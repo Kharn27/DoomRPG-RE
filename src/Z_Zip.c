@@ -198,6 +198,9 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 	SDL_RWseek(zipFile->file, namelength + extralength, SEEK_CUR);
 
 	cdata = SDL_malloc(entry->csize);
+	if (cdata == NULL) {
+		DoomRPG_Error("out of memory reading %s", name);
+	}
 	SDL_RWread(zipFile->file, cdata, sizeof(byte), entry->csize);
 
 	if (method == 0)
@@ -208,6 +211,10 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 	else if (method == 8)
 	{
 		byte* udata = SDL_malloc(entry->usize);
+		if (udata == NULL) {
+			SDL_free(cdata);
+			DoomRPG_Error("out of memory expanding %s", name);
+		}
 		#ifdef DOOMRPG_ESP32
 		/*
 		 * tinfl_decompress_mem_to_mem() creates a tinfl_decompressor as a
@@ -218,12 +225,15 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 		 * there and the state is freed immediately after this entry is decoded.
 		 */
 		tinfl_decompressor* decomp = SDL_malloc(sizeof(tinfl_decompressor));
-		if (decomp == NULL || udata == NULL || cdata == NULL) {
-			SDL_free(decomp);
+		if (decomp == NULL) {
 			SDL_free(cdata);
 			SDL_free(udata);
-			DoomRPG_Error("out of memory inflating %s", name);
+			DoomRPG_Error("out of memory allocating inflate state for %s", name);
 		}
+
+		printf("[ZIP] inflate %s c=%d u=%d state=%u\n",
+			name, entry->csize, entry->usize,
+			(unsigned int)sizeof(tinfl_decompressor));
 
 		size_t inputSize = (size_t)entry->csize;
 		size_t outputSize = (size_t)entry->usize;
