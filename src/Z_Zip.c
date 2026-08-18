@@ -41,6 +41,39 @@ static void zip_free(void* ctx, void* ptr)
 }
 #endif
 
+#ifdef DOOMRPG_ESP32
+static unsigned int read_le16_debug(const byte* p)
+{
+	return (unsigned int)p[0] | ((unsigned int)p[1] << 8);
+}
+
+static unsigned int read_le32_debug(const byte* p)
+{
+	return (unsigned int)p[0] |
+		((unsigned int)p[1] << 8) |
+		((unsigned int)p[2] << 16) |
+		((unsigned int)p[3] << 24);
+}
+
+static void print_bmp_debug(const char* name, const byte* data, int size)
+{
+	if (data == NULL || size < 54 || data[0] != 'B' || data[1] != 'M') {
+		return;
+	}
+
+	printf("[BMP] %s size=%d dataOffset=%u dib=%u w=%d h=%d bpp=%u compression=%u colors=%u\n",
+		name,
+		size,
+		read_le32_debug(data + 10),
+		read_le32_debug(data + 14),
+		(int)read_le32_debug(data + 18),
+		(int)read_le32_debug(data + 22),
+		read_le16_debug(data + 28),
+		read_le32_debug(data + 30),
+		read_le32_debug(data + 46));
+}
+#endif
+
 void findAndReadZipDir(zip_file_t* zipFile, int startoffset)
 {
 	int sig, offset, count;
@@ -211,6 +244,9 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 	if (method == 0)
 	{
 		*sizep = entry->usize;
+		#ifdef DOOMRPG_ESP32
+		print_bmp_debug(name, cdata, entry->usize);
+		#endif
 		return cdata;
 	}
 	else if (method == 8)
@@ -258,6 +294,8 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 			SDL_free(udata);
 			DoomRPG_Error("miniz inflate error for %s", name);
 		}
+
+		print_bmp_debug(name, udata, entry->usize);
 		#else
 		z_stream stream;
 
