@@ -66,9 +66,10 @@ extern "C" SDL_Surface* Esp32Bmp_LoadRW(SDL_RWops* source, int freeSource) {
     }
 
     const int height = abs(signedHeight);
-    const size_t outputBytes = static_cast<size_t>(width) * static_cast<size_t>(height);
     const size_t rowBits = static_cast<size_t>(width) * bitsPerPixel;
+    const size_t packedPitch = (rowBits + 7U) / 8U;
     const size_t filePitch = ((rowBits + 31U) / 32U) * 4U;
+    const size_t outputBytes = packedPitch * static_cast<size_t>(height);
 
     SDL_Surface* surface = static_cast<SDL_Surface*>(calloc(1, sizeof(SDL_Surface)));
     if (surface == nullptr) {
@@ -92,8 +93,11 @@ extern "C" SDL_Surface* Esp32Bmp_LoadRW(SDL_RWops* source, int freeSource) {
 
     surface->w = width;
     surface->h = height;
-    surface->pitch = width;
-    surface->format->BitsPerPixel = 8;
+    surface->pitch = static_cast<int>(packedPitch);
+    surface->format->BitsPerPixel = bitsPerPixel;
+    // Our ESP32 SDL shim understands packed indexed surfaces directly. Keep
+    // BytesPerPixel at one for compatibility with the small set of callers
+    // that inspect the format, while BitsPerPixel is authoritative for layout.
     surface->format->BytesPerPixel = 1;
     surface->format->palette->ncolors = static_cast<int>(colorCount);
 
@@ -118,10 +122,11 @@ extern "C" SDL_Surface* Esp32Bmp_LoadRW(SDL_RWops* source, int freeSource) {
         return fail(source, freeSource, surface, row, "invalid BMP pixel data");
     }
 
-    Serial.printf("[BMP] decode %ldx%d %u-bpp -> 8-bpp indexed colors=%u row=%u out=%u\n",
+    Serial.printf("[BMP] decode %ldx%d %u-bpp packed colors=%u fileRow=%u memRow=%u out=%u\n",
                   static_cast<long>(width), height, bitsPerPixel,
                   static_cast<unsigned int>(colorCount),
                   static_cast<unsigned int>(filePitch),
+                  static_cast<unsigned int>(packedPitch),
                   static_cast<unsigned int>(outputBytes));
 
     for (int fileY = 0; fileY < height; ++fileY) {
@@ -131,22 +136,8 @@ extern "C" SDL_Surface* Esp32Bmp_LoadRW(SDL_RWops* source, int freeSource) {
 
         const int destinationY = signedHeight > 0 ? height - 1 - fileY : fileY;
         Uint8* destination = static_cast<Uint8*>(surface->pixels) +
-                             static_cast<size_t>(destinationY) * surface->pitch;
-
-        if (bitsPerPixel == 8) {
-            memcpy(destination, row, static_cast<size_t>(width));
-        }
-        else if (bitsPerPixel == 4) {
-            for (int x = 0; x < width; ++x) {
-                const Uint8 packed = row[x >> 1];
-                destination[x] = (x & 1) ? (packed & 0x0f) : (packed >> 4);
-            }
-        }
-        else {
-            for (int x = 0; x < width; ++x) {
-                destination[x] = (row[x >> 3] >> (7 - (x & 7))) & 0x01;
-            }
-        }
+                             static_cast<size_t>(destinationY) * packedPitch;
+        memcpy(destination, row, packedPitch);
     }
 
     free(row);

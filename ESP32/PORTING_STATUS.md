@@ -21,117 +21,14 @@ Display, no PSRAM) port. Update it after every hardware-validated increment.
 3. Native 160x120 render target + exact 2x output (PR #2).
 4. SDL compatibility renderer sharing the platform framebuffer (PR #3).
 5. Real 12-object Doom RPG core graph (PR #4).
+6. Real `DoomCanvas_startup()` + HUD/font/legal resources + 160x120 layout
+   (`agent/esp32-engine-layout-160x120`, PR #5, merge commit
+   `9a49f032e1dbe77b10c0d2d4cbec2a9c22ce8897`).
 
 The real core graph costs 56,152 bytes of MALLOC_CAP_8BIT heap. `Game_t` is the
 largest individual core allocation at 36,484 bytes.
 
-## Current validated increment
-
-Branch: `agent/esp32-engine-layout-160x120`
-
-Status: **HARDWARE VALIDATED, READY TO MERGE**.
-
-Objective: cross the first real engine startup boundary by running
-`DoomCanvas_startup()` with the real resource archive, loading HUD/font/legal
-BMP assets, calculating the real 160x120 layout and executing `Render_setup()`.
-
-### Correct resource archive
-
-The generated `/DoomRPG.zip` is now confirmed correct on hardware:
-
-```text
-[DATA] DoomRPG.zip indexed, entries=241
-[DATA] HUD resource preflight OK
-```
-
-The earlier five-entry archive was the outer BREW distribution package and was
-not suitable for direct engine use. The preflight remains intentionally present
-to prevent `DoomRPG_Error()` reset loops when required resources are missing.
-
-### ZIP inflate stack-overflow fix
-
-The first real HUD load previously overflowed Arduino `loopTask`.
-
-Hardware diagnostics proved ZIP entries are DEFLATE (`method=8`) and that
-`tinfl_decompressor` is 10,992 bytes:
-
-```text
-[ZIP] read bar_lg.bmp method=8 c=294 u=456
-[ZIP] inflate bar_lg.bmp c=294 u=456 state=10992
-```
-
-The ESP32 ZIP path now allocates the miniz decompressor state on heap and invokes
-`tinfl_decompress()` directly instead of using `tinfl_decompress_mem_to_mem()`,
-which placed the decompressor object on the task stack. The stack overflow is
-hardware-confirmed fixed.
-
-### Indexed BMP support
-
-Original Doom RPG mobile assets are indexed BMPs, mostly 4-bpp BI_RGB.
-Examples observed on hardware:
-
-```text
-bar_lg.bmp      20x28   4-bpp
-k.bmp           20x20   4-bpp
-n.bmp           18x54   4-bpp
-l.bmp           18x180  4-bpp
-g.bmp          128x512  4-bpp
-a.bmp          144x72   4-bpp
-larger_font.bmp 208x102 4-bpp
-b.bmp            6x48   4-bpp
-```
-
-`ESP32/src/esp32_bmp.cpp` supports uncompressed indexed 1/4/8-bpp BMPs and
-expands packed rows to the engine's internal 8-bpp indexed SDL surface format.
-
-### Zero-copy indexed SDL textures
-
-The original ESP32 SDL shim converted every indexed surface to a second RGB565
-texture. This is impossible for `g.bmp`: 128x512 RGB565 would require a single
-131,072-byte allocation, while the classic CYD's largest contiguous block was
-110,580 bytes even before the HUD startup.
-
-The ESP32 SDL texture path therefore keeps BMP-derived textures indexed:
-
-- texture adopts the SDL surface pixel buffer;
-- texture adopts the palette;
-- surface relinquishes ownership before it is freed;
-- RGB565 conversion happens only when sampling in `SDL_RenderCopy()`;
-- `SDL_DestroyTexture()` owns/frees the adopted pixel buffer and palette.
-
-Hardware proof for the largest startup asset:
-
-```text
-[BMP] decode 128x512 4-bpp -> 8-bpp indexed colors=8 row=64 out=65536
-[SDL] Adopt indexed texture 128x512 pixels=65536 palette=8
-```
-
-This removes the impossible 131,072-byte RGB565 copy and keeps `g.bmp` at about
-65 KB of indexed pixels plus its tiny palette.
-
-### ESP32 120-pixel DoomCanvas rule
-
-The desktop source historically enforces a minimum display height of 128. The
-PlatformIO ESP32 build generates a Latin-1-safe build-directory copy of
-`DoomCanvas.c` and replaces that minimum only for ESP32 with
-`DOOMRPG_LOGICAL_HEIGHT` (120). The desktop source remains untouched.
-
-### Final hardware layout result
-
-The complete real startup stage now succeeds:
-
-```text
-[LAYOUT] clip    x=0 y=0 w=160 h=120
-[LAYOUT] display x=0 y=0 w=160 h=120
-[LAYOUT] screen  x=0 y=20 w=160 h=80
-[LAYOUT] HUD top=20 bottom=20 Render=160x80 arrays=1280B
-[LAYOUT] heap8 used=106708 remaining=34416 largest=14324
-[LAYOUT] READY real engine layout fits inside 160x120
-[LAYOUT] EntityDef_startup / Render_startup still NOT executed
-[LAYOUT] Summary ready=yes used=106708 heap8=34416 largest8=14324 display=160x120 render=160x80
-```
-
-Validated geometry:
+The validated DoomCanvas geometry is:
 
 - clip: 160x120
 - display: 160x120
@@ -141,82 +38,227 @@ Validated geometry:
 - `Render_t` viewport: 160x80
 - `Render_setup()` arrays: 1,280 bytes total
 
-### Touch / framebuffer regression check
+## Current validated increment
 
-After all startup resources were resident, the board stayed alive and touch still
-triggered the shared SDL framebuffer diagnostic:
+Branch: `agent/esp32-pre-render-startup`
+
+Status: **HARDWARE VALIDATED, READY TO MERGE**.
+
+Objective: cross the remaining startup stages immediately before
+`Render_startup()` without yet entering the render-resource initialization:
+
+1. `ParticleSystem_startup()`
+2. `MenuSystem_startup()`
+3. `EntityDef_startup()`
+
+`Render_startup()` and `Game_loadConfig()` remain intentionally blocked.
+
+## Packed indexed BMP storage
+
+The first hardware run of this branch exposed another contiguous-allocation
+boundary at `gibs_24.bmp`:
 
 ```text
-[READY] Bring-up remains alive; touch still runs the SDL video test.
-[TOUCH] raw=2419,2163 pressure=2149 screen=168,142
-[SDL] Sharing platform framebuffer: 38400 bytes
-[VIDEO] Present 160x120 -> 320x240 exact 2x: 34436 us
-[SDL] Touch-triggered shared-framebuffer test is on screen
-[ALIVE] uptime=10004 ms heap=100448 heap8=34416 largest8=14324 SD=ready ZIP=ready VIDEO=ready CORE=ready LAYOUT=ready
+[PRERENDER] Begin: heap8=34408 largest8=14324
+[PRERENDER] -> ParticleSystem_startup()
+[BMP] gibs_24.bmp ... w=96 h=192 bpp=4
+[BMP] ERROR out of memory loading BMP
 ```
 
-The current milestone therefore passes its hardware merge gate.
+The old ESP32 BMP loader expanded every 1/4-bpp indexed image to one byte per
+pixel. For `gibs_24.bmp`, that required a single 18,432-byte allocation while the
+largest available block was only 14,324 bytes.
 
-## Critical memory boundary after this milestone
+The ESP32 path now keeps indexed images at their native packed depth in memory:
 
-After `DoomCanvas_startup()`:
+- 1-bpp: 8 pixels per byte
+- 4-bpp: 2 pixels per byte
+- 8-bpp: 1 pixel per byte
+- BMP row padding is removed, but packed pixel order is preserved
+- SDL textures adopt the packed surface buffer and palette zero-copy
+- `SDL_RenderCopy()` extracts the palette index directly from the packed byte
+  and converts only the sampled pixel to RGB565
 
-- free MALLOC_CAP_8BIT heap: 34,416 bytes
-- largest contiguous MALLOC_CAP_8BIT block: 14,324 bytes
+The generated ESP32 SDL texture stores the indexed bit depth so 1/4/8-bpp
+textures can all share the same render path.
 
-This is the main constraint for the next increment.
+Hardware examples:
 
-**Do not call the current unmodified `Render_startup()` yet.** It creates its own
-160x120 RGB565 framebuffer, which requires 38,400 contiguous bytes. With a
-largest free block of only 14,324 bytes this allocation is structurally
-impossible, even though aggregate free heap is larger.
+```text
+[BMP] decode 128x512 4-bpp packed colors=8 fileRow=64 memRow=64 out=32768
+[SDL] Adopt packed indexed texture 128x512 bpp=4 bytes=32768 palette=8
 
-The next render-stage work must first remove/share/replace that duplicate
-framebuffer allocation or otherwise redesign the startup memory lifetime.
+[BMP] decode 208x102 4-bpp packed colors=3 fileRow=104 memRow=104 out=10608
+[SDL] Adopt packed indexed texture 208x102 bpp=4 bytes=10608 palette=3
+
+[BMP] decode 96x192 4-bpp packed colors=14 fileRow=48 memRow=48 out=9216
+[SDL] Adopt packed indexed texture 96x192 bpp=4 bytes=9216 palette=14
+```
+
+The berserk version of `gibs_24.bmp` is compatible with packed storage because
+`DoomRPG_createImageBerserkColor()` recolors the palette rather than rewriting
+pixel indices.
+
+## Memory improvement at the existing layout boundary
+
+Before native packed BMP storage, the validated DoomCanvas stage ended at:
+
+```text
+heap8=34408 largest8=14324
+```
+
+With packed 4-bpp storage, the same hardware stage now ends at:
+
+```text
+[LAYOUT] heap8 used=54708 remaining=86408 largest=47092
+[LAYOUT] READY real engine layout fits inside 160x120
+```
+
+That recovers exactly 52,000 bytes of persistent MALLOC_CAP_8BIT heap at this
+boundary and increases the largest contiguous block from 14,324 to 47,092 bytes.
+
+The geometry remains unchanged at 160x120 / 160x80, proving the memory change is
+representation-only and does not alter layout behavior.
+
+## Pre-render resource preflight
+
+Before executing the new startup stages, the ESP32 probe validates these archive
+entries:
+
+```text
+gibs_24.bmp    c=2902 u=9328
+p.bmp          c=106  u=156
+q.bmp          c=96   u=136
+j.bmp          c=2757 u=4264
+entities.db    c=1216 u=2762
+```
+
+The tested `/DoomRPG.zip` contains all five resources and the preflight passes.
+
+## Final hardware pre-render result
+
+The complete new stage succeeds on the real classic CYD:
+
+```text
+[PRERENDER] Begin: heap8=86408 largest8=47092
+
+[PRERENDER] -> ParticleSystem_startup()
+[SDL] Adopt packed indexed texture 96x192 bpp=4 bytes=9216 palette=14
+[SDL] Adopt packed indexed texture 96x192 bpp=4 bytes=9216 palette=14
+[PRERENDER] ParticleSystem_startup   used=18712 heap8=67696 largest8=36852
+
+[PRERENDER] -> MenuSystem_startup()
+[SDL] Adopt packed indexed texture 13x10 bpp=4 bytes=70 palette=5
+[SDL] Adopt packed indexed texture 7x14 bpp=4 bytes=56 palette=6
+[SDL] Adopt packed indexed texture 108x74 bpp=4 bytes=3996 palette=16
+[PRERENDER] MenuSystem_startup       used=4496 heap8=63200 largest8=36852
+
+[PRERENDER] -> EntityDef_startup()
+[ZIP] read entities.db method=8 c=1216 u=2762
+[ZIP] inflate entities.db c=1216 u=2762 state=10992
+[PRERENDER] EntityDef_startup        used=2776 heap8=60424 largest8=36852
+[PRERENDER] Entity defs=115 table=2760B
+
+[PRERENDER] READY total used=25984 heap8=60424 largest8=36852
+[PRERENDER] Render_startup / Game_loadConfig still NOT executed
+```
+
+Measured persistent costs:
+
+- `ParticleSystem_startup()`: 18,712 bytes
+- `MenuSystem_startup()`: 4,496 bytes
+- `EntityDef_startup()`: 2,776 bytes
+- total pre-render stage: 25,984 bytes
+- remaining MALLOC_CAP_8BIT heap: 60,424 bytes
+- largest contiguous block: 36,852 bytes
+- entity definitions: 115
+- final `EntityDef_t` table: 2,760 bytes
+
+The board remains alive after the stage, and touch still triggers the shared
+SDL framebuffer diagnostic successfully:
+
+```text
+[ALIVE] ... heap8=60424 largest8=36852 ... CORE=ready LAYOUT=ready
+[SDL] Sharing platform framebuffer: 38400 bytes
+[VIDEO] Present 160x120 -> 320x240 exact 2x: 34514 us
+[SDL] Touch-triggered shared-framebuffer test is on screen
+```
+
+This branch therefore passes its hardware merge gate.
+
+## Exact next memory boundary: Render_startup
+
+The original `Render_startup()` currently does the following after loading
+`sintable.bin`:
+
+```c
+w = sdlVideo.rendererW;
+h = sdlVideo.rendererH;
+render->piDIB = SDL_CreateTexture(... RGB565 ..., w, h);
+render->pitch = (((w * 2) + 3) & ~3);
+render->framebuffer = SDL_calloc(1, render->pitch * h);
+Render_loadPalettes(render);
+```
+
+On this ESP32 port `rendererW/H` are 160x120, so this attempts two separate
+38,400-byte RGB565 pixel allocations:
+
+1. `SDL_CreateTexture()` -> texture-owned RGB565 pixel buffer: 38,400 bytes
+2. `render->framebuffer` -> second RGB565 buffer: 38,400 bytes
+
+After the validated pre-render stage the largest contiguous block is only
+36,852 bytes, so even the **first** 38,400-byte allocation is structurally
+impossible. Calling the unmodified `Render_startup()` would therefore provide no
+new information and should remain blocked.
+
+The platform already owns the one 38,400-byte framebuffer required for 160x120
+output, and SDL already shares it. The next increment must make `Render_t` share
+that existing framebuffer and eliminate the duplicate `piDIB` / framebuffer
+storage rather than trying to allocate either buffer again.
+
+## Other memory work already validated
+
+- correct generated resource ZIP: 241 entries
+- miniz `tinfl_decompressor` state (10,992 bytes) moved from `loopTask` stack to heap
+- indexed BMP 1/4/8-bpp decoder
+- zero-copy ownership transfer from BMP surface to SDL texture
+- native packed indexed texture storage
+- desktop DoomCanvas 128-pixel minimum specialized to 120 only for ESP32
+- desktop `mediaPlanes[24][64*64]` removed from ESP32 `Render_t`
+- SDL and platform video already share the platform 38,400-byte logical framebuffer
 
 ## Current safe stop boundary
 
-This validated branch intentionally stops before:
+Validated and executed:
 
+- core object graph
+- `DoomCanvas_startup()` / `Hud_startup()` / `Render_setup()`
 - `ParticleSystem_startup()`
 - `MenuSystem_startup()`
 - `EntityDef_startup()`
+
+Still intentionally NOT executed:
+
 - `Render_startup()`
 - `Game_loadConfig()`
 - BSP/map loading
 - main game loop
 
-`DoomCanvas_startup()` and its internal `Render_setup()` are validated; the later
-`Render_startup()` is a distinct and still-blocked stage.
-
 ## Recommended next increment after merge
 
-Start a new branch from the newly merged `main` and advance in small measured
-steps:
+Start a new branch from the newly merged `main` and enter `Render_startup()`
+piecewise:
 
-1. `ParticleSystem_startup()` + `MenuSystem_startup()` with before/after heap8.
-2. `EntityDef_startup()` with resource/memory measurements.
-3. Enter `Render_startup()` piecewise rather than as one call:
-   - load/measure `sintable.bin`;
-   - inspect texture/framebuffer creation;
-   - replace or share the 38,400-byte duplicate render framebuffer before it is
-     allocated;
-   - load/measure `palettes.bin`.
-4. Only after those pass, attempt the first BSP/map load.
+1. load and validate `sintable.bin` with before/after heap metrics
+2. make `Render_t::framebuffer` alias the existing platform framebuffer instead
+   of allocating another 38,400 bytes
+3. avoid the second RGB565 pixel allocation currently hidden inside `piDIB`, or
+   replace `piDIB` with a non-owning/shared presentation path
+4. load `palettes.bin` and measure the persistent palette table
+5. stop before map/BSP loading
 
-## Memory surgery already present
-
-`Render_t` is specialized under `DOOMRPG_ESP32`:
-
-- desktop `short mediaPlanes[24][64 * 64]` is absent;
-- ESP32 stores compact plane offsets/references;
-- `PlaneTextureRef_t` is one byte;
-- SDL shares the platform 38,400-byte logical framebuffer;
-- BMP textures remain indexed instead of owning RGB565 copies;
-- miniz DEFLATE state lives on heap instead of task stack.
-
-These changes are the main reasons the original engine now reaches a real
-160x120 startup layout on a classic CYD without PSRAM.
+Only after that render-resource stage passes hardware should the port attempt its
+first map load.
 
 ## Increment discipline
 

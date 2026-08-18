@@ -71,9 +71,9 @@ print("[ESP32] DoomCanvas generated with 160x120-aware minimum height")
 # DoomRPG_createImage() is the central image-loading path used by the game.
 # Desktop SDL handles the original indexed BMP variants, while the deliberately
 # small ESP32 SDL shim initially handled only 8-bpp BMPs. Generate an ESP32-only
-# DoomRPG.c copy that routes those image loads through Esp32Bmp_LoadRW(), which
-# expands uncompressed 1/4/8-bpp indexed BMP rows into the same 8-bpp indexed
-# SDL_Surface representation expected by the rest of the engine.
+# DoomRPG.c copy that routes those image loads through Esp32Bmp_LoadRW(). The
+# ESP32 loader preserves indexed 1/4/8-bpp pixels in their native packed form so
+# large mobile assets do not need an expanded one-byte-per-pixel allocation.
 doom_rpg_source = join(engine_dir, "DoomRPG.c")
 doom_rpg_patched = join(patched_dir, "DoomRPG.c")
 
@@ -112,12 +112,11 @@ print(
 )
 
 # The source-tree SDL shim stores every texture as RGB565. That is acceptable
-# for small diagnostic textures but impossible for original Doom RPG assets
-# such as g.bmp (128x512): a single RGB565 copy would require 131072 contiguous
-# bytes, more than the classic CYD can provide. Generate an ESP32-only shim that
-# lets textures created from indexed BMP surfaces adopt the surface's 8-bpp
-# pixel buffer and palette instead of allocating/converting a second RGB565
-# copy. Conversion to RGB565 then happens per sampled pixel in SDL_RenderCopy().
+# for small diagnostic textures but impossible for original Doom RPG assets.
+# Generate an ESP32-only shim whose BMP-derived textures adopt packed indexed
+# surface pixels and palettes directly. 1/4/8-bpp palette indexes are decoded
+# only when SDL_RenderCopy() samples a pixel, then converted to RGB565 straight
+# into the shared 160x120 framebuffer.
 esp32_sdl_source = join(project_src_dir, "esp32_sdl.cpp")
 esp32_sdl_patched = join(patched_dir, "esp32_sdl.cpp")
 
@@ -144,6 +143,7 @@ texture_struct_replacement = '''struct SDL_Texture {
     Uint8* indexedPixels;
     SDL_Color* palette;
     int paletteSize;
+    Uint8 indexedBitsPerPixel;
     bool indexed;
     Uint8 red;
     Uint8 green;
@@ -180,9 +180,14 @@ create_from_surface_needle = '''SDL_Texture* SDL_CreateTextureFromSurface(SDL_Re
 create_from_surface_replacement = '''SDL_Texture* SDL_CreateTextureFromSurface(SDL_Renderer*, SDL_Surface* surface) {
     if (surface == nullptr || surface->format == nullptr ||
         surface->format->palette == nullptr ||
-        surface->format->palette->colors == nullptr || surface->pixels == nullptr ||
-        surface->format->BitsPerPixel != 8 || surface->format->BytesPerPixel != 1) {
+        surface->format->palette->colors == nullptr || surface->pixels == nullptr) {
         setError("unsupported indexed surface");
+        return nullptr;
+    }
+
+    const Uint8 bitsPerPixel = surface->format->BitsPerPixel;
+    if (bitsPerPixel != 1 && bitsPerPixel != 4 && bitsPerPixel != 8) {
+        setError("unsupported indexed surface depth");
         return nullptr;
     }
 
@@ -198,6 +203,7 @@ create_from_surface_replacement = '''SDL_Texture* SDL_CreateTextureFromSurface(S
     texture->indexedPixels = static_cast<Uint8*>(surface->pixels);
     texture->palette = surface->format->palette->colors;
     texture->paletteSize = surface->format->palette->ncolors;
+    texture->indexedBitsPerPixel = bitsPerPixel;
     texture->indexed = true;
     texture->red = texture->green = texture->blue = 255;
     texture->hasColorKey = surface->hasColorKey;
@@ -208,13 +214,13 @@ create_from_surface_replacement = '''SDL_Texture* SDL_CreateTextureFromSurface(S
     }
 
     // Transfer ownership to the texture. DoomRPG_createImage() immediately
-    // frees the SDL_Surface after this call, so detaching avoids a second
-    // width*height allocation and makes the transfer genuinely zero-copy.
+    // frees the SDL_Surface after this call, so detaching keeps this zero-copy.
     surface->pixels = nullptr;
     surface->format->palette->colors = nullptr;
 
-    Serial.printf("[SDL] Adopt indexed texture %dx%d pixels=%u palette=%d\\n",
+    Serial.printf("[SDL] Adopt packed indexed texture %dx%d bpp=%u bytes=%u palette=%d\\n",
                   texture->width, texture->height,
+                  texture->indexedBitsPerPixel,
                   static_cast<unsigned int>(texture->pitch * texture->height),
                   texture->paletteSize);
     return texture;
@@ -253,8 +259,20 @@ render_sample_needle = '''            const Uint16 color = texture->pixels[sourc
 '''
 render_sample_replacement = '''            Uint16 color;
             if (texture->indexed) {
-                const Uint8 paletteIndex =
-                    texture->indexedPixels[sourceY * texture->pitch + sourceX];
+                const Uint8* indexedRow =
+                    texture->indexedPixels + sourceY * texture->pitch;
+                Uint8 paletteIndex;
+                if (texture->indexedBitsPerPixel == 8) {
+                    paletteIndex = indexedRow[sourceX];
+                }
+                else if (texture->indexedBitsPerPixel == 4) {
+                    const Uint8 packed = indexedRow[sourceX >> 1];
+                    paletteIndex = (sourceX & 1) ? (packed & 0x0f) : (packed >> 4);
+                }
+                else {
+                    paletteIndex =
+                        (indexedRow[sourceX >> 3] >> (7 - (sourceX & 7))) & 0x01;
+                }
                 if (paletteIndex >= texture->paletteSize) continue;
                 const SDL_Color& paletteColor = texture->palette[paletteIndex];
                 color = rgb565(paletteColor.r, paletteColor.g, paletteColor.b);
@@ -286,7 +304,7 @@ for needle, replacement, label in patches:
 with open(esp32_sdl_patched, "w", encoding="utf-8", newline="\n") as patched_file:
     patched_file.write(esp32_sdl)
 
-print("[ESP32] SDL shim generated with zero-copy indexed BMP textures")
+print("[ESP32] SDL shim generated with packed zero-copy indexed BMP textures")
 
 # The desktop entry point and its SDL/audio/ZIP implementations are replaced by
 # the small ESP32 compatibility layer in this PlatformIO project. DoomCanvas.c

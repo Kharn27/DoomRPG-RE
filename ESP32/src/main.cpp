@@ -8,6 +8,7 @@
 #include "esp32_sdl_platform.h"
 #include "platform_input.h"
 #include "platform_video.h"
+#include "pre_render_probe.h"
 #include "soft_xpt2046.h"
 #include "Z_Zip.h"
 
@@ -379,6 +380,7 @@ void setup()
     initializeGameArchive();
     initializeEngineCore();
     initializeEngineLayout();
+    DoomRPG_probePreRenderStartup(engineLayoutReady ? 1 : 0);
     Serial.println("[READY] Bring-up remains alive; touch still runs the SDL video test.");
 }
 
