@@ -1,0 +1,194 @@
+#include "platform_video.h"
+
+#include <Arduino.h>
+#include <TFT_eSPI.h>
+
+#include <algorithm>
+
+#include "platform_video_config.h"
+
+namespace {
+
+TFT_eSPI* platformDisplay = nullptr;
+uint16_t* framebuffer = nullptr;
+
+constexpr size_t kPixelCount =
+    static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
+constexpr size_t kFramebufferBytes = kPixelCount * sizeof(uint16_t);
+
+uint16_t rgb565(uint8_t red, uint8_t green, uint8_t blue) {
+    return static_cast<uint16_t>(((red & 0xf8) << 8) |
+                                 ((green & 0xfc) << 3) | (blue >> 3));
+}
+
+void setPixel(int x, int y, uint16_t color) {
+    if (framebuffer == nullptr || x < 0 || y < 0 ||
+        x >= DOOMRPG_LOGICAL_WIDTH || y >= DOOMRPG_LOGICAL_HEIGHT) {
+        return;
+    }
+    framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
+}
+
+void fillRect(int x, int y, int width, int height, uint16_t color) {
+    if (framebuffer == nullptr || width <= 0 || height <= 0) {
+        return;
+    }
+
+    const int x0 = std::max(0, x);
+    const int y0 = std::max(0, y);
+    const int x1 = std::min(DOOMRPG_LOGICAL_WIDTH, x + width);
+    const int y1 = std::min(DOOMRPG_LOGICAL_HEIGHT, y + height);
+
+    for (int row = y0; row < y1; ++row) {
+        std::fill(framebuffer + row * DOOMRPG_LOGICAL_WIDTH + x0,
+                  framebuffer + row * DOOMRPG_LOGICAL_WIDTH + x1, color);
+    }
+}
+
+void drawLine(int x0, int y0, int x1, int y1, uint16_t color) {
+    const int dx = abs(x1 - x0);
+    const int sx = x0 < x1 ? 1 : -1;
+    const int dy = -abs(y1 - y0);
+    const int sy = y0 < y1 ? 1 : -1;
+    int error = dx + dy;
+
+    while (true) {
+        setPixel(x0, y0, color);
+        if (x0 == x1 && y0 == y1) {
+            break;
+        }
+        const int doubled = error * 2;
+        if (doubled >= dy) {
+            error += dy;
+            x0 += sx;
+        }
+        if (doubled <= dx) {
+            error += dx;
+            y0 += sy;
+        }
+    }
+}
+
+}  // namespace
+
+bool PlatformVideo_begin(TFT_eSPI* display) {
+    platformDisplay = display;
+    if (platformDisplay == nullptr) {
+        Serial.println("[VIDEO] No TFT attached");
+        return false;
+    }
+
+    if (framebuffer == nullptr) {
+        framebuffer = static_cast<uint16_t*>(calloc(kPixelCount, sizeof(uint16_t)));
+        if (framebuffer == nullptr) {
+            Serial.printf("[VIDEO] Unable to allocate %u-byte framebuffer\n",
+                          static_cast<unsigned int>(kFramebufferBytes));
+            return false;
+        }
+    }
+
+    Serial.printf("[VIDEO] Logical framebuffer %dx%d RGB565, %u bytes\n",
+                  DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
+                  static_cast<unsigned int>(kFramebufferBytes));
+    Serial.printf("[VIDEO] Physical output %dx%d, integer scale %dx\n",
+                  DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT,
+                  DOOMRPG_INTEGER_SCALE);
+    return true;
+}
+
+uint16_t* PlatformVideo_framebuffer() {
+    return framebuffer;
+}
+
+size_t PlatformVideo_framebufferSizeBytes() {
+    return kFramebufferBytes;
+}
+
+void PlatformVideo_clear(uint16_t color) {
+    if (framebuffer == nullptr) {
+        return;
+    }
+    std::fill(framebuffer, framebuffer + kPixelCount, color);
+}
+
+bool PlatformVideo_present() {
+    if (platformDisplay == nullptr || framebuffer == nullptr) {
+        return false;
+    }
+
+    uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
+    const uint32_t started = micros();
+
+    platformDisplay->startWrite();
+    platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
+                                   DOOMRPG_PHYSICAL_HEIGHT);
+
+    for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
+        const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
+        for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
+            const uint16_t color = source[sourceX];
+            const int outputX = sourceX * DOOMRPG_INTEGER_SCALE;
+            outputRow[outputX] = color;
+            outputRow[outputX + 1] = color;
+        }
+
+        for (int repeatY = 0; repeatY < DOOMRPG_INTEGER_SCALE; ++repeatY) {
+            platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
+        }
+    }
+
+    platformDisplay->endWrite();
+
+    Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x: %lu us\n",
+                  micros() - started);
+    return true;
+}
+
+void PlatformVideo_showTestPattern() {
+    if (framebuffer == nullptr) {
+        return;
+    }
+
+    const uint16_t black = rgb565(0, 0, 0);
+    const uint16_t white = rgb565(255, 255, 255);
+    const uint16_t red = rgb565(255, 0, 0);
+    const uint16_t green = rgb565(0, 255, 0);
+    const uint16_t blue = rgb565(0, 0, 255);
+    const uint16_t yellow = rgb565(255, 255, 0);
+    const uint16_t cyan = rgb565(0, 255, 255);
+    const uint16_t magenta = rgb565(255, 0, 255);
+
+    PlatformVideo_clear(black);
+
+    // Four equal 80x60 logical quadrants must become exact 160x120 physical
+    // rectangles. This makes any non-integer scaling immediately visible.
+    fillRect(1, 1, 79, 59, red);
+    fillRect(80, 1, 79, 59, green);
+    fillRect(1, 60, 79, 59, blue);
+    fillRect(80, 60, 79, 59, yellow);
+
+    // One logical pixel becomes exactly 2x2 physical pixels.
+    for (int x = 0; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
+        setPixel(x, 0, white);
+        setPixel(x, DOOMRPG_LOGICAL_HEIGHT - 1, white);
+    }
+    for (int y = 0; y < DOOMRPG_LOGICAL_HEIGHT; ++y) {
+        setPixel(0, y, white);
+        setPixel(DOOMRPG_LOGICAL_WIDTH - 1, y, white);
+    }
+
+    drawLine(0, 0, DOOMRPG_LOGICAL_WIDTH - 1,
+             DOOMRPG_LOGICAL_HEIGHT - 1, cyan);
+    drawLine(DOOMRPG_LOGICAL_WIDTH - 1, 0, 0,
+             DOOMRPG_LOGICAL_HEIGHT - 1, magenta);
+
+    // 10x10 logical checker blocks become 20x20 physical squares.
+    for (int blockY = 0; blockY < 4; ++blockY) {
+        for (int blockX = 0; blockX < 6; ++blockX) {
+            const uint16_t color = ((blockX + blockY) & 1) ? white : black;
+            fillRect(50 + blockX * 10, 40 + blockY * 10, 10, 10, color);
+        }
+    }
+
+    PlatformVideo_present();
+}
