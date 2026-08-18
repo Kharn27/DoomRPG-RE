@@ -15,12 +15,17 @@ env.Append(CPPPATH=[join(project_dir, "include"), engine_dir])
 
 # DoomCanvas keeps the original desktop minimum display height of 128 pixels.
 # The CYD render target is deliberately 160x120, so generate an ESP32-only
-# copy with the minimum tied to the canonical platform video geometry.  The
+# copy with the minimum tied to the canonical platform video geometry. The
 # source-tree file remains untouched for desktop builds.
+#
+# DoomCanvas.c is a legacy source file and contains non-UTF-8 bytes in comments
+# (for example 0xF3). Latin-1 is used intentionally here because it maps every
+# byte 1:1, so we can safely patch the ASCII code fragments without corrupting
+# the rest of the original source text.
 doom_canvas_source = join(engine_dir, "DoomCanvas.c")
 doom_canvas_patched = join(patched_dir, "DoomCanvas.c")
 
-with open(doom_canvas_source, "r", encoding="utf-8") as source_file:
+with open(doom_canvas_source, "r", encoding="latin-1") as source_file:
     doom_canvas = source_file.read()
 
 include_needle = '#include "SDL_Video.h"\n'
@@ -57,7 +62,7 @@ if doom_canvas.count(height_needle) != 1:
 doom_canvas = doom_canvas.replace(include_needle, include_replacement, 1)
 doom_canvas = doom_canvas.replace(height_needle, height_replacement, 1)
 
-with open(doom_canvas_patched, "w", encoding="utf-8", newline="\n") as patched_file:
+with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_canvas)
 
 print("[ESP32] DoomCanvas generated with 160x120-aware minimum height")
