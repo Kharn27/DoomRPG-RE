@@ -4,6 +4,7 @@
 #include <TFT_eSPI.h>
 
 #include "board_config.h"
+#include "config_mappings_probe.h"
 #include "engine_metrics.h"
 #include "esp32_sdl_platform.h"
 #include "platform_input.h"
@@ -29,6 +30,7 @@ namespace
     bool engineLayoutReady = false;
     bool enginePreRenderReady = false;
     bool engineRenderStartupReady = false;
+    bool engineConfigMappingsReady = false;
     bool videoTestShown = false;
     DoomRpgCoreInitReport coreReport{};
     DoomRpgLayoutReport layoutReport{};
@@ -292,6 +294,21 @@ namespace
         }
     }
 
+    void initializeConfigMappings()
+    {
+        engineConfigMappingsReady =
+            DoomRPG_probeConfigAndMappings(engineRenderStartupReady ? 1 : 0) != 0;
+
+        if (engineConfigMappingsReady)
+        {
+            drawLabel(186, "Engine:", "MAPPINGS OK", TFT_GREEN);
+        }
+        else if (engineRenderStartupReady)
+        {
+            drawLabel(186, "Engine:", "MAPPINGS FAIL", TFT_RED);
+        }
+    }
+
     void printSystemInfo()
     {
         Serial.println();
@@ -368,7 +385,7 @@ namespace
                                    : (archiveReady ? "partial" : "unavailable");
 
         Serial.printf(
-            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s ZIP=%s VIDEO=%s CORE=%s LAYOUT=%s PRERENDER=%s RENDER=%s touchIRQ=%s\n",
+            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s ZIP=%s VIDEO=%s CORE=%s LAYOUT=%s PRERENDER=%s RENDER=%s MAPPINGS=%s touchIRQ=%s\n",
             now, ESP.getFreeHeap(), DoomRPG_getHeap8Free(),
             DoomRPG_getLargest8BitBlock(), sdReady ? "ready" : "unavailable",
             zipState, videoReady ? "ready" : "unavailable",
@@ -376,6 +393,7 @@ namespace
             engineLayoutReady ? "ready" : "unavailable",
             enginePreRenderReady ? "ready" : "unavailable",
             engineRenderStartupReady ? "ready" : "unavailable",
+            engineConfigMappingsReady ? "ready" : "unavailable",
             input.touched() ? "active" : "idle");
     }
 
@@ -403,6 +421,7 @@ void setup()
     initializeEngineCore();
     initializeEngineLayout();
     initializeRenderStartup();
+    initializeConfigMappings();
     Serial.println("[READY] Bring-up remains alive; touch still runs the SDL video test.");
 }
 
