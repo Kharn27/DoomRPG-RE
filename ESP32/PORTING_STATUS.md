@@ -62,8 +62,7 @@ Validated on real CYD hardware and merged to `main` in PR #3.
 
 ### 5. Real Doom RPG core object graph
 
-Validated on real CYD hardware on branch `agent/esp32-engine-core-init`.
-Ready to merge after this documentation commit.
+Validated on real CYD hardware and merged to `main` in PR #4.
 
 The real global `doomRpg` root successfully owns all 12 core objects:
 
@@ -110,33 +109,17 @@ Important observations:
 - Measured full-screen exact-2x present time: 34,428 us on the tested CYD.
 - Touch, SD and ZIP remain functional after core initialization.
 
-The heartbeat currently prints `ESP.getFreeHeap()` while the core probe uses
-`heap_caps_get_free_size(MALLOC_CAP_8BIT)`. Those values are deliberately not
-compared directly; a later increment should report both metrics consistently.
+## Current increment
 
-## Current safe stop boundary
+Branch: `agent/esp32-engine-layout-160x120`
 
-The engine graph is resident, but resource startup is still intentionally not
-executed. The following remain behind the barrier:
+Goal: cross the first real engine-startup boundary by running
+`DoomCanvas_startup()` at a true 160x120 logical resolution, loading the first
+HUD resources, and validating the viewport allocations made by `Render_setup()`.
 
-- `DoomCanvas_startup()`
-- `ParticleSystem_startup()`
-- `MenuSystem_startup()`
-- `EntityDef_startup()`
-- `Render_startup()`
-- `Game_loadConfig()`
-- map loading
-- main game loop
+### ESP32-only 120-pixel startup rule
 
-This barrier is important because `Render_startup()` starts loading real files
-such as `sintable.bin` and palettes and also creates renderer resources.
-
-## Next increment: real 160x120 engine layout
-
-The next branch must address the original 128-pixel minimum height before
-calling `DoomCanvas_startup()`.
-
-Desktop behavior currently contains:
+The original desktop source keeps its historical minimum height of 128 pixels:
 
 ```c
 if (doomCanvas->displayRect.h < 0x80) {
@@ -144,16 +127,118 @@ if (doomCanvas->displayRect.h < 0x80) {
 }
 ```
 
-For ESP32 only, the minimum must permit the canonical 120-pixel logical height.
-The next increment should:
+The ESP32 PlatformIO build now generates a build-directory copy of
+`DoomCanvas.c` and changes only that rule to use `DOOMRPG_LOGICAL_HEIGHT` (120).
+The source-tree desktop file is not modified.
 
-1. make the minimum display height 120 only under `DOOMRPG_ESP32`;
-2. run `DoomCanvas_startup()` on the already resident real object graph;
-3. log `clipRect`, `displayRect`, `screenRect`, `SCR_CX` and `SCR_CY`;
-4. validate `Render_setup()` allocations at the resulting viewport size;
-5. keep the barrier before `EntityDef_startup()` / `Render_startup()` until the
-   layout and allocations have been hardware-tested;
-6. print both `ESP.getFreeHeap()` and MALLOC_CAP_8BIT heap metrics in diagnostics.
+The build script deliberately fails if the expected upstream block is no longer
+found, so a future source change cannot silently apply the patch at the wrong
+place.
+
+### What `DoomCanvas_startup()` really does
+
+This is the first increment that crosses into actual media loading.
+`DoomCanvas_startup()` calls `Hud_startup()`, which loads the first real BMPs
+from `DoomRPG.zip`, including the status bars, arrows, HUD face sheet and icon
+sheet.
+
+It then calculates the real layout and calls `Render_setup()` for the gameplay
+viewport. `Render_setup()` allocates:
+
+- `ceilingColor[screenWidth]` (`short`);
+- `floorColor[screenWidth]` (`short`);
+- `columnScale[screenWidth]` (`int`).
+
+The probe records the resulting geometry and memory state.
+
+### Expected serial output
+
+After the already validated `[CORE]` section, expect:
+
+```text
+=== Doom RPG 160x120 layout + HUD startup probe ===
+[LAYOUT] Begin DoomCanvas_startup: heap8=... largest8=...
+[LAYOUT] This stage loads the first real HUD BMP resources
+...
+[LAYOUT] clip    x=... y=... w=160 h=120
+[LAYOUT] display x=... y=... w=160 h=...
+[LAYOUT] screen  x=... y=... w=160 h=...
+[LAYOUT] HUD top=... bottom=... Render=160x... arrays=...B
+[LAYOUT] heap8 used=... remaining=... largest=...
+[LAYOUT] READY real engine layout fits inside 160x120
+[LAYOUT] EntityDef_startup / Render_startup still NOT executed
+```
+
+The exact gameplay viewport height depends on the real HUD bitmap heights and is
+therefore intentionally measured on hardware instead of hard-coded in the test.
+
+### Validation rules
+
+The probe rejects the layout unless all of these remain true:
+
+- `clipRect` is exactly 160x120;
+- `displayRect` remains inside the clip rectangle;
+- `screenRect` remains inside `displayRect`;
+- gameplay viewport dimensions are non-zero;
+- `Render_t::screenWidth/screenHeight` exactly match `screenRect`;
+- `floorColor`, `ceilingColor` and `columnScale` were allocated successfully.
+
+### Heap metrics
+
+Heartbeat diagnostics now print both metrics explicitly:
+
+- `heap=` -> Arduino `ESP.getFreeHeap()`;
+- `heap8=` -> `heap_caps_get_free_size(MALLOC_CAP_8BIT)`;
+- `largest8=` -> largest contiguous MALLOC_CAP_8BIT block.
+
+This removes the ambiguity seen in the PR #4 hardware log where the two
+incomparable free-heap values appeared side by side at different stages.
+
+### Hardware acceptance test
+
+1. Build/upload `agent/esp32-engine-layout-160x120` with the same SD card and
+   `/DoomRPG.zip`.
+2. PlatformIO build output should contain:
+   `[ESP32] DoomCanvas generated with 160x120-aware minimum height`.
+3. Core init must still reach `READY objects=12`.
+4. Keep the complete new `[LAYOUT]` block.
+5. `clip` must be 160x120 and `[LAYOUT] READY` must appear.
+6. Note the HUD top/bottom heights and the final `Render=160x...` viewport.
+7. Record `heap8 used`, remaining heap8 and largest8 after HUD/layout startup.
+8. Heartbeat must show `CORE=ready LAYOUT=ready` and stable heap values.
+9. Touch once after startup; the SDL shared-framebuffer diagnostic must still
+   render correctly with the HUD resources resident.
+
+If the board resets or `DoomRPG_Error` fires while loading a BMP, keep the full
+serial log: this is now intentionally the first resource-loading stress test.
+
+## Current safe stop boundary
+
+This branch still does **not** execute:
+
+- `ParticleSystem_startup()`;
+- `MenuSystem_startup()`;
+- `EntityDef_startup()`;
+- `Render_startup()`;
+- `Game_loadConfig()`;
+- map loading;
+- main game loop.
+
+In particular, `Render_startup()` remains behind the barrier because it loads
+`sintable.bin`, creates the original engine render texture/framebuffer and loads
+`palettes.bin`.
+
+## Likely next increment after layout validation
+
+If the 160x120 HUD/layout probe passes, cross the next resource boundary in
+small steps:
+
+1. `ParticleSystem_startup()` and `MenuSystem_startup()`;
+2. `EntityDef_startup()` with heap measurements;
+3. `Render_startup()` with detailed measurements around `sintable.bin`, the
+   engine framebuffer/texture and `palettes.bin`;
+4. decide whether the original `Render_startup()` framebuffer can be removed or
+   shared before attempting the first BSP/map load.
 
 ## Memory surgery already present in the ESP32 engine
 
