@@ -150,6 +150,8 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
 
 static DoomRpgCoreInitReport coreInitReport;
 static boolean coreInitAttempted = false;
+static DoomRpgLayoutReport layoutReport;
+static boolean layoutAttempted = false;
 
 static uint32_t coreFreeHeap(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -157,6 +159,14 @@ static uint32_t coreFreeHeap(void) {
 
 static uint32_t coreLargestBlock(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+}
+
+uint32_t DoomRPG_getHeap8Free(void) {
+    return coreFreeHeap();
+}
+
+uint32_t DoomRPG_getLargest8BitBlock(void) {
+    return coreLargestBlock();
 }
 
 const char* DoomRPG_coreStageName(uint8_t stage) {
@@ -294,5 +304,115 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     printf("[CORE] Resource startup intentionally NOT executed\n");
 
     if (report != NULL) *report = coreInitReport;
+    return 1;
+}
+
+int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
+    DoomCanvas_t* canvas;
+    Render_t* render;
+    Hud_t* hud;
+
+    if (layoutAttempted) {
+        if (report != NULL) *report = layoutReport;
+        return layoutReport.ready != 0;
+    }
+    layoutAttempted = true;
+
+    SDL_memset(&layoutReport, 0, sizeof(layoutReport));
+
+    if (!coreInitReport.ready || doomRpg == NULL || doomRpg->doomCanvas == NULL ||
+        doomRpg->render == NULL || doomRpg->hud == NULL) {
+        printf("[LAYOUT] Core graph is not ready; startup refused\n");
+        if (report != NULL) *report = layoutReport;
+        return 0;
+    }
+
+    canvas = doomRpg->doomCanvas;
+    render = doomRpg->render;
+    hud = doomRpg->hud;
+
+    layoutReport.heap8Before = coreFreeHeap();
+    layoutReport.largest8Before = coreLargestBlock();
+
+    printf("[LAYOUT] Begin DoomCanvas_startup: heap8=%u largest8=%u\n",
+           (unsigned int)layoutReport.heap8Before,
+           (unsigned int)layoutReport.largest8Before);
+    printf("[LAYOUT] This stage loads the first real HUD BMP resources\n");
+
+    DoomCanvas_startup(canvas);
+
+    layoutReport.heap8After = coreFreeHeap();
+    layoutReport.largest8After = coreLargestBlock();
+    layoutReport.bytesUsed = layoutReport.heap8Before >= layoutReport.heap8After
+        ? layoutReport.heap8Before - layoutReport.heap8After : 0;
+
+    layoutReport.clipX = (int16_t)canvas->clipRect.x;
+    layoutReport.clipY = (int16_t)canvas->clipRect.y;
+    layoutReport.clipWidth = (uint16_t)canvas->clipRect.w;
+    layoutReport.clipHeight = (uint16_t)canvas->clipRect.h;
+
+    layoutReport.displayX = (int16_t)canvas->displayRect.x;
+    layoutReport.displayY = (int16_t)canvas->displayRect.y;
+    layoutReport.displayWidth = (uint16_t)canvas->displayRect.w;
+    layoutReport.displayHeight = (uint16_t)canvas->displayRect.h;
+
+    layoutReport.screenX = (int16_t)canvas->screenRect.x;
+    layoutReport.screenY = (int16_t)canvas->screenRect.y;
+    layoutReport.screenWidth = (uint16_t)canvas->screenRect.w;
+    layoutReport.screenHeight = (uint16_t)canvas->screenRect.h;
+
+    layoutReport.renderWidth = (uint16_t)render->screenWidth;
+    layoutReport.renderHeight = (uint16_t)render->screenHeight;
+    layoutReport.statusTopBarHeight = (uint16_t)hud->statusTopBarHeight;
+    layoutReport.statusBarHeight = (uint16_t)hud->statusBarHeight;
+    layoutReport.renderArrayPayloadBytes =
+        (uint32_t)render->screenWidth *
+        (uint32_t)(sizeof(short) + sizeof(short) + sizeof(int));
+
+    printf("[LAYOUT] clip    x=%d y=%d w=%u h=%u\n",
+           layoutReport.clipX, layoutReport.clipY,
+           layoutReport.clipWidth, layoutReport.clipHeight);
+    printf("[LAYOUT] display x=%d y=%d w=%u h=%u\n",
+           layoutReport.displayX, layoutReport.displayY,
+           layoutReport.displayWidth, layoutReport.displayHeight);
+    printf("[LAYOUT] screen  x=%d y=%d w=%u h=%u\n",
+           layoutReport.screenX, layoutReport.screenY,
+           layoutReport.screenWidth, layoutReport.screenHeight);
+    printf("[LAYOUT] HUD top=%u bottom=%u Render=%ux%u arrays=%uB\n",
+           layoutReport.statusTopBarHeight, layoutReport.statusBarHeight,
+           layoutReport.renderWidth, layoutReport.renderHeight,
+           (unsigned int)layoutReport.renderArrayPayloadBytes);
+    printf("[LAYOUT] heap8 used=%u remaining=%u largest=%u\n",
+           (unsigned int)layoutReport.bytesUsed,
+           (unsigned int)layoutReport.heap8After,
+           (unsigned int)layoutReport.largest8After);
+
+    if (layoutReport.clipWidth != DOOMRPG_LOGICAL_WIDTH ||
+        layoutReport.clipHeight != DOOMRPG_LOGICAL_HEIGHT ||
+        layoutReport.displayWidth == 0 || layoutReport.displayHeight == 0 ||
+        layoutReport.displayWidth > layoutReport.clipWidth ||
+        layoutReport.displayHeight > layoutReport.clipHeight ||
+        layoutReport.screenWidth == 0 || layoutReport.screenHeight == 0 ||
+        layoutReport.screenX < layoutReport.displayX ||
+        layoutReport.screenY < layoutReport.displayY ||
+        layoutReport.screenX + layoutReport.screenWidth >
+            layoutReport.displayX + layoutReport.displayWidth ||
+        layoutReport.screenY + layoutReport.screenHeight >
+            layoutReport.displayY + layoutReport.displayHeight ||
+        layoutReport.renderWidth != layoutReport.screenWidth ||
+        layoutReport.renderHeight != layoutReport.screenHeight ||
+        render->floorColor == NULL || render->ceilingColor == NULL ||
+        render->columnScale == NULL) {
+        printf("[LAYOUT] FAILED geometry or Render_setup validation\n");
+        layoutReport.ready = 0;
+        if (report != NULL) *report = layoutReport;
+        return 0;
+    }
+
+    layoutReport.ready = 1;
+    printf("[LAYOUT] READY real engine layout fits inside 160x120\n");
+    printf("[LAYOUT] EntityDef_startup / Render_startup still NOT executed\n");
+
+    if (report != NULL) *report = layoutReport;
     return 1;
 }
