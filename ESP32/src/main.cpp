@@ -7,6 +7,7 @@
 #include "config_mappings_probe.h"
 #include "engine_metrics.h"
 #include "esp32_sdl_platform.h"
+#include "menu_bsp_probe.h"
 #include "platform_input.h"
 #include "platform_video.h"
 #include "pre_render_probe.h"
@@ -31,6 +32,7 @@ namespace
     bool enginePreRenderReady = false;
     bool engineRenderStartupReady = false;
     bool engineConfigMappingsReady = false;
+    bool engineMenuBspReady = false;
     bool videoTestShown = false;
     DoomRpgCoreInitReport coreReport{};
     DoomRpgLayoutReport layoutReport{};
@@ -309,6 +311,21 @@ namespace
         }
     }
 
+    void initializeMenuBspProbe()
+    {
+        engineMenuBspReady =
+            DoomRPG_probeMenuBspHeader(engineConfigMappingsReady ? 1 : 0) != 0;
+
+        if (engineMenuBspReady)
+        {
+            drawLabel(186, "Engine:", "MENU BSP OK", TFT_GREEN);
+        }
+        else if (engineConfigMappingsReady)
+        {
+            drawLabel(186, "Engine:", "MENU BSP FAIL", TFT_RED);
+        }
+    }
+
     void printSystemInfo()
     {
         Serial.println();
@@ -385,7 +402,7 @@ namespace
                                    : (archiveReady ? "partial" : "unavailable");
 
         Serial.printf(
-            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s ZIP=%s VIDEO=%s CORE=%s LAYOUT=%s PRERENDER=%s RENDER=%s MAPPINGS=%s touchIRQ=%s\n",
+            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s ZIP=%s VIDEO=%s CORE=%s LAYOUT=%s PRERENDER=%s RENDER=%s MAPPINGS=%s MENUBSP=%s touchIRQ=%s\n",
             now, ESP.getFreeHeap(), DoomRPG_getHeap8Free(),
             DoomRPG_getLargest8BitBlock(), sdReady ? "ready" : "unavailable",
             zipState, videoReady ? "ready" : "unavailable",
@@ -394,6 +411,7 @@ namespace
             enginePreRenderReady ? "ready" : "unavailable",
             engineRenderStartupReady ? "ready" : "unavailable",
             engineConfigMappingsReady ? "ready" : "unavailable",
+            engineMenuBspReady ? "ready" : "unavailable",
             input.touched() ? "active" : "idle");
     }
 
@@ -422,6 +440,7 @@ void setup()
     initializeEngineLayout();
     initializeRenderStartup();
     initializeConfigMappings();
+    initializeMenuBspProbe();
     Serial.println("[READY] Bring-up remains alive; touch still runs the SDL video test.");
 }
 
