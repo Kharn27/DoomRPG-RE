@@ -26,6 +26,10 @@ Display, no PSRAM) port. Update it after every hardware-validated increment.
 7. `ParticleSystem_startup()`, `MenuSystem_startup()` and
    `EntityDef_startup()` with packed indexed BMP storage
    (`agent/esp32-pre-render-startup`, PR #6).
+8. Real `Render_startup()` using the platform-owned shared framebuffer, plus
+   `sintable.bin` and `palettes.bin`
+   (`agent/esp32-render-startup-shared-framebuffer`, PR #7, merge commit
+   `72fde9307fc9de4c0a8bcbb63f3a73c5b7bf11bf`).
 
 The real core graph costs 56,152 bytes of MALLOC_CAP_8BIT heap. `Game_t` is the
 largest individual core allocation at 36,484 bytes.
@@ -42,128 +46,142 @@ Validated DoomCanvas geometry:
 
 ## Current validated increment
 
-Branch: `agent/esp32-render-startup-shared-framebuffer`
+Branch: `agent/esp32-config-mappings-startup`
 
 Status: **HARDWARE VALIDATED, READY TO MERGE**.
 
-Objective: execute the real render-resource startup boundary while removing the
-desktop-only duplicate RGB565 storage that cannot fit on a classic CYD.
+Objective: cross the startup boundary immediately after `Render_startup()` by
+exercising the config path and loading the persistent render mappings, while
+still stopping before any BSP/map data is opened.
 
 Executed and validated in this increment:
 
-1. load `/sintable.bin`
-2. initialize the render clip rectangle
-3. make `Render_t::framebuffer` alias the existing 160x120 platform framebuffer
-4. keep desktop `piDIB` absent on ESP32
-5. load `/palettes.bin`
-6. validate framebuffer identity, pitch, palette table and remaining heap
+1. `Game_loadConfig()`
+2. preflight / inspect `/mappings.bin`
+3. compute mapping allocation sizes before entering the original loader
+4. execute the real `Render_loadMappings()`
+5. validate all four persistent mapping tables
+6. keep `Render_beginLoadMap()` and BSP loading blocked
 
-`Game_loadConfig()`, mappings and BSP/map loading remain intentionally blocked.
+No engine source file is patched by this increment; the probe calls the real
+`Game_loadConfig()` and `Render_loadMappings()` implementations.
 
-## Shared Render framebuffer
+## Config path result
 
-The desktop implementation of `Render_startup()` allocates both:
-
-- an RGB565 streaming `piDIB` texture with its own 160x120 pixel storage
-- a second 160x120 RGB565 `render->framebuffer`
-
-Each pixel buffer is 38,400 bytes. After the previous validated startup stage,
-the largest contiguous MALLOC_CAP_8BIT block was only 36,852 bytes, so even one
-new 38,400-byte allocation was structurally impossible.
-
-For the ESP32 build, linker wrapping redirects `Render_startup()` and
-`Render_free()` to a small CYD bridge while leaving the upstream `src/Render.c`
-source untouched. The bridge:
-
-- loads the original `sintable.bin`
-- keeps the original render clip geometry
-- sets `render->piDIB = NULL`
-- sets `render->framebuffer` to the existing `PlatformVideo_framebuffer()`
-- uses the real RGB565 pitch of 320 bytes
-- runs the original `Render_loadPalettes()`
-- prevents `Render_free()` from freeing the platform-owned framebuffer
-
-The legacy engine bridge itself is compiled as C. A tiny C++ adapter exposes
-only the platform framebuffer pointer/size to it, avoiding C++ compilation of
-legacy `DoomRPG.h` (`typedef enum { false, true } boolean`).
-
-## Final hardware Render_startup result
-
-Hardware resource preflight:
+On the tested CYD there is no `Config` save file yet, which is a valid first-boot
+state:
 
 ```text
-[RENDERSTART] Resource preflight (2 files)
-[RENDERSTART] sintable.bin   c=622 u=1024
-[RENDERSTART] palettes.bin   c=4532 u=6564
-[RENDERSTART] Resource preflight OK
+[CONFIG] Config file present=no (missing is valid on first boot)
+[CONFIG] -> Game_loadConfig()
+loadConfig
+loadConfig: (unable to open file)
+[CONFIG] DONE heap delta=0 heap8=53388 largest8=36852
 ```
 
-Startup begins with the previous validated memory state:
+`Game_loadConfig()` therefore exits safely without persistent memory cost.
+
+## mappings.bin preflight and allocation plan
+
+The tested archive entry is:
 
 ```text
-[RENDERSTART] Begin: heap8=60416 largest8=36852 platformFB=0x3ffc421c bytes=38400
+[MAPPINGS] mappings.bin c=2156 u=8392
 ```
 
-Real engine resources load successfully:
+The probe first loads the decompressed data only for header inspection and
+calculates exactly what the original `Render_loadMappings()` will allocate:
 
 ```text
-[ZIP] read sintable.bin method=8 c=622 u=1024
-[ZIP] inflate sintable.bin c=622 u=1024 state=10992
-[RENDER] sintable loaded: 1024 bytes
-
-[RENDER] Shared framebuffer 160x120 pitch=320 bytes=38400 ptr=0x3ffc421c
-
-[ZIP] read palettes.bin method=8 c=4532 u=6564
-[ZIP] inflate palettes.bin c=4532 u=6564 state=10992
-[RENDER] palettes loaded: entries=3280 bytes=6560
+[ZIP] read mappings.bin method=8 c=2156 u=8392
+[ZIP] inflate mappings.bin c=2156 u=8392 state=10992
+[MAPPINGS] Header texelOffsets=592 bitShapeOffsets=1300 textures=152 sprites=252
+[MAPPINGS] Plan payload=8376B largestAlloc=5200B whileData heap8=44980 largest8=28660
 ```
 
-The decisive hardware proof is that the platform framebuffer and the Doom
-renderer framebuffer are exactly the same address:
+Persistent tables implied by the header:
+
+- `mediaTexelOffsets`: 592 ints = 2,368 bytes
+- `mediaBitShapeOffsets`: 1,300 ints = 5,200 bytes
+- `mediaTexturesIds`: 152 shorts = 304 bytes
+- `mediaSpriteIds`: 252 shorts = 504 bytes
+- total payload: 8,376 bytes
+- largest individual mapping allocation: 5,200 bytes
+
+While the full 8,392-byte decompressed file is resident, the largest free block
+is still 28,660 bytes, so the original loader's allocation sequence is safe on
+this hardware.
+
+## Final hardware mappings result
+
+The real engine loader succeeds:
 
 ```text
-platformFB=0x3ffc421c
-ptr=0x3ffc421c
-```
-
-No second RGB565 framebuffer or `piDIB` pixel buffer is allocated.
-
-Final render startup metrics:
-
-```text
-[RENDERSTART] Render_startup result=1 used=6576 heap8=53840 largest8=36852
-[RENDERSTART] READY shared framebuffer, sintable and palettes initialized
-[RENDERSTART] fb=0x3ffc421c pitch=320 paletteEntries=3280 paletteBytes=6560
-[RENDERSTART] Game_loadConfig / mappings / BSP still NOT executed
+[MAPPINGS] -> Render_loadMappings() heap8=53388 largest8=36852
+---Render_loadMappings---
+[ZIP] read mappings.bin method=8 c=2156 u=8392
+[ZIP] inflate mappings.bin c=2156 u=8392 state=10992
+[MAPPINGS] Render_loadMappings result=1 used=8440 heap8=44948 largest8=23540
+[CONFIGMAP] READY config path exercised and mappings resident
+[CONFIGMAP] mappingPayload=8376 heap8=44948 largest8=23540
+[CONFIGMAP] Render_beginLoadMap / BSP still NOT executed
 ```
 
 Measured persistent cost of this stage:
 
-- total: 6,576 bytes
-- palette table: 3,280 entries / 6,560 bytes
-- remaining MALLOC_CAP_8BIT heap: 53,840 bytes
-- largest contiguous block: 36,852 bytes
-- shared framebuffer storage added by this stage: **0 bytes**
+- config path: 0 bytes persistent on first boot
+- mapping payload expected from header: 8,376 bytes
+- measured mapping-stage heap delta: 8,440 bytes
+- allocator / bookkeeping overhead above payload: 64 bytes
+- remaining MALLOC_CAP_8BIT heap: 44,948 bytes
+- largest contiguous block: 23,540 bytes
+
+All four mapping pointers are non-null and the final texture/sprite counts match
+the inspected header.
 
 ## Regression checks
 
-After render startup the board remains alive and the existing shared-framebuffer
-touch diagnostic still works:
+The board remains alive after config + mappings startup. Heartbeat is stable:
 
 ```text
-[TOUCH] raw=1788,2752 pressure=1633 screen=222,98
+[ALIVE] ... heap8=44948 largest8=23540 ... CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready ...
+```
+
+Touch and the shared framebuffer diagnostic still work:
+
+```text
+[TOUCH] raw=2059,2300 pressure=1827 screen=180,117
 [SDL] Sharing platform framebuffer: 38400 bytes
-[VIDEO] Present 160x120 -> 320x240 exact 2x: 34430 us
+[VIDEO] Present 160x120 -> 320x240 exact 2x: 34441 us
 [SDL] Touch-triggered shared-framebuffer test is on screen
 ```
 
-Heartbeat remains stable for at least 20 seconds:
+This branch therefore passes its hardware merge gate.
+
+## Shared Render framebuffer already validated
+
+The ESP32 build wraps `Render_startup()` / `Render_free()` without modifying the
+upstream `src/Render.c`. `Render_t::framebuffer` aliases the platform-owned
+160x120 RGB565 framebuffer, while desktop `piDIB` stays absent.
+
+Hardware proved framebuffer identity:
 
 ```text
-[ALIVE] ... heap8=53840 largest8=36852 ... CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready ...
+platformFB=0x3ffc4224
+[RENDER] Shared framebuffer 160x120 pitch=320 bytes=38400 ptr=0x3ffc4224
 ```
 
-This branch therefore passes its hardware merge gate.
+Render startup then loads:
+
+- `sintable.bin`: 1,024 bytes temporary
+- palette table: 3,280 entries / 6,560 bytes persistent
+
+Post-render startup memory before this increment was approximately:
+
+```text
+heap8=53840
+largest8=36852
+```
 
 ## Packed indexed BMP storage already validated
 
@@ -183,8 +201,6 @@ before: heap8=34408 largest8=14324
 after:  heap8=86408 largest8=47092
 ```
 
-It is the reason later startup resources can coexist on the no-PSRAM CYD.
-
 ## Other memory work already validated
 
 - correct generated resource ZIP: 241 entries
@@ -194,7 +210,7 @@ It is the reason later startup resources can coexist on the no-PSRAM CYD.
 - native packed indexed texture storage
 - desktop DoomCanvas 128-pixel minimum specialized to 120 only for ESP32
 - desktop `mediaPlanes[24][64*64]` removed from ESP32 `Render_t`
-- SDL, platform video and now `Render_t` all share the same 38,400-byte logical framebuffer
+- SDL, platform video and `Render_t` all share the same 38,400-byte logical framebuffer
 
 ## Current safe stop boundary
 
@@ -206,33 +222,39 @@ Validated and executed:
 - `MenuSystem_startup()`
 - `EntityDef_startup()`
 - `Render_startup()` through sintable, shared framebuffer and palettes
+- `Game_loadConfig()` first-boot path
+- `Render_loadMappings()`
 
 Still intentionally NOT executed:
 
-- `Game_loadConfig()`
-- `Render_loadMappings()`
-- BSP/map loading
+- `Render_beginLoadMap()`
+- `menu.bsp` / gameplay BSP loading
+- map runtime allocations
 - main game loop
 
 ## Recommended next increment after merge
 
-Start a new branch from the newly merged `main` and cross the next startup
-boundary in similarly small measured steps:
+Start a new branch from the newly merged `main` and enter the first BSP boundary
+piecewise rather than running the complete map loader blindly.
 
-1. inspect and execute `Game_loadConfig()` with resource preflight and heap metrics
-2. inspect `Render_loadMappings()` and measure its persistent tables
-3. stop before loading `menu.bsp` or a gameplay BSP if mapping allocation becomes
-   the next memory boundary
-4. only after mappings are hardware-valid should the first BSP/map load be attempted
+Recommended order:
 
-The current post-render memory state is:
+1. inspect `/menu.bsp` archive compressed/uncompressed sizes
+2. inspect the first fixed BSP header fields and the allocation counts they imply
+3. measure peak heap while the decompressed BSP buffer is resident
+4. call only the earliest safe `Render_beginLoadMap()` / map-data stage needed to
+   validate those structures
+5. stop before large texel/bitshape/sprite payloads if their allocation plan does
+   not fit the current contiguous heap
+
+The new starting budget is:
 
 ```text
-heap8=53840
-largest8=36852
+heap8=44948
+largest8=23540
 ```
 
-Treat these values as the starting budget for the next increment.
+This is now the authoritative hardware budget for the first BSP increment.
 
 ## Increment discipline
 
