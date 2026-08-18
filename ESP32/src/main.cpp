@@ -158,8 +158,8 @@ namespace
         if (!videoTestShown && videoReady)
         {
             videoTestShown = true;
-            PlatformVideo_showTestPattern();
-            Serial.println("[VIDEO] Touch-triggered 160x120 exact-2x test is on screen");
+            Esp32Sdl_showTestPattern();
+            Serial.println("[SDL] Touch-triggered shared-framebuffer test is on screen");
         }
 
         char status[48];
