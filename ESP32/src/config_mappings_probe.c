@@ -1,5 +1,4 @@
 #include <SDL.h>
-#include <esp_heap_caps.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,6 +10,11 @@
 #include "Z_Zip.h"
 
 #include "config_mappings_probe.h"
+
+/* ESP-IDF pulls in <stdbool.h>, whose false/true macros collide with
+ * DoomRPG.h's legacy `typedef enum { false, true } boolean;`. Keep every
+ * legacy engine header above this include, as done by render_startup_bridge.c. */
+#include <esp_heap_caps.h>
 
 extern DoomRPG_t* doomRpg;
 
