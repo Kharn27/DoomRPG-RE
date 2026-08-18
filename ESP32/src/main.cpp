@@ -9,6 +9,7 @@
 #include "platform_input.h"
 #include "platform_video.h"
 #include "pre_render_probe.h"
+#include "render_startup_probe.h"
 #include "soft_xpt2046.h"
 #include "Z_Zip.h"
 
@@ -26,6 +27,8 @@ namespace
     bool videoReady = false;
     bool engineCoreReady = false;
     bool engineLayoutReady = false;
+    bool enginePreRenderReady = false;
+    bool engineRenderStartupReady = false;
     bool videoTestShown = false;
     DoomRpgCoreInitReport coreReport{};
     DoomRpgLayoutReport layoutReport{};
@@ -272,6 +275,23 @@ namespace
             layoutReport.renderWidth, layoutReport.renderHeight);
     }
 
+    void initializeRenderStartup()
+    {
+        enginePreRenderReady =
+            DoomRPG_probePreRenderStartup(engineLayoutReady ? 1 : 0) != 0;
+        engineRenderStartupReady =
+            DoomRPG_probeRenderStartup(enginePreRenderReady ? 1 : 0) != 0;
+
+        if (engineRenderStartupReady)
+        {
+            drawLabel(186, "Engine:", "RENDER startup OK", TFT_GREEN);
+        }
+        else if (enginePreRenderReady)
+        {
+            drawLabel(186, "Engine:", "RENDER startup FAIL", TFT_RED);
+        }
+    }
+
     void printSystemInfo()
     {
         Serial.println();
@@ -348,12 +368,14 @@ namespace
                                    : (archiveReady ? "partial" : "unavailable");
 
         Serial.printf(
-            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s ZIP=%s VIDEO=%s CORE=%s LAYOUT=%s touchIRQ=%s\n",
+            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s ZIP=%s VIDEO=%s CORE=%s LAYOUT=%s PRERENDER=%s RENDER=%s touchIRQ=%s\n",
             now, ESP.getFreeHeap(), DoomRPG_getHeap8Free(),
             DoomRPG_getLargest8BitBlock(), sdReady ? "ready" : "unavailable",
             zipState, videoReady ? "ready" : "unavailable",
             engineCoreReady ? "ready" : "unavailable",
             engineLayoutReady ? "ready" : "unavailable",
+            enginePreRenderReady ? "ready" : "unavailable",
+            engineRenderStartupReady ? "ready" : "unavailable",
             input.touched() ? "active" : "idle");
     }
 
@@ -380,7 +402,7 @@ void setup()
     initializeGameArchive();
     initializeEngineCore();
     initializeEngineLayout();
-    DoomRPG_probePreRenderStartup(engineLayoutReady ? 1 : 0);
+    initializeRenderStartup();
     Serial.println("[READY] Bring-up remains alive; touch still runs the SDL video test.");
 }
 
