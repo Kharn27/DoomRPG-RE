@@ -194,7 +194,8 @@ extern "C" int DoomRPG_probeRenderStartup(int preRenderReady) {
            static_cast<void*>(expectedFramebuffer),
            static_cast<unsigned int>(PlatformVideo_framebufferSizeBytes()));
 
-    const int result = __wrap_Render_startup(render);
+    /* Call the original symbol name intentionally: --wrap must redirect it. */
+    const int result = Render_startup(render);
     const uint32_t heapAfter = heap8Free();
     const uint32_t largestAfter = largest8Block();
     const uint32_t used = heapBefore >= heapAfter ? heapBefore - heapAfter : 0;
