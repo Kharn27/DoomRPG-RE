@@ -3,6 +3,10 @@
 
 #include <SDL.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define ZIP_LOCAL_FILE_SIG 0x04034b50
 #define ZIP_CENTRAL_DIRECTORY_SIG 0x02014b50
 #define ZIP_END_OF_CENTRAL_DIRECTORY_SIG 0x06054b50
@@ -30,5 +34,9 @@ void findAndReadZipDir(zip_file_t* zipFile, int startoffset);
 void openZipFile(const char* name, zip_file_t* zipFile);
 void closeZipFile(zip_file_t* zipFile);
 unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* sizep);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -13,13 +13,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <malloc.h>
+#ifdef DOOMRPG_ESP32
+#define MINIZ_NO_ARCHIVE_APIS
+#define MINIZ_NO_STDIO
+#define MINIZ_NO_TIME
+#define MINIZ_NO_MALLOC
+#define MINIZ_NO_ZLIB_APIS
+#include "miniz.h"
+#else
 #include <zlib.h>
+#endif
 
 #include "DoomRPG.h"
 #include "Z_Zip.h"
 
 zip_file_t zipFile;
 
+#ifndef DOOMRPG_ESP32
 static void* zip_alloc(void* ctx, unsigned int items, unsigned int size)
 {
 	return SDL_malloc(items * size);
@@ -29,6 +39,7 @@ static void zip_free(void* ctx, void* ptr)
 {
 	SDL_free(ptr);
 }
+#endif
 
 void findAndReadZipDir(zip_file_t* zipFile, int startoffset)
 {
@@ -96,7 +107,7 @@ void openZipFile(const char* name, zip_file_t* zipFile)
 	int filesize, back, maxback;
 	int i, n;
 
-	zipFile->file = SDL_RWFromFile(name, "r");
+	zipFile->file = SDL_RWFromFile(name, "rb");
 	if (zipFile->file == NULL) {
 		DoomRPG_Error("openZipFile: cannot open file %s\n", name);
 	}
@@ -106,19 +117,22 @@ void openZipFile(const char* name, zip_file_t* zipFile)
 	maxback = MIN(filesize, 0xFFFF + sizeof(buf));
 	back = MIN(maxback, sizeof(buf));
 
-	while (back < maxback)
+	while (back <= maxback)
 	{
 		SDL_RWseek(zipFile->file, filesize - back, SEEK_SET);
-		n = sizeof(buf);
-		SDL_RWread(zipFile->file, buf, sizeof(byte), sizeof(buf));
-		for (i = n - 4; i > 0; i--)
+		n = MIN(back, (int)sizeof(buf));
+		SDL_RWread(zipFile->file, buf, sizeof(byte), n);
+		for (i = n - 4; i >= 0; i--)
 		{
 			if (!SDL_memcmp(buf + i, "PK\5\6", 4)) {
 				findAndReadZipDir(zipFile, filesize - back + i);
 				return;
 			}
 		}
-		back += sizeof(buf) - 4;
+		if (back == maxback) {
+			break;
+		}
+		back = MIN(maxback, back + (int)sizeof(buf) - 4);
 	}
 
 	DoomRPG_Error("cannot find end of central directory\n");
@@ -127,11 +141,15 @@ void openZipFile(const char* name, zip_file_t* zipFile)
 void closeZipFile(zip_file_t* zipFile)
 {
 	if (zipFile->entry) {
+		for (int i = 0; i < zipFile->entry_count; i++) {
+			SDL_free(zipFile->entry[i].name);
+		}
 		SDL_free(zipFile->entry);
 	}
 	if (zipFile->file) {
 		SDL_RWclose(zipFile->file);
 	}
+	SDL_memset(zipFile, 0, sizeof(*zipFile));
 }
 
 unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* sizep)
@@ -190,6 +208,16 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 	else if (method == 8)
 	{
 		byte* udata = SDL_malloc(entry->usize);
+		#ifdef DOOMRPG_ESP32
+		size_t outputSize = tinfl_decompress_mem_to_mem(
+			udata, entry->usize, cdata, entry->csize, 0);
+		if (outputSize == TINFL_DECOMPRESS_MEM_TO_MEM_FAILED ||
+			outputSize != (size_t)entry->usize) {
+			SDL_free(cdata);
+			SDL_free(udata);
+			DoomRPG_Error("miniz inflate error for %s", name);
+		}
+		#else
 		z_stream stream;
 
 		SDL_memset(&stream, 0, sizeof stream);
@@ -217,6 +245,7 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 			inflateEnd(&stream);
 			DoomRPG_Error("zlib inflateEnd error: %s", stream.msg);
 		}
+		#endif
 
 		SDL_free(cdata);
 

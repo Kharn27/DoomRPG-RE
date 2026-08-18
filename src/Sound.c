@@ -392,7 +392,7 @@ void Sound_freeSounds(Sound_t* sound)
 	} while (++chan < (MAX_SOUNDCHANNELS + 1));
 }
 
-int Sound_getFromResourceID(resourceID)
+int Sound_getFromResourceID(int resourceID)
 {
 	for (int i = 0; i < MAX_AUDIOFILES; i++) {
 		if (soundTable[i] == resourceID) {

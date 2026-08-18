@@ -63,6 +63,14 @@ typedef struct Sprite_s
 	struct Entity_s* ent;
 } Sprite_t;
 
+#ifdef DOOMRPG_ESP32
+/* On the classic ESP32, a plane cell stores the index of one of at most 24
+ * textures. The renderer resolves its packed 4-bit texels on demand. */
+typedef byte PlaneTextureRef_t;
+#else
+typedef short* PlaneTextureRef_t;
+#endif
+
 typedef struct Render_s
 {
 	span_t spanFunction;
@@ -180,10 +188,15 @@ typedef struct Render_s
 	int screenRight;
 	int screenBottom;
 	short* pixels;
+	#ifdef DOOMRPG_ESP32
+	int planeTexelOffsets[24];
+	int planePaletteOffsets[24];
+	#else
 	short mediaPlanes[24][64 * 64];
+	#endif
 	int planeTexturesCnt;
 	int planeTextureIds[24];
-	short *planeTextures[1024*2];
+	PlaneTextureRef_t planeTextures[1024*2];
 
 	// New [GEC]
 	// Needed to avoid buffer overflows like in sector 5
@@ -218,8 +231,8 @@ void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned i
 void Render_initColumnScale(Render_t* render);
 void Render_renderFloorAndCeilingSolidBG(Render_t* render);
 void Render_renderFloorAndCeilingBG(Render_t* render);
-void Render_drawplane(Render_t* render, int x, int y, short** planeTextures, int cnt);
-void Render_spanPlane(Render_t* render, int x, int y, short** planeTextures, int param_5, int param_6, int param_7, int param_8, int cnt);
+void Render_drawplane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int cnt);
+void Render_spanPlane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int param_5, int param_6, int param_7, int param_8, int cnt);
 void Render_renderBSP(Render_t* render);
 void Render_renderBSPNoclip(Render_t* render);
 void Render_walkNode(Render_t* render, int i);

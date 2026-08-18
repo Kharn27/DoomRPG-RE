@@ -260,7 +260,10 @@ unsigned short Render_RGB888_To_RGB565(Render_t* render, int rgb)
 
 void Render_setGrayPalettes(Render_t* render)
 {
-	short* mediaPalettes, color, grayColor, * mediaPlanes;
+	short* mediaPalettes, color, grayColor;
+	#ifndef DOOMRPG_ESP32
+	short* mediaPlanes;
+	#endif
 	int i, j;
 
 	for (i = 0; i < render->mediaPalettesLength; i++) {
@@ -270,6 +273,7 @@ void Render_setGrayPalettes(Render_t* render)
 		mediaPalettes[i] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
 	}
 
+	#ifndef DOOMRPG_ESP32
 	for (i = 0; i < render->planeTexturesCnt; i++)
 	{
 		for (j = 0; j < (64 * 64); j++) {
@@ -279,6 +283,7 @@ void Render_setGrayPalettes(Render_t* render)
 			mediaPlanes[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
 		}
 	}
+	#endif
 
 	color = render->floorColor[0];
 	grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
@@ -409,7 +414,9 @@ boolean Render_beginLoadMap(Render_t* render, int mapNameID)
 
 boolean Render_beginLoadMapData(Render_t* render)
 {
+	#ifndef DOOMRPG_ESP32
 	short* mediaPlanes;
+	#endif
 	byte* ioBuffer;
 	Node_t* node;
 	Line_t* line;
@@ -757,7 +764,11 @@ boolean Render_beginLoadMapData(Render_t* render)
 				render->planeTexturesCnt++;
 			}
 
+			#ifdef DOOMRPG_ESP32
+			render->planeTextures[(i * 1024) + j] = (byte)indx;
+			#else
 			render->planeTextures[(i * 1024) + j] = render->mediaPlanes[indx];
+			#endif
 		}
 	}
 
@@ -779,11 +790,16 @@ boolean Render_beginLoadMapData(Render_t* render)
 		palOffset = render->mediaTexelOffsets[(render->mediaTexturesIds[render->planeTextureIds[i]] * 2) + 1];
 		texOffset = render->mediaTexelOffsets[(render->mediaTexturesIds[render->planeTextureIds[i]] * 2) + 0];
 
+		#ifdef DOOMRPG_ESP32
+		render->planePaletteOffsets[i] = palOffset;
+		render->planeTexelOffsets[i] = texOffset;
+		#else
 		for (j = 0; j < (64 * 64); j += 2) {
 			mediaPlanes = &render->mediaPlanes[i][j];
 			mediaPlanes[0] = render->mediaPalettes[palOffset + (render->mediaTexels[(texOffset >> 1) + (j >> 1)] & 0xF)];
 			mediaPlanes[1] = render->mediaPalettes[palOffset + ((render->mediaTexels[(texOffset >> 1) + (j >> 1)] >> 4) & 0xF)];
 		}
+		#endif
 	}
 
 	for (i = 1; i < render->screenWidth; i++) {
@@ -1155,10 +1171,10 @@ void Render_relinkSprite(Render_t* render, Sprite_t* sprite)
 
 void Render_addMapTextures(Render_t* render, int textureId)
 {
-	// Nuevo: esto evita desbordamientos de b˙fer
+	// Nuevo: esto evita desbordamientos de b√∫fer
 	// Esto sucede en el archivo level05.bsp, ya que al leer los datos (floorTex) tiene un valor de 153(0x99) 
-	// lo que supera el lÌmite de memoria inicializado de mediaTexturesIds que es 152, 
-	// creando asÌ el desbordamiento, esto tambiÈn sucede en dispositivos mÛviles BREW
+	// lo que supera el l√≠mite de memoria inicializado de mediaTexturesIds que es 152,
+	// creando as√≠ el desbordamiento, esto tambi√©n sucede en dispositivos m√≥viles BREW
 	//
 	// New: this prevents buffer overflows
 	// This happens in the level05.bsp file, since when reading the data (floorTex) it has a value of 153(0x99)
@@ -1190,7 +1206,7 @@ void Render_addMapTexture(Render_t* render, int textureIndex)
 
 void Render_addMapSprites(Render_t* render, int spriteId)
 {
-	// Nuevo: esto evita desbordamientos de b˙fer
+	// Nuevo: esto evita desbordamientos de b√∫fer
 	// New avoid buffer overflows
 	if (spriteId >= render->spriteCnt) {
 		spriteId = (render->spriteCnt - 1);
@@ -1362,7 +1378,7 @@ void Render_renderFloorAndCeilingBG(Render_t* render)
 	}
 }
 
-void Render_drawplane(Render_t* render, int x, int y, short** planeTextures, int cnt)
+void Render_drawplane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int cnt)
 {
 	int v14;
 	int v15;
@@ -1415,7 +1431,7 @@ void Render_drawplane(Render_t* render, int x, int y, short** planeTextures, int
 		cnt);
 }
 
-void Render_spanPlane(Render_t* render, int x, int y, short** planeTextures, int param_5, int param_6,
+void Render_spanPlane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int param_5, int param_6,
 	int param_7, int param_8, int cnt)
 {
 	short* pixels;
@@ -1427,7 +1443,17 @@ void Render_spanPlane(Render_t* render, int x, int y, short** planeTextures, int
 		offset1 = (((unsigned int)(param_6 >> 17) & 0x3E0) + ((unsigned int)(param_5 << 5) >> 27));
 		offset2 = (((unsigned int)(param_6 >> 10) & 0xFC0) + ((unsigned int)(param_5 << 10) >> 26));
 
+		#ifdef DOOMRPG_ESP32
+		{
+			int textureIndex = planeTextures[offset1];
+			int texelOffset = render->planeTexelOffsets[textureIndex];
+			byte packedTexels = render->mediaTexels[(texelOffset >> 1) + (offset2 >> 1)];
+			int paletteIndex = (offset2 & 1) ? (packedTexels >> 4) : (packedTexels & 0x0f);
+			*pixels++ = render->mediaPalettes[render->planePaletteOffsets[textureIndex] + paletteIndex];
+		}
+		#else
 		*pixels++ = planeTextures[offset1][offset2];
+		#endif
 
 		param_5 += param_7;
 		param_6 += param_8;
@@ -2814,7 +2840,7 @@ void Render_draw2DSprite(Render_t* render, int weaponFrame, int flashFrame, int 
 
 
 			// Port:
-			// corregir pÌxeles vacÌos en la parte inferior del gr·fico
+			// corregir p√≠xeles vac√≠os en la parte inferior del gr√°fico
 			// fix empty pixels at bottom of graph
 			{
 				//i21 += 1;
