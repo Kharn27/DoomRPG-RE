@@ -28,8 +28,10 @@ Display, no PSRAM) port. Update it after every hardware-validated increment.
    (`agent/esp32-pre-render-startup`, PR #6).
 8. Real `Render_startup()` using the platform-owned shared framebuffer, plus
    `sintable.bin` and `palettes.bin`
-   (`agent/esp32-render-startup-shared-framebuffer`, PR #7, merge commit
-   `72fde9307fc9de4c0a8bcbb63f3a73c5b7bf11bf`).
+   (`agent/esp32-render-startup-shared-framebuffer`, PR #7).
+9. `Game_loadConfig()` first-boot path + real `Render_loadMappings()`
+   (`agent/esp32-config-mappings-startup`, PR #8, merge commit
+   `6188a80aaae9fa91678cc58f1ff4b4d06fab1db8`).
 
 The real core graph costs 56,152 bytes of MALLOC_CAP_8BIT heap. `Game_t` is the
 largest individual core allocation at 36,484 bytes.
@@ -46,117 +48,152 @@ Validated DoomCanvas geometry:
 
 ## Current validated increment
 
-Branch: `agent/esp32-config-mappings-startup`
+Branch: `agent/esp32-menu-bsp-preflight`
 
 Status: **HARDWARE VALIDATED, READY TO MERGE**.
 
-Objective: cross the startup boundary immediately after `Render_startup()` by
-exercising the config path and loading the persistent render mappings, while
-still stopping before any BSP/map data is opened.
+Objective: make the first real contact with `/menu.bsp` without yet entering
+`Render_beginLoadMap()` / `Render_beginLoadMapData()` or allocating runtime BSP
+structures.
 
 Executed and validated in this increment:
 
-1. `Game_loadConfig()`
-2. preflight / inspect `/mappings.bin`
-3. compute mapping allocation sizes before entering the original loader
-4. execute the real `Render_loadMappings()`
-5. validate all four persistent mapping tables
-6. keep `Render_beginLoadMap()` and BSP loading blocked
+1. locate `/menu.bsp` in the real 241-entry DoomRPG archive
+2. preflight compressed/uncompressed sizes and current contiguous heap
+3. account for the ESP32 deflate transient set: compressed payload + decompressed
+   payload + 10,992-byte heap-resident miniz `tinfl_decompressor`
+4. call the real `DoomRPG_fileOpenRead(doomRpg, "/menu.bsp")`
+5. keep the complete decompressed BSP resident temporarily
+6. parse the exact 33-byte fixed header used by `Render_beginLoadMap()`
+7. free the BSP immediately and verify exact heap recovery
+8. leave all map runtime allocations blocked
 
-No engine source file is patched by this increment; the probe calls the real
-`Game_loadConfig()` and `Render_loadMappings()` implementations.
+No engine source file is patched by this increment.
 
-## Config path result
+## menu.bsp hardware result
 
-On the tested CYD there is no `Config` save file yet, which is a valid first-boot
-state:
+Archive entry:
 
 ```text
-[CONFIG] Config file present=no (missing is valid on first boot)
-[CONFIG] -> Game_loadConfig()
-loadConfig
-loadConfig: (unable to open file)
-[CONFIG] DONE heap delta=0 heap8=53388 largest8=36852
+[MENUBSP] menu.bsp c=1401 u=4494 header=33B
 ```
 
-`Game_loadConfig()` therefore exits safely without persistent memory cost.
-
-## mappings.bin preflight and allocation plan
-
-The tested archive entry is:
+Current post-mappings budget at the start of this probe:
 
 ```text
-[MAPPINGS] mappings.bin c=2156 u=8392
+[MENUBSP] Begin heap8=44940 largest8=23540 transientPayload=16887B
 ```
 
-The probe first loads the decompressed data only for header inspection and
-calculates exactly what the original `Render_loadMappings()` will allocate:
+The calculated 16,887-byte transient payload is:
+
+- compressed ZIP payload: 1,401 bytes
+- decompressed `menu.bsp`: 4,494 bytes
+- miniz inflate state: 10,992 bytes
+
+The real ZIP/decompression path succeeds:
 
 ```text
-[ZIP] read mappings.bin method=8 c=2156 u=8392
-[ZIP] inflate mappings.bin c=2156 u=8392 state=10992
-[MAPPINGS] Header texelOffsets=592 bitShapeOffsets=1300 textures=152 sprites=252
-[MAPPINGS] Plan payload=8376B largestAlloc=5200B whileData heap8=44980 largest8=28660
+[MENUBSP] -> DoomRPG_fileOpenRead(/menu.bsp)
+[ZIP] read menu.bsp method=8 c=1401 u=4494
+[ZIP] inflate menu.bsp c=1401 u=4494 state=10992
+[MENUBSP] BSP resident ptr=0x3fff6b4c heap8=40428 largest8=23540 used=4512
 ```
 
-Persistent tables implied by the header:
+The decompressed payload itself is 4,494 bytes. The measured heap delta while it
+is resident is 4,512 bytes, i.e. 18 bytes of allocator/bookkeeping overhead.
 
-- `mediaTexelOffsets`: 592 ints = 2,368 bytes
-- `mediaBitShapeOffsets`: 1,300 ints = 5,200 bytes
-- `mediaTexturesIds`: 152 shorts = 304 bytes
-- `mediaSpriteIds`: 252 shorts = 504 bytes
-- total payload: 8,376 bytes
-- largest individual mapping allocation: 5,200 bytes
+## Parsed fixed BSP header
 
-While the full 8,392-byte decompressed file is resident, the largest free block
-is still 28,660 bytes, so the original loader's allocation sequence is safe on
-this hardware.
-
-## Final hardware mappings result
-
-The real engine loader succeeds:
+The 33-byte header matches the layout consumed by `Render_beginLoadMap()`:
 
 ```text
-[MAPPINGS] -> Render_loadMappings() heap8=53388 largest8=36852
----Render_loadMappings---
-[ZIP] read mappings.bin method=8 c=2156 u=8392
-[ZIP] inflate mappings.bin c=2156 u=8392 state=10992
-[MAPPINGS] Render_loadMappings result=1 used=8440 heap8=44948 largest8=23540
-[CONFIGMAP] READY config path exercised and mappings resident
-[CONFIGMAP] mappingPayload=8376 heap8=44948 largest8=23540
-[CONFIGMAP] Render_beginLoadMap / BSP still NOT executed
+[MENUBSP] Header name='DoomRPG' floorRGB=68,68,68 ceilRGB=136,136,136
+[MENUBSP] Header floorTex=117 ceilingTex=151 introRGB=0,0,0
+[MENUBSP] Header loadMapID=0 spawn=460 dir=0 cameraSpawn=0 pos=33/33
 ```
 
-Measured persistent cost of this stage:
+Decoded values:
 
-- config path: 0 bytes persistent on first boot
-- mapping payload expected from header: 8,376 bytes
-- measured mapping-stage heap delta: 8,440 bytes
-- allocator / bookkeeping overhead above payload: 64 bytes
-- remaining MALLOC_CAP_8BIT heap: 44,948 bytes
-- largest contiguous block: 23,540 bytes
+- map name: `DoomRPG`
+- floor color RGB: 68,68,68
+- ceiling color RGB: 136,136,136
+- floor texture ID: 117
+- ceiling texture ID: 151
+- intro color RGB: 0,0,0
+- `loadMapID`: 0
+- spawn index: 460
+- spawn direction: 0
+- camera spawn index: 0
+- fixed header cursor after parse: exactly 33 bytes
 
-All four mapping pointers are non-null and the final texture/sprite counts match
-the inspected header.
+## Heap recovery and regression checks
 
-## Regression checks
-
-The board remains alive after config + mappings startup. Heartbeat is stable:
+After freeing the temporary BSP buffer:
 
 ```text
-[ALIVE] ... heap8=44948 largest8=23540 ... CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready ...
+[MENUBSP] Released BSP heap8=44940 largest8=23540 deltaFromStart=0
+[MENUBSP] READY menu.bsp read + fixed header parsed
+[MENUBSP] Render_beginLoadMap / Render_beginLoadMapData still NOT executed
+```
+
+This proves:
+
+- no persistent cost for this probe
+- no leak
+- no additional fragmentation visible in the largest MALLOC_CAP_8BIT block
+- exact recovery to the post-mappings baseline
+
+Heartbeat stays stable:
+
+```text
+[ALIVE] ... heap8=44940 largest8=23540 ... RENDER=ready MAPPINGS=ready MENUBSP=ready ...
 ```
 
 Touch and the shared framebuffer diagnostic still work:
 
 ```text
-[TOUCH] raw=2059,2300 pressure=1827 screen=180,117
+[TOUCH] raw=1921,2192 pressure=1914 screen=171,107
 [SDL] Sharing platform framebuffer: 38400 bytes
-[VIDEO] Present 160x120 -> 320x240 exact 2x: 34441 us
+[VIDEO] Present 160x120 -> 320x240 exact 2x: 34427 us
 [SDL] Touch-triggered shared-framebuffer test is on screen
 ```
 
 This branch therefore passes its hardware merge gate.
+
+## Previously validated mapping budget
+
+`mappings.bin` header:
+
+```text
+texelOffsets=592
+bitShapeOffsets=1300
+textures=152
+sprites=252
+```
+
+Persistent mapping payload:
+
+- `mediaTexelOffsets`: 2,368 bytes
+- `mediaBitShapeOffsets`: 5,200 bytes
+- `mediaTexturesIds`: 304 bytes
+- `mediaSpriteIds`: 504 bytes
+- total payload: 8,376 bytes
+- measured heap delta: 8,440 bytes
+
+Post-mappings hardware baseline before this increment is approximately:
+
+```text
+heap8=44948
+largest8=23540
+```
+
+The current build differs by only a few bytes of static/runtime bookkeeping;
+this increment starts and returns to:
+
+```text
+heap8=44940
+largest8=23540
+```
 
 ## Shared Render framebuffer already validated
 
@@ -164,24 +201,8 @@ The ESP32 build wraps `Render_startup()` / `Render_free()` without modifying the
 upstream `src/Render.c`. `Render_t::framebuffer` aliases the platform-owned
 160x120 RGB565 framebuffer, while desktop `piDIB` stays absent.
 
-Hardware proved framebuffer identity:
-
-```text
-platformFB=0x3ffc4224
-[RENDER] Shared framebuffer 160x120 pitch=320 bytes=38400 ptr=0x3ffc4224
-```
-
-Render startup then loads:
-
-- `sintable.bin`: 1,024 bytes temporary
-- palette table: 3,280 entries / 6,560 bytes persistent
-
-Post-render startup memory before this increment was approximately:
-
-```text
-heap8=53840
-largest8=36852
-```
+The renderer therefore does not allocate either of the desktop-only 38,400-byte
+RGB565 duplicates.
 
 ## Packed indexed BMP storage already validated
 
@@ -224,37 +245,43 @@ Validated and executed:
 - `Render_startup()` through sintable, shared framebuffer and palettes
 - `Game_loadConfig()` first-boot path
 - `Render_loadMappings()`
+- real ZIP load + inflate of `/menu.bsp`
+- fixed 33-byte `menu.bsp` header parse
 
 Still intentionally NOT executed:
 
 - `Render_beginLoadMap()`
-- `menu.bsp` / gameplay BSP loading
-- map runtime allocations
+- `Render_beginLoadMapData()`
+- persistent BSP nodes / lines / sprites / events / strings
+- bitshape / texel loading for the map
 - main game loop
 
 ## Recommended next increment after merge
 
-Start a new branch from the newly merged `main` and enter the first BSP boundary
-piecewise rather than running the complete map loader blindly.
+Start a new branch from the newly merged `main` and inspect the remainder of the
+`menu.bsp` format consumed by `Render_beginLoadMapData()` before allocating it.
 
 Recommended order:
 
-1. inspect `/menu.bsp` archive compressed/uncompressed sizes
-2. inspect the first fixed BSP header fields and the allocation counts they imply
-3. measure peak heap while the decompressed BSP buffer is resident
-4. call only the earliest safe `Render_beginLoadMap()` / map-data stage needed to
-   validate those structures
-5. stop before large texel/bitshape/sprite payloads if their allocation plan does
-   not fit the current contiguous heap
+1. parse the map-data counts from a temporary decompressed `menu.bsp` without
+   retaining runtime structures
+2. calculate exact ESP32 allocation sizes using `sizeof(Node_t)`, `sizeof(Line_t)`,
+   `sizeof(Sprite_t)` and the event/bytecode/string counts found in this real BSP
+3. include the fact that the 4,494-byte BSP `ioBuffer` remains resident while
+   `Render_beginLoadMapData()` creates those structures
+4. identify the largest single allocation and total persistent payload
+5. only call the first real map-data allocation stage if that measured plan fits
+   the current contiguous heap
+6. continue to stop before wall texels / bitshapes if those become the next memory
+   boundary
 
-The new starting budget is:
+Authoritative starting budget for that increment:
 
 ```text
-heap8=44948
+heap8=44940
 largest8=23540
+menu.bsp usize=4494
 ```
-
-This is now the authoritative hardware budget for the first BSP increment.
 
 ## Increment discipline
 
