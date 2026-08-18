@@ -22,7 +22,9 @@ namespace
     bool sdReady = false;
     bool archiveReady = false;
     bool videoReady = false;
+    bool engineCoreReady = false;
     bool videoTestShown = false;
+    DoomRpgCoreInitReport coreReport{};
     uint32_t lastTouchUpdate = 0;
     uint32_t lastHeartbeat = 0;
 
@@ -55,6 +57,7 @@ namespace
         drawLabel(114, "Touch:", "waiting", TFT_CYAN);
         drawLabel(138, "Game data:", "waiting", TFT_YELLOW);
         drawLabel(162, "Video:", "testing...", TFT_YELLOW);
+        drawLabel(186, "Engine:", "waiting...", TFT_YELLOW);
 
         display.setTextColor(TFT_DARKGREY, TFT_BLACK);
         display.setCursor(8, 214);
@@ -109,6 +112,35 @@ namespace
         videoReady = PlatformVideo_begin(&display);
         drawLabel(162, "Video:", videoReady ? "160x120 x2" : "alloc failed",
                   videoReady ? TFT_GREEN : TFT_RED);
+    }
+
+    void initializeEngineCore()
+    {
+        Serial.println();
+        Serial.println("=== Doom RPG core object graph probe ===");
+        engineCoreReady = DoomRPG_initEngineCore(&coreReport) != 0;
+
+        char status[48];
+        if (engineCoreReady)
+        {
+            snprintf(status, sizeof(status), "OK %uB %ux%u",
+                     static_cast<unsigned int>(coreReport.bytesUsed),
+                     coreReport.clipWidth, coreReport.clipHeight);
+            drawLabel(186, "Engine:", status, TFT_GREEN);
+        }
+        else
+        {
+            snprintf(status, sizeof(status), "FAIL %s",
+                     DoomRPG_coreStageName(coreReport.failedStage));
+            drawLabel(186, "Engine:", status, TFT_RED);
+        }
+
+        Serial.printf("[CORE] Summary ready=%s used=%u heap=%u largest=%u clip=%ux%u\n",
+                      engineCoreReady ? "yes" : "no",
+                      static_cast<unsigned int>(coreReport.bytesUsed),
+                      static_cast<unsigned int>(coreReport.heapAfter),
+                      static_cast<unsigned int>(coreReport.largestBlockAfter),
+                      coreReport.clipWidth, coreReport.clipHeight);
     }
 
     void printSystemInfo()
@@ -179,10 +211,11 @@ namespace
             return;
         }
         lastHeartbeat = now;
-        Serial.printf("[ALIVE] uptime=%lu ms heap=%u SD=%s ZIP=%s VIDEO=%s touchIRQ=%s\n",
+        Serial.printf("[ALIVE] uptime=%lu ms heap=%u SD=%s ZIP=%s VIDEO=%s CORE=%s touchIRQ=%s\n",
                       now, ESP.getFreeHeap(), sdReady ? "ready" : "unavailable",
                       archiveReady ? "ready" : "unavailable",
                       videoReady ? "ready" : "unavailable",
+                      engineCoreReady ? "ready" : "unavailable",
                       input.touched() ? "active" : "idle");
     }
 
@@ -207,7 +240,8 @@ void setup()
     initializePlatformVideo();
     initializeSdCard();
     initializeGameArchive();
-    Serial.println("[READY] Touch the panel; raw samples will appear here.");
+    initializeEngineCore();
+    Serial.println("[READY] Core graph is resident; touch still runs the SDL video test.");
 }
 
 void loop()
