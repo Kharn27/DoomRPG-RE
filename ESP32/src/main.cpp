@@ -6,6 +6,7 @@
 #include "board_config.h"
 #include "engine_metrics.h"
 #include "esp32_sdl_platform.h"
+#include "platform_input.h"
 #include "soft_xpt2046.h"
 #include "Z_Zip.h"
 
@@ -15,21 +16,13 @@ namespace
     TFT_eSPI display;
     SoftXpt2046 touchscreen(cyd::kTouchMosi, cyd::kTouchMiso,
                             cyd::kTouchClock, cyd::kTouchCs, cyd::kTouchIrq);
+    PlatformInput input(touchscreen);
 
     bool sdReady = false;
     bool archiveReady = false;
     bool rendererTestShown = false;
     uint32_t lastTouchUpdate = 0;
     uint32_t lastHeartbeat = 0;
-
-    int16_t mapTouchAxis(uint16_t raw, uint16_t rawMinimum, uint16_t rawMaximum,
-                         int16_t screenMaximum)
-    {
-        const uint16_t clamped = constrain(raw, rawMinimum, rawMaximum);
-        return static_cast<int16_t>(
-            (static_cast<uint32_t>(clamped - rawMinimum) * screenMaximum) /
-            (rawMaximum - rawMinimum));
-    }
 
     void drawLabel(int16_t y, const char *label, const char *value,
                    uint16_t color)
@@ -131,7 +124,7 @@ namespace
 
     void updateTouchDiagnostic()
     {
-        if (!touchscreen.touched())
+        if (!input.touched())
         {
             return;
         }
@@ -143,25 +136,14 @@ namespace
         }
         lastTouchUpdate = now;
 
-        TouchSample sample{};
-        if (!touchscreen.read(sample))
+        PlatformTouchPoint point{};
+        if (!input.readTouch(point))
         {
             return;
         }
 
-        const int16_t screenX = mapTouchAxis(
-            sample.y,
-            cyd::kTouchRawMinY,
-            cyd::kTouchRawMaxY,
-            cyd::kScreenWidth - 1);
-
-        const int16_t screenY = mapTouchAxis(
-            sample.x,
-            cyd::kTouchRawMinX,
-            cyd::kTouchRawMaxX,
-            cyd::kScreenHeight - 1);
-        Serial.printf("[TOUCH] raw=%u,%u pressure=%u screen=%d,%d\n", sample.x,
-                      sample.y, sample.pressure, screenX, screenY);
+        Serial.printf("[TOUCH] raw=%u,%u pressure=%u screen=%d,%d\n", point.rawX,
+                      point.rawY, point.pressure, point.x, point.y);
 
         if (!rendererTestShown)
         {
@@ -180,12 +162,12 @@ namespace
         }
 
         char status[48];
-        snprintf(status, sizeof(status), "%u,%u -> %d,%d", sample.x, sample.y,
-                 screenX, screenY);
+        snprintf(status, sizeof(status), "%u,%u -> %d,%d", point.rawX, point.rawY,
+                 point.x, point.y);
         drawLabel(114, "Touch:", status, TFT_CYAN);
-        display.drawCircle(screenX, screenY, 5, TFT_CYAN);
-        display.drawFastHLine(screenX - 8, screenY, 17, TFT_CYAN);
-        display.drawFastVLine(screenX, screenY - 8, 17, TFT_CYAN);
+        display.drawCircle(point.x, point.y, 5, TFT_CYAN);
+        display.drawFastHLine(point.x - 8, point.y, 17, TFT_CYAN);
+        display.drawFastVLine(point.x, point.y - 8, 17, TFT_CYAN);
     }
 
     void printHeartbeat()
@@ -199,7 +181,7 @@ namespace
         Serial.printf("[ALIVE] uptime=%lu ms heap=%u SD=%s ZIP=%s touchIRQ=%s\n", now,
                       ESP.getFreeHeap(), sdReady ? "ready" : "unavailable",
                       archiveReady ? "ready" : "unavailable",
-                      touchscreen.touched() ? "active" : "idle");
+                      input.touched() ? "active" : "idle");
     }
 
 } // namespace
@@ -210,7 +192,7 @@ void setup()
     delay(250);
     printSystemInfo();
 
-    touchscreen.begin();
+    input.begin();
 
     display.begin();
     display.setRotation(cyd::kDisplayRotation);
