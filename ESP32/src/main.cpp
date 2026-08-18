@@ -21,10 +21,13 @@ namespace
 
     bool sdReady = false;
     bool archiveReady = false;
+    bool archiveResourcesReady = false;
     bool videoReady = false;
     bool engineCoreReady = false;
+    bool engineLayoutReady = false;
     bool videoTestShown = false;
     DoomRpgCoreInitReport coreReport{};
+    DoomRpgLayoutReport layoutReport{};
     uint32_t lastTouchUpdate = 0;
     uint32_t lastHeartbeat = 0;
 
@@ -64,6 +67,75 @@ namespace
         display.print("Serial: 115200 / ttyUSB0");
     }
 
+    bool archiveContains(const char *name)
+    {
+        if (!archiveReady || zipFile.entry == nullptr)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < zipFile.entry_count; ++i)
+        {
+            const zip_entry_t &entry = zipFile.entry[i];
+            if (entry.name != nullptr && SDL_strcasecmp(name, entry.name) == 0)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void printArchiveEntries()
+    {
+        Serial.printf("[DATA] ZIP directory (%d entries):\n", zipFile.entry_count);
+        for (int i = 0; i < zipFile.entry_count; ++i)
+        {
+            const zip_entry_t &entry = zipFile.entry[i];
+            Serial.printf("[DATA]   [%d] %s csize=%d usize=%d\n", i,
+                          entry.name != nullptr ? entry.name : "<null>",
+                          entry.csize, entry.usize);
+        }
+    }
+
+    bool validateLayoutResources()
+    {
+        // At 160 pixels DoomCanvas uses the normal (non-large) HUD. These are
+        // exactly the images Hud_startup() attempts to load before layout can
+        // reach Render_setup(). Preflight them so a wrong/incomplete archive
+        // cannot enter DoomRPG_Error() and reboot the CYD forever.
+        static const char *const requiredHudFiles[] = {
+            "bar_lg.bmp",
+            "k.bmp",
+            "n.bmp",
+            "o.bmp",
+            "l.bmp",
+            "m.bmp",
+        };
+
+        bool allPresent = true;
+        for (const char *name : requiredHudFiles)
+        {
+            if (!archiveContains(name))
+            {
+                Serial.printf("[DATA] MISSING required HUD resource: %s\n", name);
+                allPresent = false;
+            }
+        }
+
+        if (!allPresent)
+        {
+            printArchiveEntries();
+            Serial.println("[DATA] HUD resource preflight FAILED");
+            Serial.println("[DATA] Expected a DoomRPG.zip generated from the original doomrpg.bar with BarToZip");
+        }
+        else
+        {
+            Serial.println("[DATA] HUD resource preflight OK");
+        }
+
+        return allPresent;
+    }
+
     void initializeSdCard()
     {
         pinMode(cyd::kSdCs, OUTPUT);
@@ -101,10 +173,27 @@ namespace
 
         openZipFile("/sd/DoomRPG.zip", &zipFile);
         archiveReady = zipFile.entry_count > 0;
-        char status[32];
-        snprintf(status, sizeof(status), "%d ZIP entries", zipFile.entry_count);
-        drawLabel(138, "Game data:", status, archiveReady ? TFT_GREEN : TFT_RED);
         Serial.printf("[DATA] DoomRPG.zip indexed, entries=%d\n", zipFile.entry_count);
+
+        if (!archiveReady)
+        {
+            drawLabel(138, "Game data:", "ZIP empty", TFT_RED);
+            return;
+        }
+
+        archiveResourcesReady = validateLayoutResources();
+
+        char status[32];
+        if (archiveResourcesReady)
+        {
+            snprintf(status, sizeof(status), "%d ZIP entries", zipFile.entry_count);
+            drawLabel(138, "Game data:", status, TFT_GREEN);
+        }
+        else
+        {
+            snprintf(status, sizeof(status), "ZIP incomplete (%d)", zipFile.entry_count);
+            drawLabel(138, "Game data:", status, TFT_ORANGE);
+        }
     }
 
     void initializePlatformVideo()
@@ -123,9 +212,8 @@ namespace
         char status[48];
         if (engineCoreReady)
         {
-            snprintf(status, sizeof(status), "OK %uB %ux%u",
-                     static_cast<unsigned int>(coreReport.bytesUsed),
-                     coreReport.clipWidth, coreReport.clipHeight);
+            snprintf(status, sizeof(status), "CORE %uB",
+                     static_cast<unsigned int>(coreReport.bytesUsed));
             drawLabel(186, "Engine:", status, TFT_GREEN);
         }
         else
@@ -135,12 +223,52 @@ namespace
             drawLabel(186, "Engine:", status, TFT_RED);
         }
 
-        Serial.printf("[CORE] Summary ready=%s used=%u heap=%u largest=%u clip=%ux%u\n",
+        Serial.printf("[CORE] Summary ready=%s used=%u heap8=%u largest8=%u clip=%ux%u\n",
                       engineCoreReady ? "yes" : "no",
                       static_cast<unsigned int>(coreReport.bytesUsed),
                       static_cast<unsigned int>(coreReport.heapAfter),
                       static_cast<unsigned int>(coreReport.largestBlockAfter),
                       coreReport.clipWidth, coreReport.clipHeight);
+    }
+
+    void initializeEngineLayout()
+    {
+        Serial.println();
+        Serial.println("=== Doom RPG 160x120 layout + HUD startup probe ===");
+
+        if (!engineCoreReady || !archiveResourcesReady || !videoReady)
+        {
+            Serial.println("[LAYOUT] Prerequisite unavailable; probe skipped safely");
+            if (!archiveResourcesReady)
+            {
+                Serial.println("[LAYOUT] DoomRPG.zip does not contain the HUD resources required by Hud_startup()");
+            }
+            drawLabel(186, "Engine:", "LAYOUT skipped", TFT_ORANGE);
+            return;
+        }
+
+        engineLayoutReady = DoomRPG_startEngineLayout(&layoutReport) != 0;
+
+        char status[48];
+        if (engineLayoutReady)
+        {
+            snprintf(status, sizeof(status), "OK %ux%u",
+                     layoutReport.renderWidth, layoutReport.renderHeight);
+            drawLabel(186, "Engine:", status, TFT_GREEN);
+        }
+        else
+        {
+            drawLabel(186, "Engine:", "LAYOUT FAIL", TFT_RED);
+        }
+
+        Serial.printf(
+            "[LAYOUT] Summary ready=%s used=%u heap8=%u largest8=%u display=%ux%u render=%ux%u\n",
+            engineLayoutReady ? "yes" : "no",
+            static_cast<unsigned int>(layoutReport.bytesUsed),
+            static_cast<unsigned int>(layoutReport.heap8After),
+            static_cast<unsigned int>(layoutReport.largest8After),
+            layoutReport.displayWidth, layoutReport.displayHeight,
+            layoutReport.renderWidth, layoutReport.renderHeight);
     }
 
     void printSystemInfo()
@@ -153,6 +281,8 @@ namespace
         Serial.printf("Flash: %u bytes\n", ESP.getFlashChipSize());
         Serial.printf("Heap: %u free / %u total\n", ESP.getFreeHeap(),
                       ESP.getHeapSize());
+        Serial.printf("Heap8: %u free, largest block %u\n",
+                      DoomRPG_getHeap8Free(), DoomRPG_getLargest8BitBlock());
         Serial.printf("PSRAM: %u bytes\n", ESP.getPsramSize());
         Serial.printf("Doom engine linked at: 0x%08x\n",
                       static_cast<unsigned int>(DoomRPG_engineLinkAnchor()));
@@ -211,12 +341,19 @@ namespace
             return;
         }
         lastHeartbeat = now;
-        Serial.printf("[ALIVE] uptime=%lu ms heap=%u SD=%s ZIP=%s VIDEO=%s CORE=%s touchIRQ=%s\n",
-                      now, ESP.getFreeHeap(), sdReady ? "ready" : "unavailable",
-                      archiveReady ? "ready" : "unavailable",
-                      videoReady ? "ready" : "unavailable",
-                      engineCoreReady ? "ready" : "unavailable",
-                      input.touched() ? "active" : "idle");
+
+        const char *zipState = archiveResourcesReady
+                                   ? "ready"
+                                   : (archiveReady ? "partial" : "unavailable");
+
+        Serial.printf(
+            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s ZIP=%s VIDEO=%s CORE=%s LAYOUT=%s touchIRQ=%s\n",
+            now, ESP.getFreeHeap(), DoomRPG_getHeap8Free(),
+            DoomRPG_getLargest8BitBlock(), sdReady ? "ready" : "unavailable",
+            zipState, videoReady ? "ready" : "unavailable",
+            engineCoreReady ? "ready" : "unavailable",
+            engineLayoutReady ? "ready" : "unavailable",
+            input.touched() ? "active" : "idle");
     }
 
 } // namespace
@@ -241,7 +378,8 @@ void setup()
     initializeSdCard();
     initializeGameArchive();
     initializeEngineCore();
-    Serial.println("[READY] Core graph is resident; touch still runs the SDL video test.");
+    initializeEngineLayout();
+    Serial.println("[READY] Bring-up remains alive; touch still runs the SDL video test.");
 }
 
 void loop()

@@ -41,6 +41,39 @@ static void zip_free(void* ctx, void* ptr)
 }
 #endif
 
+#ifdef DOOMRPG_ESP32
+static unsigned int read_le16_debug(const byte* p)
+{
+	return (unsigned int)p[0] | ((unsigned int)p[1] << 8);
+}
+
+static unsigned int read_le32_debug(const byte* p)
+{
+	return (unsigned int)p[0] |
+		((unsigned int)p[1] << 8) |
+		((unsigned int)p[2] << 16) |
+		((unsigned int)p[3] << 24);
+}
+
+static void print_bmp_debug(const char* name, const byte* data, int size)
+{
+	if (data == NULL || size < 54 || data[0] != 'B' || data[1] != 'M') {
+		return;
+	}
+
+	printf("[BMP] %s size=%d dataOffset=%u dib=%u w=%d h=%d bpp=%u compression=%u colors=%u\n",
+		name,
+		size,
+		read_le32_debug(data + 10),
+		read_le32_debug(data + 14),
+		(int)read_le32_debug(data + 18),
+		(int)read_le32_debug(data + 22),
+		read_le16_debug(data + 28),
+		read_le32_debug(data + 30),
+		read_le32_debug(data + 46));
+}
+#endif
+
 void findAndReadZipDir(zip_file_t* zipFile, int startoffset)
 {
 	int sig, offset, count;
@@ -195,28 +228,74 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 	namelength = File_readShort(zipFile->file);
 	extralength = File_readShort(zipFile->file);
 
+	#ifdef DOOMRPG_ESP32
+	printf("[ZIP] read %s method=%d c=%d u=%d\n",
+		name, method, entry->csize, entry->usize);
+	#endif
+
 	SDL_RWseek(zipFile->file, namelength + extralength, SEEK_CUR);
 
 	cdata = SDL_malloc(entry->csize);
+	if (cdata == NULL) {
+		DoomRPG_Error("out of memory reading %s", name);
+	}
 	SDL_RWread(zipFile->file, cdata, sizeof(byte), entry->csize);
 
 	if (method == 0)
 	{
 		*sizep = entry->usize;
+		#ifdef DOOMRPG_ESP32
+		print_bmp_debug(name, cdata, entry->usize);
+		#endif
 		return cdata;
 	}
 	else if (method == 8)
 	{
 		byte* udata = SDL_malloc(entry->usize);
+		if (udata == NULL) {
+			SDL_free(cdata);
+			DoomRPG_Error("out of memory expanding %s", name);
+		}
 		#ifdef DOOMRPG_ESP32
-		size_t outputSize = tinfl_decompress_mem_to_mem(
-			udata, entry->usize, cdata, entry->csize, 0);
-		if (outputSize == TINFL_DECOMPRESS_MEM_TO_MEM_FAILED ||
-			outputSize != (size_t)entry->usize) {
+		/*
+		 * tinfl_decompress_mem_to_mem() creates a tinfl_decompressor as a
+		 * local variable. That state contains the Huffman tables and is too
+		 * large for Arduino's loopTask stack once DoomCanvas/Hud startup is
+		 * above it in the call chain. Keep the transient inflate state on the
+		 * heap instead; the compressed and uncompressed payloads already live
+		 * there and the state is freed immediately after this entry is decoded.
+		 */
+		tinfl_decompressor* decomp = SDL_malloc(sizeof(tinfl_decompressor));
+		if (decomp == NULL) {
+			SDL_free(cdata);
+			SDL_free(udata);
+			DoomRPG_Error("out of memory allocating inflate state for %s", name);
+		}
+
+		printf("[ZIP] inflate %s c=%d u=%d state=%u\n",
+			name, entry->csize, entry->usize,
+			(unsigned int)sizeof(tinfl_decompressor));
+
+		size_t inputSize = (size_t)entry->csize;
+		size_t outputSize = (size_t)entry->usize;
+		tinfl_init(decomp);
+		tinfl_status status = tinfl_decompress(
+			decomp,
+			(const mz_uint8*)cdata,
+			&inputSize,
+			(mz_uint8*)udata,
+			(mz_uint8*)udata,
+			&outputSize,
+			TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+		SDL_free(decomp);
+
+		if (status != TINFL_STATUS_DONE || outputSize != (size_t)entry->usize) {
 			SDL_free(cdata);
 			SDL_free(udata);
 			DoomRPG_Error("miniz inflate error for %s", name);
 		}
+
+		print_bmp_debug(name, udata, entry->usize);
 		#else
 		z_stream stream;
 

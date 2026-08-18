@@ -50,10 +50,44 @@ typedef struct DoomRpgCoreInitReport_s {
     uint8_t ready;
 } DoomRpgCoreInitReport;
 
+typedef struct DoomRpgLayoutReport_s {
+    uint32_t heap8Before;
+    uint32_t heap8After;
+    uint32_t largest8Before;
+    uint32_t largest8After;
+    uint32_t bytesUsed;
+    uint32_t renderArrayPayloadBytes;
+
+    int16_t clipX;
+    int16_t clipY;
+    uint16_t clipWidth;
+    uint16_t clipHeight;
+
+    int16_t displayX;
+    int16_t displayY;
+    uint16_t displayWidth;
+    uint16_t displayHeight;
+
+    int16_t screenX;
+    int16_t screenY;
+    uint16_t screenWidth;
+    uint16_t screenHeight;
+
+    uint16_t renderWidth;
+    uint16_t renderHeight;
+    uint16_t statusTopBarHeight;
+    uint16_t statusBarHeight;
+    uint8_t ready;
+} DoomRpgLayoutReport;
+
 uintptr_t DoomRPG_engineLinkAnchor(void);
 void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics);
 int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report);
 const char* DoomRPG_coreStageName(uint8_t stage);
+
+int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report);
+uint32_t DoomRPG_getHeap8Free(void);
+uint32_t DoomRPG_getLargest8BitBlock(void);
 
 #ifdef __cplusplus
 }
