@@ -209,10 +209,36 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 	{
 		byte* udata = SDL_malloc(entry->usize);
 		#ifdef DOOMRPG_ESP32
-		size_t outputSize = tinfl_decompress_mem_to_mem(
-			udata, entry->usize, cdata, entry->csize, 0);
-		if (outputSize == TINFL_DECOMPRESS_MEM_TO_MEM_FAILED ||
-			outputSize != (size_t)entry->usize) {
+		/*
+		 * tinfl_decompress_mem_to_mem() creates a tinfl_decompressor as a
+		 * local variable. That state contains the Huffman tables and is too
+		 * large for Arduino's loopTask stack once DoomCanvas/Hud startup is
+		 * above it in the call chain. Keep the transient inflate state on the
+		 * heap instead; the compressed and uncompressed payloads already live
+		 * there and the state is freed immediately after this entry is decoded.
+		 */
+		tinfl_decompressor* decomp = SDL_malloc(sizeof(tinfl_decompressor));
+		if (decomp == NULL || udata == NULL || cdata == NULL) {
+			SDL_free(decomp);
+			SDL_free(cdata);
+			SDL_free(udata);
+			DoomRPG_Error("out of memory inflating %s", name);
+		}
+
+		size_t inputSize = (size_t)entry->csize;
+		size_t outputSize = (size_t)entry->usize;
+		tinfl_init(decomp);
+		tinfl_status status = tinfl_decompress(
+			decomp,
+			(const mz_uint8*)cdata,
+			&inputSize,
+			(mz_uint8*)udata,
+			(mz_uint8*)udata,
+			&outputSize,
+			TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+		SDL_free(decomp);
+
+		if (status != TINFL_STATUS_DONE || outputSize != (size_t)entry->usize) {
 			SDL_free(cdata);
 			SDL_free(udata);
 			DoomRPG_Error("miniz inflate error for %s", name);
