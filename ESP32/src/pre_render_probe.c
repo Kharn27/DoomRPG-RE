@@ -62,8 +62,8 @@ static int preflightResources(void) {
             continue;
         }
 
-        printf("[PRERENDER] %-14s method=%d c=%d u=%d\n",
-               required[i], entry->method, entry->csize, entry->usize);
+        printf("[PRERENDER] %-14s c=%d u=%d\n",
+               required[i], entry->csize, entry->usize);
     }
 
     if (!allPresent) {
