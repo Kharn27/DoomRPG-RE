@@ -195,6 +195,11 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 	namelength = File_readShort(zipFile->file);
 	extralength = File_readShort(zipFile->file);
 
+	#ifdef DOOMRPG_ESP32
+	printf("[ZIP] read %s method=%d c=%d u=%d\n",
+		name, method, entry->csize, entry->usize);
+	#endif
+
 	SDL_RWseek(zipFile->file, namelength + extralength, SEEK_CUR);
 
 	cdata = SDL_malloc(entry->csize);
