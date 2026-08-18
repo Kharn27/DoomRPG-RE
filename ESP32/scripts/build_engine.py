@@ -67,9 +67,52 @@ with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched
 
 print("[ESP32] DoomCanvas generated with 160x120-aware minimum height")
 
+# DoomRPG_createImage() is the central image-loading path used by the game.
+# Desktop SDL handles the original indexed BMP variants, while the deliberately
+# small ESP32 SDL shim initially handled only 8-bpp BMPs. Generate an ESP32-only
+# DoomRPG.c copy that routes those image loads through Esp32Bmp_LoadRW(), which
+# expands uncompressed 1/4/8-bpp indexed BMP rows into the same 8-bpp indexed
+# SDL_Surface representation expected by the rest of the engine.
+doom_rpg_source = join(engine_dir, "DoomRPG.c")
+doom_rpg_patched = join(patched_dir, "DoomRPG.c")
+
+with open(doom_rpg_source, "r", encoding="latin-1") as source_file:
+    doom_rpg_source_text = source_file.read()
+
+zip_include_needle = '#include "Z_Zip.h"\n'
+zip_include_replacement = (
+    '#include "Z_Zip.h"\n'
+    '#include "esp32_bmp.h"\n'
+)
+bmp_call_needle = "SDL_LoadBMP_RW("
+bmp_call_count = doom_rpg_source_text.count(bmp_call_needle)
+
+if doom_rpg_source_text.count(zip_include_needle) != 1:
+    raise RuntimeError("Unable to locate Z_Zip.h include in DoomRPG.c")
+if bmp_call_count == 0:
+    raise RuntimeError(
+        "Unable to locate SDL_LoadBMP_RW calls in DoomRPG.c; "
+        "review the ESP32 image-loader patch before building"
+    )
+
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    zip_include_needle, zip_include_replacement, 1
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    bmp_call_needle, "Esp32Bmp_LoadRW("
+)
+
+with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
+    patched_file.write(doom_rpg_source_text)
+
+print(
+    "[ESP32] DoomRPG generated with indexed BMP loader "
+    f"({bmp_call_count} SDL_LoadBMP_RW call(s) redirected)"
+)
+
 # The desktop entry point and its SDL/audio/ZIP implementations are replaced by
 # the small ESP32 compatibility layer in this PlatformIO project. DoomCanvas.c
-# is compiled from the generated ESP32-safe copy above.
+# and DoomRPG.c are compiled from generated ESP32-safe copies above.
 env.BuildSources(
     join(build_dir, "doomrpg_engine"),
     engine_dir,
@@ -80,11 +123,15 @@ env.BuildSources(
         "-<Sound.c>",
         "-<Z_Zone.c>",
         "-<DoomCanvas.c>",
+        "-<DoomRPG.c>",
     ],
 )
 
 env.BuildSources(
-    join(build_dir, "doomrpg_engine_doomcanvas"),
+    join(build_dir, "doomrpg_engine_patched"),
     patched_dir,
-    src_filter=["+<DoomCanvas.c>"],
+    src_filter=[
+        "+<DoomCanvas.c>",
+        "+<DoomRPG.c>",
+    ],
 )
