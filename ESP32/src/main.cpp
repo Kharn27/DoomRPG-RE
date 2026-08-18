@@ -7,6 +7,7 @@
 #include "engine_metrics.h"
 #include "esp32_sdl_platform.h"
 #include "platform_input.h"
+#include "platform_video.h"
 #include "soft_xpt2046.h"
 #include "Z_Zip.h"
 
@@ -20,7 +21,8 @@ namespace
 
     bool sdReady = false;
     bool archiveReady = false;
-    bool rendererTestShown = false;
+    bool videoReady = false;
+    bool videoTestShown = false;
     uint32_t lastTouchUpdate = 0;
     uint32_t lastHeartbeat = 0;
 
@@ -52,6 +54,7 @@ namespace
         drawLabel(90, "SD card:", "testing...", TFT_YELLOW);
         drawLabel(114, "Touch:", "waiting", TFT_CYAN);
         drawLabel(138, "Game data:", "waiting", TFT_YELLOW);
+        drawLabel(162, "Video:", "testing...", TFT_YELLOW);
 
         display.setTextColor(TFT_DARKGREY, TFT_BLACK);
         display.setCursor(8, 214);
@@ -101,6 +104,13 @@ namespace
         Serial.printf("[DATA] DoomRPG.zip indexed, entries=%d\n", zipFile.entry_count);
     }
 
+    void initializePlatformVideo()
+    {
+        videoReady = PlatformVideo_begin(&display);
+        drawLabel(162, "Video:", videoReady ? "160x120 x2" : "alloc failed",
+                  videoReady ? TFT_GREEN : TFT_RED);
+    }
+
     void printSystemInfo()
     {
         Serial.println();
@@ -145,20 +155,11 @@ namespace
         Serial.printf("[TOUCH] raw=%u,%u pressure=%u screen=%d,%d\n", point.rawX,
                       point.rawY, point.pressure, point.x, point.y);
 
-        if (!rendererTestShown)
+        if (!videoTestShown && videoReady)
         {
-            rendererTestShown = true;
-            Esp32Sdl_showTestPattern();
-            // Pure TFT_eSPI bars below the SDL bars provide a direct colour and
-            // byte-order comparison on the same panel.
-            display.fillRect(8, 180, 96, 18, TFT_RED);
-            display.fillRect(112, 180, 96, 18, TFT_GREEN);
-            display.fillRect(216, 180, 96, 18, TFT_BLUE);
-            display.setTextSize(1);
-            display.setTextColor(TFT_CYAN, TFT_BLACK);
-            display.setCursor(88, 220);
-            display.print("SDL top / TFT bottom");
-            Serial.println("[SDL] Touch-triggered renderer test is on screen");
+            videoTestShown = true;
+            PlatformVideo_showTestPattern();
+            Serial.println("[VIDEO] Touch-triggered 160x120 exact-2x test is on screen");
         }
 
         char status[48];
@@ -178,9 +179,10 @@ namespace
             return;
         }
         lastHeartbeat = now;
-        Serial.printf("[ALIVE] uptime=%lu ms heap=%u SD=%s ZIP=%s touchIRQ=%s\n", now,
-                      ESP.getFreeHeap(), sdReady ? "ready" : "unavailable",
+        Serial.printf("[ALIVE] uptime=%lu ms heap=%u SD=%s ZIP=%s VIDEO=%s touchIRQ=%s\n",
+                      now, ESP.getFreeHeap(), sdReady ? "ready" : "unavailable",
                       archiveReady ? "ready" : "unavailable",
+                      videoReady ? "ready" : "unavailable",
                       input.touched() ? "active" : "idle");
     }
 
@@ -202,6 +204,7 @@ void setup()
     Serial.printf("[TFT] Ready, logical size=%dx%d\n", display.width(),
                   display.height());
 
+    initializePlatformVideo();
     initializeSdCard();
     initializeGameArchive();
     Serial.println("[READY] Touch the panel; raw samples will appear here.");
