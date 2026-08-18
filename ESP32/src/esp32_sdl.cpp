@@ -6,6 +6,8 @@
 #include <algorithm>
 
 #include "esp32_sdl_platform.h"
+#include "platform_video.h"
+#include "platform_video_config.h"
 
 struct SDL_Window {};
 struct SDL_Renderer {};
@@ -36,10 +38,8 @@ struct SDL_RWops {
 namespace {
 
 const char* lastError = "";
-constexpr int kLogicalWidth = 160;
-constexpr int kLogicalHeight = 128;
-constexpr int kPhysicalWidth = 320;
-constexpr int kPhysicalHeight = 240;
+constexpr int kLogicalWidth = DOOMRPG_LOGICAL_WIDTH;
+constexpr int kLogicalHeight = DOOMRPG_LOGICAL_HEIGHT;
 
 TFT_eSPI* platformDisplay = nullptr;
 Uint16* rendererPixels = nullptr;
@@ -57,15 +57,16 @@ void setError(const char* message) {
 
 bool ensureRendererPixels() {
     if (rendererPixels != nullptr) return true;
-    rendererPixels = static_cast<Uint16*>(
-        calloc(kLogicalWidth * kLogicalHeight, sizeof(Uint16)));
+
+    rendererPixels = PlatformVideo_framebuffer();
     if (rendererPixels == nullptr) {
-        setError("out of memory creating renderer framebuffer");
-        Serial.println("[SDL] Unable to allocate 160x128 framebuffer");
+        setError("platform video framebuffer unavailable");
+        Serial.println("[SDL] Platform framebuffer is not initialized");
         return false;
     }
-    Serial.printf("[SDL] Renderer framebuffer allocated: %u bytes\n",
-                  kLogicalWidth * kLogicalHeight * sizeof(Uint16));
+
+    Serial.printf("[SDL] Sharing platform framebuffer: %u bytes\n",
+                  static_cast<unsigned int>(PlatformVideo_framebufferSizeBytes()));
     return true;
 }
 
@@ -542,21 +543,10 @@ int SDL_RenderClear(SDL_Renderer*) {
 
 void SDL_RenderPresent(SDL_Renderer*) {
     if (platformDisplay == nullptr || !ensureRendererPixels()) return;
-    Uint16 outputRow[kPhysicalWidth];
-    const uint32_t started = micros();
-    platformDisplay->startWrite();
-    platformDisplay->setAddrWindow(0, 0, kPhysicalWidth, kPhysicalHeight);
-    for (int y = 0; y < kPhysicalHeight; ++y) {
-        const int sourceY = y * kLogicalHeight / kPhysicalHeight;
-        const Uint16* source = rendererPixels + sourceY * kLogicalWidth;
-        for (int x = 0; x < kLogicalWidth; ++x) {
-            outputRow[x * 2] = source[x];
-            outputRow[x * 2 + 1] = source[x];
-        }
-        platformDisplay->pushPixels(outputRow, kPhysicalWidth);
+    if (!PlatformVideo_present()) {
+        setError("platform video present failed");
+        Serial.println("[SDL] Platform video present failed");
     }
-    platformDisplay->endWrite();
-    Serial.printf("[SDL] Present 160x128 -> 320x240: %lu us\n", micros() - started);
 }
 
 int SDL_RenderDrawRect(SDL_Renderer* renderer, const SDL_Rect* rect) {
@@ -644,7 +634,7 @@ int SDL_HapticRumbleStop(SDL_Haptic*) { return 0; }
 
 void Esp32Sdl_attachDisplay(TFT_eSPI* display) {
     platformDisplay = display;
-    Serial.println("[SDL] CYD display attached to software renderer");
+    Serial.println("[SDL] CYD display attached; renderer will share platform video");
 }
 
 void Esp32Sdl_showTestPattern() {
