@@ -12,8 +12,8 @@ without relying on chat history.
 - Storage: microSD on VSPI
 - Framework: Arduino through PlatformIO
 - Game data: `/DoomRPG.zip` on SD during the bring-up phase
-- Planned internal render target: 160x120 RGB565
-- Planned physical upscale: exact nearest-neighbour 2x to 320x240
+- Internal render target: 160x120 RGB565
+- Physical upscale: exact nearest-neighbour 2x to 320x240
 - Audio: stubbed/disabled during early milestones
 
 ## Validated milestones
@@ -41,39 +41,75 @@ Validated on real CYD hardware and merged to `main` in PR #1.
 - Mapping/calibration is isolated in `platform_input.{h,cpp}`.
 - Top-left, top-right, bottom-left and bottom-right have been hardware-tested.
 
-## Current increment
+### 3. Native 160x120 render target and exact 2x output
 
-Branch: `agent/esp32-160x120-render-target`
+Validated on real CYD hardware and merged to `main` in PR #2.
 
-Goal: validate the future game framebuffer independently from the SDL shim.
-
-Changes:
-
-- `platform_video_config.h` defines one canonical video geometry:
+- `platform_video_config.h` defines one canonical geometry:
   - logical 160x120
   - physical 320x240
   - integer scale 2
 - `platform_video.{h,cpp}` owns a 160x120 RGB565 framebuffer.
 - Framebuffer size is 38,400 bytes.
 - `PlatformVideo_present()` expands every logical pixel to exactly 2x2 physical
-  pixels. There is no fractional vertical scaling.
-- First touch displays a diagnostic test pattern through this new path.
-- The existing ESP32 SDL shim is intentionally still present and unchanged.
+  pixels with no fractional vertical scaling.
+- The diagnostic pattern displayed correctly on hardware.
+- SD and `/DoomRPG.zip` stayed ready during the test.
+- Touch remained correctly calibrated.
+- Heap remained stable at about 274 KiB during a multi-minute idle test after
+  video, SD and ZIP initialization.
+
+## Current increment
+
+Branch: `agent/esp32-engine-video-bridge`
+
+Goal: make the ESP32 SDL compatibility renderer consume the already validated
+160x120 platform framebuffer instead of owning a second framebuffer.
+
+Changes:
+
+- `engine_stubs.c` now takes `sdlVideo` and all ESP32 video modes from
+  `platform_video_config.h` instead of hard-coding 160x128.
+- The SDL shim logical geometry is now 160x120.
+- `esp32_sdl.cpp` no longer allocates a renderer framebuffer with `calloc()`.
+- `ensureRendererPixels()` obtains the buffer from
+  `PlatformVideo_framebuffer()`.
+- `SDL_RenderPresent()` delegates the physical transfer to
+  `PlatformVideo_present()`.
+- First touch now renders the SDL compatibility test pattern, not the direct
+  platform-video pattern. This exercises SDL clear, fill, line, circle,
+  texture copy, alpha blending and present through the shared framebuffer.
+- The original Doom RPG main loop is still not started in this increment.
+
+### Expected memory effect
+
+Before this branch, the bring-up could own both:
+
+- `platform_video`: 160x120 RGB565 = 38,400 bytes;
+- SDL shim: 160x128 RGB565 = 40,960 bytes.
+
+After this branch, there is only the 38,400-byte platform framebuffer for the
+logical screen. Individual SDL textures still allocate their own pixel storage
+and will be optimized later.
 
 ### Hardware acceptance test for this increment
 
-1. Build and upload the branch.
-2. Boot must still show the normal bring-up screen.
-3. `Video:` must report `160x120 x2`.
-4. SD and ZIP diagnostics must remain unchanged.
-5. Touch a corner and confirm touch calibration still behaves as before.
-6. On the first touch, the 160x120 test pattern must fill the 320x240 panel.
-7. The four logical 80x60 quadrants must appear as equal 160x120 physical
-   quadrants.
-8. The checker cells are 10x10 logical pixels and therefore must look like
-   square 20x20 physical cells.
-9. Serial should contain a line similar to:
-   `Present 160x120 -> 320x240 exact 2x`.
+1. Build and upload `agent/esp32-engine-video-bridge`.
+2. Boot must still report TFT, SD, ZIP and VIDEO ready.
+3. Before the first touch, note the idle heap value.
+4. On first touch, serial should include:
+   - `[SDL] Sharing platform framebuffer: 38400 bytes`
+   - `[VIDEO] Present 160x120 -> 320x240 exact 2x: ... us`
+   - `[SDL] Touch-triggered shared-framebuffer test is on screen`
+5. The SDL test pattern should fill the screen without corruption or vertical
+   distortion.
+6. The lower translucent strip must still be visible; it ends exactly on the
+   160x120 framebuffer boundary.
+7. Touch coordinates must continue to land at the correct physical positions.
+8. Heap should not drop by another ~41 KiB when the SDL test is first shown.
+   A small temporary change while the 16x16 checker texture is created is fine,
+   but it is destroyed before the test returns.
+9. Leave the board running for at least a minute and confirm heap remains stable.
 
 ## Known engine blocker before starting Doom RPG
 
@@ -86,20 +122,20 @@ if (doomCanvas->displayRect.h < 0x80) {
 }
 ```
 
-That code must be made ESP32-aware before the engine is allowed to consume the
-160x120 mode. Do not simply set the current `sdlVideo` stub to 120 while this
-clamp remains active: it would produce a 128-high display rectangle inside a
-120-high clip rectangle.
+The ESP32 stubs now advertise 160x120, but the real engine is deliberately not
+started yet. Before calling `DoomRPG_Init()` / entering the game loop, this clamp
+must become ESP32-aware; otherwise `displayRect.h` becomes 128 inside a 120-high
+clip rectangle.
 
-The next video integration increment should therefore do these together:
+The next increment after hardware validation of the SDL bridge is therefore:
 
-1. make the ESP32 engine mode 160x120;
-2. adapt the `DoomCanvas_startup()` minimum-height rule only for
-   `DOOMRPG_ESP32`;
-3. make the SDL compatibility renderer use the shared `platform_video`
-   framebuffer instead of maintaining a separate 160x128 framebuffer;
-4. preserve the desktop SDL backend unchanged;
-5. validate the engine layout before loading a real map.
+1. adapt the `DoomCanvas_startup()` minimum-height rule for `DOOMRPG_ESP32`;
+2. add layout diagnostics/assertions for `clipRect`, `displayRect` and
+   `screenRect`;
+3. initialize the Doom RPG object graph without loading a real map yet;
+4. stop at the first safe engine/menu screen or before resource-heavy map
+   rendering, depending on what initialization reveals;
+5. record heap before and after each major engine object allocation.
 
 ## Larger memory work still pending
 
