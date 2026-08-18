@@ -1,5 +1,6 @@
 extern "C" {
 #include "DoomRPG.h"
+#include "DoomCanvas.h"
 #include "Render.h"
 #include "SDL_Video.h"
 #include "Z_Zip.h"
