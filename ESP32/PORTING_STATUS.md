@@ -107,7 +107,7 @@ Important observations:
 - `DoomCanvas_init()` correctly sees a 160x120 clip rectangle.
 - The shared SDL framebuffer still works with the full core graph resident.
 - Measured full-screen exact-2x present time: 34,428 us on the tested CYD.
-- Touch, SD and ZIP remain functional after core initialization.
+- Touch, SD and ZIP indexing remain functional after core initialization.
 
 ## Current increment
 
@@ -127,38 +127,94 @@ if (doomCanvas->displayRect.h < 0x80) {
 }
 ```
 
-The ESP32 PlatformIO build now generates a build-directory copy of
-`DoomCanvas.c` and changes only that rule to use `DOOMRPG_LOGICAL_HEIGHT` (120).
-The source-tree desktop file is not modified.
+The ESP32 PlatformIO build generates a build-directory copy of `DoomCanvas.c`
+and changes only that rule to use `DOOMRPG_LOGICAL_HEIGHT` (120). The source-tree
+desktop file is not modified.
 
-The build script deliberately fails if the expected upstream block is no longer
-found, so a future source change cannot silently apply the patch at the wrong
-place.
+`DoomCanvas.c` contains legacy non-UTF-8 bytes in comments. The generator reads
+and writes it as Latin-1 so each source byte maps 1:1 while the ASCII patch is
+applied. The build deliberately fails if the expected upstream code block is no
+longer found.
 
 ### What `DoomCanvas_startup()` really does
 
 This is the first increment that crosses into actual media loading.
 `DoomCanvas_startup()` calls `Hud_startup()`, which loads the first real BMPs
-from `DoomRPG.zip`, including the status bars, arrows, HUD face sheet and icon
-sheet.
+from `DoomRPG.zip`, then calculates the real layout and calls `Render_setup()`.
 
-It then calculates the real layout and calls `Render_setup()` for the gameplay
-viewport. `Render_setup()` allocates:
+At 160 pixels wide the normal HUD path needs these files immediately:
+
+- `bar_lg.bmp`
+- `k.bmp`
+- `n.bmp`
+- `o.bmp`
+- `l.bmp`
+- `m.bmp`
+
+`Render_setup()` then allocates:
 
 - `ceilingColor[screenWidth]` (`short`);
 - `floorColor[screenWidth]` (`short`);
 - `columnScale[screenWidth]` (`int`).
 
-The probe records the resulting geometry and memory state.
+### Hardware run: incomplete game-data archive discovered
 
-### Expected serial output
-
-After the already validated `[CORE]` section, expect:
+First hardware run of this branch reached the real resource boundary and then
+reset-looped before layout calculation:
 
 ```text
+[DATA] DoomRPG.zip indexed, entries=5
+...
+[LAYOUT] Begin DoomCanvas_startup: heap8=151448 largest8=110580
+[LAYOUT] This stage loads the first real HUD BMP resources
+[DOOM ERROR] DoomRPG Error: did not find the bar_lg.bmp file in the zip file
+abort() was called ...
+Rebooting...
+```
+
+This is a data-package problem, not a 160x120 geometry failure. The archive on
+the tested SD card contains only five entries and does not contain the first HUD
+asset requested by the engine.
+
+DoomRPG-RE expects a game-data `DoomRPG.zip` produced from the original Doom RPG
+BREW `doomrpg.bar` using the project's `BarToZip` converter. A random ZIP named
+`DoomRPG.zip` or a partial archive is not sufficient.
+
+### Resource preflight added after the failure
+
+The firmware now validates all six initial HUD files before calling
+`DoomCanvas_startup()`.
+
+If any are missing it:
+
+- prints every missing required filename;
+- prints the complete ZIP central-directory listing with compressed and
+  uncompressed sizes;
+- marks the archive `partial`;
+- skips the layout probe safely;
+- keeps the CYD alive, including heartbeat and touch diagnostics;
+- does not enter the `DoomRPG_Error()` / reboot loop.
+
+Expected output with the currently incomplete archive is similar to:
+
+```text
+[DATA] MISSING required HUD resource: bar_lg.bmp
+[DATA] MISSING required HUD resource: k.bmp
+...
+[DATA] ZIP directory (5 entries):
+[DATA]   [0] ... csize=... usize=...
+...
+[DATA] HUD resource preflight FAILED
+[LAYOUT] Prerequisite unavailable; probe skipped safely
+[ALIVE] ... ZIP=partial ... CORE=ready LAYOUT=unavailable ...
+```
+
+With a correct generated archive, expect:
+
+```text
+[DATA] HUD resource preflight OK
 === Doom RPG 160x120 layout + HUD startup probe ===
 [LAYOUT] Begin DoomCanvas_startup: heap8=... largest8=...
-[LAYOUT] This stage loads the first real HUD BMP resources
 ...
 [LAYOUT] clip    x=... y=... w=160 h=120
 [LAYOUT] display x=... y=... w=160 h=...
@@ -166,11 +222,10 @@ After the already validated `[CORE]` section, expect:
 [LAYOUT] HUD top=... bottom=... Render=160x... arrays=...B
 [LAYOUT] heap8 used=... remaining=... largest=...
 [LAYOUT] READY real engine layout fits inside 160x120
-[LAYOUT] EntityDef_startup / Render_startup still NOT executed
 ```
 
 The exact gameplay viewport height depends on the real HUD bitmap heights and is
-therefore intentionally measured on hardware instead of hard-coded in the test.
+therefore intentionally measured on hardware instead of hard-coded.
 
 ### Validation rules
 
@@ -185,32 +240,41 @@ The probe rejects the layout unless all of these remain true:
 
 ### Heap metrics
 
-Heartbeat diagnostics now print both metrics explicitly:
+Heartbeat diagnostics print both metrics explicitly:
 
 - `heap=` -> Arduino `ESP.getFreeHeap()`;
 - `heap8=` -> `heap_caps_get_free_size(MALLOC_CAP_8BIT)`;
 - `largest8=` -> largest contiguous MALLOC_CAP_8BIT block.
 
-This removes the ambiguity seen in the PR #4 hardware log where the two
-incomparable free-heap values appeared side by side at different stages.
+### Compiler warnings currently tracked
+
+The generated `DoomCanvas.c` exposes legacy const-correctness warnings such as
+passing string literals to functions declared with `char *`. These warnings are
+not related to the reset and are not being hidden with compiler flags. They
+should be fixed in a dedicated const-correctness pass by changing read-only text
+parameters to `const char *` consistently in declarations and definitions.
+
+TFT_eSPI also warns that `TOUCH_CS` is not defined. This is expected because the
+port does not use TFT_eSPI's touch implementation; XPT2046 input is handled by
+the separate `SoftXpt2046` / `PlatformInput` path.
 
 ### Hardware acceptance test
 
-1. Build/upload `agent/esp32-engine-layout-160x120` with the same SD card and
-   `/DoomRPG.zip`.
-2. PlatformIO build output should contain:
+1. Pull the latest `agent/esp32-engine-layout-160x120`.
+2. Build output must contain:
    `[ESP32] DoomCanvas generated with 160x120-aware minimum height`.
-3. Core init must still reach `READY objects=12`.
-4. Keep the complete new `[LAYOUT]` block.
-5. `clip` must be 160x120 and `[LAYOUT] READY` must appear.
-6. Note the HUD top/bottom heights and the final `Render=160x...` viewport.
-7. Record `heap8 used`, remaining heap8 and largest8 after HUD/layout startup.
-8. Heartbeat must show `CORE=ready LAYOUT=ready` and stable heap values.
-9. Touch once after startup; the SDL shared-framebuffer diagnostic must still
-   render correctly with the HUD resources resident.
-
-If the board resets or `DoomRPG_Error` fires while loading a BMP, keep the full
-serial log: this is now intentionally the first resource-loading stress test.
+3. With the current five-entry archive, confirm the board no longer reboots and
+   prints `ZIP=partial` plus the five actual entry names.
+4. Replace `/DoomRPG.zip` with a proper archive generated by `BarToZip` from
+   `doomrpg.bar`.
+5. Reboot and confirm `[DATA] HUD resource preflight OK`.
+6. Core init must still reach `READY objects=12`.
+7. Keep the complete `[LAYOUT]` block.
+8. `clip` must be 160x120 and `[LAYOUT] READY` must appear.
+9. Record HUD top/bottom heights, final `Render=160x...`, heap8 used, remaining
+   heap8 and largest8.
+10. Touch once after startup; the shared SDL framebuffer diagnostic must still
+    render correctly with HUD resources resident.
 
 ## Current safe stop boundary
 
