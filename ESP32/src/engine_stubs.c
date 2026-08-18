@@ -16,7 +16,6 @@
 #include "Z_Zone.h"
 #include "Z_Zip.h"
 #include "engine_metrics.h"
-#include "platform_video_config.h"
 
 /* DoomRPG.h defines its original J2ME-style boolean before ESP-IDF brings in
  * the C99 false/true macros. */
@@ -25,8 +24,8 @@
 SDLVideo_t sdlVideo = {
     NULL,
     (SDL_Renderer*)1,
-    DOOMRPG_LOGICAL_WIDTH,
-    DOOMRPG_LOGICAL_HEIGHT,
+    160,
+    128,
     false,
     false,
     true,
@@ -38,20 +37,10 @@ FluidSynth_t fluidSynth = {NULL, NULL, NULL};
 SDLController_t sdlController = {NULL, NULL, NULL, 0, 0};
 
 SDLVidModes_t sdlVideoModes[14] = {
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
-    {DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT},
+    {160, 128}, {160, 128}, {160, 128}, {160, 128},
+    {160, 128}, {160, 128}, {160, 128}, {160, 128},
+    {160, 128}, {160, 128}, {160, 128}, {160, 128},
+    {160, 128}, {160, 128},
 };
 
 void SDL_InitVideo(void) {}
