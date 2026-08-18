@@ -59,61 +59,104 @@ Validated on real CYD hardware and merged to `main` in PR #2.
 - Heap remained stable at about 274 KiB during a multi-minute idle test after
   video, SD and ZIP initialization.
 
+### 4. SDL compatibility renderer shares platform framebuffer
+
+Validated on real CYD hardware and merged to `main` in PR #3.
+
+- ESP32 `sdlVideo` geometry is 160x120 and comes from
+  `platform_video_config.h`.
+- `esp32_sdl.cpp` no longer allocates a second logical framebuffer.
+- SDL drawing primitives use the same 38,400-byte framebuffer owned by
+  `platform_video`.
+- `SDL_RenderPresent()` delegates to the exact-2x physical transfer.
+- SDL diagnostic drawing, texture copy and alpha blending work on hardware.
+- Touch, SD and ZIP remained functional.
+
 ## Current increment
 
-Branch: `agent/esp32-engine-video-bridge`
+Branch: `agent/esp32-engine-core-init`
 
-Goal: make the ESP32 SDL compatibility renderer consume the already validated
-160x120 platform framebuffer instead of owning a second framebuffer.
+Goal: instantiate the real Doom RPG engine object graph on the classic ESP32
+and measure actual heap consumption, while stopping before resource-heavy
+startup.
 
-Changes:
+### What this branch does
 
-- `engine_stubs.c` now takes `sdlVideo` and all ESP32 video modes from
-  `platform_video_config.h` instead of hard-coding 160x128.
-- The SDL shim logical geometry is now 160x120.
-- `esp32_sdl.cpp` no longer allocates a renderer framebuffer with `calloc()`.
-- `ensureRendererPixels()` obtains the buffer from
-  `PlatformVideo_framebuffer()`.
-- `SDL_RenderPresent()` delegates the physical transfer to
-  `PlatformVideo_present()`.
-- First touch now renders the SDL compatibility test pattern, not the direct
-  platform-video pattern. This exercises SDL clear, fill, line, circle,
-  texture copy, alpha blending and present through the shared framebuffer.
-- The original Doom RPG main loop is still not started in this increment.
+`DoomRPG_initEngineCore()` now constructs the same root object graph used by
+`DoomRPG_Init()` and stores it in the real global `doomRpg` root:
 
-### Expected memory effect
+1. `DoomRPG_t`
+2. `DoomCanvas_t`
+3. `Render_t`
+4. `Menu_t`
+5. `MenuSystem_t`
+6. `Hud_t`
+7. `Sound_t` (ESP32 silent stub)
+8. `EntityDef_t`
+9. `Game_t`
+10. `Player_t`
+11. `ParticleSystem_t`
+12. `Combat_t`
 
-Before this branch, the bring-up could own both:
+This is intentionally not a duplicate fake engine. The created objects are the
+real engine structures and can be continued by later startup increments.
 
-- `platform_video`: 160x120 RGB565 = 38,400 bytes;
-- SDL shim: 160x128 RGB565 = 40,960 bytes.
+For every stage the serial log records:
 
-After this branch, there is only the 38,400-byte platform framebuffer for the
-logical screen. Individual SDL textures still allocate their own pixel storage
-and will be optimized later.
+- bytes consumed by that stage;
+- remaining 8-bit-capable heap;
+- largest remaining contiguous 8-bit heap block.
 
-### Hardware acceptance test for this increment
+The final report also records total heap consumed and verifies that
+`DoomCanvas_init()` sees the expected 160x120 SDL clip rectangle.
 
-1. Build and upload `agent/esp32-engine-video-bridge`.
-2. Boot must still report TFT, SD, ZIP and VIDEO ready.
-3. Before the first touch, note the idle heap value.
-4. On first touch, serial should include:
-   - `[SDL] Sharing platform framebuffer: 38400 bytes`
-   - `[VIDEO] Present 160x120 -> 320x240 exact 2x: ... us`
-   - `[SDL] Touch-triggered shared-framebuffer test is on screen`
-5. The SDL test pattern should fill the screen without corruption or vertical
-   distortion.
-6. The lower translucent strip must still be visible; it ends exactly on the
-   160x120 framebuffer boundary.
-7. Touch coordinates must continue to land at the correct physical positions.
-8. Heap should not drop by another ~41 KiB when the SDL test is first shown.
-   A small temporary change while the 16x16 checker texture is created is fine,
-   but it is destroyed before the test returns.
-9. Leave the board running for at least a minute and confirm heap remains stable.
+### Important stop boundary
 
-## Known engine blocker before starting Doom RPG
+This increment deliberately stops after `Combat_init()`.
 
-The original engine still assumes a minimum view height of 128 in
+It does **not** call:
+
+- `DoomCanvas_startup()`;
+- `EntityDef_startup()`;
+- `Render_startup()`;
+- `Game_loadConfig()`;
+- map loading;
+- the Doom RPG main loop.
+
+The original full `DoomRPG_Init()` crosses from object construction into
+resource startup. In particular `Render_startup()` loads `sintable.bin`, creates
+renderer resources and loads palettes. Keeping the barrier here gives a clean
+RAM measurement before resource/media work begins.
+
+### Hardware acceptance test
+
+1. Build and upload `agent/esp32-engine-core-init`.
+2. Boot should still initialize TFT, VIDEO, SD and ZIP normally.
+3. A new `Engine:` line should end in green with a value similar to:
+   `OK <bytes>B 160x120`.
+4. Serial should print one `[CORE]` line for each of the 12 real engine objects.
+5. The final line should resemble:
+   `[CORE] READY objects=12 heap used=... remaining=... largest=... clip=160x120`.
+6. `CORE=ready` must remain present in heartbeat lines.
+7. Leave the CYD running for at least a minute and confirm the post-core heap is
+   stable.
+8. Touch once: the shared SDL framebuffer diagnostic must still display
+   correctly after the engine graph is resident.
+9. If initialization fails, keep the complete serial log. The `FAILED at ...`
+   stage plus heap/largest-block values identify the first memory blocker.
+
+### Data worth recording from the hardware run
+
+Keep these values in the next merge note / chat result:
+
+- `Engine structs: Render=... Game=... Canvas=... Total=...`
+- all 12 `[CORE] ... used=...` lines;
+- `[CORE] READY ...` or `[CORE] FAILED ...`;
+- first stable `[ALIVE]` heap after core initialization.
+
+## Next engine blocker: true 160x120 startup layout
+
+The original engine still assumes a minimum display height of 128 in
 `DoomCanvas_startup()`:
 
 ```c
@@ -122,34 +165,41 @@ if (doomCanvas->displayRect.h < 0x80) {
 }
 ```
 
-The ESP32 stubs now advertise 160x120, but the real engine is deliberately not
-started yet. Before calling `DoomRPG_Init()` / entering the game loop, this clamp
-must become ESP32-aware; otherwise `displayRect.h` becomes 128 inside a 120-high
-clip rectangle.
+The current core probe is safe because it stops before `DoomCanvas_startup()`.
+Before resource startup is allowed, the engine startup layout must become
+ESP32-aware so a 120-high clip cannot be expanded to a 128-high display rect.
 
-The next increment after hardware validation of the SDL bridge is therefore:
+After hardware validation of the core object graph, the next increment should:
 
-1. adapt the `DoomCanvas_startup()` minimum-height rule for `DOOMRPG_ESP32`;
-2. add layout diagnostics/assertions for `clipRect`, `displayRect` and
-   `screenRect`;
-3. initialize the Doom RPG object graph without loading a real map yet;
-4. stop at the first safe engine/menu screen or before resource-heavy map
-   rendering, depending on what initialization reveals;
-5. record heap before and after each major engine object allocation.
+1. make the startup minimum height 120 only under `DOOMRPG_ESP32`;
+2. run `DoomCanvas_startup()` and log `clipRect`, `displayRect` and `screenRect`;
+3. validate `Render_setup()` allocations at the resulting game viewport size;
+4. only then cross into `EntityDef_startup()` / `Render_startup()` and inspect
+   the first real resource-loading memory peaks.
+
+## Memory surgery already present in the ESP32 engine
+
+`Render_t` is already partially specialized for `DOOMRPG_ESP32`:
+
+- the desktop `short mediaPlanes[24][64 * 64]` array is absent on ESP32;
+- ESP32 stores `planeTexelOffsets[24]` and `planePaletteOffsets[24]` instead;
+- `PlaneTextureRef_t` is a one-byte texture index on ESP32 rather than a
+  pointer.
+
+This is important: the core-init hardware measurement validates the effect of
+that optimization on the real target.
 
 ## Larger memory work still pending
 
-These are intentionally not part of the current hardware bring-up increments.
-
-- `Render_t::mediaPlanes` currently expands up to 24 64x64 textures to RGB565.
-  Planned direction: retain source 4-bpp texels and palette at render time.
-- `planeTextures[2048]` is pointer-heavy on ESP32. Planned direction: compact
-  texture indices instead of pointers where practical.
-- ZIP extraction currently creates avoidable compressed/decompressed memory
-  peaks. Planned direction: pre-extracted/preconverted SD resources for the
-  first playable ESP32 version.
-- SDL still backs much of the 2D UI/image API. Planned direction: route it
-  through explicit platform video/image/file/input/time layers incrementally.
+- Verify the packed 4-bpp plane texture rendering path on a real map.
+- ZIP extraction still creates avoidable compressed/decompressed memory peaks.
+  Planned direction: pre-extracted/preconverted SD resources for the first
+  playable ESP32 version if ZIP peaks become a blocker.
+- `Render_startup()` still creates its own RGB565 render framebuffer in the
+  original engine; this should eventually be unified with `platform_video` or
+  otherwise removed to avoid framebuffer duplication.
+- SDL textures still allocate their own RGB565 pixel storage. Optimize only once
+  real resource measurements show which images dominate RAM.
 - FluidSynth stays disabled. Sound effects come later and should be streamed or
   loaded on demand rather than preloading the full sound set.
 
