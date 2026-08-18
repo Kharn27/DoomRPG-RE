@@ -23,8 +23,10 @@ namespace
     bool archiveReady = false;
     bool videoReady = false;
     bool engineCoreReady = false;
+    bool engineLayoutReady = false;
     bool videoTestShown = false;
     DoomRpgCoreInitReport coreReport{};
+    DoomRpgLayoutReport layoutReport{};
     uint32_t lastTouchUpdate = 0;
     uint32_t lastHeartbeat = 0;
 
@@ -123,9 +125,8 @@ namespace
         char status[48];
         if (engineCoreReady)
         {
-            snprintf(status, sizeof(status), "OK %uB %ux%u",
-                     static_cast<unsigned int>(coreReport.bytesUsed),
-                     coreReport.clipWidth, coreReport.clipHeight);
+            snprintf(status, sizeof(status), "CORE %uB",
+                     static_cast<unsigned int>(coreReport.bytesUsed));
             drawLabel(186, "Engine:", status, TFT_GREEN);
         }
         else
@@ -135,12 +136,48 @@ namespace
             drawLabel(186, "Engine:", status, TFT_RED);
         }
 
-        Serial.printf("[CORE] Summary ready=%s used=%u heap=%u largest=%u clip=%ux%u\n",
+        Serial.printf("[CORE] Summary ready=%s used=%u heap8=%u largest8=%u clip=%ux%u\n",
                       engineCoreReady ? "yes" : "no",
                       static_cast<unsigned int>(coreReport.bytesUsed),
                       static_cast<unsigned int>(coreReport.heapAfter),
                       static_cast<unsigned int>(coreReport.largestBlockAfter),
                       coreReport.clipWidth, coreReport.clipHeight);
+    }
+
+    void initializeEngineLayout()
+    {
+        Serial.println();
+        Serial.println("=== Doom RPG 160x120 layout + HUD startup probe ===");
+
+        if (!engineCoreReady || !archiveReady || !videoReady)
+        {
+            Serial.println("[LAYOUT] Prerequisite unavailable; probe skipped");
+            drawLabel(186, "Engine:", "LAYOUT skipped", TFT_ORANGE);
+            return;
+        }
+
+        engineLayoutReady = DoomRPG_startEngineLayout(&layoutReport) != 0;
+
+        char status[48];
+        if (engineLayoutReady)
+        {
+            snprintf(status, sizeof(status), "OK %ux%u",
+                     layoutReport.renderWidth, layoutReport.renderHeight);
+            drawLabel(186, "Engine:", status, TFT_GREEN);
+        }
+        else
+        {
+            drawLabel(186, "Engine:", "LAYOUT FAIL", TFT_RED);
+        }
+
+        Serial.printf(
+            "[LAYOUT] Summary ready=%s used=%u heap8=%u largest8=%u display=%ux%u render=%ux%u\n",
+            engineLayoutReady ? "yes" : "no",
+            static_cast<unsigned int>(layoutReport.bytesUsed),
+            static_cast<unsigned int>(layoutReport.heap8After),
+            static_cast<unsigned int>(layoutReport.largest8After),
+            layoutReport.displayWidth, layoutReport.displayHeight,
+            layoutReport.renderWidth, layoutReport.renderHeight);
     }
 
     void printSystemInfo()
@@ -153,6 +190,8 @@ namespace
         Serial.printf("Flash: %u bytes\n", ESP.getFlashChipSize());
         Serial.printf("Heap: %u free / %u total\n", ESP.getFreeHeap(),
                       ESP.getHeapSize());
+        Serial.printf("Heap8: %u free, largest block %u\n",
+                      DoomRPG_getHeap8Free(), DoomRPG_getLargest8BitBlock());
         Serial.printf("PSRAM: %u bytes\n", ESP.getPsramSize());
         Serial.printf("Doom engine linked at: 0x%08x\n",
                       static_cast<unsigned int>(DoomRPG_engineLinkAnchor()));
@@ -211,12 +250,15 @@ namespace
             return;
         }
         lastHeartbeat = now;
-        Serial.printf("[ALIVE] uptime=%lu ms heap=%u SD=%s ZIP=%s VIDEO=%s CORE=%s touchIRQ=%s\n",
-                      now, ESP.getFreeHeap(), sdReady ? "ready" : "unavailable",
-                      archiveReady ? "ready" : "unavailable",
-                      videoReady ? "ready" : "unavailable",
-                      engineCoreReady ? "ready" : "unavailable",
-                      input.touched() ? "active" : "idle");
+        Serial.printf(
+            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s ZIP=%s VIDEO=%s CORE=%s LAYOUT=%s touchIRQ=%s\n",
+            now, ESP.getFreeHeap(), DoomRPG_getHeap8Free(),
+            DoomRPG_getLargest8BitBlock(), sdReady ? "ready" : "unavailable",
+            archiveReady ? "ready" : "unavailable",
+            videoReady ? "ready" : "unavailable",
+            engineCoreReady ? "ready" : "unavailable",
+            engineLayoutReady ? "ready" : "unavailable",
+            input.touched() ? "active" : "idle");
     }
 
 } // namespace
@@ -241,7 +283,8 @@ void setup()
     initializeSdCard();
     initializeGameArchive();
     initializeEngineCore();
-    Serial.println("[READY] Core graph is resident; touch still runs the SDL video test.");
+    initializeEngineLayout();
+    Serial.println("[READY] Engine layout probe complete; touch still runs the SDL video test.");
 }
 
 void loop()
