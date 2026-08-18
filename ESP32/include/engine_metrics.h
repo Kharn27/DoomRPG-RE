@@ -18,8 +18,42 @@ typedef struct DoomRpgEngineMetrics_s {
     uint32_t totalInitialObjects;
 } DoomRpgEngineMetrics;
 
+typedef enum DoomRpgCoreStage_e {
+    DOOMRPG_CORE_ROOT = 0,
+    DOOMRPG_CORE_CANVAS,
+    DOOMRPG_CORE_RENDER,
+    DOOMRPG_CORE_MENU,
+    DOOMRPG_CORE_MENU_SYSTEM,
+    DOOMRPG_CORE_HUD,
+    DOOMRPG_CORE_SOUND,
+    DOOMRPG_CORE_ENTITY_DEF,
+    DOOMRPG_CORE_GAME,
+    DOOMRPG_CORE_PLAYER,
+    DOOMRPG_CORE_PARTICLE_SYSTEM,
+    DOOMRPG_CORE_COMBAT,
+    DOOMRPG_CORE_STAGE_COUNT
+} DoomRpgCoreStage;
+
+#define DOOMRPG_CORE_NO_FAILURE 0xffu
+
+typedef struct DoomRpgCoreInitReport_s {
+    uint32_t heapBefore;
+    uint32_t heapAfter;
+    uint32_t largestBlockBefore;
+    uint32_t largestBlockAfter;
+    uint32_t bytesUsed;
+    uint32_t stageBytes[DOOMRPG_CORE_STAGE_COUNT];
+    uint16_t clipWidth;
+    uint16_t clipHeight;
+    uint8_t completedStages;
+    uint8_t failedStage;
+    uint8_t ready;
+} DoomRpgCoreInitReport;
+
 uintptr_t DoomRPG_engineLinkAnchor(void);
 void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics);
+int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report);
+const char* DoomRPG_coreStageName(uint8_t stage);
 
 #ifdef __cplusplus
 }
