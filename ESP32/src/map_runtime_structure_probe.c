@@ -277,7 +277,7 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
         return 0;
     }
 
-    printf("[MAPSTRUCT] Native bitshape metadata resident; texel loading remains blocked\n");
+    printf("[MAPSTRUCT] Native on-demand bitshape model validated; texel loading remains blocked\n");
     probeReady = 1;
     return 1;
 }
