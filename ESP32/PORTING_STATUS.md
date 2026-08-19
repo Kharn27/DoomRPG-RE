@@ -13,6 +13,7 @@ on the same branch as the code, before that branch is merged.
 - microSD-backed game data
 - internal render target: 160x120 RGB565 = 38,400 bytes
 - physical output: exact nearest-neighbour 2x to 320x240
+- gameplay viewport: 160x80 at framebuffer y=20
 - audio disabled/stubbed during bring-up
 
 ## Project direction
@@ -24,14 +25,15 @@ ESP32:
 
 - bounded deterministic RAM use
 - SD-backed immutable resources
-- small measured working sets / caches
+- small measured working sets / future caches
 - no whole-resource graphics inflation
 - no monolithic `shapeData`
-- no monolithic map-wide `mediaTexels`
+- no monolithic/map-wide `mediaTexels`
 - shared 160x120 RGB565 framebuffer
 - canonical RGB565 palette convention for native consumers
-- storage access isolated from rasterizers
-- original game behaviour/data preserved where practical
+- storage/file-format access isolated behind GFXRM
+- original projection/game semantics preserved where useful
+- reverse-engineered desktop memory architecture removed incrementally
 
 ## Hardware-validated milestones already merged to main
 
@@ -88,149 +90,34 @@ ESP32:
     layout knowledge, zero persistent cache allocation
     (`agent/esp32-native-graphics-resource-manager`, PR #19, merge commit
     `02b61492f216c1ad3b0fed18bf01ddfc22b768d9`).
+21. First projected wall through the original projection/span pipeline with one
+    bounded 2,048-byte GFXRM frame temporarily exposed through the legacy
+    `mediaTexels` field. This proved the original projected wall semantics work
+    without recreating the 172 KB wall pool (`agent/esp32-projected-wall-gfxrm`,
+    PR #20, merge commit `1ec77feac2a04b1297661c3f8bb78504aec81938`).
 
 ## Current validated increment
 
-Branch: `agent/esp32-projected-wall-gfxrm`
+Branch: `agent/esp32-projected-wall-native-span-source`
 
 Status: **HARDWARE VALIDATED, READY TO MERGE**.
 
-Objective: prove that the original projected wall pipeline can consume a bounded
-GFXRM wall frame without recreating the legacy 172 KB wall texel pool.
-
-This increment deliberately keeps the original projection and wall span code
-unchanged:
+Objective: remove the temporary projected-wall compatibility alias completely.
+A projected wall must now consume the bounded GFXRM frame directly while:
 
 ```text
-Render_drawLines
-  -> Render_transform2DVerts
-  -> Render_clipLine
-  -> Render_projectVertex
-  -> Render_drawWallSpans
-  -> Render_getSpanMode
-  -> Render_SpanMode0
-  -> shared framebuffer
+render->mediaTexels == NULL
+render->mediaTexelOffsets[112 * 2] == 65536
 ```
 
-The only transition bridge is the texel source.
+for the entire projected draw.
 
-## Projected-wall compatibility bridge
+The output must remain bit-identical to the previously hardware-validated
+compatibility path.
 
-GFXRM loads one real 64x64 wall texture (texture 112) as the already validated
-2,048-byte packed frame. For one draw only, the bridge presents that bounded
-frame through the legacy `mediaTexels` field so the untouched original
-`Render_SpanMode0()` can sample it.
+## Native projected-wall source boundary
 
-The matching source mapping is temporarily rebased from the original global
-logical texel offset to the local bounded frame:
-
-```text
-mediaTexelOffsets[112 * 2] : 65536 -> 0
-mediaTexels                : NULL  -> 2,048-byte GFXRM frame
-```
-
-Immediately after the draw:
-
-```text
-mediaTexelOffsets[112 * 2] : 0 -> 65536
-mediaTexels                : bounded frame -> NULL
-```
-
-This is explicitly a compatibility bridge, not a return to the legacy memory
-architecture. There is never a map-wide `mediaTexels` allocation in this path.
-
-## Authoritative hardware validation
-
-Hardware result:
-
-```text
-=== Doom RPG ESP32 projected wall via GFXRM ===
-[PROJWALL] Begin heap8=30584 largest8=22516 viewport=160x80@0,20 texture=112 shapeData=0x0 mediaTexels=0x0
-[GFXRM] WALL id=112 storage=2048B hash=92d40704 pack=closed
-[PROJWALL] BIND texture=112 palette=480 sourceOffset=65536 -> localOffset=0 boundedMediaTexels=2048B hash=92d40704 pack=closed
-[PROJWALL] COMPAT legacy mediaTexels field temporarily aliases one bounded wall frame only
-[PROJWALL] Bound frame heap8=28520 largest8=20468 used=2064B mediaTexels=0x3fffa4b4 logicalBound=2048B
-[PROJWALL] WORLD v1=(128,-32,z0) v2=(128,32,z64) camera=(0,0,z32) spanMode=0 sentinel=a55a
-[PROJWALL] -> unchanged Render_drawLines -> transform -> clip -> project -> Render_drawWallSpans -> Render_SpanMode0
-[PROJWALL] UNBIND texture=112 restoredOffset=65536 mediaTexels=0x0
-[PROJWALL] PROJECTED columns=60..100 count=40 scale=81920/81920 z=0/5242880 lineRasterCount=1 changedPixels=1600
-[PROJWALL] Bridge stats begin=1 end=1 bound=2048B texture=112 palette=480 originalOffset=65536 texelHash=92d40704
-[PROJWALL] GFXRM stats spriteLoads=0 wallLoads=1 packOpenCycles=1 logicalBytes=2048 peakFrame=2048
-[PROJWALL] framebufferFNV=ad191f54 mediaTexelsRestored=0x0 mappingOffsetRestored=65536
-[PROJWALL] End heap8=30584 largest8=22516 deltaFromStart=0
-[PROJWALL] Resident largest-block delta=2048B is allocator-placement dependent; final restoration is the contract
-[PROJWALL] READY unchanged projection + Render_drawWallSpans + Render_SpanMode0 consumed one bounded GFXRM frame
-[PROJWALL] READY legacy mediaTexels alias existed only during draw and is restored to NULL
-[MAPSTRUCT] Projected wall bridge validated; full map texel loading remains blocked
-[MENUBSP] READY menu.bsp plan + real runtime structures validated
-[ALIVE] uptime=5004 ms heap=96400 heap8=30584 largest8=22516 ... MENUBSP=ready ...
-```
-
-Validated deterministic markers:
-
-```text
-texture                 = 112
-source texel FNV         = 92d40704
-palette offset           = 480
-projected columns        = 60..100
-projected column count   = 40
-changed framebuffer px   = 1600
-projected framebuffer FNV= ad191f54
-GFXRM wallLoads          = 1
-GFXRM packOpenCycles     = 1
-GFXRM logicalBytes       = 2048
-GFXRM peakFrame          = 2048
-```
-
-This is the first wall rendered by the original projection/span geometry while
-its texture bytes come from the bounded ESP32 resource system.
-
-## Memory boundary
-
-Current branch baseline:
-
-```text
-heap8=30584
-largest8=22516
-shapeData=0x0
-mediaTexels=0x0
-```
-
-While the 2,048-byte wall frame is resident:
-
-```text
-heap8=28520
-largest8=20468
-allocator cost=2064 B
-```
-
-After release:
-
-```text
-heap8=30584
-largest8=22516
-deltaFromStart=0
-```
-
-### Largest-block allocator lesson
-
-The first hardware run produced a false probe failure because the test assumed
-that `largest8` must remain unchanged while a small frame is resident. On this
-build the allocator placed the 2,064-byte allocation inside the largest free
-region, so the largest block temporarily changed:
-
-```text
-22516 -> 20468 -> 22516
-```
-
-That is valid allocator behaviour, not fragmentation or a leak. The hardware
-contract is **exact restoration after release**, not preservation of the largest
-block during residency. The probe was corrected on the same branch.
-
-## Architectural conclusion
-
-The wall path has now crossed from asset-viewer diagnostics into the actual
-projected renderer:
+The validated path is now:
 
 ```text
 DoomRPG-ESP32.pak
@@ -238,28 +125,146 @@ DoomRPG-ESP32.pak
         v
       GFXRM
         |
-  2,048 B wall frame
+        v
+EspNativeWallFrame (2,048 B packed 4 bpp)
         |
         v
-compatibility bind (temporary only)
+original transform / clip / projection helpers
         |
         v
-unchanged original wall projection / SpanMode0
+ESP32-native wall span geometry + direct frame sampling
         |
         v
-shared RGB565 framebuffer
+canonical RGB565 palette
+        |
+        v
+shared 160x120 framebuffer
 ```
 
-Important nuance:
+The native wall-span implementation preserves the fixed-point branch used by the
+reference renderer (`FIXED_VERSION=1`) and the original wall-column interpolation
+semantics, but samples the active bounded GFXRM frame directly.
 
-- `shapeData` remains `NULL` throughout.
-- `mediaTexels` starts `NULL` and ends `NULL`.
-- during one draw, `mediaTexels` temporarily aliases only one bounded 2,048-byte
-  wall frame.
-- the legacy map-wide `mediaTexels` pool is still never created.
+The previous transition operations are gone:
 
-This bridge is intentionally transitional. Its value is proving that the
-original geometry/raster math works with a tiny on-demand texture working set.
+```text
+NO render->mediaTexels alias
+NO mediaTexelOffsets[] rebase
+NO map-wide wall texel pool
+```
+
+## Authoritative hardware validation
+
+Hardware result:
+
+```text
+=== Doom RPG ESP32 projected wall native span source ===
+[PROJWALL] Begin heap8=30576 largest8=22516 viewport=160x80@0,20 texture=112 shapeData=0x0 mediaTexels=0x0 mappingOffset=65536
+[GFXRM] WALL id=112 storage=2048B hash=92d40704 pack=closed
+[PROJWALL] ACQUIRE texture=112 palette=480 sourceOffset=65536 packed=2048B hash=92d40704 mediaTexels=0x0 mappingOffset=65536 pack=closed
+[PROJWALL] NATIVE source active; no mediaTexels alias and no mapping rewrite
+[PROJWALL] Native frame heap8=28512 largest8=20468 used=2064B logicalBound=2048B mediaTexels=0x0 mappingOffset=65536
+[PROJWALL] WORLD v1=(128,-32,z0) v2=(128,32,z64) camera=(0,0,z32) spanMode=0 sentinel=a55a
+[PROJWALL] -> original transform -> clip -> project -> ESP32-native wall spans
+[PROJWALL] RELEASE texture=112 spans=40 pixels=1600 rangeErrors=0 legacyPtrViolations=0 mappingViolations=0 mediaTexels=0x0
+[PROJWALL] PROJECTED columns=60..100 count=40 scale=81920/81920 z=0/5242880 lineRasterCount=1 changedPixels=1600
+[PROJWALL] Native span stats begin=1 end=1 bound=2048B spans=40 pixels=1600 rangeErrors=0 legacyPtrViolations=0 mappingViolations=0
+[PROJWALL] Source texture=112 palette=480 sourceOffset=65536 texelHash=92d40704
+[PROJWALL] GFXRM stats spriteLoads=0 wallLoads=1 packOpenCycles=1 logicalBytes=2048 peakFrame=2048
+[PROJWALL] framebufferFNV=ad191f54 expected=ad191f54 mediaTexelsDuring=0x0 mappingOffsetDuring=65536 mediaTexelsAfter=0x0 mappingOffsetAfter=65536
+[PROJWALL] End heap8=30576 largest8=22516 deltaFromStart=0 residentLargestDelta=2048
+[PROJWALL] READY projected wall is bit-identical with direct bounded GFXRM sampling
+[PROJWALL] READY mediaTexels stayed NULL and global mapping stayed untouched for every native span
+[MAPSTRUCT] Projected wall bridge validated; full map texel loading remains blocked
+[MENUBSP] READY menu.bsp plan + real runtime structures validated
+[ALIVE] uptime=5003 ms heap=96392 heap8=30576 largest8=22516 ... MENUBSP=ready ...
+```
+
+## Deterministic regression contract
+
+The native direct-source path must preserve all of these values:
+
+```text
+texture index             = 112
+texture source FNV        = 92d40704
+palette offset            = 480
+source texel offset       = 65536
+projected columns         = 60..100
+projected column count    = 40
+changed framebuffer px    = 1600
+native span calls         = 40
+native span pixels        = 1600
+range errors              = 0
+legacy pointer violations = 0
+mapping violations        = 0
+projected framebuffer FNV = ad191f54
+GFXRM wallLoads           = 1
+GFXRM packOpenCycles      = 1
+GFXRM logicalBytes        = 2048
+GFXRM peakFrame           = 2048
+```
+
+`ad191f54` is especially important: it is exactly the framebuffer signature
+from the previous compatibility-bridge implementation. The direct native source
+therefore reproduces the same projected wall bit-for-bit while deleting its last
+`mediaTexels` dependency.
+
+## Memory boundary
+
+Current branch baseline:
+
+```text
+heap8=30576
+largest8=22516
+shapeData=0x0
+mediaTexels=0x0
+```
+
+While the 2,048-byte frame is resident:
+
+```text
+heap8=28512
+largest8=20468
+allocator cost=2064 B
+resident largest-block delta=2048 B
+```
+
+After release:
+
+```text
+heap8=30576
+largest8=22516
+deltaFromStart=0
+```
+
+The 8-byte baseline change from the previous branch is diagnostic/static state,
+not a per-frame leak. The allocation itself still costs the same validated
+2,064 bytes and releases exactly.
+
+As established by the previous increment, the largest free block may shrink
+while a frame is resident depending on allocator placement. The contract is
+exact restoration after release.
+
+## Architectural conclusion
+
+For mode-0 projected walls, the old map-wide graphics memory model is now gone
+from the active path:
+
+```text
+projection math         -> preserved/reference semantics
+wall texture storage    -> GFXRM bounded frame
+wall texel sampling     -> ESP32-native direct source
+mediaTexels             -> NULL throughout
+mapping offset mutation -> none
+```
+
+This is the first projected-renderer primitive that is genuinely native at the
+resource-consumption boundary rather than merely using a bounded compatibility
+alias.
+
+`src/Render.c` remains untouched in this increment. DoomRPG-RE continues to act
+as the reference implementation while the ESP32 renderer is extracted one
+primitive at a time.
 
 ## Current safe stop boundary
 
@@ -268,55 +273,56 @@ Validated and executed:
 - complete engine startup through mappings
 - real `Render_beginLoadMap(MAP_MENU)`
 - real structural `Render_beginLoadMapData()` phase
-- real nodes, lines, sprites, events, bytecodes and resource reference lists
+- real menu nodes, lines, sprites, events, bytecodes and resource reference lists
 - full 241-entry native asset pack validation
 - zero resident `shapeData`
 - zero map-wide `mediaTexels`
-- native RGB565 palette normalization
+- canonical RGB565 palette normalization
 - bounded native sprite + wall frames
 - shared GFXRM backend
 - native sprite/wall diagnostic rasterizers
-- original `Render_drawLines()` transform/clip/project path for a test wall
-- original `Render_drawWallSpans()` wall-column geometry
-- original `Render_SpanMode0()` sampling a bounded 2 KB GFXRM frame through a
-  temporary compatibility alias
-- deterministic projected framebuffer hash `ad191f54`
-- exact heap and largest-block recovery after the projected wall draw
+- original transform/clip/project helpers for a deterministic projected wall
+- ESP32-native mode-0 projected wall-span geometry
+- direct sampling of one bounded 2,048-byte wall frame
+- `mediaTexels == NULL` for every native projected span
+- global wall mapping left unchanged for every native projected span
+- bit-identical projected framebuffer signature `ad191f54`
+- exact heap/largest-block restoration after release
 
-Still intentionally NOT executed / integrated:
+Still intentionally NOT integrated:
 
 - original `Render_loadBitShapes()`
 - original `Render_loadTexels()`
 - monolithic `shapeData`
 - monolithic/map-wide `mediaTexels`
-- full menu BSP wall rendering through GFXRM
+- full menu BSP wall pass using the native projected wall primitive
+- projected sprite replacement in the real scene
+- floor/ceiling native texture consumption
 - cache hit/miss/eviction policy
 - persistent open native pack
-- native replacement for the temporary `mediaTexels` compatibility alias
-- replacement of the real `Render_renderSprite()` call path
-- full floor/ceiling native texture consumption
 - completion of map graphics loading
 - game entities/player spawning
 - main game loop
 
 ## Recommended next increment after merge
 
-Remove the temporary `mediaTexels` alias from the projected wall path while
-preserving the now-proven projection/span semantics.
+Use the now-proven native projected wall primitive on **real menu map wall data**
+instead of the synthetic deterministic test line.
 
-A good next step is to introduce a small ESP32-native wall span sampler that:
+Keep the scope narrow:
 
-- receives the current bounded GFXRM wall frame explicitly
-- consumes the same `param_4 / param_5 / param_6` span coordinates as
-  `Render_SpanMode0()`
-- reproduces the exact 4-bit nibble selection and palette lookup
-- leaves `Render_drawWallSpans()` projection/math untouched
-- keeps `render->mediaTexels == NULL` even during the draw
-- reproduces the hardware reference scene (`40` columns, `1600` pixels) and a
-  deterministic framebuffer signature
+- reuse the real menu `Line_t` / map texture mappings already resident
+- render a controlled real wall or small walls-only subset from `menu.bsp`
+- keep sprites disabled
+- keep floor/ceiling simple or disabled for this proof
+- acquire required wall frames through GFXRM
+- keep `shapeData == NULL` and `mediaTexels == NULL`
+- measure how many wall texture requests occur and how often the same texture is
+  requested before choosing any cache policy
+- preserve exact heap restoration
 
-Only after that native source boundary is proven should the project attempt a
-full BSP wall pass or choose a real cache policy.
+This will turn the native projected primitive into the first real scene fragment
+and provide the first useful access-pattern data for a future tiny cache.
 
 ## Increment discipline
 
@@ -326,7 +332,7 @@ full BSP wall pass or choose a real cache policy.
 - Hardware validation on the real CYD is the merge gate.
 - **Documentation is part of the increment:** after hardware success, update all
   relevant `.md` files on the same branch before merge.
-- A branch is not considered complete/merge-ready while its code and recovery
-  documentation disagree.
+- Do not say a branch is merge-ready until code + hardware proof + documentation
+  are all present on that same branch.
 - Keep `ESP32/README.md` updated with commands, SD preparation, conventions and
   architecture decisions so operational knowledge is not left only in chat.
