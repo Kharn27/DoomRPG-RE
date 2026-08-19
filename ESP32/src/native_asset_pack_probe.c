@@ -16,6 +16,7 @@ extern DoomRPG_t* doomRpg;
 
 #define PACKED_WALL_TEXTURE_BYTES 2048U
 #define WTEXELS_HEADER_BYTES 4U
+#define MEDIA_TEXEL_OFFSET_INT_COUNT 592
 
 static int nativePackAttempted = 0;
 static int nativePackReady = 0;
@@ -77,6 +78,7 @@ int DoomRPG_probeNativeAssetPack(int resourcePlanReady) {
     uint32_t textureReadOffset;
     uint32_t textureHash;
     uint32_t sourceDataSize;
+    int sourceTexelOffsetSigned;
     int textureIndex;
 
     if (nativePackAttempted) {
@@ -143,13 +145,23 @@ int DoomRPG_probeNativeAssetPack(int resourcePlanReady) {
            (unsigned int)sourceDataSize);
 
     textureIndex = render->mapTextureTexels[0];
-    if (textureIndex < 0) {
-        printf("[ASSETPAK] FAILED first referenced texture index is negative\n");
+    if (textureIndex < 0 ||
+        (textureIndex * 2 + 1) >= MEDIA_TEXEL_OFFSET_INT_COUNT) {
+        printf("[ASSETPAK] FAILED first referenced texture index=%d exceeds mapping table\n",
+               textureIndex);
         EspAssetPack_close();
         return 0;
     }
 
-    sourceTexelOffset = (uint32_t)render->mediaTexelOffsets[textureIndex * 2];
+    sourceTexelOffsetSigned = render->mediaTexelOffsets[textureIndex * 2];
+    if (sourceTexelOffsetSigned < 0) {
+        printf("[ASSETPAK] FAILED source texel offset=%d is negative\n",
+               sourceTexelOffsetSigned);
+        EspAssetPack_close();
+        return 0;
+    }
+
+    sourceTexelOffset = (uint32_t)sourceTexelOffsetSigned;
     if ((sourceTexelOffset & 1U) != 0) {
         printf("[ASSETPAK] FAILED source texel offset=%u is not nibble-pair aligned\n",
                (unsigned int)sourceTexelOffset);
