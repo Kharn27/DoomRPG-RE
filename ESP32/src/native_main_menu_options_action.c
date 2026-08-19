@@ -19,6 +19,7 @@
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
 
+#define EXPECTED_MAIN_OPTIONS_SELECTED_FNV 0x0cf107b1U
 #define OPTIONS_ITEM_COUNT 4
 #define OPTIONS_TEXT_X 28
 #define OPTIONS_GLYPH_HEIGHT 12
@@ -217,26 +218,24 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
     render = doomRpg->render;
     inputHash = framebufferHash(render);
 
-    printf("[MAINOPTIONS] Begin menu=%d selected=%d framebufferFNV=%08x expectedSelectedOptionsFNV=learn-on-hardware heap8=%u largest8=%u shapeData=%p mediaTexels=%p\n",
+    printf("[MAINOPTIONS] Begin menu=%d selected=%d framebufferFNV=%08x expectedSelectedOptionsFNV=%08x heap8=%u largest8=%u shapeData=%p mediaTexels=%p\n",
            menuSystem->menu,
            menuSystem->selectedIndex,
            (unsigned int)inputHash,
+           (unsigned int)EXPECTED_MAIN_OPTIONS_SELECTED_FNV,
            (unsigned int)heap8Free(),
            (unsigned int)largest8Block(),
            (void*)render->shapeData,
            (void*)render->mediaTexels);
 
-    /* The opaque MENU_MAIN background intentionally changes the selected-Options
-     * framebuffer signature. This first hardware pass learns the new exact hash;
-     * it will be promoted back to a compile-time regression constant before merge.
-     */
     if (menuSystem->menu != MENU_MAIN ||
         menuSystem->selectedIndex != 1 ||
-        inputHash == 0) {
-        printf("[MAINOPTIONS] FAILED precondition menu=%d selected=%d framebuffer=%08x\n",
+        inputHash != EXPECTED_MAIN_OPTIONS_SELECTED_FNV) {
+        printf("[MAINOPTIONS] FAILED precondition menu=%d selected=%d framebuffer=%08x expected=%08x\n",
                menuSystem->menu,
                menuSystem->selectedIndex,
-               (unsigned int)inputHash);
+               (unsigned int)inputHash,
+               (unsigned int)EXPECTED_MAIN_OPTIONS_SELECTED_FNV);
         return 0;
     }
 
