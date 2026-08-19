@@ -82,6 +82,10 @@ def collect_records(zf: zipfile.ZipFile) -> list[AssetRecord]:
         normalized_names.add(normalized)
 
         name_hash = fnv1a32_name(normalized)
+        if name_hash == 0:
+            raise RuntimeError(
+                f"asset name produced reserved zero hash: {info.filename!r}"
+            )
         previous = hashes.get(name_hash)
         if previous is not None:
             raise RuntimeError(
