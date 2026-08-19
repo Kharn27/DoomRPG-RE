@@ -6,11 +6,14 @@
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "Game.h"
+#include "Menu.h"
+#include "MenuSystem.h"
 #include "Render.h"
 #include "map_runtime_structure_probe.h"
 #include "native_asset_pack_probe.h"
 #include "native_bitshape_loader.h"
 #include "native_graphics_resource_manager.h"
+#include "native_main_menu_touch_layout.h"
 #include "native_menu_sprite_frame_probe.h"
 #include "native_menu_wall_frame_probe.h"
 #include "native_palette.h"
@@ -22,6 +25,10 @@
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
+
+#ifndef DOOMRPG_ESP32_BRINGUP_PROBES
+#define DOOMRPG_ESP32_BRINGUP_PROBES 0
+#endif
 
 extern DoomRPG_t* doomRpg;
 
@@ -111,8 +118,16 @@ void DoomRPG_markMapRuntimeStructureBoundary(struct Render_s* renderBase) {
  * BSP ioBuffer has been freed and immediately before Render_loadBitShapes().
  *
  * The wrapper is transparent during every other startup stage. While this
- * probe is armed, it only jumps out once the actual runtime structures and
- * resource reference lists prove that the complete structural phase ran.
+ * startup boundary is armed, it counts the real loader progress calls and jumps
+ * out once the actual runtime structures and resource reference lists prove that
+ * the complete structural phase ran.
+ *
+ * In normal firmware the six intermediate loading-bar callbacks are deliberately
+ * visual no-ops: the original function only clears/draws the historical five-box
+ * pacifier and flushes it to the TFT. That causes a visible flash immediately
+ * before the opaque main menu and has no engine-state role. The bring-up profile
+ * preserves the original callback so historical visual diagnostics remain
+ * available there.
  */
 void __real_DoomCanvas_updateLoadingBar(DoomCanvas_t* doomCanvas);
 
@@ -135,7 +150,14 @@ void __wrap_DoomCanvas_updateLoadingBar(DoomCanvas_t* doomCanvas) {
         longjmp(structureBoundaryJump, 1);
     }
 
+#if DOOMRPG_ESP32_BRINGUP_PROBES
     __real_DoomCanvas_updateLoadingBar(doomCanvas);
+#else
+    if (loadingBarCalls == 1) {
+        printf("[MAPSTRUCT] Normal boot suppresses intermediate loading-bar TFT presents\n");
+    }
+    (void)doomCanvas;
+#endif
 }
 
 int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
@@ -150,21 +172,22 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     uint32_t heapAfter;
     uint32_t largestAfter;
     uint32_t measuredUsed;
+    uint32_t mainMenuFNV = 0;
 
     if (probeAttempted) {
         return probeReady;
     }
     probeAttempted = 1;
 
-    printf("\n=== Doom RPG real menu map runtime structure probe ===\n");
+    printf("\n=== Doom RPG real menu map runtime structure startup ===\n");
 
     if (!menuBspReady) {
-        printf("[MAPSTRUCT] Complete menu BSP plan is not ready; probe skipped safely\n");
+        printf("[MAPSTRUCT] Menu BSP prerequisite is not ready; startup skipped safely\n");
         return 0;
     }
 
     if (doomRpg == NULL || doomRpg->render == NULL) {
-        printf("[MAPSTRUCT] Core Render object unavailable; probe refused\n");
+        printf("[MAPSTRUCT] Core Render object unavailable; startup refused\n");
         return 0;
     }
 
@@ -207,7 +230,7 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
         return 0;
     }
 
-    printf("[MAPSTRUCT] -> real Render_beginLoadMapData(), armed stop before bitshapes\n");
+    printf("[MAPSTRUCT] -> real Render_beginLoadMapData(), stop before legacy bitshapes/texels\n");
     probeActive = 1;
     jumpResult = setjmp(structureBoundaryJump);
 
@@ -223,55 +246,64 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     heapAfter = heap8Free();
     largestAfter = largest8Block();
 
-    printf("[MAPSTRUCT] Probe-stop returned from real loader boundary=%s calls=%d heap8=%u largest8=%u\n",
-           boundaryReached ? "reached" : "NOT reached",
-           loadingBarCalls,
-           (unsigned int)heapAfter,
-           (unsigned int)largestAfter);
-
-    if (!boundaryReached) {
-        printf("[MAPSTRUCT] FAILED map loader did not reach the intended bitshape boundary\n");
-        return 0;
-    }
-
-    if (loadingBarCalls != 7) {
-        printf("[MAPSTRUCT] FAILED unexpected loading-bar boundary count=%d expected=7\n",
-               loadingBarCalls);
-        return 0;
-    }
-
-    if (render->ioBuffer != NULL) {
-        printf("[MAPSTRUCT] FAILED freed BSP ioBuffer was not cleared by probe boundary\n");
-        return 0;
-    }
-
-    if (!realStructuresAreComplete(render)) {
-        printf("[MAPSTRUCT] FAILED runtime structures do not match the validated menu.bsp plan\n");
+    if (!boundaryReached || loadingBarCalls != 7 || render->ioBuffer != NULL ||
+        !realStructuresAreComplete(render)) {
+        printf("[MAPSTRUCT] FAILED runtime boundary reached=%d calls=%d ioBuffer=%p complete=%d\n",
+               boundaryReached,
+               loadingBarCalls,
+               (void*)render->ioBuffer,
+               realStructuresAreComplete(render));
         return 0;
     }
 
     measuredUsed = heapBefore >= heapAfter ? heapBefore - heapAfter : 0;
 
-    printf("[MAPSTRUCT] Persistent real structures used=%uB planPayload=%uB overhead=%dB\n",
-           (unsigned int)measuredUsed,
-           (unsigned int)EXPECTED_STRUCTURAL_PAYLOAD,
-           (int)measuredUsed - (int)EXPECTED_STRUCTURAL_PAYLOAD);
-    printf("[MAPSTRUCT] Persistent pointers nodes=%p lines=%p sprites=%p events=%p byteCode=%p\n",
-           (void*)render->nodes,
-           (void*)render->lines,
-           (void*)render->mapSprites,
-           (void*)render->tileEvents,
-           (void*)render->mapByteCode);
-    printf("[MAPSTRUCT] Scratch refs textures=%p sprites=%p counts=%d/%d planes=%d\n",
-           (void*)render->mapTextureTexels,
-           (void*)render->mapSpriteTexels,
+    printf("[MAPSTRUCT] READY nodes=%d lines=%d mapSprites=%d runtimeSprites=%d events=%d refs=%d/%d planes=%d used=%uB heap8=%u largest8=%u\n",
+           render->nodesLength,
+           render->linesLength,
+           render->numMapSprites,
+           render->numSprites,
+           render->numTileEvents,
            render->mapTextureTexelsCount,
            render->mapSpriteTexelsCount,
-           render->planeTexturesCnt);
-    printf("[MAPSTRUCT] READY real menu structures resident heap8=%u largest8=%u\n",
+           render->planeTexturesCnt,
+           (unsigned int)measuredUsed,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAPSTRUCT] Original Render_loadBitShapes / Render_loadTexels intentionally NOT executed\n");
+
+#if !DOOMRPG_ESP32_BRINGUP_PROBES
+    printf("[BOOT] bringupProbes=off; skipping memory-plan/asset/sprite/wall/projected/menu-scene validation suite\n");
+
+    if (doomRpg->menu == NULL || doomRpg->menuSystem == NULL ||
+        doomRpg->doomCanvas == NULL) {
+        printf("[BOOT] FAILED menu objects unavailable for normal presentation\n");
+        return 0;
+    }
+
+    /* The menu is now opaque and no longer depends on the historical 3D menu
+     * scene. Initialize the real MENU_MAIN model and paint it directly using the
+     * same bounded painter used by the validated fast Options -> Back path.
+     */
+    doomRpg->menuSystem->menu = MENU_MAIN;
+    Menu_initMenu(doomRpg->menu, MENU_MAIN);
+    doomRpg->menuSystem->menu = MENU_MAIN;
+
+    if (!DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &mainMenuFNV)) {
+        printf("[BOOT] FAILED direct opaque MENU_MAIN presentation\n");
+        return 0;
+    }
+
+    probeReady = 1;
+    printf("[BOOT] NORMAL READY mainMenuFNV=%08x heap8=%u largest8=%u shapeData=%p mediaTexels=%p\n",
+           (unsigned int)mainMenuFNV,
+           (unsigned int)heap8Free(),
+           (unsigned int)largest8Block(),
+           (void*)render->shapeData,
+           (void*)render->mediaTexels);
+    return 1;
+#else
+    printf("[BOOT] bringupProbes=on; running full historical graphics validation suite\n");
+#endif
 
     if (!DoomRPG_probeMenuResourceMemoryPlan(1)) {
         printf("[MAPSTRUCT] FAILED graphics resource memory plan\n");
