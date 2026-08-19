@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+#define DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY 0
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -11,6 +15,7 @@ extern "C" {
 void* Esp32PlatformVideo_framebuffer(void);
 size_t Esp32PlatformVideo_framebufferSizeBytes(void);
 
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 void Esp32PlatformVideo_debugOverlayClear(void);
 void Esp32PlatformVideo_debugOverlaySetZone(int index,
                                             int16_t logicalLeft,
@@ -23,6 +28,7 @@ void Esp32PlatformVideo_debugOverlayMarkTouch(int16_t physicalX,
                                               uint16_t pressure,
                                               uint16_t rawX,
                                               uint16_t rawY);
+#endif
 
 #ifdef __cplusplus
 }
