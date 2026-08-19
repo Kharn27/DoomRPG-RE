@@ -6,6 +6,7 @@
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_options_action.h"
+#include "native_main_menu_options_back.h"
 #include "native_main_menu_touch.h"
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
@@ -14,6 +15,7 @@
 #define MENU_TAP_GATE_GLYPH_ADVANCE 7
 #define MENU_TAP_GATE_HAND_WIDTH 13
 #define MENU_TAP_GATE_PAD_X 4
+#define EXPECTED_OPTIONS_FRAMEBUFFER_FNV 0x6058d47dU
 
 static PlatformTapCallback downstreamTapCallback = NULL;
 static int gateSelectedItem = 0;
@@ -48,9 +50,9 @@ static int gateHitItem(int16_t screenX, int16_t screenY) {
 }
 
 static void executeConfirmedOptions(void) {
-    /* The Options screen is display-only in this increment. Remove the physical
-     * tap callback before mutating the real MenuSystem model so no further
-     * MENU_MAIN touch can race the transition.
+    /* Remove MENU_MAIN touch before mutating the real menu model. The Options
+     * action owns the display transition; after it succeeds, arm only the
+     * deliberately narrow Back callback for the new menu.
      */
     downstreamTapCallback = NULL;
     __real_PlatformInput_setTapCallback(NULL);
@@ -62,6 +64,12 @@ static void executeConfirmedOptions(void) {
 
     if (!DoomRPG_esp32ActivateMainMenuOptions(doomRpg)) {
         printf("[MAINOPTIONS] FAILED confirmed Options action\n");
+        return;
+    }
+
+    if (!DoomRPG_esp32OptionsBackActivate(doomRpg,
+                                          EXPECTED_OPTIONS_FRAMEBUFFER_FNV)) {
+        printf("[OPTIONBACK] FAILED arming Back after Options transition\n");
     }
 }
 
@@ -121,9 +129,9 @@ static void gatedTap(int16_t screenX,
 }
 
 /* Intercept only callback registration, not XPT2046 sampling. This keeps the
- * generic PlatformInput driver unaware of menu semantics. The validated gate
- * still enforces select-then-confirm; this increment promotes only confirmed
- * MENU_MAIN Options to a real action.
+ * generic PlatformInput driver unaware of menu semantics. MENU_MAIN gets the
+ * validated select/confirm gate; other callbacks (currently Options Back only)
+ * pass through unchanged.
  */
 void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
     gateSelectedItem = 0;
