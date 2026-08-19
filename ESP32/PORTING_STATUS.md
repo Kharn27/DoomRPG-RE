@@ -70,173 +70,300 @@ Documentation is part of the increment, not a later cleanup task.
 - TFT bring-up diagnostics disabled by default; Serial diagnostics retained
 - clean game-owned display, PR #27 merge
   `da2de773765f9675c4fe9eea1cbc82cf24b7523c`
+- fitted 160x120 `MENU_MAIN`, framebuffer `1afa0223`
+- fitted-layout merge on `main`:
+  `bf928efb3054b06cd0124acea940c5672cad927a`
 
 ## Current validated increment
 
-Branch: `agent/esp32-main-menu-160x120-layout`
+Branch: `agent/esp32-main-menu-touch-select`
 
 Base `main` SHA:
 
 ```text
-da2de773765f9675c4fe9eea1cbc82cf24b7523c
+bf928efb3054b06cd0124acea940c5672cad927a
 ```
 
 Status: **HARDWARE VALIDATED, DOCUMENTED, READY TO MERGE**.
 
-Objective: adapt only the real main-menu presentation to the 160x120 logical
-framebuffer while preserving the real Doom RPG menu model, bitmap font, hand
-cursor and four labels.
+Objective: add the first real CYD menu input without activating gameplay or any
+legacy menu transition yet.
 
-The faithful original-layout implementation remains in the repository as the
-`86c38260` reference. The ESP32-specific layout is a separate presentation layer.
-
-## Why adaptation is required
-
-The normal Doom RPG font uses 12-pixel-high glyph cells. Four menu rows therefore
-need 48 vertical pixels. The original main-menu layout starts at y=80:
+The validated behaviour is deliberately split into two layers:
 
 ```text
-original rows = 80, 92, 104, 116
-font height   = 12
-logical H     = 120
+first tap on another row
+    -> hit-test physical touch
+    -> update real MenuSystem.selectedIndex
+    -> move the real p.bmp hand cursor
+
+second released tap on the same row
+    -> emit semantic CONFIRM
+    -> do NOT execute MenuSystem_select() yet
 ```
 
-The last row cannot fit. The original logo is also 108x74, so simply moving the
-text upward would collide with the logo.
+This distinction matters: the hardware logs prove that double-tap confirmation
+works, even though there is intentionally no visible menu transition in this
+increment. `CONFIRM action=deferred` is therefore expected success, not a failed
+double tap.
 
-The chosen ESP32 adaptation keeps every real asset but scales only the logo:
+`Start Game` is the main reason to keep execution deferred here: the original
+`MENU_MAIN` selection path can call `Menu_startGame()` immediately and enter
+loading/gameplay code that has not yet been migrated to the constrained native
+runtime.
+
+## Touch input boundary
+
+The XPT2046 path is now:
 
 ```text
-logo source = 108x74
-logo target = 90x62
-logo x/y    = 35,2
-
-Start Game  y=67
-Options     y=79
-Help/About  y=91
-Exit        y=103
-font height = 12
+XPT2046
+   |
+   v
+PlatformInput
+   |
+   +--> calibrated physical 320x240 coordinates
+   |
+   +--> one semantic tap per press/release cycle
+              |
+              v
+        MENU_MAIN hit-test
+              |
+              +--> SELECT
+              `--> CONFIRM
 ```
 
-Resulting geometry:
+`PlatformInput` no longer inherits the old ~80 ms Serial diagnostic throttle for
+semantic input. A tap is delivered immediately on the press edge, then a new tap
+is blocked until the panel has been released for 50 ms continuously.
+
+This prevents a held finger from becoming an accidental second tap.
+
+## Hardware-validated hit zones
+
+The zones are derived from the already validated
+`native_main_menu_160x120_layout.h` geometry, not duplicated as unrelated touch
+magic numbers.
 
 ```text
-logo bottom    = 64
-first item y   = 67
-logo/text gap  = 3 px
-content bottom = 115
-screen bottom  = 120
-bottom margin  = 5 px
+                 logical 160x120        physical CYD 320x240
+x for all rows   28..119                 56..239
+
+Start Game       y=67..78                y=134..157
+Options          y=79..90                y=158..181
+Help/About       y=91..102               y=182..205
+Exit             y=103..114              y=206..229
 ```
 
-The real font remains unscaled/pixel-perfect. The real 13x10 hand cursor also
-remains unscaled.
+Hardware touches landed correctly in those rows, including the previously seen
+physical point around `129,215`, which maps to the `Exit` row.
 
-These coordinates live in:
+## Touch-ready menu presentation
+
+The PR #28 fitted layout remains the geometry reference:
 
 ```text
-ESP32/include/native_main_menu_160x120_layout.h
+logo target = 90x62 at 35,2
+rows        = 67,79,91,103
+layoutFNV   = 47b3656e
 ```
 
-They are intentionally shared so the next touch increment can derive hit zones
-from the exact hardware-validated geometry instead of duplicating magic numbers.
+For movable touch selection, the text is now fixed at its centered position and
+only the real hand cursor indicates selection. The earlier fitted layout shifted
+the selected text by 2 px; retaining that shift would require repainting glyphs
+when the hand moves.
 
-## Model contract preserved
+The touch-ready presentation therefore uses a new deterministic composition
+signature while preserving the same geometry, model, font and assets.
 
-The original `Menu_initMenu(MENU_MAIN)` model remains unchanged:
+Progressive hardware hashes:
 
 ```text
-menu          = MENU_MAIN / 1
-type          = MENUTYPE_MAIN / 4
-selectedIndex = 0
-scrollIndex   = 0
-items         = 4
-
-0 Start Game
-1 Options
-2 Help/About
-3 Exit
+after scaled logo        = 1e8bcfbb
+after Start Game + hand  = c03215ab
+after Options            = b2f6a68d
+after Help/About         = 994a049d
+after Exit / final       = cbc99461
 ```
 
-Hardware model signature remains:
+The prior fitted-layout `1afa0223` remains a valid historical regression
+reference for the selected-text-offset presentation. The new touch-ready initial
+frame is:
 
 ```text
-modelFNV = bbc2149b
+MENU_MAIN touch-ready framebuffer = cbc99461
 ```
 
-The underlying native scene is still the same deterministic scene:
+## Cursor movement without scene rerender
+
+A second 38,400-byte framebuffer is not used. Instead, the input layer stores the
+four tiny framebuffer regions that can lie underneath the 13x10 hand cursor:
 
 ```text
-sceneFNV = ffe0995e
-shapeData = NULL
-mediaTexels = NULL
+4 rows * 13 * 10 * RGB565 = 1,040 B
+```
+
+A selection change does only:
+
+```text
+restore old 13x10 background
+set MenuSystem.selectedIndex
+draw real p.bmp hand at new row
+present framebuffer
+```
+
+No BSP rerender and no SD read are needed for cursor movement.
+
+Hardware logs confirmed:
+
+```text
+[MENUTOUCH] PREPARED handPatches=1040B rows=4 selectionStyle=hand-only textPosition=fixed
 ```
 
 ## Authoritative hardware validation
 
+Boot/composition boundary:
+
 ```text
-=== Doom RPG ESP32 MENU_MAIN 160x120 layout ===
-[MAINLAYOUT] Begin sceneFNV=ffe0995e expected=ffe0995e faithfulOriginalFNV=86c38260 heap8=29872 largest8=21492
-[MAINLAYOUT] Model FNV=bbc2149b items=4 selected=0
-[MAINLAYOUT] Geometry screen=160x120 logoSrc=108x74 logoDst=35,2 90x62 logoBottom=64 itemStart=67 line=12 rows=4 contentBottom=115 layoutFNV=47b3656e
-[MAINLAYOUT] ITEM index=0 y=67 selected=yes text="Start Game"
-[MAINLAYOUT] ITEM index=1 y=79 selected=no text="Options   "
-[MAINLAYOUT] ITEM index=2 y=91 selected=no text="Help/About"
-[MAINLAYOUT] ITEM index=3 y=103 selected=no text="Exit      "
-[MAINLAYOUT] HASH stage=logo fnv=1e8bcfbb
-[MAINLAYOUT] HASH stage=item0 text="Start Game" fnv=64516fd1
-[MAINLAYOUT] HASH stage=item1 text="Options   " fnv=0fb73263
-[MAINLAYOUT] HASH stage=item2 text="Help/About" fnv=c7a0b65f
-[MAINLAYOUT] HASH stage=item3 text="Exit      " fnv=1afa0223
-[MAINLAYOUT] framebufferFNV=1afa0223 sceneFNV=ffe0995e changed=yes composeMs=19 shapeData=0x0 mediaTexels=0x0
-[MAINLAYOUT] End heap8=29872 largest8=21492 deltaFromStart=0 largestDelta=0
-[MAINLAYOUT] Presented fitted Doom RPG MENU_MAIN on clean CYD display
-[MAINLAYOUT] READY original menu model/font/hand preserved; only logo scale + target geometry changed
-[MAINLAYOUT] READY item rows are stable for the next touch hit-test increment
+=== Doom RPG ESP32 MENU_MAIN touch-select layout ===
+[MAINTOUCHLAYOUT] Begin sceneFNV=ffe0995e expected=ffe0995e priorFittedFNV=1afa0223 faithfulOriginalFNV=86c38260 heap8=28704 largest8=17396
+[MAINTOUCHLAYOUT] Model FNV=bbc2149b items=4 selected=0
+[MAINTOUCHLAYOUT] Geometry screen=160x120 logoDst=35,2 90x62 logoBottom=64 itemStart=67 line=12 rows=4 contentBottom=115 layoutFNV=47b3656e expected=47b3656e selectionStyle=hand-only
+[MAINTOUCHLAYOUT] framebufferFNV=cbc99461 sceneFNV=ffe0995e priorFittedFNV=1afa0223 composeMs=54 shapeData=0x0 mediaTexels=0x0
+[MAINTOUCHLAYOUT] End heap8=28704 largest8=17396 deltaFromStart=0 largestDelta=0
+[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm
+[MENUTOUCH] READY physical=320x240 logical=160x120 scale=2 selected=0 initialFNV=cbc99461 patches=1040B releaseDebounce=50ms
 ```
 
-`composeMs=19` is diagnostic only, not a regression requirement.
+`composeMs=54` is diagnostic only, not a regression requirement.
+
+### Start Game confirmation detection
+
+The first tap on the already selected boot row only arms confirmation. A second
+released tap passes confirmation:
+
+```text
+[MENUTOUCH] ARM item=0 tap=1 selected=0 awaitingReleasedSecondTap=yes
+[MENUTOUCH] GATE tap=2 CONFIRM-PASS item=0
+[MENUTOUCH] CONFIRM item=0 text="Start Game" count=1 framebufferFNV=cbc99461 action=deferred
+```
+
+No game load occurred, by design.
+
+### Real selection movement
+
+```text
+[MENUTOUCH] GATE tap=4 SELECT-ARM current=0 hit=1
+[MENUTOUCH] SELECT 0->1 text="Options   " framebufferFNV=961109a7 previousKnown=961109a7 heap8=28704->28704 largest8=17396->17396
+[MENUTOUCH] READY selection=1 selections=1 confirms=1 misses=0 noSceneRerender=yes noSDRead=yes
+
+[MENUTOUCH] GATE tap=5 SELECT-ARM current=1 hit=2
+[MENUTOUCH] SELECT 1->2 text="Help/About" framebufferFNV=e4eadfbb previousKnown=e4eadfbb heap8=28704->28704 largest8=17396->17396
+```
+
+### Bit-identical cursor restoration
+
+Returning from Help/About to Options reproduced the exact first Options frame:
+
+```text
+first Options framebuffer  = 961109a7
+return Options framebuffer = 961109a7
+```
+
+Hardware log:
+
+```text
+[MENUTOUCH] SELECT 2->1 text="Options   " framebufferFNV=961109a7 previousKnown=961109a7 heap8=28704->28704 largest8=17396->17396
+```
+
+The same deterministic restoration was observed for Start Game:
+
+```text
+Start Game framebuffer = cbc99461
+```
+
+and Exit:
+
+```text
+Exit framebuffer = 5ff2a5cd
+```
+
+## Hardware-validated selection hashes
+
+```text
+selected Start Game = cbc99461
+selected Options    = 961109a7
+selected Help/About = e4eadfbb
+selected Exit       = 5ff2a5cd
+```
+
+These are useful regression signatures for the hand-only touch-ready menu.
+
+## Confirmation semantics validated
+
+Hardware produced real `CONFIRM-PASS` + `CONFIRM` events for multiple rows:
+
+```text
+Options:
+[MENUTOUCH] GATE tap=7 CONFIRM-PASS item=1
+[MENUTOUCH] CONFIRM item=1 text="Options   " count=2 framebufferFNV=961109a7 action=deferred
+
+Start Game:
+[MENUTOUCH] GATE tap=11 CONFIRM-PASS item=0
+[MENUTOUCH] CONFIRM item=0 text="Start Game" count=3 framebufferFNV=cbc99461 action=deferred
+
+Exit:
+[MENUTOUCH] GATE tap=15 CONFIRM-PASS item=3
+[MENUTOUCH] CONFIRM item=3 text="Exit      " count=5 framebufferFNV=5ff2a5cd action=deferred
+```
+
+Therefore the double-tap state machine is hardware validated. There is currently
+no visual result after `CONFIRM` because action dispatch is deliberately out of
+scope for this branch.
+
+## Memory boundary
+
+Touch movement retained exact allocator values in the hardware run:
+
+```text
+heap8    = 28704 before / 28704 after
+largest8 = 17396 before / 17396 after
+```
+
+Every shown selection change reported:
+
+```text
+heap delta    = 0
+largest delta = 0
+noSceneRerender=yes
+noSDRead=yes
+```
+
+The 1,040-byte cursor background store is static bounded state; there is no
+per-tap heap allocation.
+
+`shapeData` and `mediaTexels` remain `NULL`.
 
 ## Deterministic signatures
 
 Useful current regression boundaries:
 
 ```text
-sprite 172 texel FNV         = 0c0a7acd
-wall 112 texel FNV           = 92d40704
-synthetic projected wall FNV = ad191f54
-real walls framebuffer       = a6d87c4a
-viewSprites list FNV         = 962cd657
-sprite request FNV           = 4457ac94
-walls + sprites framebuffer  = ffe0995e
-faithful MENU_MAIN layout    = 86c38260
-ESP32 160x120 layout config  = 47b3656e
-ESP32 fitted MENU_MAIN       = 1afa0223
+sprite 172 texel FNV              = 0c0a7acd
+wall 112 texel FNV                = 92d40704
+synthetic projected wall FNV      = ad191f54
+real walls framebuffer            = a6d87c4a
+viewSprites list FNV              = 962cd657
+sprite request FNV                = 4457ac94
+walls + sprites framebuffer       = ffe0995e
+faithful MENU_MAIN layout         = 86c38260
+ESP32 160x120 layout config       = 47b3656e
+prior fitted MENU_MAIN            = 1afa0223
+touch-ready Start Game selected   = cbc99461
+touch-ready Options selected      = 961109a7
+touch-ready Help/About selected   = e4eadfbb
+touch-ready Exit selected         = 5ff2a5cd
 ```
-
-Progressive fitted-layout hashes:
-
-```text
-after scaled logo          = 1e8bcfbb
-after Start Game + hand    = 64516fd1
-after Options              = 0fb73263
-after Help/About           = c7a0b65f
-after Exit / final         = 1afa0223
-```
-
-## Memory boundary
-
-The layout introduces no per-composition allocation:
-
-```text
-before: heap8=29872 largest8=21492
-after:  heap8=29872 largest8=21492
-
-deltaFromStart = 0
-largestDelta   = 0
-```
-
-`shapeData` and `mediaTexels` remain `NULL` for the entire path.
 
 ## Display ownership remains clean
 
@@ -255,26 +382,13 @@ tools can still be temporarily restored with value `1`.
 
 ## Hardware visual observation: color/contrast
 
-The fitted geometry is visually successful on hardware: all four rows fit cleanly
-and the selected hand is visible in the intended location.
+The fitted geometry and touch selection are visually successful on hardware.
+The hand cursor follows the selected row correctly.
 
-However, comparison against a J2ME reference capture shows the CYD presentation
-looks noticeably **flatter / less saturated / lower contrast**. This is now a
-recorded open visual issue, but it is **not** treated as a failure of this layout
-increment because:
-
-- the menu model and geometry are correct;
-- the framebuffer hashes are deterministic;
-- all memory/raster invariants pass;
-- the issue may involve composition/background, palette conversion, display
-  characteristics or another presentation stage.
-
-Do **not** change palette values blindly. Investigate this in a separate measured
-increment, ideally comparing the same menu assets against a black/controlled
-background and checking framebuffer colors separately from physical TFT output.
-
-`1afa0223` is therefore the deterministic reference for this exact fitted
-composition, not a claim that its color appearance is already final/perfect.
+Comparison against a J2ME reference capture still shows the CYD presentation
+looks noticeably flatter / less saturated / lower contrast. This remains a
+separate recorded visual issue. Do not change palette values blindly; investigate
+it in a dedicated measured increment.
 
 ## Current safe stop boundary
 
@@ -292,35 +406,46 @@ Validated and executed:
 - original `MENU_MAIN` model and real UI assets
 - faithful original menu composition `86c38260`
 - clean TFT diagnostics policy
-- ESP32-specific fitted `MENU_MAIN` composition `1afa0223`
-- exact allocator restoration
-- final item geometry suitable for touch hit-testing
+- ESP32-specific fitted menu geometry
+- calibrated physical 320x240 touch hit-testing
+- real `MenuSystem.selectedIndex` changes from touch
+- independently movable real `p.bmp` hand cursor
+- bit-identical 13x10 cursor-background restoration
+- one semantic tap per released press cycle
+- second released tap on same row detected as `CONFIRM`
+- exact allocator restoration during touch movement
 
 Still intentionally out of scope:
 
+- execution of `MenuSystem_select()` from touch `CONFIRM`
+- real transitions to Options / Help / Exit menus
+- Start Game / gameplay loader activation
 - original monolithic bitshape/texel loaders
 - textured floor/ceiling planes
 - persistent caches in the normal multi-frame runtime
-- active normal `ST_MENU` loop
-- touch selection/validation of real menu items
+- active normal multi-frame `ST_MENU` loop
 - final color/contrast correction
 - normal gameplay loop and gameplay control scheme
 - audio
 
-## Recommended next increments after merge
+## Recommended next increment after merge
 
-The layout geometry is now stable enough for the planned menu touch behaviour:
+The touch frontend itself no longer needs architectural work. The next menu step
+should connect **one safe real menu action** to the validated `CONFIRM` event,
+rather than enabling all four actions at once.
+
+A sensible first candidate is `Options`: route confirmed item 1 through the real
+menu model and render the resulting options menu while keeping `Start Game`
+deferred until gameplay loading is ready.
+
+Keep the same discipline:
 
 ```text
-first tap on a different item -> move selectedIndex / hand only
-second tap on same selected item -> validate selection
+one confirmed action
+-> real original menu transition
+-> native/ESP32 presentation
+-> hardware test
 ```
 
-The hit-test must reuse the constants in
-`native_main_menu_160x120_layout.h` and convert physical 320x240 touch coordinates
-to logical 160x120 coordinates.
-
-Keep gameplay input deferred until the first actual gameplay map is running.
-
-The color/contrast discrepancy versus J2ME is also recorded and should be handled
-as a separate diagnostic increment rather than mixed into touch semantics.
+Do not mix the unrelated color/contrast investigation into that input/action
+increment.
