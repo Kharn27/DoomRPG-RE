@@ -3,6 +3,7 @@
 #include <stdio.h>
 
 #include "DoomRPG.h"
+#include "DoomCanvas.h"
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_options_action.h"
@@ -229,6 +230,22 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
 #endif
 
     if (callback == DoomRPG_esp32MainMenuTouchOnTap) {
+        /* The ESP32 boot path initializes MENU_MAIN directly instead of calling
+         * the original MenuSystem_setMenu(), because that function also owns
+         * legacy menu-map/media transitions. MenuSystem_setMenu() normally
+         * establishes ST_MENU after Menu_initMenu(). Keep that state contract
+         * here at the exact point where our native MENU_MAIN becomes interactive.
+         * This also covers the full bring-up path; Options -> Back already arrives
+         * here in ST_MENU and therefore remains a no-op. */
+        if (doomRpg != NULL && doomRpg->doomCanvas != NULL &&
+            doomRpg->doomCanvas->state != ST_MENU) {
+            const int priorState = doomRpg->doomCanvas->state;
+            DoomCanvas_setState(doomRpg->doomCanvas, ST_MENU);
+            printf("[MENUTOUCH] STATE SYNC canvas=%d->%d source=native-MENU_MAIN activation\n",
+                   priorState,
+                   doomRpg->doomCanvas->state);
+        }
+
         downstreamTapCallback = callback;
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
         registerMainMenuHitboxOverlay();
