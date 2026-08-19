@@ -79,56 +79,265 @@ Documentation is part of the increment, not a later cleanup task.
   at `1035d4413686624feb07aaf208821946cead5869`
 - permanent bring-up hitbox overlay merged as PR #34 at
   `2b29ca7f3479c9add022ccc803bdbff7dd5ade34`
+- hardware-selected CYD color profile merged as PR #35 at
+  `a87b50747fa69bba6624870f944cbb1111014276`
 
 ## Current increment
 
-Branch: `agent/esp32-color-tuning-probe`
+Branch: `agent/esp32-start-game-entry`
 
 Base `main` SHA:
 
 ```text
-2b29ca7f3479c9add022ccc803bdbff7dd5ade34
+a87b50747fa69bba6624870f944cbb1111014276
 ```
 
-Status: **HARDWARE PASS IN NORMAL + BRING-UP; DOCUMENTED; MERGE-READY**.
+Status: **HARDWARE PASS; DOCUMENTED; MERGE-READY**.
 
-Objective: resolve the visually faded CYD output without changing engine assets,
-palettes, framebuffer hashes or renderer/resource architecture.
+Objective: execute the real fresh-profile `Start Game` action through the
+original menu/game state machine, reclaim dead menu boot memory before intro
+allocation, and stop at a safe `ST_INTRO` boundary before driving the active
+intro/game loop.
 
-## Hardware comparison and selected profile
+## Start Game state-machine contract
 
-A temporary four-way physical TFT comparison displayed four exact 160x120 1:1
-copies of the same logical framebuffer:
+The native ESP32 menu boot deliberately bypasses the original heavy
+`MenuSystem_setMenu()` presentation path. Hardware testing exposed one missing
+semantic side effect: the model was already `MENU_MAIN`, but `DoomCanvas.state`
+was still the initial `ST_LEGALS` value 0.
+
+That made direct Start fail until an Options -> Back round trip happened to call
+the original menu transition and establish `ST_MENU`.
+
+The native interactive-main activation now explicitly restores the same state
+contract:
 
 ```text
-A  gamma 1.00 / saturation 1.00
-B  gamma 1.30 / saturation 1.00
-C  gamma 1.00 / saturation 1.15
-D  gamma 1.30 / saturation 1.15
+MENU_MAIN visible + touch armed
+    => DoomCanvas.state == ST_MENU (2)
 ```
 
-The real-CYD visual choice was **C**.
-
-The temporary comparison environment was removed before final validation.
-There are still only the two permanent PlatformIO environments:
+Hardware boot marker:
 
 ```text
-esp32-cyd
-esp32-cyd-bringup
+[MENUTOUCH] STATE SYNC canvas=0->2 source=native-MENU_MAIN activation
 ```
 
-Final hardware-selected display profile:
+This is a state-machine correction, not a relaxation of Start preconditions.
+The Start helper still requires:
+
+```text
+menu      = MENU_MAIN
+selected  = 0
+state     = ST_MENU
+frame FNV = 58a11171
+shapeData = NULL
+mediaTexels = NULL
+wall/sprite caches inactive
+```
+
+## Hardware touch evidence / Start tolerance
+
+A deliberate real-CYD Start tap landed at logical `y=64`, three pixels above the
+visible first row beginning at `y=67`.
+
+Only Start receives this extra top tolerance:
+
+```text
+Start Game logical x=28..119 y=64..78
+Options    logical x=28..119 y=79..90
+Help/About logical x=28..119 y=91..102
+Exit       logical x=28..119 y=103..114
+```
+
+The other rows remain unchanged and non-overlapping.
+
+## Real fresh Start path now validated
+
+On a first-boot profile with no compatible save, confirmed Start executes the
+original action:
+
+```text
+MENU_MAIN / item 0
+    -> MenuSystem_select()
+    -> Menu_select(MENU_MAIN, 0)
+    -> Menu_startGame(menu, 1)
+    -> Player_reset()
+    -> DoomCanvas_setState(ST_INTRO)
+    -> DoomCanvas_loadPrologueText()
+```
+
+The first attempted hardware run reached the real intro loader but failed on
+`c.bmp` because the old ZIP path temporarily needed compressed data,
+uncompressed data and a 10,992-byte miniz inflate state while only 29,064 bytes
+of 8-bit heap remained.
+
+The crash was an intentional `DoomRPG_Error()` abort/reboot, not a logical return
+to the menu.
+
+## Fresh-start lifecycle cleanup
+
+The native boot had two large classes of memory still resident even though a
+fresh Start transition no longer needs them:
+
+1. `imgLegals` / `g.bmp`, because the ESP32 boot skips the original legal-screen
+   state machine that normally frees it before entering the menu;
+2. menu map runtime + mapping tables, because the opaque ESP32 menu no longer
+   needs `menu.bsp` after New Game is irreversibly confirmed.
+
+For the fresh-profile path only, before calling the original `MenuSystem_select()`:
+
+```text
+DoomRPG_freeImage(imgLegals)
+Render_freeRuntime(render)
+Game_unloadMapData(game)
+```
+
+This uses the same runtime cleanup order already used by the original map loader.
+The existing-save path is detected first and deliberately keeps menu resources
+resident because it must later paint the Continue / New Game menu.
+
+Hardware measurement:
+
+```text
+before cleanup:
+  heap8    = 29064
+  largest8 = 17396
+
+after cleanup:
+  heap8    = 84480
+  largest8 = 36852
+  gained   = 55416 B
+
+nodes       = NULL
+lines       = NULL
+mapSprites  = NULL
+mappings    = NULL / NULL
+shapeData   = NULL
+mediaTexels = NULL
+```
+
+This is now the required fresh-Start lifecycle boundary.
+
+## Intro resource plan and successful load
+
+`DoomCanvas_loadPrologueText()` loads four original indexed BMP assets:
+
+```text
+c.bmp -> imgSpaceBG
+  ZIP compressed   = 3675 B
+  uncompressed BMP = 12408 B
+  packed pixels    = 12288 B, 192x128, 4-bpp, palette 16
+
+d.bmp -> imgLinesLayer
+  ZIP compressed   = 149 B
+  uncompressed BMP = 12356 B
+  packed pixels    = 12288 B, 192x128, 4-bpp, palette 3
+
+e.bmp -> imgPlanetLayer
+  ZIP compressed   = 1352 B
+  uncompressed BMP = 8312 B
+  packed pixels    = 8192 B, 128x128, 4-bpp, palette 16
+
+f.bmp -> imgSpaceship
+  ZIP compressed   = 114 B
+  uncompressed BMP = 160 B
+  packed pixels    = 45 B, 9x9, 4-bpp, palette 8
+```
+
+ZIP totals are `5290 B` compressed / `33236 B` uncompressed, but the legacy ZIP
+loader peak is per-file. After the lifecycle cleanup, all four assets loaded
+successfully through the existing packed indexed ESP32 BMP path.
+
+No direct `.pak` intro-image migration was needed for this increment. The native
+pack remains the preferred future path when another legacy ZIP allocation peak
+becomes unsuitable.
+
+## Final Start Game hardware evidence
+
+Validated normal-firmware transition:
+
+```text
+[MAINSTART] Begin menu=1 selected=0 state=2 framebufferFNV=58a11171
+[MAINSTART] Existing-save precheck=no -> fresh cleanup allowed
+[MAINSTART] Fresh-start cleanup ... heap8=29064->84480 gained=55416
+...
+[ZIP] inflate c.bmp ...
+[SDL] Adopt packed indexed texture 192x128 bpp=4 bytes=12288 palette=16
+[ZIP] inflate d.bmp ...
+[SDL] Adopt packed indexed texture 192x128 bpp=4 bytes=12288 palette=3
+[ZIP] inflate e.bmp ...
+[SDL] Adopt packed indexed texture 128x128 bpp=4 bytes=8192 palette=16
+[ZIP] inflate f.bmp ...
+[SDL] Adopt packed indexed texture 9x9 bpp=4 bytes=45 palette=8
+...
+[MAINSTART] After select menu=0 state=9 framebufferFNV=485915c5
+             heap8=50712 largest8=13300
+[MAINSTART] READY real MenuSystem_select -> Menu_startGame(new)
+            -> Player_reset -> ST_INTRO
+```
+
+Fresh player reset contract remained exact:
+
+```text
+level           = 1
+currentXP       = 0
+nextLevelXP     = 80
+credits         = 0
+keys            = 0
+ammo[1]         = 8
+weapon          = 2
+weapons         = 0x00000004
+disabledWeapons = 0
+totalDeaths     = 0
+```
+
+The three prologue text allocations are non-NULL and the story counters are at
+the initial page:
+
+```text
+storyText1[0] != NULL
+storyText1[1] != NULL
+storyText2     != NULL
+storyPage      = 0
+storyTextPage  = 0
+```
+
+## Why the screen is black after Loading
+
+The black screen is the expected current stop point, not a crash.
+
+`DoomCanvas_loadPrologueText()`:
+
+1. paints and presents `Loading...`;
+2. loads the three story strings;
+3. loads `c.bmp`, `d.bmp`, `e.bmp`, `f.bmp`;
+4. resets intro timers/pages;
+5. clears the logical display to black;
+6. presents that black framebuffer.
+
+The ESP32 `loop()` still does not drive the original active Doom state machine,
+so no subsequent `ST_INTRO` draw occurs. The firmware remains alive after the
+transition:
+
+```text
+state    = ST_INTRO (9)
+heap8    = 50712
+largest8 = 13300
+ALIVE heartbeat continues
+```
+
+The next safe boundary is therefore **one real intro frame**, not map loading.
+
+## Hardware-selected display profile
+
+Current hardware-selected output remains:
 
 ```text
 gamma       = 1.00
 saturation  = 1.15
 resampling  = nearest
 ```
-
-Nearest-neighbour sampling was already the ESP32 behavior, so the only new
-runtime transform is saturation.
-
-## Color-profile architecture
 
 The logical framebuffer remains the source of truth:
 
@@ -141,145 +350,9 @@ engine / palettes / GFXRM
         -> ILI9341
 ```
 
-The saturation transform is deliberately outside engine state.
-
-Implementation:
-
-- expand RGB565 to 8-bit channels by bit replication;
-- compute BT.601-style integer luma;
-- scale only chroma to 115% around that luma;
-- preserve neutral grays and black/white;
-- repack to RGB565;
-- transform once per logical pixel, then duplicate the result for exact 2x output.
-
-Cost model:
-
-```text
-logical pixels transformed / frame = 160 * 120 = 19,200
-second framebuffer                  = no
-large LUT                           = no
-persistent allocation              = no
-```
-
-Strong invariant:
-
-```text
-framebuffer contents = unchanged by panel tuning
-```
-
-Therefore all pre-existing framebuffer hashes remain valid.
-
-## Normal-mode hardware evidence
-
-Validated with `esp32-cyd`:
-
-```text
-heap8    = 29064
-largest8 = 17396
-shapeData   = 0x0
-mediaTexels = 0x0
-```
-
-Deterministic hashes remained exact:
-
-```text
-MENU_MAIN Start Game = 58a11171
-Options selected      = 0cf107b1
-Options framebuffer   = 6058d47d
-Back -> MENU_MAIN     = 58a11171
-```
-
-Representative presentation timing:
-
-```text
-[VIDEO] Present ... + sat1.15: 42883 us
-[VIDEO] Present ... + sat1.15: 42717 us
-[VIDEO] Present ... + sat1.15: 42704 us
-[VIDEO] Present ... + sat1.15: 42734 us
-[VIDEO] Present ... + sat1.15: 42739 us
-```
-
-Normal display present is therefore about **42.7 ms**, versus about 34.4 ms before
-saturation tuning.
-
-Fast Options -> Back remained correct:
-
-```text
-[OPTIONBACK] FAST End framebufferFNV=58a11171 expected=58a11171
-runtimeFNV=58a11171 menu=1 selected=0 touchActive=1 repaintMs=147
-shapeData=0x0 mediaTexels=0x0
-```
-
-## Bring-up hardware evidence
-
-Validated with `esp32-cyd-bringup`.
-
-Bring-up memory baseline remained:
-
-```text
-heap8    = 28592
-largest8 = 17396
-```
-
-Native renderer/cache regression contracts remained exact while the physical TFT
-used the tuned output profile:
-
-```text
-real walls framebuffer       = a6d87c4a
-walls + sprites framebuffer  = ffe0995e
-viewSprites list FNV         = 962cd657
-sprite request FNV           = 4457ac94
-shapeData                    = 0x0
-mediaTexels                  = 0x0
-```
-
-Bring-up hitbox diagnostics also remained operational:
-
-```text
-[HITBOX] MAIN overlay registered from final tap gate zones=4 framebuffer=untouched
-[HITBOX] OPTIONS overlay registered from Back/row hit constants zones=4 ...
-```
-
-Representative presentation timing with physical overlay:
-
-```text
-[VIDEO] Present ... + sat1.15: 44394 us
-[VIDEO] Present ... + sat1.15: 44323 us
-[VIDEO] Present ... + sat1.15: 44317 us
-[VIDEO] Present ... + sat1.15: 44310 us
-```
-
-Bring-up menu presentation with overlay is therefore about **44.3 ms**.
-
-Fast Back with bring-up diagnostics remained correct:
-
-```text
-[OPTIONBACK] FAST End framebufferFNV=58a11171 expected=58a11171
-runtimeFNV=58a11171 menu=1 selected=0 touchActive=1 repaintMs=157
-shapeData=0x0 mediaTexels=0x0
-```
-
-## Performance consequence
-
-The selected physical color transform adds roughly 8 ms to a normal full-screen
-present compared with the previous neutral path.
-
-Current measured values:
-
-```text
-old neutral Present          ~= 34.4 ms
-sat1.15 normal Present       ~= 42.7 ms
-sat1.15 bring-up + overlay   ~= 44.3 ms
-```
-
-This is acceptable for the current menu milestone. It is not forgotten: when the
-active gameplay loop is enabled, frame pacing should be measured before deciding
-whether the same transform needs a cheaper lookup/table implementation or another
-optimization.
-
-Do not move the correction into game palettes merely to recover this timing; the
-current architecture intentionally keeps rendering truth separate from panel
-calibration.
+Normal full-screen presentation remains about 42.7 ms; bring-up presentation
+with physical touch overlay is about 44.3 ms. This cost should be re-measured
+when the active intro/game loop begins.
 
 ## Two PlatformIO modes remain the architecture boundary
 
@@ -331,31 +404,26 @@ MENU_MAIN_OPTIONS model       = e1ef01f7
 MENU_MAIN_OPTIONS framebuffer = 6058d47d
 ```
 
-Current touch zones:
+Options Back remains:
 
 ```text
-Start Game logical x=28..119 y=67..78
-Options    logical x=28..119 y=79..90
-Help/About logical x=28..119 y=91..102
-Exit       logical x=28..119 y=103..114
-
 Back logical  x=15..119 y=65..78
 Back physical x=30..239 y=130..157
 ```
 
-## Normal loader boundary remains real
+## Normal menu-loader boundary before Start
 
-Normal boot still executes:
+Before Start is confirmed, normal boot still executes:
 
 ```text
 Render_beginLoadMap(MAP_MENU)
 Render_beginLoadMapData()
 ```
 
-The seventh original loading-bar callback remains the validated stop point after
+The seventh original loading-bar callback is the validated stop point after
 runtime structures are resident but before legacy monolithic graphics loading.
 
-Hardware runtime contract:
+Hardware runtime contract while MENU_MAIN is active:
 
 ```text
 nodes          = 53
@@ -369,8 +437,8 @@ planeTextures  = 11
 persistent used= 14092 B
 ```
 
-Normal mode suppresses the old five-box loading-bar TFT flicker while bring-up
-retains the historical behaviour.
+Those map/runtime resources are intentionally released only after an irreversible
+fresh Start confirmation.
 
 ## Native graphics recovery references
 
@@ -424,16 +492,25 @@ Hardware validated:
 - fast opaque Back repaint
 - no historical loading-bar flicker in normal mode
 - hardware-selected color profile: gamma 1.00 / saturation 1.15 / nearest
-- logical framebuffer hashes unchanged by color profile
+- native MENU_MAIN state synchronized to `ST_MENU`
+- fresh direct Start Game through the real `MenuSystem_select()` path
+- real `Player_reset()` contract
+- dead legal/menu runtime cleanup before intro allocation
+- all four original intro BMP assets resident successfully
+- real `ST_INTRO` state reached with prologue text loaded
+- post-intro-load heap8 `50712`, largest8 `13300`
 - `shapeData == NULL`
 - `mediaTexels == NULL`
 
 Still intentionally deferred:
 
+- driving/rendering the first active `ST_INTRO` frame
+- intro touch/key progression
+- first gameplay/map load after the intro
+- existing-save Continue / New Game submenu painter and action
 - Video/Input/Sound actions
 - Help/About and Exit real actions
-- Start Game / gameplay loader activation
 - active normal multi-frame game loop
 - gameplay controls
-- possible optimization of saturation cost if gameplay frame pacing needs it
+- possible optimization of saturation cost if active frame pacing needs it
 - audio
