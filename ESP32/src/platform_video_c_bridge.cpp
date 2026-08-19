@@ -9,6 +9,7 @@ extern "C" size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
     return PlatformVideo_framebufferSizeBytes();
 }
 
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 extern "C" void Esp32PlatformVideo_debugOverlayClear(void) {
     PlatformVideo_debugOverlayClear();
 }
@@ -40,3 +41,4 @@ extern "C" void Esp32PlatformVideo_debugOverlayMarkTouch(int16_t physicalX,
                                         rawX,
                                         rawY);
 }
+#endif
