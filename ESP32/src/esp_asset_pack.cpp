@@ -1,21 +1,21 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <string.h>
-#include <strings.h>
 
 #include "esp_asset_pack.h"
 
 namespace {
 
-constexpr uint8_t kMagic[8] = {'D', 'R', 'P', 'G', 'E', 'S', 'P', '1'};
-constexpr uint32_t kVersion = 1;
-constexpr size_t kHeaderBytes = 16;
-constexpr size_t kEntryBytes = 32;
+constexpr uint8_t kMagic[8] = {'D', 'R', 'P', 'G', 'E', 'S', 'P', '2'};
+constexpr uint32_t kVersion = ESP_ASSET_PACK_FORMAT_VERSION;
+constexpr size_t kHeaderBytes = 24;
+constexpr size_t kEntryBytes = 20;
 
 File packFile;
-EspAssetPackEntry entries[ESP_ASSET_PACK_MAX_ENTRIES];
-int entryCount = 0;
+uint32_t entryCount = 0;
 uint32_t packSize = 0;
+uint32_t indexOffset = 0;
+uint32_t dataOffset = 0;
 bool openReady = false;
 
 uint32_t readLe32(const uint8_t* data)
@@ -39,24 +39,66 @@ void resetState()
     if (packFile) {
         packFile.close();
     }
-    memset(entries, 0, sizeof(entries));
     entryCount = 0;
     packSize = 0;
+    indexOffset = 0;
+    dataOffset = 0;
     openReady = false;
+}
+
+void decodeEntry(const uint8_t* raw, EspAssetPackEntry* entry)
+{
+    entry->nameHash = readLe32(raw);
+    entry->offset = readLe32(raw + 4);
+    entry->size = readLe32(raw + 8);
+    entry->crc32 = readLe32(raw + 12);
+    entry->flags = readLe32(raw + 16);
 }
 
 bool validateEntry(const EspAssetPackEntry& entry)
 {
-    if (entry.name[0] == '\0') {
+    if (entry.nameHash == 0) {
         return false;
     }
-    if (entry.offset < kHeaderBytes) {
+    if (entry.offset < dataOffset || entry.offset > packSize) {
         return false;
     }
-    if (entry.offset > packSize || entry.size > packSize - entry.offset) {
+    if (entry.size > packSize - entry.offset) {
         return false;
     }
     return true;
+}
+
+bool readEntryAt(uint32_t index, EspAssetPackEntry* outEntry)
+{
+    uint8_t raw[kEntryBytes];
+
+    if (!packFile || outEntry == nullptr || index >= entryCount) {
+        return false;
+    }
+
+    const uint64_t absoluteOffset =
+        (uint64_t)indexOffset + ((uint64_t)index * (uint64_t)kEntryBytes);
+    if (absoluteOffset > UINT32_MAX || !packFile.seek((uint32_t)absoluteOffset)) {
+        return false;
+    }
+    if (!readExact(raw, sizeof(raw))) {
+        return false;
+    }
+
+    decodeEntry(raw, outEntry);
+    return validateEntry(*outEntry);
+}
+
+uint8_t normalizeNameByte(uint8_t value)
+{
+    if (value == '\\') {
+        return '/';
+    }
+    if (value >= 'A' && value <= 'Z') {
+        return (uint8_t)(value + ('a' - 'A'));
+    }
+    return value;
 }
 
 } // namespace
@@ -64,6 +106,8 @@ bool validateEntry(const EspAssetPackEntry& entry)
 int EspAssetPack_open(const char* path)
 {
     uint8_t header[kHeaderBytes];
+    uint32_t previousHash = 0;
+    bool havePreviousHash = false;
 
     resetState();
 
@@ -88,40 +132,51 @@ int EspAssetPack_open(const char* path)
         return 0;
     }
 
-    const uint32_t count = readLe32(header + 12);
-    if (count == 0 || count > ESP_ASSET_PACK_MAX_ENTRIES) {
+    entryCount = readLe32(header + 12);
+    indexOffset = readLe32(header + 16);
+    dataOffset = readLe32(header + 20);
+
+    if (entryCount == 0 || entryCount > ESP_ASSET_PACK_MAX_ENTRY_COUNT ||
+        indexOffset < kHeaderBytes || indexOffset > packSize) {
         resetState();
         return 0;
     }
 
     const uint64_t indexEnd =
-        (uint64_t)kHeaderBytes + ((uint64_t)count * (uint64_t)kEntryBytes);
-    if (indexEnd > packSize) {
+        (uint64_t)indexOffset + ((uint64_t)entryCount * (uint64_t)kEntryBytes);
+    if (indexEnd > packSize || dataOffset < indexEnd || dataOffset > packSize) {
         resetState();
         return 0;
     }
 
-    for (uint32_t i = 0; i < count; ++i) {
+    /* Validate the complete disk index once at open time. This is a sequential
+     * 20-byte scan: no resident index allocation and no payload reads.
+     */
+    if (!packFile.seek(indexOffset)) {
+        resetState();
+        return 0;
+    }
+
+    for (uint32_t i = 0; i < entryCount; ++i) {
         uint8_t raw[kEntryBytes];
+        EspAssetPackEntry entry;
+
         if (!readExact(raw, sizeof(raw))) {
             resetState();
             return 0;
         }
+        decodeEntry(raw, &entry);
 
-        memcpy(entries[i].name, raw, 16);
-        entries[i].name[16] = '\0';
-        entries[i].offset = readLe32(raw + 16);
-        entries[i].size = readLe32(raw + 20);
-        entries[i].crc32 = readLe32(raw + 24);
-        entries[i].flags = readLe32(raw + 28);
-
-        if (!validateEntry(entries[i]) || entries[i].offset < indexEnd) {
+        if (!validateEntry(entry) ||
+            (havePreviousHash && entry.nameHash <= previousHash)) {
             resetState();
             return 0;
         }
+
+        previousHash = entry.nameHash;
+        havePreviousHash = true;
     }
 
-    entryCount = (int)count;
     openReady = true;
     return 1;
 }
@@ -143,30 +198,75 @@ uint32_t EspAssetPack_fileSize(void)
 
 int EspAssetPack_entryCount(void)
 {
-    return openReady ? entryCount : 0;
+    return openReady ? (int)entryCount : 0;
+}
+
+uint32_t EspAssetPack_dataOffset(void)
+{
+    return openReady ? dataOffset : 0;
 }
 
 int EspAssetPack_getEntryByIndex(int index, EspAssetPackEntry* outEntry)
 {
-    if (!openReady || outEntry == nullptr || index < 0 || index >= entryCount) {
+    if (!openReady || index < 0) {
         return 0;
     }
-    *outEntry = entries[index];
-    return 1;
+    return readEntryAt((uint32_t)index, outEntry) ? 1 : 0;
+}
+
+uint32_t EspAssetPack_nameHash(const char* name)
+{
+    uint32_t hash = 2166136261U;
+    bool sawByte = false;
+
+    if (name == nullptr) {
+        return 0;
+    }
+
+    while (*name == '/' || *name == '\\') {
+        ++name;
+    }
+
+    while (*name != '\0') {
+        const uint8_t value = normalizeNameByte((uint8_t)*name++);
+        hash ^= value;
+        hash *= 16777619U;
+        sawByte = true;
+    }
+
+    return sawByte ? hash : 0;
 }
 
 int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* outEntry)
 {
-    if (!openReady || name == nullptr || outEntry == nullptr) {
+    uint32_t low = 0;
+    uint32_t high = entryCount;
+    const uint32_t wantedHash = EspAssetPack_nameHash(name);
+
+    if (!openReady || outEntry == nullptr || wantedHash == 0) {
         return 0;
     }
 
-    for (int i = 0; i < entryCount; ++i) {
-        if (strcasecmp(name, entries[i].name) == 0) {
-            *outEntry = entries[i];
+    while (low < high) {
+        const uint32_t mid = low + ((high - low) / 2U);
+        EspAssetPackEntry entry;
+
+        if (!readEntryAt(mid, &entry)) {
+            return 0;
+        }
+
+        if (entry.nameHash < wantedHash) {
+            low = mid + 1U;
+        }
+        else if (entry.nameHash > wantedHash) {
+            high = mid;
+        }
+        else {
+            *outEntry = entry;
             return 1;
         }
     }
+
     return 0;
 }
 
@@ -179,7 +279,7 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry,
         return 0;
     }
 
-    if (relativeOffset > entry->size ||
+    if (!validateEntry(*entry) || relativeOffset > entry->size ||
         length > (size_t)(entry->size - relativeOffset)) {
         return 0;
     }

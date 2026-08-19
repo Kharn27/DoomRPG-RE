@@ -4,6 +4,7 @@
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include "Z_Zip.h"
 
 #include "esp_asset_pack.h"
 #include "native_asset_pack_probe.h"
@@ -17,6 +18,8 @@ extern DoomRPG_t* doomRpg;
 #define PACKED_WALL_TEXTURE_BYTES 2048U
 #define WTEXELS_HEADER_BYTES 4U
 #define MEDIA_TEXEL_OFFSET_INT_COUNT 592
+#define ASSET_PACK_V2_HEADER_BYTES 24U
+#define ASSET_PACK_V2_ENTRY_BYTES 20U
 
 static int nativePackAttempted = 0;
 static int nativePackReady = 0;
@@ -47,16 +50,68 @@ static uint32_t fnv1a32(const byte* data, uint32_t length) {
     return hash;
 }
 
-static void printEntry(const EspAssetPackEntry* entry) {
-    if (entry == NULL) {
+static void printEntry(const char* name, const EspAssetPackEntry* entry) {
+    if (name == NULL || entry == NULL) {
         return;
     }
-    printf("[ASSETPAK] %-13s offset=%u size=%u crc32=%08x flags=%u\n",
-           entry->name,
+    printf("[ASSETPAK] %-16s hash=%08x offset=%u size=%u crc32=%08x flags=%u\n",
+           name,
+           (unsigned int)entry->nameHash,
            (unsigned int)entry->offset,
            (unsigned int)entry->size,
            (unsigned int)entry->crc32,
            (unsigned int)entry->flags);
+}
+
+static int validateFullPackAgainstZip(uint64_t* outPayloadBytes) {
+    uint64_t payloadBytes = 0;
+    int matched = 0;
+    int i;
+
+    if (outPayloadBytes == NULL || zipFile.entry == NULL || zipFile.entry_count <= 0) {
+        printf("[ASSETPAK] FAILED original ZIP directory is unavailable for full-pack cross-check\n");
+        return 0;
+    }
+
+    if (EspAssetPack_entryCount() != zipFile.entry_count) {
+        printf("[ASSETPAK] FAILED full-pack entry count=%d ZIP entries=%d\n",
+               EspAssetPack_entryCount(), zipFile.entry_count);
+        return 0;
+    }
+
+    for (i = 0; i < zipFile.entry_count; ++i) {
+        const zip_entry_t* zipEntry = &zipFile.entry[i];
+        EspAssetPackEntry packEntry;
+
+        if (zipEntry->name == NULL || zipEntry->name[0] == '\0' || zipEntry->usize < 0) {
+            printf("[ASSETPAK] FAILED invalid ZIP directory entry at index=%d\n", i);
+            return 0;
+        }
+
+        if (!EspAssetPack_findEntry(zipEntry->name, &packEntry)) {
+            printf("[ASSETPAK] FAILED pack missing ZIP entry index=%d name=%s\n",
+                   i, zipEntry->name);
+            return 0;
+        }
+
+        if (packEntry.size != (uint32_t)zipEntry->usize) {
+            printf("[ASSETPAK] FAILED size mismatch name=%s pack=%u ZIP=%d\n",
+                   zipEntry->name,
+                   (unsigned int)packEntry.size,
+                   zipEntry->usize);
+            return 0;
+        }
+
+        payloadBytes += packEntry.size;
+        ++matched;
+    }
+
+    *outPayloadBytes = payloadBytes;
+    printf("[ASSETPAK] FULL directory cross-check matched=%d/%d payload=%lluB\n",
+           matched,
+           zipFile.entry_count,
+           (unsigned long long)payloadBytes);
+    return 1;
 }
 
 int DoomRPG_probeNativeAssetPack(int resourcePlanReady) {
@@ -64,8 +119,12 @@ int DoomRPG_probeNativeAssetPack(int resourcePlanReady) {
     EspAssetPackEntry bitshapes;
     EspAssetPackEntry wtexels;
     EspAssetPackEntry stexels;
+    EspAssetPackEntry mappings;
+    EspAssetPackEntry menuBsp;
     byte wtexelsHeader[WTEXELS_HEADER_BYTES];
     byte* textureData;
+    uint64_t fullPayloadBytes;
+    uint64_t expectedPackBytes;
     uint32_t heapBeforeOpen;
     uint32_t heapAfterOpen;
     uint32_t heapBeforeTexture;
@@ -78,6 +137,7 @@ int DoomRPG_probeNativeAssetPack(int resourcePlanReady) {
     uint32_t textureReadOffset;
     uint32_t textureHash;
     uint32_t sourceDataSize;
+    uint32_t expectedDataOffset;
     int sourceTexelOffsetSigned;
     int textureIndex;
 
@@ -86,7 +146,7 @@ int DoomRPG_probeNativeAssetPack(int resourcePlanReady) {
     }
     nativePackAttempted = 1;
 
-    printf("\n=== Doom RPG ESP32-native asset pack probe ===\n");
+    printf("\n=== Doom RPG ESP32-native FULL asset pack probe ===\n");
 
     if (!resourcePlanReady) {
         printf("[ASSETPAK] Resource memory plan is not ready; probe skipped safely\n");
@@ -112,28 +172,69 @@ int DoomRPG_probeNativeAssetPack(int resourcePlanReady) {
            (unsigned int)largest8Block());
 
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
-        printf("[ASSETPAK] MISSING/INVALID %s\n", ESP_ASSET_PACK_DEFAULT_PATH);
-        printf("[ASSETPAK] Build it offline with ESP32/tools/build_asset_pack.py and copy it to the SD root\n");
+        printf("[ASSETPAK] MISSING/INVALID v2 %s\n", ESP_ASSET_PACK_DEFAULT_PATH);
+        printf("[ASSETPAK] Regenerate it with ESP32/tools/build_asset_pack.py and copy it to the SD root\n");
         return 0;
     }
 
     heapAfterOpen = heap8Free();
-    printf("[ASSETPAK] READY index entries=%d fileSize=%u heapCost=%dB\n",
+    expectedDataOffset = ASSET_PACK_V2_HEADER_BYTES +
+                         ((uint32_t)EspAssetPack_entryCount() * ASSET_PACK_V2_ENTRY_BYTES);
+
+    printf("[ASSETPAK] READY v2 entries=%d fileSize=%u dataOffset=%u heapCost=%dB\n",
            EspAssetPack_entryCount(),
            (unsigned int)EspAssetPack_fileSize(),
+           (unsigned int)EspAssetPack_dataOffset(),
            (int)heapBeforeOpen - (int)heapAfterOpen);
+    printf("[ASSETPAK] Index stays on SD: header=%uB records=%d x %uB total=%uB\n",
+           (unsigned int)ASSET_PACK_V2_HEADER_BYTES,
+           EspAssetPack_entryCount(),
+           (unsigned int)ASSET_PACK_V2_ENTRY_BYTES,
+           (unsigned int)expectedDataOffset);
 
-    if (!EspAssetPack_findEntry("bitshapes.bin", &bitshapes) ||
-        !EspAssetPack_findEntry("wtexels.bin", &wtexels) ||
-        !EspAssetPack_findEntry("stexels.bin", &stexels)) {
-        printf("[ASSETPAK] FAILED required heavy asset entries are missing\n");
+    if (EspAssetPack_dataOffset() != expectedDataOffset) {
+        printf("[ASSETPAK] FAILED unexpected v2 data offset=%u expected=%u\n",
+               (unsigned int)EspAssetPack_dataOffset(),
+               (unsigned int)expectedDataOffset);
         EspAssetPack_close();
         return 0;
     }
 
-    printEntry(&bitshapes);
-    printEntry(&wtexels);
-    printEntry(&stexels);
+    if (!validateFullPackAgainstZip(&fullPayloadBytes)) {
+        EspAssetPack_close();
+        return 0;
+    }
+
+    expectedPackBytes = (uint64_t)EspAssetPack_dataOffset() + fullPayloadBytes;
+    if (expectedPackBytes != (uint64_t)EspAssetPack_fileSize()) {
+        printf("[ASSETPAK] FAILED pack total=%u expected=%llu from index+ZIP payload\n",
+               (unsigned int)EspAssetPack_fileSize(),
+               (unsigned long long)expectedPackBytes);
+        EspAssetPack_close();
+        return 0;
+    }
+
+    printf("[ASSETPAK] FULL pack size proven index+payload=%lluB\n",
+           (unsigned long long)expectedPackBytes);
+
+    if (!EspAssetPack_findEntry("bitshapes.bin", &bitshapes) ||
+        !EspAssetPack_findEntry("wtexels.bin", &wtexels) ||
+        !EspAssetPack_findEntry("stexels.bin", &stexels) ||
+        !EspAssetPack_findEntry("mappings.bin", &mappings) ||
+        !EspAssetPack_findEntry("/MENU.BSP", &menuBsp)) {
+        printf("[ASSETPAK] FAILED required representative entries are missing\n");
+        EspAssetPack_close();
+        return 0;
+    }
+
+    printEntry("bitshapes.bin", &bitshapes);
+    printEntry("wtexels.bin", &wtexels);
+    printEntry("stexels.bin", &stexels);
+    printEntry("mappings.bin", &mappings);
+    printEntry("/MENU.BSP", &menuBsp);
+    printf("[ASSETPAK] Normalized lookup '/MENU.BSP' -> hash=%08x size=%u OK\n",
+           (unsigned int)menuBsp.nameHash,
+           (unsigned int)menuBsp.size);
 
     if (!EspAssetPack_readRange(&wtexels, 0, wtexelsHeader, sizeof(wtexelsHeader))) {
         printf("[ASSETPAK] FAILED reading wtexels.bin header\n");
@@ -242,12 +343,18 @@ int DoomRPG_probeNativeAssetPack(int resourcePlanReady) {
 
     EspAssetPack_close();
     heapAfterClose = heap8Free();
-    printf("[ASSETPAK] Closed pack heap8=%u deltaFromOpenStart=%d\n",
+    printf("[ASSETPAK] Closed FULL pack heap8=%u deltaFromOpenStart=%d\n",
            (unsigned int)heapAfterClose,
            (int)heapBeforeOpen - (int)heapAfterClose);
 
+    if (heapAfterClose != heapBeforeOpen) {
+        printf("[ASSETPAK] FAILED full-pack open/lookup/read cycle leaked heap\n");
+        return 0;
+    }
+
+    printf("[ASSETPAK] READY complete ZIP mirrored as directly seekable ESP32 pack\n");
     printf("[ASSETPAK] READY random-access real wall texture read with 2048B working set\n");
-    printf("[ASSETPAK] No ZIP inflate and no monolithic mediaTexels allocation executed\n");
+    printf("[ASSETPAK] No full-pack index allocation, ZIP inflate, or monolithic mediaTexels executed\n");
 
     nativePackReady = 1;
     return 1;
