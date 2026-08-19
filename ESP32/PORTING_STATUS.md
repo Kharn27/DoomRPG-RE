@@ -44,138 +44,196 @@ Display, no PSRAM) port. Update it after every hardware-validated increment.
     (`agent/esp32-native-asset-pack`, PR #13).
 15. Full ESP32-native asset pack v2: all 241 ZIP resources mirrored uncompressed
     behind a hash-sorted on-disk index, with 241/241 hardware cross-check and
-    exact heap recovery (`agent/esp32-full-native-asset-pack`, PR #14, merge
-    commit `fc2012b1a0b9e8e74058d9396ded8fceea68e168`).
+    exact heap recovery (`agent/esp32-full-native-asset-pack`, PR #14).
+16. Native on-demand bitshape source model: 112 unique menu shapes across 284
+    sprite references, zero resident `shapeData`, <=32-byte mask-column scratch,
+    exact heap recovery (`agent/esp32-native-bitshape-loader`, PR #15, merge
+    commit `76898e7990481cf630b293477958fe0c478f7f1a`).
 
 ## Current validated increment
 
-Branch: `agent/esp32-native-bitshape-loader`
+Branch: `agent/esp32-native-sprite-texel-probe`
 
 Status: **HARDWARE VALIDATED, READY TO MERGE**.
 
-Objective: determine and validate the ESP32-native bitshape representation for
-the real 284 menu sprite references without materializing `bitshapes.bin` and
-without inheriting the original renderer's large resident `shapeData` format.
+Objective: prove that real sprite texel payloads can be addressed and read
+directly from `stexels.bin` inside `DoomRPG-ESP32.pak`, measure the actual
+maximum single-sprite working set for the menu, and keep both legacy
+`shapeData` and monolithic `mediaTexels` absent.
 
-## Important discovery: legacy shapeData does not fit
+## Hardware-validated sprite texel source model
 
-The first safe hardware attempt measured the exact legacy representation before
-allocating it:
-
-```text
-[BITSHAPE] Begin refs=284 heap8=30688 largest8=21492
-[BITSHAPE] Pack open heap8=26312 largest8=21492 cost=4376B entrySize=62273
-[BITSHAPE] Preflight unique=112 shapeWords=27838 shapeData=55676B max=64x64 pitch=8B
-[BITSHAPE] Allocation preflight heap8=26312 largest8=21492 fitAggregate=NO fitContiguous=NO
-[BITSHAPE] REFUSED exact selected shapeData does not fit while pack is open
-```
-
-This refusal was intentional and did not crash the CYD. It proved that simply
-rebuilding the reverse-engineered `shapeData` structure from streamed source
-data would still preserve a PC/mobile-oriented memory model that cannot fit the
-target.
-
-The ESP32 design therefore changed on the same branch: `shapeData` is not part
-of the native bitshape runtime model.
-
-## Hardware-validated native bitshape source model
-
-The second hardware run keeps the original mapping offsets as **source offsets**
-into `bitshapes.bin` and reads only the current bitshape header/mask data from
-`DoomRPG-ESP32.pak`.
-
-Authoritative baseline:
+Authoritative starting point after the native bitshape walk:
 
 ```text
 [BITSHAPE] Begin refs=284 heap8=30688 largest8=21492 shapeData=0x0
-[BITSHAPE] Pack open heap8=26312 largest8=21492 cost=4376B entrySize=62273
-```
-
-Representative real sprite:
-
-```text
-[BITSHAPE] Sample sprite=0 sourceOffset=0 texelOffset=233472 bounds=1..63,44..63 mask=189B active=584 packed=292B refs=4
-```
-
-Complete real menu result:
-
-```text
 [BITSHAPE] Selected unique=112 refs=284 max=64x64 pitch=8B
 [BITSHAPE] Legacy expanded shapeData=55676B (27838 words) -> ESP32 resident=0B
-[BITSHAPE] Selected source masks=30813B, decoded one column at a time scratch<=32B
 [BITSHAPE] Exact selected sprite texels=143990B packed across 284 refs activePixels=287848
-[BITSHAPE] Source walk fnv1a=ed9c1179 mappings remain source offsets shapeData=0x0
+[BITSHAPE] Pack closed heap8=30688 largest8=21492 deltaFromStart=0
 ```
 
-The total 30,813 bytes of source masks and 143,990 bytes of selected packed
-sprite texels are **dataset sizes**, not resident allocations. The validated
-bitshape probe decodes one source column at a time with at most 32 bytes of mask
-scratch.
-
-## Heap recovery proof
-
-After the complete 112-unique-shape / 284-reference walk, the pack closes back
-to the exact starting heap and largest block:
+The sprite probe starts with the two forbidden legacy pools absent:
 
 ```text
-[BITSHAPE] Pack closed heap8=30688 largest8=21492 deltaFromStart=0
+[SPRITETEX] Begin refs=284 heap8=30688 largest8=21492 shapeData=0x0 mediaTexels=0x0
+```
+
+Opening the native pack still costs 4,376 bytes temporarily:
+
+```text
+[SPRITETEX] Pack open heap8=26312 largest8=21492 cost=4376B
+```
+
+The source layout is now hardware-proven:
+
+```text
+[SPRITETEX] Source bases wallData=116736B spriteBaseTexel=233472 stexelsHeader=126614 stexelsSize=126618B
+```
+
+`bitshapes.bin` stores sprite texel offsets in the same global logical texel
+space used by the original loader. The sprite region begins after the wall
+logical texel region, so the ESP32-native reader converts a sprite texel offset
+to a byte range inside `stexels.bin` without constructing `mediaTexels`.
+
+## Cross-check against the bitshape measurement
+
+The independent sprite-texel probe reproduces the exact dataset totals measured
+by the previous bitshape increment:
+
+```text
+[SPRITETEX] Selected unique=112 refs=284 packedTotal=143990B activePixels=287848
+```
+
+This matches:
+
+```text
+[BITSHAPE] Exact selected sprite texels=143990B packed across 284 refs activePixels=287848
+```
+
+The agreement between the two independent walks is the current consistency
+check for source bitshape decoding and sprite texel addressing.
+
+## Largest real menu sprite working set
+
+The largest selected sprite payload discovered on hardware is:
+
+```text
+[SPRITETEX] Largest sprite=172 sourceOffset=15749 texelOffset=292040 stexelsByteOffset=29288 bounds=64x64 active=3199 packed=1600B refs=1
+```
+
+Therefore the real menu worst-case **single sprite payload** is only:
+
+```text
+1,600 B packed
+```
+
+This is the important working-set result. The complete selected sprite dataset
+is 143,990 bytes, but no map-wide sprite texel pool is required merely to access
+one real sprite.
+
+## Bounded real payload read
+
+The 1,600-byte worst-case payload fits comfortably inside the validated menu
+heap boundary:
+
+```text
+[SPRITETEX] Payload preflight heap8=26312 largest8=21492 required=1600B fitAggregate=yes fitContiguous=yes
+```
+
+The actual allocator cost is 1,616 bytes:
+
+```text
+[SPRITETEX] Largest payload resident heap8=24696 largest8=21492 used=1616B
+```
+
+A real direct read from `stexels.bin` succeeds:
+
+```text
+[SPRITETEX] READ sprite=172 bytes=1600 fnv1a=0c0a7acd first=8e887997 last=77979709
+```
+
+After freeing the bounded payload, both free heap and largest block return
+exactly to the pre-payload values:
+
+```text
+[SPRITETEX] Released payload heap8=26312 largest8=21492 delta=0
+```
+
+After closing the pack, the complete probe returns to the exact starting heap
+layout:
+
+```text
+[SPRITETEX] Pack closed heap8=30688 largest8=21492 deltaFromStart=0
 ```
 
 Final hardware result:
 
 ```text
-[BITSHAPE] READY on-demand bitshape source model validated; legacy shapeData eliminated
-[BITSHAPE] Renderer integration will consume source header/mask directly from bounded cache
-[BITSHAPE] Render_loadTexels / monolithic mediaTexels still intentionally NOT executed
-[MAPSTRUCT] Native on-demand bitshape model validated; texel loading remains blocked
+[SPRITETEX] READY largest selected sprite payload read directly from stexels.bin
+[SPRITETEX] READY sprite working-set ceiling measured without shapeData or mediaTexels
+[SPRITETEX] Cache size intentionally NOT chosen until hardware result is known
+[MAPSTRUCT] Native sprite texel random-access probe complete; full texel loading remains blocked
 [MENUBSP] READY menu.bsp plan + real runtime structures validated
 ```
 
 Heartbeat remains stable afterwards:
 
 ```text
-[ALIVE] uptime=5004 ms heap=96504 heap8=30688 largest8=21492 ... MENUBSP=ready ...
-[ALIVE] uptime=10005 ms heap=96504 heap8=30688 largest8=21492 ... MENUBSP=ready ...
+[ALIVE] uptime=5000 ms heap=96504 heap8=30688 largest8=21492 ... MENUBSP=ready ...
+[ALIVE] uptime=10001 ms heap=96504 heap8=30688 largest8=21492 ... MENUBSP=ready ...
 ```
 
 Touch and shared-framebuffer presentation also remain operational.
 
 ## Architectural conclusion
 
-The original bitshape pipeline is now explicitly rejected on ESP32:
+The graphics dataset sizes remain far too large for map-wide resident pools:
 
 ```text
-bitshapes.bin (62,273 B)
-        |
-        v
-whole-file inflate
-        |
-        v
-shapeData for selected menu shapes (55,676 B resident)
+legacy selected shapeData          = 55,676 B
+selected source bitshape masks     = 30,813 B
+selected packed sprite texels      = 143,990 B
+wall-only legacy mediaTexels       = 172,032 B
 ```
 
-The validated ESP32-native model is:
+But the newly measured menu working sets are small:
 
 ```text
-mappings.bin source offsets
+bitshape mask scratch              <= 32 B
+largest selected sprite payload     = 1,600 B
+one packed wall texture             = 2,048 B
+```
+
+This strongly supports an ESP32-native renderer architecture based on bounded
+on-demand resource consumers rather than original map-wide expanded graphics
+pools.
+
+Validated source path for sprites:
+
+```text
+mediaBitShapeOffsets source offset
         |
         v
 DoomRPG-ESP32.pak / bitshapes.bin
         |
-        +--> read 12-byte shape header
-        +--> read one mask column at a time (<= 32 B scratch)
-        +--> derive bounds / active pixels / sprite texel range
+        +--> 12-byte shape header
+        +--> bounded mask decode
+        +--> global sprite texel offset
         |
         v
-future bounded renderer/cache consumer
+convert against wall logical base
+        |
+        v
+DoomRPG-ESP32.pak / stexels.bin
+        |
+        v
+bounded packed sprite payload (<= 1,600 B for menu)
 ```
 
-`mediaBitShapeOffsets` therefore remain source-resource offsets on ESP32 rather
-than being rewritten into offsets inside a resident `shapeData` array.
-
-This is a deliberate platform architecture divergence from DoomRPG-RE. Game
-behaviour and data compatibility remain the reference; the reverse-engineered
-resident representation is not sacred.
+No cache slot count or eviction policy has been chosen yet. The cache design
+must follow measured renderer access behaviour, not simply the maximum dataset
+size.
 
 ## Current authoritative memory boundary
 
@@ -187,25 +245,20 @@ heap8=30,688 B
 largest8=21,492 B
 ```
 
-Temporary cost while the Arduino SD `File` for the pack is open:
+Temporary native-pack open cost:
 
 ```text
 4,376 B
 ```
 
-This temporary cost is fully recovered on close.
-
-Important measured datasets that must **not** become monolithic RAM pools:
+Worst-case measured single-sprite payload allocation:
 
 ```text
-legacy selected shapeData          = 55,676 B
-selected source bitshape masks     = 30,813 B
-selected packed sprite texels      = 143,990 B
-wall-only legacy mediaTexels       = 172,032 B
+requested payload                  = 1,600 B
+allocator-observed cost            = 1,616 B
 ```
 
-These measurements strongly require bounded caches / on-demand consumers rather
-than map-wide resident graphics pools.
+All temporary memory is fully recovered after release/close.
 
 ## Current safe stop boundary
 
@@ -217,12 +270,14 @@ Validated and executed:
 - real nodes, lines, sprites, events, bytecodes and resource reference lists
 - full 241-entry native asset pack validation
 - direct random-access read of a real menu wall texture
-- exact enumeration of the 112 unique bitshapes used by 284 menu sprite refs
-- direct source-header and source-mask reads from `bitshapes.bin` inside the pack
-- exact selected sprite texel requirement measurement
-- 32-byte maximum mask-column scratch model
+- exact enumeration of 112 unique bitshapes used by 284 menu sprite refs
 - zero resident `shapeData`
-- exact heap recovery after complete native bitshape source walk
+- direct source-header and source-mask reads from `bitshapes.bin`
+- exact selected sprite texel dataset measurement: 143,990 B
+- independent sprite texel address cross-check against the same 143,990 B total
+- exact largest selected sprite payload measurement: 1,600 B
+- real direct 1,600-byte read from `stexels.bin`
+- exact payload and pack heap recovery
 
 Still intentionally NOT executed / integrated:
 
@@ -230,7 +285,7 @@ Still intentionally NOT executed / integrated:
 - original `Render_loadTexels()`
 - monolithic `shapeData`
 - monolithic `mediaTexels`
-- native sprite texel cache / source reader used by the real renderer
+- native sprite cache used by the real renderer
 - native wall-texture cache used by the real renderer
 - direct bitshape source consumption inside sprite rasterization
 - completion of map graphics loading
@@ -239,20 +294,19 @@ Still intentionally NOT executed / integrated:
 
 ## Recommended next increment after merge
 
-Do **not** try another map-wide graphics allocation.
+The next increment can now stop measuring file format semantics and begin
+building the first reusable **ESP32-native sprite resource consumer** for the
+renderer.
 
-The next graphics increment should use the newly proven source model to build a
-small reusable native sprite/bitshape consumer boundary. A good first target is
-one real sprite: resolve its source bitshape metadata, its `stexels.bin` source
-range, read only that bounded sprite payload, and validate the bytes/heap without
-modifying the full renderer yet.
+Do not allocate 143,990 bytes and do not choose a large fixed cache blindly.
+Use the proven 1,600-byte maximum selected payload plus actual renderer access
+patterns to design a small bounded cache or decode buffer. The first integration
+should remain narrow: one existing renderer sprite path should consume native
+bitshape metadata and packed sprite texels without `shapeData` or `mediaTexels`.
 
-That measurement should establish the practical maximum single-sprite working
-set before choosing cache slot count and eviction policy. Cache capacity must be
-chosen from measured real access/size data, not guessed in advance.
-
-Walls should follow the same philosophy already proven by the 2,048-byte wall
-texture random-access test.
+A similarly bounded wall path has already been proven with a 2,048-byte packed
+wall texture and should eventually share the same resource-management
+philosophy.
 
 ## Increment discipline
 
