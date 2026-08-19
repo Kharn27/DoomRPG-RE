@@ -10,6 +10,7 @@
 #include "map_runtime_structure_probe.h"
 #include "native_asset_pack_probe.h"
 #include "native_bitshape_loader.h"
+#include "native_graphics_resource_manager.h"
 #include "native_palette.h"
 #include "native_sprite_render_consumer.h"
 #include "native_sprite_texel_probe.h"
@@ -28,6 +29,12 @@ extern DoomRPG_t* doomRpg;
 #define EXPECTED_MENU_EVENTS 15
 #define EXPECTED_STRUCTURAL_PAYLOAD 13980U
 #define EXPECTED_LARGEST_STRUCTURAL_ALLOC 4096U
+
+#define EXPECTED_GFXRM_SPRITE_LOADS 1U
+#define EXPECTED_GFXRM_WALL_LOADS 1U
+#define EXPECTED_GFXRM_PACK_OPEN_CYCLES 2U
+#define EXPECTED_GFXRM_LOGICAL_BYTES 4160U
+#define EXPECTED_GFXRM_PEAK_FRAME_BYTES 2112U
 
 static int probeAttempted = 0;
 static int probeReady = 0;
@@ -130,6 +137,7 @@ void __wrap_DoomCanvas_updateLoadingBar(DoomCanvas_t* doomCanvas) {
 
 int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     Render_t* render;
+    EspNativeGraphicsStats graphicsStats;
     boolean beginResult;
     int jumpResult;
     uint32_t heapBefore;
@@ -295,21 +303,41 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
         return 0;
     }
 
-    printf("[MAPSTRUCT] Native RGB565 palette ready; rendering one native sprite\n");
+    EspNativeGraphics_resetStats();
+    printf("[GFXRM] Stats reset; shared backend will serve sprite then wall\n");
+    printf("[MAPSTRUCT] Native RGB565 palette ready; rendering one native sprite through GFXRM\n");
 
     if (!DoomRPG_probeNativeSpriteRenderConsumer(render)) {
         printf("[MAPSTRUCT] FAILED ESP32-native sprite render consumer\n");
         return 0;
     }
 
-    printf("[MAPSTRUCT] Native sprite render consumer complete; rendering one native wall texture\n");
+    printf("[MAPSTRUCT] Native sprite render consumer complete; rendering one native wall through GFXRM\n");
 
     if (!DoomRPG_probeNativeWallRenderConsumer(render)) {
         printf("[MAPSTRUCT] FAILED ESP32-native wall render consumer\n");
         return 0;
     }
 
-    printf("[MAPSTRUCT] Native wall render consumer complete; full map texel loading remains blocked\n");
+    EspNativeGraphics_getStats(&graphicsStats);
+    printf("[GFXRM] Session stats spriteLoads=%u wallLoads=%u packOpenCycles=%u logicalBytes=%u peakFrame=%u\n",
+           (unsigned int)graphicsStats.spriteLoads,
+           (unsigned int)graphicsStats.wallLoads,
+           (unsigned int)graphicsStats.packOpenCycles,
+           (unsigned int)graphicsStats.logicalBytesLoaded,
+           (unsigned int)graphicsStats.peakFrameBytes);
+
+    if (graphicsStats.spriteLoads != EXPECTED_GFXRM_SPRITE_LOADS ||
+        graphicsStats.wallLoads != EXPECTED_GFXRM_WALL_LOADS ||
+        graphicsStats.packOpenCycles != EXPECTED_GFXRM_PACK_OPEN_CYCLES ||
+        graphicsStats.logicalBytesLoaded != EXPECTED_GFXRM_LOGICAL_BYTES ||
+        graphicsStats.peakFrameBytes != EXPECTED_GFXRM_PEAK_FRAME_BYTES) {
+        printf("[GFXRM] FAILED shared backend accounting changed\n");
+        return 0;
+    }
+
+    printf("[GFXRM] READY one shared backend served sprite + wall with zero persistent cache allocation\n");
+    printf("[MAPSTRUCT] Native graphics resource manager validated; full map texel loading remains blocked\n");
     probeReady = 1;
     return 1;
 }
