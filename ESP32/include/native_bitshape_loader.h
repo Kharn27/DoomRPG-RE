@@ -8,14 +8,17 @@ extern "C" {
 #endif
 
 /*
- * Rebuild the selected map bitshape metadata directly from the ESP32-native
- * asset pack. The large bitshapes.bin payload remains on SD; only the exact
- * shapeData required by render->mapSpriteTexels is kept resident.
+ * Validate the ESP32-native on-demand bitshape model for the currently
+ * selected map sprites.
  *
- * On success this intentionally performs the same logical remap as the
- * original Render_loadBitShapes(): mapSpriteTexels is sorted by source shape
- * offset and mediaBitShapeOffsets entries for selected sprites are rewritten
- * to offsets inside render->shapeData.
+ * Unlike the original Render_loadBitShapes(), this does NOT build the expanded
+ * render->shapeData table. mediaBitShapeOffsets keeps its original source
+ * offsets from mappings.bin, bitshapes.bin remains on SD, and masks are decoded
+ * one column at a time with a bounded <=32-byte scratch buffer.
+ *
+ * This routine also derives the exact packed sprite-texel payload implied by
+ * the selected bitshape masks. Renderer integration is intentionally deferred
+ * to a later increment; Render_loadTexels() remains blocked.
  */
 int DoomRPG_loadNativeBitShapes(struct Render_s* render);
 
