@@ -2,6 +2,7 @@
 
 #include "board_config.h"
 #include "platform_touch_events.h"
+#include "platform_video.h"
 
 namespace {
 constexpr uint32_t kTapReleaseDebounceMs = 50;
@@ -71,6 +72,17 @@ bool PlatformInput::readTouch(PlatformTouchPoint& point) {
     if (!tapDelivered_) {
         tapDelivered_ = true;
         releaseSince_ = 0;
+
+        /* Bring-up diagnostics observe the semantic calibrated press before any
+         * menu gate can suppress ARM/CONFIRM delivery. The normal environment
+         * compiles this hook as a no-op.
+         */
+        PlatformVideo_debugOverlayMarkTouch(point.x,
+                                            point.y,
+                                            point.pressure,
+                                            point.rawX,
+                                            point.rawY);
+
         if (gTapCallback != nullptr) {
             gTapCallback(point.x, point.y, point.pressure, point.rawX, point.rawY);
         }
