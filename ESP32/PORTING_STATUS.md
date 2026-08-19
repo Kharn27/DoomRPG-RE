@@ -32,252 +32,250 @@ Display, no PSRAM) port. Update it after every hardware-validated increment.
 10. Real `/menu.bsp` ZIP load/inflate + exact fixed 33-byte header parse
     (`agent/esp32-menu-bsp-preflight`, PR #9).
 11. Complete byte-for-byte parse of `menu.bsp` and exact ESP32 structural
-    allocation plan (`agent/esp32-menu-bsp-structure-plan`, PR #10, merge
-    commit `f564e38bc205ce21116d3d866a6fdf2646d62965`).
+    allocation plan (`agent/esp32-menu-bsp-structure-plan`, PR #10).
+12. Real `Render_beginLoadMap(MAP_MENU)` + real structural portion of
+    `Render_beginLoadMapData()`, stopped exactly before graphics resources
+    (`agent/esp32-menu-map-runtime-structures`, PR #11, merge commit
+    `12e64c464e8dcfc477515a38955de116c69a8730`).
 
 ## Current validated increment
 
-Branch: `agent/esp32-menu-map-runtime-structures`
+Branch: `agent/esp32-menu-resource-memory-plan`
 
 Status: **HARDWARE VALIDATED, READY TO MERGE**.
 
-Objective: execute the real `Render_beginLoadMap(MAP_MENU)` and the real
-structural portion of `Render_beginLoadMapData()`, keep the resulting runtime
-map structures resident, and stop exactly before `Render_loadBitShapes()` /
-`Render_loadTexels()`.
+Objective: measure the graphics-resource memory boundary implied by the real
+menu-map reference lists without executing `Render_loadBitShapes()` or
+`Render_loadTexels()` and without deliberately triggering OOM.
 
-No source-tree engine file is modified. The ESP32 build uses GNU linker wrapping
-of `DoomCanvas_updateLoadingBar()`. The wrapper is pass-through during normal
-startup and is armed only around `Render_beginLoadMapData()`. At the seventh
-loading-bar call, after the BSP has been fully parsed and freed and immediately
-before bitshape loading, the probe returns via a controlled `longjmp`.
+The real runtime map structures remain resident while this probe executes.
 
-## Validated starting plan
+## Authoritative post-structure baseline
 
-Previous hardware plan for the structural phase:
+Hardware state entering the resource probe:
 
 ```text
-[BSPPLAN] nodes=53
-[BSPPLAN] lines=120
-[BSPPLAN] mapSprites=44 runtimeSprites=68
-[BSPPLAN] events=15
-[BSPPLAN] byteCodes=15
-[BSPPLAN] strings=0
-[BSPPLAN] Structural payload=13980B largestAlloc=4096B
+[RESOURCEPLAN] Begin heap8=30736 largest8=21492 refs textures=84 sprites=284 planes=11
 ```
 
-ESP32 runtime sizes:
+So the current graphics stage starts with:
+
+- free MALLOC_CAP_8BIT heap: 30,736 bytes
+- largest contiguous block: 21,492 bytes
+- wall/floor texture refs: 84
+- sprite/bitshape refs: 284
+- plane textures: 11
+
+## Real graphics resource sizes
+
+ZIP metadata measured on the real SD archive:
 
 ```text
-sizeof(Node_t)=44
-sizeof(Line_t)=32
-sizeof(Sprite_t)=36
-sizeof(void*)=4
-sizeof(int)=4
+[RESOURCEPLAN] bitshapes.bin c=21708 u=62273 inflateTransient=94973B
+[RESOURCEPLAN] wtexels.bin   c=53235 u=116740 inflateTransient=180967B
+[RESOURCEPLAN] stexels.bin   c=96145 u=126618 inflateTransient=233755B
 ```
 
-## Real Render_beginLoadMap result
-
-Hardware baseline at the start of the real map-runtime probe:
+The current ESP32 ZIP path is a whole-file loader. Its deflate transient set is:
 
 ```text
-[MAPSTRUCT] Begin heap8=44836 largest8=23540 plannedPayload=13980 largestAlloc=4096
+compressed payload + decompressed payload + 10,992-byte miniz state
 ```
 
-The real engine path is called:
+Therefore none of these three resources can currently be whole-file inflated
+with the post-structure heap budget. `bitshapes.bin` alone needs a 62,273-byte
+contiguous output buffer and roughly 94,973 bytes aggregate during inflation.
+
+This is a loader-architecture boundary, not a failure of the BSP/game-state
+runtime structures.
+
+## Proven mediaTexels wall
+
+The original `Render_loadTexels()` computes the wall-texture part of
+`render->mediaTexels` as:
 
 ```text
-[MAPSTRUCT] -> Render_beginLoadMap(MAP_MENU)
----Render_loadMappings---
-[ZIP] read mappings.bin method=8 c=2156 u=8392
-[ZIP] inflate mappings.bin c=2156 u=8392 state=10992
----Render_beginLoadMap---
-[ZIP] read menu.bsp method=8 c=1401 u=4494
-[ZIP] inflate menu.bsp c=1401 u=4494 state=10992
-[MAPSTRUCT] Render_beginLoadMap result=1 heap8=40324 largest8=27636 ioBuffer=0x3fff7fac pos=33
+mapTextureTexelsCount * 64 * 64 / 2
 ```
 
-The header cursor is exactly 33 as expected and the real decompressed BSP is
-retained as `Render_t::ioBuffer` before the data phase.
-
-Note: `Render_beginLoadMap()` reloads the mappings. The previous mapping arrays
-are freed/reallocated rather than permanently duplicated. The resulting heap
-layout happens to improve the largest contiguous block from 23,540 to 27,636
-bytes while the BSP is resident.
-
-## Real Render_beginLoadMapData structural phase
-
-The original engine function runs unchanged:
+The real menu map has 84 referenced textures, therefore:
 
 ```text
-[MAPSTRUCT] -> real Render_beginLoadMapData(), armed stop before bitshapes
----Render_beginLoadMapData---
-[SDL] Sharing platform framebuffer: 38400 bytes
-[VIDEO] Present 160x120 -> 320x240 exact 2x: 34472 us
+84 * 64 * 64 / 2 = 172032 bytes
 ```
 
-The controlled boundary is reached exactly at loading-bar call 7:
+Hardware probe output:
 
 ```text
-[MAPSTRUCT] Boundary reached before bitshapes/texels loadingBarCalls=7 heap8=30744 largest8=21492
+[RESOURCEPLAN] Render_loadTexels wall payload=172032B (84 x 2048B)
+[RESOURCEPLAN] Render_loadTexels sprite-size scratch=1136B
+[RESOURCEPLAN] mediaTexels lowerBound=172032B before ANY sprite texels
+[RESOURCEPLAN] TEXEL WALL proven: lowerBound exceeds largest8 by 150540B
 ```
+
+This is a decisive result: the original monolithic `mediaTexels` allocation is
+mathematically impossible on this no-PSRAM CYD even before adding a single
+sprite texel.
 
 At this point:
 
-- the full BSP structural data has been consumed
-- `render->ioBuffer` has been freed and cleared by the probe path
-- nodes, lines, sprites, events and bytecode are real engine allocations
-- blockmap and plane texture maps have been consumed
-- map texture/sprite reference lists are populated
-- `Render_loadBitShapes()` has NOT executed
-- `Render_loadTexels()` has NOT executed
-
-## Real runtime counts
-
-The real engine-produced values exactly match the preflight plan:
-
 ```text
-[MAPSTRUCT] Real runtime counts nodes=53 lines=120 mapSprites=44 runtimeSprites=68 events=15
+mediaTexels wall-only lower bound = 172032 B
+largest contiguous heap block     =  21492 B
+shortfall                          = 150540 B
 ```
 
-Persistent pointers are all valid:
+Adding sprite texels would only increase the required allocation.
+
+## Bitshape preflight result
+
+The probe deliberately does not call the original bitshape loader because the
+current whole-file ZIP loader cannot safely produce the 62,273-byte decompressed
+`bitshapes.bin` buffer:
 
 ```text
-[MAPSTRUCT] Persistent pointers nodes=0x3ffe3400 lines=0x3ffe6074 sprites=0x3fffa15c events=0x3ffb6310 byteCode=0x3ffdf8e0
+[RESOURCEPLAN] BITSHAPE PREFLIGHT blocked: current whole-file loader cannot safely inflate bitshapes.bin
+[RESOURCEPLAN] Exact shapeData/sprite-texel contribution intentionally not inspected
 ```
 
-`menu.bsp` contains no strings, as previously parsed.
+This does NOT yet prove that the final selected `shapeData` itself is too large.
+It proves that the current implementation cannot get to the sizing pass because
+it first materializes the entire `bitshapes.bin` file in RAM.
 
-## Measured structural memory cost
+A streaming/ranged resource reader is therefore required before the exact
+selected bitshape payload can be measured safely.
 
-The validated raw payload prediction was 13,980 bytes.
+## Original Render_loadTexels scratch leak
 
-Real hardware result:
+The source allocates:
 
 ```text
-[MAPSTRUCT] Persistent real structures used=14092B planPayload=13980B overhead=112B
+mapSpriteTexelsCount * sizeof(int)
+= 284 * 4
+= 1136 bytes
 ```
 
-So allocator/bookkeeping overhead for the complete real structural phase is only
-112 bytes.
+for its sprite-size scratch array and does not free that temporary buffer before
+successful return.
 
-Authoritative post-structure memory baseline:
+Probe output:
 
 ```text
-heap8=30744
-largest8=21492
+[RESOURCEPLAN] NOTE original Render_loadTexels() allocates 1136B sprite-size scratch and does not free it
 ```
 
-This is now the starting memory budget for bitshape/texel work.
-
-## Resource-reference counts for the next stage
-
-The real structural loader also produced the exact graphics reference lists:
-
-```text
-[MAPSTRUCT] Resource refs mapTextures=84 mapSprites=284 planeTextures=11
-[MAPSTRUCT] Scratch refs textures=0x3ffe2ff0 sprites=0x3fff914c counts=84/284 planes=11
-```
-
-These are critical for the next increment:
-
-- unique/selected map wall/floor texture references: 84 entries
-- sprite/bitshape references: 284 entries
-- plane texture IDs used by the menu BSP: 11
-
-The 1,024-byte `mapTextureTexels` and 4,096-byte `mapSpriteTexels` scratch arrays
-remain resident at this boundary because the original `Render_beginLoadMapData()`
-only frees them after bitshape/texel loading completes.
+Do not fix this in isolation yet; the entire ESP32 texel loader must be redesigned
+anyway. The future ESP32 path should not carry this leak forward.
 
 ## Final hardware result
 
 ```text
-[MAPSTRUCT] Probe-stop returned from real loader boundary=reached calls=7 heap8=30744 largest8=21492
-[MAPSTRUCT] READY real menu structures resident heap8=30744 largest8=21492
-[MAPSTRUCT] Render_loadBitShapes / Render_loadTexels intentionally NOT executed
-[MENUBSP] READY menu.bsp plan + real runtime structures validated
-[MENUBSP] Bitshapes / texels still intentionally NOT executed
+[RESOURCEPLAN] Current texel allocation fit aggregate=NO contiguous=NO (wall lower bound alone is sufficient)
+[RESOURCEPLAN] READY resource budget measured; heavy graphics loaders remain blocked
+[RESOURCEPLAN] Render_loadBitShapes / Render_loadTexels still NOT executed
+[MAPSTRUCT] Resource memory plan complete; heavy graphics loaders remain blocked
 ```
 
-Heartbeat remains stable:
+Heartbeat remains stable with the real map runtime structures resident:
 
 ```text
-[ALIVE] ... heap=96560 heap8=30744 largest8=21492 ... RENDER=ready MAPPINGS=ready MENUBSP=ready ...
+[ALIVE] ... heap=96552 heap8=30736 largest8=21492 ... MENUBSP=ready ...
 ```
 
-Touch and the shared framebuffer remain operational after the real map
-structures become resident.
+Touch and shared-framebuffer presentation also remain operational.
 
 This branch therefore passes its hardware merge gate.
 
-## Major memory work already validated
+## Feasibility conclusion at this boundary
 
-- shared 160x120 RGB565 platform / SDL / Render framebuffer: 38,400 bytes total
-- desktop duplicate `piDIB` / Render framebuffer allocations removed on ESP32
-- packed indexed BMP 1/4/8-bpp storage and zero-copy texture ownership
-- approximately 52 KB recovered at the DoomCanvas layout boundary
-- miniz 10,992-byte decompressor state moved from loopTask stack to heap
-- desktop `mediaPlanes[24][64*64]` removed from ESP32 `Render_t`
-- persistent mappings payload: 8,376 bytes / measured 8,440 bytes
-- complete real menu runtime structural state: measured 14,092 bytes
+The classic no-PSRAM CYD is still a viable target, but the port can no longer
+follow DoomRPG-RE's original graphics loading model.
+
+Already proven to fit and run on the real board:
+
+- full core object graph
+- HUD/layout resources
+- prerender/menu/entity resources
+- shared 160x120 framebuffer
+- palettes and sine table
+- mappings
+- complete menu BSP parsing
+- real nodes/lines/sprites/events/bytecodes map structures
+
+The blocker is specifically the original graphics resource strategy:
+
+1. whole-file inflate of 60-126 KB resources
+2. one monolithic `mediaTexels` buffer of at least 172 KB for this map
+
+Both assumptions must be replaced on ESP32.
+
+The likely ESP32 architecture is:
+
+- stream/range-decompress resource data instead of materializing complete BIN
+  files
+- keep mapping/index metadata resident
+- retain only the bitshape metadata actually required by the current map
+- fetch/decode wall/sprite packed 4-bpp texels on demand or through a small
+  bounded cache
+- keep plane texture references as already-specialized compact IDs
+- never create the desktop/mobile monolithic `mediaTexels` pool
+
+Doom RPG is turn-based and renders a 160x80 gameplay viewport, which makes a
+small texture cache / on-demand SD-backed resource path much more plausible than
+for a high-frame-rate conventional Doom renderer.
+
+Audio remains out of scope during this memory-critical bring-up. It is optional
+for eventual functionality and should only be reconsidered after the full menu
+map and game loop are stable.
 
 ## Current safe stop boundary
 
 Validated and executed:
 
-- core object graph
-- `DoomCanvas_startup()` / HUD / layout
-- pre-render startup resources
-- real `Render_startup()`
-- `Game_loadConfig()` first-boot path
-- real persistent `Render_loadMappings()`
+- complete engine startup through mappings
 - real `Render_beginLoadMap(MAP_MENU)`
-- real structural portion of `Render_beginLoadMapData()`
-- real nodes, lines, sprites, events, bytecodes and texture/sprite reference lists
-- BSP buffer consumption and release
+- real structural `Render_beginLoadMapData()` phase
+- real nodes, lines, sprites, events, bytecodes and resource reference lists
+- resource-memory diagnostic against real map references
 
 Still intentionally NOT executed:
 
-- `Render_loadBitShapes()` / `/bitshapes.bin`
-- `Render_loadTexels()` / `/wtexels.bin` / `/stexels.bin`
-- final media texel / shape-data persistent buffers
-- completion of `Render_beginLoadMapData()`
-- game entities / player spawning for the map
+- real `Render_loadBitShapes()`
+- real `Render_loadTexels()`
+- whole-file `bitshapes.bin`, `wtexels.bin`, `stexels.bin` loading
+- monolithic `mediaTexels`
+- completion of map graphics loading
+- game entities/player spawning
 - main game loop
 
 ## Recommended next increment after merge
 
-Start a new branch from the newly merged `main` and preflight the exact graphics
-payload implied by the real reference lists before allowing either graphics
-loader to allocate.
+Do NOT attempt either original graphics loader.
 
-Recommended order:
+Start a new branch from the newly merged `main` and attack the resource-reader
+architecture first.
 
-1. inspect `/bitshapes.bin`, `/wtexels.bin`, `/stexels.bin` compressed and
-   uncompressed ZIP sizes
-2. using the already-populated real `mapSpriteTexels[284]` and mapping offsets,
-   reproduce the first sizing pass of `Render_loadBitShapes()` and calculate the
-   exact `shapeData` allocation size
-3. using the real `mapTextureTexels[84]`, `mapSpriteTexels[284]` and mapping
-   tables, reproduce the sizing pass of `Render_loadTexels()` and calculate the
-   exact `mediaTexels` allocation size
-4. include transient ZIP/miniz requirements while the current runtime structures
-   remain resident
-5. compare all individual allocations with the current largest block
-6. do not execute the real graphics loaders until the plan is proven safe
+Recommended next objective:
 
-Authoritative starting budget for the next increment:
+1. inspect ZIP reader internals and the ZIP entry format already indexed on SD
+2. design an ESP32-only streaming/ranged reader for a compressed entry that does
+   not allocate the entire uncompressed output
+3. prove it first on `bitshapes.bin` with a tiny fixed output window
+4. use that reader to walk only the referenced 284 bitshape records and calculate
+   exact selected `shapeData` + sprite texel payload without whole-file inflate
+5. keep all current real runtime map structures resident during the test
+6. continue to leave texel loading blocked
+
+Authoritative starting budget:
 
 ```text
-heap8=30744
+heap8=30736
 largest8=21492
-mapTextureTexelsCount=84
-mapSpriteTexelsCount=284
-planeTexturesCnt=11
+bitshapes.bin c=21708 u=62273
+wtexels.bin c=53235 u=116740
+stexels.bin c=96145 u=126618
+wall mediaTexels lower bound=172032
 ```
-
-This is the first point where bitshape/texel payload size, rather than BSP
-structure size, is expected to be the main memory risk.
 
 ## Increment discipline
 
