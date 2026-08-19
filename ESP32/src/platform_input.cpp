@@ -27,6 +27,15 @@ bool PlatformInput::touched() {
 
     if (active) {
         releaseSince_ = 0;
+
+        /* Deliver semantic input immediately on the press edge. The legacy
+         * Serial diagnostic reads coordinates only every ~80 ms; menu input
+         * must not inherit that throttle or short taps could be missed.
+         */
+        if (!tapDelivered_) {
+            PlatformTouchPoint point{};
+            (void)readTouch(point);
+        }
     }
     else if (tapDelivered_) {
         if (releaseSince_ == 0) {
