@@ -10,6 +10,8 @@
 #include "map_runtime_structure_probe.h"
 #include "native_asset_pack_probe.h"
 #include "native_bitshape_loader.h"
+#include "native_palette.h"
+#include "native_sprite_render_consumer.h"
 #include "native_sprite_texel_probe.h"
 #include "resource_memory_plan_probe.h"
 
@@ -285,7 +287,21 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
         return 0;
     }
 
-    printf("[MAPSTRUCT] Native sprite texel random-access probe complete; full texel loading remains blocked\n");
+    printf("[MAPSTRUCT] Native sprite texel random-access probe complete; normalizing native palette\n");
+
+    if (!DoomRPG_prepareNativePalette(render)) {
+        printf("[MAPSTRUCT] FAILED ESP32-native palette normalization\n");
+        return 0;
+    }
+
+    printf("[MAPSTRUCT] Native RGB565 palette ready; rendering one native sprite\n");
+
+    if (!DoomRPG_probeNativeSpriteRenderConsumer(render)) {
+        printf("[MAPSTRUCT] FAILED ESP32-native sprite render consumer\n");
+        return 0;
+    }
+
+    printf("[MAPSTRUCT] Native sprite render consumer complete; full map texel loading remains blocked\n");
     probeReady = 1;
     return 1;
 }

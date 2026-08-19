@@ -153,19 +153,18 @@ stexels.bin
 
 and was 305,743 bytes for the bring-up archive.
 
-That **v1 pack is intentionally incompatible with the v2 reader**. After pulling
-the full-pack branch, regenerate `DoomRPG-ESP32.pak` with the command above and
-replace the old file on the SD card.
+That **v1 pack is intentionally incompatible with the v2 reader**. Regenerate
+`DoomRPG-ESP32.pak` with the command above and replace the old file on the SD
+card if an old v1 pack is still present.
 
-Once v2 is on the SD card, future firmware increments can migrate additional
-resources to the native backend without rebuilding a different subset pack each
-time.
+Once v2 is on the SD card, firmware increments can migrate additional resources
+to the native backend without rebuilding a different subset pack each time.
 
 ## Why the native pack exists
 
 The original DoomRPG-RE graphics path materializes large compressed resources
-and then builds one large `mediaTexels` pool. This does not fit a classic ESP32
-without PSRAM.
+and then builds large resident graphics pools. This does not fit a classic
+ESP32 without PSRAM.
 
 For the real menu map the validated values are:
 
@@ -181,10 +180,23 @@ The wall-only part of the original `mediaTexels` allocation would already be:
 84 * 64 * 64 / 2 = 172,032 bytes
 ```
 
-The ESP32-native path instead keeps large immutable data on the SD card and
-reads only bounded working sets. The first hardware-validated random-access
-probe reads one real 64x64 4-bpp wall texture using a 2,048-byte buffer and
-returns the heap to exactly its starting value afterward.
+The selected menu sprite dataset is also large as a whole:
+
+```text
+selected sprite texels = 143,990 B
+legacy expanded shapeData = 55,676 B
+```
+
+The ESP32-native path instead keeps immutable data on the SD card and reads only
+bounded working sets.
+
+Hardware-validated working-set ceilings so far:
+
+```text
+bitshape mask-column scratch     <= 32 B
+largest selected sprite payload   = 1,600 B
+one packed wall texture           = 2,048 B
+```
 
 The intended architecture is:
 
@@ -196,15 +208,93 @@ DoomRPG-ESP32.pak on SD
         |
         +--> on-disk hash index
         +--> seek/read bounded resource data
-        +--> future small texture/sprite caches
+        +--> small measured runtime caches/frames
 ```
 
 No runtime whole-file inflate is required for migrated assets, and the ESP32
-must never recreate the monolithic desktop/mobile `mediaTexels` pool.
+must never recreate the monolithic desktop/mobile `shapeData` or `mediaTexels`
+pools.
+
+## Native sprite rendering contract
+
+A complete real Doom RPG sprite has now been rendered on the physical CYD using
+an ESP32-native path with both legacy graphics pools absent.
+
+Validated worst-case menu sprite used by the first renderer consumer:
+
+```text
+sprite index        = 172
+size                = 64x64
+active pixels       = 3199
+bitshape mask       = 512 B
+packed texels       = 1600 B
+logical frame data  = 2112 B
+allocator cost      = 2128 B
+palette offset      = 1616
+```
+
+The resource flow is:
+
+```text
+DoomRPG-ESP32.pak
+        |
+        +--> bitshapes.bin : source header + bounded mask
+        +--> stexels.bin   : bounded 4-bpp payload
+        |
+        v
+EspNativeSpriteFrame
+        |
+        +--> existing 16-color palette mapping
+        +--> native palette normalization
+        |
+        v
+ESP32-native rasterizer
+        |
+        v
+shared 160x120 RGB565 framebuffer
+        |
+        v
+exact 2x output to 320x240 CYD
+```
+
+The validated sprite texel payload hash is:
+
+```text
+fnv1a = 0c0a7acd
+```
+
+The first palette-correct diagnostic framebuffer signature is:
+
+```text
+framebufferFNV = 001910a9
+```
+
+These values are useful regression markers for the exact diagnostic scene.
+
+### Palette convention
+
+The reconstructed `Render_loadPalettes()` path leaves `mediaPalettes` in the
+legacy red/blue ordering used by the old renderer. ESP32-native consumers use a
+canonical RGB565 framebuffer, so the palette is normalized once at the native
+rendering boundary.
+
+Validated diagnostic:
+
+```text
+[PALETTE] Normalized 3280 entries legacy R/B order -> framebuffer RGB565
+[PALETTE] sprite172 offset=1616 first4 before=0000,ffff,c000,07ff after=0000,ffff,0018,ffe0
+```
+
+Do **not** compensate palette ordering by changing `stexels.bin` data or nibble
+order. Sprite texels are already hardware-proven byte-for-byte correct.
+
+The separate DOOM-RPG-BREW-PATCH addresses a historical BREW read-corruption
+problem in `wtexels`/`stexels`; it is not the palette conversion mechanism used
+by this ESP32 port.
 
 ## Native-pack serial diagnostics
 
-The current bring-up probe opens the full v2 pack while the real menu runtime
+The full-pack bring-up probe opens the v2 pack while the real menu runtime
 structures remain resident. It then:
 
 1. validates the complete on-disk index without allocating it in RAM
@@ -213,16 +303,18 @@ structures remain resident. It then:
 4. compares every uncompressed size
 5. proves `pack size = index boundary + total uncompressed ZIP payload`
 6. checks representative resources such as `menu.bsp` and `mappings.bin`
-7. performs the already-validated 2,048-byte real wall-texture random read
+7. performs the validated 2,048-byte real wall-texture random read
 8. closes the pack and verifies that heap usage returns to the starting value
 
-The important successful markers are:
+Important successful markers include:
 
 ```text
 [ASSETPAK] FULL directory cross-check matched=.../...
-[ASSETPAK] FULL pack size proven index+payload=...B
 [ASSETPAK] READY complete ZIP mirrored as directly seekable ESP32 pack
-[ASSETPAK] READY random-access real wall texture read with 2048B working set
+[BITSHAPE] READY on-demand bitshape source model validated; legacy shapeData eliminated
+[SPRITETEX] READY largest selected sprite payload read directly from stexels.bin
+[PALETTE] READY native consumers now see canonical RGB565
+[SPRITERENDER] READY real sprite rendered without shapeData or mediaTexels
 ```
 
 ## Porting workflow
@@ -232,10 +324,16 @@ The project is intentionally developed in small hardware-validated increments:
 1. create one branch from the latest validated `main`
 2. implement one small measurable objective
 3. build/flash/test it on the real CYD
-4. fix failures on the same branch
-5. after hardware success, update `PORTING_STATUS.md`
-6. merge the branch
-7. only then start the next increment
+4. fix failures on the **same branch**
+5. after hardware success, update every relevant `.md` file on that **same branch**
+6. only when code + documentation agree is the branch considered merge-ready
+7. merge the branch
+8. only then start the next increment from the new exact `main` SHA
+
+Documentation is part of the increment, not a separate follow-up increment.
+Useful commands, SD preparation, measured hardware values, architectural pivots
+and validated conventions should be written into `README.md`,
+`PORTING_STATUS.md`, or another appropriate `.md` before merge.
 
 This is important because many changes involve memory layout, SD access,
 renderer state or linker wrapping that cannot be fully validated from a desktop
@@ -254,10 +352,12 @@ into an ESP32-oriented engine:
 - avoid resident indexes when a compact on-disk index is sufficient
 - avoid duplicate framebuffer/resource representations
 - keep indexed/paletted graphics packed whenever possible
+- use one explicit native RGB565 convention at the rendering boundary
 - do not preserve reverse-engineered implementation details merely for fidelity
   when a simpler ESP32-native design provides the same behaviour
 - refactor subsystems incrementally rather than performing a large speculative
   rewrite
+- do not choose cache slot counts blindly; measure access patterns first
 - keep audio out of the memory-critical bring-up until the gameplay/render path
   is stable
 
@@ -277,8 +377,12 @@ named markers such as:
 [MAPSTRUCT]
 [RESOURCEPLAN]
 [ASSETPAK]
+[BITSHAPE]
+[SPRITETEX]
+[PALETTE]
+[SPRITERENDER]
 ```
 
 When reporting a hardware test, keep the complete block around the newest marker
-plus the following `[ALIVE]` heartbeat. That preserves the authoritative heap
-and largest-block measurements for the next increment.
+plus the following `[ALIVE]` heartbeat. That preserves the authoritative heap,
+largest-block and deterministic rendering measurements for the next increment.
