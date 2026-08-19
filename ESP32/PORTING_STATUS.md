@@ -12,26 +12,26 @@ before merge.
 - ILI9341 320x240 landscape
 - XPT2046 touch
 - microSD-backed game data
-- internal render target: 160x120 RGB565 = 38,400 B
+- internal framebuffer: 160x120 RGB565 = 38,400 B
 - gameplay viewport: 160x80 at framebuffer y=20
 - physical output: exact nearest-neighbour 2x to 320x240
-- audio disabled/stubbed during bring-up
+- audio still disabled during bring-up
 
 ## Project direction
 
 DoomRPG-RE is treated as an executable specification for behaviour, data formats
-and useful rendering semantics, not as an architecture contract. The ESP32 target
+and useful rendering semantics, not as an architecture contract. The ESP32 port
 is progressively becoming its own constrained engine:
 
 - bounded deterministic RAM use
 - SD as immutable backing store
-- small measured working sets and evidence-driven caches
+- measured working sets and evidence-driven caches
 - no monolithic `shapeData`
 - no map-wide `mediaTexels`
 - one shared 160x120 RGB565 framebuffer
-- storage/file-format access isolated behind GFXRM
-- cache policy isolated from storage and rasterization
-- original BSP/projection/game/menu semantics preserved where useful
+- storage isolated behind GFXRM
+- cache policy isolated from storage/rasterization
+- original BSP, projection, game and menu behaviour preserved where useful
 - one small hardware-validated subsystem per increment
 
 Core philosophy:
@@ -52,240 +52,229 @@ Core philosophy:
 
 Documentation is part of the increment, not a later cleanup task.
 
-## Hardware-validated milestones merged to main
+## Important merged milestones
 
-1. TFT / SD / engine link bring-up.
-2. Touch calibration/orientation, PR #1.
-3. Native 160x120 framebuffer + exact 2x output, PR #2.
-4. SDL compatibility renderer sharing the platform framebuffer, PR #3.
-5. Real Doom RPG core graph, PR #4.
-6. `DoomCanvas_startup()` + HUD/font/legal resources + 160x120 layout, PR #5.
-7. `ParticleSystem`, `MenuSystem`, `EntityDef` startup, PR #6.
-8. Real `Render_startup()` + sine table + palettes, PR #7.
-9. `Game_loadConfig()` + real `Render_loadMappings()`, PR #8.
-10. Real `/menu.bsp` inflate + header parse, PR #9.
-11. Complete menu BSP structural allocation plan, PR #10.
-12. Real map runtime structures stopped before graphics inflation, PR #11.
-13. Proof original monolithic graphics cannot fit no-PSRAM ESP32, PR #12.
-14. First native asset-pack random-access primitive, PR #13.
-15. Full ESP32 native asset pack v2, 241 direct-access resources, PR #14.
-16. Native on-demand bitshape model, zero resident `shapeData`, PR #15.
-17. Native sprite-texel random access, PR #16.
-18. First complete native sprite render, sprite 172, PR #17.
-19. First complete native wall render, texture 112, PR #18.
-20. Shared bounded GFXRM resource manager, PR #19.
-21. First projected wall through bounded GFXRM bridge, PR #20.
-22. Direct native projected-wall sampling, framebuffer `ad191f54`, PR #21.
-23. First real `menu.bsp` walls-only frame, framebuffer `a6d87c4a`, PR #22.
-24. Three-slot wall LRU: 25 requests -> 11 loads, same `a6d87c4a`, PR #23.
-25. Real BSP-sorted menu sprites, final framebuffer `ffe0995e`, PR #24.
-26. Three-slot sprite LRU: 11 sprite requests -> 9 physical loads, same
-    `ffe0995e`, PR #25.
-27. Original `MENU_MAIN` model/logo/hand/font composed over the native scene,
-    final framebuffer `86c38260`, PR #26, merge
-    `c327e533e59e8ebafa85a3b6a4e396c10e4a87d0`.
+- native 160x120 framebuffer + exact 2x TFT output
+- real engine object graph / HUD / MenuSystem / Render startup
+- real `menu.bsp` structural load stopped before legacy graphics inflation
+- native asset pack v2, 241 random-access resources
+- zero resident `shapeData`
+- zero map-wide `mediaTexels`
+- bounded sprite/wall GFXRM frames
+- native projected wall + sprite rasterization
+- real `menu.bsp` BSP traversal, camera and visible scene
+- wall LRU3: 25 logical requests -> 11 physical loads
+- sprite LRU3: 11 logical requests -> 9 physical loads
+- native scene framebuffer `ffe0995e`
+- original `MENU_MAIN` model/logo/hand/font overlay, faithful layout `86c38260`
+- TFT bring-up diagnostics disabled by default; Serial diagnostics retained
+- clean game-owned display, PR #27 merge
+  `da2de773765f9675c4fe9eea1cbc82cf24b7523c`
 
 ## Current validated increment
 
-Branch: `agent/esp32-clean-game-display`
+Branch: `agent/esp32-main-menu-160x120-layout`
 
 Base `main` SHA:
 
 ```text
-c327e533e59e8ebafa85a3b6a4e396c10e4a87d0
+da2de773765f9675c4fe9eea1cbc82cf24b7523c
 ```
 
 Status: **HARDWARE VALIDATED, DOCUMENTED, READY TO MERGE**.
 
-Objective: stop all bring-up/debug drawing from touching the TFT while preserving
-all serial diagnostics, all probes, the touch reader and all deterministic game
-framebuffer output.
+Objective: adapt only the real main-menu presentation to the 160x120 logical
+framebuffer while preserving the real Doom RPG menu model, bitmap font, hand
+cursor and four labels.
 
-The game framebuffer is now the sole normal owner of visible TFT content.
+The faithful original-layout implementation remains in the repository as the
+`86c38260` reference. The ESP32-specific layout is a separate presentation layer.
 
-## Clean-display policy
+## Why adaptation is required
 
-The firmware now has an explicit compile-time switch:
+The normal Doom RPG font uses 12-pixel-high glyph cells. Four menu rows therefore
+need 48 vertical pixels. The original main-menu layout starts at y=80:
 
 ```text
-DOOMRPG_ESP32_SCREEN_DIAGNOSTICS=0
+original rows = 80, 92, 104, 116
+font height   = 12
+logical H     = 120
 ```
 
-Default value is `0` in `platformio.ini` and in `main.cpp` as a fallback.
+The last row cannot fit. The original logo is also 108x74, so simply moving the
+text upward would collide with the logo.
 
-With diagnostics disabled:
-
-- `drawDiagnosticScreen()` performs no TFT drawing;
-- `drawLabel()` performs no TFT drawing;
-- touch events do not invoke `Esp32Sdl_showTestPattern()`;
-- touch events do not draw cyan crosshairs or coordinates on the TFT;
-- all `[TOUCH]`, `[ALIVE]`, startup and probe logs remain available on Serial;
-- normal game/UI composition through the shared framebuffer remains unchanged.
-
-Setting the flag back to `1` restores the old visual bring-up tools for hardware
-troubleshooting without having to recreate them.
-
-## Deterministic graphics regression
-
-The cleanup only removes direct diagnostic TFT writes. It does not change the
-160x120 framebuffer pipeline.
-
-The hardware-validated signatures remain:
+The chosen ESP32 adaptation keeps every real asset but scales only the logo:
 
 ```text
-real walls framebuffer       = a6d87c4a
-viewSprites list FNV         = 962cd657
-sprite request FNV           = 4457ac94
-walls + sprites framebuffer  = ffe0995e
-MENU_MAIN model FNV          = bbc2149b
-MENU_MAIN final framebuffer  = 86c38260
-shapeData                    = NULL
-mediaTexels                  = NULL
+logo source = 108x74
+logo target = 90x62
+logo x/y    = 35,2
+
+Start Game  y=67
+Options     y=79
+Help/About  y=91
+Exit        y=103
+font height = 12
 ```
 
-The `MENU_MAIN` progressive composition remains:
+Resulting geometry:
 
 ```text
-scene before UI          = ffe0995e
-after logo               = 0bcc168b
-after Start Game + hand  = 73aa5852
-after Options            = 82375e8e
-after Help/About         = 249ad9b4
-after Exit / final       = 86c38260
+logo bottom    = 64
+first item y   = 67
+logo/text gap  = 3 px
+content bottom = 115
+screen bottom  = 120
+bottom margin  = 5 px
+```
+
+The real font remains unscaled/pixel-perfect. The real 13x10 hand cursor also
+remains unscaled.
+
+These coordinates live in:
+
+```text
+ESP32/include/native_main_menu_160x120_layout.h
+```
+
+They are intentionally shared so the next touch increment can derive hit zones
+from the exact hardware-validated geometry instead of duplicating magic numbers.
+
+## Model contract preserved
+
+The original `Menu_initMenu(MENU_MAIN)` model remains unchanged:
+
+```text
+menu          = MENU_MAIN / 1
+type          = MENUTYPE_MAIN / 4
+selectedIndex = 0
+scrollIndex   = 0
+items         = 4
+
+0 Start Game
+1 Options
+2 Help/About
+3 Exit
+```
+
+Hardware model signature remains:
+
+```text
+modelFNV = bbc2149b
+```
+
+The underlying native scene is still the same deterministic scene:
+
+```text
+sceneFNV = ffe0995e
+shapeData = NULL
+mediaTexels = NULL
 ```
 
 ## Authoritative hardware validation
 
 ```text
-=== Doom RPG ESP32 real MENU_MAIN overlay ===
-[MAINMENU] Begin sceneFNV=ffe0995e expected=ffe0995e heap8=29872 largest8=21492 shapeData=0x0 mediaTexels=0x0
-[MAINMENU] Assets logo=108x74 transparent=1 hand=13x10 transparent=1 font=144x72 largeStatus=0
-[MAINMENU] Model menu=1 type=4 items=4 selected=0 scroll=0 maxItems=10 modelFNV=bbc2149b imgBG=logo
-[MAINMENU] ITEM index=0 selected=yes flags=2 action=0 text="Start Game"
-[MAINMENU] ITEM index=1 selected=no flags=2 action=0 text="Options   "
-[MAINMENU] ITEM index=2 selected=no flags=2 action=0 text="Help/About"
-[MAINMENU] ITEM index=3 selected=no flags=2 action=0 text="Exit      "
-[MAINMENU] HASH stage=logo fnv=0bcc168b
-[MAINMENU] HASH stage=item0 text="Start Game" fnv=73aa5852
-[MAINMENU] HASH stage=item1 text="Options   " fnv=82375e8e
-[MAINMENU] HASH stage=item2 text="Help/About" fnv=249ad9b4
-[MAINMENU] HASH stage=item3 text="Exit      " fnv=86c38260
-[MAINMENU] framebufferFNV=86c38260 sceneFNV=ffe0995e changed=yes composeMs=21 shapeData=0x0 mediaTexels=0x0
-[MAINMENU] End heap8=29872 largest8=21492 deltaFromStart=0 largestDelta=0
-[MAINMENU] Presented real Doom RPG MENU_MAIN overlay over native menu scene
-[MAINMENU] READY original Menu model + logo + hand + font composed without legacy Render_render
-[MAINMENU] READY framebuffer now contains native scene plus real main-menu UI; interaction remains intentionally out of scope
-[READY] Bring-up alive; touch diagnostics are serial-only and TFT is reserved for the game framebuffer.
-[ALIVE] ... heap8=29872 largest8=21492 ... MENUBSP=ready ...
+=== Doom RPG ESP32 MENU_MAIN 160x120 layout ===
+[MAINLAYOUT] Begin sceneFNV=ffe0995e expected=ffe0995e faithfulOriginalFNV=86c38260 heap8=29872 largest8=21492
+[MAINLAYOUT] Model FNV=bbc2149b items=4 selected=0
+[MAINLAYOUT] Geometry screen=160x120 logoSrc=108x74 logoDst=35,2 90x62 logoBottom=64 itemStart=67 line=12 rows=4 contentBottom=115 layoutFNV=47b3656e
+[MAINLAYOUT] ITEM index=0 y=67 selected=yes text="Start Game"
+[MAINLAYOUT] ITEM index=1 y=79 selected=no text="Options   "
+[MAINLAYOUT] ITEM index=2 y=91 selected=no text="Help/About"
+[MAINLAYOUT] ITEM index=3 y=103 selected=no text="Exit      "
+[MAINLAYOUT] HASH stage=logo fnv=1e8bcfbb
+[MAINLAYOUT] HASH stage=item0 text="Start Game" fnv=64516fd1
+[MAINLAYOUT] HASH stage=item1 text="Options   " fnv=0fb73263
+[MAINLAYOUT] HASH stage=item2 text="Help/About" fnv=c7a0b65f
+[MAINLAYOUT] HASH stage=item3 text="Exit      " fnv=1afa0223
+[MAINLAYOUT] framebufferFNV=1afa0223 sceneFNV=ffe0995e changed=yes composeMs=19 shapeData=0x0 mediaTexels=0x0
+[MAINLAYOUT] End heap8=29872 largest8=21492 deltaFromStart=0 largestDelta=0
+[MAINLAYOUT] Presented fitted Doom RPG MENU_MAIN on clean CYD display
+[MAINLAYOUT] READY original menu model/font/hand preserved; only logo scale + target geometry changed
+[MAINLAYOUT] READY item rows are stable for the next touch hit-test increment
 ```
 
-The branch's small static-code change shifts the absolute baseline from the
-previous 29,852 B to 29,872 B free heap8. The contract is still exact
-before/after restoration within the same firmware.
+`composeMs=19` is diagnostic only, not a regression requirement.
 
-## Touch validation
+## Deterministic signatures
 
-Hardware touch input remains alive while screen side effects are disabled.
-Observed serial-only touch samples after the menu was visible:
+Useful current regression boundaries:
 
 ```text
-[TOUCH] raw=3465,1745 pressure=2239 screen=129,215
-[TOUCH] raw=3261,1396 pressure=2434 screen=97,201
-[TOUCH] raw=3393,1180 pressure=2433 screen=78,210
-[TOUCH] raw=3617,1510 pressure=2295 screen=108,226
+sprite 172 texel FNV         = 0c0a7acd
+wall 112 texel FNV           = 92d40704
+synthetic projected wall FNV = ad191f54
+real walls framebuffer       = a6d87c4a
+viewSprites list FNV         = 962cd657
+sprite request FNV           = 4457ac94
+walls + sprites framebuffer  = ffe0995e
+faithful MENU_MAIN layout    = 86c38260
+ESP32 160x120 layout config  = 47b3656e
+ESP32 fitted MENU_MAIN       = 1afa0223
 ```
 
-The hardware photo and these touches confirm that no diagnostic crosshair, label
-or SDL test pattern replaced or corrupted the displayed Doom RPG menu.
+Progressive fitted-layout hashes:
 
-This is an important prerequisite for using the same `PlatformInput` reader for
-real menu interaction later.
+```text
+after scaled logo          = 1e8bcfbb
+after Start Game + hand    = 64516fd1
+after Options              = 0fb73263
+after Help/About           = c7a0b65f
+after Exit / final         = 1afa0223
+```
 
-## Current display ownership
+## Memory boundary
 
-Normal mode is now conceptually:
+The layout introduces no per-composition allocation:
+
+```text
+before: heap8=29872 largest8=21492
+after:  heap8=29872 largest8=21492
+
+deltaFromStart = 0
+largestDelta   = 0
+```
+
+`shapeData` and `mediaTexels` remain `NULL` for the entire path.
+
+## Display ownership remains clean
+
+Normal mode remains:
 
 ```text
 Serial
-  |
-  +--> all startup/probe/debug diagnostics
+  `--> startup/probe/debug/touch diagnostics
 
 TFT
-  |
-  `--> PlatformVideo shared framebuffer only
-          |
-          +--> native 3D scene
-          `--> Doom RPG UI/menu composition
+  `--> shared game framebuffer only
 ```
 
-Direct diagnostic TFT writes remain available only when
-`DOOMRPG_ESP32_SCREEN_DIAGNOSTICS=1`.
+`DOOMRPG_ESP32_SCREEN_DIAGNOSTICS=0` remains the default. The old bring-up visual
+tools can still be temporarily restored with value `1`.
 
-## Real `MENU_MAIN` overlay contract
+## Hardware visual observation: color/contrast
 
-The menu remains an overlay over the native 3D menu scene, matching the original
-Doom RPG behaviour:
+The fitted geometry is visually successful on hardware: all four rows fit cleanly
+and the selected hand is visible in the intended location.
 
-```text
-native scene ffe0995e
-       |
-       +--> j.bmp logo 108x74
-       +--> p.bmp hand 13x10
-       +--> Doom RPG bitmap font
-       |
-       v
-MENU_MAIN 86c38260
-```
+However, comparison against a J2ME reference capture shows the CYD presentation
+looks noticeably **flatter / less saturated / lower contrast**. This is now a
+recorded open visual issue, but it is **not** treated as a failure of this layout
+increment because:
 
-The original layout is still deliberately unchanged in this increment.
+- the menu model and geometry are correct;
+- the framebuffer hashes are deterministic;
+- all memory/raster invariants pass;
+- the issue may involve composition/background, palette conversion, display
+  characteristics or another presentation stage.
 
-## Known 160x120 layout limitation
+Do **not** change palette values blindly. Investigate this in a separate measured
+increment, ideally comparing the same menu assets against a black/controlled
+background and checking framebuffer colors separately from physical TFT output.
 
-The faithful original menu layout is cramped on the 160x120 logical target:
-
-```text
-logical screen height = 120
-MENU_MAIN first row y  = 80
-row step               = 12
-four rows extend to    ~128
-logo size              = 108x74
-```
-
-The hardware photo clearly shows the menu is functional but too large/tight for
-this target. This is a layout adaptation issue, not a rendering failure.
-
-Do not change the `86c38260` faithful-layout regression retroactively. A later
-ESP32 layout increment should preserve the real resources/model while choosing
-coordinates that fit 160x120 cleanly.
-
-## Current native graphics/UI architecture
-
-```text
-                  SD / DoomRPG-ESP32.pak
-                           |
-                           v
-                         GFXRM
-                       /       \
-            Sprite LRU(3)       Wall LRU(3)
-                 |                 |
-                 v                 v
-          native sprite       native wall
-             spans               spans
-                 \                 /
-                  \               /
-                shared 160x120 RGB565
-                         |
-                         v
-                     ffe0995e
-                         |
-            original MENU_MAIN UI
-                         |
-                         v
-                     86c38260
-                         |
-                         v
-                    exact 2x TFT
-```
+`1afa0223` is therefore the deterministic reference for this exact fitted
+composition, not a claim that its color appearance is already final/perfect.
 
 ## Current safe stop boundary
 
@@ -296,43 +285,42 @@ Validated and executed:
 - native asset-pack access
 - zero resident `shapeData`
 - zero map-wide `mediaTexels`
-- bounded GFXRM sprite/wall frames
-- hardware-validated wall LRU and sprite LRU
+- bounded GFXRM wall/sprite frames
+- hardware-validated wall and sprite LRU caches
 - native projected walls and BSP-sorted sprites
 - deterministic native scene `ffe0995e`
 - original `MENU_MAIN` model and real UI assets
-- deterministic menu overlay `86c38260`
+- faithful original menu composition `86c38260`
+- clean TFT diagnostics policy
+- ESP32-specific fitted `MENU_MAIN` composition `1afa0223`
 - exact allocator restoration
-- TFT diagnostic drawing disabled by default
-- serial diagnostics preserved
-- touch remains readable without modifying visible game output
+- final item geometry suitable for touch hit-testing
 
 Still intentionally out of scope:
 
 - original monolithic bitshape/texel loaders
 - textured floor/ceiling planes
-- persistent caches in a normal multi-frame runtime
+- persistent caches in the normal multi-frame runtime
 - active normal `ST_MENU` loop
-- touch navigation of real menu items
-- 160x120-specific menu layout adaptation
-- gameplay entities/player in the normal gameplay loop
+- touch selection/validation of real menu items
+- final color/contrast correction
+- normal gameplay loop and gameplay control scheme
 - audio
 
-## Recommended next increment after merge
+## Recommended next increments after merge
 
-Do the **160x120 `MENU_MAIN` layout adaptation next**, before touch hit-testing.
+The layout geometry is now stable enough for the planned menu touch behaviour:
 
-Reason: touch zones should be built around the final ESP32 menu coordinates, not
-around the current faithful layout where the fourth row extends beyond the logical
-screen.
+```text
+first tap on a different item -> move selectedIndex / hand only
+second tap on same selected item -> validate selection
+```
 
-Recommended sequence:
+The hit-test must reuse the constants in
+`native_main_menu_160x120_layout.h` and convert physical 320x240 touch coordinates
+to logical 160x120 coordinates.
 
-1. preserve `ffe0995e` as the native-scene regression boundary;
-2. keep the real `MENU_MAIN` model, `j.bmp`, `p.bmp` and Doom RPG font;
-3. move/scale only what is necessary so all four items fit cleanly in 160x120;
-4. establish a new deterministic framebuffer hash for the ESP32-adapted layout;
-5. then add touch behaviour: first tap selects/moves the hand, second tap on the
-   same item validates through the real menu model;
-6. gameplay input remains intentionally deferred until the first actual game map
-   is loaded and visible.
+Keep gameplay input deferred until the first actual gameplay map is running.
+
+The color/contrast discrepancy versus J2ME is also recorded and should be handled
+as a separate diagnostic increment rather than mixed into touch semantics.
