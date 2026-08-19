@@ -10,6 +10,7 @@
 #include "map_runtime_structure_probe.h"
 #include "native_asset_pack_probe.h"
 #include "native_bitshape_loader.h"
+#include "native_sprite_texel_probe.h"
 #include "resource_memory_plan_probe.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
@@ -277,7 +278,14 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
         return 0;
     }
 
-    printf("[MAPSTRUCT] Native on-demand bitshape model validated; texel loading remains blocked\n");
+    printf("[MAPSTRUCT] Native on-demand bitshape model validated; probing sprite texels\n");
+
+    if (!DoomRPG_probeNativeSpriteTexels(render)) {
+        printf("[MAPSTRUCT] FAILED ESP32-native sprite texel probe\n");
+        return 0;
+    }
+
+    printf("[MAPSTRUCT] Native sprite texel random-access probe complete; full texel loading remains blocked\n");
     probeReady = 1;
     return 1;
 }
