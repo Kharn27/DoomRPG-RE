@@ -20,8 +20,8 @@ the actual target.
 - microSD for game/resource data
 - audio disabled during bring-up
 
-For the latest hardware-validated memory figures and current safe stop boundary,
-see [`PORTING_STATUS.md`](PORTING_STATUS.md).
+For the authoritative hardware figures, branch state and recovery boundary, see
+[`PORTING_STATUS.md`](PORTING_STATUS.md).
 
 ## Build and flash
 
@@ -57,8 +57,6 @@ During migration the SD card contains:
 The long-term target is to remove the ZIP dependency completely.
 
 ## Building the ESP32 native asset pack
-
-From the repository root:
 
 ```bash
 python3 ESP32/tools/build_asset_pack.py \
@@ -99,9 +97,8 @@ header                   24 B
 index/data boundary     4844 B
 ```
 
-Payloads are stored uncompressed and directly seekable. Each 20-byte index
-record contains the normalized-name FNV-1a hash, payload offset, payload size,
-CRC32 and flags. The index remains on SD and is binary-searched on demand.
+Payloads are uncompressed and directly seekable. The on-disk index is binary
+searched; it is not kept resident as a 241-entry RAM table.
 
 ## Why the native pack exists
 
@@ -131,8 +128,8 @@ validated sprite frame            = 2,112 B logical
 one packed wall texture           = 2,048 B
 ```
 
-Immutable graphics therefore stay on SD and native consumers acquire only
-bounded working sets.
+Immutable graphics therefore remain on SD and are acquired as bounded working
+sets.
 
 ## Native palette convention
 
@@ -147,11 +144,11 @@ Validated diagnostic:
 ```
 
 Do not compensate palette ordering by modifying `stexels.bin`, `wtexels.bin` or
-nibble order. Those source bytes are already hardware-proven.
+nibble order. Those source bytes are hardware-proven.
 
 ## Native graphics resource manager (GFXRM)
 
-Sprite and wall render paths share one storage/file-format boundary:
+Sprite and wall paths share one storage/file-format boundary:
 
 ```text
                   render consumers
@@ -176,16 +173,9 @@ EspNativeGraphics_loadWallFrame(render, textureIndex, &frame);
 EspNativeGraphics_releaseWallFrame(&frame);
 ```
 
-The manager is deliberately **not a cache yet**. Each successful load opens the
-pack, performs the bounded read and closes it before returning the frame.
-
-Validated diagnostic session:
-
-```text
-[GFXRM] SPRITE id=172 storage=2112B mask=512B texels=1600B hash=0c0a7acd pack=closed
-[GFXRM] WALL id=112 storage=2048B hash=92d40704 pack=closed
-[GFXRM] Session stats spriteLoads=1 wallLoads=1 packOpenCycles=2 logicalBytes=4160 peakFrame=2112
-```
+At the current milestone GFXRM still has **no persistent cache**. Every wall
+miss/request opens the pack, performs the bounded read and closes it before the
+frame is consumed.
 
 ## Native sprite rendering contract
 
@@ -231,29 +221,13 @@ logical texel index = x * 64 + y
 
 ## Projected wall: direct native span source
 
-The projected wall path no longer needs the compatibility alias introduced in
-PR #20.
-
-The previous proof temporarily did this during one projected draw:
-
-```text
-mediaTexels                : NULL -> bounded 2 KB frame -> NULL
-mediaTexelOffsets[112 * 2] : 65536 -> 0 -> 65536
-```
-
-That transition is now removed completely.
-
-The current hardware-validated path is:
+The current projected wall path is native at the resource boundary:
 
 ```text
 GFXRM wall frame (2,048 B)
         |
         v
-Render_transform2DVerts()
-        |
-Render_clipLine()
-        |
-Render_projectVertex()
+original transform / clip / projection semantics
         |
         v
 ESP32-native wall-span geometry
@@ -265,79 +239,162 @@ direct packed 4-bit frame sampling
 shared RGB565 framebuffer
 ```
 
-The native wall-span implementation keeps the same fixed-point branch as the
-reference renderer (`FIXED_VERSION=1`) and preserves the original mode-0 wall
-column interpolation semantics.
-
-### Strong runtime invariants
-
-During every native projected wall span:
+Strong invariant:
 
 ```text
-render->mediaTexels == NULL
-mediaTexelOffsets[112 * 2] == 65536
+shapeData   = NULL
+mediaTexels = NULL
 ```
 
-The probe tracks violations per span, not merely before and after the draw.
-Hardware result:
+and global `mediaTexelOffsets[]` are not rewritten to fit local frames.
 
-```text
-[PROJWALL] RELEASE texture=112 spans=40 pixels=1600 rangeErrors=0 legacyPtrViolations=0 mappingViolations=0 mediaTexels=0x0
-[PROJWALL] Native span stats begin=1 end=1 bound=2048B spans=40 pixels=1600 rangeErrors=0 legacyPtrViolations=0 mappingViolations=0
-```
-
-So the current mode-0 projected wall path has:
-
-```text
-legacy pointer violations = 0
-mapping rewrite violations = 0
-range errors = 0
-```
-
-### Bit-identical projected output
-
-The same deterministic test wall is kept for regression:
-
-```text
-v1=(128,-32,z0)
-v2=(128, 32,z64)
-camera=(0,0,z32)
-spanMode=0
-```
-
-Hardware result:
-
-```text
-[PROJWALL] PROJECTED columns=60..100 count=40 scale=81920/81920 z=0/5242880 lineRasterCount=1 changedPixels=1600
-[PROJWALL] Source texture=112 palette=480 sourceOffset=65536 texelHash=92d40704
-[PROJWALL] GFXRM stats spriteLoads=0 wallLoads=1 packOpenCycles=1 logicalBytes=2048 peakFrame=2048
-[PROJWALL] framebufferFNV=ad191f54 expected=ad191f54 mediaTexelsDuring=0x0 mappingOffsetDuring=65536 mediaTexelsAfter=0x0 mappingOffsetAfter=65536
-[PROJWALL] READY projected wall is bit-identical with direct bounded GFXRM sampling
-[PROJWALL] READY mediaTexels stayed NULL and global mapping stayed untouched for every native span
-```
-
-The framebuffer hash is **exactly the same** as the PR #20 compatibility path:
+The deterministic synthetic projected-wall regression remains:
 
 ```text
 projected wall FNV = ad191f54
 ```
 
-That proves the direct native sampler changed the memory architecture without
-changing the projected output.
+## First real `menu.bsp` scene
 
-### Memory result
+The project now renders an actual walls-only frame from the real menu map.
+This is no longer synthetic test geometry.
 
-Current branch result:
+### Camera source
+
+The original menu loader derives X/Y and direction from the BSP header:
 
 ```text
-before    heap8=30576 largest8=22516
-resident  heap8=28512 largest8=20468
-released  heap8=30576 largest8=22516
+spawnIndex = 460
+spawn tile = 12,14
+world      = 800,928
+direction  = 0
+camera Z   = 36
 ```
 
-The wall frame still costs 2,064 allocator bytes for 2,048 logical bytes.
-`largest8` may shrink during residency depending on allocator placement; the
-contract is exact restoration after release.
+The first four values come from `menu.bsp`; Z=36 is the documented normal
+engine eye-height convention used for this deterministic probe.
+
+### Real scene pipeline
+
+```text
+menu.bsp structures
+      |
+      v
+real menu camera
+      |
+      v
+Render_render camera setup
+      |
+      v
+Render_walkNode
+(BSP traversal/culling/leaf ordering/occlusion)
+      |
+      v
+real visible map lines
+      |
+      v
+real texture mappings
+      |
+      v
+GFXRM bounded wall frames
+      |
+      v
+native projected wall spans
+      |
+      v
+shared framebuffer
+```
+
+For this first real scene only:
+
+```text
+projected sprites       disabled
+textured floor/ceiling  disabled
+menu UI overlay         not yet composed
+```
+
+So the displayed image is intentionally a grayscale walls-only scene. The
+absence of the earlier Cacodemon test sprite is expected: real-scene sprite
+rendering is a separate upcoming integration step.
+
+### Hardware result
+
+```text
+[MENUWALL] BSP visibility nodeCount=28 nodeRasterCount=10 visibleLeaves=10 sourceLines=46
+[MENUWALL] Line result walls=25 backface=15 clipped=6 spriteSpanSkipped=0 occluderOnly=0
+[MENUWALL] Texture requests total=25 unique=8 repeats=17 trackingErrors=0 requestFNV=4db9da28 animFrameTime=0
+[MENUWALL] GFXRM wallLoads=25 packOpenCycles=25 logicalBytes=51200 expected=51200 peakFrame=2048
+[MENUWALL] Native spans begin=25 end=25 spanCalls=224 pixels=5589 rangeErrors=0 legacyPtrViolations=0 mappingViolations=0
+[MENUWALL] framebufferFNV=a6d87c4a renderMs=1676 floor=4208 ceiling=8c51 mediaTexels=0x0
+[MENUWALL] End heap8=30576 largest8=22516 deltaFromStart=0
+[MENUWALL] READY real menu spawn + original BSP visibility + native GFXRM walls rendered together
+```
+
+Useful regression signature:
+
+```text
+real menu walls framebuffer FNV = a6d87c4a
+```
+
+The animation phase is frozen at `animFrameTime=0` for this first reference
+frame.
+
+## Measured wall request pattern
+
+Exact 25-request sequence from the hardware-validated real frame:
+
+```text
+116, 32, 40, 112, 108, 108, 116, 116, 116, 112,
+116, 112, 108, 108, 108, 116, 44, 0, 40, 152,
+152, 116, 116, 116, 152
+```
+
+Unique textures:
+
+```text
+0, 32, 40, 44, 108, 112, 116, 152
+```
+
+Measured totals:
+
+```text
+requests = 25
+unique   = 8
+repeats  = 17
+```
+
+Keep this sequence in documentation: it is the input for future cache design and
+lets another engineer reproduce cache simulations without rediscovering the
+first-frame access pattern on hardware.
+
+## Derived cache guidance
+
+The following is **analysis derived from the validated request sequence**, not
+yet a hardware-validated cache implementation:
+
+```text
+LRU slots   hits   misses   payload RAM
+1             8      17      2,048 B
+2            11      14      4,096 B
+3            14      11      6,144 B
+4            14      11      8,192 B
+5            16       9     10,240 B
+6            17       8     12,288 B
+7            17       8     14,336 B
+8            17       8     16,384 B
+```
+
+A 3-slot LRU is therefore the best first experiment: it captures 14 repeat hits
+while a fourth slot gives no improvement on this reference frame.
+
+If the same sequence is preserved, a 3-slot cache should theoretically reduce:
+
+```text
+pack open cycles  25 -> 11
+wall bytes read   51,200 -> 22,528 B
+```
+
+Those values are predictions until verified on the CYD.
 
 ## Current native graphics architecture
 
@@ -350,30 +407,17 @@ SD / DoomRPG-ESP32.pak
        /         \
  sprite frame   wall frame
        |            |
-       |            +--> native projected wall spans
-       |                        |
-       v                        v
-native sprite raster       RGB565 wall pixels
-       \                        /
-        \                      /
+       |            +--> projected wall spans
+       |                       |
+       v                       v
+native sprite probe      real BSP walls
+       \                       /
+        \                     /
          shared 160x120 framebuffer
                     |
                     v
              exact 2x output
 ```
-
-The current hard rules are:
-
-```text
-shapeData   = NULL
-mediaTexels = NULL
-```
-
-for the validated native projected wall path as well as the standalone native
-sprite/wall consumers.
-
-The global mapping remains the authoritative logical resource mapping and is no
-longer rewritten to fit a local frame.
 
 ## Native serial diagnostics
 
@@ -388,20 +432,24 @@ Important successful markers include:
 [SPRITERENDER]
 [WALLRENDER]
 [PROJWALL]
+[MENUWALL]
 ```
 
 Useful deterministic checks:
 
 ```text
-sprite 172 texel FNV       = 0c0a7acd
-sprite diagnostic FNV      = 001910a9
-wall 112 texel FNV         = 92d40704
-wall diagnostic FNV        = e39af2c4
-projected wall FNV         = ad191f54
+sprite 172 texel FNV         = 0c0a7acd
+sprite diagnostic FNV        = 001910a9
+wall 112 texel FNV           = 92d40704
+wall diagnostic FNV          = e39af2c4
+synthetic projected wall FNV = ad191f54
+real menu walls frame FNV    = a6d87c4a
+real menu request FNV        = 4db9da28
 ```
 
-When reporting a hardware test, keep the complete block around the newest
-marker plus the following `[ALIVE]` heartbeat.
+When reporting a hardware test, keep the complete newest marker block plus the
+following `[ALIVE]` heartbeat. A photo is especially useful for real-scene
+milestones.
 
 ## Porting workflow
 
@@ -430,19 +478,18 @@ Documentation is part of the increment, not a separate follow-up increment.
 - keep indexed/paletted graphics packed whenever possible
 - use one explicit canonical RGB565 convention at the native rendering boundary
 - never recreate monolithic `shapeData` or map-wide `mediaTexels`
-- do not rewrite global resource mappings merely to make a bounded frame look
-  like a legacy monolithic pool
+- do not rewrite global resource mappings merely to make bounded frames look like
+  a legacy monolithic pool
 - require exact allocator-state restoration after release rather than assuming
   which free block services an allocation
-- preserve deterministic framebuffer hashes when replacing a legacy renderer
-  primitive with a native equivalent
-- refactor subsystems incrementally rather than performing a speculative rewrite
-- do not choose cache slot counts blindly; measure actual real-map access first
+- preserve deterministic framebuffer hashes when replacing legacy primitives
+- measure real access patterns before selecting cache sizes
+- keep documentation sufficient for an engineer to resume without chat history
 - keep audio out of the memory-critical bring-up until gameplay/render is stable
 
 ## Next renderer direction
 
-The next useful step is to use the validated direct native projected-wall source
-with **real `menu.bsp` wall data** instead of only the synthetic regression line.
-Keep that first scene increment walls-only or otherwise tightly controlled so it
-can measure actual texture request repetition before any cache policy is chosen.
+The next recommended increment is a tiny **3-slot wall-frame LRU cache** evaluated
+against exactly the same deterministic real menu frame. Do not add sprites or
+planes in that same increment: first prove the cache preserves `a6d87c4a`, gives
+the expected request accounting and measures the real RAM/timing tradeoff.
