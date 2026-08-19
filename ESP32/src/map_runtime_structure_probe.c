@@ -12,6 +12,7 @@
 #include "native_bitshape_loader.h"
 #include "native_graphics_resource_manager.h"
 #include "native_palette.h"
+#include "native_projected_wall_probe.h"
 #include "native_sprite_render_consumer.h"
 #include "native_sprite_texel_probe.h"
 #include "native_wall_render_consumer.h"
@@ -337,7 +338,14 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     }
 
     printf("[GFXRM] READY one shared backend served sprite + wall with zero persistent cache allocation\n");
-    printf("[MAPSTRUCT] Native graphics resource manager validated; full map texel loading remains blocked\n");
+    printf("[MAPSTRUCT] Native graphics resource manager validated; projecting one wall through unchanged renderer spans\n");
+
+    if (!DoomRPG_probeProjectedWallGfxrm(render)) {
+        printf("[MAPSTRUCT] FAILED projected wall GFXRM bridge probe\n");
+        return 0;
+    }
+
+    printf("[MAPSTRUCT] Projected wall bridge validated; full map texel loading remains blocked\n");
     probeReady = 1;
     return 1;
 }
