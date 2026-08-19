@@ -7,11 +7,11 @@ extern "C" {
 
 struct DoomRPG_s;
 
-/* Execute the real MENU_MAIN Start Game action up to the engine's natural
- * first-game boundary. On a fresh profile this runs MenuSystem_select(),
- * Menu_startGame(), Player_reset() and DoomCanvas_setState(ST_INTRO), loading
- * the real prologue text. The ESP32 main loop intentionally does not advance
- * the intro yet; that is the next bounded milestone.
+/* Execute the real MENU_MAIN Start Game action up to the next bounded ESP32
+ * boundary. On a fresh profile this runs MenuSystem_select(), Menu_startGame(),
+ * Player_reset() and DoomCanvas_setState(ST_INTRO), loads the real prologue
+ * resources, then renders/presents exactly one deterministic intro frame.
+ * No active DoomCanvas_run() loop, intro input or gameplay/map load is started.
  */
 int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpg);
 
