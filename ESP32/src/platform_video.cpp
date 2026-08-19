@@ -7,10 +7,6 @@
 
 #include "platform_video_config.h"
 
-#ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
-#define DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY 0
-#endif
-
 namespace {
 
 TFT_eSPI* platformDisplay = nullptr;
@@ -91,8 +87,8 @@ void drawLine(int x0, int y0, int x1, int y1, uint16_t color) {
     }
 }
 
-void drawDebugOverlay() {
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+void drawDebugOverlay() {
     if (platformDisplay == nullptr) {
         return;
     }
@@ -131,8 +127,8 @@ void drawDebugOverlay() {
                                        y1 - y0 + 1, TFT_CYAN);
         platformDisplay->drawCircle(debugTouchX, debugTouchY, 3, TFT_YELLOW);
     }
-#endif
 }
+#endif
 
 }  // namespace
 
@@ -206,21 +202,22 @@ bool PlatformVideo_present() {
     }
 
     platformDisplay->endWrite();
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     drawDebugOverlay();
+#endif
 
     Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x: %lu us\n",
                   micros() - started);
     return true;
 }
 
-void PlatformVideo_debugOverlayClear() {
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+void PlatformVideo_debugOverlayClear() {
     for (int i = 0; i < kDebugOverlayMaxZones; ++i) {
         debugOverlayZones[i] = DebugOverlayZone{};
     }
     debugOverlayZoneCount = 0;
     debugTouchValid = false;
-#endif
 }
 
 void PlatformVideo_debugOverlaySetZone(int index,
@@ -228,7 +225,6 @@ void PlatformVideo_debugOverlaySetZone(int index,
                                        int16_t logicalTop,
                                        int16_t logicalRight,
                                        int16_t logicalBottom) {
-#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     if (index < 0 || index >= kDebugOverlayMaxZones ||
         logicalLeft < 0 || logicalTop < 0 ||
         logicalRight < logicalLeft || logicalBottom < logicalTop ||
@@ -246,13 +242,6 @@ void PlatformVideo_debugOverlaySetZone(int index,
     debugOverlayZones[index].bottom = logicalBottom;
     debugOverlayZones[index].valid = true;
     debugOverlayZoneCount = std::max(debugOverlayZoneCount, index + 1);
-#else
-    (void)index;
-    (void)logicalLeft;
-    (void)logicalTop;
-    (void)logicalRight;
-    (void)logicalBottom;
-#endif
 }
 
 void PlatformVideo_debugOverlayRefresh() {
@@ -264,7 +253,6 @@ void PlatformVideo_debugOverlayMarkTouch(int16_t physicalX,
                                          uint16_t pressure,
                                          uint16_t rawX,
                                          uint16_t rawY) {
-#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     debugTouchX = physicalX;
     debugTouchY = physicalY;
     debugTouchValid = true;
@@ -275,14 +263,8 @@ void PlatformVideo_debugOverlayMarkTouch(int16_t physicalX,
                   physicalX / DOOMRPG_INTEGER_SCALE,
                   physicalY / DOOMRPG_INTEGER_SCALE);
     drawDebugOverlay();
-#else
-    (void)physicalX;
-    (void)physicalY;
-    (void)pressure;
-    (void)rawX;
-    (void)rawY;
-#endif
 }
+#endif
 
 void PlatformVideo_showTestPattern() {
     if (framebuffer == nullptr) {
