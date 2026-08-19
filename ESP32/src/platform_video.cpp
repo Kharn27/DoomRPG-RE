@@ -16,6 +16,16 @@ constexpr size_t kPixelCount =
     static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
 constexpr size_t kFramebufferBytes = kPixelCount * sizeof(uint16_t);
 
+/* Hardware-selected CYD display profile.
+ *
+ * The four-way hardware comparison showed that the neutral gamma with a modest
+ * 1.15 saturation boost gives the best visual match on the real ILI9341 panel.
+ * Keep the logical RGB565 framebuffer untouched so every engine/rendering FNV
+ * remains a source-of-truth hash; this transform exists only at the final TFT
+ * presentation boundary.
+ */
+constexpr int kDisplaySaturationPercent = 115;
+
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 constexpr int kDebugOverlayMaxZones = 8;
 
@@ -37,6 +47,35 @@ int16_t debugTouchY = 0;
 uint16_t rgb565(uint8_t red, uint8_t green, uint8_t blue) {
     return static_cast<uint16_t>(((red & 0xf8) << 8) |
                                  ((green & 0xfc) << 3) | (blue >> 3));
+}
+
+uint8_t clamp8(int value) {
+    if (value < 0) return 0;
+    if (value > 255) return 255;
+    return static_cast<uint8_t>(value);
+}
+
+uint16_t tuneDisplayColor565(uint16_t color) {
+    /* Expand RGB565 to 8-bit using bit replication (no divisions), preserve
+     * BT.601-style luma, and scale only chroma by 1.15. Neutral grays and
+     * black/white therefore remain neutral while Doom's colored artwork gains
+     * the contrast observed in hardware comparison variant C.
+     */
+    const int red5 = (color >> 11) & 0x1f;
+    const int green6 = (color >> 5) & 0x3f;
+    const int blue5 = color & 0x1f;
+    int red = (red5 << 3) | (red5 >> 2);
+    int green = (green6 << 2) | (green6 >> 4);
+    int blue = (blue5 << 3) | (blue5 >> 2);
+
+    const int luma = (77 * red + 150 * green + 29 * blue + 128) >> 8;
+    red = clamp8(luma + ((red - luma) * kDisplaySaturationPercent) / 100);
+    green = clamp8(luma + ((green - luma) * kDisplaySaturationPercent) / 100);
+    blue = clamp8(luma + ((blue - luma) * kDisplaySaturationPercent) / 100);
+
+    return rgb565(static_cast<uint8_t>(red),
+                  static_cast<uint8_t>(green),
+                  static_cast<uint8_t>(blue));
 }
 
 void setPixel(int x, int y, uint16_t color) {
@@ -154,6 +193,8 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
     Serial.printf("[VIDEO] Physical output %dx%d, integer scale %dx\n",
                   DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT,
                   DOOMRPG_INTEGER_SCALE);
+    Serial.printf("[VIDEO] CYD display profile gamma=1.00 saturation=%d%% resampling=nearest framebuffer=untouched\n",
+                  kDisplaySaturationPercent);
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Serial.println("[HITBOX] Physical overlay enabled; framebuffer hashes remain untouched");
 #endif
@@ -190,7 +231,9 @@ bool PlatformVideo_present() {
     for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
         const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
         for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
-            const uint16_t color = source[sourceX];
+            /* Apply the panel profile once per logical pixel, then duplicate the
+             * corrected RGB565 value for exact nearest-neighbour 2x output. */
+            const uint16_t color = tuneDisplayColor565(source[sourceX]);
             const int outputX = sourceX * DOOMRPG_INTEGER_SCALE;
             outputRow[outputX] = color;
             outputRow[outputX + 1] = color;
@@ -206,7 +249,7 @@ bool PlatformVideo_present() {
     drawDebugOverlay();
 #endif
 
-    Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x: %lu us\n",
+    Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x + sat1.15: %lu us\n",
                   micros() - started);
     return true;
 }
