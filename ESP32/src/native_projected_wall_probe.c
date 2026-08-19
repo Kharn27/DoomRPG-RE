@@ -27,6 +27,7 @@
 #define EXPECTED_PROJECTED_COLUMNS 40U
 #define EXPECTED_PROJECTED_PIXELS 1600U
 #define EXPECTED_FRAME_ALLOCATOR_COST 2064U
+#define EXPECTED_PROJECTED_FRAMEBUFFER_FNV 0xad191f54U
 
 static uint32_t heap8Free(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -108,10 +109,12 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
     uint32_t framebufferHash;
     uint32_t changedPixels;
     uint16_t sentinel;
-    int originalLineFlags;
+    byte* mediaTexelsDuring;
+    int mappingOffsetDuring;
     int projectedStart;
     int projectedEnd;
     int bridgeBound = 0;
+    int drawReady = 0;
 
     int oldViewX;
     int oldViewY;
@@ -127,19 +130,15 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
     int oldScreenRight;
     int oldScreenBottom;
     int oldLineRasterCount;
-    int oldNumLines;
     byte oldSpanMode;
     boolean oldDamageBlend;
     boolean oldSkipStretch;
     short* oldPixels;
-    span_t oldSpanFunction;
-    unsigned short* oldSpanPalettes;
 
-    printf("\n=== Doom RPG ESP32 projected wall via GFXRM ===\n");
+    printf("\n=== Doom RPG ESP32 projected wall native span source ===\n");
 
     if (render == NULL || render->framebuffer == NULL ||
-        render->columnScale == NULL || render->lines == NULL ||
-        render->linesLength <= 0 || render->mediaPalettes == NULL ||
+        render->columnScale == NULL || render->mediaPalettes == NULL ||
         render->mediaTexelOffsets == NULL) {
         printf("[PROJWALL] FAILED renderer runtime contract unavailable\n");
         return 0;
@@ -167,7 +166,7 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
 
     heapBefore = heap8Free();
     largestBefore = largest8Block();
-    printf("[PROJWALL] Begin heap8=%u largest8=%u viewport=%dx%d@%d,%d texture=%d shapeData=%p mediaTexels=%p\n",
+    printf("[PROJWALL] Begin heap8=%u largest8=%u viewport=%dx%d@%d,%d texture=%d shapeData=%p mediaTexels=%p mappingOffset=%d\n",
            (unsigned int)heapBefore,
            (unsigned int)largestBefore,
            render->screenWidth,
@@ -176,7 +175,8 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
            render->screenY,
            TEST_TEXTURE_INDEX,
            (void*)render->shapeData,
-           (void*)render->mediaTexels);
+           (void*)render->mediaTexels,
+           render->mediaTexelOffsets[TEST_TEXTURE_INDEX * 2]);
 
     oldViewX = render->viewX;
     oldViewY = render->viewY;
@@ -192,20 +192,16 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
     oldScreenRight = render->screenRight;
     oldScreenBottom = render->screenBottom;
     oldLineRasterCount = render->lineRasterCount;
-    oldNumLines = render->numLines;
     oldSpanMode = render->spanMode;
     oldDamageBlend = render->damageBlend;
     oldSkipStretch = render->skipStretch;
     oldPixels = render->pixels;
-    oldSpanFunction = render->spanFunction;
-    oldSpanPalettes = render->spanPalettes;
-    originalLineFlags = render->lines[0].flags;
 
     EspNativeGraphics_resetStats();
     EspNativeProjectedWall_resetStats();
 
     if (!EspNativeProjectedWall_begin(render, TEST_TEXTURE_INDEX)) {
-        printf("[PROJWALL] FAILED bounded compatibility bind\n");
+        printf("[PROJWALL] FAILED native frame acquire\n");
         return 0;
     }
     bridgeBound = 1;
@@ -213,12 +209,21 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
     EspNativeProjectedWall_getStats(&projectedStats);
     heapBound = heap8Free();
     largestBound = largest8Block();
-    printf("[PROJWALL] Bound frame heap8=%u largest8=%u used=%uB mediaTexels=%p logicalBound=%uB\n",
+    printf("[PROJWALL] Native frame heap8=%u largest8=%u used=%uB logicalBound=%uB mediaTexels=%p mappingOffset=%d\n",
            (unsigned int)heapBound,
            (unsigned int)largestBound,
            (unsigned int)(heapBefore >= heapBound ? heapBefore - heapBound : 0),
+           (unsigned int)projectedStats.boundBytes,
            (void*)render->mediaTexels,
-           (unsigned int)projectedStats.boundBytes);
+           render->mediaTexelOffsets[TEST_TEXTURE_INDEX * 2]);
+
+    if (render->mediaTexels != NULL ||
+        render->mediaTexelOffsets[TEST_TEXTURE_INDEX * 2] !=
+            TEST_TEXTURE_EXPECTED_SOURCE_OFFSET) {
+        printf("[PROJWALL] FAILED native frame changed legacy texel state\n");
+        EspNativeProjectedWall_end();
+        return 0;
+    }
 
     sentinel = chooseSentinel(render, projectedStats.lastPaletteOffset);
     fillFramebuffer(render, sentinel);
@@ -244,7 +249,6 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
     render->damageBlend = false;
     render->skipStretch = false;
     render->lineRasterCount = 0;
-    render->numLines = 0;
     Render_initColumnScale(render);
 
     memset(&line, 0, sizeof(line));
@@ -261,15 +265,24 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
            line.vert1.x, line.vert1.y, line.vert1.z,
            line.vert2.x, line.vert2.y, line.vert2.z,
            (unsigned int)sentinel);
-    printf("[PROJWALL] -> unchanged Render_drawLines -> transform -> clip -> project -> Render_drawWallSpans -> Render_SpanMode0\n");
+    printf("[PROJWALL] -> original transform -> clip -> project -> ESP32-native wall spans\n");
 
-    Render_drawLines(render, &line);
+    Render_transform2DVerts(render, &line.vert1);
+    Render_transform2DVerts(render, &line.vert2);
+    if (Render_clipLine(render, &line)) {
+        Render_projectVertex(render, &line.vert1);
+        Render_projectVertex(render, &line.vert2);
+        drawReady = EspNativeProjectedWall_drawWallSpans(render, &line);
+    }
 
     projectedStart = (line.vert1.x + 65535) >> 16;
     projectedEnd = (line.vert2.x + 65535) >> 16;
     changedPixels = countChangedPixels(render, sentinel);
     framebufferHash = fnv1a32(render->framebuffer,
                               (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
+    mediaTexelsDuring = render->mediaTexels;
+    mappingOffsetDuring =
+        render->mediaTexelOffsets[TEST_TEXTURE_INDEX * 2];
 
     EspNativeProjectedWall_end();
     bridgeBound = 0;
@@ -286,13 +299,19 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
            line.vert2.z,
            render->lineRasterCount,
            (unsigned int)changedPixels);
-    printf("[PROJWALL] Bridge stats begin=%u end=%u bound=%uB texture=%d palette=%d originalOffset=%d texelHash=%08x\n",
+    printf("[PROJWALL] Native span stats begin=%u end=%u bound=%uB spans=%u pixels=%u rangeErrors=%u legacyPtrViolations=%u mappingViolations=%u\n",
            (unsigned int)projectedStats.beginCalls,
            (unsigned int)projectedStats.endCalls,
            (unsigned int)projectedStats.boundBytes,
+           (unsigned int)projectedStats.spanCalls,
+           (unsigned int)projectedStats.pixelsDrawn,
+           (unsigned int)projectedStats.rangeErrors,
+           (unsigned int)projectedStats.legacyPointerViolations,
+           (unsigned int)projectedStats.mappingOffsetViolations);
+    printf("[PROJWALL] Source texture=%d palette=%d sourceOffset=%d texelHash=%08x\n",
            projectedStats.lastTextureIndex,
            projectedStats.lastPaletteOffset,
-           projectedStats.originalTexelOffset,
+           projectedStats.sourceTexelOffset,
            (unsigned int)projectedStats.lastTexelHash);
     printf("[PROJWALL] GFXRM stats spriteLoads=%u wallLoads=%u packOpenCycles=%u logicalBytes=%u peakFrame=%u\n",
            (unsigned int)gfxStats.spriteLoads,
@@ -300,15 +319,17 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
            (unsigned int)gfxStats.packOpenCycles,
            (unsigned int)gfxStats.logicalBytesLoaded,
            (unsigned int)gfxStats.peakFrameBytes);
-    printf("[PROJWALL] framebufferFNV=%08x mediaTexelsRestored=%p mappingOffsetRestored=%d\n",
+    printf("[PROJWALL] framebufferFNV=%08x expected=%08x mediaTexelsDuring=%p mappingOffsetDuring=%d mediaTexelsAfter=%p mappingOffsetAfter=%d\n",
            (unsigned int)framebufferHash,
+           (unsigned int)EXPECTED_PROJECTED_FRAMEBUFFER_FNV,
+           (void*)mediaTexelsDuring,
+           mappingOffsetDuring,
            (void*)render->mediaTexels,
            render->mediaTexelOffsets[TEST_TEXTURE_INDEX * 2]);
 
     SDL_RenderPresent(NULL);
-    printf("[PROJWALL] Presented wall projected by unchanged original wall geometry + SpanMode0\n");
+    printf("[PROJWALL] Presented projected wall from direct GFXRM span source\n");
 
-    render->lines[0].flags = originalLineFlags;
     render->viewX = oldViewX;
     render->viewY = oldViewY;
     render->viewZ = oldViewZ;
@@ -323,44 +344,48 @@ int DoomRPG_probeProjectedWallGfxrm(struct Render_s* renderBase) {
     render->screenRight = oldScreenRight;
     render->screenBottom = oldScreenBottom;
     render->lineRasterCount = oldLineRasterCount;
-    render->numLines = oldNumLines;
     render->spanMode = oldSpanMode;
     render->damageBlend = oldDamageBlend;
     render->skipStretch = oldSkipStretch;
     render->pixels = oldPixels;
-    render->spanFunction = oldSpanFunction;
-    render->spanPalettes = oldSpanPalettes;
 
     heapAfter = heap8Free();
     largestAfter = largest8Block();
-    printf("[PROJWALL] End heap8=%u largest8=%u deltaFromStart=%d\n",
+    printf("[PROJWALL] End heap8=%u largest8=%u deltaFromStart=%d residentLargestDelta=%d\n",
            (unsigned int)heapAfter,
            (unsigned int)largestAfter,
-           (int)heapBefore - (int)heapAfter);
-    printf("[PROJWALL] Resident largest-block delta=%dB is allocator-placement dependent; final restoration is the contract\n",
+           (int)heapBefore - (int)heapAfter,
            (int)largestBefore - (int)largestBound);
 
-    if (bridgeBound || projectedStart != 60 || projectedEnd != 100 ||
+    if (bridgeBound || !drawReady ||
+        projectedStart != 60 || projectedEnd != 100 ||
         changedPixels != EXPECTED_PROJECTED_PIXELS ||
-        render->mediaTexels != NULL ||
+        framebufferHash != EXPECTED_PROJECTED_FRAMEBUFFER_FNV ||
+        mediaTexelsDuring != NULL || render->mediaTexels != NULL ||
+        mappingOffsetDuring != TEST_TEXTURE_EXPECTED_SOURCE_OFFSET ||
         render->mediaTexelOffsets[TEST_TEXTURE_INDEX * 2] !=
             TEST_TEXTURE_EXPECTED_SOURCE_OFFSET ||
         projectedStats.beginCalls != 1U || projectedStats.endCalls != 1U ||
         projectedStats.boundBytes != 2048U ||
+        projectedStats.spanCalls != EXPECTED_PROJECTED_COLUMNS ||
+        projectedStats.pixelsDrawn != EXPECTED_PROJECTED_PIXELS ||
+        projectedStats.rangeErrors != 0U ||
+        projectedStats.legacyPointerViolations != 0U ||
+        projectedStats.mappingOffsetViolations != 0U ||
         projectedStats.lastTextureIndex != TEST_TEXTURE_INDEX ||
         projectedStats.lastPaletteOffset != TEST_TEXTURE_EXPECTED_PALETTE_OFFSET ||
-        projectedStats.originalTexelOffset != TEST_TEXTURE_EXPECTED_SOURCE_OFFSET ||
+        projectedStats.sourceTexelOffset != TEST_TEXTURE_EXPECTED_SOURCE_OFFSET ||
         projectedStats.lastTexelHash != TEST_TEXTURE_EXPECTED_FNV1A ||
         gfxStats.spriteLoads != 0U || gfxStats.wallLoads != 1U ||
         gfxStats.packOpenCycles != 1U || gfxStats.logicalBytesLoaded != 2048U ||
         gfxStats.peakFrameBytes != 2048U ||
         heapBefore - heapBound != EXPECTED_FRAME_ALLOCATOR_COST ||
         heapAfter != heapBefore || largestAfter != largestBefore) {
-        printf("[PROJWALL] FAILED projected wall contract changed\n");
+        printf("[PROJWALL] FAILED native projected wall contract changed\n");
         return 0;
     }
 
-    printf("[PROJWALL] READY unchanged projection + Render_drawWallSpans + Render_SpanMode0 consumed one bounded GFXRM frame\n");
-    printf("[PROJWALL] READY legacy mediaTexels alias existed only during draw and is restored to NULL\n");
+    printf("[PROJWALL] READY projected wall is bit-identical with direct bounded GFXRM sampling\n");
+    printf("[PROJWALL] READY mediaTexels stayed NULL and global mapping stayed untouched for every native span\n");
     return 1;
 }
