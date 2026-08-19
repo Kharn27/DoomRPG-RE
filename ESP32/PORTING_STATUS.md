@@ -19,9 +19,9 @@ before merge.
 
 ## Project direction
 
-DoomRPG-RE is treated as an executable specification for behaviour, data formats
-and useful rendering semantics, not as an architecture contract. The ESP32 port
-is progressively becoming its own constrained engine:
+DoomRPG-RE is an executable specification for behaviour, data formats and useful
+rendering semantics, not an architecture contract. The ESP32 port is progressively
+becoming its own constrained engine:
 
 - bounded deterministic RAM use
 - SD as immutable backing store
@@ -70,176 +70,222 @@ Documentation is part of the increment, not a later cleanup task.
 - clean TFT game ownership, Serial diagnostics retained
 - fitted 160x120 `MENU_MAIN` geometry, historical framebuffer `1afa0223`
 - touch-ready hand-only `MENU_MAIN` with real XPT2046 selection
-- hardware-validated selection hashes:
+- selected-frame hashes:
   - Start Game `cbc99461`
   - Options `961109a7`
   - Help/About `e4eadfbb`
   - Exit `5ff2a5cd`
 - double-tap semantic confirmation validated on hardware
-- touch-select merge on `main` / PR #29:
-  `03b0341c8c5df50b1b82d0c668dabfa41d53697e`
+- real Options action through `MenuSystem_select()`
+- real `MENU_MAIN_OPTIONS` model (`Back / Video / Input / Sound`)
+- bounded Options framebuffer `6058d47d`
+- Options action merge on `main` / PR #30:
+  `c2ab0d1135e3c94af61e8c303469a5a96aa3caeb`
 
 ## Current validated increment
 
-Branch: `agent/esp32-main-menu-options-action`
+Branch: `agent/esp32-options-back-roundtrip`
 
 Base `main` SHA:
 
 ```text
-03b0341c8c5df50b1b82d0c668dabfa41d53697e
+c2ab0d1135e3c94af61e8c303469a5a96aa3caeb
 ```
 
 Status: **HARDWARE VALIDATED, DOCUMENTED, READY TO MERGE**.
 
-Objective: promote exactly one already validated `MENU_MAIN` confirmation into a
-real original menu action:
+Objective: prove the first complete real menu hierarchy round trip:
 
 ```text
-double tap Options
+MENU_MAIN
+    -> double tap Options
     -> real MenuSystem_select()
-    -> real MENU_MAIN_OPTIONS model
-    -> bounded ESP32 presentation
+    -> MENU_MAIN_OPTIONS
+    -> double tap Back
+    -> real MenuSystem_back()
+    -> rebuilt native MENU_MAIN scene
+    -> touch-ready MENU_MAIN re-armed
 ```
 
-`Start Game`, `Help/About` and `Exit` remain unchanged/deferred.
+`Video`, `Input`, `Sound`, `Start Game`, `Help/About` and `Exit` remain deferred.
 
-## Why Options is the first executed action
+## Real Options -> Back transition
 
-The original `MenuSystem_select()` delegates to `Menu_select()`, then calls
-`MenuSystem_setMenu()` when the target menu differs from the current menu.
+The Options screen arms a deliberately narrow touch callback. Only `Back` can
+execute an action in this increment.
 
-For `MENU_MAIN` selected item 1 (`Options`), the original path reaches
-`MENU_MAIN_OPTIONS` without entering gameplay loading. The resulting model from
-`Menu_initMenu()` is:
+Hardware-validated Options touch geometry:
 
 ```text
-menu          = MENU_MAIN_OPTIONS / 7
-type          = MENUTYPE_MAIN2 / 7
-oldMenu       = MENU_MAIN / 1
+Back logical x=15..119 y=67..78
+Back physical x=30..239 y=134..157
+```
+
+The UX remains two released taps:
+
+```text
+first Back tap  -> ARM
+release
+second Back tap -> MenuSystem_back()
+```
+
+`MenuSystem_back()` correctly restores the original menu model:
+
+```text
+menu          = MENU_MAIN / 1
+type          = 4
+oldMenu       = -1
 selectedIndex = 0
-scrollIndex   = 0
 numItems      = 4
-
-0 Back
-1 Video
-2 Input
-3 Sound
+state         = ST_MENU / 2
 ```
 
-This makes Options a safe first proof that the ESP32 touch frontend can drive a
-real Doom RPG menu transition.
+This proves the hierarchy transition itself is real original Doom RPG behaviour.
 
-## Bounded Options presentation
+## Re-entry regression found and fixed on hardware
 
-The real `MenuSystem_select()` transition is executed, but the original
-`MenuSystem_paint()` is intentionally not used yet for pre-game menus because it
-still calls legacy `Render_render()`.
-
-Instead, the ESP32 transition paints the resulting real Options model through a
-bounded presentation path:
+The first hardware attempt reached the correct `MENU_MAIN` model, then failed
+while reconstructing the native wall frame:
 
 ```text
-real MenuSystem_select()
-        |
-        v
-real MENU_MAIN_OPTIONS model
-        |
-        v
-black controlled framebuffer
-+ real scaled j.bmp logo
-+ real p.bmp hand
-+ real Doom bitmap font
-        |
-        v
-shared 160x120 RGB565 framebuffer
+[OPTIONBACK] MODEL menu=1 type=4 old=-1 selected=0 items=4 state=2
+[MENUWALL] framebufferFNV=b6f86faa expected=a6d87c4a
+[MENUWALL] FAILED cached real menu regression contract changed
 ```
 
-No BSP rerender, map reload, gameplay loader, `shapeData` or map-wide
-`mediaTexels` is introduced by this action.
-
-The Options rows currently reuse the hardware-validated 160x120 row positions:
+All geometric/resource invariants were still identical:
 
 ```text
-Back  y=67
-Video y=79
-Input y=91
-Sound y=103
+walls        = 25
+wall requests= 25
+unique       = 8
+requestFNV   = 4db9da28
+spans        = 224
+pixels       = 5589
+cache        = 14 hits / 11 misses / 8 evictions
 ```
 
-The screen is deliberately **display-only after the transition** in this
-increment. Touch is disarmed when Options opens. Therefore tapping `Back`,
-`Video`, `Input` or `Sound` does nothing yet; that is expected success, not a
-regression.
+Root cause: `Render_setGrayPalettes()` is destructive and non-idempotent. It
+rewrites `mediaPalettes`, `floorColor[0]` and `ceilingColor[0]` in place. The
+menu scene had already been converted to grayscale during initial startup; the
+Back reconstruction converted the already-gray RGB565 values a second time,
+introducing rounding changes and therefore framebuffer `b6f86faa`.
 
-## Authoritative hardware validation
-
-The real hardware produced:
+The fix leaves the original wall probe and renderer source unchanged. A tiny ESP32
+re-entry bridge wraps the probe boundary and `Render_setGrayPalettes()`:
 
 ```text
-=== Doom RPG ESP32 real MENU_MAIN -> Options action ===
-[MAINOPTIONS] Begin menu=1 selected=1 framebufferFNV=961109a7 expectedSelectedOptionsFNV=961109a7 heap8=28704 largest8=17396 shapeData=0x0 mediaTexels=0x0
-[MAINOPTIONS] Model menu=7 type=7 old=1 selected=0 scroll=0 items=4 state=2 modelFNV=e1ef01f7
-[MAINOPTIONS] ITEM index=0 y=67 text="Back" flags=0 action=0 selected=yes
-[MAINOPTIONS] ITEM index=1 y=79 text="Video" flags=0 action=0 selected=no
-[MAINOPTIONS] ITEM index=2 y=91 text="Input" flags=0 action=0 selected=no
-[MAINOPTIONS] ITEM index=3 y=103 text="Sound" flags=0 action=0 selected=no
-[MAINOPTIONS] HASH stage=logo fnv=0ac1f9c6
-[MAINOPTIONS] HASH stage=item0 text="Back" fnv=c7258261
-[MAINOPTIONS] HASH stage=item1 text="Video" fnv=4e764e2f
-[MAINOPTIONS] HASH stage=item2 text="Input" fnv=175fa691
-[MAINOPTIONS] HASH stage=item3 text="Sound" fnv=6058d47d
-[MAINOPTIONS] framebufferFNV=6058d47d inputFNV=961109a7 changed=yes shapeData=0x0 mediaTexels=0x0
-[MAINOPTIONS] End heap8=28704 largest8=17396 deltaFromStart=0 largestDelta=0
-[VIDEO] Present 160x120 -> 320x240 exact 2x: 34426 us
-[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with bounded ESP32 paint
-[MAINOPTIONS] READY MenuSystem_select executed for Options; no legacy Render_render, no map reload, no gameplay loader
-[MAINOPTIONS] READY Options interaction intentionally remains disabled for this increment
+normal boot
+    -> real Render_setGrayPalettes()
+
+Options framebuffer 6058d47d + model already returned to MENU_MAIN
+    -> arm one-shot re-entry guard
+    -> skip exactly the next destructive grayscale conversion
+    -> keep normal floor/ceiling replication and native render path
 ```
 
-`Present` timing is diagnostic only, not a regression requirement.
-
-## New deterministic Options signatures
+Hardware markers for the fixed path:
 
 ```text
-MENU_MAIN selected Options input = 961109a7
-MENU_MAIN_OPTIONS model FNV      = e1ef01f7
-Options after logo               = 0ac1f9c6
-Options after Back               = c7258261
-Options after Video              = 4e764e2f
-Options after Input              = 175fa691
-Options after Sound / final      = 6058d47d
+[MENUWALL] REENTRY detected from Options framebuffer=6058d47d; preserving already-gray palette
+[MENUWALL] REENTRY grayscale already applied; skipping destructive second Render_setGrayPalettes pass
 ```
 
-The authoritative final Options framebuffer for this exact presentation is:
+The corrected wall frame is again exact:
 
 ```text
-6058d47d
+[MENUWALL] framebufferFNV=a6d87c4a expected=a6d87c4a
 ```
 
-## Memory and legacy-resource boundary
+## Authoritative round-trip hardware validation
 
-The action retained exact allocator values:
+The real CYD then produced the complete deterministic return:
 
 ```text
-before: heap8=28704 largest8=17396
-after:  heap8=28704 largest8=17396
+[OPTIONBACK] CONFIRM Back action=MenuSystem_back
 
-deltaFromStart = 0
-largestDelta   = 0
+=== Doom RPG ESP32 real Options -> MENU_MAIN Back roundtrip ===
+[OPTIONBACK] Begin menu=7 selected=0 old=1 framebufferFNV=6058d47d shapeData=0x0 mediaTexels=0x0
+[OPTIONBACK] MODEL menu=1 type=4 old=-1 selected=0 items=4 state=2
+[MENUWALL] REENTRY detected from Options framebuffer=6058d47d; preserving already-gray palette
+...
+[MENUWALL] framebufferFNV=a6d87c4a expected=a6d87c4a
+...
+[MENUSPRITE] framebufferFNV=ffe0995e expected=ffe0995e wallsFNV=a6d87c4a
+...
+[MAINTOUCHLAYOUT] framebufferFNV=cbc99461 sceneFNV=ffe0995e
+[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm optionsAction=enabled
+...
+[OPTIONBACK] End framebufferFNV=cbc99461 expected=cbc99461 menu=1 selected=0 touchActive=1 shapeData=0x0 mediaTexels=0x0
+[OPTIONBACK] READY real MenuSystem_back returned to bit-identical touch-ready MENU_MAIN
+[OPTIONBACK] READY MENU_MAIN touch re-armed; Options can be entered again with the same deterministic hashes
 ```
 
-And throughout the transition:
+Deterministic round-trip chain:
+
+```text
+MENU_MAIN selected Options = 961109a7
+MENU_MAIN_OPTIONS          = 6058d47d
+Back walls                 = a6d87c4a
+Back walls + sprites       = ffe0995e
+Back MENU_MAIN             = cbc99461
+```
+
+## Memory boundary after round trip
+
+The final hardware build reports:
+
+```text
+heap8    = 28680
+largest8 = 17396
+```
+
+During wall/sprite cache activity the heap drops transiently as expected, then
+returns to the same baseline. At the final Options -> Main boundary:
 
 ```text
 shapeData   = NULL
 mediaTexels = NULL
+wall cache  = inactive
+sprite cache= inactive
 ```
 
-No wall/sprite cache is active during the menu transition.
+The small drop from the previous `28704` baseline is the static cost of the new
+round-trip/re-entry control state, not a per-navigation leak.
+
+## Important UX/performance finding: Back currently feels like a mini reboot
+
+The round trip is functionally correct, but the current return mechanism is a
+**validation/recovery path, not the desired final menu-navigation path**.
+
+It does **not** rerun the full startup sequence. In particular, Back does not rerun:
+
+- `ParticleSystem_startup()`
+- `MenuSystem_startup()`
+- `EntityDef_startup()`
+- `Render_startup()`
+- config/mappings load
+- `menu.bsp` structural parsing
+- asset-pack/bitshape preflight probes
+
+However, it does rerun the two expensive already-validated scene probes so the
+shared framebuffer can be reconstructed without a second 38,400-byte buffer:
+
+```text
+MENUWALL    ~= 1355 ms on measured hardware
+MENUSPRITE  ~= 1039 ms on measured hardware
+plus framebuffer presents / menu composition
+```
+
+So a Back navigation takes roughly 2.5 seconds and emits a large amount of probe
+logging. The user's observation that it feels like the game rebooted is therefore
+accurate from a UX perspective even though no actual reboot/startup occurred.
+
+Do **not** treat this heavy rebuild as the final menu architecture.
 
 ## Touch architecture status
 
-The validated `MENU_MAIN` touch frontend remains:
+Validated path:
 
 ```text
 XPT2046
@@ -247,51 +293,26 @@ XPT2046
    -> one tap per press/release cycle
    -> 50 ms stable-release rearm
    -> physical 320x240 -> logical 160x120
-   -> MENU_MAIN hit-test
-   -> real MenuSystem.selectedIndex
-   -> real p.bmp cursor
-   -> second released tap = CONFIRM
+   -> menu-specific hit test
+   -> real MenuSystem model transition
 ```
 
-Cursor movement still uses four static 13x10 RGB565 background patches:
+`MENU_MAIN` cursor movement still uses four static 13x10 RGB565 patches:
 
 ```text
 4 * 13 * 10 * 2 B = 1,040 B
 ```
 
-No second 38,400-byte framebuffer is used.
+No second full framebuffer exists.
 
-## Linker-wrapper lesson from this increment
+## Linker-wrapper rules learned so far
 
-The first implementation attempt added:
-
-```text
---wrap=DoomRPG_esp32MainMenuTouchOnTap
-```
-
-That was incorrect for this callback architecture. `native_main_menu_touch.c`
-takes the address of `DoomRPG_esp32MainMenuTouchOnTap()` in the same translation
-unit, while the existing tap gate compares callback function pointers in another
-translation unit. The additional wrapper changed symbol identity for the gate but
-did not intercept the local function-address reference.
-
-Observed consequence:
-
-```text
-GATE READY missing
-CONFIRM fell back to action=deferred
-Options action never ran
-```
-
-The failed wrapper was removed on the same branch. The final implementation keeps
-only the already validated `PlatformInput_setTapCallback` gate and performs the
-Options dispatch explicitly at the confirmed-item boundary.
-
-Rule for future work:
-
-> Do not assume GNU `--wrap` will intercept a function pointer taken locally in
-> the same translation unit. Be especially careful when pointer identity is part
-> of the control flow.
+1. Do not blindly `--wrap` a callback whose address is taken in its own
+   translation unit; local function-pointer identity may bypass the wrapper and
+   break pointer comparisons.
+2. A narrow wrapper can still be useful at an explicit cross-translation-unit
+   boundary. The grayscale re-entry bridge is acceptable because it guards one
+   deterministic transition and is transparent during normal boot.
 
 ## Deterministic regression boundaries
 
@@ -312,6 +333,7 @@ touch Help/About selected         = e4eadfbb
 touch Exit selected               = 5ff2a5cd
 MENU_MAIN_OPTIONS model           = e1ef01f7
 MENU_MAIN_OPTIONS framebuffer     = 6058d47d
+failed double-gray wall frame     = b6f86faa
 ```
 
 ## Display ownership
@@ -319,11 +341,8 @@ MENU_MAIN_OPTIONS framebuffer     = 6058d47d
 Normal mode remains:
 
 ```text
-Serial
-  `--> startup/probe/debug/touch diagnostics
-
-TFT
-  `--> shared game framebuffer only
+Serial -> startup/probe/debug/touch diagnostics
+TFT    -> shared game framebuffer only
 ```
 
 `DOOMRPG_ESP32_SCREEN_DIAGNOSTICS=0` remains the default.
@@ -334,10 +353,9 @@ Comparison against the J2ME reference still shows the main-menu presentation on
 CYD looking flatter / less saturated / lower contrast. Do not change palette
 values blindly.
 
-The Options screen in this increment uses a controlled black background, which
-will be useful later when separating background/composition contrast from palette
-conversion or physical TFT behaviour. No color correction is part of this
-increment.
+The new grayscale re-entry finding is separate from that visual issue: it explains
+why a second grayscale pass changed deterministic hashes, not why the initial
+hardware presentation looks less saturated than the J2ME reference.
 
 ## Current safe stop boundary
 
@@ -355,42 +373,39 @@ Validated and executed:
 - calibrated physical touch hit-testing
 - real `MenuSystem.selectedIndex` changes from touch
 - independently movable real `p.bmp` hand cursor
-- bit-identical cursor background restoration
 - second released tap on same row detected as `CONFIRM`
-- **real `MenuSystem_select()` execution for confirmed Options**
-- real `MENU_MAIN_OPTIONS` model (`Back / Video / Input / Sound`)
-- bounded Options framebuffer `6058d47d`
-- exact allocator restoration through Options transition
+- real `MenuSystem_select()` execution for confirmed Options
+- real `MENU_MAIN_OPTIONS` model and bounded framebuffer `6058d47d`
+- **real `MenuSystem_back()` execution from Options**
+- **bit-identical reconstruction of MENU_MAIN after Back**
+- **MENU_MAIN touch re-armed after the round trip**
+- grayscale re-entry made deterministic/idempotent at the ESP32 boundary
 
 Still intentionally out of scope:
 
-- touch interaction inside `MENU_MAIN_OPTIONS`
-- `Back` transition to `MENU_MAIN`
-- execution of `Video`, `Input` or `Sound`
-- `Help/About` and `Exit` real actions
+- fast menu-scene restoration
+- Video/Input/Sound actions
+- Help/About and Exit real actions
 - Start Game / gameplay loader activation
 - original monolithic bitshape/texel loaders
 - textured floor/ceiling planes
-- active normal multi-frame engine/menu loop
+- active normal multi-frame engine/game loop
 - final color/contrast correction
 - normal gameplay controls
 - audio
 
 ## Recommended next increment after merge
 
-The smallest useful continuation is to make the Options screen itself touch-aware,
-starting with the safest action: **Back**.
+Before enabling more submenus, remove the 2.5-second "mini reboot" effect from
+normal menu navigation.
 
-Recommended scope:
+Recommended objective:
 
-```text
-Options screen appears
-    -> touch Back
-    -> first tap selects/arms using the same UX
-    -> second released tap executes real back transition
-    -> return to bounded MENU_MAIN presentation
-    -> re-arm MENU_MAIN touch
-```
+> Replace the full `MENUWALL + MENUSPRITE` Back reconstruction with a bounded
+> reusable representation of the already deterministic `ffe0995e` menu scene.
 
-Keep `Video`, `Input`, `Sound` and `Start Game` deferred until their respective
-subsystems are understood and bounded.
+Do **not** allocate a second 38,400-byte framebuffer: the current largest free
+8-bit block is only about 17 KB. First measure an exact compact representation
+(RLE/indexed/other lossless bounded encoding) of the static menu scene and choose
+a format from hardware data. Keep the current full native rerender as a recovery /
+regression path, not as the eventual interactive navigation path.
