@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <SD.h>
 #include <string.h>
+#include <strings.h>
 
 #include "esp_asset_pack.h"
 
