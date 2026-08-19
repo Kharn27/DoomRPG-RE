@@ -10,19 +10,19 @@
 
 #include "native_main_menu_options_back.h"
 #include "native_main_menu_touch.h"
-#include "native_menu_sprite_frame_probe.h"
-#include "native_menu_wall_frame_probe.h"
+#include "native_main_menu_touch_layout.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
 
 #define EXPECTED_OPTIONS_FRAMEBUFFER_FNV 0x6058d47dU
-#define EXPECTED_MAIN_RETURN_FNV 0xcbc99461U
+#define EXPECTED_OPAQUE_MAIN_FNV 0x58a11171U
 #define OPTIONS_BACK_ITEM 0
+#define OPTIONS_ROW_TOP 67
 #define OPTIONS_BACK_HIT_LEFT 15
 #define OPTIONS_BACK_HIT_RIGHT 119
-#define OPTIONS_BACK_HIT_TOP 67
+#define OPTIONS_BACK_HIT_TOP 64
 #define OPTIONS_BACK_HIT_BOTTOM 78
 
 static DoomRPG_t* optionsDoomRpg = NULL;
@@ -78,7 +78,7 @@ static int hitBack(int16_t screenX, int16_t screenY) {
 
 static int optionsRowAt(int16_t screenY) {
     const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
-    const int relativeY = logicalY - OPTIONS_BACK_HIT_TOP;
+    const int relativeY = logicalY - OPTIONS_ROW_TOP;
 
     if (relativeY < 0 || relativeY >= 48) {
         return -1;
@@ -86,12 +86,14 @@ static int optionsRowAt(int16_t screenY) {
     return relativeY / 12;
 }
 
-static int rebuildMainMenuAfterBack(DoomRPG_t* doomRpg) {
+static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
     Render_t* render = doomRpg->render;
-    uint32_t finalHash;
+    uint32_t finalHash = 0;
+    uint32_t repaintStart;
+    uint32_t repaintMs;
 
-    printf("\n=== Doom RPG ESP32 real Options -> MENU_MAIN Back roundtrip ===\n");
+    printf("\n=== Doom RPG ESP32 fast Options -> MENU_MAIN Back ===\n");
     printf("[OPTIONBACK] Begin menu=%d selected=%d old=%d framebufferFNV=%08x shapeData=%p mediaTexels=%p\n",
            menuSystem->menu,
            menuSystem->selectedIndex,
@@ -113,9 +115,11 @@ static int rebuildMainMenuAfterBack(DoomRPG_t* doomRpg) {
         return 0;
     }
 
-    /* This is the original hierarchy transition. MENU_MAIN_OPTIONS has
-     * oldMenu=MENU_MAIN, so MenuSystem_back() reconstructs the real main model
-     * and keeps the canvas in ST_MENU without loading gameplay.
+    repaintStart = (uint32_t)DoomRPG_GetTimeMS();
+
+    /* Preserve the original hierarchy transition. Only presentation changes:
+     * after MenuSystem_back(), repaint the real MENU_MAIN model directly on an
+     * opaque framebuffer instead of replaying BSP walls and sprites.
      */
     MenuSystem_back(menuSystem);
 
@@ -141,43 +145,36 @@ static int rebuildMainMenuAfterBack(DoomRPG_t* doomRpg) {
            menuSystem->numItems,
            doomRpg->doomCanvas->state);
 
-    /* Rebuild the exact hardware-validated menu scene. The wall probe uses the
-     * legacy renderer only as a BSP/camera walker with lines/sprites/plane
-     * textures suppressed; actual wall and sprite pixels remain native bounded
-     * ESP32 paths. The sprite probe's existing linker wrapper then chains the
-     * touch-ready MENU_MAIN overlay and re-arms touch automatically.
-     */
-    if (!DoomRPG_probeNativeMenuWallFrame(render)) {
-        printf("[OPTIONBACK] FAILED rebuilding native walls\n");
+    if (!DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalHash)) {
+        printf("[OPTIONBACK] FAILED bounded opaque MENU_MAIN repaint\n");
         return 0;
     }
 
-    if (!DoomRPG_probeNativeMenuSpriteFrame(render)) {
-        printf("[OPTIONBACK] FAILED rebuilding native sprites/menu overlay\n");
-        return 0;
-    }
+    repaintMs = (uint32_t)DoomRPG_GetTimeMS() - repaintStart;
 
-    finalHash = framebufferHash(render);
-    printf("[OPTIONBACK] End framebufferFNV=%08x expected=%08x menu=%d selected=%d touchActive=%d shapeData=%p mediaTexels=%p\n",
+    printf("[OPTIONBACK] FAST End framebufferFNV=%08x expected=%08x runtimeFNV=%08x menu=%d selected=%d touchActive=%d repaintMs=%u shapeData=%p mediaTexels=%p\n",
            (unsigned int)finalHash,
-           (unsigned int)EXPECTED_MAIN_RETURN_FNV,
+           (unsigned int)EXPECTED_OPAQUE_MAIN_FNV,
+           (unsigned int)framebufferHash(render),
            menuSystem->menu,
            menuSystem->selectedIndex,
            DoomRPG_esp32MainMenuTouchIsActive(),
+           (unsigned int)repaintMs,
            (void*)render->shapeData,
            (void*)render->mediaTexels);
 
-    if (finalHash != EXPECTED_MAIN_RETURN_FNV ||
+    if (finalHash != EXPECTED_OPAQUE_MAIN_FNV ||
+        finalHash != framebufferHash(render) ||
         menuSystem->menu != MENU_MAIN ||
         menuSystem->selectedIndex != 0 ||
         !DoomRPG_esp32MainMenuTouchIsActive() ||
         !graphicsBoundaryIsSafe(doomRpg)) {
-        printf("[OPTIONBACK] FAILED roundtrip invariant\n");
+        printf("[OPTIONBACK] FAILED fast roundtrip invariant\n");
         return 0;
     }
 
-    printf("[OPTIONBACK] READY real MenuSystem_back returned to bit-identical touch-ready MENU_MAIN\n");
-    printf("[OPTIONBACK] READY MENU_MAIN touch re-armed; Options can be entered again with the same deterministic hashes\n");
+    printf("[OPTIONBACK] READY real MenuSystem_back + opaque bounded repaint; no MENUWALL/MENUSPRITE replay\n");
+    printf("[OPTIONBACK] READY MENU_MAIN touch re-armed for another complete cycle\n");
     return 1;
 }
 
@@ -237,13 +234,13 @@ static void optionsBackTap(int16_t screenX,
         return;
     }
 
-    printf("[OPTIONBACK] CONFIRM Back action=MenuSystem_back\n");
+    printf("[OPTIONBACK] CONFIRM Back action=MenuSystem_back+opaque-repaint\n");
     backArmed = 0;
     optionsBackActive = 0;
     PlatformInput_setTapCallback(NULL);
 
-    if (!rebuildMainMenuAfterBack(optionsDoomRpg)) {
-        printf("[OPTIONBACK] FAILED executing Back roundtrip\n");
+    if (!repaintMainMenuAfterBack(optionsDoomRpg)) {
+        printf("[OPTIONBACK] FAILED executing fast Back roundtrip\n");
     }
 }
 
@@ -277,7 +274,7 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
     optionsBackActive = 1;
     PlatformInput_setTapCallback(optionsBackTap);
 
-    printf("[OPTIONBACK] READY Back zone logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d firstTap=arm secondReleasedTap=back Video/Input/Sound=deferred\n",
+    printf("[OPTIONBACK] READY Back hit logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d visualRowY=67..78 topTolerance=3 firstTap=arm secondReleasedTap=back Video/Input/Sound=deferred fastOpaqueReturn=yes\n",
            OPTIONS_BACK_HIT_LEFT,
            OPTIONS_BACK_HIT_RIGHT,
            OPTIONS_BACK_HIT_TOP,

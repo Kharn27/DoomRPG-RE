@@ -11,8 +11,8 @@
 #include "Render.h"
 
 #include "native_main_menu_160x120_layout.h"
-#include "native_main_menu_overlay_probe.h"
 #include "native_main_menu_touch.h"
+#include "native_main_menu_touch_layout.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
@@ -29,6 +29,7 @@
 #define PRIOR_FITTED_MENU_FNV 0x1afa0223U
 #define EXPECTED_MAIN_MENU_MODEL_FNV 0xbbc2149bU
 #define EXPECTED_LAYOUT_FNV 0x47b3656eU
+#define EXPECTED_BLACK_LOGO_FNV 0x0ac1f9c6U
 #define EXPECTED_FONT_WIDTH 144
 #define EXPECTED_FONT_HEIGHT 72
 #define EXPECTED_HAND_WIDTH 13
@@ -72,6 +73,7 @@ static uint32_t framebufferHash(const Render_t* render) {
 
 static uint32_t fnvMixU32(uint32_t hash, uint32_t value) {
     int shift;
+
     for (shift = 0; shift < 32; shift += 8) {
         hash ^= (value >> shift) & 0xffU;
         hash *= 16777619U;
@@ -136,7 +138,24 @@ static uint32_t menuLayoutHash(const DoomCanvas_t* doomCanvas,
     return hash;
 }
 
-static int validateMainMenuModel(MenuSystem_t* menuSystem) {
+static int graphicsBoundaryIsSafe(const DoomRPG_t* doomRpg) {
+    const Render_t* render;
+
+    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
+        doomRpg->menuSystem == NULL || doomRpg->menu == NULL ||
+        doomRpg->render == NULL) {
+        return 0;
+    }
+
+    render = doomRpg->render;
+    return render->framebuffer != NULL &&
+           render->shapeData == NULL &&
+           render->mediaTexels == NULL &&
+           !EspNativeWallCache_isActive() &&
+           !EspNativeSpriteCache_isActive();
+}
+
+static int validateMainMenuModel(const MenuSystem_t* menuSystem) {
     int i;
 
     if (menuSystem->menu != MENU_MAIN ||
@@ -161,13 +180,89 @@ static int validateMainMenuModel(MenuSystem_t* menuSystem) {
     return 1;
 }
 
-static int drawTouchReadyMainMenu(
+static int validatePresentationContract(DoomRPG_t* doomRpg,
+                                        uint32_t* modelHashOut,
+                                        uint32_t* layoutHashOut) {
+    DoomCanvas_t* doomCanvas;
+    MenuSystem_t* menuSystem;
+    int logoX;
+    int logoBottom;
+    int contentBottom;
+    uint32_t modelHash;
+    uint32_t layoutHash;
+
+    if (!graphicsBoundaryIsSafe(doomRpg)) {
+        return 0;
+    }
+
+    doomCanvas = doomRpg->doomCanvas;
+    menuSystem = doomRpg->menuSystem;
+
+    if (doomCanvas->displayRect.w != DOOMRPG_LOGICAL_WIDTH ||
+        doomCanvas->displayRect.h != DOOMRPG_LOGICAL_HEIGHT ||
+        doomCanvas->largeStatus ||
+        menuSystem->imgLogo.imgBitmap == NULL ||
+        menuSystem->imgLogo.width != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_WIDTH ||
+        menuSystem->imgLogo.height != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_HEIGHT ||
+        menuSystem->imgHand.imgBitmap == NULL ||
+        menuSystem->imgHand.width != EXPECTED_HAND_WIDTH ||
+        menuSystem->imgHand.height != EXPECTED_HAND_HEIGHT ||
+        doomCanvas->imgFont.imgBitmap == NULL ||
+        doomCanvas->imgFont.width != EXPECTED_FONT_WIDTH ||
+        doomCanvas->imgFont.height != EXPECTED_FONT_HEIGHT) {
+        return 0;
+    }
+
+    menuSystem->paintMenu = true;
+    menuSystem->maxItems = doomCanvas->displayRect.h /
+                           DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
+
+    if (!validateMainMenuModel(menuSystem)) {
+        return 0;
+    }
+
+    modelHash = menuModelHash(menuSystem);
+    logoX = doomCanvas->displayRect.x +
+            ((doomCanvas->displayRect.w -
+              DOOMRPG_ESP32_MAIN_MENU_LOGO_WIDTH) >> 1);
+    logoBottom = doomCanvas->displayRect.y +
+                 DOOMRPG_ESP32_MAIN_MENU_LOGO_Y +
+                 DOOMRPG_ESP32_MAIN_MENU_LOGO_HEIGHT;
+    contentBottom = doomCanvas->displayRect.y +
+                    DOOMRPG_ESP32_MAIN_MENU_CONTENT_BOTTOM;
+    layoutHash = menuLayoutHash(doomCanvas, menuSystem, logoX);
+
+    if (modelHash != EXPECTED_MAIN_MENU_MODEL_FNV ||
+        layoutHash != EXPECTED_LAYOUT_FNV ||
+        logoBottom > doomCanvas->displayRect.y +
+                     DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y ||
+        contentBottom > doomCanvas->displayRect.y + doomCanvas->displayRect.h) {
+        return 0;
+    }
+
+    if (modelHashOut != NULL) {
+        *modelHashOut = modelHash;
+    }
+    if (layoutHashOut != NULL) {
+        *layoutHashOut = layoutHash;
+    }
+    return 1;
+}
+
+static int drawTouchReadyMainMenuOpaque(
     DoomRPG_t* doomRpg,
     uint32_t stageHashes[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT + 1]) {
     DoomCanvas_t* doomCanvas = doomRpg->doomCanvas;
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
     SDL_Rect logoDst;
     int itemIndex;
+
+    DoomRPG_setColor(doomRpg, 0x000000);
+    DoomRPG_fillRect(doomRpg,
+                     doomCanvas->displayRect.x,
+                     doomCanvas->displayRect.y,
+                     doomCanvas->displayRect.w,
+                     doomCanvas->displayRect.h);
 
     logoDst.x = doomCanvas->displayRect.x +
                 ((doomCanvas->displayRect.w -
@@ -182,9 +277,14 @@ static int drawTouchReadyMainMenu(
     }
     stageHashes[0] = framebufferHash(doomRpg->render);
 
-    /* Capture the scene+logo pixels under all four future hand positions before
-     * any row is drawn. This costs only 4 * 13 * 10 * RGB565 = 1040 bytes.
-     */
+    if (stageHashes[0] != EXPECTED_BLACK_LOGO_FNV) {
+        printf("[MAINOPAQUE] FAILED black+logo fnv=%08x expected=%08x\n",
+               (unsigned int)stageHashes[0],
+               (unsigned int)EXPECTED_BLACK_LOGO_FNV);
+        return 0;
+    }
+
+    /* Capture black+logo pixels under all future hand positions before rows. */
     if (!DoomRPG_esp32MainMenuTouchPrepare(doomRpg)) {
         return 0;
     }
@@ -201,10 +301,6 @@ static int drawTouchReadyMainMenu(
                       MENU_GLYPH_ADVANCE) >> 8;
         int x = doomCanvas->SCR_CX - length;
 
-        /* Touch UI rule: text has a stable position. Selection is represented
-         * only by the real p.bmp hand, so moving it never requires redrawing a
-         * glyph row or the 3D scene behind the menu.
-         */
         if (itemIndex == menuSystem->selectedIndex) {
             DoomCanvas_drawImage(doomCanvas,
                                  &menuSystem->imgHand,
@@ -222,7 +318,6 @@ static int drawTouchReadyMainMenu(
                             0,
                             -1,
                             false);
-
         stageHashes[itemIndex + 1] = framebufferHash(doomRpg->render);
     }
 
@@ -230,58 +325,131 @@ static int drawTouchReadyMainMenu(
     return 1;
 }
 
-/* Active ESP32 MENU_MAIN presentation for the touch-selection increment. The
- * PR #28 implementation remains in-tree but is excluded from this build so its
- * 1afa0223 hardware reference remains available as a recovery baseline.
+int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
+                                       uint32_t* finalFramebufferFNV) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    Render_t* render;
+    uint32_t stageHashes[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT + 1] = {0};
+    uint32_t modelHash = 0;
+    uint32_t layoutHash = 0;
+    uint32_t finalHash;
+    uint32_t heapBefore;
+    uint32_t heapAfter;
+    uint32_t largestBefore;
+    uint32_t largestAfter;
+    uint32_t composeStart;
+    uint32_t composeMs;
+    int i;
+
+    if (!validatePresentationContract(doomRpg, &modelHash, &layoutHash)) {
+        printf("[MAINOPAQUE] FAILED presentation contract menu=%d selected=%d\n",
+               doomRpg != NULL && doomRpg->menuSystem != NULL
+                   ? doomRpg->menuSystem->menu : -999,
+               doomRpg != NULL && doomRpg->menuSystem != NULL
+                   ? doomRpg->menuSystem->selectedIndex : -999);
+        return 0;
+    }
+
+    render = doomRpg->render;
+    heapBefore = heap8Free();
+    largestBefore = largest8Block();
+    composeStart = (uint32_t)DoomRPG_GetTimeMS();
+
+    if (!drawTouchReadyMainMenuOpaque(doomRpg, stageHashes)) {
+        printf("[MAINOPAQUE] FAILED composition\n");
+        return 0;
+    }
+
+    composeMs = (uint32_t)DoomRPG_GetTimeMS() - composeStart;
+    finalHash = framebufferHash(render);
+
+    for (i = 1; i < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT + 1; ++i) {
+        if (stageHashes[i] == stageHashes[i - 1]) {
+            printf("[MAINOPAQUE] FAILED item %d did not change framebuffer\n",
+                   i - 1);
+            return 0;
+        }
+    }
+
+    if (finalHash == 0 || render->shapeData != NULL || render->mediaTexels != NULL ||
+        EspNativeWallCache_isActive() || EspNativeSpriteCache_isActive()) {
+        printf("[MAINOPAQUE] FAILED graphics boundary final=%08x shapeData=%p mediaTexels=%p\n",
+               (unsigned int)finalHash,
+               (void*)render->shapeData,
+               (void*)render->mediaTexels);
+        return 0;
+    }
+
+    if (!DoomRPG_esp32MainMenuTouchActivate(doomRpg, finalHash)) {
+        printf("[MAINOPAQUE] FAILED touch activation\n");
+        return 0;
+    }
+
+    heapAfter = heap8Free();
+    largestAfter = largest8Block();
+
+    if (heapAfter != heapBefore || largestAfter != largestBefore) {
+        printf("[MAINOPAQUE] FAILED heap changed heap8=%u->%u largest8=%u->%u\n",
+               (unsigned int)heapBefore,
+               (unsigned int)heapAfter,
+               (unsigned int)largestBefore,
+               (unsigned int)largestAfter);
+        return 0;
+    }
+
+    printf("[MAINOPAQUE] modelFNV=%08x layoutFNV=%08x blackLogoFNV=%08x finalFNV=%08x composeMs=%u heap8=%u largest8=%u\n",
+           (unsigned int)modelHash,
+           (unsigned int)layoutHash,
+           (unsigned int)stageHashes[0],
+           (unsigned int)finalHash,
+           (unsigned int)composeMs,
+           (unsigned int)heapAfter,
+           (unsigned int)largestAfter);
+    printf("[MAINOPAQUE] HASH item0=%08x item1=%08x item2=%08x item3=%08x\n",
+           (unsigned int)stageHashes[1],
+           (unsigned int)stageHashes[2],
+           (unsigned int)stageHashes[3],
+           (unsigned int)stageHashes[4]);
+
+    SDL_RenderPresent(NULL);
+
+    if (finalFramebufferFNV != NULL) {
+        *finalFramebufferFNV = finalHash;
+    }
+
+    printf("[MAINOPAQUE] READY opaque MENU_MAIN painted without BSP/wall/sprite replay\n");
+    return 1;
+}
+
+/* Boot-time bridge: still require the fully validated native menu scene before
+ * UI composition, then deliberately replace it with an opaque J2ME-style main
+ * menu. The expensive 3D scene remains a bring-up regression proof, not a menu
+ * navigation dependency.
  */
 int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     DoomCanvas_t* doomCanvas;
     MenuSystem_t* menuSystem;
     Render_t* render;
-    uint32_t stageHashes[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT + 1] = {0};
     uint32_t sceneHash;
-    uint32_t finalHash;
-    uint32_t modelHash;
-    uint32_t layoutHash;
-    uint32_t heapBefore;
-    uint32_t largestBefore;
-    uint32_t heapAfter;
-    uint32_t largestAfter;
-    uint32_t composeStart;
-    uint32_t composeMs;
-    int logoX;
-    int logoBottom;
-    int contentBottom;
+    uint32_t finalHash = 0;
+    uint32_t modelHash = 0;
+    uint32_t layoutHash = 0;
     int i;
 
-    printf("\n=== Doom RPG ESP32 MENU_MAIN touch-select layout ===\n");
+    printf("\n=== Doom RPG ESP32 MENU_MAIN opaque touch layout ===\n");
 
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->menuSystem == NULL || doomRpg->menu == NULL ||
-        doomRpg->render == NULL) {
-        printf("[MAINTOUCHLAYOUT] FAILED core menu/render objects unavailable\n");
+    if (!graphicsBoundaryIsSafe(doomRpg)) {
+        printf("[MAINTOUCHLAYOUT] FAILED core/graphics boundary unavailable\n");
         return 0;
     }
 
     doomCanvas = doomRpg->doomCanvas;
     menuSystem = doomRpg->menuSystem;
     render = doomRpg->render;
-
-    if (render->framebuffer == NULL || render->shapeData != NULL ||
-        render->mediaTexels != NULL || EspNativeWallCache_isActive() ||
-        EspNativeSpriteCache_isActive()) {
-        printf("[MAINTOUCHLAYOUT] FAILED graphics boundary framebuffer=%p shapeData=%p mediaTexels=%p wallCache=%d spriteCache=%d\n",
-               (void*)render->framebuffer,
-               (void*)render->shapeData,
-               (void*)render->mediaTexels,
-               EspNativeWallCache_isActive(),
-               EspNativeSpriteCache_isActive());
-        return 0;
-    }
-
     sceneHash = framebufferHash(render);
-    printf("[MAINTOUCHLAYOUT] Begin sceneFNV=%08x expected=%08x priorFittedFNV=%08x faithfulOriginalFNV=%08x heap8=%u largest8=%u\n",
+
+    printf("[MAINTOUCHLAYOUT] Begin sceneFNV=%08x expected=%08x priorFittedFNV=%08x faithfulOriginalFNV=%08x heap8=%u largest8=%u background=opaque-black\n",
            (unsigned int)sceneHash,
            (unsigned int)EXPECTED_NATIVE_SCENE_FNV,
            (unsigned int)PRIOR_FITTED_MENU_FNV,
@@ -294,34 +462,6 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    if (doomCanvas->displayRect.w != DOOMRPG_LOGICAL_WIDTH ||
-        doomCanvas->displayRect.h != DOOMRPG_LOGICAL_HEIGHT ||
-        doomCanvas->largeStatus ||
-        menuSystem->imgLogo.imgBitmap == NULL ||
-        menuSystem->imgLogo.width != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_WIDTH ||
-        menuSystem->imgLogo.height != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_HEIGHT ||
-        menuSystem->imgHand.imgBitmap == NULL ||
-        menuSystem->imgHand.width != EXPECTED_HAND_WIDTH ||
-        menuSystem->imgHand.height != EXPECTED_HAND_HEIGHT ||
-        doomCanvas->imgFont.imgBitmap == NULL ||
-        doomCanvas->imgFont.width != EXPECTED_FONT_WIDTH ||
-        doomCanvas->imgFont.height != EXPECTED_FONT_HEIGHT) {
-        printf("[MAINTOUCHLAYOUT] FAILED target layout/assets display=%dx%d large=%d logo=%dx%d hand=%dx%d font=%dx%d\n",
-               doomCanvas->displayRect.w,
-               doomCanvas->displayRect.h,
-               (int)doomCanvas->largeStatus,
-               menuSystem->imgLogo.width,
-               menuSystem->imgLogo.height,
-               menuSystem->imgHand.width,
-               menuSystem->imgHand.height,
-               doomCanvas->imgFont.width,
-               doomCanvas->imgFont.height);
-        return 0;
-    }
-
-    heapBefore = heap8Free();
-    largestBefore = largest8Block();
-
     menuSystem->menu = MENU_MAIN;
     Menu_initMenu(doomRpg->menu, MENU_MAIN);
     menuSystem->menu = MENU_MAIN;
@@ -329,65 +469,17 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
     menuSystem->maxItems = doomCanvas->displayRect.h /
                            DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
 
-    if (!validateMainMenuModel(menuSystem)) {
-        printf("[MAINTOUCHLAYOUT] FAILED original MENU_MAIN model changed menu=%d type=%d items=%d selected=%d scroll=%d old=%d\n",
-               menuSystem->menu,
-               menuSystem->type,
-               menuSystem->numItems,
-               menuSystem->selectedIndex,
-               menuSystem->scrollIndex,
-               menuSystem->oldMenu);
+    if (!validatePresentationContract(doomRpg, &modelHash, &layoutHash)) {
+        printf("[MAINTOUCHLAYOUT] FAILED original MENU_MAIN model/layout contract\n");
         return 0;
     }
 
-    modelHash = menuModelHash(menuSystem);
-    if (modelHash != EXPECTED_MAIN_MENU_MODEL_FNV) {
-        printf("[MAINTOUCHLAYOUT] FAILED modelFNV=%08x expected=%08x\n",
-               (unsigned int)modelHash,
-               (unsigned int)EXPECTED_MAIN_MENU_MODEL_FNV);
-        return 0;
-    }
-
-    logoX = doomCanvas->displayRect.x +
-            ((doomCanvas->displayRect.w -
-              DOOMRPG_ESP32_MAIN_MENU_LOGO_WIDTH) >> 1);
-    logoBottom = doomCanvas->displayRect.y +
-                 DOOMRPG_ESP32_MAIN_MENU_LOGO_Y +
-                 DOOMRPG_ESP32_MAIN_MENU_LOGO_HEIGHT;
-    contentBottom = doomCanvas->displayRect.y +
-                    DOOMRPG_ESP32_MAIN_MENU_CONTENT_BOTTOM;
-    layoutHash = menuLayoutHash(doomCanvas, menuSystem, logoX);
-
-    printf("[MAINTOUCHLAYOUT] Model FNV=%08x items=%d selected=%d\n",
+    printf("[MAINTOUCHLAYOUT] Model FNV=%08x items=%d selected=%d layoutFNV=%08x expectedLayout=%08x\n",
            (unsigned int)modelHash,
            menuSystem->numItems,
-           menuSystem->selectedIndex);
-    printf("[MAINTOUCHLAYOUT] Geometry screen=%dx%d logoDst=%d,%d %dx%d logoBottom=%d itemStart=%d line=%d rows=%d contentBottom=%d layoutFNV=%08x expected=%08x selectionStyle=hand-only\n",
-           doomCanvas->displayRect.w,
-           doomCanvas->displayRect.h,
-           logoX,
-           doomCanvas->displayRect.y + DOOMRPG_ESP32_MAIN_MENU_LOGO_Y,
-           DOOMRPG_ESP32_MAIN_MENU_LOGO_WIDTH,
-           DOOMRPG_ESP32_MAIN_MENU_LOGO_HEIGHT,
-           logoBottom,
-           doomCanvas->displayRect.y + DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y,
-           DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT,
-           DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT,
-           contentBottom,
+           menuSystem->selectedIndex,
            (unsigned int)layoutHash,
            (unsigned int)EXPECTED_LAYOUT_FNV);
-
-    if (layoutHash != EXPECTED_LAYOUT_FNV ||
-        logoBottom > doomCanvas->displayRect.y +
-                     DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y ||
-        contentBottom > doomCanvas->displayRect.y + doomCanvas->displayRect.h) {
-        printf("[MAINTOUCHLAYOUT] FAILED geometry/hash logoBottom=%d firstItem=%d contentBottom=%d screenBottom=%d\n",
-               logoBottom,
-               doomCanvas->displayRect.y + DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y,
-               contentBottom,
-               doomCanvas->displayRect.y + doomCanvas->displayRect.h);
-        return 0;
-    }
 
     for (i = 0; i < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++i) {
         printf("[MAINTOUCHLAYOUT] ITEM index=%d y=%d selected=%s text=\"%s\"\n",
@@ -398,68 +490,18 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
                menuSystem->items[i].textField);
     }
 
-    composeStart = (uint32_t)DoomRPG_GetTimeMS();
-    if (!drawTouchReadyMainMenu(doomRpg, stageHashes)) {
-        printf("[MAINTOUCHLAYOUT] FAILED touch-ready composition\n");
+    if (!DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalHash)) {
+        printf("[MAINTOUCHLAYOUT] FAILED opaque main-menu paint\n");
         return 0;
     }
-    composeMs = (uint32_t)DoomRPG_GetTimeMS() - composeStart;
 
-    printf("[MAINTOUCHLAYOUT] HASH stage=logo fnv=%08x\n",
-           (unsigned int)stageHashes[0]);
-    for (i = 0; i < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++i) {
-        printf("[MAINTOUCHLAYOUT] HASH stage=item%d text=\"%s\" fnv=%08x\n",
-               i,
-               expectedMainItems[i],
-               (unsigned int)stageHashes[i + 1]);
-    }
-
-    finalHash = framebufferHash(render);
-    heapAfter = heap8Free();
-    largestAfter = largest8Block();
-
-    printf("[MAINTOUCHLAYOUT] framebufferFNV=%08x sceneFNV=%08x priorFittedFNV=%08x composeMs=%u shapeData=%p mediaTexels=%p\n",
+    printf("[MAINTOUCHLAYOUT] framebufferFNV=%08x sceneFNV=%08x changed=yes shapeData=%p mediaTexels=%p\n",
            (unsigned int)finalHash,
            (unsigned int)sceneHash,
-           (unsigned int)PRIOR_FITTED_MENU_FNV,
-           (unsigned int)composeMs,
            (void*)render->shapeData,
            (void*)render->mediaTexels);
-    printf("[MAINTOUCHLAYOUT] End heap8=%u largest8=%u deltaFromStart=%d largestDelta=%d\n",
-           (unsigned int)heapAfter,
-           (unsigned int)largestAfter,
-           (int)heapBefore - (int)heapAfter,
-           (int)largestBefore - (int)largestAfter);
-
-    if (stageHashes[0] == sceneHash || finalHash == sceneHash ||
-        render->shapeData != NULL || render->mediaTexels != NULL ||
-        EspNativeWallCache_isActive() || EspNativeSpriteCache_isActive() ||
-        heapAfter != heapBefore || largestAfter != largestBefore) {
-        printf("[MAINTOUCHLAYOUT] FAILED touch layout graphics/memory contract\n");
-        return 0;
-    }
-
-    for (i = 1; i < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT + 1; ++i) {
-        if (stageHashes[i] == stageHashes[i - 1]) {
-            printf("[MAINTOUCHLAYOUT] FAILED item %d did not change framebuffer\n",
-                   i - 1);
-            return 0;
-        }
-    }
-
-    if (!DoomRPG_esp32MainMenuTouchActivate(doomRpg, finalHash)) {
-        printf("[MAINTOUCHLAYOUT] FAILED touch activation\n");
-        return 0;
-    }
-
-    if (heap8Free() != heapBefore || largest8Block() != largestBefore) {
-        printf("[MAINTOUCHLAYOUT] FAILED touch activation changed heap\n");
-        return 0;
-    }
-
-    SDL_RenderPresent(NULL);
-    printf("[MAINTOUCHLAYOUT] Presented touch-ready Doom RPG MENU_MAIN on clean CYD display\n");
-    printf("[MAINTOUCHLAYOUT] READY PR28 geometry preserved; text fixed and real hand is independently movable\n");
-    printf("[MAINTOUCHLAYOUT] READY tap zones armed from the same hardware-validated layout constants\n");
+    printf("[MAINTOUCHLAYOUT] READY native scene %08x validated, then hidden behind opaque MENU_MAIN\n",
+           (unsigned int)sceneHash);
+    printf("[MAINTOUCHLAYOUT] READY same bounded painter is reusable by Options Back\n");
     return 1;
 }
