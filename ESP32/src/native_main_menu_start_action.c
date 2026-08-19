@@ -4,10 +4,12 @@
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
+#include "Game.h"
 #include "Menu.h"
 #include "MenuSystem.h"
 #include "Player.h"
 #include "Render.h"
+#include "Z_Zip.h"
 
 #include "native_main_menu_start_action.h"
 #include "native_sprite_lru_cache.h"
@@ -18,6 +20,14 @@
 #include <esp_heap_caps.h>
 
 #define EXPECTED_MAIN_START_SELECTED_FNV 0x58a11171U
+#define INTRO_ASSET_COUNT 4
+
+static const char* const introAssetNames[INTRO_ASSET_COUNT] = {
+    "c.bmp",
+    "d.bmp",
+    "e.bmp",
+    "f.bmp"
+};
 
 static uint32_t heap8Free(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -78,6 +88,101 @@ static int playerHasFreshResetContract(const Player_t* player) {
            player->totalDeaths == 0;
 }
 
+static const zip_entry_t* findZipEntry(const char* name) {
+    int i;
+
+    if (name == NULL || zipFile.entry == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < zipFile.entry_count; ++i) {
+        const zip_entry_t* entry = &zipFile.entry[i];
+        if (entry->name != NULL && SDL_strcasecmp(name, entry->name) == 0) {
+            return entry;
+        }
+    }
+
+    return NULL;
+}
+
+static void printIntroAssetPlan(void) {
+    uint32_t totalCompressed = 0;
+    uint32_t totalUncompressed = 0;
+    int i;
+
+    printf("[MAINSTART] Intro asset ZIP plan (%d files)\n", INTRO_ASSET_COUNT);
+    for (i = 0; i < INTRO_ASSET_COUNT; ++i) {
+        const zip_entry_t* entry = findZipEntry(introAssetNames[i]);
+        if (entry == NULL) {
+            printf("[MAINSTART] INTRO-ASSET %-5s MISSING\n", introAssetNames[i]);
+            continue;
+        }
+
+        totalCompressed += (uint32_t)entry->csize;
+        totalUncompressed += (uint32_t)entry->usize;
+        printf("[MAINSTART] INTRO-ASSET %-5s c=%d u=%d\n",
+               introAssetNames[i], entry->csize, entry->usize);
+    }
+
+    printf("[MAINSTART] Intro asset ZIP totals c=%u u=%u; loader peak is per-file, not total\n",
+           (unsigned int)totalCompressed,
+           (unsigned int)totalUncompressed);
+}
+
+static int releaseFreshStartMenuMemory(DoomRPG_t* doomRpg) {
+    DoomCanvas_t* doomCanvas = doomRpg->doomCanvas;
+    Render_t* render = doomRpg->render;
+    uint32_t heapBefore = heap8Free();
+    uint32_t largestBefore = largest8Block();
+    int legalsReleased = 0;
+
+    /* Our native boot skips the original legal-screen state machine and enters
+     * MENU_MAIN directly. The original DoomCanvas_legalsState() frees imgLegals
+     * before handing control to the menu, so keeping g.bmp resident here is a
+     * native-boot lifecycle leak. Release it at the first irreversible fresh
+     * Start Game transition.
+     */
+    if (doomCanvas->imgLegals.imgBitmap != NULL) {
+        DoomRPG_freeImage(doomRpg, &doomCanvas->imgLegals);
+        legalsReleased = 1;
+    }
+
+    /* The opaque ESP32 menu does not need the menu.bsp runtime once New Game is
+     * confirmed. This is the same cleanup order used by DoomCanvas_loadMedia()
+     * before loading a gameplay map. It also drops the resident mapping tables,
+     * which Render_beginLoadMap() reloads when the first gameplay map starts.
+     */
+    Render_freeRuntime(render);
+    Game_unloadMapData(doomRpg->game);
+
+    printf("[MAINSTART] Fresh-start cleanup legals=%s heap8=%u->%u gained=%d largest8=%u->%u nodes=%p lines=%p mapSprites=%p mappings=%p/%p shapeData=%p mediaTexels=%p\n",
+           legalsReleased ? "released" : "already-free",
+           (unsigned int)heapBefore,
+           (unsigned int)heap8Free(),
+           (int)heap8Free() - (int)heapBefore,
+           (unsigned int)largestBefore,
+           (unsigned int)largest8Block(),
+           (void*)render->nodes,
+           (void*)render->lines,
+           (void*)render->mapSprites,
+           (void*)render->mediaTexelOffsets,
+           (void*)render->mediaBitShapeOffsets,
+           (void*)render->shapeData,
+           (void*)render->mediaTexels);
+
+    return render->nodes == NULL &&
+           render->lines == NULL &&
+           render->mapSprites == NULL &&
+           render->mediaTexelOffsets == NULL &&
+           render->mediaBitShapeOffsets == NULL &&
+           render->mapTextureTexels == NULL &&
+           render->mapSpriteTexels == NULL &&
+           render->shapeData == NULL &&
+           render->mediaTexels == NULL &&
+           !EspNativeWallCache_isActive() &&
+           !EspNativeSpriteCache_isActive();
+}
+
 int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     DoomCanvas_t* doomCanvas;
@@ -90,6 +195,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     uint32_t heapAfter;
     uint32_t largestBefore;
     uint32_t largestAfter;
+    int hasExistingSave;
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Start Game entry ===\n");
 
@@ -140,6 +246,23 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
            player->weapon,
            (unsigned int)player->weapons,
            player->totalDeaths);
+
+    printIntroAssetPlan();
+
+    /* Determine which original MENU_MAIN branch will be taken before releasing
+     * resources. Existing-save Start opens MENU_MAIN_CONTINUE and therefore is
+     * still a menu transition; keep its menu resources intact for the future
+     * Continue/New Game painter milestone. A fresh profile is irreversible and
+     * can release dead boot/menu memory before Menu_startGame() loads the intro.
+     */
+    hasExistingSave = Game_checkConfigVersion(doomRpg->game) ? 1 : 0;
+    printf("[MAINSTART] Existing-save precheck=%s\n",
+           hasExistingSave ? "yes -> keep menu runtime" : "no -> fresh cleanup allowed");
+
+    if (!hasExistingSave && !releaseFreshStartMenuMemory(doomRpg)) {
+        printf("[MAINSTART] FAILED fresh-start menu memory cleanup contract\n");
+        return 0;
+    }
 
     heapBefore = heap8Free();
     largestBefore = largest8Block();
@@ -214,7 +337,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     }
 
     printf("[MAINSTART] READY real MenuSystem_select -> Menu_startGame(new) -> Player_reset -> ST_INTRO\n");
-    printf("[MAINSTART] READY prologue loader executed; map/gameplay loader not advanced because ESP32 loop remains parked\n");
+    printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
     printf("[MAINSTART] NEXT boundary = drive one real ST_INTRO frame through DoomCanvas_drawStory without entering map load\n");
     return 1;
 }
