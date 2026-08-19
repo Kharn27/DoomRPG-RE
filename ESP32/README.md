@@ -1,28 +1,31 @@
 # Doom RPG ESP32 port
 
-This directory contains the ESP32-specific port and bring-up work for the classic
+This directory contains the ESP32-specific engine/port for the classic
 ESP32-2432S028R Cheap Yellow Display with **no PSRAM**.
 
-DoomRPG-RE is used as a behavioural/data-format reference while resource
-management, rendering and UI composition are progressively rebuilt around the
-actual target constraints.
+DoomRPG-RE is used as a behavioural and data-format reference while rendering,
+resource management and UI are progressively rebuilt around the real target
+constraints.
 
-For the authoritative recovery point and exact hardware figures, see
+For the exact hardware recovery point and regression hashes, see
 [`PORTING_STATUS.md`](PORTING_STATUS.md).
 
 ## Current target
 
-- ESP32-2432S028R / classic CYD, no PSRAM
-- ESP32-D0WD-V3, 240 MHz, 4 MB flash
+- ESP32-2432S028R / classic CYD
+- ESP32-D0WD-V3, 240 MHz
+- 4 MB flash
+- no PSRAM
 - ILI9341 320x240 landscape
 - XPT2046 touch
-- internal render target: 160x120 RGB565
-- gameplay viewport: 160x80 at framebuffer y=20
-- exact 2x nearest-neighbour TFT output
+- internal RGB565 framebuffer: 160x120 = 38,400 B
+- exact nearest-neighbour 2x output to 320x240
 - microSD-backed resources
 - audio disabled during bring-up
 
-## Build and flash
+## Build / flash
+
+Normal build:
 
 ```bash
 cd ESP32
@@ -30,92 +33,26 @@ pio run -t upload
 pio device monitor
 ```
 
-Clean only when generated-source/linker changes make it useful:
+Use a clean build after linker-wrapper or generated-source changes:
 
 ```bash
 cd ESP32
 pio run -t clean
 pio run -t upload
+pio device monitor
 ```
 
-## Screen diagnostics policy
+## SD card
 
-Normal firmware reserves the TFT for the game framebuffer.
-
-```text
--D DOOMRPG_ESP32_SCREEN_DIAGNOSTICS=0
-```
-
-With `0`, the old bring-up screen, direct TFT labels, touch crosshair and touch
-triggered SDL test pattern are disabled. Serial startup/probe/`[ALIVE]`/`[TOUCH]`
-logs remain available.
-
-Set the flag to `1` temporarily to restore the old visual hardware diagnostics.
-
-## Touch status
-
-The XPT2046 reader is alive, calibrated and now drives the real `MENU_MAIN`
-selection on hardware.
-
-Input path:
-
-```text
-XPT2046
-  -> PlatformInput
-  -> calibrated physical 320x240 point
-  -> semantic press/release tap
-  -> logical 160x120 hit-test
-  -> real MenuSystem.selectedIndex
-  -> real p.bmp hand cursor
-```
-
-Semantic taps are delivered immediately on the press edge and a second tap is
-blocked until the panel has been released continuously for 50 ms. This prevents
-a held finger from becoming an accidental double tap and avoids inheriting the
-old ~80 ms Serial diagnostic throttle.
-
-Current `MENU_MAIN` behaviour:
-
-```text
-first tap on another row
-    -> move selection + hand
-
-first tap on the already selected row
-    -> arm confirmation
-
-second released tap on the same row
-    -> CONFIRM-PASS / CONFIRM
-    -> action intentionally deferred
-```
-
-Important: a working double tap currently produces **no visible menu transition**.
-That is deliberate. `MenuSystem_select()` is not called yet on this branch because
-`Start Game` can enter the not-yet-migrated gameplay loader.
-
-Gameplay controls remain deferred until the first actual gameplay map is running.
-
-## Legacy header include rule
-
-Several original engine headers assume SDL types are already visible. ESP32 C
-files that include `DoomRPG.h`, `Render.h`, etc. should include SDL first:
-
-```c
-#include <SDL.h>
-#include "DoomRPG.h"
-#include "Render.h"
-```
-
-## SD card contents
-
-During migration:
+Current migration setup expects:
 
 ```text
 /DoomRPG.zip
 /DoomRPG-ESP32.pak
 ```
 
-`DoomRPG.zip` remains only for legacy engine paths not yet migrated.
-`DoomRPG-ESP32.pak` is the native direct-access resource backend.
+`DoomRPG.zip` remains for legacy engine paths not yet migrated.
+`DoomRPG-ESP32.pak` is the native random-access resource pack.
 
 Build the native pack with:
 
@@ -131,37 +68,56 @@ The builder must finish with:
 [PACK] self-check: OK
 ```
 
-## Native graphics architecture
+## Screen diagnostics policy
 
-The original map-wide graphics architecture cannot fit the no-PSRAM target.
-The ESP32 path uses bounded frames and small measured caches:
+Normal firmware reserves the TFT for the game framebuffer:
 
 ```text
-                     SD / DoomRPG-ESP32.pak
-                              |
-                              v
-                            GFXRM
-                          /       \
-               sprite frames      wall frames
-                    |                  |
-        NativeSpriteLruCache(3)   NativeWallLruCache(3)
-                    |                  |
-                    v                  v
-          native projected       native projected
-             sprite spans           wall spans
-                    \                  /
-                     \                /
-                      shared 160x120 RGB565
+-D DOOMRPG_ESP32_SCREEN_DIAGNOSTICS=0
 ```
 
-Strong invariant:
+With diagnostics disabled:
+
+- no bring-up text on TFT
+- no touch crosshair on TFT
+- no touch-triggered SDL test pattern
+- Serial startup/probe/`[ALIVE]`/`[TOUCH]` diagnostics remain available
+
+Set the flag to `1` temporarily to restore the old visual diagnostics.
+
+## Native graphics architecture
+
+The original map-wide graphics pools do not fit the no-PSRAM target.
+The ESP32 path uses bounded resource frames and measured LRU caches:
+
+```text
+                 SD / DoomRPG-ESP32.pak
+                          |
+                          v
+                        GFXRM
+                      /       \
+            sprite frames     wall frames
+                 |                 |
+       Sprite LRU cache(3)    Wall LRU cache(3)
+                 |                 |
+                 v                 v
+          projected sprites   projected walls
+                  \             /
+                   \           /
+                    160x120 RGB565
+                          |
+                          v
+                      TFT exact x2
+```
+
+Strong runtime invariant:
 
 ```text
 shapeData   = NULL
 mediaTexels = NULL
 ```
 
-Do not reintroduce those map-wide pools as a shortcut.
+Do not reintroduce those original map-wide pools as a shortcut.
 
 ## Stable graphics signatures
 
@@ -175,44 +131,24 @@ sprite request FNV           = 4457ac94
 walls + sprites framebuffer  = ffe0995e
 ```
 
-The deterministic menu camera is:
+Hardware-validated caches:
 
 ```text
-spawnIndex    = 460
-spawn tile    = 12,14
-world X/Y     = 800,928
-direction     = 0
-camera Z      = 36
-animFrameTime = 0
+Wall LRU3
+  requests = 25
+  hits     = 14
+  misses   = 11
+  framebuffer = a6d87c4a
+
+Sprite LRU3
+  requests = 11
+  hits     = 2
+  misses   = 9
+  peak logical payload = 6038 B
+  framebuffer = ffe0995e
 ```
 
-## Hardware-validated caches
-
-Wall LRU3:
-
-```text
-25 logical requests
-14 hits
-11 misses
-8 evictions
-11 physical wall loads
-6,144 B logical cache payload
-framebuffer = a6d87c4a
-```
-
-Sprite LRU3:
-
-```text
-11 logical sprite requests
-2 hits
-9 misses
-6 evictions
-9 physical sprite loads
-6,038 B peak logical payload
-framebuffer = ffe0995e
-```
-
-## Main-menu composition
+## Main menu
 
 The real Doom RPG `MENU_MAIN` model is preserved:
 
@@ -223,119 +159,71 @@ Help/About
 Exit
 ```
 
-Real assets:
+Real resources:
 
 ```text
 j.bmp -> logo
-p.bmp -> selected hand cursor
-DoomCanvas imgFont -> menu text
+p.bmp -> hand cursor
+DoomCanvas imgFont -> text
 ```
 
-Original hardware asset sizes:
-
-```text
-logo = 108x74
-hand = 13x10
-font sheet = 144x72
-normal glyph cell = 9x12
-normal glyph advance = 7 px
-```
-
-The original menu remains conceptually an overlay over the native menu scene:
-
-```text
-native scene ffe0995e
-       |
-       +--> logo
-       +--> hand
-       +--> font
-```
-
-The faithful original layout remains available as a regression reference:
-
-```text
-faithful MENU_MAIN framebuffer = 86c38260
-modelFNV                       = bbc2149b
-```
-
-## ESP32 160x120 main-menu layout
-
-The original row placement (`80,92,104,116`) cannot fit four 12-pixel-high rows
-inside a 120-pixel framebuffer. The ESP32-specific presentation therefore scales
-**only the logo** and keeps the font/hand untouched.
+The original J2ME/BREW-style geometry does not fit four 12-pixel rows inside a
+160x120 framebuffer. The ESP32 presentation therefore keeps the font and hand at
+native size and scales only the logo.
 
 Hardware-validated geometry:
 
 ```text
 logical screen = 160x120
+logo source    = 108x74
+logo target    = 90x62 at 35,2
 
-logo source = 108x74
-logo target = 90x62
-logo x/y    = 35,2
-logo bottom = 64
-
-Start Game = y 67
-Options    = y 79
-Help/About = y 91
-Exit       = y 103
-
-font height    = 12
-content bottom = 115
-bottom margin  = 5 px
+Start Game y=67
+Options    y=79
+Help/About y=91
+Exit       y=103
 ```
 
-Shared constants live in:
+Historical deterministic references:
 
 ```text
-ESP32/include/native_main_menu_160x120_layout.h
-```
-
-Touch hit-testing reuses these exact constants.
-
-### Historical fitted-layout signatures
-
-The PR #28 layout used the original selected-item convention where the selected
-text is shifted 2 px after the hand:
-
-```text
-scene before UI             = ffe0995e
-MENU_MAIN model             = bbc2149b
+faithful original MENU_MAIN = 86c38260
+fitted PR #28 MENU_MAIN     = 1afa0223
 layout geometry FNV         = 47b3656e
-after scaled logo           = 1e8bcfbb
-after Start Game + hand     = 64516fd1
-after Options               = 0fb73263
-after Help/About            = c7a0b65f
-after Exit / final          = 1afa0223
 ```
 
-`1afa0223` remains a valid historical regression reference.
+## Touch input
 
-## Touch-ready hand-only menu
-
-For lightweight cursor movement, menu text now stays at a fixed centered
-position and only the real hand indicates selection. This avoids repainting text
-or rerendering the 3D scene when the selected row changes.
-
-Touch-ready progressive hashes measured on the CYD:
+The XPT2046 drives the real menu selection on hardware:
 
 ```text
-after scaled logo        = 1e8bcfbb
-after Start Game + hand  = c03215ab
-after Options            = b2f6a68d
-after Help/About         = 994a049d
-after Exit / final       = cbc99461
+XPT2046
+  -> PlatformInput
+  -> calibrated physical 320x240 point
+  -> one semantic tap per press/release cycle
+  -> logical 160x120 hit-test
+  -> real MenuSystem.selectedIndex
+  -> real p.bmp hand cursor
 ```
 
-Initial touch-ready frame:
+A new semantic tap is blocked until the panel has been released continuously for
+50 ms. This prevents one held press from becoming an accidental double tap.
+
+Current `MENU_MAIN` UX:
 
 ```text
-[MAINTOUCHLAYOUT] framebufferFNV=cbc99461 sceneFNV=ffe0995e priorFittedFNV=1afa0223 composeMs=54 shapeData=0x0 mediaTexels=0x0
-[MAINTOUCHLAYOUT] End heap8=28704 largest8=17396 deltaFromStart=0 largestDelta=0
+first tap on another row
+    -> select row
+    -> move real hand
+
+first tap on current row
+    -> arm confirmation
+
+second released tap on same row
+    -> CONFIRM
 ```
 
-`composeMs` is diagnostic only.
-
-## Hardware-validated touch zones
+Touch zones:
 
 ```text
                  logical 160x120        physical 320x240
@@ -346,141 +234,207 @@ Help/About       y=91..102               y=182..205
 Exit             y=103..114              y=206..229
 ```
 
-## Lightweight cursor patches
-
-No second 38,400-byte framebuffer is used. Four tiny 13x10 RGB565 background
-patches are retained under the possible hand positions:
+No second framebuffer is used for cursor movement. Four static 13x10 RGB565
+background patches are retained under the possible hand locations:
 
 ```text
 4 * 13 * 10 * 2 B = 1,040 B
 ```
 
-A selection change is only:
+Hardware-validated selected-frame hashes:
 
 ```text
-restore old hand background
--> update selectedIndex
--> draw p.bmp at new row
--> Present
+Start Game = cbc99461
+Options    = 961109a7
+Help/About = e4eadfbb
+Exit       = 5ff2a5cd
 ```
 
-Hardware confirms `noSceneRerender=yes` and `noSDRead=yes` for selection moves.
+Returning to a previously selected row reproduces the same framebuffer hash,
+proving the cursor-background restoration is bit-identical.
 
-## Hardware-validated selection hashes
+## Real Options action
+
+Confirmed `Options` is now the **first real menu action executed from touch**.
+
+Path:
 
 ```text
-selected Start Game = cbc99461
-selected Options    = 961109a7
-selected Help/About = e4eadfbb
-selected Exit       = 5ff2a5cd
+MENU_MAIN
+   |
+   | double tap Options
+   v
+real MenuSystem_select()
+   |
+   v
+real MENU_MAIN_OPTIONS model
+   |
+   v
+bounded ESP32 Options paint
 ```
 
-Returning from Help/About to Options reproduced `961109a7` exactly, proving the
-13x10 background restoration is bit-identical. Returning to Start Game similarly
-reproduced `cbc99461`.
-
-Example hardware log:
+The real original model after the transition is:
 
 ```text
-[MENUTOUCH] SELECT 2->1 text="Options   " framebufferFNV=961109a7 previousKnown=961109a7 heap8=28704->28704 largest8=17396->17396
+menu          = MENU_MAIN_OPTIONS / 7
+type          = 7
+oldMenu       = MENU_MAIN / 1
+selectedIndex = 0
+scrollIndex   = 0
+
+Back
+Video
+Input
+Sound
 ```
 
-## Double-tap confirmation status
-
-The second released tap on the same row is hardware validated.
-
-Examples:
+Hardware model signature:
 
 ```text
-[MENUTOUCH] GATE tap=7 CONFIRM-PASS item=1
-[MENUTOUCH] CONFIRM item=1 text="Options   " count=2 framebufferFNV=961109a7 action=deferred
-
-[MENUTOUCH] GATE tap=11 CONFIRM-PASS item=0
-[MENUTOUCH] CONFIRM item=0 text="Start Game" count=3 framebufferFNV=cbc99461 action=deferred
-
-[MENUTOUCH] GATE tap=15 CONFIRM-PASS item=3
-[MENUTOUCH] CONFIRM item=3 text="Exit      " count=5 framebufferFNV=5ff2a5cd action=deferred
+modelFNV = e1ef01f7
 ```
 
-`action=deferred` means exactly that: the double tap worked, but no real menu
-action was executed. This branch validates input semantics and cursor rendering,
-not action dispatch.
+The original pre-game `MenuSystem_paint()` is intentionally not used yet because
+it still calls legacy `Render_render()`. Instead the ESP32 path paints the real
+Options model onto a controlled black framebuffer using the real logo, hand and
+font.
 
-## Memory boundary for touch
-
-Observed during hardware selection changes:
+Hardware hashes:
 
 ```text
-heap8    = 28704 -> 28704
-largest8 = 17396 -> 17396
+after logo          = 0ac1f9c6
+after Back          = c7258261
+after Video         = 4e764e2f
+after Input         = 175fa691
+after Sound / final = 6058d47d
 ```
 
-No per-tap heap allocation is introduced. The 1,040-byte cursor background store
-is static bounded state.
+Authoritative final marker:
+
+```text
+[MAINOPTIONS] framebufferFNV=6058d47d inputFNV=961109a7 changed=yes shapeData=0x0 mediaTexels=0x0
+[MAINOPTIONS] End heap8=28704 largest8=17396 deltaFromStart=0 largestDelta=0
+```
+
+The transition performs no legacy BSP rerender, no map reload and no gameplay
+load.
+
+### Current Options interaction boundary
+
+The Options screen is intentionally **display-only** after opening in this
+increment. The menu touch callback is disabled during the transition.
+
+Therefore these do nothing yet:
+
+```text
+Back
+Video
+Input
+Sound
+```
+
+That is expected. `Back` is the recommended next action to activate because it is
+the smallest safe proof of a full menu round trip.
+
+## Linker-wrapper caution
+
+Do not blindly use GNU `--wrap` around callbacks whose address is taken in the
+same translation unit.
+
+A failed implementation of the Options action tried:
+
+```text
+--wrap=DoomRPG_esp32MainMenuTouchOnTap
+```
+
+The existing tap gate compares callback function pointers. Wrapping the symbol
+changed the identity visible to the gate while the callback implementation's own
+translation unit still took its local function address directly.
+
+Symptom on hardware:
+
+```text
+[MENUTOUCH] GATE READY ...   <- missing
+[MENUTOUCH] CONFIRM ... action=deferred
+```
+
+The wrapper was removed. The validated implementation dispatches the Options
+action explicitly from the existing confirmed-item gate.
+
+## Legacy header include rule
+
+Several original engine headers assume SDL types are already visible. ESP32 C
+files that include `DoomRPG.h`, `Render.h`, etc. should include SDL first:
+
+```c
+#include <SDL.h>
+#include "DoomRPG.h"
+#include "Render.h"
+```
 
 ## Color / contrast observation
 
-The geometry and touch selection are visually successful, but comparison against
-a J2ME reference screenshot still shows the CYD result looking flatter and less
-saturated / lower contrast.
+The main-menu geometry and touch interaction are correct, but comparison against
+a J2ME reference capture still makes the CYD result look flatter / less saturated
+and lower contrast.
 
-This remains a separate open visual issue. Do not tweak the palette blindly.
-Investigate it separately with a controlled test that distinguishes among:
+Do not tweak the palette blindly. Keep this as a separate measured investigation
+covering:
 
-- background/composition contrast;
-- palette/RGB565 conversion;
-- SDL texture modulation/blitting;
-- physical TFT appearance.
+- background/composition contrast
+- palette / RGB565 conversion
+- SDL blitting/modulation
+- physical TFT appearance
+
+The new Options presentation uses a controlled black background and may later be
+useful as a comparison case.
 
 ## Current safe boundary
 
-Validated:
+Hardware validated:
 
-- real `menu.bsp` scene and BSP traversal
-- native projected walls/sprites
-- bounded wall/sprite resource loading and LRU caches
-- deterministic native scene `ffe0995e`
-- original `MENU_MAIN` model and real assets
-- clean TFT ownership with Serial-only diagnostics
-- faithful original menu reference `86c38260`
-- fitted 160x120 menu geometry
-- calibrated physical touch hit-testing
-- real `MenuSystem.selectedIndex` changes
-- independently movable real `p.bmp` hand
-- bit-identical small cursor-background restoration
-- second released tap recognized as semantic `CONFIRM`
-- exact allocator restoration during touch movement
+- native `menu.bsp` scene and BSP traversal
+- native projected walls and sprites
+- bounded wall/sprite GFXRM loading and LRU caches
+- deterministic scene `ffe0995e`
+- real `MENU_MAIN` model/assets
+- clean TFT ownership
+- fitted 160x120 menu presentation
+- calibrated touch hit-testing
+- real `selectedIndex` changes
+- real hand cursor movement
+- released double-tap confirmation
+- **real Options action through `MenuSystem_select()`**
+- real `MENU_MAIN_OPTIONS` model
+- bounded Options framebuffer `6058d47d`
+- exact allocator restoration
 
-Still intentionally out of scope:
+Still deferred:
 
-- execution of `MenuSystem_select()` from touch confirmation
-- real Options / Help / Exit transitions
-- Start Game / gameplay loader activation
-- original monolithic bitshape/texel loaders
-- textured floor/ceiling planes
-- persistent caches in the normal multi-frame runtime
-- active normal multi-frame `ST_MENU` state machine
-- final color/contrast correction
-- normal gameplay loop / gameplay control scheme
+- touch interaction inside Options
+- Back round trip to MENU_MAIN
+- Video/Input/Sound actions
+- Help/About and Exit real actions
+- Start Game / gameplay loader
+- active normal multi-frame game loop
+- gameplay controls
+- final color correction
 - audio
 
 ## Recommended next direction
 
-The touch frontend itself is validated. The next menu increment should connect
-**one safe confirmed action** to the real original menu path rather than enabling
-all four entries at once.
-
-A good first candidate is `Options`:
+Make `MENU_MAIN_OPTIONS` touch-aware, starting with **Back only**:
 
 ```text
-confirmed Options
-    -> real MenuSystem/Menu transition
-    -> render resulting options menu on ESP32
-    -> hardware validate
+Options visible
+    -> tap Back / arm
+    -> second released tap
+    -> real back transition
+    -> bounded MENU_MAIN presentation
+    -> MENU_MAIN touch re-armed
 ```
 
-Keep `Start Game` deferred until the gameplay loader is ready, and keep the
-color/contrast investigation separate from input/action work.
+Do not enable Video/Input/Sound in the same increment.
 
 ## Porting workflow
 
@@ -488,7 +442,7 @@ color/contrast investigation separate from input/action work.
 2. implement one small measurable objective
 3. build/flash/test on the real CYD
 4. fix failures on the same branch
-5. after hardware success, update every relevant `.md` on that branch
+5. after hardware PASS update every relevant `.md` on that branch
 6. only when code + documentation agree is the branch merge-ready
 7. merge
 8. only then start the next increment
