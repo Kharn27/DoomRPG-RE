@@ -9,6 +9,15 @@
 #include "native_graphics_resource_manager.h"
 #include "native_sprite_lru_cache.h"
 
+/* GNU ld --wrap integration. Cache misses/evictions must always reach the real
+ * GFXRM owner functions, while normal engine callers are transparently routed
+ * through the wrappers at the bottom of this file.
+ */
+int __real_EspNativeGraphics_loadSpriteFrame(struct Render_s* render,
+                                             int spriteIndex,
+                                             EspNativeSpriteFrame* outFrame);
+void __real_EspNativeGraphics_releaseSpriteFrame(EspNativeSpriteFrame* frame);
+
 typedef struct EspNativeSpriteCacheSlot_s {
     EspNativeSpriteFrame frame;
     uint32_t lastUse;
@@ -30,8 +39,24 @@ static void releaseSlot(EspNativeSpriteCacheSlot* slot) {
         return;
     }
 
-    EspNativeGraphics_releaseSpriteFrame(&slot->frame);
+    __real_EspNativeGraphics_releaseSpriteFrame(&slot->frame);
     memset(slot, 0, sizeof(*slot));
+}
+
+static int storageBelongsToCache(const EspNativeSpriteFrame* frame) {
+    uint32_t i;
+
+    if (!spriteCache.active || frame == NULL || frame->storage == NULL) {
+        return 0;
+    }
+
+    for (i = 0; i < ESP_NATIVE_SPRITE_CACHE_SLOTS; ++i) {
+        if (spriteCache.slots[i].valid &&
+            spriteCache.slots[i].frame.storage == frame->storage) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static void refreshResidentStats(void) {
@@ -166,7 +191,9 @@ int EspNativeSpriteCache_acquire(struct Render_s* renderBase,
         refreshResidentStats();
     }
 
-    if (!EspNativeGraphics_loadSpriteFrame(render, spriteIndex, &target->frame)) {
+    if (!__real_EspNativeGraphics_loadSpriteFrame(render,
+                                                  spriteIndex,
+                                                  &target->frame)) {
         printf("[SPRITECACHE] FAILED miss load sprite=%d\n", spriteIndex);
         memset(target, 0, sizeof(*target));
         refreshResidentStats();
@@ -228,4 +255,39 @@ void EspNativeSpriteCache_end(void) {
 
 int EspNativeSpriteCache_isActive(void) {
     return spriteCache.active;
+}
+
+/* Transparent cache hook for existing renderer callers. The renderer still
+ * receives its usual EspNativeSpriteFrame value, but while the cache is active
+ * that value is a shallow borrowed view of cache-owned storage.
+ */
+int __wrap_EspNativeGraphics_loadSpriteFrame(struct Render_s* render,
+                                             int spriteIndex,
+                                             EspNativeSpriteFrame* outFrame) {
+    const EspNativeSpriteFrame* cachedFrame;
+
+    if (!spriteCache.active) {
+        return __real_EspNativeGraphics_loadSpriteFrame(render,
+                                                        spriteIndex,
+                                                        outFrame);
+    }
+
+    if (outFrame == NULL ||
+        !EspNativeSpriteCache_acquire(render, spriteIndex, &cachedFrame) ||
+        cachedFrame == NULL) {
+        return 0;
+    }
+
+    *outFrame = *cachedFrame;
+    return 1;
+}
+
+void __wrap_EspNativeGraphics_releaseSpriteFrame(EspNativeSpriteFrame* frame) {
+    if (storageBelongsToCache(frame)) {
+        /* Borrowed view: clear only the caller's copy. Cache owns storage. */
+        memset(frame, 0, sizeof(*frame));
+        return;
+    }
+
+    __real_EspNativeGraphics_releaseSpriteFrame(frame);
 }
