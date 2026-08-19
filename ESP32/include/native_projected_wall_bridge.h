@@ -16,6 +16,7 @@ extern "C" {
 
 struct Render_s;
 struct Line_s;
+struct EspNativeWallFrame_s;
 
 typedef struct EspNativeProjectedWallStats_s {
     uint32_t beginCalls;
@@ -37,8 +38,19 @@ void EspNativeProjectedWall_getStats(EspNativeProjectedWallStats* outStats);
 
 /* Acquire one bounded GFXRM wall frame. Unlike the previous compatibility
  * bridge, this never aliases Render.mediaTexels and never rewrites mappings.
+ * This entry point owns/releases the acquired frame and remains the default for
+ * standalone projected-wall probes.
  */
 int EspNativeProjectedWall_begin(struct Render_s* render, int textureIndex);
+
+/* Activate an already-resident wall frame without taking ownership of its
+ * payload. This is the cache-facing path: EspNativeProjectedWall_end() clears
+ * only the borrowed view, while the caller/cache retains the 2 KB payload.
+ */
+int EspNativeProjectedWall_beginBorrowed(
+    struct Render_s* render,
+    const struct EspNativeWallFrame_s* borrowedFrame);
+
 void EspNativeProjectedWall_end(void);
 int EspNativeProjectedWall_isActive(void);
 

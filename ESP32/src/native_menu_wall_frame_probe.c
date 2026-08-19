@@ -10,6 +10,7 @@
 #include "native_graphics_resource_manager.h"
 #include "native_menu_wall_frame_probe.h"
 #include "native_projected_wall_bridge.h"
+#include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
 
 /* Keep ESP-IDF headers after DoomRPG.h: stdbool false/true macros collide
@@ -20,6 +21,29 @@
 #define MENU_TEXTURE_TRACK_LIMIT 1024
 #define MENU_TEXTURE_TRACK_WORDS (MENU_TEXTURE_TRACK_LIMIT / 32)
 #define PACKED_WALL_BYTES 2048U
+
+#define EXPECTED_MENU_NODE_COUNT 28U
+#define EXPECTED_MENU_NODE_RASTER_COUNT 10U
+#define EXPECTED_MENU_VISIBLE_LEAVES 10U
+#define EXPECTED_MENU_SOURCE_LINES 46U
+#define EXPECTED_MENU_WALL_REQUESTS 25U
+#define EXPECTED_MENU_BACKFACE_CULLED 15U
+#define EXPECTED_MENU_CLIP_CULLED 6U
+#define EXPECTED_MENU_UNIQUE_TEXTURES 8U
+#define EXPECTED_MENU_REPEATED_REQUESTS 17U
+#define EXPECTED_MENU_REQUEST_FNV 0x4db9da28U
+#define EXPECTED_MENU_FRAMEBUFFER_FNV 0xa6d87c4aU
+#define EXPECTED_MENU_NATIVE_SPANS 224U
+#define EXPECTED_MENU_NATIVE_PIXELS 5589U
+
+#define EXPECTED_CACHE_HITS 14U
+#define EXPECTED_CACHE_MISSES 11U
+#define EXPECTED_CACHE_EVICTIONS 8U
+#define EXPECTED_CACHE_RESIDENT_SLOTS 3U
+#define EXPECTED_CACHE_RESIDENT_BYTES \
+    (EXPECTED_CACHE_RESIDENT_SLOTS * PACKED_WALL_BYTES)
+#define EXPECTED_GFXRM_LOGICAL_BYTES \
+    (EXPECTED_CACHE_MISSES * PACKED_WALL_BYTES)
 
 typedef struct MenuWallFrameStats_s {
     uint32_t leafNodes;
@@ -102,7 +126,7 @@ static int resolveDeterministicWallTexture(Render_t* render,
 
     /* Render_drawNodeLines() adds a four-frame phase derived from
      * animFrameTime + logicalTexture*3. Freeze animFrameTime at zero for this
-     * first hardware reference so the resulting frame/hash is deterministic.
+     * hardware regression so the resulting frame/hash is deterministic.
      */
     phase = (((uint32_t)(logicalTexture * 3) * 0x400000U) >> 30);
     baseTexture = render->mediaTexturesIds[logicalTexture];
@@ -214,6 +238,7 @@ static int drawNativeMenuWall(Render_t* render,
                               int lineIndex,
                               MenuWallFrameStats* stats,
                               uint32_t* seenTextures) {
+    const EspNativeWallFrame* cachedFrame;
     Line_t projected;
     int projectionResult;
     int textureIndex;
@@ -235,8 +260,16 @@ static int drawNativeMenuWall(Render_t* render,
     noteTextureRequest(stats, seenTextures, textureIndex, lineIndex);
     stats->wallRequests++;
 
-    if (!EspNativeProjectedWall_begin(render, textureIndex)) {
-        printf("[MENUWALL] FAILED GFXRM acquire line=%d texture=%d\n",
+    cachedFrame = NULL;
+    if (!EspNativeWallCache_acquire(render, textureIndex, &cachedFrame) ||
+        cachedFrame == NULL) {
+        printf("[MENUWALL] FAILED wall-cache acquire line=%d texture=%d\n",
+               lineIndex, textureIndex);
+        return 0;
+    }
+
+    if (!EspNativeProjectedWall_beginBorrowed(render, cachedFrame)) {
+        printf("[MENUWALL] FAILED borrowed projected frame line=%d texture=%d\n",
                lineIndex, textureIndex);
         return 0;
     }
@@ -259,16 +292,18 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
     Node_t* viewNodes;
     EspNativeGraphicsStats gfxStats;
     EspNativeProjectedWallStats projectedStats;
+    EspNativeWallCacheStats cacheStats;
     MenuWallFrameStats stats;
     uint32_t seenTextures[MENU_TEXTURE_TRACK_WORDS];
     uint32_t heapBefore;
     uint32_t largestBefore;
+    uint32_t heapCacheResident;
+    uint32_t largestCacheResident;
     uint32_t heapAfter;
     uint32_t largestAfter;
     uint32_t framebufferHash;
     uint32_t renderStart;
     uint32_t renderElapsed;
-    uint32_t expectedLogicalBytes;
     int menuViewX;
     int menuViewY;
     int menuViewAngle;
@@ -277,7 +312,7 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
     int oldSkipViewNudge;
     int oldRenderFloorCeilingTextures;
 
-    printf("\n=== Doom RPG ESP32 real menu.bsp walls-only frame ===\n");
+    printf("\n=== Doom RPG ESP32 real menu.bsp walls-only frame + 3-slot LRU ===\n");
 
     if (render == NULL || render->doomRpg == NULL ||
         render->doomRpg->doomCanvas == NULL ||
@@ -347,8 +382,8 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
 
     /* Reuse Render_render() for the exact camera transform, viewport setup,
      * solid background and BSP visibility walk. Lines/sprites are suppressed
-     * only for this first pass; Render_walkNode() still builds the original
-     * ordered view-node list and performs its occlusion pass.
+     * only for this pass; Render_walkNode() still builds the original ordered
+     * view-node list and performs its occlusion pass.
      */
     render->skipLines = 1;
     render->skipSprites = 1;
@@ -364,14 +399,15 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
     render->skipViewNudge = oldSkipViewNudge;
     doomCanvas->renderFloorCeilingTextures = oldRenderFloorCeilingTextures;
 
-    /* Freeze the first real frame to a deterministic animation phase. Future
-     * runtime rendering can restore real time once resource reuse/cache policy
-     * has been measured.
-     */
+    /* Freeze animation exactly as in the uncached reference frame. */
     render->animFrameTime = 0;
 
     EspNativeGraphics_resetStats();
     EspNativeProjectedWall_resetStats();
+    if (!EspNativeWallCache_begin(render)) {
+        printf("[MENUWALL] FAILED starting cold three-slot wall cache\n");
+        return 0;
+    }
 
     viewNodes = &render->viewNodes;
     for (viewNode = viewNodes->next;
@@ -386,6 +422,7 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
             firstLine + lineCount > render->linesLength) {
             printf("[MENUWALL] FAILED leaf line range first=%d count=%d lines=%d\n",
                    firstLine, lineCount, render->linesLength);
+            EspNativeWallCache_end();
             return 0;
         }
 
@@ -393,6 +430,10 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
             int lineIndex = firstLine + i;
             if (!drawNativeMenuWall(render, &render->lines[lineIndex],
                                     lineIndex, &stats, seenTextures)) {
+                if (EspNativeProjectedWall_isActive()) {
+                    EspNativeProjectedWall_end();
+                }
+                EspNativeWallCache_end();
                 return 0;
             }
         }
@@ -401,14 +442,14 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
     renderElapsed = (uint32_t)DoomRPG_GetTimeMS() - renderStart;
     EspNativeProjectedWall_getStats(&projectedStats);
     EspNativeGraphics_getStats(&gfxStats);
+    EspNativeWallCache_getStats(&cacheStats);
 
     framebufferHash = fnv1a32(
         render->framebuffer,
         (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
 
-    heapAfter = heap8Free();
-    largestAfter = largest8Block();
-    expectedLogicalBytes = stats.wallRequests * PACKED_WALL_BYTES;
+    heapCacheResident = heap8Free();
+    largestCacheResident = largest8Block();
 
     printf("[MENUWALL] BSP visibility nodeCount=%d nodeRasterCount=%d visibleLeaves=%u sourceLines=%u\n",
            render->nodeCount,
@@ -427,11 +468,26 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
            (unsigned int)stats.repeatedTextureRequests,
            (unsigned int)stats.textureTrackingErrors,
            (unsigned int)stats.textureRequestHash);
+    printf("[MENUWALL] LRU slots=%u requests=%u hits=%u misses=%u evictions=%u resident=%u peak=%u residentBytes=%u peakBytes=%u\n",
+           (unsigned int)ESP_NATIVE_WALL_CACHE_SLOTS,
+           (unsigned int)cacheStats.requests,
+           (unsigned int)cacheStats.hits,
+           (unsigned int)cacheStats.misses,
+           (unsigned int)cacheStats.evictions,
+           (unsigned int)cacheStats.residentSlots,
+           (unsigned int)cacheStats.peakResidentSlots,
+           (unsigned int)cacheStats.residentBytes,
+           (unsigned int)cacheStats.peakResidentBytes);
+    printf("[MENUWALL] LRU resident heap8=%u largest8=%u aggregateCost=%dB logicalPayload=%uB\n",
+           (unsigned int)heapCacheResident,
+           (unsigned int)largestCacheResident,
+           (int)heapBefore - (int)heapCacheResident,
+           (unsigned int)cacheStats.residentBytes);
     printf("[MENUWALL] GFXRM wallLoads=%u packOpenCycles=%u logicalBytes=%u expected=%u peakFrame=%u\n",
            (unsigned int)gfxStats.wallLoads,
            (unsigned int)gfxStats.packOpenCycles,
            (unsigned int)gfxStats.logicalBytesLoaded,
-           (unsigned int)expectedLogicalBytes,
+           (unsigned int)EXPECTED_GFXRM_LOGICAL_BYTES,
            (unsigned int)gfxStats.peakFrameBytes);
     printf("[MENUWALL] Native spans begin=%u end=%u spanCalls=%u pixels=%u rangeErrors=%u legacyPtrViolations=%u mappingViolations=%u\n",
            (unsigned int)projectedStats.beginCalls,
@@ -441,40 +497,71 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
            (unsigned int)projectedStats.rangeErrors,
            (unsigned int)projectedStats.legacyPointerViolations,
            (unsigned int)projectedStats.mappingOffsetViolations);
-    printf("[MENUWALL] framebufferFNV=%08x renderMs=%u floor=%04x ceiling=%04x mediaTexels=%p\n",
+    printf("[MENUWALL] framebufferFNV=%08x expected=%08x renderMs=%u floor=%04x ceiling=%04x mediaTexels=%p\n",
            (unsigned int)framebufferHash,
+           (unsigned int)EXPECTED_MENU_FRAMEBUFFER_FNV,
            (unsigned int)renderElapsed,
            (unsigned int)(uint16_t)render->floorColor[0],
            (unsigned int)(uint16_t)render->ceilingColor[0],
            (void*)render->mediaTexels);
-    printf("[MENUWALL] End heap8=%u largest8=%u deltaFromStart=%d\n",
+
+    if ((uint32_t)render->nodeCount != EXPECTED_MENU_NODE_COUNT ||
+        (uint32_t)render->nodeRasterCount != EXPECTED_MENU_NODE_RASTER_COUNT ||
+        stats.leafNodes != EXPECTED_MENU_VISIBLE_LEAVES ||
+        stats.lineCandidates != EXPECTED_MENU_SOURCE_LINES ||
+        stats.wallRequests != EXPECTED_MENU_WALL_REQUESTS ||
+        stats.backfaceCulled != EXPECTED_MENU_BACKFACE_CULLED ||
+        stats.clipCulled != EXPECTED_MENU_CLIP_CULLED ||
+        stats.spriteSpanSkipped != 0U || stats.occluderOnlySkipped != 0U ||
+        stats.uniqueTextures != EXPECTED_MENU_UNIQUE_TEXTURES ||
+        stats.repeatedTextureRequests != EXPECTED_MENU_REPEATED_REQUESTS ||
+        stats.textureTrackingErrors != 0U ||
+        stats.textureRequestHash != EXPECTED_MENU_REQUEST_FNV ||
+        cacheStats.requests != EXPECTED_MENU_WALL_REQUESTS ||
+        cacheStats.hits != EXPECTED_CACHE_HITS ||
+        cacheStats.misses != EXPECTED_CACHE_MISSES ||
+        cacheStats.evictions != EXPECTED_CACHE_EVICTIONS ||
+        cacheStats.residentSlots != EXPECTED_CACHE_RESIDENT_SLOTS ||
+        cacheStats.peakResidentSlots != EXPECTED_CACHE_RESIDENT_SLOTS ||
+        cacheStats.residentBytes != EXPECTED_CACHE_RESIDENT_BYTES ||
+        cacheStats.peakResidentBytes != EXPECTED_CACHE_RESIDENT_BYTES ||
+        gfxStats.spriteLoads != 0U ||
+        gfxStats.wallLoads != EXPECTED_CACHE_MISSES ||
+        gfxStats.packOpenCycles != EXPECTED_CACHE_MISSES ||
+        gfxStats.logicalBytesLoaded != EXPECTED_GFXRM_LOGICAL_BYTES ||
+        gfxStats.peakFrameBytes != PACKED_WALL_BYTES ||
+        projectedStats.beginCalls != EXPECTED_MENU_WALL_REQUESTS ||
+        projectedStats.endCalls != EXPECTED_MENU_WALL_REQUESTS ||
+        projectedStats.spanCalls != EXPECTED_MENU_NATIVE_SPANS ||
+        projectedStats.pixelsDrawn != EXPECTED_MENU_NATIVE_PIXELS ||
+        projectedStats.rangeErrors != 0U ||
+        projectedStats.legacyPointerViolations != 0U ||
+        projectedStats.mappingOffsetViolations != 0U ||
+        framebufferHash != EXPECTED_MENU_FRAMEBUFFER_FNV ||
+        render->mediaTexels != NULL) {
+        printf("[MENUWALL] FAILED cached real menu regression contract changed\n");
+        EspNativeWallCache_end();
+        return 0;
+    }
+
+    EspNativeWallCache_end();
+    heapAfter = heap8Free();
+    largestAfter = largest8Block();
+
+    printf("[MENUWALL] End heap8=%u largest8=%u deltaFromStart=%d cacheReleased=yes\n",
            (unsigned int)heapAfter,
            (unsigned int)largestAfter,
            (int)heapBefore - (int)heapAfter);
 
-    if (stats.leafNodes == 0U || stats.lineCandidates == 0U ||
-        stats.wallRequests == 0U || stats.uniqueTextures == 0U ||
-        stats.textureTrackingErrors != 0U ||
-        gfxStats.spriteLoads != 0U ||
-        gfxStats.wallLoads != stats.wallRequests ||
-        gfxStats.packOpenCycles != stats.wallRequests ||
-        gfxStats.logicalBytesLoaded != expectedLogicalBytes ||
-        gfxStats.peakFrameBytes != PACKED_WALL_BYTES ||
-        projectedStats.beginCalls != stats.wallRequests ||
-        projectedStats.endCalls != stats.wallRequests ||
-        projectedStats.spanCalls == 0U || projectedStats.pixelsDrawn == 0U ||
-        projectedStats.rangeErrors != 0U ||
-        projectedStats.legacyPointerViolations != 0U ||
-        projectedStats.mappingOffsetViolations != 0U ||
-        render->mediaTexels != NULL ||
+    if (EspNativeWallCache_isActive() ||
         heapAfter != heapBefore || largestAfter != largestBefore) {
-        printf("[MENUWALL] FAILED real menu walls-only frame contract changed\n");
+        printf("[MENUWALL] FAILED cache teardown did not restore allocator state\n");
         return 0;
     }
 
     SDL_RenderPresent(NULL);
-    printf("[MENUWALL] Presented real menu.bsp walls-only frame on CYD\n");
-    printf("[MENUWALL] READY real menu spawn + original BSP visibility + native GFXRM walls rendered together\n");
-    printf("[MENUWALL] READY no cache yet; request/repeat counts are the input for the next cache decision\n");
+    printf("[MENUWALL] Presented cached real menu.bsp walls-only frame on CYD\n");
+    printf("[MENUWALL] READY framebuffer stayed bit-identical while LRU reduced 25 requests to 11 physical wall loads\n");
+    printf("[MENUWALL] READY measured three-slot cache = 14 hits / 11 misses / 8 evictions / 6144B peak payload\n");
     return 1;
 }
