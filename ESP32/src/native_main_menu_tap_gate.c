@@ -11,10 +11,28 @@
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
 
+#ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+#define DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY 0
+#endif
+
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+#include "platform_video_c_bridge.h"
+#endif
+
 #define MENU_TAP_GATE_LABEL_CHARS 10
 #define MENU_TAP_GATE_GLYPH_ADVANCE 7
 #define MENU_TAP_GATE_HAND_WIDTH 13
 #define MENU_TAP_GATE_PAD_X 4
+#define MENU_TAP_GATE_HALF_TEXT_WIDTH \
+    ((MENU_TAP_GATE_LABEL_CHARS * MENU_TAP_GATE_GLYPH_ADVANCE) >> 1)
+#define MENU_TAP_GATE_TEXT_X \
+    ((DOOMRPG_LOGICAL_WIDTH >> 1) - MENU_TAP_GATE_HALF_TEXT_WIDTH)
+#define MENU_TAP_GATE_HIT_LEFT \
+    (MENU_TAP_GATE_TEXT_X - MENU_TAP_GATE_HAND_WIDTH - MENU_TAP_GATE_PAD_X)
+#define MENU_TAP_GATE_HIT_RIGHT \
+    (MENU_TAP_GATE_TEXT_X + \
+     (MENU_TAP_GATE_LABEL_CHARS * MENU_TAP_GATE_GLYPH_ADVANCE) + \
+     MENU_TAP_GATE_PAD_X)
 #define EXPECTED_OPTIONS_FRAMEBUFFER_FNV 0x6058d47dU
 
 static PlatformTapCallback downstreamTapCallback = NULL;
@@ -29,17 +47,10 @@ void __real_PlatformInput_setTapCallback(PlatformTapCallback callback);
 static int gateHitItem(int16_t screenX, int16_t screenY) {
     const int logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
-    const int halfTextWidth =
-        (MENU_TAP_GATE_LABEL_CHARS * MENU_TAP_GATE_GLYPH_ADVANCE) >> 1;
-    const int textX = (DOOMRPG_LOGICAL_WIDTH >> 1) - halfTextWidth;
-    const int hitLeft = textX - MENU_TAP_GATE_HAND_WIDTH - MENU_TAP_GATE_PAD_X;
-    const int hitRight = textX +
-                         (MENU_TAP_GATE_LABEL_CHARS *
-                          MENU_TAP_GATE_GLYPH_ADVANCE) +
-                         MENU_TAP_GATE_PAD_X;
     const int relativeY = logicalY - DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y;
 
-    if (logicalX < hitLeft || logicalX > hitRight ||
+    if (logicalX < MENU_TAP_GATE_HIT_LEFT ||
+        logicalX > MENU_TAP_GATE_HIT_RIGHT ||
         relativeY < 0 ||
         relativeY >= (DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT *
                       DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT)) {
@@ -49,6 +60,29 @@ static int gateHitItem(int16_t screenX, int16_t screenY) {
     return relativeY / DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
 }
 
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+static void registerMainMenuHitboxOverlay(void) {
+    int item;
+
+    Esp32PlatformVideo_debugOverlayClear();
+
+    for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
+        const int top = DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y +
+                        (item * DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT);
+        const int bottom = top + DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT - 1;
+
+        Esp32PlatformVideo_debugOverlaySetZone(item,
+                                               MENU_TAP_GATE_HIT_LEFT,
+                                               (int16_t)top,
+                                               MENU_TAP_GATE_HIT_RIGHT,
+                                               (int16_t)bottom);
+    }
+
+    printf("[HITBOX] MAIN overlay registered from final tap gate zones=%d framebuffer=untouched\n",
+           DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT);
+}
+#endif
+
 static void executeConfirmedOptions(void) {
     /* Remove MENU_MAIN touch before mutating the real menu model. The Options
      * action owns the display transition; after it succeeds, arm only the
@@ -56,6 +90,9 @@ static void executeConfirmedOptions(void) {
      */
     downstreamTapCallback = NULL;
     __real_PlatformInput_setTapCallback(NULL);
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+    Esp32PlatformVideo_debugOverlayClear();
+#endif
 
     if (doomRpg == NULL) {
         printf("[MAINOPTIONS] FAILED global DoomRPG unavailable at confirmed Options tap\n");
@@ -138,8 +175,17 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
     lastTappedItem = -1;
     gateTapCount = 0;
 
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+    if (callback == NULL) {
+        Esp32PlatformVideo_debugOverlayClear();
+    }
+#endif
+
     if (callback == DoomRPG_esp32MainMenuTouchOnTap) {
         downstreamTapCallback = callback;
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+        registerMainMenuHitboxOverlay();
+#endif
         __real_PlatformInput_setTapCallback(gatedTap);
         printf("[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm optionsAction=enabled\n");
     }

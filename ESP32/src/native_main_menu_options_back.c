@@ -16,13 +16,23 @@
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
 
+#ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+#define DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY 0
+#endif
+
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+#include "platform_video_c_bridge.h"
+#endif
+
 #define EXPECTED_OPTIONS_FRAMEBUFFER_FNV 0x6058d47dU
 #define EXPECTED_OPAQUE_MAIN_FNV 0x58a11171U
+#define OPTIONS_ITEM_COUNT 4
 #define OPTIONS_BACK_ITEM 0
 #define OPTIONS_ROW_TOP 67
-#define OPTIONS_BACK_HIT_LEFT 15
-#define OPTIONS_BACK_HIT_RIGHT 119
-#define OPTIONS_BACK_HIT_TOP 64
+#define OPTIONS_ROW_HEIGHT 12
+#define OPTIONS_HIT_LEFT 15
+#define OPTIONS_HIT_RIGHT 119
+#define OPTIONS_BACK_HIT_TOP 65
 #define OPTIONS_BACK_HIT_BOTTOM 78
 
 static DoomRPG_t* optionsDoomRpg = NULL;
@@ -70,8 +80,8 @@ static int hitBack(int16_t screenX, int16_t screenY) {
     const int logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
 
-    return logicalX >= OPTIONS_BACK_HIT_LEFT &&
-           logicalX <= OPTIONS_BACK_HIT_RIGHT &&
+    return logicalX >= OPTIONS_HIT_LEFT &&
+           logicalX <= OPTIONS_HIT_RIGHT &&
            logicalY >= OPTIONS_BACK_HIT_TOP &&
            logicalY <= OPTIONS_BACK_HIT_BOTTOM;
 }
@@ -80,11 +90,41 @@ static int optionsRowAt(int16_t screenY) {
     const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
     const int relativeY = logicalY - OPTIONS_ROW_TOP;
 
-    if (relativeY < 0 || relativeY >= 48) {
+    if (relativeY < 0 ||
+        relativeY >= (OPTIONS_ITEM_COUNT * OPTIONS_ROW_HEIGHT)) {
         return -1;
     }
-    return relativeY / 12;
+    return relativeY / OPTIONS_ROW_HEIGHT;
 }
+
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+static void registerOptionsHitboxOverlay(void) {
+    int item;
+
+    Esp32PlatformVideo_debugOverlayClear();
+
+    Esp32PlatformVideo_debugOverlaySetZone(OPTIONS_BACK_ITEM,
+                                           OPTIONS_HIT_LEFT,
+                                           OPTIONS_BACK_HIT_TOP,
+                                           OPTIONS_HIT_RIGHT,
+                                           OPTIONS_BACK_HIT_BOTTOM);
+
+    for (item = 1; item < OPTIONS_ITEM_COUNT; ++item) {
+        const int top = OPTIONS_ROW_TOP + (item * OPTIONS_ROW_HEIGHT);
+        const int bottom = top + OPTIONS_ROW_HEIGHT - 1;
+
+        Esp32PlatformVideo_debugOverlaySetZone(item,
+                                               OPTIONS_HIT_LEFT,
+                                               (int16_t)top,
+                                               OPTIONS_HIT_RIGHT,
+                                               (int16_t)bottom);
+    }
+
+    Esp32PlatformVideo_debugOverlayRefresh();
+    printf("[HITBOX] OPTIONS overlay registered from Back/row hit constants zones=%d Back=active others=deferred framebuffer=untouched\n",
+           OPTIONS_ITEM_COUNT);
+}
+#endif
 
 static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
@@ -272,15 +312,18 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
 
     optionsDoomRpg = doomRpg;
     optionsBackActive = 1;
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+    registerOptionsHitboxOverlay();
+#endif
     PlatformInput_setTapCallback(optionsBackTap);
 
-    printf("[OPTIONBACK] READY Back hit logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d visualRowY=67..78 topTolerance=3 firstTap=arm secondReleasedTap=back Video/Input/Sound=deferred fastOpaqueReturn=yes\n",
-           OPTIONS_BACK_HIT_LEFT,
-           OPTIONS_BACK_HIT_RIGHT,
+    printf("[OPTIONBACK] READY Back hit logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d visualRowY=67..78 topTolerance=2 firstTap=arm secondReleasedTap=back Video/Input/Sound=deferred fastOpaqueReturn=yes\n",
+           OPTIONS_HIT_LEFT,
+           OPTIONS_HIT_RIGHT,
            OPTIONS_BACK_HIT_TOP,
            OPTIONS_BACK_HIT_BOTTOM,
-           OPTIONS_BACK_HIT_LEFT * DOOMRPG_INTEGER_SCALE,
-           ((OPTIONS_BACK_HIT_RIGHT + 1) * DOOMRPG_INTEGER_SCALE) - 1,
+           OPTIONS_HIT_LEFT * DOOMRPG_INTEGER_SCALE,
+           ((OPTIONS_HIT_RIGHT + 1) * DOOMRPG_INTEGER_SCALE) - 1,
            OPTIONS_BACK_HIT_TOP * DOOMRPG_INTEGER_SCALE,
            ((OPTIONS_BACK_HIT_BOTTOM + 1) * DOOMRPG_INTEGER_SCALE) - 1);
     return 1;
