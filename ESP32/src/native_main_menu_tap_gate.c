@@ -1,7 +1,11 @@
+#include <SDL.h>
 #include <stdint.h>
 #include <stdio.h>
 
+#include "DoomRPG.h"
+
 #include "native_main_menu_160x120_layout.h"
+#include "native_main_menu_options_action.h"
 #include "native_main_menu_touch.h"
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
@@ -15,6 +19,8 @@ static PlatformTapCallback downstreamTapCallback = NULL;
 static int gateSelectedItem = 0;
 static int lastTappedItem = -1;
 static uint32_t gateTapCount = 0;
+
+extern DoomRPG_t* doomRpg;
 
 void __real_PlatformInput_setTapCallback(PlatformTapCallback callback);
 
@@ -39,6 +45,24 @@ static int gateHitItem(int16_t screenX, int16_t screenY) {
     }
 
     return relativeY / DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
+}
+
+static void executeConfirmedOptions(void) {
+    /* The Options screen is display-only in this increment. Remove the physical
+     * tap callback before mutating the real MenuSystem model so no further
+     * MENU_MAIN touch can race the transition.
+     */
+    downstreamTapCallback = NULL;
+    __real_PlatformInput_setTapCallback(NULL);
+
+    if (doomRpg == NULL) {
+        printf("[MAINOPTIONS] FAILED global DoomRPG unavailable at confirmed Options tap\n");
+        return;
+    }
+
+    if (!DoomRPG_esp32ActivateMainMenuOptions(doomRpg)) {
+        printf("[MAINOPTIONS] FAILED confirmed Options action\n");
+    }
 }
 
 static void gatedTap(int16_t screenX,
@@ -73,7 +97,15 @@ static void gatedTap(int16_t screenX,
     }
 
     if (lastTappedItem == hit) {
-        printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=%d\n",
+        if (hit == 1) {
+            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=1 action=execute-options\n",
+                   (unsigned int)gateTapCount);
+            lastTappedItem = -1;
+            executeConfirmedOptions();
+            return;
+        }
+
+        printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=%d action=deferred\n",
                (unsigned int)gateTapCount,
                hit);
         downstreamTapCallback(screenX, screenY, pressure, rawX, rawY);
@@ -88,9 +120,10 @@ static void gatedTap(int16_t screenX,
            gateSelectedItem);
 }
 
-/* Intercept only callback registration, not XPT2046 sampling. This lets the
- * generic PlatformInput driver remain unaware of menu semantics while enforcing
- * the requested select-then-confirm UX before MENUTOUCH sees a confirmation.
+/* Intercept only callback registration, not XPT2046 sampling. This keeps the
+ * generic PlatformInput driver unaware of menu semantics. The validated gate
+ * still enforces select-then-confirm; this increment promotes only confirmed
+ * MENU_MAIN Options to a real action.
  */
 void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
     gateSelectedItem = 0;
@@ -100,7 +133,7 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
     if (callback == DoomRPG_esp32MainMenuTouchOnTap) {
         downstreamTapCallback = callback;
         __real_PlatformInput_setTapCallback(gatedTap);
-        printf("[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm\n");
+        printf("[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm optionsAction=enabled\n");
     }
     else {
         downstreamTapCallback = callback;
