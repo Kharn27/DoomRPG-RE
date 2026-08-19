@@ -12,8 +12,8 @@ on the same branch as the code, before that branch is merged.
 - XPT2046 touch on separate software SPI path
 - microSD-backed game data
 - internal render target: 160x120 RGB565 = 38,400 bytes
-- physical output: exact nearest-neighbour 2x to 320x240
 - gameplay viewport: 160x80 at framebuffer y=20
+- physical output: exact nearest-neighbour 2x to 320x240
 - audio disabled/stubbed during bring-up
 
 ## Project direction
@@ -54,182 +54,236 @@ ESP32:
     (`agent/esp32-menu-bsp-preflight`, PR #9).
 11. Complete byte-for-byte parse of `menu.bsp` and exact ESP32 structural
     allocation plan (`agent/esp32-menu-bsp-structure-plan`, PR #10).
-12. Real `Render_beginLoadMap(MAP_MENU)` + real structural portion of
+12. Real `Render_beginLoadMap(MAP_MENU)` + structural portion of
     `Render_beginLoadMapData()`, stopped exactly before graphics resources
     (`agent/esp32-menu-map-runtime-structures`, PR #11).
-13. Graphics-resource memory plan proving the original whole-file inflate and
-    monolithic `mediaTexels` strategy cannot fit on the no-PSRAM CYD
-    (`agent/esp32-menu-resource-memory-plan`, PR #12).
-14. First ESP32-native asset-pack primitive: direct random access to a real
-    2,048-byte menu wall texture with exact heap recovery
-    (`agent/esp32-native-asset-pack`, PR #13).
+13. Graphics-resource memory plan proving the original monolithic graphics path
+    cannot fit on the no-PSRAM CYD (`agent/esp32-menu-resource-memory-plan`, PR #12).
+14. First ESP32-native asset-pack primitive: random access to a real 2,048-byte
+    menu wall texture (`agent/esp32-native-asset-pack`, PR #13).
 15. Full ESP32-native asset pack v2: all 241 ZIP resources mirrored uncompressed
-    behind a hash-sorted on-disk index, with 241/241 hardware cross-check and
-    exact heap recovery (`agent/esp32-full-native-asset-pack`, PR #14).
+    behind a hash-sorted on-disk index (`agent/esp32-full-native-asset-pack`, PR #14).
 16. Native on-demand bitshape source model: 112 unique menu shapes across 284
-    sprite references, zero resident `shapeData`, <=32-byte mask-column scratch,
-    exact heap recovery (`agent/esp32-native-bitshape-loader`, PR #15, merge
-    commit `76898e7990481cf630b293477958fe0c478f7f1a`).
-17. Native sprite-texel random access: exact 143,990-byte selected sprite dataset
-    measured without loading it, largest real menu sprite payload only 1,600 B,
-    direct `stexels.bin` read and exact heap recovery
-    (`agent/esp32-native-sprite-texel-probe`, PR #16, merge commit
-    `6252dcf7f6cdb782bbf554b7ebeae9b296086d25`).
-18. First complete ESP32-native sprite render: sprite 172 loaded from
-    `bitshapes.bin` + `stexels.bin`, native palette normalization, 3,199 pixels
-    rasterized into the shared framebuffer with `shapeData == NULL` and
-    `mediaTexels == NULL` (`agent/esp32-native-sprite-render-consumer`, PR #17,
-    merge commit `bf59ee37b7242d0917ae0e4b49a83265c0b4f652`).
-19. First complete ESP32-native wall render: texture 112 read directly from
-    `wtexels.bin`, 4,096 texels rasterized with the mapped palette, exact heap
-    recovery and deterministic framebuffer output
-    (`agent/esp32-native-wall-render-consumer`, PR #18, merge commit
-    `fa957f7aca0fe315d243156600622cf9ee115277`).
-20. First shared ESP32-native graphics resource manager: sprite + wall loaders
-    consolidated behind one bounded GFXRM API, rasterizers stripped of SD/pack
-    layout knowledge, zero persistent cache allocation
-    (`agent/esp32-native-graphics-resource-manager`, PR #19, merge commit
-    `02b61492f216c1ad3b0fed18bf01ddfc22b768d9`).
-21. First projected wall through the original projection/span pipeline with one
-    bounded 2,048-byte GFXRM frame temporarily exposed through the legacy
-    `mediaTexels` field. This proved the original projected wall semantics work
-    without recreating the 172 KB wall pool (`agent/esp32-projected-wall-gfxrm`,
-    PR #20, merge commit `1ec77feac2a04b1297661c3f8bb78504aec81938`).
+    sprite references, zero resident `shapeData` (`agent/esp32-native-bitshape-loader`,
+    PR #15, merge `76898e7990481cf630b293477958fe0c478f7f1a`).
+17. Native sprite-texel random access: 143,990 B selected dataset measured without
+    loading it, largest selected payload 1,600 B (`agent/esp32-native-sprite-texel-probe`,
+    PR #16, merge `6252dcf7f6cdb782bbf554b7ebeae9b296086d25`).
+18. First complete native sprite render: sprite 172 from `bitshapes.bin` +
+    `stexels.bin`, 3,199 pixels, `shapeData == NULL`, `mediaTexels == NULL`
+    (`agent/esp32-native-sprite-render-consumer`, PR #17, merge
+    `bf59ee37b7242d0917ae0e4b49a83265c0b4f652`).
+19. First complete native wall render: texture 112 from `wtexels.bin`, 4,096
+    texels, deterministic framebuffer (`agent/esp32-native-wall-render-consumer`,
+    PR #18, merge `fa957f7aca0fe315d243156600622cf9ee115277`).
+20. Shared native graphics resource manager: sprite + wall loads consolidated
+    behind bounded GFXRM (`agent/esp32-native-graphics-resource-manager`, PR #19,
+    merge `02b61492f216c1ad3b0fed18bf01ddfc22b768d9`).
+21. First projected wall using original transform/clip/project/span semantics and
+    a bounded 2 KB GFXRM frame through a temporary compatibility alias
+    (`agent/esp32-projected-wall-gfxrm`, PR #20, merge
+    `1ec77feac2a04b1297661c3f8bb78504aec81938`).
+22. Projected wall converted to direct bounded native span sampling: output stayed
+    bit-identical (`ad191f54`) while `mediaTexels` remained NULL and global
+    mappings remained untouched for every span
+    (`agent/esp32-projected-wall-native-span-source`, PR #21, merge
+    `421994bc08a7ecbd56540b723771973c766a5f46`).
 
 ## Current validated increment
 
-Branch: `agent/esp32-projected-wall-native-span-source`
+Branch: `agent/esp32-menu-walls-native-frame`
 
-Status: **HARDWARE VALIDATED, READY TO MERGE**.
+Status: **HARDWARE VALIDATED, DOCUMENTED, READY TO MERGE**.
 
-Objective: remove the temporary projected-wall compatibility alias completely.
-A projected wall must now consume the bounded GFXRM frame directly while:
+Objective: stop rendering synthetic test geometry and render a real deterministic
+walls-only frame from the actual `menu.bsp` using:
 
-```text
-render->mediaTexels == NULL
-render->mediaTexelOffsets[112 * 2] == 65536
-```
+- the menu BSP header spawn position and direction
+- the original camera transform
+- original BSP walk / culling / leaf ordering / occlusion
+- real map `Line_t` objects and texture mappings
+- direct native projected wall spans
+- one bounded GFXRM wall frame at a time
 
-for the entire projected draw.
+Sprites and textured floor/ceiling are intentionally disabled for this increment.
+The visible background is solid floor/ceiling color using the menu grayscale
+palette convention.
 
-The output must remain bit-identical to the previously hardware-validated
-compatibility path.
+## Real menu camera
 
-## Native projected-wall source boundary
-
-The validated path is now:
-
-```text
-DoomRPG-ESP32.pak
-        |
-        v
-      GFXRM
-        |
-        v
-EspNativeWallFrame (2,048 B packed 4 bpp)
-        |
-        v
-original transform / clip / projection helpers
-        |
-        v
-ESP32-native wall span geometry + direct frame sampling
-        |
-        v
-canonical RGB565 palette
-        |
-        v
-shared 160x120 framebuffer
-```
-
-The native wall-span implementation preserves the fixed-point branch used by the
-reference renderer (`FIXED_VERSION=1`) and the original wall-column interpolation
-semantics, but samples the active bounded GFXRM frame directly.
-
-The previous transition operations are gone:
+The original menu loader derives its camera from `mapSpawnIndex` and
+`mapSpawnDir`. The hardware-validated `menu.bsp` header contains:
 
 ```text
-NO render->mediaTexels alias
-NO mediaTexelOffsets[] rebase
-NO map-wide wall texel pool
+mapSpawnIndex = 460
+tile           = 12,14
+world X/Y      = 800,928
+mapSpawnDir    = 0
 ```
+
+World coordinates follow the original formula:
+
+```text
+viewX = ((mapSpawnIndex % 32) << 6) + 32
+viewY = ((mapSpawnIndex / 32) << 6) + 32
+```
+
+For this first deterministic real scene the camera height is fixed at `36`, the
+normal eye-height convention used by the engine. X/Y/direction come directly
+from `menu.bsp`; only Z is an explicitly documented convention in this probe.
+
+## Real menu walls-only path
+
+```text
+menu.bsp real runtime structures
+        |
+        +--> mapSpawnIndex/mapSpawnDir
+        |
+        v
+original Render_render camera setup
+        |
+        v
+original Render_walkNode
+  (BSP traversal, culling, leaf order, occlusion)
+        |
+        v
+real visible map Line_t objects
+        |
+        v
+original mediaTexturesIds mapping semantics
+        |
+        v
+GFXRM: one 2,048-byte wall frame per request
+        |
+        v
+ESP32-native projected wall spans
+        |
+        v
+shared 160x120 RGB565 framebuffer
+```
+
+Hard invariants remain:
+
+```text
+shapeData   = NULL
+mediaTexels = NULL
+```
+
+No wall mapping is rewritten.
 
 ## Authoritative hardware validation
 
-Hardware result:
+Key hardware output:
 
 ```text
-=== Doom RPG ESP32 projected wall native span source ===
-[PROJWALL] Begin heap8=30576 largest8=22516 viewport=160x80@0,20 texture=112 shapeData=0x0 mediaTexels=0x0 mappingOffset=65536
-[GFXRM] WALL id=112 storage=2048B hash=92d40704 pack=closed
-[PROJWALL] ACQUIRE texture=112 palette=480 sourceOffset=65536 packed=2048B hash=92d40704 mediaTexels=0x0 mappingOffset=65536 pack=closed
-[PROJWALL] NATIVE source active; no mediaTexels alias and no mapping rewrite
-[PROJWALL] Native frame heap8=28512 largest8=20468 used=2064B logicalBound=2048B mediaTexels=0x0 mappingOffset=65536
-[PROJWALL] WORLD v1=(128,-32,z0) v2=(128,32,z64) camera=(0,0,z32) spanMode=0 sentinel=a55a
-[PROJWALL] -> original transform -> clip -> project -> ESP32-native wall spans
-[PROJWALL] RELEASE texture=112 spans=40 pixels=1600 rangeErrors=0 legacyPtrViolations=0 mappingViolations=0 mediaTexels=0x0
-[PROJWALL] PROJECTED columns=60..100 count=40 scale=81920/81920 z=0/5242880 lineRasterCount=1 changedPixels=1600
-[PROJWALL] Native span stats begin=1 end=1 bound=2048B spans=40 pixels=1600 rangeErrors=0 legacyPtrViolations=0 mappingViolations=0
-[PROJWALL] Source texture=112 palette=480 sourceOffset=65536 texelHash=92d40704
-[PROJWALL] GFXRM stats spriteLoads=0 wallLoads=1 packOpenCycles=1 logicalBytes=2048 peakFrame=2048
-[PROJWALL] framebufferFNV=ad191f54 expected=ad191f54 mediaTexelsDuring=0x0 mappingOffsetDuring=65536 mediaTexelsAfter=0x0 mappingOffsetAfter=65536
-[PROJWALL] End heap8=30576 largest8=22516 deltaFromStart=0 residentLargestDelta=2048
-[PROJWALL] READY projected wall is bit-identical with direct bounded GFXRM sampling
-[PROJWALL] READY mediaTexels stayed NULL and global mapping stayed untouched for every native span
-[MAPSTRUCT] Projected wall bridge validated; full map texel loading remains blocked
-[MENUBSP] READY menu.bsp plan + real runtime structures validated
-[ALIVE] uptime=5003 ms heap=96392 heap8=30576 largest8=22516 ... MENUBSP=ready ...
+=== Doom RPG ESP32 real menu.bsp walls-only frame ===
+[MENUWALL] Begin heap8=30576 largest8=22516 shapeData=0x0 mediaTexels=0x0
+[MENUWALL] BSP header spawnIndex=460 tile=12,14 world=800,928 dir=0 cameraZ=36
+...
+[MENUWALL] BSP visibility nodeCount=28 nodeRasterCount=10 visibleLeaves=10 sourceLines=46
+[MENUWALL] Line result walls=25 backface=15 clipped=6 spriteSpanSkipped=0 occluderOnly=0
+[MENUWALL] Texture requests total=25 unique=8 repeats=17 trackingErrors=0 requestFNV=4db9da28 animFrameTime=0
+[MENUWALL] GFXRM wallLoads=25 packOpenCycles=25 logicalBytes=51200 expected=51200 peakFrame=2048
+[MENUWALL] Native spans begin=25 end=25 spanCalls=224 pixels=5589 rangeErrors=0 legacyPtrViolations=0 mappingViolations=0
+[MENUWALL] framebufferFNV=a6d87c4a renderMs=1676 floor=4208 ceiling=8c51 mediaTexels=0x0
+[MENUWALL] End heap8=30576 largest8=22516 deltaFromStart=0
+[MENUWALL] READY real menu spawn + original BSP visibility + native GFXRM walls rendered together
+[MENUWALL] READY no cache yet; request/repeat counts are the input for the next cache decision
+[ALIVE] ... heap8=30576 largest8=22516 ... MENUBSP=ready ...
 ```
 
-## Deterministic regression contract
+The hardware photo shows an actual grayscale 3D menu scene with multiple walls,
+perspective and texture variation. It is intentionally incomplete: no projected
+sprites, no textured floor/ceiling and no final menu UI overlay yet.
 
-The native direct-source path must preserve all of these values:
+## Deterministic real-scene regression markers
 
 ```text
-texture index             = 112
-texture source FNV        = 92d40704
-palette offset            = 480
-source texel offset       = 65536
-projected columns         = 60..100
-projected column count    = 40
-changed framebuffer px    = 1600
-native span calls         = 40
-native span pixels        = 1600
+spawnIndex                = 460
+spawn tile                = 12,14
+spawn world               = 800,928
+spawn direction           = 0
+camera Z                  = 36
+BSP nodeCount             = 28
+BSP nodeRasterCount       = 10
+visible leaves            = 10
+source lines              = 46
+wall requests             = 25
+backface culled           = 15
+clip culled               = 6
+unique wall textures      = 8
+repeated wall requests    = 17
+texture request FNV       = 4db9da28
+native span calls         = 224
+native pixels drawn       = 5589
 range errors              = 0
 legacy pointer violations = 0
 mapping violations        = 0
-projected framebuffer FNV = ad191f54
-GFXRM wallLoads           = 1
-GFXRM packOpenCycles      = 1
-GFXRM logicalBytes        = 2048
-GFXRM peakFrame           = 2048
+GFXRM wall loads          = 25
+GFXRM pack open cycles    = 25
+GFXRM logical bytes       = 51200
+GFXRM peak frame          = 2048
+framebuffer FNV           = a6d87c4a
+render time               = 1676 ms
+floor RGB565              = 4208
+ceiling RGB565            = 8c51
 ```
 
-`ad191f54` is especially important: it is exactly the framebuffer signature
-from the previous compatibility-bridge implementation. The direct native source
-therefore reproduces the same projected wall bit-for-bit while deleting its last
-`mediaTexels` dependency.
+The animation phase is deliberately frozen (`animFrameTime=0`) so this first
+real-scene framebuffer and request sequence stay deterministic.
+
+## Exact texture request sequence
+
+The first real menu frame requests these 25 wall frames, in order:
+
+```text
+116, 32, 40, 112, 108, 108, 116, 116, 116, 112,
+116, 112, 108, 108, 108, 116, 44, 0, 40, 152,
+152, 116, 116, 116, 152
+```
+
+Unique textures:
+
+```text
+0, 32, 40, 44, 108, 112, 116, 152
+```
+
+This sequence is part of the recovery data because it allows future cache
+policies to be evaluated without repeating the hardware discovery step.
+
+## Cache analysis derived from the validated sequence
+
+This is analysis, **not yet a hardware-validated cache implementation**.
+Applying a simple LRU simulation to the 25-request sequence gives:
+
+```text
+LRU slots   hits   misses   resident payload
+1             8      17       2,048 B
+2            11      14       4,096 B
+3            14      11       6,144 B
+4            14      11       8,192 B
+5            16       9      10,240 B
+6            17       8      12,288 B
+7            17       8      14,336 B
+8            17       8      16,384 B
+```
+
+Important consequence: on this reference frame, a **3-slot LRU** captures 14 of
+17 possible repeat hits while a fourth slot adds no hits. That makes 3 slots a
+strong candidate for the first measured wall cache experiment on a no-PSRAM
+CYD, subject to real hardware memory/timing validation.
 
 ## Memory boundary
 
-Current branch baseline:
+Before the real frame:
 
 ```text
 heap8=30576
 largest8=22516
-shapeData=0x0
-mediaTexels=0x0
 ```
 
-While the 2,048-byte frame is resident:
-
-```text
-heap8=28512
-largest8=20468
-allocator cost=2064 B
-resident largest-block delta=2048 B
-```
-
-After release:
+GFXRM still acquires only one 2,048-byte wall payload at a time. After all 25
+requests and releases:
 
 ```text
 heap8=30576
@@ -237,57 +291,55 @@ largest8=22516
 deltaFromStart=0
 ```
 
-The 8-byte baseline change from the previous branch is diagnostic/static state,
-not a per-frame leak. The allocation itself still costs the same validated
-2,064 bytes and releases exactly.
-
-As established by the previous increment, the largest free block may shrink
-while a frame is resident depending on allocator placement. The contract is
-exact restoration after release.
+There is no persistent wall cache yet and no leak/fragmentation visible at the
+validated end boundary.
 
 ## Architectural conclusion
 
-For mode-0 projected walls, the old map-wide graphics memory model is now gone
-from the active path:
+This increment is the first real rendered map scene on the target. The project
+has moved from isolated graphics proofs to real level geometry:
 
 ```text
-projection math         -> preserved/reference semantics
-wall texture storage    -> GFXRM bounded frame
-wall texel sampling     -> ESP32-native direct source
-mediaTexels             -> NULL throughout
-mapping offset mutation -> none
+real BSP + real camera + real walls + real texture mappings
+                     |
+                     v
+          bounded native resources
+                     |
+                     v
+              actual scene image
 ```
 
-This is the first projected-renderer primitive that is genuinely native at the
-resource-consumption boundary rather than merely using a bounded compatibility
-alias.
+The frame is not yet the complete menu. Missing pieces are deliberate and now
+well isolated:
 
-`src/Render.c` remains untouched in this increment. DoomRPG-RE continues to act
-as the reference implementation while the ESP32 renderer is extracted one
-primitive at a time.
+1. projected real-scene sprites
+2. floor/ceiling texture sampling
+3. menu UI/logo/text overlay and normal state-machine presentation
+4. resource reuse/cache policy
+
+The lack of a Cacodemon in this frame is expected: the whole projected-sprite
+path is intentionally disabled in this walls-only increment.
 
 ## Current safe stop boundary
 
 Validated and executed:
 
 - complete engine startup through mappings
-- real `Render_beginLoadMap(MAP_MENU)`
-- real structural `Render_beginLoadMapData()` phase
-- real menu nodes, lines, sprites, events, bytecodes and resource reference lists
-- full 241-entry native asset pack validation
+- real `Render_beginLoadMap(MAP_MENU)` structural map load
+- 53 nodes, 120 lines, 44 map sprites, 68 runtime sprites, 15 events
+- full native asset-pack access
 - zero resident `shapeData`
 - zero map-wide `mediaTexels`
 - canonical RGB565 palette normalization
-- bounded native sprite + wall frames
 - shared GFXRM backend
-- native sprite/wall diagnostic rasterizers
-- original transform/clip/project helpers for a deterministic projected wall
-- ESP32-native mode-0 projected wall-span geometry
-- direct sampling of one bounded 2,048-byte wall frame
-- `mediaTexels == NULL` for every native projected span
-- global wall mapping left unchanged for every native projected span
-- bit-identical projected framebuffer signature `ad191f54`
-- exact heap/largest-block restoration after release
+- native sprite diagnostic rendering
+- native direct projected wall sampling
+- original BSP traversal/culling/occlusion on real `menu.bsp`
+- real menu spawn camera X/Y/direction
+- 25 real wall draws using 8 distinct textures
+- 224 native spans / 5,589 wall pixels
+- deterministic real-scene framebuffer `a6d87c4a`
+- exact heap/largest-block restoration after all 25 uncached resource cycles
 
 Still intentionally NOT integrated:
 
@@ -295,34 +347,36 @@ Still intentionally NOT integrated:
 - original `Render_loadTexels()`
 - monolithic `shapeData`
 - monolithic/map-wide `mediaTexels`
-- full menu BSP wall pass using the native projected wall primitive
-- projected sprite replacement in the real scene
-- floor/ceiling native texture consumption
-- cache hit/miss/eviction policy
+- projected real-scene sprite rendering
+- textured floor/ceiling rendering
+- wall cache hit/miss/eviction implementation
 - persistent open native pack
-- completion of map graphics loading
-- game entities/player spawning
-- main game loop
+- complete map graphics loader replacement
+- game entities/player spawning in the active gameplay loop
+- final main-menu UI composition
+- main gameplay loop
 
 ## Recommended next increment after merge
 
-Use the now-proven native projected wall primitive on **real menu map wall data**
-instead of the synthetic deterministic test line.
+Do **not** jump straight to an 8-texture cache merely because eight unique wall
+textures appear in this frame. The access sequence shows that three LRU slots
+already capture most reuse while costing only about 6 KB of payload RAM.
 
-Keep the scope narrow:
+Recommended next step: introduce a tiny **3-slot wall-frame LRU cache** inside or
+behind GFXRM and rerun exactly this same deterministic menu frame. The acceptance
+criteria should include:
 
-- reuse the real menu `Line_t` / map texture mappings already resident
-- render a controlled real wall or small walls-only subset from `menu.bsp`
-- keep sprites disabled
-- keep floor/ceiling simple or disabled for this proof
-- acquire required wall frames through GFXRM
-- keep `shapeData == NULL` and `mediaTexels == NULL`
-- measure how many wall texture requests occur and how often the same texture is
-  requested before choosing any cache policy
-- preserve exact heap restoration
+- framebuffer remains `a6d87c4a`
+- request sequence remains `4db9da28`
+- 25 logical wall requests remain visible to diagnostics
+- expected LRU result: 14 hits / 11 misses for three slots
+- pack open cycles drop from 25 to 11
+- physical wall bytes read drop from 51,200 B to 22,528 B
+- peak/persistent heap impact is measured on real hardware
+- exact cache cleanup/restoration is proven before merge
 
-This will turn the native projected primitive into the first real scene fragment
-and provide the first useful access-pattern data for a future tiny cache.
+Only after that measured resource-reuse layer is stable should the next visual
+piece (real projected sprites or textured planes) be added.
 
 ## Increment discipline
 
@@ -334,5 +388,6 @@ and provide the first useful access-pattern data for a future tiny cache.
   relevant `.md` files on the same branch before merge.
 - Do not say a branch is merge-ready until code + hardware proof + documentation
   are all present on that same branch.
-- Keep `ESP32/README.md` updated with commands, SD preparation, conventions and
-  architecture decisions so operational knowledge is not left only in chat.
+- Keep `ESP32/README.md` updated with commands, SD preparation, conventions,
+  deterministic signatures and architecture decisions so another engineer can
+  resume without access to conversation history.

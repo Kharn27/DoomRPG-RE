@@ -11,6 +11,7 @@
 #include "native_asset_pack_probe.h"
 #include "native_bitshape_loader.h"
 #include "native_graphics_resource_manager.h"
+#include "native_menu_wall_frame_probe.h"
 #include "native_palette.h"
 #include "native_projected_wall_probe.h"
 #include "native_sprite_render_consumer.h"
@@ -345,7 +346,14 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
         return 0;
     }
 
-    printf("[MAPSTRUCT] Projected wall bridge validated; full map texel loading remains blocked\n");
+    printf("[MAPSTRUCT] Projected wall source validated; rendering real menu.bsp walls-only frame\n");
+
+    if (!DoomRPG_probeNativeMenuWallFrame(render)) {
+        printf("[MAPSTRUCT] FAILED real menu.bsp walls-only frame\n");
+        return 0;
+    }
+
+    printf("[MAPSTRUCT] Real menu.bsp walls-only frame validated; full map texel loading remains blocked\n");
     probeReady = 1;
     return 1;
 }
