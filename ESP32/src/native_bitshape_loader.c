@@ -29,8 +29,14 @@ static uint16_t readLe16(const byte* data) {
     return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
 }
 
-static uint32_t fnv1a32(const byte* data, uint32_t length) {
-    uint32_t hash = 2166136261U;
+static uint32_t readLe32(const byte* data) {
+    return (uint32_t)data[0] |
+           ((uint32_t)data[1] << 8) |
+           ((uint32_t)data[2] << 16) |
+           ((uint32_t)data[3] << 24);
+}
+
+static uint32_t fnv1aUpdate(uint32_t hash, const byte* data, uint32_t length) {
     uint32_t i;
 
     for (i = 0; i < length; ++i) {
@@ -77,8 +83,9 @@ static int sortSelectedSpritesBySourceOffset(Render_t* render) {
         }
     }
 
-    /* Preserve the exact ordering contract expected by the old loader, but do
-     * it without touching the source offset table yet.
+    /* Keep the selected sprite references in source order, matching the useful
+     * part of the original loader, but DO NOT rewrite mediaBitShapeOffsets.
+     * On ESP32 those even entries remain source offsets into bitshapes.bin.
      */
     for (i = 0; i < render->mapSpriteTexelsCount - 1; ++i) {
         for (j = 0; j < (render->mapSpriteTexelsCount - 1) - i; ++j) {
@@ -123,7 +130,7 @@ static int readShapeHeader(const EspAssetPackEntry* bitshapes,
 }
 
 static int shapeGeometry(const byte header[BITSHAPE_FIXED_HEADER_BYTES],
-                         uint32_t* outWords,
+                         uint32_t* outLegacyWords,
                          int* outWidth,
                          int* outHeight,
                          int* outPitch) {
@@ -134,20 +141,20 @@ static int shapeGeometry(const byte header[BITSHAPE_FIXED_HEADER_BYTES],
     int width;
     int height;
     int pitch;
-    uint32_t words;
+    uint32_t legacyWords;
 
-    if (header == NULL || outWords == NULL || outWidth == NULL ||
+    if (header == NULL || outLegacyWords == NULL || outWidth == NULL ||
         outHeight == NULL || outPitch == NULL) {
         return 0;
     }
 
-    words = (uint32_t)readLe16(header + 6);
+    legacyWords = (uint32_t)readLe16(header + 6);
     xMin = header[8];
     xMax = header[9];
     yMin = header[10];
     yMax = header[11];
 
-    if (words == 0 || xMax < xMin || yMax < yMin) {
+    if (legacyWords == 0 || xMax < xMin || yMax < yMin) {
         return 0;
     }
 
@@ -155,36 +162,82 @@ static int shapeGeometry(const byte header[BITSHAPE_FIXED_HEADER_BYTES],
     height = (yMax - yMin) + 1;
     pitch = (height + 7) / 8;
 
-    if (width <= 0 || height <= 0 || pitch <= 0 ||
-        pitch > (int)MAX_COLUMN_MASK_BYTES) {
+    /* Coordinates are bytes in the source format, so a column can never need
+     * more than 32 bytes of mask storage (256 vertical pixels / 8).
+     */
+    if (width <= 0 || width > 256 || height <= 0 || height > 256 ||
+        pitch <= 0 || pitch > (int)MAX_COLUMN_MASK_BYTES) {
         return 0;
     }
 
-    *outWords = words;
+    *outLegacyWords = legacyWords;
     *outWidth = width;
     *outHeight = height;
     *outPitch = pitch;
     return 1;
 }
 
+static int countActivePixels(const EspAssetPackEntry* bitshapes,
+                             int sourceOffset,
+                             int width,
+                             int height,
+                             int pitch,
+                             uint32_t* outActivePixels,
+                             uint32_t* ioHash) {
+    byte columnMask[MAX_COLUMN_MASK_BYTES];
+    uint32_t activePixels = 0;
+    int w;
+
+    if (bitshapes == NULL || outActivePixels == NULL || ioHash == NULL ||
+        sourceOffset < 0 || width <= 0 || height <= 0 ||
+        pitch <= 0 || pitch > (int)sizeof(columnMask)) {
+        return 0;
+    }
+
+    for (w = 0; w < width; ++w) {
+        uint32_t relativeOffset =
+            BITSHAPE_FILE_HEADER_BYTES + (uint32_t)sourceOffset +
+            BITSHAPE_FIXED_HEADER_BYTES + ((uint32_t)w * (uint32_t)pitch);
+        int h;
+
+        if (relativeOffset > bitshapes->size ||
+            (uint32_t)pitch > bitshapes->size - relativeOffset ||
+            !EspAssetPack_readRange(bitshapes,
+                                    relativeOffset,
+                                    columnMask,
+                                    (size_t)pitch)) {
+            return 0;
+        }
+
+        *ioHash = fnv1aUpdate(*ioHash, columnMask, (uint32_t)pitch);
+
+        for (h = 0; h < height; ++h) {
+            if ((columnMask[h / 8] & (1U << (h & 7))) != 0) {
+                ++activePixels;
+            }
+        }
+    }
+
+    *outActivePixels = activePixels;
+    return 1;
+}
+
 int DoomRPG_loadNativeBitShapes(struct Render_s* renderBase) {
     Render_t* render = (Render_t*)renderBase;
     EspAssetPackEntry bitshapes;
-    uint64_t shapeWordsTotal = 0;
+    uint64_t legacyShapeWordsTotal = 0;
+    uint64_t selectedMaskBytes = 0;
     uint64_t spritePackedBytes = 0;
+    uint64_t activePixelsTotal = 0;
     uint32_t uniqueShapes = 0;
     uint32_t maxWidth = 0;
     uint32_t maxHeight = 0;
     uint32_t maxPitch = 0;
+    uint32_t sourceHash = 2166136261U;
     uint32_t heapBeforeOpen;
     uint32_t heapAfterOpen;
-    uint32_t heapAfterShapeAlloc;
     uint32_t heapAfterClose;
-    uint32_t shapeDataBytes;
-    uint32_t shapeHash;
-    int previousSourceOffset = -1;
-    int previousShapeOffset = 0;
-    int shapeOffset = 0;
+    int samplePrinted = 0;
     int i;
 
     printf("\n=== Doom RPG ESP32-native bitshape loader ===\n");
@@ -200,11 +253,20 @@ int DoomRPG_loadNativeBitShapes(struct Render_s* renderBase) {
         return 0;
     }
 
+    /* The failed first implementation proved the selected legacy expansion is
+     * 55,676 bytes for menu.bsp. On ESP32 shapeData is therefore deliberately
+     * eliminated rather than reconstructed. The source offset table loaded from
+     * mappings.bin stays authoritative and will feed an on-demand renderer.
+     */
+    SDL_free(render->shapeData);
+    render->shapeData = NULL;
+
     heapBeforeOpen = heap8Free();
-    printf("[BITSHAPE] Begin refs=%d heap8=%u largest8=%u\n",
+    printf("[BITSHAPE] Begin refs=%d heap8=%u largest8=%u shapeData=%p\n",
            render->mapSpriteTexelsCount,
            (unsigned int)heapBeforeOpen,
-           (unsigned int)largest8Block());
+           (unsigned int)largest8Block(),
+           (void*)render->shapeData);
 
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         printf("[BITSHAPE] FAILED opening %s\n", ESP_ASSET_PACK_DEFAULT_PATH);
@@ -225,34 +287,37 @@ int DoomRPG_loadNativeBitShapes(struct Render_s* renderBase) {
            (int)heapBeforeOpen - (int)heapAfterOpen,
            (unsigned int)bitshapes.size);
 
-    /* Pass 1: only 12 bytes are read for each unique selected shape. This
-     * derives the exact resident shapeData size before allocating anything.
+    /* Walk one unique source shape at a time. We read its 12-byte fixed header
+     * and then at most one mask column (<=32 bytes) at a time. Shared shapes are
+     * decoded once and their packed sprite payload size is multiplied by the
+     * number of selected sprite IDs referencing that source shape.
      */
-    for (i = 0; i < render->mapSpriteTexelsCount; ++i) {
+    i = 0;
+    while (i < render->mapSpriteTexelsCount) {
         byte header[BITSHAPE_FIXED_HEADER_BYTES];
-        uint32_t shapeWords;
+        uint32_t legacyWords;
+        uint32_t activePixels;
+        uint32_t packedBytesPerRef;
+        uint32_t maskBytes;
+        uint32_t sourceEnd;
+        int spriteIndex = render->mapSpriteTexels[i];
+        int sourceOffset;
         int width;
         int height;
         int pitch;
-        int sourceOffset;
-        uint32_t maskBytes;
-        uint32_t sourceEnd;
+        int groupRefs = 1;
+        int j;
 
-        if (!sourceOffsetForSprite(render, render->mapSpriteTexels[i], &sourceOffset)) {
-            printf("[BITSHAPE] FAILED invalid source offset for sprite=%d\n",
-                   render->mapSpriteTexels[i]);
+        if (!sourceOffsetForSprite(render, spriteIndex, &sourceOffset)) {
+            printf("[BITSHAPE] FAILED invalid source offset sprite=%d\n", spriteIndex);
             EspAssetPack_close();
             return 0;
         }
 
-        if (sourceOffset == previousSourceOffset) {
-            continue;
-        }
-
         if (!readShapeHeader(&bitshapes, sourceOffset, header) ||
-            !shapeGeometry(header, &shapeWords, &width, &height, &pitch)) {
+            !shapeGeometry(header, &legacyWords, &width, &height, &pitch)) {
             printf("[BITSHAPE] FAILED reading shape header sprite=%d sourceOffset=%d\n",
-                   render->mapSpriteTexels[i], sourceOffset);
+                   spriteIndex, sourceOffset);
             EspAssetPack_close();
             return 0;
         }
@@ -262,17 +327,50 @@ int DoomRPG_loadNativeBitShapes(struct Render_s* renderBase) {
                     BITSHAPE_FIXED_HEADER_BYTES + maskBytes;
         if (sourceEnd > bitshapes.size) {
             printf("[BITSHAPE] FAILED shape mask exceeds bitshapes.bin sprite=%d\n",
-                   render->mapSpriteTexels[i]);
+                   spriteIndex);
             EspAssetPack_close();
             return 0;
         }
 
-        shapeWordsTotal += shapeWords;
-        if (shapeWordsTotal > (uint64_t)UINT32_MAX / sizeof(short)) {
-            printf("[BITSHAPE] FAILED selected shapeData size overflow\n");
+        /* Count consecutive selected sprite IDs sharing this exact source shape. */
+        for (j = i + 1; j < render->mapSpriteTexelsCount; ++j) {
+            int nextOffset;
+            if (!sourceOffsetForSprite(render, render->mapSpriteTexels[j], &nextOffset)) {
+                printf("[BITSHAPE] FAILED invalid grouped sprite=%d\n",
+                       render->mapSpriteTexels[j]);
+                EspAssetPack_close();
+                return 0;
+            }
+            if (nextOffset != sourceOffset) {
+                break;
+            }
+            ++groupRefs;
+        }
+
+        sourceHash = fnv1aUpdate(sourceHash, header, BITSHAPE_FIXED_HEADER_BYTES);
+        if (!countActivePixels(&bitshapes,
+                               sourceOffset,
+                               width,
+                               height,
+                               pitch,
+                               &activePixels,
+                               &sourceHash)) {
+            printf("[BITSHAPE] FAILED reading mask sprite=%d sourceOffset=%d\n",
+                   spriteIndex, sourceOffset);
             EspAssetPack_close();
             return 0;
         }
+
+        /* This is exactly Render_getSTexelBufferSize()/2 from the old expanded
+         * representation: active pixels rounded up to an even nibble count,
+         * then packed two 4-bit texels per byte.
+         */
+        packedBytesPerRef = ((activePixels + 1U) & ~1U) / 2U;
+
+        legacyShapeWordsTotal += legacyWords;
+        selectedMaskBytes += maskBytes;
+        activePixelsTotal += (uint64_t)activePixels * (uint64_t)groupRefs;
+        spritePackedBytes += (uint64_t)packedBytesPerRef * (uint64_t)groupRefs;
 
         if ((uint32_t)width > maxWidth) {
             maxWidth = (uint32_t)width;
@@ -284,225 +382,61 @@ int DoomRPG_loadNativeBitShapes(struct Render_s* renderBase) {
             maxPitch = (uint32_t)pitch;
         }
 
+        if (!samplePrinted) {
+            printf("[BITSHAPE] Sample sprite=%d sourceOffset=%d texelOffset=%u bounds=%u..%u,%u..%u mask=%uB active=%u packed=%uB refs=%d\n",
+                   spriteIndex,
+                   sourceOffset,
+                   (unsigned int)readLe32(header),
+                   (unsigned int)header[8],
+                   (unsigned int)header[9],
+                   (unsigned int)header[10],
+                   (unsigned int)header[11],
+                   (unsigned int)maskBytes,
+                   (unsigned int)activePixels,
+                   (unsigned int)packedBytesPerRef,
+                   groupRefs);
+            samplePrinted = 1;
+        }
+
         ++uniqueShapes;
-        previousSourceOffset = sourceOffset;
+        i += groupRefs;
     }
 
-    shapeDataBytes = (uint32_t)(shapeWordsTotal * sizeof(short));
-    printf("[BITSHAPE] Preflight unique=%u shapeWords=%llu shapeData=%uB max=%ux%u pitch=%uB\n",
+    printf("[BITSHAPE] Selected unique=%u refs=%d max=%ux%u pitch=%uB\n",
            (unsigned int)uniqueShapes,
-           (unsigned long long)shapeWordsTotal,
-           (unsigned int)shapeDataBytes,
+           render->mapSpriteTexelsCount,
            (unsigned int)maxWidth,
            (unsigned int)maxHeight,
            (unsigned int)maxPitch);
-    printf("[BITSHAPE] Allocation preflight heap8=%u largest8=%u fitAggregate=%s fitContiguous=%s\n",
-           (unsigned int)heap8Free(),
-           (unsigned int)largest8Block(),
-           shapeDataBytes <= heap8Free() ? "yes" : "NO",
-           shapeDataBytes <= largest8Block() ? "yes" : "NO");
-
-    if (shapeDataBytes == 0 || shapeDataBytes > heap8Free() ||
-        shapeDataBytes > largest8Block()) {
-        printf("[BITSHAPE] REFUSED exact selected shapeData does not fit while pack is open\n");
-        EspAssetPack_close();
-        return 0;
-    }
-
-    SDL_free(render->shapeData);
-    render->shapeData = (short*)SDL_malloc(shapeDataBytes);
-    if (render->shapeData == NULL) {
-        printf("[BITSHAPE] FAILED allocating exact shapeData=%uB\n",
-               (unsigned int)shapeDataBytes);
-        EspAssetPack_close();
-        return 0;
-    }
-
-    heapAfterShapeAlloc = heap8Free();
-    printf("[BITSHAPE] shapeData resident ptr=%p heap8=%u largest8=%u used=%uB\n",
-           (void*)render->shapeData,
-           (unsigned int)heapAfterShapeAlloc,
-           (unsigned int)largest8Block(),
-           (unsigned int)(heapAfterOpen >= heapAfterShapeAlloc
-                              ? heapAfterOpen - heapAfterShapeAlloc
-                              : 0));
-
-    /* Pass 2: rebuild the exact structure consumed by the existing renderer.
-     * Only one column mask (maximum 32 bytes) is ever read at a time.
-     */
-    previousSourceOffset = -1;
-    previousShapeOffset = 0;
-    shapeOffset = 0;
-
-    for (i = 0; i < render->mapSpriteTexelsCount; ++i) {
-        byte header[BITSHAPE_FIXED_HEADER_BYTES];
-        byte columnMask[MAX_COLUMN_MASK_BYTES];
-        uint32_t expectedShapeWords;
-        int width;
-        int height;
-        int pitch;
-        int spriteIndex = render->mapSpriteTexels[i];
-        int sourceOffset;
-        int shapeStart;
-        int xMin;
-        int xMax;
-        int yMin;
-        int w;
-
-        if (!sourceOffsetForSprite(render, spriteIndex, &sourceOffset)) {
-            printf("[BITSHAPE] FAILED source offset disappeared sprite=%d\n", spriteIndex);
-            EspAssetPack_close();
-            return 0;
-        }
-
-        if (sourceOffset == previousSourceOffset) {
-            render->mediaBitShapeOffsets[spriteIndex * 2] = previousShapeOffset;
-            continue;
-        }
-
-        if (!readShapeHeader(&bitshapes, sourceOffset, header) ||
-            !shapeGeometry(header, &expectedShapeWords, &width, &height, &pitch)) {
-            printf("[BITSHAPE] FAILED second-pass header sprite=%d sourceOffset=%d\n",
-                   spriteIndex, sourceOffset);
-            EspAssetPack_close();
-            return 0;
-        }
-
-        shapeStart = shapeOffset;
-        previousShapeOffset = shapeStart;
-        previousSourceOffset = sourceOffset;
-        xMin = header[8];
-        xMax = header[9];
-        yMin = header[10];
-
-        if ((uint32_t)(shapeOffset + 4 + width) > shapeWordsTotal) {
-            printf("[BITSHAPE] FAILED shapeData header/index overflow sprite=%d\n", spriteIndex);
-            EspAssetPack_close();
-            return 0;
-        }
-
-        render->shapeData[shapeOffset++] = (short)readLe16(header + 0);
-        render->shapeData[shapeOffset++] = (short)readLe16(header + 2);
-        render->shapeData[shapeOffset++] = (short)xMin;
-        render->shapeData[shapeOffset++] = (short)xMax;
-
-        shapeOffset += width;
-
-        {
-            int activePixelOffset = 0;
-
-            for (w = 0; w < width; ++w) {
-                uint32_t maskRelativeOffset =
-                    BITSHAPE_FILE_HEADER_BYTES + (uint32_t)sourceOffset +
-                    BITSHAPE_FIXED_HEADER_BYTES + ((uint32_t)w * (uint32_t)pitch);
-                int h = 0;
-
-                render->shapeData[shapeStart + w + 4] =
-                    (short)(shapeOffset - shapeStart - 2);
-
-                if (!EspAssetPack_readRange(&bitshapes,
-                                            maskRelativeOffset,
-                                            columnMask,
-                                            (size_t)pitch)) {
-                    printf("[BITSHAPE] FAILED reading column mask sprite=%d column=%d\n",
-                           spriteIndex, w);
-                    EspAssetPack_close();
-                    return 0;
-                }
-
-                while (h < height) {
-                    int runStart;
-                    int runPixelOffset;
-
-                    while (h < height &&
-                           (columnMask[h / 8] & (1U << (h & 7))) == 0) {
-                        ++h;
-                    }
-                    if (h == height) {
-                        break;
-                    }
-
-                    runStart = h;
-                    runPixelOffset = activePixelOffset;
-                    while (h < height &&
-                           (columnMask[h / 8] & (1U << (h & 7))) != 0) {
-                        ++activePixelOffset;
-                        ++h;
-                    }
-
-                    if ((uint32_t)(shapeOffset + 2) > shapeWordsTotal) {
-                        printf("[BITSHAPE] FAILED shapeData run overflow sprite=%d\n",
-                               spriteIndex);
-                        EspAssetPack_close();
-                        return 0;
-                    }
-
-                    render->shapeData[shapeOffset++] =
-                        (short)(((runStart + yMin) & 0xFF) |
-                                (((h - runStart) & 0xFF) << 8));
-                    render->shapeData[shapeOffset++] = (short)runPixelOffset;
-                }
-
-                if ((uint32_t)(shapeOffset + 1) > shapeWordsTotal) {
-                    printf("[BITSHAPE] FAILED shapeData terminator overflow sprite=%d\n",
-                           spriteIndex);
-                    EspAssetPack_close();
-                    return 0;
-                }
-                render->shapeData[shapeOffset++] = 127;
-            }
-        }
-
-        if ((uint32_t)(shapeOffset - shapeStart) != expectedShapeWords) {
-            printf("[BITSHAPE] FAILED generated words sprite=%d expected=%u actual=%u\n",
-                   spriteIndex,
-                   (unsigned int)expectedShapeWords,
-                   (unsigned int)(shapeOffset - shapeStart));
-            EspAssetPack_close();
-            return 0;
-        }
-
-        render->mediaBitShapeOffsets[spriteIndex * 2] = shapeStart;
-    }
-
-    if ((uint64_t)shapeOffset != shapeWordsTotal) {
-        printf("[BITSHAPE] FAILED final shape words expected=%llu actual=%d\n",
-               (unsigned long long)shapeWordsTotal, shapeOffset);
-        EspAssetPack_close();
-        return 0;
-    }
+    printf("[BITSHAPE] Legacy expanded shapeData=%lluB (%llu words) -> ESP32 resident=0B\n",
+           (unsigned long long)(legacyShapeWordsTotal * sizeof(short)),
+           (unsigned long long)legacyShapeWordsTotal);
+    printf("[BITSHAPE] Selected source masks=%lluB, decoded one column at a time scratch<=%uB\n",
+           (unsigned long long)selectedMaskBytes,
+           (unsigned int)MAX_COLUMN_MASK_BYTES);
+    printf("[BITSHAPE] Exact selected sprite texels=%lluB packed across %d refs activePixels=%llu\n",
+           (unsigned long long)spritePackedBytes,
+           render->mapSpriteTexelsCount,
+           (unsigned long long)activePixelsTotal);
+    printf("[BITSHAPE] Source walk fnv1a=%08x mappings remain source offsets shapeData=%p\n",
+           (unsigned int)sourceHash,
+           (void*)render->shapeData);
 
     EspAssetPack_close();
     heapAfterClose = heap8Free();
-    render->bitShapeMemory =
-        (int)(heapBeforeOpen >= heapAfterClose ? heapBeforeOpen - heapAfterClose : 0);
 
-    shapeHash = fnv1a32((const byte*)render->shapeData, shapeDataBytes);
-
-    for (i = 0; i < render->mapSpriteTexelsCount; ++i) {
-        int bytes = Render_getSTexelBufferSize(render, render->mapSpriteTexels[i]);
-        if (bytes < 0) {
-            printf("[BITSHAPE] FAILED negative sprite texel size sprite=%d\n",
-                   render->mapSpriteTexels[i]);
-            return 0;
-        }
-        spritePackedBytes += (uint64_t)bytes / 2U;
-    }
-
-    printf("[BITSHAPE] Built exact shapeData words=%d bytes=%u fnv1a=%08x\n",
-           shapeOffset,
-           (unsigned int)shapeDataBytes,
-           (unsigned int)shapeHash);
-    printf("[BITSHAPE] Exact selected sprite packed texels=%lluB across %d refs\n",
-           (unsigned long long)spritePackedBytes,
-           render->mapSpriteTexelsCount);
-    printf("[BITSHAPE] Pack closed heap8=%u largest8=%u persistentCost=%dB\n",
+    printf("[BITSHAPE] Pack closed heap8=%u largest8=%u deltaFromStart=%d\n",
            (unsigned int)heapAfterClose,
            (unsigned int)largest8Block(),
-           render->bitShapeMemory);
-    printf("[BITSHAPE] READY native selected bitshapes resident; bitshapes.bin never materialized\n");
-    printf("[BITSHAPE] Render_getSTexelBufferSize validated against rebuilt shapeData\n");
-    printf("[BITSHAPE] Render_loadTexels / mediaTexels still intentionally NOT executed\n");
+           (int)heapBeforeOpen - (int)heapAfterClose);
 
+    if (heapAfterClose != heapBeforeOpen) {
+        printf("[BITSHAPE] FAILED on-demand source walk changed persistent heap\n");
+        return 0;
+    }
+
+    printf("[BITSHAPE] READY on-demand bitshape source model validated; legacy shapeData eliminated\n");
+    printf("[BITSHAPE] Renderer integration will consume source header/mask directly from bounded cache\n");
+    printf("[BITSHAPE] Render_loadTexels / monolithic mediaTexels still intentionally NOT executed\n");
     return 1;
 }
