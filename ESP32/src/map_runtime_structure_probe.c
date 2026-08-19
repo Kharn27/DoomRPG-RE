@@ -118,8 +118,16 @@ void DoomRPG_markMapRuntimeStructureBoundary(struct Render_s* renderBase) {
  * BSP ioBuffer has been freed and immediately before Render_loadBitShapes().
  *
  * The wrapper is transparent during every other startup stage. While this
- * probe is armed, it only jumps out once the actual runtime structures and
- * resource reference lists prove that the complete structural phase ran.
+ * startup boundary is armed, it counts the real loader progress calls and jumps
+ * out once the actual runtime structures and resource reference lists prove that
+ * the complete structural phase ran.
+ *
+ * In normal firmware the six intermediate loading-bar callbacks are deliberately
+ * visual no-ops: the original function only clears/draws the historical five-box
+ * pacifier and flushes it to the TFT. That causes a visible flash immediately
+ * before the opaque main menu and has no engine-state role. The bring-up profile
+ * preserves the original callback so historical visual diagnostics remain
+ * available there.
  */
 void __real_DoomCanvas_updateLoadingBar(DoomCanvas_t* doomCanvas);
 
@@ -142,7 +150,14 @@ void __wrap_DoomCanvas_updateLoadingBar(DoomCanvas_t* doomCanvas) {
         longjmp(structureBoundaryJump, 1);
     }
 
+#if DOOMRPG_ESP32_BRINGUP_PROBES
     __real_DoomCanvas_updateLoadingBar(doomCanvas);
+#else
+    if (loadingBarCalls == 1) {
+        printf("[MAPSTRUCT] Normal boot suppresses intermediate loading-bar TFT presents\n");
+    }
+    (void)doomCanvas;
+#endif
 }
 
 int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
