@@ -8,6 +8,7 @@
 #include "Game.h"
 #include "Render.h"
 #include "map_runtime_structure_probe.h"
+#include "resource_memory_plan_probe.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
@@ -255,6 +256,12 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
            (unsigned int)largestAfter);
     printf("[MAPSTRUCT] Render_loadBitShapes / Render_loadTexels intentionally NOT executed\n");
 
+    if (!DoomRPG_probeMenuResourceMemoryPlan(1)) {
+        printf("[MAPSTRUCT] FAILED graphics resource memory plan\n");
+        return 0;
+    }
+
+    printf("[MAPSTRUCT] Resource memory plan complete; heavy graphics loaders remain blocked\n");
     probeReady = 1;
     return 1;
 }
