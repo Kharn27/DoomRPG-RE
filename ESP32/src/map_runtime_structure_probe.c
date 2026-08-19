@@ -9,6 +9,7 @@
 #include "Render.h"
 #include "map_runtime_structure_probe.h"
 #include "native_asset_pack_probe.h"
+#include "native_bitshape_loader.h"
 #include "resource_memory_plan_probe.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
@@ -255,14 +256,14 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     printf("[MAPSTRUCT] READY real menu structures resident heap8=%u largest8=%u\n",
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAPSTRUCT] Render_loadBitShapes / Render_loadTexels intentionally NOT executed\n");
+    printf("[MAPSTRUCT] Original Render_loadBitShapes / Render_loadTexels intentionally NOT executed\n");
 
     if (!DoomRPG_probeMenuResourceMemoryPlan(1)) {
         printf("[MAPSTRUCT] FAILED graphics resource memory plan\n");
         return 0;
     }
 
-    printf("[MAPSTRUCT] Resource memory plan complete; heavy graphics loaders remain blocked\n");
+    printf("[MAPSTRUCT] Resource memory plan complete; original heavy graphics loaders remain blocked\n");
 
     if (!DoomRPG_probeNativeAssetPack(1)) {
         printf("[MAPSTRUCT] FAILED ESP32-native asset pack probe\n");
@@ -270,6 +271,13 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     }
 
     printf("[MAPSTRUCT] Native asset pack random-access probe complete\n");
+
+    if (!DoomRPG_loadNativeBitShapes(render)) {
+        printf("[MAPSTRUCT] FAILED ESP32-native selected bitshape loader\n");
+        return 0;
+    }
+
+    printf("[MAPSTRUCT] Native on-demand bitshape model validated; texel loading remains blocked\n");
     probeReady = 1;
     return 1;
 }
