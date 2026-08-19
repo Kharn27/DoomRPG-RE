@@ -24,11 +24,12 @@ ESP32:
 
 - bounded deterministic RAM use
 - SD-backed immutable resources
-- small working sets / caches
+- small measured working sets / caches
 - no whole-resource graphics inflation
 - no monolithic `shapeData`
 - no monolithic `mediaTexels`
 - shared 160x120 RGB565 framebuffer
+- canonical RGB565 palette convention for native consumers
 - original game data and behaviour preserved where practical
 
 ## Hardware-validated milestones already merged to main
@@ -71,24 +72,28 @@ ESP32:
     direct `stexels.bin` read and exact heap recovery
     (`agent/esp32-native-sprite-texel-probe`, PR #16, merge commit
     `6252dcf7f6cdb782bbf554b7ebeae9b296086d25`).
+18. First complete ESP32-native sprite render: sprite 172 loaded from
+    `bitshapes.bin` + `stexels.bin`, native palette normalization, 3,199 pixels
+    rasterized into the shared framebuffer with `shapeData == NULL` and
+    `mediaTexels == NULL` (`agent/esp32-native-sprite-render-consumer`, PR #17,
+    merge commit `bf59ee37b7242d0917ae0e4b49a83265c0b4f652`).
 
 ## Current validated increment
 
-Branch: `agent/esp32-native-sprite-render-consumer`
+Branch: `agent/esp32-native-wall-render-consumer`
 
 Status: **HARDWARE VALIDATED, READY TO MERGE**.
 
-Objective: prove the first complete ESP32-native graphics path from original game
-resources on SD to visible RGB565 pixels on the CYD, without `shapeData` and
-without `mediaTexels`.
+Objective: prove the second complete ESP32-native graphics consumer: read one
+real 64x64 wall texture directly from `wtexels.bin`, apply its real 16-color
+palette, rasterize all 4,096 texels into the shared framebuffer, present it on
+the physical CYD, and recover the exact starting heap layout without ever
+creating `mediaTexels`.
 
-This increment is the first one where a real Doom RPG sprite is not only
-inspected but actually rasterized by an ESP32-native consumer.
+## Authoritative memory boundary
 
-## Authoritative pre-render memory boundary
-
-After the real menu structures are resident and all preceding resource probes
-have closed:
+Before the wall consumer starts, real menu structures and all previous native
+resource work remain valid with the two forbidden legacy graphics pools absent:
 
 ```text
 heap8=30,688 B
@@ -97,182 +102,180 @@ shapeData=0x0
 mediaTexels=0x0
 ```
 
-The previous native resource measurements remain authoritative:
+Current measured graphics working sets:
 
 ```text
-selected unique bitshapes          = 112
-menu sprite references             = 284
-legacy expanded shapeData          = 55,676 B
-ESP32 resident shapeData           = 0 B
-selected source masks total        = 30,813 B
-selected packed sprite texels      = 143,990 B
-selected active pixels total       = 287,848
-largest selected sprite payload    = 1,600 B
-one packed wall texture            = 2,048 B
+legacy expanded shapeData          = 55,676 B          (forbidden)
+selected packed sprite texels      = 143,990 B         (not resident)
+wall-only legacy mediaTexels       = 172,032 B         (forbidden)
+bitshape mask-column scratch       <= 32 B
+largest selected sprite payload     = 1,600 B
+largest validated sprite frame      = 2,112 B logical
+one packed wall texture             = 2,048 B
 ```
 
-## Native sprite source used for the first renderer consumer
+## Native wall source contract
 
-Hardware-selected worst-case menu sprite:
+The test texture is the first real texture selected by `menu.bsp`:
 
 ```text
-sprite index        = 172
-sourceOffset        = 15749
-texelOffset         = 292040
-stexelsByteOffset   = 29288
-bounds              = 64x64
-active pixels       = 3199
-packed texels       = 1600 B
-paletteOffset       = 1616
+textureIndex      = 112
+texelOffset       = 65536
+wtexels byteOffset= 32768
+paletteOffset     = 480
+packed texels     = 2048 B
+size              = 64x64 / 4 bpp
 ```
 
-The bounded frame representation used by the new consumer is:
+The original renderer's wall semantics are preserved: wall texels are addressed
+as 64 columns of 64 texels, i.e. logical texel index `x * 64 + y`, and the
+second mapping integer is the 16-color palette offset.
+
+No map-wide texture pool is created. The native frame contains only the 2,048
+packed bytes for the requested wall texture.
+
+## Hardware-validated wall render
+
+Authoritative hardware log:
 
 ```text
-bitshape mask       = 512 B
-packed texels       = 1600 B
-logical storage     = 2112 B
-allocator cost      = 2128 B
+=== Doom RPG ESP32-native wall render consumer ===
+[WALLRENDER] Begin texture=112 heap8=30688 largest8=21492 shapeData=0x0 mediaTexels=0x0
+[WALLRENDER] Loaded texture=112 texelOffset=65536 byteOffset=32768 paletteOffset=480 packed=2048B
+[WALLRENDER] Texel fnv1a=92d40704 expected=92d40704 first=aab544b4 last=e5eeeece
+[WALLRENDER] Frame resident after pack close heap8=28624 largest8=21492 used=2064B logicalStorage=2048B
+[WALLRENDER] DRAW texture=112 origin=48,28 drawn=4096 paletteOffset=480 framebufferFNV=e39af2c4
+[VIDEO] Present 160x120 -> 320x240 exact 2x: 34377 us
+[WALLRENDER] Presented native wall texture on shared 160x120 framebuffer -> CYD 320x240
+[WALLRENDER] Released frame heap8=30688 largest8=21492 deltaFromStart=0
+[WALLRENDER] READY real wall texture rendered without mediaTexels
+[WALLRENDER] READY native wall frame contract = 2048B packed texels + existing 16-color palette
+[WALLRENDER] Runtime cache/eviction policy still intentionally NOT introduced
+[MAPSTRUCT] Native wall render consumer complete; full map texel loading remains blocked
+[MENUBSP] READY menu.bsp plan + real runtime structures validated
+[READY] Bring-up remains alive; touch still runs the SDL video test.
+[ALIVE] uptime=5003 ms heap=96504 heap8=30688 largest8=21492 ... MENUBSP=ready ...
 ```
 
-No map-wide sprite pool is materialized.
-
-## Hardware-validated source integrity
-
-The independent bitshape and texel probes still reproduce the exact same menu
-sprite dataset totals:
+The source bytes exactly match the earlier native asset-pack proof:
 
 ```text
-[BITSHAPE] Exact selected sprite texels=143990B packed across 284 refs activePixels=287848
-[SPRITETEX] Selected unique=112 refs=284 packedTotal=143990B activePixels=287848
+fnv1a = 92d40704
+first = aa b5 44 b4
+last  = e5 ee ee ce
 ```
 
-The selected sprite payload remains byte-for-byte stable:
+The deterministic framebuffer signature for the exact diagnostic scene is:
 
 ```text
-[SPRITETEX] READ sprite=172 bytes=1600 fnv1a=0c0a7acd first=8e887997 last=77979709
-[SPRITERENDER] Texel fnv1a=0c0a7acd expected=0c0a7acd
+framebufferFNV=e39af2c4
 ```
 
-This proves the visible result is using the same validated `stexels.bin` payload
-as the previous random-access increment.
-
-## Native palette convention
-
-The existing DoomRPG-RE `Render_loadPalettes()` leaves `mediaPalettes` in the
-legacy red/blue ordering expected by the reconstructed renderer path. The
-ESP32-native framebuffer contract is canonical RGB565, so native consumers now
-perform one explicit palette normalization before rendering.
-
-Hardware log:
-
-```text
-[PALETTE] Normalized 3280 entries legacy R/B order -> framebuffer RGB565
-[PALETTE] sprite172 offset=1616 first4 before=0000,ffff,c000,07ff after=0000,ffff,0018,ffe0
-[PALETTE] READY native consumers now see canonical RGB565
-```
-
-The BREW pixel-corruption patch is unrelated to this conversion: that patch
-changes the way `wtexels`/`stexels` are read on affected BREW devices. Our
-sprite texel hash is already exact and the observed issue was a clean color
-channel mismatch, not pixel corruption.
-
-For the ESP32 engine, palette ordering must therefore be normalized at the
-native rendering boundary rather than by modifying sprite texel data.
-
-## First real ESP32-native sprite render
-
-Hardware result:
-
-```text
-=== Doom RPG ESP32-native sprite render consumer ===
-[SPRITERENDER] Begin sprite=172 heap8=30688 largest8=21492 shapeData=0x0 mediaTexels=0x0
-[SPRITERENDER] Loaded sprite=172 sourceOffset=15749 paletteOffset=1616 bounds=0..63,0..63 size=64x64
-[SPRITERENDER] Source mask=512B active=3199 texelOffset=292040 stexelsByteOffset=29288 packed=1600B storage=2112B
-[SPRITERENDER] Texel fnv1a=0c0a7acd expected=0c0a7acd
-[SPRITERENDER] Frame resident after pack close heap8=28560 largest8=21492 used=2128B logicalStorage=2112B
-[SPRITERENDER] DRAW sprite=172 origin=48,28 drawn=3199 paletteOffset=1616 framebufferFNV=001910a9
-[VIDEO] Present 160x120 -> 320x240 exact 2x: 34450 us
-[SPRITERENDER] Presented native sprite on shared 160x120 framebuffer -> CYD 320x240
-[SPRITERENDER] Released frame heap8=30688 largest8=21492 deltaFromStart=0
-[SPRITERENDER] READY real sprite rendered without shapeData or mediaTexels
-[SPRITERENDER] READY native frame contract = source mask + packed texels + existing 16-color palette
-```
-
-Visual hardware validation confirms that the sprite silhouette, transparency,
-masking and packed texel ordering are correct on the physical CYD. After palette
-normalization the previously blue-shifted sprite is rendered in the expected
-warm/orange palette family.
-
-The deterministic framebuffer signature for this exact diagnostic scene is:
-
-```text
-framebufferFNV=001910a9
-```
-
-Keep this value as the reference for this particular sprite-172 diagnostic
-composition unless the diagnostic background/layout intentionally changes.
+Keep this value as a regression marker unless the diagnostic background/layout
+or palette convention intentionally changes.
 
 ## Heap recovery
 
-The native sprite frame is temporary. After presenting the framebuffer, the
-2,112-byte logical frame is released and memory returns exactly to the starting
-layout:
+The native wall frame requests exactly 2,048 bytes. The ESP32 allocator consumes
+2,064 bytes while it is resident:
 
 ```text
 before       heap8=30688 largest8=21492
-resident     heap8=28560 largest8=21492
+resident     heap8=28624 largest8=21492
 released     heap8=30688 largest8=21492 deltaFromStart=0
 ```
 
-The rendered pixels remain in the shared 160x120 framebuffer after the source
-frame is released.
+The largest free block remains unchanged at 21,492 bytes throughout the bounded
+wall-frame allocation. The rendered pixels remain in the shared framebuffer
+after the source frame is freed.
 
-Heartbeat/menu state remain healthy after the render:
+## Validated native graphics contracts
 
-```text
-[MENUBSP] READY menu.bsp plan + real runtime structures validated
-[READY] Bring-up remains alive; touch still runs the SDL video test.
-```
-
-## Architectural conclusion
-
-A complete original sprite can now travel through our ESP32-specific pipeline:
+### Sprite
 
 ```text
 DoomRPG-ESP32.pak
-        |
-        +--> bitshapes.bin source header + 512 B mask
-        |
-        +--> stexels.bin bounded 4-bpp payload (<= 1,600 B for menu)
-        |
-        +--> existing 16-color palette mapping
-        |
-        +--> native RGB565 palette normalization
-        |
-        v
-EspNativeSpriteFrame (~2.1 KB worst-case validated frame)
-        |
-        v
-ESP32-native rasterizer
-        |
-        v
-shared 160x120 RGB565 framebuffer
-        |
-        v
-exact 2x presentation to 320x240 CYD
+  -> bitshapes.bin source header + bounded mask
+  -> stexels.bin bounded packed payload (menu max 1,600 B)
+  -> 16-color palette
+  -> native RGB565
+  -> shared framebuffer
 ```
 
-Forbidden legacy graphics pools remain absent throughout this path:
+Validated worst-case sprite frame:
+
+```text
+sprite=172
+mask=512 B
+texels=1600 B
+logical frame=2112 B
+allocator cost=2128 B
+active pixels=3199
+texel FNV=0c0a7acd
+framebuffer FNV=001910a9
+```
+
+### Wall
+
+```text
+DoomRPG-ESP32.pak
+  -> wtexels.bin direct 2,048 B read
+  -> mapped 16-color palette
+  -> native RGB565
+  -> shared framebuffer
+```
+
+Validated wall frame:
+
+```text
+texture=112
+texels=2048 B
+allocator cost=2064 B
+pixels=4096
+texel FNV=92d40704
+framebuffer FNV=e39af2c4
+```
+
+Both paths operate with:
 
 ```text
 shapeData   = NULL
 mediaTexels = NULL
 ```
 
-This is the first hardware proof that the ESP32 engine can consume original Doom
-RPG sprite resources and produce correct visible output using a bounded native
-working set.
+## Architectural conclusion
+
+We now have two independent complete graphics paths from original Doom RPG data
+on SD to visible pixels on the CYD:
+
+```text
+                 DoomRPG-ESP32.pak
+                         |
+             +-----------+-----------+
+             |                       |
+          sprite                    wall
+   bitshape + stexels            wtexels
+             |                       |
+       ~2.1 KB frame              2 KB frame
+             |                       |
+             +-----------+-----------+
+                         |
+                    RGB565 palette
+                         |
+                 native rasterizers
+                         |
+                 shared framebuffer
+                         |
+                    CYD 320x240
+```
+
+The next architectural step should therefore stop duplicating pack-open / lookup /
+load / release logic in isolated probes and introduce a small reusable ESP32
+resource manager/cache boundary shared by native wall and sprite consumers.
+
+That manager must remain bounded and measured. Do **not** choose a large slot
+count blindly and do not recreate map-wide resource residency under another
+name.
 
 ## Current safe stop boundary
 
@@ -283,17 +286,18 @@ Validated and executed:
 - real structural `Render_beginLoadMapData()` phase
 - real nodes, lines, sprites, events, bytecodes and resource reference lists
 - full 241-entry native asset pack validation
-- direct random-access read of a real menu wall texture
-- exact enumeration of 112 unique bitshapes used by 284 menu sprite refs
 - zero resident `shapeData`
-- exact selected sprite texel dataset measurement: 143,990 B
-- exact largest selected sprite payload measurement: 1,600 B
-- direct bounded sprite mask + packed-texel frame load
-- explicit native palette RGB565 normalization
-- first real native sprite rasterization into the shared framebuffer
-- physical CYD presentation of that sprite
-- deterministic diagnostic framebuffer hash `001910a9`
-- exact frame and pack heap recovery
+- zero resident `mediaTexels`
+- on-demand bitshape source model
+- exact selected sprite dataset measurement: 143,990 B
+- worst-case selected sprite payload: 1,600 B
+- native sprite frame + physical CYD render
+- canonical RGB565 palette normalization for native consumers
+- direct random-access read of a real menu wall texture
+- native wall frame + physical CYD render
+- deterministic sprite framebuffer hash `001910a9`
+- deterministic wall framebuffer hash `e39af2c4`
+- exact heap recovery after both native graphics consumers
 
 Still intentionally NOT executed / integrated:
 
@@ -301,32 +305,32 @@ Still intentionally NOT executed / integrated:
 - original `Render_loadTexels()`
 - monolithic `shapeData`
 - monolithic `mediaTexels`
-- native runtime sprite cache / eviction policy
-- native wall-texture cache used by the real renderer
+- reusable native resource/cache manager
+- cache hit/miss/eviction policy based on measured renderer access
+- replacement of the real projected wall-span call path
 - replacement of the real `Render_renderSprite()` call path
-- perspective/projected map sprite integration
+- full floor/ceiling native texture consumption
 - completion of map graphics loading
 - game entities/player spawning
 - main game loop
 
 ## Recommended next increment after merge
 
-The next increment should reuse this proven native frame/rasterizer contract in a
-more realistic renderer context rather than returning to map-wide resource
-loading.
+Introduce the first reusable **ESP32 native graphics resource manager** around
+the already proven contracts, rather than adding another independent probe.
 
-Good next targets are:
+The first version should be intentionally small:
 
-- factor the bounded sprite frame load into a reusable resource API rather than
-  leaving it as a diagnostic-only consumer
-- feed one real map sprite through projection/placement logic while still using
-  the ESP32-native source frame
-- only then measure actual repeated sprite access and choose a cache slot count
-  / eviction policy from observed behaviour
+- one API for acquiring/releasing a packed wall texture by texture index
+- one API for acquiring/releasing a sprite frame by sprite index
+- bounded storage only
+- no arbitrary multi-slot cache yet unless access measurements justify it
+- counters/timing for requests, SD reads, hits/misses and peak resident bytes
+- native consumers depend on this API rather than knowing pack offsets directly
 
-Do not allocate the complete 143,990-byte selected sprite dataset. Do not
-reintroduce the 55,676-byte expanded `shapeData` representation. Cache policy
-must be justified by runtime access patterns.
+After that contract is hardware-proven, use it inside one existing projected wall
+or sprite rendering path and observe real runtime access patterns before deciding
+cache size and eviction policy.
 
 ## Increment discipline
 
