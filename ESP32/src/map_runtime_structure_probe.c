@@ -8,6 +8,7 @@
 #include "Game.h"
 #include "Render.h"
 #include "map_runtime_structure_probe.h"
+#include "native_asset_pack_probe.h"
 #include "resource_memory_plan_probe.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
@@ -262,6 +263,13 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     }
 
     printf("[MAPSTRUCT] Resource memory plan complete; heavy graphics loaders remain blocked\n");
+
+    if (!DoomRPG_probeNativeAssetPack(1)) {
+        printf("[MAPSTRUCT] FAILED ESP32-native asset pack probe\n");
+        return 0;
+    }
+
+    printf("[MAPSTRUCT] Native asset pack random-access probe complete\n");
     probeReady = 1;
     return 1;
 }
