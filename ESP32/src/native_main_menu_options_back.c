@@ -14,34 +14,26 @@
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_touch_events.h"
-#include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
 
 #ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 #define DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY 0
 #endif
 
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+#include "platform_video_c_bridge.h"
+#endif
+
 #define EXPECTED_OPTIONS_FRAMEBUFFER_FNV 0x6058d47dU
 #define EXPECTED_OPAQUE_MAIN_FNV 0x58a11171U
 #define OPTIONS_ITEM_COUNT 4
 #define OPTIONS_BACK_ITEM 0
-
-/* One source of truth for Options touch geometry. Back is the only active
- * action today; Video/Input/Sound use the same zones for diagnostics and remain
- * deliberately deferred.
- */
-static const int16_t optionsHitLeft[OPTIONS_ITEM_COUNT] = {
-    15, 15, 15, 15
-};
-static const int16_t optionsHitRight[OPTIONS_ITEM_COUNT] = {
-    119, 119, 119, 119
-};
-static const int16_t optionsHitTop[OPTIONS_ITEM_COUNT] = {
-    64, 79, 91, 103
-};
-static const int16_t optionsHitBottom[OPTIONS_ITEM_COUNT] = {
-    78, 90, 102, 114
-};
+#define OPTIONS_ROW_TOP 67
+#define OPTIONS_ROW_HEIGHT 12
+#define OPTIONS_HIT_LEFT 15
+#define OPTIONS_HIT_RIGHT 119
+#define OPTIONS_BACK_HIT_TOP 65
+#define OPTIONS_BACK_HIT_BOTTOM 78
 
 static DoomRPG_t* optionsDoomRpg = NULL;
 static int optionsBackActive = 0;
@@ -84,41 +76,55 @@ static int graphicsBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            !EspNativeSpriteCache_isActive();
 }
 
-static int optionsHitAt(int16_t screenX, int16_t screenY) {
+static int hitBack(int16_t screenX, int16_t screenY) {
     const int logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
-    int item;
 
-    for (item = 0; item < OPTIONS_ITEM_COUNT; ++item) {
-        if (logicalX >= optionsHitLeft[item] &&
-            logicalX <= optionsHitRight[item] &&
-            logicalY >= optionsHitTop[item] &&
-            logicalY <= optionsHitBottom[item]) {
-            return item;
-        }
-    }
-
-    return -1;
+    return logicalX >= OPTIONS_HIT_LEFT &&
+           logicalX <= OPTIONS_HIT_RIGHT &&
+           logicalY >= OPTIONS_BACK_HIT_TOP &&
+           logicalY <= OPTIONS_BACK_HIT_BOTTOM;
 }
 
+static int optionsRowAt(int16_t screenY) {
+    const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
+    const int relativeY = logicalY - OPTIONS_ROW_TOP;
+
+    if (relativeY < 0 ||
+        relativeY >= (OPTIONS_ITEM_COUNT * OPTIONS_ROW_HEIGHT)) {
+        return -1;
+    }
+    return relativeY / OPTIONS_ROW_HEIGHT;
+}
+
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 static void registerOptionsHitboxOverlay(void) {
     int item;
 
     Esp32PlatformVideo_debugOverlayClear();
-    for (item = 0; item < OPTIONS_ITEM_COUNT; ++item) {
-        Esp32PlatformVideo_debugOverlaySetZone(item,
-                                               optionsHitLeft[item],
-                                               optionsHitTop[item],
-                                               optionsHitRight[item],
-                                               optionsHitBottom[item]);
-    }
-    Esp32PlatformVideo_debugOverlayRefresh();
 
-#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
-    printf("[HITBOX] OPTIONS overlay registered from runtime zones=%d Back=active others=deferred framebuffer=untouched\n",
+    Esp32PlatformVideo_debugOverlaySetZone(OPTIONS_BACK_ITEM,
+                                           OPTIONS_HIT_LEFT,
+                                           OPTIONS_BACK_HIT_TOP,
+                                           OPTIONS_HIT_RIGHT,
+                                           OPTIONS_BACK_HIT_BOTTOM);
+
+    for (item = 1; item < OPTIONS_ITEM_COUNT; ++item) {
+        const int top = OPTIONS_ROW_TOP + (item * OPTIONS_ROW_HEIGHT);
+        const int bottom = top + OPTIONS_ROW_HEIGHT - 1;
+
+        Esp32PlatformVideo_debugOverlaySetZone(item,
+                                               OPTIONS_HIT_LEFT,
+                                               (int16_t)top,
+                                               OPTIONS_HIT_RIGHT,
+                                               (int16_t)bottom);
+    }
+
+    Esp32PlatformVideo_debugOverlayRefresh();
+    printf("[HITBOX] OPTIONS overlay registered from Back/row hit constants zones=%d Back=active others=deferred framebuffer=untouched\n",
            OPTIONS_ITEM_COUNT);
-#endif
 }
+#endif
 
 static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
@@ -224,7 +230,7 @@ static void optionsBackTap(int16_t screenX,
     }
 
     optionsTapCount++;
-    row = optionsHitAt(screenX, screenY);
+    row = optionsRowAt(screenY);
 
     printf("[OPTIONBACK] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d row=%d armed=%d\n",
            (unsigned int)optionsTapCount,
@@ -249,7 +255,7 @@ static void optionsBackTap(int16_t screenX,
         return;
     }
 
-    if (row != OPTIONS_BACK_ITEM) {
+    if (!hitBack(screenX, screenY)) {
         backArmed = 0;
         if (row >= 1 && row <= 3) {
             printf("[OPTIONBACK] DEFER row=%d text=\"%s\" action=disabled-this-increment\n",
@@ -306,17 +312,19 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
 
     optionsDoomRpg = doomRpg;
     optionsBackActive = 1;
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     registerOptionsHitboxOverlay();
+#endif
     PlatformInput_setTapCallback(optionsBackTap);
 
-    printf("[OPTIONBACK] READY Back hit logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d visualRowY=67..78 topTolerance=3 firstTap=arm secondReleasedTap=back Video/Input/Sound=deferred fastOpaqueReturn=yes\n",
-           optionsHitLeft[OPTIONS_BACK_ITEM],
-           optionsHitRight[OPTIONS_BACK_ITEM],
-           optionsHitTop[OPTIONS_BACK_ITEM],
-           optionsHitBottom[OPTIONS_BACK_ITEM],
-           optionsHitLeft[OPTIONS_BACK_ITEM] * DOOMRPG_INTEGER_SCALE,
-           ((optionsHitRight[OPTIONS_BACK_ITEM] + 1) * DOOMRPG_INTEGER_SCALE) - 1,
-           optionsHitTop[OPTIONS_BACK_ITEM] * DOOMRPG_INTEGER_SCALE,
-           ((optionsHitBottom[OPTIONS_BACK_ITEM] + 1) * DOOMRPG_INTEGER_SCALE) - 1);
+    printf("[OPTIONBACK] READY Back hit logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d visualRowY=67..78 topTolerance=2 firstTap=arm secondReleasedTap=back Video/Input/Sound=deferred fastOpaqueReturn=yes\n",
+           OPTIONS_HIT_LEFT,
+           OPTIONS_HIT_RIGHT,
+           OPTIONS_BACK_HIT_TOP,
+           OPTIONS_BACK_HIT_BOTTOM,
+           OPTIONS_HIT_LEFT * DOOMRPG_INTEGER_SCALE,
+           ((OPTIONS_HIT_RIGHT + 1) * DOOMRPG_INTEGER_SCALE) - 1,
+           OPTIONS_BACK_HIT_TOP * DOOMRPG_INTEGER_SCALE,
+           ((OPTIONS_BACK_HIT_BOTTOM + 1) * DOOMRPG_INTEGER_SCALE) - 1);
     return 1;
 }
