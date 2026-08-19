@@ -25,7 +25,7 @@ ESP32:
 
 - bounded deterministic RAM use
 - SD-backed immutable resources
-- small measured working sets and measured caches
+- small measured working sets and evidence-driven caches
 - no whole-resource graphics inflation
 - no monolithic `shapeData`
 - no monolithic/map-wide `mediaTexels`
@@ -33,7 +33,7 @@ ESP32:
 - canonical RGB565 palette convention for native consumers
 - storage/file-format access isolated behind GFXRM
 - cache/reuse policy isolated from storage and rasterization
-- original projection/game semantics preserved where useful
+- original projection/BSP/game semantics preserved where useful
 - reverse-engineered desktop memory architecture removed incrementally
 
 ## Hardware-validated milestones already merged to main
@@ -90,259 +90,332 @@ ESP32:
     (`agent/esp32-projected-wall-native-span-source`, PR #21, merge
     `421994bc08a7ecbd56540b723771973c766a5f46`).
 23. First real `menu.bsp` walls-only scene: real spawn camera, original BSP
-    traversal/culling/occlusion, 25 real wall requests across 8 textures, 224
-    native spans and deterministic framebuffer `a6d87c4a`, still with
-    `shapeData == NULL` / `mediaTexels == NULL`
+    traversal/culling/occlusion, 25 wall requests across 8 textures, 224 native
+    spans and deterministic framebuffer `a6d87c4a`
     (`agent/esp32-menu-walls-native-frame`, PR #22, merge
     `0f30003f61e81bae20f6c5b81bda52cea3b8ff9e`).
+24. Hardware-validated three-slot wall LRU on that exact real scene: 25 logical
+    requests -> 11 physical loads, 14 hits / 11 misses / 8 evictions, 6,144 B
+    logical cache payload, framebuffer still exactly `a6d87c4a`
+    (`agent/esp32-menu-wall-lru-cache`, PR #23, merge
+    `e39079253ef72c17a908c1c2633762d20fe5f29e`).
 
 ## Current validated increment
 
-Branch: `agent/esp32-menu-wall-lru-cache`
+Branch: `agent/esp32-menu-native-sprites-frame`
 
 Status: **HARDWARE VALIDATED, DOCUMENTED, READY TO MERGE**.
 
-Objective: keep the exact real `menu.bsp` walls-only frame from PR #22 but add a
-measured three-slot wall-frame LRU cache. The cache must reduce physical SD/pack
-loads while preserving the exact request order, projection result, framebuffer
-and final allocator state.
+Objective: preserve the validated cached real `menu.bsp` wall frame, then render
+the real BSP-sorted sprite objects visible from the same deterministic menu
+camera using bounded GFXRM frames, without `shapeData`, without `mediaTexels` and
+without a sprite cache yet.
 
-## Why three wall slots
+This increment deliberately measures the real sprite request sequence before any
+sprite-cache policy is chosen.
 
-PR #22 measured this exact request sequence:
+## Real menu camera and wall baseline
 
-```text
-116, 32, 40, 112, 108, 108, 116, 116, 116, 112,
-116, 112, 108, 108, 108, 116, 44, 0, 40, 152,
-152, 116, 116, 116, 152
-```
-
-There are 25 logical requests, 8 unique textures and 17 repeat requests.
-Simulation before implementation predicted:
+The deterministic scene remains:
 
 ```text
-LRU slots   hits   misses   resident payload
-1             8      17       2,048 B
-2            11      14       4,096 B
-3            14      11       6,144 B
-4            14      11       8,192 B
+mapSpawnIndex = 460
+spawn tile    = 12,14
+world X/Y     = 800,928
+mapSpawnDir   = 0
+camera Z      = 36
+animFrameTime = 0
 ```
 
-A fourth slot gives no additional hit on this deterministic frame, so three
-slots are the smallest measured sweet spot.
-
-That prediction is now hardware-validated.
-
-## Cache architecture
-
-The cache is deliberately separate from GFXRM and the rasterizer:
+The wall pass remains the PR #23 regression:
 
 ```text
-DoomRPG-ESP32.pak
-        |
-        v
-      GFXRM
-(storage / bounded load)
-        |
-        v
-NativeWallLruCache - 3 slots x 2,048 B
-(reuse / LRU ownership)
-        |
-        v
-borrowed EspNativeWallFrame
-        |
-        v
-ESP32-native projected wall spans
-        |
-        v
-shared 160x120 RGB565 framebuffer
+wall framebuffer FNV = a6d87c4a
+wall logical requests = 25
+wall LRU              = 14 hits / 11 misses / 8 evictions
+wall physical loads   = 11
 ```
 
-Responsibilities:
+The wall cache is completely torn down before the uncached sprite pass, so the
+sprite measurements have a clean allocator/resource boundary.
+
+## Native projected sprite architecture
+
+The original BSP walk is still responsible for visibility and depth ordering.
+`Render_walkNode()` constructs `render->viewSprites` in `sortZ` order. The ESP32
+path consumes that list rather than scanning map sprites in arbitrary order.
 
 ```text
-GFXRM                      = knows pack/file layout and loads a wall frame
-NativeWallLruCache         = owns cached wall frames and LRU replacement
-ProjectedWallRenderer      = borrows a frame and rasterizes it
+menu.bsp runtime sprites
+        |
+        v
+original Render_walkNode
+(BSP visibility + sortZ ordering)
+        |
+        v
+viewSprites
+        |
+        v
+original mediaSpriteIds / anim semantics
+        |
+        v
+GFXRM sprite frame
+(mask + packed active texels + palette offset)
+        |
+        v
+ESP32-native projected sprite renderer
+        |
+        v
+shared framebuffer already containing cached real walls
 ```
 
-The projected-wall bridge now supports borrowed ownership. On a cache hit/miss,
-`EspNativeProjectedWall_beginBorrowed()` receives a view of a cache-owned frame.
-`EspNativeProjectedWall_end()` releases only the borrowed view; it does not free
-the cache slot. Cache teardown remains the sole owner of slot destruction.
+The legacy renderer expands bitshape masks into `shapeData` run tables. The
+native renderer does not rebuild that monolithic representation. For each bounded
+sprite frame it reconstructs opaque runs directly from the source mask and maps
+them to the already packed active texel stream.
 
-The original owning path remains available for previous probes, so cache use is
-opt-in rather than a hidden global policy change.
+The renderer also handles the menu objects that use wall textures instead of
+bitshape sprite frames by routing them through the existing bounded projected-wall
+path.
 
 ## Hard graphics invariants
 
-Throughout the cached real-scene draw:
+Throughout the real sprite pass:
 
 ```text
 shapeData   = NULL
 mediaTexels = NULL
 ```
 
-Global `mediaTexelOffsets[]` are never rewritten. Per-span diagnostics remain:
+The native sprite diagnostics prove:
 
 ```text
 rangeErrors          = 0
 legacyPtrViolations  = 0
+shapeDataViolations  = 0
 mappingViolations    = 0
+unsupportedFlags     = 0
+unsupportedModes     = 0
 ```
+
+No global mapping is rewritten to make a local frame resemble a legacy pool.
 
 ## Authoritative hardware validation
 
 Hardware output:
 
 ```text
-=== Doom RPG ESP32 real menu.bsp walls-only frame + 3-slot LRU ===
-[MENUWALL] Begin heap8=30392 largest8=22516 shapeData=0x0 mediaTexels=0x0
-[MENUWALL] BSP header spawnIndex=460 tile=12,14 world=800,928 dir=0 cameraZ=36
-[WALLCACHE] BEGIN slots=3 payloadPerSlot=2048B maxPayload=6144B cold=yes
+=== Doom RPG ESP32 real menu.bsp walls + native sprites ===
+[MENUSPRITE] Begin wallsFNV=a6d87c4a expected=a6d87c4a shapeData=0x0 mediaTexels=0x0
+[MENUSPRITE] Baseline heap8=30176 largest8=22516 numMapSprites=44 runtimeSlots=68
+[MENUSPRITE] View list objects=17 outOfRange=0 listFNV=962cd657 ordering=original-BSP-sortZ
 ...
-[MENUWALL] BSP visibility nodeCount=28 nodeRasterCount=10 visibleLeaves=10 sourceLines=46
-[MENUWALL] Line result walls=25 backface=15 clipped=6 spriteSpanSkipped=0 occluderOnly=0
-[MENUWALL] Texture requests total=25 unique=8 repeats=17 trackingErrors=0 requestFNV=4db9da28 animFrameTime=0
-[MENUWALL] LRU slots=3 requests=25 hits=14 misses=11 evictions=8 resident=3 peak=3 residentBytes=6144 peakBytes=6144
-[MENUWALL] LRU resident heap8=24200 largest8=16372 aggregateCost=6192B logicalPayload=6144B
-[MENUWALL] GFXRM wallLoads=11 packOpenCycles=11 logicalBytes=22528 expected=22528 peakFrame=2048
-[MENUWALL] Native spans begin=25 end=25 spanCalls=224 pixels=5589 rangeErrors=0 legacyPtrViolations=0 mappingViolations=0
-[MENUWALL] framebufferFNV=a6d87c4a expected=a6d87c4a renderMs=1357 floor=4208 ceiling=8c51 mediaTexels=0x0
-[WALLCACHE] END requests=25 hits=14 misses=11 evictions=8 resident=3 peak=3 residentBytes=6144 peakBytes=6144
-[MENUWALL] End heap8=30392 largest8=22516 deltaFromStart=0 cacheReleased=yes
-[MENUWALL] READY framebuffer stayed bit-identical while LRU reduced 25 requests to 11 physical wall loads
-[MENUWALL] READY measured three-slot cache = 14 hits / 11 misses / 8 evictions / 6144B peak payload
-[ALIVE] ... heap8=30392 largest8=22516 ... MENUBSP=ready ...
+[MENUSPRITE] Objects total=17 hidden=0 lightsSkipped=5 entityUnsupported=0 resolvedDraws=14
+[MENUSPRITE] Requests spriteFrames=11 unique=8 repeats=3 requestFNV=4457ac94 wallBacked=2 maxFrame=2112B
+[MENUSPRITE] Cull near=1 backface=0 clipped=1 spans=389 pixels=4590
+[MENUSPRITE] Invariants rangeErrors=0 legacyPtrViolations=0 shapeDataViolations=0 mappingViolations=0 unsupportedFlags=0 unsupportedModes=0
+[MENUSPRITE] GFXRM spriteLoads=11 wallLoads=2 packOpenCycles=13 logicalBytes=18784 peakFrame=2112
+[MENUSPRITE] Wall-backed projected begin=2 end=2 spans=20 pixels=340 errors=0/0/0
+[MENUSPRITE] framebufferFNV=ffe0995e wallsFNV=a6d87c4a changed=yes renderMs=1064 shapeData=0x0 mediaTexels=0x0
+[MENUSPRITE] End heap8=30176 largest8=22516 deltaFromStart=0
+[MENUSPRITE] READY real menu sprites rendered from bounded uncached GFXRM frames
+[MENUSPRITE] READY request sequence measured before any sprite cache policy is chosen
+[ALIVE] ... heap8=30176 largest8=22516 ... MENUBSP=ready ...
 ```
 
-## Deterministic regression contract
-
-The cached frame must preserve the complete PR #22 scene contract:
+## Deterministic real sprite regression contract
 
 ```text
-spawnIndex                = 460
-spawn tile                = 12,14
-spawn world               = 800,928
-spawn direction           = 0
-camera Z                  = 36
-BSP nodeCount             = 28
-BSP nodeRasterCount       = 10
-visible leaves            = 10
-source lines              = 46
-logical wall requests     = 25
-backface culled           = 15
-clip culled               = 6
-unique wall textures      = 8
-repeated wall requests    = 17
-texture request FNV       = 4db9da28
-native span calls         = 224
-native pixels drawn       = 5589
-range errors              = 0
-legacy pointer violations = 0
-mapping violations        = 0
-framebuffer FNV           = a6d87c4a
-floor RGB565              = 4208
-ceiling RGB565            = 8c51
+walls framebuffer FNV       = a6d87c4a
+viewSprites count           = 17
+viewSprites list FNV        = 962cd657
+hidden objects              = 0
+menu lights skipped         = 5
+entity-linked unsupported   = 0
+resolved draw attempts      = 14
+sprite frame requests       = 11
+unique sprite frames        = 8
+repeated sprite requests    = 3
+sprite request FNV          = 4457ac94
+wall-backed object requests = 2
+largest sprite frame        = 2,112 B
+near culled                 = 1
+backface culled             = 0
+clip culled                 = 1
+native sprite span calls    = 389
+native sprite pixels        = 4,590
+wall-backed spans           = 20
+wall-backed pixels          = 340
+range errors                = 0
+legacy pointer violations   = 0
+shapeData violations        = 0
+mapping violations          = 0
+unsupported flag paths      = 0
+unsupported render modes    = 0
+final framebuffer FNV       = ffe0995e
 ```
 
-The wall-cache-specific contract is:
+`renderMs=1064` was measured on the validation run. Treat timing as diagnostic,
+not as a deterministic regression condition: SD and serial logging timing vary.
+
+## Exact sprite request sequence
+
+The 11 actual bitshape-backed sprite frame requests, in order, are:
 
 ```text
-slots                     = 3
-requests                  = 25
-hits                      = 14
-misses                    = 11
-evictions                 = 8
-resident slots at peak    = 3
-logical resident payload  = 6,144 B
-measured allocator cost   = 6,192 B
-GFXRM physical wall loads = 11
-GFXRM pack open cycles    = 11
-GFXRM logical bytes read  = 22,528 B
-GFXRM peak single frame   = 2,048 B
+request  object  mediaId  mode
+1        17      562      0
+2        41      406      0
+3        41      410      7
+4        34      598      0
+5        27      172      0
+6        28      578      0
+7        21      578      0
+8        23      426      0
+9        23      410      7
+10       18      578      0
+11       16      102      0
 ```
 
-Most importantly, cached and uncached real-scene framebuffer hashes are exactly
-identical:
+Sequence only:
 
 ```text
-uncached PR #22 framebuffer = a6d87c4a
-cached current framebuffer  = a6d87c4a
+562, 406, 410, 598, 172, 578, 578, 426, 410, 578, 102
 ```
 
-This proves the cache changes resource lifetime/I/O only, not rendering output.
+Unique sprite frame IDs:
+
+```text
+102, 172, 406, 410, 426, 562, 578, 598
+```
+
+The repeated resources are:
+
+```text
+578 requested 3 times
+410 requested 2 times
+```
+
+Two additional visible objects are wall-backed rather than bitshape-backed:
+
+```text
+object 35 -> wall texture 152
+object 30 -> wall texture 108
+```
+
+The request hash `4457ac94` includes object index, media ID and render mode and is
+the compact deterministic regression marker for the ordered sprite request
+stream.
+
+## Measured sprite frame sizes
+
+Logical GFXRM frame storage observed in the request stream:
+
+```text
+mediaId  storage
+562       962 B
+406       603 B
+410       796 B
+598     1,949 B
+172     2,112 B
+578     1,977 B
+426       603 B
+102       936 B
+```
+
+The 11 physical sprite loads total 14,688 B. The two wall-backed 2,048-byte loads
+add 4,096 B, giving the measured GFXRM total:
+
+```text
+sprite loads      = 11
+wall loads        = 2
+pack open cycles  = 13
+logical bytes     = 18,784 B
+peak single frame = 2,112 B
+```
+
+## Sprite-cache analysis derived from hardware data
+
+The following is **derived analysis only**. No sprite cache exists in this
+increment.
+
+Applying an LRU simulation to the exact 11-request sprite sequence gives:
+
+```text
+slots  hits  misses  evictions  measured-sequence peak logical resident bytes
+1       1      10       9        2,112 B
+2       1      10       8        4,089 B
+3       2       9        6        6,038 B
+4       2       9        5        6,834 B
+5       3       8        3        7,437 B
+6       3       8        2        8,399 B
+7       3       8        1        9,002 B
+8       3       8        0        9,938 B
+```
+
+Important consequences:
+
+- three slots capture 2 of the 3 possible repeat hits with about 6 KB peak
+  logical payload on this sequence;
+- four slots add no hit compared with three;
+- five slots are the smallest cache that captures all 3 repeat hits, with a
+  measured-sequence peak logical payload of 7,437 B;
+- adding more than five slots gives no additional hit on this deterministic
+  frame.
+
+Do not choose a sprite cache size merely because there are eight unique frames.
+The next cache experiment should explicitly choose between the 3-slot RAM-saving
+point and the 5-slot all-repeat point, then validate allocator cost and exact
+framebuffer preservation on hardware.
 
 ## Memory boundary
 
-Current branch baseline before cache activation:
+Current branch baseline before the sprite pass:
 
 ```text
-heap8=30392
+heap8=30176
 largest8=22516
 ```
 
-With all three wall slots resident:
+After all 11 sprite-frame loads/releases and both wall-backed objects:
 
 ```text
-heap8=24200
-largest8=16372
-logical cache payload = 6144 B
-allocator cost        = 6192 B
-```
-
-After `NativeWallLruCache` teardown:
-
-```text
-heap8=30392
+heap8=30176
 largest8=22516
 deltaFromStart=0
-cacheReleased=yes
 ```
 
-The baseline is 184 B below the previous branch's 30,576-byte value. That is
-static cache/borrowed-path bookkeeping introduced by this increment, not a
-per-frame leak. The cache itself releases exactly and restores both free heap and
-the largest free block.
-
-The wall cache remains comfortably inside the no-PSRAM memory boundary while the
-validated largest free block stays 16,372 B even with all three slots resident.
-
-## I/O and timing result
-
-Compared with the identical uncached PR #22 frame:
-
-```text
-                          uncached      3-slot LRU
-logical wall requests       25              25
-physical GFXRM loads         25              11
-pack open cycles             25              11
-wall bytes read          51,200          22,528
-framebuffer FNV         a6d87c4a        a6d87c4a
-measured renderMs          1676            1357
-```
-
-The measured render time improved by 319 ms (about 19%) on this hardware run.
-Timing is diagnostic, not a regression assertion: SD timing and logging can vary
-between boots. Request accounting, hashes and allocator restoration are the
-stable contracts.
+The baseline is 216 B below the PR #23 branch baseline (`30392`). This is static
+state/code bookkeeping introduced by the projected-sprite probe/renderer, not a
+per-frame leak. The real contract is exact restoration to the current baseline,
+which hardware validates.
 
 ## Architectural conclusion
 
-This is the first hardware-validated reusable graphics cache in the ESP32
-engine. The project now has a clean three-layer wall resource path:
+The target now renders a real deterministic menu scene with both native walls
+and real BSP-sorted sprites while the two legacy graphics pools remain absent:
 
 ```text
-storage        -> GFXRM
-reuse/lifetime -> NativeWallLruCache
-rasterization  -> native projected wall renderer
+real menu BSP
+   |
+   +--> wall visibility/order --> 3-slot wall LRU --> native wall spans
+   |
+   +--> viewSprites sortZ order --> uncached GFXRM sprite frames
+                                      |
+                                      v
+                               native sprite spans
+   |                                  |
+   +----------------------------------+
+                    |
+                    v
+          shared 160x120 framebuffer
+                    |
+                    v
+            final FNV ffe0995e
 ```
 
-No layer needs to pretend that a map-wide `mediaTexels` pool exists.
-
-The cache slot count is evidence-driven. It was chosen only after a real scene
-provided an exact access sequence, then validated against the same scene. This
-workflow should also be used for sprite caching later.
+This is the first hardware-validated full scene containing both real map walls
+and real projected sprite objects on the no-PSRAM target.
 
 ## Current safe stop boundary
 
@@ -350,25 +423,24 @@ Validated and executed:
 
 - complete engine startup through mappings
 - real `Render_beginLoadMap(MAP_MENU)` structural map load
-- 53 nodes, 120 lines, 44 map sprites, 68 runtime sprites, 15 events
+- 53 nodes, 120 lines, 44 map sprites, 68 runtime sprite slots, 15 events
 - full native asset-pack access
 - zero resident `shapeData`
 - zero map-wide `mediaTexels`
 - canonical RGB565 palette normalization
 - shared GFXRM backend
-- native sprite diagnostic rendering
 - native direct projected wall sampling
 - original BSP traversal/culling/occlusion on real `menu.bsp`
 - real menu spawn camera X/Y/direction
-- deterministic real menu walls framebuffer `a6d87c4a`
-- exact real wall access sequence `4db9da28`
-- three-slot LRU wall cache
-- borrowed wall-frame ownership between cache and projected renderer
-- 14 hits / 11 misses / 8 evictions on the reference frame
-- 25 -> 11 physical wall loads
-- 51,200 -> 22,528 B physical wall payload reads
-- 6,144 B logical / 6,192 B allocator cache cost
-- exact heap/largest-block restoration after cache teardown
+- deterministic walls-only framebuffer `a6d87c4a`
+- hardware-validated three-slot wall LRU
+- original BSP-produced `viewSprites` ordering
+- real projected bitshape-backed menu sprites
+- real wall-backed sprite objects through bounded wall frames
+- sprite render modes used by this frame, including additive mode 7
+- exact sprite request sequence and frame-size measurements
+- deterministic walls+sprites framebuffer `ffe0995e`
+- exact heap/largest-block restoration after every uncached sprite frame
 
 Still intentionally NOT integrated:
 
@@ -376,35 +448,44 @@ Still intentionally NOT integrated:
 - original `Render_loadTexels()`
 - monolithic `shapeData`
 - monolithic/map-wide `mediaTexels`
-- projected real-scene sprite rendering
-- a measured real-scene sprite access sequence/cache policy
+- any sprite cache
 - textured floor/ceiling rendering
 - persistent open native pack
 - complete map graphics loader replacement
 - game entities/player spawning in the active gameplay loop
-- final main-menu UI composition
+- final main-menu UI/logo/text composition
+- normal main-menu state-machine presentation
 - main gameplay loop
 
 ## Recommended next increment after merge
 
-Add **real projected sprites to this same deterministic `menu.bsp` camera**, but
-do not invent a sprite cache yet.
+Do not add another visual subsystem in the same increment as the first sprite
+cache. First replay this exact deterministic walls+sprites frame with a tiny
+sprite LRU and demand `ffe0995e` bit-for-bit.
 
-Keep the scope narrow:
+Two evidence-based candidates exist:
 
-- keep the validated three-slot wall LRU active
-- reuse the `viewSprites` ordering produced by the original BSP walk
-- use the already validated bounded sprite frame contract from GFXRM
-- project/rasterize only the real sprites visible in this menu frame
-- keep floor/ceiling texturing disabled for this increment
-- keep `shapeData == NULL` and `mediaTexels == NULL`
-- measure the exact sprite request sequence, unique sprites, repeated requests,
-  bytes and peak frame size
-- establish a deterministic framebuffer hash for walls + sprites
-- release every uncached sprite frame exactly and preserve allocator recovery
+```text
+3-slot sprite LRU: expected 2 hits / 9 misses, ~6,038 B peak logical payload
+5-slot sprite LRU: expected 3 hits / 8 misses, ~7,437 B peak logical payload
+```
 
-Only after the real sprite request sequence is measured should a sprite cache
-size/policy be proposed. Follow the same evidence-driven process used for walls.
+A 4-slot cache is dominated by 3 slots on this frame because it gives no extra
+hit. A cache larger than 5 slots gives no additional hit.
+
+Whichever candidate is chosen, acceptance criteria should include:
+
+- wall regression remains `a6d87c4a`
+- final walls+sprites framebuffer remains `ffe0995e`
+- sprite request stream remains `4457ac94`
+- exact hit/miss/eviction accounting matches simulation
+- physical sprite loads/bytes fall as predicted
+- allocator peak and largest-free-block impact are measured on the real CYD
+- cache teardown restores exact heap/largest state
+- `shapeData == NULL` and `mediaTexels == NULL` throughout
+
+Only after the sprite resource lifetime is stable should the next visual piece
+(textured planes or actual menu UI composition) be added.
 
 ## Increment discipline
 
