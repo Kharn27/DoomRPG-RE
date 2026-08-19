@@ -4,15 +4,8 @@
 #include <TFT_eSPI.h>
 
 #include <algorithm>
-#if DOOMRPG_ESP32_COLOR_COMPARE
-#include <math.h>
-#endif
 
 #include "platform_video_config.h"
-
-#ifndef DOOMRPG_ESP32_COLOR_COMPARE
-#define DOOMRPG_ESP32_COLOR_COMPARE 0
-#endif
 
 namespace {
 
@@ -22,6 +15,16 @@ uint16_t* framebuffer = nullptr;
 constexpr size_t kPixelCount =
     static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
 constexpr size_t kFramebufferBytes = kPixelCount * sizeof(uint16_t);
+
+/* Hardware-selected CYD display profile.
+ *
+ * The four-way hardware comparison showed that the neutral gamma with a modest
+ * 1.15 saturation boost gives the best visual match on the real ILI9341 panel.
+ * Keep the logical RGB565 framebuffer untouched so every engine/rendering FNV
+ * remains a source-of-truth hash; this transform exists only at the final TFT
+ * presentation boundary.
+ */
+constexpr int kDisplaySaturationPercent = 115;
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 constexpr int kDebugOverlayMaxZones = 8;
@@ -41,14 +44,38 @@ int16_t debugTouchX = 0;
 int16_t debugTouchY = 0;
 #endif
 
-#if DOOMRPG_ESP32_COLOR_COMPARE
-uint8_t gamma130Lut[256]{};
-bool gamma130LutReady = false;
-#endif
-
 uint16_t rgb565(uint8_t red, uint8_t green, uint8_t blue) {
     return static_cast<uint16_t>(((red & 0xf8) << 8) |
                                  ((green & 0xfc) << 3) | (blue >> 3));
+}
+
+uint8_t clamp8(int value) {
+    if (value < 0) return 0;
+    if (value > 255) return 255;
+    return static_cast<uint8_t>(value);
+}
+
+uint16_t tuneDisplayColor565(uint16_t color) {
+    /* Expand RGB565 to 8-bit using bit replication (no divisions), preserve
+     * BT.601-style luma, and scale only chroma by 1.15. Neutral grays and
+     * black/white therefore remain neutral while Doom's colored artwork gains
+     * the contrast observed in hardware comparison variant C.
+     */
+    const int red5 = (color >> 11) & 0x1f;
+    const int green6 = (color >> 5) & 0x3f;
+    const int blue5 = color & 0x1f;
+    int red = (red5 << 3) | (red5 >> 2);
+    int green = (green6 << 2) | (green6 >> 4);
+    int blue = (blue5 << 3) | (blue5 >> 2);
+
+    const int luma = (77 * red + 150 * green + 29 * blue + 128) >> 8;
+    red = clamp8(luma + ((red - luma) * kDisplaySaturationPercent) / 100);
+    green = clamp8(luma + ((green - luma) * kDisplaySaturationPercent) / 100);
+    blue = clamp8(luma + ((blue - luma) * kDisplaySaturationPercent) / 100);
+
+    return rgb565(static_cast<uint8_t>(red),
+                  static_cast<uint8_t>(green),
+                  static_cast<uint8_t>(blue));
 }
 
 void setPixel(int x, int y, uint16_t color) {
@@ -98,98 +125,6 @@ void drawLine(int x0, int y0, int x1, int y1, uint16_t color) {
         }
     }
 }
-
-#if DOOMRPG_ESP32_COLOR_COMPARE
-uint8_t clamp8(int value) {
-    if (value < 0) return 0;
-    if (value > 255) return 255;
-    return static_cast<uint8_t>(value);
-}
-
-void prepareGamma130Lut() {
-    if (gamma130LutReady) {
-        return;
-    }
-
-    constexpr float gamma = 1.30f;
-    constexpr float exponent = 1.0f / gamma;
-    for (int value = 0; value < 256; ++value) {
-        const float normalized = static_cast<float>(value) / 255.0f;
-        const int corrected = static_cast<int>(
-            powf(normalized, exponent) * 255.0f + 0.5f);
-        gamma130Lut[value] = clamp8(corrected);
-    }
-    gamma130LutReady = true;
-}
-
-uint16_t tuneColor565(uint16_t color, bool applyGamma, bool applySaturation) {
-    int red = ((color >> 11) & 0x1f) * 255 / 31;
-    int green = ((color >> 5) & 0x3f) * 255 / 63;
-    int blue = (color & 0x1f) * 255 / 31;
-
-    if (applyGamma) {
-        red = gamma130Lut[red];
-        green = gamma130Lut[green];
-        blue = gamma130Lut[blue];
-    }
-
-    if (applySaturation) {
-        /* BT.601-style integer luma. Saturation 1.15 scales only chroma around
-         * that luma, preserving neutral grays and black/white endpoints. */
-        const int luma = (77 * red + 150 * green + 29 * blue + 128) >> 8;
-        red = clamp8(luma + ((red - luma) * 115) / 100);
-        green = clamp8(luma + ((green - luma) * 115) / 100);
-        blue = clamp8(luma + ((blue - luma) * 115) / 100);
-    }
-
-    return rgb565(static_cast<uint8_t>(red),
-                  static_cast<uint8_t>(green),
-                  static_cast<uint8_t>(blue));
-}
-
-bool presentColorComparison() {
-    prepareGamma130Lut();
-
-    uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
-    const uint32_t started = micros();
-
-    platformDisplay->startWrite();
-    platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
-                                   DOOMRPG_PHYSICAL_HEIGHT);
-
-    /* The physical 320x240 panel fits four exact 160x120 copies of the logical
-     * framebuffer. No resize, interpolation or second framebuffer is involved.
-     *
-     *   A top-left     : gamma 1.00 / saturation 1.00
-     *   B top-right    : gamma 1.30 / saturation 1.00
-     *   C bottom-left  : gamma 1.00 / saturation 1.15
-     *   D bottom-right : gamma 1.30 / saturation 1.15
-     */
-    for (int outputY = 0; outputY < DOOMRPG_PHYSICAL_HEIGHT; ++outputY) {
-        const bool lowerHalf = outputY >= DOOMRPG_LOGICAL_HEIGHT;
-        const int sourceY = outputY % DOOMRPG_LOGICAL_HEIGHT;
-        const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
-
-        for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
-            const uint16_t color = source[sourceX];
-            outputRow[sourceX] = lowerHalf
-                ? tuneColor565(color, false, true)
-                : color;
-            outputRow[sourceX + DOOMRPG_LOGICAL_WIDTH] = lowerHalf
-                ? tuneColor565(color, true, true)
-                : tuneColor565(color, true, false);
-        }
-
-        platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
-    }
-
-    platformDisplay->endWrite();
-
-    Serial.printf("[COLORPROBE] Present four 160x120 1:1 variants in %lu us; A=g1.00/s1.00 B=g1.30/s1.00 C=g1.00/s1.15 D=g1.30/s1.15 gammaFormula=x^(1/1.30)\n",
-                  micros() - started);
-    return true;
-}
-#endif
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 void drawDebugOverlay() {
@@ -258,13 +193,10 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
     Serial.printf("[VIDEO] Physical output %dx%d, integer scale %dx\n",
                   DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT,
                   DOOMRPG_INTEGER_SCALE);
+    Serial.printf("[VIDEO] CYD display profile gamma=1.00 saturation=%d%% resampling=nearest framebuffer=untouched\n",
+                  kDisplaySaturationPercent);
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Serial.println("[HITBOX] Physical overlay enabled; framebuffer hashes remain untouched");
-#endif
-#if DOOMRPG_ESP32_COLOR_COMPARE
-    prepareGamma130Lut();
-    Serial.println("[COLORPROBE] Enabled: physical TFT shows four 160x120 1:1 color variants; framebuffer remains untouched");
-    Serial.println("[COLORPROBE] A=neutral B=gamma1.30 C=saturation1.15 D=gamma1.30+saturation1.15");
 #endif
     return true;
 }
@@ -289,9 +221,6 @@ bool PlatformVideo_present() {
         return false;
     }
 
-#if DOOMRPG_ESP32_COLOR_COMPARE
-    return presentColorComparison();
-#else
     uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
     const uint32_t started = micros();
 
@@ -302,7 +231,9 @@ bool PlatformVideo_present() {
     for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
         const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
         for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
-            const uint16_t color = source[sourceX];
+            /* Apply the panel profile once per logical pixel, then duplicate the
+             * corrected RGB565 value for exact nearest-neighbour 2x output. */
+            const uint16_t color = tuneDisplayColor565(source[sourceX]);
             const int outputX = sourceX * DOOMRPG_INTEGER_SCALE;
             outputRow[outputX] = color;
             outputRow[outputX + 1] = color;
@@ -318,10 +249,9 @@ bool PlatformVideo_present() {
     drawDebugOverlay();
 #endif
 
-    Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x: %lu us\n",
+    Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x + sat1.15: %lu us\n",
                   micros() - started);
     return true;
-#endif
 }
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
