@@ -7,6 +7,7 @@
 #include "Render.h"
 #include "Z_Zip.h"
 
+#include "map_runtime_structure_probe.h"
 #include "menu_bsp_probe.h"
 #include "menu_bsp_structure_probe.h"
 
@@ -190,9 +191,14 @@ int DoomRPG_probeMenuBspHeader(int configMappingsReady) {
         return 0;
     }
 
+    if (!DoomRPG_probeMenuMapRuntimeStructures(1)) {
+        printf("[MENUBSP] FAILED real runtime structure phase\n");
+        return 0;
+    }
+
     menuBspReady = 1;
-    printf("[MENUBSP] READY menu.bsp header + complete structure plan validated\n");
-    printf("[MENUBSP] Render_beginLoadMap / Render_beginLoadMapData still NOT executed\n");
+    printf("[MENUBSP] READY menu.bsp plan + real runtime structures validated\n");
+    printf("[MENUBSP] Bitshapes / texels still intentionally NOT executed\n");
 
     return 1;
 }
