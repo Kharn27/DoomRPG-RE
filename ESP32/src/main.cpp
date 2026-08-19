@@ -15,6 +15,10 @@
 #include "soft_xpt2046.h"
 #include "Z_Zip.h"
 
+#ifndef DOOMRPG_ESP32_SCREEN_DIAGNOSTICS
+#define DOOMRPG_ESP32_SCREEN_DIAGNOSTICS 0
+#endif
+
 namespace
 {
 
@@ -33,7 +37,6 @@ namespace
     bool engineRenderStartupReady = false;
     bool engineConfigMappingsReady = false;
     bool engineMenuBspReady = false;
-    bool videoTestShown = false;
     DoomRpgCoreInitReport coreReport{};
     DoomRpgLayoutReport layoutReport{};
     uint32_t lastTouchUpdate = 0;
@@ -42,6 +45,7 @@ namespace
     void drawLabel(int16_t y, const char *label, const char *value,
                    uint16_t color)
     {
+#if DOOMRPG_ESP32_SCREEN_DIAGNOSTICS
         display.setTextColor(TFT_WHITE, TFT_BLACK);
         display.setCursor(8, y);
         display.print(label);
@@ -49,10 +53,17 @@ namespace
         display.setCursor(106, y);
         display.print(value);
         display.print("                    ");
+#else
+        (void)y;
+        (void)label;
+        (void)value;
+        (void)color;
+#endif
     }
 
     void drawDiagnosticScreen()
     {
+#if DOOMRPG_ESP32_SCREEN_DIAGNOSTICS
         display.fillScreen(TFT_BLACK);
         display.setTextSize(2);
         display.setTextColor(TFT_YELLOW, TFT_BLACK);
@@ -73,6 +84,7 @@ namespace
         display.setTextColor(TFT_DARKGREY, TFT_BLACK);
         display.setCursor(8, 214);
         display.print("Serial: 115200 / ttyUSB0");
+#endif
     }
 
     bool archiveContains(const char *name)
@@ -107,10 +119,6 @@ namespace
 
     bool validateLayoutResources()
     {
-        // At 160 pixels DoomCanvas uses the normal (non-large) HUD. These are
-        // exactly the images Hud_startup() attempts to load before layout can
-        // reach Render_setup(). Preflight them so a wrong/incomplete archive
-        // cannot enter DoomRPG_Error() and reboot the CYD forever.
         static const char *const requiredHudFiles[] = {
             "bar_lg.bmp",
             "k.bmp",
@@ -347,6 +355,8 @@ namespace
                       metrics.render, metrics.game, metrics.doomCanvas,
                       metrics.totalInitialObjects);
         Serial.println("Upload target locked to /dev/ttyUSB0");
+        Serial.printf("[TFT] Screen diagnostics=%s; game framebuffer owns visible output\n",
+                      DOOMRPG_ESP32_SCREEN_DIAGNOSTICS ? "enabled" : "disabled");
     }
 
     void updateTouchDiagnostic()
@@ -372,12 +382,9 @@ namespace
         Serial.printf("[TOUCH] raw=%u,%u pressure=%u screen=%d,%d\n", point.rawX,
                       point.rawY, point.pressure, point.x, point.y);
 
-        if (!videoTestShown && videoReady)
-        {
-            videoTestShown = true;
-            Esp32Sdl_showTestPattern();
-            Serial.println("[SDL] Touch-triggered shared-framebuffer test is on screen");
-        }
+#if DOOMRPG_ESP32_SCREEN_DIAGNOSTICS
+        Esp32Sdl_showTestPattern();
+        Serial.println("[SDL] Diagnostic touch test pattern is on screen");
 
         char status[48];
         snprintf(status, sizeof(status), "%u,%u -> %d,%d", point.rawX, point.rawY,
@@ -386,6 +393,7 @@ namespace
         display.drawCircle(point.x, point.y, 5, TFT_CYAN);
         display.drawFastHLine(point.x - 8, point.y, 17, TFT_CYAN);
         display.drawFastVLine(point.x, point.y - 8, 17, TFT_CYAN);
+#endif
     }
 
     void printHeartbeat()
@@ -430,8 +438,9 @@ void setup()
     display.setSwapBytes(true);
     Esp32Sdl_attachDisplay(&display);
     drawDiagnosticScreen();
-    Serial.printf("[TFT] Ready, logical size=%dx%d\n", display.width(),
-                  display.height());
+    Serial.printf("[TFT] Ready, physical size=%dx%d diagnostics=%s\n",
+                  display.width(), display.height(),
+                  DOOMRPG_ESP32_SCREEN_DIAGNOSTICS ? "enabled" : "disabled");
 
     initializePlatformVideo();
     initializeSdCard();
@@ -441,7 +450,7 @@ void setup()
     initializeRenderStartup();
     initializeConfigMappings();
     initializeMenuBspProbe();
-    Serial.println("[READY] Bring-up remains alive; touch still runs the SDL video test.");
+    Serial.println("[READY] Bring-up alive; touch diagnostics are serial-only and TFT is reserved for the game framebuffer.");
 }
 
 void loop()
