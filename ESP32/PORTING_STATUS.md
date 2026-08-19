@@ -35,28 +35,26 @@ Display, no PSRAM) port. Update it after every hardware-validated increment.
     allocation plan (`agent/esp32-menu-bsp-structure-plan`, PR #10).
 12. Real `Render_beginLoadMap(MAP_MENU)` + real structural portion of
     `Render_beginLoadMapData()`, stopped exactly before graphics resources
-    (`agent/esp32-menu-map-runtime-structures`, PR #11, merge commit
-    `12e64c464e8dcfc477515a38955de116c69a8730`).
+    (`agent/esp32-menu-map-runtime-structures`, PR #11).
 13. Graphics-resource memory plan proving the original whole-file inflate and
     monolithic `mediaTexels` strategy cannot fit on the no-PSRAM CYD
-    (`agent/esp32-menu-resource-memory-plan`, PR #12, merge commit
-    `7c6e72eab56cc7696262104f206f09d8dfcbd169`).
+    (`agent/esp32-menu-resource-memory-plan`, PR #12).
+14. First ESP32-native asset-pack primitive: direct random access to a real
+    2,048-byte menu wall texture with exact heap recovery
+    (`agent/esp32-native-asset-pack`, PR #13, merge commit
+    `0a3a9fcc0eb284b8b46f4a994a8e3c85469672f3`).
 
 ## Current validated increment
 
-Branch: `agent/esp32-native-asset-pack`
+Branch: `agent/esp32-full-native-asset-pack`
 
 Status: **HARDWARE VALIDATED, READY TO MERGE**.
 
-Objective: prove the first ESP32-native resource path using an offline-generated
-pack with direct SD random access, without whole-file ZIP inflate and without
-allocating the original monolithic `mediaTexels` pool.
+Objective: replace the three-entry prototype pack with one complete ESP32-native
+resource pack containing every resource from `DoomRPG.zip`, while keeping the
+index on SD and preserving bounded random access.
 
-This increment deliberately starts small: the pack contains only the three heavy
-graphics BIN resources (`bitshapes.bin`, `wtexels.bin`, `stexels.bin`). The goal
-is architectural validation before scaling the pack to the complete game data.
-
-## ESP32-native asset pack v1
+## ESP32-native asset pack v2
 
 Offline tool:
 
@@ -76,36 +74,57 @@ Output copied to the SD root:
 /DoomRPG-ESP32.pak
 ```
 
-The v1 pack is intentionally uncompressed at runtime. The PC performs extraction
-once, and the ESP32 performs only indexed `seek + read` operations.
+The v2 pack stores every ZIP member uncompressed for direct seek/read. Its index
+is a 24-byte header followed by 20-byte records sorted by a normalized FNV-1a
+name hash. The complete index remains on SD; the ESP32 reader does not allocate
+a resident table for all resources.
 
-Validated pack layout and exact size:
-
-```text
-header + index        112 B
-bitshapes.bin      62,273 B
-wtexels.bin       116,740 B
-stexels.bin       126,618 B
----------------------------
-total             305,743 B
-```
-
-Hardware saw the expected entries and CRC32 values:
+Hardware-validated full-pack layout:
 
 ```text
-[ASSETPAK] READY index entries=3 fileSize=305743 heapCost=4380B
-[ASSETPAK] bitshapes.bin offset=112 size=62273 crc32=5a7c8a2b flags=0
-[ASSETPAK] wtexels.bin   offset=62385 size=116740 crc32=32e758b5 flags=0
-[ASSETPAK] stexels.bin   offset=179125 size=126618 crc32=a44ead7e flags=0
+entries                  = 241
+header                    = 24 B
+index                     = 241 x 20 B = 4,820 B
+dataOffset                = 4,844 B
+uncompressed payload      = 2,452,554 B
+total pack size           = 2,457,398 B
 ```
 
-The 4,380-byte heap cost while the pack is open comes from the Arduino SD/File
-stack and associated filesystem state; the asset reader itself uses a fixed
-static index and performs no per-read dynamic allocation.
+Hardware proof:
 
-## Real menu texture random-access proof
+```text
+[ASSETPAK] READY v2 entries=241 fileSize=2457398 dataOffset=4844 heapCost=4376B
+[ASSETPAK] Index stays on SD: header=24B records=241 x 20B total=4844B
+[ASSETPAK] FULL directory cross-check matched=241/241 payload=2452554B
+[ASSETPAK] FULL pack size proven index+payload=2457398B
+```
 
-The real menu runtime structures remain resident and still produce:
+All 241 resources from the already-indexed source ZIP were found in the native
+pack and matched their expected uncompressed sizes. The calculated payload plus
+header/index exactly matches the physical pack size.
+
+## Validated representative entries
+
+```text
+[ASSETPAK] bitshapes.bin    hash=2c085dbd offset=1795904 size=62273 crc32=5a7c8a2b flags=0
+[ASSETPAK] wtexels.bin      hash=29d7d23c offset=2340658 size=116740 crc32=32e758b5 flags=0
+[ASSETPAK] stexels.bin      hash=7d7834e8 offset=2214040 size=126618 crc32=a44ead7e flags=0
+[ASSETPAK] mappings.bin     hash=bb74455d offset=2178480 size=8392 crc32=fc4fd8fa flags=0
+[ASSETPAK] /MENU.BSP        hash=9b797301 offset=2186872 size=4494 crc32=0e81e02a flags=0
+```
+
+Normalized lookup is hardware-validated:
+
+```text
+[ASSETPAK] Normalized lookup '/MENU.BSP' -> hash=9b797301 size=4494 OK
+```
+
+Therefore callers are not required to reproduce ZIP filename case or a leading
+slash exactly.
+
+## Real menu wall-texture proof still passes on the full pack
+
+The real menu map remains resident with:
 
 ```text
 mapTextureTexelsCount=84
@@ -113,120 +132,106 @@ mapSpriteTexelsCount=284
 planeTexturesCnt=11
 ```
 
-At the native-pack probe boundary:
-
-```text
-[ASSETPAK] Opening /DoomRPG-ESP32.pak heap8=30408 largest8=22516
-```
-
-The probe uses the real engine mapping arrays to select the first wall texture
-actually referenced by `menu.bsp`:
+The first real referenced wall texture still resolves through the original
+mapping metadata:
 
 ```text
 [ASSETPAK] wtexels source header dataSize=116736
 [ASSETPAK] Real menu texture index=112 texelOffset=65536 byteOffset=32768 read=2048B
 ```
 
-A packed Doom RPG wall texture is 64x64 at 4 bpp, therefore exactly 2,048 bytes.
-Only that bounded working buffer is allocated:
+Only one bounded packed 64x64 4-bpp wall texture buffer is allocated:
 
 ```text
-[ASSETPAK] Bounded texture buffer resident heap8=23964 largest8=20468 used=2064
+[ASSETPAK] Bounded texture buffer resident heap8=24248 largest8=21492 used=2064
 ```
 
-The 16-byte difference from the 2,048-byte payload is allocator bookkeeping.
-
-The real resource bytes are read directly from the pack using SD seek/read:
+The bytes are identical to the previously validated v1 pack result:
 
 ```text
 [ASSETPAK] READ texture=112 bytes=2048 fnv1a=92d40704 first=aab544b4 last=e5eeeece
 ```
 
-No ZIP decompression occurs and no full `wtexels.bin` buffer exists in RAM.
-
-## Heap recovery proof
-
-After the 2,048-byte texture buffer is freed:
+After freeing the texture buffer:
 
 ```text
-[ASSETPAK] Released texture buffer heap8=26028 largest8=22516 delta=0
+[ASSETPAK] Released texture buffer heap8=26312 largest8=21492 delta=0
 ```
 
-After closing the pack:
+After closing the full pack:
 
 ```text
-[ASSETPAK] Closed pack heap8=30408 deltaFromOpenStart=0
+[ASSETPAK] Closed FULL pack heap8=30688 deltaFromOpenStart=0
 ```
 
-Therefore the complete native random-access test returns exactly to its starting
-8-bit heap state.
+So the complete v2 validation returns exactly to its starting 8-bit heap state.
 
 Final hardware result:
 
 ```text
+[ASSETPAK] READY complete ZIP mirrored as directly seekable ESP32 pack
 [ASSETPAK] READY random-access real wall texture read with 2048B working set
-[ASSETPAK] No ZIP inflate and no monolithic mediaTexels allocation executed
+[ASSETPAK] No full-pack index allocation, ZIP inflate, or monolithic mediaTexels executed
 [MAPSTRUCT] Native asset pack random-access probe complete
 ```
 
-Heartbeat and touch/shared-framebuffer operation remain stable afterwards:
+Heartbeat remains stable afterwards:
 
 ```text
-[ALIVE] ... heap=96224 heap8=30408 largest8=22516 ... MENUBSP=ready ...
+[ALIVE] uptime=5002 ms heap=96504 heap8=30688 largest8=21492 ...
+[ALIVE] uptime=10003 ms heap=96504 heap8=30688 largest8=21492 ...
 ```
 
-This branch therefore passes its hardware merge gate.
+Touch and shared-framebuffer presentation also remain operational.
 
-## Architectural conclusion
+## Current authoritative memory boundary
 
-This is the first hardware proof of an ESP32-native graphics resource path.
-
-The original DoomRPG-RE graphics model is no longer the target architecture on
-ESP32. DoomRPG-RE remains the behavioral/data-format reference, while the ESP32
-port is free to replace resource management and rendering internals with bounded,
-platform-specific implementations.
-
-Proven old path to be impossible:
+Immediately before the native full-pack probe:
 
 ```text
-ZIP entry
-  -> compressed buffer
-  -> 10,992-byte miniz state
-  -> whole decompressed BIN
-  -> monolithic mediaTexels (>=172,032 B wall-only on menu map)
+heap8=30,688 B
+largest8=21,492 B
 ```
 
-Proven new primitive:
+Opening the Arduino SD `File` for the pack costs 4,376 B of 8-bit heap. That
+memory is fully recovered when the pack is closed. The on-disk index itself is
+not copied into a 241-entry RAM table.
 
-```text
-ESP32 asset pack on SD
-  -> indexed entry
-  -> seek to requested source offset
-  -> read one 2,048-byte packed texture
-  -> render/cache consumer
-```
-
-This makes the no-PSRAM classic CYD remain a viable target.
-
-## Important previous memory result
-
-The menu-map graphics baseline before the native pack probe is approximately:
-
-```text
-heap8=30,408 B
-largest8=22,516 B
-mapTextureTexelsCount=84
-mapSpriteTexelsCount=284
-planeTexturesCnt=11
-```
-
-The original wall-only `mediaTexels` lower bound remains:
+The original wall-only `mediaTexels` lower bound is still:
 
 ```text
 84 * 64 * 64 / 2 = 172,032 B
 ```
 
-so the original loader must never be re-enabled on this target.
+so the original `Render_loadTexels()` architecture remains forbidden on this
+target.
+
+## Architectural conclusion
+
+The asset backend is now no longer a probe-only three-file mechanism. One stable
+`DoomRPG-ESP32.pak` contains all 241 currently known game resources and is ready
+for incremental migration of legacy ZIP consumers without changing SD contents
+between firmware increments.
+
+Validated resource path:
+
+```text
+DoomRPG.zip on development PC
+        |
+        v
+build_asset_pack.py
+        |
+        v
+DoomRPG-ESP32.pak on SD
+        |
+        +--> hash-sorted index kept on SD
+        +--> binary-search lookup by normalized resource name
+        +--> direct seek/read of bounded ranges
+```
+
+This is now the preferred ESP32 resource architecture. `DoomRPG.zip` remains on
+the SD only as a temporary compatibility source for engine paths not yet
+migrated.
 
 ## Current safe stop boundary
 
@@ -237,46 +242,41 @@ Validated and executed:
 - real structural `Render_beginLoadMapData()` phase
 - real nodes, lines, sprites, events, bytecodes and resource reference lists
 - graphics resource memory diagnostic
-- offline ESP32-native asset pack generation
-- native pack index parsing from SD
+- full 241-entry native pack generation
+- complete on-device ZIP-directory versus native-pack cross-check
+- normalized hashed resource lookup from an SD-resident index
 - direct random-access read of a real menu wall texture
 - bounded 2,048-byte packed wall-texture working set
-- exact heap recovery after resource read
+- exact heap recovery after resource read and pack close
 
 Still intentionally NOT executed:
 
 - original `Render_loadBitShapes()`
 - original `Render_loadTexels()`
-- whole-file `bitshapes.bin`, `wtexels.bin`, `stexels.bin` loading
 - monolithic `mediaTexels`
-- native sprite/bitshape loading
-- native texture cache / renderer integration
+- native bitshape metadata loading
+- native sprite texel loading/cache
+- native wall-texture cache / renderer integration
 - completion of map graphics loading
 - game entities/player spawning
 - main game loop
 
 ## Recommended next increment after merge
 
-Scale the asset-pack concept now that the primitive is hardware-proven.
+The SD asset set is now stable. Do not redesign the pack again unless a concrete
+need appears.
 
-Recommended direction:
+Recommended next objective: migrate the first real engine resource consumer to
+the native backend instead of merely probing it. The graphics path remains the
+priority.
 
-1. generate a complete ESP32 game pack offline rather than a three-entry probe
-   pack, so normal development no longer requires repeatedly changing SD files
-2. make the pack format/index suitable for all Doom RPG resources, including
-   names/IDs that do not fit the v1 three-entry assumptions
-3. keep resources stored in a form optimized for cheap ESP32 random access;
-   runtime decompression should only be used where it provides a demonstrated
-   benefit and remains strictly bounded
-4. retain `/DoomRPG.zip` temporarily for legacy code paths while migration is
-   incremental; remove that dependency only when all required resource classes
-   have migrated
-5. after the full pack is validated, implement the first real native graphics
-   consumer (bitshape metadata or a tiny wall-texture cache) on top of
-   `EspAssetPack_readRange()`
+A useful next step is to implement a bounded ESP32-native bitshape reader on top
+of `EspAssetPack_readRange()` so the real 284 menu sprite references can be
+inspected/loaded without ever materializing the 62,273-byte `bitshapes.bin`.
+This should establish the exact selected bitshape metadata and sprite texel
+requirements before choosing the final sprite cache representation.
 
-Do not attempt to make the original heavy graphics loaders fit. Replace their
-responsibility incrementally with ESP32-native code.
+Do not re-enable the original heavy graphics loaders.
 
 ## Increment discipline
 
@@ -285,3 +285,5 @@ responsibility incrementally with ESP32-native code.
 - Fix failures on the same branch; do not create the next branch early.
 - Hardware validation on the real CYD is the merge gate.
 - Record measured hardware values here after every successful increment.
+- Keep `ESP32/README.md` updated with commands, SD preparation and tooling so
+  operational knowledge is not left only in chat history.
