@@ -2,7 +2,14 @@
 
 #include "board_config.h"
 #include "platform_touch_events.h"
+
+#ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+#define DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY 0
+#endif
+
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 #include "platform_video.h"
+#endif
 
 namespace {
 constexpr uint32_t kTapReleaseDebounceMs = 50;
@@ -73,15 +80,17 @@ bool PlatformInput::readTouch(PlatformTouchPoint& point) {
         tapDelivered_ = true;
         releaseSince_ = 0;
 
-        /* Bring-up diagnostics observe the semantic calibrated press before any
-         * menu gate can suppress ARM/CONFIRM delivery. The normal environment
-         * compiles this hook as a no-op.
+#if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
+        /* Bring-up diagnostics observe the calibrated semantic press before any
+         * menu gate can suppress ARM/CONFIRM delivery. This code is absent from
+         * the normal esp32-cyd build at preprocessing time.
          */
         PlatformVideo_debugOverlayMarkTouch(point.x,
                                             point.y,
                                             point.pressure,
                                             point.rawX,
                                             point.rawY);
+#endif
 
         if (gTapCallback != nullptr) {
             gTapCallback(point.x, point.y, point.pressure, point.rawX, point.rawY);
