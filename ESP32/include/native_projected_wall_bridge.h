@@ -12,24 +12,23 @@ struct Render_s;
 typedef struct EspNativeProjectedWallStats_s {
     uint32_t beginCalls;
     uint32_t endCalls;
-    uint32_t spanCalls;
-    uint32_t pixelsDrawn;
-    uint32_t outOfRangeReads;
+    uint32_t boundBytes;
     int lastTextureIndex;
+    int lastPaletteOffset;
+    int originalTexelOffset;
     uint32_t lastTexelHash;
 } EspNativeProjectedWallStats;
 
 void EspNativeProjectedWall_resetStats(void);
 void EspNativeProjectedWall_getStats(EspNativeProjectedWallStats* outStats);
 
+/* Transitional proof bridge: acquire one bounded GFXRM wall frame, rebase that
+ * texture's logical texel offset to zero, and expose only the 2 KB frame through
+ * Render.mediaTexels while the unchanged legacy wall span path executes.
+ * EspNativeProjectedWall_end() restores both fields immediately afterwards.
+ */
 int EspNativeProjectedWall_begin(struct Render_s* render, int textureIndex);
 void EspNativeProjectedWall_end(void);
-void EspNativeProjectedWall_spanMode0(struct Render_s* render,
-                                      int x,
-                                      int y,
-                                      int texelPosition,
-                                      int texelStep,
-                                      int pixelCount);
 
 #ifdef __cplusplus
 }
