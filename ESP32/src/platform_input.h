@@ -17,7 +17,7 @@ public:
     explicit PlatformInput(SoftXpt2046& touchscreen);
 
     void begin();
-    bool touched() const;
+    bool touched();
     bool readTouch(PlatformTouchPoint& point);
 
 private:
@@ -25,4 +25,6 @@ private:
                            uint16_t rawMaximum, int16_t screenMaximum);
 
     SoftXpt2046& touchscreen_;
+    bool tapDelivered_;
+    uint32_t releaseSince_;
 };

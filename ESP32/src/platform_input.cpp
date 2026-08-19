@@ -1,16 +1,53 @@
 #include "platform_input.h"
 
 #include "board_config.h"
+#include "platform_touch_events.h"
+
+namespace {
+constexpr uint32_t kTapReleaseDebounceMs = 50;
+PlatformTapCallback gTapCallback = nullptr;
+}
+
+extern "C" void PlatformInput_setTapCallback(PlatformTapCallback callback) {
+    gTapCallback = callback;
+}
 
 PlatformInput::PlatformInput(SoftXpt2046& touchscreen)
-    : touchscreen_(touchscreen) {}
+    : touchscreen_(touchscreen), tapDelivered_(false), releaseSince_(0) {}
 
 void PlatformInput::begin() {
     touchscreen_.begin();
+    tapDelivered_ = false;
+    releaseSince_ = 0;
 }
 
-bool PlatformInput::touched() const {
-    return touchscreen_.touched();
+bool PlatformInput::touched() {
+    const bool active = touchscreen_.touched();
+    const uint32_t now = millis();
+
+    if (active) {
+        releaseSince_ = 0;
+
+        /* Deliver semantic input immediately on the press edge. The legacy
+         * Serial diagnostic reads coordinates only every ~80 ms; menu input
+         * must not inherit that throttle or short taps could be missed.
+         */
+        if (!tapDelivered_) {
+            PlatformTouchPoint point{};
+            (void)readTouch(point);
+        }
+    }
+    else if (tapDelivered_) {
+        if (releaseSince_ == 0) {
+            releaseSince_ = now;
+        }
+        else if ((now - releaseSince_) >= kTapReleaseDebounceMs) {
+            tapDelivered_ = false;
+            releaseSince_ = 0;
+        }
+    }
+
+    return active;
 }
 
 bool PlatformInput::readTouch(PlatformTouchPoint& point) {
@@ -30,6 +67,15 @@ bool PlatformInput::readTouch(PlatformTouchPoint& point) {
                       cyd::kScreenWidth - 1);
     point.y = mapAxis(sample.x, cyd::kTouchRawMinX, cyd::kTouchRawMaxX,
                       cyd::kScreenHeight - 1);
+
+    if (!tapDelivered_) {
+        tapDelivered_ = true;
+        releaseSince_ = 0;
+        if (gTapCallback != nullptr) {
+            gTapCallback(point.x, point.y, point.pressure, point.rawX, point.rawY);
+        }
+    }
+
     return true;
 }
 
