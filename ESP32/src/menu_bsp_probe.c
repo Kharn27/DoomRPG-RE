@@ -14,6 +14,10 @@
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
 
+#ifndef DOOMRPG_ESP32_BRINGUP_PROBES
+#define DOOMRPG_ESP32_BRINGUP_PROBES 0
+#endif
+
 extern DoomRPG_t* doomRpg;
 
 #define MENU_BSP_HEADER_BYTES 33U
@@ -72,17 +76,36 @@ int DoomRPG_probeMenuBspHeader(int configMappingsReady) {
     }
     menuBspAttempted = 1;
 
-    printf("\n=== Doom RPG menu BSP header probe ===\n");
-
     if (!configMappingsReady) {
-        printf("[MENUBSP] Config/mappings startup is not ready; probe skipped safely\n");
+        printf("[MENUBSP] Config/mappings startup is not ready; startup skipped safely\n");
         return 0;
     }
 
     if (doomRpg == NULL || doomRpg->render == NULL) {
-        printf("[MENUBSP] Core object graph incomplete; probe refused\n");
+        printf("[MENUBSP] Core object graph incomplete; startup refused\n");
         return 0;
     }
+
+#if !DOOMRPG_ESP32_BRINGUP_PROBES
+    printf("\n=== Doom RPG normal menu runtime startup ===\n");
+    printf("[BOOT] bringupProbes=off; skipping standalone menu.bsp header + byte-plan diagnostics\n");
+
+    /* The real Render_beginLoadMap()/Render_beginLoadMapData() path below parses
+     * the same header and creates the actual runtime structures. The historical
+     * standalone header and byte-for-byte structure-plan probes are therefore
+     * redundant during a normal interactive boot.
+     */
+    if (!DoomRPG_probeMenuMapRuntimeStructures(1)) {
+        printf("[MENUBSP] FAILED real runtime structure startup\n");
+        return 0;
+    }
+
+    menuBspReady = 1;
+    printf("[MENUBSP] READY real menu runtime structures initialized; diagnostic header/plan skipped\n");
+    return 1;
+#else
+    printf("\n=== Doom RPG menu BSP header probe ===\n");
+#endif
 
     entry = findZipEntry("menu.bsp");
     if (entry == NULL) {
