@@ -17,6 +17,7 @@ typedef struct EspNativeProjectedWallState_s {
     EspNativeWallFrame frame;
     Render_t* render;
     int active;
+    int ownsFrame;
 } EspNativeProjectedWallState;
 
 static EspNativeProjectedWallState projectedWall;
@@ -99,6 +100,76 @@ static int sampleSpanMode0(Render_t* render,
     return 1;
 }
 
+static int activateFrame(Render_t* render,
+                         const EspNativeWallFrame* frame,
+                         int ownsFrame,
+                         const char* sourceLabel) {
+    int mappingIndex;
+
+    if (render == NULL || frame == NULL || frame->texels == NULL ||
+        render->mediaPalettes == NULL || render->mediaTexelOffsets == NULL ||
+        render->mediaTexels != NULL || projectedWall.active ||
+        frame->textureIndex < 0) {
+        printf("[PROJWALL] FAILED activate source=%s texture=%d render=%p mediaTexels=%p active=%d\n",
+               sourceLabel != NULL ? sourceLabel : "?",
+               frame != NULL ? frame->textureIndex : -1,
+               (void*)render,
+               render != NULL ? (void*)render->mediaTexels : NULL,
+               projectedWall.active);
+        return 0;
+    }
+
+    if (frame->width != EXPECTED_WALL_WIDTH ||
+        frame->height != EXPECTED_WALL_HEIGHT ||
+        frame->packedBytes != EXPECTED_WALL_PACKED_BYTES ||
+        frame->paletteOffset < 0 ||
+        frame->paletteOffset + 15 >= render->mediaPalettesLength) {
+        printf("[PROJWALL] FAILED unsupported wall frame texture=%d size=%dx%d packed=%u palette=%d\n",
+               frame->textureIndex,
+               frame->width,
+               frame->height,
+               (unsigned int)frame->packedBytes,
+               frame->paletteOffset);
+        return 0;
+    }
+
+    mappingIndex = frame->textureIndex * 2;
+    if (render->mediaTexelOffsets[mappingIndex] !=
+        (int)frame->sourceTexelOffset) {
+        printf("[PROJWALL] FAILED mapping/source mismatch texture=%d mapping=%d frame=%u\n",
+               frame->textureIndex,
+               render->mediaTexelOffsets[mappingIndex],
+               (unsigned int)frame->sourceTexelOffset);
+        return 0;
+    }
+
+    projectedWall.frame = *frame;
+    projectedWall.render = render;
+    projectedWall.active = 1;
+    projectedWall.ownsFrame = ownsFrame;
+
+    projectedStats.beginCalls++;
+    projectedStats.boundBytes = projectedWall.frame.packedBytes;
+    projectedStats.lastTextureIndex = projectedWall.frame.textureIndex;
+    projectedStats.lastPaletteOffset = projectedWall.frame.paletteOffset;
+    projectedStats.sourceTexelOffset =
+        (int)projectedWall.frame.sourceTexelOffset;
+    projectedStats.lastTexelHash = projectedWall.frame.texelHash;
+
+    printf("[PROJWALL] %s texture=%d palette=%d sourceOffset=%u packed=%uB hash=%08x mediaTexels=%p mappingOffset=%d\n",
+           ownsFrame ? "ACQUIRE" : "BORROW",
+           projectedWall.frame.textureIndex,
+           projectedWall.frame.paletteOffset,
+           (unsigned int)projectedWall.frame.sourceTexelOffset,
+           (unsigned int)projectedWall.frame.packedBytes,
+           (unsigned int)projectedWall.frame.texelHash,
+           (void*)render->mediaTexels,
+           render->mediaTexelOffsets[mappingIndex]);
+    printf("[PROJWALL] NATIVE source active; no mediaTexels alias and no mapping rewrite ownership=%s\n",
+           ownsFrame ? "owned" : "borrowed");
+    return 1;
+}
+
 void EspNativeProjectedWall_resetStats(void) {
     if (projectedWall.active) {
         EspNativeProjectedWall_end();
@@ -118,7 +189,7 @@ void EspNativeProjectedWall_getStats(EspNativeProjectedWallStats* outStats) {
 
 int EspNativeProjectedWall_begin(struct Render_s* renderBase, int textureIndex) {
     Render_t* render = (Render_t*)renderBase;
-    int mappingIndex;
+    EspNativeWallFrame frame;
 
     if (render == NULL || render->mediaPalettes == NULL ||
         render->mediaTexelOffsets == NULL || render->mediaTexels != NULL ||
@@ -131,62 +202,31 @@ int EspNativeProjectedWall_begin(struct Render_s* renderBase, int textureIndex) 
         return 0;
     }
 
-    memset(&projectedWall.frame, 0, sizeof(projectedWall.frame));
-    if (!EspNativeGraphics_loadWallFrame(render, textureIndex,
-                                         &projectedWall.frame)) {
+    memset(&frame, 0, sizeof(frame));
+    if (!EspNativeGraphics_loadWallFrame(render, textureIndex, &frame)) {
         printf("[PROJWALL] FAILED GFXRM wall acquire texture=%d\n",
                textureIndex);
         return 0;
     }
 
-    if (projectedWall.frame.width != EXPECTED_WALL_WIDTH ||
-        projectedWall.frame.height != EXPECTED_WALL_HEIGHT ||
-        projectedWall.frame.packedBytes != EXPECTED_WALL_PACKED_BYTES ||
-        projectedWall.frame.paletteOffset < 0 ||
-        projectedWall.frame.paletteOffset + 15 >= render->mediaPalettesLength) {
-        printf("[PROJWALL] FAILED unsupported wall frame texture=%d size=%dx%d packed=%u palette=%d\n",
-               textureIndex,
-               projectedWall.frame.width,
-               projectedWall.frame.height,
-               (unsigned int)projectedWall.frame.packedBytes,
-               projectedWall.frame.paletteOffset);
-        EspNativeGraphics_releaseWallFrame(&projectedWall.frame);
-        memset(&projectedWall.frame, 0, sizeof(projectedWall.frame));
+    if (!activateFrame(render, &frame, 1, "GFXRM")) {
+        EspNativeGraphics_releaseWallFrame(&frame);
         return 0;
     }
 
-    mappingIndex = textureIndex * 2;
-    if (render->mediaTexelOffsets[mappingIndex] !=
-        (int)projectedWall.frame.sourceTexelOffset) {
-        printf("[PROJWALL] FAILED mapping/source mismatch texture=%d mapping=%d frame=%u\n",
-               textureIndex,
-               render->mediaTexelOffsets[mappingIndex],
-               (unsigned int)projectedWall.frame.sourceTexelOffset);
-        EspNativeGraphics_releaseWallFrame(&projectedWall.frame);
-        memset(&projectedWall.frame, 0, sizeof(projectedWall.frame));
+    return 1;
+}
+
+int EspNativeProjectedWall_beginBorrowed(
+    struct Render_s* renderBase,
+    const struct EspNativeWallFrame_s* borrowedFrame) {
+    Render_t* render = (Render_t*)renderBase;
+    const EspNativeWallFrame* frame = (const EspNativeWallFrame*)borrowedFrame;
+
+    if (!activateFrame(render, frame, 0, "cache")) {
         return 0;
     }
 
-    projectedWall.render = render;
-    projectedWall.active = 1;
-
-    projectedStats.beginCalls++;
-    projectedStats.boundBytes = projectedWall.frame.packedBytes;
-    projectedStats.lastTextureIndex = textureIndex;
-    projectedStats.lastPaletteOffset = projectedWall.frame.paletteOffset;
-    projectedStats.sourceTexelOffset =
-        (int)projectedWall.frame.sourceTexelOffset;
-    projectedStats.lastTexelHash = projectedWall.frame.texelHash;
-
-    printf("[PROJWALL] ACQUIRE texture=%d palette=%d sourceOffset=%u packed=%uB hash=%08x mediaTexels=%p mappingOffset=%d pack=closed\n",
-           textureIndex,
-           projectedWall.frame.paletteOffset,
-           (unsigned int)projectedWall.frame.sourceTexelOffset,
-           (unsigned int)projectedWall.frame.packedBytes,
-           (unsigned int)projectedWall.frame.texelHash,
-           (void*)render->mediaTexels,
-           render->mediaTexelOffsets[mappingIndex]);
-    printf("[PROJWALL] NATIVE source active; no mediaTexels alias and no mapping rewrite\n");
     return 1;
 }
 
@@ -195,19 +235,26 @@ void EspNativeProjectedWall_end(void) {
         return;
     }
 
-    printf("[PROJWALL] RELEASE texture=%d spans=%u pixels=%u rangeErrors=%u legacyPtrViolations=%u mappingViolations=%u mediaTexels=%p\n",
+    printf("[PROJWALL] RELEASE texture=%d spans=%u pixels=%u rangeErrors=%u legacyPtrViolations=%u mappingViolations=%u mediaTexels=%p ownership=%s\n",
            projectedWall.frame.textureIndex,
            (unsigned int)projectedStats.spanCalls,
            (unsigned int)projectedStats.pixelsDrawn,
            (unsigned int)projectedStats.rangeErrors,
            (unsigned int)projectedStats.legacyPointerViolations,
            (unsigned int)projectedStats.mappingOffsetViolations,
-           projectedWall.render != NULL ? (void*)projectedWall.render->mediaTexels : NULL);
+           projectedWall.render != NULL ? (void*)projectedWall.render->mediaTexels : NULL,
+           projectedWall.ownsFrame ? "owned" : "borrowed");
 
-    EspNativeGraphics_releaseWallFrame(&projectedWall.frame);
-    memset(&projectedWall.frame, 0, sizeof(projectedWall.frame));
+    if (projectedWall.ownsFrame) {
+        EspNativeGraphics_releaseWallFrame(&projectedWall.frame);
+    }
+    else {
+        memset(&projectedWall.frame, 0, sizeof(projectedWall.frame));
+    }
+
     projectedWall.render = NULL;
     projectedWall.active = 0;
+    projectedWall.ownsFrame = 0;
     projectedStats.endCalls++;
 }
 
