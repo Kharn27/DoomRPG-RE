@@ -8,6 +8,7 @@
 #include "Z_Zip.h"
 
 #include "menu_bsp_probe.h"
+#include "menu_bsp_structure_probe.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
@@ -184,8 +185,13 @@ int DoomRPG_probeMenuBspHeader(int configMappingsReady) {
            (unsigned int)largest8Block(),
            (int)heapBefore - (int)heapAfter);
 
+    if (!DoomRPG_probeMenuBspStructure(1)) {
+        printf("[MENUBSP] FAILED complete structure plan\n");
+        return 0;
+    }
+
     menuBspReady = 1;
-    printf("[MENUBSP] READY menu.bsp read + fixed header parsed\n");
+    printf("[MENUBSP] READY menu.bsp header + complete structure plan validated\n");
     printf("[MENUBSP] Render_beginLoadMap / Render_beginLoadMapData still NOT executed\n");
 
     return 1;
