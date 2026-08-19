@@ -7,6 +7,7 @@
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_options_back.h"
+#include "native_main_menu_start_action.h"
 #include "native_main_menu_touch.h"
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
@@ -83,16 +84,33 @@ static void registerMainMenuHitboxOverlay(void) {
 }
 #endif
 
-static void executeConfirmedOptions(void) {
-    /* Remove MENU_MAIN touch before mutating the real menu model. The Options
-     * action owns the display transition; after it succeeds, arm only the
-     * deliberately narrow Back callback for the new menu.
-     */
+static void disableMainMenuTouchForTransition(void) {
     downstreamTapCallback = NULL;
     __real_PlatformInput_setTapCallback(NULL);
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Esp32PlatformVideo_debugOverlayClear();
 #endif
+}
+
+static void executeConfirmedStart(void) {
+    disableMainMenuTouchForTransition();
+
+    if (doomRpg == NULL) {
+        printf("[MAINSTART] FAILED global DoomRPG unavailable at confirmed Start tap\n");
+        return;
+    }
+
+    if (!DoomRPG_esp32ActivateMainMenuStart(doomRpg)) {
+        printf("[MAINSTART] FAILED confirmed Start Game action\n");
+    }
+}
+
+static void executeConfirmedOptions(void) {
+    /* Remove MENU_MAIN touch before mutating the real menu model. The Options
+     * action owns the display transition; after it succeeds, arm only the
+     * deliberately narrow Back callback for the new menu.
+     */
+    disableMainMenuTouchForTransition();
 
     if (doomRpg == NULL) {
         printf("[MAINOPTIONS] FAILED global DoomRPG unavailable at confirmed Options tap\n");
@@ -142,6 +160,14 @@ static void gatedTap(int16_t screenX,
     }
 
     if (lastTappedItem == hit) {
+        if (hit == 0) {
+            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=0 action=execute-start-game\n",
+                   (unsigned int)gateTapCount);
+            lastTappedItem = -1;
+            executeConfirmedStart();
+            return;
+        }
+
         if (hit == 1) {
             printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=1 action=execute-options\n",
                    (unsigned int)gateTapCount);
@@ -187,7 +213,7 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
         registerMainMenuHitboxOverlay();
 #endif
         __real_PlatformInput_setTapCallback(gatedTap);
-        printf("[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm optionsAction=enabled\n");
+        printf("[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm startAction=enabled optionsAction=enabled\n");
     }
     else {
         downstreamTapCallback = callback;
