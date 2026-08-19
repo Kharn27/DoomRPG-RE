@@ -12,6 +12,8 @@
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
 
+extern DoomRPG_t* doomRpg;
+
 void __real_DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
                                              int16_t screenY,
                                              uint16_t pressure,
