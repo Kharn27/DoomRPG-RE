@@ -14,7 +14,7 @@ before merge.
 - microSD-backed game data
 - internal framebuffer: 160x120 RGB565 = 38,400 B
 - physical output: exact nearest-neighbour 2x to 320x240
-- audio disabled during bring-up
+- audio still disabled during bring-up
 
 ## Project direction
 
@@ -71,47 +71,243 @@ Documentation is part of the increment, not a later cleanup task.
 - real Options action through `MenuSystem_select()`
 - real `MENU_MAIN_OPTIONS` model (`Back / Video / Input / Sound`)
 - real Back action through `MenuSystem_back()`
-- PR #31 heavy but deterministic Options -> Main round trip merged at
-  `457e38fc6231d392a0c7d960d5b177011d923995`
+- opaque black main-menu presentation with deterministic touch hashes
+- fast Options -> Main return without replaying MENUWALL/MENUSPRITE
+- fast-menu branch merged as PR #32 at
+  `cc2cb40cf026b5a5e232dba67f884905aca42488`
 
 ## Current validated increment
 
-Branch: `agent/esp32-fast-menu-back`
+Branch: `agent/esp32-normal-boot-cleanup`
 
 Base `main` SHA:
 
 ```text
-457e38fc6231d392a0c7d960d5b177011d923995
+cc2cb40cf026b5a5e232dba67f884905aca42488
 ```
 
-Status: **HARDWARE VALIDATED, DOCUMENTED, READY TO MERGE**.
+Status: **HARDWARE VALIDATED; DOCUMENTATION UPDATED; READY TO MERGE**.
 
-Objective: remove the ~2.5 second "mini reboot" feeling from Options -> Back
-without allocating a second 38,400-byte framebuffer.
+Objective: stop running the historical graphics/resource validation laboratory on
+every normal boot while keeping all of those probes available on demand.
 
-The new architecture deliberately separates graphics bring-up proof from menu
-presentation:
+The firmware now has two explicit PlatformIO environments:
 
 ```text
-boot
-  -> native MENUWALL / MENUSPRITE probes still validate scene ffe0995e
-  -> MENU_MAIN presentation clears the shared framebuffer to black
-  -> real j.bmp logo + p.bmp hand + Doom bitmap font
+esp32-cyd
+    normal daily firmware
 
-Options -> Back
-  -> real MenuSystem_back()
-  -> direct bounded opaque MENU_MAIN repaint
-  -> touch re-armed
-  -> NO MENUWALL replay
-  -> NO MENUSPRITE replay
+esp32-cyd-bringup
+    full historical validation / diagnostic firmware
 ```
 
-No persistent framebuffer copy, compressed snapshot or new large allocation is
-needed.
+`esp32-cyd` remains the PlatformIO default environment.
 
-## Opaque MENU_MAIN presentation
+## Two boot modes
 
-The real Doom RPG main model remains unchanged:
+### 1. Normal firmware: `esp32-cyd`
+
+Build / flash:
+
+```bash
+cd ESP32
+pio run -t upload
+pio device monitor
+```
+
+Equivalent explicit form:
+
+```bash
+pio run -e esp32-cyd -t upload
+pio device monitor -e esp32-cyd
+```
+
+Normal boot now executes only the engine state required to reach the current
+interactive main menu safely:
+
+```text
+Platform video / SD / ZIP
+    -> real engine core and layout
+    -> real ParticleSystem / MenuSystem / EntityDef startup
+    -> real Render_startup
+    -> real config + mappings
+    -> Render_beginLoadMap(MAP_MENU)
+    -> real Render_beginLoadMapData structural phase
+    -> stop at the validated boundary immediately before legacy bitshapes/texels
+    -> real menu runtime structures remain resident
+    -> direct opaque MENU_MAIN repaint
+    -> touch gate armed
+    -> READY
+```
+
+The normal mode deliberately skips the historical proof/demo chain after the
+runtime structure boundary:
+
+```text
+BSP byte-plan diagnostics
+RESOURCEPLAN
+ASSETPAK full cross-check
+BITSHAPE proof walk
+SPRITETEX proof
+SPRITERENDER demo
+WALLRENDER demo
+PROJWALL synthetic projection demo
+MENUWALL full scene benchmark
+MENUSPRITE full scene benchmark
+```
+
+No implementation has been deleted. Only normal execution is skipped.
+
+Hardware marker:
+
+```text
+[BOOT] bringupProbes=off; skipping memory-plan/asset/sprite/wall/projected/menu-scene validation suite
+```
+
+The user-facing menu is then produced directly:
+
+```text
+[MAINOPAQUE] ... finalFNV=58a11171 ...
+[BOOT] NORMAL READY mainMenuFNV=58a11171 ... shapeData=0x0 mediaTexels=0x0
+```
+
+### 2. Full laboratory firmware: `esp32-cyd-bringup`
+
+Build / flash:
+
+```bash
+cd ESP32
+pio run -e esp32-cyd-bringup -t upload
+pio device monitor -e esp32-cyd-bringup
+```
+
+This environment extends `esp32-cyd` and adds:
+
+```text
+-D DOOMRPG_ESP32_BRINGUP_PROBES=1
+```
+
+It preserves the complete historical validation chain and should be used when
+rechecking:
+
+- resource memory budgets
+- native asset-pack lookup and full-directory consistency
+- bitshape source walk
+- sprite texel random access
+- GFXRM sprite/wall consumers
+- projected-wall bridge
+- wall and sprite LRU contracts
+- deterministic native scene hashes
+- allocator recovery after native graphics activity
+
+In other words, `esp32-cyd-bringup` is the old scientific bring-up behaviour kept
+as an explicit diagnostic profile instead of being the default product boot.
+
+## Normal loader boundary remains real
+
+The cleanup does **not** replace the real menu map loader with fake structures.
+Normal boot still executes:
+
+```text
+Render_beginLoadMap(MAP_MENU)
+Render_beginLoadMapData()
+```
+
+A linker wrapper around `DoomCanvas_updateLoadingBar()` counts the original loader
+progress callbacks. The seventh callback still marks the already validated point
+where:
+
+- nodes are resident
+- lines are resident
+- map sprites/runtime sprite slots are resident
+- events and bytecode are resident
+- texture/sprite reference lists are resident
+- the BSP I/O buffer has already been freed
+- legacy `Render_loadBitShapes()` / `Render_loadTexels()` have not started
+
+Hardware normal-mode runtime contract:
+
+```text
+nodes          = 53
+lines          = 120
+mapSprites     = 44
+runtimeSprites = 68
+events         = 15
+mapTextures    = 84
+mapSpriteRefs  = 284
+planeTextures  = 11
+persistent used= 14092 B
+```
+
+This is engine state, not a demonstration probe, so it remains part of normal
+startup.
+
+## Loading-bar flicker found and removed
+
+The first hardware test of the cleaned normal boot reached the menu correctly but
+briefly displayed a black screen with five small white/gray boxes, one filled.
+
+The log showed an intermediate TFT present during the real structural loader:
+
+```text
+---Render_beginLoadMapData---
+[SDL] Sharing platform framebuffer: 38400 bytes
+[VIDEO] Present 160x120 -> 320x240 exact 2x: ...
+```
+
+Root cause: original `DoomCanvas_updateLoadingBar()` is a visual pacifier. It:
+
+1. clears graphics to black;
+2. draws five small rectangles;
+3. fills the current rectangle;
+4. advances `fillRectIndex`;
+5. flushes the framebuffer to the display.
+
+None of that visual work is required to construct the runtime structures.
+
+Hardware-validated fix:
+
+```text
+normal esp32-cyd
+    -> still count all loading-bar callbacks
+    -> still stop on callback 7 at the exact same loader boundary
+    -> suppress intermediate loading-bar drawing / TFT flushes
+
+esp32-cyd-bringup
+    -> preserve the historical loading-bar behaviour
+```
+
+The user confirmed the flicker is gone: normal boot now goes directly to the main
+menu without the transient five-box loading screen.
+
+## Normal-mode memory baseline
+
+The cleaned normal firmware measured on hardware:
+
+```text
+heap8    = 29064
+largest8 = 17396
+```
+
+The prior fast-menu build was approximately:
+
+```text
+heap8 = 28688
+```
+
+So the normal boot cleanup also leaves roughly 376 additional bytes free at the
+current menu-ready baseline.
+
+Strong invariant remains:
+
+```text
+shapeData   = NULL
+mediaTexels = NULL
+```
+
+## Active opaque MENU_MAIN references
+
+The real model remains:
 
 ```text
 Start Game
@@ -120,78 +316,32 @@ Help/About
 Exit
 ```
 
-The ESP32 presentation is now opaque black rather than composited over the static
-3D menu scene. This is closer to the observed J2ME presentation and, more
-importantly, makes normal menu navigation independent from expensive BSP scene
-reconstruction.
-
-Geometry remains unchanged:
+Geometry:
 
 ```text
 logical screen = 160x120
-logo source    = 108x74
 logo target    = 90x62 at 35,2
-
 Start Game y=67
 Options    y=79
 Help/About y=91
 Exit       y=103
-
 layout FNV = 47b3656e
 model FNV  = bbc2149b
 ```
 
-The hardware proves the existing native scene before it is hidden:
+Current hardware hashes:
 
 ```text
-[MAINTOUCHLAYOUT] Begin sceneFNV=ffe0995e expected=ffe0995e ... background=opaque-black
+black + scaled logo        = 0ac1f9c6
+Start Game selected         = 58a11171
+Options selected            = 0cf107b1
+Help/About selected         = 9db82b71
+Exit selected               = bdd775f9
+MENU_MAIN_OPTIONS model     = e1ef01f7
+MENU_MAIN_OPTIONS framebuffer = 6058d47d
 ```
 
-The black framebuffer plus scaled real logo is also deterministic and matches the
-already-known Options composition:
-
-```text
-black + logo FNV = 0ac1f9c6
-```
-
-Hardware-validated initial opaque main frame:
-
-```text
-Start Game selected = 58a11171
-```
-
-The progressive paint hashes are diagnostic composition signatures, not selection
-hashes:
-
-```text
-after item0 = 8fc6e681
-after item1 = e4dc2287
-after item2 = 711423ad
-after item3 = 58a11171
-```
-
-Measured opaque composition on the tested CYD:
-
-```text
-composeMs = 58
-heap8     = 28688
-largest8  = 17396
-```
-
-## Active MENU_MAIN selected-frame hashes
-
-Moving the real hand cursor on the opaque menu produced these deterministic
-hardware signatures:
-
-```text
-Start Game = 58a11171
-Options    = 0cf107b1
-Help/About = 9db82b71
-Exit       = bdd775f9
-```
-
-These supersede the old scene-backed selected-frame hashes for current operation.
-Historical scene-backed references remain useful for recovery:
+Historical scene-backed main-menu hashes remain recovery references only:
 
 ```text
 Start Game old = cbc99461
@@ -200,271 +350,202 @@ Help old       = e4eadfbb
 Exit old       = 5ff2a5cd
 ```
 
-Cursor movement still uses only four 13x10 RGB565 background patches:
+## Fast Options -> Back remains validated
+
+Normal navigation still uses the real engine model transitions:
 
 ```text
-4 * 13 * 10 * 2 B = 1,040 B
-```
-
-No second full framebuffer is used.
-
-## Real MENU_MAIN -> Options action
-
-Confirmed Options still executes the real original menu transition:
-
-```text
-MENU_MAIN selected Options = 0cf107b1
+MENU_MAIN
     -> MenuSystem_select()
     -> MENU_MAIN_OPTIONS
+    -> MenuSystem_back()
+    -> MENU_MAIN
 ```
 
-The resulting real model remains:
+The return paint is bounded and opaque:
 
 ```text
-menu          = MENU_MAIN_OPTIONS / 7
-type          = 7
-oldMenu       = MENU_MAIN / 1
-selectedIndex = 0
-scrollIndex   = 0
-numItems      = 4
-
-Back
-Video
-Input
-Sound
+MENU_MAIN_OPTIONS / 6058d47d
+    -> double tap Back
+    -> real MenuSystem_back()
+    -> direct opaque MENU_MAIN repaint
+    -> 58a11171
+    -> touch re-armed
 ```
 
-Hardware signatures remain unchanged because Options was already painted on a
-controlled black background:
+No MENUWALL/MENUSPRITE replay occurs during Back.
+
+Previously measured complete Back model transition + paint + TFT present:
 
 ```text
-modelFNV                     = e1ef01f7
-black + logo                 = 0ac1f9c6
-after Back                   = c7258261
-after Video                  = 4e764e2f
-after Input                  = 175fa691
-after Sound / final Options  = 6058d47d
+~138 ms
 ```
 
-`0cf107b1` is now a strict precondition for the Options action rather than a
-learn-on-hardware value.
+## Touch input and Back tolerance
 
-## Fast real Options -> Back transition
+Main-menu physical 320x240 input is converted exactly to logical 160x120 and uses
+50 ms stable-release rearming.
 
-Back still uses the real hierarchy operation:
+Main UX:
 
 ```text
-MenuSystem_back()
+first tap on another row -> select
+first tap on current row -> arm
+second released tap      -> confirm
 ```
 
-The original model returns correctly to:
+Back touch tolerance validated on hardware:
 
 ```text
-menu          = MENU_MAIN / 1
-type          = 4
-oldMenu       = -1
-selectedIndex = 0
-numItems      = 4
-state         = ST_MENU / 2
+visible Back row     y=67..78
+logical Back hitbox  x=15..119 y=64..78
+physical Back hitbox x=30..239 y=128..157
 ```
 
-The presentation then calls the same opaque MENU_MAIN painter used at boot.
-Hardware result:
+The extra upper tolerance handles observed XPT2046 jitter while staying clear of
+Video at logical y=79.
+
+## Bring-up mode is now the permanent home for visual hitbox diagnostics
+
+Do **not** create a disposable product-code branch merely to visualize touch
+zones. The better long-term design is to add an optional hitbox overlay to the
+`esp32-cyd-bringup` profile.
+
+Planned bring-up-only overlay:
 
 ```text
-=== Doom RPG ESP32 fast Options -> MENU_MAIN Back ===
-...
-[MAINOPAQUE] ... finalFNV=58a11171 composeMs=58 heap8=28688 largest8=17396
-...
-[OPTIONBACK] FAST End framebufferFNV=58a11171 runtimeFNV=58a11171 menu=1 selected=0 touchActive=1 repaintMs=138 shapeData=0x0 mediaTexels=0x0
-[OPTIONBACK] READY real MenuSystem_back + opaque bounded repaint; no MENUWALL/MENUSPRITE replay
-[OPTIONBACK] READY MENU_MAIN touch re-armed for another complete cycle
+- red rectangle outline for every active logical hitbox
+- current menu hitboxes shown together
+- optional marker/cross for the last physical/logical touch
+- Serial still reports raw / physical / logical coordinates and detected item
 ```
 
-Measured return time for the complete model transition + bounded paint + TFT
-present was about **138 ms** on this hardware, down from roughly 2.5 seconds.
-
-The user also validated that a second cycle can immediately select Options again,
-producing the same `0cf107b1` selected framebuffer. This proves normal navigation
-is re-entrant without replaying the 3D scene.
-
-## Back touch hitbox tolerance
-
-The initial Back hitbox was visually aligned to the row only:
+Workflow:
 
 ```text
-logical y=67..78
+flash esp32-cyd-bringup with hitbox overlay enabled
+    -> photograph real CYD
+    -> compare visible controls against red rectangles
+    -> adjust all zones together
+    -> repeat if needed
+    -> keep calibrated constants in normal firmware
 ```
 
-Hardware touch jitter exposed a real miss:
+This is intentionally useful beyond the current main menu. Future submenus,
+gameplay controls or screen-layout changes may need the same visual calibration,
+so keeping the overlay as a bring-up diagnostic is preferable to deleting it once.
+
+Normal `esp32-cyd` must remain free of those red diagnostic overlays.
+
+## Native graphics recovery references
+
+The following contracts are no longer rerun on every normal boot, but remain
+available through `esp32-cyd-bringup`:
 
 ```text
-first tap  logical y=67 -> ARM
-second tap logical y=65 -> MISS
+sprite 172 texel FNV          = 0c0a7acd
+wall 112 texel FNV            = 92d40704
+synthetic projected wall FNV  = ad191f54
+real walls framebuffer        = a6d87c4a
+viewSprites list FNV          = 962cd657
+sprite request FNV            = 4457ac94
+walls + sprites framebuffer   = ffe0995e
+faithful original MENU_MAIN   = 86c38260
+historical fitted MENU_MAIN   = 1afa0223
+failed double-gray wall frame = b6f86faa
 ```
 
-The drawn row did not move. Only the touch tolerance was expanded upward:
+Validated cache evidence retained for bring-up regression:
 
 ```text
-Back logical hitbox  x=15..119 y=64..78
-Back physical hitbox x=30..239 y=128..157
-```
+Wall LRU3
+  requests 25
+  hits 14
+  misses 11
+  evictions 8
+  peak payload 6144 B
 
-This captures the observed XPT2046 variation while staying below the `Video` row,
-which begins at logical y=79.
-
-The current UX remains:
-
-```text
-first Back tap  -> ARM
-release
-second Back tap -> confirm Back
-```
-
-## Grayscale re-entry bridge retired
-
-PR #31 needed a one-shot wrapper around `Render_setGrayPalettes()` because the
-heavy Back path rerendered the scene and a second grayscale conversion changed
-`a6d87c4a` into the failed `b6f86faa` wall frame.
-
-The fast opaque Back path no longer reruns MENUWALL at all. Therefore:
-
-- `native_menu_wall_reentry_bridge.c` has been removed
-- `--wrap=DoomRPG_probeNativeMenuWallFrame` has been removed
-- `--wrap=Render_setGrayPalettes` has been removed
-
-The old failure remains documented as an architectural lesson, but the runtime
-workaround is no longer part of normal code.
-
-## Current memory boundary
-
-Hardware baseline for this increment:
-
-```text
-heap8    = 28688
-largest8 = 17396
-```
-
-Across main-menu selection, Options transition and fast Back:
-
-```text
-shapeData   = NULL
-mediaTexels = NULL
-wall cache  = inactive during menu navigation
-sprite cache= inactive during menu navigation
-```
-
-No per-navigation memory leak was observed.
-
-## Deterministic regression boundaries
-
-Current active UI:
-
-```text
-MENU_MAIN model                    = bbc2149b
-MENU_MAIN layout                   = 47b3656e
-black + scaled logo                = 0ac1f9c6
-opaque Start Game selected         = 58a11171
-opaque Options selected            = 0cf107b1
-opaque Help/About selected         = 9db82b71
-opaque Exit selected               = bdd775f9
-MENU_MAIN_OPTIONS model            = e1ef01f7
-MENU_MAIN_OPTIONS framebuffer      = 6058d47d
-```
-
-Native graphics recovery references:
-
-```text
-sprite 172 texel FNV               = 0c0a7acd
-wall 112 texel FNV                 = 92d40704
-synthetic projected wall FNV       = ad191f54
-real walls framebuffer             = a6d87c4a
-viewSprites list FNV               = 962cd657
-sprite request FNV                 = 4457ac94
-walls + sprites framebuffer        = ffe0995e
-faithful original MENU_MAIN        = 86c38260
-historical fitted MENU_MAIN        = 1afa0223
-failed double-gray wall frame      = b6f86faa
+Sprite LRU3
+  requests 11
+  hits 2
+  misses 9
+  evictions 6
+  peak logical payload 6038 B
 ```
 
 ## Display and logging policy
 
-TFT ownership remains:
+Normal firmware:
 
 ```text
-Serial -> startup/probe/debug/touch diagnostics
-TFT    -> shared game framebuffer only
+TFT    -> game/menu framebuffer only
+Serial -> concise startup + touch/runtime diagnostics
 ```
 
-`DOOMRPG_ESP32_SCREEN_DIAGNOSTICS=0` remains the default.
-
-The historical graphics/resource probes currently still execute during normal
-startup. They were essential to establish the recovery hashes above, but they now
-produce a large amount of serial output and add bring-up work that is no longer
-useful on every normal boot.
-
-Recommended next increment: introduce an explicit bring-up/probe flag so that:
+Bring-up firmware:
 
 ```text
-normal firmware
-    -> minimal required startup
-    -> concise logs
-    -> no historical demonstration/proof probes
-
-diagnostic bring-up mode
-    -> current full probe chain
-    -> all recovery hashes and memory contracts available on demand
+TFT    -> game framebuffer plus explicitly enabled bring-up visual diagnostics
+Serial -> full historical proof/benchmark output
 ```
 
-Do not delete the proven probe code until normal startup dependencies are clearly
-separated from validation-only probes.
-
-## Touch-zone calibration follow-up
-
-A future disposable diagnostic branch may draw the logical hitboxes as visible red
-outlines over the actual menu and mark the last touch point. Hardware photos can
-then calibrate all menu hitboxes together rather than adjusting them one at a time.
-The overlay must be removed after measurements are captured; only final constants
-belong in normal firmware.
+`DOOMRPG_ESP32_SCREEN_DIAGNOSTICS=0` remains the normal default.
 
 ## Current safe boundary
 
-Hardware validated and executed:
+Hardware validated and executed in normal mode:
 
-- complete engine startup through mappings
-- real menu BSP structural data
-- native asset-pack access
-- zero resident `shapeData`
-- zero map-wide `mediaTexels`
-- bounded GFXRM wall/sprite frames and LRU caches
-- deterministic native menu scene `ffe0995e`
-- real `MENU_MAIN` model/assets
-- opaque black bounded main-menu presentation
-- deterministic four-state main-menu cursor hashes
-- calibrated physical touch hit-testing and 50 ms release rearm
-- real `MenuSystem.selectedIndex` changes from touch
-- real `MenuSystem_select()` for Options
-- real `MENU_MAIN_OPTIONS` model/framebuffer
-- real `MenuSystem_back()` from Options
-- **fast direct Back repaint without MENUWALL/MENUSPRITE replay**
-- **MENU_MAIN touch re-armed after Back**
-- no second framebuffer and exact allocator recovery
+- platform video, SD and ZIP
+- real core/layout/pre-render startup
+- real Render startup
+- real config and mappings
+- real menu map structural runtime load
+- stop before legacy monolithic bitshape/texel loaders
+- direct opaque `MENU_MAIN`
+- deterministic menu hashes
+- calibrated touch and released double-tap semantics
+- real Options transition
+- real Back transition
+- fast opaque Back repaint
+- no intermediate loading-bar TFT flicker
+- `shapeData == NULL`
+- `mediaTexels == NULL`
+
+Validated but moved out of normal execution into `esp32-cyd-bringup`:
+
+- BSP structure planning diagnostics
+- resource memory planning
+- full native asset-pack proof
+- bitshape / sprite-texel proof passes
+- standalone sprite/wall render consumers
+- synthetic projected-wall regression
+- full menu wall/sprite scene reconstruction
+- LRU benchmark/accounting regressions
 
 Still intentionally deferred:
 
 - Video/Input/Sound actions
 - Help/About and Exit real actions
 - Start Game / gameplay loader activation
-- active normal multi-frame engine/game loop
+- active normal multi-frame game loop
 - gameplay controls
-- removing validation-only probes from normal boot
-- full touch-zone visual calibration overlay
+- bring-up visual hitbox overlay implementation
 - final color/contrast investigation
 - audio
 
 ## Recommended next increment after merge
 
-Create a normal-vs-bring-up startup boundary so historical validation probes stop
-running on every normal boot while remaining available under an explicit debug
-flag. This should reduce startup latency and serial noise without discarding the
-hardware evidence that got the port to this point.
+Add reusable **bring-up-only visual hitbox diagnostics**.
+
+First target:
+
+```text
+MENU_MAIN hitboxes
+MENU_MAIN_OPTIONS hitboxes
+last-touch marker
+```
+
+The overlay should reuse the actual hitbox constants used by input logic rather
+than duplicating coordinates, so the photograph shows exactly what the firmware
+will accept. Keep all visual overlay code disabled from the normal `esp32-cyd`
+environment.
