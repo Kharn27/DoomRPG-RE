@@ -173,13 +173,102 @@ Validated diagnostic:
 Do not compensate palette ordering by modifying `stexels.bin`, `wtexels.bin` or
 nibble order. Those source bytes are already hardware-proven.
 
-The historical DOOM-RPG-BREW-PATCH fixes texture/sprite read corruption on
-specific BREW binaries; it is not the palette conversion mechanism used here.
+## Native graphics resource manager (GFXRM)
+
+Sprite and wall rasterizers now share one storage/file-format boundary:
+
+```text
+                  native rasterizers
+                 /                  \
+              sprite               wall
+                 \                  /
+                  \                /
+             NativeGraphicsResourceManager
+                         |
+                  DoomRPG-ESP32.pak
+                  /        |        \
+          bitshapes     stexels    wtexels
+```
+
+The manager owns:
+
+- opening/closing `DoomRPG-ESP32.pak`
+- resolving required entries
+- source offset/range validation
+- bounded allocation of sprite/wall frames
+- direct reads from `bitshapes.bin`, `stexels.bin`, and `wtexels.bin`
+- release of native frames
+- lightweight diagnostic statistics
+
+The rasterizers own:
+
+- palette sampling
+- sprite mask traversal / active-pixel consumption
+- wall texel sampling
+- writing RGB565 pixels to the shared framebuffer
+
+The public contract is defined in `include/native_graphics_resource_manager.h`:
+
+```c
+EspNativeGraphics_loadSpriteFrame(render, spriteIndex, &frame);
+EspNativeGraphics_releaseSpriteFrame(&frame);
+
+EspNativeGraphics_loadWallFrame(render, textureIndex, &frame);
+EspNativeGraphics_releaseWallFrame(&frame);
+```
+
+The manager is deliberately **not a cache yet**. Each successful load currently
+opens the pack, performs the bounded seek/read, closes the pack, and returns the
+resident frame. The pack-open cost was previously measured at about 4,376 bytes,
+so keeping it permanently open would consume meaningful RAM before real access
+patterns justify that tradeoff.
+
+### Hardware-validated GFXRM session
+
+One sprite load followed by one wall load produces:
+
+```text
+[GFXRM] SPRITE id=172 storage=2112B mask=512B texels=1600B hash=0c0a7acd pack=closed
+[GFXRM] WALL id=112 storage=2048B hash=92d40704 pack=closed
+[GFXRM] Session stats spriteLoads=1 wallLoads=1 packOpenCycles=2 logicalBytes=4160 peakFrame=2112
+[GFXRM] READY one shared backend served sprite + wall with zero persistent cache allocation
+```
+
+Expected session counters for this diagnostic are therefore:
+
+```text
+spriteLoads      = 1
+wallLoads        = 1
+packOpenCycles   = 2
+logicalBytes     = 4160 B
+peakFrame        = 2112 B
+```
+
+The counters themselves are static diagnostic state, not a graphics cache.
+
+### Memory result
+
+The shared manager introduces a stable 24-byte reduction in free 8-bit heap
+versus the previous build:
+
+```text
+previous build baseline   heap8=30688 largest8=21492
+GFXRM build baseline      heap8=30664 largest8=21492
+```
+
+The manager stores five `uint32_t` counters (20 bytes); the observed 24-byte
+change is consistent with that persistent state plus alignment/accounting.
+Every bounded load still returns exactly to the new baseline:
+
+```text
+sprite resident  heap8=28536 -> release 30664
+wall resident    heap8=28600 -> release 30664
+largest8 remains 21492
+```
+
+There is no per-load leak and no persistent frame/cache allocation.
 
 ## Native sprite rendering contract
-
-A complete real Doom RPG sprite is hardware-validated through our native path
-with both legacy graphics pools absent.
 
 Validated worst-case menu sprite:
 
@@ -196,33 +285,12 @@ texel FNV1a         = 0c0a7acd
 framebuffer FNV1a   = 001910a9
 ```
 
-Resource flow:
-
-```text
-DoomRPG-ESP32.pak
-        |
-        +--> bitshapes.bin : source header + bounded mask
-        +--> stexels.bin   : bounded 4-bpp payload
-        |
-        v
-EspNativeSpriteFrame
-        |
-        +--> mapped 16-color palette
-        +--> canonical RGB565
-        |
-        v
-native sprite rasterizer
-        |
-        v
-shared 160x120 framebuffer
-```
+The same source and framebuffer hashes remain exact after routing the load
+through GFXRM, proving the refactor did not alter the sprite output.
 
 `shapeData` and `mediaTexels` remain `NULL` throughout this path.
 
 ## Native wall rendering contract
-
-A complete real 64x64 wall texture is also hardware-validated through a native
-consumer, again with `mediaTexels == NULL`.
 
 Validated menu wall texture:
 
@@ -239,90 +307,59 @@ texel FNV1a         = 92d40704
 framebuffer FNV1a   = e39af2c4
 ```
 
-The source byte regression markers are:
-
-```text
-first = aa b5 44 b4
-last  = e5 ee ee ce
-```
-
 Wall texels use the layout expected by the original rasterizer:
 
 ```text
 logical texel index = x * 64 + y
 ```
 
-Two texels are packed into each byte. The second mapping value supplies the
-16-color palette offset.
-
-Resource flow:
-
-```text
-DoomRPG-ESP32.pak
-        |
-        +--> wtexels.bin : direct 2048 B seek/read
-        |
-        v
-EspNativeWallFrame
-        |
-        +--> mapped 16-color palette
-        +--> canonical RGB565
-        |
-        v
-native wall rasterizer
-        |
-        v
-shared 160x120 framebuffer
-```
-
-Hardware memory result:
-
-```text
-before       heap8=30688 largest8=21492
-resident     heap8=28624 largest8=21492
-released     heap8=30688 largest8=21492 deltaFromStart=0
-```
-
-This proves that a real wall can be rendered from original Doom RPG data without
-creating the old 172 KB wall pool.
+The same source and framebuffer hashes remain exact after routing the load
+through GFXRM.
 
 ## Current native graphics architecture
 
-Two complete native graphics primitives are now proven:
-
 ```text
-                 DoomRPG-ESP32.pak
-                         |
-             +-----------+-----------+
-             |                       |
-          sprite                    wall
-    bitshape + stexels            wtexels
-             |                       |
-       bounded frame            bounded frame
-             |                       |
-             +-----------+-----------+
-                         |
-                 canonical RGB565
-                         |
-                 native rasterizers
-                         |
-                 shared framebuffer
+SD / native pack
+       |
+       v
+NativeGraphicsResourceManager
+       |
+       +--> EspNativeSpriteFrame (~2.1 KB max validated)
+       |
+       +--> EspNativeWallFrame   (2 KB)
+       |
+       v
+native rasterizers
+       |
+       v
+shared 160x120 RGB565 framebuffer
+       |
+       v
+exact 2x physical presentation
 ```
 
-The next step should consolidate duplicated resource-loading logic behind a
-small reusable native graphics resource manager. Do not interpret that as a
-license to build a large cache immediately: cache size and eviction policy must
-follow measured runtime access patterns.
+The old map-wide graphics pools remain forbidden:
+
+```text
+shapeData   = NULL
+mediaTexels = NULL
+```
+
+The next useful step is not to add arbitrary cache slots. It is to route one
+**real projected renderer path** through GFXRM and measure actual repeated
+resource access before choosing cache size, pack lifetime, hits/misses or an
+eviction strategy.
 
 ## Native serial diagnostics
 
-Important successful markers currently include:
+Important successful markers include:
 
 ```text
 [ASSETPAK]
 [BITSHAPE]
 [SPRITETEX]
 [PALETTE]
+[GFXRM]
 [SPRITERENDER]
 [WALLRENDER]
 ```
@@ -353,9 +390,6 @@ The project is intentionally developed in small hardware-validated increments:
 8. only then start the next increment from the new exact `main` SHA
 
 Documentation is part of the increment, not a separate follow-up increment.
-Useful commands, SD preparation, hardware measurements, architectural pivots and
-validated conventions belong in `README.md`, `PORTING_STATUS.md`, or another
-appropriate `.md` before merge.
 
 ## ESP32 design rules
 
@@ -363,6 +397,7 @@ appropriate `.md` before merge.
   memory architecture
 - prefer bounded allocations with known maximum sizes
 - treat SD as secondary storage and RAM as a small working/cache area
+- isolate storage/file-format concerns from rasterizers
 - avoid whole-file decompression for large immutable resources
 - avoid resident indexes when a compact on-disk index is sufficient
 - avoid duplicate framebuffer/resource representations
