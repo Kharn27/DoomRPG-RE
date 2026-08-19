@@ -3,6 +3,13 @@
 
 #include <stdint.h>
 
+/* src/Render.c hard-codes FIXED_VERSION=1. The extracted ESP32 wall-span math
+ * must use the same fixed-point branch so its framebuffer remains bit-identical.
+ */
+#ifndef FIXED_VERSION
+#define FIXED_VERSION 1
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
