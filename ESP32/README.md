@@ -29,29 +29,22 @@ The project intentionally exposes **two** PlatformIO environments.
 
 ### `esp32-cyd` — normal firmware
 
-This is the default environment and the one to use for everyday development and
-hardware testing.
+This is the default everyday environment:
 
 ```bash
 cd ESP32
-pio run -t upload
-pio device monitor
-```
-
-Equivalent explicit form:
-
-```bash
 pio run -e esp32-cyd -t upload
 pio device monitor -e esp32-cyd
 ```
 
-Normal boot runs only the real engine initialization required to reach the current
+Normal boot runs only the real engine initialization required to reach the
 interactive menu. Historical graphics/resource proof probes are skipped.
 
-### `esp32-cyd-bringup` — full diagnostic laboratory
+Touch-hitbox diagnostics are also excluded at preprocessing time. The normal
+firmware does not contain overlay state arrays, overlay draw calls, overlay C
+bridge functions or menu overlay-registration calls.
 
-This preserves the former historical bring-up behaviour and enables the complete
-validation suite:
+### `esp32-cyd-bringup` — full diagnostic laboratory
 
 ```bash
 cd ESP32
@@ -59,22 +52,21 @@ pio run -e esp32-cyd-bringup -t upload
 pio device monitor -e esp32-cyd-bringup
 ```
 
-It extends `esp32-cyd` with:
+This environment extends `esp32-cyd` with:
 
 ```text
 DOOMRPG_ESP32_BRINGUP_PROBES=1
+DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY=1
 ```
 
-Use it when re-validating asset-pack access, memory budgets, bitshapes, sprite/wall
-consumers, projected walls, native menu scene rendering, LRU cache contracts or
-other low-level graphics invariants.
+It preserves the full historical validation suite and adds physical touch-zone
+visualization. Use it when re-validating asset-pack access, memory budgets,
+bitshapes, sprite/wall consumers, projected walls, native menu scene rendering,
+LRU cache contracts or touch calibration.
 
-The bring-up profile is **not** obsolete code. It is the permanent diagnostic mode
-for evidence-heavy tests that should not slow down or spam normal boot.
+The bring-up profile is intentionally verbose and is not the product boot.
 
 ## Normal boot sequence
-
-Current normal startup is:
 
 ```text
 Platform video / SD / ZIP
@@ -90,30 +82,10 @@ Platform video / SD / ZIP
     -> READY
 ```
 
-The following historical proof/demo passes are **not** executed by normal boot:
+Historical proof/demo passes are not executed by normal boot. They remain
+available in `esp32-cyd-bringup`.
 
-```text
-BSP structure planning
-RESOURCEPLAN
-ASSETPAK full proof
-BITSHAPE walk
-SPRITETEX proof
-SPRITERENDER demo
-WALLRENDER demo
-PROJWALL synthetic projection
-MENUWALL benchmark
-MENUSPRITE benchmark
-```
-
-They remain compiled and available in `esp32-cyd-bringup`.
-
-Normal-mode hardware marker:
-
-```text
-[BOOT] bringupProbes=off; skipping memory-plan/asset/sprite/wall/projected/menu-scene validation suite
-```
-
-Expected final menu marker:
+Expected normal final menu marker:
 
 ```text
 [MAINOPAQUE] ... finalFNV=58a11171 ...
@@ -122,14 +94,12 @@ Expected final menu marker:
 
 ## Real menu runtime boundary
 
-Normal boot still uses the real menu map loader. It does **not** fabricate a
-minimal menu state.
+Normal boot still uses the real menu map loader. The wrapper stops the original
+structural load on the seventh `DoomCanvas_updateLoadingBar()` callback,
+immediately before the legacy `Render_loadBitShapes()` / `Render_loadTexels()`
+phase.
 
-The current ESP32 wrapper stops the original structural load on the seventh
-`DoomCanvas_updateLoadingBar()` callback, immediately before the legacy
-`Render_loadBitShapes()` / `Render_loadTexels()` phase.
-
-At that boundary the hardware-validated real runtime state is:
+Hardware-validated state at that boundary:
 
 ```text
 nodes          = 53
@@ -150,30 +120,8 @@ shapeData   = NULL
 mediaTexels = NULL
 ```
 
-Do not reintroduce the original map-wide pools as a shortcut.
-
-## Suppressed historical loading-bar flicker
-
-Original `DoomCanvas_updateLoadingBar()` clears the framebuffer, draws five small
-progress rectangles and flushes them to the TFT.
-
-That was useful in the original game but produced a brief black/white five-box
-flash during the cleaned ESP32 normal startup.
-
-Current behaviour:
-
-```text
-esp32-cyd
-    -> count loader callbacks
-    -> keep exact structural stop boundary
-    -> suppress intermediate loading-bar drawing / TFT presents
-
-esp32-cyd-bringup
-    -> preserve historical loading-bar behaviour
-```
-
-The real CYD has validated that normal boot now goes directly to the main menu
-without that transient loading screen.
+Normal mode suppresses the historical five-box loading-bar TFT flicker. Bring-up
+keeps the old behaviour for diagnostic fidelity.
 
 ## SD card
 
@@ -226,8 +174,7 @@ path uses bounded frames and measured LRU caches:
                       TFT exact x2
 ```
 
-Stable native graphics recovery references, normally exercised only by
-`esp32-cyd-bringup`:
+Stable bring-up recovery references:
 
 ```text
 sprite 172 texel FNV         = 0c0a7acd
@@ -273,7 +220,7 @@ layout FNV = 47b3656e
 model FNV  = bbc2149b
 ```
 
-The active presentation is intentionally opaque black:
+The active presentation is opaque black:
 
 ```text
 black framebuffer
@@ -292,18 +239,9 @@ Help/About selected = 9db82b71
 Exit selected       = bdd775f9
 ```
 
-Historical scene-backed selected hashes remain recovery references only:
-
-```text
-Start Game old = cbc99461
-Options old    = 961109a7
-Help old       = e4eadfbb
-Exit old       = 5ff2a5cd
-```
-
 ## Touch input
 
-The XPT2046 drives the real menu selection:
+The XPT2046 drives real menu selection:
 
 ```text
 XPT2046
@@ -330,6 +268,65 @@ Cursor movement uses four static 13x10 RGB565 background patches:
 ```
 
 No second 38,400-byte framebuffer is allocated.
+
+## Bring-up touch-hitbox overlay
+
+`esp32-cyd-bringup` can visualize the exact touch geometry on the physical TFT:
+
+```text
+red rectangle = accepted logical hitbox scaled exactly 2x
+cyan cross    = most recent calibrated semantic touch
+small yellow ring = exact touch centre
+Serial        = raw / physical / logical touch coordinates
+```
+
+The overlay is drawn **after** framebuffer presentation with TFT_eSPI. It never
+modifies the 160x120 framebuffer, so framebuffer FNVs remain game-only regression
+contracts.
+
+The latest touch marker is captured before the main-menu double-tap gate. A first
+ARM tap therefore remains visible even if the gate deliberately consumes it.
+
+Normal `esp32-cyd` does not compile this path.
+
+### Current MENU_MAIN zones
+
+Real-CYD photographs showed the four rectangles aligned well with the visible
+controls, so no adjustment was required:
+
+```text
+Start Game logical x=28..119 y=67..78
+Options    logical x=28..119 y=79..90
+Help/About logical x=28..119 y=91..102
+Exit       logical x=28..119 y=103..114
+```
+
+Physical coordinates are exact 2x equivalents.
+
+### Current Options zones
+
+Visible rows:
+
+```text
+Back  y=67..78
+Video y=79..90
+Input y=91..102
+Sound y=103..114
+```
+
+The first overlay photograph showed the Options geometry aligned, but Back looked
+slightly taller because it still had the earlier `y=64..78` touch tolerance.
+
+A previously missed real tap had landed at logical `y=65`, so the final proposed
+Back zone keeps that proven point but removes one unnecessary upper pixel:
+
+```text
+Back logical  x=15..119 y=65..78
+Back physical x=30..239 y=130..157
+```
+
+`Video`, `Input` and `Sound` remain deferred actions, but their diagnostic zones
+are displayed in bring-up for calibration.
 
 ## Real Options action and fast Back
 
@@ -375,53 +372,31 @@ Previously measured complete return including TFT present:
 ~138 ms
 ```
 
-## Back touch tolerance
+## Original debug/developer menu
 
-The visible Back row stays at logical y=67. The touch-only hitbox is slightly
-larger to absorb measured XPT2046 jitter:
-
-```text
-logical  x=15..119 y=64..78
-physical x=30..239 y=128..157
-```
-
-`Video` begins at logical y=79, so the tolerance does not overlap the next row.
-
-## Bring-up visual hitbox diagnostics
-
-Touch-zone visualization should live in the permanent `esp32-cyd-bringup` profile,
-not in disposable production code.
-
-Planned diagnostic overlay:
+The reverse-engineered original engine already contains hidden development menus:
 
 ```text
-red outline = actual hitbox accepted by firmware
-marker/cross = most recent touch point
-Serial       = raw + physical + logical coordinates + detected item
+MENU_DEBUG
+MENU_DEBUG_CHEATS
+MENU_DEBUG_MAPS
+MENU_DEBUG_STATS
+MENU_DEVELOPER
 ```
 
-The overlay should consume the **same hitbox data** as the input code. Do not copy
-coordinates into a second independent diagnostic table.
+They include cheats, maps, statistics, benchmark and developer facilities.
 
-Expected calibration workflow:
+No original touch-hitbox visualization was found in the menu/input path. Original
+menu selection is directional (`selectedIndex` / `MenuSystem_moveDir()`), so the
+CYD hitbox overlay remains an ESP32 touch adaptation rather than a duplicate of an
+existing original feature.
 
-```text
-1. flash esp32-cyd-bringup with hitbox overlay
-2. photograph the real CYD
-3. compare red rectangles with visible menu controls
-4. adjust all zones together
-5. repeat until aligned
-6. keep final constants for normal firmware
-```
-
-This diagnostic is intended to remain useful for future submenus and gameplay
-controls, so it should be reusable rather than deleted after the first calibration.
-
-Normal `esp32-cyd` must never show these diagnostic rectangles.
+The original debug/developer menus remain useful candidates for future ESP32
+diagnostics instead of growing unrelated parallel debug systems.
 
 ## Current memory baseline
 
-Clean normal boot hardware baseline:
+Last validated clean normal boot baseline:
 
 ```text
 heap8    = 29064
@@ -431,43 +406,69 @@ largest8 = 17396
 Normal menu navigation keeps:
 
 ```text
-shapeData   = NULL
-mediaTexels = NULL
-wall cache  = inactive
-sprite cache= inactive
+shapeData    = NULL
+mediaTexels  = NULL
+wall cache   = inactive
+sprite cache = inactive
 ```
 
-## Screen / logging policy
+## Final branch validation before merge
 
-Normal environment:
+The current hitbox increment is documented before its final dual-profile test so
+that a successful hardware pass can be merged immediately.
 
-```text
-TFT    -> game/menu framebuffer only
-Serial -> concise startup and runtime/touch diagnostics
-```
-
-Bring-up environment:
-
-```text
-TFT    -> framebuffer plus explicitly enabled bring-up visuals
-Serial -> full validation/benchmark output
-```
-
-Normal firmware still uses:
-
-```text
--D DOOMRPG_ESP32_SCREEN_DIAGNOSTICS=0
-```
-
-## Build note
-
-Use a clean build after linker-wrapper, generated-source or significant
-`platformio.ini` changes:
+Test normal:
 
 ```bash
 cd ESP32
-pio run -t clean
-pio run -t upload
+pio run -e esp32-cyd -t clean
+pio run -e esp32-cyd -t upload
+pio device monitor -e esp32-cyd
+```
+
+Expected:
+
+```text
+no [HITBOX] logs
+no red rectangles
+MENU_MAIN = 58a11171
+Options selected = 0cf107b1
+Options screen = 6058d47d
+Back -> 58a11171
+shapeData = 0x0
+mediaTexels = 0x0
+```
+
+Then test bring-up:
+
+```bash
+pio run -e esp32-cyd-bringup -t clean
+pio run -e esp32-cyd-bringup -t upload
+pio device monitor -e esp32-cyd-bringup
+```
+
+Expected:
+
+```text
+[HITBOX] Physical overlay enabled
+4 MAIN rectangles
+4 Options rectangles
+last-touch marker
+Back y=65..78
+unchanged framebuffer hashes
+```
+
+If both profiles pass, this branch is merge-ready without another documentation
+round.
+
+## Build note
+
+Use a clean build after PlatformIO profile or compile-time diagnostic changes:
+
+```bash
+cd ESP32
+pio run -e esp32-cyd -t clean
+pio run -e esp32-cyd -t upload
 ```
 
 ## Legacy header include rule
@@ -483,7 +484,7 @@ files should include SDL first:
 
 ## Current safe boundary
 
-Hardware validated in normal mode:
+Hardware validated before the final branch retest:
 
 - real core/layout/pre-render startup
 - real Render startup
@@ -496,18 +497,16 @@ Hardware validated in normal mode:
 - real Back through `MenuSystem_back()`
 - fast opaque Back repaint
 - no historical loading-bar flicker
+- initial bring-up photos show correctly aligned MAIN/Options hitboxes
 - `shapeData == NULL`
 - `mediaTexels == NULL`
 
-Available on demand through `esp32-cyd-bringup`:
+Implemented on the current branch and awaiting final normal + bring-up confirmation:
 
-- structure/memory planning diagnostics
-- native asset-pack validation
-- bitshape and sprite-texel proof passes
-- sprite/wall render consumers
-- projected wall regression
-- full native menu walls/sprites scene
-- wall/sprite LRU regression metrics
+- permanent bring-up-only physical hitbox overlay
+- last calibrated touch marker
+- strict compile-time exclusion from normal firmware
+- Back tolerance tightened to logical `y=65..78`
 
 Still deferred:
 
@@ -516,17 +515,5 @@ Still deferred:
 - Start Game / gameplay loader
 - active normal multi-frame game loop
 - gameplay controls
-- visual hitbox overlay implementation
 - final color/contrast investigation
 - audio
-
-## Porting workflow
-
-1. create one branch from the latest hardware-validated `main`
-2. implement one small measurable objective
-3. build/flash/test on the real CYD
-4. fix failures on the same branch
-5. after hardware PASS update every relevant `.md` on that branch
-6. only when code + documentation agree is the branch merge-ready
-7. merge
-8. only then start the next increment
