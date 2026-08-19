@@ -17,10 +17,12 @@
 #include "platform_video_config.h"
 
 #define EXPECTED_OPTIONS_FRAMEBUFFER_FNV 0x6058d47dU
+#define EXPECTED_OPAQUE_MAIN_FNV 0x58a11171U
 #define OPTIONS_BACK_ITEM 0
+#define OPTIONS_ROW_TOP 67
 #define OPTIONS_BACK_HIT_LEFT 15
 #define OPTIONS_BACK_HIT_RIGHT 119
-#define OPTIONS_BACK_HIT_TOP 67
+#define OPTIONS_BACK_HIT_TOP 64
 #define OPTIONS_BACK_HIT_BOTTOM 78
 
 static DoomRPG_t* optionsDoomRpg = NULL;
@@ -76,7 +78,7 @@ static int hitBack(int16_t screenX, int16_t screenY) {
 
 static int optionsRowAt(int16_t screenY) {
     const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
-    const int relativeY = logicalY - OPTIONS_BACK_HIT_TOP;
+    const int relativeY = logicalY - OPTIONS_ROW_TOP;
 
     if (relativeY < 0 || relativeY >= 48) {
         return -1;
@@ -150,8 +152,9 @@ static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
 
     repaintMs = (uint32_t)DoomRPG_GetTimeMS() - repaintStart;
 
-    printf("[OPTIONBACK] FAST End framebufferFNV=%08x runtimeFNV=%08x menu=%d selected=%d touchActive=%d repaintMs=%u shapeData=%p mediaTexels=%p\n",
+    printf("[OPTIONBACK] FAST End framebufferFNV=%08x expected=%08x runtimeFNV=%08x menu=%d selected=%d touchActive=%d repaintMs=%u shapeData=%p mediaTexels=%p\n",
            (unsigned int)finalHash,
+           (unsigned int)EXPECTED_OPAQUE_MAIN_FNV,
            (unsigned int)framebufferHash(render),
            menuSystem->menu,
            menuSystem->selectedIndex,
@@ -160,7 +163,8 @@ static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
            (void*)render->shapeData,
            (void*)render->mediaTexels);
 
-    if (finalHash == 0 || finalHash != framebufferHash(render) ||
+    if (finalHash != EXPECTED_OPAQUE_MAIN_FNV ||
+        finalHash != framebufferHash(render) ||
         menuSystem->menu != MENU_MAIN ||
         menuSystem->selectedIndex != 0 ||
         !DoomRPG_esp32MainMenuTouchIsActive() ||
@@ -270,7 +274,7 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
     optionsBackActive = 1;
     PlatformInput_setTapCallback(optionsBackTap);
 
-    printf("[OPTIONBACK] READY Back zone logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d firstTap=arm secondReleasedTap=back Video/Input/Sound=deferred fastOpaqueReturn=yes\n",
+    printf("[OPTIONBACK] READY Back hit logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d visualRowY=67..78 topTolerance=3 firstTap=arm secondReleasedTap=back Video/Input/Sound=deferred fastOpaqueReturn=yes\n",
            OPTIONS_BACK_HIT_LEFT,
            OPTIONS_BACK_HIT_RIGHT,
            OPTIONS_BACK_HIT_TOP,
