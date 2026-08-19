@@ -1,8 +1,10 @@
 #include <SDL.h>
+#include <setjmp.h>
 #include <stdint.h>
 #include <stdio.h>
 
 #include "DoomRPG.h"
+#include "DoomCanvas.h"
 #include "Game.h"
 #include "Render.h"
 #include "map_runtime_structure_probe.h"
@@ -22,9 +24,12 @@ extern DoomRPG_t* doomRpg;
 
 static int probeAttempted = 0;
 static int probeReady = 0;
+static int probeActive = 0;
+static int loadingBarCalls = 0;
 static int boundaryReached = 0;
 static uint32_t boundaryHeap8 = 0;
 static uint32_t boundaryLargest8 = 0;
+static jmp_buf structureBoundaryJump;
 
 static uint32_t heap8Free(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -32,6 +37,25 @@ static uint32_t heap8Free(void) {
 
 static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+}
+
+static int realStructuresAreComplete(Render_t* render) {
+    if (render == NULL) {
+        return 0;
+    }
+
+    return render->nodesLength == EXPECTED_MENU_NODES && render->nodes != NULL &&
+           render->linesLength == EXPECTED_MENU_LINES && render->lines != NULL &&
+           render->numMapSprites == EXPECTED_MENU_MAP_SPRITES &&
+           render->numSprites == EXPECTED_MENU_RUNTIME_SPRITES &&
+           render->mapSprites != NULL &&
+           render->numTileEvents == EXPECTED_MENU_EVENTS && render->tileEvents != NULL &&
+           render->mapByteCode != NULL &&
+           render->mapStringCount == 0 && render->mapStringsIDs == NULL &&
+           render->mapTextureTexels != NULL && render->mapSpriteTexels != NULL &&
+           render->mapTextureTexelsCount > 0 &&
+           render->mapSpriteTexelsCount > 0 &&
+           render->planeTexturesCnt > 0 && render->planeTexturesCnt <= 24;
 }
 
 void DoomRPG_markMapRuntimeStructureBoundary(struct Render_s* renderBase) {
@@ -46,7 +70,8 @@ void DoomRPG_markMapRuntimeStructureBoundary(struct Render_s* renderBase) {
         return;
     }
 
-    printf("[MAPSTRUCT] Boundary reached before bitshapes/texels heap8=%u largest8=%u\n",
+    printf("[MAPSTRUCT] Boundary reached before bitshapes/texels loadingBarCalls=%d heap8=%u largest8=%u\n",
+           loadingBarCalls,
            (unsigned int)boundaryHeap8,
            (unsigned int)boundaryLargest8);
     printf("[MAPSTRUCT] Real runtime counts nodes=%d lines=%d mapSprites=%d runtimeSprites=%d events=%d\n",
@@ -61,10 +86,45 @@ void DoomRPG_markMapRuntimeStructureBoundary(struct Render_s* renderBase) {
            render->planeTexturesCnt);
 }
 
+/*
+ * DoomCanvas_updateLoadingBar() is defined in DoomCanvas.c, a different object
+ * from Render.c, so GNU ld --wrap is reliable here. During the real
+ * Render_beginLoadMapData() path the first six calls occur while parsing
+ * nodes/lines/sprites/events/strings/blockmap. The next call occurs after the
+ * BSP ioBuffer has been freed and immediately before Render_loadBitShapes().
+ *
+ * The wrapper is transparent during every other startup stage. While this
+ * probe is armed, it only jumps out once the actual runtime structures and
+ * resource reference lists prove that the complete structural phase ran.
+ */
+void __real_DoomCanvas_updateLoadingBar(DoomCanvas_t* doomCanvas);
+
+void __wrap_DoomCanvas_updateLoadingBar(DoomCanvas_t* doomCanvas) {
+    Render_t* render;
+
+    if (!probeActive) {
+        __real_DoomCanvas_updateLoadingBar(doomCanvas);
+        return;
+    }
+
+    loadingBarCalls++;
+    render = (doomRpg != NULL) ? doomRpg->render : NULL;
+
+    if (loadingBarCalls >= 7 && realStructuresAreComplete(render)) {
+        /* Render_beginLoadMapData() has already SDL_free()'d ioBuffer here. */
+        render->ioBuffer = NULL;
+        DoomRPG_markMapRuntimeStructureBoundary(render);
+        probeActive = 0;
+        longjmp(structureBoundaryJump, 1);
+    }
+
+    __real_DoomCanvas_updateLoadingBar(doomCanvas);
+}
+
 int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     Render_t* render;
     boolean beginResult;
-    boolean dataResult;
+    int jumpResult;
     uint32_t heapBefore;
     uint32_t largestBefore;
     uint32_t heapAfterBegin;
@@ -109,6 +169,8 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     boundaryReached = 0;
     boundaryHeap8 = 0;
     boundaryLargest8 = 0;
+    loadingBarCalls = 0;
+    probeActive = 0;
 
     printf("[MAPSTRUCT] -> Render_beginLoadMap(MAP_MENU)\n");
     beginResult = Render_beginLoadMap(render, MAP_MENU);
@@ -127,53 +189,46 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
         return 0;
     }
 
-    printf("[MAPSTRUCT] -> Render_beginLoadMapData() (expected probe-stop false)\n");
-    dataResult = Render_beginLoadMapData(render);
+    printf("[MAPSTRUCT] -> real Render_beginLoadMapData(), armed stop before bitshapes\n");
+    probeActive = 1;
+    jumpResult = setjmp(structureBoundaryJump);
+
+    if (jumpResult == 0) {
+        boolean unexpectedResult = Render_beginLoadMapData(render);
+        probeActive = 0;
+        printf("[MAPSTRUCT] FAILED Render_beginLoadMapData returned normally result=%d calls=%d\n",
+               (int)unexpectedResult, loadingBarCalls);
+        return 0;
+    }
+
+    probeActive = 0;
     heapAfter = heap8Free();
     largestAfter = largest8Block();
 
-    printf("[MAPSTRUCT] Render_beginLoadMapData result=%d boundary=%s heap8=%u largest8=%u\n",
-           (int)dataResult,
+    printf("[MAPSTRUCT] Probe-stop returned from real loader boundary=%s calls=%d heap8=%u largest8=%u\n",
            boundaryReached ? "reached" : "NOT reached",
+           loadingBarCalls,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
 
     if (!boundaryReached) {
-        printf("[MAPSTRUCT] FAILED map loader stopped before the intended bitshape boundary\n");
+        printf("[MAPSTRUCT] FAILED map loader did not reach the intended bitshape boundary\n");
         return 0;
     }
 
-    if (dataResult != false) {
-        printf("[MAPSTRUCT] FAILED probe guard was bypassed; resource loading may have executed\n");
+    if (loadingBarCalls != 7) {
+        printf("[MAPSTRUCT] FAILED unexpected loading-bar boundary count=%d expected=7\n",
+               loadingBarCalls);
         return 0;
     }
 
     if (render->ioBuffer != NULL) {
-        printf("[MAPSTRUCT] FAILED generated Render probe did not clear freed ioBuffer\n");
+        printf("[MAPSTRUCT] FAILED freed BSP ioBuffer was not cleared by probe boundary\n");
         return 0;
     }
 
-    if (render->nodesLength != EXPECTED_MENU_NODES || render->nodes == NULL ||
-        render->linesLength != EXPECTED_MENU_LINES || render->lines == NULL ||
-        render->numMapSprites != EXPECTED_MENU_MAP_SPRITES ||
-        render->numSprites != EXPECTED_MENU_RUNTIME_SPRITES ||
-        render->mapSprites == NULL ||
-        render->numTileEvents != EXPECTED_MENU_EVENTS || render->tileEvents == NULL ||
-        render->mapByteCode == NULL ||
-        render->mapTextureTexels == NULL || render->mapSpriteTexels == NULL) {
+    if (!realStructuresAreComplete(render)) {
         printf("[MAPSTRUCT] FAILED runtime structures do not match the validated menu.bsp plan\n");
-        return 0;
-    }
-
-    if (render->mapStringCount != 0 || render->mapStringsIDs != NULL) {
-        printf("[MAPSTRUCT] FAILED menu BSP unexpectedly retained strings\n");
-        return 0;
-    }
-
-    if (render->mapTextureTexelsCount <= 0 ||
-        render->mapSpriteTexelsCount <= 0 ||
-        render->planeTexturesCnt <= 0 || render->planeTexturesCnt > 24) {
-        printf("[MAPSTRUCT] FAILED generated texture/sprite reference lists are invalid\n");
         return 0;
     }
 
