@@ -9,7 +9,7 @@ Display, no PSRAM) port. Update it after every hardware-validated increment.
 - ESP32-D0WD-V3, 240 MHz, 4 MB flash
 - ILI9341 320x240 landscape
 - XPT2046 touch on separate software SPI path
-- microSD game data at `/DoomRPG.zip`
+- microSD-backed game data
 - internal render target: 160x120 RGB565 = 38,400 bytes
 - physical output: exact nearest-neighbour 2x to 320x240
 - audio disabled/stubbed during bring-up
@@ -37,196 +37,196 @@ Display, no PSRAM) port. Update it after every hardware-validated increment.
     `Render_beginLoadMapData()`, stopped exactly before graphics resources
     (`agent/esp32-menu-map-runtime-structures`, PR #11, merge commit
     `12e64c464e8dcfc477515a38955de116c69a8730`).
+13. Graphics-resource memory plan proving the original whole-file inflate and
+    monolithic `mediaTexels` strategy cannot fit on the no-PSRAM CYD
+    (`agent/esp32-menu-resource-memory-plan`, PR #12, merge commit
+    `7c6e72eab56cc7696262104f206f09d8dfcbd169`).
 
 ## Current validated increment
 
-Branch: `agent/esp32-menu-resource-memory-plan`
+Branch: `agent/esp32-native-asset-pack`
 
 Status: **HARDWARE VALIDATED, READY TO MERGE**.
 
-Objective: measure the graphics-resource memory boundary implied by the real
-menu-map reference lists without executing `Render_loadBitShapes()` or
-`Render_loadTexels()` and without deliberately triggering OOM.
+Objective: prove the first ESP32-native resource path using an offline-generated
+pack with direct SD random access, without whole-file ZIP inflate and without
+allocating the original monolithic `mediaTexels` pool.
 
-The real runtime map structures remain resident while this probe executes.
+This increment deliberately starts small: the pack contains only the three heavy
+graphics BIN resources (`bitshapes.bin`, `wtexels.bin`, `stexels.bin`). The goal
+is architectural validation before scaling the pack to the complete game data.
 
-## Authoritative post-structure baseline
+## ESP32-native asset pack v1
 
-Hardware state entering the resource probe:
-
-```text
-[RESOURCEPLAN] Begin heap8=30736 largest8=21492 refs textures=84 sprites=284 planes=11
-```
-
-So the current graphics stage starts with:
-
-- free MALLOC_CAP_8BIT heap: 30,736 bytes
-- largest contiguous block: 21,492 bytes
-- wall/floor texture refs: 84
-- sprite/bitshape refs: 284
-- plane textures: 11
-
-## Real graphics resource sizes
-
-ZIP metadata measured on the real SD archive:
+Offline tool:
 
 ```text
-[RESOURCEPLAN] bitshapes.bin c=21708 u=62273 inflateTransient=94973B
-[RESOURCEPLAN] wtexels.bin   c=53235 u=116740 inflateTransient=180967B
-[RESOURCEPLAN] stexels.bin   c=96145 u=126618 inflateTransient=233755B
+ESP32/tools/build_asset_pack.py
 ```
 
-The current ESP32 ZIP path is a whole-file loader. Its deflate transient set is:
+Input:
 
 ```text
-compressed payload + decompressed payload + 10,992-byte miniz state
+DoomRPG.zip
 ```
 
-Therefore none of these three resources can currently be whole-file inflated
-with the post-structure heap budget. `bitshapes.bin` alone needs a 62,273-byte
-contiguous output buffer and roughly 94,973 bytes aggregate during inflation.
-
-This is a loader-architecture boundary, not a failure of the BSP/game-state
-runtime structures.
-
-## Proven mediaTexels wall
-
-The original `Render_loadTexels()` computes the wall-texture part of
-`render->mediaTexels` as:
+Output copied to the SD root:
 
 ```text
-mapTextureTexelsCount * 64 * 64 / 2
+/DoomRPG-ESP32.pak
 ```
 
-The real menu map has 84 referenced textures, therefore:
+The v1 pack is intentionally uncompressed at runtime. The PC performs extraction
+once, and the ESP32 performs only indexed `seek + read` operations.
+
+Validated pack layout and exact size:
 
 ```text
-84 * 64 * 64 / 2 = 172032 bytes
+header + index        112 B
+bitshapes.bin      62,273 B
+wtexels.bin       116,740 B
+stexels.bin       126,618 B
+---------------------------
+total             305,743 B
 ```
 
-Hardware probe output:
+Hardware saw the expected entries and CRC32 values:
 
 ```text
-[RESOURCEPLAN] Render_loadTexels wall payload=172032B (84 x 2048B)
-[RESOURCEPLAN] Render_loadTexels sprite-size scratch=1136B
-[RESOURCEPLAN] mediaTexels lowerBound=172032B before ANY sprite texels
-[RESOURCEPLAN] TEXEL WALL proven: lowerBound exceeds largest8 by 150540B
+[ASSETPAK] READY index entries=3 fileSize=305743 heapCost=4380B
+[ASSETPAK] bitshapes.bin offset=112 size=62273 crc32=5a7c8a2b flags=0
+[ASSETPAK] wtexels.bin   offset=62385 size=116740 crc32=32e758b5 flags=0
+[ASSETPAK] stexels.bin   offset=179125 size=126618 crc32=a44ead7e flags=0
 ```
 
-This is a decisive result: the original monolithic `mediaTexels` allocation is
-mathematically impossible on this no-PSRAM CYD even before adding a single
-sprite texel.
+The 4,380-byte heap cost while the pack is open comes from the Arduino SD/File
+stack and associated filesystem state; the asset reader itself uses a fixed
+static index and performs no per-read dynamic allocation.
 
-At this point:
+## Real menu texture random-access proof
+
+The real menu runtime structures remain resident and still produce:
 
 ```text
-mediaTexels wall-only lower bound = 172032 B
-largest contiguous heap block     =  21492 B
-shortfall                          = 150540 B
+mapTextureTexelsCount=84
+mapSpriteTexelsCount=284
+planeTexturesCnt=11
 ```
 
-Adding sprite texels would only increase the required allocation.
-
-## Bitshape preflight result
-
-The probe deliberately does not call the original bitshape loader because the
-current whole-file ZIP loader cannot safely produce the 62,273-byte decompressed
-`bitshapes.bin` buffer:
+At the native-pack probe boundary:
 
 ```text
-[RESOURCEPLAN] BITSHAPE PREFLIGHT blocked: current whole-file loader cannot safely inflate bitshapes.bin
-[RESOURCEPLAN] Exact shapeData/sprite-texel contribution intentionally not inspected
+[ASSETPAK] Opening /DoomRPG-ESP32.pak heap8=30408 largest8=22516
 ```
 
-This does NOT yet prove that the final selected `shapeData` itself is too large.
-It proves that the current implementation cannot get to the sizing pass because
-it first materializes the entire `bitshapes.bin` file in RAM.
-
-A streaming/ranged resource reader is therefore required before the exact
-selected bitshape payload can be measured safely.
-
-## Original Render_loadTexels scratch leak
-
-The source allocates:
+The probe uses the real engine mapping arrays to select the first wall texture
+actually referenced by `menu.bsp`:
 
 ```text
-mapSpriteTexelsCount * sizeof(int)
-= 284 * 4
-= 1136 bytes
+[ASSETPAK] wtexels source header dataSize=116736
+[ASSETPAK] Real menu texture index=112 texelOffset=65536 byteOffset=32768 read=2048B
 ```
 
-for its sprite-size scratch array and does not free that temporary buffer before
-successful return.
-
-Probe output:
+A packed Doom RPG wall texture is 64x64 at 4 bpp, therefore exactly 2,048 bytes.
+Only that bounded working buffer is allocated:
 
 ```text
-[RESOURCEPLAN] NOTE original Render_loadTexels() allocates 1136B sprite-size scratch and does not free it
+[ASSETPAK] Bounded texture buffer resident heap8=23964 largest8=20468 used=2064
 ```
 
-Do not fix this in isolation yet; the entire ESP32 texel loader must be redesigned
-anyway. The future ESP32 path should not carry this leak forward.
+The 16-byte difference from the 2,048-byte payload is allocator bookkeeping.
 
-## Final hardware result
+The real resource bytes are read directly from the pack using SD seek/read:
 
 ```text
-[RESOURCEPLAN] Current texel allocation fit aggregate=NO contiguous=NO (wall lower bound alone is sufficient)
-[RESOURCEPLAN] READY resource budget measured; heavy graphics loaders remain blocked
-[RESOURCEPLAN] Render_loadBitShapes / Render_loadTexels still NOT executed
-[MAPSTRUCT] Resource memory plan complete; heavy graphics loaders remain blocked
+[ASSETPAK] READ texture=112 bytes=2048 fnv1a=92d40704 first=aab544b4 last=e5eeeece
 ```
 
-Heartbeat remains stable with the real map runtime structures resident:
+No ZIP decompression occurs and no full `wtexels.bin` buffer exists in RAM.
+
+## Heap recovery proof
+
+After the 2,048-byte texture buffer is freed:
 
 ```text
-[ALIVE] ... heap=96552 heap8=30736 largest8=21492 ... MENUBSP=ready ...
+[ASSETPAK] Released texture buffer heap8=26028 largest8=22516 delta=0
 ```
 
-Touch and shared-framebuffer presentation also remain operational.
+After closing the pack:
+
+```text
+[ASSETPAK] Closed pack heap8=30408 deltaFromOpenStart=0
+```
+
+Therefore the complete native random-access test returns exactly to its starting
+8-bit heap state.
+
+Final hardware result:
+
+```text
+[ASSETPAK] READY random-access real wall texture read with 2048B working set
+[ASSETPAK] No ZIP inflate and no monolithic mediaTexels allocation executed
+[MAPSTRUCT] Native asset pack random-access probe complete
+```
+
+Heartbeat and touch/shared-framebuffer operation remain stable afterwards:
+
+```text
+[ALIVE] ... heap=96224 heap8=30408 largest8=22516 ... MENUBSP=ready ...
+```
 
 This branch therefore passes its hardware merge gate.
 
-## Feasibility conclusion at this boundary
+## Architectural conclusion
 
-The classic no-PSRAM CYD is still a viable target, but the port can no longer
-follow DoomRPG-RE's original graphics loading model.
+This is the first hardware proof of an ESP32-native graphics resource path.
 
-Already proven to fit and run on the real board:
+The original DoomRPG-RE graphics model is no longer the target architecture on
+ESP32. DoomRPG-RE remains the behavioral/data-format reference, while the ESP32
+port is free to replace resource management and rendering internals with bounded,
+platform-specific implementations.
 
-- full core object graph
-- HUD/layout resources
-- prerender/menu/entity resources
-- shared 160x120 framebuffer
-- palettes and sine table
-- mappings
-- complete menu BSP parsing
-- real nodes/lines/sprites/events/bytecodes map structures
+Proven old path to be impossible:
 
-The blocker is specifically the original graphics resource strategy:
+```text
+ZIP entry
+  -> compressed buffer
+  -> 10,992-byte miniz state
+  -> whole decompressed BIN
+  -> monolithic mediaTexels (>=172,032 B wall-only on menu map)
+```
 
-1. whole-file inflate of 60-126 KB resources
-2. one monolithic `mediaTexels` buffer of at least 172 KB for this map
+Proven new primitive:
 
-Both assumptions must be replaced on ESP32.
+```text
+ESP32 asset pack on SD
+  -> indexed entry
+  -> seek to requested source offset
+  -> read one 2,048-byte packed texture
+  -> render/cache consumer
+```
 
-The likely ESP32 architecture is:
+This makes the no-PSRAM classic CYD remain a viable target.
 
-- stream/range-decompress resource data instead of materializing complete BIN
-  files
-- keep mapping/index metadata resident
-- retain only the bitshape metadata actually required by the current map
-- fetch/decode wall/sprite packed 4-bpp texels on demand or through a small
-  bounded cache
-- keep plane texture references as already-specialized compact IDs
-- never create the desktop/mobile monolithic `mediaTexels` pool
+## Important previous memory result
 
-Doom RPG is turn-based and renders a 160x80 gameplay viewport, which makes a
-small texture cache / on-demand SD-backed resource path much more plausible than
-for a high-frame-rate conventional Doom renderer.
+The menu-map graphics baseline before the native pack probe is approximately:
 
-Audio remains out of scope during this memory-critical bring-up. It is optional
-for eventual functionality and should only be reconsidered after the full menu
-map and game loop are stable.
+```text
+heap8=30,408 B
+largest8=22,516 B
+mapTextureTexelsCount=84
+mapSpriteTexelsCount=284
+planeTexturesCnt=11
+```
+
+The original wall-only `mediaTexels` lower bound remains:
+
+```text
+84 * 64 * 64 / 2 = 172,032 B
+```
+
+so the original loader must never be re-enabled on this target.
 
 ## Current safe stop boundary
 
@@ -236,46 +236,47 @@ Validated and executed:
 - real `Render_beginLoadMap(MAP_MENU)`
 - real structural `Render_beginLoadMapData()` phase
 - real nodes, lines, sprites, events, bytecodes and resource reference lists
-- resource-memory diagnostic against real map references
+- graphics resource memory diagnostic
+- offline ESP32-native asset pack generation
+- native pack index parsing from SD
+- direct random-access read of a real menu wall texture
+- bounded 2,048-byte packed wall-texture working set
+- exact heap recovery after resource read
 
 Still intentionally NOT executed:
 
-- real `Render_loadBitShapes()`
-- real `Render_loadTexels()`
+- original `Render_loadBitShapes()`
+- original `Render_loadTexels()`
 - whole-file `bitshapes.bin`, `wtexels.bin`, `stexels.bin` loading
 - monolithic `mediaTexels`
+- native sprite/bitshape loading
+- native texture cache / renderer integration
 - completion of map graphics loading
 - game entities/player spawning
 - main game loop
 
 ## Recommended next increment after merge
 
-Do NOT attempt either original graphics loader.
+Scale the asset-pack concept now that the primitive is hardware-proven.
 
-Start a new branch from the newly merged `main` and attack the resource-reader
-architecture first.
+Recommended direction:
 
-Recommended next objective:
+1. generate a complete ESP32 game pack offline rather than a three-entry probe
+   pack, so normal development no longer requires repeatedly changing SD files
+2. make the pack format/index suitable for all Doom RPG resources, including
+   names/IDs that do not fit the v1 three-entry assumptions
+3. keep resources stored in a form optimized for cheap ESP32 random access;
+   runtime decompression should only be used where it provides a demonstrated
+   benefit and remains strictly bounded
+4. retain `/DoomRPG.zip` temporarily for legacy code paths while migration is
+   incremental; remove that dependency only when all required resource classes
+   have migrated
+5. after the full pack is validated, implement the first real native graphics
+   consumer (bitshape metadata or a tiny wall-texture cache) on top of
+   `EspAssetPack_readRange()`
 
-1. inspect ZIP reader internals and the ZIP entry format already indexed on SD
-2. design an ESP32-only streaming/ranged reader for a compressed entry that does
-   not allocate the entire uncompressed output
-3. prove it first on `bitshapes.bin` with a tiny fixed output window
-4. use that reader to walk only the referenced 284 bitshape records and calculate
-   exact selected `shapeData` + sprite texel payload without whole-file inflate
-5. keep all current real runtime map structures resident during the test
-6. continue to leave texel loading blocked
-
-Authoritative starting budget:
-
-```text
-heap8=30736
-largest8=21492
-bitshapes.bin c=21708 u=62273
-wtexels.bin c=53235 u=116740
-stexels.bin c=96145 u=126618
-wall mediaTexels lower bound=172032
-```
+Do not attempt to make the original heavy graphics loaders fit. Replace their
+responsibility incrementally with ESP32-native code.
 
 ## Increment discipline
 
