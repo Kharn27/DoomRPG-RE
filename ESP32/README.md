@@ -3,9 +3,15 @@
 This directory contains the ESP32-specific Doom RPG engine/port for the classic
 **ESP32-2432S028R Cheap Yellow Display (CYD), without PSRAM**.
 
-DoomRPG-RE is used as an executable specification for behavior, data formats and
-useful rendering semantics. The ESP32 build is deliberately becoming its own
-bounded engine instead of reproducing the desktop architecture blindly.
+DoomRPG-RE is used as an **executable specification** for game behavior, data
+formats and useful rendering semantics. It is not the architecture contract for
+the final firmware. The ESP32 project is deliberately becoming its own engine,
+and the desktop-derived engine sources may eventually disappear entirely from
+the ESP32 build once their behavior/data contracts have been recovered.
+
+Compatibility wrappers and calls into `Render_*`, `DoomCanvas_*` or other legacy
+objects are therefore transitional scaffolding: useful for measurement and
+behavior comparison, but not dependencies that the final CYD engine must keep.
 
 For exact current RAM/FNV/state recovery values, read
 [`PORTING_STATUS.md`](PORTING_STATUS.md).
@@ -78,21 +84,43 @@ Both environments use the same selected CYD display profile.
 
 ## Engine direction
 
-The no-PSRAM target cannot afford the original desktop/J2ME-derived map-wide
-graphics pools. The permanent design rules are:
+The no-PSRAM target cannot afford the original desktop/J2ME-derived architecture
+as a whole. Permanent design rules are:
 
 - bounded deterministic RAM use
 - SD as immutable backing storage
 - one shared 160x120 RGB565 framebuffer
 - no resident monolithic `shapeData`
 - no resident map-wide `mediaTexels`
-- random-access native resources where legacy ZIP inflation becomes unsuitable
+- random-access or streaming native resources where legacy ZIP inflation becomes unsuitable
 - bounded wall/sprite working sets and measured LRU caches
-- preserve original game/menu/BSP behavior where useful
-- replace architecture that is inappropriate for the ESP32 target
+- preserve original game behavior and resource formats where useful
+- replace desktop/J2ME ownership, allocation and lifecycle models that are inappropriate for the ESP32
+- do not preserve a legacy type/function merely because existing desktop code uses it
 - one small hardware-validated increment at a time
 
-Current graphics shape:
+The intended long-term ownership is:
+
+```text
+Doom RPG data / recovered behavior
+              |
+              v
+      ESP32-native parsers
+              |
+              v
+      ESP32-native runtime
+              |
+              v
+   ESP32-native renderer/game
+              |
+              v
+       160x120 RGB565
+              |
+              v
+         CYD 320x240
+```
+
+Current graphics shape already follows this direction for walls/sprites:
 
 ```text
                  SD / DoomRPG-ESP32.pak
@@ -129,7 +157,8 @@ The migration setup currently expects:
 /DoomRPG-ESP32.pak
 ```
 
-`DoomRPG.zip` remains available for legacy engine paths not yet migrated.
+`DoomRPG.zip` remains available for legacy paths and format recovery not yet
+migrated. It is not a commitment to retain the legacy loader architecture.
 `DoomRPG-ESP32.pak` is the ESP32-native random-access resource pack.
 
 Build the native pack with:
@@ -171,10 +200,29 @@ color tuning.
 Representative hardware timing is currently about 42.7 ms for a normal full
 screen presentation. The bounded intro clock therefore cannot physically present
 every nominal 50 ms / 20 FPS virtual tick and measures about 14 rendered FPS with
-skipped stale ticks. The virtual story timeline remains correct. Compare with the
-original J2ME pacing before optimizing; `PlatformVideo_present()` and the final
-saturation transform are the first measured candidates if optimization becomes
-necessary.
+skipped stale ticks. The virtual story timeline remains correct.
+
+There is deliberately **no fixed gameplay FPS target yet**. Doom RPG is
+turn-based, so input/game-turn cadence must not be tied to full-screen panel
+presentation. The preferred gameplay model is demand-driven: static scenes should
+not be redrawn continuously, while actions/animations render only frames with
+visual value. A lower animation cadence than a real-time shooter may be perfectly
+acceptable, but perceived smoothness and hardware measurements will decide that
+after the native gameplay renderer exists.
+
+Performance priority remains:
+
+```text
+correct behavior
+-> bounded RAM
+-> responsive input/game logic
+-> correct visuals
+-> measured rendering optimization
+```
+
+`PlatformVideo_present()` and the final saturation transform remain measured
+optimization candidates; do not optimize them before the gameplay architecture is
+correct.
 
 ## Normal boot and menu path
 
@@ -182,8 +230,7 @@ Normal boot currently follows this bounded path:
 
 ```text
 Platform video / SD / ZIP
-    -> engine core + layout
-    -> ParticleSystem / MenuSystem / EntityDef startup
+    -> transitional engine core + layout startup
     -> Render_startup
     -> config + mappings
     -> Render_beginLoadMap(MAP_MENU)
@@ -194,6 +241,9 @@ Platform video / SD / ZIP
     -> touch armed
     -> READY
 ```
+
+This path is hardware-proven scaffolding, not a declaration that the final native
+engine must retain `Render_t`/`DoomCanvas_t`.
 
 The native menu intentionally bypasses the heavy original menu painter, but it
 preserves the original `MENU_MAIN` model:
@@ -246,7 +296,8 @@ item rather than a state-machine failure.
 
 ## Fresh Start Game lifecycle
 
-On a fresh profile with no compatible save, the real original action is used:
+On a fresh profile with no compatible save, the real original action is used as
+the current executable behavioral reference:
 
 ```text
 MENU_MAIN / Start Game
@@ -307,11 +358,11 @@ page 1:        natural ~10 s timeout OR touch skip
 page 2:        reveal -> final Continue
 ```
 
-The final Continue is guarded in two stages. It first performs the already
-validated `intro-exit-ready` PARK with the intro assets still resident. On the
-next Arduino loop service, a one-shot native disposer mirrors the resource-freeing
-part of `DoomCanvas_disposeIntro()` while deliberately excluding its final
-`DoomCanvas_loadMap()` call:
+The final Continue is guarded in two stages. It first performs the validated
+`intro-exit-ready` PARK with the intro assets still resident. On the next Arduino
+loop service, a one-shot native disposer mirrors the resource-freeing behavior
+needed by the data contract while deliberately excluding the legacy immediate map
+load:
 
 ```text
 page 2 final Continue
@@ -324,23 +375,77 @@ page 2 final Continue
     -> NO map load
 ```
 
-The real CYD recovered **33,768 bytes of 8-bit heap** during this teardown and
-grew the largest free 8-bit block from **13,300** to **36,852 bytes**. The
+The PR #41 real CYD recovered **33,768 bytes of 8-bit heap** during this teardown
+and grew the largest free 8-bit block from **13,300** to **36,852 bytes**. The
 framebuffer FNV remained unchanged across disposal, proving that the last rendered
 intro image can remain visible after its source resources have been released.
 
-The bounded intro and disposal path is hardware validated. Detailed evidence
-lives in:
+Detailed evidence lives in:
 
 - [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md)
 - [`INTRO_CLOCK.md`](INTRO_CLOCK.md)
 - [`INTRO_INPUT.md`](INTRO_INPUT.md)
 - [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md)
 
+## First post-prologue BSP measurement
+
+The current development branch probes `startupMap=1`. The recovered map enum is
+important:
+
+```text
+MAP_MENU     = 0
+MAP_INTRO    = 1 -> /intro.bsp
+MAP_SECTOR01 = 2 -> /level01.bsp
+```
+
+So the first gameplay transition after the visual prologue opens `/intro.bsp`,
+not `level01.bsp`.
+
+The normal `esp32-cyd` hardware probe measured the complete resource as:
+
+```text
+/intro.bsp compressed/uncompressed = 11150 / 21823 B
+nodes                               = 223
+lines                               = 480
+mapSprites                          = 344
+runtimeSprites                      = 368
+events                              = 93
+byteCodes                           = 265
+strings                             = 94
+string payload                      = 7873 B
+```
+
+The current desktop-derived structural representation would require **55,341 B**
+of runtime allocation while the complete 21,823-byte BSP is still resident. With
+mappings and raw BSP resident, only **54,104 B** remained. It therefore does not
+fit even with the safety headroom reduced to zero.
+
+The probe correctly refused and returned to the post-intro boundary with stable
+heartbeats. That result is the architectural trigger for the next implementation:
+an ESP32-native streaming BSP reader, preferably two-pass initially:
+
+```text
+pass 1: stream + validate + count
+        -> exact native allocation plan
+
+allocate final compact native pools
+
+pass 2: stream again
+        -> populate final native runtime directly
+```
+
+The full 21,823-byte BSP should never need to coexist with the complete runtime.
+Native map structures are not required to match desktop `Node_t`, `Line_t` or
+`Sprite_t`, and the old 8,440-byte resident mapping model is also subject to
+replacement rather than being treated as mandatory.
+
+See [`MAP1_STRUCTURAL_LOAD.md`](MAP1_STRUCTURAL_LOAD.md) for the complete real-CYD
+measurement and native-loader plan.
+
 ## Current high-level safe boundary
 
-The hardware-validated merge candidate is now parked **after intro disposal and
-before gameplay-map loading**:
+Merged `main` PR #41 is hardware-validated after intro disposal and before map
+loading:
 
 ```text
 ST_INTRO page 3
@@ -348,14 +453,22 @@ intro clock/input stopped
 intro images/texts = NULL
 render clip        = off
 startupMap         = 1
-no gameplay map load yet
 shapeData          = NULL
 mediaTexels        = NULL
 ```
 
-The authoritative current SHA, exact free heap/largest block, FNVs and next
-milestone are intentionally kept only in
-[`PORTING_STATUS.md`](PORTING_STATUS.md).
+On the current development branch, the MAP_INTRO feasibility probe temporarily
+loads mappings and `/intro.bsp`, safely refuses the legacy structural working set,
+cleans all temporary runtime data and returns to the same logical PARK. Current
+branch heartbeats are stable around:
+
+```text
+heap8     = 84384
+largest8  = 36852
+```
+
+The authoritative current SHA, exact recovery values and next implementation
+boundary are kept in [`PORTING_STATUS.md`](PORTING_STATUS.md).
 
 ## Original debug/developer menus
 
@@ -369,19 +482,19 @@ MENU_DEBUG_STATS
 MENU_DEVELOPER
 ```
 
-They remain future references; the priority path is still the bounded normal
-Start Game -> intro -> first gameplay-map transition.
+They remain behavior/UI references; the priority path is still the bounded normal
+Start Game -> intro -> native first gameplay-map transition.
 
 ## Porting workflow
 
 1. Branch from the exact latest hardware-validated `main`.
-2. Implement one small measurable objective.
+2. Implement or measure one small bounded objective.
 3. Build, flash and test on the real classic CYD.
-4. Fix failures on the same branch.
+4. Fix failures or redesign on the same branch when the measurement defines the next step.
 5. Record the hardware evidence.
 6. Update `PORTING_STATUS.md` before merge.
 7. Update this README only when stable architecture/usage changes.
-8. Merge only when code, hardware evidence and documentation agree.
+8. Merge only when the branch reaches a coherent code + hardware + documentation boundary.
 
 See [`DOCUMENTATION.md`](DOCUMENTATION.md) for the full documentation retention
 rules.
