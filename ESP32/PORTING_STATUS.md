@@ -13,34 +13,29 @@ being recopied here.
 Latest merged `main`:
 
 ```text
-PR   = #40 — documentation architecture cleanup
-main = 98378ce94da6480bbc8939830c0453514d389c82
+PR   = #41 — bounded intro disposal
+main = 897e982f4b37039d984b13265beaa68a83dce98b
 ```
 
-PR #40 was documentation-only. The latest **merged hardware-affecting** baseline
-is still PR #39:
+PR #41 is the latest merged hardware-affecting baseline.
+
+Current development branch:
 
 ```text
-PR   = #39 — bounded intro input
-main = 7ba68955a9b0979924c5e759736fb483589be744
+branch    = agent/esp32-map1-structural-load
+base main = 897e982f4b37039d984b13265beaa68a83dce98b
+status    = REAL-CYD MEASUREMENT PASS; LEGACY STRUCTURAL PATH SAFELY REFUSED;
+            NATIVE STREAMING BSP LOADER NEXT; BRANCH CONTINUES
 ```
 
-Current hardware-validated merge candidate:
-
-```text
-branch              = agent/esp32-intro-dispose
-base main           = 98378ce94da6480bbc8939830c0453514d389c82
-implementation head = b273d8cb1e8314be9cab6aedcea0c36c1a9c664e
-status              = REAL-CYD HARDWARE PASS; DOCUMENTED; MERGE-READY
-```
-
-The documentation commits on top of that implementation do not change the
-firmware behavior measured below.
+This branch is intentionally **not merge-ready yet**. It has produced a safe
+hardware measurement and the design evidence needed to replace the legacy map
+loader, but it has not yet implemented the final native gameplay BSP runtime.
 
 ### Current safe boundary
 
-The real CYD now reaches and remains safely parked **after bounded intro teardown
-and before any gameplay map load**:
+Merged PR #41 proves the real CYD can park after bounded intro teardown and
+before any gameplay map load:
 
 ```text
 menu                    = MENU_NONE
@@ -58,7 +53,7 @@ storyText1[1]           = NULL
 storyText2              = NULL
 render clip             = off
 startupMap              = 1
-heap8                   = 84408
+heap8                   = 84408 on PR #41 validation build
 largest8                = 36852
 nodes                   = NULL
 lines                   = NULL
@@ -74,8 +69,7 @@ DoomCanvas_run          = NOT called
 DoomCanvas_loadMap      = NOT called
 ```
 
-The teardown recovered exactly **33,768 B** of 8-bit heap on the validation
-build:
+The PR #41 teardown recovered exactly **33,768 B** of 8-bit heap:
 
 ```text
 heap8     50640 -> 84408
@@ -85,29 +79,34 @@ recovered          33768 B
 
 The observed final intro framebuffer hash was `a7ee546a` both before and after
 resource destruction. This hash is run-timing-specific; the regression contract
-is that teardown does not modify the already-rendered framebuffer.
+is equality before/after teardown, not one fixed final story hash.
 
-Repeated heartbeats at about 30, 35 and 40 seconds remained stable at
-`heap8=84408`, `largest8=36852`, proving the Arduino loop remained alive after
-teardown with no hidden map transition.
+On the current MAP_INTRO probe build, normal-firmware code-size/state movement
+shifted the same logical post-dispose boundary slightly to:
+
+```text
+heap8     = 84384
+largest8  = 36852
+```
+
+The MAP_INTRO feasibility probe temporarily loaded mappings plus a preflight BSP,
+refused the unsafe legacy structural working set, called the existing fail cleanup
+and returned to exactly `heap8=84384`, `largest8=36852`. Later `[ALIVE]`
+heartbeats remained stable at that boundary.
 
 ## Current execution path
 
-Validated normal-firmware path:
+Validated normal-firmware path plus current measurement:
 
 ```text
 video / SD / ZIP
-    -> Doom RPG core/layout/pre-render startup
-    -> Render_startup
-    -> config + mappings
-    -> menu.bsp structural runtime load
-    -> stop before legacy bitshape/texel inflation
+    -> transitional Doom RPG core/layout startup
+    -> menu structural startup
     -> direct opaque MENU_MAIN
-    -> DoomCanvas.state synchronized to ST_MENU
     -> semantic XPT2046 menu input
-    -> real MenuSystem_select(Start Game)
-    -> fresh-start dead-resource cleanup
-    -> original Player_reset()
+    -> confirmed fresh Start Game
+    -> dead-resource cleanup
+    -> Player_reset behavior
     -> ST_INTRO + real prologue strings/images
     -> fitted deterministic t=0 story frame
     -> ESP32-owned 50 ms intro clock
@@ -115,10 +114,15 @@ video / SD / ZIP
     -> final intro-exit-ready PARK at ST_INTRO page 2
     -> one-shot bounded intro resource teardown
     -> ST_INTRO page 3 with intro assets/texts NULL
-    -> PARK before gameplay loading
+    -> MAP_INTRO feasibility probe arms
+    -> inventory /intro.bsp
+    -> legacy structural working set REFUSED before allocation
+    -> temporary mappings/BSP released
+    -> PARK again at post-intro memory boundary
 ```
 
-The first gameplay map transition is still intentionally behind a hard boundary.
+The next real code path must be an ESP32-native BSP reader/runtime, not an attempt
+to weaken the guard until `Render_beginLoadMapData()` happens to fit.
 
 ## Permanent architecture invariants
 
@@ -143,18 +147,30 @@ mediaTexels == NULL
 ```
 
 The port must not resurrect the original monolithic `shapeData` or map-wide
-`mediaTexels` architecture. SD/native pack resources are loaded as bounded frames
-through measured working sets/caches.
+`mediaTexels` architecture. SD/native resources must be consumed through bounded
+working sets, caches or streams.
+
+Permanent engine ownership rule:
+
+```text
+DoomRPG-RE = executable specification / format + behavior reference
+final CYD engine = our ESP32-native engine
+```
+
+Desktop-derived types/functions and linker wrappers are migration scaffolding,
+not permanent architecture. The final ESP32 build may stop compiling the desktop
+engine entirely once native components own the required contracts.
 
 ## Documentation / development discipline
 
-1. Branch from the exact latest merged `main`.
-2. One branch = one bounded measurable objective.
+1. Branch from the exact latest merged hardware-validated `main`.
+2. One branch = one coherent bounded objective; a measurement may legitimately
+   reshape the implementation while staying on that branch.
 3. Build/flash/test on the real classic CYD.
-4. Fix failures on that same branch.
-5. Preserve detailed evidence in a milestone archive when it has long-term value.
-6. Update this recovery point before merge.
-7. Merge only when implementation, real hardware and documentation agree.
+4. Fail closed before known unsafe working sets.
+5. Preserve detailed evidence in a milestone document when it has long-term value.
+6. Update this recovery point as the branch boundary changes.
+7. Merge only when implementation, real hardware and documentation form a coherent boundary.
 8. After merge, mark the milestone document as a historical merged archive.
 
 ## Merged milestone timeline
@@ -170,14 +186,18 @@ through measured working sets/caches.
 | #38 | bounded ESP32-owned 50 ms intro clock | `58edfe5d7080a7e9e64ff5b516697ddf3cca31da` |
 | #39 | full bounded intro touch progression | `7ba68955a9b0979924c5e759736fb483589be744` |
 | #40 | documentation ownership / recovery cleanup | `98378ce94da6480bbc8939830c0453514d389c82` |
+| #41 | bounded intro resource teardown + RAM recovery | `897e982f4b37039d984b13265beaa68a83dce98b` |
 
-Current unmerged hardware milestone:
+Current active hardware/design milestone:
 
 ```text
-agent/esp32-intro-dispose
-  -> bounded resource-only mirror of DoomCanvas_disposeIntro()
-  -> +33768 B heap8 recovered
-  -> park at ST_INTRO page 3 before DoomCanvas_loadMap()
+agent/esp32-map1-structural-load
+  -> prove startupMap=1 is MAP_INTRO / /intro.bsp
+  -> inventory the complete BSP on real hardware
+  -> measure legacy mapping + structural working sets
+  -> refuse unsafe resident-BSP + resident-runtime lifecycle
+  -> return to stable post-intro PARK
+  -> continue with ESP32-native streaming BSP loader
 ```
 
 Earlier validated work leading to PR #32 includes native asset pack v2, zero
@@ -191,12 +211,13 @@ Detailed recent milestone documents:
 - [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md) — PR #37
 - [`INTRO_CLOCK.md`](INTRO_CLOCK.md) — PR #38
 - [`INTRO_INPUT.md`](INTRO_INPUT.md) — PR #39
-- [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md) — current merge candidate
+- [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md) — PR #41 evidence
+- [`MAP1_STRUCTURAL_LOAD.md`](MAP1_STRUCTURAL_LOAD.md) — current active branch
 
 ## Native graphics recovery references
 
-These values are primarily regression/bring-up references and should remain
-available even though the current normal path no longer replays every proof pass.
+These values are regression/bring-up references and should remain available even
+though the normal path no longer replays every proof pass.
 
 ```text
 sprite 172 texel FNV          = 0c0a7acd
@@ -344,7 +365,7 @@ logical 101,109 -> REVEAL accepted
 logical 113,105 -> MORE accepted
 ```
 
-This is retained as a non-blocking touch/re-arm UX observation rather than a
+This remains a non-blocking touch/re-arm UX observation rather than a
 state-machine or hitbox failure.
 
 ## Fresh Start Game contract
@@ -361,7 +382,7 @@ mediaTexels = NULL
 wall/sprite caches inactive
 ```
 
-Fresh no-save action remains the real original route:
+Fresh no-save action currently follows the recovered original behavior:
 
 ```text
 MENU_MAIN / item 0
@@ -373,6 +394,9 @@ MENU_MAIN / item 0
     -> DoomCanvas_loadPrologueText()
 ```
 
+This is executable-spec scaffolding; equivalent behavior may later be owned by
+native ESP32 types instead of these legacy functions.
+
 The existing-save precheck occurs before destructive cleanup. Existing-save mode
 keeps menu runtime because `MENU_MAIN_CONTINUE` still needs it.
 
@@ -383,7 +407,7 @@ The optimized menu lifecycle otherwise leaves two classes of dead resources aliv
 1. `imgLegals` / `g.bmp`, normally freed by the skipped legal-screen state path;
 2. `menu.bsp` runtime/mappings, no longer needed after fresh New Game is confirmed.
 
-Fresh Start therefore executes:
+Fresh Start therefore executes today:
 
 ```text
 DoomRPG_freeImage(imgLegals)
@@ -427,8 +451,8 @@ totalDeaths     = 0
 
 ## Intro resource plan
 
-`DoomCanvas_loadPrologueText()` uses the original three text buffers plus four
-packed indexed BMP textures:
+The current prologue loader uses the original three text buffers plus four packed
+indexed BMP textures:
 
 ```text
 c.bmp -> imgSpaceBG
@@ -459,11 +483,11 @@ compressed   = 5290 B
 uncompressed = 33236 B
 ```
 
-The legacy ZIP peak is per file. After the fresh-start cleanup all four assets
-load successfully through the existing packed indexed BMP path, so a native `.pak`
-migration was not required for these intro images.
+The legacy ZIP peak is per file. After fresh-start cleanup all four assets load
+successfully through the packed indexed BMP path; a native `.pak` migration was
+not required to complete the intro milestone.
 
-Measured teardown recovery on `agent/esp32-intro-dispose`:
+PR #41 measured teardown recovery:
 
 ```text
 c.bmp / imgSpaceBG      +12436 B
@@ -519,8 +543,7 @@ first-frame build heap8 = 50704 -> 50704
 largest8                = 13300 -> 13300
 ```
 
-See [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md) for the full pre-fit/fitted
-hardware evidence.
+See [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md) for full evidence.
 
 ## Intro clock recovery
 
@@ -572,8 +595,7 @@ story viewport = x20..139 y0..119
 prompt band    = x20..139 y102..119
 ```
 
-Across two PR #39 real-CYD captures, **every bounded intro input branch is
-validated**:
+Across two PR #39 real-CYD captures, every bounded intro input branch is validated:
 
 ```text
 out-of-band prompt touch          -> MISS PASS
@@ -621,11 +643,11 @@ See [`INTRO_INPUT.md`](INTRO_INPUT.md) for both complete hardware paths.
 
 ## Intro disposal recovery
 
-The current merge candidate mirrors only the resource-release portion of the
-original `DoomCanvas_disposeIntro()` and deliberately omits its immediate
-`DoomCanvas_loadMap(startupMap)` tail call.
+PR #41 mirrors only the resource-release behavior needed at the end of the intro
+and deliberately omits the legacy immediate `DoomCanvas_loadMap(startupMap)`
+transition.
 
-Validation run before disposal:
+PR #41 validation before disposal:
 
 ```text
 state      = ST_INTRO (9)
@@ -651,17 +673,135 @@ texts      = NULL
 map load   = NOT called
 ```
 
-The exact measured heap recovery is **33,768 B**. All runtime map pools remain
-NULL, native caches remain inactive, and `shapeData` / `mediaTexels` remain NULL.
-Three later heartbeats remained stable at the post-dispose memory boundary.
+The exact PR #41 measured heap recovery is **33,768 B**. All runtime map pools
+remain NULL, native caches remain inactive, and `shapeData` / `mediaTexels`
+remain NULL. Three later heartbeats stayed stable.
 
-See [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md) for the complete per-resource evidence.
+Current MAP_INTRO probe build repeated the same lifecycle with a small baseline
+shift:
+
+```text
+before teardown  heap8=50620 largest8=13300
+after teardown   heap8=84384 largest8=36852
+recovered        33764 B
+```
+
+Do not replace the historical PR #41 figure with this later build-specific one.
+
+See [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md) for complete per-resource evidence.
+
+## MAP_INTRO `/intro.bsp` feasibility measurement
+
+### Map identity
+
+Recovered enum/resource mapping:
+
+```text
+MAP_MENU     = 0
+MAP_INTRO    = 1 -> /intro.bsp
+MAP_SECTOR01 = 2 -> /level01.bsp
+```
+
+Therefore `startupMap=1` enters `/intro.bsp`; it is not yet `level01.bsp`.
+
+### ZIP working sets
+
+Normal `esp32-cyd` hardware measurement from the post-intro boundary:
+
+```text
+mappings.bin
+  compressed     = 2156 B
+  uncompressed   = 8392 B
+  miniz state    = 10992 B
+  transient      = 21540 B
+
+/intro.bsp
+  compressed     = 11150 B
+  uncompressed   = 21823 B
+  miniz state    = 10992 B
+  transient      = 43965 B
+```
+
+### Legacy mapping arrays
+
+Temporary `Render_loadMappings()` measured:
+
+```text
+heap8     84384 -> 75944
+largest8  36852 -> 36852
+resident cost   = 8440 B
+```
+
+The legacy negative `mappingMemory` sign is ignored; heap8 is authoritative.
+
+### Exact structural inventory
+
+The preflight parser consumed the resource exactly:
+
+```text
+nodes          = 223
+lines          = 480
+mapSprites     = 344
+runtimeSprites = 368
+events         = 93
+byteCodes      = 265
+strings        = 94
+stringBytes    = 7873
+parsed         = 21823 / 21823 B
+trailing       = 0 B
+```
+
+These counts are regression targets for the next native reader.
+
+### Why the legacy runtime is refused
+
+Current desktop-derived runtime allocation plan:
+
+```text
+structural payload     = 55341 B
+largest allocation     = 15360 B
+safety headroom        = 4096 B
+```
+
+With mappings and the raw uncompressed BSP resident:
+
+```text
+heap8                  = 54104 B
+largest8               = 20468 B
+need + headroom        = 59437 B
+largest needed block   = 15360 B
+```
+
+The largest allocation fits; aggregate memory does not.
+
+Deficit:
+
+```text
+with 4096 B guard = 5333 B
+with zero guard   = 1237 B
+```
+
+Therefore the guard is not the cause. Even with no safety margin, the old
+resident-BSP + resident-runtime lifecycle is too large.
+
+The probe emitted a fail-closed `[MAP1STRUCT] REFUSED`, freed temporary BSP and
+mappings/runtime via cleanup, then heartbeats remained:
+
+```text
+heap8     = 84384
+largest8  = 36852
+```
+
+No OOM/reset or hidden loader transition occurred.
+
+See [`MAP1_STRUCTURAL_LOAD.md`](MAP1_STRUCTURAL_LOAD.md) for the complete design
+interpretation and next native-loader plan.
 
 ## Current memory baselines
 
-Build-to-build baseline movement is expected as small state/code objects are
-added. The critical contract is that bounded render/input operations do not
-allocate unexpectedly.
+Build-to-build baseline movement is expected as small code/state objects are
+added. The critical contract is that bounded render/input/load operations do not
+allocate unexpectedly and that each milestone records its own exact build.
 
 ```text
 interactive normal-menu, earlier build
@@ -700,14 +840,23 @@ intro-input PR #39 build/final PARK
   heap8    = 50656
   largest8 = 13300
 
-intro-dispose validation build, before teardown
+intro-dispose PR #41 validation, before teardown
   heap8    = 50640
   largest8 = 13300
 
-intro-dispose validation build, after teardown
-  heap8    = 84408
-  largest8 = 36852
+intro-dispose PR #41 validation, after teardown
+  heap8     = 84408
+  largest8  = 36852
   recovered = 33768 B
+
+MAP_INTRO probe build, before teardown
+  heap8    = 50620
+  largest8 = 13300
+
+MAP_INTRO probe build, post-teardown / post-safe-refusal PARK
+  heap8     = 84384
+  largest8  = 36852
+  teardown recovered in this build = 33764 B
 ```
 
 Do not attribute small baseline differences to a particular allocation unless a
@@ -733,52 +882,110 @@ bring-up Present + physical overlay ~= 44.3 ms
 old neutral Present                 ~= 34.4 ms
 ```
 
-The current 50 ms virtual intro clock is a functional/RAM PASS but does not
-physically sustain 20 rendered FPS. It skips stale virtual ticks by design and
-measures roughly 14 rendered FPS. Compare against the original J2ME version before
-changing pacing; the presentation/saturation path is the measured first
-optimization candidate.
+The 50 ms virtual intro clock is a functional/RAM PASS but does not physically
+sustain 20 rendered FPS. It skips stale virtual ticks by design and measures
+roughly 14 rendered FPS.
+
+Gameplay does **not** inherit a mandatory 20 FPS target. Doom RPG is turn-based,
+so game-turn logic and input should be decoupled from render cadence. The desired
+runtime is demand-driven:
+
+```text
+static scene -> no continuous redraw
+input/game turn -> responsive regardless of panel FPS
+animation -> present only useful visual frames
+```
+
+A low animation rate may be acceptable on this device, but no `5 FPS` target is
+frozen yet. Native gameplay rendering must exist first; then optimize from real
+hardware/perceived smoothness. `PlatformVideo_present()` and the saturation pass
+remain measured candidates.
 
 ## Current deferred work
 
 Still intentionally deferred:
 
-- first gameplay/map load
-- bounded gameplay resource working set for map 1
+- native BSP pass-2 population and final compact map representation
+- native gameplay resource mapping/lookup policy
+- Game/entity migration into native runtime
+- player spawn/final gameplay state
+- active normal gameplay loop and controls
 - existing-save Continue / New Game submenu painter/action
 - Video/Input/Sound menu actions
 - Help/About and Exit real actions
-- active normal gameplay loop
-- gameplay controls
-- presentation optimization if J2ME comparison warrants it
+- presentation optimization after native gameplay measurement
 - intro touch re-arm/polish only if the `More` UX observation persists
 - audio
 
-## Next bounded milestone
+## Next bounded implementation — same branch
 
-Start from the new post-dispose hardware boundary:
-
-```text
-ST_INTRO page 3
-heap8=84408 largest8=36852
-intro assets/texts NULL
-clock/input inactive
-render clip off
-startupMap=1
-nodes/lines/mapSprites NULL
-shapeData/mediaTexels NULL
-native wall/sprite caches inactive
-```
-
-Next objective:
+Do **not** merge the current branch merely because the legacy feasibility probe
+measured a safe refusal. Continue on:
 
 ```text
-inspect the original DoomCanvas_loadMap(startupMap=1) path
-    -> identify structural allocations vs legacy monolithic graphics allocations
-    -> introduce an explicit bounded guard around the first gameplay-map load
-    -> preserve shapeData == NULL and mediaTexels == NULL
-    -> measure the first real map-1 structural working set
+agent/esp32-map1-structural-load
 ```
 
-The first gameplay map must **not** be allowed to resurrect monolithic
-`shapeData` or map-wide `mediaTexels`.
+Next objective is an ESP32-native streaming reader for `/intro.bsp`.
+
+### Native pass 1 — inventory
+
+From the stable post-intro boundary:
+
+```text
+SD ZIP entry /intro.bsp
+    -> streaming DEFLATE with small bounded buffers
+    -> native BSP reader
+    -> validate/count only
+    -> no full 21823 B BSP allocation
+    -> no final runtime allocation yet
+    -> PARK
+```
+
+Hardware PASS must reproduce exactly:
+
+```text
+nodes=223
+lines=480
+mapSprites=344
+runtimeSprites=368
+events=93
+byteCodes=265
+strings=94
+stringBytes=7873
+parsed=21823
+```
+
+while keeping bounded/no-leak RAM and never allocating the full uncompressed BSP.
+
+### Then native allocation + pass 2
+
+Only after pass 1 is hardware-proven:
+
+```text
+exact counts
+    -> allocate compact ESP32-native pools deliberately
+    -> restart stream
+    -> populate final pools directly
+    -> raw BSP never coexists with complete runtime
+```
+
+Candidate design improvements are allowed and expected:
+
+- compact native line/node/sprite structures instead of desktop pointer-heavy layouts
+- one string pool + offset table instead of many heap allocations
+- indexes/offsets where pointers are unnecessary
+- mapping/resource data loaded only when native consumers need it
+- largest allocations placed deliberately to control fragmentation
+
+Do not choose exact packed structures until their native gameplay/renderer
+consumers are understood.
+
+The permanent constraints remain:
+
+```text
+shapeData   == NULL
+mediaTexels == NULL
+no full raw BSP resident beside complete runtime
+DoomRPG-RE desktop architecture is not a required dependency
+```
