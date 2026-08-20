@@ -199,8 +199,8 @@ static void markRequiredTexture(EspBspInventory* inventory, uint32_t id) {
                   &inventory->textureResourceIdsAbove255);
 }
 
-static void markTextureWithRecoveredCompanion(EspBspInventory* inventory,
-                                              uint32_t id) {
+static void markLineTextureWithRecoveredCompanion(EspBspInventory* inventory,
+                                                  uint32_t id) {
     markRequiredTexture(inventory, id);
 
     switch (id) {
@@ -246,8 +246,8 @@ static int parseHeader(EspBspCursor* cursor, EspBspInventory* inventory) {
         return 0;
     }
 
-    markTextureWithRecoveredCompanion(inventory, inventory->floorTexture);
-    markTextureWithRecoveredCompanion(inventory, inventory->ceilingTexture);
+    markRequiredTexture(inventory, inventory->floorTexture);
+    markRequiredTexture(inventory, inventory->ceilingTexture);
 
     return cursor->position == ESP_BSP_HEADER_BYTES;
 }
@@ -267,7 +267,7 @@ static int parseLines(EspBspCursor* cursor, EspBspInventory* inventory) {
                       textureId,
                       &inventory->uniqueLineTextureIds,
                       &inventory->lineTextureIdsAbove255);
-        markTextureWithRecoveredCompanion(inventory, textureId);
+        markLineTextureWithRecoveredCompanion(inventory, textureId);
     }
 
     return 1;
@@ -300,7 +300,7 @@ static int parseMapSprites(EspBspCursor* cursor, EspBspInventory* inventory) {
         else if ((info & BSP_SPRITE_FLAG_SKIP_RESOURCE) == 0U) {
             if ((info & BSP_SPRITE_FLAG_TILE) != 0U) {
                 ++inventory->spriteAsTextureRefs;
-                markTextureWithRecoveredCompanion(inventory, spriteId);
+                markRequiredTexture(inventory, spriteId);
             }
             else {
                 markRequiredSprite(inventory, spriteId);
@@ -346,7 +346,7 @@ static int parsePlaneTextures(EspBspCursor* cursor, EspBspInventory* inventory) 
                       textureId,
                       &inventory->uniquePlaneTextureIds,
                       NULL);
-        markTextureWithRecoveredCompanion(inventory, textureId);
+        markRequiredTexture(inventory, textureId);
     }
 
     return 1;
