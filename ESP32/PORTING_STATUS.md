@@ -10,30 +10,56 @@ being recopied here.
 
 ## Hardware recovery baseline
 
-Latest hardware-affecting merged baseline:
+Latest merged `main`:
+
+```text
+PR   = #40 — documentation architecture cleanup
+main = 98378ce94da6480bbc8939830c0453514d389c82
+```
+
+PR #40 was documentation-only. The latest **merged hardware-affecting** baseline
+is still PR #39:
 
 ```text
 PR   = #39 — bounded intro input
 main = 7ba68955a9b0979924c5e759736fb483589be744
 ```
 
-The subsequent `agent/esp32-docs-architecture` branch is documentation-only and
-does not change the firmware/hardware contract below.
+Current hardware-validated merge candidate:
+
+```text
+branch              = agent/esp32-intro-dispose
+base main           = 98378ce94da6480bbc8939830c0453514d389c82
+implementation head = b273d8cb1e8314be9cab6aedcea0c36c1a9c664e
+status              = REAL-CYD HARDWARE PASS; DOCUMENTED; MERGE-READY
+```
+
+The documentation commits on top of that implementation do not change the
+firmware behavior measured below.
 
 ### Current safe boundary
 
-The real CYD reaches and remains safely parked after the final intro Continue:
+The real CYD now reaches and remains safely parked **after bounded intro teardown
+and before any gameplay map load**:
 
 ```text
 menu                    = MENU_NONE
 state                   = ST_INTRO (9)
-storyPage               = 2
+storyPage               = 3
 storyTextPage           = 0
 intro clock             = inactive
 intro input             = inactive
-intro images/texts      = resident
-heap8                   = 50656
-largest8                = 13300
+imgSpaceBG              = NULL
+imgLinesLayer           = NULL
+imgPlanetLayer          = NULL
+imgSpaceship            = NULL
+storyText1[0]           = NULL
+storyText1[1]           = NULL
+storyText2              = NULL
+render clip             = off
+startupMap              = 1
+heap8                   = 84408
+largest8                = 36852
 nodes                   = NULL
 lines                   = NULL
 mapSprites              = NULL
@@ -45,12 +71,25 @@ shapeData               = NULL
 mediaTexels             = NULL
 wall/sprite LRU caches  = inactive
 DoomCanvas_run          = NOT called
-DoomCanvas_disposeIntro = NOT called
 DoomCanvas_loadMap      = NOT called
 ```
 
-Post-PARK touch diagnostics still print, proving the Arduino loop remains alive
-instead of resetting or silently entering map loading.
+The teardown recovered exactly **33,768 B** of 8-bit heap on the validation
+build:
+
+```text
+heap8     50640 -> 84408
+largest8  13300 -> 36852
+recovered          33768 B
+```
+
+The observed final intro framebuffer hash was `a7ee546a` both before and after
+resource destruction. This hash is run-timing-specific; the regression contract
+is that teardown does not modify the already-rendered framebuffer.
+
+Repeated heartbeats at about 30, 35 and 40 seconds remained stable at
+`heap8=84408`, `largest8=36852`, proving the Arduino loop remained alive after
+teardown with no hidden map transition.
 
 ## Current execution path
 
@@ -73,10 +112,13 @@ video / SD / ZIP
     -> fitted deterministic t=0 story frame
     -> ESP32-owned 50 ms intro clock
     -> bounded More / Continue touch progression
-    -> final PARK at ST_INTRO page 2
+    -> final intro-exit-ready PARK at ST_INTRO page 2
+    -> one-shot bounded intro resource teardown
+    -> ST_INTRO page 3 with intro assets/texts NULL
+    -> PARK before gameplay loading
 ```
 
-The next gameplay transition is still intentionally behind a hard boundary.
+The first gameplay map transition is still intentionally behind a hard boundary.
 
 ## Permanent architecture invariants
 
@@ -127,17 +169,29 @@ through measured working sets/caches.
 | #37 | first fitted deterministic `ST_INTRO` frame | `b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96` |
 | #38 | bounded ESP32-owned 50 ms intro clock | `58edfe5d7080a7e9e64ff5b516697ddf3cca31da` |
 | #39 | full bounded intro touch progression | `7ba68955a9b0979924c5e759736fb483589be744` |
+| #40 | documentation ownership / recovery cleanup | `98378ce94da6480bbc8939830c0453514d389c82` |
+
+Current unmerged hardware milestone:
+
+```text
+agent/esp32-intro-dispose
+  -> bounded resource-only mirror of DoomCanvas_disposeIntro()
+  -> +33768 B heap8 recovered
+  -> park at ST_INTRO page 3 before DoomCanvas_loadMap()
+```
 
 Earlier validated work leading to PR #32 includes native asset pack v2, zero
 resident monolithic graphics pools, bounded wall/sprite frames and caches, real
 menu BSP traversal, native projected wall/sprite rasterization, the fitted
 160x120 main menu and semantic touch selection.
 
-Detailed intro milestone archives:
+Detailed recent milestone documents:
 
+- [`START_GAME.md`](START_GAME.md) — PR #36
 - [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md) — PR #37
 - [`INTRO_CLOCK.md`](INTRO_CLOCK.md) — PR #38
 - [`INTRO_INPUT.md`](INTRO_INPUT.md) — PR #39
+- [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md) — current merge candidate
 
 ## Native graphics recovery references
 
@@ -281,6 +335,18 @@ Serial            = raw / physical / logical coordinates
 The overlay is drawn after framebuffer presentation and never changes logical
 framebuffer hashes.
 
+A disposal-validation run produced a mild tester impression of having to insist
+on the first `More`, but the relevant semantic taps were both accepted inside the
+prompt band:
+
+```text
+logical 101,109 -> REVEAL accepted
+logical 113,105 -> MORE accepted
+```
+
+This is retained as a non-blocking touch/re-arm UX observation rather than a
+state-machine or hitbox failure.
+
 ## Fresh Start Game contract
 
 Strict preconditions at confirmed Start:
@@ -397,6 +463,20 @@ The legacy ZIP peak is per file. After the fresh-start cleanup all four assets
 load successfully through the existing packed indexed BMP path, so a native `.pak`
 migration was not required for these intro images.
 
+Measured teardown recovery on `agent/esp32-intro-dispose`:
+
+```text
+c.bmp / imgSpaceBG      +12436 B
+d.bmp / imgLinesLayer   +12384 B
+e.bmp / imgPlanetLayer   +8340 B
+f.bmp / imgSpaceship      +164 B
+storyText1[0]              +172 B
+storyText1[1]              +116 B
+storyText2                 +156 B
+-------------------------------
+total                    +33768 B
+```
+
 ## Intro rendering recovery
 
 ### Black entry boundary
@@ -434,9 +514,9 @@ No intermediate framebuffer is allocated.
 Final deterministic first fitted frame:
 
 ```text
-t=0 FNV       = 56438966
-first-frame build heap8    = 50704 -> 50704
-largest8                 = 13300 -> 13300
+t=0 FNV                 = 56438966
+first-frame build heap8 = 50704 -> 50704
+largest8                = 13300 -> 13300
 ```
 
 See [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md) for the full pre-fit/fitted
@@ -466,10 +546,10 @@ t=1000 ms  FNV=e76fec13
 PR #38 clock build RAM:
 
 ```text
-heap8       = 50672 -> 50672 per rendered frame
-largest8    = 13300 -> 13300 per rendered frame
-deltaHeap   = 0
-deltaLargest= 0
+heap8        = 50672 -> 50672 per rendered frame
+largest8     = 13300 -> 13300 per rendered frame
+deltaHeap    = 0
+deltaLargest = 0
 ```
 
 At virtual `t=1000 ms`:
@@ -492,7 +572,8 @@ story viewport = x20..139 y0..119
 prompt band    = x20..139 y102..119
 ```
 
-Across two real-CYD captures, **every bounded intro input branch is validated**:
+Across two PR #39 real-CYD captures, **every bounded intro input branch is
+validated**:
 
 ```text
 out-of-band prompt touch          -> MISS PASS
@@ -527,7 +608,7 @@ FINAL-CONTINUE      t=9150
 PARK tick=183 frames=115 skipped=68
 ```
 
-The current PR #39 build remains:
+The PR #39 build remained:
 
 ```text
 heap8    = 50656
@@ -537,6 +618,44 @@ largest8 = 13300
 through all measured frame and input transitions.
 
 See [`INTRO_INPUT.md`](INTRO_INPUT.md) for both complete hardware paths.
+
+## Intro disposal recovery
+
+The current merge candidate mirrors only the resource-release portion of the
+original `DoomCanvas_disposeIntro()` and deliberately omits its immediate
+`DoomCanvas_loadMap(startupMap)` tail call.
+
+Validation run before disposal:
+
+```text
+state      = ST_INTRO (9)
+storyPage  = 2
+startupMap = 1
+frame FNV  = a7ee546a
+heap8      = 50640
+largest8   = 13300
+clip       = on
+```
+
+After freeing four images plus three story text buffers:
+
+```text
+state      = ST_INTRO (9)
+storyPage  = 3
+frame FNV  = a7ee546a (unchanged)
+heap8      = 84408
+largest8   = 36852
+clip       = off
+assets     = NULL
+texts      = NULL
+map load   = NOT called
+```
+
+The exact measured heap recovery is **33,768 B**. All runtime map pools remain
+NULL, native caches remain inactive, and `shapeData` / `mediaTexels` remain NULL.
+Three later heartbeats remained stable at the post-dispose memory boundary.
+
+See [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md) for the complete per-resource evidence.
 
 ## Current memory baselines
 
@@ -577,9 +696,18 @@ intro-clock build
   heap8    = 50672
   largest8 = 13300
 
-current intro-input build/final PARK
+intro-input PR #39 build/final PARK
   heap8    = 50656
   largest8 = 13300
+
+intro-dispose validation build, before teardown
+  heap8    = 50640
+  largest8 = 13300
+
+intro-dispose validation build, after teardown
+  heap8    = 84408
+  largest8 = 36852
+  recovered = 33768 B
 ```
 
 Do not attribute small baseline differences to a particular allocation unless a
@@ -615,7 +743,6 @@ optimization candidate.
 
 Still intentionally deferred:
 
-- intro disposal and transition into loading
 - first gameplay/map load
 - bounded gameplay resource working set for map 1
 - existing-save Continue / New Game submenu painter/action
@@ -624,28 +751,33 @@ Still intentionally deferred:
 - active normal gameplay loop
 - gameplay controls
 - presentation optimization if J2ME comparison warrants it
+- intro touch re-arm/polish only if the `More` UX observation persists
 - audio
 
 ## Next bounded milestone
 
-Start from the final PR #39 PARK:
+Start from the new post-dispose hardware boundary:
 
 ```text
-ST_INTRO page 2
-heap8=50656 largest8=13300
-intro assets/texts resident
+ST_INTRO page 3
+heap8=84408 largest8=36852
+intro assets/texts NULL
 clock/input inactive
+render clip off
+startupMap=1
+nodes/lines/mapSprites NULL
 shapeData/mediaTexels NULL
+native wall/sprite caches inactive
 ```
 
 Next objective:
 
 ```text
-measure resident intro resources
-    -> dispose intro assets/text deliberately
-    -> measure reclaimed heap/largest block
-    -> verify all intro pointers are cleared safely
-    -> stop before, or at a fresh explicit guard around, the first gameplay-map load
+inspect the original DoomCanvas_loadMap(startupMap=1) path
+    -> identify structural allocations vs legacy monolithic graphics allocations
+    -> introduce an explicit bounded guard around the first gameplay-map load
+    -> preserve shapeData == NULL and mediaTexels == NULL
+    -> measure the first real map-1 structural working set
 ```
 
 The first gameplay map must **not** be allowed to resurrect monolithic
