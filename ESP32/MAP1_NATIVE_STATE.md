@@ -9,13 +9,19 @@ PR   = #44 — native compact MAP_INTRO access contract
 main = ddcf19e6166f210a6f63fec1c608234ee3e253ea
 ```
 
-Status: **IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS**.
+Hardware-tested code:
+
+```text
+9a17654b56a190932615bba4894e90debd0e3773
+```
+
+Status: **REAL-CYD HARDWARE PASS; FIRST NATIVE MUTABLE WORLD STATE VALIDATED; MERGE-READY**.
 
 ## Objective
 
 Create the first genuinely mutable world/spatial state owned by the ESP32-native engine, while keeping the hardware-proven compact BSP arena byte-for-byte immutable.
 
-This milestone deliberately stops at a 32x32 tile-state overlay. It does **not** activate entities, monsters, player spawn, rendering or `ST_PLAYING`.
+This milestone stops at a 32x32 tile-state overlay. It does **not** activate entities, monsters, player spawn, rendering or `ST_PLAYING`.
 
 ## Permanent ownership
 
@@ -52,9 +58,9 @@ The recovered desktop `Render_t` contains:
 byte mapFlags[1024]
 ```
 
-This array is not pointer-heavy object baggage. It is real gameplay/spatial state used for walls, secrets, entrances, event-bearing cells and later visited/automap state.
+This array is real gameplay/spatial state rather than pointer-heavy desktop baggage. It carries wall, secret, entrance, event and later visited/automap state.
 
-The recovered bit contract is:
+Recovered bit contract:
 
 ```text
 BIT_AM_WALL     = 1
@@ -64,7 +70,7 @@ BIT_AM_EVENTS   = 8
 BIT_AM_VISITED  = 16
 ```
 
-The native equivalents are:
+Native equivalents:
 
 ```text
 ESP_MAP_TILE_WALL
@@ -74,34 +80,60 @@ ESP_MAP_TILE_EVENTS
 ESP_MAP_TILE_VISITED
 ```
 
-## Exact persistent plan
+## Exact persistent plan and measured cost
 
 One separately owned mutable allocation:
 
 ```text
-32 x 32 x uint8_t = 1024 B
+32 x 32 x uint8_t = 1024 B payload
 ```
 
-The immutable native map arena remains:
+Real classic-CYD result:
+
+```text
+heap8 before       = 70056
+heap8 after        = 69016
+actual heap use    = 1040 B
+payload            = 1024 B
+allocator overhead = 16 B
+largest8           = 36852 -> 36852
+```
+
+The immutable native map arena remains separate:
 
 ```text
 arena payload = 14095 B
+arena heap    = 14112 B
 arenaFNV      = c3882516
 ```
 
-The new state is intentionally **not appended to the arena** because it has different lifecycle/ownership semantics: map source is immutable; tile/world state mutates during gameplay and save/load.
+Combined native structural + mutable spatial cost is therefore:
+
+```text
+14112 B arena actual heap
++1040 B tile-state actual heap
+------------------------------
+15152 B actual persistent heap
+```
+
+Compared with the measured legacy pointer-heavy structural allocation:
+
+```text
+legacy structural = 55341 B
+native arena+state = 15152 B
+saved              = 40189 B
+reduction          ~= 72.6%
+```
+
+This comparison is intentionally conservative: the native side now includes both immutable structure and the first mutable spatial state.
 
 ## Recovered initialization semantics
 
 ### 1. Block-map base
 
-The 256-byte source block map stores four 2-bit cells per byte. The hardware-proven access layer already exposes all 1024 logical values through:
+The 256-byte source block map stores four 2-bit cells per byte. The hardware-proven access layer exposes all 1024 logical values through `EspMapRuntime_getBlockCell()`.
 
-```text
-EspMapRuntime_getBlockCell()
-```
-
-Known MAP_INTRO distribution from PR #44:
+Known and revalidated MAP_INTRO distribution:
 
 ```text
 0 = 298
@@ -111,7 +143,7 @@ Known MAP_INTRO distribution from PR #44:
 sum = 1024
 ```
 
-`EspMapState_buildFromRuntime()` expands those values directly into the low two bits of all 1024 mutable tile bytes.
+`EspMapState_buildFromRuntime()` expands those values into the low two bits of all 1024 mutable tile bytes.
 
 ### 2. Entrance cells
 
@@ -136,13 +168,21 @@ y = (y1 + ((y2 - y1) / 2)) >> 6
 tile = y * 32 + x
 ```
 
-The PR #44 immutable `EspMapRuntime_getLine()` correctly returns **source** coordinates without those mutations. `EspMapState` is the first appropriate consumer to reproduce this runtime semantic explicitly.
+The immutable `EspMapRuntime_getLine()` correctly returns source coordinates without those mutations. `EspMapState` owns this recovered runtime semantic explicitly.
 
-The builder fails closed if a recovered entrance midpoint falls outside the 32x32 map.
+Hardware result:
+
+```text
+texture-7 line refs = 4
+unique entrance cells = 4
+first entrance tile = 68
+```
+
+All four recovered entrance references resolve in range and to distinct tiles.
 
 ### 3. Event-bearing cells
 
-The recovered loader marks:
+Recovered loader rule:
 
 ```text
 if event & 0x01f80000:
@@ -151,13 +191,24 @@ if event & 0x01f80000:
 
 The native state reproduces exactly that rule through `EspMapRuntime_getEvent()`.
 
+Hardware result:
+
+```text
+source events             = 93
+qualifying event refs     = 93
+unique event-bearing cells = 93
+first event tile          = 68
+```
+
+Every MAP_INTRO event qualifies for the recovered event-bearing-cell rule, and all 93 resolve to unique tile indexes.
+
+Tile `68` is both an entrance and event-bearing tile. This is useful confirmation that `tileFlags` must be a composable bit field rather than an exclusive enum.
+
 ### 4. Visited is intentionally absent
 
 `BIT_AM_VISITED` is **not** synthesized by this initial-state builder.
 
-The reference marks entrance cells visited later during entity/world activation and also restores visited state from saves. Those are later gameplay/save-state semantics and must remain separate from initial spatial-state construction.
-
-Hardware validation therefore requires:
+The reference applies visited semantics later during world/entity activation and save/load. Hardware validation confirmed:
 
 ```text
 visited cells = 0
@@ -175,87 +226,91 @@ EspMapState_getTileFlags(index)
 
 The raw mutable pointer is not exposed as a writable public buffer. Later state mutations should receive explicit APIs so state ownership remains controlled.
 
-## Temporary hardware probe
+## Hardware validation probe
 
 After the hardware-proven `MAPACCESS` stage completes, `MAPSTATEPROBE` arms and runs on the next Arduino service.
 
 Validation sequence:
 
-1. require the full previous intro/BSP/runtime/access boundary;
-2. recompute the actual resident arena FNV before state construction;
+1. require the complete previous intro/BSP/runtime/access boundary;
+2. recompute the resident arena FNV before state construction;
 3. allocate/build exactly 1024 bytes of native tile state;
-4. independently rebuild the set of expected entrance tiles from every texture-7 line;
-5. independently rebuild the set of expected event-bearing tiles from every qualifying event;
-6. walk all 1024 state bytes via the public API;
-7. require low two bits to equal the hardware-proven block-map accessor value;
-8. require entrance/event bits to match the independently derived tile sets exactly in both directions;
+4. independently rebuild expected entrance tiles from every texture-7 line;
+5. independently rebuild expected event-bearing tiles from every qualifying event;
+6. walk all 1024 state bytes through the public API;
+7. require low two bits to equal the proven block-map accessor value;
+8. require entrance/event bits to match independently derived tile sets in both directions;
 9. require `BIT_AM_VISITED == 0` and no unknown bits;
-10. verify the known block distribution `298 / 697 / 27 / 2`;
+10. revalidate block distribution `298 / 697 / 27 / 2`;
 11. verify out-of-range tile access fails;
-12. compute a canonical FNV-1a over the complete 1024-byte native tile state;
-13. require framebuffer and immutable arena FNV to remain unchanged;
+12. compute FNV-1a over all 1024 state bytes;
+13. require framebuffer and immutable arena FNV unchanged;
 14. measure exact heap cost, allocator overhead and largest free block;
 15. PARK before entities/gameplay.
 
-The independent expected entrance/event sets use two 1024-bit stack bitsets (128 B each), not another 1024-byte persistent oracle.
+The independent entrance/event expected sets use two 1024-bit stack bitsets (128 B each), not another persistent 1024-byte oracle.
 
-## Memory gate
+## Real-CYD hardware result
 
-Planned persistent payload:
-
-```text
-1024 B
-```
-
-The hardware probe accepts at most:
+Exact serial evidence:
 
 ```text
-allocator overhead <= 64 B
-largest8 after state >= 32768 B
+[MAPSTATE] READY bytes=1024 fnv=cd99b98e base=298/697/27/2 entranceRefs=4 entranceCells=4 eventRefs=93 eventCells=93 visited=0
+[MAPSTATEPROBE] READY stateFNV=cd99b98e elapsed=9ms base=298/697/27/2 entrance=4/4 events=93/93 firstEntrance=68 firstEvent=68
+[MAPSTATEPROBE] RAM heap8=70056->69016 used=1040 payload=1024 allocatorOverhead=16 largest8=36852->36852 frameFNV=7a95b5b5->7a95b5b5 arenaFNV=c3882516->c3882516
+[MAPSTATEPROBE] PARK state=9 page=3 nativeArena=yes nativeTileState=yes tileBytes=1024 immutableArena=yes entities=0 monsters=0 noGameplay=yes
 ```
 
-These are conservative safety gates, not expected costs. The real CYD run will establish the actual allocator overhead and fragmentation result.
-
-## Values to establish on hardware
-
-The first run must establish:
+Canonical mutable-state fingerprint:
 
 ```text
-stateFNV
-build elapsed ms
-entrance texture-7 line refs
-unique entrance cells
-event refs with trigger mask
-unique event cells
-first entrance tile
-first event tile
-heap used / allocator overhead
-largest8 after state
+stateFNV = cd99b98e
 ```
 
-Inherited regressions must remain:
+Build/verification time:
+
+```text
+9 ms
+```
+
+Inherited regressions also remained valid on this build:
 
 ```text
 arenaFNV   = c3882516
 decodedFNV = a426dd18
+MAPACCESS full sweep = 4 ms
 base       = 298 / 697 / 27 / 2
 entities   = 0
 monsters   = 0
 ST_PLAYING = no
 ```
 
-## Expected log tail
+The small variation from the earlier 3 ms accessor sweep to 4 ms is normal runtime timing variation; the semantic fingerprint and zero-drift contract are unchanged.
+
+Later heartbeats remained stable at:
 
 ```text
-[MAPSTATEPROBE] ARMED ...
+heap8    = 69016
+largest8 = 36852
+```
 
-=== Doom RPG ESP32-native MAP_INTRO mutable tile state ===
-[MAPSTATEPROBE] CONTRACT ...
-[MAPSTATE] READY bytes=1024 fnv=........ base=298/697/27/2 entranceRefs=... entranceCells=... eventRefs=... eventCells=... visited=0
-[MAPSTATEPROBE] READY stateFNV=........ elapsed=...ms base=298/697/27/2 entrance=.../... events=.../... firstEntrance=... firstEvent=...
-[MAPSTATEPROBE] RAM heap8=X->Y used=... payload=1024 allocatorOverhead=... largest8=A->B frameFNV=F->F arenaFNV=c3882516->c3882516
-[MAPSTATEPROBE] PARK state=9 page=3 nativeArena=yes nativeTileState=yes tileBytes=1024 immutableArena=yes entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
+## Hardware gates — verdict
+
+All planned gates passed:
+
+```text
+payload                  = 1024 B                    PASS
+allocator overhead       = 16 B <= 64 B             PASS
+largest8 after state     = 36852 >= 32768 B         PASS
+base counts              = 298 / 697 / 27 / 2       PASS
+entrance topology        = 4 refs / 4 cells          PASS
+event topology           = 93 refs / 93 cells        PASS
+visited cells            = 0                         PASS
+state bounds             = fail closed               PASS
+framebuffer              = unchanged                 PASS
+arenaFNV                 = c3882516 unchanged        PASS
+entities/monsters        = 0 / 0                     PASS
+ST_PLAYING               = not entered               PASS
 ```
 
 ## Still forbidden
@@ -273,15 +328,35 @@ ST_PLAYING
 continuous gameplay loop
 ```
 
-## Next boundary after hardware PASS
+## Merge recommendation
 
-If the 1 KiB native tile state passes on real hardware, it becomes the first proven mutable gameplay substrate. The next step should be chosen from a real consumer need, likely one of:
+**MERGE this branch.**
+
+The hardware-affecting code tested on the real classic CYD is:
 
 ```text
-- explicit visited-state API + automap semantics,
-- event lookup/indexing by tile without desktop tileEvents ownership,
+9a17654b56a190932615bba4894e90debd0e3773
+```
+
+Any commits after that SHA should remain documentation-only until merge; if so, no additional flash is required.
+
+## Next boundary after merge
+
+The strongest next consumer signal now comes from the event topology:
+
+```text
+93 event-bearing tiles
+93 unique event cells
+```
+
+A useful next milestone is therefore a **native tile -> event lookup/index layer** built over the immutable event records and/or a compact index overlay, so `EspMapState` can answer “this tile has an event” and native gameplay can resolve the corresponding event without desktop `tileEvents` ownership.
+
+Other later candidates remain:
+
+```text
+- explicit visited-state API + save/automap semantics,
 - minimal entity occupancy/index overlay,
 - first native collision/movement query.
 ```
 
-Do not pre-create the desktop entity graph merely because those consumers eventually need richer state.
+Do not recreate the desktop entity graph preemptively.
