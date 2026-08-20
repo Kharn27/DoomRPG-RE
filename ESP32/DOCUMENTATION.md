@@ -10,7 +10,7 @@ Use [`README.md`](README.md) for build/flash instructions, target hardware, stab
 
 ### `PORTING_STATUS.md` — authoritative current recovery point
 
-Use [`PORTING_STATUS.md`](PORTING_STATUS.md) when resuming development. It owns the latest merged baseline, active branch, exact current RAM/state boundary, current native-map plan/runtime and next bounded milestone.
+Use [`PORTING_STATUS.md`](PORTING_STATUS.md) when resuming development. It owns the latest merged baseline, active branch, exact current RAM/state boundary, current native-map plan/runtime/access contract and next bounded milestone.
 
 The older long-form recovery catalog is preserved unchanged at [`archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md`](archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md).
 
@@ -30,9 +30,11 @@ Merged milestones:
 
 The pre-final MAP_INTRO structural document remains preserved at [`archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md`](archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md).
 
-Current active milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md) — allocation-free bounds-checked decoding of the resident compact MAP_INTRO arena; full read-only accessor validation and canonical decoded FNV; awaiting real-CYD validation.
+- [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md) — allocation-free bounds-checked decoding of the resident compact MAP_INTRO arena; complete real-CYD sweep of every record/spatial/resource family; canonical semantic `decodedFNV=a426dd18`; 3 ms; zero heap/largest-block/framebuffer drift.
+
+After merge, add its PR/merge SHA here and treat it as a historical milestone archive except for archival metadata corrections.
 
 ## Architecture documentation rule
 
@@ -105,26 +107,33 @@ PR   = #43 — persistent native MAP_INTRO arena
 main = 503fdd66fae625a45446fb4ea0853abc71d7dda3
 ```
 
-Merged hardware boundary:
+Current merge-ready branch:
+
+```text
+branch = agent/esp32-map1-native-access
+hardware-tested code = dfe25218b74db9d2765850fbc29057e703c57154
+status = REAL-CYD HARDWARE PASS; MERGE-READY
+```
+
+The real CYD now proves both physical compact storage and logical native consumption:
 
 ```text
 arena payload       = 14095 B
 actual heap cost    = 14112 B
-allocator overhead  = 17 B
 arenaFNV            = c3882516
-populate reads/time = 33 / 62 ms
-heap8 after load    = 70128 on PR #43 candidate
+heap8 resident      = 70112
 largest8            = 36852
+
+decodedFNV          = a426dd18
+full access sweep   = 3 ms
+access heap drift   = 0 B
+largest drift       = 0 B
+framebuffer drift   = none
+bounds checks       = PASS
 legacy runtime      = absent
 entities/monsters   = 0
 ```
 
-Current branch:
-
-```text
-agent/esp32-map1-native-access
-```
-
-Its objective is to prove that all resident nodes/lines/sprites/events/bytecodes, strings, block-map cells, plane IDs and resource sets can be consumed by allocation-free native indexed accessors with zero RAM/framebuffer drift and without embedding desktop runtime mutations in the immutable source API.
+The next bounded milestone after merge is a roughly 1 KiB native `EspMapState.tileFlags[1024]` mutable spatial overlay initialized through the proven accessors, including recovered entrance/event flags, while keeping the source arena immutable.
 
 See [`PORTING_STATUS.md`](PORTING_STATUS.md) and [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md).
