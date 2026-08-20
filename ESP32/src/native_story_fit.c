@@ -277,8 +277,15 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     int textPageCount;
     int elapsedAnim;
     int elapsedText;
-    const int left = virtualLeft(doomCanvas);
-    const int top = virtualTop(doomCanvas);
+    int left;
+    int top;
+
+    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
+        return;
+    }
+
+    left = virtualLeft(doomCanvas);
+    top = virtualTop(doomCanvas);
 
     if (!geometryLogged) {
         printf("[INTROFIT] virtual=128x128 -> viewport=%dx%d@(%d,%d) direct-to-framebuffer; no intermediate buffer\n",
@@ -434,7 +441,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
                            shipY - 1);
             drawMappedLine(doomCanvas,
                            shipX + 4,
-                           0,
+                           top,
                            shipX + 4,
                            shipY - 1);
             drawMappedLine(doomCanvas,
@@ -446,14 +453,14 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
                            shipX + 4,
                            shipY + 9,
                            shipX + 4,
-                           doomCanvas->displayRect.h);
+                           top + ESP32_STORY_VIRTUAL_SIZE);
             drawMappedLine(doomCanvas,
                            shipX - 1,
                            shipY,
                            shipX - 1,
                            shipY + 9);
             drawMappedLine(doomCanvas,
-                           0,
+                           left,
                            shipY + 4,
                            shipX - 1,
                            shipY + 4);
@@ -465,7 +472,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
             drawMappedLine(doomCanvas,
                            shipX + 9,
                            shipY + 4,
-                           doomCanvas->displayRect.w,
+                           left + ESP32_STORY_VIRTUAL_SIZE,
                            shipY + 4);
         }
     }
