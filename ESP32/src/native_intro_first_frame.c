@@ -11,6 +11,7 @@
 
 #include "native_intro_first_frame.h"
 #include "native_sprite_lru_cache.h"
+#include "native_story_fit.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -132,16 +133,16 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    /* DoomCanvas_drawStory() lazily initializes these timers from global
-     * uptime. For this first bounded ESP32 proof we instead establish a local,
-     * deterministic intro epoch. The next milestone will own a real intro clock.
+    /* The original story code lazily initializes these timers from global
+     * uptime. For this first bounded ESP32 proof we establish a deterministic
+     * local epoch. The next milestone will own a real intro clock.
      */
     canvas->time = INTRO_FIRST_FRAME_TIME_MS;
     canvas->storyTextTime = INTRO_FIRST_FRAME_TIME_MS;
     canvas->storyAnimTime = INTRO_FIRST_FRAME_TIME_MS;
     canvas->showTextDone = false;
 
-    DoomCanvas_drawStory(canvas);
+    Esp32StoryFit_draw(canvas);
 
     outputHash = framebufferHash();
     heapAfter = heap8Free();
