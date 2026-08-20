@@ -11,6 +11,7 @@
 #include "Render.h"
 #include "Z_Zip.h"
 
+#include "native_intro_first_frame.h"
 #include "native_main_menu_start_action.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
@@ -338,6 +339,13 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     printf("[MAINSTART] READY real MenuSystem_select -> Menu_startGame(new) -> Player_reset -> ST_INTRO\n");
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
-    printf("[MAINSTART] NEXT boundary = drive one real ST_INTRO frame through DoomCanvas_drawStory without entering map load\n");
+
+    if (!DoomRPG_esp32RenderFirstIntroFrame(doomRpg)) {
+        printf("[MAINSTART] FAILED bounded first ST_INTRO frame\n");
+        return 0;
+    }
+
+    printf("[MAINSTART] READY first ST_INTRO frame rendered/presented; engine remains parked\n");
+    printf("[MAINSTART] NEXT boundary = hardware-validate frame FNV/RAM before adding an intro clock or input\n");
     return 1;
 }

@@ -89,6 +89,7 @@ Representative hardware timing:
 
 ```text
 normal full-screen Present          ~= 42.7 ms
+first fitted ST_INTRO Present       = 42.761 ms
 bring-up Present + physical overlay ~= 44.3 ms
 old neutral Present                 ~= 34.4 ms
 ```
@@ -357,8 +358,8 @@ MENU_MAIN_OPTIONS
 
 ## Real fresh Start Game path
 
-A first-boot profile with no compatible save now executes the original Start
-path directly from MENU_MAIN:
+A first-boot profile with no compatible save executes the original Start path
+directly from MENU_MAIN:
 
 ```text
 MENU_MAIN / Start Game
@@ -388,7 +389,7 @@ The first hardware attempt reached the real intro loader but OOMed while
 inflating `c.bmp`. The cause was not the intro itself; the native boot was still
 holding memory that the original lifecycle would already have released.
 
-Before the irreversible fresh New Game transition, the ESP32 path now frees:
+Before the irreversible fresh New Game transition, the ESP32 path frees:
 
 ```text
 imgLegals / g.bmp
@@ -429,7 +430,7 @@ open `MENU_MAIN_CONTINUE`.
 
 ### Intro assets
 
-The original prologue loader then successfully loads all four indexed BMPs:
+The original prologue loader successfully loads all four indexed BMPs:
 
 ```text
 c.bmp  192x128 4-bpp packed pixels=12288 B palette=16
@@ -448,12 +449,11 @@ f.bmp c=114  u=160
 ```
 
 The existing packed indexed ESP32 BMP path is sufficient once dead menu memory
-is released, so this increment does not yet migrate intro images to the native
-`.pak` reader.
+is released, so intro images are not yet migrated to the native `.pak` reader.
 
-### Validated Start result
+### Validated Start boundary
 
-Hardware result after the real original action returns:
+The original action returns at:
 
 ```text
 menu            = MENU_NONE (0)
@@ -483,26 +483,112 @@ totalDeaths     = 0
 The three prologue text buffers are allocated and story page counters are reset
 to page 0.
 
-### Why the display is currently black after `Loading...`
+## First bounded ST_INTRO frame
 
-This is the intended stop point for the current increment.
+The ESP32 port now advances one more bounded step after the black prologue-load
+boundary, while still deliberately avoiding the broad original
+`DoomCanvas_run()` loop.
 
-`DoomCanvas_loadPrologueText()` shows `Loading...`, loads the text and four intro
-images, then clears the framebuffer to black and presents it. The current ESP32
-`loop()` is still intentionally parked and does not yet drive the original
-`ST_INTRO` drawing state.
-
-So after Start:
+The first-frame bridge establishes a deterministic local epoch:
 
 ```text
-Loading...
-    -> intro assets become resident
-    -> final black clear
-    -> state remains ST_INTRO
-    -> heartbeat continues
+canvas.time          = 0
+canvas.storyTextTime = 0
+canvas.storyAnimTime = 0
+canvas.showTextDone  = false
 ```
 
-The next increment is to drive **one real intro frame**, not to enter map loading.
+and executes exactly once:
+
+```text
+Esp32StoryFit_draw(canvas)
+DoomRPG_flushGraphics(doomRpg)
+```
+
+Then it parks in `ST_INTRO`.
+
+There is no input dispatch, story-page progression or gameplay map load in this
+increment.
+
+### Why an ESP32-native story fit is needed
+
+The original story presentation assumes a 128x128 viewport. With the CYD logical
+framebuffer fixed at 160x120 and `SCR_CY=60`, that legacy square occupies:
+
+```text
+x = 16..143
+y = -4..123
+```
+
+The first real hardware frame proved the renderer/state/RAM path with pre-fit FNV
+`6cf52a3e`, but four logical pixels were cropped at both the top and bottom and
+the original `More` / `Continue` placement extended below the framebuffer.
+
+Rather than changing the 160x120 framebuffer or allocating an intermediate
+surface, `Esp32StoryFit_draw()` treats the original coordinates as a virtual
+128x128 story space and maps them directly to:
+
+```text
+virtual story space : 128x128
+ESP32 viewport      : 120x120
+viewport origin     : x=20, y=0
+logical framebuffer : 160x120
+physical TFT        : exact 2x -> 320x240
+```
+
+The fitted presentation is therefore a centered physical 240x240 square with
+40-pixel black margins on the left and right.
+
+The transform covers:
+
+- scrolling space background
+- progressive Doom font glyphs
+- `More` / `Continue`
+- menu hand
+- animated intro layers
+- spaceship
+- laser lines and their clip rectangle
+
+No 128x128 intermediate framebuffer is used. The existing ESP32
+`SDL_RenderCopy()` path samples the packed indexed textures directly into the
+shared 160x120 RGB565 framebuffer.
+
+### Hardware-validated fitted frame
+
+Final normal-firmware result:
+
+```text
+[INTRO1] Begin state=9 menu=0 page=0 textPage=0 frameFNV=485915c5 expectedEntry=485915c5 heap8=50704 largest8=13300
+[INTROFIT] virtual=128x128 -> viewport=120x120@(20,0) direct-to-framebuffer; no intermediate buffer
+[INTRO1] Drawn t=0 frameFNV=56438966 heap8=50704 largest8=13300 deltaHeap=0 deltaLargest=0 state=9 page=0 textPage=0
+[VIDEO] Present 160x120 -> 320x240 exact 2x + sat1.15: 42761 us
+[INTRO1] READY one deterministic ST_INTRO frame presented once FNV=56438966
+[INTRO1] PARK state=9 page=0 textPage=0; no DoomCanvas_run, no input dispatch, no map load
+[ALIVE] uptime=10008 ms heap=116468 heap8=50704 largest8=13300 ...
+```
+
+Final first-frame regression contract:
+
+```text
+entry FNV       = 485915c5
+fitted frame FNV= 56438966
+heap8           = 50704 -> 50704
+largest8        = 13300 -> 13300
+deltaHeap       = 0
+deltaLargest    = 0
+state           = ST_INTRO (9)
+storyPage       = 0
+storyTextPage   = 0
+```
+
+The earlier `6cf52a3e` remains the pre-fit baseline only.
+
+Hardware visual validation confirms the complete 120x120 story viewport and the
+full hand + `More` are visible on the CYD.
+
+The 8-byte difference between the older `50712` Start-boundary build and the
+current `50704` fitted build is a build-to-build baseline change; the critical
+first-frame draw itself allocates no heap.
 
 ## Current memory baselines
 
@@ -520,11 +606,19 @@ heap8    = 28592
 largest8 = 17396
 ```
 
-Fresh Start boundary after prologue load:
+Fresh Start boundary after prologue load in the PR #36 build:
 
 ```text
 heap8    = 50712
 largest8 = 13300
+```
+
+Final fitted first-frame build:
+
+```text
+heap8    = 50704 before draw
+heap8    = 50704 after draw
+largest8 = 13300 before/after draw
 ```
 
 The higher free-heap value after Start reflects deliberate release of the legal
@@ -579,14 +673,19 @@ Hardware validated:
 - original `Player_reset()` contract
 - fresh-start release of dead legal/menu runtime, recovering 55,416 B
 - successful load of original prologue strings and `c/d/e/f.bmp`
-- real `ST_INTRO` reached with `heap8=50712`, `largest8=13300`
+- real `ST_INTRO` reached at the black prologue boundary
+- one deterministic real `ST_INTRO` frame rendered and presented
+- native 128x128 -> centered 120x120 story presentation
+- final fitted first-frame FNV `56438966`
+- frame draw `heap8=50704 -> 50704`, `largest8=13300 -> 13300`
 - `shapeData == NULL`
 - `mediaTexels == NULL`
 
 Still deferred:
 
-- rendering/driving the first active `ST_INTRO` frame
-- intro touch/key progression
+- ESP32-owned timed multi-frame `ST_INTRO` progression
+- intro touch/key progression (`More` / `Continue`)
+- intro disposal / transition to loading
 - first map/gameplay load after the intro
 - existing-save Continue / New Game submenu painter/action
 - Video/Input/Sound actions
