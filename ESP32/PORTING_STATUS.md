@@ -9,22 +9,24 @@ The older full recovery catalog remains preserved in [`archive/PORTING_STATUS_PR
 ## Latest merged hardware baseline
 
 ```text
-PR   = #42 — MAP_INTRO structural feasibility + native BSP pass 1
-main = c71ac1fb07c2e281bc3f8a70c102dd22c7b9300e
+PR   = #43 — persistent compact native MAP_INTRO arena
+main = 503fdd66fae625a45446fb4ea0853abc71d7dda3
 ```
 
-Current candidate:
+PR #43 merged the first persistent gameplay-map structure owned by the ESP32-native runtime.
+
+Current development candidate:
 
 ```text
-branch = agent/esp32-map1-native-runtime
-base   = c71ac1fb07c2e281bc3f8a70c102dd22c7b9300e
-hardware-tested code = ed4ddda37d941ce6acb01148f92b6f5aebe2a275
-status = REAL-CYD HARDWARE PASS; NATIVE MAP ARENA RESIDENT; MERGE-READY
+branch = agent/esp32-map1-native-access
+base   = 503fdd66fae625a45446fb4ea0853abc71d7dda3
+hardware-affecting head = 22981ff9e9323034e56c2d0527a5c87f683622df
+status = NATIVE COMPACT ACCESSORS IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
 ```
 
-Documentation-only commits may follow the hardware-tested code without invalidating the run.
+Detailed active milestone: [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md).
 
-Detailed milestone: [`MAP1_NATIVE_RUNTIME.md`](MAP1_NATIVE_RUNTIME.md).
+Merged resident-runtime evidence: [`MAP1_NATIVE_RUNTIME.md`](MAP1_NATIVE_RUNTIME.md).
 
 ## Permanent target / ownership
 
@@ -55,11 +57,11 @@ DoomRPG-RE = executable specification / format + behavior reference
 final CYD engine = our ESP32-native engine
 ```
 
-Desktop-derived `Render_t`, `DoomCanvas_t`, pointer-heavy map structures and linker wrappers are migration scaffolding, not permanent architecture requirements.
+Desktop-derived `Render_t`, `DoomCanvas_t`, pointer-heavy map structures and linker wrappers remain migration scaffolding, not permanent architecture requirements.
 
-## Current hardware-safe boundary
+## Current merged hardware-safe boundary
 
-Normal optimized firmware now reaches:
+Normal optimized firmware at PR #43 reaches:
 
 ```text
 menu                    = MENU_NONE
@@ -81,12 +83,13 @@ legacy gameplay loader  = NOT called
 native map arena        = RESIDENT
 native arena payload    = 14095 B
 actual heap cost        = 14112 B
-heap8                   = 70128 after resident load
+heap8                   = 70128 after resident load on PR #43 candidate
 largest8                = 36852
+arenaFNV                = c3882516
 ST_PLAYING              = NOT entered
 ```
 
-The current resident arena is the first persistent gameplay-map structure owned by the native ESP32 runtime.
+The resident arena is byte-addressed and immutable. Mutable future state belongs in separate explicit index-based overlays.
 
 ## MAP_INTRO source reference
 
@@ -113,7 +116,7 @@ stringData     = 7779 B
 maxString      = 313 B
 ```
 
-Payload-relative section offsets:
+Payload-relative source offsets:
 
 ```text
 nodes         = 35
@@ -140,7 +143,7 @@ sprite-as-texture refs  = 0
 ID overflow             = 0 / 0 / 0
 ```
 
-`textureReq=33` and `spriteReq=45` remain map-derived dependencies, not a declaration of every future global gameplay resource.
+`textureReq=33` and `spriteReq=45` are map-derived dependencies, not a declaration of every future global gameplay resource.
 
 ## Rejected legacy map lifecycle
 
@@ -156,7 +159,7 @@ zero-headroom deficit     = 1237 B
 
 The fail-closed hardware probe proved that retaining the complete raw BSP while building pointer-heavy runtime structures is the wrong no-PSRAM architecture.
 
-## Native compact arena
+## Native compact arena — hardware validated
 
 Exact resident payload:
 
@@ -176,43 +179,17 @@ Exact resident payload:
 payload                14095 B
 ```
 
-The arena is byte-addressed to prevent hidden C padding. Original compact BSP records remain compact. Mutable future state belongs in separate index-based overlays.
-
-Strings remain on SD; only 188 B of little-endian source offsets are resident.
-
-## Real-CYD resident-runtime proof
-
-PR #42 pass regression on the new build:
-
-```text
-heap8       84240 -> 84240
-largest8    36852 -> 36852
-frameFNV    11b4cc0e -> 11b4cc0e
-readCalls   = 86
-elapsed     = 166 ms
-FNV-1a      = d5cc751f
-CRC32       = 623f34e4
-```
-
-Resident population:
+PR #43 real-CYD result:
 
 ```text
 arenaBytes         = 14095
+actual heap use    = 14112 B
+allocator overhead = 17 B
 populateReadCalls  = 33
 populateElapsed    = 62 ms
 arenaFNV           = c3882516
-sourceCRC          = 623f34e4
-```
-
-Exact heap measurement:
-
-```text
-heap8     84240 -> 70128
-used              14112 B
-payload            14095 B
-allocator overhead    17 B
-largest8  36852 -> 36852
-frameFNV  11b4cc0e -> 11b4cc0e
+largest8           = 36852 -> 36852
+frameFNV           = unchanged
 ```
 
 Compared with legacy structural allocation:
@@ -223,54 +200,127 @@ saved = 41229 B
 reduction ~= 74.5%
 ```
 
-The largest free 8-bit block staying at `36852` is a strong fragmentation result: the arena did not consume the largest region.
+Strings remain on SD; only 188 B of little-endian payload offsets are resident.
 
-Stable later heartbeat:
+## Current native access candidate
+
+The new branch adds allocation-free, bounds-checked decoding over the resident compact arena.
+
+Public native value contracts:
 
 ```text
-heap8     = 70128
-largest8  = 36852
+EspMapNode
+  source x1/y1/x2/y2 expanded by byte << 3
+  args1/args2 decoded from the 10-byte BSP record
+
+EspMapLine
+  source x1/y1/x2/y2
+  texture uint16
+  flags uint32
+
+EspMapSprite
+  source x/y
+  source info uint32
+
+EspMapByteCode
+  id uint8
+  arg1/arg2 uint32
 ```
 
-No OOM, reset, leak, framebuffer mutation, entity spawn or hidden gameplay transition occurred.
+Additional accessors expose:
+
+```text
+events by index
+string source offsets
+1024 packed block-map cells
+2 x 1024 plane texture IDs
+required texture/sprite/plane-resource membership
+```
+
+### Important source/runtime separation
+
+The accessors expose **immutable source semantics** only.
+
+They deliberately do not hide later desktop runtime mutations such as:
+
+```text
+line coordinate +/-3 nudges
+line derived Z/length values
+sprite +/-1 nudges
+sprite BSP relinking
+runtime-only sprite flags
+entity pointers / linked lists
+```
+
+Any behavior that the final game needs will be implemented explicitly by the appropriate native consumer or mutable overlay.
+
+## Current access-validation path
+
+After the merged PR #43 resident loader succeeds:
+
+```text
+resident EspMapRuntime
+    -> MAPACCESS arm
+    -> decode every node/line/sprite/event/bytecode through public accessors
+    -> independently compare decoded values against compact source bytes
+    -> validate all 94 string offsets
+    -> validate all 1024 block cells
+    -> validate both 1024-cell plane maps
+    -> validate 256-ID resource sets = 33 / 45 / 12
+    -> verify out-of-range access fails
+    -> compute canonical decoded FNV
+    -> require zero heap/largest8/framebuffer drift
+    -> PARK
+```
+
+Expected inherited arena regression:
+
+```text
+arenaBytes = 14095
+arenaFNV   = c3882516
+```
+
+The first real-CYD run will establish:
+
+```text
+decodedFNV
+accessor elapsed time
+first decoded node/line/sprite/event/bytecode sample
+first/last string payload offsets
+block-map 2-bit value distribution
+exact new build heap baseline
+```
+
+Accessor execution itself must remain allocation-free and produce:
+
+```text
+heap8     X -> X
+largest8  Y -> Y
+frameFNV  Z -> Z
+```
 
 ## Current temporary load timing
 
-The validation scaffolding currently does:
+The inherited validation scaffolding still performs:
 
 ```text
-PR #42 pass1 inventory = 166 ms
-second inventory       = 145 ms  # deliberate temporary duplicate
+pass1 inventory       ~= 166 ms on PR #43 build
+second inventory      ~= 145 ms  # temporary duplicate
 arena population       = 62 ms
---------------------------------
-current validation     ~= 373 ms
 ```
 
-The second inventory exists only to leave the already hardware-validated pass1 code untouched. A future native orchestrator should carry the validated inventory directly into allocation/population and remove that duplicate scan.
+The duplicate inventory remains a temporary validation artifact. A future native orchestrator should carry one validated inventory directly into allocation/population.
 
-## Execution path now proven
-
-```text
-menu/start/intro path
-    -> validated intro disposal
-    -> ST_INTRO page 3
-    -> native BSP inventory/plan
-    -> one 14095-B native structural arena allocation
-    -> direct .pak section population
-    -> string-offset table; text stays on SD
-    -> resident arena FNV proof
-    -> PARK with arena resident
-```
-
-Still absent:
+## Still forbidden
 
 ```text
 shapeData/mediaTexels
 complete raw BSP allocation
 legacy Render_beginLoadMapData()
-entity/monster activation
+mutable entity/monster activation
 player spawn
-native gameplay rendering
+hidden line/sprite mutation inside accessors
+map rendering
 ST_PLAYING
 continuous gameplay loop
 ```
@@ -289,35 +339,8 @@ intro teardown recovered      = 33768 B on PR #41
 
 Detailed old menu/touch/LRU/FNV measurements remain in the archived recovery snapshot.
 
-## Merge recommendation
+## Next action
 
-**Merge this branch. No additional hardware test is required for this milestone.**
+Build/flash the current branch on normal `esp32-cyd` and capture the `MAPACCESS` block plus later stable `[ALIVE]` heartbeats.
 
-The hardware-affecting code was tested at:
-
-```text
-ed4ddda37d941ce6acb01148f92b6f5aebe2a275
-```
-
-Later changes should remain documentation-only before merge.
-
-Two cosmetic Serial spacing defects are intentionally left in the tested binary and do not affect behavior.
-
-## Next bounded milestone after merge
-
-Branch fresh from the new `main`.
-
-Objective: make the resident structural base useful through the smallest native indexed access/mutable layer needed by the first consumer.
-
-Preferred direction:
-
-```text
-resident immutable EspMapRuntime
-    -> decode/access compact records by index
-    -> add only necessary mutable overlays using integer indices
-    -> establish one bounded first consumer
-    -> measure exact RAM/state cost
-    -> PARK
-```
-
-Do not recreate desktop pointer-heavy per-record ownership. Keep full entity/world activation, player spawn, `ST_PLAYING` and the gameplay render loop as later measured milestones.
+If the accessor probe passes with zero drift, document the canonical decoded FNV and samples, then decide whether this branch is a coherent merge boundary or whether the first tiny native mutable/spatial consumer should remain on the same branch.
