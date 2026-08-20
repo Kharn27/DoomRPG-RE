@@ -8,7 +8,18 @@ Base hardware-validated `main`:
 b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96
 ```
 
-Status: **HARDWARE PASS; DOCUMENTED; MERGE-READY**.
+Status: **MERGED ARCHIVE — HARDWARE PASS — PR #38**.
+
+Merged to `main` at:
+
+```text
+58edfe5d7080a7e9e64ff5b516697ddf3cca31da
+```
+
+This file is the historical hardware-evidence archive for PR #38. Its measured
+heap/timing values belong to that build. For the current recovery point, see
+[`PORTING_STATUS.md`](PORTING_STATUS.md); for documentation ownership rules, see
+[`DOCUMENTATION.md`](DOCUMENTATION.md).
 
 ## Objective
 
@@ -169,7 +180,7 @@ and especially the final saturation transform are the first measured candidates.
 
 ## Final milestone contract
 
-PASS is established for:
+PASS was established for:
 
 - animated fitted starfield / story presentation
 - progressive story text reveal
@@ -184,10 +195,14 @@ PASS is established for:
 - heartbeat while the clock is running
 - no `DoomCanvas_run()` handoff
 
-This branch is merge-ready.
+This evidence was merged in PR #38.
 
-## Next milestone after merge
+## Historical next boundary at merge time
 
-Add bounded intro input for `More` / `Continue`, still using the ESP32-owned story
-renderer/clock and still without handing control to the general legacy game loop
-or loading the first gameplay map.
+At the time PR #38 merged, the planned next increment was bounded intro input for
+`More` / `Continue`, still using the ESP32-owned story renderer/clock and still
+without handing control to the broad legacy game loop or loading the first
+gameplay map.
+
+That statement is retained as historical context. The live roadmap is in
+[`PORTING_STATUS.md`](PORTING_STATUS.md).
