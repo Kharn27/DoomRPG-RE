@@ -10,195 +10,92 @@ Base merged `main`:
 
 That base is PR #41, the hardware-validated bounded intro teardown.
 
-Status: **REAL-CYD MEASUREMENT PASS; NATIVE `.pak` BSP PASS 1 IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS; BRANCH CONTINUES**.
-
-## What this branch has established
-
-This branch first answered a feasibility question before committing to an engine
-architecture:
+Hardware-validated implementation head:
 
 ```text
-Can the desktop/J2ME-derived resident-BSP + resident-runtime loader fit
-/intro.bsp safely on the classic no-PSRAM CYD?
+45833b68b0e185630b1e5a769e54a051196c70e8
 ```
 
-The real-CYD answer is now measured:
+Status: **REAL-CYD HARDWARE PASS; ESP32-NATIVE BSP PASS 1 + COMPACT MAP PLAN VALIDATED; MERGE-READY**.
+
+This document is the milestone evidence for the first post-prologue gameplay BSP boundary. It records both the failed legacy feasibility model and the native replacement that was proven on a classic no-PSRAM CYD.
+
+## Executive result
+
+The branch established two complementary facts:
 
 ```text
-NO.
+legacy resident BSP + pointer-heavy runtime  -> does not fit safely
+native .pak reader + compact structural plan -> fits trivially and is hardware-proven
 ```
 
-The legacy feasibility probe refused before the unsafe allocation, cleaned every
-temporary resource and returned to the exact post-intro boundary without reset or
-heap drift.
+The active implementation no longer attempts to make `Render_beginLoadMapData()` fit. `DoomRPG-RE` remains an executable specification/data-format reference; the destination is our own ESP32-native engine.
 
-That measurement is now being used as intended: the active firmware path on this
-same branch has moved to the first reusable **ESP32-native BSP reader**.
-
-## Permanent architecture interpretation
-
-DoomRPG-RE is an **executable specification and data-format reference**. It is not
-the architecture contract for the final CYD firmware.
-
-The final ESP32 engine may completely stop compiling the desktop-derived sources.
-Current names/calls such as:
+The first real post-prologue BSP is:
 
 ```text
-Render_t
-DoomCanvas_t
-Render_beginLoadMap()
-Render_beginLoadMapData()
-DoomCanvas_run()
+startupMap = 1
+MAP_INTRO  = 1
+file       = /intro.bsp
+name       = Entrance
 ```
 
-are migration/probe scaffolding while behavior and formats are recovered. They
-are not permanent engine boundaries.
+`MAP_SECTOR01 = 2` maps to `/level01.bsp` and remains later work.
 
-Target direction:
+---
+
+# Architecture contract
+
+Permanent direction:
 
 ```text
-original Doom RPG data formats / behavior
+original Doom RPG data / recovered behavior
                 |
                 v
         ESP32-native readers
                 |
                 v
-      ESP32-native runtime model
+       compact native map data
                 |
                 v
-       ESP32-native renderer/game
+    mutable state overlays by index
+                |
+                v
+      ESP32-native renderer/game
 ```
 
-not:
+Not:
 
 ```text
 original data
-    -> desktop engine kept underneath forever
-    -> ESP32 wrappers around every incompatible subsystem
+    -> desktop engine retained underneath
+    -> pointer-heavy legacy structures
+    -> wrappers around incompatible ownership/lifecycles
 ```
 
-## Recovery boundary inherited from PR #41
-
-PR #41 proved the classic CYD can park after intro resources are released and
-before any gameplay map load:
-
-```text
-menu                    = MENU_NONE
-state                   = ST_INTRO (9)
-storyPage               = 3
-storyTextPage           = 0
-intro clock/input       = inactive
-intro images/texts      = NULL
-render clip             = off
-startupMap              = 1
-heap8                   = 84408 on the PR #41 validation build
-largest8                = 36852
-nodes/lines/mapSprites  = NULL
-mapping/ref arrays      = NULL
-shapeData               = NULL
-mediaTexels             = NULL
-wall/sprite caches      = inactive
-Game entities/monsters  = 0
-DoomCanvas_loadMap      = NOT called
-```
-
-The legacy-feasibility probe build had a small normal build-to-build shift:
-
-```text
-post-intro heap8     = 84384
-post-intro largest8  = 36852
-```
-
-## Important map-ID clarification
-
-`startupMap == 1` is **not** `level01.bsp`.
-
-Recovered enum/resource mapping:
-
-```text
-MAP_MENU     = 0
-MAP_INTRO    = 1 -> /intro.bsp
-MAP_SECTOR01 = 2 -> /level01.bsp
-```
-
-The first post-prologue gameplay BSP is therefore:
-
-```text
-MAP_INTRO / /intro.bsp
-```
-
-`/level01.bsp` remains later work.
-
----
-
-# Phase A — legacy feasibility measurement
-
-## Fail-closed measurement scaffold
-
-The first implementation on this branch deliberately used the recovered loader
-only as a measuring instrument:
-
-```text
-post-intro PARK / page 3
-    -> ZIP/memory preflight
-    -> temporary Render_loadMappings()
-    -> parse raw /intro.bsp to calculate exact structural allocations
-    -> if safe, release probe BSP
-    -> Render_beginLoadMap(MAP_INTRO)
-    -> Render_beginLoadMapData()
-    -> hard stop before Render_loadBitShapes()
-```
-
-It forbade:
-
-```text
-Render_loadBitShapes()
-Render_loadTexels()
-Game_loadMapEntities()
-Game_loadWorldState()
-Game_spawnPlayer()
-DoomCanvas_updateView()
-DoomCanvas_setState(ST_PLAYING)
-DoomCanvas_run()
-```
-
-Permanent no-PSRAM invariant:
+Permanent no-PSRAM invariants remain:
 
 ```text
 shapeData   == NULL
 mediaTexels == NULL
 ```
 
-The real hardware refused before the structural allocator, so the prepared
-bitshape hard-stop was never reached during the validation run.
+The final ESP32 build may stop compiling the desktop-derived engine completely once native components own the required behavior and formats.
 
-## Real-CYD measurement profile
+---
 
-Validation used normal optimized firmware:
+# Phase A — legacy feasibility measurement
 
-```text
-esp32-cyd
-```
+The first probe deliberately used the recovered loader only as an instrument. It measured the exact cost before allowing the unsafe structural allocation.
 
-not `esp32-cyd-bringup`.
-
-### Intro teardown still passed
+Normal firmware (`esp32-cyd`) reached the post-intro boundary at:
 
 ```text
-before teardown
-  heap8     = 50620
-  largest8  = 13300
-
-after teardown
-  heap8     = 84384
-  largest8  = 36852
-  recovered = 33764 B
+heap8     = 84384
+largest8  = 36852
 ```
 
-PR #41 had measured `33768 B`; the four-byte difference is ordinary build
-baseline movement. Resource order and the `36852` largest block remained stable.
-
-### Legacy ZIP working sets
+Legacy ZIP/mapping measurements:
 
 ```text
 mappings.bin
@@ -206,6 +103,7 @@ mappings.bin
   uncompressed   = 8392 B
   miniz state    = 10992 B
   transient      = 21540 B
+  resident cost  = 8440 B
 
 /intro.bsp
   compressed     = 11150 B
@@ -214,437 +112,330 @@ mappings.bin
   transient      = 43965 B
 ```
 
-Both individual inflates fit the initial post-intro boundary.
-
-### Legacy mapping cost
-
-```text
-heap8     84384 -> 75944
-largest8  36852 -> 36852
-resident cost   = 8440 B
-```
-
-The old `mappingMemory=-8440` diagnostic has reversed accounting sign; heap
-measurement is authoritative.
-
-### Exact `/intro.bsp` inventory
-
-The bounded parser consumed the file exactly:
+Exact structural inventory:
 
 ```text
 nodes          = 223
 lines          = 480
 mapSprites     = 344
-runtimeSprites = 368   (344 + 16 custom + 8 drop in the legacy model)
+runtimeSprites = 368   # legacy only: +16 custom +8 drop
 events         = 93
 byteCodes      = 265
 strings        = 94
-legacy string allocation bytes = 7873
-raw string payload bytes        = 7779
+raw string data= 7779 B
+legacy strings = 7873 B # includes one NUL per string
 parsed         = 21823 / 21823 B
 trailing       = 0 B
 ```
 
-The distinction between the two string figures matters:
+The desktop-derived structural allocation plan was:
 
 ```text
-7779 B = bytes physically stored in the BSP strings
-7873 B = legacy allocation plan, adding one NUL byte for each of 94 strings
+payload                    = 55341 B
+largest single allocation  = 15360 B
+safety headroom            = 4096 B
 ```
 
-These are primary regression values for the native reader.
-
-### Legacy structural allocation plan
-
-With current desktop-derived runtime types:
+With mappings and the complete raw BSP resident, only `54104 B` of 8-bit heap remained. Therefore:
 
 ```text
-structural allocation payload = 55341 B
-largest single allocation     = 15360 B
-safety headroom               = 4096 B
+zero-headroom deficit = 55341 - 54104 = 1237 B
+with 4096 B headroom  = 59437 - 54104 = 5333 B
 ```
 
-With mappings and the full uncompressed BSP resident simultaneously:
+The largest individual allocation would have fitted (`15360 <= 20468` largest block); the simultaneous total working set would not.
 
-```text
-heap8 available       = 54104 B
-largest8              = 20468 B
-required + headroom   = 59437 B
-largest allocation    = 15360 B
-```
-
-The largest individual allocation would fit. The total simultaneous working set
-would not.
-
-Deficit:
-
-```text
-with 4096 B safety headroom:
-  59437 - 54104 = 5333 B short
-
-with ZERO safety headroom:
-  55341 - 54104 = 1237 B short
-```
-
-Therefore the refusal is **not** caused by an overly conservative guard. The
-resident-BSP + resident-runtime lifecycle genuinely does not fit even with zero
-safety margin.
-
-## Why the legacy lifecycle loses
-
-The problem is not that `/intro.bsp` is intrinsically huge; it is only 21,823 B
-uncompressed.
-
-The waste comes from coexistence:
-
-```text
-mappings resident
-+ complete uncompressed BSP resident
-+ progressively allocated runtime structures
-```
-
-The legacy loader does not release the raw BSP until nodes, lines, sprites,
-scripts, strings, blockmap and plane references have all been instantiated.
-
-Trying to shave ~5 KiB until that architecture happens to pass would optimize the
-wrong design.
-
-## Safe refusal / cleanup proof
-
-Hardware emitted:
-
-```text
-[MAP1STRUCT] REFUSED structural working set does not fit with raw BSP resident
-```
-
-before entering the real structural allocator.
-
-The fail path released the temporary BSP plus mapping/runtime fields. Later
-heartbeats returned exactly to:
+The probe failed closed before allocation, cleaned mappings/BSP temporaries, and returned exactly to:
 
 ```text
 heap8     = 84384
 largest8  = 36852
 ```
 
-No reset, OOM, hidden map transition or heap drift occurred.
+No OOM, reset, leak or hidden map transition occurred.
+
+Conclusion:
+
+```text
+measurement/safety-gate = PASS
+legacy lifecycle        = REFUSED by real memory budget
+```
+
+Trying to shave a few KiB from that lifecycle would optimize the wrong architecture.
+
+---
+
+# Phase B — native `.pak` BSP reader
+
+## Source model
+
+`DoomRPG-ESP32.pak` stores the game resources uncompressed behind an on-disk hash index and supports bounded random-access reads.
+
+The native reader therefore uses:
+
+```text
+DoomRPG-ESP32.pak
+        -> find /intro.bsp
+        -> fixed 256 B window
+        -> sequential parser
+        -> complete CRC32 + FNV proof
+```
+
+No ZIP inflate, complete BSP allocation or legacy mapping table is required.
+
+`esp_bsp_reader.c/.h` intentionally has no dependency on `Render_t`, `DoomCanvas_t`, `Game_t`, `Node_t`, `Line_t` or `Sprite_t`. It is intended to remain part of the final native engine.
+
+`native_map1_bsp_pass1.c/.h` and the lifecycle bridge are temporary handoff scaffolding only.
+
+## First hardware PASS — pure inventory
+
+The initial native pass consumed every byte of `/intro.bsp` through a 256-byte window:
+
+```text
+source       = 21823 B
+readCalls    = 86
+elapsed      = 125 ms
+FNV-1a       = d5cc751f
+CRC32        = 623f34e4
+CRC verified = yes
+```
+
+The hardware reproduced all structural counts exactly and measured:
+
+```text
+heap8     84376 -> 84376  delta=0
+largest8  36852 -> 36852  delta=0
+```
+
+The logical framebuffer FNV also remained unchanged across the reader call.
+
+---
+
+# Phase C — section offsets, resource sets and compact plan
+
+The reader was then extended without allocating any map runtime. The second normal-firmware CYD run is the merge-quality hardware evidence for this branch.
+
+## Entry/header proof
+
+```text
+entry offset = 1945016
+entry size   = 21823
+CRC32        = 623f34e4
+window       = 256 B
+
+name         = Entrance
+loadMapId    = 1
+spawn        = 904
+direction    = 64
+camera       = 648
+floorTex     = 145
+ceilingTex   = 112
+```
+
+Integrity remained:
+
+```text
+bytes        = 21823 / 21823
+readCalls    = 86
+FNV-1a       = d5cc751f
+CRC32        = 623f34e4
+verified     = yes
+trailing     = 0
+```
+
+## Exact BSP section offsets
+
+All offsets are relative to the `/intro.bsp` payload in the native pack:
+
+```text
+nodes         = 35
+lines         = 2267
+mapSprites    = 7069
+events        = 8791
+byteCodes     = 9165
+strings       = 11552
+blockMap      = 19519
+planeTextures = 19775
+end           = 21823
+```
+
+These offsets are now regression-checked by the pass-1 lifecycle probe. They let future loaders use `EspAssetPack_readRange()` directly on individual sections rather than replaying or materializing the complete BSP.
+
+## Map-derived resource inventory
+
+Real `/intro.bsp` resource usage:
+
+```text
+unique line texture IDs      = 20
+unique map-sprite IDs        = 48
+required texture IDs         = 33
+required sprite IDs          = 45
+unique plane texture IDs     = 12
+EV_CHANGESPRITE bytecodes    = 0
+sprite-as-texture references = 0
+ID overflow                  = 0 / 0 / 0
+```
+
+Interpretation:
+
+- `lineTex=20` and `mapSpriteIds=48` are direct logical IDs physically referenced by map records;
+- `textureReq=33` includes map-derived texture dependencies such as floor/ceiling, planes and the recovered line companion rules (`34->92`, `33->91`, `9<->10`);
+- `spriteReq=45` is the map-derived sprite dependency set;
+- the recovered `EV_CHANGESPRITE` path is opcode `34`; `/intro.bsp` contains no such bytecode, so `changeSprite=0` is a real property of this map;
+- no map sprite in `/intro.bsp` uses the recovered sprite-as-tile path, so `spriteAsTexture=0` is also a real property, not a parser omission;
+- all relevant IDs fit in the current 0..255 bitsets. The generic reader still counts overflows and must fail closed before trusting a truncated set on a future map.
+
+Important scope rule: `textureReq=33` / `spriteReq=45` are **map-derived requirements**, not a declaration of the complete future gameplay asset set. The reference loader also injects groups of global sprites in code. Those globals are desktop/J2ME ownership policy and will be measured/assigned deliberately by the native engine instead of copied blindly.
+
+## Compact structural plan
+
+The first native plan deliberately keeps immutable source records compact and keeps string payloads on SD:
+
+```text
+nodes          2230 B  # 223 x 10 B raw native records
+lines          4800 B  # 480 x 10 B
+mapSprites     1720 B  # 344 x 5 B
+events          372 B  # 93 x 4 B
+byteCodes      2385 B  # 265 x 9 B
+stringOffsets   188 B  # 94 x uint16_t
+blockMap        256 B  # packed 2-bit cells
+planeMap       2048 B  # original two 1024-byte maps
+resourceSets     96 B  # three 256-ID bitsets
+-----------------------------------------------
+persistent    14095 B
+```
+
+Legacy structural reference:
+
+```text
+legacy structural = 55341 B
+native base plan   = 14095 B
+saved              = 41246 B
+reduction          = ~74.5%
+```
+
+This is approximately 3.93x smaller than the measured legacy structural payload.
+
+### What `14095 B` does and does not mean
+
+It is a **bounded structural baseline**, not the final complete gameplay-RAM number.
+
+Included:
+
+```text
+immutable BSP node/line/sprite records
+events and bytecode records
+packed blockmap
+plane ID map
+string offset table
+bounded resource-ID sets
+```
+
+Intentionally excluded:
+
+```text
+mutable entities/monsters
+player/gameplay state
+door and script mutable overlays
+runtime sprite links/order
+custom/drop sprite pools
+resource-cache payloads
+string scratch buffer
+renderer working buffers
+```
+
+The correct native direction is therefore:
+
+```text
+compact immutable map base
+        +
+small mutable overlays addressed by uint16/index
+```
+
+rather than expanding every BSP record into a pointer-heavy mutable desktop object.
+
+The longest string in this map is `313 B`; a `314 B` temporary buffer would be sufficient to materialize any `/intro.bsp` string with a NUL terminator. That value is map-specific and must not be assumed for later BSPs without measurement.
+
+## Final hardware performance/memory proof
+
+The extended inventory+plan pass measured:
+
+```text
+readCalls = 86
+elapsed   = 161 ms
+FNV-1a    = d5cc751f
+CRC32     = 623f34e4
+```
+
+The extra semantic parsing/resource marking increased the one-shot scan from the earlier `125 ms` inventory-only run to `161 ms`. This is not currently a performance concern: it is a bounded map-load operation, not a frame-loop cost.
+
+Memory and framebuffer remained exactly unchanged:
+
+```text
+heap8     84376 -> 84376  delta=0
+largest8  36852 -> 36852  delta=0
+frameFNV  8e274563 -> 8e274563
+```
+
+The particular final story framebuffer hash is run-timing-specific; the contract is equality before/after the native pass.
+
+Postconditions remained:
+
+```text
+state         = ST_INTRO (9)
+storyPage     = 3
+startupMap    = 1
+legacy maps   = NULL
+shapeData     = NULL
+mediaTexels   = NULL
+entities      = 0
+monsters      = 0
+legacy loader = NOT called
+```
+
+A later `[ALIVE]` heartbeat remained stable at the same heap/largest-block boundary.
 
 Classification:
 
 ```text
-measurement / safety-gate PASS
-legacy structural feasibility = REFUSED
-```
-
-The legacy probe source and its `Render_loadBitShapes` linker gate are now
-**retired from the active branch tree**. Their evidence remains preserved in Git
-history and in this document.
-
----
-
-# Phase B — ESP32-native BSP reader pass 1
-
-## Why the native `.pak` is the correct source
-
-The first design sketch considered streaming DEFLATE directly from
-`DoomRPG.zip`. That would still be better than the old loader, but DEFLATE needs
-history/window state and would add complexity and RAM pressure we have already
-solved elsewhere.
-
-`DoomRPG-ESP32.pak` v2 already mirrors every ZIP entry **uncompressed** behind a
-hash-sorted on-disk index. It provides allocation-free `seek/readRange` access.
-
-Therefore the active native path is:
-
-```text
-/DoomRPG-ESP32.pak on SD
-          |
-          v
-  EspAssetPack lookup
-          |
-          v
-  fixed 256-byte window
-          |
-          v
-      EspBspReader
-          |
-          v
- scalar inventory only
-```
-
-No ZIP inflate occurs in this pass.
-
-## Component ownership
-
-### `esp_bsp_reader.c/.h`
-
-This is intended to survive into the final ESP32 engine.
-
-It depends on:
-
-```text
-esp_asset_pack
-stdint/string primitives
-```
-
-It does **not** depend on:
-
-```text
-Render_t
-DoomCanvas_t
-Game_t
-Node_t
-Line_t
-Sprite_t
-```
-
-The reader is generic for BSP resources; `/intro.bsp` is only its first hardware
-regression target.
-
-### `native_map1_bsp_pass1.c/.h`
-
-This is temporary lifecycle scaffolding. It uses the current recovered game
-objects only to trigger the reader safely after PR #41's intro teardown and to
-prove that no legacy runtime fields appear.
-
-### `native_map1_lifecycle_bridge.c`
-
-The existing cross-object wrapper remains temporary. It now only:
-
-```text
-Esp32IntroDispose_reset()
-    -> reset native BSP pass-1 state
-
-Esp32IntroDispose_service()
-    -> run validated disposer
-    -> arm pass 1
-    -> next Arduino loop runs native inventory
-```
-
-It no longer wraps `Render_loadBitShapes()`.
-
-## Reader memory model
-
-The complete BSP is never allocated.
-
-```text
-fixed reader window = 256 B
-inventory           = scalar counters/header fields
-asset pack index    = remains on SD
-BSP payload         = remains on SD
-```
-
-The reader walks every source byte in order. Record bodies that do not yet need
-semantic decoding are consumed through the same 256-byte window, so CRC/FNV cover
-the complete file rather than only section headers.
-
-For the 21,823-byte `/intro.bsp`, the theoretical payload-window count is about:
-
-```text
-ceil(21823 / 256) = 86 reads
-```
-
-The actual hardware count and elapsed time are logged.
-
-## Integrity proof
-
-Pack v2 stores the original ZIP CRC32 for each entry. Pass 1 computes CRC32 while
-streaming the BSP and requires exact equality.
-
-It also computes FNV-1a for a cheap deterministic regression fingerprint.
-
-Expected log shape:
-
-```text
-[BSPREAD] ENTRY /intro.bsp offset=... size=21823 crc32=... window=256B
-[BSPREAD] HEADER name='...' loadMapId=... spawn=... dir=... camera=... floorTex=... ceilingTex=...
-[BSPREAD] INVENTORY nodes=223 lines=480 mapSprites=344 events=93 byteCodes=265 strings=94 stringData=7779 legacyStringAlloc=7873 maxString=... structuralEnd=21823 trailing=0
-[BSPREAD] STREAM bytes=21823/21823 readCalls=... window=256B fnv1a=... crc32=... verified=yes
-```
-
-## Pass-1 runtime contract
-
-After PR #41 disposal, pass 1 requires:
-
-```text
-state                   = ST_INTRO
-storyPage               = 3
-startupMap              = MAP_INTRO (1)
-intro resources         = NULL
-intro clock/input       = inactive
-legacy mappings         = NULL
-legacy runtime arrays   = NULL
-shapeData               = NULL
-mediaTexels             = NULL
-entities/monsters       = 0
-native wall/sprite LRU  = inactive
-```
-
-Then it performs only:
-
-```text
-open DoomRPG-ESP32.pak if needed
-find /intro.bsp
-stream complete entry through 256 B window
-parse header + section counts/string lengths
-CRC32 verify
-FNV compute
-close pack if this call opened it
-PARK
-```
-
-Forbidden in this pass:
-
-```text
-readZipFileEntry(/intro.bsp)
-Render_loadMappings()
-Render_beginLoadMap()
-Render_beginLoadMapData()
-Render_loadBitShapes()
-Render_loadTexels()
-Game_loadMapEntities()
-any native map-runtime allocation
-any gameplay state transition
-```
-
-## Hardware regression targets
-
-The native pass requires the previously measured inventory exactly:
-
-```text
-sourceBytes        = 21823
-nodes              = 223
-lines              = 480
-mapSprites         = 344
-events             = 93
-byteCodes          = 265
-strings            = 94
-stringData         = 7779
-legacyStringAlloc  = 7873
-structuralEnd      = 21823
-trailing           = 0
-CRC32              = pack index CRC32
-```
-
-`runtimeSprites=368` remains a **legacy runtime-plan reference**, not a raw BSP
-field and not a requirement for the future native runtime.
-
-## Hardware PASS criteria for native pass 1
-
-PASS requires all of the following on normal `esp32-cyd`:
-
-- PR #41 intro teardown still succeeds first;
-- `NATIVEBSP1` arms only after teardown reports done;
-- `/intro.bsp` is read from `DoomRPG-ESP32.pak`, not inflated from ZIP;
-- the reader consumes exactly `21823/21823` bytes;
-- all inventory counts match the regression target;
-- CRC32 matches the pack entry;
-- FNV-1a is reported for future regression use;
-- `readCalls` and elapsed milliseconds are measured;
-- no legacy mapping/runtime field becomes resident;
-- `shapeData == NULL`;
-- `mediaTexels == NULL`;
-- entities/monsters remain zero;
-- framebuffer FNV is unchanged across the inventory pass;
-- `heap8` is identical before/after the complete open/read/close cycle;
-- largest 8-bit free block is identical before/after;
-- later `[ALIVE]` heartbeats remain stable.
-
-Expected final shape:
-
-```text
-[NATIVEBSP1] READY ...
-[NATIVEBSP1] STREAM window=256B readCalls=... elapsed=...ms fnv1a=... crc32=... verified=yes
-[NATIVEBSP1] RAM heap8=X->X delta=0 largest8=Y->Y delta=0 frameFNV=Z->Z
-[NATIVEBSP1] PARK ... mappings=NULL runtime=NULL shapeData=0x0 mediaTexels=0x0 entities=0 monsters=0 noLegacyMapLoader=yes
-[ALIVE] ...
+native BSP reader              = REAL-CYD PASS
+complete payload verification  = PASS
+section offsets                = PASS
+map-derived resource inventory = PASS
+compact structural plan        = PASS
+zero heap drift                = PASS
+zero framebuffer drift         = PASS
+safe PARK after pass           = PASS
 ```
 
 ---
 
-# After native pass-1 hardware PASS
+# Merge boundary
 
-The next work on this branch is **not** to restore the desktop structures.
+This branch is **MERGE-READY**.
 
-It is to define the smallest native runtime actually required by our renderer and
-game logic, then populate it from the same BSP source.
+No additional hardware test is required for this milestone because the final changes after the successful run are documentation-only. The hardware-validated implementation is commit `45833b68b0e185630b1e5a769e54a051196c70e8`.
 
-Preferred flow:
+After merge, create a fresh branch from the new `main` for the first persistent native map-runtime allocation/population milestone.
 
-```text
-PASS 1
-  -> inventory/validate from .pak
-  -> exact native allocation plan
-
-CONTROLLED ALLOCATION
-  -> consolidated native pools / arrays
-  -> largest pools deliberately ordered
-  -> measure fragmentation
-
-PASS 2
-  -> re-read /intro.bsp through EspBspReader-style windows
-  -> decode directly into final native pools
-  -> never materialize complete raw BSP
-```
-
-The native structures are not required to match `Node_t`, `Line_t` or `Sprite_t`.
-Field widths and ownership should follow actual ESP32 consumers.
-
-Immediate candidates discovered by the measurement remain:
+Recommended next objective:
 
 ```text
-480 legacy Line_t entries
-  -> old largest allocation = 15360 B
-  -> inspect which fields our renderer really needs
-
-94 strings
-  -> packed string pool + offset table instead of 94 heap allocations
-
-344 map sprites
-  -> compact indexes instead of pointer-heavy desktop relationships
-
-223 BSP nodes
-  -> compact child/index representation where consumers allow it
+post-intro page-3 PARK
+    -> native BSP inventory/plan regression
+    -> allocate one compact structural arena (or a deliberately small number of pools)
+    -> readRange nodes/lines/sprites/events/bytecodes/blockmap/planes directly
+    -> build string-offset table without copying string payloads
+    -> keep mutable gameplay state separate by index
+    -> verify exact heap cost + fragmentation
+    -> PARK
 ```
 
-Do not freeze packed sizes until pass-2 consumers are mapped.
-
-Mappings are also not assumed permanently resident. The old mapping arrays cost
-`8440 B`; native resource IDs/mappings should be represented only when required by
-native rendering/resource consumers.
-
-## Performance philosophy
-
-No fixed gameplay FPS target is imposed yet.
-
-Doom RPG is turn-based. Input/game logic must be independent from panel
-presentation cadence. Prefer demand-driven rendering:
+Do not yet enter `ST_PLAYING`, spawn entities or load monolithic graphics. First prove that the planned native structural base can be made resident at the expected cost while preserving:
 
 ```text
-static scene
-  -> no pointless continuous redraw
-
-player action / animation
-  -> update logic
-  -> render only visually useful frames
-
-input cadence
-  != game-turn cadence
-  != render cadence
+shapeData   == NULL
+mediaTexels == NULL
 ```
 
-The intro feels acceptable despite roughly 14 measured rendered FPS. Gameplay
-animations may tolerate substantially less than a real-time shooter, but no
-arbitrary `5 FPS` target is frozen into the architecture. Hardware measurements
-and perceived smoothness will decide optimization effort once native gameplay
-rendering exists.
-
-Priority remains:
-
-```text
-correctness
--> bounded RAM
--> stable input/game logic
--> correct visuals
--> measured performance optimization
-```
+Only after that hardware boundary is stable should the next milestone add native rendering/gameplay consumers.
