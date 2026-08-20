@@ -317,11 +317,11 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
 
     if (!DoomRPG_esp32RenderFirstIntroFrame(doomRpg)) {
-        printf("[MAINSTART] FAILED bounded first ST_INTRO frame / clock handoff\n");
+        printf("[MAINSTART] FAILED bounded first ST_INTRO frame / clock+input handoff\n");
         return 0;
     }
 
-    printf("[MAINSTART] READY first fitted ST_INTRO frame presented; 50 ms ESP32 intro clock armed\n");
-    printf("[MAINSTART] NEXT boundary = hardware-validate multi-frame intro pacing/RAM; input and map load remain disabled\n");
+    printf("[MAINSTART] READY first fitted ST_INTRO frame presented; 50 ms ESP32 intro clock + semantic touch input armed\n");
+    printf("[MAINSTART] NEXT boundary = bounded intro disposal/loading handoff; final Continue currently parks before dispose/map load\n");
     return 1;
 }
