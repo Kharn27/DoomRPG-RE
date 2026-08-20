@@ -12,6 +12,9 @@
 #define BSP_BYTECODE_RECORD_BYTES 9U
 #define BSP_BLOCKMAP_BYTES 256U
 #define BSP_PLANE_TEXTURE_BYTES (2U * 1024U)
+#define BSP_OPCODE_CHANGE_SPRITE 34U
+#define BSP_SPRITE_FLAG_TILE 0x00040000U
+#define BSP_SPRITE_FLAG_SKIP_RESOURCE 0x20000000U
 
 typedef struct EspBspCursor_s {
     EspAssetPackEntry entry;
@@ -26,6 +29,18 @@ typedef struct EspBspCursor_s {
 
 static uint32_t minU32(uint32_t a, uint32_t b) {
     return a < b ? a : b;
+}
+
+static uint16_t readLe16(const uint8_t* bytes) {
+    return (uint16_t)((uint16_t)bytes[0] |
+                      ((uint16_t)bytes[1] << 8));
+}
+
+static uint32_t readLe32(const uint8_t* bytes) {
+    return (uint32_t)bytes[0] |
+           ((uint32_t)bytes[1] << 8) |
+           ((uint32_t)bytes[2] << 16) |
+           ((uint32_t)bytes[3] << 24);
 }
 
 static uint32_t crc32Update(uint32_t crc, const uint8_t* data, uint32_t length) {
@@ -134,8 +149,7 @@ static int cursorReadU16(EspBspCursor* cursor, uint16_t* value) {
         return 0;
     }
 
-    *value = (uint16_t)((uint16_t)bytes[0] |
-                        ((uint16_t)bytes[1] << 8));
+    *value = readLe16(bytes);
     return 1;
 }
 
@@ -148,6 +162,65 @@ static int cursorSkipRecords(EspBspCursor* cursor,
         return 0;
     }
     return cursorConsume(cursor, NULL, (uint32_t)bytes);
+}
+
+static void markLogicalId(uint32_t bits[ESP_BSP_RESOURCE_BITSET_WORDS],
+                          uint32_t id,
+                          uint32_t* uniqueCount,
+                          uint32_t* above255Count) {
+    uint32_t word;
+    uint32_t mask;
+
+    if (id >= ESP_BSP_RESOURCE_ID_LIMIT) {
+        if (above255Count != NULL) {
+            ++(*above255Count);
+        }
+        return;
+    }
+
+    word = id >> 5;
+    mask = 1U << (id & 31U);
+    if ((bits[word] & mask) == 0U) {
+        bits[word] |= mask;
+        if (uniqueCount != NULL) {
+            ++(*uniqueCount);
+        }
+    }
+}
+
+static void markRequiredTexture(EspBspInventory* inventory, uint32_t id) {
+    if (inventory == NULL) {
+        return;
+    }
+
+    markLogicalId(inventory->textureResourceIdBits,
+                  id,
+                  &inventory->uniqueTextureResourceIds,
+                  &inventory->textureResourceIdsAbove255);
+}
+
+static void markTextureWithRecoveredCompanion(EspBspInventory* inventory,
+                                              uint32_t id) {
+    markRequiredTexture(inventory, id);
+
+    switch (id) {
+        case 34U: markRequiredTexture(inventory, 92U); break;
+        case 33U: markRequiredTexture(inventory, 91U); break;
+        case 9U:  markRequiredTexture(inventory, 10U); break;
+        case 10U: markRequiredTexture(inventory, 9U); break;
+        default: break;
+    }
+}
+
+static void markRequiredSprite(EspBspInventory* inventory, uint32_t id) {
+    if (inventory == NULL) {
+        return;
+    }
+
+    markLogicalId(inventory->spriteResourceIdBits,
+                  id,
+                  &inventory->uniqueSpriteResourceIds,
+                  &inventory->spriteResourceIdsAbove255);
 }
 
 static int parseHeader(EspBspCursor* cursor, EspBspInventory* inventory) {
@@ -173,7 +246,138 @@ static int parseHeader(EspBspCursor* cursor, EspBspInventory* inventory) {
         return 0;
     }
 
+    markTextureWithRecoveredCompanion(inventory, inventory->floorTexture);
+    markTextureWithRecoveredCompanion(inventory, inventory->ceilingTexture);
+
     return cursor->position == ESP_BSP_HEADER_BYTES;
+}
+
+static int parseLines(EspBspCursor* cursor, EspBspInventory* inventory) {
+    uint8_t record[BSP_LINE_RECORD_BYTES];
+    uint32_t i;
+    uint32_t textureId;
+
+    for (i = 0; i < inventory->lines; ++i) {
+        if (!cursorConsume(cursor, record, sizeof(record))) {
+            return 0;
+        }
+
+        textureId = readLe16(record + 4U);
+        markLogicalId(inventory->lineTextureIdBits,
+                      textureId,
+                      &inventory->uniqueLineTextureIds,
+                      &inventory->lineTextureIdsAbove255);
+        markTextureWithRecoveredCompanion(inventory, textureId);
+    }
+
+    return 1;
+}
+
+static int parseMapSprites(EspBspCursor* cursor, EspBspInventory* inventory) {
+    uint8_t record[BSP_SPRITE_RECORD_BYTES];
+    uint32_t i;
+    uint32_t spriteId;
+    uint32_t info;
+
+    for (i = 0; i < inventory->mapSprites; ++i) {
+        if (!cursorConsume(cursor, record, sizeof(record))) {
+            return 0;
+        }
+
+        spriteId = record[2];
+        info = spriteId |
+               ((uint32_t)record[3] << 16) |
+               ((uint32_t)record[4] << 24);
+
+        markLogicalId(inventory->mapSpriteIdBits,
+                      spriteId,
+                      &inventory->uniqueMapSpriteIds,
+                      NULL);
+
+        if (spriteId >= 82U && spriteId <= 90U && (spriteId & 1U) == 0U) {
+            markRequiredSprite(inventory, spriteId - 1U);
+        }
+        else if ((info & BSP_SPRITE_FLAG_SKIP_RESOURCE) == 0U) {
+            if ((info & BSP_SPRITE_FLAG_TILE) != 0U) {
+                ++inventory->spriteAsTextureRefs;
+                markTextureWithRecoveredCompanion(inventory, spriteId);
+            }
+            else {
+                markRequiredSprite(inventory, spriteId);
+            }
+        }
+    }
+
+    return 1;
+}
+
+static int parseByteCodes(EspBspCursor* cursor, EspBspInventory* inventory) {
+    uint8_t record[BSP_BYTECODE_RECORD_BYTES];
+    uint32_t i;
+    uint32_t arg1;
+    uint32_t spriteId;
+
+    for (i = 0; i < inventory->byteCodes; ++i) {
+        if (!cursorConsume(cursor, record, sizeof(record))) {
+            return 0;
+        }
+
+        if (record[0] == BSP_OPCODE_CHANGE_SPRITE) {
+            ++inventory->changeSpriteByteCodes;
+            arg1 = readLe32(record + 1U);
+            spriteId = arg1 >> 13;
+            markRequiredSprite(inventory, spriteId);
+        }
+    }
+
+    return 1;
+}
+
+static int parsePlaneTextures(EspBspCursor* cursor, EspBspInventory* inventory) {
+    uint8_t textureId;
+    uint32_t i;
+
+    for (i = 0; i < BSP_PLANE_TEXTURE_BYTES; ++i) {
+        if (!cursorReadU8(cursor, &textureId)) {
+            return 0;
+        }
+
+        markLogicalId(inventory->planeTextureIdBits,
+                      textureId,
+                      &inventory->uniquePlaneTextureIds,
+                      NULL);
+        markTextureWithRecoveredCompanion(inventory, textureId);
+    }
+
+    return 1;
+}
+
+static void buildCompactPlan(EspBspInventory* inventory) {
+    EspMapPlan* plan;
+
+    if (inventory == NULL) {
+        return;
+    }
+
+    plan = &inventory->plan;
+    plan->nodeRecordsBytes = inventory->nodes * BSP_NODE_RECORD_BYTES;
+    plan->lineRecordsBytes = inventory->lines * BSP_LINE_RECORD_BYTES;
+    plan->mapSpriteRecordsBytes = inventory->mapSprites * BSP_SPRITE_RECORD_BYTES;
+    plan->eventRecordsBytes = inventory->events * BSP_EVENT_RECORD_BYTES;
+    plan->byteCodeRecordsBytes = inventory->byteCodes * BSP_BYTECODE_RECORD_BYTES;
+    plan->stringOffsetsBytes = inventory->strings * (uint32_t)sizeof(uint16_t);
+    plan->blockMapBytes = BSP_BLOCKMAP_BYTES;
+    plan->planeMapBytes = BSP_PLANE_TEXTURE_BYTES;
+    plan->resourceSetsBytes = 3U * ESP_BSP_RESOURCE_BITSET_WORDS * (uint32_t)sizeof(uint32_t);
+    plan->persistentBytes = plan->nodeRecordsBytes +
+                            plan->lineRecordsBytes +
+                            plan->mapSpriteRecordsBytes +
+                            plan->eventRecordsBytes +
+                            plan->byteCodeRecordsBytes +
+                            plan->stringOffsetsBytes +
+                            plan->blockMapBytes +
+                            plan->planeMapBytes +
+                            plan->resourceSetsBytes;
 }
 
 static int parseInventory(EspBspCursor* cursor, EspBspInventory* inventory) {
@@ -187,26 +391,32 @@ static int parseInventory(EspBspCursor* cursor, EspBspInventory* inventory) {
 
     if (!cursorReadU16(cursor, &count)) return 0;
     inventory->nodes = count;
+    inventory->sections.nodesOffset = cursor->position;
     if (!cursorSkipRecords(cursor, inventory->nodes, BSP_NODE_RECORD_BYTES)) return 0;
 
     if (!cursorReadU16(cursor, &count)) return 0;
     inventory->lines = count;
-    if (!cursorSkipRecords(cursor, inventory->lines, BSP_LINE_RECORD_BYTES)) return 0;
+    inventory->sections.linesOffset = cursor->position;
+    if (!parseLines(cursor, inventory)) return 0;
 
     if (!cursorReadU16(cursor, &count)) return 0;
     inventory->mapSprites = count;
-    if (!cursorSkipRecords(cursor, inventory->mapSprites, BSP_SPRITE_RECORD_BYTES)) return 0;
+    inventory->sections.mapSpritesOffset = cursor->position;
+    if (!parseMapSprites(cursor, inventory)) return 0;
 
     if (!cursorReadU16(cursor, &count)) return 0;
     inventory->events = count;
+    inventory->sections.eventsOffset = cursor->position;
     if (!cursorSkipRecords(cursor, inventory->events, BSP_EVENT_RECORD_BYTES)) return 0;
 
     if (!cursorReadU16(cursor, &count)) return 0;
     inventory->byteCodes = count;
-    if (!cursorSkipRecords(cursor, inventory->byteCodes, BSP_BYTECODE_RECORD_BYTES)) return 0;
+    inventory->sections.byteCodesOffset = cursor->position;
+    if (!parseByteCodes(cursor, inventory)) return 0;
 
     if (!cursorReadU16(cursor, &count)) return 0;
     inventory->strings = count;
+    inventory->sections.stringsOffset = cursor->position;
 
     for (i = 0; i < inventory->strings; ++i) {
         if (!cursorReadU16(cursor, &stringLength)) {
@@ -224,11 +434,17 @@ static int parseInventory(EspBspCursor* cursor, EspBspInventory* inventory) {
         }
     }
 
-    if (!cursorConsume(cursor, NULL, BSP_BLOCKMAP_BYTES) ||
-        !cursorConsume(cursor, NULL, BSP_PLANE_TEXTURE_BYTES)) {
+    inventory->sections.blockMapOffset = cursor->position;
+    if (!cursorConsume(cursor, NULL, BSP_BLOCKMAP_BYTES)) {
         return 0;
     }
 
+    inventory->sections.planeTexturesOffset = cursor->position;
+    if (!parsePlaneTextures(cursor, inventory)) {
+        return 0;
+    }
+
+    inventory->sections.endOffset = cursor->position;
     inventory->structuralEndOffset = cursor->position;
     inventory->trailingBytes = cursor->entry.size - cursor->position;
 
@@ -238,6 +454,7 @@ static int parseInventory(EspBspCursor* cursor, EspBspInventory* inventory) {
     }
 
     inventory->consumedBytes = cursor->position;
+    buildCompactPlan(inventory);
     return cursor->position == cursor->entry.size;
 }
 
@@ -324,6 +541,38 @@ int EspBspReader_inventoryPackEntry(const char* resourceName,
            (unsigned int)outInventory->maxStringBytes,
            (unsigned int)outInventory->structuralEndOffset,
            (unsigned int)outInventory->trailingBytes);
+    printf("[BSPREAD] OFFSETS nodes=%u lines=%u sprites=%u events=%u byteCodes=%u strings=%u blockMap=%u planes=%u end=%u\n",
+           (unsigned int)outInventory->sections.nodesOffset,
+           (unsigned int)outInventory->sections.linesOffset,
+           (unsigned int)outInventory->sections.mapSpritesOffset,
+           (unsigned int)outInventory->sections.eventsOffset,
+           (unsigned int)outInventory->sections.byteCodesOffset,
+           (unsigned int)outInventory->sections.stringsOffset,
+           (unsigned int)outInventory->sections.blockMapOffset,
+           (unsigned int)outInventory->sections.planeTexturesOffset,
+           (unsigned int)outInventory->sections.endOffset);
+    printf("[BSPREAD] RESOURCES lineTex=%u mapSpriteIds=%u textureReq=%u spriteReq=%u planeTex=%u changeSprite=%u spriteAsTexture=%u overflow=%u/%u/%u\n",
+           (unsigned int)outInventory->uniqueLineTextureIds,
+           (unsigned int)outInventory->uniqueMapSpriteIds,
+           (unsigned int)outInventory->uniqueTextureResourceIds,
+           (unsigned int)outInventory->uniqueSpriteResourceIds,
+           (unsigned int)outInventory->uniquePlaneTextureIds,
+           (unsigned int)outInventory->changeSpriteByteCodes,
+           (unsigned int)outInventory->spriteAsTextureRefs,
+           (unsigned int)outInventory->lineTextureIdsAbove255,
+           (unsigned int)outInventory->textureResourceIdsAbove255,
+           (unsigned int)outInventory->spriteResourceIdsAbove255);
+    printf("[BSPREAD] PLAN nodes=%u lines=%u sprites=%u events=%u byteCodes=%u stringOffsets=%u blockMap=%u planes=%u resourceSets=%u persistent=%u\n",
+           (unsigned int)outInventory->plan.nodeRecordsBytes,
+           (unsigned int)outInventory->plan.lineRecordsBytes,
+           (unsigned int)outInventory->plan.mapSpriteRecordsBytes,
+           (unsigned int)outInventory->plan.eventRecordsBytes,
+           (unsigned int)outInventory->plan.byteCodeRecordsBytes,
+           (unsigned int)outInventory->plan.stringOffsetsBytes,
+           (unsigned int)outInventory->plan.blockMapBytes,
+           (unsigned int)outInventory->plan.planeMapBytes,
+           (unsigned int)outInventory->plan.resourceSetsBytes,
+           (unsigned int)outInventory->plan.persistentBytes);
     printf("[BSPREAD] STREAM bytes=%u/%u readCalls=%u window=%uB fnv1a=%08x crc32=%08x verified=yes\n",
            (unsigned int)outInventory->consumedBytes,
            (unsigned int)outInventory->sourceBytes,
