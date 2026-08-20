@@ -10,6 +10,7 @@
 #include "Render.h"
 
 #include "native_intro_clock.h"
+#include "native_intro_dispose.h"
 #include "native_sprite_lru_cache.h"
 #include "native_story_fit.h"
 #include "native_wall_lru_cache.h"
@@ -31,6 +32,7 @@ typedef struct Esp32IntroClockState_s {
     uint32_t armedLargest8;
     int active;
     int textDoneLogged;
+    int exitReadyPark;
 } Esp32IntroClockState;
 
 static Esp32IntroClockState clockState;
@@ -133,6 +135,8 @@ static void parkClock(const char* reason) {
            canvas != NULL ? canvas->storyTextPage : -1,
            (unsigned int)heap8Free(),
            (unsigned int)largest8Block());
+    clockState.exitReadyPark =
+        reason != NULL && SDL_strcmp(reason, "intro-exit-ready") == 0;
     clockState.active = 0;
 }
 
@@ -167,6 +171,7 @@ int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase) {
     const uint32_t frameHash = framebufferHash();
 
     SDL_memset(&clockState, 0, sizeof(clockState));
+    Esp32IntroDispose_reset();
 
     if (!boundaryIsSafe(doomRpg) ||
         doomRpg->doomCanvas->storyPage != 0 ||
@@ -213,6 +218,9 @@ void Esp32IntroClock_service(void) {
     int pageBefore;
 
     if (!clockState.active) {
+        if (clockState.exitReadyPark) {
+            Esp32IntroDispose_service(clockState.doomRpg);
+        }
         return;
     }
 
