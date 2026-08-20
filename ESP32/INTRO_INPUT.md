@@ -8,7 +8,18 @@ Base hardware-validated `main`:
 58edfe5d7080a7e9e64ff5b516697ddf3cca31da
 ```
 
-Status: **FULL HARDWARE PASS; ALL INTRO INPUT BRANCHES VALIDATED; MERGE-READY**.
+Status: **MERGED ARCHIVE — FULL HARDWARE PASS — ALL INTRO INPUT BRANCHES VALIDATED — PR #39**.
+
+Merged to `main` at:
+
+```text
+7ba68955a9b0979924c5e759736fb483589be744
+```
+
+This file is the historical hardware-evidence archive for PR #39. The two real-CYD
+runs below intentionally remain detailed and build-specific. For the current
+recovery point, see [`PORTING_STATUS.md`](PORTING_STATUS.md); for documentation
+ownership rules, see [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
 ## Objective
 
@@ -341,9 +352,10 @@ Validated on real CYD:
 - `DoomCanvas_disposeIntro()` is not called
 - `DoomCanvas_loadMap()` is not called
 
-## Next milestone
+## Historical next boundary at merge time
 
-After merge, the next bounded increment is intro disposal / loading handoff:
+At the time PR #39 merged, the next bounded increment was defined as intro
+disposal / loading handoff:
 
 ```text
 final PARK at ST_INTRO page 2
@@ -355,3 +367,6 @@ final PARK at ST_INTRO page 2
 
 The first gameplay map must not be allowed to resurrect the old monolithic
 `shapeData` / `mediaTexels` architecture.
+
+That section is retained as the milestone's historical handoff. The live roadmap
+is in [`PORTING_STATUS.md`](PORTING_STATUS.md).
