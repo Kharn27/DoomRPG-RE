@@ -5,6 +5,7 @@
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "Game.h"
+#include "Menu.h"
 #include "MenuSystem.h"
 #include "Render.h"
 
