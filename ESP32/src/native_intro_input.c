@@ -291,7 +291,7 @@ int Esp32IntroInput_arm(struct DoomRPG_s* doomRpgBase) {
     inputState.active = 1;
     PlatformInput_setTapCallback(onTap);
 
-    printf("[INTROIN] READY released-tap input armed promptLogical=x%d..%d y%d..%d animLogical=x%d..%d y%d..%d\n",
+    printf("[INTROIN] READY semantic press-edge tap armed; stable release rearms next tap; promptLogical=x%d..%d y%d..%d animLogical=x%d..%d y%d..%d\n",
            ESP32_STORY_VIEWPORT_X,
            ESP32_STORY_VIEWPORT_X + ESP32_STORY_VIEWPORT_SIZE - 1,
            ESP32_STORY_VIEWPORT_Y + ESP32_STORY_VIEWPORT_SIZE -
