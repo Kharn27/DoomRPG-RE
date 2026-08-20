@@ -13,15 +13,13 @@ PR   = #43 — persistent compact native MAP_INTRO arena
 main = 503fdd66fae625a45446fb4ea0853abc71d7dda3
 ```
 
-PR #43 merged the first persistent gameplay-map structure owned by the ESP32-native runtime.
-
-Current development candidate:
+Current candidate:
 
 ```text
 branch = agent/esp32-map1-native-access
 base   = 503fdd66fae625a45446fb4ea0853abc71d7dda3
-hardware-affecting head = 22981ff9e9323034e56c2d0527a5c87f683622df
-status = NATIVE COMPACT ACCESSORS IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
+hardware-tested code = dfe25218b74db9d2765850fbc29057e703c57154
+status = REAL-CYD HARDWARE PASS; NATIVE COMPACT ACCESS CONTRACT VALIDATED; MERGE-READY
 ```
 
 Detailed active milestone: [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md).
@@ -59,9 +57,9 @@ final CYD engine = our ESP32-native engine
 
 Desktop-derived `Render_t`, `DoomCanvas_t`, pointer-heavy map structures and linker wrappers remain migration scaffolding, not permanent architecture requirements.
 
-## Current merged hardware-safe boundary
+## Current hardware-safe boundary
 
-Normal optimized firmware at PR #43 reaches:
+Normal optimized firmware now reaches:
 
 ```text
 menu                    = MENU_NONE
@@ -80,16 +78,17 @@ mediaTexels             = NULL
 wall/sprite LRU caches  = inactive
 entities/monsters       = 0
 legacy gameplay loader  = NOT called
-native map arena        = RESIDENT
+native map arena        = RESIDENT + IMMUTABLE
 native arena payload    = 14095 B
 actual heap cost        = 14112 B
-heap8                   = 70128 after resident load on PR #43 candidate
+heap8                   = 70112 after resident load on current tested build
 largest8                = 36852
 arenaFNV                = c3882516
+decodedFNV              = a426dd18
 ST_PLAYING              = NOT entered
 ```
 
-The resident arena is byte-addressed and immutable. Mutable future state belongs in separate explicit index-based overlays.
+The resident arena is byte-addressed and immutable. Native consumers access it allocation-free by index; mutable future state belongs in separate explicit index-based overlays.
 
 ## MAP_INTRO source reference
 
@@ -179,14 +178,14 @@ Exact resident payload:
 payload                14095 B
 ```
 
-PR #43 real-CYD result:
+Current real-CYD regression:
 
 ```text
 arenaBytes         = 14095
 actual heap use    = 14112 B
 allocator overhead = 17 B
 populateReadCalls  = 33
-populateElapsed    = 62 ms
+populateElapsed    = 63 ms
 arenaFNV           = c3882516
 largest8           = 36852 -> 36852
 frameFNV           = unchanged
@@ -202,125 +201,114 @@ reduction ~= 74.5%
 
 Strings remain on SD; only 188 B of little-endian payload offsets are resident.
 
-## Current native access candidate
+## Native compact access contract — hardware validated
 
-The new branch adds allocation-free, bounds-checked decoding over the resident compact arena.
-
-Public native value contracts:
+Allocation-free, bounds-checked native accessors expose:
 
 ```text
-EspMapNode
-  source x1/y1/x2/y2 expanded by byte << 3
-  args1/args2 decoded from the 10-byte BSP record
-
-EspMapLine
-  source x1/y1/x2/y2
-  texture uint16
-  flags uint32
-
-EspMapSprite
-  source x/y
-  source info uint32
-
-EspMapByteCode
-  id uint8
-  arg1/arg2 uint32
+EspMapRuntime_getNode()
+EspMapRuntime_getLine()
+EspMapRuntime_getMapSprite()
+EspMapRuntime_getEvent()
+EspMapRuntime_getByteCode()
+EspMapRuntime_getStringSourceOffset()
+EspMapRuntime_getBlockCell()
+EspMapRuntime_getPlaneTexture()
+EspMapRuntime_textureRequired()
+EspMapRuntime_spriteRequired()
+EspMapRuntime_planeTextureUsed()
 ```
 
-Additional accessors expose:
+They expose **immutable source semantics**, not later desktop runtime mutations such as line +/-3 nudges, sprite +/-1 nudges, BSP relinking, derived line Z/length or entity pointers.
+
+The real CYD fully swept:
 
 ```text
-events by index
-string source offsets
-1024 packed block-map cells
-2 x 1024 plane texture IDs
-required texture/sprite/plane-resource membership
+223 nodes
+480 lines
+344 map sprites
+93 events
+265 bytecodes
+94 string offsets
+1024 block-map cells
+2048 plane cells
+256 resource IDs
+all family bounds checks
 ```
 
-### Important source/runtime separation
-
-The accessors expose **immutable source semantics** only.
-
-They deliberately do not hide later desktop runtime mutations such as:
+Hardware result:
 
 ```text
-line coordinate +/-3 nudges
-line derived Z/length values
-sprite +/-1 nudges
-sprite BSP relinking
-runtime-only sprite flags
-entity pointers / linked lists
+decodedFNV = a426dd18
+elapsed    = 3 ms
+heap8      = 70112 -> 70112
+largest8   = 36852 -> 36852
+frameFNV   = 1f4d9cd6 -> 1f4d9cd6
+arenaFNV   = c3882516 unchanged
 ```
 
-Any behavior that the final game needs will be implemented explicitly by the appropriate native consumer or mutable overlay.
-
-## Current access-validation path
-
-After the merged PR #43 resident loader succeeds:
+Decoded reference sample:
 
 ```text
-resident EspMapRuntime
-    -> MAPACCESS arm
-    -> decode every node/line/sprite/event/bytecode through public accessors
-    -> independently compare decoded values against compact source bytes
-    -> validate all 94 string offsets
-    -> validate all 1024 block cells
-    -> validate both 1024-cell plane maps
-    -> validate 256-ID resource sets = 33 / 45 / 12
-    -> verify out-of-range access fails
-    -> compute canonical decoded FNV
-    -> require zero heap/largest8/framebuffer drift
-    -> PARK
+node0   = 64,128-1984,1984 args=00010400/00640001
+line0   = 1728,1440-1696,1472 tex=87 flags=00000000
+sprite0 = 160,1440 info=00010091
+event0  = 00080044
+code0   = 16/000001cb/000000d0
+string0 = 11554
 ```
 
-Expected inherited arena regression:
+Block-map distribution:
 
 ```text
-arenaBytes = 14095
-arenaFNV   = c3882516
+0 = 298
+1 = 697
+2 = 27
+3 = 2
+sum = 1024
 ```
 
-The first real-CYD run will establish:
+String payload offsets span `11554..19512`. Resource-set sweep reproduced exactly `33 / 45 / 12`. Out-of-range accesses fail closed.
 
-```text
-decodedFNV
-accessor elapsed time
-first decoded node/line/sprite/event/bytecode sample
-first/last string payload offsets
-block-map 2-bit value distribution
-exact new build heap baseline
-```
-
-Accessor execution itself must remain allocation-free and produce:
-
-```text
-heap8     X -> X
-largest8  Y -> Y
-frameFNV  Z -> Z
-```
+A later heartbeat remained stable at `heap8=70112`, `largest8=36852`.
 
 ## Current temporary load timing
 
-The inherited validation scaffolding still performs:
+The validation scaffolding currently does:
 
 ```text
-pass1 inventory       ~= 166 ms on PR #43 build
-second inventory      ~= 145 ms  # temporary duplicate
-arena population       = 62 ms
+pass1 inventory       = 166 ms
+second inventory      = 145 ms  # temporary duplicate
+arena population      = 63 ms
+accessor full sweep   =   3 ms
 ```
 
 The duplicate inventory remains a temporary validation artifact. A future native orchestrator should carry one validated inventory directly into allocation/population.
 
-## Still forbidden
+## Execution path now proven
+
+```text
+menu/start/intro path
+    -> validated intro disposal
+    -> native BSP inventory/plan
+    -> one compact native arena allocation
+    -> direct .pak population
+    -> resident arena FNV proof
+    -> allocation-free indexed accessors
+    -> full semantic access sweep + decoded FNV proof
+    -> PARK
+```
+
+Still absent:
 
 ```text
 shapeData/mediaTexels
 complete raw BSP allocation
 legacy Render_beginLoadMapData()
-mutable entity/monster activation
+mutable world overlays
+entity/monster activation
 player spawn
-hidden line/sprite mutation inside accessors
-map rendering
+native gameplay rendering
 ST_PLAYING
 continuous gameplay loop
 ```
@@ -339,8 +327,40 @@ intro teardown recovered      = 33768 B on PR #41
 
 Detailed old menu/touch/LRU/FNV measurements remain in the archived recovery snapshot.
 
-## Next action
+## Merge recommendation
 
-Build/flash the current branch on normal `esp32-cyd` and capture the `MAPACCESS` block plus later stable `[ALIVE]` heartbeats.
+**MERGE this branch. No additional hardware test is required if later commits remain documentation-only.**
 
-If the accessor probe passes with zero drift, document the canonical decoded FNV and samples, then decide whether this branch is a coherent merge boundary or whether the first tiny native mutable/spatial consumer should remain on the same branch.
+Hardware-tested code:
+
+```text
+dfe25218b74db9d2765850fbc29057e703c57154
+```
+
+Two inherited cosmetic Serial spacing defects remain harmless and are intentionally not changed after the hardware pass.
+
+## Next bounded milestone after merge
+
+Branch fresh from the new `main`.
+
+Create the first genuinely useful small mutable consumer: a native spatial tile-state overlay.
+
+Preferred design:
+
+```text
+EspMapState
+    uint8_t tileFlags[1024]
+```
+
+Initialization should use only the hardware-proven access API:
+
+```text
+1. copy/decode the 2-bit block-map base into tileFlags
+2. walk lines and derive BIT_AM_ENTRANCE cells from texture 7 semantics
+3. walk events and OR BIT_AM_EVENTS into referenced cells
+4. preserve EspMapRuntime byte-for-byte (`arenaFNV=c3882516`)
+5. measure the exact ~1 KiB persistent mutable cost
+6. PARK before entities, rendering, player spawn or ST_PLAYING
+```
+
+This gives the native engine its first real mutable world/spatial state without recreating desktop pointer graphs.
