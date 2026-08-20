@@ -67,6 +67,22 @@ static uint32_t framebufferHash(void) {
     return fnv1a32(framebuffer, (uint32_t)bytes);
 }
 
+static int storyPositionIsSafe(const DoomCanvas_t* canvas) {
+    if (canvas == NULL) {
+        return 0;
+    }
+
+    switch (canvas->storyPage) {
+    case 0:
+        return canvas->storyTextPage >= 0 && canvas->storyTextPage <= 1;
+    case 1:
+    case 2:
+        return canvas->storyTextPage == 0;
+    default:
+        return 0;
+    }
+}
+
 static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
     const DoomCanvas_t* canvas;
     const Render_t* render;
@@ -82,8 +98,7 @@ static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
 
     return canvas->state == ST_INTRO &&
            doomRpg->menuSystem->menu == MENU_NONE &&
-           canvas->storyPage == 0 &&
-           canvas->storyTextPage == 0 &&
+           storyPositionIsSafe(canvas) &&
            canvas->storyText1[0] != NULL &&
            canvas->storyText1[1] != NULL &&
            canvas->storyText2 != NULL &&
@@ -121,13 +136,41 @@ static void parkClock(const char* reason) {
     clockState.active = 0;
 }
 
+static int rebaseTextEpochInternal(void) {
+    DoomCanvas_t* canvas;
+
+    if (!clockState.active || clockState.doomRpg == NULL ||
+        clockState.doomRpg->doomCanvas == NULL) {
+        return 0;
+    }
+
+    canvas = clockState.doomRpg->doomCanvas;
+    canvas->storyTextTime = canvas->time;
+    clockState.textDoneLogged = 0;
+    return 1;
+}
+
+static int rebasePageEpochsInternal(void) {
+    DoomCanvas_t* canvas;
+
+    if (!rebaseTextEpochInternal()) {
+        return 0;
+    }
+
+    canvas = clockState.doomRpg->doomCanvas;
+    canvas->storyAnimTime = canvas->time;
+    return 1;
+}
+
 int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     const uint32_t frameHash = framebufferHash();
 
     SDL_memset(&clockState, 0, sizeof(clockState));
 
-    if (!boundaryIsSafe(doomRpg)) {
+    if (!boundaryIsSafe(doomRpg) ||
+        doomRpg->doomCanvas->storyPage != 0 ||
+        doomRpg->doomCanvas->storyTextPage != 0) {
         printf("[INTROCLK] FAILED arm boundary unavailable\n");
         return 0;
     }
@@ -167,6 +210,7 @@ void Esp32IntroClock_service(void) {
     uint32_t largestBefore;
     uint32_t largestAfter;
     int wasTextDone;
+    int pageBefore;
 
     if (!clockState.active) {
         return;
@@ -196,8 +240,30 @@ void Esp32IntroClock_service(void) {
     heapBefore = heap8Free();
     largestBefore = largest8Block();
     wasTextDone = canvas->showTextDone != 0;
+    pageBefore = canvas->storyPage;
 
     Esp32StoryFit_draw(canvas);
+
+    if (canvas->storyPage != pageBefore) {
+        if (pageBefore == 1 && canvas->storyPage == 2 &&
+            canvas->storyTextPage == 0) {
+            canvas->showTextDone = false;
+            if (!rebasePageEpochsInternal()) {
+                parkClock("auto-page-rebase-failed");
+                return;
+            }
+            printf("[INTROCLK] AUTO-PAGE %d->%d t=%d textPage=%d epoch=%d\n",
+                   pageBefore,
+                   canvas->storyPage,
+                   canvas->time,
+                   canvas->storyTextPage,
+                   canvas->storyAnimTime);
+        }
+        else {
+            parkClock("unexpected-story-transition");
+            return;
+        }
+    }
 
     heapAfter = heap8Free();
     largestAfter = largest8Block();
@@ -224,7 +290,7 @@ void Esp32IntroClock_service(void) {
 
     if (clockState.renderedFrames <= 3U ||
         (targetTick % INTRO_CLOCK_CHECKPOINT_TICKS) == 0U) {
-        printf("[INTROCLK] frame=%u tick=%u t=%d FNV=%08x heap8=%u largest8=%u skipped=%u textDone=%d\n",
+        printf("[INTROCLK] frame=%u tick=%u t=%d FNV=%08x heap8=%u largest8=%u skipped=%u page=%d textPage=%d textDone=%d\n",
                (unsigned int)clockState.renderedFrames,
                (unsigned int)targetTick,
                canvas->time,
@@ -232,18 +298,36 @@ void Esp32IntroClock_service(void) {
                (unsigned int)heapAfter,
                (unsigned int)largestAfter,
                (unsigned int)clockState.skippedTicks,
+               canvas->storyPage,
+               canvas->storyTextPage,
                canvas->showTextDone ? 1 : 0);
     }
 
     if (!wasTextDone && canvas->showTextDone && !clockState.textDoneLogged) {
         clockState.textDoneLogged = 1;
-        printf("[INTROCLK] TEXT DONE tick=%u t=%d frames=%u skipped=%u heap8=%u largest8=%u\n",
+        printf("[INTROCLK] TEXT DONE page=%d textPage=%d tick=%u t=%d frames=%u skipped=%u heap8=%u largest8=%u\n",
+               canvas->storyPage,
+               canvas->storyTextPage,
                (unsigned int)targetTick,
                canvas->time,
                (unsigned int)clockState.renderedFrames,
                (unsigned int)clockState.skippedTicks,
                (unsigned int)heapAfter,
                (unsigned int)largestAfter);
+    }
+}
+
+int Esp32IntroClock_rebaseTextEpoch(void) {
+    return rebaseTextEpochInternal();
+}
+
+int Esp32IntroClock_rebasePageEpochs(void) {
+    return rebasePageEpochsInternal();
+}
+
+void Esp32IntroClock_park(const char* reason) {
+    if (clockState.active) {
+        parkClock(reason);
     }
 }
 

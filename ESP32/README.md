@@ -319,8 +319,11 @@ visible row   y=67..78
 top tolerance = 2 logical pixels
 ```
 
-Intro `More` / `Continue` input is still deliberately disabled; that is the next
-bounded milestone after the intro clock merge.
+Intro input now reuses the same platform callback boundary. The callback fires on
+the physical press edge, while a stable 50 ms release is required before the next
+semantic tap can be emitted. Text pages accept taps in the fitted prompt band
+`x20..139 y102..119`; the page-1 animation accepts the whole story viewport for
+its optional skip action.
 
 ## Bring-up touch-hitbox overlay
 
@@ -435,6 +438,9 @@ mediaTexels = NULL
 The cleanup is only used for the fresh-profile branch. If an existing compatible
 save is detected, menu runtime is kept because the original action must instead
 open `MENU_MAIN_CONTINUE`.
+
+A later intro-input build measured `heap8=29008 -> 84424`, preserving the exact
+same 55,416-byte recovery and `largest8=36852` after cleanup.
 
 ### Intro assets
 
@@ -662,6 +668,110 @@ This milestone is a **functional/RAM PASS with a known presentation-performance
 limit**. Pacing should be compared against the original J2ME version before any
 optimization is made.
 
+## Bounded intro touch progression
+
+The current branch adds semantic intro progression without entering
+`DoomCanvas_run()` or the legacy input loop.
+
+Platform semantics:
+
+```text
+press edge -> one semantic tap callback
+hold       -> no repeat
+stable release 50 ms -> rearm
+```
+
+Prompt geometry:
+
+```text
+story viewport logical = x20..139 y0..119
+prompt band logical    = x20..139 y102..119
+```
+
+A real out-of-band touch at logical `57,29` produced `MISS` and left state/RAM
+unchanged.
+
+The first end-to-end run validated natural page-1 timeout behavior:
+
+```text
+[INTROCLK] TEXT DONE page=0 textPage=0 tick=78 t=3900 ...
+[INTROIN] MORE textPage=0->1 t=5600 textEpoch=5600
+[INTROIN] REVEAL page=0 textPage=1 t=7400
+[INTROIN] CONTINUE storyPage=0->1 t=9150 epoch=9150
+[INTROCLK] AUTO-PAGE 1->2 t=19200 textPage=0 epoch=19200
+[INTROCLK] TEXT DONE page=2 textPage=0 tick=453 t=22650 ...
+[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=23650
+[INTROCLK] PARK reason=intro-exit-ready tick=473 frames=282 skipped=191 state=9 page=2 textPage=0 heap8=50656 largest8=13300
+[INTROIN] READY-TO-EXIT state=9 page=2 textPage=0 heap8=50656 largest8=13300 assets=retained noDispose=yes noMapLoad=yes
+[TOUCH] ...
+```
+
+The page-1 natural animation ran from virtual epoch `9150` to `19200`, i.e.
+10.05 seconds. The extra 50 ms is the expected quantization of the 50 ms clock.
+
+The second run explicitly exercised every alternate branch that was still
+uncovered:
+
+```text
+[INTROIN] REVEAL page=0 textPage=0 t=2050
+[INTROIN] MORE textPage=0->1 t=3300 textEpoch=3300
+[INTROIN] REVEAL page=0 textPage=1 t=4600
+[INTROIN] CONTINUE storyPage=0->1 t=5400 epoch=5400
+[INTROIN] SKIP-ANIM storyPage=1->2 t=7300 epoch=7300
+[INTROIN] REVEAL page=2 textPage=0 t=8400
+[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=9150
+[INTROCLK] PARK reason=intro-exit-ready tick=183 frames=115 skipped=68 state=9 page=2 textPage=0 heap8=50656 largest8=13300
+[INTROIN] READY-TO-EXIT state=9 page=2 textPage=0 heap8=50656 largest8=13300 assets=retained noDispose=yes noMapLoad=yes
+[TOUCH] ...
+```
+
+Across both real-CYD runs, every bounded intro-input branch is now hardware
+validated:
+
+```text
+out-of-band prompt touch          -> MISS PASS
+page 0 / text 0 early reveal      -> PASS
+page 0 / text 0 -> More           -> PASS
+page 0 / text 1 early reveal      -> PASS
+page 0 -> page 1 Continue         -> PASS
+page 1 natural timeout -> page 2  -> PASS
+page 1 touch skip -> page 2       -> PASS
+page 2 early reveal               -> PASS
+final Continue -> safe PARK       -> PASS
+```
+
+The current intro-input build remains allocation-free across measured rendering
+and input transitions:
+
+```text
+heap8    = 50656
+largest8 = 13300
+```
+
+At final PARK:
+
+```text
+state                   = ST_INTRO (9)
+storyPage               = 2
+storyTextPage           = 0
+intro clock             = inactive
+intro input             = inactive
+intro images/texts      = retained
+DoomCanvas_run          = NOT called
+DoomCanvas_disposeIntro = NOT called
+DoomCanvas_loadMap      = NOT called
+shapeData               = NULL
+mediaTexels             = NULL
+```
+
+The `[TOUCH]` markers after `READY-TO-EXIT` prove the Arduino loop continued after
+PARK rather than resetting or entering a map transition. The long natural-timeout
+run also retained stable 5-second heartbeats.
+
+There are no remaining intro-input branch coverage gaps in this milestone.
+
+See [`INTRO_INPUT.md`](INTRO_INPUT.md) for the complete milestone evidence.
+
 ## Current memory baselines
 
 Interactive normal-menu baseline before Start:
@@ -692,11 +802,18 @@ heap8    = 50704 before/after draw
 largest8 = 13300 before/after draw
 ```
 
-Current intro-clock build:
+Merged intro-clock build:
 
 ```text
 heap8    = 50672 before/after every measured frame
 largest8 = 13300 before/after every measured frame
+```
+
+Current intro-input build:
+
+```text
+heap8    = 50656 across measured frames/input transitions
+largest8 = 13300 across measured frames/input transitions
 ```
 
 The higher free-heap value after Start reflects deliberate release of the legal
@@ -738,7 +855,7 @@ Hardware validated:
 - real menu runtime structures through the pre-bitshape boundary
 - bounded native wall/sprite rendering and LRU contracts in bring-up
 - opaque deterministic `MENU_MAIN`
-- calibrated touch / released double-tap semantics
+- calibrated touch / released double-tap menu semantics
 - permanent bring-up hitbox overlay
 - native MENU_MAIN canvas-state synchronization to `ST_MENU`
 - real Options action through `MenuSystem_select()`
@@ -756,17 +873,26 @@ Hardware validated:
 - native 128x128 -> centered 120x120 story presentation
 - ESP32-owned quantized 50 ms multi-frame intro clock
 - clock checkpoint hashes through virtual `t=1000 ms`
-- per-frame `heap8=50672 -> 50672`, `largest8=13300 -> 13300`
 - bounded skipped-tick behavior under current ~42.8 ms TFT presentation cost
+- semantic intro touch input with stable-release rearm
+- prompt-band rejection and accepted `More` / `Continue` input
+- reveal-on-tap validated on page-0 text 0, page-0 text 1 and page 2
+- page 0 -> page 1 progression
+- natural page 1 -> page 2 progression with local virtual-time rebase
+- touch-skip page 1 -> page 2 progression with local virtual-time rebase
+- final Continue PARK at `ST_INTRO`, page 2
+- all bounded intro-input branches covered on real CYD
+- current `heap8=50656` stable across measured frames/input
+- current `largest8=13300` stable
+- intro resources retained at final PARK
 - no map/runtime resurrection
 - no `DoomCanvas_run()` handoff
+- no intro disposal or map load yet
 - `shapeData == NULL`
 - `mediaTexels == NULL`
 
 Still deferred:
 
-- intro touch/key progression (`More` / `Continue`)
-- intro page progression after user input
 - intro disposal / transition to loading
 - first map/gameplay load after the intro
 - existing-save Continue / New Game submenu painter/action
@@ -776,6 +902,21 @@ Still deferred:
 - gameplay controls
 - future presentation optimization if J2ME comparison shows it is warranted
 - audio
+
+## Next milestone
+
+After merge, start from the new `main` at the final intro PARK:
+
+```text
+ST_INTRO page 2 final PARK
+    -> measure resident intro resources/RAM
+    -> dispose intro resources deliberately
+    -> measure reclaimed heap/largest block
+    -> approach the first gameplay-map load behind a fresh explicit guard
+```
+
+The first gameplay load must not resurrect monolithic `shapeData` or map-wide
+`mediaTexels`.
 
 ## Porting workflow
 

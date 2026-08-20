@@ -11,6 +11,7 @@
 
 #include "native_intro_clock.h"
 #include "native_intro_first_frame.h"
+#include "native_intro_input.h"
 #include "native_sprite_lru_cache.h"
 #include "native_story_fit.h"
 #include "native_wall_lru_cache.h"
@@ -184,7 +185,13 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    printf("[INTRO1] HANDOFF state=%d page=%d textPage=%d; intro clock armed, input/map load still disabled\n",
+    if (!Esp32IntroInput_arm(doomRpg)) {
+        printf("[INTRO1] FAILED to arm bounded intro input\n");
+        Esp32IntroClock_park("input-arm-failed");
+        return 0;
+    }
+
+    printf("[INTRO1] HANDOFF state=%d page=%d textPage=%d; intro clock+input armed, dispose/map load still blocked\n",
            canvas->state,
            canvas->storyPage,
            canvas->storyTextPage);
