@@ -25,12 +25,14 @@ Current development branch:
 branch    = agent/esp32-map1-structural-load
 base main = 897e982f4b37039d984b13265beaa68a83dce98b
 status    = REAL-CYD MEASUREMENT PASS; LEGACY STRUCTURAL PATH SAFELY REFUSED;
-            NATIVE STREAMING BSP LOADER NEXT; BRANCH CONTINUES
+            NATIVE .PAK BSP PASS1 IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS;
+            BRANCH CONTINUES
 ```
 
-This branch is intentionally **not merge-ready yet**. It has produced a safe
-hardware measurement and the design evidence needed to replace the legacy map
-loader, but it has not yet implemented the final native gameplay BSP runtime.
+This branch is intentionally **not merge-ready yet**. The legacy feasibility
+measurement is hardware-proven, and the first reusable native BSP reader is now
+implemented, but that native pass still needs a normal-firmware real-CYD run
+before the branch can advance to compact runtime allocation/population.
 
 ### Current safe boundary
 
@@ -96,7 +98,7 @@ heartbeats remained stable at that boundary.
 
 ## Current execution path
 
-Validated normal-firmware path plus current measurement:
+Hardware-validated normal-firmware path currently reaches:
 
 ```text
 video / SD / ZIP
@@ -121,8 +123,24 @@ video / SD / ZIP
     -> PARK again at post-intro memory boundary
 ```
 
-The next real code path must be an ESP32-native BSP reader/runtime, not an attempt
-to weaken the guard until `Render_beginLoadMapData()` happens to fit.
+The current unvalidated candidate now continues from that same boundary with:
+
+```text
+post-intro PARK
+    -> open DoomRPG-ESP32.pak
+    -> find /intro.bsp
+    -> stream the complete BSP through a fixed 256 B window
+    -> scalar inventory only
+    -> CRC32 verify + FNV regression hash
+    -> close pack
+    -> require zero heap/largest-block/framebuffer drift
+    -> PARK
+```
+
+It does **not** call `Render_loadMappings()`, `Render_beginLoadMap()`,
+`Render_beginLoadMapData()` or any gameplay runtime loader. The next real code
+path is our ESP32-native BSP reader/runtime, not an attempt to weaken the legacy
+guard until the desktop-derived loader happens to fit.
 
 ## Permanent architecture invariants
 
@@ -192,12 +210,14 @@ Current active hardware/design milestone:
 
 ```text
 agent/esp32-map1-structural-load
-  -> prove startupMap=1 is MAP_INTRO / /intro.bsp
-  -> inventory the complete BSP on real hardware
-  -> measure legacy mapping + structural working sets
-  -> refuse unsafe resident-BSP + resident-runtime lifecycle
-  -> return to stable post-intro PARK
-  -> continue with ESP32-native streaming BSP loader
+  -> startupMap=1 proven as MAP_INTRO / /intro.bsp
+  -> complete BSP inventoried on real hardware
+  -> legacy mapping + structural working sets measured
+  -> unsafe resident-BSP + resident-runtime lifecycle refused safely
+  -> native EspBspReader implemented over DoomRPG-ESP32.pak
+  -> fixed 256 B pass-1 source window
+  -> CRC32/FNV complete-payload validation
+  -> awaiting native pass-1 real-CYD validation
 ```
 
 Earlier validated work leading to PR #32 includes native asset pack v2, zero
@@ -746,12 +766,13 @@ runtimeSprites = 368
 events         = 93
 byteCodes      = 265
 strings        = 94
-stringBytes    = 7873
+legacy string allocation bytes = 7873
+raw string payload bytes        = 7779
 parsed         = 21823 / 21823 B
 trailing       = 0 B
 ```
 
-These counts are regression targets for the next native reader.
+These counts are regression targets for the native reader.
 
 ### Why the legacy runtime is refused
 
@@ -794,8 +815,33 @@ largest8  = 36852
 
 No OOM/reset or hidden loader transition occurred.
 
-See [`MAP1_STRUCTURAL_LOAD.md`](MAP1_STRUCTURAL_LOAD.md) for the complete design
-interpretation and next native-loader plan.
+### Active native replacement now implemented
+
+The legacy feasibility probe has been retired from the active firmware tree. Its
+measurements remain in Git history and [`MAP1_STRUCTURAL_LOAD.md`](MAP1_STRUCTURAL_LOAD.md).
+
+Current native pass 1 uses the already validated full asset pack instead of ZIP
+inflate:
+
+```text
+DoomRPG-ESP32.pak
+    -> hash lookup /intro.bsp
+    -> 256 B fixed reader window
+    -> complete sequential byte consumption
+    -> header + count/string-length parsing
+    -> CRC32 against pack index
+    -> FNV-1a regression hash
+    -> close pack
+    -> PARK
+```
+
+`esp_bsp_reader.c/.h` has no dependency on `Render_t`, `DoomCanvas_t`, `Game_t`,
+`Node_t`, `Line_t` or `Sprite_t`; it is intended to remain part of the native
+engine. `native_map1_bsp_pass1.c/.h` is only temporary lifecycle scaffolding for
+this first hardware regression target.
+
+Expected source-window count for 21,823 B at 256 B/window is approximately 86;
+the exact read count and elapsed milliseconds are logged on hardware.
 
 ## Current memory baselines
 
@@ -917,46 +963,59 @@ Still intentionally deferred:
 - intro touch re-arm/polish only if the `More` UX observation persists
 - audio
 
-## Next bounded implementation — same branch
+## Next bounded validation — same branch
 
-Do **not** merge the current branch merely because the legacy feasibility probe
-measured a safe refusal. Continue on:
+Do **not** merge yet. Continue on:
 
 ```text
 agent/esp32-map1-structural-load
 ```
 
-Next objective is an ESP32-native streaming reader for `/intro.bsp`.
-
-### Native pass 1 — inventory
+Immediate objective is hardware validation of the implemented native pass 1.
 
 From the stable post-intro boundary:
 
 ```text
-SD ZIP entry /intro.bsp
-    -> streaming DEFLATE with small bounded buffers
-    -> native BSP reader
-    -> validate/count only
+DoomRPG-ESP32.pak /intro.bsp
+    -> 256 B bounded source window
+    -> native EspBspReader inventory
     -> no full 21823 B BSP allocation
-    -> no final runtime allocation yet
+    -> no mappings/runtime allocation
+    -> CRC32/FNV proof
+    -> zero heap/largest/framebuffer drift
     -> PARK
 ```
 
 Hardware PASS must reproduce exactly:
 
 ```text
+sourceBytes=21823
 nodes=223
 lines=480
 mapSprites=344
-runtimeSprites=368
 events=93
 byteCodes=265
 strings=94
-stringBytes=7873
-parsed=21823
+stringData=7779
+legacyStringAlloc=7873
+structuralEnd=21823
+trailing=0
 ```
 
-while keeping bounded/no-leak RAM and never allocating the full uncompressed BSP.
+and report:
+
+```text
+readCalls=...
+elapsed=...ms
+fnv1a=...
+crc32=... verified=yes
+heap8 X->X
+largest8 Y->Y
+frameFNV Z->Z
+```
+
+while keeping every legacy mapping/runtime field NULL and entities/monsters at
+zero.
 
 ### Then native allocation + pass 2
 
@@ -965,7 +1024,7 @@ Only after pass 1 is hardware-proven:
 ```text
 exact counts
     -> allocate compact ESP32-native pools deliberately
-    -> restart stream
+    -> re-read /intro.bsp from .pak
     -> populate final pools directly
     -> raw BSP never coexists with complete runtime
 ```
