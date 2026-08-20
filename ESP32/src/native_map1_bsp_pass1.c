@@ -162,6 +162,8 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
     uint32_t largestAfter;
     uint32_t frameBefore;
     uint32_t frameAfter;
+    uint32_t startedMs;
+    uint32_t elapsedMs;
 
     if (pass1State.done || pass1State.attempted || doomRpg == NULL) {
         return;
@@ -209,6 +211,7 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
     heapBefore = heap8Free();
     largestBefore = largest8Block();
     frameBefore = framebufferHash();
+    startedMs = DoomRPG_GetUpTimeMS();
 
     printf("[NATIVEBSP1] BEGIN state=%d page=%d mapId=%d file=%s heap8=%u largest8=%u frameFNV=%08x\n",
            canvas->state,
@@ -225,6 +228,7 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
 
+    elapsedMs = DoomRPG_GetUpTimeMS() - startedMs;
     heapAfter = heap8Free();
     largestAfter = largest8Block();
     frameAfter = framebufferHash();
@@ -271,9 +275,10 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)inventory.strings,
            (unsigned int)inventory.stringDataBytes,
            (unsigned int)inventory.maxStringBytes);
-    printf("[NATIVEBSP1] STREAM window=%uB readCalls=%u fnv1a=%08x crc32=%08x verified=yes\n",
+    printf("[NATIVEBSP1] STREAM window=%uB readCalls=%u elapsed=%ums fnv1a=%08x crc32=%08x verified=yes\n",
            (unsigned int)ESP_BSP_READER_BUFFER_BYTES,
            (unsigned int)inventory.readCalls,
+           (unsigned int)elapsedMs,
            (unsigned int)inventory.fnv1a32,
            (unsigned int)inventory.crc32);
     printf("[NATIVEBSP1] RAM heap8=%u->%u delta=%d largest8=%u->%u delta=%d frameFNV=%08x->%08x\n",
