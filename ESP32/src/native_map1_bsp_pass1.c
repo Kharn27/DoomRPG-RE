@@ -31,6 +31,21 @@
 #define EXPECTED_INTRO_STRINGS 94U
 #define EXPECTED_INTRO_STRING_DATA_BYTES 7779U
 #define EXPECTED_INTRO_LEGACY_STRING_ALLOC_BYTES 7873U
+#define EXPECTED_INTRO_FNV1A 0xd5cc751fU
+#define EXPECTED_INTRO_CRC32 0x623f34e4U
+
+#define EXPECTED_NODES_OFFSET 35U
+#define EXPECTED_LINES_OFFSET 2267U
+#define EXPECTED_SPRITES_OFFSET 7069U
+#define EXPECTED_EVENTS_OFFSET 8791U
+#define EXPECTED_BYTECODES_OFFSET 9165U
+#define EXPECTED_STRINGS_OFFSET 11552U
+#define EXPECTED_BLOCKMAP_OFFSET 19519U
+#define EXPECTED_PLANES_OFFSET 19775U
+#define EXPECTED_END_OFFSET 21823U
+
+#define EXPECTED_COMPACT_PLAN_BYTES 14095U
+#define MEASURED_LEGACY_STRUCTURAL_BYTES 55341U
 
 typedef struct Esp32Map1BspPass1State_s {
     int armed;
@@ -129,6 +144,26 @@ static int preBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            doomRpg->game->numMonsters == 0;
 }
 
+static int offsetsMatchMeasuredIntro(const EspBspInventory* inventory) {
+    return inventory != NULL &&
+           inventory->sections.nodesOffset == EXPECTED_NODES_OFFSET &&
+           inventory->sections.linesOffset == EXPECTED_LINES_OFFSET &&
+           inventory->sections.mapSpritesOffset == EXPECTED_SPRITES_OFFSET &&
+           inventory->sections.eventsOffset == EXPECTED_EVENTS_OFFSET &&
+           inventory->sections.byteCodesOffset == EXPECTED_BYTECODES_OFFSET &&
+           inventory->sections.stringsOffset == EXPECTED_STRINGS_OFFSET &&
+           inventory->sections.blockMapOffset == EXPECTED_BLOCKMAP_OFFSET &&
+           inventory->sections.planeTexturesOffset == EXPECTED_PLANES_OFFSET &&
+           inventory->sections.endOffset == EXPECTED_END_OFFSET;
+}
+
+static int resourceSetsAreBounded(const EspBspInventory* inventory) {
+    return inventory != NULL &&
+           inventory->lineTextureIdsAbove255 == 0U &&
+           inventory->textureResourceIdsAbove255 == 0U &&
+           inventory->spriteResourceIdsAbove255 == 0U;
+}
+
 static int inventoryMatchesMeasuredIntro(const EspBspInventory* inventory) {
     return inventory != NULL &&
            inventory->sourceBytes == EXPECTED_INTRO_BSP_BYTES &&
@@ -144,7 +179,12 @@ static int inventoryMatchesMeasuredIntro(const EspBspInventory* inventory) {
            inventory->stringDataBytes == EXPECTED_INTRO_STRING_DATA_BYTES &&
            inventory->legacyStringAllocationBytes ==
                EXPECTED_INTRO_LEGACY_STRING_ALLOC_BYTES &&
-           inventory->crc32 == inventory->expectedCrc32;
+           inventory->fnv1a32 == EXPECTED_INTRO_FNV1A &&
+           inventory->crc32 == EXPECTED_INTRO_CRC32 &&
+           inventory->crc32 == inventory->expectedCrc32 &&
+           offsetsMatchMeasuredIntro(inventory) &&
+           resourceSetsAreBounded(inventory) &&
+           inventory->plan.persistentBytes == EXPECTED_COMPACT_PLAN_BYTES;
 }
 
 void Esp32Map1BspPass1_reset(void) {
@@ -176,7 +216,7 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
 
     if (!pass1State.armed) {
         pass1State.armed = 1;
-        printf("[NATIVEBSP1] ARMED post-intro boundary; native .pak inventory starts on next loop service\n");
+        printf("[NATIVEBSP1] ARMED post-intro boundary; native .pak inventory+plan starts on next loop service\n");
         return;
     }
 
@@ -184,7 +224,7 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
     canvas = doomRpg->doomCanvas;
     render = doomRpg->render;
 
-    printf("\n=== Doom RPG ESP32-native BSP reader pass 1 ===\n");
+    printf("\n=== Doom RPG ESP32-native BSP reader pass 1 + map plan ===\n");
 
     if (!preBoundaryIsSafe(doomRpg)) {
         printf("[NATIVEBSP1] FAILED precondition state=%d page=%d startupMap=%d menu=%d heap8=%u largest8=%u shapeData=%p mediaTexels=%p entities=%d monsters=%d\n",
@@ -222,7 +262,7 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)heapBefore,
            (unsigned int)largestBefore,
            (unsigned int)frameBefore);
-    printf("[NATIVEBSP1] CONTRACT .pak -> 256B reader window -> scalar inventory only; no ZIP inflate, mappings, map runtime, bitshapes, texels or entities\n");
+    printf("[NATIVEBSP1] CONTRACT .pak -> 256B reader window -> offsets/resource sets/compact plan only; no mappings, map runtime, bitshapes, texels or entities\n");
 
     if (!EspBspReader_inventoryPackEntry(mapFile, &inventory)) {
         printf("[NATIVEBSP1] FAILED native BSP reader\n");
@@ -235,7 +275,7 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
     frameAfter = framebufferHash();
 
     if (!inventoryMatchesMeasuredIntro(&inventory)) {
-        printf("[NATIVEBSP1] FAILED inventory regression bytes=%u nodes=%u lines=%u sprites=%u events=%u byteCodes=%u strings=%u stringData=%u legacyStringAlloc=%u trailing=%u\n",
+        printf("[NATIVEBSP1] FAILED regression bytes=%u nodes=%u lines=%u sprites=%u events=%u byteCodes=%u strings=%u stringData=%u plan=%u offsetsOK=%d boundedIDs=%d fnv=%08x crc=%08x\n",
                (unsigned int)inventory.sourceBytes,
                (unsigned int)inventory.nodes,
                (unsigned int)inventory.lines,
@@ -244,8 +284,11 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)inventory.byteCodes,
                (unsigned int)inventory.strings,
                (unsigned int)inventory.stringDataBytes,
-               (unsigned int)inventory.legacyStringAllocationBytes,
-               (unsigned int)inventory.trailingBytes);
+               (unsigned int)inventory.plan.persistentBytes,
+               offsetsMatchMeasuredIntro(&inventory),
+               resourceSetsAreBounded(&inventory),
+               (unsigned int)inventory.fnv1a32,
+               (unsigned int)inventory.crc32);
         return;
     }
 
@@ -276,6 +319,37 @@ void Esp32Map1BspPass1_service(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)inventory.strings,
            (unsigned int)inventory.stringDataBytes,
            (unsigned int)inventory.maxStringBytes);
+    printf("[NATIVEBSP1] OFFSETS nodes=%u lines=%u sprites=%u events=%u byteCodes=%u strings=%u blockMap=%u planes=%u end=%u\n",
+           (unsigned int)inventory.sections.nodesOffset,
+           (unsigned int)inventory.sections.linesOffset,
+           (unsigned int)inventory.sections.mapSpritesOffset,
+           (unsigned int)inventory.sections.eventsOffset,
+           (unsigned int)inventory.sections.byteCodesOffset,
+           (unsigned int)inventory.sections.stringsOffset,
+           (unsigned int)inventory.sections.blockMapOffset,
+           (unsigned int)inventory.sections.planeTexturesOffset,
+           (unsigned int)inventory.sections.endOffset);
+    printf("[NATIVEBSP1] RESOURCES lineTex=%u mapSpriteIds=%u textureReq=%u spriteReq=%u planeTex=%u changeSprite=%u spriteAsTexture=%u bounded8=yes\n",
+           (unsigned int)inventory.uniqueLineTextureIds,
+           (unsigned int)inventory.uniqueMapSpriteIds,
+           (unsigned int)inventory.uniqueTextureResourceIds,
+           (unsigned int)inventory.uniqueSpriteResourceIds,
+           (unsigned int)inventory.uniquePlaneTextureIds,
+           (unsigned int)inventory.changeSpriteByteCodes,
+           (unsigned int)inventory.spriteAsTextureRefs);
+    printf("[NATIVEBSP1] PLAN compactPersistent=%u legacyStructural=%u saved=%u nodes=%u lines=%u sprites=%u events=%u byteCodes=%u stringOffsets=%u blockMap=%u planes=%u resourceSets=%u\n",
+           (unsigned int)inventory.plan.persistentBytes,
+           (unsigned int)MEASURED_LEGACY_STRUCTURAL_BYTES,
+           (unsigned int)(MEASURED_LEGACY_STRUCTURAL_BYTES - inventory.plan.persistentBytes),
+           (unsigned int)inventory.plan.nodeRecordsBytes,
+           (unsigned int)inventory.plan.lineRecordsBytes,
+           (unsigned int)inventory.plan.mapSpriteRecordsBytes,
+           (unsigned int)inventory.plan.eventRecordsBytes,
+           (unsigned int)inventory.plan.byteCodeRecordsBytes,
+           (unsigned int)inventory.plan.stringOffsetsBytes,
+           (unsigned int)inventory.plan.blockMapBytes,
+           (unsigned int)inventory.plan.planeMapBytes,
+           (unsigned int)inventory.plan.resourceSetsBytes);
     printf("[NATIVEBSP1] STREAM window=%uB readCalls=%u elapsed=%ums fnv1a=%08x crc32=%08x verified=yes\n",
            (unsigned int)ESP_BSP_READER_BUFFER_BYTES,
            (unsigned int)inventory.readCalls,
