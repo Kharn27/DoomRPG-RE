@@ -83,31 +83,32 @@ Documentation is part of the increment, not a later cleanup task.
   `a87b50747fa69bba6624870f944cbb1111014276`
 - fresh Start Game entry / lifecycle cleanup merged as PR #36 at
   `5275e4a1c6eca703b51221e80f3b199178015a01`
+- first fitted deterministic `ST_INTRO` frame merged as PR #37 at
+  `b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96`
 
 ## Current increment
 
-Branch: `agent/esp32-first-intro-frame`
+Branch: `agent/esp32-intro-clock`
 
 Base `main` SHA:
 
 ```text
-5275e4a1c6eca703b51221e80f3b199178015a01
+b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96
 ```
 
 Status: **HARDWARE PASS; DOCUMENTED; MERGE-READY**.
 
-Objective: advance exactly one bounded step beyond the validated fresh Start
-boundary: render and present one deterministic real `ST_INTRO` frame, adapt the
-legacy 128x128 story presentation to the 160x120 CYD framebuffer, and park before
-starting an active intro clock, processing intro input or loading gameplay.
+Objective: drive repeated fitted `ST_INTRO` frames from the Arduino `loop()` with
+an ESP32-owned 50 ms virtual clock, while keeping intro input, page progression,
+map loading and the broad legacy `DoomCanvas_run()` loop disabled.
 
-Final fitted first-frame recovery contract:
+Current recovery contract:
 
 ```text
-entry framebuffer FNV = 485915c5
-fitted intro FNV       = 56438966
-heap8                  = 50704 -> 50704
-largest8               = 13300 -> 13300
+entry fitted intro FNV = 56438966
+clock step             = 50 ms nominal (~20 FPS virtual)
+heap8                  = 50672 stable per rendered frame
+largest8               = 13300 stable per rendered frame
 deltaHeap              = 0
 deltaLargest           = 0
 state                   = ST_INTRO (9)
@@ -116,7 +117,24 @@ storyTextPage           = 0
 shapeData               = NULL
 mediaTexels             = NULL
 wall/sprite caches      = inactive
+
+checkpoint FNVs:
+  t=50 ms    da9cd50e
+  t=100 ms   c63cf367
+  t=200 ms   2620e850
+  t=1000 ms  e76fec13
+
+at virtual t=1000 ms:
+  frames rendered = 14
+  ticks skipped   = 6
+  effective render ~= 14 FPS
+  Present ~= 42.77..42.84 ms
 ```
+
+The clock is a functional/RAM PASS. The current full-screen TFT presentation cost
+prevents sustaining the nominal 20 FPS target, so stale virtual ticks are skipped
+as designed rather than rendered in catch-up bursts. This is a measured
+presentation-performance limit, not a state-machine failure.
 
 ## Start Game state-machine contract inherited from PR #36
 
@@ -200,7 +218,7 @@ The native boot had two large classes of memory still resident even though a
 fresh Start transition no longer needs them:
 
 1. `imgLegals` / `g.bmp`, because the ESP32 boot skips the original legal-screen
-   state machine that normally frees it before entering the menu;
+   state machine that normally frees it before handing control to the menu;
 2. menu map runtime + mapping tables, because the opaque ESP32 menu no longer
    needs `menu.bsp` after New Game is irreversibly confirmed.
 
@@ -321,11 +339,10 @@ storyPage      = 0
 storyTextPage  = 0
 ```
 
-## First bounded ST_INTRO frame
+## First bounded ST_INTRO frame (PR #37)
 
-The current increment intentionally does not enter `DoomCanvas_run()`. After the
-fresh Start action has reached the black `ST_INTRO` boundary, the ESP32 helper
-establishes a deterministic local epoch:
+After the fresh Start action reaches the black `ST_INTRO` boundary, the ESP32
+first-frame helper establishes a deterministic local epoch:
 
 ```text
 canvas.time          = 0
@@ -334,14 +351,12 @@ canvas.storyAnimTime = 0
 canvas.showTextDone  = false
 ```
 
-It then executes exactly once:
+It executes exactly once:
 
 ```text
 Esp32StoryFit_draw(canvas)
 DoomRPG_flushGraphics(doomRpg)
 ```
-
-and parks.
 
 There is no input dispatch, no story-page advancement and no gameplay map load.
 
@@ -395,30 +410,84 @@ Hardware marker:
 Validated fitted normal-firmware result:
 
 ```text
-=== Doom RPG ESP32 bounded first ST_INTRO frame ===
 [INTRO1] Begin state=9 menu=0 page=0 textPage=0 frameFNV=485915c5 expectedEntry=485915c5 heap8=50704 largest8=13300
 [INTROFIT] virtual=128x128 -> viewport=120x120@(20,0) direct-to-framebuffer; no intermediate buffer
 [INTRO1] Drawn t=0 frameFNV=56438966 heap8=50704 largest8=13300 deltaHeap=0 deltaLargest=0 state=9 page=0 textPage=0
 [VIDEO] Present 160x120 -> 320x240 exact 2x + sat1.15: 42761 us
 [INTRO1] READY one deterministic ST_INTRO frame presented once FNV=56438966
-[INTRO1] PARK state=9 page=0 textPage=0; no DoomCanvas_run, no input dispatch, no map load
-[MAINSTART] READY first ST_INTRO frame rendered/presented; engine remains parked
-[ALIVE] uptime=10008 ms heap=116468 heap8=50704 largest8=13300 SD=ready ZIP=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready touchIRQ=idle
+[ALIVE] uptime=10008 ms heap=116468 heap8=50704 largest8=13300 ...
 ```
 
 The 8-byte difference between the earlier `50712` Start boundary build and the
 final `50704` fitted build is a build-to-build baseline difference. The critical
-frame contract is unchanged before/after the draw:
+frame contract is unchanged before/after the draw.
+
+Hardware visual validation confirmed the full fitted viewport and the complete
+hand + `More` presentation are visible on the CYD.
+
+## Bounded ESP32 intro clock hardware evidence
+
+The current branch arms the clock immediately after the validated `t=0` fitted
+frame. Arduino `loop()` services at most one due virtual tick per pass.
+
+Clock model:
 
 ```text
-heap8        50704 -> 50704
-largest8     13300 -> 13300
+virtual step = 50 ms
+nominal virtual pacing ~= 20 FPS
+one render maximum per loop service call
+stale ticks are skipped, never catch-up rendered
+```
+
+Each due tick still executes only:
+
+```text
+Esp32StoryFit_draw(canvas)
+DoomRPG_flushGraphics(doomRpg)
+```
+
+Hardware sequence:
+
+```text
+[INTROCLK] ARMED step=50 ms startFNV=56438966 heap8=50672 largest8=13300 wallStart=1313
+[INTROCLK] frame=1 tick=1 t=50 FNV=da9cd50e heap8=50672 largest8=13300 skipped=0 textDone=0
+[INTROCLK] frame=2 tick=2 t=100 FNV=c63cf367 heap8=50672 largest8=13300 skipped=0 textDone=0
+[INTROCLK] frame=3 tick=4 t=200 FNV=2620e850 heap8=50672 largest8=13300 skipped=1 textDone=0
+[INTROCLK] frame=14 tick=20 t=1000 FNV=e76fec13 heap8=50672 largest8=13300 skipped=6 textDone=0
+[ALIVE] uptime=5020 ms heap=116436 heap8=50672 largest8=13300 ...
+```
+
+Validated clock RAM contract:
+
+```text
+heap8        50672 -> 50672 per rendered frame
+largest8     13300 -> 13300 per rendered frame
 deltaHeap    0
 deltaLargest 0
 ```
 
-Hardware visual validation confirms the full fitted viewport and the complete
-hand + `More` presentation are visible on the CYD.
+The 32-byte difference from the prior first-frame build (`50704` -> `50672`) is a
+build-to-build baseline difference from the clock state/code, not an allocation
+performed by each frame.
+
+Measured pacing at virtual `t=1000 ms`:
+
+```text
+ticks elapsed     = 20
+frames rendered   = 14
+ticks skipped     = 6
+effective render  ~= 14 FPS
+Present           ~= 42.77..42.84 ms
+```
+
+The user's visual observation that the intro feels somewhat slow is consistent
+with these measurements. Before changing pacing or presentation, compare against
+the original J2ME version. If optimization is required later, the measured
+`PlatformVideo_present()` path and final saturation 1.15 transform are the first
+candidates.
+
+No clock frame triggered `PARK` / `FAILED`; state/page invariants remained fixed,
+no map runtime was resurrected and heartbeat continued.
 
 ## Hardware-selected display profile
 
@@ -441,10 +510,9 @@ engine / palettes / GFXRM
         -> ILI9341
 ```
 
-Normal full-screen presentation remains about 42.7 ms; the fitted first intro
-frame measured 42.761 ms. Bring-up presentation with physical touch overlay is
-about 44.3 ms. This cost should be re-measured when the active intro/game loop
-begins.
+Normal full-screen presentation remains about 42.7 ms. During the active intro
+clock, repeated hardware measurements were about 42.77..42.84 ms. Bring-up
+presentation with physical touch overlay is about 44.3 ms.
 
 ## Two PlatformIO modes remain the architecture boundary
 
@@ -592,22 +660,27 @@ Hardware validated:
 - real `ST_INTRO` state reached with prologue text loaded
 - deterministic bounded first `ST_INTRO` frame presented once
 - native 128x128 -> centered 120x120 story fit
-- final fitted intro framebuffer FNV `56438966`
-- first-frame heap8 `50704 -> 50704`, largest8 `13300 -> 13300`
-- no map/runtime resurrection during the frame
+- fitted first-frame FNV `56438966`
+- ESP32-owned 50 ms multi-frame `ST_INTRO` clock
+- representative clock hashes `da9cd50e`, `c63cf367`, `2620e850`, `e76fec13`
+- clock heap8 `50672 -> 50672`, largest8 `13300 -> 13300` per frame
+- bounded skip behavior: 14 rendered / 6 skipped by virtual `t=1000 ms`
+- measured effective presentation about 14 FPS with current output path
+- no map/runtime resurrection during intro clock frames
+- no `DoomCanvas_run()` handoff
 - `shapeData == NULL`
 - `mediaTexels == NULL`
 
 Still intentionally deferred:
 
-- ESP32-owned timed multi-frame `ST_INTRO` progression
 - intro touch/key progression (`More` / `Continue`)
+- intro page progression after user input
 - intro disposal / transition to loading
 - first gameplay/map load after the intro
 - existing-save Continue / New Game submenu painter and action
 - Video/Input/Sound actions
 - Help/About and Exit real actions
-- active normal multi-frame game loop
+- active normal gameplay loop
 - gameplay controls
-- possible optimization of saturation cost if active frame pacing needs it
+- possible optimization of saturation/presentation cost after J2ME comparison
 - audio

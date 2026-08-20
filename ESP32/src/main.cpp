@@ -8,6 +8,7 @@
 #include "engine_metrics.h"
 #include "esp32_sdl_platform.h"
 #include "menu_bsp_probe.h"
+#include "native_intro_clock.h"
 #include "platform_input.h"
 #include "platform_video.h"
 #include "pre_render_probe.h"
@@ -455,6 +456,7 @@ void setup()
 
 void loop()
 {
+    Esp32IntroClock_service();
     updateTouchDiagnostic();
     printHeartbeat();
     delay(5);

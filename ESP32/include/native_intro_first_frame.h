@@ -7,11 +7,10 @@ extern "C" {
 
 struct DoomRPG_s;
 
-/* Render exactly one deterministic ST_INTRO frame after a validated fresh
- * Start Game transition. This deliberately does not enter DoomCanvas_run(),
- * does not process input, does not advance story pages and does not load a map.
- * The frame is rendered at intro-local t=0, presented once, instrumented and
- * then left parked for hardware validation.
+/* Render exactly one deterministic fitted ST_INTRO frame after a validated
+ * fresh Start Game transition, then hand off to the bounded ESP32 intro clock.
+ * This deliberately does not enter DoomCanvas_run(), process intro input,
+ * advance story pages or load a gameplay map.
  */
 int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpg);
 
