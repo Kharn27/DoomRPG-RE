@@ -1,5 +1,3 @@
-#include "DoomRPG.h"
-
 #include "native_intro_dispose.h"
 #include "native_map1_bsp_pass1.h"
 
