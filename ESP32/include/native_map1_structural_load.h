@@ -17,9 +17,10 @@ void Esp32Map1StructuralLoad_reset(void);
  */
 void Esp32Map1StructuralLoad_service(struct DoomRPG_s* doomRpg);
 
-/* ESP32-generated Render.c calls this immediately after freeing the BSP input
- * buffer and before the first legacy bitshape/texel loader. Returning non-zero
- * makes the generated loader return at that exact structural boundary.
+/* The ESP32 Render_loadBitShapes linker gate calls this at the first legacy
+ * graphics-loader boundary, immediately after Render_beginLoadMapData() has
+ * freed the raw BSP and completed structural parsing. Non-zero means the
+ * MAP_INTRO milestone owns this call and the legacy graphics tail must stop.
  */
 int Esp32Map1StructuralLoad_captureBoundary(struct Render_s* render);
 
