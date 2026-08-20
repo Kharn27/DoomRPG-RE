@@ -43,11 +43,12 @@ state. The historical value remains valid for the old milestone/build.
 
 ### Milestone archives — immutable evidence
 
-The following files preserve the detailed evidence that established major intro
-boundaries:
+The following files preserve the detailed evidence that established the recent
+fresh-Start and intro boundaries:
 
 | Archive | Purpose | PR | Merged `main` |
 | --- | --- | ---: | --- |
+| [`START_GAME.md`](START_GAME.md) | real fresh Start action, OOM diagnosis and 55,416 B lifecycle cleanup | #36 | `5275e4a1c6eca703b51221e80f3b199178015a01` |
 | [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md) | first real fitted `ST_INTRO` frame | #37 | `b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96` |
 | [`INTRO_CLOCK.md`](INTRO_CLOCK.md) | bounded 50 ms multi-frame intro clock | #38 | `58edfe5d7080a7e9e64ff5b516697ddf3cca31da` |
 | [`INTRO_INPUT.md`](INTRO_INPUT.md) | full bounded `More` / `Continue` touch progression | #39 | `7ba68955a9b0979924c5e759736fb483589be744` |
