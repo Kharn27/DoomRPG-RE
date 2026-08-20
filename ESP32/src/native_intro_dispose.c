@@ -173,6 +173,7 @@ void Esp32IntroDispose_reset(void) {
 void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     DoomCanvas_t* canvas;
+    Render_t* render;
     uint32_t heapBefore;
     uint32_t heapAfter;
     uint32_t largestBefore;
@@ -185,6 +186,21 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     if (!preDisposeBoundaryIsSafe(doomRpg)) {
+        canvas = doomRpg->doomCanvas;
+        render = doomRpg->render;
+        disposeState.attempted = 1;
+        printf("[INTRODISP] FAILED precondition clock=%d input=%d menu=%d state=%d page=%d textPage=%d textDone=%d heap8=%u largest8=%u shapeData=%p mediaTexels=%p\n",
+               Esp32IntroClock_isActive(),
+               Esp32IntroInput_isActive(),
+               doomRpg->menuSystem != NULL ? doomRpg->menuSystem->menu : -1,
+               canvas != NULL ? canvas->state : -1,
+               canvas != NULL ? canvas->storyPage : -1,
+               canvas != NULL ? canvas->storyTextPage : -1,
+               canvas != NULL && canvas->showTextDone ? 1 : 0,
+               (unsigned int)heap8Free(),
+               (unsigned int)largest8Block(),
+               render != NULL ? (void*)render->shapeData : NULL,
+               render != NULL ? (void*)render->mediaTexels : NULL);
         return;
     }
 
