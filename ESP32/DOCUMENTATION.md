@@ -29,9 +29,11 @@ Merged milestones:
 
 The pre-final MAP_INTRO document remains preserved at [`archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md`](archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md).
 
-Current active milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_RUNTIME.md`](MAP1_NATIVE_RUNTIME.md) — persistent 14,095-byte compact native MAP_INTRO arena and direct `.pak` section population; awaiting real-CYD validation.
+- [`MAP1_NATIVE_RUNTIME.md`](MAP1_NATIVE_RUNTIME.md) — one persistent 14,095-byte native MAP_INTRO arena populated directly from `.pak`; hardware measured at 14,112 B actual heap cost, 17 B allocator overhead, `arenaFNV=c3882516`, `largest8=36852` preserved.
+
+After this branch is merged, add its PR/merge SHA here and treat `MAP1_NATIVE_RUNTIME.md` as an immutable merged archive except for archival metadata fixes.
 
 ## Architecture documentation rule
 
@@ -77,7 +79,7 @@ Do not delete unique hardware measurements merely to shorten documentation. Fail
 | Stable architecture | yes | concise invariants | milestone detail |
 | Latest merged/candidate SHA | link | **authoritative** | historical base/merge SHA |
 | Current safe RAM/state boundary | summary | **authoritative** | historical boundary |
-| Current native map plan | concise | **authoritative** | detailed proof |
+| Current native map plan/runtime | concise | **authoritative** | detailed proof |
 | Full Serial evidence | no | selected values | yes |
 | Rejected approaches | concise if recovery-relevant | concise | detailed |
 | Next bounded milestone | link | **authoritative** | historical context only |
@@ -103,12 +105,27 @@ PR   = #42 — MAP_INTRO structural/native BSP pass 1
 main = c71ac1fb07c2e281bc3f8a70c102dd22c7b9300e
 ```
 
-Current branch:
+Current candidate:
 
 ```text
-agent/esp32-map1-native-runtime
+branch = agent/esp32-map1-native-runtime
+hardware-tested code = ed4ddda37d941ce6acb01148f92b6f5aebe2a275
+status = REAL-CYD HARDWARE PASS; MERGE-READY
 ```
 
-Its objective is to turn the hardware-proven 14,095-byte MAP_INTRO plan into one real resident byte-addressed arena populated directly from `DoomRPG-ESP32.pak`, measure allocator overhead/fragmentation, and PARK before entities, rendering or `ST_PLAYING`.
+The real CYD now keeps the compact `/intro.bsp` structural base resident in one native arena:
+
+```text
+planned payload      = 14095 B
+actual heap cost     = 14112 B
+allocator overhead   = 17 B
+arena FNV            = c3882516
+populate reads/time  = 33 / 62 ms
+heap8 after load     = 70128
+largest8 after load  = 36852
+framebuffer drift    = none
+legacy runtime       = absent
+entities/monsters    = 0
+```
 
 See [`PORTING_STATUS.md`](PORTING_STATUS.md) and [`MAP1_NATIVE_RUNTIME.md`](MAP1_NATIVE_RUNTIME.md).

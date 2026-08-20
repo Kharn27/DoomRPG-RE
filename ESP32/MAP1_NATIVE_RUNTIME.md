@@ -9,27 +9,27 @@ PR   = #42 — MAP_INTRO structural probe + native BSP pass 1
 main = c71ac1fb07c2e281bc3f8a70c102dd22c7b9300e
 ```
 
-Implementation head before hardware validation:
+Hardware-tested implementation head:
 
 ```text
 ed4ddda37d941ce6acb01148f92b6f5aebe2a275
 ```
 
-Status: **IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS**.
+Status: **REAL-CYD HARDWARE PASS; NATIVE MAP ARENA RESIDENT; MERGE-READY**.
 
 ## Objective
 
 Turn the hardware-validated 14,095-byte compact MAP_INTRO plan into a genuinely resident native map base, then PARK before entities, rendering or `ST_PLAYING`.
 
-This is the first milestone that keeps native gameplay-map structure persistently resident in RAM.
+This milestone is the first point where a real gameplay BSP structure remains persistently resident in **our ESP32-native runtime**, not in the desktop-derived `Render_t` model.
 
 ## Architectural ownership
 
-`esp_map_runtime.c/.h` is intended to survive into the final ESP32 engine. It depends only on the native asset pack and BSP inventory contracts. It does not depend on `Render_t`, `DoomCanvas_t`, `Game_t`, `Node_t`, `Line_t` or `Sprite_t`.
+`esp_map_runtime.c/.h` is intended to survive into the final ESP32 engine. It depends on the native asset pack and BSP inventory contracts and does not depend on `Render_t`, `DoomCanvas_t`, `Game_t`, `Node_t`, `Line_t` or `Sprite_t`.
 
-`native_map1_runtime_load.c/.h` and the lifecycle bridge remain temporary migration/test scaffolding. They exist only to trigger the native component from the already validated post-intro boundary and verify that no legacy gameplay runtime appears.
+`native_map1_runtime_load.c/.h` and the lifecycle bridge remain temporary migration/test scaffolding.
 
-Permanent direction remains:
+Permanent direction:
 
 ```text
 Doom RPG data / recovered behavior
@@ -39,7 +39,7 @@ Doom RPG data / recovered behavior
         -> native renderer/gameplay
 ```
 
-## Inherited source proof
+## Inherited MAP_INTRO proof
 
 PR #42 established `/intro.bsp` as:
 
@@ -56,7 +56,7 @@ byteCodes  = 265
 strings    = 94
 ```
 
-Exact source offsets:
+Exact payload-relative source offsets:
 
 ```text
 nodes         = 35
@@ -72,9 +72,9 @@ end           = 21823
 
 ## Exact arena contract
 
-The runtime allocates **one 14,095-byte 8-bit-capable arena**.
+The runtime allocates one byte-addressed 8-bit-capable arena with an exact payload of **14,095 B**.
 
-The arena is deliberately byte-addressed. No C struct packing/alignment is allowed to silently inflate the hardware budget.
+No C struct packing/alignment is allowed to silently inflate the plan:
 
 ```text
 arena + 0      nodes          2230 B
@@ -89,28 +89,28 @@ arena + 13999  texture IDs      32 B
 arena + 14031  sprite IDs       32 B
 arena + 14063  plane IDs        32 B
 --------------------------------------
-end            14095 B
+end                         = 14095 B
 ```
 
-Nodes/lines/sprites/events/bytecodes remain in their original compact BSP record encoding. Future consumers decode fields on demand or build small overlays; they are not expanded into desktop pointer-heavy objects.
+Nodes/lines/sprites/events/bytecodes remain in their original compact BSP record encoding. Future consumers decode fields on demand or add small index-based mutable overlays rather than expanding everything into pointer-heavy desktop objects.
 
-## Strings stay on SD
+## Strings remain on SD
 
-The `7,779 B` string payload is not copied into the arena.
+The `7,779 B` of string payload is not copied into the arena.
 
-For each of 94 strings, the runtime stores only one little-endian `uint16` BSP-entry-relative payload offset:
+For each of the 94 strings, the runtime stores one little-endian `uint16_t` BSP-entry-relative payload offset:
 
 ```text
 94 x 2 B = 188 B
 ```
 
-`/intro.bsp` is below 64 KiB, so 16-bit source offsets are valid for this map. The runtime fails closed for a source larger than `UINT16_MAX` under this plan rather than truncating offsets.
+The longest string in `/intro.bsp` is 313 B, so this map can materialize any one string with a roughly 314-byte NUL-terminated scratch buffer when a future consumer needs it.
 
-String lengths are discovered through a bounded 256-byte cached window while building the offset table. String payload bytes remain on SD.
+This 16-bit offset plan is valid because `/intro.bsp < 64 KiB`; the loader fails closed for larger sources rather than truncating offsets.
 
-## Direct population
+## Direct `.pak` population
 
-After an inventory regression pass, population performs bounded native-pack reads directly into final arena locations:
+After inventory regression, the runtime populates final arena locations directly from `DoomRPG-ESP32.pak`:
 
 ```text
 nodes section        -> arena nodes
@@ -118,127 +118,189 @@ lines section        -> arena lines
 mapSprites section   -> arena sprites
 events section       -> arena events
 byteCodes section    -> arena byteCodes
-strings section      -> 256 B scratch only; build offset table
+strings section      -> bounded 256 B scanner -> offset table only
 blockMap section     -> arena blockMap
 plane section        -> arena planeMap
 resource sets        -> copy pass-1 bitsets
 ```
 
-The complete raw BSP is never resident.
+The complete 21,823-byte raw BSP is never resident.
 
-The loader records:
+## Real-CYD hardware PASS
+
+Validation used normal optimized firmware:
 
 ```text
-populateReadCalls
-populateElapsedMs
-arenaFNV
-heap8 before/after
-largest8 before/after
-allocator overhead above 14095 B payload
-framebuffer FNV before/after
+esp32-cyd
 ```
 
-## Why pass 1 is temporarily repeated
+### PR #42 regression remained intact
 
-The already hardware-validated PR #42 pass-1 implementation is intentionally left bit-identical on this branch.
-
-The temporary lifecycle probe therefore inventories `/intro.bsp` again immediately before allocation instead of modifying pass 1 to retain hidden state. This costs roughly the previously measured 161 ms once during map load but isolates the new runtime milestone cleanly.
-
-A later native map orchestrator will naturally perform inventory -> plan -> allocation/population as one operation without the duplicate validation scan.
-
-## Fail-closed precondition
-
-Before native allocation:
+Before the resident arena was created, the existing native BSP pass still reproduced:
 
 ```text
-intro disposal        = done
-native BSP pass1      = done
-state                 = ST_INTRO (9)
-storyPage             = 3
-startupMap            = MAP_INTRO (1)
-legacy map arrays     = NULL
-legacy mappings       = NULL
-shapeData             = NULL
-mediaTexels           = NULL
-wall/sprite caches    = inactive
-entities/monsters     = 0
-native map arena      = absent
+sourceBytes  = 21823
+readCalls    = 86
+elapsed      = 166 ms
+FNV-1a       = d5cc751f
+CRC32        = 623f34e4
+plan         = 14095 B
+heap8        = 84240 -> 84240
+largest8     = 36852 -> 36852
+frameFNV     = 11b4cc0e -> 11b4cc0e
 ```
 
-## Required postcondition
+The small post-intro heap shift versus PR #42 (`84376 -> 84240`) is ordinary build-to-build code/state movement; the pass itself still has zero drift.
 
-After success:
+### Temporary second inventory
+
+The validation scaffold intentionally leaves the PR #42 pass untouched and inventories the BSP again immediately before allocation:
 
 ```text
-native arena          = resident
-arena payload         = exactly 14095 B
-legacy map runtime    = still NULL
-shapeData             = NULL
-mediaTexels           = NULL
-entities/monsters     = 0
-state                 = ST_INTRO (9)
-storyPage             = 3
-framebuffer           = unchanged
-ST_PLAYING            = NOT entered
+second inventory = 145 ms
 ```
 
-The heap reduction is expected to be at least 14,095 B. The difference between measured heap consumption and the payload is recorded as allocator overhead; this milestone intentionally measures that value on real hardware instead of assuming it.
+This is temporary validation overhead, not a required final-engine lifecycle. A native orchestrator can retain the already validated inventory and avoid this duplicate scan.
 
-If any postcondition fails after allocation, `EspMapRuntime_reset()` frees the arena before returning and logs the recovered heap boundary.
+### Arena population
 
-## Forbidden work
-
-This milestone does not add:
+Hardware then reported:
 
 ```text
-legacy Render_beginLoadMapData()
-shapeData/mediaTexels
-entity or monster spawn
-mutable door/script overlays
-custom/drop sprite pools
-resource-cache payloads
-map rendering
+[MAPRT] ARENA bytes=14095
+[MAPRT] READY arenaBytes=14095 populateReadCalls=33 arenaFNV=c3882516 strings=94 sourceCRC=623f34e4
+```
+
+Measured population cost:
+
+```text
+populateReadCalls = 33
+populateElapsed   = 62 ms
+arenaFNV          = c3882516
+```
+
+`c3882516` is now the first deterministic regression fingerprint for the complete compact resident MAP_INTRO structural base.
+
+### Exact persistent RAM cost
+
+Real allocator result:
+
+```text
+heap8     84240 -> 70128
+used              14112 B
+payload            14095 B
+allocator overhead    17 B
+largest8  36852 -> 36852
+```
+
+The actual persistent cost is therefore only 17 B above the planned payload.
+
+Compared with the measured legacy structural allocation:
+
+```text
+legacy structural     = 55341 B
+native actual heap use= 14112 B
+saved                 = 41229 B
+reduction             ~= 74.5%
+```
+
+The fact that `largest8` remains exactly `36852` after the 14,112-byte allocation is particularly healthy: the arena did not consume or split the largest available free block.
+
+### Frame/state integrity
+
+The resident load did not touch the visible image:
+
+```text
+frameFNV = 11b4cc0e -> 11b4cc0e
+```
+
+Postconditions:
+
+```text
+state          = ST_INTRO (9)
+storyPage      = 3
+startupMap     = 1
+nativeArena    = yes
+legacy runtime = NULL
+shapeData      = NULL
+mediaTexels    = NULL
+entities       = 0
+monsters       = 0
+ST_PLAYING     = NOT entered
+```
+
+A later heartbeat remained stable with the arena resident:
+
+```text
+heap8     = 70128
+largest8  = 36852
+```
+
+No reset, OOM, leak or hidden gameplay transition occurred.
+
+## Load-time interpretation
+
+Current temporary validation sequence costs approximately:
+
+```text
+pass1 inventory       166 ms
+second inventory      145 ms   # temporary duplicate
+arena population       62 ms
+--------------------------------
+current scaffold      ~373 ms
+```
+
+The duplicate 145 ms scan is removable once a native orchestrator owns inventory -> plan -> allocation/population as one lifecycle. Using the current measurements as a rough reference, the non-duplicated work is around 228 ms before any later gameplay-resource work is added.
+
+This is map-load time, not frame-loop time, and is not currently an optimization priority.
+
+## Merge classification
+
+```text
+native BSP regression              = PASS
+one exact 14095-B arena             = PASS
+direct native-pack population       = PASS
+string payload left on SD           = PASS
+arena FNV regression                = PASS (c3882516)
+allocator overhead measured         = PASS (17 B)
+largest free block preserved        = PASS (36852 B)
+framebuffer unchanged               = PASS
+legacy runtime still absent         = PASS
+entities/monsters still absent      = PASS
+stable resident heartbeat           = PASS
+```
+
+This branch is **MERGE-READY**.
+
+No additional hardware run is required for this milestone if subsequent commits are documentation-only. The hardware-tested code head is `ed4ddda37d941ce6acb01148f92b6f5aebe2a275`.
+
+Two harmless Serial formatting defects remain in that tested binary (`spriteAsTexture=0bounded8=yes` and `strings=94/188BblockMap=...`). They are intentionally not changed before merge because they are cosmetic and changing them would alter the tested firmware binary for no functional benefit.
+
+## Next bounded milestone after merge
+
+Start from fresh merged `main`.
+
+The next milestone should add the **smallest native mutable/indexed layer or first consumer needed to make this structural base useful**, without regressing into desktop object ownership.
+
+Preferred direction:
+
+```text
+resident immutable EspMapRuntime
+        -> native accessors/decoders by index
+        -> minimal mutable overlays only where gameplay actually mutates data
+        -> establish first bounded spatial/render/game consumer
+        -> measure RAM again
+        -> PARK
+```
+
+Continue to avoid pointer-heavy per-record objects. Use integer indices (`uint16_t` where sufficient) for links/ownership whenever practical.
+
+Still defer until their own measured milestones:
+
+```text
+full entity/monster activation
 player spawn
 ST_PLAYING
-continuous gameplay loop
+gameplay rendering loop
+monolithic shapeData/mediaTexels
 ```
-
-## Real-CYD PASS criteria
-
-Normal `esp32-cyd` must show:
-
-- PR #42 native BSP pass 1 still succeeds first;
-- the runtime arms only after pass 1 is done;
-- inventory regression still reports `21823 B`, CRC `623f34e4`, FNV `d5cc751f`, plan `14095 B`;
-- one native arena becomes resident;
-- `arenaBytes=14095`;
-- all counts/section byte sizes match the plan;
-- a deterministic `arenaFNV` is reported;
-- population read count/time are reported;
-- heap use is >= 14,095 B and allocator overhead is measured;
-- largest free block remains healthy and is recorded;
-- logical framebuffer FNV is unchanged;
-- all legacy runtime pointers remain NULL;
-- entities/monsters remain zero;
-- later `[ALIVE]` heartbeats remain stable with the arena resident.
-
-Expected tail:
-
-```text
-[NATIVEMAP] ARMED ...
-=== Doom RPG ESP32-native MAP_INTRO resident structural base ===
-[NATIVEMAP] CONTRACT ...
-[BSPREAD] ...
-[NATIVEMAP] BEGIN ... plan=14095
-[MAPRT] ARENA bytes=14095 ...
-[MAPRT] READY arenaBytes=14095 populateReadCalls=... arenaFNV=...
-[NATIVEMAP] READY arenaBytes=14095 ...
-[NATIVEMAP] RESIDENT ...
-[NATIVEMAP] RAM heap8=...->... used=... payload=14095 allocatorOverhead=... largest8=...->... frameFNV=X->X
-[NATIVEMAP] PARK ... nativeArena=yes ... noGameplay=yes
-[ALIVE] ...
-```
-
-## Next boundary after PASS
-
-If this arena is hardware-stable, the following milestone should add the **smallest mutable native overlays needed by the first consumer**, still using integer indices instead of pointers where practical. Rendering/entity activation should remain separated until the memory ownership model is measured and stable.
