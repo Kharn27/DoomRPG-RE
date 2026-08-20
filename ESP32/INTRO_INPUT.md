@@ -8,7 +8,7 @@ Base hardware-validated `main`:
 58edfe5d7080a7e9e64ff5b516697ddf3cca31da
 ```
 
-Status: **HARDWARE PASS; END-TO-END AUTO PATH DOCUMENTED; MERGE-READY**.
+Status: **FULL HARDWARE PASS; ALL INTRO INPUT BRANCHES VALIDATED; MERGE-READY**.
 
 ## Objective
 
@@ -107,7 +107,7 @@ prompt hit band         = x20..139 y102..119
 The animated page has no visible prompt, so any tap inside the 120x120 story
 viewport may skip it.
 
-The hardware run deliberately proved rejection outside the prompt band:
+The first hardware run deliberately proved rejection outside the prompt band:
 
 ```text
 physical=115,59 -> logical=57,29
@@ -177,6 +177,20 @@ The 16-byte difference from the prior intro-clock build (`50672 -> 50656`) is a
 build-to-build baseline difference after adding the input state/callback code.
 All measured frame and input transitions remained allocation-free.
 
+The second validation run also measured the pre-Start menu and cleanup boundary:
+
+```text
+MENU_MAIN heap8        = 29008
+post-cleanup heap8     = 84424
+cleanup gain           = 55416 B
+post-cleanup largest8  = 36852
+intro heap8            = 50656
+intro largest8         = 13300
+```
+
+The cleanup gain remains exactly the same 55,416 bytes as the earlier Start
+milestone despite small build-to-build baseline movement.
+
 Initial clock hashes remain stable:
 
 ```text
@@ -186,7 +200,9 @@ t=200 ms   FNV=2620e850
 t=1000 ms  FNV=e76fec13
 ```
 
-End-to-end hardware sequence:
+### Natural page-1 timeout path
+
+The first end-to-end hardware run validated the natural animation timeout:
 
 ```text
 [INTROCLK] TEXT DONE page=0 textPage=0 tick=78 t=3900 ...
@@ -214,12 +230,60 @@ End-to-end hardware sequence:
 [TOUCH] ...
 ```
 
-The final `[TOUCH]` after `READY-TO-EXIT` proves the Arduino loop continued after
-PARK instead of resetting or entering the map loader. Earlier 5-second heartbeats
-remained stable throughout the long run.
-
 The natural page-1 animation lasted from virtual `t=9150` to `t=19200`, i.e.
 10.05 seconds. The extra 50 ms is the expected quantization of the 50 ms clock.
+
+### Explicit reveal + page-1 touch-skip path
+
+A second hardware run closed every remaining alternate branch:
+
+```text
+[INTROIN] TAP n=1 ... page=0 textPage=0 textDone=0 accepted=1
+[INTROIN] REVEAL page=0 textPage=0 t=2050
+[INTROIN] READY page=0 textPage=0 textDone=1 heap8=50656 largest8=13300
+
+[INTROIN] TAP n=2 ... page=0 textPage=0 textDone=1 accepted=1
+[INTROIN] MORE textPage=0->1 t=3300 textEpoch=3300
+[INTROIN] READY page=0 textPage=1 textDone=0 heap8=50656 largest8=13300
+
+[INTROIN] TAP n=3 ... page=0 textPage=1 textDone=0 accepted=1
+[INTROIN] REVEAL page=0 textPage=1 t=4600
+[INTROIN] READY page=0 textPage=1 textDone=1 heap8=50656 largest8=13300
+
+[INTROIN] TAP n=4 ... page=0 textPage=1 textDone=1 accepted=1
+[INTROIN] CONTINUE storyPage=0->1 t=5400 epoch=5400
+[INTROIN] READY page=1 textPage=0 textDone=0 heap8=50656 largest8=13300
+
+[INTROIN] TAP n=5 ... page=1 textPage=0 textDone=0 accepted=1
+[INTROIN] SKIP-ANIM storyPage=1->2 t=7300 epoch=7300
+[INTROIN] READY page=2 textPage=0 textDone=0 heap8=50656 largest8=13300
+
+[INTROIN] TAP n=6 ... page=2 textPage=0 textDone=0 accepted=1
+[INTROIN] REVEAL page=2 textPage=0 t=8400
+[INTROIN] READY page=2 textPage=0 textDone=1 heap8=50656 largest8=13300
+
+[INTROIN] TAP n=7 ... page=2 textPage=0 textDone=1 accepted=1
+[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=9150
+[INTROCLK] PARK reason=intro-exit-ready tick=183 frames=115 skipped=68 state=9 page=2 textPage=0 heap8=50656 largest8=13300
+[INTROIN] READY-TO-EXIT state=9 page=2 textPage=0 heap8=50656 largest8=13300 assets=retained noDispose=yes noMapLoad=yes
+[TOUCH] ...
+```
+
+This proves on hardware that the same bounded state machine supports both page-1
+exit modes:
+
+```text
+page 1 timeout    -> AUTO-PAGE 1->2   PASS
+page 1 touch skip -> SKIP-ANIM 1->2   PASS
+```
+
+It also proves early reveal on every progressive text stage used by this intro:
+
+```text
+page 0 / text 0 -> REVEAL PASS
+page 0 / text 1 -> REVEAL PASS
+page 2 / text 0 -> REVEAL PASS
+```
 
 RAM remained:
 
@@ -228,29 +292,32 @@ heap8    = 50656
 largest8 = 13300
 ```
 
-through first frame, text progression, page transition, automatic animation
-completion, page-2 text completion and final PARK.
+through first frame, every reveal, `More`, `Continue`, both page-1 transition
+modes, page-2 progression and final PARK.
+
+The `[TOUCH]` markers after `READY-TO-EXIT` prove the Arduino loop continued after
+PARK instead of resetting or entering the map loader. Stable 5-second heartbeats
+were also observed during the long natural-timeout run.
 
 No unexpected `[INTROIN] FAILED` or `[INTROCLK] PARK` occurred before the intended
 final `intro-exit-ready` park.
 
-## Hardware coverage note
+## Full hardware branch coverage
 
-This captured run validates the complete natural end-to-end path and one active
-`REVEAL` transition on page-0 text 1.
+Across the two captured real-CYD runs, every bounded intro input branch is now
+hardware validated:
 
-The following alternate branches are implemented but were not exercised in the
-pasted Serial capture:
+- out-of-band prompt touch -> `MISS` with no state/RAM mutation
+- page-0 text 0 early reveal
+- page-0 text 0 complete -> `More` / text 1
+- page-0 text 1 early reveal
+- page-0 text 1 complete -> `Continue` / page 1
+- page-1 natural ~10-second timeout -> page 2
+- page-1 touch skip -> page 2
+- page-2 early reveal
+- page-2 final Continue -> safe PARK
 
-- reveal page-0 text 0 before its natural completion
-- touch-skip page 1 (`[INTROIN] SKIP-ANIM ...`)
-- reveal page-2 text before its natural completion
-
-The two reveal cases share the exact hardware-validated `showTextDone` mutation
-used by page-0 text 1. The optional page-1 skip remains a useful regression check
-for a future retest, while the natural 10-second transition and the final safe
-boundary are hardware validated. These alternate-path coverage gaps are recorded
-rather than silently claimed.
+There are no remaining intro-input branch coverage gaps for this milestone.
 
 ## PASS result
 
@@ -259,11 +326,11 @@ Validated on real CYD:
 - prompt hitbox accepts valid bottom-band touches
 - out-of-band touch is rejected without state/RAM change
 - `More` reaches page-0 text 1
-- reveal-on-tap works
+- reveal-on-tap works on page-0 text 0, page-0 text 1 and page 2
 - `Continue` reaches animated page 1
 - page 1 auto-advances after its original ~10-second duration
-- virtual-time epochs remain coherent across transitions
-- page 2 renders and naturally completes its progressive text
+- page 1 can also be skipped immediately by semantic touch
+- both page-1 exits correctly rebase the local virtual-time epoch
 - final Continue parks at page 2 instead of disposing/loading
 - no reset/crash
 - no unexpected failure park
