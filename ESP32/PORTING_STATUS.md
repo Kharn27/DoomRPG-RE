@@ -98,7 +98,7 @@ Base `main` SHA:
 58edfe5d7080a7e9e64ff5b516697ddf3cca31da
 ```
 
-Status: **HARDWARE PASS; DOCUMENTED; MERGE-READY**.
+Status: **FULL HARDWARE PASS; ALL INTRO INPUT BRANCHES VALIDATED; MERGE-READY**.
 
 Objective: add bounded semantic touch progression through the intro while keeping
 `DoomCanvas_run()`, intro disposal and gameplay map loading unreachable.
@@ -244,6 +244,9 @@ mappings    = NULL / NULL
 shapeData   = NULL
 mediaTexels = NULL
 ```
+
+A later intro-input build measured `29008 -> 84424`, preserving the exact same
+55,416-byte cleanup gain and the same `largest8=36852` post-cleanup boundary.
 
 This is the required fresh-Start lifecycle boundary.
 
@@ -518,7 +521,7 @@ t=200 ms   2620e850
 t=1000 ms  e76fec13
 ```
 
-Hardware-validated end-to-end sequence:
+The first hardware run validated the complete natural timeout path:
 
 ```text
 [INTROCLK] TEXT DONE page=0 textPage=0 tick=78 t=3900 ...
@@ -543,18 +546,41 @@ Hardware-validated end-to-end sequence:
 Page 1 ran from virtual epoch `9150` to automatic transition `19200`, i.e. 10.05
 seconds; the extra 50 ms is the expected clock quantization.
 
-The `[TOUCH]` marker after final PARK shows that the Arduino loop continued instead
+The second hardware run closed every remaining alternate branch:
+
+```text
+[INTROIN] REVEAL page=0 textPage=0 t=2050
+[INTROIN] MORE textPage=0->1 t=3300 textEpoch=3300
+[INTROIN] REVEAL page=0 textPage=1 t=4600
+[INTROIN] CONTINUE storyPage=0->1 t=5400 epoch=5400
+[INTROIN] SKIP-ANIM storyPage=1->2 t=7300 epoch=7300
+[INTROIN] REVEAL page=2 textPage=0 t=8400
+[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=9150
+[INTROCLK] PARK reason=intro-exit-ready tick=183 frames=115 skipped=68 state=9 page=2 textPage=0 heap8=50656 largest8=13300
+[INTROIN] READY-TO-EXIT state=9 page=2 textPage=0 heap8=50656 largest8=13300 assets=retained noDispose=yes noMapLoad=yes
+[TOUCH] ...
+```
+
+Across those two runs, every bounded intro-input branch is hardware validated:
+
+```text
+out-of-band prompt touch -> MISS
+page 0 text 0 early reveal -> PASS
+page 0 text 0 -> More -> PASS
+page 0 text 1 early reveal -> PASS
+page 0 -> page 1 Continue -> PASS
+page 1 natural timeout -> page 2 -> PASS
+page 1 touch skip -> page 2 -> PASS
+page 2 early reveal -> PASS
+final Continue -> safe PARK -> PASS
+```
+
+The `[TOUCH]` markers after final PARK show that the Arduino loop continued instead
 of resetting or entering the map loader. Stable 5-second heartbeats were also
-observed throughout the long run.
+observed throughout the long natural-timeout run.
 
 No unexpected `[INTROIN] FAILED` or `[INTROCLK] PARK` occurred before the intended
 final `intro-exit-ready` park.
-
-Alternate-path coverage note: the pasted run used the natural page-1 timeout and
-did not capture the optional `SKIP-ANIM` touch branch. Early reveal on page-0 text
-0 and page-2 text was also not captured; those text pages use the same
-`showTextDone` mutation hardware-validated on page-0 text 1. These gaps are
-recorded rather than silently claimed.
 
 At the final safe boundary:
 
@@ -749,10 +775,12 @@ Hardware validated:
 - bounded skipped-tick behavior under current ~42.8 ms presentation cost
 - semantic intro press-edge touch with stable-release rearm
 - prompt-band rejection and accepted `More` / `Continue` touches
-- reveal-on-tap hardware validated
+- reveal-on-tap validated on all three progressive text stages
 - page 0 -> page 1 transition
 - natural page 1 -> page 2 transition with virtual epoch rebase
+- touch-skip page 1 -> page 2 transition with virtual epoch rebase
 - final Continue parks at `ST_INTRO`, page 2
+- all bounded intro-input branches covered on real CYD
 - current heap8 `50656` stable across measured frames/input
 - current largest8 `13300` stable
 - intro assets retained at final PARK
@@ -765,7 +793,6 @@ Hardware validated:
 
 Still intentionally deferred:
 
-- optional page-1 touch-skip hardware regression capture
 - intro disposal / transition to loading
 - first gameplay/map load after the intro
 - existing-save Continue / New Game submenu painter and action
