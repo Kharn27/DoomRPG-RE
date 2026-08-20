@@ -33,8 +33,6 @@ own constrained engine:
   unsuitable for the target
 - one small hardware-validated subsystem per increment
 
-Core philosophy:
-
 > We are no longer forcing DoomRPG-RE onto ESP32. We are building an ESP32 Doom
 > RPG engine from the behaviour and data model proven by DoomRPG-RE.
 
@@ -66,17 +64,13 @@ Documentation is part of the increment, not a later cleanup task.
 - sprite LRU3: 11 logical requests -> 9 physical loads
 - native scene framebuffer `ffe0995e`
 - fitted 160x120 `MENU_MAIN` geometry / layout FNV `47b3656e`
-- touch-ready hand-only main menu with real XPT2046 selection
-- released double-tap confirmation
-- real Options action through `MenuSystem_select()`
-- real `MENU_MAIN_OPTIONS` model (`Back / Video / Input / Sound`)
-- real Back action through `MenuSystem_back()`
-- opaque black main-menu presentation with deterministic touch hashes
-- fast Options -> Main return without replaying MENUWALL/MENUSPRITE
+- real XPT2046 menu touch + released double-tap confirmation
+- Options / Back real menu actions
+- fast opaque menu return without replaying menu scene
 - fast-menu branch merged as PR #32 at
   `cc2cb40cf026b5a5e232dba67f884905aca42488`
-- normal/bring-up boot split and loading-bar flicker suppression merged as PR #33
-  at `1035d4413686624feb07aaf208821946cead5869`
+- normal/bring-up boot split merged as PR #33 at
+  `1035d4413686624feb07aaf208821946cead5869`
 - permanent bring-up hitbox overlay merged as PR #34 at
   `2b29ca7f3479c9add022ccc803bdbff7dd5ade34`
 - hardware-selected CYD color profile merged as PR #35 at
@@ -85,144 +79,154 @@ Documentation is part of the increment, not a later cleanup task.
   `5275e4a1c6eca703b51221e80f3b199178015a01`
 - first fitted deterministic `ST_INTRO` frame merged as PR #37 at
   `b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96`
+- bounded 50 ms multi-frame intro clock merged as PR #38 at
+  `58edfe5d7080a7e9e64ff5b516697ddf3cca31da`
 
 ## Current increment
 
-Branch: `agent/esp32-intro-clock`
+Branch: `agent/esp32-intro-input`
 
 Base `main` SHA:
 
 ```text
-b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96
+58edfe5d7080a7e9e64ff5b516697ddf3cca31da
 ```
 
 Status: **HARDWARE PASS; DOCUMENTED; MERGE-READY**.
 
-Objective: drive repeated fitted `ST_INTRO` frames from the Arduino `loop()` with
-an ESP32-owned 50 ms virtual clock, while keeping intro input, page progression,
-map loading and the broad legacy `DoomCanvas_run()` loop disabled.
+Objective: add bounded touch progression through the complete intro while keeping
+`DoomCanvas_run()`, intro disposal and gameplay map loading unreachable.
 
 Current recovery contract:
 
 ```text
 entry fitted intro FNV = 56438966
-clock step             = 50 ms nominal (~20 FPS virtual)
-heap8                  = 50672 stable per rendered frame
-largest8               = 13300 stable per rendered frame
-deltaHeap              = 0
-deltaLargest           = 0
+clock step             = 50 ms nominal
+heap8                  = 50656 stable
+largest8               = 13300 stable
 state                   = ST_INTRO (9)
-storyPage               = 0
-storyTextPage           = 0
+menu                    = MENU_NONE
+story pages             = bounded to 0 / 1 / 2
 shapeData               = NULL
 mediaTexels             = NULL
 wall/sprite caches      = inactive
-
-checkpoint FNVs:
-  t=50 ms    da9cd50e
-  t=100 ms   c63cf367
-  t=200 ms   2620e850
-  t=1000 ms  e76fec13
-
-at virtual t=1000 ms:
-  frames rendered = 14
-  ticks skipped   = 6
-  effective render ~= 14 FPS
-  Present ~= 42.77..42.84 ms
+intro assets            = resident until final PARK
+DoomCanvas_run          = NOT called
+DoomCanvas_disposeIntro = NOT called
+DoomCanvas_loadMap      = NOT called
 ```
 
-The clock is a functional/RAM PASS. The current full-screen TFT presentation cost
-prevents sustaining the nominal 20 FPS target, so stale virtual ticks are skipped
-as designed rather than rendered in catch-up bursts. This is a measured
-presentation-performance limit, not a state-machine failure.
+The 16-byte baseline change from the merged clock build (`50672 -> 50656`) is a
+build-to-build difference from the input state/callback code. Every measured
+frame and every measured input transition retained zero heap/largest-block delta.
 
-## Start Game state-machine contract inherited from PR #36
+## Current intro touch semantics
 
-The native ESP32 menu boot deliberately bypasses the original heavy
-`MenuSystem_setMenu()` presentation path. Hardware testing exposed one missing
-semantic side effect: the model was already `MENU_MAIN`, but `DoomCanvas.state`
-was still the initial `ST_LEGALS` value 0.
-
-That made direct Start fail until an Options -> Back round trip happened to call
-the original menu transition and establish `ST_MENU`.
-
-The native interactive-main activation explicitly restores the same state
-contract:
+`PlatformInput` emits one semantic callback on the physical press edge, then
+requires a stable 50 ms release before another callback can be emitted:
 
 ```text
-MENU_MAIN visible + touch armed
-    => DoomCanvas.state == ST_MENU (2)
+press -> one semantic tap
+hold  -> no repeat
+release stable 50 ms -> rearm
 ```
 
-Hardware boot marker:
+Earlier wording called this a `released-tap`; the implementation was correct but
+the wording was not. The current branch corrects the runtime marker and comments.
+
+Text-page hit geometry:
 
 ```text
-[MENUTOUCH] STATE SYNC canvas=0->2 source=native-MENU_MAIN activation
+story viewport logical = x20..139 y0..119
+prompt band logical    = x20..139 y102..119
 ```
 
-This is a state-machine correction, not a relaxation of Start preconditions.
-The Start helper still requires:
+Page 1 has no prompt, so its optional animation-skip touch accepts the whole story
+viewport.
+
+The real CYD run proved rejection outside the prompt band:
 
 ```text
-menu      = MENU_MAIN
-selected  = 0
-state     = ST_MENU
-frame FNV = 58a11171
-shapeData = NULL
-mediaTexels = NULL
-wall/sprite caches inactive
+physical=115,59 -> logical=57,29
+page=0 textPage=0 textDone=0 accepted=0
+[INTROIN] MISS ... promptBandY=102..119
 ```
 
-## Hardware touch evidence / Start tolerance
+## Hardware-validated intro input sequence
 
-A deliberate real-CYD Start tap landed at logical `y=64`, three pixels above the
-visible first row beginning at `y=67`.
-
-Only Start receives this extra top tolerance:
+Initial deterministic hashes remain unchanged from PR #38:
 
 ```text
-Start Game logical x=28..119 y=64..78
-Options    logical x=28..119 y=79..90
-Help/About logical x=28..119 y=91..102
-Exit       logical x=28..119 y=103..114
+t=0 ms     56438966
+t=50 ms    da9cd50e
+t=100 ms   c63cf367
+t=200 ms   2620e850
+t=1000 ms  e76fec13
 ```
 
-The other rows remain unchanged and non-overlapping.
-
-## Real fresh Start path validated in PR #36
-
-On a first-boot profile with no compatible save, confirmed Start executes the
-original action:
+Hardware path:
 
 ```text
-MENU_MAIN / item 0
+page 0 / text 0 naturally completes at t=3900
+
+[INTROIN] MORE textPage=0->1 t=5600 textEpoch=5600
+[INTROIN] READY page=0 textPage=1 ... heap8=50656 largest8=13300
+
+[INTROIN] REVEAL page=0 textPage=1 t=7400
+[INTROIN] READY page=0 textPage=1 textDone=1 heap8=50656 largest8=13300
+
+[INTROIN] CONTINUE storyPage=0->1 t=9150 epoch=9150
+[INTROIN] READY page=1 textPage=0 ... heap8=50656 largest8=13300
+
+[INTROCLK] AUTO-PAGE 1->2 t=19200 textPage=0 epoch=19200
+
+page 2 / text 0 naturally completes at t=22650
+
+[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=23650
+[INTROCLK] PARK reason=intro-exit-ready tick=473 frames=282 skipped=191
+           state=9 page=2 textPage=0 heap8=50656 largest8=13300
+[INTROIN] READY-TO-EXIT state=9 page=2 textPage=0 heap8=50656 largest8=13300
+          assets=retained noDispose=yes noMapLoad=yes
+[TOUCH] ...
+```
+
+The page-1 natural animation therefore lasted 10.05 virtual seconds from epoch
+`t=9150` to transition `t=19200`; the extra 50 ms is the expected clock
+quantization.
+
+The `[TOUCH]` line after final `READY-TO-EXIT` shows the Arduino loop continued
+after PARK. Stable `[ALIVE]` markers were also observed throughout the long run.
+
+No unexpected `[INTROIN] FAILED` or `[INTROCLK] PARK` occurred before the intended
+final `intro-exit-ready` park.
+
+### Alternate-path coverage note
+
+The pasted hardware capture did not exercise:
+
+- reveal page-0 text 0 before natural completion
+- page-1 touch skip (`SKIP-ANIM`)
+- reveal page-2 text before natural completion
+
+The reveal mutation is hardware-validated on page-0 text 1 and shared by the
+other text pages. The optional page-1 skip remains implemented and is recorded as
+an alternate-path regression check; the complete natural end-to-end path and the
+final safe boundary are hardware validated.
+
+## Fresh Start lifecycle contract inherited from PR #36
+
+Fresh no-save path:
+
+```text
+MENU_MAIN / Start Game
     -> MenuSystem_select()
-    -> Menu_select(MENU_MAIN, 0)
-    -> Menu_startGame(menu, 1)
+    -> Menu_startGame(new)
     -> Player_reset()
-    -> DoomCanvas_setState(ST_INTRO)
+    -> ST_INTRO
     -> DoomCanvas_loadPrologueText()
 ```
 
-The first attempted hardware run reached the real intro loader but failed on
-`c.bmp` because the old ZIP path temporarily needed compressed data,
-uncompressed data and a 10,992-byte miniz inflate state while only 29,064 bytes
-of 8-bit heap remained.
-
-The crash was an intentional `DoomRPG_Error()` abort/reboot, not a logical return
-to the menu.
-
-## Fresh-start lifecycle cleanup
-
-The native boot had two large classes of memory still resident even though a
-fresh Start transition no longer needs them:
-
-1. `imgLegals` / `g.bmp`, because the ESP32 boot skips the original legal-screen
-   state machine that normally frees it before handing control to the menu;
-2. menu map runtime + mapping tables, because the opaque ESP32 menu no longer
-   needs `menu.bsp` after New Game is irreversibly confirmed.
-
-For the fresh-profile path only, before calling the original `MenuSystem_select()`:
+Before the irreversible fresh transition, dead menu/legal resources are released:
 
 ```text
 DoomRPG_freeImage(imgLegals)
@@ -230,22 +234,17 @@ Render_freeRuntime(render)
 Game_unloadMapData(game)
 ```
 
-This uses the same runtime cleanup order already used by the original map loader.
-The existing-save path is detected first and deliberately keeps menu resources
-resident because it must later paint the Continue / New Game menu.
-
-Hardware measurement:
+Measured recovery:
 
 ```text
-before cleanup:
-  heap8    = 29064
-  largest8 = 17396
+heap8    29064 -> 84480
+largest8 17396 -> 36852
+gained   55416 B
+```
 
-after cleanup:
-  heap8    = 84480
-  largest8 = 36852
-  gained   = 55416 B
+Required post-cleanup state:
 
+```text
 nodes       = NULL
 lines       = NULL
 mapSprites  = NULL
@@ -254,244 +253,71 @@ shapeData   = NULL
 mediaTexels = NULL
 ```
 
-This is the required fresh-Start lifecycle boundary.
-
-## Intro resource plan and successful load
-
-`DoomCanvas_loadPrologueText()` loads four original indexed BMP assets:
+The original prologue loader then successfully loads:
 
 ```text
-c.bmp -> imgSpaceBG
-  ZIP compressed   = 3675 B
-  uncompressed BMP = 12408 B
-  packed pixels    = 12288 B, 192x128, 4-bpp, palette 16
-
-d.bmp -> imgLinesLayer
-  ZIP compressed   = 149 B
-  uncompressed BMP = 12356 B
-  packed pixels    = 12288 B, 192x128, 4-bpp, palette 3
-
-e.bmp -> imgPlanetLayer
-  ZIP compressed   = 1352 B
-  uncompressed BMP = 8312 B
-  packed pixels    = 8192 B, 128x128, 4-bpp, palette 16
-
-f.bmp -> imgSpaceship
-  ZIP compressed   = 114 B
-  uncompressed BMP = 160 B
-  packed pixels    = 45 B, 9x9, 4-bpp, palette 8
+c.bmp 192x128 4-bpp packed=12288 B palette=16
+d.bmp 192x128 4-bpp packed=12288 B palette=3
+e.bmp 128x128 4-bpp packed=8192 B  palette=16
+f.bmp 9x9     4-bpp packed=45 B    palette=8
 ```
 
-ZIP totals are `5290 B` compressed / `33236 B` uncompressed, but the legacy ZIP
-loader peak is per-file. After the lifecycle cleanup, all four assets loaded
-successfully through the existing packed indexed ESP32 BMP path.
-
-No direct `.pak` intro-image migration was needed. The native pack remains the
-preferred future path when another legacy ZIP allocation peak becomes unsuitable.
-
-## Start Game hardware evidence
-
-Validated normal-firmware transition before the first intro draw:
+Fresh `Player_reset()` remains:
 
 ```text
-[MAINSTART] Begin menu=1 selected=0 state=2 framebufferFNV=58a11171
-[MAINSTART] Existing-save precheck=no -> fresh cleanup allowed
-[MAINSTART] Fresh-start cleanup ... heap8=29064->84480 gained=55416
-...
-[ZIP] inflate c.bmp ...
-[SDL] Adopt packed indexed texture 192x128 bpp=4 bytes=12288 palette=16
-[ZIP] inflate d.bmp ...
-[SDL] Adopt packed indexed texture 192x128 bpp=4 bytes=12288 palette=3
-[ZIP] inflate e.bmp ...
-[SDL] Adopt packed indexed texture 128x128 bpp=4 bytes=8192 palette=16
-[ZIP] inflate f.bmp ...
-[SDL] Adopt packed indexed texture 9x9 bpp=4 bytes=45 palette=8
-...
-[MAINSTART] After select menu=0 state=9 framebufferFNV=485915c5
-             heap8=50712 largest8=13300
-[MAINSTART] READY real MenuSystem_select -> Menu_startGame(new)
-            -> Player_reset -> ST_INTRO
+level=1 xp=0 nextXP=80 credits=0 keys=0 ammo[1]=8
+weapon=2 weapons=0x00000004 disabledWeapons=0 deaths=0
 ```
 
-Fresh player reset contract remained exact:
+## Fitted first-frame contract inherited from PR #37
+
+Virtual story geometry:
 
 ```text
-level           = 1
-currentXP       = 0
-nextLevelXP     = 80
-credits         = 0
-keys            = 0
-ammo[1]         = 8
-weapon          = 2
-weapons         = 0x00000004
-disabledWeapons = 0
-totalDeaths     = 0
+original virtual story = 128x128
+ESP32 viewport         = 120x120 at x20,y0
+logical framebuffer    = 160x120
+physical TFT           = exact 2x -> 320x240
 ```
 
-The three prologue text allocations are non-NULL and the story counters are at
-the initial page:
+Final first-frame regression:
 
 ```text
-storyText1[0] != NULL
-storyText1[1] != NULL
-storyText2     != NULL
-storyPage      = 0
-storyTextPage  = 0
+entry FNV        = 485915c5
+fitted frame FNV = 56438966
+heap8            = 50704 -> 50704
+largest8         = 13300 -> 13300
 ```
 
-## First bounded ST_INTRO frame (PR #37)
+Pre-fit historical frame `6cf52a3e` is retained only as the cropped baseline.
 
-After the fresh Start action reaches the black `ST_INTRO` boundary, the ESP32
-first-frame helper establishes a deterministic local epoch:
-
-```text
-canvas.time          = 0
-canvas.storyTextTime = 0
-canvas.storyAnimTime = 0
-canvas.showTextDone  = false
-```
-
-It executes exactly once:
-
-```text
-Esp32StoryFit_draw(canvas)
-DoomRPG_flushGraphics(doomRpg)
-```
-
-There is no input dispatch, no story-page advancement and no gameplay map load.
-
-### Pre-fit hardware baseline
-
-The first implementation called the original 128x128 story geometry directly:
-
-```text
-frame FNV    = 6cf52a3e
-heap8        = 50712 -> 50712
-largest8     = 13300 -> 13300
-deltaHeap    = 0
-deltaLargest = 0
-```
-
-The engine/state/RAM result was correct, but the 128x128 story square maps to
-`y=-4..123` around `SCR_CY=60`, so four logical pixels were cropped at both the
-top and bottom of the 120-high framebuffer. `More` / `Continue` also extended
-past the bottom edge.
-
-`6cf52a3e` is retained as the pre-fit recovery hash only.
-
-### ESP32-native 128 -> 120 story fit
-
-The current renderer keeps Doom RPG's 128x128 coordinates as a virtual story
-space and maps them directly into a centered 120x120 viewport:
-
-```text
-virtual story space : 128x128
-ESP32 viewport      : 120x120
-viewport origin     : x=20, y=0
-logical framebuffer : 160x120
-physical TFT        : exact 2x -> 320x240
-```
-
-The fit applies to the scrolling background, progressive Doom font, hand,
-`More` / `Continue`, animated layers, spaceship, laser lines and clip rectangle.
-
-There is no intermediate 128x128 framebuffer and no fit-time heap allocation.
-The packed indexed textures are sampled directly into the shared RGB565
-framebuffer by the existing ESP32 `SDL_RenderCopy()` scaler.
-
-Hardware marker:
-
-```text
-[INTROFIT] virtual=128x128 -> viewport=120x120@(20,0) direct-to-framebuffer; no intermediate buffer
-```
-
-### Final first-frame hardware evidence
-
-Validated fitted normal-firmware result:
-
-```text
-[INTRO1] Begin state=9 menu=0 page=0 textPage=0 frameFNV=485915c5 expectedEntry=485915c5 heap8=50704 largest8=13300
-[INTROFIT] virtual=128x128 -> viewport=120x120@(20,0) direct-to-framebuffer; no intermediate buffer
-[INTRO1] Drawn t=0 frameFNV=56438966 heap8=50704 largest8=13300 deltaHeap=0 deltaLargest=0 state=9 page=0 textPage=0
-[VIDEO] Present 160x120 -> 320x240 exact 2x + sat1.15: 42761 us
-[INTRO1] READY one deterministic ST_INTRO frame presented once FNV=56438966
-[ALIVE] uptime=10008 ms heap=116468 heap8=50704 largest8=13300 ...
-```
-
-The 8-byte difference between the earlier `50712` Start boundary build and the
-final `50704` fitted build is a build-to-build baseline difference. The critical
-frame contract is unchanged before/after the draw.
-
-Hardware visual validation confirmed the full fitted viewport and the complete
-hand + `More` presentation are visible on the CYD.
-
-## Bounded ESP32 intro clock hardware evidence
-
-The current branch arms the clock immediately after the validated `t=0` fitted
-frame. Arduino `loop()` services at most one due virtual tick per pass.
+## Intro clock contract inherited from PR #38
 
 Clock model:
 
 ```text
-virtual step = 50 ms
-nominal virtual pacing ~= 20 FPS
-one render maximum per loop service call
-stale ticks are skipped, never catch-up rendered
+virtual step      = 50 ms
+nominal target    ~= 20 FPS
+one render max per loop service
+stale ticks       = skipped, never catch-up rendered
 ```
 
-Each due tick still executes only:
+At virtual `t=1000 ms` on hardware:
 
 ```text
-Esp32StoryFit_draw(canvas)
-DoomRPG_flushGraphics(doomRpg)
+ticks elapsed    = 20
+frames rendered  = 14
+ticks skipped    = 6
+effective render ~= 14 FPS
+Present          ~= 42.77..42.84 ms
 ```
 
-Hardware sequence:
-
-```text
-[INTROCLK] ARMED step=50 ms startFNV=56438966 heap8=50672 largest8=13300 wallStart=1313
-[INTROCLK] frame=1 tick=1 t=50 FNV=da9cd50e heap8=50672 largest8=13300 skipped=0 textDone=0
-[INTROCLK] frame=2 tick=2 t=100 FNV=c63cf367 heap8=50672 largest8=13300 skipped=0 textDone=0
-[INTROCLK] frame=3 tick=4 t=200 FNV=2620e850 heap8=50672 largest8=13300 skipped=1 textDone=0
-[INTROCLK] frame=14 tick=20 t=1000 FNV=e76fec13 heap8=50672 largest8=13300 skipped=6 textDone=0
-[ALIVE] uptime=5020 ms heap=116436 heap8=50672 largest8=13300 ...
-```
-
-Validated clock RAM contract:
-
-```text
-heap8        50672 -> 50672 per rendered frame
-largest8     13300 -> 13300 per rendered frame
-deltaHeap    0
-deltaLargest 0
-```
-
-The 32-byte difference from the prior first-frame build (`50704` -> `50672`) is a
-build-to-build baseline difference from the clock state/code, not an allocation
-performed by each frame.
-
-Measured pacing at virtual `t=1000 ms`:
-
-```text
-ticks elapsed     = 20
-frames rendered   = 14
-ticks skipped     = 6
-effective render  ~= 14 FPS
-Present           ~= 42.77..42.84 ms
-```
-
-The user's visual observation that the intro feels somewhat slow is consistent
-with these measurements. Before changing pacing or presentation, compare against
-the original J2ME version. If optimization is required later, the measured
-`PlatformVideo_present()` path and final saturation 1.15 transform are the first
-candidates.
-
-No clock frame triggered `PARK` / `FAILED`; state/page invariants remained fixed,
-no map runtime was resurrected and heartbeat continued.
+The clock is functionally correct; current full-screen TFT presentation cost is
+the measured pacing bottleneck. Compare against the original J2ME version before
+optimizing. `PlatformVideo_present()` and the saturation 1.15 output transform are
+the first measured candidates if optimization is later required.
 
 ## Hardware-selected display profile
-
-Current hardware-selected output remains:
 
 ```text
 gamma       = 1.00
@@ -499,26 +325,11 @@ saturation  = 1.15
 resampling  = nearest
 ```
 
-The logical framebuffer remains the source of truth:
+The transform is applied only after the logical framebuffer/FNV boundary.
 
-```text
-engine / palettes / GFXRM
-        -> 160x120 RGB565 framebuffer
-        -> deterministic engine/menu/render FNV hashes
-        -> CYD presentation transform (saturation 1.15)
-        -> exact nearest-neighbour 2x
-        -> ILI9341
-```
+## Two PlatformIO modes
 
-Normal full-screen presentation remains about 42.7 ms. During the active intro
-clock, repeated hardware measurements were about 42.77..42.84 ms. Bring-up
-presentation with physical touch overlay is about 44.3 ms.
-
-## Two PlatformIO modes remain the architecture boundary
-
-### `esp32-cyd`
-
-Everyday optimized firmware:
+Normal firmware:
 
 ```bash
 cd ESP32
@@ -526,12 +337,7 @@ pio run -e esp32-cyd -t upload
 pio device monitor -e esp32-cyd
 ```
 
-Normal boot skips historical resource/render proof passes and compiles no hitbox
-overlay path.
-
-### `esp32-cyd-bringup`
-
-Diagnostic laboratory:
+Bring-up laboratory:
 
 ```bash
 cd ESP32
@@ -539,148 +345,89 @@ pio run -e esp32-cyd-bringup -t upload
 pio device monitor -e esp32-cyd-bringup
 ```
 
-Adds:
+Bring-up adds historical probes and the physical touch-hitbox overlay while normal
+mode keeps those paths compiled out.
+
+## Stable menu / renderer recovery references
 
 ```text
-DOOMRPG_ESP32_BRINGUP_PROBES=1
-DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY=1
-```
-
-Both permanent environments use the same hardware-selected CYD color profile.
-
-## MENU_MAIN / Options recovery references
-
-Active opaque main menu:
-
-```text
-model FNV                     = bbc2149b
-layout FNV                    = 47b3656e
-black + scaled logo           = 0ac1f9c6
-Start Game selected           = 58a11171
-Options selected              = 0cf107b1
-Help/About selected           = 9db82b71
-Exit selected                 = bdd775f9
-MENU_MAIN_OPTIONS model       = e1ef01f7
-MENU_MAIN_OPTIONS framebuffer = 6058d47d
-```
-
-Options Back remains:
-
-```text
-Back logical  x=15..119 y=65..78
-Back physical x=30..239 y=130..157
-```
-
-## Normal menu-loader boundary before Start
-
-Before Start is confirmed, normal boot still executes:
-
-```text
-Render_beginLoadMap(MAP_MENU)
-Render_beginLoadMapData()
-```
-
-The seventh original loading-bar callback is the validated stop point after
-runtime structures are resident but before legacy monolithic graphics loading.
-
-Hardware runtime contract while MENU_MAIN is active:
-
-```text
-nodes          = 53
-lines          = 120
-mapSprites     = 44
-runtimeSprites = 68
-events         = 15
-mapTextures    = 84
-mapSpriteRefs  = 284
-planeTextures  = 11
-persistent used= 14092 B
-```
-
-Those map/runtime resources are intentionally released only after an irreversible
-fresh Start confirmation.
-
-## Native graphics recovery references
-
-These contracts are normally exercised only by `esp32-cyd-bringup`:
-
-```text
-sprite 172 texel FNV          = 0c0a7acd
-wall 112 texel FNV            = 92d40704
-synthetic projected wall FNV  = ad191f54
-real walls framebuffer        = a6d87c4a
-viewSprites list FNV          = 962cd657
-sprite request FNV            = 4457ac94
-walls + sprites framebuffer   = ffe0995e
-faithful original MENU_MAIN   = 86c38260
-historical fitted MENU_MAIN   = 1afa0223
-failed double-gray wall frame = b6f86faa
-```
-
-Validated cache evidence:
-
-```text
-Wall LRU3
-  requests 25
-  hits 14
-  misses 11
-  evictions 8
-  peak payload 6144 B
-
-Sprite LRU3
-  requests 11
-  hits 2
-  misses 9
-  evictions 6
-  peak logical payload 6038 B
+native scene framebuffer       = ffe0995e
+MENU_MAIN model FNV            = bbc2149b
+MENU_MAIN layout FNV           = 47b3656e
+black + scaled logo            = 0ac1f9c6
+Start Game selected            = 58a11171
+Options selected               = 0cf107b1
+Help/About selected            = 9db82b71
+Exit selected                  = bdd775f9
+MENU_MAIN_OPTIONS model        = e1ef01f7
+MENU_MAIN_OPTIONS framebuffer  = 6058d47d
+sprite 172 texel               = 0c0a7acd
+wall 112 texel                 = 92d40704
+synthetic projected wall       = ad191f54
+real walls framebuffer         = a6d87c4a
+viewSprites list               = 962cd657
+sprite request                 = 4457ac94
 ```
 
 ## Current safe boundary
 
 Hardware validated:
 
-- real core/layout/pre-render startup
-- real Render startup
-- real config + mappings
-- real menu runtime structures through the pre-bitshape boundary
-- bounded native wall/sprite render and cache regressions in bring-up
+- core/layout/pre-render/Render/config/mappings startup
+- bounded wall/sprite render and LRU contracts
 - opaque deterministic `MENU_MAIN`
-- released double-tap touch semantics
-- permanent bring-up hitbox overlay
-- real Options action through `MenuSystem_select()`
-- real Back through `MenuSystem_back()`
-- fast opaque Back repaint
-- no historical loading-bar flicker in normal mode
-- hardware-selected color profile: gamma 1.00 / saturation 1.15 / nearest
-- native MENU_MAIN state synchronized to `ST_MENU`
-- fresh direct Start Game through the real `MenuSystem_select()` path
-- real `Player_reset()` contract
-- dead legal/menu runtime cleanup before intro allocation
-- all four original intro BMP assets resident successfully
-- real `ST_INTRO` state reached with prologue text loaded
-- deterministic bounded first `ST_INTRO` frame presented once
+- calibrated XPT2046 menu touch and stable-release rearm
+- Options / Back actions
+- fresh direct Start through real `MenuSystem_select()`
+- fresh-start lifecycle cleanup recovering 55,416 B
+- original prologue text + four intro BMP assets resident
+- fitted first `ST_INTRO` FNV `56438966`
 - native 128x128 -> centered 120x120 story fit
-- fitted first-frame FNV `56438966`
-- ESP32-owned 50 ms multi-frame `ST_INTRO` clock
-- representative clock hashes `da9cd50e`, `c63cf367`, `2620e850`, `e76fec13`
-- clock heap8 `50672 -> 50672`, largest8 `13300 -> 13300` per frame
-- bounded skip behavior: 14 rendered / 6 skipped by virtual `t=1000 ms`
-- measured effective presentation about 14 FPS with current output path
-- no map/runtime resurrection during intro clock frames
+- ESP32-owned 50 ms multi-frame clock
+- bounded skipped-tick behavior under ~42.8 ms TFT presentation cost
+- semantic intro touch input
+- prompt-band rejection / acceptance
+- `More` page-0 text progression
+- reveal-on-tap
+- `Continue` page 0 -> page 1
+- natural 10-second page 1 -> page 2 transition with virtual epoch rebase
+- page-2 rendering/completion
+- final Continue parks at `ST_INTRO`, page 2
+- intro assets retained at final PARK
+- heap8 `50656` stable throughout current run
+- largest8 `13300` stable throughout current run
+- no map/runtime resurrection
 - no `DoomCanvas_run()` handoff
+- no `DoomCanvas_disposeIntro()` at final Continue
+- no `DoomCanvas_loadMap()` at final Continue
 - `shapeData == NULL`
 - `mediaTexels == NULL`
 
 Still intentionally deferred:
 
-- intro touch/key progression (`More` / `Continue`)
-- intro page progression after user input
-- intro disposal / transition to loading
+- optional page-1 touch-skip hardware regression capture
+- bounded intro disposal / transition to loading
 - first gameplay/map load after the intro
-- existing-save Continue / New Game submenu painter and action
+- existing-save Continue / New Game submenu painter/action
 - Video/Input/Sound actions
 - Help/About and Exit real actions
 - active normal gameplay loop
 - gameplay controls
-- possible optimization of saturation/presentation cost after J2ME comparison
+- possible presentation optimization after J2ME comparison
 - audio
+
+## Next milestone
+
+After merge, start from the new `main` and implement one bounded intro-disposal /
+loading handoff increment:
+
+```text
+final PARK at ST_INTRO page 2
+    -> measure resident intro resources
+    -> dispose intro resources deliberately
+    -> measure reclaimed heap/largest block
+    -> approach first gameplay map load behind a new explicit boundary
+```
+
+Do not permit the first gameplay load to reintroduce monolithic `shapeData` or
+map-wide `mediaTexels`.
