@@ -3,6 +3,19 @@
 ![image](https://github.com/Erick194/DoomRPG-RE/assets/41172072/258e99d9-b122-4cbe-8659-2fd0f4105068)<br />
 https://www.doomworld.com/forum/topic/129997
 
+## ESP32 CYD port
+
+This repository also contains an actively developed native port for the classic
+ESP32-2432S028R Cheap Yellow Display (CYD), targeting the no-PSRAM board with a
+160x120 RGB565 engine framebuffer, exact 2x TFT output, SD-backed resources and
+bounded ESP32-specific graphics/resource management.
+
+Start here:
+
+- [`ESP32/README.md`](ESP32/README.md) — build, flash and architecture guide
+- [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md) — exact current hardware recovery point
+- [`ESP32/DOCUMENTATION.md`](ESP32/DOCUMENTATION.md) — documentation map and milestone archives
+
 ## Español
 Doom RPG ingeniería inversa por [GEC]<br />
 Creado por Erick Vásquez García.
@@ -73,5 +86,5 @@ Original game cheat codes:
 J2ME/BREW Version:<br />
 3666 -> Opens debug menu.<br />
 43629 -> Gives max health and armor to the player.<br />
-4332 -> Gives all keys, items and weapons to the player.<br />
+4332 -> Gives all keys, items and weapons.<br />
 3366 -> Starts speed test "Benchmark".<br />
