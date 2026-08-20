@@ -9,7 +9,13 @@ PR   = #43 — persistent compact native MAP_INTRO arena
 main = 503fdd66fae625a45446fb4ea0853abc71d7dda3
 ```
 
-Status: **IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS**.
+Hardware-tested implementation head:
+
+```text
+dfe25218b74db9d2765850fbc29057e703c57154
+```
+
+Status: **REAL-CYD HARDWARE PASS; NATIVE COMPACT ACCESS CONTRACT VALIDATED; MERGE-READY**.
 
 ## Objective
 
@@ -101,7 +107,7 @@ LE32(raw+6)  -> flags
 
 `EspMapRuntime_getLine()` returns these **source coordinates**.
 
-The reference renderer later applies conditional ±3 coordinate nudges based on line flags and derives Z/length values. Those are runtime/render semantics and are intentionally **not** hidden inside the immutable accessor. A future native consumer may reproduce the required behavior explicitly.
+The reference renderer later applies conditional +/-3 coordinate nudges based on line flags and derives Z/length values. Those are runtime/render semantics and are intentionally **not** hidden inside the immutable accessor. A future native consumer may reproduce the required behavior explicitly.
 
 ### Map sprite — 5 bytes
 
@@ -200,59 +206,186 @@ The probe:
 
 No heap allocation occurs during the probe.
 
-## Expected hardware boundary
+## Real-CYD hardware PASS
 
-Inherited resident state before `MAPACCESS`:
-
-```text
-state        = ST_INTRO (9)
-storyPage    = 3
-startupMap   = 1
-arenaBytes   = 14095
-arenaFNV     = c3882516
-heap8        ~= 70128 on PR #43 candidate build
-largest8     = 36852
-legacy map   = NULL
-shapeData    = NULL
-mediaTexels  = NULL
-entities     = 0
-monsters     = 0
-```
-
-Build-to-build heap movement is allowed; accessor execution itself must have zero drift.
-
-Expected new log tail:
+Validation used the normal optimized `esp32-cyd` build at hardware-affecting head:
 
 ```text
-[MAPACCESS] ARMED ...
-=== Doom RPG ESP32-native MAP_INTRO compact access contract ===
-[MAPACCESS] CONTRACT ...
-[MAPACCESS] READY decodedFNV=........ elapsed=...ms ...
-[MAPACCESS] SAMPLE node0=... line0=... sprite0=... event0=... code0=... string0=...
-[MAPACCESS] BLOCK flags0=... flags1=... flags2=... flags3=... resources=33/45/12 strings=..... .... boundsChecks=yes
-[MAPACCESS] RAM heap8=X->X delta=0 largest8=Y->Y delta=0 frameFNV=Z->Z arenaFNV=c3882516
-[MAPACCESS] PARK ... nativeArena=yes immutable=yes overlays=none entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
+dfe25218b74db9d2765850fbc29057e703c57154
 ```
 
-The first real-CYD run will establish the canonical decoded FNV and useful first-record/block-map samples for future consumers.
+### Inherited BSP + arena regressions
 
-## Forbidden work
-
-Still not part of this milestone:
+The earlier native contracts remained intact on this build:
 
 ```text
-mutable entity/monster state
-door/script overlays
-sprite linked lists/relinking
-legacy line-coordinate mutation hidden in accessors
-custom/drop sprite pools
-texture/sprite cache activation
-map rendering
-player spawn
-ST_PLAYING
+BSP bytes/FNV/CRC = 21823 / d5cc751f / 623f34e4
+BSP readCalls      = 86
+BSP elapsed        = 166 ms
+compact plan       = 14095 B
+pass1 heap8        = 84224 -> 84224
+pass1 largest8     = 36852 -> 36852
+pass1 frameFNV     = 1f4d9cd6 -> 1f4d9cd6
+
+second inventory   = 145 ms
+arena population   = 63 ms
+arena bytes/FNV    = 14095 / c3882516
+population reads   = 33
+resident heap8     = 84224 -> 70112
+actual heap use    = 14112 B
+allocator overhead = 17 B
+resident largest8  = 36852 -> 36852
+resident frameFNV  = 1f4d9cd6 -> 1f4d9cd6
 ```
 
-## Next boundary after hardware PASS
+The small heap baseline movement versus PR #43 is normal build-to-build code/state movement; all stage-local drift contracts still pass exactly.
 
-Once the read-only access contract is hardware-proven, choose the first real native consumer deliberately. The preferred next step is a **small index-based spatial/runtime overlay**, driven by actual consumer needs, rather than recreating all desktop runtime fields preemptively.
+### Complete accessor sweep
+
+The hardware probe successfully consumed every exposed compact family through the public API:
+
+```text
+nodes       = 223
+lines       = 480
+sprites     = 344
+events      = 93
+byteCodes   = 265
+strings     = 94
+blockCells  = 1024
+planeCells  = 2048
+resource IDs checked = 256
+```
+
+Canonical decoded semantic fingerprint:
+
+```text
+decodedFNV = a426dd18
+elapsed    = 3 ms
+```
+
+`a426dd18` is now the hardware regression hash for the decoded MAP_INTRO access contract. It complements `arenaFNV=c3882516`: the arena hash fingerprints physical compact storage, while the decoded hash fingerprints the values exposed to native consumers.
+
+### Hardware-decoded reference sample
+
+```text
+node0   = 64,128-1984,1984 args=00010400/00640001
+line0   = 1728,1440-1696,1472 tex=87 flags=00000000
+sprite0 = 160,1440 info=00010091
+event0  = 00080044
+code0   = 16/000001cb/000000d0
+string0 = 11554
+```
+
+These values are source semantics before any future mutable/runtime transformation.
+
+### Block map, strings and resources
+
+The 1024 unpacked 2-bit block cells have this distribution:
+
+```text
+value 0 = 298
+value 1 = 697
+value 2 = 27
+value 3 = 2
+----------------
+total   = 1024
+```
+
+The string payload-offset table spans:
+
+```text
+first = 11554
+last  = 19512
+```
+
+The complete resource-set sweep reproduced:
+
+```text
+required textures = 33
+required sprites  = 45
+plane textures    = 12
+```
+
+All explicit out-of-range accessor tests failed closed as required (`boundsChecks=yes`).
+
+### Zero-cost read contract
+
+The entire semantic sweep has no persistent or transient heap effect visible to the allocator:
+
+```text
+heap8     = 70112 -> 70112
+largest8  = 36852 -> 36852
+frameFNV  = 1f4d9cd6 -> 1f4d9cd6
+arenaFNV  = c3882516
+```
+
+The probe leaves:
+
+```text
+state       = ST_INTRO page 3
+nativeArena = resident + immutable
+overlays    = none
+entities    = 0
+monsters    = 0
+gameplay    = not entered
+```
+
+A later `[ALIVE]` heartbeat remained stable at `heap8=70112`, `largest8=36852`.
+
+No OOM, reset, leak, framebuffer mutation, arena mutation or hidden gameplay transition occurred.
+
+## Cosmetic inherited Serial formatting
+
+Two harmless spacing defects remain visible in inherited logs:
+
+```text
+spriteAsTexture=0bounded8=yes
+strings=94/188BblockMap=...
+```
+
+They are cosmetic only and are deliberately not changed after this hardware pass, so the merge candidate remains the exact tested firmware plus documentation-only commits.
+
+## Merge classification
+
+```text
+BSP reader regression             = PASS
+resident arena regression         = PASS
+all compact record accessors      = PASS
+all strings offsets               = PASS
+1024 block cells                  = PASS
+2048 plane cells                  = PASS
+256 resource IDs                  = PASS
+out-of-range fail-closed checks   = PASS
+canonical decoded FNV             = PASS (a426dd18)
+access sweep elapsed              = PASS (3 ms)
+heap drift                        = PASS (0 B)
+largest-block drift               = PASS (0 B)
+framebuffer drift                 = PASS (none)
+arena mutation                    = PASS (none)
+legacy runtime/entities/gameplay  = absent as required
+stable heartbeat                  = PASS
+```
+
+This branch is **MERGE-READY**.
+
+No additional hardware test is required if subsequent commits are documentation-only.
+
+## Next bounded milestone after merge
+
+The first useful native mutable consumer is now clear from the recovered reference behavior: create a small **spatial tile-state overlay** instead of recreating pointer-heavy object graphs.
+
+Preferred next direction:
+
+```text
+resident immutable EspMapRuntime
+    -> allocation-free accessors (hardware proven)
+    -> EspMapState tileFlags[1024]
+         initialize low block-map bits
+         derive BIT_AM_ENTRANCE from relevant lines
+         derive BIT_AM_EVENTS from events
+    -> measure exact ~1 KiB mutable cost
+    -> verify source arena remains immutable
+    -> PARK
+```
+
+This is meaningful gameplay/world state and a real consumer of the new API, while still deferring entities, sprite relinking, renderer activation, player spawn and `ST_PLAYING` to later measured milestones.
