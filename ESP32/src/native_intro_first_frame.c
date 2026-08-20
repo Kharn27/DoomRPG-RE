@@ -9,6 +9,7 @@
 #include "MenuSystem.h"
 #include "Render.h"
 
+#include "native_intro_clock.h"
 #include "native_intro_first_frame.h"
 #include "native_sprite_lru_cache.h"
 #include "native_story_fit.h"
@@ -133,10 +134,6 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    /* The original story code lazily initializes these timers from global
-     * uptime. For this first bounded ESP32 proof we establish a deterministic
-     * local epoch. The next milestone will own a real intro clock.
-     */
     canvas->time = INTRO_FIRST_FRAME_TIME_MS;
     canvas->storyTextTime = INTRO_FIRST_FRAME_TIME_MS;
     canvas->storyAnimTime = INTRO_FIRST_FRAME_TIME_MS;
@@ -181,7 +178,13 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
 
     printf("[INTRO1] READY one deterministic ST_INTRO frame presented once FNV=%08x\n",
            (unsigned int)outputHash);
-    printf("[INTRO1] PARK state=%d page=%d textPage=%d; no DoomCanvas_run, no input dispatch, no map load\n",
+
+    if (!Esp32IntroClock_arm(doomRpg)) {
+        printf("[INTRO1] FAILED to arm bounded intro clock\n");
+        return 0;
+    }
+
+    printf("[INTRO1] HANDOFF state=%d page=%d textPage=%d; intro clock armed, input/map load still disabled\n",
            canvas->state,
            canvas->storyPage,
            canvas->storyTextPage);

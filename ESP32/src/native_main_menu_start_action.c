@@ -137,22 +137,11 @@ static int releaseFreshStartMenuMemory(DoomRPG_t* doomRpg) {
     uint32_t largestBefore = largest8Block();
     int legalsReleased = 0;
 
-    /* Our native boot skips the original legal-screen state machine and enters
-     * MENU_MAIN directly. The original DoomCanvas_legalsState() frees imgLegals
-     * before handing control to the menu, so keeping g.bmp resident here is a
-     * native-boot lifecycle leak. Release it at the first irreversible fresh
-     * Start Game transition.
-     */
     if (doomCanvas->imgLegals.imgBitmap != NULL) {
         DoomRPG_freeImage(doomRpg, &doomCanvas->imgLegals);
         legalsReleased = 1;
     }
 
-    /* The opaque ESP32 menu does not need the menu.bsp runtime once New Game is
-     * confirmed. This is the same cleanup order used by DoomCanvas_loadMedia()
-     * before loading a gameplay map. It also drops the resident mapping tables,
-     * which Render_beginLoadMap() reloads when the first gameplay map starts.
-     */
     Render_freeRuntime(render);
     Game_unloadMapData(doomRpg->game);
 
@@ -250,12 +239,6 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     printIntroAssetPlan();
 
-    /* Determine which original MENU_MAIN branch will be taken before releasing
-     * resources. Existing-save Start opens MENU_MAIN_CONTINUE and therefore is
-     * still a menu transition; keep its menu resources intact for the future
-     * Continue/New Game painter milestone. A fresh profile is irreversible and
-     * can release dead boot/menu memory before Menu_startGame() loads the intro.
-     */
     hasExistingSave = Game_checkConfigVersion(doomRpg->game) ? 1 : 0;
     printf("[MAINSTART] Existing-save precheck=%s\n",
            hasExistingSave ? "yes -> keep menu runtime" : "no -> fresh cleanup allowed");
@@ -267,13 +250,6 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     heapBefore = heap8Free();
     largestBefore = largest8Block();
-
-    /* This is the original menu action. On a fresh profile Menu_select() calls
-     * Menu_startGame(menu, 1), which performs Player_reset() and enters the
-     * intro. If a save is present, the original engine instead transitions to
-     * MENU_MAIN_CONTINUE; that path is detected and deliberately left for a
-     * separate bounded menu milestone.
-     */
     MenuSystem_select(menuSystem);
 
     outputHash = framebufferHash(render);
@@ -341,11 +317,11 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
 
     if (!DoomRPG_esp32RenderFirstIntroFrame(doomRpg)) {
-        printf("[MAINSTART] FAILED bounded first ST_INTRO frame\n");
+        printf("[MAINSTART] FAILED bounded first ST_INTRO frame / clock handoff\n");
         return 0;
     }
 
-    printf("[MAINSTART] READY first ST_INTRO frame rendered/presented; engine remains parked\n");
-    printf("[MAINSTART] NEXT boundary = hardware-validate frame FNV/RAM before adding an intro clock or input\n");
+    printf("[MAINSTART] READY first fitted ST_INTRO frame presented; 50 ms ESP32 intro clock armed\n");
+    printf("[MAINSTART] NEXT boundary = hardware-validate multi-frame intro pacing/RAM; input and map load remain disabled\n");
     return 1;
 }
