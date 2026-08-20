@@ -88,7 +88,7 @@ static int cursorConsume(EspBspCursor* cursor,
     uint32_t available;
     uint32_t chunk;
 
-    if (cursor == NULL ||
+    if (cursor == NULL || cursor->position > cursor->entry.size ||
         length > cursor->entry.size - cursor->position) {
         return 0;
     }
