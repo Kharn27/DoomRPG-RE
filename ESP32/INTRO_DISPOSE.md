@@ -23,7 +23,7 @@ shapeData     = NULL
 mediaTexels   = NULL
 ```
 
-Status: **IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS**.
+Status: **REAL-CYD HARDWARE PASS; DOCUMENTED; MERGE-READY**.
 
 ## Objective
 
@@ -77,8 +77,8 @@ from this increment.
 
 ## ESP32 handoff design
 
-`native_intro_input.c` remains unchanged. Its already hardware-validated final
-Continue still performs:
+`native_intro_input.c` remains unchanged. Its hardware-validated final Continue
+still performs:
 
 ```text
 [INTROIN] FINAL-CONTINUE ...
@@ -86,20 +86,19 @@ Continue still performs:
 [INTROIN] READY-TO-EXIT ... assets=retained noDispose=yes noMapLoad=yes
 ```
 
-The clock now remembers whether the PARK reason was **exactly**
+The clock remembers whether the PARK reason was **exactly**
 `intro-exit-ready`. On the next `Esp32IntroClock_service()` call, and only for
 that intentional PARK, it hands the retained `DoomRPG_t*` to
 `Esp32IntroDispose_service()`.
 
 Therefore error/failure PARK reasons cannot accidentally destroy intro assets.
-
 The disposal state is one-shot and is reset whenever a fresh intro clock is
 armed, so a future second New Game in the same boot cannot inherit a stale
 `done` flag.
 
 ## Pre-dispose safety gate
 
-The disposer does nothing until all of these are simultaneously true:
+The disposer requires all of these simultaneously:
 
 ```text
 intro clock            = inactive
@@ -111,17 +110,20 @@ storyTextPage          = 0
 showTextDone           = true
 all 4 intro images     = resident
 all 3 intro text ptrs  = non-NULL
-nodes                   = NULL
-lines                   = NULL
-mapSprites              = NULL
-mediaTexelOffsets       = NULL
-mediaBitShapeOffsets    = NULL
-mapTextureTexels        = NULL
-mapSpriteTexels         = NULL
-shapeData               = NULL
-mediaTexels             = NULL
-wall/sprite caches      = inactive
+nodes                  = NULL
+lines                  = NULL
+mapSprites             = NULL
+mediaTexelOffsets      = NULL
+mediaBitShapeOffsets   = NULL
+mapTextureTexels       = NULL
+mapSpriteTexels        = NULL
+shapeData              = NULL
+mediaTexels            = NULL
+wall/sprite caches     = inactive
 ```
+
+A failed gate is fail-closed and emits one explicit `[INTRODISP] FAILED
+precondition ...` diagnostic rather than silently freeing anything.
 
 ## Teardown operation
 
@@ -141,67 +143,205 @@ Once the gate passes:
 11. park without loading `startupMap`.
 
 The framebuffer is intentionally left untouched, so the last rendered intro
-frame should remain physically visible while its backing intro resources have
-already been released.
+frame remains physically visible while its backing intro resources have already
+been released.
 
-## Expected Serial shape
+## Real-CYD hardware PASS
 
-Exact recovered byte counts are intentionally **not predicted**; the real CYD
-measurement is the point of this milestone.
-
-Expected sequence after the already validated final Continue:
+Validated normal-firmware run reached the already-proven final intro PARK with:
 
 ```text
-[INTROCLK] PARK reason=intro-exit-ready ...
-[INTROIN] READY-TO-EXIT ... assets=retained noDispose=yes noMapLoad=yes
-
-=== Doom RPG ESP32 bounded intro disposal ===
-[INTRODISP] BEGIN state=9 page=2 textPage=0 startupMap=1 frameFNV=........ heap8=..... largest8=..... clip=...
-[INTRODISP] CONTRACT mirror DoomCanvas_disposeIntro resources only; DoomCanvas_loadMap is forbidden
-[INTRODISP] FREE image=c.bmp/imgSpaceBG ... ptr=0x0
-[INTRODISP] FREE image=d.bmp/imgLinesLayer ... ptr=0x0
-[INTRODISP] FREE image=e.bmp/imgPlanetLayer ... ptr=0x0
-[INTRODISP] FREE image=f.bmp/imgSpaceship ... ptr=0x0
-[INTRODISP] FREE text=storyText1[0] ... ptr=0x0
-[INTRODISP] FREE text=storyText1[1] ... ptr=0x0
-[INTRODISP] FREE text=storyText2 ... ptr=0x0
-[INTRODISP] READY state=9 page=3 textPage=0 frameFNV=........->........ heap8=.....->..... recovered=..... largest8=.....->..... assets=NULL texts=NULL clip=off noMapLoad=yes
-[INTRODISP] PARK state=9 startupMap=1 shapeData=0x0 mediaTexels=0x0 nodes=0x0 lines=0x0 mapSprites=0x0; next milestone owns map loading
-[ALIVE] ...
+[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=21100
+[INTROCLK] PARK reason=intro-exit-ready tick=422 frames=250 skipped=172 state=9 page=2 textPage=0 heap8=50640 largest8=13300
+[INTROIN] READY-TO-EXIT state=9 page=2 textPage=0 heap8=50640 largest8=13300 assets=retained noDispose=yes noMapLoad=yes
 ```
 
-## Hardware PASS criteria
+The next Arduino loop service then entered the bounded disposer:
 
-PASS requires all of the following on the classic CYD:
+```text
+=== Doom RPG ESP32 bounded intro disposal ===
+[INTRODISP] BEGIN state=9 page=2 textPage=0 startupMap=1 frameFNV=a7ee546a heap8=50640 largest8=13300 clip=1
+[INTRODISP] CONTRACT mirror DoomCanvas_disposeIntro resources only; DoomCanvas_loadMap is forbidden
+```
 
-- final Continue still reaches the previously validated `intro-exit-ready` PARK;
+### Per-resource recovery
+
+Real measured 8-bit heap recovery:
+
+```text
+c.bmp / imgSpaceBG
+  heap8      50640 -> 63076
+  recovered  +12436 B
+  largest8   13300 -> 34804
+
+d.bmp / imgLinesLayer
+  heap8      63076 -> 75460
+  recovered  +12384 B
+  largest8   34804 -> 34804
+
+e.bmp / imgPlanetLayer
+  heap8      75460 -> 83800
+  recovered  +8340 B
+  largest8   34804 -> 36852
+
+f.bmp / imgSpaceship
+  heap8      83800 -> 83964
+  recovered  +164 B
+  largest8   36852 -> 36852
+
+storyText1[0]
+  string bytes = 153
+  heap8        83964 -> 84136
+  recovered    +172 B
+
+storyText1[1]
+  string bytes = 97
+  heap8        84136 -> 84252
+  recovered    +116 B
+
+storyText2
+  string bytes = 137
+  heap8        84252 -> 84408
+  recovered    +156 B
+```
+
+The measured recovery adds up exactly:
+
+```text
+12436
+12384
+ 8340
+  164
+  172
+  116
+  156
+-----
+33768 B total
+```
+
+### Final disposal boundary
+
+Hardware result:
+
+```text
+[INTRODISP] READY state=9 page=3 textPage=0 frameFNV=a7ee546a->a7ee546a heap8=50640->84408 recovered=33768 largest8=13300->36852 assets=NULL texts=NULL clip=off noMapLoad=yes
+[INTRODISP] PARK state=9 startupMap=1 shapeData=0x0 mediaTexels=0x0 nodes=0x0 lines=0x0 mapSprites=0x0; next milestone owns map loading
+```
+
+Final contract:
+
+```text
+menu                    = MENU_NONE
+state                   = ST_INTRO (9)
+storyPage               = 3
+storyTextPage           = 0
+intro clock             = inactive
+intro input             = inactive
+imgSpaceBG              = NULL
+imgLinesLayer           = NULL
+imgPlanetLayer          = NULL
+imgSpaceship            = NULL
+storyText1[0]           = NULL
+storyText1[1]           = NULL
+storyText2              = NULL
+heap8                   = 84408
+largest8                = 36852
+8-bit heap recovered    = 33768 B
+framebuffer FNV         = a7ee546a unchanged across teardown
+render clip             = off
+nodes                   = NULL
+lines                   = NULL
+mapSprites              = NULL
+mediaTexelOffsets       = NULL
+mediaBitShapeOffsets    = NULL
+mapTextureTexels        = NULL
+mapSpriteTexels         = NULL
+shapeData               = NULL
+mediaTexels             = NULL
+wall/sprite LRU caches  = inactive
+DoomCanvas_run          = NOT called
+DoomCanvas_loadMap      = NOT called
+```
+
+`a7ee546a` is the observed final-frame FNV for this run; the important teardown
+invariant is equality before/after disposal, not that every intro run must finish
+on this exact hash.
+
+### Stability after disposal
+
+The device remained alive with an unchanged post-dispose memory boundary:
+
+```text
+[ALIVE] uptime=30181 ms ... heap8=84408 largest8=36852 ...
+[ALIVE] uptime=35182 ms ... heap8=84408 largest8=36852 ...
+[ALIVE] uptime=40183 ms ... heap8=84408 largest8=36852 ...
+```
+
+No reset, delayed corruption, hidden map transition or resource resurrection was
+observed.
+
+## Input UX observation from the validation run
+
+The tester reported a slight feeling of having to insist on `More` on the first
+story screen. The Serial evidence does **not** show a rejected hitbox tap:
+
+```text
+TAP n=1 logical=101,109 page=0 textPage=0 textDone=0 accepted=1
+  -> REVEAL
+
+TAP n=2 logical=113,105 page=0 textPage=0 textDone=1 accepted=1
+  -> MORE
+```
+
+Both touches were comfortably inside the prompt band `y=102..119`. The current
+semantic behavior is therefore behaving as designed: a press while text is still
+progressing first completes/reveals that text; a later press advances `More`, and
+the platform requires a stable 50 ms release before the next press-edge can be
+emitted.
+
+This is recorded as a **non-blocking UX observation**, not a failure of this
+lifecycle milestone. If it remains noticeable in later play testing, touch
+re-arm/double-tap ergonomics can be tuned separately without changing the story
+state machine.
+
+## Hardware PASS result
+
+Every planned criterion passed on the classic no-PSRAM CYD:
+
+- final Continue still reaches the validated `intro-exit-ready` PARK;
 - disposal starts only after clock and intro input are inactive;
 - `storyPage` advances from 2 to 3;
 - all four intro image pointers become NULL;
 - all three intro text pointers become NULL;
-- `heap8` increases by a measured positive amount;
-- `largest8` does not regress;
+- `heap8` increases by exactly **33,768 B** on this build;
+- `largest8` grows from **13,300 B** to **36,852 B**;
 - framebuffer FNV is identical before/after teardown;
 - `shapeData == NULL` and `mediaTexels == NULL` remain true;
 - nodes/lines/mapSprites remain NULL;
 - wall/sprite caches remain inactive;
 - no `DoomCanvas_loadMap()` occurs;
 - no reset/crash;
-- `[ALIVE]` continues after the disposal PARK.
+- repeated `[ALIVE]` heartbeats remain stable after disposal.
 
-## Next boundary after hardware PASS
+This branch is merge-ready.
 
-Only after this teardown is measured and documented should the next branch own
-the first gameplay-loading step:
+## Next bounded milestone after merge
+
+The next branch may finally own the first gameplay-loading step from this exact
+hardware-measured boundary:
 
 ```text
 ST_INTRO page 3
 intro assets/texts = NULL
-measured reclaimed RAM available
-startupMap = 1
-shapeData/mediaTexels = NULL
+heap8              = 84408
+largest8           = 36852
+startupMap         = 1
+shapeData          = NULL
+mediaTexels        = NULL
+runtime map pools  = NULL
+native caches      = inactive
 
-    -> inspect/guard first gameplay map structural load
+    -> inspect and guard the first gameplay map structural load
 ```
 
 The next milestone must keep the no-PSRAM architecture rule: no resurrection of

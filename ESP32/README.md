@@ -237,6 +237,13 @@ prompt band    = x20..139 y102..119
 Page 1 has no prompt, so the whole story viewport is accepted for the optional
 animation skip.
 
+A press while story text is still progressively revealing completes that text;
+a later press performs `More` / `Continue`. Because the platform rearms only
+after a stable 50 ms release, an extremely fast second press can feel less
+responsive than a conventional button. Current hardware evidence shows accepted
+hits inside the intended prompt band; this is tracked as a non-blocking UX polish
+item rather than a state-machine failure.
+
 ## Fresh Start Game lifecycle
 
 On a fresh profile with no compatible save, the real original action is used:
@@ -300,28 +307,50 @@ page 1:        natural ~10 s timeout OR touch skip
 page 2:        reveal -> final Continue
 ```
 
-The final Continue is deliberately guarded. It parks **before** the original
-`DoomCanvas_disposeIntro()` / `DoomCanvas_loadMap()` chain so the first gameplay
-load can be introduced as its own measured milestone.
+The final Continue is guarded in two stages. It first performs the already
+validated `intro-exit-ready` PARK with the intro assets still resident. On the
+next Arduino loop service, a one-shot native disposer mirrors the resource-freeing
+part of `DoomCanvas_disposeIntro()` while deliberately excluding its final
+`DoomCanvas_loadMap()` call:
 
-All bounded intro branches, including the natural page-1 timeout and touch skip,
-are hardware validated. Full Serial evidence lives in:
+```text
+page 2 final Continue
+    -> clock/input PARK
+    -> free c.bmp / d.bmp / e.bmp / f.bmp
+    -> free all three story text buffers
+    -> reset render clip
+    -> storyPage = 3
+    -> PARK again
+    -> NO map load
+```
+
+The real CYD recovered **33,768 bytes of 8-bit heap** during this teardown and
+grew the largest free 8-bit block from **13,300** to **36,852 bytes**. The
+framebuffer FNV remained unchanged across disposal, proving that the last rendered
+intro image can remain visible after its source resources have been released.
+
+The bounded intro and disposal path is hardware validated. Detailed evidence
+lives in:
 
 - [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md)
 - [`INTRO_CLOCK.md`](INTRO_CLOCK.md)
 - [`INTRO_INPUT.md`](INTRO_INPUT.md)
+- [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md)
 
 ## Current high-level safe boundary
 
-The merged port is currently parked after the final intro Continue:
+The hardware-validated merge candidate is now parked **after intro disposal and
+before gameplay-map loading**:
 
 ```text
-ST_INTRO page 2
+ST_INTRO page 3
 intro clock/input stopped
-intro resources still resident
+intro images/texts = NULL
+render clip        = off
+startupMap         = 1
 no gameplay map load yet
-shapeData   = NULL
-mediaTexels = NULL
+shapeData          = NULL
+mediaTexels        = NULL
 ```
 
 The authoritative current SHA, exact free heap/largest block, FNVs and next
