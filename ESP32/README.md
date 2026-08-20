@@ -439,6 +439,9 @@ The cleanup is only used for the fresh-profile branch. If an existing compatible
 save is detected, menu runtime is kept because the original action must instead
 open `MENU_MAIN_CONTINUE`.
 
+A later intro-input build measured `heap8=29008 -> 84424`, preserving the exact
+same 55,416-byte recovery and `largest8=36852` after cleanup.
+
 ### Intro assets
 
 The original prologue loader successfully loads all four indexed BMPs:
@@ -688,7 +691,7 @@ prompt band logical    = x20..139 y102..119
 A real out-of-band touch at logical `57,29` produced `MISS` and left state/RAM
 unchanged.
 
-Hardware-validated end-to-end sequence:
+The first end-to-end run validated natural page-1 timeout behavior:
 
 ```text
 [INTROCLK] TEXT DONE page=0 textPage=0 tick=78 t=3900 ...
@@ -705,6 +708,37 @@ Hardware-validated end-to-end sequence:
 
 The page-1 natural animation ran from virtual epoch `9150` to `19200`, i.e.
 10.05 seconds. The extra 50 ms is the expected quantization of the 50 ms clock.
+
+The second run explicitly exercised every alternate branch that was still
+uncovered:
+
+```text
+[INTROIN] REVEAL page=0 textPage=0 t=2050
+[INTROIN] MORE textPage=0->1 t=3300 textEpoch=3300
+[INTROIN] REVEAL page=0 textPage=1 t=4600
+[INTROIN] CONTINUE storyPage=0->1 t=5400 epoch=5400
+[INTROIN] SKIP-ANIM storyPage=1->2 t=7300 epoch=7300
+[INTROIN] REVEAL page=2 textPage=0 t=8400
+[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=9150
+[INTROCLK] PARK reason=intro-exit-ready tick=183 frames=115 skipped=68 state=9 page=2 textPage=0 heap8=50656 largest8=13300
+[INTROIN] READY-TO-EXIT state=9 page=2 textPage=0 heap8=50656 largest8=13300 assets=retained noDispose=yes noMapLoad=yes
+[TOUCH] ...
+```
+
+Across both real-CYD runs, every bounded intro-input branch is now hardware
+validated:
+
+```text
+out-of-band prompt touch          -> MISS PASS
+page 0 / text 0 early reveal      -> PASS
+page 0 / text 0 -> More           -> PASS
+page 0 / text 1 early reveal      -> PASS
+page 0 -> page 1 Continue         -> PASS
+page 1 natural timeout -> page 2  -> PASS
+page 1 touch skip -> page 2       -> PASS
+page 2 early reveal               -> PASS
+final Continue -> safe PARK       -> PASS
+```
 
 The current intro-input build remains allocation-free across measured rendering
 and input transitions:
@@ -730,13 +764,11 @@ shapeData               = NULL
 mediaTexels             = NULL
 ```
 
-The `[TOUCH]` marker after `READY-TO-EXIT` proves the Arduino loop continued after
-PARK rather than resetting or entering a map transition.
+The `[TOUCH]` markers after `READY-TO-EXIT` prove the Arduino loop continued after
+PARK rather than resetting or entering a map transition. The long natural-timeout
+run also retained stable 5-second heartbeats.
 
-The pasted run used the natural page-1 timeout. The optional `SKIP-ANIM` touch
-branch was not captured; early reveal on page-0 text 0 and page-2 text were also
-not captured. Those text pages share the same `showTextDone` mutation
-hardware-validated on page-0 text 1. The coverage gap is recorded explicitly.
+There are no remaining intro-input branch coverage gaps in this milestone.
 
 See [`INTRO_INPUT.md`](INTRO_INPUT.md) for the complete milestone evidence.
 
@@ -844,10 +876,12 @@ Hardware validated:
 - bounded skipped-tick behavior under current ~42.8 ms TFT presentation cost
 - semantic intro touch input with stable-release rearm
 - prompt-band rejection and accepted `More` / `Continue` input
-- reveal-on-tap hardware validated
+- reveal-on-tap validated on page-0 text 0, page-0 text 1 and page 2
 - page 0 -> page 1 progression
 - natural page 1 -> page 2 progression with local virtual-time rebase
+- touch-skip page 1 -> page 2 progression with local virtual-time rebase
 - final Continue PARK at `ST_INTRO`, page 2
+- all bounded intro-input branches covered on real CYD
 - current `heap8=50656` stable across measured frames/input
 - current `largest8=13300` stable
 - intro resources retained at final PARK
@@ -859,7 +893,6 @@ Hardware validated:
 
 Still deferred:
 
-- optional page-1 touch-skip hardware regression capture
 - intro disposal / transition to loading
 - first map/gameplay load after the intro
 - existing-save Continue / New Game submenu painter/action
