@@ -111,9 +111,7 @@ int EspMapState_buildFromRuntime(void) {
     uint8_t before;
     int ok = 0;
 
-    if (runtime == NULL || runtime->arena == NULL ||
-        runtime->arenaBytes == 0U ||
-        runtime->lineCount == 0U || runtime->eventCount == 0U) {
+    if (runtime == NULL || runtime->arena == NULL || runtime->arenaBytes == 0U) {
         printf("[MAPSTATE] FAILED native runtime unavailable\n");
         return 0;
     }
