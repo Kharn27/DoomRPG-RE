@@ -8,7 +8,18 @@ Base hardware-validated `main`:
 5275e4a1c6eca703b51221e80f3b199178015a01
 ```
 
-Status: **HARDWARE PASS; DOCUMENTED; MERGE-READY**.
+Status: **MERGED ARCHIVE — HARDWARE PASS — PR #37**.
+
+Merged to `main` at:
+
+```text
+b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96
+```
+
+This file is a historical hardware-evidence archive for PR #37. Its measured
+values remain intentionally build-specific. For the current port recovery point,
+see [`PORTING_STATUS.md`](PORTING_STATUS.md); for documentation ownership rules,
+see [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
 ## Objective
 
@@ -190,15 +201,15 @@ wall/sprite caches      = inactive
 Hardware visual validation confirms that the complete fitted story viewport is
 visible and that the hand plus `More` are inside the display.
 
-This is the merge-ready recovery point for the increment.
+This is the merged recovery evidence for PR #37.
 
-## Next milestone after merge
+## Historical next boundary at merge time
 
-The next branch may add an **ESP32-owned timed multi-frame `ST_INTRO` clock** that
-repeatedly calls `Esp32StoryFit_draw()` while preserving the same bounded memory
-architecture.
+At the time PR #37 merged, the next planned branch was an **ESP32-owned timed
+multi-frame `ST_INTRO` clock** repeatedly calling `Esp32StoryFit_draw()` while
+preserving the same bounded memory architecture.
 
-Still deferred beyond this increment:
+At that time these items were still deferred:
 
 - active timed multi-frame intro progression
 - intro touch/key handling (`More` / `Continue`)
@@ -207,3 +218,6 @@ Still deferred beyond this increment:
 - existing-save Continue / New Game submenu painter/action
 - active normal game loop and gameplay controls
 - audio
+
+Those bullets are retained only as historical context. The live roadmap is in
+[`PORTING_STATUS.md`](PORTING_STATUS.md).
