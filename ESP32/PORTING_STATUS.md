@@ -16,8 +16,8 @@ Current candidate:
 ```text
 branch = agent/esp32-map1-native-ui-intent
 base   = 6e43ef059db52783b7264e84579216cb2572a1e2
-hardware-affecting head = 045b219dd7d6d06630eb446424e8d3d3fa3d249e
-status = NATIVE STRING SPANS + UI INTENT FAMILY IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
+hardware-tested firmware content = 045b219dd7d6d06630eb446424e8d3d3fa3d249e
+status = REAL-CYD HARDWARE PASS; NATIVE STRING SPANS + UI INTENTS VALIDATED; MERGE-READY
 ```
 
 Detailed active milestone: [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md).
@@ -64,7 +64,8 @@ BSP source in native pack
  -> fail-closed native opcode executor
  -> allocation-free native string spans
  -> compact native UI/player intents
- -> bounded native gameplay/UI owners
+ -> bounded native string reader / effect owners
+ -> ESP32-native gameplay + renderer
 ```
 
 ## Hardware-proven foundation
@@ -82,6 +83,8 @@ filterFNV      = a5923b21
 resumeFNV      = b98452da
 opcodeAuditFNV = 6f28df45
 firstExecFNV   = 646b565c
+stringSpanFNV  = 713188eb
+uiIntentFNV    = 7fdd6a79
 ```
 
 MAP_INTRO `/intro.bsp` / `Entrance`:
@@ -118,6 +121,7 @@ immutable arena       = 14112 B actual heap
 mutable tile state    =  1040 B actual heap
 mutable script state  =   100 B actual heap
 opcode executor       =     0 B persistent
+string spans/intents  =     0 B persistent
 -----------------------------------------
 current total         = 15252 B
 largest8              = 36852 preserved
@@ -160,7 +164,7 @@ Supported state family:
 20 EV_PREVSTATE
 ```
 
-All other IDs still fail closed in `EspMapOpcodeExecutor_execute()`.
+All other IDs fail closed in `EspMapOpcodeExecutor_execute()`.
 
 Real MAP_INTRO opcode corpus:
 
@@ -205,21 +209,7 @@ real command 0 / EV_CLOSELINE -> UNSUPPORTED, no mutation
 malformed CHANGESTATE state 16 -> refused, no mutation
 ```
 
-Integrity across first execution:
-
-```text
-heap8        = 68828 -> 68828
-largest8     = 36852 -> 36852
-frameFNV     = 10f53ffb -> 10f53ffb
-arenaFNV     = c3882516 -> c3882516
-mapStateFNV  = cd99b98e -> cd99b98e
-scriptFNV    = f9e3d9df -> f9e3d9df
-entities     = 0
-monsters     = 0
-ST_PLAYING   = no
-```
-
-## Current candidate — native UI/string intents
+## Native UI/string intents — hardware validated
 
 Recovered family:
 
@@ -230,8 +220,6 @@ Recovered family:
 40 EV_NOTE
 ```
 
-Legacy behavior requires dialog presentation, forced status-bar text, or notebook mutation. This branch **does not call those legacy owners**.
-
 Permanent allocation-free APIs:
 
 ```text
@@ -240,54 +228,81 @@ EspMapUiIntent_supports()
 EspMapUiIntent_build()
 ```
 
-`EspMapStrings_getRef()` resolves one of the 94 length-prefixed map strings to:
+String bytes remain on `/DoomRPG-ESP32.pak`; no map-wide `mapStringsIDs[]` allocation exists.
+
+### String span proof
 
 ```text
-string index
-BSP source payload offset
-bounded payload length
+strings         = 94
+payload bytes   = 7779
+zero-length     = 1
+max length      = 313
+first payload   = 11554
+last payload    = 19512 + 7
+spanFNV         = 713188eb
+persistentBytes = 0
 ```
 
-String bytes remain on `/DoomRPG-ESP32.pak`; no map-wide text allocation is introduced.
-
-UI translation produces caller-owned intents:
+### Real UI corpus
 
 ```text
-DIALOG          -> string span + Back/no-Back + pause/resume metadata
-FORCE_MESSAGE   -> string span + EMPTY_CLEARS semantic based on resolved text[0]
-APPEND_NOTE     -> string span + recovered trailing "||" append semantic
+refs                 = 94
+EV_DIALOG            = 76
+EV_FORCEMESSAGE      = 3
+EV_DIALOGNOBACK      = 8
+EV_NOTE              = 7
+pause intents        = 84
+force-empty semantics= 3
+zero-length force    = 2
+state-exec refused   = 94
+intentFNV            = 7fdd6a79
+probe elapsed        = 1 ms
+persistentBytes      = 0
 ```
 
-The old state-mutating opcode executor remains unchanged and must continue refusing all UI-family bytecodes as `UNSUPPORTED`.
+Accounting is exact: `76 + 3 + 8 + 7 = 94`, and `76 + 8 = 84` dialog pause/resume intents.
 
-New persistent cost:
+Canonical samples:
 
 ```text
-0 B
+dialog: cmd11 event6 off0 resume1 flags07 string25@13558+23
+force : cmd4  event2 off0 resume1 flags08 string1@11569+14
+noBack: cmd19 event6 off8 resume9 flags06 string30@13679+14
+note  : cmd103 event40 off8 resume9 flags10 string85@18964+54
 ```
 
-Real-CYD probe must validate:
+The state-mutating opcode executor refused all 94 UI commands as `UNSUPPORTED`, preserving strict effect-family separation.
+
+No legacy effect was applied:
 
 ```text
-all 94 string spans
-payload sum = 7779 B
-max length = 313 B
-adjacent length-prefix topology
-all real 8/24/26/40 command translations
-first sample of each family
-total/per-opcode reference counts
-pause + FORCE_MESSAGE empty-clears semantic counts
-zero-length FORCE_MESSAGE span count
-spanFNV + intentFNV
-state executor refuses every UI ref
-0 heap/largest/frame/arena/map/script drift
-Player.NotebookString unchanged
-Hud.statBarMessage unchanged
-Game continuation fields unchanged
-entities=0 monsters=0 ST_PLAYING=no
+DoomCanvas dialog state = untouched
+Hud.statBarMessage      = untouched
+Player.NotebookString   = untouched
+Game continuation fields= untouched
+world/entities/render   = untouched
 ```
 
-## Current candidate execution path
+Hardware integrity across the UI/string sweep:
+
+```text
+heap8        = 68820 -> 68820
+largest8     = 36852 -> 36852
+frameFNV     = b8b39f0f -> b8b39f0f
+arenaFNV     = c3882516 -> c3882516
+mapStateFNV  = cd99b98e -> cd99b98e
+scriptFNV    = f9e3d9df -> f9e3d9df
+notebookFNV  = 4d7705c5 -> 4d7705c5
+entities     = 0
+monsters     = 0
+ST_PLAYING   = no
+```
+
+Later `[ALIVE]` remained stable at `heap8=68820`, `largest8=36852`.
+
+The absolute heap8 moved from `68828` on the previous build to `68820`; the current stage itself has exact zero drift, so this is treated as a build/layout difference rather than a runtime allocation.
+
+## Current proven execution path
 
 ```text
 validated intro disposal
@@ -300,8 +315,8 @@ validated intro disposal
  -> 81 B script-state build
  -> exhaustive event-filter proof
  -> opcode inventory + real EV_NEXTSTATE execution/rollback
- -> string-span sweep
- -> real UI/string bytecodes -> native intents only
+ -> allocation-free 94-string span sweep
+ -> 94 real UI/string bytecodes -> caller-owned native intents
  -> PARK
 ```
 
@@ -319,8 +334,23 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Next action
+## Merge recommendation
 
-Build/flash normal `esp32-cyd` from `agent/esp32-map1-native-ui-intent` and capture the `MAPSTRING`, `MAPUI`, `MAPUIPROBE` block plus a later stable `[ALIVE]` line.
+**MERGE `agent/esp32-map1-native-ui-intent`.**
 
-If PASS, lock exact counts/fingerprints/samples in docs and verify all post-test commits are documentation-only before merge.
+Hardware-tested firmware content is `045b219dd7d6d06630eb446424e8d3d3fa3d249e`. Post-test commits must remain documentation-only unless another flash is performed.
+
+## Next bounded milestone after merge
+
+Prefer a **bounded native string reader backed directly by `/DoomRPG-ESP32.pak`**:
+
+```text
+EspMapStringRef
+ -> exact range read
+ -> bounded caller buffer (MAP_INTRO max 313 B + terminator)
+ -> validate real string bytes/content fingerprint
+ -> no map-wide strings
+ -> no ZIP runtime dependency
+```
+
+Only after that boundary is hardware-proven should a native dialog/status/notebook owner begin consuming UI intents.
