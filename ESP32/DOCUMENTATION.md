@@ -37,9 +37,9 @@ Merged milestones:
 | [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) | DIALOG/NOBACK pause + static continuation owner | #53 | `395418510207bf24ac45ddbb4c4c15db3ddc8998` |
 | [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md) | bounded EV_NOTE native notebook owner | #54 | `03002f79eb03bdcb4c9e430c43e4693dab47e44b` |
 
-Current candidate milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) — pure native evaluator for real `41 / EV_CHECK_KEY`. It validates canonical descriptor/command provenance, evaluates all legacy key-bit semantics without mutating legacy Player/Hud/Sound/Game state, returns a 12-byte caller-local PASS/BLOCKED result, and hardware-probes every real CHECK_KEY across all 16 low-nibble key contexts. Firmware candidate `3b4844e8fa5d38d522e1adc70ffac646978f130d`; **IMPLEMENTED, REAL-CYD HARDWARE VALIDATION PENDING**.
+- [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) — pure native evaluator for real `41 / EV_CHECK_KEY`. Real CYD proved one yellow-key command (`cmd38 event11 off0`, mask `02`), the complete 16-context truth table (`8 PASS / 8 BLOCKED`), 12-byte caller-local result, exact four message mappings, ignored high key bits, full fail-closed behavior, zero persistent allocation/PAK I/O, unchanged Player/Hud/Game/world state, `keyGateFNV=9ace79cd`, and stable post-PARK recovery. Hardware-tested firmware `3b4844e8fa5d38d522e1adc70ffac646978f130d`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Architecture rule
 
@@ -76,16 +76,16 @@ main = 03002f79eb03bdcb4c9e430c43e4693dab47e44b
 hardware-tested firmware content = f619aefc85402d28c4de6edab5ca32ea1eb514dd
 ```
 
-Current candidate:
+Current merge-ready branch:
 
 ```text
 branch = agent/esp32-map1-native-key-gate
 base   = 03002f79eb03bdcb4c9e430c43e4693dab47e44b
-firmware candidate content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Hardware-proven fingerprints through PR #54:
+Hardware-proven fingerprints now include:
 
 ```text
 arenaFNV           = c3882516
@@ -107,94 +107,54 @@ dialogApplyFNV     = d0254f3d
 noteApplyFNV       = 43183162
 notebookContentFNV = 599609e0
 notebookStorageFNV = 75cf54e0
+keyGateFNV         = 9ace79cd
 ```
 
-Persistent native structural/script heap remains hardware-proven at:
+Persistent native structural/script heap remains hardware-proven at `15252 B`.
 
-```text
-15252 B
-```
-
-Caller-owned values proven:
+Caller-local/value types proven:
 
 ```text
 status owner   =   8 B
 dialog owner   =  12 B
 notebook owner = 514 B
+key-gate result=  12 B
 ```
 
-Current key-gate result target:
+CHECK_KEY hardware proof:
 
 ```text
-result value     = 12 B expected
-persistent owner = none
-persistent heap  = 0 B expected
-pack I/O         = none
+refs             = 1
+green/yellow/blue/red = 0/1/0/0
+scenarios        = 16
+pass             = 8
+blocked          = 8
+stateExecRefused = 1
+resultBytes      = 12
+keyGateFNV       = 9ace79cd
+sample           = cmd38 event11 off0 key1 mask02 arg2=00000100
+message          = Need Yellow Key
+sound            = 5065
 ```
 
-## CHECK_KEY recovered contract
+Integrity on the tested firmware:
 
 ```text
-arg1 0 -> green  mask 01 -> Need Green Key
-arg1 1 -> yellow mask 02 -> Need Yellow Key
-arg1 2 -> blue   mask 04 -> Need Blue Key
-arg1 3 -> red    mask 08 -> Need Red Key
+heap8             = 68756 -> 68756
+largest8          = 36852 -> 36852
+frameFNV          = c56f998b -> c56f998b
+arenaFNV          = c3882516 -> c3882516
+mapStateFNV       = cd99b98e -> cd99b98e
+scriptFNV         = f9e3d9df -> f9e3d9df
+legacyNotebookFNV = 4d7705c5 -> 4d7705c5
+legacyKeys        = 00000000 -> 00000000
+hudFNV            = 505b1255 -> 505b1255
+persistentBytes   = 0
 ```
 
-Key present:
+Complete post-PARK heartbeat: `uptime=25410 ms`, `heap=134520`, `heap8=68756`, `largest8=36852`, all reported subsystems ready.
 
-```text
-legacy Game_executeEvent return false
-continue script
-no Hud/Sound/save effect
-```
-
-Key missing:
-
-```text
-exact key message
-sound 5065
-legacy Game_executeEvent return true
-stop current event
-save current command offset + active flags
-```
-
-The candidate API is side-effect-free and fail-closed for malformed/noncanonical input.
-
-## Hardware target for current candidate
-
-For every real CHECK_KEY command, the probe tests all `keyBits=0..15` contexts. Real family counts are deliberately established by the real CYD rather than guessed in advance; full bytecode corpus identity is already protected by `opcodeAuditFNV=6f28df45`.
-
-Acceptance shape:
-
-```text
-refs > 0
-colorRefs sum = refs
-scenarios      = refs * 16
-PASS           = refs * 8
-BLOCKED        = refs * 8
-stateExecRefused = refs
-resultBytes    = 12
-messages       = 4/4
-extraBitsIgnored = 1
-persistentBytes = 0
-```
-
-Fail-closed:
-
-```text
-unsupported=1
-badOffset=1
-badDescriptor=1
-nullDescriptor=1
-nullResult=1
-```
-
-Integrity witnesses include heap/largest/framebuffer, arena/map/script fingerprints, legacy notebook FNV, legacy Player.keys, Hud message-state FNV and legacy Game continuation fields.
-
-## Remaining unowned MAP_INTRO opcode families
-
-After current candidate:
+## Remaining MAP_INTRO opcode families
 
 ```text
 2  EV_CHANGEMAP
@@ -208,7 +168,7 @@ After current candidate:
 27 EV_SAVEGAME
 ```
 
-PASSWORD remains a bounded pause/input candidate. The SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE group crosses into explicit world/render overlays. CHANGEMAP and SAVEGAME remain larger later boundaries.
+PASSWORD remains a bounded pause/input candidate. SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE cross into explicit world/render overlays. CHANGEMAP and SAVEGAME remain larger later boundaries.
 
 ## Milestone workflow
 
@@ -221,6 +181,4 @@ PASSWORD remains a bounded pause/input candidate. The SHOW/HIDE/GIVEMAP/UNLOCK/O
 7. Mark merge-ready only after implementation + hardware + docs agree.
 8. Keep all post-hardware commits docs-only unless another flash is performed.
 
-Current validation target: normal `esp32-cyd` from `agent/esp32-map1-native-key-gate`, including `[MAPKEY]` / `[MAPKEYPROBE]` plus a later stable `[ALIVE]` heartbeat.
-
-After PASS + merge, reread the new `main`, `PORTING_STATUS.md`, merged CHECK_KEY milestone and exact remaining MAP_INTRO behavior before selecting the next boundary.
+After this branch is merged, reread the new `main`, `PORTING_STATUS.md`, merged CHECK_KEY milestone and exact remaining MAP_INTRO behavior before selecting the next bounded milestone.
