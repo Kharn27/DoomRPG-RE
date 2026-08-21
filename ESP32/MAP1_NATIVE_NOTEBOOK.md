@@ -9,13 +9,13 @@ PR   = #53 — native DIALOG/NOBACK pause owner
 main = 395418510207bf24ac45ddbb4c4c15db3ddc8998
 ```
 
-Firmware candidate content:
+Hardware-tested firmware content:
 
 ```text
 f619aefc85402d28c4de6edab5ca32ea1eb514dd
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
@@ -29,7 +29,7 @@ real EV_NOTE bytecode
  -> bounded native notebook append
 ```
 
-This milestone supports only opcode `40 / EV_NOTE`. It does not mutate legacy `Player.NotebookString`, does not present the notes menu, does not run a full native event loop and does not mutate world/entities/rendering.
+This milestone supports only opcode `40 / EV_NOTE`. It does not mutate legacy `Player.NotebookString`, present the notes menu, run a full native event loop or mutate world/entities/rendering.
 
 ## Recovered legacy behavior
 
@@ -41,35 +41,23 @@ snprintf(str, sizeof(player->NotebookString), "%s%s||",
          str, mapStringsIDs[arg1])
 ```
 
-`Player_t` owns:
+`Player_t` owns `char NotebookString[512]`. `Player_setup()` resets it with `NotebookString[0] = '\0'`. `Menu_setNotes()` later splits the accumulated text on `|`, so each `EV_NOTE` contributes its text followed by two separator characters.
 
-```text
-char NotebookString[512]
-```
-
-`Player_setup()` resets that map-local notebook with:
-
-```text
-NotebookString[0] = '\0'
-```
-
-`Menu_setNotes()` later splits the accumulated text on `|`, so each `EV_NOTE` contributes its text followed by two separator characters.
-
-The desktop C expression aliases destination and first `%s` input. The permanent ESP32 owner makes the intended bounded behavior explicit and deterministic:
+The permanent ESP32 owner makes the intended bounded behavior explicit and deterministic:
 
 ```text
 existing notebook text
 + source note up to its first C NUL
 + "||"
 truncated to at most 511 payload bytes
-+ synthesized trailing NUL
++ trailing NUL
 ```
 
-Once the notebook reaches 511 payload bytes, later note commands still validate/read successfully but cannot change the stored text.
+Once the notebook reaches 511 payload bytes, later valid NOTE commands can still validate/read but cannot change the stored text.
 
 ## Permanent native API
 
-New files:
+Files:
 
 ```text
 ESP32/include/esp_map_notebook.h
@@ -85,7 +73,7 @@ typedef struct EspMapNotebookState_s {
 } EspMapNotebookState;
 ```
 
-Expected classic ESP32 ABI footprint:
+Real classic-CYD ABI footprint:
 
 ```text
 notebook value        = 514 B
@@ -94,9 +82,9 @@ maximum text payload  = 511 B
 persistent heap       = 0 B in this probe
 ```
 
-The 512-byte bounded text storage is deliberate: unlike DIALOG and FORCE_MESSAGE, `EV_NOTE` creates persistent concatenated player text state rather than merely retaining a map string reference.
+The 512-byte bounded text storage is deliberate: unlike DIALOG and FORCE_MESSAGE, `EV_NOTE` creates persistent concatenated player text state rather than merely retaining a map-string reference.
 
-API:
+Allocation-free API:
 
 ```text
 EspMapNotebook_reset()
@@ -105,43 +93,33 @@ EspMapNotebook_text()
 EspMapNotebook_apply()
 ```
 
-`EspMapNotebook_apply()` accepts:
+`EspMapNotebook_apply()` supports only a validated NOTE intent and revalidates current-state C-string/length consistency, canonical string ref, source event/command, global command index, opcode and args before reading or mutating. Semantic state is committed only after `EspMapStrings_read()` succeeds. Unsupported, malformed, short-buffer and I/O failures leave the owner unchanged.
+
+## Real-CYD hardware proof
+
+Normal optimized environment:
 
 ```text
-caller-owned EspMapNotebookState
-current native-pack BSP entry
-one EspMapUiIntent
-caller-owned bounded string scratch
+esp32-cyd
 ```
 
-It supports only a fully validated NOTE intent:
+The real classic no-PSRAM CYD executed the complete NOTE probe successfully.
+
+Real MAP_INTRO corpus:
 
 ```text
-codeId = 40
-kind   = ESP_MAP_UI_INTENT_APPEND_NOTE
-flags  = ESP_MAP_UI_INTENT_FLAG_APPEND_NOTE_SEPARATOR
-arg1   = text.index
-```
-
-Before reading or mutating state it revalidates:
-
-```text
-current state C-string/length consistency
-canonical string ref
-source event exists
-source command exists
-global command index matches descriptor
-bytecode id/arg1/arg2 match the source command
-```
-
-The semantic notebook changes only after `EspMapStrings_read()` succeeds. Unsupported, malformed, short-buffer and I/O failures leave the owner unchanged.
-
-## Inherited MAP_INTRO corpus
-
-Already hardware-proven UI-intent data:
-
-```text
-EV_NOTE refs = 7
+refs             = 7
+separators       = 7
+appendMatches    = 7
+ownerBytes       = 514
+textCapacity     = 512
+stateExecRefused = 7
+sourceBytes      = 256
+finalLen         = 270
+noteApplyFNV     = 43183162
+contentFNV       = 599609e0
+storageFNV       = 75cf54e0
+elapsed          = 83 ms
 ```
 
 Canonical NOTE sample:
@@ -152,108 +130,113 @@ event          = 40
 command offset = 8
 string         = 85 @ 18964 + 54
 payload FNV    = ee639dc1
-flags          = 10
 ```
 
-The state-only opcode executor must continue to refuse all seven NOTE commands.
+All seven NOTE commands remain refused by the state-only opcode executor, preserving the state/effect-owner split.
 
-The legacy Player notebook is currently empty after intro disposal/setup:
+## Bounds proof
+
+Hardware proved the controlled local-state cases:
 
 ```text
-FNV32 over all 512 bytes = 4d7705c5
+separator  = 1
+truncation = 1
+fullStable = 1
+guards     = 7 / 7
+terminator = yes
 ```
 
-That legacy buffer is read only as an integrity witness in this milestone.
-
-## Temporary hardware probe
-
-New files:
-
-```text
-ESP32/include/native_map1_notebook_probe.h
-ESP32/src/native_map1_notebook_probe.c
-```
-
-The probe runs only after the hardware-proven DIALOG/NOBACK owner stage.
-
-It opens `/DoomRPG-ESP32.pak`, resolves `/intro.bsp`, walks all 93 event descriptors / 265 bytecodes and applies only the seven real `EV_NOTE` commands to a caller-owned native notebook.
-
-Acceptance requires:
-
-```text
-NOTE refs            = 7
-append matches       = 7 / 7
-separator intents    = 7
-reader guards        = 7 / 7
-state executor       = UNSUPPORTED for all 7
-owner value          = 514 B
-text capacity        = 512 B
-persistent heap      = 0 B
-legacy notebook      = unchanged
-```
-
-The real-CYD run will establish, rather than predeclare:
-
-```text
-noteApplyFNV
-sourceBytes across seven NOTE payloads
-final native notebook length
-final active-content FNV
-final 512-byte storage FNV
-new-build absolute heap/framebuffer values
-```
-
-## Explicit bounds proof
-
-The probe additionally applies the canonical real NOTE in controlled local states to prove:
-
-```text
-empty state + sample -> note text + "||" + NUL
-510-byte state + sample -> exactly 511-byte payload + NUL
-511-byte full state + sample -> exact state unchanged
-```
-
-This validates separator handling and truncation independently of whether the seven real MAP_INTRO notes naturally fill the 512-byte notebook.
+Therefore the owner preserves the exact `text + "||"` shape, truncates at 511 payload bytes with a trailing NUL, and becomes stable once full.
 
 ## Atomic fail-closed proof
 
-Starting from the real accumulated native notebook, the probe requires all of these to be refused without mutation:
+Starting from the real accumulated native notebook, every deliberately invalid path was refused atomically:
 
 ```text
-DIALOG intent                   -> UNSUPPORTED
-NOTE with bad flags             -> INVALID
-NOTE with bad intent kind       -> INVALID
-mutated canonical string ref    -> INVALID
-bad source event                -> INVALID
-bad global command index        -> INVALID
-scratch without terminator room -> BUFFER_TOO_SMALL
-NULL intent                     -> INVALID
-valid NOTE with PAK closed      -> IO_ERROR
+unsupported DIALOG = 1
+bad flags          = 1
+bad kind           = 1
+bad ref            = 1
+bad source event   = 1
+bad global index   = 1
+short scratch      = 1
+NULL intent        = 1
+closed pack        = 1
+ownerAtomic        = yes
+reset              = 1
 ```
 
-A final reset must clear all 514 bytes of owner state deterministically.
+The final reset cleared the complete 514-byte owner deterministically.
 
-## Hardware integrity boundary
+## Native-pack I/O / RAM proof
 
-Before and after the complete probe the following must remain exact:
+The owner reads only the seven individual NOTE strings through the proven bounded reader. The native-pack open cost was fully transient:
 
 ```text
-heap8
-largest8
-framebuffer FNV
-arenaFNV      = c3882516
-mapStateFNV   = cd99b98e
-scriptFNV     = f9e3d9df
-legacy Player.NotebookString FNV = 4d7705c5
-Hud.statBarMessage pointer
-Game.skipAdvanceTurn
-Game.saveTileEvent
-Game.tileEvent
-Game.tileEventIndex
-Game.tileEventFlags
+entry             = /intro.bsp
+size              = 21823
+crc32             = 623f34e4
+heapOpen          = 64408
+transientHeapCost = 4364 B
+largestOpen       = 36852
+packIO            = yes
+persistentHeap    = 0 B
 ```
 
-The pack must be closed again before PARK.
+Before/after the complete NOTE stage:
+
+```text
+heap8              = 68772 -> 68772
+largest8           = 36852 -> 36852
+frameFNV           = a3e3cc8e -> a3e3cc8e
+arenaFNV           = c3882516 -> c3882516
+mapStateFNV        = cd99b98e -> cd99b98e
+scriptFNV          = f9e3d9df -> f9e3d9df
+legacyNotebookFNV  = 4d7705c5 -> 4d7705c5
+```
+
+The absolute `heap8` and framebuffer FNV differ from earlier firmware builds, but this stage has exact before/after stability and all inherited structural fingerprints remain canonical. This is therefore a build-to-build layout/content difference rather than persistent NOTE-owner allocation or framebuffer mutation.
+
+## Final effect boundary
+
+Hardware PARK proved:
+
+```text
+nativeArena                  = yes
+nativeTileState              = yes
+nativeEventLookup            = yes
+nativeEventDescriptor        = yes
+nativeScriptState            = yes
+nativeFilter                 = yes
+nativeOpcodeExec             = yes
+nativeUiIntent               = yes
+nativeStringReader           = yes
+nativeStatusMessageOwner     = yes
+nativeDialogOwner            = yes
+nativeNotebookOwner          = yes
+ownerValueBytes              = 514
+textCapacity                 = 512
+legacyNotebookMutation       = no
+legacyHudMutation            = no
+legacyGameContinuationMutation = no
+worldMutation                = no
+framebufferMutation          = no
+entities                     = 0
+monsters                     = 0
+noGameplay                   = yes
+```
+
+A complete post-PARK heartbeat from the same tested firmware remained stable:
+
+```text
+uptime=25893 ms
+heap=134536
+heap8=68772
+largest8=36852
+SD/ZIP/VIDEO/CORE/LAYOUT/PRERENDER/RENDER/MAPPINGS/MENUBSP = ready
+```
+
+A later heartbeat was truncated after `VIDEO=`; the complete heartbeat above is sufficient for acceptance.
 
 Permanent prohibitions remain:
 
@@ -264,36 +247,19 @@ legacy Player notebook mutation   = no
 legacy Hud mutation               = no
 legacy Game continuation mutation = no
 actual notes-menu presentation    = no
+full native Game_runEvent loop    = no
 world/entity/render mutation      = no
 entities                           = 0
 monsters                           = 0
 ST_PLAYING                         = no
 ```
 
-## Expected Serial family
+## Hardware acceptance status
 
-```text
-[MAPNOTEPROBE] ARMED ...
+The complete `EV_NOTE` notebook-owner probe plus post-PARK heartbeat is a **REAL-CYD HARDWARE PASS**.
 
-=== Doom RPG ESP32-native MAP_INTRO NOTE notebook owner ===
-[MAPNOTE] READY refs=7 separators=7 appendMatches=7 ownerBytes=514 textCapacity=512 stateExecRefused=7 sourceBytes=... finalLen=... noteApplyFNV=... contentFNV=... storageFNV=... elapsed=...ms
-[MAPNOTE] SAMPLE cmd=103 event=40 off=8 string=85@18964+54 payloadFNV=ee639dc1
-[MAPNOTE] BOUNDS separator=1 truncation=1 fullStable=1 guards=7/7 terminator=yes
-[MAPNOTE] FAILCLOSED unsupported=1 badFlags=1 badKind=1 badRef=1 badEvent=1 badGlobal=1 shortBuffer=1 nullIntent=1 closedPack=1 ownerAtomic=yes reset=1
-[MAPNOTE] IO entry=/intro.bsp size=21823 crc32=623f34e4 ... packIO=yes persistentHeapBytes=0
-[MAPNOTEPROBE] RAM ... legacyNotebookFNV=4d7705c5->4d7705c5
-[MAPNOTEPROBE] PARK ... nativeNotebookOwner=yes ownerValueBytes=514 textCapacity=512 legacyNotebookMutation=no ...
-[ALIVE] ...
-```
+This branch is **MERGE-READY**. The firmware-bearing commit is `f619aefc85402d28c4de6edab5ca32ea1eb514dd`; every later commit must remain documentation-only unless another flash is performed.
 
-Use the normal optimized PlatformIO environment:
+## Next bounded milestone after merge
 
-```text
-esp32-cyd
-```
-
-Until the real classic CYD supplies the PASS log and a stable post-PARK heartbeat, this branch is **not merge-ready**.
-
-## Next boundary after a hardware PASS
-
-Do not preselect the next opcode family. After PASS + merge, reread the then-current `main`, recovery docs, this milestone and exact remaining MAP_INTRO legacy behavior before choosing the next bounded mutation/effect owner.
+Do not preselect the next opcode family. After merge, reread the then-current `main`, recovery docs, this merged NOTE milestone and exact remaining MAP_INTRO legacy behavior before choosing the next coherent native mutation/effect boundary.
