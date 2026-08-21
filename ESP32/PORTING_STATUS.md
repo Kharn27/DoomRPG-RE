@@ -16,8 +16,8 @@ Current candidate:
 ```text
 branch = agent/esp32-map1-native-opcode-exec1
 base   = 0c8a52549ebb436139f7cd5c8b4ee63bdd175907
-hardware-affecting head = 3e07f1b0c4c6f609da8008f20dc667c7bbe58af6
-status = OPCODE INVENTORY + FIRST FAIL-CLOSED NATIVE EXECUTOR IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
+hardware-tested firmware content = 3e07f1b0c4c6f609da8008f20dc667c7bbe58af6
+status = REAL-CYD HARDWARE PASS; FIRST REAL NATIVE OPCODE EXECUTED + ROLLED BACK; MERGE-READY
 ```
 
 Detailed active milestone: [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
@@ -60,7 +60,7 @@ BSP source
  -> mutable EspMapScriptState
  -> side-effect-free event filter
  -> fail-closed native opcode executor
- -> later bounded gameplay effects
+ -> bounded native gameplay effects
 ```
 
 ## Hardware-proven foundation
@@ -76,6 +76,8 @@ linkageFNV     = 5727902c
 scriptFNV      = f9e3d9df
 filterFNV      = a5923b21
 resumeFNV      = b98452da
+opcodeAuditFNV = 6f28df45
+firstExecFNV   = 646b565c
 ```
 
 MAP_INTRO structure:
@@ -102,12 +104,13 @@ all initial event states = 0
 event flag values = {0,1}
 ```
 
-Persistent native RAM already measured:
+Persistent native RAM measured:
 
 ```text
 immutable arena       = 14112 B actual heap
 mutable tile state    =  1040 B actual heap
 mutable script state  =   100 B actual heap
+opcode executor       =     0 B persistent
 -----------------------------------------
 current total         = 15252 B
 largest8              = 36852 preserved
@@ -131,7 +134,7 @@ resumeFNV        = b98452da
 probe elapsed    = 1411 ms
 ```
 
-Decision accounting is exact: all `407040` evaluations fall into one class. The 1411 ms is exhaustive probe/oracle cost, not runtime event cost.
+Decision accounting is exact. The 1411 ms is exhaustive probe/oracle cost, not runtime event cost.
 
 Script-state ownership proof:
 
@@ -142,9 +145,9 @@ initialFNV    = f9e3d9df
 mutation test = f9e3d9df -> 99003167 -> f9e3d9df
 ```
 
-## Current candidate — first native opcode execution
+## First native opcode execution — hardware validated
 
-Recovered first safe executor family:
+Supported first executor family:
 
 ```text
 11 EV_CHANGESTATE
@@ -152,49 +155,91 @@ Recovered first safe executor family:
 20 EV_PREVSTATE
 ```
 
-Legacy semantics target an event by:
+All other opcodes fail closed as `UNSUPPORTED`.
+
+### Real MAP_INTRO opcode corpus
+
+The real CYD audited all 265 compact bytecodes:
 
 ```text
-targetTile = (arg1 & 0xff) + (((arg1 >> 8) & 0xff) * 32)
+refs         = 265
+unique IDs   = 16
+idMaskLo     = 0d0daf84
+idMaskHi     = 00000300
+outOfRange   = 0
+opcodeAuditFNV = 6f28df45
 ```
 
-and mutate only its current event state. Native execution applies that mutation only to `EspMapScriptState`.
-
-Permanent API:
+Exact IDs present:
 
 ```text
-EspMapOpcodeExecutor_supports()
-EspMapOpcodeExecutor_execute()
+2, 7, 8, 9, 10, 11, 13, 15,
+16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-All other opcode IDs return `UNSUPPORTED` with no mutation. Malformed state values outside the native 4-bit `0..15` domain are refused.
-
-New persistent cost:
+State-family references:
 
 ```text
-0 B
+EV_CHANGESTATE = 41
+EV_NEXTSTATE   = 35
+EV_PREVSTATE   = 0
+supported refs = 76
 ```
 
-The real-CYD probe must:
+### First executed real BSP command
 
 ```text
-audit all 265 actual opcode IDs
-require every ID inside recovered legacy range 1..42
-report unique ID count + 0..63 masks
-count real refs to 11 / 19 / 20
-select one real supported BSP command
-execute it against the 81 B script overlay
-prove exact target/state mutation
-rollback to scriptFNV=f9e3d9df
-refuse a real unsupported command
-refuse malformed CHANGESTATE state 16
-keep heap/largest/frame/arena/map-state unchanged
-PARK with entities=0 monsters=0 ST_PLAYING=no
+command index  = 50
+opcode         = 19 / EV_NEXTSTATE
+arg1           = 00000702
+arg2           = 00000100
+target tile    = 226
+target event   = 16
+prepared state = 0
+state          = 0 -> 1
+mutated        = yes
+execFNV        = 646b565c
 ```
 
-If MAP_INTRO contains no valid real command in this first safe family, the probe must fail closed rather than execute a more dangerous opcode.
+This is the first real Doom RPG opcode executed by the ESP32-native engine.
 
-## Current candidate execution path
+The effect is confined to `EspMapScriptState`; no immutable BSP/map bytes are changed.
+
+Rollback proof:
+
+```text
+scriptFNV initial  = f9e3d9df
+scriptFNV prepared = f9e3d9df
+scriptFNV executed = 9b636dec
+scriptFNV restored = f9e3d9df
+rollback           = yes
+```
+
+Fail-closed proofs:
+
+```text
+real unsupported sample = command 0 / opcode 16 -> UNSUPPORTED, no mutation
+malformed CHANGESTATE state 16 -> refused, no mutation
+```
+
+Hardware integrity across audit + execution + rollback:
+
+```text
+elapsed      = 1 ms
+heap8        = 68828 -> 68828
+largest8     = 36852 -> 36852
+frameFNV     = 10f53ffb -> 10f53ffb
+arenaFNV     = c3882516 -> c3882516
+mapStateFNV  = cd99b98e -> cd99b98e
+scriptFNV    = f9e3d9df -> f9e3d9df
+entities     = 0
+monsters     = 0
+ST_PLAYING   = no
+```
+
+Later `[ALIVE]` remained stable at `heap8=68828`, `largest8=36852`.
+
+## Execution path now proven
 
 ```text
 validated intro disposal
@@ -206,8 +251,9 @@ validated intro disposal
  -> descriptor/linkage sweep
  -> 81 B script-state build
  -> exhaustive event-filter proof
- -> opcode inventory
- -> ONE reversible real state-opcode execution
+ -> full 265-bytecode opcode inventory
+ -> ONE real EV_NEXTSTATE native execution
+ -> exact state mutation
  -> rollback
  -> PARK
 ```
@@ -226,8 +272,19 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Next action
+## Merge recommendation
 
-Build/flash normal `esp32-cyd` from `agent/esp32-map1-native-opcode-exec1` and capture the `MAPOPCODE` / `MAPOPCODEPROBE` block plus a later stable `[ALIVE]` line.
+**MERGE `agent/esp32-map1-native-opcode-exec1`.**
 
-If the hardware pass succeeds, record the opcode inventory, `auditFNV`, executed real command, `execFNV`, rollback fingerprints and exact timing before merge.
+The real CYD has now validated both fail-closed dispatch and one actual reversible Doom RPG opcode execution. Any later commits must remain documentation-only to avoid requiring another flash.
+
+## Next bounded milestone after merge
+
+Use the measured real opcode corpus instead of guessing. Remaining real IDs are:
+
+```text
+2, 7, 8, 9, 10, 13, 15, 16,
+18, 24, 26, 27, 40, 41
+```
+
+Audit their legacy semantics and group them by native ownership requirements. Add one coherent family at a time, preferring effects that can live in small native state/intent objects before touching entities or renderer-owned world mutation. Unsupported IDs continue to fail closed.
