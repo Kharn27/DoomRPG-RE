@@ -9,7 +9,13 @@ PR   = #46 — allocation-free native tile -> event lookup
 main = 438cffabaaaaa3dc3b45486f56eacec1a047edcf
 ```
 
-Status: **IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS**.
+Hardware-tested code:
+
+```text
+b3e453baea1ac861c608f0c11b8aaa592f1cc3e5
+```
+
+Status: **REAL-CYD HARDWARE PASS; EVENT DESCRIPTOR + BYTECODE LINKAGE VALIDATED; MERGE-READY**.
 
 ## Objective
 
@@ -84,7 +90,7 @@ tileEvents[eventIndex] =
     (event & 0xe1ffffff) | (eventState << 25)
 ```
 
-Therefore the immutable BSP value can only represent the **initial** event state.
+Therefore the immutable BSP value represents the **initial** event state.
 
 The native descriptor deliberately names the field:
 
@@ -142,111 +148,141 @@ commandEndIndex == firstCommandIndex + commandCount
 commandEndIndex <= resident byteCodeCount
 ```
 
-The API returns an existing compact command through `EspMapRuntime_getByteCode()`; it creates no command copies or ownership graph.
+The API returns an existing compact command through `EspMapRuntime_getByteCode()`; it creates no command ownership graph.
 
-## Known MAP_INTRO event/bytecode facts
-
-Hardware-proven event section:
+## MAP_INTRO event/bytecode facts
 
 ```text
 events       = 93
-bytes        = 372
-sorted       = yes
-unique tiles = yes
-first        = tile 68 / event 0 / 00080044
-last         = tile 968 / event 92 / 000c23c8
+event bytes  = 372
+byteCodes    = 265
+byteCode bytes = 2385
+sorted event tiles = yes
+unique event tiles = yes
 ```
 
-Resident compact bytecodes:
-
-```text
-records = 265
-bytes   = 2385
-```
-
-The first raw event already decodes structurally to:
+First descriptor:
 
 ```text
 value             = 00080044
-tile              = 68
+eventIndex        = 0
+tile               = 68
 firstCommandIndex = 0
 commandCount      = 1
+commandEndIndex   = 1
 initialState      = 0
 flags             = 0
 ```
 
-The last raw event is expected to prove the upper linkage boundary on hardware.
-
-## Temporary real-CYD probe
-
-Validation scaffold:
+Last descriptor:
 
 ```text
-ESP32/include/native_map1_event_descriptor_probe.h
-ESP32/src/native_map1_event_descriptor_probe.c
+value             = 000c23c8
+eventIndex        = 92
+tile               = 968
+firstCommandIndex = 264
+commandCount      = 1
+commandEndIndex   = 265
+initialState      = 0
+flags             = 0
 ```
 
-It runs only after the hardware-proven `MAPEVENTPROBE` stage completes.
+## Hardware validation method
 
-The probe must:
+The real-CYD probe:
 
-1. require the inherited arena/state/event-lookup safe boundary;
-2. decode all 93 raw events independently with masks/shifts;
-3. resolve each event tile through `EspMapEvents_findByTile()`;
-4. require `EspMapEvents_describe()` to reproduce every independently decoded field;
-5. require every command range to stay inside the 265 compact bytecodes;
-6. walk every command linked by every descriptor through `EspMapEvents_getCommand()`;
-7. compare every linked command to direct `EspMapRuntime_getByteCode(globalIndex)` access;
-8. require `commandOffset == commandCount` to fail closed for every event;
-9. verify invalid NULL/forged descriptor inputs fail closed;
-10. compute a canonical `descriptorFNV` over all descriptor fields;
-11. compute a canonical `linkageFNV` over every event -> command linkage plus command payload;
-12. measure total command references, unique command indexes, overlaps and uncovered bytecode indexes;
-13. establish command-count range, maximum linked end index, observed initial-state mask and event-flags mask;
-14. require zero heap/largest-block drift;
-15. require framebuffer, immutable arena and mutable tile state unchanged;
-16. PARK before any event execution, state mutation, entities, rendering or `ST_PLAYING`.
+1. requires the inherited arena/state/event-lookup safe boundary;
+2. independently decodes all 93 raw events with masks/shifts;
+3. resolves each event tile through `EspMapEvents_findByTile()`;
+4. requires `EspMapEvents_describe()` to reproduce every field;
+5. requires every command range to remain inside the 265 compact bytecodes;
+6. walks every linked command through `EspMapEvents_getCommand()`;
+7. compares every linked command with direct `EspMapRuntime_getByteCode(globalIndex)` access;
+8. requires `commandOffset == commandCount` to fail closed for every event;
+9. checks NULL/forged descriptor/ref inputs fail closed;
+10. computes canonical descriptor/linkage fingerprints;
+11. measures total refs, unique refs, overlaps, gaps, count range, maximum end and observed state/flag sets;
+12. requires zero heap/largest-block drift and no framebuffer/arena/state mutation;
+13. PARKs before script execution, event-state mutation, entities, rendering or `ST_PLAYING`.
 
-A 265-bit stack bitmap (~34 bytes) is used only as a temporary coverage oracle. No persistent coverage/index structure is added.
+Coverage uses only a temporary 265-bit (~34-byte) stack bitmap. No persistent coverage/index structure exists.
 
-## Values the real CYD must establish
+## Real-CYD hardware result
 
-```text
-descriptorFNV
-linkageFNV
-full descriptor/link sweep elapsed time
-
-total command references
-unique command indexes
-overlap references
-uncovered bytecodes
-commandCount min..max
-maximum commandEndIndex
-observed initialState mask
-observed event-flags mask
-
-first descriptor
-last descriptor
-```
-
-The probe deliberately does **not** assume in advance that all 265 bytecodes are covered exactly once. It measures the actual topology first.
-
-## Expected new log tail
+Exact serial evidence:
 
 ```text
-[MAPDESCPROBE] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO event descriptor linkage ===
-[MAPDESCPROBE] CONTRACT decode event bits + validate linked compact bytecodes; 0 persistent bytes; no script execution, mutation, entities, rendering or gameplay
-
-[MAPDESC] READY events=93 byteCodes=265 descriptorFNV=........ linkageFNV=........ persistentBytes=0
-[MAPDESCPROBE] READY elapsed=...ms commandRefs=... unique=... overlaps=... gaps=... countRange=..... maxEnd=... stateMask=.... flagsMask=..
-[MAPDESCPROBE] SAMPLE first=68/0/00080044 cmd=0+1 state=0 flags=0 last=968/92/000c23c8 cmd=...+... state=... flags=...
-[MAPDESCPROBE] RAM heap8=X->X delta=0 largest8=Y->Y delta=0 frameFNV=F->F arenaFNV=c3882516->c3882516 stateFNV=cd99b98e->cd99b98e
+[MAPDESC] READY events=93 byteCodes=265 descriptorFNV=27115328 linkageFNV=5727902c persistentBytes=0
+[MAPDESCPROBE] READY elapsed=2ms commandRefs=265 unique=265 overlaps=0 gaps=0 countRange=1..14 maxEnd=265 stateMask=0001 flagsMask=03
+[MAPDESCPROBE] SAMPLE first=68/0/00080044 cmd=0+1 state=0 flags=0 last=968/92/000c23c8 cmd=264+1 state=0 flags=0
+[MAPDESCPROBE] RAM heap8=68992->68992 delta=0 largest8=36852->36852 delta=0 frameFNV=bd237825->bd237825 arenaFNV=c3882516->c3882516 stateFNV=cd99b98e->cd99b98e
 [MAPDESCPROBE] PARK state=9 page=3 nativeArena=yes nativeTileState=yes nativeEventLookup=yes nativeEventDescriptor=yes persistentBytes=0 scriptExecution=no entities=0 monsters=0 noGameplay=yes
 ```
 
-## Memory plan
+Canonical fingerprints:
+
+```text
+descriptorFNV = 27115328
+linkageFNV    = 5727902c
+```
+
+Full descriptor + linkage sweep:
+
+```text
+elapsed = 2 ms
+```
+
+## Important structural discovery: exact bytecode partition
+
+The real CYD proved:
+
+```text
+total command references = 265
+unique command indexes    = 265
+overlap references        = 0
+uncovered bytecodes       = 0
+maximum commandEndIndex   = 265
+```
+
+Therefore the 93 MAP_INTRO events partition the complete 265-command bytecode stream **exactly once**:
+
+```text
+93 event command ranges
+        -> 265 total references
+        -> every bytecode referenced exactly once
+        -> no holes
+        -> no overlap
+        -> final exclusive end = 265
+```
+
+This is a strong native format invariant for `/intro.bsp` and removes the need for any extra event-to-command ownership structure.
+
+Observed event command-count range:
+
+```text
+min = 1
+max = 14
+```
+
+## Observed initial state and event flags
+
+Hardware result:
+
+```text
+stateMask = 0001
+flagsMask = 03
+```
+
+The probe builds these masks as `1 << observedValue`, therefore:
+
+```text
+initial event states present = { 0 }
+event flag values present    = { 0, 1 }
+```
+
+All 93 BSP events therefore begin in state 0. Runtime state changes remain a later mutable-overlay concern.
+
+## Memory / integrity verdict
 
 New persistent payload:
 
@@ -254,7 +290,7 @@ New persistent payload:
 0 B
 ```
 
-Existing measured persistent map/world foundation remains:
+Existing measured persistent foundation remains:
 
 ```text
 14112 B immutable arena actual heap
@@ -263,7 +299,35 @@ Existing measured persistent map/world foundation remains:
 15152 B total
 ```
 
-The descriptor and linked `EspMapByteCode` values are stack/local copies only.
+Descriptor probe integrity:
+
+```text
+heap8       = 68992 -> 68992
+largest8    = 36852 -> 36852
+frameFNV    = bd237825 -> bd237825
+arenaFNV    = c3882516 -> c3882516
+stateFNV    = cd99b98e -> cd99b98e
+script exec = no
+entities    = 0
+monsters    = 0
+ST_PLAYING  = no
+```
+
+Later `[ALIVE]` heartbeat remained stable at `heap8=68992`, `largest8=36852`.
+
+## Regression fingerprint chain
+
+```text
+source BSP FNV = d5cc751f
+arenaFNV       = c3882516
+decodedFNV     = a426dd18
+stateFNV       = cd99b98e
+lookupFNV      = 63430151
+descriptorFNV  = 27115328
+linkageFNV     = 5727902c
+```
+
+Each fingerprint protects a distinct layer: source bytes, compact physical representation, decoded records, mutable tile state, tile-event lookup, event descriptor semantics and event-command linkage.
 
 ## Still forbidden
 
@@ -283,14 +347,29 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Next boundary after hardware PASS
+## Merge recommendation
 
-If the descriptor/linkage contract passes, native code will know, without allocation:
+**MERGE `agent/esp32-map1-native-event-descriptor`.**
+
+Hardware-tested code:
+
+```text
+b3e453baea1ac861c608f0c11b8aaa592f1cc3e5
+```
+
+Any later commits should remain documentation-only until merge; if so, no additional hardware flash is required.
+
+## Next boundary after merge
+
+Native code can now answer, allocation-free:
 
 ```text
 which tile -> which event
-which event -> which compact command range
-which command offset -> which exact EspMapByteCode
+which event -> exact descriptor
+which event -> exact compact command range
+which command offset -> exact EspMapByteCode
 ```
 
-Only then should the next milestone recover **execution filtering semantics** from `Game_runEvent()` (`initial/current state`, direction/trigger flags, block-input, remove/modify-world behavior), still preferably as a side-effect-free decision layer before implementing actual script execution.
+The next bounded milestone should recover **side-effect-free `Game_runEvent()` eligibility/filtering semantics**: current state, event flags, trigger/direction flags, block-input behavior and command `arg2` filters. A small separate mutable current-event-state overlay is likely required because the source arena contains only `initialState`.
+
+Do not execute commands or mutate the world until that decision layer is hardware-proven.
