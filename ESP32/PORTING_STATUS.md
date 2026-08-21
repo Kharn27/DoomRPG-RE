@@ -14,13 +14,13 @@ hardware-tested firmware content = 85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
 
 Detailed merged evidence: [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md).
 
-## Current candidate
+## Current merge-ready candidate
 
 ```text
 branch = agent/esp32-map1-native-notebook-owner
 base   = 395418510207bf24ac45ddbb4c4c15db3ddc8998
-firmware candidate content = f619aefc85402d28c4de6edab5ca32ea1eb514dd
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware content = f619aefc85402d28c4de6edab5ca32ea1eb514dd
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Detailed active milestone: [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md).
@@ -73,7 +73,7 @@ BSP source in native pack
  -> ESP32-native gameplay + renderer
 ```
 
-## Hardware-proven fingerprints through PR #53
+## Hardware-proven fingerprints
 
 ```text
 source BSP FNV   = d5cc751f
@@ -93,6 +93,9 @@ uiIntentFNV      = 7fdd6a79
 stringContentFNV = e995ee51
 statusApplyFNV   = 52b25a5f
 dialogApplyFNV   = d0254f3d
+noteApplyFNV     = 43183162
+notebookContentFNV = 599609e0
+notebookStorageFNV = 75cf54e0
 ```
 
 MAP_INTRO `/intro.bsp` / `Entrance`:
@@ -127,23 +130,15 @@ current proven total  = 15252 B
 largest8              = 36852 preserved
 ```
 
-Caller-owned value types already proven:
+Caller-owned value types proven on the classic CYD:
 
 ```text
 EspMapStatusMessageState =   8 B
 EspMapDialogOwnerState   =  12 B
+EspMapNotebookState      = 514 B
 ```
 
-Current notebook candidate value type:
-
-```text
-EspMapNotebookState
- = char text[512]
- + uint16_t length
- = 514 B expected on classic ESP32 ABI
-```
-
-Its temporary probe keeps that value on stack and therefore should add 0 persistent heap bytes. A future permanent native player owner embedding it must account the 514 bytes explicitly.
+The notebook probe keeps its 514-byte owner on stack and therefore adds 0 persistent heap bytes. A future permanent native player owner embedding it must account those 514 bytes explicitly.
 
 Measured legacy structural allocation was `55341 B`; hardware-proven native structural/script heap ownership remains `40089 B` smaller (~72.4%).
 
@@ -195,13 +190,13 @@ string 85 / NOTE          = ee639dc1
 ## Native FORCE_MESSAGE owner — hardware validated
 
 ```text
-refs             = 3
-set              = 1
-clear            = 2
-ownerBytes       = 8
-textCopyBytes    = 0
-statusApplyFNV   = 52b25a5f
-ownerAtomic      = yes
+refs           = 3
+set            = 1
+clear          = 2
+ownerBytes     = 8
+textCopyBytes  = 0
+statusApplyFNV = 52b25a5f
+ownerAtomic    = yes
 ```
 
 ## Native DIALOG/NOBACK pause owner — hardware validated
@@ -228,29 +223,7 @@ Back   cmd11 event6 off0 resume1 flags07 string25@13558+23
 noBack cmd19 event6 off8 resume9 flags06 string30@13679+14
 ```
 
-Atomic fail-closed proof:
-
-```text
-unsupported=1 badFlags=1 badKind=1 badRef=1 badEvent=1 badGlobal=1 badResume=1 nullIntent=1
-ownerAtomic=yes reset=1
-```
-
-Latest hardware-tested build integrity (dialog firmware):
-
-```text
-heap8       = 68780 -> 68780
-largest8    = 36852 -> 36852
-frameFNV    = ef79123a -> ef79123a
-arenaFNV    = c3882516 -> c3882516
-mapStateFNV = cd99b98e -> cd99b98e
-scriptFNV   = f9e3d9df -> f9e3d9df
-notebookFNV = 4d7705c5 -> 4d7705c5
-packIO      = no
-```
-
-A complete post-PARK heartbeat remained stable at `heap=134544`, `heap8=68780`, `largest8=36852`.
-
-## Current NOTE notebook candidate contract
+## Native NOTE notebook owner — hardware validated
 
 Recovered legacy state:
 
@@ -261,33 +234,32 @@ EV_NOTE appends map string + "||"
 Menu_setNotes later splits on '|'
 ```
 
-Permanent native candidate:
+Permanent native state:
 
 ```text
 EspMapNotebookState
-text capacity  = 512 B
-max payload    = 511 B + NUL
-length field   = uint16_t
-owner size     = 514 B expected
-heap allocation= 0
+text capacity   = 512 B
+max payload     = 511 B + NUL
+length field    = uint16_t
+owner size      = 514 B
+heap allocation = 0
 ```
 
-The native owner performs a deterministic bounded append equivalent to the intended legacy format:
+Real-CYD corpus proof:
 
 ```text
-existing text + source C-string + "||"
-truncate at 511 payload bytes
-always terminate with NUL
-```
-
-It validates NOTE intent provenance and the canonical string ref before reading. State is committed only after the proven `EspMapStrings_read()` succeeds.
-
-Inherited real corpus:
-
-```text
-NOTE refs          = 7
-stateExecRefused   = 7 expected
-separator semantics= 7 expected
+refs             = 7
+separators       = 7
+appendMatches    = 7
+stateExecRefused = 7
+sourceBytes      = 256
+finalLen         = 270
+ownerBytes       = 514
+textCapacity     = 512
+noteApplyFNV     = 43183162
+contentFNV       = 599609e0
+storageFNV       = 75cf54e0
+elapsed          = 83 ms
 ```
 
 Canonical sample:
@@ -296,48 +268,79 @@ Canonical sample:
 cmd103 event40 off8 string85@18964+54 payloadFNV=ee639dc1
 ```
 
-The probe additionally proves controlled bounds independent of the corpus:
+Hardware bounds proof:
 
 ```text
-empty + sample -> exact trailing "||"
-510-byte payload + sample -> 511-byte payload + NUL
-full 511-byte payload + sample -> unchanged
+separator  = 1
+truncation = 1
+fullStable = 1
+guards     = 7/7
+terminator = yes
 ```
 
-Expected fail-closed set:
+Atomic fail-closed hardware proof:
 
 ```text
-unsupported DIALOG
-bad NOTE flags
-bad intent kind
-mutated string ref
-bad source event
-bad global command index
-short scratch
-NULL intent
-closed native pack
+unsupported=1 badFlags=1 badKind=1 badRef=1 badEvent=1 badGlobal=1
+shortBuffer=1 nullIntent=1 closedPack=1 ownerAtomic=yes reset=1
 ```
 
-All must preserve the notebook owner atomically.
-
-Real-CYD validation must establish rather than predeclare:
+Native-pack I/O and recovery:
 
 ```text
-noteApplyFNV
-seven-note source byte total
-final notebook length
-final notebook active-content FNV
-final 512-byte storage FNV
-new-build heap/framebuffer absolute values
+entry             = /intro.bsp
+size              = 21823
+crc32             = 623f34e4
+heapOpen          = 64408
+transientHeapCost = 4364 B
+largestOpen       = 36852
+packIO            = yes
+persistentHeap    = 0 B
 ```
 
-Legacy `Player.NotebookString` must remain exactly:
+Current tested-build integrity:
 
 ```text
-FNV over 512 bytes = 4d7705c5
+heap8             = 68772 -> 68772
+largest8          = 36852 -> 36852
+frameFNV          = a3e3cc8e -> a3e3cc8e
+arenaFNV          = c3882516 -> c3882516
+mapStateFNV       = cd99b98e -> cd99b98e
+scriptFNV         = f9e3d9df -> f9e3d9df
+legacyNotebookFNV = 4d7705c5 -> 4d7705c5
 ```
 
-before and after the new probe.
+The previous dialog firmware reported `heap8=68780` and `frameFNV=ef79123a`; this build reports `68772` and `a3e3cc8e`. Every stage has exact before/after stability and inherited structural fingerprints remain canonical, so these are build-to-build layout/content differences rather than persistent NOTE-owner allocation or framebuffer mutation.
+
+Final PARK proves:
+
+```text
+nativeStatusMessageOwner       = yes
+nativeDialogOwner              = yes
+nativeNotebookOwner            = yes
+ownerValueBytes                = 514
+textCapacity                   = 512
+legacyNotebookMutation         = no
+legacyHudMutation              = no
+legacyGameContinuationMutation = no
+worldMutation                  = no
+framebufferMutation            = no
+entities                       = 0
+monsters                       = 0
+ST_PLAYING                      = no
+```
+
+Complete post-PARK heartbeat:
+
+```text
+uptime=25893 ms
+heap=134536
+heap8=68772
+largest8=36852
+all reported subsystems = ready
+```
+
+A later heartbeat was truncated after `VIDEO=` and is not required for acceptance.
 
 ## Current hardware-proven execution path
 
@@ -356,7 +359,8 @@ validated intro disposal
  -> bounded native-pack string reader
  -> real EV_FORCEMESSAGE -> native status owner
  -> real EV_DIALOG/NOBACK -> native pause owner
- -> candidate: real EV_NOTE -> bounded native notebook owner
+ -> real EV_NOTE -> bounded native notebook owner
+ -> PARK + stable post-PARK heartbeat
 ```
 
 Still forbidden:
@@ -375,18 +379,18 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Current validation target
+## Merge recommendation
 
-Build/flash the normal optimized environment:
+**MERGE `agent/esp32-map1-native-notebook-owner`.**
+
+Hardware-tested firmware content:
 
 ```text
-esp32-cyd
+f619aefc85402d28c4de6edab5ca32ea1eb514dd
 ```
 
-from `agent/esp32-map1-native-notebook-owner` and capture the `[MAPNOTE]` / `[MAPNOTEPROBE]` family plus a later stable `[ALIVE]` heartbeat.
+All commits after that firmware-bearing SHA must remain documentation-only unless another flash is performed.
 
-Do not mark this branch merge-ready until the real classic CYD supplies the PASS.
+## Next bounded milestone after merge
 
-## Next bounded milestone after a PASS + merge
-
-Do not preselect it now. Reread the then-current repository, recovery docs, merged NOTE milestone and exact remaining MAP_INTRO opcode behavior before choosing the next coherent boundary.
+Do not preselect it. Reread the then-current repository, recovery docs, merged NOTE milestone and exact remaining MAP_INTRO opcode behavior before choosing the next coherent boundary.
