@@ -33,9 +33,9 @@ Merged milestones:
 | [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) | full MAP_INTRO opcode inventory + first real native EV_NEXTSTATE execution/rollback | #49 | `6e43ef059db52783b7264e84579216cb2572a1e2` |
 | [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md) | 94 allocation-free string spans + all real UI/string bytecodes translated to caller-owned intents | #50 | `9a5e8ade361180d220f2b3614a443e5efb0d27bd` |
 
-Current candidate milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md) — bounded `EspMapStrings_read()` over `/DoomRPG-ESP32.pak`, one canonical `EspMapStringRef` into caller-owned storage, plus exhaustive 94-string MAP_INTRO probe and fail-closed checks. Firmware candidate `d13d5eb13c4657d5ec5c16fd82939cfc38989c86`; **IMPLEMENTED, REAL-CYD HARDWARE VALIDATION PENDING**.
+- [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md) — bounded `EspMapStrings_read()` over `/DoomRPG-ESP32.pak`, one canonical `EspMapStringRef` into caller-owned storage. Real CYD: 94/94 prefix checks, 94/94 guard checks, `stringContentFNV=e995ee51`, 93 non-empty payload reads, all fail-closed paths proven, 4364 B transient PAK-open cost fully recovered, three stable post-PARK heartbeats; **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Architecture rule
 
@@ -69,71 +69,79 @@ main = 9a5e8ade361180d220f2b3614a443e5efb0d27bd
 hardware-tested firmware content = 045b219dd7d6d06630eb446424e8d3d3fa3d249e
 ```
 
-Current candidate:
+Current merge-ready branch:
 
 ```text
 branch = agent/esp32-map1-native-string-reader
 base   = 9a5e8ade361180d220f2b3614a443e5efb0d27bd
-firmware candidate content = d13d5eb13c4657d5ec5c16fd82939cfc38989c86
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware content = d13d5eb13c4657d5ec5c16fd82939cfc38989c86
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Hardware-proven fingerprints through PR #50:
+Hardware-proven fingerprints now include:
 
 ```text
-arenaFNV       = c3882516
-decodedFNV     = a426dd18
-mapStateFNV    = cd99b98e
-lookupFNV      = 63430151
-descriptorFNV  = 27115328
-linkageFNV     = 5727902c
-scriptFNV      = f9e3d9df
-filterFNV      = a5923b21
-resumeFNV      = b98452da
-opcodeAuditFNV = 6f28df45
-firstExecFNV   = 646b565c
-stringSpanFNV  = 713188eb
-uiIntentFNV    = 7fdd6a79
+arenaFNV         = c3882516
+decodedFNV       = a426dd18
+mapStateFNV      = cd99b98e
+lookupFNV        = 63430151
+descriptorFNV    = 27115328
+linkageFNV       = 5727902c
+scriptFNV        = f9e3d9df
+filterFNV        = a5923b21
+resumeFNV        = b98452da
+opcodeAuditFNV   = 6f28df45
+firstExecFNV     = 646b565c
+stringSpanFNV    = 713188eb
+uiIntentFNV      = 7fdd6a79
+stringContentFNV = e995ee51
 ```
 
-Persistent native map/world/script heap remains hardware-proven at:
+Persistent native map/world/script ownership remains:
 
 ```text
 15252 B
 ```
 
-The merged string-span and UI-intent layers add **0 persistent bytes**.
+The string-span, UI-intent and bounded string-reader layers each add **0 persistent bytes**.
 
-String corpus hardware proof:
+String reader hardware proof:
 
 ```text
 94 strings
 7779 payload bytes
 1 zero-length string
+0 embedded source NUL bytes
 max payload = 313 B
-first span = 11554
-last span  = 19512 + 7
+94/94 on-disk length prefixes match
+94/94 caller-buffer guards preserved
+93 non-empty PAK payload reads
+spanFNV    = 713188eb
+contentFNV = e995ee51
 ```
 
-UI/string corpus hardware proof:
+Canonical fixture payload fingerprints:
 
 ```text
-94 refs total
-76 EV_DIALOG
-3  EV_FORCEMESSAGE
-8  EV_DIALOGNOBACK
-7  EV_NOTE
-84 dialog pause/resume intents
-94/94 refused by state-mutating executor
-probe = 1 ms
+string 1  = f6da01bb
+string 25 = 84f743cf
+string 30 = 3692ac94
+string 85 = ee639dc1
 ```
 
-Integrity remained exact on the merged UI-intent hardware pass:
+Transient storage proof:
 
 ```text
-heap8       = 68820 -> 68820
-largest8    = 36852 -> 36852
-frameFNV    = b8b39f0f -> b8b39f0f
+heap8 before/open/after = 68804 / 64440 / 68804
+PAK-open transient cost = 4364 B
+largest8                = 36852 preserved
+persistentBytes         = 0
+```
+
+Integrity remained exact through the reader stage:
+
+```text
+frameFNV    = 805df09e -> 805df09e
 arenaFNV    = c3882516 -> c3882516
 mapStateFNV = cd99b98e -> cd99b98e
 scriptFNV   = f9e3d9df -> f9e3d9df
@@ -143,7 +151,7 @@ monsters    = 0
 ST_PLAYING  = no
 ```
 
-The current string-reader candidate deliberately has no canonical content fingerprint or hardware RAM result yet. Those values are recorded only from the real classic CYD Serial log.
+Three post-PARK `[ALIVE]` heartbeats remained stable at `heap=134568`, `heap8=68804`, `largest8=36852` with all reported subsystems ready.
 
 ## Milestone workflow
 
@@ -156,6 +164,6 @@ The current string-reader candidate deliberately has no canonical content finger
 7. Mark merge-ready only after implementation + hardware + docs agree.
 8. Keep all post-hardware commits docs-only unless another flash is performed.
 
-Current validation target: build/flash normal `esp32-cyd` from `agent/esp32-map1-native-string-reader` and capture the `[MAPTEXT]` / `[MAPTEXTPROBE]` lines. If that boundary passes, the next milestone should introduce only one small explicit native text/effect owner consuming the already-proven UI intents and bounded reader.
+After this branch is merged, the next bounded milestone should introduce only one small explicit native text/effect owner consuming the already-proven `EspMapUiIntent` plus bounded `EspMapStrings_read()` contract. Keep world/entity/render mutation out of that boundary.
 
 See [`PORTING_STATUS.md`](PORTING_STATUS.md), merged [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md), active [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md), and merged [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
