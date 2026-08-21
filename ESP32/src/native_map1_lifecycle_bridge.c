@@ -5,6 +5,7 @@
 #include "native_map1_event_descriptor_probe.h"
 #include "native_map1_event_filter_probe.h"
 #include "native_map1_events_probe.h"
+#include "native_map1_key_gate_probe.h"
 #include "native_map1_notebook_probe.h"
 #include "native_map1_opcode_exec_probe.h"
 #include "native_map1_runtime_load.h"
@@ -37,6 +38,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32Map1StatusMessageProbe_reset();
     Esp32Map1DialogOwnerProbe_reset();
     Esp32Map1NotebookProbe_reset();
+    Esp32Map1KeyGateProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -51,8 +53,8 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * reversible native state-opcode execution -> allocation-free string spans
      * + UI/string intent translation -> bounded pack-backed one-string reader
      * -> compact EV_FORCEMESSAGE status-message owner -> compact DIALOG/NOBACK
-     * pause owner -> bounded EV_NOTE notebook owner. Each stage arms first and
-     * executes on a later Arduino loop service.
+     * pause owner -> bounded EV_NOTE notebook owner -> pure EV_CHECK_KEY control
+     * gate. Each stage arms first and executes on a later Arduino loop service.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -67,4 +69,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32Map1StatusMessageProbe_service(doomRpg);
     Esp32Map1DialogOwnerProbe_service(doomRpg);
     Esp32Map1NotebookProbe_service(doomRpg);
+    Esp32Map1KeyGateProbe_service(doomRpg);
 }
