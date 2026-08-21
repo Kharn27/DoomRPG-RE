@@ -63,9 +63,7 @@ EspMapUiIntentStatus EspMapUiIntent_build(
     }
     else if (command.id == ESP_MAP_OPCODE_FORCE_MESSAGE) {
         outIntent->kind = ESP_MAP_UI_INTENT_FORCE_MESSAGE;
-        if (text.length == 0U) {
-            outIntent->flags = ESP_MAP_UI_INTENT_FLAG_CLEAR_IF_EMPTY;
-        }
+        outIntent->flags = ESP_MAP_UI_INTENT_FLAG_CLEAR_IF_EMPTY;
     }
     else {
         outIntent->kind = ESP_MAP_UI_INTENT_APPEND_NOTE;
