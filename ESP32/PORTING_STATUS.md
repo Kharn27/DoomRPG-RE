@@ -9,24 +9,22 @@ The older full recovery catalog remains preserved in [`archive/PORTING_STATUS_PR
 ## Latest merged hardware baseline
 
 ```text
-PR   = #44 — native compact MAP_INTRO access contract
-main = ddcf19e6166f210a6f63fec1c608234ee3e253ea
+PR   = #45 — first native mutable MAP_INTRO tile state
+main = feec8a7fcb839dbd9f6de708f56f26b69a1e79e9
 ```
-
-PR #44 hardware-proved complete allocation-free native indexed access over the resident MAP_INTRO arena with canonical `decodedFNV=a426dd18` and zero heap/largest-block/framebuffer drift.
 
 Current candidate:
 
 ```text
-branch = agent/esp32-map1-native-state
-base   = ddcf19e6166f210a6f63fec1c608234ee3e253ea
-hardware-tested code = 9a17654b56a190932615bba4894e90debd0e3773
-status = REAL-CYD HARDWARE PASS; FIRST NATIVE MUTABLE TILE STATE VALIDATED; MERGE-READY
+branch = agent/esp32-map1-native-events
+base   = feec8a7fcb839dbd9f6de708f56f26b69a1e79e9
+hardware-tested code = a522c56403ff3269e02e93213b8f7d643bfba0af
+status = REAL-CYD HARDWARE PASS; ALLOCATION-FREE NATIVE TILE EVENT LOOKUP VALIDATED; MERGE-READY
 ```
 
-Detailed active milestone: [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md).
+Detailed active milestone: [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md).
 
-Merged access evidence: [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md).
+Merged state evidence: [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md).
 
 ## Permanent target / ownership
 
@@ -59,15 +57,17 @@ final CYD engine = our ESP32-native engine
 
 Desktop-derived `Render_t`, `DoomCanvas_t`, pointer-heavy map structures and linker wrappers remain migration scaffolding, not permanent architecture requirements.
 
-Current native ownership direction:
+Current native direction:
 
 ```text
 Doom RPG source data
     -> EspBspReader
     -> immutable compact EspMapRuntime
     -> allocation-free native accessors
-    -> small explicit mutable EspMapState / later overlays
-    -> native gameplay + renderer
+    -> explicit mutable EspMapState
+    -> allocation-free EspMapEvents tile lookup
+    -> bounded event descriptor / bytecode linkage
+    -> later native gameplay + renderer
 ```
 
 ## Current hardware-safe boundary
@@ -79,9 +79,9 @@ menu                    = MENU_NONE
 state                   = ST_INTRO (9)
 storyPage               = 3
 storyTextPage           = 0
+startupMap              = 1 (MAP_INTRO / /intro.bsp)
 intro clock/input       = inactive
 intro images/texts      = NULL
-startupMap              = 1 (MAP_INTRO / /intro.bsp)
 legacy nodes/lines      = NULL
 legacy mapSprites       = NULL
 legacy mappings         = NULL
@@ -90,22 +90,28 @@ mediaTexels             = NULL
 wall/sprite LRU caches  = inactive
 entities/monsters       = 0
 legacy gameplay loader  = NOT called
+
 native map arena        = RESIDENT + IMMUTABLE
-native arena payload    = 14095 B
-actual arena heap cost  = 14112 B
-native tile state       = RESIDENT + MUTABLE
-native tile payload     = 1024 B
-actual tile heap cost   = 1040 B
-combined native heap    = 15152 B
-heap8                   = 69016 after tile-state build on current test build
-largest8                = 36852
+arena payload           = 14095 B
+actual arena heap       = 14112 B
 arenaFNV                = c3882516
-decodedFNV              = a426dd18
+
+native tile state       = RESIDENT + MUTABLE
+tile payload            = 1024 B
+actual tile heap        = 1040 B
 stateFNV                = cd99b98e
+
+native event lookup     = READY + ALLOCATION-FREE
+lookup persistent bytes = 0
+lookupFNV               = 63430151
+
+combined native heap    = 15152 B
+heap8                   = 69000 on current hardware run
+largest8                = 36852
 ST_PLAYING              = NOT entered
 ```
 
-The mutable state is separately owned from the immutable arena. Source records remain byte-for-byte stable while gameplay/spatial bits can evolve through explicit native state APIs.
+Absolute `heap8` may move slightly between builds as firmware code grows. The regression contract is exact ownership, measured allocation cost, largest-block integrity, fingerprints and zero drift inside allocation-free stages.
 
 ## MAP_INTRO source reference
 
@@ -144,7 +150,7 @@ planeTextures = 19775
 end           = 21823
 ```
 
-Resource inventory remains:
+Map-derived resource inventory:
 
 ```text
 line texture IDs        = 20
@@ -157,205 +163,132 @@ sprite-as-texture refs  = 0
 ID overflow             = 0 / 0 / 0
 ```
 
-## Native compact arena — hardware validated
+## Native map foundation — hardware validated
+
+### Immutable compact arena
 
 ```text
 payload                = 14095 B
 actual heap use        = 14112 B
 allocator overhead     = 17 B
 populateReadCalls      = 33
-populateElapsed        = 61 ms on current test build
+populateElapsed        = 61–63 ms across tested builds
 arenaFNV               = c3882516
 largest8               = 36852 preserved
 ```
 
-Legacy structural runtime measured `55341 B`; the native resident arena alone saves about 41.2 KiB / 74.5% versus that pointer-heavy structural allocation.
-
-Strings remain on SD; only 188 B of payload offsets are resident.
-
-## Native access contract — hardware validated
-
-The access layer sweeps:
-
-```text
-223 nodes
-480 lines
-344 map sprites
-93 events
-265 bytecodes
-94 string offsets
-1024 block-map cells
-2048 plane cells
-256 resource IDs
-all out-of-range families
-```
-
-Canonical semantic fingerprint:
+### Allocation-free access contract
 
 ```text
 decodedFNV = a426dd18
 ```
 
-Current test build result:
+The real CYD swept every node, line, map sprite, event, bytecode, string offset, block cell, plane cell, resource ID and bounds family with zero heap/largest-block/framebuffer drift.
 
-```text
-elapsed    = 4 ms
-heap8      = 70056 -> 70056
-largest8   = 36852 -> 36852
-frameFNV   = unchanged
-arenaFNV   = c3882516 unchanged
-```
-
-The earlier 3 ms result and this 4 ms result share the same semantic fingerprint and zero-drift boundary; the 1 ms difference is normal timing variation.
-
-Block-map distribution remains:
-
-```text
-0 = 298
-1 = 697
-2 = 27
-3 = 2
-sum = 1024
-```
-
-Accessors expose immutable source semantics. Recovered runtime transformations belong in explicit consumers/overlays rather than hidden decode behavior.
-
-## `EspMapState` — hardware validated
-
-The branch adds the first mutable native world/spatial state:
-
-```text
-EspMapState
-    uint8 tileFlags[1024]
-```
-
-Persistent payload and actual classic-CYD cost:
+### Mutable tile state
 
 ```text
 payload            = 1024 B
 actual heap use    = 1040 B
 allocator overhead = 16 B
-largest8           = 36852 -> 36852
+stateFNV           = cd99b98e
+build/verify       = 9 ms
+largest8           = 36852 preserved
 ```
 
-Recovered tile bits:
+Spatial topology:
 
 ```text
-WALL     = 1
-SECRET   = 2
-ENTRANCE = 4
-EVENTS   = 8
-VISITED  = 16
+block base             = 298 / 697 / 27 / 2
+texture-7 entrances    = 4 refs / 4 unique cells
+first entrance tile    = 68
+event-bearing cells    = 93 refs / 93 unique cells
+first event tile       = 68
+visited cells          = 0
 ```
 
-Initial-state construction uses only the hardware-proven native access API:
+Combined measured persistent map/world heap:
 
 ```text
-block-map cells -> low two state bits
-texture-7 lines -> ENTRANCE
-qualifying events -> EVENTS
-VISITED -> deliberately absent at initial build
+14112 B immutable arena
++1040 B mutable tile state
+----------------------------
+15152 B actual heap
 ```
 
-### Entrance semantic
+Measured legacy structural allocation was `55341 B`, so current native structure + mutable spatial state saves `40189 B` (~72.6%).
 
-The reference loader applies line coordinate nudges before locating texture-7 entrance cells:
+## Native tile-event lookup — hardware validated
+
+Recovered reference key:
 
 ```text
-horizontal(512) + east/south(8)  -> x += 3
-horizontal(512) + west/north(16) -> x -= 3
-vertical(256)   + east/south(8)  -> y += 3
-vertical(256)   + west/north(16) -> y -= 3
+key = event & 1023
 ```
 
-Then it computes the midpoint and shifts by 6 to obtain the 32x32 tile coordinate.
-
-Hardware topology:
+Permanent API:
 
 ```text
-texture-7 line refs = 4
-unique entrance cells = 4
-first entrance tile = 68
+EspMapEvents_findByTile(tile, &eventRef)
 ```
 
-### Event semantic
+The API performs lower-bound binary search directly over the already resident compact 372-byte event section. No `eventIndexByTile[1024]` or duplicate `Render.tileEvents` ownership exists.
 
-Recovered loader rule:
+Persistent cost:
 
 ```text
-if event & 0x01f80000:
-    tileFlags[event & 1023] |= EVENTS
+0 B
 ```
 
-Hardware topology:
+Real-CYD topology:
 
 ```text
-source events = 93
-qualifying event refs = 93
-unique event cells = 93
-first event tile = 68
+events       = 93
+sorted       = yes
+unique tiles = yes
+first        = tile 68 / index 0 / value 00080044
+last         = tile 968 / index 92 / value 000c23c8
 ```
 
-Every event in MAP_INTRO qualifies, and each maps to a unique event cell.
-
-Tile `68` is both entrance-bearing and event-bearing, confirming that the state representation must support composable bits.
-
-### Visited remains deferred
-
-Initial state contains:
+Exhaustive lookup result:
 
 ```text
-visited cells = 0
+queries      = 1024
+hits         = 93
+misses       = 931
+stateEvents  = 93 / 93
+elapsed      = 5 ms
+lookupFNV    = 63430151
 ```
 
-Visited/save/automap mutation remains a later gameplay concern.
-
-### Canonical state proof
+Integrity result:
 
 ```text
-stateFNV = cd99b98e
-build+verification elapsed = 9 ms
-base counts = 298 / 697 / 27 / 2
+heap8      = 69000 -> 69000
+largest8   = 36852 -> 36852
+frameFNV   = b8b39f0f -> b8b39f0f
+arenaFNV   = c3882516 -> c3882516
+stateFNV   = cd99b98e -> cd99b98e
+entities   = 0
+monsters   = 0
+ST_PLAYING = no
 ```
 
-RAM/integrity proof:
+Later `[ALIVE]` heartbeats remained stable at `heap8=69000`, `largest8=36852`.
+
+The legacy binary-search ordering assumption is therefore now explicitly proven for MAP_INTRO rather than inherited blindly.
+
+## Native regression fingerprints
 
 ```text
-heap8       = 70056 -> 69016
-used        = 1040 B
-payload     = 1024 B
-overhead    = 16 B
-largest8    = 36852 -> 36852
-frameFNV    = unchanged
-arenaFNV    = c3882516 -> c3882516
-entities    = 0
-monsters    = 0
-ST_PLAYING  = no
+source BSP FNV = d5cc751f
+arenaFNV       = c3882516
+decodedFNV     = a426dd18
+stateFNV       = cd99b98e
+lookupFNV      = 63430151
 ```
 
-Later `[ALIVE]` heartbeats remained stable at `heap8=69016`, `largest8=36852`.
-
-## Combined native memory result
-
-Measured current persistent map/world foundation:
-
-```text
-immutable arena actual heap = 14112 B
-mutable tile state actual   =  1040 B
--------------------------------------
-combined actual heap        = 15152 B
-```
-
-Compared with the measured legacy structural allocation:
-
-```text
-legacy structural = 55341 B
-native arena+state = 15152 B
-saved              = 40189 B
-reduction          ~= 72.6%
-```
-
-The native side now includes both structural source state and the first mutable spatial/gameplay substrate.
+These protect distinct layers: source, compact physical representation, decoded semantics, mutable spatial state and tile-event resolution.
 
 ## Execution path now proven
 
@@ -363,9 +296,9 @@ The native side now includes both structural source state and the first mutable 
 validated intro disposal
     -> native BSP inventory/plan
     -> compact resident arena
-    -> native accessor sweep
+    -> allocation-free native accessor sweep
     -> 1024-byte native mutable tile-state build
-    -> independent semantic state verification
+    -> allocation-free 1024-tile event lookup sweep
     -> PARK
 ```
 
@@ -375,6 +308,8 @@ Still absent:
 shapeData/mediaTexels
 complete raw BSP allocation
 legacy Render_beginLoadMapData()
+legacy Render.tileEvents ownership
+native event/bytecode execution
 entity/monster activation
 entityDb ownership
 visited/save-state mutation
@@ -396,29 +331,29 @@ fresh Start cleanup recovered = 55416 B
 intro teardown recovered      = 33768 B on PR #41
 ```
 
-Detailed old menu/touch/LRU/FNV measurements remain in archived recovery snapshots and milestone documents.
+Detailed earlier evidence remains in milestone documents and archived recovery snapshots.
 
 ## Merge recommendation
 
-**MERGE `agent/esp32-map1-native-state`.**
+**MERGE `agent/esp32-map1-native-events`.**
 
 Hardware-tested code:
 
 ```text
-9a17654b56a190932615bba4894e90debd0e3773
+a522c56403ff3269e02e93213b8f7d643bfba0af
 ```
 
-If all commits after that SHA remain documentation-only, no additional hardware flash is required.
+If all later commits remain documentation-only, no additional hardware flash is required.
 
 ## Next bounded milestone after merge
 
-The event topology is now a strong consumer signal:
+Native code can now answer:
 
 ```text
-93 event refs
-93 unique event-bearing tiles
+Does tile X carry an event? -> EspMapState
+Which event is it?          -> EspMapEvents
 ```
 
-Preferred next step: implement a compact native **tile -> event lookup/index contract** so gameplay can resolve an event from `EspMapState` without desktop `tileEvents` ownership.
+Next, decode and validate the **raw event descriptor / compact bytecode linkage** without executing scripts yet. The next branch should establish the exact bit fields, offsets/indexes and bounds needed to describe an event's bytecode entry point, produce a canonical descriptor/linkage fingerprint, and PARK before any `Game_runEvent()` equivalent.
 
-Candidate shape should be derived from actual event-query behavior rather than copied from `Render_t`. Preserve the immutable arena and current 1 KiB state; do not advance to the desktop entity graph simply because richer gameplay eventually needs entities.
+Prefer an allocation-free read-only descriptor API if the recovered format permits it. Do not advance directly to entities, renderer activation or `ST_PLAYING`.
