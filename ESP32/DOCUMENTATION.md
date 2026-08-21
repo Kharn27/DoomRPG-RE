@@ -70,7 +70,7 @@ Active branch:
 
 ```text
 agent/esp32-map1-native-ui-intent
-hardware-affecting head = 608449f427baf65f036ca7e00e424cb39938f86e
+hardware-affecting head = 045b219dd7d6d06630eb446424e8d3d3fa3d249e
 status = IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
 ```
 
@@ -111,7 +111,7 @@ Current candidate now interprets the next measured real family without applying 
 
 ```text
 8  EV_DIALOG        -> DIALOG intent + Back + pause/resume
-24 EV_FORCEMESSAGE  -> FORCE_MESSAGE intent; empty means clear
+24 EV_FORCEMESSAGE  -> FORCE_MESSAGE intent + EMPTY_CLEARS semantic
 26 EV_DIALOGNOBACK  -> DIALOG intent without Back + pause/resume
 40 EV_NOTE          -> APPEND_NOTE intent + "||" semantic
 ```
