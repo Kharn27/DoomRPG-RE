@@ -35,9 +35,9 @@ Merged milestones:
 | [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md) | bounded native-pack string reads | #51 | `526640b12d978fdbe9c8a9239c37db2fca95cddd` |
 | [`MAP1_NATIVE_STATUS_MESSAGE.md`](MAP1_NATIVE_STATUS_MESSAGE.md) | first native effect owner: FORCE_MESSAGE status ref | #52 | `40b61af5e2115266d4d03dddcc3175850538b0f5` |
 
-Current candidate milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) — compact native pause/presentation owner for all real `EV_DIALOG` / `EV_DIALOGNOBACK` intents. Expected real corpus: `84 = 76 Back + 8 no-Back`, 12-byte caller-owned state, exact source/resume provenance validation, zero text copy, zero pack I/O, zero legacy continuation/presentation/world mutation. Firmware candidate `85aa89c4218a819e7f18cbf77f64dfbef3c5bac9`; **IMPLEMENTED, REAL-CYD HARDWARE VALIDATION PENDING**.
+- [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) — compact native pause/presentation owner for all real `EV_DIALOG` / `EV_DIALOGNOBACK` intents. Real CYD proved `84 = 76 Back + 8 no-Back`, exact pause/skip-turn/resume semantics, 12-byte caller-owned state, zero text copy, zero pack I/O, atomic fail-closed provenance validation and zero legacy continuation/presentation/world mutation. `dialogApplyFNV=d0254f3d`; firmware `85aa89c4218a819e7f18cbf77f64dfbef3c5bac9`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Architecture rule
 
@@ -73,16 +73,16 @@ main = 40b61af5e2115266d4d03dddcc3175850538b0f5
 hardware-tested firmware content = d782681c3cd267b9f16c290a593c1b6e5b34df1c
 ```
 
-Current candidate:
+Current merge-ready branch:
 
 ```text
 branch = agent/esp32-map1-native-dialog-owner
 base   = 40b61af5e2115266d4d03dddcc3175850538b0f5
-firmware candidate content = 85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware content = 85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Hardware-proven fingerprints through PR #52 include:
+Hardware-proven fingerprints now include:
 
 ```text
 arenaFNV         = c3882516
@@ -100,6 +100,7 @@ stringSpanFNV    = 713188eb
 uiIntentFNV      = 7fdd6a79
 stringContentFNV = e995ee51
 statusApplyFNV   = 52b25a5f
+dialogApplyFNV   = d0254f3d
 ```
 
 Persistent native structural/script heap remains hardware-proven at:
@@ -108,19 +109,9 @@ Persistent native structural/script heap remains hardware-proven at:
 15252 B
 ```
 
-The merged status-message owner is an 8-byte caller-owned value. The dialog candidate is a 12-byte caller-owned value and adds 0 persistent heap bytes in its probe.
+The merged status-message owner is an 8-byte caller-owned value. The dialog owner is a 12-byte caller-owned value. Both probes add 0 persistent heap bytes and retain no persistent text copy.
 
-## Current dialog-owner target
-
-Recovered semantics:
-
-```text
-EV_DIALOG       -> Back soft-key + pause + skip turn
-EV_DIALOGNOBACK -> no Back soft-key + pause + skip turn
-resume          -> same source event, command offset + 1
-```
-
-Expected corpus:
+Current dialog-owner hardware proof:
 
 ```text
 refs             = 84
@@ -133,6 +124,8 @@ stateExecRefused = 84
 ownerBytes       = 12
 textCopyBytes    = 0
 packIO           = no
+persistentHeap   = 0
+dialogApplyFNV   = d0254f3d
 ```
 
 Canonical samples:
@@ -142,7 +135,27 @@ Back   cmd11 event6 off0 resume1 flags07 string25@13558+23
 noBack cmd19 event6 off8 resume9 flags06 string30@13679+14
 ```
 
-The permanent owner revalidates the source event/command and canonical string ref before committing. Actual presentation and dynamic event-loop activation flags remain outside this milestone.
+Atomic fail-closed proof:
+
+```text
+unsupported=1 badFlags=1 badKind=1 badRef=1 badEvent=1 badGlobal=1 badResume=1 nullIntent=1
+ownerAtomic=yes reset=1
+```
+
+Current tested-build integrity:
+
+```text
+heap8       = 68780 -> 68780
+largest8    = 36852 -> 36852
+frameFNV    = ef79123a -> ef79123a
+arenaFNV    = c3882516 -> c3882516
+mapStateFNV = cd99b98e -> cd99b98e
+scriptFNV   = f9e3d9df -> f9e3d9df
+notebookFNV = 4d7705c5 -> 4d7705c5
+packIO      = no
+```
+
+A complete post-PARK heartbeat remained stable at `heap=134544`, `heap8=68780`, `largest8=36852`, with all reported subsystems ready.
 
 ## Milestone workflow
 
@@ -155,6 +168,4 @@ The permanent owner revalidates the source event/command and canonical string re
 7. Mark merge-ready only after implementation + hardware + docs agree.
 8. Keep all post-hardware commits docs-only unless another flash is performed.
 
-Current validation target: normal `esp32-cyd` from `agent/esp32-map1-native-dialog-owner`, including `[MAPDIALOG]` / `[MAPDIALOGPROBE]` plus a later stable `[ALIVE]` heartbeat.
-
-After PASS + merge, reread `PORTING_STATUS.md`, `DOCUMENTATION.md`, the merged dialog milestone and legacy source before choosing the next owner. `EV_NOTE` is only a likely candidate, not a precommitted direction.
+After this branch is merged, reread the new `main`, `PORTING_STATUS.md`, `DOCUMENTATION.md`, the merged dialog milestone and exact legacy source before choosing the next boundary. `EV_NOTE` is only a likely candidate, not a precommitted direction.
