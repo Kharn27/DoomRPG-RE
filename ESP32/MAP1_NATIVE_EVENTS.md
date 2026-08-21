@@ -9,7 +9,13 @@ PR   = #45 — first native mutable MAP_INTRO tile state
 main = feec8a7fcb839dbd9f6de708f56f26b69a1e79e9
 ```
 
-Status: **IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS**.
+Hardware-tested code:
+
+```text
+a522c56403ff3269e02e93213b8f7d643bfba0af
+```
+
+Status: **REAL-CYD HARDWARE PASS; ALLOCATION-FREE NATIVE TILE EVENT LOOKUP VALIDATED; MERGE-READY**.
 
 ## Objective
 
@@ -37,33 +43,13 @@ The desktop loader stores each event as one 32-bit value. The tile key is:
 eventTile = event & 1023
 ```
 
-The legacy `Render_findEventIndex()` performs a binary search over the event array using that low-10-bit key. That proves the event array is intended to be ordered by tile.
+Legacy `Render_findEventIndex()` binary-searches the event array using that low-10-bit key. The native port preserves the useful behavior, not the desktop ownership model.
 
-MAP_INTRO hardware evidence from PR #45 already established:
+## Architecture decision: no duplicate tile index
 
-```text
-source events          = 93
-qualifying event refs  = 93
-unique event cells     = 93
-first event tile       = 68
-first event value      = 00080044
-```
+A 1024-entry `eventIndexByTile` would cost another 1–2 KiB to index only 93 event-bearing cells.
 
-Tile 68 is also an entrance tile.
-
-## Architecture decision: no duplicate index
-
-A tempting implementation would allocate something like:
-
-```text
-uint8/uint16 eventIndexByTile[1024]
-```
-
-That would spend another 1–2 KiB to index only 93 event-bearing cells.
-
-Instead the native engine keeps the 372-byte compact event section already resident in `EspMapRuntime` and performs a lower-bound binary search directly through `EspMapRuntime_getEvent()`.
-
-With 93 records, a hit/miss requires only about seven comparisons in the worst case.
+Instead, the native engine keeps the 372-byte compact event section already resident in `EspMapRuntime` and performs a lower-bound binary search directly through `EspMapRuntime_getEvent()`.
 
 Permanent component:
 
@@ -72,7 +58,7 @@ ESP32/include/esp_map_events.h
 ESP32/src/esp_map_events.c
 ```
 
-Public contract:
+Public API:
 
 ```text
 EspMapEvents_findByTile(tileIndex, &eventRef)
@@ -87,104 +73,160 @@ EspMapEventRef
     value      uint32
 ```
 
-Bounds:
+Bounds contract:
 
 ```text
 valid tile = 0..1023
 invalid tile / NULL output / missing runtime -> false
 ```
 
-The search uses deterministic `lower_bound` semantics. If a future BSP contains duplicate event tiles, it returns the first matching record. MAP_INTRO itself is expected to remain strictly unique and the hardware probe validates that property.
+The implementation uses deterministic lower-bound semantics. If a future map ever has duplicate event tiles, the first matching record is returned. MAP_INTRO itself is now hardware-proven strictly ordered and unique.
 
 ## Why this belongs outside `EspMapState`
 
 `EspMapState` owns mutable spatial flags such as `EVENTS`; it should not duplicate immutable event payloads or indices.
 
-The intended flow is:
+The intended native flow is:
 
 ```text
 EspMapState_getTileFlags(tile)
     -> EVENTS bit says whether an event exists
     -> EspMapEvents_findByTile(tile)
-    -> immutable raw event record + compact index
+    -> immutable raw event record + compact event index
 ```
 
-Later code may decode/execute the returned event, but execution is deliberately outside this milestone.
+Bytecode decoding/execution remains a later concern.
 
-## Temporary hardware probe
+## Hardware validation strategy
 
-Validation scaffold:
+The temporary probe:
 
 ```text
 ESP32/include/native_map1_events_probe.h
 ESP32/src/native_map1_events_probe.c
 ```
 
-It runs only after the full PR #45 tile-state probe is done.
+runs only after the complete native tile-state hardware boundary is proven.
 
-The real-CYD probe must:
+It validates:
 
-1. require inherited `arenaFNV=c3882516` and `stateFNV=cd99b98e`;
-2. scan all 93 source events and require strictly increasing tile keys;
-3. require all MAP_INTRO events to retain the recovered trigger mask used by tile-state construction;
-4. require first event = tile 68 / index 0 / value `00080044`;
-5. query **all 1024 tiles** through `EspMapEvents_findByTile()`;
-6. compare every result against an independent sequential event cursor;
-7. require `EspMapState.EVENTS` to match lookup existence for all 1024 tiles;
-8. require exactly 93 hits and 931 misses;
-9. require tile 1024 and NULL-output queries to fail closed;
-10. compute a canonical `lookupFNV` across all 1024 lookup results;
-11. require zero heap and largest-block drift;
-12. require framebuffer, immutable arena and mutable tile state all byte-for-byte unchanged;
-13. PARK before bytecode execution, entities, rendering or `ST_PLAYING`.
+1. inherited `arenaFNV=c3882516` and `stateFNV=cd99b98e`;
+2. all 93 raw event records;
+3. strictly increasing `(event & 1023)` tile keys;
+4. retained trigger-mask semantics for all MAP_INTRO events;
+5. first event = tile 68 / index 0 / value `00080044`;
+6. all **1024 tile lookups** through the public API;
+7. every result against an independent sequential oracle;
+8. exact agreement with `EspMapState.EVENTS` for every tile;
+9. exactly 93 hits and 931 misses;
+10. tile 1024 and NULL-output rejection;
+11. canonical `lookupFNV` over the complete 1024-query result stream;
+12. zero heap/largest-block drift;
+13. framebuffer, immutable arena and mutable tile state byte-for-byte unchanged;
+14. PARK before bytecode execution, entities, rendering or `ST_PLAYING`.
 
-## Expected inherited boundary
+## Real-CYD hardware result
 
-Build-to-build heap baseline may move with code size, but before this probe the runtime must still contain:
-
-```text
-arena payload        = 14095 B
-arena actual heap    = 14112 B
-arenaFNV             = c3882516
-
-tile-state payload   = 1024 B
-tile-state heap      = 1040 B
-stateFNV             = cd99b98e
-
-combined native heap = 15152 B
-largest8             = 36852 on PR #45 hardware run
-entities/monsters    = 0 / 0
-ST_PLAYING           = no
-```
-
-The new event lookup itself must consume:
+Exact serial evidence:
 
 ```text
-persistent bytes = 0
-heap drift       = 0
-```
-
-## Expected new log tail
-
-```text
-[MAPEVENTPROBE] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO tile event lookup ===
-[MAPEVENTPROBE] CONTRACT binary search directly over compact immutable event records; 0 persistent bytes; no bytecode execution, entities, rendering or gameplay
-[MAPEVENTS] READY events=93 firstTile=68 lastTile=... sortedUnique=yes persistentBytes=0
-[MAPEVENTPROBE] READY lookupFNV=........ elapsed=...ms hits=93 misses=931 first=68/0/00080044 last=.../92/........ stateEvents=93/93
-[MAPEVENTPROBE] RAM heap8=X->X delta=0 largest8=Y->Y delta=0 frameFNV=F->F arenaFNV=c3882516->c3882516 stateFNV=cd99b98e->cd99b98e
+[MAPEVENTS] READY events=93 firstTile=68 lastTile=968 sortedUnique=yes persistentBytes=0
+[MAPEVENTPROBE] READY lookupFNV=63430151 elapsed=5ms hits=93 misses=931 first=68/0/00080044 last=968/92/000c23c8 stateEvents=93/93
+[MAPEVENTPROBE] RAM heap8=69000->69000 delta=0 largest8=36852->36852 delta=0 frameFNV=b8b39f0f->b8b39f0f arenaFNV=c3882516->c3882516 stateFNV=cd99b98e->cd99b98e
 [MAPEVENTPROBE] PARK state=9 page=3 nativeArena=yes nativeTileState=yes nativeEventLookup=yes persistentBytes=0 entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
 ```
 
-The hardware run will establish:
+Canonical event-lookup fingerprint:
 
 ```text
-lookupFNV
-full 1024-query elapsed time
-last event tile
-last event raw value
+lookupFNV = 63430151
+```
+
+Measured full sweep:
+
+```text
+queries        = 1024
+hits           = 93
+misses         = 931
+elapsed        = 5 ms
+persistent     = 0 B
+heap drift     = 0 B
+largest drift  = 0 B
+```
+
+Event topology established on hardware:
+
+```text
+records        = 93
+first tile     = 68
+first index    = 0
+first value    = 00080044
+last tile      = 968
+last index     = 92
+last value     = 000c23c8
+sorted         = yes
+unique         = yes
+state agreement = 93 / 93
+```
+
+The old engine's ordering assumption is therefore now an explicit hardware-proven native contract for MAP_INTRO.
+
+## Integrity proof
+
+The event lookup changed no persistent state:
+
+```text
+heap8      = 69000 -> 69000
+largest8   = 36852 -> 36852
+frameFNV   = b8b39f0f -> b8b39f0f
+arenaFNV   = c3882516 -> c3882516
+stateFNV   = cd99b98e -> cd99b98e
+entities   = 0
+monsters   = 0
+ST_PLAYING = no
+```
+
+Later `[ALIVE]` heartbeats remained stable at:
+
+```text
+heap8    = 69000
+largest8 = 36852
+```
+
+The 16-byte lower absolute heap baseline versus the previous branch is a normal build-to-build code-size effect; the event lookup itself has exactly zero runtime heap drift.
+
+## Native regression ladder
+
+The port now has five useful fingerprints:
+
+```text
+source BSP FNV = d5cc751f
+arenaFNV       = c3882516
+decodedFNV     = a426dd18
+stateFNV       = cd99b98e
+lookupFNV      = 63430151
+```
+
+Each protects a different layer: source bytes, compact storage, decoded semantics, mutable spatial state, and tile-event resolution.
+
+## Hardware gates — verdict
+
+```text
+93 events scanned                         PASS
+strictly sorted/unique tile keys          PASS
+1024 public lookups                       PASS
+93 hits / 931 misses                      PASS
+sequential oracle agreement               PASS
+EspMapState.EVENTS agreement = 93/93      PASS
+bounds / NULL rejection                   PASS
+persistent bytes = 0                      PASS
+heap drift = 0                            PASS
+largest8 drift = 0                        PASS
+framebuffer unchanged                     PASS
+arenaFNV unchanged                        PASS
+stateFNV unchanged                        PASS
+entities/monsters = 0/0                   PASS
+ST_PLAYING not entered                    PASS
 ```
 
 ## Still forbidden
@@ -200,13 +242,34 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Next boundary after hardware PASS
+## Merge recommendation
 
-If the lookup contract passes, native code will be able to answer both:
+**MERGE this branch.**
+
+Hardware-affecting code tested on the real classic CYD:
 
 ```text
-Does this tile carry an event?  -> EspMapState
-Which compact event is it?      -> EspMapEvents
+a522c56403ff3269e02e93213b8f7d643bfba0af
 ```
 
-The next milestone can then study the raw event bit layout and bytecode linkage needed for a bounded native event descriptor/execution path, without reintroducing desktop `Game_t`/`Render_t` ownership.
+Commits after that SHA must remain documentation-only until merge; if so, no additional flash is required.
+
+## Next bounded milestone after merge
+
+Native code can now answer both:
+
+```text
+Does this tile carry an event? -> EspMapState
+Which event is it?             -> EspMapEvents
+```
+
+The next bounded milestone should decode the **raw event descriptor and its bytecode linkage** without executing it yet. The objective is to determine, validate and expose the exact event fields needed to locate the relevant compact bytecode sequence while preserving:
+
+```text
+arenaFNV   = c3882516
+stateFNV   = cd99b98e
+lookupFNV  = 63430151
+heap drift = 0 if possible
+```
+
+Do not jump directly into `Game_runEvent()`, entities or `ST_PLAYING` before the descriptor/linkage contract is hardware-proven.
