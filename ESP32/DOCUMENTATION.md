@@ -30,10 +30,11 @@ Merged milestones:
 | [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md) | allocation-free tile -> event lookup | #46 | `438cffabaaaaa3dc3b45486f56eacec1a047edcf` |
 | [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) | event descriptor + exact bytecode linkage | #47 | `a3e629ba0be6b4dcc6329b17f18a0c3ca9828958` |
 | [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md) | 81-byte mutable script state + side-effect-free Game_runEvent filtering | #48 | `0c8a52549ebb436139f7cd5c8b4ee63bdd175907` |
+| [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) | full MAP_INTRO opcode inventory + first real native EV_NEXTSTATE execution/rollback | #49 | `6e43ef059db52783b7264e84579216cb2572a1e2` |
 
-Current merge-ready milestone:
+Current active milestone:
 
-- [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) — exhaustive audit of all 265 real MAP_INTRO bytecodes plus first actual native Doom RPG opcode execution. Real-CYD corpus has 16 unique IDs (`2,7,8,9,10,11,13,15,16,18,19,24,26,27,40,41`), `opcodeAuditFNV=6f28df45`; state family has 41× `EV_CHANGESTATE`, 35× `EV_NEXTSTATE`, 0× `EV_PREVSTATE`; real command #50 (`EV_NEXTSTATE`) mutated target tile 226/event 16 from state 0→1, `execFNV=646b565c`, then rolled back to `scriptFNV=f9e3d9df`; zero heap/largest/frame/arena/map-state drift; **MERGE-READY**.
+- [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md) — allocation-free native string spans plus real `EV_DIALOG` / `EV_FORCEMESSAGE` / `EV_DIALOGNOBACK` / `EV_NOTE` translation to compact caller-owned intents; no legacy DoomCanvas/Hud/Player mutation; old state executor remains fail-closed for UI opcodes; **AWAITING REAL-CYD HARDWARE PASS**.
 
 ## Architecture rule
 
@@ -43,37 +44,37 @@ Long-term direction:
 
 ```text
 Doom RPG data / recovered behavior
+ -> native pack-backed parsers
  -> compact immutable native map
  -> allocation-free accessors
- -> small explicit mutable spatial state
+ -> small explicit mutable spatial/script state
  -> native event lookup + descriptor/linkage
- -> compact mutable script state
  -> side-effect-free event filtering
  -> fail-closed native opcode execution
- -> bounded native gameplay effects
+ -> compact native effect intents/owners
  -> ESP32-native gameplay + renderer
 ```
 
-Do not promote desktop `Render_t`, `DoomCanvas_t`, pointer-heavy map structs or legacy resource ownership into permanent requirements.
+Do not promote desktop `Render_t`, `DoomCanvas_t`, pointer-heavy map structs, map-wide strings/texels, runtime ZIP access or legacy resource ownership into permanent requirements.
 
 ## Current recovery point
 
 Latest merged hardware baseline:
 
 ```text
-PR   = #48
-main = 0c8a52549ebb436139f7cd5c8b4ee63bdd175907
+PR   = #49
+main = 6e43ef059db52783b7264e84579216cb2572a1e2
 ```
 
-Current merge-ready branch:
+Active branch:
 
 ```text
-agent/esp32-map1-native-opcode-exec1
-hardware-tested firmware content = 3e07f1b0c4c6f609da8008f20dc667c7bbe58af6
-status = REAL-CYD HARDWARE PASS; FIRST REAL NATIVE OPCODE EXECUTED; MERGE-READY
+agent/esp32-map1-native-ui-intent
+hardware-affecting head = 608449f427baf65f036ca7e00e424cb39938f86e
+status = IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
 ```
 
-Hardware-proven fingerprints now include:
+Hardware-proven fingerprints entering this milestone:
 
 ```text
 arenaFNV       = c3882516
@@ -95,43 +96,37 @@ Persistent native map/world/script heap remains:
 15252 B
 ```
 
-The opcode executor adds **0 persistent bytes**.
+The current candidate adds **0 persistent bytes**.
 
-First true native script side effect:
+First true native script side effect already validated:
 
 ```text
-real command #50
-EV_NEXTSTATE
-arg1=00000702 arg2=00000100
+real command #50 / EV_NEXTSTATE
  -> target tile 226 / event 16
  -> state 0 -> 1
- -> scriptFNV temporary 9b636dec
- -> rollback to f9e3d9df
+ -> rollback to scriptFNV=f9e3d9df
 ```
 
-Integrity remained exact:
+Current candidate now interprets the next measured real family without applying legacy side effects:
 
 ```text
-heap8       = 68828 -> 68828
-largest8    = 36852 -> 36852
-frameFNV    = 10f53ffb -> 10f53ffb
-arenaFNV    = c3882516 -> c3882516
-mapStateFNV = cd99b98e -> cd99b98e
-scriptFNV   = f9e3d9df -> f9e3d9df
-entities    = 0
-monsters    = 0
-ST_PLAYING  = no
+8  EV_DIALOG        -> DIALOG intent + Back + pause/resume
+24 EV_FORCEMESSAGE  -> FORCE_MESSAGE intent; empty means clear
+26 EV_DIALOGNOBACK  -> DIALOG intent without Back + pause/resume
+40 EV_NOTE          -> APPEND_NOTE intent + "||" semantic
 ```
+
+Strings remain in `/DoomRPG-ESP32.pak`; `EspMapStrings_getRef()` exposes only bounded source spans from the compact resident offset table.
 
 ## Milestone workflow
 
 1. Branch from exact latest hardware-validated `main`.
-2. Keep one bounded objective per branch.
-3. Fail closed before unimplemented or unsafe ownership.
-4. Validate normal optimized firmware on the real classic CYD.
-5. Preserve exact RAM/fingerprint/hardware evidence.
-6. Mark merge-ready only after implementation + hardware + docs agree.
+2. Keep one coherent bounded objective per branch.
+3. Recover exact legacy semantics before designing native ownership.
+4. Fail closed before unimplemented or unsafe effects.
+5. Validate normal optimized firmware on the real classic CYD.
+6. Preserve exact RAM/fingerprint/hardware evidence.
+7. Mark merge-ready only after implementation + hardware + docs agree.
+8. Keep all post-hardware commits docs-only unless another flash is performed.
 
-After merge, the next bounded milestone should classify the remaining real opcode families and add only one coherent native effect family at a time. Prefer small state/intent ownership before entities or renderer mutation.
-
-See [`PORTING_STATUS.md`](PORTING_STATUS.md) and [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
+See [`PORTING_STATUS.md`](PORTING_STATUS.md), [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md), and merged [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
