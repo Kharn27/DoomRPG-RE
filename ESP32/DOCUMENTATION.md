@@ -32,9 +32,9 @@ Merged milestones:
 | [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md) | 81-byte mutable script state + side-effect-free Game_runEvent filtering | #48 | `0c8a52549ebb436139f7cd5c8b4ee63bdd175907` |
 | [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) | full MAP_INTRO opcode inventory + first real native EV_NEXTSTATE execution/rollback | #49 | `6e43ef059db52783b7264e84579216cb2572a1e2` |
 
-Current active milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md) — allocation-free native string spans plus real `EV_DIALOG` / `EV_FORCEMESSAGE` / `EV_DIALOGNOBACK` / `EV_NOTE` translation to compact caller-owned intents; no legacy DoomCanvas/Hud/Player mutation; old state executor remains fail-closed for UI opcodes; **AWAITING REAL-CYD HARDWARE PASS**.
+- [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md) — allocation-free reconstruction of all 94 string spans plus translation of all 94 real `EV_DIALOG` / `EV_FORCEMESSAGE` / `EV_DIALOGNOBACK` / `EV_NOTE` commands to caller-owned native intents. Real CYD: 76 dialog + 3 force + 8 no-back + 7 note, 84 pause/resume intents, `spanFNV=713188eb`, `intentFNV=7fdd6a79`, 1 ms probe, 0 persistent bytes, zero heap/largest/frame/arena/map/script/notebook drift, no legacy UI mutation; **MERGE-READY**.
 
 ## Architecture rule
 
@@ -52,6 +52,7 @@ Doom RPG data / recovered behavior
  -> side-effect-free event filtering
  -> fail-closed native opcode execution
  -> compact native effect intents/owners
+ -> bounded pack-backed string/text access
  -> ESP32-native gameplay + renderer
 ```
 
@@ -66,15 +67,15 @@ PR   = #49
 main = 6e43ef059db52783b7264e84579216cb2572a1e2
 ```
 
-Active branch:
+Current merge-ready branch:
 
 ```text
 agent/esp32-map1-native-ui-intent
-hardware-affecting head = 045b219dd7d6d06630eb446424e8d3d3fa3d249e
-status = IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
+hardware-tested firmware content = 045b219dd7d6d06630eb446424e8d3d3fa3d249e
+status = REAL-CYD HARDWARE PASS; MERGE-READY
 ```
 
-Hardware-proven fingerprints entering this milestone:
+Hardware-proven fingerprints now include:
 
 ```text
 arenaFNV       = c3882516
@@ -88,6 +89,8 @@ filterFNV      = a5923b21
 resumeFNV      = b98452da
 opcodeAuditFNV = 6f28df45
 firstExecFNV   = 646b565c
+stringSpanFNV  = 713188eb
+uiIntentFNV    = 7fdd6a79
 ```
 
 Persistent native map/world/script heap remains:
@@ -96,27 +99,46 @@ Persistent native map/world/script heap remains:
 15252 B
 ```
 
-The current candidate adds **0 persistent bytes**.
+The string-span and UI-intent layers add **0 persistent bytes**.
 
-First true native script side effect already validated:
-
-```text
-real command #50 / EV_NEXTSTATE
- -> target tile 226 / event 16
- -> state 0 -> 1
- -> rollback to scriptFNV=f9e3d9df
-```
-
-Current candidate now interprets the next measured real family without applying legacy side effects:
+String corpus hardware proof:
 
 ```text
-8  EV_DIALOG        -> DIALOG intent + Back + pause/resume
-24 EV_FORCEMESSAGE  -> FORCE_MESSAGE intent + EMPTY_CLEARS semantic
-26 EV_DIALOGNOBACK  -> DIALOG intent without Back + pause/resume
-40 EV_NOTE          -> APPEND_NOTE intent + "||" semantic
+94 strings
+7779 payload bytes
+1 zero-length string
+max payload = 313 B
+first span = 11554
+last span  = 19512 + 7
 ```
 
-Strings remain in `/DoomRPG-ESP32.pak`; `EspMapStrings_getRef()` exposes only bounded source spans from the compact resident offset table.
+UI/string corpus hardware proof:
+
+```text
+94 refs total
+76 EV_DIALOG
+3  EV_FORCEMESSAGE
+8  EV_DIALOGNOBACK
+7  EV_NOTE
+84 dialog pause/resume intents
+94/94 refused by state-mutating executor
+probe = 1 ms
+```
+
+Integrity remained exact:
+
+```text
+heap8       = 68820 -> 68820
+largest8    = 36852 -> 36852
+frameFNV    = b8b39f0f -> b8b39f0f
+arenaFNV    = c3882516 -> c3882516
+mapStateFNV = cd99b98e -> cd99b98e
+scriptFNV   = f9e3d9df -> f9e3d9df
+notebookFNV = 4d7705c5 -> 4d7705c5
+entities    = 0
+monsters    = 0
+ST_PLAYING  = no
+```
 
 ## Milestone workflow
 
@@ -128,5 +150,7 @@ Strings remain in `/DoomRPG-ESP32.pak`; `EspMapStrings_getRef()` exposes only bo
 6. Preserve exact RAM/fingerprint/hardware evidence.
 7. Mark merge-ready only after implementation + hardware + docs agree.
 8. Keep all post-hardware commits docs-only unless another flash is performed.
+
+After merge, the next bounded milestone should prefer an exact **bounded native string reader over `/DoomRPG-ESP32.pak`**, reading only one resolved string payload into a small caller buffer and validating real text bytes/content without resurrecting `mapStringsIDs[]` or runtime ZIP access.
 
 See [`PORTING_STATUS.md`](PORTING_STATUS.md), [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md), and merged [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
