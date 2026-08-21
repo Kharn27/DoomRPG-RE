@@ -14,13 +14,13 @@ hardware-tested firmware content = f619aefc85402d28c4de6edab5ca32ea1eb514dd
 
 Detailed merged evidence: [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md).
 
-## Current candidate
+## Current merge-ready candidate
 
 ```text
 branch = agent/esp32-map1-native-key-gate
 base   = 03002f79eb03bdcb4c9e430c43e4693dab47e44b
-firmware candidate content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Detailed active milestone: [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md).
@@ -74,29 +74,30 @@ BSP source in native pack
  -> ESP32-native gameplay + renderer
 ```
 
-## Hardware-proven fingerprints through PR #54
+## Hardware-proven fingerprints
 
 ```text
-source BSP FNV     = d5cc751f
-arenaFNV           = c3882516
-decodedFNV         = a426dd18
-mapStateFNV        = cd99b98e
-lookupFNV          = 63430151
-descriptorFNV      = 27115328
-linkageFNV         = 5727902c
-scriptFNV          = f9e3d9df
-filterFNV          = a5923b21
-resumeFNV          = b98452da
-opcodeAuditFNV     = 6f28df45
-firstExecFNV       = 646b565c
-stringSpanFNV      = 713188eb
-uiIntentFNV        = 7fdd6a79
-stringContentFNV   = e995ee51
-statusApplyFNV     = 52b25a5f
-dialogApplyFNV     = d0254f3d
-noteApplyFNV       = 43183162
-notebookContentFNV = 599609e0
-notebookStorageFNV = 75cf54e0
+source BSP FNV       = d5cc751f
+arenaFNV             = c3882516
+decodedFNV           = a426dd18
+mapStateFNV          = cd99b98e
+lookupFNV            = 63430151
+descriptorFNV        = 27115328
+linkageFNV           = 5727902c
+scriptFNV            = f9e3d9df
+filterFNV            = a5923b21
+resumeFNV            = b98452da
+opcodeAuditFNV       = 6f28df45
+firstExecFNV         = 646b565c
+stringSpanFNV        = 713188eb
+uiIntentFNV          = 7fdd6a79
+stringContentFNV     = e995ee51
+statusApplyFNV       = 52b25a5f
+dialogApplyFNV       = d0254f3d
+noteApplyFNV         = 43183162
+notebookContentFNV   = 599609e0
+notebookStorageFNV   = 75cf54e0
+keyGateFNV           = 9ace79cd
 ```
 
 MAP_INTRO `/intro.bsp` / `Entrance`:
@@ -114,15 +115,13 @@ stringData   = 7779 B
 maxString    = 313 B
 ```
 
-Real MAP_INTRO opcode IDs remain:
+Real opcode IDs:
 
 ```text
 2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
 ## Persistent native RAM ownership
-
-Hardware-proven persistent heap ownership remains:
 
 ```text
 immutable arena       = 14112 B actual heap
@@ -131,36 +130,26 @@ mutable script state  =   100 B actual heap
 opcode executor       =     0 B persistent heap
 string spans/intents  =     0 B persistent heap
 bounded string reader =     0 B persistent heap
-effect-owner probes   =     0 B persistent heap
+effect/gate probes    =     0 B persistent heap
 -----------------------------------------
 current proven total  = 15252 B
 largest8              = 36852 preserved
 ```
 
-Caller-owned value types already hardware-proven:
+Caller-owned values proven on classic CYD:
 
 ```text
 EspMapStatusMessageState =   8 B
 EspMapDialogOwnerState   =  12 B
 EspMapNotebookState      = 514 B
+EspMapKeyGateResult      =  12 B
 ```
 
-Current candidate adds only a caller-local result type:
+CHECK_KEY has no persistent owner and no persistent heap.
 
-```text
-EspMapKeyGateResult = 12 B expected
-persistent owner    = none
-persistent heap     = 0 B expected
-pack I/O            = none
-```
+## Hardware-proven native execution/effect boundary
 
-A future permanent gameplay/player owner embedding the notebook must explicitly account its 514 bytes. The current NOTE and gate probes keep all such values on stack.
-
-Measured legacy structural allocation was `55341 B`; hardware-proven native structural/script heap ownership remains `40089 B` smaller (~72.4%).
-
-## Hardware-proven state/UI/player boundary
-
-State-only native opcode executor still supports only:
+State-only opcode executor still supports only:
 
 ```text
 11 EV_CHANGESTATE
@@ -168,21 +157,7 @@ State-only native opcode executor still supports only:
 20 EV_PREVSTATE
 ```
 
-All other opcodes remain fail-closed there.
-
-Hardware-proven UI/string corpus:
-
-```text
-EV_DIALOG       = 76
-EV_FORCEMESSAGE = 3
-EV_DIALOGNOBACK = 8
-EV_NOTE         = 7
-total UI refs   = 94
-pause intents   = 84
-uiIntentFNV     = 7fdd6a79
-```
-
-Hardware-proven owners:
+Hardware-proven effect/player families:
 
 ```text
 FORCEMESSAGE:
@@ -195,136 +170,77 @@ DIALOG/NOBACK:
 NOTE:
   refs=7 sourceBytes=256 finalLen=270 ownerBytes=514
   noteApplyFNV=43183162 contentFNV=599609e0 storageFNV=75cf54e0
+
+CHECK_KEY:
+  refs=1 green=0 yellow=1 blue=0 red=0
+  scenarios=16 pass=8 blocked=8 resultBytes=12
+  stateExecRefused=1 keyGateFNV=9ace79cd
 ```
 
-Latest NOTE firmware integrity:
+Canonical CHECK_KEY sample:
 
 ```text
-heap8             = 68772 -> 68772
+cmd38 event11 off0 key=1 mask=02 arg2=00000100
+missingMessage="Need Yellow Key"
+sound=5065
+saveOffset=current
+```
+
+Truth-table proof:
+
+```text
+perRef=16 passEach=8 blockedEach=8
+messages=4/4
+extraBitsIgnored=1
+PASS effect=none
+BLOCKED effect=message+sound+stop+saveCurrent
+```
+
+Fail-closed hardware proof:
+
+```text
+unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1 nullResult=1
+```
+
+## Current tested-build integrity
+
+CHECK_KEY stage:
+
+```text
+heap8             = 68756 -> 68756
 largest8          = 36852 -> 36852
-frameFNV          = a3e3cc8e -> a3e3cc8e
+frameFNV          = c56f998b -> c56f998b
 arenaFNV          = c3882516 -> c3882516
 mapStateFNV       = cd99b98e -> cd99b98e
 scriptFNV         = f9e3d9df -> f9e3d9df
 legacyNotebookFNV = 4d7705c5 -> 4d7705c5
-PAK transient     = 4364 B, fully recovered
+legacyKeys        = 00000000 -> 00000000
+hudFNV            = 505b1255 -> 505b1255
+persistentBytes   = 0
+pack I/O          = none
 ```
 
-Post-PARK heartbeat on the merged NOTE firmware:
+Preceding NOTE stage on the same firmware:
 
 ```text
-uptime=25893 ms
-heap=134536
-heap8=68772
+heap8             = 68756 -> 68756
+largest8          = 36852 -> 36852
+frameFNV          = c56f998b -> c56f998b
+heapOpen          = 64384
+transientHeapCost = 4372 B
+persistentHeap    = 0 B
+```
+
+Absolute heap/frame values vary slightly between firmware builds. Every stage has exact before/after stability and inherited structural fingerprints remain canonical, so these are build-layout/content differences rather than persistent allocation or framebuffer mutation.
+
+Complete post-PARK heartbeat:
+
+```text
+uptime=25410 ms
+heap=134520
+heap8=68756
 largest8=36852
 all reported subsystems = ready
-```
-
-## Current CHECK_KEY candidate contract
-
-Recovered legacy key mapping:
-
-```text
-arg1=0 -> green  -> mask 0x1 -> "Need Green Key"
-arg1=1 -> yellow -> mask 0x2 -> "Need Yellow Key"
-arg1=2 -> blue   -> mask 0x4 -> "Need Blue Key"
-arg1=3 -> red    -> mask 0x8 -> "Need Red Key"
-```
-
-Exact dynamic behavior:
-
-```text
-required key present:
-  Game_executeEvent legacy return = false
-  script continues
-  Hud/Sound/saveTileEvent = untouched
-
-required key absent:
-  message = Need <Color> Key
-  sound   = 5065
-  Game_executeEvent legacy return = true
-  saveTileEvent = true
-  Game_runEvent saves current command offset + active flags and stops
-```
-
-Permanent API:
-
-```text
-EspMapKeyGate_evaluate(descriptor, commandOffset, keyBits, outResult)
-EspMapKeyGate_message(result)
-```
-
-The evaluator revalidates the descriptor against the immutable runtime, accepts only opcode 41 and key selectors `0..3`, ignores key bits above the low nibble and returns no persistent state.
-
-Expected result ABI:
-
-```text
-source event/global command/source offset
-key index + mask
-sound id
-legacy return bit
-stop-event bit
-save-current-command bit
-sizeof = 12 B
-```
-
-The permanent source depends only on native runtime/event APIs, not on legacy `Player`, `Hud`, `Sound`, `Game`, entity or render structures.
-
-## Current CHECK_KEY hardware probe
-
-The real CHECK_KEY count is intentionally not predeclared. The complete source bytecode is already protected by hardware-proven `opcodeAuditFNV=6f28df45`; this probe will establish family-specific counts on the real CYD.
-
-For each real CHECK_KEY, all sixteen key contexts `0..15` are evaluated. Acceptance requires:
-
-```text
-refs > 0
-color counts sum to refs
-scenarios = refs * 16
-PASS      = refs * 8
-BLOCKED   = refs * 8
-stateExecRefused = refs
-resultBytes = 12
-messages = 4 / 4 exact
-higher key bits ignored
-```
-
-The first real-CYD PASS will establish:
-
-```text
-CHECK_KEY ref count
-green/yellow/blue/red distribution
-first real sample metadata
-keyGateFNV
-new-build absolute heap/framebuffer values
-legacy Player.keys baseline
-Hud witness FNV
-```
-
-Fail-closed set:
-
-```text
-unsupported non-CHECK_KEY command
-bad command offset
-non-canonical descriptor
-NULL descriptor
-NULL result
-```
-
-All non-NULL-result failures must return a zeroed result.
-
-Hardware integrity must preserve:
-
-```text
-heap / largest block / framebuffer
-arena/map/script fingerprints
-legacy notebook FNV 4d7705c5
-legacy Player.keys
-Hud message witness
-Game continuation fields
-pack remains closed
-entities=0
-monsters=0
-ST_PLAYING not reached
 ```
 
 ## Current hardware-proven execution path
@@ -345,7 +261,8 @@ validated intro disposal
  -> real EV_FORCEMESSAGE -> native status owner
  -> real EV_DIALOG/NOBACK -> native pause owner
  -> real EV_NOTE -> bounded native notebook owner
- -> candidate: real EV_CHECK_KEY -> pure native dynamic gate
+ -> real EV_CHECK_KEY -> pure native dynamic gate
+ -> PARK + stable post-PARK heartbeat
 ```
 
 Still forbidden:
@@ -365,7 +282,7 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Remaining MAP_INTRO families after current candidate
+## Remaining MAP_INTRO families
 
 Not yet owned/executed natively:
 
@@ -381,20 +298,20 @@ Not yet owned/executed natively:
 27 EV_SAVEGAME
 ```
 
-PASSWORD is still a bounded UI/input candidate. SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE cross into the first explicit world/render overlays. CHANGEMAP and SAVEGAME remain later boundaries.
+PASSWORD remains a bounded pause/input candidate. SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE cross into the first explicit world/render overlays. CHANGEMAP and SAVEGAME remain larger later boundaries.
 
-## Current validation target
+## Merge recommendation
 
-Build/flash normal optimized:
+**MERGE `agent/esp32-map1-native-key-gate`.**
+
+Hardware-tested firmware content:
 
 ```text
-esp32-cyd
+3b4844e8fa5d38d522e1adc70ffac646978f130d
 ```
 
-from `agent/esp32-map1-native-key-gate` and capture `[MAPKEY]` / `[MAPKEYPROBE]` plus a later stable `[ALIVE]` heartbeat.
+All commits after that firmware-bearing SHA must remain documentation-only unless another flash is performed.
 
-No CI status is published for firmware candidate `3b4844e8fa5d38d522e1adc70ffac646978f130d`. Do not mark merge-ready until the real classic CYD supplies the PASS.
+## Next bounded milestone after merge
 
-## Next bounded milestone after PASS + merge
-
-Reread the then-current repository, recovery docs, merged CHECK_KEY milestone and exact remaining legacy behavior. Do not pre-authorize PASSWORD or a world-mutation family before that recovery.
+Do not preselect it. Reread the then-current repository, `PORTING_STATUS.md`, merged CHECK_KEY milestone and exact remaining MAP_INTRO legacy behavior before choosing the next coherent boundary.
