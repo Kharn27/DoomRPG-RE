@@ -2,35 +2,35 @@
 
 This file is the **authoritative current recovery point** for the classic ESP32-2432S028R Doom RPG port.
 
-Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOCUMENTATION.md) for the documentation index, and milestone documents for detailed hardware evidence.
+Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOCUMENTATION.md) for the documentation index, and milestone archives for detailed hardware evidence.
 
 ## Latest merged hardware baseline
 
 ```text
-PR   = #50 — allocation-free native string spans + UI intents
-main = 9a5e8ade361180d220f2b3614a443e5efb0d27bd
+PR   = #51 — bounded native map string reader
+main = 526640b12d978fdbe9c8a9239c37db2fca95cddd
 ```
 
-Merged hardware-tested firmware content for PR #50:
+Hardware-tested firmware content merged through PR #51:
 
 ```text
-045b219dd7d6d06630eb446424e8d3d3fa3d249e
+d13d5eb13c4657d5ec5c16fd82939cfc38989c86
 ```
 
-Detailed merged evidence: [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md).
+Detailed merged evidence: [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md).
 
 ## Current merge-ready candidate
 
 ```text
-branch = agent/esp32-map1-native-string-reader
-base   = 9a5e8ade361180d220f2b3614a443e5efb0d27bd
-hardware-tested firmware content = d13d5eb13c4657d5ec5c16fd82939cfc38989c86
+branch = agent/esp32-map1-native-force-message-owner
+base   = 526640b12d978fdbe9c8a9239c37db2fca95cddd
+hardware-tested firmware content = d782681c3cd267b9f16c290a593c1b6e5b34df1c
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Detailed active milestone: [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md).
+Detailed active milestone: [`MAP1_NATIVE_STATUS_MESSAGE.md`](MAP1_NATIVE_STATUS_MESSAGE.md).
 
-The bounded native string reader passed the full normal `esp32-cyd` real-CYD probe and three post-PARK heartbeats. All commits after the hardware-tested firmware content SHA must remain documentation-only unless another flash is performed.
+The candidate consumes only the three real `EV_FORCEMESSAGE` intents into a compact caller-owned native status-message ref state. It does not mutate legacy `Hud`, world/entities/rendering or enter gameplay.
 
 ## Permanent target / ownership
 
@@ -74,6 +74,7 @@ BSP source in native pack
  -> compact native UI/player intents
  -> bounded pack-backed one-string reader
  -> small explicit native text/effect owners
+ -> native event/script loop
  -> ESP32-native gameplay + renderer
 ```
 
@@ -95,6 +96,7 @@ firstExecFNV     = 646b565c
 stringSpanFNV    = 713188eb
 uiIntentFNV      = 7fdd6a79
 stringContentFNV = e995ee51
+statusApplyFNV   = 52b25a5f
 ```
 
 MAP_INTRO `/intro.bsp` / `Entrance`:
@@ -112,33 +114,26 @@ stringData   = 7779 B
 maxString    = 313 B
 ```
 
-Event/bytecode topology:
+## Persistent native RAM ownership
 
-```text
-93 event tiles sorted + unique
-265 command refs = 265 unique
-0 overlaps / 0 gaps
-command count range = 1..14
-max command end = 265
-all initial event states = 0
-event flag values = {0,1}
-```
-
-Persistent native RAM measured on hardware:
+Hardware-proven persistent heap ownership remains:
 
 ```text
 immutable arena       = 14112 B actual heap
 mutable tile state    =  1040 B actual heap
 mutable script state  =   100 B actual heap
-opcode executor       =     0 B persistent
-string spans/intents  =     0 B persistent
-bounded string reader =     0 B persistent
+opcode executor       =     0 B persistent heap
+string spans/intents  =     0 B persistent heap
+bounded string reader =     0 B persistent heap
+status owner probe    =     0 B persistent heap
 -----------------------------------------
 current proven total  = 15252 B
 largest8              = 36852 preserved
 ```
 
-Measured legacy structural allocation was `55341 B`; native ownership remains `40089 B` smaller (~72.4%).
+The new `EspMapStatusMessageState` is an **8-byte caller-owned value type**, not a heap allocation in this milestone. It stores no copied text. A future permanent gameplay/HUD owner embedding that value must account those 8 bytes explicitly.
+
+Measured legacy structural allocation was `55341 B`; native structural/script heap ownership remains `40089 B` smaller (~72.4%).
 
 ## Side-effect-free event filter — hardware validated
 
@@ -153,7 +148,7 @@ flagsMismatch    = 20816
 blockInputEvents = 8
 filterFNV        = a5923b21
 resumeFNV        = b98452da
-probe elapsed    = 1410 ms on current reader firmware
+probe elapsed    = 1411 ms on current owner firmware
 ```
 
 Script-state ownership proof:
@@ -207,17 +202,10 @@ mutated        = yes
 execFNV        = 646b565c
 ```
 
-Rollback:
+Rollback remains exact:
 
 ```text
 scriptFNV f9e3d9df -> 9b636dec -> f9e3d9df
-```
-
-Fail-closed proofs:
-
-```text
-real command 0 / EV_CLOSELINE -> UNSUPPORTED, no mutation
-malformed CHANGESTATE state 16 -> refused, no mutation
 ```
 
 ## Native UI/string intents — hardware validated
@@ -239,19 +227,6 @@ EspMapUiIntent_supports()
 EspMapUiIntent_build()
 ```
 
-String span proof:
-
-```text
-strings         = 94
-payload bytes   = 7779
-zero-length     = 1
-max length      = 313
-first payload   = 11554
-last payload    = 19512 + 7
-spanFNV         = 713188eb
-persistentBytes = 0
-```
-
 Real UI corpus:
 
 ```text
@@ -265,10 +240,7 @@ force-empty semantics = 3
 zero-length force     = 2
 state-exec refused    = 94
 intentFNV             = 7fdd6a79
-persistentBytes       = 0
 ```
-
-The state-mutating opcode executor refused all 94 UI commands as `UNSUPPORTED`, preserving strict effect-family separation.
 
 ## Bounded native string reader — hardware validated
 
@@ -278,19 +250,7 @@ Permanent API:
 EspMapStrings_read(sourceEntry, ref, destination, capacity, outLength)
 ```
 
-Contract:
-
-```text
-current source size/CRC must match
-ref must equal canonical resolved ref
-capacity >= ref.length + 1
-read exactly one payload from /DoomRPG-ESP32.pak
-synthesize trailing C NUL
-caller owns the buffer
-0 persistent bytes
-```
-
-Real MAP_INTRO content sweep:
+Real content sweep:
 
 ```text
 strings          = 94
@@ -304,10 +264,9 @@ guards           = 94 / 94
 packPayloadReads = 93
 spanFNV          = 713188eb
 contentFNV       = e995ee51
-elapsed          = 41 ms
 ```
 
-Canonical fixture payload FNVs:
+Canonical payload fingerprints:
 
 ```text
 string 1  / FORCE_MESSAGE = f6da01bb
@@ -316,57 +275,103 @@ string 30 / DIALOGNOBACK  = 3692ac94
 string 85 / NOTE          = ee639dc1
 ```
 
-Fail-closed hardware proof:
+## Native FORCE_MESSAGE status owner — hardware validated
+
+Recovered ownership semantics:
 
 ```text
-shortBuffer = 1
+non-empty first C byte -> active owner keeps canonical EspMapStringRef
+empty first C byte     -> owner cleared
+```
+
+Real MAP_INTRO execution proof:
+
+```text
+EV_FORCEMESSAGE refs = 3
+set refs             = 1
+clear refs           = 2
+set->clear transition= 1
+owner value size     = 8 B
+persistent text copy = 0 B
+state executor refused = 3 / 3
+statusApplyFNV       = 52b25a5f
+```
+
+Canonical set:
+
+```text
+cmd4 event2 off0 string1@11569+14 payloadFNV=f6da01bb
+```
+
+Canonical first clear:
+
+```text
+cmd5 event2 off1 string2@11585+0
+```
+
+Atomic fail-closed hardware proof:
+
+```text
+unsupported = 1
+badFlags    = 1
 badRef      = 1
-nullRef     = 1
+shortBuffer = 1
+nullIntent  = 1
 closedPack  = 1
+ownerAtomic = yes
 ```
 
-Transient PAK-open cost and exact recovery:
+Transient native-pack cost on current owner firmware:
 
 ```text
-heap before open    = 68804 B
-heap while open     = 64440 B
-transient heap cost = 4364 B
-largest while open  = 36852 B
-persistentBytes     = 0 B
-
-heap8        = 68804 -> 68804
-largest8     = 36852 -> 36852
-frameFNV     = 805df09e -> 805df09e
-arenaFNV     = c3882516 -> c3882516
-mapStateFNV  = cd99b98e -> cd99b98e
-scriptFNV    = f9e3d9df -> f9e3d9df
-notebookFNV  = 4d7705c5 -> 4d7705c5
+heap8 before/open/after = 68796 / 64432 / 68796
+PAK-open transient cost = 4364 B
+largest8                = 36852 preserved
+elapsed                 = 37 ms
+heapPersistentBytes     = 0
 ```
+
+Exact owner-stage integrity:
+
+```text
+frameFNV    = faa62417 -> faa62417
+arenaFNV    = c3882516 -> c3882516
+mapStateFNV = cd99b98e -> cd99b98e
+scriptFNV   = f9e3d9df -> f9e3d9df
+notebookFNV = 4d7705c5 -> 4d7705c5
+legacy Hud  = unchanged
+entities    = 0
+monsters    = 0
+ST_PLAYING  = no
+```
+
+The previous merged reader firmware reported `heap8=68804` and `frameFNV=805df09e`; this candidate build reports `68796` and `faa62417`. Every current stage has zero before/after drift and every inherited native fingerprint remains canonical, so these are build-to-build layout/content differences rather than owner allocations or render mutations.
 
 Final PARK:
 
 ```text
-nativeStringReader = yes
-persistentBytes    = 0
-legacyUiMutation   = no
-worldMutation      = no
-framebufferMutation= no
-entities           = 0
-monsters           = 0
-ST_PLAYING         = no
+nativeStatusMessageOwner = yes
+ownerValueBytes          = 8
+textCopyBytes            = 0
+legacyHudMutation        = no
+worldMutation            = no
+framebufferMutation      = no
+entities                 = 0
+monsters                 = 0
+ST_PLAYING                = no
 ```
 
-Three post-PARK heartbeats remained stable:
+Post-PARK heartbeat from the same tested firmware:
 
 ```text
-uptime=140113 ms heap=134568 heap8=68804 largest8=36852
-uptime=145114 ms heap=134568 heap8=68804 largest8=36852
-uptime=150115 ms heap=134568 heap8=68804 largest8=36852
+uptime=210115 ms
+heap=134560
+heap8=68796
+largest8=36852
+all reported subsystems = ready
 ```
 
-All reported subsystems stayed `ready`.
-
-The absolute heap8 moved from `68820` on the previous UI-intent build to `68804` on this build, and the framebuffer fingerprint moved from `b8b39f0f` to `805df09e`. The reader stage itself has exact zero drift and all inherited native fingerprints remain canonical, so these are build-to-build differences rather than reader allocations/mutations.
+A later `[ALIVE] uptime=215116 ms` marker was present but truncated in the supplied capture; it is not used as acceptance evidence.
 
 ## Current hardware-proven execution path
 
@@ -381,17 +386,18 @@ validated intro disposal
  -> 81 B script-state build
  -> exhaustive event-filter proof
  -> opcode inventory + real EV_NEXTSTATE execution/rollback
- -> allocation-free 94-string span sweep
- -> 94 real UI/string bytecodes -> caller-owned native intents
- -> bounded 94-string native-pack content sweep
- -> PARK + stable post-PARK heartbeats
+ -> allocation-free string-span sweep
+ -> 94 UI/string bytecodes -> native intents
+ -> bounded native-pack string-content sweep
+ -> real EV_FORCEMESSAGE intents -> native status-message owner
+ -> PARK + stable post-PARK heartbeat
 ```
 
 Still forbidden:
 
 ```text
 actual DoomCanvas dialog presentation
-actual Hud mutation
+legacy Hud.statBarMessage mutation from native owner
 actual Player notebook mutation
 full native Game_runEvent execution loop
 world/door/line/sprite mutation
@@ -403,18 +409,26 @@ ST_PLAYING
 
 ## Merge recommendation
 
-**MERGE `agent/esp32-map1-native-string-reader`.**
+**MERGE `agent/esp32-map1-native-force-message-owner`.**
 
 Hardware-tested firmware content:
 
 ```text
-d13d5eb13c4657d5ec5c16fd82939cfc38989c86
+d782681c3cd267b9f16c290a593c1b6e5b34df1c
 ```
 
-All later commits must remain documentation-only unless another flash is performed.
+All commits after that firmware-bearing SHA must remain documentation-only unless another flash is performed.
 
 ## Next bounded milestone after merge
 
-Choose one **small explicit native text/effect owner** consuming the existing `EspMapUiIntent` plus `EspMapStrings_read()` boundary.
+Prefer a compact native `EV_DIALOG` / `EV_DIALOGNOBACK` owner carrying:
 
-Keep it caller-owned/bounded and avoid world/entity/render mutation. Do not reintroduce legacy `DoomCanvas`, `Hud`, `Player`, `mapStringsIDs[]` or runtime ZIP ownership into the permanent architecture.
+```text
+immutable text ref
+Back / no-Back mode
+source event
+resume command offset
+pause-script / skip-turn semantics
+```
+
+Keep actual dialog presentation, legacy `DoomCanvas` mutation, world/entity/render mutation and a full native event loop outside that next boundary.
