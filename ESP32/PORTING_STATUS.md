@@ -7,25 +7,25 @@ Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOC
 ## Latest merged hardware baseline
 
 ```text
-PR   = #52 — native FORCE_MESSAGE status owner
-main = 40b61af5e2115266d4d03dddcc3175850538b0f5
-hardware-tested firmware content = d782681c3cd267b9f16c290a593c1b6e5b34df1c
+PR   = #53 — native DIALOG/NOBACK pause owner
+main = 395418510207bf24ac45ddbb4c4c15db3ddc8998
+hardware-tested firmware content = 85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
 ```
 
-Detailed merged evidence: [`MAP1_NATIVE_STATUS_MESSAGE.md`](MAP1_NATIVE_STATUS_MESSAGE.md).
+Detailed merged evidence: [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md).
 
-## Current merge-ready candidate
+## Current candidate
 
 ```text
-branch = agent/esp32-map1-native-dialog-owner
-base   = 40b61af5e2115266d4d03dddcc3175850538b0f5
-hardware-tested firmware content = 85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-map1-native-notebook-owner
+base   = 395418510207bf24ac45ddbb4c4c15db3ddc8998
+firmware candidate content = f619aefc85402d28c4de6edab5ca32ea1eb514dd
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Detailed active milestone: [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md).
+Detailed active milestone: [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md).
 
-The candidate consumes only real `EV_DIALOG` / `EV_DIALOGNOBACK` intents into a compact caller-owned pause/presentation state. It performs no presentation, no pack I/O, no legacy `DoomCanvas` or `Game_t` continuation mutation, and no world/entity/render mutation.
+The candidate consumes only the seven real `EV_NOTE` intents into a bounded caller-owned native map notebook. It reads individual note strings through the native pack, but does not mutate legacy `Player.NotebookString`, Hud, Game continuation, world/entities/rendering or enter gameplay.
 
 ## Permanent target / ownership
 
@@ -68,12 +68,12 @@ BSP source in native pack
  -> allocation-free native string spans
  -> compact native UI/player intents
  -> bounded pack-backed one-string reader
- -> explicit native effect owners
+ -> explicit native effect/player owners
  -> native event/script loop
  -> ESP32-native gameplay + renderer
 ```
 
-## Hardware-proven fingerprints
+## Hardware-proven fingerprints through PR #53
 
 ```text
 source BSP FNV   = d5cc751f
@@ -127,9 +127,25 @@ current proven total  = 15252 B
 largest8              = 36852 preserved
 ```
 
-`EspMapStatusMessageState` is an 8-byte caller-owned value. `EspMapDialogOwnerState` is a **12-byte caller-owned value**. Neither probe adds persistent heap or persistent copied text. A future permanent gameplay/UI owner embedding these values must account them explicitly.
+Caller-owned value types already proven:
 
-Measured legacy structural allocation was `55341 B`; native structural/script heap ownership remains `40089 B` smaller (~72.4%).
+```text
+EspMapStatusMessageState =   8 B
+EspMapDialogOwnerState   =  12 B
+```
+
+Current notebook candidate value type:
+
+```text
+EspMapNotebookState
+ = char text[512]
+ + uint16_t length
+ = 514 B expected on classic ESP32 ABI
+```
+
+Its temporary probe keeps that value on stack and therefore should add 0 persistent heap bytes. A future permanent native player owner embedding it must account the 514 bytes explicitly.
+
+Measured legacy structural allocation was `55341 B`; hardware-proven native structural/script heap ownership remains `40089 B` smaller (~72.4%).
 
 ## Hardware-proven event/UI boundary
 
@@ -167,61 +183,28 @@ contentFNV       = e995ee51
 packPayloadReads = 93
 ```
 
-## Native FORCE_MESSAGE owner — merged hardware baseline
+Canonical payload fingerprints include:
 
 ```text
-refs                  = 3
-set                   = 1
-clear                 = 2
-transition            = 1
-ownerBytes            = 8
-textCopyBytes         = 0
-stateExecRefused      = 3
-statusApplyFNV        = 52b25a5f
+string 1  / FORCE_MESSAGE = f6da01bb
+string 25 / DIALOG        = 84f743cf
+string 30 / DIALOGNOBACK  = 3692ac94
+string 85 / NOTE          = ee639dc1
 ```
 
-Canonical transitions:
+## Native FORCE_MESSAGE owner — hardware validated
 
 ```text
-set   = cmd4 event2 off0 string1@11569+14 payloadFNV=f6da01bb
-clear = cmd5 event2 off1 string2@11585+0
-```
-
-Atomic fail-closed:
-
-```text
-unsupported=1 badFlags=1 badRef=1 shortBuffer=1 nullIntent=1 closedPack=1
-ownerAtomic=yes
+refs             = 3
+set              = 1
+clear            = 2
+ownerBytes       = 8
+textCopyBytes    = 0
+statusApplyFNV   = 52b25a5f
+ownerAtomic      = yes
 ```
 
 ## Native DIALOG/NOBACK pause owner — hardware validated
-
-Recovered legacy behavior:
-
-```text
-EV_DIALOG       -> Back soft-key + pause + skip turn
-EV_DIALOGNOBACK -> no Back soft-key + pause + skip turn
-resume          -> same source event, command offset + 1
-```
-
-Permanent state:
-
-```text
-EspMapDialogOwnerState
- = immutable EspMapStringRef
- + source event
- + source command offset
- + resume command offset
- + Back/pause/skip-turn flags
- + active bit
- = 12 B on classic CYD ABI
-```
-
-No persistent text is copied. No PAK read occurs when capturing the owner because dialog semantics do not branch on text content. A future presenter reads `state.text` through `EspMapStrings_read()`.
-
-The dynamic activation flags corresponding to legacy `tileEventFlags` remain future native event-loop context and are not invented here.
-
-Real-CYD proof:
 
 ```text
 refs             = 84
@@ -236,7 +219,6 @@ textCopyBytes    = 0
 packIO           = no
 persistentHeap   = 0
 dialogApplyFNV   = d0254f3d
-elapsed          = 2 ms
 ```
 
 Canonical samples:
@@ -246,76 +228,116 @@ Back   cmd11 event6 off0 resume1 flags07 string25@13558+23
 noBack cmd19 event6 off8 resume9 flags06 string30@13679+14
 ```
 
-Atomic fail-closed hardware proof:
+Atomic fail-closed proof:
 
 ```text
-unsupported = 1
-badFlags    = 1
-badKind     = 1
-badRef      = 1
-badEvent    = 1
-badGlobal   = 1
-badResume   = 1
-nullIntent  = 1
-ownerAtomic = yes
-reset       = 1
+unsupported=1 badFlags=1 badKind=1 badRef=1 badEvent=1 badGlobal=1 badResume=1 nullIntent=1
+ownerAtomic=yes reset=1
 ```
 
-The permanent owner revalidates the source event/descriptor/command, global command index, opcode args, canonical string ref and exact `resume=source+1` before committing.
-
-## Current tested-build RAM / integrity
-
-DIALOG owner stage:
+Latest hardware-tested build integrity (dialog firmware):
 
 ```text
-heap8        = 68780 -> 68780
-largest8     = 36852 -> 36852
-frameFNV     = ef79123a -> ef79123a
-arenaFNV     = c3882516 -> c3882516
-mapStateFNV  = cd99b98e -> cd99b98e
-scriptFNV    = f9e3d9df -> f9e3d9df
-notebookFNV  = 4d7705c5 -> 4d7705c5
-packIO       = no
-persistentHeapBytes = 0
+heap8       = 68780 -> 68780
+largest8    = 36852 -> 36852
+frameFNV    = ef79123a -> ef79123a
+arenaFNV    = c3882516 -> c3882516
+mapStateFNV = cd99b98e -> cd99b98e
+scriptFNV   = f9e3d9df -> f9e3d9df
+notebookFNV = 4d7705c5 -> 4d7705c5
+packIO      = no
 ```
 
-The inherited bounded reader / FORCE_MESSAGE stages on the same build also recovered exactly around the native-pack open:
+A complete post-PARK heartbeat remained stable at `heap=134544`, `heap8=68780`, `largest8=36852`.
+
+## Current NOTE notebook candidate contract
+
+Recovered legacy state:
 
 ```text
-heap8 before/open/after = 68780 / 64416 / 68780
-PAK transient cost      = 4364 B
-largest8                = 36852 preserved
+Player.NotebookString[512]
+reset on Player_setup()
+EV_NOTE appends map string + "||"
+Menu_setNotes later splits on '|'
 ```
 
-The previous merged FORCE_MESSAGE firmware reported `heap8=68796` and `frameFNV=faa62417`; this build reports `68780` and `ef79123a`. Every current stage has zero before/after drift and all inherited structural fingerprints remain canonical, so these are build-to-build layout/content differences rather than persistent owner allocation or render mutation.
-
-Final PARK:
+Permanent native candidate:
 
 ```text
-nativeStatusMessageOwner       = yes
-nativeDialogOwner              = yes
-ownerValueBytes                = 12
-textCopyBytes                  = 0
-legacyDialogMutation           = no
-legacyGameContinuationMutation = no
-worldMutation                  = no
-framebufferMutation            = no
-entities                       = 0
-monsters                       = 0
-ST_PLAYING                      = no
+EspMapNotebookState
+text capacity  = 512 B
+max payload    = 511 B + NUL
+length field   = uint16_t
+owner size     = 514 B expected
+heap allocation= 0
 ```
 
-Complete post-PARK heartbeat from the same tested firmware:
+The native owner performs a deterministic bounded append equivalent to the intended legacy format:
 
 ```text
-uptime=21790 ms
-heap=134544
-heap8=68780
-largest8=36852
-all reported subsystems = ready
+existing text + source C-string + "||"
+truncate at 511 payload bytes
+always terminate with NUL
 ```
 
-A later `[ALIVE] uptime=` line was truncated in the supplied capture and is not required for acceptance.
+It validates NOTE intent provenance and the canonical string ref before reading. State is committed only after the proven `EspMapStrings_read()` succeeds.
+
+Inherited real corpus:
+
+```text
+NOTE refs          = 7
+stateExecRefused   = 7 expected
+separator semantics= 7 expected
+```
+
+Canonical sample:
+
+```text
+cmd103 event40 off8 string85@18964+54 payloadFNV=ee639dc1
+```
+
+The probe additionally proves controlled bounds independent of the corpus:
+
+```text
+empty + sample -> exact trailing "||"
+510-byte payload + sample -> 511-byte payload + NUL
+full 511-byte payload + sample -> unchanged
+```
+
+Expected fail-closed set:
+
+```text
+unsupported DIALOG
+bad NOTE flags
+bad intent kind
+mutated string ref
+bad source event
+bad global command index
+short scratch
+NULL intent
+closed native pack
+```
+
+All must preserve the notebook owner atomically.
+
+Real-CYD validation must establish rather than predeclare:
+
+```text
+noteApplyFNV
+seven-note source byte total
+final notebook length
+final notebook active-content FNV
+final 512-byte storage FNV
+new-build heap/framebuffer absolute values
+```
+
+Legacy `Player.NotebookString` must remain exactly:
+
+```text
+FNV over 512 bytes = 4d7705c5
+```
+
+before and after the new probe.
 
 ## Current hardware-proven execution path
 
@@ -334,7 +356,7 @@ validated intro disposal
  -> bounded native-pack string reader
  -> real EV_FORCEMESSAGE -> native status owner
  -> real EV_DIALOG/NOBACK -> native pause owner
- -> PARK + stable post-PARK heartbeat
+ -> candidate: real EV_NOTE -> bounded native notebook owner
 ```
 
 Still forbidden:
@@ -343,7 +365,8 @@ Still forbidden:
 actual DoomCanvas dialog presentation
 legacy Game continuation mutation by native owner
 legacy Hud mutation
-actual Player notebook mutation
+legacy Player.NotebookString mutation
+actual notes-menu presentation
 full native Game_runEvent execution loop
 world/door/line/sprite mutation
 map transitions
@@ -352,18 +375,18 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Merge recommendation
+## Current validation target
 
-**MERGE `agent/esp32-map1-native-dialog-owner`.**
-
-Hardware-tested firmware content:
+Build/flash the normal optimized environment:
 
 ```text
-85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
+esp32-cyd
 ```
 
-All commits after that firmware-bearing SHA must remain documentation-only unless another flash is performed.
+from `agent/esp32-map1-native-notebook-owner` and capture the `[MAPNOTE]` / `[MAPNOTEPROBE]` family plus a later stable `[ALIVE]` heartbeat.
 
-## Next bounded milestone after merge
+Do not mark this branch merge-ready until the real classic CYD supplies the PASS.
 
-Reread the then-current `main`, `PORTING_STATUS.md`, `DOCUMENTATION.md`, this merged dialog milestone and exact legacy behavior before choosing. `EV_NOTE` is a likely next small explicit owner, but it is not pre-authorized as the next implementation.
+## Next bounded milestone after a PASS + merge
+
+Do not preselect it now. Reread the then-current repository, recovery docs, merged NOTE milestone and exact remaining MAP_INTRO opcode behavior before choosing the next coherent boundary.
