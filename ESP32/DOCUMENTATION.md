@@ -10,7 +10,7 @@ Use [`README.md`](README.md) for build/flash instructions, target hardware, stab
 
 ### `PORTING_STATUS.md` — authoritative current recovery point
 
-Use [`PORTING_STATUS.md`](PORTING_STATUS.md) when resuming development. It owns the latest merged baseline, active branch, exact current RAM/state boundary, current native runtime/access/state/event/descriptor contracts and next bounded milestone.
+Use [`PORTING_STATUS.md`](PORTING_STATUS.md) when resuming development. It owns the latest merged baseline, active branch, exact current RAM/state boundary, current native runtime/access/state/event/descriptor/script/filter contracts and next bounded milestone.
 
 The older full recovery catalog remains preserved unchanged at [`archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md`](archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md).
 
@@ -26,16 +26,17 @@ Merged milestones:
 | [`INTRO_INPUT.md`](INTRO_INPUT.md) | bounded More/Continue progression | #39 | `7ba68955a9b0979924c5e759736fb483589be744` |
 | [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md) | bounded intro teardown + RAM recovery | #41 | `897e982f4b37039d984b13265beaa68a83dce98b` |
 | [`MAP1_STRUCTURAL_LOAD.md`](MAP1_STRUCTURAL_LOAD.md) | MAP_INTRO legacy refusal + native BSP reader/offset/resource/14,095 B plan | #42 | `c71ac1fb07c2e281bc3f8a70c102dd22c7b9300e` |
-| [`MAP1_NATIVE_RUNTIME.md`](MAP1_NATIVE_RUNTIME.md) | persistent 14,095-byte native arena; 14,112 B actual heap cost, 17 B overhead, `arenaFNV=c3882516` | #43 | `503fdd66fae625a45446fb4ea0853abc71d7dda3` |
-| [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md) | allocation-free native indexed access; full real-CYD semantic sweep, `decodedFNV=a426dd18`, 3–4 ms, zero drift | #44 | `ddcf19e6166f210a6f63fec1c608234ee3e253ea` |
-| [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md) | first mutable native world state; 1,024-byte tile payload, 1,040 B actual heap, `stateFNV=cd99b98e`, exact entrance/event topology | #45 | `feec8a7fcb839dbd9f6de708f56f26b69a1e79e9` |
-| [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md) | allocation-free tile -> event lookup; 93/931 exhaustive hit/miss proof, `lookupFNV=63430151`, 5 ms, zero drift | #46 | `438cffabaaaaa3dc3b45486f56eacec1a047edcf` |
+| [`MAP1_NATIVE_RUNTIME.md`](MAP1_NATIVE_RUNTIME.md) | persistent 14,095-byte native arena; 14,112 B actual heap cost, `arenaFNV=c3882516` | #43 | `503fdd66fae625a45446fb4ea0853abc71d7dda3` |
+| [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md) | allocation-free native indexed access; full real-CYD semantic sweep, `decodedFNV=a426dd18` | #44 | `ddcf19e6166f210a6f63fec1c608234ee3e253ea` |
+| [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md) | first mutable native world state; 1,024-byte tile payload, 1,040 B actual heap, `stateFNV=cd99b98e` | #45 | `feec8a7fcb839dbd9f6de708f56f26b69a1e79e9` |
+| [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md) | allocation-free tile -> event lookup; 93/931 hit/miss proof, `lookupFNV=63430151` | #46 | `438cffabaaaaa3dc3b45486f56eacec1a047edcf` |
+| [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) | read-only event descriptor + exact bytecode linkage; `descriptorFNV=27115328`, `linkageFNV=5727902c`, all 265 commands partitioned once | #47 | `a3e629ba0be6b4dcc6329b17f18a0c3ca9828958` |
 
 The pre-final MAP_INTRO structural document remains preserved at [`archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md`](archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md).
 
 Current merge-ready milestone:
 
-- [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) — allocation-free read-only event bit decoding plus exact linkage to compact `EspMapByteCode`; real-CYD `descriptorFNV=27115328`, `linkageFNV=5727902c`; all 265 bytecodes partitioned exactly once across 93 events; 0 overlaps, 0 gaps, 2 ms, zero drift; **MERGE-READY**.
+- [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md) — compact 81-byte mutable script-state overlay plus exact side-effect-free `Game_runEvent()` eligibility filtering; real-CYD 142,848 contexts / 407,040 command evaluations, `filterFNV=a5923b21`, `resumeFNV=b98452da`, reversible `scriptFNV=f9e3d9df -> 99003167 -> f9e3d9df`; actual script heap 100 B; filter persistent cost 0 B; zero largest/frame/arena/map-state drift; **MERGE-READY**.
 
 After merge, add its PR/merge SHA to the merged-milestone table and treat the document as historical evidence except for archival metadata corrections.
 
@@ -54,10 +55,12 @@ Doom RPG data / recovered behavior
         -> ESP32-native parsers
         -> compact immutable native map base
         -> allocation-free native accessors
-        -> small explicit mutable native state
+        -> small explicit mutable native spatial state
         -> allocation-free native event lookup
         -> read-only event descriptor / bytecode linkage
-        -> side-effect-free event eligibility + current-state overlay
+        -> compact mutable native script state
+        -> side-effect-free event eligibility filter
+        -> bounded fail-closed opcode execution
         -> ESP32-native gameplay + renderer
 ```
 
@@ -77,7 +80,7 @@ Do not delete unique hardware measurements merely to shorten documentation. Fail
 | Stable architecture | yes | concise invariants | milestone detail |
 | Latest merged/candidate SHA | link | **authoritative** | historical base/merge SHA |
 | Current safe RAM/state boundary | summary | **authoritative** | historical boundary |
-| Current native runtime/access/state/event/descriptor contracts | concise | **authoritative** | detailed proof |
+| Current native runtime/access/state/event/script/filter contracts | concise | **authoritative** | detailed proof |
 | Full Serial evidence | no | selected values | yes |
 | Rejected approaches | concise if recovery-relevant | concise | detailed |
 | Next bounded milestone | link | **authoritative** | historical context only |
@@ -99,19 +102,18 @@ Do not delete unique hardware measurements merely to shorten documentation. Fail
 Latest merged hardware baseline:
 
 ```text
-PR   = #46 — allocation-free native MAP_INTRO tile event lookup
-main = 438cffabaaaaa3dc3b45486f56eacec1a047edcf
+PR   = #47 — native MAP_INTRO event descriptor / bytecode linkage
+main = a3e629ba0be6b4dcc6329b17f18a0c3ca9828958
 ```
 
 Current merge-ready branch:
 
 ```text
-branch = agent/esp32-map1-native-event-descriptor
-hardware-tested code = b3e453baea1ac861c608f0c11b8aaa592f1cc3e5
+branch = agent/esp32-map1-native-event-filter
 status = REAL-CYD HARDWARE PASS; MERGE-READY
 ```
 
-The real CYD now proves five successive native layers:
+The real CYD now proves seven successive native layers:
 
 ```text
 immutable arena
@@ -129,50 +131,66 @@ mutable tile state
 
 tile -> event lookup
   persistent bytes   = 0 B
-  hits/misses        = 93 / 931
   lookupFNV          = 63430151
 
 event descriptor / bytecode linkage
   persistent bytes   = 0 B
   descriptorFNV      = 27115328
   linkageFNV         = 5727902c
-  commandRefs        = 265
-  unique commands    = 265
-  overlaps/gaps      = 0 / 0
-  countRange         = 1..14
-  maxEnd             = 265
-  state values       = {0}
-  flag values        = {0,1}
-  sweep              = 2 ms
+  265 command refs   = 265 unique / 0 overlaps / 0 gaps
+
+mutable script state
+  payload            = 81 B
+  actual heap        = 100 B
+  allocator overhead = 19 B
+  scriptFNV          = f9e3d9df
+  reversible test    = f9e3d9df -> 99003167 -> f9e3d9df
+
+side-effect-free event filter
+  persistent bytes   = 0 B
+  contexts           = 142848
+  evaluations        = 407040
+  eligible           = 4784
+  blocked            = 2048
+  state mismatch     = 379392
+  key mismatch       = 0
+  flags mismatch     = 20816
+  block-input events = 8
+  filterFNV          = a5923b21
+  resumeFNV          = b98452da
+  exhaustive sweep   = 1411 ms
 ```
 
-Combined actual native persistent map/world heap remains:
+Combined actual native persistent map/world/script heap:
 
 ```text
-15152 B
+14112 + 1040 + 100 = 15252 B
 ```
 
 Compared with measured legacy structural allocation:
 
 ```text
-55341 B -> 15152 B
-saved = 40189 B
-reduction ~= 72.6%
+55341 B -> 15252 B
+saved = 40089 B
+reduction ~= 72.4%
 ```
 
 Current integrity boundary:
 
 ```text
-heap8 after state    = 68992 on current build
-largest8             = 36852
-framebuffer drift    = none
-arenaFNV             = c3882516
-stateFNV             = cd99b98e
-legacy runtime       = absent
-entities/monsters    = 0 / 0
-ST_PLAYING           = no
+heap8 after script state = 68844 on current build
+largest8                 = 36852
+framebuffer drift        = none
+arenaFNV                 = c3882516
+map stateFNV             = cd99b98e
+scriptFNV                = f9e3d9df
+filter persistent heap   = 0 B
+legacy runtime           = absent
+script execution         = no
+entities/monsters        = 0 / 0
+ST_PLAYING               = no
 ```
 
-The next bounded milestone after merge is a side-effect-free recovery of `Game_runEvent()` eligibility/filtering semantics, plus a separate mutable current-event-state overlay initialized from descriptor `initialState`. Do not execute commands yet.
+The next bounded milestone after merge is a **native opcode inventory + fail-closed executor-dispatch audit**, followed by one deliberately harmless real execution proof. Do not enable all opcode side effects or enter gameplay in one jump.
 
-See [`PORTING_STATUS.md`](PORTING_STATUS.md), [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md), and merged [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md).
+See [`PORTING_STATUS.md`](PORTING_STATUS.md), [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md), and merged [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md).
