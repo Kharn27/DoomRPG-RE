@@ -7,22 +7,22 @@ Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOC
 ## Latest merged hardware baseline
 
 ```text
-PR   = #48 — native script state + side-effect-free Game_runEvent filtering
-main = 0c8a52549ebb436139f7cd5c8b4ee63bdd175907
+PR   = #49 — first fail-closed native opcode execution
+main = 6e43ef059db52783b7264e84579216cb2572a1e2
 ```
 
 Current candidate:
 
 ```text
-branch = agent/esp32-map1-native-opcode-exec1
-base   = 0c8a52549ebb436139f7cd5c8b4ee63bdd175907
-hardware-tested firmware content = 3e07f1b0c4c6f609da8008f20dc667c7bbe58af6
-status = REAL-CYD HARDWARE PASS; FIRST REAL NATIVE OPCODE EXECUTED + ROLLED BACK; MERGE-READY
+branch = agent/esp32-map1-native-ui-intent
+base   = 6e43ef059db52783b7264e84579216cb2572a1e2
+hardware-affecting head = 608449f427baf65f036ca7e00e424cb39938f86e
+status = NATIVE STRING SPANS + UI INTENT FAMILY IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
 ```
 
-Detailed active milestone: [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
+Detailed active milestone: [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md).
 
-Merged filter evidence: [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md).
+Merged first-execution evidence: [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
 
 ## Permanent target / ownership
 
@@ -44,6 +44,8 @@ Permanent invariants:
 ```text
 shapeData   == NULL
 mediaTexels == NULL
+runtime ZIP dependency = forbidden
+native backing store   = /DoomRPG-ESP32.pak
 DoomRPG-RE desktop engine = executable specification/reference only
 final CYD engine          = ESP32-native ownership
 ```
@@ -51,7 +53,7 @@ final CYD engine          = ESP32-native ownership
 Current native direction:
 
 ```text
-BSP source
+BSP source in native pack
  -> compact immutable EspMapRuntime
  -> allocation-free accessors
  -> mutable EspMapState
@@ -60,7 +62,9 @@ BSP source
  -> mutable EspMapScriptState
  -> side-effect-free event filter
  -> fail-closed native opcode executor
- -> bounded native gameplay effects
+ -> allocation-free native string spans
+ -> compact native UI/player intents
+ -> bounded native gameplay/UI owners
 ```
 
 ## Hardware-proven foundation
@@ -80,24 +84,27 @@ opcodeAuditFNV = 6f28df45
 firstExecFNV   = 646b565c
 ```
 
-MAP_INTRO structure:
+MAP_INTRO `/intro.bsp` / `Entrance`:
 
 ```text
-nodes       = 223
-lines       = 480
-mapSprites  = 344
-events      = 93
-byteCodes   = 265
-strings     = 94
+source bytes = 21823
+CRC32        = 623f34e4
+nodes        = 223
+lines        = 480
+mapSprites   = 344
+events       = 93
+byteCodes    = 265
+strings      = 94
+stringData   = 7779 B
+maxString    = 313 B
 ```
 
 Event/bytecode topology:
 
 ```text
-93 event tiles are sorted + unique
+93 event tiles sorted + unique
 265 command refs = 265 unique
-0 overlaps
-0 gaps
+0 overlaps / 0 gaps
 command count range = 1..14
 max command end = 265
 all initial event states = 0
@@ -116,7 +123,7 @@ current total         = 15252 B
 largest8              = 36852 preserved
 ```
 
-Measured legacy structural allocation was `55341 B`, so the current native foundation remains `40089 B` smaller (~72.4%).
+Measured legacy structural allocation was `55341 B`; native ownership remains `40089 B` smaller (~72.4%).
 
 ## Side-effect-free event filter — hardware validated
 
@@ -134,8 +141,6 @@ resumeFNV        = b98452da
 probe elapsed    = 1411 ms
 ```
 
-Decision accounting is exact. The 1411 ms is exhaustive probe/oracle cost, not runtime event cost.
-
 Script-state ownership proof:
 
 ```text
@@ -147,7 +152,7 @@ mutation test = f9e3d9df -> 99003167 -> f9e3d9df
 
 ## First native opcode execution — hardware validated
 
-Supported first executor family:
+Supported state family:
 
 ```text
 11 EV_CHANGESTATE
@@ -155,38 +160,25 @@ Supported first executor family:
 20 EV_PREVSTATE
 ```
 
-All other opcodes fail closed as `UNSUPPORTED`.
+All other IDs still fail closed in `EspMapOpcodeExecutor_execute()`.
 
-### Real MAP_INTRO opcode corpus
-
-The real CYD audited all 265 compact bytecodes:
-
-```text
-refs         = 265
-unique IDs   = 16
-idMaskLo     = 0d0daf84
-idMaskHi     = 00000300
-outOfRange   = 0
-opcodeAuditFNV = 6f28df45
-```
-
-Exact IDs present:
+Real MAP_INTRO opcode corpus:
 
 ```text
 2, 7, 8, 9, 10, 11, 13, 15,
 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-State-family references:
-
 ```text
-EV_CHANGESTATE = 41
-EV_NEXTSTATE   = 35
-EV_PREVSTATE   = 0
-supported refs = 76
+refs           = 265
+unique IDs     = 16
+opcodeAuditFNV = 6f28df45
+EV_CHANGESTATE = 41 refs
+EV_NEXTSTATE   = 35 refs
+EV_PREVSTATE   = 0 refs
 ```
 
-### First executed real BSP command
+First executed real BSP command:
 
 ```text
 command index  = 50
@@ -195,37 +187,27 @@ arg1           = 00000702
 arg2           = 00000100
 target tile    = 226
 target event   = 16
-prepared state = 0
 state          = 0 -> 1
 mutated        = yes
 execFNV        = 646b565c
 ```
 
-This is the first real Doom RPG opcode executed by the ESP32-native engine.
-
-The effect is confined to `EspMapScriptState`; no immutable BSP/map bytes are changed.
-
-Rollback proof:
+Rollback:
 
 ```text
-scriptFNV initial  = f9e3d9df
-scriptFNV prepared = f9e3d9df
-scriptFNV executed = 9b636dec
-scriptFNV restored = f9e3d9df
-rollback           = yes
+scriptFNV f9e3d9df -> 9b636dec -> f9e3d9df
 ```
 
 Fail-closed proofs:
 
 ```text
-real unsupported sample = command 0 / opcode 16 -> UNSUPPORTED, no mutation
+real command 0 / EV_CLOSELINE -> UNSUPPORTED, no mutation
 malformed CHANGESTATE state 16 -> refused, no mutation
 ```
 
-Hardware integrity across audit + execution + rollback:
+Integrity across first execution:
 
 ```text
-elapsed      = 1 ms
 heap8        = 68828 -> 68828
 largest8     = 36852 -> 36852
 frameFNV     = 10f53ffb -> 10f53ffb
@@ -237,9 +219,74 @@ monsters     = 0
 ST_PLAYING   = no
 ```
 
-Later `[ALIVE]` remained stable at `heap8=68828`, `largest8=36852`.
+## Current candidate — native UI/string intents
 
-## Execution path now proven
+Recovered family:
+
+```text
+8  EV_DIALOG
+24 EV_FORCEMESSAGE
+26 EV_DIALOGNOBACK
+40 EV_NOTE
+```
+
+Legacy behavior requires dialog presentation, forced status-bar text, or notebook mutation. This branch **does not call those legacy owners**.
+
+Permanent allocation-free APIs:
+
+```text
+EspMapStrings_getRef()
+EspMapUiIntent_supports()
+EspMapUiIntent_build()
+```
+
+`EspMapStrings_getRef()` resolves one of the 94 length-prefixed map strings to:
+
+```text
+string index
+BSP source payload offset
+bounded payload length
+```
+
+String bytes remain on `/DoomRPG-ESP32.pak`; no map-wide text allocation is introduced.
+
+UI translation produces caller-owned intents:
+
+```text
+DIALOG          -> string span + Back/no-Back + pause/resume metadata
+FORCE_MESSAGE   -> string span; empty string means clear
+APPEND_NOTE     -> string span + recovered trailing "||" append semantic
+```
+
+The old state-mutating opcode executor remains unchanged and must continue refusing all UI-family bytecodes as `UNSUPPORTED`.
+
+New persistent cost:
+
+```text
+0 B
+```
+
+Real-CYD probe must validate:
+
+```text
+all 94 string spans
+payload sum = 7779 B
+max length = 313 B
+adjacent length-prefix topology
+all real 8/24/26/40 command translations
+first sample of each family
+total/per-opcode reference counts
+pause + empty-clear counts
+spanFNV + intentFNV
+state executor refuses every UI ref
+0 heap/largest/frame/arena/map/script drift
+Player.NotebookString unchanged
+Hud.statBarMessage unchanged
+Game continuation fields unchanged
+entities=0 monsters=0 ST_PLAYING=no
+```
+
+## Current candidate execution path
 
 ```text
 validated intro disposal
@@ -251,40 +298,28 @@ validated intro disposal
  -> descriptor/linkage sweep
  -> 81 B script-state build
  -> exhaustive event-filter proof
- -> full 265-bytecode opcode inventory
- -> ONE real EV_NEXTSTATE native execution
- -> exact state mutation
- -> rollback
+ -> opcode inventory + real EV_NEXTSTATE execution/rollback
+ -> string-span sweep
+ -> real UI/string bytecodes -> native intents only
  -> PARK
 ```
 
 Still forbidden:
 
 ```text
+actual DoomCanvas dialog presentation
+actual Hud mutation
+actual Player notebook mutation
 full native Game_runEvent execution loop
-non-state opcode families
 world/door/line/sprite mutation
-HUD/dialog/sound effects
-player/stat/inventory mutation
-entity/monster activation
 map transitions
+entity/monster activation
 native gameplay rendering
 ST_PLAYING
 ```
 
-## Merge recommendation
+## Next action
 
-**MERGE `agent/esp32-map1-native-opcode-exec1`.**
+Build/flash normal `esp32-cyd` from `agent/esp32-map1-native-ui-intent` and capture the `MAPSTRING`, `MAPUI`, `MAPUIPROBE` block plus a later stable `[ALIVE]` line.
 
-The real CYD has now validated both fail-closed dispatch and one actual reversible Doom RPG opcode execution. Any later commits must remain documentation-only to avoid requiring another flash.
-
-## Next bounded milestone after merge
-
-Use the measured real opcode corpus instead of guessing. Remaining real IDs are:
-
-```text
-2, 7, 8, 9, 10, 13, 15, 16,
-18, 24, 26, 27, 40, 41
-```
-
-Audit their legacy semantics and group them by native ownership requirements. Add one coherent family at a time, preferring effects that can live in small native state/intent objects before touching entities or renderer-owned world mutation. Unsupported IDs continue to fail closed.
+If PASS, lock exact counts/fingerprints/samples in docs and verify all post-test commits are documentation-only before merge.
