@@ -9,22 +9,22 @@ The older full recovery catalog remains preserved in [`archive/PORTING_STATUS_PR
 ## Latest merged hardware baseline
 
 ```text
-PR   = #45 — first native mutable MAP_INTRO tile state
-main = feec8a7fcb839dbd9f6de708f56f26b69a1e79e9
+PR   = #46 — allocation-free native MAP_INTRO tile event lookup
+main = 438cffabaaaaa3dc3b45486f56eacec1a047edcf
 ```
 
 Current candidate:
 
 ```text
-branch = agent/esp32-map1-native-events
-base   = feec8a7fcb839dbd9f6de708f56f26b69a1e79e9
-hardware-tested code = a522c56403ff3269e02e93213b8f7d643bfba0af
-status = REAL-CYD HARDWARE PASS; ALLOCATION-FREE NATIVE TILE EVENT LOOKUP VALIDATED; MERGE-READY
+branch = agent/esp32-map1-native-event-descriptor
+base   = 438cffabaaaaa3dc3b45486f56eacec1a047edcf
+hardware-tested code = b3e453baea1ac861c608f0c11b8aaa592f1cc3e5
+status = REAL-CYD HARDWARE PASS; EVENT DESCRIPTOR/BYTECODE LINKAGE VALIDATED; MERGE-READY
 ```
 
-Detailed active milestone: [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md).
+Detailed active milestone: [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md).
 
-Merged state evidence: [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md).
+Merged event-lookup evidence: [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md).
 
 ## Permanent target / ownership
 
@@ -66,8 +66,9 @@ Doom RPG source data
     -> allocation-free native accessors
     -> explicit mutable EspMapState
     -> allocation-free EspMapEvents tile lookup
-    -> bounded event descriptor / bytecode linkage
-    -> later native gameplay + renderer
+    -> read-only native event descriptor / bytecode linkage
+    -> side-effect-free event eligibility/filtering + mutable event state
+    -> native gameplay + renderer
 ```
 
 ## Current hardware-safe boundary
@@ -105,13 +106,17 @@ native event lookup     = READY + ALLOCATION-FREE
 lookup persistent bytes = 0
 lookupFNV               = 63430151
 
+native descriptors      = READY + ALLOCATION-FREE
+descriptorFNV           = 27115328
+linkageFNV              = 5727902c
+
 combined native heap    = 15152 B
-heap8                   = 69000 on current hardware run
+heap8                   = 68992 on current hardware run
 largest8                = 36852
 ST_PLAYING              = NOT entered
 ```
 
-Absolute `heap8` may move slightly between builds as firmware code grows. The regression contract is exact ownership, measured allocation cost, largest-block integrity, fingerprints and zero drift inside allocation-free stages.
+Absolute `heap8` may move slightly between builds as firmware code grows. Regression is based on ownership, allocation cost, largest-block integrity and fingerprints.
 
 ## MAP_INTRO source reference
 
@@ -183,7 +188,7 @@ largest8               = 36852 preserved
 decodedFNV = a426dd18
 ```
 
-The real CYD swept every node, line, map sprite, event, bytecode, string offset, block cell, plane cell, resource ID and bounds family with zero heap/largest-block/framebuffer drift.
+The real CYD swept every node, line, map sprite, event, bytecode, string offset, block cell, plane cell, resource ID and bounds family with zero drift.
 
 ### Mutable tile state
 
@@ -216,67 +221,113 @@ Combined measured persistent map/world heap:
 15152 B actual heap
 ```
 
-Measured legacy structural allocation was `55341 B`, so current native structure + mutable spatial state saves `40189 B` (~72.6%).
+Measured legacy structural allocation was `55341 B`; current native structure + mutable spatial state saves `40189 B` (~72.6%).
 
 ## Native tile-event lookup — hardware validated
-
-Recovered reference key:
-
-```text
-key = event & 1023
-```
-
-Permanent API:
 
 ```text
 EspMapEvents_findByTile(tile, &eventRef)
 ```
 
-The API performs lower-bound binary search directly over the already resident compact 372-byte event section. No `eventIndexByTile[1024]` or duplicate `Render.tileEvents` ownership exists.
-
-Persistent cost:
+The API lower-bound binary-searches the resident 372-byte event section. No duplicate tile index is allocated.
 
 ```text
-0 B
+persistent cost = 0 B
+events           = 93
+sorted           = yes
+unique tiles     = yes
+first            = 68 / 0 / 00080044
+last             = 968 / 92 / 000c23c8
+queries          = 1024
+hits/misses      = 93 / 931
+elapsed          = 5 ms
+lookupFNV        = 63430151
 ```
 
-Real-CYD topology:
+Hardware integrity:
 
 ```text
-events       = 93
-sorted       = yes
-unique tiles = yes
-first        = tile 68 / index 0 / value 00080044
-last         = tile 968 / index 92 / value 000c23c8
+heap drift     = 0
+largest drift  = 0
+frame drift    = 0
+arenaFNV       = c3882516 unchanged
+stateFNV       = cd99b98e unchanged
 ```
 
-Exhaustive lookup result:
+## Native event descriptor / bytecode linkage — hardware validated
+
+Recovered 32-bit event layout:
 
 ```text
-queries      = 1024
-hits         = 93
-misses       = 931
-stateEvents  = 93 / 93
-elapsed      = 5 ms
-lookupFNV    = 63430151
+bits  0..9   tile
+bits 10..18  first compact command index
+bits 19..24  command count
+bits 25..28  initial event state
+bits 29..31  event flags
 ```
 
-Integrity result:
+Permanent API:
 
 ```text
-heap8      = 69000 -> 69000
+EspMapEvents_describe()
+EspMapEvents_getCommand()
+```
+
+The desktop `* 3` index/count scaling is only a flattened `ID/ARG1/ARG2 int[]` storage artifact; native values are logical `EspMapByteCode` record indexes.
+
+Real-CYD fingerprints:
+
+```text
+descriptorFNV = 27115328
+linkageFNV    = 5727902c
+elapsed       = 2 ms
+persistent    = 0 B
+```
+
+### Exact event -> bytecode topology
+
+```text
+commandRefs = 265
+unique      = 265
+overlaps    = 0
+gaps        = 0
+countRange  = 1..14
+maxEnd      = 265
+```
+
+The 93 event command ranges therefore partition the complete 265-command stream exactly once: every command belongs to one event, there are no holes and no overlaps.
+
+Boundary descriptors:
+
+```text
+first event = tile 68 / index 0 / raw 00080044 / commands 0+1 / state 0 / flags 0
+last event  = tile 968 / index 92 / raw 000c23c8 / commands 264+1 / state 0 / flags 0
+```
+
+Observed masks:
+
+```text
+stateMask = 0001 -> initial states present = {0}
+flagsMask = 03   -> event flag values present = {0,1}
+```
+
+All 93 BSP events start at initial state 0. Later current-state changes belong in a separate mutable overlay; the immutable arena must remain unchanged.
+
+Descriptor-stage integrity:
+
+```text
+heap8      = 68992 -> 68992
 largest8   = 36852 -> 36852
-frameFNV   = b8b39f0f -> b8b39f0f
+frameFNV   = bd237825 -> bd237825
 arenaFNV   = c3882516 -> c3882516
 stateFNV   = cd99b98e -> cd99b98e
+scriptExec = no
 entities   = 0
 monsters   = 0
 ST_PLAYING = no
 ```
 
-Later `[ALIVE]` heartbeats remained stable at `heap8=69000`, `largest8=36852`.
-
-The legacy binary-search ordering assumption is therefore now explicitly proven for MAP_INTRO rather than inherited blindly.
+Later `[ALIVE]` remained stable at `heap8=68992`, `largest8=36852`.
 
 ## Native regression fingerprints
 
@@ -286,9 +337,9 @@ arenaFNV       = c3882516
 decodedFNV     = a426dd18
 stateFNV       = cd99b98e
 lookupFNV      = 63430151
+descriptorFNV  = 27115328
+linkageFNV     = 5727902c
 ```
-
-These protect distinct layers: source, compact physical representation, decoded semantics, mutable spatial state and tile-event resolution.
 
 ## Execution path now proven
 
@@ -299,6 +350,7 @@ validated intro disposal
     -> allocation-free native accessor sweep
     -> 1024-byte native mutable tile-state build
     -> allocation-free 1024-tile event lookup sweep
+    -> allocation-free event descriptor + command-link sweep
     -> PARK
 ```
 
@@ -308,8 +360,10 @@ Still absent:
 shapeData/mediaTexels
 complete raw BSP allocation
 legacy Render_beginLoadMapData()
-legacy Render.tileEvents ownership
-native event/bytecode execution
+legacy Render.tileEvents/mapByteCode ownership
+native Game_runEvent() execution
+bytecode side effects
+mutable current event-state overlay
 entity/monster activation
 entityDb ownership
 visited/save-state mutation
@@ -331,29 +385,30 @@ fresh Start cleanup recovered = 55416 B
 intro teardown recovered      = 33768 B on PR #41
 ```
 
-Detailed earlier evidence remains in milestone documents and archived recovery snapshots.
-
 ## Merge recommendation
 
-**MERGE `agent/esp32-map1-native-events`.**
+**MERGE `agent/esp32-map1-native-event-descriptor`.**
 
 Hardware-tested code:
 
 ```text
-a522c56403ff3269e02e93213b8f7d643bfba0af
+b3e453baea1ac861c608f0c11b8aaa592f1cc3e5
 ```
 
 If all later commits remain documentation-only, no additional hardware flash is required.
 
 ## Next bounded milestone after merge
 
-Native code can now answer:
+Recover `Game_runEvent()` **eligibility/filtering semantics without side effects**. The next layer should decide which commands would be eligible from:
 
 ```text
-Does tile X carry an event? -> EspMapState
-Which event is it?          -> EspMapEvents
+current event state
+EVENT_FLAG_BLOCKINPUT
+event trigger/direction flags
+command arg2 state/trigger filters
+resume/start command offset
 ```
 
-Next, decode and validate the **raw event descriptor / compact bytecode linkage** without executing scripts yet. The next branch should establish the exact bit fields, offsets/indexes and bounds needed to describe an event's bytecode entry point, produce a canonical descriptor/linkage fingerprint, and PARK before any `Game_runEvent()` equivalent.
+A small separately owned current-event-state overlay is likely required. It must be initialized from descriptor `initialState` and must not mutate `EspMapRuntime`.
 
-Prefer an allocation-free read-only descriptor API if the recovered format permits it. Do not advance directly to entities, renderer activation or `ST_PLAYING`.
+Do not execute `Game_executeEvent()` effects until that decision layer is independently hardware-proven.

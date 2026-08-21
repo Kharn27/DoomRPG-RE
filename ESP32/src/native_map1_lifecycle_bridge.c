@@ -1,6 +1,7 @@
 #include "native_intro_dispose.h"
 #include "native_map1_access_probe.h"
 #include "native_map1_bsp_pass1.h"
+#include "native_map1_event_descriptor_probe.h"
 #include "native_map1_events_probe.h"
 #include "native_map1_runtime_load.h"
 #include "native_map1_state_probe.h"
@@ -21,6 +22,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32Map1AccessProbe_reset();
     Esp32Map1StateProbe_reset();
     Esp32Map1EventsProbe_reset();
+    Esp32Map1EventDescriptorProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -29,12 +31,14 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     /*
      * Final Continue -> validated intro teardown -> native BSP pass 1 -> native
      * compact resident arena -> allocation-free indexed accessor validation ->
-     * compact mutable tile state -> allocation-free tile/event lookup. Each
-     * stage arms first and executes on a later Arduino loop service.
+     * compact mutable tile state -> allocation-free tile/event lookup ->
+     * read-only event descriptor/bytecode linkage. Each stage arms first and
+     * executes on a later Arduino loop service.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
     Esp32Map1AccessProbe_service(doomRpg);
     Esp32Map1StateProbe_service(doomRpg);
     Esp32Map1EventsProbe_service(doomRpg);
+    Esp32Map1EventDescriptorProbe_service(doomRpg);
 }
