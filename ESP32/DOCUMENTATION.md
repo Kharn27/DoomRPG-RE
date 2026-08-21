@@ -33,9 +33,11 @@ Merged milestones:
 
 The pre-final MAP_INTRO structural document remains preserved at [`archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md`](archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md).
 
-Current active milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) — allocation-free read-only decoding of the 32-bit event format plus bounds-checked linkage to compact `EspMapByteCode` records; measures descriptor/linkage fingerprints and actual bytecode coverage; **AWAITING REAL-CYD HARDWARE PASS**.
+- [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) — allocation-free read-only event bit decoding plus exact linkage to compact `EspMapByteCode`; real-CYD `descriptorFNV=27115328`, `linkageFNV=5727902c`; all 265 bytecodes partitioned exactly once across 93 events; 0 overlaps, 0 gaps, 2 ms, zero drift; **MERGE-READY**.
+
+After merge, add its PR/merge SHA to the merged-milestone table and treat the document as historical evidence except for archival metadata corrections.
 
 ## Architecture documentation rule
 
@@ -55,7 +57,7 @@ Doom RPG data / recovered behavior
         -> small explicit mutable native state
         -> allocation-free native event lookup
         -> read-only event descriptor / bytecode linkage
-        -> bounded execution filtering / event state
+        -> side-effect-free event eligibility + current-state overlay
         -> ESP32-native gameplay + renderer
 ```
 
@@ -101,7 +103,15 @@ PR   = #46 — allocation-free native MAP_INTRO tile event lookup
 main = 438cffabaaaaa3dc3b45486f56eacec1a047edcf
 ```
 
-The real CYD currently proves four native layers:
+Current merge-ready branch:
+
+```text
+branch = agent/esp32-map1-native-event-descriptor
+hardware-tested code = b3e453baea1ac861c608f0c11b8aaa592f1cc3e5
+status = REAL-CYD HARDWARE PASS; MERGE-READY
+```
+
+The real CYD now proves five successive native layers:
 
 ```text
 immutable arena
@@ -119,13 +129,21 @@ mutable tile state
 
 tile -> event lookup
   persistent bytes   = 0 B
-  1024-query sweep   = 5 ms
   hits/misses        = 93 / 931
-  first event        = 68 / 0 / 00080044
-  last event         = 968 / 92 / 000c23c8
   lookupFNV          = 63430151
-  heap drift         = 0 B
-  largest8 drift     = 0 B
+
+event descriptor / bytecode linkage
+  persistent bytes   = 0 B
+  descriptorFNV      = 27115328
+  linkageFNV         = 5727902c
+  commandRefs        = 265
+  unique commands    = 265
+  overlaps/gaps      = 0 / 0
+  countRange         = 1..14
+  maxEnd             = 265
+  state values       = {0}
+  flag values        = {0,1}
+  sweep              = 2 ms
 ```
 
 Combined actual native persistent map/world heap remains:
@@ -142,14 +160,19 @@ saved = 40189 B
 reduction ~= 72.6%
 ```
 
-Current branch:
+Current integrity boundary:
 
 ```text
-agent/esp32-map1-native-event-descriptor
+heap8 after state    = 68992 on current build
+largest8             = 36852
+framebuffer drift    = none
+arenaFNV             = c3882516
+stateFNV             = cd99b98e
+legacy runtime       = absent
+entities/monsters    = 0 / 0
+ST_PLAYING           = no
 ```
 
-Current candidate adds no persistent bytes. It decodes each raw event into tile/command-range/initial-state/flags fields and validates linked compact bytecodes through the native runtime. The hardware probe will establish `descriptorFNV`, `linkageFNV`, command-range coverage/overlap/gaps and observed initial-state/flag masks while requiring zero heap/largest/frame/arena/state drift.
-
-No script is executed and no event state is mutated in this milestone.
+The next bounded milestone after merge is a side-effect-free recovery of `Game_runEvent()` eligibility/filtering semantics, plus a separate mutable current-event-state overlay initialized from descriptor `initialState`. Do not execute commands yet.
 
 See [`PORTING_STATUS.md`](PORTING_STATUS.md), [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md), and merged [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md).
