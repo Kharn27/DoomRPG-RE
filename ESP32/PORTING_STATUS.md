@@ -9,22 +9,24 @@ The older full recovery catalog remains preserved in [`archive/PORTING_STATUS_PR
 ## Latest merged hardware baseline
 
 ```text
-PR   = #45 — first native mutable MAP_INTRO tile state
-main = feec8a7fcb839dbd9f6de708f56f26b69a1e79e9
+PR   = #46 — allocation-free native MAP_INTRO tile event lookup
+main = 438cffabaaaaa3dc3b45486f56eacec1a047edcf
 ```
+
+PR #46 hardware-proved exhaustive tile -> event resolution directly over the compact resident event section with no extra persistent index.
 
 Current candidate:
 
 ```text
-branch = agent/esp32-map1-native-events
-base   = feec8a7fcb839dbd9f6de708f56f26b69a1e79e9
-hardware-tested code = a522c56403ff3269e02e93213b8f7d643bfba0af
-status = REAL-CYD HARDWARE PASS; ALLOCATION-FREE NATIVE TILE EVENT LOOKUP VALIDATED; MERGE-READY
+branch = agent/esp32-map1-native-event-descriptor
+base   = 438cffabaaaaa3dc3b45486f56eacec1a047edcf
+hardware-affecting head = b3e453baea1ac861c608f0c11b8aaa592f1cc3e5
+status = READ-ONLY NATIVE EVENT DESCRIPTOR/BYTECODE LINKAGE IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
 ```
 
-Detailed active milestone: [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md).
+Detailed active milestone: [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md).
 
-Merged state evidence: [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md).
+Merged event-lookup evidence: [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md).
 
 ## Permanent target / ownership
 
@@ -66,13 +68,14 @@ Doom RPG source data
     -> allocation-free native accessors
     -> explicit mutable EspMapState
     -> allocation-free EspMapEvents tile lookup
-    -> bounded event descriptor / bytecode linkage
-    -> later native gameplay + renderer
+    -> read-only native event descriptor / bytecode linkage
+    -> later bounded execution filtering + mutable event state
+    -> native gameplay + renderer
 ```
 
-## Current hardware-safe boundary
+## Current merged hardware-safe boundary
 
-Normal optimized firmware now reaches:
+Normal optimized firmware at PR #46 reaches:
 
 ```text
 menu                    = MENU_NONE
@@ -106,7 +109,7 @@ lookup persistent bytes = 0
 lookupFNV               = 63430151
 
 combined native heap    = 15152 B
-heap8                   = 69000 on current hardware run
+heap8                   = 69000 on PR #46 hardware run
 largest8                = 36852
 ST_PLAYING              = NOT entered
 ```
@@ -276,9 +279,111 @@ ST_PLAYING = no
 
 Later `[ALIVE]` heartbeats remained stable at `heap8=69000`, `largest8=36852`.
 
-The legacy binary-search ordering assumption is therefore now explicitly proven for MAP_INTRO rather than inherited blindly.
+The legacy binary-search ordering assumption is therefore explicitly proven for MAP_INTRO rather than inherited blindly.
+
+## Current candidate: native event descriptor / bytecode linkage
+
+Recovered `Game_runEvent()` event layout:
+
+```text
+bits  0..9   tile index
+bits 10..18  first command index
+bits 19..24  command count
+bits 25..28  event state
+bits 29..31  event flags
+```
+
+Masks:
+
+```text
+tile          = 0x000003ff
+command index = 0x0007fc00 >> 10
+command count = 0x01f80000 >> 19
+state         = 0x1e000000 >> 25
+flags         = 0xe0000000 >> 29
+```
+
+The desktop code multiplies command index/count by `BYTE_CODE_MAX == 3` only because its `mapByteCode` is a flattened `int[]` containing ID/ARG1/ARG2 triples. Native compact storage already has one logical 9-byte `EspMapByteCode` per command, so native descriptor indexes remain logical record indexes.
+
+Permanent additions:
+
+```text
+EspMapEventDescriptor
+EspMapEvents_describe()
+EspMapEvents_getCommand()
+```
+
+Descriptor fields:
+
+```text
+raw value
+source event index
+tile index
+first compact command index
+exclusive command end
+command count
+initial event state
+event flags
+```
+
+The state field is explicitly **initialState** because recovered gameplay later rewrites bits 25..28 in `tileEvents[]`. Current mutable event state will need a separate overlay; the immutable arena must remain unchanged.
+
+The candidate validates every event command range against:
+
+```text
+resident byteCodeCount = 265
+```
+
+and exposes each linked command only through the existing bounds-checked compact runtime accessor.
+
+New persistent cost:
+
+```text
+0 B
+```
+
+## Current hardware gate
+
+After the inherited `MAPEVENTPROBE` PASS, `MAPDESCPROBE` must:
+
+```text
+decode all 93 event descriptors
+independently compare every bit field
+validate every command range against 265 compact bytecodes
+walk every linked command through EspMapEvents_getCommand()
+compare every linked command to direct EspMapRuntime_getByteCode()
+fail closed at commandOffset == commandCount
+fail closed for NULL / forged refs
+compute descriptorFNV
+compute linkageFNV
+measure total command refs
+measure unique linked bytecodes
+measure overlaps and gaps
+measure command-count range and max command end
+measure observed initial-state mask
+measure observed event-flags mask
+```
+
+The probe uses only a ~34-byte temporary stack bitmap to measure bytecode coverage. It deliberately does not assume before hardware whether the 265 bytecodes are covered exactly once.
+
+Integrity gates remain:
+
+```text
+heap8      X -> X
+largest8   Y -> Y
+frameFNV   F -> F
+arenaFNV   c3882516 -> c3882516
+stateFNV   cd99b98e -> cd99b98e
+entities   = 0
+monsters   = 0
+ST_PLAYING = no
+```
+
+No command is executed and no event state is changed.
 
 ## Native regression fingerprints
+
+Hardware-established fingerprints so far:
 
 ```text
 source BSP FNV = d5cc751f
@@ -288,9 +393,16 @@ stateFNV       = cd99b98e
 lookupFNV      = 63430151
 ```
 
-These protect distinct layers: source, compact physical representation, decoded semantics, mutable spatial state and tile-event resolution.
+Candidate will add:
 
-## Execution path now proven
+```text
+descriptorFNV = pending hardware
+linkageFNV    = pending hardware
+```
+
+These protect distinct layers: source, compact physical representation, decoded semantics, mutable spatial state, tile-event resolution, event bit decoding and event-command linkage.
+
+## Current candidate execution path
 
 ```text
 validated intro disposal
@@ -299,6 +411,7 @@ validated intro disposal
     -> allocation-free native accessor sweep
     -> 1024-byte native mutable tile-state build
     -> allocation-free 1024-tile event lookup sweep
+    -> read-only event descriptor + command-link sweep
     -> PARK
 ```
 
@@ -309,7 +422,10 @@ shapeData/mediaTexels
 complete raw BSP allocation
 legacy Render_beginLoadMapData()
 legacy Render.tileEvents ownership
-native event/bytecode execution
+legacy Render.mapByteCode ownership
+native Game_runEvent() execution semantics
+bytecode side effects
+mutable current event-state overlay
 entity/monster activation
 entityDb ownership
 visited/save-state mutation
@@ -333,27 +449,10 @@ intro teardown recovered      = 33768 B on PR #41
 
 Detailed earlier evidence remains in milestone documents and archived recovery snapshots.
 
-## Merge recommendation
+## Next action
 
-**MERGE `agent/esp32-map1-native-events`.**
+Build/flash `agent/esp32-map1-native-event-descriptor` with normal `esp32-cyd`, progress through the intro, and capture the new `MAPDESC` / `MAPDESCPROBE` block plus later stable `[ALIVE]` heartbeats.
 
-Hardware-tested code:
+If it passes, record the descriptor/linkage fingerprints and actual command coverage topology, then decide merge.
 
-```text
-a522c56403ff3269e02e93213b8f7d643bfba0af
-```
-
-If all later commits remain documentation-only, no additional hardware flash is required.
-
-## Next bounded milestone after merge
-
-Native code can now answer:
-
-```text
-Does tile X carry an event? -> EspMapState
-Which event is it?          -> EspMapEvents
-```
-
-Next, decode and validate the **raw event descriptor / compact bytecode linkage** without executing scripts yet. The next branch should establish the exact bit fields, offsets/indexes and bounds needed to describe an event's bytecode entry point, produce a canonical descriptor/linkage fingerprint, and PARK before any `Game_runEvent()` equivalent.
-
-Prefer an allocation-free read-only descriptor API if the recovered format permits it. Do not advance directly to entities, renderer activation or `ST_PLAYING`.
+Do **not** advance to actual event execution on an unproven descriptor/linkage contract. The likely next bounded milestone after a PASS is a side-effect-free recovery of `Game_runEvent()` filtering/eligibility semantics plus a separate mutable current-event-state model, before any command is allowed to mutate the world.
