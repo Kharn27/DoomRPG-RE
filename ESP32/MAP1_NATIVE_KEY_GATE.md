@@ -9,13 +9,13 @@ PR   = #54 — native NOTE notebook owner
 main = 03002f79eb03bdcb4c9e430c43e4693dab47e44b
 ```
 
-Firmware candidate content:
+Hardware-tested firmware content:
 
 ```text
 3b4844e8fa5d38d522e1adc70ffac646978f130d
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
@@ -32,7 +32,7 @@ This milestone supports only opcode `41 / EV_CHECK_KEY`. It does not mutate lega
 
 ## Recovered legacy behavior
 
-`Game_executeEvent()` checks `arg1` as a key selector:
+`Game_executeEvent()` maps `arg1` as:
 
 ```text
 0 -> green  -> bit 0x1 -> "Need Green Key"
@@ -41,9 +41,15 @@ This milestone supports only opcode `41 / EV_CHECK_KEY`. It does not mutate lega
 3 -> red    -> bit 0x8 -> "Need Red Key"
 ```
 
-If the required key is present, the opcode returns `false` immediately. In `Game_runEvent()` that means this command produces no handled effect and command processing continues.
+Required key present:
 
-If the required key is absent, legacy behavior is:
+```text
+Game_executeEvent returns false
+script continues
+no Hud/Sound/save effect
+```
+
+Required key missing:
 
 ```text
 Hud_addMessage("Need <Color> Key")
@@ -52,40 +58,39 @@ saveTileEvent = true
 Game_executeEvent returns true
 ```
 
-`Game_runEvent()` then stores the **current command offset** in `tileEventIndex`, stores the active flags, clears the transient `saveTileEvent` latch and stops the event loop.
+`Game_runEvent()` then saves the **current command offset** and active flags, clears the transient latch and stops the event loop.
 
-Therefore the permanent native semantics owned here are:
+Therefore the permanent native result owns only the decision metadata:
 
 ```text
-key present:
-  status = PASS
-  legacy executeEvent return = false
-  stop event = no
-  save current command = no
-  message/sound = none
+PASS:
+  legacyReturnValue = 0
+  stopEvent = 0
+  saveCurrentCommand = 0
+  sound = 0
+  message = none
 
-key absent:
-  status = BLOCKED
-  legacy executeEvent return = true
-  stop event = yes
-  save current command = yes
+BLOCKED:
+  legacyReturnValue = 1
+  stopEvent = 1
+  saveCurrentCommand = 1
   saved offset = source command offset
-  message = exact key-color text
   sound = 5065
+  message = exact key-color text
 ```
 
-Malformed key selectors outside `0..3` are rejected fail-closed by the native evaluator rather than inheriting the desktop fallback behavior for corrupt bytecode.
+Malformed key selectors outside `0..3` are rejected fail-closed.
 
 ## Permanent native API
 
-New files:
+Files:
 
 ```text
 ESP32/include/esp_map_key_gate.h
 ESP32/src/esp_map_key_gate.c
 ```
 
-Result value:
+Result:
 
 ```c
 typedef struct EspMapKeyGateResult_s {
@@ -101,7 +106,7 @@ typedef struct EspMapKeyGateResult_s {
 } EspMapKeyGateResult;
 ```
 
-Expected classic ESP32 ABI footprint:
+Real classic-CYD ABI footprint:
 
 ```text
 result value      = 12 B
@@ -117,15 +122,180 @@ EspMapKeyGate_evaluate(descriptor, commandOffset, keyBits, outResult)
 EspMapKeyGate_message(result)
 ```
 
-`EspMapKeyGate_evaluate()` revalidates that the supplied descriptor is exactly canonical for the current immutable runtime before reading its command. It supports only real `EV_CHECK_KEY` bytecode with `arg1=0..3`.
+The evaluator revalidates the supplied descriptor against the current immutable runtime, reads only the linked canonical command, supports only opcode 41 with selectors `0..3`, and ignores key bits above the low nibble. The permanent implementation has no legacy `Player`, `Hud`, `Sound`, `Game`, entity or render dependency.
 
-The caller-provided `keyBits` uses the legacy low-bit layout `1,2,4,8`; higher bits are deliberately ignored.
+## Real-CYD corpus proof
 
-The permanent implementation includes no legacy `Player`, `Hud`, `Sound`, `Game`, entity or render dependency.
+Normal optimized environment:
 
-## Why this milestone now
+```text
+esp32-cyd
+```
 
-The remaining MAP_INTRO opcode IDs after the already-proven state/UI/player families include:
+The real classic no-PSRAM CYD established the exact MAP_INTRO CHECK_KEY corpus:
+
+```text
+refs             = 1
+green            = 0
+yellow           = 1
+blue             = 0
+red              = 0
+scenarios        = 16
+PASS             = 8
+BLOCKED          = 8
+resultBytes      = 12
+stateExecRefused = 1
+keyGateFNV       = 9ace79cd
+elapsed          = 1 ms
+```
+
+Canonical real command:
+
+```text
+global command = 38
+event          = 11
+command offset = 0
+key selector   = 1 / yellow
+required mask  = 0x02
+arg2           = 0x00000100
+missing message= "Need Yellow Key"
+sound          = 5065
+saved offset   = current command
+```
+
+The state-only opcode executor still refuses opcode 41, preserving the split between state mutation and dynamic control/effect evaluation.
+
+## Full truth-table proof
+
+The one real command was evaluated with every low-nibble key context `0..15`:
+
+```text
+perRef           = 16
+passEach         = 8
+blockedEach      = 8
+messages         = 4 / 4 exact
+extraBitsIgnored = 1
+PASS effect      = none
+BLOCKED effect   = message + sound + stop + save-current
+```
+
+Even though only yellow occurs in MAP_INTRO, the probe separately validates all four immutable message mappings.
+
+## Fail-closed proof
+
+Hardware proved:
+
+```text
+unsupported non-CHECK_KEY = 1
+bad command offset        = 1
+noncanonical descriptor   = 1
+NULL descriptor           = 1
+NULL result               = 1
+```
+
+All failures with a writable result leave that result zeroed.
+
+## RAM / integrity proof
+
+Before and after the complete CHECK_KEY stage:
+
+```text
+heap8             = 68756 -> 68756
+largest8          = 36852 -> 36852
+frameFNV          = c56f998b -> c56f998b
+arenaFNV          = c3882516 -> c3882516
+mapStateFNV       = cd99b98e -> cd99b98e
+scriptFNV         = f9e3d9df -> f9e3d9df
+legacyNotebookFNV = 4d7705c5 -> 4d7705c5
+legacyKeys        = 00000000 -> 00000000
+hudFNV            = 505b1255 -> 505b1255
+persistentBytes   = 0
+pack I/O          = none
+```
+
+The immediately preceding NOTE stage on the same firmware also remained stable:
+
+```text
+heap8             = 68756 -> 68756
+largest8          = 36852 -> 36852
+frameFNV          = c56f998b -> c56f998b
+noteApplyFNV      = 43183162
+contentFNV        = 599609e0
+storageFNV        = 75cf54e0
+heapOpen          = 64384
+transientHeapCost = 4372 B
+persistentHeap    = 0 B
+```
+
+The absolute heap/frame values differ slightly from prior firmware builds, but each probe has exact before/after stability and all inherited structural fingerprints remain canonical. These are build-layout/content differences, not persistent allocation or framebuffer mutation.
+
+## Final boundary
+
+PARK proved:
+
+```text
+nativeArena                  = yes
+nativeTileState              = yes
+nativeEventLookup            = yes
+nativeEventDescriptor        = yes
+nativeScriptState            = yes
+nativeFilter                 = yes
+nativeOpcodeExec             = yes
+nativeUiIntent               = yes
+nativeStringReader           = yes
+nativeStatusMessageOwner     = yes
+nativeDialogOwner            = yes
+nativeNotebookOwner          = yes
+nativeKeyGate                = yes
+resultBytes                  = 12
+persistentBytes              = 0
+legacyKeyMutation            = no
+legacyHudMutation            = no
+legacyGameContinuationMutation = no
+worldMutation                = no
+framebufferMutation          = no
+entities                     = 0
+monsters                     = 0
+noGameplay                   = yes
+```
+
+Complete post-PARK heartbeat:
+
+```text
+uptime=25410 ms
+heap=134520
+heap8=68756
+largest8=36852
+SD/ZIP/VIDEO/CORE/LAYOUT/PRERENDER/RENDER/MAPPINGS/MENUBSP = ready
+```
+
+Permanent prohibitions remain:
+
+```text
+shapeData                          = NULL
+mediaTexels                        = NULL
+legacy Player key/notebook mutation = no
+legacy Hud mutation               = no
+legacy Game continuation mutation = no
+actual sound playback from native gate = no
+full native Game_runEvent loop    = no
+world/entity/render mutation      = no
+map transitions                   = no
+savegame mutation                 = no
+entities                           = 0
+monsters                           = 0
+ST_PLAYING                         = no
+```
+
+## Hardware acceptance status
+
+The full real CHECK_KEY corpus, complete 16-context truth table, fail-closed paths, integrity witnesses and stable post-PARK heartbeat are a **REAL-CYD HARDWARE PASS**.
+
+This branch is **MERGE-READY**. The firmware-bearing commit is `3b4844e8fa5d38d522e1adc70ffac646978f130d`; every later commit must remain documentation-only unless another flash is performed.
+
+## Remaining MAP_INTRO opcode families
+
+After CHECK_KEY, still unowned:
 
 ```text
 2  EV_CHANGEMAP
@@ -137,159 +307,6 @@ The remaining MAP_INTRO opcode IDs after the already-proven state/UI/player fami
 16 EV_CLOSELINE
 18 EV_HIDE
 27 EV_SAVEGAME
-41 EV_CHECK_KEY
 ```
 
-Most of these cross into world/render/save/map-transition ownership. `EV_CHECK_KEY` instead introduces a real dynamic branch decision required by the future native event loop while keeping the current no-world-mutation boundary intact.
-
-`EV_PASSWORD` remains a future pause/input owner candidate but is not included here.
-
-## Temporary hardware probe
-
-New files:
-
-```text
-ESP32/include/native_map1_key_gate_probe.h
-ESP32/src/native_map1_key_gate_probe.c
-```
-
-The probe runs after the hardware-proven NOTE owner stage.
-
-For every real `EV_CHECK_KEY` in the canonical `93 event / 265 bytecode` MAP_INTRO corpus, it evaluates all sixteen low-nibble key contexts:
-
-```text
-keyBits = 0 .. 15
-```
-
-For any one key selector, exactly half of these contexts contain the key and half do not. Therefore acceptance is independent of the not-yet-canonical real CHECK_KEY count:
-
-```text
-refs > 0
-scenarios = refs * 16
-PASS      = refs * 8
-BLOCKED   = refs * 8
-state-only opcode executor refuses every ref
-color counts sum exactly to refs
-```
-
-The first real-CYD PASS will establish rather than predeclare:
-
-```text
-real CHECK_KEY ref count
-green/yellow/blue/red ref distribution
-first canonical CHECK_KEY sample
-keyGateFNV
-new-build heap/framebuffer absolute values
-legacy Player.keys baseline value
-Hud witness FNV
-```
-
-The complete bytecode corpus is already independently protected by hardware-proven `opcodeAuditFNV=6f28df45`, so discovering the family count here does not weaken source-corpus integrity.
-
-## Table / side-effect proof
-
-For each real command and each of 16 key contexts the probe requires exact output metadata:
-
-```text
-source event/global command/source offset
-required key index and mask
-PASS vs BLOCKED
-legacy executeEvent return bit
-stop-event bit
-save-current-command bit
-sound 5065 only when blocked
-exact color message only when blocked
-```
-
-It separately proves:
-
-```text
-4 / 4 exact key messages
-higher keyBits ignored
-PASS has no effect metadata
-BLOCKED carries message+sound+stop+save-current
-```
-
-## Fail-closed proof
-
-The probe requires:
-
-```text
-non-CHECK_KEY source command -> UNSUPPORTED + zero result
-out-of-range command offset  -> INVALID + zero result
-non-canonical descriptor     -> INVALID + zero result
-NULL descriptor              -> INVALID + zero result
-NULL result                  -> INVALID
-```
-
-No persistent owner exists in this milestone; the 12-byte result is caller-local and overwritten on each evaluation.
-
-## Hardware integrity boundary
-
-Before and after the complete probe:
-
-```text
-heap8
-largest8
-framebuffer FNV
-arenaFNV      = c3882516
-mapStateFNV   = cd99b98e
-scriptFNV     = f9e3d9df
-legacy Player.NotebookString FNV = 4d7705c5
-legacy Player.keys
-Hud message witness FNV
-Game.skipAdvanceTurn
-Game.saveTileEvent
-Game.tileEvent
-Game.tileEventIndex
-Game.tileEventFlags
-```
-
-must remain exact.
-
-The pack must remain closed throughout the stage.
-
-Permanent prohibitions remain:
-
-```text
-legacy key mutation               = no
-legacy Hud mutation               = no
-legacy Game continuation mutation = no
-world/entity/render mutation      = no
-map transitions                   = no
-actual sound playback             = no
-full native Game_runEvent loop    = no
-entities                           = 0
-monsters                           = 0
-ST_PLAYING                         = no
-shapeData                          = NULL
-mediaTexels                        = NULL
-```
-
-## Expected Serial family
-
-```text
-[MAPKEYPROBE] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO CHECK_KEY gate ===
-[MAPKEYPROBE] CONTRACT ...
-[MAPKEY] READY refs=... green=... yellow=... blue=... red=... scenarios=... pass=... blocked=... resultBytes=12 stateExecRefused=... keyGateFNV=... elapsed=...ms
-[MAPKEY] SAMPLE cmd=... event=... off=... key=... mask=... arg2=... missingMessage="Need ... Key" sound=5065 saveOffset=current
-[MAPKEY] TABLE perRef=16 passEach=8 blockedEach=8 messages=4/4 extraBitsIgnored=1 passEffect=none blockedEffect=message+sound+stop+saveCurrent
-[MAPKEY] FAILCLOSED unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1 nullResult=1
-[MAPKEYPROBE] RAM ... legacyNotebookFNV=4d7705c5->4d7705c5 legacyKeys=...->... hudFNV=...->...
-[MAPKEYPROBE] PARK ... nativeKeyGate=yes resultBytes=12 persistentBytes=0 ...
-[ALIVE] ...
-```
-
-Use the normal optimized PlatformIO environment:
-
-```text
-esp32-cyd
-```
-
-No CI status is currently published for the firmware candidate. Do not claim a local build or hardware PASS until the real classic CYD supplies it.
-
-## Next boundary after a hardware PASS
-
-Do not preselect it. After PASS + merge, reread the then-current `main`, recovery docs, this milestone and the exact remaining MAP_INTRO legacy behavior before choosing between password/input ownership and the first bounded world mutation family.
+Do not preselect the next family. After merge, reread the new `main`, recovery docs, this milestone and exact remaining legacy behavior before choosing between password/input ownership and the first bounded world-mutation family.
