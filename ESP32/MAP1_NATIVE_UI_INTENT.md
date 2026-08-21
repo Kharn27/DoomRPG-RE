@@ -45,9 +45,11 @@ Same as `EV_DIALOG`, except no Back softkey.
 
 ```text
 text = mapStringsIDs[arg1]
-non-empty -> Hud.statBarMessage = text
-empty     -> Hud.statBarMessage = NULL
+text[0] != '\0' -> Hud.statBarMessage = text
+text[0] == '\0' -> Hud.statBarMessage = NULL
 ```
+
+The native intent therefore always carries the semantic flag `CLEAR_IF_EMPTY`. It does **not** assume that BSP `length == 0` is the only possible representation whose first byte is NUL. Actual text-byte inspection belongs to the future bounded string reader/consumer.
 
 ### EV_NOTE (40)
 
@@ -110,8 +112,8 @@ resume command offset
 string ID + source span
 dialog Back/no-Back
 pause-script / skip-advance-turn semantics
-empty FORCE_MESSAGE clearing
-NOTE append + "||" semantics
+FORCE_MESSAGE empty-clears semantic
+NOTE append + "||" semantic
 ```
 
 No queue/mailbox is allocated yet. The intent is a caller-owned value object. A future native UI/player owner can consume it without forcing this layer to depend on legacy UI structures.
@@ -123,17 +125,17 @@ The temporary probe runs only after the hardware-proven first opcode-execution s
 It validates all 94 MAP_INTRO string refs:
 
 ```text
-count                 = 94
-payload bytes         = 7779
-max string length     = 313
-adjacent span topology= exact
-last string end       = start of blockmap
+count                  = 94
+payload bytes          = 7779
+max string length      = 313
+adjacent span topology = exact
+last string end        = start of blockmap
 ```
 
 Hardware establishes:
 
 ```text
-empty string count
+zero-length string count
 first/last source span
 spanFNV
 ```
@@ -146,7 +148,8 @@ Hardware establishes:
 total UI refs
 8/24/26/40 counts
 pause-intent count
-empty FORCE_MESSAGE clear count
+FORCE_MESSAGE empty-clears semantic count
+zero-length FORCE_MESSAGE span count
 intentFNV
 first real sample of each opcode family
 ```
@@ -181,7 +184,7 @@ ST_PLAYING   = no
 === Doom RPG ESP32-native MAP_INTRO UI/string intents ===
 [MAPUIPROBE] CONTRACT resolve compact string spans + translate EV_DIALOG/FORCEMESSAGE/DIALOGNOBACK/NOTE to native intents; 0 persistent bytes; no DoomCanvas/Hud/Player/world mutation
 [MAPSTRING] READY strings=94 payload=7779 empty=? max=313 firstOffset=? last=?+? spanFNV=???????? persistentBytes=0
-[MAPUI] READY refs=? dialog=? force=? noBack=? note=? pause=? clear=? stateExecRefused=? intentFNV=???????? elapsed=?ms persistentBytes=0
+[MAPUI] READY refs=? dialog=? force=? noBack=? note=? pause=? forceEmptySemantics=? zeroLenForce=? stateExecRefused=? intentFNV=???????? elapsed=?ms persistentBytes=0
 [MAPUIPROBE] SAMPLE dialog ...
 [MAPUIPROBE] SAMPLE force ...
 [MAPUIPROBE] SAMPLE noBack ...
