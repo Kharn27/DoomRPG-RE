@@ -2,7 +2,7 @@
 
 This file is the **authoritative current recovery point** for the classic ESP32-2432S028R Doom RPG port.
 
-Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOCUMENTATION.md) for the documentation index, and milestone archives for detailed evidence.
+Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOCUMENTATION.md) for the documentation index, and milestone archives for detailed hardware evidence.
 
 ## Latest merged hardware baseline
 
@@ -14,18 +14,18 @@ hardware-tested firmware content = d782681c3cd267b9f16c290a593c1b6e5b34df1c
 
 Detailed merged evidence: [`MAP1_NATIVE_STATUS_MESSAGE.md`](MAP1_NATIVE_STATUS_MESSAGE.md).
 
-## Current candidate
+## Current merge-ready candidate
 
 ```text
 branch = agent/esp32-map1-native-dialog-owner
 base   = 40b61af5e2115266d4d03dddcc3175850538b0f5
-firmware candidate content = 85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware content = 85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Detailed active milestone: [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md).
 
-The candidate consumes only the real `EV_DIALOG` / `EV_DIALOGNOBACK` intents into a compact caller-owned pause/presentation state. It performs no presentation, no pack I/O, no legacy `DoomCanvas` or `Game_t` continuation mutation, and no world/entity/render mutation.
+The candidate consumes only real `EV_DIALOG` / `EV_DIALOGNOBACK` intents into a compact caller-owned pause/presentation state. It performs no presentation, no pack I/O, no legacy `DoomCanvas` or `Game_t` continuation mutation, and no world/entity/render mutation.
 
 ## Permanent target / ownership
 
@@ -73,7 +73,7 @@ BSP source in native pack
  -> ESP32-native gameplay + renderer
 ```
 
-## Hardware-proven fingerprints through PR #52
+## Hardware-proven fingerprints
 
 ```text
 source BSP FNV   = d5cc751f
@@ -92,6 +92,7 @@ stringSpanFNV    = 713188eb
 uiIntentFNV      = 7fdd6a79
 stringContentFNV = e995ee51
 statusApplyFNV   = 52b25a5f
+dialogApplyFNV   = d0254f3d
 ```
 
 MAP_INTRO `/intro.bsp` / `Entrance`:
@@ -126,7 +127,9 @@ current proven total  = 15252 B
 largest8              = 36852 preserved
 ```
 
-`EspMapStatusMessageState` is an 8-byte caller-owned value. The dialog candidate adds a **12-byte caller-owned value type** only; its temporary probe allocates no persistent heap and copies no text.
+`EspMapStatusMessageState` is an 8-byte caller-owned value. `EspMapDialogOwnerState` is a **12-byte caller-owned value**. Neither probe adds persistent heap or persistent copied text. A future permanent gameplay/UI owner embedding these values must account them explicitly.
+
+Measured legacy structural allocation was `55341 B`; native structural/script heap ownership remains `40089 B` smaller (~72.4%).
 
 ## Hardware-proven event/UI boundary
 
@@ -166,8 +169,6 @@ packPayloadReads = 93
 
 ## Native FORCE_MESSAGE owner — merged hardware baseline
 
-Real CYD proof:
-
 ```text
 refs                  = 3
 set                   = 1
@@ -193,34 +194,17 @@ unsupported=1 badFlags=1 badRef=1 shortBuffer=1 nullIntent=1 closedPack=1
 ownerAtomic=yes
 ```
 
-Current tested build integrity:
-
-```text
-heap8 before/open/after = 68796 / 64432 / 68796
-PAK transient cost      = 4364 B
-largest8                = 36852 preserved
-frameFNV                = faa62417 -> faa62417
-arenaFNV                = c3882516 -> c3882516
-mapStateFNV             = cd99b98e -> cd99b98e
-scriptFNV               = f9e3d9df -> f9e3d9df
-notebookFNV             = 4d7705c5 -> 4d7705c5
-```
-
-## Current DIALOG/NOBACK candidate contract
+## Native DIALOG/NOBACK pause owner — hardware validated
 
 Recovered legacy behavior:
 
 ```text
-DoomCanvas_startDialog(text, codeId == EV_DIALOG)
-saveTileEvent = true
-tileEvent     = event
-skipAdvanceTurn = true
-
-on close:
-resume Game_runEvent(..., tileEventIndex + 1, tileEventFlags)
+EV_DIALOG       -> Back soft-key + pause + skip turn
+EV_DIALOGNOBACK -> no Back soft-key + pause + skip turn
+resume          -> same source event, command offset + 1
 ```
 
-Permanent candidate state:
+Permanent state:
 
 ```text
 EspMapDialogOwnerState
@@ -230,55 +214,108 @@ EspMapDialogOwnerState
  + resume command offset
  + Back/pause/skip-turn flags
  + active bit
- = 12 B expected on classic ESP32 ABI
+ = 12 B on classic CYD ABI
 ```
 
-No persistent text is copied. No PAK read is required when capturing the owner because dialog semantics do not branch on text content. A future presenter reads `state.text` with `EspMapStrings_read()`.
+No persistent text is copied. No PAK read occurs when capturing the owner because dialog semantics do not branch on text content. A future presenter reads `state.text` through `EspMapStrings_read()`.
 
-The dynamic event activation flags corresponding to legacy `tileEventFlags` remain future event-loop context and are not invented by this milestone.
+The dynamic activation flags corresponding to legacy `tileEventFlags` remain future native event-loop context and are not invented here.
 
-Expected real corpus:
+Real-CYD proof:
 
 ```text
-dialog refs       = 84
-Back              = 76
-noBack            = 8
-pause             = 84
-skipTurn          = 84
-resumeExact       = 84
-stateExecRefused  = 84
-ownerBytes        = 12
-textCopyBytes     = 0
-packIO            = no
-persistentHeap    = 0
+refs             = 84
+Back             = 76
+noBack           = 8
+pause            = 84
+skipTurn         = 84
+resumeExact      = 84
+stateExecRefused = 84
+ownerBytes       = 12
+textCopyBytes    = 0
+packIO           = no
+persistentHeap   = 0
+dialogApplyFNV   = d0254f3d
+elapsed          = 2 ms
 ```
 
-Canonical samples already hardware-proven by the intent layer:
+Canonical samples:
 
 ```text
-Back:
-cmd11 event6 off0 resume1 flags07 string25@13558+23
-
-noBack:
-cmd19 event6 off8 resume9 flags06 string30@13679+14
+Back   cmd11 event6 off0 resume1 flags07 string25@13558+23
+noBack cmd19 event6 off8 resume9 flags06 string30@13679+14
 ```
 
-The candidate additionally validates intent provenance against the immutable event descriptor / bytecode before committing continuation metadata.
-
-Real-CYD validation must establish the new `dialogApplyFNV` and prove atomic refusal of:
+Atomic fail-closed hardware proof:
 
 ```text
-unsupported FORCE_MESSAGE
-bad flags
-bad kind
-mutated ref
-bad source event
-bad global command index
-bad resume offset
-NULL intent
+unsupported = 1
+badFlags    = 1
+badKind     = 1
+badRef      = 1
+badEvent    = 1
+badGlobal   = 1
+badResume   = 1
+nullIntent  = 1
+ownerAtomic = yes
+reset       = 1
 ```
 
-Before/after integrity must preserve heap, largest block, framebuffer, arena, map state, script state, notebook, legacy HUD pointer and all legacy Game continuation fields.
+The permanent owner revalidates the source event/descriptor/command, global command index, opcode args, canonical string ref and exact `resume=source+1` before committing.
+
+## Current tested-build RAM / integrity
+
+DIALOG owner stage:
+
+```text
+heap8        = 68780 -> 68780
+largest8     = 36852 -> 36852
+frameFNV     = ef79123a -> ef79123a
+arenaFNV     = c3882516 -> c3882516
+mapStateFNV  = cd99b98e -> cd99b98e
+scriptFNV    = f9e3d9df -> f9e3d9df
+notebookFNV  = 4d7705c5 -> 4d7705c5
+packIO       = no
+persistentHeapBytes = 0
+```
+
+The inherited bounded reader / FORCE_MESSAGE stages on the same build also recovered exactly around the native-pack open:
+
+```text
+heap8 before/open/after = 68780 / 64416 / 68780
+PAK transient cost      = 4364 B
+largest8                = 36852 preserved
+```
+
+The previous merged FORCE_MESSAGE firmware reported `heap8=68796` and `frameFNV=faa62417`; this build reports `68780` and `ef79123a`. Every current stage has zero before/after drift and all inherited structural fingerprints remain canonical, so these are build-to-build layout/content differences rather than persistent owner allocation or render mutation.
+
+Final PARK:
+
+```text
+nativeStatusMessageOwner       = yes
+nativeDialogOwner              = yes
+ownerValueBytes                = 12
+textCopyBytes                  = 0
+legacyDialogMutation           = no
+legacyGameContinuationMutation = no
+worldMutation                  = no
+framebufferMutation            = no
+entities                       = 0
+monsters                       = 0
+ST_PLAYING                      = no
+```
+
+Complete post-PARK heartbeat from the same tested firmware:
+
+```text
+uptime=21790 ms
+heap=134544
+heap8=68780
+largest8=36852
+all reported subsystems = ready
+```
+
+A later `[ALIVE] uptime=` line was truncated in the supplied capture and is not required for acceptance.
 
 ## Current hardware-proven execution path
 
@@ -296,7 +333,8 @@ validated intro disposal
  -> string spans + UI intents
  -> bounded native-pack string reader
  -> real EV_FORCEMESSAGE -> native status owner
- -> candidate: real DIALOG/NOBACK -> native pause owner
+ -> real EV_DIALOG/NOBACK -> native pause owner
+ -> PARK + stable post-PARK heartbeat
 ```
 
 Still forbidden:
@@ -314,18 +352,18 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Current validation target
+## Merge recommendation
 
-Build/flash the normal optimized environment:
+**MERGE `agent/esp32-map1-native-dialog-owner`.**
+
+Hardware-tested firmware content:
 
 ```text
-esp32-cyd
+85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
 ```
 
-from `agent/esp32-map1-native-dialog-owner` and capture the `[MAPDIALOG]` / `[MAPDIALOGPROBE]` family plus a later stable `[ALIVE]` heartbeat.
+All commits after that firmware-bearing SHA must remain documentation-only unless another flash is performed.
 
-Do not mark this branch merge-ready until the real classic CYD supplies the PASS.
+## Next bounded milestone after merge
 
-## Next bounded milestone after a PASS + merge
-
-Reread the then-current repository and legacy behavior before choosing. `EV_NOTE` is a likely next small explicit owner, but this is not pre-authorized as an implementation decision.
+Reread the then-current `main`, `PORTING_STATUS.md`, `DOCUMENTATION.md`, this merged dialog milestone and exact legacy behavior before choosing. `EV_NOTE` is a likely next small explicit owner, but it is not pre-authorized as the next implementation.
