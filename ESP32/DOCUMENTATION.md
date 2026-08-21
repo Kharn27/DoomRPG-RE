@@ -10,7 +10,7 @@ Use [`README.md`](README.md) for build/flash instructions, target hardware, stab
 
 ### `PORTING_STATUS.md` — authoritative current recovery point
 
-Use [`PORTING_STATUS.md`](PORTING_STATUS.md) when resuming development. It owns the latest merged baseline, active branch, exact current RAM/state boundary, current native-map runtime/access/state/event contracts and next bounded milestone.
+Use [`PORTING_STATUS.md`](PORTING_STATUS.md) when resuming development. It owns the latest merged baseline, active branch, exact current RAM/state boundary, current native runtime/access/state/event contracts and next bounded milestone.
 
 The older full recovery catalog remains preserved unchanged at [`archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md`](archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md).
 
@@ -32,9 +32,11 @@ Merged milestones:
 
 The pre-final MAP_INTRO structural document remains preserved at [`archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md`](archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md).
 
-Current active milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md) — allocation-free native tile -> event resolution by binary-searching the existing compact event records directly; **0 persistent bytes**; exhaustive 1024-tile real-CYD validation pending.
+- [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md) — allocation-free native tile -> event resolution by lower-bound binary search directly over the existing compact event records; **0 persistent bytes**; real-CYD exhaustive 1024-tile sweep; 93 hits / 931 misses; sorted+unique event topology; `lookupFNV=63430151`; 5 ms; zero heap/largest/frame/arena/state drift; **MERGE-READY**.
+
+After merge, add its PR/merge SHA to the merged-milestone table and treat the document as historical evidence except for archival metadata corrections.
 
 ## Architecture documentation rule
 
@@ -53,8 +55,8 @@ Doom RPG data / recovered behavior
         -> allocation-free native accessors
         -> small explicit mutable native state
         -> allocation-free native event lookup
-        -> bounded event/gameplay consumers
-        -> ESP32-native renderer/game
+        -> bounded event descriptor / bytecode linkage
+        -> ESP32-native gameplay + renderer
 ```
 
 The final ESP32 build may stop compiling the desktop-derived engine entirely once native components own the required contracts.
@@ -99,7 +101,15 @@ PR   = #45 — first native mutable MAP_INTRO tile state
 main = feec8a7fcb839dbd9f6de708f56f26b69a1e79e9
 ```
 
-Merged native foundation:
+Current merge-ready branch:
+
+```text
+branch = agent/esp32-map1-native-events
+hardware-tested code = a522c56403ff3269e02e93213b8f7d643bfba0af
+status = REAL-CYD HARDWARE PASS; MERGE-READY
+```
+
+The real CYD now proves four successive native ownership/consumer layers:
 
 ```text
 immutable arena
@@ -107,19 +117,26 @@ immutable arena
   actual heap        = 14112 B
   arenaFNV           = c3882516
 
-allocation-free access
+allocation-free decode
   decodedFNV         = a426dd18
-  heap drift         = 0 B
 
 mutable tile state
   payload            = 1024 B
   actual heap        = 1040 B
   stateFNV           = cd99b98e
-  entrance topology  = 4 refs / 4 cells
-  event topology     = 93 refs / 93 cells
+
+tile -> event lookup
+  persistent bytes   = 0 B
+  1024-query sweep   = 5 ms
+  hits/misses        = 93 / 931
+  first event        = 68 / 0 / 00080044
+  last event         = 968 / 92 / 000c23c8
+  lookupFNV          = 63430151
+  heap drift         = 0 B
+  largest8 drift     = 0 B
 ```
 
-Combined actual native persistent map/world heap:
+Combined actual native persistent map/world heap remains:
 
 ```text
 15152 B
@@ -133,12 +150,20 @@ saved = 40189 B
 reduction ~= 72.6%
 ```
 
-Current branch:
+Current integrity boundary:
 
 ```text
-agent/esp32-map1-native-events
+heap8 after state    = 69000 on current build
+largest8             = 36852
+framebuffer drift    = none
+arenaFNV             = c3882516
+stateFNV             = cd99b98e
+lookupFNV            = 63430151
+legacy runtime       = absent
+entities/monsters    = 0 / 0
+ST_PLAYING           = no
 ```
 
-Its objective is to resolve a tile to its compact event record with **no new persistent allocation**. The new `EspMapEvents_findByTile()` uses lower-bound binary search directly over the 93 immutable event records. Hardware validation will query all 1024 tiles and require exact agreement with both a sequential oracle and `EspMapState.EVENTS` while preserving heap, largest block, framebuffer, `arenaFNV` and `stateFNV`.
+The next bounded milestone after merge is a read-only native **event descriptor / bytecode linkage** contract. Decode and validate how a raw event points into the compact bytecode stream, preferably allocation-free, but do not execute scripts yet.
 
 See [`PORTING_STATUS.md`](PORTING_STATUS.md), [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md), and merged [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md).
