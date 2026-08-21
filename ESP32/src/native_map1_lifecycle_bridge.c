@@ -7,6 +7,7 @@
 #include "native_map1_opcode_exec_probe.h"
 #include "native_map1_runtime_load.h"
 #include "native_map1_state_probe.h"
+#include "native_map1_status_message_probe.h"
 #include "native_map1_string_reader_probe.h"
 #include "native_map1_ui_intent_probe.h"
 
@@ -31,6 +32,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32Map1OpcodeExecProbe_reset();
     Esp32Map1UiIntentProbe_reset();
     Esp32Map1StringReaderProbe_reset();
+    Esp32Map1StatusMessageProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -43,8 +45,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * read-only event descriptor/bytecode linkage -> compact mutable script
      * state + side-effect-free execution filtering -> opcode inventory + first
      * reversible native state-opcode execution -> allocation-free string spans
-     * + UI/string intent translation -> bounded pack-backed one-string reader.
-     * Each stage arms first and executes on a later Arduino loop service.
+     * + UI/string intent translation -> bounded pack-backed one-string reader
+     * -> compact EV_FORCEMESSAGE status-message owner. Each stage arms first and
+     * executes on a later Arduino loop service.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -56,4 +59,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32Map1OpcodeExecProbe_service(doomRpg);
     Esp32Map1UiIntentProbe_service(doomRpg);
     Esp32Map1StringReaderProbe_service(doomRpg);
+    Esp32Map1StatusMessageProbe_service(doomRpg);
 }
