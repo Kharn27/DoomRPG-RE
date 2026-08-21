@@ -9,13 +9,13 @@ PR   = #50 — allocation-free native string spans + UI intents
 main = 9a5e8ade361180d220f2b3614a443e5efb0d27bd
 ```
 
-Firmware candidate content:
+Hardware-tested firmware content:
 
 ```text
 d13d5eb13c4657d5ec5c16fd82939cfc38989c86
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PROBE PASS; POST-PARK HEARTBEAT EVIDENCE PENDING BEFORE MERGE-READY**.
 
 ## Objective
 
@@ -34,7 +34,7 @@ This milestone does **not** present dialogs, mutate the HUD/notebook, execute ad
 
 ## Permanent native API
 
-`ESP32/include/esp_map_strings.h` now exposes:
+`ESP32/include/esp_map_strings.h` exposes:
 
 ```c
 EspMapStringReadStatus EspMapStrings_read(
@@ -58,7 +58,7 @@ range              inside source entry
 native pack         open for non-empty payload I/O
 ```
 
-On success, exactly `ref.length` source bytes are read and `destination[ref.length]` is set to `\0` by the reader. The terminator is not read from the BSP and is not included in the source payload length.
+On success, exactly `ref.length` source bytes are read and `destination[ref.length]` is set to `\0` by the reader. The terminator is synthesized by the reader; it is not read from the BSP and is not included in the source payload length.
 
 Status values are deliberately fail-closed:
 
@@ -71,45 +71,81 @@ OK
 
 A zero-length payload requires no SD payload read but still receives the synthesized terminator after the same source/ref validation.
 
-## Temporary MAP_INTRO hardware probe
+## Real-CYD hardware result
 
-`native_map1_string_reader_probe.c` runs only after the hardware-proven UI-intent probe.
+The normal optimized `esp32-cyd` firmware executed the complete bounded reader probe on the real classic no-PSRAM CYD.
 
-It opens the native pack once, resolves the real `/intro.bsp` entry and requires the inherited source identity:
-
-```text
-source bytes = 21823
-CRC32        = 623f34e4
-strings      = 94
-payload      = 7779 B
-max payload  = 313 B
-spanFNV      = 713188eb
-```
-
-For every one of the 94 strings the probe:
-
-1. resolves the canonical `EspMapStringRef`;
-2. reads the preceding on-disk little-endian length prefix and checks it against `ref.length`;
-3. calls `EspMapStrings_read()` into a caller-owned `314 B` text capacity (`313 B + terminator`);
-4. checks two guard bytes surrounding that buffer;
-5. checks the synthesized terminator and returned length;
-6. recomputes the already hardware-proven span fingerprint;
-7. feeds the actual payload bytes into a new deterministic content fingerprint.
-
-The content fingerprint is intentionally **not predeclared** before the first hardware run. The exact Serial result becomes canonical only after the real CYD proves the source identity, all 94 length prefixes, all 94 bounded reads and the no-mutation boundary.
-
-The probe also reports raw payload FNVs for the four existing UI fixtures:
+Inherited source identity remained exact:
 
 ```text
-string 1   — FORCE_MESSAGE sample
-string 25  — DIALOG sample
-string 30  — DIALOGNOBACK sample
-string 85  — NOTE sample
+entry          = /intro.bsp
+source bytes   = 21823
+CRC32          = 623f34e4
+strings        = 94
+payload        = 7779 B
+max payload    = 313 B
+spanFNV        = 713188eb
 ```
 
-## Fail-closed checks
+Every one of the 94 canonical string refs was resolved and its preceding little-endian source length prefix matched exactly:
 
-Before PARK the probe must prove:
+```text
+prefixMatches = 94 / 94
+```
+
+All 94 strings were read into a caller-owned bounded buffer with guard bytes intact:
+
+```text
+guards          = 94 / 94
+payload bytes   = 7779
+zeroLength      = 1
+cEmpty          = 1
+sourceNulBytes  = 0
+max             = 313 B
+packPayloadReads= 93
+```
+
+The `93` payload reads for `94` strings are expected: the unique zero-length payload needs no source payload I/O.
+
+## Canonical string-content fingerprints
+
+The first real hardware content fingerprint is now canonical:
+
+```text
+contentFNV = e995ee51
+```
+
+Raw payload FNVs for the four existing UI fixtures are:
+
+```text
+string 1  / FORCE_MESSAGE = f6da01bb
+string 25 / DIALOG        = 84f743cf
+string 30 / DIALOGNOBACK  = 3692ac94
+string 85 / NOTE          = ee639dc1
+```
+
+Together with the already-proven span fingerprint this gives two independent native contracts:
+
+```text
+stringSpanFNV = 713188eb   structural index/span topology
+contentFNV    = e995ee51   actual payload bytes read from native pack
+```
+
+The probe also established that MAP_INTRO contains no embedded source NUL bytes in its 7779 payload bytes. The single C-empty result comes from the unique zero-length source span rather than an embedded terminator.
+
+## Fail-closed proof
+
+All deliberately invalid paths were refused on hardware:
+
+```text
+shortBuffer = 1
+badRef      = 1
+nullRef     = 1
+closedPack  = 1
+guards      = 94 / 94
+```
+
+Meaning:
 
 ```text
 max-string buffer without terminator room -> BUFFER_TOO_SMALL
@@ -118,61 +154,75 @@ NULL ref -> INVALID
 valid non-empty ref after closing pack -> IO_ERROR
 ```
 
-No failed operation may escape the caller buffer or mutate native/legacy gameplay state.
+No failed operation escaped the caller buffer or mutated native/legacy gameplay state.
 
-## Expected memory/effect boundary
+## Storage / RAM proof
 
-Permanent cost by construction:
+Opening the native pack for the exhaustive sweep had a bounded transient heap cost:
 
 ```text
-EspMapStrings_read state = 0 B persistent
-caller buffer            = <=314 B transient stack/caller ownership for MAP_INTRO
-native pack handle       = transient existing EspAssetPack ownership
+heap before open   = 68804 B
+heap while open    = 64440 B
+transient heap cost=  4364 B
+largest while open = 36852 B
+elapsed            = 41 ms
+persistentBytes    = 0 B
 ```
 
-The probe records the temporary heap cost while the PAK is open, then requires exact recovery after close.
-
-The following must be unchanged before/after the full 94-string sweep:
+After the pack was closed, the stage recovered exactly:
 
 ```text
-heap8
-largest8
-framebuffer FNV
-arenaFNV
-mapStateFNV
-scriptFNV
-Player.NotebookString FNV
-Hud.statBarMessage
-Game continuation fields
-entities / monsters
+heap8        = 68804 -> 68804
+largest8     = 36852 -> 36852
+frameFNV     = 805df09e -> 805df09e
+arenaFNV     = c3882516 -> c3882516
+mapStateFNV  = cd99b98e -> cd99b98e
+scriptFNV    = f9e3d9df -> f9e3d9df
+notebookFNV  = 4d7705c5 -> 4d7705c5
 ```
 
-The final boundary must still have:
+The absolute heap8 moved from `68820` on the previous UI-intent build to `68804` on this firmware, while the framebuffer fingerprint also changed from the previous build's `b8b39f0f` to `805df09e`. Both are build-to-build layout/content differences: this reader stage itself has exact zero drift before/after, and all inherited arena/map/script fingerprints remain canonical.
+
+The final PARK boundary was:
 
 ```text
-shapeData   == NULL
-mediaTexels == NULL
-legacy mapStringsIDs == NULL
-legacy UI mutation    = no
-world mutation        = no
-framebuffer mutation  = no
+nativeArena           = yes
+nativeTileState       = yes
+nativeEventLookup     = yes
+nativeEventDescriptor = yes
+nativeScriptState     = yes
+nativeFilter          = yes
+nativeOpcodeExec      = yes
+nativeUiIntent        = yes
+nativeStringReader    = yes
+persistentBytes       = 0
+legacyUiMutation      = no
+worldMutation         = no
+framebufferMutation   = no
 entities              = 0
 monsters              = 0
-ST_PLAYING             = no
+noGameplay            = yes
 ```
 
-## Hardware acceptance
-
-Use the normal optimized PlatformIO environment:
+Permanent invariants remain:
 
 ```text
-esp32-cyd
+shapeData            == NULL
+mediaTexels          == NULL
+legacy mapStringsIDs == NULL
+runtime ZIP strings   = forbidden
 ```
 
-A real-CYD PASS requires `[MAPTEXT] READY`, all four fail-closed checks, exact RAM/state/frame preservation and `[MAPTEXTPROBE] PARK ... nativeStringReader=yes` with no later regression in `[ALIVE]`.
+## Hardware acceptance status
 
-Until those Serial logs are supplied, this milestone remains **hardware pending** and is not merge-ready.
+The complete `[MAPTEXT]` / `[MAPTEXTPROBE]` one-shot probe is a **REAL-CYD HARDWARE PASS**.
 
-## Next boundary after a hardware PASS
+One acceptance item from the pre-test milestone text remains unobserved in the supplied capture: it ends immediately after `[MAPTEXTPROBE] PARK`, so there is no later `[ALIVE]` heartbeat proving post-PARK steady-state persistence. No firmware change or reflash is required for this evidence; one later heartbeat from the same tested firmware is sufficient.
 
-Only after the bounded reader is proven should one small native text/effect owner consume the existing UI intents. Keep presentation/state ownership explicit and do not route the permanent architecture back through legacy `DoomCanvas`, `Hud`, `Player` or `mapStringsIDs[]`.
+Until that post-PARK heartbeat is captured, keep the branch **not merge-ready** even though the bounded reader probe itself passed.
+
+## Next boundary after merge
+
+Once post-PARK stability is locked and this branch is merged, the next coherent milestone is one **small explicit native text/effect owner** consuming the already-separated UI intents and bounded reader.
+
+Prefer a bounded owner that does not mutate world/entities/rendering. Do not route the permanent architecture back through legacy `DoomCanvas`, `Hud`, `Player`, `mapStringsIDs[]` or runtime ZIP access.
