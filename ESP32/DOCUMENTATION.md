@@ -10,9 +10,9 @@ Use [`README.md`](README.md) for build/flash instructions, target hardware, stab
 
 ### `PORTING_STATUS.md` — authoritative current recovery point
 
-Use [`PORTING_STATUS.md`](PORTING_STATUS.md) when resuming development. It owns the latest merged baseline, active branch, exact current RAM/state boundary, current native-map plan/runtime/access contract and next bounded milestone.
+Use [`PORTING_STATUS.md`](PORTING_STATUS.md) when resuming development. It owns the latest merged baseline, active branch, exact current RAM/state boundary, current native-map plan/runtime/access/state contracts and next bounded milestone.
 
-The older long-form recovery catalog is preserved unchanged at [`archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md`](archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md).
+The older full recovery catalog remains preserved unchanged at [`archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md`](archive/PORTING_STATUS_PRE_MAP1_NATIVE_PASS1.md).
 
 ### Milestone archives — detailed evidence
 
@@ -27,14 +27,15 @@ Merged milestones:
 | [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md) | bounded intro teardown + RAM recovery | #41 | `897e982f4b37039d984b13265beaa68a83dce98b` |
 | [`MAP1_STRUCTURAL_LOAD.md`](MAP1_STRUCTURAL_LOAD.md) | MAP_INTRO legacy refusal + native BSP reader/offset/resource/14,095 B plan | #42 | `c71ac1fb07c2e281bc3f8a70c102dd22c7b9300e` |
 | [`MAP1_NATIVE_RUNTIME.md`](MAP1_NATIVE_RUNTIME.md) | persistent 14,095-byte native arena; 14,112 B actual heap cost, 17 B overhead, `arenaFNV=c3882516` | #43 | `503fdd66fae625a45446fb4ea0853abc71d7dda3` |
+| [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md) | allocation-free native indexed access; full real-CYD semantic sweep, `decodedFNV=a426dd18`, 3–4 ms, zero drift | #44 | `ddcf19e6166f210a6f63fec1c608234ee3e253ea` |
 
 The pre-final MAP_INTRO structural document remains preserved at [`archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md`](archive/MAP1_STRUCTURAL_LOAD_PRE_HARDWARE_PASS.md).
 
 Current merge-ready milestone:
 
-- [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md) — allocation-free bounds-checked decoding of the resident compact MAP_INTRO arena; complete real-CYD sweep of every record/spatial/resource family; canonical semantic `decodedFNV=a426dd18`; 3 ms; zero heap/largest-block/framebuffer drift.
+- [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md) — first separate mutable native world state: hardware-proven 1,024-byte `tileFlags[1024]` payload, 1,040 B actual heap cost, `stateFNV=cd99b98e`, exact entrance/event topology, immutable `arenaFNV=c3882516`, and stable largest block; **MERGE-READY**.
 
-After merge, add its PR/merge SHA here and treat it as a historical milestone archive except for archival metadata corrections.
+After merge, add its PR/merge SHA to the merged-milestone table and treat the document as historical evidence except for archival metadata corrections.
 
 ## Architecture documentation rule
 
@@ -61,7 +62,7 @@ Doom RPG data / recovered behavior
         -> ESP32-native parsers
         -> compact immutable native map base
         -> allocation-free native accessors
-        -> small mutable index-based overlays
+        -> small explicit mutable native state/overlays
         -> ESP32-native renderer/game
 ```
 
@@ -81,7 +82,7 @@ Do not delete unique hardware measurements merely to shorten documentation. Fail
 | Stable architecture | yes | concise invariants | milestone detail |
 | Latest merged/candidate SHA | link | **authoritative** | historical base/merge SHA |
 | Current safe RAM/state boundary | summary | **authoritative** | historical boundary |
-| Current native map plan/runtime/access contract | concise | **authoritative** | detailed proof |
+| Current native map/runtime/access/state contract | concise | **authoritative** | detailed proof |
 | Full Serial evidence | no | selected values | yes |
 | Rejected approaches | concise if recovery-relevant | concise | detailed |
 | Next bounded milestone | link | **authoritative** | historical context only |
@@ -103,37 +104,73 @@ Do not delete unique hardware measurements merely to shorten documentation. Fail
 Latest merged hardware baseline:
 
 ```text
-PR   = #43 — persistent native MAP_INTRO arena
-main = 503fdd66fae625a45446fb4ea0853abc71d7dda3
+PR   = #44 — native compact MAP_INTRO access contract
+main = ddcf19e6166f210a6f63fec1c608234ee3e253ea
 ```
 
 Current merge-ready branch:
 
 ```text
-branch = agent/esp32-map1-native-access
-hardware-tested code = dfe25218b74db9d2765850fbc29057e703c57154
+branch = agent/esp32-map1-native-state
+hardware-tested code = 9a17654b56a190932615bba4894e90debd0e3773
 status = REAL-CYD HARDWARE PASS; MERGE-READY
 ```
 
-The real CYD now proves both physical compact storage and logical native consumption:
+The real CYD now proves three successive native layers:
 
 ```text
-arena payload       = 14095 B
-actual heap cost    = 14112 B
-arenaFNV            = c3882516
-heap8 resident      = 70112
-largest8            = 36852
+immutable arena
+  payload            = 14095 B
+  actual heap        = 14112 B
+  arenaFNV           = c3882516
 
-decodedFNV          = a426dd18
-full access sweep   = 3 ms
-access heap drift   = 0 B
-largest drift       = 0 B
-framebuffer drift   = none
-bounds checks       = PASS
-legacy runtime      = absent
-entities/monsters   = 0
+allocation-free access
+  decodedFNV         = a426dd18
+  full sweep         = 4 ms on current build
+  heap drift         = 0 B
+
+mutable tile state
+  payload            = 1024 B
+  actual heap        = 1040 B
+  allocator overhead = 16 B
+  stateFNV           = cd99b98e
+  build/verify       = 9 ms
 ```
 
-The next bounded milestone after merge is a roughly 1 KiB native `EspMapState.tileFlags[1024]` mutable spatial overlay initialized through the proven accessors, including recovered entrance/event flags, while keeping the source arena immutable.
+Combined actual native persistent map/world heap:
 
-See [`PORTING_STATUS.md`](PORTING_STATUS.md) and [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md).
+```text
+15152 B
+```
+
+Compared with measured legacy structural allocation:
+
+```text
+55341 B -> 15152 B
+saved = 40189 B
+reduction ~= 72.6%
+```
+
+Spatial topology established on real hardware:
+
+```text
+block base       = 298 / 697 / 27 / 2
+entrance refs    = 4
+entrance cells   = 4
+event refs       = 93
+event cells      = 93
+first entrance   = tile 68
+first event      = tile 68
+visited cells    = 0
+largest8         = 36852 preserved
+heap8 after state = 69016
+legacy runtime   = absent
+entities/monsters = 0
+ST_PLAYING       = no
+```
+
+Tile 68 carrying both entrance and event semantics confirms the composable bit-field model for `EspMapState`.
+
+The preferred next bounded milestone after merge is a compact native **tile -> event lookup/index contract**, derived from actual event-query behavior rather than desktop `tileEvents` ownership.
+
+See [`PORTING_STATUS.md`](PORTING_STATUS.md), [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md), and merged [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md).
