@@ -16,7 +16,7 @@ Current candidate:
 ```text
 branch = agent/esp32-map1-native-ui-intent
 base   = 6e43ef059db52783b7264e84579216cb2572a1e2
-hardware-affecting head = 608449f427baf65f036ca7e00e424cb39938f86e
+hardware-affecting head = 045b219dd7d6d06630eb446424e8d3d3fa3d249e
 status = NATIVE STRING SPANS + UI INTENT FAMILY IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS
 ```
 
@@ -254,7 +254,7 @@ UI translation produces caller-owned intents:
 
 ```text
 DIALOG          -> string span + Back/no-Back + pause/resume metadata
-FORCE_MESSAGE   -> string span; empty string means clear
+FORCE_MESSAGE   -> string span + EMPTY_CLEARS semantic based on resolved text[0]
 APPEND_NOTE     -> string span + recovered trailing "||" append semantic
 ```
 
@@ -276,7 +276,8 @@ adjacent length-prefix topology
 all real 8/24/26/40 command translations
 first sample of each family
 total/per-opcode reference counts
-pause + empty-clear counts
+pause + FORCE_MESSAGE empty-clears semantic counts
+zero-length FORCE_MESSAGE span count
 spanFNV + intentFNV
 state executor refuses every UI ref
 0 heap/largest/frame/arena/map/script drift
