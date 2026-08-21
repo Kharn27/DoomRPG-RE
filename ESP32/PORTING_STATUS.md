@@ -19,18 +19,18 @@ Merged hardware-tested firmware content for PR #50:
 
 Detailed merged evidence: [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md).
 
-## Current candidate
+## Current merge-ready candidate
 
 ```text
 branch = agent/esp32-map1-native-string-reader
 base   = 9a5e8ade361180d220f2b3614a443e5efb0d27bd
-firmware candidate content = d13d5eb13c4657d5ec5c16fd82939cfc38989c86
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware content = d13d5eb13c4657d5ec5c16fd82939cfc38989c86
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Detailed active milestone: [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md).
 
-The current candidate adds one bounded, allocation-free pack-backed string reader plus a temporary exhaustive MAP_INTRO hardware probe. It is **not merge-ready** until the normal `esp32-cyd` firmware passes on the real CYD.
+The bounded native string reader passed the full normal `esp32-cyd` real-CYD probe and three post-PARK heartbeats. All commits after the hardware-tested firmware content SHA must remain documentation-only unless another flash is performed.
 
 ## Permanent target / ownership
 
@@ -73,30 +73,29 @@ BSP source in native pack
  -> allocation-free native string spans
  -> compact native UI/player intents
  -> bounded pack-backed one-string reader
- -> small explicit native effect owners
+ -> small explicit native text/effect owners
  -> ESP32-native gameplay + renderer
 ```
 
-## Hardware-proven foundation through PR #50
+## Hardware-proven fingerprints
 
 ```text
-source BSP FNV = d5cc751f
-arenaFNV       = c3882516
-decodedFNV     = a426dd18
-mapStateFNV    = cd99b98e
-lookupFNV      = 63430151
-descriptorFNV  = 27115328
-linkageFNV     = 5727902c
-scriptFNV      = f9e3d9df
-filterFNV      = a5923b21
-resumeFNV      = b98452da
-opcodeAuditFNV = 6f28df45
-firstExecFNV   = 646b565c
-stringSpanFNV  = 713188eb
-uiIntentFNV    = 7fdd6a79
+source BSP FNV   = d5cc751f
+arenaFNV         = c3882516
+decodedFNV       = a426dd18
+mapStateFNV      = cd99b98e
+lookupFNV        = 63430151
+descriptorFNV    = 27115328
+linkageFNV       = 5727902c
+scriptFNV        = f9e3d9df
+filterFNV        = a5923b21
+resumeFNV        = b98452da
+opcodeAuditFNV   = 6f28df45
+firstExecFNV     = 646b565c
+stringSpanFNV    = 713188eb
+uiIntentFNV      = 7fdd6a79
+stringContentFNV = e995ee51
 ```
-
-No string-content fingerprint is canonical yet. The current string-reader candidate will measure it on the real CYD; do not predeclare it from desktop/tool output.
 
 MAP_INTRO `/intro.bsp` / `Entrance`:
 
@@ -125,7 +124,7 @@ all initial event states = 0
 event flag values = {0,1}
 ```
 
-Persistent native RAM measured on hardware through PR #50:
+Persistent native RAM measured on hardware:
 
 ```text
 immutable arena       = 14112 B actual heap
@@ -133,14 +132,13 @@ mutable tile state    =  1040 B actual heap
 mutable script state  =   100 B actual heap
 opcode executor       =     0 B persistent
 string spans/intents  =     0 B persistent
+bounded string reader =     0 B persistent
 -----------------------------------------
 current proven total  = 15252 B
 largest8              = 36852 preserved
 ```
 
 Measured legacy structural allocation was `55341 B`; native ownership remains `40089 B` smaller (~72.4%).
-
-The candidate `EspMapStrings_read()` owns **0 persistent bytes by construction**; its real transient pack-open cost and exact post-close recovery are hardware-pending.
 
 ## Side-effect-free event filter — hardware validated
 
@@ -155,7 +153,7 @@ flagsMismatch    = 20816
 blockInputEvents = 8
 filterFNV        = a5923b21
 resumeFNV        = b98452da
-probe elapsed    = 1411 ms
+probe elapsed    = 1410 ms on current reader firmware
 ```
 
 Script-state ownership proof:
@@ -241,8 +239,6 @@ EspMapUiIntent_supports()
 EspMapUiIntent_build()
 ```
 
-String bytes remain on `/DoomRPG-ESP32.pak`; no map-wide `mapStringsIDs[]` allocation exists.
-
 String span proof:
 
 ```text
@@ -269,73 +265,14 @@ force-empty semantics = 3
 zero-length force     = 2
 state-exec refused    = 94
 intentFNV             = 7fdd6a79
-probe elapsed         = 1 ms
 persistentBytes       = 0
-```
-
-Accounting is exact: `76 + 3 + 8 + 7 = 94`, and `76 + 8 = 84` dialog pause/resume intents.
-
-Canonical samples:
-
-```text
-dialog: cmd11 event6 off0 resume1 flags07 string25@13558+23
-force : cmd4  event2 off0 resume1 flags08 string1@11569+14
-noBack: cmd19 event6 off8 resume9 flags06 string30@13679+14
-note  : cmd103 event40 off8 resume9 flags10 string85@18964+54
 ```
 
 The state-mutating opcode executor refused all 94 UI commands as `UNSUPPORTED`, preserving strict effect-family separation.
 
-No legacy effect was applied:
+## Bounded native string reader — hardware validated
 
-```text
-DoomCanvas dialog state = untouched
-Hud.statBarMessage      = untouched
-Player.NotebookString   = untouched
-Game continuation fields= untouched
-world/entities/render   = untouched
-```
-
-Hardware integrity across the UI/string sweep:
-
-```text
-heap8        = 68820 -> 68820
-largest8     = 36852 -> 36852
-frameFNV     = b8b39f0f -> b8b39f0f
-arenaFNV     = c3882516 -> c3882516
-mapStateFNV  = cd99b98e -> cd99b98e
-scriptFNV    = f9e3d9df -> f9e3d9df
-notebookFNV  = 4d7705c5 -> 4d7705c5
-entities     = 0
-monsters     = 0
-ST_PLAYING   = no
-```
-
-Later `[ALIVE]` remained stable at `heap8=68820`, `largest8=36852`.
-
-The absolute heap8 moved from `68828` on the previous build to `68820`; the UI-intent stage itself had exact zero drift, so this remains a build/layout difference rather than a runtime allocation.
-
-## Current hardware-proven execution path
-
-```text
-validated intro disposal
- -> native BSP inventory
- -> compact resident arena
- -> accessor sweep
- -> mutable tile state
- -> tile/event lookup
- -> descriptor/linkage sweep
- -> 81 B script-state build
- -> exhaustive event-filter proof
- -> opcode inventory + real EV_NEXTSTATE execution/rollback
- -> allocation-free 94-string span sweep
- -> 94 real UI/string bytecodes -> caller-owned native intents
- -> PARK
-```
-
-## Candidate string-reader boundary — hardware pending
-
-Permanent API added by firmware candidate `d13d5eb13c4657d5ec5c16fd82939cfc38989c86`:
+Permanent API:
 
 ```text
 EspMapStrings_read(sourceEntry, ref, destination, capacity, outLength)
@@ -353,22 +290,102 @@ caller owns the buffer
 0 persistent bytes
 ```
 
-Temporary MAP_INTRO probe target:
+Real MAP_INTRO content sweep:
 
 ```text
-94 canonical refs
-94 on-disk length-prefix checks
-94 bounded caller-buffer checks
-93 non-empty PAK payload reads
-new contentFNV measured from real source bytes
-short buffer -> refused
-mutated ref  -> refused
-NULL ref     -> refused
-closed pack non-empty read -> refused
-heap/largest/frame/arena/map/script/notebook -> exact recovery
+strings          = 94
+payload          = 7779 B
+zeroLength       = 1
+cEmpty           = 1
+sourceNulBytes   = 0
+max              = 313 B
+prefixMatches    = 94 / 94
+guards           = 94 / 94
+packPayloadReads = 93
+spanFNV          = 713188eb
+contentFNV       = e995ee51
+elapsed          = 41 ms
 ```
 
-Do not record `contentFNV`, transient heap cost, elapsed time, or PASS status until the real CYD Serial log supplies them.
+Canonical fixture payload FNVs:
+
+```text
+string 1  / FORCE_MESSAGE = f6da01bb
+string 25 / DIALOG        = 84f743cf
+string 30 / DIALOGNOBACK  = 3692ac94
+string 85 / NOTE          = ee639dc1
+```
+
+Fail-closed hardware proof:
+
+```text
+shortBuffer = 1
+badRef      = 1
+nullRef     = 1
+closedPack  = 1
+```
+
+Transient PAK-open cost and exact recovery:
+
+```text
+heap before open    = 68804 B
+heap while open     = 64440 B
+transient heap cost = 4364 B
+largest while open  = 36852 B
+persistentBytes     = 0 B
+
+heap8        = 68804 -> 68804
+largest8     = 36852 -> 36852
+frameFNV     = 805df09e -> 805df09e
+arenaFNV     = c3882516 -> c3882516
+mapStateFNV  = cd99b98e -> cd99b98e
+scriptFNV    = f9e3d9df -> f9e3d9df
+notebookFNV  = 4d7705c5 -> 4d7705c5
+```
+
+Final PARK:
+
+```text
+nativeStringReader = yes
+persistentBytes    = 0
+legacyUiMutation   = no
+worldMutation      = no
+framebufferMutation= no
+entities           = 0
+monsters           = 0
+ST_PLAYING         = no
+```
+
+Three post-PARK heartbeats remained stable:
+
+```text
+uptime=140113 ms heap=134568 heap8=68804 largest8=36852
+uptime=145114 ms heap=134568 heap8=68804 largest8=36852
+uptime=150115 ms heap=134568 heap8=68804 largest8=36852
+```
+
+All reported subsystems stayed `ready`.
+
+The absolute heap8 moved from `68820` on the previous UI-intent build to `68804` on this build, and the framebuffer fingerprint moved from `b8b39f0f` to `805df09e`. The reader stage itself has exact zero drift and all inherited native fingerprints remain canonical, so these are build-to-build differences rather than reader allocations/mutations.
+
+## Current hardware-proven execution path
+
+```text
+validated intro disposal
+ -> native BSP inventory
+ -> compact resident arena
+ -> accessor sweep
+ -> mutable tile state
+ -> tile/event lookup
+ -> descriptor/linkage sweep
+ -> 81 B script-state build
+ -> exhaustive event-filter proof
+ -> opcode inventory + real EV_NEXTSTATE execution/rollback
+ -> allocation-free 94-string span sweep
+ -> 94 real UI/string bytecodes -> caller-owned native intents
+ -> bounded 94-string native-pack content sweep
+ -> PARK + stable post-PARK heartbeats
+```
 
 Still forbidden:
 
@@ -384,30 +401,20 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Current validation request
+## Merge recommendation
 
-Build/flash the normal optimized environment from `agent/esp32-map1-native-string-reader`:
+**MERGE `agent/esp32-map1-native-string-reader`.**
 
-```text
-esp32-cyd
-```
-
-The firmware-content commit to validate is:
+Hardware-tested firmware content:
 
 ```text
 d13d5eb13c4657d5ec5c16fd82939cfc38989c86
 ```
 
-Expected terminal family:
+All later commits must remain documentation-only unless another flash is performed.
 
-```text
-[MAPTEXTPROBE] ARMED ...
-[MAPTEXT] READY ... contentFNV=...
-[MAPTEXT] SAMPLES ...
-[MAPTEXT] FAILCLOSED shortBuffer=1 badRef=1 nullRef=1 closedPack=1 ...
-[MAPTEXT] IO ... persistentBytes=0
-[MAPTEXTPROBE] RAM ...
-[MAPTEXTPROBE] PARK ... nativeStringReader=yes ...
-```
+## Next bounded milestone after merge
 
-Only after a real-CYD PASS should this candidate be documented as hardware validated / merge-ready. The next bounded milestone should then choose one small native dialog/status/notebook effect owner consuming the already-separated UI intents and bounded reader, without reintroducing legacy UI ownership.
+Choose one **small explicit native text/effect owner** consuming the existing `EspMapUiIntent` plus `EspMapStrings_read()` boundary.
+
+Keep it caller-owned/bounded and avoid world/entity/render mutation. Do not reintroduce legacy `DoomCanvas`, `Hud`, `Player`, `mapStringsIDs[]` or runtime ZIP ownership into the permanent architecture.
