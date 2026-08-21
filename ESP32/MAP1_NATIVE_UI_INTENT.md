@@ -9,7 +9,13 @@ PR   = #49 — first fail-closed native opcode execution
 main = 6e43ef059db52783b7264e84579216cb2572a1e2
 ```
 
-Status: **IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS**.
+Hardware-tested firmware content:
+
+```text
+045b219dd7d6d06630eb446424e8d3d3fa3d249e
+```
+
+Status: **REAL-CYD HARDWARE PASS; ALLOCATION-FREE NATIVE STRING SPANS + UI INTENTS VALIDATED; MERGE-READY**.
 
 ## Objective
 
@@ -22,9 +28,9 @@ Expand native script ownership with one coherent non-world-mutating family:
 40 EV_NOTE
 ```
 
-These commands are not allowed to call legacy `DoomCanvas`, `Hud` or `Player` yet. Instead they translate to compact native UI/player intents that preserve the recovered semantics and string linkage.
+These commands do not call legacy `DoomCanvas`, `Hud` or `Player`. They translate to compact caller-owned native intents preserving the recovered semantics and exact map-string linkage.
 
-The existing state-mutating opcode executor remains unchanged and continues to support only `11/19/20`. UI opcodes must still return `UNSUPPORTED` there.
+The existing state-mutating opcode executor remains unchanged and continues to support only `11/19/20`. UI opcodes still return `UNSUPPORTED` there.
 
 ## Recovered legacy semantics
 
@@ -35,6 +41,7 @@ text = mapStringsIDs[arg1]
 start dialog with Back softkey
 save tile-event continuation
 skip advance turn
+resume at following command when dialog closes
 ```
 
 ### EV_DIALOGNOBACK (26)
@@ -49,7 +56,7 @@ text[0] != '\0' -> Hud.statBarMessage = text
 text[0] == '\0' -> Hud.statBarMessage = NULL
 ```
 
-The native intent therefore always carries the semantic flag `CLEAR_IF_EMPTY`. It does **not** assume that BSP `length == 0` is the only possible representation whose first byte is NUL. Actual text-byte inspection belongs to the future bounded string reader/consumer.
+The native intent always carries `CLEAR_IF_EMPTY`. Actual first-byte inspection belongs to the bounded text reader/consumer; BSP length zero is structural evidence, not assumed to be the only representation of an empty C string.
 
 ### EV_NOTE (40)
 
@@ -59,15 +66,15 @@ Player.NotebookString += text + "||"
 
 Native code does not apply these legacy mutations in this milestone.
 
-## Allocation-free string span contract
+## Permanent allocation-free string span contract
 
-New permanent API:
+API:
 
 ```text
 EspMapStrings_getRef(stringId, &ref)
 ```
 
-`EspMapStringRef` contains:
+`EspMapStringRef` contains only:
 
 ```text
 index
@@ -75,9 +82,9 @@ sourceOffset
 length
 ```
 
-Only the existing 188-byte packed string-offset table remains resident. String payloads stay in `/DoomRPG-ESP32.pak` and are not materialized map-wide.
+The existing 188-byte packed string-offset table remains resident. String payloads stay in `/DoomRPG-ESP32.pak`; no map-wide text allocation is introduced.
 
-The source format is length-prefixed. For all but the final string, native length is recovered from adjacent payload offsets; the final span ends immediately before the fixed blockmap + plane-map source tail. The resident runtime already rejects trailing bytes and unsupported section topology.
+Length is recovered from adjacent payload offsets; the final span ends immediately before the fixed blockmap + plane-map tail.
 
 New persistent cost:
 
@@ -85,9 +92,9 @@ New persistent cost:
 0 B
 ```
 
-## Compact native intent contract
+## Permanent compact intent contract
 
-New permanent API:
+API:
 
 ```text
 EspMapUiIntent_supports(codeId)
@@ -116,81 +123,140 @@ FORCE_MESSAGE empty-clears semantic
 NOTE append + "||" semantic
 ```
 
-No queue/mailbox is allocated yet. The intent is a caller-owned value object. A future native UI/player owner can consume it without forcing this layer to depend on legacy UI structures.
+No queue/mailbox is allocated. The intent is a caller-owned value object.
 
-## Hardware probe
+## Real-CYD hardware result
 
-The temporary probe runs only after the hardware-proven first opcode-execution stage.
+The normal optimized `esp32-cyd` firmware passed the complete probe on the classic no-PSRAM CYD.
 
-It validates all 94 MAP_INTRO string refs:
+### String-span proof
+
+All 94 MAP_INTRO strings were reconstructed allocation-free from the resident offset table:
 
 ```text
-count                  = 94
-payload bytes          = 7779
-max string length      = 313
-adjacent span topology = exact
-last string end        = start of blockmap
+strings         = 94
+payload bytes   = 7779
+zero-length     = 1
+max length      = 313
+first payload   = 11554
+last payload    = 19512 + 7
+spanFNV         = 713188eb
+persistentBytes = 0
 ```
 
-Hardware establishes:
+The final span ends exactly at the string-data boundary immediately before the fixed blockmap/plane tail.
+
+### Real UI-intent corpus
+
+All real `8/24/26/40` commands in the 265-bytecode stream translated successfully:
 
 ```text
-zero-length string count
-first/last source span
-spanFNV
+refs                = 94
+EV_DIALOG           = 76
+EV_FORCEMESSAGE     = 3
+EV_DIALOGNOBACK     = 8
+EV_NOTE             = 7
+pause intents       = 84
+force-empty semantic= 3
+zero-length force   = 2
+state-exec refused  = 94
+intentFNV           = 7fdd6a79
+probe elapsed       = 1 ms
+persistentBytes     = 0
 ```
 
-It then walks all 93 event descriptors and all 265 commands. Every real `8/24/26/40` command must translate successfully and be checked against an independent expected kind/flag mapping.
-
-Hardware establishes:
+Accounting is exact:
 
 ```text
-total UI refs
-8/24/26/40 counts
-pause-intent count
-FORCE_MESSAGE empty-clears semantic count
-zero-length FORCE_MESSAGE span count
-intentFNV
-first real sample of each opcode family
+76 + 3 + 8 + 7 = 94
+76 + 8         = 84 pause/resume dialogs
 ```
 
-Every UI command is also sent to the old state-mutating `EspMapOpcodeExecutor_execute()` and must still return `UNSUPPORTED`.
+Every UI-family command remained `UNSUPPORTED` in the old state-mutating opcode executor, proving the two effect families stay separated.
 
-## Integrity gate
-
-Across the complete string + intent sweep:
+### Canonical real samples
 
 ```text
-heap8        X -> X
-largest8     Y -> Y
-frameFNV     F -> F
-arenaFNV     c3882516 -> c3882516
-mapStateFNV  cd99b98e -> cd99b98e
-scriptFNV    f9e3d9df -> f9e3d9df
-NotebookString fingerprint unchanged
-Hud.statBarMessage pointer unchanged
-Game tile-event continuation fields unchanged
-DoomCanvas remains ST_INTRO page 3
+EV_DIALOG
+  command = 11
+  event   = 6
+  offset  = 0
+  resume  = 1
+  flags   = 07
+  string  = 25 @ 13558 + 23
+
+EV_FORCEMESSAGE
+  command = 4
+  event   = 2
+  offset  = 0
+  resume  = 1
+  flags   = 08
+  string  = 1 @ 11569 + 14
+
+EV_DIALOGNOBACK
+  command = 19
+  event   = 6
+  offset  = 8
+  resume  = 9
+  flags   = 06
+  string  = 30 @ 13679 + 14
+
+EV_NOTE
+  command = 103
+  event   = 40
+  offset  = 8
+  resume  = 9
+  flags   = 10
+  string  = 85 @ 18964 + 54
+```
+
+## Hardware integrity proof
+
+Across the entire string-span and intent sweep:
+
+```text
+heap8        = 68820 -> 68820
+largest8     = 36852 -> 36852
+frameFNV     = b8b39f0f -> b8b39f0f
+arenaFNV     = c3882516 -> c3882516
+mapStateFNV  = cd99b98e -> cd99b98e
+scriptFNV    = f9e3d9df -> f9e3d9df
+notebookFNV  = 4d7705c5 -> 4d7705c5
+persistent   = 0 B
+legacy UI    = unchanged
+world        = unchanged
 entities     = 0
 monsters     = 0
 ST_PLAYING   = no
 ```
 
-## Expected log tail
+Later `[ALIVE]` lines remained stable at:
 
 ```text
-[MAPUIPROBE] ARMED first native opcode execution proven; allocation-free UI/string intent translation starts on next loop service
+heap8    = 68820
+largest8 = 36852
+```
 
-=== Doom RPG ESP32-native MAP_INTRO UI/string intents ===
-[MAPUIPROBE] CONTRACT resolve compact string spans + translate EV_DIALOG/FORCEMESSAGE/DIALOGNOBACK/NOTE to native intents; 0 persistent bytes; no DoomCanvas/Hud/Player/world mutation
-[MAPSTRING] READY strings=94 payload=7779 empty=? max=313 firstOffset=? last=?+? spanFNV=???????? persistentBytes=0
-[MAPUI] READY refs=? dialog=? force=? noBack=? note=? pause=? forceEmptySemantics=? zeroLenForce=? stateExecRefused=? intentFNV=???????? elapsed=?ms persistentBytes=0
-[MAPUIPROBE] SAMPLE dialog ...
-[MAPUIPROBE] SAMPLE force ...
-[MAPUIPROBE] SAMPLE noBack ...
-[MAPUIPROBE] SAMPLE note ...
-[MAPUIPROBE] RAM heap8=X->X ... arenaFNV=c3882516->c3882516 mapStateFNV=cd99b98e->cd99b98e scriptFNV=f9e3d9df->f9e3d9df notebookFNV=N->N
-[MAPUIPROBE] PARK ... nativeUiIntent=yes persistentBytes=0 legacyUiMutation=no worldMutation=no framebufferMutation=no entities=0 monsters=0 noGameplay=yes
+The absolute `heap8` is 8 B lower than the previous build's `68828`; this is a build-to-build code/layout effect. The UI-intent stage itself has exact `68820 -> 68820` zero drift.
+
+Final PARK boundary:
+
+```text
+nativeArena           = yes
+nativeTileState       = yes
+nativeEventLookup     = yes
+nativeEventDescriptor = yes
+nativeScriptState     = yes
+nativeFilter          = yes
+nativeOpcodeExec      = yes
+nativeUiIntent        = yes
+persistentBytes       = 0
+legacyUiMutation      = no
+worldMutation         = no
+framebufferMutation   = no
+entities              = 0
+monsters              = 0
+noGameplay            = yes
 ```
 
 ## Still forbidden
@@ -206,11 +272,23 @@ entity/monster activation
 ST_PLAYING
 ```
 
-## Next boundary after PASS
+## Merge recommendation
 
-Use the measured UI-intent corpus to choose the next owner. Likely choices are either:
+**MERGE `agent/esp32-map1-native-ui-intent`.**
 
-1. a bounded native string reader + first real dialog/message presentation path; or
-2. another non-entity opcode family if that keeps ownership boundaries cleaner.
+The hardware-tested firmware content is `045b219dd7d6d06630eb446424e8d3d3fa3d249e`. Post-test commits must remain documentation-only unless another flash is performed.
 
-Do not couple the permanent intent layer back to legacy `Render.mapStringsIDs` or runtime ZIP access.
+## Next boundary after merge
+
+The most coherent next milestone is a **bounded native string reader over `/DoomRPG-ESP32.pak`**:
+
+```text
+EspMapStringRef
+ -> bounded read of exactly one payload
+ -> max MAP_INTRO payload = 313 B
+ -> canonical text/content fingerprint
+ -> no map-wide mapStringsIDs[]
+ -> no runtime ZIP access
+```
+
+Use it first as a validation/consumer boundary. Do not wire legacy `DoomCanvas`, `Hud` or `Player` mutation back into the permanent intent layer.
