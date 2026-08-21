@@ -76,7 +76,8 @@ typedef struct UiAudit_s {
     uint32_t noBackRefs;
     uint32_t noteRefs;
     uint32_t pauseRefs;
-    uint32_t clearRefs;
+    uint32_t forceEmptySemantics;
+    uint32_t zeroLengthForceRefs;
     uint32_t stateExecutorRefused;
     EspMapUiIntent dialogSample;
     EspMapUiIntent forceSample;
@@ -306,7 +307,7 @@ static uint8_t expectedIntentKind(uint8_t codeId) {
     return ESP_MAP_UI_INTENT_NONE;
 }
 
-static uint8_t expectedIntentFlags(uint8_t codeId, uint16_t textLength) {
+static uint8_t expectedIntentFlags(uint8_t codeId) {
     uint8_t flags = 0U;
 
     if (codeId == ESP_MAP_OPCODE_DIALOG ||
@@ -317,7 +318,7 @@ static uint8_t expectedIntentFlags(uint8_t codeId, uint16_t textLength) {
             flags |= ESP_MAP_UI_INTENT_FLAG_DIALOG_BACK;
         }
     }
-    else if (codeId == ESP_MAP_OPCODE_FORCE_MESSAGE && textLength == 0U) {
+    else if (codeId == ESP_MAP_OPCODE_FORCE_MESSAGE) {
         flags = ESP_MAP_UI_INTENT_FLAG_CLEAR_IF_EMPTY;
     }
     else if (codeId == ESP_MAP_OPCODE_NOTE) {
@@ -396,7 +397,7 @@ static int auditUiIntents(UiAudit* outAudit) {
 
             expectedGlobal = (uint32_t)descriptor.firstCommandIndex + commandOffset;
             expectedKind = expectedIntentKind(command.id);
-            expectedFlags = expectedIntentFlags(command.id, intent.text.length);
+            expectedFlags = expectedIntentFlags(command.id);
             if (intent.codeId != command.id || intent.arg1 != command.arg1 ||
                 intent.arg2 != command.arg2 ||
                 intent.sourceEventIndex != descriptor.eventIndex ||
@@ -420,7 +421,7 @@ static int auditUiIntents(UiAudit* outAudit) {
                 ++outAudit->pauseRefs;
             }
             if ((intent.flags & ESP_MAP_UI_INTENT_FLAG_CLEAR_IF_EMPTY) != 0U) {
-                ++outAudit->clearRefs;
+                ++outAudit->forceEmptySemantics;
             }
 
             if (command.id == ESP_MAP_OPCODE_DIALOG) {
@@ -432,6 +433,9 @@ static int auditUiIntents(UiAudit* outAudit) {
             }
             else if (command.id == ESP_MAP_OPCODE_FORCE_MESSAGE) {
                 ++outAudit->forceRefs;
+                if (intent.text.length == 0U) {
+                    ++outAudit->zeroLengthForceRefs;
+                }
                 if (!outAudit->haveForce) {
                     outAudit->forceSample = intent;
                     outAudit->haveForce = 1U;
@@ -461,6 +465,7 @@ static int auditUiIntents(UiAudit* outAudit) {
         outAudit->refs != outAudit->dialogRefs + outAudit->forceRefs +
                          outAudit->noBackRefs + outAudit->noteRefs ||
         outAudit->stateExecutorRefused != outAudit->refs ||
+        outAudit->forceEmptySemantics != outAudit->forceRefs ||
         !outAudit->haveDialog || !outAudit->haveForce ||
         !outAudit->haveNoBack || !outAudit->haveNote ||
         outAudit->pauseRefs != outAudit->dialogRefs + outAudit->noBackRefs) {
@@ -618,14 +623,15 @@ void Esp32Map1UiIntentProbe_service(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)stringAudit.lastOffset,
            (unsigned int)stringAudit.lastLength,
            (unsigned int)stringAudit.spanFNV);
-    printf("[MAPUI] READY refs=%u dialog=%u force=%u noBack=%u note=%u pause=%u clear=%u stateExecRefused=%u intentFNV=%08x elapsed=%ums persistentBytes=0\n",
+    printf("[MAPUI] READY refs=%u dialog=%u force=%u noBack=%u note=%u pause=%u forceEmptySemantics=%u zeroLenForce=%u stateExecRefused=%u intentFNV=%08x elapsed=%ums persistentBytes=0\n",
            (unsigned int)uiAudit.refs,
            (unsigned int)uiAudit.dialogRefs,
            (unsigned int)uiAudit.forceRefs,
            (unsigned int)uiAudit.noBackRefs,
            (unsigned int)uiAudit.noteRefs,
            (unsigned int)uiAudit.pauseRefs,
-           (unsigned int)uiAudit.clearRefs,
+           (unsigned int)uiAudit.forceEmptySemantics,
+           (unsigned int)uiAudit.zeroLengthForceRefs,
            (unsigned int)uiAudit.stateExecutorRefused,
            (unsigned int)uiAudit.intentFNV,
            (unsigned int)elapsed);
