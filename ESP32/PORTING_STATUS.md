@@ -7,22 +7,30 @@ Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOC
 ## Latest merged hardware baseline
 
 ```text
-PR   = #49 — first fail-closed native opcode execution
-main = 6e43ef059db52783b7264e84579216cb2572a1e2
+PR   = #50 — allocation-free native string spans + UI intents
+main = 9a5e8ade361180d220f2b3614a443e5efb0d27bd
 ```
 
-Current candidate:
+Merged hardware-tested firmware content for PR #50:
 
 ```text
-branch = agent/esp32-map1-native-ui-intent
-base   = 6e43ef059db52783b7264e84579216cb2572a1e2
-hardware-tested firmware content = 045b219dd7d6d06630eb446424e8d3d3fa3d249e
-status = REAL-CYD HARDWARE PASS; NATIVE STRING SPANS + UI INTENTS VALIDATED; MERGE-READY
+045b219dd7d6d06630eb446424e8d3d3fa3d249e
 ```
 
-Detailed active milestone: [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md).
+Detailed merged evidence: [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md).
 
-Merged first-execution evidence: [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
+## Current candidate
+
+```text
+branch = agent/esp32-map1-native-string-reader
+base   = 9a5e8ade361180d220f2b3614a443e5efb0d27bd
+firmware candidate content = d13d5eb13c4657d5ec5c16fd82939cfc38989c86
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+```
+
+Detailed active milestone: [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md).
+
+The current candidate adds one bounded, allocation-free pack-backed string reader plus a temporary exhaustive MAP_INTRO hardware probe. It is **not merge-ready** until the normal `esp32-cyd` firmware passes on the real CYD.
 
 ## Permanent target / ownership
 
@@ -64,11 +72,12 @@ BSP source in native pack
  -> fail-closed native opcode executor
  -> allocation-free native string spans
  -> compact native UI/player intents
- -> bounded native string reader / effect owners
+ -> bounded pack-backed one-string reader
+ -> small explicit native effect owners
  -> ESP32-native gameplay + renderer
 ```
 
-## Hardware-proven foundation
+## Hardware-proven foundation through PR #50
 
 ```text
 source BSP FNV = d5cc751f
@@ -86,6 +95,8 @@ firstExecFNV   = 646b565c
 stringSpanFNV  = 713188eb
 uiIntentFNV    = 7fdd6a79
 ```
+
+No string-content fingerprint is canonical yet. The current string-reader candidate will measure it on the real CYD; do not predeclare it from desktop/tool output.
 
 MAP_INTRO `/intro.bsp` / `Entrance`:
 
@@ -114,7 +125,7 @@ all initial event states = 0
 event flag values = {0,1}
 ```
 
-Persistent native RAM measured:
+Persistent native RAM measured on hardware through PR #50:
 
 ```text
 immutable arena       = 14112 B actual heap
@@ -123,11 +134,13 @@ mutable script state  =   100 B actual heap
 opcode executor       =     0 B persistent
 string spans/intents  =     0 B persistent
 -----------------------------------------
-current total         = 15252 B
+current proven total  = 15252 B
 largest8              = 36852 preserved
 ```
 
 Measured legacy structural allocation was `55341 B`; native ownership remains `40089 B` smaller (~72.4%).
+
+The candidate `EspMapStrings_read()` owns **0 persistent bytes by construction**; its real transient pack-open cost and exact post-close recovery are hardware-pending.
 
 ## Side-effect-free event filter — hardware validated
 
@@ -230,7 +243,7 @@ EspMapUiIntent_build()
 
 String bytes remain on `/DoomRPG-ESP32.pak`; no map-wide `mapStringsIDs[]` allocation exists.
 
-### String span proof
+String span proof:
 
 ```text
 strings         = 94
@@ -243,21 +256,21 @@ spanFNV         = 713188eb
 persistentBytes = 0
 ```
 
-### Real UI corpus
+Real UI corpus:
 
 ```text
-refs                 = 94
-EV_DIALOG            = 76
-EV_FORCEMESSAGE      = 3
-EV_DIALOGNOBACK      = 8
-EV_NOTE              = 7
-pause intents        = 84
-force-empty semantics= 3
-zero-length force    = 2
-state-exec refused   = 94
-intentFNV            = 7fdd6a79
-probe elapsed        = 1 ms
-persistentBytes      = 0
+refs                  = 94
+EV_DIALOG             = 76
+EV_FORCEMESSAGE       = 3
+EV_DIALOGNOBACK       = 8
+EV_NOTE               = 7
+pause intents         = 84
+force-empty semantics = 3
+zero-length force     = 2
+state-exec refused    = 94
+intentFNV             = 7fdd6a79
+probe elapsed         = 1 ms
+persistentBytes       = 0
 ```
 
 Accounting is exact: `76 + 3 + 8 + 7 = 94`, and `76 + 8 = 84` dialog pause/resume intents.
@@ -300,9 +313,9 @@ ST_PLAYING   = no
 
 Later `[ALIVE]` remained stable at `heap8=68820`, `largest8=36852`.
 
-The absolute heap8 moved from `68828` on the previous build to `68820`; the current stage itself has exact zero drift, so this is treated as a build/layout difference rather than a runtime allocation.
+The absolute heap8 moved from `68828` on the previous build to `68820`; the UI-intent stage itself had exact zero drift, so this remains a build/layout difference rather than a runtime allocation.
 
-## Current proven execution path
+## Current hardware-proven execution path
 
 ```text
 validated intro disposal
@@ -320,6 +333,43 @@ validated intro disposal
  -> PARK
 ```
 
+## Candidate string-reader boundary — hardware pending
+
+Permanent API added by firmware candidate `d13d5eb13c4657d5ec5c16fd82939cfc38989c86`:
+
+```text
+EspMapStrings_read(sourceEntry, ref, destination, capacity, outLength)
+```
+
+Contract:
+
+```text
+current source size/CRC must match
+ref must equal canonical resolved ref
+capacity >= ref.length + 1
+read exactly one payload from /DoomRPG-ESP32.pak
+synthesize trailing C NUL
+caller owns the buffer
+0 persistent bytes
+```
+
+Temporary MAP_INTRO probe target:
+
+```text
+94 canonical refs
+94 on-disk length-prefix checks
+94 bounded caller-buffer checks
+93 non-empty PAK payload reads
+new contentFNV measured from real source bytes
+short buffer -> refused
+mutated ref  -> refused
+NULL ref     -> refused
+closed pack non-empty read -> refused
+heap/largest/frame/arena/map/script/notebook -> exact recovery
+```
+
+Do not record `contentFNV`, transient heap cost, elapsed time, or PASS status until the real CYD Serial log supplies them.
+
 Still forbidden:
 
 ```text
@@ -334,23 +384,30 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Merge recommendation
+## Current validation request
 
-**MERGE `agent/esp32-map1-native-ui-intent`.**
-
-Hardware-tested firmware content is `045b219dd7d6d06630eb446424e8d3d3fa3d249e`. Post-test commits must remain documentation-only unless another flash is performed.
-
-## Next bounded milestone after merge
-
-Prefer a **bounded native string reader backed directly by `/DoomRPG-ESP32.pak`**:
+Build/flash the normal optimized environment from `agent/esp32-map1-native-string-reader`:
 
 ```text
-EspMapStringRef
- -> exact range read
- -> bounded caller buffer (MAP_INTRO max 313 B + terminator)
- -> validate real string bytes/content fingerprint
- -> no map-wide strings
- -> no ZIP runtime dependency
+esp32-cyd
 ```
 
-Only after that boundary is hardware-proven should a native dialog/status/notebook owner begin consuming UI intents.
+The firmware-content commit to validate is:
+
+```text
+d13d5eb13c4657d5ec5c16fd82939cfc38989c86
+```
+
+Expected terminal family:
+
+```text
+[MAPTEXTPROBE] ARMED ...
+[MAPTEXT] READY ... contentFNV=...
+[MAPTEXT] SAMPLES ...
+[MAPTEXT] FAILCLOSED shortBuffer=1 badRef=1 nullRef=1 closedPack=1 ...
+[MAPTEXT] IO ... persistentBytes=0
+[MAPTEXTPROBE] RAM ...
+[MAPTEXTPROBE] PARK ... nativeStringReader=yes ...
+```
+
+Only after a real-CYD PASS should this candidate be documented as hardware validated / merge-ready. The next bounded milestone should then choose one small native dialog/status/notebook effect owner consuming the already-separated UI intents and bounded reader, without reintroducing legacy UI ownership.
