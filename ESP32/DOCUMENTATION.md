@@ -30,10 +30,11 @@ Merged milestones:
 | [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md) | allocation-free tile -> event lookup | #46 | `438cffabaaaaa3dc3b45486f56eacec1a047edcf` |
 | [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) | event descriptor + exact bytecode linkage | #47 | `a3e629ba0be6b4dcc6329b17f18a0c3ca9828958` |
 | [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md) | 81-byte mutable script state + side-effect-free Game_runEvent filtering | #48 | `0c8a52549ebb436139f7cd5c8b4ee63bdd175907` |
+| [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) | full MAP_INTRO opcode inventory + first real native EV_NEXTSTATE execution/rollback | #49 | `6e43ef059db52783b7264e84579216cb2572a1e2` |
 
 Current merge-ready milestone:
 
-- [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) — exhaustive audit of all 265 real MAP_INTRO bytecodes plus first actual native Doom RPG opcode execution. Real-CYD corpus has 16 unique IDs (`2,7,8,9,10,11,13,15,16,18,19,24,26,27,40,41`), `opcodeAuditFNV=6f28df45`; state family has 41× `EV_CHANGESTATE`, 35× `EV_NEXTSTATE`, 0× `EV_PREVSTATE`; real command #50 (`EV_NEXTSTATE`) mutated target tile 226/event 16 from state 0→1, `execFNV=646b565c`, then rolled back to `scriptFNV=f9e3d9df`; zero heap/largest/frame/arena/map-state drift; **MERGE-READY**.
+- [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md) — allocation-free reconstruction of all 94 string spans plus translation of all 94 real `EV_DIALOG` / `EV_FORCEMESSAGE` / `EV_DIALOGNOBACK` / `EV_NOTE` commands to caller-owned native intents. Real CYD: 76 dialog + 3 force + 8 no-back + 7 note, 84 pause/resume intents, `spanFNV=713188eb`, `intentFNV=7fdd6a79`, 1 ms probe, 0 persistent bytes, zero heap/largest/frame/arena/map/script/notebook drift, no legacy UI mutation; **MERGE-READY**.
 
 ## Architecture rule
 
@@ -43,34 +44,35 @@ Long-term direction:
 
 ```text
 Doom RPG data / recovered behavior
+ -> native pack-backed parsers
  -> compact immutable native map
  -> allocation-free accessors
- -> small explicit mutable spatial state
+ -> small explicit mutable spatial/script state
  -> native event lookup + descriptor/linkage
- -> compact mutable script state
  -> side-effect-free event filtering
  -> fail-closed native opcode execution
- -> bounded native gameplay effects
+ -> compact native effect intents/owners
+ -> bounded pack-backed string/text access
  -> ESP32-native gameplay + renderer
 ```
 
-Do not promote desktop `Render_t`, `DoomCanvas_t`, pointer-heavy map structs or legacy resource ownership into permanent requirements.
+Do not promote desktop `Render_t`, `DoomCanvas_t`, pointer-heavy map structs, map-wide strings/texels, runtime ZIP access or legacy resource ownership into permanent requirements.
 
 ## Current recovery point
 
 Latest merged hardware baseline:
 
 ```text
-PR   = #48
-main = 0c8a52549ebb436139f7cd5c8b4ee63bdd175907
+PR   = #49
+main = 6e43ef059db52783b7264e84579216cb2572a1e2
 ```
 
 Current merge-ready branch:
 
 ```text
-agent/esp32-map1-native-opcode-exec1
-hardware-tested firmware content = 3e07f1b0c4c6f609da8008f20dc667c7bbe58af6
-status = REAL-CYD HARDWARE PASS; FIRST REAL NATIVE OPCODE EXECUTED; MERGE-READY
+agent/esp32-map1-native-ui-intent
+hardware-tested firmware content = 045b219dd7d6d06630eb446424e8d3d3fa3d249e
+status = REAL-CYD HARDWARE PASS; MERGE-READY
 ```
 
 Hardware-proven fingerprints now include:
@@ -87,6 +89,8 @@ filterFNV      = a5923b21
 resumeFNV      = b98452da
 opcodeAuditFNV = 6f28df45
 firstExecFNV   = 646b565c
+stringSpanFNV  = 713188eb
+uiIntentFNV    = 7fdd6a79
 ```
 
 Persistent native map/world/script heap remains:
@@ -95,29 +99,42 @@ Persistent native map/world/script heap remains:
 15252 B
 ```
 
-The opcode executor adds **0 persistent bytes**.
+The string-span and UI-intent layers add **0 persistent bytes**.
 
-First true native script side effect:
+String corpus hardware proof:
 
 ```text
-real command #50
-EV_NEXTSTATE
-arg1=00000702 arg2=00000100
- -> target tile 226 / event 16
- -> state 0 -> 1
- -> scriptFNV temporary 9b636dec
- -> rollback to f9e3d9df
+94 strings
+7779 payload bytes
+1 zero-length string
+max payload = 313 B
+first span = 11554
+last span  = 19512 + 7
+```
+
+UI/string corpus hardware proof:
+
+```text
+94 refs total
+76 EV_DIALOG
+3  EV_FORCEMESSAGE
+8  EV_DIALOGNOBACK
+7  EV_NOTE
+84 dialog pause/resume intents
+94/94 refused by state-mutating executor
+probe = 1 ms
 ```
 
 Integrity remained exact:
 
 ```text
-heap8       = 68828 -> 68828
+heap8       = 68820 -> 68820
 largest8    = 36852 -> 36852
-frameFNV    = 10f53ffb -> 10f53ffb
+frameFNV    = b8b39f0f -> b8b39f0f
 arenaFNV    = c3882516 -> c3882516
 mapStateFNV = cd99b98e -> cd99b98e
 scriptFNV   = f9e3d9df -> f9e3d9df
+notebookFNV = 4d7705c5 -> 4d7705c5
 entities    = 0
 monsters    = 0
 ST_PLAYING  = no
@@ -126,12 +143,14 @@ ST_PLAYING  = no
 ## Milestone workflow
 
 1. Branch from exact latest hardware-validated `main`.
-2. Keep one bounded objective per branch.
-3. Fail closed before unimplemented or unsafe ownership.
-4. Validate normal optimized firmware on the real classic CYD.
-5. Preserve exact RAM/fingerprint/hardware evidence.
-6. Mark merge-ready only after implementation + hardware + docs agree.
+2. Keep one coherent bounded objective per branch.
+3. Recover exact legacy semantics before designing native ownership.
+4. Fail closed before unimplemented or unsafe effects.
+5. Validate normal optimized firmware on the real classic CYD.
+6. Preserve exact RAM/fingerprint/hardware evidence.
+7. Mark merge-ready only after implementation + hardware + docs agree.
+8. Keep all post-hardware commits docs-only unless another flash is performed.
 
-After merge, the next bounded milestone should classify the remaining real opcode families and add only one coherent native effect family at a time. Prefer small state/intent ownership before entities or renderer mutation.
+After merge, the next bounded milestone should prefer an exact **bounded native string reader over `/DoomRPG-ESP32.pak`**, reading only one resolved string payload into a small caller buffer and validating real text bytes/content without resurrecting `mapStringsIDs[]` or runtime ZIP access.
 
-See [`PORTING_STATUS.md`](PORTING_STATUS.md) and [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
+See [`PORTING_STATUS.md`](PORTING_STATUS.md), [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md), and merged [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
