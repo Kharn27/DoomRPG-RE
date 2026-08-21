@@ -34,10 +34,11 @@ Merged milestones:
 | [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md) | allocation-free string spans + UI intents | #50 | `9a5e8ade361180d220f2b3614a443e5efb0d27bd` |
 | [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md) | bounded native-pack string reads | #51 | `526640b12d978fdbe9c8a9239c37db2fca95cddd` |
 | [`MAP1_NATIVE_STATUS_MESSAGE.md`](MAP1_NATIVE_STATUS_MESSAGE.md) | first native effect owner: FORCE_MESSAGE status ref | #52 | `40b61af5e2115266d4d03dddcc3175850538b0f5` |
+| [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) | DIALOG/NOBACK pause + exact static continuation owner | #53 | `395418510207bf24ac45ddbb4c4c15db3ddc8998` |
 
 Current merge-ready milestone:
 
-- [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) — compact native pause/presentation owner for all real `EV_DIALOG` / `EV_DIALOGNOBACK` intents. Real CYD proved `84 = 76 Back + 8 no-Back`, exact pause/skip-turn/resume semantics, 12-byte caller-owned state, zero text copy, zero pack I/O, atomic fail-closed provenance validation and zero legacy continuation/presentation/world mutation. `dialogApplyFNV=d0254f3d`; firmware `85aa89c4218a819e7f18cbf77f64dfbef3c5bac9`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
+- [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md) — bounded native player notebook owner for the seven real `EV_NOTE` intents. Real CYD proved `514 B` caller-owned state, `256` source bytes, final length `270`, exact separator/truncation/full-buffer behavior, zero persistent heap, unchanged legacy notebook, `noteApplyFNV=43183162`, `contentFNV=599609e0`, `storageFNV=75cf54e0`, full atomic fail-closed behavior and stable post-PARK recovery. Firmware `f619aefc85402d28c4de6edab5ca32ea1eb514dd`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Architecture rule
 
@@ -56,7 +57,7 @@ Doom RPG data / recovered behavior
  -> fail-closed native opcode execution
  -> compact native effect intents
  -> bounded pack-backed string/text access
- -> small explicit native effect owners
+ -> small explicit native effect/player owners
  -> native event/script loop
  -> ESP32-native gameplay + renderer
 ```
@@ -68,39 +69,42 @@ Do not promote desktop `Render_t`, `DoomCanvas_t`, pointer-heavy map structs, ma
 Latest merged hardware baseline:
 
 ```text
-PR   = #52
-main = 40b61af5e2115266d4d03dddcc3175850538b0f5
-hardware-tested firmware content = d782681c3cd267b9f16c290a593c1b6e5b34df1c
+PR   = #53
+main = 395418510207bf24ac45ddbb4c4c15db3ddc8998
+hardware-tested firmware content = 85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
 ```
 
 Current merge-ready branch:
 
 ```text
-branch = agent/esp32-map1-native-dialog-owner
-base   = 40b61af5e2115266d4d03dddcc3175850538b0f5
-hardware-tested firmware content = 85aa89c4218a819e7f18cbf77f64dfbef3c5bac9
+branch = agent/esp32-map1-native-notebook-owner
+base   = 395418510207bf24ac45ddbb4c4c15db3ddc8998
+hardware-tested firmware content = f619aefc85402d28c4de6edab5ca32ea1eb514dd
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Hardware-proven fingerprints now include:
 
 ```text
-arenaFNV         = c3882516
-decodedFNV       = a426dd18
-mapStateFNV      = cd99b98e
-lookupFNV        = 63430151
-descriptorFNV    = 27115328
-linkageFNV       = 5727902c
-scriptFNV        = f9e3d9df
-filterFNV        = a5923b21
-resumeFNV        = b98452da
-opcodeAuditFNV   = 6f28df45
-firstExecFNV     = 646b565c
-stringSpanFNV    = 713188eb
-uiIntentFNV      = 7fdd6a79
-stringContentFNV = e995ee51
-statusApplyFNV   = 52b25a5f
-dialogApplyFNV   = d0254f3d
+arenaFNV           = c3882516
+decodedFNV         = a426dd18
+mapStateFNV        = cd99b98e
+lookupFNV          = 63430151
+descriptorFNV      = 27115328
+linkageFNV         = 5727902c
+scriptFNV          = f9e3d9df
+filterFNV          = a5923b21
+resumeFNV          = b98452da
+opcodeAuditFNV     = 6f28df45
+firstExecFNV       = 646b565c
+stringSpanFNV      = 713188eb
+uiIntentFNV        = 7fdd6a79
+stringContentFNV   = e995ee51
+statusApplyFNV     = 52b25a5f
+dialogApplyFNV     = d0254f3d
+noteApplyFNV       = 43183162
+notebookContentFNV = 599609e0
+notebookStorageFNV = 75cf54e0
 ```
 
 Persistent native structural/script heap remains hardware-proven at:
@@ -109,53 +113,61 @@ Persistent native structural/script heap remains hardware-proven at:
 15252 B
 ```
 
-The merged status-message owner is an 8-byte caller-owned value. The dialog owner is a 12-byte caller-owned value. Both probes add 0 persistent heap bytes and retain no persistent text copy.
-
-Current dialog-owner hardware proof:
+Caller-owned value types now hardware-proven:
 
 ```text
-refs             = 84
-Back             = 76
-noBack           = 8
-pause            = 84
-skipTurn         = 84
-resumeExact      = 84
-stateExecRefused = 84
-ownerBytes       = 12
-textCopyBytes    = 0
-packIO           = no
-persistentHeap   = 0
-dialogApplyFNV   = d0254f3d
+status owner   =   8 B
+dialog owner   =  12 B
+notebook owner = 514 B
 ```
 
-Canonical samples:
+The notebook probe keeps the 514-byte state on stack, so persistent heap remains unchanged. A future permanent native player owner must explicitly account this value.
+
+## NOTE owner hardware proof
 
 ```text
-Back   cmd11 event6 off0 resume1 flags07 string25@13558+23
-noBack cmd19 event6 off8 resume9 flags06 string30@13679+14
+refs             = 7
+separators       = 7
+appendMatches    = 7
+stateExecRefused = 7
+sourceBytes      = 256
+finalLen         = 270
+ownerBytes       = 514
+textCapacity     = 512
+noteApplyFNV     = 43183162
+contentFNV       = 599609e0
+storageFNV       = 75cf54e0
+elapsed          = 83 ms
 ```
 
-Atomic fail-closed proof:
+Canonical sample:
 
 ```text
-unsupported=1 badFlags=1 badKind=1 badRef=1 badEvent=1 badGlobal=1 badResume=1 nullIntent=1
-ownerAtomic=yes reset=1
+cmd103 event40 off8 string85@18964+54 payloadFNV=ee639dc1
+```
+
+Bounds and fail-closed proof:
+
+```text
+separator=1 truncation=1 fullStable=1 guards=7/7 terminator=yes
+unsupported=1 badFlags=1 badKind=1 badRef=1 badEvent=1 badGlobal=1
+shortBuffer=1 nullIntent=1 closedPack=1 ownerAtomic=yes reset=1
 ```
 
 Current tested-build integrity:
 
 ```text
-heap8       = 68780 -> 68780
-largest8    = 36852 -> 36852
-frameFNV    = ef79123a -> ef79123a
-arenaFNV    = c3882516 -> c3882516
-mapStateFNV = cd99b98e -> cd99b98e
-scriptFNV   = f9e3d9df -> f9e3d9df
-notebookFNV = 4d7705c5 -> 4d7705c5
-packIO      = no
+heap8             = 68772 -> 68772
+largest8          = 36852 -> 36852
+frameFNV          = a3e3cc8e -> a3e3cc8e
+arenaFNV          = c3882516 -> c3882516
+mapStateFNV       = cd99b98e -> cd99b98e
+scriptFNV         = f9e3d9df -> f9e3d9df
+legacyNotebookFNV = 4d7705c5 -> 4d7705c5
+PAK transient     = 4364 B, fully recovered
 ```
 
-A complete post-PARK heartbeat remained stable at `heap=134544`, `heap8=68780`, `largest8=36852`, with all reported subsystems ready.
+A complete post-PARK heartbeat remained stable at `heap=134536`, `heap8=68772`, `largest8=36852`, with all reported subsystems ready.
 
 ## Milestone workflow
 
@@ -168,4 +180,4 @@ A complete post-PARK heartbeat remained stable at `heap=134544`, `heap8=68780`, 
 7. Mark merge-ready only after implementation + hardware + docs agree.
 8. Keep all post-hardware commits docs-only unless another flash is performed.
 
-After this branch is merged, reread the new `main`, `PORTING_STATUS.md`, `DOCUMENTATION.md`, the merged dialog milestone and exact legacy source before choosing the next boundary. `EV_NOTE` is only a likely candidate, not a precommitted direction.
+After this branch is merged, reread the new `main`, `PORTING_STATUS.md`, this merged NOTE milestone and exact remaining MAP_INTRO legacy behavior before selecting the next bounded mutation/effect family.
