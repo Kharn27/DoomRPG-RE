@@ -9,7 +9,7 @@ PR   = #47 — native event descriptor / bytecode linkage
 main = a3e629ba0be6b4dcc6329b17f18a0c3ca9828958
 ```
 
-Status: **IMPLEMENTED; AWAITING REAL-CYD HARDWARE PASS**.
+Status: **REAL-CYD HARDWARE PASS; SCRIPT STATE + SIDE-EFFECT-FREE EVENT FILTER VALIDATED; MERGE-READY**.
 
 ## Objective
 
@@ -22,6 +22,69 @@ This milestone adds:
 3. an exhaustive real-CYD oracle comparison across synthetic states, triggers and key combinations.
 
 It still does **not** call `Game_executeEvent()`, mutate the world, activate entities, render gameplay or enter `ST_PLAYING`.
+
+## Real-CYD result
+
+The normal optimized `esp32-cyd` firmware passed the full probe on the classic no-PSRAM CYD.
+
+Measured script-state allocation:
+
+```text
+payload             = 81 B
+event state bytes   = 47 B
+removed bits bytes  = 34 B
+actual heap use     = 100 B
+allocator overhead  = 19 B
+buildElapsed        = 1 ms
+initialFNV          = f9e3d9df
+mutatedFNV          = 99003167
+restoredFNV         = f9e3d9df
+```
+
+Measured exhaustive filter matrix:
+
+```text
+contexts         = 142848
+evaluations      = 407040
+eligible         = 4784
+eventBlocked     = 2048
+stateMismatch    = 379392
+keyMismatch      = 0
+flagsMismatch    = 20816
+blockInputEvents = 8
+filterFNV        = a5923b21
+resumeFNV        = b98452da
+elapsed          = 1411 ms
+```
+
+Decision accounting is exact:
+
+```text
+4784 + 2048 + 379392 + 0 + 20816 = 407040
+```
+
+The 1411 ms value is the intentionally huge verification matrix plus independent oracle and hashing work. It is **not** a gameplay-frame or single-event execution cost.
+
+The real MAP_INTRO corpus produced `keyMismatch=0`. Key ownership still changes `effectiveFlags` according to the recovered priority, but none of the 407040 tested MAP_INTRO decisions landed in the dedicated key-field mismatch class.
+
+Integrity stayed exact:
+
+```text
+heap8          = 68944 -> 68844
+heap used      = 100 B
+largest8       = 36852 -> 36852
+filter heap    = +0 B after script-state allocation
+frameFNV       = b8924a47 -> b8924a47
+arenaFNV       = c3882516 -> c3882516
+mapStateFNV    = cd99b98e -> cd99b98e
+scriptFNV      = f9e3d9df final
+scriptExecution= no
+entities       = 0
+monsters       = 0
+ST_PLAYING     = no
+```
+
+Later `[ALIVE]` remained stable at `heap8=68844`, `largest8=36852`.
 
 ## Recovered `Game_runEvent()` filtering order
 
@@ -83,7 +146,7 @@ yellow key 0x02 -> run flag 0x1000
 
 The command key field is `arg2 & 0xf000`.
 
-## Why mutable script state is separate
+## Mutable script state ownership
 
 Two legacy mutations are now known:
 
@@ -101,7 +164,7 @@ ESP32/include/esp_map_script_state.h
 ESP32/src/esp_map_script_state.c
 ```
 
-MAP_INTRO compact payload plan:
+MAP_INTRO compact payload:
 
 ```text
 93 event states x 4 bits = ceil(93 / 2) = 47 B
@@ -126,6 +189,16 @@ EspMapScriptState_setCommandRemoved()
 ```
 
 Initial event states are decoded from descriptor `initialState`; removed-command bits start clear.
+
+The real-CYD reversible ownership test passed:
+
+```text
+event 0 state       0 -> 15 -> 0
+command 0 removed   0 -> 1 -> 0
+scriptFNV           f9e3d9df -> 99003167 -> f9e3d9df
+```
+
+The immutable map arena stayed `c3882516` throughout.
 
 ## Side-effect-free filter API
 
@@ -165,51 +238,13 @@ KEY_MISMATCH
 FLAGS_MISMATCH
 ```
 
-`ELIGIBLE` means only that the reference `Game_runEvent()` would reach the `Game_executeEvent()` call for that command. This milestone never calls it.
+`ELIGIBLE` means only that the recovered `Game_runEvent()` would reach the `Game_executeEvent()` call for that command. This milestone never calls it.
 
 The explicit `REMOVED` class is the native representation of the legacy condition where a previously successful `0x200` command had its mutable `arg2` zeroed. The immutable command payload remains untouched.
 
-## Hardware probe
+## Exhaustive hardware oracle
 
-Temporary scaffold:
-
-```text
-ESP32/include/native_map1_event_filter_probe.h
-ESP32/src/native_map1_event_filter_probe.c
-```
-
-It runs only after the hardware-proven descriptor/linkage probe.
-
-### Script-state gates
-
-The probe must establish:
-
-```text
-storageBytes        = 81
-eventStateBytes     = 47
-removedCommandBytes = 34
-eventCount          = 93
-byteCodeCount       = 265
-all initial states  = 0
-all removed bits    = 0
-```
-
-It measures actual heap consumption and allocator overhead.
-
-It also performs a reversible ownership test:
-
-```text
-event 0 state: 0 -> 15 -> 0
-command 0 removed: 0 -> 1 -> 0
-```
-
-The final script-state fingerprint must exactly return to the initial fingerprint.
-
-No immutable map byte is touched.
-
-### Exhaustive filter matrix
-
-The permanent filter is compared against a separately coded reference oracle derived from `Game_runEvent()`.
+The permanent filter was compared against a separately coded reference oracle derived from `Game_runEvent()`.
 
 Matrix:
 
@@ -235,13 +270,14 @@ Total contexts per event:
 16 * 12 * 8 = 1536
 ```
 
-Because the previous hardware pass proved that the 93 events partition exactly 265 commands, total command decisions are expected to be:
+Previous hardware proved that the 93 events partition exactly 265 commands, therefore:
 
 ```text
-265 * 1536 = 407040
+93 * 1536  = 142848 event contexts
+265 * 1536 = 407040 command evaluations
 ```
 
-For every decision, the probe compares:
+For every decision, the probe compared:
 
 ```text
 prepared effective flags
@@ -254,11 +290,14 @@ arg2
 final decision class
 ```
 
-The matrix establishes a canonical `filterFNV` and counts each skip/eligible reason.
+Canonical hardware fingerprints:
 
-### Resume/start-offset validation
+```text
+filterFNV = a5923b21
+resumeFNV = b98452da
+```
 
-For each of the 93 events the probe also tests start offsets:
+Resume/start-offset checks were also validated for each event with offsets:
 
 ```text
 0
@@ -266,13 +305,11 @@ commandCount / 2
 commandCount
 ```
 
-against the same independent oracle and establishes `resumeFNV`.
+Out-of-range state/start/command parameters failed closed.
 
-Out-of-range state/start/command parameters must fail closed.
+## Inherited native fingerprints
 
-## Inherited hardware regressions
-
-The candidate must retain:
+All inherited layers remained unchanged:
 
 ```text
 arenaFNV       = c3882516
@@ -283,7 +320,17 @@ descriptorFNV  = 27115328
 linkageFNV     = 5727902c
 ```
 
-Current persistent foundation before this milestone:
+This milestone adds:
+
+```text
+scriptFNV      = f9e3d9df
+filterFNV      = a5923b21
+resumeFNV      = b98452da
+```
+
+## Persistent RAM boundary
+
+Previously measured native map/world heap:
 
 ```text
 immutable map arena actual heap = 14112 B
@@ -292,29 +339,22 @@ mutable tile state actual heap  =  1040 B
 combined                         = 15152 B
 ```
 
-New planned persistent payload:
+New real-CYD script-state allocation:
 
 ```text
-script state = 81 B payload
-filter       = 0 B persistent
+payload            = 81 B
+actual heap use    = 100 B
+allocator overhead = 19 B
+filter persistent  = 0 B
 ```
 
-The real CYD must establish the allocator cost of the 81-byte allocation.
-
-## Expected log tail
+New combined persistent map/world/script heap:
 
 ```text
-[MAPFILTERPROBE] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO script state + event filtering ===
-[MAPFILTERPROBE] CONTRACT ...
-
-[MAPSCRIPT] READY bytes=81 eventStateBytes=47 removedBytes=34 events=93 byteCodes=265 initialFNV=........ buildElapsed=...ms
-[MAPFILTER] READY filterFNV=........ resumeFNV=........ elapsed=...ms contexts=142848 evaluations=407040 eligible=... blocked=... stateSkip=... keySkip=... flagsSkip=... blockInputEvents=...
-[MAPFILTERPROBE] MUTATION reversible=yes scriptFNV=........->........->........ removedFinal=0 statesRestored=yes
-[MAPFILTERPROBE] RAM heap8=X->Y used=... payload=81 allocatorOverhead=... largest8=A->B filterDelta=0 frameFNV=F->F arenaFNV=c3882516->c3882516 mapStateFNV=cd99b98e->cd99b98e scriptFNV=........
-[MAPFILTERPROBE] PARK state=9 page=3 nativeArena=yes nativeTileState=yes nativeEventLookup=yes nativeEventDescriptor=yes nativeScriptState=yes scriptBytes=81 filterReady=yes scriptExecution=no entities=0 monsters=0 noGameplay=yes
+15152 B + 100 B = 15252 B
 ```
+
+Measured legacy structural allocation was `55341 B`; even with native mutable tile + script state, the current native foundation remains `40089 B` smaller (~72.4%).
 
 ## Still forbidden
 
@@ -332,12 +372,17 @@ ST_PLAYING
 continuous gameplay loop
 ```
 
-## Next boundary after hardware PASS
+## Next boundary after PASS
 
-If this passes, the engine will possess all prerequisites for a first bounded native script execution experiment:
+The engine now has all prerequisites for a first bounded native script execution experiment:
 
 ```text
-tile -> event -> descriptor -> current state -> filtered command list
+tile
+ -> event
+ -> descriptor
+ -> current state
+ -> filtered command list
+ -> known ELIGIBLE/SKIP decision
 ```
 
-The next step should not execute all opcode families at once. Prefer a small executor-dispatch audit and a deliberately harmless first opcode/effect, with unsupported opcodes failing closed and PARK immediately after the bounded experiment.
+The next step must **not** enable every opcode family at once. Audit the opcode IDs actually present in MAP_INTRO, classify them by side-effect/risk, implement a tiny fail-closed executor dispatcher, and choose one deliberately harmless opcode/effect as the first real execution proof. Unsupported or world-mutating opcodes must remain refused and the probe must PARK immediately after the bounded experiment.
