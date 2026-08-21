@@ -31,9 +31,9 @@ Merged milestones:
 | [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) | event descriptor + exact bytecode linkage | #47 | `a3e629ba0be6b4dcc6329b17f18a0c3ca9828958` |
 | [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md) | 81-byte mutable script state + side-effect-free Game_runEvent filtering | #48 | `0c8a52549ebb436139f7cd5c8b4ee63bdd175907` |
 
-Current active milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) — audit all 265 real MAP_INTRO opcode IDs and execute exactly one real, reversible event-state opcode through a fail-closed native executor supporting only IDs `11/19/20`; **AWAITING REAL-CYD HARDWARE PASS**.
+- [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) — exhaustive audit of all 265 real MAP_INTRO bytecodes plus first actual native Doom RPG opcode execution. Real-CYD corpus has 16 unique IDs (`2,7,8,9,10,11,13,15,16,18,19,24,26,27,40,41`), `opcodeAuditFNV=6f28df45`; state family has 41× `EV_CHANGESTATE`, 35× `EV_NEXTSTATE`, 0× `EV_PREVSTATE`; real command #50 (`EV_NEXTSTATE`) mutated target tile 226/event 16 from state 0→1, `execFNV=646b565c`, then rolled back to `scriptFNV=f9e3d9df`; zero heap/largest/frame/arena/map-state drift; **MERGE-READY**.
 
 ## Architecture rule
 
@@ -50,6 +50,7 @@ Doom RPG data / recovered behavior
  -> compact mutable script state
  -> side-effect-free event filtering
  -> fail-closed native opcode execution
+ -> bounded native gameplay effects
  -> ESP32-native gameplay + renderer
 ```
 
@@ -64,24 +65,28 @@ PR   = #48
 main = 0c8a52549ebb436139f7cd5c8b4ee63bdd175907
 ```
 
-Active branch:
+Current merge-ready branch:
 
 ```text
 agent/esp32-map1-native-opcode-exec1
+hardware-tested firmware content = 3e07f1b0c4c6f609da8008f20dc667c7bbe58af6
+status = REAL-CYD HARDWARE PASS; FIRST REAL NATIVE OPCODE EXECUTED; MERGE-READY
 ```
 
-Hardware-proven fingerprints entering this milestone:
+Hardware-proven fingerprints now include:
 
 ```text
-arenaFNV      = c3882516
-decodedFNV    = a426dd18
-mapStateFNV   = cd99b98e
-lookupFNV     = 63430151
-descriptorFNV = 27115328
-linkageFNV    = 5727902c
-scriptFNV     = f9e3d9df
-filterFNV     = a5923b21
-resumeFNV     = b98452da
+arenaFNV       = c3882516
+decodedFNV     = a426dd18
+mapStateFNV    = cd99b98e
+lookupFNV      = 63430151
+descriptorFNV  = 27115328
+linkageFNV     = 5727902c
+scriptFNV      = f9e3d9df
+filterFNV      = a5923b21
+resumeFNV      = b98452da
+opcodeAuditFNV = 6f28df45
+firstExecFNV   = 646b565c
 ```
 
 Persistent native map/world/script heap remains:
@@ -90,7 +95,33 @@ Persistent native map/world/script heap remains:
 15252 B
 ```
 
-The current candidate adds **0 persistent bytes**. It inventories the real opcode corpus, supports only `EV_CHANGESTATE`, `EV_NEXTSTATE`, `EV_PREVSTATE`, executes one actual supported BSP command if present, verifies the exact mutation in `EspMapScriptState`, restores `scriptFNV=f9e3d9df`, and PARKs before any world/render/entity effect.
+The opcode executor adds **0 persistent bytes**.
+
+First true native script side effect:
+
+```text
+real command #50
+EV_NEXTSTATE
+arg1=00000702 arg2=00000100
+ -> target tile 226 / event 16
+ -> state 0 -> 1
+ -> scriptFNV temporary 9b636dec
+ -> rollback to f9e3d9df
+```
+
+Integrity remained exact:
+
+```text
+heap8       = 68828 -> 68828
+largest8    = 36852 -> 36852
+frameFNV    = 10f53ffb -> 10f53ffb
+arenaFNV    = c3882516 -> c3882516
+mapStateFNV = cd99b98e -> cd99b98e
+scriptFNV   = f9e3d9df -> f9e3d9df
+entities    = 0
+monsters    = 0
+ST_PLAYING  = no
+```
 
 ## Milestone workflow
 
@@ -100,5 +131,7 @@ The current candidate adds **0 persistent bytes**. It inventories the real opcod
 4. Validate normal optimized firmware on the real classic CYD.
 5. Preserve exact RAM/fingerprint/hardware evidence.
 6. Mark merge-ready only after implementation + hardware + docs agree.
+
+After merge, the next bounded milestone should classify the remaining real opcode families and add only one coherent native effect family at a time. Prefer small state/intent ownership before entities or renderer mutation.
 
 See [`PORTING_STATUS.md`](PORTING_STATUS.md) and [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md).
