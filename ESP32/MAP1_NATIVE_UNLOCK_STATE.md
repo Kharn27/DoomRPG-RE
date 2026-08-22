@@ -9,48 +9,46 @@ PR   = #57 — native OPEN/CLOSE line world state
 main = e4fb32f41b7074bbb433e64f4c824edb2167cf50
 ```
 
-Firmware candidate content:
+Hardware-tested firmware content:
 
 ```text
 e423093c8e17dda1345bebecf721dedf4bbb2002
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
-Extend the first native world owner with exact `13 / EV_UNLOCK` semantics without reintroducing legacy `Render_t` or entities:
+Extend the hardware-proven native line world with exact `13 / EV_UNLOCK` semantics without reviving legacy `Render_t`, entities or pointer-heavy line state:
 
 ```text
-hardware-proven 120 B line OPEN/LOCKED owner
- + 60 B packed 9/10 door-texture overlay
+hardware-proven 120 B OPEN/LOCKED owner
+ + 60 B packed texture-9/10 owner
  + real EV_UNLOCK bytecode
  -> clear native locked bit
- -> if current texture == 9, native texture 9 -> 10
+ -> optional native texture 9 -> 10
  -> deferred sound / special-entity-def / view-refresh metadata
  -> exact rollback in probe
 ```
 
-This milestone supports only `EV_UNLOCK`. It does not authorize `EV_LOCK`, `EV_TOGGLELOCK`, actual `EntityDef` mutation, actual sound, renderer refresh, legacy line mutation, entity instantiation, gameplay rendering or `ST_PLAYING`.
+Only `EV_UNLOCK` is supported here. `EV_LOCK`, `EV_TOGGLELOCK`, actual `EntityDef` mutation, actual sound playback, view refresh, legacy line mutation, entity instantiation, gameplay rendering and `ST_PLAYING` remain forbidden.
 
 ## Recovered legacy behavior
 
-`Game_executeEvent()` handles opcode 13 as:
+Legacy `Game_executeEvent()` dispatches opcode 13 to:
 
 ```c
-case EV_UNLOCK:
-    Game_setLineLocked(game, arg1, false, false);
-    break;
+Game_setLineLocked(game, arg1, false, false);
 ```
 
-`Game_executeEvent()` then reaches its normal `return true`, so a valid UNLOCK is **handled even if it changes nothing**.
+and then reaches its normal `return true`. Therefore every valid UNLOCK is handled even if it is already fully unlocked.
 
-`Game_setLineLocked(game, index, false, false)` performs:
+`Game_setLineLocked(..., false, false)` performs:
 
 ```text
 line.flags &= ~0x400
 
-if line.texture == 9:
+if current line.texture == 9:
     line.texture = 10
     play sound 5067
     if matching special line entity exists:
@@ -58,118 +56,61 @@ if line.texture == 9:
         refresh view
 ```
 
-Because `z2=false`, any line whose current texture is not 9 only receives the lock clear.
+The outer `Game_runEvent()` removes a successfully handled command when source `arg2 & 0x200`. Native UNLOCK exposes that as `removeCommandIfHandled`; it does not yet mutate `EspMapScriptState`.
 
-The outer `Game_runEvent()` still applies the existing handled-command rule:
+## Permanent native ownership
 
-```text
-if command.arg2 & 0x200 and Game_executeEvent returned true:
-    remove/disable that command
-```
-
-The native UNLOCK result exposes `removeCommandIfHandled` but does not mutate `EspMapScriptState`; the future native event loop owns that outer step.
-
-## Why a separate texture overlay
-
-The merged OPEN/CLOSE owner is already hardware-proven and canonical:
+The merged OPEN/CLOSE owner remains byte-for-byte unchanged and keeps its hardware fingerprint:
 
 ```text
 openBits       = 60 B
 lockedBits     = 60 B
 storage        = 120 B
-lineStateFNV   = e5e74861
 actual heap    = 136 B
 initialOpen    = 0
 initialLocked  = 7
+lineStateFNV   = e5e74861
 ```
 
-Changing that storage layout would invalidate a useful hardware fingerprint. Therefore this milestone leaves `EspMapLineState` untouched and adds a separate compact owner only for the mutable 9/10 lock-door texture variant.
-
-For each of 480 lines:
-
-```text
-source texture 9/10:
-  one bit stores current variant
-  0 -> texture 9
-  1 -> texture 10
-
-all other source textures:
-  effective texture remains immutable source texture
-```
-
-MAP_INTRO payload target:
-
-```text
-480 bits = 60 B
-```
-
-This representation is also reusable by a later native LOCK/TOGGLELOCK milestone without copying complete line records.
-
-## Permanent native API
-
-New files:
+New permanent files:
 
 ```text
 ESP32/include/esp_map_line_texture_state.h
 ESP32/src/esp_map_line_texture_state.c
 ```
 
-State view:
-
-```c
-typedef struct EspMapLineTextureStateView_s {
-    const uint8_t* texture10Bits;
-    uint32_t lineCount;
-    uint32_t bitsetBytes;
-    uint32_t storageBytes;
-    uint32_t stateFNV1a;
-    uint32_t variantCount;
-    uint32_t texture10Count;
-} EspMapLineTextureStateView;
-```
-
-Permanent functions:
+The texture owner stores one bit per line for only the mutable 9/10 door variant:
 
 ```text
-EspMapLineTextureState_reset()
-EspMapLineTextureState_buildFromRuntime()
-EspMapLineTextureState_isReady()
-EspMapLineTextureState_view()
-EspMapLineTextureState_getEffectiveTexture()
-EspMapLineTextureState_setDoorTexture()
-EspMapLineTextureState_applyUnlockCommand()
+source texture 9/10:
+  bit 0 -> effective texture 9
+  bit 1 -> effective texture 10
+
+all other source textures:
+  effective texture = immutable source texture
 ```
 
-The source depends only on native runtime/event/line-state APIs and heap allocation. It has no `Game`, `Render`, `Entity`, `EntityDef`, Hud, Sound, Player or DoomCanvas dependency.
-
-## UNLOCK result
-
-```c
-typedef struct EspMapLineUnlockResult_s {
-    uint16_t sourceEventIndex;
-    uint16_t globalCommandIndex;
-    uint16_t lineIndex;
-    uint16_t soundId;
-    uint16_t textureBefore;
-    uint16_t textureAfter;
-    uint8_t sourceCommandOffset;
-    uint8_t lockedBefore;
-    uint8_t lockedAfter;
-    uint8_t lockMutated;
-    uint8_t textureMutated;
-    uint8_t effectFlags;
-    uint8_t legacyReturnValue;
-    uint8_t removeCommandIfHandled;
-} EspMapLineUnlockResult;
-```
-
-Expected classic ESP32 ABI:
+MAP_INTRO real classic-CYD state:
 
 ```text
-resultBytes = 20
+lineCount       = 480
+storageBytes    = 60 B payload
+variantCount    = 6
+initialTexture10= 0
+textureStateFNV = f1fc1875
 ```
 
-Valid command semantics:
+The owner has no `Game`, `Render`, `Entity`, `EntityDef`, Hud, Sound, Player or DoomCanvas dependency.
+
+## Permanent UNLOCK result
+
+Hardware-proven classic ESP32 ABI:
+
+```text
+EspMapLineUnlockResult = 20 B
+```
+
+Valid semantics:
 
 ```text
 lockedAfter = 0
@@ -186,199 +127,253 @@ textureBefore != 9:
   textureMutated = 0
   sound/effects  = none
 
-legacyReturnValue = 1 always for valid EV_UNLOCK
+legacyReturnValue      = 1 always
+removeCommandIfHandled = source arg2 & 0x200
 ```
 
-`SPECIAL_ENTITY_DEF_SYNC` means future entity ownership should reproduce subtype 2 for a matching special line entity. `REFRESH_IF_ENTITY` preserves the legacy conditional refresh: the old code refreshes only after finding that entity.
+When both lock and texture change, the executor treats them as one logical operation. If the lock primitive unexpectedly fails after a texture change, the texture change is rolled back and the command returns INVALID with a zeroed result.
 
-## Atomicity
+## Real-CYD corpus proof
 
-The executor validates descriptor, linked command, line index and both owners before mutation.
+Normal optimized environment: `esp32-cyd`.
 
-When both lock and texture change, it commits the texture and lock changes as one logical operation. If the second primitive unexpectedly fails, the first is rolled back before returning INVALID and the result is zeroed.
-
-## Temporary real-CYD probe
-
-New files:
+The real classic no-PSRAM CYD established:
 
 ```text
-ESP32/include/native_map1_unlock_probe.h
-ESP32/src/native_map1_unlock_probe.c
+refs              = 6
+mutated           = 6
+lockMutated       = 6
+textureMutated    = 6
+noMutation        = 0
+removable         = 0
+resultBytes       = 20
+stateExecRefused  = 6
+unlockFNV         = 261d756a
+elapsed           = 9 ms
 ```
 
-The stage runs only after the hardware-proven line-door probe and requires the inherited line owner to remain canonical:
+The complete real corpus is therefore exceptionally clean:
 
 ```text
-storageBytes = 120
-lineStateFNV = e5e74861
-openCount    = 0
-lockedCount  = 7
+6 UNLOCK refs
+6 initially locked target lines
+6 current texture-9 targets
+6 lock 1 -> 0 mutations
+6 texture 9 -> 10 mutations
+0 already-unlocked real refs
+0 removable refs
 ```
 
-### Texture-state build proof
-
-The new owner is built directly from all 480 immutable line textures. Hardware must establish rather than predeclare:
+Canonical first real UNLOCK mutation:
 
 ```text
-variantCount      // source texture 9 or 10
-initialTexture10
-textureStateFNV
-actual persistent heap cost for the 60 B payload
+global command = 18
+event          = 6
+command offset = 7
+line           = 400
+locked         = 1 -> 0
+texture        = 9 -> 10
+lockMutated    = 1
+textureMutated = 1
+sound          = 5067
+effects        = 07
+handled        = 1
+removeIfHandled= 0
 ```
 
-Every effective texture must equal its immutable source texture before any UNLOCK command is executed.
+This is real `/intro.bsp` bytecode, not a synthetic command.
 
-### Real UNLOCK corpus
+## Two-owner mutation + rollback proof
 
-The probe scans all 93 events / 265 bytecodes and discovers every real opcode-13 command.
-
-For each real ref it requires:
+Initial owners:
 
 ```text
-state-only opcode executor -> UNSUPPORTED
-canonical descriptor and command provenance
-line index < 480
-status -> OK
-legacyReturnValue -> 1
-lockedAfter -> 0
-lockMutated exactly matches prior lock bit
-textureMutated exactly matches current texture == 9
-texture 9 -> 10 only
-sound 5067 only on texture mutation
-effect flags 0x07 only on texture mutation
-removeCommandIfHandled exactly matches arg2 & 0x200
+lineStateFNV    = e5e74861
+textureStateFNV = f1fc1875
 ```
 
-After each real mutation both native owners are restored to their exact initial FNVs.
-
-Hardware acceptance requires at least one real UNLOCK mutation so this branch proves actual world execution rather than only owner construction.
-
-The CYD will establish:
+Applying the canonical sample produces:
 
 ```text
-UNLOCK ref count
-mutated refs
-lock-mutated refs
-texture-mutated refs
-no-mutation handled refs
-removable handled refs
-first real mutated command sample
-unlockFNV
-sample mutated line-state FNV
-sample mutated texture-state FNV
+mutatedLineFNV    = 8d5f89d8
+mutatedTextureFNV = 997459ec
 ```
 
-### Repeated handled semantics
-
-The first real mutating UNLOCK is applied twice without rollback between calls:
+Every real mutating UNLOCK is immediately restored:
 
 ```text
-first apply:
-  OK / handled=1
-  one or both native world owners mutate
-
-second apply:
-  OK / handled=1
-  lockMutated=0
-  textureMutated=0
-  sound=0
-  effects=0
-  world FNVs unchanged from post-first-apply state
-  removeCommandIfHandled unchanged
+rollback = 6 / 6
+final lineStateFNV    = e5e74861
+final textureStateFNV = f1fc1875
+worldRestored = yes
 ```
 
-Then both owners are rolled back to their initial fingerprints.
+Thus the real CYD proved one bytecode command atomically mutating two separate native world owners and restoring both exactly.
 
-### Fail closed
+## Repeated handled semantics
 
-Expected hardware proof:
+The first real mutating UNLOCK was also applied twice without rollback between calls.
+
+First call:
 
 ```text
-notReady=1
-unsupported=1
-badOffset=1
-badDescriptor=1
-nullDescriptor=1
-nullResult=1
-badTextureIndex=1
-badTextureValue=1
-nonVariant=1
-stateAtomic=yes
-worldRestored=yes
+status=OK
+handled=1
+lock and texture mutate
 ```
 
-## RAM / integrity boundary
+Second call against the already-unlocked native state:
 
-The proven persistent native heap entering this milestone is:
+```text
+status=OK
+handled=1
+lockMutated=0
+textureMutated=0
+sound=0
+effects=0
+world FNVs unchanged from post-first-call state
+removeCommandIfHandled unchanged
+```
+
+Hardware proof:
+
+```text
+idempotentHandled = 1
+```
+
+Both owners were then rolled back to their initial fingerprints.
+
+## Fail-closed / atomicity proof
+
+Real hardware proved:
+
+```text
+notReady       = 1
+unsupported    = 1
+badOffset      = 1
+badDescriptor  = 1
+nullDescriptor = 1
+nullResult     = 1
+badTextureIndex= 1
+badTextureValue= 1
+nonVariant     = 1
+stateAtomic    = yes
+worldRestored  = yes
+```
+
+## Persistent RAM proof
+
+Entering this stage, the persistent native heap was hardware-proven at `15388 B`.
+
+The real texture-owner allocation is:
+
+```text
+payload             = 60 B
+persistentHeapCost  = 76 B
+allocatorOverhead   = 16 B
+```
+
+New persistent native total:
 
 ```text
 immutable arena       14112 B
 mutable tile state     1040 B
 mutable script state    100 B
 mutable line state      136 B
+mutable texture state    76 B
 ----------------------------
-current total         15388 B
+total                 15464 B
 ```
 
-The candidate adds a 60-byte persistent texture payload. The probe accepts only a bounded allocation:
+Current-firmware allocation witness:
 
 ```text
-60 B <= incremental heap cost <= 124 B
+heap8       = 68516 -> 68440
+largest8    = 34804 -> 34804
 ```
 
-Exact allocator overhead and new total are hardware-pending.
+The owner remains resident at PARK; there is no post-build heap drift.
 
-The following must stay bit-exact through the probe:
+## Current-build integrity
+
+The preceding line-door stage in this same firmware remained canonical:
 
 ```text
-arenaFNV          = c3882516
-mapStateFNV       = cd99b98e
-scriptFNV         = f9e3d9df
-lineStateFNV      = e5e74861 after rollback
-legacyNotebookFNV = 4d7705c5
-legacy Player.keys
-Hud witness
-DoomCanvas password witness
-Game continuation witness
-framebuffer
-legacy Render runtime clear
-pack closed
-entities=0
-monsters=0
-ST_PLAYING not reached
+lineStateFNV  = e5e74861
+refs          = 71
+open/close    = 39/32
+mutated       = 29
+locked        = 18
+alreadyTarget = 24
+lineDoorFNV   = b1c9d297
+rollback      = 29/29
 ```
 
-The texture-state owner remains allocated at PARK but must be restored to its initial content FNV after all probe mutations.
-
-## Expected Serial family
+UNLOCK preserved all inherited state across its full audit:
 
 ```text
-[MAPUNLOCKPROBE] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO UNLOCK world state ===
-[MAPUNLOCKPROBE] CONTRACT ...
-[MAPLINETEX] READY lines=480 storageBytes=60 variants=... texture10=... stateFNV=...
-[MAPUNLOCK] READY refs=... mutated=... lockMutated=... textureMutated=... noMutation=... removable=... resultBytes=20 stateExecRefused=... unlockFNV=... elapsed=...ms
-[MAPUNLOCK] SAMPLE cmd=... event=... off=... line=... locked=...->0 texture=...->... lockMut=... texMut=... sound=... effects=... handled=1 removeIfHandled=...
-[MAPUNLOCK] WORLD lineStateBytes=120 lineStateFNV=e5e74861 textureBytes=60 variants=... initialTexture10=... textureStateFNV=... mutatedLineFNV=... mutatedTextureFNV=... rollback=.../... idempotentHandled=1
-[MAPUNLOCK] FAILCLOSED notReady=1 unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1 nullResult=1 badTextureIndex=1 badTextureValue=1 nonVariant=1 stateAtomic=yes worldRestored=yes
-[MAPUNLOCKPROBE] RAM heap8=...->... persistentHeapCost=... payload=60 allocatorOverhead=... largest8=...->... frameFNV=...->... arenaFNV=... mapStateFNV=... scriptFNV=... lineStateFNV=e5e74861->e5e74861
-[MAPUNLOCKPROBE] LEGACY ... packIO=no legacyRuntimeClear=yes
-[MAPUNLOCKPROBE] PARK ... nativeLineTextureState=yes nativeUnlockExec=yes textureStorageBytes=60 resultBytes=20 worldMutationProven=yes worldRestored=yes legacyWorldMutation=no ...
-[ALIVE] ...
+frameFNV          = 64347226 -> 64347226
+arenaFNV          = c3882516 -> c3882516
+mapStateFNV       = cd99b98e -> cd99b98e
+scriptFNV         = f9e3d9df -> f9e3d9df
+lineStateFNV      = e5e74861 -> e5e74861
+legacyNotebookFNV = 4d7705c5 -> 4d7705c5
+legacy keys       = 00000000 -> 00000000
+hudFNV            = 505b1255 -> 505b1255
+passwordCanvasFNV = 214171cf -> 214171cf
+continuationFNV   = e2ba14a5 -> e2ba14a5
+packIO            = no
+legacyRuntimeClear= yes
 ```
 
-Use normal optimized PlatformIO environment:
+No legacy world mutation occurred.
+
+## Final PARK boundary
+
+Hardware proved:
 
 ```text
-esp32-cyd
+nativeLineState        = yes
+nativeDoorExec         = yes
+nativeLineTextureState = yes
+nativeUnlockExec       = yes
+textureStorageBytes    = 60
+resultBytes            = 20
+worldMutationProven    = yes
+worldRestored          = yes
+legacyWorldMutation    = no
+framebufferMutation    = no
+entities               = 0
+monsters               = 0
+noGameplay             = yes
 ```
 
-No CI status is currently published for firmware candidate `e423093c8e17dda1345bebecf721dedf4bbb2002`. No local build or hardware PASS is claimed.
+Stable post-PARK heartbeats:
 
-## Remaining MAP_INTRO families after PASS
+```text
+uptime=25201 ms heap=134204 heap8=68440 largest8=34804 all reported subsystems ready
+uptime=30202 ms heap=134204 heap8=68440 largest8=34804 all reported subsystems ready
+```
 
-If UNLOCK passes, still unowned:
+Absolute `heap8`, `largest8` and framebuffer FNV can differ across firmware builds. Acceptance is same-build stability plus canonical native-state fingerprints and bounded persistent ownership.
+
+## Hardware acceptance status
+
+The real CYD proved the complete UNLOCK corpus, exact lock + texture behavior, six two-owner world mutations, 6/6 exact rollback, repeated handled semantics, fail-closed paths, 76-byte persistent allocation, legacy integrity and stable PARK heartbeats.
+
+This milestone is **REAL-CYD HARDWARE PASS / MERGE-READY**.
+
+Hardware-tested firmware content:
+
+```text
+e423093c8e17dda1345bebecf721dedf4bbb2002
+```
+
+All later commits must remain documentation-only unless another firmware is flashed.
+
+## Remaining MAP_INTRO families
+
+After UNLOCK, still unowned:
 
 ```text
 2  EV_CHANGEMAP
@@ -388,4 +383,4 @@ If UNLOCK passes, still unowned:
 27 EV_SAVEGAME
 ```
 
-Do not pre-authorize the next family before PASS + merge recovery.
+Do not preselect the next family before merge recovery. Read the new true `main`, recovery docs and exact remaining legacy behavior first.
