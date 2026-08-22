@@ -12,20 +12,20 @@ hardware-tested firmware = f881ccdad20d950462dd781456c340e792f59ec3
 
 Merged evidence: [`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md).
 
-All 16 real MAP_INTRO opcode IDs now have explicit native ownership/execution boundaries.
+All 16 real MAP_INTRO opcode IDs have explicit native ownership/execution boundaries.
 
-## Current candidate
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-map1-native-level-exit-stats
 base   = ed5cd9a09c9ae36f999661f4284f64400681b1af
-firmware candidate = f9a05933a00fab26b1c0e2b15375d074161ef2bc
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = f9a05933a00fab26b1c0e2b15375d074161ef2bc
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Active evidence: [`MAP1_NATIVE_LEVEL_EXIT_STATS.md`](MAP1_NATIVE_LEVEL_EXIT_STATS.md).
 
-This is the first post-event-family consumer milestone. It computes the map-derived part of legacy `Player_addLevelStats()` without mutating legacy Player/Menu/Game/Render state.
+This is the first hardware-proven post-event-family consumer. It computes the map-derived portion of legacy `Player_addLevelStats()` without mutating legacy Player/Menu/Game/Render state.
 
 ## Permanent invariants
 
@@ -71,9 +71,11 @@ mutable sprite topology   2424 B
 total                    18008 B
 ```
 
-Current candidate adds no persistent allocation. Target total remains `18008 B`.
+Level-exit stats is a caller-owned 20 B value and adds no persistent allocation. Hardware total remains exactly `18008 B`.
 
 ## Hardware-proven fingerprints
+
+Inherited canons:
 
 ```text
 arenaFNV                = c3882516
@@ -89,8 +91,6 @@ saveRouteOwnerFNV       = 06ea6ea8
 saveRouteResultFNV      = c2ecb064
 changeMapOwnerFNV       = f75eb7c7
 changeMapResultFNV      = 2f40c9be
-legacyTransitionFNV     = 79ab740c
-playerStatsFNV          = 0b2ae445
 spriteTopologyFNV       = 3f321e43
 showResultFNV           = 6029eb3c
 hideResultFNV           = d24f5bae
@@ -100,6 +100,25 @@ contextAfterShowFNV     = 2de723aa
 contextAfterHideFNV     = bb1d78a4
 legacyEntityTopologyFNV = f8f9b485
 ```
+
+New level-exit stats canons:
+
+```text
+levelExitStatsFNV       = bd41bcfa
+levelExitNoStatsFNV     = d9532169
+levelExitMapId2FNV      = ceb6ad21
+levelExitShowSensFNV    = 5155b517
+levelExitSecretOpenFNV  = 6694b0e1
+```
+
+Same-build legacy witnesses for this firmware:
+
+```text
+playerStatsFNV = 17e22395
+transitionFNV  = f450c49f
+```
+
+These legacy witnesses are equality guards for this milestone; the permanent native collector does not depend on legacy objects.
 
 ## SHOW/HIDE merged canon
 
@@ -115,38 +134,7 @@ blockersFound=2 blockersRemoved=2 blockerNoops=0 deferredDeaths=2
 rollback=12/12 showRepeatGuard=1 hideContext=1 hideIdempotent=1 reset=1
 ```
 
-Final PARK proved:
-
-```text
-allMapIntroOpcodeFamiliesOwned=yes
-worldRestored=yes
-legacyEntityMutation=no
-framebufferMutation=no
-entities=0 monsters=0 noGameplay=yes
-```
-
-## Why level-exit stats are next
-
-The real intro CHANGEMAP is:
-
-```text
-name=/junction.bsp
-targetMap=9
-spawnParam=0
-showStats=1
-effects=03
-```
-
-Legacy `Game_changeMap()` therefore calls `Player_addLevelStats(true)` and opens the map-stats menu before any real Junction load.
-
-The native engine now has exactly the owners needed for the map-derived counters:
-
-```text
-secret totals/found -> immutable line flag 0x8 + mutable OPEN bit
-monster totals/dead -> native enemy entities + topology ALIVE bit
-```
-
-## Current permanent API
+## Level-exit stats permanent API
 
 Files:
 
@@ -161,128 +149,153 @@ API:
 EspMapLevelExitStats_collect(loadMapId, showStats, outStats)
 ```
 
-Result ABI target:
+Hardware-proven ABI:
 
 ```text
 EspMapLevelExitStats = 20 B
 ```
 
-The result contains:
+Permanent dependencies are only:
 
 ```text
-completionLevelBit
-secretsFound / secretsTotal
-monstersDead / monstersTotal
-loadMapId / showStats
-markCompleted / markAllSecrets / markAllMonsters
-effectFlags
+EspMapRuntime
+EspMapLineState
+EspMapSpriteTopology
 ```
 
-Base effect flags reproduce the non-map writes that a future native player-state consumer must perform:
+No Player/Menu/Game/Render/DoomCanvas object is referenced by the permanent collector. It performs no PAK I/O, no ZIP I/O and no allocation.
+
+## Real-CYD level-exit snapshot
+
+Canonical intro result:
+
+```text
+loadMapId          = 1
+showStats          = 1
+secrets            = 0 / 6
+monsters           = 0 / 30
+markCompleted      = 1
+markAllSecrets     = 0
+markAllMonsters    = 0
+completionLevelBit = 00000001
+effects            = 1f
+statsFNV           = bd41bcfa
+elapsed            = 11 ms
+```
+
+Effect interpretation:
 
 ```text
 01 accumulate time
 02 accumulate moves
 04 reset berserker
 08 clear familiar
-```
-
-Completion flags:
-
-```text
 10 mark completed
 20 mark all secrets
 40 mark all monsters
+
+source result 1f = 0f base effects + 10 mark completed
 ```
 
-They apply only when `showStats && loadMapId != 2`, exactly matching legacy. The permanent collector references no legacy Player/Menu/Game/Render/DoomCanvas type and allocates nothing.
+## Legacy gates
 
-## Candidate real-CYD proof
-
-The probe runs after hardware-proven SHOW/HIDE and requires all previous FNVs unchanged.
-
-It will establish hardware canons for:
+Hardware proved:
 
 ```text
-secretsFound / secretsTotal
-monstersDead / monstersTotal
-markCompleted / markAllSecrets / markAllMonsters
-completionLevelBit
-effectFlags
-statsFNV
+showStats=0  -> base effects only
+loadMapId=2  -> base effects only
+baseEffects  = 0f
+showStats0   = yes
+loadMapId2   = yes
+equalityOnZero=legacy
 ```
 
-It independently recomputes source counts from raw native storage.
-
-It also proves dynamic sensitivity:
+Fingerprints:
 
 ```text
-real deferred-blocker SHOW
- -> collect again
- -> monster-dead delta == removed enemy blockers
- -> topology rollback exact to 3f321e43
-
-one real secret line if present
- -> toggle native OPEN bit
- -> secretsFound +/-1
- -> line rollback exact to e5e74861
+noStatsFNV         = d9532169
+noCompletionMapFNV = ceb6ad21
 ```
 
-Legacy gates:
+## Dynamic sensitivity proofs
+
+Real SHOW / deferred blocker:
 
 ```text
-showStats=0 -> base effects only, no completion proposal
-loadMapId=2 -> base effects only, no completion proposal
+cmd=205 event=74 off=2
+enemyBlockersRemoved=1
+topologyFNV 3f321e43 -> 723e7300 -> 3f321e43
+mutated statsFNV = 5155b517
 ```
 
-Fail closed:
+This proves native level-exit monster counts consume the compact ALIVE state changed by SHOW without calling legacy `Entity_died()`.
+
+Real secret-line sensitivity:
 
 ```text
-mapId0=1
-mapId33=1
-showStats2=1
-nullResult=1
-stateAtomic=yes
+line=39
+initialOpen=0
+proof=1
+lineFNV e5e74861 -> 6694b0e1 -> e5e74861
 ```
 
-RAM/integrity target:
+## Fail closed
 
 ```text
-resultBytes=20
+mapId0      = 1
+mapId33     = 1
+showStats2  = 1
+nullResult  = 1
+stateAtomic = yes
+```
+
+## RAM / integrity evidence
+
+```text
+heap8      65640 -> 65640 delta=0
+largest8   34804 -> 34804 delta=0
 persistentHeapBytes=0
-heap8 delta=0
-largest8 delta=0
-framebuffer unchanged
-all native owner FNVs restored
-legacy Player exit-stat fields unchanged
-legacy menu/transition state unchanged
-PAK closed
-legacy runtime clear
-entities=0 monsters=0
+frameFNV   bd237825 -> bd237825
+arenaFNV   c3882516 -> c3882516
+lineFNV    e5e74861 -> e5e74861
+topologyFNV 3f321e43 -> 3f321e43
 ```
 
-## Validation target
-
-Build/flash normal optimized environment:
+Legacy guards:
 
 ```text
-esp32-cyd
+playerStatsFNV 17e22395 -> 17e22395
+transitionFNV  f450c49f -> f450c49f
+legacyRuntimeClear=yes
+Player_addLevelStatsCalled=no
+menuMutation=no
+transitionTriggered=no
 ```
 
-Branch / firmware:
+Final PARK:
 
 ```text
-agent/esp32-map1-native-level-exit-stats
-f9a05933a00fab26b1c0e2b15375d074161ef2bc
+state=9 page=3
+nativeExitStats=yes
+resultBytes=20
+persistentBytes=0
+allMapIntroOpcodeFamiliesOwned=yes
+playerMutation=no
+menuMutation=no
+worldRestored=yes
+entities=0 monsters=0 noGameplay=yes
 ```
 
-Capture `[MAPEXITSTATS]` and stable `[ALIVE]` lines.
+Stable real-CYD heartbeats:
 
-No CI status is published for this firmware candidate. No local build or real-CYD PASS is claimed.
+```text
+35280 ms heap=131404 heap8=65640 largest8=34804
+40281 ms heap=131404 heap8=65640 largest8=34804
+```
 
 ## Current architecture boundary
 
-Hardware-proven ownership through PR #62:
+Hardware-proven native ownership now includes:
 
 ```text
 compact immutable map runtime
@@ -295,25 +308,28 @@ GIVEMAP automap state
 SAVEGAME durable route
 CHANGEMAP pending transition intent
 SHOW/HIDE compact sprite/entity topology
-```
-
-Candidate adds:
-
-```text
 pure native level-exit stats snapshot / completion plan
 ```
 
-Still outside:
+Still intentionally outside:
 
 ```text
-native player-state application of exit effects
+application of exit effects to native player state
 native stats-menu consumer
-actual CHANGEMAP transition/map swap
+actual CHANGEMAP transition / Junction map swap
 full native entity/monster gameplay
 legacy-world-free gameplay loop
 native gameplay renderer
 ST_PLAYING progression
-actual sound playback
+sound playback
 ```
 
-Do not merge the current candidate until the exact firmware above passes on the real classic CYD and all post-test changes are documentation-only.
+`entities=0`, `monsters=0`, `ST_PLAYING` is not reached, and `shapeData/mediaTexels` remain NULL.
+
+## Merge recommendation
+
+```text
+MERGE agent/esp32-map1-native-level-exit-stats
+```
+
+Hardware-tested firmware is `f9a05933a00fab26b1c0e2b15375d074161ef2bc`. All commits after that firmware must remain documentation-only until merge; no further flash is required if that condition holds.
