@@ -36,10 +36,11 @@ Merged milestones:
 | [`MAP1_NATIVE_STATUS_MESSAGE.md`](MAP1_NATIVE_STATUS_MESSAGE.md) | first native effect owner: FORCE_MESSAGE status ref | #52 | `40b61af5e2115266d4d03dddcc3175850538b0f5` |
 | [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) | DIALOG/NOBACK pause + static continuation owner | #53 | `395418510207bf24ac45ddbb4c4c15db3ddc8998` |
 | [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md) | bounded EV_NOTE native notebook owner | #54 | `03002f79eb03bdcb4c9e430c43e4693dab47e44b` |
+| [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) | pure EV_CHECK_KEY dynamic gate | #55 | `03c4275f2abfd6671c8bf499c075435d7b61ab97` |
 
-Current merge-ready milestone:
+Current candidate milestone:
 
-- [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) — pure native evaluator for real `41 / EV_CHECK_KEY`. Real CYD proved one yellow-key command (`cmd38 event11 off0`, mask `02`), the complete 16-context truth table (`8 PASS / 8 BLOCKED`), 12-byte caller-local result, exact four message mappings, ignored high key bits, full fail-closed behavior, zero persistent allocation/PAK I/O, unchanged Player/Hud/Game/world state, `keyGateFNV=9ace79cd`, and stable post-PARK recovery. Hardware-tested firmware `3b4844e8fa5d38d522e1adc70ffac646978f130d`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
+- [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) — compact native owner for real `10 / EV_PASSWORD`: two immutable string refs (expected code + prompt), static pause/continuation provenance, 20-byte caller-owned state and 12-byte bounded submit result preserving correct/incorrect/empty outcomes plus the recovered 300 ms matched-length feedback delay. It performs no password presentation or legacy DoomCanvas/Game/Hud/world mutation. Firmware candidate `e2d12085712324444f26528b77ea5122c871d85b`; **IMPLEMENTED, REAL-CYD HARDWARE VALIDATION PENDING**.
 
 ## Architecture rule
 
@@ -60,7 +61,9 @@ Doom RPG data / recovered behavior
  -> bounded pack-backed string/text access
  -> small explicit native effect/player owners
  -> pure dynamic gates
+ -> bounded pause/input owners
  -> native event/script loop
+ -> explicit native world/render overlays
  -> ESP32-native gameplay + renderer
 ```
 
@@ -71,21 +74,21 @@ Do not promote desktop `Render_t`, `DoomCanvas_t`, pointer-heavy map structs, ma
 Latest merged hardware baseline:
 
 ```text
-PR   = #54
-main = 03002f79eb03bdcb4c9e430c43e4693dab47e44b
-hardware-tested firmware content = f619aefc85402d28c4de6edab5ca32ea1eb514dd
+PR   = #55
+main = 03c4275f2abfd6671c8bf499c075435d7b61ab97
+hardware-tested firmware content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
 ```
 
-Current merge-ready branch:
+Current candidate:
 
 ```text
-branch = agent/esp32-map1-native-key-gate
-base   = 03002f79eb03bdcb4c9e430c43e4693dab47e44b
-hardware-tested firmware content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-map1-native-password-owner
+base   = 03c4275f2abfd6671c8bf499c075435d7b61ab97
+firmware candidate content = e2d12085712324444f26528b77ea5122c871d85b
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Hardware-proven fingerprints now include:
+Hardware-proven fingerprints through PR #55:
 
 ```text
 arenaFNV           = c3882516
@@ -112,55 +115,83 @@ keyGateFNV         = 9ace79cd
 
 Persistent native structural/script heap remains hardware-proven at `15252 B`.
 
-Caller-local/value types proven:
+Caller-local/value types proven through PR #55:
 
 ```text
-status owner   =   8 B
-dialog owner   =  12 B
-notebook owner = 514 B
-key-gate result=  12 B
+status owner    =   8 B
+dialog owner    =  12 B
+notebook owner  = 514 B
+key-gate result =  12 B
 ```
 
-CHECK_KEY hardware proof:
+Current PASSWORD target:
 
 ```text
-refs             = 1
-green/yellow/blue/red = 0/1/0/0
-scenarios        = 16
-pass             = 8
-blocked          = 8
-stateExecRefused = 1
-resultBytes      = 12
-keyGateFNV       = 9ace79cd
-sample           = cmd38 event11 off0 key1 mask02 arg2=00000100
-message          = Need Yellow Key
-sound            = 5065
+password owner         = 20 B expected
+password submit result = 12 B expected
+persistent heap        = 0 B expected
 ```
 
-Integrity on the tested firmware:
+## PASSWORD recovered contract
+
+Static opcode behavior:
 
 ```text
-heap8             = 68756 -> 68756
-largest8          = 36852 -> 36852
-frameFNV          = c56f998b -> c56f998b
-arenaFNV          = c3882516 -> c3882516
-mapStateFNV       = cd99b98e -> cd99b98e
-scriptFNV         = f9e3d9df -> f9e3d9df
-legacyNotebookFNV = 4d7705c5 -> 4d7705c5
-legacyKeys        = 00000000 -> 00000000
-hudFNV            = 505b1255 -> 505b1255
-persistentBytes   = 0
+arg1 low byte  -> expected-code string ref
+arg1 high byte -> prompt string ref
+pause script
+skip advance turn
+save current event/command continuation
 ```
 
-Complete post-PARK heartbeat: `uptime=25410 ms`, `heap=134520`, `heap8=68756`, `largest8=36852`, all reported subsystems ready.
+Submission behavior:
 
-## Remaining MAP_INTRO opcode families
+```text
+max input payload = 7 B
+matched expected length -> 300 ms feedback delay
+early submitted shorter input -> 0 ms deliberate delay
+correct -> "Correct code!" + resume at source offset + 1
+non-empty wrong -> "Invalid code!" + no resume
+empty wrong -> no forced message + no resume
+```
+
+The permanent owner never copies password/prompt text. The submit evaluator reads only the expected-code string from the native pack into caller scratch and returns metadata; it never mutates/presents legacy state.
+
+## Hardware target for current candidate
+
+The real PASSWORD count is discovered by the probe rather than guessed. Full source identity remains protected by `opcodeAuditFNV=6f28df45`.
+
+Acceptance shape:
+
+```text
+refs > 0
+stateExecRefused = refs
+ownerBytes = 20
+submitResultBytes = 12
+resumeExact = refs
+correct = refs
+incorrect = refs
+emptySemantics = refs
+correctResume = refs
+incorrectNoResume = refs
+matchedLengthDelay = 300 ms
+earlySubmitDelay = 0 ms
+maxCodeLen <= 7
+persistentHeapBytes = 0
+```
+
+Hardware must establish the real corpus counts/spans and new `passwordOwnerFNV` / `passwordSubmitFNV`; these are intentionally not predeclared.
+
+Integrity witnesses include heap/largest/framebuffer, arena/map/script fingerprints, legacy notebook/keys, Hud witness, DoomCanvas password buffers/timing witness, `Game.passCode` pointer and Game continuation fields.
+
+## Remaining MAP_INTRO opcode families after PASSWORD
+
+If the candidate passes:
 
 ```text
 2  EV_CHANGEMAP
 7  EV_SHOW
 9  EV_GIVEMAP
-10 EV_PASSWORD
 13 EV_UNLOCK
 15 EV_OPENLINE
 16 EV_CLOSELINE
@@ -168,7 +199,7 @@ Complete post-PARK heartbeat: `uptime=25410 ms`, `heap=134520`, `heap8=68756`, `
 27 EV_SAVEGAME
 ```
 
-PASSWORD remains a bounded pause/input candidate. SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE cross into explicit world/render overlays. CHANGEMAP and SAVEGAME remain larger later boundaries.
+That exhausts the currently bounded non-world UI/control families. The next recovery should choose the first explicit native world/render overlay from SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE, while CHANGEMAP and SAVEGAME remain larger boundaries.
 
 ## Milestone workflow
 
@@ -181,4 +212,6 @@ PASSWORD remains a bounded pause/input candidate. SHOW/HIDE/GIVEMAP/UNLOCK/OPENL
 7. Mark merge-ready only after implementation + hardware + docs agree.
 8. Keep all post-hardware commits docs-only unless another flash is performed.
 
-After this branch is merged, reread the new `main`, `PORTING_STATUS.md`, merged CHECK_KEY milestone and exact remaining MAP_INTRO behavior before selecting the next bounded milestone.
+Current validation target: normal `esp32-cyd` from `agent/esp32-map1-native-password-owner`, including `[MAPPASSWORD]` / `[MAPPASSWORDPROBE]` plus a later stable `[ALIVE]` heartbeat.
+
+After PASS + merge, reread the new `main`, `PORTING_STATUS.md`, merged PASSWORD milestone and exact remaining MAP_INTRO behavior before selecting the first world/render overlay milestone.
