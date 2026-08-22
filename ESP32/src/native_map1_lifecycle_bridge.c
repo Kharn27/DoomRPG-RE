@@ -14,6 +14,7 @@
 #include "native_map1_password_probe.h"
 #include "native_map1_runtime_load.h"
 #include "native_map1_save_route_probe.h"
+#include "native_map1_show_hide_diag.h"
 #include "native_map1_show_hide_probe.h"
 #include "native_map1_state_probe.h"
 #include "native_map1_status_message_probe.h"
@@ -53,6 +54,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32Map1SaveRouteProbe_reset();
     Esp32Map1ChangeMapProbe_reset();
     Esp32Map1ShowHideProbe_reset();
+    Esp32Map1ShowHideDiag_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -98,4 +100,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32Map1SaveRouteProbe_service(doomRpg);
     Esp32Map1ChangeMapProbe_service(doomRpg);
     Esp32Map1ShowHideProbe_service(doomRpg);
+    Esp32Map1ShowHideDiag_service(doomRpg);
 }
