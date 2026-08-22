@@ -38,9 +38,9 @@ Merged milestones:
 | [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md) | bounded EV_NOTE native notebook owner | #54 | `03002f79eb03bdcb4c9e430c43e4693dab47e44b` |
 | [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) | pure EV_CHECK_KEY dynamic gate | #55 | `03c4275f2abfd6671c8bf499c075435d7b61ab97` |
 
-Current candidate milestone:
+Current merge-ready milestone:
 
-- [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) — compact native owner for real `10 / EV_PASSWORD`: two immutable string refs (expected code + prompt), static pause/continuation provenance, 20-byte caller-owned state and 12-byte bounded submit result preserving correct/incorrect/empty outcomes plus the recovered 300 ms matched-length feedback delay. It performs no password presentation or legacy DoomCanvas/Game/Hud/world mutation. Firmware candidate `e2d12085712324444f26528b77ea5122c871d85b`; **IMPLEMENTED, REAL-CYD HARDWARE VALIDATION PENDING**.
+- [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) — compact native owner for real `10 / EV_PASSWORD`: two immutable string refs (expected code + prompt), static pause/continuation provenance, 20-byte caller-owned owner and 12-byte bounded submit result. Real CYD proved two PASSWORD commands, exact resume-at-`off+1`, correct/incorrect/empty outcomes, 300 ms matched-length vs 0 ms early-submit timing, zero legacy/world mutation, `passwordOwnerFNV=48f01689` and `passwordSubmitFNV=90e8c574`. Hardware-tested firmware `e2d12085712324444f26528b77ea5122c871d85b`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Architecture rule
 
@@ -79,16 +79,16 @@ main = 03c4275f2abfd6671c8bf499c075435d7b61ab97
 hardware-tested firmware content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
 ```
 
-Current candidate:
+Current merge-ready branch:
 
 ```text
 branch = agent/esp32-map1-native-password-owner
 base   = 03c4275f2abfd6671c8bf499c075435d7b61ab97
-firmware candidate content = e2d12085712324444f26528b77ea5122c871d85b
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware content = e2d12085712324444f26528b77ea5122c871d85b
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Hardware-proven fingerprints through PR #55:
+Hardware-proven fingerprints now include:
 
 ```text
 arenaFNV           = c3882516
@@ -111,82 +111,101 @@ noteApplyFNV       = 43183162
 notebookContentFNV = 599609e0
 notebookStorageFNV = 75cf54e0
 keyGateFNV         = 9ace79cd
+passwordOwnerFNV   = 48f01689
+passwordSubmitFNV  = 90e8c574
 ```
 
 Persistent native structural/script heap remains hardware-proven at `15252 B`.
 
-Caller-local/value types proven through PR #55:
+Caller-owned/value types proven:
 
 ```text
-status owner    =   8 B
-dialog owner    =  12 B
-notebook owner  = 514 B
-key-gate result =  12 B
+status owner           =   8 B
+dialog owner           =  12 B
+notebook owner         = 514 B
+key-gate result        =  12 B
+password owner         =  20 B
+password submit result =  12 B
 ```
 
-Current PASSWORD target:
+## PASSWORD hardware proof
 
 ```text
-password owner         = 20 B expected
-password submit result = 12 B expected
-persistent heap        = 0 B expected
+refs              = 2
+stateExecRefused  = 2
+codeBytes         = 8
+promptBytes       = 72
+maxCodeLen        = 4
+resumeExact       = 2
+correct           = 2
+incorrect         = 2
+emptySemantics    = 2
+correctResume     = 2
+incorrectNoResume = 2
+passwordOwnerFNV  = 48f01689
+passwordSubmitFNV = 90e8c574
+elapsed           = 49 ms
 ```
 
-## PASSWORD recovered contract
-
-Static opcode behavior:
+Canonical sample:
 
 ```text
-arg1 low byte  -> expected-code string ref
-arg1 high byte -> prompt string ref
-pause script
-skip advance turn
-save current event/command continuation
+cmd17 event6 off6 resume7
+arg1=00001d1c arg2=00040100
+code=28@13630+4 codeFNV=92444853
+prompt=29@13636+41 promptFNV=ddbe080a
+codeLen=4
 ```
 
-Submission behavior:
+Outcome proof:
 
 ```text
-max input payload = 7 B
-matched expected length -> 300 ms feedback delay
-early submitted shorter input -> 0 ms deliberate delay
-correct -> "Correct code!" + resume at source offset + 1
-non-empty wrong -> "Invalid code!" + no resume
-empty wrong -> no forced message + no resume
+delayMatch=300 ms
+earlySubmit=0 ms
+correctMessage="Correct code!"
+invalidMessage="Invalid code!"
+guards=10/10
 ```
 
-The permanent owner never copies password/prompt text. The submit evaluator reads only the expected-code string from the native pack into caller scratch and returns metadata; it never mutates/presents legacy state.
-
-## Hardware target for current candidate
-
-The real PASSWORD count is discovered by the probe rather than guessed. Full source identity remains protected by `opcodeAuditFNV=6f28df45`.
-
-Acceptance shape:
+Fail-closed hardware proof:
 
 ```text
-refs > 0
-stateExecRefused = refs
-ownerBytes = 20
-submitResultBytes = 12
-resumeExact = refs
-correct = refs
-incorrect = refs
-emptySemantics = refs
-correctResume = refs
-incorrectNoResume = refs
-matchedLengthDelay = 300 ms
-earlySubmitDelay = 0 ms
-maxCodeLen <= 7
-persistentHeapBytes = 0
+unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1
+nullOwner=1 badOwner=1 tooLong=1 shortBuffer=1
+nullSubmitOwner=1 nullSubmitResult=1 closedPack=1
+ownerAtomic=yes reset=1
 ```
 
-Hardware must establish the real corpus counts/spans and new `passwordOwnerFNV` / `passwordSubmitFNV`; these are intentionally not predeclared.
+Integrity on the tested firmware:
 
-Integrity witnesses include heap/largest/framebuffer, arena/map/script fingerprints, legacy notebook/keys, Hud witness, DoomCanvas password buffers/timing witness, `Game.passCode` pointer and Game continuation fields.
+```text
+heap8             = 68748 -> 68748
+largest8          = 36852 -> 36852
+frameFNV          = 7a95b5b5 -> 7a95b5b5
+arenaFNV          = c3882516 -> c3882516
+mapStateFNV       = cd99b98e -> cd99b98e
+scriptFNV         = f9e3d9df -> f9e3d9df
+legacyNotebookFNV = 4d7705c5 -> 4d7705c5
+legacyKeys        = 00000000 -> 00000000
+hudFNV            = 505b1255 -> 505b1255
+passwordCanvasFNV = 214171cf -> 214171cf
+gamePassCodeStable= yes
+```
 
-## Remaining MAP_INTRO opcode families after PASSWORD
+Native-pack PASSWORD read cost:
 
-If the candidate passes:
+```text
+heapOpen=64384
+transientHeapCost=4364 B
+largestOpen=36852
+persistentHeapBytes=0
+```
+
+Complete post-PARK heartbeat: `uptime=170149 ms`, `heap=134512`, `heap8=68748`, `largest8=36852`, all reported subsystems ready.
+
+## Remaining MAP_INTRO opcode families
+
+The bounded non-world UI/control families are now exhausted:
 
 ```text
 2  EV_CHANGEMAP
@@ -199,7 +218,7 @@ If the candidate passes:
 27 EV_SAVEGAME
 ```
 
-That exhausts the currently bounded non-world UI/control families. The next recovery should choose the first explicit native world/render overlay from SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE, while CHANGEMAP and SAVEGAME remain larger boundaries.
+The next recovery should choose the first explicit native world/render overlay from SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE. CHANGEMAP and SAVEGAME remain larger later boundaries.
 
 ## Milestone workflow
 
@@ -210,8 +229,8 @@ That exhausts the currently bounded non-world UI/control families. The next reco
 5. Validate normal optimized firmware on the real classic CYD.
 6. Preserve exact RAM/fingerprint/hardware evidence.
 7. Mark merge-ready only after implementation + hardware + docs agree.
-8. Keep all post-hardware commits docs-only unless another flash is performed.
+8. Keep all post-hardware commits docs-only unless another firmware is flashed.
 
-Current validation target: normal `esp32-cyd` from `agent/esp32-map1-native-password-owner`, including `[MAPPASSWORD]` / `[MAPPASSWORDPROBE]` plus a later stable `[ALIVE]` heartbeat.
+Current recommendation: merge `agent/esp32-map1-native-password-owner`.
 
-After PASS + merge, reread the new `main`, `PORTING_STATUS.md`, merged PASSWORD milestone and exact remaining MAP_INTRO behavior before selecting the first world/render overlay milestone.
+After merge, reread the new true `main`, `PORTING_STATUS.md`, `DOCUMENTATION.md`, merged PASSWORD milestone and exact remaining MAP_INTRO legacy behavior before selecting the first world/render overlay milestone.
