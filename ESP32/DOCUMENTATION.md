@@ -38,180 +38,165 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md) | SAVEGAME future-save route | #60 | `50ed329801fe99917ef2f848ee13e742ae7734ab` |
 | [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md) | CHANGEMAP pending transition intent | #61 | `fc39ac60757e0d992e3729a5044a9d83e9994971` |
 
-## Current candidate
+## Current merge-ready milestone
 
 [`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md) owns the final two real MAP_INTRO opcode families, `7 / EV_SHOW` and `18 / EV_HIDE`, through one compact native map-sprite/entity topology.
 
 ```text
 branch = agent/esp32-map1-native-show-hide-topology
 base   = fc39ac60757e0d992e3729a5044a9d83e9994971
-firmware candidate = 93d26e171e8a98f3824b3071e01b9234c8ebe6c3
-status = IMPLEMENTED; CORRECTED REAL-CYD VALIDATION PENDING
+hardware-tested firmware = f881ccdad20d950462dd781456c340e792f59ec3
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Permanent topology storage:
+### Final MAP_INTRO event-family result
+
+All 16 real opcode IDs are now explicitly owned natively:
 
 ```text
-344 map sprites
-7 B / sprite
-payload = 2408 B
-
-entity type       1 B
-entity subtype    1 B
-visual state      1 B
-link state/tile   2 B
-link order        2 B
+2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-Expected result ABIs:
+There is **no remaining real MAP_INTRO opcode family without a native ownership/execution boundary**.
+
+### SHOW/HIDE hardware canons
+
+Compact topology:
+
+```text
+sprites=344
+7 B/sprite
+payload=2408 B
+actual heap=2424 B
+allocator overhead=16 B
+stateFNV=3f321e43
+
+entityDefCount=115
+entities=220
+hasDef=213
+fallback=7
+linked=209
+hiddenSprites=11
+hiddenEntities=11
+enemies=30
+destructibles=13
+nextOrder=209
+```
+
+Corpus:
+
+```text
+refs=12
+show=11
+hide=1
+removable=12
+stateExecRefused=12
+showMutated=11
+hideMutatedIsolated=0
+hideNoMutation=1
+blockersFound=2
+blockersRemoved=2
+deferredDeaths=2
+rollback=12/12
+```
+
+Fingerprints:
+
+```text
+showResultFNV       = 6029eb3c
+hideResultFNV       = d24f5bae
+showStateFNV        = b6a45f47
+hideStateFNV        = bec68187
+contextAfterShowFNV = 2de723aa
+contextAfterHideFNV = bb1d78a4
+entityTopologyFNV   = f8f9b485
+```
+
+The sole real HIDE is a valid source-state no-op. The same event contains an earlier real SHOW on the same tile, and hardware proved the contextual sequence hides/unlinks exactly one entity, then becomes idempotent on the second HIDE.
+
+```text
+SHOW cmd165 event60 off1 sprite0 tile706
+HIDE cmd173 event60 off9 tile706
+hidden=1
+secondHidden=0
+contextProven=1
+idempotent=1
+```
+
+Result ABI:
 
 ```text
 EspMapShowResult = 26 B
 EspMapHideResult = 18 B
 ```
 
-SHOW owns the directly deterministic visual/link projection and reports deferred blocker gameplay instead of invoking legacy `Entity_died()`. HIDE traverses compact native tile links and hides/unlinks eligible non-enemy map-sprite entities. Runtime ZIP access remains forbidden; `/entities.db` is read only during owner build from `/DoomRPG-ESP32.pak`.
+### Persistent native RAM
 
-## First SHOW/HIDE hardware attempt and correction
-
-Initial firmware `1e9760de2269f57ec24dcea0fc16774a119ae65a` built the compact owner but failed the temporary `topology/corpus audit`.
-
-Diagnostic firmware `3a7dc83b14e8de47827b51bee12b0c907635ffc3` proved the permanent owner and all 12 real opcode applications were individually valid:
+Hardware-proven persistent total is now:
 
 ```text
-sprites=344 storageBytes=2408
-actual heap delta=2424 B
-stateFNV=3f321e43
-entities=220 hasDef=213 fallback=7 linked=209
-hiddenEntities=11 enemies=30 destructibles=13 nextOrder=209
-initial audit=1
-
-refs=12 show=11 hide=1
-showOk=11 hideOk=1
-showAlreadyLinked=0 showRandomBlocker=0
-showOtherFailure=0 hideOtherFailure=0
-finalFNV=3f321e43
+immutable arena          14112 B
+mutable tile state        1040 B
+mutable script state       100 B
+mutable line state         136 B
+mutable texture state       76 B
+mutable automap state      120 B
+mutable sprite topology   2424 B
+-------------------------------
+total                    18008 B
 ```
 
-The sole HIDE is a legitimate source-state no-op:
+`largest8=34804` remains unchanged.
+
+### Integrity
+
+Real-CYD final PARK proved:
 
 ```text
-cmd173 event60 off9
-tile=2,22 / index706
-status=OK hidden=0 effects=00 handled=1 remove=1
+allMapIntroOpcodeFamiliesOwned=yes
+worldMutationProven=yes
+worldRestored=yes
+legacyEntityMutation=no
+framebufferMutation=no
+entities=0
+monsters=0
+noGameplay=yes
 ```
 
-The failing probe had incorrectly required an isolated HIDE mutation. This was a test-harness assumption, not a permanent owner failure.
+Inherited native fingerprints remain exact, framebuffer is unchanged, and the legacy entity topology witness remains `f8f9b485 -> f8f9b485`.
 
-The same event has an earlier real SHOW on the same tile:
+## Architecture boundary after MAP_INTRO event-family ownership
+
+This milestone is a major boundary, not the end of the port.
+
+Still intentionally outside current native ownership:
 
 ```text
-cmd165 event60 off1
-sprite0 tile706
-FNV 3f321e43 -> 2de723aa
+full native entity/monster gameplay
+consumption of deferred blocker death/gameplay effects
+actual CHANGEMAP transition consumer
+legacy-world-free gameplay loop
+native gameplay renderer integration
+actual ST_PLAYING progression
+actual sound playback
 ```
 
-The corrected final probe therefore validates both:
+The permanent invariants remain:
 
 ```text
-isolated real corpus:
-  HIDE may be handled/no-op from source state
-
-contextual mutation proof:
-  same-event/same-tile SHOW
-  -> real HIDE must hide/unlink
-  -> second HIDE must be handled/idempotent
-  -> reset exact
-```
-
-No permanent `esp_map_sprite_topology.c` code was changed by this correction.
-
-## Current hardware-proven boundary through PR #61
-
-```text
-persistent native heap = 15584 B
-arenaFNV               = c3882516
-mapStateFNV            = cd99b98e
-scriptFNV              = f9e3d9df
-lineStateFNV           = e5e74861
-lineTextureStateFNV    = f1fc1875
-automapStateFNV        = 669b1aa7
-giveMapFNV             = 98c7ac59
-saveRouteOwnerFNV      = 06ea6ea8
-saveRouteResultFNV     = c2ecb064
-saveRouteContentFNV    = 725845aa
-changeMapOwnerFNV      = f75eb7c7
-changeMapResultFNV     = 2f40c9be
-changeMapContentFNV    = f7a79d99
-legacyTransitionFNV    = 79ab740c
-playerStatsFNV         = 0b2ae445
-```
-
-The SHOW/HIDE topology values above are diagnostic observations, not yet promoted to final hardware canons until firmware `93d26e17...` passes its corrected probe.
-
-## Corrected validation target
-
-The final firmware must establish:
-
-```text
-initial topology audit PASS
-refs = SHOW + HIDE
-stateExecRefused = refs
-rollback = refs/refs
-SHOW mutation coverage > 0
-isolated HIDE handled (mutation or no-op accepted)
-same-event/same-tile context SHOW found
-context HIDE hides/unlinks >= 1 entity
-second context HIDE handled/no-op with unchanged FNV
-showRepeatGuard=1
-hideContext=1
-hideIdempotent=1
-reset=1
-showResultBytes=26
-hideResultBytes=18
-```
-
-RAM target:
-
-```text
-topology payload = 2408 B
-2408 <= actual heap cost <= 2536 B
-largest8 >= 32768 B
-new persistent total = 15584 B + hardware-measured topology allocation
-```
-
-Final integrity remains:
-
-```text
-legacy Render runtime clear
-legacy entity topology unchanged
-entities=0 monsters=0
-framebuffer unchanged
-shapeData=NULL
-mediaTexels=NULL
+shapeData == NULL
+mediaTexels == NULL
+runtime ZIP forbidden
+/DoomRPG-ESP32.pak is native backing store
+entities=0
+monsters=0
 ST_PLAYING not reached
 ```
 
-## Architecture rule
-
-DoomRPG-RE desktop/J2ME remains the executable behavior/format reference, not the final ESP32 architecture.
+## Merge recommendation
 
 ```text
-original behavior/data
- -> native pack-backed parsers
- -> compact immutable map
- -> explicit small mutable owners
- -> native event/script ownership
- -> native gameplay/effect consumers
- -> native renderer
+MERGE agent/esp32-map1-native-show-hide-topology
 ```
 
-Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexels`, pointer-heavy desktop map structures or legacy `Render_t` ownership as a shortcut.
-
-## MAP_INTRO event-family frontier
-
-If firmware `93d26e171e8a98f3824b3071e01b9234c8ebe6c3` passes, there will be **no remaining real MAP_INTRO opcode ID without an explicit native ownership/execution boundary**.
-
-That closes event-family ownership only. Native entity/monster gameplay, deferred effect consumers, transition consumption, rendering and progression to `ST_PLAYING` remain later work.
-
-Do not merge this candidate until corrected real-CYD hardware validation passes and all later commits are verified documentation-only.
+All post-hardware commits after `f881ccdad20d950462dd781456c340e792f59ec3` must be documentation-only. After merge, recover from the true new `main` before selecting the next gameplay/effect-consumer milestone.
