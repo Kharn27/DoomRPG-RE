@@ -37,39 +37,56 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md) | GIVEMAP automap state | #59 | `9891a25d700f9ffe1be044ac4a7629c3487604ec` |
 | [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md) | SAVEGAME future-save route | #60 | `50ed329801fe99917ef2f848ee13e742ae7734ab` |
 
-## Current candidate
+## Current merge-ready milestone
 
 [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md) owns `2 / EV_CHANGEMAP` as a pending native transition intent.
 
 ```text
 branch = agent/esp32-map1-native-change-map-intent
 base   = 50ed329801fe99917ef2f848ee13e742ae7734ab
-firmware candidate = 93e0be24558ebffcbc9f60ef0ced54f29274ab28
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 93e0be24558ebffcbc9f60ef0ced54f29274ab28
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-The candidate mirrors only the bytecode-time assignment of legacy `Game.changeMapParam`. It does not invoke the later texture-7 transition consumer.
-
-Expected caller-owned values:
+Real-CYD CHANGEMAP corpus:
 
 ```text
-EspMapChangeMapState  = 16 B
-EspMapChangeMapResult = 20 B
-persistent heap       = 0 B
+refs=1 pending=1 zeroParam=0 showStats=1 directLoad=0
+removable=0 fallbackMap=0 stateExecRefused=1
+ownerBytes=16 resultBytes=20 persistentHeapBytes=0
+mapNameBytes=13 maxMapName=13
+ownerFNV=f75eb7c7 resultFNV=2f40c9be contentFNV=f7a79d99
+rollback=1/1 reapplyExact=1 closedPackApply=1
 ```
 
-The result decodes spawn/show-stats metadata and describes the later effects:
+Canonical command:
+
+```text
+cmd2 event1 off1
+arg1=80000000 arg2=00000100
+mapString=0
+name="/junction.bsp"
+targetMap=9 / MAP_JUNCTION
+spawnParam=0
+showStats=1
+effects=03
+pending=1 handled=1 removeIfHandled=0
+```
+
+The milestone mirrors only the bytecode-time assignment of legacy `Game.changeMapParam`. It does not invoke the later texture-7 transition consumer.
+
+Deferred effects remain metadata only:
 
 ```text
 showStats -> level stats + stats menu
 no stats  -> level stats + map load
 ```
 
-Those effects, transition sound `5068`, actual target-map load and pending-state consumption remain deferred.
+Transition sound `5068`, actual target-map load and pending-state consumption remain deferred.
 
-The permanent executor uses only the resident native runtime/string span and performs no PAK I/O. The real-CYD probe temporarily opens `/DoomRPG-ESP32.pak` only to validate destination names, then proves the same sample can be armed identically after the pack is closed.
+The permanent executor uses only the resident native runtime/string span and performs no PAK I/O. Hardware proved the same sample can be armed identically after the verification PAK is closed.
 
-## Current hardware-proven boundary through PR #60
+## Current hardware-proven boundary
 
 ```text
 persistent native heap = 15584 B
@@ -83,16 +100,43 @@ giveMapFNV             = 98c7ac59
 saveRouteOwnerFNV      = 06ea6ea8
 saveRouteResultFNV     = c2ecb064
 saveRouteContentFNV    = 725845aa
+changeMapOwnerFNV      = f75eb7c7
+changeMapResultFNV     = 2f40c9be
+changeMapContentFNV    = f7a79d99
+legacyTransitionFNV    = 79ab740c
+playerStatsFNV         = 0b2ae445
 ```
 
-SAVEGAME hardware proof:
+Latest same-build CHANGEMAP witness:
 
 ```text
-refs=1
-mapName="/junction.bsp"
-tile=15,29 destination=992,1888 angle=64
-ownerBytes=46 resultBytes=16 persistentHeapBytes=0
-rollback=1/1 reapplyExact=1 ownerSurvivesPackClose=1
+heap8=68176->68176
+largest8=34804->34804
+frameFNV=e36ac6fd->e36ac6fd
+transient PAK cost=4376 B
+persistent CHANGEMAP heap=0 B
+transitionFNV=79ab740c->79ab740c
+statsFNV=0b2ae445->0b2ae445
+```
+
+Final PARK boundary:
+
+```text
+nativeChangeMapIntent=yes
+transitionArmedProven=yes
+transitionTriggered=no
+statsMutation=no
+menuMutation=no
+mapLoad=no
+framebufferMutation=no
+entities=0 monsters=0 noGameplay=yes
+```
+
+Stable heartbeats:
+
+```text
+35181 ms: heap=133940 heap8=68176 largest8=34804
+40182 ms: heap=133940 heap8=68176 largest8=34804
 ```
 
 ## Architecture rule
@@ -113,13 +157,15 @@ Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexel
 
 ## Remaining MAP_INTRO families
 
-Current candidate owns CHANGEMAP. If it passes, only these remain:
+After CHANGEMAP, only these remain:
 
 ```text
 7  EV_SHOW
 18 EV_HIDE
 ```
 
-SHOW/HIDE are entity-topology operations, not simple visibility bits: their legacy semantics include entity death, linking/unlinking and tile-chain traversal. They require the final explicit compact native sprite/entity-topology boundary.
+They are entity-topology operations, not simple visibility bits: legacy behavior includes entity death, linking/unlinking and tile-chain traversal. They require the final explicit compact native sprite/entity-topology boundary.
 
-Follow the standard hardware PASS -> docs-only -> merge -> exact-main recovery workflow before authorizing that boundary.
+Current recommendation: **merge `agent/esp32-map1-native-change-map-intent`**.
+
+After merge, recover the exact new `main` before selecting or implementing the final SHOW/HIDE milestone.
