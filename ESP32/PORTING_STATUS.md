@@ -12,18 +12,18 @@ hardware-tested firmware = 42497b80c6158300ec3fa7b8eb8af6cee643f59e
 
 Merged evidence: [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md).
 
-## Current candidate
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-map1-native-change-map-intent
 base   = 50ed329801fe99917ef2f848ee13e742ae7734ab
-firmware candidate = 93e0be24558ebffcbc9f60ef0ced54f29274ab28
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 93e0be24558ebffcbc9f60ef0ced54f29274ab28
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Active evidence: [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md).
+Detailed evidence: [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md).
 
-The candidate owns only `2 / EV_CHANGEMAP` as a caller-owned pending transition intent. It does **not** trigger the later texture-7 transition consumer: no sound, level stats, menu transition or map load occurs in this milestone.
+This milestone owns only `2 / EV_CHANGEMAP` as a compact caller-owned pending transition intent. It does not trigger the later texture-7 transition consumer: no sound, level stats, menu transition or map load occurs.
 
 ## Permanent invariants
 
@@ -54,7 +54,7 @@ Real opcode IDs:
 2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-## Hardware-proven fingerprints through PR #60
+## Hardware-proven fingerprints through CHANGEMAP
 
 ```text
 arenaFNV               = c3882516
@@ -74,23 +74,18 @@ saveRouteContentFNV    = 725845aa
 saveRouteInitialFNV    = 9a00a0bd
 saveRouteSampleFNV     = 7e69bd59
 legacySaveRouteFNV     = 9bcfe135
-```
-
-Current CHANGEMAP candidate will establish:
-
-```text
-changeMapOwnerFNV   = pending
-changeMapResultFNV  = pending
-changeMapContentFNV = pending
-initialOwnerFNV     = pending
-sampleOwnerFNV      = pending
-legacyTransitionFNV = pending witness
-playerStatsFNV      = pending witness
+changeMapOwnerFNV      = f75eb7c7
+changeMapResultFNV     = 2f40c9be
+changeMapContentFNV    = f7a79d99
+changeMapInitialFNV    = 69691905
+changeMapSampleFNV     = 4e4ebeac
+legacyTransitionFNV    = 79ab740c
+playerStatsFNV         = 0b2ae445
 ```
 
 ## Persistent native RAM ownership
 
-Hardware-proven heap entering this candidate:
+Hardware-proven heap remains:
 
 ```text
 immutable arena        14112 B
@@ -103,15 +98,15 @@ mutable automap state    120 B
 total                  15584 B
 ```
 
-Current candidate value types:
+Hardware-proven CHANGEMAP value types:
 
 ```text
-EspMapChangeMapState  = 16 B expected
-EspMapChangeMapResult = 20 B expected
-persistent heap       = 0 B expected
+EspMapChangeMapState  = 16 B
+EspMapChangeMapResult = 20 B
+persistent heap       = 0 B
 ```
 
-The probe temporarily opens the native PAK only to verify real destination names. The permanent CHANGEMAP executor performs no PAK I/O.
+The probe temporarily opens the native PAK only to verify the real destination string. The permanent CHANGEMAP executor performs no PAK I/O.
 
 ## Hardware-proven recent families
 
@@ -133,9 +128,15 @@ SAVEGAME route:
   mapName="/junction.bsp" tile=15,29 destination=992,1888 angle=64
   ownerFNV=06ea6ea8 resultFNV=c2ecb064 contentFNV=725845aa
   rollback=1/1 reapplyExact=1 ownerSurvivesPackClose=1
+
+CHANGEMAP intent:
+  refs=1 pending=1 zeroParam=0 showStats=1 directLoad=0 removable=0 fallbackMap=0
+  ownerBytes=16 resultBytes=20 persistentHeapBytes=0
+  ownerFNV=f75eb7c7 resultFNV=2f40c9be contentFNV=f7a79d99
+  rollback=1/1 reapplyExact=1 closedPackApply=1
 ```
 
-## EV_CHANGEMAP recovered contract
+## EV_CHANGEMAP permanent contract
 
 Legacy bytecode execution itself is only:
 
@@ -156,7 +157,7 @@ otherwise       -> map load
 clears changeMapParam
 ```
 
-The candidate therefore owns only pending state:
+The native milestone owns only pending state:
 
 ```text
 rawParam
@@ -164,8 +165,6 @@ map-local EspMapStringRef
 source event/command provenance
 active flag
 ```
-
-For rawParam=0, the native owner clears and the command still reports handled=true, matching legacy assignment semantics.
 
 Deferred result metadata:
 
@@ -175,103 +174,135 @@ pending + showStats=0 -> ADD_LEVEL_STATS | LOAD_MAP        = 0x05
 pending=0             -> no deferred effects
 ```
 
-Sound 5068 is intentionally outside this opcode owner because it belongs to the later texture-7 door transition trigger.
+Sound 5068 remains outside this opcode owner because it belongs to the later texture-7 transition-door trigger.
 
-## Real-CYD validation target
+## CHANGEMAP real-CYD proof
 
-The probe must discover rather than guess:
+Complete MAP_INTRO corpus:
 
 ```text
-CHANGEMAP refs
-pending / zero-param refs
-showStats / direct-load refs
-removable refs
-fallback-map refs
-map-name total bytes / max length
-first real target map + raw param + spawn param
-ownerFNV / resultFNV / contentFNV
-initial/sample owner FNV
-transient pack-open heap cost
-legacy transition witness FNV
-player stats witness FNV
+refs=1
+pending=1
+zeroParam=0
+showStats=1
+directLoad=0
+removable=0
+fallbackMap=0
+stateExecRefused=1
+mapNameBytes=13
+maxMapName=13
 ```
 
-Acceptance:
+Canonical real command:
 
 ```text
-refs > 0
-pending > 0
-pending + zeroParam = refs
-showStats + directLoad = pending
-stateExecRefused = refs
-rollback = refs/refs
-ownerBytes = 16
-resultBytes = 20
-reapplyExact = 1
-closedPackApply = 1
-activeAtPark = 0
-persistentHeapBytes = 0
-executorPackIO = no
-transitionTriggered = no
-statsMutation = no
-menuMutation = no
-mapLoad = no
+cmd2 event1 off1
+arg1=80000000 arg2=00000100
+mapString=0
+name="/junction.bsp"
+targetMap=9 / MAP_JUNCTION
+spawnParam=0
+showStats=1
+effects=03
+pending=1
+handled=1
+removeIfHandled=0
+```
+
+Owner proof:
+
+```text
+initialOwnerFNV=69691905
+sampleOwnerFNV=4e4ebeac
+rollback=1/1
+reapplyExact=1
+closedPackApply=1
+activeAtPark=0
 ```
 
 Fail closed:
 
 ```text
-unsupported=1
-badOffset=1
-badDescriptor=1
-nullDescriptor=1
-nullState=1
-nullResult=1
-reset=1
-stateAtomic=yes
+unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1
+nullState=1 nullResult=1 reset=1 stateAtomic=yes
 ```
 
-Protected inherited state:
+PAK / RAM witness:
+
+```text
+heapOpen=63800 transientHeapCost=4376 largestOpen=34804
+packIO=yes verificationOnly=yes executorPackIO=no persistentHeapBytes=0
+heap8=68176->68176
+largest8=34804->34804
+frameFNV=e36ac6fd->e36ac6fd
+```
+
+Protected inherited/native state stayed exact:
 
 ```text
 arenaFNV=c3882516
 mapStateFNV=cd99b98e
 scriptFNV=f9e3d9df
-lineStateFNV=e5e74861
-lineTextureStateFNV=f1fc1875
 automapStateFNV=669b1aa7
-legacy SAVE route unchanged
-legacy transition fields unchanged
-player level-stat fields unchanged
-legacy Render runtime clear
-entities=0 monsters=0 ST_PLAYING not reached
 ```
 
-## Remaining MAP_INTRO families after candidate PASS
+Legacy witnesses stayed exact:
 
-If CHANGEMAP passes, only these remain unowned:
+```text
+notebookFNV       = 4d7705c5 -> 4d7705c5
+keys              = 00000000 -> 00000000
+hudFNV            = 505b1255 -> 505b1255
+passwordCanvasFNV = 214171cf -> 214171cf
+continuationFNV   = e2ba14a5 -> e2ba14a5
+saveRouteFNV      = 9bcfe135 -> 9bcfe135
+transitionFNV     = 79ab740c -> 79ab740c
+statsFNV          = 0b2ae445 -> 0b2ae445
+legacyRuntimeClear= yes
+```
+
+Final boundary:
+
+```text
+transitionArmedProven=yes
+transitionTriggered=no
+statsMutation=no
+menuMutation=no
+mapLoad=no
+framebufferMutation=no
+entities=0 monsters=0
+ST_PLAYING not reached
+```
+
+Stable PARK heartbeats:
+
+```text
+35181 ms: heap=133940 heap8=68176 largest8=34804 all reported subsystems ready
+40182 ms: heap=133940 heap8=68176 largest8=34804 all reported subsystems ready
+```
+
+Absolute heap/frame values can differ across builds; acceptance uses same-build stability plus canonical fingerprints.
+
+## Remaining MAP_INTRO families
+
+Only these remain unowned:
 
 ```text
 7  EV_SHOW
 18 EV_HIDE
 ```
 
-They remain intentionally deferred because their exact legacy semantics include entity death/link/unlink and tile entity topology, not just sprite visibility.
+They remain intentionally deferred because their exact legacy semantics include entity death/link/unlink and tile entity topology, not merely sprite visibility.
 
-## Validation target
+## Merge recommendation
 
-Build/flash normal optimized `esp32-cyd` from:
+**MERGE `agent/esp32-map1-native-change-map-intent`.**
 
-```text
-agent/esp32-map1-native-change-map-intent
-```
-
-Firmware candidate:
+Hardware-tested firmware content:
 
 ```text
 93e0be24558ebffcbc9f60ef0ced54f29274ab28
 ```
 
-Capture `[MAPCHANGEMAP]`, `[MAPCHANGEMAPPROBE]` and a stable `[ALIVE]` heartbeat.
+All later commits must remain documentation-only unless another firmware is flashed.
 
-No CI status is published for this firmware candidate. No local build or hardware PASS is claimed.
+After merge, recover the true new `main`, reread this file, `DOCUMENTATION.md`, the merged CHANGEMAP archive and exact SHOW/HIDE legacy behavior before selecting the final topology milestone.
