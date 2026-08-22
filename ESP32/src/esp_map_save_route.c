@@ -42,23 +42,26 @@ int EspMapSaveRoute_isActive(const EspMapSaveRouteState* state) {
 }
 
 EspMapSaveRouteStatus EspMapSaveRoute_apply(
+    const EspAssetPackEntry* sourceEntry,
     EspMapSaveRouteState* state,
     const EspMapEventDescriptor* descriptor,
     uint32_t commandOffset,
     EspMapSaveRouteResult* outResult) {
     EspMapByteCode command;
-    EspMapStringRef mapName;
+    EspMapStringRef mapNameRef;
     EspMapSaveRouteState next;
     uint32_t globalCommandIndex;
     uint32_t packedDestination;
     uint32_t destinationX;
     uint32_t destinationY;
+    size_t mapNameLength = 0U;
     uint8_t rawX;
     uint8_t rawY;
     uint8_t angle;
 
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
-    if (state == NULL || descriptor == NULL || outResult == NULL) {
+    if (sourceEntry == NULL || state == NULL || descriptor == NULL ||
+        outResult == NULL) {
         return ESP_MAP_SAVE_ROUTE_INVALID;
     }
     if (!descriptorIsCanonical(descriptor) ||
@@ -76,11 +79,21 @@ EspMapSaveRouteStatus EspMapSaveRoute_apply(
         return ESP_MAP_SAVE_ROUTE_INVALID;
     }
 
-    if (!EspMapStrings_getRef(command.arg1 & 0xffU, &mapName)) {
+    if (!EspMapStrings_getRef(command.arg1 & 0xffU, &mapNameRef)) {
         return ESP_MAP_SAVE_ROUTE_STRING_NOT_FOUND;
     }
-    if (mapName.length >= ESP_MAP_SAVE_ROUTE_LEGACY_NAME_CAPACITY) {
+    if (mapNameRef.length >= ESP_MAP_SAVE_ROUTE_NAME_CAPACITY) {
         return ESP_MAP_SAVE_ROUTE_STRING_TOO_LONG;
+    }
+
+    memset(&next, 0, sizeof(next));
+    if (EspMapStrings_read(sourceEntry, &mapNameRef, next.mapName,
+                           sizeof(next.mapName), &mapNameLength) !=
+            ESP_MAP_STRING_READ_OK ||
+        mapNameLength != mapNameRef.length ||
+        mapNameLength >= sizeof(next.mapName) ||
+        next.mapName[mapNameLength] != '\0') {
+        return ESP_MAP_SAVE_ROUTE_IO_ERROR;
     }
 
     packedDestination = command.arg1 >> 8;
@@ -89,12 +102,11 @@ EspMapSaveRouteStatus EspMapSaveRoute_apply(
     angle = (uint8_t)((packedDestination >> 16) & 0xffU);
     destinationX = 32U + ((uint32_t)rawX << 6);
     destinationY = 32U + ((uint32_t)rawY << 6);
-    if (destinationX > 0xffffU || destinationY > 0xffffU) {
+    if (destinationX > 0xffffU || destinationY > 0xffffU ||
+        mapNameLength > 0xffU) {
         return ESP_MAP_SAVE_ROUTE_INVALID;
     }
 
-    memset(&next, 0, sizeof(next));
-    next.mapName = mapName;
     next.destinationX = (uint16_t)destinationX;
     next.destinationY = (uint16_t)destinationY;
     next.sourceEventIndex = descriptor->eventIndex;
@@ -103,13 +115,14 @@ EspMapSaveRouteStatus EspMapSaveRoute_apply(
     next.angle = angle;
     next.rawX = rawX;
     next.rawY = rawY;
+    next.mapNameLength = (uint8_t)mapNameLength;
     next.active = 1U;
 
     *state = next;
 
     outResult->sourceEventIndex = descriptor->eventIndex;
     outResult->globalCommandIndex = (uint16_t)globalCommandIndex;
-    outResult->mapStringIndex = mapName.index;
+    outResult->mapStringIndex = mapNameRef.index;
     outResult->destinationX = (uint16_t)destinationX;
     outResult->destinationY = (uint16_t)destinationY;
     outResult->sourceCommandOffset = (uint8_t)commandOffset;

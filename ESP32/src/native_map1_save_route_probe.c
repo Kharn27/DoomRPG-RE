@@ -55,9 +55,9 @@
 #define EXPECTED_TEXTURE_STATE_FNV 0xf1fc1875U
 #define EXPECTED_AUTOMAP_STORAGE_BYTES 103U
 #define EXPECTED_AUTOMAP_STATE_FNV 0x669b1aa7U
-#define EXPECTED_OWNER_BYTES 20U
+#define EXPECTED_OWNER_BYTES 46U
 #define EXPECTED_RESULT_BYTES 16U
-#define NAME_BUFFER_BYTES ESP_MAP_SAVE_ROUTE_LEGACY_NAME_CAPACITY
+#define NAME_BUFFER_BYTES ESP_MAP_SAVE_ROUTE_NAME_CAPACITY
 
 typedef struct Esp32Map1SaveRouteProbeState_s {
     int armed;
@@ -78,11 +78,13 @@ typedef struct SaveRouteAudit_s {
     uint32_t initialOwnerFNV;
     uint32_t sampleOwnerFNV;
     uint32_t reapplyExact;
-    uint32_t closedPackApply;
+    uint32_t closedPackRefused;
+    uint32_t ownerSurvivesPackClose;
     uint32_t unsupportedRefused;
     uint32_t badOffsetRefused;
     uint32_t badDescriptorRefused;
     uint32_t nullDescriptorRefused;
+    uint32_t nullEntryRefused;
     uint32_t nullStateRefused;
     uint32_t nullResultRefused;
     uint32_t resetProof;
@@ -95,7 +97,6 @@ typedef struct SaveRouteAudit_s {
     uint8_t unsupportedOffset;
     uint8_t haveSample;
     uint8_t haveUnsupported;
-    char sampleName[NAME_BUFFER_BYTES];
 } SaveRouteAudit;
 
 static Esp32Map1SaveRouteProbeState probeState;
@@ -211,11 +212,12 @@ static uint32_t legacySaveRouteHash(const Game_t* game) {
 
 static uint32_t routeStateHash(const EspMapSaveRouteState* state) {
     uint32_t hash = 2166136261U;
+    uint32_t i;
 
     if (state == NULL) return 0U;
-    hash = hashU16(hash, state->mapName.index);
-    hash = hashU16(hash, state->mapName.sourceOffset);
-    hash = hashU16(hash, state->mapName.length);
+    for (i = 0U; i < (uint32_t)sizeof(state->mapName); ++i) {
+        hash = hashByte(hash, (uint8_t)state->mapName[i]);
+    }
     hash = hashU16(hash, state->destinationX);
     hash = hashU16(hash, state->destinationY);
     hash = hashU16(hash, state->sourceEventIndex);
@@ -224,6 +226,7 @@ static uint32_t routeStateHash(const EspMapSaveRouteState* state) {
     hash = hashByte(hash, state->angle);
     hash = hashByte(hash, state->rawX);
     hash = hashByte(hash, state->rawY);
+    hash = hashByte(hash, state->mapNameLength);
     return hashByte(hash, state->active);
 }
 
@@ -247,16 +250,15 @@ static uint32_t routeResultHash(const EspMapSaveRouteResult* result) {
 static int sameRouteState(const EspMapSaveRouteState* a,
                           const EspMapSaveRouteState* b) {
     return a != NULL && b != NULL &&
-           a->mapName.index == b->mapName.index &&
-           a->mapName.sourceOffset == b->mapName.sourceOffset &&
-           a->mapName.length == b->mapName.length &&
+           memcmp(a->mapName, b->mapName, sizeof(a->mapName)) == 0 &&
            a->destinationX == b->destinationX &&
            a->destinationY == b->destinationY &&
            a->sourceEventIndex == b->sourceEventIndex &&
            a->globalCommandIndex == b->globalCommandIndex &&
            a->sourceCommandOffset == b->sourceCommandOffset &&
            a->angle == b->angle && a->rawX == b->rawX &&
-           a->rawY == b->rawY && a->active == b->active;
+           a->rawY == b->rawY && a->mapNameLength == b->mapNameLength &&
+           a->active == b->active;
 }
 
 static int resultIsZero(const EspMapSaveRouteResult* result) {
@@ -364,9 +366,9 @@ static int descriptorByIndex(uint32_t index,
 static int validateRoute(const EspMapEventDescriptor* descriptor,
                          uint32_t commandOffset,
                          const EspMapByteCode* command,
+                         const EspMapStringRef* expectedRef,
                          const EspMapSaveRouteState* state,
                          const EspMapSaveRouteResult* result) {
-    EspMapStringRef expectedRef;
     uint32_t packedDestination;
     uint8_t rawX;
     uint8_t rawY;
@@ -375,9 +377,9 @@ static int validateRoute(const EspMapEventDescriptor* descriptor,
     uint16_t destinationY;
     uint32_t globalCommandIndex;
 
-    if (descriptor == NULL || command == NULL || state == NULL ||
-        result == NULL || command->id != ESP_MAP_OPCODE_SAVEGAME ||
-        !EspMapStrings_getRef(command->arg1 & 0xffU, &expectedRef)) return 0;
+    if (descriptor == NULL || command == NULL || expectedRef == NULL ||
+        state == NULL || result == NULL ||
+        command->id != ESP_MAP_OPCODE_SAVEGAME) return 0;
 
     packedDestination = command->arg1 >> 8;
     rawX = (uint8_t)(packedDestination & 0xffU);
@@ -388,10 +390,10 @@ static int validateRoute(const EspMapEventDescriptor* descriptor,
     globalCommandIndex =
         (uint32_t)descriptor->firstCommandIndex + commandOffset;
 
-    return expectedRef.length < ESP_MAP_SAVE_ROUTE_LEGACY_NAME_CAPACITY &&
-           state->mapName.index == expectedRef.index &&
-           state->mapName.sourceOffset == expectedRef.sourceOffset &&
-           state->mapName.length == expectedRef.length &&
+    return expectedRef->index == (uint16_t)(command->arg1 & 0xffU) &&
+           expectedRef->length < ESP_MAP_SAVE_ROUTE_NAME_CAPACITY &&
+           state->mapNameLength == expectedRef->length &&
+           state->mapName[state->mapNameLength] == '\0' &&
            state->destinationX == destinationX &&
            state->destinationY == destinationY &&
            state->sourceEventIndex == descriptor->eventIndex &&
@@ -401,7 +403,7 @@ static int validateRoute(const EspMapEventDescriptor* descriptor,
            state->rawY == rawY && state->active == 1U &&
            result->sourceEventIndex == descriptor->eventIndex &&
            result->globalCommandIndex == (uint16_t)globalCommandIndex &&
-           result->mapStringIndex == expectedRef.index &&
+           result->mapStringIndex == expectedRef->index &&
            result->destinationX == destinationX &&
            result->destinationY == destinationY &&
            result->sourceCommandOffset == (uint8_t)commandOffset &&
@@ -424,13 +426,15 @@ static int auditSaveRoutes(const EspAssetPackEntry* entry,
     EspMapSaveRouteResult result;
     EspMapSaveRouteResult repeatedResult;
     EspMapSaveRouteStatus status;
+    EspMapStringRef expectedRef;
     uint32_t eventIndex;
     uint32_t commandOffset;
     uint32_t ownerAggregate = 2166136261U;
     uint32_t resultAggregate = 2166136261U;
     uint32_t contentAggregate = 2166136261U;
-    size_t mapNameLength;
-    char mapName[NAME_BUFFER_BYTES];
+    size_t verifyLength;
+    uint32_t i;
+    char verifyName[NAME_BUFFER_BYTES];
 
     if (entry == NULL || audit == NULL) return 0;
     memset(audit, 0, sizeof(*audit));
@@ -457,36 +461,40 @@ static int auditSaveRoutes(const EspAssetPackEntry* entry,
             ++audit->stateExecutorRefused;
             ++audit->refs;
 
+            if (!EspMapStrings_getRef(command.arg1 & 0xffU, &expectedRef) ||
+                expectedRef.length >= ESP_MAP_SAVE_ROUTE_NAME_CAPACITY) return 0;
+
             EspMapSaveRoute_reset(&state);
-            status = EspMapSaveRoute_apply(&state, &descriptor, commandOffset,
-                                           &result);
+            memset(&result, 0, sizeof(result));
+            status = EspMapSaveRoute_apply(entry, &state, &descriptor,
+                                           commandOffset, &result);
             if (status != ESP_MAP_SAVE_ROUTE_OK ||
-                !validateRoute(&descriptor, commandOffset, &command, &state,
-                               &result) ||
+                !validateRoute(&descriptor, commandOffset, &command,
+                               &expectedRef, &state, &result) ||
                 sizeof(EspMapSaveRouteState) != EXPECTED_OWNER_BYTES ||
                 sizeof(EspMapSaveRouteResult) != EXPECTED_RESULT_BYTES) return 0;
+
+            memset(verifyName, 0, sizeof(verifyName));
+            verifyLength = 0U;
+            if (EspMapStrings_read(entry, &expectedRef, verifyName,
+                                   sizeof(verifyName), &verifyLength) !=
+                    ESP_MAP_STRING_READ_OK ||
+                verifyLength != expectedRef.length ||
+                verifyLength != state.mapNameLength ||
+                memcmp(verifyName, state.mapName, verifyLength + 1U) != 0) return 0;
 
             if (result.removeCommandIfHandled != 0U) ++audit->removableRefs;
             ownerAggregate = hashU32(ownerAggregate, routeStateHash(&state));
             resultAggregate = hashU32(resultAggregate, routeResultHash(&result));
-
-            memset(mapName, 0, sizeof(mapName));
-            mapNameLength = 0U;
-            if (EspMapStrings_read(entry, &state.mapName, mapName,
-                                   sizeof(mapName), &mapNameLength) !=
-                    ESP_MAP_STRING_READ_OK ||
-                mapNameLength != state.mapName.length ||
-                mapNameLength >= sizeof(mapName) ||
-                mapName[mapNameLength] != '\0') return 0;
-            audit->mapNameBytes += (uint32_t)mapNameLength;
-            if (mapNameLength > audit->maxMapNameLength) {
-                audit->maxMapNameLength = (uint32_t)mapNameLength;
+            audit->mapNameBytes += (uint32_t)state.mapNameLength;
+            if (state.mapNameLength > audit->maxMapNameLength) {
+                audit->maxMapNameLength = state.mapNameLength;
             }
-            contentAggregate = hashU16(contentAggregate, state.mapName.index);
-            contentAggregate = hashU16(contentAggregate, state.mapName.length);
-            for (size_t i = 0U; i < mapNameLength; ++i) {
+            contentAggregate = hashU16(contentAggregate, expectedRef.index);
+            contentAggregate = hashByte(contentAggregate, state.mapNameLength);
+            for (i = 0U; i < state.mapNameLength; ++i) {
                 contentAggregate = hashByte(contentAggregate,
-                                            (uint8_t)mapName[i]);
+                                            (uint8_t)state.mapName[i]);
             }
 
             if (!audit->haveSample) {
@@ -495,7 +503,6 @@ static int auditSaveRoutes(const EspAssetPackEntry* entry,
                 audit->sampleState = state;
                 audit->sampleResult = result;
                 audit->sampleOffset = (uint8_t)commandOffset;
-                memcpy(audit->sampleName, mapName, mapNameLength + 1U);
                 audit->sampleOwnerFNV = routeStateHash(&state);
                 audit->haveSample = 1U;
             }
@@ -515,12 +522,12 @@ static int auditSaveRoutes(const EspAssetPackEntry* entry,
     audit->contentFNV = contentAggregate;
 
     EspMapSaveRoute_reset(&state);
-    if (EspMapSaveRoute_apply(&state, &audit->sampleDescriptor,
+    if (EspMapSaveRoute_apply(entry, &state, &audit->sampleDescriptor,
                               audit->sampleOffset, &result) !=
             ESP_MAP_SAVE_ROUTE_OK) return 0;
     repeatedState = state;
     repeatedResult = result;
-    if (EspMapSaveRoute_apply(&state, &audit->sampleDescriptor,
+    if (EspMapSaveRoute_apply(entry, &state, &audit->sampleDescriptor,
                               audit->sampleOffset, &result) !=
             ESP_MAP_SAVE_ROUTE_OK ||
         !sameRouteState(&state, &repeatedState) ||
@@ -531,7 +538,7 @@ static int auditSaveRoutes(const EspAssetPackEntry* entry,
     state = audit->sampleState;
     beforeState = state;
     memset(&result, 0xa5, sizeof(result));
-    if (EspMapSaveRoute_apply(&state, &audit->unsupportedDescriptor,
+    if (EspMapSaveRoute_apply(entry, &state, &audit->unsupportedDescriptor,
                               audit->unsupportedOffset, &result) !=
             ESP_MAP_SAVE_ROUTE_UNSUPPORTED ||
         !sameRouteState(&state, &beforeState) || !resultIsZero(&result)) return 0;
@@ -540,7 +547,7 @@ static int auditSaveRoutes(const EspAssetPackEntry* entry,
     state = audit->sampleState;
     beforeState = state;
     memset(&result, 0xa5, sizeof(result));
-    if (EspMapSaveRoute_apply(&state, &audit->sampleDescriptor,
+    if (EspMapSaveRoute_apply(entry, &state, &audit->sampleDescriptor,
                               audit->sampleDescriptor.commandCount, &result) !=
             ESP_MAP_SAVE_ROUTE_INVALID ||
         !sameRouteState(&state, &beforeState) || !resultIsZero(&result)) return 0;
@@ -551,28 +558,38 @@ static int auditSaveRoutes(const EspAssetPackEntry* entry,
     state = audit->sampleState;
     beforeState = state;
     memset(&result, 0xa5, sizeof(result));
-    if (EspMapSaveRoute_apply(&state, &badDescriptor, audit->sampleOffset,
-                              &result) != ESP_MAP_SAVE_ROUTE_INVALID ||
+    if (EspMapSaveRoute_apply(entry, &state, &badDescriptor,
+                              audit->sampleOffset, &result) !=
+            ESP_MAP_SAVE_ROUTE_INVALID ||
         !sameRouteState(&state, &beforeState) || !resultIsZero(&result)) return 0;
     audit->badDescriptorRefused = 1U;
 
     state = audit->sampleState;
     beforeState = state;
     memset(&result, 0xa5, sizeof(result));
-    if (EspMapSaveRoute_apply(&state, NULL, audit->sampleOffset, &result) !=
-            ESP_MAP_SAVE_ROUTE_INVALID ||
+    if (EspMapSaveRoute_apply(entry, &state, NULL, audit->sampleOffset,
+                              &result) != ESP_MAP_SAVE_ROUTE_INVALID ||
         !sameRouteState(&state, &beforeState) || !resultIsZero(&result)) return 0;
     audit->nullDescriptorRefused = 1U;
 
+    state = audit->sampleState;
+    beforeState = state;
     memset(&result, 0xa5, sizeof(result));
-    if (EspMapSaveRoute_apply(NULL, &audit->sampleDescriptor,
+    if (EspMapSaveRoute_apply(NULL, &state, &audit->sampleDescriptor,
+                              audit->sampleOffset, &result) !=
+            ESP_MAP_SAVE_ROUTE_INVALID ||
+        !sameRouteState(&state, &beforeState) || !resultIsZero(&result)) return 0;
+    audit->nullEntryRefused = 1U;
+
+    memset(&result, 0xa5, sizeof(result));
+    if (EspMapSaveRoute_apply(entry, NULL, &audit->sampleDescriptor,
                               audit->sampleOffset, &result) !=
             ESP_MAP_SAVE_ROUTE_INVALID || !resultIsZero(&result)) return 0;
     audit->nullStateRefused = 1U;
 
     state = audit->sampleState;
     beforeState = state;
-    if (EspMapSaveRoute_apply(&state, &audit->sampleDescriptor,
+    if (EspMapSaveRoute_apply(entry, &state, &audit->sampleDescriptor,
                               audit->sampleOffset, NULL) !=
             ESP_MAP_SAVE_ROUTE_INVALID ||
         !sameRouteState(&state, &beforeState)) return 0;
@@ -603,6 +620,7 @@ void Esp32Map1SaveRouteProbe_service(struct DoomRPG_s* doomRpgOpaque) {
     const EspMapAutomapStateView* automapState;
     EspAssetPackEntry entry;
     SaveRouteAudit audit;
+    EspMapSaveRouteState beforeClosedState;
     EspMapSaveRouteResult closedResult;
     uint32_t heapBefore;
     uint32_t heapOpen;
@@ -646,7 +664,7 @@ void Esp32Map1SaveRouteProbe_service(struct DoomRPG_s* doomRpgOpaque) {
 
     probeState.attempted = 1;
     printf("\n=== Doom RPG ESP32-native MAP_INTRO SAVEGAME route owner ===\n");
-    printf("[MAPSAVEROUTEPROBE] CONTRACT consume only EV_SAVEGAME -> caller-owned map-string/destination route state; verify names through native PAK but perform no save-file write, no Game/newMapName mutation, no map transition or world/render/entity mutation\n");
+    printf("[MAPSAVEROUTEPROBE] CONTRACT consume only EV_SAVEGAME -> 46B caller-owned durable map-name/destination route + 16B result; one bounded native-PAK string read, no save-file write, no legacy Game/newMapName mutation, no map transition/world/render/entity mutation\n");
 
     if (!boundaryIsSafe(doomRpg)) {
         printf("[MAPSAVEROUTEPROBE] FAILED unsafe precondition\n");
@@ -701,18 +719,21 @@ void Esp32Map1SaveRouteProbe_service(struct DoomRPG_s* doomRpgOpaque) {
     heapAfter = heap8Free();
     largestAfter = largest8Block();
 
-    EspMapSaveRoute_reset(&parkedRouteState);
-    memset(&closedResult, 0, sizeof(closedResult));
-    if (EspAssetPack_isOpen() ||
-        EspMapSaveRoute_apply(&parkedRouteState, &audit.sampleDescriptor,
-                              audit.sampleOffset, &closedResult) !=
-            ESP_MAP_SAVE_ROUTE_OK ||
-        !sameRouteState(&parkedRouteState, &audit.sampleState) ||
-        routeResultHash(&closedResult) != routeResultHash(&audit.sampleResult)) {
-        printf("[MAPSAVEROUTEPROBE] FAILED closed-pack apply proof\n");
+    parkedRouteState = audit.sampleState;
+    beforeClosedState = parkedRouteState;
+    memset(&closedResult, 0xa5, sizeof(closedResult));
+    if (EspAssetPack_isOpen() || !EspMapSaveRoute_isActive(&parkedRouteState) ||
+        routeStateHash(&parkedRouteState) != audit.sampleOwnerFNV ||
+        EspMapSaveRoute_apply(&entry, &parkedRouteState,
+                              &audit.sampleDescriptor, audit.sampleOffset,
+                              &closedResult) != ESP_MAP_SAVE_ROUTE_IO_ERROR ||
+        !sameRouteState(&parkedRouteState, &beforeClosedState) ||
+        !resultIsZero(&closedResult)) {
+        printf("[MAPSAVEROUTEPROBE] FAILED closed-pack/survival proof\n");
         return;
     }
-    audit.closedPackApply = 1U;
+    audit.closedPackRefused = 1U;
+    audit.ownerSurvivesPackClose = 1U;
     EspMapSaveRoute_reset(&parkedRouteState);
 
     elapsedMs = DoomRPG_GetUpTimeMS() - startedMs;
@@ -739,12 +760,13 @@ void Esp32Map1SaveRouteProbe_service(struct DoomRPG_s* doomRpgOpaque) {
         sizeof(EspMapSaveRouteResult) != EXPECTED_RESULT_BYTES ||
         audit.refs == 0U || audit.stateExecutorRefused != audit.refs ||
         audit.rollbackProofs != audit.refs || !audit.reapplyExact ||
-        !audit.closedPackApply || !audit.resetProof ||
-        heapAfter != heapBefore || largestAfter != largestBefore ||
-        frameAfter != frameBefore || arenaAfter != arenaBefore ||
-        arenaAfter != EXPECTED_ARENA_FNV || mapStateAfter != mapStateBefore ||
-        mapStateAfter != EXPECTED_MAP_STATE_FNV || scriptAfter != scriptBefore ||
-        scriptAfter != EXPECTED_SCRIPT_FNV || automapAfter != automapBefore ||
+        !audit.closedPackRefused || !audit.ownerSurvivesPackClose ||
+        !audit.resetProof || heapAfter != heapBefore ||
+        largestAfter != largestBefore || frameAfter != frameBefore ||
+        arenaAfter != arenaBefore || arenaAfter != EXPECTED_ARENA_FNV ||
+        mapStateAfter != mapStateBefore || mapStateAfter != EXPECTED_MAP_STATE_FNV ||
+        scriptAfter != scriptBefore || scriptAfter != EXPECTED_SCRIPT_FNV ||
+        automapAfter != automapBefore ||
         automapAfter != EXPECTED_AUTOMAP_STATE_FNV ||
         EspMapLineState_view() == NULL ||
         EspMapLineState_view()->stateFNV1a != EXPECTED_LINE_STATE_FNV ||
@@ -756,7 +778,8 @@ void Esp32Map1SaveRouteProbe_service(struct DoomRPG_s* doomRpgOpaque) {
         continuationAfter != continuationBefore ||
         legacyRouteAfter != legacyRouteBefore || EspAssetPack_isOpen() ||
         !legacyRuntimeIsClear(doomRpg->render) ||
-        doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0) {
+        doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0 ||
+        EspMapSaveRoute_isActive(&parkedRouteState)) {
         printf("[MAPSAVEROUTEPROBE] FAILED integrity regression\n");
         return;
     }
@@ -773,16 +796,15 @@ void Esp32Map1SaveRouteProbe_service(struct DoomRPG_s* doomRpgOpaque) {
            (unsigned int)audit.resultFNV,
            (unsigned int)audit.contentFNV,
            (unsigned int)elapsedMs);
-    printf("[MAPSAVEROUTE] SAMPLE cmd=%u event=%u off=%u arg1=%08x arg2=%08x map=%u@%u+%u name=\"%s\" tile=%u,%u dest=%u,%u angle=%u handled=%u removeIfHandled=%u\n",
+    printf("[MAPSAVEROUTE] SAMPLE cmd=%u event=%u off=%u arg1=%08x arg2=%08x mapString=%u name=\"%s\" nameLen=%u tile=%u,%u dest=%u,%u angle=%u handled=%u removeIfHandled=%u\n",
            (unsigned int)audit.sampleResult.globalCommandIndex,
            (unsigned int)audit.sampleResult.sourceEventIndex,
            (unsigned int)audit.sampleResult.sourceCommandOffset,
            (unsigned int)audit.sampleCommand.arg1,
            (unsigned int)audit.sampleCommand.arg2,
-           (unsigned int)audit.sampleState.mapName.index,
-           (unsigned int)audit.sampleState.mapName.sourceOffset,
-           (unsigned int)audit.sampleState.mapName.length,
-           audit.sampleName,
+           (unsigned int)audit.sampleResult.mapStringIndex,
+           audit.sampleState.mapName,
+           (unsigned int)audit.sampleState.mapNameLength,
            (unsigned int)audit.sampleState.rawX,
            (unsigned int)audit.sampleState.rawY,
            (unsigned int)audit.sampleState.destinationX,
@@ -790,23 +812,25 @@ void Esp32Map1SaveRouteProbe_service(struct DoomRPG_s* doomRpgOpaque) {
            (unsigned int)audit.sampleState.angle,
            (unsigned int)audit.sampleResult.legacyReturnValue,
            (unsigned int)audit.sampleResult.removeCommandIfHandled);
-    printf("[MAPSAVEROUTE] STATE initialOwnerFNV=%08x sampleOwnerFNV=%08x rollback=%u/%u reapplyExact=%u closedPackApply=%u activeAtPark=%u\n",
+    printf("[MAPSAVEROUTE] STATE initialOwnerFNV=%08x sampleOwnerFNV=%08x rollback=%u/%u reapplyExact=%u ownerSurvivesPackClose=%u activeAtPark=%u\n",
            (unsigned int)audit.initialOwnerFNV,
            (unsigned int)audit.sampleOwnerFNV,
            (unsigned int)audit.rollbackProofs,
            (unsigned int)audit.refs,
            (unsigned int)audit.reapplyExact,
-           (unsigned int)audit.closedPackApply,
+           (unsigned int)audit.ownerSurvivesPackClose,
            (unsigned int)EspMapSaveRoute_isActive(&parkedRouteState));
-    printf("[MAPSAVEROUTE] FAILCLOSED unsupported=%u badOffset=%u badDescriptor=%u nullDescriptor=%u nullState=%u nullResult=%u reset=%u stateAtomic=yes\n",
+    printf("[MAPSAVEROUTE] FAILCLOSED unsupported=%u badOffset=%u badDescriptor=%u nullDescriptor=%u nullEntry=%u nullState=%u nullResult=%u closedPack=%u reset=%u stateAtomic=yes\n",
            (unsigned int)audit.unsupportedRefused,
            (unsigned int)audit.badOffsetRefused,
            (unsigned int)audit.badDescriptorRefused,
            (unsigned int)audit.nullDescriptorRefused,
+           (unsigned int)audit.nullEntryRefused,
            (unsigned int)audit.nullStateRefused,
            (unsigned int)audit.nullResultRefused,
+           (unsigned int)audit.closedPackRefused,
            (unsigned int)audit.resetProof);
-    printf("[MAPSAVEROUTE] IO entry=/intro.bsp size=%u crc32=%08x heapOpen=%u transientHeapCost=%u largestOpen=%u packIO=yes persistentHeapBytes=0 saveFileWrite=no\n",
+    printf("[MAPSAVEROUTE] IO entry=/intro.bsp size=%u crc32=%08x heapOpen=%u transientHeapCost=%u largestOpen=%u packIO=yes boundedNameRead=yes persistentHeapBytes=0 saveFileWrite=no\n",
            (unsigned int)entry.size,
            (unsigned int)entry.crc32,
            (unsigned int)heapOpen,
@@ -842,7 +866,7 @@ void Esp32Map1SaveRouteProbe_service(struct DoomRPG_s* doomRpgOpaque) {
            (unsigned int)continuationAfter,
            (unsigned int)legacyRouteBefore,
            (unsigned int)legacyRouteAfter);
-    printf("[MAPSAVEROUTEPROBE] PARK state=%d page=%d nativeArena=yes nativeTileState=yes nativeEventLookup=yes nativeEventDescriptor=yes nativeScriptState=yes nativeFilter=yes nativeOpcodeExec=yes nativeUiIntent=yes nativeStringReader=yes nativeStatusMessageOwner=yes nativeDialogOwner=yes nativeNotebookOwner=yes nativeKeyGate=yes nativePasswordOwner=yes nativeLineState=yes nativeDoorExec=yes nativeLineTextureState=yes nativeUnlockExec=yes nativeAutomapState=yes nativeGiveMapExec=yes nativeSaveRoute=yes ownerBytes=%u resultBytes=%u persistentBytes=0 legacySaveRouteMutation=no saveFileWrite=no worldMutation=no framebufferMutation=no entities=%d monsters=%d noGameplay=yes\n",
+    printf("[MAPSAVEROUTEPROBE] PARK state=%d page=%d nativeArena=yes nativeTileState=yes nativeEventLookup=yes nativeEventDescriptor=yes nativeScriptState=yes nativeFilter=yes nativeOpcodeExec=yes nativeUiIntent=yes nativeStringReader=yes nativeStatusMessageOwner=yes nativeDialogOwner=yes nativeNotebookOwner=yes nativeKeyGate=yes nativePasswordOwner=yes nativeLineState=yes nativeDoorExec=yes nativeLineTextureState=yes nativeUnlockExec=yes nativeAutomapState=yes nativeGiveMapExec=yes nativeSaveRoute=yes ownerBytes=%u resultBytes=%u persistentBytes=0 routeLifetimeCrossMap=yes legacySaveRouteMutation=no saveFileWrite=no worldMutation=no framebufferMutation=no entities=%d monsters=%d noGameplay=yes\n",
            doomRpg->doomCanvas->state,
            doomRpg->doomCanvas->storyPage,
            (unsigned int)sizeof(EspMapSaveRouteState),
