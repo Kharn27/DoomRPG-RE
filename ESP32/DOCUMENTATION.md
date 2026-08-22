@@ -33,82 +33,50 @@ This file defines how the ESP32 CYD port documentation is organized and which fi
 | [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) | CHECK_KEY dynamic gate | #55 | `03c4275f2abfd6671c8bf499c075435d7b61ab97` |
 | [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) | PASSWORD pause/submission owner | #56 | `3c113cc047aeb613f2ba4ab7905e92487c796f80` |
 | [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md) | first mutable world owner + OPEN/CLOSE | #57 | `e4fb32f41b7074bbb433e64f4c824edb2167cf50` |
+| [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) | second line-world owner + EV_UNLOCK | #58 | `7503b379185db3f05713eb34f1762173edb977d0` |
 
-## Current merge-ready milestone
+## Current candidate
 
-[`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) owns `13 / EV_UNLOCK` as a second explicit native line-world mutation family.
-
-```text
-branch = agent/esp32-map1-native-unlock-state
-base   = e4fb32f41b7074bbb433e64f4c824edb2167cf50
-hardware-tested firmware = e423093c8e17dda1345bebecf721dedf4bbb2002
-status = REAL-CYD HARDWARE PASS / MERGE-READY
-```
-
-The existing 120-byte OPEN/LOCKED owner remains unchanged at `lineStateFNV=e5e74861`. A separate 60-byte texture-9/10 owner is now hardware-proven with:
+[`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md) owns `9 / EV_GIVEMAP` as a compact native automap mutation family.
 
 ```text
-variants         = 6
-initialTexture10 = 0
-textureStateFNV  = f1fc1875
-actual heap      = 76 B
+branch = agent/esp32-map1-native-givemap-state
+base   = 7503b379185db3f05713eb34f1762173edb977d0
+firmware candidate = 2e0f8f5de93f806380ee254a8dab59a817c73f5d
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Complete real UNLOCK corpus:
+The candidate adds:
 
 ```text
-refs=6 mutated=6 lockMutated=6 textureMutated=6
-noMutation=0 removable=0 stateExecRefused=6
-resultBytes=20 unlockFNV=261d756a
-rollback=6/6 idempotentHandled=1
+480 line reveal bits  = 60 B
+344 sprite reveal bits= 43 B
+---------------------------
+automap payload       = 103 B
 ```
 
-Canonical first UNLOCK:
+`EspMapState` remains 1024 bytes and gains only a bounded `BIT_AM_VISITED` setter. GIVEMAP reveals eligible lines, every map sprite and entrance tiles without touching legacy `Render_t`, entities, sound or presentation.
+
+Expected new caller-local ABI:
 
 ```text
-cmd18 event6 off7 line400
-locked 1->0 texture 9->10
-sound=5067 effects=07 handled=1 removeIfHandled=0
-lineStateFNV    e5e74861 -> 8d5f89d8 -> rollback e5e74861
-textureStateFNV f1fc1875 -> 997459ec -> rollback f1fc1875
+EspMapGiveMapResult = 20 B
 ```
 
-## Architecture rule
+The real CYD must establish the initial reveal topology, real GIVEMAP corpus, automap/result fingerprints, mutation counts and exact incremental heap cost.
 
-DoomRPG-RE desktop/J2ME remains an executable behavior/format reference, not the permanent ESP32 architecture.
-
-```text
-original data/behavior
- -> native pack-backed parsers
- -> compact immutable map
- -> small explicit mutable overlays
- -> native script/event ownership
- -> native gameplay effects
- -> native renderer
-```
-
-Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexels`, pointer-heavy desktop map structures or legacy `Render_t` ownership as a shortcut.
-
-## Current hardware-proven boundary
+## Current hardware-proven boundary through PR #58
 
 Persistent native heap:
 
 ```text
-immutable arena       14112 B
-mutable tile state     1040 B
-mutable script state    100 B
-mutable line state      136 B
-mutable texture state    76 B
-----------------------------
-total                  15464 B
-```
-
-Latest same-build stable allocation boundary:
-
-```text
-line state:    heap8 68652 -> 68516, cost 136 B, largest8 34804 stable
-texture state: heap8 68516 -> 68440, cost  76 B, largest8 34804 stable
-PARK:          heap=134204 heap8=68440 largest8=34804
+immutable arena        14112 B
+mutable tile state      1040 B
+mutable script state     100 B
+mutable line state       136 B
+mutable texture state     76 B
+-----------------------------
+total                   15464 B
 ```
 
 Key fingerprints:
@@ -129,31 +97,53 @@ unlockMutatedLineFNV = 8d5f89d8
 unlockMutatedTexFNV  = 997459ec
 ```
 
-Legacy witnesses and framebuffer remain unchanged across UNLOCK; `packIO=no`, legacy runtime remains clear, `entities=0`, `monsters=0`, `noGameplay=yes`.
+UNLOCK hardware proof:
+
+```text
+refs=6 mutated=6 lockMutated=6 textureMutated=6
+rollback=6/6 idempotentHandled=1
+texture payload=60 B / actual heap=76 B
+first success: cmd18 event6 off7 line400 locked 1->0 texture 9->10
+```
+
+## Architecture rule
+
+DoomRPG-RE desktop/J2ME is the executable behavior/format reference, not the permanent ESP32 architecture.
+
+```text
+original data/behavior
+ -> native pack-backed parsers
+ -> compact immutable map
+ -> small explicit mutable overlays
+ -> native event/script ownership
+ -> native gameplay effects
+ -> native renderer
+```
+
+Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexels`, pointer-heavy desktop map structures or legacy `Render_t` ownership as a shortcut.
 
 ## Remaining MAP_INTRO families
 
-After UNLOCK, still unowned:
+Current candidate owns GIVEMAP. If it passes, remaining unowned families are:
 
 ```text
 2  EV_CHANGEMAP
 7  EV_SHOW
-9  EV_GIVEMAP
 18 EV_HIDE
 27 EV_SAVEGAME
 ```
 
-No later family is pre-authorized. After merge, recover the exact new `main`, read `PORTING_STATUS.md`, `DOCUMENTATION.md`, the merged UNLOCK archive and exact legacy semantics before selecting the next bounded owner.
+SHOW/HIDE are deliberately not treated as simple sprite visibility: legacy semantics also kill/link/unlink entities. They require a later explicit compact native entity/topology boundary.
 
 ## Milestone workflow
 
 1. Branch from exact latest hardware-validated `main`.
 2. Keep one coherent bounded objective per branch.
-3. Recover exact legacy semantics before designing native ownership.
-4. Fail closed before unsupported or unsafe effects.
+3. Recover exact legacy semantics before native ownership design.
+4. Fail closed before unsupported/unsafe effects.
 5. Validate normal optimized `esp32-cyd` on the real classic CYD.
 6. Preserve exact RAM/fingerprint/hardware evidence.
 7. Mark merge-ready only after implementation + hardware + docs agree.
-8. Keep every post-hardware commit docs-only unless another firmware is flashed.
+8. Keep all post-hardware commits docs-only unless another firmware is flashed.
 
-Current recommendation: **merge `agent/esp32-map1-native-unlock-state`**.
+Current validation target: `agent/esp32-map1-native-givemap-state`, firmware content `2e0f8f5de93f806380ee254a8dab59a817c73f5d`.
