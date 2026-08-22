@@ -35,30 +35,56 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md) | OPEN/CLOSE world state | #57 | `e4fb32f41b7074bbb433e64f4c824edb2167cf50` |
 | [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) | UNLOCK world state | #58 | `7503b379185db3f05713eb34f1762173edb977d0` |
 | [`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md) | GIVEMAP automap state | #59 | `9891a25d700f9ffe1be044ac4a7629c3487604ec` |
+| [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md) | SAVEGAME future-save route | #60 | `50ed329801fe99917ef2f848ee13e742ae7734ab` |
 
 ## Current merge-ready milestone
 
-[`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md) owns `27 / EV_SAVEGAME` as a durable future-save route capture.
+[`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md) owns `2 / EV_CHANGEMAP` as a pending native transition intent.
 
 ```text
-branch = agent/esp32-map1-native-save-route
-base   = 9891a25d700f9ffe1be044ac4a7629c3487604ec
-hardware-tested firmware = 42497b80c6158300ec3fa7b8eb8af6cee643f59e
+branch = agent/esp32-map1-native-change-map-intent
+base   = 50ed329801fe99917ef2f848ee13e742ae7734ab
+hardware-tested firmware = 93e0be24558ebffcbc9f60ef0ced54f29274ab28
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Hardware-proven SAVE route:
+Real-CYD CHANGEMAP corpus:
 
 ```text
-refs=1 removable=0 stateExecRefused=1
-ownerBytes=46 resultBytes=16 persistentHeapBytes=0
-mapName="/junction.bsp" nameLen=13
-raw tile=15,29 destination=992,1888 angle=64
-ownerFNV=06ea6ea8 resultFNV=c2ecb064 contentFNV=725845aa
-rollback=1/1 reapplyExact=1 ownerSurvivesPackClose=1
+refs=1 pending=1 zeroParam=0 showStats=1 directLoad=0
+removable=0 fallbackMap=0 stateExecRefused=1
+ownerBytes=16 resultBytes=20 persistentHeapBytes=0
+mapNameBytes=13 maxMapName=13
+ownerFNV=f75eb7c7 resultFNV=2f40c9be contentFNV=f7a79d99
+rollback=1/1 reapplyExact=1 closedPackApply=1
 ```
 
-The opcode performs one bounded native-PAK string read but **no save-file write**. The inline 32-byte route name is deliberately durable across source-map teardown; this lifetime behavior was corrected before hardware validation and then proven on the real CYD.
+Canonical command:
+
+```text
+cmd2 event1 off1
+arg1=80000000 arg2=00000100
+mapString=0
+name="/junction.bsp"
+targetMap=9 / MAP_JUNCTION
+spawnParam=0
+showStats=1
+effects=03
+pending=1 handled=1 removeIfHandled=0
+```
+
+The milestone mirrors only the bytecode-time assignment of legacy `Game.changeMapParam`. It does not invoke the later texture-7 transition consumer.
+
+Deferred effects remain metadata only:
+
+```text
+showStats -> level stats + stats menu
+no stats  -> level stats + map load
+```
+
+Transition sound `5068`, actual target-map load and pending-state consumption remain deferred.
+
+The permanent executor uses only the resident native runtime/string span and performs no PAK I/O. Hardware proved the same sample can be armed identically after the verification PAK is closed.
 
 ## Current hardware-proven boundary
 
@@ -74,24 +100,43 @@ giveMapFNV             = 98c7ac59
 saveRouteOwnerFNV      = 06ea6ea8
 saveRouteResultFNV     = c2ecb064
 saveRouteContentFNV    = 725845aa
+changeMapOwnerFNV      = f75eb7c7
+changeMapResultFNV     = 2f40c9be
+changeMapContentFNV    = f7a79d99
+legacyTransitionFNV    = 79ab740c
+playerStatsFNV         = 0b2ae445
 ```
 
-Latest same-build SAVE route witness:
+Latest same-build CHANGEMAP witness:
 
 ```text
-heap8=68208->68208
+heap8=68176->68176
 largest8=34804->34804
-frameFNV=99102464->99102464
+frameFNV=e36ac6fd->e36ac6fd
 transient PAK cost=4376 B
-persistent route heap=0 B
-legacy saveRouteFNV=9bcfe135->9bcfe135
+persistent CHANGEMAP heap=0 B
+transitionFNV=79ab740c->79ab740c
+statsFNV=0b2ae445->0b2ae445
 ```
 
-Stable PARK heartbeats:
+Final PARK boundary:
 
 ```text
-135324 ms: heap=133972 heap8=68208 largest8=34804
-140327 ms: heap=133972 heap8=68208 largest8=34804
+nativeChangeMapIntent=yes
+transitionArmedProven=yes
+transitionTriggered=no
+statsMutation=no
+menuMutation=no
+mapLoad=no
+framebufferMutation=no
+entities=0 monsters=0 noGameplay=yes
+```
+
+Stable heartbeats:
+
+```text
+35181 ms: heap=133940 heap8=68176 largest8=34804
+40182 ms: heap=133940 heap8=68176 largest8=34804
 ```
 
 ## Architecture rule
@@ -112,14 +157,15 @@ Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexel
 
 ## Remaining MAP_INTRO families
 
-After SAVEGAME, still unowned:
+After CHANGEMAP, only these remain:
 
 ```text
-2  EV_CHANGEMAP
 7  EV_SHOW
 18 EV_HIDE
 ```
 
-SHOW/HIDE remain entity-topology operations rather than simple visibility bits. Follow the standard PASS -> docs-only -> merge -> exact-main recovery workflow before selecting the next family.
+They are entity-topology operations, not simple visibility bits: legacy behavior includes entity death, linking/unlinking and tile-chain traversal. They require the final explicit compact native sprite/entity-topology boundary.
 
-Current recommendation: **merge `agent/esp32-map1-native-save-route`**.
+Current recommendation: **merge `agent/esp32-map1-native-change-map-intent`**.
+
+After merge, recover the exact new `main` before selecting or implementing the final SHOW/HIDE milestone.
