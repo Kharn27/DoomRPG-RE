@@ -17,8 +17,8 @@ Merged evidence: [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INT
 ```text
 branch = agent/esp32-map1-native-show-hide-topology
 base   = fc39ac60757e0d992e3729a5044a9d83e9994971
-firmware candidate = 1e9760de2269f57ec24dcea0fc16774a119ae65a
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+firmware candidate = 93d26e171e8a98f3824b3071e01b9234c8ebe6c3
+status = IMPLEMENTED; CORRECTED REAL-CYD VALIDATION PENDING
 ```
 
 Active evidence: [`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md).
@@ -30,7 +30,7 @@ The candidate owns together the final two real MAP_INTRO opcode IDs:
 18 EV_HIDE
 ```
 
-They share a compact native map-sprite/entity tile topology. The stage does not instantiate legacy map entities or mutable legacy Render map data.
+They share one compact native map-sprite/entity tile topology. No legacy map entities or mutable legacy Render map data are instantiated.
 
 ## Permanent invariants
 
@@ -90,8 +90,6 @@ playerStatsFNV         = 0b2ae445
 
 ## Persistent native RAM entering this candidate
 
-Hardware-proven heap:
-
 ```text
 immutable arena        14112 B
 mutable tile state      1040 B
@@ -126,26 +124,9 @@ link order        2 B
 344 sprites       2408 B payload
 ```
 
-No `Entity_t*`, `Sprite_t*`, monster objects or 1024-entry pointer entity database are stored.
+No `Entity_t*`, `Sprite_t*`, monster object or 1024-entry pointer entity database is stored.
 
-The owner reconstructs relevant `Game_loadMapEntities()` classification from immutable map sprites plus a bounded `/entities.db` read from the native PAK. PAK access occurs only while building the owner; SHOW/HIDE execution performs no PAK or ZIP I/O.
-
-Hardware must establish:
-
-```text
-entityDefCount
-entityCount
-EntityDef-backed count
-fallback count
-initial linked count
-hidden sprite count
-hidden entity count
-enemy count
-destructible count
-nextLinkOrder
-topologyFNV
-actual persistent heap cost / allocator overhead
-```
+The owner reconstructs the relevant `Game_loadMapEntities()` classification from immutable BSP map sprites plus one bounded `/entities.db` read from `/DoomRPG-ESP32.pak`. PAK access occurs only during owner build; SHOW/HIDE execution performs no PAK or ZIP I/O.
 
 Expected persistent allocation bound:
 
@@ -154,103 +135,153 @@ Expected persistent allocation bound:
 largest8 >= 32768 B
 ```
 
-New total persistent heap is hardware-pending:
+## SHOW/HIDE permanent boundary
+
+Legacy SHOW replaces sprite visual state and, when `sprite->ent` exists, may call `Entity_died()` on up to two enemy/destructible blockers before linking the target entity.
+
+The native owner directly owns only deterministic compact topology consequences:
 
 ```text
-15584 B + actual topology heap cost
+SHOW:
+- visual state update
+- base blocker unlink/death projection
+- target tile link
+- deferred blocker-gameplay metadata
+
+HIDE:
+- traverse native tile links in legacy link order
+- leave enemies linked
+- hide/unlink eligible map-sprite entities
 ```
 
-## SHOW permanent contract
+Full `Entity_died()` gameplay fan-out remains deferred. The RNG crate branch (`eType=12,eSubType=2`) is fail-closed before mutation. Repeated SHOW on an already-linked target is refused instead of reproducing legacy double-link corruption.
 
-Legacy bytecode behavior:
-
-```text
-spriteIndex = arg1 & 0xffff
-showFlags   = (arg1 >> 16) & 0xff
-replace sprite visual state
-if sprite->ent:
-    find enemy/destructible blocker and Entity_died()
-    find a second blocker and Entity_died()
-    link target entity at sprite tile
-handled=true
-```
-
-Native direct ownership is deliberately bounded to the base compact topology/visual projection. Full `Entity_died()` gameplay fan-out is not opened here.
-
-Deferred metadata covers non-owned blocker gameplay. The known RNG crate branch (`eType=12,eSubType=2`) is rejected before mutation. Repeated SHOW on an already-linked target is also refused rather than reproducing legacy double-link corruption.
-
-Expected result ABI:
+Expected result ABIs:
 
 ```text
 EspMapShowResult = 26 B
-```
-
-## HIDE permanent contract
-
-Legacy behavior walks the tile entity chain and, for each non-line non-enemy entity, sets the map-sprite hidden bit and unlinks the entity.
-
-Native topology preserves map-sprite link traversal order using 16-bit link-order values rather than pointers.
-
-Expected result ABI:
-
-```text
 EspMapHideResult = 18 B
 ```
 
-Repeated HIDE remains handled and becomes a zero-mutation no-op after eligible entities are already hidden/unlinked.
+## First real-CYD attempt — probe acceptance bug, permanent owner not disproven
 
-## Temporary real-CYD probe
-
-Probe files:
+Firmware initially tested:
 
 ```text
-ESP32/include/native_map1_show_hide_probe.h
-ESP32/src/native_map1_show_hide_probe.c
-ESP32/src/native_map1_show_hide_probe_internal.h
-ESP32/src/native_map1_show_hide_probe_support.c
-ESP32/src/native_map1_show_hide_probe_corpus.c
+1e9760de2269f57ec24dcea0fc16774a119ae65a
 ```
 
-The probe runs only after hardware-proven CHANGEMAP.
+The first strict probe printed `FAILED topology/corpus audit`, but a follow-up diagnostic firmware (`3a7dc83b14e8de47827b51bee12b0c907635ffc3`) localized the cause.
 
-Initial topology is cross-checked against the already-loaded legacy `EntityDefManager` without calling legacy map-entity construction.
-
-The complete 93-event / 265-bytecode corpus is scanned. Every opcode 7/18 must remain unsupported by the old state-only executor and be accepted only by this topology executor.
-
-Hardware will establish:
+Hardware proved the owner itself built correctly:
 
 ```text
-refs / showRefs / hideRefs
-removableRefs
-showMutated
-hideMutated / hideNoMutation
-showTargetEnt / showTargetNoEnt
-blockersFound / blockersRemoved / blockerNoops
-deferredDeaths
-hideEntities total
-showResultFNV / hideResultFNV
-showStateFNV / hideStateFNV
+sprites=344
+storageBytes=2408
+actual heap delta=2424 B = 2408 payload + 16 allocator overhead
+stateFNV=3f321e43
+entities=220
+hasDef=213
+fallback=7
+linked=209
+hiddenEntities=11
+enemies=30
+destructibles=13
+nextOrder=209
+initial audit=PASS
 ```
 
-Acceptance requires:
+Complete isolated real corpus diagnostic:
 
 ```text
-showRefs > 0
-hideRefs > 0
-refs = showRefs + hideRefs
+refs=12
+SHOW=11
+HIDE=1
+SHOW status OK=11
+HIDE status OK=1
+SHOW already-linked=0
+SHOW random-blocker=0
+other SHOW failures=0
+other HIDE failures=0
+finalFNV=3f321e43
+```
+
+The sole real HIDE is:
+
+```text
+cmd=173 event=60 off=9
+tile=2,22 index=706
+handled=1 removeIfHandled=1
+source-state hidden=0 effects=00
+source-state FNV unchanged=3f321e43
+```
+
+Therefore the original probe assumption was wrong: it required `hideMutated > 0` and `hideEntities > 0` while testing every command after resetting to source state.
+
+The same event contains an earlier real SHOW on the same tile:
+
+```text
+SHOW cmd=165 event=60 off=1
+sprite=0 tile=706
+status=OK
+source FNV 3f321e43 -> 2de723aa
+```
+
+The corrected proof must distinguish:
+
+```text
+isolated corpus:
+  HIDE is valid/handled and may be a source-state no-op
+
+contextual topology proof:
+  reset
+  same-event same-tile real SHOW before HIDE
+  HIDE must hide/unlink >=1 entity
+  second HIDE must remain handled with zero additional mutation
+  reset must restore exact initial topology FNV
+```
+
+No permanent `esp_map_sprite_topology.c` semantics were changed as a result of the first hardware failure.
+
+## Corrected final real-CYD probe
+
+Authoritative firmware candidate:
+
+```text
+93d26e171e8a98f3824b3071e01b9234c8ebe6c3
+```
+
+New temporary files:
+
+```text
+ESP32/include/native_map1_show_hide_final_probe.h
+ESP32/src/native_map1_show_hide_final_probe.c
+```
+
+The lifecycle now runs only this corrected final SHOW/HIDE probe after CHANGEMAP. The older failing probe/diagnostic sources remain temporary source history but are not serviced.
+
+Acceptance now requires:
+
+```text
+initial topology audit PASS
+SHOW refs > 0
+HIDE refs > 0
+refs = SHOW + HIDE
 stateExecRefused = refs
 rollback = refs/refs
-showMutated > 0
-hideMutated > 0
-hideEntities > 0
-showResultBytes = 26
-hideResultBytes = 18
-showRepeatGuard = 1
-hideIdempotent = 1
-reset = 1
+SHOW mutated > 0
+isolated HIDE handled whether mutation or no-op
+same-event/same-tile context SHOW found before HIDE
+context HIDE hiddenEntityCount > 0
+context HIDE state FNV changes
+second context HIDE handled + hiddenEntityCount=0 + exact state unchanged
+SHOW repeat guard=1
+final reset exact
+showResultBytes=26
+hideResultBytes=18
 ```
 
-Fail closed:
+Fail closed remains:
 
 ```text
 unsupported=1
@@ -258,14 +289,14 @@ badOffset=1
 badDescriptor=1
 nullDescriptor=1
 nullResult=1
-randomCrate=guarded
+no real RNG crate blocker
 targetRelink=guarded
 stateAtomic=yes
 ```
 
 ## Integrity boundary
 
-Hardware must prove after final rollback/PARK:
+Final hardware acceptance requires:
 
 ```text
 topology initial FNV restored exactly
@@ -284,21 +315,9 @@ entities=0 monsters=0
 ST_PLAYING not reached
 ```
 
-## Latest hardware-proven CHANGEMAP boundary
-
-```text
-refs=1 pending=1 showStats=1 directLoad=0
-name="/junction.bsp" targetMap=9 spawnParam=0 effects=03
-ownerBytes=16 resultBytes=20 persistentHeapBytes=0
-ownerFNV=f75eb7c7 resultFNV=2f40c9be contentFNV=f7a79d99
-rollback=1/1 reapplyExact=1 closedPackApply=1
-transitionTriggered=no statsMutation=no menuMutation=no mapLoad=no
-heap8=68176->68176 largest8=34804->34804
-```
-
 ## Validation target
 
-Build/flash normal optimized environment:
+Build/flash normal environment:
 
 ```text
 esp32-cyd
@@ -308,15 +327,15 @@ Branch / firmware:
 
 ```text
 agent/esp32-map1-native-show-hide-topology
-1e9760de2269f57ec24dcea0fc16774a119ae65a
+93d26e171e8a98f3824b3071e01b9234c8ebe6c3
 ```
 
-Capture `[MAPTOPOLOGY]`, `[MAPSHOWHIDE]`, `[MAPSHOW]`, `[MAPHIDE]`, `[MAPSHOWHIDEPROBE]` and stable `[ALIVE]` lines.
+Capture `[MAPTOPOLOGY]`, `[MAPSHOWHIDE]`, `[MAPSHOW]`, `[MAPHIDE]`, `[MAPSHOWHIDEFINAL]` and stable `[ALIVE]` lines.
 
 No CI status is published for this firmware candidate. No local build or hardware PASS is claimed.
 
 ## Boundary after candidate PASS
 
-If SHOW/HIDE passes, **all 16 real MAP_INTRO opcode IDs will have explicit native ownership/execution boundaries**.
+If corrected SHOW/HIDE passes, **all 16 real MAP_INTRO opcode IDs will have explicit native ownership/execution boundaries**.
 
-This is only the end of MAP_INTRO event-family ownership. Full native gameplay/effect consumers, entity/monster runtime, transition consumption, renderer integration and actual `ST_PLAYING` progression remain later milestones.
+That completes MAP_INTRO event-family ownership only. Full native gameplay/effect consumers, entity/monster runtime, transition consumption, renderer integration and actual `ST_PLAYING` progression remain later milestones.
