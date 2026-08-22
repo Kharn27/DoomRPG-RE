@@ -9,19 +9,19 @@ PR   = #60 — native EV_SAVEGAME route owner
 main = 50ed329801fe99917ef2f848ee13e742ae7734ab
 ```
 
-Firmware candidate content:
+Hardware-tested firmware content:
 
 ```text
 93e0be24558ebffcbc9f60ef0ced54f29274ab28
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
 Own exact `2 / EV_CHANGEMAP` bytecode semantics without prematurely performing the later map transition.
 
-Recovered legacy behavior cleanly separates two moments:
+Recovered legacy behavior separates two moments:
 
 ```text
 EV_CHANGEMAP bytecode
@@ -38,13 +38,13 @@ later, when an opened texture-7 transition door is processed
  -> clear changeMapParam
 ```
 
-This milestone owns only the first boundary: the pending transition intent.
+This milestone owns only the first boundary: a compact pending transition intent.
 
 No level stats, menu state, map load, sound, renderer state, entities or gameplay are changed.
 
-## Why CHANGEMAP before SHOW/HIDE
+## Why CHANGEMAP was the correct next family
 
-After SAVEGAME, MAP_INTRO has only:
+After merged SAVEGAME, MAP_INTRO had only:
 
 ```text
 2  EV_CHANGEMAP
@@ -52,11 +52,9 @@ After SAVEGAME, MAP_INTRO has only:
 18 EV_HIDE
 ```
 
-`SHOW/HIDE` are not visibility-only operations. Recovered legacy behavior couples them to entity death/link/unlink and tile entity chains, so they need an explicit compact native entity/topology boundary.
+`SHOW/HIDE` are entity-topology operations in the legacy engine. `CHANGEMAP` is naturally deferred: the opcode only stores a pending parameter, while the heavy transition consumer runs later. That permits a bounded permanent owner without opening gameplay or legacy world mutation.
 
-`CHANGEMAP`, by contrast, is already naturally deferred in the original engine. The opcode merely stores a pending scalar and the transition consumer runs later. That makes it a small permanent ownership boundary now.
-
-## Recovered legacy dispatch
+## Exact legacy contract
 
 `Game_executeEvent()`:
 
@@ -66,13 +64,9 @@ case EV_CHANGEMAP:
     break;
 ```
 
-Normal execution then returns handled=true. As with other handled commands, outer `Game_runEvent()` may remove the command when source `arg2 & 0x200`.
+Outer `Game_runEvent()` may remove a handled command when source `arg2 & 0x200`; native code exposes this as `removeCommandIfHandled` but does not mutate `EspMapScriptState` here.
 
-Native code returns this as `removeCommandIfHandled`; it does not mutate `EspMapScriptState` yet.
-
-## Recovered deferred consumer
-
-`Game_changeMap()` only acts when `changeMapParam != 0`:
+Deferred `Game_changeMap()` behavior:
 
 ```text
 spawnParam = (changeMapParam << 1) >> 9
@@ -90,7 +84,7 @@ else:
 changeMapParam = 0
 ```
 
-The consumer itself is triggered by the door animation/update path when an open door has texture `7`:
+The consumer is triggered by the door update path when an open door has texture `7`:
 
 ```text
 transition door open
@@ -98,11 +92,9 @@ transition door open
  -> Game_changeMap()
 ```
 
-This proves that `EV_CHANGEMAP` must not directly load a map.
+Therefore `EV_CHANGEMAP` itself must not load a map.
 
 ## Raw parameter decoding
-
-Recovered format:
 
 ```text
 bits  0..7  = map string index
@@ -110,23 +102,17 @@ bits  8..30 = spawn parameter payload
 bit      31 = SHOWSTATS
 ```
 
-Legacy spawn expression:
-
-```text
-(changeMapParam << 1) >> 9
-```
-
-Native code uses explicit unsigned shifts:
+Native spawn extraction uses:
 
 ```text
 (rawParam << 1U) >> 9U
 ```
 
-so the low-byte map string id and bit31 SHOWSTATS flag are removed without depending on signed-shift undefined behavior.
+which preserves the intended bit extraction using explicit unsigned shifts.
 
 ## Permanent native owner
 
-New files:
+Files:
 
 ```text
 ESP32/include/esp_map_change_map_state.h
@@ -146,202 +132,177 @@ typedef struct EspMapChangeMapState_s {
 } EspMapChangeMapState;
 ```
 
-Expected classic ESP32 ABI:
+Real classic ESP32 ABI:
 
 ```text
-EspMapChangeMapState = 16 B
-persistent heap      = 0 B
+EspMapChangeMapState  = 16 B
+EspMapChangeMapResult = 20 B
+persistent heap       = 0 B
 ```
 
-Unlike `EV_SAVEGAME`, the destination name is deliberately **not copied inline**. `Game_changeMap()` resolves the target while the source map is still resident, before initiating teardown. Therefore a current-map immutable `EspMapStringRef` is the correct lifetime owner here.
-
-SAVEGAME required an inline name because its later save consumer can run after source-map teardown; the two owners intentionally model different lifetimes.
-
-Permanent calls:
-
-```text
-EspMapChangeMap_reset()
-EspMapChangeMap_isActive()
-EspMapChangeMap_apply()
-```
-
-For a non-zero raw parameter, `apply()` resolves/validates the low-byte string index through the immutable native runtime and stores the pending state.
-
-For raw parameter zero, the owner becomes clear/inactive but the command still returns handled=true, matching the legacy assignment plus later no-op consumer.
+Unlike `EV_SAVEGAME`, the destination string is intentionally not copied inline. The later CHANGEMAP consumer resolves it while the source map is still resident, before teardown. A current-map immutable `EspMapStringRef` is therefore the correct lifetime owner.
 
 The permanent source performs no PAK I/O and has no dependency on legacy Game/Render/Player/Menu/Sound/DoomCanvas types.
 
-## Result / deferred effects
-
-```c
-typedef struct EspMapChangeMapResult_s {
-    uint32_t rawParam;
-    uint32_t spawnParam;
-    uint16_t sourceEventIndex;
-    uint16_t globalCommandIndex;
-    uint16_t mapStringIndex;
-    uint8_t sourceCommandOffset;
-    uint8_t showStats;
-    uint8_t pending;
-    uint8_t legacyReturnValue;
-    uint8_t removeCommandIfHandled;
-    uint8_t effectFlags;
-} EspMapChangeMapResult;
-```
-
-Expected ABI:
+## Deferred-effect metadata
 
 ```text
-EspMapChangeMapResult = 20 B
-```
-
-Deferred effects are metadata only:
-
-```text
-ADD_LEVEL_STATS    = 0x01
-SHOW_STATS_MENU    = 0x02
-LOAD_MAP           = 0x04
+ADD_LEVEL_STATS = 0x01
+SHOW_STATS_MENU = 0x02
+LOAD_MAP        = 0x04
 
 pending=0:
   effects=0
 
 pending + showStats=1:
-  effects=ADD_LEVEL_STATS | SHOW_STATS_MENU = 0x03
+  effects=0x03
 
 pending + showStats=0:
-  effects=ADD_LEVEL_STATS | LOAD_MAP = 0x05
+  effects=0x05
 ```
 
-Sound `5068` belongs to the later texture-7 transition-door trigger, not to `EV_CHANGEMAP` itself, and is intentionally not emitted here.
+These effects are metadata only. Sound `5068` belongs to the later transition-door trigger and is not emitted here.
 
-## Temporary real-CYD probe
+## Real-CYD corpus proof
 
-New files:
+Normal optimized PlatformIO environment: `esp32-cyd`.
+
+The real classic no-PSRAM CYD established:
 
 ```text
-ESP32/include/native_map1_change_map_probe.h
-ESP32/src/native_map1_change_map_probe.c
+refs             = 1
+pending          = 1
+zeroParam        = 0
+showStats        = 1
+directLoad       = 0
+removable        = 0
+fallbackMap      = 0
+ownerBytes       = 16
+resultBytes      = 20
+stateExecRefused = 1
+mapNameBytes     = 13
+maxMapName       = 13
+ownerFNV         = f75eb7c7
+resultFNV        = 2f40c9be
+contentFNV       = f7a79d99
+elapsed          = 38 ms
 ```
 
-The stage runs only after hardware-proven SAVEGAME route validation.
-
-Inherited required fingerprints:
+The corpus partitions exactly:
 
 ```text
-arenaFNV            = c3882516
-mapStateFNV         = cd99b98e
-scriptFNV           = f9e3d9df
-lineStateFNV        = e5e74861
-lineTextureStateFNV = f1fc1875
-automapStateFNV     = 669b1aa7
+pending + zeroParam = 1 + 0 = 1 ref
+showStats + directLoad = 1 + 0 = 1 pending ref
 ```
 
-Other preconditions remain:
+## Canonical real command
 
 ```text
-/intro.bsp size=21823 crc32=623f34e4
-events=93 bytecodes=265 lines=480 mapSprites=344
-ST_INTRO storyPage=3
-legacy Render runtime clear
-pack closed
-entities=0 monsters=0
+global command = 2
+event          = 1
+command offset = 1
+arg1           = 80000000
+arg2           = 00000100
+mapString      = 0
+mapName        = "/junction.bsp"
+targetMap      = 9 / MAP_JUNCTION
+spawnParam     = 0
+showStats      = 1
+effectFlags    = 03
+pending        = 1
+handled        = 1
+removeIfHandled= 0
 ```
 
-### Complete real corpus
+This proves the real MAP_INTRO exit command arms a deferred transition to Junction and requests the stats-menu path, while leaving the transition itself untouched.
 
-The probe scans all 93 events / 265 commands and discovers every real opcode-2 command.
+## Owner mutation / rollback / closed-pack proof
 
-For each ref it requires:
-
-```text
-state-only executor -> UNSUPPORTED
-canonical descriptor/command provenance
-native CHANGEMAP apply -> OK
-raw parameter exact
-spawn decoding exact
-showStats exact
-pending exact
-removeCommandIfHandled exact
-deferred effect flags exact
-owner reset to exact initial fingerprint
-```
-
-Hardware will establish rather than predeclare:
+Hardware fingerprints:
 
 ```text
-refs
-pending refs
-zero-param refs
-showStats refs
-direct-load refs
-removable refs
-fallback-map refs
-map-name total bytes / max length
-ownerFNV
-resultFNV
-contentFNV
-initial owner FNV
-sample owner FNV
-first real command / target / spawn / flags
-```
-
-Acceptance requires:
-
-```text
-refs > 0
-pending > 0
-pending + zeroParam = refs
-showStats + directLoad = pending
-stateExecRefused = refs
-rollback = refs/refs
-ownerBytes = 16
-resultBytes = 20
-reapplyExact = 1
+initialOwnerFNV = 69691905
+sampleOwnerFNV  = 4e4ebeac
+rollback        = 1 / 1
+reapplyExact    = 1
 closedPackApply = 1
-activeAtPark = 0
+activeAtPark    = 0
 ```
 
-### Destination verification
+The probe first opens `/DoomRPG-ESP32.pak` only to verify the real destination string. After closing the PAK, the exact same command is applied again and produces byte-identical owner/result state.
 
-The executor itself performs no I/O. The probe temporarily opens `/DoomRPG-ESP32.pak` only to read the real destination strings and compare them to the recovered legacy map-file list:
+Therefore:
 
 ```text
-/intro.bsp
-/level01.bsp ... /level07.bsp
-/junction.bsp
-/junction_destroyed.bsp
-/items.bsp
-/reactor.bsp
-/endgame.bsp
+executorPackIO = no
 ```
 
-Unknown names are counted as `fallbackMapRefs`, matching legacy `Game_getResourceMapID()` fallback-to-MAP_INTRO behavior. Hardware decides the actual corpus.
+The permanent executor relies only on the already-resident native runtime/string span.
 
-After verification the PAK closes. The same sample CHANGEMAP is then applied again with the pack closed and must produce byte-identical owner/result:
+## Fail-closed proof
+
+Real hardware proved:
 
 ```text
-closedPackApply = 1
-executorPackIO  = no
+unsupported    = 1
+badOffset      = 1
+badDescriptor  = 1
+nullDescriptor = 1
+nullState      = 1
+nullResult     = 1
+reset          = 1
+stateAtomic    = yes
 ```
 
-## Fail-closed / atomicity
+Invalid non-zero map string indices also remain fail-closed through `STRING_NOT_FOUND` in permanent code.
 
-Expected:
+## PAK / RAM proof
+
+Bounded verification witness:
 
 ```text
-unsupported=1
-badOffset=1
-badDescriptor=1
-nullDescriptor=1
-nullState=1
-nullResult=1
-reset=1
-stateAtomic=yes
+entry               = /intro.bsp
+size                = 21823
+crc32               = 623f34e4
+heapOpen            = 63800
+transientHeapCost   = 4376 B
+largestOpen         = 34804
+packIO              = yes
+verificationOnly    = yes
+executorPackIO      = no
+persistentHeapBytes = 0
 ```
 
-Invalid non-zero map string indices also fail closed in permanent code through `STRING_NOT_FOUND`.
+Before/after the complete stage:
 
-## Legacy transition-integrity witness
+```text
+heap8       = 68176 -> 68176
+largest8    = 34804 -> 34804
+frameFNV    = e36ac6fd -> e36ac6fd
+arenaFNV    = c3882516 -> c3882516
+mapStateFNV = cd99b98e -> cd99b98e
+scriptFNV   = f9e3d9df -> f9e3d9df
+automapFNV  = 669b1aa7 -> 669b1aa7
+```
+
+Persistent native heap remains exactly:
+
+```text
+immutable arena        14112 B
+mutable tile state      1040 B
+mutable script state     100 B
+mutable line state       136 B
+mutable texture state     76 B
+mutable automap state    120 B
+-----------------------------
+total                  15584 B
+```
+
+CHANGEMAP adds no persistent heap allocation.
+
+Absolute heap/frame values differ from earlier firmware builds; acceptance is same-build stability plus canonical native fingerprints.
+
+## Legacy transition-integrity proof
 
 The probe hashes fields that the later legacy consumer would otherwise mutate:
 
@@ -356,101 +317,84 @@ DoomCanvas.loadType
 DoomCanvas.saveType
 ```
 
-It separately hashes player fields touched by `Player_addLevelStats()`:
+Real hardware witness:
 
 ```text
-Player.time
-Player.totalTime
-Player.moves
-Player.totalMoves
-Player.completedLevels
-Player.killedMonstersLevels
-Player.foundSecretsLevels
-Player.xpGained
+legacy transitionFNV = 79ab740c -> 79ab740c
 ```
 
-Both fingerprints must remain unchanged. The already-proven legacy SAVE route witness also remains unchanged.
-
-Thus any accidental call into `Game_changeMap()`, level-stats mutation, menu transition or map load causes the probe to fail.
-
-## RAM / integrity boundary
-
-Hardware-proven persistent native heap entering this milestone:
+Player fields touched by `Player_addLevelStats()` were separately protected:
 
 ```text
-immutable arena        14112 B
-mutable tile state      1040 B
-mutable script state     100 B
-mutable line state       136 B
-mutable texture state     76 B
-mutable automap state    120 B
------------------------------
-total                  15584 B
+player statsFNV = 0b2ae445 -> 0b2ae445
 ```
 
-Candidate state/result are caller-owned values:
+Other protected witnesses stayed exact:
 
 ```text
-ownerBytes       = 16 expected
-resultBytes      = 20 expected
-persistent heap  = 0 expected
+notebookFNV       = 4d7705c5 -> 4d7705c5
+keys              = 00000000 -> 00000000
+hudFNV            = 505b1255 -> 505b1255
+passwordCanvasFNV = 214171cf -> 214171cf
+continuationFNV   = e2ba14a5 -> e2ba14a5
+saveRouteFNV      = 9bcfe135 -> 9bcfe135
+legacyRuntimeClear= yes
 ```
 
-The temporary PAK open used for string verification will have a transient heap cost. After close:
+No legacy transition, level-stat mutation, menu transition, map load, renderer/entity mutation or framebuffer mutation occurred.
+
+## Final PARK boundary
+
+Hardware proved:
 
 ```text
-heap8 after == heap8 before
-largest8 after == largest8 before
-persistentHeapBytes = 0
+nativeChangeMapIntent = yes
+ownerBytes            = 16
+resultBytes           = 20
+persistentBytes       = 0
+transitionArmedProven = yes
+transitionTriggered   = no
+statsMutation         = no
+menuMutation          = no
+mapLoad               = no
+framebufferMutation   = no
+entities              = 0
+monsters              = 0
+noGameplay            = yes
 ```
 
-All inherited state must remain exact:
+The Serial line printed `ownerBytes=16resultBytes=20` without an intervening space; this is formatting-only and both numeric values are unambiguous.
+
+Stable post-PARK heartbeats:
 
 ```text
-framebuffer unchanged
-arena/map/script/line/texture/automap fingerprints unchanged
-legacy notebook/keys/Hud/password/continuation unchanged
-legacy SAVE route unchanged
-legacy transition witness unchanged
-player stats witness unchanged
-legacy Render runtime clear
-entities=0 monsters=0
-no gameplay / no ST_PLAYING
+uptime=35181 ms heap=133940 heap8=68176 largest8=34804 all reported subsystems ready
+uptime=40182 ms heap=133940 heap8=68176 largest8=34804 all reported subsystems ready
 ```
 
-## Expected Serial family
+`ZIP=ready` is the existing subsystem status label and does not indicate runtime map access through ZIP. Runtime backing remains `/DoomRPG-ESP32.pak`.
+
+## Hardware acceptance status
+
+The real CYD proved the complete CHANGEMAP corpus, exact destination/span and show-stats decoding, exact owner/result fingerprints, rollback/reapply, closed-pack executor behavior, zero persistent heap, legacy transition/stat integrity and stable PARK heartbeats.
+
+This milestone is **REAL-CYD HARDWARE PASS / MERGE-READY**.
+
+Hardware-tested firmware content:
 
 ```text
-[MAPCHANGEMAPPROBE] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO CHANGEMAP pending transition ===
-[MAPCHANGEMAPPROBE] CONTRACT ...
-[MAPCHANGEMAP] READY refs=... pending=... zeroParam=... showStats=... directLoad=... removable=... fallbackMap=... ownerBytes=16 resultBytes=20 stateExecRefused=... mapNameBytes=... maxMapName=... ownerFNV=... resultFNV=... contentFNV=... elapsed=...ms
-[MAPCHANGEMAP] SAMPLE cmd=... event=... off=... arg1=... arg2=... mapString=... name="..." targetMap=... spawnParam=... showStats=... effects=... pending=... handled=1 removeIfHandled=...
-[MAPCHANGEMAP] STATE initialOwnerFNV=... sampleOwnerFNV=... rollback=.../... reapplyExact=1 closedPackApply=1 activeAtPark=0
-[MAPCHANGEMAP] FAILCLOSED unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1 nullState=1 nullResult=1 reset=1 stateAtomic=yes
-[MAPCHANGEMAP] IO entry=/intro.bsp size=21823 crc32=623f34e4 heapOpen=... transientHeapCost=... largestOpen=... packIO=yes verificationOnly=yes executorPackIO=no persistentHeapBytes=0
-[MAPCHANGEMAPPROBE] RAM heap8=...->... delta=0 largest8=...->... delta=0 ...
-[MAPCHANGEMAPPROBE] LEGACY ... transitionFNV=...->... statsFNV=...->... legacyRuntimeClear=yes
-[MAPCHANGEMAPPROBE] PARK ... nativeChangeMapIntent=yes ownerBytes=16 resultBytes=20 persistentBytes=0 transitionArmedProven=yes transitionTriggered=no statsMutation=no menuMutation=no mapLoad=no framebufferMutation=no entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
+93e0be24558ebffcbc9f60ef0ced54f29274ab28
 ```
 
-Use normal optimized PlatformIO environment:
+All later commits must remain documentation-only unless another firmware is flashed.
 
-```text
-esp32-cyd
-```
+## Remaining MAP_INTRO families
 
-No CI status is published for firmware candidate `93e0be24558ebffcbc9f60ef0ced54f29274ab28`. No local build or hardware PASS is claimed.
-
-## Remaining families after PASS
-
-If CHANGEMAP passes, MAP_INTRO will have only:
+After CHANGEMAP, only these remain unowned:
 
 ```text
 7  EV_SHOW
 18 EV_HIDE
 ```
 
-Those remain deferred to an explicit native sprite/entity-topology owner. Do not pre-authorize that final boundary before CHANGEMAP PASS + merge recovery.
+They are a single closely related entity/sprite-topology frontier in legacy behavior, but the exact next milestone must still be selected only after this branch is merged and the true new `main` is recovered.
