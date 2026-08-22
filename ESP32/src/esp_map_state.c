@@ -243,3 +243,22 @@ int EspMapState_getTileFlags(uint32_t tileIndex, uint8_t* outFlags) {
     *outFlags = stateTiles[tileIndex];
     return 1;
 }
+
+int EspMapState_setVisited(uint32_t tileIndex, uint8_t visited) {
+    uint8_t before;
+    uint8_t after;
+
+    if (!EspMapState_isReady() || visited > 1U ||
+        tileIndex >= ESP_MAP_STATE_TILE_COUNT) {
+        return 0;
+    }
+
+    before = stateTiles[tileIndex];
+    if (visited != 0U) after = (uint8_t)(before | ESP_MAP_TILE_VISITED);
+    else after = (uint8_t)(before & (uint8_t)~ESP_MAP_TILE_VISITED);
+    if (after == before) return 1;
+
+    stateTiles[tileIndex] = after;
+    stateView.stateFNV1a = fnv1a32(stateTiles, ESP_MAP_STATE_BYTES);
+    return 1;
+}

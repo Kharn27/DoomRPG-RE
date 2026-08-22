@@ -5,6 +5,7 @@
 #include "native_map1_event_descriptor_probe.h"
 #include "native_map1_event_filter_probe.h"
 #include "native_map1_events_probe.h"
+#include "native_map1_givemap_probe.h"
 #include "native_map1_key_gate_probe.h"
 #include "native_map1_line_door_probe.h"
 #include "native_map1_notebook_probe.h"
@@ -45,6 +46,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32Map1PasswordProbe_reset();
     Esp32Map1LineDoorProbe_reset();
     Esp32Map1UnlockProbe_reset();
+    Esp32Map1GiveMapProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -62,8 +64,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * pause owner -> bounded EV_NOTE notebook owner -> pure EV_CHECK_KEY control
      * gate -> bounded EV_PASSWORD pause/submit owner -> compact line open/lock
      * world state + reversible EV_OPENLINE/EV_CLOSELINE execution -> compact
-     * line texture 9/10 state + reversible EV_UNLOCK execution. Each stage arms
-     * first and executes on a later Arduino loop service.
+     * line texture 9/10 state + reversible EV_UNLOCK execution -> compact
+     * line/sprite automap reveal state + reversible EV_GIVEMAP execution. Each
+     * stage arms first and executes on a later Arduino loop service.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -82,4 +85,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32Map1PasswordProbe_service(doomRpg);
     Esp32Map1LineDoorProbe_service(doomRpg);
     Esp32Map1UnlockProbe_service(doomRpg);
+    Esp32Map1GiveMapProbe_service(doomRpg);
 }

@@ -33,127 +33,139 @@ This file defines how the ESP32 CYD port documentation is organized and which fi
 | [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) | CHECK_KEY dynamic gate | #55 | `03c4275f2abfd6671c8bf499c075435d7b61ab97` |
 | [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) | PASSWORD pause/submission owner | #56 | `3c113cc047aeb613f2ba4ab7905e92487c796f80` |
 | [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md) | first mutable world owner + OPEN/CLOSE | #57 | `e4fb32f41b7074bbb433e64f4c824edb2167cf50` |
+| [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) | second line-world owner + EV_UNLOCK | #58 | `7503b379185db3f05713eb34f1762173edb977d0` |
 
 ## Current merge-ready milestone
 
-[`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) owns `13 / EV_UNLOCK` as a second explicit native line-world mutation family.
+[`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md) owns `9 / EV_GIVEMAP` as a compact native automap mutation family.
 
 ```text
-branch = agent/esp32-map1-native-unlock-state
-base   = e4fb32f41b7074bbb433e64f4c824edb2167cf50
-hardware-tested firmware = e423093c8e17dda1345bebecf721dedf4bbb2002
+branch = agent/esp32-map1-native-givemap-state
+base   = 7503b379185db3f05713eb34f1762173edb977d0
+hardware-tested firmware = 2e0f8f5de93f806380ee254a8dab59a817c73f5d
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-The existing 120-byte OPEN/LOCKED owner remains unchanged at `lineStateFNV=e5e74861`. A separate 60-byte texture-9/10 owner is now hardware-proven with:
+Hardware-proven automap owner:
 
 ```text
-variants         = 6
-initialTexture10 = 0
-textureStateFNV  = f1fc1875
-actual heap      = 76 B
+480 line reveal bits   = 60 B
+344 sprite reveal bits = 43 B
+payload                = 103 B
+actual heap            = 120 B
+initial line revealed  = 0
+initial sprite revealed= 0
+automapStateFNV        = 669b1aa7
 ```
 
-Complete real UNLOCK corpus:
+Real GIVEMAP corpus:
 
 ```text
-refs=6 mutated=6 lockMutated=6 textureMutated=6
-noMutation=0 removable=0 stateExecRefused=6
-resultBytes=20 unlockFNV=261d756a
-rollback=6/6 idempotentHandled=1
+refs=1 mutated=1 noMutation=0 removable=0 stateExecRefused=1
+resultBytes=20
+lineTargets=430 spriteTargets=344 entranceTargets=4
+lineMutTotal=430 spriteMutTotal=344 tileMutTotal=4
+giveMapFNV=98c7ac59
+rollback=1/1 idempotentHandled=1
 ```
 
-Canonical first UNLOCK:
+Canonical real mutation:
 
 ```text
-cmd18 event6 off7 line400
-locked 1->0 texture 9->10
-sound=5067 effects=07 handled=1 removeIfHandled=0
-lineStateFNV    e5e74861 -> 8d5f89d8 -> rollback e5e74861
-textureStateFNV f1fc1875 -> 997459ec -> rollback f1fc1875
+cmd43 event14 off1
+430 line reveals + 344 sprite reveals + 4 entrance VISITED bits
+handled=1 removeIfHandled=0
+automapStateFNV 669b1aa7 -> 9d03ca2d -> rollback 669b1aa7
+mapStateFNV     cd99b98e -> e21edbce -> rollback cd99b98e
 ```
-
-## Architecture rule
-
-DoomRPG-RE desktop/J2ME remains an executable behavior/format reference, not the permanent ESP32 architecture.
-
-```text
-original data/behavior
- -> native pack-backed parsers
- -> compact immutable map
- -> small explicit mutable overlays
- -> native script/event ownership
- -> native gameplay effects
- -> native renderer
-```
-
-Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexels`, pointer-heavy desktop map structures or legacy `Render_t` ownership as a shortcut.
 
 ## Current hardware-proven boundary
 
 Persistent native heap:
 
 ```text
-immutable arena       14112 B
-mutable tile state     1040 B
-mutable script state    100 B
-mutable line state      136 B
-mutable texture state    76 B
-----------------------------
-total                  15464 B
+immutable arena         14112 B
+mutable tile state       1040 B
+mutable script state      100 B
+mutable line state        136 B
+mutable texture state      76 B
+mutable automap state     120 B
+------------------------------
+total                   15584 B
 ```
 
-Latest same-build stable allocation boundary:
+Latest same-build GIVEMAP allocation witness:
 
 ```text
-line state:    heap8 68652 -> 68516, cost 136 B, largest8 34804 stable
-texture state: heap8 68516 -> 68440, cost  76 B, largest8 34804 stable
-PARK:          heap=134204 heap8=68440 largest8=34804
+heap8 68384 -> 68264
+payload=103 B actual heap=120 B overhead=17 B
+largest8=34804 stable
+frameFNV=453f0d5c stable
+PARK heap=134028 heap8=68264 largest8=34804
 ```
 
 Key fingerprints:
 
 ```text
-arenaFNV             = c3882516
-mapStateFNV          = cd99b98e
-scriptFNV            = f9e3d9df
-keyGateFNV           = 9ace79cd
-passwordOwnerFNV     = 48f01689
-passwordSubmitFNV    = 90e8c574
-lineStateFNV         = e5e74861
-lineDoorFNV          = b1c9d297
-lineMutatedFNV       = 8f57d779
-lineTextureStateFNV  = f1fc1875
-unlockFNV            = 261d756a
-unlockMutatedLineFNV = 8d5f89d8
-unlockMutatedTexFNV  = 997459ec
+arenaFNV              = c3882516
+mapStateFNV           = cd99b98e
+scriptFNV             = f9e3d9df
+keyGateFNV            = 9ace79cd
+passwordOwnerFNV      = 48f01689
+passwordSubmitFNV     = 90e8c574
+lineStateFNV          = e5e74861
+lineDoorFNV           = b1c9d297
+lineMutatedFNV        = 8f57d779
+lineTextureStateFNV   = f1fc1875
+unlockFNV             = 261d756a
+unlockMutatedLineFNV  = 8d5f89d8
+unlockMutatedTexFNV   = 997459ec
+automapStateFNV       = 669b1aa7
+giveMapFNV            = 98c7ac59
+giveMapMutatedAutoFNV = 9d03ca2d
+giveMapMutatedMapFNV  = e21edbce
 ```
 
-Legacy witnesses and framebuffer remain unchanged across UNLOCK; `packIO=no`, legacy runtime remains clear, `entities=0`, `monsters=0`, `noGameplay=yes`.
+Legacy witnesses and framebuffer remain unchanged across GIVEMAP; `packIO=no`, legacy runtime remains clear, `entities=0`, `monsters=0`, `noGameplay=yes`.
+
+## Architecture rule
+
+DoomRPG-RE desktop/J2ME is the executable behavior/format reference, not the permanent ESP32 architecture.
+
+```text
+original data/behavior
+ -> native pack-backed parsers
+ -> compact immutable map
+ -> small explicit mutable overlays
+ -> native event/script ownership
+ -> native gameplay effects
+ -> native renderer
+```
+
+Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexels`, pointer-heavy desktop map structures or legacy `Render_t` ownership as a shortcut.
 
 ## Remaining MAP_INTRO families
 
-After UNLOCK, still unowned:
+After GIVEMAP, still unowned:
 
 ```text
 2  EV_CHANGEMAP
 7  EV_SHOW
-9  EV_GIVEMAP
 18 EV_HIDE
 27 EV_SAVEGAME
 ```
 
-No later family is pre-authorized. After merge, recover the exact new `main`, read `PORTING_STATUS.md`, `DOCUMENTATION.md`, the merged UNLOCK archive and exact legacy semantics before selecting the next bounded owner.
+SHOW/HIDE are deliberately not treated as simple sprite visibility: legacy semantics also kill/link/unlink entities. They require a later explicit compact native entity/topology boundary. CHANGEMAP and SAVEGAME remain larger ownership boundaries.
 
 ## Milestone workflow
 
 1. Branch from exact latest hardware-validated `main`.
 2. Keep one coherent bounded objective per branch.
-3. Recover exact legacy semantics before designing native ownership.
-4. Fail closed before unsupported or unsafe effects.
+3. Recover exact legacy semantics before native ownership design.
+4. Fail closed before unsupported/unsafe effects.
 5. Validate normal optimized `esp32-cyd` on the real classic CYD.
 6. Preserve exact RAM/fingerprint/hardware evidence.
 7. Mark merge-ready only after implementation + hardware + docs agree.
-8. Keep every post-hardware commit docs-only unless another firmware is flashed.
+8. Keep all post-hardware commits docs-only unless another firmware is flashed.
 
-Current recommendation: **merge `agent/esp32-map1-native-unlock-state`**.
+Current recommendation: **merge `agent/esp32-map1-native-givemap-state`**.

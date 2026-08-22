@@ -2,30 +2,30 @@
 
 This file is the **authoritative current recovery point** for the classic ESP32-2432S028R Doom RPG port.
 
-Use [`README.md`](README.md) for stable build/flash guidance, [`DOCUMENTATION.md`](DOCUMENTATION.md) for the documentation index, and milestone archives for detailed evidence.
+Use [`README.md`](README.md) for stable build/flash guidance, [`DOCUMENTATION.md`](DOCUMENTATION.md) for the documentation index, and milestone archives for detailed hardware evidence.
 
 ## Latest merged hardware baseline
 
 ```text
-PR   = #57 — native OPEN/CLOSE line world state
-main = e4fb32f41b7074bbb433e64f4c824edb2167cf50
-hardware-tested firmware content = 376f45bcdd12264d3cba1ee83e7197a52e248210
+PR   = #58 — native EV_UNLOCK world state
+main = 7503b379185db3f05713eb34f1762173edb977d0
+hardware-tested firmware content = e423093c8e17dda1345bebecf721dedf4bbb2002
 ```
 
-Detailed merged evidence: [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md).
+Detailed merged evidence: [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-map1-native-unlock-state
-base   = e4fb32f41b7074bbb433e64f4c824edb2167cf50
-hardware-tested firmware content = e423093c8e17dda1345bebecf721dedf4bbb2002
+branch = agent/esp32-map1-native-givemap-state
+base   = 7503b379185db3f05713eb34f1762173edb977d0
+hardware-tested firmware content = 2e0f8f5de93f806380ee254a8dab59a817c73f5d
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Detailed evidence: [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md).
+Detailed evidence: [`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md).
 
-The milestone supports only `13 / EV_UNLOCK`. It preserves the hardware-proven OPEN/LOCKED line owner unchanged and adds a packed 60-byte texture-9/10 world overlay. Valid UNLOCK always reports handled, clears the native lock bit and conditionally changes effective texture 9->10. Sound, special-entity definition synchronization and view refresh remain deferred metadata; legacy Render/Game/Entity state stays untouched.
+The milestone owns only `9 / EV_GIVEMAP`. It adds a packed 103-byte line/sprite automap-reveal owner and reuses the existing 1024-byte `EspMapState` for `BIT_AM_VISITED` on entrance cells. Legacy Render/Entity state remains untouched.
 
 ## Permanent target / invariants
 
@@ -49,26 +49,22 @@ shapeData   == NULL
 mediaTexels == NULL
 runtime ZIP dependency = forbidden
 native backing store   = /DoomRPG-ESP32.pak
-DoomRPG-RE desktop engine = executable specification/reference only
-final CYD engine          = ESP32-native ownership
+DoomRPG-RE desktop/J2ME = executable behavior/format reference only
+final engine             = ESP32-native ownership
 ```
 
 Current native direction:
 
 ```text
-BSP source in native pack
+native BSP/pack
  -> compact immutable EspMapRuntime
- -> allocation-free accessors
- -> mutable EspMapState
- -> event lookup + descriptor/linkage
- -> mutable EspMapScriptState
- -> event filtering + fail-closed opcode owners
- -> strings/UI/effect owners
- -> dynamic gates + pause/input owners
- -> compact mutable native world overlays
+ -> compact tile/script state
+ -> event lookup + descriptors
+ -> native opcode/effect owners
+ -> compact native world overlays
  -> native event/script loop
  -> native gameplay/effect consumers
- -> ESP32-native gameplay + renderer
+ -> ESP32-native renderer/gameplay
 ```
 
 ## Hardware-proven MAP_INTRO identity
@@ -126,6 +122,10 @@ lineTextureStateFNV  = f1fc1875
 unlockFNV            = 261d756a
 unlockMutatedLineFNV = 8d5f89d8
 unlockMutatedTexFNV  = 997459ec
+automapStateFNV      = 669b1aa7
+giveMapFNV           = 98c7ac59
+giveMapMutatedMapFNV = e21edbce
+giveMapMutatedAutoFNV= 9d03ca2d
 ```
 
 ## Persistent native RAM ownership
@@ -133,16 +133,17 @@ unlockMutatedTexFNV  = 997459ec
 Hardware-proven persistent heap:
 
 ```text
-immutable arena       = 14112 B actual heap
-mutable tile state    =  1040 B actual heap
-mutable script state  =   100 B actual heap
-mutable line state    =   136 B actual heap (120 B payload + 16 B allocator)
-mutable texture state =    76 B actual heap ( 60 B payload + 16 B allocator)
------------------------------------------
-current proven total  = 15464 B
+immutable arena         = 14112 B actual heap
+mutable tile state      =  1040 B actual heap
+mutable script state    =   100 B actual heap
+mutable line state      =   136 B actual heap
+mutable texture state   =    76 B actual heap
+mutable automap state   =   120 B actual heap (103 B payload + 17 B allocator)
+------------------------------------------
+current proven total    = 15584 B
 ```
 
-Hardware-proven value/caller-local types:
+Hardware-proven caller/value ABIs:
 
 ```text
 EspMapStatusMessageState    =   8 B
@@ -153,24 +154,42 @@ EspMapPasswordOwnerState    =  20 B
 EspMapPasswordSubmitResult  =  12 B
 EspMapLineDoorResult        =  16 B
 EspMapLineUnlockResult      =  20 B
+EspMapGiveMapResult         =  20 B
 ```
 
-Current line-world owners:
+## Hardware-proven world owners
+
+Line OPEN/LOCK state:
 
 ```text
-lineCount        = 480
-openBits         = 60 B
-lockedBits       = 60 B
-line storage     = 120 B payload / 136 B actual heap
-initialOpen      = 0
-initialLocked    = 7
-lineStateFNV     = e5e74861
-
-texture9/10 bits = 60 B payload / 76 B actual heap
-variantCount     = 6
-initialTexture10 = 0
-textureStateFNV  = f1fc1875
+480 lines
+openBits=60 B lockedBits=60 B
+payload=120 B / actual heap=136 B
+initialOpen=0 initialLocked=7
+lineStateFNV=e5e74861
 ```
+
+Line texture 9/10 state:
+
+```text
+payload=60 B / actual heap=76 B
+variants=6 initialTexture10=0
+lineTextureStateFNV=f1fc1875
+```
+
+Automap state:
+
+```text
+480 line reveal bits   = 60 B
+344 sprite reveal bits = 43 B
+payload                = 103 B
+actual heap            = 120 B
+initialLineRevealed    = 0
+initialSpriteRevealed  = 0
+automapStateFNV        = 669b1aa7
+```
+
+`EspMapState` remains 1024 bytes; GIVEMAP adds no duplicate tile storage.
 
 ## Hardware-proven opcode/effect families
 
@@ -182,7 +201,7 @@ State-only executor remains deliberately limited to:
 20 EV_PREVSTATE
 ```
 
-Dedicated hardware-proven families now include:
+Dedicated proven families include:
 
 ```text
 FORCEMESSAGE:
@@ -216,112 +235,77 @@ UNLOCK:
   noMutation=0 removable=0 stateExecRefused=6
   resultBytes=20 unlockFNV=261d756a
   rollback=6/6 idempotentHandled=1
+
+GIVEMAP:
+  refs=1 mutated=1 noMutation=0 removable=0 stateExecRefused=1
+  resultBytes=20
+  lineTargets=430 spriteTargets=344 entranceTargets=4
+  lineMutTotal=430 spriteMutTotal=344 tileMutTotal=4
+  giveMapFNV=98c7ac59
+  rollback=1/1 idempotentHandled=1
 ```
 
-Canonical first OPEN/CLOSE world mutation:
+Canonical real GIVEMAP:
 
 ```text
-cmd3 event1 off2 line459 opcode15 / EV_OPENLINE
-open=0->1 locked=0 sound=5063 effects=07 removeIfHandled=0
-lineStateFNV e5e74861 -> 8f57d779 -> rollback e5e74861
+cmd43 event14 off1
+lines 430 mutated
+sprites 344 mutated
+entrance tiles 4 mutated
+handled=1 removeIfHandled=0
+automapStateFNV 669b1aa7 -> 9d03ca2d -> rollback 669b1aa7
+mapStateFNV     cd99b98e -> e21edbce -> rollback cd99b98e
 ```
 
-Canonical first UNLOCK world mutation:
+## Latest tested-build integrity
+
+Same-build allocations before GIVEMAP:
 
 ```text
-cmd18 event6 off7 line400 opcode13 / EV_UNLOCK
-locked=1->0 texture=9->10
-lockMutated=1 textureMutated=1
-sound=5067 effects=07 handled=1 removeIfHandled=0
-lineStateFNV    e5e74861 -> 8d5f89d8 -> rollback e5e74861
-textureStateFNV f1fc1875 -> 997459ec -> rollback f1fc1875
+line state:    cost 136 B
+texture state: cost  76 B
 ```
 
-## Current tested-build integrity
-
-The OPEN/CLOSE stage in the UNLOCK firmware remained semantically canonical. Its same-build allocation witness was:
+GIVEMAP allocation:
 
 ```text
-heap8             = 68652 -> 68516
-persistentHeapCost= 136 B
-payload           = 120 B
-allocatorOverhead = 16 B
+heap8             = 68384 -> 68264
+persistentHeapCost= 120 B
+payload           = 103 B
+allocatorOverhead = 17 B
 largest8          = 34804 -> 34804
-frameFNV          = 64347226 -> 64347226
+frameFNV          = 453f0d5c -> 453f0d5c
 ```
 
-UNLOCK then added its permanent texture owner:
+Post-audit integrity:
 
 ```text
-heap8             = 68516 -> 68440
-persistentHeapCost= 76 B
-payload           = 60 B
-allocatorOverhead = 16 B
-largest8          = 34804 -> 34804
-```
-
-Post-UNLOCK audit integrity:
-
-```text
-frameFNV          = 64347226 -> 64347226
-arenaFNV          = c3882516 -> c3882516
-mapStateFNV       = cd99b98e -> cd99b98e
-scriptFNV         = f9e3d9df -> f9e3d9df
-lineStateFNV      = e5e74861 -> e5e74861
-legacyNotebookFNV = 4d7705c5 -> 4d7705c5
-legacyKeys        = 00000000 -> 00000000
-hudFNV            = 505b1255 -> 505b1255
-passwordCanvasFNV = 214171cf -> 214171cf
-continuationFNV   = e2ba14a5 -> e2ba14a5
-packIO            = no
-legacyRuntimeClear= yes
+arenaFNV            = c3882516 -> c3882516
+mapStateFNV         = cd99b98e -> cd99b98e
+scriptFNV           = f9e3d9df -> f9e3d9df
+lineStateFNV        = e5e74861
+lineTextureStateFNV = f1fc1875
+legacyNotebookFNV   = 4d7705c5 -> 4d7705c5
+legacyKeys          = 00000000 -> 00000000
+hudFNV              = 505b1255 -> 505b1255
+passwordCanvasFNV   = 214171cf -> 214171cf
+continuationFNV     = e2ba14a5 -> e2ba14a5
+packIO              = no
+legacyRuntimeClear  = yes
 entities=0 monsters=0 noGameplay=yes
 ```
 
 Stable PARK heartbeats:
 
 ```text
-25201 ms: heap=134204 heap8=68440 largest8=34804 all reported subsystems ready
-30202 ms: heap=134204 heap8=68440 largest8=34804 all reported subsystems ready
+25135 ms: heap=134028 heap8=68264 largest8=34804 all reported subsystems ready
+30136 ms: heap=134028 heap8=68264 largest8=34804 all reported subsystems ready
+35137 ms: heap=134028 heap8=68264 largest8=34804 all reported subsystems ready
 ```
 
-Absolute heap/frame values may differ between firmware builds. Hardware acceptance uses same-build stability plus exact canonical native-state fingerprints and bounded owner allocations.
+Absolute heap/frame values may differ between firmware builds. Hardware acceptance uses same-build stability plus exact canonical fingerprints.
 
-## EV_UNLOCK hardware proof
-
-Real texture topology:
-
-```text
-variants         = 6
-initialTexture10 = 0
-textureStateFNV  = f1fc1875
-```
-
-Complete corpus:
-
-```text
-refs             = 6
-mutated          = 6
-lockMutated      = 6
-textureMutated   = 6
-noMutation       = 0
-removable        = 0
-stateExecRefused = 6
-unlockFNV        = 261d756a
-elapsed          = 9 ms
-```
-
-Every real UNLOCK target begins locked and at texture 9, so all six real commands atomically mutate both world owners.
-
-Repeated handled proof:
-
-```text
-first apply  -> handled=1 + mutation
-second apply -> handled=1, no mutation, no sound/effects
-idempotentHandled=1
-```
-
-Fail-closed / atomicity proof:
+## GIVEMAP fail-closed / atomicity proof
 
 ```text
 notReady=1
@@ -330,9 +314,11 @@ badOffset=1
 badDescriptor=1
 nullDescriptor=1
 nullResult=1
-badTextureIndex=1
-badTextureValue=1
-nonVariant=1
+badLineIndex=1
+badSpriteIndex=1
+badRevealValue=1
+badVisitedIndex=1
+badVisitedValue=1
 stateAtomic=yes
 worldRestored=yes
 ```
@@ -340,11 +326,9 @@ worldRestored=yes
 Final PARK:
 
 ```text
-nativeLineState=yes
-nativeDoorExec=yes
-nativeLineTextureState=yes
-nativeUnlockExec=yes
-textureStorageBytes=60
+nativeAutomapState=yes
+nativeGiveMapExec=yes
+storageBytes=103
 resultBytes=20
 worldMutationProven=yes
 worldRestored=yes
@@ -367,24 +351,24 @@ validated intro disposal
  -> strings/UI/effect owners
  -> CHECK_KEY
  -> PASSWORD
- -> packed native line OPEN/LOCKED state
- -> real OPENLINE/CLOSELINE world mutation + rollback
- -> packed native texture-9/10 state
- -> real EV_UNLOCK two-owner world mutation + rollback
+ -> packed line OPEN/LOCK state
+ -> OPENLINE/CLOSELINE mutation
+ -> packed texture-9/10 state
+ -> EV_UNLOCK mutation
+ -> packed line/sprite automap state
+ -> EV_GIVEMAP automap + tile VISITED mutation
  -> PARK + stable heartbeat
 ```
 
 Still forbidden:
 
 ```text
-legacy Render line mutation
+legacy Render line/sprite mutation
 legacy Entity/EntityDef mutation
 actual door/lock sound playback
-actual view refresh from world effects
-EV_LOCK / EV_TOGGLELOCK
+actual view refresh from deferred effects
 full native Game_runEvent loop
 sprite SHOW/HIDE mutation
-GIVEMAP automap mutation
 map transitions
 savegame mutation
 entity/monster activation
@@ -399,23 +383,22 @@ Still unowned:
 ```text
 2  EV_CHANGEMAP
 7  EV_SHOW
-9  EV_GIVEMAP
 18 EV_HIDE
 27 EV_SAVEGAME
 ```
 
+SHOW/HIDE remain intentionally deferred until a compact native entity/topology owner exists; legacy behavior is not sprite-visibility-only. CHANGEMAP and SAVEGAME remain larger ownership boundaries.
+
 ## Merge recommendation
 
-**MERGE `agent/esp32-map1-native-unlock-state`.**
+**MERGE `agent/esp32-map1-native-givemap-state`.**
 
 Hardware-tested firmware content:
 
 ```text
-e423093c8e17dda1345bebecf721dedf4bbb2002
+2e0f8f5de93f806380ee254a8dab59a817c73f5d
 ```
 
 All later commits must remain documentation-only unless another firmware is flashed.
 
-## Next bounded milestone after merge
-
-Reread the true new `main`, this recovery point, `DOCUMENTATION.md`, the merged UNLOCK archive and exact remaining legacy behavior before selecting the next family. Do not pre-authorize SHOW/HIDE/GIVEMAP/CHANGEMAP/SAVEGAME from conversation memory.
+After merge, recover the true new `main`, reread this file, `DOCUMENTATION.md`, the merged GIVEMAP archive and exact legacy behavior before selecting the next family.

@@ -39,14 +39,17 @@ typedef struct EspMapStateView_s {
  *   - BIT_AM_ENTRANCE from texture-7 lines after the recovered line nudge,
  *   - BIT_AM_EVENTS from qualifying tile-event records.
  *
- * BIT_AM_VISITED is intentionally not synthesized here; it belongs to later
- * gameplay/load-state behavior.
+ * BIT_AM_VISITED starts clear and is mutated explicitly by native gameplay /
+ * load-state owners such as EV_GIVEMAP.
  */
 void EspMapState_reset(void);
 int EspMapState_buildFromRuntime(void);
 int EspMapState_isReady(void);
 const EspMapStateView* EspMapState_view(void);
 int EspMapState_getTileFlags(uint32_t tileIndex, uint8_t* outFlags);
+
+/* Set/clear only BIT_AM_VISITED while preserving every structural tile bit. */
+int EspMapState_setVisited(uint32_t tileIndex, uint8_t visited);
 
 #ifdef __cplusplus
 }
