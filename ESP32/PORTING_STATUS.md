@@ -2,32 +2,32 @@
 
 This file is the **authoritative current recovery point** for the classic ESP32-2432S028R Doom RPG port.
 
-Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOCUMENTATION.md) for the documentation index, and milestone archives for detailed hardware evidence.
+Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOCUMENTATION.md) for the documentation index, and milestone archives for detailed evidence.
 
 ## Latest merged hardware baseline
 
 ```text
-PR   = #56 — native PASSWORD pause owner
-main = 3c113cc047aeb613f2ba4ab7905e92487c796f80
-hardware-tested firmware content = e2d12085712324444f26528b77ea5122c871d85b
+PR   = #57 — native OPEN/CLOSE line world state
+main = e4fb32f41b7074bbb433e64f4c824edb2167cf50
+hardware-tested firmware content = 376f45bcdd12264d3cba1ee83e7197a52e248210
 ```
 
-Detailed merged evidence: [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md).
+Detailed merged evidence: [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md).
 
-## Current merge-ready milestone
+## Current candidate
 
 ```text
-branch = agent/esp32-map1-native-line-door-state
-base   = 3c113cc047aeb613f2ba4ab7905e92487c796f80
-hardware-tested firmware content = 376f45bcdd12264d3cba1ee83e7197a52e248210
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-map1-native-unlock-state
+base   = e4fb32f41b7074bbb433e64f4c824edb2167cf50
+firmware candidate content = e423093c8e17dda1345bebecf721dedf4bbb2002
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Detailed evidence: [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md).
+Detailed active milestone: [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md).
 
-This is the first explicit hardware-proven mutable-world owner. It keeps a packed OPEN/LOCKED state for the immutable 480-line runtime and executes only real `15 / EV_OPENLINE` and `16 / EV_CLOSELINE` open-bit transitions. Door animation, collision-entity synchronization, sound and command-removal stay deferred metadata; legacy Render/Game/Entity state remains untouched.
+The candidate supports only `13 / EV_UNLOCK`. It preserves the hardware-proven 120-byte OPEN/LOCKED line owner unchanged and adds one packed 60-byte 9/10 door-texture overlay. Valid UNLOCK clears the native lock bit and, only when current texture is 9, changes native texture 9->10 and returns deferred sound/special-entity/view effects. Legacy Render/Game/Entity state remains untouched.
 
-## Permanent target / ownership
+## Permanent target / invariants
 
 ```text
 board        = ESP32-2432S028R classic CYD
@@ -42,7 +42,7 @@ presentation = nearest-neighbor 2x
 audio        = deferred
 ```
 
-Permanent invariants:
+Permanent constraints:
 
 ```text
 shapeData   == NULL
@@ -53,7 +53,7 @@ DoomRPG-RE desktop engine = executable specification/reference only
 final CYD engine          = ESP32-native ownership
 ```
 
-Current native direction:
+Native direction:
 
 ```text
 BSP source in native pack
@@ -61,23 +61,41 @@ BSP source in native pack
  -> allocation-free accessors
  -> mutable EspMapState
  -> tile/event lookup
- -> event descriptor + bytecode linkage
+ -> descriptor + bytecode linkage
  -> mutable EspMapScriptState
  -> side-effect-free event filter
- -> fail-closed native state-opcode executor
- -> allocation-free native string spans
- -> compact native UI/player intents
- -> bounded pack-backed string reader
- -> explicit native effect/player owners
- -> pure dynamic gates
- -> bounded native pause/input owners
+ -> fail-closed state-opcode executor
+ -> native strings/intents/effect owners
+ -> dynamic gates + pause/input owners
  -> compact mutable native world overlays
  -> native event/script loop
  -> native gameplay/effect consumers
  -> ESP32-native gameplay + renderer
 ```
 
-## Hardware-proven fingerprints
+## Hardware-proven MAP_INTRO identity
+
+```text
+resource       = /intro.bsp / Entrance
+source bytes   = 21823
+CRC32          = 623f34e4
+nodes          = 223
+lines          = 480
+mapSprites     = 344
+events         = 93
+byteCodes      = 265
+strings        = 94
+stringData     = 7779 B
+maxString      = 313 B
+```
+
+Real opcode IDs:
+
+```text
+2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
+```
+
+Hardware-proven fingerprints:
 
 ```text
 source BSP FNV       = d5cc751f
@@ -108,30 +126,18 @@ lineDoorFNV          = b1c9d297
 lineMutatedFNV       = 8f57d779
 ```
 
-MAP_INTRO `/intro.bsp` / `Entrance`:
+Current UNLOCK candidate will establish new hardware canons:
 
 ```text
-source bytes = 21823
-CRC32        = 623f34e4
-nodes        = 223
-lines        = 480
-mapSprites   = 344
-events       = 93
-byteCodes    = 265
-strings      = 94
-stringData   = 7779 B
-maxString    = 313 B
-```
-
-Real opcode IDs:
-
-```text
-2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
+lineTextureStateFNV = pending
+unlockFNV           = pending
+sample mutated line FNV    = pending
+sample mutated texture FNV = pending
 ```
 
 ## Persistent native RAM ownership
 
-Hardware-proven persistent heap:
+Hardware-proven entering this candidate:
 
 ```text
 immutable arena       = 14112 B actual heap
@@ -155,22 +161,30 @@ EspMapPasswordSubmitResult  =  12 B
 EspMapLineDoorResult        =  16 B
 ```
 
-Current line-world owner:
+Current UNLOCK candidate target:
+
+```text
+EspMapLineTextureState payload = 60 B
+EspMapLineUnlockResult          = 20 B expected
+incremental persistent heap     = hardware pending, accepted 60..124 B
+```
+
+The existing line owner must remain structurally unchanged:
 
 ```text
 lineCount      = 480
 openBits       = 60 B
 lockedBits     = 60 B
-storage payload= 120 B
-actual heap    = 136 B
+storage        = 120 B
 initialOpen    = 0
 initialLocked  = 7
 lineStateFNV   = e5e74861
+actual heap    = 136 B
 ```
 
 ## Hardware-proven execution/effect/control boundary
 
-State-only native opcode executor still supports only:
+State-only executor still supports only:
 
 ```text
 11 EV_CHANGESTATE
@@ -185,7 +199,7 @@ FORCEMESSAGE:
   refs=3 set=1 clear=2 ownerBytes=8 statusApplyFNV=52b25a5f
 
 DIALOG/NOBACK:
-  refs=84 Back=76 noBack=8 pause=84 skipTurn=84 resumeExact=84
+  refs=84 back=76 noBack=8 pause=84 skipTurn=84 resumeExact=84
   ownerBytes=12 dialogApplyFNV=d0254f3d
 
 NOTE:
@@ -212,43 +226,17 @@ OPENLINE/CLOSELINE:
   rollback=29/29 idempotent=1 lockedGuard=1
 ```
 
-Canonical first real OPEN/CLOSE success:
+First hardware-proven native world mutation:
 
 ```text
 cmd3 event1 off2 line459 opcode15 / EV_OPENLINE
 open=0->1 locked=0 sound=5063 effects=07 removeIfHandled=0
+lineStateFNV e5e74861 -> 8f57d779 -> exact rollback e5e74861
 ```
 
-## First hardware-proven native world mutation
+## Latest tested-build integrity
 
-The real CYD proved this complete native world transition:
-
-```text
-real MAP_INTRO bytecode
- -> canonical event/command linkage
- -> EspMapLineState line 459
- -> open bit 0 -> 1
- -> line state FNV e5e74861 -> 8f57d779
- -> exact rollback to e5e74861
-```
-
-Across the complete real corpus:
-
-```text
-29 successful mutations
-29 exact rollbacks
-18 blocked by native locked state
-24 already in requested state
-71 total refs accounted exactly
-```
-
-Door animation, entity relink and sound are returned only as deferred effect metadata. Legacy Render/Entity/Game world objects remain untouched.
-
-`arg2 & 0x200` is exposed as `removeCommandIfHandled`; `EspMapScriptState` is not mutated by this owner. The future native event loop must consume that outer `Game_runEvent()` behavior.
-
-## Current tested-build integrity
-
-Pre-line-state stages in the hardware-tested firmware were stable at:
+OPEN/CLOSE firmware before line-state allocation:
 
 ```text
 heap8       = 68700
@@ -256,7 +244,7 @@ largest8    = 36852
 frameFNV    = 5a979d01
 ```
 
-Line-state construction then intentionally adds permanent world heap:
+After permanent line state:
 
 ```text
 heap8             = 68700 -> 68564
@@ -266,7 +254,7 @@ allocatorOverhead = 16 B
 largest8          = 36852 -> 36852
 ```
 
-After all OPEN/CLOSE mutations and rollbacks:
+Post-audit integrity:
 
 ```text
 frameFNV          = 5a979d01 -> 5a979d01
@@ -280,24 +268,95 @@ passwordCanvasFNV = 214171cf -> 214171cf
 continuationFNV   = e2ba14a5 -> e2ba14a5
 packIO            = no
 legacyRuntimeClear= yes
+entities=0 monsters=0 noGameplay=yes
 ```
 
-PASSWORD transient pack access on this firmware was also bounded and fully recovered:
+Stable heartbeats:
 
 ```text
-heapOpen          = 64336
-transientHeapCost = 4364 B
-largestOpen       = 36852
+30084 ms: heap=134328 heap8=68564 largest8=36852 all reported subsystems ready
+35085 ms: heap=134328 heap8=68564 largest8=36852 all reported subsystems ready
 ```
 
-Stable post-PARK heartbeats:
+## Current EV_UNLOCK contract
+
+Recovered legacy setup:
 
 ```text
-uptime=30084 ms heap=134328 heap8=68564 largest8=36852 all reported subsystems ready
-uptime=35085 ms heap=134328 heap8=68564 largest8=36852 all reported subsystems ready
+Game_setLineLocked(lineIndex, false, false)
 ```
 
-## Fail-closed / atomicity proof for line world state
+Permanent native semantics:
+
+```text
+valid command:
+  legacyReturnValue = 1 always
+  lockedAfter = 0
+  lockMutated = lockedBefore != 0
+
+if current effective texture == 9:
+  texture 9 -> 10
+  textureMutated=1
+  soundId=5067
+  deferred effects:
+    PLAY_SOUND
+    SPECIAL_ENTITY_DEF_SYNC subtype 2
+    REFRESH_IF_ENTITY
+else:
+  texture unchanged
+  textureMutated=0
+  sound/effects=none
+
+removeCommandIfHandled = source arg2 & 0x200
+```
+
+The new texture owner is a single 480-bit bitset. For source texture 9/10, bit 0/1 represents effective texture 9/10; all other textures remain immutable source values.
+
+The 120-byte OPEN/LOCKED owner is not resized or reformatted.
+
+## Current real-CYD validation target
+
+The probe discovers the real UNLOCK corpus rather than predeclaring counts.
+
+Acceptance requires:
+
+```text
+refs > 0
+mutatedRefs > 0
+mutated + noMutation = refs
+stateExecRefused = refs
+resultBytes = 20
+rollbackProofs = mutatedRefs
+idempotentHandled = 1
+```
+
+Hardware will establish:
+
+```text
+texture-variant line count
+initial texture-10 count
+lineTextureStateFNV
+UNLOCK refs
+mutated / lockMutated / textureMutated / noMutation counts
+removable handled refs
+first real mutated sample
+unlockFNV
+sample mutated line FNV
+sample mutated texture FNV
+incremental persistent heap cost + allocator overhead
+new-build heap/frame absolute values
+```
+
+Repeated UNLOCK proof:
+
+```text
+first real mutating apply -> handled=1 + mutation
+second apply without rollback -> handled=1, no mutation, no sound/effects
+removeIfHandled unchanged
+then exact rollback of both world owners
+```
+
+Fail-closed target:
 
 ```text
 notReady=1
@@ -306,29 +365,36 @@ badOffset=1
 badDescriptor=1
 nullDescriptor=1
 nullResult=1
-badOpenIndex=1
-badLockedIndex=1
+badTextureIndex=1
+badTextureValue=1
+nonVariant=1
 stateAtomic=yes
 worldRestored=yes
 ```
 
-Final PARK:
+Integrity must preserve:
 
 ```text
-nativeLineState=yes
-nativeDoorExec=yes
-storageBytes=120
-resultBytes=16
-worldMutationProven=yes
-worldRestored=yes
-legacyWorldMutation=no
-framebufferMutation=no
+arenaFNV          c3882516
+mapStateFNV       cd99b98e
+scriptFNV         f9e3d9df
+lineStateFNV      e5e74861 after rollback
+legacyNotebookFNV 4d7705c5
+legacy Player.keys
+Hud witness
+DoomCanvas password witness
+Game continuation witness
+framebuffer
+pack closed
+legacy Render runtime clear
 entities=0
 monsters=0
-noGameplay=yes
+ST_PLAYING not reached
 ```
 
-## Current hardware-proven execution path
+The new 60-byte texture owner remains allocated at PARK but must be restored to its initial content fingerprint.
+
+## Current execution path
 
 ```text
 validated intro disposal
@@ -339,29 +405,25 @@ validated intro disposal
  -> tile/event lookup
  -> descriptor/linkage
  -> compact script state
- -> exhaustive event filter
- -> real state-opcode execution/rollback
- -> string spans + UI intents
- -> bounded native-pack string reader
- -> real EV_FORCEMESSAGE -> native status owner
- -> real EV_DIALOG/NOBACK -> native pause owner
- -> real EV_NOTE -> bounded native notebook owner
- -> real EV_CHECK_KEY -> pure native dynamic gate
- -> real EV_PASSWORD -> pause owner + bounded submit evaluator
- -> packed native line world state
- -> real EV_OPENLINE/EV_CLOSELINE world mutation + rollback
- -> PARK + stable heartbeat
+ -> event filter
+ -> state-opcode execution/rollback
+ -> strings/UI/effect owners
+ -> CHECK_KEY gate
+ -> PASSWORD pause/submit owner
+ -> packed line OPEN/LOCKED state
+ -> OPENLINE/CLOSELINE world mutation + rollback
+ -> candidate: packed 9/10 line-texture state + EV_UNLOCK atomic world mutation + rollback
 ```
 
 Still forbidden:
 
 ```text
 legacy Render line mutation
-legacy Entity link/unlink
-actual door animation
-actual sound playback
-EV_UNLOCK texture/entity mutation
-full native Game_runEvent execution loop
+legacy Entity/EntityDef mutation
+actual door/lock sound playback
+actual view refresh from world effects
+EV_LOCK / EV_TOGGLELOCK
+full native Game_runEvent loop
 sprite SHOW/HIDE mutation
 GIVEMAP automap mutation
 map transitions
@@ -371,31 +433,34 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Remaining MAP_INTRO families
+## Remaining MAP_INTRO families after current candidate
 
-Still unowned:
+If UNLOCK passes:
 
 ```text
 2  EV_CHANGEMAP
 7  EV_SHOW
 9  EV_GIVEMAP
-13 EV_UNLOCK
 18 EV_HIDE
 27 EV_SAVEGAME
 ```
 
-## Merge recommendation
+Do not pre-authorize the next family. After PASS + merge, recover the then-current repository and exact remaining legacy semantics.
 
-**MERGE `agent/esp32-map1-native-line-door-state`.**
+## Validation target
 
-Hardware-tested firmware content:
+Build/flash normal optimized:
 
 ```text
-376f45bcdd12264d3cba1ee83e7197a52e248210
+esp32-cyd
 ```
 
-All later commits must remain documentation-only unless another firmware is flashed.
+from `agent/esp32-map1-native-unlock-state` and capture `[MAPLINETEX]`, `[MAPUNLOCK]`, `[MAPUNLOCKPROBE]` plus a later stable `[ALIVE]` heartbeat.
 
-## Next bounded milestone after merge
+Firmware candidate:
 
-Reread the true new `main`, this recovery point, `DOCUMENTATION.md`, the merged line-door milestone and exact remaining legacy behavior before selecting the next family. `EV_UNLOCK` is an adjacent candidate because lock state is now natively owned, but its texture/entity-definition semantics must be recovered explicitly before implementation.
+```text
+e423093c8e17dda1345bebecf721dedf4bbb2002
+```
+
+No CI status is published for this SHA. Do not mark merge-ready until the real classic CYD supplies the PASS.
