@@ -36,29 +36,29 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) | UNLOCK world state | #58 | `7503b379185db3f05713eb34f1762173edb977d0` |
 | [`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md) | GIVEMAP automap state | #59 | `9891a25d700f9ffe1be044ac4a7629c3487604ec` |
 
-## Current candidate
+## Current merge-ready milestone
 
 [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md) owns `27 / EV_SAVEGAME` as a durable future-save route capture.
 
 ```text
 branch = agent/esp32-map1-native-save-route
 base   = 9891a25d700f9ffe1be044ac4a7629c3487604ec
-firmware candidate = 42497b80c6158300ec3fa7b8eb8af6cee643f59e
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 42497b80c6158300ec3fa7b8eb8af6cee643f59e
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Key design:
+Hardware-proven SAVE route:
 
 ```text
-EV_SAVEGAME does not write a save file
-one <=31-byte destination map name is copied from native PAK
-route state survives source-map teardown
-ownerBytes=46 expected
-resultBytes=16 expected
-persistent heap=0 expected
+refs=1 removable=0 stateExecRefused=1
+ownerBytes=46 resultBytes=16 persistentHeapBytes=0
+mapName="/junction.bsp" nameLen=13
+raw tile=15,29 destination=992,1888 angle=64
+ownerFNV=06ea6ea8 resultFNV=c2ecb064 contentFNV=725845aa
+rollback=1/1 reapplyExact=1 ownerSurvivesPackClose=1
 ```
 
-The first zero-copy-ref implementation was corrected before hardware after recovery showed that normal map loading tears down source-map runtime before the later save consumer can use the route.
+The opcode performs one bounded native-PAK string read but **no save-file write**. The inline 32-byte route name is deliberately durable across source-map teardown; this lifetime behavior was corrected before hardware validation and then proven on the real CYD.
 
 ## Current hardware-proven boundary
 
@@ -71,17 +71,27 @@ lineStateFNV           = e5e74861
 lineTextureStateFNV    = f1fc1875
 automapStateFNV        = 669b1aa7
 giveMapFNV             = 98c7ac59
+saveRouteOwnerFNV      = 06ea6ea8
+saveRouteResultFNV     = c2ecb064
+saveRouteContentFNV    = 725845aa
 ```
 
-GIVEMAP hardware proof:
+Latest same-build SAVE route witness:
 
 ```text
-refs=1
-430 line reveals
-344 sprite reveals
-4 entrance VISITED bits
-rollback=1/1
-actual automap heap=120 B
+heap8=68208->68208
+largest8=34804->34804
+frameFNV=99102464->99102464
+transient PAK cost=4376 B
+persistent route heap=0 B
+legacy saveRouteFNV=9bcfe135->9bcfe135
+```
+
+Stable PARK heartbeats:
+
+```text
+135324 ms: heap=133972 heap8=68208 largest8=34804
+140327 ms: heap=133972 heap8=68208 largest8=34804
 ```
 
 ## Architecture rule
@@ -102,7 +112,7 @@ Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexel
 
 ## Remaining MAP_INTRO families
 
-Current candidate owns SAVEGAME. If it passes, still unowned:
+After SAVEGAME, still unowned:
 
 ```text
 2  EV_CHANGEMAP
@@ -111,3 +121,5 @@ Current candidate owns SAVEGAME. If it passes, still unowned:
 ```
 
 SHOW/HIDE remain entity-topology operations rather than simple visibility bits. Follow the standard PASS -> docs-only -> merge -> exact-main recovery workflow before selecting the next family.
+
+Current recommendation: **merge `agent/esp32-map1-native-save-route`**.
