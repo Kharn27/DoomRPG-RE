@@ -9,17 +9,17 @@ PR   = #55 — native CHECK_KEY dynamic gate
 main = 03c4275f2abfd6671c8bf499c075435d7b61ab97
 ```
 
-Firmware candidate content:
+Hardware-tested firmware content:
 
 ```text
 e2d12085712324444f26528b77ea5122c871d85b
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
-Cross the last currently bounded MAP_INTRO UI/input pause family without opening world mutation:
+Cross the last bounded MAP_INTRO UI/input pause family before opening native world mutation:
 
 ```text
 real EV_PASSWORD bytecode
@@ -30,7 +30,7 @@ real EV_PASSWORD bytecode
  -> CORRECT / INCORRECT / EMPTY outcome metadata
 ```
 
-This milestone supports only opcode `10 / EV_PASSWORD`. It does not present a password UI, mutate legacy `DoomCanvas.passCode`, assign `Game.passCode`, call `Game_runEvent()`, update Hud, play sounds, mutate world/entities/rendering or enter gameplay.
+This milestone supports only opcode `10 / EV_PASSWORD`. It does not present password UI, mutate legacy `DoomCanvas.passCode`, assign `Game.passCode`, call `Game_runEvent()`, update Hud, play sounds, mutate world/entities/rendering or enter gameplay.
 
 ## Recovered legacy behavior
 
@@ -60,7 +60,7 @@ char passCode[8]
 char strPassCode[8]
 ```
 
-So the native submission API accepts at most 7 payload bytes plus the synthesized C-string terminator.
+The native submission API therefore accepts at most 7 payload bytes plus the synthesized C-string terminator.
 
 ### Validation / continuation
 
@@ -70,9 +70,9 @@ When input reaches the expected code length, legacy sets:
 passwordTime = time + 300
 ```
 
-A SELECT-style submission before the expected length uses the current time instead, i.e. no deliberate 300 ms feedback delay.
+A SELECT-style submission before the expected length uses the current time instead, so it has no deliberate 300 ms feedback delay.
 
-After the delay, PASSWORD closes the dialog and compares input with the expected code:
+After that timing gate, PASSWORD closes the dialog and compares input with the expected code:
 
 ```text
 correct:
@@ -88,11 +88,11 @@ empty incorrect:
   no resume
 ```
 
-The static continuation saved by `Game_runEvent()` is the current password command; successful validation resumes from `sourceCommandOffset + 1`. Active event flags remain future invocation-context state and are not embedded in this static owner, matching the earlier DIALOG owner boundary.
+The static continuation saved by the event loop is the current password command. Successful validation resumes from `sourceCommandOffset + 1`. Dynamic invocation flags remain future native event-loop context and are not embedded in this static owner.
 
 ## Permanent native API
 
-New files:
+Files:
 
 ```text
 ESP32/include/esp_map_password.h
@@ -114,7 +114,7 @@ typedef struct EspMapPasswordOwnerState_s {
 } EspMapPasswordOwnerState;
 ```
 
-Expected classic ESP32 ABI footprint:
+Real classic-CYD ABI footprint:
 
 ```text
 owner value       = 20 B
@@ -149,13 +149,13 @@ typedef struct EspMapPasswordSubmitResult_s {
 } EspMapPasswordSubmitResult;
 ```
 
-Expected classic ESP32 ABI footprint:
+Real classic-CYD ABI footprint:
 
 ```text
 submit result = 12 B
 ```
 
-`EspMapPassword_evaluateSubmit()` accepts caller-owned submitted bytes plus one bounded reader scratch buffer. It reads only the expected-code string from `/DoomRPG-ESP32.pak` and returns side-effect-free metadata:
+`EspMapPassword_evaluateSubmit()` reads only the expected-code string from `/DoomRPG-ESP32.pak` into caller-owned scratch and returns side-effect-free metadata:
 
 ```text
 CORRECT:
@@ -169,7 +169,7 @@ INCORRECT non-empty:
   resumeEvent=0
   forced message="Invalid code!"
   feedbackDelayMs=300 when submitted length == expected length
-  feedbackDelayMs=0 for early shorter submit
+  feedbackDelayMs=0 for an early shorter submit
 
 EMPTY incorrect:
   closeDialog=1
@@ -178,123 +178,173 @@ EMPTY incorrect:
   feedbackDelayMs=0
 ```
 
-If a future map had an empty expected code, an empty submission is correctly classified as CORRECT with the matched-length 300 ms delay.
+If a future map had an empty expected code, an empty submission is classified as CORRECT with the matched-length 300 ms delay.
 
 The permanent source depends only on native pack/runtime/event/string APIs. It has no `DoomCanvas`, `Game`, Hud, Player, Sound, entity or render dependency.
 
-## Why PASSWORD before world mutation
+## Real-CYD corpus proof
 
-After CHECK_KEY, MAP_INTRO still contains:
-
-```text
-2  EV_CHANGEMAP
-7  EV_SHOW
-9  EV_GIVEMAP
-10 EV_PASSWORD
-13 EV_UNLOCK
-15 EV_OPENLINE
-16 EV_CLOSELINE
-18 EV_HIDE
-27 EV_SAVEGAME
-```
-
-PASSWORD is still entirely representable as compact immutable refs + explicit pause/continuation metadata + bounded input evaluation. The remaining SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE group requires the first native world/render overlay ownership, while CHANGEMAP and SAVEGAME are larger boundaries.
-
-## Temporary hardware probe
-
-New files:
+Normal optimized environment:
 
 ```text
-ESP32/include/native_map1_password_probe.h
-ESP32/src/native_map1_password_probe.c
+esp32-cyd
 ```
 
-The probe runs only after the hardware-proven CHECK_KEY stage.
-
-It scans the canonical `93 event / 265 bytecode` MAP_INTRO corpus and discovers every real PASSWORD command rather than predeclaring a count. For each real ref it requires:
+The real classic no-PSRAM CYD established the exact MAP_INTRO PASSWORD corpus:
 
 ```text
-state-only executor -> UNSUPPORTED
-20 B owner
-exact code ref
-exact prompt ref
-resume offset = source offset + 1
-code C-string length <= 7
-bounded code read
-bounded prompt read
-correct submission outcome
-same-length wrong submission outcome
-empty submission semantics
-300 ms matched-length feedback delay
-0 ms early-submit delay
+refs              = 2
+ownerBytes        = 20
+submitResultBytes = 12
+stateExecRefused  = 2
+codeBytes         = 8
+promptBytes       = 72
+maxCodeLen        = 4
+resumeExact       = 2
+passwordOwnerFNV  = 48f01689
+passwordSubmitFNV = 90e8c574
+elapsed           = 49 ms
 ```
 
-The first real-CYD PASS will establish rather than predeclare:
+Canonical first real PASSWORD command:
 
 ```text
-PASSWORD ref count
-code/prompt source byte totals
-max expected code length
-first canonical command + refs
-sample code content FNV
-sample prompt content FNV
-passwordOwnerFNV
-passwordSubmitFNV
-new-build heap/framebuffer values
-passwordCanvas witness FNV
+global command = 17
+event          = 6
+command offset = 6
+resume offset  = 7
+arg1           = 00001d1c
+arg2           = 00040100
+expected code  = string 28 @ 13630 + 4
+codeFNV        = 92444853
+prompt         = string 29 @ 13636 + 41
+promptFNV      = ddbe080a
+codeLen        = 4
 ```
 
-No secret/password text is printed by the probe; only IDs, offsets, lengths and fingerprints are emitted.
+The probe intentionally does not print password text; only IDs, offsets, lengths and fingerprints are emitted.
+
+## Submission / continuation proof
+
+Every real PASSWORD command was exercised through the side-effect-free evaluator:
+
+```text
+correct           = 2
+incorrect         = 2
+emptySemantics    = 2
+correctResume     = 2
+incorrectNoResume = 2
+delayMatch        = 300 ms
+earlySubmit       = 0 ms
+guards            = 10 / 10
+correct message   = "Correct code!"
+invalid message   = "Invalid code!"
+```
+
+This proves both static pause ownership and the asymmetric continuation rule: only a correct submitted code resumes the event at `sourceCommandOffset + 1`.
+
+The state-only opcode executor still refuses both PASSWORD refs, preserving the split between the small state executor and this dedicated pause/input owner.
 
 ## Fail-closed proof
 
-Owner-side failures must preserve the previous 20-byte owner atomically:
+Hardware proved all expected refusals:
 
 ```text
-non-PASSWORD source -> UNSUPPORTED
-bad command offset  -> INVALID
-noncanonical descriptor -> INVALID
-NULL descriptor -> INVALID
-NULL owner -> INVALID
+unsupported       = 1
+badOffset         = 1
+badDescriptor     = 1
+nullDescriptor    = 1
+nullOwner         = 1
+badOwner          = 1
+tooLong           = 1
+shortBuffer       = 1
+nullSubmitOwner   = 1
+nullSubmitResult  = 1
+closedPack        = 1
+ownerAtomic       = yes
+reset             = 1
 ```
 
-Submission-side failures must return a zero result:
+Owner-side failures preserve the previous 20-byte owner atomically. Submission-side failures leave the writable result zeroed. The closed-pack case returns IO failure without mutating owner or legacy state.
+
+## Native-pack / RAM proof
+
+PASSWORD transient pack access:
 
 ```text
-mutated/noncanonical owner -> INVALID
-submitted length >= 8      -> INVALID
-scratch without terminator room -> BUFFER_TOO_SMALL
-NULL submit owner          -> INVALID
-NULL submit result         -> INVALID
-valid owner with PAK closed -> IO_ERROR
+entry              = /intro.bsp
+size               = 21823
+crc32              = 623f34e4
+heapOpen           = 64384
+transientHeapCost  = 4364 B
+largestOpen        = 36852
+packIO             = yes
+persistentHeapBytes= 0
 ```
 
-A final reset must clear the complete owner deterministically.
-
-## Hardware integrity boundary
-
-Before/after the complete stage the probe requires exact stability of:
+Before and after the complete PASSWORD stage:
 
 ```text
-heap8
-largest8
-framebuffer FNV
-arenaFNV      = c3882516
-mapStateFNV   = cd99b98e
-scriptFNV     = f9e3d9df
-legacy Player.NotebookString FNV = 4d7705c5
-legacy Player.keys
-Hud message witness FNV
-DoomCanvas passwordTime/passInput/passCode[8]/strPassCode[8] witness
-Game.passCode pointer
-Game.skipAdvanceTurn
-Game.saveTileEvent
-Game.tileEvent
-Game.tileEventIndex
-Game.tileEventFlags
+heap8             = 68748 -> 68748
+largest8          = 36852 -> 36852
+frameFNV          = 7a95b5b5 -> 7a95b5b5
+arenaFNV          = c3882516 -> c3882516
+mapStateFNV       = cd99b98e -> cd99b98e
+scriptFNV         = f9e3d9df -> f9e3d9df
+legacyNotebookFNV = 4d7705c5 -> 4d7705c5
+legacyKeys        = 00000000 -> 00000000
+hudFNV            = 505b1255 -> 505b1255
+passwordCanvasFNV = 214171cf -> 214171cf
+gamePassCodeStable= yes
 ```
 
-The native pack may open only transiently for bounded expected-code/prompt reads and must be closed/recovered before PARK.
+The immediately preceding CHECK_KEY stage on the same firmware also remained stable at `heap8=68748`, `largest8=36852` and `frameFNV=7a95b5b5`, with canonical `keyGateFNV=9ace79cd`.
+
+Absolute heap/frame values can vary slightly across firmware builds. Acceptance is based on exact before/after stability inside a build plus unchanged canonical structural fingerprints.
+
+## Final PARK boundary
+
+Hardware PARK proved:
+
+```text
+nativeArena                  = yes
+nativeTileState              = yes
+nativeEventLookup            = yes
+nativeEventDescriptor        = yes
+nativeScriptState            = yes
+nativeFilter                 = yes
+nativeOpcodeExec             = yes
+nativeUiIntent               = yes
+nativeStringReader           = yes
+nativeStatusMessageOwner     = yes
+nativeDialogOwner            = yes
+nativeNotebookOwner          = yes
+nativeKeyGate                = yes
+nativePasswordOwner          = yes
+ownerBytes                   = 20
+submitResultBytes            = 12
+persistentBytes              = 0
+legacyPasswordMutation       = no
+legacyHudMutation            = no
+legacyGameContinuationMutation = no
+worldMutation                = no
+framebufferMutation          = no
+entities                     = 0
+monsters                     = 0
+noGameplay                   = yes
+```
+
+Complete post-PARK heartbeat:
+
+```text
+uptime=170149 ms
+heap=134512
+heap8=68748
+largest8=36852
+SD/ZIP/VIDEO/CORE/LAYOUT/PRERENDER/RENDER/MAPPINGS/MENUBSP = ready
+```
+
+A later heartbeat began at `175150 ms` with the same heap values but its line was truncated after `VIDEO=rea`; the preceding complete heartbeat is sufficient steady-state evidence.
 
 Permanent prohibitions remain:
 
@@ -316,31 +366,33 @@ monsters                           = 0
 ST_PLAYING                         = no
 ```
 
-## Expected Serial family
+## Hardware acceptance status
+
+The complete real PASSWORD corpus, both string refs per command, exact static resumes, correct/incorrect/empty submit semantics, 300 ms/0 ms timing behavior, fail-closed paths, PAK recovery, legacy integrity witnesses and stable post-PARK heartbeat are a **REAL-CYD HARDWARE PASS**.
+
+This branch is **MERGE-READY**. The firmware-bearing content actually tested is:
 
 ```text
-[MAPPASSWORDPROBE] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO PASSWORD owner ===
-[MAPPASSWORDPROBE] CONTRACT ...
-[MAPPASSWORD] READY refs=... ownerBytes=20 submitResultBytes=12 stateExecRefused=... codeBytes=... promptBytes=... maxCodeLen=... resumeExact=... passwordOwnerFNV=... passwordSubmitFNV=... elapsed=...ms
-[MAPPASSWORD] SAMPLE cmd=... event=... off=... resume=... arg1=... arg2=... code=...@...+... codeFNV=... prompt=...@...+... promptFNV=... codeLen=...
-[MAPPASSWORD] OUTCOMES correct=... incorrect=... emptySemantics=... correctResume=... incorrectNoResume=... delayMatch=300ms earlySubmit=0ms correctMessage="Correct code!" invalidMessage="Invalid code!" guards=.../...
-[MAPPASSWORD] FAILCLOSED unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1 nullOwner=1 badOwner=1 tooLong=1 shortBuffer=1 nullSubmitOwner=1 nullSubmitResult=1 closedPack=1 ownerAtomic=yes reset=1
-[MAPPASSWORD] IO entry=/intro.bsp size=21823 crc32=623f34e4 ... packIO=yes persistentHeapBytes=0
-[MAPPASSWORDPROBE] RAM ... passwordCanvasFNV=...->... gamePassCodeStable=yes
-[MAPPASSWORDPROBE] PARK ... nativePasswordOwner=yes ownerBytes=20 submitResultBytes=12 persistentBytes=0 ...
-[ALIVE] ...
+e2d12085712324444f26528b77ea5122c871d85b
 ```
 
-Use the normal optimized PlatformIO environment:
+Every later commit must remain documentation-only unless another firmware is flashed.
+
+## Remaining MAP_INTRO opcode families
+
+After PASSWORD, the bounded non-world UI/control families are exhausted. Still unowned:
 
 ```text
-esp32-cyd
+2  EV_CHANGEMAP
+7  EV_SHOW
+9  EV_GIVEMAP
+13 EV_UNLOCK
+15 EV_OPENLINE
+16 EV_CLOSELINE
+18 EV_HIDE
+27 EV_SAVEGAME
 ```
 
-No CI status is currently published for firmware candidate `e2d12085712324444f26528b77ea5122c871d85b`. Do not claim a local build or hardware PASS until the real classic CYD supplies it.
+The likely next architectural boundary is the first explicit native world/render overlay selected from SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE. `EV_CHANGEMAP` and `EV_SAVEGAME` remain larger later boundaries.
 
-## Next boundary after hardware PASS + merge
-
-Reread the then-current `main`, recovery docs, this milestone and exact remaining corpus. At that point the bounded non-world UI/control families will be exhausted, so the likely next architectural step is a first explicit native world/render overlay — but it must still be selected from the actual merged repository and legacy semantics.
+Do not preselect the exact family before merge recovery: reread the new `main`, recovery docs, this merged milestone and exact legacy behavior first.
