@@ -37,166 +37,115 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md) | GIVEMAP automap state | #59 | `9891a25d700f9ffe1be044ac4a7629c3487604ec` |
 | [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md) | SAVEGAME future-save route | #60 | `50ed329801fe99917ef2f848ee13e742ae7734ab` |
 | [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md) | CHANGEMAP pending transition intent | #61 | `fc39ac60757e0d992e3729a5044a9d83e9994971` |
+| [`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md) | SHOW/HIDE compact sprite topology; completes all real MAP_INTRO opcode families | #62 | `ed5cd9a09c9ae36f999661f4284f64400681b1af` |
 
-## Current merge-ready milestone
+## Current candidate
 
-[`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md) owns the final two real MAP_INTRO opcode families, `7 / EV_SHOW` and `18 / EV_HIDE`, through one compact native map-sprite/entity topology.
+[`MAP1_NATIVE_LEVEL_EXIT_STATS.md`](MAP1_NATIVE_LEVEL_EXIT_STATS.md) is the first consumer milestone after complete MAP_INTRO event-family ownership.
 
 ```text
-branch = agent/esp32-map1-native-show-hide-topology
-base   = fc39ac60757e0d992e3729a5044a9d83e9994971
-hardware-tested firmware = f881ccdad20d950462dd781456c340e792f59ec3
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-map1-native-level-exit-stats
+base   = ed5cd9a09c9ae36f999661f4284f64400681b1af
+firmware candidate = f9a05933a00fab26b1c0e2b15375d074161ef2bc
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-### Final MAP_INTRO event-family result
+The real intro CHANGEMAP has `showStats=1`, so legacy `Game_changeMap()` first performs `Player_addLevelStats(true)` and opens the map-stats menu rather than loading Junction immediately.
 
-All 16 real opcode IDs are now explicitly owned natively:
+The candidate adds a pure native 20-byte level-exit stats/result value:
 
 ```text
-2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
+secrets found / total
+monsters dead / total
+completion bit proposal
+mark completed / all-secrets / all-monsters
+effect flags for later player-state writes
 ```
 
-There is **no remaining real MAP_INTRO opcode family without a native ownership/execution boundary**.
-
-### SHOW/HIDE hardware canons
-
-Compact topology:
+Inputs are only native owners:
 
 ```text
-sprites=344
-7 B/sprite
-payload=2408 B
-actual heap=2424 B
-allocator overhead=16 B
-stateFNV=3f321e43
-
-entityDefCount=115
-entities=220
-hasDef=213
-fallback=7
-linked=209
-hiddenSprites=11
-hiddenEntities=11
-enemies=30
-destructibles=13
-nextOrder=209
+EspMapRuntime
+EspMapLineState
+EspMapSpriteTopology
 ```
 
-Corpus:
+No Player/Menu/Game/Render/DoomCanvas object is referenced by the permanent collector, no PAK I/O occurs, and no allocation is performed.
+
+The real-CYD probe also verifies:
 
 ```text
-refs=12
-show=11
-hide=1
-removable=12
-stateExecRefused=12
-showMutated=11
-hideMutatedIsolated=0
-hideNoMutation=1
-blockersFound=2
-blockersRemoved=2
-deferredDeaths=2
-rollback=12/12
+source count/reference equality
+showStats=0 gate
+loadMapId=2 gate
+real SHOW/deferred-death sensitivity
+secret OPEN-bit sensitivity if a secret line exists
+exact line/topology rollback
+zero heap/largest-block drift
+legacy Player/menu/transition witnesses unchanged
 ```
 
-Fingerprints:
+Expected ABI / RAM:
 
 ```text
-showResultFNV       = 6029eb3c
-hideResultFNV       = d24f5bae
-showStateFNV        = b6a45f47
-hideStateFNV        = bec68187
-contextAfterShowFNV = 2de723aa
-contextAfterHideFNV = bb1d78a4
-entityTopologyFNV   = f8f9b485
+EspMapLevelExitStats = 20 B
+persistent heap      = 0 B
+hardware total       = remains 18008 B
 ```
 
-The sole real HIDE is a valid source-state no-op. The same event contains an earlier real SHOW on the same tile, and hardware proved the contextual sequence hides/unlinks exactly one entity, then becomes idempotent on the second HIDE.
+## Current hardware-proven boundary through PR #62
 
 ```text
-SHOW cmd165 event60 off1 sprite0 tile706
-HIDE cmd173 event60 off9 tile706
-hidden=1
-secondHidden=0
-contextProven=1
-idempotent=1
-```
+persistent native heap = 18008 B
+arenaFNV               = c3882516
+mapStateFNV            = cd99b98e
+scriptFNV              = f9e3d9df
+lineStateFNV           = e5e74861
+lineTextureStateFNV    = f1fc1875
+automapStateFNV        = 669b1aa7
+spriteTopologyFNV      = 3f321e43
 
-Result ABI:
-
-```text
-EspMapShowResult = 26 B
-EspMapHideResult = 18 B
-```
-
-### Persistent native RAM
-
-Hardware-proven persistent total is now:
-
-```text
-immutable arena          14112 B
-mutable tile state        1040 B
-mutable script state       100 B
-mutable line state         136 B
-mutable texture state       76 B
-mutable automap state      120 B
-mutable sprite topology   2424 B
--------------------------------
-total                    18008 B
-```
-
-`largest8=34804` remains unchanged.
-
-### Integrity
-
-Real-CYD final PARK proved:
-
-```text
 allMapIntroOpcodeFamiliesOwned=yes
-worldMutationProven=yes
-worldRestored=yes
-legacyEntityMutation=no
-framebufferMutation=no
-entities=0
-monsters=0
-noGameplay=yes
-```
-
-Inherited native fingerprints remain exact, framebuffer is unchanged, and the legacy entity topology witness remains `f8f9b485 -> f8f9b485`.
-
-## Architecture boundary after MAP_INTRO event-family ownership
-
-This milestone is a major boundary, not the end of the port.
-
-Still intentionally outside current native ownership:
-
-```text
-full native entity/monster gameplay
-consumption of deferred blocker death/gameplay effects
-actual CHANGEMAP transition consumer
-legacy-world-free gameplay loop
-native gameplay renderer integration
-actual ST_PLAYING progression
-actual sound playback
-```
-
-The permanent invariants remain:
-
-```text
-shapeData == NULL
-mediaTexels == NULL
-runtime ZIP forbidden
-/DoomRPG-ESP32.pak is native backing store
 entities=0
 monsters=0
 ST_PLAYING not reached
+shapeData=NULL
+mediaTexels=NULL
 ```
 
-## Merge recommendation
+SHOW/HIDE final hardware canons:
 
 ```text
-MERGE agent/esp32-map1-native-show-hide-topology
+refs=12 show=11 hide=1
+blockersFound=2 blockersRemoved=2 deferredDeaths=2
+rollback=12/12
+context SHOW165 -> HIDE173 hidden=1
+second HIDE hidden=0
 ```
 
-All post-hardware commits after `f881ccdad20d950462dd781456c340e792f59ec3` must be documentation-only. After merge, recover from the true new `main` before selecting the next gameplay/effect-consumer milestone.
+## Architecture direction
+
+```text
+original Doom RPG behavior/data
+ -> native pack-backed parsers
+ -> compact immutable map
+ -> explicit mutable owners
+ -> complete native MAP_INTRO event-family ownership
+ -> native gameplay/effect consumers  <-- current phase
+ -> native renderer
+```
+
+Still outside the current candidate:
+
+```text
+application of exit effects to native player state
+stats-menu owner/consumer
+actual CHANGEMAP map swap
+full native entity/monster gameplay
+legacy-world-free gameplay loop
+native gameplay rendering
+actual ST_PLAYING progression
+sound playback
+```
+
+Do not merge the current candidate until the exact firmware above passes on the real classic CYD and all later commits are documentation-only.
