@@ -9,13 +9,13 @@ PR   = #59 — native EV_GIVEMAP automap state
 main = 9891a25d700f9ffe1be044ac4a7629c3487604ec
 ```
 
-Firmware candidate content:
+Hardware-tested firmware content:
 
 ```text
 42497b80c6158300ec3fa7b8eb8af6cee643f59e
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
@@ -32,7 +32,7 @@ angle byte
 
 The actual filesystem save is performed later by `Game_saveState()`.
 
-Native target:
+Native behavior:
 
 ```text
 real EV_SAVEGAME bytecode
@@ -62,8 +62,6 @@ strncpy(game->newMapName,
         sizeof(game->newMapName));
 ```
 
-It then reaches the normal `Game_executeEvent()` handled return.
-
 So `arg1` is packed as:
 
 ```text
@@ -73,32 +71,13 @@ bits 16..23 = y tile
 bits 24..31 = angle
 ```
 
-The outer `Game_runEvent()` still removes a handled command when source `arg2 & 0x200`; native SAVE route exposes `removeCommandIfHandled` but does not mutate `EspMapScriptState` yet.
+The outer `Game_runEvent()` may remove a handled command when source `arg2 & 0x200`; native SAVE route exposes `removeCommandIfHandled` but does not mutate `EspMapScriptState` yet.
 
-## Why the destination name is copied
+## Durable cross-map ownership
 
-The first implementation attempt stored only `EspMapStringRef`. Static recovery found that this is not a permanent-enough owner.
+The first implementation attempt stored only `EspMapStringRef`. Static recovery found that normal map loading can tear down the source map runtime before the later save consumer uses the route. The firmware was corrected before hardware validation.
 
-For a normal map transition, `DoomCanvas_loadMedia()` executes:
-
-```text
-DoomCanvas_unloadMedia()
-Render_freeRuntime()
-Game_unloadMapData()
-...
-```
-
-The later `Game_saveState()` consumer can therefore run after current-map runtime teardown has started. Legacy deliberately stores `newMapName[32]` inside `Game_t`, making the destination name independent of the source map string table.
-
-The native permanent owner follows that lifetime semantics instead of keeping a dangling map-local ref:
-
-```text
-char mapName[32]
-```
-
-Only one small string is copied; there is still no map-wide text materialization.
-
-Pre-hardware correction history:
+Pre-hardware history:
 
 ```text
 8d6e7405d59aba7ba7699a3289de4094cf2a3341
@@ -108,18 +87,9 @@ Pre-hardware correction history:
   corrected durable inline route-name ownership
 ```
 
-Only `42497b80...` is the firmware candidate for hardware validation.
+Only `42497b80...` is hardware-tested.
 
-## Permanent native API
-
-New files:
-
-```text
-ESP32/include/esp_map_save_route.h
-ESP32/src/esp_map_save_route.c
-```
-
-State:
+The permanent owner therefore keeps:
 
 ```c
 typedef struct EspMapSaveRouteState_s {
@@ -137,42 +107,12 @@ typedef struct EspMapSaveRouteState_s {
 } EspMapSaveRouteState;
 ```
 
-Expected classic ESP32 ABI:
+Hardware-proven classic ESP32 ABI:
 
 ```text
-ownerBytes = 46
-```
-
-Result:
-
-```c
-typedef struct EspMapSaveRouteResult_s {
-    uint16_t sourceEventIndex;
-    uint16_t globalCommandIndex;
-    uint16_t mapStringIndex;
-    uint16_t destinationX;
-    uint16_t destinationY;
-    uint8_t sourceCommandOffset;
-    uint8_t rawX;
-    uint8_t rawY;
-    uint8_t angle;
-    uint8_t legacyReturnValue;
-    uint8_t removeCommandIfHandled;
-} EspMapSaveRouteResult;
-```
-
-Expected ABI:
-
-```text
-resultBytes = 16
-```
-
-Permanent calls:
-
-```text
-EspMapSaveRoute_reset()
-EspMapSaveRoute_isActive()
-EspMapSaveRoute_apply()
+EspMapSaveRouteState  = 46 B
+EspMapSaveRouteResult = 16 B
+persistent heap       = 0 B
 ```
 
 The permanent source depends only on native pack/runtime/string/event APIs. It has no `Game`, `Render`, `Entity`, Hud, Player, Sound or DoomCanvas dependency.
@@ -185,9 +125,7 @@ A valid SAVEGAME command resolves `arg1 & 0xff` through `EspMapStrings_getRef()`
 mapNameLength < 32
 ```
 
-The executor then performs one `EspMapStrings_read()` into the 32-byte owner.
-
-This is deliberate bounded native-pack I/O:
+The executor performs exactly one `EspMapStrings_read()` into the 32-byte owner.
 
 ```text
 /DoomRPG-ESP32.pak only
@@ -196,168 +134,145 @@ no allocation
 no ZIP
 no decompression
 no map-wide string table copy
+no save-file write
 ```
 
 If the pack is closed or the read fails, the executor returns `ESP_MAP_SAVE_ROUTE_IO_ERROR`, zeroes the result and preserves the previous owner exactly.
 
-## Lifetime contract
+## Real-CYD corpus proof
 
-After a successful apply, the owner contains all data required by a future save consumer even if the source map runtime is later destroyed:
+Normal optimized environment: `esp32-cyd`.
 
-```text
-mapName bytes are inline
-destinationX/Y are inline
-angle is inline
-no future source-map string lookup required
-```
-
-The temporary probe explicitly closes the PAK while a sample owner remains populated and verifies that the owner content/fingerprint stays unchanged. A new apply with pack closed must fail closed because it cannot capture a new route, but the already-captured route must survive.
-
-## Temporary real-CYD probe
-
-New files:
+The real classic no-PSRAM CYD established:
 
 ```text
-ESP32/include/native_map1_save_route_probe.h
-ESP32/src/native_map1_save_route_probe.c
+refs             = 1
+removable        = 0
+ownerBytes       = 46
+resultBytes      = 16
+stateExecRefused = 1
+mapNameBytes     = 13
+maxMapName       = 13
+ownerFNV         = 06ea6ea8
+resultFNV        = c2ecb064
+contentFNV       = 725845aa
+elapsed          = 37 ms
 ```
 
-The stage runs only after the hardware-proven GIVEMAP stage and requires all inherited owners to remain canonical:
+Canonical real command:
 
 ```text
-arenaFNV            = c3882516
-mapStateFNV         = cd99b98e
-scriptFNV           = f9e3d9df
-lineStateFNV        = e5e74861
-lineTextureStateFNV = f1fc1875
-automapStateFNV     = 669b1aa7
+global command = 1
+event          = 1
+command offset = 0
+arg1           = 401d0f00
+arg2           = 00000100
+mapString      = 0
+mapName        = "/junction.bsp"
+mapNameLength  = 13
+raw tile       = 15,29
+destination    = 992,1888
+angle          = 64
+handled        = 1
+removeIfHandled= 0
 ```
 
-### Complete real SAVEGAME corpus
+## Owner mutation / rollback / lifetime proof
 
-The probe scans all 93 events / 265 bytecodes and discovers every opcode-27 command.
-
-For every real ref it requires:
+Hardware fingerprints:
 
 ```text
-state-only opcode executor -> UNSUPPORTED
-canonical descriptor + command provenance
-map string ID resolves
-map string payload < 32 bytes
-bounded PAK read succeeds
-raw x/y/angle exactly match packed arg1
-destination = 32 + (tile << 6)
-legacyReturnValue = 1
-removeCommandIfHandled exactly matches arg2 & 0x200
+initialOwnerFNV = 9a00a0bd
+sampleOwnerFNV  = 7e69bd59
+rollback        = 1 / 1
+reapplyExact    = 1
 ```
 
-Every route apply is reset immediately and must return to the exact initial owner fingerprint.
-
-Hardware will establish rather than predeclare:
+The sample owner was captured while the PAK was open. The PAK was then closed and the already-captured owner remained byte-exact and active:
 
 ```text
-SAVEGAME ref count
-removable ref count
-map-name total bytes
-max map-name length
-ownerFNV
-resultFNV
-contentFNV
-initial owner FNV
-first sample owner FNV
-first real command/sample route
+ownerSurvivesPackClose = 1
 ```
 
-### Reapply proof
-
-The first real command is applied twice while the pack is open:
+A new apply with the pack closed failed closed without changing the existing route:
 
 ```text
-first apply -> OK / handled=1
-second apply -> OK / handled=1
-owner bytes exactly identical
-result bytes exactly identical
+closedPack = 1
+stateAtomic = yes
 ```
 
-Then the owner is reset.
-
-### Cross-map lifetime / closed-pack proof
-
-After the complete audit:
+The owner was reset before PARK:
 
 ```text
-sample owner copied to parked test state
-PAK closed
-sample owner must remain byte-exact and active
-new apply with PAK closed -> IO_ERROR
-previous owner remains exact
-result remains zero
-owner reset before PARK
+activeAtPark = 0
 ```
 
-Expected proof fields:
+This proves the route lifetime crosses source-map/pack lifetime correctly.
+
+## Fail-closed proof
+
+Real hardware proved:
 
 ```text
-ownerSurvivesPackClose=1
-closedPack=1
-activeAtPark=0
+unsupported    = 1
+badOffset      = 1
+badDescriptor  = 1
+nullDescriptor = 1
+nullEntry      = 1
+nullState      = 1
+nullResult     = 1
+closedPack     = 1
+reset          = 1
+stateAtomic    = yes
 ```
 
-## Fail closed / atomicity
+## Native-pack / RAM proof
 
-Expected hardware proof:
+Real bounded PAK witness:
 
 ```text
-unsupported=1
-badOffset=1
-badDescriptor=1
-nullDescriptor=1
-nullEntry=1
-nullState=1
-nullResult=1
-closedPack=1
-reset=1
-stateAtomic=yes
+entry              = /intro.bsp
+size               = 21823
+crc32              = 623f34e4
+heapOpen           = 63832
+transientHeapCost  = 4376 B
+largestOpen        = 34804
+packIO             = yes
+boundedNameRead    = yes
+persistentHeapBytes= 0
+saveFileWrite      = no
 ```
 
-Strings >=32 bytes also fail closed by permanent API contract, even if MAP_INTRO has no such real SAVEGAME ref.
-
-## RAM boundary
-
-Persistent native heap entering this milestone is hardware-proven at:
+Before/after the complete stage:
 
 ```text
-immutable arena         14112 B
-mutable tile state       1040 B
-mutable script state      100 B
-mutable line state        136 B
-mutable texture state      76 B
-mutable automap state     120 B
-------------------------------
-total                   15584 B
+heap8      = 68208 -> 68208
+largest8   = 34804 -> 34804
+frameFNV   = 99102464 -> 99102464
+arenaFNV   = c3882516 -> c3882516
+mapStateFNV= cd99b98e -> cd99b98e
+scriptFNV  = f9e3d9df -> f9e3d9df
+automapFNV = 669b1aa7 -> 669b1aa7
 ```
 
-SAVE route is caller-owned/static value state:
+Persistent native heap therefore remains exactly:
 
 ```text
-ownerBytes       = 46 expected
-resultBytes      = 16 expected
-persistent heap  = 0 expected
+immutable arena        14112 B
+mutable tile state      1040 B
+mutable script state     100 B
+mutable line state       136 B
+mutable texture state     76 B
+mutable automap state    120 B
+-----------------------------
+total                  15584 B
 ```
 
-The probe opens the native pack temporarily for bounded string reads, so hardware will measure a transient pack-open heap cost. After close:
+SAVE route adds no persistent heap allocation.
 
-```text
-heap8 after == heap8 before
-largest8 after == largest8 before
-persistentHeapBytes=0
-```
+## Legacy integrity proof
 
-No save file is created or modified by this milestone.
-
-## Legacy integrity witness
-
-In addition to all inherited witnesses, this milestone hashes exactly the legacy fields opcode 27 would otherwise mutate:
+The probe hashes the exact legacy fields opcode 27 would otherwise mutate:
 
 ```text
 Game.newMapName[32]
@@ -366,50 +281,70 @@ Game.newDestY
 Game.newAngle
 ```
 
-The before/after `legacy saveRouteFNV` must remain identical.
-
-Other protected state:
+Real hardware witness:
 
 ```text
-framebuffer
-arena / map / script / line / texture / automap owners
-legacy notebook / keys / Hud / password / continuation
-legacy Render runtime clear
-pack closed at PARK
+legacy saveRouteFNV = 9bcfe135 -> 9bcfe135
+```
+
+Other protected witnesses also stayed exact:
+
+```text
+notebookFNV       = 4d7705c5 -> 4d7705c5
+keys              = 00000000 -> 00000000
+hudFNV            = 505b1255 -> 505b1255
+passwordCanvasFNV = 214171cf -> 214171cf
+continuationFNV   = e2ba14a5 -> e2ba14a5
+legacyRuntimeClear= yes
+```
+
+No legacy route/world/render/entity mutation occurred.
+
+## Final PARK boundary
+
+Hardware proved:
+
+```text
+nativeSaveRoute=yes
+ownerBytes=46
+resultBytes=16
+persistentBytes=0
+routeLifetimeCrossMap=yes
+legacySaveRouteMutation=no
+saveFileWrite=no
+worldMutation=no
+framebufferMutation=no
 entities=0
 monsters=0
-ST_PLAYING not reached
+noGameplay=yes
 ```
 
-## Expected Serial family
+Stable post-PARK heartbeats:
 
 ```text
-[MAPSAVEROUTEPROBE] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO SAVEGAME route owner ===
-[MAPSAVEROUTEPROBE] CONTRACT ...
-[MAPSAVEROUTE] READY refs=... removable=... ownerBytes=46 resultBytes=16 stateExecRefused=... mapNameBytes=... maxMapName=... ownerFNV=... resultFNV=... contentFNV=... elapsed=...ms
-[MAPSAVEROUTE] SAMPLE cmd=... event=... off=... arg1=... arg2=... mapString=... name="..." nameLen=... tile=...,... dest=...,... angle=... handled=1 removeIfHandled=...
-[MAPSAVEROUTE] STATE initialOwnerFNV=... sampleOwnerFNV=... rollback=.../... reapplyExact=1 ownerSurvivesPackClose=1 activeAtPark=0
-[MAPSAVEROUTE] FAILCLOSED unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1 nullEntry=1 nullState=1 nullResult=1 closedPack=1 reset=1 stateAtomic=yes
-[MAPSAVEROUTE] IO entry=/intro.bsp size=21823 crc32=623f34e4 heapOpen=... transientHeapCost=... largestOpen=... packIO=yes boundedNameRead=yes persistentHeapBytes=0 saveFileWrite=no
-[MAPSAVEROUTEPROBE] RAM heap8=...->... delta=0 largest8=...->... delta=0 ...
-[MAPSAVEROUTEPROBE] LEGACY ... saveRouteFNV=...->... legacyRuntimeClear=yes
-[MAPSAVEROUTEPROBE] PARK ... nativeSaveRoute=yes ownerBytes=46 resultBytes=16 persistentBytes=0 routeLifetimeCrossMap=yes legacySaveRouteMutation=no saveFileWrite=no worldMutation=no framebufferMutation=no entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
+uptime=135324 ms heap=133972 heap8=68208 largest8=34804 all reported subsystems ready
+uptime=140327 ms heap=133972 heap8=68208 largest8=34804 all reported subsystems ready
 ```
 
-Use normal optimized PlatformIO environment:
+Absolute heap/frame values can differ across builds; acceptance uses same-build stability plus canonical fingerprints.
+
+## Hardware acceptance status
+
+The real CYD proved the complete SAVEGAME corpus, exact map-name/x/y/angle decoding, durable cross-map route ownership, exact rollback/reapply, closed-pack fail-closed behavior, zero persistent heap, no save-file write, legacy integrity and stable PARK heartbeats.
+
+This milestone is **REAL-CYD HARDWARE PASS / MERGE-READY**.
+
+Hardware-tested firmware content:
 
 ```text
-esp32-cyd
+42497b80c6158300ec3fa7b8eb8af6cee643f59e
 ```
 
-No CI status is currently published for firmware candidate `42497b80c6158300ec3fa7b8eb8af6cee643f59e`. No local build or hardware PASS is claimed.
+All later commits must remain documentation-only unless another firmware is flashed.
 
-## Remaining MAP_INTRO families after PASS
+## Remaining MAP_INTRO families
 
-If SAVEGAME passes, still unowned:
+After SAVEGAME, still unowned:
 
 ```text
 2  EV_CHANGEMAP
@@ -417,4 +352,4 @@ If SAVEGAME passes, still unowned:
 18 EV_HIDE
 ```
 
-Do not pre-authorize the next family before PASS + merge recovery.
+Do not preselect the next family before merge recovery.
