@@ -45,11 +45,11 @@ This file defines the current ESP32 CYD documentation map.
 ```text
 branch = agent/esp32-map1-native-show-hide-topology
 base   = fc39ac60757e0d992e3729a5044a9d83e9994971
-firmware candidate = 1e9760de2269f57ec24dcea0fc16774a119ae65a
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+firmware candidate = 93d26e171e8a98f3824b3071e01b9234c8ebe6c3
+status = IMPLEMENTED; CORRECTED REAL-CYD VALIDATION PENDING
 ```
 
-The owner intentionally avoids legacy pointer topology:
+Permanent topology storage:
 
 ```text
 344 map sprites
@@ -70,9 +70,61 @@ EspMapShowResult = 26 B
 EspMapHideResult = 18 B
 ```
 
-SHOW projects the directly owned visual/link consequences and reports deferred blocker gameplay effects rather than invoking legacy `Entity_died()`. The RNG crate blocker path is fail-closed before mutation. HIDE reproduces non-enemy map-sprite hide/unlink traversal using compact link order rather than pointer chains.
+SHOW owns the directly deterministic visual/link projection and reports deferred blocker gameplay instead of invoking legacy `Entity_died()`. HIDE traverses compact native tile links and hides/unlinks eligible non-enemy map-sprite entities. Runtime ZIP access remains forbidden; `/entities.db` is read only during owner build from `/DoomRPG-ESP32.pak`.
 
-The topology is built once from immutable BSP sprites plus a bounded `/entities.db` read from `/DoomRPG-ESP32.pak`; SHOW/HIDE execution itself performs no PAK I/O. Runtime ZIP access remains forbidden.
+## First SHOW/HIDE hardware attempt and correction
+
+Initial firmware `1e9760de2269f57ec24dcea0fc16774a119ae65a` built the compact owner but failed the temporary `topology/corpus audit`.
+
+Diagnostic firmware `3a7dc83b14e8de47827b51bee12b0c907635ffc3` proved the permanent owner and all 12 real opcode applications were individually valid:
+
+```text
+sprites=344 storageBytes=2408
+actual heap delta=2424 B
+stateFNV=3f321e43
+entities=220 hasDef=213 fallback=7 linked=209
+hiddenEntities=11 enemies=30 destructibles=13 nextOrder=209
+initial audit=1
+
+refs=12 show=11 hide=1
+showOk=11 hideOk=1
+showAlreadyLinked=0 showRandomBlocker=0
+showOtherFailure=0 hideOtherFailure=0
+finalFNV=3f321e43
+```
+
+The sole HIDE is a legitimate source-state no-op:
+
+```text
+cmd173 event60 off9
+tile=2,22 / index706
+status=OK hidden=0 effects=00 handled=1 remove=1
+```
+
+The failing probe had incorrectly required an isolated HIDE mutation. This was a test-harness assumption, not a permanent owner failure.
+
+The same event has an earlier real SHOW on the same tile:
+
+```text
+cmd165 event60 off1
+sprite0 tile706
+FNV 3f321e43 -> 2de723aa
+```
+
+The corrected final probe therefore validates both:
+
+```text
+isolated real corpus:
+  HIDE may be handled/no-op from source state
+
+contextual mutation proof:
+  same-event/same-tile SHOW
+  -> real HIDE must hide/unlink
+  -> second HIDE must be handled/idempotent
+  -> reset exact
+```
+
+No permanent `esp_map_sprite_topology.c` code was changed by this correction.
 
 ## Current hardware-proven boundary through PR #61
 
@@ -95,43 +147,28 @@ legacyTransitionFNV    = 79ab740c
 playerStatsFNV         = 0b2ae445
 ```
 
-Latest hardware-proven CHANGEMAP witness:
+The SHOW/HIDE topology values above are diagnostic observations, not yet promoted to final hardware canons until firmware `93d26e17...` passes its corrected probe.
+
+## Corrected validation target
+
+The final firmware must establish:
 
 ```text
-refs=1 pending=1 showStats=1 directLoad=0
-name="/junction.bsp" targetMap=9 spawnParam=0 effects=03
-ownerBytes=16 resultBytes=20 persistentHeapBytes=0
-rollback=1/1 reapplyExact=1 closedPackApply=1
-heap8=68176->68176 largest8=34804->34804
-transitionTriggered=no statsMutation=no menuMutation=no mapLoad=no
-```
-
-## SHOW/HIDE validation target
-
-Hardware must establish the actual compact topology counts and fingerprints rather than inheriting desktop assumptions:
-
-```text
-entityDefCount
-entityCount
-EntityDef-backed / fallback counts
-initial linked / hidden counts
-enemy / destructible counts
-nextLinkOrder
-topologyFNV
-actual persistent topology heap cost
-```
-
-It must also audit the complete real opcode corpus:
-
-```text
-SHOW refs / HIDE refs
-SHOW/HIDE mutation counts
-blocker counts and deferred gameplay metadata
-HIDE hidden entity total
-SHOW/HIDE result and state fingerprints
+initial topology audit PASS
+refs = SHOW + HIDE
+stateExecRefused = refs
 rollback = refs/refs
+SHOW mutation coverage > 0
+isolated HIDE handled (mutation or no-op accepted)
+same-event/same-tile context SHOW found
+context HIDE hides/unlinks >= 1 entity
+second context HIDE handled/no-op with unchanged FNV
 showRepeatGuard=1
+hideContext=1
 hideIdempotent=1
+reset=1
+showResultBytes=26
+hideResultBytes=18
 ```
 
 RAM target:
@@ -140,10 +177,10 @@ RAM target:
 topology payload = 2408 B
 2408 <= actual heap cost <= 2536 B
 largest8 >= 32768 B
-new total persistent heap = 15584 B + hardware-measured topology allocation
+new persistent total = 15584 B + hardware-measured topology allocation
 ```
 
-Final integrity still requires:
+Final integrity remains:
 
 ```text
 legacy Render runtime clear
@@ -173,8 +210,8 @@ Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexel
 
 ## MAP_INTRO event-family frontier
 
-If this candidate passes, there will be **no remaining real MAP_INTRO opcode ID without an explicit native ownership/execution boundary**.
+If firmware `93d26e171e8a98f3824b3071e01b9234c8ebe6c3` passes, there will be **no remaining real MAP_INTRO opcode ID without an explicit native ownership/execution boundary**.
 
-That milestone closes event-family ownership only. It does not complete the game port: native entity/monster gameplay, deferred effect consumers, map-transition consumption, rendering and actual progression to `ST_PLAYING` remain later work.
+That closes event-family ownership only. Native entity/monster gameplay, deferred effect consumers, transition consumption, rendering and progression to `ST_PLAYING` remain later work.
 
-Do not merge this candidate until real-CYD hardware validation passes and the post-test commits are verified documentation-only.
+Do not merge this candidate until corrected real-CYD hardware validation passes and all later commits are verified documentation-only.
