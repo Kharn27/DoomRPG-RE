@@ -5,25 +5,32 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #60 — native EV_SAVEGAME route owner
-main = 50ed329801fe99917ef2f848ee13e742ae7734ab
-hardware-tested firmware = 42497b80c6158300ec3fa7b8eb8af6cee643f59e
+PR   = #61 — native EV_CHANGEMAP pending transition intent
+main = fc39ac60757e0d992e3729a5044a9d83e9994971
+hardware-tested firmware = 93e0be24558ebffcbc9f60ef0ced54f29274ab28
 ```
 
-Merged evidence: [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md).
+Merged evidence: [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md).
 
-## Current merge-ready milestone
+## Current candidate
 
 ```text
-branch = agent/esp32-map1-native-change-map-intent
-base   = 50ed329801fe99917ef2f848ee13e742ae7734ab
-hardware-tested firmware = 93e0be24558ebffcbc9f60ef0ced54f29274ab28
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-map1-native-show-hide-topology
+base   = fc39ac60757e0d992e3729a5044a9d83e9994971
+firmware candidate = 1e9760de2269f57ec24dcea0fc16774a119ae65a
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Detailed evidence: [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md).
+Active evidence: [`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md).
 
-This milestone owns only `2 / EV_CHANGEMAP` as a compact caller-owned pending transition intent. It does not trigger the later texture-7 transition consumer: no sound, level stats, menu transition or map load occurs.
+The candidate owns together the final two real MAP_INTRO opcode IDs:
+
+```text
+7  EV_SHOW
+18 EV_HIDE
+```
+
+They share a compact native map-sprite/entity tile topology. The stage does not instantiate legacy map entities or mutable legacy Render map data.
 
 ## Permanent invariants
 
@@ -54,7 +61,7 @@ Real opcode IDs:
 2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-## Hardware-proven fingerprints through CHANGEMAP
+## Hardware-proven fingerprints through PR #61
 
 ```text
 arenaFNV               = c3882516
@@ -71,8 +78,6 @@ giveMapMutatedMapFNV   = e21edbce
 saveRouteOwnerFNV      = 06ea6ea8
 saveRouteResultFNV     = c2ecb064
 saveRouteContentFNV    = 725845aa
-saveRouteInitialFNV    = 9a00a0bd
-saveRouteSampleFNV     = 7e69bd59
 legacySaveRouteFNV     = 9bcfe135
 changeMapOwnerFNV      = f75eb7c7
 changeMapResultFNV     = 2f40c9be
@@ -83,9 +88,9 @@ legacyTransitionFNV    = 79ab740c
 playerStatsFNV         = 0b2ae445
 ```
 
-## Persistent native RAM ownership
+## Persistent native RAM entering this candidate
 
-Hardware-proven heap remains:
+Hardware-proven heap:
 
 ```text
 immutable arena        14112 B
@@ -98,211 +103,220 @@ mutable automap state    120 B
 total                  15584 B
 ```
 
-Hardware-proven CHANGEMAP value types:
+CHANGEMAP and SAVE route are caller-owned value states and add no persistent heap.
+
+## Candidate compact sprite topology
+
+Permanent files:
 
 ```text
-EspMapChangeMapState  = 16 B
-EspMapChangeMapResult = 20 B
-persistent heap       = 0 B
+ESP32/include/esp_map_sprite_topology.h
+ESP32/src/esp_map_sprite_topology.c
 ```
 
-The probe temporarily opens the native PAK only to verify the real destination string. The permanent CHANGEMAP executor performs no PAK I/O.
-
-## Hardware-proven recent families
+Storage is exactly 7 B per map sprite:
 
 ```text
-OPEN/CLOSE:
-  refs=71 mutated=29 locked=18 alreadyTarget=24 rollback=29/29
-  lineStateFNV=e5e74861 lineDoorFNV=b1c9d297
-
-UNLOCK:
-  refs=6 mutated=6 lockMutated=6 textureMutated=6 rollback=6/6
-  lineTextureStateFNV=f1fc1875 unlockFNV=261d756a
-
-GIVEMAP:
-  refs=1 lines=430 sprites=344 entranceTiles=4 rollback=1/1
-  automapStateFNV=669b1aa7 giveMapFNV=98c7ac59
-
-SAVEGAME route:
-  refs=1 ownerBytes=46 resultBytes=16 persistentHeapBytes=0
-  mapName="/junction.bsp" tile=15,29 destination=992,1888 angle=64
-  ownerFNV=06ea6ea8 resultFNV=c2ecb064 contentFNV=725845aa
-  rollback=1/1 reapplyExact=1 ownerSurvivesPackClose=1
-
-CHANGEMAP intent:
-  refs=1 pending=1 zeroParam=0 showStats=1 directLoad=0 removable=0 fallbackMap=0
-  ownerBytes=16 resultBytes=20 persistentHeapBytes=0
-  ownerFNV=f75eb7c7 resultFNV=2f40c9be contentFNV=f7a79d99
-  rollback=1/1 reapplyExact=1 closedPackApply=1
+entity type       1 B
+entity subtype    1 B
+visual state      1 B
+link state/tile   2 B
+link order        2 B
+---------------------
+344 sprites       2408 B payload
 ```
 
-## EV_CHANGEMAP permanent contract
+No `Entity_t*`, `Sprite_t*`, monster objects or 1024-entry pointer entity database are stored.
 
-Legacy bytecode execution itself is only:
+The owner reconstructs relevant `Game_loadMapEntities()` classification from immutable map sprites plus a bounded `/entities.db` read from the native PAK. PAK access occurs only while building the owner; SHOW/HIDE execution performs no PAK or ZIP I/O.
+
+Hardware must establish:
 
 ```text
-Game.changeMapParam = arg1
-return handled=true
+entityDefCount
+entityCount
+EntityDef-backed count
+fallback count
+initial linked count
+hidden sprite count
+hidden entity count
+enemy count
+destructible count
+nextLinkOrder
+topologyFNV
+actual persistent heap cost / allocator overhead
 ```
 
-The parameter is consumed later by `Game_changeMap()` only when an opened transition door with texture `7` is processed. That later consumer:
+Expected persistent allocation bound:
 
 ```text
-plays sound 5068
-spawnParam = (rawParam << 1) >> 9
-resolves mapStrings[rawParam & 0xff]
-updates level stats
-bit31 SHOWSTATS -> stats menu
-otherwise       -> map load
-clears changeMapParam
+2408 B <= heapCost <= 2536 B
+largest8 >= 32768 B
 ```
 
-The native milestone owns only pending state:
+New total persistent heap is hardware-pending:
 
 ```text
-rawParam
-map-local EspMapStringRef
-source event/command provenance
-active flag
+15584 B + actual topology heap cost
 ```
 
-Deferred result metadata:
+## SHOW permanent contract
+
+Legacy bytecode behavior:
 
 ```text
-pending + showStats=1 -> ADD_LEVEL_STATS | SHOW_STATS_MENU = 0x03
-pending + showStats=0 -> ADD_LEVEL_STATS | LOAD_MAP        = 0x05
-pending=0             -> no deferred effects
+spriteIndex = arg1 & 0xffff
+showFlags   = (arg1 >> 16) & 0xff
+replace sprite visual state
+if sprite->ent:
+    find enemy/destructible blocker and Entity_died()
+    find a second blocker and Entity_died()
+    link target entity at sprite tile
+handled=true
 ```
 
-Sound 5068 remains outside this opcode owner because it belongs to the later texture-7 transition-door trigger.
+Native direct ownership is deliberately bounded to the base compact topology/visual projection. Full `Entity_died()` gameplay fan-out is not opened here.
 
-## CHANGEMAP real-CYD proof
+Deferred metadata covers non-owned blocker gameplay. The known RNG crate branch (`eType=12,eSubType=2`) is rejected before mutation. Repeated SHOW on an already-linked target is also refused rather than reproducing legacy double-link corruption.
 
-Complete MAP_INTRO corpus:
+Expected result ABI:
 
 ```text
-refs=1
-pending=1
-zeroParam=0
-showStats=1
-directLoad=0
-removable=0
-fallbackMap=0
-stateExecRefused=1
-mapNameBytes=13
-maxMapName=13
+EspMapShowResult = 26 B
 ```
 
-Canonical real command:
+## HIDE permanent contract
+
+Legacy behavior walks the tile entity chain and, for each non-line non-enemy entity, sets the map-sprite hidden bit and unlinks the entity.
+
+Native topology preserves map-sprite link traversal order using 16-bit link-order values rather than pointers.
+
+Expected result ABI:
 
 ```text
-cmd2 event1 off1
-arg1=80000000 arg2=00000100
-mapString=0
-name="/junction.bsp"
-targetMap=9 / MAP_JUNCTION
-spawnParam=0
-showStats=1
-effects=03
-pending=1
-handled=1
-removeIfHandled=0
+EspMapHideResult = 18 B
 ```
 
-Owner proof:
+Repeated HIDE remains handled and becomes a zero-mutation no-op after eligible entities are already hidden/unlinked.
+
+## Temporary real-CYD probe
+
+Probe files:
 
 ```text
-initialOwnerFNV=69691905
-sampleOwnerFNV=4e4ebeac
-rollback=1/1
-reapplyExact=1
-closedPackApply=1
-activeAtPark=0
+ESP32/include/native_map1_show_hide_probe.h
+ESP32/src/native_map1_show_hide_probe.c
+ESP32/src/native_map1_show_hide_probe_internal.h
+ESP32/src/native_map1_show_hide_probe_support.c
+ESP32/src/native_map1_show_hide_probe_corpus.c
+```
+
+The probe runs only after hardware-proven CHANGEMAP.
+
+Initial topology is cross-checked against the already-loaded legacy `EntityDefManager` without calling legacy map-entity construction.
+
+The complete 93-event / 265-bytecode corpus is scanned. Every opcode 7/18 must remain unsupported by the old state-only executor and be accepted only by this topology executor.
+
+Hardware will establish:
+
+```text
+refs / showRefs / hideRefs
+removableRefs
+showMutated
+hideMutated / hideNoMutation
+showTargetEnt / showTargetNoEnt
+blockersFound / blockersRemoved / blockerNoops
+deferredDeaths
+hideEntities total
+showResultFNV / hideResultFNV
+showStateFNV / hideStateFNV
+```
+
+Acceptance requires:
+
+```text
+showRefs > 0
+hideRefs > 0
+refs = showRefs + hideRefs
+stateExecRefused = refs
+rollback = refs/refs
+showMutated > 0
+hideMutated > 0
+hideEntities > 0
+showResultBytes = 26
+hideResultBytes = 18
+showRepeatGuard = 1
+hideIdempotent = 1
+reset = 1
 ```
 
 Fail closed:
 
 ```text
-unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1
-nullState=1 nullResult=1 reset=1 stateAtomic=yes
+unsupported=1
+badOffset=1
+badDescriptor=1
+nullDescriptor=1
+nullResult=1
+randomCrate=guarded
+targetRelink=guarded
+stateAtomic=yes
 ```
 
-PAK / RAM witness:
+## Integrity boundary
+
+Hardware must prove after final rollback/PARK:
 
 ```text
-heapOpen=63800 transientHeapCost=4376 largestOpen=34804
-packIO=yes verificationOnly=yes executorPackIO=no persistentHeapBytes=0
-heap8=68176->68176
-largest8=34804->34804
-frameFNV=e36ac6fd->e36ac6fd
-```
-
-Protected inherited/native state stayed exact:
-
-```text
+topology initial FNV restored exactly
 arenaFNV=c3882516
 mapStateFNV=cd99b98e
 scriptFNV=f9e3d9df
+lineStateFNV=e5e74861
+lineTextureStateFNV=f1fc1875
 automapStateFNV=669b1aa7
-```
-
-Legacy witnesses stayed exact:
-
-```text
-notebookFNV       = 4d7705c5 -> 4d7705c5
-keys              = 00000000 -> 00000000
-hudFNV            = 505b1255 -> 505b1255
-passwordCanvasFNV = 214171cf -> 214171cf
-continuationFNV   = e2ba14a5 -> e2ba14a5
-saveRouteFNV      = 9bcfe135 -> 9bcfe135
-transitionFNV     = 79ab740c -> 79ab740c
-statsFNV          = 0b2ae445 -> 0b2ae445
-legacyRuntimeClear= yes
-```
-
-Final boundary:
-
-```text
-transitionArmedProven=yes
-transitionTriggered=no
-statsMutation=no
-menuMutation=no
-mapLoad=no
-framebufferMutation=no
+framebuffer unchanged
+legacy notebook/keys/Hud/password/continuation unchanged
+legacy entity topology witness unchanged
+pack closed
+legacy Render runtime clear
 entities=0 monsters=0
 ST_PLAYING not reached
 ```
 
-Stable PARK heartbeats:
+## Latest hardware-proven CHANGEMAP boundary
 
 ```text
-35181 ms: heap=133940 heap8=68176 largest8=34804 all reported subsystems ready
-40182 ms: heap=133940 heap8=68176 largest8=34804 all reported subsystems ready
+refs=1 pending=1 showStats=1 directLoad=0
+name="/junction.bsp" targetMap=9 spawnParam=0 effects=03
+ownerBytes=16 resultBytes=20 persistentHeapBytes=0
+ownerFNV=f75eb7c7 resultFNV=2f40c9be contentFNV=f7a79d99
+rollback=1/1 reapplyExact=1 closedPackApply=1
+transitionTriggered=no statsMutation=no menuMutation=no mapLoad=no
+heap8=68176->68176 largest8=34804->34804
 ```
 
-Absolute heap/frame values can differ across builds; acceptance uses same-build stability plus canonical fingerprints.
+## Validation target
 
-## Remaining MAP_INTRO families
-
-Only these remain unowned:
+Build/flash normal optimized environment:
 
 ```text
-7  EV_SHOW
-18 EV_HIDE
+esp32-cyd
 ```
 
-They remain intentionally deferred because their exact legacy semantics include entity death/link/unlink and tile entity topology, not merely sprite visibility.
-
-## Merge recommendation
-
-**MERGE `agent/esp32-map1-native-change-map-intent`.**
-
-Hardware-tested firmware content:
+Branch / firmware:
 
 ```text
-93e0be24558ebffcbc9f60ef0ced54f29274ab28
+agent/esp32-map1-native-show-hide-topology
+1e9760de2269f57ec24dcea0fc16774a119ae65a
 ```
 
-All later commits must remain documentation-only unless another firmware is flashed.
+Capture `[MAPTOPOLOGY]`, `[MAPSHOWHIDE]`, `[MAPSHOW]`, `[MAPHIDE]`, `[MAPSHOWHIDEPROBE]` and stable `[ALIVE]` lines.
 
-After merge, recover the true new `main`, reread this file, `DOCUMENTATION.md`, the merged CHANGEMAP archive and exact SHOW/HIDE legacy behavior before selecting the final topology milestone.
+No CI status is published for this firmware candidate. No local build or hardware PASS is claimed.
+
+## Boundary after candidate PASS
+
+If SHOW/HIDE passes, **all 16 real MAP_INTRO opcode IDs will have explicit native ownership/execution boundaries**.
+
+This is only the end of MAP_INTRO event-family ownership. Full native gameplay/effect consumers, entity/monster runtime, transition consumption, renderer integration and actual `ST_PLAYING` progression remain later milestones.
