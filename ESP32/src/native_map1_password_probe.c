@@ -59,7 +59,7 @@
 #define EXPECTED_INTRO_BSP_CRC32 0x623f34e4U
 #define EXPECTED_LEGACY_NOTEBOOK_FNV 0x4d7705c5U
 #define EXPECTED_OWNER_BYTES 20U
-#define EXPECTED_SUBMIT_RESULT_BYTES 10U
+#define EXPECTED_SUBMIT_RESULT_BYTES 12U
 #define SCRATCH_CAPACITY 314U
 #define SCRATCH_STORAGE_BYTES (SCRATCH_CAPACITY + 2U)
 
@@ -218,6 +218,7 @@ static uint32_t submitResultHash(const EspMapPasswordSubmitResult* result) {
     if (result == NULL) return 0U;
     hash = hashU16(hash, result->sourceEventIndex);
     hash = hashU16(hash, result->globalCommandIndex);
+    hash = hashU16(hash, result->feedbackDelayMs);
     hash = hashByte(hash, result->sourceCommandOffset);
     hash = hashByte(hash, result->resumeCommandOffset);
     hash = hashByte(hash, result->kind);
@@ -431,12 +432,14 @@ static int validateOwner(const EspMapEventDescriptor* descriptor,
 
 static int validateOutcome(const EspMapPasswordOwnerState* owner,
                            uint8_t expectedKind,
+                           uint16_t expectedDelayMs,
                            const EspMapPasswordSubmitResult* result) {
     const char* message;
 
     if (owner == NULL || result == NULL ||
         result->sourceEventIndex != owner->sourceEventIndex ||
         result->globalCommandIndex != owner->globalCommandIndex ||
+        result->feedbackDelayMs != expectedDelayMs ||
         result->sourceCommandOffset != owner->sourceCommandOffset ||
         result->resumeCommandOffset != owner->resumeCommandOffset ||
         result->kind != expectedKind || result->closeDialog != 1U) {
@@ -495,6 +498,8 @@ static int auditPasswords(const EspAssetPackEntry* entry,
     uint32_t ownerAggregate = 2166136261U;
     uint32_t submitAggregate = 2166136261U;
     uint8_t emptyKind;
+    uint16_t wrongDelay;
+    uint16_t emptyDelay;
 
     if (entry == NULL || audit == NULL) return 0;
     memset(audit, 0, sizeof(*audit));
@@ -559,6 +564,7 @@ static int auditPasswords(const EspAssetPackEntry* entry,
                 submitStatus != ESP_MAP_PASSWORD_SUBMIT_OK ||
                 expectedLength != codeLength ||
                 !validateOutcome(&owner, ESP_MAP_PASSWORD_OUTCOME_CORRECT,
+                                 ESP_MAP_PASSWORD_MATCH_DELAY_MS,
                                  &result)) return 0;
             ++audit->guardChecks;
             ++audit->correctScenarios;
@@ -568,7 +574,7 @@ static int auditPasswords(const EspAssetPackEntry* entry,
             memset(wrong, 0, sizeof(wrong));
             if (codeLength == 0U) {
                 wrong[0] = '0';
-                codeLength = 0U;
+                wrongDelay = 0U;
                 if (!submitWithGuard(entry, &owner, wrong, 1U,
                                      submitStorage, SCRATCH_CAPACITY,
                                      &expectedLength, &result, &submitStatus) ||
@@ -576,12 +582,13 @@ static int auditPasswords(const EspAssetPackEntry* entry,
                     expectedLength != 0U ||
                     !validateOutcome(&owner,
                                      ESP_MAP_PASSWORD_OUTCOME_INCORRECT,
-                                     &result)) return 0;
+                                     wrongDelay, &result)) return 0;
             }
             else {
                 size_t wrongLength = codeLength;
                 memcpy(wrong, codeScratch, wrongLength);
                 wrong[0] = wrong[0] == '0' ? '1' : '0';
+                wrongDelay = ESP_MAP_PASSWORD_MATCH_DELAY_MS;
                 if (!submitWithGuard(entry, &owner, wrong, wrongLength,
                                      submitStorage, SCRATCH_CAPACITY,
                                      &expectedLength, &result, &submitStatus) ||
@@ -589,7 +596,7 @@ static int auditPasswords(const EspAssetPackEntry* entry,
                     expectedLength != codeLength ||
                     !validateOutcome(&owner,
                                      ESP_MAP_PASSWORD_OUTCOME_INCORRECT,
-                                     &result)) return 0;
+                                     wrongDelay, &result)) return 0;
             }
             ++audit->guardChecks;
             ++audit->incorrectScenarios;
@@ -605,7 +612,12 @@ static int auditPasswords(const EspAssetPackEntry* entry,
             emptyKind = codeLength == 0U
                             ? ESP_MAP_PASSWORD_OUTCOME_CORRECT
                             : ESP_MAP_PASSWORD_OUTCOME_EMPTY;
-            if (!validateOutcome(&owner, emptyKind, &result)) return 0;
+            emptyDelay = codeLength == 0U
+                             ? ESP_MAP_PASSWORD_MATCH_DELAY_MS
+                             : 0U;
+            if (!validateOutcome(&owner, emptyKind, emptyDelay, &result)) {
+                return 0;
+            }
             ++audit->emptySemantics;
             emptyHash = submitResultHash(&result);
 
@@ -797,7 +809,7 @@ void Esp32Map1PasswordProbe_service(struct DoomRPG_s* doomRpgOpaque) {
 
     probeState.attempted = 1;
     printf("\n=== Doom RPG ESP32-native MAP_INTRO PASSWORD owner ===\n");
-    printf("[MAPPASSWORDPROBE] CONTRACT consume only EV_PASSWORD -> 20B caller-owned two-ref pause/continuation state + bounded submit evaluator; no password UI, legacy DoomCanvas/Game/Hud/world/render mutation\n");
+    printf("[MAPPASSWORDPROBE] CONTRACT consume only EV_PASSWORD -> 20B caller-owned two-ref pause/continuation state + 12B bounded submit result; no password UI, legacy DoomCanvas/Game/Hud/world/render mutation\n");
 
     if (!boundaryIsSafe(doomRpg)) {
         printf("[MAPPASSWORDPROBE] FAILED unsafe precondition\n");
@@ -944,12 +956,13 @@ void Esp32Map1PasswordProbe_service(struct DoomRPG_s* doomRpgOpaque) {
            (unsigned)audit.sampleOwner.prompt.length,
            (unsigned)audit.samplePromptFNV,
            (unsigned)audit.sampleCodeLength);
-    printf("[MAPPASSWORD] OUTCOMES correct=%u incorrect=%u emptySemantics=%u correctResume=%u incorrectNoResume=%u correctMessage=\"Correct code!\" invalidMessage=\"Invalid code!\" guards=%u/%u\n",
+    printf("[MAPPASSWORD] OUTCOMES correct=%u incorrect=%u emptySemantics=%u correctResume=%u incorrectNoResume=%u delayMatch=%ums earlySubmit=0ms correctMessage=\"Correct code!\" invalidMessage=\"Invalid code!\" guards=%u/%u\n",
            (unsigned)audit.correctScenarios,
            (unsigned)audit.incorrectScenarios,
            (unsigned)audit.emptySemantics,
            (unsigned)audit.correctResume,
            (unsigned)audit.incorrectNoResume,
+           (unsigned)ESP_MAP_PASSWORD_MATCH_DELAY_MS,
            (unsigned)audit.guardChecks,
            (unsigned)(audit.refs * 5U));
     printf("[MAPPASSWORD] FAILCLOSED unsupported=%u badOffset=%u badDescriptor=%u nullDescriptor=%u nullOwner=%u badOwner=%u tooLong=%u shortBuffer=%u nullSubmitOwner=%u nullSubmitResult=%u closedPack=%u ownerAtomic=yes reset=%u\n",

@@ -14,6 +14,7 @@ extern "C" {
 
 #define ESP_MAP_OPCODE_PASSWORD 10U
 #define ESP_MAP_PASSWORD_INPUT_CAPACITY 8U
+#define ESP_MAP_PASSWORD_MATCH_DELAY_MS 300U
 
 #define ESP_MAP_PASSWORD_FLAG_PAUSE_SCRIPT       0x01U
 #define ESP_MAP_PASSWORD_FLAG_SKIP_ADVANCE_TURN  0x02U
@@ -55,6 +56,7 @@ typedef struct EspMapPasswordOwnerState_s {
 typedef struct EspMapPasswordSubmitResult_s {
     uint16_t sourceEventIndex;
     uint16_t globalCommandIndex;
+    uint16_t feedbackDelayMs;
     uint8_t sourceCommandOffset;
     uint8_t resumeCommandOffset;
     uint8_t kind;
@@ -79,7 +81,9 @@ EspMapPasswordOwnerStatus EspMapPasswordOwner_apply(
  * Evaluate one completed password submission without presentation or legacy
  * mutation. submittedLength is the payload length excluding NUL and must fit
  * the recovered 8-byte input buffer (max 7 bytes). The expected code is read
- * from the native pack through the proven bounded string reader.
+ * from the native pack through the proven bounded string reader. A submission
+ * whose length equals the expected code length preserves the recovered 300 ms
+ * feedback delay; an early SELECT-style shorter submission has zero delay.
  */
 EspMapPasswordSubmitStatus EspMapPassword_evaluateSubmit(
     const EspAssetPackEntry* sourceEntry,

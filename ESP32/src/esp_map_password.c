@@ -222,6 +222,10 @@ EspMapPasswordSubmitStatus EspMapPassword_evaluateSubmit(
 
     outResult->sourceEventIndex = state->sourceEventIndex;
     outResult->globalCommandIndex = state->globalCommandIndex;
+    outResult->feedbackDelayMs =
+        submittedLength == expectedLength
+            ? (uint16_t)ESP_MAP_PASSWORD_MATCH_DELAY_MS
+            : 0U;
     outResult->sourceCommandOffset = state->sourceCommandOffset;
     outResult->resumeCommandOffset = state->resumeCommandOffset;
     outResult->closeDialog = 1U;
