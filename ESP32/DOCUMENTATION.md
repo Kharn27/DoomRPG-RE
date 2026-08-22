@@ -4,17 +4,11 @@ This file defines how the ESP32 CYD port documentation is organized and which fi
 
 ## Source-of-truth hierarchy
 
-### `README.md` — stable port guide
+- [`README.md`](README.md): stable build/flash and platform guide.
+- [`PORTING_STATUS.md`](PORTING_STATUS.md): authoritative current recovery point.
+- Milestone archives: detailed implementation and real-CYD evidence.
 
-Use [`README.md`](README.md) for build/flash instructions, target hardware, stable architecture, SD/native-pack layout, touch model and high-level execution flow.
-
-### `PORTING_STATUS.md` — authoritative current recovery point
-
-Use [`PORTING_STATUS.md`](PORTING_STATUS.md) when resuming development. It owns the latest merged baseline, active branch, exact RAM/state boundary, current native contracts and next bounded milestone.
-
-### Milestone archives — detailed evidence
-
-Merged milestones:
+## Merged milestones
 
 | Archive | Purpose | PR | Merged `main` |
 | --- | --- | ---: | --- |
@@ -28,228 +22,138 @@ Merged milestones:
 | [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md) | allocation-free compact accessors | #44 | `ddcf19e6166f210a6f63fec1c608234ee3e253ea` |
 | [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md) | compact mutable tile state | #45 | `feec8a7fcb839dbd9f6de708f56f26b69a1e79e9` |
 | [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md) | allocation-free tile -> event lookup | #46 | `438cffabaaaaa3dc3b45486f56eacec1a047edcf` |
-| [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) | event descriptor + exact bytecode linkage | #47 | `a3e629ba0be6b4dcc6329b17f18a0c3ca9828958` |
-| [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md) | mutable script state + side-effect-free event filtering | #48 | `0c8a52549ebb436139f7cd5c8b4ee63bdd175907` |
-| [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) | opcode audit + first real native state mutation/rollback | #49 | `6e43ef059db52783b7264e84579216cb2572a1e2` |
-| [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md) | allocation-free string spans + UI intents | #50 | `9a5e8ade361180d220f2b3614a443e5efb0d27bd` |
-| [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md) | bounded native-pack string reads | #51 | `526640b12d978fdbe9c8a9239c37db2fca95cddd` |
-| [`MAP1_NATIVE_STATUS_MESSAGE.md`](MAP1_NATIVE_STATUS_MESSAGE.md) | first native effect owner: FORCE_MESSAGE status ref | #52 | `40b61af5e2115266d4d03dddcc3175850538b0f5` |
-| [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) | DIALOG/NOBACK pause + static continuation owner | #53 | `395418510207bf24ac45ddbb4c4c15db3ddc8998` |
-| [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md) | bounded EV_NOTE native notebook owner | #54 | `03002f79eb03bdcb4c9e430c43e4693dab47e44b` |
-| [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) | pure EV_CHECK_KEY dynamic gate | #55 | `03c4275f2abfd6671c8bf499c075435d7b61ab97` |
-| [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) | bounded EV_PASSWORD pause/submission owner | #56 | `3c113cc047aeb613f2ba4ab7905e92487c796f80` |
+| [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) | event descriptor + bytecode linkage | #47 | `a3e629ba0be6b4dcc6329b17f18a0c3ca9828958` |
+| [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md) | compact script state + event filtering | #48 | `0c8a52549ebb436139f7cd5c8b4ee63bdd175907` |
+| [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) | opcode audit + first native state mutation | #49 | `6e43ef059db52783b7264e84579216cb2572a1e2` |
+| [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md) | string spans + UI intents | #50 | `9a5e8ade361180d220f2b3614a443e5efb0d27bd` |
+| [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md) | bounded pack-backed strings | #51 | `526640b12d978fdbe9c8a9239c37db2fca95cddd` |
+| [`MAP1_NATIVE_STATUS_MESSAGE.md`](MAP1_NATIVE_STATUS_MESSAGE.md) | FORCE_MESSAGE owner | #52 | `40b61af5e2115266d4d03dddcc3175850538b0f5` |
+| [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) | DIALOG/NOBACK pause owner | #53 | `395418510207bf24ac45ddbb4c4c15db3ddc8998` |
+| [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md) | NOTE notebook owner | #54 | `03002f79eb03bdcb4c9e430c43e4693dab47e44b` |
+| [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) | CHECK_KEY dynamic gate | #55 | `03c4275f2abfd6671c8bf499c075435d7b61ab97` |
+| [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) | PASSWORD pause/submission owner | #56 | `3c113cc047aeb613f2ba4ab7905e92487c796f80` |
+| [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md) | first mutable world owner + OPEN/CLOSE | #57 | `e4fb32f41b7074bbb433e64f4c824edb2167cf50` |
 
-Current merge-ready milestone:
+## Current merge-ready milestone
 
-- [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md) — first explicit native mutable-world owner. Real CYD proved a 120-byte packed OPEN/LOCKED overlay for all 480 immutable lines, 71 real `EV_OPENLINE`/`EV_CLOSELINE` commands, 29 actual world mutations with exact 29/29 rollback, 18 lock-blocked commands, 24 already-target commands, 136 B actual persistent heap, `lineStateFNV=e5e74861`, `lineDoorFNV=b1c9d297`, and first mutated state `8f57d779`. Firmware `376f45bcdd12264d3cba1ee83e7197a52e248210`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
-
-## Architecture rule
-
-DoomRPG-RE is the executable specification/reference, **not the permanent engine architecture**.
-
-Long-term direction:
+[`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) owns `13 / EV_UNLOCK` as a second explicit native line-world mutation family.
 
 ```text
-Doom RPG data / recovered behavior
- -> native pack-backed parsers
- -> compact immutable native map
- -> allocation-free accessors
- -> small explicit mutable spatial/script state
- -> native event lookup + descriptor/linkage
- -> side-effect-free event filtering
- -> fail-closed native opcode execution
- -> compact native effect intents
- -> bounded pack-backed string/text access
- -> small explicit native effect/player owners
- -> pure dynamic gates
- -> bounded pause/input owners
- -> compact native world overlays
- -> native event/script loop
- -> native gameplay/effect consumers
- -> ESP32-native gameplay + renderer
-```
-
-Do not promote desktop `Render_t`, `DoomCanvas_t`, pointer-heavy map structs, map-wide strings/texels, runtime ZIP access or legacy resource ownership into permanent requirements.
-
-## Current recovery point
-
-Latest merged hardware baseline:
-
-```text
-PR   = #56
-main = 3c113cc047aeb613f2ba4ab7905e92487c796f80
-hardware-tested firmware content = e2d12085712324444f26528b77ea5122c871d85b
-```
-
-Current merge-ready branch:
-
-```text
-branch = agent/esp32-map1-native-line-door-state
-base   = 3c113cc047aeb613f2ba4ab7905e92487c796f80
-hardware-tested firmware content = 376f45bcdd12264d3cba1ee83e7197a52e248210
+branch = agent/esp32-map1-native-unlock-state
+base   = e4fb32f41b7074bbb433e64f4c824edb2167cf50
+hardware-tested firmware = e423093c8e17dda1345bebecf721dedf4bbb2002
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Hardware-proven fingerprints now include:
+The existing 120-byte OPEN/LOCKED owner remains unchanged at `lineStateFNV=e5e74861`. A separate 60-byte texture-9/10 owner is now hardware-proven with:
 
 ```text
-arenaFNV           = c3882516
-decodedFNV         = a426dd18
-mapStateFNV        = cd99b98e
-lookupFNV          = 63430151
-descriptorFNV      = 27115328
-linkageFNV         = 5727902c
-scriptFNV          = f9e3d9df
-filterFNV          = a5923b21
-resumeFNV          = b98452da
-opcodeAuditFNV     = 6f28df45
-firstExecFNV       = 646b565c
-stringSpanFNV      = 713188eb
-uiIntentFNV        = 7fdd6a79
-stringContentFNV   = e995ee51
-statusApplyFNV     = 52b25a5f
-dialogApplyFNV     = d0254f3d
-noteApplyFNV       = 43183162
-notebookContentFNV = 599609e0
-notebookStorageFNV = 75cf54e0
-keyGateFNV         = 9ace79cd
-passwordOwnerFNV   = 48f01689
-passwordSubmitFNV  = 90e8c574
-lineStateFNV       = e5e74861
-lineDoorFNV        = b1c9d297
-lineMutatedFNV     = 8f57d779
+variants         = 6
+initialTexture10 = 0
+textureStateFNV  = f1fc1875
+actual heap      = 76 B
 ```
 
-Persistent native heap is now hardware-proven at:
+Complete real UNLOCK corpus:
 
 ```text
-immutable arena      14112 B
-mutable tile state    1040 B
-mutable script state   100 B
-mutable line state     136 B
+refs=6 mutated=6 lockMutated=6 textureMutated=6
+noMutation=0 removable=0 stateExecRefused=6
+resultBytes=20 unlockFNV=261d756a
+rollback=6/6 idempotentHandled=1
+```
+
+Canonical first UNLOCK:
+
+```text
+cmd18 event6 off7 line400
+locked 1->0 texture 9->10
+sound=5067 effects=07 handled=1 removeIfHandled=0
+lineStateFNV    e5e74861 -> 8d5f89d8 -> rollback e5e74861
+textureStateFNV f1fc1875 -> 997459ec -> rollback f1fc1875
+```
+
+## Architecture rule
+
+DoomRPG-RE desktop/J2ME remains an executable behavior/format reference, not the permanent ESP32 architecture.
+
+```text
+original data/behavior
+ -> native pack-backed parsers
+ -> compact immutable map
+ -> small explicit mutable overlays
+ -> native script/event ownership
+ -> native gameplay effects
+ -> native renderer
+```
+
+Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexels`, pointer-heavy desktop map structures or legacy `Render_t` ownership as a shortcut.
+
+## Current hardware-proven boundary
+
+Persistent native heap:
+
+```text
+immutable arena       14112 B
+mutable tile state     1040 B
+mutable script state    100 B
+mutable line state      136 B
+mutable texture state    76 B
 ----------------------------
-total                 15388 B
+total                  15464 B
 ```
 
-Hardware-proven value types:
+Latest same-build stable allocation boundary:
 
 ```text
-status owner           =   8 B
-dialog owner           =  12 B
-notebook owner         = 514 B
-key-gate result        =  12 B
-password owner         =  20 B
-password submit result =  12 B
-line-door result       =  16 B
+line state:    heap8 68652 -> 68516, cost 136 B, largest8 34804 stable
+texture state: heap8 68516 -> 68440, cost  76 B, largest8 34804 stable
+PARK:          heap=134204 heap8=68440 largest8=34804
 ```
 
-## Line-world hardware proof
-
-Initial native line world:
+Key fingerprints:
 
 ```text
-lines        = 480
-openBits     = 60 B
-lockedBits   = 60 B
-storage      = 120 B
-initialOpen  = 0
-initialLocked= 7
-lineStateFNV = e5e74861
+arenaFNV             = c3882516
+mapStateFNV          = cd99b98e
+scriptFNV            = f9e3d9df
+keyGateFNV           = 9ace79cd
+passwordOwnerFNV     = 48f01689
+passwordSubmitFNV    = 90e8c574
+lineStateFNV         = e5e74861
+lineDoorFNV          = b1c9d297
+lineMutatedFNV       = 8f57d779
+lineTextureStateFNV  = f1fc1875
+unlockFNV            = 261d756a
+unlockMutatedLineFNV = 8d5f89d8
+unlockMutatedTexFNV  = 997459ec
 ```
 
-Complete real OPEN/CLOSE corpus:
+Legacy witnesses and framebuffer remain unchanged across UNLOCK; `packIO=no`, legacy runtime remains clear, `entities=0`, `monsters=0`, `noGameplay=yes`.
 
-```text
-refs             = 71
-open             = 39
-close            = 32
-mutated          = 29
-locked           = 18
-alreadyTarget    = 24
-removable        = 12
-stateExecRefused = 71
-resultBytes      = 16
-lineDoorFNV      = b1c9d297
-elapsed          = 11 ms
-```
+## Remaining MAP_INTRO families
 
-Canonical first successful world mutation:
-
-```text
-cmd3 event1 off2 line459 opcode15 / EV_OPENLINE
-open=0->1 locked=0 sound=5063 effects=07 removeIfHandled=0
-lineStateFNV e5e74861 -> mutatedFNV 8f57d779
-rollback exact to e5e74861
-```
-
-Rollback/idempotence/lock proof:
-
-```text
-rollback=29/29
-idempotent=1
-lockedGuard=1
-stateAtomic=yes
-worldRestored=yes
-```
-
-Persistent allocation proof:
-
-```text
-heap8             = 68700 -> 68564
-persistentHeapCost= 136 B
-payload           = 120 B
-allocatorOverhead = 16 B
-largest8          = 36852 -> 36852
-```
-
-Current-build integrity:
-
-```text
-frameFNV          = 5a979d01 -> 5a979d01
-arenaFNV          = c3882516 -> c3882516
-mapStateFNV       = cd99b98e -> cd99b98e
-scriptFNV         = f9e3d9df -> f9e3d9df
-legacyNotebookFNV = 4d7705c5 -> 4d7705c5
-keys               = 00000000 -> 00000000
-hudFNV             = 505b1255 -> 505b1255
-passwordCanvasFNV = 214171cf -> 214171cf
-continuationFNV   = e2ba14a5 -> e2ba14a5
-packIO            = no
-legacyRuntimeClear= yes
-entities=0 monsters=0 noGameplay=yes
-```
-
-Stable heartbeats after PARK:
-
-```text
-30084 ms: heap=134328 heap8=68564 largest8=36852 all reported subsystems ready
-35085 ms: heap=134328 heap8=68564 largest8=36852 all reported subsystems ready
-```
-
-## Remaining MAP_INTRO opcode families
-
-Still unowned:
+After UNLOCK, still unowned:
 
 ```text
 2  EV_CHANGEMAP
 7  EV_SHOW
 9  EV_GIVEMAP
-13 EV_UNLOCK
 18 EV_HIDE
 27 EV_SAVEGAME
 ```
 
-No next family is pre-authorized. After merge, reread the true new `main`, `PORTING_STATUS.md`, this milestone and exact remaining legacy semantics. `EV_UNLOCK` is adjacent to the now-owned line state, but its lock/texture/special-entity effects require an explicit milestone.
+No later family is pre-authorized. After merge, recover the exact new `main`, read `PORTING_STATUS.md`, `DOCUMENTATION.md`, the merged UNLOCK archive and exact legacy semantics before selecting the next bounded owner.
 
 ## Milestone workflow
 
 1. Branch from exact latest hardware-validated `main`.
 2. Keep one coherent bounded objective per branch.
 3. Recover exact legacy semantics before designing native ownership.
-4. Fail closed before unimplemented or unsafe effects.
-5. Validate normal optimized firmware on the real classic CYD.
+4. Fail closed before unsupported or unsafe effects.
+5. Validate normal optimized `esp32-cyd` on the real classic CYD.
 6. Preserve exact RAM/fingerprint/hardware evidence.
 7. Mark merge-ready only after implementation + hardware + docs agree.
-8. Keep all post-hardware commits docs-only unless another firmware is flashed.
+8. Keep every post-hardware commit docs-only unless another firmware is flashed.
 
-Current recommendation: merge `agent/esp32-map1-native-line-door-state`.
+Current recommendation: **merge `agent/esp32-map1-native-unlock-state`**.
