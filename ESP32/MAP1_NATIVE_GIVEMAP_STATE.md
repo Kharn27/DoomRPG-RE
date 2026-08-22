@@ -9,13 +9,13 @@ PR   = #58 — native EV_UNLOCK world state
 main = 7503b379185db3f05713eb34f1762173edb977d0
 ```
 
-Firmware candidate content:
+Hardware-tested firmware content:
 
 ```text
 2e0f8f5de93f806380ee254a8dab59a817c73f5d
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
@@ -33,31 +33,25 @@ real EV_GIVEMAP bytecode
  -> exact rollback in probe
 ```
 
-The new reveal owner payload is therefore:
-
-```text
-60 + 43 = 103 B
-```
-
-No map geometry, sprite records or tile flags are duplicated.
+The new reveal owner payload is exactly `103 B`. No map geometry, sprite records or duplicate tile-state array are allocated.
 
 ## Why GIVEMAP before SHOW/HIDE
 
-Recovered remaining world semantics show a useful boundary split.
+Recovered legacy behavior shows that `EV_SHOW` and `EV_HIDE` are entity-topology operations, not visibility-only commands.
 
-`EV_SHOW` is entity-coupled: it changes map-sprite frame/hidden bits, can kill up to two qualifying entities occupying the sprite tile, then links `sprite->ent` into the world.
+`EV_SHOW` changes the target map-sprite frame/hidden bits, can kill up to two qualifying entities occupying the sprite tile, then links `sprite->ent` into the world.
 
-`EV_HIDE` is also entity-coupled: it walks the complete entity chain at a tile, hides each qualifying entity-backed sprite and unlinks those entities.
+`EV_HIDE` walks the complete entity chain at a tile, hides each qualifying entity-backed sprite and unlinks those entities.
 
-Those opcodes should wait for an explicit compact native entity/topology owner rather than smuggling legacy `Entity_t` behavior into a sprite bitset.
+Those families therefore remain deferred until an explicit compact native entity/topology owner exists.
 
-`EV_GIVEMAP`, by contrast, is pure automap state and can be owned permanently now.
+`EV_GIVEMAP`, by contrast, is pure automap/tile state and is permanently ownable now.
 
 ## Recovered legacy behavior
 
-Legacy `Game_executeEvent()` dispatches opcode 9 to `Game_givemap(game)` and then reaches its normal `return true`.
+Legacy `Game_executeEvent()` dispatches opcode 9 to `Game_givemap(game)` and then returns handled=true.
 
-`Game_givemap()` performs exactly:
+`Game_givemap()` performs:
 
 ```text
 for every line:
@@ -67,25 +61,25 @@ for every line:
 for every map sprite:
     sprite.info |= 0x10000000
 
-for each of 32x32 mapFlags cells:
+for each 32x32 mapFlags cell:
     if cell & BIT_AM_ENTRANCE:
         cell |= BIT_AM_VISITED
 ```
 
 A valid GIVEMAP remains handled even when all targets are already revealed/visited.
 
-The outer legacy `Game_runEvent()` may remove a handled command when source `arg2 & 0x200`; native GIVEMAP returns `removeCommandIfHandled` but does not mutate `EspMapScriptState` yet.
+The outer `Game_runEvent()` may remove a handled command when source `arg2 & 0x200`; native GIVEMAP exposes this as `removeCommandIfHandled` but does not mutate `EspMapScriptState` yet.
 
 ## Existing tile-state ownership reused
 
-`EspMapState` already owns the canonical 1024 mutable tile flags and already defines:
+`EspMapState` already owns the canonical 1024 mutable tile flags and defines:
 
 ```text
 BIT_AM_ENTRANCE = 0x04
 BIT_AM_VISITED  = 0x10
 ```
 
-Its initial hardware fingerprint remains:
+Initial hardware fingerprint:
 
 ```text
 mapStateFNV = cd99b98e
@@ -99,7 +93,7 @@ EspMapState_setVisited(tileIndex, visited)
 
 The setter preserves every other structural tile bit, changes no storage layout and allocates no memory.
 
-## Permanent automap reveal owner
+## Permanent automap owner
 
 New files:
 
@@ -108,31 +102,17 @@ ESP32/include/esp_map_automap_state.h
 ESP32/src/esp_map_automap_state.c
 ```
 
-State view:
-
-```c
-typedef struct EspMapAutomapStateView_s {
-    const uint8_t* lineRevealedBits;
-    const uint8_t* spriteRevealedBits;
-    uint32_t lineCount;
-    uint32_t spriteCount;
-    uint32_t lineBitsetBytes;
-    uint32_t spriteBitsetBytes;
-    uint32_t storageBytes;
-    uint32_t stateFNV1a;
-    uint32_t lineRevealedCount;
-    uint32_t spriteRevealedCount;
-} EspMapAutomapStateView;
-```
-
-For MAP_INTRO the structural payload is fixed from already-proven counts:
+MAP_INTRO storage proven on hardware:
 
 ```text
-lineCount         = 480
-lineBitsetBytes   = 60
-mapSpriteCount    = 344
-spriteBitsetBytes = 43
-storageBytes      = 103 B
+lineCount             = 480
+lineBitsetBytes       = 60
+initialLineRevealed   = 0
+mapSpriteCount        = 344
+spriteBitsetBytes     = 43
+initialSpriteRevealed = 0
+storageBytes          = 103
+automapStateFNV       = 669b1aa7
 ```
 
 Initial bits are derived directly from immutable source records:
@@ -141,8 +121,6 @@ Initial bits are derived directly from immutable source records:
 line reveal   <- source line.flags & 0x80
 sprite reveal <- source sprite.info & 0x10000000
 ```
-
-The real CYD must establish the initial reveal counts, initial automap-state FNV and actual allocator cost.
 
 Permanent primitives:
 
@@ -160,9 +138,9 @@ EspMapAutomapState_applyGiveMapCommand()
 
 The permanent implementation has no `Game`, `Render`, `Entity`, Hud, Sound, Player or DoomCanvas dependency.
 
-## GIVEMAP result
+## GIVEMAP result ABI
 
-Expected classic ESP32 ABI:
+Hardware-proven classic ESP32 ABI:
 
 ```text
 EspMapGiveMapResult = 20 B
@@ -183,122 +161,142 @@ legacyReturnValue = 1
 removeCommandIfHandled
 ```
 
-Repeated valid GIVEMAP semantics are explicit:
+## Real-CYD corpus proof
+
+Normal optimized environment: `esp32-cyd`.
+
+The real classic no-PSRAM CYD established:
 
 ```text
-first apply:
-  handled=1
-  one or more native automap/tile mutations expected
-
-second apply without rollback:
-  handled=1
-  linesMutated=0
-  spritesMutated=0
-  tilesMutated=0
-  mutated=0
-  state fingerprints unchanged from post-first-apply
+refs             = 1
+mutated          = 1
+noMutation       = 0
+removable        = 0
+resultBytes      = 20
+stateExecRefused = 1
+lineTargets      = 430
+spriteTargets    = 344
+entranceTargets  = 4
+lineMutTotal     = 430
+spriteMutTotal   = 344
+tileMutTotal     = 4
+giveMapFNV       = 98c7ac59
+elapsed          = 34 ms
 ```
 
-## Temporary real-CYD probe
-
-New files:
+Canonical real command:
 
 ```text
-ESP32/include/native_map1_givemap_probe.h
-ESP32/src/native_map1_givemap_probe.c
+global command = 43
+event          = 14
+command offset = 1
+line mutations = 430
+sprite mutations = 344
+tile mutations = 4
+handled        = 1
+removeIfHandled= 0
 ```
 
-The probe runs only after the hardware-proven UNLOCK stage. It requires these inherited native owners to remain exact:
+The line target count also proves that 50 of 480 source lines carry the no-automap `0x20` flag and are intentionally not revealed by GIVEMAP.
+
+All 344 map sprites are GIVEMAP targets. The four entrance targets are the four native `BIT_AM_ENTRANCE` cells already owned by `EspMapState`.
+
+## World mutation + rollback proof
+
+Initial fingerprints:
 
 ```text
-arenaFNV             = c3882516
-mapStateFNV          = cd99b98e
-scriptFNV            = f9e3d9df
-lineStateFNV         = e5e74861
-lineTextureStateFNV  = f1fc1875
+automapStateFNV = 669b1aa7
+mapStateFNV     = cd99b98e
 ```
 
-### Initial automap proof
-
-Every line/sprite reveal bit is independently checked against its immutable source record before GIVEMAP is executed.
-
-Hardware-pending canons:
+Applying the real GIVEMAP produces:
 
 ```text
-initialLineRevealed
-initialSpriteRevealed
-automapStateFNV
-lineTargets
-spriteTargets
-entranceTargets
+mutatedAutomapFNV = 9d03ca2d
+mutatedMapStateFNV = e21edbce
 ```
 
-### Complete real GIVEMAP corpus
-
-The probe scans all 93 events / 265 bytecodes and discovers every real opcode-9 command.
-
-For each real ref it requires:
+The probe then restores both owners exactly:
 
 ```text
-state-only executor -> UNSUPPORTED
-canonical descriptor/command provenance
-status -> OK
-legacyReturnValue -> 1
-line targets exactly match !(source flags & 0x20)
-sprite targets exactly match all 344 map sprites
-entrance targets exactly match native ESP_MAP_TILE_ENTRANCE cells
-mutation counts exactly match current native state
-removeCommandIfHandled exactly matches arg2 & 0x200
+rollback = 1 / 1
+final automapStateFNV = 669b1aa7
+final mapStateFNV     = cd99b98e
+worldRestored = yes
 ```
 
-After each real mutating command the probe restores:
+Thus one real Doom RPG bytecode command simultaneously mutates the dedicated automap reveal owner and the pre-existing native tile owner, with exact two-owner rollback.
+
+## Repeated handled semantics
+
+The real mutating GIVEMAP was applied twice without rollback between calls.
+
+First call:
 
 ```text
-line reveal bits -> immutable source 0x80 values
-sprite reveal bits -> immutable source 0x10000000 values
-all VISITED bits -> initial clear state
+status=OK
+handled=1
+linesMutated=430
+spritesMutated=344
+tilesMutated=4
+mutated=1
 ```
 
-and requires exact initial fingerprints again.
-
-Acceptance requires at least one real GIVEMAP mutation.
-
-New hardware canons intentionally left pending:
+Second call against the already-revealed native state:
 
 ```text
-GIVEMAP ref count
-mutated/no-mutation refs
-remove-if-handled count
-line/sprite/tile mutation totals
-first real sample
-giveMapFNV
-first mutated automap-state FNV
-first mutated map-state FNV
+status=OK
+handled=1
+linesMutated=0
+spritesMutated=0
+tilesMutated=0
+mutated=0
+world fingerprints unchanged from post-first-call state
+removeCommandIfHandled unchanged
 ```
 
-### Fail-closed / atomicity proof
-
-Expected:
+Hardware proof:
 
 ```text
-notReady=1
-unsupported=1
-badOffset=1
-badDescriptor=1
-nullDescriptor=1
-nullResult=1
-badLineIndex=1
-badSpriteIndex=1
-badRevealValue=1
-badVisitedIndex=1
-badVisitedValue=1
-stateAtomic=yes
-worldRestored=yes
+idempotentHandled = 1
 ```
 
-## RAM / integrity boundary
+Both owners were then restored to their initial fingerprints.
 
-Hardware-proven persistent native heap entering this milestone:
+## Fail-closed / atomicity proof
+
+Real hardware proved:
+
+```text
+notReady       = 1
+unsupported    = 1
+badOffset      = 1
+badDescriptor  = 1
+nullDescriptor = 1
+nullResult     = 1
+badLineIndex   = 1
+badSpriteIndex = 1
+badRevealValue = 1
+badVisitedIndex= 1
+badVisitedValue= 1
+stateAtomic    = yes
+worldRestored  = yes
+```
+
+## Persistent RAM proof
+
+Hardware-proven persistent native heap entering this stage was `15464 B`.
+
+The real automap-owner allocation is:
+
+```text
+payload             = 103 B
+persistentHeapCost  = 120 B
+allocatorOverhead   = 17 B
+```
+
+New persistent native total:
 
 ```text
 immutable arena        14112 B
@@ -306,74 +304,96 @@ mutable tile state      1040 B
 mutable script state     100 B
 mutable line state       136 B
 mutable texture state     76 B
+mutable automap state    120 B
 -----------------------------
-proven total           15464 B
+total                  15584 B
 ```
 
-Candidate payload:
+Same-build allocation witness:
 
 ```text
-automap reveal state = 103 B
+heap8       = 68384 -> 68264
+largest8    = 34804 -> 34804
+frameFNV    = 453f0d5c -> 453f0d5c
 ```
 
-Probe acceptance for actual allocator cost:
+The 17-byte allocator overhead is the measured allocator delta for the 103-byte payload on this build; it is within the predeclared 103..167 B acceptance bound.
+
+## Inherited world / legacy integrity
+
+The preceding UNLOCK stage remained semantically canonical in this same firmware:
 
 ```text
-103 B <= incremental persistent heap <= 167 B
-largest8 >= 32768 B
-no heap drift after state construction
+textureStateFNV = f1fc1875
+unlockFNV       = 261d756a
+rollback        = 6/6
 ```
 
-Exact allocation and new persistent total are hardware-pending.
-
-All inherited owners and legacy witnesses must remain exact after rollback:
+GIVEMAP preserved all inherited state after rollback:
 
 ```text
-framebuffer unchanged
-arenaFNV unchanged
-mapStateFNV = cd99b98e
-scriptFNV unchanged
-lineStateFNV = e5e74861
+frameFNV            = 453f0d5c -> 453f0d5c
+arenaFNV            = c3882516 -> c3882516
+mapStateFNV         = cd99b98e -> cd99b98e
+scriptFNV           = f9e3d9df -> f9e3d9df
+lineStateFNV        = e5e74861
 lineTextureStateFNV = f1fc1875
-legacy notebook/keys/Hud/password/continuation unchanged
-pack closed
-legacy Render runtime clear
-entities=0
-monsters=0
-ST_PLAYING not reached
+legacyNotebookFNV   = 4d7705c5 -> 4d7705c5
+legacy keys         = 00000000 -> 00000000
+hudFNV              = 505b1255 -> 505b1255
+passwordCanvasFNV   = 214171cf -> 214171cf
+continuationFNV     = e2ba14a5 -> e2ba14a5
+packIO              = no
+legacyRuntimeClear  = yes
 ```
 
-The 103-byte automap owner remains resident at PARK but restored to its initial content FNV.
+No legacy world mutation occurred.
 
-## Expected Serial family
+## Final PARK boundary
+
+Hardware proved:
 
 ```text
-[MAPGIVEMAPPROBE] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO GIVEMAP automap state ===
-[MAPGIVEMAPPROBE] CONTRACT ...
-[MAPAUTOMAP] READY lines=480 lineBytes=60 lineRevealed=... sprites=344 spriteBytes=43 spriteRevealed=... storageBytes=103 stateFNV=...
-[MAPGIVEMAP] READY refs=... mutated=... noMutation=... removable=... resultBytes=20 stateExecRefused=... lineTargets=... spriteTargets=... entranceTargets=... lineMutTotal=... spriteMutTotal=... tileMutTotal=... giveMapFNV=... elapsed=...ms
-[MAPGIVEMAP] SAMPLE cmd=... event=... off=... lineMut=... spriteMut=... tileMut=... handled=1 removeIfHandled=...
-[MAPGIVEMAP] WORLD ... automapStateFNV=... mutatedAutomapFNV=... mapStateFNV=cd99b98e mutatedMapStateFNV=... rollback=.../... idempotentHandled=1
-[MAPGIVEMAP] FAILCLOSED ... stateAtomic=yes worldRestored=yes
-[MAPGIVEMAPPROBE] RAM heap8=...->... persistentHeapCost=... payload=103 allocatorOverhead=... largest8=...->...
-[MAPGIVEMAPPROBE] LEGACY ... packIO=no legacyRuntimeClear=yes
-[MAPGIVEMAPPROBE] PARK ... nativeAutomapState=yes nativeGiveMapExec=yes storageBytes=103 resultBytes=20 worldMutationProven=yes worldRestored=yes ...
-[ALIVE] ...
+nativeAutomapState = yes
+nativeGiveMapExec  = yes
+storageBytes       = 103
+resultBytes        = 20
+worldMutationProven = yes
+worldRestored       = yes
+legacyWorldMutation = no
+framebufferMutation = no
+entities             = 0
+monsters             = 0
+noGameplay           = yes
 ```
 
-Use normal optimized PlatformIO environment:
+Stable post-PARK heartbeats:
 
 ```text
-esp32-cyd
+uptime=25135 ms heap=134028 heap8=68264 largest8=34804 all reported subsystems ready
+uptime=30136 ms heap=134028 heap8=68264 largest8=34804 all reported subsystems ready
+uptime=35137 ms heap=134028 heap8=68264 largest8=34804 all reported subsystems ready
 ```
 
-No CI status is published for firmware candidate `2e0f8f5de93f806380ee254a8dab59a817c73f5d`. A local build could not be attempted because the execution container could not resolve GitHub; this is not a compile result. Real classic-CYD Serial remains the validation authority.
+Absolute `heap8`, `largest8` and framebuffer FNV can differ across firmware builds. Acceptance uses same-build stability plus canonical fingerprints and bounded persistent ownership.
 
-## Remaining MAP_INTRO families after PASS
+## Hardware acceptance status
 
-If GIVEMAP passes, still unowned:
+The real CYD proved the complete GIVEMAP corpus, exact line/sprite/entrance targeting, two-owner mutation, exact rollback, repeated handled semantics, fail-closed paths, 120-byte persistent allocation, legacy integrity and stable PARK heartbeats.
+
+This milestone is **REAL-CYD HARDWARE PASS / MERGE-READY**.
+
+Hardware-tested firmware content:
+
+```text
+2e0f8f5de93f806380ee254a8dab59a817c73f5d
+```
+
+All later commits must remain documentation-only unless another firmware is flashed.
+
+## Remaining MAP_INTRO families
+
+After GIVEMAP, still unowned:
 
 ```text
 2  EV_CHANGEMAP
@@ -382,4 +402,4 @@ If GIVEMAP passes, still unowned:
 27 EV_SAVEGAME
 ```
 
-Do not pre-authorize the next family before PASS + merge recovery.
+Do not preselect the next family before merge recovery. SHOW/HIDE remain entity-topology coupled; CHANGEMAP and SAVEGAME remain larger ownership boundaries.
