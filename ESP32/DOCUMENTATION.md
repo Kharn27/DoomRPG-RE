@@ -35,76 +35,98 @@ This file defines how the ESP32 CYD port documentation is organized and which fi
 | [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md) | first mutable world owner + OPEN/CLOSE | #57 | `e4fb32f41b7074bbb433e64f4c824edb2167cf50` |
 | [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) | second line-world owner + EV_UNLOCK | #58 | `7503b379185db3f05713eb34f1762173edb977d0` |
 
-## Current candidate
+## Current merge-ready milestone
 
 [`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md) owns `9 / EV_GIVEMAP` as a compact native automap mutation family.
 
 ```text
 branch = agent/esp32-map1-native-givemap-state
 base   = 7503b379185db3f05713eb34f1762173edb977d0
-firmware candidate = 2e0f8f5de93f806380ee254a8dab59a817c73f5d
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 2e0f8f5de93f806380ee254a8dab59a817c73f5d
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-The candidate adds:
+Hardware-proven automap owner:
 
 ```text
-480 line reveal bits  = 60 B
-344 sprite reveal bits= 43 B
----------------------------
-automap payload       = 103 B
+480 line reveal bits   = 60 B
+344 sprite reveal bits = 43 B
+payload                = 103 B
+actual heap            = 120 B
+initial line revealed  = 0
+initial sprite revealed= 0
+automapStateFNV        = 669b1aa7
 ```
 
-`EspMapState` remains 1024 bytes and gains only a bounded `BIT_AM_VISITED` setter. GIVEMAP reveals eligible lines, every map sprite and entrance tiles without touching legacy `Render_t`, entities, sound or presentation.
-
-Expected new caller-local ABI:
+Real GIVEMAP corpus:
 
 ```text
-EspMapGiveMapResult = 20 B
+refs=1 mutated=1 noMutation=0 removable=0 stateExecRefused=1
+resultBytes=20
+lineTargets=430 spriteTargets=344 entranceTargets=4
+lineMutTotal=430 spriteMutTotal=344 tileMutTotal=4
+giveMapFNV=98c7ac59
+rollback=1/1 idempotentHandled=1
 ```
 
-The real CYD must establish the initial reveal topology, real GIVEMAP corpus, automap/result fingerprints, mutation counts and exact incremental heap cost.
+Canonical real mutation:
 
-## Current hardware-proven boundary through PR #58
+```text
+cmd43 event14 off1
+430 line reveals + 344 sprite reveals + 4 entrance VISITED bits
+handled=1 removeIfHandled=0
+automapStateFNV 669b1aa7 -> 9d03ca2d -> rollback 669b1aa7
+mapStateFNV     cd99b98e -> e21edbce -> rollback cd99b98e
+```
+
+## Current hardware-proven boundary
 
 Persistent native heap:
 
 ```text
-immutable arena        14112 B
-mutable tile state      1040 B
-mutable script state     100 B
-mutable line state       136 B
-mutable texture state     76 B
------------------------------
-total                   15464 B
+immutable arena         14112 B
+mutable tile state       1040 B
+mutable script state      100 B
+mutable line state        136 B
+mutable texture state      76 B
+mutable automap state     120 B
+------------------------------
+total                   15584 B
+```
+
+Latest same-build GIVEMAP allocation witness:
+
+```text
+heap8 68384 -> 68264
+payload=103 B actual heap=120 B overhead=17 B
+largest8=34804 stable
+frameFNV=453f0d5c stable
+PARK heap=134028 heap8=68264 largest8=34804
 ```
 
 Key fingerprints:
 
 ```text
-arenaFNV             = c3882516
-mapStateFNV          = cd99b98e
-scriptFNV            = f9e3d9df
-keyGateFNV           = 9ace79cd
-passwordOwnerFNV     = 48f01689
-passwordSubmitFNV    = 90e8c574
-lineStateFNV         = e5e74861
-lineDoorFNV          = b1c9d297
-lineMutatedFNV       = 8f57d779
-lineTextureStateFNV  = f1fc1875
-unlockFNV            = 261d756a
-unlockMutatedLineFNV = 8d5f89d8
-unlockMutatedTexFNV  = 997459ec
+arenaFNV              = c3882516
+mapStateFNV           = cd99b98e
+scriptFNV             = f9e3d9df
+keyGateFNV            = 9ace79cd
+passwordOwnerFNV      = 48f01689
+passwordSubmitFNV     = 90e8c574
+lineStateFNV          = e5e74861
+lineDoorFNV           = b1c9d297
+lineMutatedFNV        = 8f57d779
+lineTextureStateFNV   = f1fc1875
+unlockFNV             = 261d756a
+unlockMutatedLineFNV  = 8d5f89d8
+unlockMutatedTexFNV   = 997459ec
+automapStateFNV       = 669b1aa7
+giveMapFNV            = 98c7ac59
+giveMapMutatedAutoFNV = 9d03ca2d
+giveMapMutatedMapFNV  = e21edbce
 ```
 
-UNLOCK hardware proof:
-
-```text
-refs=6 mutated=6 lockMutated=6 textureMutated=6
-rollback=6/6 idempotentHandled=1
-texture payload=60 B / actual heap=76 B
-first success: cmd18 event6 off7 line400 locked 1->0 texture 9->10
-```
+Legacy witnesses and framebuffer remain unchanged across GIVEMAP; `packIO=no`, legacy runtime remains clear, `entities=0`, `monsters=0`, `noGameplay=yes`.
 
 ## Architecture rule
 
@@ -124,7 +146,7 @@ Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexel
 
 ## Remaining MAP_INTRO families
 
-Current candidate owns GIVEMAP. If it passes, remaining unowned families are:
+After GIVEMAP, still unowned:
 
 ```text
 2  EV_CHANGEMAP
@@ -133,7 +155,7 @@ Current candidate owns GIVEMAP. If it passes, remaining unowned families are:
 27 EV_SAVEGAME
 ```
 
-SHOW/HIDE are deliberately not treated as simple sprite visibility: legacy semantics also kill/link/unlink entities. They require a later explicit compact native entity/topology boundary.
+SHOW/HIDE are deliberately not treated as simple sprite visibility: legacy semantics also kill/link/unlink entities. They require a later explicit compact native entity/topology boundary. CHANGEMAP and SAVEGAME remain larger ownership boundaries.
 
 ## Milestone workflow
 
@@ -146,4 +168,4 @@ SHOW/HIDE are deliberately not treated as simple sprite visibility: legacy seman
 7. Mark merge-ready only after implementation + hardware + docs agree.
 8. Keep all post-hardware commits docs-only unless another firmware is flashed.
 
-Current validation target: `agent/esp32-map1-native-givemap-state`, firmware content `2e0f8f5de93f806380ee254a8dab59a817c73f5d`.
+Current recommendation: **merge `agent/esp32-map1-native-givemap-state`**.
