@@ -7,25 +7,25 @@ Use [`README.md`](README.md) for stable build guidance, [`DOCUMENTATION.md`](DOC
 ## Latest merged hardware baseline
 
 ```text
-PR   = #55 — native CHECK_KEY dynamic gate
-main = 03c4275f2abfd6671c8bf499c075435d7b61ab97
-hardware-tested firmware content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
+PR   = #56 — native PASSWORD pause owner
+main = 3c113cc047aeb613f2ba4ab7905e92487c796f80
+hardware-tested firmware content = e2d12085712324444f26528b77ea5122c871d85b
 ```
 
-Detailed merged evidence: [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md).
+Detailed merged evidence: [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md).
 
-## Current merge-ready milestone
+## Current candidate
 
 ```text
-branch = agent/esp32-map1-native-password-owner
-base   = 03c4275f2abfd6671c8bf499c075435d7b61ab97
-hardware-tested firmware content = e2d12085712324444f26528b77ea5122c871d85b
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-map1-native-line-door-state
+base   = 3c113cc047aeb613f2ba4ab7905e92487c796f80
+firmware candidate content = 376f45bcdd12264d3cba1ee83e7197a52e248210
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Detailed evidence: [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md).
+Detailed active milestone: [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md).
 
-The branch supports only `10 / EV_PASSWORD` as a compact two-string-ref pause/continuation owner plus a bounded native submission evaluator. It does not present password UI, mutate legacy DoomCanvas/Game/Hud state, run Game continuation, mutate world/entities/rendering or enter gameplay.
+The candidate is the first explicit native mutable-world owner. It adds a 2-bit-per-line packed OPEN/LOCKED overlay over the immutable 480-line runtime and executes only real `15 / EV_OPENLINE` and `16 / EV_CLOSELINE` open-bit transitions. Door animation, collision-entity synchronization and sound remain deferred result metadata; legacy Render/Game/Entity state remains untouched.
 
 ## Permanent target / ownership
 
@@ -71,12 +71,13 @@ BSP source in native pack
  -> explicit native effect/player owners
  -> pure native dynamic gates
  -> bounded native pause/input owners
+ -> compact native line-world state
  -> native event/script loop
- -> explicit native world/render overlays
+ -> explicit native gameplay/render effects
  -> ESP32-native gameplay + renderer
 ```
 
-## Hardware-proven fingerprints
+## Hardware-proven fingerprints through PR #56
 
 ```text
 source BSP FNV       = d5cc751f
@@ -104,6 +105,14 @@ passwordOwnerFNV     = 48f01689
 passwordSubmitFNV    = 90e8c574
 ```
 
+Current line-world candidate will establish new hardware canons:
+
+```text
+lineStateFNV = pending
+lineDoorFNV  = pending
+mutatedFNV   = pending
+```
+
 MAP_INTRO `/intro.bsp` / `Entrance`:
 
 ```text
@@ -127,33 +136,41 @@ Real opcode IDs:
 
 ## Persistent native RAM ownership
 
-Hardware-proven persistent heap ownership remains:
+Hardware-proven persistent heap through PR #56:
 
 ```text
 immutable arena       = 14112 B actual heap
 mutable tile state    =  1040 B actual heap
 mutable script state  =   100 B actual heap
-opcode executor       =     0 B persistent heap
-string spans/intents  =     0 B persistent heap
-bounded string reader =     0 B persistent heap
-effect/gate probes    =     0 B persistent heap
+opcode/string/effect owners = 0 B persistent heap
 -----------------------------------------
-current proven total  = 15252 B
+proven total          = 15252 B
 largest8              = 36852 preserved
 ```
 
-Caller-owned/value types now hardware-proven:
+Hardware-proven caller-owned/value types:
 
 ```text
-EspMapStatusMessageState  =   8 B
-EspMapDialogOwnerState    =  12 B
-EspMapNotebookState       = 514 B
-EspMapKeyGateResult       =  12 B
-EspMapPasswordOwnerState  =  20 B
-EspMapPasswordSubmitResult=  12 B
+EspMapStatusMessageState   =   8 B
+EspMapDialogOwnerState     =  12 B
+EspMapNotebookState        = 514 B
+EspMapKeyGateResult        =  12 B
+EspMapPasswordOwnerState   =  20 B
+EspMapPasswordSubmitResult =  12 B
 ```
 
-PASSWORD copies no password/prompt text into persistent owner state and adds no persistent heap.
+Current candidate adds the first persistent world overlay target:
+
+```text
+lineCount                   = 480
+open bitset payload          =  60 B
+locked bitset payload        =  60 B
+EspMapLineState payload      = 120 B
+EspMapLineDoorResult         =  16 B expected caller-local
+actual line-state heap cost  = hardware pending
+```
+
+The probe accepts allocator cost only in the bounded range `120..184 B`; the exact real-CYD cost becomes canonical after PASS.
 
 ## Hardware-proven execution/effect/control boundary
 
@@ -192,7 +209,7 @@ PASSWORD:
   passwordOwnerFNV=48f01689 passwordSubmitFNV=90e8c574
 ```
 
-Canonical PASSWORD sample:
+PASSWORD canonical sample:
 
 ```text
 cmd17 event6 off6 resume7
@@ -202,29 +219,9 @@ prompt=string29@13636+41 promptFNV=ddbe080a
 codeLen=4
 ```
 
-Recovered submit timing/output proved on hardware:
+## Latest merged tested-build integrity
 
-```text
-matched expected length -> 300 ms feedback delay
-early submitted shorter input -> 0 ms deliberate delay
-correct -> "Correct code!" + resume at source offset + 1
-non-empty wrong -> "Invalid code!" + no resume
-empty wrong -> no forced message + no resume
-guards=10/10
-```
-
-PASSWORD fail-closed proof:
-
-```text
-unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1
-nullOwner=1 badOwner=1 tooLong=1 shortBuffer=1
-nullSubmitOwner=1 nullSubmitResult=1 closedPack=1
-ownerAtomic=yes reset=1
-```
-
-## Current tested-build integrity
-
-CHECK_KEY and PASSWORD stages on the hardware-tested PASSWORD firmware both use this stable build baseline:
+PASSWORD firmware:
 
 ```text
 heap8             = 68748 -> 68748
@@ -236,33 +233,18 @@ scriptFNV         = f9e3d9df -> f9e3d9df
 legacyNotebookFNV = 4d7705c5 -> 4d7705c5
 legacyKeys        = 00000000 -> 00000000
 hudFNV            = 505b1255 -> 505b1255
-```
-
-Additional PASSWORD integrity witnesses:
-
-```text
 passwordCanvasFNV = 214171cf -> 214171cf
 gamePassCodeStable= yes
-legacyPasswordMutation = no
-legacyGameContinuationMutation = no
-worldMutation = no
-framebufferMutation = no
-entities=0
-monsters=0
-noGameplay=yes
 ```
 
-PASSWORD pack access:
+PASSWORD bounded pack access:
 
 ```text
 heapOpen           = 64384
 transientHeapCost  = 4364 B
 largestOpen        = 36852
-packIO             = yes
 persistentHeapBytes= 0
 ```
-
-The pack is fully closed/recovered before PARK.
 
 Complete post-PARK heartbeat:
 
@@ -274,9 +256,107 @@ largest8=36852
 all reported subsystems = ready
 ```
 
-A later heartbeat at `175150 ms` began with the same heap values but was truncated after `VIDEO=rea`; the preceding complete heartbeat is sufficient steady-state evidence.
+Absolute heap/frame values may change in the current firmware. Acceptance is exact before/after integrity within that build plus the expected persistent line-state allocation.
 
-Absolute heap/frame values may vary across firmware builds; acceptance is based on exact before/after stability plus unchanged canonical structural fingerprints.
+## Current line-door recovered contract
+
+Legacy `Game_performDoorEvent()` for IDs 15/16:
+
+```text
+locked (flags & 0x400) -> false / no mutation
+OPENLINE + already open (flags & 0x40) -> false / no mutation
+CLOSELINE + already closed -> false / no mutation
+otherwise toggle 0x40 -> true
+successful open sound  = 5063
+successful close sound = 5064
+successful transition also requests door animation + special entity link sync
+```
+
+The permanent native owner keeps only two packed mutable predicates:
+
+```text
+openBits
+lockedBits
+```
+
+All immutable geometry/texture/other flags remain in `EspMapRuntime`.
+
+`lockedBits` is mutable state infrastructure but opcode `13 / EV_UNLOCK` remains unsupported. Its texture/entity-definition behavior is explicitly outside this milestone.
+
+Successful native OPEN/CLOSE returns deferred effect flags rather than calling legacy animation/entity/sound APIs.
+
+If a successfully handled source command has `arg2 & 0x200`, the result sets `removeCommandIfHandled=1`. It does not mutate the existing 81-byte `EspMapScriptState`; future native `Game_runEvent` ownership will do that outer-loop step.
+
+## Current real-CYD probe target
+
+The full 265-bytecode corpus is scanned and real OPEN/CLOSE counts are discovered rather than guessed.
+
+Acceptance:
+
+```text
+refs > 0
+openRefs + closeRefs = refs
+mutatedRefs > 0
+mutated + locked + alreadyTarget = refs
+stateExecRefused = refs
+resultBytes = 16
+rollbackProofs = mutatedRefs
+idempotent = 1
+lockedGuard = 1
+```
+
+The first successful real command must produce an actual native open-bit mutation, a different state FNV, then exact rollback to the initial `lineStateFNV`.
+
+The CYD will establish:
+
+```text
+initialOpen / initialLocked counts
+lineStateFNV
+OPEN/CLOSE corpus distribution
+mutated / locked / already-target counts
+removable handled count
+first successful sample
+lineDoorFNV
+first mutatedFNV
+persistent line-state heap cost
+new-build heap/frame absolute values
+```
+
+Fail-closed target:
+
+```text
+notReady=1
+unsupported=1
+badOffset=1
+badDescriptor=1
+nullDescriptor=1
+nullResult=1
+badOpenIndex=1
+badLockedIndex=1
+stateAtomic=yes
+worldRestored=yes
+```
+
+Integrity must preserve:
+
+```text
+arenaFNV          c3882516
+mapStateFNV       cd99b98e
+scriptFNV         f9e3d9df
+legacyNotebookFNV 4d7705c5
+legacy Player.keys
+Hud witness
+DoomCanvas password witness
+Game continuation witness
+framebuffer
+legacy Render runtime remains clear
+pack remains closed
+entities=0
+monsters=0
+ST_PLAYING not reached
+```
+
+The new line-state owner remains allocated at PARK but must be restored to initial contents after every probe mutation.
 
 ## Current hardware-proven execution path
 
@@ -298,7 +378,7 @@ validated intro disposal
  -> real EV_NOTE -> bounded native notebook owner
  -> real EV_CHECK_KEY -> pure native dynamic gate
  -> real EV_PASSWORD -> two-ref pause owner + bounded submit evaluator
- -> PARK + stable post-PARK heartbeat
+ -> candidate: packed line world state + real EV_OPENLINE/EV_CLOSELINE mutation/rollback
 ```
 
 Still forbidden:
@@ -306,13 +386,15 @@ Still forbidden:
 ```text
 actual DoomCanvas dialog/password presentation
 legacy Game continuation mutation by native code
-legacy Hud mutation
-legacy Player key/notebook mutation
-legacy DoomCanvas password mutation
-legacy Game.passCode mutation
-actual password/input sound playback
+legacy Hud/Player/password mutation
+legacy Render line mutation
+legacy Entity link/unlink
+actual door animation
+actual sound playback
+EV_UNLOCK texture/entity mutation
 full native Game_runEvent execution loop
-world/door/line/sprite mutation
+sprite SHOW/HIDE mutation
+GIVEMAP automap mutation
 map transitions
 savegame mutation
 entity/monster activation
@@ -320,35 +402,35 @@ native gameplay rendering
 ST_PLAYING
 ```
 
-## Remaining MAP_INTRO families
+## Remaining MAP_INTRO families after current candidate
 
-The bounded non-world UI/control families are now exhausted. Still unowned/executed natively:
+If OPEN/CLOSE passes, still unowned:
 
 ```text
 2  EV_CHANGEMAP
 7  EV_SHOW
 9  EV_GIVEMAP
 13 EV_UNLOCK
-15 EV_OPENLINE
-16 EV_CLOSELINE
 18 EV_HIDE
 27 EV_SAVEGAME
 ```
 
-The next recovery should select the first explicit native world/render overlay from SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE. `EV_CHANGEMAP` and `EV_SAVEGAME` remain larger later boundaries.
+Do not pre-authorize the next family. After PASS + merge, reread the then-current repository and choose the next bounded owner from the actual remaining semantics.
 
-## Merge recommendation
+## Current validation target
 
-**MERGE `agent/esp32-map1-native-password-owner`.**
-
-Hardware-tested firmware content:
+Build/flash normal optimized:
 
 ```text
-e2d12085712324444f26528b77ea5122c871d85b
+esp32-cyd
 ```
 
-All commits after that firmware-bearing SHA must remain documentation-only unless another firmware is flashed.
+from `agent/esp32-map1-native-line-door-state` and capture `[MAPLINESTATE]`, `[MAPDOOR]`, `[MAPDOORPROBE]` plus a later stable `[ALIVE]` heartbeat.
 
-## Next bounded milestone after merge
+Firmware candidate to identify the tested content:
 
-Reread the true new `main`, `PORTING_STATUS.md`, `DOCUMENTATION.md`, merged PASSWORD milestone and exact remaining legacy opcode behavior. Only then select the first bounded world/render overlay family.
+```text
+376f45bcdd12264d3cba1ee83e7197a52e248210
+```
+
+No CI status is published for this SHA. Do not mark merge-ready until the real classic CYD supplies the PASS.

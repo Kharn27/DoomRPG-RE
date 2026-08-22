@@ -37,10 +37,11 @@ Merged milestones:
 | [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) | DIALOG/NOBACK pause + static continuation owner | #53 | `395418510207bf24ac45ddbb4c4c15db3ddc8998` |
 | [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md) | bounded EV_NOTE native notebook owner | #54 | `03002f79eb03bdcb4c9e430c43e4693dab47e44b` |
 | [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) | pure EV_CHECK_KEY dynamic gate | #55 | `03c4275f2abfd6671c8bf499c075435d7b61ab97` |
+| [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) | bounded EV_PASSWORD pause/submission owner | #56 | `3c113cc047aeb613f2ba4ab7905e92487c796f80` |
 
-Current merge-ready milestone:
+Current candidate milestone:
 
-- [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) — compact native owner for real `10 / EV_PASSWORD`: two immutable string refs (expected code + prompt), static pause/continuation provenance, 20-byte caller-owned owner and 12-byte bounded submit result. Real CYD proved two PASSWORD commands, exact resume-at-`off+1`, correct/incorrect/empty outcomes, 300 ms matched-length vs 0 ms early-submit timing, zero legacy/world mutation, `passwordOwnerFNV=48f01689` and `passwordSubmitFNV=90e8c574`. Hardware-tested firmware `e2d12085712324444f26528b77ea5122c871d85b`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
+- [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md) — first explicit native mutable-world owner. It derives a 120-byte packed open/locked line overlay from the immutable 480-line runtime and executes only real `EV_OPENLINE` / `EV_CLOSELINE` open-bit transitions with exact rollback. Door animation, entity-link synchronization, sound and command-removal are returned as metadata rather than applied to legacy state. Firmware candidate `376f45bcdd12264d3cba1ee83e7197a52e248210`; **IMPLEMENTED, REAL-CYD HARDWARE VALIDATION PENDING**.
 
 ## Architecture rule
 
@@ -62,8 +63,9 @@ Doom RPG data / recovered behavior
  -> small explicit native effect/player owners
  -> pure dynamic gates
  -> bounded pause/input owners
+ -> compact native world overlays
  -> native event/script loop
- -> explicit native world/render overlays
+ -> native gameplay/effect consumers
  -> ESP32-native gameplay + renderer
 ```
 
@@ -74,21 +76,21 @@ Do not promote desktop `Render_t`, `DoomCanvas_t`, pointer-heavy map structs, ma
 Latest merged hardware baseline:
 
 ```text
-PR   = #55
-main = 03c4275f2abfd6671c8bf499c075435d7b61ab97
-hardware-tested firmware content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
+PR   = #56
+main = 3c113cc047aeb613f2ba4ab7905e92487c796f80
+hardware-tested firmware content = e2d12085712324444f26528b77ea5122c871d85b
 ```
 
-Current merge-ready branch:
+Current candidate:
 
 ```text
-branch = agent/esp32-map1-native-password-owner
-base   = 03c4275f2abfd6671c8bf499c075435d7b61ab97
-hardware-tested firmware content = e2d12085712324444f26528b77ea5122c871d85b
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-map1-native-line-door-state
+base   = 3c113cc047aeb613f2ba4ab7905e92487c796f80
+firmware candidate content = 376f45bcdd12264d3cba1ee83e7197a52e248210
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Hardware-proven fingerprints now include:
+Hardware-proven fingerprints through PR #56:
 
 ```text
 arenaFNV           = c3882516
@@ -115,9 +117,9 @@ passwordOwnerFNV   = 48f01689
 passwordSubmitFNV  = 90e8c574
 ```
 
-Persistent native structural/script heap remains hardware-proven at `15252 B`.
+Persistent native structural/script heap remains hardware-proven at `15252 B` before the current line-world candidate.
 
-Caller-owned/value types proven:
+Hardware-proven value types:
 
 ```text
 status owner           =   8 B
@@ -128,97 +130,77 @@ password owner         =  20 B
 password submit result =  12 B
 ```
 
-## PASSWORD hardware proof
+Current world-state target:
 
 ```text
-refs              = 2
-stateExecRefused  = 2
-codeBytes         = 8
-promptBytes       = 72
-maxCodeLen        = 4
-resumeExact       = 2
-correct           = 2
-incorrect         = 2
-emptySemantics    = 2
-correctResume     = 2
-incorrectNoResume = 2
-passwordOwnerFNV  = 48f01689
-passwordSubmitFNV = 90e8c574
-elapsed           = 49 ms
+lineCount              = 480
+openBits payload       = 60 B
+lockedBits payload     = 60 B
+line-state payload     = 120 B
+line-door result       = 16 B expected
+actual persistent heap = hardware pending
 ```
 
-Canonical sample:
+## Line-door recovered contract
 
 ```text
-cmd17 event6 off6 resume7
-arg1=00001d1c arg2=00040100
-code=28@13630+4 codeFNV=92444853
-prompt=29@13636+41 promptFNV=ddbe080a
-codeLen=4
+locked -> no-op
+OPENLINE on open -> no-op
+CLOSELINE on closed -> no-op
+otherwise mutate only native open bit
+open sound  = 5063
+close sound = 5064
+animation/entity-link/sound remain deferred effects
+source arg2 & 0x200 -> removeCommandIfHandled metadata only
 ```
 
-Outcome proof:
+The source runtime remains immutable. `lockedBits` is state infrastructure but `EV_UNLOCK` is still unsupported.
+
+## Hardware target for current candidate
+
+The real CYD must establish rather than predeclare:
 
 ```text
-delayMatch=300 ms
-earlySubmit=0 ms
-correctMessage="Correct code!"
-invalidMessage="Invalid code!"
-guards=10/10
+initial open/locked line counts
+lineStateFNV
+OPEN/CLOSE real ref distribution
+mutated / locked / already-target counts
+remove-if-handled count
+first successful real sample
+lineDoorFNV
+first mutatedFNV
+actual 120-byte-owner heap cost
+new-build heap/frame values
 ```
 
-Fail-closed hardware proof:
+Acceptance also requires:
 
 ```text
-unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1
-nullOwner=1 badOwner=1 tooLong=1 shortBuffer=1
-nullSubmitOwner=1 nullSubmitResult=1 closedPack=1
-ownerAtomic=yes reset=1
+at least one real world mutation
+all successful mutations rolled back exactly
+second apply of sample is idempotent no-op
+locked sample is atomic no-op
+state-only executor refuses all OPEN/CLOSE refs
+resultBytes=16
+packIO=no
+legacy Render runtime still clear
+entities=0 monsters=0 noGameplay=yes
 ```
 
-Integrity on the tested firmware:
+## Remaining MAP_INTRO families after current candidate
 
-```text
-heap8             = 68748 -> 68748
-largest8          = 36852 -> 36852
-frameFNV          = 7a95b5b5 -> 7a95b5b5
-arenaFNV          = c3882516 -> c3882516
-mapStateFNV       = cd99b98e -> cd99b98e
-scriptFNV         = f9e3d9df -> f9e3d9df
-legacyNotebookFNV = 4d7705c5 -> 4d7705c5
-legacyKeys        = 00000000 -> 00000000
-hudFNV            = 505b1255 -> 505b1255
-passwordCanvasFNV = 214171cf -> 214171cf
-gamePassCodeStable= yes
-```
-
-Native-pack PASSWORD read cost:
-
-```text
-heapOpen=64384
-transientHeapCost=4364 B
-largestOpen=36852
-persistentHeapBytes=0
-```
-
-Complete post-PARK heartbeat: `uptime=170149 ms`, `heap=134512`, `heap8=68748`, `largest8=36852`, all reported subsystems ready.
-
-## Remaining MAP_INTRO opcode families
-
-The bounded non-world UI/control families are now exhausted:
+If OPEN/CLOSE passes:
 
 ```text
 2  EV_CHANGEMAP
 7  EV_SHOW
 9  EV_GIVEMAP
 13 EV_UNLOCK
-15 EV_OPENLINE
-16 EV_CLOSELINE
 18 EV_HIDE
 27 EV_SAVEGAME
 ```
 
-The next recovery should choose the first explicit native world/render overlay from SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE. CHANGEMAP and SAVEGAME remain larger later boundaries.
+No next family is pre-authorized. Recover the merged repository first.
 
 ## Milestone workflow
 
@@ -231,6 +213,4 @@ The next recovery should choose the first explicit native world/render overlay f
 7. Mark merge-ready only after implementation + hardware + docs agree.
 8. Keep all post-hardware commits docs-only unless another firmware is flashed.
 
-Current recommendation: merge `agent/esp32-map1-native-password-owner`.
-
-After merge, reread the new true `main`, `PORTING_STATUS.md`, `DOCUMENTATION.md`, merged PASSWORD milestone and exact remaining MAP_INTRO legacy behavior before selecting the first world/render overlay milestone.
+Current validation target: normal `esp32-cyd` from `agent/esp32-map1-native-line-door-state`, including `[MAPLINESTATE]`, `[MAPDOOR]`, `[MAPDOORPROBE]` and a later stable `[ALIVE]` heartbeat.
