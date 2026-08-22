@@ -9,19 +9,19 @@ PR   = #62 — native SHOW/HIDE sprite topology
 main = ed5cd9a09c9ae36f999661f4284f64400681b1af
 ```
 
-Firmware candidate:
+Hardware-tested firmware:
 
 ```text
 f9a05933a00fab26b1c0e2b15375d074161ef2bc
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
-## Why this is the next boundary
+## Objective and result
 
-MAP_INTRO event-family ownership is complete: all 16 real opcode IDs have native ownership/execution boundaries.
+MAP_INTRO event-family ownership was already complete. This milestone is the first native consumer after that boundary.
 
-The real intro `EV_CHANGEMAP` has `showStats=1`. Legacy `Game_changeMap()` therefore does not load Junction immediately. Its first consumer is:
+The real intro `EV_CHANGEMAP` has `showStats=1`. Legacy `Game_changeMap()` therefore first performs:
 
 ```text
 Player_addLevelStats(player, true)
@@ -29,13 +29,13 @@ menu->mapNameId = targetMap
 MenuSystem_setMenu(MENU_MAP_STATS)
 ```
 
-Only later does the transition proceed.
+before a later map transition.
 
-This milestone owns the **map-derived stats snapshot/plan only**. It does not mutate Player, Menu, Game, Render or DoomCanvas and does not trigger the map transition.
+This milestone now hardware-proves the **map-derived level-exit stats snapshot/plan** without mutating Player, Menu, Game, Render or DoomCanvas and without triggering CHANGEMAP.
 
-## Exact legacy source
+## Exact legacy semantics represented
 
-`Player_addLevelStats(player, z)` always:
+`Player_addLevelStats(player, z)` always performs the future player-state effects:
 
 ```text
 totalTime  += now - player.time
@@ -50,36 +50,46 @@ When:
 z && render->loadMapID != 2
 ```
 
-it additionally marks the level completed and evaluates two map-derived predicates.
+it also marks the current level completed and evaluates map-derived secret and monster predicates.
 
 Secrets:
 
 ```text
-for every Render line:
-    if line.flags & 8:
-        totalSecrets++
-        if line.flags & 64:
-            foundSecrets++
+for each line where line.flags & 8:
+    totalSecrets++
+    if line.flags & 64:
+        foundSecrets++
+```
 
-if foundSecrets == totalSecrets:
-    foundSecretsLevels |= 1 << (loadMapID - 1)
+Native equivalent:
+
+```text
+immutable line.flags & 0x8
++
+mutable EspMapLineState OPEN bit
 ```
 
 Monsters:
 
 ```text
-for every legacy map entity with entity->monster:
+for each legacy entity with entity->monster:
     totalMonsters++
-    if sprite.info & 0x01000000 OR entity.info & 0x00020000:
-        deadMonsters++
-
-if deadMonsters == totalMonsters:
-    killedMonstersLevels |= 1 << (loadMapID - 1)
+    dead if sprite death bit or entity inactive/dead bit is set
 ```
 
-The BSP-native pass already hardware-proved `/intro.bsp` header `loadMapId=1`, so the completion bit for the intro is `0x00000001`.
+Native equivalent:
 
-## Permanent native API
+```text
+entity type == enemy
++
+ESP_MAP_SPRITE_TOPOLOGY_EXISTS
++
+dead iff ESP_MAP_SPRITE_TOPOLOGY_ALIVE is clear
+```
+
+The BSP-native header already proves `/intro.bsp` has `loadMapId=1`, so the completion bit is `0x00000001`.
+
+## Permanent API
 
 Files:
 
@@ -94,65 +104,28 @@ API:
 EspMapLevelExitStats_collect(loadMapId, showStats, outStats)
 ```
 
-The implementation has no dependency on legacy `Player`, `Menu`, `Game`, `Render`, `DoomCanvas`, entities or sound.
+Permanent dependencies are only native map owners. There is no Player/Menu/Game/Render/DoomCanvas dependency, no PAK I/O, no ZIP access and no allocation.
 
-It reads only:
-
-```text
-EspMapRuntime
-EspMapLineState
-EspMapSpriteTopology
-```
-
-Secret predicate:
-
-```text
-immutable line.flags & 0x8
-+
-mutable EspMapLineState OPEN bit
-```
-
-Monster predicate:
-
-```text
-native entity type == enemy
-+
-ESP_MAP_SPRITE_TOPOLOGY_EXISTS
-+
-dead iff ESP_MAP_SPRITE_TOPOLOGY_ALIVE is clear
-```
-
-The topology ALIVE bit is the native death predicate already mutated by deterministic SHOW blocker projection and intended for later native gameplay consumers.
-
-## Result ABI
-
-Expected classic ESP32 ABI:
+Hardware-proven ABI:
 
 ```text
 EspMapLevelExitStats = 20 B
 ```
 
-Fields:
+Fields include:
 
 ```text
-completionLevelBit  uint32
-secretsFound        uint16
-secretsTotal        uint16
-monstersDead        uint16
-monstersTotal       uint16
-loadMapId           uint8
-showStats           uint8
-markCompleted       uint8
-markAllSecrets      uint8
-markAllMonsters     uint8
-effectFlags         uint8
+completionLevelBit
+secretsFound / secretsTotal
+monstersDead / monstersTotal
+loadMapId / showStats
+markCompleted / markAllSecrets / markAllMonsters
+effectFlags
 ```
-
-The struct is caller-owned and the collector allocates nothing.
 
 ## Effect flags
 
-The collector does not write player state. It reports the later native player consumer obligations:
+The collector reports future player-state obligations without applying them:
 
 ```text
 01 ACCUMULATE_TIME
@@ -164,179 +137,192 @@ The collector does not write player state. It reports the later native player co
 40 MARK_ALL_MONSTERS
 ```
 
-Base effects `0x0f` apply regardless of `showStats`, matching legacy `Player_addLevelStats()`.
+Base effects `0x0f` always apply. Completion effects apply only when `showStats != 0 && loadMapId != 2`, matching legacy, including equality semantics when a total is zero.
 
-Completion flags apply only when:
+## Real-CYD source snapshot
 
-```text
-showStats != 0 && loadMapId != 2
-```
-
-Equality semantics intentionally match legacy, including `0 == 0` totals.
-
-## Temporary real-CYD probe
-
-Files:
+Hardware output:
 
 ```text
-ESP32/include/native_map1_level_exit_stats_probe.h
-ESP32/src/native_map1_level_exit_stats_probe.c
+resultBytes       = 20
+loadMapId         = 1
+showStats         = 1
+secretsFound      = 0
+secretsTotal      = 6
+monstersDead      = 0
+monstersTotal     = 30
+markCompleted     = 1
+markAllSecrets    = 0
+markAllMonsters   = 0
+completionLevelBit= 00000001
+effectFlags       = 1f
+statsFNV          = bd41bcfa
+elapsed           = 11 ms
 ```
 
-The probe runs only after the hardware-proven final SHOW/HIDE probe.
-
-### Source snapshot
-
-It collects intro stats with:
+Interpretation:
 
 ```text
-loadMapId=1
-showStats=1
+0x1f = base exit effects 0x0f + MARK_COMPLETED 0x10
 ```
 
-and independently recomputes the same counts from raw native line/open bitsets and topology type/link-state storage.
+No all-secrets or all-monsters completion is proposed because source MAP_INTRO begins at `0/6` secrets and `0/30` monsters dead.
 
-Hardware establishes:
+## Legacy gate proof
+
+Hardware established both legacy gates:
 
 ```text
-secretsFound / secretsTotal
-monstersDead / monstersTotal
-markCompleted
-markAllSecrets
-markAllMonsters
-completionLevelBit
-effectFlags
-statsFNV
+showStats=0  -> base effects only
+loadMapId=2  -> base effects only
 ```
 
-### Legacy gates
-
-The probe also verifies:
+Fingerprints:
 
 ```text
-showStats=0
- -> base effects only
- -> no completion bit writes proposed
-
-loadMapId=2 + showStats=1
- -> base effects only
- -> no completion bit writes proposed
+noStatsFNV         = d9532169
+noCompletionMapFNV = ceb6ad21
+baseEffects        = 0f
+showStats0         = yes
+loadMapId2         = yes
+equalityOnZero     = legacy
 ```
 
-### SHOW/death sensitivity
+## Real SHOW / deferred-death sensitivity
 
-The probe scans the real 93-event corpus, resets the topology before each SHOW and locates the first real SHOW that reports `DEFER_BLOCKER_GAMEPLAY` with a deterministic blocker removal.
-
-It then collects stats from the mutated native topology and verifies:
+The probe scanned the real corpus and selected a real SHOW with deterministic blocker removal:
 
 ```text
-secret counts unchanged
-monster total unchanged
-monster dead delta == number of removed enemy blockers
+cmd=205
+event=74
+off=2
+enemyBlockersRemoved=1
 ```
 
-Then it resets topology and requires exact restoration to:
+Topology and stats witnesses:
 
 ```text
-3f321e43
+topologyFNV 3f321e43 -> 723e7300
+mutated statsFNV      = 5155b517
+rollback topologyFNV  = 3f321e43
 ```
 
-The selected command/event and real `enemyBlockersRemoved` are hardware values.
+This proves that the level-exit monster snapshot consumes the same compact `ALIVE` state changed by native SHOW blocker projection. The selected real command removes one enemy blocker; the collector observes the corresponding monster-death sensitivity without invoking legacy `Entity_died()`.
 
-### Secret sensitivity
+## Secret-line sensitivity
 
-If MAP_INTRO has at least one secret line, the probe toggles only that line's native OPEN bit, collects again, requires an exact +/-1 `secretsFound` delta, then restores the line state exactly to:
+A real secret line was used:
 
 ```text
-e5e74861
+lineIndex   = 39
+initialOpen = 0
+proof       = 1
 ```
 
-If there are no secret lines, the probe reports the sensitivity path as not applicable instead of inventing one.
-
-### Fail closed
+Native line-state witness:
 
 ```text
-loadMapId=0  -> INVALID + zero result
-loadMapId=33 -> INVALID + zero result
-showStats=2  -> INVALID + zero result
-NULL result  -> INVALID
+lineFNV e5e74861 -> 6694b0e1 -> e5e74861
 ```
 
-## RAM / integrity target
+The temporary OPEN mutation changed the secret-found count exactly as required, then rollback restored the canonical line state.
 
-Hardware-proven persistent native heap entering this milestone:
+## Fail closed
+
+Hardware proof:
+
+```text
+mapId0      = 1
+mapId33     = 1
+showStats2  = 1
+nullResult  = 1
+stateAtomic = yes
+```
+
+Invalid requests do not mutate any native owner.
+
+## RAM / integrity
+
+Hardware-proven persistent heap entering this milestone was `18008 B`.
+
+This milestone adds no persistent allocation:
+
+```text
+heap8      65640 -> 65640  delta=0
+largest8   34804 -> 34804  delta=0
+persistentHeapBytes=0
+```
+
+Therefore the native persistent total remains:
 
 ```text
 18008 B
 ```
 
-This milestone target:
+Same-build integrity witnesses:
 
 ```text
-persistentHeapBytes = 0
-heap8 delta          = 0
-largest8 delta       = 0
+frameFNV    bd237825 -> bd237825
+arenaFNV    c3882516 -> c3882516
+lineFNV     e5e74861 -> e5e74861
+topologyFNV 3f321e43 -> 3f321e43
 ```
 
-Final integrity requires exact preservation of:
+Legacy witnesses:
 
 ```text
-arenaFNV            c3882516
-mapStateFNV         cd99b98e
-scriptFNV           f9e3d9df
-lineStateFNV        e5e74861
-lineTextureStateFNV f1fc1875
-automapStateFNV     669b1aa7
-spriteTopologyFNV   3f321e43
-framebuffer
-legacy Player exit-stat fields
-legacy transition/menu state
+playerStatsFNV = 17e22395 -> 17e22395
+transitionFNV  = f450c49f -> f450c49f
+legacyRuntimeClear=yes
+Player_addLevelStatsCalled=no
+menuMutation=no
+transitionTriggered=no
 ```
 
-Still required:
+The milestone never calls `Player_addLevelStats()`, `Game_changeMap()`, `MenuSystem_setMenu()` or a legacy entity routine.
+
+## Final PARK
 
 ```text
-PAK closed
-legacy Render runtime clear
+state=9 page=3
+nativeExitStats=yes
+resultBytes=20
+persistentBytes=0
+allMapIntroOpcodeFamiliesOwned=yes
+playerMutation=no
+menuMutation=no
+worldRestored=yes
 entities=0
 monsters=0
-ST_PLAYING not reached
+noGameplay=yes
 ```
 
-The probe never calls `Player_addLevelStats()`, `Game_changeMap()`, `MenuSystem_setMenu()` or any legacy entity routine.
-
-## Expected Serial family
+Stable heartbeat evidence:
 
 ```text
-[MAPEXITSTATS] ARMED ...
-
-=== Doom RPG ESP32-native MAP_INTRO level-exit stats snapshot ===
-[MAPEXITSTATS] CONTRACT ...
-[MAPEXITSTATS] READY resultBytes=20 loadMapId=1 showStats=1 secrets=.../... monsters=.../... markCompleted=1 markAllSecrets=... markAllMonsters=... completionBit=00000001 effects=... statsFNV=... elapsed=...ms
-[MAPEXITSTATS] GATES ... showStats0=yes loadMapId2=yes ...
-[MAPEXITSTATS] SHOWSENS cmd=... event=... off=... enemyBlockersRemoved=... topologyFNV=3f321e43->... statsFNV=... rollback=3f321e43
-[MAPEXITSTATS] SECRETSENS line=... initialOpen=... proof=... lineFNV=e5e74861->...->e5e74861
-[MAPEXITSTATS] FAILCLOSED mapId0=1 mapId33=1 showStats2=1 nullResult=1 stateAtomic=yes
-[MAPEXITSTATS] RAM ... persistentHeapBytes=0 ...
-[MAPEXITSTATS] LEGACY ... Player_addLevelStatsCalled=no menuMutation=no transitionTriggered=no
-[MAPEXITSTATS] PARK ... nativeExitStats=yes resultBytes=20 persistentBytes=0 ... entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
+35280 ms heap=131404 heap8=65640 largest8=34804
+40281 ms heap=131404 heap8=65640 largest8=34804
 ```
 
-Use normal PlatformIO environment `esp32-cyd`.
+## Architecture boundary after PASS
 
-No CI status is published for the candidate. No local build or hardware PASS is claimed.
+This establishes the first hardware-proven native consumer after complete MAP_INTRO event-family ownership.
 
-## Boundary after PASS
+Native ownership now includes enough information to compute the real intro exit statistics without legacy Render/entities.
 
-A PASS establishes the first native consumer after complete MAP_INTRO event-family ownership.
-
-The next transition work can then split cleanly into:
+Still outside this milestone:
 
 ```text
-native player exit-state application
-native stats-menu intent/owner
-native CHANGEMAP target preflight / map swap
+application of exit effects to native player state
+native stats-menu intent/consumer
+actual CHANGEMAP transition / Junction map swap
+full native entity/monster gameplay
+legacy-world-free gameplay loop
+native gameplay renderer
+ST_PLAYING progression
+sound playback
 ```
 
-without falling back to legacy entities or Render map state.
+The next milestone should recover from merged `main` and choose one bounded next consumer, with a natural direction of applying the already-proven exit effects to a small explicitly owned native player exit state before opening menu/transition ownership.
+
+The real classic CYD Serial log is the final hardware source of truth.
