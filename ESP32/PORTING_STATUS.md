@@ -12,18 +12,18 @@ hardware-tested firmware = 2e0f8f5de93f806380ee254a8dab59a817c73f5d
 
 Merged evidence: [`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md).
 
-## Current candidate
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-map1-native-save-route
 base   = 9891a25d700f9ffe1be044ac4a7629c3487604ec
-firmware candidate = 42497b80c6158300ec3fa7b8eb8af6cee643f59e
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 42497b80c6158300ec3fa7b8eb8af6cee643f59e
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Active evidence: [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md).
+Detailed evidence: [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md).
 
-The candidate owns only `27 / EV_SAVEGAME` as a durable future-save route capture. Opcode 27 itself does not serialize a file: it captures one map name plus destination x/y and angle. Native code copies only that <=31-byte map name from `/DoomRPG-ESP32.pak` into a caller-owned route state so it survives source-map teardown.
+The milestone owns only `27 / EV_SAVEGAME` as a durable future-save route capture. Opcode 27 itself performs no save-file write: it captures `/junction.bsp`-style route data into a caller-owned state that survives source-map teardown.
 
 ## Permanent invariants
 
@@ -54,36 +54,31 @@ Real opcode IDs:
 2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-## Hardware-proven fingerprints through PR #59
+## Hardware-proven fingerprints through SAVEGAME
 
 ```text
-arenaFNV             = c3882516
-mapStateFNV          = cd99b98e
-scriptFNV            = f9e3d9df
-lineStateFNV         = e5e74861
-lineTextureStateFNV  = f1fc1875
-automapStateFNV      = 669b1aa7
-lineDoorFNV          = b1c9d297
-unlockFNV            = 261d756a
-giveMapFNV           = 98c7ac59
-giveMapMutatedAutoFNV= 9d03ca2d
-giveMapMutatedMapFNV = e21edbce
-```
-
-Current candidate will establish:
-
-```text
-saveRouteOwnerFNV   = pending
-saveRouteResultFNV  = pending
-saveRouteContentFNV = pending
-initialOwnerFNV     = pending
-sampleOwnerFNV      = pending
-legacySaveRouteFNV  = pending witness
+arenaFNV              = c3882516
+mapStateFNV           = cd99b98e
+scriptFNV             = f9e3d9df
+lineStateFNV          = e5e74861
+lineTextureStateFNV   = f1fc1875
+automapStateFNV       = 669b1aa7
+lineDoorFNV           = b1c9d297
+unlockFNV             = 261d756a
+giveMapFNV            = 98c7ac59
+giveMapMutatedAutoFNV = 9d03ca2d
+giveMapMutatedMapFNV  = e21edbce
+saveRouteOwnerFNV     = 06ea6ea8
+saveRouteResultFNV    = c2ecb064
+saveRouteContentFNV   = 725845aa
+saveRouteInitialFNV   = 9a00a0bd
+saveRouteSampleFNV    = 7e69bd59
+legacySaveRouteFNV    = 9bcfe135
 ```
 
 ## Persistent native RAM ownership
 
-Hardware-proven heap entering this candidate:
+Hardware-proven heap remains:
 
 ```text
 immutable arena        14112 B
@@ -96,15 +91,13 @@ mutable automap state    120 B
 total                  15584 B
 ```
 
-Candidate value types:
+Hardware-proven value types now include:
 
 ```text
-EspMapSaveRouteState  = 46 B expected
-EspMapSaveRouteResult = 16 B expected
-persistent heap       = 0 B expected
+EspMapSaveRouteState  = 46 B
+EspMapSaveRouteResult = 16 B
+persistent heap       = 0 B
 ```
-
-The bounded PAK open/read is transient; heap and largest free block must return exactly after close.
 
 ## Hardware-proven recent families
 
@@ -120,9 +113,29 @@ UNLOCK:
 GIVEMAP:
   refs=1 lines=430 sprites=344 entranceTiles=4 rollback=1/1
   automapStateFNV=669b1aa7 giveMapFNV=98c7ac59
+
+SAVEGAME route:
+  refs=1 removable=0 stateExecRefused=1
+  ownerBytes=46 resultBytes=16 persistentHeapBytes=0
+  mapName="/junction.bsp" nameLen=13
+  tile=15,29 destination=992,1888 angle=64
+  rollback=1/1 reapplyExact=1 ownerSurvivesPackClose=1
 ```
 
-## EV_SAVEGAME recovered contract
+Canonical SAVEGAME command:
+
+```text
+cmd1 event1 off0
+arg1=401d0f00 arg2=00000100
+mapString=0
+name="/junction.bsp"
+raw tile=15,29
+destination=992,1888
+angle=64
+handled=1 removeIfHandled=0
+```
+
+## EV_SAVEGAME permanent contract
 
 Legacy opcode 27 only captures route data:
 
@@ -136,7 +149,7 @@ destinationY= 32 + (rawY << 6)
 handled     = true
 ```
 
-The map name must survive map teardown. The first zero-copy-ref implementation was corrected before hardware: candidate `42497b80...` stores the bounded destination name inline, matching the legacy lifetime without retaining the desktop engine.
+The map name must survive map teardown. The first zero-copy-ref implementation was corrected before hardware; tested firmware `42497b80...` stores the bounded destination name inline.
 
 Permanent behavior:
 
@@ -149,59 +162,60 @@ no map transition
 no legacy Game mutation
 ```
 
-## Real-CYD validation target
+## SAVEGAME hardware proof
 
-Hardware must discover:
-
-```text
-SAVEGAME refs / removable refs
-map-name total bytes / max length
-first real route name + x/y + angle
-ownerFNV / resultFNV / contentFNV
-initial/sample owner FNV
-transient pack-open heap cost
-legacy save-route witness FNV
-```
-
-Acceptance:
+Real-CYD corpus:
 
 ```text
-refs > 0
-stateExecRefused = refs
-rollback = refs/refs
-ownerBytes=46 resultBytes=16
-reapplyExact=1
-ownerSurvivesPackClose=1
-closedPack=1
-activeAtPark=0
-persistentHeapBytes=0
-saveFileWrite=no
+refs=1 removable=0 ownerBytes=46 resultBytes=16 stateExecRefused=1
+mapNameBytes=13 maxMapName=13
+ownerFNV=06ea6ea8 resultFNV=c2ecb064 contentFNV=725845aa
+initialOwnerFNV=9a00a0bd sampleOwnerFNV=7e69bd59
+rollback=1/1 reapplyExact=1
+ownerSurvivesPackClose=1 activeAtPark=0
 ```
 
 Fail closed:
 
 ```text
-unsupported=1 badOffset=1 badDescriptor=1
-nullDescriptor=1 nullEntry=1 nullState=1 nullResult=1
-closedPack=1 reset=1 stateAtomic=yes
+unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1
+nullEntry=1 nullState=1 nullResult=1 closedPack=1 reset=1
+stateAtomic=yes
 ```
 
-Protected inherited state:
+PAK / RAM witness:
+
+```text
+heapOpen=63832 transientHeapCost=4376 largestOpen=34804
+packIO=yes boundedNameRead=yes persistentHeapBytes=0 saveFileWrite=no
+heap8=68208->68208
+largest8=34804->34804
+frameFNV=99102464->99102464
+```
+
+Inherited state stayed exact:
 
 ```text
 arenaFNV=c3882516
 mapStateFNV=cd99b98e
 scriptFNV=f9e3d9df
-lineStateFNV=e5e74861
-lineTextureStateFNV=f1fc1875
 automapStateFNV=669b1aa7
+legacy notebook/keys/Hud/password/continuation unchanged
+legacy saveRouteFNV=9bcfe135->9bcfe135
 legacy runtime clear
 entities=0 monsters=0 ST_PLAYING not reached
 ```
 
-The probe also hashes the legacy fields that opcode 27 would otherwise touch: `Game.newMapName[32]`, `newDestX`, `newDestY`, `newAngle`; that witness must remain unchanged.
+Stable PARK heartbeats:
 
-## Remaining MAP_INTRO families after candidate PASS
+```text
+135324 ms: heap=133972 heap8=68208 largest8=34804 all reported subsystems ready
+140327 ms: heap=133972 heap8=68208 largest8=34804 all reported subsystems ready
+```
+
+## Remaining MAP_INTRO families
+
+Still unowned:
 
 ```text
 2  EV_CHANGEMAP
@@ -209,10 +223,18 @@ The probe also hashes the legacy fields that opcode 27 would otherwise touch: `G
 18 EV_HIDE
 ```
 
-SHOW/HIDE remain entity-topology coupled. Do not authorize the next family before hardware PASS + merge recovery.
+SHOW/HIDE remain entity-topology coupled. CHANGEMAP is the remaining transition family and must be recovered from the new true main after this branch is merged.
 
-## Validation target
+## Merge recommendation
 
-Build/flash normal optimized `esp32-cyd` from `agent/esp32-map1-native-save-route` and capture `[MAPSAVEROUTE]`, `[MAPSAVEROUTEPROBE]` plus a stable `[ALIVE]`.
+**MERGE `agent/esp32-map1-native-save-route`.**
 
-No CI status is published for candidate `42497b80c6158300ec3fa7b8eb8af6cee643f59e`. No local build or hardware PASS is claimed.
+Hardware-tested firmware content:
+
+```text
+42497b80c6158300ec3fa7b8eb8af6cee643f59e
+```
+
+All later commits must remain documentation-only unless another firmware is flashed.
+
+After merge, recover the true new `main`, reread this file, `DOCUMENTATION.md`, the merged SAVE route archive and exact legacy behavior before selecting the next family.
