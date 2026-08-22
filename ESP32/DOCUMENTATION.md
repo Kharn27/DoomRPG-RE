@@ -37,10 +37,11 @@ Merged milestones:
 | [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) | DIALOG/NOBACK pause + static continuation owner | #53 | `395418510207bf24ac45ddbb4c4c15db3ddc8998` |
 | [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md) | bounded EV_NOTE native notebook owner | #54 | `03002f79eb03bdcb4c9e430c43e4693dab47e44b` |
 | [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) | pure EV_CHECK_KEY dynamic gate | #55 | `03c4275f2abfd6671c8bf499c075435d7b61ab97` |
+| [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) | bounded EV_PASSWORD pause/submission owner | #56 | `3c113cc047aeb613f2ba4ab7905e92487c796f80` |
 
 Current merge-ready milestone:
 
-- [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) — compact native owner for real `10 / EV_PASSWORD`: two immutable string refs (expected code + prompt), static pause/continuation provenance, 20-byte caller-owned owner and 12-byte bounded submit result. Real CYD proved two PASSWORD commands, exact resume-at-`off+1`, correct/incorrect/empty outcomes, 300 ms matched-length vs 0 ms early-submit timing, zero legacy/world mutation, `passwordOwnerFNV=48f01689` and `passwordSubmitFNV=90e8c574`. Hardware-tested firmware `e2d12085712324444f26528b77ea5122c871d85b`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
+- [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md) — first explicit native mutable-world owner. Real CYD proved a 120-byte packed OPEN/LOCKED overlay for all 480 immutable lines, 71 real `EV_OPENLINE`/`EV_CLOSELINE` commands, 29 actual world mutations with exact 29/29 rollback, 18 lock-blocked commands, 24 already-target commands, 136 B actual persistent heap, `lineStateFNV=e5e74861`, `lineDoorFNV=b1c9d297`, and first mutated state `8f57d779`. Firmware `376f45bcdd12264d3cba1ee83e7197a52e248210`; **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Architecture rule
 
@@ -62,8 +63,9 @@ Doom RPG data / recovered behavior
  -> small explicit native effect/player owners
  -> pure dynamic gates
  -> bounded pause/input owners
+ -> compact native world overlays
  -> native event/script loop
- -> explicit native world/render overlays
+ -> native gameplay/effect consumers
  -> ESP32-native gameplay + renderer
 ```
 
@@ -74,17 +76,17 @@ Do not promote desktop `Render_t`, `DoomCanvas_t`, pointer-heavy map structs, ma
 Latest merged hardware baseline:
 
 ```text
-PR   = #55
-main = 03c4275f2abfd6671c8bf499c075435d7b61ab97
-hardware-tested firmware content = 3b4844e8fa5d38d522e1adc70ffac646978f130d
+PR   = #56
+main = 3c113cc047aeb613f2ba4ab7905e92487c796f80
+hardware-tested firmware content = e2d12085712324444f26528b77ea5122c871d85b
 ```
 
 Current merge-ready branch:
 
 ```text
-branch = agent/esp32-map1-native-password-owner
-base   = 03c4275f2abfd6671c8bf499c075435d7b61ab97
-hardware-tested firmware content = e2d12085712324444f26528b77ea5122c871d85b
+branch = agent/esp32-map1-native-line-door-state
+base   = 3c113cc047aeb613f2ba4ab7905e92487c796f80
+hardware-tested firmware content = 376f45bcdd12264d3cba1ee83e7197a52e248210
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
@@ -113,11 +115,23 @@ notebookStorageFNV = 75cf54e0
 keyGateFNV         = 9ace79cd
 passwordOwnerFNV   = 48f01689
 passwordSubmitFNV  = 90e8c574
+lineStateFNV       = e5e74861
+lineDoorFNV        = b1c9d297
+lineMutatedFNV     = 8f57d779
 ```
 
-Persistent native structural/script heap remains hardware-proven at `15252 B`.
+Persistent native heap is now hardware-proven at:
 
-Caller-owned/value types proven:
+```text
+immutable arena      14112 B
+mutable tile state    1040 B
+mutable script state   100 B
+mutable line state     136 B
+----------------------------
+total                 15388 B
+```
+
+Hardware-proven value types:
 
 ```text
 status owner           =   8 B
@@ -126,99 +140,106 @@ notebook owner         = 514 B
 key-gate result        =  12 B
 password owner         =  20 B
 password submit result =  12 B
+line-door result       =  16 B
 ```
 
-## PASSWORD hardware proof
+## Line-world hardware proof
+
+Initial native line world:
 
 ```text
-refs              = 2
-stateExecRefused  = 2
-codeBytes         = 8
-promptBytes       = 72
-maxCodeLen        = 4
-resumeExact       = 2
-correct           = 2
-incorrect         = 2
-emptySemantics    = 2
-correctResume     = 2
-incorrectNoResume = 2
-passwordOwnerFNV  = 48f01689
-passwordSubmitFNV = 90e8c574
-elapsed           = 49 ms
+lines        = 480
+openBits     = 60 B
+lockedBits   = 60 B
+storage      = 120 B
+initialOpen  = 0
+initialLocked= 7
+lineStateFNV = e5e74861
 ```
 
-Canonical sample:
+Complete real OPEN/CLOSE corpus:
 
 ```text
-cmd17 event6 off6 resume7
-arg1=00001d1c arg2=00040100
-code=28@13630+4 codeFNV=92444853
-prompt=29@13636+41 promptFNV=ddbe080a
-codeLen=4
+refs             = 71
+open             = 39
+close            = 32
+mutated          = 29
+locked           = 18
+alreadyTarget    = 24
+removable        = 12
+stateExecRefused = 71
+resultBytes      = 16
+lineDoorFNV      = b1c9d297
+elapsed          = 11 ms
 ```
 
-Outcome proof:
+Canonical first successful world mutation:
 
 ```text
-delayMatch=300 ms
-earlySubmit=0 ms
-correctMessage="Correct code!"
-invalidMessage="Invalid code!"
-guards=10/10
+cmd3 event1 off2 line459 opcode15 / EV_OPENLINE
+open=0->1 locked=0 sound=5063 effects=07 removeIfHandled=0
+lineStateFNV e5e74861 -> mutatedFNV 8f57d779
+rollback exact to e5e74861
 ```
 
-Fail-closed hardware proof:
+Rollback/idempotence/lock proof:
 
 ```text
-unsupported=1 badOffset=1 badDescriptor=1 nullDescriptor=1
-nullOwner=1 badOwner=1 tooLong=1 shortBuffer=1
-nullSubmitOwner=1 nullSubmitResult=1 closedPack=1
-ownerAtomic=yes reset=1
+rollback=29/29
+idempotent=1
+lockedGuard=1
+stateAtomic=yes
+worldRestored=yes
 ```
 
-Integrity on the tested firmware:
+Persistent allocation proof:
 
 ```text
-heap8             = 68748 -> 68748
+heap8             = 68700 -> 68564
+persistentHeapCost= 136 B
+payload           = 120 B
+allocatorOverhead = 16 B
 largest8          = 36852 -> 36852
-frameFNV          = 7a95b5b5 -> 7a95b5b5
+```
+
+Current-build integrity:
+
+```text
+frameFNV          = 5a979d01 -> 5a979d01
 arenaFNV          = c3882516 -> c3882516
 mapStateFNV       = cd99b98e -> cd99b98e
 scriptFNV         = f9e3d9df -> f9e3d9df
 legacyNotebookFNV = 4d7705c5 -> 4d7705c5
-legacyKeys        = 00000000 -> 00000000
-hudFNV            = 505b1255 -> 505b1255
+keys               = 00000000 -> 00000000
+hudFNV             = 505b1255 -> 505b1255
 passwordCanvasFNV = 214171cf -> 214171cf
-gamePassCodeStable= yes
+continuationFNV   = e2ba14a5 -> e2ba14a5
+packIO            = no
+legacyRuntimeClear= yes
+entities=0 monsters=0 noGameplay=yes
 ```
 
-Native-pack PASSWORD read cost:
+Stable heartbeats after PARK:
 
 ```text
-heapOpen=64384
-transientHeapCost=4364 B
-largestOpen=36852
-persistentHeapBytes=0
+30084 ms: heap=134328 heap8=68564 largest8=36852 all reported subsystems ready
+35085 ms: heap=134328 heap8=68564 largest8=36852 all reported subsystems ready
 ```
-
-Complete post-PARK heartbeat: `uptime=170149 ms`, `heap=134512`, `heap8=68748`, `largest8=36852`, all reported subsystems ready.
 
 ## Remaining MAP_INTRO opcode families
 
-The bounded non-world UI/control families are now exhausted:
+Still unowned:
 
 ```text
 2  EV_CHANGEMAP
 7  EV_SHOW
 9  EV_GIVEMAP
 13 EV_UNLOCK
-15 EV_OPENLINE
-16 EV_CLOSELINE
 18 EV_HIDE
 27 EV_SAVEGAME
 ```
 
-The next recovery should choose the first explicit native world/render overlay from SHOW/HIDE/GIVEMAP/UNLOCK/OPENLINE/CLOSELINE. CHANGEMAP and SAVEGAME remain larger later boundaries.
+No next family is pre-authorized. After merge, reread the true new `main`, `PORTING_STATUS.md`, this milestone and exact remaining legacy semantics. `EV_UNLOCK` is adjacent to the now-owned line state, but its lock/texture/special-entity effects require an explicit milestone.
 
 ## Milestone workflow
 
@@ -231,6 +252,4 @@ The next recovery should choose the first explicit native world/render overlay f
 7. Mark merge-ready only after implementation + hardware + docs agree.
 8. Keep all post-hardware commits docs-only unless another firmware is flashed.
 
-Current recommendation: merge `agent/esp32-map1-native-password-owner`.
-
-After merge, reread the new true `main`, `PORTING_STATUS.md`, `DOCUMENTATION.md`, merged PASSWORD milestone and exact remaining MAP_INTRO legacy behavior before selecting the first world/render overlay milestone.
+Current recommendation: merge `agent/esp32-map1-native-line-door-state`.
