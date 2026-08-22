@@ -39,61 +39,105 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md) | CHANGEMAP pending transition intent | #61 | `fc39ac60757e0d992e3729a5044a9d83e9994971` |
 | [`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md) | SHOW/HIDE compact sprite topology; completes all real MAP_INTRO opcode families | #62 | `ed5cd9a09c9ae36f999661f4284f64400681b1af` |
 
-## Current candidate
+## Current merge-ready milestone
 
-[`MAP1_NATIVE_LEVEL_EXIT_STATS.md`](MAP1_NATIVE_LEVEL_EXIT_STATS.md) is the first consumer milestone after complete MAP_INTRO event-family ownership.
+[`MAP1_NATIVE_LEVEL_EXIT_STATS.md`](MAP1_NATIVE_LEVEL_EXIT_STATS.md) is the first hardware-proven native consumer after complete MAP_INTRO event-family ownership.
 
 ```text
 branch = agent/esp32-map1-native-level-exit-stats
 base   = ed5cd9a09c9ae36f999661f4284f64400681b1af
-firmware candidate = f9a05933a00fab26b1c0e2b15375d074161ef2bc
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = f9a05933a00fab26b1c0e2b15375d074161ef2bc
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-The real intro CHANGEMAP has `showStats=1`, so legacy `Game_changeMap()` first performs `Player_addLevelStats(true)` and opens the map-stats menu rather than loading Junction immediately.
+The real intro CHANGEMAP has `showStats=1`, so legacy first computes level stats and opens the map-stats menu before a later Junction transition. This milestone now computes the map-derived stats as a pure native 20-byte value without mutating Player/Menu/Game/Render/DoomCanvas.
 
-The candidate adds a pure native 20-byte level-exit stats/result value:
+### Hardware-proven exit snapshot
 
 ```text
-secrets found / total
-monsters dead / total
-completion bit proposal
-mark completed / all-secrets / all-monsters
-effect flags for later player-state writes
+loadMapId          = 1
+showStats          = 1
+secrets            = 0 / 6
+monsters           = 0 / 30
+markCompleted      = 1
+markAllSecrets     = 0
+markAllMonsters    = 0
+completionLevelBit = 00000001
+effects            = 1f
+statsFNV           = bd41bcfa
+resultBytes        = 20
+elapsed            = 11 ms
 ```
 
-Inputs are only native owners:
+The effect byte is:
 
 ```text
-EspMapRuntime
-EspMapLineState
-EspMapSpriteTopology
+1f = base exit effects 0f + mark-completed 10
 ```
 
-No Player/Menu/Game/Render/DoomCanvas object is referenced by the permanent collector, no PAK I/O occurs, and no allocation is performed.
-
-The real-CYD probe also verifies:
+Legacy gates are hardware-proven:
 
 ```text
-source count/reference equality
-showStats=0 gate
-loadMapId=2 gate
-real SHOW/deferred-death sensitivity
-secret OPEN-bit sensitivity if a secret line exists
-exact line/topology rollback
-zero heap/largest-block drift
-legacy Player/menu/transition witnesses unchanged
+showStats=0 -> base effects only
+loadMapId=2 -> base effects only
+noStatsFNV         = d9532169
+noCompletionMapFNV = ceb6ad21
 ```
 
-Expected ABI / RAM:
+### Dynamic owner sensitivity
+
+The collector is not a static MAP_INTRO lookup. Hardware proved it consumes current native mutable owners.
+
+Real SHOW blocker proof:
 
 ```text
-EspMapLevelExitStats = 20 B
-persistent heap      = 0 B
-hardware total       = remains 18008 B
+cmd205 event74 off2
+enemyBlockersRemoved=1
+topologyFNV 3f321e43 -> 723e7300 -> 3f321e43
+mutated statsFNV = 5155b517
 ```
 
-## Current hardware-proven boundary through PR #62
+Real secret line proof:
+
+```text
+line39 initialOpen=0 proof=1
+lineFNV e5e74861 -> 6694b0e1 -> e5e74861
+```
+
+### RAM and integrity
+
+```text
+persistent heap total = 18008 B
+candidate addition     = 0 B
+heap8     65640 -> 65640
+largest8  34804 -> 34804
+```
+
+Native owner rollback remained exact and legacy Player/menu/transition state was unchanged:
+
+```text
+playerStatsFNV 17e22395 -> 17e22395
+transitionFNV  f450c49f -> f450c49f
+Player_addLevelStatsCalled=no
+menuMutation=no
+transitionTriggered=no
+```
+
+Final PARK:
+
+```text
+nativeExitStats=yes
+persistentBytes=0
+allMapIntroOpcodeFamiliesOwned=yes
+playerMutation=no
+menuMutation=no
+worldRestored=yes
+entities=0
+monsters=0
+noGameplay=yes
+```
+
+## Current hardware-proven boundary
 
 ```text
 persistent native heap = 18008 B
@@ -104,6 +148,7 @@ lineStateFNV           = e5e74861
 lineTextureStateFNV    = f1fc1875
 automapStateFNV        = 669b1aa7
 spriteTopologyFNV      = 3f321e43
+levelExitStatsFNV      = bd41bcfa
 
 allMapIntroOpcodeFamiliesOwned=yes
 entities=0
@@ -111,16 +156,6 @@ monsters=0
 ST_PLAYING not reached
 shapeData=NULL
 mediaTexels=NULL
-```
-
-SHOW/HIDE final hardware canons:
-
-```text
-refs=12 show=11 hide=1
-blockersFound=2 blockersRemoved=2 deferredDeaths=2
-rollback=12/12
-context SHOW165 -> HIDE173 hidden=1
-second HIDE hidden=0
 ```
 
 ## Architecture direction
@@ -131,11 +166,15 @@ original Doom RPG behavior/data
  -> compact immutable map
  -> explicit mutable owners
  -> complete native MAP_INTRO event-family ownership
- -> native gameplay/effect consumers  <-- current phase
+ -> native gameplay/effect consumers
+      -> level-exit stats snapshot  [hardware-proven]
+      -> native player exit-state application
+      -> stats-menu intent/consumer
+      -> CHANGEMAP / Junction map swap
  -> native renderer
 ```
 
-Still outside the current candidate:
+Still outside the current merged baseline/candidate boundary:
 
 ```text
 application of exit effects to native player state
@@ -148,4 +187,10 @@ actual ST_PLAYING progression
 sound playback
 ```
 
-Do not merge the current candidate until the exact firmware above passes on the real classic CYD and all later commits are documentation-only.
+## Merge recommendation
+
+```text
+MERGE agent/esp32-map1-native-level-exit-stats
+```
+
+Hardware-tested firmware is `f9a05933a00fab26b1c0e2b15375d074161ef2bc`. All commits after it are documentation-only. After merge, recover the true new `main` before choosing the next consumer milestone.
