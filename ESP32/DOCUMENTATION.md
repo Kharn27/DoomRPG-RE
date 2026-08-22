@@ -36,57 +36,45 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) | UNLOCK world state | #58 | `7503b379185db3f05713eb34f1762173edb977d0` |
 | [`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md) | GIVEMAP automap state | #59 | `9891a25d700f9ffe1be044ac4a7629c3487604ec` |
 | [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md) | SAVEGAME future-save route | #60 | `50ed329801fe99917ef2f848ee13e742ae7734ab` |
+| [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md) | CHANGEMAP pending transition intent | #61 | `fc39ac60757e0d992e3729a5044a9d83e9994971` |
 
-## Current merge-ready milestone
+## Current candidate
 
-[`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md) owns `2 / EV_CHANGEMAP` as a pending native transition intent.
-
-```text
-branch = agent/esp32-map1-native-change-map-intent
-base   = 50ed329801fe99917ef2f848ee13e742ae7734ab
-hardware-tested firmware = 93e0be24558ebffcbc9f60ef0ced54f29274ab28
-status = REAL-CYD HARDWARE PASS / MERGE-READY
-```
-
-Real-CYD CHANGEMAP corpus:
+[`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md) owns the final two real MAP_INTRO opcode families, `7 / EV_SHOW` and `18 / EV_HIDE`, through one compact native map-sprite/entity topology.
 
 ```text
-refs=1 pending=1 zeroParam=0 showStats=1 directLoad=0
-removable=0 fallbackMap=0 stateExecRefused=1
-ownerBytes=16 resultBytes=20 persistentHeapBytes=0
-mapNameBytes=13 maxMapName=13
-ownerFNV=f75eb7c7 resultFNV=2f40c9be contentFNV=f7a79d99
-rollback=1/1 reapplyExact=1 closedPackApply=1
+branch = agent/esp32-map1-native-show-hide-topology
+base   = fc39ac60757e0d992e3729a5044a9d83e9994971
+firmware candidate = 1e9760de2269f57ec24dcea0fc16774a119ae65a
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Canonical command:
+The owner intentionally avoids legacy pointer topology:
 
 ```text
-cmd2 event1 off1
-arg1=80000000 arg2=00000100
-mapString=0
-name="/junction.bsp"
-targetMap=9 / MAP_JUNCTION
-spawnParam=0
-showStats=1
-effects=03
-pending=1 handled=1 removeIfHandled=0
+344 map sprites
+7 B / sprite
+payload = 2408 B
+
+entity type       1 B
+entity subtype    1 B
+visual state      1 B
+link state/tile   2 B
+link order        2 B
 ```
 
-The milestone mirrors only the bytecode-time assignment of legacy `Game.changeMapParam`. It does not invoke the later texture-7 transition consumer.
-
-Deferred effects remain metadata only:
+Expected result ABIs:
 
 ```text
-showStats -> level stats + stats menu
-no stats  -> level stats + map load
+EspMapShowResult = 26 B
+EspMapHideResult = 18 B
 ```
 
-Transition sound `5068`, actual target-map load and pending-state consumption remain deferred.
+SHOW projects the directly owned visual/link consequences and reports deferred blocker gameplay effects rather than invoking legacy `Entity_died()`. The RNG crate blocker path is fail-closed before mutation. HIDE reproduces non-enemy map-sprite hide/unlink traversal using compact link order rather than pointer chains.
 
-The permanent executor uses only the resident native runtime/string span and performs no PAK I/O. Hardware proved the same sample can be armed identically after the verification PAK is closed.
+The topology is built once from immutable BSP sprites plus a bounded `/entities.db` read from `/DoomRPG-ESP32.pak`; SHOW/HIDE execution itself performs no PAK I/O. Runtime ZIP access remains forbidden.
 
-## Current hardware-proven boundary
+## Current hardware-proven boundary through PR #61
 
 ```text
 persistent native heap = 15584 B
@@ -107,36 +95,64 @@ legacyTransitionFNV    = 79ab740c
 playerStatsFNV         = 0b2ae445
 ```
 
-Latest same-build CHANGEMAP witness:
+Latest hardware-proven CHANGEMAP witness:
 
 ```text
-heap8=68176->68176
-largest8=34804->34804
-frameFNV=e36ac6fd->e36ac6fd
-transient PAK cost=4376 B
-persistent CHANGEMAP heap=0 B
-transitionFNV=79ab740c->79ab740c
-statsFNV=0b2ae445->0b2ae445
+refs=1 pending=1 showStats=1 directLoad=0
+name="/junction.bsp" targetMap=9 spawnParam=0 effects=03
+ownerBytes=16 resultBytes=20 persistentHeapBytes=0
+rollback=1/1 reapplyExact=1 closedPackApply=1
+heap8=68176->68176 largest8=34804->34804
+transitionTriggered=no statsMutation=no menuMutation=no mapLoad=no
 ```
 
-Final PARK boundary:
+## SHOW/HIDE validation target
+
+Hardware must establish the actual compact topology counts and fingerprints rather than inheriting desktop assumptions:
 
 ```text
-nativeChangeMapIntent=yes
-transitionArmedProven=yes
-transitionTriggered=no
-statsMutation=no
-menuMutation=no
-mapLoad=no
-framebufferMutation=no
-entities=0 monsters=0 noGameplay=yes
+entityDefCount
+entityCount
+EntityDef-backed / fallback counts
+initial linked / hidden counts
+enemy / destructible counts
+nextLinkOrder
+topologyFNV
+actual persistent topology heap cost
 ```
 
-Stable heartbeats:
+It must also audit the complete real opcode corpus:
 
 ```text
-35181 ms: heap=133940 heap8=68176 largest8=34804
-40182 ms: heap=133940 heap8=68176 largest8=34804
+SHOW refs / HIDE refs
+SHOW/HIDE mutation counts
+blocker counts and deferred gameplay metadata
+HIDE hidden entity total
+SHOW/HIDE result and state fingerprints
+rollback = refs/refs
+showRepeatGuard=1
+hideIdempotent=1
+```
+
+RAM target:
+
+```text
+topology payload = 2408 B
+2408 <= actual heap cost <= 2536 B
+largest8 >= 32768 B
+new total persistent heap = 15584 B + hardware-measured topology allocation
+```
+
+Final integrity still requires:
+
+```text
+legacy Render runtime clear
+legacy entity topology unchanged
+entities=0 monsters=0
+framebuffer unchanged
+shapeData=NULL
+mediaTexels=NULL
+ST_PLAYING not reached
 ```
 
 ## Architecture rule
@@ -155,17 +171,10 @@ original behavior/data
 
 Never reintroduce runtime ZIP access, map-wide `shapeData`, map-wide `mediaTexels`, pointer-heavy desktop map structures or legacy `Render_t` ownership as a shortcut.
 
-## Remaining MAP_INTRO families
+## MAP_INTRO event-family frontier
 
-After CHANGEMAP, only these remain:
+If this candidate passes, there will be **no remaining real MAP_INTRO opcode ID without an explicit native ownership/execution boundary**.
 
-```text
-7  EV_SHOW
-18 EV_HIDE
-```
+That milestone closes event-family ownership only. It does not complete the game port: native entity/monster gameplay, deferred effect consumers, map-transition consumption, rendering and actual progression to `ST_PLAYING` remain later work.
 
-They are entity-topology operations, not simple visibility bits: legacy behavior includes entity death, linking/unlinking and tile-chain traversal. They require the final explicit compact native sprite/entity-topology boundary.
-
-Current recommendation: **merge `agent/esp32-map1-native-change-map-intent`**.
-
-After merge, recover the exact new `main` before selecting or implementing the final SHOW/HIDE milestone.
+Do not merge this candidate until real-CYD hardware validation passes and the post-test commits are verified documentation-only.
