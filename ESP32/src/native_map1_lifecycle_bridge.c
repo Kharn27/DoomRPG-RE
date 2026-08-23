@@ -7,6 +7,7 @@
 #include "native_junction_orientation_probe.h"
 #include "native_junction_player_setup_probe.h"
 #include "native_junction_player_view_probe.h"
+#include "native_junction_post_load_hud_clear_probe.h"
 #include "native_junction_spawn_probe.h"
 #include "native_map1_access_probe.h"
 #include "native_map1_bsp_pass1.h"
@@ -81,6 +82,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32JunctionOrientationProbe_reset();
     Esp32JunctionFinishRotationTileProbe_reset();
     Esp32JunctionFacingProbe_reset();
+    Esp32JunctionPostLoadHudClearProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -91,8 +93,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * owners -> bounded opcode/UI/world semantic owners -> committed Junction
      * residency -> fresh-map spawn/player/HUD/setup -> first tile dispatch ->
      * finishRotation orientation -> second tile dispatch -> durable native
-     * facing resolution. ST_PLAYING/gameplay/render remain outside this chain.
-     * Each stage arms first and executes on a later Arduino loop.
+     * facing -> post-load HUD message-channel clear. Junction Game_givemap,
+     * weapon/save/cleanup and ST_PLAYING remain outside this chain. Each stage
+     * arms first and executes on a later Arduino loop.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -129,4 +132,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32JunctionOrientationProbe_service(doomRpg);
     Esp32JunctionFinishRotationTileProbe_service(doomRpg);
     Esp32JunctionFacingProbe_service(doomRpg);
+    Esp32JunctionPostLoadHudClearProbe_service(doomRpg);
 }
