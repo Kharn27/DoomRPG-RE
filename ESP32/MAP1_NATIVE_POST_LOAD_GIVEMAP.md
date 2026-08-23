@@ -9,7 +9,13 @@ PR   = #77 — native post-load HUD clear
 main = 56c4211a91e6a95763dd4cc215ef40de6c10a98b
 ```
 
-Status: **HARDWARE CANDIDATE — NOT YET CYD-PROVEN**.
+Hardware-tested firmware:
+
+```text
+511156120bd877367d13ffa4b98ed6815005bc3c
+```
+
+Status: **REAL-CYD HARDWARE PASS / historical MAP_INTRO regression witness not included in supplied excerpt**.
 
 ## Objective
 
@@ -59,7 +65,7 @@ operation.
 The project already hardware-proved these semantics for real `9 / EV_GIVEMAP`
 bytecode in `MAP1_NATIVE_GIVEMAP_STATE.md`.
 
-Permanent owners already exist:
+Permanent owners:
 
 ```text
 EspMapAutomapState
@@ -90,10 +96,10 @@ destructibles=3
 
 ## Shared direct GIVEMAP primitive
 
-`esp_map_automap_state` now exposes an event-independent result:
+`esp_map_automap_state` exposes an event-independent result:
 
-```c
-EspMapGiveMapDirectResult = 12 B  // candidate ABI
+```text
+EspMapGiveMapDirectResult = 12 B
 ```
 
 Fields:
@@ -107,65 +113,68 @@ spritesMutated
 tilesMutated
 ```
 
-New APIs:
+Permanent APIs:
 
-```c
+```text
 EspMapAutomapState_planGiveMapDirect()
 EspMapAutomapState_applyGiveMapDirect()
 ```
 
-`planGiveMapDirect()` is pure. It counts total targets and how many current
-native-owner mutations would be required.
-
-`applyGiveMapDirect()` performs the exact three recovered mutations, without
-allocation and without Game/Render/Entity/Hud/Player/DoomCanvas dependencies.
+`planGiveMapDirect()` is pure. `applyGiveMapDirect()` performs the exact three
+recovered mutations without allocation and without Game/Render/Entity/Hud/
+Player/DoomCanvas dependencies.
 
 The existing opcode API remains:
 
-```c
+```text
 EspMapAutomapState_applyGiveMapCommand(...)
 EspMapGiveMapResult = 20 B
 ```
 
-Its hardware-proven 20 B ABI is unchanged. The command wrapper still validates
-canonical event descriptor, opcode 9, command offset/global index and
-remove-if-handled metadata, then delegates only the world mutation to the same
-direct primitive. Thus event-driven and caller-driven GIVEMAP now have one
-permanent implementation of the world semantics.
-
-The normal probe chain still runs the historical MAP_INTRO GIVEMAP probe before
-the Junction transition, so the next real-CYD flash also regression-tests the
-existing opcode-9 behavior.
+Its previously hardware-proven 20 B ABI and descriptor/opcode/remove semantics
+are unchanged. The command wrapper delegates only the world mutation to the same
+direct primitive, so event-driven and caller-driven GIVEMAP share one permanent
+implementation.
 
 ## Post-load caller-order owner
 
-New permanent files:
+Permanent files:
 
 ```text
 ESP32/include/esp_post_load_givemap_state.h
 ESP32/src/esp_post_load_givemap_state.c
 ```
 
-Candidate ABI:
+Hardware-proven ABI:
 
 ```text
 EspPostLoadGiveMapState = 16 B
 persistent heap = 0 B
+stateFNV = 448e587d
 ```
 
-It stores only:
+Real-CYD state:
 
 ```text
-six direct target/mutation counts
-map identity targetMapId/gameplayLoadMapId/loadType
-active marker
+lineTargetCount=198
+spriteTargetCount=48
+entranceTargetCount=15
+linesMutated=198
+spritesMutated=48
+tilesMutated=15
+targetMapId=9
+gameplayLoadMapId=2
+loadType=0
+active=1
 ```
 
-The durable revealed state remains exclusively in `EspMapAutomapState` and
-`EspMapState`; the 16 B owner is only an explicit caller-order marker for later
-post-load progression.
+The FNV `448e587d` independently matches the 16-byte little-endian ABI payload
+for those exact values.
 
-### Strict current-context gate
+The durable revealed state remains exclusively in `EspMapAutomapState` and
+`EspMapState`; the 16 B owner is only an explicit caller-order marker.
+
+## Strict current-context gate
 
 The pure `EspPostLoadGiveMap_prepare()` requires:
 
@@ -180,69 +189,159 @@ pre-GIVEMAP mapStateFNV=c5cdfc04
 pre-GIVEMAP automapFNV=0b2ae445
 ```
 
-This deliberately fail-closes saved-world loads, other maps and reordered calls
-until their own caller path is recovered.
+Saved-world loads, other maps and reordered calls remain fail-closed.
 
-`EspPostLoadGiveMap_route()` performs the pure plan, applies direct GIVEMAP once,
-then parks the 16 B result. Repeat routing is refused as already active.
+## Real-CYD world proof
 
-## Hardware probe
-
-Temporary files:
+The tested normal `esp32-cyd` firmware produced:
 
 ```text
-ESP32/include/native_junction_post_load_givemap_probe.h
-ESP32/src/native_junction_post_load_givemap_probe.c
+[JUNCTIONGIVEMAP] READY stateBytes=16 directResultBytes=12 stateFNV=448e587d lineTargets=198 spriteTargets=48 entranceTargets=15 linesMutated=198 spritesMutated=48 tilesMutated=15 active=1 targetMap=9 gameplayLoadMapId=2 loadType=0
 ```
 
-It runs one Arduino loop after the hardware-proven HUD-clear probe.
-
-Expected block:
+Both target owners mutated exactly as required:
 
 ```text
-=== Doom RPG ESP32-native Junction post-load Game_givemap ===
-[JUNCTIONGIVEMAP] READY ...
-[JUNCTIONGIVEMAP] INPUT ...
-[JUNCTIONGIVEMAP] WORLD ...
-[JUNCTIONGIVEMAP] FAILCLOSED ...
-[JUNCTIONGIVEMAP] RESIDENT ...
-[JUNCTIONGIVEMAP] RAM ...
-[JUNCTIONGIVEMAP] LEGACY ...
-[JUNCTIONGIVEMAP] PARK ...
+mapStateFNV  c5cdfc04 -> 8dba0bb4
+automapFNV   0b2ae445 -> b699bd75
 ```
 
-The probe does **not** predeclare the Junction target counts, post-world FNVs or
-new state FNV. The real CYD establishes them.
-
-Acceptance requires:
+Every current target required mutation on this fresh Junction boundary:
 
 ```text
-EspPostLoadGiveMapState=16 B
-EspMapGiveMapDirectResult=12 B
-pure prepare with no mutation
-all eligible lines revealed after route
-all map sprites revealed after route
-all entrance tiles visited after route
-second pure direct plan reports zero mutations
-runtime/script/line/texture/topology FNVs unchanged
-map-state FNV changes from c5cdfc04
-automap FNV changes from 0b2ae445
-payload/entity counts unchanged
-HUD-clear b7383e18 unchanged
-PlayerView afcdcf74 unchanged
-Facing 95aa1108 unchanged
-PAK closed
-heap/largest delta=0
-legacy Game/Player/Hud/DoomCanvas/Render/framebuffer unchanged
-legacy Game_givemap not called
+198 / 198 eligible lines revealed
+48 / 48 map sprites revealed
+15 / 15 entrance tiles visited
+```
+
+The semantic scan and second pure plan both passed:
+
+```text
+allTargetsRevealed=yes
+idempotentPlan=yes
+second-plan mutations=0/0/0
+```
+
+Non-target resident owners stayed canonical:
+
+```text
+runtimeFNV=bc432a0f
+scriptFNV=bc9b18ff
+lineFNV=3658710d
+textureFNV=537319ad
+topologyFNV=d6e8df7d
+nonTargetOwnersUnchanged=yes
+```
+
+Because map/automap are intentionally mutable, the resident snapshot FNV changed:
+
+```text
+snapshotFNV bc9071e9 -> bb714d80
+payload=10410
+entities=30
+enemies=0
+destructibles=3
+packClosed=yes
+```
+
+## Input-owner integrity
+
+Hardware kept the preceding owners unchanged:
+
+```text
+HUD-clear FNV=b7383e18
+PlayerView FNV=afcdcf74
+Facing FNV=95aa1108
+callerOrder=yes
+```
+
+## Fail-closed / atomicity proof
+
+Real hardware proved:
+
+```text
+nullHud=1
+nullOutput=1
+inactiveHud=1
+uncleared=1
+targetMap=1
+gameplayMap=1
+loadType=1
+plannerNull=1
+prepareAtomic=yes
+postActivePrepare=1
+repeat=1
+repeatAtomic=yes
+```
+
+## RAM proof
+
+Normal `esp32-cyd`:
+
+```text
+heap8=72700 -> 72700
+delta=0
+largest8=34804 -> 34804
+delta=0
+persistentHeapBytes=0
+```
+
+Stable post-PARK heartbeat:
+
+```text
+heap=138464
+heap8=72700
+largest8=34804
+SD=ready
+VIDEO=ready
+CORE=ready
+```
+
+## Legacy / framebuffer integrity
+
+Same-build equality witnesses:
+
+```text
+gameFNV=d073b2d5 -> d073b2d5
+playerFNV=c64e7862 -> c64e7862
+hudFNV=b18611d2 -> b18611d2
+canvasFNV=702a1a9d -> 702a1a9d
+renderFNV=f9344dec -> f9344dec
+frameFNV=2cb60336 -> 2cb60336
+```
+
+And explicitly:
+
+```text
+legacyRuntimeClear=yes
+GameMutation=no
+PlayerMutation=no
+HudMutation=no
+DoomCanvasMutation=no
+RenderMutation=no
+legacyGame_givemapCalled=no
+```
+
+These equality hashes are same-build witnesses, not cross-build canons.
+
+## Hardware PARK
+
+```text
+state=9 / ST_INTRO
+page=3
+targetMap=9
+junctionResident=yes
+nativeHudClear=yes
+nativePostLoadGiveMap=yes
+Game_givemapPending=no
+weaponReselectPending=yes
+initialSavePending=yes
+postLoadCleanupPending=yes
 ST_PLAYING=no
 entities=0
 monsters=0
+noGameplay=yes
 ```
-
-Fail-closed coverage includes null input/output, inactive/uncleared HUD owner,
-wrong target map, wrong gameplay map, saved-load context, null direct planner,
-pure-prepare atomicity, post-active prepare refusal and repeat-route atomicity.
 
 ## Mandatory invariants
 
@@ -255,22 +354,32 @@ legacy Game.monsters = 0
 ST_PLAYING not reached
 ```
 
-## Promotion rule
+## Regression-witness note
 
-Do not promote this milestone until normal `esp32-cyd` Serial proves the complete
-`[JUNCTIONGIVEMAP]` block and the earlier `[MAPGIVEMAPPROBE]` still passes in the
-same firmware.
+The candidate contract also requested the historical MAP_INTRO
+`[MAPGIVEMAPPROBE]` PASS from the same firmware, because this branch factors the
+shared GIVEMAP world primitive used by opcode 9. The supplied Serial excerpt
+contains the complete Junction `[JUNCTIONGIVEMAP]` PASS block but does not
+contain the earlier MAP_INTRO regression block.
 
-After PASS, only documentation commits may follow the flashed firmware SHA.
+Therefore:
 
-## Next caller boundary after PASS
+```text
+direct Junction boundary = REAL-CYD HARDWARE PASS
+historical opcode-9 regression witness = not present in supplied excerpt
+```
 
-The next exact operation is:
+Do not invent that missing witness. If it is supplied from the same flashed
+firmware, the branch can be declared fully merge-ready with documentation-only
+follow-up.
+
+## Next caller boundary after merge
+
+The next exact operation remains:
 
 ```c
 Player_selectWeapon(player, player->weapon);
 ```
 
-Do not implement it until this direct Junction GIVEMAP boundary is hardware-
-proven and merged. Weapon ownership/save/load cleanup/`ST_PLAYING` remain
-separate milestones.
+Weapon ownership, initial save, load cleanup and `ST_PLAYING` remain separate
+milestones.
