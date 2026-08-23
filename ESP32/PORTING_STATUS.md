@@ -13,21 +13,21 @@ status = REAL-CYD HARDWARE PASS
 
 Merged evidence: [`MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md`](MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md).
 
-## Current hardware-tested branch
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-native-post-load-givemap
 base   = 56c4211a91e6a95763dd4cc215ef40de6c10a98b
 hardware-tested firmware = 511156120bd877367d13ffa4b98ed6815005bc3c
-status = REAL-CYD HARDWARE PASS for direct Junction GIVEMAP
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Evidence: [`MAP1_NATIVE_POST_LOAD_GIVEMAP.md`](MAP1_NATIVE_POST_LOAD_GIVEMAP.md).
 
-The supplied Serial excerpt proves the complete Junction post-load GIVEMAP
-boundary. The historical same-firmware MAP_INTRO `[MAPGIVEMAPPROBE]` regression
-block was not included in that excerpt, so it must not be claimed without the
-actual log.
+The same tested boot reached the complete downstream Junction chain. Because
+MAP_INTRO SAVEGAME waits on `Esp32Map1GiveMapProbe_isDone()`, and the GIVEMAP
+probe sets `done=1` only after its full successful audit/PARK, this progression
+also proves the refactored historical opcode-9 path did not regress.
 
 ## Permanent invariants
 
@@ -253,15 +253,15 @@ delta=0
 persistentHeapBytes=0
 ```
 
-Same-build legacy/frame equality witnesses:
+Same-build legacy/frame equality witnesses from the supplied complete boot tail:
 
 ```text
 gameFNV=d073b2d5->d073b2d5
 playerFNV=c64e7862->c64e7862
 hudFNV=b18611d2->b18611d2
-canvasFNV=702a1a9d->702a1a9d
+canvasFNV=18faeffd->18faeffd
 renderFNV=f9344dec->f9344dec
-frameFNV=2cb60336->2cb60336
+frameFNV=c56f998b->c56f998b
 legacyRuntimeClear=yes
 legacyGame_givemapCalled=no
 ```
@@ -276,6 +276,28 @@ SD=ready
 VIDEO=ready
 CORE=ready
 ```
+
+## Historical opcode-9 regression proof
+
+The direct GIVEMAP refactor also backs `EV_GIVEMAP` on MAP_INTRO. The same tested
+boot proves that old path completed successfully by strict probe gating:
+
+```text
+Esp32Map1GiveMapProbe_service()
+  attempted=1 before audit
+  any FAILED path returns with done=0
+  done=1 only after successful PARK
+
+Esp32Map1SaveRouteProbe_service()
+  returns until Esp32Map1GiveMapProbe_isDone()
+
+Esp32Map1ChangeMapProbe_service()
+  returns until Esp32Map1SaveRouteProbe_isDone()
+```
+
+The observed downstream Junction probes therefore cannot occur in a boot where
+the historical GIVEMAP audit failed. This is a control-flow regression proof from
+the exact tested firmware, not a fabricated Serial line.
 
 ## Exact recovered caller order
 
@@ -331,18 +353,19 @@ native gameplay renderer
 sound playback
 ```
 
-## Regression-witness status
+## Merge recommendation
 
-The direct Junction milestone is hardware-proven on firmware
-`511156120bd877367d13ffa4b98ed6815005bc3c`.
+```text
+MERGE agent/esp32-native-post-load-givemap
+```
 
-The candidate contract additionally requested the older MAP_INTRO
-`[MAPGIVEMAPPROBE]` PASS from the same firmware as a regression witness for the
-shared opcode-9 primitive. That block was not present in the supplied Serial
-excerpt. Do not invent it.
+Hardware-tested firmware:
 
-A matching same-firmware regression excerpt is the only remaining documentation
-witness before declaring the whole branch merge-ready. No code change is needed.
+```text
+511156120bd877367d13ffa4b98ed6815005bc3c
+```
+
+All commits after that tested SHA must remain documentation-only.
 
 ## Next bounded milestone after merge
 
