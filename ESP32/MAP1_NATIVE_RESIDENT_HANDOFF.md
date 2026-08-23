@@ -9,33 +9,35 @@ PR   = #66 — native transition preflight
 main = 9f981f490282200f216aef66d22608d2244beb00
 ```
 
-Firmware candidate:
+Hardware-tested firmware:
 
 ```text
-f71520281254ff9d0b2d5e4be1b3611e29ca87c4
+090d7dac5c255fc42a3d12fb3441053fdefe681b
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
-## Objective
+## Objective and result
 
-The target `/junction.bsp` is already hardware-proven readable, CRC-valid and structurally bounded while Entrance remains resident. The next boundary is therefore not another read-only preflight: it is proving that the current native resident owners can be torn down and rebuilt in a dependency-safe, RAM-safe order.
+This milestone proves that the current ESP32-native resident-map owner set can be torn down and rebuilt in a dependency-safe, RAM-safe order without falling back to legacy `DoomCanvas_loadMap()`.
 
-This milestone introduces a permanent generic resident-map lifecycle and a temporary destructive-but-reversible hardware proof:
+The real classic CYD executed the complete reversible transaction:
 
 ```text
 Entrance resident
- -> explicit native resetAll()
- -> EMPTY
- -> build Junction resident runtime + all current mutable owners
+ -> explicit resetAll()
+ -> EMPTY1
+ -> build full Junction resident runtime + mutable owners
  -> capture Junction
  -> explicit resetAll()
- -> EMPTY
+ -> EMPTY2
  -> rebuild Entrance
  -> require exact source restoration
 ```
 
-The test does **not** call legacy `DoomCanvas_loadMap()`, does not mutate `Game/Menu/Player/Render`, does not enter `ST_PLAYING`, does not commit Junction as the active gameplay map, and leaves Entrance resident at PARK.
+The hardware PASS proves for the first time that `/junction.bsp` can exist as the complete current native resident owner set. Junction is still temporary in this milestone: PARK leaves Entrance restored and no committed gameplay map swap occurs.
+
+No legacy `Game/Menu/Player/Render` mutation, no `ST_PLAYING`, no gameplay entity/monster population and no legacy map loader are introduced.
 
 ## Permanent resident lifecycle
 
@@ -58,7 +60,7 @@ EspMapResidentLifecycle_loadFromEmpty()
 
 ### Explicit teardown rule
 
-`loadFromEmpty()` never hides a destructive source teardown. If any current owner is live it returns `ESP_MAP_RESIDENT_NOT_EMPTY` before opening the PAK.
+`loadFromEmpty()` never hides a destructive source teardown. A live resident set returns `ESP_MAP_RESIDENT_NOT_EMPTY` before PAK I/O.
 
 The only destructive primitive is explicit:
 
@@ -78,33 +80,19 @@ sprite topology
  -> immutable runtime arena
 ```
 
-Every owner already has its own real `reset()` and heap ownership. No mutable overlay owns the immutable arena.
-
-### Empty-only build
-
-`EspMapResidentLifecycle_loadFromEmpty(resourceName, inventory, snapshot)` requires:
-
-```text
-all seven owners empty
-PAK closed on entry
-valid pre-inventoried BSP
-```
-
-It then owns one temporary PAK session and builds:
+Empty-only build order:
 
 ```text
 EspMapRuntime
-EspMapState
-EspMapScriptState
-EspMapLineState
-EspMapLineTextureState
-EspMapAutomapState
-EspMapSpriteTopology + /entities.db
+ -> EspMapState
+ -> EspMapScriptState
+ -> EspMapLineState
+ -> EspMapLineTextureState
+ -> EspMapAutomapState
+ -> EspMapSpriteTopology + /entities.db
 ```
 
-The PAK is closed before return. On any failure the lifecycle is reset back to EMPTY and the result snapshot is zeroed.
-
-`PACK_BUSY` does not steal or close a caller-owned PAK session.
+The lifecycle owns one temporary PAK session, closes it before return and resets all partially built owners on failure. `PACK_BUSY` preserves caller ownership of an already-open PAK.
 
 ## Pointer-free resident snapshot
 
@@ -112,73 +100,59 @@ The PAK is closed before return. On any failure the lifecycle is reset back to E
 EspMapResidentSnapshot = 96 B
 ```
 
-It contains only scalar sizes, FNVs and cardinalities:
+The snapshot contains only logical payload sizes, FNVs and cardinalities. No pointer or legacy object is retained.
+
+Important semantic distinction recovered during hardware validation:
 
 ```text
-runtimeArenaBytes
-mapStateBytes
-scriptStateBytes
-lineStateBytes
-textureStateBytes
-automapStateBytes
-topologyBytes
-totalPayloadBytes
-
-runtimeFNV1a
-mapStateFNV1a
-scriptStateFNV1a
-lineStateFNV1a
-textureStateFNV1a
-automapStateFNV1a
-topologyFNV1a
-
-nodeCount
-lineCount
-spriteCount
-eventCount
-byteCodeCount
-stringCount
-entityCount
-enemyCount
-destructibleCount
+runtimeArenaBytes = logical payload
+heap delta        = actual allocator cost
 ```
 
-No pointer or legacy object is retained in the snapshot.
-
-## Source Entrance snapshot target
-
-From the hardware-proven current owners and their exact storage formulas:
+The original runtime milestone already established Entrance as:
 
 ```text
-runtime arena       14112 B
-map state            1024 B
-script state           81 B
-line state            120 B
-texture state          60 B
-automap state         103 B
-topology              2408 B
----------------------------
-logical payload      17908 B
+runtime payload = 14095 B
+runtime heap    = 14112 B
+runtime overhead= 17 B
 ```
 
-Existing hardware actual allocation:
+The first handoff candidate incorrectly used `14112` as snapshot payload. Diagnostic v2 isolated that single mismatch before any teardown. Corrected v3 uses the permanent snapshot contract correctly.
+
+## Hardware-proven Entrance source snapshot
+
+Real-CYD source capture:
+
+```text
+snapshotBytes = 96
+snapshotFNV   = b3811f3d
+
+runtime arena = 14095 B
+map state     = 1024 B
+script state  = 81 B
+line state    = 120 B
+texture state = 60 B
+automap state = 103 B
+topology      = 2408 B
+----------------------
+payload total = 17891 B
+```
+
+Actual resident heap cost remains the inherited hardware canon:
 
 ```text
 18008 B
 ```
 
-Therefore expected allocator overhead released by `resetAll()`:
+Total allocator overhead across the seven owners is therefore:
 
 ```text
-100 B
+18008 - 17891 = 117 B
 ```
 
-Deterministic source snapshot target:
+Exact source fingerprints/cardinalities:
 
 ```text
-snapshotBytes = 96
-snapshotFNV   = 97090c81
-
 arenaFNV      = c3882516
 mapStateFNV   = cd99b98e
 scriptFNV     = f9e3d9df
@@ -187,223 +161,273 @@ textureFNV    = f1fc1875
 automapFNV    = 669b1aa7
 topologyFNV   = 3f321e43
 
-nodes=223 lines=480 sprites=344 events=93 byteCodes=265 strings=94
-entities=220 enemies=30 destructibles=13
+nodes=223
+lines=480
+sprites=344
+events=93
+byteCodes=265
+strings=94
+entities=220
+enemies=30
+destructibles=13
 ```
 
-The 96-byte whole-snapshot FNV is a static prediction; the real CYD remains authoritative.
+## Source release / fail-closed gates
 
-## Junction resident payload prediction
-
-The preflight has already hardware-proven the immutable Junction plan and source counts. Applying the current generic mutable-owner storage formulas gives:
+Before destruction the hardware proved:
 
 ```text
-runtime arena       8867 B
-map state           1024 B
-script state          73 B   # ceil(66/2) + ceil(319/8)
-line state            52 B   # 2 * ceil(207/8)
-texture state         26 B   # ceil(207/8)
-automap state         32 B   # ceil(207/8)+ceil(48/8)
-topology              336 B  # 48 * 7
---------------------------
-logical payload     10410 B
+NOT_EMPTY gate     = 1
+invalid resource   = 1
+capture(NULL)      = 1
+PACK_BUSY          = 1
+busy result zero   = 1
+caller owns PAK    = 1
+empty atomic       = yes
 ```
 
-These payload sizes are format-derived expectations. The following remain intentionally unknown until hardware:
+After explicit `resetAll()`:
 
 ```text
-actual Junction heap allocation cost
-allocator overhead
-runtime/map/script/line/texture/automap/topology FNVs
-whole Junction snapshot FNV
-entity/enemy/destructible counts
-largest-block behavior through the round trip
-build elapsed time
+SOURCE heap8 = 65592
+EMPTY1 heap8 = 83600
+released     = 18008 B
+sourcePayload= 17891 B
+allocatorOverhead=117 B
+allOwnersEmpty=yes
+largest8     = 34804 -> 34804
 ```
 
-## Temporary reversible handoff probe
+This proves the complete current native resident set is released exactly and does not consume the largest free 8-bit block.
 
-Files:
+## Hardware-proven Junction resident owner set
+
+Source BSP remains the preflight canon:
 
 ```text
-ESP32/include/native_resident_handoff_probe.h
-ESP32/src/native_resident_handoff_probe.c
+resource=/junction.bsp
+resourceMapId=9
+gameplayLoadMapId=2
+bytes=21051
+crc32=4a2c5800
+sourceFNV=fefaf5ca
+nodes=77 lines=207 sprites=48 events=66 byteCodes=319 strings=126
 ```
 
-The probe arms only after the corrected transition-preflight probe has completed.
-
-### Phase 0 — source and fail-closed gates
-
-Before any teardown it requires current Entrance to match the exact source snapshot and proves:
+Full native resident build:
 
 ```text
-loadFromEmpty while Entrance live -> NOT_EMPTY
-result zero
-Entrance snapshot unchanged
-PAK never opened
+snapshotBytes = 96
+snapshotFNV   = bc9071e9
+buildElapsed  = 121 ms
 
-NULL resource -> INVALID + zero result
-capture(NULL) -> refused
+runtime       = 8867 B
+map state     = 1024 B
+script state  = 73 B
+line state    = 52 B
+texture state = 26 B
+automap state = 32 B
+topology      = 336 B
+---------------------
+payload       = 10410 B
+actual heap   = 10540 B
+allocator ovh = 130 B
 ```
 
-### Phase 1 — explicit source release
-
-The probe inventories `/intro.bsp` and `/junction.bsp` first, then performs the destructive call:
+Heap/largest while Junction is resident:
 
 ```text
-EspMapResidentLifecycle_resetAll()
+heap8    = 73060
+largest8 = 34804
 ```
 
-Acceptance at `EMPTY1`:
+Permanent builders emitted:
 
 ```text
-all owners empty
-capture refused + zero output
-heapEmpty1 - heapSource = 18008 B
-logical source payload = 17908 B
-allocator overhead = 100 B
+[MAPRT] ARENA bytes=8867
+[MAPRT] READY populateReadCalls=44 arenaFNV=bc432a0f
+[MAPSTATE] READY bytes=1024 fnv=c5cdfc04
+[MAPLINESTATE] READY storageBytes=52 stateFNV=3658710d
+[MAPLINETEX] READY storageBytes=26 stateFNV=537319ad
+[MAPAUTOMAP] READY storageBytes=32 stateFNV=0b2ae445
 ```
 
-### Phase 2 — PAK ownership gate
-
-While EMPTY, the probe deliberately opens the PAK itself and calls `loadFromEmpty()`.
-
-Required:
+Hardware-proven Junction resident fingerprints:
 
 ```text
-PACK_BUSY
-result zero
-caller still owns the open PAK
-caller closes it explicitly
-heap/largest return exactly to EMPTY1
+runtimeFNV  = bc432a0f
+mapStateFNV = c5cdfc04
+scriptFNV   = bc9b18ff
+lineFNV     = 3658710d
+textureFNV  = 537319ad
+automapFNV  = 0b2ae445
+topologyFNV = d6e8df7d
+snapshotFNV = bc9071e9
 ```
 
-### Phase 3 — temporary Junction residency
-
-The permanent lifecycle builds full Junction native residency from the pre-inventoried target.
-
-Expected shape:
+Hardware-proven Junction compact topology:
 
 ```text
-snapshotBytes=96
-payload=10410
-arena=8867
-state=1024
-script=73
-line=52
-texture=26
-automap=32
-topology=336
-
-nodes=77
-lines=207
-sprites=48
-events=66
-byteCodes=319
-strings=126
+sprites       = 48
+entities      = 30
+enemies       = 0
+destructibles = 3
 ```
 
-All seven Junction FNVs must be non-zero. Topology counts must be sane and will be established by hardware.
+These are compact native topology semantics only; legacy `Game.entities` and `Game.monsters` remain zero.
 
-The probe captures the target twice without rebuilding and requires byte-exact equality.
-
-### Phase 4 — target release / fragmentation gate
+## Target release / fragmentation proof
 
 After releasing Junction:
 
 ```text
-heapEmpty2    == heapEmpty1
-largestEmpty2 == largestEmpty1
-all owners empty
+EMPTY2 heap8    = 83600
+EMPTY2 largest8 = 34804
+targetReleased  = 10540 B
+emptyExact      = 1
+fragmentationDelta=0
 ```
 
-This deliberately makes allocator fragmentation visible before a committed map swap is allowed.
-
-### Phase 5 — exact Entrance restoration
-
-The source is rebuilt through the same permanent `loadFromEmpty()` API.
-
-Acceptance:
+Therefore:
 
 ```text
-restored snapshot byte-identical to source
-restored snapshotFNV=97090c81
-heapRestored == heapSource
-largestRestored == largestSource
-PAK closed
+EMPTY2 heap/largest == EMPTY1 heap/largest
 ```
 
-The probe then requires unchanged framebuffer, legacy Player witness and legacy transition/menu witness.
+The target round-trip introduces no final allocator drift and no largest-block degradation.
 
-### Recovery behavior
+## Exact Entrance restoration
 
-Any failure after source release enters the probe recovery path:
+The source was rebuilt through the same permanent `loadFromEmpty()` API.
+
+Hardware:
 
 ```text
-close PAK if needed
-reset all native resident owners
-attempt loadFromEmpty(/intro.bsp)
-print [RESIDENTHANDOFF] RECOVERY ...
+restored snapshotFNV = b3811f3d
+exact                 = 1
+heap8                  = 65592 -> 65592
+largest8               = 34804 -> 34804
+sourceCost             = 18008 B
+payload                = 17891 B
 ```
 
-A failed target proof is therefore not intentionally allowed to strand the board with an empty native runtime.
-
-## Expected Serial family
+Whole RAM sequence:
 
 ```text
-[RESIDENTHANDOFFPROBE] ARMED ...
+SOURCE   heap8=65592 largest8=34804
+EMPTY1   heap8=83600 largest8=34804
+JUNCTION heap8=73060 largest8=34804
+EMPTY2   heap8=83600 largest8=34804
+RESTORED heap8=65592 largest8=34804
 
-=== Doom RPG ESP32-native reversible resident handoff ===
-[RESIDENTHANDOFFPROBE] CONTRACT ...
-
-[BSPREAD] ... /intro.bsp ...
-[BSPREAD] ... /junction.bsp ...
-
-# Junction build uses the existing permanent builders:
-[MAPRT] ARENA ...
-[MAPRT] READY ...
-[MAPSTATE] READY ...
-[MAPLINESTATE] READY ...
-[MAPLINETEX] READY ...
-[MAPAUTOMAP] READY ...
-
-# Entrance restoration prints the same builder families again.
-
-[RESIDENTHANDOFF] SOURCE snapshotBytes=96 payload=17908 snapshotFNV=97090c81 ...
-[RESIDENTHANDOFF] EMPTY1 ... released=18008 sourcePayload=17908 allocatorOverhead=100 allOwnersEmpty=yes
-[RESIDENTHANDOFF] GATES notEmpty=1 invalid=1 nullCapture=1 packBusy=1 busyZero=1 callerOwnsPack=1 emptyAtomic=yes
-[RESIDENTHANDOFF] JUNCTION snapshotBytes=96 payload=10410 heapCost=... allocatorOverhead=... snapshotFNV=... elapsed=...ms arena=8867 state=1024 script=73 line=52 texture=26 automap=32 topology=336
-[RESIDENTHANDOFF] JUNCTIONFNV arena=... map=... script=... line=... texture=... automap=... topology=...
-[RESIDENTHANDOFF] JUNCTIONTOPO nodes=77 lines=207 sprites=48 events=66 byteCodes=319 strings=126 entities=... enemies=... destructibles=... heap8=... largest8=...
-[RESIDENTHANDOFF] EMPTY2 ... emptyExact=1 ... fragmentationDelta=0
-[RESIDENTHANDOFF] RESTORE snapshotFNV=97090c81 exact=1 ...
-[RESIDENTHANDOFF] RAM ... finalDelta=0 ...
-[RESIDENTHANDOFF] LEGACY ... DoomCanvas_loadMapCalled=no menuMutation=no legacyPlayerMutation=no
-[RESIDENTHANDOFF] PARK state=9 page=3 nativeResidentLifecycle=yes reversibleHandoff=yes junctionResidentProven=yes sourceRestored=yes targetLeftResident=no packClosed=yes persistentBytes=18008 mapSwapCommitted=no entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
+sourceCost   = 18008 B
+junctionCost = 10540 B
+finalDelta   = 0
 ```
 
-Use normal PlatformIO environment `esp32-cyd`.
+This is the first hardware proof that a complete target native resident set can replace the source allocation and that the source can then be reconstructed exactly on the no-PSRAM classic CYD.
 
-No CI status is published for the firmware candidate. No local build or hardware PASS is claimed.
+## Legacy/frame integrity
+
+Same-build witnesses remained unchanged across the destructive native round-trip:
+
+```text
+playerFNV     0b2ae445 -> 0b2ae445
+transitionFNV f450c49f -> f450c49f
+frameFNV      ee9d9dbc -> ee9d9dbc
+
+legacyRuntimeClear=yes
+sourceTeardownNativeOnly=yes
+DoomCanvas_loadMapCalled=no
+menuMutation=no
+legacyPlayerMutation=no
+```
+
+Final PARK:
+
+```text
+state=9
+page=3
+nativeResidentLifecycle=yes
+reversibleHandoff=yes
+junctionResidentProven=yes
+sourceRestored=yes
+targetLeftResident=no
+packClosed=yes
+persistentBytes=18008
+mapSwapCommitted=no
+entities=0
+monsters=0
+noGameplay=yes
+```
+
+Stable post-PASS heartbeat:
+
+```text
+heap=131356
+heap8=65592
+largest8=34804
+```
+
+## Pre-Start Game heartbeat context
+
+The same firmware also showed stable pre-Start-Game heartbeats before the native Entrance lifecycle was mounted:
+
+```text
+heap=93948
+heap8=28184
+largest8=18420
+```
+
+These values are useful same-run lifecycle context but are not resident-map allocation canons. The resident handoff proof begins only after the normal Start Game chain has built and proven Entrance.
+
+## Validation history
+
+```text
+v1 f71520281254ff9d0b2d5e4be1b3611e29ca87c4
+   -> safe FAIL at combined source boundary; no teardown
+
+v2 13f7f3787bf6de08595167081af1ea628ae30946
+   -> diagnostic safe FAIL; isolated 14095 payload vs 14112 heap-cost confusion
+
+v3 090d7dac5c255fc42a3d12fb3441053fdefe681b
+   -> REAL-CYD HARDWARE PASS
+```
+
+No local PlatformIO build or CI result is claimed for this milestone; the real CYD Serial log is the hardware source of truth.
 
 ## Boundary after PASS
 
-A hardware PASS would prove for the first time that `/junction.bsp` can exist as the **complete current native resident owner set**, not merely as a read-only inventory, while also proving the source can be restored exactly with no final heap/largest-block drift.
+Hardware ownership now includes:
 
-Still outside this milestone:
+```text
+generic explicit resident lifecycle
+complete temporary Junction native residency
+explicit Entrance teardown
+explicit Junction teardown
+exact Entrance reconstruction
+no-fragmentation resident round-trip
+```
+
+Still outside:
 
 ```text
 committing Junction as the active map after the stats-menu pause
 native transition state machine / point-of-no-return ownership
 spawn placement and loadType handoff
 actual stats-menu presentation/input
-full entity/monster gameplay beyond compact topology
+full native entity/monster gameplay beyond compact topology
 ST_PLAYING progression
 native gameplay renderer
 sound playback
 ```
 
-The next milestone after a PASS should use this permanent lifecycle to own a bounded **committed transition state machine** rather than reimplementing teardown/build ordering.
+The next bounded milestone should use this proven lifecycle to own a **committed native transition state machine** rather than reimplementing teardown/build ordering.
 
-The real classic CYD Serial log is the final hardware source of truth.
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-resident-handoff
+```
+
+Hardware-tested firmware is `090d7dac5c255fc42a3d12fb3441053fdefe681b`. Every later commit must remain documentation-only until merge.
