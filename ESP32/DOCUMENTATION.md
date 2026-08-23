@@ -6,7 +6,7 @@ This file defines the current ESP32 CYD documentation map.
 
 - [`README.md`](README.md): stable build/flash guide.
 - [`PORTING_STATUS.md`](PORTING_STATUS.md): authoritative current recovery point.
-- Milestone archives: detailed implementation and hardware evidence/candidate contracts.
+- Milestone archives: detailed implementation and hardware evidence.
 
 ## Recent merged milestones
 
@@ -29,7 +29,7 @@ Older milestone archives remain in this directory and are indexed by Git history
 
 ## Latest merged boundary
 
-PR #72 hardware-proved native ownership of the supported fresh-map `Player_setup()` semantics without touching the legacy `Player` object.
+PR #72 hardware-proved native ownership of the supported fresh-map `Player_setup()` semantics:
 
 ```text
 EspPlayerFreshMapState=24 B
@@ -43,17 +43,7 @@ playerSetupPending=0
 tileEnterPending=1
 ```
 
-Real-CYD same-run setup witness:
-
-```text
-stateFNV=d0ab146e
-startMs=27538
-startExact=yes
-```
-
-`stateFNV` is dynamic because it includes the level start clock; `3b27c6a1` is the normalized hardware canon.
-
-Junction remains resident at the merged boundary:
+Junction remains resident at:
 
 ```text
 snapshotFNV=bc9071e9
@@ -64,35 +54,21 @@ enemies=0
 destructibles=3
 ```
 
-Last hardware RAM proof:
+## Current merge-ready milestone
 
-```text
-heap8=72900->72900
-largest8=34804->34804
-persistentHeapBytes=0
-```
-
-## Current hardware candidate
-
-[`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md) defines the next bounded candidate.
+[`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md) hardware-proves the first fresh-map tile dispatch.
 
 ```text
 branch = agent/esp32-native-initial-tile-enter
 base   = 9077ae4496bdcc06b6b99846332ab43b38943a8a
-status = HARDWARE CANDIDATE — NOT YET CYD-PROVEN
+hardware-tested firmware = d8fb3e0e372b89d95c37cce558420f7fcb474419
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-### Exact recovered call boundary
-
-The first fresh-map tile execution is invoked by `Game_spawnPlayer()` only after the transient old-vector facing write and `Player_setup()`:
+### Exact recovered call
 
 ```text
 Game_executeTile(viewX, viewY, 0x40f | DoomCanvas_flagForFacingDir())
-```
-
-For the hardware-proven Junction placement:
-
-```text
 world=992/1888
 tile=943
 angle=64
@@ -100,11 +76,12 @@ facing flag=0x10000000
 input flags=0x1000040f
 ```
 
-### Permanent candidate API
+### Permanent API and hardware canon
 
 ```text
 EspPlayerInitialTileState = 24 B
 persistent heap = 0 B
+stateFNV=f73e28b2
 
 EspPlayerInitialTile_reset
 EspPlayerInitialTile_isReady
@@ -114,23 +91,30 @@ EspPlayerInitialTile_route
 EspPlayerView_consumeTileEnter
 ```
 
-The candidate reuses the already permanent allocation-free event lookup, descriptor, script-state overlay and recovered `Game_runEvent()` filtering logic.
-
-### Deliberate executor boundary
-
-The generic native opcode executor remains intentionally restricted to:
+Real event result:
 
 ```text
-11 EV_CHANGESTATE
-19 EV_NEXTSTATE
-20 EV_PREVSTATE
+eventFound=1
+eventIndex=61
+eventState=0
+eventFlags=0
+blocked=0
+eligible=0
+executed=0
+removed=0
+skipAdvanceTurn=0
+playerKeys=00000000
 ```
 
-The candidate therefore performs a complete side-effect-free preflight. If tile 943 exposes any eligible opcode outside those three, it returns `ESP_PLAYER_INITIAL_TILE_OPCODE_DEFERRED` and prints the exact event/command ID, `arg1`, `arg2` and offset. Player/view and script state remain untouched. No fallback to legacy `Game_executeEvent()` is allowed.
+Tile 943 therefore has a real event but no eligible command under the exact first fresh-map flags. No opcode executes and the script overlay remains unchanged:
 
-If every eligible command is already supported, route execution updates only the native script overlay as required, applies recovered `arg2 & 0x200` removal there, and then consumes only `tileEnterPending`.
+```text
+script FNV bc9b18ff -> bc9b18ff
+```
 
-Candidate expected player/view transfer:
+The generic opcode executor remains intentionally restricted to IDs 11/19/20. This milestone does not broaden that executor.
+
+### Player/view ownership transfer
 
 ```text
 beforeFNV=c21fba3c
@@ -139,29 +123,70 @@ hudRefreshPending=0
 facingRefreshPending=1
 playerSetupPending=0
 tileEnterPending=0
+placementExact=yes
 ```
 
-`1bd0f09b` is a predicted candidate fingerprint, **not yet a hardware canon**.
+`1bd0f09b` is now hardware-proven and canonical.
 
-### Probe outcomes
-
-Complete route:
+### Hardware fail-closed proof
 
 ```text
-[JUNCTIONTILE] READY ...
+nullView=1
+nullSetup=1
+nullOutput=1
+angle=1
+blocked=1
+missingTile=1
+missingFacing=1
+setupMismatch=1
+prepareAtomic=yes
+repeat=1
+repeatAtomic=yes
 ```
 
-must prove exact tile/flags, zero same-build heap delta, no legacy/framebuffer mutation, immutable runtime + all non-script resident owners stable, and `tileEnterPending=0` while facing/finishRotation remain deferred.
-
-Unsupported real command discovery:
+### Hardware RAM / integrity
 
 ```text
-[JUNCTIONTILE] DEFERRED ... code=<id> arg1=<...> arg2=<...> failClosed=yes
+heap8=72868->72868
+largest8=34804->34804
+persistentHeapBytes=0
+
+heap=138632
+heap8=72868
+largest8=34804
 ```
 
-is intentionally not a tile-enter PASS. It identifies the exact next opcode prerequisite while keeping `tileEnterPending=1`.
+Resident integrity:
 
-## Hardware-proven canons through PR #72
+```text
+runtime=bc432a0f
+map=c5cdfc04
+script=bc9b18ff
+line=3658710d
+texture=537319ad
+automap=0b2ae445
+topology=d6e8df7d
+payload=10410
+runtimeStable=yes
+nonScriptMutableStable=yes
+packClosed=yes
+```
+
+Same-build equality witnesses:
+
+```text
+gameFNV=c655ff85->c655ff85
+playerFNV=774ed642->774ed642
+frameFNV=7a95b5b5->7a95b5b5
+legacyRuntimeClear=yes
+GameMutation=no
+PlayerMutation=no
+HudMutation=no
+DoomCanvasMutation=no
+RenderMutation=no
+```
+
+## Hardware-proven canons through current branch
 
 ```text
 Entrance snapshotFNV=b3811f3d
@@ -177,18 +202,8 @@ postHudPlayerViewFNV=d17fa0d1
 JunctionHudRefreshFNV=6965ee06
 PlayerSetupSemanticFNV=3b27c6a1
 postSetupPlayerViewFNV=c21fba3c
-```
-
-Junction resident owner FNVs:
-
-```text
-runtime=bc432a0f
-map=c5cdfc04
-script=bc9b18ff
-line=3658710d
-texture=537319ad
-automap=0b2ae445
-topology=d6e8df7d
+JunctionInitialTileFNV=f73e28b2
+postInitialTilePlayerViewFNV=1bd0f09b
 ```
 
 ## Architecture direction
@@ -204,19 +219,40 @@ original Doom RPG behavior/data
  -> permanent native player/view application     [hardware-proven]
  -> post-spawn HUD dirty ownership               [hardware-proven]
  -> Player_setup-equivalent session root         [hardware-proven]
- -> initial tile-enter dispatch                  [CURRENT CANDIDATE]
- -> finishRotation orientation + second tile
+ -> initial tile-enter dispatch                  [hardware-proven]
+ -> finishRotation orientation preparation       [next]
+ -> second tile dispatch
  -> durable facing query
  -> ST_PLAYING / native gameplay/render loop
 ```
 
-Still outside the current hardware baseline:
+Current hardware PARK:
+
+```text
+state=9 / ST_INTRO
+page=3
+targetMap=9
+junctionResident=yes
+nativePlayerView=yes
+nativePlayerSetup=yes
+nativeInitialTile=yes
+tileEnterPending=no
+facingPending=yes
+finishRotationPending=yes
+secondTilePending=yes
+finalFacingPending=yes
+ST_PLAYING=no
+legacy Game.entities=0
+legacy Game.monsters=0
+noGameplay=yes
+```
+
+Still outside:
 
 ```text
 actual stats-menu rendering/input
 actual HUD rendering / renderer dirty consumption
 weapon restore/select ownership when disabledWeapons!=0
-initial tile-enter until candidate PASS
 finishRotation-equivalent orientation preparation
 second tile event
 final native facing-entity query
@@ -237,12 +273,20 @@ legacy Game.monsters = 0
 ST_PLAYING not reached
 ```
 
-## Next test
+## Next bounded milestone after merge
 
-Build and flash the normal environment:
+After the branch is merged, recover from the exact new `main` SHA. The natural next boundary is the orientation preparation inside `DoomCanvas_finishRotation()` (`viewSin`, `viewCos`, `viewStepX`, `viewStepY`). Keep the second tile dispatch and final durable facing separate unless the fresh legacy/repo audit proves a tighter safe boundary.
+
+## Merge recommendation
 
 ```text
-esp32-cyd
+MERGE agent/esp32-native-initial-tile-enter
 ```
 
-Return the complete `JUNCTIONTILE` Serial block. Promote documentation to hardware PASS only after the real CYD proves a complete native route; if the probe reports `DEFERRED`, implement that exact opcode family first and re-test.
+Hardware-tested firmware:
+
+```text
+d8fb3e0e372b89d95c37cce558420f7fcb474419
+```
+
+All later commits on this branch are documentation-only unless another firmware is flashed.
