@@ -63,6 +63,15 @@ const EspPlayerViewState* EspPlayerView_view(void);
 EspPlayerViewApplyStatus EspPlayerView_applySpawn(
     const EspPlayerSpawnState* spawn);
 
+/*
+ * Transfer the recovered Hud.isUpdate=true responsibility to a matching native
+ * HUD dirty owner. Only hudRefreshPending is cleared. Facing, Player_setup and
+ * tile-enter remain pending. Invalid identity/order is fail-closed.
+ */
+int EspPlayerView_consumeHudRefresh(uint8_t targetMapId,
+                                    uint8_t gameplayLoadMapId,
+                                    uint8_t loadType);
+
 #ifdef __cplusplus
 }
 #endif

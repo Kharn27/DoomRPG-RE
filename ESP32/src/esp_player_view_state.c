@@ -102,3 +102,24 @@ EspPlayerViewApplyStatus EspPlayerView_applySpawn(
     playerViewState = next;
     return ESP_PLAYER_VIEW_APPLY_OK;
 }
+
+int EspPlayerView_consumeHudRefresh(uint8_t targetMapId,
+                                    uint8_t gameplayLoadMapId,
+                                    uint8_t loadType) {
+    EspPlayerViewState next;
+
+    if (!EspPlayerView_isReady() || playerViewState.hudRefreshPending != 1U ||
+        playerViewState.facingRefreshPending != 1U ||
+        playerViewState.playerSetupPending != 1U ||
+        playerViewState.tileEnterPending != 1U ||
+        targetMapId != playerViewState.targetMapId ||
+        gameplayLoadMapId != playerViewState.gameplayLoadMapId ||
+        loadType != playerViewState.loadType) {
+        return 0;
+    }
+
+    next = playerViewState;
+    next.hudRefreshPending = 0U;
+    playerViewState = next;
+    return 1;
+}

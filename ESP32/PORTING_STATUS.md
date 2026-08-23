@@ -5,26 +5,26 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #69 — native Junction spawn projection
-main = 992f38374840113409e776fb82ce57ab014607e5
-hardware-tested firmware = 08a3a29c5e4e4a64000fa12a877299bbb1e772a0
+PR   = #70 — native player/view owner
+main = 8a82891bb8d9c62582170cc4b3b74d270849e77b
+hardware-tested firmware = fe1630ad5618dfd35bbbc555de8f9762d0b046f8
 status = REAL-CYD HARDWARE PASS
 ```
 
-Merged evidence: [`MAP1_NATIVE_JUNCTION_SPAWN.md`](MAP1_NATIVE_JUNCTION_SPAWN.md).
+Merged evidence: [`MAP1_NATIVE_PLAYER_VIEW.md`](MAP1_NATIVE_PLAYER_VIEW.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-player-view
-base   = 992f38374840113409e776fb82ce57ab014607e5
-hardware-tested firmware = fe1630ad5618dfd35bbbc555de8f9762d0b046f8
+branch = agent/esp32-native-post-spawn-refresh
+base   = 8a82891bb8d9c62582170cc4b3b74d270849e77b
+hardware-tested firmware = 1761e2929ec50260a1f27373ce477530b84d041a
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Active evidence: [`MAP1_NATIVE_PLAYER_VIEW.md`](MAP1_NATIVE_PLAYER_VIEW.md).
+Active evidence: [`MAP1_NATIVE_HUD_REFRESH.md`](MAP1_NATIVE_HUD_REFRESH.md).
 
-This milestone introduces the first permanent active native player/view owner. It applies the already hardware-proven Junction spawn projection to native state only while keeping HUD refresh, facing lookup, Player_setup, tile-enter and ST_PLAYING explicitly pending.
+This milestone routes the recovered `Hud.isUpdate=true` write into a permanent 8-byte native HUD dirty owner and atomically consumes only the player/view HUD-pending bit. Facing, `Player_setup`, tile-enter and `ST_PLAYING` remain explicitly pending.
 
 ## Permanent invariants
 
@@ -102,6 +102,7 @@ CHANGEMAP pending intent
  -> fresh-map load semantic
  -> 24 B native Junction spawn projection
  -> 44 B active native player/view owner
+ -> 8 B native post-spawn HUD dirty owner
 ```
 
 Canonical fingerprints:
@@ -120,6 +121,8 @@ Junction spawn FNV       = ba6af4a7
 packed override FNV      = e0a5110b
 Junction player/view FNV = d1131d18
 packed override view FNV = 9ed47d08
+post-HUD player/view FNV = d17fa0d1
+Junction HUD refresh FNV = 6965ee06
 ```
 
 All real MAP_INTRO opcode IDs have explicit native ownership/execution boundaries:
@@ -173,15 +176,6 @@ ESP32/include/esp_player_view_state.h
 ESP32/src/esp_player_view_state.c
 ```
 
-API:
-
-```text
-EspPlayerView_reset()
-EspPlayerView_isReady()
-EspPlayerView_view()
-EspPlayerView_applySpawn()
-```
-
 State:
 
 ```text
@@ -189,33 +183,9 @@ EspPlayerViewState = 44 B
 persistent heap = 0 B
 ```
 
-The owner keeps legacy-width placement fields:
+Hardware-proven initial Junction owner:
 
 ```text
-viewX/viewY/viewZ/viewAngle
-destX/destY/destAngle
-viewZOld
-```
-
-plus target/load identity and explicit pending follow-ups.
-
-Recovered `Game_spawnPlayer()` writes `Hud.isUpdate=true` after placement and before facing lookup. Native state therefore owns:
-
-```text
-hudRefreshPending=1
-facingRefreshPending=1
-playerSetupPending=1
-tileEnterPending=1
-```
-
-without mutating the legacy HUD.
-
-## Hardware-proven native player/view application
-
-Real CYD:
-
-```text
-stateBytes=44
 stateFNV=d1131d18
 view=992/1888/36
 viewAngle=64
@@ -227,50 +197,102 @@ gameplayLoadMapId=2
 loadType=0
 active=1
 spawnApplied=1
-```
-
-Pending semantics:
-
-```text
 hudRefresh=1
 facingRefresh=1
 playerSetup=1
 tileEnter=1
-hudApplied=no
-facingApplied=no
-playerSetupApplied=no
-tileEnterApplied=no
 ```
 
-Packed override application:
+## Permanent native HUD dirty owner
+
+Files:
 
 ```text
-param=00030167
-view=480/736/36
-angle=192
-dest=480/736
-stateFNV=9ed47d08
-sourceProjectionFNV=e0a5110b
+ESP32/include/esp_hud_refresh_state.h
+ESP32/src/esp_hud_refresh_state.c
 ```
 
-## Hardware fail-closed proof
+API:
 
 ```text
-nullSpawn=1
+EspHudRefresh_reset()
+EspHudRefresh_isReady()
+EspHudRefresh_view()
+EspHudRefresh_preparePostSpawn()
+EspHudRefresh_routePostSpawn()
+```
+
+State:
+
+```text
+EspHudRefreshState = 8 B
+persistent heap = 0 B
+```
+
+Real-CYD Junction canon:
+
+```text
+stateFNV=6965ee06
+reason=POST_SPAWN
+refreshPending=1
+routed=1
+active=1
+targetMap=9
+gameplayLoadMapId=2
+loadType=0
+```
+
+Routing atomically transfers ownership of only the HUD pending bit:
+
+```text
+PlayerView beforeFNV=d1131d18
+PlayerView afterFNV =d17fa0d1
+hudRefreshPending=0
+facingRefreshPending=1
+playerSetupPending=1
+tileEnterPending=1
+placementExact=yes
+```
+
+## Recovered post-spawn ordering
+
+Exact legacy order is:
+
+```text
+Game_spawnPlayer:
+  placement
+  Render.viewZOld=4
+  Hud.isUpdate=true
+  checkFacingEntity()            # transient, old orientation vectors
+  Player_setup()
+  Game_executeTile(...)
+
+caller -> finishRotation():
+  recalc viewSin/viewCos/viewStep
+  Game_executeTile(... | 0x400)
+  checkFacingEntity()            # durable final facing
+```
+
+The first facing write is transitory and not consumed by `Player_setup()` or the intervening tile execution. Native facing must therefore stay pending until after the correct setup/tile/finishRotation ordering rather than being calculated early from stale or incomplete world state.
+
+## Hardware fail-closed proof for HUD routing
+
+```text
+nullView=1
+nullOutput=1
 inactive=1
-badGeometry=1
-badPending=1
+loadType=1
+missingHud=1
+missingFacing=1
+reset=1
+prepareAtomic=yes
 repeat=1
 repeatAtomic=yes
-reset=1
-stateAtomic=yes
 ```
-
-The active-owner once-only rule is hardware-proven.
 
 ## Resident / RAM integrity
 
-Real CYD:
+Real CYD for the HUD milestone:
 
 ```text
 snapshotFNV=bc9071e9->bc9071e9
@@ -281,31 +303,31 @@ enemies=0
 destructibles=3
 packClosed=yes
 
-heap8=72956->72956
+heap8=72940->72940
 delta=0
 largest8=34804->34804
 delta=0
 persistentHeapBytes=0
 ```
 
-Stable heartbeat after the probe:
+Stable heartbeat:
 
 ```text
-heap=138720
-heap8=72956
+heap=138704
+heap8=72940
 largest8=34804
 ```
 
-Absolute heap is build-context dependent; the player/view milestone adds no heap allocation.
+Absolute heap is build-context dependent; same-build zero delta is the hardware proof.
 
 ## Legacy / framebuffer integrity
 
-Same-build witnesses:
+Same-build witnesses for the HUD milestone:
 
 ```text
 placementFNV=5d1076bf->5d1076bf
 playerFNV=a1725bcb->a1725bcb
-frameFNV=a3e3cc8e->a3e3cc8e
+frameFNV=7a95b5b5->7a95b5b5
 legacyRuntimeClear=yes
 DoomCanvasMutation=no
 GameMutation=no
@@ -324,11 +346,11 @@ page=3
 mapSwapCommitted=yes
 targetMap=9
 junctionResident=yes
-nativeSpawnState=yes
 nativePlayerView=yes
-spawnAppliedNative=yes
-legacySpawnApplied=no
-hudRefreshPending=yes
+nativeHudRefresh=yes
+hudDirty=yes
+hudRouted=yes
+hudRefreshPending=0
 facingPending=yes
 playerSetupPending=yes
 tileEnterPending=yes
@@ -353,41 +375,43 @@ Junction compact topology
 fresh-map load semantic
 24 B native spawn projection
 44 B active native player/view owner
-explicit HUD/facing/setup/tile-enter pending boundary
+8 B post-spawn HUD dirty owner
+explicit facing/setup/tile-enter pending boundary
 ```
 
 Still intentionally outside:
 
 ```text
 actual stats-menu rendering/input
-HUD refresh consumption
-native facing-entity query
-Player_setup-equivalent fresh-map initialization
+actual HUD rendering / renderer dirty consumption
+native Player_setup-equivalent initialization
 initial tile-enter execution
+finishRotation-equivalent orientation preparation
+final native facing-entity query
 ST_PLAYING progression
 full native entity/monster gameplay
 native gameplay renderer
 sound playback
 ```
 
-The player/view owner is intentionally not reset by `EspMapResidentLifecycle_resetAll()`: player state and map arena have different lifetimes. A future transition orchestrator must explicitly reset/reapply player placement.
+The player/view and HUD owners deliberately have different lifetimes from the map-resident arena and are not folded into the seven-owner resident snapshot.
 
 `shapeData == NULL` and `mediaTexels == NULL` remain mandatory.
 
 ## Next direction after merge
 
-After merge, recover from true `main` before choosing the next milestone. The natural next small boundaries are explicit HUD-refresh consumption and compact-topology facing lookup. Do not collapse Player_setup, tile-enter and ST_PLAYING into one milestone without a fresh legacy audit.
+After merge, recover from true `main` before implementation. The next bounded semantic is the native `Player_setup()` equivalent. Keep initial tile-enter, finishRotation/final-facing and `ST_PLAYING` separate unless the next legacy audit proves a tighter safe boundary.
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-player-view
+MERGE agent/esp32-native-post-spawn-refresh
 ```
 
 Hardware-tested firmware:
 
 ```text
-fe1630ad5618dfd35bbbc555de8f9762d0b046f8
+1761e2929ec50260a1f27373ce477530b84d041a
 ```
 
 Every later commit on this branch must remain documentation-only unless another firmware is flashed.
