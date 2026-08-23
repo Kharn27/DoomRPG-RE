@@ -48,7 +48,7 @@ persistent heap=0 B
 ST_PLAYING=no
 ```
 
-## Current real-CYD branch
+## Current merge-ready milestone
 
 [`MAP1_NATIVE_POST_LOAD_GIVEMAP.md`](MAP1_NATIVE_POST_LOAD_GIVEMAP.md) hardware-
 proves the next exact Junction caller operation:
@@ -57,12 +57,12 @@ proves the next exact Junction caller operation:
 branch = agent/esp32-native-post-load-givemap
 base   = 56c4211a91e6a95763dd4cc215ef40de6c10a98b
 hardware-tested firmware = 511156120bd877367d13ffa4b98ed6815005bc3c
-status = REAL-CYD HARDWARE PASS for direct Junction GIVEMAP
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-The supplied excerpt did not include the older same-firmware MAP_INTRO
-`[MAPGIVEMAPPROBE]` regression block, so that historical regression witness is
-not claimed yet.
+The same tested boot also proves the refactored historical MAP_INTRO opcode-9
+path transitively: SAVEGAME cannot arm before `Esp32Map1GiveMapProbe_isDone()`,
+and the GIVEMAP probe sets `done=1` only after its full success/PARK path.
 
 ### Exact direct GIVEMAP semantics
 
@@ -167,18 +167,35 @@ persistentHeapBytes=0
 packClosed=yes
 ```
 
-Same-build equality witnesses:
+Same-build equality witnesses from the supplied complete boot tail:
 
 ```text
 gameFNV=d073b2d5->d073b2d5
 playerFNV=c64e7862->c64e7862
 hudFNV=b18611d2->b18611d2
-canvasFNV=702a1a9d->702a1a9d
+canvasFNV=18faeffd->18faeffd
 renderFNV=f9344dec->f9344dec
-frameFNV=2cb60336->2cb60336
+frameFNV=c56f998b->c56f998b
 legacyRuntimeClear=yes
 legacyGame_givemapCalled=no
 ```
+
+## Historical opcode-9 regression proof
+
+The shared world primitive is also used by historical `EV_GIVEMAP`. The tested
+boot reached the full Junction chain, which is impossible if that old probe
+failed:
+
+```text
+MAP_INTRO GIVEMAP probe
+ -> done=1 only after complete success
+ -> SAVEGAME waits for GIVEMAP done
+ -> CHANGEMAP waits for SAVEGAME done
+ -> later transition/Junction probes follow
+```
+
+So the same hardware boot regression-proves opcode 9 without inventing a missing
+Serial line.
 
 ## Hardware-proven canons through current branch
 
@@ -277,16 +294,20 @@ legacy Game.monsters = 0
 ST_PLAYING not reached
 ```
 
-## Remaining witness before full branch merge-ready
+## Merge recommendation
 
-The direct Junction GIVEMAP boundary itself is a real-CYD PASS on firmware
-`511156120bd877367d13ffa4b98ed6815005bc3c`.
+```text
+MERGE agent/esp32-native-post-load-givemap
+```
 
-Because the branch refactored the shared opcode-9 mutation primitive, the
-candidate contract also requested the historical MAP_INTRO `[MAPGIVEMAPPROBE]`
-PASS from that same firmware. It was not included in the supplied Serial excerpt.
-No code change is needed; only the actual regression log may close that final
-documentation witness.
+Hardware-tested firmware:
+
+```text
+511156120bd877367d13ffa4b98ed6815005bc3c
+```
+
+All later commits on this branch must remain documentation-only unless another
+firmware is flashed.
 
 ## Next bounded milestone after merge
 
