@@ -72,6 +72,15 @@ int EspPlayerView_consumeHudRefresh(uint8_t targetMapId,
                                     uint8_t gameplayLoadMapId,
                                     uint8_t loadType);
 
+/*
+ * Transfer the fresh-map Player_setup responsibility to the matching native
+ * player session owner. This is valid only after HUD routing. It clears only
+ * playerSetupPending; facing and initial tile-enter remain pending.
+ */
+int EspPlayerView_consumePlayerSetup(uint8_t targetMapId,
+                                     uint8_t gameplayLoadMapId,
+                                     uint8_t loadType);
+
 #ifdef __cplusplus
 }
 #endif
