@@ -25,40 +25,13 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_POST_LOAD_GIVEMAP.md`](MAP1_NATIVE_POST_LOAD_GIVEMAP.md) | direct Junction Game_givemap | #78 | `4737b016d02615b8435cf84909fe3c251b6d338b` |
 | [`MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md`](MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md) | current-weapon identity self-select | #79 | `04e4e2269a6c70db3f3e4027717bdb36f286ce65` |
 | [`MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md`](MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md) | initial-save semantic intent | #80 | `b669488c6f577d1004ac5a1dc742392698d66095` |
+| [`MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md) | isLoaded/isSaved/activeLoadType cleanup | #81 | `c4a093d9db77a715c355a68c5aae9faaddf22e0b` |
 
 Older archives remain indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
 
 ## Latest merged boundary
 
-PR #80 hardware-proved the semantic caller request corresponding to the fresh
-Junction `Game_saveState(...)` boundary without reproducing legacy save files.
-
-```text
-EspPostLoadInitialSaveIntentState=24 B
-stateFNV=0bf1a911
-mapId=9
-view=992/1888
-angle=64
-componentMask=0f
-persistenceDeferred=1
-presentationDeferred=1
-persistentHeapBytes=0
-ST_PLAYING=no
-```
-
-## Current merge-ready milestone
-
-[`MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md)
-hardware-proves the next three contiguous legacy writes:
-
-```text
-branch = agent/esp32-native-post-load-flag-cleanup
-base   = b669488c6f577d1004ac5a1dc742392698d66095
-hardware-tested firmware = 7f16e08f6948da121815ba669fcbbff7e061e2b7
-status = REAL-CYD HARDWARE PASS / MERGE-READY
-```
-
-Exact caller boundary:
+PR #81 hardware-proved:
 
 ```c
 game->isLoaded = false;
@@ -66,58 +39,105 @@ game->isSaved = false;
 game->activeLoadType = 0;
 ```
 
-### Permanent owner
+Canonical result:
 
 ```text
-ESP32/include/esp_post_load_flag_cleanup_state.h
-ESP32/src/esp_post_load_flag_cleanup_state.c
-EspPostLoadFlagCleanupState = 8 B
-stateFNV = 46cb2547
-persistent heap = 0 B
-```
-
-The real CYD established the incoming and outgoing scalar state:
-
-```text
+EspPostLoadFlagCleanupState=8 B
+stateFNV=46cb2547
 isLoaded=0->0
 isSaved=0->0
 activeLoadType=0->0
 targetMap=9
+persistentHeapBytes=0
+ST_PLAYING=no
+```
+
+## Current merge-ready milestone
+
+[`MAP1_NATIVE_POST_LOAD_EVENT_PARTICLE_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_EVENT_PARTICLE_CLEANUP.md)
+hardware-proves the next exact caller block:
+
+```text
+branch = agent/esp32-native-post-load-event-particle-cleanup
+base   = c4a093d9db77a715c355a68c5aae9faaddf22e0b
+hardware-tested firmware = 48d47b1c2e6e7276ca555e5811933fd033f496ed
+status = REAL-CYD HARDWARE PASS / MERGE-READY
+```
+
+Exact legacy sequence:
+
+```c
+doomCanvas->numEvents = 0;
+ParticleSystem_freeAllParticles(doomCanvas->particleSystem);
+doomCanvas->numEvents = 0;
+```
+
+### Permanent owner
+
+```text
+ESP32/include/esp_post_load_event_particle_cleanup_state.h
+ESP32/src/esp_post_load_event_particle_cleanup_state.c
+EspPostLoadEventParticleCleanupState = 8 B
+stateFNV = 8bc79e2b
+persistent heap = 0 B
+```
+
+Real-CYD state:
+
+```text
+numEvents=0->0->0
+particleCount=0->0
+targetMap=9
 active=1
 ```
 
-So the three legacy writes are identity assignments on the native fresh-Junction
-path. The explicit owner still preserves exact caller order and keeps future
-restore/load contexts fail-closed.
+So the current fresh-Junction path reaches this cleanup already empty. The
+explicit owner preserves caller order while non-empty event/particle contexts
+remain fail-closed rather than silently discarded.
 
 ### Strict predecessor proof
 
 ```text
-saveIntentBytes=24
-saveIntentFNV=0bf1a911
+flagCleanupBytes=8
+flagCleanupFNV=46cb2547
 unchanged=yes
 callerOrder=yes
-persistenceDebtPreserved=yes
 ```
 
-Fail-closed proof:
+### Particle topology proof
+
+The hardware probe did not trust `particleCount` alone. It bounded-walked both
+legacy circular lists and proved:
 
 ```text
-nullIntent=1
+particleTopologyCanonical=yes
+activeList=0
+freeList=64
+totalPool=64
+```
+
+All links were reciprocal, all nodes belonged to `nodeListC[64]`, no duplicates
+were seen, and all 64 pool nodes were covered exactly once. This confirms the
+active particle list is genuinely empty.
+
+### Fail-closed proof
+
+```text
+nullFlag=1
 nullOutput=1
-inactiveIntent=1
+inactiveFlag=1
 targetMap=1
-invalidLoaded=1
-invalidSaved=1
-invalidLoadType=1
-loadedMismatch=1
+invalidEvents=1
+invalidParticles=1
+nonemptyEvents=1
+nonemptyParticles=1
 prepareAtomic=yes
 postActivePrepare=1
 repeat=1
 repeatAtomic=yes
 ```
 
-Resident stayed exact:
+### Resident / RAM / side-effect proof
 
 ```text
 snapshotFNV=bb714d80->bb714d80
@@ -128,17 +148,7 @@ lineFNV=3658710d
 textureFNV=537319ad
 automapFNV=b699bd75
 topologyFNV=d6e8df7d
-payload=10410
-entities=30
-enemies=0
-destructibles=3
-packClosed=yes
-```
-
-RAM / side-effect proof:
-
-```text
-heap8=72620->72620
+heap8=72604->72604
 largest8=34804->34804
 persistentHeapBytes=0
 GameMutation=no
@@ -146,7 +156,9 @@ PlayerMutation=no
 HudMutation=no
 DoomCanvasMutation=no
 RenderMutation=no
-legacyRuntimeClear=yes
+ParticleSystemMutation=no
+legacyParticle_freeAllCalled=no
+packClosed=yes
 ```
 
 Same-build equality witnesses only:
@@ -155,16 +167,18 @@ Same-build equality witnesses only:
 gameFNV=6960d5bb->6960d5bb
 playerFNV=c64e7862->c64e7862
 hudFNV=d2deba0f->d2deba0f
-canvasFNV=ade981cb->ade981cb
+canvasFNV=96abe6d0->96abe6d0
 renderFNV=f9344dec->f9344dec
-frameFNV=7a95b5b5->7a95b5b5
+frameFNV=805df09e->805df09e
+eventQueueFNV=d985589f->d985589f
+particleFNV=f186cf0c->f186cf0c
 ```
 
 Stable heartbeat:
 
 ```text
-heap=138384
-heap8=72620
+heap=138368
+heap8=72604
 largest8=34804
 SD=ready ZIP=ready VIDEO=ready CORE=ready LAYOUT=ready
 PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
@@ -190,6 +204,7 @@ JunctionPostLoadGiveMapFNV=448e587d
 JunctionWeaponSelfSelectFNV=699f3cf3
 JunctionInitialSaveIntentFNV=0bf1a911
 JunctionPostLoadFlagCleanupFNV=46cb2547
+JunctionEventParticleCleanupFNV=8bc79e2b
 ```
 
 ## Exact caller order
@@ -203,10 +218,10 @@ conditional Game_saveState(...)             [hardware-proven semantic intent]
 Game.isLoaded=false                         [hardware-proven]
 Game.isSaved=false                          [hardware-proven]
 Game.activeLoadType=0                       [hardware-proven]
-DoomCanvas.numEvents=0                      [next]
-ParticleSystem_freeAllParticles(...)        [next]
-DoomCanvas.numEvents=0                      [next]
-DoomCanvas.isUpdateView=true                [deferred]
+DoomCanvas.numEvents=0                      [hardware-proven semantic cleanup]
+ParticleSystem_freeAllParticles(...)        [hardware-proven semantic cleanup]
+DoomCanvas.numEvents=0                      [hardware-proven semantic cleanup]
+DoomCanvas.isUpdateView=true                [NEXT after merge]
 DoomCanvas_setState(ST_PLAYING)             [deferred]
 idleTime=time+8000                          [deferred]
 ```
@@ -221,14 +236,9 @@ original behavior/data
  -> native event semantics                       [hardware-proven by family]
  -> native transition/residency                  [hardware-proven]
  -> native fresh-map player chain                [hardware-proven]
- -> finishRotation durable facing                [hardware-proven]
- -> post-load HUD message reset                  [hardware-proven]
- -> direct Junction Game_givemap                 [hardware-proven]
- -> current-weapon self-selection                [hardware-proven]
- -> initial-save semantic intent                 [hardware-proven]
- -> post-load flag cleanup                       [hardware-proven]
- -> event/particle cleanup                       [next]
- -> remaining caller-side load completion
+ -> post-load chain through flag cleanup         [hardware-proven]
+ -> empty event/particle cleanup                 [hardware-proven]
+ -> isUpdateView caller write                    [next]
  -> ST_PLAYING
  -> native gameplay
  -> native renderer
@@ -241,11 +251,10 @@ state=9 / ST_INTRO
 page=3
 targetMap=9
 junctionResident=yes
-nativeInitialSaveIntent=yes
 nativePostLoadFlagCleanup=yes
+nativeEventParticleCleanup=yes
 initialSavePersistencePending=yes
-flagCleanupPending=no
-eventParticleCleanupPending=yes
+eventParticleCleanupPending=no
 isUpdateViewPending=yes
 ST_PLAYING=no
 legacy Game.entities=0
@@ -267,13 +276,13 @@ ST_PLAYING not reached
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-post-load-flag-cleanup
+MERGE agent/esp32-native-post-load-event-particle-cleanup
 ```
 
 Hardware-tested firmware:
 
 ```text
-7f16e08f6948da121815ba669fcbbff7e061e2b7
+48d47b1c2e6e7276ca555e5811933fd033f496ed
 ```
 
 ## Next bounded milestone after merge
@@ -281,10 +290,7 @@ Hardware-tested firmware:
 Recover exact new `main`, then own only:
 
 ```c
-doomCanvas->numEvents = 0;
-ParticleSystem_freeAllParticles(doomCanvas->particleSystem);
-doomCanvas->numEvents = 0;
+doomCanvas->isUpdateView = true;
 ```
 
-Keep `isUpdateView`, `ST_PLAYING`, `idleTime`, rendering and native durable save
-storage separate.
+Keep `ST_PLAYING`, `idleTime`, rendering and durable native save storage separate.

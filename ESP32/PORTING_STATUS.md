@@ -5,36 +5,36 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #80 — post-load initial-save semantic intent
-main = b669488c6f577d1004ac5a1dc742392698d66095
-hardware-tested firmware = 0da9526775b706606338045babeb89e0d6c72729
+PR   = #81 — post-load flag cleanup
+main = c4a093d9db77a715c355a68c5aae9faaddf22e0b
+hardware-tested firmware = 7f16e08f6948da121815ba669fcbbff7e061e2b7
 status = REAL-CYD HARDWARE PASS
 ```
 
-Merged evidence: [`MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md`](MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md).
+Merged evidence: [`MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-post-load-flag-cleanup
-base   = b669488c6f577d1004ac5a1dc742392698d66095
-hardware-tested firmware = 7f16e08f6948da121815ba669fcbbff7e061e2b7
+branch = agent/esp32-native-post-load-event-particle-cleanup
+base   = c4a093d9db77a715c355a68c5aae9faaddf22e0b
+hardware-tested firmware = 48d47b1c2e6e7276ca555e5811933fd033f496ed
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Evidence: [`MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md).
+Evidence: [`MAP1_NATIVE_POST_LOAD_EVENT_PARTICLE_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_EVENT_PARTICLE_CLEANUP.md).
 
 This milestone owns only:
 
 ```c
-game->isLoaded = false;
-game->isSaved = false;
-game->activeLoadType = 0;
+doomCanvas->numEvents = 0;
+ParticleSystem_freeAllParticles(doomCanvas->particleSystem);
+doomCanvas->numEvents = 0;
 ```
 
-The exact legacy writes are contiguous. The real CYD proved the incoming values
-are already `0/0/0`, so this fresh-Junction path is an identity cleanup while
-remaining an explicit caller-order boundary.
+The permanent path does not call legacy `ParticleSystem_freeAllParticles()`.
+Because queued-event and particle payload ownership is not native yet, the
+milestone remains fail-closed for any non-empty payload.
 
 ## Permanent invariants
 
@@ -123,100 +123,67 @@ CHANGEMAP pending intent
  -> 8 B current-weapon self-select caller-order owner
  -> 24 B initial-save semantic intent owner
  -> 8 B post-load flag cleanup owner
+ -> 8 B event/particle cleanup owner
 ```
 
 Canonical fingerprints:
 
 ```text
-levelExitStatsFNV              = bd41bcfa
-playerExitAppliedFNV           = 298eaaa4
-statsMenuIntentFNV             = 96afe901
-catalogFNV                     = ce322e3f
-transitionPreflightFNV         = 108e5c7b
-committed WAIT_STATS FNV       = 66fe636a
-committed READY FNV            = 0ef58ea8
-committed ROLLBACK FNV         = 2dec1442
-committed COMMITTED FNV        = 2c595a62
-Junction spawn FNV             = ba6af4a7
-packed override FNV            = e0a5110b
-Junction player/view FNV       = d1131d18
-packed override view FNV       = 9ed47d08
-post-HUD player/view FNV       = d17fa0d1
-Junction HUD refresh FNV       = 6965ee06
-Player_setup semantic FNV      = 3b27c6a1
-post-setup player/view FNV     = c21fba3c
-Junction initial-tile FNV      = f73e28b2
-post-initial-tile player FNV   = 1bd0f09b
-Junction orientation FNV       = acc754a6
-Junction second-tile FNV       = 09e58e0d
-Junction durable-facing FNV    = 95aa1108
-post-facing player/view FNV    = afcdcf74
-Junction post-load HUD clear   = b7383e18
-Junction post-load GIVEMAP     = 448e587d
-Junction weapon self-select    = 699f3cf3
-Junction initial-save intent   = 0bf1a911
-Junction post-load flag cleanup= 46cb2547
+levelExitStatsFNV                = bd41bcfa
+playerExitAppliedFNV             = 298eaaa4
+statsMenuIntentFNV               = 96afe901
+catalogFNV                       = ce322e3f
+transitionPreflightFNV           = 108e5c7b
+committed WAIT_STATS FNV         = 66fe636a
+committed READY FNV              = 0ef58ea8
+committed ROLLBACK FNV           = 2dec1442
+committed COMMITTED FNV          = 2c595a62
+Junction spawn FNV               = ba6af4a7
+packed override FNV              = e0a5110b
+Junction player/view FNV         = d1131d18
+packed override view FNV         = 9ed47d08
+post-HUD player/view FNV         = d17fa0d1
+Junction HUD refresh FNV         = 6965ee06
+Player_setup semantic FNV        = 3b27c6a1
+post-setup player/view FNV       = c21fba3c
+Junction initial-tile FNV        = f73e28b2
+post-initial-tile player FNV     = 1bd0f09b
+Junction orientation FNV         = acc754a6
+Junction second-tile FNV         = 09e58e0d
+Junction durable-facing FNV      = 95aa1108
+post-facing player/view FNV      = afcdcf74
+Junction post-load HUD clear     = b7383e18
+Junction post-load GIVEMAP       = 448e587d
+Junction weapon self-select      = 699f3cf3
+Junction initial-save intent     = 0bf1a911
+Junction post-load flag cleanup  = 46cb2547
+Junction event/particle cleanup  = 8bc79e2b
 ```
 
 Generic `EspMapOpcodeExecutor` remains intentionally only 11/19/20.
 
-## Hardware-proven initial-save semantic intent
-
-```text
-EspPostLoadInitialSaveIntentState = 24 B
-stateFNV=0bf1a911
-mapId=9
-view=992/1888
-angle=64
-isLoadedBefore=0
-saveMode=0
-saveRequired=1
-componentMask=0f
-persistenceDeferred=1
-presentationDeferred=1
-active=1
-persistentHeapBytes=0
-```
-
-Requested persistence components remain semantic debt only:
-
-```text
-CONFIG       requested
-PLAYER2      requested
-WORLD        requested
-PLAYER_ROUTE requested
-saveFileWrite=no
-savingUi=no
-presentation=no
-routePayloadOwned=no
-playerPersistence=no
-worldPersistence=no
-configPersistence=no
-```
-
-## Hardware-proven post-load flag cleanup
+## Hardware-proven event / particle cleanup
 
 Permanent files:
 
 ```text
-ESP32/include/esp_post_load_flag_cleanup_state.h
-ESP32/src/esp_post_load_flag_cleanup_state.c
+ESP32/include/esp_post_load_event_particle_cleanup_state.h
+ESP32/src/esp_post_load_event_particle_cleanup_state.c
 ```
 
 Owner:
 
 ```text
-EspPostLoadFlagCleanupState = 8 B
-stateFNV = 46cb2547
-persistent heap = 0 B
+EspPostLoadEventParticleCleanupState = 8 B
+stateFNV=8bc79e2b
+persistentHeapBytes=0
 ```
 
 Real-CYD state:
 
 ```text
-isLoaded=0->0
-isSaved=0->0
-activeLoadType=0->0
+numEvents=0->0->0
+particleCount=0->0
 targetMap=9
 active=1
 ```
@@ -224,34 +191,47 @@ active=1
 Semantic proof:
 
 ```text
-isLoadedCleared=yes
-isSavedCleared=yes
-activeLoadTypeCleared=yes
-legacyValues=0/0/0->0/0/0
+eventQueueEmpty=yes
+particleActiveListEmpty=yes
+identityCleanup=yes
+legacyNumEvents=0->0
+legacyParticleCount=0->0
 legacyMutation=no
 ```
 
-Input proof:
+Strict predecessor proof:
 
 ```text
-saveIntentBytes=24
-saveIntentFNV=0bf1a911
+flagCleanupBytes=8
+flagCleanupFNV=46cb2547
 unchanged=yes
 callerOrder=yes
-persistenceDebtPreserved=yes
 ```
+
+Particle topology proof:
+
+```text
+particleTopologyCanonical=yes
+activeList=0
+freeList=64
+totalPool=64
+```
+
+The bounded walk proved reciprocal links, pool membership, uniqueness, exact
+coverage and `activeCount == particleCount`. This establishes that zero active
+particles is real, not a stale counter.
 
 Fail-closed proof:
 
 ```text
-nullIntent=1
+nullFlag=1
 nullOutput=1
-inactiveIntent=1
+inactiveFlag=1
 targetMap=1
-invalidLoaded=1
-invalidSaved=1
-invalidLoadType=1
-loadedMismatch=1
+invalidEvents=1
+invalidParticles=1
+nonemptyEvents=1
+nonemptyParticles=1
 prepareAtomic=yes
 postActivePrepare=1
 repeat=1
@@ -279,7 +259,7 @@ packClosed=yes
 Normal-env RAM proof:
 
 ```text
-heap8=72620->72620
+heap8=72604->72604
 delta=0
 largest8=34804->34804
 delta=0
@@ -292,22 +272,26 @@ Same-build equality witnesses only:
 gameFNV=6960d5bb->6960d5bb
 playerFNV=c64e7862->c64e7862
 hudFNV=d2deba0f->d2deba0f
-canvasFNV=ade981cb->ade981cb
+canvasFNV=96abe6d0->96abe6d0
 renderFNV=f9344dec->f9344dec
-frameFNV=7a95b5b5->7a95b5b5
+frameFNV=805df09e->805df09e
+eventQueueFNV=d985589f->d985589f
+particleFNV=f186cf0c->f186cf0c
 legacyRuntimeClear=yes
 GameMutation=no
 PlayerMutation=no
 HudMutation=no
 DoomCanvasMutation=no
 RenderMutation=no
+ParticleSystemMutation=no
+legacyParticle_freeAllCalled=no
 ```
 
 Stable post-PARK heartbeat:
 
 ```text
-heap=138384
-heap8=72620
+heap=138368
+heap8=72604
 largest8=34804
 SD=ready
 ZIP=ready
@@ -320,13 +304,6 @@ MAPPINGS=ready
 MENUBSP=ready
 ```
 
-## Probe completion semantics
-
-Historical temporary probes may set `done=1` on terminal failure; `*_isDone()`
-alone is not a PASS certificate. New downstream probes must revalidate exact
-predecessor owners/world state. The flag-cleanup probe follows the new convention
-and sets `done=1` only after successful PARK.
-
 ## Exact recovered caller order
 
 ```text
@@ -335,16 +312,15 @@ Hud.msgCount=0                              [hardware-proven]
 Hud.statBarMessage=NULL                     [hardware-proven]
 Hud.logMessage[0]='\0'                     [hardware-proven]
 if Junction: Game_givemap()                 [hardware-proven]
-else: DoomCanvas_uncoverAutomap()
 Player_selectWeapon(player, player->weapon) [hardware-proven]
 conditional Game_saveState(...)             [hardware-proven semantic intent]
-Game.isLoaded=false                         [hardware-proven semantic cleanup]
-Game.isSaved=false                          [hardware-proven semantic cleanup]
-Game.activeLoadType=0                       [hardware-proven semantic cleanup]
-DoomCanvas.numEvents=0                      [NEXT after merge]
-ParticleSystem_freeAllParticles(...)        [NEXT after merge]
-DoomCanvas.numEvents=0                      [NEXT after merge]
-DoomCanvas.isUpdateView=true                [deferred]
+Game.isLoaded=false                         [hardware-proven]
+Game.isSaved=false                          [hardware-proven]
+Game.activeLoadType=0                       [hardware-proven]
+DoomCanvas.numEvents=0                      [hardware-proven semantic cleanup]
+ParticleSystem_freeAllParticles(...)        [hardware-proven semantic cleanup]
+DoomCanvas.numEvents=0                      [hardware-proven semantic cleanup]
+DoomCanvas.isUpdateView=true                [NEXT after merge]
 DoomCanvas_setState(ST_PLAYING)             [deferred]
 idleTime=time+8000                          [deferred]
 ```
@@ -356,16 +332,12 @@ state=9 / ST_INTRO
 page=3
 targetMap=9
 junctionResident=yes
-nativeFacing=yes
-nativeHudClear=yes
-nativePostLoadGiveMap=yes
-nativeWeaponSelfSelect=yes
 nativeInitialSaveIntent=yes
 nativePostLoadFlagCleanup=yes
-initialSaveDecisionPending=no
+nativeEventParticleCleanup=yes
 initialSavePersistencePending=yes
 flagCleanupPending=no
-eventParticleCleanupPending=yes
+eventParticleCleanupPending=no
 isUpdateViewPending=yes
 ST_PLAYING=no
 legacy Game.entities=0
@@ -376,13 +348,13 @@ noGameplay=yes
 ## Still intentionally outside
 
 ```text
-native durable save storage format
+native durable save storage
 cross-map durable SAVEGAME route payload
-full native player checkpoint persistence
-full native world/entity persistence
-queued-event / particle cleanup
+native queued-event payload ownership for non-empty contexts
+native particle payload/runtime ownership for non-empty contexts
 isUpdateView caller write
 ST_PLAYING progression
+idleTime=time+8000
 full native entity/monster gameplay
 native gameplay renderer
 sound playback
@@ -391,13 +363,13 @@ sound playback
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-post-load-flag-cleanup
+MERGE agent/esp32-native-post-load-event-particle-cleanup
 ```
 
 Hardware-tested firmware:
 
 ```text
-7f16e08f6948da121815ba669fcbbff7e061e2b7
+48d47b1c2e6e7276ca555e5811933fd033f496ed
 ```
 
 All commits after that tested SHA must remain documentation-only.
@@ -407,10 +379,7 @@ All commits after that tested SHA must remain documentation-only.
 Recover exact new `main`, then own only:
 
 ```c
-doomCanvas->numEvents = 0;
-ParticleSystem_freeAllParticles(doomCanvas->particleSystem);
-doomCanvas->numEvents = 0;
+doomCanvas->isUpdateView = true;
 ```
 
-Do not bundle `isUpdateView`, `ST_PLAYING`, `idleTime`, native durable save
-storage, gameplay entities or rendering.
+Do not bundle `ST_PLAYING`, `idleTime`, rendering or durable native save storage.
