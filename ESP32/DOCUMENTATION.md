@@ -41,15 +41,15 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_LEVEL_EXIT_STATS.md`](MAP1_NATIVE_LEVEL_EXIT_STATS.md) | pure map-derived `Player_addLevelStats()` snapshot | #63 | `533784b5483e14a12558fb08c9331d8b744caa88` |
 | [`MAP1_NATIVE_PLAYER_EXIT_STATE.md`](MAP1_NATIVE_PLAYER_EXIT_STATE.md) | pointer-free application of player level-exit writes | #64 | `3759bcd12a3f6d36a6a696457110ab27474c24b8` |
 
-## Current candidate
+## Current merge-ready milestone
 
 [`MAP1_NATIVE_STATS_MENU_INTENT.md`](MAP1_NATIVE_STATS_MENU_INTENT.md) owns the semantic stats-menu pause intent in the real `CHANGEMAP showStats=1` path.
 
 ```text
 branch = agent/esp32-native-stats-menu-intent
 base   = 3759bcd12a3f6d36a6a696457110ab27474c24b8
-firmware candidate = 1dddbe86788389400d6e2186595174e723c72f5c
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 1dddbe86788389400d6e2186595174e723c72f5c
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Recovered legacy semantics after level-exit player writes:
@@ -76,7 +76,7 @@ consumePending
 
 The permanent owner contains no legacy `MENU_*` numeric value and references no Menu/Game/Render object. It allocates nothing and performs no PAK I/O.
 
-### Candidate hardware targets
+### Real-CYD proof
 
 Real MAP_INTRO path:
 
@@ -86,39 +86,79 @@ menuKind=LEVEL
 active=1
 consumePending=1
 sourceStatsFNV=bd41bcfa
-intentFNV=96afe901  # static prediction
+intentFNV=96afe901
+legacyMenuId=15
 ```
 
-End-game special-case proof:
+End-game special case:
 
 ```text
 targetMap=13 / MAP_END_GAME
 menuKind=OVERALL
-endGameFNV=deea91b4 # static prediction
+endGameFNV=deea91b4
+legacyOverallId=16
 ```
 
 Direct-load gate:
 
 ```text
 showStats=0 -> NOT_APPLICABLE + zero intent
-zeroFNV=4b95f515    # static prediction
+noStatsStatus=1
+noStatsZero=1
+zeroFNV=4b95f515
+repeatExact=1
 ```
 
-Fail-closed target:
+The emitted Serial line concatenated `noStatsStatus=1noStatsZero=1`; both values passed unambiguously.
+
+Fail closed:
 
 ```text
 target0=1 target14=1 showStats2=1 nullIntent=1 reset=1 stateAtomic=yes
 ```
 
-RAM target:
+RAM / integrity:
 
 ```text
 persistent native heap = 18008 B
-candidate addition     = 0 B
-heap8/largest8 delta   = 0
+milestone addition     = 0 B
+heap8      65616 -> 65616
+largest8   34804 -> 34804
+frameFNV   e8a3b4ef -> e8a3b4ef
+lineFNV    e5e74861
+topologyFNV=3f321e43
 ```
 
-## Current hardware-proven boundary through PR #64
+Legacy remained untouched:
+
+```text
+playerExitFNV 0b2ae445 -> 0b2ae445
+transitionFNV f450c49f -> f450c49f
+legacyRuntimeClear=yes
+menuMutation=no
+Game_changeMapCalled=no
+mapLoad=no
+```
+
+Final PARK:
+
+```text
+nativeStatsMenuIntent=yes
+intentBytes=4
+targetMap=9
+menuKind=LEVEL
+consumePendingSemantic=yes
+nativePlayerExitState=yes
+legacyMenuMutation=no
+transitionTriggered=no
+entities=0
+monsters=0
+noGameplay=yes
+```
+
+Stable heartbeats ran through `270270 ms` with `heap=131380 heap8=65616 largest8=34804`.
+
+## Hardware-proven boundary
 
 ```text
 persistent native heap = 18008 B
@@ -131,6 +171,7 @@ automapStateFNV        = 669b1aa7
 spriteTopologyFNV      = 3f321e43
 levelExitStatsFNV      = bd41bcfa
 playerExitAppliedFNV   = 298eaaa4
+statsMenuIntentFNV     = 96afe901
 
 allMapIntroOpcodeFamiliesOwned=yes
 entities=0
@@ -150,13 +191,13 @@ original Doom RPG behavior/data
  -> native exit/transition consumers
       -> level-exit stats             [hardware-proven]
       -> player exit-state            [hardware-proven]
-      -> stats-menu semantic intent   [current candidate]
-      -> target catalog/preflight
+      -> stats-menu semantic intent   [hardware-proven]
+      -> target catalog/preflight     [next natural boundary]
       -> Junction map lifecycle swap
  -> native gameplay/render loop
 ```
 
-Still outside current candidate:
+Still outside current ownership:
 
 ```text
 actual stats-menu rendering/input
@@ -167,4 +208,10 @@ native ST_PLAYING progression/rendering
 sound playback
 ```
 
-Build/flash the current candidate using normal `esp32-cyd` and capture `[STATSMENUPROBE]`, `[STATSMENU]`, and stable `[ALIVE]` lines. Do not merge until the exact firmware candidate passes on the real CYD and all post-test commits are documentation-only.
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-stats-menu-intent
+```
+
+Hardware-tested firmware is `1dddbe86788389400d6e2186595174e723c72f5c`. All commits after it are documentation-only.
