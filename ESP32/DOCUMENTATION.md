@@ -6,7 +6,7 @@ This file defines the current ESP32 CYD documentation map.
 
 - [`README.md`](README.md): stable build/flash guide.
 - [`PORTING_STATUS.md`](PORTING_STATUS.md): authoritative current recovery point.
-- Milestone archives: detailed implementation and hardware evidence.
+- Milestone archives: detailed implementation and hardware evidence/candidate contracts.
 
 ## Recent merged milestones
 
@@ -27,169 +27,148 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md) | first fresh-map tile dispatch | #73 | `0bc171affad8416ed1a7918a4a67fd4d53d61efe` |
 | [`MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md`](MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md) | finishRotation orientation | #74 | `2decae5067438dc1a2d9c29335cfc0cad5538645` |
 | [`MAP1_NATIVE_FINISH_ROTATION_SECOND_TILE.md`](MAP1_NATIVE_FINISH_ROTATION_SECOND_TILE.md) | finishRotation second tile | #75 | `7a0e57cf13d02320be3a238dc73499a023c9f04c` |
+| [`MAP1_NATIVE_DURABLE_FACING.md`](MAP1_NATIVE_DURABLE_FACING.md) | finishRotation durable facing | #76 | `3ab143110a1f44ebb44bc130d12d1844f3ae73ca` |
 
 Older archives remain indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
 
 ## Latest merged boundary
 
-PR #75 hardware-proved the second `Game_executeTile()` in
-`DoomCanvas_finishRotation()`:
-
-```text
-EspPlayerFinishRotationTileState=24 B
-stateFNV=09e58e0d
-tile=943
-flags=0x10000400
-eventIndex=61
-eligible=0
-executed=0
-removed=0
-script FNV=bc9b18ff unchanged
-persistent heap=0 B
-```
-
-## Current merge-ready milestone
-
-[`MAP1_NATIVE_DURABLE_FACING.md`](MAP1_NATIVE_DURABLE_FACING.md) hardware-proves
-the final durable `DoomCanvas_checkFacingEntity()` in recovered
-`DoomCanvas_finishRotation()`.
-
-```text
-branch = agent/esp32-native-durable-facing
-base   = 7a0e57cf13d02320be3a238dc73499a023c9f04c
-hardware-tested firmware = 660c797e2168260a861c185fae9e812769b46156
-status = REAL-CYD HARDWARE PASS / MERGE-READY
-```
-
-### Exact legacy ray
-
-At Junction angle 64:
-
-```text
-traceStart=(992,1857)
-traceEnd=(992,1665)
-traceFlags=0x0001f6ff
-tile path=(15,29),(15,28),(15,27),(15,26)
-```
-
-The final legacy selection keeps the first trace candidate matching `eType==14`,
-a line entity (`Entity.info & 0x00200000`), the wall sentinel (`Entity.info==0`),
-or an ordinary sprite whose tile differs from the trace-start tile. Ordinary
-near-tile candidates are skipped.
-
-### Permanent native query + facing owner
-
-```text
-ESP32/include/esp_map_topology_query.h
-ESP32/src/esp_map_topology_query.c
-EspMapTopologyQuery_findLinkedOnTile()
-
-ESP32/include/esp_player_facing_state.h
-ESP32/src/esp_player_facing_state.c
-EspPlayerFacingState = 32 B
-```
-
-The resolver combines:
-
-```text
-immutable EspMapRuntime sprite/line/block data
-compact EspMapSpriteTopology entity type/tile/order
-EspMapLineState current open state
-bounded /entities.db PAK reads for line EntityDef type/subtype
-```
-
-No `Entity_t`, legacy `entityDb[1024]`, `Game_trace()` or
-`Player.facingEntity` write is used. PAK access is temporary and closes before
-return. Persistent heap cost is zero.
-
-### Hardware facing canon
-
-The real CYD resolved no durable target on the exact ray:
+PR #76 hardware-proved the final durable `DoomCanvas_checkFacingEntity()` and
+therefore completes the recovered `DoomCanvas_finishRotation()` sequence natively.
 
 ```text
 EspPlayerFacingState=32 B
 stateFNV=95aa1108
-kind=0 / none
-hitIndex=65535
-hitTile=65535
-entityType=255
-entitySubType=255
-legacyIdentity=00000000
+kind=none
 traceEntities=0
-traceFlags=0001f6ff
-start=992/1857
-end=992/1665
+PlayerView FNV=afcdcf74
+finishRotationComplete=yes
+persistent heap=0 B
 ```
 
-Hardware-proven PlayerView transition:
+Real-CYD Junction resident/RAM boundary remains:
 
 ```text
-beforeFNV=1bd0f09b
-afterFNV=afcdcf74
-facingRefreshPending=1 -> 0
-consumedOnlyFacing=yes
+snapshotFNV=bc9071e9
+runtime=bc432a0f
+map=c5cdfc04
+script=bc9b18ff
+line=3658710d
+texture=537319ad
+automap=0b2ae445
+topology=d6e8df7d
+heap8=72736
+largest8=34804
+ST_PLAYING=no
+entities=0
+monsters=0
 ```
 
-Input owners remain exact:
+## Exact caller order after finishRotation
+
+Current `src/DoomCanvas.c` continues with:
 
 ```text
-InitialTile FNV=f73e28b2
-Orientation FNV=acc754a6
-SecondTile FNV=09e58e0d
+Hud.msgCount=0
+Hud.statBarMessage=NULL
+Hud.logMessage[0]='\0'
+if MAP_JUNCTION: Game_givemap()
+else: DoomCanvas_uncoverAutomap()
+Player_selectWeapon(current weapon)
+initial Game_saveState when !isLoaded
+clear isLoaded/isSaved/activeLoadType
+clear queued events / particles
+isUpdateView=true
+DoomCanvas_setState(ST_PLAYING)
+idleTime=time+8000
 ```
 
-### Hardware fail-closed proof
+This sequence is being ported in bounded caller-order milestones instead of one
+large post-load finalizer.
+
+## Current hardware candidate
+
+[`MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md`](MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md) owns
+only the first three HUD message-channel resets after finishRotation.
 
 ```text
-nullView=1
-nullInitial=1
-nullOrientation=1
-nullSecond=1
-nullOutput=1
-missingFacing=1
-tilePending=1
-angle=1
-initialMismatch=1
-orientationInactive=1
-secondInactive=1
-prepareAtomic=yes
-repeat=1
-repeatAtomic=yes
+branch = agent/esp32-native-post-load-hud-clear
+base   = 3ab143110a1f44ebb44bc130d12d1844f3ae73ca
+status = HARDWARE CANDIDATE — NOT YET CYD-PROVEN
 ```
 
-### Hardware RAM / integrity
+### Permanent owner
 
 ```text
-snapshotFNV=bc9071e9->bc9071e9
-payload=10410
-entities=30
-enemies=0
-destructibles=3
-packClosed=yes
+ESP32/include/esp_hud_post_load_clear_state.h
+ESP32/src/esp_hud_post_load_clear_state.c
 
-heap8=72736->72736
-largest8=34804->34804
-persistentHeapBytes=0
+EspHudPostLoadClearState = 8 B
+persistent heap = 0 B
 ```
 
-Same-build equality witnesses:
+It represents only:
 
 ```text
-gameFNV=c655ff85->c655ff85
-playerFNV=c64e7862->c64e7862
-canvasFNV=1b7ba23f->1b7ba23f
-renderFNV=f9344dec->f9344dec
-frameFNV=9eb7ce0f->9eb7ce0f
-legacyRuntimeClear=yes
-GameMutation=no
-PlayerMutation=no
-FacingEntityMutation=no
-HudMutation=no
-DoomCanvasMutation=no
-RenderMutation=no
+messageCount=0
+statBarMessagePresent=0
+logMessageLength=0
+cleared=1
+active=1
 ```
 
-## Hardware-proven canons through current branch
+The owner is deliberately distinct from the hardware-proven post-spawn
+`EspHudRefreshState`: that older state owns `Hud.isUpdate=true`; this one owns
+the later post-load message reset.
+
+`EspHudPostLoadClear_prepare()` requires:
+
+```text
+active fresh-map PlayerView
+PlayerView FNV boundary afcdcf74
+all PlayerView pending bits clear
+matching active durable facing
+finishRotation complete
+```
+
+Saved-world load is fail-closed. `route()` parks only this owner and does not
+mutate PlayerView, facing or the resident map.
+
+### Hardware probe
+
+```text
+ESP32/include/native_junction_post_load_hud_clear_probe.h
+ESP32/src/native_junction_post_load_hud_clear_probe.c
+```
+
+Expected block:
+
+```text
+=== Doom RPG ESP32-native Junction post-load HUD clear ===
+[JUNCTIONHUDCLEAR] READY ...
+```
+
+The probe requires:
+
+```text
+EspHudPostLoadClearState=8 B
+PlayerView afcdcf74 unchanged
+Facing 95aa1108 unchanged
+resident snapshot bc9071e9 unchanged
+automap 0b2ae445 unchanged
+pack closed
+heap/largest delta=0
+legacy Game/Player/Hud/DoomCanvas/Render/framebuffer unchanged
+ST_PLAYING=no
+entities=0
+monsters=0
+```
+
+It hashes the complete legacy `Hud_t` before/after and also logs the three exact
+legacy message fields, proving native semantic ownership without writing the
+legacy HUD.
+
+## Hardware-proven canons through PR #76
 
 ```text
 Entrance snapshotFNV=b3811f3d
@@ -213,18 +192,6 @@ JunctionDurableFacingFNV=95aa1108
 postFacingPlayerViewFNV=afcdcf74
 ```
 
-Resident owners:
-
-```text
-runtime=bc432a0f
-map=c5cdfc04
-script=bc9b18ff
-line=3658710d
-texture=537319ad
-automap=0b2ae445
-topology=d6e8df7d
-```
-
 ## Architecture direction
 
 ```text
@@ -236,7 +203,10 @@ original behavior/data
  -> native transition/residency                  [hardware-proven]
  -> native fresh-map player chain                [hardware-proven]
  -> finishRotation durable facing                [hardware-proven]
- -> caller-side ST_PLAYING progression           [next]
+ -> post-load HUD message reset                  [CURRENT CANDIDATE]
+ -> direct Junction Game_givemap                 [next]
+ -> remaining caller-side load completion
+ -> ST_PLAYING
  -> native gameplay
  -> native renderer
 ```
@@ -261,9 +231,6 @@ legacy Game.monsters=0
 noGameplay=yes
 ```
 
-This is the first hardware-proven point where recovered fresh-map
-`DoomCanvas_finishRotation()` is fully complete natively.
-
 Mandatory invariants remain:
 
 ```text
@@ -275,23 +242,12 @@ legacy Game.monsters = 0
 ST_PLAYING not reached
 ```
 
-## Next bounded milestone after merge
+## Next test
 
-After merge, recover from the exact new `main` SHA and audit the caller-side code
-immediately following `DoomCanvas_finishRotation()`. Isolate only the smallest
-state progression toward `ST_PLAYING`; keep gameplay entities, AI and rendering
-outside until separately owned and hardware-proven.
+Build and flash normal `esp32-cyd`, then return the complete
+`[JUNCTIONHUDCLEAR]` Serial block. Promote only after the real CYD proves the
+owner, unchanged legacy HUD/PlayerView/facing/resident/automap, closed PAK and
+zero RAM/framebuffer regression.
 
-## Merge recommendation
-
-```text
-MERGE agent/esp32-native-durable-facing
-```
-
-Hardware-tested firmware:
-
-```text
-660c797e2168260a861c185fae9e812769b46156
-```
-
-All commits after that tested SHA on this branch must be documentation-only.
+After PASS, the next bounded milestone is direct caller-side Junction
+`Game_givemap()` against native automap/map-state owners.
