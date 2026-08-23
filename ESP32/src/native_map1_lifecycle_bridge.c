@@ -22,6 +22,7 @@
 #include "native_map1_ui_intent_probe.h"
 #include "native_map1_unlock_probe.h"
 #include "native_player_exit_state_probe.h"
+#include "native_resident_handoff_probe.h"
 #include "native_stats_menu_intent_probe.h"
 #include "native_transition_preflight_final_probe.h"
 
@@ -61,6 +62,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32PlayerExitStateProbe_reset();
     Esp32StatsMenuIntentProbe_reset();
     Esp32TransitionPreflightFinalProbe_reset();
+    Esp32ResidentHandoffProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -86,8 +88,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * native level-exit stats snapshot -> pointer-free native player exit-state
      * application -> pointer-free LEVEL/OVERALL stats-menu intent -> immutable
      * map catalog + corrected resource/gameplay-ID Junction PAK/BSP transition
-     * preflight. Each stage arms first and executes on a later Arduino loop
-     * service.
+     * preflight -> explicit empty-only resident lifecycle + reversible
+     * Entrance/Junction/Entrance handoff proof. Each stage arms first and
+     * executes on a later Arduino loop service.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -114,4 +117,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32PlayerExitStateProbe_service(doomRpg);
     Esp32StatsMenuIntentProbe_service(doomRpg);
     Esp32TransitionPreflightFinalProbe_service(doomRpg);
+    Esp32ResidentHandoffProbe_service(doomRpg);
 }
