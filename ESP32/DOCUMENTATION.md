@@ -44,36 +44,85 @@ This file defines the current ESP32 CYD documentation map.
 
 ## Current candidate
 
-[`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_PREFLIGHT.md) establishes an immutable native 13-map catalog and a read-only target PAK/BSP preflight for Junction.
+[`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_PREFLIGHT.md) establishes the immutable 13-map resource catalog and a read-only target PAK/BSP preflight for Junction.
 
 ```text
 branch = agent/esp32-native-transition-preflight
 base   = c8679133351fa00e01a67103386b7676660c4a6e
-firmware candidate = b674c9ad4878acdf3d026d061de94f964e2c7d6e
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+corrected firmware candidate = 4d78a66548fab6373c06c67f107f176fc3988b1c
+status = IMPLEMENTED; CORRECTED REAL-CYD VALIDATION PENDING
 ```
 
-### Permanent catalog
+### First hardware discovery
 
-Exact recovered original map-resource order:
+First candidate:
 
 ```text
-1  /intro.bsp
-2  /level01.bsp
-3  /level02.bsp
-4  /level03.bsp
-5  /level04.bsp
-6  /level05.bsp
-7  /level06.bsp
-8  /level07.bsp
-9  /junction.bsp
-10 /junction_destroyed.bsp
-11 /items.bsp
-12 /reactor.bsp
-13 /endgame.bsp
+b674c9ad4878acdf3d026d061de94f964e2c7d6e
 ```
 
-API:
+It fully streamed `/junction.bsp` and verified CRC/structure, then failed only because the first model incorrectly required:
+
+```text
+BSP header loadMapId == resource targetMapId
+```
+
+Real CYD proved:
+
+```text
+resourceMapId      = 9 / MAP_JUNCTION
+gameplayLoadMapId  = 2
+```
+
+This matches recovered `Player_addLevelStats()` semantics: BSP/Render `loadMapID == 2` is the hub/no-completion progression gate. Resource identity and gameplay progression identity are separate concepts.
+
+### Junction diagnostic facts already observed
+
+```text
+resourceName=/junction.bsp
+entryOffset=1974397
+bytes=21051
+crc32=4a2c5800
+fnv1a=fefaf5ca
+gameplayLoadMapId=2
+spawn=943
+dir=64
+camera=0
+floorTex=117
+ceilingTex=151
+
+nodes=77
+lines=207
+mapSprites=48
+events=66
+byteCodes=319
+strings=126
+stringData=12235
+maxString=380
+trailing=0
+
+persistentPlanBytes=8867
+readCalls=83
+window=256 B
+```
+
+These become final canons only after corrected v2 reproduces them and completes the full integrity/failclosed proof.
+
+### Corrected permanent model
+
+```text
+EspMapTransitionPreflightResult = 56 B
+
+targetMapId
+  = resource/catalog/lifecycle identity
+
+gameplayLoadMapId
+  = BSP header / Render.loadMapID progression semantic
+```
+
+The permanent preflight no longer requires equality. It validates the gameplay ID in `1..32`, returns both identities, closes the PAK, and retains no allocation.
+
+Catalog API remains:
 
 ```text
 EspMapCatalog_isValidId
@@ -81,72 +130,63 @@ EspMapCatalog_nameForId
 EspMapCatalog_idForName
 ```
 
-Static catalog-audit fingerprint prediction:
-
-```text
-ce322e3f
-```
-
-### Permanent transition preflight
-
-```text
-EspMapTransitionPreflightResult = 56 B
-```
-
-`EspMapTransitionPreflight_run(9, ...)` resolves `/junction.bsp`, opens the native PAK, performs a complete CRC-verified streaming BSP inventory through the existing `256 B` reader window, validates target/header identity, closes the PAK, and returns a pointer-free summary.
-
-It performs no source-map reset, runtime swap, menu mutation or legacy `DoomCanvas_loadMap()` call.
-
-### Candidate hardware proof target
-
-Known semantic target:
-
-```text
-targetMap=9 / MAP_JUNCTION
-name=/junction.bsp
-resultBytes=56
-headerLoadMapId=9
-ready=1
-repeat exact
-```
-
-The CYD must establish the actual Junction:
-
-```text
-nameHash
-entry offset
-bytes
-CRC32
-FNV1a
-compact persistent-plan bytes
-nodes / lines / mapSprites / events / byteCodes / strings / stringData
-preflight result FNV
-```
-
-Catalog/failclosed target:
+Static catalog audit target:
 
 ```text
 count=13
-roundtrip=13/13
+roundtrip=13
 catalogFNV=ce322e3f
-target0=1 target14=1 nullResult=1
-packBusy=1 busyZero=1 stateAtomic=yes
 ```
 
-RAM/integrity target:
+### Corrected real-CYD proof target
+
+```text
+resultBytes=56
+resourceMapId=9
+gameplayLoadMapId=2
+hubProgressionGate=1
+entryOffset=1974397
+size=21051
+crc32=4a2c5800
+fnv1a=fefaf5ca
+planBytes=8867
+nodes=77
+lines=207
+mapSprites=48
+events=66
+byteCodes=319
+strings=126
+stringData=12235
+repeatExact=1
+resourceGameplayDistinct=1
+```
+
+Fail closed:
+
+```text
+target0=1
+target14=1
+nullResult=1
+packBusy=1
+busyZero=1
+stateAtomic=yes
+```
+
+RAM/integrity:
 
 ```text
 hardware-proven persistent native heap = 18008 B
 candidate persistent addition          = 0 B
 heap8/largest8 before == after
 PAK closed at PARK
-all Entrance owners unchanged
+all Entrance owner FNVs unchanged
 legacy Player/transition unchanged
 sourceTeardown=no
 mapLoad=no
 menuMutation=no
 mapSwap=no
-entities=0 monsters=0
+entities=0
+monsters=0
 ```
 
 ## Current hardware-proven boundary through PR #65
@@ -183,8 +223,8 @@ original Doom RPG behavior/data
       -> level-exit stats             [hardware-proven]
       -> player exit-state            [hardware-proven]
       -> stats-menu semantic intent   [hardware-proven]
-      -> generic map catalog          [current candidate]
-      -> target PAK/BSP preflight     [current candidate]
+      -> generic resource map catalog [corrected candidate]
+      -> target PAK/BSP preflight     [corrected candidate]
       -> source-target lifecycle handoff
       -> Junction resident-runtime swap
  -> native gameplay/render loop
@@ -202,4 +242,6 @@ native ST_PLAYING progression/rendering
 sound playback
 ```
 
-Build/flash the current candidate using normal `esp32-cyd` and capture `[TRANSITIONPREFLIGHT]`, Junction `[BSPREAD]`, and stable `[ALIVE]` lines. Do not merge until the exact firmware candidate passes on the real CYD and all post-test commits are documentation-only.
+Build/flash corrected candidate with normal `esp32-cyd` and capture `[TRANSITIONPREFLIGHTFINAL]`, both Junction `[BSPREAD]` inventories, final `[TRANSITIONPREFLIGHT]` lines, and stable `[ALIVE]` lines.
+
+Do not merge until exact corrected firmware `4d78a66548fab6373c06c67f107f176fc3988b1c` passes on the real CYD and every later commit remains documentation-only.
