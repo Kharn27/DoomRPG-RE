@@ -12,20 +12,20 @@ hardware-tested firmware = f9a05933a00fab26b1c0e2b15375d074161ef2bc
 
 Merged evidence: [`MAP1_NATIVE_LEVEL_EXIT_STATS.md`](MAP1_NATIVE_LEVEL_EXIT_STATS.md).
 
-All 16 real MAP_INTRO opcode IDs have explicit native ownership/execution boundaries. The first post-opcode consumer, native level-exit stats, is also hardware-proven.
+All 16 real MAP_INTRO opcode IDs have explicit native ownership/execution boundaries. Native level-exit stats is hardware-proven.
 
-## Current candidate
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-native-player-exit-state
 base   = 533784b5483e14a12558fb08c9331d8b744caa88
-firmware candidate = f8c5a1c398c0946025aef976f7a997589bae4923
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = f8c5a1c398c0946025aef976f7a997589bae4923
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Active evidence: [`MAP1_NATIVE_PLAYER_EXIT_STATE.md`](MAP1_NATIVE_PLAYER_EXIT_STATE.md).
 
-This milestone consumes the already-proven 20 B native level-exit snapshot into a 28 B pointer-free native player exit state without mutating legacy `Player_t`.
+This milestone consumes the hardware-proven 20 B level-exit snapshot into a 28 B pointer-free native player exit state without mutating legacy `Player_t`.
 
 ## Permanent invariants
 
@@ -41,7 +41,7 @@ runtime ZIP = forbidden
 backing     = /DoomRPG-ESP32.pak
 ```
 
-`entities=0`, `monsters=0` and `ST_PLAYING` is still not reached.
+`entities=0`, `monsters=0`; `ST_PLAYING` is not reached.
 
 ## MAP_INTRO identity
 
@@ -72,9 +72,11 @@ mutable sprite topology   2424 B
 total                    18008 B
 ```
 
-Level-exit stats is caller-owned 20 B and added 0 B persistent heap. Current candidate state/result are also caller-owned; target total remains `18008 B`.
+Level-exit stats and player exit-state/result are caller-owned values and add no persistent allocation. Hardware total remains exactly `18008 B`.
 
 ## Hardware-proven fingerprints
+
+Inherited native canons:
 
 ```text
 arenaFNV                 = c3882516
@@ -103,6 +105,23 @@ levelExitShowSensFNV     = 5155b517
 levelExitSecretOpenFNV   = 6694b0e1
 ```
 
+New player exit-state canons:
+
+```text
+playerExitInitialFNV     = 940b0171
+playerExitAppliedFNV     = 298eaaa4
+playerExitResultFNV      = 5d10a566
+playerExitAllMasksFNV    = c93e8128
+playerExitLiveFNV        = 57fce418   # same-build live projection
+```
+
+Same-build legacy witnesses:
+
+```text
+playerExitLegacyFNV = f5cbf9f5
+transitionFNV       = f450c49f
+```
+
 ## Hardware-proven level-exit snapshot
 
 ```text
@@ -119,21 +138,7 @@ resultBytes        = 20
 persistentHeapBytes= 0
 ```
 
-Effects:
-
-```text
-01 accumulate time
-02 accumulate moves
-04 reset berserker
-08 clear familiar
-10 mark completed
-20 mark all secrets
-40 mark all monsters
-```
-
-Source intro result is `1f = 0f base + 10 completed`.
-
-## Current permanent player-exit API
+## Permanent player exit-state API
 
 Files:
 
@@ -142,7 +147,7 @@ ESP32/include/esp_player_exit_state.h
 ESP32/src/esp_player_exit_state.c
 ```
 
-Expected ABI:
+Hardware-proven ABI:
 
 ```text
 EspPlayerExitState       = 28 B
@@ -158,7 +163,7 @@ completedLevels
 killedMonstersLevels
 foundSecretsLevels
 berserkerTics
-familiarActive   # semantic bool only, no Entity pointer
+familiarActive   # semantic bool only; no Entity pointer
 ```
 
 API:
@@ -170,64 +175,123 @@ EspPlayerExitState_apply(state, stats, elapsedTimeMs, levelMoves, result)
 
 `elapsedTimeMs` and `levelMoves` are explicit caller inputs. The permanent owner has no dependency on legacy Player/Game/Menu/Render/DoomCanvas/Entity, no clock access, no PAK/ZIP I/O and no allocation.
 
-The consumer validates the complete stats contract before mutation and fails closed on inconsistent effect flags, completion bits, ranges or mark predicates.
-
-## Candidate validation target
-
-Deterministic seed:
+## Real-CYD deterministic application
 
 ```text
-totalTime=10203040 totalMoves=01020304
-completed=00000004 killed=00000008 secrets=00000010
-berserker=9 familiar=1
+stateBytes=28 resultBytes=28
 elapsed=12345 moves=37
+effects=1f
+
+initialFNV=940b0171
+appliedFNV=298eaaa4
+resultFNV=5d10a566
+
+totalTime  10203040 -> 10206079
+totalMoves 01020304 -> 01020329
+completed  00000004 -> 00000005
+killed     00000008 -> 00000008
+secrets    00000010 -> 00000010
+berserker  9 -> 0
+familiar   1 -> 0
 ```
 
-With real intro stats `effects=1f`:
+The static predicted FNVs matched hardware exactly.
+
+## Gates / mask proof
 
 ```text
-time/moves accumulate
-completed |= 00000001
-killed/found masks unchanged
-berserker -> 0
-familiar -> 0
+sourceCompleted=1
+sourceSecrets=0
+sourceMonsters=0
+repeatIdempotent=1
+allMasks=1
+allStateFNV=c93e8128
+noStatsGate=1
+mapId2Gate=1
 ```
 
-Static ABI/FNV prediction only; real CYD is authoritative:
+A valid all-complete snapshot applies all three progression masks. Source-state completion is idempotent when reapplied with zero elapsed/moves.
+
+## Live Player projection
 
 ```text
-initialFNV = 940b0171
-appliedFNV = 298eaaa4
-resultFNV  = 5d10a566
-allMasksFNV= c93e8128
+elapsed=64325
+moves=0
+projection=1
+liveStateFNV=57fce418
+legacyPlayerUnchanged=yes
 ```
 
-Probe also requires:
+`elapsed` is run-timing-specific; hardware proves exact formula projection without legacy mutation.
+
+## Rollback / pointer boundary
 
 ```text
-repeat completion with 0 elapsed/moves -> mask/reset idempotent
-showStats=0 gate -> no progression-mask writes
-loadMapId=2 gate -> no progression-mask writes
-synthetic valid all-complete stats -> all three masks OR level bit
-live legacy Player projection -> exact formula, legacy unchanged
-null/inconsistent inputs -> fail closed, state atomic
-heap8/largest8/framebuffer unchanged
-lineStateFNV=e5e74861 unchanged
-spriteTopologyFNV=3f321e43 unchanged
-PAK closed
-entities=0 monsters=0
+rollbackFNV=940b0171
+rollback=1
+familiarSemanticOnly=yes
+entityPointerStored=no
 ```
 
-RAM target:
+## Fail closed
 
 ```text
-persistentHeapBytes = 0
-persistent native total remains 18008 B
+nullState=1
+nullStats=1
+nullResult=1
+effectMismatch=1
+bitMismatch=1
+rangeMismatch=1
+stateAtomic=yes
+```
+
+## RAM / integrity evidence
+
+```text
+heap8      65632 -> 65632 delta=0
+largest8   34804 -> 34804 delta=0
+persistentHeapBytes=0
+frameFNV   ef79123a -> ef79123a
+lineFNV    e5e74861
+topologyFNV=3f321e43
+```
+
+Legacy guards:
+
+```text
+playerExitFNV f5cbf9f5 -> f5cbf9f5
+transitionFNV f450c49f -> f450c49f
+legacyRuntimeClear=yes
+Player_addLevelStatsCalled=no
+playerMutation=no
+menuMutation=no
+transitionTriggered=no
+```
+
+Final PARK:
+
+```text
+state=9 page=3
+nativePlayerExitState=yes
+stateBytes=28 resultBytes=28
+persistentBytes=0
+nativeExitStats=yes
+playerMutationProven=yes
+legacyPlayerMutation=no
+entities=0 monsters=0 noGameplay=yes
+```
+
+Stable heartbeats:
+
+```text
+70245 ms heap=131396 heap8=65632 largest8=34804
+75246 ms heap=131396 heap8=65632 largest8=34804
+80247 ms heap=131396 heap8=65632 largest8=34804
 ```
 
 ## Current architecture boundary
 
-Hardware-proven ownership:
+Hardware-proven ownership now includes:
 
 ```text
 compact immutable native map
@@ -237,15 +301,10 @@ SAVEGAME durable route
 CHANGEMAP pending transition intent
 SHOW/HIDE compact sprite/entity topology
 native level-exit stats snapshot
+native player exit-state application
 ```
 
-Candidate adds:
-
-```text
-native application of Player_addLevelStats exit writes to a pointer-free player state
-```
-
-Still outside:
+Still intentionally outside:
 
 ```text
 native stats-menu intent/consumer
@@ -257,21 +316,12 @@ ST_PLAYING progression
 sound playback
 ```
 
-## Validation
+`shapeData` and `mediaTexels` remain NULL.
 
-Build/flash normal environment:
-
-```text
-esp32-cyd
-```
-
-Branch / firmware:
+## Merge recommendation
 
 ```text
-agent/esp32-native-player-exit-state
-f8c5a1c398c0946025aef976f7a997589bae4923
+MERGE agent/esp32-native-player-exit-state
 ```
 
-Capture `[PLAYEREXITPROBE]`, `[PLAYEREXIT]` and stable `[ALIVE]` lines.
-
-No CI status is published for the candidate. No local build or hardware PASS is claimed.
+Hardware-tested firmware is `f8c5a1c398c0946025aef976f7a997589bae4923`. All commits after that firmware must remain documentation-only until merge.
