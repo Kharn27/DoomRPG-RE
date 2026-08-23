@@ -11,6 +11,7 @@
 #include "native_junction_post_load_flag_cleanup_probe.h"
 #include "native_junction_post_load_givemap_probe.h"
 #include "native_junction_post_load_hud_clear_probe.h"
+#include "native_junction_post_load_idle_time_probe.h"
 #include "native_junction_post_load_initial_save_intent_probe.h"
 #include "native_junction_post_load_playing_transition_probe.h"
 #include "native_junction_post_load_view_invalidation_probe.h"
@@ -97,6 +98,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32JunctionPostLoadEventParticleCleanupProbe_reset();
     Esp32JunctionPostLoadViewInvalidationProbe_reset();
     Esp32JunctionPostLoadPlayingTransitionProbe_reset();
+    Esp32JunctionPostLoadIdleTimeProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -110,10 +112,10 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * facing -> post-load HUD message clear -> direct Junction Game_givemap ->
      * current-weapon self-selection -> initial-save caller intent -> scalar
      * isLoaded/isSaved/activeLoadType cleanup -> empty event/particle cleanup ->
-     * caller-side redraw request -> native ST_INTRO->ST_PLAYING transition
-     * semantics. Durable save persistence, legacy playingState/rendering and
-     * idleTime remain outside this chain. Each stage arms first and executes on
-     * a later loop.
+     * caller-side redraw request -> native ST_INTRO->ST_PLAYING transition ->
+     * final idleTime deadline semantic. Durable save persistence and native
+     * PLAYING loop/render dispatch remain outside this chain. Each stage arms
+     * first and executes on a later loop.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -158,4 +160,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32JunctionPostLoadEventParticleCleanupProbe_service(doomRpg);
     Esp32JunctionPostLoadViewInvalidationProbe_service(doomRpg);
     Esp32JunctionPostLoadPlayingTransitionProbe_service(doomRpg);
+    Esp32JunctionPostLoadIdleTimeProbe_service(doomRpg);
 }
