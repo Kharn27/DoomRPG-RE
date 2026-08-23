@@ -13,17 +13,18 @@ status = REAL-CYD HARDWARE PASS
 
 Merged evidence: [`MAP1_NATIVE_PLAYER_SETUP.md`](MAP1_NATIVE_PLAYER_SETUP.md).
 
-## Current hardware candidate
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-native-initial-tile-enter
 base   = 9077ae4496bdcc06b6b99846332ab43b38943a8a
-status = HARDWARE CANDIDATE — NOT YET CYD-PROVEN
+hardware-tested firmware = d8fb3e0e372b89d95c37cce558420f7fcb474419
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Candidate evidence/design: [`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md).
+Evidence: [`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md).
 
-The candidate owns only the first fresh-map `Game_executeTile()` dispatch after hardware-proven `Player_setup()`. It keeps `finishRotation()`, the second tile event, durable facing and `ST_PLAYING` explicitly pending. If Junction tile 943 exposes an eligible opcode outside the existing tiny 11/19/20 executor, the probe must stop fail-closed and print the exact command rather than falling back to legacy execution.
+This milestone hardware-proves the first fresh-map `Game_executeTile()` dispatch at Junction and consumes only `tileEnterPending`. `finishRotation()`, its second tile event, durable facing and `ST_PLAYING` remain explicitly pending.
 
 ## Permanent invariants
 
@@ -77,7 +78,7 @@ enemies=0
 destructibles=3
 ```
 
-Junction owner FNVs:
+Junction resident owner FNVs:
 
 ```text
 runtime  = bc432a0f
@@ -107,28 +108,31 @@ CHANGEMAP pending intent
  -> 44 B active native player/view owner
  -> 8 B native post-spawn HUD dirty owner
  -> 24 B native fresh-map Player_setup session owner
+ -> 24 B native initial tile-enter owner
 ```
 
 Canonical fingerprints:
 
 ```text
-levelExitStatsFNV          = bd41bcfa
-playerExitAppliedFNV       = 298eaaa4
-statsMenuIntentFNV         = 96afe901
-catalogFNV                 = ce322e3f
-transitionPreflightFNV     = 108e5c7b
-committed WAIT_STATS FNV   = 66fe636a
-committed READY FNV        = 0ef58ea8
-committed ROLLBACK FNV     = 2dec1442
-committed COMMITTED FNV    = 2c595a62
-Junction spawn FNV         = ba6af4a7
-packed override FNV        = e0a5110b
-Junction player/view FNV   = d1131d18
-packed override view FNV   = 9ed47d08
-post-HUD player/view FNV   = d17fa0d1
-Junction HUD refresh FNV   = 6965ee06
-Player_setup semantic FNV  = 3b27c6a1
-post-setup player/view FNV = c21fba3c
+levelExitStatsFNV              = bd41bcfa
+playerExitAppliedFNV           = 298eaaa4
+statsMenuIntentFNV             = 96afe901
+catalogFNV                     = ce322e3f
+transitionPreflightFNV         = 108e5c7b
+committed WAIT_STATS FNV       = 66fe636a
+committed READY FNV            = 0ef58ea8
+committed ROLLBACK FNV         = 2dec1442
+committed COMMITTED FNV        = 2c595a62
+Junction spawn FNV             = ba6af4a7
+packed override FNV            = e0a5110b
+Junction player/view FNV       = d1131d18
+packed override view FNV       = 9ed47d08
+post-HUD player/view FNV       = d17fa0d1
+Junction HUD refresh FNV       = 6965ee06
+Player_setup semantic FNV      = 3b27c6a1
+post-setup player/view FNV     = c21fba3c
+Junction initial-tile FNV      = f73e28b2
+post-initial-tile player FNV   = 1bd0f09b
 ```
 
 All real MAP_INTRO opcode IDs already have explicit native ownership/execution boundaries:
@@ -137,7 +141,7 @@ All real MAP_INTRO opcode IDs already have explicit native ownership/execution b
 2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-Important distinction: the generic `EspMapOpcodeExecutor` deliberately remains tiny and currently executes only IDs 11/19/20. Other opcode families have dedicated owners/probes and must not be silently wired into a generic event path without a dedicated milestone.
+The generic `EspMapOpcodeExecutor` deliberately remains tiny and executes only IDs 11/19/20. Other opcode families keep dedicated owners/probes.
 
 ## Hardware-proven current player state
 
@@ -155,43 +159,11 @@ viewZOld=4
 loadType=0
 ```
 
-Active player/view before HUD routing:
-
-```text
-EspPlayerViewState=44 B
-stateFNV=d1131d18
-hudRefreshPending=1
-facingRefreshPending=1
-playerSetupPending=1
-tileEnterPending=1
-```
-
-Post-HUD:
-
-```text
-EspHudRefreshState=8 B
-HUD FNV=6965ee06
-PlayerView FNV=d17fa0d1
-hudRefreshPending=0
-facingRefreshPending=1
-playerSetupPending=1
-tileEnterPending=1
-```
-
-Post-Player_setup — latest merged hardware boundary:
+Post-Player_setup:
 
 ```text
 EspPlayerFreshMapState=24 B
 setup semanticFNV=3b27c6a1
-raw same-run stateFNV=d0ab146e at startMs=27538
-startExact=yes
-moves=0
-xpGained=0
-berserkerTics=0
-familiarActive=0
-notebookEmpty=1
-weaponRestorePerformed=0
-
 PlayerView FNV=c21fba3c
 hudRefreshPending=0
 facingRefreshPending=1
@@ -199,7 +171,38 @@ playerSetupPending=0
 tileEnterPending=1
 ```
 
-`d0ab146e` is a same-run witness only because `levelStartTimeMs` is dynamic. `3b27c6a1` is the normalized hardware canon.
+Latest hardware boundary — post initial tile-enter:
+
+```text
+EspPlayerInitialTileState=24 B
+stateFNV=f73e28b2
+world=992/1888
+tile=943
+flags=1000040f
+eventFound=1
+eventIndex=61
+eventState=0
+eventFlags=0
+blocked=0
+eligible=0
+executed=0
+removed=0
+skipAdvanceTurn=0
+playerKeys=00000000
+
+PlayerView FNV c21fba3c -> 1bd0f09b
+hudRefreshPending=0
+facingRefreshPending=1
+playerSetupPending=0
+tileEnterPending=0
+```
+
+The real tile 943 event exists, but no command is eligible under the exact fresh-map flags. Therefore script state remains byte-for-byte unchanged:
+
+```text
+script FNV bc9b18ff -> bc9b18ff
+changed=no
+```
 
 ## Recovered fresh-map ordering
 
@@ -220,11 +223,11 @@ caller -> DoomCanvas_finishRotation():
   checkFacingEntity()            # durable final facing
 ```
 
-The first facing write is transitory and is not consumed by `Player_setup()` or the intervening tile execution. Native facing remains pending until after the correct setup/tile/orientation ordering.
+Hardware-proven boundary now reaches through the first `Game_executeTile()` call. The transient first facing write remains deliberately unowned because it is overwritten later and is not consumed by Player_setup or the initial tile dispatch.
 
-## Initial tile candidate contract
+## Initial tile-enter hardware proof
 
-Recovered legacy call at the current real Junction spawn:
+Recovered call:
 
 ```text
 worldX=992
@@ -238,21 +241,7 @@ base flags=0x0000040f
 input flags=0x1000040f
 ```
 
-Permanent candidate files:
-
-```text
-ESP32/include/esp_player_initial_tile.h
-ESP32/src/esp_player_initial_tile.c
-```
-
-Candidate owner:
-
-```text
-EspPlayerInitialTileState = 24 B
-persistent heap = 0 B
-```
-
-Candidate API:
+Permanent API:
 
 ```text
 EspPlayerInitialTile_reset()
@@ -263,38 +252,38 @@ EspPlayerInitialTile_route()
 EspPlayerView_consumeTileEnter()
 ```
 
-`prepare()` is side-effect free and preflights the full filtered command set. The route executes only already-supported 11/19/20 state mutations, maps recovered MCODE_FLAG_REMOVE/`arg2 & 0x200` into `EspMapScriptState`, rolls script state back on failure, then consumes only `tileEnterPending`.
-
-Any eligible unsupported opcode returns:
+Hardware fail-closed gates:
 
 ```text
-ESP_PLAYER_INITIAL_TILE_OPCODE_DEFERRED
+nullView=1
+nullSetup=1
+nullOutput=1
+angle=1
+blocked=1
+missingTile=1
+missingFacing=1
+setupMismatch=1
+prepareAtomic=yes
+repeat=1
+repeatAtomic=yes
 ```
 
-with no player/script mutation. The hardware probe prints the exact real opcode/args so the next family can be implemented deliberately.
+No fallback to legacy `Game_executeEvent()` is permitted. Eligible unsupported commands would still fail closed; the real initial Junction dispatch simply has `eligible=0`.
 
-Predicted one-bit post-route player/view fingerprint:
+## Latest hardware RAM / integrity baseline
 
-```text
-post-initial-tile PlayerView FNV = 1bd0f09b
-```
-
-This is **not yet a hardware canon**.
-
-## Last hardware RAM / integrity baseline
-
-Player_setup milestone on real CYD:
+Initial tile-enter milestone on real CYD:
 
 ```text
-snapshotFNV=bc9071e9->bc9071e9
-targetLeftResident=yes
 payload=10410
 entities=30
 enemies=0
 destructibles=3
 packClosed=yes
+runtimeStable=yes
+nonScriptMutableStable=yes
 
-heap8=72900->72900
+heap8=72868->72868
 delta=0
 largest8=34804->34804
 delta=0
@@ -304,42 +293,41 @@ persistentHeapBytes=0
 Stable heartbeat:
 
 ```text
-heap=138664
-heap8=72900
+heap=138632
+heap8=72868
 largest8=34804
 ```
 
-Legacy/framebuffer same-build witnesses from that PASS:
+Same-build equality witnesses:
 
 ```text
-placementFNV=5d1076bf->5d1076bf
-playerSetupFNV=ea247b9a->ea247b9a
-frameFNV=9eb7ce0f->9eb7ce0f
+gameFNV=c655ff85->c655ff85
+playerFNV=774ed642->774ed642
+frameFNV=7a95b5b5->7a95b5b5
 legacyRuntimeClear=yes
-DoomCanvasMutation=no
 GameMutation=no
 PlayerMutation=no
-RenderMutation=no
 HudMutation=no
+DoomCanvasMutation=no
+RenderMutation=no
 ```
 
-## Latest merged hardware PARK
+These equality FNVs are same-build witnesses, not cross-build canons.
+
+## Current hardware PARK
 
 ```text
 state=9 / ST_INTRO
 page=3
-mapSwapCommitted=yes
 targetMap=9
 junctionResident=yes
 nativePlayerView=yes
-nativeHudRefresh=yes
 nativePlayerSetup=yes
-setupApplied=yes
-hudDirty=yes
+nativeInitialTile=yes
+tileEnterPending=no
 facingPending=yes
-playerSetupPending=no
-tileEnterPending=yes
 finishRotationPending=yes
+secondTilePending=yes
 finalFacingPending=yes
 ST_PLAYING=no
 legacy Game.entities=0
@@ -347,34 +335,9 @@ legacy Game.monsters=0
 noGameplay=yes
 ```
 
-## Candidate hardware outcomes
-
-The normal `esp32-cyd` firmware chains `native_junction_initial_tile_probe` after the proven Player_setup probe.
-
-A complete candidate PASS must reach:
-
-```text
-[JUNCTIONTILE] READY ...
-PlayerView c21fba3c -> 1bd0f09b
-tileEnterPending=0
-facingRefreshPending=1
-finishRotationPending=yes
-ST_PLAYING=no
-```
-
-and prove zero same-build heap delta plus no legacy/framebuffer mutation. Script FNV may change only if an eligible supported state opcode executes; immutable runtime and all non-script resident owners must remain stable.
-
-If the real event contains a currently unsupported eligible opcode, the correct result is instead:
-
-```text
-[JUNCTIONTILE] DEFERRED ... code=<id> arg1=<...> arg2=<...> failClosed=yes
-```
-
-with `tileEnterPending=1`. That is discovery, not tile-enter PASS; implement that exact opcode family in a bounded follow-up before promoting this milestone.
-
 ## Current architecture boundary
 
-Hardware-proven native ownership through merged `main` includes:
+Hardware-proven native ownership now includes:
 
 ```text
 compact immutable native map + explicit mutable owners
@@ -387,12 +350,7 @@ fresh-map spawn/load projection
 active native player/view owner
 post-spawn HUD dirty ownership
 fresh-map Player_setup-equivalent per-level session root
-```
-
-Candidate only:
-
-```text
-bounded first fresh-map tile dispatch
+first fresh-map tile dispatch
 ```
 
 Still intentionally outside:
@@ -414,12 +372,20 @@ The player/view, HUD, fresh-map session and initial-tile owners have lifetimes d
 
 `shapeData == NULL` and `mediaTexels == NULL` remain mandatory.
 
-## Next action
+## Next bounded milestone after merge
 
-Build/flash the normal environment:
+Recover from the true post-merge `main` before implementation. The natural next operation is the `DoomCanvas_finishRotation()` orientation preparation (`viewSin`, `viewCos`, `viewStepX`, `viewStepY`). Keep its second `Game_executeTile(... | 0x400)` and final durable facing as later boundaries unless a fresh legacy audit proves a tighter safe grouping.
+
+## Merge recommendation
 
 ```text
-esp32-cyd
+MERGE agent/esp32-native-initial-tile-enter
 ```
 
-Use the exact `[JUNCTIONTILE]` Serial block as hardware truth. Do not mark this candidate merge-ready until a complete native route is proven; a deferred-opcode discovery must be implemented and re-tested first.
+Hardware-tested firmware:
+
+```text
+d8fb3e0e372b89d95c37cce558420f7fcb474419
+```
+
+Every later commit on this branch must remain documentation-only unless another firmware is flashed.
