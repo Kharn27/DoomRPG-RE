@@ -22,21 +22,22 @@ This file defines the current ESP32 CYD documentation map.
 
 Older milestone archives remain in this directory and are indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
 
-## Current candidate
+## Current merge-ready milestone
 
-[`MAP1_NATIVE_COMMITTED_TRANSITION.md`](MAP1_NATIVE_COMMITTED_TRANSITION.md) introduces a permanent stats-ack-gated point-of-no-return transition owner and a hardware proof that first forces post-teardown recovery, then commits Junction and deliberately leaves it resident.
+[`MAP1_NATIVE_COMMITTED_TRANSITION.md`](MAP1_NATIVE_COMMITTED_TRANSITION.md) introduces the first permanent stats-ack-gated point-of-no-return transition owner and hardware-proves both post-teardown recovery and a true committed Entrance -> Junction resident swap.
 
 ```text
 branch = agent/esp32-native-committed-transition
 base   = fddae899fd7dc01b20cf6bd532489326380954e3
-firmware candidate = 759b7f05a7c1940e98caf68e4041faa69b34cfc9
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 759b7f05a7c1940e98caf68e4041faa69b34cfc9
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 ### Permanent API
 
 ```text
 EspMapCommittedTransitionState = 24 B
+persistent heap = 0 B
 
 EspMapCommittedTransition_reset
 EspMapCommittedTransition_isCommitted
@@ -44,8 +45,6 @@ EspMapCommittedTransition_begin
 EspMapCommittedTransition_ackStats
 EspMapCommittedTransition_commit
 ```
-
-The state is pointer-free and adds zero persistent heap.
 
 Phases:
 
@@ -57,31 +56,11 @@ EMPTY -> WAIT_STATS -> READY -> COMMITTED
 
 `begin()` consumes the real caller-owned `EspMapChangeMapState` only after all pending/result/stats/preflight relationships validate. This mirrors legacy `Game_changeMap()` clearing `changeMapParam` when it schedules the stats menu.
 
-The actual map replacement is not allowed before explicit `ackStats()`, matching the recovered legacy flow where accepting `MENU_MAP_STATS` later calls `DoomCanvas_loadMap(menu.mapNameId)`.
+The actual native map replacement is not allowed before explicit `ackStats()`, matching the recovered legacy flow where accepting `MENU_MAP_STATS` later calls `DoomCanvas_loadMap(menu.mapNameId)`.
 
-### Transactional commit
+### Hardware-proven transition-state ABI
 
-Before any source teardown:
-
-```text
-source inventory == live runtime
-target inventory == preflight-bound bytes/CRC/FNV/gameplay ID
-PAK closed
-source resident capture valid
-```
-
-Then the permanent state machine reuses the already-proven resident lifecycle:
-
-```text
-resetAll(source)
- -> loadFromEmpty(target)
-```
-
-Success leaves Junction resident and marks COMMITTED. Failure after teardown attempts immediate source reconstruction and reports ROLLED_BACK or FAILED.
-
-### Candidate state fingerprints
-
-Static predictions for real Entrance -> Junction:
+The real CYD confirmed all predicted 24-byte FNVs exactly:
 
 ```text
 WAIT_STATS  = 66fe636a
@@ -90,50 +69,99 @@ ROLLED_BACK = 2dec1442
 COMMITTED   = 2c595a62
 ```
 
-### Hardware probe sequence
+Real begin:
 
 ```text
-canonical Entrance
- -> real EV_CHANGEMAP event 1 / offset 1
- -> LEVEL stats intent
- -> Junction preflight
- -> source + target inventories
- -> invalid begin atomicity
- -> begin consumes pending / WAIT_STATS
- -> pre-ACK commit refused
- -> ACK / READY
- -> bad target fingerprint refused before teardown
- -> deliberately corrupt target plan
- -> source teardown
- -> target runtime failure
- -> automatic Entrance recovery
- -> exact source snapshot/heap/largest restoration
- -> true commit
- -> Junction stays resident
+sourceMap=1
+targetMap=9
+gameplayLoadMapId=2
+spawnParam=0
+menuKind=LEVEL
+pendingConsumed=1
+phase=WAIT_STATS
+preflightFNV=108e5c7b
+statsIntentFNV=96afe901
 ```
 
-An intentional diagnostic line is expected during forced rollback:
+ACK:
+
+```text
+statsAcknowledged=1
+phase=READY
+repeatAck=1
+```
+
+Fail-closed gates:
+
+```text
+invalidBegin=1
+preAckCommit=1
+badInventory=1
+repeatCommit=1
+stateAtomic=yes
+sourcePreservedBeforeCommit=yes
+```
+
+### Hardware-proven post-teardown recovery
+
+The probe deliberately corrupts only the target compact plan after validating target bytes/CRC/FNV/gameplay identity. Entrance is actually released and the target runtime intentionally emits:
 
 ```text
 [MAPRT] FAILED unsupported plan/source
 ```
 
-That line is only healthy if exact Entrance recovery follows before the final successful Junction build.
-
-### Final PASS target
-
-Inherited Junction canons:
+The permanent transaction then reconstructs Entrance exactly:
 
 ```text
-snapshotFNV=bc9071e9
-payload=10410 B
-actual resident heap=10540 B
-runtime/map/script/line/texture/automap/topology FNVs:
-bc432a0f / c5cdfc04 / bc9b18ff / 3658710d / 537319ad / 0b2ae445 / d6e8df7d
-compact entities=30 enemies=0 destructibles=3
+phase=ROLLED_BACK
+stateFNV=2dec1442
+sourceRestored=yes
+snapshotFNV=b3811f3d
+heap8=65584->65584
+largest8=34804->34804
+packClosed=yes
 ```
 
-Expected final boundary:
+### Hardware-proven committed Junction residency
+
+The second READY transaction performs the real commit and deliberately leaves Junction resident:
+
+```text
+status=8 / ESP_MAP_COMMITTED_TRANSITION_OK
+phase=COMMITTED
+committed=1
+committedStateFNV=2c595a62
+targetSnapshotFNV=bc9071e9
+payload=10410 B
+sourceHeap=65584
+targetHeap=73052
+free-heap gain=7468 B
+largest=34804->34804
+packClosed=yes
+```
+
+Exact target FNVs:
+
+```text
+runtime  = bc432a0f
+map      = c5cdfc04
+script   = bc9b18ff
+line     = 3658710d
+texture  = 537319ad
+automap  = 0b2ae445
+topology = d6e8df7d
+snapshot = bc9071e9
+```
+
+Target compact topology:
+
+```text
+entities=30
+enemies=0
+destructibles=3
+```
+
+Final resident boundary:
 
 ```text
 mapSwapCommitted=yes
@@ -147,17 +175,61 @@ statsAck=yes
 spawnParam=0 retained
 spawnPending=yes
 spawnApplied=no
-legacy DoomCanvas/Game/Menu/Player/Render unchanged
 legacy Game.entities=0
 legacy Game.monsters=0
 ST_INTRO page=3
 ST_PLAYING=no
-framebuffer unchanged
 ```
 
-The unchanged intro frame with Junction native owners underneath is intentional. Rendering/gameplay are separate future consumers.
+This is the first hardware-proven committed native resident map replacement.
 
-## Hardware-proven boundary through PR #67
+### Legacy / framebuffer integrity
+
+Same-probe witnesses remained exact:
+
+```text
+playerFNV=0b2ae445->0b2ae445
+transitionFNV=95142f8f->95142f8f
+frameFNV=b8924a47->b8924a47
+legacyRuntimeClear=yes
+DoomCanvas_loadMapCalled=no
+menuMutation=no
+legacyPlayerMutation=no
+spawnApplied=no
+loadTypeMutation=no
+```
+
+The unchanged visible intro framebuffer with Junction native owners underneath is intentional. Residency, player placement and presentation are now explicit separate boundaries.
+
+Post-PARK heartbeat observed:
+
+```text
+uptime=40092 ms
+heap=138816
+heap8=73052
+largest8=34804
+```
+
+### Same-build resident cost proof
+
+The prerequisite reversible handoff also reran successfully in the tested firmware:
+
+```text
+SOURCE   65584 / 34804
+EMPTY1   83592 / 34804
+JUNCTION 73052 / 34804
+EMPTY2   83592 / 34804
+RESTORED 65584 / 34804
+
+Entrance cost=18008 B
+Junction cost=10540 B
+finalDelta=0
+fragmentationDelta=0
+```
+
+The 8-byte absolute shift from the earlier PR #67 firmware is build-context only; resident costs and fingerprints remain identical.
+
+## Hardware-proven boundary through current milestone
 
 ```text
 Entrance resident heap = 18008 B
@@ -169,11 +241,14 @@ preflightFNV           = 108e5c7b
 statsMenuIntentFNV     = 96afe901
 levelExitStatsFNV      = bd41bcfa
 playerExitAppliedFNV   = 298eaaa4
+committedTransitionBytes = 24
+committedTransitionFNV   = 2c595a62
 
 all MAP_INTRO opcode families owned=yes
 reversible Entrance -> Junction -> Entrance=yes
-final heap drift=0
-largest-block fragmentation=0
+post-teardown rollback recovery=yes
+committed Entrance -> Junction=yes
+Junction left resident=yes
 legacy entities=0
 legacy monsters=0
 ST_PLAYING not reached
@@ -192,12 +267,12 @@ original Doom RPG behavior/data
  -> map catalog/preflight
  -> explicit resident lifecycle
  -> reversible full resident handoff          [hardware-proven]
- -> committed stats-ack-gated transition      [candidate]
- -> spawn/loadType ownership
+ -> committed stats-ack-gated transition      [hardware-proven]
+ -> native spawn/loadType ownership
  -> native gameplay/render loop
 ```
 
-Still outside current candidate:
+Still outside:
 
 ```text
 actual stats-menu rendering/input
@@ -209,4 +284,29 @@ native gameplay renderer
 sound playback
 ```
 
-Build/flash candidate with normal `esp32-cyd`. No CI status is published and no local build/hardware PASS is claimed.
+## Next bounded milestone after merge
+
+Re-audit legacy `Game_spawnPlayer()` and `loadType` semantics, then own native player placement from:
+
+```text
+retained spawnParam=0
+Junction BSP spawnIndex=943
+Junction BSP spawnDirection=64
+gameplayLoadMapId=2
+```
+
+Do not open full gameplay or `ST_PLAYING` as part of the same milestone unless the repo/legacy audit proves that boundary is unavoidable.
+
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-committed-transition
+```
+
+Hardware-tested firmware:
+
+```text
+759b7f05a7c1940e98caf68e404467a54405ae
+```
+
+Note: the canonical full firmware SHA is `759b7f05a7c1940e98caf68e4041faa69b34cfc9`; the line above is intentionally not authoritative if truncated by a UI. Always use the full SHA from `PORTING_STATUS.md` / milestone evidence.
