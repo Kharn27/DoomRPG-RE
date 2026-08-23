@@ -6,7 +6,7 @@ This file defines the current ESP32 CYD documentation map.
 
 - [`README.md`](README.md): stable build/flash guide.
 - [`PORTING_STATUS.md`](PORTING_STATUS.md): authoritative current recovery point.
-- Milestone archives: detailed implementation and hardware evidence.
+- Milestone archives: implementation contracts and hardware evidence.
 
 ## Recent merged milestones
 
@@ -29,183 +29,172 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_FINISH_ROTATION_SECOND_TILE.md`](MAP1_NATIVE_FINISH_ROTATION_SECOND_TILE.md) | finishRotation second tile | #75 | `7a0e57cf13d02320be3a238dc73499a023c9f04c` |
 | [`MAP1_NATIVE_DURABLE_FACING.md`](MAP1_NATIVE_DURABLE_FACING.md) | finishRotation durable facing | #76 | `3ab143110a1f44ebb44bc130d12d1844f3ae73ca` |
 | [`MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md`](MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md) | post-load HUD message clear | #77 | `56c4211a91e6a95763dd4cc215ef40de6c10a98b` |
+| [`MAP1_NATIVE_POST_LOAD_GIVEMAP.md`](MAP1_NATIVE_POST_LOAD_GIVEMAP.md) | direct Junction Game_givemap | #78 | `4737b016d02615b8435cf84909fe3c251b6d338b` |
 
 Older archives remain indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
 
 ## Latest merged boundary
 
-PR #77 hardware-proved the three HUD message-channel writes immediately after
-recovered `DoomCanvas_finishRotation()`:
+PR #78 hardware-proved direct caller-side Junction `Game_givemap()` using the
+existing compact automap/map-state owners.
 
 ```text
-EspHudPostLoadClearState=8 B
-stateFNV=b7383e18
-PlayerView=afcdcf74 unchanged
-Facing=95aa1108 unchanged
-resident snapshot=bc9071e9 unchanged
-automap=0b2ae445 unchanged
+EspPostLoadGiveMapState=16 B
+stateFNV=448e587d
+line/sprite/entrance targets=198/48/15
+mutations=198/48/15
+mapState c5cdfc04 -> 8dba0bb4
+automap  0b2ae445 -> b699bd75
+snapshot bc9071e9 -> bb714d80
 persistent heap=0 B
 ST_PLAYING=no
 ```
 
 ## Current merge-ready milestone
 
-[`MAP1_NATIVE_POST_LOAD_GIVEMAP.md`](MAP1_NATIVE_POST_LOAD_GIVEMAP.md) hardware-
-proves the next exact Junction caller operation:
+[`MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md`](MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md)
+hardware-proves the next exact caller operation:
 
 ```text
-branch = agent/esp32-native-post-load-givemap
-base   = 56c4211a91e6a95763dd4cc215ef40de6c10a98b
-hardware-tested firmware = 511156120bd877367d13ffa4b98ed6815005bc3c
+branch = agent/esp32-native-post-load-weapon-self-select
+base   = 4737b016d02615b8435cf84909fe3c251b6d338b
+hardware-tested firmware = 24fb8fbf914820500d2e16815e22beb0439c9ba0
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-The same tested boot also proves the refactored historical MAP_INTRO opcode-9
-path transitively: SAVEGAME cannot arm before `Esp32Map1GiveMapProbe_isDone()`,
-and the GIVEMAP probe sets `done=1` only after its full success/PARK path.
+Exact callsite:
 
-### Exact direct GIVEMAP semantics
-
-```text
-for each line without flag 0x20: set reveal flag 0x80
-for every map sprite: set reveal bit 0x10000000
-for every BIT_AM_ENTRANCE tile: set BIT_AM_VISITED
+```c
+Player_selectWeapon(player, player->weapon);
 ```
 
-The operation maps directly onto existing compact owners:
+Recovered implementation:
 
-```text
-EspMapAutomapState -> line/sprite reveal bits
-EspMapState        -> tile BIT_AM_VISITED
+```c
+if (player->weapon != i) {
+    DoomCanvas_updateViewTrue(player->doomRpg->doomCanvas);
+}
+player->weapon = i;
 ```
 
-No legacy `Game_givemap()` call occurs.
+At this caller the request is the current weapon, so the branch is not taken and
+the assignment is identity.
 
-### Shared permanent primitive
-
-```text
-EspMapGiveMapDirectResult = 12 B
-EspMapAutomapState_planGiveMapDirect()
-EspMapAutomapState_applyGiveMapDirect()
-```
-
-The historical event wrapper remains ABI-compatible:
+### Permanent owner
 
 ```text
-EspMapGiveMapResult = 20 B
-EspMapAutomapState_applyGiveMapCommand()
-```
-
-### Caller-order owner
-
-```text
-EspPostLoadGiveMapState = 16 B
-stateFNV = 448e587d
+EspPostLoadWeaponSelectState = 8 B
+stateFNV = 699f3cf3
 persistent heap = 0 B
 ```
 
 Real-CYD state:
 
 ```text
-lineTargets=198
-spriteTargets=48
-entranceTargets=15
-linesMutated=198
-spritesMutated=48
-tilesMutated=15
+weaponBefore=2
+requestedWeapon=2
+weaponAfter=2
+viewInvalidationRequested=0
 targetMap=9
 gameplayLoadMapId=2
 loadType=0
 active=1
 ```
 
-### World fingerprints
-
-```text
-mapStateFNV  c5cdfc04 -> 8dba0bb4
-automapFNV   0b2ae445 -> b699bd75
-snapshotFNV  bc9071e9 -> bb714d80
-```
-
-Unchanged non-target owners:
-
-```text
-runtime=bc432a0f
-script=bc9b18ff
-line=3658710d
-texture=537319ad
-topology=d6e8df7d
-```
-
 Semantic proof:
 
 ```text
-allTargetsRevealed=yes
-idempotentPlan=yes
-nonTargetOwnersUnchanged=yes
+selfSelect=yes
+identityAssignment=yes
+updateViewBranchTaken=no
+legacyWeapon=2->2
+legacyIsUpdateView=1->1
 ```
 
-### Fail-closed / RAM / legacy integrity
+Input-owner proof:
 
 ```text
-nullHud=1
-nullOutput=1
-inactiveHud=1
-uncleared=1
-targetMap=1
-gameplayMap=1
-loadType=1
-plannerNull=1
-prepareAtomic=yes
-postActivePrepare=1
-repeat=1
-repeatAtomic=yes
+giveMapFNV=448e587d
+hudClearFNV=b7383e18
+viewFNV=afcdcf74
+facingFNV=95aa1108
+unchanged=yes
+callerOrder=yes
+```
 
-heap8=72700->72700
+Resident/RAM proof:
+
+```text
+snapshotFNV=bb714d80->bb714d80
+mapFNV=8dba0bb4
+automapFNV=b699bd75
+runtimeFNV=bc432a0f
+scriptFNV=bc9b18ff
+lineFNV=3658710d
+textureFNV=537319ad
+topologyFNV=d6e8df7d
+heap8=72684->72684
 largest8=34804->34804
 persistentHeapBytes=0
 packClosed=yes
 ```
 
-Same-build equality witnesses from the supplied complete boot tail:
+Fail-closed proof:
+
+```text
+nullGiveMap=1
+nullOutput=1
+inactiveGiveMap=1
+targetMap=1
+gameplayMap=1
+loadType=1
+count=1
+invalidWeapon=1
+prepareAtomic=yes
+postActivePrepare=1
+repeat=1
+repeatAtomic=yes
+```
+
+Same-build equality witnesses:
 
 ```text
 gameFNV=d073b2d5->d073b2d5
 playerFNV=c64e7862->c64e7862
 hudFNV=b18611d2->b18611d2
-canvasFNV=18faeffd->18faeffd
+canvasFNV=d6d1b92a->d6d1b92a
 renderFNV=f9344dec->f9344dec
-frameFNV=c56f998b->c56f998b
+frameFNV=ee9d9dbc->ee9d9dbc
 legacyRuntimeClear=yes
-legacyGame_givemapCalled=no
+legacyPlayer_selectWeaponCalled=no
 ```
 
-## Historical opcode-9 regression proof
+## Probe completion semantics
 
-The shared world primitive is also used by historical `EV_GIVEMAP`. The tested
-boot reached the full Junction chain, which is impossible if that old probe
-failed:
+A repository audit performed during promotion corrected an older documentation
+assumption: temporary probe `done` flags are terminal-attempt markers, and some
+failure branches also set `done=1`.
+
+Therefore:
 
 ```text
-MAP_INTRO GIVEMAP probe
- -> done=1 only after complete success
- -> SAVEGAME waits for GIVEMAP done
- -> CHANGEMAP waits for SAVEGAME done
- -> later transition/Junction probes follow
+*_isDone() alone != PASS certificate
 ```
 
-So the same hardware boot regression-proves opcode 9 without inventing a missing
-Serial line.
+Every downstream milestone must independently revalidate its predecessor owner/
+world boundary. Historical regression claims must not rely solely on reaching a
+later `isDone()`-gated probe. The current weapon milestone is hardware-proven by
+its complete successful Serial block plus its own strict input validation.
 
 ## Hardware-proven canons through current branch
 
 ```text
 Entrance snapshotFNV=b3811f3d
 Entrance heap=18008 B
+Junction sourceFNV=fefaf5ca
 Junction pre-GIVEMAP snapshotFNV=bc9071e9
 Junction post-GIVEMAP snapshotFNV=bb714d80
 Junction heap=10540 B
-Junction sourceFNV=fefaf5ca
 catalogFNV=ce322e3f
 committed COMMITTED FNV=2c595a62
 JunctionSpawnFNV=ba6af4a7
@@ -222,6 +211,7 @@ JunctionDurableFacingFNV=95aa1108
 postFacingPlayerViewFNV=afcdcf74
 JunctionPostLoadHudClearFNV=b7383e18
 JunctionPostLoadGiveMapFNV=448e587d
+JunctionWeaponSelfSelectFNV=699f3cf3
 ```
 
 ## Exact caller order
@@ -233,8 +223,8 @@ Hud.statBarMessage=NULL                     [hardware-proven]
 Hud.logMessage[0]='\0'                     [hardware-proven]
 if MAP_JUNCTION: Game_givemap()             [hardware-proven]
 else: DoomCanvas_uncoverAutomap()
-Player_selectWeapon(current weapon)         [NEXT after merge]
-initial Game_saveState when !isLoaded       [deferred]
+Player_selectWeapon(player, player->weapon) [hardware-proven]
+if !game->isLoaded: Game_saveState(1,1,1)   [NEXT after merge]
 clear isLoaded/isSaved/activeLoadType       [deferred]
 clear queued events / particles             [deferred]
 isUpdateView=true                           [deferred]
@@ -255,7 +245,8 @@ original behavior/data
  -> finishRotation durable facing                [hardware-proven]
  -> post-load HUD message reset                  [hardware-proven]
  -> direct Junction Game_givemap                 [hardware-proven]
- -> weapon reselection                           [next after merge]
+ -> current-weapon self-selection                [hardware-proven]
+ -> initial post-load save                       [next]
  -> remaining caller-side load completion
  -> ST_PLAYING
  -> native gameplay
@@ -269,12 +260,11 @@ state=9 / ST_INTRO
 page=3
 targetMap=9
 junctionResident=yes
-nativeFacing=yes
 nativeHudClear=yes
 nativePostLoadGiveMap=yes
-finishRotationComplete=yes
+nativeWeaponSelfSelect=yes
 Game_givemapPending=no
-weaponReselectPending=yes
+weaponReselectPending=no
 initialSavePending=yes
 postLoadCleanupPending=yes
 ST_PLAYING=no
@@ -297,13 +287,13 @@ ST_PLAYING not reached
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-post-load-givemap
+MERGE agent/esp32-native-post-load-weapon-self-select
 ```
 
 Hardware-tested firmware:
 
 ```text
-511156120bd877367d13ffa4b98ed6815005bc3c
+24fb8fbf914820500d2e16815e22beb0439c9ba0
 ```
 
 All later commits on this branch must remain documentation-only unless another
@@ -311,10 +301,12 @@ firmware is flashed.
 
 ## Next bounded milestone after merge
 
-Recover exact `main`, then port only:
+Recover exact new `main`, then audit only:
 
 ```c
-Player_selectWeapon(player, player->weapon);
+if (!game->isLoaded) {
+    Game_saveState(game, 1, 1, 1);
+}
 ```
 
-Keep save, cleanup, `ST_PLAYING`, gameplay entities and rendering separate.
+Keep load cleanup, `ST_PLAYING`, gameplay entities and rendering separate.
