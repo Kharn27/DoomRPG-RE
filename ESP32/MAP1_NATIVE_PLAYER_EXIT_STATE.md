@@ -9,15 +9,15 @@ PR   = #63 — native MAP_INTRO level-exit stats
 main = 533784b5483e14a12558fb08c9331d8b744caa88
 ```
 
-Firmware candidate:
+Hardware-tested firmware:
 
 ```text
 f8c5a1c398c0946025aef976f7a997589bae4923
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
-## Objective
+## Objective and result
 
 The previous hardware milestone produced the exact map-derived input for recovered `Player_addLevelStats()`:
 
@@ -30,9 +30,9 @@ effects=1f
 statsFNV=bd41bcfa
 ```
 
-This milestone consumes that value into a small pointer-free native player exit owner. It still does not mutate legacy `Player_t`, open the stats menu or trigger CHANGEMAP.
+This milestone consumes that value into a small pointer-free native player exit owner. It does not mutate legacy `Player_t`, open the stats menu or trigger CHANGEMAP.
 
-## Exact legacy writes
+## Exact legacy writes represented
 
 Recovered `Player_addLevelStats(player, z)` writes only:
 
@@ -46,7 +46,7 @@ berserkerTics = 0
 dogFamiliar = NULL
 ```
 
-The native owner deliberately does not retain `player.time`, `player.moves`, `dogFamiliar` or any Entity pointer. The future gameplay/player core supplies elapsed time and current level moves explicitly.
+The native owner deliberately does not retain `player.time`, `player.moves`, `dogFamiliar` or any Entity pointer. Elapsed time and current level moves are explicit caller inputs.
 
 ## Permanent API
 
@@ -57,11 +57,16 @@ ESP32/include/esp_player_exit_state.h
 ESP32/src/esp_player_exit_state.c
 ```
 
+Hardware-proven ABI:
+
+```text
+EspPlayerExitState       = 28 B
+EspPlayerExitApplyResult = 28 B
+```
+
 State:
 
 ```text
-EspPlayerExitState = 28 B expected
-
 totalTime               uint32
 totalMoves              uint32
 completedLevels         uint32
@@ -74,12 +79,6 @@ reserved                3 B
 
 `familiarActive` is semantic presence only. No pointer is stored.
 
-Result:
-
-```text
-EspPlayerExitApplyResult = 28 B expected
-```
-
 API:
 
 ```text
@@ -87,11 +86,11 @@ EspPlayerExitState_reset(state)
 EspPlayerExitState_apply(state, stats, elapsedTimeMs, levelMoves, result)
 ```
 
-Permanent dependencies are only `stdint`, `string` and `esp_map_level_exit_stats.h`. There is no dependency on legacy Player/Game/Menu/Render/DoomCanvas/Entity or clocks.
+Permanent dependencies are only `stdint`, `string` and `esp_map_level_exit_stats.h`. There is no dependency on legacy Player/Game/Menu/Render/DoomCanvas/Entity, no clock access, no PAK/ZIP I/O and no allocation.
 
 ## Validation rules
 
-The consumer does not blindly trust caller input. Before mutation it verifies the full `EspMapLevelExitStats` contract:
+Before mutation the consumer validates the full `EspMapLevelExitStats` contract:
 
 ```text
 loadMapId 1..32
@@ -107,7 +106,7 @@ markAllMonsters exactly mirrors dead==total when gated
 effect byte exactly matches the derived marks
 ```
 
-Any inconsistent value fails closed with state unchanged and a zero result.
+Invalid input fails closed with state unchanged and a zero result.
 
 ## Application semantics
 
@@ -127,20 +126,9 @@ if markAllMonsters:
     killedMonstersLevels |= completionLevelBit
 ```
 
-`uint32_t` arithmetic preserves the 32-bit bit-pattern/wrap behavior expected on the target.
+`uint32_t` arithmetic preserves target 32-bit bit-pattern/wrap behavior.
 
-## Temporary real-CYD probe
-
-Files:
-
-```text
-ESP32/include/native_player_exit_state_probe.h
-ESP32/src/native_player_exit_state_probe.c
-```
-
-The probe runs after the hardware-proven level-exit stats probe.
-
-### Deterministic source-apply proof
+## Real-CYD deterministic apply proof
 
 Seed:
 
@@ -156,65 +144,78 @@ elapsed              = 12345 ms
 levelMoves           = 37
 ```
 
-With the real intro snapshot (`effects=1f`), hardware must prove:
+Hardware result with real intro `effects=1f`:
 
 ```text
-time/moves accumulate exactly
-completedLevels ORs bit 00000001
-killed/found masks unchanged
-berserker -> 0
-familiar -> 0
-source result flags exact
+stateBytes=28
+resultBytes=28
+initialFNV=940b0171
+appliedFNV=298eaaa4
+resultFNV=5d10a566
+
+totalTime  10203040 -> 10206079
+totalMoves 01020304 -> 01020329
+completed  00000004 -> 00000005
+killed     00000008 -> 00000008
+secrets    00000010 -> 00000010
+berserker  9 -> 0
+familiar   1 -> 0
 ```
 
-Static little-endian ABI calculations predict these FNVs; hardware remains authoritative:
+The precomputed little-endian fingerprints matched the real CYD exactly.
+
+## Mask / gate proof
+
+Hardware:
 
 ```text
-initialFNV = 940b0171
-appliedFNV = 298eaaa4
-resultFNV  = 5d10a566
+sourceCompleted=1
+sourceSecrets=0
+sourceMonsters=0
+repeatIdempotent=1
+allMasks=1
+allStateFNV=c93e8128
+noStatsGate=1
+mapId2Gate=1
 ```
 
-The probe then reapplies the same completion with zero elapsed/moves and requires mask/reset idempotence.
-
-### Gate proof
-
-It consumes the already-proven collector variants:
+Therefore:
 
 ```text
-showStats=0
-loadMapId=2
+same completion with 0 elapsed/moves -> progression/reset idempotent
+showStats=0 -> no progression-mask mutation
+loadMapId=2 -> no progression-mask mutation
+valid all-complete stats -> all three progression masks OR the level bit
 ```
 
-Both must still accumulate time/moves and clear berserker/familiar, while leaving all progression masks unchanged.
+## Live legacy projection
 
-### All-mask proof
-
-A structurally valid derived snapshot sets both found/dead counts equal to totals, therefore:
+The probe seeded native state from the live legacy exit-related fields without modifying legacy Player and captured once:
 
 ```text
-markCompleted=1
-markAllSecrets=1
-markAllMonsters=1
-effects=7f
+elapsed=64325
+moves=0
+projection=1
+liveStateFNV=57fce418
+legacyPlayerUnchanged=yes
 ```
 
-All three progression masks must OR the same level bit. Static predicted state FNV is `c93e8128`; hardware is final truth.
+The live elapsed value is run-timing-specific; the contract is exact formula agreement and legacy equality.
 
-### Live legacy projection
-
-Without modifying legacy Player, the probe seeds native state from the live legacy exit-related fields, captures once:
+## Rollback / pointer boundary
 
 ```text
-elapsed = uptime - player.time
-moves   = player.moves
+rollbackFNV=940b0171
+rollback=1
+familiarSemanticOnly=yes
+entityPointerStored=no
 ```
 
-and verifies the native post-state formula exactly. Legacy Player remains an equality witness only.
+No Entity/familiar pointer crosses into permanent native ownership.
 
-### Fail closed
+## Fail closed
 
-Hardware must prove:
+Hardware proof:
 
 ```text
 nullState=1
@@ -226,60 +227,92 @@ rangeMismatch=1
 stateAtomic=yes
 ```
 
-## RAM / integrity target
+## RAM / integrity
 
-Hardware-proven persistent native heap entering this milestone:
+Hardware-proven persistent native heap entering this milestone was `18008 B`.
+
+This milestone adds no persistent allocation:
+
+```text
+heap8      65632 -> 65632 delta=0
+largest8   34804 -> 34804 delta=0
+persistentHeapBytes=0
+```
+
+Therefore persistent native total remains exactly:
 
 ```text
 18008 B
 ```
 
-Both state and result are caller-owned values. Target:
+Same-build integrity witnesses:
 
 ```text
-persistentHeapBytes=0
-heap8 delta=0
-largest8 delta=0
-hardware persistent total remains 18008 B
+frameFNV        ef79123a -> ef79123a
+lineStateFNV    e5e74861
+spriteTopologyFNV=3f321e43
 ```
 
-Integrity requires exact preservation of:
+Legacy witnesses:
 
 ```text
-lineStateFNV      e5e74861
-spriteTopologyFNV 3f321e43
-framebuffer
-legacy Player exit-related fields
-legacy menu/transition state
-legacy Render runtime clear
-PAK closed
-entities=0 monsters=0
+playerExitFNV = f5cbf9f5 -> f5cbf9f5
+transitionFNV = f450c49f -> f450c49f
+legacyRuntimeClear=yes
+Player_addLevelStatsCalled=no
+playerMutation=no
+menuMutation=no
+transitionTriggered=no
 ```
 
-## Expected Serial family
+## Final PARK
 
 ```text
-[PLAYEREXITPROBE] ARMED ...
-
-=== Doom RPG ESP32-native player exit-state application ===
-[PLAYEREXITPROBE] CONTRACT ...
-[PLAYEREXIT] READY stateBytes=28 resultBytes=28 elapsed=12345 moves=37 initialFNV=... appliedFNV=... resultFNV=... effects=1f ...
-[PLAYEREXIT] MASKS sourceCompleted=1 sourceSecrets=0 sourceMonsters=0 repeatIdempotent=1 allMasks=1 allStateFNV=... noStatsGate=1 mapId2Gate=1
-[PLAYEREXIT] LIVE elapsed=... moves=... projection=1 liveStateFNV=... legacyPlayerUnchanged=yes
-[PLAYEREXIT] STATE rollbackFNV=... rollback=1 familiarSemanticOnly=yes entityPointerStored=no
-[PLAYEREXIT] FAILCLOSED ... stateAtomic=yes
-[PLAYEREXIT] RAM ... persistentHeapBytes=0 ...
-[PLAYEREXIT] LEGACY ... playerMutation=no menuMutation=no transitionTriggered=no
-[PLAYEREXIT] PARK ... nativePlayerExitState=yes ... entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
+state=9 page=3
+nativePlayerExitState=yes
+stateBytes=28
+resultBytes=28
+persistentBytes=0
+nativeExitStats=yes
+playerMutationProven=yes
+legacyPlayerMutation=no
+entities=0
+monsters=0
+noGameplay=yes
 ```
 
-Use normal PlatformIO environment `esp32-cyd`.
+Stable real-CYD heartbeats:
 
-No CI status is published for the candidate. No local build or real-CYD PASS is claimed.
+```text
+70245 ms heap=131396 heap8=65632 largest8=34804
+75246 ms heap=131396 heap8=65632 largest8=34804
+80247 ms heap=131396 heap8=65632 largest8=34804
+```
 
-## Boundary after PASS
+## Architecture boundary after PASS
 
-A PASS will complete native ownership/application of the `Player_addLevelStats()` exit-state writes while keeping legacy Player untouched.
+Native ownership now includes both halves of recovered `Player_addLevelStats()`:
 
-The next bounded consumer should then be the stats-menu transition intent/owner for the already-proven `CHANGEMAP showStats=1` path. Actual map swap remains later.
+```text
+map-derived level-exit snapshot
++
+pointer-free player exit-state application
+```
+
+Legacy Player remains untouched.
+
+Still outside:
+
+```text
+native stats-menu intent/consumer
+actual CHANGEMAP / Junction map swap
+full native entity/monster gameplay
+legacy-world-free gameplay loop
+native gameplay renderer
+ST_PLAYING progression
+sound playback
+```
+
+The next bounded milestone should own the stats-menu transition intent for the already-proven `CHANGEMAP showStats=1` path. Actual map swap remains later.
+
+The real classic CYD Serial log is the final hardware source of truth.
