@@ -51,45 +51,27 @@ void EspPlayerView_reset(void);
 int EspPlayerView_isReady(void);
 const EspPlayerViewState* EspPlayerView_view(void);
 
-/*
- * Apply one already-validated spawn projection into the native player/view
- * owner. The application is once-only while active. Invalid/refused input is
- * fail-closed and leaves the owner unchanged.
- *
- * The recovered legacy Hud.isUpdate=true write is represented as
- * hudRefreshPending=1. Facing refresh, Player_setup and initial tile-enter stay
- * pending and are deliberately not executed here.
- */
 EspPlayerViewApplyStatus EspPlayerView_applySpawn(
     const EspPlayerSpawnState* spawn);
 
-/*
- * Transfer the recovered Hud.isUpdate=true responsibility to a matching native
- * HUD dirty owner. Only hudRefreshPending is cleared. Facing, Player_setup and
- * tile-enter remain pending. Invalid identity/order is fail-closed.
- */
 int EspPlayerView_consumeHudRefresh(uint8_t targetMapId,
                                     uint8_t gameplayLoadMapId,
                                     uint8_t loadType);
-
-/*
- * Transfer the fresh-map Player_setup responsibility to the matching native
- * player session owner. This is valid only after HUD routing. It clears only
- * playerSetupPending; facing and initial tile-enter remain pending.
- */
 int EspPlayerView_consumePlayerSetup(uint8_t targetMapId,
                                      uint8_t gameplayLoadMapId,
                                      uint8_t loadType);
-
-/*
- * Mark the first fresh-map Game_executeTile() call complete after native tile
- * dispatch succeeds (or legitimately finds/executes no eligible command).
- * Only tileEnterPending is cleared. The finishRotation/final-facing semantic
- * remains represented by facingRefreshPending=1.
- */
 int EspPlayerView_consumeTileEnter(uint8_t targetMapId,
                                    uint8_t gameplayLoadMapId,
                                    uint8_t loadType);
+
+/*
+ * Consume the final durable checkFacingEntity responsibility after both
+ * finishRotation tile/orientation boundaries are complete. This clears only
+ * facingRefreshPending. HUD/setup/tile-enter must already be fully consumed.
+ */
+int EspPlayerView_consumeFacing(uint8_t targetMapId,
+                                uint8_t gameplayLoadMapId,
+                                uint8_t loadType);
 
 #ifdef __cplusplus
 }

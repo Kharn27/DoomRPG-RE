@@ -1,5 +1,6 @@
 #include "native_intro_dispose.h"
 #include "native_committed_transition_probe.h"
+#include "native_junction_facing_probe.h"
 #include "native_junction_finish_rotation_tile_probe.h"
 #include "native_junction_hud_refresh_probe.h"
 #include "native_junction_initial_tile_probe.h"
@@ -79,39 +80,19 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32JunctionInitialTileProbe_reset();
     Esp32JunctionOrientationProbe_reset();
     Esp32JunctionFinishRotationTileProbe_reset();
+    Esp32JunctionFacingProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     __real_Esp32IntroDispose_service(doomRpg);
 
     /*
-     * Final Continue -> validated intro teardown -> native BSP pass 1 -> native
-     * compact resident arena -> allocation-free indexed accessor validation ->
-     * compact mutable tile state -> allocation-free tile/event lookup ->
-     * read-only event descriptor/bytecode linkage -> compact mutable script
-     * state + side-effect-free execution filtering -> opcode inventory + first
-     * reversible native state-opcode execution -> allocation-free string spans
-     * + UI/string intent translation -> bounded pack-backed one-string reader
-     * -> compact EV_FORCEMESSAGE status-message owner -> compact DIALOG/NOBACK
-     * pause owner -> bounded EV_NOTE notebook owner -> pure EV_CHECK_KEY control
-     * gate -> bounded EV_PASSWORD pause/submit owner -> compact line open/lock
-     * world state + reversible EV_OPENLINE/EV_CLOSELINE execution -> compact
-     * line texture 9/10 state + reversible EV_UNLOCK execution -> compact
-     * line/sprite automap reveal state + reversible EV_GIVEMAP execution ->
-     * caller-owned EV_SAVEGAME future-save route state -> caller-owned
-     * EV_CHANGEMAP pending transition intent -> compact map-sprite entity
-     * topology + corrected isolated/contextual EV_SHOW/EV_HIDE proof -> pure
-     * native level-exit stats snapshot -> pointer-free native player exit-state
-     * application -> pointer-free LEVEL/OVERALL stats-menu intent -> immutable
-     * map catalog + corrected resource/gameplay-ID Junction PAK/BSP transition
-     * preflight -> explicit empty-only resident lifecycle + reversible
-     * Entrance/Junction/Entrance handoff -> stats-ack-gated committed native
-     * Junction residency with transactional source recovery -> fresh-map native
-     * player spawn/load projection -> permanent native player/view application
-     * -> native post-spawn HUD dirty routing -> native fresh-map Player_setup
-     * -> bounded native first tile dispatch -> bounded finishRotation orientation
-     * preparation -> bounded second tile dispatch while final-facing remains
-     * pending. Each stage arms first and executes on a later Arduino loop.
+     * Final Continue -> validated intro teardown -> compact native map/resident
+     * owners -> bounded opcode/UI/world semantic owners -> committed Junction
+     * residency -> fresh-map spawn/player/HUD/setup -> first tile dispatch ->
+     * finishRotation orientation -> second tile dispatch -> durable native
+     * facing resolution. ST_PLAYING/gameplay/render remain outside this chain.
+     * Each stage arms first and executes on a later Arduino loop.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -147,4 +128,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32JunctionInitialTileProbe_service(doomRpg);
     Esp32JunctionOrientationProbe_service(doomRpg);
     Esp32JunctionFinishRotationTileProbe_service(doomRpg);
+    Esp32JunctionFacingProbe_service(doomRpg);
 }
