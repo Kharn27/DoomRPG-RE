@@ -17,11 +17,15 @@ Merged evidence: [`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_
 ```text
 branch = agent/esp32-native-resident-handoff
 base   = 9f981f490282200f216aef66d22608d2244beb00
-firmware candidate = f71520281254ff9d0b2d5e4be1b3611e29ca87c4
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+firmware candidate = 13f7f3787bf6de08595167081af1ea628ae30946
+status = DIAGNOSTIC V2; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
 Active evidence: [`MAP1_NATIVE_RESIDENT_HANDOFF.md`](MAP1_NATIVE_RESIDENT_HANDOFF.md).
+
+Candidate v1 `f71520281254ff9d0b2d5e4be1b3611e29ca87c4` reached the new handoff probe on the real CYD but failed safely at the initial `unsafe source boundary` guard before any `resetAll()` or source teardown. All immediately preceding transition-preflight witnesses remained valid: Entrance resident FNVs were unchanged, the PAK was closed, legacy Render runtime was clear, `entities=0`, `monsters=0`, and the system remained stable in `ST_INTRO` page 3. Because the v1 guard combined lifecycle/capture/snapshot checks into one boolean, the exact subcondition could not be identified from that log alone.
+
+Diagnostic v2 `13f7f3787bf6de08595167081af1ea628ae30946` keeps the same fail-closed behavior but splits the pre-teardown audit into explicit legacy/lifecycle, owner-readiness, payload/FNV and cardinality diagnostics. It must still refuse destruction unless the complete Entrance source snapshot is canonical.
 
 The candidate adds a generic explicit resident-map lifecycle and a destructive-but-auto-restored `Entrance -> EMPTY -> Junction -> EMPTY -> Entrance` hardware proof. It does not call legacy `DoomCanvas_loadMap()`, does not commit Junction as the active gameplay map, and must PARK with Entrance restored.
 
@@ -341,7 +345,7 @@ Branch / exact firmware:
 
 ```text
 agent/esp32-native-resident-handoff
-f71520281254ff9d0b2d5e4be1b3611e29ca87c4
+13f7f3787bf6de08595167081af1ea628ae30946
 ```
 
 Capture:
@@ -358,7 +362,17 @@ Capture:
 [ALIVE]
 ```
 
-No CI status is published. No local build or hardware PASS is claimed.
+If v2 still refuses before teardown, the new diagnostic lines identify the failing layer explicitly:
+
+```text
+[RESIDENTHANDOFFPROBE] SOURCEBOUNDARY ...
+[RESIDENTHANDOFFPROBE] SOURCEOWNERS ...
+[RESIDENTHANDOFFPROBE] SOURCESNAPSHOT ...
+[RESIDENTHANDOFFPROBE] SOURCEFNV ...
+[RESIDENTHANDOFFPROBE] SOURCECOUNTS ...
+```
+
+No CI status is published. No local PlatformIO build or hardware PASS is claimed for v2.
 
 ## Architecture boundary
 
@@ -399,4 +413,4 @@ native gameplay renderer
 sound playback
 ```
 
-Do not merge until exact firmware `f71520281254ff9d0b2d5e4be1b3611e29ca87c4` passes on the real CYD and every later commit remains documentation-only.
+Do not merge until exact firmware `13f7f3787bf6de08595167081af1ea628ae30946` passes on the real CYD and every later commit remains documentation-only.
