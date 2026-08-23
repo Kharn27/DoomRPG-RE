@@ -9,13 +9,13 @@ PR   = #67 — native reversible resident handoff
 main = fddae899fd7dc01b20cf6bd532489326380954e3
 ```
 
-Firmware candidate:
+Hardware-tested firmware content:
 
 ```text
 759b7f05a7c1940e98caf68e4041faa69b34cfc9
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
@@ -29,7 +29,7 @@ with exact source restoration, zero final heap drift and zero largest-block frag
 
 This milestone opens the next permanent boundary: a transition state machine that owns the stats acknowledgement and the destructive point of no return. A successful commit deliberately leaves Junction resident instead of restoring Entrance.
 
-Legacy `Game_changeMap()` with `showStats=1` performs two distinct moments:
+Recovered legacy `Game_changeMap()` with `showStats=1` performs two distinct moments:
 
 ```text
 Game_changeMap()
@@ -112,11 +112,13 @@ EspMapCommittedTransition_ackStats()
 EspMapCommittedTransition_commit()
 ```
 
+Hardware confirms status `8` on the final commit, which is permanent enum value `ESP_MAP_COMMITTED_TRANSITION_OK`.
+
 ## Pending consumption
 
 `begin()` consumes the existing caller-owned `EspMapChangeMapState` only after all source/result/stats/preflight relationships validate.
 
-Real Entrance command already hardware-proven:
+Real Entrance command:
 
 ```text
 event=1
@@ -154,11 +156,11 @@ WAIT_STATS
  -> READY
 ```
 
-A commit attempt before acknowledgement must fail closed and preserve Entrance exactly.
+A commit attempt before acknowledgement fails closed and preserves Entrance exactly.
 
 Repeated acknowledgement in READY is an exact no-op.
 
-The probe supplies the acknowledgement directly. It does not pretend that stats UI rendering/input exists yet.
+The probe supplies the acknowledgement directly. It does not claim that stats UI rendering/input exists yet.
 
 ## Commit transaction
 
@@ -200,7 +202,21 @@ reset partial target
 
 The pending CHANGEMAP remains consumed after rollback, matching legacy timing: the transition parameter had already been cleared before the later load attempt.
 
-## Real target canons inherited from PR #67
+## Real target canons
+
+Junction source identity:
+
+```text
+resourceMapId=9
+resource=/junction.bsp
+gameplayLoadMapId=2
+entryOffset=1974397
+bytes=21051
+crc32=4a2c5800
+sourceFNV=fefaf5ca
+spawnIndex=943
+spawnDirection=64
+```
 
 Junction native resident snapshot:
 
@@ -240,11 +256,11 @@ nodes=77 lines=207 sprites=48 events=66 byteCodes=319 strings=126
 compact entities=30 enemies=0 destructibles=3
 ```
 
-Legacy `Game.entities` and `Game.monsters` must remain zero.
+Legacy `Game.entities` and `Game.monsters` remain zero.
 
-## State fingerprints
+## Hardware-proven state fingerprints
 
-Static 24-byte little-endian predictions for the real Entrance -> Junction path:
+The real CYD exactly confirmed the static 24-byte little-endian predictions:
 
 ```text
 WAIT_STATS  FNV = 66fe636a
@@ -253,157 +269,265 @@ ROLLED_BACK FNV = 2dec1442
 COMMITTED   FNV = 2c595a62
 ```
 
-These are candidate predictions until the real CYD confirms them.
+This proves the permanent ABI and all four real transition phases used by the probe.
 
-## Temporary hardware probe
+## Real-CYD forced rollback proof
 
-Files:
+The probe intentionally supplied a Junction inventory with correct target bytes/CRC/FNV/gameplay ID but a structurally invalid compact plan. This passed state-machine identity checks, released Entrance, then failed inside target runtime construction as intended:
 
 ```text
-ESP32/include/native_committed_transition_probe.h
-ESP32/src/native_committed_transition_probe.c
+[MAPRT] FAILED unsupported plan/source
 ```
 
-The probe arms only after the hardware-proven reversible resident-handoff probe has restored Entrance.
+That line is expected PASS behavior in this milestone.
 
-Sequence:
+The state machine then rebuilt Entrance using the caller-owned source inventory. Hardware proved:
 
 ```text
-capture canonical Entrance
- -> reconstruct real event 1 / command offset 1 EV_CHANGEMAP
- -> prepare real LEVEL stats intent
- -> preflight resource map 9 / Junction
- -> inventory Entrance + Junction
- -> prove invalid begin atomicity
- -> valid begin consumes pending -> WAIT_STATS
- -> prove pre-ACK commit cannot tear down source
- -> ACK -> READY
- -> prove bad target fingerprint inventory rejected before teardown
- -> force structurally invalid target plan after validation
- -> source teardown occurs
- -> target runtime build fails
- -> automatic Entrance recovery
- -> require exact source snapshot/heap/largest restoration
- -> true READY commit
- -> Junction full resident build
- -> leave Junction resident at PARK
+forced=1
+phase=ROLLED_BACK
+stateFNV=2dec1442
+sourceRestored=yes
+snapshotFNV=b3811f3d
+heap8=65584->65584
+largest8=34804->34804
+packClosed=yes
 ```
 
-The forced rollback inventory preserves the real target bytes/CRC/FNV/gameplay ID but corrupts one compact-plan field. This intentionally passes the state-machine prevalidation and fails inside `EspMapRuntime_loadPackEntry()` only after source release, exercising the permanent recovery path.
+Therefore the recovery path is proven after the destructive point has actually been crossed.
 
-## Strict acceptance
+## Real-CYD final committed swap
 
-Before final commit:
+After the rollback proof, a fresh READY state performed the true target commit.
+
+Hardware output:
 
 ```text
-Entrance snapshotFNV=b3811f3d
-pending real EV_CHANGEMAP active
+status=8 / ESP_MAP_COMMITTED_TRANSITION_OK
+phase=COMMITTED
+committed=1
+committedStateFNV=2c595a62
+targetSnapshotFNV=bc9071e9
+payload=10410
+targetHeapGain=7468
+sourceHeap=65584
+targetHeap=73052
+largest=34804->34804
+packClosed=yes
+```
+
+The resident-cost equation matched exactly:
+
+```text
+Entrance heap cost = 18008 B
+Junction heap cost = 10540 B
+expected free-heap gain = 18008 - 10540 = 7468 B
+observed gain = 73052 - 65584 = 7468 B
+```
+
+The final native target fingerprints all matched the previously proven Junction canons:
+
+```text
+arena=bc432a0f
+map=c5cdfc04
+script=bc9b18ff
+line=3658710d
+texture=537319ad
+automap=0b2ae445
+topology=d6e8df7d
+entities=30
+enemies=0
+destructibles=3
+```
+
+Most importantly, there is no final source restoration:
+
+```text
+junctionResident=yes
+sourceRestored=no
+targetLeftResident=yes
+mapSwapCommitted=yes
+```
+
+This is the first hardware-proven committed resident map replacement in the native port.
+
+## Fail-closed / atomic gates
+
+Hardware proved:
+
+```text
+invalidBegin=1
+preAckCommit=1
+badInventory=1
+repeatCommit=1
+stateAtomic=yes
+sourcePreservedBeforeCommit=yes
+repeatAck=1
+```
+
+The pre-ACK and bad-inventory paths cannot tear down Entrance. Repeated final commit is refused without mutating the committed state.
+
+## Pending / stats boundary
+
+Real hardware begin/ACK output:
+
+```text
+stateBytes=24
+sourceMap=1
+targetMap=9
+gameplayLoadMapId=2
+spawnParam=0
+menuKind=1 / LEVEL
+pendingConsumed=1
+phase=WAIT_STATS
+waitStateFNV=66fe636a
 preflightFNV=108e5c7b
 statsIntentFNV=96afe901
 ```
 
-State machine:
+then:
 
 ```text
-sizeof(state)=24
-WAIT_STATS=66fe636a
-READY=0ef58ea8
-ROLLED_BACK=2dec1442
-COMMITTED=2c595a62
-pendingConsumed=1
-statsAcknowledged=1 before commit
+statsAcknowledged=1
+phase=READY
+readyStateFNV=0ef58ea8
+repeatAck=1
 ```
 
-Forced rollback:
+The Serial `BEGIN` line prints `menuKind=1pendingConsumed=1` without a separating space. This is formatting-only; both numeric values are unambiguous and the full state FNV matches exactly.
+
+## Legacy / framebuffer integrity
+
+The committed swap touches only native resident owners and the new native transition state.
+
+Hardware same-probe witnesses:
 
 ```text
-source restored snapshotFNV=b3811f3d
-heap == pre-rollback source heap
-largest == pre-rollback source largest
-PAK closed
-```
-
-Final commit:
-
-```text
-Junction snapshotFNV=bc9071e9
-Junction payload=10410 B
-source heap -> target heap gain = 18008 - 10540 = 7468 B
-largest target == largest source
-PAK closed
-second target capture byte-exact
-repeat commit refused without mutation
-```
-
-Legacy/frame boundary:
-
-```text
-framebuffer unchanged
-legacy Player witness unchanged
-legacy transition/menu witness unchanged
-legacy Render runtime clear
+playerFNV=0b2ae445->0b2ae445
+transitionFNV=95142f8f->95142f8f
+frameFNV=b8924a47->b8924a47
+legacyRuntimeClear=yes
 DoomCanvas_loadMapCalled=no
 menuMutation=no
 legacyPlayerMutation=no
 spawnApplied=no
 loadTypeMutation=no
-Game.entities=0
-Game.monsters=0
-ST_INTRO page=3
 ```
 
-Final PARK intentionally differs from all earlier resident probes:
+`transitionFNV=95142f8f` and `frameFNV=b8924a47` are same-build/same-probe equality witnesses, not cross-build permanent canons.
+
+The unchanged visible intro frame is intentional. Native resident lifecycle and gameplay presentation are now explicitly decoupled.
+
+## Final PARK boundary
+
+Real hardware proved:
 
 ```text
+state=9
+page=3
+committedTransition=yes
 mapSwapCommitted=yes
 sourceMap=1
 targetMap=9
 junctionResident=yes
-sourceRestored=no          # deliberate success condition
+sourceRestored=no
 targetLeftResident=yes
+nativePayload=10410
+persistentHeapProven=10540
 pendingConsumed=yes
 statsAck=yes
 spawnPending=yes
 spawnApplied=no
 ST_PLAYING=no
+legacy entities=0
+legacy monsters=0
+noGameplay=yes
 ```
 
-The visible intro framebuffer is intentionally unchanged. This milestone proves resident ownership and transition sequencing, not gameplay presentation.
-
-## Expected Serial family
+Post-PARK heartbeat observed:
 
 ```text
-[COMMITTRANSITIONPROBE] ARMED ...
-
-=== Doom RPG ESP32-native committed Junction transition ===
-[COMMITTRANSITIONPROBE] CONTRACT ...
-
-[BSPREAD] ... Junction preflight/inventories ...
-[MAPRT] FAILED unsupported plan/source   # intentional forced rollback target
-[MAPRT] ... Entrance recovery ...
-[MAPRT] ... Junction final commit ...
-
-[COMMITTRANSITION] BEGIN ...
-[COMMITTRANSITION] ACK ...
-[COMMITTRANSITION] GATES ...
-[COMMITTRANSITION] ROLLBACK ...
-[COMMITTRANSITION] COMMIT ...
-[COMMITTRANSITION] TARGETFNV ...
-[COMMITTRANSITION] LEGACY ...
-[COMMITTRANSITION] PARK ...
-[ALIVE] ...
+uptime=40092 ms
+heap=138816
+heap8=73052
+largest8=34804
+SD=ready
+VIDEO=ready
+CORE=ready
 ```
 
-Normal build environment:
+The existing `ZIP=ready` heartbeat label does not imply runtime ZIP map access. Runtime backing remains `/DoomRPG-ESP32.pak`.
+
+## Same-build inherited reversible-handoff witness
+
+The same flashed firmware re-ran PR #67's reversible handoff immediately before the committed transition. It remained exact with this build's absolute heap baseline:
 
 ```text
-esp32-cyd
+SOURCE   heap8=65584
+EMPTY1   heap8=83592
+JUNCTION heap8=73052
+EMPTY2   heap8=83592
+RESTORED heap8=65584
+largest8=34804 throughout
+sourceCost=18008
+junctionCost=10540
+finalDelta=0
+fragmentationDelta=0
 ```
 
-No CI status is published for the candidate and no local build or hardware PASS is claimed.
+The 8-byte absolute shift versus the earlier PR #67 firmware is build-context only. Resident costs, payloads, fingerprints and exact restoration remain unchanged.
+
+## Hardware acceptance status
+
+The real classic CYD proved:
+
+```text
+real pending CHANGEMAP consumed exactly once
+WAIT_STATS gate
+explicit stats ACK
+pre-ACK fail closed
+inventory fail closed
+post-teardown forced rollback
+byte-exact Entrance recovery
+real Junction commit
+Junction left resident
+exact 7468 B resident-cost delta
+largest block unchanged
+all target FNVs exact
+PAK closed
+legacy runtime untouched
+framebuffer untouched
+spawn/loadType untouched
+ST_PLAYING not reached
+```
+
+This milestone is **REAL-CYD HARDWARE PASS / MERGE-READY**.
+
+Hardware-tested firmware content:
+
+```text
+759b7f05a7c1940e98caf68e4041faa69b34cfc9
+```
+
+Every later commit on this branch must remain documentation-only unless another firmware is flashed.
 
 ## Boundary after PASS
 
-A PASS would establish for the first time that the native engine has a durable point-of-no-return transition owner and can leave Junction as the active resident map while all legacy gameplay/render state remains untouched.
+The native engine now owns a durable point-of-no-return transition and can leave Junction as the active resident map while all legacy gameplay/render state remains untouched.
 
-The next bounded milestone should own **spawn/loadType semantics** using the already retained `spawnParam` plus Junction BSP header values (`spawnIndex=943`, `spawnDirection=64`) before opening `ST_PLAYING` or native gameplay rendering.
+Next bounded milestone after merge should own **native player spawn/load semantics** using:
+
+```text
+retained CHANGEMAP spawnParam=0
+Junction BSP spawnIndex=943
+Junction BSP spawnDirection=64
+gameplayLoadMapId=2
+```
+
+That milestone should still avoid opening full gameplay or `ST_PLAYING` until the exact legacy `Game_spawnPlayer()` / loadType semantics are re-audited.
+
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-committed-transition
+```
