@@ -25,7 +25,7 @@ Older milestone archives remain in this directory and are indexed by Git history
 
 ## Latest merged boundary
 
-PR #68 hardware-proved:
+PR #68 hardware-proved the first committed native resident map replacement:
 
 ```text
 EspMapCommittedTransitionState = 24 B
@@ -45,7 +45,7 @@ spawnApplied=no
 ST_PLAYING=no
 ```
 
-Junction remains the active compact native resident map:
+Junction resident canon:
 
 ```text
 snapshotFNV=bc9071e9
@@ -56,32 +56,28 @@ bc432a0f / c5cdfc04 / bc9b18ff / 3658710d / 537319ad / 0b2ae445 / d6e8df7d
 compact entities=30 enemies=0 destructibles=3
 ```
 
-Legacy `Game.entities`, `Game.monsters` and legacy Render runtime remain untouched.
+## Current merge-ready milestone
 
-## Current candidate
-
-[`MAP1_NATIVE_JUNCTION_SPAWN.md`](MAP1_NATIVE_JUNCTION_SPAWN.md) introduces a permanent pointer-free projection of recovered `Game_spawnPlayer()` placement for the already committed Junction map.
+[`MAP1_NATIVE_JUNCTION_SPAWN.md`](MAP1_NATIVE_JUNCTION_SPAWN.md) hardware-proves a permanent pointer-free projection of recovered `Game_spawnPlayer()` placement for the already committed Junction map.
 
 ```text
 branch = agent/esp32-native-junction-spawn
 base   = 00268a100c6662cb883f9a02d979b4f29eecbf12
-firmware candidate = 08a3a29c5e4e4a64000fa12a877299bbb1e772a0
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 08a3a29c5e4e4a64000fa12a877299bbb1e772a0
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 ### Permanent API
 
 ```text
-EspPlayerSpawnState = 24 B expected classic-ESP32 ABI
+EspPlayerSpawnState = 24 B
 persistent heap = 0 B
 
 EspPlayerSpawn_reset
 EspPlayerSpawn_prepareCommitted
 ```
 
-The API requires a COMMITTED transition plus a complete target inventory matching the current resident runtime.
-
-It supports only the ordinary fresh-map load context:
+The API requires a COMMITTED transition plus a complete target inventory matching the current resident runtime. It supports only the ordinary fresh-map load context:
 
 ```text
 loadType=0
@@ -90,51 +86,7 @@ gameIsLoaded=0
 
 Saved-game restoration remains fail-closed.
 
-### Recovered placement semantics
-
-When `spawnParam == 0`:
-
-```text
-x = mapSpawnIndex % 32
-y = mapSpawnIndex / 32
-angle = mapSpawnDir
-```
-
-When `spawnParam != 0`:
-
-```text
-x = spawnParam & 31
-y = (spawnParam >> 5) & 31
-angle = (spawnParam >> 10) & 255
-```
-
-Common projected placement:
-
-```text
-worldX = x*64 + 32
-worldY = y*64 + 32
-viewZ=36
-viewZOld=4
-```
-
-The candidate does **not** execute the next legacy effects:
-
-```text
-DoomCanvas_checkFacingEntity
-Player_setup
-initial Game_executeTile
-ST_PLAYING
-```
-
-Instead the native state records:
-
-```text
-facingRefreshPending=1
-playerSetupPending=1
-tileEnterPending=1
-```
-
-### Real Junction prediction
+### Hardware-proven real Junction placement
 
 Committed transition:
 
@@ -149,86 +101,139 @@ spawnIndex=943
 spawnDirection=64
 ```
 
-Expected state:
+Real CYD state:
 
 ```text
+stateBytes=24
+stateFNV=ba6af4a7
+targetMap=9
+gameplayLoadMapId=2
+source=HEADER
 tileIndex=943
 tile=15/29
 world=992/1888
 angle=64
 viewZ=36
 viewZOld=4
-spawnSource=HEADER
 loadType=0
+active=1
 ```
 
-Static 24-byte FNV prediction:
+`ba6af4a7` is now a hardware canon.
 
-```text
-ba6af4a7
-```
+### Hardware-proven packed override
 
-This remains a candidate value until real-CYD confirmation.
-
-### Synthetic packed-override prediction
-
-Probe-local committed transition copy:
+Probe-local committed-state copy:
 
 ```text
 spawnParam=00030167
-x=7
-y=11
-angle=192
 tileIndex=359
+tile=7/11
 world=480/736
-spawnSource=OVERRIDE
+angle=192
+source=OVERRIDE
+overrideUsed=1
+headerIgnored=yes
+stateFNV=e0a5110b
 ```
 
-Static FNV prediction:
+`e0a5110b` is now a hardware canon. The real transition was not changed.
+
+### Follow-up boundary
+
+The projection records but does not execute:
 
 ```text
-e0a5110b
-```
-
-The real committed transition remains unchanged.
-
-### Hardware probe acceptance
-
-The temporary probe runs after committed Junction residency and must prove:
-
-```text
-real stateBytes=24
-real stateFNV=ba6af4a7
-real tile=15/29
-real world=992/1888
-real angle=64
-
-override stateFNV=e0a5110b
-override tile=7/11
-override world=480/736
-override angle=192
-
-fresh loadType=0
-saved/loaded contexts refused
-all invalid inputs fail closed with zero output
-
-Junction snapshot bc9071e9 unchanged
-heap8 delta=0
-largest8 delta=0
-PAK closed
-framebuffer unchanged
-legacy placement fields unchanged
-legacy Player unchanged
-legacy Render runtime clear
-legacy entities=0
-legacy monsters=0
+facingRefreshPending=1
+playerSetupPending=1
+tileEnterPending=1
 spawnApplied=no
-ST_PLAYING=no
+facingApplied=no
+playerSetupApplied=no
+tileEnterApplied=no
 ```
 
-Expected final PARK:
+Therefore this milestone still does not call or emulate:
 
 ```text
+DoomCanvas_checkFacingEntity
+Player_setup
+initial Game_executeTile
+ST_PLAYING
+```
+
+### Fail-closed hardware proof
+
+```text
+nullTransition=1
+nullInventory=1
+nullOutput=1
+notCommitted=1
+loadType=1
+loadedWorld=1
+targetMismatch=1
+runtimeMismatch=1
+badHeaderSpawn=1
+reset=1
+outputAtomic=yes
+```
+
+### Resident / RAM integrity
+
+```text
+snapshotFNV=bc9071e9->bc9071e9
+targetLeftResident=yes
+payload=10410
+entities=30
+enemies=0
+destructibles=3
+packClosed=yes
+
+heap8=73012->73012
+delta=0
+largest8=34804->34804
+delta=0
+persistentHeapBytes=0
+```
+
+Same firmware prerequisite committed transition:
+
+```text
+sourceHeap=65544
+targetHeap=73012
+targetHeapGain=7468
+largest=34804->34804
+```
+
+The absolute build baseline shifted by 40 B versus the previous PR #68 test, while exact resident costs stayed unchanged:
+
+```text
+Entrance heap=18008 B
+Junction heap=10540 B
+free-heap gain=7468 B
+```
+
+### Legacy / framebuffer integrity
+
+Same-probe witnesses:
+
+```text
+placementFNV=5d1076bf->5d1076bf
+playerFNV=a1725bcb->a1725bcb
+frameFNV=833705d2->833705d2
+legacyRuntimeClear=yes
+DoomCanvasMutation=no
+GameMutation=no
+PlayerMutation=no
+RenderMutation=no
+HudMutation=no
+```
+
+Final hardware PARK:
+
+```text
+state=9 / ST_INTRO
+page=3
 committedTransition=yes
 mapSwapCommitted=yes
 targetMap=9
@@ -241,12 +246,20 @@ facingPending=yes
 playerSetupPending=yes
 tileEnterPending=yes
 ST_PLAYING=no
-entities=0
-monsters=0
+legacy entities=0
+legacy monsters=0
 noGameplay=yes
 ```
 
-## Hardware-proven canons inherited by candidate
+Stable heartbeat after the probe:
+
+```text
+heap=138776
+heap8=73012
+largest8=34804
+```
+
+## Hardware-proven canons through current milestone
 
 ```text
 Entrance snapshotFNV=b3811f3d
@@ -260,6 +273,9 @@ statsMenuIntentFNV=96afe901
 levelExitStatsFNV=bd41bcfa
 playerExitAppliedFNV=298eaaa4
 committedTransitionFNV=2c595a62
+playerSpawnBytes=24
+JunctionSpawnFNV=ba6af4a7
+packedOverrideFNV=e0a5110b
 ```
 
 ## Architecture direction
@@ -274,12 +290,14 @@ original Doom RPG behavior/data
  -> explicit resident lifecycle
  -> reversible full resident handoff              [hardware-proven]
  -> committed stats-ack-gated transition          [hardware-proven]
- -> native fresh-map spawn/load projection        [candidate]
- -> native player/view + facing/setup/tile enter
+ -> fresh-map load semantic                       [hardware-proven]
+ -> native player spawn projection                [hardware-proven]
+ -> native player/view application
+ -> facing/setup/tile-enter ownership
  -> native gameplay/render loop
 ```
 
-Still outside candidate:
+Still outside:
 
 ```text
 actual stats-menu rendering/input
@@ -295,4 +313,20 @@ sound playback
 
 `shapeData == NULL` and `mediaTexels == NULL` remain mandatory.
 
-Build/flash the current candidate with the normal `esp32-cyd` environment. No local build or hardware PASS is claimed.
+## Next bounded milestone after merge
+
+Recover from the true post-merge `main` before implementation. The likely next milestone is a small native player/view owner that applies the already hardware-proven `(992,1888,64)` placement without yet opening facing/setup/tile-enter or `ST_PLAYING`; exact scope must be chosen from the merged repo and legacy audit.
+
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-junction-spawn
+```
+
+Hardware-tested firmware:
+
+```text
+08a3a29c5e4e4a64000fa12a877299bbb1e772a0
+```
+
+Every later commit on this branch must remain documentation-only unless another firmware is flashed.
