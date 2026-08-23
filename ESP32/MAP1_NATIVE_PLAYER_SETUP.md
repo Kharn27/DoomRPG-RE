@@ -9,13 +9,13 @@ PR   = #71 — native post-spawn HUD refresh
 main = 02b7f143a12e6df86ada094af10ef580ad572aad
 ```
 
-Firmware candidate:
+Hardware-tested firmware:
 
 ```text
 d808d895e97daef5d454ca06d5fda1738e99b147
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
@@ -50,25 +50,26 @@ if (player->disabledWeapons) {
 }
 ```
 
-`Player_restoreWeapons()` is not folded into this milestone. A nonzero `disabledWeapons` can alter `weapons`, clear `disabledWeapons`, select another weapon, and request a view refresh. Until a native inventory/weapon owner exists, that branch remains fail-closed.
+`Player_restoreWeapons()` is intentionally not folded into this milestone. A nonzero `disabledWeapons` can alter `weapons`, clear `disabledWeapons`, select another weapon, and request a view refresh. Until a native inventory/weapon owner exists, that branch remains fail-closed.
 
-The real fresh-run hardware path is therefore required to present:
+The real fresh-run CYD path proved:
 
 ```text
 disabledWeapons=0
+weaponRestorePerformed=0
 ```
 
 The probe reads this legacy value only as a hardware precondition. Permanent APIs remain legacy-engine free.
 
 ## Correct ordering boundary
 
-The already-recovered fresh-map sequence remains:
+The fresh-map sequence remains:
 
 ```text
 placement
 Hud.isUpdate=true                         [owned]
 first checkFacingEntity()                 [transient, deliberately unowned]
-Player_setup()                            [THIS MILESTONE]
+Player_setup()                            [THIS MILESTONE, hardware-proven]
 initial Game_executeTile(...)             [deferred]
 finishRotation():
   recalc viewSin/viewCos/viewStep         [deferred]
@@ -87,80 +88,73 @@ ESP32/include/esp_player_fresh_map_state.h
 ESP32/src/esp_player_fresh_map_state.c
 ```
 
-Expected classic-ESP32 ABI:
+Hardware-proven classic-ESP32 ABI:
 
 ```text
 EspPlayerFreshMapState = 24 B
 persistent heap = 0 B
 ```
 
-State:
+Real CYD state:
 
 ```text
-levelStartTimeMs        dynamic caller-sampled uptime
-moves                   0
-xpGained                0
-berserkerTics           0
-familiarActive          0
-notebookEmpty           1
-weaponRestorePerformed  0
-targetMapId             9
-gameplayLoadMapId       2
-loadType                0
-setupApplied            1
-active                  1
+levelStartTimeMs        = 27538   # same-run witness, dynamic
+moves                   = 0
+xpGained                = 0
+berserkerTics           = 0
+familiarActive          = 0
+notebookEmpty           = 1
+weaponRestorePerformed  = 0
+targetMapId             = 9
+gameplayLoadMapId       = 2
+loadType                = 0
+setupApplied            = 1
+active                  = 1
 ```
 
-`levelStartTimeMs` is intentionally dynamic. It mirrors the 32-bit `DoomRPG_GetUpTimeMS()` write and is verified against the exact value sampled immediately before routing.
+`levelStartTimeMs` mirrors the recovered 32-bit `DoomRPG_GetUpTimeMS()` write. Hardware proved `startExact=yes`: the parked owner contains the exact value sampled immediately before routing.
 
-The empty `Player.NotebookString` state is represented compactly by `notebookEmpty=1`. The reusable `EspMapNotebookState` remains caller-owned until a non-empty gameplay NOTE must be materialized; no permanent 512-byte buffer is introduced merely to represent an empty string.
+The empty `Player.NotebookString` state is represented compactly by `notebookEmpty=1`. No permanent 512-byte notebook buffer is allocated merely to represent an empty string.
 
-## Deterministic semantic fingerprint
+## Fingerprints
 
-A raw whole-state FNV varies because `levelStartTimeMs` varies. The probe therefore also hashes a copy with only `levelStartTimeMs` normalized to zero.
-
-Expected normalized FNV-1a:
+The raw whole-state FNV includes dynamic `levelStartTimeMs`, so it is a same-run witness only:
 
 ```text
-setup semanticFNV = 3b27c6a1
+stateFNV=d0ab146e
+startMs=27538
+startExact=yes
 ```
 
-The raw `stateFNV` is logged as a same-run witness only.
+For a deterministic cross-run semantic fingerprint, the probe normalizes only `levelStartTimeMs` to zero before hashing:
+
+```text
+setup semanticFNV=3b27c6a1
+```
+
+`3b27c6a1` is now the hardware canon for the fresh-map Player_setup semantic state.
 
 ## Player/view ownership transfer
 
-`EspPlayerViewState` remains 44 B. New primitive:
+`EspPlayerViewState` remains 44 B. Primitive:
 
 ```text
 EspPlayerView_consumePlayerSetup(targetMapId, gameplayLoadMapId, loadType)
 ```
 
-It is valid only after HUD routing and clears exactly:
+Hardware proved exactly:
 
 ```text
-playerSetupPending: 1 -> 0
-```
-
-while preserving:
-
-```text
+before FNV=d17fa0d1
+ after FNV=c21fba3c
 hudRefreshPending=0
 facingRefreshPending=1
+playerSetupPending=0
 tileEnterPending=1
-all placement/load identity unchanged
+placementExact=yes
 ```
 
-Hardware-proven input FNV from PR #71:
-
-```text
-d17fa0d1
-```
-
-Expected output FNV:
-
-```text
-c21fba3c
-```
+Only `playerSetupPending` is consumed. `c21fba3c` is now the hardware canon for the post-setup 44-byte player/view owner.
 
 ## Permanent API
 
@@ -189,98 +183,156 @@ disabledWeapons=0
 
 On success it parks the 24-byte session owner and atomically consumes only `playerSetupPending`.
 
-## Fail-closed cases
+## Hardware fail-closed proof
 
-The hardware probe verifies:
+Real CYD:
 
 ```text
-null player/view
-null HUD owner
-null output
-inactive player/view
-nonzero loadType
-HUD not yet consumed
-missing facing pending bit
-missing setup pending bit
-missing tile-enter pending bit
-HUD identity mismatch
-disabledWeapons != 0
-repeat live route
-reset to empty
+nullView=1
+nullHud=1
+nullOutput=1
+inactive=1
+loadType=1
+hudPending=1
+missingFacing=1
+missingSetup=1
+missingTile=1
+hudMismatch=1
+weaponRestore=1
+reset=1
+prepareAtomic=yes
+repeat=1
+repeatAtomic=yes
 ```
 
-No refused case may mutate the player/view or HUD owners.
+The `weaponRestore=1` gate proves a nonzero `disabledWeapons` context is rejected rather than silently approximated.
 
-## Temporary hardware probe
+## Resident integrity
 
-Files:
+Real CYD:
 
 ```text
-ESP32/include/native_junction_player_setup_probe.h
-ESP32/src/native_junction_player_setup_probe.c
+snapshotFNV=bc9071e9->bc9071e9
+targetLeftResident=yes
+payload=10410
+entities=30
+enemies=0
+destructibles=3
+packClosed=yes
 ```
 
-It arms only after the hardware-proven HUD probe has completed.
+Junction remained byte-exact.
 
-Expected decisive Serial:
+## RAM proof
+
+Real CYD:
 
 ```text
-[JUNCTIONSETUPPROBE] ARMED ...
-
-=== Doom RPG ESP32-native Junction fresh-map Player_setup ===
-
-[JUNCTIONSETUP] READY stateBytes=24 stateFNV=<dynamic> semanticFNV=3b27c6a1 startMs=<runtime> startExact=yes moves=0 xpGained=0 berserker=0 familiar=0 notebookEmpty=1 weaponRestore=0 targetMap=9 gameplayLoadMapId=2 loadType=0 active=1 setupApplied=1
-
-[JUNCTIONSETUP] PLAYER viewBytes=44 beforeFNV=d17fa0d1 afterFNV=c21fba3c hudPending=0 facingPending=1 playerSetupPending=0 tileEnterPending=1 placementExact=yes
-
-[JUNCTIONSETUP] ORDER hudOwned=yes firstFacingTransientUnowned=yes playerSetupApplied=yes tileEnterDeferred=yes finishRotationDeferred=yes finalFacingDeferred=yes disabledWeapons=0
-
-[JUNCTIONSETUP] FAILCLOSED nullView=1 nullHud=1 nullOutput=1 inactive=1 loadType=1 hudPending=1 missingFacing=1 missingSetup=1 missingTile=1 hudMismatch=1 weaponRestore=1 reset=1 prepareAtomic=yes repeat=1 repeatAtomic=yes
-
-[JUNCTIONSETUP] RESIDENT snapshotFNV=bc9071e9->bc9071e9 targetLeftResident=yes payload=10410 entities=30 enemies=0 destructibles=3 packClosed=yes
-
-[JUNCTIONSETUP] RAM heap8=...->... delta=0 largest8=...->... delta=0 persistentHeapBytes=0
-
-[JUNCTIONSETUP] LEGACY ... unchanged ... PlayerMutation=no ...
-
-[JUNCTIONSETUP] PARK state=9 page=3 mapSwapCommitted=yes targetMap=9 junctionResident=yes nativePlayerView=yes nativeHudRefresh=yes nativePlayerSetup=yes setupApplied=yes hudDirty=yes facingPending=yes playerSetupPending=no tileEnterPending=yes finishRotationPending=yes finalFacingPending=yes ST_PLAYING=no entities=0 monsters=0 noGameplay=yes
+heap8=72900->72900
+delta=0
+largest8=34804->34804
+delta=0
+persistentHeapBytes=0
 ```
 
-## Strict PASS boundary
-
-A PASS must prove:
+Stable heartbeat after the probe:
 
 ```text
-EspPlayerFreshMapState bytes=24
-semanticFNV=3b27c6a1
-startExact=yes
-moves=0
-xpGained=0
-berserker=0
-familiar=0
-notebookEmpty=1
-weaponRestore=0
-real disabledWeapons=0
-PlayerView d17fa0d1 -> c21fba3c
-only playerSetupPending cleared
-HUD owner 6965ee06 unchanged
-Junction snapshot bc9071e9 unchanged
-heap/largest unchanged
-PAK closed
-legacy Player/Game/Hud/DoomCanvas/Render unchanged
-framebuffer unchanged
-tile-enter not executed
-finishRotation/final-facing not executed
+heap=138664
+heap8=72900
+largest8=34804
+```
+
+Absolute heap is build-context dependent. The hardware proof is the zero same-build delta.
+
+## Legacy / framebuffer integrity
+
+Same-build witnesses:
+
+```text
+placementFNV=5d1076bf->5d1076bf
+playerSetupFNV=ea247b9a->ea247b9a
+frameFNV=9eb7ce0f->9eb7ce0f
+legacyRuntimeClear=yes
+DoomCanvasMutation=no
+GameMutation=no
+PlayerMutation=no
+RenderMutation=no
+HudMutation=no
+```
+
+These witness hashes are same-build equality checks, not cross-build canons.
+
+## Final hardware PARK
+
+Real CYD:
+
+```text
+state=9 / ST_INTRO
+page=3
+mapSwapCommitted=yes
+targetMap=9
+junctionResident=yes
+nativePlayerView=yes
+nativeHudRefresh=yes
+nativePlayerSetup=yes
+setupApplied=yes
+hudDirty=yes
+facingPending=yes
+playerSetupPending=no
+tileEnterPending=yes
+finishRotationPending=yes
+finalFacingPending=yes
 ST_PLAYING=no
-legacy entities=0
-legacy monsters=0
+legacy Game.entities=0
+legacy Game.monsters=0
+noGameplay=yes
+```
+
+## Hardware canons added by this milestone
+
+```text
+EspPlayerFreshMapState bytes = 24
+setup semanticFNV            = 3b27c6a1
+post-setup PlayerView FNV    = c21fba3c
+persistent heap              = 0 B
+```
+
+Same-run dynamic witness:
+
+```text
+stateFNV=d0ab146e at startMs=27538
+```
+
+Inherited canons remain:
+
+```text
+post-HUD PlayerView FNV=d17fa0d1
+HUD owner FNV=6965ee06
+Junction snapshotFNV=bc9071e9
+Junction resident heap=10540 B
 ```
 
 ## Boundary after PASS
 
-A hardware PASS establishes the first native per-level player session root with a real level-start clock and exact fresh-map reset semantics.
+Native ownership now includes the fresh-map `Player_setup()` reset semantics and a real per-level start clock without touching the legacy `Player` object.
 
-The next operation is the **initial tile-enter execution** at the already hardware-proven Junction position `(992,1888)` with the recovered facing-direction flag. `finishRotation()`/its second tile execution, final facing, and `ST_PLAYING` remain later boundaries until separately audited.
+The next exact operation is the **initial tile-enter execution** at the hardware-proven Junction player position `(992,1888)`. `finishRotation()`/its second tile execution, durable final facing, and `ST_PLAYING` remain later boundaries until separately audited.
+
+Still intentionally outside:
+
+```text
+actual HUD rendering / dirty consumption by renderer
+weapon restore/select ownership for disabledWeapons!=0
+initial tile-enter execution
+finishRotation-equivalent orientation preparation
+second tile/facing event
+final native facing-entity query
+ST_PLAYING progression
+full native entity/monster gameplay
+native gameplay renderer
+sound playback
+```
 
 Mandatory invariants remain:
 
@@ -296,4 +348,16 @@ Normal hardware environment:
 esp32-cyd
 ```
 
-No local PlatformIO build or hardware PASS is claimed for this candidate.
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-player-setup
+```
+
+Hardware-tested firmware:
+
+```text
+d808d895e97daef5d454ca06d5fda1738e99b147
+```
+
+Every later commit on this branch must remain documentation-only unless another firmware is flashed.
