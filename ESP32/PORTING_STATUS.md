@@ -5,25 +5,38 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #65 — native stats-menu intent
-main = c8679133351fa00e01a67103386b7676660c4a6e
-hardware-tested stats-menu firmware = 1dddbe86788389400d6e2186595174e723c72f5c
+PR   = #66 — native transition preflight
+main = 9f981f490282200f216aef66d22608d2244beb00
+hardware-tested preflight firmware = 4d78a66548fab6373c06c67f107f176fc3988b1c
 ```
 
-Merged evidence: [`MAP1_NATIVE_STATS_MENU_INTENT.md`](MAP1_NATIVE_STATS_MENU_INTENT.md).
+Merged evidence: [`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_PREFLIGHT.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-transition-preflight
-base   = c8679133351fa00e01a67103386b7676660c4a6e
-hardware-tested firmware = 4d78a66548fab6373c06c67f107f176fc3988b1c
+branch = agent/esp32-native-resident-handoff
+base   = 9f981f490282200f216aef66d22608d2244beb00
+hardware-tested firmware = 090d7dac5c255fc42a3d12fb3441053fdefe681b
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Active evidence: [`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_PREFLIGHT.md).
+Active evidence: [`MAP1_NATIVE_RESIDENT_HANDOFF.md`](MAP1_NATIVE_RESIDENT_HANDOFF.md).
 
-Candidate v1 `b674c9ad4878acdf3d026d061de94f964e2c7d6e` exposed a useful model error: Junction resource ID is `9` while its BSP gameplay `loadMapId` is `2`. Corrected v2 separated those semantics and passed completely on the real CYD.
+Validation history:
+
+```text
+v1 f71520281254ff9d0b2d5e4be1b3611e29ca87c4
+   safe FAIL before teardown at combined source guard
+
+v2 13f7f3787bf6de08595167081af1ea628ae30946
+   safe diagnostic FAIL; isolated logical-payload vs heap-cost confusion
+
+v3 090d7dac5c255fc42a3d12fb3441053fdefe681b
+   REAL-CYD HARDWARE PASS
+```
+
+The permanent lifecycle itself was correct throughout: `EspMapResidentSnapshot.runtimeArenaBytes` is logical payload. The faulty probe expectation used Entrance runtime heap cost `14112` instead of runtime payload `14095`.
 
 ## Permanent invariants
 
@@ -42,13 +55,15 @@ monsters    = 0
 ST_PLAYING  = not reached
 ```
 
-## MAP_INTRO identity
+## MAP_INTRO / Entrance canon
 
 ```text
-/intro.bsp / Entrance
-bytes=21823 crc32=623f34e4 loadMapId=1
+resource=/intro.bsp
+name=Entrance
+bytes=21823 crc32=623f34e4 gameplayLoadMapId=1
 nodes=223 lines=480 mapSprites=344 events=93 byteCodes=265
 strings=94 stringData=7779 maxString=313
+spawn=904 direction=64 camera=648 floorTex=145 ceilingTex=112
 ```
 
 All real MAP_INTRO opcode IDs have native ownership/execution boundaries:
@@ -57,7 +72,9 @@ All real MAP_INTRO opcode IDs have native ownership/execution boundaries:
 2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-## Hardware-proven persistent native RAM
+## Hardware-proven Entrance resident RAM
+
+Actual heap cost:
 
 ```text
 immutable arena          14112 B
@@ -71,53 +88,60 @@ mutable sprite topology   2424 B
 total                    18008 B
 ```
 
-Level-exit stats, player exit-state/result, stats-menu intent, map catalog and transition-preflight result are caller-owned or immutable program data and add no persistent heap allocation. Hardware total remains exactly `18008 B`.
-
-## Hardware-proven fingerprints
+Logical payload captured by the resident lifecycle:
 
 ```text
-arenaFNV                 = c3882516
-mapStateFNV              = cd99b98e
-scriptFNV                = f9e3d9df
-lineStateFNV             = e5e74861
-lineTextureStateFNV      = f1fc1875
-automapStateFNV          = 669b1aa7
-saveRouteOwnerFNV        = 06ea6ea8
-saveRouteResultFNV       = c2ecb064
-changeMapOwnerFNV        = f75eb7c7
-changeMapResultFNV       = 2f40c9be
-spriteTopologyFNV        = 3f321e43
-showResultFNV            = 6029eb3c
-hideResultFNV            = d24f5bae
-contextAfterShowFNV      = 2de723aa
-contextAfterHideFNV      = bb1d78a4
-legacyEntityTopologyFNV  = f8f9b485
-levelExitStatsFNV        = bd41bcfa
-levelExitNoStatsFNV      = d9532169
-levelExitMapId2FNV       = ceb6ad21
-levelExitShowSensFNV     = 5155b517
-levelExitSecretOpenFNV   = 6694b0e1
-playerExitInitialFNV     = 940b0171
-playerExitAppliedFNV     = 298eaaa4
-playerExitResultFNV      = 5d10a566
-playerExitAllMasksFNV    = c93e8128
-playerExitLiveFNV        = 57fce418
-statsMenuIntentFNV       = 96afe901
-statsMenuEndGameFNV      = deea91b4
-statsMenuZeroFNV         = 4b95f515
-catalogFNV               = ce322e3f
-transitionPreflightFNV   = 108e5c7b
-junctionSourceFNV        = fefaf5ca
+runtime arena       14095 B
+map state            1024 B
+script state           81 B
+line state            120 B
+texture state          60 B
+automap state         103 B
+topology              2408 B
+---------------------------
+payload total        17891 B
+allocator overhead     117 B
+actual heap total    18008 B
 ```
 
-Latest same-build legacy witnesses:
+## Hardware-proven Entrance fingerprints
 
 ```text
-playerWitnessFNV = 0b2ae445
-transitionFNV    = f450c49f
+residentSnapshotFNV       = b3811f3d
+arenaFNV                  = c3882516
+mapStateFNV               = cd99b98e
+scriptFNV                 = f9e3d9df
+lineStateFNV              = e5e74861
+lineTextureStateFNV       = f1fc1875
+automapStateFNV           = 669b1aa7
+spriteTopologyFNV         = 3f321e43
+saveRouteOwnerFNV         = 06ea6ea8
+saveRouteResultFNV        = c2ecb064
+changeMapOwnerFNV         = f75eb7c7
+changeMapResultFNV        = 2f40c9be
+showResultFNV             = 6029eb3c
+hideResultFNV             = d24f5bae
+contextAfterShowFNV       = 2de723aa
+contextAfterHideFNV       = bb1d78a4
+legacyEntityTopologyFNV   = f8f9b485
+levelExitStatsFNV         = bd41bcfa
+levelExitNoStatsFNV       = d9532169
+levelExitMapId2FNV        = ceb6ad21
+levelExitShowSensFNV      = 5155b517
+levelExitSecretOpenFNV    = 6694b0e1
+playerExitInitialFNV      = 940b0171
+playerExitAppliedFNV      = 298eaaa4
+playerExitResultFNV       = 5d10a566
+playerExitAllMasksFNV     = c93e8128
+statsMenuIntentFNV        = 96afe901
+statsMenuEndGameFNV       = deea91b4
+statsMenuZeroFNV          = 4b95f515
+catalogFNV                = ce322e3f
+transitionPreflightFNV    = 108e5c7b
+junctionSourceFNV         = fefaf5ca
 ```
 
-Framebuffer FNV is only a same-build equality witness and is not a cross-build canon.
+Same-build framebuffer FNV is only an equality witness, not a cross-build canon.
 
 ## Hardware-proven CHANGEMAP exit chain
 
@@ -132,307 +156,266 @@ effects=03
 pending=1
 ```
 
-Native consumer chain now hardware-proven through target preflight:
+Native consumer chain:
 
 ```text
 CHANGEMAP pending intent
- -> EspMapLevelExitStats = 20 B
-      loadMapId=1 showStats=1
-      secrets=0/6 monsters=0/30
-      completionLevelBit=00000001
-      effects=1f
-      FNV=bd41bcfa
- -> EspPlayerExitState = 28 B
-      appliedFNV=298eaaa4
-      persistentHeapBytes=0
- -> EspStatsMenuIntent = 4 B
-      targetMap=9
-      menuKind=LEVEL
-      consumePending=1
-      FNV=96afe901
- -> immutable 13-map catalog
-      catalogFNV=ce322e3f
- -> EspMapTransitionPreflightResult = 56 B
-      resourceMapId=9
-      gameplayLoadMapId=2
-      FNV=108e5c7b
-      persistentHeapBytes=0
+ -> EspMapLevelExitStats = 20 B, FNV=bd41bcfa
+ -> EspPlayerExitState = 28 B, appliedFNV=298eaaa4
+ -> EspStatsMenuIntent = 4 B, target=9 kind=LEVEL FNV=96afe901
+ -> immutable 13-map catalog, FNV=ce322e3f
+ -> EspMapTransitionPreflightResult = 56 B, FNV=108e5c7b
+      resourceMapId=9 gameplayLoadMapId=2
+ -> explicit resident lifecycle
+      Entrance -> EMPTY -> Junction -> EMPTY -> Entrance
 ```
 
-No legacy `Player_addLevelStats()`, `Game_changeMap()`, menu mutation, source teardown or map swap is performed by this chain.
+No legacy `Player_addLevelStats()`, `Game_changeMap()`, menu mutation or `DoomCanvas_loadMap()` is called by this native chain.
 
-## Native resource-map catalog
+## Hardware-proven Junction target source
 
-Permanent files/API:
-
-```text
-ESP32/include/esp_map_catalog.h
-ESP32/src/esp_map_catalog.c
-
-EspMapCatalog_isValidId()
-EspMapCatalog_nameForId()
-EspMapCatalog_idForName()
-```
-
-Recovered exact resource order:
+Critical identity split:
 
 ```text
-1  /intro.bsp
-2  /level01.bsp
-3  /level02.bsp
-4  /level03.bsp
-5  /level04.bsp
-6  /level05.bsp
-7  /level06.bsp
-8  /level07.bsp
-9  /junction.bsp
-10 /junction_destroyed.bsp
-11 /items.bsp
-12 /reactor.bsp
-13 /endgame.bsp
-```
-
-Real-CYD proof:
-
-```text
-count=13
-roundtrip=13
-catalogFNV=ce322e3f
-invalidName=1
-legacyIds=1
-```
-
-## Transition-preflight semantics
-
-Permanent API:
-
-```text
-ESP32/include/esp_map_transition_preflight.h
-ESP32/src/esp_map_transition_preflight.c
-
-EspMapTransitionPreflightResult = 56 B
-EspMapTransitionPreflight_run(targetMapId, &result)
-```
-
-Critical semantic split:
-
-```text
-targetMapId
-  = resource/lifecycle identity
-  = catalog / Game.mapFiles[] / DoomCanvas_loadMap()
-
-gameplayLoadMapId
-  = BSP header Render.loadMapID byte
-  = level-progression/stat semantic
-```
-
-Legacy `Player_addLevelStats()` establishes gameplay ID `2` as the hub/no-completion gate. Real Junction is therefore correctly:
-
-```text
-resourceMapId      = 9
+resourceMapId      = 9 / /junction.bsp
 gameplayLoadMapId  = 2
 hubProgressionGate = 1
 ```
 
-The permanent preflight validates `gameplayLoadMapId` only for the safe recovered bit-semantic range `1..32`; resource/gameplay equality is not required.
-
-## Hardware-proven Junction target
+Source/preflight:
 
 ```text
-resourceName      = /junction.bsp
-entryOffset       = 1974397
-sourceBytes       = 21051
-sourceCRC32       = 4a2c5800
-sourceFNV1a       = fefaf5ca
-mapName           = Junction
-gameplayLoadMapId = 2
-spawnIndex        = 943
-spawnDirection    = 64
-cameraSpawnIndex  = 0
-floorTexture      = 117
-ceilingTexture    = 151
+entryOffset=1974397
+bytes=21051
+crc32=4a2c5800
+sourceFNV=fefaf5ca
+name=Junction
+spawn=943 direction=64 camera=0
+floorTex=117 ceilingTex=151
+nodes=77 lines=207 mapSprites=48 events=66 byteCodes=319 strings=126
+stringData=12235 maxString=380 trailing=0
+persistentPlanBytes=8867
+readCalls=83 window=256 B
+preflightResultFNV=108e5c7b
 ```
 
-Structure:
+## Permanent resident lifecycle
+
+Files/API:
+
+```text
+ESP32/include/esp_map_resident_lifecycle.h
+ESP32/src/esp_map_resident_lifecycle.c
+
+EspMapResidentLifecycle_resetAll()
+EspMapResidentLifecycle_isEmpty()
+EspMapResidentLifecycle_isReady()
+EspMapResidentLifecycle_capture()
+EspMapResidentLifecycle_loadFromEmpty()
+```
+
+`loadFromEmpty()` is intentionally non-destructive. A live owner set returns `NOT_EMPTY` before PAK I/O. Destruction is always an explicit `resetAll()`.
+
+Teardown:
+
+```text
+topology -> automap -> texture -> line -> script -> map state -> runtime
+```
+
+Build from EMPTY:
+
+```text
+runtime -> map state -> script -> line -> texture -> automap -> topology
+```
+
+The lifecycle owns one temporary PAK session, uses `/entities.db` for topology, closes PAK before return, preserves caller ownership on `PACK_BUSY`, and returns EMPTY on partial-build failure.
+
+## Hardware-proven reversible resident handoff
+
+Fail-closed gates:
+
+```text
+notEmpty=1
+invalid=1
+nullCapture=1
+packBusy=1
+busyZero=1
+callerOwnsPack=1
+emptyAtomic=yes
+```
+
+Entrance release:
+
+```text
+SOURCE heap8=65592 largest8=34804
+EMPTY1 heap8=83600 largest8=34804
+released=18008
+sourcePayload=17891
+allocatorOverhead=117
+allOwnersEmpty=yes
+```
+
+### Full Junction resident owner set
+
+```text
+EspMapResidentSnapshot = 96 B
+snapshotFNV = bc9071e9
+elapsed     = 121 ms
+
+runtime   = 8867 B
+state     = 1024 B
+script    = 73 B
+line      = 52 B
+texture   = 26 B
+automap   = 32 B
+topology  = 336 B
+----------------
+payload   = 10410 B
+heapCost  = 10540 B
+overhead  = 130 B
+```
+
+Resident FNVs:
+
+```text
+junctionRuntimeFNV  = bc432a0f
+junctionMapStateFNV = c5cdfc04
+junctionScriptFNV   = bc9b18ff
+junctionLineFNV     = 3658710d
+junctionTextureFNV  = 537319ad
+junctionAutomapFNV  = 0b2ae445
+junctionTopologyFNV = d6e8df7d
+junctionSnapshotFNV = bc9071e9
+```
+
+Topology/cardinalities:
 
 ```text
 nodes=77
 lines=207
-mapSprites=48
+sprites=48
 events=66
 byteCodes=319
 strings=126
-stringData=12235
-legacyStringAlloc=12361
-maxString=380
-trailing=0
+entities=30
+enemies=0
+destructibles=3
 ```
 
-Offsets:
+Junction resident RAM:
 
 ```text
-nodes=35
-lines=807
-sprites=2879
-events=3121
-byteCodes=3387
-strings=6260
-blockMap=18747
-planes=19003
-end=21051
+heap8=73060
+largest8=34804
 ```
 
-Resources:
+### Target release and source restoration
 
 ```text
-lineTex=22
-mapSpriteIds=16
-textureReq=30
-spriteReq=16
-planeTex=6
-changeSprite=0
-spriteAsTexture=0
-overflow=0/0/0
+EMPTY2 heap8=83600 largest8=34804
+emptyExact=1
+targetReleased=10540
+fragmentationDelta=0
+
+RESTORED snapshotFNV=b3811f3d
+exact=1
+heap8=65592->65592
+largest8=34804->34804
 ```
 
-Compact plan:
+Whole RAM sequence:
 
 ```text
-nodes=770
-lines=2070
-sprites=240
-events=264
-byteCodes=2871
-stringOffsets=252
-blockMap=256
-planes=2048
-resourceSets=96
-persistentPlanBytes=8867
+SOURCE   65592 / 34804
+EMPTY1   83600 / 34804
+JUNCTION 73060 / 34804
+EMPTY2   83600 / 34804
+RESTORED 65592 / 34804
+
+sourceCost   = 18008
+junctionCost = 10540
+finalDelta   = 0
 ```
 
-Stream and preflight:
+The largest free 8-bit block remains `34804` throughout the complete destructive/rebuild round-trip.
+
+## Legacy / final integrity
 
 ```text
-readCalls=83
-window=256 B
-CRC32=4a2c5800 verified=yes
-FNV1a=fefaf5ca
-resultFNV=108e5c7b
-repeatFNV=108e5c7b
-repeatExact=1
-resourceGameplayDistinct=1
-elapsed=147 ms
-ready=1
-```
-
-## Fail closed / I/O / RAM
-
-Hardware:
-
-```text
-target0=1
-target14=1
-nullResult=1
-packBusy=1
-busyZero=1
-stateAtomic=yes
-```
-
-I/O/RAM:
-
-```text
-heap8      65608 -> 65608 delta=0
-largest8   34804 -> 34804 delta=0
-persistentHeapBytes=0
-heapOpen=61232
-transientPackCost=4376 B
-largestOpen=34804
-packClosed=yes
-fullTargetCRC=yes
-```
-
-Persistent native total remains exactly `18008 B`.
-
-## Entrance / legacy integrity
-
-```text
-arenaFNV     c3882516
-mapStateFNV  cd99b98e
-scriptFNV    f9e3d9df
-lineFNV      e5e74861
-textureFNV   f1fc1875
-automapFNV   669b1aa7
-topologyFNV  3f321e43
-
 playerFNV     0b2ae445 -> 0b2ae445
 transitionFNV f450c49f -> f450c49f
+frameFNV      ee9d9dbc -> ee9d9dbc
 legacyRuntimeClear=yes
-sourceTeardown=no
-mapLoad=no
+sourceTeardownNativeOnly=yes
+DoomCanvas_loadMapCalled=no
 menuMutation=no
-mapSwap=no
+legacyPlayerMutation=no
 ```
 
 Final PARK:
 
 ```text
 state=9 page=3
-nativeCatalog=yes
-nativeTargetPreflight=yes
-resourceMapId=9
-gameplayLoadMapId=2
-targetReady=yes
-sourceMapPreserved=yes
+nativeResidentLifecycle=yes
+reversibleHandoff=yes
+junctionResidentProven=yes
+sourceRestored=yes
+targetLeftResident=no
 packClosed=yes
-persistentBytes=0
-mapSwap=no
+persistentBytes=18008
+mapSwapCommitted=no
 entities=0 monsters=0 noGameplay=yes
 ```
 
-Stable post-PASS heartbeats:
+Stable post-PASS heartbeat:
 
 ```text
-1025843 ms heap=131372 heap8=65608 largest8=34804
-1030844 ms heap=131372 heap8=65608 largest8=34804
+heap=131356 heap8=65592 largest8=34804
 ```
+
+Same-run pre-Start-Game heartbeats were stable at `heap=93948 heap8=28184 largest8=18420`; these are lifecycle context, not resident-map canons.
 
 ## Current architecture boundary
 
 Hardware-proven ownership now includes:
 
 ```text
-compact immutable native Entrance map + explicit mutable owners
-all 16 real MAP_INTRO opcode families
-SAVEGAME durable route
-CHANGEMAP pending transition intent
-SHOW/HIDE compact sprite/entity topology
-native level-exit stats
-native player exit-state
-native stats-menu semantic intent
-immutable generic 13-map resource catalog
-read-only target Junction PAK/BSP preflight
-explicit resourceMapId vs gameplayLoadMapId semantics
+compact immutable native Entrance + explicit mutable owners
+all 16 MAP_INTRO opcode families
+SAVEGAME route
+CHANGEMAP intent
+SHOW/HIDE compact topology
+level-exit stats
+player exit-state
+stats-menu intent
+generic 13-map catalog
+Junction target PAK/BSP preflight
+resourceMapId vs gameplayLoadMapId semantics
+generic explicit resident lifecycle
+complete temporary Junction resident build
+exact reversible Entrance -> Junction -> Entrance handoff
+no-fragmentation resident round-trip
 ```
 
 Still intentionally outside:
 
 ```text
-actual stats-menu rendering/input consumer
-source-target lifecycle handoff / source teardown ordering
-Junction resident-runtime allocation/swap
-Junction mutable-owner rebuild
+committed Junction residency
+native transition point-of-no-return state machine
 spawn/loadType handoff
+actual stats-menu rendering/input
 full native entity/monster gameplay
-native ST_PLAYING progression/rendering
+ST_PLAYING progression
+native gameplay renderer
 sound playback
 ```
 
-The next bounded milestone should own **source-target lifecycle handoff / reversible swap staging** before any real Junction resident-runtime replacement.
+The next bounded milestone should own a **committed native transition state machine** using the proven resident lifecycle rather than reimplementing teardown/build order.
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-transition-preflight
+MERGE agent/esp32-native-resident-handoff
 ```
 
-Hardware-tested firmware is `4d78a66548fab6373c06c67f107f176fc3988b1c`. All commits after that firmware must remain documentation-only until merge.
+Hardware-tested firmware is `090d7dac5c255fc42a3d12fb3441053fdefe681b`. Every later commit must remain documentation-only until merge.
