@@ -26,17 +26,12 @@ Older milestone archives remain in this directory and are indexed by Git history
 
 ## Latest merged boundary
 
-PR #69 hardware-proved deterministic fresh-map player placement for the already committed Junction resident map:
+PR #69 hardware-proved deterministic fresh-map player placement for the committed Junction resident map:
 
 ```text
 EspPlayerSpawnState = 24 B
-persistent heap = 0 B
-
-stateFNV=ba6af4a7
-spawnParam=0
-source=HEADER
-tileIndex=943
-tile=15/29
+Junction spawn FNV = ba6af4a7
+packed override FNV = e0a5110b
 world=992/1888
 angle=64
 viewZ=36
@@ -44,17 +39,7 @@ viewZOld=4
 loadType=0
 ```
 
-Packed override decode is also hardware-proven:
-
-```text
-spawnParam=00030167
-tile=7/11
-world=480/736
-angle=192
-stateFNV=e0a5110b
-```
-
-Junction remains resident and unchanged:
+Junction remains resident at:
 
 ```text
 snapshotFNV=bc9071e9
@@ -63,23 +48,21 @@ actual heap=10540 B
 entities=30 enemies=0 destructibles=3
 ```
 
-Legacy Game/Player/Render/Hud/DoomCanvas remain untouched and ST_PLAYING is still not reached.
+## Current merge-ready milestone
 
-## Current candidate
-
-[`MAP1_NATIVE_PLAYER_VIEW.md`](MAP1_NATIVE_PLAYER_VIEW.md) applies the hardware-proven spawn projection to the first permanent active native player/view owner.
+[`MAP1_NATIVE_PLAYER_VIEW.md`](MAP1_NATIVE_PLAYER_VIEW.md) hardware-proves the first permanent active native player/view owner on committed Junction.
 
 ```text
 branch = agent/esp32-native-player-view
 base   = 992f38374840113409e776fb82ce57ab014607e5
-firmware candidate = fe1630ad5618dfd35bbbc555de8f9762d0b046f8
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = fe1630ad5618dfd35bbbc555de8f9762d0b046f8
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 ### Permanent API
 
 ```text
-EspPlayerViewState = 44 B expected classic-ESP32 ABI
+EspPlayerViewState = 44 B
 persistent heap = 0 B
 
 EspPlayerView_reset
@@ -96,7 +79,7 @@ destX/destY/destAngle
 viewZOld
 ```
 
-and keeps explicit target/load/follow-up state.
+and owns target/load identity plus explicit pending follow-ups.
 
 ### Recovered exact boundary
 
@@ -112,98 +95,125 @@ if fresh map:
     initial Game_executeTile()
 ```
 
-The candidate owns only the first native player/view application and represents the HUD write as:
+The milestone applies only the native player/view portion and records:
 
 ```text
 hudRefreshPending=1
-```
-
-The following remain unexecuted:
-
-```text
 facingRefreshPending=1
 playerSetupPending=1
 tileEnterPending=1
-ST_PLAYING=no
 ```
 
-### Expected real Junction native player/view
+without mutating legacy Hud/DoomCanvas/Render/Game/Player.
+
+### Hardware-proven real Junction player/view
+
+Real CYD:
 
 ```text
-viewX=992
-viewY=1888
-viewZ=36
+stateBytes=44
+stateFNV=d1131d18
+view=992/1888/36
 viewAngle=64
-
-destX=992
-destY=1888
+dest=992/1888
 destAngle=64
-
 viewZOld=4
-targetMapId=9
+targetMap=9
 gameplayLoadMapId=2
 loadType=0
-spawnApplied=1
-hudRefreshPending=1
-facingRefreshPending=1
-playerSetupPending=1
-tileEnterPending=1
 active=1
+spawnApplied=1
 ```
 
-Static 44-byte FNV prediction:
+`d1131d18` is now a hardware canon.
+
+Follow-ups remain pending:
 
 ```text
-d1131d18
+hudRefresh=1
+facingRefresh=1
+playerSetup=1
+tileEnter=1
+hudApplied=no
+facingApplied=no
+playerSetupApplied=no
+tileEnterApplied=no
 ```
 
-Packed override application prediction:
+### Hardware-proven packed override view
 
 ```text
-view/dest=480/736
+param=00030167
+view=480/736/36
 angle=192
-viewZ=36
-viewZOld=4
+dest=480/736
+destAngle=192
 stateFNV=9ed47d08
+sourceProjectionFNV=e0a5110b
 ```
 
-These are candidate values until hardware confirms them.
+`9ed47d08` is now a hardware canon.
 
-### Fail-closed rules
-
-Application is once-only while active and validates:
+### Fail-closed hardware proof
 
 ```text
-active fresh-map spawn projection
-valid target/gameplay identities
-tile/world geometry
-fixed viewZ/viewZOld
-required pending flags
-header source semantics
-packed override re-decoded from sourceSpawnParam
+nullSpawn=1
+inactive=1
+badGeometry=1
+badPending=1
+repeat=1
+repeatAtomic=yes
+reset=1
+stateAtomic=yes
 ```
 
-Refused inputs leave the native owner unchanged.
+The active owner refuses a second spawn application without mutation.
 
-### Candidate hardware acceptance
-
-Expected decisive lines:
+### Resident / RAM integrity
 
 ```text
-[JUNCTIONVIEW] READY stateBytes=44 stateFNV=d1131d18 view=992/1888/36 angle=64 dest=992/1888 angle=64 viewZOld=4 targetMap=9 gameplayLoadMapId=2 loadType=0 active=1 spawnApplied=1
+snapshotFNV=bc9071e9->bc9071e9
+targetLeftResident=yes
+payload=10410
+entities=30
+enemies=0
+destructibles=3
+packClosed=yes
 
-[JUNCTIONVIEW] FOLLOWUPS hudRefresh=1 facingRefresh=1 playerSetup=1 tileEnter=1 hudApplied=no facingApplied=no playerSetupApplied=no tileEnterApplied=no
-
-[JUNCTIONVIEW] OVERRIDE param=00030167 view=480/736/36 angle=192 dest=480/736 angle=192 stateFNV=9ed47d08 sourceProjectionFNV=e0a5110b
-
-[JUNCTIONVIEW] FAILCLOSED nullSpawn=1 inactive=1 badGeometry=1 badPending=1 repeat=1 repeatAtomic=yes reset=1 stateAtomic=yes
-
-[JUNCTIONVIEW] RESIDENT snapshotFNV=bc9071e9->bc9071e9 targetLeftResident=yes payload=10410 entities=30 enemies=0 destructibles=3 packClosed=yes
-
-[JUNCTIONVIEW] RAM heap8=...->... delta=0 largest8=...->... delta=0 persistentHeapBytes=0
+heap8=72956->72956
+delta=0
+largest8=34804->34804
+delta=0
+persistentHeapBytes=0
 ```
 
-Final intended PARK:
+Stable heartbeat:
+
+```text
+heap=138720
+heap8=72956
+largest8=34804
+```
+
+### Legacy / framebuffer integrity
+
+Same-build witnesses:
+
+```text
+placementFNV=5d1076bf->5d1076bf
+playerFNV=a1725bcb->a1725bcb
+frameFNV=a3e3cc8e->a3e3cc8e
+legacyRuntimeClear=yes
+DoomCanvasMutation=no
+GameMutation=no
+PlayerMutation=no
+RenderMutation=no
+HudMutation=no
+```
+
+These hashes are same-build witnesses, not cross-build canons.
+
+Final hardware PARK:
 
 ```text
 state=9 / ST_INTRO
@@ -225,7 +235,9 @@ legacy monsters=0
 noGameplay=yes
 ```
 
-## Hardware-proven canons inherited by candidate
+This is the first hardware-proven active native player/view state on a non-Entrance committed map.
+
+## Hardware-proven canons through current milestone
 
 ```text
 Entrance snapshotFNV=b3811f3d
@@ -239,8 +251,12 @@ statsMenuIntentFNV=96afe901
 levelExitStatsFNV=bd41bcfa
 playerExitAppliedFNV=298eaaa4
 committedTransitionFNV=2c595a62
+playerSpawnBytes=24
 JunctionSpawnFNV=ba6af4a7
 packedOverrideFNV=e0a5110b
+playerViewBytes=44
+JunctionPlayerViewFNV=d1131d18
+packedOverrideViewFNV=9ed47d08
 ```
 
 ## Architecture direction
@@ -257,12 +273,14 @@ original Doom RPG behavior/data
  -> committed stats-ack-gated transition          [hardware-proven]
  -> fresh-map load semantic                       [hardware-proven]
  -> native player spawn projection                [hardware-proven]
- -> permanent native player/view application      [candidate]
- -> HUD refresh / facing / setup / tile-enter
- -> native gameplay/render loop
+ -> permanent native player/view application      [hardware-proven]
+ -> HUD refresh / facing query
+ -> Player_setup-equivalent initialization
+ -> initial tile-enter
+ -> ST_PLAYING / native gameplay/render loop
 ```
 
-Still outside candidate:
+Still outside:
 
 ```text
 actual stats-menu rendering/input
@@ -276,8 +294,24 @@ native gameplay renderer
 sound playback
 ```
 
-The player/view owner is deliberately not part of `EspMapResidentLifecycle_resetAll()`: map-resident data and player state have different lifetimes.
+The player/view owner deliberately has a different lifetime from map-resident arena state and is not reset by `EspMapResidentLifecycle_resetAll()`.
 
 `shapeData == NULL` and `mediaTexels == NULL` remain mandatory.
 
-Build/flash the candidate with the normal `esp32-cyd` environment. No local build or hardware PASS is claimed.
+## Next bounded milestone after merge
+
+Recover from the true post-merge `main` before implementation. The natural next small boundaries are explicit HUD-refresh consumption and compact-topology facing lookup. Keep Player_setup, tile-enter and ST_PLAYING separate unless a fresh legacy audit proves otherwise.
+
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-player-view
+```
+
+Hardware-tested firmware:
+
+```text
+fe1630ad5618dfd35bbbc555de8f9762d0b046f8
+```
+
+Every later commit on this branch must remain documentation-only unless another firmware is flashed.
