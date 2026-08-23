@@ -32,6 +32,9 @@ typedef enum EspMapTransitionPreflightStatus_e {
  * completion gate. The two IDs are therefore intentionally NOT required to
  * match (real /junction.bsp is resource map 9 with gameplay load ID 2).
  *
+ * headerLoadMapId is retained as a source-compatibility alias for the first
+ * diagnostic probe; it aliases the exact same byte and has no separate state.
+ *
  * No pointers or map-sized data are retained. persistentPlanBytes is the
  * existing compact-plan estimate produced by EspBspReader and is advisory for
  * the later destructive lifecycle handoff.
@@ -51,7 +54,10 @@ typedef struct EspMapTransitionPreflightResult_s {
     uint32_t strings;
     uint32_t stringDataBytes;
     uint8_t targetMapId;
-    uint8_t gameplayLoadMapId;
+    union {
+        uint8_t gameplayLoadMapId;
+        uint8_t headerLoadMapId;
+    };
     uint8_t ready;
     uint8_t reserved;
 } EspMapTransitionPreflightResult;
