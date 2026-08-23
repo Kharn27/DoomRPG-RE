@@ -2,6 +2,7 @@
 #include "native_committed_transition_probe.h"
 #include "native_junction_facing_probe.h"
 #include "native_junction_finish_rotation_tile_probe.h"
+#include "native_junction_first_frame_probe.h"
 #include "native_junction_graphics_catalog_probe.h"
 #include "native_junction_hud_refresh_probe.h"
 #include "native_junction_initial_tile_probe.h"
@@ -103,6 +104,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32JunctionPostLoadIdleTimeProbe_reset();
     Esp32JunctionPlayingServiceProbe_reset();
     Esp32JunctionGraphicsCatalogProbe_reset();
+    Esp32JunctionFirstFrameProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -118,8 +120,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * isLoaded/isSaved/activeLoadType cleanup -> empty event/particle cleanup ->
      * caller-side redraw request -> native ST_INTRO->ST_PLAYING transition ->
      * final idleTime deadline -> first native PLAYING service -> sparse native
-     * graphics catalog. Durable save persistence, gameplay mutation and first
-     * native gameplay frame remain outside. Each stage arms first and runs later.
+     * graphics catalog -> first visible native Junction walls frame. Durable
+     * save persistence, sprites/HUD, input and gameplay mutation remain outside.
+     * Each stage arms first and runs later.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -167,4 +170,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32JunctionPostLoadIdleTimeProbe_service(doomRpg);
     Esp32JunctionPlayingServiceProbe_service(doomRpg);
     Esp32JunctionGraphicsCatalogProbe_service(doomRpg);
+    Esp32JunctionFirstFrameProbe_service(doomRpg);
 }
