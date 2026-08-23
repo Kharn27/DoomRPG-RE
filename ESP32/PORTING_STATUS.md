@@ -5,28 +5,28 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #85 — post-load idle time
-main = cdd7f3c7bdd7f1ea472faaccf64d055e7a00a4a2
-hardware-tested firmware = 1349ed314487bcade159ce92c6ad9c27b75735d5
+PR   = #86 — first native PLAYING service
+main = bf1275037fd22504077f6ff2bbf57e14721edf0a
+hardware-tested firmware = e9c10c8759588e48478d3d702292628411c5939e
 status = REAL-CYD HARDWARE PASS
 ```
 
-Merged evidence: [`MAP1_NATIVE_POST_LOAD_IDLE_TIME.md`](MAP1_NATIVE_POST_LOAD_IDLE_TIME.md).
+Merged evidence: [`MAP1_NATIVE_PLAYING_SERVICE.md`](MAP1_NATIVE_PLAYING_SERVICE.md).
 
-The successful fresh-Junction `DoomCanvas_loadMedia()` caller tail is semantically complete.
+The port has a hardware-proven native ST_PLAYING owner and first native PLAYING service iteration while the legacy canvas remains parked at ST_INTRO.
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-playing-service
-base   = cdd7f3c7bdd7f1ea472faaccf64d055e7a00a4a2
-hardware-tested firmware = e9c10c8759588e48478d3d702292628411c5939e
+branch = agent/esp32-native-graphics-catalog
+base   = bf1275037fd22504077f6ff2bbf57e14721edf0a
+hardware-tested firmware = 0b40b47eb242ee5ff40b5c4981fe6a8892e95fc5
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Evidence: [`MAP1_NATIVE_PLAYING_SERVICE.md`](MAP1_NATIVE_PLAYING_SERVICE.md).
+Evidence: [`MAP1_NATIVE_GRAPHICS_CATALOG.md`](MAP1_NATIVE_GRAPHICS_CATALOG.md).
 
-This milestone establishes the first permanent native PLAYING service iteration while keeping input, gameplay, rendering and presentation deferred.
+This milestone replaces the need to resurrect global legacy mapping arrays with a compact immutable sparse graphics catalog built directly from the native PAK for resources actually required by Junction.
 
 ## Permanent invariants
 
@@ -45,6 +45,7 @@ legacy Game.monsters = 0
 native ST_PLAYING = reached
 legacy ST_PLAYING = not reached
 native PLAYING service = reached
+native sparse graphics catalog = reached
 ```
 
 ## Hardware-proven map canons
@@ -122,6 +123,7 @@ CHANGEMAP pending intent
  -> native ST_PLAYING transition owner
  -> post-load idle-time owner
  -> first native PLAYING service owner
+ -> native sparse graphics catalog
 ```
 
 Stable canonical fingerprints:
@@ -159,9 +161,12 @@ Junction event/particle cleanup   = 8bc79e2b
 Junction view invalidation        = 4561c3c1
 Junction native ST_PLAYING        = 73bc9acd
 Junction native PLAYING service   = 4c50b853
+Junction graphics catalog         = 969d5a77
+Junction graphics texture records = 2dd5dfcf
+Junction graphics sprite records  = cfd036cf
 ```
 
-The idle-time owner FNV is intentionally not cross-boot canonical because it contains live uptime. The current PLAYING-service run observed `idleFNV=1e6f9a0e`, while the stable idle contract remains `idleTimeAfter-timeBefore=8000`.
+The idle-time owner FNV is intentionally not cross-boot canonical because it contains live uptime. The stable idle contract remains `idleTimeAfter-timeBefore=8000`.
 
 Generic `EspMapOpcodeExecutor` remains intentionally only 11/19/20.
 
@@ -198,28 +203,9 @@ active=1
 persistentHeapBytes=0
 ```
 
-Reference hardware run for PR #85:
-
-```text
-timeBefore=4600
-idleTimeBefore=0
-idleTimeAfter=12600
-delta=8000
-stateFNV=d6e95f57   # run-specific witness
-```
-
-Current playing-service boot revalidated the same semantic owner with `idleFNV=1e6f9a0e` and `idleDelta=8000`.
+The owner contains live uptime, so its state FNV is a same-run witness rather than a stable cross-boot canon.
 
 ## Hardware-proven first native PLAYING service
-
-Permanent files:
-
-```text
-ESP32/include/esp_native_playing_service_state.h
-ESP32/src/esp_native_playing_service_state.c
-```
-
-Owner:
 
 ```text
 EspNativePlayingServiceState = 12 B
@@ -236,10 +222,9 @@ presentationDeferred=1
 hudIntent=1
 targetMapId=9
 active=1
-reserved=0
 ```
 
-Real-CYD semantic proof:
+Semantic proof:
 
 ```text
 firstNativePlayingService=yes
@@ -257,54 +242,75 @@ legacyDoomCanvas_updateViewCalled=no
 legacyDoomCanvas_drawRGBCalled=no
 ```
 
-Real-CYD first-service gates:
+## Hardware-proven sparse graphics catalog
+
+Permanent files:
 
 ```text
-renderOnly=0
-health=30
-waitTime=0
-activeSprites=0
-monstersTurn=0
-openDoors=0
-animDoors=0
-viewSettled=yes
-isUpdateView=1
-particleCount=0
-idleDeadlinePending=yes
-currentTime=4200
-nativeIdleDeadline=12200
-activeMonstersPresent=no
+ESP32/include/esp_native_graphics_catalog.h
+ESP32/src/esp_native_graphics_catalog.c
 ```
 
-Strict predecessor / fail-closed proof:
+Record and stable fingerprints:
 
 ```text
-playingBytes=12
-playingFNV=73bc9acd
-unchanged=yes
-idleBytes=16
-idleFNV=1e6f9a0e
-unchanged=yes
-idleDelta=8000
-callerOrder=yes
-particleTopologyCanonical=yes
-activeList=0
-freeList=64
-totalPool=64
+EspNativeGraphicsCatalogRecord=40 B
+textureCount=30
+spriteCount=16
+totalRecords=46
+storageBytes=1840
+heapCost=1856
+allocatorOverhead=16
+stateFNV=969d5a77
+textureFNV=2dd5dfcf
+spriteFNV=cfd036cf
+textureRange=0..151
+spriteRange=134..162
+```
 
-nullPlaying=1
-nullIdle=1
-nullOutput=1
-inactivePlaying=1
-badIdle=1
-inputPending=1
-prepareAtomic=yes
-postActivePrepare=1
+Semantic proof:
+
+```text
+sparseCoverage=yes
+coverageExact=yes
+paletteRgb565Native=yes
+legacyPaletteRelation=legacy-rb-swapped
+texelPayloadResident=no
+mapWideTexels=no
+nativeCatalogPersistent=yes
+```
+
+The permanent catalog reads only selected mappings/palettes from `mappings.bin` + `palettes.bin` in `/DoomRPG-ESP32.pak`. It does not keep texels resident and does not use the runtime ZIP.
+
+The legacy palette is only a temporary hardware witness and remained unchanged:
+
+```text
+legacyPaletteFNV=1e9365e2->1e9365e2
+unchanged=yes
+```
+
+Legacy graphics mapping/runtime invariants remained:
+
+```text
+mediaTexelOffsets=NULL
+mediaBitShapeOffsets=NULL
+mediaTexturesIds=NULL
+mediaSpriteIds=NULL
+shapeData=NULL
+mediaTexels=NULL
+```
+
+Fail-closed proof:
+
+```text
+preFindEmpty=1
 repeat=1
 repeatAtomic=yes
+missingTexture=yes
+missingSprite=yes
 ```
 
-Resident / RAM integrity:
+Resident / RAM proof:
 
 ```text
 snapshotFNV=bb714d80->bb714d80
@@ -312,40 +318,38 @@ runtimeFNV=bc432a0f
 mapFNV=8dba0bb4
 scriptFNV=bc9b18ff
 lineFNV=3658710d
-textureFNV=537319ad
+textureStateFNV=537319ad
 automapFNV=b699bd75
 topologyFNV=d6e8df7d
-heap8=72516->72516
-largest8=34804->34804
-persistentHeapBytes=0
+payload=10410
 packClosed=yes
+heap8=72476->70620
+persistentDelta=1856
+largest8=34804->34804
+logicalCatalogBytes=1840
+allocatorOverhead=16
 ```
 
 Same-build equality witnesses only:
 
 ```text
-gameFNV=cfb0e7fb->cfb0e7fb
-playerFNV=a7a56b94->a7a56b94
-hudFNV=d2deba0f->d2deba0f
-canvasFNV=ae31f4d7->ae31f4d7
-renderFNV=f9344dec->f9344dec
-frameFNV=ee9d9dbc->ee9d9dbc
-eventQueueFNV=d985589f->d985589f
-particleFNV=f186cf0c->f186cf0c
-legacyState=9->9
-legacyRuntimeClear=yes
+gameFNV=0b2bb17f->0b2bb17f
+playerFNV=96f121f4->96f121f4
+hudFNV=b18611d2->b18611d2
+canvasFNV=564ff705->564ff705
+renderFNV=29f02a1d->29f02a1d
+frameFNV=6a0726c1->6a0726c1
 GameMutation=no
 PlayerMutation=no
 HudMutation=no
 DoomCanvasMutation=no
 RenderMutation=no
-ParticleSystemMutation=no
-frameMutation=no
+FrameMutation=no
 ```
 
 ## Fresh-Junction load tail: complete
 
-Every successful caller statement through `return true` is now hardware-proven semantically. There is no remaining post-load statement to recover before PLAYING service/render work.
+Every successful caller statement through `return true` is hardware-proven semantically. There is no remaining post-load statement to recover before native PLAYING/render work.
 
 ## Current hardware PARK
 
@@ -358,7 +362,8 @@ nativeST_PLAYING=yes
 nativeIdleTime=yes
 postLoadTailComplete=yes
 nativePlayingService=yes
-playingServicePending=no
+nativeGraphicsCatalog=yes
+graphicsCatalogPending=no
 firstFramePending=yes
 gameplayDispatchPending=yes
 rendererPending=yes
@@ -384,25 +389,25 @@ sound playback
 
 ## Probe completion semantics
 
-Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` alone is not a PASS certificate. Downstream probes must revalidate exact predecessor owners/world state. The current PLAYING-service probe sets `done=1` only after successful PARK.
+Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` alone is not a PASS certificate. Downstream probes must revalidate exact predecessor owners/world state. The graphics-catalog probe sets `done=1` only after successful PARK.
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-playing-service
+MERGE agent/esp32-native-graphics-catalog
 ```
 
 Hardware-tested firmware:
 
 ```text
-e9c10c8759588e48478d3d702292628411c5939e
+0b40b47eb242ee5ff40b5c4981fe6a8892e95fc5
 ```
 
 All commits after that tested SHA must remain documentation-only.
 
 ## Next bounded milestone after merge
 
-Recover exact new `main`, then consume the stable native PLAYING-service owner (`stateFNV=4c50b853`) to produce the **first native Junction gameplay frame**.
+Recover exact new `main`, then consume the stable native graphics catalog (`stateFNV=969d5a77`) to remove `Render.mediaTexelOffsets` / `Render.mediaBitShapeOffsets` / `Render.mediaPalettes` from the bounded native graphics resource manager path and produce the **first real Junction gameplay framebuffer mutation** using native PAK-backed wall/sprite assets.
 
 Keep it bounded:
 
@@ -416,6 +421,7 @@ legacy DoomCanvas_playingState = not called
 legacy Render_render = not called
 shapeData = NULL
 mediaTexels = NULL
+runtime ZIP = forbidden
 ```
 
-The milestone may finally mutate the logical 160x120 framebuffer and present it, but must not bundle input, turn logic, entities/monsters or a full legacy-style renderer architecture.
+The next milestone may mutate and present the logical 160x120 RGB565 framebuffer, but must not bundle input, turn logic, entity/monster activation or a return to the legacy renderer architecture.
