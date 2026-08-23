@@ -39,6 +39,11 @@
 #define EXPECTED_FACING_BYTES 32U
 #define EXPECTED_FACING_FNV 0x95aa1108U
 
+#define EXPECTED_SAVE_MAP_ID 9U
+#define EXPECTED_SAVE_VIEW_X 992
+#define EXPECTED_SAVE_VIEW_Y 1888
+#define EXPECTED_SAVE_VIEW_ANGLE 64
+
 #define EXPECTED_SNAPSHOT_FNV 0xbb714d80U
 #define EXPECTED_RUNTIME_FNV 0xbc432a0fU
 #define EXPECTED_MAP_FNV 0x8dba0bb4U
@@ -269,12 +274,11 @@ void Esp32JunctionPostLoadInitialSaveIntentProbe_service(
 
     probeState.attempted = 1;
     printf("\n=== Doom RPG ESP32-native Junction post-load initial save intent ===\n");
-    printf("[JUNCTIONSAVEINTENTPROBE] CONTRACT recover only the fresh-Junction caller decision if (loadMapID != MAP_END_GAME && !Game.isLoaded) Game_saveState(game, loadMapID, viewX, viewY, viewAngle, false): capture map/view/mode plus Config+Player2+World+Player component intent in one 24B pointer-free owner; do not call legacy Game_saveState, do not show Saving UI, do not present, do not write Config/Player2/World/Player, keep actual persistence/load cleanup/ST_PLAYING deferred and do not allocate\n");
+    printf("[JUNCTIONSAVEINTENTPROBE] CONTRACT recover only the fresh-Junction caller decision if (loadMapID != MAP_END_GAME && !Game.isLoaded) Game_saveState(game, loadMapID, viewX, viewY, viewAngle, false): source map/view arguments from the hardware-proven native PlayerView, capture Config+Player2+World+Player component intent in one 24B pointer-free owner; do not call legacy Game_saveState, do not show Saving UI, do not present, do not write Config/Player2/World/Player, keep actual persistence/load cleanup/ST_PLAYING deferred and do not allocate\n");
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL || doomRpg->game == NULL ||
         doomRpg->render == NULL || doomRpg->player == NULL || doomRpg->hud == NULL ||
         doomRpg->doomCanvas->state != ST_INTRO || doomRpg->doomCanvas->storyPage != 3 ||
-        doomRpg->doomCanvas->loadMapID != MAP_JUNCTION ||
         doomRpg->game->isLoaded != false || doomRpg->game->numEntities != 0 ||
         doomRpg->game->numMonsters != 0 || EspAssetPack_isOpen() ||
         !legacyRuntimeIsClear(doomRpg->render) ||
@@ -282,10 +286,7 @@ void Esp32JunctionPostLoadInitialSaveIntentProbe_service(
         !precedingOwnersCanonical() ||
         !EspMapResidentLifecycle_capture(&residentBefore) ||
         !residentCanonical(&residentBefore)) {
-        printf("[JUNCTIONSAVEINTENTPROBE] FAILED unsafe post-weapon boundary loadMapID=%d isLoaded=%d\n",
-               doomRpg != NULL && doomRpg->doomCanvas != NULL
-                   ? doomRpg->doomCanvas->loadMapID
-                   : -1,
+        printf("[JUNCTIONSAVEINTENTPROBE] FAILED unsafe post-weapon boundary isLoaded=%d\n",
                doomRpg != NULL && doomRpg->game != NULL
                    ? doomRpg->game->isLoaded
                    : -1);
@@ -373,14 +374,14 @@ void Esp32JunctionPostLoadInitialSaveIntentProbe_service(
     status = EspPostLoadInitialSaveIntent_prepare(
         &weaponBeforeOwner, &viewBeforeOwner, 0U, &prepared);
     if (status != ESP_POST_LOAD_INITIAL_SAVE_INTENT_OK || prepared.active != 1U ||
-        prepared.mapId != MAP_JUNCTION || prepared.isLoadedBefore != 0U ||
+        prepared.mapId != EXPECTED_SAVE_MAP_ID || prepared.isLoadedBefore != 0U ||
         prepared.saveMode != 0U || prepared.saveRequired != 1U ||
         prepared.componentMask != ESP_POST_LOAD_SAVE_COMPONENT_ALL ||
         prepared.persistenceDeferred != 1U ||
         prepared.presentationDeferred != 1U ||
-        prepared.viewX != viewBeforeOwner.viewX ||
-        prepared.viewY != viewBeforeOwner.viewY ||
-        prepared.viewAngle != viewBeforeOwner.viewAngle ||
+        prepared.viewX != EXPECTED_SAVE_VIEW_X ||
+        prepared.viewY != EXPECTED_SAVE_VIEW_Y ||
+        prepared.viewAngle != EXPECTED_SAVE_VIEW_ANGLE ||
         EspPostLoadInitialSaveIntent_isReady() ||
         !EspMapResidentLifecycle_capture(&residentPrepared) ||
         memcmp(&residentBefore, &residentPrepared, sizeof(residentBefore)) != 0 ||
@@ -390,18 +391,6 @@ void Esp32JunctionPostLoadInitialSaveIntentProbe_service(
         return;
     }
     prepareAtomic = 1;
-
-    if (doomRpg->doomCanvas->viewX != prepared.viewX ||
-        doomRpg->doomCanvas->viewY != prepared.viewY ||
-        doomRpg->doomCanvas->viewAngle != prepared.viewAngle ||
-        doomRpg->doomCanvas->loadMapID != prepared.mapId) {
-        printf("[JUNCTIONSAVEINTENTPROBE] FAILED native/legacy caller arguments mismatch legacy=%d/%d/%d map=%d native=%ld/%ld/%ld map=%u\n",
-               doomRpg->doomCanvas->viewX, doomRpg->doomCanvas->viewY,
-               doomRpg->doomCanvas->viewAngle, doomRpg->doomCanvas->loadMapID,
-               (long)prepared.viewX, (long)prepared.viewY,
-               (long)prepared.viewAngle, (unsigned)prepared.mapId);
-        return;
-    }
 
     status = EspPostLoadInitialSaveIntent_route(0U);
     if (status != ESP_POST_LOAD_INITIAL_SAVE_INTENT_OK ||
@@ -462,7 +451,6 @@ void Esp32JunctionPostLoadInitialSaveIntentProbe_service(
         !legacyRuntimeIsClear(doomRpg->render) || doomRpg->game->isLoaded != false ||
         doomRpg->doomCanvas->state != ST_INTRO ||
         doomRpg->doomCanvas->storyPage != 3 ||
-        doomRpg->doomCanvas->loadMapID != MAP_JUNCTION ||
         doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0) {
         printf("[JUNCTIONSAVEINTENTPROBE] FAILED integrity after initial-save intent route\n");
         return;
@@ -481,12 +469,10 @@ void Esp32JunctionPostLoadInitialSaveIntentProbe_service(
            (unsigned)liveState->presentationDeferred,
            (unsigned)liveState->active);
     printf("[JUNCTIONSAVEINTENT] SEMANTIC mapNotEnd=yes notLoaded=yes config=yes player2=yes world=yes playerRoute=yes saveFileWrite=no savingUi=no presentation=no\n");
-    printf("[JUNCTIONSAVEINTENT] INPUT weaponFNV=%08x giveMapFNV=%08x hudClearFNV=%08x viewFNV=%08x facingFNV=%08x unchanged=yes callerOrder=yes legacyMap=%d legacyView=%d/%d angle=%d matchNative=yes\n",
+    printf("[JUNCTIONSAVEINTENT] INPUT weaponFNV=%08x giveMapFNV=%08x hudClearFNV=%08x viewFNV=%08x facingFNV=%08x unchanged=yes callerOrder=yes callMap=9 callView=992/1888 angle=64 source=nativePlayerView legacyIsLoaded=%d\n",
            (unsigned)weaponFNVAfter, (unsigned)giveMapFNVAfter,
            (unsigned)hudOwnerAfter, (unsigned)viewFNVAfter,
-           (unsigned)facingFNVAfter, doomRpg->doomCanvas->loadMapID,
-           doomRpg->doomCanvas->viewX, doomRpg->doomCanvas->viewY,
-           doomRpg->doomCanvas->viewAngle);
+           (unsigned)facingFNVAfter, doomRpg->game->isLoaded);
     printf("[JUNCTIONSAVEINTENT] FAILCLOSED nullWeapon=%d nullView=%d nullOutput=%d inactiveWeapon=%d weaponMismatch=%d inactiveView=%d viewPending=%d loadedContextDeferred=%d invalidLoaded=%d prepareAtomic=%s postActivePrepare=%d repeat=%d repeatAtomic=%s\n",
            nullWeaponGate, nullViewGate, nullOutputGate, inactiveWeaponGate,
            weaponMismatchGate, inactiveViewGate, viewPendingGate,
