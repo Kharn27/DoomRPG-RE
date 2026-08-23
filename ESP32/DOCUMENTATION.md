@@ -43,15 +43,15 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_STATS_MENU_INTENT.md`](MAP1_NATIVE_STATS_MENU_INTENT.md) | LEVEL/OVERALL stats-menu intent | #65 | `c8679133351fa00e01a67103386b7676660c4a6e` |
 | [`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_PREFLIGHT.md) | map catalog + Junction PAK/BSP preflight | #66 | `9f981f490282200f216aef66d22608d2244beb00` |
 
-## Current candidate
+## Current merge-ready milestone
 
-[`MAP1_NATIVE_RESIDENT_HANDOFF.md`](MAP1_NATIVE_RESIDENT_HANDOFF.md) introduces a generic explicit resident-map lifecycle and proves the intended source/target ownership order with a reversible hardware transaction.
+[`MAP1_NATIVE_RESIDENT_HANDOFF.md`](MAP1_NATIVE_RESIDENT_HANDOFF.md) introduces the generic explicit resident-map lifecycle and hardware-proves the full reversible native resident transaction `Entrance -> EMPTY -> Junction -> EMPTY -> Entrance`.
 
 ```text
 branch = agent/esp32-native-resident-handoff
 base   = 9f981f490282200f216aef66d22608d2244beb00
-firmware candidate = f71520281254ff9d0b2d5e4be1b3611e29ca87c4
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 090d7dac5c255fc42a3d12fb3441053fdefe681b
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 ### Permanent lifecycle
@@ -64,7 +64,7 @@ EspMapResidentLifecycle_capture
 EspMapResidentLifecycle_loadFromEmpty
 ```
 
-The key invariant is explicit ownership of destruction:
+Ownership rule:
 
 ```text
 loadFromEmpty() never tears down a live source
@@ -72,60 +72,44 @@ live owners -> NOT_EMPTY before PAK I/O
 resetAll()  -> only explicit destructive primitive
 ```
 
-Teardown order:
+Teardown:
 
 ```text
 topology -> automap -> texture -> line -> script -> map state -> runtime
 ```
 
-Build order from EMPTY:
+Build from EMPTY:
 
 ```text
 runtime -> map state -> script -> line -> texture -> automap -> topology
 ```
 
-The lifecycle owns one temporary PAK session, uses `/entities.db` for topology, closes PAK before return and returns EMPTY on partial-build failure.
-
-### Resident snapshot
+### Hardware-proven Entrance resident snapshot
 
 ```text
 EspMapResidentSnapshot = 96 B
-```
+snapshotFNV = b3811f3d
 
-Entrance logical payload target:
-
-```text
-runtime=14112
+runtime=14095
 state=1024
 script=81
 line=120
 texture=60
 automap=103
 topology=2408
-payload=17908 B
-actual hardware owner heap=18008 B
-expected allocator overhead=100 B
-snapshotFNV static target=97090c81
+payload=17891 B
+actual heap=18008 B
+allocator overhead=117 B
 ```
 
-### Temporary Junction residency target
+The runtime payload/heap distinction is explicit: the immutable arena payload is `14095 B`; its allocator cost is `14112 B`.
 
-Already-proven Junction source/plan:
-
-```text
-resource=/junction.bsp
-resourceMapId=9
-gameplayLoadMapId=2
-bytes=21051
-crc32=4a2c5800
-sourceFNV=fefaf5ca
-nodes=77 lines=207 sprites=48 events=66 byteCodes=319 strings=126
-runtime plan=8867 B
-```
-
-Current owner formulas predict:
+### Hardware-proven full Junction residency
 
 ```text
+snapshotFNV = bc9071e9
+buildElapsed=121 ms
+
 runtime=8867
 state=1024
 script=73
@@ -134,39 +118,63 @@ texture=26
 automap=32
 topology=336
 payload=10410 B
+actual heap=10540 B
+allocator overhead=130 B
 ```
 
-The CYD must establish the actual Junction heap cost, allocator overhead, seven resident FNVs, whole snapshot FNV and topology counts.
-
-### Reversible proof sequence
+Resident Junction fingerprints:
 
 ```text
-SOURCE Entrance
- -> reject hidden load with NOT_EMPTY
- -> inventory Entrance + Junction
- -> resetAll
- -> EMPTY1
- -> prove PACK_BUSY ownership while empty
- -> build full Junction resident set
- -> capture Junction twice exactly
- -> resetAll
- -> EMPTY2 == EMPTY1 heap/largest
- -> rebuild Entrance
- -> RESTORED == SOURCE byte-for-byte
+runtimeFNV  = bc432a0f
+mapStateFNV = c5cdfc04
+scriptFNV   = bc9b18ff
+lineFNV     = 3658710d
+textureFNV  = 537319ad
+automapFNV  = 0b2ae445
+topologyFNV = d6e8df7d
+snapshotFNV = bc9071e9
 ```
 
-If anything fails after source release, the probe attempts immediate `/intro.bsp` recovery before PARK.
-
-Strict acceptance:
+Topology:
 
 ```text
-EMPTY1 - SOURCE heap = 18008 B
-EMPTY2 heap/largest == EMPTY1
-RESTORED heap/largest == SOURCE
-final heap delta=0
+entities=30
+enemies=0
+destructibles=3
+```
+
+Legacy `Game.entities` and `Game.monsters` remain zero.
+
+### RAM-safe reversible proof
+
+```text
+SOURCE   heap8=65592 largest8=34804
+EMPTY1   heap8=83600 largest8=34804
+JUNCTION heap8=73060 largest8=34804
+EMPTY2   heap8=83600 largest8=34804
+RESTORED heap8=65592 largest8=34804
+
+sourceCost   = 18008
+junctionCost = 10540
+finalDelta   = 0
+fragmentationDelta=0
+```
+
+Entrance restoration is byte-exact:
+
+```text
+restored snapshotFNV=b3811f3d
+exact=1
+heap/largest restored exactly
+```
+
+Final integrity:
+
+```text
 PAK closed
 framebuffer unchanged
-legacy Player/transition unchanged
+legacy Player unchanged
+legacy transition/menu unchanged
 legacy Render runtime clear
 DoomCanvas_loadMapCalled=no
 menuMutation=no
@@ -177,51 +185,32 @@ entities=0 monsters=0
 ST_INTRO page=3
 ```
 
-### Expected Serial focus
+## Hardware-proven boundary through current candidate
 
 ```text
-[RESIDENTHANDOFFPROBE] ARMED ...
-=== Doom RPG ESP32-native reversible resident handoff ===
-[BSPREAD] ... /intro.bsp ...
-[BSPREAD] ... /junction.bsp ...
-[MAPRT] ...
-[MAPSTATE] ...
-[MAPLINESTATE] ...
-[MAPLINETEX] ...
-[MAPAUTOMAP] ...
-[RESIDENTHANDOFF] SOURCE ...
-[RESIDENTHANDOFF] EMPTY1 ...
-[RESIDENTHANDOFF] GATES ...
-[RESIDENTHANDOFF] JUNCTION ...
-[RESIDENTHANDOFF] JUNCTIONFNV ...
-[RESIDENTHANDOFF] JUNCTIONTOPO ...
-[RESIDENTHANDOFF] EMPTY2 ...
-[RESIDENTHANDOFF] RESTORE ...
-[RESIDENTHANDOFF] RAM ...
-[RESIDENTHANDOFF] LEGACY ...
-[RESIDENTHANDOFF] PARK ...
-[ALIVE] ...
-```
-
-Build/flash with normal `esp32-cyd`. No CI status is published and no local build/hardware PASS is claimed.
-
-## Hardware-proven boundary through PR #66
-
-```text
-persistent native heap = 18008 B
-arenaFNV               = c3882516
-mapStateFNV            = cd99b98e
-scriptFNV              = f9e3d9df
-lineStateFNV           = e5e74861
-lineTextureStateFNV    = f1fc1875
-automapStateFNV        = 669b1aa7
-spriteTopologyFNV      = 3f321e43
-levelExitStatsFNV      = bd41bcfa
-playerExitAppliedFNV   = 298eaaa4
-statsMenuIntentFNV     = 96afe901
-catalogFNV             = ce322e3f
-transitionPreflightFNV = 108e5c7b
-junctionSourceFNV      = fefaf5ca
+persistent Entrance native heap = 18008 B
+Entrance snapshotFNV           = b3811f3d
+arenaFNV                       = c3882516
+mapStateFNV                    = cd99b98e
+scriptFNV                      = f9e3d9df
+lineStateFNV                   = e5e74861
+lineTextureStateFNV            = f1fc1875
+automapStateFNV                = 669b1aa7
+spriteTopologyFNV              = 3f321e43
+levelExitStatsFNV              = bd41bcfa
+playerExitAppliedFNV           = 298eaaa4
+statsMenuIntentFNV             = 96afe901
+catalogFNV                     = ce322e3f
+transitionPreflightFNV         = 108e5c7b
+junctionSourceFNV              = fefaf5ca
+junctionSnapshotFNV            = bc9071e9
+junctionRuntimeFNV             = bc432a0f
+junctionMapStateFNV            = c5cdfc04
+junctionScriptFNV              = bc9b18ff
+junctionLineFNV                = 3658710d
+junctionTextureFNV             = 537319ad
+junctionAutomapFNV             = 0b2ae445
+junctionTopologyFNV            = d6e8df7d
 
 allMapIntroOpcodeFamiliesOwned=yes
 entities=0
@@ -244,13 +233,13 @@ original Doom RPG behavior/data
       -> stats-menu intent         [hardware-proven]
       -> generic map catalog       [hardware-proven]
       -> target PAK/BSP preflight  [hardware-proven]
-      -> explicit resident lifecycle + reversible handoff [candidate]
+      -> explicit resident lifecycle + reversible full handoff [hardware-proven]
       -> committed transition state machine
       -> spawn/loadType handoff
  -> native gameplay/render loop
 ```
 
-Still outside current candidate:
+Still outside:
 
 ```text
 committed Junction residency
@@ -261,4 +250,10 @@ full native entity/monster gameplay
 ST_PLAYING progression
 native gameplay renderer
 sound playback
+```
+
+Merge recommendation:
+
+```text
+MERGE agent/esp32-native-resident-handoff
 ```
