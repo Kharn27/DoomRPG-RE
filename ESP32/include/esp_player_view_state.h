@@ -81,6 +81,16 @@ int EspPlayerView_consumePlayerSetup(uint8_t targetMapId,
                                      uint8_t gameplayLoadMapId,
                                      uint8_t loadType);
 
+/*
+ * Mark the first fresh-map Game_executeTile() call complete after native tile
+ * dispatch succeeds (or legitimately finds/executes no eligible command).
+ * Only tileEnterPending is cleared. The finishRotation/final-facing semantic
+ * remains represented by facingRefreshPending=1.
+ */
+int EspPlayerView_consumeTileEnter(uint8_t targetMapId,
+                                   uint8_t gameplayLoadMapId,
+                                   uint8_t loadType);
+
 #ifdef __cplusplus
 }
 #endif
