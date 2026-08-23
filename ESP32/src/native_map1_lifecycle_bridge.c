@@ -9,6 +9,7 @@
 #include "native_junction_player_view_probe.h"
 #include "native_junction_post_load_givemap_probe.h"
 #include "native_junction_post_load_hud_clear_probe.h"
+#include "native_junction_post_load_initial_save_intent_probe.h"
 #include "native_junction_post_load_weapon_select_probe.h"
 #include "native_junction_spawn_probe.h"
 #include "native_map1_access_probe.h"
@@ -87,6 +88,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32JunctionPostLoadHudClearProbe_reset();
     Esp32JunctionPostLoadGiveMapProbe_reset();
     Esp32JunctionPostLoadWeaponSelectProbe_reset();
+    Esp32JunctionPostLoadInitialSaveIntentProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -98,8 +100,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * residency -> fresh-map spawn/player/HUD/setup -> first tile dispatch ->
      * finishRotation orientation -> second tile dispatch -> durable native
      * facing -> post-load HUD message clear -> direct Junction Game_givemap ->
-     * current-weapon self-selection. Initial save/load cleanup/ST_PLAYING remain
-     * outside this chain. Each stage arms first and executes on a later loop.
+     * current-weapon self-selection -> initial-save caller intent. Durable save
+     * persistence/load cleanup/ST_PLAYING remain outside this chain. Each stage
+     * arms first and executes on a later loop.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -139,4 +142,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32JunctionPostLoadHudClearProbe_service(doomRpg);
     Esp32JunctionPostLoadGiveMapProbe_service(doomRpg);
     Esp32JunctionPostLoadWeaponSelectProbe_service(doomRpg);
+    Esp32JunctionPostLoadInitialSaveIntentProbe_service(doomRpg);
 }
