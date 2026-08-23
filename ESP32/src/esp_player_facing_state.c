@@ -72,7 +72,6 @@ static int spritePlaneCrosses(const EspMapSprite* sprite,
     return 0;
 }
 
-/* Return 1 for a valid lookup operation (found or absent), 0 for storage error. */
 static int resolveEntityDef(const EspAssetPackEntry* entry,
                             uint16_t lookup,
                             uint8_t* outFound,
@@ -87,9 +86,7 @@ static int resolveEntityDef(const EspAssetPackEntry* entry,
     if (outType != NULL) *outType = 0xffU;
     if (outSubType != NULL) *outSubType = 0xffU;
     if (entry == NULL || outFound == NULL || outType == NULL ||
-        outSubType == NULL || !EspAssetPack_readRange(entry, 0U, header, 2U)) {
-        return 0;
-    }
+        outSubType == NULL || !EspAssetPack_readRange(entry, 0U, header, 2U)) return 0;
 
     count = readLe16(header);
     if (count == 0U || count > ENTITY_DEF_MAX_COUNT ||
@@ -164,6 +161,7 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
     uint8_t lineOpen;
     int initialLineEntityPresent;
     int stopTrace;
+    int queryResult;
     int opened = 0;
     EspPlayerFacingStatus status = ESP_PLAYER_FACING_OK;
 
@@ -175,12 +173,9 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
     topology = EspMapSpriteTopology_view();
     lineState = EspMapLineState_view();
     if (runtime == NULL || topology == NULL || lineState == NULL ||
-        runtime->lineCount != lineState->lineCount) {
-        return ESP_PLAYER_FACING_TOPOLOGY_INVALID;
-    }
+        runtime->lineCount != lineState->lineCount) return ESP_PLAYER_FACING_TOPOLOGY_INVALID;
 
-    if (EspAssetPack_isOpen() ||
-        !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+    if (EspAssetPack_isOpen() || !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         return ESP_PLAYER_FACING_STORAGE_ERROR;
     }
     opened = 1;
@@ -199,10 +194,6 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
                           ((uint32_t)state->traceStartX >> 6U));
         initialLineEntityPresent = 0;
 
-        /* Line entities are created after map-sprite entities and linked at the
-         * tile head in increasing line-index order. Walking line indexes in
-         * reverse therefore matches legacy nextOnTile order before sprites.
-         */
         lineIndex = runtime->lineCount;
         while (lineIndex != 0U) {
             --lineIndex;
@@ -242,8 +233,7 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
                 status = ESP_PLAYER_FACING_TRACE_OVERFLOW;
                 goto cleanup;
             }
-            state->legacyIdentity =
-                ((uint32_t)lineIndex + 1U) | ENTITY_INFO_LINE;
+            state->legacyIdentity = ((uint32_t)lineIndex + 1U) | ENTITY_INFO_LINE;
             state->hitIndex = (uint16_t)lineIndex;
             state->hitTile = tile;
             state->kind = ESP_PLAYER_FACING_KIND_LINE;
@@ -253,9 +243,6 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
             goto cleanup;
         }
 
-        /* entities[0] replaces the initial tile head only when the automap wall
-         * bit is set and no line entity occupied that head at map load time.
-         */
         if (!EspMapRuntime_getBlockCell(tile, &blockFlags)) {
             status = ESP_PLAYER_FACING_TOPOLOGY_INVALID;
             goto cleanup;
@@ -276,43 +263,51 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
         }
 
         beforeOrder = 0xffffU;
-        while (EspMapTopologyQuery_findLinkedOnTile(tile, beforeOrder, &entity)) {
+        queryResult = EspMapTopologyQuery_findLinkedOnTile(tile, beforeOrder, &entity);
+        while (queryResult > 0) {
             beforeOrder = entity.linkOrder;
-            if (!traceTypeEnabled(entity.type)) continue;
+            if (traceTypeEnabled(entity.type)) {
+                if (entity.type == 14U || entity.type == 15U) {
+                    if (!EspMapRuntime_getMapSprite(entity.spriteIndex, &sprite)) {
+                        status = ESP_PLAYER_FACING_TOPOLOGY_INVALID;
+                        goto cleanup;
+                    }
+                    if (spritePlaneCrosses(&sprite, state->traceStartX,
+                                           state->traceStartY, state->traceEndX,
+                                           state->traceEndY)) {
+                        stopTrace = 1;
+                    }
+                    else {
+                        queryResult = EspMapTopologyQuery_findLinkedOnTile(
+                            tile, beforeOrder, &entity);
+                        continue;
+                    }
+                }
 
-            if (entity.type == 14U || entity.type == 15U) {
-                if (!EspMapRuntime_getMapSprite(entity.spriteIndex, &sprite)) {
-                    status = ESP_PLAYER_FACING_TOPOLOGY_INVALID;
+                if (!appendTrace(state)) {
+                    status = ESP_PLAYER_FACING_TRACE_OVERFLOW;
                     goto cleanup;
                 }
-                if (!spritePlaneCrosses(&sprite, state->traceStartX,
-                                        state->traceStartY, state->traceEndX,
-                                        state->traceEndY)) continue;
-                stopTrace = 1;
-            }
 
-            if (!appendTrace(state)) {
-                status = ESP_PLAYER_FACING_TRACE_OVERFLOW;
-                goto cleanup;
+                if (entity.type == 14U ||
+                    ((entity.x >> 6U) != ((uint32_t)state->traceStartX >> 6U)) ||
+                    ((entity.y >> 6U) != ((uint32_t)state->traceStartY >> 6U))) {
+                    state->legacyIdentity = (uint32_t)entity.spriteIndex + 1U;
+                    state->hitIndex = entity.spriteIndex;
+                    state->hitTile = tile;
+                    state->kind = ESP_PLAYER_FACING_KIND_SPRITE;
+                    state->entityType = entity.type;
+                    state->entitySubType = entity.subType;
+                    state->active = 1U;
+                    goto cleanup;
+                }
+                if (stopTrace) break;
             }
-
-            /* Exact final checkFacingEntity filter: eType 14 is always durable;
-             * otherwise an ordinary map entity on the near/start tile is
-             * skipped and tracing continues to the next returned entity.
-             */
-            if (entity.type == 14U ||
-                ((entity.x >> 6U) != ((uint32_t)state->traceStartX >> 6U)) ||
-                ((entity.y >> 6U) != ((uint32_t)state->traceStartY >> 6U))) {
-                state->legacyIdentity = (uint32_t)entity.spriteIndex + 1U;
-                state->hitIndex = entity.spriteIndex;
-                state->hitTile = tile;
-                state->kind = ESP_PLAYER_FACING_KIND_SPRITE;
-                state->entityType = entity.type;
-                state->entitySubType = entity.subType;
-                state->active = 1U;
-                goto cleanup;
-            }
-            if (stopTrace) break;
+            queryResult = EspMapTopologyQuery_findLinkedOnTile(tile, beforeOrder, &entity);
+        }
+        if (queryResult < 0) {
+            status = ESP_PLAYER_FACING_TOPOLOGY_INVALID;
+            goto cleanup;
         }
 
         --tileY;
@@ -325,9 +320,7 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
 
 cleanup:
     if (opened) EspAssetPack_close();
-    if (status != ESP_PLAYER_FACING_OK) {
-        memset(state, 0, sizeof(*state));
-    }
+    if (status != ESP_PLAYER_FACING_OK) memset(state, 0, sizeof(*state));
     return status;
 }
 
@@ -393,11 +386,9 @@ EspPlayerFacingStatus EspPlayerFacing_prepare(
 
     memset(&next, 0, sizeof(next));
     next.traceStartX = playerView->destX +
-        (int32_t)(((int64_t)orientation->viewCos *
-                   ESP_PLAYER_FACING_NEAR_OFFSET) >> 16);
+        (int32_t)(((int64_t)orientation->viewCos * ESP_PLAYER_FACING_NEAR_OFFSET) >> 16);
     next.traceStartY = playerView->destY +
-        (int32_t)(((-(int64_t)orientation->viewSin) *
-                   ESP_PLAYER_FACING_NEAR_OFFSET) >> 16);
+        (int32_t)(((-(int64_t)orientation->viewSin) * ESP_PLAYER_FACING_NEAR_OFFSET) >> 16);
     next.traceEndX = next.traceStartX +
         ESP_PLAYER_FACING_STEP_COUNT * orientation->viewStepX;
     next.traceEndY = next.traceStartY +
@@ -407,10 +398,6 @@ EspPlayerFacingStatus EspPlayerFacing_prepare(
     next.loadType = playerView->loadType;
     setNoneDefaults(&next);
 
-    /* Current permanent proof is deliberately the exact north-facing axial
-     * fresh-map path. Generalized movement/turn traces receive later gameplay
-     * milestones instead of silently widening this contract.
-     */
     if (next.traceStartX != next.traceEndX || next.traceStartY <= next.traceEndY ||
         next.traceStartX < 0 || next.traceStartY < 0 || next.traceEndY < 0 ||
         next.traceStartX >= MAP_WIDTH * MAP_TILE_SIZE ||
