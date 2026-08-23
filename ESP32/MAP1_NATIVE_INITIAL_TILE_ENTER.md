@@ -9,11 +9,17 @@ PR   = #72 — native fresh-map Player_setup
 main = 9077ae4496bdcc06b6b99846332ab43b38943a8a
 ```
 
-Status: **HARDWARE CANDIDATE — NOT YET CYD-PROVEN**.
+Hardware-tested firmware:
+
+```text
+d8fb3e0e372b89d95c37cce558420f7fcb474419
+```
+
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
-PR #72 hardware-proved the fresh-map player setup boundary and parks the active native Junction player/view at:
+PR #72 hardware-proved the fresh-map player setup boundary and parked the active native Junction player/view at:
 
 ```text
 world=992/1888
@@ -70,7 +76,7 @@ if tile has an event:
 return whether an event command reported success
 ```
 
-The native milestone represents `skipAdvanceTurn=false` in its own semantic owner and requires the currently parked legacy witness to already be false; it does not mutate legacy `Game_t`.
+The native owner represents `skipAdvanceTurn=false` without mutating legacy `Game_t`.
 
 ## Permanent owner
 
@@ -81,35 +87,60 @@ ESP32/include/esp_player_initial_tile.h
 ESP32/src/esp_player_initial_tile.c
 ```
 
-Candidate ABI:
+Hardware-proven classic-ESP32 ABI:
 
 ```text
 EspPlayerInitialTileState = 24 B
 persistent heap = 0 B
+stateFNV = f73e28b2
 ```
 
-The owner records:
+Real Junction state:
 
 ```text
-input flags
-tile index
-event index / found state
-initial mutable event state
-event flags
-eligible command count
-executed command count
-removed-command count
-BLOCKINPUT result
-skipAdvanceTurn semantic
-target/load identity
-active state
+tile=943
+flags=1000040f
+eventFound=1
+eventIndex=61
+eventState=0
+eventFlags=0
+blocked=0
+eligible=0
+executed=0
+removed=0
+skipAdvanceTurn=0
+active=1
+targetMap=9
+gameplayLoadMapId=2
+loadType=0
+playerKeys=00000000
 ```
 
-Mutable event state and MCODE_FLAG_REMOVE bits remain in the already permanent `EspMapScriptState` overlay. The immutable runtime arena is never patched.
+`f73e28b2` is now the hardware canon for this 24-byte initial-tile owner at the fresh Junction spawn.
 
-## Existing native machinery reused
+## Important real-event result
 
-This milestone intentionally reuses rather than duplicates:
+The real tile 943 does contain an event:
+
+```text
+eventFound=1
+eventIndex=61
+```
+
+However, with the exact recovered fresh-map flags `0x1000040f`, the current event state and zero player keys, **no command is eligible**:
+
+```text
+eligible=0
+executed=0
+removed=0
+blocked=0
+```
+
+Therefore this first fresh-map tile dispatch requires no opcode execution and no script mutation. The tiny generic executor remains deliberately limited to 11/19/20; no additional opcode family was implicitly enabled by this milestone.
+
+## Native machinery reused
+
+The implementation reuses:
 
 ```text
 EspMapEvents_findByTile()
@@ -121,117 +152,134 @@ EspMapScriptState event-state / removed-command overlay
 EspMapOpcodeExecutor_execute()
 ```
 
-The recovered key-filter input remains an explicit `playerKeys` argument because cross-map key ownership has not yet moved into the active native player root. The hardware probe passes the current legacy value read-only and proves the legacy player object is not mutated.
+A complete side-effect-free preflight still rejects any eligible unsupported opcode with `ESP_PLAYER_INITIAL_TILE_OPCODE_DEFERRED`. The real hardware path simply proved that this gate is not reached for the initial Junction tile-enter because there are zero eligible commands.
 
-## Deliberately narrow opcode boundary
+## Player/view ownership transfer
 
-The generic native opcode executor still supports only:
-
-```text
-11 EV_CHANGESTATE
-19 EV_NEXTSTATE
-20 EV_PREVSTATE
-```
-
-Therefore the initial tile route performs a full side-effect-free preflight before mutation. If any **eligible** command on tile 943 uses any other opcode, preparation returns:
+Hardware proved the exact one-bit ownership transfer:
 
 ```text
-ESP_PLAYER_INITIAL_TILE_OPCODE_DEFERRED
-```
-
-and leaves player/view + script state unchanged.
-
-The probe then prints the exact real command:
-
-```text
-event index/value
-initial state/event flags
-command offset
-opcode ID
-arg1
-arg2
-```
-
-That output is the source of truth for the next dedicated opcode-family implementation. No fallback to legacy `Game_executeEvent()` is permitted.
-
-## Atomic execution
-
-If every eligible command is already supported, route execution:
-
-1. executes only through `EspMapOpcodeExecutor`;
-2. applies recovered `arg2 & 0x200` removal through `EspMapScriptState` rather than zeroing immutable bytecode;
-3. records enough bounded stack state to roll back script mutations if execution or player-view consumption fails;
-4. consumes only `tileEnterPending` after the whole dispatch succeeds.
-
-Expected post-route player/view semantic:
-
-```text
+beforeFNV=c21fba3c
+afterFNV=1bd0f09b
 hudRefreshPending=0
 facingRefreshPending=1
 playerSetupPending=0
 tileEnterPending=0
+placementExact=yes
 ```
 
-With the 44-byte ABI unchanged, the predicted FNV for that one-bit ownership transfer is:
+`1bd0f09b` was previously only a predicted fingerprint. It is now a hardware canon.
+
+Only `tileEnterPending` is consumed. `finishRotation`, its second tile execution and durable facing remain pending.
+
+## Script / resident integrity
+
+The native script overlay did not change:
 
 ```text
-post-initial-tile PlayerView FNV=1bd0f09b
+script beforeFNV=bc9b18ff
+afterFNV=bc9b18ff
+changed=no
 ```
 
-This is a **candidate expectation**, not a hardware canon until the CYD proves it.
-
-## Hardware probe
-
-Temporary probe files:
+All resident owners remained canonical:
 
 ```text
-ESP32/include/native_junction_initial_tile_probe.h
-ESP32/src/native_junction_initial_tile_probe.c
+runtimeFNV=bc432a0f
+mapStateFNV=c5cdfc04
+lineFNV=3658710d
+textureFNV=537319ad
+automapFNV=0b2ae445
+topologyFNV=d6e8df7d
+payload=10410
+entities=30
+enemies=0
+destructibles=3
+packClosed=yes
+runtimeStable=yes
+nonScriptMutableStable=yes
 ```
 
-The normal `esp32-cyd` chain arms it only after the hardware-proven Player_setup probe has completed.
+## Hardware fail-closed proof
 
-Two valid diagnostic outcomes exist before this milestone can be promoted:
-
-### A. Complete native route
-
-Expected markers begin with:
+Real CYD proved:
 
 ```text
-=== Doom RPG ESP32-native Junction initial tile-enter ===
-[JUNCTIONTILE] READY ...
+nullView=1
+nullSetup=1
+nullOutput=1
+angle=1
+blocked=1
+missingTile=1
+missingFacing=1
+setupMismatch=1
+prepareAtomic=yes
+repeat=1
+repeatAtomic=yes
 ```
 
-The probe then proves:
+These gates prove invalid context/order is rejected without partially consuming the player/view boundary.
+
+## RAM proof
+
+Normal `esp32-cyd` hardware run:
 
 ```text
-tile=943
-flags=1000040f
-PlayerView c21fba3c -> 1bd0f09b
-tileEnterPending=0
-facingRefreshPending=1
-finishRotation still deferred
-no legacy mutation
-no framebuffer mutation
-zero same-build heap delta
-immutable runtime/non-script owners stable
+heap8=72868->72868
+delta=0
+largest8=34804->34804
+delta=0
+persistentHeapBytes=0
 ```
 
-Script FNV is allowed to change only if eligible supported state opcodes actually execute.
-
-### B. Real unsupported opcode discovery
-
-Expected marker:
+Stable heartbeat after PASS:
 
 ```text
-[JUNCTIONTILE] DEFERRED ... code=<real opcode> arg1=<...> arg2=<...> failClosed=yes
+heap=138632
+heap8=72868
+largest8=34804
 ```
 
-This is not a hardware PASS for tile-enter ownership. It is a successful fail-closed discovery result: `tileEnterPending` remains 1 and the exact opcode becomes the next bounded prerequisite.
+## Legacy / framebuffer non-mutation
 
-## Mandatory invariants
+Same-build equality witnesses:
 
-Always remain true:
+```text
+gameFNV=c655ff85->c655ff85
+playerFNV=774ed642->774ed642
+frameFNV=7a95b5b5->7a95b5b5
+legacyRuntimeClear=yes
+GameMutation=no
+PlayerMutation=no
+HudMutation=no
+DoomCanvasMutation=no
+RenderMutation=no
+```
+
+These three FNVs are same-build equality witnesses, not cross-build canons.
+
+## Final hardware PARK
+
+```text
+state=9
+page=3
+targetMap=9
+junctionResident=yes
+nativePlayerView=yes
+nativePlayerSetup=yes
+nativeInitialTile=yes
+tileEnterPending=no
+facingPending=yes
+finishRotationPending=yes
+secondTilePending=yes
+finalFacingPending=yes
+ST_PLAYING=no
+entities=0
+monsters=0
+noGameplay=yes
+```
+
+Mandatory invariants remain true:
 
 ```text
 shapeData == NULL
@@ -242,14 +290,34 @@ legacy Game.monsters = 0
 ST_PLAYING not reached
 ```
 
-Normal hardware environment:
+## Correct ordering boundary
+
+Hardware-proven fresh-map chain is now:
 
 ```text
-esp32-cyd
+placement                         [hardware-proven]
+HUD dirty                         [hardware-proven]
+transient old-vector facing       [deliberately unowned]
+Player_setup                      [hardware-proven]
+initial Game_executeTile          [hardware-proven]
+finishRotation orientation prep   [next]
+second Game_executeTile           [deferred]
+final durable facing              [deferred]
+ST_PLAYING                        [deferred]
 ```
 
-## Promotion rule
+The natural next bounded milestone after merge is the `DoomCanvas_finishRotation()` orientation preparation (`viewSin`, `viewCos`, `viewStepX`, `viewStepY`) while keeping its second tile dispatch and final facing as separate boundaries unless a fresh legacy audit proves a tighter safe grouping.
 
-Do not mark this milestone hardware-proven until the real CYD logs establish either that the initial tile dispatch is fully owned by the current executor, or after any discovered deferred opcode family is implemented and the complete route is re-tested.
+## Merge recommendation
 
-After a complete PASS, update `PORTING_STATUS.md`, `DOCUMENTATION.md` and this archive using the exact Serial values; all commits after the flashed firmware SHA must then be documentation-only.
+```text
+MERGE agent/esp32-native-initial-tile-enter
+```
+
+Hardware-tested firmware:
+
+```text
+d8fb3e0e372b89d95c37cce558420f7fcb474419
+```
+
+Every commit after that firmware SHA on this branch must remain documentation-only unless another firmware is flashed.
