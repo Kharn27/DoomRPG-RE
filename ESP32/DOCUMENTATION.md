@@ -50,15 +50,16 @@ persistent heap=0 B
 ST_PLAYING=no
 ```
 
-## Current hardware candidate
+## Current merge-ready milestone
 
 [`MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md`](MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md)
-owns only the next exact caller operation:
+hardware-proves the next exact caller operation:
 
 ```text
 branch = agent/esp32-native-post-load-weapon-self-select
 base   = 4737b016d02615b8435cf84909fe3c251b6d338b
-status = HARDWARE CANDIDATE — NOT YET CYD-PROVEN
+hardware-tested firmware = 24fb8fbf914820500d2e16815e22beb0439c9ba0
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Exact callsite:
@@ -76,105 +77,116 @@ if (player->weapon != i) {
 player->weapon = i;
 ```
 
-Because `i` is the current weapon itself, this caller is strictly:
-
-```text
-requested == current
-updateView branch not taken
-weapon assignment is identity
-```
-
-No real weapon-change gameplay, ammo or inventory ownership is introduced.
+At this caller the request is the current weapon, so the branch is not taken and
+the assignment is identity.
 
 ### Permanent owner
 
 ```text
-ESP32/include/esp_post_load_weapon_select_state.h
-ESP32/src/esp_post_load_weapon_select_state.c
-EspPostLoadWeaponSelectState = 8 B candidate
+EspPostLoadWeaponSelectState = 8 B
+stateFNV = 699f3cf3
 persistent heap = 0 B
 ```
 
-The state contains:
+Real-CYD state:
 
 ```text
-weaponBefore
-requestedWeapon
-weaponAfter
-viewInvalidationRequested
-targetMapId
-gameplayLoadMapId
-loadType
-active
-```
-
-The real CYD will establish the current weapon and state FNV. Reset-time defaults
-are not treated as hardware truth.
-
-### Strict input boundary
-
-The candidate requires:
-
-```text
-post-load GIVEMAP FNV=448e587d / counts 198/48/15
+weaponBefore=2
+requestedWeapon=2
+weaponAfter=2
+viewInvalidationRequested=0
 targetMap=9
 gameplayLoadMapId=2
 loadType=0
-runtimeFNV=bc432a0f
-mapStateFNV=8dba0bb4
-automapFNV=b699bd75
-current weapon in legacy range 0..11
+active=1
 ```
 
-Legacy source confirms weapon iteration uses indices through 11 inclusive.
-
-### Hardware probe contract
+Semantic proof:
 
 ```text
-ESP32/include/native_junction_post_load_weapon_select_probe.h
-ESP32/src/native_junction_post_load_weapon_select_probe.c
-```
-
-Expected marker:
-
-```text
-=== Doom RPG ESP32-native Junction post-load weapon self-select ===
-[JUNCTIONWEAPON] READY ...
-[JUNCTIONWEAPON] SEMANTIC ...
-[JUNCTIONWEAPON] INPUT ...
-[JUNCTIONWEAPON] FAILCLOSED ...
-[JUNCTIONWEAPON] RESIDENT ...
-[JUNCTIONWEAPON] RAM ...
-[JUNCTIONWEAPON] LEGACY ...
-[JUNCTIONWEAPON] PARK ...
-```
-
-Acceptance requires:
-
-```text
-stateBytes=8
-weaponBefore=requestedWeapon=weaponAfter
-viewInvalidationRequested=0
 selfSelect=yes
 identityAssignment=yes
 updateViewBranchTaken=no
-legacy weapon unchanged
-legacy isUpdateView unchanged
-post-load GIVEMAP/HUD-clear/PlayerView/Facing unchanged
-snapshotFNV=bb714d80 unchanged
-map=8dba0bb4 unchanged
-automap=b699bd75 unchanged
-runtime/script/line/texture/topology unchanged
-PAK closed
-heap/largest delta=0
-legacy Game/Player/Hud/DoomCanvas/Render/frame unchanged
-legacy Player_selectWeapon not called
-ST_PLAYING=no
-entities=0
-monsters=0
+legacyWeapon=2->2
+legacyIsUpdateView=1->1
 ```
 
-## Hardware-proven canons through PR #78
+Input-owner proof:
+
+```text
+giveMapFNV=448e587d
+hudClearFNV=b7383e18
+viewFNV=afcdcf74
+facingFNV=95aa1108
+unchanged=yes
+callerOrder=yes
+```
+
+Resident/RAM proof:
+
+```text
+snapshotFNV=bb714d80->bb714d80
+mapFNV=8dba0bb4
+automapFNV=b699bd75
+runtimeFNV=bc432a0f
+scriptFNV=bc9b18ff
+lineFNV=3658710d
+textureFNV=537319ad
+topologyFNV=d6e8df7d
+heap8=72684->72684
+largest8=34804->34804
+persistentHeapBytes=0
+packClosed=yes
+```
+
+Fail-closed proof:
+
+```text
+nullGiveMap=1
+nullOutput=1
+inactiveGiveMap=1
+targetMap=1
+gameplayMap=1
+loadType=1
+count=1
+invalidWeapon=1
+prepareAtomic=yes
+postActivePrepare=1
+repeat=1
+repeatAtomic=yes
+```
+
+Same-build equality witnesses:
+
+```text
+gameFNV=d073b2d5->d073b2d5
+playerFNV=c64e7862->c64e7862
+hudFNV=b18611d2->b18611d2
+canvasFNV=d6d1b92a->d6d1b92a
+renderFNV=f9344dec->f9344dec
+frameFNV=ee9d9dbc->ee9d9dbc
+legacyRuntimeClear=yes
+legacyPlayer_selectWeaponCalled=no
+```
+
+## Probe completion semantics
+
+A repository audit performed during promotion corrected an older documentation
+assumption: temporary probe `done` flags are terminal-attempt markers, and some
+failure branches also set `done=1`.
+
+Therefore:
+
+```text
+*_isDone() alone != PASS certificate
+```
+
+Every downstream milestone must independently revalidate its predecessor owner/
+world boundary. Historical regression claims must not rely solely on reaching a
+later `isDone()`-gated probe. The current weapon milestone is hardware-proven by
+its complete successful Serial block plus its own strict input validation.
+
+## Hardware-proven canons through current branch
 
 ```text
 Entrance snapshotFNV=b3811f3d
@@ -199,19 +211,7 @@ JunctionDurableFacingFNV=95aa1108
 postFacingPlayerViewFNV=afcdcf74
 JunctionPostLoadHudClearFNV=b7383e18
 JunctionPostLoadGiveMapFNV=448e587d
-```
-
-Current Junction resident owners before the candidate:
-
-```text
-runtime=bc432a0f
-map=8dba0bb4
-script=bc9b18ff
-line=3658710d
-texture=537319ad
-automap=b699bd75
-topology=d6e8df7d
-snapshot=bb714d80
+JunctionWeaponSelfSelectFNV=699f3cf3
 ```
 
 ## Exact caller order
@@ -223,8 +223,8 @@ Hud.statBarMessage=NULL                     [hardware-proven]
 Hud.logMessage[0]='\0'                     [hardware-proven]
 if MAP_JUNCTION: Game_givemap()             [hardware-proven]
 else: DoomCanvas_uncoverAutomap()
-Player_selectWeapon(player, player->weapon) [CURRENT CANDIDATE]
-if !game->isLoaded: Game_saveState(1,1,1)   [next after PASS/merge]
+Player_selectWeapon(player, player->weapon) [hardware-proven]
+if !game->isLoaded: Game_saveState(1,1,1)   [NEXT after merge]
 clear isLoaded/isSaved/activeLoadType       [deferred]
 clear queued events / particles             [deferred]
 isUpdateView=true                           [deferred]
@@ -245,15 +245,15 @@ original behavior/data
  -> finishRotation durable facing                [hardware-proven]
  -> post-load HUD message reset                  [hardware-proven]
  -> direct Junction Game_givemap                 [hardware-proven]
- -> current-weapon self-selection                [CURRENT CANDIDATE]
- -> initial post-load save                       [next after PASS/merge]
+ -> current-weapon self-selection                [hardware-proven]
+ -> initial post-load save                       [next]
  -> remaining caller-side load completion
  -> ST_PLAYING
  -> native gameplay
  -> native renderer
 ```
 
-Current hardware PARK before candidate:
+Current hardware PARK:
 
 ```text
 state=9 / ST_INTRO
@@ -262,8 +262,9 @@ targetMap=9
 junctionResident=yes
 nativeHudClear=yes
 nativePostLoadGiveMap=yes
+nativeWeaponSelfSelect=yes
 Game_givemapPending=no
-weaponReselectPending=yes
+weaponReselectPending=no
 initialSavePending=yes
 postLoadCleanupPending=yes
 ST_PLAYING=no
@@ -283,8 +284,29 @@ legacy Game.monsters = 0
 ST_PLAYING not reached
 ```
 
-## Next test
+## Merge recommendation
 
-Build and flash normal `esp32-cyd`, then return the complete `[JUNCTIONWEAPON]`
-block. Promote only after the real CYD proves the self-selection identity and all
-integrity/RAM invariants.
+```text
+MERGE agent/esp32-native-post-load-weapon-self-select
+```
+
+Hardware-tested firmware:
+
+```text
+24fb8fbf914820500d2e16815e22beb0439c9ba0
+```
+
+All later commits on this branch must remain documentation-only unless another
+firmware is flashed.
+
+## Next bounded milestone after merge
+
+Recover exact new `main`, then audit only:
+
+```c
+if (!game->isLoaded) {
+    Game_saveState(game, 1, 1, 1);
+}
+```
+
+Keep load cleanup, `ST_PLAYING`, gameplay entities and rendering separate.
