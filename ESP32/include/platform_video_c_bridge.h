@@ -14,6 +14,7 @@ extern "C" {
 
 void* Esp32PlatformVideo_framebuffer(void);
 size_t Esp32PlatformVideo_framebufferSizeBytes(void);
+int Esp32PlatformVideo_present(void);
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 void Esp32PlatformVideo_debugOverlayClear(void);
