@@ -17,7 +17,14 @@
 
 #include "esp_asset_pack.h"
 #include "esp_bsp_reader.h"
+#include "esp_map_automap_state.h"
+#include "esp_map_line_state.h"
+#include "esp_map_line_texture_state.h"
 #include "esp_map_resident_lifecycle.h"
+#include "esp_map_runtime.h"
+#include "esp_map_script_state.h"
+#include "esp_map_sprite_topology.h"
+#include "esp_map_state.h"
 #include "native_resident_handoff_probe.h"
 #include "native_transition_preflight_final_probe.h"
 #include "platform_video_c_bridge.h"
@@ -276,6 +283,7 @@ void Esp32ResidentHandoffProbe_service(struct DoomRPG_s* doomRpg) {
     int sourceReleased = 0;
     int introInventoryReady = 0;
     int passReady = 0;
+    int sourceCapture;
 
     if (probeState.done || probeState.attempted) return;
     if (!Esp32TransitionPreflightFinalProbe_isDone()) return;
@@ -293,14 +301,71 @@ void Esp32ResidentHandoffProbe_service(struct DoomRPG_s* doomRpg) {
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
         doomRpg->render == NULL || doomRpg->game == NULL ||
         doomRpg->menu == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->player == NULL || doomRpg->doomCanvas->state != ST_INTRO ||
+        doomRpg->player == NULL) {
+        printf("[RESIDENTHANDOFFPROBE] FAILED missing source witness objects\n");
+        probeState.done = 1;
+        return;
+    }
+
+    if (doomRpg->doomCanvas->state != ST_INTRO ||
         doomRpg->doomCanvas->storyPage != 3 ||
         doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0 ||
         !legacyRuntimeIsClear(doomRpg->render) || EspAssetPack_isOpen() ||
-        sizeof(EspMapResidentSnapshot) != EXPECTED_SNAPSHOT_BYTES ||
-        !EspMapResidentLifecycle_capture(&source) ||
-        !sourceSnapshotMatches(&source)) {
-        printf("[RESIDENTHANDOFFPROBE] FAILED unsafe source boundary\n");
+        sizeof(EspMapResidentSnapshot) != EXPECTED_SNAPSHOT_BYTES) {
+        printf("[RESIDENTHANDOFFPROBE] SOURCEBOUNDARY state=%d expected=%d page=%d entities=%d monsters=%d legacyClear=%d packOpen=%d snapshotBytes=%u expectedBytes=%u\n",
+               doomRpg->doomCanvas->state, ST_INTRO,
+               doomRpg->doomCanvas->storyPage,
+               doomRpg->game->numEntities, doomRpg->game->numMonsters,
+               legacyRuntimeIsClear(doomRpg->render), EspAssetPack_isOpen(),
+               (unsigned int)sizeof(EspMapResidentSnapshot),
+               (unsigned int)EXPECTED_SNAPSHOT_BYTES);
+        printf("[RESIDENTHANDOFFPROBE] FAILED unsafe source legacy/lifecycle boundary\n");
+        probeState.done = 1;
+        return;
+    }
+
+    memset(&source, 0, sizeof(source));
+    sourceCapture = EspMapResidentLifecycle_capture(&source);
+    if (!sourceCapture) {
+        printf("[RESIDENTHANDOFFPROBE] SOURCEOWNERS capture=0 runtime=%d map=%d script=%d line=%d texture=%d automap=%d topology=%d empty=%d\n",
+               EspMapRuntime_isLoaded(), EspMapState_isReady(),
+               EspMapScriptState_isReady(), EspMapLineState_isReady(),
+               EspMapLineTextureState_isReady(), EspMapAutomapState_isReady(),
+               EspMapSpriteTopology_isReady(), EspMapResidentLifecycle_isEmpty());
+        printf("[RESIDENTHANDOFFPROBE] FAILED source resident capture\n");
+        probeState.done = 1;
+        return;
+    }
+
+    if (!sourceSnapshotMatches(&source)) {
+        printf("[RESIDENTHANDOFFPROBE] SOURCESNAPSHOT payload=%u/%u arena=%u/%u map=%u/%u script=%u/%u line=%u/%u texture=%u/%u automap=%u/%u topology=%u/%u\n",
+               (unsigned int)source.totalPayloadBytes, (unsigned int)EXPECTED_SOURCE_PAYLOAD,
+               (unsigned int)source.runtimeArenaBytes, (unsigned int)EXPECTED_SOURCE_RUNTIME_BYTES,
+               (unsigned int)source.mapStateBytes, (unsigned int)EXPECTED_SOURCE_MAP_BYTES,
+               (unsigned int)source.scriptStateBytes, (unsigned int)EXPECTED_SOURCE_SCRIPT_BYTES,
+               (unsigned int)source.lineStateBytes, (unsigned int)EXPECTED_SOURCE_LINE_BYTES,
+               (unsigned int)source.textureStateBytes, (unsigned int)EXPECTED_SOURCE_TEXTURE_BYTES,
+               (unsigned int)source.automapStateBytes, (unsigned int)EXPECTED_SOURCE_AUTOMAP_BYTES,
+               (unsigned int)source.topologyBytes, (unsigned int)EXPECTED_SOURCE_TOPOLOGY_BYTES);
+        printf("[RESIDENTHANDOFFPROBE] SOURCEFNV arena=%08x/%08x map=%08x/%08x script=%08x/%08x line=%08x/%08x texture=%08x/%08x automap=%08x/%08x topology=%08x/%08x\n",
+               (unsigned int)source.runtimeFNV1a, (unsigned int)EXPECTED_SOURCE_ARENA_FNV,
+               (unsigned int)source.mapStateFNV1a, (unsigned int)EXPECTED_SOURCE_MAP_FNV,
+               (unsigned int)source.scriptStateFNV1a, (unsigned int)EXPECTED_SOURCE_SCRIPT_FNV,
+               (unsigned int)source.lineStateFNV1a, (unsigned int)EXPECTED_SOURCE_LINE_FNV,
+               (unsigned int)source.textureStateFNV1a, (unsigned int)EXPECTED_SOURCE_TEXTURE_FNV,
+               (unsigned int)source.automapStateFNV1a, (unsigned int)EXPECTED_SOURCE_AUTOMAP_FNV,
+               (unsigned int)source.topologyFNV1a, (unsigned int)EXPECTED_SOURCE_TOPOLOGY_FNV);
+        printf("[RESIDENTHANDOFFPROBE] SOURCECOUNTS nodes=%u/%u lines=%u/%u sprites=%u/%u events=%u/%u byteCodes=%u/%u strings=%u/%u entities=%u/%u enemies=%u/%u destructibles=%u/%u\n",
+               (unsigned int)source.nodeCount, (unsigned int)EXPECTED_SOURCE_NODES,
+               (unsigned int)source.lineCount, (unsigned int)EXPECTED_SOURCE_LINES,
+               (unsigned int)source.spriteCount, (unsigned int)EXPECTED_SOURCE_SPRITES,
+               (unsigned int)source.eventCount, (unsigned int)EXPECTED_SOURCE_EVENTS,
+               (unsigned int)source.byteCodeCount, (unsigned int)EXPECTED_SOURCE_BYTECODES,
+               (unsigned int)source.stringCount, (unsigned int)EXPECTED_SOURCE_STRINGS,
+               (unsigned int)source.entityCount, (unsigned int)EXPECTED_SOURCE_ENTITIES,
+               (unsigned int)source.enemyCount, (unsigned int)EXPECTED_SOURCE_ENEMIES,
+               (unsigned int)source.destructibleCount, (unsigned int)EXPECTED_SOURCE_DESTRUCTIBLES);
+        printf("[RESIDENTHANDOFFPROBE] FAILED source resident snapshot mismatch\n");
         probeState.done = 1;
         return;
     }
