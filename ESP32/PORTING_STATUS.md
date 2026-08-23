@@ -17,15 +17,24 @@ Merged evidence: [`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_
 ```text
 branch = agent/esp32-native-resident-handoff
 base   = 9f981f490282200f216aef66d22608d2244beb00
-firmware candidate = 13f7f3787bf6de08595167081af1ea628ae30946
-status = DIAGNOSTIC V2; REAL-CYD HARDWARE VALIDATION PENDING
+firmware candidate = 090d7dac5c255fc42a3d12fb3441053fdefe681b
+status = CORRECTED V3; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
 Active evidence: [`MAP1_NATIVE_RESIDENT_HANDOFF.md`](MAP1_NATIVE_RESIDENT_HANDOFF.md).
 
-Candidate v1 `f71520281254ff9d0b2d5e4be1b3611e29ca87c4` reached the new handoff probe on the real CYD but failed safely at the initial `unsafe source boundary` guard before any `resetAll()` or source teardown. All immediately preceding transition-preflight witnesses remained valid: Entrance resident FNVs were unchanged, the PAK was closed, legacy Render runtime was clear, `entities=0`, `monsters=0`, and the system remained stable in `ST_INTRO` page 3. Because the v1 guard combined lifecycle/capture/snapshot checks into one boolean, the exact subcondition could not be identified from that log alone.
+Candidate v1 `f71520281254ff9d0b2d5e4be1b3611e29ca87c4` reached the new handoff probe on the real CYD but failed safely at the initial combined source guard before any `resetAll()` or source teardown.
 
-Diagnostic v2 `13f7f3787bf6de08595167081af1ea628ae30946` keeps the same fail-closed behavior but splits the pre-teardown audit into explicit legacy/lifecycle, owner-readiness, payload/FNV and cardinality diagnostics. It must still refuse destruction unless the complete Entrance source snapshot is canonical.
+Diagnostic v2 `13f7f3787bf6de08595167081af1ea628ae30946` split the guard and hardware-isolated the only mismatch:
+
+```text
+runtimeArenaBytes = 14095 observed / 14112 expected
+resident payload  = 17891 observed / 17908 expected
+```
+
+All seven resident FNVs, all cardinalities and all non-runtime owner payloads matched exactly. The original MAP1 native-runtime milestone already established the correct distinction: the immutable runtime arena has a **14095 B logical payload** while its ESP32 heap allocation costs **14112 B**, i.e. 17 B allocator overhead. The lifecycle snapshot contract is explicitly logical payload, so the probe expectation was wrong; the permanent lifecycle capture was correct.
+
+Corrected v3 `090d7dac5c255fc42a3d12fb3441053fdefe681b` now uses `runtimeArenaBytes=14095`, total logical resident payload `17891`, and static Entrance snapshot FNV `b3811f3d`. The strict hardware release gate remains `18008 B`, because that gate intentionally measures actual allocator cost.
 
 The candidate adds a generic explicit resident-map lifecycle and a destructive-but-auto-restored `Entrance -> EMPTY -> Junction -> EMPTY -> Entrance` hardware proof. It does not call legacy `DoomCanvas_loadMap()`, does not commit Junction as the active gameplay map, and must PARK with Entrance restored.
 
@@ -79,10 +88,10 @@ mutable sprite topology   2424 B
 total                    18008 B
 ```
 
-Logical owner payloads used by the new lifecycle snapshot are:
+Logical owner payloads used by the lifecycle snapshot are:
 
 ```text
-runtime arena       14112 B
+runtime arena       14095 B
 map state            1024 B
 script state           81 B
 line state            120 B
@@ -90,10 +99,12 @@ texture state          60 B
 automap state         103 B
 topology              2408 B
 ---------------------------
-payload total        17908 B
-allocator overhead     100 B
+payload total        17891 B
+allocator overhead     117 B
 actual heap total    18008 B
 ```
+
+The total 117 B allocator overhead includes the already hardware-proven 17 B runtime-arena overhead plus allocator overheads of the six mutable owners.
 
 ## Hardware-proven fingerprints
 
@@ -132,14 +143,14 @@ transitionPreflightFNV   = 108e5c7b
 junctionSourceFNV        = fefaf5ca
 ```
 
-Current candidate static source snapshot target:
+Current corrected source snapshot target:
 
 ```text
 EspMapResidentSnapshot = 96 B
-Entrance snapshotFNV   = 97090c81
+Entrance snapshotFNV   = b3811f3d
 ```
 
-This whole-snapshot FNV is not hardware canon until the candidate passes.
+This whole-snapshot FNV is not hardware canon until corrected v3 passes.
 
 ## Hardware-proven CHANGEMAP exit chain
 
@@ -288,6 +299,8 @@ topology=336
 payload=10410 B
 ```
 
+Unlike the erroneous Entrance expectation, Junction `runtime=8867` is already the BSP-plan logical payload and therefore remains unchanged.
+
 Hardware must establish:
 
 ```text
@@ -331,7 +344,7 @@ ST_INTRO page=3
 noGameplay=yes
 ```
 
-Persistent state at PARK must remain the proven Entrance `18008 B`.
+Persistent state at PARK must remain the proven Entrance `18008 B` actual heap cost.
 
 ## Validation
 
@@ -345,7 +358,7 @@ Branch / exact firmware:
 
 ```text
 agent/esp32-native-resident-handoff
-13f7f3787bf6de08595167081af1ea628ae30946
+090d7dac5c255fc42a3d12fb3441053fdefe681b
 ```
 
 Capture:
@@ -362,17 +375,16 @@ Capture:
 [ALIVE]
 ```
 
-If v2 still refuses before teardown, the new diagnostic lines identify the failing layer explicitly:
+Corrected source acceptance now expects:
 
 ```text
-[RESIDENTHANDOFFPROBE] SOURCEBOUNDARY ...
-[RESIDENTHANDOFFPROBE] SOURCEOWNERS ...
-[RESIDENTHANDOFFPROBE] SOURCESNAPSHOT ...
-[RESIDENTHANDOFFPROBE] SOURCEFNV ...
-[RESIDENTHANDOFFPROBE] SOURCECOUNTS ...
+snapshotBytes=96
+runtimeArenaBytes=14095
+payload=17891
+snapshotFNV=b3811f3d
 ```
 
-No CI status is published. No local PlatformIO build or hardware PASS is claimed for v2.
+No CI status is published. No local PlatformIO build or hardware PASS is claimed for v3.
 
 ## Architecture boundary
 
@@ -413,4 +425,4 @@ native gameplay renderer
 sound playback
 ```
 
-Do not merge until exact firmware `13f7f3787bf6de08595167081af1ea628ae30946` passes on the real CYD and every later commit remains documentation-only.
+Do not merge until exact firmware `090d7dac5c255fc42a3d12fb3441053fdefe681b` passes on the real CYD and every later commit remains documentation-only.
