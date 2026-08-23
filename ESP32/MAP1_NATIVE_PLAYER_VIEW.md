@@ -9,13 +9,13 @@ PR   = #69 — native Junction spawn projection
 main = 992f38374840113409e776fb82ce57ab014607e5
 ```
 
-Firmware candidate:
+Hardware-tested firmware:
 
 ```text
 fe1630ad5618dfd35bbbc555de8f9762d0b046f8
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
@@ -35,7 +35,7 @@ tileEnterPending=1
 spawnApplied=no
 ```
 
-This milestone applies that already-validated projection into the first permanent native player/view owner. It still does not mutate legacy DoomCanvas, Render, Hud, Game or Player state and still does not execute facing lookup, Player_setup, tile-enter or ST_PLAYING.
+This milestone applies that already-validated projection into the first permanent active native player/view owner. It still does not mutate legacy DoomCanvas, Render, Hud, Game or Player state and still does not execute facing lookup, Player_setup, tile-enter or ST_PLAYING.
 
 ## Recovered legacy boundary
 
@@ -55,7 +55,7 @@ if (!Game.isLoaded):
     Game_executeTile(...)
 ```
 
-The previous milestone projected the coordinate fields. This milestone owns the first eight placement fields in native state and represents `Hud.isUpdate=true` as `hudRefreshPending=1`. Everything after that remains pending.
+This milestone owns the first eight placement fields in native state and represents `Hud.isUpdate=true` as `hudRefreshPending=1`. Everything after that remains pending.
 
 ## Permanent native owner
 
@@ -78,7 +78,7 @@ EspPlayerView_applySpawn()
 State:
 
 ```text
-EspPlayerViewState = 44 B expected classic-ESP32 ABI
+EspPlayerViewState = 44 B
 persistent heap = 0 B
 ```
 
@@ -143,175 +143,211 @@ angle = (sourceSpawnParam >> 10) & 255
 
 This prevents an internally coherent coordinate set from being paired with the wrong packed parameter.
 
-## Expected real Junction owner
+## Hardware-proven real Junction owner
 
-From hardware-proven spawn state `ba6af4a7`:
+Real CYD:
 
 ```text
-viewX=992
-viewY=1888
-viewZ=36
+stateBytes=44
+stateFNV=d1131d18
+view=992/1888/36
 viewAngle=64
-
-destX=992
-destY=1888
+dest=992/1888
 destAngle=64
-
 viewZOld=4
-
-targetMapId=9
+targetMap=9
 gameplayLoadMapId=2
 loadType=0
-spawnApplied=1
-hudRefreshPending=1
-facingRefreshPending=1
-playerSetupPending=1
-tileEnterPending=1
 active=1
+spawnApplied=1
 ```
 
-Static little-endian 44-byte FNV prediction:
+`d1131d18` is now a hardware canon for the 44-byte native player/view ABI.
+
+Pending follow-ups remain exact:
 
 ```text
-d1131d18
+hudRefresh=1
+facingRefresh=1
+playerSetup=1
+tileEnter=1
+hudApplied=no
+facingApplied=no
+playerSetupApplied=no
+tileEnterApplied=no
 ```
 
-This remains a candidate until the real CYD confirms it.
-
-## Packed override application proof
+## Hardware-proven packed override application
 
 The temporary probe also applies the already hardware-proven synthetic packed override:
 
 ```text
 sourceSpawnParam=00030167
-view/dest X=480
-view/dest Y=736
-angle=192
-viewZ=36
-viewZOld=4
+view=480/736/36
+viewAngle=192
+dest=480/736
+destAngle=192
+stateFNV=9ed47d08
+sourceProjectionFNV=e0a5110b
 ```
 
-Expected 44-byte FNV:
+`9ed47d08` is now a hardware canon. The final PARK is restored to the real Junction placement.
+
+## Hardware-proven fail-closed boundary
+
+Real CYD:
 
 ```text
-9ed47d08
+nullSpawn=1
+inactive=1
+badGeometry=1
+badPending=1
+repeat=1
+repeatAtomic=yes
+reset=1
+stateAtomic=yes
 ```
 
-The final PARK is restored to the real Junction placement, not the synthetic override.
+The once-only active-owner rule is hardware-proven: a second application is refused without modifying the live native view owner.
 
-## Temporary hardware probe
+## Resident integrity
 
-Files:
-
-```text
-ESP32/include/native_junction_player_view_probe.h
-ESP32/src/native_junction_player_view_probe.c
-```
-
-The probe waits for `Esp32JunctionSpawnProbe_isDone()` and obtains the exact parked 24-byte spawn state through `Esp32JunctionSpawnProbe_getState()`.
-
-Sequence:
+Complete Junction residency stayed byte-exact:
 
 ```text
-reset native player/view owner
-prove null/inactive/bad-geometry/bad-pending refusal
-apply real Junction spawn
-prove repeat apply refused and state atomic
-reset
-apply packed override and verify FNV
-reset
-apply real Junction spawn again
-PARK with real native player/view owner active
-```
-
-## Requested hardware integrity proof
-
-Complete Junction residency must remain byte-exact:
-
-```text
-snapshotFNV=bc9071e9 -> bc9071e9
+snapshotFNV=bc9071e9->bc9071e9
+targetLeftResident=yes
 payload=10410
 entities=30
 enemies=0
 destructibles=3
-PAK closed
+packClosed=yes
 ```
 
-Player/view owner itself must cost:
+The resident map remains Junction throughout the player/view apply/reset/override/reapply sequence.
+
+## RAM proof
+
+Real CYD:
 
 ```text
-persistent heap = 0 B
-heap8 delta = 0
-largest8 delta = 0
+heap8=72956->72956
+delta=0
+largest8=34804->34804
+delta=0
+persistentHeapBytes=0
 ```
 
-Legacy witnesses must remain exact:
+The 44-byte owner is static/caller-independent state and adds no persistent heap allocation.
+
+Stable post-probe heartbeat:
 
 ```text
-DoomCanvas placement fields unchanged
-Render.viewZOld unchanged
-Hud.isUpdate unchanged
-Game spawn/load fields unchanged
-Player witness unchanged
-framebuffer unchanged
-legacy Render runtime clear
-legacy entities=0
-legacy monsters=0
+heap=138720
+heap8=72956
+largest8=34804
+SD=ready
+VIDEO=ready
+CORE=ready
 ```
 
-## Expected Serial family
+The absolute heap baseline is build-context dependent; the important same-build proof is zero delta across the player/view application.
+
+## Legacy / framebuffer integrity
+
+Same-probe witnesses:
 
 ```text
-[JUNCTIONVIEWPROBE] ARMED ...
-
-=== Doom RPG ESP32-native Junction player/view application ===
-[JUNCTIONVIEWPROBE] CONTRACT ...
-
-[JUNCTIONVIEW] READY stateBytes=44 stateFNV=d1131d18 view=992/1888/36 angle=64 dest=992/1888 angle=64 viewZOld=4 targetMap=9 gameplayLoadMapId=2 loadType=0 active=1 spawnApplied=1
-
-[JUNCTIONVIEW] FOLLOWUPS hudRefresh=1 facingRefresh=1 playerSetup=1 tileEnter=1 hudApplied=no facingApplied=no playerSetupApplied=no tileEnterApplied=no
-
-[JUNCTIONVIEW] OVERRIDE param=00030167 view=480/736/36 angle=192 dest=480/736 angle=192 stateFNV=9ed47d08 sourceProjectionFNV=e0a5110b
-
-[JUNCTIONVIEW] FAILCLOSED nullSpawn=1 inactive=1 badGeometry=1 badPending=1 repeat=1 repeatAtomic=yes reset=1 stateAtomic=yes
-
-[JUNCTIONVIEW] RESIDENT snapshotFNV=bc9071e9->bc9071e9 targetLeftResident=yes payload=10410 entities=30 enemies=0 destructibles=3 packClosed=yes
-
-[JUNCTIONVIEW] RAM heap8=...->... delta=0 largest8=...->... delta=0 persistentHeapBytes=0
-
-[JUNCTIONVIEW] LEGACY placementFNV=...->... playerFNV=...->... frameFNV=...->... legacyRuntimeClear=yes DoomCanvasMutation=no GameMutation=no PlayerMutation=no RenderMutation=no HudMutation=no
-
-[JUNCTIONVIEW] PARK state=9 page=3 mapSwapCommitted=yes targetMap=9 junctionResident=yes nativeSpawnState=yes nativePlayerView=yes spawnAppliedNative=yes legacySpawnApplied=no hudRefreshPending=yes facingPending=yes playerSetupPending=yes tileEnterPending=yes ST_PLAYING=no entities=0 monsters=0 noGameplay=yes
+placementFNV=5d1076bf->5d1076bf
+playerFNV=a1725bcb->a1725bcb
+frameFNV=a3e3cc8e->a3e3cc8e
+legacyRuntimeClear=yes
+DoomCanvasMutation=no
+GameMutation=no
+PlayerMutation=no
+RenderMutation=no
+HudMutation=no
 ```
 
-## Strict PASS boundary
+These witness hashes are same-build equality checks, not cross-build canons.
 
-A PASS must prove:
+Legacy topology remains closed:
 
 ```text
-EspPlayerViewState bytes=44
-real stateFNV=d1131d18
-real native view/dest=992/1888 angle=64 z=36 viewZOld=4
-override stateFNV=9ed47d08
-repeat apply refused atomically
-Junction resident snapshot unchanged
-heap/largest unchanged
-PAK closed
-legacy placement/Hud/Player/frame unchanged
-native spawn applied=yes
-legacy spawn applied=no
-hud refresh still pending
-facing still pending
-Player_setup still pending
-tile-enter still pending
+Game.entities=0
+Game.monsters=0
+```
+
+## Final hardware PARK
+
+Real CYD:
+
+```text
+state=9
+page=3
+mapSwapCommitted=yes
+targetMap=9
+junctionResident=yes
+nativeSpawnState=yes
+nativePlayerView=yes
+spawnAppliedNative=yes
+legacySpawnApplied=no
+hudRefreshPending=yes
+facingPending=yes
+playerSetupPending=yes
+tileEnterPending=yes
 ST_PLAYING=no
-legacy entities=0
-legacy monsters=0
+entities=0
+monsters=0
+noGameplay=yes
+```
+
+This is the first hardware-proven active native player/view owner on the committed Junction map.
+
+## Hardware canons added by this milestone
+
+```text
+EspPlayerViewState bytes = 44
+Junction player/view FNV = d1131d18
+packed override view FNV = 9ed47d08
+
+view/dest X = 992
+view/dest Y = 1888
+viewZ       = 36
+angle       = 64
+viewZOld    = 4
+```
+
+Inherited canons remain:
+
+```text
+Junction spawn FNV   = ba6af4a7
+packed spawn FNV     = e0a5110b
+Junction snapshotFNV = bc9071e9
+Junction heap        = 10540 B
 ```
 
 ## Boundary after PASS
 
-A hardware PASS would establish the first active native player/view state on committed Junction. The next layer should be selected only after merge and repository recovery. The natural next candidates are compact-topology facing query and/or explicit HUD refresh consumption; `Player_setup`, tile-enter and ST_PLAYING should remain separately bounded unless the legacy audit proves otherwise.
+Native ownership now includes a live player/view state on committed Junction while presentation/gameplay initialization remains explicitly separate.
+
+Still intentionally outside:
+
+```text
+actual stats-menu rendering/input
+HUD refresh consumption
+native facing-entity query
+Player_setup-equivalent fresh-map initialization
+initial tile-enter event execution
+ST_PLAYING progression
+full native entity/monster gameplay
+native gameplay renderer
+sound playback
+```
+
+The player/view owner is intentionally not reset by `EspMapResidentLifecycle_resetAll()`: player state and map arena have different lifetimes. A future transition orchestrator must explicitly reset/reapply player placement.
+
+The next milestone must be selected only after merge and recovery from true `main`. The natural next small boundaries are explicit HUD-refresh consumption and compact-topology facing lookup; do not collapse Player_setup, tile-enter and ST_PLAYING into the same milestone without a fresh legacy audit.
 
 Mandatory invariants remain:
 
@@ -326,5 +362,3 @@ Normal hardware environment:
 ```text
 esp32-cyd
 ```
-
-No local build or hardware PASS is claimed for this candidate.
