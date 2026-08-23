@@ -23,12 +23,13 @@
 #include "native_map1_unlock_probe.h"
 #include "native_player_exit_state_probe.h"
 #include "native_stats_menu_intent_probe.h"
+#include "native_transition_preflight_final_probe.h"
 
 /*
  * Keep the hardware-validated intro clock/dispose, native BSP pass-1 and native
  * resident-runtime implementations untouched. These wrappers are temporary
- * lifecycle scaffolding only; reusable native map/player/UI components remain
- * legacy-engine free.
+ * lifecycle scaffolding only; reusable native map/player/UI/transition
+ * components remain legacy-engine free.
  */
 void __real_Esp32IntroDispose_reset(void);
 void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
@@ -59,6 +60,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32Map1LevelExitStatsProbe_reset();
     Esp32PlayerExitStateProbe_reset();
     Esp32StatsMenuIntentProbe_reset();
+    Esp32TransitionPreflightFinalProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -82,8 +84,10 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * EV_CHANGEMAP pending transition intent -> compact map-sprite entity
      * topology + corrected isolated/contextual EV_SHOW/EV_HIDE proof -> pure
      * native level-exit stats snapshot -> pointer-free native player exit-state
-     * application -> pointer-free LEVEL/OVERALL stats-menu intent. Each stage
-     * arms first and executes on a later Arduino loop service.
+     * application -> pointer-free LEVEL/OVERALL stats-menu intent -> immutable
+     * map catalog + corrected resource/gameplay-ID Junction PAK/BSP transition
+     * preflight. Each stage arms first and executes on a later Arduino loop
+     * service.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -109,4 +113,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32Map1LevelExitStatsProbe_service(doomRpg);
     Esp32PlayerExitStateProbe_service(doomRpg);
     Esp32StatsMenuIntentProbe_service(doomRpg);
+    Esp32TransitionPreflightFinalProbe_service(doomRpg);
 }
