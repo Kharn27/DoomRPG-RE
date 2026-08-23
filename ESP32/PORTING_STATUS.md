@@ -5,25 +5,25 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #64 — native player exit-state
-main = 3759bcd12a3f6d36a6a696457110ab27474c24b8
-hardware-tested firmware = f8c5a1c398c0946025aef976f7a997589bae4923
+PR   = #65 — native stats-menu intent
+main = c8679133351fa00e01a67103386b7676660c4a6e
+hardware-tested stats-menu firmware = 1dddbe86788389400d6e2186595174e723c72f5c
 ```
 
-Merged evidence: [`MAP1_NATIVE_PLAYER_EXIT_STATE.md`](MAP1_NATIVE_PLAYER_EXIT_STATE.md).
+Merged evidence: [`MAP1_NATIVE_STATS_MENU_INTENT.md`](MAP1_NATIVE_STATS_MENU_INTENT.md).
 
-## Current merge-ready milestone
+## Current candidate
 
 ```text
-branch = agent/esp32-native-stats-menu-intent
-base   = 3759bcd12a3f6d36a6a696457110ab27474c24b8
-hardware-tested firmware = 1dddbe86788389400d6e2186595174e723c72f5c
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-native-transition-preflight
+base   = c8679133351fa00e01a67103386b7676660c4a6e
+firmware candidate = b674c9ad4878acdf3d026d061de94f964e2c7d6e
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Active evidence: [`MAP1_NATIVE_STATS_MENU_INTENT.md`](MAP1_NATIVE_STATS_MENU_INTENT.md).
+Active evidence: [`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_PREFLIGHT.md).
 
-This milestone owns the semantic `MENU_MAP_STATS` / `MENU_MAP_STATS_OVERALL` branch intent of recovered `Game_changeMap()` without mutating legacy Menu/Game/Render state or loading a map.
+The candidate adds an immutable native 13-map catalog and a read-only Junction PAK/BSP preflight. It performs no Entrance teardown and no map swap.
 
 ## Permanent invariants
 
@@ -71,11 +71,9 @@ mutable sprite topology   2424 B
 total                    18008 B
 ```
 
-Level-exit stats, player exit-state/result and stats-menu intent are caller-owned values and add no persistent allocation. Hardware total remains exactly `18008 B`.
+Level-exit stats, player exit-state/result and stats-menu intent are caller-owned values and add no persistent allocation. Current transition-preflight candidate also targets `0 B` persistent addition, keeping the total at `18008 B`.
 
 ## Hardware-proven fingerprints
-
-Inherited native canons:
 
 ```text
 arenaFNV                 = c3882516
@@ -104,17 +102,12 @@ playerExitAppliedFNV     = 298eaaa4
 playerExitResultFNV      = 5d10a566
 playerExitAllMasksFNV    = c93e8128
 playerExitLiveFNV        = 57fce418
-```
-
-New stats-menu canons:
-
-```text
 statsMenuIntentFNV       = 96afe901
 statsMenuEndGameFNV      = deea91b4
 statsMenuZeroFNV         = 4b95f515
 ```
 
-Same-build legacy/integrity witnesses for the stats-menu firmware:
+Latest stats-menu same-build witnesses:
 
 ```text
 playerExitWitnessFNV = 0b2ae445
@@ -122,7 +115,7 @@ transitionFNV        = f450c49f
 frameFNV             = e8a3b4ef
 ```
 
-## Hardware-proven CHANGEMAP target
+## Hardware-proven CHANGEMAP exit chain
 
 Real MAP_INTRO command:
 
@@ -135,234 +128,217 @@ effects=03
 pending=1
 ```
 
-Recovered legacy `Game_changeMap()` show-stats branch:
+Native consumers now hardware-proven through the pause point:
 
 ```text
-Player_addLevelStats(player, true)
-menu->mapNameId = targetMapId
-if targetMapId == MAP_END_GAME:
-    MenuSystem_setMenu(MENU_MAP_STATS_OVERALL)
-else:
-    MenuSystem_setMenu(MENU_MAP_STATS)
-game->changeMapParam = 0
+CHANGEMAP pending intent
+ -> EspMapLevelExitStats = 20 B
+      loadMapId=1 showStats=1
+      secrets=0/6 monsters=0/30
+      completionLevelBit=00000001
+      effects=1f
+      FNV=bd41bcfa
+ -> EspPlayerExitState = 28 B
+      appliedFNV=298eaaa4
+      persistentHeapBytes=0
+ -> EspStatsMenuIntent = 4 B
+      targetMap=9
+      menuKind=LEVEL
+      consumePending=1
+      FNV=96afe901
 ```
 
-No target map load occurs in this branch before the stats UI.
+No legacy `Player_addLevelStats()`, `Game_changeMap()`, menu mutation or map load is called by these native stages.
 
-## Hardware-proven level-exit consumer chain
+## Current native map catalog
 
-Native level-exit stats:
+Permanent files:
 
 ```text
-EspMapLevelExitStats = 20 B
-loadMapId=1 showStats=1
-secrets=0/6 monsters=0/30
-completionLevelBit=00000001
-effects=1f
-statsFNV=bd41bcfa
-persistentHeapBytes=0
+ESP32/include/esp_map_catalog.h
+ESP32/src/esp_map_catalog.c
 ```
 
-Native player exit state:
+Recovered exact legacy map-resource order:
 
 ```text
-EspPlayerExitState       = 28 B
-EspPlayerExitApplyResult = 28 B
-initialFNV=940b0171
-appliedFNV=298eaaa4
-resultFNV=5d10a566
-allMasksFNV=c93e8128
-persistentHeapBytes=0
-```
-
-Native stats-menu intent:
-
-```text
-EspStatsMenuIntent = 4 B
-targetMap=9
-menuKind=1 / LEVEL
-active=1
-consumePending=1
-intentFNV=96afe901
-persistentHeapBytes=0
-```
-
-It stores no legacy menu object or numeric `MENU_*` ID.
-
-## Permanent stats-menu intent API
-
-Files:
-
-```text
-ESP32/include/esp_stats_menu_intent.h
-ESP32/src/esp_stats_menu_intent.c
-```
-
-Hardware-proven ABI:
-
-```text
-EspStatsMenuIntent = 4 B
-```
-
-Fields:
-
-```text
-targetMapId
-menuKind       # NONE=0, LEVEL=1, OVERALL=2
-active
-consumePending
+1  /intro.bsp
+2  /level01.bsp
+3  /level02.bsp
+4  /level03.bsp
+5  /level04.bsp
+6  /level05.bsp
+7  /level06.bsp
+8  /level07.bsp
+9  /junction.bsp
+10 /junction_destroyed.bsp
+11 /items.bsp
+12 /reactor.bsp
+13 /endgame.bsp
 ```
 
 API:
 
 ```text
-EspStatsMenuIntent_reset(intent)
-EspStatsMenuIntent_prepare(targetMapId, showStats, intent)
+EspMapCatalog_isValidId()
+EspMapCatalog_nameForId()
+EspMapCatalog_idForName()
 ```
 
-Permanent semantics:
+Static catalog-audit prediction:
 
 ```text
-showStats=0 -> NOT_APPLICABLE + zero intent
-showStats=1,target!=13 -> LEVEL
-showStats=1,target==13 -> OVERALL
-success -> active=1 consumePending=1
+catalogFNV = ce322e3f
 ```
 
-Permanent code has no dependency on legacy `Menu_t`, `MenuSystem_t`, `Game_t`, `Render_t` or `DoomCanvas_t`, performs no PAK/ZIP I/O and allocates nothing.
+Hardware remains authoritative.
 
-Target map-name -> ID resolution is intentionally not owned here; it remains future transition/catalog work. Real MAP_INTRO target ID `9` is already hardware-proven.
+## Current transition-preflight API
 
-## Real-CYD stats-menu proof
-
-Real Junction projection:
+Permanent files:
 
 ```text
-intentBytes=4
+ESP32/include/esp_map_transition_preflight.h
+ESP32/src/esp_map_transition_preflight.c
+```
+
+ABI target:
+
+```text
+EspMapTransitionPreflightResult = 56 B
+```
+
+`EspMapTransitionPreflight_run(targetMapId, &result)`:
+
+```text
+requires PAK closed on entry
+resolves ID through native catalog
+opens /DoomRPG-ESP32.pak
+finds hash-sorted entry on SD
+streams complete target BSP through existing 256 B EspBspReader window
+verifies full CRC32 and structure
+requires BSP header loadMapId == catalog target
+returns compact target summary
+closes PAK before return
+retains no allocation
+```
+
+Fail-closed statuses include `INVALID`, `PACK_BUSY`, `PACK_OPEN_FAILED`, `ENTRY_NOT_FOUND`, `BSP_INVALID`, `ID_MISMATCH`, `OK`.
+
+If the pack is already open, preflight returns `PACK_BUSY` without stealing/closing the caller session.
+
+## Candidate Junction proof target
+
+Expected semantic target only:
+
+```text
 targetMap=9
-menuKind=1 / LEVEL
-active=1
-consumePending=1
-sourceStatsFNV=bd41bcfa
-intentFNV=96afe901
-legacyMenuId=15
+name=/junction.bsp
+headerLoadMapId=9
+resultBytes=56
+ready=1
+repeat exact
+pack closed after each preflight
 ```
 
-End-game branch:
+The following Junction values are intentionally **not guessed** before hardware:
 
 ```text
-endGameTarget=13
-endGameKind=2 / OVERALL
-endGameFNV=deea91b4
-legacyOverallId=16
+nameHash
+entry offset
+source bytes
+CRC32
+source FNV1a
+compact persistent-plan bytes
+nodes/lines/mapSprites/events/byteCodes/strings/stringData
+result FNV
+elapsed
 ```
 
-Direct-load gate:
+Catalog/failclosed target:
 
 ```text
-showStats=0
-noStatsStatus=1 / NOT_APPLICABLE
-noStatsZero=1
-zeroFNV=4b95f515
-repeatExact=1
-```
-
-The emitted Serial text concatenated `noStatsStatus=1noStatsZero=1`; both successful fields are still unambiguous.
-
-Fail closed:
-
-```text
+count=13
+roundtrip=13/13
+catalogFNV=ce322e3f  # static prediction
 target0=1
 target14=1
-showStats2=1
-nullIntent=1
-reset=1
+nullResult=1
+packBusy=1
+busyZero=1
 stateAtomic=yes
 ```
 
-## RAM / legacy integrity
+RAM/integrity target:
 
 ```text
-heap8      65616 -> 65616 delta=0
-largest8   34804 -> 34804 delta=0
 persistentHeapBytes=0
-frameFNV   e8a3b4ef -> e8a3b4ef
-lineFNV    e5e74861
-topologyFNV=3f321e43
-```
-
-Legacy guards:
-
-```text
-playerExitFNV 0b2ae445 -> 0b2ae445
-transitionFNV f450c49f -> f450c49f
-legacyRuntimeClear=yes
-menuMutation=no
-Game_changeMapCalled=no
+heap8 before == after
+largest8 before == after
+persistent native total remains 18008 B
+PAK closed at park
+all Entrance owner FNVs unchanged
+framebuffer same-build equality
+legacy Player/transition witnesses unchanged
+sourceTeardown=no
 mapLoad=no
+menuMutation=no
+mapSwap=no
+entities=0 monsters=0
 ```
 
-Final PARK:
+## Validation
+
+Build/flash normal environment:
 
 ```text
-state=9 page=3
-nativeStatsMenuIntent=yes
-intentBytes=4
-targetMap=9
-menuKind=LEVEL
-consumePendingSemantic=yes
-persistentBytes=0
-nativePlayerExitState=yes
-legacyMenuMutation=no
-transitionTriggered=no
-entities=0 monsters=0 noGameplay=yes
+esp32-cyd
 ```
 
-Stable heartbeats continued from `95234 ms` through `270270 ms` at:
+Branch / firmware:
 
 ```text
-heap=131380
-heap8=65616
-largest8=34804
+agent/esp32-native-transition-preflight
+b674c9ad4878acdf3d026d061de94f964e2c7d6e
 ```
 
-No delayed transition or leak appeared.
+Capture `[TRANSITIONPREFLIGHT]`, the Junction `[BSPREAD]` inventory lines, and stable `[ALIVE]` lines.
+
+No CI status is published for the candidate. No local build or hardware PASS is claimed.
 
 ## Current architecture boundary
 
-Hardware-proven ownership now includes:
+Hardware-proven ownership through PR #65:
 
 ```text
-compact immutable native map + explicit mutable owners
+compact immutable native Entrance map + explicit mutable owners
 all 16 real MAP_INTRO opcode families
 SAVEGAME durable route
 CHANGEMAP pending transition intent
 SHOW/HIDE compact sprite/entity topology
-native level-exit stats snapshot
-native player exit-state application
-native stats-menu semantic intent / pending-consume projection
+native level-exit stats
+native player exit-state
+native stats-menu semantic intent
+```
+
+Candidate adds:
+
+```text
+immutable generic 13-map catalog
+read-only target PAK/BSP preflight for Junction
 ```
 
 Still intentionally outside:
 
 ```text
 actual stats-menu rendering/input consumer
-generic map target catalog/name resolution
-transition preflight / source-target lifecycle handoff
-actual CHANGEMAP / Junction map swap
+source-target lifecycle handoff / source teardown ordering
+Junction resident-runtime allocation/swap
+Junction mutable-owner rebuild
+spawn/loadType handoff
 full native entity/monster gameplay
-legacy-world-free gameplay loop
-native gameplay renderer
-ST_PLAYING progression
+native ST_PLAYING progression/rendering
 sound playback
 ```
 
-The next bounded milestone should own target transition/catalog preflight before any destructive `/intro.bsp` -> `/junction.bsp` swap.
-
-## Merge recommendation
-
-```text
-MERGE agent/esp32-native-stats-menu-intent
-```
-
-Hardware-tested firmware is `1dddbe86788389400d6e2186595174e723c72f5c`. All commits after that firmware must remain documentation-only until merge.
+Do not merge the candidate until the exact firmware above passes on the real CYD and every later commit remains documentation-only.
