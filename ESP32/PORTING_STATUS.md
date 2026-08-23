@@ -13,17 +13,18 @@ status = REAL-CYD HARDWARE PASS
 
 Merged evidence: [`MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md`](MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md).
 
-## Current hardware candidate
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-native-post-load-initial-save-intent
 base   = 04e4e2269a6c70db3f3e4027717bdb36f286ce65
-status = HARDWARE CANDIDATE — NOT YET CYD-PROVEN
+hardware-tested firmware = 0da9526775b706606338045babeb89e0d6c72729
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Candidate: [`MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md`](MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md).
+Evidence: [`MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md`](MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md).
 
-The candidate owns only the semantic boundary for:
+This milestone owns only the semantic boundary for the fresh Junction caller:
 
 ```c
 if ((doomCanvas->loadMapID != MAP_END_GAME) &&
@@ -37,9 +38,9 @@ if ((doomCanvas->loadMapID != MAP_END_GAME) &&
 }
 ```
 
-It does **not** emulate legacy Config/Player/Player2/World files. It captures the
-caller request in a compact native intent and records persistence/presentation as
-explicitly deferred side effects.
+The native path reconstructs map/view arguments from the hardware-proven
+`EspPlayerView`, samples only `Game.isLoaded` read-only, and parks a compact save
+intent. It does not emulate legacy Config/Player/Player2/World files.
 
 ## Permanent invariants
 
@@ -126,6 +127,7 @@ CHANGEMAP pending intent
  -> 8 B post-load HUD-clear owner
  -> 16 B direct Junction GIVEMAP caller-order owner
  -> 8 B current-weapon self-select caller-order owner
+ -> 24 B initial-save semantic intent owner
 ```
 
 Canonical fingerprints:
@@ -157,131 +159,31 @@ post-facing player/view FNV    = afcdcf74
 Junction post-load HUD clear   = b7383e18
 Junction post-load GIVEMAP     = 448e587d
 Junction weapon self-select    = 699f3cf3
+Junction initial-save intent   = 0bf1a911
 ```
 
 Generic `EspMapOpcodeExecutor` remains intentionally only 11/19/20.
 
-## Last hardware-proven caller boundary: weapon self-select
+## Hardware-proven initial-save semantic intent
+
+Permanent files:
 
 ```text
-EspPostLoadWeaponSelectState = 8 B
-stateFNV = 699f3cf3
-persistent heap = 0 B
-weaponBefore=2
-requestedWeapon=2
-weaponAfter=2
-viewInvalidationRequested=0
-selfSelect=yes
-identityAssignment=yes
-updateViewBranchTaken=no
+ESP32/include/esp_post_load_initial_save_intent.h
+ESP32/src/esp_post_load_initial_save_intent.c
 ```
 
-Input owners remained:
+Owner:
 
 ```text
-giveMapFNV=448e587d
-hudClearFNV=b7383e18
-viewFNV=afcdcf74
-facingFNV=95aa1108
-```
-
-Resident stayed exactly `bb714d80`; normal-env RAM stayed
-`heap8=72684`, `largest8=34804`, both delta zero.
-
-## Current initial-save intent design
-
-### Exact legacy orchestration recovered
-
-`Game_saveState(game, mapId, x, y, angle, z)` currently performs:
-
-```text
-Saving... UI / present
-Game_saveConfig(game, z)
-if !z: Game_savePlayerState("Player2", current map, x, y, angle)
-Game_saveWorldState(game)
-if !z: Game_savePlayerState("Player", pending route or Junction fallback)
-```
-
-The current caller uses `z=false`.
-
-The four persistence components are represented as a compact mask:
-
-```text
-0x01 CONFIG
-0x02 PLAYER2
-0x04 WORLD
-0x08 PLAYER_ROUTE
-0x0f ALL
-```
-
-### Why persistence is deferred
-
-Legacy `Game_saveWorldState()` traverses pointer-heavy `Entity_t` topology while
-the ESP32 native path intentionally has no legacy entity graph. Native player
-ownership is also not yet complete. Copying these legacy file formats would make
-temporary desktop architecture permanent on a no-PSRAM target.
-
-The permanent ESP32 boundary therefore owns the request only:
-
-```text
-EspPostLoadInitialSaveIntentState = 24 B candidate
+EspPostLoadInitialSaveIntentState = 24 B
+stateFNV = 0bf1a911
 persistent heap = 0 B
 ```
 
-Fields:
+Real-CYD state:
 
 ```text
-viewX/viewY/viewAngle as int32
-mapId
-isLoadedBefore
-saveMode
-saveRequired
-componentMask
-persistenceDeferred
-presentationDeferred
-active
-reserved[4]
-```
-
-Current already-proven native caller arguments are:
-
-```text
-mapId=9
-viewX=992
-viewY=1888
-viewAngle=64
-```
-
-The probe samples only legacy `Game.isLoaded` read-only. Live legacy
-`DoomCanvas.view*`/`loadMapID` are not native source-of-truth because the native
-path deliberately did not apply legacy placement writes.
-
-### Current candidate gates
-
-The permanent owner requires:
-
-```text
-weapon self-select semantic owner active and self-select exact
-targetMapId=9
-gameplayLoadMapId=2
-loadType=0
-PlayerView active/spawnApplied
-all PlayerView follow-up pending bits consumed
-isLoadedBefore=0
-runtimeFNV=bc432a0f
-mapFNV=8dba0bb4
-automapFNV=b699bd75
-```
-
-`isLoadedBefore=1` is explicitly returned as `LOADED_CONTEXT_DEFERRED`; restore
-semantics are not silently generalized from this fresh-load milestone.
-
-### Hardware candidate acceptance
-
-Expected state semantics:
-
-```text
-stateBytes=24
 mapId=9
 view=992/1888
 angle=64
@@ -294,9 +196,19 @@ presentationDeferred=1
 active=1
 ```
 
-The real CYD establishes the new 24 B state FNV.
+Component intent:
 
-Required unchanged input owners:
+```text
+CONFIG       = requested
+PLAYER2      = requested
+WORLD        = requested
+PLAYER_ROUTE = requested
+saveFileWrite=no
+savingUi=no
+presentation=no
+```
+
+Input-owner proof:
 
 ```text
 weaponFNV=699f3cf3
@@ -304,18 +216,38 @@ giveMapFNV=448e587d
 hudClearFNV=b7383e18
 viewFNV=afcdcf74
 facingFNV=95aa1108
+unchanged=yes
+callerOrder=yes
 ```
 
-Required unchanged resident:
+Fail-closed/deferred proof:
 
 ```text
-snapshotFNV=bb714d80
-runtimeFNV=bc432a0f
+nullWeapon=1
+nullView=1
+nullOutput=1
+inactiveWeapon=1
+weaponMismatch=1
+inactiveView=1
+viewPending=1
+loadedContextDeferred=1
+invalidLoaded=1
+prepareAtomic=yes
+postActivePrepare=1
+repeat=1
+repeatAtomic=yes
+```
+
+Resident integrity:
+
+```text
+snapshotFNV=bb714d80->bb714d80
 mapFNV=8dba0bb4
+automapFNV=b699bd75
+runtimeFNV=bc432a0f
 scriptFNV=bc9b18ff
 lineFNV=3658710d
 textureFNV=537319ad
-automapFNV=b699bd75
 topologyFNV=d6e8df7d
 payload=10410
 entities=30
@@ -324,40 +256,85 @@ destructibles=3
 packClosed=yes
 ```
 
-Required side-effect proof:
+Normal-env RAM proof:
 
 ```text
-saveFileWrite=no
-savingUi=no
-presentation=no
-legacy Game_saveState not called
-heap/largest delta=0
-frame unchanged
-legacy Game/Player/Hud/DoomCanvas/Render unchanged
-ST_PLAYING=no
-legacy Game.entities=0
-legacy Game.monsters=0
+heap8=72644->72644
+delta=0
+largest8=34804->34804
+delta=0
+persistentHeapBytes=0
 ```
+
+Same-build legacy/frame equality witnesses:
+
+```text
+gameFNV=6960d5bb->6960d5bb
+playerFNV=c64e7862->c64e7862
+hudFNV=b18611d2->b18611d2
+canvasFNV=592d59c9->592d59c9
+renderFNV=f9344dec->f9344dec
+frameFNV=6a0726c1->6a0726c1
+legacyRuntimeClear=yes
+legacyGame_saveStateCalled=no
+GameMutation=no
+PlayerMutation=no
+HudMutation=no
+DoomCanvasMutation=no
+RenderMutation=no
+```
+
+Persistence debt remains explicit:
+
+```text
+legacyNewMapPresent=no
+legacyNewDest=0/0
+legacyNewAngle=0
+routePayloadOwned=no
+playerPersistence=no
+worldPersistence=no
+configPersistence=no
+```
+
+Stable post-PARK heartbeat:
+
+```text
+heap=138408
+heap8=72644
+largest8=34804
+SD=ready
+ZIP=ready
+VIDEO=ready
+CORE=ready
+LAYOUT=ready
+PRERENDER=ready
+RENDER=ready
+MAPPINGS=ready
+MENUBSP=ready
+```
+
+## SD test incident
+
+An earlier boot of the same firmware showed `SD=unavailable`, cascading into
+ZIP/layout/render/menu startup skips. The branch had not modified the SD/build
+wiring path and the new milestone cannot execute before SD initialization. The
+user confirmed the microSD card was the cause; after correcting it, the same
+firmware reached the full successful save-intent PARK. No SD workaround was
+introduced.
 
 ## Historical SAVEGAME route correction
 
-Opcode 27 parsing itself remains hardware-proven. However, the old temporary
-`native_map1_save_route_probe.c` resets its probe-local sampled route before its
-PARK. Therefore the old diagnostic wording `routeLifetimeCrossMap=yes` must not
-be interpreted as a live owner instance surviving the resident handoff.
-
-A future durable save implementation must explicitly own that cross-map route.
-The current initial-save intent records the `PLAYER_ROUTE` component request but
-does not fabricate route payload that is no longer live.
+Opcode 27 parsing itself remains hardware-proven. The old temporary MAP_INTRO
+route probe resets its sampled owner before PARK, so historical
+`routeLifetimeCrossMap=yes` wording is not proof of a live owner surviving the
+map handoff. A future durable save implementation must explicitly own that route.
 
 ## Probe completion semantics
 
-Older temporary probes may set `done=1` on terminal failures. `*_isDone()` alone
-is not a PASS certificate. Every downstream candidate must revalidate exact
-owners/world state.
-
-The new initial-save-intent probe changes convention locally: its `done=1` is set
-only after successful final PARK.
+Older temporary probes may set `done=1` on terminal failure. `*_isDone()` alone
+is not a PASS certificate. The initial-save-intent probe revalidates all exact
+predecessor owners/world state and sets its own `done=1` only after successful
+PARK.
 
 ## Exact recovered caller order
 
@@ -369,17 +346,17 @@ Hud.logMessage[0]='\0'                     [hardware-proven]
 if Junction: Game_givemap()                 [hardware-proven]
 else: DoomCanvas_uncoverAutomap()
 Player_selectWeapon(player, player->weapon) [hardware-proven]
-conditional Game_saveState(...)             [CURRENT INTENT CANDIDATE]
-Game.isLoaded=false                         [next after PASS/merge]
-Game.isSaved=false                          [next after PASS/merge]
-Game.activeLoadType=0                       [next after PASS/merge]
+conditional Game_saveState(...)             [hardware-proven semantic intent]
+Game.isLoaded=false                         [NEXT after merge]
+Game.isSaved=false                          [NEXT after merge]
+Game.activeLoadType=0                       [NEXT after merge]
 numEvents=0 / particles cleared             [deferred]
 isUpdateView=true                           [deferred]
 DoomCanvas_setState(ST_PLAYING)             [deferred]
 idleTime=time+8000                          [deferred]
 ```
 
-## Current hardware PARK before candidate
+## Current hardware PARK
 
 ```text
 state=9 / ST_INTRO
@@ -390,9 +367,10 @@ nativeFacing=yes
 nativeHudClear=yes
 nativePostLoadGiveMap=yes
 nativeWeaponSelfSelect=yes
-Game_givemapPending=no
-weaponReselectPending=no
-initialSavePending=yes
+nativeInitialSaveIntent=yes
+initialSaveDecisionPending=no
+initialSavePersistencePending=yes
+initialSavePending=yes   # persistence debt only
 postLoadCleanupPending=yes
 ST_PLAYING=no
 legacy Game.entities=0
@@ -400,17 +378,7 @@ legacy Game.monsters=0
 noGameplay=yes
 ```
 
-Candidate successful PARK adds:
-
-```text
-nativeInitialSaveIntent=yes
-initialSaveDecisionPending=no
-initialSavePersistencePending=yes
-postLoadCleanupPending=yes
-ST_PLAYING=no
-```
-
-The persistence debt is explicit but does not need to block native gameplay
+The persistence debt is explicit but does not need to block later gameplay
 bring-up once the save side effect has a permanent semantic owner.
 
 ## Still intentionally outside
@@ -427,12 +395,21 @@ native gameplay renderer
 sound playback
 ```
 
-## Next test
+## Merge recommendation
 
-Build/flash normal `esp32-cyd` from the current candidate branch and return the
-complete `[JUNCTIONSAVEINTENT]` Serial block. Promote only after real-CYD PASS.
+```text
+MERGE agent/esp32-native-post-load-initial-save-intent
+```
 
-## Next bounded milestone after PASS + merge
+Hardware-tested firmware:
+
+```text
+0da9526775b706606338045babeb89e0d6c72729
+```
+
+All commits after that tested SHA must remain documentation-only.
+
+## Next bounded milestone after merge
 
 Recover exact new `main`, then own only:
 
@@ -442,5 +419,5 @@ game->isSaved = false;
 game->activeLoadType = 0;
 ```
 
-Do not bundle event/particle cleanup, `isUpdateView`, `ST_PLAYING`, rendering or
-native durable save storage.
+Do not bundle queued-event/particle cleanup, `isUpdateView`, `ST_PLAYING`,
+rendering or native durable save storage.
