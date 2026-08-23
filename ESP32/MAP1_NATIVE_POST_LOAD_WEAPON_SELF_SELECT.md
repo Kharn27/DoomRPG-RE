@@ -9,7 +9,13 @@ PR   = #78 — direct Junction post-load Game_givemap
 main = 4737b016d02615b8435cf84909fe3c251b6d338b
 ```
 
-Status: **HARDWARE CANDIDATE — NOT YET CYD-PROVEN**.
+Hardware-tested firmware:
+
+```text
+24fb8fbf914820500d2e16815e22beb0439c9ba0
+```
+
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
@@ -47,8 +53,7 @@ void Player_selectWeapon(Player_t* player, int i)
 }
 ```
 
-At this exact load caller, `i` is `player->weapon` itself. Therefore the recovered
-semantics are strictly:
+At this exact load caller, `i` is `player->weapon` itself. Therefore:
 
 ```text
 requestedWeapon == weaponBefore
@@ -57,47 +62,37 @@ weaponAfter == weaponBefore
 ```
 
 The assignment is an identity write. No ammo, inventory, disabled-weapon,
-combat, sound or HUD behavior belongs to this call.
-
-Legacy weapon iteration also confirms the valid weapon index range is `0..11`.
-
-## Why this is not a weapon-gameplay owner
-
-This milestone deliberately does **not** introduce native ammo/inventory/weapon
-selection gameplay state merely because the legacy function is named
-`Player_selectWeapon()`.
-
-The exact caller is a semantic no-op. A future real selection where requested
-weapon differs from current weapon will need its own native player/inventory/HUD
-boundary because that path requests `DoomCanvas_updateViewTrue()`.
+combat, sound or HUD behavior belongs to this call. Legacy weapon iteration
+confirms the valid weapon index range is `0..11`.
 
 ## Permanent caller-order owner
 
-New files:
+Files:
 
 ```text
 ESP32/include/esp_post_load_weapon_select_state.h
 ESP32/src/esp_post_load_weapon_select_state.c
 ```
 
-Candidate ABI:
+Hardware-proven ABI:
 
 ```text
 EspPostLoadWeaponSelectState = 8 B
 persistent heap = 0 B
+stateFNV = 699f3cf3
 ```
 
-Fields:
+Hardware-proven state:
 
 ```text
-weaponBefore
-requestedWeapon
-weaponAfter
-viewInvalidationRequested
-targetMapId
-gameplayLoadMapId
-loadType
-active
+weaponBefore=2
+requestedWeapon=2
+weaponAfter=2
+viewInvalidationRequested=0
+targetMapId=9
+gameplayLoadMapId=2
+loadType=0
+active=1
 ```
 
 Permanent APIs:
@@ -112,11 +107,12 @@ EspPostLoadWeaponSelect_route()
 
 The permanent implementation has no `Player_t`, `DoomCanvas_t`, `Hud_t`,
 `Game_t` or `Render_t` dependency. The caller supplies only the current weapon
-scalar.
+scalar. A future real weapon change remains a separate native player/inventory/
+HUD boundary.
 
 ## Strict current-context gate
 
-Pure preparation requires the already hardware-proven direct-GIVEMAP marker:
+Preparation requires the post-GIVEMAP caller marker:
 
 ```text
 EspPostLoadGiveMapState = 16 B
@@ -147,79 +143,60 @@ Only current weapon indices `0..11` are accepted. Other maps, saved-load
 contexts, reordered calls, malformed preceding owners and invalid weapon values
 remain fail-closed.
 
-## Temporary hardware probe
+## Real-CYD evidence
 
-New files:
+The supplied normal `esp32-cyd` boot emitted the complete successful block.
 
-```text
-ESP32/include/native_junction_post_load_weapon_select_probe.h
-ESP32/src/native_junction_post_load_weapon_select_probe.c
-```
-
-The lifecycle bridge runs it one Arduino loop after
-`Esp32JunctionPostLoadGiveMapProbe_isDone()`.
-
-The probe samples legacy `Player.weapon` **read-only** as the hardware input.
-Neither the candidate owner nor the probe calls legacy `Player_selectWeapon()`.
-
-Expected block:
-
-```text
-=== Doom RPG ESP32-native Junction post-load weapon self-select ===
-[JUNCTIONWEAPONPROBE] CONTRACT ...
-[JUNCTIONWEAPON] READY ...
-[JUNCTIONWEAPON] SEMANTIC ...
-[JUNCTIONWEAPON] INPUT ...
-[JUNCTIONWEAPON] FAILCLOSED ...
-[JUNCTIONWEAPON] RESIDENT ...
-[JUNCTIONWEAPON] RAM ...
-[JUNCTIONWEAPON] LEGACY ...
-[JUNCTIONWEAPON] PARK ...
-```
-
-## Hardware values deliberately not predeclared
-
-The real CYD must establish:
-
-```text
-legacy current weapon at this exact caller boundary
-EspPostLoadWeaponSelectState FNV
-same-build Game/Player/Hud/DoomCanvas/Render/frame witnesses
-same-build heap8/largest8
-```
-
-Do not promote the legacy reset-time `weapon=2` default into a hardware canon
-before this probe reports the actual value.
-
-## Hardware acceptance
-
-The real normal `esp32-cyd` firmware must prove:
+Semantic result:
 
 ```text
 stateBytes=8
-weaponBefore=requestedWeapon=weaponAfter
+stateFNV=699f3cf3
+weaponBefore=2
+requestedWeapon=2
+weaponAfter=2
 viewInvalidationRequested=0
 selfSelect=yes
 identityAssignment=yes
 updateViewBranchTaken=no
-legacy Player.weapon unchanged
-legacy DoomCanvas.isUpdateView unchanged
+legacyWeapon=2->2
+legacyIsUpdateView=1->1
 ```
 
-Input owners must remain canonical:
+Input-owner integrity:
 
 ```text
-post-load GIVEMAP FNV=448e587d
-post-load HUD-clear FNV=b7383e18
-PlayerView FNV=afcdcf74
-Facing FNV=95aa1108
+giveMapFNV=448e587d
+hudClearFNV=b7383e18
+viewFNV=afcdcf74
+facingFNV=95aa1108
+unchanged=yes
+callerOrder=yes
 ```
 
-Resident world must remain exactly unchanged:
+Fail-closed proof:
 
 ```text
-snapshotFNV=bb714d80 -> bb714d80
-mapStateFNV=8dba0bb4
+nullGiveMap=1
+nullOutput=1
+inactiveGiveMap=1
+targetMap=1
+gameplayMap=1
+loadType=1
+count=1
+invalidWeapon=1
+prepareAtomic=yes
+postActivePrepare=1
+repeat=1
+repeatAtomic=yes
+```
+
+Resident-world integrity:
+
+```text
+snapshotFNV=bb714d80->bb714d80
+unchanged=yes
+mapFNV=8dba0bb4
 automapFNV=b699bd75
 runtimeFNV=bc432a0f
 scriptFNV=bc9b18ff
@@ -233,41 +210,50 @@ destructibles=3
 packClosed=yes
 ```
 
-Fail-closed coverage includes:
+Normal-env RAM proof:
 
 ```text
-null preceding owner
-null output
-inactive preceding owner
-wrong target map
-wrong gameplay map
-saved-load context
-wrong direct-GIVEMAP counts
-invalid weapon index
-pure-prepare atomicity
-post-active prepare refusal
-repeat-route atomicity
-```
-
-RAM / integrity acceptance:
-
-```text
-heap8 delta=0
-largest8 delta=0
+heap8=72684->72684
+delta=0
+largest8=34804->34804
+delta=0
 persistentHeapBytes=0
-framebuffer unchanged
-Game unchanged
-Player unchanged
-Hud unchanged
-DoomCanvas unchanged
-Render unchanged
-legacy runtime remains clear
-legacy Player_selectWeapon not called
-shapeData == NULL
-mediaTexels == NULL
 ```
 
-## Candidate PARK
+Same-build legacy/frame equality witnesses:
+
+```text
+gameFNV=d073b2d5->d073b2d5
+playerFNV=c64e7862->c64e7862
+hudFNV=b18611d2->b18611d2
+canvasFNV=d6d1b92a->d6d1b92a
+renderFNV=f9344dec->f9344dec
+frameFNV=ee9d9dbc->ee9d9dbc
+legacyRuntimeClear=yes
+GameMutation=no
+PlayerMutation=no
+HudMutation=no
+DoomCanvasMutation=no
+RenderMutation=no
+legacyPlayer_selectWeaponCalled=no
+```
+
+Stable heartbeat after PARK:
+
+```text
+heap=138448
+heap8=72684
+largest8=34804
+SD=ready
+VIDEO=ready
+CORE=ready
+```
+
+`ZIP=ready` in the platform heartbeat does not change the runtime asset invariant:
+this milestone performed no ZIP map access and the native backing store remains
+`/DoomRPG-ESP32.pak`.
+
+## Hardware PARK
 
 ```text
 state=9 / ST_INTRO
@@ -286,13 +272,29 @@ monsters=0
 noGameplay=yes
 ```
 
-## Promotion rule
+## Probe `done` recovery note
 
-Only a complete real-CYD `[JUNCTIONWEAPON]` PASS on normal `esp32-cyd` may
-establish the current weapon and state FNV. After that tested firmware SHA, all
-promotion commits must be documentation-only.
+Repository audit after the hardware PASS confirmed that current temporary probes
+use `done` as a terminal-attempt marker: some failure branches also set
+`probeState.done=1`. Therefore `*_isDone()` alone must **not** be documented as a
+proof that the preceding probe passed.
 
-## Next exact caller boundary after PASS + merge
+This milestone is hardware-proven by its complete successful `[JUNCTIONWEAPON]`
+block and by its own strict revalidation of the preceding owners/world. Future
+stages must continue to revalidate their input boundary instead of treating an
+`isDone()` gate by itself as a PASS certificate.
+
+## Merge rule
+
+The firmware actually tested on the real CYD is exactly:
+
+```text
+24fb8fbf914820500d2e16815e22beb0439c9ba0
+```
+
+All commits after that SHA on this branch must be documentation-only.
+
+## Next exact caller boundary after merge
 
 The next load caller operation is:
 
