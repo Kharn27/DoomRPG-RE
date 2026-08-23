@@ -9,8 +9,6 @@
 extern "C" {
 #endif
 
-struct EspPostSpawnRefreshState_s;
-
 typedef enum EspPlayerViewApplyStatus_e {
     ESP_PLAYER_VIEW_APPLY_INVALID = 0,
     ESP_PLAYER_VIEW_APPLY_SPAWN_INVALID = 1,
@@ -66,13 +64,13 @@ EspPlayerViewApplyStatus EspPlayerView_applySpawn(
     const EspPlayerSpawnState* spawn);
 
 /*
- * Transfer ownership of the two immediate post-spawn follow-ups to one already
- * resolved native post-spawn refresh state. Only hudRefreshPending and
- * facingRefreshPending are cleared; Player_setup and tile-enter remain pending.
- * Invalid/inconsistent input is fail-closed and leaves the owner byte-exact.
+ * Transfer the recovered Hud.isUpdate=true responsibility to a matching native
+ * HUD dirty owner. Only hudRefreshPending is cleared. Facing, Player_setup and
+ * tile-enter remain pending. Invalid identity/order is fail-closed.
  */
-int EspPlayerView_consumePostSpawnRefresh(
-    const struct EspPostSpawnRefreshState_s* refresh);
+int EspPlayerView_consumeHudRefresh(uint8_t targetMapId,
+                                    uint8_t gameplayLoadMapId,
+                                    uint8_t loadType);
 
 #ifdef __cplusplus
 }
