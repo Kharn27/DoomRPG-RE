@@ -1,6 +1,7 @@
 #include "native_intro_dispose.h"
 #include "native_committed_transition_probe.h"
 #include "native_junction_hud_refresh_probe.h"
+#include "native_junction_initial_tile_probe.h"
 #include "native_junction_player_setup_probe.h"
 #include "native_junction_player_view_probe.h"
 #include "native_junction_spawn_probe.h"
@@ -73,6 +74,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32JunctionPlayerViewProbe_reset();
     Esp32JunctionHudRefreshProbe_reset();
     Esp32JunctionPlayerSetupProbe_reset();
+    Esp32JunctionInitialTileProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -103,8 +105,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * Junction residency with transactional source recovery -> fresh-map native
      * player spawn/load projection -> permanent native player/view application
      * -> native post-spawn HUD dirty routing -> native fresh-map Player_setup
-     * ownership while tile-enter/finishRotation/final-facing remain pending.
-     * Each stage arms first and executes on a later Arduino loop.
+     * -> bounded native first tile dispatch while finishRotation/second tile/
+     * final-facing remain pending. Each stage arms first and executes on a later
+     * Arduino loop.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -137,4 +140,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32JunctionPlayerViewProbe_service(doomRpg);
     Esp32JunctionHudRefreshProbe_service(doomRpg);
     Esp32JunctionPlayerSetupProbe_service(doomRpg);
+    Esp32JunctionInitialTileProbe_service(doomRpg);
 }

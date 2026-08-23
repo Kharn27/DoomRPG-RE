@@ -5,26 +5,26 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #71 — native post-spawn HUD refresh
-main = 02b7f143a12e6df86ada094af10ef580ad572aad
-hardware-tested firmware = 1761e2929ec50260a1f27373ce477530b84d041a
+PR   = #72 — native fresh-map Player_setup
+main = 9077ae4496bdcc06b6b99846332ab43b38943a8a
+hardware-tested firmware = d808d895e97daef5d454ca06d5fda1738e99b147
 status = REAL-CYD HARDWARE PASS
 ```
 
-Merged evidence: [`MAP1_NATIVE_HUD_REFRESH.md`](MAP1_NATIVE_HUD_REFRESH.md).
+Merged evidence: [`MAP1_NATIVE_PLAYER_SETUP.md`](MAP1_NATIVE_PLAYER_SETUP.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-player-setup
-base   = 02b7f143a12e6df86ada094af10ef580ad572aad
-hardware-tested firmware = d808d895e97daef5d454ca06d5fda1738e99b147
+branch = agent/esp32-native-initial-tile-enter
+base   = 9077ae4496bdcc06b6b99846332ab43b38943a8a
+hardware-tested firmware = d8fb3e0e372b89d95c37cce558420f7fcb474419
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Active evidence: [`MAP1_NATIVE_PLAYER_SETUP.md`](MAP1_NATIVE_PLAYER_SETUP.md).
+Evidence: [`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md).
 
-This milestone owns recovered fresh-map `Player_setup()` semantics in a permanent 24-byte native per-level session root, consumes only `playerSetupPending`, and leaves initial tile-enter, `finishRotation()`/final-facing and `ST_PLAYING` explicitly pending.
+This milestone hardware-proves the first fresh-map `Game_executeTile()` dispatch at Junction and consumes only `tileEnterPending`. `finishRotation()`, its second tile event, durable facing and `ST_PLAYING` remain explicitly pending.
 
 ## Permanent invariants
 
@@ -49,8 +49,12 @@ Entrance:
 
 ```text
 resource=/intro.bsp
-bytes=21823 crc32=623f34e4 sourceFNV=d5cc751f
-gameplayLoadMapId=1 spawnIndex=904 spawnDirection=64
+bytes=21823
+crc32=623f34e4
+sourceFNV=d5cc751f
+gameplayLoadMapId=1
+spawnIndex=904
+spawnDirection=64
 snapshotFNV=b3811f3d
 logical payload=17891 B
 actual heap=18008 B
@@ -74,7 +78,7 @@ enemies=0
 destructibles=3
 ```
 
-Junction owner FNVs:
+Junction resident owner FNVs:
 
 ```text
 runtime  = bc432a0f
@@ -104,68 +108,55 @@ CHANGEMAP pending intent
  -> 44 B active native player/view owner
  -> 8 B native post-spawn HUD dirty owner
  -> 24 B native fresh-map Player_setup session owner
+ -> 24 B native initial tile-enter owner
 ```
 
 Canonical fingerprints:
 
 ```text
-levelExitStatsFNV        = bd41bcfa
-playerExitAppliedFNV     = 298eaaa4
-statsMenuIntentFNV       = 96afe901
-catalogFNV               = ce322e3f
-transitionPreflightFNV   = 108e5c7b
-committed WAIT_STATS FNV = 66fe636a
-committed READY FNV      = 0ef58ea8
-committed ROLLBACK FNV   = 2dec1442
-committed COMMITTED FNV  = 2c595a62
-Junction spawn FNV       = ba6af4a7
-packed override FNV      = e0a5110b
-Junction player/view FNV = d1131d18
-packed override view FNV = 9ed47d08
-post-HUD player/view FNV = d17fa0d1
-Junction HUD refresh FNV = 6965ee06
-Player_setup semantic FNV= 3b27c6a1
-post-setup player/view FNV = c21fba3c
+levelExitStatsFNV              = bd41bcfa
+playerExitAppliedFNV           = 298eaaa4
+statsMenuIntentFNV             = 96afe901
+catalogFNV                     = ce322e3f
+transitionPreflightFNV         = 108e5c7b
+committed WAIT_STATS FNV       = 66fe636a
+committed READY FNV            = 0ef58ea8
+committed ROLLBACK FNV         = 2dec1442
+committed COMMITTED FNV        = 2c595a62
+Junction spawn FNV             = ba6af4a7
+packed override FNV            = e0a5110b
+Junction player/view FNV       = d1131d18
+packed override view FNV       = 9ed47d08
+post-HUD player/view FNV       = d17fa0d1
+Junction HUD refresh FNV       = 6965ee06
+Player_setup semantic FNV      = 3b27c6a1
+post-setup player/view FNV     = c21fba3c
+Junction initial-tile FNV      = f73e28b2
+post-initial-tile player FNV   = 1bd0f09b
 ```
 
-All real MAP_INTRO opcode IDs have explicit native ownership/execution boundaries:
+All real MAP_INTRO opcode IDs already have explicit native ownership/execution boundaries:
 
 ```text
 2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-## Hardware-proven current player chain
+The generic `EspMapOpcodeExecutor` deliberately remains tiny and executes only IDs 11/19/20. Other opcode families keep dedicated owners/probes.
+
+## Hardware-proven current player state
 
 Fresh-map spawn projection:
 
 ```text
 EspPlayerSpawnState=24 B
 stateFNV=ba6af4a7
-targetMap=9 gameplayLoadMapId=2
-world=992/1888 angle=64 viewZ=36 viewZOld=4 loadType=0
-```
-
-Active player/view before HUD routing:
-
-```text
-EspPlayerViewState=44 B
-stateFNV=d1131d18
-hudRefreshPending=1
-facingRefreshPending=1
-playerSetupPending=1
-tileEnterPending=1
-```
-
-Post-HUD:
-
-```text
-EspHudRefreshState=8 B
-HUD FNV=6965ee06
-PlayerView FNV=d17fa0d1
-hudRefreshPending=0
-facingRefreshPending=1
-playerSetupPending=1
-tileEnterPending=1
+targetMap=9
+gameplayLoadMapId=2
+world=992/1888
+angle=64
+viewZ=36
+viewZOld=4
+loadType=0
 ```
 
 Post-Player_setup:
@@ -173,14 +164,6 @@ Post-Player_setup:
 ```text
 EspPlayerFreshMapState=24 B
 setup semanticFNV=3b27c6a1
-raw same-run stateFNV=d0ab146e at startMs=27538
-startExact=yes
-moves=0
-xpGained=0
-berserkerTics=0
-familiarActive=0
-notebookEmpty=1
-weaponRestorePerformed=0
 PlayerView FNV=c21fba3c
 hudRefreshPending=0
 facingRefreshPending=1
@@ -188,7 +171,38 @@ playerSetupPending=0
 tileEnterPending=1
 ```
 
-`d0ab146e` is a same-run witness only because `levelStartTimeMs` is dynamic. `3b27c6a1` is the normalized hardware canon.
+Latest hardware boundary — post initial tile-enter:
+
+```text
+EspPlayerInitialTileState=24 B
+stateFNV=f73e28b2
+world=992/1888
+tile=943
+flags=1000040f
+eventFound=1
+eventIndex=61
+eventState=0
+eventFlags=0
+blocked=0
+eligible=0
+executed=0
+removed=0
+skipAdvanceTurn=0
+playerKeys=00000000
+
+PlayerView FNV c21fba3c -> 1bd0f09b
+hudRefreshPending=0
+facingRefreshPending=1
+playerSetupPending=0
+tileEnterPending=0
+```
+
+The real tile 943 event exists, but no command is eligible under the exact fresh-map flags. Therefore script state remains byte-for-byte unchanged:
+
+```text
+script FNV bc9b18ff -> bc9b18ff
+changed=no
+```
 
 ## Recovered fresh-map ordering
 
@@ -209,93 +223,67 @@ caller -> DoomCanvas_finishRotation():
   checkFacingEntity()            # durable final facing
 ```
 
-The first facing write is transitory and is not consumed by `Player_setup()` or the intervening tile execution. Native facing remains pending until after the correct setup/tile/orientation ordering.
+Hardware-proven boundary now reaches through the first `Game_executeTile()` call. The transient first facing write remains deliberately unowned because it is overwritten later and is not consumed by Player_setup or the initial tile dispatch.
 
-## Native fresh-map Player_setup owner
+## Initial tile-enter hardware proof
 
-Permanent files:
-
-```text
-ESP32/include/esp_player_fresh_map_state.h
-ESP32/src/esp_player_fresh_map_state.c
-```
-
-API:
+Recovered call:
 
 ```text
-EspPlayerFreshMap_reset()
-EspPlayerFreshMap_isReady()
-EspPlayerFreshMap_view()
-EspPlayerFreshMap_prepare()
-EspPlayerFreshMap_route()
-EspPlayerView_consumePlayerSetup()
+worldX=992
+worldY=1888
+tileX=15
+tileY=29
+tileIndex=943
+destAngle=64
+DoomCanvas_flagForFacingDir(64)=0x10000000
+base flags=0x0000040f
+input flags=0x1000040f
 ```
 
-Hardware-proven ABI:
+Permanent API:
 
 ```text
-EspPlayerFreshMapState = 24 B
-persistent heap = 0 B
+EspPlayerInitialTile_reset()
+EspPlayerInitialTile_isReady()
+EspPlayerInitialTile_view()
+EspPlayerInitialTile_prepare()
+EspPlayerInitialTile_route()
+EspPlayerView_consumeTileEnter()
 ```
 
-Recovered semantics owned:
-
-```text
-levelStartTimeMs = exact sampled uptime
-moves=0
-xpGained=0
-berserkerTics=0
-familiarActive=0
-notebookEmpty=1
-weaponRestorePerformed=0
-```
-
-### Weapon restore boundary
-
-Recovered `Player_setup()` calls `Player_restoreWeapons()` only when `disabledWeapons != 0`. That branch can mutate weapons, clear `disabledWeapons`, select another weapon and request a view refresh.
-
-The current permanent owner therefore supports only:
-
-```text
-disabledWeapons=0
-```
-
-and fails closed otherwise. Hardware proved the real fresh-run path has `disabledWeapons=0` and the `weaponRestore` refusal gate works.
-
-## Hardware fail-closed proof for Player_setup
+Hardware fail-closed gates:
 
 ```text
 nullView=1
-nullHud=1
+nullSetup=1
 nullOutput=1
-inactive=1
-loadType=1
-hudPending=1
-missingFacing=1
-missingSetup=1
+angle=1
+blocked=1
 missingTile=1
-hudMismatch=1
-weaponRestore=1
-reset=1
+missingFacing=1
+setupMismatch=1
 prepareAtomic=yes
 repeat=1
 repeatAtomic=yes
 ```
 
-## Resident / RAM integrity
+No fallback to legacy `Game_executeEvent()` is permitted. Eligible unsupported commands would still fail closed; the real initial Junction dispatch simply has `eligible=0`.
 
-Real CYD for the Player_setup milestone:
+## Latest hardware RAM / integrity baseline
+
+Initial tile-enter milestone on real CYD:
 
 ```text
-snapshotFNV=bc9071e9->bc9071e9
-targetLeftResident=yes
 payload=10410
 entities=30
 enemies=0
 destructibles=3
 packClosed=yes
+runtimeStable=yes
+nonScriptMutableStable=yes
 
-heap8=72900->72900
+heap8=72868->72868
 delta=0
 largest8=34804->34804
 delta=0
@@ -305,48 +293,41 @@ persistentHeapBytes=0
 Stable heartbeat:
 
 ```text
-heap=138664
-heap8=72900
+heap=138632
+heap8=72868
 largest8=34804
 ```
 
-Absolute heap is build-context dependent; same-build zero delta is the hardware proof.
-
-## Legacy / framebuffer integrity
-
-Same-build witnesses for the Player_setup milestone:
+Same-build equality witnesses:
 
 ```text
-placementFNV=5d1076bf->5d1076bf
-playerSetupFNV=ea247b9a->ea247b9a
-frameFNV=9eb7ce0f->9eb7ce0f
+gameFNV=c655ff85->c655ff85
+playerFNV=774ed642->774ed642
+frameFNV=7a95b5b5->7a95b5b5
 legacyRuntimeClear=yes
-DoomCanvasMutation=no
 GameMutation=no
 PlayerMutation=no
-RenderMutation=no
 HudMutation=no
+DoomCanvasMutation=no
+RenderMutation=no
 ```
 
-These hashes are same-build witnesses, not cross-build canons.
+These equality FNVs are same-build witnesses, not cross-build canons.
 
-## Final hardware PARK
+## Current hardware PARK
 
 ```text
 state=9 / ST_INTRO
 page=3
-mapSwapCommitted=yes
 targetMap=9
 junctionResident=yes
 nativePlayerView=yes
-nativeHudRefresh=yes
 nativePlayerSetup=yes
-setupApplied=yes
-hudDirty=yes
+nativeInitialTile=yes
+tileEnterPending=no
 facingPending=yes
-playerSetupPending=no
-tileEnterPending=yes
 finishRotationPending=yes
+secondTilePending=yes
 finalFacingPending=yes
 ST_PLAYING=no
 legacy Game.entities=0
@@ -360,7 +341,7 @@ Hardware-proven native ownership now includes:
 
 ```text
 compact immutable native map + explicit mutable owners
-all MAP_INTRO opcode families
+all MAP_INTRO opcode families as dedicated semantic boundaries
 exit/save/change-map chain
 Junction catalog/preflight
 resident lifecycle
@@ -369,6 +350,7 @@ fresh-map spawn/load projection
 active native player/view owner
 post-spawn HUD dirty ownership
 fresh-map Player_setup-equivalent per-level session root
+first fresh-map tile dispatch
 ```
 
 Still intentionally outside:
@@ -377,9 +359,8 @@ Still intentionally outside:
 actual stats-menu rendering/input
 actual HUD rendering / renderer dirty consumption
 weapon restore/select ownership when disabledWeapons!=0
-initial tile-enter execution
 finishRotation-equivalent orientation preparation
-second tile/facing event
+second tile event
 final native facing-entity query
 ST_PLAYING progression
 full native entity/monster gameplay
@@ -387,24 +368,24 @@ native gameplay renderer
 sound playback
 ```
 
-The player/view, HUD and fresh-map session owners deliberately have different lifetimes from the map-resident arena and are not folded into the seven-owner resident snapshot.
+The player/view, HUD, fresh-map session and initial-tile owners have lifetimes distinct from the seven-owner resident arena.
 
 `shapeData == NULL` and `mediaTexels == NULL` remain mandatory.
 
-## Next direction after merge
+## Next bounded milestone after merge
 
-After merge, recover from true `main` before implementation. The next exact operation is the initial tile-enter at the hardware-proven Junction position `(992,1888)`. Keep `finishRotation()`, its second tile execution, durable final facing and `ST_PLAYING` as later boundaries unless a fresh legacy audit proves otherwise.
+Recover from the true post-merge `main` before implementation. The natural next operation is the `DoomCanvas_finishRotation()` orientation preparation (`viewSin`, `viewCos`, `viewStepX`, `viewStepY`). Keep its second `Game_executeTile(... | 0x400)` and final durable facing as later boundaries unless a fresh legacy audit proves a tighter safe grouping.
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-player-setup
+MERGE agent/esp32-native-initial-tile-enter
 ```
 
 Hardware-tested firmware:
 
 ```text
-d808d895e97daef5d454ca06d5fda1738e99b147
+d8fb3e0e372b89d95c37cce558420f7fcb474419
 ```
 
 Every later commit on this branch must remain documentation-only unless another firmware is flashed.
