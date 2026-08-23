@@ -9,27 +9,17 @@ PR   = #74 — native finishRotation orientation
 main = 2decae5067438dc1a2d9c29335cfc0cad5538645
 ```
 
-Status: **HARDWARE CANDIDATE — NOT YET CYD-PROVEN**.
+Hardware-tested firmware:
+
+```text
+df4f62687d99eb3b3e9569ae6861b6909d59c82d
+```
+
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
-PR #74 hardware-proved the first four orientation writes in recovered
-`DoomCanvas_finishRotation()` and parks Junction at:
-
-```text
-PlayerView FNV=1bd0f09b
-InitialTile FNV=f73e28b2
-Orientation FNV=acc754a6
-world=992/1888
-destAngle=64
-viewSin=65536
-viewCos=0
-viewStepX=0
-viewStepY=-64
-facingRefreshPending=1
-```
-
-This milestone owns only the next exact legacy operation:
+Own only the second `Game_executeTile()` inside recovered `DoomCanvas_finishRotation()` after the hardware-proven orientation preparation:
 
 ```c
 Game_executeTile(doomCanvas->game,
@@ -38,12 +28,11 @@ Game_executeTile(doomCanvas->game,
                  DoomCanvas_flagForFacingDir(doomCanvas) | 0x400);
 ```
 
-The final durable `DoomCanvas_checkFacingEntity()` and `ST_PLAYING` remain
-strictly deferred.
+The final durable `DoomCanvas_checkFacingEntity()` and `ST_PLAYING` remain strictly deferred.
 
-## Exact current Junction call
+## Exact hardware-proven call
 
-For the hardware-proven fresh-map placement/orientation:
+For the current Junction fresh-map state:
 
 ```text
 worldX=992
@@ -69,8 +58,7 @@ if tile has an event:
 return event-command result
 ```
 
-The native path represents `skipAdvanceTurn=false` in its own owner and never
-mutates legacy `Game_t`.
+The native path represents `skipAdvanceTurn=false` in its own owner and never mutates legacy `Game_t`.
 
 ## Permanent owner
 
@@ -81,56 +69,67 @@ ESP32/include/esp_player_finish_rotation_tile.h
 ESP32/src/esp_player_finish_rotation_tile.c
 ```
 
-Candidate ABI:
+Hardware-proven ABI:
 
 ```text
 EspPlayerFinishRotationTileState = 24 B
 persistent heap = 0 B
+stateFNV = 09e58e0d
 ```
 
-The state records:
+Real Junction owner:
 
 ```text
-input flags
-tile/event identity
-initial mutable event state/event flags
-eligible/executed/removed command counts
-BLOCKINPUT result
-skipAdvanceTurn semantic
-target/load identity
-active state
+tile=943
+flags=10000400
+eventFound=1
+eventIndex=61
+eventState=0
+eventFlags=0
+blocked=0
+eligible=0
+executed=0
+removed=0
+skipAdvanceTurn=0
+active=1
+targetMap=9
+gameplayLoadMapId=2
+loadType=0
+playerKeys=00000000
 ```
 
-No second-tile state FNV is predicted in advance because the real event command
-eligibility under `0x10000400` is intentionally discovered by the hardware
-probe rather than guessed.
+`09e58e0d` is now the canonical hardware fingerprint for this 24-byte second-tile owner.
 
-## API
+## Important real-event result
+
+The second tile call resolves the same real tile/event:
 
 ```text
-EspPlayerFinishRotationTile_reset()
-EspPlayerFinishRotationTile_isReady()
-EspPlayerFinishRotationTile_view()
-EspPlayerFinishRotationTile_prepare()
-EspPlayerFinishRotationTile_route()
+tile=943
+eventIndex=61
 ```
 
-Required live owners:
+Under the exact `finishRotation()` flags `0x10000400`, however, no command is eligible:
 
 ```text
-PlayerView active, tileEnterPending=0, facingRefreshPending=1
-InitialTile active and identity-matched
-Orientation active/prepared and identity-matched
-angle=64 with 65536/0/0/-64 orientation values
-fresh loadType=0
+eligible=0
+executed=0
+removed=0
+blocked=0
 ```
 
-The API is allocation-free and does not mutate PlayerView, InitialTile or
-Orientation.
+Therefore the second tile dispatch executes no opcode and makes no script mutation. The generic `EspMapOpcodeExecutor` remains deliberately restricted to IDs 11/19/20; this milestone broadens nothing.
 
-## Event execution boundary
+Together with the first fresh-map tile call, hardware now proves:
 
-The implementation intentionally reuses the permanent native primitives:
+```text
+first tile  flags=0x1000040f -> event 61 -> eligible=0
+second tile flags=0x10000400 -> event 61 -> eligible=0
+```
+
+## Native machinery reused
+
+The implementation reuses the permanent native primitives:
 
 ```text
 EspMapEvents_findByTile()
@@ -138,134 +137,41 @@ EspMapEvents_describe()
 EspMapEvents_getCommand()
 EspMapEventFilter_prepare()
 EspMapEventFilter_evaluate()
-EspMapScriptState mutable event/removed-command overlay
+EspMapScriptState event-state / removed-command overlay
 EspMapOpcodeExecutor_execute()
 ```
 
-The generic executor remains deliberately restricted to:
+A complete side-effect-free preflight still rejects any eligible unsupported opcode with `ESP_PLAYER_FINISH_ROTATION_TILE_OPCODE_DEFERRED`. The real Junction path simply proved that this gate is not reached because the filtered command count is zero.
+
+## Input owner integrity
+
+Hardware proved all previously owned player boundaries remain byte-for-byte canonical:
 
 ```text
-11 EV_CHANGESTATE
-19 EV_NEXTSTATE
-20 EV_PREVSTATE
-```
-
-`prepare()` scans the complete filtered command set before any mutation. If the
-real event 61 exposes an eligible opcode outside those IDs under the second-tile
-flags, it returns:
-
-```text
-ESP_PLAYER_FINISH_ROTATION_TILE_OPCODE_DEFERRED
-```
-
-and reports the exact opcode/command offset with no mutation. No fallback to
-legacy `Game_executeEvent()` is permitted.
-
-## Atomic route
-
-If all eligible commands are already supported, route execution:
-
-1. executes only through `EspMapOpcodeExecutor`;
-2. applies recovered `arg2 & 0x200` command removal in `EspMapScriptState`;
-3. keeps bounded rollback state on the stack;
-4. restores all script mutations if execution fails;
-5. parks the 24-byte second-tile owner only after complete success.
-
-Unlike the first tile milestone, no PlayerView pending bit is consumed here.
-The final-facing boundary is represented by `facingRefreshPending=1` remaining
-unchanged.
-
-## Hardware probe
-
-Temporary probe files:
-
-```text
-ESP32/include/native_junction_finish_rotation_tile_probe.h
-ESP32/src/native_junction_finish_rotation_tile_probe.c
-```
-
-The normal `esp32-cyd` chain arms it only after the hardware-proven orientation
-probe has completed.
-
-Two diagnostic outcomes are intentionally valid before promotion.
-
-### A. Complete native route
-
-Expected markers begin with:
-
-```text
-=== Doom RPG ESP32-native Junction finishRotation second tile ===
-[JUNCTIONTILE2] READY ...
-```
-
-The probe records the real:
-
-```text
-stateFNV
-eventFound/eventIndex/eventState/eventFlags
-eligible/executed/removed counts
-script FNV before/after
-```
-
-and requires:
-
-```text
-tile=943
-flags=10000400
-PlayerView FNV=1bd0f09b unchanged
+PlayerView FNV=1bd0f09b -> 1bd0f09b
 InitialTile FNV=f73e28b2 unchanged
 Orientation FNV=acc754a6 unchanged
 facingRefreshPending=1
-final facing still deferred
-zero same-build heap delta
-no legacy/framebuffer mutation
-non-script resident owners stable
+tileEnterPending=0
 ```
 
-Script state may change only if eligible supported state opcodes execute.
+No PlayerView pending bit is consumed by the second tile. The remaining pending semantic is final durable facing.
 
-### B. Unsupported real opcode discovery
+## Script / resident integrity
 
-Expected marker:
+The native script overlay remained unchanged:
 
 ```text
-[JUNCTIONTILE2] DEFERRED ... code=<id> arg1=<...> arg2=<...> failClosed=yes
+script beforeFNV=bc9b18ff
+afterFNV=bc9b18ff
+changed=no
 ```
 
-This is a successful fail-closed discovery but **not** a second-tile hardware
-PASS. The exact real opcode becomes the next bounded prerequisite and must be
-integrated natively before this milestone can be promoted.
-
-## Fail-closed proof
-
-The probe exercises:
+All resident owners remain canonical:
 
 ```text
-null PlayerView
-null InitialTile
-null Orientation
-null output
-inactive PlayerView
-tileEnterPending unexpectedly restored
-missing facing pending
-wrong angle
-Game.f658b execution block
-InitialTile identity mismatch
-inactive Orientation
-Orientation fixed-point mismatch
-repeat route
-pure-prepare atomicity
-```
-
-## Mandatory integrity
-
-The pre-route Junction resident canon is:
-
-```text
-snapshotFNV=bc9071e9
 runtimeFNV=bc432a0f
 mapStateFNV=c5cdfc04
-scriptStateFNV=bc9b18ff
 lineFNV=3658710d
 textureFNV=537319ad
 automapFNV=0b2ae445
@@ -275,13 +181,94 @@ entities=30
 enemies=0
 destructibles=3
 packClosed=yes
+nonScriptStable=yes
 ```
 
-If script execution changes the script overlay, only the script FNV is allowed
-to differ. Runtime/map/line/texture/automap/topology and resident topology/counts
-must remain stable.
+## Hardware fail-closed proof
 
-Permanent invariants remain:
+Real CYD proved:
+
+```text
+nullView=1
+nullInitial=1
+nullOrientation=1
+nullOutput=1
+inactive=1
+tilePending=1
+missingFacing=1
+angle=1
+blocked=1
+initialMismatch=1
+orientationInactive=1
+orientationMismatch=1
+prepareAtomic=yes
+repeat=1
+repeatAtomic=yes
+```
+
+Every refusal preserves the live owner graph and script state.
+
+## RAM proof
+
+Normal `esp32-cyd` hardware run:
+
+```text
+heap8=72796->72796
+delta=0
+largest8=34804->34804
+delta=0
+persistentHeapBytes=0
+```
+
+Stable heartbeat after PASS:
+
+```text
+heap=138560
+heap8=72796
+largest8=34804
+```
+
+## Legacy / framebuffer integrity
+
+Same-build equality witnesses from the tested firmware:
+
+```text
+gameFNV=c655ff85->c655ff85
+playerFNV=774ed642->774ed642
+canvasFNV=1b7ba23f->1b7ba23f
+renderFNV=f9344dec->f9344dec
+frameFNV=e6066fb0->e6066fb0
+legacyRuntimeClear=yes
+GameMutation=no
+PlayerMutation=no
+HudMutation=no
+DoomCanvasMutation=no
+RenderMutation=no
+```
+
+These equality FNVs are same-build witnesses, not cross-build canons.
+
+## Final hardware PARK
+
+```text
+state=9 / ST_INTRO
+page=3
+targetMap=9
+junctionResident=yes
+nativePlayerView=yes
+nativeInitialTile=yes
+nativeOrientation=yes
+nativeSecondTile=yes
+secondTilePending=no
+finalFacingPending=yes
+finishRotationComplete=no
+ST_PLAYING=no
+legacy Game.entities=0
+legacy Game.monsters=0
+noGameplay=yes
+```
+
+Mandatory invariants remain true:
 
 ```text
 shapeData == NULL
@@ -292,7 +279,9 @@ legacy Game.monsters = 0
 ST_PLAYING not reached
 ```
 
-## Ordering boundary
+## Correct ordering boundary
+
+Hardware-proven fresh-map chain is now:
 
 ```text
 placement                         [hardware-proven]
@@ -301,30 +290,33 @@ transient old-vector facing       [deliberately unowned]
 Player_setup                      [hardware-proven]
 initial Game_executeTile          [hardware-proven]
 finishRotation orientation prep   [hardware-proven]
-second Game_executeTile           [THIS MILESTONE]
-final durable facing              [deferred]
+second Game_executeTile           [hardware-proven]
+final durable facing              [next]
 ST_PLAYING                        [deferred]
 ```
 
-Even after a complete second-tile PASS, `finishRotationComplete` remains false
-until the durable facing query receives its own native boundary.
+`finishRotationComplete` remains false because the durable facing query is the final operation of legacy `DoomCanvas_finishRotation()` and still has no native owner.
 
-## Promotion rule
+## Next bounded milestone after merge
 
-Do not mark this milestone hardware-proven until the real CYD reaches a complete
-`[JUNCTIONTILE2] READY` route. A `DEFERRED` result is discovery only and must be
-followed by a bounded native implementation/re-test.
-
-After PASS, update this archive, `PORTING_STATUS.md` and `DOCUMENTATION.md` with
-the exact Serial values. Every commit after the flashed firmware SHA must then
-remain documentation-only.
-
-## Next boundary after PASS
-
-The next exact legacy operation is:
+Recover from the exact post-merge `main`, then own only:
 
 ```text
 DoomCanvas_checkFacingEntity()   # durable final facing result
 ```
 
-Keep `ST_PLAYING` progression separate until that facing ownership is proven.
+That milestone should derive the facing query from the hardware-proven native player position/orientation and compact resident topology without reviving legacy entities/render runtime. `ST_PLAYING` remains a later boundary.
+
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-finish-rotation-second-tile
+```
+
+Hardware-tested firmware:
+
+```text
+df4f62687d99eb3b3e9569ae6861b6909d59c82d
+```
+
+Every later commit on this branch must remain documentation-only unless another firmware is flashed.
