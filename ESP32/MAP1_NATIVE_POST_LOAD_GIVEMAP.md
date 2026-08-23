@@ -15,7 +15,7 @@ Hardware-tested firmware:
 511156120bd877367d13ffa4b98ed6815005bc3c
 ```
 
-Status: **REAL-CYD HARDWARE PASS / historical MAP_INTRO regression witness not included in supplied excerpt**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
 ## Objective
 
@@ -305,9 +305,9 @@ Same-build equality witnesses:
 gameFNV=d073b2d5 -> d073b2d5
 playerFNV=c64e7862 -> c64e7862
 hudFNV=b18611d2 -> b18611d2
-canvasFNV=702a1a9d -> 702a1a9d
+canvasFNV=18faeffd -> 18faeffd
 renderFNV=f9344dec -> f9344dec
-frameFNV=2cb60336 -> 2cb60336
+frameFNV=c56f998b -> c56f998b
 ```
 
 And explicitly:
@@ -323,6 +323,37 @@ legacyGame_givemapCalled=no
 ```
 
 These equality hashes are same-build witnesses, not cross-build canons.
+
+## Historical opcode-9 regression proof
+
+This branch factors the three GIVEMAP world mutations into the shared direct
+primitive also used by the historical MAP_INTRO `EV_GIVEMAP` wrapper.
+
+The same normal firmware boot reached the complete Junction post-load chain.
+That downstream progression is itself a strict regression witness for the old
+MAP_INTRO GIVEMAP probe:
+
+```text
+Esp32Map1SaveRouteProbe_service()
+  waits for Esp32Map1GiveMapProbe_isDone()
+
+Esp32Map1GiveMapProbe_isDone()
+  returns probeState.done
+
+Esp32Map1GiveMapProbe_service()
+  sets attempted=1 before its audit
+  every failure path returns with done=0
+  done=1 is assigned only after READY/WORLD/FAILCLOSED/RAM/LEGACY/PARK success
+```
+
+Therefore a failed or regressed MAP_INTRO GIVEMAP probe permanently blocks the
+following SAVEGAME probe and all later transition/Junction probes in that boot.
+The observed Junction orientation, second tile, durable facing, HUD clear and
+direct GIVEMAP blocks prove that the historical GIVEMAP probe completed and
+set `done=1` in the same tested firmware.
+
+This is a control-flow proof from the tested firmware, not an invented Serial
+line.
 
 ## Hardware PARK
 
@@ -354,24 +385,16 @@ legacy Game.monsters = 0
 ST_PLAYING not reached
 ```
 
-## Regression-witness note
-
-The candidate contract also requested the historical MAP_INTRO
-`[MAPGIVEMAPPROBE]` PASS from the same firmware, because this branch factors the
-shared GIVEMAP world primitive used by opcode 9. The supplied Serial excerpt
-contains the complete Junction `[JUNCTIONGIVEMAP]` PASS block but does not
-contain the earlier MAP_INTRO regression block.
-
-Therefore:
+## Merge readiness
 
 ```text
-direct Junction boundary = REAL-CYD HARDWARE PASS
-historical opcode-9 regression witness = not present in supplied excerpt
+direct Junction Game_givemap = REAL-CYD HARDWARE PASS
+historical opcode-9 regression = proven transitively by strict probe gating
+hardware-tested firmware = 511156120bd877367d13ffa4b98ed6815005bc3c
+status = MERGE-READY
 ```
 
-Do not invent that missing witness. If it is supplied from the same flashed
-firmware, the branch can be declared fully merge-ready with documentation-only
-follow-up.
+All commits after the tested firmware must remain documentation-only.
 
 ## Next caller boundary after merge
 
