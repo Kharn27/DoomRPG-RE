@@ -5,27 +5,25 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #63 — native MAP_INTRO level-exit stats
-main = 533784b5483e14a12558fb08c9331d8b744caa88
-hardware-tested firmware = f9a05933a00fab26b1c0e2b15375d074161ef2bc
+PR   = #64 — native player exit-state
+main = 3759bcd12a3f6d36a6a696457110ab27474c24b8
+hardware-tested firmware = f8c5a1c398c0946025aef976f7a997589bae4923
 ```
 
-Merged evidence: [`MAP1_NATIVE_LEVEL_EXIT_STATS.md`](MAP1_NATIVE_LEVEL_EXIT_STATS.md).
-
-All 16 real MAP_INTRO opcode IDs have explicit native ownership/execution boundaries. Native level-exit stats is hardware-proven.
+Merged evidence: [`MAP1_NATIVE_PLAYER_EXIT_STATE.md`](MAP1_NATIVE_PLAYER_EXIT_STATE.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-player-exit-state
-base   = 533784b5483e14a12558fb08c9331d8b744caa88
-hardware-tested firmware = f8c5a1c398c0946025aef976f7a997589bae4923
+branch = agent/esp32-native-stats-menu-intent
+base   = 3759bcd12a3f6d36a6a696457110ab27474c24b8
+hardware-tested firmware = 1dddbe86788389400d6e2186595174e723c72f5c
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Active evidence: [`MAP1_NATIVE_PLAYER_EXIT_STATE.md`](MAP1_NATIVE_PLAYER_EXIT_STATE.md).
+Active evidence: [`MAP1_NATIVE_STATS_MENU_INTENT.md`](MAP1_NATIVE_STATS_MENU_INTENT.md).
 
-This milestone consumes the hardware-proven 20 B level-exit snapshot into a 28 B pointer-free native player exit state without mutating legacy `Player_t`.
+This milestone owns the semantic `MENU_MAP_STATS` / `MENU_MAP_STATS_OVERALL` branch intent of recovered `Game_changeMap()` without mutating legacy Menu/Game/Render state or loading a map.
 
 ## Permanent invariants
 
@@ -39,9 +37,10 @@ shapeData   = NULL
 mediaTexels = NULL
 runtime ZIP = forbidden
 backing     = /DoomRPG-ESP32.pak
+entities    = 0
+monsters    = 0
+ST_PLAYING  = not reached
 ```
-
-`entities=0`, `monsters=0`; `ST_PLAYING` is not reached.
 
 ## MAP_INTRO identity
 
@@ -52,7 +51,7 @@ nodes=223 lines=480 mapSprites=344 events=93 byteCodes=265
 strings=94 stringData=7779 maxString=313
 ```
 
-Owned real opcode IDs:
+All real MAP_INTRO opcode IDs have native ownership/execution boundaries:
 
 ```text
 2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
@@ -72,7 +71,7 @@ mutable sprite topology   2424 B
 total                    18008 B
 ```
 
-Level-exit stats and player exit-state/result are caller-owned values and add no persistent allocation. Hardware total remains exactly `18008 B`.
+Level-exit stats, player exit-state/result and stats-menu intent are caller-owned values and add no persistent allocation. Hardware total remains exactly `18008 B`.
 
 ## Hardware-proven fingerprints
 
@@ -85,9 +84,6 @@ scriptFNV                = f9e3d9df
 lineStateFNV             = e5e74861
 lineTextureStateFNV      = f1fc1875
 automapStateFNV          = 669b1aa7
-lineDoorFNV              = b1c9d297
-unlockFNV                = 261d756a
-giveMapFNV               = 98c7ac59
 saveRouteOwnerFNV        = 06ea6ea8
 saveRouteResultFNV       = c2ecb064
 changeMapOwnerFNV        = f75eb7c7
@@ -103,155 +99,194 @@ levelExitNoStatsFNV      = d9532169
 levelExitMapId2FNV       = ceb6ad21
 levelExitShowSensFNV     = 5155b517
 levelExitSecretOpenFNV   = 6694b0e1
-```
-
-New player exit-state canons:
-
-```text
 playerExitInitialFNV     = 940b0171
 playerExitAppliedFNV     = 298eaaa4
 playerExitResultFNV      = 5d10a566
 playerExitAllMasksFNV    = c93e8128
-playerExitLiveFNV        = 57fce418   # same-build live projection
+playerExitLiveFNV        = 57fce418
 ```
 
-Same-build legacy witnesses:
+New stats-menu canons:
 
 ```text
-playerExitLegacyFNV = f5cbf9f5
-transitionFNV       = f450c49f
+statsMenuIntentFNV       = 96afe901
+statsMenuEndGameFNV      = deea91b4
+statsMenuZeroFNV         = 4b95f515
 ```
 
-## Hardware-proven level-exit snapshot
+Same-build legacy/integrity witnesses for the stats-menu firmware:
 
 ```text
-loadMapId          = 1
-showStats          = 1
-secrets            = 0 / 6
-monsters           = 0 / 30
-markCompleted      = 1
-markAllSecrets     = 0
-markAllMonsters    = 0
-completionLevelBit = 00000001
-effects            = 1f
-resultBytes        = 20
-persistentHeapBytes= 0
+playerExitWitnessFNV = 0b2ae445
+transitionFNV        = f450c49f
+frameFNV             = e8a3b4ef
 ```
 
-## Permanent player exit-state API
+## Hardware-proven CHANGEMAP target
+
+Real MAP_INTRO command:
+
+```text
+name=/junction.bsp
+targetMap=9 / MAP_JUNCTION
+spawnParam=0
+showStats=1
+effects=03
+pending=1
+```
+
+Recovered legacy `Game_changeMap()` show-stats branch:
+
+```text
+Player_addLevelStats(player, true)
+menu->mapNameId = targetMapId
+if targetMapId == MAP_END_GAME:
+    MenuSystem_setMenu(MENU_MAP_STATS_OVERALL)
+else:
+    MenuSystem_setMenu(MENU_MAP_STATS)
+game->changeMapParam = 0
+```
+
+No target map load occurs in this branch before the stats UI.
+
+## Hardware-proven level-exit consumer chain
+
+Native level-exit stats:
+
+```text
+EspMapLevelExitStats = 20 B
+loadMapId=1 showStats=1
+secrets=0/6 monsters=0/30
+completionLevelBit=00000001
+effects=1f
+statsFNV=bd41bcfa
+persistentHeapBytes=0
+```
+
+Native player exit state:
+
+```text
+EspPlayerExitState       = 28 B
+EspPlayerExitApplyResult = 28 B
+initialFNV=940b0171
+appliedFNV=298eaaa4
+resultFNV=5d10a566
+allMasksFNV=c93e8128
+persistentHeapBytes=0
+```
+
+Native stats-menu intent:
+
+```text
+EspStatsMenuIntent = 4 B
+targetMap=9
+menuKind=1 / LEVEL
+active=1
+consumePending=1
+intentFNV=96afe901
+persistentHeapBytes=0
+```
+
+It stores no legacy menu object or numeric `MENU_*` ID.
+
+## Permanent stats-menu intent API
 
 Files:
 
 ```text
-ESP32/include/esp_player_exit_state.h
-ESP32/src/esp_player_exit_state.c
+ESP32/include/esp_stats_menu_intent.h
+ESP32/src/esp_stats_menu_intent.c
 ```
 
 Hardware-proven ABI:
 
 ```text
-EspPlayerExitState       = 28 B
-EspPlayerExitApplyResult = 28 B
+EspStatsMenuIntent = 4 B
 ```
 
-State owns only:
+Fields:
 
 ```text
-totalTime
-totalMoves
-completedLevels
-killedMonstersLevels
-foundSecretsLevels
-berserkerTics
-familiarActive   # semantic bool only; no Entity pointer
+targetMapId
+menuKind       # NONE=0, LEVEL=1, OVERALL=2
+active
+consumePending
 ```
 
 API:
 
 ```text
-EspPlayerExitState_reset(state)
-EspPlayerExitState_apply(state, stats, elapsedTimeMs, levelMoves, result)
+EspStatsMenuIntent_reset(intent)
+EspStatsMenuIntent_prepare(targetMapId, showStats, intent)
 ```
 
-`elapsedTimeMs` and `levelMoves` are explicit caller inputs. The permanent owner has no dependency on legacy Player/Game/Menu/Render/DoomCanvas/Entity, no clock access, no PAK/ZIP I/O and no allocation.
-
-## Real-CYD deterministic application
+Permanent semantics:
 
 ```text
-stateBytes=28 resultBytes=28
-elapsed=12345 moves=37
-effects=1f
-
-initialFNV=940b0171
-appliedFNV=298eaaa4
-resultFNV=5d10a566
-
-totalTime  10203040 -> 10206079
-totalMoves 01020304 -> 01020329
-completed  00000004 -> 00000005
-killed     00000008 -> 00000008
-secrets    00000010 -> 00000010
-berserker  9 -> 0
-familiar   1 -> 0
+showStats=0 -> NOT_APPLICABLE + zero intent
+showStats=1,target!=13 -> LEVEL
+showStats=1,target==13 -> OVERALL
+success -> active=1 consumePending=1
 ```
 
-The static predicted FNVs matched hardware exactly.
+Permanent code has no dependency on legacy `Menu_t`, `MenuSystem_t`, `Game_t`, `Render_t` or `DoomCanvas_t`, performs no PAK/ZIP I/O and allocates nothing.
 
-## Gates / mask proof
+Target map-name -> ID resolution is intentionally not owned here; it remains future transition/catalog work. Real MAP_INTRO target ID `9` is already hardware-proven.
+
+## Real-CYD stats-menu proof
+
+Real Junction projection:
 
 ```text
-sourceCompleted=1
-sourceSecrets=0
-sourceMonsters=0
-repeatIdempotent=1
-allMasks=1
-allStateFNV=c93e8128
-noStatsGate=1
-mapId2Gate=1
+intentBytes=4
+targetMap=9
+menuKind=1 / LEVEL
+active=1
+consumePending=1
+sourceStatsFNV=bd41bcfa
+intentFNV=96afe901
+legacyMenuId=15
 ```
 
-A valid all-complete snapshot applies all three progression masks. Source-state completion is idempotent when reapplied with zero elapsed/moves.
-
-## Live Player projection
+End-game branch:
 
 ```text
-elapsed=64325
-moves=0
-projection=1
-liveStateFNV=57fce418
-legacyPlayerUnchanged=yes
+endGameTarget=13
+endGameKind=2 / OVERALL
+endGameFNV=deea91b4
+legacyOverallId=16
 ```
 
-`elapsed` is run-timing-specific; hardware proves exact formula projection without legacy mutation.
-
-## Rollback / pointer boundary
+Direct-load gate:
 
 ```text
-rollbackFNV=940b0171
-rollback=1
-familiarSemanticOnly=yes
-entityPointerStored=no
+showStats=0
+noStatsStatus=1 / NOT_APPLICABLE
+noStatsZero=1
+zeroFNV=4b95f515
+repeatExact=1
 ```
 
-## Fail closed
+The emitted Serial text concatenated `noStatsStatus=1noStatsZero=1`; both successful fields are still unambiguous.
+
+Fail closed:
 
 ```text
-nullState=1
-nullStats=1
-nullResult=1
-effectMismatch=1
-bitMismatch=1
-rangeMismatch=1
+target0=1
+target14=1
+showStats2=1
+nullIntent=1
+reset=1
 stateAtomic=yes
 ```
 
-## RAM / integrity evidence
+## RAM / legacy integrity
 
 ```text
-heap8      65632 -> 65632 delta=0
+heap8      65616 -> 65616 delta=0
 largest8   34804 -> 34804 delta=0
 persistentHeapBytes=0
-frameFNV   ef79123a -> ef79123a
+frameFNV   e8a3b4ef -> e8a3b4ef
 lineFNV    e5e74861
 topologyFNV=3f321e43
 ```
@@ -259,55 +294,61 @@ topologyFNV=3f321e43
 Legacy guards:
 
 ```text
-playerExitFNV f5cbf9f5 -> f5cbf9f5
+playerExitFNV 0b2ae445 -> 0b2ae445
 transitionFNV f450c49f -> f450c49f
 legacyRuntimeClear=yes
-Player_addLevelStatsCalled=no
-playerMutation=no
 menuMutation=no
-transitionTriggered=no
+Game_changeMapCalled=no
+mapLoad=no
 ```
 
 Final PARK:
 
 ```text
 state=9 page=3
-nativePlayerExitState=yes
-stateBytes=28 resultBytes=28
+nativeStatsMenuIntent=yes
+intentBytes=4
+targetMap=9
+menuKind=LEVEL
+consumePendingSemantic=yes
 persistentBytes=0
-nativeExitStats=yes
-playerMutationProven=yes
-legacyPlayerMutation=no
+nativePlayerExitState=yes
+legacyMenuMutation=no
+transitionTriggered=no
 entities=0 monsters=0 noGameplay=yes
 ```
 
-Stable heartbeats:
+Stable heartbeats continued from `95234 ms` through `270270 ms` at:
 
 ```text
-70245 ms heap=131396 heap8=65632 largest8=34804
-75246 ms heap=131396 heap8=65632 largest8=34804
-80247 ms heap=131396 heap8=65632 largest8=34804
+heap=131380
+heap8=65616
+largest8=34804
 ```
+
+No delayed transition or leak appeared.
 
 ## Current architecture boundary
 
 Hardware-proven ownership now includes:
 
 ```text
-compact immutable native map
-explicit tile/script/line/texture/automap/sprite mutable owners
+compact immutable native map + explicit mutable owners
 all 16 real MAP_INTRO opcode families
 SAVEGAME durable route
 CHANGEMAP pending transition intent
 SHOW/HIDE compact sprite/entity topology
 native level-exit stats snapshot
 native player exit-state application
+native stats-menu semantic intent / pending-consume projection
 ```
 
 Still intentionally outside:
 
 ```text
-native stats-menu intent/consumer
+actual stats-menu rendering/input consumer
+generic map target catalog/name resolution
+transition preflight / source-target lifecycle handoff
 actual CHANGEMAP / Junction map swap
 full native entity/monster gameplay
 legacy-world-free gameplay loop
@@ -316,12 +357,12 @@ ST_PLAYING progression
 sound playback
 ```
 
-`shapeData` and `mediaTexels` remain NULL.
+The next bounded milestone should own target transition/catalog preflight before any destructive `/intro.bsp` -> `/junction.bsp` swap.
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-player-exit-state
+MERGE agent/esp32-native-stats-menu-intent
 ```
 
-Hardware-tested firmware is `f8c5a1c398c0946025aef976f7a997589bae4923`. All commits after that firmware must remain documentation-only until merge.
+Hardware-tested firmware is `1dddbe86788389400d6e2186595174e723c72f5c`. All commits after that firmware must remain documentation-only until merge.
