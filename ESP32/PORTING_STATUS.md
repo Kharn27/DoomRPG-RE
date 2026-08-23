@@ -13,21 +13,22 @@ status = REAL-CYD HARDWARE PASS
 
 Merged evidence: [`MAP1_NATIVE_DURABLE_FACING.md`](MAP1_NATIVE_DURABLE_FACING.md).
 
-`DoomCanvas_finishRotation()` is now semantically complete natively through its
-final durable facing query. `ST_PLAYING` is still intentionally not reached.
+`DoomCanvas_finishRotation()` is semantically complete natively through its
+final durable facing query.
 
-## Current hardware candidate
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-native-post-load-hud-clear
 base   = 3ab143110a1f44ebb44bc130d12d1844f3ae73ca
-status = HARDWARE CANDIDATE — NOT YET CYD-PROVEN
+hardware-tested firmware = 469abe119fbc401d812c21f96d94fd8aaae06ff3
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Candidate: [`MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md`](MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md).
+Evidence: [`MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md`](MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md).
 
-This milestone owns only the first three caller writes immediately after
-`DoomCanvas_finishRotation()`:
+This milestone hardware-proves only the first three caller writes immediately
+after `DoomCanvas_finishRotation()`:
 
 ```text
 Hud.msgCount=0
@@ -35,6 +36,7 @@ Hud.statBarMessage=NULL
 Hud.logMessage[0]='\0'
 ```
 
+The native owner represents those semantics without mutating the legacy `Hud_t`.
 Junction `Game_givemap()`, weapon reselection, initial save, post-load cleanup,
 view dirtying and `ST_PLAYING` remain explicitly deferred.
 
@@ -102,7 +104,7 @@ automap  = 0b2ae445
 topology = d6e8df7d
 ```
 
-## Hardware-proven transition/player chain
+## Hardware-proven transition/player/post-load chain
 
 ```text
 CHANGEMAP pending intent
@@ -120,6 +122,7 @@ CHANGEMAP pending intent
  -> 24 B finishRotation orientation owner
  -> 24 B finishRotation second-tile owner
  -> 32 B durable facing owner
+ -> 8 B post-load HUD-clear owner
 ```
 
 Canonical fingerprints:
@@ -148,84 +151,106 @@ Junction orientation FNV       = acc754a6
 Junction second-tile FNV       = 09e58e0d
 Junction durable-facing FNV    = 95aa1108
 post-facing player/view FNV    = afcdcf74
+Junction post-load HUD clear   = b7383e18
 ```
 
 Generic `EspMapOpcodeExecutor` remains intentionally only 11/19/20. All real
 MAP_INTRO opcode families have dedicated native boundaries.
 
-## Hardware-proven finishRotation boundary
+## Hardware-proven post-load HUD clear boundary
 
-Exact durable facing ray on Junction:
+Permanent owner:
 
 ```text
-traceStart=(992,1857)
-traceEnd=(992,1665)
-traceFlags=0x0001f6ff
-tiles=(15,29)->(15,28)->(15,27)->(15,26)
+ESP32/include/esp_hud_post_load_clear_state.h
+ESP32/src/esp_hud_post_load_clear_state.c
+EspHudPostLoadClearState = 8 B
+persistent heap = 0 B
 ```
 
-Real-CYD result:
+Real-CYD state:
 
 ```text
-EspPlayerFacingState=32 B
-stateFNV=95aa1108
-kind=0 / none
-hitIndex=65535
-hitTile=65535
-entityType=255
-entitySubType=255
-legacyIdentity=00000000
-traceEntities=0
+stateFNV=b7383e18
+messageCount=0
+statBarMessagePresent=0
+logMessageLength=0
+cleared=1
 active=1
 targetMap=9
 gameplayLoadMapId=2
 loadType=0
 ```
 
-PlayerView after durable facing:
+Hardware-proven inputs remain unchanged:
 
 ```text
-FNV=afcdcf74
-hudRefreshPending=0
-facingRefreshPending=0
-playerSetupPending=0
-tileEnterPending=0
+PlayerView FNV=afcdcf74
+Facing FNV=95aa1108
+finishRotationComplete=yes
 ```
 
-Input owners remain:
+Semantic legacy-field witness:
 
 ```text
-InitialTile FNV=f73e28b2
-Orientation FNV=acc754a6
-SecondTile FNV=09e58e0d
+legacyMsgCount=0->0
+legacyStatBarPresent=0->0
+legacyLogFirst=0->0
+legacyHudUntouched=yes
 ```
 
-Latest hardware RAM / integrity baseline:
+Fail-closed proof:
+
+```text
+nullView=1
+nullFacing=1
+nullOutput=1
+inactiveView=1
+inactiveFacing=1
+facingMismatch=1
+loadType=1
+order=1
+prepareAtomic=yes
+repeat=1
+repeatAtomic=yes
+```
+
+Resident/automap proof:
 
 ```text
 snapshotFNV=bc9071e9->bc9071e9
+unchanged=yes
+automapFNV=0b2ae445->0b2ae445
 payload=10410
 entities=30
 enemies=0
 destructibles=3
 packClosed=yes
-heap8=72736->72736
+Game_givemapDeferred=yes
+```
+
+Latest normal-env RAM proof:
+
+```text
+heap8=72732->72732
+delta=0
 largest8=34804->34804
+delta=0
 persistentHeapBytes=0
 ```
 
-Durable-facing same-build equality witnesses:
+Same-build equality witnesses:
 
 ```text
-gameFNV=c655ff85->c655ff85
+gameFNV=d073b2d5->d073b2d5
 playerFNV=c64e7862->c64e7862
-canvasFNV=1b7ba23f->1b7ba23f
+hudFNV=b18611d2->b18611d2
+canvasFNV=70a8ad15->70a8ad15
 renderFNV=f9344dec->f9344dec
 frameFNV=9eb7ce0f->9eb7ce0f
 legacyRuntimeClear=yes
 GameMutation=no
 PlayerMutation=no
-FacingEntityMutation=no
 HudMutation=no
 DoomCanvasMutation=no
 RenderMutation=no
@@ -233,15 +258,26 @@ RenderMutation=no
 
 These equality FNVs are same-build witnesses, not cross-build canons.
 
+Stable heartbeat after the milestone:
+
+```text
+heap=138496
+heap8=72732
+largest8=34804
+SD=ready
+VIDEO=ready
+CORE=ready
+```
+
 ## Exact recovered caller order after finishRotation
 
 From current `src/DoomCanvas.c`:
 
 ```text
 DoomCanvas_finishRotation()                  [hardware-proven complete]
-Hud.msgCount=0                              [CURRENT CANDIDATE]
-Hud.statBarMessage=NULL                     [CURRENT CANDIDATE]
-Hud.logMessage[0]='\0'                     [CURRENT CANDIDATE]
+Hud.msgCount=0                              [hardware-proven]
+Hud.statBarMessage=NULL                     [hardware-proven]
+Hud.logMessage[0]='\0'                     [hardware-proven]
 if Junction: Game_givemap()                 [next]
 else: DoomCanvas_uncoverAutomap()
 Player_selectWeapon(current weapon)         [deferred]
@@ -255,7 +291,7 @@ DoomCanvas_setState(ST_PLAYING)             [deferred]
 idleTime=time+8000                          [deferred]
 ```
 
-Recovered direct `Game_givemap()` semantics are:
+Recovered direct `Game_givemap()` semantics:
 
 ```text
 all non-hidden lines: flags |= 0x80
@@ -263,51 +299,10 @@ all map sprites: info |= 0x10000000
 all BIT_AM_ENTRANCE tiles: add BIT_AM_VISITED
 ```
 
-Those semantics already map to the compact native automap/map-state owners, but
-direct caller-side `Game_givemap()` is deliberately not executed in the current
-HUD-clear milestone.
-
-## Current post-load HUD-clear candidate
-
-Permanent owner:
-
-```text
-ESP32/include/esp_hud_post_load_clear_state.h
-ESP32/src/esp_hud_post_load_clear_state.c
-EspHudPostLoadClearState = 8 B
-persistent heap = 0 B
-```
-
-The owner represents only:
-
-```text
-messageCount=0
-statBarMessagePresent=0
-logMessageLength=0
-cleared=1
-active=1
-```
-
-It requires the hardware-proven fresh-map PlayerView/facing identity and all
-PlayerView pending bits clear. It stores no legacy `Hud_t*` and does not mutate
-PlayerView or any resident owner.
-
-Temporary probe:
-
-```text
-ESP32/include/native_junction_post_load_hud_clear_probe.h
-ESP32/src/native_junction_post_load_hud_clear_probe.c
-```
-
-The probe runs one Arduino loop after durable facing. It hashes the complete
-legacy `Hud_t` before/after and separately witnesses `msgCount`,
-`statBarMessage` presence and `logMessage[0]`, while requiring PlayerView
-`afcdcf74`, facing `95aa1108`, resident snapshot `bc9071e9`, automap `0b2ae445`,
-heap/largest and framebuffer unchanged.
+Those semantics already map to compact native automap/map-state owners. Direct
+caller-side `Game_givemap()` remains the next separate milestone.
 
 ## Current hardware PARK
-
-Before the new candidate:
 
 ```text
 state=9 / ST_INTRO
@@ -319,20 +314,17 @@ nativeInitialTile=yes
 nativeOrientation=yes
 nativeSecondTile=yes
 nativeFacing=yes
+nativeHudClear=yes
 facingPending=no
 finishRotationComplete=yes
+Game_givemapPending=yes
+weaponReselectPending=yes
+initialSavePending=yes
+postLoadCleanupPending=yes
 ST_PLAYING=no
 legacy Game.entities=0
 legacy Game.monsters=0
 noGameplay=yes
-```
-
-Successful candidate PARK is expected to add only:
-
-```text
-nativeHudClear=yes
-Game_givemapPending=yes
-ST_PLAYING=no
 ```
 
 ## Still intentionally outside
@@ -351,17 +343,24 @@ sound playback
 
 `shapeData == NULL` and `mediaTexels == NULL` remain mandatory.
 
-## Next action
+## Next bounded milestone after merge
 
-Build/flash normal environment:
+After merge, recover the exact new `main` SHA and implement only direct
+caller-side Junction `Game_givemap()` against the native automap/map-state
+owners. Do not bundle weapon selection, save, cleanup, `ST_PLAYING`, entity
+reconstruction or rendering into that milestone.
+
+## Merge recommendation
 
 ```text
-esp32-cyd
+MERGE agent/esp32-native-post-load-hud-clear
 ```
 
-Return the complete `[JUNCTIONHUDCLEAR]` Serial block. Do not mark the milestone
-merge-ready until real CYD proves the semantic owner, unchanged legacy Hud,
-PlayerView/facing/resident/automap, closed PAK and zero RAM/framebuffer mutation.
+Hardware-tested firmware:
 
-After PASS, the next exact bounded milestone is direct caller-side Junction
-`Game_givemap()` against native automap/map-state ownership.
+```text
+469abe119fbc401d812c21f96d94fd8aaae06ff3
+```
+
+Every later commit on this branch must remain documentation-only unless another
+firmware is flashed.
