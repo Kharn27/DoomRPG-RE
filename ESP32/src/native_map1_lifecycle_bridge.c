@@ -7,6 +7,7 @@
 #include "native_junction_orientation_probe.h"
 #include "native_junction_player_setup_probe.h"
 #include "native_junction_player_view_probe.h"
+#include "native_junction_playing_service_probe.h"
 #include "native_junction_post_load_event_particle_cleanup_probe.h"
 #include "native_junction_post_load_flag_cleanup_probe.h"
 #include "native_junction_post_load_givemap_probe.h"
@@ -99,6 +100,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32JunctionPostLoadViewInvalidationProbe_reset();
     Esp32JunctionPostLoadPlayingTransitionProbe_reset();
     Esp32JunctionPostLoadIdleTimeProbe_reset();
+    Esp32JunctionPlayingServiceProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -113,9 +115,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * current-weapon self-selection -> initial-save caller intent -> scalar
      * isLoaded/isSaved/activeLoadType cleanup -> empty event/particle cleanup ->
      * caller-side redraw request -> native ST_INTRO->ST_PLAYING transition ->
-     * final idleTime deadline semantic. Durable save persistence and native
-     * PLAYING loop/render dispatch remain outside this chain. Each stage arms
-     * first and executes on a later loop.
+     * final idleTime deadline semantic -> first native PLAYING service dispatch.
+     * Durable save persistence, gameplay mutation and native frame rendering
+     * remain outside this chain. Each stage arms first and executes later.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -161,4 +163,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32JunctionPostLoadViewInvalidationProbe_service(doomRpg);
     Esp32JunctionPostLoadPlayingTransitionProbe_service(doomRpg);
     Esp32JunctionPostLoadIdleTimeProbe_service(doomRpg);
+    Esp32JunctionPlayingServiceProbe_service(doomRpg);
 }
