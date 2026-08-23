@@ -114,9 +114,7 @@ int EspPlayerView_consumeHudRefresh(uint8_t targetMapId,
         playerViewState.tileEnterPending != 1U ||
         targetMapId != playerViewState.targetMapId ||
         gameplayLoadMapId != playerViewState.gameplayLoadMapId ||
-        loadType != playerViewState.loadType) {
-        return 0;
-    }
+        loadType != playerViewState.loadType) return 0;
 
     next = playerViewState;
     next.hudRefreshPending = 0U;
@@ -135,9 +133,7 @@ int EspPlayerView_consumePlayerSetup(uint8_t targetMapId,
         playerViewState.tileEnterPending != 1U ||
         targetMapId != playerViewState.targetMapId ||
         gameplayLoadMapId != playerViewState.gameplayLoadMapId ||
-        loadType != playerViewState.loadType) {
-        return 0;
-    }
+        loadType != playerViewState.loadType) return 0;
 
     next = playerViewState;
     next.playerSetupPending = 0U;
@@ -156,12 +152,29 @@ int EspPlayerView_consumeTileEnter(uint8_t targetMapId,
         playerViewState.tileEnterPending != 1U ||
         targetMapId != playerViewState.targetMapId ||
         gameplayLoadMapId != playerViewState.gameplayLoadMapId ||
-        loadType != playerViewState.loadType) {
-        return 0;
-    }
+        loadType != playerViewState.loadType) return 0;
 
     next = playerViewState;
     next.tileEnterPending = 0U;
+    playerViewState = next;
+    return 1;
+}
+
+int EspPlayerView_consumeFacing(uint8_t targetMapId,
+                                uint8_t gameplayLoadMapId,
+                                uint8_t loadType) {
+    EspPlayerViewState next;
+
+    if (!EspPlayerView_isReady() || playerViewState.hudRefreshPending != 0U ||
+        playerViewState.facingRefreshPending != 1U ||
+        playerViewState.playerSetupPending != 0U ||
+        playerViewState.tileEnterPending != 0U ||
+        targetMapId != playerViewState.targetMapId ||
+        gameplayLoadMapId != playerViewState.gameplayLoadMapId ||
+        loadType != playerViewState.loadType) return 0;
+
+    next = playerViewState;
+    next.facingRefreshPending = 0U;
     playerViewState = next;
     return 1;
 }
