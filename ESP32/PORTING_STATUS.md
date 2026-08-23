@@ -13,27 +13,21 @@ status = REAL-CYD HARDWARE PASS
 
 Merged evidence: [`MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md`](MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md).
 
-The native caller chain is hardware-proven through the three HUD message-channel
-resets immediately after `DoomCanvas_finishRotation()`.
-
-## Current hardware candidate
+## Current hardware-tested branch
 
 ```text
 branch = agent/esp32-native-post-load-givemap
 base   = 56c4211a91e6a95763dd4cc215ef40de6c10a98b
-status = HARDWARE CANDIDATE — NOT YET CYD-PROVEN
+hardware-tested firmware = 511156120bd877367d13ffa4b98ed6815005bc3c
+status = REAL-CYD HARDWARE PASS for direct Junction GIVEMAP
 ```
 
-Candidate: [`MAP1_NATIVE_POST_LOAD_GIVEMAP.md`](MAP1_NATIVE_POST_LOAD_GIVEMAP.md).
+Evidence: [`MAP1_NATIVE_POST_LOAD_GIVEMAP.md`](MAP1_NATIVE_POST_LOAD_GIVEMAP.md).
 
-This milestone owns only the next exact Junction caller operation:
-
-```c
-Game_givemap(doomCanvas->game);
-```
-
-Weapon reselection, initial save, load/event/particle cleanup, view dirtying and
-`ST_PLAYING` remain explicitly deferred.
+The supplied Serial excerpt proves the complete Junction post-load GIVEMAP
+boundary. The historical same-firmware MAP_INTRO `[MAPGIVEMAPPROBE]` regression
+block was not included in that excerpt, so it must not be claimed without the
+actual log.
 
 ## Permanent invariants
 
@@ -69,7 +63,7 @@ logical payload=17891 B
 actual heap=18008 B
 ```
 
-Junction:
+Junction source/residency:
 
 ```text
 resourceMapId=9 / /junction.bsp
@@ -79,7 +73,6 @@ crc32=4a2c5800
 sourceFNV=fefaf5ca
 spawnIndex=943
 spawnDirection=64
-snapshotFNV=bc9071e9
 payload=10410 B
 actual heap=10540 B
 entities=30
@@ -87,7 +80,7 @@ enemies=0
 destructibles=3
 ```
 
-Junction resident owner FNVs before direct caller GIVEMAP:
+Pre-GIVEMAP Junction resident owner FNVs:
 
 ```text
 runtime  = bc432a0f
@@ -96,6 +89,25 @@ script   = bc9b18ff
 line     = 3658710d
 texture  = 537319ad
 automap  = 0b2ae445
+topology = d6e8df7d
+snapshot = bc9071e9
+```
+
+Post-GIVEMAP Junction mutable owner FNVs:
+
+```text
+map      = 8dba0bb4
+automap  = b699bd75
+snapshot = bb714d80
+```
+
+Non-target owners remain unchanged:
+
+```text
+runtime  = bc432a0f
+script   = bc9b18ff
+line     = 3658710d
+texture  = 537319ad
 topology = d6e8df7d
 ```
 
@@ -118,6 +130,7 @@ CHANGEMAP pending intent
  -> 24 B finishRotation second-tile owner
  -> 32 B durable facing owner
  -> 8 B post-load HUD-clear owner
+ -> 16 B direct Junction GIVEMAP caller-order owner
 ```
 
 Canonical fingerprints:
@@ -147,60 +160,122 @@ Junction second-tile FNV       = 09e58e0d
 Junction durable-facing FNV    = 95aa1108
 post-facing player/view FNV    = afcdcf74
 Junction post-load HUD clear   = b7383e18
+Junction post-load GIVEMAP     = 448e587d
 ```
 
 Generic `EspMapOpcodeExecutor` remains intentionally only 11/19/20. Other real
 opcode families keep their dedicated native semantic boundaries.
 
-## Last hardware-proven caller boundary
+## Hardware-proven direct Junction GIVEMAP
 
-`EspHudPostLoadClearState`:
+Exact caller operation:
 
-```text
-bytes=8
-stateFNV=b7383e18
-messageCount=0
-statBarMessagePresent=0
-logMessageLength=0
-cleared=1
-active=1
-targetMap=9
-gameplayLoadMapId=2
-loadType=0
-persistent heap=0 B
+```c
+Game_givemap(doomCanvas->game);
 ```
 
-Inputs remain:
+Exact legacy semantics represented natively:
 
 ```text
-PlayerView FNV=afcdcf74
-Facing FNV=95aa1108
-finishRotationComplete=yes
+all lines without 0x20: set reveal 0x80
+all map sprites: set reveal 0x10000000
+all BIT_AM_ENTRANCE tiles: add BIT_AM_VISITED
 ```
 
-Latest normal-env RAM/integrity proof:
+Permanent shared direct API:
 
 ```text
-snapshotFNV=bc9071e9->bc9071e9
-automapFNV=0b2ae445->0b2ae445
-heap8=72732->72732
+EspMapGiveMapDirectResult = 12 B
+EspMapAutomapState_planGiveMapDirect()
+EspMapAutomapState_applyGiveMapDirect()
+```
+
+Historical event wrapper ABI remains:
+
+```text
+EspMapGiveMapResult = 20 B
+EspMapAutomapState_applyGiveMapCommand()
+```
+
+Caller-order owner:
+
+```text
+EspPostLoadGiveMapState = 16 B
+persistent heap = 0 B
+stateFNV = 448e587d
+```
+
+Real-CYD target/mutation counts:
+
+```text
+lineTargets=198
+spriteTargets=48
+entranceTargets=15
+linesMutated=198
+spritesMutated=48
+tilesMutated=15
+```
+
+Semantic proof:
+
+```text
+allTargetsRevealed=yes
+idempotentPlan=yes
+nonTargetOwnersUnchanged=yes
+```
+
+The second pure direct plan reports zero pending mutations.
+
+Fail-closed proof:
+
+```text
+nullHud=1
+nullOutput=1
+inactiveHud=1
+uncleared=1
+targetMap=1
+gameplayMap=1
+loadType=1
+plannerNull=1
+prepareAtomic=yes
+postActivePrepare=1
+repeat=1
+repeatAtomic=yes
+```
+
+RAM proof on normal `esp32-cyd`:
+
+```text
+heap8=72700->72700
+delta=0
 largest8=34804->34804
+delta=0
 persistentHeapBytes=0
-packClosed=yes
 ```
 
-Same-build witnesses from that tested firmware:
+Same-build legacy/frame equality witnesses:
 
 ```text
 gameFNV=d073b2d5->d073b2d5
 playerFNV=c64e7862->c64e7862
 hudFNV=b18611d2->b18611d2
-canvasFNV=70a8ad15->70a8ad15
+canvasFNV=702a1a9d->702a1a9d
 renderFNV=f9344dec->f9344dec
-frameFNV=9eb7ce0f->9eb7ce0f
+frameFNV=2cb60336->2cb60336
+legacyRuntimeClear=yes
+legacyGame_givemapCalled=no
 ```
 
-These equality hashes are same-build witnesses, not cross-build canons.
+Stable post-PARK heartbeat:
+
+```text
+heap=138464
+heap8=72700
+largest8=34804
+SD=ready
+VIDEO=ready
+CORE=ready
+```
 
 ## Exact recovered caller order
 
@@ -209,9 +284,9 @@ DoomCanvas_finishRotation()                  [hardware-proven complete]
 Hud.msgCount=0                              [hardware-proven]
 Hud.statBarMessage=NULL                     [hardware-proven]
 Hud.logMessage[0]='\0'                     [hardware-proven]
-if Junction: Game_givemap()                 [CURRENT CANDIDATE]
+if Junction: Game_givemap()                 [hardware-proven]
 else: DoomCanvas_uncoverAutomap()
-Player_selectWeapon(current weapon)         [deferred]
+Player_selectWeapon(current weapon)         [NEXT after merge]
 initial Game_saveState when !isLoaded       [deferred]
 Game.isLoaded=false                         [deferred]
 Game.isSaved=false                          [deferred]
@@ -222,113 +297,7 @@ DoomCanvas_setState(ST_PLAYING)             [deferred]
 idleTime=time+8000                          [deferred]
 ```
 
-Exact direct `Game_givemap()` semantics:
-
-```text
-all lines without 0x20: set reveal 0x80
-all map sprites: set reveal 0x10000000
-all BIT_AM_ENTRANCE tiles: add BIT_AM_VISITED
-```
-
-## Current direct-GIVEMAP implementation boundary
-
-Existing permanent owners are reused:
-
-```text
-EspMapAutomapState -> line/sprite reveal bits
-EspMapState        -> BIT_AM_VISITED
-```
-
-The hardware-proven event wrapper remains ABI-compatible:
-
-```text
-EspMapGiveMapResult = 20 B
-EspMapAutomapState_applyGiveMapCommand()
-```
-
-New shared event-independent primitive:
-
-```text
-EspMapGiveMapDirectResult = 12 B candidate
-EspMapAutomapState_planGiveMapDirect()
-EspMapAutomapState_applyGiveMapDirect()
-```
-
-The old opcode-9 path keeps descriptor/opcode/removal validation, then delegates
-only the world mutation to the same direct primitive. The normal firmware still
-runs the historical `[MAPGIVEMAPPROBE]`, so this refactor receives same-build
-hardware regression coverage before the Junction transition.
-
-New caller-order owner:
-
-```text
-ESP32/include/esp_post_load_givemap_state.h
-ESP32/src/esp_post_load_givemap_state.c
-EspPostLoadGiveMapState = 16 B candidate
-persistent heap = 0 B
-```
-
-Pure preparation requires the exact HUD-clear owner plus exact untouched
-Junction runtime/world identity:
-
-```text
-targetMap=9
-gameplayLoadMapId=2
-loadType=0
-sourceBytes=21051
-sourceCrc32=4a2c5800
-runtimeFNV=bc432a0f
-mapStateFNV=c5cdfc04
-automapFNV=0b2ae445
-```
-
-Route applies direct GIVEMAP exactly once and parks the target/mutation counts.
-No legacy `Game_givemap()` call occurs.
-
-## Candidate hardware acceptance
-
-New probe:
-
-```text
-ESP32/include/native_junction_post_load_givemap_probe.h
-ESP32/src/native_junction_post_load_givemap_probe.c
-```
-
-The real CYD must establish the unknown Junction values:
-
-```text
-EspPostLoadGiveMapState FNV
-line/sprite/entrance target counts
-line/sprite/tile mutation counts
-post-GIVEMAP mapStateFNV
-post-GIVEMAP automapFNV
-post-GIVEMAP resident snapshotFNV
-same-build legacy/frame/RAM witnesses
-```
-
-Required semantics:
-
-```text
-pure prepare atomic
-all eligible lines revealed
-all map sprites revealed
-all entrance tiles visited
-second direct plan has zero mutations
-runtime/script/line/texture/topology unchanged
-map and automap FNVs changed from initial canon
-payload/entity counts unchanged
-HUD-clear b7383e18 unchanged
-PlayerView afcdcf74 unchanged
-Facing 95aa1108 unchanged
-PAK closed
-heap/largest delta=0
-legacy Game/Player/Hud/DoomCanvas/Render/frame unchanged
-ST_PLAYING=no
-entities=0
-monsters=0
-```
-
-## Current hardware PARK before candidate
+## Current hardware PARK
 
 ```text
 state=9 / ST_INTRO
@@ -337,8 +306,9 @@ targetMap=9
 junctionResident=yes
 nativeFacing=yes
 nativeHudClear=yes
+nativePostLoadGiveMap=yes
 finishRotationComplete=yes
-Game_givemapPending=yes
+Game_givemapPending=no
 weaponReselectPending=yes
 initialSavePending=yes
 postLoadCleanupPending=yes
@@ -346,17 +316,6 @@ ST_PLAYING=no
 legacy Game.entities=0
 legacy Game.monsters=0
 noGameplay=yes
-```
-
-Successful candidate PARK should change only the native map/automap state and add:
-
-```text
-nativePostLoadGiveMap=yes
-Game_givemapPending=no
-weaponReselectPending=yes
-initialSavePending=yes
-postLoadCleanupPending=yes
-ST_PLAYING=no
 ```
 
 ## Still intentionally outside
@@ -372,10 +331,26 @@ native gameplay renderer
 sound playback
 ```
 
-## Next action
+## Regression-witness status
 
-Build/flash normal `esp32-cyd` and return the complete `[JUNCTIONGIVEMAP]` block.
-Also preserve the earlier `[MAPGIVEMAPPROBE]` PASS in the same firmware.
+The direct Junction milestone is hardware-proven on firmware
+`511156120bd877367d13ffa4b98ed6815005bc3c`.
 
-Do not mark this branch merge-ready until real CYD proves the direct Junction
-world mutation, idempotence, invariants and RAM/legacy integrity.
+The candidate contract additionally requested the older MAP_INTRO
+`[MAPGIVEMAPPROBE]` PASS from the same firmware as a regression witness for the
+shared opcode-9 primitive. That block was not present in the supplied Serial
+excerpt. Do not invent it.
+
+A matching same-firmware regression excerpt is the only remaining documentation
+witness before declaring the whole branch merge-ready. No code change is needed.
+
+## Next bounded milestone after merge
+
+Recover the exact new `main` SHA, then audit and port only:
+
+```c
+Player_selectWeapon(player, player->weapon);
+```
+
+Do not bundle initial save, load cleanup, `ST_PLAYING`, gameplay entities or
+rendering into that milestone.
