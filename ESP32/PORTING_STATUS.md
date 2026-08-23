@@ -5,42 +5,41 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #78 — direct Junction post-load Game_givemap
-main = 4737b016d02615b8435cf84909fe3c251b6d338b
-hardware-tested firmware = 511156120bd877367d13ffa4b98ed6815005bc3c
+PR   = #79 — post-load current-weapon self-select
+main = 04e4e2269a6c70db3f3e4027717bdb36f286ce65
+hardware-tested firmware = 24fb8fbf914820500d2e16815e22beb0439c9ba0
 status = REAL-CYD HARDWARE PASS
 ```
 
-Merged evidence: [`MAP1_NATIVE_POST_LOAD_GIVEMAP.md`](MAP1_NATIVE_POST_LOAD_GIVEMAP.md).
+Merged evidence: [`MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md`](MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md).
 
-## Current merge-ready milestone
+## Current hardware candidate
 
 ```text
-branch = agent/esp32-native-post-load-weapon-self-select
-base   = 4737b016d02615b8435cf84909fe3c251b6d338b
-hardware-tested firmware = 24fb8fbf914820500d2e16815e22beb0439c9ba0
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-native-post-load-initial-save-intent
+base   = 04e4e2269a6c70db3f3e4027717bdb36f286ce65
+status = HARDWARE CANDIDATE — NOT YET CYD-PROVEN
 ```
 
-Evidence: [`MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md`](MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md).
+Candidate: [`MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md`](MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md).
 
-This milestone owns only:
-
-```c
-Player_selectWeapon(player, player->weapon);
-```
-
-Recovered legacy behavior:
+The candidate owns only the semantic boundary for:
 
 ```c
-if (player->weapon != i) {
-    DoomCanvas_updateViewTrue(player->doomRpg->doomCanvas);
+if ((doomCanvas->loadMapID != MAP_END_GAME) &&
+    (game->isLoaded == false)) {
+    Game_saveState(game,
+                   doomCanvas->loadMapID,
+                   doomCanvas->viewX,
+                   doomCanvas->viewY,
+                   doomCanvas->viewAngle,
+                   false);
 }
-player->weapon = i;
 ```
 
-At this caller `i == player->weapon`, so the view-update branch is not taken and
-the assignment is identity. The real CYD hardware-proved current weapon `2`.
+It does **not** emulate legacy Config/Player/Player2/World files. It captures the
+caller request in a compact native intent and records persistence/presentation as
+explicitly deferred side effects.
 
 ## Permanent invariants
 
@@ -93,20 +92,7 @@ enemies=0
 destructibles=3
 ```
 
-Pre-GIVEMAP Junction resident owners:
-
-```text
-runtime  = bc432a0f
-map      = c5cdfc04
-script   = bc9b18ff
-line     = 3658710d
-texture  = 537319ad
-automap  = 0b2ae445
-topology = d6e8df7d
-snapshot = bc9071e9
-```
-
-Post-GIVEMAP/current Junction resident owners:
+Current post-GIVEMAP resident owner FNVs:
 
 ```text
 runtime  = bc432a0f
@@ -175,79 +161,161 @@ Junction weapon self-select    = 699f3cf3
 
 Generic `EspMapOpcodeExecutor` remains intentionally only 11/19/20.
 
-## Hardware-proven current-weapon self-selection
-
-Permanent files:
-
-```text
-ESP32/include/esp_post_load_weapon_select_state.h
-ESP32/src/esp_post_load_weapon_select_state.c
-```
-
-Owner:
+## Last hardware-proven caller boundary: weapon self-select
 
 ```text
 EspPostLoadWeaponSelectState = 8 B
-persistent heap = 0 B
 stateFNV = 699f3cf3
-```
-
-Real-CYD semantic state:
-
-```text
+persistent heap = 0 B
 weaponBefore=2
 requestedWeapon=2
 weaponAfter=2
 viewInvalidationRequested=0
-targetMap=9
-gameplayLoadMapId=2
-loadType=0
-active=1
 selfSelect=yes
 identityAssignment=yes
 updateViewBranchTaken=no
-legacyWeapon=2->2
-legacyIsUpdateView=1->1
 ```
 
-Input-owner proof:
+Input owners remained:
 
 ```text
 giveMapFNV=448e587d
 hudClearFNV=b7383e18
 viewFNV=afcdcf74
 facingFNV=95aa1108
-unchanged=yes
-callerOrder=yes
 ```
 
-Fail-closed proof:
+Resident stayed exactly `bb714d80`; normal-env RAM stayed
+`heap8=72684`, `largest8=34804`, both delta zero.
+
+## Current initial-save intent design
+
+### Exact legacy orchestration recovered
+
+`Game_saveState(game, mapId, x, y, angle, z)` currently performs:
 
 ```text
-nullGiveMap=1
-nullOutput=1
-inactiveGiveMap=1
-targetMap=1
-gameplayMap=1
-loadType=1
-count=1
-invalidWeapon=1
-prepareAtomic=yes
-postActivePrepare=1
-repeat=1
-repeatAtomic=yes
+Saving... UI / present
+Game_saveConfig(game, z)
+if !z: Game_savePlayerState("Player2", current map, x, y, angle)
+Game_saveWorldState(game)
+if !z: Game_savePlayerState("Player", pending route or Junction fallback)
 ```
 
-Resident integrity:
+The current caller uses `z=false`.
+
+The four persistence components are represented as a compact mask:
 
 ```text
-snapshotFNV=bb714d80->bb714d80
+0x01 CONFIG
+0x02 PLAYER2
+0x04 WORLD
+0x08 PLAYER_ROUTE
+0x0f ALL
+```
+
+### Why persistence is deferred
+
+Legacy `Game_saveWorldState()` traverses pointer-heavy `Entity_t` topology while
+the ESP32 native path intentionally has no legacy entity graph. Native player
+ownership is also not yet complete. Copying these legacy file formats would make
+temporary desktop architecture permanent on a no-PSRAM target.
+
+The permanent ESP32 boundary therefore owns the request only:
+
+```text
+EspPostLoadInitialSaveIntentState = 24 B candidate
+persistent heap = 0 B
+```
+
+Fields:
+
+```text
+viewX/viewY/viewAngle as int32
+mapId
+isLoadedBefore
+saveMode
+saveRequired
+componentMask
+persistenceDeferred
+presentationDeferred
+active
+reserved[4]
+```
+
+Current already-proven native caller arguments are:
+
+```text
+mapId=9
+viewX=992
+viewY=1888
+viewAngle=64
+```
+
+The probe samples only legacy `Game.isLoaded` read-only. Live legacy
+`DoomCanvas.view*`/`loadMapID` are not native source-of-truth because the native
+path deliberately did not apply legacy placement writes.
+
+### Current candidate gates
+
+The permanent owner requires:
+
+```text
+weapon self-select semantic owner active and self-select exact
+targetMapId=9
+gameplayLoadMapId=2
+loadType=0
+PlayerView active/spawnApplied
+all PlayerView follow-up pending bits consumed
+isLoadedBefore=0
+runtimeFNV=bc432a0f
 mapFNV=8dba0bb4
 automapFNV=b699bd75
+```
+
+`isLoadedBefore=1` is explicitly returned as `LOADED_CONTEXT_DEFERRED`; restore
+semantics are not silently generalized from this fresh-load milestone.
+
+### Hardware candidate acceptance
+
+Expected state semantics:
+
+```text
+stateBytes=24
+mapId=9
+view=992/1888
+angle=64
+isLoadedBefore=0
+saveMode=0
+saveRequired=1
+componentMask=0f
+persistenceDeferred=1
+presentationDeferred=1
+active=1
+```
+
+The real CYD establishes the new 24 B state FNV.
+
+Required unchanged input owners:
+
+```text
+weaponFNV=699f3cf3
+giveMapFNV=448e587d
+hudClearFNV=b7383e18
+viewFNV=afcdcf74
+facingFNV=95aa1108
+```
+
+Required unchanged resident:
+
+```text
+snapshotFNV=bb714d80
 runtimeFNV=bc432a0f
+mapFNV=8dba0bb4
 scriptFNV=bc9b18ff
 lineFNV=3658710d
 textureFNV=537319ad
+automapFNV=b699bd75
 topologyFNV=d6e8df7d
 payload=10410
 entities=30
@@ -256,55 +324,40 @@ destructibles=3
 packClosed=yes
 ```
 
-Normal-env RAM proof:
+Required side-effect proof:
 
 ```text
-heap8=72684->72684
-delta=0
-largest8=34804->34804
-delta=0
-persistentHeapBytes=0
+saveFileWrite=no
+savingUi=no
+presentation=no
+legacy Game_saveState not called
+heap/largest delta=0
+frame unchanged
+legacy Game/Player/Hud/DoomCanvas/Render unchanged
+ST_PLAYING=no
+legacy Game.entities=0
+legacy Game.monsters=0
 ```
 
-Same-build legacy/frame equality witnesses:
+## Historical SAVEGAME route correction
 
-```text
-gameFNV=d073b2d5->d073b2d5
-playerFNV=c64e7862->c64e7862
-hudFNV=b18611d2->b18611d2
-canvasFNV=d6d1b92a->d6d1b92a
-renderFNV=f9344dec->f9344dec
-frameFNV=ee9d9dbc->ee9d9dbc
-legacyRuntimeClear=yes
-legacyPlayer_selectWeaponCalled=no
-```
+Opcode 27 parsing itself remains hardware-proven. However, the old temporary
+`native_map1_save_route_probe.c` resets its probe-local sampled route before its
+PARK. Therefore the old diagnostic wording `routeLifetimeCrossMap=yes` must not
+be interpreted as a live owner instance surviving the resident handoff.
 
-Stable post-PARK heartbeat:
+A future durable save implementation must explicitly own that cross-map route.
+The current initial-save intent records the `PLAYER_ROUTE` component request but
+does not fabricate route payload that is no longer live.
 
-```text
-heap=138448
-heap8=72684
-largest8=34804
-SD=ready
-VIDEO=ready
-CORE=ready
-```
+## Probe completion semantics
 
-## Probe completion semantics recovery note
+Older temporary probes may set `done=1` on terminal failures. `*_isDone()` alone
+is not a PASS certificate. Every downstream candidate must revalidate exact
+owners/world state.
 
-Repository audit confirms temporary probes currently use `probeState.done` as a
-terminal-attempt marker; some failure paths also set `done=1`. Therefore a
-`*_isDone()` gate alone is **not** a PASS certificate and must not be used as a
-standalone transitive regression proof.
-
-Downstream stages must revalidate the exact preceding owner/world boundary. The
-weapon self-select hardware PASS is valid because the complete successful
-`[JUNCTIONWEAPON]` block was observed and the probe independently validated all
-required predecessor fingerprints and invariants before PARK.
-
-The previous documentation claim that historical opcode-9 GIVEMAP was proven
-solely because later probes were reached is retired. Any future historical-path
-regression claim must be backed by direct output or by a success-only signal.
+The new initial-save-intent probe changes convention locally: its `done=1` is set
+only after successful final PARK.
 
 ## Exact recovered caller order
 
@@ -316,17 +369,17 @@ Hud.logMessage[0]='\0'                     [hardware-proven]
 if Junction: Game_givemap()                 [hardware-proven]
 else: DoomCanvas_uncoverAutomap()
 Player_selectWeapon(player, player->weapon) [hardware-proven]
-if !game->isLoaded: Game_saveState(1,1,1)   [NEXT after merge]
-Game.isLoaded=false                         [deferred]
-Game.isSaved=false                          [deferred]
-Game.activeLoadType=0                       [deferred]
+conditional Game_saveState(...)             [CURRENT INTENT CANDIDATE]
+Game.isLoaded=false                         [next after PASS/merge]
+Game.isSaved=false                          [next after PASS/merge]
+Game.activeLoadType=0                       [next after PASS/merge]
 numEvents=0 / particles cleared             [deferred]
 isUpdateView=true                           [deferred]
 DoomCanvas_setState(ST_PLAYING)             [deferred]
 idleTime=time+8000                          [deferred]
 ```
 
-## Current hardware PARK
+## Current hardware PARK before candidate
 
 ```text
 state=9 / ST_INTRO
@@ -337,7 +390,6 @@ nativeFacing=yes
 nativeHudClear=yes
 nativePostLoadGiveMap=yes
 nativeWeaponSelfSelect=yes
-finishRotationComplete=yes
 Game_givemapPending=no
 weaponReselectPending=no
 initialSavePending=yes
@@ -348,11 +400,26 @@ legacy Game.monsters=0
 noGameplay=yes
 ```
 
+Candidate successful PARK adds:
+
+```text
+nativeInitialSaveIntent=yes
+initialSaveDecisionPending=no
+initialSavePersistencePending=yes
+postLoadCleanupPending=yes
+ST_PLAYING=no
+```
+
+The persistence debt is explicit but does not need to block native gameplay
+bring-up once the save side effect has a permanent semantic owner.
+
 ## Still intentionally outside
 
 ```text
-real weapon-change gameplay ownership
-initial post-load save
+native durable save storage format
+cross-map durable SAVEGAME route payload
+full native player checkpoint persistence
+full native world/entity persistence
 post-load flag/event/particle cleanup
 ST_PLAYING progression
 full native entity/monster gameplay
@@ -360,28 +427,20 @@ native gameplay renderer
 sound playback
 ```
 
-## Merge recommendation
+## Next test
 
-```text
-MERGE agent/esp32-native-post-load-weapon-self-select
-```
+Build/flash normal `esp32-cyd` from the current candidate branch and return the
+complete `[JUNCTIONSAVEINTENT]` Serial block. Promote only after real-CYD PASS.
 
-Hardware-tested firmware:
+## Next bounded milestone after PASS + merge
 
-```text
-24fb8fbf914820500d2e16815e22beb0439c9ba0
-```
-
-All commits after that tested SHA must remain documentation-only.
-
-## Next bounded milestone after merge
-
-Recover exact new `main`, then audit only:
+Recover exact new `main`, then own only:
 
 ```c
-if (!game->isLoaded) {
-    Game_saveState(game, 1, 1, 1);
-}
+game->isLoaded = false;
+game->isSaved = false;
+game->activeLoadType = 0;
 ```
 
-Do not bundle load cleanup, `ST_PLAYING`, gameplay entities or rendering.
+Do not bundle event/particle cleanup, `isUpdateView`, `ST_PLAYING`, rendering or
+native durable save storage.
