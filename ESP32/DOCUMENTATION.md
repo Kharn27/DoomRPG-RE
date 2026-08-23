@@ -27,111 +27,134 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md`](MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md) | initial-save semantic intent | #80 | `b669488c6f577d1004ac5a1dc742392698d66095` |
 | [`MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md) | isLoaded/isSaved/activeLoadType cleanup | #81 | `c4a093d9db77a715c355a68c5aae9faaddf22e0b` |
 | [`MAP1_NATIVE_POST_LOAD_EVENT_PARTICLE_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_EVENT_PARTICLE_CLEANUP.md) | empty event/particle cleanup | #82 | `c9d0a3fdc705acdbb613beccb17de4d98af218c3` |
+| [`MAP1_NATIVE_POST_LOAD_VIEW_INVALIDATION.md`](MAP1_NATIVE_POST_LOAD_VIEW_INVALIDATION.md) | redraw-request caller write | #83 | `4b5a9a368fbe4ee7938b2e3d11218b312d631f47` |
 
 Older archives remain indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
 
 ## Latest merged boundary
 
-PR #82 hardware-proved the exact caller block:
-
-```c
-doomCanvas->numEvents = 0;
-ParticleSystem_freeAllParticles(doomCanvas->particleSystem);
-doomCanvas->numEvents = 0;
-```
-
-Canonical result:
-
-```text
-EspPostLoadEventParticleCleanupState=8 B
-stateFNV=8bc79e2b
-numEvents=0->0->0
-particleCount=0->0
-particleTopologyCanonical=yes
-activeList=0
-freeList=64
-totalPool=64
-persistentHeapBytes=0
-ST_PLAYING=no
-```
-
-## Current merge-ready milestone
-
-[`MAP1_NATIVE_POST_LOAD_VIEW_INVALIDATION.md`](MAP1_NATIVE_POST_LOAD_VIEW_INVALIDATION.md) hardware-proves the next exact caller write:
-
-```text
-branch = agent/esp32-native-post-load-view-invalidation
-base   = c9d0a3fdc705acdbb613beccb17de4d98af218c3
-hardware-tested firmware = 25976e82976bf7ed78b0506640db62bd0779ec5f
-status = REAL-CYD HARDWARE PASS / MERGE-READY
-```
-
-Exact legacy boundary:
+PR #83 hardware-proved:
 
 ```c
 doomCanvas->isUpdateView = true;
 ```
 
+Canonical result:
+
+```text
+EspPostLoadViewInvalidationState=4 B
+stateFNV=4561c3c1
+isUpdateView=1->1
+targetMap=9
+persistentHeapBytes=0
+legacy ST_PLAYING=no
+```
+
+## Current merge-ready milestone
+
+[`MAP1_NATIVE_POST_LOAD_PLAYING_TRANSITION.md`](MAP1_NATIVE_POST_LOAD_PLAYING_TRANSITION.md) hardware-proves the full relevant fresh-Junction semantics of:
+
+```c
+DoomCanvas_setState(doomCanvas, ST_PLAYING);
+```
+
+Candidate/result:
+
+```text
+branch = agent/esp32-native-post-load-playing-transition
+base   = 4b5a9a368fbe4ee7938b2e3d11218b312d631f47
+hardware-tested firmware = afda93f0a28af5c34620fef2ac3354a24b3f91f5
+status = REAL-CYD HARDWARE PASS / MERGE-READY
+```
+
 ### Permanent owner
 
 ```text
-ESP32/include/esp_post_load_view_invalidation_state.h
-ESP32/src/esp_post_load_view_invalidation_state.c
-EspPostLoadViewInvalidationState = 4 B
-stateFNV = 4561c3c1
+ESP32/include/esp_post_load_playing_transition_state.h
+ESP32/src/esp_post_load_playing_transition_state.c
+EspPostLoadPlayingTransitionState = 12 B
+stateFNV = 73bc9acd
 persistent heap = 0 B
 ```
 
 Real-CYD state:
 
 ```text
-isUpdateView=1->1
+state=9->3
+monstersTurn=0
+displaySoftKeys=0
+restoreSoftKeys=0->0
+skipCheckState=0->1
+softKeyIntent=1
+softKeyPresentationDeferred=0
 targetMap=9
 active=1
 ```
 
-The write is an identity assignment on the fresh-Junction path but remains an explicit caller-order boundary.
+The permanent owner now establishes native `ST_PLAYING`. Legacy `DoomCanvas.state` deliberately remains `ST_INTRO` because the legacy loop would otherwise enter `DoomCanvas_playingState()` and the removed pointer-heavy renderer/runtime.
+
+### Soft-key semantics
+
+Legacy `DoomCanvas_setState(ST_PLAYING)` requests `DoomCanvas_drawSoftKeys("Menu", "Map")` when `!game->monstersTurn`.
+
+Real CYD:
+
+```text
+monstersTurn=0
+softKeyCallRequested=yes
+softKeyIntent=Menu/Map
+displaySoftKeys=0
+softKeyVisible=no
+restoreSoftKeys=0->0
+```
+
+`DoomCanvas_drawSoftKeys()` only enters its drawing/state-mutation body when `displaySoftKeys` is enabled. Therefore the Menu/Map intent is preserved permanently without a presentation debt on this classic CYD path.
 
 ### Semantic proof
 
 ```text
-redrawRequested=yes
-identityAssignment=yes
-edgeTransition=no
-legacyIsUpdateView=1->1
-legacyMutation=no
-renderTriggered=no
+nativeST_PLAYING=yes
+legacyST_PLAYING=no
+stateTransition=yes
+softKeyCallRequested=yes
+softKeyVisible=no
+softKeyLabels=Menu/Map
+restoreSoftKeysResult=0
+skipCheckStateResult=1
+legacyDoomCanvas_setStateCalled=no
+legacyDoomCanvas_drawSoftKeysCalled=no
+rendering=no
 presentation=no
 ```
 
-### Strict predecessor proof
+### Strict predecessor / fail-closed proof
 
 ```text
-eventParticleBytes=8
-eventParticleFNV=8bc79e2b
+viewInvalidationBytes=4
+viewInvalidationFNV=4561c3c1
 unchanged=yes
 callerOrder=yes
+isUpdateView=1->1
 particleTopologyCanonical=yes
 activeList=0
 freeList=64
 totalPool=64
-```
 
-Fail-closed proof:
-
-```text
-nullCleanup=1
+nullView=1
 nullOutput=1
-inactiveCleanup=1
+inactiveView=1
 targetMap=1
-invalidValue=1
+invalidMonstersTurn=1
+invalidDisplaySoftKeys=1
+invalidRestoreSoftKeys=1
+invalidSkipCheckState=1
 prepareAtomic=yes
 postActivePrepare=1
 repeat=1
 repeatAtomic=yes
 ```
 
-Resident stayed exact:
+### Resident / RAM / side-effect proof
 
 ```text
 snapshotFNV=bb714d80->bb714d80
@@ -142,37 +165,30 @@ lineFNV=3658710d
 textureFNV=537319ad
 automapFNV=b699bd75
 topologyFNV=d6e8df7d
-payload=10410
-entities=30
-enemies=0
-destructibles=3
-packClosed=yes
-```
-
-RAM / side-effect proof:
-
-```text
-heap8=72588->72588
+heap8=72552->72552
 largest8=34804->34804
 persistentHeapBytes=0
+legacyState=9->9
 GameMutation=no
 PlayerMutation=no
 HudMutation=no
 DoomCanvasMutation=no
 RenderMutation=no
 ParticleSystemMutation=no
-legacyDoomCanvas_updateViewTrueCalled=no
+legacyDoomCanvas_setStateCalled=no
+legacyDoomCanvas_drawSoftKeysCalled=no
+packClosed=yes
 ```
 
 Same-build equality witnesses only:
 
 ```text
-gameFNV=6960d5bb->6960d5bb
+gameFNV=002b366b->002b366b
 playerFNV=c64e7862->c64e7862
 hudFNV=d2deba0f->d2deba0f
-canvasFNV=d140bc71->d140bc71
+canvasFNV=4331fadc->4331fadc
 renderFNV=f9344dec->f9344dec
-frameFNV=faa62417->faa62417
+frameFNV=b8924a47->b8924a47
 eventQueueFNV=d985589f->d985589f
 particleFNV=f186cf0c->f186cf0c
 ```
@@ -180,8 +196,8 @@ particleFNV=f186cf0c->f186cf0c
 Stable heartbeat:
 
 ```text
-heap=138352
-heap8=72588
+heap=138316
+heap8=72552
 largest8=34804
 SD=ready ZIP=ready VIDEO=ready CORE=ready LAYOUT=ready
 PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
@@ -209,6 +225,7 @@ JunctionInitialSaveIntentFNV=0bf1a911
 JunctionPostLoadFlagCleanupFNV=46cb2547
 JunctionEventParticleCleanupFNV=8bc79e2b
 JunctionViewInvalidationFNV=4561c3c1
+JunctionNativeSTPlayingFNV=73bc9acd
 ```
 
 ## Exact caller order
@@ -226,8 +243,8 @@ DoomCanvas.numEvents=0                      [hardware-proven semantic cleanup]
 ParticleSystem_freeAllParticles(...)        [hardware-proven semantic cleanup]
 DoomCanvas.numEvents=0                      [hardware-proven semantic cleanup]
 DoomCanvas.isUpdateView=true                [hardware-proven semantic owner]
-DoomCanvas_setState(ST_PLAYING)             [NEXT after merge]
-idleTime=time+8000                          [deferred]
+DoomCanvas_setState(ST_PLAYING)             [hardware-proven native semantic owner]
+idleTime=time+8000                          [NEXT after merge]
 ```
 
 ## Architecture direction
@@ -240,28 +257,27 @@ original behavior/data
  -> native event semantics                       [hardware-proven by family]
  -> native transition/residency                  [hardware-proven]
  -> native fresh-map player chain                [hardware-proven]
- -> post-load chain through event/particle       [hardware-proven]
- -> post-load view invalidation                  [hardware-proven]
- -> ST_PLAYING transition                        [NEXT]
+ -> post-load caller chain                       [hardware-proven through ST_PLAYING]
+ -> idleTime caller write                        [next]
+ -> native PLAYING loop/input dispatch
  -> native gameplay
- -> native renderer
+ -> native renderer/presentation
 ```
 
 Current hardware PARK:
 
 ```text
-state=9 / ST_INTRO
+legacyState=9 / ST_INTRO
 page=3
 targetMap=9
 junctionResident=yes
-nativeEventParticleCleanup=yes
 nativeViewInvalidation=yes
+nativeST_PLAYING=yes
+legacyST_PLAYING=no
 initialSavePersistencePending=yes
-eventParticleCleanupPending=no
-isUpdateViewPending=no
-ST_PLAYINGPending=yes
+ST_PLAYINGPending=no
 idleTimePending=yes
-ST_PLAYING=no
+rendererPending=yes
 legacy Game.entities=0
 legacy Game.monsters=0
 noGameplay=yes
@@ -275,27 +291,28 @@ mediaTexels == NULL
 runtime ZIP map access forbidden
 legacy Game.entities = 0
 legacy Game.monsters = 0
-ST_PLAYING not reached
 ```
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-post-load-view-invalidation
+MERGE agent/esp32-native-post-load-playing-transition
 ```
 
 Hardware-tested firmware:
 
 ```text
-25976e82976bf7ed78b0506640db62bd0779ec5f
+afda93f0a28af5c34620fef2ac3354a24b3f91f5
 ```
+
+All commits after that tested SHA must remain documentation-only.
 
 ## Next bounded milestone after merge
 
-Recover exact new `main`, then recover the full legacy semantics of:
+Recover exact new `main`, then own only:
 
 ```c
-DoomCanvas_setState(doomCanvas, ST_PLAYING);
+doomCanvas->idleTime = doomCanvas->time + 8000;
 ```
 
-Do not treat this as a simple scalar write. Audit all `ST_INTRO -> ST_PLAYING` behavior inside `DoomCanvas_setState()` before designing the native owner. Keep `idleTime = time + 8000`, durable save storage, entity gameplay and renderer migration separate unless the function itself proves a side effect inseparable from the state transition.
+Keep native gameplay dispatch and renderer activation separate. Once this final post-load caller write is hardware-proven, the fresh-Junction load tail is semantically complete; the following architectural milestone should consume native ST_PLAYING in a native loop/render path rather than changing legacy `DoomCanvas.state` to 3.
