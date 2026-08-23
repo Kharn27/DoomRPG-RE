@@ -5,42 +5,36 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #79 — post-load current-weapon self-select
-main = 04e4e2269a6c70db3f3e4027717bdb36f286ce65
-hardware-tested firmware = 24fb8fbf914820500d2e16815e22beb0439c9ba0
+PR   = #80 — post-load initial-save semantic intent
+main = b669488c6f577d1004ac5a1dc742392698d66095
+hardware-tested firmware = 0da9526775b706606338045babeb89e0d6c72729
 status = REAL-CYD HARDWARE PASS
 ```
 
-Merged evidence: [`MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md`](MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md).
+Merged evidence: [`MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md`](MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-post-load-initial-save-intent
-base   = 04e4e2269a6c70db3f3e4027717bdb36f286ce65
-hardware-tested firmware = 0da9526775b706606338045babeb89e0d6c72729
+branch = agent/esp32-native-post-load-flag-cleanup
+base   = b669488c6f577d1004ac5a1dc742392698d66095
+hardware-tested firmware = 7f16e08f6948da121815ba669fcbbff7e061e2b7
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Evidence: [`MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md`](MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md).
+Evidence: [`MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md).
 
-This milestone owns only the semantic boundary for the fresh Junction caller:
+This milestone owns only:
 
 ```c
-if ((doomCanvas->loadMapID != MAP_END_GAME) &&
-    (game->isLoaded == false)) {
-    Game_saveState(game,
-                   doomCanvas->loadMapID,
-                   doomCanvas->viewX,
-                   doomCanvas->viewY,
-                   doomCanvas->viewAngle,
-                   false);
-}
+game->isLoaded = false;
+game->isSaved = false;
+game->activeLoadType = 0;
 ```
 
-The native path reconstructs map/view arguments from the hardware-proven
-`EspPlayerView`, samples only `Game.isLoaded` read-only, and parks a compact save
-intent. It does not emulate legacy Config/Player/Player2/World files.
+The exact legacy writes are contiguous. The real CYD proved the incoming values
+are already `0/0/0`, so this fresh-Junction path is an identity cleanup while
+remaining an explicit caller-order boundary.
 
 ## Permanent invariants
 
@@ -93,7 +87,7 @@ enemies=0
 destructibles=3
 ```
 
-Current post-GIVEMAP resident owner FNVs:
+Current Junction resident owner FNVs:
 
 ```text
 runtime  = bc432a0f
@@ -128,6 +122,7 @@ CHANGEMAP pending intent
  -> 16 B direct Junction GIVEMAP caller-order owner
  -> 8 B current-weapon self-select caller-order owner
  -> 24 B initial-save semantic intent owner
+ -> 8 B post-load flag cleanup owner
 ```
 
 Canonical fingerprints:
@@ -160,30 +155,16 @@ Junction post-load HUD clear   = b7383e18
 Junction post-load GIVEMAP     = 448e587d
 Junction weapon self-select    = 699f3cf3
 Junction initial-save intent   = 0bf1a911
+Junction post-load flag cleanup= 46cb2547
 ```
 
 Generic `EspMapOpcodeExecutor` remains intentionally only 11/19/20.
 
 ## Hardware-proven initial-save semantic intent
 
-Permanent files:
-
-```text
-ESP32/include/esp_post_load_initial_save_intent.h
-ESP32/src/esp_post_load_initial_save_intent.c
-```
-
-Owner:
-
 ```text
 EspPostLoadInitialSaveIntentState = 24 B
-stateFNV = 0bf1a911
-persistent heap = 0 B
-```
-
-Real-CYD state:
-
-```text
+stateFNV=0bf1a911
 mapId=9
 view=992/1888
 angle=64
@@ -194,44 +175,83 @@ componentMask=0f
 persistenceDeferred=1
 presentationDeferred=1
 active=1
+persistentHeapBytes=0
 ```
 
-Component intent:
+Requested persistence components remain semantic debt only:
 
 ```text
-CONFIG       = requested
-PLAYER2      = requested
-WORLD        = requested
-PLAYER_ROUTE = requested
+CONFIG       requested
+PLAYER2      requested
+WORLD        requested
+PLAYER_ROUTE requested
 saveFileWrite=no
 savingUi=no
 presentation=no
+routePayloadOwned=no
+playerPersistence=no
+worldPersistence=no
+configPersistence=no
 ```
 
-Input-owner proof:
+## Hardware-proven post-load flag cleanup
+
+Permanent files:
 
 ```text
-weaponFNV=699f3cf3
-giveMapFNV=448e587d
-hudClearFNV=b7383e18
-viewFNV=afcdcf74
-facingFNV=95aa1108
+ESP32/include/esp_post_load_flag_cleanup_state.h
+ESP32/src/esp_post_load_flag_cleanup_state.c
+```
+
+Owner:
+
+```text
+EspPostLoadFlagCleanupState = 8 B
+stateFNV = 46cb2547
+persistent heap = 0 B
+```
+
+Real-CYD state:
+
+```text
+isLoaded=0->0
+isSaved=0->0
+activeLoadType=0->0
+targetMap=9
+active=1
+```
+
+Semantic proof:
+
+```text
+isLoadedCleared=yes
+isSavedCleared=yes
+activeLoadTypeCleared=yes
+legacyValues=0/0/0->0/0/0
+legacyMutation=no
+```
+
+Input proof:
+
+```text
+saveIntentBytes=24
+saveIntentFNV=0bf1a911
 unchanged=yes
 callerOrder=yes
+persistenceDebtPreserved=yes
 ```
 
-Fail-closed/deferred proof:
+Fail-closed proof:
 
 ```text
-nullWeapon=1
-nullView=1
+nullIntent=1
 nullOutput=1
-inactiveWeapon=1
-weaponMismatch=1
-inactiveView=1
-viewPending=1
-loadedContextDeferred=1
+inactiveIntent=1
+targetMap=1
 invalidLoaded=1
+invalidSaved=1
+invalidLoadType=1
+loadedMismatch=1
 prepareAtomic=yes
 postActivePrepare=1
 repeat=1
@@ -259,24 +279,23 @@ packClosed=yes
 Normal-env RAM proof:
 
 ```text
-heap8=72644->72644
+heap8=72620->72620
 delta=0
 largest8=34804->34804
 delta=0
 persistentHeapBytes=0
 ```
 
-Same-build legacy/frame equality witnesses:
+Same-build equality witnesses only:
 
 ```text
 gameFNV=6960d5bb->6960d5bb
 playerFNV=c64e7862->c64e7862
-hudFNV=b18611d2->b18611d2
-canvasFNV=592d59c9->592d59c9
+hudFNV=d2deba0f->d2deba0f
+canvasFNV=ade981cb->ade981cb
 renderFNV=f9344dec->f9344dec
-frameFNV=6a0726c1->6a0726c1
+frameFNV=7a95b5b5->7a95b5b5
 legacyRuntimeClear=yes
-legacyGame_saveStateCalled=no
 GameMutation=no
 PlayerMutation=no
 HudMutation=no
@@ -284,23 +303,11 @@ DoomCanvasMutation=no
 RenderMutation=no
 ```
 
-Persistence debt remains explicit:
-
-```text
-legacyNewMapPresent=no
-legacyNewDest=0/0
-legacyNewAngle=0
-routePayloadOwned=no
-playerPersistence=no
-worldPersistence=no
-configPersistence=no
-```
-
 Stable post-PARK heartbeat:
 
 ```text
-heap=138408
-heap8=72644
+heap=138384
+heap8=72620
 largest8=34804
 SD=ready
 ZIP=ready
@@ -313,28 +320,12 @@ MAPPINGS=ready
 MENUBSP=ready
 ```
 
-## SD test incident
-
-An earlier boot of the same firmware showed `SD=unavailable`, cascading into
-ZIP/layout/render/menu startup skips. The branch had not modified the SD/build
-wiring path and the new milestone cannot execute before SD initialization. The
-user confirmed the microSD card was the cause; after correcting it, the same
-firmware reached the full successful save-intent PARK. No SD workaround was
-introduced.
-
-## Historical SAVEGAME route correction
-
-Opcode 27 parsing itself remains hardware-proven. The old temporary MAP_INTRO
-route probe resets its sampled owner before PARK, so historical
-`routeLifetimeCrossMap=yes` wording is not proof of a live owner surviving the
-map handoff. A future durable save implementation must explicitly own that route.
-
 ## Probe completion semantics
 
-Older temporary probes may set `done=1` on terminal failure. `*_isDone()` alone
-is not a PASS certificate. The initial-save-intent probe revalidates all exact
-predecessor owners/world state and sets its own `done=1` only after successful
-PARK.
+Historical temporary probes may set `done=1` on terminal failure; `*_isDone()`
+alone is not a PASS certificate. New downstream probes must revalidate exact
+predecessor owners/world state. The flag-cleanup probe follows the new convention
+and sets `done=1` only after successful PARK.
 
 ## Exact recovered caller order
 
@@ -347,11 +338,13 @@ if Junction: Game_givemap()                 [hardware-proven]
 else: DoomCanvas_uncoverAutomap()
 Player_selectWeapon(player, player->weapon) [hardware-proven]
 conditional Game_saveState(...)             [hardware-proven semantic intent]
-Game.isLoaded=false                         [NEXT after merge]
-Game.isSaved=false                          [NEXT after merge]
-Game.activeLoadType=0                       [NEXT after merge]
-numEvents=0 / particles cleared             [deferred]
-isUpdateView=true                           [deferred]
+Game.isLoaded=false                         [hardware-proven semantic cleanup]
+Game.isSaved=false                          [hardware-proven semantic cleanup]
+Game.activeLoadType=0                       [hardware-proven semantic cleanup]
+DoomCanvas.numEvents=0                      [NEXT after merge]
+ParticleSystem_freeAllParticles(...)        [NEXT after merge]
+DoomCanvas.numEvents=0                      [NEXT after merge]
+DoomCanvas.isUpdateView=true                [deferred]
 DoomCanvas_setState(ST_PLAYING)             [deferred]
 idleTime=time+8000                          [deferred]
 ```
@@ -368,18 +361,17 @@ nativeHudClear=yes
 nativePostLoadGiveMap=yes
 nativeWeaponSelfSelect=yes
 nativeInitialSaveIntent=yes
+nativePostLoadFlagCleanup=yes
 initialSaveDecisionPending=no
 initialSavePersistencePending=yes
-initialSavePending=yes   # persistence debt only
-postLoadCleanupPending=yes
+flagCleanupPending=no
+eventParticleCleanupPending=yes
+isUpdateViewPending=yes
 ST_PLAYING=no
 legacy Game.entities=0
 legacy Game.monsters=0
 noGameplay=yes
 ```
-
-The persistence debt is explicit but does not need to block later gameplay
-bring-up once the save side effect has a permanent semantic owner.
 
 ## Still intentionally outside
 
@@ -388,7 +380,8 @@ native durable save storage format
 cross-map durable SAVEGAME route payload
 full native player checkpoint persistence
 full native world/entity persistence
-post-load flag/event/particle cleanup
+queued-event / particle cleanup
+isUpdateView caller write
 ST_PLAYING progression
 full native entity/monster gameplay
 native gameplay renderer
@@ -398,13 +391,13 @@ sound playback
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-post-load-initial-save-intent
+MERGE agent/esp32-native-post-load-flag-cleanup
 ```
 
 Hardware-tested firmware:
 
 ```text
-0da9526775b706606338045babeb89e0d6c72729
+7f16e08f6948da121815ba669fcbbff7e061e2b7
 ```
 
 All commits after that tested SHA must remain documentation-only.
@@ -414,10 +407,10 @@ All commits after that tested SHA must remain documentation-only.
 Recover exact new `main`, then own only:
 
 ```c
-game->isLoaded = false;
-game->isSaved = false;
-game->activeLoadType = 0;
+doomCanvas->numEvents = 0;
+ParticleSystem_freeAllParticles(doomCanvas->particleSystem);
+doomCanvas->numEvents = 0;
 ```
 
-Do not bundle queued-event/particle cleanup, `isUpdateView`, `ST_PLAYING`,
-rendering or native durable save storage.
+Do not bundle `isUpdateView`, `ST_PLAYING`, `idleTime`, native durable save
+storage, gameplay entities or rendering.
