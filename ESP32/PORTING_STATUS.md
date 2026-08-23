@@ -12,18 +12,18 @@ hardware-tested stats-menu firmware = 1dddbe86788389400d6e2186595174e723c72f5c
 
 Merged evidence: [`MAP1_NATIVE_STATS_MENU_INTENT.md`](MAP1_NATIVE_STATS_MENU_INTENT.md).
 
-## Current candidate
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-native-transition-preflight
 base   = c8679133351fa00e01a67103386b7676660c4a6e
-corrected firmware candidate = 4d78a66548fab6373c06c67f107f176fc3988b1c
-status = IMPLEMENTED; CORRECTED REAL-CYD VALIDATION PENDING
+hardware-tested firmware = 4d78a66548fab6373c06c67f107f176fc3988b1c
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Active evidence: [`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_PREFLIGHT.md).
 
-First candidate `b674c9ad4878acdf3d026d061de94f964e2c7d6e` produced a useful real-CYD diagnostic failure: `/junction.bsp` parsed and CRC-verified completely, but its BSP header `loadMapId` is `2`, not resource map ID `9`. The model has been corrected accordingly.
+Candidate v1 `b674c9ad4878acdf3d026d061de94f964e2c7d6e` exposed a useful model error: Junction resource ID is `9` while its BSP gameplay `loadMapId` is `2`. Corrected v2 separated those semantics and passed completely on the real CYD.
 
 ## Permanent invariants
 
@@ -71,7 +71,7 @@ mutable sprite topology   2424 B
 total                    18008 B
 ```
 
-Level-exit stats, player exit-state/result, stats-menu intent, map catalog and transition-preflight result add no persistent heap allocation. Current target remains exactly `18008 B`.
+Level-exit stats, player exit-state/result, stats-menu intent, map catalog and transition-preflight result are caller-owned or immutable program data and add no persistent heap allocation. Hardware total remains exactly `18008 B`.
 
 ## Hardware-proven fingerprints
 
@@ -105,13 +105,16 @@ playerExitLiveFNV        = 57fce418
 statsMenuIntentFNV       = 96afe901
 statsMenuEndGameFNV      = deea91b4
 statsMenuZeroFNV         = 4b95f515
+catalogFNV               = ce322e3f
+transitionPreflightFNV   = 108e5c7b
+junctionSourceFNV        = fefaf5ca
 ```
 
-Latest stats-menu same-build witnesses:
+Latest same-build legacy witnesses:
 
 ```text
-playerExitWitnessFNV = 0b2ae445
-transitionFNV        = f450c49f
+playerWitnessFNV = 0b2ae445
+transitionFNV    = f450c49f
 ```
 
 Framebuffer FNV is only a same-build equality witness and is not a cross-build canon.
@@ -129,7 +132,7 @@ effects=03
 pending=1
 ```
 
-Native consumers hardware-proven through the pause point:
+Native consumer chain now hardware-proven through target preflight:
 
 ```text
 CHANGEMAP pending intent
@@ -147,13 +150,20 @@ CHANGEMAP pending intent
       menuKind=LEVEL
       consumePending=1
       FNV=96afe901
+ -> immutable 13-map catalog
+      catalogFNV=ce322e3f
+ -> EspMapTransitionPreflightResult = 56 B
+      resourceMapId=9
+      gameplayLoadMapId=2
+      FNV=108e5c7b
+      persistentHeapBytes=0
 ```
 
-No legacy `Player_addLevelStats()`, `Game_changeMap()`, menu mutation or map load is called by those native stages.
+No legacy `Player_addLevelStats()`, `Game_changeMap()`, menu mutation, source teardown or map swap is performed by this chain.
 
-## Native map catalog
+## Native resource-map catalog
 
-Permanent API:
+Permanent files/API:
 
 ```text
 ESP32/include/esp_map_catalog.h
@@ -164,7 +174,7 @@ EspMapCatalog_nameForId()
 EspMapCatalog_idForName()
 ```
 
-Recovered exact resource-map order:
+Recovered exact resource order:
 
 ```text
 1  /intro.bsp
@@ -182,13 +192,15 @@ Recovered exact resource-map order:
 13 /endgame.bsp
 ```
 
-Static catalog audit:
+Real-CYD proof:
 
 ```text
-catalogFNV = ce322e3f
+count=13
+roundtrip=13
+catalogFNV=ce322e3f
+invalidName=1
+legacyIds=1
 ```
-
-Corrected hardware validation remains pending.
 
 ## Transition-preflight semantics
 
@@ -202,7 +214,7 @@ EspMapTransitionPreflightResult = 56 B
 EspMapTransitionPreflight_run(targetMapId, &result)
 ```
 
-Critical semantic split discovered on real hardware:
+Critical semantic split:
 
 ```text
 targetMapId
@@ -214,34 +226,17 @@ gameplayLoadMapId
   = level-progression/stat semantic
 ```
 
-Legacy `Player_addLevelStats()` proves that gameplay ID `2` is the hub/no-completion gate:
-
-```text
-if (showStats && render->loadMapID != 2) {
-    completedLevels |= 1 << (render->loadMapID - 1)
-    ...
-}
-```
-
-Therefore real Junction is expected to be:
+Legacy `Player_addLevelStats()` establishes gameplay ID `2` as the hub/no-completion gate. Real Junction is therefore correctly:
 
 ```text
 resourceMapId      = 9
 gameplayLoadMapId  = 2
-resource/gameplay IDs intentionally distinct
+hubProgressionGate = 1
 ```
 
-The permanent preflight now validates `gameplayLoadMapId` only for safe progression-bit semantics (`1..32`); it does not require equality with resource ID.
+The permanent preflight validates `gameplayLoadMapId` only for the safe recovered bit-semantic range `1..32`; resource/gameplay equality is not required.
 
-## Real-CYD Junction diagnostic facts from candidate v1
-
-First candidate:
-
-```text
-b674c9ad4878acdf3d026d061de94f964e2c7d6e
-```
-
-Hardware successfully streamed the complete target before the obsolete ID-equality check failed:
+## Hardware-proven Junction target
 
 ```text
 resourceName      = /junction.bsp
@@ -249,7 +244,7 @@ entryOffset       = 1974397
 sourceBytes       = 21051
 sourceCRC32       = 4a2c5800
 sourceFNV1a       = fefaf5ca
-BSP mapName       = Junction
+mapName           = Junction
 gameplayLoadMapId = 2
 spawnIndex        = 943
 spawnDirection    = 64
@@ -268,6 +263,7 @@ events=66
 byteCodes=319
 strings=126
 stringData=12235
+legacyStringAlloc=12361
 maxString=380
 trailing=0
 ```
@@ -314,53 +310,24 @@ resourceSets=96
 persistentPlanBytes=8867
 ```
 
-Stream:
+Stream and preflight:
 
 ```text
-bytes=21051/21051
 readCalls=83
 window=256 B
+CRC32=4a2c5800 verified=yes
 FNV1a=fefaf5ca
-CRC32=4a2c5800
-verified=yes
+resultFNV=108e5c7b
+repeatFNV=108e5c7b
+repeatExact=1
+resourceGameplayDistinct=1
+elapsed=147 ms
+ready=1
 ```
 
-These are diagnostic hardware observations until the corrected final probe reproduces them and completes all rollback/failclosed checks.
+## Fail closed / I/O / RAM
 
-## Corrected final transition-preflight probe
-
-Corrected code SHA:
-
-```text
-4d78a66548fab6373c06c67f107f176fc3988b1c
-```
-
-The lifecycle now services only:
-
-```text
-Esp32TransitionPreflightFinalProbe_*
-```
-
-The original failing probe remains compiled as history but is not run.
-
-Corrected acceptance requires:
-
-```text
-resultBytes=56
-resourceMapId=9
-gameplayLoadMapId=2
-hubProgressionGate=1
-entryOffset=1974397
-sourceBytes=21051
-crc32=4a2c5800
-fnv1a=fefaf5ca
-persistentPlanBytes=8867
-nodes=77 lines=207 mapSprites=48 events=66 byteCodes=319 strings=126 stringData=12235
-repeat exact
-catalog count=13 roundtrip=13 catalogFNV=ce322e3f
-```
-
-Fail closed:
+Hardware:
 
 ```text
 target0=1
@@ -371,46 +338,67 @@ busyZero=1
 stateAtomic=yes
 ```
 
-RAM/integrity target:
+I/O/RAM:
 
 ```text
+heap8      65608 -> 65608 delta=0
+largest8   34804 -> 34804 delta=0
 persistentHeapBytes=0
-heap8 before == after
-largest8 before == after
-persistent native total remains 18008 B
-PAK closed at PARK
-all Entrance owner FNVs unchanged
-framebuffer same-build equality
-legacy Player/transition witnesses unchanged
+heapOpen=61232
+transientPackCost=4376 B
+largestOpen=34804
+packClosed=yes
+fullTargetCRC=yes
+```
+
+Persistent native total remains exactly `18008 B`.
+
+## Entrance / legacy integrity
+
+```text
+arenaFNV     c3882516
+mapStateFNV  cd99b98e
+scriptFNV    f9e3d9df
+lineFNV      e5e74861
+textureFNV   f1fc1875
+automapFNV   669b1aa7
+topologyFNV  3f321e43
+
+playerFNV     0b2ae445 -> 0b2ae445
+transitionFNV f450c49f -> f450c49f
+legacyRuntimeClear=yes
 sourceTeardown=no
 mapLoad=no
 menuMutation=no
 mapSwap=no
-entities=0 monsters=0
 ```
 
-## Validation
-
-Build/flash normal environment:
+Final PARK:
 
 ```text
-esp32-cyd
+state=9 page=3
+nativeCatalog=yes
+nativeTargetPreflight=yes
+resourceMapId=9
+gameplayLoadMapId=2
+targetReady=yes
+sourceMapPreserved=yes
+packClosed=yes
+persistentBytes=0
+mapSwap=no
+entities=0 monsters=0 noGameplay=yes
 ```
 
-Branch / corrected firmware:
+Stable post-PASS heartbeats:
 
 ```text
-agent/esp32-native-transition-preflight
-4d78a66548fab6373c06c67f107f176fc3988b1c
+1025843 ms heap=131372 heap8=65608 largest8=34804
+1030844 ms heap=131372 heap8=65608 largest8=34804
 ```
-
-Capture `[TRANSITIONPREFLIGHTFINAL]`, both complete Junction `[BSPREAD]` inventories, `[TRANSITIONPREFLIGHT]` final lines, and stable `[ALIVE]` lines.
-
-No CI status is published. No local build or corrected hardware PASS is claimed.
 
 ## Current architecture boundary
 
-Hardware-proven through PR #65:
+Hardware-proven ownership now includes:
 
 ```text
 compact immutable native Entrance map + explicit mutable owners
@@ -421,17 +409,12 @@ SHOW/HIDE compact sprite/entity topology
 native level-exit stats
 native player exit-state
 native stats-menu semantic intent
-```
-
-Corrected candidate adds:
-
-```text
 immutable generic 13-map resource catalog
-read-only target PAK/BSP preflight
+read-only target Junction PAK/BSP preflight
 explicit resourceMapId vs gameplayLoadMapId semantics
 ```
 
-Still outside:
+Still intentionally outside:
 
 ```text
 actual stats-menu rendering/input consumer
@@ -444,4 +427,12 @@ native ST_PLAYING progression/rendering
 sound playback
 ```
 
-Do not merge until corrected firmware `4d78a66548fab6373c06c67f107f176fc3988b1c` passes on the real CYD and every later commit remains documentation-only.
+The next bounded milestone should own **source-target lifecycle handoff / reversible swap staging** before any real Junction resident-runtime replacement.
+
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-transition-preflight
+```
+
+Hardware-tested firmware is `4d78a66548fab6373c06c67f107f176fc3988b1c`. All commits after that firmware must remain documentation-only until merge.
