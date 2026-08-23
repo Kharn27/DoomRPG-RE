@@ -21,11 +21,12 @@
 #include "native_map1_string_reader_probe.h"
 #include "native_map1_ui_intent_probe.h"
 #include "native_map1_unlock_probe.h"
+#include "native_player_exit_state_probe.h"
 
 /*
  * Keep the hardware-validated intro clock/dispose, native BSP pass-1 and native
  * resident-runtime implementations untouched. These wrappers are temporary
- * lifecycle scaffolding only; reusable native map components remain
+ * lifecycle scaffolding only; reusable native map/player components remain
  * legacy-engine free.
  */
 void __real_Esp32IntroDispose_reset(void);
@@ -55,6 +56,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32Map1ChangeMapProbe_reset();
     Esp32Map1ShowHideFinalProbe_reset();
     Esp32Map1LevelExitStatsProbe_reset();
+    Esp32PlayerExitStateProbe_reset();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -77,8 +79,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
      * caller-owned EV_SAVEGAME future-save route state -> caller-owned
      * EV_CHANGEMAP pending transition intent -> compact map-sprite entity
      * topology + corrected isolated/contextual EV_SHOW/EV_HIDE proof -> pure
-     * native level-exit stats snapshot for the CHANGEMAP show-stats consumer.
-     * Each stage arms first and executes on a later Arduino loop service.
+     * native level-exit stats snapshot -> pointer-free native player exit-state
+     * application. Each stage arms first and executes on a later Arduino loop
+     * service.
      */
     Esp32Map1BspPass1_service(doomRpg);
     Esp32Map1RuntimeLoad_service(doomRpg);
@@ -102,4 +105,5 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32Map1ChangeMapProbe_service(doomRpg);
     Esp32Map1ShowHideFinalProbe_service(doomRpg);
     Esp32Map1LevelExitStatsProbe_service(doomRpg);
+    Esp32PlayerExitStateProbe_service(doomRpg);
 }
