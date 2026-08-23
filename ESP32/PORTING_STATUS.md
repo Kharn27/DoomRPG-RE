@@ -5,26 +5,28 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #73 — native initial tile-enter
-main = 0bc171affad8416ed1a7918a4a67fd4d53d61efe
-hardware-tested firmware = d8fb3e0e372b89d95c37cce558420f7fcb474419
+PR   = #74 — native finishRotation orientation
+main = 2decae5067438dc1a2d9c29335cfc0cad5538645
+hardware-tested firmware = 850f1651db7ca1943d5647a00099dfb48c9de284
 status = REAL-CYD HARDWARE PASS
 ```
 
-Merged evidence: [`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md).
+Merged evidence: [`MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md`](MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md).
 
-## Current merge-ready milestone
+## Current hardware candidate
 
 ```text
-branch = agent/esp32-native-finish-rotation-orientation
-base   = 0bc171affad8416ed1a7918a4a67fd4d53d61efe
-hardware-tested firmware = 850f1651db7ca1943d5647a00099dfb48c9de284
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-native-finish-rotation-second-tile
+base   = 2decae5067438dc1a2d9c29335cfc0cad5538645
+status = HARDWARE CANDIDATE — NOT YET CYD-PROVEN
 ```
 
-Evidence: [`MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md`](MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md).
+Candidate evidence/design: [`MAP1_NATIVE_FINISH_ROTATION_SECOND_TILE.md`](MAP1_NATIVE_FINISH_ROTATION_SECOND_TILE.md).
 
-This milestone owns only the four orientation writes at the start of recovered `DoomCanvas_finishRotation()`. The second tile dispatch, final durable facing and `ST_PLAYING` remain explicitly pending.
+This candidate owns only the second `Game_executeTile()` inside recovered
+`DoomCanvas_finishRotation()`. Final durable facing and `ST_PLAYING` remain
+explicitly pending. Unsupported eligible opcodes must fail closed and be
+reported exactly; no legacy event fallback is permitted.
 
 ## Permanent invariants
 
@@ -137,13 +139,15 @@ post-initial-tile player FNV   = 1bd0f09b
 Junction orientation FNV       = acc754a6
 ```
 
-All real MAP_INTRO opcode IDs already have explicit native ownership/execution boundaries:
+All real MAP_INTRO opcode IDs already have explicit native ownership/execution
+boundaries:
 
 ```text
 2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-The generic `EspMapOpcodeExecutor` deliberately remains tiny and executes only IDs 11/19/20. Other opcode families keep dedicated owners/probes.
+The generic `EspMapOpcodeExecutor` deliberately remains tiny and executes only
+IDs 11/19/20. Other opcode families keep dedicated owners/probes.
 
 ## Hardware-proven current player/orientation boundary
 
@@ -173,9 +177,10 @@ playerSetupPending=0
 tileEnterPending=0
 ```
 
-The first tile event exists but has no eligible command under the exact fresh-map flags, so script state remains `bc9b18ff`.
+The first tile event exists but has no eligible command under `0x1000040f`, so
+script state remains `bc9b18ff`.
 
-Latest hardware boundary — finishRotation orientation preparation:
+Latest merged hardware boundary — finishRotation orientation preparation:
 
 ```text
 EspPlayerOrientationState=24 B
@@ -197,7 +202,7 @@ gameplayLoadMapId=2
 loadType=0
 ```
 
-PlayerView remains exactly:
+PlayerView remains:
 
 ```text
 1bd0f09b -> 1bd0f09b
@@ -217,32 +222,84 @@ Game_spawnPlayer:
   Game_executeTile(...)          # first tile dispatch
 
 caller -> DoomCanvas_finishRotation():
-  viewSin   = sinTable[destAngle & 255]      [hardware-proven]
-  viewCos   = sinTable[(destAngle + 64)&255] [hardware-proven]
-  viewStepX = (viewCos * 64) >> 16           [hardware-proven]
-  viewStepY = ((-viewSin) * 64) >> 16        [hardware-proven]
-  Game_executeTile(... | 0x400)              [next]
-  checkFacingEntity()                        [deferred]
+  viewSin/viewCos/viewStepX/viewStepY  [hardware-proven]
+  Game_executeTile(... | 0x400)        [CURRENT CANDIDATE]
+  checkFacingEntity()                  [deferred]
 ```
 
-The transient first facing result remains deliberately unowned.
-
-## Orientation fail-closed proof
+At the current Junction path the second call is exactly:
 
 ```text
-nullView=1
-nullTile=1
-nullOutput=1
-inactive=1
-tilePending=1
-missingFacing=1
-angle=1
-tileInactive=1
-tileMismatch=1
-prepareAtomic=yes
-repeat=1
-repeatAtomic=yes
+world=992/1888
+tile=943
+destAngle=64
+facing flag=0x10000000
+input flags=0x10000400
 ```
+
+## Current second-tile candidate
+
+Permanent files:
+
+```text
+ESP32/include/esp_player_finish_rotation_tile.h
+ESP32/src/esp_player_finish_rotation_tile.c
+```
+
+Candidate owner:
+
+```text
+EspPlayerFinishRotationTileState = 24 B
+persistent heap = 0 B
+```
+
+Candidate API:
+
+```text
+EspPlayerFinishRotationTile_reset()
+EspPlayerFinishRotationTile_isReady()
+EspPlayerFinishRotationTile_view()
+EspPlayerFinishRotationTile_prepare()
+EspPlayerFinishRotationTile_route()
+```
+
+The route requires the canonical PlayerView/InitialTile/Orientation owners,
+performs a complete side-effect-free filtered-command preflight, executes only
+already-supported 11/19/20 state commands, maps recovered `arg2 & 0x200` removal
+into `EspMapScriptState`, rolls all script changes back on failure and never
+mutates PlayerView/InitialTile/Orientation.
+
+Any eligible unsupported command returns:
+
+```text
+ESP_PLAYER_FINISH_ROTATION_TILE_OPCODE_DEFERRED
+```
+
+with exact opcode/command diagnostics and no mutation.
+
+No candidate second-tile FNV is promoted before the real event eligibility is
+observed on hardware.
+
+Temporary probe:
+
+```text
+ESP32/include/native_junction_finish_rotation_tile_probe.h
+ESP32/src/native_junction_finish_rotation_tile_probe.c
+```
+
+Complete route marker:
+
+```text
+[JUNCTIONTILE2] READY ...
+```
+
+Fail-closed discovery marker:
+
+```text
+[JUNCTIONTILE2] DEFERRED ... code=<id> arg1=<...> arg2=<...> failClosed=yes
+```
+
+A DEFERRED result is discovery, not milestone PASS.
 
 ## Latest hardware RAM / integrity baseline
 
@@ -287,9 +344,8 @@ DoomCanvasMutation=no
 RenderMutation=no
 ```
 
-The implementation performs no HUD write; this probe does not materialize a separate HUD fingerprint, so none is promoted as a canon.
-
-These equality FNVs are same-build witnesses, not cross-build canons.
+The implementation performs no HUD write; no separate HUD fingerprint is
+promoted by the orientation probe.
 
 ## Current hardware PARK
 
@@ -330,13 +386,18 @@ first fresh-map tile dispatch
 finishRotation orientation preparation
 ```
 
+Candidate only:
+
+```text
+second finishRotation tile dispatch
+```
+
 Still intentionally outside:
 
 ```text
 actual stats-menu rendering/input
 actual HUD rendering / renderer dirty consumption
 weapon restore/select ownership when disabledWeapons!=0
-second finishRotation tile dispatch
 final native facing-entity query
 ST_PLAYING progression
 full native entity/monster gameplay
@@ -344,34 +405,20 @@ native gameplay renderer
 sound playback
 ```
 
-The player/view, HUD, fresh-map session, initial-tile and orientation owners have lifetimes distinct from the seven-owner resident arena.
+The player/view, HUD, fresh-map session, initial-tile, orientation and second-tile
+owners have lifetimes distinct from the seven-owner resident arena.
 
 `shapeData == NULL` and `mediaTexels == NULL` remain mandatory.
 
-## Next bounded milestone after merge
+## Next action
 
-Recover from the exact post-merge `main`. The next operation is the second `Game_executeTile()` inside `DoomCanvas_finishRotation()`:
-
-```text
-world=992/1888
-tile=943
-destAngle=64
-DoomCanvas_flagForFacingDir(64)=0x10000000
-input flags=0x10000400
-```
-
-Keep final durable `checkFacingEntity()` and `ST_PLAYING` separate unless a fresh audit proves a tighter safe boundary.
-
-## Merge recommendation
+Build/flash the normal environment:
 
 ```text
-MERGE agent/esp32-native-finish-rotation-orientation
+esp32-cyd
 ```
 
-Hardware-tested firmware:
-
-```text
-850f1651db7ca1943d5647a00099dfb48c9de284
-```
-
-Every later commit on this branch must remain documentation-only unless another firmware is flashed.
+Use the exact `[JUNCTIONTILE2]` Serial block as hardware truth. Do not mark this
+candidate merge-ready until a complete native route is proven. If the probe
+reports `DEFERRED`, implement that exact opcode family/integration and re-test
+before promotion.
