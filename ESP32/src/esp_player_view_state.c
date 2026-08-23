@@ -12,6 +12,9 @@ static int spawnIsConsistent(const EspPlayerSpawnState* spawn) {
     uint32_t expectedTileIndex;
     uint32_t expectedWorldX;
     uint32_t expectedWorldY;
+    uint32_t expectedOverrideX;
+    uint32_t expectedOverrideY;
+    uint32_t expectedOverrideAngle;
 
     if (spawn == NULL || spawn->active != 1U ||
         spawn->loadType != ESP_PLAYER_SPAWN_LOAD_FRESH_MAP ||
@@ -46,7 +49,13 @@ static int spawnIsConsistent(const EspPlayerSpawnState* spawn) {
         return spawn->sourceSpawnParam == 0U && spawn->overrideUsed == 0U;
     }
     if (spawn->spawnSource == ESP_PLAYER_SPAWN_SOURCE_OVERRIDE) {
-        return spawn->sourceSpawnParam != 0U && spawn->overrideUsed == 1U;
+        if (spawn->sourceSpawnParam == 0U || spawn->overrideUsed != 1U) return 0;
+        expectedOverrideX = spawn->sourceSpawnParam & 31U;
+        expectedOverrideY = (spawn->sourceSpawnParam >> 5U) & 31U;
+        expectedOverrideAngle = (spawn->sourceSpawnParam >> 10U) & 255U;
+        return spawn->tileX == expectedOverrideX &&
+               spawn->tileY == expectedOverrideY &&
+               spawn->angle == expectedOverrideAngle;
     }
     return 0;
 }
