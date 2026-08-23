@@ -306,7 +306,5 @@ MERGE agent/esp32-native-committed-transition
 Hardware-tested firmware:
 
 ```text
-759b7f05a7c1940e98caf68e404467a54405ae
+759b7f05a7c1940e98caf68e4041faa69b34cfc9
 ```
-
-Note: the canonical full firmware SHA is `759b7f05a7c1940e98caf68e4041faa69b34cfc9`; the line above is intentionally not authoritative if truncated by a UI. Always use the full SHA from `PORTING_STATUS.md` / milestone evidence.
