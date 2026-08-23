@@ -5,26 +5,28 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #68 — native committed Junction transition
-main = 00268a100c6662cb883f9a02d979b4f29eecbf12
-hardware-tested firmware = 759b7f05a7c1940e98caf68e4041faa69b34cfc9
+PR   = #69 — native Junction spawn projection
+main = 992f38374840113409e776fb82ce57ab014607e5
+hardware-tested firmware = 08a3a29c5e4e4a64000fa12a877299bbb1e772a0
 status = REAL-CYD HARDWARE PASS
 ```
 
-Merged evidence: [`MAP1_NATIVE_COMMITTED_TRANSITION.md`](MAP1_NATIVE_COMMITTED_TRANSITION.md).
+Merged evidence: [`MAP1_NATIVE_JUNCTION_SPAWN.md`](MAP1_NATIVE_JUNCTION_SPAWN.md).
 
-## Current merge-ready milestone
+PR #69 leaves Junction as the committed compact native resident map and hardware-proves the deterministic fresh-map player spawn projection without mutating legacy gameplay state.
+
+## Current candidate
 
 ```text
-branch = agent/esp32-native-junction-spawn
-base   = 00268a100c6662cb883f9a02d979b4f29eecbf12
-hardware-tested firmware = 08a3a29c5e4e4a64000fa12a877299bbb1e772a0
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-native-player-view
+base   = 992f38374840113409e776fb82ce57ab014607e5
+firmware candidate = fe1630ad5618dfd35bbbc555de8f9762d0b046f8
+status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
 ```
 
-Active evidence: [`MAP1_NATIVE_JUNCTION_SPAWN.md`](MAP1_NATIVE_JUNCTION_SPAWN.md).
+Active evidence: [`MAP1_NATIVE_PLAYER_VIEW.md`](MAP1_NATIVE_PLAYER_VIEW.md).
 
-This milestone adds a permanent 24-byte pointer-free fresh-map player spawn projection. It reproduces the deterministic placement portion of recovered `Game_spawnPlayer()` for the already committed Junction map without applying placement to legacy state and without entering gameplay.
+The candidate introduces the first permanent active native player/view owner. It applies the already hardware-proven Junction spawn projection to native state only while keeping HUD refresh, facing lookup, Player_setup, tile-enter and ST_PLAYING explicitly pending.
 
 ## Permanent invariants
 
@@ -43,7 +45,9 @@ legacy Game.monsters = 0
 ST_PLAYING  = not reached
 ```
 
-## Entrance canon
+## Hardware-proven map canons
+
+Entrance:
 
 ```text
 resource=/intro.bsp
@@ -54,29 +58,13 @@ sourceFNV=d5cc751f
 gameplayLoadMapId=1
 spawnIndex=904
 spawnDirection=64
-camera=648
-floorTex=145
-ceilingTex=112
-nodes=223
-lines=480
-mapSprites=344
-events=93
-byteCodes=265
-strings=94
-stringData=7779
-```
-
-Entrance native resident memory:
-
-```text
 snapshotBytes=96
 snapshotFNV=b3811f3d
 logical payload=17891 B
 actual heap=18008 B
-allocator overhead=117 B
 ```
 
-Owner FNVs:
+Entrance owner FNVs:
 
 ```text
 runtime  = c3882516
@@ -88,29 +76,48 @@ automap  = 669b1aa7
 topology = 3f321e43
 ```
 
-All real MAP_INTRO opcode IDs have explicit native ownership/execution boundaries:
+Junction:
 
 ```text
-2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
+resourceMapId=9
+resource=/junction.bsp
+gameplayLoadMapId=2
+hubProgressionGate=1
+entryOffset=1974397
+bytes=21051
+crc32=4a2c5800
+sourceFNV=fefaf5ca
+spawnIndex=943
+spawnDirection=64
+nodes=77
+lines=207
+mapSprites=48
+events=66
+byteCodes=319
+strings=126
+snapshotBytes=96
+snapshotFNV=bc9071e9
+payload=10410 B
+actual heap=10540 B
+allocator overhead=130 B
+entities=30
+enemies=0
+destructibles=3
 ```
 
-## Hardware-proven exit / transition chain
-
-Real Entrance CHANGEMAP:
+Junction owner FNVs:
 
 ```text
-event=1
-commandOffset=1
-globalCommand=2
-arg1=80000000
-mapName=/junction.bsp
-targetMap=9
-spawnParam=0
-showStats=1
-pending=1
+runtime  = bc432a0f
+map      = c5cdfc04
+script   = bc9b18ff
+line     = 3658710d
+texture  = 537319ad
+automap  = 0b2ae445
+topology = d6e8df7d
 ```
 
-Native chain now proven through fresh-map spawn projection:
+## Hardware-proven transition chain
 
 ```text
 CHANGEMAP pending intent
@@ -120,11 +127,11 @@ CHANGEMAP pending intent
  -> immutable 13-map catalog
  -> Junction target preflight
  -> explicit resident lifecycle
- -> reversible Entrance -> Junction -> Entrance proof
- -> committed transition state machine
- -> real committed Entrance -> Junction resident swap
- -> fresh-map load semantic ownership
- -> deterministic native player spawn projection
+ -> reversible Entrance -> Junction -> Entrance
+ -> committed transition with post-teardown rollback
+ -> real committed Entrance -> Junction residency
+ -> fresh-map load semantic
+ -> native Junction player spawn projection
 ```
 
 Canonical fingerprints:
@@ -143,195 +150,32 @@ Junction spawn FNV       = ba6af4a7
 packed override FNV      = e0a5110b
 ```
 
-## Junction source canon
-
-Resource identity and gameplay progression identity are distinct:
+All real MAP_INTRO opcode IDs have explicit native ownership/execution boundaries:
 
 ```text
-resourceMapId      = 9 / /junction.bsp
-gameplayLoadMapId  = 2
-hubProgressionGate = 1
+2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
 ```
 
-Source:
+## Hardware-proven fresh-map spawn
 
-```text
-entryOffset=1974397
-bytes=21051
-crc32=4a2c5800
-sourceFNV=fefaf5ca
-name=Junction
-spawnIndex=943
-spawnDirection=64
-camera=0
-floorTex=117
-ceilingTex=151
-nodes=77
-lines=207
-mapSprites=48
-events=66
-byteCodes=319
-strings=126
-stringData=12235
-runtimePlan=8867 B
-```
-
-## Junction resident canon
-
-```text
-snapshotBytes=96
-snapshotFNV=bc9071e9
-payload=10410 B
-actual heap=10540 B
-allocator overhead=130 B
-```
-
-Owner payloads:
-
-```text
-runtime   = 8867 B
-map       = 1024 B
-script    = 73 B
-line      = 52 B
-texture   = 26 B
-automap   = 32 B
-topology  = 336 B
-```
-
-Owner FNVs:
-
-```text
-runtime  = bc432a0f
-map      = c5cdfc04
-script   = bc9b18ff
-line     = 3658710d
-texture  = 537319ad
-automap  = 0b2ae445
-topology = d6e8df7d
-```
-
-Compact topology:
-
-```text
-entities=30
-enemies=0
-destructibles=3
-```
-
-These are compact native topology entities. Legacy `Game.entities` and `Game.monsters` remain zero.
-
-## Permanent committed transition
-
-```text
-EspMapCommittedTransitionState = 24 B
-persistent heap = 0 B
-```
-
-The state machine owns WAIT_STATS -> READY -> COMMITTED and automatic post-teardown rollback. PR #68 hardware-proved both a forced rollback and a final real commit leaving Junction resident.
-
-Same firmware as the spawn milestone reran that prerequisite successfully:
-
-```text
-COMMITTED FNV=2c595a62
-sourceHeap=65544
-targetHeap=73012
-targetHeapGain=7468
-largest=34804->34804
-targetSnapshotFNV=bc9071e9
-packClosed=yes
-```
-
-The absolute heap baseline is build-context dependent; proven resident costs remain Entrance 18008 B and Junction 10540 B.
-
-## Recovered Game_spawnPlayer semantics
-
-Header fallback when `spawnParam == 0`:
-
-```text
-x     = mapSpawnIndex % 32
-y     = mapSpawnIndex / 32
-angle = mapSpawnDir
-```
-
-Packed override when `spawnParam != 0`:
-
-```text
-x     = spawnParam & 31
-y     = (spawnParam >> 5) & 31
-angle = (spawnParam >> 10) & 255
-spawnParam cleared
-```
-
-Common placement writes:
-
-```text
-viewX = destX = x*64 + 32
-viewY = destY = y*64 + 32
-viewZ = 36
-viewAngle = destAngle = angle
-Render.viewZOld = 4
-```
-
-Legacy next performs facing refresh and, for a fresh map, `Player_setup()` plus the initial tile-enter event. Those remain outside the current milestone.
-
-## Fresh-map load semantic
-
-Hardware-proven normal CHANGEMAP context:
-
-```text
-loadType=0
-gameIsLoaded=0
-normalMapLoad=yes
-savedGameLoad=no
-activeLoadType=0
-loadTypeMutation=no
-```
-
-Nonzero `loadType` belongs to saved-game restoration and remains fail-closed.
-
-## Permanent native player spawn owner
-
-Files:
-
-```text
-ESP32/include/esp_player_spawn_state.h
-ESP32/src/esp_player_spawn_state.c
-```
-
-API:
-
-```text
-EspPlayerSpawn_reset()
-EspPlayerSpawn_prepareCommitted()
-```
-
-State:
+Permanent projection:
 
 ```text
 EspPlayerSpawnState = 24 B
 persistent heap = 0 B
 ```
 
-The permanent function requires a committed transition, fresh-map load context, complete matching target inventory and the matching live resident runtime. It performs no PAK I/O, allocation or legacy mutation.
-
-## Hardware-proven real Junction spawn
-
-Because the committed transition retains `spawnParam=0`, the BSP header is authoritative.
-
-Real CYD:
+Real Junction CYD result:
 
 ```text
-stateBytes=24
 stateFNV=ba6af4a7
 targetMap=9
 gameplayLoadMapId=2
 spawnParam=00000000
 source=HEADER
 tileIndex=943
-tileX=15
-tileY=29
-worldX=992
-worldY=1888
+tile=15/29
+world=992/1888
 angle=64
 viewZ=36
 viewZOld=4
@@ -339,21 +183,7 @@ loadType=0
 active=1
 ```
 
-Pending effects:
-
-```text
-facingRefreshPending=1
-playerSetupPending=1
-tileEnterPending=1
-spawnApplied=no
-facingApplied=no
-playerSetupApplied=no
-tileEnterApplied=no
-```
-
-## Hardware-proven packed override
-
-Probe-local committed transition copy:
+Packed override hardware canon:
 
 ```text
 spawnParam=00030167
@@ -361,83 +191,170 @@ tileIndex=359
 tile=7/11
 world=480/736
 angle=192
-source=OVERRIDE
-overrideUsed=1
-headerIgnored=yes
 stateFNV=e0a5110b
 ```
 
-The real committed transition remained unchanged.
-
-## Hardware fail-closed proof
+Fresh-load semantic:
 
 ```text
-nullTransition=1
-nullInventory=1
-nullOutput=1
-notCommitted=1
-loadType=1
-loadedWorld=1
-targetMismatch=1
-runtimeMismatch=1
-badHeaderSpawn=1
-reset=1
-outputAtomic=yes
+loadType=0
+gameIsLoaded=0
+normalMapLoad=yes
+savedGameLoad=no
 ```
 
-## Resident / RAM integrity
-
-Real CYD:
+Pending after PR #69:
 
 ```text
-snapshotFNV=bc9071e9->bc9071e9
-targetLeftResident=yes
-payload=10410
-entities=30
-enemies=0
-destructibles=3
-packClosed=yes
-
-heap8=73012->73012
-delta=0
-largest8=34804->34804
-delta=0
-persistentHeapBytes=0
+facingRefreshPending=1
+playerSetupPending=1
+tileEnterPending=1
+spawnApplied=no
 ```
 
-The spawn owner adds no persistent heap allocation.
+## Current permanent player/view candidate
 
-## Legacy / framebuffer integrity
-
-Same-probe equality witnesses:
+Files:
 
 ```text
-placementFNV=5d1076bf->5d1076bf
-playerFNV=a1725bcb->a1725bcb
-frameFNV=833705d2->833705d2
-legacyRuntimeClear=yes
-DoomCanvasMutation=no
-GameMutation=no
-PlayerMutation=no
-RenderMutation=no
-HudMutation=no
+ESP32/include/esp_player_view_state.h
+ESP32/src/esp_player_view_state.c
 ```
 
-These hashes are same-build witnesses, not cross-build canons.
-
-## Final hardware PARK
+API:
 
 ```text
-state=9 / ST_INTRO
-page=3
-committedTransition=yes
+EspPlayerView_reset()
+EspPlayerView_isReady()
+EspPlayerView_view()
+EspPlayerView_applySpawn()
+```
+
+State:
+
+```text
+EspPlayerViewState = 44 B expected classic-ESP32 ABI
+persistent heap = 0 B
+```
+
+The owner mirrors the legacy-width placement fields:
+
+```text
+viewX/viewY/viewZ/viewAngle
+destX/destY/destAngle
+viewZOld
+```
+
+plus target/load identity and explicit follow-up flags.
+
+Recovered `Game_spawnPlayer()` writes `Hud.isUpdate=true` immediately after `Render.viewZOld=4` and before facing lookup. The candidate therefore records:
+
+```text
+hudRefreshPending=1
+facingRefreshPending=1
+playerSetupPending=1
+tileEnterPending=1
+```
+
+without mutating the legacy HUD.
+
+### Expected real Junction player/view state
+
+```text
+view=992/1888/36
+viewAngle=64
+dest=992/1888
+destAngle=64
+viewZOld=4
+targetMapId=9
+gameplayLoadMapId=2
+loadType=0
+spawnApplied=1
+active=1
+```
+
+Static 44-byte FNV prediction:
+
+```text
+d1131d18
+```
+
+### Expected packed override application
+
+```text
+view/dest=480/736
+viewZ=36
+angle=192
+viewZOld=4
+```
+
+Static 44-byte FNV prediction:
+
+```text
+9ed47d08
+```
+
+Both values remain predictions until real-CYD confirmation.
+
+## Candidate fail-closed boundary
+
+The player/view owner refuses without mutation when:
+
+```text
+spawn pointer is null
+owner is already active
+spawn projection is inactive
+map/load identity is invalid
+tile/world geometry is inconsistent
+required pending follow-ups are missing
+header-source flags are inconsistent
+packed override does not re-decode from sourceSpawnParam
+```
+
+The once-only active-owner rule prevents accidental double spawn application.
+
+## Candidate hardware acceptance
+
+The temporary probe runs after the hardware-proven Junction spawn probe and consumes its exact parked 24-byte state.
+
+Required real-CYD proof:
+
+```text
+EspPlayerViewState bytes=44
+real stateFNV=d1131d18
+real view/dest=992/1888
+real z=36
+real angle=64
+real viewZOld=4
+override stateFNV=9ed47d08
+repeat apply refused atomically
+reset/reapply exact
+Junction snapshot bc9071e9 unchanged
+heap8 delta=0
+largest8 delta=0
+PAK closed
+legacy placement fields unchanged
+legacy Hud.isUpdate unchanged
+legacy Player unchanged
+framebuffer unchanged
+legacy Render runtime clear
+legacy entities=0
+legacy monsters=0
+ST_INTRO page=3
+ST_PLAYING=no
+```
+
+Final intended PARK:
+
+```text
 mapSwapCommitted=yes
 targetMap=9
 junctionResident=yes
 nativeSpawnState=yes
-spawnProjected=yes
-spawnApplied=no
-loadType=0
+nativePlayerView=yes
+spawnAppliedNative=yes
+legacySpawnApplied=no
+hudRefreshPending=yes
 facingPending=yes
 playerSetupPending=yes
 tileEnterPending=yes
@@ -447,52 +364,38 @@ monsters=0
 noGameplay=yes
 ```
 
-Stable post-probe heartbeat:
-
-```text
-heap=138776
-heap8=73012
-largest8=34804
-SD=ready
-VIDEO=ready
-CORE=ready
-```
-
-The heartbeat's existing `ZIP=ready` label does not mean runtime ZIP map access. Runtime backing remains `/DoomRPG-ESP32.pak`.
-
 ## Current architecture boundary
 
-Hardware-proven native ownership now includes:
+Hardware-proven native ownership includes:
 
 ```text
 compact immutable Entrance + explicit mutable owners
-all 16 MAP_INTRO opcode families
-SAVEGAME route
-CHANGEMAP transition intent
-SHOW/HIDE compact topology
-level-exit stats
-player exit-state
-stats-menu semantic intent
-13-map resource catalog
-Junction PAK/BSP preflight
+all MAP_INTRO opcode families
+exit/save/change-map chain
+Junction catalog/preflight
 resident lifecycle
-reversible resident handoff
-committed transition with rollback
-real Entrance -> Junction resident swap
+transactional committed map swap
 Junction compact topology
-fresh-map loadType semantic
-24 B native player spawn projection
-header fallback + packed override decode
-explicit facing/setup/tile-enter pending boundary
+fresh-map load semantic
+24 B native spawn projection
+```
+
+Candidate adds:
+
+```text
+44 B permanent native player/view owner
+real spawn application to native state
+explicit HUD refresh pending semantic
+once-only spawn application gate
 ```
 
 Still intentionally outside:
 
 ```text
 actual stats-menu rendering/input
-application of projected coordinates to native player/view state
-native facing-entity computation
-Player_setup-equivalent native initialization
+legacy/native HUD refresh consumption
+native facing-entity query
+Player_setup-equivalent fresh-map initialization
 initial tile-enter execution
 ST_PLAYING progression
 full native entity/monster gameplay
@@ -500,22 +403,30 @@ native gameplay renderer
 sound playback
 ```
 
+The player/view owner is intentionally not reset by `EspMapResidentLifecycle_resetAll()`: player state and map arena have different lifetimes. A future transition orchestrator must explicitly reset/reapply player placement.
+
 `shapeData == NULL` and `mediaTexels == NULL` remain mandatory.
 
-## Next direction after merge
+## Validation
 
-After merge, recover from true `main` before choosing the next bounded milestone. The likely next layer is applying the hardware-proven spawn projection to a small native player/view owner, potentially followed separately by compact-topology facing lookup. Do not open full `ST_PLAYING` or collapse facing/setup/tile-enter blindly into the same milestone.
-
-## Merge recommendation
+Build/flash normal environment:
 
 ```text
-MERGE agent/esp32-native-junction-spawn
+esp32-cyd
 ```
 
-Hardware-tested firmware:
+Exact code candidate:
 
 ```text
-08a3a29c5e4e4a64000fa12a877299bbb1e772a0
+fe1630ad5618dfd35bbbc555de8f9762d0b046f8
 ```
 
-Every later commit on this branch must remain documentation-only unless another firmware is flashed.
+Capture:
+
+```text
+[JUNCTIONVIEWPROBE]
+[JUNCTIONVIEW]
+[ALIVE]
+```
+
+No local build or hardware PASS is claimed for this candidate.
