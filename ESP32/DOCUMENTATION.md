@@ -40,18 +40,18 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md) | SHOW/HIDE compact topology; all real MAP_INTRO opcode families owned | #62 | `ed5cd9a09c9ae36f999661f4284f64400681b1af` |
 | [`MAP1_NATIVE_LEVEL_EXIT_STATS.md`](MAP1_NATIVE_LEVEL_EXIT_STATS.md) | pure map-derived `Player_addLevelStats()` snapshot | #63 | `533784b5483e14a12558fb08c9331d8b744caa88` |
 
-## Current candidate
+## Current merge-ready milestone
 
-[`MAP1_NATIVE_PLAYER_EXIT_STATE.md`](MAP1_NATIVE_PLAYER_EXIT_STATE.md) applies the already-proven exit snapshot to a small pointer-free native player state.
+[`MAP1_NATIVE_PLAYER_EXIT_STATE.md`](MAP1_NATIVE_PLAYER_EXIT_STATE.md) applies the hardware-proven exit snapshot to a small pointer-free native player state.
 
 ```text
 branch = agent/esp32-native-player-exit-state
 base   = 533784b5483e14a12558fb08c9331d8b744caa88
-firmware candidate = f8c5a1c398c0946025aef976f7a997589bae4923
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = f8c5a1c398c0946025aef976f7a997589bae4923
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Permanent state/result ABI target:
+Permanent ABI:
 
 ```text
 EspPlayerExitState       = 28 B
@@ -70,51 +70,104 @@ berserkerTics
 familiarActive
 ```
 
-No familiar/Entity pointer is retained. `elapsedTimeMs` and current `levelMoves` are explicit caller inputs, keeping clock and gameplay-turn ownership outside this bounded milestone.
+No familiar/Entity pointer is retained. `elapsedTimeMs` and current `levelMoves` are explicit caller inputs.
 
-The consumer validates the complete 20 B `EspMapLevelExitStats` contract before mutation, then applies time/move accumulation, progression mask ORs and berserker/familiar clears. Invalid snapshots fail closed atomically.
+### Real-CYD deterministic proof
 
-### Hardware-proven input
-
-From PR #63:
+With the hardware-proven intro snapshot `effects=1f`:
 
 ```text
-loadMapId=1 showStats=1
-secrets=0/6 monsters=0/30
-completionLevelBit=00000001
-effects=1f
-statsFNV=bd41bcfa
+stateBytes=28 resultBytes=28
+elapsed=12345 moves=37
+initialFNV=940b0171
+appliedFNV=298eaaa4
+resultFNV=5d10a566
+
+totalTime  10203040 -> 10206079
+totalMoves 01020304 -> 01020329
+completed  00000004 -> 00000005
+killed     00000008 -> 00000008
+secrets    00000010 -> 00000010
+berserker  9 -> 0
+familiar   1 -> 0
 ```
 
-### Candidate proof
-
-The probe uses a deterministic seed plus a live legacy projection. It requires:
+Mask/gate proof:
 
 ```text
-source effects 1f applied exactly
-repeat completion mask idempotence
-showStats=0 gate
-loadMapId=2 gate
-valid all-complete snapshot applies all 3 masks
-live Player exit fields project exactly without legacy mutation
-fail-closed inconsistent stats with stateAtomic=yes
-heap8/largest8/framebuffer unchanged
-lineStateFNV=e5e74861 unchanged
-spriteTopologyFNV=3f321e43 unchanged
-PAK closed
-entities=0 monsters=0
+repeatIdempotent=1
+allMasks=1
+allStateFNV=c93e8128
+noStatsGate=1
+mapId2Gate=1
 ```
 
-Static ABI/FNV prediction, not yet hardware canon:
+Live legacy projection:
 
 ```text
-initialFNV = 940b0171
-appliedFNV = 298eaaa4
-resultFNV  = 5d10a566
-allMasksFNV= c93e8128
+elapsed=64325
+moves=0
+projection=1
+liveStateFNV=57fce418
+legacyPlayerUnchanged=yes
 ```
 
-## Hardware-proven baseline through PR #63
+The elapsed value is run-specific; exact projection and legacy equality are the contract.
+
+### Fail closed / pointer boundary
+
+```text
+rollbackFNV=940b0171
+rollback=1
+familiarSemanticOnly=yes
+entityPointerStored=no
+nullState=1
+nullStats=1
+nullResult=1
+effectMismatch=1
+bitMismatch=1
+rangeMismatch=1
+stateAtomic=yes
+```
+
+### RAM and legacy integrity
+
+```text
+persistent native heap = 18008 B
+candidate addition     = 0 B
+heap8     65632 -> 65632
+largest8  34804 -> 34804
+frameFNV  ef79123a -> ef79123a
+lineFNV   e5e74861
+topologyFNV=3f321e43
+```
+
+Legacy state stayed untouched:
+
+```text
+playerExitFNV f5cbf9f5 -> f5cbf9f5
+transitionFNV f450c49f -> f450c49f
+Player_addLevelStatsCalled=no
+playerMutation=no
+menuMutation=no
+transitionTriggered=no
+legacyRuntimeClear=yes
+```
+
+Final PARK:
+
+```text
+nativePlayerExitState=yes
+nativeExitStats=yes
+playerMutationProven=yes
+legacyPlayerMutation=no
+persistentBytes=0
+entities=0
+monsters=0
+noGameplay=yes
+```
+
+## Hardware-proven boundary
 
 ```text
 persistent native heap = 18008 B
@@ -126,6 +179,7 @@ lineTextureStateFNV    = f1fc1875
 automapStateFNV        = 669b1aa7
 spriteTopologyFNV      = 3f321e43
 levelExitStatsFNV      = bd41bcfa
+playerExitAppliedFNV   = 298eaaa4
 
 allMapIntroOpcodeFamiliesOwned=yes
 entities=0
@@ -144,8 +198,8 @@ original Doom RPG behavior/data
  -> complete native MAP_INTRO event-family ownership
  -> native gameplay/effect consumers
       -> level-exit stats snapshot       [hardware-proven]
-      -> player exit-state application   [current candidate]
-      -> stats-menu intent/consumer
+      -> player exit-state application   [hardware-proven]
+      -> stats-menu intent/consumer      [next natural boundary]
       -> CHANGEMAP / Junction map swap
  -> native renderer/gameplay loop
 ```
@@ -162,4 +216,10 @@ ST_PLAYING progression
 sound playback
 ```
 
-Build/flash current candidate with normal environment `esp32-cyd`; capture `[PLAYEREXITPROBE]`, `[PLAYEREXIT]`, and stable `[ALIVE]` lines. Do not merge until real-CYD PASS and post-test changes are documentation-only.
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-player-exit-state
+```
+
+Hardware-tested firmware is `f8c5a1c398c0946025aef976f7a997589bae4923`. All commits after it are documentation-only.
