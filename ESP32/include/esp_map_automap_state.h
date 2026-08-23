@@ -36,6 +36,20 @@ typedef enum EspMapGiveMapStatus_e {
     ESP_MAP_GIVEMAP_OK = 3
 } EspMapGiveMapStatus;
 
+/*
+ * Event-independent Game_givemap semantic result. This is deliberately smaller
+ * than EspMapGiveMapResult: caller-side Game_givemap has no source event,
+ * command index or remove-if-handled metadata.
+ */
+typedef struct EspMapGiveMapDirectResult_s {
+    uint16_t lineTargetCount;
+    uint16_t spriteTargetCount;
+    uint16_t entranceTargetCount;
+    uint16_t linesMutated;
+    uint16_t spritesMutated;
+    uint16_t tilesMutated;
+} EspMapGiveMapDirectResult;
+
 typedef struct EspMapGiveMapResult_s {
     uint16_t sourceEventIndex;
     uint16_t globalCommandIndex;
@@ -71,12 +85,28 @@ int EspMapAutomapState_setSpriteRevealed(uint32_t spriteIndex,
                                          uint8_t revealed);
 
 /*
+ * Event-independent Game_givemap primitive.
+ *
+ * planGiveMapDirect() is pure and reports both total targets and how many
+ * mutations the current native owners would require. applyGiveMapDirect()
+ * performs exactly those three recovered legacy effects:
+ *   - reveal every line without flag 0x20,
+ *   - reveal every map sprite,
+ *   - mark every BIT_AM_ENTRANCE tile BIT_AM_VISITED.
+ *
+ * Neither function touches renderer/entity/UI/presentation state or allocates.
+ */
+EspMapGiveMapStatus EspMapAutomapState_planGiveMapDirect(
+    EspMapGiveMapDirectResult* outResult);
+EspMapGiveMapStatus EspMapAutomapState_applyGiveMapDirect(
+    EspMapGiveMapDirectResult* outResult);
+
+/*
  * Execute only 9 / EV_GIVEMAP.
  *
- * Legacy Game_givemap() reveals every line whose 0x20 flag is clear, reveals
- * every map sprite, and marks every BIT_AM_ENTRANCE tile BIT_AM_VISITED.
+ * The event wrapper validates canonical descriptor/opcode/removal metadata and
+ * then delegates the world mutation to the same direct Game_givemap primitive.
  * A valid command is handled even when every target is already revealed.
- * No renderer, entity, sound or presentation state is touched here.
  */
 EspMapGiveMapStatus EspMapAutomapState_applyGiveMapCommand(
     const EspMapEventDescriptor* descriptor,
