@@ -38,6 +38,11 @@
 #define EXPECTED_RECORD_BYTES 40U
 #define MAX_ALLOCATOR_OVERHEAD 64U
 
+#define PALETTE_RELATION_NONE 0
+#define PALETTE_RELATION_NATIVE 1
+#define PALETTE_RELATION_LEGACY_RB 2
+#define PALETTE_RELATION_AMBIGUOUS 3
+
 static struct {
     int armed;
     int attempted;
@@ -56,6 +61,21 @@ static uint32_t hashBytes(const void* data, uint32_t length) {
     return hash;
 }
 
+static uint16_t swapRedBlue565(uint16_t color) {
+    return (uint16_t)(((color & 0x001fU) << 11) |
+                      (color & 0x07e0U) |
+                      ((color & 0xf800U) >> 11));
+}
+
+static const char* paletteRelationName(int relation) {
+    switch (relation) {
+        case PALETTE_RELATION_NATIVE: return "native-direct";
+        case PALETTE_RELATION_LEGACY_RB: return "legacy-rb-swapped";
+        case PALETTE_RELATION_AMBIGUOUS: return "ambiguous-symmetric";
+        default: return "invalid";
+    }
+}
+
 static uint32_t framebufferHash(void) {
     const uint8_t* framebuffer =
         (const uint8_t*)Esp32PlatformVideo_framebuffer();
@@ -66,85 +86,6 @@ static uint32_t framebufferHash(void) {
         return 0U;
     }
     return hashBytes(framebuffer, (uint32_t)bytes);
-}
-
-static uint32_t gameWitness(const Game_t* game) {
-    uint32_t v[11];
-    if (game == NULL) return 0U;
-    v[0] = (uint32_t)game->numEntities;
-    v[1] = (uint32_t)game->numMonsters;
-    v[2] = (uint32_t)game->waitTime;
-    v[3] = (uint32_t)game->activeSprites;
-    v[4] = (uint32_t)game->monstersTurn;
-    v[5] = (uint32_t)game->tileEvent;
-    v[6] = (uint32_t)game->tileEventIndex;
-    v[7] = (uint32_t)game->tileEventFlags;
-    v[8] = (uint32_t)game->isLoaded;
-    v[9] = (uint32_t)game->isSaved;
-    v[10] = (uint32_t)game->activeLoadType;
-    return hashBytes(v, sizeof(v));
-}
-
-static uint32_t playerWitness(const Player_t* player) {
-    uint32_t v[8];
-    if (player == NULL) return 0U;
-    v[0] = (uint32_t)player->keys;
-    v[1] = (uint32_t)player->moves;
-    v[2] = (uint32_t)player->weapons;
-    v[3] = (uint32_t)player->weapon;
-    v[4] = (uint32_t)player->currentXP;
-    v[5] = (uint32_t)player->level;
-    v[6] = (uint32_t)player->credits;
-    v[7] = (uint32_t)player->berserkerTics;
-    return hashBytes(v, sizeof(v));
-}
-
-static uint32_t hudWitness(const Hud_t* hud) {
-    uint32_t v[5];
-    if (hud == NULL) return 0U;
-    v[0] = (uint32_t)hud->msgCount;
-    v[1] = (uint32_t)hud->msgTime;
-    v[2] = (uint32_t)hud->msgDuration;
-    v[3] = (uint32_t)hud->isUpdate;
-    v[4] = (uint32_t)(uintptr_t)hud->statBarMessage;
-    return hashBytes(v, sizeof(v));
-}
-
-static uint32_t canvasWitness(const DoomCanvas_t* canvas) {
-    uint32_t v[15];
-    if (canvas == NULL) return 0U;
-    v[0] = (uint32_t)canvas->viewX;
-    v[1] = (uint32_t)canvas->viewY;
-    v[2] = (uint32_t)canvas->viewAngle;
-    v[3] = (uint32_t)canvas->destX;
-    v[4] = (uint32_t)canvas->destY;
-    v[5] = (uint32_t)canvas->destAngle;
-    v[6] = (uint32_t)canvas->state;
-    v[7] = (uint32_t)canvas->storyPage;
-    v[8] = (uint32_t)canvas->numEvents;
-    v[9] = (uint32_t)canvas->isUpdateView;
-    v[10] = (uint32_t)canvas->time;
-    v[11] = (uint32_t)canvas->idleTime;
-    v[12] = (uint32_t)canvas->openDoorsCount;
-    v[13] = (uint32_t)canvas->animFrameCount;
-    v[14] = (uint32_t)canvas->renderOnly;
-    return hashBytes(v, sizeof(v));
-}
-
-static uint32_t renderWitness(const Render_t* render) {
-    uint32_t v[10];
-    if (render == NULL) return 0U;
-    v[0] = (uint32_t)(uintptr_t)render->mediaTexelOffsets;
-    v[1] = (uint32_t)(uintptr_t)render->mediaBitShapeOffsets;
-    v[2] = (uint32_t)(uintptr_t)render->mediaTexturesIds;
-    v[3] = (uint32_t)(uintptr_t)render->mediaSpriteIds;
-    v[4] = (uint32_t)(uintptr_t)render->shapeData;
-    v[5] = (uint32_t)(uintptr_t)render->mediaTexels;
-    v[6] = (uint32_t)render->mediaPalettesLength;
-    v[7] = (uint32_t)render->numMapSprites;
-    v[8] = (uint32_t)render->mapStringCount;
-    v[9] = (uint32_t)render->linesLength;
-    return hashBytes(v, sizeof(v));
 }
 
 static int legacyMappingRuntimeClear(const Render_t* render) {
@@ -196,6 +137,7 @@ static int catalogCoverageExact(const EspNativeGraphicsCatalogView* view) {
     uint16_t textures = 0U;
     uint16_t sprites = 0U;
     if (view == NULL) return 0;
+
     for (id = 0U; id < 256U; ++id) {
         int textureRequired = EspMapRuntime_textureRequired(id) ||
                               EspMapRuntime_planeTextureUsed(id);
@@ -204,6 +146,7 @@ static int catalogCoverageExact(const EspNativeGraphicsCatalogView* view) {
             EspNativeGraphicsCatalog_findTexture((uint16_t)id);
         const EspNativeGraphicsCatalogRecord* sprite =
             EspNativeGraphicsCatalog_findSprite((uint16_t)id);
+
         if ((texture != NULL) != textureRequired ||
             (sprite != NULL) != spriteRequired) {
             return 0;
@@ -211,35 +154,62 @@ static int catalogCoverageExact(const EspNativeGraphicsCatalogView* view) {
         if (texture != NULL) ++textures;
         if (sprite != NULL) ++sprites;
     }
+
     return textures == view->textureCount && sprites == view->spriteCount;
 }
 
-static int catalogPalettesMatchLegacy(const EspNativeGraphicsCatalogView* view,
-                                      const Render_t* render) {
+/*
+ * palettes.bin raw words are the permanent framebuffer RGB565 representation.
+ * Normal esp32-cyd startup currently leaves Render.mediaPalettes in the legacy
+ * R/B-swapped representation because the historical bring-up normalization
+ * suite is skipped. Accept either globally coherent relation so this probe is
+ * valid both for normal firmware and for a diagnostic build that already ran
+ * DoomRPG_prepareNativePalette(), without mutating the transitional table.
+ */
+static int catalogPaletteRelation(const EspNativeGraphicsCatalogView* view,
+                                  const Render_t* render) {
+    int directPossible = 1;
+    int swappedPossible = 1;
     uint32_t group;
+
     if (view == NULL || render == NULL || render->mediaPalettes == NULL ||
-        render->mediaPalettesLength <= 0) return 0;
+        render->mediaPalettesLength <= 0) return PALETTE_RELATION_NONE;
 
     for (group = 0U; group < 2U; ++group) {
         const EspNativeGraphicsCatalogRecord* records =
             group == 0U ? view->textures : view->sprites;
         uint16_t count = group == 0U ? view->textureCount : view->spriteCount;
         uint16_t i;
+
         for (i = 0U; i < count; ++i) {
             uint32_t p;
             if ((uint32_t)records[i].paletteSourceOffset + 15U >=
-                (uint32_t)render->mediaPalettesLength) return 0;
-            if (group == 0U && (records[i].sourceOffset & 1U) != 0U) return 0;
+                (uint32_t)render->mediaPalettesLength) {
+                return PALETTE_RELATION_NONE;
+            }
+            if (group == 0U && (records[i].sourceOffset & 1U) != 0U) {
+                return PALETTE_RELATION_NONE;
+            }
+
             for (p = 0U; p < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++p) {
-                if (records[i].paletteRgb565[p] !=
-                    (uint16_t)render->mediaPalettes[
-                        (uint32_t)records[i].paletteSourceOffset + p]) {
-                    return 0;
+                uint16_t nativeColor = records[i].paletteRgb565[p];
+                uint16_t legacyColor = (uint16_t)render->mediaPalettes[
+                    (uint32_t)records[i].paletteSourceOffset + p];
+                if (nativeColor != legacyColor) directPossible = 0;
+                if (nativeColor != swapRedBlue565(legacyColor)) {
+                    swappedPossible = 0;
+                }
+                if (!directPossible && !swappedPossible) {
+                    return PALETTE_RELATION_NONE;
                 }
             }
         }
     }
-    return 1;
+
+    if (directPossible && swappedPossible) return PALETTE_RELATION_AMBIGUOUS;
+    if (directPossible) return PALETTE_RELATION_NATIVE;
+    if (swappedPossible) return PALETTE_RELATION_LEGACY_RB;
+    return PALETTE_RELATION_NONE;
 }
 
 void Esp32JunctionGraphicsCatalogProbe_reset(void) {
@@ -255,13 +225,15 @@ void Esp32JunctionGraphicsCatalogProbe_service(struct DoomRPG_s* doomRpg) {
     EspMapResidentSnapshot residentBefore, residentAfter;
     const EspNativeGraphicsCatalogView* view;
     uint32_t heapBefore, heapAfter, largestBefore, largestAfter, heapCost;
-    uint32_t frameBefore, frameAfter, gameBefore, gameAfter;
-    uint32_t playerBefore, playerAfter, hudBefore, hudAfter;
-    uint32_t canvasBefore, canvasAfter, renderBefore, renderAfter;
-    uint32_t paletteBefore, paletteAfter, serviceBefore, serviceAfter;
-    uint32_t textureFNV, spriteFNV, stateBeforeRepeat;
+    uint32_t frameBefore, frameAfter;
+    uint32_t gameBefore, gameAfter, playerBefore, playerAfter;
+    uint32_t hudBefore, hudAfter, canvasBefore, canvasAfter;
+    uint32_t renderBefore, renderAfter, paletteBefore, paletteAfter;
+    uint32_t serviceBefore, serviceAfter, textureFNV, spriteFNV;
+    uint32_t stateBeforeRepeat;
     uint16_t firstTexture, lastTexture, firstSprite, lastSprite;
-    int preFindEmpty, coverageExact, paletteMatch, repeatGate, repeatAtomic;
+    int preFindEmpty, coverageExact, paletteRelation;
+    int repeatGate, repeatAtomic;
     EspNativeGraphicsCatalogStatus status;
 
     if (probeState.done || probeState.attempted) return;
@@ -275,7 +247,7 @@ void Esp32JunctionGraphicsCatalogProbe_service(struct DoomRPG_s* doomRpg) {
 
     probeState.attempted = 1;
     printf("\n=== Doom RPG ESP32-native Junction sparse graphics catalog ===\n");
-    printf("[JUNCTIONGFXCATPROBE] CONTRACT build only mappings/palettes for resident Junction resource IDs from mappings.bin + palettes.bin in DoomRPG-ESP32.pak; one compact immutable 40B record per required texture/sprite, no texel payload, keep legacy mapping arrays/shapeData/mediaTexels NULL, do not mutate framebuffer/gameplay and close PAK before PARK\n");
+    printf("[JUNCTIONGFXCATPROBE] CONTRACT build only mappings/palettes for resident Junction resource IDs from mappings.bin + palettes.bin in DoomRPG-ESP32.pak; one compact immutable 40B record per required texture/sprite, no texel payload, keep legacy mapping arrays/shapeData/mediaTexels NULL, prove the raw-PAK native RGB565 relation without mutating legacy palettes/framebuffer/gameplay, close PAK before PARK\n");
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL || doomRpg->game == NULL ||
         doomRpg->render == NULL || doomRpg->player == NULL || doomRpg->hud == NULL ||
@@ -286,14 +258,13 @@ void Esp32JunctionGraphicsCatalogProbe_service(struct DoomRPG_s* doomRpg) {
         EspAssetPack_isOpen() || sizeof(EspNativeGraphicsCatalogRecord) != EXPECTED_RECORD_BYTES ||
         !playingServiceCanonical() || !idleCanonical() ||
         !EspMapResidentLifecycle_capture(&residentBefore) || !residentCanonical(&residentBefore)) {
-        printf("[JUNCTIONGFXCATPROBE] FAILED unsafe catalog boundary state=%d page=%d events=%d entities=%d monsters=%d mappingsClear=%d palettes=%p paletteEntries=%d service=%d idle=%d packOpen=%d\n",
+        printf("[JUNCTIONGFXCATPROBE] FAILED unsafe catalog boundary state=%d page=%d events=%d entities=%d monsters=%d mappingsClear=%d paletteEntries=%d service=%d idle=%d packOpen=%d\n",
                doomRpg && doomRpg->doomCanvas ? doomRpg->doomCanvas->state : -1,
                doomRpg && doomRpg->doomCanvas ? doomRpg->doomCanvas->storyPage : -1,
                doomRpg && doomRpg->doomCanvas ? doomRpg->doomCanvas->numEvents : -1,
                doomRpg && doomRpg->game ? doomRpg->game->numEntities : -1,
                doomRpg && doomRpg->game ? doomRpg->game->numMonsters : -1,
                doomRpg && doomRpg->render ? legacyMappingRuntimeClear(doomRpg->render) : 0,
-               doomRpg && doomRpg->render ? (void*)doomRpg->render->mediaPalettes : NULL,
                doomRpg && doomRpg->render ? doomRpg->render->mediaPalettesLength : -1,
                playingServiceCanonical(), idleCanonical(), EspAssetPack_isOpen());
         return;
@@ -310,11 +281,11 @@ void Esp32JunctionGraphicsCatalogProbe_service(struct DoomRPG_s* doomRpg) {
     heapBefore = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
     largestBefore = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     frameBefore = framebufferHash();
-    gameBefore = gameWitness(doomRpg->game);
-    playerBefore = playerWitness(doomRpg->player);
-    hudBefore = hudWitness(doomRpg->hud);
-    canvasBefore = canvasWitness(doomRpg->doomCanvas);
-    renderBefore = renderWitness(doomRpg->render);
+    gameBefore = hashBytes(doomRpg->game, sizeof(*doomRpg->game));
+    playerBefore = hashBytes(doomRpg->player, sizeof(*doomRpg->player));
+    hudBefore = hashBytes(doomRpg->hud, sizeof(*doomRpg->hud));
+    canvasBefore = hashBytes(doomRpg->doomCanvas, sizeof(*doomRpg->doomCanvas));
+    renderBefore = hashBytes(doomRpg->render, sizeof(*doomRpg->render));
     paletteBefore = hashBytes(doomRpg->render->mediaPalettes,
                               (uint32_t)doomRpg->render->mediaPalettesLength * 2U);
     serviceBefore = hashBytes(EspNativePlayingService_view(),
@@ -327,8 +298,8 @@ void Esp32JunctionGraphicsCatalogProbe_service(struct DoomRPG_s* doomRpg) {
         view->storageBytes != ((uint32_t)view->textureCount +
                               (uint32_t)view->spriteCount) * EXPECTED_RECORD_BYTES ||
         view->stateFNV1a == 0U || EspAssetPack_isOpen()) {
-        printf("[JUNCTIONGFXCATPROBE] FAILED build status=%d view=%p textures=%u sprites=%u storage=%u fnv=%08x packOpen=%d\n",
-               (int)status, (const void*)view,
+        printf("[JUNCTIONGFXCATPROBE] FAILED build status=%d textures=%u sprites=%u storage=%u fnv=%08x packOpen=%d\n",
+               (int)status,
                view ? (unsigned)view->textureCount : 0U,
                view ? (unsigned)view->spriteCount : 0U,
                view ? (unsigned)view->storageBytes : 0U,
@@ -338,12 +309,12 @@ void Esp32JunctionGraphicsCatalogProbe_service(struct DoomRPG_s* doomRpg) {
     }
 
     coverageExact = catalogCoverageExact(view);
-    paletteMatch = catalogPalettesMatchLegacy(view, doomRpg->render);
-    if (!coverageExact || !paletteMatch ||
+    paletteRelation = catalogPaletteRelation(view, doomRpg->render);
+    if (!coverageExact || paletteRelation == PALETTE_RELATION_NONE ||
         EspNativeGraphicsCatalog_findTexture(0xffffU) != NULL ||
         EspNativeGraphicsCatalog_findSprite(0xffffU) != NULL) {
-        printf("[JUNCTIONGFXCATPROBE] FAILED semantic coverage=%d paletteMatch=%d missingTexture=%p missingSprite=%p\n",
-               coverageExact, paletteMatch,
+        printf("[JUNCTIONGFXCATPROBE] FAILED semantic coverage=%d paletteRelation=%s missingTexture=%p missingSprite=%p\n",
+               coverageExact, paletteRelationName(paletteRelation),
                (const void*)EspNativeGraphicsCatalog_findTexture(0xffffU),
                (const void*)EspNativeGraphicsCatalog_findSprite(0xffffU));
         return;
@@ -364,11 +335,11 @@ void Esp32JunctionGraphicsCatalogProbe_service(struct DoomRPG_s* doomRpg) {
     largestAfter = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     heapCost = heapBefore >= heapAfter ? heapBefore - heapAfter : 0U;
     frameAfter = framebufferHash();
-    gameAfter = gameWitness(doomRpg->game);
-    playerAfter = playerWitness(doomRpg->player);
-    hudAfter = hudWitness(doomRpg->hud);
-    canvasAfter = canvasWitness(doomRpg->doomCanvas);
-    renderAfter = renderWitness(doomRpg->render);
+    gameAfter = hashBytes(doomRpg->game, sizeof(*doomRpg->game));
+    playerAfter = hashBytes(doomRpg->player, sizeof(*doomRpg->player));
+    hudAfter = hashBytes(doomRpg->hud, sizeof(*doomRpg->hud));
+    canvasAfter = hashBytes(doomRpg->doomCanvas, sizeof(*doomRpg->doomCanvas));
+    renderAfter = hashBytes(doomRpg->render, sizeof(*doomRpg->render));
     paletteAfter = hashBytes(doomRpg->render->mediaPalettes,
                              (uint32_t)doomRpg->render->mediaPalettesLength * 2U);
     serviceAfter = hashBytes(EspNativePlayingService_view(),
@@ -411,7 +382,8 @@ void Esp32JunctionGraphicsCatalogProbe_service(struct DoomRPG_s* doomRpg) {
            (unsigned)view->storageBytes, (unsigned)heapCost,
            (unsigned)view->stateFNV1a, (unsigned)textureFNV,
            (unsigned)spriteFNV);
-    printf("[JUNCTIONGFXCAT] SEMANTIC sparseCoverage=yes paletteRgb565Native=yes paletteLegacyWitnessMatch=yes textureRange=%u..%u spriteRange=%u..%u texelPayloadResident=no mapWideTexels=no nativeCatalogPersistent=yes\n",
+    printf("[JUNCTIONGFXCAT] SEMANTIC sparseCoverage=yes paletteRgb565Native=yes legacyPaletteRelation=%s textureRange=%u..%u spriteRange=%u..%u texelPayloadResident=no mapWideTexels=no nativeCatalogPersistent=yes\n",
+           paletteRelationName(paletteRelation),
            (unsigned)firstTexture, (unsigned)lastTexture,
            (unsigned)firstSprite, (unsigned)lastSprite);
     printf("[JUNCTIONGFXCAT] INPUT playingServiceBytes=%u playingServiceFNV=%08x unchanged=yes residentSnapshot=%08x coverageExact=%s legacyPaletteFNV=%08x->%08x unchanged=yes\n",
