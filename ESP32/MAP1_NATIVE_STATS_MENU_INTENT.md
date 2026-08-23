@@ -9,25 +9,26 @@ PR   = #64 — native player exit-state
 main = 3759bcd12a3f6d36a6a696457110ab27474c24b8
 ```
 
-Firmware candidate:
+Hardware-tested firmware:
 
 ```text
 1dddbe86788389400d6e2186595174e723c72f5c
 ```
 
-Status: **IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
-## Objective
+## Objective and result
 
-The show-stats branch of the real MAP_INTRO `EV_CHANGEMAP` is now owned through:
+The real `EV_CHANGEMAP showStats=1` path is now natively owned through the semantic stats-menu pause point:
 
 ```text
 native CHANGEMAP pending intent
  -> native level-exit stats
  -> native player exit-state application
+ -> native stats-menu intent
 ```
 
-Recovered `Game_changeMap()` then performs only these logical writes before waiting in the stats UI:
+Recovered `Game_changeMap()` performs these logical writes after the player level-exit writes:
 
 ```text
 menu->mapNameId = targetMapId
@@ -50,7 +51,7 @@ ESP32/include/esp_stats_menu_intent.h
 ESP32/src/esp_stats_menu_intent.c
 ```
 
-ABI:
+Hardware-proven ABI:
 
 ```text
 EspStatsMenuIntent = 4 B
@@ -97,88 +98,68 @@ Target map-name -> map-ID resolution remains a separate future transition/catalo
 
 Permanent code has no dependency on `Menu_t`, `MenuSystem_t`, `Game_t`, `Render_t`, `DoomCanvas_t`, PAK I/O or allocation.
 
-## Temporary real-CYD probe
+## Real-CYD proof
 
-Files:
+The hardware-tested firmware is exactly:
 
 ```text
-ESP32/include/native_stats_menu_intent_probe.h
-ESP32/src/native_stats_menu_intent_probe.c
+1dddbe86788389400d6e2186595174e723c72f5c
 ```
-
-The probe runs only after the hardware-proven native Player exit-state probe.
 
 ### Real Junction path
 
-It first recollects the already-proven intro exit snapshot:
+Hardware:
 
 ```text
-loadMapId=1
-showStats=1
-secrets=0/6
-monsters=0/30
-effects=1f
-statsFNV=bd41bcfa
-```
-
-It then prepares the real target:
-
-```text
-targetMap=9 / MAP_JUNCTION
-menuKind=LEVEL
+intentBytes=4
+targetMap=9
+menuKind=1 / LEVEL
 active=1
 consumePending=1
+sourceStatsFNV=bd41bcfa
+intentFNV=96afe901
+legacyMenuId=15
 ```
 
-Static raw-ABI prediction:
+The precomputed raw-ABI fingerprint matched hardware exactly:
 
 ```text
 intent bytes = 09 01 01 01
 intentFNV    = 96afe901
 ```
 
-Hardware remains authoritative.
-
 ### End-game variant
 
-The legacy special case is explicitly covered:
+Hardware explicitly proved the legacy special case:
 
 ```text
-targetMap=13 / MAP_END_GAME
-menuKind=OVERALL
-active=1
-consumePending=1
+endGameTarget=13
+endGameKind=2 / OVERALL
+endGameFNV=deea91b4
+legacyOverallId=16
 ```
 
-Static prediction:
-
-```text
-endGameFNV = deea91b4
-```
-
-The probe also verifies that legacy `MENU_MAP_STATS` and `MENU_MAP_STATS_OVERALL` are distinct, while permanent native code remains independent of their numeric values.
+The precomputed `deea91b4` fingerprint matched hardware exactly. Legacy menu IDs are observed only by the temporary probe; permanent native code remains independent of those numeric values.
 
 ### Direct-load gate
 
-For:
+Hardware:
 
 ```text
 showStats=0
-```
-
-this owner is not applicable:
-
-```text
-status=NOT_APPLICABLE
-intent=all zero
+noStatsStatus=1 / NOT_APPLICABLE
+noStatsZero=1
 zeroFNV=4b95f515
+repeatExact=1
 ```
+
+The Serial line emitted `noStatsStatus=1noStatsZero=1` without a separating space; both fields are unambiguous and passed.
 
 The actual direct-load path remains future transition work.
 
 ### Fail closed
 
-The probe requires:
+Hardware:
 
 ```text
 target0=1
@@ -189,65 +170,82 @@ reset=1
 stateAtomic=yes
 ```
 
-Invalid calls zero any supplied output before returning INVALID.
+Invalid calls fail closed with no partial state mutation.
 
-## RAM / integrity target
+## RAM / integrity
 
-Hardware-proven persistent native heap entering this milestone:
+Hardware-proven persistent native heap entering this milestone was `18008 B`.
+
+This milestone adds no persistent allocation:
+
+```text
+heap8      65616 -> 65616 delta=0
+largest8   34804 -> 34804 delta=0
+persistentHeapBytes=0
+```
+
+Therefore persistent native total remains exactly:
 
 ```text
 18008 B
 ```
 
-The intent is caller-owned and permanent code allocates nothing:
+Same-build native integrity witnesses:
 
 ```text
-persistentHeapBytes=0
-heap8 delta=0
-largest8 delta=0
-persistent total remains 18008 B
+frameFNV        e8a3b4ef -> e8a3b4ef
+lineStateFNV    e5e74861
+spriteTopologyFNV=3f321e43
+sourceStatsFNV  bd41bcfa
 ```
 
-Required unchanged hardware witnesses:
+Legacy witnesses:
 
 ```text
-levelExitStatsFNV = bd41bcfa
-lineStateFNV      = e5e74861
-spriteTopologyFNV = 3f321e43
-framebuffer equality
-legacy Player exit fields equality
-legacy menu/transition equality
-PAK closed
-legacy Render runtime clear
+playerExitFNV 0b2ae445 -> 0b2ae445
+transitionFNV f450c49f -> f450c49f
+legacyRuntimeClear=yes
+menuMutation=no
+Game_changeMapCalled=no
+mapLoad=no
+```
+
+The `playerExitFNV=0b2ae445` witness is the same-build probe projection for this milestone; the previously hardware-proven Player-exit semantic fingerprints remain unchanged.
+
+No call was made to `Game_changeMap()`, `MenuSystem_setMenu()` or `DoomCanvas_loadMap()`.
+
+## Final PARK
+
+```text
+state=9 page=3
+nativeStatsMenuIntent=yes
+intentBytes=4
+targetMap=9
+menuKind=LEVEL
+consumePendingSemantic=yes
+persistentBytes=0
+nativePlayerExitState=yes
+legacyMenuMutation=no
+transitionTriggered=no
 entities=0
 monsters=0
+noGameplay=yes
 ```
 
-No call is made to `Game_changeMap()`, `MenuSystem_setMenu()` or `DoomCanvas_loadMap()`.
-
-## Expected Serial family
+Stable real-CYD heartbeats:
 
 ```text
-[STATSMENUPROBE] ARMED ...
-
-=== Doom RPG ESP32-native stats-menu intent ===
-[STATSMENUPROBE] CONTRACT ...
-[STATSMENU] READY intentBytes=4 targetMap=9 menuKind=1 active=1 consumePending=1 sourceStatsFNV=bd41bcfa intentFNV=96afe901 ...
-[STATSMENU] VARIANTS endGameTarget=13 endGameKind=2 endGameFNV=deea91b4 ... noStatsStatus=1 noStatsZero=1 zeroFNV=4b95f515 repeatExact=1
-[STATSMENU] FAILCLOSED target0=1 target14=1 showStats2=1 nullIntent=1 reset=1 stateAtomic=yes
-[STATSMENU] RAM ... persistentHeapBytes=0 ... lineFNV=e5e74861 topologyFNV=3f321e43
-[STATSMENU] LEGACY ... menuMutation=no Game_changeMapCalled=no mapLoad=no
-[STATSMENU] PARK ... nativeStatsMenuIntent=yes intentBytes=4 targetMap=9 menuKind=LEVEL ... entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
+95234  ms heap=131380 heap8=65616 largest8=34804
+100236 ms heap=131380 heap8=65616 largest8=34804
+...
+270270 ms heap=131380 heap8=65616 largest8=34804
 ```
 
-Use normal PlatformIO environment `esp32-cyd`.
+The long stable heartbeat run proves no delayed allocation/leak or deferred legacy transition occurred after the probe.
 
-No CI status is published for the candidate. No local build or real-CYD PASS is claimed.
+## Architecture boundary after PASS
 
-## Boundary after PASS
-
-A PASS completes semantic native ownership of the show-stats pause point in recovered `Game_changeMap()`:
+Semantic native ownership of the recovered `Game_changeMap()` show-stats pause path is complete through:
 
 ```text
 CHANGEMAP pending intent
@@ -256,7 +254,7 @@ CHANGEMAP pending intent
  -> stats-menu intent
 ```
 
-Still outside:
+Still intentionally outside:
 
 ```text
 actual stats-menu rendering/input consumer
@@ -268,4 +266,6 @@ native ST_PLAYING loop/rendering
 sound playback
 ```
 
-The next bounded milestone should recover from merged main and establish the target transition/catalog preflight needed before replacing `/intro.bsp` with `/junction.bsp`, without yet performing the destructive map swap.
+The next bounded milestone should establish the target transition/catalog preflight needed before replacing `/intro.bsp` with `/junction.bsp`, without yet performing the destructive map swap.
+
+The real classic CYD Serial log is the final hardware source of truth.
