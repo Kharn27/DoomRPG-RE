@@ -55,10 +55,6 @@ EspPlayerOrientationStatus EspPlayerOrientation_prepare(
     if (!tileMatchesView(initialTile, playerView)) {
         return ESP_PLAYER_ORIENTATION_TILE_INVALID;
     }
-    if (playerView->targetMapId != 9U || playerView->gameplayLoadMapId != 2U ||
-        playerView->loadType != 0U) {
-        return ESP_PLAYER_ORIENTATION_UNSUPPORTED_CONTEXT;
-    }
     if (playerView->destAngle != (int32_t)ESP_PLAYER_ORIENTATION_ANGLE_64 ||
         playerView->viewAngle != playerView->destAngle) {
         return ESP_PLAYER_ORIENTATION_UNSUPPORTED_CONTEXT;
