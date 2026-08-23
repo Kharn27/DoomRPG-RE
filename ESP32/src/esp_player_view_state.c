@@ -5,7 +5,6 @@
 #include "esp_map_catalog.h"
 #include "esp_player_spawn_state.h"
 #include "esp_player_view_state.h"
-#include "esp_post_spawn_refresh.h"
 
 static EspPlayerViewState playerViewState;
 
@@ -104,26 +103,23 @@ EspPlayerViewApplyStatus EspPlayerView_applySpawn(
     return ESP_PLAYER_VIEW_APPLY_OK;
 }
 
-int EspPlayerView_consumePostSpawnRefresh(
-    const struct EspPostSpawnRefreshState_s* refresh) {
+int EspPlayerView_consumeHudRefresh(uint8_t targetMapId,
+                                    uint8_t gameplayLoadMapId,
+                                    uint8_t loadType) {
     EspPlayerViewState next;
 
-    if (!EspPlayerView_isReady() || refresh == NULL ||
-        refresh->active != 1U || refresh->hudRefreshIntent != 1U ||
-        refresh->hudRefreshRouted != 1U || refresh->facingResolved != 1U ||
-        refresh->targetMapId != playerViewState.targetMapId ||
-        refresh->gameplayLoadMapId != playerViewState.gameplayLoadMapId ||
-        refresh->loadType != playerViewState.loadType ||
-        playerViewState.hudRefreshPending != 1U ||
+    if (!EspPlayerView_isReady() || playerViewState.hudRefreshPending != 1U ||
         playerViewState.facingRefreshPending != 1U ||
         playerViewState.playerSetupPending != 1U ||
-        playerViewState.tileEnterPending != 1U) {
+        playerViewState.tileEnterPending != 1U ||
+        targetMapId != playerViewState.targetMapId ||
+        gameplayLoadMapId != playerViewState.gameplayLoadMapId ||
+        loadType != playerViewState.loadType) {
         return 0;
     }
 
     next = playerViewState;
     next.hudRefreshPending = 0U;
-    next.facingRefreshPending = 0U;
     playerViewState = next;
     return 1;
 }
