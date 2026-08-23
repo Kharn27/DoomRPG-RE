@@ -87,6 +87,7 @@ static EspNativeGraphicsCatalogStatus readRecord(
     sourceOffset = (int32_t)readLe32(pair);
     paletteOffset = (int32_t)readLe32(pair + 4U);
     if (sourceOffset < 0 || paletteOffset < 0 ||
+        (uint32_t)paletteOffset > UINT16_MAX ||
         (uint32_t)paletteOffset > paletteEntries ||
         ESP_NATIVE_GRAPHICS_PALETTE_COLORS >
             paletteEntries - (uint32_t)paletteOffset) {
@@ -107,13 +108,14 @@ static EspNativeGraphicsCatalogStatus readRecord(
     outRecord->sourceOffset = (uint32_t)sourceOffset;
 
     /*
-     * palettes.bin itself stores the original RGB565 words. The transitional
-     * legacy loader swaps R/B for its historical backend and the ESP32 native
-     * palette-normalization step swaps them back. Reading the little-endian
-     * source words directly therefore yields the permanent native RGB565 form.
-     * The hardware probe cross-checks every selected color against the already
-     * normalized transitional Render palette before this legacy dependency is
-     * removed from the renderer path.
+     * palettes.bin stores the original RGB565 words. Legacy
+     * Render_loadPalettes() historically swaps R/B for the desktop backend;
+     * DoomRPG_prepareNativePalette() swaps that transitional table back for
+     * the ESP32 framebuffer. Reading the little-endian source words directly
+     * therefore yields the permanent native RGB565 form without depending on
+     * either legacy transformation. The hardware probe accepts only one
+     * coherent relation to the transitional Render palette: already-native or
+     * exactly one R/B swap away.
      */
     for (i = 0U; i < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++i) {
         outRecord->paletteRgb565[i] = readLe16(&paletteBytes[i * 2U]);
