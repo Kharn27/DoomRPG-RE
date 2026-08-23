@@ -50,8 +50,9 @@ EspMapTransitionPreflightStatus EspMapTransitionPreflight_run(
         status = ESP_MAP_TRANSITION_PREFLIGHT_BSP_INVALID;
         goto done;
     }
-    if (inventory.loadMapId != targetMapId) {
-        status = ESP_MAP_TRANSITION_PREFLIGHT_ID_MISMATCH;
+    if (inventory.loadMapId < ESP_MAP_TRANSITION_GAMEPLAY_LOAD_ID_MIN ||
+        inventory.loadMapId > ESP_MAP_TRANSITION_GAMEPLAY_LOAD_ID_MAX) {
+        status = ESP_MAP_TRANSITION_PREFLIGHT_GAMEPLAY_ID_INVALID;
         goto done;
     }
 
@@ -69,7 +70,7 @@ EspMapTransitionPreflightStatus EspMapTransitionPreflight_run(
     outResult->strings = inventory.strings;
     outResult->stringDataBytes = inventory.stringDataBytes;
     outResult->targetMapId = targetMapId;
-    outResult->headerLoadMapId = inventory.loadMapId;
+    outResult->gameplayLoadMapId = inventory.loadMapId;
     outResult->ready = 1U;
     status = ESP_MAP_TRANSITION_PREFLIGHT_OK;
 
