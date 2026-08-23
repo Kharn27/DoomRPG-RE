@@ -12,13 +12,13 @@ hardware-tested firmware = f8c5a1c398c0946025aef976f7a997589bae4923
 
 Merged evidence: [`MAP1_NATIVE_PLAYER_EXIT_STATE.md`](MAP1_NATIVE_PLAYER_EXIT_STATE.md).
 
-## Current candidate
+## Current merge-ready milestone
 
 ```text
 branch = agent/esp32-native-stats-menu-intent
 base   = 3759bcd12a3f6d36a6a696457110ab27474c24b8
-firmware candidate = 1dddbe86788389400d6e2186595174e723c72f5c
-status = IMPLEMENTED; REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = 1dddbe86788389400d6e2186595174e723c72f5c
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 Active evidence: [`MAP1_NATIVE_STATS_MENU_INTENT.md`](MAP1_NATIVE_STATS_MENU_INTENT.md).
@@ -71,9 +71,11 @@ mutable sprite topology   2424 B
 total                    18008 B
 ```
 
-Level-exit stats, player exit-state/result and current stats-menu intent are caller-owned values. Current candidate target remains `18008 B` persistent heap.
+Level-exit stats, player exit-state/result and stats-menu intent are caller-owned values and add no persistent allocation. Hardware total remains exactly `18008 B`.
 
 ## Hardware-proven fingerprints
+
+Inherited native canons:
 
 ```text
 arenaFNV                 = c3882516
@@ -104,11 +106,20 @@ playerExitAllMasksFNV    = c93e8128
 playerExitLiveFNV        = 57fce418
 ```
 
-Latest same-build legacy witnesses from PR #64:
+New stats-menu canons:
 
 ```text
-playerExitLegacyFNV = f5cbf9f5
-transitionFNV       = f450c49f
+statsMenuIntentFNV       = 96afe901
+statsMenuEndGameFNV      = deea91b4
+statsMenuZeroFNV         = 4b95f515
+```
+
+Same-build legacy/integrity witnesses for the stats-menu firmware:
+
+```text
+playerExitWitnessFNV = 0b2ae445
+transitionFNV        = f450c49f
+frameFNV             = e8a3b4ef
 ```
 
 ## Hardware-proven CHANGEMAP target
@@ -164,9 +175,21 @@ allMasksFNV=c93e8128
 persistentHeapBytes=0
 ```
 
-It stores no Entity/familiar pointer and leaves legacy Player unchanged.
+Native stats-menu intent:
 
-## Current permanent stats-menu intent API
+```text
+EspStatsMenuIntent = 4 B
+targetMap=9
+menuKind=1 / LEVEL
+active=1
+consumePending=1
+intentFNV=96afe901
+persistentHeapBytes=0
+```
+
+It stores no legacy menu object or numeric `MENU_*` ID.
+
+## Permanent stats-menu intent API
 
 Files:
 
@@ -175,7 +198,7 @@ ESP32/include/esp_stats_menu_intent.h
 ESP32/src/esp_stats_menu_intent.c
 ```
 
-ABI target:
+Hardware-proven ABI:
 
 ```text
 EspStatsMenuIntent = 4 B
@@ -210,9 +233,9 @@ Permanent code has no dependency on legacy `Menu_t`, `MenuSystem_t`, `Game_t`, `
 
 Target map-name -> ID resolution is intentionally not owned here; it remains future transition/catalog work. Real MAP_INTRO target ID `9` is already hardware-proven.
 
-## Candidate real-CYD proof target
+## Real-CYD stats-menu proof
 
-Expected real Junction projection:
+Real Junction projection:
 
 ```text
 intentBytes=4
@@ -221,27 +244,32 @@ menuKind=1 / LEVEL
 active=1
 consumePending=1
 sourceStatsFNV=bd41bcfa
-intentFNV=96afe901   # static prediction; hardware final truth
+intentFNV=96afe901
+legacyMenuId=15
 ```
 
-End-game branch proof:
+End-game branch:
 
 ```text
-targetMap=13 / MAP_END_GAME
-menuKind=2 / OVERALL
-endGameFNV=deea91b4  # static prediction
+endGameTarget=13
+endGameKind=2 / OVERALL
+endGameFNV=deea91b4
+legacyOverallId=16
 ```
 
 Direct-load gate:
 
 ```text
 showStats=0
-status=NOT_APPLICABLE
-intent all zero
-zeroFNV=4b95f515     # static prediction
+noStatsStatus=1 / NOT_APPLICABLE
+noStatsZero=1
+zeroFNV=4b95f515
+repeatExact=1
 ```
 
-Fail closed target:
+The emitted Serial text concatenated `noStatsStatus=1noStatsZero=1`; both successful fields are still unambiguous.
+
+Fail closed:
 
 ```text
 target0=1
@@ -252,44 +280,57 @@ reset=1
 stateAtomic=yes
 ```
 
-RAM/integrity target:
+## RAM / legacy integrity
 
 ```text
+heap8      65616 -> 65616 delta=0
+largest8   34804 -> 34804 delta=0
 persistentHeapBytes=0
-heap8 delta=0
-largest8 delta=0
-framebuffer unchanged
-lineStateFNV=e5e74861
-spriteTopologyFNV=3f321e43
-legacy Player unchanged
-legacy menu/transition unchanged
-PAK closed
-legacy Render runtime clear
-entities=0 monsters=0
+frameFNV   e8a3b4ef -> e8a3b4ef
+lineFNV    e5e74861
+topologyFNV=3f321e43
 ```
 
-## Validation
-
-Build/flash normal environment:
+Legacy guards:
 
 ```text
-esp32-cyd
+playerExitFNV 0b2ae445 -> 0b2ae445
+transitionFNV f450c49f -> f450c49f
+legacyRuntimeClear=yes
+menuMutation=no
+Game_changeMapCalled=no
+mapLoad=no
 ```
 
-Branch / firmware:
+Final PARK:
 
 ```text
-agent/esp32-native-stats-menu-intent
-1dddbe86788389400d6e2186595174e723c72f5c
+state=9 page=3
+nativeStatsMenuIntent=yes
+intentBytes=4
+targetMap=9
+menuKind=LEVEL
+consumePendingSemantic=yes
+persistentBytes=0
+nativePlayerExitState=yes
+legacyMenuMutation=no
+transitionTriggered=no
+entities=0 monsters=0 noGameplay=yes
 ```
 
-Capture `[STATSMENUPROBE]`, `[STATSMENU]` and stable `[ALIVE]` lines.
+Stable heartbeats continued from `95234 ms` through `270270 ms` at:
 
-No CI status is published for the candidate. No local build or hardware PASS is claimed.
+```text
+heap=131380
+heap8=65616
+largest8=34804
+```
+
+No delayed transition or leak appeared.
 
 ## Current architecture boundary
 
-Hardware-proven ownership through PR #64:
+Hardware-proven ownership now includes:
 
 ```text
 compact immutable native map + explicit mutable owners
@@ -299,11 +340,6 @@ CHANGEMAP pending transition intent
 SHOW/HIDE compact sprite/entity topology
 native level-exit stats snapshot
 native player exit-state application
-```
-
-Candidate adds:
-
-```text
 native stats-menu semantic intent / pending-consume projection
 ```
 
@@ -321,4 +357,12 @@ ST_PLAYING progression
 sound playback
 ```
 
-Do not merge the candidate until the exact firmware above passes on the real classic CYD and every later commit remains documentation-only.
+The next bounded milestone should own target transition/catalog preflight before any destructive `/intro.bsp` -> `/junction.bsp` swap.
+
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-stats-menu-intent
+```
+
+Hardware-tested firmware is `1dddbe86788389400d6e2186595174e723c72f5c`. All commits after that firmware must remain documentation-only until merge.
