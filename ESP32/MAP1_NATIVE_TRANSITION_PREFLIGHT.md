@@ -9,30 +9,32 @@ PR   = #65 — native stats-menu intent
 main = c8679133351fa00e01a67103386b7676660c4a6e
 ```
 
-Corrected firmware candidate:
+Hardware-tested corrected firmware:
 
 ```text
 4d78a66548fab6373c06c67f107f176fc3988b1c
 ```
 
-Status: **IMPLEMENTED; CORRECTED REAL-CYD VALIDATION PENDING**.
+Status: **REAL-CYD HARDWARE PASS / MERGE-READY**.
 
-## Objective
+## Objective and result
 
-Before any destructive `/intro.bsp` -> `/junction.bsp` handoff, the port needs a permanent way to answer:
+Before any destructive `/intro.bsp` -> `/junction.bsp` handoff, this milestone establishes two permanent read-only facilities:
 
 ```text
-1. Which BSP resource belongs to a native resource-map ID?
-2. Does that target exist in DoomRPG-ESP32.pak?
-3. Does the complete target BSP parse and CRC correctly with bounded I/O?
-4. What compact runtime budget/structure would the target require?
+native resource-map catalog
+ -> target PAK lookup
+ -> complete bounded BSP inventory + CRC
+ -> compact caller-owned transition preflight summary
 ```
 
-This milestone owns those questions only. It does **not** reset Entrance, free native owners, mutate legacy `Game/Menu/Render`, load Junction into the resident runtime, enter `ST_PLAYING`, or render gameplay.
+It does not reset Entrance, free current native owners, mutate legacy `Game/Menu/Render`, load Junction into the resident runtime, enter `ST_PLAYING`, or render gameplay.
+
+The corrected v2 probe passed on the real classic CYD while preserving Entrance exactly.
 
 ## Permanent native map catalog
 
-Recovered legacy `Game_init()` / `Game_getResourceMapID()` resource order:
+Recovered original resource order:
 
 ```text
 1  /intro.bsp
@@ -50,28 +52,27 @@ Recovered legacy `Game_init()` / `Game_getResourceMapID()` resource order:
 13 /endgame.bsp
 ```
 
-Files:
+Files/API:
 
 ```text
 ESP32/include/esp_map_catalog.h
 ESP32/src/esp_map_catalog.c
-```
 
-API:
-
-```text
 EspMapCatalog_isValidId()
 EspMapCatalog_nameForId()
 EspMapCatalog_idForName()
 ```
 
-The table is immutable program data. Static audit prediction:
+Real-CYD audit:
 
 ```text
-catalogFNV = ce322e3f
+count       = 13
+roundtrip   = 13
+catalogFNV  = ce322e3f
+invalidName = 1
+legacyIds   = 1
+junctionName=/junction.bsp
 ```
-
-Hardware remains authoritative.
 
 ## Permanent transition preflight
 
@@ -82,7 +83,7 @@ ESP32/include/esp_map_transition_preflight.h
 ESP32/src/esp_map_transition_preflight.c
 ```
 
-Caller-owned ABI remains:
+Hardware-proven ABI:
 
 ```text
 EspMapTransitionPreflightResult = 56 B
@@ -109,55 +110,62 @@ gameplayLoadMapId
 ready
 ```
 
-`targetMapId` and `gameplayLoadMapId` are deliberately different concepts:
+Critical semantic split discovered and then hardware-proven:
 
 ```text
 targetMapId
-  = resource/lifecycle ID
+  = resource/catalog/lifecycle identity
   = Game.mapFiles[] / DoomCanvas_loadMap() identity
 
 gameplayLoadMapId
-  = byte stored in the BSP header
+  = byte stored in BSP header
   = legacy Render.loadMapID
-  = progression/stat bookkeeping semantic
+  = level-progression/stat bookkeeping semantic
 ```
 
-The permanent API **does not require them to match**.
+These IDs are intentionally independent.
 
-The legacy proof is explicit in `Player_addLevelStats()`:
+Legacy `Player_addLevelStats()` proves that gameplay ID `2` is the hub/no-completion gate:
 
 ```text
 if (showStats && render->loadMapID != 2) {
     completedLevels |= 1 << (render->loadMapID - 1)
-    ... secret/monster completion bits ...
+    ...
 }
 ```
 
-Therefore BSP value `2` is the hub / no-completion progression gate, not resource map ID 2.
+Real Junction therefore correctly has:
 
-For source compatibility with the first temporary diagnostic probe, `headerLoadMapId` remains an ABI-neutral alias of the same one-byte `gameplayLoadMapId` field. It has no separate storage.
+```text
+resourceMapId      = 9
+gameplayLoadMapId  = 2
+hubProgressionGate = 1
+```
 
-### I/O contract
+The permanent preflight validates only that `gameplayLoadMapId` is safe for the recovered bit semantics (`1..32`). It does not require equality with the resource ID.
 
-`EspMapTransitionPreflight_run(targetMapId, &result)` requires the PAK closed on entry and performs:
+For source compatibility with the first diagnostic probe, `headerLoadMapId` remains an ABI-neutral alias of the same one-byte field; it has no separate storage.
+
+## I/O contract
+
+`EspMapTransitionPreflight_run(targetMapId, &result)` requires the PAK closed on entry:
 
 ```text
 resource map ID
- -> immutable native catalog name
+ -> immutable catalog name
  -> open /DoomRPG-ESP32.pak
  -> bounded hash-sorted index lookup on SD
  -> EspBspReader complete streaming inventory
-      256 B window
+      window = 256 B
       full BSP CRC32
       complete structural traversal
       compact persistent-plan estimate
- -> validate gameplayLoadMapId is safely representable for legacy bit semantics
-      1..32
+ -> validate gameplayLoadMapId range
  -> close PAK
  -> return 56 B pointer-free summary
 ```
 
-If the PAK is already open, status is `PACK_BUSY`; the caller's session is neither stolen nor closed.
+If the PAK is already open, status is `PACK_BUSY` and the caller retains ownership of its session.
 
 Statuses:
 
@@ -171,36 +179,31 @@ GAMEPLAY_ID_INVALID
 OK
 ```
 
-## First real-CYD diagnostic — candidate v1
+## Diagnostic v1 and corrected v2
 
-First firmware candidate:
+First candidate:
 
 ```text
 b674c9ad4878acdf3d026d061de94f964e2c7d6e
 ```
 
-It successfully found and fully inventoried `/junction.bsp`, then intentionally failed at the original incorrect assertion:
+It successfully found, streamed and CRC-verified `/junction.bsp`, then failed only because the first model incorrectly required:
 
 ```text
-inventory.loadMapId == targetMapId
+BSP loadMapId == resource targetMapId
 ```
 
-Hardware showed:
+Hardware showed `9 != 2`. This was a model/probe assumption failure, not an I/O or BSP parse failure.
+
+Corrected hardware-tested firmware:
 
 ```text
-resource target map = 9 / MAP_JUNCTION
-BSP header loadMapId = 2
+4d78a66548fab6373c06c67f107f176fc3988b1c
 ```
 
-The first candidate therefore printed:
+The corrected final probe explicitly requires the real `resourceMapId=9 / gameplayLoadMapId=2` semantics and ran two complete Junction inventories identically.
 
-```text
-[TRANSITIONPREFLIGHT] FAILED Junction preflight
-```
-
-This was a **model/probe assumption failure**, not a PAK/BSP parse failure.
-
-### Junction facts discovered by that run
+## Hardware-proven Junction identity
 
 ```text
 resourceName      = /junction.bsp
@@ -227,7 +230,9 @@ events      = 66
 byteCodes   = 319
 strings     = 126
 stringData  = 12235
+legacyStringAlloc = 12361
 maxString   = 380
+structuralEnd = 21051
 trailing    = 0
 ```
 
@@ -258,7 +263,7 @@ spriteAsTexture = 0
 overflow        = 0/0/0
 ```
 
-Compact plan:
+Compact persistent plan:
 
 ```text
 nodes         = 770 B
@@ -274,7 +279,7 @@ resourceSets  = 96 B
 persistent    = 8867 B
 ```
 
-Streaming proof:
+Streaming proof, reproduced twice:
 
 ```text
 bytes     = 21051/21051
@@ -283,50 +288,65 @@ window    = 256 B
 FNV1a     = fefaf5ca
 CRC32     = 4a2c5800
 verified  = yes
+repeatExact = 1
 ```
 
-These are real-CYD observations from candidate v1. They become final canons only when the corrected candidate reproduces them and completes the full acceptance proof.
-
-## Corrected final probe v2
-
-Files:
+Preflight result:
 
 ```text
-ESP32/include/native_transition_preflight_final_probe.h
-ESP32/src/native_transition_preflight_final_probe.c
+resultBytes      = 56
+resourceMapId    = 9
+gameplayLoadMapId= 2
+hubProgressionGate=1
+resultFNV        = 108e5c7b
+repeatFNV        = 108e5c7b
+resourceGameplayDistinct=1
+elapsed          = 147 ms
+ready            = 1
 ```
 
-The old first diagnostic probe remains compiled as history but is no longer serviced by the lifecycle bridge.
+## Fail-closed proof
 
-The corrected probe requires:
-
-```text
-resourceMapId      = 9
-gameplayLoadMapId  = 2
-hubProgressionGate = 1
-```
-
-and reproduces exactly the discovered Junction payload/structure above twice.
-
-It also requires:
+Hardware:
 
 ```text
-catalog count=13
-roundtrip=13/13
-catalogFNV=ce322e3f
-unknown name fail-closed
-
-target0=1
-target14=1
-nullResult=1
-packBusy=1
-busyZero=1
+target0    = 1
+target14   = 1
+nullResult = 1
+packBusy   = 1
+busyZero   = 1
 stateAtomic=yes
 ```
 
-## Source-map integrity boundary
+The PACK_BUSY test opened the PAK deliberately, verified that preflight refused it without stealing the session, then closed it explicitly.
 
-Before/after target I/O, Entrance must remain exact:
+## RAM and I/O
+
+Hardware:
+
+```text
+heap8      65608 -> 65608 delta=0
+largest8   34804 -> 34804 delta=0
+persistentHeapBytes=0
+
+heapOpen          = 61232
+transientPackCost = 4376 B
+largestOpen       = 34804
+packIO            = yes
+fullTargetCRC     = yes
+window            = 256 B
+packClosed        = yes
+```
+
+Hardware-proven persistent native heap remains exactly:
+
+```text
+18008 B
+```
+
+## Entrance integrity / legacy isolation
+
+Native owners after the target I/O remained exactly:
 
 ```text
 arenaFNV     = c3882516
@@ -338,95 +358,83 @@ automapFNV   = 669b1aa7
 topologyFNV  = 3f321e43
 ```
 
-Plus same-build equality for framebuffer, legacy Player witness and legacy transition/menu witness.
-
-Required final boundary:
+Same-build framebuffer witness:
 
 ```text
-shapeData=NULL
-mediaTexels=NULL
-legacy Render runtime clear
-entities=0
-monsters=0
+frameFNV db8a11f6 -> db8a11f6
+```
+
+Legacy witnesses:
+
+```text
+playerFNV     0b2ae445 -> 0b2ae445
+transitionFNV f450c49f -> f450c49f
+legacyRuntimeClear=yes
 sourceTeardown=no
 mapLoad=no
 menuMutation=no
 mapSwap=no
-PAK closed at PARK
 ```
 
-## RAM target
-
-Hardware-proven persistent native heap entering the milestone:
+Final PARK:
 
 ```text
-18008 B
+state=9 page=3
+nativeCatalog=yes
+nativeTargetPreflight=yes
+resourceMapId=9
+gameplayLoadMapId=2
+targetReady=yes
+sourceMapPreserved=yes
+packClosed=yes
+persistentBytes=0
+mapSwap=no
+entities=0
+monsters=0
+noGameplay=yes
 ```
 
-Catalog is immutable program data and result is caller-owned:
+Stable heartbeats observed after PASS:
 
 ```text
-persistentHeapBytes = 0
-persistent total remains 18008 B
-heap8 before == after
-largest8 before == after
+1025843 ms heap=131372 heap8=65608 largest8=34804
+1030844 ms heap=131372 heap8=65608 largest8=34804
 ```
 
-PAK/File allocation is transient and printed separately.
+## Architecture boundary after PASS
 
-## Corrected expected Serial family
+Hardware-proven chain now includes:
 
 ```text
-[TRANSITIONPREFLIGHTFINAL] ARMED ...
-
-=== Doom RPG ESP32-native Junction transition preflight v2 ===
-[TRANSITIONPREFLIGHTFINAL] CONTRACT ...
-
-[BSPREAD] ... /junction.bsp ...   # first complete inventory
-[BSPREAD] ... /junction.bsp ...   # repeat complete inventory
-
-[TRANSITIONPREFLIGHT] READY resultBytes=56 resourceMapId=9 gameplayLoadMapId=2 hubProgressionGate=1 entryOffset=1974397 size=21051 crc32=4a2c5800 fnv1a=fefaf5ca planBytes=8867 resultFNV=... elapsed=... ready=1
-[TRANSITIONPREFLIGHT] STRUCT nodes=77 lines=207 mapSprites=48 events=66 byteCodes=319 strings=126 stringData=12235
-[TRANSITIONPREFLIGHT] CATALOG count=13 roundtrip=13 catalogFNV=ce322e3f invalidName=1 legacyIds=1 junctionName=/junction.bsp
-[TRANSITIONPREFLIGHT] REPEAT exact=1 firstFNV=... repeatFNV=... resourceGameplayDistinct=1
-[TRANSITIONPREFLIGHT] FAILCLOSED target0=1 target14=1 nullResult=1 packBusy=1 busyZero=1 stateAtomic=yes
-[TRANSITIONPREFLIGHT] IO ... packClosed=yes ...
-[TRANSITIONPREFLIGHT] RAM ... persistentHeapBytes=0 ...
-[TRANSITIONPREFLIGHT] LEGACY ... sourceTeardown=no mapLoad=no menuMutation=no mapSwap=no
-[TRANSITIONPREFLIGHT] PARK ... resourceMapId=9 gameplayLoadMapId=2 targetReady=yes sourceMapPreserved=yes packClosed=yes persistentBytes=0 mapSwap=no entities=0 monsters=0 noGameplay=yes
-[ALIVE] ...
+CHANGEMAP pending intent
+ -> exit stats
+ -> player exit-state
+ -> stats-menu intent
+ -> generic resource-map catalog
+ -> target Junction PAK/BSP preflight
 ```
 
-Use normal PlatformIO environment `esp32-cyd`.
-
-No CI status is published for corrected candidate `4d78a66548fab6373c06c67f107f176fc3988b1c`. No local build or corrected hardware PASS is claimed.
-
-## Boundary after PASS
-
-A corrected PASS will prove Junction readable and structurally valid while Entrance remains resident:
-
-```text
-CHANGEMAP pending intent       [hardware-proven]
- -> exit stats                [hardware-proven]
- -> player exit-state         [hardware-proven]
- -> stats-menu intent         [hardware-proven]
- -> map catalog               [corrected candidate]
- -> target PAK/BSP preflight  [corrected candidate]
-```
-
-Still outside:
+Still intentionally outside:
 
 ```text
 actual stats-menu rendering/input consumer
-source-map teardown ordering
-allocation/swap of Junction resident runtime
-rebuild of Junction mutable owners
-spawn placement / loadType handoff
+source-map teardown ordering / lifecycle handoff
+Junction resident-runtime allocation/swap
+Junction mutable-owner rebuild
+spawn/loadType handoff
 full native entity/monster gameplay
 native ST_PLAYING loop/rendering
 sound playback
 ```
 
-The next bounded milestone after PASS should design/prove the source-target lifecycle handoff / reversible swap staging, not call legacy `DoomCanvas_loadMap()`.
+The next bounded milestone should own the **source-target lifecycle handoff / reversible swap staging**. It must not call legacy `DoomCanvas_loadMap()` as a shortcut.
 
-The real classic CYD Serial log remains the final hardware source of truth.
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-transition-preflight
+```
+
+Hardware-tested firmware is `4d78a66548fab6373c06c67f107f176fc3988b1c`. Every commit after that firmware must remain documentation-only until merge.
+
+The real classic CYD Serial log is the final hardware source of truth.
