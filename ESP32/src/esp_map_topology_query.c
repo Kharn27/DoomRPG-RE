@@ -24,26 +24,20 @@ int EspMapTopologyQuery_findLinkedOnTile(
 
     if (outEntity != NULL) memset(outEntity, 0, sizeof(*outEntity));
     if (outEntity == NULL || tileIndex >= 1024U || beforeOrder == 0U ||
-        !EspMapSpriteTopology_isReady() || !EspMapRuntime_isLoaded()) {
-        return 0;
-    }
+        !EspMapSpriteTopology_isReady() || !EspMapRuntime_isLoaded()) return -1;
 
     topology = EspMapSpriteTopology_view();
     runtime = EspMapRuntime_view();
     if (topology == NULL || runtime == NULL || topology->storage == NULL ||
         topology->linkStatesLE == NULL || topology->linkOrdersLE == NULL ||
         topology->entityTypes == NULL || topology->entitySubTypes == NULL ||
-        topology->spriteCount != runtime->mapSpriteCount) {
-        return 0;
-    }
+        topology->spriteCount != runtime->mapSpriteCount) return -1;
 
     for (i = 0U; i < topology->spriteCount; ++i) {
         state = readLe16(topology->linkStatesLE + (i * 2U));
         if ((state & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U ||
             (state & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U ||
-            (state & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) != tileIndex) {
-            continue;
-        }
+            (state & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) != tileIndex) continue;
 
         order = readLe16(topology->linkOrdersLE + (i * 2U));
         if (order == 0U || order >= beforeOrder) continue;
@@ -53,10 +47,8 @@ int EspMapTopologyQuery_findLinkedOnTile(
         }
     }
 
-    if (bestIndex == ESP_MAP_TOPOLOGY_QUERY_NO_SPRITE ||
-        !EspMapRuntime_getMapSprite(bestIndex, &sprite)) {
-        return 0;
-    }
+    if (bestIndex == ESP_MAP_TOPOLOGY_QUERY_NO_SPRITE) return 0;
+    if (!EspMapRuntime_getMapSprite(bestIndex, &sprite)) return -1;
 
     outEntity->info = sprite.info;
     outEntity->spriteIndex = bestIndex;
