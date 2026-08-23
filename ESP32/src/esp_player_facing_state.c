@@ -12,7 +12,6 @@
 #define ENTITY_DEF_RECORD_BYTES 24U
 #define ENTITY_DEF_MAX_COUNT 1024U
 #define MAP_WIDTH 32U
-#define MAP_TILE_COUNT 1024U
 #define MAP_TILE_SIZE 64
 #define BLOCK_FLAG_WALL 0x01U
 #define ENTITY_INFO_LINE 0x00200000UL
@@ -110,13 +109,10 @@ static int resolveEntityDef(const EspAssetPackEntry* entry,
     return 1;
 }
 
-static int lineEntityTile(uint32_t lineIndex,
-                          const EspMapLine* line,
-                          uint16_t* outTile) {
+static int lineEntityTile(const EspMapLine* line, uint16_t* outTile) {
     int32_t x;
     int32_t y;
 
-    (void)lineIndex;
     if (line == NULL || outTile == NULL) return 0;
     x = (int32_t)line->x1 + (((int32_t)line->x2 - (int32_t)line->x1) / 2);
     y = (int32_t)line->y1 + (((int32_t)line->y2 - (int32_t)line->y1) / 2);
@@ -155,7 +151,6 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
     EspMapTopologyEntityRef entity;
     EspMapSprite sprite;
     EspMapLine line;
-    uint16_t startTile;
     uint16_t tile;
     uint16_t beforeOrder;
     uint16_t lineTile;
@@ -195,8 +190,6 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
         goto cleanup;
     }
 
-    startTile = (uint16_t)(((uint32_t)state->traceStartY >> 6U) * MAP_WIDTH +
-                           ((uint32_t)state->traceStartX >> 6U));
     tileY = state->traceStartY >> 6;
     endTileY = state->traceEndY >> 6;
     stopTrace = 0;
@@ -208,13 +201,13 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
 
         /* Line entities are created after map-sprite entities and linked at the
          * tile head in increasing line-index order. Walking line indexes in
-         * reverse therefore matches the legacy nextOnTile order before sprites.
+         * reverse therefore matches legacy nextOnTile order before sprites.
          */
         lineIndex = runtime->lineCount;
         while (lineIndex != 0U) {
             --lineIndex;
             if (!EspMapRuntime_getLine(lineIndex, &line) ||
-                !lineEntityTile(lineIndex, &line, &lineTile)) {
+                !lineEntityTile(&line, &lineTile)) {
                 status = ESP_PLAYER_FACING_TOPOLOGY_INVALID;
                 goto cleanup;
             }
@@ -357,6 +350,7 @@ EspPlayerFacingStatus EspPlayerFacing_prepare(
     const EspPlayerFinishRotationTileState* secondTile,
     EspPlayerFacingState* outState) {
     EspPlayerFacingState next;
+    EspPlayerFacingStatus traceStatus;
 
     if (outState != NULL) memset(outState, 0, sizeof(*outState));
     if (playerView == NULL || initialTile == NULL || orientation == NULL ||
@@ -423,15 +417,11 @@ EspPlayerFacingStatus EspPlayerFacing_prepare(
         next.traceStartY >= MAP_WIDTH * MAP_TILE_SIZE ||
         next.traceEndY >= MAP_WIDTH * MAP_TILE_SIZE ||
         (next.traceStartY >> 6) - (next.traceEndY >> 6) > 3) {
-        memset(outState, 0, sizeof(*outState));
         return ESP_PLAYER_FACING_UNSUPPORTED_CONTEXT;
     }
 
-    if (resolveTrace(&next) != ESP_PLAYER_FACING_OK) {
-        EspPlayerFacingStatus status = resolveTrace(&next);
-        memset(outState, 0, sizeof(*outState));
-        return status;
-    }
+    traceStatus = resolveTrace(&next);
+    if (traceStatus != ESP_PLAYER_FACING_OK) return traceStatus;
 
     *outState = next;
     return ESP_PLAYER_FACING_OK;
