@@ -22,169 +22,140 @@ This file defines the current ESP32 CYD documentation map.
 | [`MAP1_NATIVE_COMMITTED_TRANSITION.md`](MAP1_NATIVE_COMMITTED_TRANSITION.md) | transactional committed Entrance -> Junction resident swap | #68 | `00268a100c6662cb883f9a02d979b4f29eecbf12` |
 | [`MAP1_NATIVE_JUNCTION_SPAWN.md`](MAP1_NATIVE_JUNCTION_SPAWN.md) | fresh-map Junction spawn/load projection | #69 | `992f38374840113409e776fb82ce57ab014607e5` |
 | [`MAP1_NATIVE_PLAYER_VIEW.md`](MAP1_NATIVE_PLAYER_VIEW.md) | permanent active Junction player/view owner | #70 | `8a82891bb8d9c62582170cc4b3b74d270849e77b` |
-| [`MAP1_NATIVE_HUD_REFRESH.md`](MAP1_NATIVE_HUD_REFRESH.md) | post-spawn HUD dirty ownership and corrected facing order | #71 | `02b7f143a12e6df86ada094af10ef580ad572aad` |
+| [`MAP1_NATIVE_HUD_REFRESH.md`](MAP1_NATIVE_HUD_REFRESH.md) | post-spawn HUD dirty ownership | #71 | `02b7f143a12e6df86ada094af10ef580ad572aad` |
 | [`MAP1_NATIVE_PLAYER_SETUP.md`](MAP1_NATIVE_PLAYER_SETUP.md) | fresh-map Player_setup semantic owner | #72 | `9077ae4496bdcc06b6b99846332ab43b38943a8a` |
+| [`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md) | first fresh-map Game_executeTile dispatch | #73 | `0bc171affad8416ed1a7918a4a67fd4d53d61efe` |
 
-Older milestone archives remain in this directory and are indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
+Older milestone archives remain indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
 
 ## Latest merged boundary
 
-PR #72 hardware-proved native ownership of the supported fresh-map `Player_setup()` semantics:
+PR #73 hardware-proved the first fresh-map tile dispatch at Junction:
 
 ```text
-EspPlayerFreshMapState=24 B
-setup semanticFNV=3b27c6a1
-post-setup PlayerView FNV=c21fba3c
-persistent heap=0 B
-
-hudRefreshPending=0
+EspPlayerInitialTileState=24 B
+stateFNV=f73e28b2
+tile=943
+eventIndex=61
+eligible=0
+executed=0
+PlayerView FNV=1bd0f09b
+tileEnterPending=0
 facingRefreshPending=1
-playerSetupPending=0
-tileEnterPending=1
-```
-
-Junction remains resident at:
-
-```text
-snapshotFNV=bc9071e9
-payload=10410 B
-actual heap=10540 B
-entities=30
-enemies=0
-destructibles=3
 ```
 
 ## Current merge-ready milestone
 
-[`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md) hardware-proves the first fresh-map tile dispatch.
+[`MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md`](MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md) hardware-proves only the orientation preparation at the start of `DoomCanvas_finishRotation()`.
 
 ```text
-branch = agent/esp32-native-initial-tile-enter
-base   = 9077ae4496bdcc06b6b99846332ab43b38943a8a
-hardware-tested firmware = d8fb3e0e372b89d95c37cce558420f7fcb474419
+branch = agent/esp32-native-finish-rotation-orientation
+base   = 0bc171affad8416ed1a7918a4a67fd4d53d61efe
+hardware-tested firmware = 850f1651db7ca1943d5647a00099dfb48c9de284
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-### Exact recovered call
+### Exact recovered boundary
 
 ```text
-Game_executeTile(viewX, viewY, 0x40f | DoomCanvas_flagForFacingDir())
-world=992/1888
-tile=943
-angle=64
-facing flag=0x10000000
-input flags=0x1000040f
+viewSin   = sinTable[destAngle & 255]
+viewCos   = sinTable[(destAngle + 64) & 255]
+viewStepX = (viewCos * 64) >> 16
+viewStepY = ((-viewSin) * 64) >> 16
 ```
 
-### Permanent API and hardware canon
+Real CYD proved exact native-vs-legacy equality at Junction `destAngle=64`:
 
 ```text
-EspPlayerInitialTileState = 24 B
-persistent heap = 0 B
-stateFNV=f73e28b2
-
-EspPlayerInitialTile_reset
-EspPlayerInitialTile_isReady
-EspPlayerInitialTile_view
-EspPlayerInitialTile_prepare
-EspPlayerInitialTile_route
-EspPlayerView_consumeTileEnter
+EspPlayerOrientationState=24 B
+OrientationState FNV=acc754a6
+viewSin=65536
+viewCos=0
+viewStepX=0
+viewStepY=-64
+legacySin=65536
+legacyCos=0
+legacyStepX=0
+legacyStepY=-64
+exact=yes
+prepared=1
+active=1
 ```
 
-Real event result:
+`acc754a6` is now a hardware canon.
+
+### Permanent API
 
 ```text
-eventFound=1
-eventIndex=61
-eventState=0
-eventFlags=0
-blocked=0
-eligible=0
-executed=0
-removed=0
-skipAdvanceTurn=0
-playerKeys=00000000
+ESP32/include/esp_player_orientation_state.h
+ESP32/src/esp_player_orientation_state.c
+
+EspPlayerOrientation_reset
+EspPlayerOrientation_isReady
+EspPlayerOrientation_view
+EspPlayerOrientation_prepare
+EspPlayerOrientation_route
 ```
 
-Tile 943 therefore has a real event but no eligible command under the exact first fresh-map flags. No opcode executes and the script overlay remains unchanged:
+The owner is map-generic but currently supports only angle 64. It does not mutate PlayerView or InitialTile.
+
+Hardware proved:
 
 ```text
-script FNV bc9b18ff -> bc9b18ff
-```
-
-The generic opcode executor remains intentionally restricted to IDs 11/19/20. This milestone does not broaden that executor.
-
-### Player/view ownership transfer
-
-```text
-beforeFNV=c21fba3c
-afterFNV=1bd0f09b
-hudRefreshPending=0
+PlayerView 1bd0f09b -> 1bd0f09b
+unchanged=yes
 facingRefreshPending=1
-playerSetupPending=0
-tileEnterPending=0
-placementExact=yes
 ```
 
-`1bd0f09b` is now hardware-proven and canonical.
-
-### Hardware fail-closed proof
+### Fail-closed proof
 
 ```text
 nullView=1
-nullSetup=1
+nullTile=1
 nullOutput=1
-angle=1
-blocked=1
-missingTile=1
+inactive=1
+tilePending=1
 missingFacing=1
-setupMismatch=1
+angle=1
+tileInactive=1
+tileMismatch=1
 prepareAtomic=yes
 repeat=1
 repeatAtomic=yes
 ```
 
-### Hardware RAM / integrity
+### RAM / resident integrity
 
 ```text
-heap8=72868->72868
+snapshotFNV=bc9071e9->bc9071e9
+unchanged=yes
+payload=10410
+entities=30
+enemies=0
+destructibles=3
+packClosed=yes
+
+heap8=72828->72828
 largest8=34804->34804
 persistentHeapBytes=0
 
-heap=138632
-heap8=72868
-largest8=34804
-```
-
-Resident integrity:
-
-```text
-runtime=bc432a0f
-map=c5cdfc04
-script=bc9b18ff
-line=3658710d
-texture=537319ad
-automap=0b2ae445
-topology=d6e8df7d
-payload=10410
-runtimeStable=yes
-nonScriptMutableStable=yes
-packClosed=yes
+heartbeat heap=138592
+heartbeat heap8=72828
+heartbeat largest8=34804
 ```
 
 Same-build equality witnesses:
 
 ```text
-gameFNV=c655ff85->c655ff85
-playerFNV=774ed642->774ed642
-frameFNV=7a95b5b5->7a95b5b5
+gameFNV=ea6207e5->ea6207e5
+playerFNV=2c811802->2c811802
+canvasFNV=1b7ba23f->1b7ba23f
+renderFNV=f9344dec->f9344dec
+frameFNV=faa62417->faa62417
 legacyRuntimeClear=yes
-GameMutation=no
-PlayerMutation=no
-HudMutation=no
-DoomCanvasMutation=no
-RenderMutation=no
 ```
+
+No separate HUD fingerprint is promoted by this probe; the implementation performs no HUD write.
 
 ## Hardware-proven canons through current branch
 
@@ -204,6 +175,19 @@ PlayerSetupSemanticFNV=3b27c6a1
 postSetupPlayerViewFNV=c21fba3c
 JunctionInitialTileFNV=f73e28b2
 postInitialTilePlayerViewFNV=1bd0f09b
+JunctionOrientationFNV=acc754a6
+```
+
+Junction resident owner FNVs:
+
+```text
+runtime=bc432a0f
+map=c5cdfc04
+script=bc9b18ff
+line=3658710d
+texture=537319ad
+automap=0b2ae445
+topology=d6e8df7d
 ```
 
 ## Architecture direction
@@ -220,8 +204,8 @@ original Doom RPG behavior/data
  -> post-spawn HUD dirty ownership               [hardware-proven]
  -> Player_setup-equivalent session root         [hardware-proven]
  -> initial tile-enter dispatch                  [hardware-proven]
- -> finishRotation orientation preparation       [next]
- -> second tile dispatch
+ -> finishRotation orientation preparation       [hardware-proven]
+ -> second tile dispatch                         [next]
  -> durable facing query
  -> ST_PLAYING / native gameplay/render loop
 ```
@@ -234,13 +218,12 @@ page=3
 targetMap=9
 junctionResident=yes
 nativePlayerView=yes
-nativePlayerSetup=yes
 nativeInitialTile=yes
-tileEnterPending=no
-facingPending=yes
-finishRotationPending=yes
+nativeOrientation=yes
+orientationPending=no
 secondTilePending=yes
 finalFacingPending=yes
+finishRotationComplete=no
 ST_PLAYING=no
 legacy Game.entities=0
 legacy Game.monsters=0
@@ -253,8 +236,7 @@ Still outside:
 actual stats-menu rendering/input
 actual HUD rendering / renderer dirty consumption
 weapon restore/select ownership when disabledWeapons!=0
-finishRotation-equivalent orientation preparation
-second tile event
+second finishRotation tile dispatch
 final native facing-entity query
 ST_PLAYING progression
 full native entity/monster gameplay
@@ -275,18 +257,33 @@ ST_PLAYING not reached
 
 ## Next bounded milestone after merge
 
-After the branch is merged, recover from the exact new `main` SHA. The natural next boundary is the orientation preparation inside `DoomCanvas_finishRotation()` (`viewSin`, `viewCos`, `viewStepX`, `viewStepY`). Keep the second tile dispatch and final durable facing separate unless the fresh legacy/repo audit proves a tighter safe boundary.
+After merge, recover from the exact new `main` SHA. The next operation is the second tile dispatch inside `DoomCanvas_finishRotation()`:
+
+```text
+Game_executeTile(destX, destY, DoomCanvas_flagForFacingDir() | 0x400)
+```
+
+For the current Junction state:
+
+```text
+world=992/1888
+tile=943
+destAngle=64
+input flags=0x10000400
+```
+
+Keep final durable facing and `ST_PLAYING` as later boundaries.
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-initial-tile-enter
+MERGE agent/esp32-native-finish-rotation-orientation
 ```
 
 Hardware-tested firmware:
 
 ```text
-d8fb3e0e372b89d95c37cce558420f7fcb474419
+850f1651db7ca1943d5647a00099dfb48c9de284
 ```
 
-All later commits on this branch are documentation-only unless another firmware is flashed.
+All later commits on this branch must remain documentation-only unless another firmware is flashed.
