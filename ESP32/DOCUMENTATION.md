@@ -50,36 +50,21 @@ actual heap=10540 B
 entities=30 enemies=0 destructibles=3
 ```
 
-The corrected fresh-map ordering is:
+## Current merge-ready milestone
 
-```text
-placement
-HUD dirty
-transient old-vector facing write
-Player_setup
-initial tile-enter
-finishRotation orientation preparation
-second tile execution
-final durable facing
-```
-
-The transient facing result is not consumed before it is overwritten, so native facing remains intentionally deferred.
-
-## Current hardware candidate
-
-[`MAP1_NATIVE_PLAYER_SETUP.md`](MAP1_NATIVE_PLAYER_SETUP.md) owns only fresh-map `Player_setup()` semantics.
+[`MAP1_NATIVE_PLAYER_SETUP.md`](MAP1_NATIVE_PLAYER_SETUP.md) hardware-proves the fresh-map `Player_setup()` semantic owner.
 
 ```text
 branch = agent/esp32-native-player-setup
 base   = 02b7f143a12e6df86ada094af10ef580ad572aad
-firmware candidate = d808d895e97daef5d454ca06d5fda1738e99b147
-status = IMPLEMENTED / REAL-CYD HARDWARE VALIDATION PENDING
+hardware-tested firmware = d808d895e97daef5d454ca06d5fda1738e99b147
+status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
 ### Permanent API
 
 ```text
-EspPlayerFreshMapState = 24 B expected
+EspPlayerFreshMapState = 24 B
 persistent heap = 0 B
 
 EspPlayerFreshMap_reset
@@ -87,16 +72,15 @@ EspPlayerFreshMap_isReady
 EspPlayerFreshMap_view
 EspPlayerFreshMap_prepare
 EspPlayerFreshMap_route
-
 EspPlayerView_consumePlayerSetup
 ```
 
 ### Recovered exact semantics
 
-Supported `Player_setup()` path owns:
+The supported fresh-map `Player_setup()` path now owns:
 
 ```text
-levelStartTimeMs = sampled DoomRPG_GetUpTimeMS()
+levelStartTimeMs = exact sampled uptime
 moves=0
 xpGained=0
 berserkerTics=0
@@ -105,80 +89,167 @@ notebookEmpty=1
 weaponRestorePerformed=0
 ```
 
-The real path must have `disabledWeapons=0`. A nonzero value is fail-closed because recovered `Player_restoreWeapons()` can mutate weapons, select a replacement weapon, and request a view refresh; those effects are not silently approximated.
-
-### Candidate deterministic canons
-
-The timestamp is dynamic, so the setup semantic FNV normalizes only `levelStartTimeMs` to zero:
+The real hardware run proved:
 
 ```text
-setup semanticFNV = 3b27c6a1      # prediction
-PlayerView before = d17fa0d1       # hardware-proven input
-PlayerView after  = c21fba3c       # prediction
+startMs=27538
+startExact=yes
+moves=0
+xpGained=0
+berserker=0
+familiar=0
+notebookEmpty=1
+weaponRestore=0
 ```
 
-The candidate clears only:
+`levelStartTimeMs` is dynamic. The raw state FNV is therefore a same-run witness only:
 
 ```text
-playerSetupPending: 1 -> 0
+stateFNV=d0ab146e
 ```
 
-and preserves:
+The deterministic semantic FNV normalizes only `levelStartTimeMs` to zero:
 
 ```text
+setup semanticFNV=3b27c6a1
+```
+
+`3b27c6a1` is hardware-proven and canonical.
+
+### Player/view ownership transfer
+
+Hardware proved:
+
+```text
+beforeFNV=d17fa0d1
+afterFNV=c21fba3c
 hudRefreshPending=0
 facingRefreshPending=1
+playerSetupPending=0
 tileEnterPending=1
-placement/load identity unchanged
-HUD owner FNV=6965ee06 unchanged
+placementExact=yes
 ```
 
-### Candidate fail-closed proof
+Only `playerSetupPending` is consumed. `c21fba3c` is the hardware canon for the post-setup player/view state.
 
-The probe checks:
+### Weapon restore boundary
+
+Recovered `Player_setup()` calls `Player_restoreWeapons()` only when `disabledWeapons != 0`. That branch can mutate weapons, clear disabled state, select a replacement weapon, and request view refresh.
+
+This milestone intentionally supports only:
 
 ```text
-nullView
-nullHud
-nullOutput
-inactive
-loadType
-hudPending
-missingFacing
-missingSetup
-missingTile
-hudMismatch
-weaponRestore
-reset
-prepareAtomic
-repeat
-repeatAtomic
+disabledWeapons=0
 ```
 
-### Required hardware integrity
+and fails closed for the nonzero branch. Real CYD proved the fresh-run path has `disabledWeapons=0` and the `weaponRestore=1` refusal gate works.
 
-A PASS requires:
+### Hardware fail-closed proof
 
 ```text
-setup bytes=24
-semanticFNV=3b27c6a1
-startExact=yes
-real disabledWeapons=0
-PlayerView d17fa0d1 -> c21fba3c
-Junction snapshot bc9071e9 unchanged
-heap/largest unchanged
+nullView=1
+nullHud=1
+nullOutput=1
+inactive=1
+loadType=1
+hudPending=1
+missingFacing=1
+missingSetup=1
+missingTile=1
+hudMismatch=1
+weaponRestore=1
+reset=1
+prepareAtomic=yes
+repeat=1
+repeatAtomic=yes
+```
+
+### Resident / RAM integrity
+
+```text
+snapshotFNV=bc9071e9->bc9071e9
+targetLeftResident=yes
+payload=10410
+entities=30
+enemies=0
+destructibles=3
+packClosed=yes
+
+heap8=72900->72900
+delta=0
+largest8=34804->34804
+delta=0
 persistentHeapBytes=0
-PAK closed
-legacy Player/Game/Hud/DoomCanvas/Render unchanged
-framebuffer unchanged
-initial tile-enter deferred
-finishRotation/final facing deferred
+```
+
+Stable heartbeat:
+
+```text
+heap=138664
+heap8=72900
+largest8=34804
+```
+
+### Legacy / framebuffer integrity
+
+Same-build witnesses:
+
+```text
+placementFNV=5d1076bf->5d1076bf
+playerSetupFNV=ea247b9a->ea247b9a
+frameFNV=9eb7ce0f->9eb7ce0f
+legacyRuntimeClear=yes
+DoomCanvasMutation=no
+GameMutation=no
+PlayerMutation=no
+RenderMutation=no
+HudMutation=no
+```
+
+These are same-build equality witnesses, not cross-build canons.
+
+### Correct ordering boundary
+
+Fresh-map order remains:
+
+```text
+placement
+HUD dirty
+transient old-vector facing write
+Player_setup                           [hardware-proven]
+initial tile-enter                     [next]
+finishRotation orientation preparation
+second tile execution
+final durable facing
+```
+
+The transient first facing result remains deliberately unowned; the durable facing must wait until the later correct ordering.
+
+Final hardware PARK:
+
+```text
+state=9 / ST_INTRO
+page=3
+mapSwapCommitted=yes
+targetMap=9
+junctionResident=yes
+nativePlayerView=yes
+nativeHudRefresh=yes
+nativePlayerSetup=yes
+setupApplied=yes
+hudDirty=yes
+facingPending=yes
+playerSetupPending=no
+tileEnterPending=yes
+finishRotationPending=yes
+finalFacingPending=yes
 ST_PLAYING=no
 legacy entities=0
 legacy monsters=0
+noGameplay=yes
 ```
 
-## Hardware-proven canons through PR #71
+## Hardware-proven canons through current milestone
 
 ```text
 Entrance snapshotFNV=b3811f3d
@@ -201,9 +272,16 @@ packedOverrideViewFNV=9ed47d08
 postHudPlayerViewFNV=d17fa0d1
 hudRefreshBytes=8
 JunctionHudRefreshFNV=6965ee06
+playerSetupBytes=24
+PlayerSetupSemanticFNV=3b27c6a1
+postSetupPlayerViewFNV=c21fba3c
 ```
 
-Candidate-only predictions are not promoted into this hardware canon list until Serial PASS.
+Same-run dynamic setup witness:
+
+```text
+stateFNV=d0ab146e at startMs=27538
+```
 
 ## Architecture direction
 
@@ -221,7 +299,7 @@ original Doom RPG behavior/data
  -> native player spawn projection                [hardware-proven]
  -> permanent native player/view application      [hardware-proven]
  -> post-spawn HUD dirty ownership                [hardware-proven]
- -> Player_setup-equivalent session root          [candidate]
+ -> Player_setup-equivalent session root          [hardware-proven]
  -> initial tile-enter
  -> finishRotation-equivalent orientation + tile event
  -> durable facing query
@@ -236,6 +314,7 @@ actual HUD rendering / renderer dirty consumption
 weapon restore/select ownership when disabledWeapons!=0
 initial tile-enter execution
 finishRotation-equivalent orientation preparation
+second tile/facing event
 final native facing-entity query
 ST_PLAYING progression
 full native entity/monster gameplay
@@ -243,20 +322,24 @@ native gameplay renderer
 sound playback
 ```
 
+The player/view, HUD and fresh-map setup owners deliberately have different lifetimes from the map-resident arena and are not part of the seven-owner resident snapshot.
+
 `shapeData == NULL` and `mediaTexels == NULL` remain mandatory.
 
-## Next bounded milestone after candidate PASS + merge
+## Next bounded milestone after merge
 
-Recover from true post-merge `main`. The next exact operation is the initial tile-enter at the hardware-proven Junction position `(992,1888)`. Keep `finishRotation()`, its second tile execution, final facing and `ST_PLAYING` as later boundaries unless a fresh legacy audit proves otherwise.
+Recover from the true post-merge `main` before implementation. The next exact operation is the **initial tile-enter execution at `(992,1888)`**. Keep `finishRotation()`, its second tile execution, final facing and `ST_PLAYING` as later boundaries unless a fresh legacy audit proves otherwise.
 
 ## Merge recommendation
 
 ```text
-DO NOT MERGE YET — hardware validation pending
+MERGE agent/esp32-native-player-setup
 ```
 
-Firmware candidate:
+Hardware-tested firmware:
 
 ```text
 d808d895e97daef5d454ca06d5fda1738e99b147
 ```
+
+Every later commit on this branch must remain documentation-only unless another firmware is flashed.
