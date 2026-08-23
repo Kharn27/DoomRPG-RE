@@ -70,6 +70,74 @@ static int descriptorIsCanonical(const EspMapEventDescriptor* descriptor) {
            sameDescriptor(descriptor, &canonical);
 }
 
+static EspMapGiveMapStatus planGiveMapDirect(
+    EspMapGiveMapDirectResult* outResult) {
+    const EspMapRuntimeView* runtime;
+    EspMapLine line;
+    uint32_t i;
+    uint32_t lineTargets = 0U;
+    uint32_t spriteTargets = 0U;
+    uint32_t entranceTargets = 0U;
+    uint32_t linesMutated = 0U;
+    uint32_t spritesMutated = 0U;
+    uint32_t tilesMutated = 0U;
+    uint8_t revealed;
+    uint8_t tileFlags;
+
+    if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
+    if (outResult == NULL) return ESP_MAP_GIVEMAP_INVALID;
+    if (!EspMapAutomapState_isReady() || !EspMapState_isReady()) {
+        return ESP_MAP_GIVEMAP_NOT_READY;
+    }
+
+    runtime = EspMapRuntime_view();
+    if (runtime == NULL || runtime->lineCount != automapView.lineCount ||
+        runtime->mapSpriteCount != automapView.spriteCount) {
+        return ESP_MAP_GIVEMAP_INVALID;
+    }
+
+    for (i = 0U; i < runtime->lineCount; ++i) {
+        if (!EspMapRuntime_getLine(i, &line) ||
+            !EspMapAutomapState_getLineRevealed(i, &revealed)) {
+            return ESP_MAP_GIVEMAP_INVALID;
+        }
+        if ((line.flags & ESP_MAP_LINE_FLAG_NO_AUTOMAP) != 0U) continue;
+        ++lineTargets;
+        if (revealed == 0U) ++linesMutated;
+    }
+
+    spriteTargets = runtime->mapSpriteCount;
+    for (i = 0U; i < runtime->mapSpriteCount; ++i) {
+        if (!EspMapAutomapState_getSpriteRevealed(i, &revealed)) {
+            return ESP_MAP_GIVEMAP_INVALID;
+        }
+        if (revealed == 0U) ++spritesMutated;
+    }
+
+    for (i = 0U; i < ESP_MAP_STATE_TILE_COUNT; ++i) {
+        if (!EspMapState_getTileFlags(i, &tileFlags)) {
+            return ESP_MAP_GIVEMAP_INVALID;
+        }
+        if ((tileFlags & ESP_MAP_TILE_ENTRANCE) == 0U) continue;
+        ++entranceTargets;
+        if ((tileFlags & ESP_MAP_TILE_VISITED) == 0U) ++tilesMutated;
+    }
+
+    if (lineTargets > 0xffffU || spriteTargets > 0xffffU ||
+        entranceTargets > 0xffffU || linesMutated > 0xffffU ||
+        spritesMutated > 0xffffU || tilesMutated > 0xffffU) {
+        return ESP_MAP_GIVEMAP_INVALID;
+    }
+
+    outResult->lineTargetCount = (uint16_t)lineTargets;
+    outResult->spriteTargetCount = (uint16_t)spriteTargets;
+    outResult->entranceTargetCount = (uint16_t)entranceTargets;
+    outResult->linesMutated = (uint16_t)linesMutated;
+    outResult->spritesMutated = (uint16_t)spritesMutated;
+    outResult->tilesMutated = (uint16_t)tilesMutated;
+    return ESP_MAP_GIVEMAP_OK;
+}
+
 void EspMapAutomapState_reset(void) {
     if (automapStorage != NULL) {
         heap_caps_free(automapStorage);
@@ -231,18 +299,18 @@ int EspMapAutomapState_setSpriteRevealed(uint32_t spriteIndex,
     return 1;
 }
 
-EspMapGiveMapStatus EspMapAutomapState_applyGiveMapCommand(
-    const EspMapEventDescriptor* descriptor,
-    uint32_t commandOffset,
-    EspMapGiveMapResult* outResult) {
+EspMapGiveMapStatus EspMapAutomapState_planGiveMapDirect(
+    EspMapGiveMapDirectResult* outResult) {
+    return planGiveMapDirect(outResult);
+}
+
+EspMapGiveMapStatus EspMapAutomapState_applyGiveMapDirect(
+    EspMapGiveMapDirectResult* outResult) {
     const EspMapRuntimeView* runtime;
-    EspMapByteCode command;
+    EspMapGiveMapDirectResult planned;
     EspMapLine line;
-    uint32_t globalCommandIndex;
+    EspMapGiveMapStatus status;
     uint32_t i;
-    uint32_t lineTargets = 0U;
-    uint32_t spriteTargets;
-    uint32_t entranceTargets = 0U;
     uint32_t linesMutated = 0U;
     uint32_t spritesMutated = 0U;
     uint32_t tilesMutated = 0U;
@@ -250,48 +318,16 @@ EspMapGiveMapStatus EspMapAutomapState_applyGiveMapCommand(
     uint8_t tileFlags;
 
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
-    if (descriptor == NULL || outResult == NULL) return ESP_MAP_GIVEMAP_INVALID;
-    if (!EspMapAutomapState_isReady() || !EspMapState_isReady()) {
-        return ESP_MAP_GIVEMAP_NOT_READY;
-    }
-    if (!descriptorIsCanonical(descriptor) ||
-        commandOffset >= descriptor->commandCount || commandOffset > 0xffU ||
-        !EspMapEvents_getCommand(descriptor, commandOffset, &command)) {
-        return ESP_MAP_GIVEMAP_INVALID;
-    }
-    if (command.id != ESP_MAP_OPCODE_GIVEMAP) return ESP_MAP_GIVEMAP_UNSUPPORTED;
+    if (outResult == NULL) return ESP_MAP_GIVEMAP_INVALID;
+
+    status = planGiveMapDirect(&planned);
+    if (status != ESP_MAP_GIVEMAP_OK) return status;
 
     runtime = EspMapRuntime_view();
-    if (runtime == NULL || runtime->lineCount != automapView.lineCount ||
-        runtime->mapSpriteCount != automapView.spriteCount) {
-        return ESP_MAP_GIVEMAP_INVALID;
-    }
-    globalCommandIndex =
-        (uint32_t)descriptor->firstCommandIndex + commandOffset;
-    if (globalCommandIndex > 0xffffU) return ESP_MAP_GIVEMAP_INVALID;
+    if (runtime == NULL) return ESP_MAP_GIVEMAP_INVALID;
 
-    for (i = 0U; i < runtime->lineCount; ++i) {
-        if (!EspMapRuntime_getLine(i, &line)) return ESP_MAP_GIVEMAP_INVALID;
-        if ((line.flags & ESP_MAP_LINE_FLAG_NO_AUTOMAP) == 0U) ++lineTargets;
-    }
-    spriteTargets = runtime->mapSpriteCount;
-    for (i = 0U; i < ESP_MAP_STATE_TILE_COUNT; ++i) {
-        if (!EspMapState_getTileFlags(i, &tileFlags)) return ESP_MAP_GIVEMAP_INVALID;
-        if ((tileFlags & ESP_MAP_TILE_ENTRANCE) != 0U) ++entranceTargets;
-    }
-    if (lineTargets > 0xffffU || spriteTargets > 0xffffU ||
-        entranceTargets > 0xffffU) return ESP_MAP_GIVEMAP_INVALID;
-
-    outResult->sourceEventIndex = descriptor->eventIndex;
-    outResult->globalCommandIndex = (uint16_t)globalCommandIndex;
-    outResult->lineTargetCount = (uint16_t)lineTargets;
-    outResult->spriteTargetCount = (uint16_t)spriteTargets;
-    outResult->entranceTargetCount = (uint16_t)entranceTargets;
-    outResult->sourceCommandOffset = (uint8_t)commandOffset;
-    outResult->legacyReturnValue = 1U;
-    outResult->removeCommandIfHandled =
-        (uint8_t)((command.arg2 & ESP_MAP_GIVEMAP_COMMAND_FLAG_REMOVE) != 0U ? 1U : 0U);
-
+    /* Cooperative runtime: after the complete pure preflight above there is no
+     * owner teardown or concurrent writer between these bounded mutations. */
     for (i = 0U; i < runtime->lineCount; ++i) {
         if (!EspMapRuntime_getLine(i, &line)) return ESP_MAP_GIVEMAP_INVALID;
         if ((line.flags & ESP_MAP_LINE_FLAG_NO_AUTOMAP) != 0U) continue;
@@ -319,7 +355,9 @@ EspMapGiveMapStatus EspMapAutomapState_applyGiveMapCommand(
     }
 
     for (i = 0U; i < ESP_MAP_STATE_TILE_COUNT; ++i) {
-        if (!EspMapState_getTileFlags(i, &tileFlags)) return ESP_MAP_GIVEMAP_INVALID;
+        if (!EspMapState_getTileFlags(i, &tileFlags)) {
+            return ESP_MAP_GIVEMAP_INVALID;
+        }
         if ((tileFlags & ESP_MAP_TILE_ENTRANCE) != 0U &&
             (tileFlags & ESP_MAP_TILE_VISITED) == 0U) {
             if (!EspMapState_setVisited(i, 1U)) return ESP_MAP_GIVEMAP_INVALID;
@@ -327,11 +365,55 @@ EspMapGiveMapStatus EspMapAutomapState_applyGiveMapCommand(
         }
     }
 
-    outResult->linesMutated = (uint16_t)linesMutated;
-    outResult->spritesMutated = (uint16_t)spritesMutated;
-    outResult->tilesMutated = (uint16_t)tilesMutated;
+    planned.linesMutated = (uint16_t)linesMutated;
+    planned.spritesMutated = (uint16_t)spritesMutated;
+    planned.tilesMutated = (uint16_t)tilesMutated;
+    *outResult = planned;
+    return ESP_MAP_GIVEMAP_OK;
+}
+
+EspMapGiveMapStatus EspMapAutomapState_applyGiveMapCommand(
+    const EspMapEventDescriptor* descriptor,
+    uint32_t commandOffset,
+    EspMapGiveMapResult* outResult) {
+    EspMapByteCode command;
+    EspMapGiveMapDirectResult direct;
+    EspMapGiveMapStatus status;
+    uint32_t globalCommandIndex;
+
+    if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
+    if (descriptor == NULL || outResult == NULL) return ESP_MAP_GIVEMAP_INVALID;
+    if (!EspMapAutomapState_isReady() || !EspMapState_isReady()) {
+        return ESP_MAP_GIVEMAP_NOT_READY;
+    }
+    if (!descriptorIsCanonical(descriptor) ||
+        commandOffset >= descriptor->commandCount || commandOffset > 0xffU ||
+        !EspMapEvents_getCommand(descriptor, commandOffset, &command)) {
+        return ESP_MAP_GIVEMAP_INVALID;
+    }
+    if (command.id != ESP_MAP_OPCODE_GIVEMAP) return ESP_MAP_GIVEMAP_UNSUPPORTED;
+
+    globalCommandIndex =
+        (uint32_t)descriptor->firstCommandIndex + commandOffset;
+    if (globalCommandIndex > 0xffffU) return ESP_MAP_GIVEMAP_INVALID;
+
+    status = EspMapAutomapState_applyGiveMapDirect(&direct);
+    if (status != ESP_MAP_GIVEMAP_OK) return status;
+
+    outResult->sourceEventIndex = descriptor->eventIndex;
+    outResult->globalCommandIndex = (uint16_t)globalCommandIndex;
+    outResult->lineTargetCount = direct.lineTargetCount;
+    outResult->spriteTargetCount = direct.spriteTargetCount;
+    outResult->entranceTargetCount = direct.entranceTargetCount;
+    outResult->linesMutated = direct.linesMutated;
+    outResult->spritesMutated = direct.spritesMutated;
+    outResult->tilesMutated = direct.tilesMutated;
+    outResult->sourceCommandOffset = (uint8_t)commandOffset;
     outResult->mutated =
-        (uint8_t)((linesMutated != 0U || spritesMutated != 0U ||
-                   tilesMutated != 0U) ? 1U : 0U);
+        (uint8_t)((direct.linesMutated != 0U || direct.spritesMutated != 0U ||
+                   direct.tilesMutated != 0U) ? 1U : 0U);
+    outResult->legacyReturnValue = 1U;
+    outResult->removeCommandIfHandled =
+        (uint8_t)((command.arg2 & ESP_MAP_GIVEMAP_COMMAND_FLAG_REMOVE) != 0U ? 1U : 0U);
     return ESP_MAP_GIVEMAP_OK;
 }
