@@ -7,18 +7,6 @@
 
 static EspPlayerFreshMapState freshMapState;
 
-static int playerViewIsCanonical(const EspPlayerViewState* view) {
-    return view != NULL && view->active == 1U && view->spawnApplied == 1U &&
-           EspMapCatalog_isValidId(view->targetMapId) &&
-           view->gameplayLoadMapId != 0U && view->gameplayLoadMapId <= 32U &&
-           view->loadType == 0U && view->hudRefreshPending == 0U &&
-           view->facingRefreshPending == 1U &&
-           view->playerSetupPending == 1U && view->tileEnterPending == 1U &&
-           view->viewX == view->destX && view->viewY == view->destY &&
-           view->viewAngle == view->destAngle && view->viewZ == 36 &&
-           view->viewZOld == 4;
-}
-
 static int hudIsCanonical(const EspHudRefreshState* hud,
                           const EspPlayerViewState* view) {
     return hud != NULL && view != NULL &&
