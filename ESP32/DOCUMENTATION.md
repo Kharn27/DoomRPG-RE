@@ -8,134 +8,152 @@ This file defines the current ESP32 CYD documentation map.
 - [`PORTING_STATUS.md`](PORTING_STATUS.md): authoritative current recovery point.
 - Milestone archives: detailed implementation and hardware evidence.
 
-## Merged milestones
+## Recent merged milestones
 
 | Archive | Purpose | PR | Merged `main` |
 | --- | --- | ---: | --- |
-| [`START_GAME.md`](START_GAME.md) | start/lifecycle cleanup | #36 | `5275e4a1c6eca703b51221e80f3b199178015a01` |
-| [`FIRST_INTRO_FRAME.md`](FIRST_INTRO_FRAME.md) | first fitted intro frame | #37 | `b934e21c7f2dbf6463a4d2dfa13d1e06614e2b96` |
-| [`INTRO_CLOCK.md`](INTRO_CLOCK.md) | bounded intro clock | #38 | `58edfe5d7080a7e9e64ff5b516697ddf3cca31da` |
-| [`INTRO_INPUT.md`](INTRO_INPUT.md) | intro input progression | #39 | `7ba68955a9b0979924c5e759736fb483589be744` |
-| [`INTRO_DISPOSE.md`](INTRO_DISPOSE.md) | intro teardown | #41 | `897e982f4b37039d984b13265beaa68a83dce98b` |
-| [`MAP1_STRUCTURAL_LOAD.md`](MAP1_STRUCTURAL_LOAD.md) | BSP inventory | #42 | `c71ac1fb07c2e281bc3f8a70c102dd22c7b9300e` |
-| [`MAP1_NATIVE_RUNTIME.md`](MAP1_NATIVE_RUNTIME.md) | compact immutable runtime | #43 | `503fdd66fae625a45446fb4ea0853abc71d7dda3` |
-| [`MAP1_NATIVE_ACCESS.md`](MAP1_NATIVE_ACCESS.md) | allocation-free access | #44 | `ddcf19e6166f63fec1c608234ee3e253ea` |
-| [`MAP1_NATIVE_STATE.md`](MAP1_NATIVE_STATE.md) | mutable tile state | #45 | `feec8a7fcb839dbd9f6de708f56f26b69a1e79e9` |
-| [`MAP1_NATIVE_EVENTS.md`](MAP1_NATIVE_EVENTS.md) | tile-event lookup | #46 | `438cffabaaaaa3dc3b45486f56eacec1a047edcf` |
-| [`MAP1_NATIVE_EVENT_DESCRIPTOR.md`](MAP1_NATIVE_EVENT_DESCRIPTOR.md) | event descriptor/linkage | #47 | `a3e629ba0be6b4dcc6329b17f18a0c3ca9828958` |
-| [`MAP1_NATIVE_EVENT_FILTER.md`](MAP1_NATIVE_EVENT_FILTER.md) | script state/filtering | #48 | `0c8a52549ebb436139f7cd5c8b4ee63bdd175907` |
-| [`MAP1_NATIVE_OPCODE_EXEC1.md`](MAP1_NATIVE_OPCODE_EXEC1.md) | first state opcode execution | #49 | `6e43ef059db52783b7264e84579216cb2572a1e2` |
-| [`MAP1_NATIVE_UI_INTENT.md`](MAP1_NATIVE_UI_INTENT.md) | UI/string intents | #50 | `9a5e8ade361180d220f2b3614a443e5efb0d27bd` |
-| [`MAP1_NATIVE_STRING_READER.md`](MAP1_NATIVE_STRING_READER.md) | bounded pack strings | #51 | `526640b12d978fdbe9c8a9239c37db2fca95cddd` |
-| [`MAP1_NATIVE_STATUS_MESSAGE.md`](MAP1_NATIVE_STATUS_MESSAGE.md) | status-message owner | #52 | `40b61af5e2115266d4d03dddcc3175850538b0f5` |
-| [`MAP1_NATIVE_DIALOG_OWNER.md`](MAP1_NATIVE_DIALOG_OWNER.md) | dialog owner | #53 | `395418510207bf24ac45ddbb4c4c15db3ddc8998` |
-| [`MAP1_NATIVE_NOTEBOOK.md`](MAP1_NATIVE_NOTEBOOK.md) | notebook owner | #54 | `03002f79eb03bdcb4c9e430c43e4693dab47e44b` |
-| [`MAP1_NATIVE_KEY_GATE.md`](MAP1_NATIVE_KEY_GATE.md) | key gate | #55 | `03c4275f2abfd6671c8bf499c075435d7b61ab97` |
-| [`MAP1_NATIVE_PASSWORD_OWNER.md`](MAP1_NATIVE_PASSWORD_OWNER.md) | password pause/submit owner | #56 | `3c113cc047aeb613f2ba4ab7905e92487c796f80` |
-| [`MAP1_NATIVE_LINE_DOOR_STATE.md`](MAP1_NATIVE_LINE_DOOR_STATE.md) | OPEN/CLOSE world state | #57 | `e4fb32f41b7074bbb433e64f4c824edb2167cf50` |
-| [`MAP1_NATIVE_UNLOCK_STATE.md`](MAP1_NATIVE_UNLOCK_STATE.md) | UNLOCK world state | #58 | `7503b379185db3f05713eb34f1762173edb977d0` |
-| [`MAP1_NATIVE_GIVEMAP_STATE.md`](MAP1_NATIVE_GIVEMAP_STATE.md) | GIVEMAP automap state | #59 | `9891a25d700f9ffe1be044ac4a7629c3487604ec` |
-| [`MAP1_NATIVE_SAVE_ROUTE.md`](MAP1_NATIVE_SAVE_ROUTE.md) | SAVEGAME future-save route | #60 | `50ed329801fe99917ef2f848ee13e742ae7734ab` |
 | [`MAP1_NATIVE_CHANGE_MAP_INTENT.md`](MAP1_NATIVE_CHANGE_MAP_INTENT.md) | CHANGEMAP pending transition intent | #61 | `fc39ac60757e0d992e3729a5044a9d83e9994971` |
 | [`MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md`](MAP1_NATIVE_SHOW_HIDE_TOPOLOGY.md) | SHOW/HIDE compact topology; all MAP_INTRO opcode families owned | #62 | `ed5cd9a09c9ae36f999661f4284f64400681b1af` |
 | [`MAP1_NATIVE_LEVEL_EXIT_STATS.md`](MAP1_NATIVE_LEVEL_EXIT_STATS.md) | map-derived level-exit stats | #63 | `533784b5483e14a12558fb08c9331d8b744caa88` |
 | [`MAP1_NATIVE_PLAYER_EXIT_STATE.md`](MAP1_NATIVE_PLAYER_EXIT_STATE.md) | pointer-free player exit writes | #64 | `3759bcd12a3f6d36a6a696457110ab27474c24b8` |
 | [`MAP1_NATIVE_STATS_MENU_INTENT.md`](MAP1_NATIVE_STATS_MENU_INTENT.md) | LEVEL/OVERALL stats-menu intent | #65 | `c8679133351fa00e01a67103386b7676660c4a6e` |
 | [`MAP1_NATIVE_TRANSITION_PREFLIGHT.md`](MAP1_NATIVE_TRANSITION_PREFLIGHT.md) | map catalog + Junction PAK/BSP preflight | #66 | `9f981f490282200f216aef66d22608d2244beb00` |
+| [`MAP1_NATIVE_RESIDENT_HANDOFF.md`](MAP1_NATIVE_RESIDENT_HANDOFF.md) | reversible full resident Entrance/Junction handoff | #67 | `fddae899fd7dc01b20cf6bd532489326380954e3` |
+
+Older milestone archives remain in this directory and are indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
 
 ## Current merge-ready milestone
 
-[`MAP1_NATIVE_RESIDENT_HANDOFF.md`](MAP1_NATIVE_RESIDENT_HANDOFF.md) introduces the generic explicit resident-map lifecycle and hardware-proves the full reversible native resident transaction `Entrance -> EMPTY -> Junction -> EMPTY -> Entrance`.
+[`MAP1_NATIVE_COMMITTED_TRANSITION.md`](MAP1_NATIVE_COMMITTED_TRANSITION.md) introduces the first permanent stats-ack-gated point-of-no-return transition owner and hardware-proves both post-teardown recovery and a true committed Entrance -> Junction resident swap.
 
 ```text
-branch = agent/esp32-native-resident-handoff
-base   = 9f981f490282200f216aef66d22608d2244beb00
-hardware-tested firmware = 090d7dac5c255fc42a3d12fb3441053fdefe681b
+branch = agent/esp32-native-committed-transition
+base   = fddae899fd7dc01b20cf6bd532489326380954e3
+hardware-tested firmware = 759b7f05a7c1940e98caf68e4041faa69b34cfc9
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-### Permanent lifecycle
+### Permanent API
 
 ```text
-EspMapResidentLifecycle_resetAll
-EspMapResidentLifecycle_isEmpty
-EspMapResidentLifecycle_isReady
-EspMapResidentLifecycle_capture
-EspMapResidentLifecycle_loadFromEmpty
+EspMapCommittedTransitionState = 24 B
+persistent heap = 0 B
+
+EspMapCommittedTransition_reset
+EspMapCommittedTransition_isCommitted
+EspMapCommittedTransition_begin
+EspMapCommittedTransition_ackStats
+EspMapCommittedTransition_commit
 ```
 
-Ownership rule:
+Phases:
 
 ```text
-loadFromEmpty() never tears down a live source
-live owners -> NOT_EMPTY before PAK I/O
-resetAll()  -> only explicit destructive primitive
+EMPTY -> WAIT_STATS -> READY -> COMMITTED
+                         |
+                         +-> target failure -> ROLLED_BACK / FAILED
 ```
 
-Teardown:
+`begin()` consumes the real caller-owned `EspMapChangeMapState` only after all pending/result/stats/preflight relationships validate. This mirrors legacy `Game_changeMap()` clearing `changeMapParam` when it schedules the stats menu.
+
+The actual native map replacement is not allowed before explicit `ackStats()`, matching the recovered legacy flow where accepting `MENU_MAP_STATS` later calls `DoomCanvas_loadMap(menu.mapNameId)`.
+
+### Hardware-proven transition-state ABI
+
+The real CYD confirmed all predicted 24-byte FNVs exactly:
 
 ```text
-topology -> automap -> texture -> line -> script -> map state -> runtime
+WAIT_STATS  = 66fe636a
+READY       = 0ef58ea8
+ROLLED_BACK = 2dec1442
+COMMITTED   = 2c595a62
 ```
 
-Build from EMPTY:
+Real begin:
 
 ```text
-runtime -> map state -> script -> line -> texture -> automap -> topology
+sourceMap=1
+targetMap=9
+gameplayLoadMapId=2
+spawnParam=0
+menuKind=LEVEL
+pendingConsumed=1
+phase=WAIT_STATS
+preflightFNV=108e5c7b
+statsIntentFNV=96afe901
 ```
 
-### Hardware-proven Entrance resident snapshot
+ACK:
 
 ```text
-EspMapResidentSnapshot = 96 B
-snapshotFNV = b3811f3d
-
-runtime=14095
-state=1024
-script=81
-line=120
-texture=60
-automap=103
-topology=2408
-payload=17891 B
-actual heap=18008 B
-allocator overhead=117 B
+statsAcknowledged=1
+phase=READY
+repeatAck=1
 ```
 
-The runtime payload/heap distinction is explicit: the immutable arena payload is `14095 B`; its allocator cost is `14112 B`.
-
-### Hardware-proven full Junction residency
+Fail-closed gates:
 
 ```text
-snapshotFNV = bc9071e9
-buildElapsed=121 ms
+invalidBegin=1
+preAckCommit=1
+badInventory=1
+repeatCommit=1
+stateAtomic=yes
+sourcePreservedBeforeCommit=yes
+```
 
-runtime=8867
-state=1024
-script=73
-line=52
-texture=26
-automap=32
-topology=336
+### Hardware-proven post-teardown recovery
+
+The probe deliberately corrupts only the target compact plan after validating target bytes/CRC/FNV/gameplay identity. Entrance is actually released and the target runtime intentionally emits:
+
+```text
+[MAPRT] FAILED unsupported plan/source
+```
+
+The permanent transaction then reconstructs Entrance exactly:
+
+```text
+phase=ROLLED_BACK
+stateFNV=2dec1442
+sourceRestored=yes
+snapshotFNV=b3811f3d
+heap8=65584->65584
+largest8=34804->34804
+packClosed=yes
+```
+
+### Hardware-proven committed Junction residency
+
+The second READY transaction performs the real commit and deliberately leaves Junction resident:
+
+```text
+status=8 / ESP_MAP_COMMITTED_TRANSITION_OK
+phase=COMMITTED
+committed=1
+committedStateFNV=2c595a62
+targetSnapshotFNV=bc9071e9
 payload=10410 B
-actual heap=10540 B
-allocator overhead=130 B
+sourceHeap=65584
+targetHeap=73052
+free-heap gain=7468 B
+largest=34804->34804
+packClosed=yes
 ```
 
-Resident Junction fingerprints:
+Exact target FNVs:
 
 ```text
-runtimeFNV  = bc432a0f
-mapStateFNV = c5cdfc04
-scriptFNV   = bc9b18ff
-lineFNV     = 3658710d
-textureFNV  = 537319ad
-automapFNV  = 0b2ae445
-topologyFNV = d6e8df7d
-snapshotFNV = bc9071e9
+runtime  = bc432a0f
+map      = c5cdfc04
+script   = bc9b18ff
+line     = 3658710d
+texture  = 537319ad
+automap  = 0b2ae445
+topology = d6e8df7d
+snapshot = bc9071e9
 ```
 
-Topology:
+Target compact topology:
 
 ```text
 entities=30
@@ -143,78 +161,96 @@ enemies=0
 destructibles=3
 ```
 
-Legacy `Game.entities` and `Game.monsters` remain zero.
-
-### RAM-safe reversible proof
+Final resident boundary:
 
 ```text
-SOURCE   heap8=65592 largest8=34804
-EMPTY1   heap8=83600 largest8=34804
-JUNCTION heap8=73060 largest8=34804
-EMPTY2   heap8=83600 largest8=34804
-RESTORED heap8=65592 largest8=34804
-
-sourceCost   = 18008
-junctionCost = 10540
-finalDelta   = 0
-fragmentationDelta=0
+mapSwapCommitted=yes
+sourceMap=1
+targetMap=9
+junctionResident=yes
+sourceRestored=no
+targetLeftResident=yes
+pendingConsumed=yes
+statsAck=yes
+spawnParam=0 retained
+spawnPending=yes
+spawnApplied=no
+legacy Game.entities=0
+legacy Game.monsters=0
+ST_INTRO page=3
+ST_PLAYING=no
 ```
 
-Entrance restoration is byte-exact:
+This is the first hardware-proven committed native resident map replacement.
+
+### Legacy / framebuffer integrity
+
+Same-probe witnesses remained exact:
 
 ```text
-restored snapshotFNV=b3811f3d
-exact=1
-heap/largest restored exactly
-```
-
-Final integrity:
-
-```text
-PAK closed
-framebuffer unchanged
-legacy Player unchanged
-legacy transition/menu unchanged
-legacy Render runtime clear
+playerFNV=0b2ae445->0b2ae445
+transitionFNV=95142f8f->95142f8f
+frameFNV=b8924a47->b8924a47
+legacyRuntimeClear=yes
 DoomCanvas_loadMapCalled=no
 menuMutation=no
 legacyPlayerMutation=no
-mapSwapCommitted=no
-targetLeftResident=no
-entities=0 monsters=0
-ST_INTRO page=3
+spawnApplied=no
+loadTypeMutation=no
 ```
 
-## Hardware-proven boundary through current candidate
+The unchanged visible intro framebuffer with Junction native owners underneath is intentional. Residency, player placement and presentation are now explicit separate boundaries.
+
+Post-PARK heartbeat observed:
 
 ```text
-persistent Entrance native heap = 18008 B
-Entrance snapshotFNV           = b3811f3d
-arenaFNV                       = c3882516
-mapStateFNV                    = cd99b98e
-scriptFNV                      = f9e3d9df
-lineStateFNV                   = e5e74861
-lineTextureStateFNV            = f1fc1875
-automapStateFNV                = 669b1aa7
-spriteTopologyFNV              = 3f321e43
-levelExitStatsFNV              = bd41bcfa
-playerExitAppliedFNV           = 298eaaa4
-statsMenuIntentFNV             = 96afe901
-catalogFNV                     = ce322e3f
-transitionPreflightFNV         = 108e5c7b
-junctionSourceFNV              = fefaf5ca
-junctionSnapshotFNV            = bc9071e9
-junctionRuntimeFNV             = bc432a0f
-junctionMapStateFNV            = c5cdfc04
-junctionScriptFNV              = bc9b18ff
-junctionLineFNV                = 3658710d
-junctionTextureFNV             = 537319ad
-junctionAutomapFNV             = 0b2ae445
-junctionTopologyFNV            = d6e8df7d
+uptime=40092 ms
+heap=138816
+heap8=73052
+largest8=34804
+```
 
-allMapIntroOpcodeFamiliesOwned=yes
-entities=0
-monsters=0
+### Same-build resident cost proof
+
+The prerequisite reversible handoff also reran successfully in the tested firmware:
+
+```text
+SOURCE   65584 / 34804
+EMPTY1   83592 / 34804
+JUNCTION 73052 / 34804
+EMPTY2   83592 / 34804
+RESTORED 65584 / 34804
+
+Entrance cost=18008 B
+Junction cost=10540 B
+finalDelta=0
+fragmentationDelta=0
+```
+
+The 8-byte absolute shift from the earlier PR #67 firmware is build-context only; resident costs and fingerprints remain identical.
+
+## Hardware-proven boundary through current milestone
+
+```text
+Entrance resident heap = 18008 B
+Entrance snapshotFNV   = b3811f3d
+Junction resident heap = 10540 B
+Junction snapshotFNV   = bc9071e9
+catalogFNV             = ce322e3f
+preflightFNV           = 108e5c7b
+statsMenuIntentFNV     = 96afe901
+levelExitStatsFNV      = bd41bcfa
+playerExitAppliedFNV   = 298eaaa4
+committedTransitionBytes = 24
+committedTransitionFNV   = 2c595a62
+
+all MAP_INTRO opcode families owned=yes
+reversible Entrance -> Junction -> Entrance=yes
+post-teardown rollback recovery=yes
+committed Entrance -> Junction=yes
+Junction left resident=yes
+legacy entities=0
+legacy monsters=0
 ST_PLAYING not reached
 shapeData=NULL
 mediaTexels=NULL
@@ -226,34 +262,49 @@ mediaTexels=NULL
 original Doom RPG behavior/data
  -> native pack-backed parsers
  -> compact immutable map + explicit mutable owners
- -> complete MAP_INTRO event-family ownership
- -> exit/transition consumers
-      -> level-exit stats          [hardware-proven]
-      -> player exit-state         [hardware-proven]
-      -> stats-menu intent         [hardware-proven]
-      -> generic map catalog       [hardware-proven]
-      -> target PAK/BSP preflight  [hardware-proven]
-      -> explicit resident lifecycle + reversible full handoff [hardware-proven]
-      -> committed transition state machine
-      -> spawn/loadType handoff
+ -> native event/script ownership
+ -> exit chain
+ -> map catalog/preflight
+ -> explicit resident lifecycle
+ -> reversible full resident handoff          [hardware-proven]
+ -> committed stats-ack-gated transition      [hardware-proven]
+ -> native spawn/loadType ownership
  -> native gameplay/render loop
 ```
 
 Still outside:
 
 ```text
-committed Junction residency
-native transition point-of-no-return state machine
-spawn/loadType handoff
 actual stats-menu rendering/input
-full native entity/monster gameplay
+spawn/loadType handoff
+native player position owner
 ST_PLAYING progression
+full native entity/monster gameplay
 native gameplay renderer
 sound playback
 ```
 
-Merge recommendation:
+## Next bounded milestone after merge
+
+Re-audit legacy `Game_spawnPlayer()` and `loadType` semantics, then own native player placement from:
 
 ```text
-MERGE agent/esp32-native-resident-handoff
+retained spawnParam=0
+Junction BSP spawnIndex=943
+Junction BSP spawnDirection=64
+gameplayLoadMapId=2
+```
+
+Do not open full gameplay or `ST_PLAYING` as part of the same milestone unless the repo/legacy audit proves that boundary is unavoidable.
+
+## Merge recommendation
+
+```text
+MERGE agent/esp32-native-committed-transition
+```
+
+Hardware-tested firmware:
+
+```text
+759b7f05a7c1940e98caf68e4041faa69b34cfc9
 ```
