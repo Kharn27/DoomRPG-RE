@@ -29,6 +29,12 @@ static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
 
+static uint16_t sourceBgr565ToRgb565(uint16_t color) {
+    return (uint16_t)(((color & 0x001fU) << 11) |
+                      (color & 0x07e0U) |
+                      ((color & 0xf800U) >> 11));
+}
+
 static uint32_t fnvAppend(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
     uint32_t i;
@@ -108,17 +114,18 @@ static EspNativeGraphicsCatalogStatus readRecord(
     outRecord->sourceOffset = (uint32_t)sourceOffset;
 
     /*
-     * palettes.bin stores the original RGB565 words. Legacy
-     * Render_loadPalettes() historically swaps R/B for the desktop backend;
-     * DoomRPG_prepareNativePalette() swaps that transitional table back for
-     * the ESP32 framebuffer. Reading the little-endian source words directly
-     * therefore yields the permanent native RGB565 form without depending on
-     * either legacy transformation. The hardware probe accepts only one
-     * coherent relation to the transitional Render palette: already-native or
-     * exactly one R/B swap away.
+     * The original palettes.bin words are stored in the game's source BGR565
+     * channel order. Render_loadPalettes() performs exactly one red/blue swap
+     * before the menu/game pixels reach the RGB565 framebuffer. The first
+     * native gameplay-frame hardware test made this distinction visible: using
+     * the raw source word directly produced obviously wrong wall colors while
+     * the legacy menu looked correct. Store the display/framebuffer RGB565 form
+     * permanently so every native consumer sees the same channel order as the
+     * proven menu path without depending on Render.mediaPalettes.
      */
     for (i = 0U; i < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++i) {
-        outRecord->paletteRgb565[i] = readLe16(&paletteBytes[i * 2U]);
+        outRecord->paletteRgb565[i] =
+            sourceBgr565ToRgb565(readLe16(&paletteBytes[i * 2U]));
     }
 
     return ESP_NATIVE_GRAPHICS_CATALOG_OK;
