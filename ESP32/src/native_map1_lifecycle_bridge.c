@@ -1,3 +1,10 @@
+#include <stdio.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include "esp_native_plane_renderer.h"
+#include "esp_probe_log.h"
 #include "native_intro_dispose.h"
 #include "native_committed_transition_probe.h"
 #include "native_junction_facing_probe.h"
@@ -47,17 +54,16 @@
 #include "native_stats_menu_intent_probe.h"
 #include "native_transition_preflight_final_probe.h"
 
-/*
- * Keep the hardware-validated intro clock/dispose, native BSP pass-1 and native
- * resident-runtime implementations untouched. These wrappers are temporary
- * lifecycle scaffolding only; reusable native map/player/UI/transition
- * components remain legacy-engine free.
- */
+#define VALIDATED_FAST_FORWARD_MAX_PASSES 64U
+
+static unsigned int fastForwardTotalPasses;
+static int fastForwardReadyLogged;
+static int fastForwardWaitLogged;
+
 void __real_Esp32IntroDispose_reset(void);
 void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
 
-void __wrap_Esp32IntroDispose_reset(void) {
-    __real_Esp32IntroDispose_reset();
+static void resetValidatedChain(void) {
     Esp32Map1BspPass1_reset();
     Esp32Map1RuntimeLoad_reset();
     Esp32Map1AccessProbe_reset();
@@ -105,27 +111,10 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32JunctionPlayingServiceProbe_reset();
     Esp32JunctionGraphicsCatalogProbe_reset();
     Esp32JunctionFirstFrameCorrectedProbe_reset();
+    EspNativePlaneRenderer_reset();
 }
 
-void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
-    __real_Esp32IntroDispose_service(doomRpg);
-
-    /*
-     * Final Continue -> validated intro teardown -> compact native map/resident
-     * owners -> bounded opcode/UI/world semantic owners -> committed Junction
-     * residency -> fresh-map spawn/player/HUD/setup -> first tile dispatch ->
-     * finishRotation orientation -> second tile dispatch -> durable native
-     * facing -> post-load HUD message clear -> direct Junction Game_givemap ->
-     * current-weapon self-selection -> initial-save caller intent -> scalar
-     * isLoaded/isSaved/activeLoadType cleanup -> empty event/particle cleanup ->
-     * caller-side redraw request -> native ST_INTRO->ST_PLAYING transition ->
-     * final idleTime deadline -> first native PLAYING service -> sparse native
-     * graphics catalog -> first visible native Junction walls frame with source
-     * BGR565 converted once to the menu-equivalent RGB565 channel order. Durable
-     * save persistence, sprites/HUD, input and gameplay mutation remain outside.
-     * Each stage arms first and runs later.
-     */
-    Esp32Map1BspPass1_service(doomRpg);
+static void serviceValidatedPredecessors(struct DoomRPG_s* doomRpg) {
     Esp32Map1RuntimeLoad_service(doomRpg);
     Esp32Map1AccessProbe_service(doomRpg);
     Esp32Map1StateProbe_service(doomRpg);
@@ -171,5 +160,60 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32JunctionPostLoadIdleTimeProbe_service(doomRpg);
     Esp32JunctionPlayingServiceProbe_service(doomRpg);
     Esp32JunctionGraphicsCatalogProbe_service(doomRpg);
+}
+
+void __wrap_Esp32IntroDispose_reset(void) {
+    __real_Esp32IntroDispose_reset();
+    EspProbeLog_setQuiet(0);
+    fastForwardTotalPasses = 0U;
+    fastForwardReadyLogged = 0;
+    fastForwardWaitLogged = 0;
+    resetValidatedChain();
+}
+
+void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
+    unsigned int pass;
+
+    __real_Esp32IntroDispose_service(doomRpg);
+
+    /* Historical probes remain executable source-of-truth checks, but their
+     * successful chatter is no longer useful on every firmware flash. Keep
+     * failures visible, and once BSP pass-1 has completed, pipeline the already
+     * hardware-proven owners in the same strict order instead of waiting one
+     * outer game loop per ARMED/PARK boundary.
+     */
+    EspProbeLog_setQuiet(1);
+    Esp32Map1BspPass1_service(doomRpg);
+
+    if (Esp32Map1BspPass1_isDone() &&
+        !Esp32JunctionGraphicsCatalogProbe_isDone()) {
+        for (pass = 0U;
+             pass < VALIDATED_FAST_FORWARD_MAX_PASSES &&
+             !Esp32JunctionGraphicsCatalogProbe_isDone();
+             ++pass) {
+            serviceValidatedPredecessors(doomRpg);
+            ++fastForwardTotalPasses;
+            vTaskDelay(1);
+        }
+    }
+    EspProbeLog_setQuiet(0);
+
+    if (!Esp32Map1BspPass1_isDone()) return;
+
+    if (!Esp32JunctionGraphicsCatalogProbe_isDone()) {
+        if (!fastForwardWaitLogged) {
+            printf("[NATIVEBOOT] WAIT validated predecessor chain incomplete after %u silent passes; any FAILED line above is authoritative\n",
+                   fastForwardTotalPasses);
+            fastForwardWaitLogged = 1;
+        }
+        return;
+    }
+
+    if (!fastForwardReadyLogged) {
+        printf("[NATIVEBOOT] READY validated predecessors silent passes=%u catalog=969d5a77; current first-frame fidelity probe starts now\n",
+               fastForwardTotalPasses);
+        fastForwardReadyLogged = 1;
+    }
+
     Esp32JunctionFirstFrameCorrectedProbe_service(doomRpg);
 }

@@ -18,6 +18,7 @@
 #include "esp_map_resident_lifecycle.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_graphics_catalog.h"
+#include "esp_native_plane_renderer.h"
 #include "esp_native_playing_service_state.h"
 #include "esp_player_view_state.h"
 #include "native_junction_first_frame_corrected_probe.h"
@@ -35,6 +36,9 @@
 #define EXPECTED_TOPOLOGY_FNV 0xd6e8df7dU
 #define EXPECTED_PLAYING_SERVICE_FNV 0x4c50b853U
 #define EXPECTED_PLAYER_VIEW_FNV 0xafcdcf74U
+#define EXPECTED_CATALOG_FNV 0x969d5a77U
+#define EXPECTED_TEXTURE_FNV 0x2dd5dfcfU
+#define EXPECTED_SPRITE_FNV 0xcfd036cfU
 #define EXPECTED_CATALOG_RECORD_BYTES 40U
 #define EXPECTED_TEXTURE_COUNT 30U
 #define EXPECTED_SPRITE_COUNT 16U
@@ -45,15 +49,14 @@
 #define EXPECTED_WALL_REQUESTS 34U
 #define EXPECTED_WALL_DRAWS 34U
 #define EXPECTED_SPANS 166U
-#define EXPECTED_PIXELS 4341U
-#define EXPECTED_CACHE_HITS 17U
-#define EXPECTED_CACHE_MISSES 17U
-#define EXPECTED_CEILING_RGB565 0xb5b6U
-#define EXPECTED_FLOOR_RGB565 0x632cU
+#define EXPECTED_WALL_PIXELS 4341U
+#define EXPECTED_WALL_CACHE_HITS 17U
+#define EXPECTED_WALL_CACHE_MISSES 17U
+#define EXPECTED_PLANE_ROWS 80U
+#define EXPECTED_PLANE_PIXELS 12800U
 #define JUNCTION_TARGET_MAP 9U
 
 static struct {
-    int armed;
     int attempted;
     int done;
 } probeState;
@@ -70,14 +73,6 @@ static uint32_t hashBytes(const void* data, uint32_t bytes) {
     return hash;
 }
 
-static uint32_t heap8Free(void) {
-    return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
-}
-
-static uint32_t largest8Block(void) {
-    return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-}
-
 static uint32_t framebufferHash(void) {
     const void* fb = Esp32PlatformVideo_framebuffer();
     const size_t bytes = Esp32PlatformVideo_framebufferSizeBytes();
@@ -87,10 +82,9 @@ static uint32_t framebufferHash(void) {
     return hashBytes(fb, (uint32_t)bytes);
 }
 
-static uint32_t columnWitness(const Render_t* render) {
+static uint32_t columnHash(const Render_t* render) {
     if (render == NULL || render->columnScale == NULL ||
-        render->screenWidth <= 0 || render->screenWidth > DOOMRPG_LOGICAL_WIDTH)
-        return 0U;
+        render->screenWidth <= 0 || render->screenWidth > 160) return 0U;
     return hashBytes(render->columnScale,
                      (uint32_t)render->screenWidth * sizeof(int));
 }
@@ -141,85 +135,31 @@ static int playerViewCanonical(void) {
            s->active == 1U;
 }
 
-static int catalogMenuDirect(uint32_t* outTextureFNV,
-                             uint32_t* outSpriteFNV) {
+static int catalogCanonical(uint32_t* textureFNV, uint32_t* spriteFNV) {
     const EspNativeGraphicsCatalogView* v = EspNativeGraphicsCatalog_view();
-    Render_t* render;
-    uint32_t group;
-
-    if (outTextureFNV != NULL) *outTextureFNV = 0U;
-    if (outSpriteFNV != NULL) *outSpriteFNV = 0U;
-
+    uint32_t t;
+    uint32_t s;
     if (v == NULL || sizeof(EspNativeGraphicsCatalogRecord) !=
                          EXPECTED_CATALOG_RECORD_BYTES ||
         v->textureCount != EXPECTED_TEXTURE_COUNT ||
         v->spriteCount != EXPECTED_SPRITE_COUNT ||
         v->storageBytes != EXPECTED_CATALOG_STORAGE ||
-        v->stateFNV1a == 0U) return 0;
-
-    /* The caller supplies the legacy menu palette through the global Render
-     * witness. Resolve it from the currently initialized engine object only in
-     * the service function; this helper receives it through a temporary static
-     * below to keep the structural checks together. */
-    render = NULL;
-    (void)render;
-
-    if (outTextureFNV != NULL) {
-        *outTextureFNV = hashBytes(
-            v->textures,
-            (uint32_t)v->textureCount * sizeof(EspNativeGraphicsCatalogRecord));
-    }
-    if (outSpriteFNV != NULL) {
-        *outSpriteFNV = hashBytes(
-            v->sprites,
-            (uint32_t)v->spriteCount * sizeof(EspNativeGraphicsCatalogRecord));
-    }
-
-    for (group = 0U; group < 2U; ++group) {
-        const EspNativeGraphicsCatalogRecord* records =
-            group == 0U ? v->textures : v->sprites;
-        uint16_t count = group == 0U ? v->textureCount : v->spriteCount;
-        uint16_t i;
-        for (i = 0U; i < count; ++i) {
-            if (records[i].resourceId >= 256U ||
-                (group == 0U && (records[i].sourceOffset & 1U) != 0U)) {
-                return 0;
-            }
-        }
-    }
-    return 1;
-}
-
-static int catalogPaletteMatchesMenu(const EspNativeGraphicsCatalogView* v,
-                                     const Render_t* render) {
-    uint32_t group;
-    if (v == NULL || render == NULL || render->mediaPalettes == NULL ||
-        render->mediaPalettesLength <= 0) return 0;
-
-    for (group = 0U; group < 2U; ++group) {
-        const EspNativeGraphicsCatalogRecord* records =
-            group == 0U ? v->textures : v->sprites;
-        uint16_t count = group == 0U ? v->textureCount : v->spriteCount;
-        uint16_t i;
-        for (i = 0U; i < count; ++i) {
-            uint32_t p;
-            if ((uint32_t)records[i].paletteSourceOffset + 15U >=
-                (uint32_t)render->mediaPalettesLength) return 0;
-            for (p = 0U; p < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++p) {
-                if (records[i].paletteRgb565[p] !=
-                    (uint16_t)render->mediaPalettes[
-                        (uint32_t)records[i].paletteSourceOffset + p]) {
-                    return 0;
-                }
-            }
-        }
-    }
-    return 1;
+        v->stateFNV1a != EXPECTED_CATALOG_FNV) return 0;
+    t = hashBytes(v->textures,
+                  (uint32_t)v->textureCount *
+                      sizeof(EspNativeGraphicsCatalogRecord));
+    s = hashBytes(v->sprites,
+                  (uint32_t)v->spriteCount *
+                      sizeof(EspNativeGraphicsCatalogRecord));
+    if (textureFNV != NULL) *textureFNV = t;
+    if (spriteFNV != NULL) *spriteFNV = s;
+    return t == EXPECTED_TEXTURE_FNV && s == EXPECTED_SPRITE_FNV;
 }
 
 void Esp32JunctionFirstFrameCorrectedProbe_reset(void) {
     memset(&probeState, 0, sizeof(probeState));
     EspNativeFirstFrame_reset();
+    EspNativePlaneRenderer_reset();
 }
 
 int Esp32JunctionFirstFrameCorrectedProbe_isDone(void) {
@@ -231,8 +171,8 @@ void Esp32JunctionFirstFrameCorrectedProbe_service(struct DoomRPG_s* doomRpgBase
     EspMapResidentSnapshot residentBefore, residentAfter;
     const EspMapLineStateView* lineState;
     const EspPlayerViewState* playerView;
-    const EspNativeGraphicsCatalogView* catalog;
     const EspNativeFirstFrameState* frame;
+    const EspNativePlaneRenderStats* planes;
     EspNativeFirstFrameState frameCopy;
     uint32_t textureFNV = 0U, spriteFNV = 0U;
     uint32_t frameBefore, frameAfter, stateFNV;
@@ -240,48 +180,46 @@ void Esp32JunctionFirstFrameCorrectedProbe_service(struct DoomRPG_s* doomRpgBase
     uint32_t gameBefore, gameAfter, playerBefore, playerAfter;
     uint32_t hudBefore, hudAfter, canvasBefore, canvasAfter;
     uint32_t renderBefore, renderAfter, columnBefore, columnAfter;
-    uint32_t paletteBefore, paletteAfter;
-    uint32_t catalogBeforeFNV, catalogAfterFNV;
-    int nullRender, nullView, badMap, repeat, repeatAtomic;
+    uint32_t paletteBefore, paletteAfter, catalogBefore, catalogAfter;
+    int nullRender, nullView, wrongMap, repeat, repeatAtomic;
+    int geometryOk, planeOk, integrityOk;
     EspNativeFirstFrameStatus status;
 
     if (probeState.done || probeState.attempted) return;
     if (!Esp32JunctionGraphicsCatalogProbe_isDone()) return;
-
-    if (!probeState.armed) {
-        probeState.armed = 1;
-        printf("[JUNCTIONFRAMEPROBE] ARMED corrected menu-equivalent RGB565 catalog; first visible Junction frame starts on next loop service\n");
-        return;
-    }
-
     probeState.attempted = 1;
-    printf("\n=== Doom RPG ESP32-native Junction first gameplay frame (corrected RGB565) ===\n");
-    printf("[JUNCTIONFRAMEPROBE] CONTRACT render the same hardware-proven deterministic Junction walls-only frame, but require source BGR565 palettes to be converted once into the exact RGB565 channel order used by the menu; framebuffer mutation/presentation are allowed, sprites/HUD/input/turn/gameplay remain deferred, legacy BSP/mappings/shapeData/mediaTexels stay absent and all transient wall texels/PAK handles must be released before PARK\n");
 
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL || doomRpg->render == NULL ||
-        doomRpg->game == NULL || doomRpg->player == NULL || doomRpg->hud == NULL ||
-        doomRpg->doomCanvas->state != ST_INTRO || doomRpg->doomCanvas->storyPage != 3 ||
-        doomRpg->doomCanvas->numEvents != 0 || doomRpg->game->numEntities != 0 ||
-        doomRpg->game->numMonsters != 0 || !legacyGraphicsClear(doomRpg->render) ||
-        doomRpg->render->framebuffer != (byte*)Esp32PlatformVideo_framebuffer() ||
-        doomRpg->render->columnScale == NULL || doomRpg->render->screenWidth != 160 ||
-        doomRpg->render->screenHeight != 80 || doomRpg->render->screenX != 0 ||
-        doomRpg->render->screenY != 20 || EspAssetPack_isOpen() ||
+    printf("\n=== Doom RPG ESP32-native Junction first gameplay frame v2 ===\n");
+
+    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
+        doomRpg->render == NULL || doomRpg->game == NULL ||
+        doomRpg->player == NULL || doomRpg->hud == NULL ||
+        doomRpg->doomCanvas->state != ST_INTRO ||
+        doomRpg->doomCanvas->storyPage != 3 ||
+        doomRpg->doomCanvas->numEvents != 0 ||
+        doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0 ||
+        !legacyGraphicsClear(doomRpg->render) ||
+        doomRpg->render->framebuffer !=
+            (byte*)Esp32PlatformVideo_framebuffer() ||
+        doomRpg->render->screenWidth != 160 ||
+        doomRpg->render->screenHeight != 80 ||
+        doomRpg->render->screenX != 0 || doomRpg->render->screenY != 20 ||
+        EspAssetPack_isOpen() || EspNativeFirstFrame_isReady() ||
         sizeof(EspNativeFirstFrameState) != EXPECTED_FRAME_STATE_BYTES ||
-        EspNativeFirstFrame_isReady() || !playingCanonical() ||
-        !playerViewCanonical() ||
+        !playingCanonical() || !playerViewCanonical() ||
+        !catalogCanonical(&textureFNV, &spriteFNV) ||
         !EspMapResidentLifecycle_capture(&residentBefore) ||
         !residentCanonical(&residentBefore)) {
-        printf("[JUNCTIONFRAMEPROBE] FAILED unsafe corrected-frame boundary\n");
-        return;
-    }
-
-    catalog = EspNativeGraphicsCatalog_view();
-    if (!catalogMenuDirect(&textureFNV, &spriteFNV) ||
-        !catalogPaletteMatchesMenu(catalog, doomRpg->render)) {
-        printf("[JUNCTIONFRAMEPROBE] FAILED corrected catalog/menu palette relation catalog=%p stateFNV=%08x\n",
-               (const void*)catalog,
-               (unsigned int)(catalog ? catalog->stateFNV1a : 0U));
+        printf("[JUNCTIONFRAME] FAILED unsafe boundary state=%d page=%d entities=%d monsters=%d legacyClear=%d playing=%d view=%d catalog=%d resident=%d\n",
+               doomRpg && doomRpg->doomCanvas ? doomRpg->doomCanvas->state : -1,
+               doomRpg && doomRpg->doomCanvas ? doomRpg->doomCanvas->storyPage : -1,
+               doomRpg && doomRpg->game ? doomRpg->game->numEntities : -1,
+               doomRpg && doomRpg->game ? doomRpg->game->numMonsters : -1,
+               doomRpg && doomRpg->render ? legacyGraphicsClear(doomRpg->render) : 0,
+               playingCanonical(), playerViewCanonical(),
+               catalogCanonical(NULL, NULL),
+               EspMapResidentLifecycle_capture(&residentAfter) &&
+                   residentCanonical(&residentAfter));
         return;
     }
 
@@ -289,24 +227,24 @@ void Esp32JunctionFirstFrameCorrectedProbe_service(struct DoomRPG_s* doomRpgBase
     playerView = EspPlayerView_view();
     if (lineState == NULL || lineState->stateFNV1a != EXPECTED_LINE_FNV ||
         lineState->openCount != 0U || playerView == NULL) {
-        printf("[JUNCTIONFRAMEPROBE] FAILED mutable world gate lineFNV=%08x open=%u\n",
+        printf("[JUNCTIONFRAME] FAILED mutable-world gate lineFNV=%08x open=%u\n",
                (unsigned int)(lineState ? lineState->stateFNV1a : 0U),
                (unsigned int)(lineState ? lineState->openCount : 0U));
         return;
     }
 
     frameBefore = framebufferHash();
-    heapBefore = heap8Free();
-    largestBefore = largest8Block();
+    heapBefore = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    largestBefore = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     gameBefore = hashBytes(doomRpg->game, sizeof(*doomRpg->game));
     playerBefore = hashBytes(doomRpg->player, sizeof(*doomRpg->player));
     hudBefore = hashBytes(doomRpg->hud, sizeof(*doomRpg->hud));
     canvasBefore = hashBytes(doomRpg->doomCanvas, sizeof(*doomRpg->doomCanvas));
     renderBefore = hashBytes(doomRpg->render, sizeof(*doomRpg->render));
-    columnBefore = columnWitness(doomRpg->render);
+    columnBefore = columnHash(doomRpg->render);
     paletteBefore = hashBytes(doomRpg->render->mediaPalettes,
                               (uint32_t)doomRpg->render->mediaPalettesLength * 2U);
-    catalogBeforeFNV = catalog->stateFNV1a;
+    catalogBefore = EspNativeGraphicsCatalog_view()->stateFNV1a;
 
     nullRender = EspNativeFirstFrame_route(NULL, playerView) ==
                  ESP_NATIVE_FIRST_FRAME_INVALID;
@@ -315,134 +253,122 @@ void Esp32JunctionFirstFrameCorrectedProbe_service(struct DoomRPG_s* doomRpgBase
     {
         EspPlayerViewState bad = *playerView;
         bad.targetMapId = 8U;
-        badMap = EspNativeFirstFrame_route(doomRpg->render, &bad) ==
-                 ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
+        wrongMap = EspNativeFirstFrame_route(doomRpg->render, &bad) ==
+                   ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
     }
-
-    if (framebufferHash() != frameBefore || EspNativeFirstFrame_isReady()) {
-        printf("[JUNCTIONFRAMEPROBE] FAILED preflight mutated framebuffer/owner\n");
+    if (!nullRender || !nullView || !wrongMap ||
+        framebufferHash() != frameBefore || EspNativeFirstFrame_isReady() ||
+        EspNativePlaneRenderer_view() != NULL) {
+        printf("[JUNCTIONFRAME] FAILED fail-closed preflight nullRender=%d nullView=%d wrongMap=%d\n",
+               nullRender, nullView, wrongMap);
         return;
     }
 
     status = EspNativeFirstFrame_route(doomRpg->render, playerView);
     if (status != ESP_NATIVE_FIRST_FRAME_OK) {
-        printf("[JUNCTIONFRAMEPROBE] FAILED corrected route status=%d frameNow=%08x packOpen=%d\n",
+        printf("[JUNCTIONFRAME] FAILED route status=%d frame=%08x packOpen=%d\n",
                (int)status, (unsigned int)framebufferHash(), EspAssetPack_isOpen());
         return;
     }
 
     frame = EspNativeFirstFrame_view();
-    if (frame == NULL) return;
+    planes = EspNativePlaneRenderer_view();
+    if (frame == NULL || planes == NULL) {
+        printf("[JUNCTIONFRAME] FAILED missing frame/plane owner frame=%p planes=%p\n",
+               (const void*)frame, (const void*)planes);
+        return;
+    }
+
     frameCopy = *frame;
     stateFNV = hashBytes(frame, sizeof(*frame));
-
     repeat = EspNativeFirstFrame_route(doomRpg->render, playerView) ==
              ESP_NATIVE_FIRST_FRAME_ALREADY_ACTIVE;
     repeatAtomic = memcmp(frame, &frameCopy, sizeof(frameCopy)) == 0;
 
     frameAfter = framebufferHash();
-    heapAfter = heap8Free();
-    largestAfter = largest8Block();
+    heapAfter = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    largestAfter = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     gameAfter = hashBytes(doomRpg->game, sizeof(*doomRpg->game));
     playerAfter = hashBytes(doomRpg->player, sizeof(*doomRpg->player));
     hudAfter = hashBytes(doomRpg->hud, sizeof(*doomRpg->hud));
     canvasAfter = hashBytes(doomRpg->doomCanvas, sizeof(*doomRpg->doomCanvas));
     renderAfter = hashBytes(doomRpg->render, sizeof(*doomRpg->render));
-    columnAfter = columnWitness(doomRpg->render);
+    columnAfter = columnHash(doomRpg->render);
     paletteAfter = hashBytes(doomRpg->render->mediaPalettes,
                              (uint32_t)doomRpg->render->mediaPalettesLength * 2U);
-    catalogAfterFNV = EspNativeGraphicsCatalog_view()->stateFNV1a;
+    catalogAfter = EspNativeGraphicsCatalog_view()->stateFNV1a;
 
-    if (!EspMapResidentLifecycle_capture(&residentAfter) ||
-        !residentCanonical(&residentAfter) ||
-        frame->frameBeforeFNV != frameBefore || frame->frameAfterFNV != frameAfter ||
-        frameBefore == frameAfter || frame->targetMapId != JUNCTION_TARGET_MAP ||
-        frame->rendered != 1U || frame->presented != 1U || frame->active != 1U ||
-        frame->leafNodes != EXPECTED_LEAVES ||
-        frame->lineCandidates != EXPECTED_LINE_CANDIDATES ||
-        frame->wallRequests != EXPECTED_WALL_REQUESTS ||
-        frame->wallDraws != EXPECTED_WALL_DRAWS ||
-        frame->spanCalls != EXPECTED_SPANS || frame->pixelsDrawn != EXPECTED_PIXELS ||
-        frame->cacheHits != EXPECTED_CACHE_HITS ||
-        frame->cacheMisses != EXPECTED_CACHE_MISSES ||
-        frame->ceilingRgb565 != EXPECTED_CEILING_RGB565 ||
-        frame->floorRgb565 != EXPECTED_FLOOR_RGB565 ||
-        heapBefore != heapAfter || largestBefore != largestAfter ||
-        gameBefore != gameAfter || playerBefore != playerAfter ||
-        hudBefore != hudAfter || canvasBefore != canvasAfter ||
-        renderBefore != renderAfter || columnBefore != columnAfter ||
-        paletteBefore != paletteAfter || catalogBeforeFNV != catalogAfterFNV ||
-        !legacyGraphicsClear(doomRpg->render) || EspAssetPack_isOpen() ||
-        !repeat || !repeatAtomic ||
-        !catalogPaletteMatchesMenu(EspNativeGraphicsCatalog_view(), doomRpg->render)) {
-        printf("[JUNCTIONFRAMEPROBE] FAILED corrected integrity frameChanged=%d geometry=%u/%u/%u/%u/%u heap=%d largest=%d game=%d player=%d hud=%d canvas=%d render=%d column=%d palette=%d catalog=%d repeat=%d atomic=%d pack=%d\n",
-               frameBefore != frameAfter,
-               (unsigned int)frame->leafNodes,
-               (unsigned int)frame->lineCandidates,
-               (unsigned int)frame->wallDraws,
-               (unsigned int)frame->spanCalls,
-               (unsigned int)frame->pixelsDrawn,
+    if (!EspMapResidentLifecycle_capture(&residentAfter)) {
+        printf("[JUNCTIONFRAME] FAILED resident capture after frame\n");
+        return;
+    }
+
+    geometryOk = frame->leafNodes == EXPECTED_LEAVES &&
+                 frame->lineCandidates == EXPECTED_LINE_CANDIDATES &&
+                 frame->wallRequests == EXPECTED_WALL_REQUESTS &&
+                 frame->wallDraws == EXPECTED_WALL_DRAWS &&
+                 frame->spanCalls == EXPECTED_SPANS &&
+                 frame->pixelsDrawn == EXPECTED_WALL_PIXELS &&
+                 frame->cacheHits == EXPECTED_WALL_CACHE_HITS &&
+                 frame->cacheMisses == EXPECTED_WALL_CACHE_MISSES;
+    planeOk = planes->active == 1U && planes->rendered == 1U &&
+              planes->rowsRendered == EXPECTED_PLANE_ROWS &&
+              planes->pixelsRendered == EXPECTED_PLANE_PIXELS &&
+              planes->uniqueLogicalTextures > 0U &&
+              planes->uniqueLogicalTextures <= 24U &&
+              planes->cacheMisses > 0U &&
+              planes->texelReadBytes == planes->cacheMisses * 2048U;
+    integrityOk = frameBefore != frameAfter && frameAfter == frame->frameAfterFNV &&
+                  frameBefore == frame->frameBeforeFNV &&
+                  heapBefore == heapAfter && largestBefore == largestAfter &&
+                  gameBefore == gameAfter && playerBefore == playerAfter &&
+                  hudBefore == hudAfter && canvasBefore == canvasAfter &&
+                  renderBefore == renderAfter && columnBefore == columnAfter &&
+                  paletteBefore == paletteAfter &&
+                  catalogBefore == EXPECTED_CATALOG_FNV &&
+                  catalogAfter == EXPECTED_CATALOG_FNV &&
+                  memcmp(&residentBefore, &residentAfter,
+                         sizeof(residentBefore)) == 0 &&
+                  residentCanonical(&residentAfter) &&
+                  legacyGraphicsClear(doomRpg->render) &&
+                  !EspAssetPack_isOpen() && repeat && repeatAtomic &&
+                  doomRpg->doomCanvas->state == ST_INTRO &&
+                  doomRpg->game->numEntities == 0 &&
+                  doomRpg->game->numMonsters == 0;
+
+    if (!geometryOk || !planeOk || !integrityOk) {
+        printf("[JUNCTIONFRAME] FAILED integrity geometry=%d planes=%d frameChanged=%d heap=%d largest=%d game=%d player=%d hud=%d canvas=%d render=%d column=%d palette=%d catalog=%08x/%08x resident=%d repeat=%d atomic=%d pack=%d\n",
+               geometryOk, planeOk, frameBefore != frameAfter,
                heapBefore == heapAfter, largestBefore == largestAfter,
                gameBefore == gameAfter, playerBefore == playerAfter,
                hudBefore == hudAfter, canvasBefore == canvasAfter,
                renderBefore == renderAfter, columnBefore == columnAfter,
                paletteBefore == paletteAfter,
-               catalogBeforeFNV == catalogAfterFNV,
+               (unsigned int)catalogBefore, (unsigned int)catalogAfter,
+               memcmp(&residentBefore, &residentAfter,
+                      sizeof(residentBefore)) == 0,
                repeat, repeatAtomic, EspAssetPack_isOpen());
         return;
     }
 
-    printf("[JUNCTIONFRAME] READY stateBytes=%u stateFNV=%08x frame=%08x->%08x viewport=160x80@0,20 ceiling=%04x floor=%04x targetMap=9 rendered=1 presented=1 active=1\n",
+    printf("[JUNCTIONFRAME] READY stateBytes=%u stateFNV=%08x frame=%08x->%08x walls=%u spans=%u wallPixels=%u planes=%u planeTex=%u cache=%uH/%uM/%uE presented=%u\n",
            (unsigned int)sizeof(*frame), (unsigned int)stateFNV,
-           (unsigned int)frame->frameBeforeFNV,
-           (unsigned int)frame->frameAfterFNV,
-           (unsigned int)frame->ceilingRgb565,
-           (unsigned int)frame->floorRgb565);
-    printf("[JUNCTIONFRAME] SEMANTIC nativeFrame=yes walls=yes paletteCorrected=yes paletteRelation=menu-direct spritesDeferred=yes hudDeferred=yes presentation=yes frameMutation=yes inputConsumed=no turnAdvanced=no gameplayDispatch=no legacyDoomCanvas_playingStateCalled=no legacyRender_renderCalled=no\n");
-    printf("[JUNCTIONFRAME] RENDER leaves=%u lineCandidates=%u wallRequests=%u wallDraws=%u spans=%u pixels=%u cacheHits=%u cacheMisses=%u camera=%ld/%ld/%ld angle=%ld lineOpen=0\n",
-           (unsigned int)frame->leafNodes,
-           (unsigned int)frame->lineCandidates,
-           (unsigned int)frame->wallRequests,
-           (unsigned int)frame->wallDraws,
-           (unsigned int)frame->spanCalls,
+           (unsigned int)frameBefore, (unsigned int)frameAfter,
+           (unsigned int)frame->wallDraws, (unsigned int)frame->spanCalls,
            (unsigned int)frame->pixelsDrawn,
-           (unsigned int)frame->cacheHits,
-           (unsigned int)frame->cacheMisses,
-           (long)playerView->viewX, (long)playerView->viewY,
-           (long)playerView->viewZ, (long)playerView->viewAngle);
-    printf("[JUNCTIONFRAME] GFX catalogFNV=%08x->%08x textureFNV=%08x spriteFNV=%08x records=30/16 storage=1840 logicalToActual=yes paletteRelation=menu-direct packClosed=yes transientWallTexelsReleased=yes\n",
-           (unsigned int)catalogBeforeFNV,
-           (unsigned int)catalogAfterFNV,
-           (unsigned int)textureFNV,
-           (unsigned int)spriteFNV);
-    printf("[JUNCTIONFRAME] FAILCLOSED nullRender=%d nullView=%d wrongMap=%d preFrameUnchanged=yes repeat=%d repeatAtomic=yes\n",
-           nullRender, nullView, badMap, repeat);
-    printf("[JUNCTIONFRAME] RESIDENT snapshotFNV=%08x->%08x unchanged=yes runtimeFNV=%08x mapFNV=%08x scriptFNV=%08x lineFNV=%08x textureStateFNV=%08x automapFNV=%08x topologyFNV=%08x payload=%u entities=%u enemies=%u destructibles=%u packClosed=yes\n",
-           (unsigned int)hashBytes(&residentBefore, sizeof(residentBefore)),
+           (unsigned int)planes->pixelsRendered,
+           (unsigned int)planes->uniqueLogicalTextures,
+           (unsigned int)planes->cacheHits,
+           (unsigned int)planes->cacheMisses,
+           (unsigned int)planes->cacheEvictions,
+           (unsigned int)frame->presented);
+    printf("[JUNCTIONFRAME] GFX catalog=%08x texture=%08x sprite=%08x planeReads=%uB resident=%08x heapDelta=%d largestDelta=%d legacyRenderStable=yes packClosed=yes\n",
+           (unsigned int)catalogAfter, (unsigned int)textureFNV,
+           (unsigned int)spriteFNV, (unsigned int)planes->texelReadBytes,
            (unsigned int)hashBytes(&residentAfter, sizeof(residentAfter)),
-           (unsigned int)residentAfter.runtimeFNV1a,
-           (unsigned int)residentAfter.mapStateFNV1a,
-           (unsigned int)residentAfter.scriptStateFNV1a,
-           (unsigned int)residentAfter.lineStateFNV1a,
-           (unsigned int)residentAfter.textureStateFNV1a,
-           (unsigned int)residentAfter.automapStateFNV1a,
-           (unsigned int)residentAfter.topologyFNV1a,
-           (unsigned int)residentAfter.totalPayloadBytes,
-           (unsigned int)residentAfter.entityCount,
-           (unsigned int)residentAfter.enemyCount,
-           (unsigned int)residentAfter.destructibleCount);
-    printf("[JUNCTIONFRAME] RAM heap8=%u->%u delta=0 largest8=%u->%u delta=0 persistentFrameBytes=0 catalogPersistentBytes=1840\n",
-           (unsigned int)heapBefore, (unsigned int)heapAfter,
-           (unsigned int)largestBefore, (unsigned int)largestAfter);
-    printf("[JUNCTIONFRAME] LEGACY gameFNV=%08x->%08x playerFNV=%08x->%08x hudFNV=%08x->%08x canvasFNV=%08x->%08x renderFNV=%08x->%08x columnFNV=%08x->%08x paletteFNV=%08x->%08x legacyState=9->9 legacyRuntimeClear=yes GameMutation=no PlayerMutation=no HudMutation=no DoomCanvasMutation=no RenderMutation=no ColumnMutation=no PaletteMutation=no\n",
-           (unsigned int)gameBefore, (unsigned int)gameAfter,
-           (unsigned int)playerBefore, (unsigned int)playerAfter,
-           (unsigned int)hudBefore, (unsigned int)hudAfter,
-           (unsigned int)canvasBefore, (unsigned int)canvasAfter,
-           (unsigned int)renderBefore, (unsigned int)renderAfter,
-           (unsigned int)columnBefore, (unsigned int)columnAfter,
-           (unsigned int)paletteBefore, (unsigned int)paletteAfter);
-    printf("[JUNCTIONFRAME] PARK legacyState=9 page=3 targetMap=9 junctionResident=yes nativeST_PLAYING=yes nativePlayingService=yes nativeGraphicsCatalog=yes nativeFirstFrame=yes firstFramePending=no spritesPending=yes hudPending=yes gameplayDispatchPending=yes initialSavePersistencePending=yes entities=0 monsters=0 noGameplay=yes\n");
+           (int)heapBefore - (int)heapAfter,
+           (int)largestBefore - (int)largestAfter);
+    printf("[JUNCTIONFRAME] PARK nativeFirstFrame=yes texturedPlanes=yes firstFramePending=no spritesPending=yes hudPending=yes gameplayDispatchPending=yes legacyState=9 entities=0 monsters=0 noGameplay=yes\n");
 
     probeState.done = 1;
 }
