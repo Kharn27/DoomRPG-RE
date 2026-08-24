@@ -149,6 +149,12 @@ static uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
                       ((uint16_t)b >> 3));
 }
 
+static uint16_t sourceBgr565ToRgb565(uint16_t color) {
+    return (uint16_t)(((color & 0x001fU) << 11) |
+                      (color & 0x07e0U) |
+                      ((color & 0xf800U) >> 11));
+}
+
 static uint32_t framebufferFNV(const Render_t* render) {
     const uint32_t expectedBytes =
         DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT * (uint32_t)sizeof(uint16_t);
@@ -361,7 +367,8 @@ static int buildResolvedTextures(FirstFrameWork* work,
         out->paletteSourceOffset = (uint16_t)paletteOffset;
         out->sourceTexelOffset = (uint32_t)sourceOffset;
         for (p = 0U; p < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++p) {
-            out->paletteRgb565[p] = readLe16(&paletteRaw[p * 2U]);
+            out->paletteRgb565[p] =
+                sourceBgr565ToRgb565(readLe16(&paletteRaw[p * 2U]));
         }
     }
 
