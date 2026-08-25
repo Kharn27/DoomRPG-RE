@@ -26,6 +26,8 @@ typedef enum EspNativeGameplayAction_e {
     ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN = 14
 } EspNativeGameplayAction;
 
+/* Touch-zone IDs are native CYD geometry, not legacy key IDs. Keep the 3x3
+ * gameplay pad row-major, then the three top-HUD semantic zones. */
 typedef enum EspNativeGameplayTouchZone_e {
     ESP_NATIVE_GAMEPLAY_ZONE_NONE = 0,
     ESP_NATIVE_GAMEPLAY_ZONE_MOVE_LEFT = 1,
@@ -34,11 +36,12 @@ typedef enum EspNativeGameplayTouchZone_e {
     ESP_NATIVE_GAMEPLAY_ZONE_TURN_LEFT = 4,
     ESP_NATIVE_GAMEPLAY_ZONE_SELECT = 5,
     ESP_NATIVE_GAMEPLAY_ZONE_TURN_RIGHT = 6,
-    ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON = 7,
+    ESP_NATIVE_GAMEPLAY_ZONE_PREV_WEAPON = 7,
     ESP_NATIVE_GAMEPLAY_ZONE_MOVE_BACK = 8,
-    ESP_NATIVE_GAMEPLAY_ZONE_PASS_TURN = 9,
+    ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON = 9,
     ESP_NATIVE_GAMEPLAY_ZONE_MENU = 10,
-    ESP_NATIVE_GAMEPLAY_ZONE_AUTOMAP = 11
+    ESP_NATIVE_GAMEPLAY_ZONE_PASS_TURN = 11,
+    ESP_NATIVE_GAMEPLAY_ZONE_AUTOMAP = 12
 } EspNativeGameplayTouchZone;
 
 typedef enum EspNativeGameplayInputStatus_e {
