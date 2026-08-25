@@ -14,25 +14,28 @@
 /*
  * Temporary first-frame-only hardware diagnostic.
  *
- * The rendered Junction viewport has already proven dark in RAM while the real
- * CYD still looks visually washed out.  Leave the 160x80 gameplay viewport
- * untouched, but draw a small set of known RGB565 swatches in the otherwise
- * unused bottom 20 logical rows immediately before the first-frame present.
- * This gives a panel-side visual reference that is independent of Doom assets,
- * palettes and BSP rendering.  The viewport statistics remain read-only.
+ * The real-CYD RGB565 swatch proved that the ILI9341/presentation path can
+ * display known black/gray/white/red/green/blue values correctly.  Stop
+ * modifying the framebuffer for color experiments.  Instead, leave the frame
+ * byte-for-byte untouched and export the exact 160x80 gameplay viewport to a
+ * tiny 24-bpp BMP on the SD card after the one native first-frame present.
+ *
+ * This removes camera white-balance/panel appearance from the comparison: the
+ * uploaded BMP is the renderer's digital output itself.  Conversion is one
+ * 480-byte stack row at a time; there is no persistent allocation.
  */
-
-static int firstFrameRouteActive;
-static int swatchesApplied;
 
 EspNativeFirstFrameStatus __real_EspNativeFirstFrame_route(
     struct Render_s* render,
     const struct EspPlayerViewState_s* playerView);
 int __real_Esp32PlatformVideo_present(void);
 
-static uint32_t fnv1a32(const void* data, size_t bytes) {
+int __wrap_Esp32PlatformVideo_present(void) {
+    return __real_Esp32PlatformVideo_present();
+}
+
+static uint32_t fnvAppend(uint32_t hash, const void* data, size_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
-    uint32_t hash = 2166136261U;
     size_t i;
     if (p == NULL && bytes != 0U) return 0U;
     for (i = 0U; i < bytes; ++i) {
@@ -40,58 +43,6 @@ static uint32_t fnv1a32(const void* data, size_t bytes) {
         hash *= 16777619U;
     }
     return hash;
-}
-
-static uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
-    return (uint16_t)((((uint16_t)r >> 3) << 11) |
-                      (((uint16_t)g >> 2) << 5) |
-                      ((uint16_t)b >> 3));
-}
-
-static void drawKnownSwatches(void) {
-    static const uint16_t colors[] = {
-        0x0000U, /* black */
-        0x4208U, /* neutral gray 64 */
-        0x8410U, /* neutral gray 128 */
-        0xffffU, /* white */
-        0xf800U, /* red */
-        0x07e0U, /* green */
-        0x001fU  /* blue */
-    };
-    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    const size_t bytes = Esp32PlatformVideo_framebufferSizeBytes();
-    const size_t expected =
-        (size_t)DOOMRPG_LOGICAL_WIDTH *
-        (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
-    const int swatchCount = (int)(sizeof(colors) / sizeof(colors[0]));
-    const int y0 = 100;
-    const int height = 20;
-    const int width = DOOMRPG_LOGICAL_WIDTH / swatchCount;
-    int i;
-    int y;
-    int x;
-
-    if (framebuffer == NULL || bytes != expected) return;
-
-    for (i = 0; i < swatchCount; ++i) {
-        const int x0 = i * width;
-        const int x1 = (i == swatchCount - 1)
-                           ? DOOMRPG_LOGICAL_WIDTH
-                           : (i + 1) * width;
-        for (y = y0; y < y0 + height; ++y) {
-            for (x = x0; x < x1; ++x) {
-                framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = colors[i];
-            }
-        }
-    }
-    swatchesApplied = 1;
-}
-
-int __wrap_Esp32PlatformVideo_present(void) {
-    if (firstFrameRouteActive && !swatchesApplied) {
-        drawKnownSwatches();
-    }
-    return __real_Esp32PlatformVideo_present();
 }
 
 static uint8_t expand5(uint16_t value) {
@@ -102,6 +53,136 @@ static uint8_t expand5(uint16_t value) {
 static uint8_t expand6(uint16_t value) {
     value &= 63U;
     return (uint8_t)((value << 2) | (value >> 4));
+}
+
+static void writeLe16(uint8_t* out, uint16_t value) {
+    out[0] = (uint8_t)(value & 0xffU);
+    out[1] = (uint8_t)((value >> 8) & 0xffU);
+}
+
+static void writeLe32(uint8_t* out, uint32_t value) {
+    out[0] = (uint8_t)(value & 0xffU);
+    out[1] = (uint8_t)((value >> 8) & 0xffU);
+    out[2] = (uint8_t)((value >> 16) & 0xffU);
+    out[3] = (uint8_t)((value >> 24) & 0xffU);
+}
+
+static uint32_t viewportFNV(const Render_t* render) {
+    const uint16_t* framebuffer;
+    const size_t rowBytes =
+        (size_t)DOOMRPG_LOGICAL_WIDTH * sizeof(uint16_t);
+    int pitchPixels;
+    uint32_t hash = 2166136261U;
+    int y;
+
+    if (render == NULL || render->framebuffer == NULL ||
+        render->screenWidth != DOOMRPG_LOGICAL_WIDTH ||
+        render->screenHeight <= 0 || render->screenX != 0 ||
+        render->screenY < 0 ||
+        render->screenY + render->screenHeight > DOOMRPG_LOGICAL_HEIGHT) {
+        return 0U;
+    }
+
+    framebuffer = (const uint16_t*)render->framebuffer;
+    pitchPixels = render->pitch >> 1;
+    for (y = 0; y < render->screenHeight; ++y) {
+        const uint16_t* row = framebuffer +
+            (render->screenY + y) * pitchPixels;
+        hash = fnvAppend(hash, row, rowBytes);
+    }
+    return hash;
+}
+
+static int dumpViewportBmp(const Render_t* render, uint32_t* outFNV) {
+    static const char* const path = "/sd/junction-viewport.bmp";
+    enum {
+        BMP_HEADER_BYTES = 54,
+        BMP_WIDTH = DOOMRPG_LOGICAL_WIDTH,
+        BMP_HEIGHT = 80,
+        BMP_ROW_BYTES = BMP_WIDTH * 3,
+        BMP_IMAGE_BYTES = BMP_ROW_BYTES * BMP_HEIGHT,
+        BMP_FILE_BYTES = BMP_HEADER_BYTES + BMP_IMAGE_BYTES
+    };
+    uint8_t header[BMP_HEADER_BYTES] = {0};
+    uint8_t row[BMP_ROW_BYTES];
+    const uint16_t* framebuffer;
+    int pitchPixels;
+    FILE* file;
+    int y;
+    int x;
+
+    if (outFNV != NULL) *outFNV = 0U;
+    if (render == NULL || render->framebuffer == NULL ||
+        render->screenWidth != BMP_WIDTH ||
+        render->screenHeight != BMP_HEIGHT || render->screenX != 0 ||
+        render->screenY < 0 ||
+        render->screenY + BMP_HEIGHT > DOOMRPG_LOGICAL_HEIGHT) {
+        printf("[JUNCTIONFRAME] BMP FAILED viewport=%dx%d@%d,%d\n",
+               render != NULL ? render->screenWidth : -1,
+               render != NULL ? render->screenHeight : -1,
+               render != NULL ? render->screenX : -1,
+               render != NULL ? render->screenY : -1);
+        return 0;
+    }
+
+    file = fopen(path, "wb");
+    if (file == NULL) {
+        printf("[JUNCTIONFRAME] BMP FAILED open path=/junction-viewport.bmp\n");
+        return 0;
+    }
+
+    header[0] = 'B';
+    header[1] = 'M';
+    writeLe32(&header[2], BMP_FILE_BYTES);
+    writeLe32(&header[10], BMP_HEADER_BYTES);
+    writeLe32(&header[14], 40U);
+    writeLe32(&header[18], BMP_WIDTH);
+    writeLe32(&header[22], BMP_HEIGHT);
+    writeLe16(&header[26], 1U);
+    writeLe16(&header[28], 24U);
+    writeLe32(&header[34], BMP_IMAGE_BYTES);
+    writeLe32(&header[38], 2835U);
+    writeLe32(&header[42], 2835U);
+
+    if (fwrite(header, 1U, sizeof(header), file) != sizeof(header)) {
+        fclose(file);
+        remove(path);
+        printf("[JUNCTIONFRAME] BMP FAILED header write\n");
+        return 0;
+    }
+
+    framebuffer = (const uint16_t*)render->framebuffer;
+    pitchPixels = render->pitch >> 1;
+    for (y = BMP_HEIGHT - 1; y >= 0; --y) {
+        const uint16_t* source = framebuffer +
+            (render->screenY + y) * pitchPixels;
+        for (x = 0; x < BMP_WIDTH; ++x) {
+            const uint16_t color = source[x];
+            row[(x * 3) + 0] = expand5(color);
+            row[(x * 3) + 1] = expand6(color >> 5);
+            row[(x * 3) + 2] = expand5(color >> 11);
+        }
+        if (fwrite(row, 1U, sizeof(row), file) != sizeof(row)) {
+            fclose(file);
+            remove(path);
+            printf("[JUNCTIONFRAME] BMP FAILED pixel write row=%d\n", y);
+            return 0;
+        }
+    }
+
+    if (fclose(file) != 0) {
+        remove(path);
+        printf("[JUNCTIONFRAME] BMP FAILED close\n");
+        return 0;
+    }
+
+    if (outFNV != NULL) *outFNV = viewportFNV(render);
+    printf("[JUNCTIONFRAME] BMP READY path=/junction-viewport.bmp size=%u viewport=%dx%d@%d,%d viewportFNV=%08x framebufferUntouched=yes\n",
+           (unsigned int)BMP_FILE_BYTES,
+           render->screenWidth, render->screenHeight,
+           render->screenX, render->screenY,
+           (unsigned int)(outFNV != NULL ? *outFNV : 0U));
+    return 1;
 }
 
 static void measureViewport(const Render_t* render) {
@@ -130,10 +211,10 @@ static void measureViewport(const Render_t* render) {
     pitchPixels = render->pitch >> 1;
 
     for (y = 0; y < render->screenHeight; ++y) {
-        const uint16_t* row = framebuffer +
+        const uint16_t* source = framebuffer +
             (render->screenY + y) * pitchPixels + render->screenX;
         for (x = 0; x < render->screenWidth; ++x) {
-            const uint16_t color = row[x];
+            const uint16_t color = source[x];
             const uint8_t r = expand5(color >> 11);
             const uint8_t g = expand6(color >> 5);
             const uint8_t b = expand5(color);
@@ -164,7 +245,7 @@ static void measureViewport(const Render_t* render) {
         return;
     }
 
-    printf("[JUNCTIONFRAME] COLORSTATS viewport=%dx%d@%d,%d meanRGB=%u/%u/%u meanY=%u minY=%u maxY=%u binsY=0-63:%u 64-127:%u 128-191:%u 192-255:%u neutral=%u/%u framebufferViewportUntouched=yes\n",
+    printf("[JUNCTIONFRAME] COLORSTATS viewport=%dx%d@%d,%d meanRGB=%u/%u/%u meanY=%u minY=%u maxY=%u binsY=0-63:%u 64-127:%u 128-191:%u 192-255:%u neutral=%u/%u framebufferUntouched=yes\n",
            render->screenWidth, render->screenHeight,
            render->screenX, render->screenY,
            (unsigned int)(sumR / count),
@@ -185,29 +266,15 @@ EspNativeFirstFrameStatus __wrap_EspNativeFirstFrame_route(
     struct Render_s* renderBase,
     const struct EspPlayerViewState_s* playerView) {
     Render_t* render = (Render_t*)renderBase;
-    EspNativeFirstFrameStatus status;
-
-    firstFrameRouteActive = 1;
-    swatchesApplied = 0;
-    status = __real_EspNativeFirstFrame_route(renderBase, playerView);
-    firstFrameRouteActive = 0;
+    const EspNativeFirstFrameStatus status =
+        __real_EspNativeFirstFrame_route(renderBase, playerView);
 
     if (status == ESP_NATIVE_FIRST_FRAME_OK) {
-        EspNativeFirstFrameState* state =
-            (EspNativeFirstFrameState*)EspNativeFirstFrame_view();
-        if (!swatchesApplied || state == NULL || render == NULL ||
-            render->framebuffer == NULL) {
-            printf("[JUNCTIONFRAME] SWATCH FAILED applied=%d owner=%p render=%p\n",
-                   swatchesApplied, (void*)state, (void*)render);
+        uint32_t dumpFNV = 0U;
+        measureViewport(render);
+        if (!dumpViewportBmp(render, &dumpFNV) || dumpFNV == 0U) {
             return ESP_NATIVE_FIRST_FRAME_PRESENT_FAILED;
         }
-
-        state->frameAfterFNV = fnv1a32(
-            render->framebuffer,
-            (size_t)DOOMRPG_LOGICAL_WIDTH *
-                (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t));
-        printf("[JUNCTIONFRAME] SWATCH y=100..119 order=black,gray64,gray128,white,red,green,blue values=0000,4208,8410,ffff,f800,07e0,001f\n");
-        measureViewport(render);
     }
     return status;
 }
