@@ -26,8 +26,16 @@
 #define EXPECTED_GAMEPLAY_FRAME_FNV 0xba3e5182U
 #define EXPECTED_GAMEPLAY_HUD_FNV 0x4756db9cU
 #define TOUCH_FEEDBACK_MS 250U
-#define TOUCH_FEEDBACK_MAX_EDITS 288U
-#define TOUCH_FEEDBACK_GLOW_RGB565 0x0418U
+#define TOUCH_FEEDBACK_MAX_EDITS 512U
+
+#define NEON_BLUE_HALO 0x0008U
+#define NEON_BLUE_CORE 0x001fU
+#define NEON_GREEN_HALO 0x0200U
+#define NEON_GREEN_CORE 0x07e0U
+#define NEON_YELLOW_HALO 0x4200U
+#define NEON_YELLOW_CORE 0xffe0U
+#define NEON_RED_HALO 0x4000U
+#define NEON_RED_CORE 0xf800U
 
 typedef struct LegacySnapshot_s {
     uint32_t hud;
@@ -55,6 +63,12 @@ typedef struct TouchFeedback_s {
     uint8_t active;
     uint8_t reserved;
 } TouchFeedback;
+
+typedef struct FeedbackPalette_s {
+    uint16_t halo;
+    uint16_t core;
+    const char* name;
+} FeedbackPalette;
 
 typedef struct GameplayInputProbeState_s {
     DoomRPG_t* doomRpg;
@@ -178,8 +192,9 @@ static int pureHitTestContract(void) {
         {26, 59, ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT, ESP_NATIVE_GAMEPLAY_ZONE_TURN_LEFT, 0, 46, 52, 72},
         {79, 59, ESP_NATIVE_GAMEPLAY_ACTION_SELECT, ESP_NATIVE_GAMEPLAY_ZONE_SELECT, 53, 46, 105, 72},
         {132, 59, ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT, ESP_NATIVE_GAMEPLAY_ZONE_TURN_RIGHT, 106, 46, 159, 72},
-        {26, 86, ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON, ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON, 0, 73, 52, 99},
-        {79, 86, ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK, ESP_NATIVE_GAMEPLAY_ZONE_MOVE_BACK, 53, 73, 105, 99}
+        {26, 86, ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON, ESP_NATIVE_GAMEPLAY_ZONE_PREV_WEAPON, 0, 73, 52, 99},
+        {79, 86, ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK, ESP_NATIVE_GAMEPLAY_ZONE_MOVE_BACK, 53, 73, 105, 99},
+        {132, 86, ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON, ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON, 106, 73, 159, 99}
     };
     unsigned int i;
 
@@ -198,9 +213,7 @@ static int pureHitTestContract(void) {
         }
     }
 
-    if (EspNativeGameplayInput_classify(132, 86, &hit) !=
-            ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT ||
-        EspNativeGameplayInput_classify(80, 110, &hit) !=
+    if (EspNativeGameplayInput_classify(80, 110, &hit) !=
             ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT ||
         EspNativeGameplayInput_classify(-1, 20, &hit) !=
             ESP_NATIVE_GAMEPLAY_INPUT_INVALID ||
@@ -228,20 +241,45 @@ static void printZone(int logicalX, int logicalY) {
            (((unsigned int)hit.bottom + 1U) * DOOMRPG_INTEGER_SCALE) - 1U);
 }
 
-static uint16_t glowAdd565(uint16_t destination) {
-    unsigned int r = ((destination >> 11) & 31U) +
-                     ((TOUCH_FEEDBACK_GLOW_RGB565 >> 11) & 31U);
-    unsigned int g = ((destination >> 5) & 63U) +
-                     ((TOUCH_FEEDBACK_GLOW_RGB565 >> 5) & 63U);
-    unsigned int b = (destination & 31U) +
-                     (TOUCH_FEEDBACK_GLOW_RGB565 & 31U);
+static FeedbackPalette feedbackPalette(const EspNativeGameplayTouchHit* hit) {
+    FeedbackPalette palette;
+    if (hit == NULL || hit->top < 20U) {
+        palette.halo = NEON_BLUE_HALO;
+        palette.core = NEON_BLUE_CORE;
+        palette.name = "BLUE";
+    }
+    else if (hit->top < 46U) {
+        palette.halo = NEON_GREEN_HALO;
+        palette.core = NEON_GREEN_CORE;
+        palette.name = "GREEN";
+    }
+    else if (hit->top < 73U) {
+        palette.halo = NEON_YELLOW_HALO;
+        palette.core = NEON_YELLOW_CORE;
+        palette.name = "YELLOW";
+    }
+    else {
+        palette.halo = NEON_RED_HALO;
+        palette.core = NEON_RED_CORE;
+        palette.name = "RED";
+    }
+    return palette;
+}
+
+static uint16_t glowAdd565(uint16_t destination, uint16_t additive) {
+    unsigned int r = ((destination >> 11) & 31U) + ((additive >> 11) & 31U);
+    unsigned int g = ((destination >> 5) & 63U) + ((additive >> 5) & 63U);
+    unsigned int b = (destination & 31U) + (additive & 31U);
     if (r > 31U) r = 31U;
     if (g > 63U) g = 63U;
     if (b > 31U) b = 31U;
     return (uint16_t)((r << 11) | (g << 5) | b);
 }
 
-static int editFeedbackPixel(uint16_t* framebuffer, int x, int y) {
+static int editFeedbackPixel(uint16_t* framebuffer,
+                             int x,
+                             int y,
+                             uint16_t additive) {
     TouchFeedback* feedback = &probeState.feedback;
     TouchFeedbackEdit* edit;
     uint16_t* pixel;
@@ -258,12 +296,16 @@ static int editFeedbackPixel(uint16_t* framebuffer, int x, int y) {
     pixel = framebuffer + offset;
     edit->offset = (uint16_t)offset;
     edit->saved = *pixel;
-    *pixel = glowAdd565(*pixel);
+    *pixel = glowAdd565(*pixel, additive);
     return 1;
 }
 
 static int drawFeedbackLine(uint16_t* framebuffer,
-                            int x0, int y0, int x1, int y1) {
+                            int x0,
+                            int y0,
+                            int x1,
+                            int y1,
+                            uint16_t additive) {
     int dx = x1 >= x0 ? x1 - x0 : x0 - x1;
     int sx = x0 < x1 ? 1 : -1;
     int dyAbs = y1 >= y0 ? y1 - y0 : y0 - y1;
@@ -272,7 +314,7 @@ static int drawFeedbackLine(uint16_t* framebuffer,
     int err = dx + dy;
 
     for (;;) {
-        if (!editFeedbackPixel(framebuffer, x0, y0)) return 0;
+        if (!editFeedbackPixel(framebuffer, x0, y0, additive)) return 0;
         if (x0 == x1 && y0 == y1) break;
         {
             const int e2 = err << 1;
@@ -289,80 +331,126 @@ static int drawFeedbackLine(uint16_t* framebuffer,
     return 1;
 }
 
+static int drawFeedbackRect(uint16_t* framebuffer,
+                            int left,
+                            int top,
+                            int right,
+                            int bottom,
+                            uint16_t additive) {
+    int x;
+    int y;
+    if (left > right || top > bottom) return 0;
+    for (x = left; x <= right; ++x) {
+        if (!editFeedbackPixel(framebuffer, x, top, additive)) return 0;
+    }
+    if (bottom != top) {
+        for (x = left; x <= right; ++x) {
+            if (!editFeedbackPixel(framebuffer, x, bottom, additive)) return 0;
+        }
+    }
+    for (y = top + 1; y < bottom; ++y) {
+        if (!editFeedbackPixel(framebuffer, left, y, additive)) return 0;
+        if (right != left &&
+            !editFeedbackPixel(framebuffer, right, y, additive)) return 0;
+    }
+    return 1;
+}
+
 static int drawCardinalArrow(uint16_t* framebuffer,
-                             int cx, int cy, int dx, int dy) {
+                             int cx,
+                             int cy,
+                             int dx,
+                             int dy,
+                             uint16_t color) {
     if (dx < 0) {
-        return drawFeedbackLine(framebuffer, cx + 5, cy, cx - 4, cy) &&
-               drawFeedbackLine(framebuffer, cx - 5, cy, cx - 1, cy - 4) &&
-               drawFeedbackLine(framebuffer, cx - 5, cy, cx - 1, cy + 4);
+        return drawFeedbackLine(framebuffer, cx + 5, cy, cx - 4, cy, color) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy, cx - 1, cy - 4, color) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy, cx - 1, cy + 4, color);
     }
     if (dx > 0) {
-        return drawFeedbackLine(framebuffer, cx - 5, cy, cx + 4, cy) &&
-               drawFeedbackLine(framebuffer, cx + 5, cy, cx + 1, cy - 4) &&
-               drawFeedbackLine(framebuffer, cx + 5, cy, cx + 1, cy + 4);
+        return drawFeedbackLine(framebuffer, cx - 5, cy, cx + 4, cy, color) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy, cx + 1, cy - 4, color) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy, cx + 1, cy + 4, color);
     }
     if (dy < 0) {
-        return drawFeedbackLine(framebuffer, cx, cy + 5, cx, cy - 4) &&
-               drawFeedbackLine(framebuffer, cx, cy - 5, cx - 4, cy - 1) &&
-               drawFeedbackLine(framebuffer, cx, cy - 5, cx + 4, cy - 1);
+        return drawFeedbackLine(framebuffer, cx, cy + 5, cx, cy - 4, color) &&
+               drawFeedbackLine(framebuffer, cx, cy - 5, cx - 4, cy - 1, color) &&
+               drawFeedbackLine(framebuffer, cx, cy - 5, cx + 4, cy - 1, color);
     }
-    return drawFeedbackLine(framebuffer, cx, cy - 5, cx, cy + 4) &&
-           drawFeedbackLine(framebuffer, cx, cy + 5, cx - 4, cy + 1) &&
-           drawFeedbackLine(framebuffer, cx, cy + 5, cx + 4, cy + 1);
+    return drawFeedbackLine(framebuffer, cx, cy - 5, cx, cy + 4, color) &&
+           drawFeedbackLine(framebuffer, cx, cy + 5, cx - 4, cy + 1, color) &&
+           drawFeedbackLine(framebuffer, cx, cy + 5, cx + 4, cy + 1, color);
+}
+
+static int drawWeaponChevron(uint16_t* framebuffer,
+                             int cx,
+                             int cy,
+                             int direction,
+                             uint16_t color) {
+    if (direction < 0) {
+        return drawFeedbackLine(framebuffer, cx + 5, cy - 4, cx + 1, cy, color) &&
+               drawFeedbackLine(framebuffer, cx + 1, cy, cx + 5, cy + 4, color) &&
+               drawFeedbackLine(framebuffer, cx, cy - 4, cx - 4, cy, color) &&
+               drawFeedbackLine(framebuffer, cx - 4, cy, cx, cy + 4, color);
+    }
+    return drawFeedbackLine(framebuffer, cx - 5, cy - 4, cx - 1, cy, color) &&
+           drawFeedbackLine(framebuffer, cx - 1, cy, cx - 5, cy + 4, color) &&
+           drawFeedbackLine(framebuffer, cx, cy - 4, cx + 4, cy, color) &&
+           drawFeedbackLine(framebuffer, cx + 4, cy, cx, cy + 4, color);
 }
 
 static int drawActionGlyph(uint16_t* framebuffer,
-                           const EspNativeGameplayTouchHit* hit) {
+                           const EspNativeGameplayTouchHit* hit,
+                           uint16_t color) {
     const int cx = ((int)hit->left + (int)hit->right) >> 1;
     const int cy = ((int)hit->top + (int)hit->bottom) >> 1;
 
     switch (hit->action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT:
-        return drawCardinalArrow(framebuffer, cx, cy, -1, 0);
+        return drawCardinalArrow(framebuffer, cx, cy, -1, 0, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
-        return drawCardinalArrow(framebuffer, cx, cy, 0, -1);
+        return drawCardinalArrow(framebuffer, cx, cy, 0, -1, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT:
-        return drawCardinalArrow(framebuffer, cx, cy, 1, 0);
+        return drawCardinalArrow(framebuffer, cx, cy, 1, 0, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK:
-        return drawCardinalArrow(framebuffer, cx, cy, 0, 1);
+        return drawCardinalArrow(framebuffer, cx, cy, 0, 1, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT:
-        return drawFeedbackLine(framebuffer, cx + 5, cy + 4, cx + 5, cy - 2) &&
-               drawFeedbackLine(framebuffer, cx + 5, cy - 2, cx - 4, cy - 2) &&
-               drawFeedbackLine(framebuffer, cx - 5, cy - 2, cx - 1, cy - 5) &&
-               drawFeedbackLine(framebuffer, cx - 5, cy - 2, cx - 1, cy + 1);
+        return drawFeedbackLine(framebuffer, cx + 5, cy + 4, cx + 5, cy - 2, color) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy - 2, cx - 4, cy - 2, color) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy - 2, cx - 1, cy - 5, color) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy - 2, cx - 1, cy + 1, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT:
-        return drawFeedbackLine(framebuffer, cx - 5, cy + 4, cx - 5, cy - 2) &&
-               drawFeedbackLine(framebuffer, cx - 5, cy - 2, cx + 4, cy - 2) &&
-               drawFeedbackLine(framebuffer, cx + 5, cy - 2, cx + 1, cy - 5) &&
-               drawFeedbackLine(framebuffer, cx + 5, cy - 2, cx + 1, cy + 1);
+        return drawFeedbackLine(framebuffer, cx - 5, cy + 4, cx - 5, cy - 2, color) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy - 2, cx + 4, cy - 2, color) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy - 2, cx + 1, cy - 5, color) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy - 2, cx + 1, cy + 1, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
-        return drawFeedbackLine(framebuffer, cx - 5, cy, cx - 2, cy) &&
-               drawFeedbackLine(framebuffer, cx + 2, cy, cx + 5, cy) &&
-               drawFeedbackLine(framebuffer, cx, cy - 5, cx, cy - 2) &&
-               drawFeedbackLine(framebuffer, cx, cy + 2, cx, cy + 5) &&
-               editFeedbackPixel(framebuffer, cx, cy);
+        return drawFeedbackLine(framebuffer, cx - 5, cy, cx - 2, cy, color) &&
+               drawFeedbackLine(framebuffer, cx + 2, cy, cx + 5, cy, color) &&
+               drawFeedbackLine(framebuffer, cx, cy - 5, cx, cy - 2, color) &&
+               drawFeedbackLine(framebuffer, cx, cy + 2, cx, cy + 5, color) &&
+               editFeedbackPixel(framebuffer, cx, cy, color);
+    case ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON:
+        return drawWeaponChevron(framebuffer, cx, cy, -1, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
-        return drawFeedbackLine(framebuffer, cx - 5, cy - 4, cx - 1, cy) &&
-               drawFeedbackLine(framebuffer, cx - 1, cy, cx - 5, cy + 4) &&
-               drawFeedbackLine(framebuffer, cx, cy - 4, cx + 4, cy) &&
-               drawFeedbackLine(framebuffer, cx + 4, cy, cx, cy + 4);
+        return drawWeaponChevron(framebuffer, cx, cy, 1, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN:
-        return drawFeedbackLine(framebuffer, cx - 5, cy - 4, cx + 5, cy - 4) &&
-               drawFeedbackLine(framebuffer, cx - 5, cy, cx + 5, cy) &&
-               drawFeedbackLine(framebuffer, cx - 5, cy + 4, cx + 5, cy + 4);
+        return drawFeedbackLine(framebuffer, cx - 5, cy - 4, cx + 5, cy - 4, color) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy, cx + 5, cy, color) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy + 4, cx + 5, cy + 4, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP:
-        return drawFeedbackLine(framebuffer, cx - 6, cy + 4, cx - 6, cy - 4) &&
-               drawFeedbackLine(framebuffer, cx - 6, cy - 4, cx - 2, cy - 2) &&
-               drawFeedbackLine(framebuffer, cx - 2, cy - 2, cx + 2, cy - 4) &&
-               drawFeedbackLine(framebuffer, cx + 2, cy - 4, cx + 6, cy - 2) &&
-               drawFeedbackLine(framebuffer, cx + 6, cy - 2, cx + 6, cy + 4) &&
-               drawFeedbackLine(framebuffer, cx - 2, cy - 2, cx - 2, cy + 4) &&
-               drawFeedbackLine(framebuffer, cx + 2, cy - 4, cx + 2, cy + 2);
+        return drawFeedbackLine(framebuffer, cx - 6, cy + 4, cx - 6, cy - 4, color) &&
+               drawFeedbackLine(framebuffer, cx - 6, cy - 4, cx - 2, cy - 2, color) &&
+               drawFeedbackLine(framebuffer, cx - 2, cy - 2, cx + 2, cy - 4, color) &&
+               drawFeedbackLine(framebuffer, cx + 2, cy - 4, cx + 6, cy - 2, color) &&
+               drawFeedbackLine(framebuffer, cx + 6, cy - 2, cx + 6, cy + 4, color) &&
+               drawFeedbackLine(framebuffer, cx - 2, cy - 2, cx - 2, cy + 4, color) &&
+               drawFeedbackLine(framebuffer, cx + 2, cy - 4, cx + 2, cy + 2, color);
     case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN:
-        return drawFeedbackLine(framebuffer, cx - 6, cy, cx + 2, cy) &&
-               drawFeedbackLine(framebuffer, cx + 3, cy, cx, cy - 3) &&
-               drawFeedbackLine(framebuffer, cx + 3, cy, cx, cy + 3) &&
-               drawFeedbackLine(framebuffer, cx + 6, cy - 5, cx + 6, cy + 5);
+        return drawFeedbackLine(framebuffer, cx - 6, cy, cx + 2, cy, color) &&
+               drawFeedbackLine(framebuffer, cx + 3, cy, cx, cy - 3, color) &&
+               drawFeedbackLine(framebuffer, cx + 3, cy, cx, cy + 3, color) &&
+               drawFeedbackLine(framebuffer, cx + 6, cy - 5, cx + 6, cy + 5, color);
     default:
         return 0;
     }
@@ -371,8 +459,11 @@ static int drawActionGlyph(uint16_t* framebuffer,
 static int drawFeedback(const EspNativeGameplayTouchHit* hit) {
     TouchFeedback* feedback = &probeState.feedback;
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    int x;
-    int y;
+    const FeedbackPalette palette = feedbackPalette(hit);
+    const int innerLeft = (int)hit->left + 1;
+    const int innerTop = (int)hit->top + 1;
+    const int innerRight = (int)hit->right - 1;
+    const int innerBottom = (int)hit->bottom - 1;
 
     if (hit == NULL || framebuffer == NULL || feedback->active) return 0;
     memset(feedback, 0, sizeof(*feedback));
@@ -384,20 +475,18 @@ static int drawFeedback(const EspNativeGameplayTouchHit* hit) {
     feedback->zone = hit->zone;
     feedback->active = 1U;
 
-    for (x = hit->left; x <= hit->right; ++x) {
-        if (!editFeedbackPixel(framebuffer, x, hit->top)) return 0;
+    /* Outer dim ring + one-pixel-inset saturated core gives a cheap neon halo
+     * while staying entirely inside the semantic hitbox, including screen-edge
+     * MENU/AUTOMAP and the y=0 top HUD. Every edit is reverse-restorable. */
+    if (!drawFeedbackRect(framebuffer,
+                          hit->left, hit->top, hit->right, hit->bottom,
+                          palette.halo) ||
+        !drawFeedbackRect(framebuffer,
+                          innerLeft, innerTop, innerRight, innerBottom,
+                          palette.core) ||
+        !drawActionGlyph(framebuffer, hit, palette.core)) {
+        return 0;
     }
-    if (hit->bottom != hit->top) {
-        for (x = hit->left; x <= hit->right; ++x) {
-            if (!editFeedbackPixel(framebuffer, x, hit->bottom)) return 0;
-        }
-    }
-    for (y = hit->top + 1; y < hit->bottom; ++y) {
-        if (!editFeedbackPixel(framebuffer, hit->left, y)) return 0;
-        if (hit->right != hit->left &&
-            !editFeedbackPixel(framebuffer, hit->right, y)) return 0;
-    }
-    if (!drawActionGlyph(framebuffer, hit)) return 0;
 
     feedback->expiresMs = nowMs() + TOUCH_FEEDBACK_MS;
     return 1;
@@ -467,6 +556,7 @@ static void onGameplayTap(int16_t screenX,
     LegacySnapshot legacyBefore;
     LegacySnapshot legacyAfter;
     EspNativeGameplayInputStatus classifyStatus;
+    FeedbackPalette palette;
     uint32_t heapBefore;
     uint32_t heapAfter;
     uint32_t largestBefore;
@@ -512,7 +602,7 @@ static void onGameplayTap(int16_t screenX,
     if (classifyStatus == ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT) {
         ++probeState.misses;
         if (hadFeedback) presentRestored = Esp32PlatformVideo_present();
-        printf("[NATIVEINPUT] MISS n=%u logical=%d,%d unbound=bottom-right-or-bottom-HUD frame=%08x restoredPresent=%d gameplay=no\n",
+        printf("[NATIVEINPUT] MISS n=%u logical=%d,%d unbound=bottom-HUD frame=%08x restoredPresent=%d gameplay=no\n",
                (unsigned int)probeState.misses,
                logicalX, logicalY,
                (unsigned int)frameFNV(), presentRestored);
@@ -587,6 +677,7 @@ static void onGameplayTap(int16_t screenX,
         return;
     }
 
+    palette = feedbackPalette(&hit);
     ++probeState.intents;
     printf("[NATIVEINPUT] INTENT n=%u seq=%u action=%s id=%u zone=%u logical=%u,%u consumedBy=probe dispatch=deferred gameplay=no\n",
            (unsigned int)probeState.intents,
@@ -596,9 +687,10 @@ static void onGameplayTap(int16_t screenX,
            (unsigned int)consumed.zone,
            (unsigned int)consumed.logicalX,
            (unsigned int)consumed.logicalY);
-    printf("[NATIVEINPUT] FEEDBACK zone=%u action=%s logical=x%u..%u y%u..%u physical=x%u..%u y%u..%u edits=%u hold=%ums style=additive-cyan-border+vector-glyph frame=%08x->%08x heapDelta=0 largestDelta=0\n",
+    printf("[NATIVEINPUT] FEEDBACK zone=%u action=%s palette=%s logical=x%u..%u y%u..%u physical=x%u..%u y%u..%u edits=%u hold=%ums style=neon-double-ring+vector-glyph frame=%08x->%08x heapDelta=0 largestDelta=0\n",
            (unsigned int)hit.zone,
            EspNativeGameplayInput_actionName(hit.action),
+           palette.name,
            (unsigned int)hit.left, (unsigned int)hit.right,
            (unsigned int)hit.top, (unsigned int)hit.bottom,
            (unsigned int)hit.left * DOOMRPG_INTEGER_SCALE,
@@ -645,7 +737,7 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
     if (!Esp32JunctionGameplayHudProbe_isDone()) return;
 
     printf("\n=== Doom RPG ESP32-native invisible gameplay touch pad ===\n");
-    printf("[NATIVEINPUTPROBE] CONTRACT calibrated CYD press -> logical 160x120 -> invisible Doom RPG keypad intent; eight active world zones with bottom-right deliberately free, MENU/PASS_TURN/AUTOMAP own the top HUD left/message/right zones, one cyclic NEXT_WEAPON touch is sufficient because weapon selection wraps; one compact pointer-free pending owner, unsupported/busy fail closed; this milestone consumes every intent in the probe and performs NO movement, turn, select, weapon, menu, automap, entity or world mutation; feedback is a 250ms allocation-free exact-restoring additive glow border plus action-specific vector glyph\n");
+    printf("[NATIVEINPUTPROBE] CONTRACT calibrated CYD press -> logical 160x120 -> twelve invisible semantic zones: full 3x3 world keypad with PREV_WEAPON/BACK/NEXT_WEAPON on its bottom row plus MENU/PASS_TURN/AUTOMAP across the top HUD; one compact pointer-free pending owner, unsupported/busy fail closed; this milestone consumes every intent in the probe and performs NO movement, turn, select, weapon, menu, automap, pass-turn, entity or world mutation; feedback is 250ms allocation-free exact-restoring row-coded neon double-ring + action-specific vector glyph, with BLUE top HUD / GREEN movement / YELLOW turn-select / RED weapon-back\n");
 
     heapBefore = heap8();
     largestBefore = largest8();
@@ -717,8 +809,9 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
     printZone(132, 59);
     printZone(26, 86);
     printZone(79, 86);
+    printZone(132, 86);
 
-    printf("[NATIVEINPUTPROBE] READY stateBytes=%u hitBytes=%u feedbackBytes=%u maxEdits=%u baseline=%08x touch=physical-calibrated/x2 logical releaseDebounce=50ms feedback=%ums style=additive-cyan-border+vector-glyph heap=%u->%u largest=%u->%u dispatch=deferred gameplay=no\n",
+    printf("[NATIVEINPUTPROBE] READY zones=12 stateBytes=%u hitBytes=%u feedbackBytes=%u maxEdits=%u baseline=%08x touch=physical-calibrated/x2 logical releaseDebounce=50ms feedback=%ums palette=BLUE/GREEN/YELLOW/RED style=neon-double-ring+vector-glyph heap=%u->%u largest=%u->%u dispatch=deferred gameplay=no\n",
            (unsigned int)sizeof(EspNativeGameplayInputState),
            (unsigned int)sizeof(EspNativeGameplayTouchHit),
            (unsigned int)sizeof(TouchFeedback),
@@ -727,5 +820,5 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)TOUCH_FEEDBACK_MS,
            (unsigned int)heapBefore, (unsigned int)heapAfter,
            (unsigned int)largestBefore, (unsigned int)largestAfter);
-    printf("[NATIVEINPUTPROBE] PARK tap all 11 active zones plus bottom-right MISS; every valid tap must log INTENT + glow/glyph FEEDBACK then exact RESTORE; no action is executed yet\n");
+    printf("[NATIVEINPUTPROBE] PARK tap all 12 zones plus bottom-HUD MISS; every valid tap must log INTENT + row-color neon/glyph FEEDBACK then exact RESTORE; no action is executed yet\n");
 }
