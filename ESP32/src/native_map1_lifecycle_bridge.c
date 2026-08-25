@@ -225,6 +225,13 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     EspProbeLog_setQuiet(0);
 
     if (EspProbeLog_hasBlockingFailure()) {
+        /* A current gameplay-probe failure must still allow the already-drawn
+         * transient touch overlay to expire and restore its saved pixels. This
+         * service performs no gameplay dispatch when the input probe is merely
+         * active; it only completes its bounded feedback timer/restore path. */
+        if (Esp32JunctionGameplayInputProbe_isActive()) {
+            Esp32JunctionGameplayInputProbe_service(doomRpg);
+        }
         if (!fastForwardBlockedLogged) {
             printf("[NATIVEBOOT] BLOCKED predecessor probe failure after %u silent passes; current first-frame probe NOT started\n",
                    fastForwardTotalPasses);
