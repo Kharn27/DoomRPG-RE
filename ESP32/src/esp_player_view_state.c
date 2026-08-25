@@ -6,6 +6,8 @@
 #include "esp_player_spawn_state.h"
 #include "esp_player_view_state.h"
 
+#define RUNTIME_STEP_SIZE 64
+
 static EspPlayerViewState playerViewState;
 
 static int spawnIsConsistent(const EspPlayerSpawnState* spawn) {
@@ -60,7 +62,7 @@ static int spawnIsConsistent(const EspPlayerSpawnState* spawn) {
     return 0;
 }
 
-static int viewSettledForRuntimeTurn(const EspPlayerViewState* view) {
+static int viewSettledForRuntimeAction(const EspPlayerViewState* view) {
     return view != NULL && view->active == 1U && view->spawnApplied == 1U &&
            view->hudRefreshPending == 0U &&
            view->facingRefreshPending == 0U &&
@@ -86,9 +88,34 @@ static int sameExceptRuntimeAngles(const EspPlayerViewState* a,
     return memcmp(&left, &right, sizeof(left)) == 0;
 }
 
+static int sameExceptRuntimePosition(const EspPlayerViewState* a,
+                                     const EspPlayerViewState* b) {
+    EspPlayerViewState left;
+    EspPlayerViewState right;
+    if (a == NULL || b == NULL) return 0;
+    left = *a;
+    right = *b;
+    left.viewX = 0;
+    left.viewY = 0;
+    left.destX = 0;
+    left.destY = 0;
+    right.viewX = 0;
+    right.viewY = 0;
+    right.destX = 0;
+    right.destY = 0;
+    return memcmp(&left, &right, sizeof(left)) == 0;
+}
+
 static int oneQuarterApart(int32_t before, int32_t after) {
     const int32_t diff = (after - before) & 255;
     return diff == 64 || diff == 192;
+}
+
+static int cardinalStep(int32_t deltaX, int32_t deltaY) {
+    return (deltaX == RUNTIME_STEP_SIZE && deltaY == 0) ||
+           (deltaX == -RUNTIME_STEP_SIZE && deltaY == 0) ||
+           (deltaX == 0 && deltaY == RUNTIME_STEP_SIZE) ||
+           (deltaX == 0 && deltaY == -RUNTIME_STEP_SIZE);
 }
 
 void EspPlayerView_reset(void) {
@@ -220,7 +247,7 @@ EspPlayerViewTurnStatus EspPlayerView_prepareQuarterTurn(
     if (outAfter != NULL) memset(outAfter, 0, sizeof(*outAfter));
     if (outBefore == NULL || outAfter == NULL) return ESP_PLAYER_VIEW_TURN_INVALID;
     if (!EspPlayerView_isReady()) return ESP_PLAYER_VIEW_TURN_NOT_READY;
-    if (!viewSettledForRuntimeTurn(&playerViewState)) {
+    if (!viewSettledForRuntimeAction(&playerViewState)) {
         return ESP_PLAYER_VIEW_TURN_UNSETTLED;
     }
     if (angleDelta != 64 && angleDelta != -64) {
@@ -245,8 +272,8 @@ EspPlayerViewTurnStatus EspPlayerView_commitPreparedTurn(
     if (memcmp(&playerViewState, expectedBefore, sizeof(playerViewState)) != 0) {
         return ESP_PLAYER_VIEW_TURN_STALE;
     }
-    if (!viewSettledForRuntimeTurn(expectedBefore) ||
-        !viewSettledForRuntimeTurn(preparedAfter)) {
+    if (!viewSettledForRuntimeAction(expectedBefore) ||
+        !viewSettledForRuntimeAction(preparedAfter)) {
         return ESP_PLAYER_VIEW_TURN_UNSETTLED;
     }
     if (!sameExceptRuntimeAngles(expectedBefore, preparedAfter) ||
@@ -256,4 +283,62 @@ EspPlayerViewTurnStatus EspPlayerView_commitPreparedTurn(
 
     playerViewState = *preparedAfter;
     return ESP_PLAYER_VIEW_TURN_OK;
+}
+
+EspPlayerViewMoveStatus EspPlayerView_prepareCardinalMove(
+    int32_t deltaX,
+    int32_t deltaY,
+    EspPlayerViewState* outBefore,
+    EspPlayerViewState* outAfter) {
+    EspPlayerViewState next;
+
+    if (outBefore != NULL) memset(outBefore, 0, sizeof(*outBefore));
+    if (outAfter != NULL) memset(outAfter, 0, sizeof(*outAfter));
+    if (outBefore == NULL || outAfter == NULL) return ESP_PLAYER_VIEW_MOVE_INVALID;
+    if (!EspPlayerView_isReady()) return ESP_PLAYER_VIEW_MOVE_NOT_READY;
+    if (!viewSettledForRuntimeAction(&playerViewState)) {
+        return ESP_PLAYER_VIEW_MOVE_UNSETTLED;
+    }
+    if (!cardinalStep(deltaX, deltaY)) {
+        return ESP_PLAYER_VIEW_MOVE_UNSUPPORTED;
+    }
+
+    *outBefore = playerViewState;
+    next = playerViewState;
+    next.viewX += deltaX;
+    next.viewY += deltaY;
+    next.destX = next.viewX;
+    next.destY = next.viewY;
+    *outAfter = next;
+    return ESP_PLAYER_VIEW_MOVE_OK;
+}
+
+EspPlayerViewMoveStatus EspPlayerView_commitPreparedMove(
+    const EspPlayerViewState* expectedBefore,
+    const EspPlayerViewState* preparedAfter) {
+    int32_t deltaX;
+    int32_t deltaY;
+
+    if (expectedBefore == NULL || preparedAfter == NULL) {
+        return ESP_PLAYER_VIEW_MOVE_INVALID;
+    }
+    if (!EspPlayerView_isReady()) return ESP_PLAYER_VIEW_MOVE_NOT_READY;
+    if (memcmp(&playerViewState, expectedBefore, sizeof(playerViewState)) != 0) {
+        return ESP_PLAYER_VIEW_MOVE_STALE;
+    }
+    if (!viewSettledForRuntimeAction(expectedBefore) ||
+        !viewSettledForRuntimeAction(preparedAfter)) {
+        return ESP_PLAYER_VIEW_MOVE_UNSETTLED;
+    }
+    deltaX = preparedAfter->viewX - expectedBefore->viewX;
+    deltaY = preparedAfter->viewY - expectedBefore->viewY;
+    if (!sameExceptRuntimePosition(expectedBefore, preparedAfter) ||
+        !cardinalStep(deltaX, deltaY) ||
+        preparedAfter->destX != preparedAfter->viewX ||
+        preparedAfter->destY != preparedAfter->viewY) {
+        return ESP_PLAYER_VIEW_MOVE_UNSUPPORTED;
+    }
+
+    playerViewState = *preparedAfter;
+    return ESP_PLAYER_VIEW_MOVE_OK;
 }
