@@ -41,6 +41,8 @@
 #define X_NUDGE 0x00000200UL
 #define OCCLUDER 0x20000000UL
 #define ENEMY_TYPE 1U
+#define RENDER_MODE_NORMAL 0U
+#define RENDER_MODE_ADD 7U
 
 typedef struct Sources_s {
     EspAssetPackEntry mappings;
@@ -145,6 +147,12 @@ static uint16_t source565(uint16_t c) {
     return (uint16_t)(((c & 0x001fU) << 11) |
                       (c & 0x07e0U) |
                       ((c & 0xf800U) >> 11));
+}
+
+static uint8_t spriteRenderMode(uint16_t logical) {
+    return (logical == 136U || logical == 137U || logical == 144U)
+               ? RENDER_MODE_ADD
+               : RENDER_MODE_NORMAL;
 }
 
 static int readRange(const EspAssetPackEntry* e,
@@ -656,6 +664,12 @@ static int buildOrder(Render_t* r,
             return 0;
         }
 
+        if (spriteRenderMode((uint16_t)id) == RENDER_MODE_ADD) {
+            ++s->mode7Objects;
+        }
+        else {
+            ++s->mode0Objects;
+        }
         if (id == 135U || id == 140U || id == 131U) ++s->glowDeferred;
 
         z = (int32_t)((sp.x * r->viewCos_) +
@@ -688,6 +702,7 @@ static int buildOrder(Render_t* r,
 static int spans(Render_t* r,
                  Line_t* l,
                  const Frame* frame,
+                 uint8_t renderMode,
                  EspNativeJunctionSpriteStats* s) {
     int dx = l->vert2.x - l->vert1.x;
     int step;
@@ -698,6 +713,9 @@ static int spans(Render_t* r,
     int tex;
     int depth;
 
+    if (renderMode != RENDER_MODE_NORMAL && renderMode != RENDER_MODE_ADD) {
+        return 0;
+    }
     if (dx <= 0) return 1;
     step = (MAXINT / dx) << 1;
     dSide = (int)DoomRPG_FixedMul(l->vert2.y - l->vert1.y, step);
@@ -786,13 +804,29 @@ static int spans(Render_t* r,
                     uint32_t pi;
                     uint8_t packed;
                     int shift;
+                    uint16_t src;
 
                     if (pos < 0) return 0;
                     pi = (uint32_t)(pos >> 13);
                     if (pi >= frame->packedBytes) return 0;
                     packed = frame->texels[pi];
                     shift = (int)((pos >> 10) & 4);
-                    *dst = frame->palette[(packed >> shift) & 15U];
+                    src = frame->palette[(packed >> shift) & 15U];
+
+                    if (renderMode == RENDER_MODE_NORMAL) {
+                        *dst = src;
+                    }
+                    else {
+                        uint32_t color = (uint32_t)(src & 0xf7deU) +
+                                         ((uint32_t)(*dst) & 0xf7deU);
+                        uint32_t carry = color & 0x10820U;
+                        *dst = (uint16_t)((color & 0xf7deU) |
+                                          (carry >> 1) |
+                                          (carry >> 2) |
+                                          (carry >> 3));
+                        ++s->mode7Pixels;
+                    }
+
                     dst += pitch;
                     pos += texStep;
                     ++s->pixelsDrawn;
@@ -819,6 +853,7 @@ static int drawOne(Render_t* r,
     Vertex_t center;
     Line_t l;
     uint32_t anim;
+    uint8_t renderMode;
     int min;
     int max;
 
@@ -838,6 +873,7 @@ static int drawOne(Render_t* r,
                : 0U;
     if (!loadFrame(c, o->logical, anim, frame, seenLogical, s)) return 0;
 
+    renderMode = spriteRenderMode(o->logical);
     min = frame->xMin - 32;
     max = frame->xMax - 32;
     memset(&l, 0, sizeof(l));
@@ -853,7 +889,7 @@ static int drawOne(Render_t* r,
     }
     Render_projectVertex(r, &l.vert1);
     Render_projectVertex(r, &l.vert2);
-    if (!spans(r, &l, frame, s)) return 0;
+    if (!spans(r, &l, frame, renderMode, s)) return 0;
     ++s->draws;
     return 1;
 }
@@ -902,7 +938,8 @@ int EspNativeJunctionSprite_render(struct Render_s* renderBase,
             goto done;
         }
     }
-    ok = s.draws > 0U && s.pixelsDrawn > 0U;
+    ok = s.draws > 0U && s.pixelsDrawn > 0U &&
+         s.mode0Objects > 0U && s.mode7Objects > 0U && s.mode7Pixels > 0U;
 
 done:
     if (opened || EspAssetPack_isOpen()) EspAssetPack_close();
