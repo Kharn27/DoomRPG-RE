@@ -9,115 +9,123 @@
 #include "esp_native_first_frame.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
-#include "platform_video_config.h"
 
 /*
  * Temporary first-frame-only hardware diagnostic.
  *
- * The hardware-proven sparse graphics catalog stores the direct CYD
- * framebuffer RGB565 words from palettes.bin. The current v2 wall/plane
- * rasterizers still apply a red/blue swap locally while resolving those
- * palettes. Rather than rewriting both rasterizers before proving the visible
- * consequence on hardware, this wrapper cancels that exact transform once,
- * immediately before the one first-frame presentation. Menu/intro and every
- * other PlatformVideo presentation remain untouched.
- *
- * If hardware proves this representation, the post-pass must be removed and
- * the redundant per-palette swaps deleted at their rasterizer sources.
+ * The previous R/B cancellation experiment changed the framebuffer hash but
+ * produced no meaningful visual change on the real CYD, so it is deliberately
+ * removed here.  This wrapper leaves every pixel untouched and measures the
+ * exact RGB565 viewport already rendered/presented by EspNativeFirstFrame.
+ * The resulting channel/luminance statistics distinguish an image that is
+ * already washed out in RAM from one that only becomes washed out later in the
+ * TFT presentation path.
  */
-
-static int firstFrameRouteActive;
-static int colorCorrectionApplied;
-static uint32_t colorBeforeFNV;
-static uint32_t colorAfterFNV;
 
 EspNativeFirstFrameStatus __real_EspNativeFirstFrame_route(
     struct Render_s* render,
     const struct EspPlayerViewState_s* playerView);
 int __real_Esp32PlatformVideo_present(void);
 
-static uint32_t fnv1a32(const void* data, size_t bytes) {
-    const uint8_t* p = (const uint8_t*)data;
-    uint32_t hash = 2166136261U;
-    size_t i;
-    if (p == NULL && bytes != 0U) return 0U;
-    for (i = 0U; i < bytes; ++i) {
-        hash ^= p[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-static uint16_t swapRedBlue565(uint16_t color) {
-    return (uint16_t)(((color & 0x001fU) << 11) |
-                      (color & 0x07e0U) |
-                      ((color & 0xf800U) >> 11));
-}
-
 int __wrap_Esp32PlatformVideo_present(void) {
-    if (firstFrameRouteActive && !colorCorrectionApplied) {
-        uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
-        const size_t bytes = Esp32PlatformVideo_framebufferSizeBytes();
-        const size_t expected =
-            (size_t)DOOMRPG_LOGICAL_WIDTH *
-            (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
-        size_t i;
+    return __real_Esp32PlatformVideo_present();
+}
 
-        if (framebuffer == NULL || bytes != expected) {
-            printf("[JUNCTIONFRAME] COLOR FAILED framebuffer=%p bytes=%u expected=%u\n",
-                   (void*)framebuffer,
-                   (unsigned int)bytes,
-                   (unsigned int)expected);
-            return 0;
-        }
+static uint8_t expand5(uint16_t value) {
+    value &= 31U;
+    return (uint8_t)((value << 3) | (value >> 2));
+}
 
-        colorBeforeFNV = fnv1a32(framebuffer, bytes);
-        for (i = 0U; i < bytes / sizeof(uint16_t); ++i) {
-            framebuffer[i] = swapRedBlue565(framebuffer[i]);
-        }
-        colorAfterFNV = fnv1a32(framebuffer, bytes);
-        colorCorrectionApplied = 1;
+static uint8_t expand6(uint16_t value) {
+    value &= 63U;
+    return (uint8_t)((value << 2) | (value >> 4));
+}
+
+static void measureViewport(const Render_t* render) {
+    const uint16_t* framebuffer;
+    uint64_t sumR = 0U;
+    uint64_t sumG = 0U;
+    uint64_t sumB = 0U;
+    uint64_t sumY = 0U;
+    uint32_t bins[4] = {0U, 0U, 0U, 0U};
+    uint32_t neutral = 0U;
+    uint32_t count = 0U;
+    uint8_t minY = 255U;
+    uint8_t maxY = 0U;
+    int pitchPixels;
+    int x;
+    int y;
+
+    if (render == NULL || render->framebuffer == NULL ||
+        render->screenWidth <= 0 || render->screenHeight <= 0 ||
+        render->screenX < 0 || render->screenY < 0) {
+        printf("[JUNCTIONFRAME] COLORSTATS FAILED invalid render viewport\n");
+        return;
     }
 
-    return __real_Esp32PlatformVideo_present();
+    framebuffer = (const uint16_t*)render->framebuffer;
+    pitchPixels = render->pitch >> 1;
+
+    for (y = 0; y < render->screenHeight; ++y) {
+        const uint16_t* row = framebuffer +
+            (render->screenY + y) * pitchPixels + render->screenX;
+        for (x = 0; x < render->screenWidth; ++x) {
+            const uint16_t color = row[x];
+            const uint8_t r = expand5(color >> 11);
+            const uint8_t g = expand6(color >> 5);
+            const uint8_t b = expand5(color);
+            const uint8_t lum = (uint8_t)(((uint32_t)77U * r +
+                                           (uint32_t)150U * g +
+                                           (uint32_t)29U * b) >> 8);
+            const int rg = (int)r - (int)g;
+            const int rb = (int)r - (int)b;
+            const int gb = (int)g - (int)b;
+
+            sumR += r;
+            sumG += g;
+            sumB += b;
+            sumY += lum;
+            ++bins[lum >> 6];
+            if (lum < minY) minY = lum;
+            if (lum > maxY) maxY = lum;
+            if (rg >= -4 && rg <= 4 && rb >= -4 && rb <= 4 &&
+                gb >= -4 && gb <= 4) {
+                ++neutral;
+            }
+            ++count;
+        }
+    }
+
+    if (count == 0U) {
+        printf("[JUNCTIONFRAME] COLORSTATS FAILED empty viewport\n");
+        return;
+    }
+
+    printf("[JUNCTIONFRAME] COLORSTATS viewport=%dx%d@%d,%d meanRGB=%u/%u/%u meanY=%u minY=%u maxY=%u binsY=0-63:%u 64-127:%u 128-191:%u 192-255:%u neutral=%u/%u framebufferUntouched=yes\n",
+           render->screenWidth, render->screenHeight,
+           render->screenX, render->screenY,
+           (unsigned int)(sumR / count),
+           (unsigned int)(sumG / count),
+           (unsigned int)(sumB / count),
+           (unsigned int)(sumY / count),
+           (unsigned int)minY,
+           (unsigned int)maxY,
+           (unsigned int)bins[0],
+           (unsigned int)bins[1],
+           (unsigned int)bins[2],
+           (unsigned int)bins[3],
+           (unsigned int)neutral,
+           (unsigned int)count);
 }
 
 EspNativeFirstFrameStatus __wrap_EspNativeFirstFrame_route(
     struct Render_s* render,
     const struct EspPlayerViewState_s* playerView) {
-    EspNativeFirstFrameStatus status;
-
-    firstFrameRouteActive = 1;
-    colorCorrectionApplied = 0;
-    colorBeforeFNV = 0U;
-    colorAfterFNV = 0U;
-
-    status = __real_EspNativeFirstFrame_route(render, playerView);
-    firstFrameRouteActive = 0;
+    const EspNativeFirstFrameStatus status =
+        __real_EspNativeFirstFrame_route(render, playerView);
 
     if (status == ESP_NATIVE_FIRST_FRAME_OK) {
-        EspNativeFirstFrameState* state;
-        if (!colorCorrectionApplied || colorBeforeFNV == 0U ||
-            colorAfterFNV == 0U || colorBeforeFNV == colorAfterFNV) {
-            printf("[JUNCTIONFRAME] COLOR FAILED applied=%d before=%08x after=%08x\n",
-                   colorCorrectionApplied,
-                   (unsigned int)colorBeforeFNV,
-                   (unsigned int)colorAfterFNV);
-            return ESP_NATIVE_FIRST_FRAME_PRESENT_FAILED;
-        }
-
-        state = (EspNativeFirstFrameState*)EspNativeFirstFrame_view();
-        if (state == NULL || !state->active || !state->presented) {
-            printf("[JUNCTIONFRAME] COLOR FAILED owner unavailable after present\n");
-            return ESP_NATIVE_FIRST_FRAME_PRESENT_FAILED;
-        }
-
-        /* Keep the probe owner consistent with the pixels actually presented. */
-        state->frameAfterFNV = colorAfterFNV;
-        printf("[JUNCTIONFRAME] COLOR directCatalogRgb565=yes cancelLegacyRbSwap=yes frame=%08x->%08x\n",
-               (unsigned int)colorBeforeFNV,
-               (unsigned int)colorAfterFNV);
+        measureViewport((const Render_t*)render);
     }
-
     return status;
 }
