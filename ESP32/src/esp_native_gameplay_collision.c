@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "esp_map_line_state.h"
+#include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_collision.h"
@@ -11,6 +12,9 @@
 #define TILE_CENTER 32
 #define MAP_WIDTH 32
 #define MAP_MAX_CENTER (((MAP_WIDTH - 1) * TILE_SIZE) + TILE_CENTER)
+#define SPECIAL_TRACE_ENTITY_FLAG 0x00020000UL
+#define SPECIAL_TRACE_Y_MASK 0x00180000UL
+#define SPECIAL_TRACE_X_MASK 0x00600000UL
 
 typedef char EspNativeGameplayCollisionResult_must_be_16_bytes[
     sizeof(EspNativeGameplayCollisionResult) == 16U ? 1 : -1];
@@ -45,9 +49,38 @@ static int oneCardinalStep(int32_t sourceX,
            (dx == 0 && dy == -TILE_SIZE);
 }
 
-static int entityTypeBlocks(uint8_t type) {
+static int entityTypeInTraceMask(uint8_t type) {
     return type < 16U &&
            (ESP_NATIVE_GAMEPLAY_COLLISION_LEGACY_TRACE_MASK & (1U << type)) != 0U;
+}
+
+/* Game_trace() treats map-sprite entity types 14/15 as thin crossing planes.
+ * They are appended only when the movement segment crosses the axis selected by
+ * sprite info; otherwise the entity is skipped. Reproduce that exact predicate
+ * from immutable EspMapSprite data rather than treating 14/15 as solid tiles. */
+static int specialEntityBlocks(uint32_t spriteIndex,
+                               int32_t sourceX,
+                               int32_t sourceY,
+                               int32_t destX,
+                               int32_t destY) {
+    EspMapSprite sprite;
+    int32_t sprX;
+    int32_t sprY;
+
+    if (!EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return -1;
+    if ((sprite.info & SPECIAL_TRACE_ENTITY_FLAG) == 0U) return 0;
+
+    sprX = (int32_t)sprite.x;
+    sprY = (int32_t)sprite.y;
+    if ((sprite.info & SPECIAL_TRACE_Y_MASK) != 0U) {
+        return (sourceY <= sprY && destY > sprY) ||
+               (sourceY >= sprY && destY < sprY);
+    }
+    if ((sprite.info & SPECIAL_TRACE_X_MASK) != 0U) {
+        return (sourceX <= sprX && destX > sprX) ||
+               (sourceX >= sprX && destX < sprX);
+    }
+    return 0;
 }
 
 static EspNativeGameplayCollisionStatus finish(
@@ -87,7 +120,7 @@ EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
     }
 
     if (!EspMapState_isReady() || !EspMapLineState_isReady() ||
-        !EspMapSpriteTopology_isReady()) {
+        !EspMapSpriteTopology_isReady() || !EspMapRuntime_isLoaded()) {
         return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_NOT_READY);
     }
     mapState = EspMapState_view();
@@ -112,7 +145,12 @@ EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
                       ESP_NATIVE_GAMEPLAY_COLLISION_UNSUPPORTED_DYNAMIC_LINES);
     }
 
-    if ((outResult->destFlags & ESP_MAP_TILE_WALL) != 0U) {
+    /* Legacy Game_trace walks both cells for a one-tile move. The classic
+     * loader installs its sentinel wall entity on blocked map cells. Native
+     * gameplay has no pointer database, so the compact WALL bit is the direct
+     * equivalent while no dynamic line has been opened. */
+    if ((outResult->sourceFlags & ESP_MAP_TILE_WALL) != 0U ||
+        (outResult->destFlags & ESP_MAP_TILE_WALL) != 0U) {
         return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_BLOCKED_WALL);
     }
 
@@ -121,15 +159,29 @@ EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
         uint8_t subType;
         uint16_t linkState;
         uint16_t linkOrder;
+        uint16_t tile;
+        int specialBlocks;
+
         if (!EspMapSpriteTopology_getEntity(
                 i, &type, &subType, &linkState, &linkOrder)) {
             return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_NOT_READY);
         }
         if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U ||
-            (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) != destTile ||
-            !entityTypeBlocks(type)) {
+            !entityTypeInTraceMask(type)) {
             continue;
         }
+        tile = linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK;
+        if (tile != sourceTile && tile != destTile) continue;
+
+        if (type == 14U || type == 15U) {
+            specialBlocks = specialEntityBlocks(
+                i, sourceX, sourceY, destX, destY);
+            if (specialBlocks < 0) {
+                return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_NOT_READY);
+            }
+            if (specialBlocks == 0) continue;
+        }
+
         if (outResult->linkedBlockers != 0xffU) ++outResult->linkedBlockers;
         if (blocker == ESP_NATIVE_GAMEPLAY_COLLISION_NO_SPRITE ||
             linkOrder > bestOrder) {
