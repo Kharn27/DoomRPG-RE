@@ -13,6 +13,12 @@ typedef struct EspNativeGameplayFrameStats_s {
     uint32_t frameBeforeFNV;
     uint32_t worldFrameFNV;
     uint32_t frameAfterFNV;
+    uint32_t viewportBeforeFNV;
+    uint32_t viewportAfterWorldFNV;
+    uint32_t viewportAfterSpritesFNV;
+    uint32_t hudBandsBeforeFNV;
+    uint32_t hudBandsRestoredFNV;
+    uint32_t hudBandsAfterFNV;
     uint32_t temporaryHudBytes;
     uint32_t wallDraws;
     uint32_t wallPixels;
@@ -25,17 +31,19 @@ typedef struct EspNativeGameplayFrameStats_s {
     uint32_t hudPackReads;
     uint32_t hudPixels;
     uint8_t angle;
-    uint8_t worldPresented;
+    uint8_t intermediatePresentSuppressed;
     uint8_t finalPresented;
     uint8_t active;
 } EspNativeGameplayFrameStats;
 
 /* Recompose one complete current Junction gameplay frame after a committed
- * cardinal view turn. Existing HUD bands are kept in one bounded temporary
- * 12.8 KiB buffer because the historical first-frame world route clears the
- * whole logical framebuffer. The world route may present its walls+planes
- * intermediate; the final present occurs only after sprites/glows, HUD-band
- * restore and compass repaint. No persistent allocation is retained. */
+ * cardinal view turn. The historical first-frame renderer is still reused for
+ * the world pixels, but its intermediate presentation is suppressed: the
+ * existing HUD bands are restored from one bounded temporary 12.8 KiB buffer,
+ * the small compass panel is repainted, then exactly one final presentation is
+ * issued. Phase FNVs make viewport/HUD round-trip drift explicit while this
+ * bridge is being reduced toward a permanent viewport-only runtime renderer.
+ * No persistent allocation is retained. */
 int EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,
