@@ -6,6 +6,8 @@
 #define GAMEPLAY_TOP_HUD_HEIGHT 20
 #define GAMEPLAY_VIEW_BOTTOM 99
 #define GAMEPLAY_MENU_RIGHT 31
+#define GAMEPLAY_PASS_TURN_LEFT 32
+#define GAMEPLAY_PASS_TURN_RIGHT 127
 #define GAMEPLAY_AUTOMAP_LEFT 128
 
 static EspNativeGameplayInputState inputState;
@@ -62,7 +64,7 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
          ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT},
         {ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON,
          ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK,
-         ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN}
+         ESP_NATIVE_GAMEPLAY_ACTION_NONE}
     };
     static const uint8_t zones[3][3] = {
         {ESP_NATIVE_GAMEPLAY_ZONE_MOVE_LEFT,
@@ -73,7 +75,7 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
          ESP_NATIVE_GAMEPLAY_ZONE_TURN_RIGHT},
         {ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON,
          ESP_NATIVE_GAMEPLAY_ZONE_MOVE_BACK,
-         ESP_NATIVE_GAMEPLAY_ZONE_PASS_TURN}
+         ESP_NATIVE_GAMEPLAY_ZONE_NONE}
     };
     static const uint8_t xLeft[3] = {0, 53, 106};
     static const uint8_t xRight[3] = {52, 105, 159};
@@ -104,6 +106,14 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
                    DOOMRPG_LOGICAL_WIDTH - 1, GAMEPLAY_TOP_HUD_HEIGHT - 1);
             return ESP_NATIVE_GAMEPLAY_INPUT_OK;
         }
+        if (logicalX >= GAMEPLAY_PASS_TURN_LEFT &&
+            logicalX <= GAMEPLAY_PASS_TURN_RIGHT) {
+            setHit(outHit, ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN,
+                   ESP_NATIVE_GAMEPLAY_ZONE_PASS_TURN,
+                   GAMEPLAY_PASS_TURN_LEFT, 0,
+                   GAMEPLAY_PASS_TURN_RIGHT, GAMEPLAY_TOP_HUD_HEIGHT - 1);
+            return ESP_NATIVE_GAMEPLAY_INPUT_OK;
+        }
         return ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT;
     }
 
@@ -118,6 +128,11 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
     if (logicalY <= yBottom[0]) row = 0;
     else if (logicalY <= yBottom[1]) row = 1;
     else row = 2;
+
+    if (actions[row][column] == ESP_NATIVE_GAMEPLAY_ACTION_NONE ||
+        zones[row][column] == ESP_NATIVE_GAMEPLAY_ZONE_NONE) {
+        return ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT;
+    }
 
     setHit(outHit, actions[row][column], zones[row][column],
            xLeft[column], yTop[row], xRight[column], yBottom[row]);
