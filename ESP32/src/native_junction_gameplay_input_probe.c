@@ -25,7 +25,7 @@
 
 #define EXPECTED_GAMEPLAY_FRAME_FNV 0xba3e5182U
 #define EXPECTED_GAMEPLAY_HUD_FNV 0x4756db9cU
-#define TOUCH_FEEDBACK_MS 250U
+#define TOUCH_FEEDBACK_MS 120U
 #define TOUCH_FEEDBACK_MAX_EDITS 512U
 
 #define NEON_BLUE_HALO 0x0008U
@@ -479,9 +479,6 @@ static int drawFeedback(const EspNativeGameplayTouchHit* hit) {
     feedback->zone = hit->zone;
     feedback->active = 1U;
 
-    /* Outer dim ring + one-pixel-inset saturated core gives a cheap neon halo
-     * while staying entirely inside the semantic hitbox, including screen-edge
-     * MENU/AUTOMAP and the y=0 top HUD. Every edit is reverse-restorable. */
     if (!drawFeedbackRect(framebuffer,
                           hit->left, hit->top, hit->right, hit->bottom,
                           palette.halo) ||
@@ -749,7 +746,7 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
     if (!Esp32JunctionGameplayHudProbe_isDone()) return;
 
     printf("\n=== Doom RPG ESP32-native invisible gameplay touch pad ===\n");
-    printf("[NATIVEINPUTPROBE] CONTRACT calibrated CYD press -> logical 160x120 -> twelve invisible semantic zones: full 3x3 world keypad with PREV_WEAPON/BACK/NEXT_WEAPON on its bottom row plus MENU/PASS_TURN/AUTOMAP across the top HUD; one compact pointer-free pending owner, unsupported/busy fail closed; feedback is 250ms allocation-free row-coded neon double-ring + action-specific vector glyph and now records/restores the exact current gameplay-frame FNV so the same input layer remains valid after native view changes. This layer itself performs no movement, turn, select, weapon, menu, automap, pass-turn, entity or world mutation.\n");
+    printf("[NATIVEINPUTPROBE] CONTRACT calibrated CYD press -> logical 160x120 -> twelve invisible semantic zones: full 3x3 world keypad with PREV_WEAPON/BACK/NEXT_WEAPON on its bottom row plus MENU/PASS_TURN/AUTOMAP across the top HUD; one compact pointer-free pending owner, unsupported/busy fail closed; feedback is 120ms allocation-free row-coded neon double-ring + action-specific vector glyph and records/restores the exact current gameplay-frame FNV so the same input layer remains valid after native view changes. This layer itself performs no movement, turn, select, weapon, menu, automap, pass-turn, entity or world mutation.\n");
 
     heapBefore = heap8();
     largestBefore = largest8();
