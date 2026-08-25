@@ -26,6 +26,18 @@ constexpr size_t kFramebufferBytes = kPixelCount * sizeof(uint16_t);
  */
 constexpr int kDisplaySaturationPercent = 115;
 
+/* Temporary first-frame presentation-boundary diagnostic.
+ *
+ * The native Junction renderer has already proved the exact logical framebuffer
+ * hash below and the exported BMP is generated from those same RGB565 words.
+ * Once, and only for that exact frame, compare panel-side presentation variants
+ * without ever mutating the framebuffer.  This distinguishes the legacy
+ * saturation profile, panel inversion, TFT_eSPI byte order and controller R/B
+ * order from renderer/palette faults.
+ */
+constexpr uint32_t kJunctionFirstFrameFNV = 0x8910c2edU;
+bool junctionPresentationDiagnosticDone = false;
+
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 constexpr int kDebugOverlayMaxZones = 8;
 
@@ -76,6 +88,94 @@ uint16_t tuneDisplayColor565(uint16_t color) {
     return rgb565(static_cast<uint8_t>(red),
                   static_cast<uint8_t>(green),
                   static_cast<uint8_t>(blue));
+}
+
+uint16_t swapRedBlue565(uint16_t color) {
+    return static_cast<uint16_t>(((color & 0x001fU) << 11) |
+                                 (color & 0x07e0U) |
+                                 ((color & 0xf800U) >> 11));
+}
+
+uint32_t framebufferFNV() {
+    if (framebuffer == nullptr) return 0U;
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(framebuffer);
+    uint32_t hash = 2166136261U;
+    for (size_t i = 0; i < kFramebufferBytes; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+bool pushFramebuffer(bool tuneColor, bool swapRedBlue) {
+    if (platformDisplay == nullptr || framebuffer == nullptr) {
+        return false;
+    }
+
+    uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
+
+    platformDisplay->startWrite();
+    platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
+                                   DOOMRPG_PHYSICAL_HEIGHT);
+
+    for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
+        const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
+        for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
+            uint16_t color = source[sourceX];
+            if (swapRedBlue) color = swapRedBlue565(color);
+            if (tuneColor) color = tuneDisplayColor565(color);
+            const int outputX = sourceX * DOOMRPG_INTEGER_SCALE;
+            outputRow[outputX] = color;
+            outputRow[outputX + 1] = color;
+        }
+
+        for (int repeatY = 0; repeatY < DOOMRPG_INTEGER_SCALE; ++repeatY) {
+            platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
+        }
+    }
+
+    platformDisplay->endWrite();
+    return true;
+}
+
+bool showPresentationProfile(const char* name,
+                             bool tuneColor,
+                             bool invertPanel,
+                             bool swapBytes,
+                             bool swapRedBlue) {
+    const uint32_t started = micros();
+    platformDisplay->invertDisplay(invertPanel);
+    platformDisplay->setSwapBytes(swapBytes);
+    const bool ok = pushFramebuffer(tuneColor, swapRedBlue);
+    Serial.printf("[VIDEOBOUNDARY] PROFILE %s tune=%s invert=%s swapBytes=%s rbSwap=%s hold=2500ms result=%s time=%lu us\n",
+                  name,
+                  tuneColor ? "sat1.15" : "raw",
+                  invertPanel ? "on" : "off",
+                  swapBytes ? "on" : "off",
+                  swapRedBlue ? "on" : "off",
+                  ok ? "OK" : "FAILED",
+                  micros() - started);
+    delay(2500);
+    return ok;
+}
+
+void runJunctionPresentationDiagnostic() {
+    bool ok = true;
+    Serial.println("[VIDEOBOUNDARY] START exact framebuffer=8910c2ed; compare each TFT profile to exported BMP");
+    ok &= showPresentationProfile("A CURRENT", true, true, true, false);
+    ok &= showPresentationProfile("B RAW", false, true, true, false);
+    ok &= showPresentationProfile("C RAW-NOINVERT", false, false, true, false);
+    ok &= showPresentationProfile("D RAW-NOSWAP", false, true, false, false);
+    ok &= showPresentationProfile("E RAW-NOINVERT-NOSWAP", false, false, false, false);
+    ok &= showPresentationProfile("F RAW-RBSWAP", false, true, true, true);
+
+    /* Restore the exact normal CYD presentation state and image. */
+    platformDisplay->invertDisplay(true);
+    platformDisplay->setSwapBytes(true);
+    (void)pushFramebuffer(true, false);
+    Serial.printf("[VIDEOBOUNDARY] RESTORE A CURRENT final=yes aggregate=%s framebuffer=%08x untouched=yes\n",
+                  ok ? "OK" : "FAILED",
+                  static_cast<unsigned int>(framebufferFNV()));
 }
 
 void setPixel(int x, int y, uint16_t color) {
@@ -221,37 +321,23 @@ bool PlatformVideo_present() {
         return false;
     }
 
-    uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
-    const uint32_t started = micros();
-
-    platformDisplay->startWrite();
-    platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
-                                   DOOMRPG_PHYSICAL_HEIGHT);
-
-    for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
-        const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
-        for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
-            /* Apply the panel profile once per logical pixel, then duplicate the
-             * corrected RGB565 value for exact nearest-neighbour 2x output. */
-            const uint16_t color = tuneDisplayColor565(source[sourceX]);
-            const int outputX = sourceX * DOOMRPG_INTEGER_SCALE;
-            outputRow[outputX] = color;
-            outputRow[outputX + 1] = color;
-        }
-
-        for (int repeatY = 0; repeatY < DOOMRPG_INTEGER_SCALE; ++repeatY) {
-            platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
-        }
+    const uint32_t frameHash = framebufferFNV();
+    if (!junctionPresentationDiagnosticDone &&
+        frameHash == kJunctionFirstFrameFNV) {
+        junctionPresentationDiagnosticDone = true;
+        runJunctionPresentationDiagnostic();
+        return true;
     }
 
-    platformDisplay->endWrite();
+    const uint32_t started = micros();
+    const bool ok = pushFramebuffer(true, false);
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     drawDebugOverlay();
 #endif
 
     Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x + sat1.15: %lu us\n",
                   micros() - started);
-    return true;
+    return ok;
 }
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
