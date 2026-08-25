@@ -59,6 +59,7 @@ typedef struct TurnProbeState_s {
     uint32_t turns;
     uint32_t roundTrips;
     uint32_t observedTurns;
+    uint32_t feedbackBaselineFNV;
     uint8_t initialized;
     uint8_t feedbackTurnPending;
     uint8_t pendingIntentValid;
@@ -186,14 +187,16 @@ static int runtimeBoundary(const DoomRPG_t* doomRpg) {
 }
 
 static void failProbe(const char* reason) {
-    printf("[TURNPROBE] FAILED %s frame=%08x pending=%u queued=%u pack=%d\n",
+    printf("[TURNPROBE] FAILED %s frame=%08x pending=%u queued=%u feedbackBaseline=%08x pack=%d\n",
            reason, (unsigned int)frameFNV(),
            (unsigned int)EspNativeGameplayInput_peek()->pending,
            (unsigned int)probeState.pendingIntentValid,
+           (unsigned int)probeState.feedbackBaselineFNV,
            EspAssetPack_isOpen());
     probeState.failed = 1U;
     probeState.feedbackTurnPending = 0U;
     probeState.pendingIntentValid = 0U;
+    probeState.feedbackBaselineFNV = 0U;
 }
 
 static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
@@ -317,36 +320,45 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
 }
 
 static int queueRestoredTurn(void) {
+    const uint32_t baseline = probeState.feedbackBaselineFNV;
     if (!probeState.feedbackTurnPending || probeState.pendingIntentValid ||
-        probeState.failed) return 0;
+        probeState.failed || baseline == 0U || frameFNV() != baseline) return 0;
     probeState.pendingIntent = probeState.restoredTurn;
     probeState.pendingIntentValid = 1U;
     memset(&probeState.restoredTurn, 0, sizeof(probeState.restoredTurn));
     probeState.feedbackTurnPending = 0U;
-    printf("[TURNPROBE] QUEUED seq=%u action=%s origin=restored-input-probe render=next-service\n",
+    probeState.feedbackBaselineFNV = 0U;
+    printf("[TURNPROBE] QUEUED seq=%u action=%s baseline=%08x origin=restored-input-probe render=next-service\n",
            (unsigned int)probeState.pendingIntent.sequence,
-           EspNativeGameplayInput_actionName(probeState.pendingIntent.action));
+           EspNativeGameplayInput_actionName(probeState.pendingIntent.action),
+           (unsigned int)baseline);
     return 1;
 }
 
 /* Temporary weak observation point from EspNativeGameplayInput_consume(). The
  * proven input probe stays the sole touch owner for the whole milestone, so
- * every TURN keeps the same neon/glyph feedback. We only remember one turn
- * intent while that feedback owns the framebuffer. */
+ * every TURN keeps the same neon/glyph feedback. Capture the current frame FNV
+ * before the input callback paints that feedback, then wait for that exact
+ * dynamic frame to be restored before queueing any render work. */
 void Esp32NativeGameplayInputProbe_observeConsumed(
     const EspNativeGameplayInputState* intent) {
+    uint32_t baseline;
     if (!probeState.initialized || probeState.failed ||
         probeState.feedbackTurnPending || probeState.pendingIntentValid ||
         intent == NULL) return;
     if (intent->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT &&
         intent->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT) return;
+    baseline = frameFNV();
+    if (baseline == 0U) return;
     probeState.restoredTurn = *intent;
+    probeState.feedbackBaselineFNV = baseline;
     probeState.feedbackTurnPending = 1U;
     ++probeState.observedTurns;
-    printf("[TURNPROBE] HANDOFF n=%u seq=%u action=%s callbackOwner=input-probe waitingForFeedbackRestore=yes\n",
+    printf("[TURNPROBE] HANDOFF n=%u seq=%u action=%s baseline=%08x callbackOwner=input-probe waitingForFeedbackRestore=yes\n",
            (unsigned int)probeState.observedTurns,
            (unsigned int)intent->sequence,
-           EspNativeGameplayInput_actionName(intent->action));
+           EspNativeGameplayInput_actionName(intent->action),
+           (unsigned int)baseline);
 }
 
 void Esp32JunctionTurnDispatchProbe_reset(void) {
@@ -373,8 +385,8 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
     if (!probeState.initialized) {
         if (!Esp32JunctionGameplayInputProbe_isActive()) return;
 
-        printf("\n=== Doom RPG ESP32-native first gameplay turn dispatcher v4 ===\n");
-        printf("[TURNPROBE] CONTRACT the hardware-proven input probe remains the sole touch callback owner forever, preserving neon/glyph feedback on every press. Its consumed TURN_LEFT(+64)/TURN_RIGHT(-64) is observed, allowed to restore exactly, queued, then rendered only on a later lifecycle service. No callback ever renders. Heavy turn snapshots are static probe scratch rather than loopTask stack. All non-turn actions stay consumed/deferred by the input milestone. No Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
+        printf("\n=== Doom RPG ESP32-native first gameplay turn dispatcher v5 ===\n");
+        printf("[TURNPROBE] CONTRACT the hardware-proven input probe remains the sole touch callback owner forever, preserving neon/glyph feedback on every press. Each consumed TURN_LEFT(+64)/TURN_RIGHT(-64) captures the current gameplay-frame FNV before feedback, waits for exact dynamic restore, queues the semantic intent, returns the full lifecycle once, then renders only on a later service. No callback ever renders. Heavy turn snapshots are static probe scratch rather than loopTask stack. All non-turn actions stay consumed/deferred by the input milestone. No Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
 
         heapBefore = heap8();
         largestBefore = largest8();
@@ -404,7 +416,7 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
 
-        printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u execScratchBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d baseline=%08x heap=%u->%u largest=%u->%u stackHighWater=%u callbackOwner=input-probe permanent renderFromCallback=no\n",
+        printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u execScratchBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d initialBaseline=%08x dynamicRestore=yes heap=%u->%u largest=%u->%u stackHighWater=%u callbackOwner=input-probe permanent renderFromCallback=no\n",
                (unsigned int)sizeof(EspNativeGameplayTurnState),
                (unsigned int)sizeof(EspNativeGameplayDispatchResult),
                (unsigned int)sizeof(EspPlayerViewState),
@@ -415,24 +427,28 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)heapBefore, (unsigned int)heapAfter,
                (unsigned int)largestBefore, (unsigned int)largestAfter,
                stackHighWater());
-        printf("[TURNPROBE] PARK every TURN => neon feedback => exact restore => queue => full lifecycle return => native render on later service.\n");
+        printf("[TURNPROBE] PARK every TURN => neon feedback => exact current-frame restore => queue => full lifecycle return => native render on later service.\n");
         return;
     }
 
     if (probeState.feedbackTurnPending && !probeState.pendingIntentValid) {
+        const uint32_t baseline = probeState.feedbackBaselineFNV;
         /* Do not race the 250 ms feedback. Once the input probe has restored
-         * canonical pixels, queue and RETURN so this entire lifecycle unwinds
-         * before the renderer is entered on a later service. */
-        if (frameFNV() != EXPECTED_BASE_FRAME_FNV ||
-            EspNativeGameplayInput_peek()->pending) {
+         * the exact frame on which this press began, queue and RETURN so this
+         * entire lifecycle unwinds before the renderer is entered later. */
+        if (baseline == 0U) {
+            failProbe("missing feedback baseline");
+            return;
+        }
+        if (frameFNV() != baseline || EspNativeGameplayInput_peek()->pending) {
             return;
         }
         if (!queueRestoredTurn()) {
             failProbe("restored turn queue");
             return;
         }
-        printf("[TURNPROBE] RESTORED frame=%08x queued=yes lifecycleReturnBeforeRender=yes\n",
-               (unsigned int)EXPECTED_BASE_FRAME_FNV);
+        printf("[TURNPROBE] RESTORED frame=%08x exact=yes queued=yes lifecycleReturnBeforeRender=yes\n",
+               (unsigned int)baseline);
         return;
     }
 
