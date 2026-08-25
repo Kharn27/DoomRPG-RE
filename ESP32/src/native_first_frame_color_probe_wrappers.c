@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 #include "DoomRPG.h"
 #include "Render.h"
 
@@ -14,11 +17,13 @@
 /*
  * Temporary first-frame fidelity diagnostics.
  *
- * COLORSTATS is read-only and remains inside the renderer route so the strict
- * frame probe can prove the framebuffer it actually presented.  The BMP dump,
- * however, uses stdio/SD and the first fopen() can retain a small libc/VFS
- * allocation.  It must therefore run only AFTER the frame integrity probe has
- * PARKed, never inside the zero-heap-delta renderer contract.
+ * The renderer contract owns only the logical RGB565 framebuffer.  The BMP
+ * dump runs after PARK because first-use stdio/SD may retain a small VFS/libc
+ * allocation.  A second, equally temporary presentation probe is armed only
+ * while EspNativeFirstFrame_route() is inside its real TFT present.  It shows
+ * the exact same restored framebuffer through four reversible variants so one
+ * hardware flash can distinguish panel inversion, byte-order and R/B-order
+ * faults without changing any gameplay/render owner or canonical FNV.
  */
 
 EspNativeFirstFrameStatus __real_EspNativeFirstFrame_route(
@@ -27,12 +32,10 @@ EspNativeFirstFrameStatus __real_EspNativeFirstFrame_route(
 int __real_Esp32PlatformVideo_present(void);
 
 static Render_t* pendingDumpRender;
+static Render_t* presentationRender;
+static int presentationArmed;
 static int dumpAttempted;
 static int dumpSucceeded;
-
-int __wrap_Esp32PlatformVideo_present(void) {
-    return __real_Esp32PlatformVideo_present();
-}
 
 static uint32_t fnvAppend(uint32_t hash, const void* data, size_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -262,8 +265,77 @@ static void measureViewport(const Render_t* render) {
            (unsigned int)count);
 }
 
+static int presentationBufferValid(const Render_t* render) {
+    return render != NULL && render->framebuffer != NULL &&
+           render->framebuffer == (byte*)Esp32PlatformVideo_framebuffer() &&
+           Esp32PlatformVideo_framebufferSizeBytes() ==
+               (size_t)DOOMRPG_LOGICAL_WIDTH *
+               (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
+}
+
+static void transformInvert(uint16_t* pixels, size_t count) {
+    size_t i;
+    for (i = 0U; i < count; ++i) pixels[i] ^= 0xffffU;
+}
+
+static void transformByteSwap(uint16_t* pixels, size_t count) {
+    size_t i;
+    for (i = 0U; i < count; ++i) {
+        const uint16_t color = pixels[i];
+        pixels[i] = (uint16_t)((color << 8) | (color >> 8));
+    }
+}
+
+static void transformRedBlueSwap(uint16_t* pixels, size_t count) {
+    size_t i;
+    for (i = 0U; i < count; ++i) {
+        const uint16_t color = pixels[i];
+        pixels[i] = (uint16_t)(((color & 0x001fU) << 11) |
+                               (color & 0x07e0U) |
+                               ((color & 0xf800U) >> 11));
+    }
+}
+
+static int showReversibleProfile(const char* name,
+                                 void (*transform)(uint16_t*, size_t),
+                                 uint16_t* pixels,
+                                 size_t count) {
+    int result;
+    printf("[VIDEOCAL] PROFILE %s hold=2500ms framebufferRestored=yes\n", name);
+    if (transform != NULL) transform(pixels, count);
+    result = __real_Esp32PlatformVideo_present();
+    if (transform != NULL) transform(pixels, count);
+    vTaskDelay(pdMS_TO_TICKS(2500));
+    return result;
+}
+
+int __wrap_Esp32PlatformVideo_present(void) {
+    uint16_t* pixels;
+    size_t count;
+    int ok = 1;
+
+    if (!presentationArmed || !presentationBufferValid(presentationRender)) {
+        return __real_Esp32PlatformVideo_present();
+    }
+
+    pixels = (uint16_t*)presentationRender->framebuffer;
+    count = (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT;
+
+    printf("[VIDEOCAL] START same logical frame; choose closest profile by eye\n");
+    ok &= showReversibleProfile("A CURRENT", NULL, pixels, count);
+    ok &= showReversibleProfile("B PRE-INVERT", transformInvert, pixels, count);
+    ok &= showReversibleProfile("C PRE-BYTESWAP", transformByteSwap, pixels, count);
+    ok &= showReversibleProfile("D PRE-RBSWAP", transformRedBlueSwap, pixels, count);
+
+    printf("[VIDEOCAL] RESTORE A CURRENT final=yes\n");
+    ok &= __real_Esp32PlatformVideo_present();
+    return ok;
+}
+
 void Esp32FirstFrameDiagnostic_reset(void) {
     pendingDumpRender = NULL;
+    presentationRender = NULL;
+    presentationArmed = 0;
     dumpAttempted = 0;
     dumpSucceeded = 0;
 }
@@ -287,8 +359,13 @@ EspNativeFirstFrameStatus __wrap_EspNativeFirstFrame_route(
     struct Render_s* renderBase,
     const struct EspPlayerViewState_s* playerView) {
     Render_t* render = (Render_t*)renderBase;
-    const EspNativeFirstFrameStatus status =
-        __real_EspNativeFirstFrame_route(renderBase, playerView);
+    EspNativeFirstFrameStatus status;
+
+    presentationRender = render;
+    presentationArmed = 1;
+    status = __real_EspNativeFirstFrame_route(renderBase, playerView);
+    presentationArmed = 0;
+    presentationRender = NULL;
 
     if (status == ESP_NATIVE_FIRST_FRAME_OK) {
         measureViewport(render);
