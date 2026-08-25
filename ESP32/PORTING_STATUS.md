@@ -5,28 +5,25 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #86 — first native PLAYING service
-main = bf1275037fd22504077f6ff2bbf57e14721edf0a
-hardware-tested firmware = e9c10c8759588e48478d3d702292628411c5939e
-status = REAL-CYD HARDWARE PASS
+PR   = #87 — native sparse graphics catalog
+main = 91a17414859fa12a0553e5b011956b6f95165780
+status = REAL-CYD HARDWARE PASS / MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_PLAYING_SERVICE.md`](MAP1_NATIVE_PLAYING_SERVICE.md).
-
-The port has a hardware-proven native ST_PLAYING owner and first native PLAYING service iteration while the legacy canvas remains parked at ST_INTRO.
+Merged evidence: [`MAP1_NATIVE_GRAPHICS_CATALOG.md`](MAP1_NATIVE_GRAPHICS_CATALOG.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-graphics-catalog
-base   = bf1275037fd22504077f6ff2bbf57e14721edf0a
-hardware-tested firmware = 0b40b47eb242ee5ff40b5c4981fe6a8892e95fc5
+branch = agent/esp32-native-first-junction-frame
+base   = 91a17414859fa12a0553e5b011956b6f95165780
+hardware-tested firmware = 09f670a2f11e1cfce065c55aef8a4d3a5711a9a3
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Evidence: [`MAP1_NATIVE_GRAPHICS_CATALOG.md`](MAP1_NATIVE_GRAPHICS_CATALOG.md).
+Evidence: [`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md).
 
-This milestone replaces the need to resurrect global legacy mapping arrays with a compact immutable sparse graphics catalog built directly from the native PAK for resources actually required by Junction.
+This milestone produces and presents the first real deterministic native Junction gameplay framebuffer while the legacy gameplay/render loop remains parked.
 
 ## Permanent invariants
 
@@ -46,6 +43,8 @@ native ST_PLAYING = reached
 legacy ST_PLAYING = not reached
 native PLAYING service = reached
 native sparse graphics catalog = reached
+native first Junction frame = reached
+native textured planes = reached
 ```
 
 ## Hardware-proven map canons
@@ -95,7 +94,7 @@ topology = d6e8df7d
 snapshot = bb714d80
 ```
 
-## Hardware-proven transition/player/post-load/PLAYING chain
+## Hardware-proven transition/player/post-load/PLAYING/render chain
 
 ```text
 CHANGEMAP pending intent
@@ -124,9 +123,12 @@ CHANGEMAP pending intent
  -> post-load idle-time owner
  -> first native PLAYING service owner
  -> native sparse graphics catalog
+ -> first native Junction wall frame
+ -> native textured floor/ceiling planes
+ -> raw RGB565 CYD presentation
 ```
 
-Stable canonical fingerprints:
+Stable canonical fingerprints through the pre-render chain:
 
 ```text
 levelExitStatsFNV                 = bd41bcfa
@@ -166,44 +168,9 @@ Junction graphics texture records = 2dd5dfcf
 Junction graphics sprite records  = cfd036cf
 ```
 
-The idle-time owner FNV is intentionally not cross-boot canonical because it contains live uptime. The stable idle contract remains `idleTimeAfter-timeBefore=8000`.
+The idle-time owner FNV is intentionally not cross-boot canonical because it contains live uptime. Its stable contract remains `idleTimeAfter-timeBefore=8000`.
 
 Generic `EspMapOpcodeExecutor` remains intentionally only 11/19/20.
-
-## Hardware-proven native ST_PLAYING
-
-```text
-EspPostLoadPlayingTransitionState = 12 B
-stateFNV=73bc9acd
-state=9->3
-monstersTurn=0
-displaySoftKeys=0
-restoreSoftKeys=0->0
-skipCheckState=0->1
-softKeyIntent=1
-softKeyPresentationDeferred=0
-targetMap=9
-active=1
-nativeST_PLAYING=yes
-legacyST_PLAYING=no
-persistentHeapBytes=0
-```
-
-Legacy `DoomCanvas.state` remains parked at `ST_INTRO` so the legacy loop cannot enter `DoomCanvas_playingState()` / `Render_render()`.
-
-## Hardware-proven post-load idle time
-
-Stable contract:
-
-```text
-EspPostLoadIdleTimeState = 16 B
-idleTimeAfter = timeBefore + 8000
-targetMap=9
-active=1
-persistentHeapBytes=0
-```
-
-The owner contains live uptime, so its state FNV is a same-run witness rather than a stable cross-boot canon.
 
 ## Hardware-proven first native PLAYING service
 
@@ -224,23 +191,7 @@ targetMapId=9
 active=1
 ```
 
-Semantic proof:
-
-```text
-firstNativePlayingService=yes
-nativeST_PLAYING=yes
-inputQueueEmpty=yes
-inputConsumed=no
-gameplayDispatch=no
-renderRequested=yes
-renderDeferred=yes
-hudRequested=yes
-presentation=no
-legacyDoomCanvas_runCalled=no
-legacyDoomCanvas_playingStateCalled=no
-legacyDoomCanvas_updateViewCalled=no
-legacyDoomCanvas_drawRGBCalled=no
-```
+Legacy `DoomCanvas.state` remains parked at `ST_INTRO` so the legacy loop cannot enter `DoomCanvas_playingState()` / `Render_render()`.
 
 ## Hardware-proven sparse graphics catalog
 
@@ -251,7 +202,7 @@ ESP32/include/esp_native_graphics_catalog.h
 ESP32/src/esp_native_graphics_catalog.c
 ```
 
-Record and stable fingerprints:
+Catalog canon:
 
 ```text
 EspNativeGraphicsCatalogRecord=40 B
@@ -268,28 +219,9 @@ textureRange=0..151
 spriteRange=134..162
 ```
 
-Semantic proof:
+The catalog reads selected mappings/palettes directly from `/DoomRPG-ESP32.pak`, keeps no texel payload resident, and does not resurrect the global legacy mapping arrays.
 
-```text
-sparseCoverage=yes
-coverageExact=yes
-paletteRgb565Native=yes
-legacyPaletteRelation=legacy-rb-swapped
-texelPayloadResident=no
-mapWideTexels=no
-nativeCatalogPersistent=yes
-```
-
-The permanent catalog reads only selected mappings/palettes from `mappings.bin` + `palettes.bin` in `/DoomRPG-ESP32.pak`. It does not keep texels resident and does not use the runtime ZIP.
-
-The legacy palette is only a temporary hardware witness and remained unchanged:
-
-```text
-legacyPaletteFNV=1e9365e2->1e9365e2
-unchanged=yes
-```
-
-Legacy graphics mapping/runtime invariants remained:
+Legacy graphics invariants remain:
 
 ```text
 mediaTexelOffsets=NULL
@@ -300,56 +232,118 @@ shapeData=NULL
 mediaTexels=NULL
 ```
 
-Fail-closed proof:
+## Hardware-proven first native Junction frame
+
+Permanent renderer files:
 
 ```text
-preFindEmpty=1
-repeat=1
-repeatAtomic=yes
-missingTexture=yes
-missingSprite=yes
+ESP32/include/esp_native_first_frame.h
+ESP32/src/esp_native_first_frame.c
+ESP32/include/esp_native_plane_renderer.h
+ESP32/src/esp_native_plane_renderer.c
 ```
 
-Resident / RAM proof:
+Published first-frame owner:
 
 ```text
-snapshotFNV=bb714d80->bb714d80
-runtimeFNV=bc432a0f
-mapFNV=8dba0bb4
-scriptFNV=bc9b18ff
-lineFNV=3658710d
-textureStateFNV=537319ad
-automapFNV=b699bd75
-topologyFNV=d6e8df7d
-payload=10410
+EspNativeFirstFrameState = 48 B
+```
+
+Important fingerprint rule:
+
+```text
+frameBeforeFNV = NOT cross-boot canonical
+whole stateFNV = NOT cross-boot canonical
+frameAfterFNV  = 8910c2ed  [stable canon]
+viewportFNV    = 032ffaed  [stable canon, 160x80 @ 0,20]
+```
+
+The final hardware-tested run had `stateFNV=f81692b2` and `frameBeforeFNV=b366be13`, but those values are only same-run witnesses and must not be used as recovery canons.
+
+Wall/BSP proof:
+
+```text
+nodes=39
+leaves=12
+nodeCull=8
+lineCandidates=62
+backfaceCull=20
+clipCull=8
+occluderOnly=0
+spriteSpanDeferred=0
+wallRequests=34
+wallDraws=34
+spanCalls=166
+wallPixels=4341
+wallCache=17H/17M/14E
+resolvedTextures=30
+animationTime=0
+```
+
+Textured plane proof:
+
+```text
+rows=80
+pixels=12800
+uniqueLogicalTextures=6
+cache=12795H/5M/0E
+texelReads=10240 B
+```
+
+Integrity/RAM proof:
+
+```text
+frameAfterFNV=8910c2ed
+residentSnapshot=bb714d80->bb714d80
+catalog=969d5a77->969d5a77
+heapDelta=0
+largestDelta=0
+legacyRenderStable=yes
 packClosed=yes
-heap8=72476->70620
-persistentDelta=1856
-largest8=34804->34804
-logicalCatalogBytes=1840
-allocatorOverhead=16
+repeat=ALREADY_ACTIVE
+repeatAtomic=yes
 ```
 
-Same-build equality witnesses only:
+The strict probe also proves Game, Player, Hud, DoomCanvas, Render, `Render.columnScale`, the legacy palette and resident owners are unchanged by the render.
+
+Post-PARK diagnostic:
 
 ```text
-gameFNV=0b2bb17f->0b2bb17f
-playerFNV=96f121f4->96f121f4
-hudFNV=b18611d2->b18611d2
-canvasFNV=564ff705->564ff705
-renderFNV=29f02a1d->29f02a1d
-frameFNV=6a0726c1->6a0726c1
-GameMutation=no
-PlayerMutation=no
-HudMutation=no
-DoomCanvasMutation=no
-RenderMutation=no
-FrameMutation=no
+BMP path=/junction-viewport.bmp
+BMP size=38454
+viewport=160x80@0,20
+viewportFNV=032ffaed
 ```
 
-## Fresh-Junction load tail: complete
+## Hardware-selected classic CYD presentation
 
-Every successful caller statement through `return true` is hardware-proven semantically. There is no remaining post-load statement to recover before native PLAYING/render work.
+The logical framebuffer is standard raw RGB565. Dedicated real-CYD primary testing proved that software red/blue swapping is wrong.
+
+Permanent presentation policy:
+
+```text
+framebuffer       = raw RGB565
+logical size      = 160x120
+physical size     = 320x240
+resampling        = exact nearest-neighbour x2
+software sat/gamma transform = none
+software R/B swap = none
+TFT byte swap     = ON
+panel inversion   = ON
+TFT_RGB_ORDER     = TFT_BGR
+ILI9341 driver    = ILI9341_2_DRIVER
+SPI frequency     = 55 MHz
+```
+
+The stock `ILI9341_2_DRIVER` power/VCOM/frame-rate settings are retained. The real CYD selected panel calibration profile **B / INV-GAMMA-WA** without contest. `PlatformVideo_begin()` therefore programs this table into both ILI9341 gamma registers `0xE0` and `0xE1`:
+
+```text
+00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
+```
+
+This correction is panel-side only. `PlatformVideo_present()` still sends the raw framebuffer with exact x2 duplication and performs no per-pixel colour correction.
+
+Final normal firmware no longer contains the temporary `VIDEOCAL`, `VIDEOBOUNDARY`, `VIDEOPRIMARY` or `PANELCAL` display carousels.
 
 ## Current hardware PARK
 
@@ -363,10 +357,13 @@ nativeIdleTime=yes
 postLoadTailComplete=yes
 nativePlayingService=yes
 nativeGraphicsCatalog=yes
+nativeFirstFrame=yes
+texturedPlanes=yes
 graphicsCatalogPending=no
-firstFramePending=yes
+firstFramePending=no
+spritesPending=yes
+hudPending=yes
 gameplayDispatchPending=yes
-rendererPending=yes
 initialSavePersistencePending=yes
 legacy Game.entities=0
 legacy Game.monsters=0
@@ -376,44 +373,47 @@ noGameplay=yes
 ## Still intentionally outside
 
 ```text
+native sprite rasterization in gameplay frame
+native HUD gameplay painting
+native input dispatch
+turn advancement
+full native entity/monster gameplay
 native durable save storage
 cross-map durable SAVEGAME route payload
 native queued-event payload ownership for non-empty contexts
 native particle payload/runtime ownership for non-empty contexts
-first native gameplay framebuffer render/presentation
-native input dispatch
-turn advancement
-full native entity/monster gameplay
 sound playback
 ```
 
 ## Probe completion semantics
 
-Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` alone is not a PASS certificate. Downstream probes must revalidate exact predecessor owners/world state. The graphics-catalog probe sets `done=1` only after successful PARK.
+Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` alone is not a PASS certificate. Downstream probes must revalidate exact predecessor owners/world state. The first-frame probe publishes `done=1` only after all render, integrity, RAM, repeat and PARK checks pass.
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-graphics-catalog
+MERGE agent/esp32-native-first-junction-frame
 ```
 
 Hardware-tested firmware:
 
 ```text
-0b40b47eb242ee5ff40b5c4981fe6a8892e95fc5
+09f670a2f11e1cfce065c55aef8a4d3a5711a9a3
 ```
 
-All commits after that tested SHA must remain documentation-only.
+All commits after that tested SHA are documentation-only.
 
 ## Next bounded milestone after merge
 
-Recover exact new `main`, then consume the stable native graphics catalog (`stateFNV=969d5a77`) to remove `Render.mediaTexelOffsets` / `Render.mediaBitShapeOffsets` / `Render.mediaPalettes` from the bounded native graphics resource manager path and produce the **first real Junction gameplay framebuffer mutation** using native PAK-backed wall/sprite assets.
+After merge, read the exact new `main` SHA and branch from it. Extend the same deterministic Junction first-frame boundary with **native sprite rendering** using the already hardware-proven 16 sparse sprite catalog records.
 
 Keep it bounded:
 
 ```text
+same Junction pose/frame boundary
 input consumed = no
 turn advanced = no
+gameplay dispatch = no
 legacy Game.entities = 0
 legacy Game.monsters = 0
 legacy DoomCanvas.state = ST_INTRO
@@ -422,6 +422,6 @@ legacy Render_render = not called
 shapeData = NULL
 mediaTexels = NULL
 runtime ZIP = forbidden
+bounded sprite cache only
+HUD painting deferred unless separately scoped
 ```
-
-The next milestone may mutate and present the logical 160x120 RGB565 framebuffer, but must not bundle input, turn logic, entity/monster activation or a return to the legacy renderer architecture.
