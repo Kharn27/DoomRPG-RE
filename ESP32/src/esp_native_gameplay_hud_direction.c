@@ -10,8 +10,6 @@
 #include "platform_video_config.h"
 
 #define HUD_BOTTOM_Y 100
-#define HUD_PANEL_LEFT 112
-#define HUD_PANEL_RIGHT 143
 #define HUD_ARROW_RIGHT 144
 #define HUD_ARROW_Y 102
 #define HUD_DIR_X 135
@@ -20,6 +18,12 @@
 #define HUD_FONT_HEIGHT 12U
 #define HUD_TRANSPARENT 1U
 #define HUD_OPAQUE 0U
+
+/* The initial hardware-proven HUD places pistol-ammo text immediately to the
+ * left of the compass. Do not clear a broad fixed panel here: the old x112..143
+ * range erased part of that text on every TURN. Reconstruct only the exact
+ * horizontal union occupied by o.bmp and the direction glyph. */
+#define HUD_COMPASS_RIGHT (HUD_DIR_X + (int)HUD_FONT_WIDTH - 1)
 
 typedef struct HudDirectionScratch_s {
     EspNativeIndexedBmp bar;
@@ -85,17 +89,31 @@ static char directionChar(uint8_t angle) {
     }
 }
 
-static int clearPanel(const EspNativeIndexedBmp* bar,
-                      uint16_t* framebuffer,
-                      EspNativeGameplayHudDirectionStats* stats) {
+static int clearCompass(const EspNativeIndexedBmp* bar,
+                        const EspNativeIndexedBmp* arrow,
+                        uint16_t* framebuffer,
+                        EspNativeGameplayHudDirectionStats* stats) {
+    int left;
+    int right = HUD_COMPASS_RIGHT;
     int y;
-    if (bar == NULL || bar->width != 20U || bar->height != 20U) return 0;
+
+    if (bar == NULL || arrow == NULL ||
+        bar->width != 20U || bar->height != 20U ||
+        arrow->width == 0U || arrow->width > 32U) {
+        return 0;
+    }
+
+    left = HUD_ARROW_RIGHT - (int)arrow->width;
+    if (HUD_DIR_X < left) left = HUD_DIR_X;
+    if (HUD_ARROW_RIGHT - 1 > right) right = HUD_ARROW_RIGHT - 1;
+    if (left < 0 || right >= DOOMRPG_LOGICAL_WIDTH || left > right) return 0;
+
     for (y = 0; y < 20; ++y) {
-        int x = HUD_PANEL_LEFT;
-        while (x <= HUD_PANEL_RIGHT) {
+        int x = left;
+        while (x <= right) {
             const uint16_t sourceX = (uint16_t)(x % 20);
             int run = 20 - (int)sourceX;
-            const int remaining = HUD_PANEL_RIGHT - x + 1;
+            const int remaining = right - x + 1;
             if (run > remaining) run = remaining;
             if (!drawBmp(bar, framebuffer,
                          sourceX, (uint16_t)y,
@@ -161,7 +179,7 @@ int EspNativeGameplayHudDirection_render(
     }
     stats->resourcesValidated = 3U;
 
-    if (!clearPanel(bar, framebuffer, stats)) goto done;
+    if (!clearCompass(bar, arrow, framebuffer, stats)) goto done;
     if (!drawBmp(arrow, framebuffer, 0U, 0U, arrow->width, arrow->height,
                  HUD_ARROW_RIGHT - (int)arrow->width, HUD_ARROW_Y,
                  HUD_TRANSPARENT, stats)) {
