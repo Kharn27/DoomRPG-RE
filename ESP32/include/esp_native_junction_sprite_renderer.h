@@ -13,6 +13,8 @@ typedef struct EspNativeJunctionSpriteStats_s {
     uint32_t objects;
     uint32_t hidden;
     uint32_t unsupported;
+    uint32_t bspCandidates;
+    uint32_t bspRejected;
     uint32_t mode0Objects;
     uint32_t mode7Objects;
     uint32_t nearCulled;
@@ -46,10 +48,12 @@ typedef struct EspNativeJunctionSpriteStats_s {
  * range reads. Mode 7 follows legacy RGB565 additive saturation exactly.
  * Glow companion sprites spawned by IDs 135/140/131 remain separately deferred.
  *
- * Wall depth is reconstructed through the same compact BSP walk used by the
- * validated first native frame, not by scanning map-wide lines. The call
- * temporarily borrows Render projection scratch and restores it exactly before
- * returning. It never installs legacy runtime graphics pools.
+ * Wall depth and view-sprite admission are produced by the same compact BSP
+ * walk used by the validated first native frame. Only sprites relinked to a
+ * leaf actually visited by that stateful depth/cull traversal enter sorting or
+ * rasterization; map-wide sprites outside those leaves never load bitshapes.
+ * The call temporarily borrows Render projection scratch and restores it
+ * exactly before returning. It never installs legacy runtime graphics pools.
  */
 int EspNativeJunctionSprite_render(struct Render_s* render,
                                    EspNativeJunctionSpriteStats* outStats);
