@@ -5,25 +5,25 @@ Authoritative recovery point for the classic ESP32-2432S028R port.
 ## Latest merged hardware baseline
 
 ```text
-PR   = #87 — native sparse graphics catalog
-main = 91a17414859fa12a0553e5b011956b6f95165780
+PR   = #88 — first native Junction gameplay frame + permanent CYD panel profile
+main = d8da51e5a3b9700d1806110f56f553a422d7d182
 status = REAL-CYD HARDWARE PASS / MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_GRAPHICS_CATALOG.md`](MAP1_NATIVE_GRAPHICS_CATALOG.md).
+Merged evidence: [`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-first-junction-frame
-base   = 91a17414859fa12a0553e5b011956b6f95165780
-hardware-tested firmware = 09f670a2f11e1cfce065c55aef8a4d3a5711a9a3
+branch = agent/esp32-native-junction-sprites
+base   = d8da51e5a3b9700d1806110f56f553a422d7d182
+hardware-tested firmware = 3fdb2905b1d49ef1112a9e9df7a5db7e278897bd
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Evidence: [`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md).
+Evidence: [`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md).
 
-This milestone produces and presents the first real deterministic native Junction gameplay framebuffer while the legacy gameplay/render loop remains parked.
+This milestone extends the deterministic Junction walls+textured-planes frame with BSP-visible native billboard rasterization, intrinsic legacy render modes 0/7 and bounded PAK-backed bitshape/texel reads while the legacy gameplay/render loop remains parked.
 
 ## Permanent invariants
 
@@ -45,6 +45,9 @@ native PLAYING service = reached
 native sparse graphics catalog = reached
 native first Junction frame = reached
 native textured planes = reached
+native base billboard sprites = reached
+native BSP-visible sprite admission = reached
+native intrinsic sprite mode 7 = reached
 ```
 
 ## Hardware-proven map canons
@@ -75,11 +78,13 @@ sourceFNV=fefaf5ca
 spawnIndex=943
 spawnDirection=64
 payload=10410 B
-actual heap=10540 B
+historical heap cost=10540 B
 entities=30
 enemies=0
 destructibles=3
 ```
+
+Later diagnostic BSS changes shifted allocator bookkeeping by 8 B on hardware (`10548 B` observed) without changing Junction payload, snapshots or largest free block. Absolute heap cost is therefore an allocator-layout witness, not a semantic fingerprint; the historical 10540 B value remains recorded for recovery.
 
 Current Junction resident owner FNVs:
 
@@ -126,6 +131,7 @@ CHANGEMAP pending intent
  -> first native Junction wall frame
  -> native textured floor/ceiling planes
  -> raw RGB565 CYD presentation
+ -> native BSP-visible billboard sprite pass
 ```
 
 Stable canonical fingerprints through the pre-render chain:
@@ -258,8 +264,6 @@ frameAfterFNV  = 8910c2ed  [stable canon]
 viewportFNV    = 032ffaed  [stable canon, 160x80 @ 0,20]
 ```
 
-The final hardware-tested run had `stateFNV=f81692b2` and `frameBeforeFNV=b366be13`, but those values are only same-run witnesses and must not be used as recovery canons.
-
 Wall/BSP proof:
 
 ```text
@@ -300,11 +304,7 @@ heapDelta=0
 largestDelta=0
 legacyRenderStable=yes
 packClosed=yes
-repeat=ALREADY_ACTIVE
-repeatAtomic=yes
 ```
-
-The strict probe also proves Game, Player, Hud, DoomCanvas, Render, `Render.columnScale`, the legacy palette and resident owners are unchanged by the render.
 
 Post-PARK diagnostic:
 
@@ -314,6 +314,80 @@ BMP size=38454
 viewport=160x80@0,20
 viewportFNV=032ffaed
 ```
+
+## Hardware-proven native Junction billboard pass
+
+Permanent renderer files:
+
+```text
+ESP32/include/esp_native_junction_sprite_renderer.h
+ESP32/src/esp_native_junction_sprite_renderer.c
+```
+
+The pass begins from `frame=8910c2ed`, repeats the validated stateful BSP depth walk, and uses visited leaves as the permanent equivalent of legacy `Render_relinkSprite()` / `viewSprites` admission.
+
+View-sprite canon:
+
+```text
+mapSprites=48
+bspCandidates=21
+bspRejected=27
+hidden=0
+candidate modes=0:14 / 7:7
+hardware census candidateFNV=23ef1895
+permanent orderFNV=f16737cb
+```
+
+The 27 BSP-rejected sprites produce no pixels in this pose. Filtering them reduced work but deliberately left the final framebuffer unchanged versus the earlier map-wide implementation.
+
+Raster/storage canon:
+
+```text
+depth nodes=39 leaves=12 nodeCull=8 lines=62 backface=20 clip=8
+modes=0:14 / 7:7
+mode7Pixels=311
+draws=21
+nearCull=0
+clipCull=0
+spanRuns=219
+pixels=1828
+wallOccludedCols=62
+frameLoads=21
+uniqueLogical=9
+frameBytes=12251
+maxFrameBytes=1020
+packReads=130
+glowDeferred=7
+```
+
+Stable post-sprite framebuffer:
+
+```text
+frameAfterFNV=299506eb
+viewportFNV=ae2246eb
+BMP path=/junction-sprite-viewport.bmp
+BMP size=38454
+viewport=160x80@0,20
+```
+
+Memory/world proof:
+
+```text
+heapDelta=0
+largestDelta=0
+legacyRenderStable=yes
+topology=d6e8df7d
+catalog=969d5a77
+packClosed=yes
+shapeData=NULL
+mediaTexels=NULL
+legacy Game.entities=0
+legacy Game.monsters=0
+```
+
+The renderer owns one temporary bounded workspace only for the call. It resolves logical BSP IDs through bounded native PAK ranges, reads compact bitshape mask/texels/palette payloads, restores borrowed legacy projection scratch exactly and closes the pack before returning.
+
+The intrinsic legacy mode-7 family is active for logical IDs 136/137/144. Implicit glow companions spawned by base IDs 135/140/131 are **not** yet rendered; seven are pending in the current Junction view.
 
 ## Hardware-selected classic CYD presentation
 
@@ -335,15 +409,13 @@ ILI9341 driver    = ILI9341_2_DRIVER
 SPI frequency     = 55 MHz
 ```
 
-The stock `ILI9341_2_DRIVER` power/VCOM/frame-rate settings are retained. The real CYD selected panel calibration profile **B / INV-GAMMA-WA** without contest. `PlatformVideo_begin()` therefore programs this table into both ILI9341 gamma registers `0xE0` and `0xE1`:
+The stock `ILI9341_2_DRIVER` power/VCOM/frame-rate settings are retained. The real CYD selected panel calibration profile **B / INV-GAMMA-WA**. `PlatformVideo_begin()` programs this table into both ILI9341 gamma registers `0xE0` and `0xE1`:
 
 ```text
 00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
 ```
 
 This correction is panel-side only. `PlatformVideo_present()` still sends the raw framebuffer with exact x2 duplication and performs no per-pixel colour correction.
-
-Final normal firmware no longer contains the temporary `VIDEOCAL`, `VIDEOBOUNDARY`, `VIDEOPRIMARY` or `PANELCAL` display carousels.
 
 ## Current hardware PARK
 
@@ -359,9 +431,10 @@ nativePlayingService=yes
 nativeGraphicsCatalog=yes
 nativeFirstFrame=yes
 texturedPlanes=yes
-graphicsCatalogPending=no
-firstFramePending=no
-spritesPending=yes
+nativeBaseBillboards=yes
+bspVisibleOnly=yes
+intrinsicMode7=yes
+glowPending=yes
 hudPending=yes
 gameplayDispatchPending=yes
 initialSavePersistencePending=yes
@@ -373,7 +446,8 @@ noGameplay=yes
 ## Still intentionally outside
 
 ```text
-native sprite rasterization in gameplay frame
+implicit glow companion sprites (7 pending in current Junction view)
+other unsupported sprite families/render modes
 native HUD gameplay painting
 native input dispatch
 turn advancement
@@ -387,41 +461,30 @@ sound playback
 
 ## Probe completion semantics
 
-Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` alone is not a PASS certificate. Downstream probes must revalidate exact predecessor owners/world state. The first-frame probe publishes `done=1` only after all render, integrity, RAM, repeat and PARK checks pass.
+Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` alone is not a PASS certificate. Downstream probes must revalidate exact predecessor owners/world state. Hardware serial evidence remains the final truth.
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-first-junction-frame
+MERGE agent/esp32-native-junction-sprites
 ```
 
 Hardware-tested firmware:
 
 ```text
-09f670a2f11e1cfce065c55aef8a4d3a5711a9a3
+3fdb2905b1d49ef1112a9e9df7a5db7e278897bd
 ```
 
-All commits after that tested SHA are documentation-only.
+All commits after that tested SHA must remain documentation-only before merge-ready declaration.
 
 ## Next bounded milestone after merge
 
-After merge, read the exact new `main` SHA and branch from it. Extend the same deterministic Junction first-frame boundary with **native sprite rendering** using the already hardware-proven 16 sparse sprite catalog records.
-
-Keep it bounded:
+After merge, recover the exact new `main` SHA and branch from it. Close the native sprite dependency graph for legacy implicit glow spawning, then render only that bounded family:
 
 ```text
-same Junction pose/frame boundary
-input consumed = no
-turn advanced = no
-gameplay dispatch = no
-legacy Game.entities = 0
-legacy Game.monsters = 0
-legacy DoomCanvas.state = ST_INTRO
-legacy DoomCanvas_playingState = not called
-legacy Render_render = not called
-shapeData = NULL
-mediaTexels = NULL
-runtime ZIP = forbidden
-bounded sprite cache only
-HUD painting deferred unless separately scoped
+135/140 -> companion logical 136, mode 7
+131 -> companion logical 144, mode 7 when encountered
+current Junction view = 7 pending companions
 ```
+
+The sparse catalog must explicitly own these implicit dependencies; do not bypass ownership with ad-hoc PAK reads. Keep the existing BSP-visible set, input/turn/gameplay PARK and all no-legacy-graphics-pool invariants unchanged.
