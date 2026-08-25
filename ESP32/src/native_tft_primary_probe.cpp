@@ -5,13 +5,11 @@
 #include "esp_native_first_frame.h"
 #include "platform_video_c_bridge.h"
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
 namespace {
 
 constexpr uint32_t kExpectedJunctionFrameFNV = 0x8910c2edU;
 constexpr uint32_t kProbeHoldMs = 3000U;
+bool attempted = false;
 
 uint16_t swapRedBlue565(uint16_t color) {
     return static_cast<uint16_t>(((color & 0x001fU) << 11) |
@@ -43,27 +41,28 @@ void drawPrimaryPattern(TFT_eSPI& display, bool softwareRedBlueSwap) {
                      display.width() - 3 * stripeWidth, height, colors[3]);
 }
 
-void primaryProbeTask(void*) {
-    const EspNativeFirstFrameState* frame = nullptr;
+}  // namespace
 
-    while (!EspNativeFirstFrame_isReady()) {
-        vTaskDelay(pdMS_TO_TICKS(100));
+void Esp32TftPrimaryProbe_service() {
+    if (attempted || !EspNativeFirstFrame_isReady()) {
+        return;
     }
+    attempted = true;
 
-    frame = EspNativeFirstFrame_view();
+    const EspNativeFirstFrameState* frame = EspNativeFirstFrame_view();
     if (frame == nullptr || frame->frameAfterFNV != kExpectedJunctionFrameFNV ||
         frame->presented != 1U || frame->active != 1U) {
         Serial.printf("[VIDEOPRIMARY] REFUSED frame=%08x presented=%u active=%u\n",
                       static_cast<unsigned int>(frame ? frame->frameAfterFNV : 0U),
                       static_cast<unsigned int>(frame ? frame->presented : 0U),
                       static_cast<unsigned int>(frame ? frame->active : 0U));
-        vTaskDelete(nullptr);
         return;
     }
 
-    /* The normal first-frame route and its strict heap/FNV checks have already
-     * completed. Re-open only the physical TFT controller using the exact same
-     * compile-time CYD setup; the logical framebuffer is never touched. */
+    /* This service is called only after the canonical first-frame route has
+     * completed all of its predecessor, heap and framebuffer checks.  There is
+     * deliberately no static constructor, task, queue or boot-time allocation.
+     * The logical framebuffer is never modified by this visual-only probe. */
     TFT_eSPI diagnosticDisplay;
     diagnosticDisplay.begin();
     diagnosticDisplay.setRotation(cyd::kDisplayRotation);
@@ -75,12 +74,12 @@ void primaryProbeTask(void*) {
     drawPrimaryPattern(diagnosticDisplay, false);
     Serial.printf("[VIDEOPRIMARY] PROFILE RAW source=RED|GREEN|BLUE|GRAY softwareRbSwap=no hold=%lums\n",
                   static_cast<unsigned long>(kProbeHoldMs));
-    vTaskDelay(pdMS_TO_TICKS(kProbeHoldMs));
+    delay(kProbeHoldMs);
 
     drawPrimaryPattern(diagnosticDisplay, true);
     Serial.printf("[VIDEOPRIMARY] PROFILE RBSWAP source=RED|GREEN|BLUE|GRAY softwareRbSwap=yes hold=%lums\n",
                   static_cast<unsigned long>(kProbeHoldMs));
-    vTaskDelay(pdMS_TO_TICKS(kProbeHoldMs));
+    delay(kProbeHoldMs);
 
     diagnosticDisplay.invertDisplay(true);
     diagnosticDisplay.setSwapBytes(true);
@@ -88,21 +87,4 @@ void primaryProbeTask(void*) {
     Serial.printf("[VIDEOPRIMARY] RESTORE gameplayFrame=yes result=%s framebuffer=%08x untouched=yes\n",
                   restored ? "OK" : "FAILED",
                   static_cast<unsigned int>(frame->frameAfterFNV));
-
-    vTaskDelete(nullptr);
 }
-
-struct PrimaryProbeTaskStarter {
-    PrimaryProbeTaskStarter() {
-        (void)xTaskCreate(primaryProbeTask,
-                          "tft-primary",
-                          4096,
-                          nullptr,
-                          1,
-                          nullptr);
-    }
-};
-
-PrimaryProbeTaskStarter primaryProbeTaskStarter;
-
-}  // namespace
