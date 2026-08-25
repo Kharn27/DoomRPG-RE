@@ -5,25 +5,26 @@ Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHu
 ## Latest merged hardware baseline
 
 ```text
-PR   = #90 — native Junction glow companions
-main = 30351fd0a867e18dad171962b00d70923b4d173f
+PR   = #91 — native gameplay HUD
+main = 7686f7fb5c93d375f51a34ec0dd0b5cb127017e3
 status = REAL-CYD HARDWARE PASS / MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_JUNCTION_GLOWS.md`](MAP1_NATIVE_JUNCTION_GLOWS.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_HUD.md`](MAP1_NATIVE_GAMEPLAY_HUD.md).
 
-## Current merge-ready milestone
+## Current candidate milestone
 
 ```text
-branch = agent/esp32-native-gameplay-hud
-base   = 30351fd0a867e18dad171962b00d70923b4d173f
-hardware-tested firmware = fa6b0d2ab4c1ec2598b92dfe635a84ff50a74867
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch = agent/esp32-native-touch-input-intent
+base   = 7686f7fb5c93d375f51a34ec0dd0b5cb127017e3
+implementation HEAD = 8c620093650ac4efd5d470343466ce9f5c441e4e
+status = REAL-CYD VISUAL PASS / FINAL SERIAL ARCHIVE PENDING
+merge-ready = no
 ```
 
-Evidence: [`MAP1_NATIVE_GAMEPLAY_HUD.md`](MAP1_NATIVE_GAMEPLAY_HUD.md).
+Evidence: [`MAP1_NATIVE_GAMEPLAY_INPUT.md`](MAP1_NATIVE_GAMEPLAY_INPUT.md).
 
-The user visually confirmed the native gameplay HUD on the real classic CYD. The painter preserves the complete native Junction world viewport byte-for-byte, paints only the 20-pixel top/bottom HUD bands, consumes the existing native HUD dirty intent after success, and leaves all legacy Game/Player/Hud/DoomCanvas/Render state stable.
+The final CYD layout has been visually confirmed by the user as perfect. The semantic input owner and exact-restoring feedback path were already exercised on real hardware before the final layout/color polish, but the repository deliberately does not label the final HEAD hardware-tested until a Serial block from that exact firmware is archived.
 
 ## Permanent invariants
 
@@ -50,6 +51,8 @@ native intrinsic sprite mode 7 = reached
 native glow dependency closure = reached
 native glow companions = reached
 native gameplay HUD = reached
+native gameplay touch intent owner = reached on candidate branch
+real gameplay action dispatch = not reached
 ```
 
 ## Hardware-proven map / resident canons
@@ -103,7 +106,7 @@ Later diagnostic layout changes can shift allocator bookkeeping without changing
 
 ## Native transition / player / post-load chain
 
-Hardware-proven sequence through the current visible boundary:
+Hardware-proven sequence through the merged HUD boundary:
 
 ```text
 CHANGEMAP intent
@@ -135,6 +138,16 @@ CHANGEMAP intent
  -> seven native glow companions
  -> native gameplay HUD paint
  -> consume native HUD dirty intent
+```
+
+Candidate branch adds, without action execution:
+
+```text
+ -> calibrated CYD touch
+ -> logical 160x120 hit classification
+ -> compact EspNativeGameplayInputState
+ -> probe consumes semantic intent
+ -> transient exact-restoring feedback
 ```
 
 Stable pre-render fingerprints retained for recovery:
@@ -350,6 +363,59 @@ no gameplay dispatch
 
 The user explicitly reported the HUD as visually correct on the physical CYD.
 
+## Candidate native gameplay touch boundary
+
+Permanent semantic owner:
+
+```text
+EspNativeGameplayInputState = 12 B
+EspNativeGameplayTouchHit   = 6 B
+one pending intent maximum
+unsupported/busy = fail closed
+```
+
+Final touch layout at implementation HEAD:
+
+```text
+top HUD y=0..19:
+  x0..31    MENU
+  x32..127  PASS_TURN
+  x128..159 AUTOMAP
+
+world y=20..45: STRAFE_LEFT | FORWARD | STRAFE_RIGHT
+world y=46..72: TURN_LEFT   | SELECT  | TURN_RIGHT
+world y=73..99: PREV_WEAPON | BACK    | NEXT_WEAPON
+bottom HUD y=100..119: unbound
+```
+
+Final transient feedback contract:
+
+```text
+hold=250 ms
+maxEdits=512
+bounded static saved-pixel storage ~= 2 KiB + metadata
+runtime allocation=0
+style=neon double ring + vector glyph
+palette top/move/turn/weapon = BLUE/GREEN/YELLOW/RED
+restore=reverse-order exact pixel restore
+no PAK/SD reads
+```
+
+The first real-CYD input run before final polish proved:
+
+```text
+baseline frame=ba3e5182
+stateBytes=12
+hitBytes=6
+heap8=69828->69828
+largest8=34804->34804
+all exercised valid taps => semantic INTENT
+all transient restores => frame ba3e5182 exact=yes
+no gameplay dispatch
+```
+
+The user subsequently visually confirmed the final 12-zone neon layout as perfect. Exact final-HEAD runtime values are intentionally not promoted until its Serial block is archived.
+
 ## Hardware-selected classic CYD presentation
 
 ```text
@@ -372,9 +438,9 @@ Selected hardware gamma profile B / INV-GAMMA-WA, written to ILI9341 registers `
 00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
 ```
 
-Presentation remains raw framebuffer x2 duplication with no per-pixel software colour transform.
-
 ## Current hardware PARK
+
+Merged/main hardware PARK:
 
 ```text
 legacyState=9 / ST_INTRO
@@ -400,11 +466,17 @@ legacy Game.monsters=0
 noGameplay=yes
 ```
 
+Candidate branch additionally arms native touch-intent classification after this PARK, but still executes no gameplay action.
+
 ## Still intentionally outside
 
 ```text
-native gameplay input/action dispatch
+real native gameplay action dispatch
+player/view mutation from touch
 turn advancement
+movement collision
+full menu navigation from gameplay
+real automap activation from gameplay
 other sprite families/render modes not required by current Junction pose
 full native entity/monster gameplay
 native durable save storage
@@ -421,31 +493,19 @@ Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` a
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-gameplay-hud
+DO NOT MERGE YET
 ```
 
-Hardware-tested firmware:
+Implementation HEAD awaiting final Serial archive:
 
 ```text
-fa6b0d2ab4c1ec2598b92dfe635a84ff50a74867
+8c620093650ac4efd5d470343466ce9f5c441e4e
 ```
 
-All commits after that tested SHA must remain documentation-only before merge-ready declaration.
+Once the final Serial block from that exact firmware proves the 12-zone contract, representative BLUE/GREEN/YELLOW/RED feedback, PREV/NEXT weapon, PASS_TURN, exact `ba3e5182` restore and unchanged heap/largest with no FAILED/ERROR, update the three documentation files only and declare merge-ready.
 
 ## Next bounded milestone after merge
 
-After merge, recover the exact new `main` SHA and branch from it. The next coherent frontier is **native gameplay input/action dispatch**, but it must begin with one small recovered action family rather than enabling the whole legacy playing-event loop.
+After merge, recover the exact new `main` SHA and branch from it. The next coherent frontier is the first **real native gameplay action family**, preferably `TURN_LEFT` / `TURN_RIGHT` only.
 
-Before coding, reread the exact legacy action semantics and choose the smallest permanent native owner/dispatcher that preserves:
-
-```text
-current 160x120 renderer + HUD PARK
-no broad Game/DoomCanvas legacy gameplay loop
-unsupported actions fail closed
-shapeData=NULL
-mediaTexels=NULL
-runtime ZIP forbidden
-bounded native ownership
-```
-
-Do not fold full turn advancement, monster gameplay or general entity activation into the first input milestone.
+All other recognized actions must remain deferred/fail-closed. Do not combine first dispatch with movement collision, full turn advancement, monster gameplay or general entity activation.
