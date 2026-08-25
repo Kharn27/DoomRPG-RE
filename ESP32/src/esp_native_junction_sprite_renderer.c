@@ -23,6 +23,7 @@
 #define MAX_MASK 512U
 #define MAX_TEXELS 2048U
 #define MAX_BSP_DEPTH 64U
+#define MAX_TRACKED_NODES 256U
 #define SCREEN_W 160
 
 #define VISUAL_MASK 0x0001fe00UL
@@ -120,6 +121,7 @@ typedef struct SpriteWorkspace_s {
     Frame frame;
     Order order[MAX_SPRITES];
     uint32_t seenLogical[8];
+    uint32_t visibleLeaves[MAX_TRACKED_NODES / 32U];
 } SpriteWorkspace;
 
 static uint16_t le16(const uint8_t* p) {
@@ -380,6 +382,7 @@ static int walkDepthNode(Render_t* r,
                          const EspMapRuntimeView* rt,
                          uint32_t nodeIndex,
                          uint32_t depth,
+                         uint32_t visibleLeaves[MAX_TRACKED_NODES / 32U],
                          EspNativeJunctionSpriteStats* s) {
     EspMapNode compact;
     Node_t node;
@@ -390,7 +393,8 @@ static int walkDepthNode(Render_t* r,
     uint32_t split;
     uint32_t i;
 
-    if (r == NULL || rt == NULL || s == NULL || depth > MAX_BSP_DEPTH ||
+    if (r == NULL || rt == NULL || visibleLeaves == NULL || s == NULL ||
+        depth > MAX_BSP_DEPTH || rt->nodeCount > MAX_TRACKED_NODES ||
         nodeIndex >= rt->nodeCount || !EspMapRuntime_getNode(nodeIndex, &compact)) {
         return 0;
     }
@@ -416,6 +420,7 @@ static int walkDepthNode(Render_t* r,
         if (lineStart > rt->lineCount || lineCount > rt->lineCount - lineStart) {
             return 0;
         }
+        visibleLeaves[nodeIndex >> 5] |= 1U << (nodeIndex & 31U);
         ++r->nodeRasterCount;
         ++s->depthLeaves;
         r->lineCount += (int)lineCount;
@@ -432,11 +437,55 @@ static int walkDepthNode(Render_t* r,
     split = compact.args1 & 0xffffU;
     if (((compact.args1 & 0x20000U) == 0U || r->viewY <= (int)split) &&
         ((compact.args1 & 0x10000U) == 0U || r->viewX <= (int)split)) {
-        return walkDepthNode(r, rt, first, depth + 1U, s) &&
-               walkDepthNode(r, rt, second, depth + 1U, s);
+        return walkDepthNode(r, rt, first, depth + 1U, visibleLeaves, s) &&
+               walkDepthNode(r, rt, second, depth + 1U, visibleLeaves, s);
     }
-    return walkDepthNode(r, rt, second, depth + 1U, s) &&
-           walkDepthNode(r, rt, first, depth + 1U, s);
+    return walkDepthNode(r, rt, second, depth + 1U, visibleLeaves, s) &&
+           walkDepthNode(r, rt, first, depth + 1U, visibleLeaves, s);
+}
+
+static int spriteLeaf(const EspMapRuntimeView* rt,
+                      const EspMapSprite* sprite,
+                      uint32_t* outLeaf) {
+    uint32_t nodeIndex = 0U;
+    uint32_t depth;
+
+    if (rt == NULL || sprite == NULL || outLeaf == NULL ||
+        rt->nodeCount == 0U || rt->nodeCount > MAX_TRACKED_NODES) {
+        return 0;
+    }
+
+    for (depth = 0U; depth <= MAX_BSP_DEPTH; ++depth) {
+        EspMapNode node;
+        uint32_t split;
+        uint32_t child;
+
+        if (nodeIndex >= rt->nodeCount || !EspMapRuntime_getNode(nodeIndex, &node)) {
+            return 0;
+        }
+        if ((node.args1 & 0x30000U) == 0U) {
+            *outLeaf = nodeIndex;
+            return 1;
+        }
+
+        split = node.args1 & 0xffffU;
+        if ((node.args1 & 0x10000U) != 0U) {
+            child = sprite->x > split
+                        ? (node.args2 & 0xffffU)
+                        : ((node.args2 >> 16) & 0xffffU);
+        }
+        else if ((node.args1 & 0x20000U) != 0U) {
+            child = sprite->y > split
+                        ? (node.args2 & 0xffffU)
+                        : ((node.args2 >> 16) & 0xffffU);
+        }
+        else {
+            return 0;
+        }
+        if (child >= rt->nodeCount) return 0;
+        nodeIndex = child;
+    }
+    return 0;
 }
 
 static int initSources(Sources* c, EspNativeJunctionSpriteStats* s) {
@@ -620,6 +669,7 @@ static int loadFrame(const Sources* c,
 
 static int buildOrder(Render_t* r,
                       const EspMapRuntimeView* rt,
+                      const uint32_t visibleLeaves[MAX_TRACKED_NODES / 32U],
                       Order order[MAX_SPRITES],
                       EspNativeJunctionSpriteStats* s,
                       uint32_t* n) {
@@ -627,7 +677,10 @@ static int buildOrder(Render_t* r,
     uint32_t count = 0U;
     uint32_t h = 2166136261U;
 
-    if (rt->mapSpriteCount > MAX_SPRITES) return 0;
+    if (rt == NULL || visibleLeaves == NULL || s == NULL || n == NULL ||
+        rt->mapSpriteCount > MAX_SPRITES || rt->nodeCount > MAX_TRACKED_NODES) {
+        return 0;
+    }
 
     for (i = 0U; i < rt->mapSpriteCount; ++i) {
         EspMapSprite sp;
@@ -638,6 +691,7 @@ static int buildOrder(Render_t* r,
         uint16_t ord;
         uint32_t info;
         uint32_t id;
+        uint32_t leaf;
         uint32_t pos;
         int32_t z;
 
@@ -657,6 +711,13 @@ static int buildOrder(Render_t* r,
             ++s->hidden;
             continue;
         }
+        if (!spriteLeaf(rt, &sp, &leaf)) return 0;
+        if ((visibleLeaves[leaf >> 5] & (1U << (leaf & 31U))) == 0U) {
+            ++s->bspRejected;
+            continue;
+        }
+        ++s->bspCandidates;
+
         if (id >= 82U && id <= 90U && (id & 1U) == 0U) info |= CROSS;
         if ((info & (TILE | CROSS | SKIP_RESOURCE | ORIENT_MASK)) != 0U ||
             EspNativeGraphicsCatalog_findSprite((uint16_t)id) == NULL) {
@@ -914,7 +975,8 @@ int EspNativeJunctionSprite_render(struct Render_s* renderBase,
         !EspMapSpriteTopology_isReady() ||
         !EspNativeGraphicsCatalog_isReady() || EspAssetPack_isOpen() ||
         r->screenWidth != SCREEN_W || r->columnScale == NULL ||
-        r->framebuffer == NULL || rt->nodeCount == 0U || rt->lineCount == 0U) {
+        r->framebuffer == NULL || rt->nodeCount == 0U ||
+        rt->nodeCount > MAX_TRACKED_NODES || rt->lineCount == 0U) {
         return 0;
     }
 
@@ -924,8 +986,9 @@ int EspNativeJunctionSprite_render(struct Render_s* renderBase,
     memset(&s, 0, sizeof(s));
     saveScratch(r, &saved);
 
-    if (!setupView(r, v) || !walkDepthNode(r, rt, 0U, 0U, &s) ||
-        !buildOrder(r, rt, workspace->order, &s, &n)) {
+    if (!setupView(r, v) ||
+        !walkDepthNode(r, rt, 0U, 0U, workspace->visibleLeaves, &s) ||
+        !buildOrder(r, rt, workspace->visibleLeaves, workspace->order, &s, &n)) {
         goto done;
     }
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
@@ -938,7 +1001,7 @@ int EspNativeJunctionSprite_render(struct Render_s* renderBase,
             goto done;
         }
     }
-    ok = s.draws > 0U && s.pixelsDrawn > 0U &&
+    ok = s.bspCandidates > 0U && s.draws > 0U && s.pixelsDrawn > 0U &&
          s.mode0Objects > 0U && s.mode7Objects > 0U && s.mode7Pixels > 0U;
 
 done:
