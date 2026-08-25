@@ -19,121 +19,112 @@ If chat history and repository state disagree, current GitHub `main` + `PORTING_
 | [`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md) | first Junction walls+planes frame + permanent CYD panel profile | #88 | `d8da51e5a3b9700d1806110f56f553a422d7d182` |
 | [`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md) | BSP-visible native Junction billboard rendering | #89 | `674b45bbd115cd8f9202f2ce2d7132550c3bb75e` |
 | [`MAP1_NATIVE_JUNCTION_GLOWS.md`](MAP1_NATIVE_JUNCTION_GLOWS.md) | dependency-closed additive Junction glow companions | #90 | `30351fd0a867e18dad171962b00d70923b4d173f` |
+| [`MAP1_NATIVE_GAMEPLAY_HUD.md`](MAP1_NATIVE_GAMEPLAY_HUD.md) | native fresh-Junction gameplay HUD painter | #91 | `7686f7fb5c93d375f51a34ec0dd0b5cb127017e3` |
 
 Older archives remain available in Git history; `PORTING_STATUS.md` is the preferred recovery entry point.
 
 ## Latest merged boundary
 
-PR #90 established the dependency-closed current Junction sprite set and seven native additive glow companions.
+PR #91 established the first complete static gameplay presentation including the native compact HUD.
 
 ```text
-main=30351fd0a867e18dad171962b00d70923b4d173f
-closedCatalogFNV=257444a5
-complete sprite+glow frame=b5218f24
-complete viewportFNV=9206eb24
-shapeData=NULL
-mediaTexels=NULL
-```
-
-Merged evidence: [`MAP1_NATIVE_JUNCTION_GLOWS.md`](MAP1_NATIVE_JUNCTION_GLOWS.md).
-
-## Current merge-ready milestone
-
-[`MAP1_NATIVE_GAMEPLAY_HUD.md`](MAP1_NATIVE_GAMEPLAY_HUD.md) records the current real-CYD PASS.
-
-```text
-branch=agent/esp32-native-gameplay-hud
-base=30351fd0a867e18dad171962b00d70923b4d173f
-hardware-tested firmware=fa6b0d2ab4c1ec2598b92dfe635a84ff50a74867
-status=REAL-CYD HARDWARE PASS / MERGE-READY
-```
-
-### Native HUD boundary
-
-The current fresh-Junction pose now paints the original compact gameplay HUD natively:
-
-```text
-top band=0..19
-world viewport=20..99 / 160x80
-bottom band=100..119
-health=30/30
-armor=0/20
-weapon=2 / pistol
-ammoType=1
-ammo=8
-face=0 / normal
-direction=N
-```
-
-The user visually confirmed the HUD on the physical classic CYD.
-
-### PAK-backed HUD resources
-
-The native indexed-BMP path reads only bounded rows from `/DoomRPG-ESP32.pak` and keeps no decoded image resident:
-
-```text
-assets=a.bmp,k.bmp,l.bmp,m.bmp,o.bmp
-assetsValidated=5
-bar=20x20
-icon=13x13
-face=18x20
-PAK reads=184
-PAK bytes=6344
-source rows=164
-painted pixels=7538
-packClosed=yes
-```
-
-### Stable framebuffer canons
-
-```text
-pre-HUD frame=b5218f24
-post-HUD frame=ba3e5182
-world viewport=9206eb24
-world viewport preserved=yes
-HUD bands=9cf0c5c5->6c2aa46f
+main=7686f7fb5c93d375f51a34ec0dd0b5cb127017e3
+JunctionHudFrameFNV=ba3e5182
+JunctionGlowViewportFNV=9206eb24
 EspNativeGameplayHudState=22 B
-HUD stateFNV=4756db9c
-```
-
-The complete-frame hash changes only in the top/bottom HUD bands. The 160x80 gameplay viewport remains byte-identical.
-
-### HUD dirty ownership
-
-```text
-before dirty FNV=6965ee06 refreshPending=1
-after dirty FNV=40c66f99 refreshPending=0
-consume only after successful paint=yes
-```
-
-The legacy `Hud_t` object remains stable; native dirty ownership is not reflected back into legacy state.
-
-### RAM / ownership proof
-
-```text
-heap8=70196->70196
-largest8=34804->34804
-heapDelta=0
-largestDelta=0
-legacyHudStable=yes
-playerStable=yes
-gameStable=yes
-canvasStable=yes
-renderStable=yes
-residentStable=yes
-topologyFNV=d6e8df7d
-closedCatalogFNV=257444a5
-packClosed=yes
+HudStateFNV=4756db9c
 shapeData=NULL
 mediaTexels=NULL
-legacy Game.entities=0
-legacy Game.monsters=0
-no input consumed
-no turn advancement
+```
+
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_HUD.md`](MAP1_NATIVE_GAMEPLAY_HUD.md).
+
+## Current candidate milestone
+
+[`MAP1_NATIVE_GAMEPLAY_INPUT.md`](MAP1_NATIVE_GAMEPLAY_INPUT.md) records the gameplay touch-intent boundary currently on:
+
+```text
+branch=agent/esp32-native-touch-input-intent
+base=7686f7fb5c93d375f51a34ec0dd0b5cb127017e3
+implementation HEAD=8c620093650ac4efd5d470343466ce9f5c441e4e
+status=REAL-CYD VISUAL PASS / FINAL SERIAL ARCHIVE PENDING
+merge-ready=no
+```
+
+### Native touch ownership
+
+The permanent input layer owns one compact pointer-free semantic intent and no hidden queue:
+
+```text
+EspNativeGameplayInputState=12 B
+EspNativeGameplayTouchHit=6 B
+one pending intent maximum
+busy producer=fail closed
+```
+
+Physical CYD touch remains calibrated by `SoftXpt2046` and maps to the logical 160x120 framebuffer coordinate space.
+
+### Final 12-zone layout
+
+```text
+top HUD y=0..19:
+  MENU      = x0..31
+  PASS_TURN = x32..127
+  AUTOMAP   = x128..159
+
+world y=20..45:
+  STRAFE_LEFT | FORWARD | STRAFE_RIGHT
+
+world y=46..72:
+  TURN_LEFT | SELECT | TURN_RIGHT
+
+world y=73..99:
+  PREV_WEAPON | BACK | NEXT_WEAPON
+
+bottom HUD y=100..119:
+  unbound
+```
+
+Recovered semantic action IDs remain the original mobile IDs: `1,2,3,4,5,6,7,9,10,11,12,14`.
+
+### Neon transient feedback
+
+The current feedback exists only to make invisible hitboxes discoverable while preserving the static gameplay framebuffer:
+
+```text
+hold=250 ms
+style=neon double ring + vector glyph
+row palettes=BLUE / GREEN / YELLOW / RED
+max edits=512
+saved edit=offset + original RGB565 pixel
+bounded static storage ~= 2 KiB + metadata
+runtime allocations=0
+PAK/SD reads=0
+restore=reverse-order exact pixel restore
+```
+
+Vector glyphs cover movement arrows, bent turn arrows, SELECT reticle, `<<`/`>>` weapon cycling, MENU, AUTOMAP and PASS_TURN.
+
+The user visually confirmed the final colored 12-zone layout as perfect on the physical CYD.
+
+### Hardware evidence status
+
+The earlier real-CYD input run before final polish proved the semantic owner, calibrated touch path and exact restore contract:
+
+```text
+baseline=ba3e5182
+stateBytes=12
+hitBytes=6
+heap8=69828->69828
+largest8=34804->34804
+valid taps => INTENT
+feedback restore => ba3e5182 exact=yes
 no gameplay dispatch
 ```
 
-## Stable recovery canons through current branch
+The final implementation subsequently changed the active layout from 11 to 12 zones and replaced the predecessor feedback with row-coded neon double rings and vector glyphs. Therefore exact final-HEAD runtime values are **not** canonical until the Serial block from `8c620093...` is archived.
+
+## Stable recovery canons through merged main
 
 ```text
 Entrance snapshotFNV=b3811f3d
@@ -181,12 +172,15 @@ original behavior/data
  -> BSP-visible native billboards                 [hardware-proven]
  -> implicit sprite dependency closure + glows    [hardware-proven]
  -> native gameplay HUD painting                  [hardware-proven]
- -> native gameplay input/action dispatch         [NEXT]
+ -> native gameplay touch intent                  [candidate: visual PASS, Serial final pending]
+ -> first real native gameplay action family      [NEXT after merge]
  -> turn/entity/monster gameplay by bounded family
  -> expanded native renderer/gameplay
 ```
 
 ## Current hardware PARK
+
+Merged main remains:
 
 ```text
 legacyState=9 / ST_INTRO
@@ -211,6 +205,8 @@ legacy Game.entities=0
 legacy Game.monsters=0
 noGameplay=yes
 ```
+
+Candidate branch arms touch-intent classification after this PARK but still executes no gameplay action.
 
 Mandatory invariants remain:
 
@@ -240,19 +236,21 @@ gamma=00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-gameplay-hud
+DO NOT MERGE YET
 ```
 
-Hardware-tested firmware:
+Archive the final Serial block from implementation HEAD:
 
 ```text
-fa6b0d2ab4c1ec2598b92dfe635a84ff50a74867
+8c620093650ac4efd5d470343466ce9f5c441e4e
 ```
 
-All commits after that tested SHA must be documentation-only before merge-ready declaration.
+The final block should prove 12-zone READY, representative BLUE/GREEN/YELLOW/RED feedback, `PREV_WEAPON`, `NEXT_WEAPON`, `PASS_TURN`, exact `ba3e5182` restores, stable heap/largest and no `FAILED`/`ERROR`.
+
+After that proof, any remaining commits must be documentation-only before merge-ready declaration.
 
 ## Next bounded milestone after merge
 
-Recover the exact new `main` SHA, reread the legacy playing-event semantics and choose one small **native gameplay input/action family**. Unsupported actions must remain fail-closed.
+Recover the exact new `main` SHA and implement only the first small real gameplay action family, preferably `TURN_LEFT` / `TURN_RIGHT`.
 
-Do not activate the broad legacy `DoomCanvas_handlePlayingEvents()` / gameplay loop, full turn advancement, monster gameplay or general entity activation in the first input milestone. Preserve the current renderer + HUD PARK, native PAK backing and no-PSRAM invariants.
+All other recognized touch intents remain deferred/fail-closed. Do not enable the broad legacy playing-event loop, movement collision, full turn advancement, monster gameplay or general entity activation in the same milestone.
