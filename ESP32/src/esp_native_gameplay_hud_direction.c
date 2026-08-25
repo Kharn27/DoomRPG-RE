@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_asset_pack.h"
@@ -19,6 +20,13 @@
 #define HUD_FONT_HEIGHT 12U
 #define HUD_TRANSPARENT 1U
 #define HUD_OPAQUE 0U
+
+typedef struct HudDirectionScratch_s {
+    EspNativeIndexedBmp bar;
+    EspNativeIndexedBmp arrow;
+    EspNativeIndexedBmp font;
+    EspNativeGameplayHudDirectionStats stats;
+} HudDirectionScratch;
 
 static void mergeStats(EspNativeGameplayHudDirectionStats* out,
                        const EspNativeIndexedBmpStats* in) {
@@ -105,17 +113,17 @@ static int clearPanel(const EspNativeIndexedBmp* bar,
 int EspNativeGameplayHudDirection_render(
     uint8_t angle,
     EspNativeGameplayHudDirectionStats* outStats) {
-    EspNativeGameplayHudDirectionStats stats;
-    EspNativeIndexedBmp bar;
-    EspNativeIndexedBmp arrow;
-    EspNativeIndexedBmp font;
+    HudDirectionScratch* scratch = NULL;
+    EspNativeGameplayHudDirectionStats* stats;
+    EspNativeIndexedBmp* bar;
+    EspNativeIndexedBmp* arrow;
+    EspNativeIndexedBmp* font;
     uint16_t* framebuffer;
     size_t framebufferBytes;
     char c;
     uint8_t glyph;
     int ok = 0;
 
-    memset(&stats, 0, sizeof(stats));
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
     if (outStats == NULL) return 0;
     c = directionChar(angle);
@@ -130,41 +138,52 @@ int EspNativeGameplayHudDirection_render(
         return 0;
     }
 
-    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
-    if (!openBmp("k.bmp", &bar, &stats) ||
-        bar.width != 20U || bar.height != 20U ||
-        !openBmp("o.bmp", &arrow, &stats) ||
-        arrow.width == 0U || arrow.width > 32U ||
-        arrow.height == 0U || arrow.height > 20U ||
-        !openBmp("a.bmp", &font, &stats) ||
-        font.width != 144U || font.height != 72U) {
+    /* Each EspNativeIndexedBmp carries a 256-entry RGB565 palette. Keep the
+     * three metadata objects in one bounded transient heap block instead of
+     * stacking ~1.6 KiB on top of the gameplay compositor/render stack. */
+    scratch = (HudDirectionScratch*)malloc(sizeof(*scratch));
+    if (scratch == NULL) return 0;
+    memset(scratch, 0, sizeof(*scratch));
+    stats = &scratch->stats;
+    bar = &scratch->bar;
+    arrow = &scratch->arrow;
+    font = &scratch->font;
+
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
+    if (!openBmp("k.bmp", bar, stats) ||
+        bar->width != 20U || bar->height != 20U ||
+        !openBmp("o.bmp", arrow, stats) ||
+        arrow->width == 0U || arrow->width > 32U ||
+        arrow->height == 0U || arrow->height > 20U ||
+        !openBmp("a.bmp", font, stats) ||
+        font->width != 144U || font->height != 72U) {
         goto done;
     }
-    stats.resourcesValidated = 3U;
+    stats->resourcesValidated = 3U;
 
-    if (!clearPanel(&bar, framebuffer, &stats)) goto done;
-    if (!drawBmp(&arrow, framebuffer, 0U, 0U, arrow.width, arrow.height,
-                 HUD_ARROW_RIGHT - (int)arrow.width, HUD_ARROW_Y,
-                 HUD_TRANSPARENT, &stats)) {
+    if (!clearPanel(bar, framebuffer, stats)) goto done;
+    if (!drawBmp(arrow, framebuffer, 0U, 0U, arrow->width, arrow->height,
+                 HUD_ARROW_RIGHT - (int)arrow->width, HUD_ARROW_Y,
+                 HUD_TRANSPARENT, stats)) {
         goto done;
     }
 
     glyph = (uint8_t)c - 33U;
-    if (!drawBmp(&font, framebuffer,
+    if (!drawBmp(font, framebuffer,
                  (uint16_t)(HUD_FONT_WIDTH * (glyph & 0x0fU)),
                  (uint16_t)(HUD_FONT_HEIGHT * (glyph >> 4)),
                  HUD_FONT_WIDTH, HUD_FONT_HEIGHT,
-                 HUD_DIR_X, HUD_DIR_Y, HUD_TRANSPARENT, &stats)) {
+                 HUD_DIR_X, HUD_DIR_Y, HUD_TRANSPARENT, stats)) {
         goto done;
     }
 
-    stats.angle = angle;
-    stats.rendered = 1U;
+    stats->angle = angle;
+    stats->rendered = 1U;
     ok = 1;
 
 done:
-    EspAssetPack_close();
-    if (!ok) memset(&stats, 0, sizeof(stats));
-    *outStats = stats;
+    if (EspAssetPack_isOpen()) EspAssetPack_close();
+    if (ok) *outStats = *stats;
+    free(scratch);
     return ok;
 }
