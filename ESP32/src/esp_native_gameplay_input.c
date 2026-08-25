@@ -62,9 +62,9 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
         {ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT,
          ESP_NATIVE_GAMEPLAY_ACTION_SELECT,
          ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT},
-        {ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON,
+        {ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON,
          ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK,
-         ESP_NATIVE_GAMEPLAY_ACTION_NONE}
+         ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON}
     };
     static const uint8_t zones[3][3] = {
         {ESP_NATIVE_GAMEPLAY_ZONE_MOVE_LEFT,
@@ -73,9 +73,9 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
         {ESP_NATIVE_GAMEPLAY_ZONE_TURN_LEFT,
          ESP_NATIVE_GAMEPLAY_ZONE_SELECT,
          ESP_NATIVE_GAMEPLAY_ZONE_TURN_RIGHT},
-        {ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON,
+        {ESP_NATIVE_GAMEPLAY_ZONE_PREV_WEAPON,
          ESP_NATIVE_GAMEPLAY_ZONE_MOVE_BACK,
-         ESP_NATIVE_GAMEPLAY_ZONE_NONE}
+         ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON}
     };
     static const uint8_t xLeft[3] = {0, 53, 106};
     static const uint8_t xRight[3] = {52, 105, 159};
@@ -128,11 +128,6 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
     if (logicalY <= yBottom[0]) row = 0;
     else if (logicalY <= yBottom[1]) row = 1;
     else row = 2;
-
-    if (actions[row][column] == ESP_NATIVE_GAMEPLAY_ACTION_NONE ||
-        zones[row][column] == ESP_NATIVE_GAMEPLAY_ZONE_NONE) {
-        return ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT;
-    }
 
     setHit(outHit, actions[row][column], zones[row][column],
            xLeft[column], yTop[row], xRight[column], yBottom[row]);
