@@ -57,6 +57,39 @@ static uint32_t frameFNV(void) {
     return fnv1a(framebuffer, (uint32_t)bytes);
 }
 
+/* The historical Junction sprite milestone deliberately required one mode7
+ * object and at least one rendered glow because its fixed north-facing pose was
+ * proving those families. A runtime cardinal view may legitimately contain no
+ * visible mode7/glow at all. If that strict fixed-pose witness is absent, the
+ * gameplay compositor accepts the render only when every admitted base/glow
+ * object is fully accounted for. Any unsupported object, deferred glow, short
+ * draw, or renderer scratch mutation remains fail-closed. */
+static int spriteViewAccountingComplete(
+    const EspNativeJunctionSpriteStats* sprites) {
+    uint32_t classified;
+    uint32_t basesFinished;
+    uint32_t glowsFinished;
+
+    if (sprites == NULL || sprites->objects == 0U ||
+        sprites->bspCandidates == 0U || sprites->unsupported != 0U ||
+        sprites->glowDeferred != 0U) {
+        return 0;
+    }
+
+    classified = sprites->hidden + sprites->bspRejected +
+                 sprites->bspCandidates;
+    basesFinished = sprites->draws + sprites->nearCulled +
+                    sprites->clipCulled;
+    glowsFinished = sprites->glowDraws + sprites->glowNearCulled +
+                    sprites->glowClipCulled;
+
+    return classified == sprites->objects &&
+           sprites->mode0Objects + sprites->mode7Objects ==
+               sprites->bspCandidates &&
+           basesFinished == sprites->bspCandidates &&
+           glowsFinished == sprites->glowCompanions;
+}
+
 int EspNativeGameplayFrame_renderTurn(
     struct Render_s* renderBase,
     uint8_t angle,
@@ -70,6 +103,9 @@ int EspNativeGameplayFrame_renderTurn(
     EspNativeGameplayHudDirectionStats* hud = &frameScratch.hud;
     uint16_t* framebuffer;
     uint16_t* savedHud = NULL;
+    uint32_t renderBeforeSpritesFNV;
+    uint32_t renderAfterSpritesFNV;
+    int strictSpriteWitness;
     int ok = 0;
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
@@ -115,7 +151,34 @@ int EspNativeGameplayFrame_renderTurn(
     stats->wallPixels = world->pixelsDrawn;
     stats->planePixels = planes->pixelsRendered;
 
-    if (!EspNativeJunctionSprite_render(render, sprites)) goto done;
+    renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
+    strictSpriteWitness = EspNativeJunctionSprite_render(render, sprites);
+    renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
+    if (!strictSpriteWitness) {
+        if (!spriteViewAccountingComplete(sprites) ||
+            renderAfterSpritesFNV != renderBeforeSpritesFNV ||
+            EspAssetPack_isOpen()) {
+            goto done;
+        }
+        printf("[TURNFRAME] SPRITES viewComplete=yes strictFixedPoseWitness=no objects=%u candidates=%u modes=%u/%u base=%u+%u+%u glows=%u:%u+%u+%u unsupported=%u deferred=%u renderStable=yes\n",
+               (unsigned int)sprites->objects,
+               (unsigned int)sprites->bspCandidates,
+               (unsigned int)sprites->mode0Objects,
+               (unsigned int)sprites->mode7Objects,
+               (unsigned int)sprites->draws,
+               (unsigned int)sprites->nearCulled,
+               (unsigned int)sprites->clipCulled,
+               (unsigned int)sprites->glowCompanions,
+               (unsigned int)sprites->glowDraws,
+               (unsigned int)sprites->glowNearCulled,
+               (unsigned int)sprites->glowClipCulled,
+               (unsigned int)sprites->unsupported,
+               (unsigned int)sprites->glowDeferred);
+    }
+    else if (renderAfterSpritesFNV != renderBeforeSpritesFNV) {
+        goto done;
+    }
+
     stats->spriteDraws = sprites->draws;
     stats->spritePixels = sprites->pixelsDrawn;
     stats->glowDraws = sprites->glowDraws;
