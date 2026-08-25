@@ -44,6 +44,10 @@ typedef struct RenderScratch_s {
     int viewY;
     int viewZ;
     int viewAngle;
+    int screenLeft;
+    int screenTop;
+    int screenRight;
+    int screenBottom;
     Line_t tmpLine;
 } RenderScratch;
 
@@ -108,6 +112,10 @@ static void saveScratch(const Render_t* render, RenderScratch* out) {
     out->viewY = render->viewY;
     out->viewZ = render->viewZ;
     out->viewAngle = render->viewAngle;
+    out->screenLeft = render->screenLeft;
+    out->screenTop = render->screenTop;
+    out->screenRight = render->screenRight;
+    out->screenBottom = render->screenBottom;
     out->tmpLine = render->tmpLine;
 }
 
@@ -122,6 +130,10 @@ static void restoreScratch(Render_t* render, const RenderScratch* in) {
     render->viewY = in->viewY;
     render->viewZ = in->viewZ;
     render->viewAngle = in->viewAngle;
+    render->screenLeft = in->screenLeft;
+    render->screenTop = in->screenTop;
+    render->screenRight = in->screenRight;
+    render->screenBottom = in->screenBottom;
     render->tmpLine = in->tmpLine;
 }
 
@@ -154,6 +166,15 @@ static int setupView(Render_t* render, const EspPlayerViewState* view) {
     render->viewTransY = -((viewX * render->viewSin) +
                            (viewY * render->viewCos));
     render->viewAngle = view->viewAngle;
+
+    /* Render_cullBoundingBox() clips against these mutable viewport fields.
+     * The native renderer sets the exact same no-shake bounds before its
+     * hardware-proven 39/12/8 walk. Leaving the legacy idle values here made
+     * this diagnostic cull most of Junction before leaf admission. */
+    render->screenLeft = 0;
+    render->screenTop = 0;
+    render->screenRight = render->screenWidth;
+    render->screenBottom = render->screenHeight;
     return 1;
 }
 
@@ -209,6 +230,9 @@ static int markVisibleLeaves(Render_t* render,
            markVisibleLeaves(render, runtime, first, depth + 1U, walk);
 }
 
+/* Exact compact equivalent of legacy Render_relinkSprite(): descend from root,
+ * choose the low child when the coordinate is strictly greater than the split,
+ * otherwise choose the high child, and stop on the leaf node. */
 static int spriteLeaf(const EspMapRuntimeView* runtime,
                       const EspMapSprite* sprite,
                       uint32_t* outLeaf) {
@@ -398,9 +422,10 @@ void Esp32JunctionSpriteFidelityProbe_preOverlayService(struct DoomRPG_s* doomRp
     memset(&walk, 0, sizeof(walk));
 
     printf("\n=== Doom RPG ESP32-native Junction BSP view-sprite census ===\n");
-    printf("[SPRITEVIEW] CONTRACT reproduce legacy Render_relinkSprite leaf ownership plus Render_walkNode visible-leaf admission; read-only diagnostic before sprite overlay\n");
+    printf("[SPRITEVIEW] CONTRACT reproduce legacy Render_relinkSprite leaf ownership plus the exact native first-frame cull viewport/walk; read-only diagnostic before sprite overlay\n");
 
-    if (runtime == NULL || view == NULL || runtime->mapSpriteCount != EXPECTED_MAP_SPRITES ||
+    if (runtime == NULL || view == NULL ||
+        runtime->mapSpriteCount != EXPECTED_MAP_SPRITES ||
         runtime->nodeCount == 0U || runtime->nodeCount > MAX_TRACKED_NODES ||
         frameBefore != EXPECTED_BASE_FRAME_FNV) {
         printf("[SPRITEVIEW] FAILED boundary frame=%08x sprites=%u nodes=%u\n",
@@ -436,7 +461,8 @@ void Esp32JunctionSpriteFidelityProbe_preOverlayService(struct DoomRPG_s* doomRp
             continue;
         }
 
-        admitted = (walk.leafBits[leaf >> 5] & (1U << (leaf & 31U))) != 0U;
+        admitted = (walk.leafBits[leaf >> 5] &
+                    (1U << (leaf & 31U))) != 0U;
         if (!admitted) {
             ++rejected;
             continue;
@@ -490,8 +516,8 @@ void Esp32JunctionSpriteFidelityProbe_postOverlayService(struct DoomRPG_s* doomR
     uint32_t frame;
     uint32_t viewport = 0U;
 
-    if (probeState.postDone || probeState.postAttempted || !probeState.preDone ||
-        !Esp32JunctionSpriteOverlayProbe_isDone()) {
+    if (probeState.postDone || probeState.postAttempted ||
+        !probeState.preDone || !Esp32JunctionSpriteOverlayProbe_isDone()) {
         return;
     }
     probeState.postAttempted = 1;
