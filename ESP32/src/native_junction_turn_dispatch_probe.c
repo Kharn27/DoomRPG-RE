@@ -18,6 +18,7 @@
 #include "esp_native_gameplay_input.h"
 #include "esp_player_view_state.h"
 #include "native_junction_gameplay_input_probe.h"
+#include "native_junction_move_collision_probe.h"
 #include "native_junction_turn_dispatch_probe.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -32,6 +33,10 @@
 #define EXPECTED_INITIAL_HUD_FNV 0x4756db9cU
 #define EXPECTED_INITIAL_VIEW_FNV 0xafcdcf74U
 #define EXPECTED_RESIDENT_FNV 0xbb714d80U
+#define CANONICAL_SPAWN_X 992
+#define CANONICAL_SPAWN_Y 1888
+#define MAP_MIN_CENTER 32
+#define MAP_MAX_CENTER 2016
 
 typedef struct LegacySnapshot_s {
     uint32_t hud;
@@ -104,6 +109,23 @@ static unsigned int stackHighWater(void) {
     return (unsigned int)uxTaskGetStackHighWaterMark(NULL);
 }
 
+static int centeredCoordinate(int32_t value) {
+    return value >= MAP_MIN_CENTER && value <= MAP_MAX_CENTER &&
+           (value & 63) == 32;
+}
+
+static int atCanonicalSpawn(const EspPlayerViewState* view) {
+    return view != NULL && view->viewX == CANONICAL_SPAWN_X &&
+           view->viewY == CANONICAL_SPAWN_Y;
+}
+
+static int movementAction(uint8_t action) {
+    return action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ||
+           action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK ||
+           action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT ||
+           action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT;
+}
+
 static int legacySnapshot(const DoomRPG_t* doomRpg, LegacySnapshot* out) {
     if (doomRpg == NULL || out == NULL || doomRpg->hud == NULL ||
         doomRpg->player == NULL || doomRpg->game == NULL ||
@@ -129,10 +151,11 @@ static int residentCanonical(const EspMapResidentSnapshot* s) {
 
 static int viewRuntimeValid(const EspPlayerViewState* view) {
     return view != NULL && sizeof(*view) == 44U &&
-           view->viewX == 992 && view->viewY == 1888 && view->viewZ == 36 &&
-           view->viewX == view->destX && view->viewY == view->destY &&
-           view->viewAngle == view->destAngle && view->viewAngle >= 0 &&
-           view->viewAngle <= 255 && (view->viewAngle & 63) == 0 &&
+           centeredCoordinate(view->viewX) && centeredCoordinate(view->viewY) &&
+           view->viewZ == 36 && view->viewX == view->destX &&
+           view->viewY == view->destY && view->viewAngle == view->destAngle &&
+           view->viewAngle >= 0 && view->viewAngle <= 255 &&
+           (view->viewAngle & 63) == 0 &&
            view->targetMapId == 9U && view->gameplayLoadMapId == 2U &&
            view->loadType == 0U && view->hudRefreshPending == 0U &&
            view->facingRefreshPending == 0U && view->playerSetupPending == 0U &&
@@ -242,8 +265,9 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
         return 0;
     }
 
-    printf("[TURNSTACK] beforeRender highWater=%u execScratch=%uB angle=%u\n",
+    printf("[TURNSTACK] beforeRender highWater=%u execScratch=%uB pos=%d,%d angle=%u\n",
            stackHighWater(), (unsigned int)sizeof(executionWorkspace),
+           (int)w->afterView.viewX, (int)w->afterView.viewY,
            (unsigned int)w->result.angleAfter);
     if (!EspNativeGameplayFrame_renderTurn(
             probeState.doomRpg->render, w->result.angleAfter, &w->frameStats)) {
@@ -257,8 +281,9 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
     frameAfter = frameFNV();
     heapAfter = heap8();
     largestAfter = largest8();
-    printf("[TURN] PHASE angle=%u viewport=%08x->world:%08x->sprites:%08x hud=%08x->restore:%08x->dir:%08x frame=%08x->%08x intermediatePresentSuppressed=%u finalPresent=%u\n",
+    printf("[TURN] PHASE angle=%u pos=%d,%d viewport=%08x->world:%08x->sprites:%08x hud=%08x->restore:%08x->dir:%08x frame=%08x->%08x intermediatePresentSuppressed=%u finalPresent=%u\n",
            (unsigned int)w->result.angleAfter,
+           (int)w->afterView.viewX, (int)w->afterView.viewY,
            (unsigned int)w->frameStats.viewportBeforeFNV,
            (unsigned int)w->frameStats.viewportAfterWorldFNV,
            (unsigned int)w->frameStats.viewportAfterSpritesFNV,
@@ -284,7 +309,7 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
         return 0;
     }
 
-    roundTrip = w->result.angleAfter == 64U;
+    roundTrip = w->result.angleAfter == 64U && atCanonicalSpawn(&w->afterView);
     if (roundTrip &&
         w->frameStats.viewportAfterSpritesFNV != EXPECTED_BASE_VIEWPORT_FNV) {
         failProbe("round-trip viewport mismatch");
@@ -299,20 +324,22 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
         failProbe("round-trip frame mismatch");
         return 0;
     }
-    if (!roundTrip && frameAfter == EXPECTED_BASE_FRAME_FNV) {
+    if (atCanonicalSpawn(&w->afterView) &&
+        w->result.angleAfter != 64U && frameAfter == EXPECTED_BASE_FRAME_FNV) {
         failProbe("turned frame unchanged");
         return 0;
     }
 
     ++probeState.turns;
     if (roundTrip) ++probeState.roundTrips;
-    printf("[TURN] OK n=%u seq=%u action=%s delta=%d angle=%u->%u viewFNV=%08x->%08x orientFNV=%08x->%08x frame=%08x->%08x roundTrip=%s\n",
+    printf("[TURN] OK n=%u seq=%u action=%s delta=%d angle=%u->%u pos=%d,%d viewFNV=%08x->%08x orientFNV=%08x->%08x frame=%08x->%08x canonicalRoundTrip=%s\n",
            (unsigned int)probeState.turns,
            (unsigned int)w->result.sequence,
            EspNativeGameplayInput_actionName(w->result.action),
            (int)w->result.angleDelta,
            (unsigned int)w->result.angleBefore,
            (unsigned int)w->result.angleAfter,
+           (int)w->afterView.viewX, (int)w->afterView.viewY,
            (unsigned int)fnv1a(&w->beforeView, sizeof(w->beforeView)),
            (unsigned int)fnv1a(EspPlayerView_view(), sizeof(EspPlayerViewState)),
            (unsigned int)fnv1a(&w->beforeTurn, sizeof(w->beforeTurn)),
@@ -360,11 +387,17 @@ static int queueRestoredTurn(void) {
 void Esp32NativeGameplayInputProbe_observeConsumed(
     const EspNativeGameplayInputState* intent) {
     uint32_t baseline;
-    if (!probeState.initialized || probeState.failed ||
-        probeState.feedbackTurnPending || probeState.pendingIntentValid ||
-        intent == NULL) return;
+
+    if (!probeState.initialized || probeState.failed || intent == NULL) return;
+    if (probeState.feedbackTurnPending || probeState.pendingIntentValid) return;
+
+    if (movementAction(intent->action)) {
+        Esp32JunctionMoveCollisionProbe_observeConsumed(intent);
+        return;
+    }
     if (intent->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT &&
         intent->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT) return;
+
     baseline = frameFNV();
     if (baseline == 0U) return;
     probeState.restoredTurn = *intent;
@@ -402,8 +435,8 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
     if (!probeState.initialized) {
         if (!Esp32JunctionGameplayInputProbe_isActive()) return;
 
-        printf("\n=== Doom RPG ESP32-native first gameplay turn dispatcher v6 ===\n");
-        printf("[TURNPROBE] CONTRACT input remains sole touch owner; TURN_LEFT(+64)/TURN_RIGHT(-64) waits for exact dynamic neon restore, queues, returns the lifecycle once, then recomposes on a later service. The historical world route's physical intermediate present is now one-shot suppressed, leaving one final complete-frame presentation. Phase FNVs separate viewport from HUD-band drift. No Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
+        printf("\n=== Doom RPG ESP32-native gameplay turn dispatcher v7 ===\n");
+        printf("[TURNPROBE] CONTRACT input remains sole touch owner; TURN_LEFT(+64)/TURN_RIGHT(-64) waits for exact dynamic neon restore, queues, returns the lifecycle once, then recomposes on a later service. Runtime turns now accept any settled native tile-center position so the hardware-proven turn boundary composes with cardinal movement. Canonical frame/viewport/HUD hashes are enforced only when position is the original Junction spawn. No Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
 
         heapBefore = heap8();
         largestBefore = largest8();
@@ -433,7 +466,7 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
 
-        printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u frameStatsBytes=%u execScratchBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d initialFrame=%08x initialViewport=%08x initialHudBands=%08x dynamicRestore=yes heap=%u->%u largest=%u->%u stackHighWater=%u callbackOwner=input-probe renderFromCallback=no physicalPresentsPerTurn=1\n",
+        printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u frameStatsBytes=%u execScratchBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d initialFrame=%08x initialViewport=%08x initialHudBands=%08x dynamicRestore=yes position=tile-center-runtime heap=%u->%u largest=%u->%u stackHighWater=%u callbackOwner=input-probe renderFromCallback=no physicalPresentsPerTurn=1\n",
                (unsigned int)sizeof(EspNativeGameplayTurnState),
                (unsigned int)sizeof(EspNativeGameplayDispatchResult),
                (unsigned int)sizeof(EspPlayerViewState),
@@ -447,7 +480,7 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)heapBefore, (unsigned int)heapAfter,
                (unsigned int)largestBefore, (unsigned int)largestAfter,
                stackHighWater());
-        printf("[TURNPROBE] PARK TURN => neon feedback => exact current-frame restore => queue => lifecycle return => single-present native render; a return to angle=64 must recover viewport=%08x hudBands=%08x frame=%08x exactly.\n",
+        printf("[TURNPROBE] PARK TURN remains live at moved tile centers; only angle=64 at canonical spawn must recover viewport=%08x hudBands=%08x frame=%08x exactly.\n",
                (unsigned int)EXPECTED_BASE_VIEWPORT_FNV,
                (unsigned int)EXPECTED_BASE_HUD_BANDS_FNV,
                (unsigned int)EXPECTED_BASE_FRAME_FNV);
