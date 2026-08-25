@@ -64,6 +64,14 @@ static int fastForwardBlockedLogged;
 void __real_Esp32IntroDispose_reset(void);
 void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
 
+/* Temporary frame-fidelity diagnostic owned by
+ * native_first_frame_color_probe_wrappers.c.  The BMP write is deliberately
+ * outside the strict renderer integrity contract because first-use stdio/SD
+ * may retain a small VFS/libc allocation.
+ */
+void Esp32FirstFrameDiagnostic_reset(void);
+int Esp32FirstFrameDiagnostic_exportBmp(void);
+
 static void resetValidatedChain(void) {
     Esp32Map1BspPass1_reset();
     Esp32Map1RuntimeLoad_reset();
@@ -113,6 +121,7 @@ static void resetValidatedChain(void) {
     Esp32JunctionGraphicsCatalogProbe_reset();
     Esp32JunctionFirstFrameCorrectedProbe_reset();
     EspNativePlaneRenderer_reset();
+    Esp32FirstFrameDiagnostic_reset();
 }
 
 static void serviceValidatedPredecessors(struct DoomRPG_s* doomRpg) {
@@ -230,4 +239,10 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     }
 
     Esp32JunctionFirstFrameCorrectedProbe_service(doomRpg);
+
+    /* Only a strict PARK may trigger the SD diagnostic.  The renderer probe has
+     * already captured heap/largest/PAK integrity before this call. */
+    if (Esp32JunctionFirstFrameCorrectedProbe_isDone()) {
+        (void)Esp32FirstFrameDiagnostic_exportBmp();
+    }
 }
