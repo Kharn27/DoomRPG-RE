@@ -15,7 +15,8 @@ static int mustSurface(const char* text) {
            strstr(text, "ERROR") != NULL ||
            strstr(text, "REFUSED") != NULL ||
            strstr(text, "PANIC") != NULL ||
-           strstr(text, "ASSERT") != NULL;
+           strstr(text, "ASSERT") != NULL ||
+           strstr(text, "[RESIDENTRESET]") != NULL;
 }
 
 /* Some permanent APIs deliberately print FAILED while old probes exercise a
