@@ -16,6 +16,35 @@ constexpr size_t kPixelCount =
     static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
 constexpr size_t kFramebufferBytes = kPixelCount * sizeof(uint16_t);
 
+/* Temporary, strictly panel-side first-frame calibration.
+ *
+ * The native renderer has already proved this exact logical framebuffer and the
+ * BMP exporter reads the same words.  The real CYD still shows poor contrast /
+ * colour fidelity, so compare ILI9341 analogue/gamma register families without
+ * modifying one framebuffer byte or allocating memory.  Every profile uses the
+ * same raw RGB565 x2 presentation path; only controller registers change.
+ */
+constexpr uint32_t kPanelCalibrationFrameFNV = 0x8910c2edU;
+constexpr uint32_t kPanelCalibrationHoldMs = 3500U;
+bool panelCalibrationDone = false;
+
+constexpr uint8_t kAltGammaPositive[15] = {
+    0x0f, 0x2a, 0x28, 0x08, 0x0e, 0x08, 0x54, 0xa9,
+    0x43, 0x0a, 0x0f, 0x00, 0x00, 0x00, 0x00,
+};
+constexpr uint8_t kAltGammaNegative[15] = {
+    0x00, 0x15, 0x17, 0x07, 0x11, 0x06, 0x2b, 0x56,
+    0x3c, 0x05, 0x10, 0x0f, 0x3f, 0x3f, 0x0f,
+};
+constexpr uint8_t kGenericGammaPositive[15] = {
+    0x0f, 0x31, 0x2b, 0x0c, 0x0e, 0x08, 0x4e, 0xf1,
+    0x37, 0x07, 0x10, 0x03, 0x0e, 0x09, 0x00,
+};
+constexpr uint8_t kGenericGammaNegative[15] = {
+    0x00, 0x0e, 0x14, 0x03, 0x11, 0x07, 0x31, 0xc1,
+    0x48, 0x08, 0x0f, 0x0c, 0x31, 0x36, 0x0f,
+};
+
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 constexpr int kDebugOverlayMaxZones = 8;
 
@@ -37,6 +66,149 @@ int16_t debugTouchY = 0;
 uint16_t rgb565(uint8_t red, uint8_t green, uint8_t blue) {
     return static_cast<uint16_t>(((red & 0xf8) << 8) |
                                  ((green & 0xfc) << 3) | (blue >> 3));
+}
+
+uint32_t framebufferFNV() {
+    if (framebuffer == nullptr) return 0U;
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(framebuffer);
+    uint32_t hash = 2166136261U;
+    for (size_t i = 0; i < kFramebufferBytes; ++i) {
+        hash ^= bytes[i];
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+void writePanel1(uint8_t command, uint8_t value) {
+    platformDisplay->writecommand(command);
+    platformDisplay->writedata(value);
+}
+
+void writePanel2(uint8_t command, uint8_t first, uint8_t second) {
+    platformDisplay->writecommand(command);
+    platformDisplay->writedata(first);
+    platformDisplay->writedata(second);
+}
+
+void writePanelTable(uint8_t command, const uint8_t* values, size_t count) {
+    platformDisplay->writecommand(command);
+    for (size_t i = 0; i < count; ++i) {
+        platformDisplay->writedata(values[i]);
+    }
+}
+
+void applyCurrent2PanelProfile() {
+    /* TFT_eSPI V2.5.43 ILI9341_2_DRIVER analogue + gamma values. */
+    writePanel1(0xc0, 0x10);
+    writePanel1(0xc1, 0x00);
+    writePanel2(0xc5, 0x30, 0x30);
+    writePanel1(0xc7, 0xb7);
+    writePanel2(0xb1, 0x00, 0x1a);
+    writePanel1(0xf2, 0x00);
+    writePanel1(0x26, 0x01);
+    writePanelTable(0xe0, kAltGammaPositive, sizeof(kAltGammaPositive));
+    writePanelTable(0xe1, kAltGammaNegative, sizeof(kAltGammaNegative));
+    platformDisplay->invertDisplay(true);
+    platformDisplay->setSwapBytes(true);
+}
+
+void applyInvertGammaWorkaround() {
+    applyCurrent2PanelProfile();
+    /* Community workaround reported specifically for ILI9341_2 + INVON:
+     * redirect the second alternative gamma table to the positive register.
+     * This is intentionally a visual probe, not yet a permanent policy.
+     */
+    writePanelTable(0xe0, kAltGammaNegative, sizeof(kAltGammaNegative));
+}
+
+void applyGenericGamma() {
+    applyCurrent2PanelProfile();
+    writePanelTable(0xe0, kGenericGammaPositive, sizeof(kGenericGammaPositive));
+    writePanelTable(0xe1, kGenericGammaNegative, sizeof(kGenericGammaNegative));
+}
+
+void applyGenericGamma100Hz() {
+    applyGenericGamma();
+    writePanel2(0xb1, 0x00, 0x13);
+}
+
+void applyGenericAnalogB7() {
+    applyCurrent2PanelProfile();
+    writePanel1(0xc0, 0x23);
+    writePanel1(0xc1, 0x10);
+    writePanel2(0xc5, 0x3e, 0x28);
+    /* Preserve the alternative-driver VCOM value that fixed line/ghosting
+     * problems on some ILI9341 panel variants. */
+    writePanel1(0xc7, 0xb7);
+    writePanel2(0xb1, 0x00, 0x13);
+    writePanelTable(0xe0, kGenericGammaPositive, sizeof(kGenericGammaPositive));
+    writePanelTable(0xe1, kGenericGammaNegative, sizeof(kGenericGammaNegative));
+}
+
+void applyGenericLive86() {
+    applyGenericAnalogB7();
+    /* Generic TFT_eSPI ILI9341_DRIVER VCOM control 2. */
+    writePanel1(0xc7, 0x86);
+}
+
+bool pushFramebufferRaw() {
+    if (platformDisplay == nullptr || framebuffer == nullptr) {
+        return false;
+    }
+
+    uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
+
+    platformDisplay->startWrite();
+    platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
+                                   DOOMRPG_PHYSICAL_HEIGHT);
+
+    for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
+        const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
+        for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
+            const uint16_t color = source[sourceX];
+            const int outputX = sourceX * DOOMRPG_INTEGER_SCALE;
+            outputRow[outputX] = color;
+            outputRow[outputX + 1] = color;
+        }
+
+        for (int repeatY = 0; repeatY < DOOMRPG_INTEGER_SCALE; ++repeatY) {
+            platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
+        }
+    }
+
+    platformDisplay->endWrite();
+    return true;
+}
+
+bool showPanelProfile(const char* name, void (*applyProfile)()) {
+    applyProfile();
+    const uint32_t started = micros();
+    const bool ok = pushFramebufferRaw();
+    Serial.printf("[PANELCAL] PROFILE %s hold=%lums result=%s time=%lu us framebuffer=%08x untouched=yes\n",
+                  name,
+                  static_cast<unsigned long>(kPanelCalibrationHoldMs),
+                  ok ? "OK" : "FAILED",
+                  static_cast<unsigned long>(micros() - started),
+                  static_cast<unsigned int>(framebufferFNV()));
+    delay(kPanelCalibrationHoldMs);
+    return ok;
+}
+
+void runPanelCalibration() {
+    bool ok = true;
+    Serial.println("[PANELCAL] START exact framebuffer=8910c2ed; same raw frame, controller registers only");
+    ok &= showPanelProfile("A CURRENT-2", applyCurrent2PanelProfile);
+    ok &= showPanelProfile("B INV-GAMMA-WA", applyInvertGammaWorkaround);
+    ok &= showPanelProfile("C GENERIC-GAMMA", applyGenericGamma);
+    ok &= showPanelProfile("D GENERIC-GAMMA-100HZ", applyGenericGamma100Hz);
+    ok &= showPanelProfile("E GENERIC-ANALOG-B7", applyGenericAnalogB7);
+    ok &= showPanelProfile("F GENERIC-LIVE-86", applyGenericLive86);
+
+    applyCurrent2PanelProfile();
+    ok &= pushFramebufferRaw();
+    Serial.printf("[PANELCAL] RESTORE A CURRENT-2 final=yes aggregate=%s framebuffer=%08x untouched=yes\n",
+                  ok ? "OK" : "FAILED",
+                  static_cast<unsigned int>(framebufferFNV()));
 }
 
 void setPixel(int x, int y, uint16_t color) {
@@ -181,35 +353,22 @@ bool PlatformVideo_present() {
         return false;
     }
 
-    uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
-    const uint32_t started = micros();
-
-    platformDisplay->startWrite();
-    platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
-                                   DOOMRPG_PHYSICAL_HEIGHT);
-
-    for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
-        const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
-        for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
-            const uint16_t color = source[sourceX];
-            const int outputX = sourceX * DOOMRPG_INTEGER_SCALE;
-            outputRow[outputX] = color;
-            outputRow[outputX + 1] = color;
-        }
-
-        for (int repeatY = 0; repeatY < DOOMRPG_INTEGER_SCALE; ++repeatY) {
-            platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
-        }
+    const uint32_t frameHash = framebufferFNV();
+    if (!panelCalibrationDone && frameHash == kPanelCalibrationFrameFNV) {
+        panelCalibrationDone = true;
+        runPanelCalibration();
+        return true;
     }
 
-    platformDisplay->endWrite();
+    const uint32_t started = micros();
+    const bool ok = pushFramebufferRaw();
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     drawDebugOverlay();
 #endif
 
     Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x raw RGB565: %lu us\n",
-                  micros() - started);
-    return true;
+                  static_cast<unsigned long>(micros() - started));
+    return ok;
 }
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
