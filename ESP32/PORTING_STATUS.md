@@ -5,26 +5,28 @@ Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHu
 ## Latest merged hardware baseline
 
 ```text
-PR   = #91 — native gameplay HUD
-main = 7686f7fb5c93d375f51a34ec0dd0b5cb127017e3
-status = REAL-CYD HARDWARE PASS / MERGED
+PR   = #92 — native gameplay touch intent
+main = cdda239f1c884a7d6f6707ba1c30a0a0a3603923
+status = MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_HUD.md`](MAP1_NATIVE_GAMEPLAY_HUD.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_INPUT.md`](MAP1_NATIVE_GAMEPLAY_INPUT.md).
+
+PR #92 was merged from the input branch even though that archive still recorded the historical final-input-SHA Serial archive as pending. The current TURN milestone re-exercises the evolved input path on real hardware, including dynamic frame restore and 120 ms neon feedback.
 
 ## Current candidate milestone
 
 ```text
-branch = agent/esp32-native-touch-input-intent
-base   = 7686f7fb5c93d375f51a34ec0dd0b5cb127017e3
-implementation HEAD = 8c620093650ac4efd5d470343466ce9f5c441e4e
-status = REAL-CYD VISUAL PASS / FINAL SERIAL ARCHIVE PENDING
-merge-ready = no
+branch = agent/esp32-native-turn-dispatch
+base   = cdda239f1c884a7d6f6707ba1c30a0a0a3603923
+hardware-tested implementation SHA = 66ba643e7650f51d0022cd56e007242902d76c77
+status = REAL-CYD HARDWARE PASS
+merge-ready = yes after docs-only closeout audit
 ```
 
-Evidence: [`MAP1_NATIVE_GAMEPLAY_INPUT.md`](MAP1_NATIVE_GAMEPLAY_INPUT.md).
+Evidence: [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md).
 
-The final CYD layout has been visually confirmed by the user as perfect. The semantic input owner and exact-restoring feedback path were already exercised on real hardware before the final layout/color polish, but the repository deliberately does not label the final HEAD hardware-tested until a Serial block from that exact firmware is archived.
+The real CYD executed four consecutive `TURN_RIGHT` actions, traversed all cardinal orientations, and returned exactly to the canonical North viewport, HUD bands and complete framebuffer.
 
 ## Permanent invariants
 
@@ -48,11 +50,11 @@ native first Junction frame = reached
 native textured planes = reached
 native BSP-visible billboards = reached
 native intrinsic sprite mode 7 = reached
-native glow dependency closure = reached
 native glow companions = reached
 native gameplay HUD = reached
-native gameplay touch intent owner = reached on candidate branch
-real gameplay action dispatch = not reached
+native gameplay touch intent owner = reached
+native TURN_LEFT/TURN_RIGHT execution = reached
+broad legacy PLAYING loop = forbidden
 ```
 
 ## Hardware-proven map / resident canons
@@ -84,7 +86,7 @@ spawnIndex=943
 spawnDirection=64
 payload=10410 B
 historical heap cost=10540 B
-entities=30
+entities metadata=30
 enemies=0
 destructibles=3
 ```
@@ -102,11 +104,11 @@ topology = d6e8df7d
 snapshot = bb714d80
 ```
 
-Later diagnostic layout changes can shift allocator bookkeeping without changing semantic payload/snapshots. Absolute heap cost is a witness, not a semantic fingerprint.
+Absolute allocator cost is a witness, not a semantic fingerprint.
 
 ## Native transition / player / post-load chain
 
-Hardware-proven sequence through the merged HUD boundary:
+Hardware-proven sequence:
 
 ```text
 CHANGEMAP intent
@@ -131,26 +133,15 @@ CHANGEMAP intent
  -> idle-time owner
  -> first native PLAYING service
  -> direct sparse graphics catalog
- -> first native walls + textured planes frame
- -> raw CYD presentation
- -> BSP-visible billboard pass
- -> implicit glow dependency closure
- -> seven native glow companions
- -> native gameplay HUD paint
- -> consume native HUD dirty intent
+ -> walls + textured planes
+ -> BSP-visible billboards
+ -> implicit glow closure + glow companions
+ -> native gameplay HUD
+ -> native calibrated touch intent
+ -> first native gameplay TURN dispatcher
 ```
 
-Candidate branch adds, without action execution:
-
-```text
- -> calibrated CYD touch
- -> logical 160x120 hit classification
- -> compact EspNativeGameplayInputState
- -> probe consumes semantic intent
- -> transient exact-restoring feedback
-```
-
-Stable pre-render fingerprints retained for recovery:
+Stable pre-render/player fingerprints:
 
 ```text
 levelExitStatsFNV               = bd41bcfa
@@ -169,201 +160,109 @@ Junction native ST_PLAYING      = 73bc9acd
 Junction native PLAYING service = 4c50b853
 ```
 
-The idle-time owner FNV is intentionally not cross-boot canonical because it contains live uptime; stable contract is `idleTimeAfter-timeBefore=8000`.
+Idle-time state contains uptime; stable contract remains `idleTimeAfter-timeBefore=8000`.
 
 Generic `EspMapOpcodeExecutor` remains intentionally limited to opcodes 11/19/20 and fail-closes all others.
 
-## Hardware-proven graphics catalog / glow closure
+## Graphics / renderer recovery canons
 
-Direct sparse catalog predecessor:
+Direct sparse catalog:
 
 ```text
-EspNativeGraphicsCatalogRecord=40 B
-textureCount=30
-spriteCount=16
-totalRecords=46
-storageBytes=1840
-historical heapCost=1856
+record=40 B
+textures=30
+sprites=16
+storage=1840 B
+historical heap=1856 B
 stateFNV=969d5a77
 textureFNV=2dd5dfcf
 spriteFNV=cfd036cf
 ```
 
-Current Junction dependency closure:
+Dependency-closed current Junction catalog:
 
 ```text
-135/140 -> logical 136 / mode 7
-direct stateFNV=969d5a77
+135/140 -> 136 mode7
+131 -> 144 remains generic future dependency
 closed stateFNV=257444a5
-textureCount=30
-spriteCount=17
-storageBytes=1880
+textures=30
+sprites=17
+storage=1880 B
 persistent increment=40 B
-dependency=136
-directTextureFNV=2dd5dfcf
-directSpriteFNV=cfd036cf
-largest8=34804->34804
-repeatAtomic=yes
-packClosed=yes
+largest8=34804 stable
 ```
 
-Generic dependency semantics retain `131 -> 144` for future maps/views that require it; current Junction requires only 136.
-
-## Hardware-proven native Junction world frame
-
-Walls + textured planes predecessor:
+Canonical North walls + textured planes:
 
 ```text
-frameAfterFNV=8910c2ed
-viewportFNV=032ffaed
-viewport=160x80 @ 0,20
-nodes=39
-leaves=12
-nodeCull=8
-lines=62
-backface=20
-clip=8
-occluder=0
-spriteSpan=0
-wallRequests=34
-wallDraws=34
-wallSpans=166
-wallPixels=4341
-planes=12800
-planeTextures=6
-planeCache=12795H/5M/0E
-planeReads=10240 B
-heapDelta=0
-largestDelta=0
-legacyRenderStable=yes
-packClosed=yes
+frame=8910c2ed
+viewport=032ffaed
+viewport=160x80 @0,20
+nodes=39 leaves=12 nodeCull=8
+lines=62 backface=20 clip=8 occluder=0 spriteSpan=0
+wallRequests/draws=34/34
+wallSpans=166 wallPixels=4341
+planes=12800 textures=6 cache=12795H/5M/0E reads=10240 B
+heapDelta=0 largestDelta=0
+legacyRenderStable=yes packClosed=yes
 ```
 
-BSP-visible base billboards:
+Canonical North base billboards:
 
 ```text
-mapSprites=48
-bspCandidates=21
-bspRejected=27
-hidden=0
+mapSprites=48 candidates=21 rejected=27 hidden=0
 candidateFNV=23ef1895
 orderFNV=f16737cb
 modes=0:14 / 7:7
 mode7Pixels=311
-draws=21
-nearCull=0
-clipCull=0
-spans=219
-pixels=1828
-wallOccludedCols=62
-frameLoads=21
-uniqueLogical=9
-frameBytes=12251
-maxFrameBytes=1020
-preGlowFrameFNV=299506eb
-preGlowViewportFNV=ae2246eb
+draws=21 spans=219 pixels=1828 wallOccludedCols=62
+frameLoads=21 uniqueLogical=9 frameBytes=12251 maxFrame=1020
+preGlowFrame=299506eb
+preGlowViewport=ae2246eb
 ```
 
-Glow companions:
+Canonical North glow companions:
 
 ```text
-companions=7
-draws=7
-nearCull=0
-clipCull=0
-spans=59
-pixels=1917
-wallOccludedCols=32
-frameLoads=7
-frameBytes=5572
-maxFrameBytes=796
-packReads=172
-renderMode=7 additive RGB565
-completeFrameFNV=b5218f24
-completeViewportFNV=9206eb24
+companions=7 draws=7 spans=59 pixels=1917 wallOccludedCols=32
+frameLoads=7 frameBytes=5572 maxFrame=796 packReads=172
+completeFrame=b5218f24
+completeViewport=9206eb24
 ```
 
-Real-CYD visual inspection clearly showed the additive lamp glow effect.
+## Native gameplay HUD
 
-## Hardware-proven native gameplay HUD
-
-Current-pose HUD contract:
+Fresh Junction HUD:
 
 ```text
-top HUD band = y 0..19
-world viewport = y 20..99 / 160x80
-bottom HUD band = y 100..119
-health=30/30
-armor=0/20
-weapon=2 / pistol
-ammoType=1
-ammo=8
-face=0 / normal
-direction=N
-```
-
-Permanent native painter / indexed-BMP path:
-
-```text
+top y=0..19
+world y=20..99
+bottom y=100..119
+health=30/30 armor=0/20 weapon=2 pistol ammoType=1 ammo=8 face=0 direction=N
 EspNativeGameplayHudState=22 B
 stateFNV=4756db9c
 assets=a.bmp,k.bmp,l.bmp,m.bmp,o.bmp
-assetsValidated=5
-bar=20x20
-icon=13x13
-face=18x20
-PAK reads=184
-PAK bytes=6344
-source rows=164
-painted pixels=7538
-packClosed=yes
+PAK reads=184 bytes=6344 rows=164 pixels=7538
 ```
 
-Stable framebuffer canons:
+Canonical framebuffer:
 
 ```text
-frameBeforeFNV=b5218f24
-frameAfterFNV=ba3e5182
-worldViewportFNV=9206eb24
-worldViewportPreserved=yes
-HUD bands FNV=9cf0c5c5->6c2aa46f
+pre-HUD frame=b5218f24
+complete gameplay frame=ba3e5182
+world viewport=9206eb24
+HUD bands=6c2aa46f
 ```
 
 HUD dirty owner:
 
 ```text
-before: bytes=8 FNV=6965ee06 refreshPending=1
-after :         FNV=40c66f99 refreshPending=0
+before FNV=6965ee06 refreshPending=1
+after  FNV=40c66f99 refreshPending=0
 consume only after successful paint=yes
 ```
 
-Real-CYD RAM / side-effect proof:
-
-```text
-heap8=70196->70196
-largest8=34804->34804
-heapDelta=0
-largestDelta=0
-legacyHudStable=yes
-playerStable=yes
-gameStable=yes
-canvasStable=yes
-renderStable=yes
-residentStable=yes
-topology=d6e8df7d
-closedCatalog=257444a5
-shapeData=NULL
-mediaTexels=NULL
-legacy Game.entities=0
-legacy Game.monsters=0
-no input consumed
-no turn advancement
-no gameplay dispatch
-```
-
-The user explicitly reported the HUD as visually correct on the physical CYD.
-
-## Candidate native gameplay touch boundary
+## Native gameplay touch boundary
 
 Permanent semantic owner:
 
@@ -371,50 +270,104 @@ Permanent semantic owner:
 EspNativeGameplayInputState = 12 B
 EspNativeGameplayTouchHit   = 6 B
 one pending intent maximum
-unsupported/busy = fail closed
+busy/unsupported = fail closed
 ```
 
-Final touch layout at implementation HEAD:
+Current touch layout:
 
 ```text
 top HUD y=0..19:
   x0..31    MENU
   x32..127  PASS_TURN
   x128..159 AUTOMAP
-
 world y=20..45: STRAFE_LEFT | FORWARD | STRAFE_RIGHT
 world y=46..72: TURN_LEFT   | SELECT  | TURN_RIGHT
 world y=73..99: PREV_WEAPON | BACK    | NEXT_WEAPON
 bottom HUD y=100..119: unbound
 ```
 
-Final transient feedback contract:
+Current feedback contract exercised during TURN hardware validation:
 
 ```text
-hold=250 ms
+hold=120 ms
 maxEdits=512
-bounded static saved-pixel storage ~= 2 KiB + metadata
-runtime allocation=0
+feedbackBytes=2068 in predecessor 250 ms build; bounded static storage remains ~2 KiB
 style=neon double ring + vector glyph
-palette top/move/turn/weapon = BLUE/GREEN/YELLOW/RED
-restore=reverse-order exact pixel restore
-no PAK/SD reads
+palette=BLUE/GREEN/YELLOW/RED
+current-frame FNV captured per tap
+reverse exact restore before dispatch
+runtime allocation=0 for feedback
+PAK/SD reads=0 for feedback
 ```
 
-The first real-CYD input run before final polish proved:
+Every TURN tap in the final hardware run restored its current dynamic frame exactly before dispatch.
+
+## Hardware-proven first real gameplay action family
+
+Permanent dispatcher:
 
 ```text
-baseline frame=ba3e5182
-stateBytes=12
-hitBytes=6
-heap8=69828->69828
-largest8=34804->34804
-all exercised valid taps => semantic INTENT
-all transient restores => frame ba3e5182 exact=yes
-no gameplay dispatch
+EspNativeGameplayTurnState = 24 B
+EspNativeGameplayDispatchResult = 12 B
+TURN_LEFT  => +64
+TURN_RIGHT => -64
+only cardinal angles 0/64/128/192
+all other recognized actions = DEFERRED
 ```
 
-The user subsequently visually confirmed the final 12-zone neon layout as perfect. Exact final-HEAD runtime values are intentionally not promoted until its Serial block is archived.
+The input callback never renders. TURN waits for exact neon restore, queues an intent, returns the lifecycle, then commits and renders on a later service.
+
+Final real-CYD runtime witnesses at tested SHA `66ba643e7650f51d0022cd56e007242902d76c77`:
+
+```text
+EspPlayerViewState=44 B
+EspNativeGameplayFrameStats=84 B
+probe execScratch=464 B
+heap8=67284->67284
+largest8=34804->34804
+stackHighWater=172
+intermediate world present suppressed=yes
+final complete-frame present=1
+Game_advanceTurn=no
+Game_executeTile=no
+legacyStable=yes
+residentStable=yes
+facingRefresh=deferred
+```
+
+Four consecutive `TURN_RIGHT` actions proved all cardinal views and exact 360-degree recovery.
+
+Turn frames:
+
+```text
+N / angle64: frame ba3e5182 viewport 9206eb24 HUD 6c2aa46f
+E / angle0 : frame 8cfdfe34 viewport 17c48c15 HUD 1d908304
+S / angle192: frame da1c4297 viewport 582c2ad8 HUD a78d0f96
+W / angle128: frame 23ee0954 viewport de06a408 HUD 9281a6d1
+N / angle64 round-trip: frame ba3e5182 viewport 9206eb24 HUD 6c2aa46f exact
+```
+
+Final North render details re-match the established renderer canons:
+
+```text
+world viewport=032ffaed
+sprites+glows viewport=9206eb24
+walls=34 / 4341 pixels
+planes=12800
+sprites=21 / 1828 pixels
+glows=7 / 1917 pixels
+spriteReads=172
+```
+
+The runtime sprite compositor is view-agnostic: a cardinal view may legitimately draw zero sprites/glows when all BSP candidates are accounted for. Unsupported sprites and deferred glow dependencies still fail closed.
+
+Current TURN frame bridge still uses one bounded temporary HUD save:
+
+```text
+temporaryHudBytes=12800
+```
+
+This is not persistent allocation and showed no heap/largest drift. Future cleanup should move the world renderer to a viewport-only redraw and remove this bridge buffer; do not mix that cleanup into already-proven TURN semantics.
 
 ## Hardware-selected classic CYD presentation
 
@@ -430,17 +383,14 @@ panel inversion   = ON
 TFT_RGB_ORDER     = TFT_BGR
 ILI9341 driver    = ILI9341_2_DRIVER
 SPI frequency     = 55 MHz
+gamma             = 00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
 ```
 
-Selected hardware gamma profile B / INV-GAMMA-WA, written to ILI9341 registers `0xE0` and `0xE1`:
-
-```text
-00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
-```
+Do not prematurely optimize `PlatformVideo_present()`.
 
 ## Current hardware PARK
 
-Merged/main hardware PARK:
+Candidate hardware PARK after the TURN PASS:
 
 ```text
 legacyState=9 / ST_INTRO
@@ -456,33 +406,37 @@ nativeBaseBillboards=yes
 bspVisibleOnly=yes
 intrinsicMode7=yes
 glowCompanions=yes
-glowPending=no
 nativeHud=yes
-hudPending=no
-gameplayDispatchPending=yes
+nativeInput=yes
+nativeTurnDispatch=yes
+TURN_LEFT=yes
+TURN_RIGHT=yes
+360-degree roundTrip=exact
 initialSavePersistencePending=yes
 legacy Game.entities=0
 legacy Game.monsters=0
-noGameplay=yes
+Game_advanceTurn=no
+Game_executeTile=no
 ```
-
-Candidate branch additionally arms native touch-intent classification after this PARK, but still executes no gameplay action.
 
 ## Still intentionally outside
 
 ```text
-real native gameplay action dispatch
-player/view mutation from touch
-turn advancement
+FORWARD/BACK/STRAFE execution
 movement collision
-full menu navigation from gameplay
-real automap activation from gameplay
-other sprite families/render modes not required by current Junction pose
+SELECT interaction
+weapon switching execution
+PASS_TURN execution
+MENU/AUTOMAP execution from gameplay
+actual turn advancement
+post-move/turn tile event dispatch
+facing refresh after gameplay actions
 full native entity/monster gameplay
+first-person weapon overlay
 native durable save storage
 cross-map durable SAVEGAME route payload
 native queued-event payload ownership for non-empty contexts
-native particle payload/runtime ownership for non-empty contexts
+native particle runtime for non-empty contexts
 sound playback
 ```
 
@@ -493,19 +447,21 @@ Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` a
 ## Merge recommendation
 
 ```text
-DO NOT MERGE YET
+MERGE-READY after docs-only audit
 ```
 
-Implementation HEAD awaiting final Serial archive:
+Hardware-tested implementation SHA:
 
 ```text
-8c620093650ac4efd5d470343466ce9f5c441e4e
+66ba643e7650f51d0022cd56e007242902d76c77
 ```
 
-Once the final Serial block from that exact firmware proves the 12-zone contract, representative BLUE/GREEN/YELLOW/RED feedback, PREV/NEXT weapon, PASS_TURN, exact `ba3e5182` restore and unchanged heap/largest with no FAILED/ERROR, update the three documentation files only and declare merge-ready.
+No code may change after this tested SHA without another hardware run. Documentation commits after it must be `.md` only.
 
 ## Next bounded milestone after merge
 
-After merge, recover the exact new `main` SHA and branch from it. The next coherent frontier is the first **real native gameplay action family**, preferably `TURN_LEFT` / `TURN_RIGHT` only.
+After the user merges, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md` and [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md) before branching.
 
-All other recognized actions must remain deferred/fail-closed. Do not combine first dispatch with movement collision, full turn advancement, monster gameplay or general entity activation.
+Preferred next gameplay frontier: native cardinal translation (`FORWARD/BACK/STRAFE`) with collision semantics, while keeping actual turn advancement, tile-event execution and entity/monster activation fail-closed for later milestones.
+
+A smaller renderer-only alternative is the first-person weapon overlay (fresh Junction pistol logical sprite 242). Do not mix both frontiers in one milestone.
