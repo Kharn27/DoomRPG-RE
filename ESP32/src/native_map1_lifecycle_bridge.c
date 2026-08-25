@@ -32,6 +32,7 @@
 #include "native_junction_sprite_census_probe.h"
 #include "native_junction_sprite_fidelity_probe.h"
 #include "native_junction_sprite_overlay_probe.h"
+#include "native_junction_turn_dispatch_probe.h"
 #include "native_map1_access_probe.h"
 #include "native_map1_bsp_pass1.h"
 #include "native_map1_change_map_probe.h"
@@ -130,6 +131,7 @@ static void resetValidatedChain(void) {
     Esp32JunctionSpriteOverlayProbe_reset();
     Esp32JunctionGameplayHudProbe_reset();
     Esp32JunctionGameplayInputProbe_reset();
+    Esp32JunctionTurnDispatchProbe_reset();
     EspNativePlaneRenderer_reset();
     Esp32FirstFrameDiagnostic_reset();
 }
@@ -223,6 +225,13 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     EspProbeLog_setQuiet(0);
 
     if (EspProbeLog_hasBlockingFailure()) {
+        /* A current gameplay-probe failure must still allow the already-drawn
+         * transient touch overlay to expire and restore its saved pixels. This
+         * service performs no gameplay dispatch when the input probe is merely
+         * active; it only completes its bounded feedback timer/restore path. */
+        if (Esp32JunctionGameplayInputProbe_isActive()) {
+            Esp32JunctionGameplayInputProbe_service(doomRpg);
+        }
         if (!fastForwardBlockedLogged) {
             printf("[NATIVEBOOT] BLOCKED predecessor probe failure after %u silent passes; current first-frame probe NOT started\n",
                    fastForwardTotalPasses);
@@ -263,6 +272,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
                 Esp32JunctionGameplayHudProbe_service(doomRpg);
                 if (Esp32JunctionGameplayHudProbe_isDone()) {
                     Esp32JunctionGameplayInputProbe_service(doomRpg);
+                    if (Esp32JunctionGameplayInputProbe_isActive()) {
+                        Esp32JunctionTurnDispatchProbe_service(doomRpg);
+                    }
                 }
             }
         }

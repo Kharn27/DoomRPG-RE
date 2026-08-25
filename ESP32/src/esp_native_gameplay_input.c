@@ -12,6 +12,13 @@
 
 static EspNativeGameplayInputState inputState;
 
+/* Temporary milestone observer. Keeping this as an unresolved weak declaration
+ * means the permanent input owner has no extra queue, callback storage or
+ * runtime dependency: when no current probe defines the symbol, consume()
+ * behaves exactly as before. */
+extern void Esp32NativeGameplayInputProbe_observeConsumed(
+    const EspNativeGameplayInputState* intent) __attribute__((weak));
+
 static int supportedAction(uint8_t action) {
     switch (action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
@@ -172,6 +179,9 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_consume(
     if (!inputState.pending) return ESP_NATIVE_GAMEPLAY_INPUT_EMPTY;
     *outIntent = inputState;
     inputState.pending = 0U;
+    if (Esp32NativeGameplayInputProbe_observeConsumed != NULL) {
+        Esp32NativeGameplayInputProbe_observeConsumed(outIntent);
+    }
     return ESP_NATIVE_GAMEPLAY_INPUT_OK;
 }
 

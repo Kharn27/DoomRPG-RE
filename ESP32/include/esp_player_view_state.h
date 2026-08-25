@@ -16,6 +16,15 @@ typedef enum EspPlayerViewApplyStatus_e {
     ESP_PLAYER_VIEW_APPLY_OK = 3
 } EspPlayerViewApplyStatus;
 
+typedef enum EspPlayerViewTurnStatus_e {
+    ESP_PLAYER_VIEW_TURN_INVALID = 0,
+    ESP_PLAYER_VIEW_TURN_NOT_READY = 1,
+    ESP_PLAYER_VIEW_TURN_UNSETTLED = 2,
+    ESP_PLAYER_VIEW_TURN_UNSUPPORTED = 3,
+    ESP_PLAYER_VIEW_TURN_STALE = 4,
+    ESP_PLAYER_VIEW_TURN_OK = 5
+} EspPlayerViewTurnStatus;
+
 /*
  * Small permanent native owner for the placement fields written by recovered
  * Game_spawnPlayer() before facing/setup/tile-enter side effects begin.
@@ -72,6 +81,23 @@ int EspPlayerView_consumeTileEnter(uint8_t targetMapId,
 int EspPlayerView_consumeFacing(uint8_t targetMapId,
                                 uint8_t gameplayLoadMapId,
                                 uint8_t loadType);
+
+/*
+ * Runtime gameplay rotation is a separate boundary from the historical
+ * fresh-map finishRotation chain above. Prepare is pure and accepts exactly
+ * one cardinal quarter-turn (+64 left or -64 right) from a fully settled view.
+ * Commit is compare-and-swap-like: it publishes only when the live owner still
+ * equals expectedBefore byte-for-byte. No tile, facing, entity or turn side
+ * effect is hidden in either call.
+ */
+EspPlayerViewTurnStatus EspPlayerView_prepareQuarterTurn(
+    int32_t angleDelta,
+    EspPlayerViewState* outBefore,
+    EspPlayerViewState* outAfter);
+
+EspPlayerViewTurnStatus EspPlayerView_commitPreparedTurn(
+    const EspPlayerViewState* expectedBefore,
+    const EspPlayerViewState* preparedAfter);
 
 #ifdef __cplusplus
 }

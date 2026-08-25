@@ -60,6 +60,37 @@ static int spawnIsConsistent(const EspPlayerSpawnState* spawn) {
     return 0;
 }
 
+static int viewSettledForRuntimeTurn(const EspPlayerViewState* view) {
+    return view != NULL && view->active == 1U && view->spawnApplied == 1U &&
+           view->hudRefreshPending == 0U &&
+           view->facingRefreshPending == 0U &&
+           view->playerSetupPending == 0U &&
+           view->tileEnterPending == 0U &&
+           view->viewX == view->destX && view->viewY == view->destY &&
+           view->viewAngle == view->destAngle &&
+           view->viewAngle >= 0 && view->viewAngle <= 255 &&
+           (view->viewAngle & 63) == 0;
+}
+
+static int sameExceptRuntimeAngles(const EspPlayerViewState* a,
+                                   const EspPlayerViewState* b) {
+    EspPlayerViewState left;
+    EspPlayerViewState right;
+    if (a == NULL || b == NULL) return 0;
+    left = *a;
+    right = *b;
+    left.viewAngle = 0;
+    left.destAngle = 0;
+    right.viewAngle = 0;
+    right.destAngle = 0;
+    return memcmp(&left, &right, sizeof(left)) == 0;
+}
+
+static int oneQuarterApart(int32_t before, int32_t after) {
+    const int32_t diff = (after - before) & 255;
+    return diff == 64 || diff == 192;
+}
+
 void EspPlayerView_reset(void) {
     memset(&playerViewState, 0, sizeof(playerViewState));
 }
@@ -177,4 +208,52 @@ int EspPlayerView_consumeFacing(uint8_t targetMapId,
     next.facingRefreshPending = 0U;
     playerViewState = next;
     return 1;
+}
+
+EspPlayerViewTurnStatus EspPlayerView_prepareQuarterTurn(
+    int32_t angleDelta,
+    EspPlayerViewState* outBefore,
+    EspPlayerViewState* outAfter) {
+    EspPlayerViewState next;
+
+    if (outBefore != NULL) memset(outBefore, 0, sizeof(*outBefore));
+    if (outAfter != NULL) memset(outAfter, 0, sizeof(*outAfter));
+    if (outBefore == NULL || outAfter == NULL) return ESP_PLAYER_VIEW_TURN_INVALID;
+    if (!EspPlayerView_isReady()) return ESP_PLAYER_VIEW_TURN_NOT_READY;
+    if (!viewSettledForRuntimeTurn(&playerViewState)) {
+        return ESP_PLAYER_VIEW_TURN_UNSETTLED;
+    }
+    if (angleDelta != 64 && angleDelta != -64) {
+        return ESP_PLAYER_VIEW_TURN_UNSUPPORTED;
+    }
+
+    *outBefore = playerViewState;
+    next = playerViewState;
+    next.viewAngle = (playerViewState.viewAngle + angleDelta) & 255;
+    next.destAngle = next.viewAngle;
+    *outAfter = next;
+    return ESP_PLAYER_VIEW_TURN_OK;
+}
+
+EspPlayerViewTurnStatus EspPlayerView_commitPreparedTurn(
+    const EspPlayerViewState* expectedBefore,
+    const EspPlayerViewState* preparedAfter) {
+    if (expectedBefore == NULL || preparedAfter == NULL) {
+        return ESP_PLAYER_VIEW_TURN_INVALID;
+    }
+    if (!EspPlayerView_isReady()) return ESP_PLAYER_VIEW_TURN_NOT_READY;
+    if (memcmp(&playerViewState, expectedBefore, sizeof(playerViewState)) != 0) {
+        return ESP_PLAYER_VIEW_TURN_STALE;
+    }
+    if (!viewSettledForRuntimeTurn(expectedBefore) ||
+        !viewSettledForRuntimeTurn(preparedAfter)) {
+        return ESP_PLAYER_VIEW_TURN_UNSETTLED;
+    }
+    if (!sameExceptRuntimeAngles(expectedBefore, preparedAfter) ||
+        !oneQuarterApart(expectedBefore->viewAngle, preparedAfter->viewAngle)) {
+        return ESP_PLAYER_VIEW_TURN_UNSUPPORTED;
+    }
+
+    playerViewState = *preparedAfter;
+    return ESP_PLAYER_VIEW_TURN_OK;
 }

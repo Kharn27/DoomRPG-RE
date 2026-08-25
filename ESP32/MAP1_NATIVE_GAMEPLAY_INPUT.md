@@ -6,23 +6,22 @@
 branch = agent/esp32-native-touch-input-intent
 base   = 7686f7fb5c93d375f51a34ec0dd0b5cb127017e3
 implementation HEAD = 8c620093650ac4efd5d470343466ce9f5c441e4e
-status = REAL-CYD VISUAL PASS / FINAL SERIAL ARCHIVE PENDING
-merge-ready = no (until final Serial block from implementation HEAD is archived)
+merged PR = #92
+merged main = cdda239f1c884a7d6f6707ba1c30a0a0a3603923
+status = MERGED
 ```
 
-Base `7686f7fb5c93d375f51a34ec0dd0b5cb127017e3` is merged PR #91 (`agent/esp32-native-gameplay-hud`).
+Historical note: the final input-only SHA was merged before its own final Serial block was archived. Do not retroactively label `8c620093...` as hardware-Serial-proven. The subsequent TURN milestone at tested SHA `66ba643e7650f51d0022cd56e007242902d76c77` re-exercises the evolved input path on the real CYD, including exact dynamic frame restore, all current TURN hitboxes, neon feedback, and stable memory.
 
 ## Objective
 
 Add the first permanent native gameplay input ownership boundary without executing gameplay actions.
 
-The CYD touch driver remains `SoftXpt2046`. A calibrated physical press is converted to logical 160x120 coordinates, classified into one compact pointer-free semantic intent, consumed immediately by the temporary probe, and rendered as a short exact-restoring visual feedback overlay.
+The CYD touch driver remains `SoftXpt2046`. A calibrated physical press is converted to logical 160x120 coordinates, classified into one compact pointer-free semantic intent, consumed by the temporary probe, and rendered as a short exact-restoring visual feedback overlay.
 
-This milestone deliberately does **not** move the player, rotate the view, change weapons, advance the turn, open menus, open automap, activate entities, or invoke the broad legacy playing-event loop.
+This milestone itself does **not** move the player, rotate the view, change weapons, advance the turn, open menus, open automap, activate entities, or invoke the broad legacy playing-event loop.
 
 ## Permanent semantic owner
-
-Permanent modules:
 
 ```text
 ESP32/include/esp_native_gameplay_input.h
@@ -40,7 +39,7 @@ busy producer => fail closed
 consumer explicitly clears pending
 ```
 
-Recovered legacy action IDs are retained:
+Recovered legacy action IDs:
 
 ```text
 1  FORWARD
@@ -67,7 +66,7 @@ x=32..127  PASS_TURN / message area
 x=128..159 AUTOMAP
 ```
 
-World viewport (`y=20..99`) is a 3x3 keypad:
+World viewport (`y=20..99`) is a full 3x3 keypad:
 
 ```text
 row y=20..45
@@ -92,86 +91,68 @@ This preserves the original phone-keypad spirit while avoiding permanent on-scre
 
 ## Transient visual feedback
 
-The current diagnostic/polish feedback is intentionally allocation-free and renderer-independent:
+The merged input branch introduced allocation-free renderer-independent feedback:
 
 ```text
-hold = 250 ms
 style = neon double ring + vector glyph
 max edits = 512
 edit = framebuffer offset + saved RGB565 pixel = 4 B
-static bounded edit storage ~= 2048 B + metadata
+static bounded edit storage ~= 2 KiB + metadata
 runtime allocations = 0
 restore = reverse-order exact pixel restore
 ```
 
-Palette by row/family:
+Palette by family:
 
 ```text
-top HUD controls = BLUE neon
-movement row      = GREEN neon
-turn/select row   = YELLOW neon
-weapon/back row   = RED neon
+top HUD controls = BLUE
+movement row      = GREEN
+turn/select row   = YELLOW
+weapon/back row   = RED
 ```
 
-Vector glyphs are generated procedurally and require no asset/PAK access:
+Vector glyphs cover movement arrows, bent turn arrows, SELECT reticle, `<<`/`>>` weapon cycling, MENU, AUTOMAP and PASS_TURN.
 
-```text
-movement     arrows
-turn         bent arrows
-SELECT       reticle
-PREV_WEAPON  <<
-NEXT_WEAPON  >>
-MENU         three-line icon
-AUTOMAP      compact map icon
-PASS_TURN    arrow-to-stop glyph
-```
+The user visually confirmed the final colored 12-zone layout as perfect on the physical classic CYD.
 
-The user explicitly reported the final row-coded neon layout as visually perfect on the physical classic CYD.
+The follow-on TURN milestone evolved the same feedback from a fixed initial-frame restore to a **dynamic current-frame restore** and shortened the hold to `120 ms`. That current behavior is documented in [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md).
 
-## Hardware evidence already archived before final polish
+## Hardware evidence history
 
-An earlier hardware run of the same semantic owner and touch path (before the final 12-zone/layout + row-color polish) proved the core input/restore contract on real hardware:
+An earlier real-CYD input run before the final 12-zone/color polish proved the core semantic and restore contract:
 
 ```text
 baseline frame = ba3e5182
 EspNativeGameplayInputState = 12 B
 EspNativeGameplayTouchHit = 6 B
-feedback predecessor storage = 332 B
 heap8 = 69828 -> 69828
 largest8 = 34804 -> 34804
-heapDelta = 0
-largestDelta = 0
-all exercised valid taps produced INTENT
-all exercised feedback restores returned exactly to frame ba3e5182
+valid taps => semantic INTENT
+feedback restore => ba3e5182 exact=yes
 no gameplay dispatch
 ```
 
-The archived run exercised movement, turn, select, weapon, menu and automap semantics and showed exact restore after each transient overlay. It also proved an intentionally unbound region returns `NO_HIT` without mutating gameplay.
+That run exercised movement, turn, select, weapon, menu and automap semantics and proved exact restore after transient overlays.
 
-## Final-HEAD evidence still required before merge-ready
-
-The final implementation HEAD changed two hardware-visible details after the archived Serial run:
+The final input-only implementation changed two hardware-visible details after that archived Serial run:
 
 ```text
 11 active zones -> 12 active zones
-single-color/inversion feedback -> row-coded neon double-ring + vector glyph feedback
+single-color/inversion feedback -> row-coded neon double-ring + vector glyph
 ```
 
-Therefore the repo must not promote `8c620093650ac4efd5d470343466ce9f5c441e4e` to hardware-tested/merge-ready until a Serial block from that exact firmware is archived.
+Therefore this archive intentionally does not invent exact runtime canons for `8c620093...`.
 
-Required final proof is intentionally small:
+The later hardware-tested TURN SHA `66ba643e7650f51d0022cd56e007242902d76c77` proves the current evolved input path in real gameplay use:
 
 ```text
-[NATIVEINPUTPROBE] READY ... zones=12 ... baseline=ba3e5182 ...
-representative BLUE/GREEN/YELLOW/RED taps
-PREV_WEAPON and NEXT_WEAPON recognized
-PASS_TURN recognized in top message area
-FEEDBACK RESTORE ... frame=ba3e5182 exact=yes
-heap/largest unchanged
-no FAILED/ERROR
+TURN hitbox recognition = yes
+feedback hold = 120 ms
+feedback dynamic baseline = yes
+feedback restore = exact current-frame FNV
+heap8 = 67284 -> 67284
+largest8 = 34804 -> 34804
 ```
-
-No unobserved final-HEAD framebuffer hashes, heap values or per-action overlay FNVs are canonicalized here.
 
 ## Invariants
 
@@ -182,16 +163,9 @@ runtime ZIP graphics/map access forbidden
 legacy Game.entities == 0
 legacy Game.monsters == 0
 legacy broad gameplay loop not called
-turn advancement = none
-player/view mutation = none
-world mutation = none
-entity activation = none
+input layer itself does not mutate player/view/world
 ```
 
-The touch intent owner is the first native gameplay-input boundary; action execution remains outside this milestone.
+## Follow-on milestone
 
-## Next bounded milestone after merge
-
-After the final Serial proof and merge, recover the exact new `main` SHA before branching again.
-
-The first real gameplay dispatcher milestone should enable only one small action family (preferably `TURN_LEFT` / `TURN_RIGHT`) while all other actions remain recognized but fail closed/deferred. Do not combine first dispatch with movement collision, turn advancement, monsters or general entity gameplay.
+The merged input owner is consumed by the first real native gameplay dispatcher archived in [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md). Only `TURN_LEFT` / `TURN_RIGHT` are executed there; all other recognized actions remain deferred.

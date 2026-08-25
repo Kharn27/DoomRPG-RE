@@ -25,7 +25,7 @@
 
 #define EXPECTED_GAMEPLAY_FRAME_FNV 0xba3e5182U
 #define EXPECTED_GAMEPLAY_HUD_FNV 0x4756db9cU
-#define TOUCH_FEEDBACK_MS 250U
+#define TOUCH_FEEDBACK_MS 120U
 #define TOUCH_FEEDBACK_MAX_EDITS 512U
 
 #define NEON_BLUE_HALO 0x0008U
@@ -53,6 +53,7 @@ typedef struct TouchFeedbackEdit_s {
 typedef struct TouchFeedback_s {
     TouchFeedbackEdit edits[TOUCH_FEEDBACK_MAX_EDITS];
     uint32_t expiresMs;
+    uint32_t baselineFNV;
     uint16_t count;
     uint8_t left;
     uint8_t top;
@@ -464,9 +465,12 @@ static int drawFeedback(const EspNativeGameplayTouchHit* hit) {
     const int innerTop = (int)hit->top + 1;
     const int innerRight = (int)hit->right - 1;
     const int innerBottom = (int)hit->bottom - 1;
+    const uint32_t baseline = frameFNV();
 
-    if (hit == NULL || framebuffer == NULL || feedback->active) return 0;
+    if (hit == NULL || framebuffer == NULL || feedback->active || baseline == 0U)
+        return 0;
     memset(feedback, 0, sizeof(*feedback));
+    feedback->baselineFNV = baseline;
     feedback->left = hit->left;
     feedback->top = hit->top;
     feedback->right = hit->right;
@@ -475,9 +479,6 @@ static int drawFeedback(const EspNativeGameplayTouchHit* hit) {
     feedback->zone = hit->zone;
     feedback->active = 1U;
 
-    /* Outer dim ring + one-pixel-inset saturated core gives a cheap neon halo
-     * while staying entirely inside the semantic hitbox, including screen-edge
-     * MENU/AUTOMAP and the y=0 top HUD. Every edit is reverse-restorable. */
     if (!drawFeedbackRect(framebuffer,
                           hit->left, hit->top, hit->right, hit->bottom,
                           palette.halo) ||
@@ -495,6 +496,7 @@ static int drawFeedback(const EspNativeGameplayTouchHit* hit) {
 static int restoreFeedback(int present) {
     TouchFeedback* feedback = &probeState.feedback;
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    const uint32_t expectedFNV = feedback->baselineFNV;
     uint32_t heapBefore;
     uint32_t heapAfter;
     uint32_t largestBefore;
@@ -503,7 +505,7 @@ static int restoreFeedback(int present) {
     int ok = 1;
 
     if (!feedback->active) return 1;
-    if (framebuffer == NULL) return 0;
+    if (framebuffer == NULL || expectedFNV == 0U) return 0;
 
     heapBefore = heap8();
     largestBefore = largest8();
@@ -514,7 +516,7 @@ static int restoreFeedback(int present) {
         framebuffer[edit->offset] = edit->saved;
     }
 
-    if (frameFNV() != EXPECTED_GAMEPLAY_FRAME_FNV) ok = 0;
+    if (frameFNV() != expectedFNV) ok = 0;
     if (ok && present && !Esp32PlatformVideo_present()) ok = 0;
 
     heapAfter = heap8();
@@ -523,15 +525,16 @@ static int restoreFeedback(int present) {
 
     if (ok) {
         ++probeState.restores;
-        printf("[NATIVEINPUT] FEEDBACK RESTORE n=%u frame=%08x exact=yes heap=%u->%u largest=%u->%u\n",
+        printf("[NATIVEINPUT] FEEDBACK RESTORE n=%u frame=%08x exact=yes dynamicBaseline=yes heap=%u->%u largest=%u->%u\n",
                (unsigned int)probeState.restores,
-               (unsigned int)EXPECTED_GAMEPLAY_FRAME_FNV,
+               (unsigned int)expectedFNV,
                (unsigned int)heapBefore, (unsigned int)heapAfter,
                (unsigned int)largestBefore, (unsigned int)largestAfter);
     }
     else {
-        printf("[NATIVEINPUT] FAILED feedback restore edits=%u frame=%08x present=%d heap=%u->%u largest=%u->%u\n",
+        printf("[NATIVEINPUT] FAILED feedback restore edits=%u expected=%08x frame=%08x present=%d heap=%u->%u largest=%u->%u\n",
                (unsigned int)feedback->count,
+               (unsigned int)expectedFNV,
                (unsigned int)frameFNV(), present,
                (unsigned int)heapBefore, (unsigned int)heapAfter,
                (unsigned int)largestBefore, (unsigned int)largestAfter);
@@ -561,6 +564,7 @@ static void onGameplayTap(int16_t screenX,
     uint32_t heapAfter;
     uint32_t largestBefore;
     uint32_t largestAfter;
+    uint32_t baselineFNV;
     uint32_t overlayFNV;
     int logicalX;
     int logicalY;
@@ -577,12 +581,12 @@ static void onGameplayTap(int16_t screenX,
     hadFeedback = probeState.feedback.active != 0U;
     if (hadFeedback && !restoreFeedback(0)) return;
 
-    if (!runtimeBoundary(probeState.doomRpg) ||
-        frameFNV() != EXPECTED_GAMEPLAY_FRAME_FNV ||
+    baselineFNV = frameFNV();
+    if (!runtimeBoundary(probeState.doomRpg) || baselineFNV == 0U ||
         EspNativeGameplayInput_peek()->pending) {
         printf("[NATIVEINPUT] FAILED tap boundary n=%u frame=%08x pending=%u shapeData=%p mediaTexels=%p\n",
                (unsigned int)probeState.taps,
-               (unsigned int)frameFNV(),
+               (unsigned int)baselineFNV,
                (unsigned int)EspNativeGameplayInput_peek()->pending,
                probeState.doomRpg->render != NULL ?
                    (void*)probeState.doomRpg->render->shapeData : NULL,
@@ -594,10 +598,11 @@ static void onGameplayTap(int16_t screenX,
         return;
     }
 
-    printf("[NATIVEINPUT] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d status=%d\n",
+    printf("[NATIVEINPUT] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d status=%d frame=%08x\n",
            (unsigned int)probeState.taps,
            rawX, rawY, pressure, screenX, screenY,
-           logicalX, logicalY, (int)classifyStatus);
+           logicalX, logicalY, (int)classifyStatus,
+           (unsigned int)baselineFNV);
 
     if (classifyStatus == ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT) {
         ++probeState.misses;
@@ -605,7 +610,7 @@ static void onGameplayTap(int16_t screenX,
         printf("[NATIVEINPUT] MISS n=%u logical=%d,%d unbound=bottom-HUD frame=%08x restoredPresent=%d gameplay=no\n",
                (unsigned int)probeState.misses,
                logicalX, logicalY,
-               (unsigned int)frameFNV(), presentRestored);
+               (unsigned int)baselineFNV, presentRestored);
         return;
     }
     if (classifyStatus != ESP_NATIVE_GAMEPLAY_INPUT_OK) {
@@ -627,16 +632,16 @@ static void onGameplayTap(int16_t screenX,
         consumed.logicalX != logicalX || consumed.logicalY != logicalY ||
         !consumed.pending || !consumed.active || consumed.sequence == 0U ||
         EspNativeGameplayInput_peek()->pending ||
-        frameFNV() != EXPECTED_GAMEPLAY_FRAME_FNV ||
+        frameFNV() != baselineFNV ||
         !legacySnapshot(probeState.doomRpg, &legacyAfter) ||
         !legacySnapshotEqual(&legacyBefore, &legacyAfter) ||
         !EspMapResidentLifecycle_capture(&residentAfter) ||
         memcmp(&residentBefore, &residentAfter, sizeof(residentBefore)) != 0 ||
         !runtimeBoundary(probeState.doomRpg)) {
-        printf("[NATIVEINPUT] FAILED semantic route action=%u zone=%u sequence=%u frame=%08x pending=%u legacyStable=%d\n",
+        printf("[NATIVEINPUT] FAILED semantic route action=%u zone=%u sequence=%u frame=%08x expected=%08x pending=%u legacyStable=%d\n",
                (unsigned int)hit.action, (unsigned int)hit.zone,
                (unsigned int)consumed.sequence,
-               (unsigned int)frameFNV(),
+               (unsigned int)frameFNV(), (unsigned int)baselineFNV,
                (unsigned int)EspNativeGameplayInput_peek()->pending,
                legacySnapshotEqual(&legacyBefore, &legacyAfter));
         probeState.failed = 1U;
@@ -645,12 +650,15 @@ static void onGameplayTap(int16_t screenX,
         return;
     }
 
-    if (!drawFeedback(&hit) || !Esp32PlatformVideo_present()) {
-        printf("[NATIVEINPUT] FAILED feedback draw action=%s zone=%u edits=%u/%u frame=%08x\n",
+    if (!drawFeedback(&hit) ||
+        probeState.feedback.baselineFNV != baselineFNV ||
+        !Esp32PlatformVideo_present()) {
+        printf("[NATIVEINPUT] FAILED feedback draw action=%s zone=%u edits=%u/%u baseline=%08x frame=%08x\n",
                EspNativeGameplayInput_actionName(hit.action),
                (unsigned int)hit.zone,
                (unsigned int)probeState.feedback.count,
                (unsigned int)TOUCH_FEEDBACK_MAX_EDITS,
+               (unsigned int)probeState.feedback.baselineFNV,
                (unsigned int)frameFNV());
         (void)restoreFeedback(1);
         probeState.failed = 1U;
@@ -662,10 +670,11 @@ static void onGameplayTap(int16_t screenX,
     overlayFNV = frameFNV();
     heapAfter = heap8();
     largestAfter = largest8();
-    if (overlayFNV == EXPECTED_GAMEPLAY_FRAME_FNV ||
+    if (overlayFNV == baselineFNV ||
         heapAfter != heapBefore || largestAfter != largestBefore ||
         !runtimeBoundary(probeState.doomRpg) || EspAssetPack_isOpen()) {
-        printf("[NATIVEINPUT] FAILED feedback invariant frame=%08x heap=%u->%u largest=%u->%u pack=%d\n",
+        printf("[NATIVEINPUT] FAILED feedback invariant baseline=%08x frame=%08x heap=%u->%u largest=%u->%u pack=%d\n",
+               (unsigned int)baselineFNV,
                (unsigned int)overlayFNV,
                (unsigned int)heapBefore, (unsigned int)heapAfter,
                (unsigned int)largestBefore, (unsigned int)largestAfter,
@@ -679,7 +688,7 @@ static void onGameplayTap(int16_t screenX,
 
     palette = feedbackPalette(&hit);
     ++probeState.intents;
-    printf("[NATIVEINPUT] INTENT n=%u seq=%u action=%s id=%u zone=%u logical=%u,%u consumedBy=probe dispatch=deferred gameplay=no\n",
+    printf("[NATIVEINPUT] INTENT n=%u seq=%u action=%s id=%u zone=%u logical=%u,%u consumedBy=probe dispatch=observer gameplay=no\n",
            (unsigned int)probeState.intents,
            (unsigned int)consumed.sequence,
            EspNativeGameplayInput_actionName(consumed.action),
@@ -687,7 +696,7 @@ static void onGameplayTap(int16_t screenX,
            (unsigned int)consumed.zone,
            (unsigned int)consumed.logicalX,
            (unsigned int)consumed.logicalY);
-    printf("[NATIVEINPUT] FEEDBACK zone=%u action=%s palette=%s logical=x%u..%u y%u..%u physical=x%u..%u y%u..%u edits=%u hold=%ums style=neon-double-ring+vector-glyph frame=%08x->%08x heapDelta=0 largestDelta=0\n",
+    printf("[NATIVEINPUT] FEEDBACK zone=%u action=%s palette=%s logical=x%u..%u y%u..%u physical=x%u..%u y%u..%u edits=%u hold=%ums style=neon-double-ring+vector-glyph frame=%08x->%08x dynamicBaseline=yes heapDelta=0 largestDelta=0\n",
            (unsigned int)hit.zone,
            EspNativeGameplayInput_actionName(hit.action),
            palette.name,
@@ -699,7 +708,7 @@ static void onGameplayTap(int16_t screenX,
            (((unsigned int)hit.bottom + 1U) * DOOMRPG_INTEGER_SCALE) - 1U,
            (unsigned int)probeState.feedback.count,
            (unsigned int)TOUCH_FEEDBACK_MS,
-           (unsigned int)EXPECTED_GAMEPLAY_FRAME_FNV,
+           (unsigned int)baselineFNV,
            (unsigned int)overlayFNV);
 }
 
@@ -737,7 +746,7 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
     if (!Esp32JunctionGameplayHudProbe_isDone()) return;
 
     printf("\n=== Doom RPG ESP32-native invisible gameplay touch pad ===\n");
-    printf("[NATIVEINPUTPROBE] CONTRACT calibrated CYD press -> logical 160x120 -> twelve invisible semantic zones: full 3x3 world keypad with PREV_WEAPON/BACK/NEXT_WEAPON on its bottom row plus MENU/PASS_TURN/AUTOMAP across the top HUD; one compact pointer-free pending owner, unsupported/busy fail closed; this milestone consumes every intent in the probe and performs NO movement, turn, select, weapon, menu, automap, pass-turn, entity or world mutation; feedback is 250ms allocation-free exact-restoring row-coded neon double-ring + action-specific vector glyph, with BLUE top HUD / GREEN movement / YELLOW turn-select / RED weapon-back\n");
+    printf("[NATIVEINPUTPROBE] CONTRACT calibrated CYD press -> logical 160x120 -> twelve invisible semantic zones: full 3x3 world keypad with PREV_WEAPON/BACK/NEXT_WEAPON on its bottom row plus MENU/PASS_TURN/AUTOMAP across the top HUD; one compact pointer-free pending owner, unsupported/busy fail closed; feedback is 120ms allocation-free row-coded neon double-ring + action-specific vector glyph and records/restores the exact current gameplay-frame FNV so the same input layer remains valid after native view changes. This layer itself performs no movement, turn, select, weapon, menu, automap, pass-turn, entity or world mutation.\n");
 
     heapBefore = heap8();
     largestBefore = largest8();
@@ -811,7 +820,7 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
     printZone(79, 86);
     printZone(132, 86);
 
-    printf("[NATIVEINPUTPROBE] READY zones=12 stateBytes=%u hitBytes=%u feedbackBytes=%u maxEdits=%u baseline=%08x touch=physical-calibrated/x2 logical releaseDebounce=50ms feedback=%ums palette=BLUE/GREEN/YELLOW/RED style=neon-double-ring+vector-glyph heap=%u->%u largest=%u->%u dispatch=deferred gameplay=no\n",
+    printf("[NATIVEINPUTPROBE] READY zones=12 stateBytes=%u hitBytes=%u feedbackBytes=%u maxEdits=%u initialBaseline=%08x dynamicRestore=yes touch=physical-calibrated/x2 logical releaseDebounce=50ms feedback=%ums palette=BLUE/GREEN/YELLOW/RED style=neon-double-ring+vector-glyph heap=%u->%u largest=%u->%u dispatch=observer gameplay=no\n",
            (unsigned int)sizeof(EspNativeGameplayInputState),
            (unsigned int)sizeof(EspNativeGameplayTouchHit),
            (unsigned int)sizeof(TouchFeedback),
@@ -820,5 +829,5 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)TOUCH_FEEDBACK_MS,
            (unsigned int)heapBefore, (unsigned int)heapAfter,
            (unsigned int)largestBefore, (unsigned int)largestAfter);
-    printf("[NATIVEINPUTPROBE] PARK tap all 12 zones plus bottom-HUD MISS; every valid tap must log INTENT + row-color neon/glyph FEEDBACK then exact RESTORE; no action is executed yet\n");
+    printf("[NATIVEINPUTPROBE] PARK tap all 12 zones plus bottom-HUD MISS; every valid tap must restore the exact frame it started from, including after native view changes.\n");
 }
