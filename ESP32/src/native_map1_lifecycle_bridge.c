@@ -1,7 +1,15 @@
+#include <stdio.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include "esp_native_plane_renderer.h"
+#include "esp_probe_log.h"
 #include "native_intro_dispose.h"
 #include "native_committed_transition_probe.h"
 #include "native_junction_facing_probe.h"
 #include "native_junction_finish_rotation_tile_probe.h"
+#include "native_junction_first_frame_corrected_probe.h"
 #include "native_junction_graphics_catalog_probe.h"
 #include "native_junction_hud_refresh_probe.h"
 #include "native_junction_initial_tile_probe.h"
@@ -46,17 +54,25 @@
 #include "native_stats_menu_intent_probe.h"
 #include "native_transition_preflight_final_probe.h"
 
-/*
- * Keep the hardware-validated intro clock/dispose, native BSP pass-1 and native
- * resident-runtime implementations untouched. These wrappers are temporary
- * lifecycle scaffolding only; reusable native map/player/UI/transition
- * components remain legacy-engine free.
- */
+#define VALIDATED_FAST_FORWARD_MAX_PASSES 64U
+
+static unsigned int fastForwardTotalPasses;
+static int fastForwardReadyLogged;
+static int fastForwardWaitLogged;
+static int fastForwardBlockedLogged;
+
 void __real_Esp32IntroDispose_reset(void);
 void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
 
-void __wrap_Esp32IntroDispose_reset(void) {
-    __real_Esp32IntroDispose_reset();
+/* Temporary frame-fidelity diagnostic owned by
+ * native_first_frame_color_probe_wrappers.c.  The BMP write is deliberately
+ * outside the strict renderer integrity contract because first-use stdio/SD
+ * may retain a small VFS/libc allocation.
+ */
+void Esp32FirstFrameDiagnostic_reset(void);
+int Esp32FirstFrameDiagnostic_exportBmp(void);
+
+static void resetValidatedChain(void) {
     Esp32Map1BspPass1_reset();
     Esp32Map1RuntimeLoad_reset();
     Esp32Map1AccessProbe_reset();
@@ -103,25 +119,12 @@ void __wrap_Esp32IntroDispose_reset(void) {
     Esp32JunctionPostLoadIdleTimeProbe_reset();
     Esp32JunctionPlayingServiceProbe_reset();
     Esp32JunctionGraphicsCatalogProbe_reset();
+    Esp32JunctionFirstFrameCorrectedProbe_reset();
+    EspNativePlaneRenderer_reset();
+    Esp32FirstFrameDiagnostic_reset();
 }
 
-void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
-    __real_Esp32IntroDispose_service(doomRpg);
-
-    /*
-     * Final Continue -> validated intro teardown -> compact native map/resident
-     * owners -> bounded opcode/UI/world semantic owners -> committed Junction
-     * residency -> fresh-map spawn/player/HUD/setup -> first tile dispatch ->
-     * finishRotation orientation -> second tile dispatch -> durable native
-     * facing -> post-load HUD message clear -> direct Junction Game_givemap ->
-     * current-weapon self-selection -> initial-save caller intent -> scalar
-     * isLoaded/isSaved/activeLoadType cleanup -> empty event/particle cleanup ->
-     * caller-side redraw request -> native ST_INTRO->ST_PLAYING transition ->
-     * final idleTime deadline -> first native PLAYING service -> sparse native
-     * graphics catalog. Durable save persistence, gameplay mutation and first
-     * native gameplay frame remain outside. Each stage arms first and runs later.
-     */
-    Esp32Map1BspPass1_service(doomRpg);
+static void serviceValidatedPredecessors(struct DoomRPG_s* doomRpg) {
     Esp32Map1RuntimeLoad_service(doomRpg);
     Esp32Map1AccessProbe_service(doomRpg);
     Esp32Map1StateProbe_service(doomRpg);
@@ -167,4 +170,79 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32JunctionPostLoadIdleTimeProbe_service(doomRpg);
     Esp32JunctionPlayingServiceProbe_service(doomRpg);
     Esp32JunctionGraphicsCatalogProbe_service(doomRpg);
+}
+
+void __wrap_Esp32IntroDispose_reset(void) {
+    __real_Esp32IntroDispose_reset();
+    EspProbeLog_setQuiet(0);
+    EspProbeLog_clearBlockingFailure();
+    fastForwardTotalPasses = 0U;
+    fastForwardReadyLogged = 0;
+    fastForwardWaitLogged = 0;
+    fastForwardBlockedLogged = 0;
+    resetValidatedChain();
+}
+
+void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
+    unsigned int pass;
+
+    __real_Esp32IntroDispose_service(doomRpg);
+
+    /* Historical probes remain executable source-of-truth checks, but their
+     * successful chatter is no longer useful on every firmware flash. Pipeline
+     * the already hardware-proven owners once BSP pass-1 is complete. A probe-
+     * level FAILED/ERROR latches the fast-forward and forbids current-frame
+     * execution even if that historical probe marks itself done after recovery.
+     */
+    EspProbeLog_setQuiet(1);
+    Esp32Map1BspPass1_service(doomRpg);
+
+    if (!EspProbeLog_hasBlockingFailure() &&
+        Esp32Map1BspPass1_isDone() &&
+        !Esp32JunctionGraphicsCatalogProbe_isDone()) {
+        for (pass = 0U;
+             pass < VALIDATED_FAST_FORWARD_MAX_PASSES &&
+             !Esp32JunctionGraphicsCatalogProbe_isDone() &&
+             !EspProbeLog_hasBlockingFailure();
+             ++pass) {
+            serviceValidatedPredecessors(doomRpg);
+            ++fastForwardTotalPasses;
+            if (!EspProbeLog_hasBlockingFailure()) vTaskDelay(1);
+        }
+    }
+    EspProbeLog_setQuiet(0);
+
+    if (EspProbeLog_hasBlockingFailure()) {
+        if (!fastForwardBlockedLogged) {
+            printf("[NATIVEBOOT] BLOCKED predecessor probe failure after %u silent passes; current first-frame probe NOT started\n",
+                   fastForwardTotalPasses);
+            fastForwardBlockedLogged = 1;
+        }
+        return;
+    }
+
+    if (!Esp32Map1BspPass1_isDone()) return;
+
+    if (!Esp32JunctionGraphicsCatalogProbe_isDone()) {
+        if (!fastForwardWaitLogged) {
+            printf("[NATIVEBOOT] WAIT validated predecessor chain incomplete after %u silent passes\n",
+                   fastForwardTotalPasses);
+            fastForwardWaitLogged = 1;
+        }
+        return;
+    }
+
+    if (!fastForwardReadyLogged) {
+        printf("[NATIVEBOOT] READY validated predecessors silent passes=%u catalog=969d5a77; current first-frame fidelity probe starts now\n",
+               fastForwardTotalPasses);
+        fastForwardReadyLogged = 1;
+    }
+
+    Esp32JunctionFirstFrameCorrectedProbe_service(doomRpg);
+
+    /* Only a strict PARK may trigger the SD diagnostic.  The renderer probe has
+     * already captured heap/largest/PAK integrity before this call. */
+    if (Esp32JunctionFirstFrameCorrectedProbe_isDone()) {
+        (void)Esp32FirstFrameDiagnostic_exportBmp();
+    }
 }

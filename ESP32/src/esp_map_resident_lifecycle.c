@@ -1,6 +1,9 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
+
+#include <esp_heap_caps.h>
 
 #include "esp_asset_pack.h"
 #include "esp_map_automap_state.h"
@@ -29,6 +32,17 @@ static void clearSnapshot(EspMapResidentSnapshot* snapshot) {
 }
 
 void EspMapResidentLifecycle_resetAll(void) {
+    const int beforeRuntime = EspMapRuntime_isLoaded();
+    const int beforeMap = EspMapState_isReady();
+    const int beforeScript = EspMapScriptState_isReady();
+    const int beforeLine = EspMapLineState_isReady();
+    const int beforeTexture = EspMapLineTextureState_isReady();
+    const int beforeAutomap = EspMapAutomapState_isReady();
+    const int beforeTopology = EspMapSpriteTopology_isReady();
+    const uint32_t heapBefore =
+        (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    uint32_t heapAfter;
+
     EspMapSpriteTopology_reset();
     EspMapAutomapState_reset();
     EspMapLineTextureState_reset();
@@ -36,6 +50,28 @@ void EspMapResidentLifecycle_resetAll(void) {
     EspMapScriptState_reset();
     EspMapState_reset();
     EspMapRuntime_reset();
+
+    heapAfter = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+
+    /* Temporary integrated-run diagnostic. The reversible handoff milestone
+     * proved an exact 18008 B Entrance allocator release in isolation. Surface
+     * the primitive's actual owner/heap transition without changing reset
+     * semantics so a later fast-forward regression cannot be guessed around.
+     */
+    if (beforeRuntime || beforeMap || beforeScript || beforeLine ||
+        beforeTexture || beforeAutomap || beforeTopology) {
+        printf("[RESIDENTRESET] heap8=%u->%u released=%d before=%d/%d/%d/%d/%d/%d/%d after=%d/%d/%d/%d/%d/%d/%d empty=%d\n",
+               (unsigned int)heapBefore,
+               (unsigned int)heapAfter,
+               (int)heapAfter - (int)heapBefore,
+               beforeRuntime, beforeMap, beforeScript, beforeLine,
+               beforeTexture, beforeAutomap, beforeTopology,
+               EspMapRuntime_isLoaded(), EspMapState_isReady(),
+               EspMapScriptState_isReady(), EspMapLineState_isReady(),
+               EspMapLineTextureState_isReady(), EspMapAutomapState_isReady(),
+               EspMapSpriteTopology_isReady(),
+               EspMapResidentLifecycle_isEmpty());
+    }
 }
 
 int EspMapResidentLifecycle_isEmpty(void) {
