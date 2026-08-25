@@ -25,6 +25,15 @@ typedef enum EspPlayerViewTurnStatus_e {
     ESP_PLAYER_VIEW_TURN_OK = 5
 } EspPlayerViewTurnStatus;
 
+typedef enum EspPlayerViewMoveStatus_e {
+    ESP_PLAYER_VIEW_MOVE_INVALID = 0,
+    ESP_PLAYER_VIEW_MOVE_NOT_READY = 1,
+    ESP_PLAYER_VIEW_MOVE_UNSETTLED = 2,
+    ESP_PLAYER_VIEW_MOVE_UNSUPPORTED = 3,
+    ESP_PLAYER_VIEW_MOVE_STALE = 4,
+    ESP_PLAYER_VIEW_MOVE_OK = 5
+} EspPlayerViewMoveStatus;
+
 /*
  * Small permanent native owner for the placement fields written by recovered
  * Game_spawnPlayer() before facing/setup/tile-enter side effects begin.
@@ -96,6 +105,22 @@ EspPlayerViewTurnStatus EspPlayerView_prepareQuarterTurn(
     EspPlayerViewState* outAfter);
 
 EspPlayerViewTurnStatus EspPlayerView_commitPreparedTurn(
+    const EspPlayerViewState* expectedBefore,
+    const EspPlayerViewState* preparedAfter);
+
+/*
+ * Runtime gameplay translation follows the same explicit prepare/commit model.
+ * Prepare accepts exactly one cardinal 64-unit step and mutates only
+ * viewX/viewY/destX/destY in the returned candidate. Collision is deliberately
+ * outside this owner and must be proven by the gameplay dispatcher first.
+ */
+EspPlayerViewMoveStatus EspPlayerView_prepareCardinalMove(
+    int32_t deltaX,
+    int32_t deltaY,
+    EspPlayerViewState* outBefore,
+    EspPlayerViewState* outAfter);
+
+EspPlayerViewMoveStatus EspPlayerView_commitPreparedMove(
     const EspPlayerViewState* expectedBefore,
     const EspPlayerViewState* preparedAfter);
 
