@@ -10,6 +10,7 @@
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud_direction.h"
+#include "esp_native_gameplay_present_gate.h"
 #include "esp_native_junction_sprite_renderer.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_player_view_state.h"
@@ -21,6 +22,9 @@
 #define HUD_SAVED_PIXELS (HUD_BAND_PIXELS * 2U)
 #define HUD_SAVED_BYTES (HUD_SAVED_PIXELS * sizeof(uint16_t))
 #define BOTTOM_HUD_Y (DOOMRPG_LOGICAL_HEIGHT - HUD_ROWS)
+#define WORLD_Y HUD_ROWS
+#define WORLD_ROWS (DOOMRPG_LOGICAL_HEIGHT - (HUD_ROWS * 2U))
+#define WORLD_PIXELS (DOOMRPG_LOGICAL_WIDTH * WORLD_ROWS)
 
 typedef struct GameplayFrameScratch_s {
     EspNativeGameplayFrameStats stats;
@@ -36,9 +40,8 @@ typedef struct GameplayFrameScratch_s {
  * shared framebuffer or the bounded temporary HUD save below. */
 static GameplayFrameScratch frameScratch;
 
-static uint32_t fnv1a(const void* data, uint32_t bytes) {
+static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
-    uint32_t hash = 2166136261U;
     uint32_t i;
     if (p == NULL && bytes != 0U) return 0U;
     for (i = 0U; i < bytes; ++i) {
@@ -48,6 +51,10 @@ static uint32_t fnv1a(const void* data, uint32_t bytes) {
     return hash;
 }
 
+static uint32_t fnv1a(const void* data, uint32_t bytes) {
+    return fnv1aUpdate(2166136261U, data, bytes);
+}
+
 static uint32_t frameFNV(void) {
     const void* framebuffer = Esp32PlatformVideo_framebuffer();
     const size_t bytes = Esp32PlatformVideo_framebufferSizeBytes();
@@ -55,6 +62,37 @@ static uint32_t frameFNV(void) {
                             (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
     if (framebuffer == NULL || bytes != expected) return 0U;
     return fnv1a(framebuffer, (uint32_t)bytes);
+}
+
+static uint32_t viewportFNV(void) {
+    const uint16_t* framebuffer =
+        (const uint16_t*)Esp32PlatformVideo_framebuffer();
+    if (framebuffer == NULL ||
+        Esp32PlatformVideo_framebufferSizeBytes() !=
+            (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                sizeof(uint16_t)) {
+        return 0U;
+    }
+    return fnv1a(framebuffer + WORLD_Y * DOOMRPG_LOGICAL_WIDTH,
+                 WORLD_PIXELS * (uint32_t)sizeof(uint16_t));
+}
+
+static uint32_t hudBandsFNV(void) {
+    const uint16_t* framebuffer =
+        (const uint16_t*)Esp32PlatformVideo_framebuffer();
+    uint32_t hash = 2166136261U;
+    if (framebuffer == NULL ||
+        Esp32PlatformVideo_framebufferSizeBytes() !=
+            (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                sizeof(uint16_t)) {
+        return 0U;
+    }
+    hash = fnv1aUpdate(hash, framebuffer,
+                       HUD_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
+    return fnv1aUpdate(
+        hash,
+        framebuffer + BOTTOM_HUD_Y * DOOMRPG_LOGICAL_WIDTH,
+        HUD_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
 }
 
 /* The historical Junction sprite milestone deliberately required one mode7
@@ -105,6 +143,7 @@ int EspNativeGameplayFrame_renderTurn(
     uint16_t* savedHud = NULL;
     uint32_t renderBeforeSpritesFNV;
     uint32_t renderAfterSpritesFNV;
+    unsigned int suppressedBefore;
     int strictSpriteWitness;
     int ok = 0;
 
@@ -116,7 +155,7 @@ int EspNativeGameplayFrame_renderTurn(
         render->framebuffer != Esp32PlatformVideo_framebuffer() ||
         render->screenX != 0 || render->screenY != 20 ||
         render->screenWidth != 160 || render->screenHeight != 80 ||
-        EspAssetPack_isOpen()) {
+        EspAssetPack_isOpen() || EspNativeGameplayPresentGate_isArmed()) {
         return 0;
     }
 
@@ -127,7 +166,12 @@ int EspNativeGameplayFrame_renderTurn(
 
     framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     stats->frameBeforeFNV = frameFNV();
-    if (framebuffer == NULL || stats->frameBeforeFNV == 0U) goto done;
+    stats->viewportBeforeFNV = viewportFNV();
+    stats->hudBandsBeforeFNV = hudBandsFNV();
+    if (framebuffer == NULL || stats->frameBeforeFNV == 0U ||
+        stats->viewportBeforeFNV == 0U || stats->hudBandsBeforeFNV == 0U) {
+        goto done;
+    }
 
     savedHud = (uint16_t*)malloc(HUD_SAVED_BYTES);
     if (savedHud == NULL) goto done;
@@ -139,14 +183,24 @@ int EspNativeGameplayFrame_renderTurn(
 
     EspNativeFirstFrame_reset();
     EspNativePlaneRenderer_reset();
+    suppressedBefore = EspNativeGameplayPresentGate_suppressedCount();
+    if (!EspNativeGameplayPresentGate_armOne()) goto done;
     if (EspNativeFirstFrame_route(render, view) != ESP_NATIVE_FIRST_FRAME_OK) {
+        EspNativeGameplayPresentGate_cancel();
         goto done;
     }
-    stats->worldPresented = 1U;
+    if (EspNativeGameplayPresentGate_isArmed() ||
+        EspNativeGameplayPresentGate_suppressedCount() != suppressedBefore + 1U) {
+        EspNativeGameplayPresentGate_cancel();
+        goto done;
+    }
+    stats->intermediatePresentSuppressed = 1U;
+
     world = EspNativeFirstFrame_view();
     planes = EspNativePlaneRenderer_view();
     if (world == NULL || planes == NULL) goto done;
     stats->worldFrameFNV = world->frameAfterFNV;
+    stats->viewportAfterWorldFNV = viewportFNV();
     stats->wallDraws = world->wallDraws;
     stats->wallPixels = world->pixelsDrawn;
     stats->planePixels = planes->pixelsRendered;
@@ -184,18 +238,25 @@ int EspNativeGameplayFrame_renderTurn(
     stats->glowDraws = sprites->glowDraws;
     stats->glowPixels = sprites->glowPixels;
     stats->spritePackReads = sprites->packReads;
+    stats->viewportAfterSpritesFNV = viewportFNV();
 
     memcpy(framebuffer, savedHud, HUD_BAND_PIXELS * sizeof(uint16_t));
     memcpy(framebuffer + BOTTOM_HUD_Y * DOOMRPG_LOGICAL_WIDTH,
            savedHud + HUD_BAND_PIXELS,
            HUD_BAND_PIXELS * sizeof(uint16_t));
+    stats->hudBandsRestoredFNV = hudBandsFNV();
+    if (stats->hudBandsRestoredFNV != stats->hudBandsBeforeFNV) goto done;
 
     if (!EspNativeGameplayHudDirection_render(angle, hud)) goto done;
     stats->hudPackReads = hud->packReads;
     stats->hudPixels = hud->pixelsWritten;
+    stats->hudBandsAfterFNV = hudBandsFNV();
     stats->angle = angle;
     stats->frameAfterFNV = frameFNV();
-    if (stats->frameAfterFNV == 0U) goto done;
+    if (stats->frameAfterFNV == 0U || stats->viewportAfterSpritesFNV == 0U ||
+        stats->hudBandsAfterFNV == 0U) {
+        goto done;
+    }
 
     if (!Esp32PlatformVideo_present()) goto done;
     stats->finalPresented = 1U;
@@ -203,6 +264,9 @@ int EspNativeGameplayFrame_renderTurn(
     ok = 1;
 
 done:
+    if (EspNativeGameplayPresentGate_isArmed()) {
+        EspNativeGameplayPresentGate_cancel();
+    }
     if (EspAssetPack_isOpen()) EspAssetPack_close();
     free(savedHud);
     if (!ok) stats->active = 0U;
