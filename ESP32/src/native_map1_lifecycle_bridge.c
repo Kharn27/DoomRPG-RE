@@ -59,6 +59,7 @@
 static unsigned int fastForwardTotalPasses;
 static int fastForwardReadyLogged;
 static int fastForwardWaitLogged;
+static int fastForwardBlockedLogged;
 
 void __real_Esp32IntroDispose_reset(void);
 void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
@@ -165,9 +166,11 @@ static void serviceValidatedPredecessors(struct DoomRPG_s* doomRpg) {
 void __wrap_Esp32IntroDispose_reset(void) {
     __real_Esp32IntroDispose_reset();
     EspProbeLog_setQuiet(0);
+    EspProbeLog_clearBlockingFailure();
     fastForwardTotalPasses = 0U;
     fastForwardReadyLogged = 0;
     fastForwardWaitLogged = 0;
+    fastForwardBlockedLogged = 0;
     resetValidatedChain();
 }
 
@@ -177,32 +180,43 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     __real_Esp32IntroDispose_service(doomRpg);
 
     /* Historical probes remain executable source-of-truth checks, but their
-     * successful chatter is no longer useful on every firmware flash. Keep
-     * failures visible, and once BSP pass-1 has completed, pipeline the already
-     * hardware-proven owners in the same strict order instead of waiting one
-     * outer game loop per ARMED/PARK boundary.
+     * successful chatter is no longer useful on every firmware flash. Pipeline
+     * the already hardware-proven owners once BSP pass-1 is complete. A probe-
+     * level FAILED/ERROR latches the fast-forward and forbids current-frame
+     * execution even if that historical probe marks itself done after recovery.
      */
     EspProbeLog_setQuiet(1);
     Esp32Map1BspPass1_service(doomRpg);
 
-    if (Esp32Map1BspPass1_isDone() &&
+    if (!EspProbeLog_hasBlockingFailure() &&
+        Esp32Map1BspPass1_isDone() &&
         !Esp32JunctionGraphicsCatalogProbe_isDone()) {
         for (pass = 0U;
              pass < VALIDATED_FAST_FORWARD_MAX_PASSES &&
-             !Esp32JunctionGraphicsCatalogProbe_isDone();
+             !Esp32JunctionGraphicsCatalogProbe_isDone() &&
+             !EspProbeLog_hasBlockingFailure();
              ++pass) {
             serviceValidatedPredecessors(doomRpg);
             ++fastForwardTotalPasses;
-            vTaskDelay(1);
+            if (!EspProbeLog_hasBlockingFailure()) vTaskDelay(1);
         }
     }
     EspProbeLog_setQuiet(0);
+
+    if (EspProbeLog_hasBlockingFailure()) {
+        if (!fastForwardBlockedLogged) {
+            printf("[NATIVEBOOT] BLOCKED predecessor probe failure after %u silent passes; current first-frame probe NOT started\n",
+                   fastForwardTotalPasses);
+            fastForwardBlockedLogged = 1;
+        }
+        return;
+    }
 
     if (!Esp32Map1BspPass1_isDone()) return;
 
     if (!Esp32JunctionGraphicsCatalogProbe_isDone()) {
         if (!fastForwardWaitLogged) {
-            printf("[NATIVEBOOT] WAIT validated predecessor chain incomplete after %u silent passes; any FAILED line above is authoritative\n",
+            printf("[NATIVEBOOT] WAIT validated predecessor chain incomplete after %u silent passes\n",
                    fastForwardTotalPasses);
             fastForwardWaitLogged = 1;
         }
