@@ -27,6 +27,8 @@
 #include "freertos/task.h"
 
 #define EXPECTED_BASE_FRAME_FNV 0xba3e5182U
+#define EXPECTED_BASE_VIEWPORT_FNV 0x9206eb24U
+#define EXPECTED_BASE_HUD_BANDS_FNV 0x6c2aa46fU
 #define EXPECTED_INITIAL_HUD_FNV 0x4756db9cU
 #define EXPECTED_INITIAL_VIEW_FNV 0xafcdcf74U
 #define EXPECTED_RESIDENT_FNV 0xbb714d80U
@@ -67,8 +69,6 @@ typedef struct TurnProbeState_s {
 } TurnProbeState;
 
 static TurnProbeState probeState;
-/* Probe-only bounded scratch. The renderer already owns a proven stack budget;
- * gameplay dispatch must not add hundreds of bytes of snapshots on top of it. */
 static TurnExecutionWorkspace executionWorkspace;
 
 static uint32_t fnv1a(const void* data, uint32_t bytes) {
@@ -182,8 +182,7 @@ static int runtimeBoundary(const DoomRPG_t* doomRpg) {
            viewRuntimeValid(view) && turnStateMatchesView(turn, view) &&
            hud != NULL && fnv1a(hud, sizeof(*hud)) == EXPECTED_INITIAL_HUD_FNV &&
            EspMapResidentLifecycle_capture(&resident) && residentCanonical(&resident) &&
-           !EspAssetPack_isOpen() &&
-           (view->viewAngle != 64 || frameFNV() == EXPECTED_BASE_FRAME_FNV);
+           !EspAssetPack_isOpen();
 }
 
 static void failProbe(const char* reason) {
@@ -258,6 +257,18 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
     frameAfter = frameFNV();
     heapAfter = heap8();
     largestAfter = largest8();
+    printf("[TURN] PHASE angle=%u viewport=%08x->world:%08x->sprites:%08x hud=%08x->restore:%08x->dir:%08x frame=%08x->%08x intermediatePresentSuppressed=%u finalPresent=%u\n",
+           (unsigned int)w->result.angleAfter,
+           (unsigned int)w->frameStats.viewportBeforeFNV,
+           (unsigned int)w->frameStats.viewportAfterWorldFNV,
+           (unsigned int)w->frameStats.viewportAfterSpritesFNV,
+           (unsigned int)w->frameStats.hudBandsBeforeFNV,
+           (unsigned int)w->frameStats.hudBandsRestoredFNV,
+           (unsigned int)w->frameStats.hudBandsAfterFNV,
+           (unsigned int)frameBefore, (unsigned int)frameAfter,
+           (unsigned int)w->frameStats.intermediatePresentSuppressed,
+           (unsigned int)w->frameStats.finalPresented);
+
     if (!legacySnapshot(probeState.doomRpg, &w->legacyAfter) ||
         !legacyEqual(&w->legacyBefore, &w->legacyAfter) ||
         !EspMapResidentLifecycle_capture(&w->residentAfter) ||
@@ -267,12 +278,23 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
         heapAfter != heapBefore || largestAfter != largestBefore ||
         frameAfter == frameBefore || w->frameStats.frameAfterFNV != frameAfter ||
         w->frameStats.temporaryHudBytes != 12800U ||
+        w->frameStats.intermediatePresentSuppressed != 1U ||
         w->frameStats.finalPresented != 1U || EspAssetPack_isOpen()) {
         failProbe("post-turn integrity");
         return 0;
     }
 
     roundTrip = w->result.angleAfter == 64U;
+    if (roundTrip &&
+        w->frameStats.viewportAfterSpritesFNV != EXPECTED_BASE_VIEWPORT_FNV) {
+        failProbe("round-trip viewport mismatch");
+        return 0;
+    }
+    if (roundTrip &&
+        w->frameStats.hudBandsAfterFNV != EXPECTED_BASE_HUD_BANDS_FNV) {
+        failProbe("round-trip HUD mismatch");
+        return 0;
+    }
     if (roundTrip && frameAfter != EXPECTED_BASE_FRAME_FNV) {
         failProbe("round-trip frame mismatch");
         return 0;
@@ -298,7 +320,7 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
                                sizeof(EspNativeGameplayTurnState)),
            (unsigned int)frameBefore, (unsigned int)frameAfter,
            roundTrip ? "exact" : "no");
-    printf("[TURN] RENDER world=%08x walls=%u/%u planes=%u sprites=%u/%u glows=%u/%u spriteReads=%u hudReads=%u hudPixels=%u tempHud=%uB presented=%u+%u heap=%u->%u largest=%u->%u stackHighWater=%u legacyStable=yes residentStable=yes turnAdvance=no tileDispatch=no facingRefresh=deferred\n",
+    printf("[TURN] RENDER world=%08x walls=%u/%u planes=%u sprites=%u/%u glows=%u/%u spriteReads=%u hudReads=%u hudPixels=%u tempHud=%uB present=intermediate-suppressed:%u/final:%u heap=%u->%u largest=%u->%u stackHighWater=%u legacyStable=yes residentStable=yes turnAdvance=no tileDispatch=no facingRefresh=deferred\n",
            (unsigned int)w->frameStats.worldFrameFNV,
            (unsigned int)w->frameStats.wallDraws,
            (unsigned int)w->frameStats.wallPixels,
@@ -311,7 +333,7 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
            (unsigned int)w->frameStats.hudPackReads,
            (unsigned int)w->frameStats.hudPixels,
            (unsigned int)w->frameStats.temporaryHudBytes,
-           (unsigned int)w->frameStats.worldPresented,
+           (unsigned int)w->frameStats.intermediatePresentSuppressed,
            (unsigned int)w->frameStats.finalPresented,
            (unsigned int)heapBefore, (unsigned int)heapAfter,
            (unsigned int)largestBefore, (unsigned int)largestAfter,
@@ -335,11 +357,6 @@ static int queueRestoredTurn(void) {
     return 1;
 }
 
-/* Temporary weak observation point from EspNativeGameplayInput_consume(). The
- * proven input probe stays the sole touch owner for the whole milestone, so
- * every TURN keeps the same neon/glyph feedback. Capture the current frame FNV
- * before the input callback paints that feedback, then wait for that exact
- * dynamic frame to be restored before queueing any render work. */
 void Esp32NativeGameplayInputProbe_observeConsumed(
     const EspNativeGameplayInputState* intent) {
     uint32_t baseline;
@@ -385,8 +402,8 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
     if (!probeState.initialized) {
         if (!Esp32JunctionGameplayInputProbe_isActive()) return;
 
-        printf("\n=== Doom RPG ESP32-native first gameplay turn dispatcher v5 ===\n");
-        printf("[TURNPROBE] CONTRACT the hardware-proven input probe remains the sole touch callback owner forever, preserving neon/glyph feedback on every press. Each consumed TURN_LEFT(+64)/TURN_RIGHT(-64) captures the current gameplay-frame FNV before feedback, waits for exact dynamic restore, queues the semantic intent, returns the full lifecycle once, then renders only on a later service. No callback ever renders. Heavy turn snapshots are static probe scratch rather than loopTask stack. All non-turn actions stay consumed/deferred by the input milestone. No Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
+        printf("\n=== Doom RPG ESP32-native first gameplay turn dispatcher v6 ===\n");
+        printf("[TURNPROBE] CONTRACT input remains sole touch owner; TURN_LEFT(+64)/TURN_RIGHT(-64) waits for exact dynamic neon restore, queues, returns the lifecycle once, then recomposes on a later service. The historical world route's physical intermediate present is now one-shot suppressed, leaving one final complete-frame presentation. Phase FNVs separate viewport from HUD-band drift. No Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
 
         heapBefore = heap8();
         largestBefore = largest8();
@@ -416,26 +433,29 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
 
-        printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u execScratchBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d initialBaseline=%08x dynamicRestore=yes heap=%u->%u largest=%u->%u stackHighWater=%u callbackOwner=input-probe permanent renderFromCallback=no\n",
+        printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u frameStatsBytes=%u execScratchBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d initialFrame=%08x initialViewport=%08x initialHudBands=%08x dynamicRestore=yes heap=%u->%u largest=%u->%u stackHighWater=%u callbackOwner=input-probe renderFromCallback=no physicalPresentsPerTurn=1\n",
                (unsigned int)sizeof(EspNativeGameplayTurnState),
                (unsigned int)sizeof(EspNativeGameplayDispatchResult),
                (unsigned int)sizeof(EspPlayerViewState),
+               (unsigned int)sizeof(EspNativeGameplayFrameStats),
                (unsigned int)sizeof(executionWorkspace),
                (unsigned int)turn->destAngle,
                turn->viewSin, turn->viewCos, turn->viewStepX, turn->viewStepY,
                (unsigned int)EXPECTED_BASE_FRAME_FNV,
+               (unsigned int)EXPECTED_BASE_VIEWPORT_FNV,
+               (unsigned int)EXPECTED_BASE_HUD_BANDS_FNV,
                (unsigned int)heapBefore, (unsigned int)heapAfter,
                (unsigned int)largestBefore, (unsigned int)largestAfter,
                stackHighWater());
-        printf("[TURNPROBE] PARK every TURN => neon feedback => exact current-frame restore => queue => full lifecycle return => native render on later service.\n");
+        printf("[TURNPROBE] PARK TURN => neon feedback => exact current-frame restore => queue => lifecycle return => single-present native render; a return to angle=64 must recover viewport=%08x hudBands=%08x frame=%08x exactly.\n",
+               (unsigned int)EXPECTED_BASE_VIEWPORT_FNV,
+               (unsigned int)EXPECTED_BASE_HUD_BANDS_FNV,
+               (unsigned int)EXPECTED_BASE_FRAME_FNV);
         return;
     }
 
     if (probeState.feedbackTurnPending && !probeState.pendingIntentValid) {
         const uint32_t baseline = probeState.feedbackBaselineFNV;
-        /* Do not race the 250 ms feedback. Once the input probe has restored
-         * the exact frame on which this press began, queue and RETURN so this
-         * entire lifecycle unwinds before the renderer is entered later. */
         if (baseline == 0U) {
             failProbe("missing feedback baseline");
             return;
