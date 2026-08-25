@@ -17,6 +17,39 @@ static int mustSurface(const char* text) {
            strstr(text, "ASSERT") != NULL;
 }
 
+/*
+ * Normal first-frame development no longer needs a transcript of already
+ * hardware-proven menu/intro decode, animation, touch and heartbeat activity.
+ * Keep the current native-frame tags visible and always surface failures.
+ */
+static int routineBootNoise(const char* text) {
+    static const char* prefixes[] = {
+        "[ALIVE]",
+        "[VIDEO] Present",
+        "[MENUTOUCH]",
+        "[TOUCH]",
+        "[MAINSTART]",
+        "[ZIP]",
+        "[BMP]",
+        "[SDL] Adopt",
+        "[INTROFIT]",
+        "[INTRO1]",
+        "[INTROCLK]",
+        "[INTROIN]",
+        "[INTRODISP]",
+        "=== Doom RPG ESP32 real MENU_MAIN",
+        "=== Doom RPG ESP32 bounded first ST_INTRO",
+        "=== Doom RPG ESP32 bounded intro disposal"
+    };
+    unsigned int i;
+
+    if (text == NULL) return 0;
+    for (i = 0U; i < sizeof(prefixes) / sizeof(prefixes[0]); ++i) {
+        if (strncmp(text, prefixes[i], strlen(prefixes[i])) == 0) return 1;
+    }
+    return 0;
+}
+
 void EspProbeLog_setQuiet(int quiet) {
     probeLogQuiet = quiet ? 1 : 0;
 }
@@ -29,7 +62,9 @@ int __wrap_printf(const char* format, ...) {
     va_list args;
     int result;
 
-    if (probeLogQuiet && !mustSurface(format)) return 0;
+    if ((probeLogQuiet || routineBootNoise(format)) && !mustSurface(format)) {
+        return 0;
+    }
 
     va_start(args, format);
     result = vprintf(format, args);
@@ -38,6 +73,6 @@ int __wrap_printf(const char* format, ...) {
 }
 
 int __wrap_puts(const char* text) {
-    if (probeLogQuiet && !mustSurface(text)) return 0;
+    if ((probeLogQuiet || routineBootNoise(text)) && !mustSurface(text)) return 0;
     return __real_puts(text);
 }
