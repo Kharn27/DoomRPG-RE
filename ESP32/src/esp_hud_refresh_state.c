@@ -20,6 +20,17 @@ const EspHudRefreshState* EspHudRefresh_view(void) {
     return EspHudRefresh_isReady() ? &hudRefreshState : NULL;
 }
 
+const EspHudRefreshState* EspHudRefresh_peek(void) {
+    return hudRefreshState.active == 1U && hudRefreshState.routed == 1U
+               ? &hudRefreshState
+               : NULL;
+}
+
+int EspHudRefresh_isPaintConsumed(void) {
+    return hudRefreshState.active == 1U && hudRefreshState.routed == 1U &&
+           hudRefreshState.refreshPending == 0U;
+}
+
 EspHudRefreshStatus EspHudRefresh_preparePostSpawn(
     const EspPlayerViewState* playerView,
     EspHudRefreshState* outState) {
@@ -59,7 +70,7 @@ EspHudRefreshStatus EspHudRefresh_routePostSpawn(void) {
     EspHudRefreshState next;
     EspHudRefreshStatus status;
 
-    if (EspHudRefresh_isReady()) return ESP_HUD_REFRESH_ALREADY_ACTIVE;
+    if (EspHudRefresh_peek() != NULL) return ESP_HUD_REFRESH_ALREADY_ACTIVE;
     playerView = EspPlayerView_view();
     if (playerView == NULL) return ESP_HUD_REFRESH_VIEW_INVALID;
 
@@ -73,4 +84,18 @@ EspHudRefreshStatus EspHudRefresh_routePostSpawn(void) {
 
     hudRefreshState = next;
     return ESP_HUD_REFRESH_OK;
+}
+
+int EspHudRefresh_consumePaint(uint8_t targetMapId,
+                               uint8_t gameplayLoadMapId,
+                               uint8_t loadType) {
+    if (!EspHudRefresh_isReady() ||
+        hudRefreshState.targetMapId != targetMapId ||
+        hudRefreshState.gameplayLoadMapId != gameplayLoadMapId ||
+        hudRefreshState.loadType != loadType) {
+        return 0;
+    }
+
+    hudRefreshState.refreshPending = 0U;
+    return EspHudRefresh_isPaintConsumed();
 }
