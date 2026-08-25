@@ -26,8 +26,8 @@
 #define EXPECTED_GAMEPLAY_FRAME_FNV 0xba3e5182U
 #define EXPECTED_GAMEPLAY_HUD_FNV 0x4756db9cU
 #define TOUCH_FEEDBACK_MS 250U
-#define TOUCH_FEEDBACK_MAX_BORDER_PIXELS 160U
-#define TOUCH_FEEDBACK_XOR 0xffffU
+#define TOUCH_FEEDBACK_MAX_EDITS 288U
+#define TOUCH_FEEDBACK_GLOW_RGB565 0x0418U
 
 typedef struct LegacySnapshot_s {
     uint32_t hud;
@@ -37,14 +37,21 @@ typedef struct LegacySnapshot_s {
     uint32_t render;
 } LegacySnapshot;
 
+typedef struct TouchFeedbackEdit_s {
+    uint16_t offset;
+    uint16_t saved;
+} TouchFeedbackEdit;
+
 typedef struct TouchFeedback_s {
-    uint16_t saved[TOUCH_FEEDBACK_MAX_BORDER_PIXELS];
+    TouchFeedbackEdit edits[TOUCH_FEEDBACK_MAX_EDITS];
     uint32_t expiresMs;
     uint16_t count;
     uint8_t left;
     uint8_t top;
     uint8_t right;
     uint8_t bottom;
+    uint8_t action;
+    uint8_t zone;
     uint8_t active;
     uint8_t reserved;
 } TouchFeedback;
@@ -163,6 +170,7 @@ static int pureHitTestContract(void) {
         uint8_t bottom;
     } tests[] = {
         {16, 10, ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN, ESP_NATIVE_GAMEPLAY_ZONE_MENU, 0, 0, 31, 19},
+        {80, 10, ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN, ESP_NATIVE_GAMEPLAY_ZONE_PASS_TURN, 32, 0, 127, 19},
         {144, 10, ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP, ESP_NATIVE_GAMEPLAY_ZONE_AUTOMAP, 128, 0, 159, 19},
         {26, 32, ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT, ESP_NATIVE_GAMEPLAY_ZONE_MOVE_LEFT, 0, 20, 52, 45},
         {79, 32, ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD, ESP_NATIVE_GAMEPLAY_ZONE_MOVE_FORWARD, 53, 20, 105, 45},
@@ -171,8 +179,7 @@ static int pureHitTestContract(void) {
         {79, 59, ESP_NATIVE_GAMEPLAY_ACTION_SELECT, ESP_NATIVE_GAMEPLAY_ZONE_SELECT, 53, 46, 105, 72},
         {132, 59, ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT, ESP_NATIVE_GAMEPLAY_ZONE_TURN_RIGHT, 106, 46, 159, 72},
         {26, 86, ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON, ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON, 0, 73, 52, 99},
-        {79, 86, ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK, ESP_NATIVE_GAMEPLAY_ZONE_MOVE_BACK, 53, 73, 105, 99},
-        {132, 86, ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN, ESP_NATIVE_GAMEPLAY_ZONE_PASS_TURN, 106, 73, 159, 99}
+        {79, 86, ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK, ESP_NATIVE_GAMEPLAY_ZONE_MOVE_BACK, 53, 73, 105, 99}
     };
     unsigned int i;
 
@@ -191,7 +198,7 @@ static int pureHitTestContract(void) {
         }
     }
 
-    if (EspNativeGameplayInput_classify(80, 10, &hit) !=
+    if (EspNativeGameplayInput_classify(132, 86, &hit) !=
             ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT ||
         EspNativeGameplayInput_classify(80, 110, &hit) !=
             ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT ||
@@ -221,14 +228,144 @@ static void printZone(int logicalX, int logicalY) {
            (((unsigned int)hit.bottom + 1U) * DOOMRPG_INTEGER_SCALE) - 1U);
 }
 
-static int writeFeedbackPixel(uint16_t* framebuffer, int x, int y) {
+static uint16_t glowAdd565(uint16_t destination) {
+    unsigned int r = ((destination >> 11) & 31U) +
+                     ((TOUCH_FEEDBACK_GLOW_RGB565 >> 11) & 31U);
+    unsigned int g = ((destination >> 5) & 63U) +
+                     ((TOUCH_FEEDBACK_GLOW_RGB565 >> 5) & 63U);
+    unsigned int b = (destination & 31U) +
+                     (TOUCH_FEEDBACK_GLOW_RGB565 & 31U);
+    if (r > 31U) r = 31U;
+    if (g > 63U) g = 63U;
+    if (b > 31U) b = 31U;
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+static int editFeedbackPixel(uint16_t* framebuffer, int x, int y) {
     TouchFeedback* feedback = &probeState.feedback;
+    TouchFeedbackEdit* edit;
     uint16_t* pixel;
-    if (feedback->count >= TOUCH_FEEDBACK_MAX_BORDER_PIXELS) return 0;
-    pixel = framebuffer + y * DOOMRPG_LOGICAL_WIDTH + x;
-    feedback->saved[feedback->count++] = *pixel;
-    *pixel ^= TOUCH_FEEDBACK_XOR;
+    unsigned int offset;
+
+    if (x < 0 || x >= DOOMRPG_LOGICAL_WIDTH ||
+        y < 0 || y >= DOOMRPG_LOGICAL_HEIGHT) {
+        return 0;
+    }
+    if (feedback->count >= TOUCH_FEEDBACK_MAX_EDITS) return 0;
+
+    offset = (unsigned int)y * DOOMRPG_LOGICAL_WIDTH + (unsigned int)x;
+    edit = &feedback->edits[feedback->count++];
+    pixel = framebuffer + offset;
+    edit->offset = (uint16_t)offset;
+    edit->saved = *pixel;
+    *pixel = glowAdd565(*pixel);
     return 1;
+}
+
+static int drawFeedbackLine(uint16_t* framebuffer,
+                            int x0, int y0, int x1, int y1) {
+    int dx = x1 >= x0 ? x1 - x0 : x0 - x1;
+    int sx = x0 < x1 ? 1 : -1;
+    int dyAbs = y1 >= y0 ? y1 - y0 : y0 - y1;
+    int dy = -dyAbs;
+    int sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+
+    for (;;) {
+        if (!editFeedbackPixel(framebuffer, x0, y0)) return 0;
+        if (x0 == x1 && y0 == y1) break;
+        {
+            const int e2 = err << 1;
+            if (e2 >= dy) {
+                err += dy;
+                x0 += sx;
+            }
+            if (e2 <= dx) {
+                err += dx;
+                y0 += sy;
+            }
+        }
+    }
+    return 1;
+}
+
+static int drawCardinalArrow(uint16_t* framebuffer,
+                             int cx, int cy, int dx, int dy) {
+    if (dx < 0) {
+        return drawFeedbackLine(framebuffer, cx + 5, cy, cx - 4, cy) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy, cx - 1, cy - 4) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy, cx - 1, cy + 4);
+    }
+    if (dx > 0) {
+        return drawFeedbackLine(framebuffer, cx - 5, cy, cx + 4, cy) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy, cx + 1, cy - 4) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy, cx + 1, cy + 4);
+    }
+    if (dy < 0) {
+        return drawFeedbackLine(framebuffer, cx, cy + 5, cx, cy - 4) &&
+               drawFeedbackLine(framebuffer, cx, cy - 5, cx - 4, cy - 1) &&
+               drawFeedbackLine(framebuffer, cx, cy - 5, cx + 4, cy - 1);
+    }
+    return drawFeedbackLine(framebuffer, cx, cy - 5, cx, cy + 4) &&
+           drawFeedbackLine(framebuffer, cx, cy + 5, cx - 4, cy + 1) &&
+           drawFeedbackLine(framebuffer, cx, cy + 5, cx + 4, cy + 1);
+}
+
+static int drawActionGlyph(uint16_t* framebuffer,
+                           const EspNativeGameplayTouchHit* hit) {
+    const int cx = ((int)hit->left + (int)hit->right) >> 1;
+    const int cy = ((int)hit->top + (int)hit->bottom) >> 1;
+
+    switch (hit->action) {
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT:
+        return drawCardinalArrow(framebuffer, cx, cy, -1, 0);
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
+        return drawCardinalArrow(framebuffer, cx, cy, 0, -1);
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT:
+        return drawCardinalArrow(framebuffer, cx, cy, 1, 0);
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK:
+        return drawCardinalArrow(framebuffer, cx, cy, 0, 1);
+    case ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT:
+        return drawFeedbackLine(framebuffer, cx + 5, cy + 4, cx + 5, cy - 2) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy - 2, cx - 4, cy - 2) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy - 2, cx - 1, cy - 5) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy - 2, cx - 1, cy + 1);
+    case ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT:
+        return drawFeedbackLine(framebuffer, cx - 5, cy + 4, cx - 5, cy - 2) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy - 2, cx + 4, cy - 2) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy - 2, cx + 1, cy - 5) &&
+               drawFeedbackLine(framebuffer, cx + 5, cy - 2, cx + 1, cy + 1);
+    case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
+        return drawFeedbackLine(framebuffer, cx - 5, cy, cx - 2, cy) &&
+               drawFeedbackLine(framebuffer, cx + 2, cy, cx + 5, cy) &&
+               drawFeedbackLine(framebuffer, cx, cy - 5, cx, cy - 2) &&
+               drawFeedbackLine(framebuffer, cx, cy + 2, cx, cy + 5) &&
+               editFeedbackPixel(framebuffer, cx, cy);
+    case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
+        return drawFeedbackLine(framebuffer, cx - 5, cy - 4, cx - 1, cy) &&
+               drawFeedbackLine(framebuffer, cx - 1, cy, cx - 5, cy + 4) &&
+               drawFeedbackLine(framebuffer, cx, cy - 4, cx + 4, cy) &&
+               drawFeedbackLine(framebuffer, cx + 4, cy, cx, cy + 4);
+    case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN:
+        return drawFeedbackLine(framebuffer, cx - 5, cy - 4, cx + 5, cy - 4) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy, cx + 5, cy) &&
+               drawFeedbackLine(framebuffer, cx - 5, cy + 4, cx + 5, cy + 4);
+    case ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP:
+        return drawFeedbackLine(framebuffer, cx - 6, cy + 4, cx - 6, cy - 4) &&
+               drawFeedbackLine(framebuffer, cx - 6, cy - 4, cx - 2, cy - 2) &&
+               drawFeedbackLine(framebuffer, cx - 2, cy - 2, cx + 2, cy - 4) &&
+               drawFeedbackLine(framebuffer, cx + 2, cy - 4, cx + 6, cy - 2) &&
+               drawFeedbackLine(framebuffer, cx + 6, cy - 2, cx + 6, cy + 4) &&
+               drawFeedbackLine(framebuffer, cx - 2, cy - 2, cx - 2, cy + 4) &&
+               drawFeedbackLine(framebuffer, cx + 2, cy - 4, cx + 2, cy + 2);
+    case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN:
+        return drawFeedbackLine(framebuffer, cx - 6, cy, cx + 2, cy) &&
+               drawFeedbackLine(framebuffer, cx + 3, cy, cx, cy - 3) &&
+               drawFeedbackLine(framebuffer, cx + 3, cy, cx, cy + 3) &&
+               drawFeedbackLine(framebuffer, cx + 6, cy - 5, cx + 6, cy + 5);
+    default:
+        return 0;
+    }
 }
 
 static int drawFeedback(const EspNativeGameplayTouchHit* hit) {
@@ -243,23 +380,26 @@ static int drawFeedback(const EspNativeGameplayTouchHit* hit) {
     feedback->top = hit->top;
     feedback->right = hit->right;
     feedback->bottom = hit->bottom;
+    feedback->action = hit->action;
+    feedback->zone = hit->zone;
+    feedback->active = 1U;
 
     for (x = hit->left; x <= hit->right; ++x) {
-        if (!writeFeedbackPixel(framebuffer, x, hit->top)) return 0;
+        if (!editFeedbackPixel(framebuffer, x, hit->top)) return 0;
     }
     if (hit->bottom != hit->top) {
         for (x = hit->left; x <= hit->right; ++x) {
-            if (!writeFeedbackPixel(framebuffer, x, hit->bottom)) return 0;
+            if (!editFeedbackPixel(framebuffer, x, hit->bottom)) return 0;
         }
     }
     for (y = hit->top + 1; y < hit->bottom; ++y) {
-        if (!writeFeedbackPixel(framebuffer, hit->left, y)) return 0;
+        if (!editFeedbackPixel(framebuffer, hit->left, y)) return 0;
         if (hit->right != hit->left &&
-            !writeFeedbackPixel(framebuffer, hit->right, y)) return 0;
+            !editFeedbackPixel(framebuffer, hit->right, y)) return 0;
     }
+    if (!drawActionGlyph(framebuffer, hit)) return 0;
 
     feedback->expiresMs = nowMs() + TOUCH_FEEDBACK_MS;
-    feedback->active = 1U;
     return 1;
 }
 
@@ -270,9 +410,7 @@ static int restoreFeedback(int present) {
     uint32_t heapAfter;
     uint32_t largestBefore;
     uint32_t largestAfter;
-    uint16_t index = 0U;
-    int x;
-    int y;
+    uint16_t index;
     int ok = 1;
 
     if (!feedback->active) return 1;
@@ -281,28 +419,13 @@ static int restoreFeedback(int present) {
     heapBefore = heap8();
     largestBefore = largest8();
 
-    for (x = feedback->left; x <= feedback->right; ++x) {
-        framebuffer[feedback->top * DOOMRPG_LOGICAL_WIDTH + x] =
-            feedback->saved[index++];
-    }
-    if (feedback->bottom != feedback->top) {
-        for (x = feedback->left; x <= feedback->right; ++x) {
-            framebuffer[feedback->bottom * DOOMRPG_LOGICAL_WIDTH + x] =
-                feedback->saved[index++];
-        }
-    }
-    for (y = feedback->top + 1; y < feedback->bottom; ++y) {
-        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + feedback->left] =
-            feedback->saved[index++];
-        if (feedback->right != feedback->left) {
-            framebuffer[y * DOOMRPG_LOGICAL_WIDTH + feedback->right] =
-                feedback->saved[index++];
-        }
+    index = feedback->count;
+    while (index > 0U) {
+        const TouchFeedbackEdit* edit = &feedback->edits[--index];
+        framebuffer[edit->offset] = edit->saved;
     }
 
-    if (index != feedback->count || frameFNV() != EXPECTED_GAMEPLAY_FRAME_FNV) {
-        ok = 0;
-    }
+    if (frameFNV() != EXPECTED_GAMEPLAY_FRAME_FNV) ok = 0;
     if (ok && present && !Esp32PlatformVideo_present()) ok = 0;
 
     heapAfter = heap8();
@@ -318,8 +441,8 @@ static int restoreFeedback(int present) {
                (unsigned int)largestBefore, (unsigned int)largestAfter);
     }
     else {
-        printf("[NATIVEINPUT] FAILED feedback restore pixels=%u/%u frame=%08x present=%d heap=%u->%u largest=%u->%u\n",
-               (unsigned int)index, (unsigned int)feedback->count,
+        printf("[NATIVEINPUT] FAILED feedback restore edits=%u frame=%08x present=%d heap=%u->%u largest=%u->%u\n",
+               (unsigned int)feedback->count,
                (unsigned int)frameFNV(), present,
                (unsigned int)heapBefore, (unsigned int)heapAfter,
                (unsigned int)largestBefore, (unsigned int)largestAfter);
@@ -389,7 +512,7 @@ static void onGameplayTap(int16_t screenX,
     if (classifyStatus == ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT) {
         ++probeState.misses;
         if (hadFeedback) presentRestored = Esp32PlatformVideo_present();
-        printf("[NATIVEINPUT] MISS n=%u logical=%d,%d bottomHUD/upper-center=unbound frame=%08x restoredPresent=%d gameplay=no\n",
+        printf("[NATIVEINPUT] MISS n=%u logical=%d,%d unbound=bottom-right-or-bottom-HUD frame=%08x restoredPresent=%d gameplay=no\n",
                (unsigned int)probeState.misses,
                logicalX, logicalY,
                (unsigned int)frameFNV(), presentRestored);
@@ -433,10 +556,11 @@ static void onGameplayTap(int16_t screenX,
     }
 
     if (!drawFeedback(&hit) || !Esp32PlatformVideo_present()) {
-        printf("[NATIVEINPUT] FAILED feedback draw action=%s zone=%u pixels=%u frame=%08x\n",
+        printf("[NATIVEINPUT] FAILED feedback draw action=%s zone=%u edits=%u/%u frame=%08x\n",
                EspNativeGameplayInput_actionName(hit.action),
                (unsigned int)hit.zone,
                (unsigned int)probeState.feedback.count,
+               (unsigned int)TOUCH_FEEDBACK_MAX_EDITS,
                (unsigned int)frameFNV());
         (void)restoreFeedback(1);
         probeState.failed = 1U;
@@ -472,8 +596,9 @@ static void onGameplayTap(int16_t screenX,
            (unsigned int)consumed.zone,
            (unsigned int)consumed.logicalX,
            (unsigned int)consumed.logicalY);
-    printf("[NATIVEINPUT] FEEDBACK zone=%u logical=x%u..%u y%u..%u physical=x%u..%u y%u..%u borderPixels=%u hold=%ums frame=%08x->%08x heapDelta=0 largestDelta=0\n",
+    printf("[NATIVEINPUT] FEEDBACK zone=%u action=%s logical=x%u..%u y%u..%u physical=x%u..%u y%u..%u edits=%u hold=%ums style=additive-cyan-border+vector-glyph frame=%08x->%08x heapDelta=0 largestDelta=0\n",
            (unsigned int)hit.zone,
+           EspNativeGameplayInput_actionName(hit.action),
            (unsigned int)hit.left, (unsigned int)hit.right,
            (unsigned int)hit.top, (unsigned int)hit.bottom,
            (unsigned int)hit.left * DOOMRPG_INTEGER_SCALE,
@@ -520,7 +645,7 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
     if (!Esp32JunctionGameplayHudProbe_isDone()) return;
 
     printf("\n=== Doom RPG ESP32-native invisible gameplay touch pad ===\n");
-    printf("[NATIVEINPUTPROBE] CONTRACT calibrated CYD press -> logical 160x120 -> invisible Doom RPG keypad intent; 3x3 only on world viewport, MENU/AUTOMAP on top bar corners, bottom HUD and top center unbound; one compact pointer-free pending owner, unsupported/busy fail closed; this milestone consumes every intent in the probe and performs NO movement, turn, select, weapon, menu, automap, entity or world mutation; feedback is a 250ms allocation-free exact-restoring border overlay with on-demand presentation only\n");
+    printf("[NATIVEINPUTPROBE] CONTRACT calibrated CYD press -> logical 160x120 -> invisible Doom RPG keypad intent; eight active world zones with bottom-right deliberately free, MENU/PASS_TURN/AUTOMAP own the top HUD left/message/right zones, one cyclic NEXT_WEAPON touch is sufficient because weapon selection wraps; one compact pointer-free pending owner, unsupported/busy fail closed; this milestone consumes every intent in the probe and performs NO movement, turn, select, weapon, menu, automap, entity or world mutation; feedback is a 250ms allocation-free exact-restoring additive glow border plus action-specific vector glyph\n");
 
     heapBefore = heap8();
     largestBefore = largest8();
@@ -582,6 +707,7 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     printZone(16, 10);
+    printZone(80, 10);
     printZone(144, 10);
     printZone(26, 32);
     printZone(79, 32);
@@ -591,15 +717,15 @@ void Esp32JunctionGameplayInputProbe_service(struct DoomRPG_s* doomRpgBase) {
     printZone(132, 59);
     printZone(26, 86);
     printZone(79, 86);
-    printZone(132, 86);
 
-    printf("[NATIVEINPUTPROBE] READY stateBytes=%u hitBytes=%u feedbackBytes=%u baseline=%08x touch=physical-calibrated/x2 logical releaseDebounce=50ms feedback=%ums heap=%u->%u largest=%u->%u dispatch=deferred gameplay=no\n",
+    printf("[NATIVEINPUTPROBE] READY stateBytes=%u hitBytes=%u feedbackBytes=%u maxEdits=%u baseline=%08x touch=physical-calibrated/x2 logical releaseDebounce=50ms feedback=%ums style=additive-cyan-border+vector-glyph heap=%u->%u largest=%u->%u dispatch=deferred gameplay=no\n",
            (unsigned int)sizeof(EspNativeGameplayInputState),
            (unsigned int)sizeof(EspNativeGameplayTouchHit),
            (unsigned int)sizeof(TouchFeedback),
+           (unsigned int)TOUCH_FEEDBACK_MAX_EDITS,
            (unsigned int)EXPECTED_GAMEPLAY_FRAME_FNV,
            (unsigned int)TOUCH_FEEDBACK_MS,
            (unsigned int)heapBefore, (unsigned int)heapAfter,
            (unsigned int)largestBefore, (unsigned int)largestAfter);
-    printf("[NATIVEINPUTPROBE] PARK tap all 11 zones; each valid tap must log INTENT + transient FEEDBACK then exact RESTORE; no action is executed yet\n");
+    printf("[NATIVEINPUTPROBE] PARK tap all 11 active zones plus bottom-right MISS; every valid tap must log INTENT + glow/glyph FEEDBACK then exact RESTORE; no action is executed yet\n");
 }
