@@ -18,10 +18,12 @@ typedef struct EspNativeGameplayHudDirectionStats_s {
     uint8_t reserved;
 } EspNativeGameplayHudDirectionStats;
 
-/* Repaint only the bottom-HUD compass panel for one cardinal angle. The panel
- * background is reconstructed from the same 20x20 k.bmp tile phase used by the
- * hardware-proven full HUD, then o.bmp and the one-character a.bmp glyph are
- * redrawn. No HUD/game/player legacy owner is touched. */
+/* Repaint only the exact bottom-HUD compass dirty rectangle for one cardinal
+ * angle. The horizontal range is derived from the real o.bmp arrow width plus
+ * the one-character a.bmp direction glyph, so neighboring ammo/icon pixels are
+ * never cleared. The background is reconstructed from the same 20x20 k.bmp
+ * tile phase used by the hardware-proven full HUD. No HUD/game/player legacy
+ * owner is touched. */
 int EspNativeGameplayHudDirection_render(
     uint8_t angle,
     EspNativeGameplayHudDirectionStats* outStats);
