@@ -22,6 +22,7 @@
 #define MAX_DIM 64
 #define MAX_MASK 512U
 #define MAX_TEXELS 2048U
+#define MAX_BSP_DEPTH 64U
 #define SCREEN_W 160
 
 #define VISUAL_MASK 0x0001fe00UL
@@ -42,17 +43,36 @@
 #define ENEMY_TYPE 1U
 
 typedef struct Sources_s {
-    EspAssetPackEntry mappings, palettes, bitshapes, wtexels, stexels;
-    uint32_t texelPairs, bitShapePairs, textureIds, spriteIds;
-    uint32_t spritePairBase, spriteIdBase, paletteEntries;
-    uint32_t wallBytes, spriteBytes;
+    EspAssetPackEntry mappings;
+    EspAssetPackEntry palettes;
+    EspAssetPackEntry bitshapes;
+    EspAssetPackEntry wtexels;
+    EspAssetPackEntry stexels;
+    uint32_t texelPairs;
+    uint32_t bitShapePairs;
+    uint32_t textureIds;
+    uint32_t spriteIds;
+    uint32_t spritePairBase;
+    uint32_t spriteIdBase;
+    uint32_t paletteEntries;
+    uint32_t wallBytes;
+    uint32_t spriteBytes;
 } Sources;
 
 typedef struct Frame_s {
-    uint16_t logical, actual;
+    uint16_t logical;
+    uint16_t actual;
     uint32_t texelOffset;
-    int xMin, xMax, yMin, yMax, width, height, pitch;
-    uint32_t maskBytes, active, packedBytes;
+    int xMin;
+    int xMax;
+    int yMin;
+    int yMax;
+    int width;
+    int height;
+    int pitch;
+    uint32_t maskBytes;
+    uint32_t active;
+    uint32_t packedBytes;
     uint16_t palette[16];
     uint16_t prefix[MAX_DIM + 1];
     uint8_t mask[MAX_MASK];
@@ -60,17 +80,34 @@ typedef struct Frame_s {
 } Frame;
 
 typedef struct Order_s {
-    uint16_t index, logical;
+    uint16_t index;
+    uint16_t logical;
     uint32_t info;
     int32_t sortZ;
 } Order;
 
 typedef struct Scratch_s {
-    int viewCos_, viewSin_, viewTransX, viewSin, viewCos, viewTransY;
-    int viewX, viewY, viewZ, viewAngle;
-    int lineCount, lineRasterCount, nodeCount, nodeRasterCount;
-    int spriteCount, spriteRasterCount;
-    int screenLeft, screenTop, screenRight, screenBottom, numLines;
+    int viewCos_;
+    int viewSin_;
+    int viewTransX;
+    int viewSin;
+    int viewCos;
+    int viewTransY;
+    int viewX;
+    int viewY;
+    int viewZ;
+    int viewAngle;
+    int lineCount;
+    int lineRasterCount;
+    int nodeCount;
+    int nodeRasterCount;
+    int spriteCount;
+    int spriteRasterCount;
+    int screenLeft;
+    int screenTop;
+    int screenRight;
+    int screenBottom;
+    int numLines;
     byte spanMode;
     short* pixels;
     Line_t tmpLine;
@@ -88,14 +125,16 @@ static uint16_t le16(const uint8_t* p) {
 }
 
 static uint32_t le32(const uint8_t* p) {
-    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
-           ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+    return (uint32_t)p[0] |
+           ((uint32_t)p[1] << 8) |
+           ((uint32_t)p[2] << 16) |
+           ((uint32_t)p[3] << 24);
 }
 
 static uint32_t fnv(uint32_t h, const void* data, uint32_t n) {
     const uint8_t* p = (const uint8_t*)data;
     uint32_t i;
-    for (i = 0; i < n; ++i) {
+    for (i = 0U; i < n; ++i) {
         h ^= p[i];
         h *= 16777619U;
     }
@@ -212,6 +251,13 @@ static int setupView(Render_t* r, const EspPlayerViewState* v) {
     r->screenTop = 0;
     r->screenRight = SCREEN_W;
     r->screenBottom = 80;
+    r->lineCount = 0;
+    r->lineRasterCount = 0;
+    r->nodeCount = 0;
+    r->nodeRasterCount = 0;
+    r->spriteCount = 0;
+    r->spriteRasterCount = 0;
+    r->spanMode = 0;
 
     for (x = 0; x < SCREEN_W; ++x) {
         r->columnScale[x] = MAXINT;
@@ -278,52 +324,111 @@ static int depthColumns(Render_t* r, Line_t* l) {
     return 1;
 }
 
-static int rebuildDepth(Render_t* r,
-                        const EspMapRuntimeView* rt,
-                        EspNativeJunctionSpriteStats* s) {
+static int depthLine(Render_t* r,
+                     uint32_t lineIndex,
+                     EspNativeJunctionSpriteStats* s) {
+    EspMapLine src;
+    Line_t l;
+    Vertex_t tmp;
+
+    if (!EspMapRuntime_getLine(lineIndex, &src)) return 0;
+    sourceLine(&src, &l);
+    r->numLines = (int)lineIndex;
+    ++s->depthLines;
+
+    if (((l.vert1.x - r->viewX) * (l.vert2.y - l.vert1.y)) +
+        ((l.vert1.y - r->viewY) * (-(l.vert2.x - l.vert1.x))) <= 0) {
+        if ((l.flags & TWO_SIDED) == 0) {
+            ++s->depthBackfaceCulled;
+            return 1;
+        }
+        tmp = l.vert1;
+        l.vert1 = l.vert2;
+        l.vert2 = tmp;
+    }
+
+    Render_transform2DVerts(r, &l.vert1);
+    Render_transform2DVerts(r, &l.vert2);
+    if (!Render_clipLine(r, &l)) {
+        ++s->depthClipCulled;
+        return 1;
+    }
+    Render_projectVertex(r, &l.vert1);
+    Render_projectVertex(r, &l.vert2);
+
+    if ((l.flags & OCCLUDER) != 0) {
+        Render_occludeClippedLine(r, &l);
+        ++s->depthOccluders;
+        return 1;
+    }
+    if ((l.flags & SPRITE_SPAN) != 0) {
+        ++s->depthSpriteSpans;
+        return 1;
+    }
+    return depthColumns(r, &l);
+}
+
+static int walkDepthNode(Render_t* r,
+                         const EspMapRuntimeView* rt,
+                         uint32_t nodeIndex,
+                         uint32_t depth,
+                         EspNativeJunctionSpriteStats* s) {
+    EspMapNode compact;
+    Node_t node;
+    uint32_t lineStart;
+    uint32_t lineCount;
+    uint32_t first;
+    uint32_t second;
+    uint32_t split;
     uint32_t i;
 
-    for (i = 0U; i < rt->lineCount; ++i) {
-        EspMapLine src;
-        Line_t l;
-        Vertex_t tmp;
+    if (r == NULL || rt == NULL || s == NULL || depth > MAX_BSP_DEPTH ||
+        nodeIndex >= rt->nodeCount || !EspMapRuntime_getNode(nodeIndex, &compact)) {
+        return 0;
+    }
 
-        if (!EspMapRuntime_getLine(i, &src)) return 0;
-        sourceLine(&src, &l);
-        ++s->depthLines;
+    memset(&node, 0, sizeof(node));
+    node.x1 = (short)compact.x1;
+    node.y1 = (short)compact.y1;
+    node.x2 = (short)compact.x2;
+    node.y2 = (short)compact.y2;
+    node.args1 = (int)compact.args1;
+    node.args2 = (int)compact.args2;
 
-        if (((l.vert1.x - r->viewX) * (l.vert2.y - l.vert1.y)) +
-            ((l.vert1.y - r->viewY) * (-(l.vert2.x - l.vert1.x))) <= 0) {
-            if ((l.flags & TWO_SIDED) == 0) {
-                ++s->depthBackfaceCulled;
-                continue;
-            }
-            tmp = l.vert1;
-            l.vert1 = l.vert2;
-            l.vert2 = tmp;
-        }
+    ++r->nodeCount;
+    ++s->depthNodes;
+    if (Render_cullBoundingBox(r, &node)) {
+        ++s->depthNodeCulled;
+        return 1;
+    }
 
-        Render_transform2DVerts(r, &l.vert1);
-        Render_transform2DVerts(r, &l.vert2);
-        if (!Render_clipLine(r, &l)) {
-            ++s->depthClipCulled;
-            continue;
-        }
-        Render_projectVertex(r, &l.vert1);
-        Render_projectVertex(r, &l.vert2);
-
-        if ((l.flags & OCCLUDER) != 0) {
-            Render_occludeClippedLine(r, &l);
-            ++s->depthOccluders;
-        }
-        else if ((l.flags & SPRITE_SPAN) != 0) {
-            ++s->depthSpriteSpans;
-        }
-        else if (!depthColumns(r, &l)) {
+    if ((compact.args1 & 0x30000U) == 0U) {
+        lineStart = compact.args2 & 0xffffU;
+        lineCount = (compact.args2 >> 16) & 0xffffU;
+        if (lineStart > rt->lineCount || lineCount > rt->lineCount - lineStart) {
             return 0;
         }
+        ++r->nodeRasterCount;
+        ++s->depthLeaves;
+        r->lineCount += (int)lineCount;
+        for (i = 0U; i < lineCount; ++i) {
+            if (!depthLine(r, lineStart + i, s)) return 0;
+        }
+        return 1;
     }
-    return 1;
+
+    first = (compact.args2 >> 16) & 0xffffU;
+    second = compact.args2 & 0xffffU;
+    if (first >= rt->nodeCount || second >= rt->nodeCount) return 0;
+
+    split = compact.args1 & 0xffffU;
+    if (((compact.args1 & 0x20000U) == 0U || r->viewY <= (int)split) &&
+        ((compact.args1 & 0x10000U) == 0U || r->viewX <= (int)split)) {
+        return walkDepthNode(r, rt, first, depth + 1U, s) &&
+               walkDepthNode(r, rt, second, depth + 1U, s);
+    }
+    return walkDepthNode(r, rt, second, depth + 1U, s) &&
+           walkDepthNode(r, rt, first, depth + 1U, s);
 }
 
 static int initSources(Sources* c, EspNativeJunctionSpriteStats* s) {
@@ -397,7 +502,7 @@ static int loadFrame(const Sources* c,
     uint32_t stexOff;
     uint32_t p;
 
-    if (logical >= c->spriteIds ||
+    if (logical >= c->spriteIds || logical >= 256U ||
         EspNativeGraphicsCatalog_findSprite(logical) == NULL) {
         return 0;
     }
@@ -773,21 +878,17 @@ int EspNativeJunctionSprite_render(struct Render_s* renderBase,
         !EspMapSpriteTopology_isReady() ||
         !EspNativeGraphicsCatalog_isReady() || EspAssetPack_isOpen() ||
         r->screenWidth != SCREEN_W || r->columnScale == NULL ||
-        r->framebuffer == NULL) {
+        r->framebuffer == NULL || rt->nodeCount == 0U || rt->lineCount == 0U) {
         return 0;
     }
 
-    /* Keep the large bitshape/mask/order scratch out of permanent DRAM/BSS.
-     * One bounded workspace exists only while this overlay is rendered and is
-     * released before the caller checks heap/largest-block integrity.
-     */
     workspace = (SpriteWorkspace*)malloc(sizeof(*workspace));
     if (workspace == NULL) return 0;
     memset(workspace, 0, sizeof(*workspace));
     memset(&s, 0, sizeof(s));
     saveScratch(r, &saved);
 
-    if (!setupView(r, v) || !rebuildDepth(r, rt, &s) ||
+    if (!setupView(r, v) || !walkDepthNode(r, rt, 0U, 0U, &s) ||
         !buildOrder(r, rt, workspace->order, &s, &n)) {
         goto done;
     }
