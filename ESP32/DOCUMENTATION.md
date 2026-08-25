@@ -18,167 +18,117 @@ If chat history and repository state disagree, current GitHub `main` + `PORTING_
 | [`MAP1_NATIVE_GRAPHICS_CATALOG.md`](MAP1_NATIVE_GRAPHICS_CATALOG.md) | compact PAK-backed graphics catalog | #87 | `91a17414859fa12a0553e5b011956b6f95165780` |
 | [`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md) | first Junction walls+planes frame + permanent CYD panel profile | #88 | `d8da51e5a3b9700d1806110f56f553a422d7d182` |
 | [`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md) | BSP-visible native Junction billboard rendering | #89 | `674b45bbd115cd8f9202f2ce2d7132550c3bb75e` |
+| [`MAP1_NATIVE_JUNCTION_GLOWS.md`](MAP1_NATIVE_JUNCTION_GLOWS.md) | dependency-closed additive Junction glow companions | #90 | `30351fd0a867e18dad171962b00d70923b4d173f` |
 
 Older archives remain available in Git history; `PORTING_STATUS.md` is the preferred recovery entry point.
 
 ## Latest merged boundary
 
-PR #89 established the first hardware-proven BSP-visible native billboard pass on Junction.
+PR #90 established the dependency-closed current Junction sprite set and seven native additive glow companions.
 
 ```text
-main=674b45bbd115cd8f9202f2ce2d7132550c3bb75e
-base world frame=8910c2ed
-base sprite frame=299506eb
-base sprite viewport=ae2246eb
-mapSprites=48
-BSP-visible candidates=21
-BSP-rejected=27
-modes=0:14 / 7:7
+main=30351fd0a867e18dad171962b00d70923b4d173f
+closedCatalogFNV=257444a5
+complete sprite+glow frame=b5218f24
+complete viewportFNV=9206eb24
 shapeData=NULL
 mediaTexels=NULL
 ```
 
-Merged evidence: [`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md).
+Merged evidence: [`MAP1_NATIVE_JUNCTION_GLOWS.md`](MAP1_NATIVE_JUNCTION_GLOWS.md).
 
 ## Current merge-ready milestone
 
-[`MAP1_NATIVE_JUNCTION_GLOWS.md`](MAP1_NATIVE_JUNCTION_GLOWS.md) records the current real-CYD PASS.
+[`MAP1_NATIVE_GAMEPLAY_HUD.md`](MAP1_NATIVE_GAMEPLAY_HUD.md) records the current real-CYD PASS.
 
 ```text
-branch=agent/esp32-native-junction-glows
-base=674b45bbd115cd8f9202f2ce2d7132550c3bb75e
-hardware-tested firmware=338388ee4166115585e2c964aa95e79d5b0313eb
+branch=agent/esp32-native-gameplay-hud
+base=30351fd0a867e18dad171962b00d70923b4d173f
+hardware-tested firmware=fa6b0d2ab4c1ec2598b92dfe635a84ff50a74867
 status=REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-### Direct catalog predecessor
+### Native HUD boundary
+
+The current fresh-Junction pose now paints the original compact gameplay HUD natively:
 
 ```text
-stateFNV=969d5a77
-textures=30
-sprites=16
-storage=1840 B
-textureFNV=2dd5dfcf
-spriteFNV=cfd036cf
+top band=0..19
+world viewport=20..99 / 160x80
+bottom band=100..119
+health=30/30
+armor=0/20
+weapon=2 / pistol
+ammoType=1
+ammo=8
+face=0 / normal
+direction=N
 ```
 
-### Native dependency closure
+The user visually confirmed the HUD on the physical classic CYD.
 
-The current Junction view requires the legacy implicit family:
+### PAK-backed HUD resources
 
-```text
-135/140 -> companion logical sprite 136 / mode 7
-```
-
-The native catalog now closes that dependency atomically instead of bypassing ownership with ad-hoc PAK reads.
-
-Hardware canon:
+The native indexed-BMP path reads only bounded rows from `/DoomRPG-ESP32.pak` and keeps no decoded image resident:
 
 ```text
-closedCatalogFNV=257444a5
-textures=30
-sprites=17
-storage=1880 B
-persistentIncrement=40 B
-dependency=136
-largest8=34804->34804
-repeatAtomic=yes
+assets=a.bmp,k.bmp,l.bmp,m.bmp,o.bmp
+assetsValidated=5
+bar=20x20
+icon=13x13
+face=18x20
+PAK reads=184
+PAK bytes=6344
+source rows=164
+painted pixels=7538
 packClosed=yes
 ```
 
-Generic dependency semantics retain `131 -> 144` for future maps/views; current Junction requires only 136.
-
-### Shared BSP visibility/depth primitive
-
-This milestone extracts the stateful compact BSP visibility/depth walk into a reusable native primitive. It publishes visited leaves plus the 160-column depth boundary and restores borrowed legacy projection scratch exactly.
-
-Hardware parity remains:
+### Stable framebuffer canons
 
 ```text
-nodes=39
-leaves=12
-nodeCull=8
-lines=62
-backface=20
-clip=8
-occluder=0
-spriteSpan=0
-orderFNV=f16737cb
+pre-HUD frame=b5218f24
+post-HUD frame=ba3e5182
+world viewport=9206eb24
+world viewport preserved=yes
+HUD bands=9cf0c5c5->6c2aa46f
+EspNativeGameplayHudState=22 B
+HUD stateFNV=4756db9c
 ```
 
-### Base billboard pass remains preserved
+The complete-frame hash changes only in the top/bottom HUD bands. The 160x80 gameplay viewport remains byte-identical.
+
+### HUD dirty ownership
 
 ```text
-objects=48
-bspCandidates=21
-bspRejected=27
-modes=0:14 / 7:7
-mode7Pixels=311
-draws=21
-nearCull=0
-clipCull=0
-spans=219
-pixels=1828
-wallOccludedCols=62
-frameLoads=21
-uniqueLogical=9
-frameBytes=12251
-maxFrameBytes=1020
-preserved=yes
+before dirty FNV=6965ee06 refreshPending=1
+after dirty FNV=40c66f99 refreshPending=0
+consume only after successful paint=yes
 ```
 
-### Hardware-proven glow companions
-
-Legacy ordering is preserved: each additive companion is rendered immediately after its parent.
-
-```text
-companions=7
-draws=7
-nearCull=0
-clipCull=0
-spans=59
-pixels=1917
-wallOccludedCols=32
-frameLoads=7
-frameBytes=5572
-maxFrameBytes=796
-packReads=172
-renderMode=7 additive RGB565
-```
-
-The additive lamp glow is visibly present on the real CYD.
-
-### Stable complete framebuffer
-
-```text
-predecessor world frame=8910c2ed
-pre-glow sprite frame=299506eb
-complete sprite+glow frame=b5218f24
-complete viewportFNV=9206eb24
-BMP=/junction-sprite-viewport.bmp
-BMP bytes=38454
-viewport=160x80 @ 0,20
-```
+The legacy `Hud_t` object remains stable; native dirty ownership is not reflected back into legacy state.
 
 ### RAM / ownership proof
 
 ```text
-catalog persistent increment=40 B
-renderer heapDelta=0
-renderer largestDelta=0
+heap8=70196->70196
+largest8=34804->34804
+heapDelta=0
+largestDelta=0
+legacyHudStable=yes
+playerStable=yes
+gameStable=yes
+canvasStable=yes
+renderStable=yes
+residentStable=yes
 topologyFNV=d6e8df7d
 closedCatalogFNV=257444a5
 packClosed=yes
 shapeData=NULL
 mediaTexels=NULL
-mediaTexelOffsets=NULL
-mediaBitShapeOffsets=NULL
-mediaTexturesIds=NULL
-mediaSpriteIds=NULL
 legacy Game.entities=0
 legacy Game.monsters=0
-no world/entity mutation
-no input consumption
+no input consumed
 no turn advancement
 no gameplay dispatch
 ```
@@ -210,6 +160,8 @@ JunctionSpriteCandidateFNV=23ef1895
 JunctionSpriteOrderFNV=f16737cb
 JunctionGlowFrameFNV=b5218f24
 JunctionGlowViewportFNV=9206eb24
+JunctionHudFrameFNV=ba3e5182
+JunctionHudStateFNV=4756db9c
 ```
 
 ## Architecture direction
@@ -228,8 +180,9 @@ original behavior/data
  -> raw CYD presentation                          [hardware-proven]
  -> BSP-visible native billboards                 [hardware-proven]
  -> implicit sprite dependency closure + glows    [hardware-proven]
- -> native gameplay HUD painting                  [NEXT]
- -> native input/turn/gameplay dispatch
+ -> native gameplay HUD painting                  [hardware-proven]
+ -> native gameplay input/action dispatch         [NEXT]
+ -> turn/entity/monster gameplay by bounded family
  -> expanded native renderer/gameplay
 ```
 
@@ -250,7 +203,8 @@ bspVisibleOnly=yes
 intrinsicMode7=yes
 glowCompanions=yes
 glowPending=no
-hudPending=yes
+nativeHud=yes
+hudPending=no
 gameplayDispatchPending=yes
 initialSavePersistencePending=yes
 legacy Game.entities=0
@@ -286,19 +240,19 @@ gamma=00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-junction-glows
+MERGE agent/esp32-native-gameplay-hud
 ```
 
 Hardware-tested firmware:
 
 ```text
-338388ee4166115585e2c964aa95e79d5b0313eb
+fa6b0d2ab4c1ec2598b92dfe635a84ff50a74867
 ```
 
 All commits after that tested SHA must be documentation-only before merge-ready declaration.
 
 ## Next bounded milestone after merge
 
-Recover the exact new `main` SHA, then implement **native gameplay HUD painting** as a separate visible boundary. Consume the already-owned native HUD/player/view intent only; do not combine it with input, turn advancement or gameplay dispatch.
+Recover the exact new `main` SHA, reread the legacy playing-event semantics and choose one small **native gameplay input/action family**. Unsupported actions must remain fail-closed.
 
-Keep the existing renderer/PARK constraints: same 160x120 framebuffer, native PAK only, bounded caches/scratch, no legacy gameplay/render loop, `shapeData=NULL`, `mediaTexels=NULL`.
+Do not activate the broad legacy `DoomCanvas_handlePlayingEvents()` / gameplay loop, full turn advancement, monster gameplay or general entity activation in the first input milestone. Preserve the current renderer + HUD PARK, native PAK backing and no-PSRAM invariants.
