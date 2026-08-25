@@ -7,6 +7,8 @@
 #include "esp_player_view_state.h"
 
 #define RUNTIME_STEP_SIZE 64
+#define RUNTIME_MIN_CENTER 32
+#define RUNTIME_MAX_CENTER 2016
 
 static EspPlayerViewState playerViewState;
 
@@ -62,12 +64,19 @@ static int spawnIsConsistent(const EspPlayerSpawnState* spawn) {
     return 0;
 }
 
+static int runtimeCenterCoordinate(int32_t value) {
+    return value >= RUNTIME_MIN_CENTER && value <= RUNTIME_MAX_CENTER &&
+           (value & (RUNTIME_STEP_SIZE - 1)) == RUNTIME_MIN_CENTER;
+}
+
 static int viewSettledForRuntimeAction(const EspPlayerViewState* view) {
     return view != NULL && view->active == 1U && view->spawnApplied == 1U &&
            view->hudRefreshPending == 0U &&
            view->facingRefreshPending == 0U &&
            view->playerSetupPending == 0U &&
            view->tileEnterPending == 0U &&
+           runtimeCenterCoordinate(view->viewX) &&
+           runtimeCenterCoordinate(view->viewY) &&
            view->viewX == view->destX && view->viewY == view->destY &&
            view->viewAngle == view->destAngle &&
            view->viewAngle >= 0 && view->viewAngle <= 255 &&
@@ -309,6 +318,11 @@ EspPlayerViewMoveStatus EspPlayerView_prepareCardinalMove(
     next.viewY += deltaY;
     next.destX = next.viewX;
     next.destY = next.viewY;
+    if (!runtimeCenterCoordinate(next.viewX) ||
+        !runtimeCenterCoordinate(next.viewY)) {
+        memset(outBefore, 0, sizeof(*outBefore));
+        return ESP_PLAYER_VIEW_MOVE_UNSUPPORTED;
+    }
     *outAfter = next;
     return ESP_PLAYER_VIEW_MOVE_OK;
 }
@@ -334,6 +348,8 @@ EspPlayerViewMoveStatus EspPlayerView_commitPreparedMove(
     deltaY = preparedAfter->viewY - expectedBefore->viewY;
     if (!sameExceptRuntimePosition(expectedBefore, preparedAfter) ||
         !cardinalStep(deltaX, deltaY) ||
+        !runtimeCenterCoordinate(preparedAfter->viewX) ||
+        !runtimeCenterCoordinate(preparedAfter->viewY) ||
         preparedAfter->destX != preparedAfter->viewX ||
         preparedAfter->destY != preparedAfter->viewY) {
         return ESP_PLAYER_VIEW_MOVE_UNSUPPORTED;
