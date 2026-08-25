@@ -11,6 +11,7 @@
 #include "native_junction_finish_rotation_tile_probe.h"
 #include "native_junction_first_frame_corrected_probe.h"
 #include "native_junction_gameplay_hud_probe.h"
+#include "native_junction_gameplay_input_probe.h"
 #include "native_junction_graphics_catalog_probe.h"
 #include "native_junction_hud_refresh_probe.h"
 #include "native_junction_initial_tile_probe.h"
@@ -128,6 +129,7 @@ static void resetValidatedChain(void) {
     Esp32JunctionSpriteFidelityProbe_reset();
     Esp32JunctionSpriteOverlayProbe_reset();
     Esp32JunctionGameplayHudProbe_reset();
+    Esp32JunctionGameplayInputProbe_reset();
     EspNativePlaneRenderer_reset();
     Esp32FirstFrameDiagnostic_reset();
 }
@@ -259,6 +261,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
             Esp32JunctionSpriteFidelityProbe_postOverlayService(doomRpg);
             if (Esp32JunctionSpriteFidelityProbe_postOverlayDone()) {
                 Esp32JunctionGameplayHudProbe_service(doomRpg);
+                if (Esp32JunctionGameplayHudProbe_isDone()) {
+                    Esp32JunctionGameplayInputProbe_service(doomRpg);
+                }
             }
         }
     }
