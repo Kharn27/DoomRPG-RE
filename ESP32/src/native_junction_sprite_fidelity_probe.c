@@ -386,7 +386,7 @@ void Esp32JunctionSpriteFidelityProbe_preOverlayService(struct DoomRPG_s* doomRp
     if (probeState.preDone || probeState.preAttempted) return;
     if (doomRpg == NULL || doomRpg->render == NULL ||
         !EspMapRuntime_isLoaded() || !EspMapSpriteTopology_isReady() ||
-        EspNativeFirstFrame_state() == NULL) {
+        !EspNativeFirstFrame_isReady()) {
         return;
     }
     probeState.preAttempted = 1;
