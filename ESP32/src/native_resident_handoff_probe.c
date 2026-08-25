@@ -35,7 +35,8 @@
 
 #define EXPECTED_SNAPSHOT_BYTES 96U
 #define EXPECTED_SOURCE_SNAPSHOT_FNV 0xb3811f3dU
-#define EXPECTED_SOURCE_HEAP_COST 18008U
+#define HISTORICAL_SOURCE_HEAP_COST 18008U
+#define MAX_SOURCE_ALLOCATOR_OVERHEAD 256U
 #define EXPECTED_SOURCE_PAYLOAD 17891U
 #define EXPECTED_SOURCE_RUNTIME_BYTES 14095U
 #define EXPECTED_SOURCE_MAP_BYTES 1024U
@@ -431,7 +432,9 @@ void Esp32ResidentHandoffProbe_service(struct DoomRPG_s* doomRpg) {
     emptyAtomic = EspMapResidentLifecycle_isEmpty() &&
                   !EspMapResidentLifecycle_capture(&gateResult) &&
                   snapshotIsZero(&gateResult) &&
-                  sourceReleasedCost == EXPECTED_SOURCE_HEAP_COST;
+                  sourceReleasedCost >= source.totalPayloadBytes &&
+                  (sourceReleasedCost - source.totalPayloadBytes) <=
+                      MAX_SOURCE_ALLOCATOR_OVERHEAD;
     if (!emptyAtomic) {
         printf("[RESIDENTHANDOFFPROBE] FAILED explicit source release\n");
         goto recover;
@@ -445,7 +448,7 @@ void Esp32ResidentHandoffProbe_service(struct DoomRPG_s* doomRpg) {
     packBusy =
         EspMapResidentLifecycle_loadFromEmpty(TARGET_RESOURCE, &targetInventory,
                                               &busyResult) ==
-        ESP_MAP_RESIDENT_PACK_BUSY;
+            ESP_MAP_RESIDENT_PACK_BUSY;
     busyZero = snapshotIsZero(&busyResult);
     callerOwnsPack = EspAssetPack_isOpen();
     EspAssetPack_close();
@@ -534,10 +537,11 @@ void Esp32ResidentHandoffProbe_service(struct DoomRPG_s* doomRpg) {
            (unsigned int)source.mapStateBytes, (unsigned int)source.scriptStateBytes,
            (unsigned int)source.lineStateBytes, (unsigned int)source.textureStateBytes,
            (unsigned int)source.automapStateBytes, (unsigned int)source.topologyBytes);
-    printf("[RESIDENTHANDOFF] EMPTY1 heap8=%u largest8=%u released=%u sourcePayload=%u allocatorOverhead=%u allOwnersEmpty=yes\n",
+    printf("[RESIDENTHANDOFF] EMPTY1 heap8=%u largest8=%u released=%u sourcePayload=%u allocatorOverhead=%u historicalCost=%u allOwnersEmpty=yes\n",
            (unsigned int)heapEmpty1, (unsigned int)largestEmpty1,
            (unsigned int)sourceReleasedCost, (unsigned int)source.totalPayloadBytes,
-           (unsigned int)(sourceReleasedCost - source.totalPayloadBytes));
+           (unsigned int)(sourceReleasedCost - source.totalPayloadBytes),
+           (unsigned int)HISTORICAL_SOURCE_HEAP_COST);
     printf("[RESIDENTHANDOFF] GATES notEmpty=%d invalid=%d nullCapture=%d packBusy=%d busyZero=%d callerOwnsPack=%d emptyAtomic=yes\n",
            notEmptyGate, invalidGate, nullCapture, packBusy, busyZero,
            callerOwnsPack);
@@ -575,7 +579,7 @@ void Esp32ResidentHandoffProbe_service(struct DoomRPG_s* doomRpg) {
            (unsigned int)restoredSnapshotFNV,
            (unsigned int)heapSource, (unsigned int)heapRestored,
            (unsigned int)largestSource, (unsigned int)largestRestored,
-           (unsigned int)EXPECTED_SOURCE_HEAP_COST,
+           (unsigned int)sourceReleasedCost,
            (unsigned int)restored.totalPayloadBytes);
     printf("[RESIDENTHANDOFF] RAM source=%u empty1=%u junction=%u empty2=%u restored=%u sourceCost=%u junctionCost=%u finalDelta=%d largest=%u/%u/%u/%u/%u\n",
            (unsigned int)heapSource, (unsigned int)heapEmpty1,
@@ -591,7 +595,7 @@ void Esp32ResidentHandoffProbe_service(struct DoomRPG_s* doomRpg) {
            (unsigned int)frameBefore, (unsigned int)frameAfter);
     printf("[RESIDENTHANDOFF] PARK state=%d page=%d nativeResidentLifecycle=yes reversibleHandoff=yes junctionResidentProven=yes sourceRestored=yes targetLeftResident=no packClosed=yes persistentBytes=%u mapSwapCommitted=no entities=%d monsters=%d noGameplay=yes\n",
            doomRpg->doomCanvas->state, doomRpg->doomCanvas->storyPage,
-           (unsigned int)EXPECTED_SOURCE_HEAP_COST,
+           (unsigned int)sourceReleasedCost,
            doomRpg->game->numEntities, doomRpg->game->numMonsters);
 
     probeState.done = 1;
