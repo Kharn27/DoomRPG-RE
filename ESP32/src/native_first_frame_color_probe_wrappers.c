@@ -3,9 +3,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
 #include "DoomRPG.h"
 #include "Render.h"
 
@@ -13,6 +10,10 @@
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
+
+/* Keep ESP-IDF/FreeRTOS boolean macros out of legacy DoomRPG headers. */
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 /*
  * Temporary first-frame fidelity diagnostics.
