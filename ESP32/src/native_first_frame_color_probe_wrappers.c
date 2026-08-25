@@ -1,7 +1,9 @@
+#include <SDL.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
+#include "DoomRPG.h"
 #include "Render.h"
 
 #include "esp_native_first_frame.h"
