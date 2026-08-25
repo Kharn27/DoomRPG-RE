@@ -40,13 +40,15 @@ typedef struct LegacySnapshot_s {
 
 typedef struct TurnProbeState_s {
     DoomRPG_t* doomRpg;
+    EspNativeGameplayInputState firstTurn;
     uint32_t taps;
     uint32_t turns;
     uint32_t deferred;
     uint32_t roundTrips;
-    uint8_t active;
+    uint8_t initialized;
+    uint8_t firstTurnPending;
+    uint8_t callbackOwned;
     uint8_t failed;
-    uint8_t reserved[2];
 } TurnProbeState;
 
 static TurnProbeState probeState;
@@ -162,23 +164,19 @@ static int runtimeBoundary(const DoomRPG_t* doomRpg) {
            (view->viewAngle != 64 || frameFNV() == EXPECTED_BASE_FRAME_FNV);
 }
 
-static void failAndDetach(const char* reason) {
-    printf("[TURNPROBE] FAILED %s frame=%08x pending=%u pack=%d\n",
+static void failProbe(const char* reason) {
+    printf("[TURNPROBE] FAILED %s frame=%08x pending=%u pack=%d callbackOwned=%u\n",
            reason, (unsigned int)frameFNV(),
            (unsigned int)EspNativeGameplayInput_peek()->pending,
-           EspAssetPack_isOpen());
+           EspAssetPack_isOpen(), (unsigned int)probeState.callbackOwned);
     probeState.failed = 1U;
-    probeState.active = 0U;
-    PlatformInput_setTapCallback(NULL);
+    if (probeState.callbackOwned) {
+        PlatformInput_setTapCallback(NULL);
+        probeState.callbackOwned = 0U;
+    }
 }
 
-static void onTurnTap(int16_t screenX,
-                      int16_t screenY,
-                      uint16_t pressure,
-                      uint16_t rawX,
-                      uint16_t rawY) {
-    EspNativeGameplayTouchHit hit;
-    EspNativeGameplayInputState intent;
+static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
     EspPlayerViewState beforeView;
     EspPlayerViewState afterView;
     EspNativeGameplayTurnState beforeTurn;
@@ -189,7 +187,6 @@ static void onTurnTap(int16_t screenX,
     EspMapResidentSnapshot residentAfter;
     LegacySnapshot legacyBefore;
     LegacySnapshot legacyAfter;
-    EspNativeGameplayInputStatus classify;
     EspNativeGameplayDispatchStatus dispatch;
     uint32_t heapBefore;
     uint32_t heapAfter;
@@ -197,53 +194,30 @@ static void onTurnTap(int16_t screenX,
     uint32_t largestAfter;
     uint32_t frameBefore;
     uint32_t frameAfter;
-    int logicalX;
-    int logicalY;
     int roundTrip;
 
-    if (!probeState.active || probeState.failed || probeState.doomRpg == NULL) return;
-    logicalX = screenX / DOOMRPG_INTEGER_SCALE;
-    logicalY = screenY / DOOMRPG_INTEGER_SCALE;
-    ++probeState.taps;
-    classify = EspNativeGameplayInput_classify(logicalX, logicalY, &hit);
-
-    printf("[TURNPROBE] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d status=%d\n",
-           (unsigned int)probeState.taps, rawX, rawY, pressure,
-           screenX, screenY, logicalX, logicalY, (int)classify);
-
-    if (classify == ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT) {
-        printf("[TURNPROBE] MISS logical=%d,%d gameplay=no\n", logicalX, logicalY);
-        return;
-    }
-    if (classify != ESP_NATIVE_GAMEPLAY_INPUT_OK ||
-        EspNativeGameplayInput_peek()->pending || !runtimeBoundary(probeState.doomRpg)) {
-        failAndDetach("tap boundary/classify");
-        return;
-    }
-    if (EspNativeGameplayInput_route(&hit, logicalX, logicalY) !=
-            ESP_NATIVE_GAMEPLAY_INPUT_OK ||
-        EspNativeGameplayInput_consume(&intent) != ESP_NATIVE_GAMEPLAY_INPUT_OK ||
-        EspNativeGameplayInput_peek()->pending) {
-        failAndDetach("input route/consume");
-        return;
+    if (intent == NULL || probeState.doomRpg == NULL ||
+        !runtimeBoundary(probeState.doomRpg)) {
+        failProbe("execute boundary");
+        return 0;
     }
 
     dispatch = EspNativeGameplayDispatch_prepareTurn(
-        &intent, &beforeView, &afterView, &beforeTurn, &afterTurn, &result);
+        intent, &beforeView, &afterView, &beforeTurn, &afterTurn, &result);
     if (dispatch == ESP_NATIVE_GAMEPLAY_DISPATCH_DEFERRED) {
         ++probeState.deferred;
-        printf("[TURNPROBE] DEFERRED n=%u seq=%u action=%s id=%u supportedFamily=TURN_LEFT/TURN_RIGHT view=%u frame=%08x gameplay=no\n",
+        printf("[TURNPROBE] DEFERRED n=%u seq=%u action=%s id=%u view=%u frame=%08x gameplay=no\n",
                (unsigned int)probeState.deferred,
-               (unsigned int)intent.sequence,
-               EspNativeGameplayInput_actionName(intent.action),
-               (unsigned int)intent.action,
+               (unsigned int)intent->sequence,
+               EspNativeGameplayInput_actionName(intent->action),
+               (unsigned int)intent->action,
                (unsigned int)EspPlayerView_view()->viewAngle,
                (unsigned int)frameFNV());
-        return;
+        return 1;
     }
     if (dispatch != ESP_NATIVE_GAMEPLAY_DISPATCH_PREPARED) {
-        failAndDetach("dispatch prepare");
-        return;
+        failProbe("dispatch prepare");
+        return 0;
     }
 
     heapBefore = heap8();
@@ -252,15 +226,15 @@ static void onTurnTap(int16_t screenX,
     if (!legacySnapshot(probeState.doomRpg, &legacyBefore) ||
         !EspMapResidentLifecycle_capture(&residentBefore) ||
         !residentCanonical(&residentBefore)) {
-        failAndDetach("pre-turn snapshots");
-        return;
+        failProbe("pre-turn snapshots");
+        return 0;
     }
 
     if (EspNativeGameplayDispatch_commitTurn(
             &beforeView, &afterView, &beforeTurn, &afterTurn, &result) !=
             ESP_NATIVE_GAMEPLAY_DISPATCH_OK) {
-        failAndDetach("dispatch commit");
-        return;
+        failProbe("dispatch commit");
+        return 0;
     }
 
     memset(&frameStats, 0, sizeof(frameStats));
@@ -268,8 +242,8 @@ static void onTurnTap(int16_t screenX,
             probeState.doomRpg->render, result.angleAfter, &frameStats)) {
         (void)EspNativeGameplayDispatch_rollbackTurn(
             &afterView, &beforeView, &afterTurn, &beforeTurn, &result);
-        failAndDetach("native frame render");
-        return;
+        failProbe("native frame render");
+        return 0;
     }
 
     frameAfter = frameFNV();
@@ -284,18 +258,18 @@ static void onTurnTap(int16_t screenX,
         frameAfter == frameBefore || frameStats.frameAfterFNV != frameAfter ||
         frameStats.temporaryHudBytes != 12800U ||
         frameStats.finalPresented != 1U || EspAssetPack_isOpen()) {
-        failAndDetach("post-turn integrity");
-        return;
+        failProbe("post-turn integrity");
+        return 0;
     }
 
     roundTrip = result.angleAfter == 64U;
     if (roundTrip && frameAfter != EXPECTED_BASE_FRAME_FNV) {
-        failAndDetach("round-trip frame mismatch");
-        return;
+        failProbe("round-trip frame mismatch");
+        return 0;
     }
     if (!roundTrip && frameAfter == EXPECTED_BASE_FRAME_FNV) {
-        failAndDetach("turned frame unchanged");
-        return;
+        failProbe("turned frame unchanged");
+        return 0;
     }
 
     ++probeState.turns;
@@ -330,6 +304,66 @@ static void onTurnTap(int16_t screenX,
            (unsigned int)frameStats.finalPresented,
            (unsigned int)heapBefore, (unsigned int)heapAfter,
            (unsigned int)largestBefore, (unsigned int)largestAfter);
+    return 1;
+}
+
+static void onTurnTap(int16_t screenX,
+                      int16_t screenY,
+                      uint16_t pressure,
+                      uint16_t rawX,
+                      uint16_t rawY) {
+    EspNativeGameplayTouchHit hit;
+    EspNativeGameplayInputState intent;
+    EspNativeGameplayInputStatus classify;
+    int logicalX;
+    int logicalY;
+
+    if (!probeState.callbackOwned || probeState.failed || probeState.doomRpg == NULL)
+        return;
+
+    logicalX = screenX / DOOMRPG_INTEGER_SCALE;
+    logicalY = screenY / DOOMRPG_INTEGER_SCALE;
+    ++probeState.taps;
+    classify = EspNativeGameplayInput_classify(logicalX, logicalY, &hit);
+    printf("[TURNPROBE] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d status=%d\n",
+           (unsigned int)probeState.taps, rawX, rawY, pressure,
+           screenX, screenY, logicalX, logicalY, (int)classify);
+
+    if (classify == ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT) {
+        printf("[TURNPROBE] MISS logical=%d,%d gameplay=no\n", logicalX, logicalY);
+        return;
+    }
+    if (classify != ESP_NATIVE_GAMEPLAY_INPUT_OK ||
+        EspNativeGameplayInput_peek()->pending || !runtimeBoundary(probeState.doomRpg)) {
+        failProbe("tap boundary/classify");
+        return;
+    }
+    if (EspNativeGameplayInput_route(&hit, logicalX, logicalY) !=
+            ESP_NATIVE_GAMEPLAY_INPUT_OK ||
+        EspNativeGameplayInput_consume(&intent) != ESP_NATIVE_GAMEPLAY_INPUT_OK ||
+        EspNativeGameplayInput_peek()->pending) {
+        failProbe("input route/consume");
+        return;
+    }
+    (void)executeConsumedIntent(&intent);
+}
+
+/* Called only by the temporary weak observation point in
+ * EspNativeGameplayInput_consume(). Before the first real turn, the proven
+ * input probe remains the actual touch callback owner and still performs its
+ * 250 ms exact-restoring feedback. We copy one TURN intent and wait for that
+ * feedback to restore the canonical framebuffer before executing anything. */
+void Esp32NativeGameplayInputProbe_observeConsumed(
+    const EspNativeGameplayInputState* intent) {
+    if (!probeState.initialized || probeState.failed || probeState.callbackOwned ||
+        probeState.firstTurnPending || intent == NULL) return;
+    if (intent->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT &&
+        intent->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT) return;
+    probeState.firstTurn = *intent;
+    probeState.firstTurnPending = 1U;
+    printf("[TURNPROBE] HANDOFF seq=%u action=%s waitingForInputFeedbackRestore=yes\n",
+           (unsigned int)intent->sequence,
+           EspNativeGameplayInput_actionName(intent->action));
 }
 
 void Esp32JunctionTurnDispatchProbe_reset(void) {
@@ -338,91 +372,82 @@ void Esp32JunctionTurnDispatchProbe_reset(void) {
 }
 
 int Esp32JunctionTurnDispatchProbe_isActive(void) {
-    return probeState.active != 0U && probeState.failed == 0U;
+    return probeState.initialized != 0U && probeState.failed == 0U;
 }
 
 void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     const EspPlayerViewState* view;
     const EspNativeGameplayTurnState* turn;
-    EspNativeGameplayInputState fake;
-    EspPlayerViewState beforeView;
-    EspPlayerViewState afterView;
-    EspNativeGameplayTurnState beforeTurn;
-    EspNativeGameplayTurnState afterTurn;
-    EspNativeGameplayDispatchResult result;
-    EspPlayerViewState viewCopy;
-    EspNativeGameplayTurnState turnCopy;
     uint32_t heapBefore;
     uint32_t heapAfter;
     uint32_t largestBefore;
     uint32_t largestAfter;
 
-    if (probeState.failed || probeState.active) return;
-    if (!Esp32JunctionGameplayInputProbe_isActive()) return;
+    if (probeState.failed) return;
 
-    printf("\n=== Doom RPG ESP32-native first gameplay turn dispatcher ===\n");
-    printf("[TURNPROBE] CONTRACT consume the existing native touch intent owner but execute ONLY TURN_LEFT(+64) / TURN_RIGHT(-64); publish one settled cardinal EspPlayerViewState plus one 24B runtime fixed-point turn owner, recompose walls+textured planes+sprites+glows+HUD compass and present; every other known action remains DEFERRED. No Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
+    if (!probeState.initialized) {
+        if (!Esp32JunctionGameplayInputProbe_isActive()) return;
 
-    heapBefore = heap8();
-    largestBefore = largest8();
-    view = EspPlayerView_view();
-    if (doomRpg == NULL || view == NULL ||
-        fnv1a(view, sizeof(*view)) != EXPECTED_INITIAL_VIEW_FNV ||
-        frameFNV() != EXPECTED_BASE_FRAME_FNV ||
-        EspNativeGameplayDispatch_adoptView() != ESP_NATIVE_GAMEPLAY_DISPATCH_OK) {
-        failAndDetach("activation predecessor/adopt");
-        return;
-    }
-    turn = EspNativeGameplayDispatch_view();
-    if (!turnStateMatchesView(turn, view) || turn->sequence != 0U ||
-        turn->lastAction != ESP_NATIVE_GAMEPLAY_ACTION_NONE ||
-        !runtimeBoundary(doomRpg)) {
-        failAndDetach("activation turn owner");
-        return;
-    }
-    viewCopy = *view;
-    turnCopy = *turn;
+        printf("\n=== Doom RPG ESP32-native first gameplay turn dispatcher v2 ===\n");
+        printf("[TURNPROBE] CONTRACT boot/input ownership is unchanged: the hardware-proven gameplay input probe keeps the touch callback. Only after it consumes a real TURN_LEFT/TURN_RIGHT and restores its 250ms feedback exactly does this probe execute the turn and take over subsequent gameplay taps. Other actions remain deferred; no Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
 
-    memset(&fake, 0, sizeof(fake));
-    fake.action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD;
-    fake.zone = ESP_NATIVE_GAMEPLAY_ZONE_MOVE_FORWARD;
-    fake.logicalX = 79U;
-    fake.logicalY = 32U;
-    fake.sequence = 0x1234U;
-    fake.pending = 1U;
-    fake.active = 1U;
-    if (EspNativeGameplayDispatch_prepareTurn(
-            &fake, &beforeView, &afterView, &beforeTurn, &afterTurn, &result) !=
-            ESP_NATIVE_GAMEPLAY_DISPATCH_DEFERRED ||
-        memcmp(EspPlayerView_view(), &viewCopy, sizeof(viewCopy)) != 0 ||
-        memcmp(EspNativeGameplayDispatch_view(), &turnCopy, sizeof(turnCopy)) != 0) {
-        failAndDetach("fail-closed deferred action");
-        return;
-    }
+        heapBefore = heap8();
+        largestBefore = largest8();
+        view = EspPlayerView_view();
+        if (doomRpg == NULL || view == NULL ||
+            fnv1a(view, sizeof(*view)) != EXPECTED_INITIAL_VIEW_FNV ||
+            frameFNV() != EXPECTED_BASE_FRAME_FNV ||
+            EspNativeGameplayDispatch_adoptView() != ESP_NATIVE_GAMEPLAY_DISPATCH_OK) {
+            failProbe("activation predecessor/adopt");
+            return;
+        }
+        turn = EspNativeGameplayDispatch_view();
+        if (!turnStateMatchesView(turn, view) || turn->sequence != 0U ||
+            turn->lastAction != ESP_NATIVE_GAMEPLAY_ACTION_NONE ||
+            !runtimeBoundary(doomRpg)) {
+            failProbe("activation turn owner");
+            return;
+        }
 
-    probeState.doomRpg = doomRpg;
-    probeState.active = 1U;
-    PlatformInput_setTapCallback(onTurnTap);
+        probeState.doomRpg = doomRpg;
+        probeState.initialized = 1U;
+        heapAfter = heap8();
+        largestAfter = largest8();
+        if (heapAfter != heapBefore || largestAfter != largestBefore ||
+            !runtimeBoundary(doomRpg)) {
+            failProbe("activation heap/boundary");
+            return;
+        }
 
-    heapAfter = heap8();
-    largestAfter = largest8();
-    if (heapAfter != heapBefore || largestAfter != largestBefore ||
-        !runtimeBoundary(doomRpg)) {
-        failAndDetach("activation heap/boundary");
+        printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d baseline=%08x heap=%u->%u largest=%u->%u callbackOwner=input-probe takeover=after-first-restored-turn\n",
+               (unsigned int)sizeof(EspNativeGameplayTurnState),
+               (unsigned int)sizeof(EspNativeGameplayDispatchResult),
+               (unsigned int)sizeof(EspPlayerViewState),
+               (unsigned int)turn->destAngle,
+               turn->viewSin, turn->viewCos, turn->viewStepX, turn->viewStepY,
+               (unsigned int)EXPECTED_BASE_FRAME_FNV,
+               (unsigned int)heapBefore, (unsigned int)heapAfter,
+               (unsigned int)largestBefore, (unsigned int)largestAfter);
+        printf("[TURNPROBE] PARK first TURN uses the proven neon input feedback, restores frame %08x, then dispatches; subsequent taps are owned by TURN probe.\n",
+               (unsigned int)EXPECTED_BASE_FRAME_FNV);
         return;
     }
 
-    turn = EspNativeGameplayDispatch_view();
-    printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d baseline=%08x heap=%u->%u largest=%u->%u\n",
-           (unsigned int)sizeof(EspNativeGameplayTurnState),
-           (unsigned int)sizeof(EspNativeGameplayDispatchResult),
-           (unsigned int)sizeof(EspPlayerViewState),
-           (unsigned int)turn->destAngle,
-           turn->viewSin, turn->viewCos, turn->viewStepX, turn->viewStepY,
-           (unsigned int)EXPECTED_BASE_FRAME_FNV,
-           (unsigned int)heapBefore, (unsigned int)heapAfter,
-           (unsigned int)largestBefore, (unsigned int)largestAfter);
-    printf("[TURNPROBE] PARK tap TURN_LEFT then TURN_RIGHT (or inverse): first tap must visibly rotate the complete native scene/HUD compass; inverse must restore frame %08x exactly. Other zones must log DEFERRED only.\n",
-           (unsigned int)EXPECTED_BASE_FRAME_FNV);
+    if (!probeState.callbackOwned && probeState.firstTurnPending) {
+        /* The input probe's temporary feedback owns the framebuffer until its
+         * canonical exact restore. Never race or overwrite it. */
+        if (frameFNV() != EXPECTED_BASE_FRAME_FNV ||
+            EspNativeGameplayInput_peek()->pending) {
+            return;
+        }
+        if (!executeConsumedIntent(&probeState.firstTurn)) return;
+        memset(&probeState.firstTurn, 0, sizeof(probeState.firstTurn));
+        probeState.firstTurnPending = 0U;
+        PlatformInput_setTapCallback(onTurnTap);
+        probeState.callbackOwned = 1U;
+        printf("[TURNPROBE] TAKEOVER callbackOwner=turn-probe afterFirstTurn=yes frame=%08x angle=%u\n",
+               (unsigned int)frameFNV(),
+               (unsigned int)EspPlayerView_view()->viewAngle);
+    }
 }
