@@ -22,8 +22,9 @@ typedef enum EspHudRefreshStatus_e {
 
 /*
  * Tiny permanent native equivalent of the recovered `Hud.isUpdate = true`
- * dirty write. It owns only the semantic request; actual HUD rendering remains
- * deferred. No legacy Hud object, framebuffer pointer or allocation is owned.
+ * dirty write. It owns only the semantic request; actual HUD rendering is a
+ * separate bounded consumer. No legacy Hud object, framebuffer pointer or
+ * allocation is owned.
  */
 typedef struct EspHudRefreshState_s {
     uint8_t reason;
@@ -40,6 +41,10 @@ void EspHudRefresh_reset(void);
 int EspHudRefresh_isReady(void);
 const EspHudRefreshState* EspHudRefresh_view(void);
 
+/* Return the routed owner even after its paint request has been consumed. */
+const EspHudRefreshState* EspHudRefresh_peek(void);
+int EspHudRefresh_isPaintConsumed(void);
+
 /* Pure pointer-free translation of one player/view HUD follow-up. */
 EspHudRefreshStatus EspHudRefresh_preparePostSpawn(
     const EspPlayerViewState* playerView,
@@ -51,6 +56,16 @@ EspHudRefreshStatus EspHudRefresh_preparePostSpawn(
  * Player_setup and initial tile-enter remain pending.
  */
 EspHudRefreshStatus EspHudRefresh_routePostSpawn(void);
+
+/*
+ * Consume the already-routed dirty request after one native HUD painter has
+ * successfully produced the matching map/load context. This is intentionally
+ * identity-only: rendering owns no legacy Hud pointer and cannot consume a
+ * request belonging to another transition.
+ */
+int EspHudRefresh_consumePaint(uint8_t targetMapId,
+                               uint8_t gameplayLoadMapId,
+                               uint8_t loadType);
 
 #ifdef __cplusplus
 }
