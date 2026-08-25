@@ -59,10 +59,10 @@ void Esp32TftPrimaryProbe_service() {
         return;
     }
 
-    /* This service is called only after the canonical first-frame route has
-     * completed all of its predecessor, heap and framebuffer checks.  There is
-     * deliberately no static constructor, task, queue or boot-time allocation.
-     * The logical framebuffer is never modified by this visual-only probe. */
+    /* This service is reached only after the normal Arduino loop has run the
+     * complete native intro/first-frame lifecycle. There is deliberately no
+     * static constructor, task, queue or boot-time allocation. The logical
+     * framebuffer is never modified by this visual-only TFT probe. */
     TFT_eSPI diagnosticDisplay;
     diagnosticDisplay.begin();
     diagnosticDisplay.setRotation(cyd::kDisplayRotation);
@@ -87,4 +87,11 @@ void Esp32TftPrimaryProbe_service() {
     Serial.printf("[VIDEOPRIMARY] RESTORE gameplayFrame=yes result=%s framebuffer=%08x untouched=yes\n",
                   restored ? "OK" : "FAILED",
                   static_cast<unsigned int>(frame->frameAfterFNV));
+}
+
+extern "C" void __real_Esp32IntroClock_service(void);
+
+extern "C" void __wrap_Esp32IntroClock_service(void) {
+    __real_Esp32IntroClock_service();
+    Esp32TftPrimaryProbe_service();
 }
