@@ -380,6 +380,9 @@ int EspNativeBspVisibility_build(struct Render_s* renderBase,
 
     if (outState != NULL) memset(outState, 0, sizeof(*outState));
     if (render == NULL || outState == NULL || runtime == NULL || view == NULL ||
+        render->framebuffer == NULL || render->columnScale == NULL ||
+        render->screenWidth != SCREEN_W || render->screenHeight != SCREEN_H ||
+        render->screenX != 0 || render->screenY != 20 ||
         !EspMapRuntime_isLoaded() || runtime->nodeCount == 0U ||
         runtime->nodeCount > ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
         runtime->lineCount == 0U) {
