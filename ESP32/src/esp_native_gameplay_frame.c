@@ -22,6 +22,20 @@
 #define HUD_SAVED_BYTES (HUD_SAVED_PIXELS * sizeof(uint16_t))
 #define BOTTOM_HUD_Y (DOOMRPG_LOGICAL_HEIGHT - HUD_ROWS)
 
+typedef struct GameplayFrameScratch_s {
+    EspNativeGameplayFrameStats stats;
+    EspNativeJunctionSpriteStats sprites;
+    EspNativeGameplayHudDirectionStats hud;
+    uint8_t busy;
+    uint8_t reserved[3];
+} GameplayFrameScratch;
+
+/* Single gameplay service, non-reentrant by contract. The scratch is permanent
+ * bounded BSS so repeated TURN rendering does not deepen loopTask stack with
+ * the large sprite/stat aggregates. Pixel payload still lives only in the
+ * shared framebuffer or the bounded temporary HUD save below. */
+static GameplayFrameScratch frameScratch;
+
 static uint32_t fnv1a(const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
     uint32_t hash = 2166136261U;
@@ -51,17 +65,15 @@ int EspNativeGameplayFrame_renderTurn(
     const EspPlayerViewState* view = EspPlayerView_view();
     const EspNativeFirstFrameState* world;
     const EspNativePlaneRenderStats* planes;
-    EspNativeJunctionSpriteStats sprites;
-    EspNativeGameplayHudDirectionStats hud;
-    EspNativeGameplayFrameStats stats;
+    EspNativeGameplayFrameStats* stats = &frameScratch.stats;
+    EspNativeJunctionSpriteStats* sprites = &frameScratch.sprites;
+    EspNativeGameplayHudDirectionStats* hud = &frameScratch.hud;
     uint16_t* framebuffer;
     uint16_t* savedHud = NULL;
     int ok = 0;
 
-    memset(&stats, 0, sizeof(stats));
-    memset(&sprites, 0, sizeof(sprites));
-    memset(&hud, 0, sizeof(hud));
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
+    if (frameScratch.busy) return 0;
     if (render == NULL || outStats == NULL || view == NULL ||
         view->active != 1U || view->viewAngle != (int32_t)angle ||
         view->destAngle != (int32_t)angle || (angle & 63U) != 0U ||
@@ -72,13 +84,18 @@ int EspNativeGameplayFrame_renderTurn(
         return 0;
     }
 
+    frameScratch.busy = 1U;
+    memset(stats, 0, sizeof(*stats));
+    memset(sprites, 0, sizeof(*sprites));
+    memset(hud, 0, sizeof(*hud));
+
     framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    stats.frameBeforeFNV = frameFNV();
-    if (framebuffer == NULL || stats.frameBeforeFNV == 0U) return 0;
+    stats->frameBeforeFNV = frameFNV();
+    if (framebuffer == NULL || stats->frameBeforeFNV == 0U) goto done;
 
     savedHud = (uint16_t*)malloc(HUD_SAVED_BYTES);
-    if (savedHud == NULL) return 0;
-    stats.temporaryHudBytes = (uint32_t)HUD_SAVED_BYTES;
+    if (savedHud == NULL) goto done;
+    stats->temporaryHudBytes = (uint32_t)HUD_SAVED_BYTES;
     memcpy(savedHud, framebuffer, HUD_BAND_PIXELS * sizeof(uint16_t));
     memcpy(savedHud + HUD_BAND_PIXELS,
            framebuffer + BOTTOM_HUD_Y * DOOMRPG_LOGICAL_WIDTH,
@@ -89,43 +106,44 @@ int EspNativeGameplayFrame_renderTurn(
     if (EspNativeFirstFrame_route(render, view) != ESP_NATIVE_FIRST_FRAME_OK) {
         goto done;
     }
-    stats.worldPresented = 1U;
+    stats->worldPresented = 1U;
     world = EspNativeFirstFrame_view();
     planes = EspNativePlaneRenderer_view();
     if (world == NULL || planes == NULL) goto done;
-    stats.worldFrameFNV = world->frameAfterFNV;
-    stats.wallDraws = world->wallDraws;
-    stats.wallPixels = world->pixelsDrawn;
-    stats.planePixels = planes->pixelsRendered;
+    stats->worldFrameFNV = world->frameAfterFNV;
+    stats->wallDraws = world->wallDraws;
+    stats->wallPixels = world->pixelsDrawn;
+    stats->planePixels = planes->pixelsRendered;
 
-    if (!EspNativeJunctionSprite_render(render, &sprites)) goto done;
-    stats.spriteDraws = sprites.draws;
-    stats.spritePixels = sprites.pixelsDrawn;
-    stats.glowDraws = sprites.glowDraws;
-    stats.glowPixels = sprites.glowPixels;
-    stats.spritePackReads = sprites.packReads;
+    if (!EspNativeJunctionSprite_render(render, sprites)) goto done;
+    stats->spriteDraws = sprites->draws;
+    stats->spritePixels = sprites->pixelsDrawn;
+    stats->glowDraws = sprites->glowDraws;
+    stats->glowPixels = sprites->glowPixels;
+    stats->spritePackReads = sprites->packReads;
 
     memcpy(framebuffer, savedHud, HUD_BAND_PIXELS * sizeof(uint16_t));
     memcpy(framebuffer + BOTTOM_HUD_Y * DOOMRPG_LOGICAL_WIDTH,
            savedHud + HUD_BAND_PIXELS,
            HUD_BAND_PIXELS * sizeof(uint16_t));
 
-    if (!EspNativeGameplayHudDirection_render(angle, &hud)) goto done;
-    stats.hudPackReads = hud.packReads;
-    stats.hudPixels = hud.pixelsWritten;
-    stats.angle = angle;
-    stats.frameAfterFNV = frameFNV();
-    if (stats.frameAfterFNV == 0U) goto done;
+    if (!EspNativeGameplayHudDirection_render(angle, hud)) goto done;
+    stats->hudPackReads = hud->packReads;
+    stats->hudPixels = hud->pixelsWritten;
+    stats->angle = angle;
+    stats->frameAfterFNV = frameFNV();
+    if (stats->frameAfterFNV == 0U) goto done;
 
     if (!Esp32PlatformVideo_present()) goto done;
-    stats.finalPresented = 1U;
-    stats.active = 1U;
+    stats->finalPresented = 1U;
+    stats->active = 1U;
     ok = 1;
 
 done:
     if (EspAssetPack_isOpen()) EspAssetPack_close();
     free(savedHud);
-    if (!ok) stats.active = 0U;
-    *outStats = stats;
+    if (!ok) stats->active = 0U;
+    *outStats = *stats;
+    frameScratch.busy = 0U;
     return ok;
 }
