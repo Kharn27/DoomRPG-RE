@@ -12,23 +12,23 @@
 #include "platform_video_config.h"
 
 /*
- * Temporary first-frame-only hardware diagnostic.
+ * Temporary first-frame fidelity diagnostics.
  *
- * The real-CYD RGB565 swatch proved that the ILI9341/presentation path can
- * display known black/gray/white/red/green/blue values correctly.  Stop
- * modifying the framebuffer for color experiments.  Instead, leave the frame
- * byte-for-byte untouched and export the exact 160x80 gameplay viewport to a
- * tiny 24-bpp BMP on the SD card after the one native first-frame present.
- *
- * This removes camera white-balance/panel appearance from the comparison: the
- * uploaded BMP is the renderer's digital output itself.  Conversion is one
- * 480-byte stack row at a time; there is no persistent allocation.
+ * COLORSTATS is read-only and remains inside the renderer route so the strict
+ * frame probe can prove the framebuffer it actually presented.  The BMP dump,
+ * however, uses stdio/SD and the first fopen() can retain a small libc/VFS
+ * allocation.  It must therefore run only AFTER the frame integrity probe has
+ * PARKed, never inside the zero-heap-delta renderer contract.
  */
 
 EspNativeFirstFrameStatus __real_EspNativeFirstFrame_route(
     struct Render_s* render,
     const struct EspPlayerViewState_s* playerView);
 int __real_Esp32PlatformVideo_present(void);
+
+static Render_t* pendingDumpRender;
+static int dumpAttempted;
+static int dumpSucceeded;
 
 int __wrap_Esp32PlatformVideo_present(void) {
     return __real_Esp32PlatformVideo_present();
@@ -177,7 +177,7 @@ static int dumpViewportBmp(const Render_t* render, uint32_t* outFNV) {
     }
 
     if (outFNV != NULL) *outFNV = viewportFNV(render);
-    printf("[JUNCTIONFRAME] BMP READY path=/junction-viewport.bmp size=%u viewport=%dx%d@%d,%d viewportFNV=%08x framebufferUntouched=yes\n",
+    printf("[JUNCTIONFRAME] BMP READY path=/junction-viewport.bmp size=%u viewport=%dx%d@%d,%d viewportFNV=%08x postParkDiagnostic=yes\n",
            (unsigned int)BMP_FILE_BYTES,
            render->screenWidth, render->screenHeight,
            render->screenX, render->screenY,
@@ -262,6 +262,27 @@ static void measureViewport(const Render_t* render) {
            (unsigned int)count);
 }
 
+void Esp32FirstFrameDiagnostic_reset(void) {
+    pendingDumpRender = NULL;
+    dumpAttempted = 0;
+    dumpSucceeded = 0;
+}
+
+int Esp32FirstFrameDiagnostic_exportBmp(void) {
+    uint32_t dumpFNV = 0U;
+
+    if (dumpAttempted) return dumpSucceeded;
+    dumpAttempted = 1;
+    if (pendingDumpRender == NULL) {
+        printf("[JUNCTIONFRAME] BMP FAILED no validated frame pending\n");
+        return 0;
+    }
+
+    dumpSucceeded = dumpViewportBmp(pendingDumpRender, &dumpFNV) &&
+                    dumpFNV != 0U;
+    return dumpSucceeded;
+}
+
 EspNativeFirstFrameStatus __wrap_EspNativeFirstFrame_route(
     struct Render_s* renderBase,
     const struct EspPlayerViewState_s* playerView) {
@@ -270,11 +291,8 @@ EspNativeFirstFrameStatus __wrap_EspNativeFirstFrame_route(
         __real_EspNativeFirstFrame_route(renderBase, playerView);
 
     if (status == ESP_NATIVE_FIRST_FRAME_OK) {
-        uint32_t dumpFNV = 0U;
         measureViewport(render);
-        if (!dumpViewportBmp(render, &dumpFNV) || dumpFNV == 0U) {
-            return ESP_NATIVE_FIRST_FRAME_PRESENT_FAILED;
-        }
+        pendingDumpRender = render;
     }
     return status;
 }
