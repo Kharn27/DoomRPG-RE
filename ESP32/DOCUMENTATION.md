@@ -34,125 +34,123 @@ When chat history and repository documentation disagree, current `main` + `PORTI
 | [`MAP1_NATIVE_POST_LOAD_IDLE_TIME.md`](MAP1_NATIVE_POST_LOAD_IDLE_TIME.md) | final fresh-map idle deadline / load-tail completion | #85 | `cdd7f3c7bdd7f1ea472faaccf64d055e7a00a4a2` |
 | [`MAP1_NATIVE_PLAYING_SERVICE.md`](MAP1_NATIVE_PLAYING_SERVICE.md) | first permanent native PLAYING service iteration | #86 | `bf1275037fd22504077f6ff2bbf57e14721edf0a` |
 | [`MAP1_NATIVE_GRAPHICS_CATALOG.md`](MAP1_NATIVE_GRAPHICS_CATALOG.md) | compact PAK-backed Junction graphics catalog | #87 | `91a17414859fa12a0553e5b011956b6f95165780` |
+| [`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md) | first native Junction walls+planes frame and permanent CYD panel profile | #88 | `d8da51e5a3b9700d1806110f56f553a422d7d182` |
 
 Older archives remain indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
 
 ## Latest merged boundary
 
-PR #87 established the compact native sparse graphics catalog.
+PR #88 established the first deterministic native Junction gameplay framebuffer, textured planes and the permanent hardware-selected CYD display profile.
 
 ```text
-main = 91a17414859fa12a0553e5b011956b6f95165780
-JunctionGraphicsCatalogFNV=969d5a77
-textureRecordsFNV=2dd5dfcf
-spriteRecordsFNV=cfd036cf
+main = d8da51e5a3b9700d1806110f56f553a422d7d182
+firstFrameFNV=8910c2ed
+viewportFNV=032ffaed
+catalogFNV=969d5a77
 shapeData=NULL
 mediaTexels=NULL
-firstFramePending=yes
 ```
 
 ## Current merge-ready milestone
 
-[`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md) hardware-proves the first real native Junction gameplay framebuffer and the permanent classic-CYD panel profile.
+[`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md) hardware-proves the first native Junction billboard sprite pass.
 
 ```text
-branch = agent/esp32-native-first-junction-frame
-base   = 91a17414859fa12a0553e5b011956b6f95165780
-hardware-tested firmware = 09f670a2f11e1cfce065c55aef8a4d3a5711a9a3
+branch = agent/esp32-native-junction-sprites
+base   = d8da51e5a3b9700d1806110f56f553a422d7d182
+hardware-tested firmware = 3fdb2905b1d49ef1112a9e9df7a5db7e278897bd
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-### Native frame canon
+### Predecessor frame canon
 
 ```text
-EspNativeFirstFrameState = 48 B
-frameAfterFNV = 8910c2ed
-viewport = 160x80 @ 0,20
-viewportFNV = 032ffaed
-BMP = /junction-viewport.bmp
-BMP bytes = 38454
+frameBeforeFNV=8910c2ed
+viewportBeforeFNV=032ffaed
+viewport=160x80 @ 0,20
 ```
 
-`frameBeforeFNV` and the complete first-frame state FNV are deliberately **not** cross-boot canons because the previously displayed framebuffer differs between runs.
+### BSP-visible view-sprite admission
 
-### Native walls/BSP
+The milestone reproduces legacy `Render_relinkSprite()` leaf ownership and admits sprites only from leaves visited by the same stateful BSP/depth walk used for the native frame.
 
 ```text
-nodes=39
-leaves=12
-nodeCull=8
-lineCandidates=62
-backfaceCull=20
-clipCull=8
-occluderOnly=0
-spriteSpanDeferred=0
-wallRequests=34
-wallDraws=34
-spanCalls=166
-wallPixels=4341
-wallCache=17H/17M/14E
-resolvedTextures=30
-animationTime=0
+BSP walk = nodes:39 leaves:12 nodeCull:8 lines:62 backface:20 clip:8
+mapSprites=48
+bspCandidates=21
+bspRejected=27
+hidden=0
+candidate modes=0:14 / 7:7
+hardware census candidateFNV=23ef1895
+permanent orderFNV=f16737cb
 ```
 
-### Native textured planes
+The 27 rejected sprites do not contribute pixels in the canonical Junction pose. Filtering them reduces work/PAK reads while preserving the final image.
+
+### Native billboard raster canon
 
 ```text
-rows=80
-pixels=12800
-uniqueLogicalTextures=6
-cache=12795H/5M/0E
-texelReads=10240 B
+modes=0:14 / 7:7
+mode7Pixels=311
+draws=21
+nearCull=0
+clipCull=0
+spanRuns=219
+pixels=1828
+wallOccludedCols=62
+frameLoads=21
+uniqueLogical=9
+frameBytes=12251
+maxFrameBytes=1020
+packReads=130
+glowDeferred=7
 ```
 
-### Resident / RAM / side-effect proof
+Mode 7 uses the legacy additive RGB565 saturation rule. Physical bitshapes/texels are resolved through bounded native PAK reads; no resident legacy graphics pool is installed.
+
+### Stable post-sprite framebuffer
 
 ```text
-residentSnapshot=bb714d80->bb714d80
-runtimeFNV=bc432a0f
-mapFNV=8dba0bb4
-scriptFNV=bc9b18ff
-lineFNV=3658710d
-textureStateFNV=537319ad
-automapFNV=b699bd75
-topologyFNV=d6e8df7d
-playerViewFNV=afcdcf74
-playingServiceFNV=4c50b853
-catalogFNV=969d5a77
+frameAfterFNV=299506eb
+viewportAfterFNV=ae2246eb
+BMP=/junction-sprite-viewport.bmp
+BMP bytes=38454
+```
+
+The BMP is a direct logical-framebuffer diagnostic, independent of TFT/panel/camera effects.
+
+### RAM / ownership proof
+
+```text
 heapDelta=0
 largestDelta=0
 legacyRenderStable=yes
+topologyFNV=d6e8df7d
+catalogFNV=969d5a77
 packClosed=yes
+shapeData=NULL
+mediaTexels=NULL
+mediaTexelOffsets=NULL
+mediaBitShapeOffsets=NULL
+mediaTexturesIds=NULL
+mediaSpriteIds=NULL
+legacy Game.entities=0
+legacy Game.monsters=0
 ```
 
-The strict probe additionally verifies unchanged Game, Player, Hud, DoomCanvas, Render, `Render.columnScale`, legacy palette, graphics catalog and resident state; wrong-map/null inputs fail closed and repeat is atomic.
+The sprite renderer uses one temporary bounded workspace and restores borrowed Render projection scratch exactly before return.
 
-### Classic CYD presentation profile
+### Still deferred inside sprite rendering
 
-The logical framebuffer is standard raw RGB565 and remains untouched by display calibration.
+Legacy automatically spawns additive glow companions after some base sprites. These are deliberately outside the current milestone:
 
 ```text
-logical framebuffer = 160x120 RGB565 / 38400 B
-physical output      = 320x240
-resampling           = exact nearest-neighbour x2
-software saturation = none
-software R/B swap   = none
-TFT byte swap        = ON
-panel inversion      = ON
-TFT_RGB_ORDER        = TFT_BGR
-ILI9341 driver       = ILI9341_2_DRIVER
-SPI frequency        = 55 MHz
+135/140 -> companion logical 136, mode 7
+131 -> companion logical 144, mode 7 when encountered
+current Junction pose: glowDeferred=7
 ```
 
-Real-CYD primary testing proved raw RGB565 channel order correct. A later controller-only A-F comparison of the exact canonical Junction frame isolated the remaining poor colour/contrast reproduction to the ILI9341 gamma profile.
-
-Hardware selected **B / INV-GAMMA-WA** without contest. The permanent `PlatformVideo_begin()` keeps the stock `ILI9341_2_DRIVER` power/VCOM/frame-rate setup and writes this table into both gamma registers `0xE0` and `0xE1`:
-
-```text
-00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
-```
-
-`PlatformVideo_present()` remains a direct raw RGB565 nearest-neighbour x2 path. The final tested firmware contains no temporary `VIDEOCAL`, `VIDEOBOUNDARY`, `VIDEOPRIMARY` or `PANELCAL` carousel.
+The next milestone must extend the sparse catalog dependency closure so implicit companions are explicit native-owned resources before rendering them.
 
 ## Stable canons through current branch
 
@@ -183,6 +181,10 @@ JunctionGraphicsTextureRecordsFNV=2dd5dfcf
 JunctionGraphicsSpriteRecordsFNV=cfd036cf
 JunctionFirstFrameFNV=8910c2ed
 JunctionViewportFNV=032ffaed
+JunctionSpriteFrameFNV=299506eb
+JunctionSpriteViewportFNV=ae2246eb
+JunctionSpriteCandidateFNV=23ef1895
+JunctionSpriteOrderFNV=f16737cb
 ```
 
 ## Architecture direction
@@ -200,7 +202,8 @@ original behavior/data
  -> sparse native graphics catalog               [hardware-proven]
  -> native wall + textured-plane gameplay frame  [hardware-proven]
  -> raw CYD presentation                         [hardware-proven]
- -> native sprite gameplay rendering             [NEXT]
+ -> BSP-visible native billboard rendering       [hardware-proven]
+ -> implicit sprite dependency/glow family       [NEXT]
  -> native HUD/input/turn/gameplay
  -> expanded native renderer
 ```
@@ -219,9 +222,10 @@ nativePlayingService=yes
 nativeGraphicsCatalog=yes
 nativeFirstFrame=yes
 texturedPlanes=yes
-graphicsCatalogPending=no
-firstFramePending=no
-spritesPending=yes
+nativeBaseBillboards=yes
+bspVisibleOnly=yes
+intrinsicMode7=yes
+glowPending=yes
 hudPending=yes
 gameplayDispatchPending=yes
 initialSavePersistencePending=yes
@@ -242,39 +246,28 @@ legacy Game.entities = 0
 legacy Game.monsters = 0
 ```
 
+## Classic CYD presentation profile
+
+The logical framebuffer remains standard raw RGB565 and presentation remains exact nearest-neighbour x2 from 160x120 to 320x240. The hardware-selected panel profile is inversion ON, TFT byte swap ON, no software saturation or R/B swap, with the selected inverted gamma table:
+
+```text
+00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
+```
+
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-first-junction-frame
+MERGE agent/esp32-native-junction-sprites
 ```
 
 Hardware-tested firmware:
 
 ```text
-09f670a2f11e1cfce065c55aef8a4d3a5711a9a3
+3fdb2905b1d49ef1112a9e9df7a5db7e278897bd
 ```
 
-All commits after that tested SHA are documentation-only.
+All commits after this tested SHA are documentation-only.
 
 ## Next bounded milestone after merge
 
-Recover exact new `main`, then render the Junction **native sprite pass** inside the same deterministic gameplay-frame boundary using the 16 hardware-proven sparse sprite catalog records.
-
-Keep it bounded:
-
-```text
-same Junction pose/frame boundary
-input consumed = no
-turn advanced = no
-gameplay dispatch = no
-legacy Game.entities = 0
-legacy Game.monsters = 0
-legacy DoomCanvas.state = ST_INTRO
-legacy DoomCanvas_playingState = not called
-legacy Render_render = not called
-shapeData = NULL
-mediaTexels = NULL
-runtime ZIP = forbidden
-bounded sprite cache only
-HUD painting deferred unless separately scoped
-```
+Recover the exact new `main` SHA, then close the sparse native graphics dependency graph for the implicit legacy glow family and render only those companions. Preserve the current BSP-visible candidate set, world/gameplay PARK, bounded temporary scratch, PAK-backed range access and all no-legacy-graphics-pool invariants.
