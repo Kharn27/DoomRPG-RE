@@ -16,28 +16,6 @@ constexpr size_t kPixelCount =
     static_cast<size_t>(DOOMRPG_LOGICAL_WIDTH) * DOOMRPG_LOGICAL_HEIGHT;
 constexpr size_t kFramebufferBytes = kPixelCount * sizeof(uint16_t);
 
-/* Hardware-selected CYD display profile.
- *
- * The four-way hardware comparison showed that the neutral gamma with a modest
- * 1.15 saturation boost gives the best visual match on the real ILI9341 panel.
- * Keep the logical RGB565 framebuffer untouched so every engine/rendering FNV
- * remains a source-of-truth hash; this transform exists only at the final TFT
- * presentation boundary.
- */
-constexpr int kDisplaySaturationPercent = 115;
-
-/* Temporary first-frame presentation-boundary diagnostic.
- *
- * The native Junction renderer has already proved the exact logical framebuffer
- * hash below and the exported BMP is generated from those same RGB565 words.
- * Once, and only for that exact frame, compare panel-side presentation variants
- * without ever mutating the framebuffer.  This distinguishes the legacy
- * saturation profile, panel inversion, TFT_eSPI byte order and controller R/B
- * order from renderer/palette faults.
- */
-constexpr uint32_t kJunctionFirstFrameFNV = 0x8910c2edU;
-bool junctionPresentationDiagnosticDone = false;
-
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 constexpr int kDebugOverlayMaxZones = 8;
 
@@ -59,123 +37,6 @@ int16_t debugTouchY = 0;
 uint16_t rgb565(uint8_t red, uint8_t green, uint8_t blue) {
     return static_cast<uint16_t>(((red & 0xf8) << 8) |
                                  ((green & 0xfc) << 3) | (blue >> 3));
-}
-
-uint8_t clamp8(int value) {
-    if (value < 0) return 0;
-    if (value > 255) return 255;
-    return static_cast<uint8_t>(value);
-}
-
-uint16_t tuneDisplayColor565(uint16_t color) {
-    /* Expand RGB565 to 8-bit using bit replication (no divisions), preserve
-     * BT.601-style luma, and scale only chroma by 1.15. Neutral grays and
-     * black/white therefore remain neutral while Doom's colored artwork gains
-     * the contrast observed in hardware comparison variant C.
-     */
-    const int red5 = (color >> 11) & 0x1f;
-    const int green6 = (color >> 5) & 0x3f;
-    const int blue5 = color & 0x1f;
-    int red = (red5 << 3) | (red5 >> 2);
-    int green = (green6 << 2) | (green6 >> 4);
-    int blue = (blue5 << 3) | (blue5 >> 2);
-
-    const int luma = (77 * red + 150 * green + 29 * blue + 128) >> 8;
-    red = clamp8(luma + ((red - luma) * kDisplaySaturationPercent) / 100);
-    green = clamp8(luma + ((green - luma) * kDisplaySaturationPercent) / 100);
-    blue = clamp8(luma + ((blue - luma) * kDisplaySaturationPercent) / 100);
-
-    return rgb565(static_cast<uint8_t>(red),
-                  static_cast<uint8_t>(green),
-                  static_cast<uint8_t>(blue));
-}
-
-uint16_t swapRedBlue565(uint16_t color) {
-    return static_cast<uint16_t>(((color & 0x001fU) << 11) |
-                                 (color & 0x07e0U) |
-                                 ((color & 0xf800U) >> 11));
-}
-
-uint32_t framebufferFNV() {
-    if (framebuffer == nullptr) return 0U;
-    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(framebuffer);
-    uint32_t hash = 2166136261U;
-    for (size_t i = 0; i < kFramebufferBytes; ++i) {
-        hash ^= bytes[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-bool pushFramebuffer(bool tuneColor, bool swapRedBlue) {
-    if (platformDisplay == nullptr || framebuffer == nullptr) {
-        return false;
-    }
-
-    uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
-
-    platformDisplay->startWrite();
-    platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
-                                   DOOMRPG_PHYSICAL_HEIGHT);
-
-    for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
-        const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
-        for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
-            uint16_t color = source[sourceX];
-            if (swapRedBlue) color = swapRedBlue565(color);
-            if (tuneColor) color = tuneDisplayColor565(color);
-            const int outputX = sourceX * DOOMRPG_INTEGER_SCALE;
-            outputRow[outputX] = color;
-            outputRow[outputX + 1] = color;
-        }
-
-        for (int repeatY = 0; repeatY < DOOMRPG_INTEGER_SCALE; ++repeatY) {
-            platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
-        }
-    }
-
-    platformDisplay->endWrite();
-    return true;
-}
-
-bool showPresentationProfile(const char* name,
-                             bool tuneColor,
-                             bool invertPanel,
-                             bool swapBytes,
-                             bool swapRedBlue) {
-    const uint32_t started = micros();
-    platformDisplay->invertDisplay(invertPanel);
-    platformDisplay->setSwapBytes(swapBytes);
-    const bool ok = pushFramebuffer(tuneColor, swapRedBlue);
-    Serial.printf("[VIDEOBOUNDARY] PROFILE %s tune=%s invert=%s swapBytes=%s rbSwap=%s hold=2500ms result=%s time=%lu us\n",
-                  name,
-                  tuneColor ? "sat1.15" : "raw",
-                  invertPanel ? "on" : "off",
-                  swapBytes ? "on" : "off",
-                  swapRedBlue ? "on" : "off",
-                  ok ? "OK" : "FAILED",
-                  micros() - started);
-    delay(2500);
-    return ok;
-}
-
-void runJunctionPresentationDiagnostic() {
-    bool ok = true;
-    Serial.println("[VIDEOBOUNDARY] START exact framebuffer=8910c2ed; compare each TFT profile to exported BMP");
-    ok &= showPresentationProfile("A CURRENT", true, true, true, false);
-    ok &= showPresentationProfile("B RAW", false, true, true, false);
-    ok &= showPresentationProfile("C RAW-NOINVERT", false, false, true, false);
-    ok &= showPresentationProfile("D RAW-NOSWAP", false, true, false, false);
-    ok &= showPresentationProfile("E RAW-NOINVERT-NOSWAP", false, false, false, false);
-    ok &= showPresentationProfile("F RAW-RBSWAP", false, true, true, true);
-
-    /* Restore the exact normal CYD presentation state and image. */
-    platformDisplay->invertDisplay(true);
-    platformDisplay->setSwapBytes(true);
-    (void)pushFramebuffer(true, false);
-    Serial.printf("[VIDEOBOUNDARY] RESTORE A CURRENT final=yes aggregate=%s framebuffer=%08x untouched=yes\n",
-                  ok ? "OK" : "FAILED",
-                  static_cast<unsigned int>(framebufferFNV()));
 }
 
 void setPixel(int x, int y, uint16_t color) {
@@ -293,8 +154,7 @@ bool PlatformVideo_begin(TFT_eSPI* display) {
     Serial.printf("[VIDEO] Physical output %dx%d, integer scale %dx\n",
                   DOOMRPG_PHYSICAL_WIDTH, DOOMRPG_PHYSICAL_HEIGHT,
                   DOOMRPG_INTEGER_SCALE);
-    Serial.printf("[VIDEO] CYD display profile gamma=1.00 saturation=%d%% resampling=nearest framebuffer=untouched\n",
-                  kDisplaySaturationPercent);
+    Serial.println("[VIDEO] CYD display profile raw RGB565 resampling=nearest framebuffer=untouched");
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     Serial.println("[HITBOX] Physical overlay enabled; framebuffer hashes remain untouched");
 #endif
@@ -321,23 +181,35 @@ bool PlatformVideo_present() {
         return false;
     }
 
-    const uint32_t frameHash = framebufferFNV();
-    if (!junctionPresentationDiagnosticDone &&
-        frameHash == kJunctionFirstFrameFNV) {
-        junctionPresentationDiagnosticDone = true;
-        runJunctionPresentationDiagnostic();
-        return true;
+    uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
+    const uint32_t started = micros();
+
+    platformDisplay->startWrite();
+    platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
+                                   DOOMRPG_PHYSICAL_HEIGHT);
+
+    for (int sourceY = 0; sourceY < DOOMRPG_LOGICAL_HEIGHT; ++sourceY) {
+        const uint16_t* source = framebuffer + sourceY * DOOMRPG_LOGICAL_WIDTH;
+        for (int sourceX = 0; sourceX < DOOMRPG_LOGICAL_WIDTH; ++sourceX) {
+            const uint16_t color = source[sourceX];
+            const int outputX = sourceX * DOOMRPG_INTEGER_SCALE;
+            outputRow[outputX] = color;
+            outputRow[outputX + 1] = color;
+        }
+
+        for (int repeatY = 0; repeatY < DOOMRPG_INTEGER_SCALE; ++repeatY) {
+            platformDisplay->pushPixels(outputRow, DOOMRPG_PHYSICAL_WIDTH);
+        }
     }
 
-    const uint32_t started = micros();
-    const bool ok = pushFramebuffer(true, false);
+    platformDisplay->endWrite();
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
     drawDebugOverlay();
 #endif
 
-    Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x + sat1.15: %lu us\n",
+    Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x raw RGB565: %lu us\n",
                   micros() - started);
-    return ok;
+    return true;
 }
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
