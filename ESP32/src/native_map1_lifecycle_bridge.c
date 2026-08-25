@@ -28,6 +28,7 @@
 #include "native_junction_post_load_weapon_select_probe.h"
 #include "native_junction_spawn_probe.h"
 #include "native_junction_sprite_census_probe.h"
+#include "native_junction_sprite_overlay_probe.h"
 #include "native_map1_access_probe.h"
 #include "native_map1_bsp_pass1.h"
 #include "native_map1_change_map_probe.h"
@@ -122,6 +123,7 @@ static void resetValidatedChain(void) {
     Esp32JunctionGraphicsCatalogProbe_reset();
     Esp32JunctionFirstFrameCorrectedProbe_reset();
     Esp32JunctionSpriteCensusProbe_reset();
+    Esp32JunctionSpriteOverlayProbe_reset();
     EspNativePlaneRenderer_reset();
     Esp32FirstFrameDiagnostic_reset();
 }
@@ -247,5 +249,6 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     if (Esp32JunctionFirstFrameCorrectedProbe_isDone()) {
         (void)Esp32FirstFrameDiagnostic_exportBmp();
         Esp32JunctionSpriteCensusProbe_service();
+        Esp32JunctionSpriteOverlayProbe_service(doomRpg);
     }
 }
