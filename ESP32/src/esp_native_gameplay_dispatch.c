@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "esp_native_gameplay_collision.h"
 #include "esp_native_gameplay_dispatch.h"
 
 #define FIXED_ONE 65536L
@@ -11,6 +12,8 @@ typedef char EspNativeGameplayTurnState_must_be_24_bytes[
     sizeof(EspNativeGameplayTurnState) == 24U ? 1 : -1];
 typedef char EspNativeGameplayDispatchResult_must_be_12_bytes[
     sizeof(EspNativeGameplayDispatchResult) == 12U ? 1 : -1];
+typedef char EspNativeGameplayMoveResult_must_be_24_bytes[
+    sizeof(EspNativeGameplayMoveResult) == 24U ? 1 : -1];
 
 static EspNativeGameplayTurnState turnState;
 
@@ -32,6 +35,13 @@ static int knownAction(uint8_t action) {
     default:
         return 0;
     }
+}
+
+static int movementAction(uint8_t action) {
+    return action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ||
+           action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK ||
+           action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT ||
+           action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT;
 }
 
 static int settledView(const EspPlayerViewState* view) {
@@ -113,6 +123,56 @@ static int candidateMatchesResult(
         afterTurn->sequence != result->sequence ||
         afterTurn->lastAction != result->action ||
         afterTurn->active != 1U) return 0;
+    return 1;
+}
+
+static int candidateMatchesMoveResult(
+    const EspPlayerViewState* beforeView,
+    const EspPlayerViewState* afterView,
+    const EspNativeGameplayMoveResult* result) {
+    if (beforeView == NULL || afterView == NULL || result == NULL ||
+        result->prepared != 1U || result->committed != 0U ||
+        result->rolledBack != 0U || !movementAction(result->action) ||
+        result->collisionStatus != ESP_NATIVE_GAMEPLAY_COLLISION_CLEAR ||
+        result->blockerSpriteIndex != ESP_NATIVE_GAMEPLAY_COLLISION_NO_SPRITE) {
+        return 0;
+    }
+    return afterView->viewX - beforeView->viewX == result->deltaX &&
+           afterView->viewY - beforeView->viewY == result->deltaY &&
+           afterView->viewAngle == beforeView->viewAngle &&
+           afterView->destAngle == beforeView->destAngle;
+}
+
+static int deriveMoveDelta(uint8_t action,
+                           int32_t* outDeltaX,
+                           int32_t* outDeltaY) {
+    int32_t dx;
+    int32_t dy;
+    if (outDeltaX == NULL || outDeltaY == NULL || !movementAction(action)) {
+        return 0;
+    }
+    switch (action) {
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
+        dx = turnState.viewStepX;
+        dy = turnState.viewStepY;
+        break;
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK:
+        dx = -turnState.viewStepX;
+        dy = -turnState.viewStepY;
+        break;
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT:
+        dx = turnState.viewStepY;
+        dy = -turnState.viewStepX;
+        break;
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT:
+        dx = -turnState.viewStepY;
+        dy = turnState.viewStepX;
+        break;
+    default:
+        return 0;
+    }
+    *outDeltaX = dx;
+    *outDeltaY = dy;
     return 1;
 }
 
@@ -259,6 +319,132 @@ EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackTurn(
         return ESP_NATIVE_GAMEPLAY_DISPATCH_COMMIT_FAILED;
     }
     turnState = *restoreBeforeTurn;
+    ioResult->committed = 0U;
+    ioResult->rolledBack = 1U;
+    return ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK;
+}
+
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_prepareMove(
+    const EspNativeGameplayInputState* intent,
+    EspPlayerViewState* outBeforeView,
+    EspPlayerViewState* outAfterView,
+    EspNativeGameplayMoveResult* outResult) {
+    const EspPlayerViewState* liveView;
+    EspNativeGameplayCollisionResult collision;
+    EspNativeGameplayCollisionStatus collisionStatus;
+    EspPlayerViewMoveStatus viewStatus;
+    int32_t deltaX;
+    int32_t deltaY;
+
+    if (outBeforeView != NULL) memset(outBeforeView, 0, sizeof(*outBeforeView));
+    if (outAfterView != NULL) memset(outAfterView, 0, sizeof(*outAfterView));
+    if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
+    if (!intentShapeValid(intent) || outBeforeView == NULL || outAfterView == NULL ||
+        outResult == NULL) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
+    }
+
+    outResult->sequence = intent->sequence;
+    outResult->action = intent->action;
+    outResult->blockerSpriteIndex = ESP_NATIVE_GAMEPLAY_COLLISION_NO_SPRITE;
+    outResult->blockerType = 0xffU;
+    if (!movementAction(intent->action)) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_DEFERRED;
+    }
+    if (!EspNativeGameplayDispatch_isReady()) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_VIEW_NOT_READY;
+    }
+
+    liveView = EspPlayerView_view();
+    if (!settledView(liveView) ||
+        turnState.destAngle != (uint8_t)liveView->viewAngle ||
+        !deriveMoveDelta(intent->action, &deltaX, &deltaY)) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_STALE;
+    }
+
+    outResult->deltaX = deltaX;
+    outResult->deltaY = deltaY;
+    collisionStatus = EspNativeGameplayCollision_traceCardinalStep(
+        liveView->viewX, liveView->viewY,
+        liveView->viewX + deltaX, liveView->viewY + deltaY,
+        &collision);
+    outResult->sourceTile = collision.sourceTile;
+    outResult->destTile = collision.destTile;
+    outResult->blockerSpriteIndex = collision.blockerSpriteIndex;
+    outResult->blockerType = collision.blockerType;
+    outResult->collisionStatus = (uint8_t)collisionStatus;
+
+    if (collisionStatus == ESP_NATIVE_GAMEPLAY_COLLISION_BLOCKED_WALL ||
+        collisionStatus == ESP_NATIVE_GAMEPLAY_COLLISION_BLOCKED_ENTITY) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_COLLISION_BLOCKED;
+    }
+    if (collisionStatus != ESP_NATIVE_GAMEPLAY_COLLISION_CLEAR) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_COLLISION_UNSUPPORTED;
+    }
+
+    viewStatus = EspPlayerView_prepareCardinalMove(
+        deltaX, deltaY, outBeforeView, outAfterView);
+    if (viewStatus != ESP_PLAYER_VIEW_MOVE_OK) {
+        return viewStatus == ESP_PLAYER_VIEW_MOVE_STALE
+                   ? ESP_NATIVE_GAMEPLAY_DISPATCH_STALE
+                   : ESP_NATIVE_GAMEPLAY_DISPATCH_VIEW_NOT_READY;
+    }
+    if (turnState.destAngle != (uint8_t)outBeforeView->viewAngle) {
+        memset(outBeforeView, 0, sizeof(*outBeforeView));
+        memset(outAfterView, 0, sizeof(*outAfterView));
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_STALE;
+    }
+
+    outResult->prepared = 1U;
+    return ESP_NATIVE_GAMEPLAY_DISPATCH_PREPARED;
+}
+
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_commitMove(
+    const EspPlayerViewState* expectedBeforeView,
+    const EspPlayerViewState* preparedAfterView,
+    EspNativeGameplayMoveResult* ioResult) {
+    EspPlayerViewMoveStatus viewStatus;
+
+    if (!candidateMatchesMoveResult(expectedBeforeView, preparedAfterView, ioResult)) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
+    }
+    if (!EspNativeGameplayDispatch_isReady() ||
+        turnState.destAngle != (uint8_t)expectedBeforeView->viewAngle) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_STALE;
+    }
+
+    viewStatus = EspPlayerView_commitPreparedMove(expectedBeforeView,
+                                                  preparedAfterView);
+    if (viewStatus != ESP_PLAYER_VIEW_MOVE_OK) {
+        return viewStatus == ESP_PLAYER_VIEW_MOVE_STALE
+                   ? ESP_NATIVE_GAMEPLAY_DISPATCH_STALE
+                   : ESP_NATIVE_GAMEPLAY_DISPATCH_COMMIT_FAILED;
+    }
+    ioResult->committed = 1U;
+    return ESP_NATIVE_GAMEPLAY_DISPATCH_OK;
+}
+
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackMove(
+    const EspPlayerViewState* expectedAfterView,
+    const EspPlayerViewState* restoreBeforeView,
+    EspNativeGameplayMoveResult* ioResult) {
+    EspPlayerViewMoveStatus viewStatus;
+
+    if (expectedAfterView == NULL || restoreBeforeView == NULL ||
+        ioResult == NULL || ioResult->prepared != 1U ||
+        ioResult->committed != 1U || ioResult->rolledBack != 0U ||
+        !EspNativeGameplayDispatch_isReady() ||
+        turnState.destAngle != (uint8_t)expectedAfterView->viewAngle) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
+    }
+
+    viewStatus = EspPlayerView_commitPreparedMove(expectedAfterView,
+                                                  restoreBeforeView);
+    if (viewStatus != ESP_PLAYER_VIEW_MOVE_OK) {
+        return viewStatus == ESP_PLAYER_VIEW_MOVE_STALE
+                   ? ESP_NATIVE_GAMEPLAY_DISPATCH_STALE
+                   : ESP_NATIVE_GAMEPLAY_DISPATCH_COMMIT_FAILED;
+    }
     ioResult->committed = 0U;
     ioResult->rolledBack = 1U;
     return ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK;
