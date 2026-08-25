@@ -1,132 +1,173 @@
 # ESP32 documentation map
 
-This file defines the current ESP32 CYD documentation map.
+This file indexes the current classic-CYD port documentation.
 
 ## Source of truth
 
 - [`README.md`](README.md): stable build/flash guide.
-- [`PORTING_STATUS.md`](PORTING_STATUS.md): authoritative current recovery point.
-- Milestone archives: implementation contracts and real-hardware evidence.
+- [`PORTING_STATUS.md`](PORTING_STATUS.md): authoritative recovery point and current hardware PARK.
+- Milestone archives: implementation contracts plus real-CYD evidence.
 
-When chat history and repository documentation disagree, current `main` + `PORTING_STATUS.md` + the latest relevant milestone archive win.
+If chat history and repository state disagree, current GitHub `main` + `PORTING_STATUS.md` + the latest relevant milestone archive win.
 
 ## Recent merged milestones
 
 | Archive | Purpose | PR | Merged `main` |
 | --- | --- | ---: | --- |
-| [`MAP1_NATIVE_COMMITTED_TRANSITION.md`](MAP1_NATIVE_COMMITTED_TRANSITION.md) | committed native map swap | #68 | `00268a100c6662cb883f9a02d979b4f29eecbf12` |
-| [`MAP1_NATIVE_JUNCTION_SPAWN.md`](MAP1_NATIVE_JUNCTION_SPAWN.md) | fresh Junction spawn | #69 | `992f38374840113409e776fb82ce57ab014607e5` |
-| [`MAP1_NATIVE_PLAYER_VIEW.md`](MAP1_NATIVE_PLAYER_VIEW.md) | active player/view owner | #70 | `8a82891bb8d9c62582170cc4b3b74d270849e77b` |
-| [`MAP1_NATIVE_HUD_REFRESH.md`](MAP1_NATIVE_HUD_REFRESH.md) | HUD dirty ownership | #71 | `02b7f143a12e6df86ada094af10ef580ad572aad` |
-| [`MAP1_NATIVE_PLAYER_SETUP.md`](MAP1_NATIVE_PLAYER_SETUP.md) | fresh-map Player_setup | #72 | `9077ae4496bdcc06b6b99846332ab43b38943a8a` |
-| [`MAP1_NATIVE_INITIAL_TILE_ENTER.md`](MAP1_NATIVE_INITIAL_TILE_ENTER.md) | first fresh-map tile dispatch | #73 | `0bc171affad8416ed1a7918a4a67fd4d53d61efe` |
-| [`MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md`](MAP1_NATIVE_FINISH_ROTATION_ORIENTATION.md) | finishRotation orientation | #74 | `2decae5067438dc1a2d9c29335cfc0cad5538645` |
-| [`MAP1_NATIVE_FINISH_ROTATION_SECOND_TILE.md`](MAP1_NATIVE_FINISH_ROTATION_SECOND_TILE.md) | finishRotation second tile | #75 | `7a0e57cf13d02320be3a238dc73499a023c9f04c` |
-| [`MAP1_NATIVE_DURABLE_FACING.md`](MAP1_NATIVE_DURABLE_FACING.md) | finishRotation durable facing | #76 | `3ab143110a1f44ebb44bc130d12d1844f3ae73ca` |
-| [`MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md`](MAP1_NATIVE_POST_LOAD_HUD_CLEAR.md) | post-load HUD message clear | #77 | `56c4211a91e6a95763dd4cc215ef40de6c10a98b` |
-| [`MAP1_NATIVE_POST_LOAD_GIVEMAP.md`](MAP1_NATIVE_POST_LOAD_GIVEMAP.md) | direct Junction Game_givemap | #78 | `4737b016d02615b8435cf84909fe3c251b6d338b` |
-| [`MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md`](MAP1_NATIVE_POST_LOAD_WEAPON_SELF_SELECT.md) | current-weapon identity self-select | #79 | `04e4e2269a6c70db3f3e4027717bdb36f286ce65` |
-| [`MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md`](MAP1_NATIVE_POST_LOAD_INITIAL_SAVE_INTENT.md) | initial-save semantic intent | #80 | `b669488c6f577d1004ac5a1dc742392698d66095` |
-| [`MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_FLAG_CLEANUP.md) | isLoaded/isSaved/activeLoadType cleanup | #81 | `c4a093d9db77a715c355a68c5aae9faaddf22e0b` |
-| [`MAP1_NATIVE_POST_LOAD_EVENT_PARTICLE_CLEANUP.md`](MAP1_NATIVE_POST_LOAD_EVENT_PARTICLE_CLEANUP.md) | empty event/particle cleanup | #82 | `c9d0a3fdc705acdbb613beccb17de4d98af218c3` |
-| [`MAP1_NATIVE_POST_LOAD_VIEW_INVALIDATION.md`](MAP1_NATIVE_POST_LOAD_VIEW_INVALIDATION.md) | redraw-request caller write | #83 | `4b5a9a368fbe4ee7938b2e3d11218b312d631f47` |
-| [`MAP1_NATIVE_POST_LOAD_PLAYING_TRANSITION.md`](MAP1_NATIVE_POST_LOAD_PLAYING_TRANSITION.md) | native ST_PLAYING transition semantics | #84 | `0a2cf860e074b19240f50fc65822710ab8d505bb` |
-| [`MAP1_NATIVE_POST_LOAD_IDLE_TIME.md`](MAP1_NATIVE_POST_LOAD_IDLE_TIME.md) | final fresh-map idle deadline / load-tail completion | #85 | `cdd7f3c7bdd7f1ea472faaccf64d055e7a00a4a2` |
-| [`MAP1_NATIVE_PLAYING_SERVICE.md`](MAP1_NATIVE_PLAYING_SERVICE.md) | first permanent native PLAYING service iteration | #86 | `bf1275037fd22504077f6ff2bbf57e14721edf0a` |
-| [`MAP1_NATIVE_GRAPHICS_CATALOG.md`](MAP1_NATIVE_GRAPHICS_CATALOG.md) | compact PAK-backed Junction graphics catalog | #87 | `91a17414859fa12a0553e5b011956b6f95165780` |
-| [`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md) | first native Junction walls+planes frame and permanent CYD panel profile | #88 | `d8da51e5a3b9700d1806110f56f553a422d7d182` |
+| [`MAP1_NATIVE_PLAYING_SERVICE.md`](MAP1_NATIVE_PLAYING_SERVICE.md) | first permanent native PLAYING service | #86 | `bf1275037fd22504077f6ff2bbf57e14721edf0a` |
+| [`MAP1_NATIVE_GRAPHICS_CATALOG.md`](MAP1_NATIVE_GRAPHICS_CATALOG.md) | compact PAK-backed graphics catalog | #87 | `91a17414859fa12a0553e5b011956b6f95165780` |
+| [`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md) | first Junction walls+planes frame + permanent CYD panel profile | #88 | `d8da51e5a3b9700d1806110f56f553a422d7d182` |
+| [`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md) | BSP-visible native Junction billboard rendering | #89 | `674b45bbd115cd8f9202f2ce2d7132550c3bb75e` |
 
-Older archives remain indexed by Git history. `PORTING_STATUS.md` is the preferred recovery point.
+Older archives remain available in Git history; `PORTING_STATUS.md` is the preferred recovery entry point.
 
 ## Latest merged boundary
 
-PR #88 established the first deterministic native Junction gameplay framebuffer, textured planes and the permanent hardware-selected CYD display profile.
+PR #89 established the first hardware-proven BSP-visible native billboard pass on Junction.
 
 ```text
-main = d8da51e5a3b9700d1806110f56f553a422d7d182
-firstFrameFNV=8910c2ed
-viewportFNV=032ffaed
-catalogFNV=969d5a77
+main=674b45bbd115cd8f9202f2ce2d7132550c3bb75e
+base world frame=8910c2ed
+base sprite frame=299506eb
+base sprite viewport=ae2246eb
+mapSprites=48
+BSP-visible candidates=21
+BSP-rejected=27
+modes=0:14 / 7:7
 shapeData=NULL
 mediaTexels=NULL
 ```
 
+Merged evidence: [`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md).
+
 ## Current merge-ready milestone
 
-[`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md) hardware-proves the first native Junction billboard sprite pass.
+[`MAP1_NATIVE_JUNCTION_GLOWS.md`](MAP1_NATIVE_JUNCTION_GLOWS.md) records the current real-CYD PASS.
 
 ```text
-branch = agent/esp32-native-junction-sprites
-base   = d8da51e5a3b9700d1806110f56f553a422d7d182
-hardware-tested firmware = 3fdb2905b1d49ef1112a9e9df7a5db7e278897bd
-status = REAL-CYD HARDWARE PASS / MERGE-READY
+branch=agent/esp32-native-junction-glows
+base=674b45bbd115cd8f9202f2ce2d7132550c3bb75e
+hardware-tested firmware=338388ee4166115585e2c964aa95e79d5b0313eb
+status=REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-### Predecessor frame canon
+### Direct catalog predecessor
 
 ```text
-frameBeforeFNV=8910c2ed
-viewportBeforeFNV=032ffaed
-viewport=160x80 @ 0,20
+stateFNV=969d5a77
+textures=30
+sprites=16
+storage=1840 B
+textureFNV=2dd5dfcf
+spriteFNV=cfd036cf
 ```
 
-### BSP-visible view-sprite admission
+### Native dependency closure
 
-The milestone reproduces legacy `Render_relinkSprite()` leaf ownership and admits sprites only from leaves visited by the same stateful BSP/depth walk used for the native frame.
+The current Junction view requires the legacy implicit family:
 
 ```text
-BSP walk = nodes:39 leaves:12 nodeCull:8 lines:62 backface:20 clip:8
-mapSprites=48
+135/140 -> companion logical sprite 136 / mode 7
+```
+
+The native catalog now closes that dependency atomically instead of bypassing ownership with ad-hoc PAK reads.
+
+Hardware canon:
+
+```text
+closedCatalogFNV=257444a5
+textures=30
+sprites=17
+storage=1880 B
+persistentIncrement=40 B
+dependency=136
+largest8=34804->34804
+repeatAtomic=yes
+packClosed=yes
+```
+
+Generic dependency semantics retain `131 -> 144` for future maps/views; current Junction requires only 136.
+
+### Shared BSP visibility/depth primitive
+
+This milestone extracts the stateful compact BSP visibility/depth walk into a reusable native primitive. It publishes visited leaves plus the 160-column depth boundary and restores borrowed legacy projection scratch exactly.
+
+Hardware parity remains:
+
+```text
+nodes=39
+leaves=12
+nodeCull=8
+lines=62
+backface=20
+clip=8
+occluder=0
+spriteSpan=0
+orderFNV=f16737cb
+```
+
+### Base billboard pass remains preserved
+
+```text
+objects=48
 bspCandidates=21
 bspRejected=27
-hidden=0
-candidate modes=0:14 / 7:7
-hardware census candidateFNV=23ef1895
-permanent orderFNV=f16737cb
-```
-
-The 27 rejected sprites do not contribute pixels in the canonical Junction pose. Filtering them reduces work/PAK reads while preserving the final image.
-
-### Native billboard raster canon
-
-```text
 modes=0:14 / 7:7
 mode7Pixels=311
 draws=21
 nearCull=0
 clipCull=0
-spanRuns=219
+spans=219
 pixels=1828
 wallOccludedCols=62
 frameLoads=21
 uniqueLogical=9
 frameBytes=12251
 maxFrameBytes=1020
-packReads=130
-glowDeferred=7
+preserved=yes
 ```
 
-Mode 7 uses the legacy additive RGB565 saturation rule. Physical bitshapes/texels are resolved through bounded native PAK reads; no resident legacy graphics pool is installed.
+### Hardware-proven glow companions
 
-### Stable post-sprite framebuffer
+Legacy ordering is preserved: each additive companion is rendered immediately after its parent.
 
 ```text
-frameAfterFNV=299506eb
-viewportAfterFNV=ae2246eb
-BMP=/junction-sprite-viewport.bmp
-BMP bytes=38454
+companions=7
+draws=7
+nearCull=0
+clipCull=0
+spans=59
+pixels=1917
+wallOccludedCols=32
+frameLoads=7
+frameBytes=5572
+maxFrameBytes=796
+packReads=172
+renderMode=7 additive RGB565
 ```
 
-The BMP is a direct logical-framebuffer diagnostic, independent of TFT/panel/camera effects.
+The additive lamp glow is visibly present on the real CYD.
+
+### Stable complete framebuffer
+
+```text
+predecessor world frame=8910c2ed
+pre-glow sprite frame=299506eb
+complete sprite+glow frame=b5218f24
+complete viewportFNV=9206eb24
+BMP=/junction-sprite-viewport.bmp
+BMP bytes=38454
+viewport=160x80 @ 0,20
+```
 
 ### RAM / ownership proof
 
 ```text
-heapDelta=0
-largestDelta=0
-legacyRenderStable=yes
+catalog persistent increment=40 B
+renderer heapDelta=0
+renderer largestDelta=0
 topologyFNV=d6e8df7d
-catalogFNV=969d5a77
+closedCatalogFNV=257444a5
 packClosed=yes
 shapeData=NULL
 mediaTexels=NULL
@@ -136,23 +177,13 @@ mediaTexturesIds=NULL
 mediaSpriteIds=NULL
 legacy Game.entities=0
 legacy Game.monsters=0
+no world/entity mutation
+no input consumption
+no turn advancement
+no gameplay dispatch
 ```
 
-The sprite renderer uses one temporary bounded workspace and restores borrowed Render projection scratch exactly before return.
-
-### Still deferred inside sprite rendering
-
-Legacy automatically spawns additive glow companions after some base sprites. These are deliberately outside the current milestone:
-
-```text
-135/140 -> companion logical 136, mode 7
-131 -> companion logical 144, mode 7 when encountered
-current Junction pose: glowDeferred=7
-```
-
-The next milestone must extend the sparse catalog dependency closure so implicit companions are explicit native-owned resources before rendering them.
-
-## Stable canons through current branch
+## Stable recovery canons through current branch
 
 ```text
 Entrance snapshotFNV=b3811f3d
@@ -162,29 +193,23 @@ runtimeFNV=bc432a0f
 mapFNV=8dba0bb4
 scriptFNV=bc9b18ff
 lineFNV=3658710d
-textureFNV=537319ad
+textureStateFNV=537319ad
 automapFNV=b699bd75
 topologyFNV=d6e8df7d
-JunctionDurableFacingFNV=95aa1108
-postFacingPlayerViewFNV=afcdcf74
-JunctionPostLoadHudClearFNV=b7383e18
-JunctionPostLoadGiveMapFNV=448e587d
-JunctionWeaponSelfSelectFNV=699f3cf3
-JunctionInitialSaveIntentFNV=0bf1a911
-JunctionPostLoadFlagCleanupFNV=46cb2547
-JunctionEventParticleCleanupFNV=8bc79e2b
-JunctionViewInvalidationFNV=4561c3c1
 JunctionNativeSTPlayingFNV=73bc9acd
 JunctionNativePlayingServiceFNV=4c50b853
-JunctionGraphicsCatalogFNV=969d5a77
-JunctionGraphicsTextureRecordsFNV=2dd5dfcf
-JunctionGraphicsSpriteRecordsFNV=cfd036cf
+DirectGraphicsCatalogFNV=969d5a77
+DirectTextureRecordsFNV=2dd5dfcf
+DirectSpriteRecordsFNV=cfd036cf
+ClosedGlowCatalogFNV=257444a5
 JunctionFirstFrameFNV=8910c2ed
-JunctionViewportFNV=032ffaed
-JunctionSpriteFrameFNV=299506eb
-JunctionSpriteViewportFNV=ae2246eb
+JunctionFirstViewportFNV=032ffaed
+JunctionBaseSpriteFrameFNV=299506eb
+JunctionBaseSpriteViewportFNV=ae2246eb
 JunctionSpriteCandidateFNV=23ef1895
 JunctionSpriteOrderFNV=f16737cb
+JunctionGlowFrameFNV=b5218f24
+JunctionGlowViewportFNV=9206eb24
 ```
 
 ## Architecture direction
@@ -192,23 +217,23 @@ JunctionSpriteOrderFNV=f16737cb
 ```text
 original behavior/data
  -> /DoomRPG-ESP32.pak
- -> compact immutable map                        [hardware-proven]
- -> compact mutable world overlays               [hardware-proven]
- -> native event semantics                       [hardware-proven by family]
- -> native transition/residency                  [hardware-proven]
- -> native fresh-map player chain                [hardware-proven]
- -> post-load caller chain                       [hardware-proven complete]
- -> native PLAYING service/dispatch              [hardware-proven first iteration]
- -> sparse native graphics catalog               [hardware-proven]
- -> native wall + textured-plane gameplay frame  [hardware-proven]
- -> raw CYD presentation                         [hardware-proven]
- -> BSP-visible native billboard rendering       [hardware-proven]
- -> implicit sprite dependency/glow family       [NEXT]
- -> native HUD/input/turn/gameplay
- -> expanded native renderer
+ -> compact immutable map                         [hardware-proven]
+ -> compact mutable overlays                      [hardware-proven]
+ -> native event semantics                        [hardware-proven by family]
+ -> native transition/residency                   [hardware-proven]
+ -> native fresh-map player/post-load chain       [hardware-proven]
+ -> first native PLAYING service                  [hardware-proven]
+ -> sparse native graphics catalog                [hardware-proven]
+ -> native walls + textured planes                [hardware-proven]
+ -> raw CYD presentation                          [hardware-proven]
+ -> BSP-visible native billboards                 [hardware-proven]
+ -> implicit sprite dependency closure + glows    [hardware-proven]
+ -> native gameplay HUD painting                  [NEXT]
+ -> native input/turn/gameplay dispatch
+ -> expanded native renderer/gameplay
 ```
 
-Current hardware PARK:
+## Current hardware PARK
 
 ```text
 legacyState=9 / ST_INTRO
@@ -216,8 +241,6 @@ page=3
 targetMap=9
 junctionResident=yes
 nativeST_PLAYING=yes
-nativeIdleTime=yes
-postLoadTailComplete=yes
 nativePlayingService=yes
 nativeGraphicsCatalog=yes
 nativeFirstFrame=yes
@@ -225,7 +248,8 @@ texturedPlanes=yes
 nativeBaseBillboards=yes
 bspVisibleOnly=yes
 intrinsicMode7=yes
-glowPending=yes
+glowCompanions=yes
+glowPending=no
 hudPending=yes
 gameplayDispatchPending=yes
 initialSavePersistencePending=yes
@@ -239,35 +263,42 @@ Mandatory invariants remain:
 ```text
 shapeData == NULL
 mediaTexels == NULL
-mediaTexelOffsets == NULL
-mediaBitShapeOffsets == NULL
 runtime ZIP map/graphics access forbidden
-legacy Game.entities = 0
-legacy Game.monsters = 0
+legacy Game.entities == 0
+legacy Game.monsters == 0
 ```
 
 ## Classic CYD presentation profile
 
-The logical framebuffer remains standard raw RGB565 and presentation remains exact nearest-neighbour x2 from 160x120 to 320x240. The hardware-selected panel profile is inversion ON, TFT byte swap ON, no software saturation or R/B swap, with the selected inverted gamma table:
+The logical framebuffer remains raw RGB565, presented by exact nearest-neighbour x2 from 160x120 to 320x240. Permanent hardware-selected panel policy:
 
 ```text
-00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
+inversion=ON
+TFT byte swap=ON
+software saturation/gamma transform=none
+software R/B swap=none
+TFT_RGB_ORDER=TFT_BGR
+driver=ILI9341_2_DRIVER
+SPI=55 MHz
+gamma=00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
 ```
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-junction-sprites
+MERGE agent/esp32-native-junction-glows
 ```
 
 Hardware-tested firmware:
 
 ```text
-3fdb2905b1d49ef1112a9e9df7a5db7e278897bd
+338388ee4166115585e2c964aa95e79d5b0313eb
 ```
 
-All commits after this tested SHA are documentation-only.
+All commits after that tested SHA must be documentation-only before merge-ready declaration.
 
 ## Next bounded milestone after merge
 
-Recover the exact new `main` SHA, then close the sparse native graphics dependency graph for the implicit legacy glow family and render only those companions. Preserve the current BSP-visible candidate set, world/gameplay PARK, bounded temporary scratch, PAK-backed range access and all no-legacy-graphics-pool invariants.
+Recover the exact new `main` SHA, then implement **native gameplay HUD painting** as a separate visible boundary. Consume the already-owned native HUD/player/view intent only; do not combine it with input, turn advancement or gameplay dispatch.
+
+Keep the existing renderer/PARK constraints: same 160x120 framebuffer, native PAK only, bounded caches/scratch, no legacy gameplay/render loop, `shapeData=NULL`, `mediaTexels=NULL`.

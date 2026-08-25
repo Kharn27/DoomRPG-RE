@@ -11,6 +11,8 @@
 #define PALETTES_HEADER_BYTES 4U
 #define PALETTE_BYTES (ESP_NATIVE_GRAPHICS_PALETTE_COLORS * 2U)
 #define RESOURCE_ID_COUNT 256U
+#define GLOW_SPRITE_136 136U
+#define GLOW_SPRITE_144 144U
 
 typedef char EspNativeGraphicsCatalogRecord_must_be_40_bytes[
     sizeof(EspNativeGraphicsCatalogRecord) == 40U ? 1 : -1];
@@ -50,9 +52,7 @@ static uint16_t countResources(int sprites) {
     for (id = 0U; id < RESOURCE_ID_COUNT; ++id) {
         int required = sprites ? EspMapRuntime_spriteRequired(id)
                                : textureRequired(id);
-        if (required) {
-            ++count;
-        }
+        if (required) ++count;
     }
     return count;
 }
@@ -107,16 +107,7 @@ static EspNativeGraphicsCatalogStatus readRecord(
     outRecord->paletteSourceOffset = (uint16_t)paletteOffset;
     outRecord->sourceOffset = (uint32_t)sourceOffset;
 
-    /*
-     * palettes.bin stores the original RGB565 words. Legacy
-     * Render_loadPalettes() historically swaps R/B for the desktop backend;
-     * DoomRPG_prepareNativePalette() swaps that transitional table back for
-     * the ESP32 framebuffer. Reading the little-endian source words directly
-     * therefore yields the permanent native RGB565 form without depending on
-     * either legacy transformation. The hardware probe accepts only one
-     * coherent relation to the transitional Render palette: already-native or
-     * exactly one R/B swap away.
-     */
+    /* palettes.bin raw words are already the permanent native RGB565 form. */
     for (i = 0U; i < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++i) {
         outRecord->paletteRgb565[i] = readLe16(&paletteBytes[i * 2U]);
     }
@@ -247,9 +238,7 @@ EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
                                 MAPPINGS_HEADER_BYTES, texelPairs,
                                 paletteEntries, (uint16_t)id,
                                 &catalogArena[textureIndex]);
-            if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK) {
-                goto fail_pack;
-            }
+            if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK) goto fail_pack;
             ++textureIndex;
         }
     }
@@ -259,9 +248,7 @@ EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void) {
                                 spritePairBase, bitShapePairs,
                                 paletteEntries, (uint16_t)id,
                                 &catalogArena[(uint32_t)textureCount + spriteIndex]);
-            if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK) {
-                goto fail_pack;
-            }
+            if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK) goto fail_pack;
             ++spriteIndex;
         }
     }
@@ -290,6 +277,178 @@ fail_pack:
     EspAssetPack_close();
 fail:
     EspNativeGraphicsCatalog_reset();
+    return status;
+}
+
+static int spriteRecordPresent(uint16_t resourceId) {
+    uint16_t i;
+    if (!EspNativeGraphicsCatalog_isReady()) return 0;
+    for (i = 0U; i < catalogView.spriteCount; ++i) {
+        uint16_t id = catalogView.sprites[i].resourceId;
+        if (id == resourceId) return 1;
+        if (id > resourceId) break;
+    }
+    return 0;
+}
+
+EspNativeGraphicsCatalogStatus
+EspNativeGraphicsCatalog_expandSpriteDependencies(void) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    EspAssetPackEntry mappings;
+    EspAssetPackEntry palettes;
+    uint8_t mappingHeader[MAPPINGS_HEADER_BYTES];
+    uint8_t paletteHeader[PALETTES_HEADER_BYTES];
+    uint16_t missing[2];
+    EspNativeGraphicsCatalogRecord dependency[2];
+    EspNativeGraphicsCatalogRecord* replacement = NULL;
+    EspNativeGraphicsCatalogRecord* oldArena;
+    uint32_t missingCount = 0U;
+    uint32_t texelPairs;
+    uint32_t bitShapePairs;
+    uint32_t textureIdCount;
+    uint32_t spriteIdCount;
+    uint32_t paletteBytes;
+    uint32_t paletteEntries;
+    uint32_t spritePairBase;
+    uint64_t expectedMappingsBytes;
+    uint32_t totalCount;
+    uint32_t storageBytes;
+    uint16_t targetSpriteCount;
+    uint16_t counts[2];
+    uint32_t hash;
+    uint32_t oldIndex;
+    uint32_t depIndex;
+    uint32_t dstIndex;
+    EspNativeGraphicsCatalogStatus status = ESP_NATIVE_GRAPHICS_CATALOG_INVALID;
+
+    if (!EspNativeGraphicsCatalog_isReady() || runtime == NULL ||
+        !EspMapRuntime_isLoaded() || runtime->arena == NULL ||
+        runtime->arenaBytes == 0U) {
+        return ESP_NATIVE_GRAPHICS_CATALOG_RUNTIME_NOT_READY;
+    }
+    if (EspAssetPack_isOpen()) return ESP_NATIVE_GRAPHICS_CATALOG_PACK_BUSY;
+
+    if ((EspMapRuntime_spriteRequired(135U) ||
+         EspMapRuntime_spriteRequired(140U)) &&
+        !spriteRecordPresent(GLOW_SPRITE_136)) {
+        missing[missingCount++] = GLOW_SPRITE_136;
+    }
+    if (EspMapRuntime_spriteRequired(131U) &&
+        !spriteRecordPresent(GLOW_SPRITE_144)) {
+        missing[missingCount++] = GLOW_SPRITE_144;
+    }
+    if (missingCount == 0U) {
+        return ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE;
+    }
+
+    if ((uint32_t)catalogView.spriteCount + missingCount > UINT16_MAX) {
+        return ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+    }
+    targetSpriteCount = (uint16_t)((uint32_t)catalogView.spriteCount + missingCount);
+    totalCount = (uint32_t)catalogView.textureCount + targetSpriteCount;
+    if (totalCount > UINT32_MAX / (uint32_t)sizeof(*replacement)) {
+        return ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+    }
+    storageBytes = totalCount * (uint32_t)sizeof(*replacement);
+    replacement = (EspNativeGraphicsCatalogRecord*)malloc(storageBytes);
+    if (replacement == NULL) return ESP_NATIVE_GRAPHICS_CATALOG_ALLOC_FAILED;
+    memset(replacement, 0, storageBytes);
+
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_PACK_OPEN_FAILED;
+        goto fail;
+    }
+    if (!EspAssetPack_findEntry("mappings.bin", &mappings) ||
+        !EspAssetPack_findEntry("palettes.bin", &palettes)) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_MISSING;
+        goto fail_pack;
+    }
+    if (mappings.size < MAPPINGS_HEADER_BYTES ||
+        palettes.size < PALETTES_HEADER_BYTES ||
+        !EspAssetPack_readRange(&mappings, 0U, mappingHeader,
+                                sizeof(mappingHeader)) ||
+        !EspAssetPack_readRange(&palettes, 0U, paletteHeader,
+                                sizeof(paletteHeader))) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_READ_FAILED;
+        goto fail_pack;
+    }
+
+    texelPairs = readLe32(mappingHeader);
+    bitShapePairs = readLe32(mappingHeader + 4U);
+    textureIdCount = readLe32(mappingHeader + 8U);
+    spriteIdCount = readLe32(mappingHeader + 12U);
+    paletteBytes = readLe32(paletteHeader);
+    expectedMappingsBytes =
+        (uint64_t)MAPPINGS_HEADER_BYTES +
+        ((uint64_t)texelPairs * MAPPING_PAIR_BYTES) +
+        ((uint64_t)bitShapePairs * MAPPING_PAIR_BYTES) +
+        ((uint64_t)textureIdCount * 2U) +
+        ((uint64_t)spriteIdCount * 2U);
+
+    if (texelPairs == 0U || bitShapePairs == 0U ||
+        texelPairs > 4096U || bitShapePairs > 4096U ||
+        textureIdCount > 4096U || spriteIdCount > 4096U ||
+        expectedMappingsBytes != mappings.size ||
+        (paletteBytes & 1U) != 0U || paletteBytes < PALETTE_BYTES ||
+        paletteBytes + PALETTES_HEADER_BYTES != palettes.size) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+        goto fail_pack;
+    }
+
+    paletteEntries = paletteBytes / 2U;
+    spritePairBase = MAPPINGS_HEADER_BYTES + texelPairs * MAPPING_PAIR_BYTES;
+    for (depIndex = 0U; depIndex < missingCount; ++depIndex) {
+        status = readRecord(&mappings, &palettes,
+                            spritePairBase, bitShapePairs, paletteEntries,
+                            missing[depIndex], &dependency[depIndex]);
+        if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK) goto fail_pack;
+    }
+    EspAssetPack_close();
+
+    memcpy(replacement, catalogView.textures,
+           (uint32_t)catalogView.textureCount * sizeof(*replacement));
+    oldIndex = 0U;
+    depIndex = 0U;
+    dstIndex = (uint32_t)catalogView.textureCount;
+    while (oldIndex < catalogView.spriteCount || depIndex < missingCount) {
+        if (depIndex < missingCount &&
+            (oldIndex >= catalogView.spriteCount ||
+             dependency[depIndex].resourceId <
+                 catalogView.sprites[oldIndex].resourceId)) {
+            replacement[dstIndex++] = dependency[depIndex++];
+        }
+        else {
+            replacement[dstIndex++] = catalogView.sprites[oldIndex++];
+        }
+    }
+    if (dstIndex != totalCount) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+        goto fail;
+    }
+
+    counts[0] = catalogView.textureCount;
+    counts[1] = targetSpriteCount;
+    hash = fnvAppend(2166136261U, counts, sizeof(counts));
+    hash = fnvAppend(hash, replacement, storageBytes);
+    if (hash == 0U) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+        goto fail;
+    }
+
+    oldArena = catalogArena;
+    catalogArena = replacement;
+    catalogView.textures = catalogArena;
+    catalogView.sprites = catalogArena + catalogView.textureCount;
+    catalogView.spriteCount = targetSpriteCount;
+    catalogView.storageBytes = storageBytes;
+    catalogView.stateFNV1a = hash;
+    free(oldArena);
+    return ESP_NATIVE_GRAPHICS_CATALOG_OK;
+
+fail_pack:
+    EspAssetPack_close();
+fail:
+    free(replacement);
     return status;
 }
 

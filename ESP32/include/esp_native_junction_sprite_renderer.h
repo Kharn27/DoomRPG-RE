@@ -30,6 +30,16 @@ typedef struct EspNativeJunctionSpriteStats_s {
     uint32_t maxFrameBytes;
     uint32_t packReads;
     uint32_t glowDeferred;
+    uint32_t glowCompanions;
+    uint32_t glowDraws;
+    uint32_t glowNearCulled;
+    uint32_t glowClipCulled;
+    uint32_t glowSpanRuns;
+    uint32_t glowPixels;
+    uint32_t glowWallOccludedColumns;
+    uint32_t glowFrameLoads;
+    uint32_t glowFrameBytes;
+    uint32_t glowMaxFrameBytes;
     uint32_t depthNodes;
     uint32_t depthLeaves;
     uint32_t depthNodeCulled;
@@ -41,19 +51,19 @@ typedef struct EspNativeJunctionSpriteStats_s {
     uint32_t orderFNV1a;
 } EspNativeJunctionSpriteStats;
 
-/* Render the currently validated Junction family onto the existing native
- * walls+planes framebuffer. Supported here: visible standard billboards,
- * legacy intrinsic render modes 0 and 7, animation time 0. Logical IDs remain
- * sparse ownership keys; physical bitshape IDs are resolved by bounded PAK
- * range reads. Mode 7 follows legacy RGB565 additive saturation exactly.
- * Glow companion sprites spawned by IDs 135/140/131 remain separately deferred.
+/*
+ * Render the validated Junction BSP-visible sprite family onto the existing
+ * walls+planes framebuffer. Base billboards keep legacy render modes 0/7.
+ * Renderer-owned glow companions are emitted immediately after their parent
+ * in the same sorted view-sprite sequence: 135/140 -> 136 mode7 and
+ * 131 -> 144 mode7. The sparse catalog must already have explicit dependency
+ * closure for any companion used by the map.
  *
- * Wall depth and view-sprite admission are produced by the same compact BSP
- * walk used by the validated first native frame. Only sprites relinked to a
- * leaf actually visited by that stateful depth/cull traversal enter sorting or
- * rasterization; map-wide sprites outside those leaves never load bitshapes.
- * The call temporarily borrows Render projection scratch and restores it
- * exactly before returning. It never installs legacy runtime graphics pools.
+ * Visibility and wall column depth come from EspNativeBspVisibility, which
+ * reproduces the stateful compact BSP walk without retaining legacy map or
+ * graphics pools. Logical IDs remain sparse ownership keys; physical bitshape
+ * IDs and packed texels are resolved through bounded PAK reads. All Render
+ * projection scratch is restored exactly before return.
  */
 int EspNativeJunctionSprite_render(struct Render_s* render,
                                    EspNativeJunctionSpriteStats* outStats);

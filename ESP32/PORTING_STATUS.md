@@ -1,29 +1,29 @@
 # Doom RPG ESP32 CYD porting status
 
-Authoritative recovery point for the classic ESP32-2432S028R port.
+Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHub `main` + this file + the latest relevant milestone archive override chat memory.
 
 ## Latest merged hardware baseline
 
 ```text
-PR   = #88 — first native Junction gameplay frame + permanent CYD panel profile
-main = d8da51e5a3b9700d1806110f56f553a422d7d182
+PR   = #89 — native Junction BSP-visible billboard sprites
+main = 674b45bbd115cd8f9202f2ce2d7132550c3bb75e
 status = REAL-CYD HARDWARE PASS / MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_FIRST_JUNCTION_FRAME.md`](MAP1_NATIVE_FIRST_JUNCTION_FRAME.md).
+Merged evidence: [`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md).
 
 ## Current merge-ready milestone
 
 ```text
-branch = agent/esp32-native-junction-sprites
-base   = d8da51e5a3b9700d1806110f56f553a422d7d182
-hardware-tested firmware = 3fdb2905b1d49ef1112a9e9df7a5db7e278897bd
+branch = agent/esp32-native-junction-glows
+base   = 674b45bbd115cd8f9202f2ce2d7132550c3bb75e
+hardware-tested firmware = 338388ee4166115585e2c964aa95e79d5b0313eb
 status = REAL-CYD HARDWARE PASS / MERGE-READY
 ```
 
-Evidence: [`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md).
+Evidence: [`MAP1_NATIVE_JUNCTION_GLOWS.md`](MAP1_NATIVE_JUNCTION_GLOWS.md).
 
-This milestone extends the deterministic Junction walls+textured-planes frame with BSP-visible native billboard rasterization, intrinsic legacy render modes 0/7 and bounded PAK-backed bitshape/texel reads while the legacy gameplay/render loop remains parked.
+This milestone preserves the hardware-proven Junction wall/plane/base-billboard frame, closes the sparse sprite dependency `135/140 -> 136`, and renders all seven current glow companions in exact legacy parent order.
 
 ## Permanent invariants
 
@@ -45,12 +45,13 @@ native PLAYING service = reached
 native sparse graphics catalog = reached
 native first Junction frame = reached
 native textured planes = reached
-native base billboard sprites = reached
-native BSP-visible sprite admission = reached
+native BSP-visible billboards = reached
 native intrinsic sprite mode 7 = reached
+native glow dependency closure = reached
+native glow companions = reached
 ```
 
-## Hardware-proven map canons
+## Hardware-proven map / resident canons
 
 Entrance:
 
@@ -64,7 +65,7 @@ spawnIndex=904
 spawnDirection=64
 snapshotFNV=b3811f3d
 logical payload=17891 B
-actual heap=18008 B
+historical heap=18008 B
 ```
 
 Junction:
@@ -84,7 +85,7 @@ enemies=0
 destructibles=3
 ```
 
-Later diagnostic BSS changes shifted allocator bookkeeping by 8 B on hardware (`10548 B` observed) without changing Junction payload, snapshots or largest free block. Absolute heap cost is therefore an allocator-layout witness, not a semantic fingerprint; the historical 10540 B value remains recorded for recovery.
+Later diagnostic layout changes can shift allocator bookkeeping without changing semantic payload/snapshots. Absolute heap cost is a witness, not a semantic fingerprint.
 
 Current Junction resident owner FNVs:
 
@@ -99,116 +100,64 @@ topology = d6e8df7d
 snapshot = bb714d80
 ```
 
-## Hardware-proven transition/player/post-load/PLAYING/render chain
+## Native transition / player / post-load chain
+
+Hardware-proven sequence through the current renderer boundary:
 
 ```text
-CHANGEMAP pending intent
+CHANGEMAP intent
  -> level-exit stats
  -> native player exit-state
  -> LEVEL stats-menu semantic intent
  -> immutable 13-map catalog
- -> Junction transition preflight
- -> resident lifecycle / committed swap
- -> fresh-map spawn projection
- -> active player/view owner
- -> post-spawn HUD dirty owner
- -> Player_setup session owner
- -> initial tile owner
- -> finishRotation orientation owner
- -> finishRotation second-tile owner
- -> durable facing owner
- -> post-load HUD-clear owner
- -> direct Junction GIVEMAP owner
- -> current-weapon self-select owner
- -> initial-save semantic intent owner
- -> post-load flag cleanup owner
- -> event/particle cleanup owner
- -> post-load view-invalidation owner
- -> native ST_PLAYING transition owner
- -> post-load idle-time owner
- -> first native PLAYING service owner
- -> native sparse graphics catalog
- -> first native Junction wall frame
- -> native textured floor/ceiling planes
- -> raw RGB565 CYD presentation
- -> native BSP-visible billboard sprite pass
+ -> Junction preflight
+ -> resident committed swap
+ -> spawn projection
+ -> player/view owner
+ -> HUD dirty owner
+ -> Player_setup owner
+ -> initial tile
+ -> finishRotation orientation + second tile
+ -> durable facing
+ -> post-load HUD clear / GIVEMAP / weapon self-select
+ -> initial-save intent
+ -> post-load flag + event/particle cleanup
+ -> view invalidation
+ -> native ST_PLAYING transition
+ -> idle-time owner
+ -> first native PLAYING service
+ -> direct sparse graphics catalog
+ -> first native walls + textured planes frame
+ -> raw CYD presentation
+ -> BSP-visible billboard pass
+ -> implicit glow dependency closure
+ -> seven native glow companions
 ```
 
-Stable canonical fingerprints through the pre-render chain:
+Stable pre-render fingerprints retained for recovery:
 
 ```text
-levelExitStatsFNV                 = bd41bcfa
-playerExitAppliedFNV              = 298eaaa4
-statsMenuIntentFNV                = 96afe901
-catalogFNV                        = ce322e3f
-transitionPreflightFNV            = 108e5c7b
-committed WAIT_STATS FNV          = 66fe636a
-committed READY FNV               = 0ef58ea8
-committed ROLLBACK FNV            = 2dec1442
-committed COMMITTED FNV           = 2c595a62
-Junction spawn FNV                = ba6af4a7
-packed override FNV               = e0a5110b
-Junction player/view FNV          = d1131d18
-packed override view FNV          = 9ed47d08
-post-HUD player/view FNV          = d17fa0d1
-Junction HUD refresh FNV          = 6965ee06
-Player_setup semantic FNV         = 3b27c6a1
-post-setup player/view FNV        = c21fba3c
-Junction initial-tile FNV         = f73e28b2
-post-initial-tile player FNV      = 1bd0f09b
-Junction orientation FNV          = acc754a6
-Junction second-tile FNV          = 09e58e0d
-Junction durable-facing FNV       = 95aa1108
-post-facing player/view FNV       = afcdcf74
-Junction post-load HUD clear      = b7383e18
-Junction post-load GIVEMAP        = 448e587d
-Junction weapon self-select       = 699f3cf3
-Junction initial-save intent      = 0bf1a911
-Junction post-load flag cleanup   = 46cb2547
-Junction event/particle cleanup   = 8bc79e2b
-Junction view invalidation        = 4561c3c1
-Junction native ST_PLAYING        = 73bc9acd
-Junction native PLAYING service   = 4c50b853
-Junction graphics catalog         = 969d5a77
-Junction graphics texture records = 2dd5dfcf
-Junction graphics sprite records  = cfd036cf
+levelExitStatsFNV               = bd41bcfa
+playerExitAppliedFNV            = 298eaaa4
+statsMenuIntentFNV              = 96afe901
+mapCatalogFNV                   = ce322e3f
+transitionPreflightFNV          = 108e5c7b
+committed WAIT_STATS FNV        = 66fe636a
+committed READY FNV             = 0ef58ea8
+committed ROLLBACK FNV          = 2dec1442
+committed COMMITTED FNV         = 2c595a62
+Junction spawn FNV              = ba6af4a7
+Junction durable-facing FNV     = 95aa1108
+post-facing player/view FNV     = afcdcf74
+Junction native ST_PLAYING      = 73bc9acd
+Junction native PLAYING service = 4c50b853
 ```
 
-The idle-time owner FNV is intentionally not cross-boot canonical because it contains live uptime. Its stable contract remains `idleTimeAfter-timeBefore=8000`.
+The idle-time owner FNV is intentionally not cross-boot canonical because it contains live uptime; stable contract is `idleTimeAfter-timeBefore=8000`.
 
-Generic `EspMapOpcodeExecutor` remains intentionally only 11/19/20.
+Generic `EspMapOpcodeExecutor` remains intentionally limited to opcodes 11/19/20 and fail-closes all others.
 
-## Hardware-proven first native PLAYING service
-
-```text
-EspNativePlayingServiceState = 12 B
-stateFNV=4c50b853
-persistentHeapBytes=0
-nativeState=3
-serviceOrdinal=1
-inputCountBefore=0
-inputConsumed=0
-gameplayDispatched=0
-renderIntent=1
-renderDeferred=1
-presentationDeferred=1
-hudIntent=1
-targetMapId=9
-active=1
-```
-
-Legacy `DoomCanvas.state` remains parked at `ST_INTRO` so the legacy loop cannot enter `DoomCanvas_playingState()` / `Render_render()`.
-
-## Hardware-proven sparse graphics catalog
-
-Permanent files:
-
-```text
-ESP32/include/esp_native_graphics_catalog.h
-ESP32/src/esp_native_graphics_catalog.c
-```
-
-Catalog canon:
+## Hardware-proven direct sparse graphics catalog
 
 ```text
 EspNativeGraphicsCatalogRecord=40 B
@@ -216,184 +165,156 @@ textureCount=30
 spriteCount=16
 totalRecords=46
 storageBytes=1840
-heapCost=1856
-allocatorOverhead=16
+historical heapCost=1856
 stateFNV=969d5a77
 textureFNV=2dd5dfcf
 spriteFNV=cfd036cf
-textureRange=0..151
-spriteRange=134..162
 ```
 
-The catalog reads selected mappings/palettes directly from `/DoomRPG-ESP32.pak`, keeps no texel payload resident, and does not resurrect the global legacy mapping arrays.
+The catalog reads only selected mappings/palettes from `/DoomRPG-ESP32.pak`, retains no map-wide texel payload, and does not resurrect legacy graphics arrays.
 
-Legacy graphics invariants remain:
+## Hardware-proven glow dependency closure
+
+The direct catalog remains the predecessor canon. The current milestone atomically adds the implicit current-view dependency:
 
 ```text
-mediaTexelOffsets=NULL
-mediaBitShapeOffsets=NULL
-mediaTexturesIds=NULL
-mediaSpriteIds=NULL
-shapeData=NULL
-mediaTexels=NULL
+135/140 -> logical 136 / mode 7
 ```
 
-## Hardware-proven first native Junction frame
-
-Permanent renderer files:
+Real-CYD closure canon:
 
 ```text
-ESP32/include/esp_native_first_frame.h
-ESP32/src/esp_native_first_frame.c
-ESP32/include/esp_native_plane_renderer.h
-ESP32/src/esp_native_plane_renderer.c
+direct stateFNV=969d5a77
+closed stateFNV=257444a5
+textureCount=30
+spriteCount=17
+storageBytes=1880
+persistent increment=40 B
+dependency=136
+directTextureFNV=2dd5dfcf
+directSpriteFNV=cfd036cf
+largest8=34804->34804
+repeatAtomic=yes
+packClosed=yes
 ```
 
-Published first-frame owner:
+Generic dependency semantics also retain `131 -> 144` for future maps/views that require it; current Junction requires only 136.
 
-```text
-EspNativeFirstFrameState = 48 B
-```
-
-Important fingerprint rule:
-
-```text
-frameBeforeFNV = NOT cross-boot canonical
-whole stateFNV = NOT cross-boot canonical
-frameAfterFNV  = 8910c2ed  [stable canon]
-viewportFNV    = 032ffaed  [stable canon, 160x80 @ 0,20]
-```
-
-Wall/BSP proof:
-
-```text
-nodes=39
-leaves=12
-nodeCull=8
-lineCandidates=62
-backfaceCull=20
-clipCull=8
-occluderOnly=0
-spriteSpanDeferred=0
-wallRequests=34
-wallDraws=34
-spanCalls=166
-wallPixels=4341
-wallCache=17H/17M/14E
-resolvedTextures=30
-animationTime=0
-```
-
-Textured plane proof:
-
-```text
-rows=80
-pixels=12800
-uniqueLogicalTextures=6
-cache=12795H/5M/0E
-texelReads=10240 B
-```
-
-Integrity/RAM proof:
+## Hardware-proven native Junction walls + planes frame
 
 ```text
 frameAfterFNV=8910c2ed
-residentSnapshot=bb714d80->bb714d80
-catalog=969d5a77->969d5a77
+viewportFNV=032ffaed
+viewport=160x80 @ 0,20
+nodes=39
+leaves=12
+nodeCull=8
+lines=62
+backface=20
+clip=8
+occluder=0
+spriteSpan=0
+wallRequests=34
+wallDraws=34
+wallSpans=166
+wallPixels=4341
+planes=12800
+planeTextures=6
+planeCache=12795H/5M/0E
+planeReads=10240 B
 heapDelta=0
 largestDelta=0
 legacyRenderStable=yes
 packClosed=yes
 ```
 
-Post-PARK diagnostic:
+`frameBeforeFNV` and the whole first-frame state FNV are not cross-boot canons.
 
-```text
-BMP path=/junction-viewport.bmp
-BMP size=38454
-viewport=160x80@0,20
-viewportFNV=032ffaed
-```
+## Hardware-proven BSP-visible base billboard pass
 
-## Hardware-proven native Junction billboard pass
-
-Permanent renderer files:
-
-```text
-ESP32/include/esp_native_junction_sprite_renderer.h
-ESP32/src/esp_native_junction_sprite_renderer.c
-```
-
-The pass begins from `frame=8910c2ed`, repeats the validated stateful BSP depth walk, and uses visited leaves as the permanent equivalent of legacy `Render_relinkSprite()` / `viewSprites` admission.
-
-View-sprite canon:
+The shared stateful BSP visibility/depth walk publishes visited leaves and 160 column depths, then only sprites relinked to those visited leaves enter sorting/rasterization.
 
 ```text
 mapSprites=48
 bspCandidates=21
 bspRejected=27
 hidden=0
-candidate modes=0:14 / 7:7
-hardware census candidateFNV=23ef1895
-permanent orderFNV=f16737cb
-```
-
-The 27 BSP-rejected sprites produce no pixels in this pose. Filtering them reduced work but deliberately left the final framebuffer unchanged versus the earlier map-wide implementation.
-
-Raster/storage canon:
-
-```text
-depth nodes=39 leaves=12 nodeCull=8 lines=62 backface=20 clip=8
+candidateFNV=23ef1895
+orderFNV=f16737cb
 modes=0:14 / 7:7
 mode7Pixels=311
 draws=21
 nearCull=0
 clipCull=0
-spanRuns=219
+spans=219
 pixels=1828
 wallOccludedCols=62
 frameLoads=21
 uniqueLogical=9
 frameBytes=12251
 maxFrameBytes=1020
-packReads=130
-glowDeferred=7
 ```
 
-Stable post-sprite framebuffer:
+Pre-glow predecessor framebuffer:
 
 ```text
 frameAfterFNV=299506eb
 viewportFNV=ae2246eb
+```
+
+Filtering the 27 non-visible-leaf sprites reduced work but did not change this framebuffer because those sprites already contributed no final pixels.
+
+## Hardware-proven native glow companions
+
+Legacy draws the glow immediately after each parent. Current Junction contains seven visible parents requiring companion sprite 136.
+
+```text
+companions=7
+draws=7
+nearCull=0
+clipCull=0
+spans=59
+pixels=1917
+wallOccludedCols=32
+frameLoads=7
+frameBytes=5572
+maxFrameBytes=796
+packReads=172
+renderMode=7 additive RGB565
+```
+
+Stable complete sprite+glow framebuffer:
+
+```text
+frameAfterFNV=b5218f24
+viewportFNV=9206eb24
 BMP path=/junction-sprite-viewport.bmp
 BMP size=38454
-viewport=160x80@0,20
+viewport=160x80 @ 0,20
 ```
+
+Real-CYD visual inspection clearly showed the additive lamp glow effect.
 
 Memory/world proof:
 
 ```text
-heapDelta=0
-largestDelta=0
-legacyRenderStable=yes
+catalog persistent increment=40 B
+renderer heapDelta=0
+renderer largestDelta=0
 topology=d6e8df7d
-catalog=969d5a77
+closedCatalog=257444a5
 packClosed=yes
 shapeData=NULL
 mediaTexels=NULL
 legacy Game.entities=0
 legacy Game.monsters=0
+no world/entity mutation
+no input consumed
+no turn advancement
+no gameplay dispatch
 ```
 
-The renderer owns one temporary bounded workspace only for the call. It resolves logical BSP IDs through bounded native PAK ranges, reads compact bitshape mask/texels/palette payloads, restores borrowed legacy projection scratch exactly and closes the pack before returning.
-
-The intrinsic legacy mode-7 family is active for logical IDs 136/137/144. Implicit glow companions spawned by base IDs 135/140/131 are **not** yet rendered; seven are pending in the current Junction view.
-
 ## Hardware-selected classic CYD presentation
-
-The logical framebuffer is standard raw RGB565. Dedicated real-CYD primary testing proved that software red/blue swapping is wrong.
-
-Permanent presentation policy:
 
 ```text
 framebuffer       = raw RGB565
@@ -409,13 +330,13 @@ ILI9341 driver    = ILI9341_2_DRIVER
 SPI frequency     = 55 MHz
 ```
 
-The stock `ILI9341_2_DRIVER` power/VCOM/frame-rate settings are retained. The real CYD selected panel calibration profile **B / INV-GAMMA-WA**. `PlatformVideo_begin()` programs this table into both ILI9341 gamma registers `0xE0` and `0xE1`:
+Selected hardware gamma profile B / INV-GAMMA-WA, written to ILI9341 registers `0xE0` and `0xE1`:
 
 ```text
 00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
 ```
 
-This correction is panel-side only. `PlatformVideo_present()` still sends the raw framebuffer with exact x2 duplication and performs no per-pixel colour correction.
+Presentation remains raw framebuffer x2 duplication with no per-pixel software colour transform.
 
 ## Current hardware PARK
 
@@ -425,8 +346,6 @@ page=3
 targetMap=9
 junctionResident=yes
 nativeST_PLAYING=yes
-nativeIdleTime=yes
-postLoadTailComplete=yes
 nativePlayingService=yes
 nativeGraphicsCatalog=yes
 nativeFirstFrame=yes
@@ -434,7 +353,8 @@ texturedPlanes=yes
 nativeBaseBillboards=yes
 bspVisibleOnly=yes
 intrinsicMode7=yes
-glowPending=yes
+glowCompanions=yes
+glowPending=no
 hudPending=yes
 gameplayDispatchPending=yes
 initialSavePersistencePending=yes
@@ -446,9 +366,8 @@ noGameplay=yes
 ## Still intentionally outside
 
 ```text
-implicit glow companion sprites (7 pending in current Junction view)
-other unsupported sprite families/render modes
-native HUD gameplay painting
+native gameplay HUD painting
+other sprite families/render modes not required by current Junction pose
 native input dispatch
 turn advancement
 full native entity/monster gameplay
@@ -461,30 +380,39 @@ sound playback
 
 ## Probe completion semantics
 
-Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` alone is not a PASS certificate. Downstream probes must revalidate exact predecessor owners/world state. Hardware serial evidence remains the final truth.
+Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` alone is not a PASS certificate. Downstream code must revalidate exact predecessor owners/world state. Serial logs from the real CYD remain the final truth.
 
 ## Merge recommendation
 
 ```text
-MERGE agent/esp32-native-junction-sprites
+MERGE agent/esp32-native-junction-glows
 ```
 
 Hardware-tested firmware:
 
 ```text
-3fdb2905b1d49ef1112a9e9df7a5db7e278897bd
+338388ee4166115585e2c964aa95e79d5b0313eb
 ```
 
 All commits after that tested SHA must remain documentation-only before merge-ready declaration.
 
 ## Next bounded milestone after merge
 
-After merge, recover the exact new `main` SHA and branch from it. Close the native sprite dependency graph for legacy implicit glow spawning, then render only that bounded family:
+After merge, recover the exact new `main` SHA and branch from it. The next coherent visible boundary is **native gameplay HUD painting** from the already-owned native player/view/HUD intents.
+
+Keep it bounded:
 
 ```text
-135/140 -> companion logical 136, mode 7
-131 -> companion logical 144, mode 7 when encountered
-current Junction view = 7 pending companions
+same 160x120 framebuffer
+same Junction pose/world PARK
+no input consumption
+no turn advancement
+no gameplay dispatch
+no legacy DoomCanvas_playingState / Render_render
+shapeData=NULL
+mediaTexels=NULL
+runtime ZIP forbidden
+bounded native PAK reads/caches only
 ```
 
-The sparse catalog must explicitly own these implicit dependencies; do not bypass ownership with ad-hoc PAK reads. Keep the existing BSP-visible set, input/turn/gameplay PARK and all no-legacy-graphics-pool invariants unchanged.
+Do not fold input/gameplay dispatch into the HUD milestone.

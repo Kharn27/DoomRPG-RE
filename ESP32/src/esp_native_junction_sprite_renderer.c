@@ -9,6 +9,7 @@
 #include "esp_asset_pack.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
+#include "esp_native_bsp_visibility.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_junction_sprite_renderer.h"
 #include "esp_player_view_state.h"
@@ -22,9 +23,8 @@
 #define MAX_DIM 64
 #define MAX_MASK 512U
 #define MAX_TEXELS 2048U
-#define MAX_BSP_DEPTH 64U
-#define MAX_TRACKED_NODES 256U
 #define SCREEN_W 160
+#define SCREEN_H 80
 
 #define VISUAL_MASK 0x0001fe00UL
 #define HIDDEN 0x00010000UL
@@ -34,13 +34,6 @@
 #define FIXED_ANIM 0x80000000UL
 #define SORT_BIAS 0x01000000UL
 #define ORIENT_MASK 0x00780000UL
-#define TWO_SIDED 0x00000001UL
-#define SPRITE_SPAN 0x00000002UL
-#define AXIS_X 0x00000008UL
-#define AXIS_NEG 0x00000010UL
-#define Y_NUDGE 0x00000100UL
-#define X_NUDGE 0x00000200UL
-#define OCCLUDER 0x20000000UL
 #define ENEMY_TYPE 1U
 #define RENDER_MODE_NORMAL 0U
 #define RENDER_MODE_ADD 7U
@@ -121,7 +114,7 @@ typedef struct SpriteWorkspace_s {
     Frame frame;
     Order order[MAX_SPRITES];
     uint32_t seenLogical[8];
-    uint32_t visibleLeaves[MAX_TRACKED_NODES / 32U];
+    EspNativeBspVisibilityState visibility;
 } SpriteWorkspace;
 
 static uint16_t le16(const uint8_t* p) {
@@ -145,6 +138,8 @@ static uint32_t fnv(uint32_t h, const void* data, uint32_t n) {
     return h;
 }
 
+/* Keep the same source-palette conversion as the hardware-proven wall/base
+ * sprite path. This milestone changes dependency ownership/order only. */
 static uint16_t source565(uint16_t c) {
     return (uint16_t)(((c & 0x001fU) << 11) |
                       (c & 0x07e0U) |
@@ -157,451 +152,257 @@ static uint8_t spriteRenderMode(uint16_t logical) {
                : RENDER_MODE_NORMAL;
 }
 
-static int readRange(const EspAssetPackEntry* e,
-                     uint32_t off,
-                     void* dst,
-                     uint32_t n,
-                     EspNativeJunctionSpriteStats* s) {
-    if (e == NULL || dst == NULL || s == NULL ||
-        off > e->size || n > e->size - off ||
-        !EspAssetPack_readRange(e, off, dst, n)) {
+static uint16_t glowFor(uint16_t logical) {
+    if (logical == 135U || logical == 140U) return 136U;
+    if (logical == 131U) return 144U;
+    return 0U;
+}
+
+static int readRange(const EspAssetPackEntry* entry,
+                     uint32_t offset,
+                     void* destination,
+                     uint32_t bytes,
+                     EspNativeJunctionSpriteStats* stats) {
+    if (entry == NULL || destination == NULL || stats == NULL ||
+        offset > entry->size || bytes > entry->size - offset ||
+        !EspAssetPack_readRange(entry, offset, destination, bytes)) {
         return 0;
     }
-    ++s->packReads;
+    ++stats->packReads;
     return 1;
 }
 
-static void saveScratch(Render_t* r, Scratch* s) {
-    memset(s, 0, sizeof(*s));
-    s->viewCos_ = r->viewCos_;
-    s->viewSin_ = r->viewSin_;
-    s->viewTransX = r->viewTransX;
-    s->viewSin = r->viewSin;
-    s->viewCos = r->viewCos;
-    s->viewTransY = r->viewTransY;
-    s->viewX = r->viewX;
-    s->viewY = r->viewY;
-    s->viewZ = r->viewZ;
-    s->viewAngle = r->viewAngle;
-    s->lineCount = r->lineCount;
-    s->lineRasterCount = r->lineRasterCount;
-    s->nodeCount = r->nodeCount;
-    s->nodeRasterCount = r->nodeRasterCount;
-    s->spriteCount = r->spriteCount;
-    s->spriteRasterCount = r->spriteRasterCount;
-    s->screenLeft = r->screenLeft;
-    s->screenTop = r->screenTop;
-    s->screenRight = r->screenRight;
-    s->screenBottom = r->screenBottom;
-    s->numLines = r->numLines;
-    s->spanMode = r->spanMode;
-    s->pixels = r->pixels;
-    s->tmpLine = r->tmpLine;
-    memcpy(s->columnScale, r->columnScale, sizeof(s->columnScale));
+static void saveScratch(Render_t* render, Scratch* scratch) {
+    memset(scratch, 0, sizeof(*scratch));
+    scratch->viewCos_ = render->viewCos_;
+    scratch->viewSin_ = render->viewSin_;
+    scratch->viewTransX = render->viewTransX;
+    scratch->viewSin = render->viewSin;
+    scratch->viewCos = render->viewCos;
+    scratch->viewTransY = render->viewTransY;
+    scratch->viewX = render->viewX;
+    scratch->viewY = render->viewY;
+    scratch->viewZ = render->viewZ;
+    scratch->viewAngle = render->viewAngle;
+    scratch->lineCount = render->lineCount;
+    scratch->lineRasterCount = render->lineRasterCount;
+    scratch->nodeCount = render->nodeCount;
+    scratch->nodeRasterCount = render->nodeRasterCount;
+    scratch->spriteCount = render->spriteCount;
+    scratch->spriteRasterCount = render->spriteRasterCount;
+    scratch->screenLeft = render->screenLeft;
+    scratch->screenTop = render->screenTop;
+    scratch->screenRight = render->screenRight;
+    scratch->screenBottom = render->screenBottom;
+    scratch->numLines = render->numLines;
+    scratch->spanMode = render->spanMode;
+    scratch->pixels = render->pixels;
+    scratch->tmpLine = render->tmpLine;
+    memcpy(scratch->columnScale, render->columnScale,
+           sizeof(scratch->columnScale));
 }
 
-static void restoreScratch(Render_t* r, const Scratch* s) {
-    r->viewCos_ = s->viewCos_;
-    r->viewSin_ = s->viewSin_;
-    r->viewTransX = s->viewTransX;
-    r->viewSin = s->viewSin;
-    r->viewCos = s->viewCos;
-    r->viewTransY = s->viewTransY;
-    r->viewX = s->viewX;
-    r->viewY = s->viewY;
-    r->viewZ = s->viewZ;
-    r->viewAngle = s->viewAngle;
-    r->lineCount = s->lineCount;
-    r->lineRasterCount = s->lineRasterCount;
-    r->nodeCount = s->nodeCount;
-    r->nodeRasterCount = s->nodeRasterCount;
-    r->spriteCount = s->spriteCount;
-    r->spriteRasterCount = s->spriteRasterCount;
-    r->screenLeft = s->screenLeft;
-    r->screenTop = s->screenTop;
-    r->screenRight = s->screenRight;
-    r->screenBottom = s->screenBottom;
-    r->numLines = s->numLines;
-    r->spanMode = s->spanMode;
-    r->pixels = s->pixels;
-    r->tmpLine = s->tmpLine;
-    memcpy(r->columnScale, s->columnScale, sizeof(s->columnScale));
+static void restoreScratch(Render_t* render, const Scratch* scratch) {
+    render->viewCos_ = scratch->viewCos_;
+    render->viewSin_ = scratch->viewSin_;
+    render->viewTransX = scratch->viewTransX;
+    render->viewSin = scratch->viewSin;
+    render->viewCos = scratch->viewCos;
+    render->viewTransY = scratch->viewTransY;
+    render->viewX = scratch->viewX;
+    render->viewY = scratch->viewY;
+    render->viewZ = scratch->viewZ;
+    render->viewAngle = scratch->viewAngle;
+    render->lineCount = scratch->lineCount;
+    render->lineRasterCount = scratch->lineRasterCount;
+    render->nodeCount = scratch->nodeCount;
+    render->nodeRasterCount = scratch->nodeRasterCount;
+    render->spriteCount = scratch->spriteCount;
+    render->spriteRasterCount = scratch->spriteRasterCount;
+    render->screenLeft = scratch->screenLeft;
+    render->screenTop = scratch->screenTop;
+    render->screenRight = scratch->screenRight;
+    render->screenBottom = scratch->screenBottom;
+    render->numLines = scratch->numLines;
+    render->spanMode = scratch->spanMode;
+    render->pixels = scratch->pixels;
+    render->tmpLine = scratch->tmpLine;
+    memcpy(render->columnScale, scratch->columnScale,
+           sizeof(scratch->columnScale));
 }
 
-static int setupView(Render_t* r, const EspPlayerViewState* v) {
+static int setupDrawView(Render_t* render,
+                         const EspPlayerViewState* view,
+                         const EspNativeBspVisibilityState* visibility) {
     int sin_;
     int cos_;
-    int vx;
-    int vy;
-    int x;
+    int viewX;
+    int viewY;
 
-    if (r == NULL || v == NULL || r->framebuffer == NULL ||
-        r->columnScale == NULL || r->screenWidth != SCREEN_W ||
-        r->screenHeight != 80 || r->screenX != 0 || r->screenY != 20) {
+    if (render == NULL || view == NULL || visibility == NULL ||
+        render->framebuffer == NULL || render->columnScale == NULL ||
+        render->screenWidth != SCREEN_W || render->screenHeight != SCREEN_H ||
+        render->screenX != 0 || render->screenY != 20) {
         return 0;
     }
 
-    sin_ = r->sinTable[v->viewAngle & 255];
-    cos_ = r->sinTable[(v->viewAngle + 64) & 255];
-    vx = v->viewX - ((16 * cos_) >> 16);
-    vy = v->viewY + ((16 * sin_) >> 16);
+    sin_ = render->sinTable[view->viewAngle & 255];
+    cos_ = render->sinTable[(view->viewAngle + 64) & 255];
+    viewX = view->viewX - ((16 * cos_) >> 16);
+    viewY = view->viewY + ((16 * sin_) >> 16);
 
-    r->viewX = vx;
-    r->viewY = vy;
-    r->viewZ = v->viewZ;
-    r->viewCos_ = cos_;
-    r->viewSin_ = -sin_;
-    r->viewTransX = -((vx * r->viewCos_) + (vy * r->viewSin_));
-    r->viewSin = sin_;
-    r->viewCos = cos_;
-    r->viewTransY = -((vx * r->viewSin) + (vy * r->viewCos));
-    r->viewAngle = v->viewAngle;
-    r->pixels = (short*)&r->framebuffer[r->pitch * r->screenY];
-    r->screenLeft = 0;
-    r->screenTop = 0;
-    r->screenRight = SCREEN_W;
-    r->screenBottom = 80;
-    r->lineCount = 0;
-    r->lineRasterCount = 0;
-    r->nodeCount = 0;
-    r->nodeRasterCount = 0;
-    r->spriteCount = 0;
-    r->spriteRasterCount = 0;
-    r->spanMode = 0;
-
-    for (x = 0; x < SCREEN_W; ++x) {
-        r->columnScale[x] = MAXINT;
-    }
+    render->viewX = viewX;
+    render->viewY = viewY;
+    render->viewZ = view->viewZ;
+    render->viewCos_ = cos_;
+    render->viewSin_ = -sin_;
+    render->viewTransX = -((viewX * render->viewCos_) +
+                           (viewY * render->viewSin_));
+    render->viewSin = sin_;
+    render->viewCos = cos_;
+    render->viewTransY = -((viewX * render->viewSin) +
+                           (viewY * render->viewCos));
+    render->viewAngle = view->viewAngle;
+    render->pixels = (short*)&render->framebuffer[render->pitch * render->screenY];
+    render->screenLeft = 0;
+    render->screenTop = 0;
+    render->screenRight = SCREEN_W;
+    render->screenBottom = SCREEN_H;
+    render->lineCount = 0;
+    render->lineRasterCount = 0;
+    render->nodeCount = 0;
+    render->nodeRasterCount = 0;
+    render->spriteCount = 0;
+    render->spriteRasterCount = 0;
+    render->spanMode = 0;
+    memcpy(render->columnScale, visibility->columnScale,
+           sizeof(visibility->columnScale));
     return 1;
 }
 
-static void sourceLine(const EspMapLine* src, Line_t* l) {
-    memset(l, 0, sizeof(*l));
-    l->vert1.x = src->x1;
-    l->vert1.y = src->y1;
-    l->vert2.x = src->x2;
-    l->vert2.y = src->y2;
-    l->flags = (int)src->flags;
-
-    if ((src->flags & X_NUDGE) != 0U) {
-        if ((src->flags & AXIS_X) != 0U) {
-            l->vert1.x += 3;
-            l->vert2.x += 3;
-        }
-        else if ((src->flags & AXIS_NEG) != 0U) {
-            l->vert1.x -= 3;
-            l->vert2.x -= 3;
-        }
-    }
-    else if ((src->flags & Y_NUDGE) != 0U) {
-        if ((src->flags & AXIS_X) != 0U) {
-            l->vert1.y += 3;
-            l->vert2.y += 3;
-        }
-        else if ((src->flags & AXIS_NEG) != 0U) {
-            l->vert1.y -= 3;
-            l->vert2.y -= 3;
-        }
-    }
-}
-
-static int depthColumns(Render_t* r, Line_t* l) {
-    int dx = l->vert2.x - l->vert1.x;
-    int step;
-    int dDepth;
-    int x;
-    int x2;
-    int depth;
-
-    if (dx <= 0) return 1;
-    step = (MAXINT / dx) << 1;
-    dDepth = (int)DoomRPG_FixedMul(l->vert2.y - l->vert1.y, step);
-    x = (l->vert1.x + 65535) >> 16;
-    x2 = (l->vert2.x + 65535) >> 16;
-    if (x < r->screenLeft) x = r->screenLeft;
-    if (x2 > r->screenRight) x2 = r->screenRight;
-    depth = l->vert1.y +
-            DoomRPG_FixedMul((x << 16) - l->vert1.x, dDepth);
-
-    while (x < x2) {
-        int scale;
-        if (depth <= 0) return 0;
-        scale = (0x40000000 / depth) << 2;
-        depth += dDepth;
-        if (r->columnScale[x] >= scale) r->columnScale[x] = scale;
-        ++x;
-    }
-    return 1;
-}
-
-static int depthLine(Render_t* r,
-                     uint32_t lineIndex,
-                     EspNativeJunctionSpriteStats* s) {
-    EspMapLine src;
-    Line_t l;
-    Vertex_t tmp;
-
-    if (!EspMapRuntime_getLine(lineIndex, &src)) return 0;
-    sourceLine(&src, &l);
-    r->numLines = (int)lineIndex;
-    ++s->depthLines;
-
-    if (((l.vert1.x - r->viewX) * (l.vert2.y - l.vert1.y)) +
-        ((l.vert1.y - r->viewY) * (-(l.vert2.x - l.vert1.x))) <= 0) {
-        if ((l.flags & TWO_SIDED) == 0) {
-            ++s->depthBackfaceCulled;
-            return 1;
-        }
-        tmp = l.vert1;
-        l.vert1 = l.vert2;
-        l.vert2 = tmp;
-    }
-
-    Render_transform2DVerts(r, &l.vert1);
-    Render_transform2DVerts(r, &l.vert2);
-    if (!Render_clipLine(r, &l)) {
-        ++s->depthClipCulled;
-        return 1;
-    }
-    Render_projectVertex(r, &l.vert1);
-    Render_projectVertex(r, &l.vert2);
-
-    if ((l.flags & OCCLUDER) != 0) {
-        Render_occludeClippedLine(r, &l);
-        ++s->depthOccluders;
-        return 1;
-    }
-    if ((l.flags & SPRITE_SPAN) != 0) {
-        ++s->depthSpriteSpans;
-        return 1;
-    }
-    return depthColumns(r, &l);
-}
-
-static int walkDepthNode(Render_t* r,
-                         const EspMapRuntimeView* rt,
-                         uint32_t nodeIndex,
-                         uint32_t depth,
-                         uint32_t visibleLeaves[MAX_TRACKED_NODES / 32U],
-                         EspNativeJunctionSpriteStats* s) {
-    EspMapNode compact;
-    Node_t node;
-    uint32_t lineStart;
-    uint32_t lineCount;
-    uint32_t first;
-    uint32_t second;
-    uint32_t split;
-    uint32_t i;
-
-    if (r == NULL || rt == NULL || visibleLeaves == NULL || s == NULL ||
-        depth > MAX_BSP_DEPTH || rt->nodeCount > MAX_TRACKED_NODES ||
-        nodeIndex >= rt->nodeCount || !EspMapRuntime_getNode(nodeIndex, &compact)) {
-        return 0;
-    }
-
-    memset(&node, 0, sizeof(node));
-    node.x1 = (short)compact.x1;
-    node.y1 = (short)compact.y1;
-    node.x2 = (short)compact.x2;
-    node.y2 = (short)compact.y2;
-    node.args1 = (int)compact.args1;
-    node.args2 = (int)compact.args2;
-
-    ++r->nodeCount;
-    ++s->depthNodes;
-    if (Render_cullBoundingBox(r, &node)) {
-        ++s->depthNodeCulled;
-        return 1;
-    }
-
-    if ((compact.args1 & 0x30000U) == 0U) {
-        lineStart = compact.args2 & 0xffffU;
-        lineCount = (compact.args2 >> 16) & 0xffffU;
-        if (lineStart > rt->lineCount || lineCount > rt->lineCount - lineStart) {
-            return 0;
-        }
-        visibleLeaves[nodeIndex >> 5] |= 1U << (nodeIndex & 31U);
-        ++r->nodeRasterCount;
-        ++s->depthLeaves;
-        r->lineCount += (int)lineCount;
-        for (i = 0U; i < lineCount; ++i) {
-            if (!depthLine(r, lineStart + i, s)) return 0;
-        }
-        return 1;
-    }
-
-    first = (compact.args2 >> 16) & 0xffffU;
-    second = compact.args2 & 0xffffU;
-    if (first >= rt->nodeCount || second >= rt->nodeCount) return 0;
-
-    split = compact.args1 & 0xffffU;
-    if (((compact.args1 & 0x20000U) == 0U || r->viewY <= (int)split) &&
-        ((compact.args1 & 0x10000U) == 0U || r->viewX <= (int)split)) {
-        return walkDepthNode(r, rt, first, depth + 1U, visibleLeaves, s) &&
-               walkDepthNode(r, rt, second, depth + 1U, visibleLeaves, s);
-    }
-    return walkDepthNode(r, rt, second, depth + 1U, visibleLeaves, s) &&
-           walkDepthNode(r, rt, first, depth + 1U, visibleLeaves, s);
-}
-
-static int spriteLeaf(const EspMapRuntimeView* rt,
-                      const EspMapSprite* sprite,
-                      uint32_t* outLeaf) {
-    uint32_t nodeIndex = 0U;
-    uint32_t depth;
-
-    if (rt == NULL || sprite == NULL || outLeaf == NULL ||
-        rt->nodeCount == 0U || rt->nodeCount > MAX_TRACKED_NODES) {
-        return 0;
-    }
-
-    for (depth = 0U; depth <= MAX_BSP_DEPTH; ++depth) {
-        EspMapNode node;
-        uint32_t split;
-        uint32_t child;
-
-        if (nodeIndex >= rt->nodeCount || !EspMapRuntime_getNode(nodeIndex, &node)) {
-            return 0;
-        }
-        if ((node.args1 & 0x30000U) == 0U) {
-            *outLeaf = nodeIndex;
-            return 1;
-        }
-
-        split = node.args1 & 0xffffU;
-        if ((node.args1 & 0x10000U) != 0U) {
-            child = sprite->x > split
-                        ? (node.args2 & 0xffffU)
-                        : ((node.args2 >> 16) & 0xffffU);
-        }
-        else if ((node.args1 & 0x20000U) != 0U) {
-            child = sprite->y > split
-                        ? (node.args2 & 0xffffU)
-                        : ((node.args2 >> 16) & 0xffffU);
-        }
-        else {
-            return 0;
-        }
-        if (child >= rt->nodeCount) return 0;
-        nodeIndex = child;
-    }
-    return 0;
-}
-
-static int initSources(Sources* c, EspNativeJunctionSpriteStats* s) {
-    uint8_t mh[16];
-    uint8_t ph[4];
-    uint8_t wh[4];
-    uint8_t sh[4];
-    uint32_t pbytes;
-    uint32_t tidBase;
+static int initSources(Sources* sources, EspNativeJunctionSpriteStats* stats) {
+    uint8_t mappingHeader[16];
+    uint8_t paletteHeader[4];
+    uint8_t wallHeader[4];
+    uint8_t spriteHeader[4];
+    uint32_t paletteBytes;
+    uint32_t textureIdBase;
     uint64_t expected;
 
-    memset(c, 0, sizeof(*c));
-    if (!EspAssetPack_findEntry("mappings.bin", &c->mappings) ||
-        !EspAssetPack_findEntry("palettes.bin", &c->palettes) ||
-        !EspAssetPack_findEntry("bitshapes.bin", &c->bitshapes) ||
-        !EspAssetPack_findEntry("wtexels.bin", &c->wtexels) ||
-        !EspAssetPack_findEntry("stexels.bin", &c->stexels) ||
-        !readRange(&c->mappings, 0U, mh, sizeof(mh), s) ||
-        !readRange(&c->palettes, 0U, ph, sizeof(ph), s) ||
-        !readRange(&c->wtexels, 0U, wh, sizeof(wh), s) ||
-        !readRange(&c->stexels, 0U, sh, sizeof(sh), s)) {
+    memset(sources, 0, sizeof(*sources));
+    if (!EspAssetPack_findEntry("mappings.bin", &sources->mappings) ||
+        !EspAssetPack_findEntry("palettes.bin", &sources->palettes) ||
+        !EspAssetPack_findEntry("bitshapes.bin", &sources->bitshapes) ||
+        !EspAssetPack_findEntry("wtexels.bin", &sources->wtexels) ||
+        !EspAssetPack_findEntry("stexels.bin", &sources->stexels) ||
+        !readRange(&sources->mappings, 0U, mappingHeader,
+                   sizeof(mappingHeader), stats) ||
+        !readRange(&sources->palettes, 0U, paletteHeader,
+                   sizeof(paletteHeader), stats) ||
+        !readRange(&sources->wtexels, 0U, wallHeader,
+                   sizeof(wallHeader), stats) ||
+        !readRange(&sources->stexels, 0U, spriteHeader,
+                   sizeof(spriteHeader), stats)) {
         return 0;
     }
 
-    c->texelPairs = le32(mh);
-    c->bitShapePairs = le32(mh + 4U);
-    c->textureIds = le32(mh + 8U);
-    c->spriteIds = le32(mh + 12U);
-    pbytes = le32(ph);
-    c->wallBytes = le32(wh);
-    c->spriteBytes = le32(sh);
-    c->spritePairBase = MAP_HEADER + c->texelPairs * PAIR_BYTES;
-    tidBase = c->spritePairBase + c->bitShapePairs * PAIR_BYTES;
-    c->spriteIdBase = tidBase + c->textureIds * 2U;
-    expected = (uint64_t)c->spriteIdBase + (uint64_t)c->spriteIds * 2U;
+    sources->texelPairs = le32(mappingHeader);
+    sources->bitShapePairs = le32(mappingHeader + 4U);
+    sources->textureIds = le32(mappingHeader + 8U);
+    sources->spriteIds = le32(mappingHeader + 12U);
+    paletteBytes = le32(paletteHeader);
+    sources->wallBytes = le32(wallHeader);
+    sources->spriteBytes = le32(spriteHeader);
+    sources->spritePairBase = MAP_HEADER + sources->texelPairs * PAIR_BYTES;
+    textureIdBase = sources->spritePairBase +
+                    sources->bitShapePairs * PAIR_BYTES;
+    sources->spriteIdBase = textureIdBase + sources->textureIds * 2U;
+    expected = (uint64_t)sources->spriteIdBase +
+               (uint64_t)sources->spriteIds * 2U;
 
-    if (c->texelPairs == 0U || c->bitShapePairs == 0U ||
-        c->spriteIds == 0U || c->texelPairs > 4096U ||
-        c->bitShapePairs > 4096U || c->spriteIds > 4096U ||
-        expected != c->mappings.size || (pbytes & 1U) != 0U ||
-        pbytes + PALETTE_HEADER != c->palettes.size ||
-        c->wallBytes + TEXEL_HEADER != c->wtexels.size ||
-        c->spriteBytes + TEXEL_HEADER != c->stexels.size ||
-        c->wallBytes > UINT32_MAX / 2U) {
+    if (sources->texelPairs == 0U || sources->bitShapePairs == 0U ||
+        sources->spriteIds == 0U || sources->texelPairs > 4096U ||
+        sources->bitShapePairs > 4096U || sources->spriteIds > 4096U ||
+        expected != sources->mappings.size || (paletteBytes & 1U) != 0U ||
+        paletteBytes + PALETTE_HEADER != sources->palettes.size ||
+        sources->wallBytes + TEXEL_HEADER != sources->wtexels.size ||
+        sources->spriteBytes + TEXEL_HEADER != sources->stexels.size ||
+        sources->wallBytes > UINT32_MAX / 2U) {
         return 0;
     }
 
-    c->paletteEntries = pbytes / 2U;
+    sources->paletteEntries = paletteBytes / 2U;
     return 1;
 }
 
-static int loadFrame(const Sources* c,
+static int loadFrame(const Sources* sources,
                      uint16_t logical,
-                     uint32_t anim,
+                     uint32_t animation,
+                     int glow,
                      Frame* frame,
                      uint32_t seenLogical[8],
-                     EspNativeJunctionSpriteStats* s) {
-    uint8_t id[2];
+                     EspNativeJunctionSpriteStats* stats) {
+    uint8_t idBytes[2];
     uint8_t pair[8];
-    uint8_t h[12];
-    uint8_t pal[32];
+    uint8_t header[12];
+    uint8_t palette[32];
     uint32_t actual;
-    uint32_t shapeOff;
-    uint32_t maskOff;
-    int32_t srcOff;
-    int32_t palOff;
+    uint32_t shapeOffset;
+    uint32_t maskOffset;
+    int32_t sourceOffset;
+    int32_t paletteOffset;
     uint32_t x;
     uint32_t active = 0U;
     uint32_t base;
-    uint32_t rel;
-    uint32_t stexOff;
+    uint32_t relative;
+    uint32_t spriteTexelOffset;
     uint32_t p;
+    uint32_t loadedBytes;
 
-    if (logical >= c->spriteIds || logical >= 256U ||
+    if (logical >= sources->spriteIds || logical >= 256U ||
         EspNativeGraphicsCatalog_findSprite(logical) == NULL) {
         return 0;
     }
 
     memset(frame, 0, sizeof(*frame));
-    if (!readRange(&c->mappings,
-                   c->spriteIdBase + (uint32_t)logical * 2U,
-                   id, sizeof(id), s)) {
+    if (!readRange(&sources->mappings,
+                   sources->spriteIdBase + (uint32_t)logical * 2U,
+                   idBytes, sizeof(idBytes), stats)) {
         return 0;
     }
 
-    actual = (uint32_t)le16(id) + anim;
-    if (actual >= c->bitShapePairs || actual > UINT16_MAX ||
-        !readRange(&c->mappings,
-                   c->spritePairBase + actual * PAIR_BYTES,
-                   pair, sizeof(pair), s)) {
+    actual = (uint32_t)le16(idBytes) + animation;
+    if (actual >= sources->bitShapePairs || actual > UINT16_MAX ||
+        !readRange(&sources->mappings,
+                   sources->spritePairBase + actual * PAIR_BYTES,
+                   pair, sizeof(pair), stats)) {
         return 0;
     }
 
-    srcOff = (int32_t)le32(pair);
-    palOff = (int32_t)le32(pair + 4U);
-    if (srcOff < 0 || palOff < 0 ||
-        (uint32_t)palOff > c->paletteEntries ||
-        16U > c->paletteEntries - (uint32_t)palOff) {
+    sourceOffset = (int32_t)le32(pair);
+    paletteOffset = (int32_t)le32(pair + 4U);
+    if (sourceOffset < 0 || paletteOffset < 0 ||
+        (uint32_t)paletteOffset > sources->paletteEntries ||
+        16U > sources->paletteEntries - (uint32_t)paletteOffset) {
         return 0;
     }
 
-    shapeOff = TEXEL_HEADER + (uint32_t)srcOff;
-    if (!readRange(&c->bitshapes, shapeOff, h, sizeof(h), s) ||
-        !readRange(&c->palettes,
-                   PALETTE_HEADER + (uint32_t)palOff * 2U,
-                   pal, sizeof(pal), s)) {
+    shapeOffset = TEXEL_HEADER + (uint32_t)sourceOffset;
+    if (!readRange(&sources->bitshapes, shapeOffset, header,
+                   sizeof(header), stats) ||
+        !readRange(&sources->palettes,
+                   PALETTE_HEADER + (uint32_t)paletteOffset * 2U,
+                   palette, sizeof(palette), stats)) {
         return 0;
     }
 
     frame->logical = logical;
     frame->actual = (uint16_t)actual;
-    frame->texelOffset = le32(h);
-    frame->xMin = h[8];
-    frame->xMax = h[9];
-    frame->yMin = h[10];
-    frame->yMax = h[11];
+    frame->texelOffset = le32(header);
+    frame->xMin = header[8];
+    frame->xMax = header[9];
+    frame->yMin = header[10];
+    frame->yMax = header[11];
     if (frame->xMax < frame->xMin || frame->yMax < frame->yMin) return 0;
 
     frame->width = frame->xMax - frame->xMin + 1;
@@ -614,18 +415,18 @@ static int loadFrame(const Sources* c,
 
     frame->maskBytes = (uint32_t)frame->width * (uint32_t)frame->pitch;
     if (frame->maskBytes == 0U || frame->maskBytes > MAX_MASK) return 0;
-    maskOff = shapeOff + SHAPE_HEADER;
-    if (!readRange(&c->bitshapes,
-                   maskOff, frame->mask, frame->maskBytes, s)) {
+    maskOffset = shapeOffset + SHAPE_HEADER;
+    if (!readRange(&sources->bitshapes, maskOffset, frame->mask,
+                   frame->maskBytes, stats)) {
         return 0;
     }
 
     frame->prefix[0] = 0U;
     for (x = 0U; x < (uint32_t)frame->width; ++x) {
-        const uint8_t* col = frame->mask + x * (uint32_t)frame->pitch;
+        const uint8_t* column = frame->mask + x * (uint32_t)frame->pitch;
         int y;
         for (y = 0; y < frame->height; ++y) {
-            if ((col[y / 8] & (1U << (y & 7))) != 0U) ++active;
+            if ((column[y / 8] & (1U << (y & 7))) != 0U) ++active;
         }
         frame->prefix[x + 1U] = (uint16_t)active;
     }
@@ -634,138 +435,148 @@ static int loadFrame(const Sources* c,
     frame->packedBytes = ((active + 1U) & ~1U) / 2U;
     if (frame->packedBytes == 0U || frame->packedBytes > MAX_TEXELS) return 0;
 
-    base = c->wallBytes * 2U;
+    base = sources->wallBytes * 2U;
     if (frame->texelOffset < base ||
         ((frame->texelOffset - base) & 1U) != 0U) {
         return 0;
     }
-    rel = frame->texelOffset - base;
-    stexOff = TEXEL_HEADER + rel / 2U;
-    if (!readRange(&c->stexels,
-                   stexOff, frame->texels, frame->packedBytes, s)) {
+    relative = frame->texelOffset - base;
+    spriteTexelOffset = TEXEL_HEADER + relative / 2U;
+    if (!readRange(&sources->stexels, spriteTexelOffset, frame->texels,
+                   frame->packedBytes, stats)) {
         return 0;
     }
 
     for (p = 0U; p < 16U; ++p) {
-        frame->palette[p] = source565(le16(pal + p * 2U));
+        frame->palette[p] = source565(le16(palette + p * 2U));
     }
 
-    ++s->frameLoads;
-    s->frameBytes += frame->maskBytes + frame->packedBytes;
-    if (frame->maskBytes + frame->packedBytes > s->maxFrameBytes) {
-        s->maxFrameBytes = frame->maskBytes + frame->packedBytes;
+    loadedBytes = frame->maskBytes + frame->packedBytes;
+    if (glow) {
+        ++stats->glowFrameLoads;
+        stats->glowFrameBytes += loadedBytes;
+        if (loadedBytes > stats->glowMaxFrameBytes) {
+            stats->glowMaxFrameBytes = loadedBytes;
+        }
     }
-
-    {
-        uint32_t w = (uint32_t)logical >> 5;
-        uint32_t b = 1U << ((uint32_t)logical & 31U);
-        if ((seenLogical[w] & b) == 0U) {
-            seenLogical[w] |= b;
-            ++s->uniqueLogical;
+    else {
+        uint32_t word;
+        uint32_t bit;
+        ++stats->frameLoads;
+        stats->frameBytes += loadedBytes;
+        if (loadedBytes > stats->maxFrameBytes) stats->maxFrameBytes = loadedBytes;
+        word = (uint32_t)logical >> 5;
+        bit = 1U << ((uint32_t)logical & 31U);
+        if ((seenLogical[word] & bit) == 0U) {
+            seenLogical[word] |= bit;
+            ++stats->uniqueLogical;
         }
     }
     return 1;
 }
 
-static int buildOrder(Render_t* r,
-                      const EspMapRuntimeView* rt,
-                      const uint32_t visibleLeaves[MAX_TRACKED_NODES / 32U],
+static int buildOrder(Render_t* render,
+                      const EspMapRuntimeView* runtime,
+                      const EspNativeBspVisibilityState* visibility,
                       Order order[MAX_SPRITES],
-                      EspNativeJunctionSpriteStats* s,
-                      uint32_t* n) {
+                      EspNativeJunctionSpriteStats* stats,
+                      uint32_t* outCount) {
     uint32_t i;
     uint32_t count = 0U;
-    uint32_t h = 2166136261U;
+    uint32_t hash = 2166136261U;
 
-    if (rt == NULL || visibleLeaves == NULL || s == NULL || n == NULL ||
-        rt->mapSpriteCount > MAX_SPRITES || rt->nodeCount > MAX_TRACKED_NODES) {
+    if (runtime == NULL || visibility == NULL || stats == NULL ||
+        outCount == NULL || runtime->mapSpriteCount > MAX_SPRITES) {
         return 0;
     }
 
-    for (i = 0U; i < rt->mapSpriteCount; ++i) {
-        EspMapSprite sp;
-        uint8_t vis;
+    for (i = 0U; i < runtime->mapSpriteCount; ++i) {
+        EspMapSprite sprite;
+        uint8_t visual;
         uint8_t type;
-        uint8_t sub;
+        uint8_t subtype;
         uint16_t link;
-        uint16_t ord;
+        uint16_t ordinal;
         uint32_t info;
         uint32_t id;
-        uint32_t leaf;
-        uint32_t pos;
-        int32_t z;
+        uint32_t leaf = UINT32_MAX;
+        uint32_t position;
+        int visible;
+        int32_t sortZ;
 
-        if (!EspMapRuntime_getMapSprite(i, &sp) ||
-            !EspMapSpriteTopology_getVisualState(i, &vis) ||
-            !EspMapSpriteTopology_getEntity(i, &type, &sub, &link, &ord)) {
+        if (!EspMapRuntime_getMapSprite(i, &sprite) ||
+            !EspMapSpriteTopology_getVisualState(i, &visual) ||
+            !EspMapSpriteTopology_getEntity(i, &type, &subtype, &link, &ordinal)) {
             return 0;
         }
-        (void)sub;
+        (void)subtype;
         (void)link;
-        (void)ord;
-        ++s->objects;
+        (void)ordinal;
+        ++stats->objects;
 
-        info = (sp.info & ~VISUAL_MASK) | ((uint32_t)vis << 9);
+        info = (sprite.info & ~VISUAL_MASK) | ((uint32_t)visual << 9);
         id = info & 511U;
         if ((info & HIDDEN) != 0U) {
-            ++s->hidden;
+            ++stats->hidden;
             continue;
         }
-        if (!spriteLeaf(rt, &sp, &leaf)) return 0;
-        if ((visibleLeaves[leaf >> 5] & (1U << (leaf & 31U))) == 0U) {
-            ++s->bspRejected;
+
+        visible = EspNativeBspVisibility_mapSpriteVisible(visibility, i, &leaf);
+        if (!visible) {
+            if (leaf == UINT32_MAX) return 0;
+            ++stats->bspRejected;
             continue;
         }
-        ++s->bspCandidates;
+        ++stats->bspCandidates;
 
         if (id >= 82U && id <= 90U && (id & 1U) == 0U) info |= CROSS;
         if ((info & (TILE | CROSS | SKIP_RESOURCE | ORIENT_MASK)) != 0U ||
             EspNativeGraphicsCatalog_findSprite((uint16_t)id) == NULL) {
-            ++s->unsupported;
+            ++stats->unsupported;
             return 0;
         }
 
         if (spriteRenderMode((uint16_t)id) == RENDER_MODE_ADD) {
-            ++s->mode7Objects;
+            ++stats->mode7Objects;
         }
         else {
-            ++s->mode0Objects;
+            ++stats->mode0Objects;
         }
-        if (id == 135U || id == 140U || id == 131U) ++s->glowDeferred;
 
-        z = (int32_t)((sp.x * r->viewCos_) +
-                      (sp.y * r->viewSin_) + r->viewTransX);
-        if ((info & SORT_BIAS) != 0U) ++z;
-        else if (type == ENEMY_TYPE) --z;
-        else if (id >= 180U && id <= 191U) z -= 2;
+        sortZ = (int32_t)((sprite.x * render->viewCos_) +
+                          (sprite.y * render->viewSin_) + render->viewTransX);
+        if ((info & SORT_BIAS) != 0U) ++sortZ;
+        else if (type == ENEMY_TYPE) --sortZ;
+        else if (id >= 180U && id <= 191U) sortZ -= 2;
 
-        pos = count;
-        while (pos > 0U && z >= order[pos - 1U].sortZ) {
-            order[pos] = order[pos - 1U];
-            --pos;
+        position = count;
+        while (position > 0U && sortZ >= order[position - 1U].sortZ) {
+            order[position] = order[position - 1U];
+            --position;
         }
-        order[pos].index = (uint16_t)i;
-        order[pos].logical = (uint16_t)id;
-        order[pos].info = info;
-        order[pos].sortZ = z;
+        order[position].index = (uint16_t)i;
+        order[position].logical = (uint16_t)id;
+        order[position].info = info;
+        order[position].sortZ = sortZ;
         ++count;
     }
 
     for (i = 0U; i < count; ++i) {
-        h = fnv(h, &order[i].index, 2U);
-        h = fnv(h, &order[i].sortZ, 4U);
+        hash = fnv(hash, &order[i].index, 2U);
+        hash = fnv(hash, &order[i].sortZ, 4U);
     }
-    s->orderFNV1a = h;
-    *n = count;
+    stats->orderFNV1a = hash;
+    *outCount = count;
     return count > 0U;
 }
 
-static int spans(Render_t* r,
-                 Line_t* l,
+static int spans(Render_t* render,
+                 Line_t* line,
                  const Frame* frame,
                  uint8_t renderMode,
-                 EspNativeJunctionSpriteStats* s) {
-    int dx = l->vert2.x - l->vert1.x;
+                 int glow,
+                 EspNativeJunctionSpriteStats* stats) {
+    int dx = line->vert2.x - line->vert1.x;
     int step;
     int dSide;
     int dTex;
@@ -779,51 +590,51 @@ static int spans(Render_t* r,
     }
     if (dx <= 0) return 1;
     step = (MAXINT / dx) << 1;
-    dSide = (int)DoomRPG_FixedMul(l->vert2.y - l->vert1.y, step);
-    dTex = (int)DoomRPG_FixedMul(l->vert2.z - l->vert1.z, step);
-    x = (l->vert1.x + 65535) >> 16;
-    x2 = (l->vert2.x + 65535) >> 16;
-    if (x < r->screenLeft) x = r->screenLeft;
-    if (x2 > r->screenRight) x2 = r->screenRight;
+    dSide = (int)DoomRPG_FixedMul(line->vert2.y - line->vert1.y, step);
+    dTex = (int)DoomRPG_FixedMul(line->vert2.z - line->vert1.z, step);
+    x = (line->vert1.x + 65535) >> 16;
+    x2 = (line->vert2.x + 65535) >> 16;
+    if (x < render->screenLeft) x = render->screenLeft;
+    if (x2 > render->screenRight) x2 = render->screenRight;
 
     {
-        int j = (x << 16) - l->vert1.x;
-        tex = l->vert1.z + DoomRPG_FixedMul(j, dTex);
-        depth = l->vert1.y + DoomRPG_FixedMul(j, dSide);
+        int offset = (x << 16) - line->vert1.x;
+        tex = line->vert1.z + DoomRPG_FixedMul(offset, dTex);
+        depth = line->vert1.y + DoomRPG_FixedMul(offset, dSide);
     }
 
     while (x < x2) {
         int scale;
-        int col;
-        int texStep;
+        int column;
+        int texelStep;
 
         if (depth <= 0) return 0;
         scale = (0x40000000 / depth) << 2;
-        col = (int)(DoomRPG_FixedMul(tex, scale) >> 16);
+        column = (int)(DoomRPG_FixedMul(tex, scale) >> 16);
         depth += dSide;
         tex += dTex;
 
-        if (r->columnScale[x] >= scale) {
+        if (render->columnScale[x] >= scale) {
             const uint8_t* bits;
             uint32_t cursor;
             int y = 0;
 
-            if (col < 0 || col >= frame->width) return 0;
-            texStep = scale >> 3;
-            bits = frame->mask + (uint32_t)col * (uint32_t)frame->pitch;
-            cursor = frame->prefix[col];
+            if (column < 0 || column >= frame->width) return 0;
+            texelStep = scale >> 3;
+            bits = frame->mask + (uint32_t)column * (uint32_t)frame->pitch;
+            cursor = frame->prefix[column];
 
             while (y < frame->height) {
                 int start;
-                int len;
-                int sy;
+                int length;
+                int screenY;
                 int pixels;
                 int pitch;
-                int remain;
-                int world;
-                uint32_t base;
-                int64_t pos;
-                uint16_t* dst;
+                int remaining;
+                int worldY;
+                uint32_t texelBase;
+                int64_t position;
+                uint16_t* destination;
 
                 while (y < frame->height &&
                        (bits[y / 8] & (1U << (y & 7))) == 0U) {
@@ -832,184 +643,237 @@ static int spans(Render_t* r,
                 if (y >= frame->height) break;
 
                 start = y;
-                base = cursor;
+                texelBase = cursor;
                 while (y < frame->height &&
                        (bits[y / 8] & (1U << (y & 7))) != 0U) {
                     ++cursor;
                     ++y;
                 }
 
-                len = y - start;
-                world = (64 - (frame->yMin + start)) - r->viewZ;
-                pixels = (len * depth) >> 17;
-                sy = r->halfScreenHeight - ((world * depth) >> 17);
-                pos = ((int64_t)base) << 12;
+                length = y - start;
+                worldY = (64 - (frame->yMin + start)) - render->viewZ;
+                pixels = (length * depth) >> 17;
+                screenY = render->halfScreenHeight - ((worldY * depth) >> 17);
+                position = ((int64_t)texelBase) << 12;
 
-                if (sy < r->screenTop) {
-                    int cut = r->screenTop - sy;
-                    pos += (int64_t)texStep * cut;
+                if (screenY < render->screenTop) {
+                    int cut = render->screenTop - screenY;
+                    position += (int64_t)texelStep * cut;
                     pixels -= cut;
-                    sy = r->screenTop;
+                    screenY = render->screenTop;
                 }
-                if (sy + pixels > r->screenBottom) {
-                    pixels = r->screenBottom - sy;
+                if (screenY + pixels > render->screenBottom) {
+                    pixels = render->screenBottom - screenY;
                 }
                 if (pixels <= 0) continue;
 
-                pitch = r->pitch >> 1;
-                dst = (uint16_t*)r->pixels + pitch * sy + x;
-                remain = pixels;
-                ++s->spanRuns;
+                pitch = render->pitch >> 1;
+                destination = (uint16_t*)render->pixels + pitch * screenY + x;
+                remaining = pixels;
+                if (glow) ++stats->glowSpanRuns;
+                else ++stats->spanRuns;
 
-                while (remain-- > 0) {
-                    uint32_t pi;
+                while (remaining-- > 0) {
+                    uint32_t packedIndex;
                     uint8_t packed;
                     int shift;
-                    uint16_t src;
+                    uint16_t source;
 
-                    if (pos < 0) return 0;
-                    pi = (uint32_t)(pos >> 13);
-                    if (pi >= frame->packedBytes) return 0;
-                    packed = frame->texels[pi];
-                    shift = (int)((pos >> 10) & 4);
-                    src = frame->palette[(packed >> shift) & 15U];
+                    if (position < 0) return 0;
+                    packedIndex = (uint32_t)(position >> 13);
+                    if (packedIndex >= frame->packedBytes) return 0;
+                    packed = frame->texels[packedIndex];
+                    shift = (int)((position >> 10) & 4);
+                    source = frame->palette[(packed >> shift) & 15U];
 
                     if (renderMode == RENDER_MODE_NORMAL) {
-                        *dst = src;
+                        *destination = source;
                     }
                     else {
-                        uint32_t color = (uint32_t)(src & 0xf7deU) +
-                                         ((uint32_t)(*dst) & 0xf7deU);
+                        uint32_t color = (uint32_t)(source & 0xf7deU) +
+                                         ((uint32_t)(*destination) & 0xf7deU);
                         uint32_t carry = color & 0x10820U;
-                        *dst = (uint16_t)((color & 0xf7deU) |
-                                          (carry >> 1) |
-                                          (carry >> 2) |
-                                          (carry >> 3));
-                        ++s->mode7Pixels;
+                        *destination = (uint16_t)((color & 0xf7deU) |
+                                                  (carry >> 1) |
+                                                  (carry >> 2) |
+                                                  (carry >> 3));
+                        if (!glow) ++stats->mode7Pixels;
                     }
 
-                    dst += pitch;
-                    pos += texStep;
-                    ++s->pixelsDrawn;
+                    destination += pitch;
+                    position += texelStep;
+                    if (glow) ++stats->glowPixels;
+                    else ++stats->pixelsDrawn;
                 }
             }
 
-            if (cursor != frame->prefix[col + 1]) return 0;
+            if (cursor != frame->prefix[column + 1]) return 0;
         }
         else {
-            ++s->wallOccludedColumns;
+            if (glow) ++stats->glowWallOccludedColumns;
+            else ++stats->wallOccludedColumns;
         }
         ++x;
     }
     return 1;
 }
 
-static int drawOne(Render_t* r,
-                   const Sources* c,
-                   const Order* o,
-                   Frame* frame,
-                   uint32_t seenLogical[8],
-                   EspNativeJunctionSpriteStats* s) {
-    EspMapSprite sp;
+static int drawAt(Render_t* render,
+                  const Sources* sources,
+                  const Order* parent,
+                  uint16_t logical,
+                  uint8_t renderMode,
+                  int glow,
+                  Frame* frame,
+                  uint32_t seenLogical[8],
+                  EspNativeJunctionSpriteStats* stats) {
+    EspMapSprite sprite;
     Vertex_t center;
-    Line_t l;
-    uint32_t anim;
-    uint8_t renderMode;
-    int min;
-    int max;
+    Line_t line;
+    uint32_t animation;
+    int minimum;
+    int maximum;
 
-    if (!EspMapRuntime_getMapSprite(o->index, &sp)) return 0;
+    if (!EspMapRuntime_getMapSprite(parent->index, &sprite)) return 0;
     memset(&center, 0, sizeof(center));
-    center.x = sp.x;
-    center.y = sp.y;
-    Render_transform2DVerts(r, &center);
+    center.x = sprite.x;
+    center.y = sprite.y;
+    Render_transform2DVerts(render, &center);
     center.x -= 0x100000;
     if (center.x < 0x40000) {
-        ++s->nearCulled;
+        if (glow) ++stats->glowNearCulled;
+        else ++stats->nearCulled;
         return 1;
     }
 
-    anim = (o->info & FIXED_ANIM) != 0U
-               ? ((o->info & 0x1e00U) >> 9)
-               : 0U;
-    if (!loadFrame(c, o->logical, anim, frame, seenLogical, s)) return 0;
+    animation = (parent->info & FIXED_ANIM) != 0U
+                    ? ((parent->info & 0x1e00U) >> 9)
+                    : 0U;
+    if (!loadFrame(sources, logical, animation, glow,
+                   frame, seenLogical, stats)) {
+        return 0;
+    }
 
-    renderMode = spriteRenderMode(o->logical);
-    min = frame->xMin - 32;
-    max = frame->xMax - 32;
-    memset(&l, 0, sizeof(l));
-    l.vert1 = center;
-    l.vert2.x = center.x;
-    l.vert2.y = center.y + (max << 16);
-    l.vert2.z = max - min;
-    l.vert1.y += min << 16;
+    minimum = frame->xMin - 32;
+    maximum = frame->xMax - 32;
+    memset(&line, 0, sizeof(line));
+    line.vert1 = center;
+    line.vert2.x = center.x;
+    line.vert2.y = center.y + (maximum << 16);
+    line.vert2.z = maximum - minimum;
+    line.vert1.y += minimum << 16;
 
-    if (!Render_clipLine(r, &l)) {
-        ++s->clipCulled;
+    if (!Render_clipLine(render, &line)) {
+        if (glow) ++stats->glowClipCulled;
+        else ++stats->clipCulled;
         return 1;
     }
-    Render_projectVertex(r, &l.vert1);
-    Render_projectVertex(r, &l.vert2);
-    if (!spans(r, &l, frame, renderMode, s)) return 0;
-    ++s->draws;
+    Render_projectVertex(render, &line.vert1);
+    Render_projectVertex(render, &line.vert2);
+    if (!spans(render, &line, frame, renderMode, glow, stats)) return 0;
+    if (glow) ++stats->glowDraws;
+    else ++stats->draws;
     return 1;
+}
+
+static int drawParentAndGlow(Render_t* render,
+                             const Sources* sources,
+                             const Order* parent,
+                             Frame* frame,
+                             uint32_t seenLogical[8],
+                             EspNativeJunctionSpriteStats* stats) {
+    uint16_t glowLogical;
+
+    if (!drawAt(render, sources, parent, parent->logical,
+                spriteRenderMode(parent->logical), 0,
+                frame, seenLogical, stats)) {
+        return 0;
+    }
+
+    glowLogical = glowFor(parent->logical);
+    if (glowLogical == 0U) return 1;
+    ++stats->glowCompanions;
+    if (EspNativeGraphicsCatalog_findSprite(glowLogical) == NULL) {
+        ++stats->glowDeferred;
+        return 0;
+    }
+    return drawAt(render, sources, parent, glowLogical,
+                  RENDER_MODE_ADD, 1, frame, seenLogical, stats);
 }
 
 int EspNativeJunctionSprite_render(struct Render_s* renderBase,
                                    EspNativeJunctionSpriteStats* outStats) {
-    Render_t* r = (Render_t*)renderBase;
-    const EspMapRuntimeView* rt = EspMapRuntime_view();
-    const EspPlayerViewState* v = EspPlayerView_view();
+    Render_t* render = (Render_t*)renderBase;
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const EspPlayerViewState* view = EspPlayerView_view();
     Scratch saved;
     Scratch after;
-    Sources src;
+    Sources sources;
     SpriteWorkspace* workspace = NULL;
-    EspNativeJunctionSpriteStats s;
-    uint32_t n = 0U;
+    EspNativeJunctionSpriteStats stats;
+    uint32_t orderCount = 0U;
     uint32_t i;
     int opened = 0;
     int ok = 0;
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
-    if (r == NULL || outStats == NULL || rt == NULL || v == NULL ||
+    if (render == NULL || outStats == NULL || runtime == NULL || view == NULL ||
         !EspMapSpriteTopology_isReady() ||
         !EspNativeGraphicsCatalog_isReady() || EspAssetPack_isOpen() ||
-        r->screenWidth != SCREEN_W || r->columnScale == NULL ||
-        r->framebuffer == NULL || rt->nodeCount == 0U ||
-        rt->nodeCount > MAX_TRACKED_NODES || rt->lineCount == 0U) {
+        render->screenWidth != SCREEN_W || render->columnScale == NULL ||
+        render->framebuffer == NULL || runtime->nodeCount == 0U ||
+        runtime->lineCount == 0U) {
         return 0;
     }
 
     workspace = (SpriteWorkspace*)malloc(sizeof(*workspace));
     if (workspace == NULL) return 0;
     memset(workspace, 0, sizeof(*workspace));
-    memset(&s, 0, sizeof(s));
-    saveScratch(r, &saved);
+    memset(&stats, 0, sizeof(stats));
+    saveScratch(render, &saved);
 
-    if (!setupView(r, v) ||
-        !walkDepthNode(r, rt, 0U, 0U, workspace->visibleLeaves, &s) ||
-        !buildOrder(r, rt, workspace->visibleLeaves, workspace->order, &s, &n)) {
+    if (!EspNativeBspVisibility_build(render, &workspace->visibility) ||
+        !setupDrawView(render, view, &workspace->visibility)) {
+        goto done;
+    }
+
+    stats.depthNodes = workspace->visibility.nodes;
+    stats.depthLeaves = workspace->visibility.leaves;
+    stats.depthNodeCulled = workspace->visibility.nodeCull;
+    stats.depthLines = workspace->visibility.lines;
+    stats.depthBackfaceCulled = workspace->visibility.backfaceCull;
+    stats.depthClipCulled = workspace->visibility.clipCull;
+    stats.depthOccluders = workspace->visibility.occluders;
+    stats.depthSpriteSpans = workspace->visibility.spriteSpans;
+
+    if (!buildOrder(render, runtime, &workspace->visibility,
+                    workspace->order, &stats, &orderCount)) {
         goto done;
     }
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
     opened = 1;
-    if (!initSources(&src, &s)) goto done;
+    if (!initSources(&sources, &stats)) goto done;
 
-    for (i = 0U; i < n; ++i) {
-        if (!drawOne(r, &src, &workspace->order[i],
-                     &workspace->frame, workspace->seenLogical, &s)) {
+    for (i = 0U; i < orderCount; ++i) {
+        if (!drawParentAndGlow(render, &sources, &workspace->order[i],
+                               &workspace->frame, workspace->seenLogical,
+                               &stats)) {
             goto done;
         }
     }
-    ok = s.bspCandidates > 0U && s.draws > 0U && s.pixelsDrawn > 0U &&
-         s.mode0Objects > 0U && s.mode7Objects > 0U && s.mode7Pixels > 0U;
+
+    ok = stats.bspCandidates > 0U && stats.draws > 0U &&
+         stats.pixelsDrawn > 0U && stats.mode0Objects > 0U &&
+         stats.mode7Objects > 0U && stats.mode7Pixels > 0U &&
+         stats.glowCompanions > 0U && stats.glowDraws > 0U &&
+         stats.glowPixels > 0U && stats.glowDeferred == 0U;
 
 done:
     if (opened || EspAssetPack_isOpen()) EspAssetPack_close();
-    restoreScratch(r, &saved);
-    saveScratch(r, &after);
+    restoreScratch(render, &saved);
+    saveScratch(render, &after);
     if (memcmp(&saved, &after, sizeof(saved)) != 0) ok = 0;
     free(workspace);
-    *outStats = s;
+    *outStats = stats;
     return ok;
 }

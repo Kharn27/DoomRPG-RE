@@ -49,14 +49,24 @@ typedef struct EspNativeGraphicsCatalogView_s {
 void EspNativeGraphicsCatalog_reset(void);
 
 /*
- * Build a sparse immutable catalog directly from mappings.bin + palettes.bin
+ * Build the direct sparse immutable catalog from mappings.bin + palettes.bin
  * in DoomRPG-ESP32.pak, using the current EspMapRuntime resource bitsets.
- *
- * Texture records are the union of textureRequired() and planeTextureUsed().
- * Sprite records come from spriteRequired(). The asset pack is closed before
- * return on both success and failure.
+ * This preserves the historically hardware-proven direct-resource boundary:
+ * implicit renderer dependencies are expanded explicitly by the API below.
  */
 EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void);
+
+/*
+ * Atomically close renderer-owned sprite dependencies over the already-built
+ * direct catalog. Doom RPG semantics currently require sprite 136 whenever
+ * map sprite 135 or 140 is required, and sprite 144 whenever 131 is required.
+ * Missing records are inserted in sorted order from the native PAK. On any
+ * failure the previously published catalog remains byte-for-byte active.
+ * Returns OK when expansion occurs and ALREADY_ACTIVE when closure was already
+ * satisfied.
+ */
+EspNativeGraphicsCatalogStatus
+EspNativeGraphicsCatalog_expandSpriteDependencies(void);
 
 int EspNativeGraphicsCatalog_isReady(void);
 const EspNativeGraphicsCatalogView* EspNativeGraphicsCatalog_view(void);
