@@ -24,6 +24,8 @@
 #include "platform_video_config.h"
 
 #include <esp_heap_caps.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define EXPECTED_BASE_FRAME_FNV 0xba3e5182U
 #define EXPECTED_INITIAL_HUD_FNV 0x4756db9cU
@@ -38,20 +40,41 @@ typedef struct LegacySnapshot_s {
     uint32_t render;
 } LegacySnapshot;
 
+typedef struct TurnExecutionWorkspace_s {
+    EspPlayerViewState beforeView;
+    EspPlayerViewState afterView;
+    EspNativeGameplayTurnState beforeTurn;
+    EspNativeGameplayTurnState afterTurn;
+    EspNativeGameplayDispatchResult result;
+    EspNativeGameplayFrameStats frameStats;
+    EspMapResidentSnapshot residentBefore;
+    EspMapResidentSnapshot residentAfter;
+    LegacySnapshot legacyBefore;
+    LegacySnapshot legacyAfter;
+} TurnExecutionWorkspace;
+
 typedef struct TurnProbeState_s {
     DoomRPG_t* doomRpg;
     EspNativeGameplayInputState firstTurn;
+    EspNativeGameplayInputState pendingIntent;
     uint32_t taps;
     uint32_t turns;
     uint32_t deferred;
     uint32_t roundTrips;
     uint8_t initialized;
     uint8_t firstTurnPending;
+    uint8_t pendingIntentValid;
     uint8_t callbackOwned;
     uint8_t failed;
+    uint8_t reserved[3];
 } TurnProbeState;
 
 static TurnProbeState probeState;
+/* Temporary probe-only static workspace. Keeping the snapshot/result graph out
+ * of loopTask stack is intentional: the reusable first-frame renderer already
+ * has its own bounded stack workspace and gameplay TURN must not deepen it just
+ * because input was serviced immediately beforehand. */
+static TurnExecutionWorkspace executionWorkspace;
 
 static uint32_t fnv1a(const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -80,6 +103,10 @@ static uint32_t heap8(void) {
 
 static uint32_t largest8(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+}
+
+static unsigned int stackHighWater(void) {
+    return (unsigned int)uxTaskGetStackHighWaterMark(NULL);
 }
 
 static int legacySnapshot(const DoomRPG_t* doomRpg, LegacySnapshot* out) {
@@ -165,11 +192,14 @@ static int runtimeBoundary(const DoomRPG_t* doomRpg) {
 }
 
 static void failProbe(const char* reason) {
-    printf("[TURNPROBE] FAILED %s frame=%08x pending=%u pack=%d callbackOwned=%u\n",
+    printf("[TURNPROBE] FAILED %s frame=%08x pending=%u queued=%u pack=%d callbackOwned=%u\n",
            reason, (unsigned int)frameFNV(),
            (unsigned int)EspNativeGameplayInput_peek()->pending,
+           (unsigned int)probeState.pendingIntentValid,
            EspAssetPack_isOpen(), (unsigned int)probeState.callbackOwned);
     probeState.failed = 1U;
+    probeState.firstTurnPending = 0U;
+    probeState.pendingIntentValid = 0U;
     if (probeState.callbackOwned) {
         PlatformInput_setTapCallback(NULL);
         probeState.callbackOwned = 0U;
@@ -177,16 +207,7 @@ static void failProbe(const char* reason) {
 }
 
 static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
-    EspPlayerViewState beforeView;
-    EspPlayerViewState afterView;
-    EspNativeGameplayTurnState beforeTurn;
-    EspNativeGameplayTurnState afterTurn;
-    EspNativeGameplayDispatchResult result;
-    EspNativeGameplayFrameStats frameStats;
-    EspMapResidentSnapshot residentBefore;
-    EspMapResidentSnapshot residentAfter;
-    LegacySnapshot legacyBefore;
-    LegacySnapshot legacyAfter;
+    TurnExecutionWorkspace* w = &executionWorkspace;
     EspNativeGameplayDispatchStatus dispatch;
     uint32_t heapBefore;
     uint32_t heapAfter;
@@ -196,6 +217,7 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
     uint32_t frameAfter;
     int roundTrip;
 
+    memset(w, 0, sizeof(*w));
     if (intent == NULL || probeState.doomRpg == NULL ||
         !runtimeBoundary(probeState.doomRpg)) {
         failProbe("execute boundary");
@@ -203,7 +225,8 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
     }
 
     dispatch = EspNativeGameplayDispatch_prepareTurn(
-        intent, &beforeView, &afterView, &beforeTurn, &afterTurn, &result);
+        intent, &w->beforeView, &w->afterView,
+        &w->beforeTurn, &w->afterTurn, &w->result);
     if (dispatch == ESP_NATIVE_GAMEPLAY_DISPATCH_DEFERRED) {
         ++probeState.deferred;
         printf("[TURNPROBE] DEFERRED n=%u seq=%u action=%s id=%u view=%u frame=%08x gameplay=no\n",
@@ -223,25 +246,29 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
     heapBefore = heap8();
     largestBefore = largest8();
     frameBefore = frameFNV();
-    if (!legacySnapshot(probeState.doomRpg, &legacyBefore) ||
-        !EspMapResidentLifecycle_capture(&residentBefore) ||
-        !residentCanonical(&residentBefore)) {
+    if (!legacySnapshot(probeState.doomRpg, &w->legacyBefore) ||
+        !EspMapResidentLifecycle_capture(&w->residentBefore) ||
+        !residentCanonical(&w->residentBefore)) {
         failProbe("pre-turn snapshots");
         return 0;
     }
 
     if (EspNativeGameplayDispatch_commitTurn(
-            &beforeView, &afterView, &beforeTurn, &afterTurn, &result) !=
+            &w->beforeView, &w->afterView,
+            &w->beforeTurn, &w->afterTurn, &w->result) !=
             ESP_NATIVE_GAMEPLAY_DISPATCH_OK) {
         failProbe("dispatch commit");
         return 0;
     }
 
-    memset(&frameStats, 0, sizeof(frameStats));
+    printf("[TURNSTACK] beforeRender highWater=%u workspace=%uB angle=%u\n",
+           stackHighWater(), (unsigned int)sizeof(executionWorkspace),
+           (unsigned int)w->result.angleAfter);
     if (!EspNativeGameplayFrame_renderTurn(
-            probeState.doomRpg->render, result.angleAfter, &frameStats)) {
+            probeState.doomRpg->render, w->result.angleAfter, &w->frameStats)) {
         (void)EspNativeGameplayDispatch_rollbackTurn(
-            &afterView, &beforeView, &afterTurn, &beforeTurn, &result);
+            &w->afterView, &w->beforeView,
+            &w->afterTurn, &w->beforeTurn, &w->result);
         failProbe("native frame render");
         return 0;
     }
@@ -249,20 +276,21 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
     frameAfter = frameFNV();
     heapAfter = heap8();
     largestAfter = largest8();
-    if (!legacySnapshot(probeState.doomRpg, &legacyAfter) ||
-        !legacyEqual(&legacyBefore, &legacyAfter) ||
-        !EspMapResidentLifecycle_capture(&residentAfter) ||
-        memcmp(&residentBefore, &residentAfter, sizeof(residentBefore)) != 0 ||
+    if (!legacySnapshot(probeState.doomRpg, &w->legacyAfter) ||
+        !legacyEqual(&w->legacyBefore, &w->legacyAfter) ||
+        !EspMapResidentLifecycle_capture(&w->residentAfter) ||
+        memcmp(&w->residentBefore, &w->residentAfter,
+               sizeof(w->residentBefore)) != 0 ||
         !runtimeBoundary(probeState.doomRpg) ||
         heapAfter != heapBefore || largestAfter != largestBefore ||
-        frameAfter == frameBefore || frameStats.frameAfterFNV != frameAfter ||
-        frameStats.temporaryHudBytes != 12800U ||
-        frameStats.finalPresented != 1U || EspAssetPack_isOpen()) {
+        frameAfter == frameBefore || w->frameStats.frameAfterFNV != frameAfter ||
+        w->frameStats.temporaryHudBytes != 12800U ||
+        w->frameStats.finalPresented != 1U || EspAssetPack_isOpen()) {
         failProbe("post-turn integrity");
         return 0;
     }
 
-    roundTrip = result.angleAfter == 64U;
+    roundTrip = w->result.angleAfter == 64U;
     if (roundTrip && frameAfter != EXPECTED_BASE_FRAME_FNV) {
         failProbe("round-trip frame mismatch");
         return 0;
@@ -276,34 +304,50 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
     if (roundTrip) ++probeState.roundTrips;
     printf("[TURN] OK n=%u seq=%u action=%s delta=%d angle=%u->%u viewFNV=%08x->%08x orientFNV=%08x->%08x frame=%08x->%08x roundTrip=%s\n",
            (unsigned int)probeState.turns,
-           (unsigned int)result.sequence,
-           EspNativeGameplayInput_actionName(result.action),
-           (int)result.angleDelta,
-           (unsigned int)result.angleBefore,
-           (unsigned int)result.angleAfter,
-           (unsigned int)fnv1a(&beforeView, sizeof(beforeView)),
+           (unsigned int)w->result.sequence,
+           EspNativeGameplayInput_actionName(w->result.action),
+           (int)w->result.angleDelta,
+           (unsigned int)w->result.angleBefore,
+           (unsigned int)w->result.angleAfter,
+           (unsigned int)fnv1a(&w->beforeView, sizeof(w->beforeView)),
            (unsigned int)fnv1a(EspPlayerView_view(), sizeof(EspPlayerViewState)),
-           (unsigned int)fnv1a(&beforeTurn, sizeof(beforeTurn)),
-           (unsigned int)fnv1a(EspNativeGameplayDispatch_view(), sizeof(EspNativeGameplayTurnState)),
+           (unsigned int)fnv1a(&w->beforeTurn, sizeof(w->beforeTurn)),
+           (unsigned int)fnv1a(EspNativeGameplayDispatch_view(),
+                               sizeof(EspNativeGameplayTurnState)),
            (unsigned int)frameBefore, (unsigned int)frameAfter,
            roundTrip ? "exact" : "no");
-    printf("[TURN] RENDER world=%08x walls=%u/%u planes=%u sprites=%u/%u glows=%u/%u spriteReads=%u hudReads=%u hudPixels=%u tempHud=%uB presented=%u+%u heap=%u->%u largest=%u->%u legacyStable=yes residentStable=yes turnAdvance=no tileDispatch=no facingRefresh=deferred\n",
-           (unsigned int)frameStats.worldFrameFNV,
-           (unsigned int)frameStats.wallDraws,
-           (unsigned int)frameStats.wallPixels,
-           (unsigned int)frameStats.planePixels,
-           (unsigned int)frameStats.spriteDraws,
-           (unsigned int)frameStats.spritePixels,
-           (unsigned int)frameStats.glowDraws,
-           (unsigned int)frameStats.glowPixels,
-           (unsigned int)frameStats.spritePackReads,
-           (unsigned int)frameStats.hudPackReads,
-           (unsigned int)frameStats.hudPixels,
-           (unsigned int)frameStats.temporaryHudBytes,
-           (unsigned int)frameStats.worldPresented,
-           (unsigned int)frameStats.finalPresented,
+    printf("[TURN] RENDER world=%08x walls=%u/%u planes=%u sprites=%u/%u glows=%u/%u spriteReads=%u hudReads=%u hudPixels=%u tempHud=%uB presented=%u+%u heap=%u->%u largest=%u->%u stackHighWater=%u legacyStable=yes residentStable=yes turnAdvance=no tileDispatch=no facingRefresh=deferred\n",
+           (unsigned int)w->frameStats.worldFrameFNV,
+           (unsigned int)w->frameStats.wallDraws,
+           (unsigned int)w->frameStats.wallPixels,
+           (unsigned int)w->frameStats.planePixels,
+           (unsigned int)w->frameStats.spriteDraws,
+           (unsigned int)w->frameStats.spritePixels,
+           (unsigned int)w->frameStats.glowDraws,
+           (unsigned int)w->frameStats.glowPixels,
+           (unsigned int)w->frameStats.spritePackReads,
+           (unsigned int)w->frameStats.hudPackReads,
+           (unsigned int)w->frameStats.hudPixels,
+           (unsigned int)w->frameStats.temporaryHudBytes,
+           (unsigned int)w->frameStats.worldPresented,
+           (unsigned int)w->frameStats.finalPresented,
            (unsigned int)heapBefore, (unsigned int)heapAfter,
-           (unsigned int)largestBefore, (unsigned int)largestAfter);
+           (unsigned int)largestBefore, (unsigned int)largestAfter,
+           stackHighWater());
+    return 1;
+}
+
+static int queueIntent(const EspNativeGameplayInputState* intent,
+                       const char* origin) {
+    if (intent == NULL || probeState.pendingIntentValid || probeState.failed) {
+        return 0;
+    }
+    probeState.pendingIntent = *intent;
+    probeState.pendingIntentValid = 1U;
+    printf("[TURNPROBE] QUEUED seq=%u action=%s origin=%s render=next-service\n",
+           (unsigned int)intent->sequence,
+           EspNativeGameplayInput_actionName(intent->action),
+           origin != NULL ? origin : "unknown");
     return 1;
 }
 
@@ -334,29 +378,31 @@ static void onTurnTap(int16_t screenX,
         return;
     }
     if (classify != ESP_NATIVE_GAMEPLAY_INPUT_OK ||
-        EspNativeGameplayInput_peek()->pending || !runtimeBoundary(probeState.doomRpg)) {
-        failProbe("tap boundary/classify");
+        probeState.pendingIntentValid || EspNativeGameplayInput_peek()->pending ||
+        !runtimeBoundary(probeState.doomRpg)) {
+        failProbe("tap boundary/classify/busy");
         return;
     }
     if (EspNativeGameplayInput_route(&hit, logicalX, logicalY) !=
             ESP_NATIVE_GAMEPLAY_INPUT_OK ||
         EspNativeGameplayInput_consume(&intent) != ESP_NATIVE_GAMEPLAY_INPUT_OK ||
-        EspNativeGameplayInput_peek()->pending) {
-        failProbe("input route/consume");
+        EspNativeGameplayInput_peek()->pending ||
+        !queueIntent(&intent, "turn-callback")) {
+        failProbe("input route/consume/queue");
         return;
     }
-    (void)executeConsumedIntent(&intent);
 }
 
 /* Called only by the temporary weak observation point in
  * EspNativeGameplayInput_consume(). Before the first real turn, the proven
  * input probe remains the actual touch callback owner and still performs its
  * 250 ms exact-restoring feedback. We copy one TURN intent and wait for that
- * feedback to restore the canonical framebuffer before executing anything. */
+ * feedback to restore the canonical framebuffer before queueing execution. */
 void Esp32NativeGameplayInputProbe_observeConsumed(
     const EspNativeGameplayInputState* intent) {
     if (!probeState.initialized || probeState.failed || probeState.callbackOwned ||
-        probeState.firstTurnPending || intent == NULL) return;
+        probeState.firstTurnPending || probeState.pendingIntentValid ||
+        intent == NULL) return;
     if (intent->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT &&
         intent->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT) return;
     probeState.firstTurn = *intent;
@@ -368,6 +414,7 @@ void Esp32NativeGameplayInputProbe_observeConsumed(
 
 void Esp32JunctionTurnDispatchProbe_reset(void) {
     memset(&probeState, 0, sizeof(probeState));
+    memset(&executionWorkspace, 0, sizeof(executionWorkspace));
     EspNativeGameplayDispatch_reset();
 }
 
@@ -389,8 +436,8 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
     if (!probeState.initialized) {
         if (!Esp32JunctionGameplayInputProbe_isActive()) return;
 
-        printf("\n=== Doom RPG ESP32-native first gameplay turn dispatcher v2 ===\n");
-        printf("[TURNPROBE] CONTRACT boot/input ownership is unchanged: the hardware-proven gameplay input probe keeps the touch callback. Only after it consumes a real TURN_LEFT/TURN_RIGHT and restores its 250ms feedback exactly does this probe execute the turn and take over subsequent gameplay taps. Other actions remain deferred; no Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
+        printf("\n=== Doom RPG ESP32-native first gameplay turn dispatcher v3 ===\n");
+        printf("[TURNPROBE] CONTRACT input callbacks never render. The hardware-proven gameplay input probe owns the first TURN through neon feedback + exact restore; the restored intent is queued, the lifecycle returns once, and only a later service executes TURN_LEFT(+64)/TURN_RIGHT(-64). After takeover, touch callbacks still only enqueue semantic intents. Heavy probe snapshots live in static probe scratch, not loopTask stack. Other actions remain DEFERRED; no Game_advanceTurn, Game_executeTile, legacy finishRotation, entities/monsters/world mutation or facing refresh.\n");
 
         heapBefore = heap8();
         largestBefore = largest8();
@@ -420,34 +467,55 @@ void Esp32JunctionTurnDispatchProbe_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
 
-        printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d baseline=%08x heap=%u->%u largest=%u->%u callbackOwner=input-probe takeover=after-first-restored-turn\n",
+        printf("[TURNPROBE] READY turnStateBytes=%u resultBytes=%u viewBytes=%u execScratchBytes=%u angle=%u fixed=sin:%d cos:%d step:%d,%d baseline=%08x heap=%u->%u largest=%u->%u stackHighWater=%u callbackOwner=input-probe renderFromCallback=no\n",
                (unsigned int)sizeof(EspNativeGameplayTurnState),
                (unsigned int)sizeof(EspNativeGameplayDispatchResult),
                (unsigned int)sizeof(EspPlayerViewState),
+               (unsigned int)sizeof(executionWorkspace),
                (unsigned int)turn->destAngle,
                turn->viewSin, turn->viewCos, turn->viewStepX, turn->viewStepY,
                (unsigned int)EXPECTED_BASE_FRAME_FNV,
                (unsigned int)heapBefore, (unsigned int)heapAfter,
-               (unsigned int)largestBefore, (unsigned int)largestAfter);
-        printf("[TURNPROBE] PARK first TURN uses the proven neon input feedback, restores frame %08x, then dispatches; subsequent taps are owned by TURN probe.\n",
-               (unsigned int)EXPECTED_BASE_FRAME_FNV);
+               (unsigned int)largestBefore, (unsigned int)largestAfter,
+               stackHighWater());
+        printf("[TURNPROBE] PARK first TURN => proven neon feedback => exact restore => queue => one full lifecycle return => native render on later service.\n");
         return;
     }
 
-    if (!probeState.callbackOwned && probeState.firstTurnPending) {
-        /* The input probe's temporary feedback owns the framebuffer until its
-         * canonical exact restore. Never race or overwrite it. */
+    if (!probeState.callbackOwned && probeState.firstTurnPending &&
+        !probeState.pendingIntentValid) {
+        /* The input probe owns its feedback until canonical restore. Once it is
+         * restored, queue the intent and RETURN. This deliberately unwinds the
+         * complete lifecycle stack before any renderer is entered. */
         if (frameFNV() != EXPECTED_BASE_FRAME_FNV ||
             EspNativeGameplayInput_peek()->pending) {
             return;
         }
-        if (!executeConsumedIntent(&probeState.firstTurn)) return;
+        if (!queueIntent(&probeState.firstTurn, "restored-input-probe")) {
+            failProbe("first turn queue");
+            return;
+        }
         memset(&probeState.firstTurn, 0, sizeof(probeState.firstTurn));
         probeState.firstTurnPending = 0U;
-        PlatformInput_setTapCallback(onTurnTap);
-        probeState.callbackOwned = 1U;
-        printf("[TURNPROBE] TAKEOVER callbackOwner=turn-probe afterFirstTurn=yes frame=%08x angle=%u\n",
-               (unsigned int)frameFNV(),
-               (unsigned int)EspPlayerView_view()->viewAngle);
+        printf("[TURNPROBE] RESTORED frame=%08x queued=yes lifecycleReturnBeforeRender=yes\n",
+               (unsigned int)EXPECTED_BASE_FRAME_FNV);
+        return;
+    }
+
+    if (probeState.pendingIntentValid) {
+        EspNativeGameplayInputState intent = probeState.pendingIntent;
+        const int firstTakeover = !probeState.callbackOwned;
+        /* Clear the queue before execution so fail paths cannot replay it. */
+        memset(&probeState.pendingIntent, 0, sizeof(probeState.pendingIntent));
+        probeState.pendingIntentValid = 0U;
+        if (!executeConsumedIntent(&intent)) return;
+        if (firstTakeover) {
+            PlatformInput_setTapCallback(onTurnTap);
+            probeState.callbackOwned = 1U;
+            printf("[TURNPROBE] TAKEOVER callbackOwner=turn-probe afterFirstTurn=yes frame=%08x angle=%u renderFromCallback=no\n",
+                   (unsigned int)frameFNV(),
+                   (unsigned int)EspPlayerView_view()->viewAngle);
+        }
+        return;
     }
 }
