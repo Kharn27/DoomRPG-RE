@@ -7,6 +7,8 @@ extern "C" {
 
 void EspProbeLog_setQuiet(int quiet);
 int EspProbeLog_isQuiet(void);
+void EspProbeLog_clearBlockingFailure(void);
+int EspProbeLog_hasBlockingFailure(void);
 
 #ifdef __cplusplus
 }
