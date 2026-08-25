@@ -23,6 +23,8 @@
 #define EXPECTED_BASE_FRAME_FNV 0x8910c2edU
 #define EXPECTED_TOPOLOGY_FNV 0xd6e8df7dU
 #define EXPECTED_CATALOG_FNV 0x969d5a77U
+#define EXPECTED_MODE0_OBJECTS 30U
+#define EXPECTED_MODE7_OBJECTS 18U
 #define EXPECTED_DEPTH_NODES 39U
 #define EXPECTED_DEPTH_LEAVES 12U
 #define EXPECTED_DEPTH_NODE_CULL 8U
@@ -143,13 +145,16 @@ void Esp32JunctionSpriteOverlayProbe_service(struct DoomRPG_s* doomRpgBase) {
     largestBefore = largest8();
     memset(&stats, 0, sizeof(stats));
 
-    printf("\n=== Doom RPG ESP32-native Junction base billboard overlay ===\n");
-    printf("[JUNCTIONSPRITE] CONTRACT logical BSP id is sparse ownership key; physical bitshape resolves through bounded mappings.bin ranges; wall depth must reproduce validated compact BSP walk; standard billboard/mode0/animationTime0 only; glow companion mode7 deferred; no resident legacy graphics pools and no world/entity mutation\n");
+    printf("\n=== Doom RPG ESP32-native Junction billboard overlay modes 0+7 ===\n");
+    printf("[JUNCTIONSPRITE] CONTRACT logical BSP id is sparse ownership key; physical bitshape resolves through bounded mappings.bin ranges; wall depth reproduces validated compact BSP walk; intrinsic legacy mode0 plus ID136/137/144 mode7 additive RGB565 saturation; animationTime0; spawned glow companions still deferred; no resident legacy graphics pools and no world/entity mutation\n");
 
     if (!EspNativeJunctionSprite_render(render, &stats)) {
-        printf("[JUNCTIONSPRITE] FAILED renderer objects=%u unsupported=%u draws=%u pixels=%u reads=%u glowDeferred=%u\n",
+        printf("[JUNCTIONSPRITE] FAILED renderer objects=%u unsupported=%u mode0=%u mode7=%u mode7Pixels=%u draws=%u pixels=%u reads=%u glowDeferred=%u\n",
                (unsigned int)stats.objects,
                (unsigned int)stats.unsupported,
+               (unsigned int)stats.mode0Objects,
+               (unsigned int)stats.mode7Objects,
+               (unsigned int)stats.mode7Pixels,
                (unsigned int)stats.draws,
                (unsigned int)stats.pixelsDrawn,
                (unsigned int)stats.packReads,
@@ -165,19 +170,24 @@ void Esp32JunctionSpriteOverlayProbe_service(struct DoomRPG_s* doomRpgBase) {
 
     if (after == 0U || after == before || stats.objects != 48U ||
         stats.hidden != 0U || stats.unsupported != 0U ||
-        stats.glowDeferred != 9U || stats.draws == 0U ||
-        stats.pixelsDrawn == 0U || !depthMatchesFirstFrame(&stats) ||
-        heapAfter != heapBefore || largestAfter != largestBefore ||
-        topology == NULL || catalog == NULL ||
+        stats.mode0Objects != EXPECTED_MODE0_OBJECTS ||
+        stats.mode7Objects != EXPECTED_MODE7_OBJECTS ||
+        stats.mode7Pixels == 0U || stats.glowDeferred != 9U ||
+        stats.draws == 0U || stats.pixelsDrawn == 0U ||
+        !depthMatchesFirstFrame(&stats) || heapAfter != heapBefore ||
+        largestAfter != largestBefore || topology == NULL || catalog == NULL ||
         topology->stateFNV1a != topologyFNV ||
         catalog->stateFNV1a != catalogFNV ||
         !legacyClear(render) || EspAssetPack_isOpen()) {
-        printf("[JUNCTIONSPRITE] FAILED post frame=%08x->%08x objects=%u hidden=%u unsupported=%u glow=%u draws=%u pixels=%u depth=%u/%u/%u/%u/%u/%u/%u/%u heap8=%u->%u largest8=%u->%u topology=%08x/%08x catalog=%08x/%08x legacyClear=%d pack=%d\n",
+        printf("[JUNCTIONSPRITE] FAILED post frame=%08x->%08x objects=%u hidden=%u unsupported=%u modes=%u/%u mode7Pixels=%u glow=%u draws=%u pixels=%u depth=%u/%u/%u/%u/%u/%u/%u/%u heap8=%u->%u largest8=%u->%u topology=%08x/%08x catalog=%08x/%08x legacyClear=%d pack=%d\n",
                (unsigned int)before,
                (unsigned int)after,
                (unsigned int)stats.objects,
                (unsigned int)stats.hidden,
                (unsigned int)stats.unsupported,
+               (unsigned int)stats.mode0Objects,
+               (unsigned int)stats.mode7Objects,
+               (unsigned int)stats.mode7Pixels,
                (unsigned int)stats.glowDeferred,
                (unsigned int)stats.draws,
                (unsigned int)stats.pixelsDrawn,
@@ -217,10 +227,13 @@ void Esp32JunctionSpriteOverlayProbe_service(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)stats.depthOccluders,
            (unsigned int)stats.depthSpriteSpans,
            (unsigned int)stats.orderFNV1a);
-    printf("[JUNCTIONSPRITE] READY frame=%08x->%08x objects=%u draws=%u nearCull=%u clipCull=%u spans=%u pixels=%u wallOccludedCols=%u frames=%u uniqueLogical=%u frameBytes=%u maxFrame=%u packReads=%u glowDeferred=%u heapDelta=0 largestDelta=0 legacyRenderStable=yes topology=%08x catalog=%08x packClosed=yes presented=1\n",
+    printf("[JUNCTIONSPRITE] READY frame=%08x->%08x objects=%u modes=0:%u/7:%u mode7Pixels=%u draws=%u nearCull=%u clipCull=%u spans=%u pixels=%u wallOccludedCols=%u frames=%u uniqueLogical=%u frameBytes=%u maxFrame=%u packReads=%u glowDeferred=%u heapDelta=0 largestDelta=0 legacyRenderStable=yes topology=%08x catalog=%08x packClosed=yes presented=1\n",
            (unsigned int)before,
            (unsigned int)after,
            (unsigned int)stats.objects,
+           (unsigned int)stats.mode0Objects,
+           (unsigned int)stats.mode7Objects,
+           (unsigned int)stats.mode7Pixels,
            (unsigned int)stats.draws,
            (unsigned int)stats.nearCulled,
            (unsigned int)stats.clipCulled,
@@ -235,6 +248,6 @@ void Esp32JunctionSpriteOverlayProbe_service(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)stats.glowDeferred,
            (unsigned int)topologyFNV,
            (unsigned int)catalogFNV);
-    printf("[JUNCTIONSPRITE] PARK baseBillboards=yes depthBspParity=yes glowPending=yes noLegacyGraphicsPools=yes noWorldMutation=yes\n");
+    printf("[JUNCTIONSPRITE] PARK baseBillboards=yes intrinsicMode7=yes depthBspParity=yes glowPending=yes noLegacyGraphicsPools=yes noWorldMutation=yes\n");
     probeState.done = 1;
 }
