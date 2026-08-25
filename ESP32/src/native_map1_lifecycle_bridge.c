@@ -27,6 +27,7 @@
 #include "native_junction_post_load_view_invalidation_probe.h"
 #include "native_junction_post_load_weapon_select_probe.h"
 #include "native_junction_spawn_probe.h"
+#include "native_junction_sprite_census_probe.h"
 #include "native_map1_access_probe.h"
 #include "native_map1_bsp_pass1.h"
 #include "native_map1_change_map_probe.h"
@@ -120,6 +121,7 @@ static void resetValidatedChain(void) {
     Esp32JunctionPlayingServiceProbe_reset();
     Esp32JunctionGraphicsCatalogProbe_reset();
     Esp32JunctionFirstFrameCorrectedProbe_reset();
+    Esp32JunctionSpriteCensusProbe_reset();
     EspNativePlaneRenderer_reset();
     Esp32FirstFrameDiagnostic_reset();
 }
@@ -240,9 +242,10 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
 
     Esp32JunctionFirstFrameCorrectedProbe_service(doomRpg);
 
-    /* Only a strict PARK may trigger the SD diagnostic.  The renderer probe has
-     * already captured heap/largest/PAK integrity before this call. */
+    /* Only a strict PARK may trigger diagnostics. The first-frame probe has
+     * already captured heap/largest/PAK integrity before these calls. */
     if (Esp32JunctionFirstFrameCorrectedProbe_isDone()) {
         (void)Esp32FirstFrameDiagnostic_exportBmp();
+        Esp32JunctionSpriteCensusProbe_service();
     }
 }
