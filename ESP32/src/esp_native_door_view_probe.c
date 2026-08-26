@@ -110,6 +110,15 @@ int EspNativeDoorViewProbe_log(struct Render_s* renderBase,
         view->active != 1U || runtime->nodeCount == 0U ||
         runtime->nodeCount > ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
         runtime->lineCount == 0U) {
+        printf("[DOORVIEW] SKIP busy=%u render=%s runtime=%s view=%s active=%u nodes=%u lines=%u maxNodes=%u\n",
+               (unsigned int)doorProbeBusy,
+               render != NULL ? "yes" : "no",
+               runtime != NULL ? "yes" : "no",
+               view != NULL ? "yes" : "no",
+               view != NULL ? (unsigned int)view->active : 0U,
+               runtime != NULL ? (unsigned int)runtime->nodeCount : 0U,
+               runtime != NULL ? (unsigned int)runtime->lineCount : 0U,
+               (unsigned int)ESP_NATIVE_BSP_VISIBILITY_MAX_NODES);
         return 0;
     }
 
