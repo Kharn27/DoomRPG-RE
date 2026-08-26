@@ -27,7 +27,6 @@
 #define BSP_HEADER_BYTES 33U
 #define WALL_TEXEL_HEADER_BYTES 4U
 #define WALL_PACKED_BYTES 2048U
-#define WALL_EXTENDED_PACKED_BYTES (WALL_PACKED_BYTES * 2U)
 #define WALL_WIDTH 64
 #define WALL_HEIGHT 64
 #define MAX_RESOLVED_TEXTURES 64U
@@ -43,7 +42,6 @@
 #define LINE_FLAG_Y_NUDGE 0x00000100UL
 #define LINE_FLAG_X_NUDGE 0x00000200UL
 #define LINE_FLAG_REVERSE_TEX 0x00008000UL
-#define LINE_FLAG_DOUBLE_HEIGHT 0x00010000UL
 #define LINE_FLAG_OCCLUDER_ONLY 0x20000000UL
 
 #define COLUMN_SCALE_INIT_LOCAL MAXINT
@@ -55,7 +53,7 @@ typedef struct ResolvedWallTexture_s {
     uint16_t logicalId;
     uint16_t actualId;
     uint16_t paletteSourceOffset;
-    uint16_t baseActualId;
+    uint16_t reserved;
     uint32_t sourceTexelOffset;
     uint16_t paletteRgb565[ESP_NATIVE_GRAPHICS_PALETTE_COLORS];
 } ResolvedWallTexture;
@@ -74,17 +72,8 @@ typedef struct FirstFrameWork_s {
     uint16_t resolvedCount;
     WallCacheSlot cache[WALL_CACHE_SLOTS];
     uint32_t cacheClock;
-    EspAssetPackEntry mappings;
     EspAssetPackEntry wallTexels;
-    uint32_t texelPairs;
     uint32_t wallTexelDataBytes;
-    uint8_t* continuationTexels;
-    uint32_t continuationForSourceOffset;
-    uint32_t continuationSourceOffset;
-    uint32_t continuationLoads;
-    uint32_t continuationHits;
-    uint32_t continuationPixels;
-    uint8_t continuationValid;
 
     uint32_t lineCandidates;
     uint32_t leafNodes;
@@ -318,8 +307,6 @@ static int buildResolvedTextures(FirstFrameWork* work,
                     texelPairs * MAPPING_PAIR_BYTES +
                     bitShapePairs * MAPPING_PAIR_BYTES;
 
-    work->mappings = *mappings;
-    work->texelPairs = texelPairs;
     memset(work->resolved, 0, sizeof(work->resolved));
     work->resolvedCount = catalog->textureCount;
 
@@ -332,7 +319,6 @@ static int buildResolvedTextures(FirstFrameWork* work,
         uint32_t logical = logicalRecord->resourceId;
         uint32_t lookupLogical = logical;
         uint32_t phase;
-        uint32_t baseActual;
         uint32_t actual;
         int32_t sourceOffset;
         int32_t paletteOffset;
@@ -348,8 +334,7 @@ static int buildResolvedTextures(FirstFrameWork* work,
 
         phase = (uint32_t)((((uint64_t)(FIRST_FRAME_ANIMATION_TIME + logical * 3U)) *
                             0x400000ULL) >> 30);
-        baseActual = (uint32_t)readLe16(idBytes);
-        actual = baseActual + phase;
+        actual = (uint32_t)readLe16(idBytes) + phase;
         if (actual >= texelPairs || actual > UINT16_MAX) return 0;
 
         if (!EspAssetPack_readRange(mappings,
@@ -379,7 +364,6 @@ static int buildResolvedTextures(FirstFrameWork* work,
 
         out->logicalId = (uint16_t)logical;
         out->actualId = (uint16_t)actual;
-        out->baseActualId = (uint16_t)baseActual;
         out->paletteSourceOffset = (uint16_t)paletteOffset;
         out->sourceTexelOffset = (uint32_t)sourceOffset;
         for (p = 0U; p < ESP_NATIVE_GRAPHICS_PALETTE_COLORS; ++p) {
@@ -398,9 +382,6 @@ static void releaseCache(FirstFrameWork* work) {
         free(work->cache[i].texels);
         memset(&work->cache[i], 0, sizeof(work->cache[i]));
     }
-    free(work->continuationTexels);
-    work->continuationTexels = NULL;
-    work->continuationValid = 0U;
 }
 
 static int loadWallTexels(FirstFrameWork* work,
@@ -480,109 +461,6 @@ static int acquireWall(FirstFrameWork* work,
     return 1;
 }
 
-static int actualSourceOffset(FirstFrameWork* work,
-                              uint32_t actualId,
-                              uint32_t* outSourceOffset) {
-    uint8_t pair[MAPPING_PAIR_BYTES];
-    int32_t sourceOffset;
-
-    if (outSourceOffset != NULL) *outSourceOffset = 0U;
-    if (work == NULL || outSourceOffset == NULL ||
-        actualId >= work->texelPairs ||
-        !EspAssetPack_readRange(&work->mappings,
-                                MAPPINGS_HEADER_BYTES +
-                                    actualId * MAPPING_PAIR_BYTES,
-                                pair, sizeof(pair))) {
-        return 0;
-    }
-
-    sourceOffset = (int32_t)readLe32(pair);
-    if (sourceOffset < 0 || (sourceOffset & 1) != 0) return 0;
-    *outSourceOffset = (uint32_t)sourceOffset;
-    return 1;
-}
-
-static int findLegacyCompactSuccessor(FirstFrameWork* work,
-                                      const ResolvedWallTexture* source,
-                                      uint32_t* outSourceOffset) {
-    uint32_t best = UINT32_MAX;
-    uint16_t i;
-
-    if (outSourceOffset != NULL) *outSourceOffset = 0U;
-    if (work == NULL || source == NULL || outSourceOffset == NULL ||
-        work->resolvedCount == 0U || work->texelPairs == 0U) return 0;
-
-    /* Legacy Render_addMapTextures() admitted four consecutive actual texture
-     * ids for every required logical texture, then Render_loadTexels() sorted
-     * those ids by source offset and compacted unique 2048-byte blocks. A
-     * double-height wall can read past its current block into the next block in
-     * that compact order. Reconstruct only that one successor lazily; never
-     * materialize the old map-wide mediaTexels array. */
-    for (i = 0U; i < work->resolvedCount; ++i) {
-        uint32_t phase;
-        for (phase = 0U; phase < 4U; ++phase) {
-            const uint32_t actual =
-                (uint32_t)work->resolved[i].baseActualId + phase;
-            uint32_t candidate;
-            if (actual >= work->texelPairs ||
-                !actualSourceOffset(work, actual, &candidate)) {
-                continue;
-            }
-            if (candidate > source->sourceTexelOffset && candidate < best) {
-                best = candidate;
-            }
-        }
-    }
-
-    if (best == UINT32_MAX) return 0;
-    *outSourceOffset = best;
-    return 1;
-}
-
-static int acquireWallContinuation(FirstFrameWork* work,
-                                   const ResolvedWallTexture* source,
-                                   const uint8_t** outTexels) {
-    uint32_t successorSourceOffset;
-    uint32_t readOffset;
-
-    if (outTexels != NULL) *outTexels = NULL;
-    if (work == NULL || source == NULL || outTexels == NULL) return 0;
-
-    if (work->continuationValid && work->continuationTexels != NULL &&
-        work->continuationForSourceOffset == source->sourceTexelOffset) {
-        ++work->continuationHits;
-        *outTexels = work->continuationTexels;
-        return 1;
-    }
-
-    if (!findLegacyCompactSuccessor(work, source, &successorSourceOffset)) {
-        return 0;
-    }
-    readOffset = WALL_TEXEL_HEADER_BYTES + successorSourceOffset / 2U;
-    if (readOffset > work->wallTexels.size ||
-        WALL_PACKED_BYTES > work->wallTexels.size - readOffset) {
-        return 0;
-    }
-
-    if (work->continuationTexels == NULL) {
-        work->continuationTexels = (uint8_t*)malloc(WALL_PACKED_BYTES);
-        if (work->continuationTexels == NULL) return 0;
-    }
-    if (!EspAssetPack_readRange(&work->wallTexels,
-                                readOffset,
-                                work->continuationTexels,
-                                WALL_PACKED_BYTES)) {
-        return 0;
-    }
-
-    work->continuationForSourceOffset = source->sourceTexelOffset;
-    work->continuationSourceOffset = successorSourceOffset;
-    work->continuationValid = 1U;
-    ++work->continuationLoads;
-    *outTexels = work->continuationTexels;
-    return 1;
-}
-
 static int sampleWallSpan(FirstFrameWork* work,
                           const ResolvedWallTexture* source,
                           const uint8_t* texels,
@@ -593,7 +471,6 @@ static int sampleWallSpan(FirstFrameWork* work,
                           int pixelCount) {
     Render_t* render;
     uint16_t* pixels;
-    const uint8_t* continuation = NULL;
     int pitch;
     int64_t localPosition;
     int remaining;
@@ -620,32 +497,8 @@ static int sampleWallSpan(FirstFrameWork* work,
 
         if (localPosition < 0) return 0;
         packedIndex = (uint32_t)(localPosition >> 13);
-        if (packedIndex < WALL_PACKED_BYTES) {
-            packed = texels[packedIndex];
-        }
-        else {
-            if (packedIndex >= WALL_EXTENDED_PACKED_BYTES) {
-                printf("[NATIVEFRAME] WALLSPAN FAILED extended-index=%u logical=%u actual=%u source=%u x=%d y=%d pixels=%d\n",
-                       (unsigned int)packedIndex,
-                       (unsigned int)source->logicalId,
-                       (unsigned int)source->actualId,
-                       (unsigned int)source->sourceTexelOffset,
-                       x, y, pixelCount);
-                return 0;
-            }
-            if (continuation == NULL &&
-                !acquireWallContinuation(work, source, &continuation)) {
-                printf("[NATIVEFRAME] WALLSPAN FAILED continuation logical=%u actual=%u source=%u packed=%u x=%d y=%d pixels=%d\n",
-                       (unsigned int)source->logicalId,
-                       (unsigned int)source->actualId,
-                       (unsigned int)source->sourceTexelOffset,
-                       (unsigned int)packedIndex,
-                       x, y, pixelCount);
-                return 0;
-            }
-            packed = continuation[packedIndex - WALL_PACKED_BYTES];
-            ++work->continuationPixels;
-        }
+        if (packedIndex >= WALL_PACKED_BYTES) return 0;
+        packed = texels[packedIndex];
         nibbleShift = (int)((localPosition >> 10) & 4);
         paletteIndex = (uint32_t)((packed >> nibbleShift) & 0x0f);
         *pixels = source->paletteRgb565[paletteIndex];
@@ -709,11 +562,10 @@ static int drawProjectedWall(FirstFrameWork* work,
             zPos = 64;
             i16 = render->halfScreenHeight -
                   (((zPos - render->viewZ) * i8) >> 17);
-            /* The legacy renderer addressed one compact map-wide mediaTexels
-             * array. The normal native path keeps the coordinate local to one
-             * 2048-byte block. For legacy double-height lines only, the sampler
-             * may lazily continue into one exact successor block reconstructed
-             * from Render_loadTexels()' required-texture sort order. */
+            /* The legacy renderer addressed one map-wide mediaTexels array.
+             * Native wall texels are already a bounded 2048-byte cache slot,
+             * so keep the raster coordinate local and avoid overflowing an
+             * irrelevant global source offset before subtracting it again. */
             i17 = (i13 << 6) << 12;
 
             if (render->screenTop > i16) {
@@ -826,37 +678,14 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
     }
 
     source = findResolved(work, mapLine.texture);
-    if (source == NULL) {
-        printf("[NATIVEFRAME] FAILED wall-source line=%u logical=%u flags=%08x\n",
-               (unsigned int)lineIndex,
-               (unsigned int)mapLine.texture,
-               (unsigned int)mapLine.flags);
-        return 0;
-    }
+    if (source == NULL) return 0;
     projected.texture = (short)source->actualId;
     work->render->spanMode = 0;
     work->render->numLines = (int)lineIndex;
     ++work->wallRequests;
 
-    if (!acquireWall(work, source, &texels)) {
-        printf("[NATIVEFRAME] FAILED wall-load line=%u logical=%u actual=%u source=%u flags=%08x\n",
-               (unsigned int)lineIndex,
-               (unsigned int)source->logicalId,
-               (unsigned int)source->actualId,
-               (unsigned int)source->sourceTexelOffset,
-               (unsigned int)mapLine.flags);
-        return 0;
-    }
-    if (!drawProjectedWall(work, &projected, source, texels)) {
-        printf("[NATIVEFRAME] FAILED wall-raster line=%u logical=%u actual=%u source=%u flags=%08x double=%u\n",
-               (unsigned int)lineIndex,
-               (unsigned int)source->logicalId,
-               (unsigned int)source->actualId,
-               (unsigned int)source->sourceTexelOffset,
-               (unsigned int)mapLine.flags,
-               (unsigned int)((mapLine.flags & LINE_FLAG_DOUBLE_HEIGHT) != 0U));
-        return 0;
-    }
+    if (!acquireWall(work, source, &texels)) return 0;
+    if (!drawProjectedWall(work, &projected, source, texels)) return 0;
     ++work->wallDraws;
     return 1;
 }
@@ -1063,7 +892,7 @@ static int renderFrame(Render_t* render,
            (unsigned int)work.clipCulled,
            (unsigned int)work.occluderOnly,
            (unsigned int)work.spriteSpanSkipped);
-    printf("[NATIVEFRAME] WALL requests=%u draws=%u spans=%u pixels=%u cache=%uH/%uM/%uE continuation=%uL/%uH/%uP resolvedTextures=%u animationTime=%u\n",
+    printf("[NATIVEFRAME] WALL requests=%u draws=%u spans=%u pixels=%u cache=%uH/%uM/%uE resolvedTextures=%u animationTime=%u\n",
            (unsigned int)work.wallRequests,
            (unsigned int)work.wallDraws,
            (unsigned int)work.spanCalls,
@@ -1071,9 +900,6 @@ static int renderFrame(Render_t* render,
            (unsigned int)work.cacheHits,
            (unsigned int)work.cacheMisses,
            (unsigned int)work.cacheEvictions,
-           (unsigned int)work.continuationLoads,
-           (unsigned int)work.continuationHits,
-           (unsigned int)work.continuationPixels,
            (unsigned int)work.resolvedCount,
            (unsigned int)FIRST_FRAME_ANIMATION_TIME);
 
