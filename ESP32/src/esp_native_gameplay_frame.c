@@ -11,6 +11,7 @@
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud_direction.h"
+#include "esp_native_gameplay_present_gate.h"
 #include "esp_native_junction_sprite_renderer.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_player_view_state.h"
@@ -160,7 +161,7 @@ int EspNativeGameplayFrame_renderTurn(
         render->framebuffer != Esp32PlatformVideo_framebuffer() ||
         render->screenX != 0 || render->screenY != 20 ||
         render->screenWidth != 160 || render->screenHeight != 80 ||
-        EspAssetPack_isOpen()) {
+        EspAssetPack_isOpen() || EspNativeGameplayPresentGate_isArmed()) {
         return 0;
     }
 
