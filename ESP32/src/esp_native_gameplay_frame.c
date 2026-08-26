@@ -9,7 +9,6 @@
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
-#include "esp_native_door_view_probe.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud_direction.h"
@@ -41,7 +40,6 @@ typedef struct GameplayFrameScratch_s {
  * Pixel payload lives only in the shared framebuffer; the gameplay world route
  * no longer allocates or copies a temporary HUD save. */
 static GameplayFrameScratch frameScratch;
-static uint8_t diagnosticBuildPrinted;
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -155,7 +153,6 @@ int EspNativeGameplayFrame_renderTurn(
     int64_t totalStart;
     int64_t phaseStart;
     int strictSpriteWitness;
-    int doorProbeOk;
     int ok = 0;
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
@@ -168,11 +165,6 @@ int EspNativeGameplayFrame_renderTurn(
         render->screenWidth != 160 || render->screenHeight != 80 ||
         EspAssetPack_isOpen() || EspNativeGameplayPresentGate_isArmed()) {
         return 0;
-    }
-
-    if (!diagnosticBuildPrinted) {
-        printf("[DOORVIEW] BUILD postworld-v3-sprite-accounting nonfatal=yes\n");
-        diagnosticBuildPrinted = 1U;
     }
 
     frameScratch.busy = 1U;
@@ -207,38 +199,16 @@ int EspNativeGameplayFrame_renderTurn(
     stats->worldMicros = elapsedMicros(phaseStart);
     stats->worldRouteNoPresent = 1U;
 
-    /* Diagnostic branch only. Observe the world result immediately after the
-     * recursive BSP/raster stack has unwound, before any compositor guard can
-     * hide the failing frame. The probe is strictly non-fatal. */
+    /* Permanent post-world invariants. The temporary door/BSP witness that
+     * diagnosed the arrival collision is intentionally absent from this normal
+     * gameplay path: do not perform a second visibility traversal or success
+     * logging after an already successful world render. */
     stats->worldFrameFNV = world->frameAfterFNV;
     stats->viewportAfterWorldFNV = viewportFNV();
     stats->wallDraws = world->wallDraws;
     stats->wallPixels = world->pixelsDrawn;
     hudAfterWorldFNV = hudBandsFNV();
-    printf("[DOORVIEW] ARMED build=postworld-v3 player=%d,%d,%d angle=%d viewport=%08x hud=%08x->%08x world=rendered:%u presented:%u frame:%08x walls:%u pixels:%u\n",
-           (int)view->viewX,
-           (int)view->viewY,
-           (int)view->viewZ,
-           (int)view->viewAngle,
-           (unsigned int)stats->viewportAfterWorldFNV,
-           (unsigned int)stats->hudBandsBeforeFNV,
-           (unsigned int)hudAfterWorldFNV,
-           (unsigned int)world->rendered,
-           (unsigned int)world->presented,
-           (unsigned int)world->frameAfterFNV,
-           (unsigned int)world->wallDraws,
-           (unsigned int)world->pixelsDrawn);
-    doorProbeOk = EspNativeDoorViewProbe_log(render,
-                                              stats->viewportAfterWorldFNV);
-
     planes = EspNativePlaneRenderer_view();
-    printf("[TURNFRAME] DIAG postWorld probe=%s planes=%s rendered=%u presented=%u hudExact=%s viewport=%08x\n",
-           doorProbeOk ? "ok" : "no-witness",
-           planes != NULL ? "yes" : "no",
-           (unsigned int)world->rendered,
-           (unsigned int)world->presented,
-           hudAfterWorldFNV == stats->hudBandsBeforeFNV ? "yes" : "NO",
-           (unsigned int)stats->viewportAfterWorldFNV);
 
     if (planes == NULL || world->presented != 0U || world->rendered != 1U) {
         printf("[TURNFRAME] DIAG fail=WORLD_POST planes=%s rendered=%u presented=%u\n",
@@ -293,20 +263,6 @@ int EspNativeGameplayFrame_renderTurn(
                    (unsigned int)sprites->packReads);
             goto done;
         }
-        printf("[TURNFRAME] SPRITES viewComplete=yes strictFixedPoseWitness=no objects=%u candidates=%u modes=%u/%u base=%u+%u+%u glows=%u:%u+%u+%u unsupported=%u deferred=%u renderStable=yes\n",
-               (unsigned int)sprites->objects,
-               (unsigned int)sprites->bspCandidates,
-               (unsigned int)sprites->mode0Objects,
-               (unsigned int)sprites->mode7Objects,
-               (unsigned int)sprites->draws,
-               (unsigned int)sprites->nearCulled,
-               (unsigned int)sprites->clipCulled,
-               (unsigned int)sprites->glowCompanions,
-               (unsigned int)sprites->glowDraws,
-               (unsigned int)sprites->glowNearCulled,
-               (unsigned int)sprites->glowClipCulled,
-               (unsigned int)sprites->unsupported,
-               (unsigned int)sprites->glowDeferred);
     }
     else if (renderAfterSpritesFNV != renderBeforeSpritesFNV) {
         printf("[TURNFRAME] DIAG fail=SPRITE_RENDER_SCRATCH strict=yes\n");
