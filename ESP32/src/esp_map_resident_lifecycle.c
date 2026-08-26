@@ -6,6 +6,7 @@
 #include <esp_heap_caps.h>
 
 #include "esp_asset_pack.h"
+#include "esp_entity_def_type_catalog.h"
 #include "esp_map_automap_state.h"
 #include "esp_map_line_state.h"
 #include "esp_map_line_texture_state.h"
@@ -196,6 +197,10 @@ EspMapResidentLifecycleStatus EspMapResidentLifecycle_loadFromEmpty(
         (entityDefsEntry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U ||
         entityDefsEntry.size == 0U) {
         status = ESP_MAP_RESIDENT_ENTITY_DEFS_MISSING;
+        goto done;
+    }
+    if (!EspEntityDefTypeCatalog_buildFromPackEntry(&entityDefsEntry)) {
+        status = ESP_MAP_RESIDENT_TOPOLOGY_FAILED;
         goto done;
     }
 

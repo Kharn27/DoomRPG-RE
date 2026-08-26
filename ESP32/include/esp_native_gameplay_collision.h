@@ -36,13 +36,18 @@ typedef struct EspNativeGameplayCollisionResult_s {
 /*
  * Reproduce the collision-only prefix of DoomCanvas_attemptMove()/Game_trace()
  * for one cardinal 64-unit tile-center step. Current native gameplay has no
- * legacy Entity_t database; the query therefore uses the permanent map WALL
- * bit plus compact linked sprite/entity topology. The recovered Game_trace()
- * movement mask 62087 / 0xf287 blocks entity types 0,1,2,7,9,12,13,14,15.
+ * legacy Entity_t database; the query therefore composes three compact sources:
  *
- * Door/line collision relinking remains a later milestone. To avoid allowing a
- * stale wall through an opened native line, any live open line makes this
- * function fail closed with UNSUPPORTED_DYNAMIC_LINES. No owner is mutated.
+ * - static wall occupancy from native tile flags;
+ * - closed line-derived entities using the immutable /entities.db eType catalog
+ *   plus the exact legacy midpoint/nudge link rule;
+ * - linked compact sprite/entity topology.
+ *
+ * The recovered Game_trace() movement mask 62087 / 0xf287 blocks entity types
+ * 0,1,2,7,9,12,13,14,15. Sprite types 14/15 retain their crossing-plane
+ * predicate. Dynamic line/entity relinking is still deliberately outside this
+ * boundary: any live open line remains fail-closed with
+ * UNSUPPORTED_DYNAMIC_LINES. No owner is mutated.
  */
 EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
     int32_t sourceX,

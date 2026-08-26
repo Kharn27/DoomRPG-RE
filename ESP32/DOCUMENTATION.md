@@ -20,158 +20,183 @@ If chat history and repository state disagree, current GitHub `main` + `PORTING_
 | [`MAP1_NATIVE_JUNCTION_SPRITES.md`](MAP1_NATIVE_JUNCTION_SPRITES.md) | BSP-visible native Junction billboard rendering | #89 | `674b45bbd115cd8f9202f2ce2d7132550c3bb75e` |
 | [`MAP1_NATIVE_JUNCTION_GLOWS.md`](MAP1_NATIVE_JUNCTION_GLOWS.md) | dependency-closed additive Junction glow companions | #90 | `30351fd0a867e18dad171962b00d70923b4d173f` |
 | [`MAP1_NATIVE_GAMEPLAY_HUD.md`](MAP1_NATIVE_GAMEPLAY_HUD.md) | native fresh-Junction gameplay HUD painter | #91 | `7686f7fb5c93d375f51a34ec0dd0b5cb127017e3` |
-| [`MAP1_NATIVE_GAMEPLAY_INPUT.md`](MAP1_NATIVE_GAMEPLAY_INPUT.md) | calibrated invisible 12-zone gameplay touch intent owner | #92 | `cdda239f1c884a7d6f6707ba1c30a0a0a3603923` |
+| [`MAP1_NATIVE_GAMEPLAY_INPUT.md`](MAP1_NATIVE_GAMEPLAY_INPUT.md) | calibrated invisible gameplay touch intent owner | #92 | `cdda239f1c884a7d6f6707ba1c30a0a0a3603923` |
 | [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md) | native TURN_LEFT/TURN_RIGHT + cardinal render round-trip | #93 | `89f9d5f3feaa40f2e2a0c6e9506d1d8efaf5eeb6` |
-| [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md) | native cardinal movement + compact wall/entity collision | #94 | `b5a4426eb0df1ef1506893d4bc08b5538543a7b3` |
-| [`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md) | viewport-only gameplay recomposition, no temporary HUD save/intermediate present | #95 | `f98a0b8e9eb4cbd38bf5678a1ce60c4989766985` |
-| [`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md) | persistent bounded PAK/render-resource owner + exact small-range reuse | #96 | `377fce3de5381373750a7fba29d0c83b8142c583` |
+| [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md) | native cardinal movement + initial wall/sprite-entity collision | #94 | `b5a4426eb0df1ef1506893d4bc08b5538543a7b3` |
+| [`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md) | viewport-only gameplay recomposition | #95 | `f98a0b8e9eb4cbd38bf5678a1ce60c4989766985` |
+| [`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md) | persistent bounded PAK/render-resource owner | #96 | `377fce3de5381373750a7fba29d0c83b8142c583` |
+| [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md) | shared exact 2048 B reuse + bounded legacy wall-block guard | #97 | `2aae0676528ab00c3494d142d8b35c22b7685dce` |
 
 Older archives remain available in Git history; `PORTING_STATUS.md` is the preferred recovery entry point.
 
 ## Latest merged boundary
 
-PR #96 is the current merged hardware baseline:
+PR #97 is the current merged hardware baseline:
 
 ```text
-main=377fce3de5381373750a7fba29d0c83b8142c583
-physical /DoomRPG-ESP32.pak owner = resident during native gameplay
-entry descriptor cache = 24 slots
-exact resident payload = 16384 B
-exact range key capacity = 256
-small exact range <=1024 B
-owner struct=21160 B
-canonical warm North reads=22 x 2048 B
+main=2aae0676528ab00c3494d142d8b35c22b7685dce
+small exact resident ranges <=1024 B
+shared exact 2048 B tail cache
+three retained 2048 B slots on canonical Junction North
+canonical warm physical reads=19
+bounded cross-block legacy wall guard=16 B BSS
 shapeData=NULL
 mediaTexels=NULL
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md).
 
 ## Current candidate milestone
 
-[`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md) records the shared-payload exact `2048 B` cache plus the bounded legacy wall-block guard required by unrestricted gameplay roaming.
+[`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md) records the diagnosis and correction of the Junction arrival-door bug.
 
 ```text
-branch=agent/esp32-native-gameplay-large-range-cache
-base=377fce3de5381373750a7fba29d0c83b8142c583
-hardware-tested implementation SHA=1273f0205c0ba060972500bedd76effc974077bf
+branch=agent/esp32-native-gameplay-door-view-probe
+base=2aae0676528ab00c3494d142d8b35c22b7685dce
+hardware-tested implementation SHA=5c01d91f9c6320460b2ecaf033f68a88bde80dfd
 status=REAL-CYD HARDWARE PASS
+merge-ready=yes after docs-only closeout audit
 ```
 
-### Shared-payload large range cache
+### Root cause
 
-The existing `16 KiB` resident payload is split logically from both ends:
+The original native MOVE collision family modeled:
 
 ```text
-small <=1024 B ranges grow upward
-exact 2048 B ranges grow downward
-small ranges retain priority
-large activation allocates nothing
-same 256 range-record table
-no second permanent heap owner
+static WALL cells
++ compact map-sprite entity topology
 ```
 
-Canonical hardware proof:
+but omitted legacy line-derived entities. At fresh Junction spawn that incorrectly allowed:
 
 ```text
-BASE  cache=9225/16384 B entries=195/256 large=off
-LEARN cache=15369/16384 B entries=198/256 large=3
-WARM  cache=15369/16384 B entries=198/256 large=3
-savedReads=3
-savedBytes=6144
-ownerDelta=0
-frame=ba3e5182
-viewport=9206eb24
-HUD=6c2aa46f
-exact=yes
+BACK tile 943 -> 975
+player 992,1888 -> 992,1952
 ```
 
-The warm strict frame used `19` physical `2048 B` reads instead of `22`, with total time roughly `232.9 ms`. The gain is real but modest; the user reported the game was already playable and did not perceive a dramatic change from these three retained ranges alone.
-
-### Renderer boundary discovered by real roaming
-
-The first unrestricted North traversal exposed a fail-closed wall sampler boundary at:
+Closed arrival-door line `35` is a real legacy collision entity:
 
 ```text
-view=992,1568,36
-angle=64
-line=90
-logical=66
-actual=140
-flags=00002000
-source=98304
-packedIndex=2048
+texture=7
+entity-def lookup=305+7=312
+entity type=0
+trace mask 0xf287 includes type 0
+line midpoint/link tile=975
 ```
 
-This disproved the earlier speculative double-height hypothesis: the line flags do not contain the `0x00010000` double-height bit.
+The player therefore ended up exactly on the door line. The gameplay camera's 16-unit offset then placed the wall extremely close to the camera, producing the huge door image. Renderer semantics were not wrong; collision had supplied an illegal pose.
 
-The recovered desktop behavior explains the exact `2048` access: legacy `Render_loadTexels()` admitted required wall blocks, sorted them by source offset, then packed them contiguously into map-wide `mediaTexels`. The native cache keeps each block bounded, so the one-byte cross-block legacy read must be modeled explicitly rather than recreating `mediaTexels`.
+### Permanent correction
 
-### 16-byte BSS legacy guard
-
-Final recovery is deliberately outside the deep renderer stack:
+Bounded owner:
 
 ```text
-LegacyWallGuard=16 B BSS
-no new 2048 B buffer
-no FirstFrameWork growth
-no PAK read inside sampleWallSpan()
-exact packedIndex=2048 only
-all unrelated OOB remains fail-closed
+EspEntityDefTypeCatalog
+817 B BSS
+source=/entities.db from /DoomRPG-ESP32.pak
+heap=0
+runtime ZIP=no
+stores eType only
 ```
 
-Flow:
+Native cardinal collision now traces closed line-derived entities using recovered legacy midpoint/nudge placement plus trace mask `0xf287`. It does not instantiate `Entity_t`, legacy `entityDb`, or other pointer-heavy world state.
+
+Dynamic opened-line relinking remains fail-closed.
+
+### Final real-CYD proof
+
+Cleaned production firmware `5c01d91f9c6320460b2ecaf033f68a88bde80dfd` produced:
 
 ```text
-SPAN_OOB=2048
- -> renderer unwinds completely
- -> resolve the next legacy compact wall block from mappings.bin
- -> read one packed byte from wtexels.bin
- -> store 16 B guard
- -> retry frame
+[MOVEPROBE] NEIGHBOR action=FORWARD ... tile=943->911 ... status=CLEAR
+[LINECOLLISION] BLOCK source=943 dest=975 line=35 texture=7 flags=00000505 type=0 defTile=312
+[MOVEPROBE] NEIGHBOR action=BACK ... tile=943->975 ... status=ENTITY ... type=0
+[MOVEPROBE] NEIGHBOR action=STRAFE_LEFT ... status=WALL
+[MOVEPROBE] NEIGHBOR action=STRAFE_RIGHT ... status=WALL
 ```
 
-Explicit real-CYD recovery witness:
+Interactive BACK remained exact:
 
 ```text
-logical=15 actual=40 source=20480
-successorActual=108 successorSource=61440 byte=aa
-guard owner=BSS bytes=16
-retry line=33
-recovered=yes
+[MOVE] BLOCKED ... tile=943->975 collision=ENTITY blocker=65535 type=0 frame=ba3e5182 exact=yes heap=38928->38928 largest=29684->29684
 ```
 
-The next MOVE committed normally and the user then roamed throughout the level without renderer failure, Guru Meditation, reboot, heap drift, or resident-state loss.
+The user confirms the physical CYD behaves correctly.
 
-Final long-run memory/stack witness:
+### PR #98 production cleanup also proven
+
+Code review correctly identified that the temporary door-view witness still ran after every successful world render. The branch removed:
 
 ```text
-heap=105424 stable
-heap8=39756 stable
-largest8=14836 stable
-stackHighWater=924
-MOVE execScratch=540 B
-TURN execScratch=484 B
+EspNativeDoorViewProbe_log()
+second diagnostic EspNativeBspVisibility_build()
+DOORVIEW success logging
+TURNFRAME SPRITES success logging
+esp_native_door_view_probe.c/.h
+```
+
+Failure-only TURNFRAME diagnostics remain.
+
+The cleanup retest proves:
+
+```text
+no [DOORVIEW] output
+no [TURNFRAME] ... fail=
+no Guru Meditation / reboot
+heap8=38928 stable
+largest8=29684 stable
+```
+
+Four successful TURN renders exercised the cleaned shared gameplay renderer and returned exactly to canonical North:
+
+```text
+N ba3e5182 / 9206eb24 / 6c2aa46f
+W 23ee0954 / de06a408 / 9281a6d1
+S da1c4297 / 582c2ad8 / a78d0f96
+E 8cfdfe34 / 17c48c15 / 1d908304
+N round-trip exact
+```
+
+The final North render retained:
+
+```text
+tempHud=0 B
+routeNoPresent=1
+finalPresent=1
 legacyStable=yes
 residentStable=yes
+stackHighWater=860
 ```
 
-The previous pre-guard stable heap witness was `39772 B`; the exact `16 B` reduction matches the BSS guard owner.
+The supplied retest excerpt contains the intentional blocked-door MOVE rather than a successful CLEAR MOVE; do not invent a missing CLEAR-MOVE fingerprint.
 
-## Known renderer/view anomaly kept outside this milestone
+## Historical collision erratum
 
-The user still sees a confusing start/arrival-door view in some combinations of backing away / approaching while facing particular directions. Serial semantic orientation remains coherent:
+[`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md) records the genuine earlier hardware result `BACK 943->975 CLEAR`. That is historical evidence of the missing line-derived entity family, not the current collision contract.
+
+Current truth is defined by `PORTING_STATUS.md` and [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md).
+
+Likewise, the “start-door renderer/view anomaly” section in [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md) is resolved by this milestone as a collision-model defect. The large-cache/legacy-wall-guard evidence remains valid.
+
+## Superseded branch
+
+The older unmerged branch:
 
 ```text
-0=East
-64=North
-128=West
-192=South
+agent/esp32-native-door-view-witness
+tip=e04195e60a0499a4da3dc189eef98446d074fd92
 ```
 
-MOVE preserves orientation and TURN changes it by exactly `+/-64`, including canonical round trips. Do not alter gameplay orientation to hide this visual symptom.
+is two commits above the same base and changes only:
 
-The next bounded renderer investigation should instrument the door view / geometry / culling relation and prove whether the divergence is in camera transform, BSP visibility, wall orientation, or another render-only path.
+```text
+ESP32/platformio.ini                  +6 lines
+ESP32/src/native_door_view_witness.c  +230 lines
+```
+
+It is an obsolete wrapper-based diagnostic and contains no permanent collision correction. No cherry-pick is required.
+
+Disposition: **safe to abandon/delete**.
 
 ## Stable recovery canons
 
@@ -189,15 +214,9 @@ topologyFNV=d6e8df7d
 JunctionNativeSTPlayingFNV=73bc9acd
 JunctionNativePlayingServiceFNV=4c50b853
 DirectGraphicsCatalogFNV=969d5a77
-DirectTextureRecordsFNV=2dd5dfcf
-DirectSpriteRecordsFNV=cfd036cf
 ClosedGlowCatalogFNV=257444a5
 JunctionFirstFrameFNV=8910c2ed
 JunctionFirstViewportFNV=032ffaed
-JunctionBaseSpriteFrameFNV=299506eb
-JunctionBaseSpriteViewportFNV=ae2246eb
-JunctionSpriteCandidateFNV=23ef1895
-JunctionSpriteOrderFNV=f16737cb
 JunctionGlowFrameFNV=b5218f24
 JunctionGlowViewportFNV=9206eb24
 JunctionHudFrameFNV=ba3e5182
@@ -205,34 +224,29 @@ JunctionHudBandsFNV=6c2aa46f
 JunctionHudStateFNV=4756db9c
 ```
 
-## Architecture direction
+## Current architecture direction
 
 ```text
 original behavior/data
  -> /DoomRPG-ESP32.pak
  -> compact immutable map                         [hardware-proven]
  -> compact mutable overlays                      [hardware-proven]
- -> native event semantics                        [hardware-proven by family]
+ -> native event semantics by bounded family      [hardware-proven]
  -> native transition/residency                   [hardware-proven]
- -> native fresh-map player/post-load chain       [hardware-proven]
- -> first native PLAYING service                  [hardware-proven]
+ -> native PLAYING service                        [hardware-proven]
  -> sparse native graphics catalog                [hardware-proven]
- -> native walls + textured planes                [hardware-proven]
- -> raw CYD presentation                          [hardware-proven]
- -> BSP-visible native billboards                 [hardware-proven]
- -> implicit sprite dependency closure + glows    [hardware-proven]
- -> native gameplay HUD                           [hardware-proven]
- -> native gameplay touch intent                  [merged]
- -> native TURN_LEFT/TURN_RIGHT                   [merged]
- -> native cardinal movement + collision          [merged]
- -> native viewport-only gameplay recomposition   [merged]
- -> bounded persistent render resource owner      [merged]
- -> shared-payload exact 2048 B reuse             [hardware-proven candidate]
- -> bounded legacy wall-block guard               [hardware-proven candidate]
- -> door/view renderer investigation              [preferred NEXT]
- -> turn advancement / tile events                [later]
+ -> native walls + planes                         [hardware-proven]
+ -> billboards + glows                            [hardware-proven]
+ -> native HUD + touch intent                     [hardware-proven]
+ -> native TURN                                   [hardware-proven]
+ -> native cardinal MOVE                          [hardware-proven]
+ -> static WALL + sprite-entity collision         [hardware-proven]
+ -> closed line-entity collision                  [hardware-proven]
+ -> production renderer diagnostic cleanup        [hardware-proven]
+ -> persistent bounded render caches              [merged]
+ -> dynamic opened-line relinking                 [later]
+ -> post-move turn/tile events                    [later]
  -> entity/monster gameplay                       [later]
- -> expanded native renderer/gameplay
 ```
 
 ## Current hardware PARK
@@ -248,8 +262,6 @@ nativeGraphicsCatalog=yes
 nativeFirstFrame=yes
 texturedPlanes=yes
 nativeBaseBillboards=yes
-bspVisibleOnly=yes
-intrinsicMode7=yes
 glowCompanions=yes
 nativeHud=yes
 nativeInput=yes
@@ -260,13 +272,12 @@ persistentRenderResourceOwner=yes
 smallExactRangeCache=yes
 largeExact2048RangeCache=yes
 legacyWallGuard=yes
-TURN_LEFT=yes
-TURN_RIGHT=yes
-FORWARD/BACK/STRAFE native semantics=yes
 static wall collision=yes
-compact linked entity collision=yes
+compact linked sprite-entity collision=yes
+closed line-entity collision=yes
+spawn BACK blocked=yes
 dynamic opened-line collision=fail-closed
-initialSavePersistencePending=yes
+TURN canonical round-trip=exact
 legacy Game.entities=0
 legacy Game.monsters=0
 Game_advanceTurn=no
@@ -283,32 +294,19 @@ runtime ZIP map/graphics access forbidden
 /DoomRPG-ESP32.pak = native backing store
 ```
 
-## Classic CYD presentation profile
-
-```text
-logical framebuffer=160x120 RGB565
-physical=320x240
-present=exact nearest-neighbour x2
-inversion=ON
-TFT byte swap=ON
-software saturation/gamma transform=none
-software R/B swap=none
-TFT_RGB_ORDER=TFT_BGR
-driver=ILI9341_2_DRIVER
-SPI=55 MHz
-gamma=00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
-```
-
 ## Merge boundary
 
-Hardware-tested code SHA:
+Final hardware-tested firmware SHA:
 
 ```text
-1273f0205c0ba060972500bedd76effc974077bf
+5c01d91f9c6320460b2ecaf033f68a88bde80dfd
 ```
 
-Any commit after that SHA must be documentation-only for the current hardware PASS to remain valid.
+Status:
 
-After merge, recover the exact new `main` SHA and reread `PORTING_STATUS.md`, this file, and [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md) before branching.
+```text
+REAL-CYD HARDWARE PASS
+MERGE-READY after docs-only closeout audit
+```
 
-Preferred next milestone: a minimal fail-only/view-only witness around the start-door anomaly. Keep semantic orientation unchanged unless hardware proves the owner itself is wrong.
+All later commits on the candidate branch must remain documentation-only. After merge, recover the exact new `main` SHA and reread `PORTING_STATUS.md`, this file, and [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md) before branching again.
