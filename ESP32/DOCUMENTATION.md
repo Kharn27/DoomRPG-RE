@@ -8,7 +8,7 @@ This file indexes the current classic-CYD port documentation.
 - [`PORTING_STATUS.md`](PORTING_STATUS.md): authoritative recovery point and current hardware PARK.
 - Milestone archives: implementation contracts plus real-CYD evidence.
 
-If chat history and repository state disagree, current GitHub `main` + `PORTING_STATUS.md` + the latest relevant milestone archive win.
+If chat history and repository state disagree, current GitHub `main` + `PORTING_STATUS.md` + this file + the latest relevant milestone archive win.
 
 ## Recent merged milestones
 
@@ -22,96 +22,96 @@ If chat history and repository state disagree, current GitHub `main` + `PORTING_
 | [`MAP1_NATIVE_GAMEPLAY_HUD.md`](MAP1_NATIVE_GAMEPLAY_HUD.md) | native fresh-Junction gameplay HUD painter | #91 | `7686f7fb5c93d375f51a34ec0dd0b5cb127017e3` |
 | [`MAP1_NATIVE_GAMEPLAY_INPUT.md`](MAP1_NATIVE_GAMEPLAY_INPUT.md) | calibrated invisible 12-zone gameplay touch intent owner | #92 | `cdda239f1c884a7d6f6707ba1c30a0a0a3603923` |
 | [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md) | native TURN_LEFT/TURN_RIGHT + cardinal render round-trip | #93 | `89f9d5f3feaa40f2e2a0c6e9506d1d8efaf5eeb6` |
+| [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md) | native cardinal movement + compact wall/entity collision | #94 | `b5a4426eb0df1ef1506893d4bc08b5538543a7b3` |
 
 Older archives remain available in Git history; `PORTING_STATUS.md` is the preferred recovery entry point.
 
 ## Latest merged boundary
 
-PR #93 merged the first real native gameplay action family: `TURN_LEFT` / `TURN_RIGHT`.
+PR #94 merged cardinal native translation and compact collision:
 
 ```text
-main=89f9d5f3feaa40f2e2a0c6e9506d1d8efaf5eeb6
-EspNativeGameplayTurnState=24 B
-EspNativeGameplayDispatchResult=12 B
-TURN_LEFT=+64
-TURN_RIGHT=-64
+main=b5a4426eb0df1ef1506893d4bc08b5538543a7b3
+EspNativeGameplayCollisionResult=16 B
+EspNativeGameplayMoveResult=24 B
+EspPlayerViewState=44 B
+FORWARD/BACK/STRAFE_LEFT/STRAFE_RIGHT = one cardinal 64-unit step
 shapeData=NULL
 mediaTexels=NULL
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md).
 
 ## Current candidate milestone
 
-[`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md) records native cardinal translation plus collision:
+[`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md) records the gameplay-only renderer viewport path:
 
 ```text
-branch=agent/esp32-native-move-collision
-base=89f9d5f3feaa40f2e2a0c6e9506d1d8efaf5eeb6
-hardware-tested implementation SHA=becaa1ec5bdd68311fa2e1d626fc238d1a706779
+branch=agent/esp32-native-gameplay-render-hotpath
+base=b5a4426eb0df1ef1506893d4bc08b5538543a7b3
+hardware-tested implementation SHA=a07455e34eadbacca7d23fb068ba4308f0b7f80a
 status=REAL-CYD HARDWARE PASS
 merge-ready=yes after docs-only audit
 ```
 
-### Movement ownership
+### Hot-path ownership
 
-Permanent native collision / dispatch boundary:
+Permanent renderer boundary:
 
 ```text
-EspNativeGameplayCollisionResult=16 B
-EspNativeGameplayMoveResult=24 B
-EspPlayerViewState=44 B
-FORWARD/BACK/STRAFE_LEFT/STRAFE_RIGHT = one 64-unit cardinal step
+world viewport=160x80 @0,20
+EspNativeGameplayFrameStats=104 B
+world route whole-frame clear=no
+world route physical present=no
+temporary HUD save=0 B
+HUD bands preserved in place=yes
+final complete-frame present=exactly one
 ```
 
-Movement derives its vector from the live gameplay orientation owner, not from hard-coded Junction North. A successful move mutates only settled native X/Y and renders on a later service.
+The historical first-frame renderer now exposes `EspNativeFirstFrame_renderGameplayViewport()`, which reuses the compact BSP/wall/plane path without clearing pixels outside the gameplay viewport, presenting, or mutating the historical first-frame owner.
 
-### Collision semantics
+### Final wrapper correction
 
-Fresh Junction neighbor probe:
+The real-CYD run first exposed a regression where walls remained visible but sprites disappeared. The gameplay-only route left the historical first-frame owner ready, so a wrapper guard based on `!EspNativeFirstFrame_isReady()` stopped injecting native planes and the compositor failed closed before sprites.
+
+Final tested correction:
 
 ```text
-FORWARD      tile 943->911 CLEAR
-BACK         tile 943->975 CLEAR
-STRAFE_LEFT  tile 943->942 WALL
-STRAFE_RIGHT tile 943->944 WALL
+a07455e34eadbacca7d23fb068ba4308f0b7f80a
+fix(esp32): activate native render wrappers for gameplay viewport
 ```
 
-Collision uses compact native tile flags and linked sprite/entity topology. Dynamic opened lines remain deliberately fail-closed until their relinking semantics have a dedicated milestone.
+The wrappers now identify the actual compact native world context instead of using first-frame lifecycle state. Plane injection and `tmpLine` preservation therefore work for both boot and gameplay recomposition.
 
-The final hardware run also proved a true entity blocker:
-
-```text
-FORWARD tile 911->910
-collision=ENTITY
-blocker=24
-type=7
-frame exact / no movement
-```
-
-### TURN + MOVE composition
-
-The final real-CYD run composed movement and rotation at non-spawn tile centers:
+### Canonical real-CYD proof
 
 ```text
-FORWARD 943->911
-TURN_LEFT at pos 992,1824
-blocked FORWARD by ENTITY
-STRAFE_RIGHT 911->879
-TURN_RIGHT at pos 992,1760
-FORWARD 879->847
-TURN_RIGHT at pos 992,1696
-FORWARD 847->848
-```
-
-No probe failure followed. `SELECT` taps in the same run remained feedback-only/deferred.
-
-Hardware side-effect witnesses:
-
-```text
-heap8=66708->66708
+frame=ba3e5182
+viewport=9206eb24
+HUD=6c2aa46f
+tempHud=0
+routeNoPresent=1
+finalPresent=1
+heap8=66452->66452
 largest8=29684->29684
-stackHighWater=172
+exact=yes
+```
+
+North gameplay recomposition remained bit-exact after removing the 12.8 KiB HUD bridge and intermediate world presentation.
+
+MOVE and TURN also remained live on the same route. The hardware run included:
+
+```text
+TURN_RIGHT angle64->0 frame ba3e5182->8cfdfe34
+TURN_LEFT  angle0->64 frame 8cfdfe34->ba3e5182 exact round-trip
+FORWARD tile943->911 frame ba3e5182->66da9d16
+FORWARD tile911->879 frame 66da9d16->fc7a5142
+FORWARD tile879->847 frame fc7a5142->3625f7a7
+```
+
+No new gameplay side effects were enabled:
+
+```text
 legacyStable=yes
 residentStable=yes
 Game_advanceTurn=no
@@ -119,46 +119,72 @@ Game_executeTile=no
 facingRefresh=deferred
 ```
 
-### Native wall-cache fix
+## Current performance truth
 
-The final tested SHA includes a renderer correction required by moved-position views. Native wall cache slots contain one bounded 2048-byte packed texture, so wall sampling now uses local texel coordinates rather than reconstructing the legacy map-wide `mediaTexels` coordinate and subtracting it again.
+The user reports **no notable fluidity improvement versus `main`**. This is consistent with the new hardware timings.
 
-This removes a 32-bit overflow path for newly visible textures and aligns the renderer with the permanent architecture:
-
-```text
-sourceTexelOffset -> PAK range + cache identity only
-raster texel coordinate -> local 0..4095
-mediaTexels -> NULL permanently
-```
-
-## Current performance status
-
-Movement and TURN are functionally correct on the real CYD but visibly slow. This is now an explicit renderer hot-path debt, not a gameplay correctness issue.
-
-A successful action currently performs roughly:
+Canonical North hot-path:
 
 ```text
-feedback full present
- -> feedback restore full present
- -> transient bounded cache rebuild / repeated PAK reads
- -> complete world + sprite/glow recomposition
- -> temporary 12.8 KiB HUD save/restore bridge
- -> final full present
+world   = 1261184 us
+sprites = 1572941 us
+HUD     =  387161 us
+present =   34930 us
+total   = 3265801 us
 ```
 
-Observed full physical presents remain about 34 ms; neon feedback hold is 120 ms. Do not start by micro-optimizing `PlatformVideo_present()`.
-
-The preferred bounded performance frontier is:
+Approximate share:
 
 ```text
-persistent bounded wall/plane caches
-+ viewport-only gameplay world redraw
-+ remove temporary HUD save bridge
-+ preserve exact frame canons
-+ keep redraw on demand
+world   ~38.6%
+sprites ~48.2%
+HUD     ~11.9%
+present  ~1.1%
 ```
 
-This work should remain separate from new gameplay semantics.
+The milestone successfully removed one redundant ~34 ms world presentation and a 12.8 KiB HUD save/restore, but the full heavy frame still costs ~3.27 s. `PlatformVideo_present()` is therefore not the next meaningful optimization target.
+
+Other hardware samples:
+
+```text
+TURN N->E total=1835575 us
+TURN E->N total=3265560 us
+MOVE 943->911 total=3038743 us
+MOVE 911->879 total=2952445 us
+MOVE 879->847 total=2916327 us
+```
+
+### Measured remaining debt
+
+The current world phase still opens `/DoomRPG-ESP32.pak`, validates/scans its complete disk index, performs disk-backed entry searches, rebuilds all resolved wall texture descriptors and closes the pack every recomposition.
+
+The sprite phase then opens/validates the PAK again and reloads sprite frames one at a time. Canonical North performs:
+
+```text
+21 base frame loads
+7 glow frame loads
+172 PAK reads
+9 unique base logical sprite IDs
+```
+
+The compass phase independently reopens the PAK and `k.bmp` / `o.bmp` / `a.bmp`, performs 63 PAK reads and takes about 387 ms.
+
+This repeated bounded storage work is legal but is now the dominant measured performance debt.
+
+## Preferred next performance frontier
+
+After merge, use a separate bounded milestone for **persistent native render-resource/cache ownership**:
+
+```text
+1. retain validated render-source / PAK-entry metadata
+2. small bounded sprite-frame cache keyed by logical/actual frame
+3. bounded resident compass/HUD render resources
+4. evaluate bounded persistent wall/plane texel cache with explicit RAM budget
+```
+
+Keep `/DoomRPG-ESP32.pak` as backing store. Do not create a map-wide texel pool or revive runtime ZIP access.
+
+Every cache milestone must preserve exact framebuffer canons, stable heap, explicit bounded ownership/eviction and fail-closed behavior.
 
 ## Stable recovery canons
 
@@ -211,8 +237,9 @@ original behavior/data
  -> native gameplay HUD                           [hardware-proven]
  -> native gameplay touch intent                  [merged]
  -> native TURN_LEFT/TURN_RIGHT                   [merged]
- -> native cardinal movement + collision          [hardware-proven candidate]
- -> native gameplay render hot path               [preferred NEXT]
+ -> native cardinal movement + collision          [merged]
+ -> native viewport-only gameplay recomposition   [hardware-proven candidate]
+ -> bounded persistent render caches              [preferred NEXT]
  -> turn advancement / tile events                [later]
  -> entity/monster gameplay                       [later]
  -> expanded native renderer/gameplay
@@ -238,6 +265,7 @@ nativeHud=yes
 nativeInput=yes
 nativeTurnDispatch=yes
 nativeMovementDispatch=yes
+nativeGameplayViewportHotPath=yes
 TURN_LEFT=yes
 TURN_RIGHT=yes
 FORWARD/BACK/STRAFE native semantics=yes
@@ -258,8 +286,7 @@ Mandatory invariants remain:
 shapeData == NULL
 mediaTexels == NULL
 runtime ZIP map/graphics access forbidden
-legacy Game.entities == 0
-legacy Game.monsters == 0
+/DoomRPG-ESP32.pak = native backing store
 ```
 
 ## Classic CYD presentation profile
@@ -287,15 +314,15 @@ MERGE-READY after docs-only audit
 Hardware-tested code SHA:
 
 ```text
-becaa1ec5bdd68311fa2e1d626fc238d1a706779
+a07455e34eadbacca7d23fb068ba4308f0b7f80a
 ```
 
-Any commit after that SHA must be documentation-only or the hardware PASS is invalidated.
+Any code commit after that SHA invalidates the hardware PASS. Closeout commits after it must be documentation-only.
 
 ## Next bounded milestone after merge
 
-After merge, recover the exact new `main` SHA and reread `PORTING_STATUS.md`, this file and [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md).
+After merge, recover the exact new `main` SHA and reread `PORTING_STATUS.md`, this file and [`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md).
 
-Preferred next milestone: native gameplay renderer hot-path ownership. Preserve current MOVE/TURN behavior and frame canons while making caches/buffers permanent and bounded and making world redraw viewport-only. Do not mix this with `PlatformVideo_present()` micro-optimization or new gameplay behavior.
+Preferred next milestone: bounded persistent native render-resource/cache ownership, starting with repeated PAK metadata/source setup and duplicate sprite/HUD reads. Do not mix this with new gameplay behavior or `PlatformVideo_present()` micro-optimization.
 
-If behavior is prioritized instead, recover post-move `Game_eventFlagsForMovement`, tile-event and turn-advance semantics from legacy and introduce them as a separate fail-closed family.
+If behavior is prioritized instead, recover post-move `Game_eventFlagsForMovement`, tile-event and turn-advance semantics from legacy as a separate fail-closed family.
