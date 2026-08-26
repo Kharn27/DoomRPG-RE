@@ -23,95 +23,145 @@ If chat history and repository state disagree, current GitHub `main` + `PORTING_
 | [`MAP1_NATIVE_GAMEPLAY_INPUT.md`](MAP1_NATIVE_GAMEPLAY_INPUT.md) | calibrated invisible 12-zone gameplay touch intent owner | #92 | `cdda239f1c884a7d6f6707ba1c30a0a0a3603923` |
 | [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md) | native TURN_LEFT/TURN_RIGHT + cardinal render round-trip | #93 | `89f9d5f3feaa40f2e2a0c6e9506d1d8efaf5eeb6` |
 | [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md) | native cardinal movement + compact wall/entity collision | #94 | `b5a4426eb0df1ef1506893d4bc08b5538543a7b3` |
+| [`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md) | viewport-only gameplay recomposition, no temporary HUD save/intermediate present | #95 | `f98a0b8e9eb4cbd38bf5678a1ce60c4989766985` |
 
 Older archives remain available in Git history; `PORTING_STATUS.md` is the preferred recovery entry point.
 
 ## Latest merged boundary
 
-PR #94 merged cardinal native translation and compact collision:
+PR #95 merged the gameplay renderer hot path:
 
 ```text
-main=b5a4426eb0df1ef1506893d4bc08b5538543a7b3
-EspNativeGameplayCollisionResult=16 B
-EspNativeGameplayMoveResult=24 B
-EspPlayerViewState=44 B
-FORWARD/BACK/STRAFE_LEFT/STRAFE_RIGHT = one cardinal 64-unit step
+main=f98a0b8e9eb4cbd38bf5678a1ce60c4989766985
+world viewport=160x80 @0,20
+EspNativeGameplayFrameStats=104 B
+temporary HUD save=0 B
+world intermediate present=none
+final present=exactly one
+canonical frame=ba3e5182
+canonical viewport=9206eb24
+canonical HUD=6c2aa46f
 shapeData=NULL
 mediaTexels=NULL
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md).
 
 ## Current candidate milestone
 
-[`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md) records the gameplay-only renderer viewport path:
+[`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md) records the persistent bounded PAK/render-resource owner:
 
 ```text
-branch=agent/esp32-native-gameplay-render-hotpath
-base=b5a4426eb0df1ef1506893d4bc08b5538543a7b3
-hardware-tested implementation SHA=a07455e34eadbacca7d23fb068ba4308f0b7f80a
+branch=agent/esp32-native-gameplay-render-resource-cache
+base=f98a0b8e9eb4cbd38bf5678a1ce60c4989766985
+hardware-tested implementation SHA=1e8c6a5f8fd1e6d01588b1c74dd4fc4e3b961e95
 status=REAL-CYD HARDWARE PASS
 merge-ready=yes after docs-only audit
 ```
 
-### Hot-path ownership
-
-Permanent renderer boundary:
+### Permanent storage/cache ownership
 
 ```text
-world viewport=160x80 @0,20
-EspNativeGameplayFrameStats=104 B
-world route whole-frame clear=no
-world route physical present=no
-temporary HUD save=0 B
-HUD bands preserved in place=yes
-final complete-frame present=exactly one
+physical /DoomRPG-ESP32.pak owner = resident during native gameplay
+world/sprite/HUD open-close calls = logical leases
+full disk-index validation = once at resident begin
+entry descriptor cache = 24 slots
+small exact-range payload = 16384 B
+small exact-range keys = 256
+cacheable exact range <=1024 B
+large world reads remain PAK-backed
+runtime ZIP forbidden
+shapeData=NULL
+mediaTexels=NULL
 ```
 
-The historical first-frame renderer now exposes `EspNativeFirstFrame_renderGameplayViewport()`, which reuses the compact BSP/wall/plane path without clearing pixels outside the gameplay viewport, presenting, or mutating the historical first-frame owner.
+The pack's historical non-resident lifecycle remains valid outside this explicit resident mode.
 
-### Final wrapper correction
-
-The real-CYD run first exposed a regression where walls remained visible but sprites disappeared. The gameplay-only route left the historical first-frame owner ready, so a wrapper guard based on `!EspNativeFirstFrame_isReady()` stopped injecting native planes and the compositor failed closed before sprites.
-
-Final tested correction:
+### Real-CYD RAM witness
 
 ```text
-a07455e34eadbacca7d23fb068ba4308f0b7f80a
-fix(esp32): activate native render wrappers for gameplay viewport
+owner struct=21160 B
+heap8=66372->40832
+observed heap cost=25540 B
+largest8 after owner=13812 B
+cache used=9225/16384 B after canonical cold frame
+range entries=195/256
 ```
 
-The wrappers now identify the actual compact native world context instead of using first-frame lifecycle state. Plane injection and `tmpLine` preservation therefore work for both boot and gameplay recomposition.
+This is a substantial permanent cost on the no-PSRAM CYD, so future cache growth must be justified by measured hardware gain.
 
-### Canonical real-CYD proof
+### Canonical cold/warm proof
+
+Immediate predecessor, before enabling the resident owner in the same firmware:
 
 ```text
-frame=ba3e5182
-viewport=9206eb24
-HUD=6c2aa46f
+world=1295232 us
+sprites=1610031 us
+HUD=400296 us
+present=34935 us
+total=3350141 us
+frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f exact=yes
+```
+
+First resident COLD frame:
+
+```text
+physicalOpen=0 validate=0
+sdReads=280 sdBytes=55541
+entry=6H/9M
+range=155H/195M/195S/22B
+world=1044890 us
+sprites=505972 us
+HUD=378835 us
+present=34925 us
+total=1974252 us
+frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f exact=yes
+```
+
+Second resident WARM frame:
+
+```text
+physicalOpen=0 validate=0
+sdReads=22 sdBytes=45056
+entry=15H/0M
+range=350H/0M/0S/22B
+world=209454 us
+sprites=9604 us
+HUD=1317 us
+present=34908 us
+total=264828 us
+frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f exact=yes
+heapStable=yes
+```
+
+Physical reads fell from `280` to `22`, saving `258` reads (~92.1%). The user reports the result is now clearly more playable.
+
+The same strict repeated pose improved from `3350141 us` immediately before owner activation to `264828 us` warm, approximately `12.65x` lower total recomposition time.
+
+### Interactive MOVE/TURN proof
+
+The owner remained resident after the strict probe and real calibrated touch actions stayed stable at arbitrary moved positions:
+
+```text
+FORWARD 943->911 total=255050 us
+FORWARD 911->879 total=272550 us
+TURN_RIGHT 64->0 @ tile879 total=160497 us
+TURN_LEFT 0->64 @ tile879 total=272608 us
+TURN_LEFT 64->128 @ tile879 total=260054 us
+TURN_RIGHT 128->64 @ tile879 total=272618 us
+FORWARD 879->847 total=235073 us
+FORWARD 847->815 total=290621 us
+TURN_RIGHT 64->0 @ tile815 total=203124 us
+```
+
+Across the interactive sequence:
+
+```text
+heap8=40832->40832
+largest8=13812->13812
 tempHud=0
 routeNoPresent=1
 finalPresent=1
-heap8=66452->66452
-largest8=29684->29684
-exact=yes
-```
-
-North gameplay recomposition remained bit-exact after removing the 12.8 KiB HUD bridge and intermediate world presentation.
-
-MOVE and TURN also remained live on the same route. The hardware run included:
-
-```text
-TURN_RIGHT angle64->0 frame ba3e5182->8cfdfe34
-TURN_LEFT  angle0->64 frame 8cfdfe34->ba3e5182 exact round-trip
-FORWARD tile943->911 frame ba3e5182->66da9d16
-FORWARD tile911->879 frame 66da9d16->fc7a5142
-FORWARD tile879->847 frame fc7a5142->3625f7a7
-```
-
-No new gameplay side effects were enabled:
-
-```text
 legacyStable=yes
 residentStable=yes
 Game_advanceTurn=no
@@ -119,72 +169,35 @@ Game_executeTile=no
 facingRefresh=deferred
 ```
 
+One first West-direction compass repaint measured `110734 us`; already-warm compass paths measured about `1.3 ms`. This remains a recorded hardware witness.
+
 ## Current performance truth
 
-The user reports **no notable fluidity improvement versus `main`**. This is consistent with the new hardware timings.
-
-Canonical North hot-path:
+Warm canonical North is now:
 
 ```text
-world   = 1261184 us
-sprites = 1572941 us
-HUD     =  387161 us
-present =   34930 us
-total   = 3265801 us
+world   = 209454 us  ~79.1%
+sprites =   9604 us  ~3.6%
+HUD     =   1317 us  ~0.5%
+present =  34908 us  ~13.2%
+total   = 264828 us
 ```
 
-Approximate share:
+The broad repeated PAK metadata/sprite/HUD problem is therefore no longer the current bottleneck.
+
+The remaining warm storage traffic is exactly:
 
 ```text
-world   ~38.6%
-sprites ~48.2%
-HUD     ~11.9%
-present  ~1.1%
+22 physical reads
+45056 B
+22 x 2048 B
 ```
 
-The milestone successfully removed one redundant ~34 ms world presentation and a 12.8 KiB HUD save/restore, but the full heavy frame still costs ~3.27 s. `PlatformVideo_present()` is therefore not the next meaningful optimization target.
+Those reads are the deliberate >1024 B cache-bypass class, corresponding to the remaining wall/plane texture path. This is the preferred next renderer frontier.
 
-Other hardware samples:
+Because the resident owner already reserves 16 KiB payload but only 9225 B was occupied by the canonical cold frame, first investigate whether part of that already-paid capacity can service a tiny bounded 2048-byte wall/plane cache before increasing permanent RAM.
 
-```text
-TURN N->E total=1835575 us
-TURN E->N total=3265560 us
-MOVE 943->911 total=3038743 us
-MOVE 911->879 total=2952445 us
-MOVE 879->847 total=2916327 us
-```
-
-### Measured remaining debt
-
-The current world phase still opens `/DoomRPG-ESP32.pak`, validates/scans its complete disk index, performs disk-backed entry searches, rebuilds all resolved wall texture descriptors and closes the pack every recomposition.
-
-The sprite phase then opens/validates the PAK again and reloads sprite frames one at a time. Canonical North performs:
-
-```text
-21 base frame loads
-7 glow frame loads
-172 PAK reads
-9 unique base logical sprite IDs
-```
-
-The compass phase independently reopens the PAK and `k.bmp` / `o.bmp` / `a.bmp`, performs 63 PAK reads and takes about 387 ms.
-
-This repeated bounded storage work is legal but is now the dominant measured performance debt.
-
-## Preferred next performance frontier
-
-After merge, use a separate bounded milestone for **persistent native render-resource/cache ownership**:
-
-```text
-1. retain validated render-source / PAK-entry metadata
-2. small bounded sprite-frame cache keyed by logical/actual frame
-3. bounded resident compass/HUD render resources
-4. evaluate bounded persistent wall/plane texel cache with explicit RAM budget
-```
-
-Keep `/DoomRPG-ESP32.pak` as backing store. Do not create a map-wide texel pool or revive runtime ZIP access.
-
-Every cache milestone must preserve exact framebuffer canons, stable heap, explicit bounded ownership/eviction and fail-closed behavior.
+`PlatformVideo_present()` is now a visible fraction of the optimized frame, but should not be optimized before the remaining 2048-byte PAK reads are bounded and measured.
 
 ## Stable recovery canons
 
@@ -238,8 +251,9 @@ original behavior/data
  -> native gameplay touch intent                  [merged]
  -> native TURN_LEFT/TURN_RIGHT                   [merged]
  -> native cardinal movement + collision          [merged]
- -> native viewport-only gameplay recomposition   [hardware-proven candidate]
- -> bounded persistent render caches              [preferred NEXT]
+ -> native viewport-only gameplay recomposition   [merged]
+ -> bounded persistent render resource owner      [hardware-proven candidate]
+ -> bounded remaining 2048-byte texture reuse     [preferred NEXT]
  -> turn advancement / tile events                [later]
  -> entity/monster gameplay                       [later]
  -> expanded native renderer/gameplay
@@ -266,6 +280,8 @@ nativeInput=yes
 nativeTurnDispatch=yes
 nativeMovementDispatch=yes
 nativeGameplayViewportHotPath=yes
+persistentRenderResourceOwner=yes
+smallExactRangeCache=yes
 TURN_LEFT=yes
 TURN_RIGHT=yes
 FORWARD/BACK/STRAFE native semantics=yes
@@ -314,15 +330,17 @@ MERGE-READY after docs-only audit
 Hardware-tested code SHA:
 
 ```text
-a07455e34eadbacca7d23fb068ba4308f0b7f80a
+1e8c6a5f8fd1e6d01588b1c74dd4fc4e3b961e95
 ```
 
 Any code commit after that SHA invalidates the hardware PASS. Closeout commits after it must be documentation-only.
 
 ## Next bounded milestone after merge
 
-After merge, recover the exact new `main` SHA and reread `PORTING_STATUS.md`, this file and [`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md).
+After merge, recover the exact new `main` SHA and reread `PORTING_STATUS.md`, this file and [`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md).
 
-Preferred next milestone: bounded persistent native render-resource/cache ownership, starting with repeated PAK metadata/source setup and duplicate sprite/HUD reads. Do not mix this with new gameplay behavior or `PlatformVideo_present()` micro-optimization.
+Preferred renderer milestone: bound the remaining `22 x 2048 B` warm PAK reads with the smallest possible cache/ownership change, preferably by repartitioning already allocated resident payload rather than increasing the permanent heap footprint.
+
+Do not mix this with new gameplay behavior.
 
 If behavior is prioritized instead, recover post-move `Game_eventFlagsForMovement`, tile-event and turn-advance semantics from legacy as a separate fail-closed family.
