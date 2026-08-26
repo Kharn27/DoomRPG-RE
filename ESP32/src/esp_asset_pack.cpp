@@ -12,7 +12,7 @@ constexpr uint32_t kVersion = ESP_ASSET_PACK_FORMAT_VERSION;
 constexpr size_t kHeaderBytes = 24;
 constexpr size_t kEntryBytes = 20;
 constexpr uint32_t kResidentRangeCapacityBytes = 16U * 1024U;
-constexpr uint32_t kResidentRangeEntryCapacity = 128U;
+constexpr uint32_t kResidentRangeEntryCapacity = 256U;
 constexpr uint32_t kResidentEntryCacheSlots = 24U;
 constexpr uint32_t kResidentMaxCachedRangeBytes = 1024U;
 
