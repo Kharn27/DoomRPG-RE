@@ -30,20 +30,30 @@ typedef struct EspNativeGameplayFrameStats_s {
     uint32_t spritePackReads;
     uint32_t hudPackReads;
     uint32_t hudPixels;
+    uint32_t worldMicros;
+    uint32_t spriteMicros;
+    uint32_t hudMicros;
+    uint32_t presentMicros;
+    uint32_t totalMicros;
     uint8_t angle;
-    uint8_t intermediatePresentSuppressed;
+    uint8_t worldRouteNoPresent;
     uint8_t finalPresented;
     uint8_t active;
 } EspNativeGameplayFrameStats;
 
+typedef char EspNativeGameplayFrameStats_must_be_104_bytes[
+    sizeof(EspNativeGameplayFrameStats) == 104U ? 1 : -1];
+
 /* Recompose one complete current Junction gameplay frame after a committed
- * cardinal view turn. The historical first-frame renderer is still reused for
- * the world pixels, but its intermediate presentation is suppressed: the
- * existing HUD bands are restored from one bounded temporary 12.8 KiB buffer,
- * the small compass panel is repainted, then exactly one final presentation is
- * issued. Phase FNVs make viewport/HUD round-trip drift explicit while this
- * bridge is being reduced toward a permanent viewport-only runtime renderer.
- * No persistent allocation is retained. */
+ * cardinal MOVE/TURN. The world phase now uses a viewport-only route: pixels
+ * outside 160x80@0,20 are preserved in place, no historical intermediate
+ * presentation exists, and no temporary HUD save buffer is allocated. The
+ * bounded compass footprint is then repainted for the current angle before
+ * exactly one final complete-frame presentation is issued.
+ *
+ * Timing witnesses cover the gameplay compositor only (world/sprites/HUD/final
+ * present); they intentionally exclude the separate input feedback hold and its
+ * feedback/restore presentations. */
 int EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,

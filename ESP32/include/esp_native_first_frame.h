@@ -58,6 +58,18 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_route(
     struct Render_s* render,
     const struct EspPlayerViewState_s* playerView);
 
+/*
+ * Gameplay-only world route over the same hardware-proven BSP/wall/plane path.
+ * It writes only render->screenX/Y/Width/Height pixels, never clears pixels
+ * outside that logical viewport, never presents, and never mutates the global
+ * historical first-frame state.  The caller receives the local render witness
+ * in outState and owns the later sprite/HUD/final-present composition.
+ */
+EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* playerView,
+    EspNativeFirstFrameState* outState);
+
 #ifdef __cplusplus
 }
 #endif

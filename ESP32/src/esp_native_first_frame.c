@@ -751,7 +751,8 @@ static int walkNode(FirstFrameWork* work, uint32_t nodeIndex, uint32_t depth) {
 
 static void fillBackground(Render_t* render,
                            uint16_t ceiling,
-                           uint16_t floor) {
+                           uint16_t floor,
+                           int clearWholeFramebuffer) {
     uint16_t* fb;
     int y;
     int x;
@@ -760,8 +761,10 @@ static void fillBackground(Render_t* render,
 
     fb = (uint16_t*)render->framebuffer;
     pitchPixels = render->pitch >> 1;
-    memset(render->framebuffer, 0,
-           DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t));
+    if (clearWholeFramebuffer) {
+        memset(render->framebuffer, 0,
+               DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t));
+    }
 
     half = render->screenHeight >> 1;
     for (y = 0; y < render->screenHeight; ++y) {
@@ -773,7 +776,8 @@ static void fillBackground(Render_t* render,
 
 static int renderFrame(Render_t* render,
                        const EspPlayerViewState* playerView,
-                       EspNativeFirstFrameState* outState) {
+                       EspNativeFirstFrameState* outState,
+                       int clearWholeFramebuffer) {
     FirstFrameWork work;
     RenderScratch scratch;
     EspAssetPackEntry mappings;
@@ -835,7 +839,8 @@ static int renderFrame(Render_t* render,
     outState->ceilingRgb565 = rgb565(bspHeader[19], bspHeader[20], bspHeader[21]);
     outState->floorRgb565 = rgb565(bspHeader[16], bspHeader[17], bspHeader[18]);
 
-    fillBackground(render, outState->ceilingRgb565, outState->floorRgb565);
+    fillBackground(render, outState->ceilingRgb565, outState->floorRgb565,
+                   clearWholeFramebuffer);
 
     sin_ = render->sinTable[playerView->viewAngle & 255];
     cos_ = render->sinTable[(playerView->viewAngle + 64) & 255];
@@ -938,7 +943,7 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_route(
     candidate.targetMapId = JUNCTION_TARGET_MAP_ID;
     if (candidate.frameBeforeFNV == 0U) return ESP_NATIVE_FIRST_FRAME_SOURCE_INVALID;
 
-    if (!renderFrame(render, playerView, &candidate)) {
+    if (!renderFrame(render, playerView, &candidate, 1)) {
         return ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
     }
 
@@ -957,5 +962,46 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_route(
     candidate.presented = 1U;
     candidate.active = 1U;
     frameState = candidate;
+    return ESP_NATIVE_FIRST_FRAME_OK;
+}
+
+EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport(
+    struct Render_s* renderBase,
+    const struct EspPlayerViewState_s* playerViewBase,
+    EspNativeFirstFrameState* outState) {
+    Render_t* render = (Render_t*)renderBase;
+    const EspPlayerViewState* playerView = (const EspPlayerViewState*)playerViewBase;
+    EspNativeFirstFrameState candidate;
+
+    if (outState != NULL) memset(outState, 0, sizeof(*outState));
+    if (render == NULL || playerView == NULL || outState == NULL) {
+        return ESP_NATIVE_FIRST_FRAME_INVALID;
+    }
+    if (EspAssetPack_isOpen()) return ESP_NATIVE_FIRST_FRAME_PACK_BUSY;
+    if (!EspMapRuntime_isLoaded() || !EspNativeGraphicsCatalog_isReady()) {
+        return ESP_NATIVE_FIRST_FRAME_NOT_READY;
+    }
+
+    memset(&candidate, 0, sizeof(candidate));
+    candidate.frameBeforeFNV = framebufferFNV(render);
+    candidate.targetMapId = JUNCTION_TARGET_MAP_ID;
+    if (candidate.frameBeforeFNV == 0U) {
+        return ESP_NATIVE_FIRST_FRAME_SOURCE_INVALID;
+    }
+
+    if (!renderFrame(render, playerView, &candidate, 0)) {
+        return ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
+    }
+
+    candidate.frameAfterFNV = framebufferFNV(render);
+    if (candidate.frameAfterFNV == 0U || candidate.wallDraws == 0U ||
+        candidate.pixelsDrawn == 0U) {
+        return ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
+    }
+
+    candidate.rendered = 1U;
+    candidate.presented = 0U;
+    candidate.active = 1U;
+    *outState = candidate;
     return ESP_NATIVE_FIRST_FRAME_OK;
 }

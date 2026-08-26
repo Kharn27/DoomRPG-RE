@@ -1,32 +1,34 @@
 # Doom RPG ESP32 CYD porting status
 
-Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHub `main` + this file + the latest relevant milestone archive override chat memory.
+Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHub `main` + this file + `DOCUMENTATION.md` + the latest relevant milestone archive override chat memory.
 
 ## Latest merged hardware baseline
 
 ```text
-PR   = #93 — native gameplay TURN dispatcher
-main = 89f9d5f3feaa40f2e2a0c6e9506d1d8efaf5eeb6
+PR   = #94 — native cardinal movement + collision
+main = b5a4426eb0df1ef1506893d4bc08b5538543a7b3
 status = MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md).
 
 ## Current candidate milestone
 
 ```text
-branch = agent/esp32-native-move-collision
-base   = 89f9d5f3feaa40f2e2a0c6e9506d1d8efaf5eeb6
-hardware-tested implementation SHA = becaa1ec5bdd68311fa2e1d626fc238d1a706779
+branch = agent/esp32-native-gameplay-render-hotpath
+base   = b5a4426eb0df1ef1506893d4bc08b5538543a7b3
+hardware-tested implementation SHA = a07455e34eadbacca7d23fb068ba4308f0b7f80a
 status = REAL-CYD HARDWARE PASS
 merge-ready = yes after docs-only closeout audit
 ```
 
-Evidence: [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md).
+Evidence: [`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md).
 
-The real CYD executed native cardinal movement, TURN at moved tile centers, wall/entity collision, strafe derived from live orientation, continued movement after collision, and the renderer path that previously failed from a moved position. No `FAILED` marker occurred in the final run.
+The real CYD proved a bit-exact gameplay-only world redraw that touches only the `160x80 @0,20` viewport, preserves both HUD bands in place, uses `0 B` temporary HUD save, performs no intermediate world present, and still produces exactly one final physical present.
 
-## Permanent invariants
+The user reports **no notable fluidity improvement versus `main`**. Timing witnesses explain why: the eliminated intermediate present was only ~34 ms while canonical North recomposition remains ~3.27 s, dominated by world/sprite/HUD PAK-backed work.
+
+## Permanent hardware / memory invariants
 
 ```text
 board       = ESP32-2432S028R classic CYD
@@ -43,18 +45,6 @@ legacy Game.monsters = 0
 native ST_PLAYING = reached
 legacy ST_PLAYING = not reached
 native PLAYING service = reached
-native sparse graphics catalog = reached
-native first Junction frame = reached
-native textured planes = reached
-native BSP-visible billboards = reached
-native intrinsic sprite mode 7 = reached
-native glow companions = reached
-native gameplay HUD = reached
-native gameplay touch intent owner = reached
-native TURN_LEFT/TURN_RIGHT execution = reached
-native FORWARD/BACK/STRAFE execution = reached
-native static wall collision = reached
-native compact linked-entity collision = reached
 broad legacy PLAYING loop = forbidden
 ```
 
@@ -105,7 +95,7 @@ topology = d6e8df7d
 snapshot = bb714d80
 ```
 
-Absolute allocator cost is a witness, not a semantic fingerprint.
+Absolute allocator values are witnesses, not semantic fingerprints.
 
 ## Native transition / player / gameplay chain
 
@@ -141,6 +131,7 @@ CHANGEMAP intent
  -> native calibrated touch intent
  -> native TURN_LEFT/TURN_RIGHT
  -> native FORWARD/BACK/STRAFE + collision
+ -> viewport-only native gameplay recomposition
 ```
 
 Stable pre-render/player fingerprints:
@@ -231,7 +222,7 @@ completeFrame=b5218f24
 completeViewport=9206eb24
 ```
 
-Final movement hardware SHA also fixes one permanent renderer bug: cached wall textures now raster in local texel space. `sourceTexelOffset` remains only for PAK range lookup/cache identity, avoiding a legacy map-wide 32-bit fixed-point overflow path while preserving `mediaTexels == NULL`.
+The movement milestone permanently fixed wall cache raster addressing: `sourceTexelOffset` is PAK lookup/cache identity only; raster sampling stays in local cached texel space. `mediaTexels` remains NULL.
 
 ## Native gameplay HUD
 
@@ -245,7 +236,7 @@ health=30/30 armor=0/20 weapon=2 pistol ammoType=1 ammo=8 face=0 direction=N
 EspNativeGameplayHudState=22 B
 stateFNV=4756db9c
 assets=a.bmp,k.bmp,l.bmp,m.bmp,o.bmp
-PAK reads=184 bytes=6344 rows=164 pixels=7538
+initial PAK reads=184 bytes=6344 rows=164 pixels=7538
 ```
 
 Canonical framebuffer:
@@ -289,7 +280,7 @@ world y=73..99: PREV_WEAPON | BACK    | NEXT_WEAPON
 bottom HUD y=100..119: unbound
 ```
 
-Feedback contract exercised in the final movement run:
+Feedback contract:
 
 ```text
 hold=120 ms
@@ -303,11 +294,7 @@ runtime allocation=0 for feedback
 PAK/SD reads=0 for feedback
 ```
 
-Every valid tap in the final hardware run restored its current dynamic frame exactly before semantic execution/defer.
-
 ## Hardware-proven native TURN family
-
-Permanent dispatcher:
 
 ```text
 EspNativeGameplayTurnState = 24 B
@@ -317,9 +304,9 @@ TURN_RIGHT => -64
 cardinal angles = 0/64/128/192
 ```
 
-TURN is live at any settled native tile-center position. It does not call `Game_advanceTurn`, `Game_executeTile`, legacy `finishRotation`, entity/monster gameplay or facing refresh.
+TURN is live at arbitrary settled native tile-center positions. It does not call `Game_advanceTurn`, `Game_executeTile`, legacy `finishRotation`, entity/monster gameplay or facing refresh.
 
-Canonical spawn 360-degree proof from the TURN milestone remains:
+Canonical spawn cardinal proof:
 
 ```text
 N / angle64: frame ba3e5182 viewport 9206eb24 HUD 6c2aa46f
@@ -331,19 +318,15 @@ N / angle64 round-trip: frame ba3e5182 viewport 9206eb24 HUD 6c2aa46f exact
 
 ## Hardware-proven native cardinal movement + collision
 
-Permanent compact results:
+Permanent compact results from the merged movement milestone:
 
 ```text
 EspNativeGameplayCollisionResult = 16 B
 EspNativeGameplayMoveResult      = 24 B
 EspPlayerViewState               = 44 B
-EspNativeGameplayFrameStats      = 84 B
-movement probe execScratch       = 520 B
 ```
 
-One successful action changes exactly one tile-center axis by 64 units. Forward derives from current gameplay orientation; BACK negates it; strafes rotate the vector cardinally.
-
-Fresh Junction neighbor proof:
+Fresh Junction neighbors:
 
 ```text
 FORWARD      943->911 delta=0,-64 flags=08 CLEAR
@@ -353,21 +336,103 @@ STRAFE_RIGHT 943->944 delta=+64,0 flags=01 WALL
 openLines=0
 ```
 
-Final real-CYD run at tested SHA `becaa1ec5bdd68311fa2e1d626fc238d1a706779`:
+Merged hardware proof also includes a real entity blocker:
 
 ```text
-heap8=66708->66708
+FORWARD 911->910
+collision=ENTITY
+blocker=24
+type=7
+frame exact / no movement
+```
+
+Opened native lines remain deliberately fail-closed until dynamic line/entity relinking has its own milestone.
+
+## Hardware-proven gameplay renderer hot path
+
+Permanent boundary:
+
+```text
+EspNativeGameplayFrameStats = 104 B
+world viewport = 160x80 @0,20
+temporary HUD save = 0 B
+world route physical present = none
+final physical present = exactly one
+HUD bands preserved in place during world/sprite redraw
+```
+
+Final real-CYD implementation SHA:
+
+```text
+a07455e34eadbacca7d23fb068ba4308f0b7f80a
+```
+
+Strict canonical North proof:
+
+```text
+frame=ba3e5182
+viewport=9206eb24
+HUD=6c2aa46f
+frameStatsBytes=104
+tempHud=0
+routeNoPresent=1
+finalPresent=1
+heap8=66452->66452
 largest8=29684->29684
-stackHighWater=172
-FORWARD 943->911 pos 992,1888->992,1824 frame ba3e5182->66da9d16
-TURN_LEFT at moved pos: angle64->128 frame 66da9d16->ec232716
-blocked FORWARD 911->910: ENTITY blocker=24 type=7 frame exact
-STRAFE_RIGHT at angle128: 911->879 pos 992,1824->992,1760
-TURN_RIGHT at moved pos: angle128->64 frame 50c26281->fc7a5142
-FORWARD 879->847 pos 992,1760->992,1696
-TURN_RIGHT at moved pos: angle64->0 frame 3625f7a7->b6a50fb1
-FORWARD 847->848 pos 992,1696->1056,1696
-SELECT taps remained feedback-only/deferred
+exact=yes
+```
+
+The final fix replaced the old wrapper activation dependency on `!EspNativeFirstFrame_isReady()` with the real compact-native render context. This is required so plane injection and `tmpLine` preservation work for both boot and gameplay viewport routes without resetting the historical first-frame owner.
+
+Representative successful-action scratch witnesses at this SHA:
+
+```text
+TURN probe execScratch = 484 B
+MOVE probe execScratch = 540 B
+stackHighWater = 172
+```
+
+### Measured performance truth
+
+Canonical North hot-path:
+
+```text
+world   = 1261184 us
+sprites = 1572941 us
+HUD     =  387161 us
+present =   34930 us
+total   = 3265801 us
+```
+
+Approximate total share:
+
+```text
+world   ~38.6%
+sprites ~48.2%
+HUD     ~11.9%
+present  ~1.1%
+```
+
+The user reports no notable fluidity improvement versus `main`, which is consistent with the measurements. Removing an ~34 ms redundant present cannot materially change a ~3.27 s heavy frame.
+
+Other real-CYD samples:
+
+```text
+TURN N->E total=1835575 us
+TURN E->N total=3265560 us / canonical round-trip exact
+MOVE 943->911 total=3038743 us
+MOVE 911->879 total=2952445 us
+MOVE 879->847 total=2916327 us
+```
+
+Across those actions:
+
+```text
+tempHud=0
+routeNoPresent=1
+finalPresent=1
+heap8=66452->66452
+largest8=29684->29684
 legacyStable=yes
 residentStable=yes
 Game_advanceTurn=no
@@ -375,32 +440,45 @@ Game_executeTile=no
 facingRefresh=deferred
 ```
 
-Opened native lines remain deliberately fail-closed for movement collision until dynamic line/entity relinking has its own milestone.
+## Current performance diagnosis
 
-## Performance status
+The remaining latency is now measured renderer/storage debt, not presentation debt.
 
-Functionality is hardware-proven, but the user reports MOVE/TURN as **very slow**. This is expected from the current diagnostic bridge and is now an explicit performance debt, not a semantic blocker.
-
-Current successful action hot path still includes:
+Current world phase still:
 
 ```text
-feedback full present
- -> exact feedback-restore full present
- -> transient wall/plane/sprite cache rebuild + PAK reads
- -> complete world/sprite/glow recomposition
- -> temporary 12.8 KiB HUD band save/restore
- -> final full present
+open PAK
+ -> validate/scan complete disk index
+ -> disk-backed entry searches
+ -> rebuild 30 resolved wall descriptors
+ -> transient 3-slot wall cache
+ -> plane reads
+ -> close PAK
 ```
 
-Representative physical full presents are ~34 ms each; feedback hold is 120 ms. The renderer also repeats bounded PAK reads and transient cache construction per action.
+Current sprite phase then independently:
 
-Do **not** prematurely optimize `PlatformVideo_present()`. Preferred performance work is architectural and bounded:
+```text
+build BSP visibility
+ -> open/validate PAK again
+ -> resolve mappings/palettes/bitshape/texel sources again
+ -> load one frame at a time
+ -> canonical North: 21 base + 7 glow loads / 172 PAK reads
+ -> only 9 unique base logical sprite IDs
+ -> close PAK
+```
 
-- persistent bounded wall/plane caches;
-- viewport-only native world redraw;
-- remove the temporary 12.8 KiB HUD bridge save;
-- retain on-demand turn-based redraw and exact frame canons;
-- keep all migrated assets PAK-backed and map-wide texel pools forbidden.
+Current compass phase then independently:
+
+```text
+open/validate PAK again
+ -> reopen k.bmp/o.bmp/a.bmp
+ -> 63 PAK reads
+ -> ~387 ms
+ -> close PAK
+```
+
+Do **not** prioritize `PlatformVideo_present()` optimization: hardware proves it is only ~1% of canonical heavy-frame time.
 
 ## Hardware-selected classic CYD presentation
 
@@ -439,6 +517,7 @@ nativeHud=yes
 nativeInput=yes
 nativeTurnDispatch=yes
 nativeMovementDispatch=yes
+nativeGameplayViewportHotPath=yes
 TURN_LEFT=yes
 TURN_RIGHT=yes
 FORWARD/BACK/STRAFE semantic execution=yes
@@ -456,6 +535,7 @@ facingRefresh=deferred
 ## Still intentionally outside
 
 ```text
+persistent bounded render-resource/frame caches
 Game_eventFlagsForMovement
 post-move tile event execution
 actual turn advancement
@@ -487,15 +567,26 @@ MERGE-READY after docs-only audit
 Hardware-tested implementation SHA:
 
 ```text
-becaa1ec5bdd68311fa2e1d626fc238d1a706779
+a07455e34eadbacca7d23fb068ba4308f0b7f80a
 ```
 
 No code may change after this tested SHA without another hardware run. Documentation commits after it must be `.md` only.
 
 ## Next bounded milestone after merge
 
-After the user merges, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md` and [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md) before branching.
+After the user merges, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md` and [`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md) before branching.
 
-Preferred next frontier: a bounded **native gameplay renderer hot-path** milestone. Preserve all current gameplay semantics and exact frame outputs while replacing repeated transient render-cache/HUD-save work with permanent bounded caches and viewport-only redraw. Do not optimize `PlatformVideo_present()` itself as the first move.
+Preferred next frontier: **bounded persistent native render-resource/cache ownership**. Keep `/DoomRPG-ESP32.pak` as backing store while avoiding repeated full PAK validation/index scans, repeated source-metadata reconstruction and repeated identical sprite/HUD frame reads.
 
-If behavior is prioritized instead, the next coherent semantic family is post-move `Game_eventFlagsForMovement` / tile-event / turn-advance behavior, recovered from legacy and introduced fail-closed family by family. Do not combine that with broad entity/monster gameplay.
+Suggested order:
+
+```text
+1. resident validated render-source / PAK-entry metadata
+2. small bounded sprite-frame cache keyed by logical/actual frame
+3. bounded resident compass/HUD render resources
+4. evaluate bounded persistent wall/plane texel cache with explicit RAM budget
+```
+
+All output must remain bit-exact. Keep `shapeData == NULL`, `mediaTexels == NULL`, no runtime ZIP, no map-wide texel pool, bounded RAM, explicit eviction, and fail-closed behavior.
+
+If behavior is prioritized instead, the next coherent semantic family remains post-move `Game_eventFlagsForMovement` / tile-event / turn-advance behavior. Do not combine that semantic work with the performance-cache milestone.

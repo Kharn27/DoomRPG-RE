@@ -407,7 +407,7 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
         return 0;
     }
     w->turnAfter = *EspNativeGameplayDispatch_view();
-    printf("[MOVE] PHASE action=%s pos=%d,%d->%d,%d viewport=%08x->world:%08x->sprites:%08x hud=%08x->%08x frame=%08x->%08x\n",
+    printf("[MOVE] PHASE action=%s pos=%d,%d->%d,%d viewport=%08x->world:%08x->sprites:%08x hud=%08x->preserved:%08x->after:%08x frame=%08x->%08x worldRouteNoPresent=%u finalPresent=%u\n",
            EspNativeGameplayInput_actionName(w->result.action),
            (int)w->beforeView.viewX, (int)w->beforeView.viewY,
            (int)w->afterView.viewX, (int)w->afterView.viewY,
@@ -415,8 +415,11 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
            (unsigned int)w->frameStats.viewportAfterWorldFNV,
            (unsigned int)w->frameStats.viewportAfterSpritesFNV,
            (unsigned int)w->frameStats.hudBandsBeforeFNV,
+           (unsigned int)w->frameStats.hudBandsRestoredFNV,
            (unsigned int)w->frameStats.hudBandsAfterFNV,
-           (unsigned int)frameBefore, (unsigned int)frameAfter);
+           (unsigned int)frameBefore, (unsigned int)frameAfter,
+           (unsigned int)w->frameStats.worldRouteNoPresent,
+           (unsigned int)w->frameStats.finalPresented);
 
     if (!legacySnapshot(probeState.doomRpg, &w->legacyAfter) ||
         !legacyEqual(&w->legacyBefore, &w->legacyAfter) ||
@@ -427,8 +430,8 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
         !runtimeBoundary(probeState.doomRpg) ||
         heapAfter != heapBefore || largestAfter != largestBefore ||
         frameAfter == frameBefore || w->frameStats.frameAfterFNV != frameAfter ||
-        w->frameStats.temporaryHudBytes != 12800U ||
-        w->frameStats.intermediatePresentSuppressed != 1U ||
+        w->frameStats.temporaryHudBytes != 0U ||
+        w->frameStats.worldRouteNoPresent != 1U ||
         w->frameStats.finalPresented != 1U || EspAssetPack_isOpen()) {
         failProbe("post-move integrity");
         return 0;
@@ -459,7 +462,7 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
            (unsigned int)fnv1a(EspPlayerView_view(), sizeof(EspPlayerViewState)),
            (unsigned int)frameBefore, (unsigned int)frameAfter,
            positionRoundTrip ? "exact" : "no");
-    printf("[MOVE] RENDER world=%08x walls=%u/%u planes=%u sprites=%u/%u glows=%u/%u spriteReads=%u hudReads=%u tempHud=%uB heap=%u->%u largest=%u->%u stackHighWater=%u legacyStable=yes residentStable=yes orientationStable=yes turnAdvance=no tileDispatch=no facingRefresh=deferred\n",
+    printf("[MOVE] RENDER world=%08x walls=%u/%u planes=%u sprites=%u/%u glows=%u/%u spriteReads=%u hudReads=%u tempHud=%uB routeNoPresent=%u final=%u timeUs=world:%u sprite:%u hud:%u present:%u total:%u heap=%u->%u largest=%u->%u stackHighWater=%u legacyStable=yes residentStable=yes orientationStable=yes turnAdvance=no tileDispatch=no facingRefresh=deferred\n",
            (unsigned int)w->frameStats.worldFrameFNV,
            (unsigned int)w->frameStats.wallDraws,
            (unsigned int)w->frameStats.wallPixels,
@@ -471,6 +474,13 @@ static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
            (unsigned int)w->frameStats.spritePackReads,
            (unsigned int)w->frameStats.hudPackReads,
            (unsigned int)w->frameStats.temporaryHudBytes,
+           (unsigned int)w->frameStats.worldRouteNoPresent,
+           (unsigned int)w->frameStats.finalPresented,
+           (unsigned int)w->frameStats.worldMicros,
+           (unsigned int)w->frameStats.spriteMicros,
+           (unsigned int)w->frameStats.hudMicros,
+           (unsigned int)w->frameStats.presentMicros,
+           (unsigned int)w->frameStats.totalMicros,
            (unsigned int)heapBefore, (unsigned int)heapAfter,
            (unsigned int)largestBefore, (unsigned int)largestAfter,
            stackHighWater());
@@ -543,8 +553,8 @@ void Esp32JunctionMoveCollisionProbe_service(struct DoomRPG_s* doomRpgBase) {
         unsigned int blockedCount = 0U;
         if (!Esp32JunctionTurnDispatchProbe_isActive()) return;
 
-        printf("\n=== Doom RPG ESP32-native cardinal movement + collision ===\n");
-        printf("[MOVEPROBE] CONTRACT FORWARD/BACK/STRAFE derive exactly one 64-unit cardinal step from the hardware-proven runtime orientation owner. Collision reproduces the current legacy Game_trace movement blocker mask using native WALL flags plus linked compact sprite/entity topology. Any opened native line fails closed until line-entity collision relinking has its own milestone. A CLEAR move mutates only EspPlayerViewState x/y, renders later from lifecycle, and performs NO Game_eventFlagsForMovement, Game_executeTile, Game_advanceTurn, entity/monster activation or facing refresh.\n");
+        printf("\n=== Doom RPG ESP32-native cardinal movement + collision / viewport hot path ===\n");
+        printf("[MOVEPROBE] CONTRACT cardinal MOVE/collision semantics are unchanged. A CLEAR move still mutates only EspPlayerViewState x/y after compact WALL/entity collision, but gameplay recomposition must now preserve HUD bands in place: no whole-frame clear, no 12.8 KiB HUD save, no intermediate world present. Timing witnesses expose the remaining renderer cost; no tile events, turn advance, entity activation or facing refresh are enabled.\n");
 
         heapBefore = heap8();
         largestBefore = largest8();
@@ -594,7 +604,7 @@ void Esp32JunctionMoveCollisionProbe_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
 
-        printf("[MOVEPROBE] READY collisionBytes=%u moveResultBytes=%u viewBytes=%u frameStatsBytes=%u execScratchBytes=%u neighbors=clear:%u blocked:%u recommended=%s then %s blockedWitness=%s heap=%u->%u largest=%u->%u stackHighWater=%u dynamicLines=fail-closed renderFromCallback=no\n",
+        printf("[MOVEPROBE] READY collisionBytes=%u moveResultBytes=%u viewBytes=%u frameStatsBytes=%u execScratchBytes=%u neighbors=clear:%u blocked:%u recommended=%s then %s blockedWitness=%s heap=%u->%u largest=%u->%u stackHighWater=%u dynamicLines=fail-closed renderFromCallback=no gameplayWorldPresent=none tempHud=0\n",
                (unsigned int)sizeof(EspNativeGameplayCollisionResult),
                (unsigned int)sizeof(EspNativeGameplayMoveResult),
                (unsigned int)sizeof(EspPlayerViewState),
@@ -607,7 +617,7 @@ void Esp32JunctionMoveCollisionProbe_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)heapBefore, (unsigned int)heapAfter,
                (unsigned int)largestBefore, (unsigned int)largestAfter,
                stackHighWater());
-        printf("[MOVEPROBE] PARK tap recommended move + inverse for exact spawn round-trip; also tap blockedWitness when not NONE. TURN remains live before/after movement; all tile-event/turn-advance gameplay stays deferred.\n");
+        printf("[MOVEPROBE] PARK tap recommended move + inverse and TURN at moved positions; successful render logs must show tempHud=0 routeNoPresent=1 plus phase timings.\n");
         return;
     }
 

@@ -1,10 +1,11 @@
 #include <SDL.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "DoomRPG.h"
 #include "Render.h"
+
+#include <esp_timer.h>
 
 #include "esp_asset_pack.h"
 #include "esp_native_first_frame.h"
@@ -19,8 +20,6 @@
 
 #define HUD_ROWS 20U
 #define HUD_BAND_PIXELS (DOOMRPG_LOGICAL_WIDTH * HUD_ROWS)
-#define HUD_SAVED_PIXELS (HUD_BAND_PIXELS * 2U)
-#define HUD_SAVED_BYTES (HUD_SAVED_PIXELS * sizeof(uint16_t))
 #define BOTTOM_HUD_Y (DOOMRPG_LOGICAL_HEIGHT - HUD_ROWS)
 #define WORLD_Y HUD_ROWS
 #define WORLD_ROWS (DOOMRPG_LOGICAL_HEIGHT - (HUD_ROWS * 2U))
@@ -30,14 +29,15 @@ typedef struct GameplayFrameScratch_s {
     EspNativeGameplayFrameStats stats;
     EspNativeJunctionSpriteStats sprites;
     EspNativeGameplayHudDirectionStats hud;
+    EspNativeFirstFrameState world;
     uint8_t busy;
     uint8_t reserved[3];
 } GameplayFrameScratch;
 
 /* Single gameplay service, non-reentrant by contract. The scratch is permanent
- * bounded BSS so repeated TURN rendering does not deepen loopTask stack with
- * the large sprite/stat aggregates. Pixel payload still lives only in the
- * shared framebuffer or the bounded temporary HUD save below. */
+ * bounded BSS so repeated MOVE/TURN rendering does not deepen loopTask stack.
+ * Pixel payload lives only in the shared framebuffer; the gameplay world route
+ * no longer allocates or copies a temporary HUD save. */
 static GameplayFrameScratch frameScratch;
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
@@ -53,6 +53,13 @@ static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
 
 static uint32_t fnv1a(const void* data, uint32_t bytes) {
     return fnv1aUpdate(2166136261U, data, bytes);
+}
+
+static uint32_t elapsedMicros(int64_t start) {
+    int64_t elapsed = esp_timer_get_time() - start;
+    if (elapsed <= 0) return 0U;
+    if ((uint64_t)elapsed > UINT32_MAX) return UINT32_MAX;
+    return (uint32_t)elapsed;
 }
 
 static uint32_t frameFNV(void) {
@@ -134,16 +141,15 @@ int EspNativeGameplayFrame_renderTurn(
     EspNativeGameplayFrameStats* outStats) {
     Render_t* render = (Render_t*)renderBase;
     const EspPlayerViewState* view = EspPlayerView_view();
-    const EspNativeFirstFrameState* world;
     const EspNativePlaneRenderStats* planes;
     EspNativeGameplayFrameStats* stats = &frameScratch.stats;
     EspNativeJunctionSpriteStats* sprites = &frameScratch.sprites;
     EspNativeGameplayHudDirectionStats* hud = &frameScratch.hud;
-    uint16_t* framebuffer;
-    uint16_t* savedHud = NULL;
+    EspNativeFirstFrameState* world = &frameScratch.world;
     uint32_t renderBeforeSpritesFNV;
     uint32_t renderAfterSpritesFNV;
-    unsigned int suppressedBefore;
+    int64_t totalStart;
+    int64_t phaseStart;
     int strictSpriteWitness;
     int ok = 0;
 
@@ -163,51 +169,42 @@ int EspNativeGameplayFrame_renderTurn(
     memset(stats, 0, sizeof(*stats));
     memset(sprites, 0, sizeof(*sprites));
     memset(hud, 0, sizeof(*hud));
+    memset(world, 0, sizeof(*world));
+    totalStart = esp_timer_get_time();
 
-    framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     stats->frameBeforeFNV = frameFNV();
     stats->viewportBeforeFNV = viewportFNV();
     stats->hudBandsBeforeFNV = hudBandsFNV();
-    if (framebuffer == NULL || stats->frameBeforeFNV == 0U ||
-        stats->viewportBeforeFNV == 0U || stats->hudBandsBeforeFNV == 0U) {
+    if (stats->frameBeforeFNV == 0U || stats->viewportBeforeFNV == 0U ||
+        stats->hudBandsBeforeFNV == 0U) {
         goto done;
     }
 
-    savedHud = (uint16_t*)malloc(HUD_SAVED_BYTES);
-    if (savedHud == NULL) goto done;
-    stats->temporaryHudBytes = (uint32_t)HUD_SAVED_BYTES;
-    memcpy(savedHud, framebuffer, HUD_BAND_PIXELS * sizeof(uint16_t));
-    memcpy(savedHud + HUD_BAND_PIXELS,
-           framebuffer + BOTTOM_HUD_Y * DOOMRPG_LOGICAL_WIDTH,
-           HUD_BAND_PIXELS * sizeof(uint16_t));
-
-    EspNativeFirstFrame_reset();
+    phaseStart = esp_timer_get_time();
     EspNativePlaneRenderer_reset();
-    suppressedBefore = EspNativeGameplayPresentGate_suppressedCount();
-    if (!EspNativeGameplayPresentGate_armOne()) goto done;
-    if (EspNativeFirstFrame_route(render, view) != ESP_NATIVE_FIRST_FRAME_OK) {
-        EspNativeGameplayPresentGate_cancel();
+    if (EspNativeFirstFrame_renderGameplayViewport(render, view, world) !=
+        ESP_NATIVE_FIRST_FRAME_OK) {
         goto done;
     }
-    if (EspNativeGameplayPresentGate_isArmed() ||
-        EspNativeGameplayPresentGate_suppressedCount() != suppressedBefore + 1U) {
-        EspNativeGameplayPresentGate_cancel();
-        goto done;
-    }
-    stats->intermediatePresentSuppressed = 1U;
+    stats->worldMicros = elapsedMicros(phaseStart);
+    stats->worldRouteNoPresent = 1U;
 
-    world = EspNativeFirstFrame_view();
     planes = EspNativePlaneRenderer_view();
-    if (world == NULL || planes == NULL) goto done;
+    if (planes == NULL || world->presented != 0U || world->rendered != 1U) {
+        goto done;
+    }
     stats->worldFrameFNV = world->frameAfterFNV;
     stats->viewportAfterWorldFNV = viewportFNV();
     stats->wallDraws = world->wallDraws;
     stats->wallPixels = world->pixelsDrawn;
     stats->planePixels = planes->pixelsRendered;
+    if (hudBandsFNV() != stats->hudBandsBeforeFNV) goto done;
 
+    phaseStart = esp_timer_get_time();
     renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     strictSpriteWitness = EspNativeJunctionSprite_render(render, sprites);
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
+    stats->spriteMicros = elapsedMicros(phaseStart);
     if (!strictSpriteWitness) {
         if (!spriteViewAccountingComplete(sprites) ||
             renderAfterSpritesFNV != renderBeforeSpritesFNV ||
@@ -240,14 +237,15 @@ int EspNativeGameplayFrame_renderTurn(
     stats->spritePackReads = sprites->packReads;
     stats->viewportAfterSpritesFNV = viewportFNV();
 
-    memcpy(framebuffer, savedHud, HUD_BAND_PIXELS * sizeof(uint16_t));
-    memcpy(framebuffer + BOTTOM_HUD_Y * DOOMRPG_LOGICAL_WIDTH,
-           savedHud + HUD_BAND_PIXELS,
-           HUD_BAND_PIXELS * sizeof(uint16_t));
+    /* The viewport-only world and sprite routes must leave both HUD bands
+     * bit-exact. This replaces the old 12.8 KiB save/restore bridge. */
+    stats->temporaryHudBytes = 0U;
     stats->hudBandsRestoredFNV = hudBandsFNV();
     if (stats->hudBandsRestoredFNV != stats->hudBandsBeforeFNV) goto done;
 
+    phaseStart = esp_timer_get_time();
     if (!EspNativeGameplayHudDirection_render(angle, hud)) goto done;
+    stats->hudMicros = elapsedMicros(phaseStart);
     stats->hudPackReads = hud->packReads;
     stats->hudPixels = hud->pixelsWritten;
     stats->hudBandsAfterFNV = hudBandsFNV();
@@ -258,17 +256,16 @@ int EspNativeGameplayFrame_renderTurn(
         goto done;
     }
 
+    phaseStart = esp_timer_get_time();
     if (!Esp32PlatformVideo_present()) goto done;
+    stats->presentMicros = elapsedMicros(phaseStart);
     stats->finalPresented = 1U;
     stats->active = 1U;
     ok = 1;
 
 done:
-    if (EspNativeGameplayPresentGate_isArmed()) {
-        EspNativeGameplayPresentGate_cancel();
-    }
     if (EspAssetPack_isOpen()) EspAssetPack_close();
-    free(savedHud);
+    stats->totalMicros = elapsedMicros(totalStart);
     if (!ok) stats->active = 0U;
     *outStats = *stats;
     frameScratch.busy = 0U;
