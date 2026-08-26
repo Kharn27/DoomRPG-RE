@@ -8,6 +8,7 @@
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
+#include "esp_native_door_view_probe.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud_direction.h"
@@ -199,6 +200,11 @@ int EspNativeGameplayFrame_renderTurn(
     stats->wallPixels = world->pixelsDrawn;
     stats->planePixels = planes->pixelsRendered;
     if (hudBandsFNV() != stats->hudBandsBeforeFNV) goto done;
+
+    /* Diagnostic branch only: deep world/BSP/raster stack is fully unwound here.
+     * The probe is observational; failure to produce a witness never changes
+     * gameplay/render success. */
+    (void)EspNativeDoorViewProbe_log(render, stats->viewportAfterWorldFNV);
 
     phaseStart = esp_timer_get_time();
     renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
