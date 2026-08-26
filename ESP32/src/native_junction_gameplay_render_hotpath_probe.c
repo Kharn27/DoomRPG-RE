@@ -3,10 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <esp_heap_caps.h>
-
 #include "DoomRPG.h"
 #include "Render.h"
+
+#include <esp_heap_caps.h>
 
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_frame.h"
