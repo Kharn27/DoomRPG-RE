@@ -17,17 +17,16 @@ Merged evidence: [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEP
 ```text
 branch = agent/esp32-native-gameplay-door-view-probe
 base   = 2aae0676528ab00c3494d142d8b35c22b7685dce
-hardware-proven semantic-fix SHA = efea93977d20ba94e2fd5d6981ebce2e7916bc5b
-post-review firmware SHA = 5c01d91f9c6320460b2ecaf033f68a88bde80dfd
-status = REAL-CYD RETEST REQUIRED
-merge-ready = no
+hardware-tested implementation SHA = 5c01d91f9c6320460b2ecaf033f68a88bde80dfd
+status = REAL-CYD HARDWARE PASS
+merge-ready = yes after docs-only closeout audit
 ```
 
 Evidence: [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md).
 
-The Junction arrival-door symptom is understood and the collision correction is hardware-proven: native movement had allowed `BACK` from spawn into tile `975`, exactly onto closed line `35`. The current firmware candidate additionally removes the now-completed diagnostic BSP witness from the normal gameplay hot path after PR #98 review; that post-test code cleanup requires one final real-CYD retest before merge.
+The Junction arrival-door symptom is closed. The renderer was correct; native movement collision had allowed `BACK` from spawn into tile `975`, exactly onto closed line `35`. The permanent fix adds bounded line-derived collision semantics. PR #98 review then removed the completed diagnostic BSP witness from the normal gameplay hot path, and that production cleanup is now also hardware-revalidated.
 
-## Hardware-proven root cause
+## Current hardware root-cause proof
 
 Fresh Junction canon:
 
@@ -62,20 +61,16 @@ Game_loadMapEntities()
  -> Game_trace(..., 62087 / 0xf287) sees the closed line entity
 ```
 
-The old native movement milestone modeled static WALL cells plus map-sprite entity topology, but omitted line-derived entities. That omission incorrectly classified:
+The earlier native MOVE collision family modeled static WALL cells plus compact map-sprite entities but omitted line-derived entities. That omission incorrectly produced `BACK 943->975 = CLEAR`.
 
-```text
-BACK 943->975 = CLEAR
-```
-
-Hardware-tested semantic fix `efea939...` produced:
+Current real-CYD truth at `5c01d91...`:
 
 ```text
 [LINECOLLISION] BLOCK source=943 dest=975 line=35 texture=7 flags=00000505 type=0 defTile=312
-[MOVE] BLOCKED ... tile=943->975 collision=ENTITY blocker=65535 type=0 frame=ba3e5182 exact=yes heap=38216->38216 largest=21492->21492
+[MOVE] BLOCKED ... tile=943->975 collision=ENTITY blocker=65535 type=0 frame=ba3e5182 exact=yes heap=38928->38928 largest=29684->29684
 ```
 
-Therefore the corrected immediate Junction movement canon is:
+Corrected immediate Junction movement canon:
 
 ```text
 FORWARD      943->911 : CLEAR
@@ -84,69 +79,65 @@ STRAFE_LEFT  943->942 : WALL
 STRAFE_RIGHT 943->944 : WALL
 ```
 
-The player remains at `992,1888` and the framebuffer remains exactly `ba3e5182` on the blocked BACK. The user confirmed on the physical CYD that the huge arrival-door view disappears when this illegal movement is blocked.
+The blocked BACK mutates neither player position nor framebuffer.
 
-## Renderer diagnosis closed
+## PR #98 production cleanup — hardware proven
 
-Temporary direct post-world diagnostics at `efea939...` proved the renderer/compositor was stable even at the formerly illegal pose:
+Review correctly flagged that the temporary door witness still performed a second `EspNativeBspVisibility_build()` plus map-line scans and success-path `printf`s on every normal gameplay render.
 
-```text
-world rendered=1
-world presented=0
-HUD exact=yes
-sprite accounting complete=yes
-unsupported=0
-render scratch stable=yes
-final present succeeds
-```
-
-The formerly observed `4 walls / 17120 pixels` close-up was caused by the player being moved onto the door midpoint, leaving the 16-unit gameplay camera extremely close to the wall. Do not change camera orientation, BSP side tests, wall projection, sprite composition, or `PlatformVideo_present()` to address this resolved symptom.
-
-The same hardware run revalidated cardinal TURN canons and exact North round trip:
-
-```text
-N frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
-E frame=8cfdfe34 viewport=17c48c15 HUD=1d908304
-S frame=da1c4297 viewport=582c2ad8 HUD=a78d0f96
-W frame=23ee0954 viewport=de06a408 HUD=9281a6d1
-N round-trip=exact
-```
-
-## PR #98 review cleanup — RETEST REQUIRED
-
-Code review correctly flagged that the temporary door witness still ran on every successful gameplay render, causing a second full `EspNativeBspVisibility_build()` traversal plus map-line scans and success-path console I/O.
-
-The current firmware candidate removes the completed diagnostic from production gameplay:
+Cleanup commits:
 
 ```text
 c8b39ab1dde922045391f160ab447b6f974ccfbb
-  EspNativeGameplayFrame_renderTurn():
-  - no EspNativeDoorViewProbe_log()
-  - no DOORVIEW BUILD/ARMED/postWorld success logs
-  - no TURNFRAME SPRITES success log
-  - failure-only TURNFRAME diagnostics retained
+  remove EspNativeDoorViewProbe_log() from gameplay render
+  remove DOORVIEW success-path logs
+  remove TURNFRAME SPRITES success log
+  retain failure-only TURNFRAME diagnostics
 
 1d84f58770087237020a5b3ecfbfc2bfe8fe7bde
-  delete ESP32/src/esp_native_door_view_probe.c
+  delete esp_native_door_view_probe.c
 
 5c01d91f9c6320460b2ecaf033f68a88bde80dfd
-  delete ESP32/include/esp_native_door_view_probe.h
+  delete esp_native_door_view_probe.h
 ```
 
-The normal gameplay render now executes only its real world pass rather than repeating BSP visibility for an already-solved witness.
-
-Because these are firmware changes after `efea939...`, the previous PASS does **not** certify the current HEAD. Required final retest:
+The final CYD retest proves the cleanup:
 
 ```text
-normal env = esp32-cyd
-reach Junction
-BACK at spawn remains BLOCKED by line 35 / type 0
-perform at least one successful TURN and one successful MOVE render
-no DOORVIEW success-path spam
-no TURNFRAME failure
+no [DOORVIEW] output
+no [TURNFRAME] ... fail=
 no Guru Meditation / reboot
-heap/resident state stable
+heap8=38928 stable
+largest8=29684 stable
 ```
+
+Four successful TURN renders exercised the same cleaned `EspNativeGameplayFrame_renderTurn()` path and returned exactly to canonical North:
+
+```text
+N frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
+W frame=23ee0954 viewport=de06a408 HUD=9281a6d1
+S frame=da1c4297 viewport=582c2ad8 HUD=a78d0f96
+E frame=8cfdfe34 viewport=17c48c15 HUD=1d908304
+N round-trip=exact
+```
+
+Representative final North render:
+
+```text
+tempHud=0 B
+routeNoPresent=1
+finalPresent=1
+world=180664 us
+sprite=9595 us
+hud=1321 us
+present=35034 us
+total=236218 us
+stackHighWater=860
+legacyStable=yes
+residentStable=yes
+```
+
+The supplied cleanup retest excerpt does not contain a successful CLEAR MOVE render; it contains the intentional blocked-door MOVE plus successful TURN renders through the same shared cleaned renderer. Do not invent a missing CLEAR-MOVE fingerprint.
 
 ## Permanent compact entity-definition owner
 
@@ -168,9 +159,9 @@ stored metadata=eType only
 runtime ZIP=no
 ```
 
-It exists so native consumers can reproduce entity-type decisions without creating legacy `EntityDef_t` arrays, `Entity_t` objects, or the 1024-pointer `entityDb`.
+It exists so native consumers can reproduce entity-type decisions without constructing legacy `EntityDef_t`, `Entity_t`, or pointer-heavy `entityDb` owners.
 
-Closed line collision reproduces legacy line placement, including recovered render geometry nudges and the one-unit entity-link nudge. Public ABI remains:
+Closed line collision reproduces legacy line placement, including the recovered `+/-3` geometry nudge and one-unit entity-link nudge. Public ABI remains:
 
 ```text
 EspNativeGameplayCollisionResult = 16 B
@@ -180,14 +171,14 @@ For a line-derived blocker, `blockerSpriteIndex=65535` means deliberately “not
 
 ## Open-line boundary remains fail-closed
 
-This milestone adds only the initial closed-line topology required by legacy collision. It does **not** implement dynamic line/entity relinking.
+This milestone adds only closed line-derived collision. Dynamic line/entity relinking is still intentionally absent:
 
 ```text
 if native lineState.openCount != 0
  -> ESP_NATIVE_GAMEPLAY_COLLISION_UNSUPPORTED_DYNAMIC_LINES
 ```
 
-Do not infer door-open collision semantics until that family gets its own bounded milestone.
+Do not infer door-open collision semantics until a dedicated milestone recovers them.
 
 ## Permanent hardware / memory invariants
 
@@ -209,13 +200,13 @@ native PLAYING service = reached
 broad legacy PLAYING loop = forbidden
 ```
 
-Last hardware witness, valid for `efea939...`:
+Final hardware witness for the current implementation:
 
 ```text
-heap=103884 stable
-heap8=38216 stable
-largest8=21492 stable
-TURN/MOVE legacyStable=yes
+heap=104596 stable
+heap8=38928 stable
+largest8=29684 stable
+TURN legacyStable=yes
 residentStable=yes
 turnAdvance=no
 tileDispatch=no
@@ -223,7 +214,7 @@ shapeData=NULL
 mediaTexels=NULL
 ```
 
-Absolute heap values are witnesses, not semantic fingerprints. New absolute values after diagnostic removal must come from the retest; do not predict them.
+Absolute allocator values are witnesses, not semantic fingerprints.
 
 ## Stable Junction resident canons
 
@@ -269,7 +260,7 @@ shapeData=NULL
 mediaTexels=NULL
 ```
 
-The earlier wall packed-index recovery remains hardware-proven and unchanged by this milestone.
+The wall packed-index guard remains hardware-proven and unchanged by this milestone.
 
 ## Native transition / gameplay chain
 
@@ -331,13 +322,11 @@ ESP32/platformio.ini                  +6
 ESP32/src/native_door_view_witness.c  +230
 ```
 
-It contains only the older wrapper-based renderer witness. The later direct witness also served its purpose and has now been removed from the normal candidate. Neither diagnostic branch/file is required by the permanent closed-line collision fix.
+It contains only the obsolete wrapper-based renderer witness and no permanent collision fix. No cherry-pick is required.
 
-Disposition: **safe to abandon/delete; no cherry-pick required**.
+Disposition: **safe to abandon/delete**.
 
 ## Current hardware PARK
-
-The following semantic state is proven by `efea939...`; the production-cleanup firmware must revalidate it before merge:
 
 ```text
 legacyState=9 / ST_INTRO
@@ -376,10 +365,9 @@ facingRefresh=deferred
 ## Merge recommendation
 
 ```text
-REAL-CYD semantic fix = PASS at efea93977d20ba94e2fd5d6981ebce2e7916bc5b
-current firmware candidate = 5c01d91f9c6320460b2ecaf033f68a88bde80dfd
-current candidate retest = REQUIRED
-MERGE-READY = NO
+REAL-CYD HARDWARE PASS
+hardware-tested implementation SHA = 5c01d91f9c6320460b2ecaf033f68a88bde80dfd
+MERGE-READY = YES after docs-only closeout audit
 ```
 
-After the current firmware candidate passes on the real CYD, only documentation may change before merge. Then record the exact tested SHA and declare merge-ready.
+All commits after `5c01d91...` must remain documentation-only for this hardware certificate to stay valid. After merge, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md`, and [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md) before branching again.
