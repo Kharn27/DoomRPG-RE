@@ -6,12 +6,15 @@
 branch = agent/esp32-native-gameplay-door-view-probe
 base main = 2aae0676528ab00c3494d142d8b35c22b7685dce
 base PR = #97 — shared-payload large range cache + bounded legacy wall guard
-hardware-tested implementation SHA = efea93977d20ba94e2fd5d6981ebce2e7916bc5b
-status = REAL-CYD HARDWARE PASS
-merge-ready = yes after documentation-only closeout audit
+hardware-proven semantic-fix SHA = efea93977d20ba94e2fd5d6981ebce2e7916bc5b
+post-review cleanup SHA = 5c01d91f9c6320460b2ecaf033f68a88bde80dfd
+status = REAL-CYD RETEST REQUIRED
+merge-ready = no
 ```
 
 This milestone started as a renderer/view investigation around the Junction arrival door. The real CYD proved that the renderer was not the root cause. The visual corruption came from an incomplete native movement-collision model that allowed the player to step onto a closed legacy line entity.
+
+The semantic fix itself is hardware-proven at `efea939...`. A later PR review correctly identified that the temporary door/BSP witness still performed a second full BSP visibility traversal and success-path console logging on every normal gameplay render. That diagnostic was removed after the hardware run, so the current branch head requires one final normal `esp32-cyd` retest before merge.
 
 ## Original symptom
 
@@ -52,9 +55,9 @@ midpoint= 992,1952
 
 The player was therefore moved exactly onto the door-line midpoint. With the proven 16-unit gameplay camera offset, the wall became extremely near the camera and filled most of the viewport. The huge close-up door was a consequence of illegal movement, not a projection bug.
 
-## Renderer diagnosis that ruled out the wrong layer
+## Temporary renderer diagnosis
 
-The bounded door-view diagnostics proved the failing post-move frame itself was internally coherent:
+The bounded door-view diagnostics at the hardware-tested semantic-fix SHA proved the failing post-move frame itself was internally coherent:
 
 ```text
 world rendered=1
@@ -75,9 +78,9 @@ viewport=223030ff
 frame=75bedd61
 ```
 
-This is now interpreted correctly: the renderer was drawing a valid but nonsensical camera pose produced by collision semantics. No orientation sign, BSP side test, wall projection rule, sprite compositor rule, or `PlatformVideo_present()` behavior needed to be changed.
+This is interpreted correctly: the renderer was drawing a valid but nonsensical camera pose produced by collision semantics. No orientation sign, BSP side test, wall projection rule, sprite compositor rule, or `PlatformVideo_present()` behavior needed to be changed.
 
-The same final hardware run also revalidated all four cardinal rotations at the legal spawn and returned exactly to canonical North:
+The same hardware run also revalidated all four cardinal rotations at the legal spawn and returned exactly to canonical North:
 
 ```text
 N frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
@@ -86,6 +89,28 @@ S frame=da1c4297 viewport=582c2ad8 HUD=a78d0f96
 W frame=23ee0954 viewport=de06a408 HUD=9281a6d1
 N round-trip frame=ba3e5182 exact
 ```
+
+### PR-review cleanup
+
+The temporary direct door-view witness was useful for diagnosis but was not a permanent gameplay service. PR review #98 correctly flagged that the normal successful render path still called it unconditionally, causing a second `EspNativeBspVisibility_build()` traversal plus map-line scans and multiple `printf`s per MOVE/TURN.
+
+The current candidate removes that cost completely:
+
+```text
+c8b39ab1dde922045391f160ab447b6f974ccfbb
+  remove EspNativeDoorViewProbe_log() from EspNativeGameplayFrame_renderTurn()
+  remove DOORVIEW BUILD/ARMED/postWorld success logs
+  remove TURNFRAME SPRITES success log
+  retain failure-only TURNFRAME diagnostics
+
+1d84f58770087237020a5b3ecfbfc2bfe8fe7bde
+  delete ESP32/src/esp_native_door_view_probe.c
+
+5c01d91f9c6320460b2ecaf033f68a88bde80dfd
+  delete ESP32/include/esp_native_door_view_probe.h
+```
+
+The normal gameplay path therefore performs only the actual world render; it no longer repeats BSP visibility merely for a solved diagnostic. Because this is firmware code after the last hardware-tested SHA, the current candidate is intentionally **not merge-ready until retested**.
 
 ## Recovered legacy collision behavior
 
@@ -124,7 +149,7 @@ Therefore `BACK 943->975` must be blocked.
 
 ### Bounded entity-definition type catalogue
 
-New files:
+Files:
 
 ```text
 ESP32/include/esp_entity_def_type_catalog.h
@@ -146,7 +171,7 @@ The catalogue does not duplicate names, parms, subtypes, pointers, `Entity_t`, o
 
 ### Closed line collision
 
-`EspNativeGameplayCollision_traceCardinalStep()` now includes closed line-derived entities in addition to the already proven tile WALL bit and compact map-sprite entity topology.
+`EspNativeGameplayCollision_traceCardinalStep()` includes closed line-derived entities in addition to the already proven tile WALL bit and compact map-sprite entity topology.
 
 For one cardinal step it:
 
@@ -171,18 +196,18 @@ EspNativeGameplayCollisionResult = 16 B
 
 Dynamic opened-line relinking is still outside this milestone. Any live opened native line continues to return `UNSUPPORTED_DYNAMIC_LINES` before closed-line tracing.
 
-## Real-CYD hardware proof
+## Real-CYD semantic-fix proof
 
 Normal environment: `esp32-cyd`.
 
-The corrected firmware produced the decisive witness:
+Hardware-tested SHA `efea93977d20ba94e2fd5d6981ebce2e7916bc5b` produced the decisive witness:
 
 ```text
 [LINECOLLISION] BLOCK source=943 dest=975 line=35 texture=7 flags=00000505 type=0 defTile=312
 [MOVE] BLOCKED n=1 seq=1 action=BACK delta=0,64 tile=943->975 collision=ENTITY blocker=65535 type=0 frame=ba3e5182 exact=yes heap=38216->38216 largest=21492->21492 turnAdvance=no tileDispatch=no
 ```
 
-This proves the complete intended behavior:
+This proves the intended collision behavior:
 
 ```text
 position remains 992,1888
@@ -209,11 +234,11 @@ VIDEO=ready
 CORE=ready
 ```
 
-The reduced absolute heap versus the previous milestone includes the new bounded catalogue and current diagnostics; absolute allocator values remain witnesses rather than semantic fingerprints.
+These values certify `efea939...`; they are not yet a hardware certificate for post-review cleanup SHA `5c01d91...`.
 
 ## Corrected movement canon
 
-Fresh Junction immediate movement is now:
+Fresh Junction immediate movement is:
 
 ```text
 FORWARD      943->911 : CLEAR
@@ -224,7 +249,7 @@ STRAFE_RIGHT 943->944 : WALL
 
 The historical MOVE milestone's `BACK=CLEAR` record remains useful as the hardware evidence that exposed the missing line-entity family, but it is no longer the current collision truth.
 
-## Invariants preserved
+## Invariants preserved by the semantic fix
 
 ```text
 shapeData == NULL
@@ -243,7 +268,7 @@ facing refresh = deferred
 opened-line relinking = still fail-closed
 ```
 
-## Diagnostic branch supersession
+## Superseded diagnostic branch
 
 The older branch:
 
@@ -253,39 +278,37 @@ tip = e04195e60a0499a4da3dc189eef98446d074fd92
 base = 2aae0676528ab00c3494d142d8b35c22b7685dce
 ```
 
-contains only two commits above the same base:
-
-```text
-948e9d173f0234fb3f8c3d3df4c6d0511246dbe2  add bounded door view renderer witness
-e04195e60a0499a4da3dc189eef98446d074fd92  enable gameplay door view witness
-```
-
-Its only changed paths are:
+contains only two commits above the same base and changes only:
 
 ```text
 ESP32/platformio.ini                         +6 lines
 ESP32/src/native_door_view_witness.c         +230 lines
 ```
 
-That wrapper-based witness is superseded by the more precise direct diagnostics on this milestone branch and contains no permanent collision fix. It is not referenced by the authoritative current documentation. It may be abandoned/deleted after this branch is merged; no cherry-pick from it is required.
+That wrapper-based witness is superseded. The more precise direct witness used on this milestone has itself now been retired from the normal gameplay build after finding the root cause. No code from `agent/esp32-native-door-view-witness` is required by the permanent collision fix.
+
+Disposition: **safe to abandon/delete; no cherry-pick required**.
 
 ## Merge boundary
 
-The firmware-bearing content actually tested on the physical CYD is:
+Last hardware-tested firmware-bearing SHA:
 
 ```text
 efea93977d20ba94e2fd5d6981ebce2e7916bc5b
 ```
 
-Every commit after that SHA must remain documentation-only unless another firmware is flashed.
-
-Status:
+Current post-review firmware candidate:
 
 ```text
-REAL-CYD HARDWARE PASS
-MERGE-READY after docs-only closeout audit
+5c01d91f9c6320460b2ecaf033f68a88bde80dfd
 ```
 
-After merge, recover the exact new `main` SHA before creating the next `agent/*` branch.
+Code changed after the hardware-tested SHA specifically to remove completed diagnostics from the production render path. Therefore:
 
-Do not preselect the next gameplay family from chat memory. Re-read `main`, `PORTING_STATUS.md`, `DOCUMENTATION.md`, and this milestone first. Dynamic opened-line relinking / door interaction and post-move turn/tile-event semantics remain separate bounded candidates.
+```text
+REAL-CYD SEMANTIC FIX PROVEN
+CURRENT HEAD RETEST REQUIRED
+MERGE-READY = NO until retest passes
+```
+
+Required retest is intentionally small: normal `esp32-cyd`, reach Junction, verify spawn BACK is still blocked by line 35, perform a MOVE/TURN render, confirm no `DOORVIEW` success spam and no failure/reboot/heap drift. After PASS, update docs only and declare merge-ready.
