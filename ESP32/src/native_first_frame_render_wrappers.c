@@ -12,9 +12,13 @@
 void __real_Render_initColumnScale(Render_t* render);
 boolean __real_Render_cullBoundingBox(Render_t* render, Node_t* node);
 
-static int nativeFirstFrameContext(const Render_t* render) {
+/* Compact native world rendering is identified by its permanent architecture
+ * boundary, not by whether the historical first-frame owner happens to be
+ * ready.  The gameplay viewport route deliberately leaves that historical
+ * owner untouched, but it still needs the same native plane injection and
+ * tmpLine preservation as the hardware-proven boot route. */
+static int nativeCompactWorldContext(const Render_t* render) {
     return render != NULL &&
-           !EspNativeFirstFrame_isReady() &&
            EspMapRuntime_isLoaded() &&
            EspNativeGraphicsCatalog_isReady() &&
            EspAssetPack_isOpen() &&
@@ -33,7 +37,7 @@ static int nativeFirstFrameContext(const Render_t* render) {
 
 void __wrap_Render_initColumnScale(Render_t* render) {
     __real_Render_initColumnScale(render);
-    if (nativeFirstFrameContext(render)) {
+    if (nativeCompactWorldContext(render)) {
         (void)EspNativePlaneRenderer_render(render);
     }
 }
@@ -42,7 +46,7 @@ boolean __wrap_Render_cullBoundingBox(Render_t* render, Node_t* node) {
     boolean result;
     Line_t savedTmpLine;
 
-    if (!nativeFirstFrameContext(render)) {
+    if (!nativeCompactWorldContext(render)) {
         return __real_Render_cullBoundingBox(render, node);
     }
 
