@@ -19,6 +19,10 @@
 #define SPECIAL_TRACE_X_MASK 0x00600000UL
 #define LINE_ENTITY_DEF_BASE 305U
 #define LINE_ENTITY_FALLBACK_FLAGS 0x00000018UL
+#define LINE_GEOMETRY_AXIS_X 0x00000008UL
+#define LINE_GEOMETRY_AXIS_NEG 0x00000010UL
+#define LINE_GEOMETRY_Y_NUDGE 0x00000100UL
+#define LINE_GEOMETRY_X_NUDGE 0x00000200UL
 #define LINE_ENTITY_NUDGE_Y_NEG 0x00000800UL
 #define LINE_ENTITY_NUDGE_X_POS 0x00002000UL
 #define LINE_ENTITY_NUDGE_Y_POS 0x00001000UL
@@ -62,18 +66,49 @@ static int entityTypeInTraceMask(uint8_t type) {
            (ESP_NATIVE_GAMEPLAY_COLLISION_LEGACY_TRACE_MASK & (1U << type)) != 0U;
 }
 
-/* Reproduce Game_loadMapEntities() placement for line-derived entities. The
- * legacy loader links the midpoint after applying one mutually-exclusive
- * one-unit side nudge encoded in flags. */
+/* Reproduce the coordinates seen by legacy Game_loadMapEntities(). Render map
+ * loading first applies the +/-3 line geometry nudge; line-entity placement
+ * then takes that midpoint and applies its mutually-exclusive +/-1 cell-side
+ * nudge before linking the entity. */
 static int lineEntityTile(const EspMapLine* line, uint16_t* outTile) {
+    int32_t x1;
+    int32_t y1;
+    int32_t x2;
+    int32_t y2;
     int32_t x;
     int32_t y;
     uint32_t tileX;
     uint32_t tileY;
 
     if (line == NULL || outTile == NULL) return 0;
-    x = (int32_t)line->x1 + (((int32_t)line->x2 - (int32_t)line->x1) / 2);
-    y = (int32_t)line->y1 + (((int32_t)line->y2 - (int32_t)line->y1) / 2);
+    x1 = (int32_t)line->x1;
+    y1 = (int32_t)line->y1;
+    x2 = (int32_t)line->x2;
+    y2 = (int32_t)line->y2;
+
+    if ((line->flags & LINE_GEOMETRY_X_NUDGE) != 0U) {
+        if ((line->flags & LINE_GEOMETRY_AXIS_X) != 0U) {
+            x1 += 3;
+            x2 += 3;
+        }
+        else if ((line->flags & LINE_GEOMETRY_AXIS_NEG) != 0U) {
+            x1 -= 3;
+            x2 -= 3;
+        }
+    }
+    else if ((line->flags & LINE_GEOMETRY_Y_NUDGE) != 0U) {
+        if ((line->flags & LINE_GEOMETRY_AXIS_X) != 0U) {
+            y1 += 3;
+            y2 += 3;
+        }
+        else if ((line->flags & LINE_GEOMETRY_AXIS_NEG) != 0U) {
+            y1 -= 3;
+            y2 -= 3;
+        }
+    }
+
+    x = x1 + ((x2 - x1) / 2);
+    y = y1 + ((y2 - y1) / 2);
     if ((line->flags & LINE_ENTITY_NUDGE_Y_NEG) != 0U) --y;
     else if ((line->flags & LINE_ENTITY_NUDGE_X_POS) != 0U) ++x;
     else if ((line->flags & LINE_ENTITY_NUDGE_Y_POS) != 0U) ++y;
