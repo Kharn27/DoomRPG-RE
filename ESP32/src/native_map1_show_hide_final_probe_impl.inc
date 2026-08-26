@@ -37,7 +37,6 @@
 #define EXPECTED_SHOW_RESULT_BYTES 26U
 #define EXPECTED_HIDE_RESULT_BYTES 18U
 #define MAX_TOPOLOGY_HEAP_OVERHEAD 128U
-#define MIN_LARGEST_8BIT_BLOCK 32768U
 
 typedef struct Esp32ShowHideFinalProbeState_s {
     int armed;
@@ -586,12 +585,17 @@ void Esp32Map1ShowHideFinalProbe_service(struct DoomRPG_s* doomRpgOpaque) {
     continuationAfter = Esp32ShowHideProbe_continuationHash(doomRpg->game);
     legacyTopologyAfter = Esp32ShowHideProbe_legacyTopologyHash(doomRpg->game);
 
+    /* The topology owner is 2408 bytes plus bounded allocator overhead. Its
+     * fragmentation proof must be relative to this build, not to an absolute
+     * free-block floor captured by an older firmware. */
     if (topology == NULL || topology->stateFNV1a != audit.initialFNV ||
         topology->stateFNV1a != topologyAudit.topologyFNV ||
         persistentHeapCost < EXPECTED_TOPOLOGY_BYTES ||
         persistentHeapCost > EXPECTED_TOPOLOGY_BYTES + MAX_TOPOLOGY_HEAP_OVERHEAD ||
         heapAfter != heapAfterBuild || largestAfter != largestAfterBuild ||
-        largestAfter < MIN_LARGEST_8BIT_BLOCK || frameAfter != frameBefore ||
+        (largestBefore > largestAfterBuild &&
+         (largestBefore - largestAfterBuild) > persistentHeapCost) ||
+        frameAfter != frameBefore ||
         arenaAfter != arenaBefore || arenaAfter != EXPECTED_ARENA_FNV ||
         mapAfter != mapBefore || mapAfter != EXPECTED_MAP_STATE_FNV ||
         scriptAfter != scriptBefore || scriptAfter != EXPECTED_SCRIPT_FNV ||

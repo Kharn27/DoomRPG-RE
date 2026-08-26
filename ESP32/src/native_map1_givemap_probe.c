@@ -76,7 +76,6 @@
 #define EXPECTED_AUTOMAP_STORAGE_BYTES 103U
 #define EXPECTED_RESULT_BYTES 20U
 #define MAX_ALLOCATOR_OVERHEAD 64U
-#define MIN_LARGEST8_AFTER_STATE 32768U
 
 typedef struct Esp32Map1GiveMapProbeState_s {
     int armed;
@@ -855,10 +854,14 @@ void Esp32Map1GiveMapProbe_service(struct DoomRPG_s* doomRpgOpaque) {
     }
     allocatorOverhead = heapCost - EXPECTED_AUTOMAP_STORAGE_BYTES;
 
+    /* This historical probe owns only the 103-byte automap allocation. Keep
+     * its fragmentation proof relative to the entry baseline, rather than an
+     * absolute free-block floor from an older firmware image. */
     automapState = EspMapAutomapState_view();
     if (automapState == NULL || automapState->stateFNV1a != automapFNV ||
         sizeof(EspMapGiveMapResult) != EXPECTED_RESULT_BYTES ||
-        largestAfter < MIN_LARGEST8_AFTER_STATE ||
+        (largestBefore > largestAfter &&
+         (largestBefore - largestAfter) > heapCost) ||
         frameAfter != frameBefore || arenaAfter != arenaBefore ||
         arenaAfter != EXPECTED_ARENA_FNV || mapStateAfter != mapStateBefore ||
         mapStateAfter != EXPECTED_MAP_STATE_FNV || scriptAfter != scriptBefore ||

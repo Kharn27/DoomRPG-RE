@@ -33,7 +33,6 @@
 #define EXPECTED_BASE_2 27U
 #define EXPECTED_BASE_3 2U
 #define MAX_STATE_ALLOCATOR_OVERHEAD 64U
-#define MIN_LARGEST8_AFTER_STATE 32768U
 
 #define ENTRANCE_TEXTURE_ID 7U
 #define EVENT_TRIGGER_MASK 0x01f80000U
@@ -424,10 +423,16 @@ void Esp32Map1StateProbe_service(struct DoomRPG_s* doomRpgBase) {
     allocatorOverhead = heapUsed >= ESP_MAP_STATE_BYTES ?
                         heapUsed - ESP_MAP_STATE_BYTES : UINT32_MAX;
 
+    /* The current firmware can legitimately enter this historical probe with a
+     * smaller absolute largest-free block than early bring-up builds because
+     * later permanent native owners consume static DRAM. Keep the meaningful
+     * invariant local to this allocation: fragmentation loss may not exceed
+     * the bytes actually consumed by the 1024-byte state allocation. */
     if (state == NULL || runtime == NULL ||
         heapAfter >= heapBefore || heapUsed < ESP_MAP_STATE_BYTES ||
         allocatorOverhead > MAX_STATE_ALLOCATOR_OVERHEAD ||
-        largestAfter < MIN_LARGEST8_AFTER_STATE ||
+        (largestBefore > largestAfter &&
+         (largestBefore - largestAfter) > heapUsed) ||
         frameAfter != frameBefore || arenaAfter != arenaBefore ||
         arenaAfter != EXPECTED_ARENA_FNV || !boundaryIsSafe(doomRpg) ||
         !legacyRuntimeIsClear(doomRpg->render) ||

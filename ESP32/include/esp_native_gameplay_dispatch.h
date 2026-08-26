@@ -19,7 +19,9 @@ typedef enum EspNativeGameplayDispatchStatus_e {
     ESP_NATIVE_GAMEPLAY_DISPATCH_STALE = 5,
     ESP_NATIVE_GAMEPLAY_DISPATCH_COMMIT_FAILED = 6,
     ESP_NATIVE_GAMEPLAY_DISPATCH_OK = 7,
-    ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK = 8
+    ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK = 8,
+    ESP_NATIVE_GAMEPLAY_DISPATCH_COLLISION_BLOCKED = 9,
+    ESP_NATIVE_GAMEPLAY_DISPATCH_COLLISION_UNSUPPORTED = 10
 } EspNativeGameplayDispatchStatus;
 
 /* Permanent runtime orientation owner for executed gameplay turns. The older
@@ -49,6 +51,21 @@ typedef struct EspNativeGameplayDispatchResult_s {
     uint8_t rolledBack;
     uint8_t reserved;
 } EspNativeGameplayDispatchResult;
+
+typedef struct EspNativeGameplayMoveResult_s {
+    uint32_t sequence;
+    int32_t deltaX;
+    int32_t deltaY;
+    uint16_t sourceTile;
+    uint16_t destTile;
+    uint16_t blockerSpriteIndex;
+    uint8_t action;
+    uint8_t blockerType;
+    uint8_t collisionStatus;
+    uint8_t prepared;
+    uint8_t committed;
+    uint8_t rolledBack;
+} EspNativeGameplayMoveResult;
 
 void EspNativeGameplayDispatch_reset(void);
 int EspNativeGameplayDispatch_isReady(void);
@@ -81,6 +98,29 @@ EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackTurn(
     const EspNativeGameplayTurnState* expectedAfterTurn,
     const EspNativeGameplayTurnState* restoreBeforeTurn,
     EspNativeGameplayDispatchResult* ioResult);
+
+/*
+ * Prepare cardinal translation for FORWARD/BACK/STRAFE only. The permanent
+ * orientation owner supplies the exact 64-unit step vectors. Collision is
+ * checked before an EspPlayerViewState candidate is exposed. A blocked move is
+ * a semantic no-op and returns COLLISION_BLOCKED; dynamic opened-line collision
+ * remains fail-closed as COLLISION_UNSUPPORTED until its dedicated milestone.
+ */
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_prepareMove(
+    const EspNativeGameplayInputState* intent,
+    EspPlayerViewState* outBeforeView,
+    EspPlayerViewState* outAfterView,
+    EspNativeGameplayMoveResult* outResult);
+
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_commitMove(
+    const EspPlayerViewState* expectedBeforeView,
+    const EspPlayerViewState* preparedAfterView,
+    EspNativeGameplayMoveResult* ioResult);
+
+EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackMove(
+    const EspPlayerViewState* expectedAfterView,
+    const EspPlayerViewState* restoreBeforeView,
+    EspNativeGameplayMoveResult* ioResult);
 
 #ifdef __cplusplus
 }

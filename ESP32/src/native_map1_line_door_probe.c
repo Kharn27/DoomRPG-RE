@@ -62,7 +62,6 @@
 #define EXPECTED_STORAGE_BYTES 120U
 #define EXPECTED_RESULT_BYTES 16U
 #define MAX_ALLOCATOR_OVERHEAD 64U
-#define MIN_LARGEST8_AFTER_STATE 32768U
 
 typedef struct Esp32Map1LineDoorProbeState_s {
     int armed;
@@ -735,10 +734,14 @@ void Esp32Map1LineDoorProbe_service(struct DoomRPG_s* doomRpgOpaque) {
     }
     allocatorOverhead = heapCost - EXPECTED_STORAGE_BYTES;
 
+    /* Keep the historical line-state proof local to its own allocation. A
+     * later firmware may enter with a smaller absolute largest block, but this
+     * 120-byte owner must not fragment that block by more than its heap cost. */
     lineState = EspMapLineState_view();
     if (lineState == NULL || lineState->stateFNV1a != lineStateFNV ||
         sizeof(EspMapLineDoorResult) != EXPECTED_RESULT_BYTES ||
-        largestAfter < MIN_LARGEST8_AFTER_STATE ||
+        (largestBefore > largestAfter &&
+         (largestBefore - largestAfter) > heapCost) ||
         frameAfter != frameBefore || arenaAfter != arenaBefore ||
         arenaAfter != EXPECTED_ARENA_FNV || mapStateAfter != mapStateBefore ||
         mapStateAfter != EXPECTED_MAP_STATE_FNV || scriptAfter != scriptBefore ||

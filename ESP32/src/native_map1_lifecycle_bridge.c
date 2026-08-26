@@ -15,6 +15,7 @@
 #include "native_junction_graphics_catalog_probe.h"
 #include "native_junction_hud_refresh_probe.h"
 #include "native_junction_initial_tile_probe.h"
+#include "native_junction_move_collision_probe.h"
 #include "native_junction_orientation_probe.h"
 #include "native_junction_player_setup_probe.h"
 #include "native_junction_player_view_probe.h"
@@ -132,6 +133,7 @@ static void resetValidatedChain(void) {
     Esp32JunctionGameplayHudProbe_reset();
     Esp32JunctionGameplayInputProbe_reset();
     Esp32JunctionTurnDispatchProbe_reset();
+    Esp32JunctionMoveCollisionProbe_reset();
     EspNativePlaneRenderer_reset();
     Esp32FirstFrameDiagnostic_reset();
 }
@@ -274,6 +276,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
                     Esp32JunctionGameplayInputProbe_service(doomRpg);
                     if (Esp32JunctionGameplayInputProbe_isActive()) {
                         Esp32JunctionTurnDispatchProbe_service(doomRpg);
+                        if (Esp32JunctionTurnDispatchProbe_isActive()) {
+                            Esp32JunctionMoveCollisionProbe_service(doomRpg);
+                        }
                     }
                 }
             }
