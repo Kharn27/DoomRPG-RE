@@ -473,7 +473,6 @@ static int sampleWallSpan(FirstFrameWork* work,
     uint16_t* pixels;
     int pitch;
     int64_t localPosition;
-    int64_t basePosition;
     int remaining;
 
     if (work == NULL || source == NULL || texels == NULL ||
@@ -487,8 +486,7 @@ static int sampleWallSpan(FirstFrameWork* work,
 
     pitch = render->pitch >> 1;
     pixels = (uint16_t*)render->pixels + pitch * y + x;
-    basePosition = ((int64_t)source->sourceTexelOffset) << 12;
-    localPosition = (int64_t)texelPosition - basePosition;
+    localPosition = (int64_t)texelPosition;
     remaining = pixelCount;
 
     while (remaining-- > 0) {
@@ -516,7 +514,7 @@ static int drawProjectedWall(FirstFrameWork* work,
                              const ResolvedWallTexture* source,
                              const uint8_t* texels) {
     Render_t* render;
-    int i, i2, i3, i4, i5, i6, i7, i8, i9;
+    int i, i2, i3, i4, i5, i6, i7, i8;
     int i12, i13, i14, i15, i16, i17, zPos;
 
     if (work == NULL || line == NULL || source == NULL || texels == NULL ||
@@ -542,7 +540,6 @@ static int drawProjectedWall(FirstFrameWork* work,
         i8 = line->vert1.y + DoomRPG_FixedMul(j, i3);
     }
 
-    i9 = (int)source->sourceTexelOffset;
     while (i5 < i6) {
         if (i8 <= 0) return 0;
         i12 = (0x40000000 / i8) << 2;
@@ -565,7 +562,11 @@ static int drawProjectedWall(FirstFrameWork* work,
             zPos = 64;
             i16 = render->halfScreenHeight -
                   (((zPos - render->viewZ) * i8) >> 17);
-            i17 = (i9 + (i13 << 6)) << 12;
+            /* The legacy renderer addressed one map-wide mediaTexels array.
+             * Native wall texels are already a bounded 2048-byte cache slot,
+             * so keep the raster coordinate local and avoid overflowing an
+             * irrelevant global source offset before subtracting it again. */
+            i17 = (i13 << 6) << 12;
 
             if (render->screenTop > i16) {
                 i17 -= i14 * (i16 - render->screenTop);
