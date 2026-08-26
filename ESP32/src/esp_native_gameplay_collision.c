@@ -1,7 +1,9 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
+#include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
@@ -15,6 +17,12 @@
 #define SPECIAL_TRACE_ENTITY_FLAG 0x00020000UL
 #define SPECIAL_TRACE_Y_MASK 0x00180000UL
 #define SPECIAL_TRACE_X_MASK 0x00600000UL
+#define LINE_ENTITY_DEF_BASE 305U
+#define LINE_ENTITY_FALLBACK_FLAGS 0x00000018UL
+#define LINE_ENTITY_NUDGE_Y_NEG 0x00000800UL
+#define LINE_ENTITY_NUDGE_X_POS 0x00002000UL
+#define LINE_ENTITY_NUDGE_Y_POS 0x00001000UL
+#define LINE_ENTITY_NUDGE_X_NEG 0x00004000UL
 
 typedef char EspNativeGameplayCollisionResult_must_be_16_bytes[
     sizeof(EspNativeGameplayCollisionResult) == 16U ? 1 : -1];
@@ -52,6 +60,83 @@ static int oneCardinalStep(int32_t sourceX,
 static int entityTypeInTraceMask(uint8_t type) {
     return type < 16U &&
            (ESP_NATIVE_GAMEPLAY_COLLISION_LEGACY_TRACE_MASK & (1U << type)) != 0U;
+}
+
+/* Reproduce Game_loadMapEntities() placement for line-derived entities. The
+ * legacy loader links the midpoint after applying one mutually-exclusive
+ * one-unit side nudge encoded in flags. */
+static int lineEntityTile(const EspMapLine* line, uint16_t* outTile) {
+    int32_t x;
+    int32_t y;
+    uint32_t tileX;
+    uint32_t tileY;
+
+    if (line == NULL || outTile == NULL) return 0;
+    x = (int32_t)line->x1 + (((int32_t)line->x2 - (int32_t)line->x1) / 2);
+    y = (int32_t)line->y1 + (((int32_t)line->y2 - (int32_t)line->y1) / 2);
+    if ((line->flags & LINE_ENTITY_NUDGE_Y_NEG) != 0U) --y;
+    else if ((line->flags & LINE_ENTITY_NUDGE_X_POS) != 0U) ++x;
+    else if ((line->flags & LINE_ENTITY_NUDGE_Y_POS) != 0U) ++y;
+    else if ((line->flags & LINE_ENTITY_NUDGE_X_NEG) != 0U) --x;
+
+    if (x < 0 || y < 0) return 0;
+    tileX = (uint32_t)x >> 6;
+    tileY = (uint32_t)y >> 6;
+    if (tileX >= MAP_WIDTH || tileY >= MAP_WIDTH) return 0;
+    *outTile = (uint16_t)((tileY * MAP_WIDTH) + tileX);
+    return 1;
+}
+
+/* Game_loadMapEntities() appends line entities after all map-sprite entities,
+ * and Game_linkEntity() inserts at the tile-list head. Reverse line order is
+ * therefore the native equivalent for the first line blocker on one tile.
+ * Current native gameplay still rejects any map containing an opened line
+ * before reaching this helper, so only the proven closed-link state is traced.
+ */
+static int findClosedLineBlocker(uint16_t tile,
+                                 uint16_t* outLineIndex,
+                                 uint16_t* outTexture,
+                                 uint32_t* outFlags,
+                                 uint8_t* outType) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t i;
+
+    if (runtime == NULL || outLineIndex == NULL || outTexture == NULL ||
+        outFlags == NULL || outType == NULL ||
+        !EspEntityDefTypeCatalog_isReady()) {
+        return -1;
+    }
+
+    i = runtime->lineCount;
+    while (i > 0U) {
+        EspMapLine line;
+        uint32_t lookup;
+        uint16_t lineTile;
+        uint8_t type;
+        int hasDefinition;
+
+        --i;
+        if (!EspMapRuntime_getLine(i, &line)) return -1;
+        lookup = LINE_ENTITY_DEF_BASE + (uint32_t)line.texture;
+        hasDefinition =
+            lookup < ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT &&
+            EspEntityDefTypeCatalog_getType((uint16_t)lookup, &type);
+        if (!hasDefinition) {
+            if ((line.flags & LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
+            /* Legacy fallback is game->entities[0].def, the static wall type. */
+            type = 0U;
+        }
+        if (!entityTypeInTraceMask(type)) continue;
+        if (!lineEntityTile(&line, &lineTile)) return -1;
+        if (lineTile != tile) continue;
+
+        *outLineIndex = (uint16_t)i;
+        *outTexture = line.texture;
+        *outFlags = line.flags;
+        *outType = type;
+        return 1;
+    }
+    return 0;
 }
 
 /* Game_trace() treats map-sprite entity types 14/15 as thin crossing planes.
@@ -106,6 +191,11 @@ EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
     uint16_t blocker = ESP_NATIVE_GAMEPLAY_COLLISION_NO_SPRITE;
     uint8_t blockerType = 0xffU;
     uint8_t blockerSubType = 0xffU;
+    uint16_t blockerLine;
+    uint16_t blockerLineTexture;
+    uint32_t blockerLineFlags;
+    uint8_t blockerLineType;
+    int lineBlocker;
 
     if (outResult == NULL) return ESP_NATIVE_GAMEPLAY_COLLISION_INVALID;
     memset(outResult, 0, sizeof(*outResult));
@@ -120,7 +210,8 @@ EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
     }
 
     if (!EspMapState_isReady() || !EspMapLineState_isReady() ||
-        !EspMapSpriteTopology_isReady() || !EspMapRuntime_isLoaded()) {
+        !EspMapSpriteTopology_isReady() || !EspMapRuntime_isLoaded() ||
+        !EspEntityDefTypeCatalog_isReady()) {
         return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_NOT_READY);
     }
     mapState = EspMapState_view();
@@ -152,6 +243,39 @@ EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
     if ((outResult->sourceFlags & ESP_MAP_TILE_WALL) != 0U ||
         (outResult->destFlags & ESP_MAP_TILE_WALL) != 0U) {
         return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_BLOCKED_WALL);
+    }
+
+    /* Closed special/map-door lines are real legacy Entity_t records too. They
+     * were the missing part of the first native movement milestone: tile flags
+     * alone cannot represent a door entity whose midpoint is linked into the
+     * destination cell. Trace source then destination, matching Game_trace's
+     * tile walk. */
+    lineBlocker = findClosedLineBlocker(sourceTile, &blockerLine,
+                                        &blockerLineTexture,
+                                        &blockerLineFlags, &blockerLineType);
+    if (lineBlocker < 0) {
+        return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_NOT_READY);
+    }
+    if (lineBlocker == 0) {
+        lineBlocker = findClosedLineBlocker(destTile, &blockerLine,
+                                            &blockerLineTexture,
+                                            &blockerLineFlags, &blockerLineType);
+        if (lineBlocker < 0) {
+            return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_NOT_READY);
+        }
+    }
+    if (lineBlocker > 0) {
+        outResult->blockerType = blockerLineType;
+        outResult->blockerSubType = 0xffU;
+        outResult->linkedBlockers = 1U;
+        printf("[LINECOLLISION] BLOCK source=%u dest=%u line=%u texture=%u flags=%08x type=%u defTile=%u\n",
+               (unsigned int)sourceTile, (unsigned int)destTile,
+               (unsigned int)blockerLine,
+               (unsigned int)blockerLineTexture,
+               (unsigned int)blockerLineFlags,
+               (unsigned int)blockerLineType,
+               (unsigned int)(LINE_ENTITY_DEF_BASE + blockerLineTexture));
+        return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_BLOCKED_ENTITY);
     }
 
     for (i = 0U; i < topology->spriteCount; ++i) {
