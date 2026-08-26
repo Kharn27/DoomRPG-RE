@@ -5,28 +5,26 @@ Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHu
 ## Latest merged hardware baseline
 
 ```text
-PR   = #92 — native gameplay touch intent
-main = cdda239f1c884a7d6f6707ba1c30a0a0a3603923
+PR   = #93 — native gameplay TURN dispatcher
+main = 89f9d5f3feaa40f2e2a0c6e9506d1d8efaf5eeb6
 status = MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_INPUT.md`](MAP1_NATIVE_GAMEPLAY_INPUT.md).
-
-PR #92 was merged from the input branch even though that archive still recorded the historical final-input-SHA Serial archive as pending. The current TURN milestone re-exercises the evolved input path on real hardware, including dynamic frame restore and 120 ms neon feedback.
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md).
 
 ## Current candidate milestone
 
 ```text
-branch = agent/esp32-native-turn-dispatch
-base   = cdda239f1c884a7d6f6707ba1c30a0a0a3603923
-hardware-tested implementation SHA = 66ba643e7650f51d0022cd56e007242902d76c77
+branch = agent/esp32-native-move-collision
+base   = 89f9d5f3feaa40f2e2a0c6e9506d1d8efaf5eeb6
+hardware-tested implementation SHA = becaa1ec5bdd68311fa2e1d626fc238d1a706779
 status = REAL-CYD HARDWARE PASS
 merge-ready = yes after docs-only closeout audit
 ```
 
-Evidence: [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md).
+Evidence: [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md).
 
-The real CYD executed four consecutive `TURN_RIGHT` actions, traversed all cardinal orientations, and returned exactly to the canonical North viewport, HUD bands and complete framebuffer.
+The real CYD executed native cardinal movement, TURN at moved tile centers, wall/entity collision, strafe derived from live orientation, continued movement after collision, and the renderer path that previously failed from a moved position. No `FAILED` marker occurred in the final run.
 
 ## Permanent invariants
 
@@ -54,6 +52,9 @@ native glow companions = reached
 native gameplay HUD = reached
 native gameplay touch intent owner = reached
 native TURN_LEFT/TURN_RIGHT execution = reached
+native FORWARD/BACK/STRAFE execution = reached
+native static wall collision = reached
+native compact linked-entity collision = reached
 broad legacy PLAYING loop = forbidden
 ```
 
@@ -106,7 +107,7 @@ snapshot = bb714d80
 
 Absolute allocator cost is a witness, not a semantic fingerprint.
 
-## Native transition / player / post-load chain
+## Native transition / player / gameplay chain
 
 Hardware-proven sequence:
 
@@ -138,7 +139,8 @@ CHANGEMAP intent
  -> implicit glow closure + glow companions
  -> native gameplay HUD
  -> native calibrated touch intent
- -> first native gameplay TURN dispatcher
+ -> native TURN_LEFT/TURN_RIGHT
+ -> native FORWARD/BACK/STRAFE + collision
 ```
 
 Stable pre-render/player fingerprints:
@@ -179,7 +181,7 @@ textureFNV=2dd5dfcf
 spriteFNV=cfd036cf
 ```
 
-Dependency-closed current Junction catalog:
+Dependency-closed Junction catalog:
 
 ```text
 135/140 -> 136 mode7
@@ -189,7 +191,6 @@ textures=30
 sprites=17
 storage=1880 B
 persistent increment=40 B
-largest8=34804 stable
 ```
 
 Canonical North walls + textured planes:
@@ -229,6 +230,8 @@ frameLoads=7 frameBytes=5572 maxFrame=796 packReads=172
 completeFrame=b5218f24
 completeViewport=9206eb24
 ```
+
+Final movement hardware SHA also fixes one permanent renderer bug: cached wall textures now raster in local texel space. `sourceTexelOffset` remains only for PAK range lookup/cache identity, avoiding a legacy map-wide 32-bit fixed-point overflow path while preserving `mediaTexels == NULL`.
 
 ## Native gameplay HUD
 
@@ -286,12 +289,12 @@ world y=73..99: PREV_WEAPON | BACK    | NEXT_WEAPON
 bottom HUD y=100..119: unbound
 ```
 
-Current feedback contract exercised during TURN hardware validation:
+Feedback contract exercised in the final movement run:
 
 ```text
 hold=120 ms
 maxEdits=512
-feedbackBytes=2068 in predecessor 250 ms build; bounded static storage remains ~2 KiB
+bounded static feedback storage ~2 KiB
 style=neon double ring + vector glyph
 palette=BLUE/GREEN/YELLOW/RED
 current-frame FNV captured per tap
@@ -300,9 +303,9 @@ runtime allocation=0 for feedback
 PAK/SD reads=0 for feedback
 ```
 
-Every TURN tap in the final hardware run restored its current dynamic frame exactly before dispatch.
+Every valid tap in the final hardware run restored its current dynamic frame exactly before semantic execution/defer.
 
-## Hardware-proven first real gameplay action family
+## Hardware-proven native TURN family
 
 Permanent dispatcher:
 
@@ -311,33 +314,12 @@ EspNativeGameplayTurnState = 24 B
 EspNativeGameplayDispatchResult = 12 B
 TURN_LEFT  => +64
 TURN_RIGHT => -64
-only cardinal angles 0/64/128/192
-all other recognized actions = DEFERRED
+cardinal angles = 0/64/128/192
 ```
 
-The input callback never renders. TURN waits for exact neon restore, queues an intent, returns the lifecycle, then commits and renders on a later service.
+TURN is live at any settled native tile-center position. It does not call `Game_advanceTurn`, `Game_executeTile`, legacy `finishRotation`, entity/monster gameplay or facing refresh.
 
-Final real-CYD runtime witnesses at tested SHA `66ba643e7650f51d0022cd56e007242902d76c77`:
-
-```text
-EspPlayerViewState=44 B
-EspNativeGameplayFrameStats=84 B
-probe execScratch=464 B
-heap8=67284->67284
-largest8=34804->34804
-stackHighWater=172
-intermediate world present suppressed=yes
-final complete-frame present=1
-Game_advanceTurn=no
-Game_executeTile=no
-legacyStable=yes
-residentStable=yes
-facingRefresh=deferred
-```
-
-Four consecutive `TURN_RIGHT` actions proved all cardinal views and exact 360-degree recovery.
-
-Turn frames:
+Canonical spawn 360-degree proof from the TURN milestone remains:
 
 ```text
 N / angle64: frame ba3e5182 viewport 9206eb24 HUD 6c2aa46f
@@ -347,27 +329,78 @@ W / angle128: frame 23ee0954 viewport de06a408 HUD 9281a6d1
 N / angle64 round-trip: frame ba3e5182 viewport 9206eb24 HUD 6c2aa46f exact
 ```
 
-Final North render details re-match the established renderer canons:
+## Hardware-proven native cardinal movement + collision
+
+Permanent compact results:
 
 ```text
-world viewport=032ffaed
-sprites+glows viewport=9206eb24
-walls=34 / 4341 pixels
-planes=12800
-sprites=21 / 1828 pixels
-glows=7 / 1917 pixels
-spriteReads=172
+EspNativeGameplayCollisionResult = 16 B
+EspNativeGameplayMoveResult      = 24 B
+EspPlayerViewState               = 44 B
+EspNativeGameplayFrameStats      = 84 B
+movement probe execScratch       = 520 B
 ```
 
-The runtime sprite compositor is view-agnostic: a cardinal view may legitimately draw zero sprites/glows when all BSP candidates are accounted for. Unsupported sprites and deferred glow dependencies still fail closed.
+One successful action changes exactly one tile-center axis by 64 units. Forward derives from current gameplay orientation; BACK negates it; strafes rotate the vector cardinally.
 
-Current TURN frame bridge still uses one bounded temporary HUD save:
+Fresh Junction neighbor proof:
 
 ```text
-temporaryHudBytes=12800
+FORWARD      943->911 delta=0,-64 flags=08 CLEAR
+BACK         943->975 delta=0,+64 flags=1c CLEAR
+STRAFE_LEFT  943->942 delta=-64,0 flags=01 WALL
+STRAFE_RIGHT 943->944 delta=+64,0 flags=01 WALL
+openLines=0
 ```
 
-This is not persistent allocation and showed no heap/largest drift. Future cleanup should move the world renderer to a viewport-only redraw and remove this bridge buffer; do not mix that cleanup into already-proven TURN semantics.
+Final real-CYD run at tested SHA `becaa1ec5bdd68311fa2e1d626fc238d1a706779`:
+
+```text
+heap8=66708->66708
+largest8=29684->29684
+stackHighWater=172
+FORWARD 943->911 pos 992,1888->992,1824 frame ba3e5182->66da9d16
+TURN_LEFT at moved pos: angle64->128 frame 66da9d16->ec232716
+blocked FORWARD 911->910: ENTITY blocker=24 type=7 frame exact
+STRAFE_RIGHT at angle128: 911->879 pos 992,1824->992,1760
+TURN_RIGHT at moved pos: angle128->64 frame 50c26281->fc7a5142
+FORWARD 879->847 pos 992,1760->992,1696
+TURN_RIGHT at moved pos: angle64->0 frame 3625f7a7->b6a50fb1
+FORWARD 847->848 pos 992,1696->1056,1696
+SELECT taps remained feedback-only/deferred
+legacyStable=yes
+residentStable=yes
+Game_advanceTurn=no
+Game_executeTile=no
+facingRefresh=deferred
+```
+
+Opened native lines remain deliberately fail-closed for movement collision until dynamic line/entity relinking has its own milestone.
+
+## Performance status
+
+Functionality is hardware-proven, but the user reports MOVE/TURN as **very slow**. This is expected from the current diagnostic bridge and is now an explicit performance debt, not a semantic blocker.
+
+Current successful action hot path still includes:
+
+```text
+feedback full present
+ -> exact feedback-restore full present
+ -> transient wall/plane/sprite cache rebuild + PAK reads
+ -> complete world/sprite/glow recomposition
+ -> temporary 12.8 KiB HUD band save/restore
+ -> final full present
+```
+
+Representative physical full presents are ~34 ms each; feedback hold is 120 ms. The renderer also repeats bounded PAK reads and transient cache construction per action.
+
+Do **not** prematurely optimize `PlatformVideo_present()`. Preferred performance work is architectural and bounded:
+
+- persistent bounded wall/plane caches;
+- viewport-only native world redraw;
+- remove the temporary 12.8 KiB HUD bridge save;
+- retain on-demand turn-based redraw and exact frame canons;
+- keep all migrated assets PAK-backed and map-wide texel pools forbidden.
 
 ## Hardware-selected classic CYD presentation
 
@@ -386,11 +419,7 @@ SPI frequency     = 55 MHz
 gamma             = 00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
 ```
 
-Do not prematurely optimize `PlatformVideo_present()`.
-
 ## Current hardware PARK
-
-Candidate hardware PARK after the TURN PASS:
 
 ```text
 legacyState=9 / ST_INTRO
@@ -409,29 +438,34 @@ glowCompanions=yes
 nativeHud=yes
 nativeInput=yes
 nativeTurnDispatch=yes
+nativeMovementDispatch=yes
 TURN_LEFT=yes
 TURN_RIGHT=yes
-360-degree roundTrip=exact
+FORWARD/BACK/STRAFE semantic execution=yes
+static wall collision=yes
+compact linked entity collision=yes
+dynamic opened-line collision=fail-closed
 initialSavePersistencePending=yes
 legacy Game.entities=0
 legacy Game.monsters=0
 Game_advanceTurn=no
 Game_executeTile=no
+facingRefresh=deferred
 ```
 
 ## Still intentionally outside
 
 ```text
-FORWARD/BACK/STRAFE execution
-movement collision
+Game_eventFlagsForMovement
+post-move tile event execution
+actual turn advancement
+dynamic line/entity collision relinking / opened-door collision
 SELECT interaction
 weapon switching execution
 PASS_TURN execution
 MENU/AUTOMAP execution from gameplay
-actual turn advancement
-post-move/turn tile event dispatch
+entity/monster activation and AI
 facing refresh after gameplay actions
-full native entity/monster gameplay
 first-person weapon overlay
 native durable save storage
 cross-map durable SAVEGAME route payload
@@ -453,15 +487,15 @@ MERGE-READY after docs-only audit
 Hardware-tested implementation SHA:
 
 ```text
-66ba643e7650f51d0022cd56e007242902d76c77
+becaa1ec5bdd68311fa2e1d626fc238d1a706779
 ```
 
 No code may change after this tested SHA without another hardware run. Documentation commits after it must be `.md` only.
 
 ## Next bounded milestone after merge
 
-After the user merges, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md` and [`MAP1_NATIVE_GAMEPLAY_TURN.md`](MAP1_NATIVE_GAMEPLAY_TURN.md) before branching.
+After the user merges, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md` and [`MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_MOVE_COLLISION.md) before branching.
 
-Preferred next gameplay frontier: native cardinal translation (`FORWARD/BACK/STRAFE`) with collision semantics, while keeping actual turn advancement, tile-event execution and entity/monster activation fail-closed for later milestones.
+Preferred next frontier: a bounded **native gameplay renderer hot-path** milestone. Preserve all current gameplay semantics and exact frame outputs while replacing repeated transient render-cache/HUD-save work with permanent bounded caches and viewport-only redraw. Do not optimize `PlatformVideo_present()` itself as the first move.
 
-A smaller renderer-only alternative is the first-person weapon overlay (fresh Junction pistol logical sprite 242). Do not mix both frontiers in one milestone.
+If behavior is prioritized instead, the next coherent semantic family is post-move `Game_eventFlagsForMovement` / tile-event / turn-advance behavior, recovered from legacy and introduced fail-closed family by family. Do not combine that with broad entity/monster gameplay.
