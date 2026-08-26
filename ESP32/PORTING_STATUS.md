@@ -5,72 +5,57 @@ Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHu
 ## Latest merged hardware baseline
 
 ```text
-PR   = #97 — shared-payload large range cache + bounded legacy wall guard
-main = 2aae0676528ab00c3494d142d8b35c22b7685dce
+PR   = #98 — closed line-derived gameplay collision
+main = 3b17a400c35338e434fab16ae0c2a3a63ab47e3e
 status = MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md).
 
 ## Current candidate milestone
 
 ```text
-branch = agent/esp32-native-gameplay-door-view-probe
-base   = 2aae0676528ab00c3494d142d8b35c22b7685dce
-hardware-tested implementation SHA = 5c01d91f9c6320460b2ecaf033f68a88bde80dfd
+branch = agent/esp32-native-gameplay-dynamic-line-collision
+base   = 3b17a400c35338e434fab16ae0c2a3a63ab47e3e
+hardware-tested implementation SHA = 52ddbf979e33f99be27c8344eb4e0572ac4d0547
 status = REAL-CYD HARDWARE PASS
 merge-ready = yes after docs-only closeout audit
 ```
 
-Evidence: [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md).
+Evidence: [`MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md).
 
-The Junction arrival-door symptom is closed. The renderer was correct; native movement collision had allowed `BACK` from spawn into tile `975`, exactly onto closed line `35`. The permanent fix adds bounded line-derived collision semantics. PR #98 review then removed the completed diagnostic BSP witness from the normal gameplay hot path, and that production cleanup is now also hardware-revalidated.
+## Current hardware truth
 
-## Current hardware root-cause proof
-
-Fresh Junction canon:
+Canonical fresh Junction state remains:
 
 ```text
+resourceMapId=9 / /junction.bsp
+gameplayLoadMapId=2
 player=992,1888,36
 angle=64 / North
 tile=943
 frame=ba3e5182
 viewport=9206eb24
-HUD=6c2aa46f
+HUD bands=6c2aa46f
+HUD stateFNV=4756db9c
 ```
 
-Door line:
+Arrival-door line witness:
 
 ```text
 line=35
 texture=7
 raw=960,1952 -> 1024,1952
 flags=00000505
-midpoint=992,1952
-def lookup=305+7=312
+LOCKED bit 0x400=yes
+open bit 0x40=no at baseline
+entity-def lookup=305+7=312
 entity type=0
 linked tile=975
+baseline lineStateFNV=3658710d
 ```
 
-Recovered legacy behavior:
-
-```text
-Game_loadMapEntities()
- -> EntityDef_lookup(305 + line.texture)
- -> create/link line-derived Entity_t
- -> Game_trace(..., 62087 / 0xf287) sees the closed line entity
-```
-
-The earlier native MOVE collision family modeled static WALL cells plus compact map-sprite entities but omitted line-derived entities. That omission incorrectly produced `BACK 943->975 = CLEAR`.
-
-Current real-CYD truth at `5c01d91...`:
-
-```text
-[LINECOLLISION] BLOCK source=943 dest=975 line=35 texture=7 flags=00000505 type=0 defTile=312
-[MOVE] BLOCKED ... tile=943->975 collision=ENTITY blocker=65535 type=0 frame=ba3e5182 exact=yes heap=38928->38928 largest=29684->29684
-```
-
-Corrected immediate Junction movement canon:
+Correct fresh-neighbor collision canon:
 
 ```text
 FORWARD      943->911 : CLEAR
@@ -79,108 +64,83 @@ STRAFE_LEFT  943->942 : WALL
 STRAFE_RIGHT 943->944 : WALL
 ```
 
-The blocked BACK mutates neither player position nor framebuffer.
+## Dynamic line collision — hardware proven
 
-## PR #98 production cleanup — hardware proven
+The closed-line milestone previously failed closed whenever `EspMapLineState.openCount != 0`.
 
-Review correctly flagged that the temporary door witness still performed a second `EspNativeBspVisibility_build()` plus map-line scans and success-path `printf`s on every normal gameplay render.
-
-Cleanup commits:
+The permanent collision path now consumes the compact line overlay per line:
 
 ```text
-c8b39ab1dde922045391f160ab447b6f974ccfbb
-  remove EspNativeDoorViewProbe_log() from gameplay render
-  remove DOORVIEW success-path logs
-  remove TURNFRAME SPRITES success log
-  retain failure-only TURNFRAME diagnostics
-
-1d84f58770087237020a5b3ecfbfc2bfe8fe7bde
-  delete esp_native_door_view_probe.c
-
-5c01d91f9c6320460b2ecaf033f68a88bde80dfd
-  delete esp_native_door_view_probe.h
+closed line -> collision candidate
+open line   -> skipped
+close again -> collision candidate again
 ```
 
-The final CYD retest proves the cleanup:
+This reproduces the legacy entity topology without constructing `Entity_t` or `entityDb`. Wall ordering, line geometry/link nudges, reverse line scan, trace mask `0xf287`, sprite-entity collision and the 16 B collision result ABI remain unchanged.
+
+Activation uses line 35 only as a reversible collision-consumer witness:
 
 ```text
-no [DOORVIEW] output
-no [TURNFRAME] ... fail=
-no Guru Meditation / reboot
+CLOSED -> BLOCKED_ENTITY
+OPEN   -> CLEAR
+CLOSE  -> byte-identical BLOCKED_ENTITY result
+```
+
+The first implementation SHA `429a86d2d84cbbedc807046491d06db1e37b9474` contained a contradictory probe guard: it intentionally changed line-state FNV while simultaneously requiring the entire resident snapshot, which contains that FNV, to remain byte-identical. Real hardware caught this and correctly blocked native gameplay activation.
+
+Fix SHA `52ddbf979e33f99be27c8344eb4e0572ac4d0547` changes only the witness rule: while OPEN the resident snapshot may differ only in `lineStateFNV1a`; after CLOSE the complete snapshot must match exactly again.
+
+Post-fix real-CYD evidence shows normal MOVE and TURN execution continuing after activation, which can only happen after the dynamic-line witness succeeds:
+
+```text
+[MOVE] OK ... tile=591->559 ...
+[MOVE] OK ... tile=591->623 ...
+[MOVE] OK ... tile=623->655 ...
+[MOVE] OK ... tile=655->687 ...
+[MOVE] OK ... tile=746->778 ...
+[TURN] OK ...
+```
+
+Representative integrity witnesses from the supplied run:
+
+```text
 heap8=38928 stable
 largest8=29684 stable
-```
-
-Four successful TURN renders exercised the same cleaned `EspNativeGameplayFrame_renderTurn()` path and returned exactly to canonical North:
-
-```text
-N frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
-W frame=23ee0954 viewport=de06a408 HUD=9281a6d1
-S frame=da1c4297 viewport=582c2ad8 HUD=a78d0f96
-E frame=8cfdfe34 viewport=17c48c15 HUD=1d908304
-N round-trip=exact
-```
-
-Representative final North render:
-
-```text
-tempHud=0 B
-routeNoPresent=1
-finalPresent=1
-world=180664 us
-sprite=9595 us
-hud=1321 us
-present=35034 us
-total=236218 us
 stackHighWater=860
 legacyStable=yes
 residentStable=yes
+orientationStable=yes on MOVE
+turnAdvance=no
+tileDispatch=no
 ```
 
-The supplied cleanup retest excerpt does not contain a successful CLEAR MOVE render; it contains the intentional blocked-door MOVE plus successful TURN renders through the same shared cleaned renderer. Do not invent a missing CLEAR-MOVE fingerprint.
+The supplied post-fix excerpt starts after activation and does not contain the exact OPEN-state FNV. Do not invent it.
 
-## Permanent compact entity-definition owner
+## Important SELECT / door boundary
 
-Files:
+There is **no player-operated door yet**.
+
+Current SELECT remains input-only:
 
 ```text
-ESP32/include/esp_entity_def_type_catalog.h
-ESP32/src/esp_entity_def_type_catalog.c
+action=SELECT
+consumedBy=probe
+dispatch=observer
+gameplay=no
 ```
 
-Contract:
+The dynamic-line witness opens/closes line 35 during activation and restores it before gameplay. It is not a user-visible door action.
+
+Recovered legacy `Game_performDoorEvent()` semantics begin with:
 
 ```text
-source=/entities.db inside /DoomRPG-ESP32.pak
-lookup limit=817 tileIndex values
-storage=817 B BSS
-heap allocation=0
-stored metadata=eType only
-runtime ZIP=no
+if line.flags & 0x400 (LOCKED)
+    return false
 ```
 
-It exists so native consumers can reproduce entity-type decisions without constructing legacy `EntityDef_t`, `Entity_t`, or pointer-heavy `entityDb` owners.
+Therefore the next milestone must not make colored/locked Junction doors open by directly toggling the native bit. Lock/key/event semantics must be recovered before a real door is declared playable.
 
-Closed line collision reproduces legacy line placement, including the recovered `+/-3` geometry nudge and one-unit entity-link nudge. Public ABI remains:
-
-```text
-EspNativeGameplayCollisionResult = 16 B
-```
-
-For a line-derived blocker, `blockerSpriteIndex=65535` means deliberately “not a map sprite”.
-
-## Open-line boundary remains fail-closed
-
-This milestone adds only closed line-derived collision. Dynamic line/entity relinking is still intentionally absent:
-
-```text
-if native lineState.openCount != 0
- -> ESP_NATIVE_GAMEPLAY_COLLISION_UNSUPPORTED_DYNAMIC_LINES
-```
-
-Do not infer door-open collision semantics until a dedicated milestone recovers them.
-
-## Permanent hardware / memory invariants
+## Permanent memory / architecture invariants
 
 ```text
 board       = ESP32-2432S028R classic CYD
@@ -197,35 +157,14 @@ legacy Game.monsters = 0
 native ST_PLAYING = reached
 legacy ST_PLAYING = not reached
 native PLAYING service = reached
-broad legacy PLAYING loop = forbidden
 ```
 
-Final hardware witness for the current implementation:
+Stable Junction resident canons:
 
 ```text
-heap=104596 stable
-heap8=38928 stable
-largest8=29684 stable
-TURN legacyStable=yes
-residentStable=yes
-turnAdvance=no
-tileDispatch=no
-shapeData=NULL
-mediaTexels=NULL
-```
-
-Absolute allocator values are witnesses, not semantic fingerprints.
-
-## Stable Junction resident canons
-
-```text
-resourceMapId=9 / /junction.bsp
-gameplayLoadMapId=2
 sourceBytes=21051
 crc32=4a2c5800
 sourceFNV=fefaf5ca
-spawnIndex=943
-spawnDirection=64
 payload=10410 B
 runtimeFNV=bc432a0f
 mapFNV=8dba0bb4
@@ -237,40 +176,23 @@ topologyFNV=d6e8df7d
 snapshotFNV=bb714d80
 ```
 
-Canonical native gameplay framebuffer:
+Persistent render/storage baseline remains inherited from merged PR #97/#98:
 
 ```text
-frame=ba3e5182
-viewport=9206eb24
-HUD bands=6c2aa46f
-HUD stateFNV=4756db9c
-```
-
-## Renderer/storage baseline inherited from merged PR #97
-
-```text
-persistent PAK/render owner=yes
 small exact cache <=1024 B=yes
 shared exact 2048 B tail cache=yes
 large retained slots=3
-canonical warm reads=19 x 2048 B
-saved versus predecessor=3 reads / 6144 B
 legacy cross-block wall guard=16 B BSS
 shapeData=NULL
 mediaTexels=NULL
 ```
 
-The wall packed-index guard remains hardware-proven and unchanged by this milestone.
-
-## Native transition / gameplay chain
-
-Hardware-proven high-level chain:
+## Hardware-proven native chain
 
 ```text
 native map transition/residency
  -> spawn/player/view ownership
- -> post-load native ST_PLAYING
- -> PLAYING service
+ -> native ST_PLAYING + PLAYING service
  -> sparse graphics catalog
  -> walls + textured planes
  -> BSP-visible billboards + glows
@@ -280,7 +202,8 @@ native map transition/residency
  -> FORWARD/BACK/STRAFE
  -> static WALL collision
  -> compact sprite-entity collision
- -> closed line-entity collision
+ -> closed line-derived collision
+ -> dynamic per-line open/close collision topology
  -> viewport-only gameplay recomposition
  -> persistent bounded render-resource owner
 ```
@@ -288,11 +211,13 @@ native map transition/residency
 Still intentionally absent:
 
 ```text
-Game_eventFlagsForMovement
+SELECT gameplay dispatch
+front-tile interaction semantics
+lock/key gameplay ownership
 post-move tile event execution
 actual Game_advanceTurn semantics
-dynamic opened-line/entity relinking
-SELECT interaction / door use
+EV_OPENLINE/CLOSELINE triggered by real gameplay
+visual door animation consumer
 weapon switching execution
 PASS_TURN execution
 MENU/AUTOMAP gameplay execution
@@ -303,28 +228,7 @@ native durable save storage
 sound playback
 ```
 
-Generic `EspMapOpcodeExecutor` remains limited to opcodes `11/19/20` and fail-closes all others.
-
-## Superseded diagnostic branch
-
-The unmerged branch:
-
-```text
-agent/esp32-native-door-view-witness
-tip=e04195e60a0499a4da3dc189eef98446d074fd92
-base=2aae0676528ab00c3494d142d8b35c22b7685dce
-```
-
-is exactly two commits ahead of the same base and changes only:
-
-```text
-ESP32/platformio.ini                  +6
-ESP32/src/native_door_view_witness.c  +230
-```
-
-It contains only the obsolete wrapper-based renderer witness and no permanent collision fix. No cherry-pick is required.
-
-Disposition: **safe to abandon/delete**.
+Generic `EspMapOpcodeExecutor` remains limited to opcodes `11/19/20` and fail-closes unsupported opcodes.
 
 ## Current hardware PARK
 
@@ -345,29 +249,41 @@ nativeInput=yes
 nativeTurnDispatch=yes
 nativeMovementDispatch=yes
 nativeGameplayViewportHotPath=yes
-persistentRenderResourceOwner=yes
-smallExactRangeCache=yes
-largeExact2048RangeCache=yes
-legacyWallGuard=yes
 static wall collision=yes
 compact linked sprite-entity collision=yes
 closed line-entity collision=yes
-spawn BACK blocked by line 35=yes
-dynamic opened-line collision=fail-closed
-TURN canonical round-trip=exact
-legacy Game.entities=0
-legacy Game.monsters=0
+dynamic opened-line collision=yes / per-line open skip
+player-operated door=no
+SELECT gameplay=no
 Game_advanceTurn=no
 Game_executeTile=no
 facingRefresh=deferred
 ```
 
+## Recommended next bounded milestone
+
+Recover **native SELECT front-tile routing and lock-aware interaction intent** before enabling a visible door open.
+
+The preferred boundary is:
+
+```text
+SELECT at current cardinal facing
+ -> identify canonical front tile / front line / tile event
+ -> recover legacy 1280 interaction flag semantics
+ -> expose compact native interaction result/intent
+ -> preserve LOCKED fail-closed behavior
+ -> no fake key ownership
+ -> no broad legacy Game_executeEvent
+```
+
+Only after that boundary is hardware-proven should a dedicated milestone trigger native `EV_OPENLINE/EV_CLOSELINE` and then a later visual door-animation consumer.
+
 ## Merge recommendation
 
 ```text
 REAL-CYD HARDWARE PASS
-hardware-tested implementation SHA = 5c01d91f9c6320460b2ecaf033f68a88bde80dfd
+hardware-tested implementation SHA = 52ddbf979e33f99be27c8344eb4e0572ac4d0547
 MERGE-READY = YES after docs-only closeout audit
 ```
 
-All commits after `5c01d91...` must remain documentation-only for this hardware certificate to stay valid. After merge, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md`, and [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md) before branching again.
+All commits after `52ddbf9...` must remain documentation-only for this hardware certificate to stay valid. After merge, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md`, and [`MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md) before creating the next `agent/*` branch.

@@ -124,11 +124,10 @@ static int lineEntityTile(const EspMapLine* line, uint16_t* outTile) {
 
 /* Game_loadMapEntities() appends line entities after all map-sprite entities,
  * and Game_linkEntity() inserts at the tile-list head. Reverse line order is
- * therefore the native equivalent for the first line blocker on one tile.
- * Current native gameplay still rejects any map containing an opened line
- * before reaching this helper, so only the proven closed-link state is traced.
- */
-static int findClosedLineBlocker(uint16_t tile,
+ * therefore the native equivalent for the first linked line blocker on one
+ * tile. Legacy door-open unlinks only that line entity; consume the compact
+ * per-line open bit directly and continue scanning older closed lines. */
+static int findLinkedLineBlocker(uint16_t tile,
                                  uint16_t* outLineIndex,
                                  uint16_t* outTexture,
                                  uint32_t* outFlags,
@@ -147,10 +146,13 @@ static int findClosedLineBlocker(uint16_t tile,
         EspMapLine line;
         uint32_t lookup;
         uint16_t lineTile;
+        uint8_t open;
         uint8_t type;
         int hasDefinition;
 
         --i;
+        if (!EspMapLineState_getOpen(i, &open)) return -1;
+        if (open != 0U) continue;
         if (!EspMapRuntime_getLine(i, &line)) return -1;
         lookup = LINE_ENTITY_DEF_BASE + (uint32_t)line.texture;
         hasDefinition =
@@ -266,33 +268,29 @@ EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
 
     outResult->openLineCount =
         (uint8_t)(lineState->openCount > 255U ? 255U : lineState->openCount);
-    if (lineState->openCount != 0U) {
-        return finish(outResult,
-                      ESP_NATIVE_GAMEPLAY_COLLISION_UNSUPPORTED_DYNAMIC_LINES);
-    }
 
     /* Legacy Game_trace walks both cells for a one-tile move. The classic
      * loader installs its sentinel wall entity on blocked map cells. Native
      * gameplay has no pointer database, so the compact WALL bit is the direct
-     * equivalent while no dynamic line has been opened. */
+     * equivalent. */
     if ((outResult->sourceFlags & ESP_MAP_TILE_WALL) != 0U ||
         (outResult->destFlags & ESP_MAP_TILE_WALL) != 0U) {
         return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_BLOCKED_WALL);
     }
 
-    /* Closed special/map-door lines are real legacy Entity_t records too. They
-     * were the missing part of the first native movement milestone: tile flags
-     * alone cannot represent a door entity whose midpoint is linked into the
-     * destination cell. Trace source then destination, matching Game_trace's
-     * tile walk. */
-    lineBlocker = findClosedLineBlocker(sourceTile, &blockerLine,
+    /* Special/map-door lines are real legacy Entity_t records while linked.
+     * Tile flags alone cannot represent a door entity whose midpoint is linked
+     * into the destination cell. The compact line overlay is the permanent
+     * relink owner: closed lines participate, open lines are skipped. Trace
+     * source then destination, matching Game_trace's tile walk. */
+    lineBlocker = findLinkedLineBlocker(sourceTile, &blockerLine,
                                         &blockerLineTexture,
                                         &blockerLineFlags, &blockerLineType);
     if (lineBlocker < 0) {
         return finish(outResult, ESP_NATIVE_GAMEPLAY_COLLISION_NOT_READY);
     }
     if (lineBlocker == 0) {
-        lineBlocker = findClosedLineBlocker(destTile, &blockerLine,
+        lineBlocker = findLinkedLineBlocker(destTile, &blockerLine,
                                             &blockerLineTexture,
                                             &blockerLineFlags, &blockerLineType);
         if (lineBlocker < 0) {
