@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -169,6 +170,19 @@ static int residentCanonical(const EspMapResidentSnapshot* s) {
            fnv1a(s, sizeof(*s)) == EXPECTED_RESIDENT_FNV &&
            s->totalPayloadBytes == 10410U && s->entityCount == 30U &&
            s->enemyCount == 0U && s->destructibleCount == 3U;
+}
+
+static int residentEqualExceptLineStateFNV(
+    const EspMapResidentSnapshot* a,
+    const EspMapResidentSnapshot* b) {
+    const size_t fieldOffset = offsetof(EspMapResidentSnapshot, lineStateFNV1a);
+    const size_t tailOffset = fieldOffset + sizeof(a->lineStateFNV1a);
+
+    if (a == NULL || b == NULL || tailOffset > sizeof(*a)) return 0;
+    return memcmp(a, b, fieldOffset) == 0 &&
+           memcmp((const uint8_t*)a + tailOffset,
+                  (const uint8_t*)b + tailOffset,
+                  sizeof(*a) - tailOffset) == 0;
 }
 
 static int viewRuntimeValid(const EspPlayerViewState* view) {
@@ -408,12 +422,13 @@ static int verifyDynamicLineCollision(DoomRPG_t* doomRpg) {
         !legacySnapshot(doomRpg, &w->legacyAfter) ||
         !legacyEqual(&w->legacyBefore, &w->legacyAfter) ||
         !EspMapResidentLifecycle_capture(&w->residentAfter) ||
-        memcmp(&w->residentBefore, &w->residentAfter,
-               sizeof(w->residentBefore)) != 0 || EspAssetPack_isOpen()) {
+        w->residentAfter.lineStateFNV1a != stateFNVOpen ||
+        !residentEqualExceptLineStateFNV(&w->residentBefore, &w->residentAfter) ||
+        EspAssetPack_isOpen()) {
         failure = "open side effect";
         goto fail;
     }
-    printf("[DYNLINECOLLISION] OPEN line=%u tile=%u->%u status=%s blocker=%u openLines=%u stateFNV=%08x frame=%08x heap=%u largest=%u sideEffects=line-open-bit-only\n",
+    printf("[DYNLINECOLLISION] OPEN line=%u tile=%u->%u status=%s blocker=%u openLines=%u stateFNV=%08x frame=%08x heap=%u largest=%u sideEffects=line-open-bit+resident-line-fnv-only\n",
            (unsigned int)DYNAMIC_LINE_WITNESS_INDEX,
            (unsigned int)openResult.sourceTile,
            (unsigned int)openResult.destTile,
@@ -740,7 +755,7 @@ void Esp32JunctionMoveCollisionProbe_service(struct DoomRPG_s* doomRpgBase) {
         if (!Esp32JunctionTurnDispatchProbe_isActive()) return;
 
         printf("\n=== Doom RPG ESP32-native cardinal movement + dynamic line collision / viewport hot path ===\n");
-        printf("[MOVEPROBE] CONTRACT cardinal MOVE semantics and WALL/sprite collision stay unchanged. Line collision now consumes EspMapLineState per-line open bits: a closed line participates, an open line is skipped, and closing relinks it logically without Entity_t/entityDb. Activation temporarily toggles canonical arrival-door line 35 and requires CLOSED->BLOCK, OPEN->CLEAR, CLOSE->identical BLOCK with exact line-state FNV rollback, heap/frame/view/legacy/resident stability. No SELECT, sound, animation, renderer mutation, tile events, turn advance, entity activation or facing refresh are enabled.\n");
+        printf("[MOVEPROBE] CONTRACT cardinal MOVE semantics and WALL/sprite collision stay unchanged. Line collision now consumes EspMapLineState per-line open bits: a closed line participates, an open line is skipped, and closing relinks it logically without Entity_t/entityDb. Activation temporarily toggles canonical arrival-door line 35 and requires CLOSED->BLOCK, OPEN->CLEAR, CLOSE->identical BLOCK with exact line-state FNV rollback, heap/frame/view/legacy stability plus resident equality except the intentional line-state FNV while OPEN. No SELECT, sound, animation, renderer mutation, tile events, turn advance, entity activation or facing refresh are enabled.\n");
 
         heapBefore = heap8();
         largestBefore = largest8();
