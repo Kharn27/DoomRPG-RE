@@ -5,31 +5,152 @@ Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHu
 ## Latest merged hardware baseline
 
 ```text
-PR   = #96 — persistent gameplay render resource cache
-main = 377fce3de5381373750a7fba29d0c83b8142c583
+PR   = #97 — shared-payload large range cache + bounded legacy wall guard
+main = 2aae0676528ab00c3494d142d8b35c22b7685dce
 status = MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md).
 
 ## Current candidate milestone
 
 ```text
-branch = agent/esp32-native-gameplay-large-range-cache
-base   = 377fce3de5381373750a7fba29d0c83b8142c583
-hardware-tested implementation SHA = 1273f0205c0ba060972500bedd76effc974077bf
+branch = agent/esp32-native-gameplay-door-view-probe
+base   = 2aae0676528ab00c3494d142d8b35c22b7685dce
+hardware-tested implementation SHA = efea93977d20ba94e2fd5d6981ebce2e7916bc5b
 status = REAL-CYD HARDWARE PASS
 merge-ready = yes after docs-only closeout audit
 ```
 
-Evidence: [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md).
+Evidence: [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md).
 
-The real CYD proves two permanent renderer/storage boundaries in this milestone:
+The apparent Junction arrival-door renderer bug is now closed. The renderer was drawing the camera pose it was given; the real defect was native movement collision allowing `BACK` from spawn into tile `975`, exactly onto closed line `35`.
 
-1. exact `2048 B` immutable texture ranges can borrow the unused tail of the existing `16 KiB` resident payload with **zero new heap owner**;
-2. the legacy renderer's one-byte cross-block wall sampling at packed index `2048` can be reproduced with a **16 B BSS guard** after the raster/BSP stack has fully unwound, without restoring map-wide `mediaTexels`.
+## Hardware root-cause proof
 
-The user reports being able to roam throughout the level on the final tested firmware.
+Fresh Junction canon:
+
+```text
+player=992,1888,36
+angle=64 / North
+tile=943
+frame=ba3e5182
+viewport=9206eb24
+HUD=6c2aa46f
+```
+
+Door line:
+
+```text
+line=35
+texture=7
+raw=960,1952 -> 1024,1952
+flags=00000505
+midpoint=992,1952
+def lookup=305+7=312
+entity type=0
+linked tile=975
+```
+
+Recovered legacy behavior:
+
+```text
+Game_loadMapEntities()
+ -> EntityDef_lookup(305 + line.texture)
+ -> create/link line-derived Entity_t
+ -> Game_trace(..., 62087 / 0xf287) sees the closed line entity
+```
+
+The old native movement milestone modeled static WALL cells plus map-sprite entity topology, but omitted line-derived entities. That omission incorrectly classified:
+
+```text
+BACK 943->975 = CLEAR
+```
+
+Current hardware truth is:
+
+```text
+[LINECOLLISION] BLOCK source=943 dest=975 line=35 texture=7 flags=00000505 type=0 defTile=312
+[MOVE] BLOCKED ... tile=943->975 collision=ENTITY blocker=65535 type=0 frame=ba3e5182 exact=yes heap=38216->38216 largest=21492->21492
+```
+
+Therefore the corrected immediate Junction movement canon is:
+
+```text
+FORWARD      943->911 : CLEAR
+BACK         943->975 : ENTITY / closed line 35 / type 0
+STRAFE_LEFT  943->942 : WALL
+STRAFE_RIGHT 943->944 : WALL
+```
+
+The player remains at `992,1888` and the framebuffer remains exactly `ba3e5182` on the blocked BACK.
+
+## Renderer diagnosis now closed
+
+The direct post-world diagnostics proved the renderer/compositor path was stable even at the formerly illegal pose:
+
+```text
+world rendered=1
+world presented=0
+HUD exact=yes
+sprite accounting complete=yes
+unsupported=0
+render scratch stable=yes
+final present succeeds
+```
+
+The formerly observed `4 walls / 17120 pixels` close-up was caused by the player being moved onto the door midpoint, leaving the 16-unit gameplay camera extremely close to the wall. Do not change camera orientation, BSP side tests, wall projection, sprite composition, or `PlatformVideo_present()` to address this resolved symptom.
+
+The final hardware run also revalidated the cardinal TURN canons and exact North round trip:
+
+```text
+N frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
+E frame=8cfdfe34 viewport=17c48c15 HUD=1d908304
+S frame=da1c4297 viewport=582c2ad8 HUD=a78d0f96
+W frame=23ee0954 viewport=de06a408 HUD=9281a6d1
+N round-trip=exact
+```
+
+## New permanent compact owner
+
+Files:
+
+```text
+ESP32/include/esp_entity_def_type_catalog.h
+ESP32/src/esp_entity_def_type_catalog.c
+```
+
+Contract:
+
+```text
+source=/entities.db inside /DoomRPG-ESP32.pak
+lookup limit=817 tileIndex values
+storage=817 B BSS
+heap allocation=0
+stored metadata=eType only
+runtime ZIP=no
+```
+
+It exists so native consumers can reproduce entity-type decisions without creating legacy `EntityDef_t` arrays, `Entity_t` objects, or the 1024-pointer `entityDb`.
+
+Closed line collision now reproduces legacy line placement, including recovered render geometry nudges and the one-unit entity-link nudge. The public collision ABI stays:
+
+```text
+EspNativeGameplayCollisionResult = 16 B
+```
+
+For a line-derived blocker, `blockerSpriteIndex=65535` means deliberately “not a map sprite”.
+
+## Open-line boundary remains fail-closed
+
+This milestone adds only the initial closed-line topology required by legacy collision. It does **not** implement dynamic line/entity relinking.
+
+```text
+if native lineState.openCount != 0
+ -> ESP_NATIVE_GAMEPLAY_COLLISION_UNSUPPORTED_DYNAMIC_LINES
+```
+
+Do not silently infer door-open collision semantics until that family gets its own bounded milestone.
 
 ## Permanent hardware / memory invariants
 
@@ -51,24 +172,23 @@ native PLAYING service = reached
 broad legacy PLAYING loop = forbidden
 ```
 
-## Hardware-proven map / resident canons
-
-Entrance:
+Final real-CYD witness for the tested implementation:
 
 ```text
-resource=/intro.bsp
-bytes=21823
-crc32=623f34e4
-sourceFNV=d5cc751f
-gameplayLoadMapId=1
-spawnIndex=904
-spawnDirection=64
-snapshotFNV=b3811f3d
-logical payload=17891 B
-historical heap=18008 B
+heap=103884 stable
+heap8=38216 stable
+largest8=21492 stable
+TURN/MOVE legacyStable=yes
+residentStable=yes
+turnAdvance=no
+tileDispatch=no
+shapeData=NULL
+mediaTexels=NULL
 ```
 
-Junction:
+Absolute heap values are witnesses, not semantic fingerprints.
+
+## Stable Junction resident canons
 
 ```text
 resourceMapId=9 / /junction.bsp
@@ -79,505 +199,104 @@ sourceFNV=fefaf5ca
 spawnIndex=943
 spawnDirection=64
 payload=10410 B
-historical heap cost=10540 B
-entities metadata=30
-enemies=0
-destructibles=3
+runtimeFNV=bc432a0f
+mapFNV=8dba0bb4
+scriptFNV=bc9b18ff
+lineFNV=3658710d
+textureStateFNV=537319ad
+automapFNV=b699bd75
+topologyFNV=d6e8df7d
+snapshotFNV=bb714d80
 ```
 
-Current Junction resident owner FNVs:
-
-```text
-runtime  = bc432a0f
-map      = 8dba0bb4
-script   = bc9b18ff
-line     = 3658710d
-texture  = 537319ad
-automap  = b699bd75
-topology = d6e8df7d
-snapshot = bb714d80
-```
-
-Absolute allocator values are witnesses, not semantic fingerprints.
-
-## Native transition / player / gameplay chain
-
-Hardware-proven sequence:
-
-```text
-CHANGEMAP intent
- -> level-exit stats
- -> native player exit-state
- -> LEVEL stats-menu semantic intent
- -> immutable 13-map catalog
- -> Junction preflight
- -> resident committed swap
- -> spawn projection
- -> player/view owner
- -> HUD dirty owner
- -> Player_setup owner
- -> initial tile
- -> finishRotation orientation + second tile
- -> durable facing
- -> post-load HUD clear / GIVEMAP / weapon self-select
- -> initial-save intent
- -> post-load flag + event/particle cleanup
- -> view invalidation
- -> native ST_PLAYING transition
- -> idle-time owner
- -> first native PLAYING service
- -> direct sparse graphics catalog
- -> walls + textured planes
- -> BSP-visible billboards
- -> implicit glow closure + glow companions
- -> native gameplay HUD
- -> native calibrated touch intent
- -> native TURN_LEFT/TURN_RIGHT
- -> native FORWARD/BACK/STRAFE + collision
- -> viewport-only native gameplay recomposition
- -> persistent bounded gameplay render resource owner
- -> shared-payload exact 2048 B reuse
- -> bounded legacy wall-block guard recovery
-```
-
-Stable pre-render/player fingerprints:
-
-```text
-levelExitStatsFNV               = bd41bcfa
-playerExitAppliedFNV            = 298eaaa4
-statsMenuIntentFNV              = 96afe901
-mapCatalogFNV                   = ce322e3f
-transitionPreflightFNV          = 108e5c7b
-committed WAIT_STATS FNV        = 66fe636a
-committed READY FNV             = 0ef58ea8
-committed ROLLBACK FNV          = 2dec1442
-committed COMMITTED FNV         = 2c595a62
-Junction spawn FNV              = ba6af4a7
-Junction durable-facing FNV     = 95aa1108
-post-facing player/view FNV     = afcdcf74
-Junction native ST_PLAYING      = 73bc9acd
-Junction native PLAYING service = 4c50b853
-```
-
-Idle-time state contains uptime; stable contract remains `idleTimeAfter-timeBefore=8000`.
-
-Generic `EspMapOpcodeExecutor` remains intentionally limited to opcodes 11/19/20 and fail-closes all others.
-
-## Graphics / renderer recovery canons
-
-Direct sparse catalog:
-
-```text
-record=40 B
-textures=30
-sprites=16
-storage=1840 B
-historical heap=1856 B
-stateFNV=969d5a77
-textureFNV=2dd5dfcf
-spriteFNV=cfd036cf
-```
-
-Dependency-closed Junction catalog:
-
-```text
-135/140 -> 136 mode7
-131 -> 144 remains generic future dependency
-closed stateFNV=257444a5
-textures=30
-sprites=17
-storage=1880 B
-persistent increment=40 B
-```
-
-Canonical North walls + textured planes:
-
-```text
-frame=8910c2ed
-viewport=032ffaed
-viewport=160x80 @0,20
-nodes=39 leaves=12 nodeCull=8
-lines=62 backface=20 clip=8 occluder=0 spriteSpan=0
-wallRequests/draws=34/34
-wallSpans=166 wallPixels=4341
-planes=12800 textures=6 cache=12795H/5M/0E reads=10240 B
-legacyRenderStable=yes
-```
-
-Canonical North base billboards:
-
-```text
-mapSprites=48 candidates=21 rejected=27 hidden=0
-candidateFNV=23ef1895
-orderFNV=f16737cb
-modes=0:14 / 7:7
-mode7Pixels=311
-draws=21 spans=219 pixels=1828 wallOccludedCols=62
-frameLoads=21 uniqueLogical=9 frameBytes=12251 maxFrame=1020
-preGlowFrame=299506eb
-preGlowViewport=ae2246eb
-```
-
-Canonical North glow companions:
-
-```text
-companions=7 draws=7 spans=59 pixels=1917 wallOccludedCols=32
-frameLoads=7 frameBytes=5572 maxFrame=796 packReads=172
-completeFrame=b5218f24
-completeViewport=9206eb24
-```
-
-The movement milestone permanently fixed wall cache raster addressing: `sourceTexelOffset` is PAK lookup/cache identity only; normal raster sampling stays in local cached texel space. `mediaTexels` remains NULL.
-
-## Native gameplay HUD
-
-Fresh Junction HUD:
-
-```text
-top y=0..19
-world y=20..99
-bottom y=100..119
-health=30/30 armor=0/20 weapon=2 pistol ammoType=1 ammo=8 face=0 direction=N
-EspNativeGameplayHudState=22 B
-stateFNV=4756db9c
-assets=a.bmp,k.bmp,l.bmp,m.bmp,o.bmp
-```
-
-Canonical framebuffer:
-
-```text
-pre-HUD frame=b5218f24
-complete gameplay frame=ba3e5182
-world viewport=9206eb24
-HUD bands=6c2aa46f
-```
-
-HUD dirty owner:
-
-```text
-before FNV=6965ee06 refreshPending=1
-after  FNV=40c66f99 refreshPending=0
-consume only after successful paint=yes
-```
-
-## Native gameplay touch boundary
-
-Permanent semantic owner:
-
-```text
-EspNativeGameplayInputState = 12 B
-EspNativeGameplayTouchHit   = 6 B
-one pending intent maximum
-busy/unsupported = fail closed
-```
-
-Current touch layout:
-
-```text
-top HUD y=0..19:
-  x0..31    MENU
-  x32..127  PASS_TURN
-  x128..159 AUTOMAP
-world y=20..45: STRAFE_LEFT | FORWARD | STRAFE_RIGHT
-world y=46..72: TURN_LEFT   | SELECT  | TURN_RIGHT
-world y=73..99: PREV_WEAPON | BACK    | NEXT_WEAPON
-bottom HUD y=100..119: unbound
-```
-
-Feedback contract:
-
-```text
-hold=120 ms
-maxEdits=512
-bounded static feedback storage ~2 KiB
-current-frame FNV captured per tap
-reverse exact restore before dispatch
-runtime allocation=0 for feedback
-PAK/SD reads=0 for feedback
-```
-
-## Hardware-proven native TURN family
-
-```text
-EspNativeGameplayTurnState = 24 B
-EspNativeGameplayDispatchResult = 12 B
-TURN_LEFT  => +64
-TURN_RIGHT => -64
-cardinal angles = 0/64/128/192
-```
-
-Cardinal semantic orientation:
-
-```text
-0   = East
-64  = North
-128 = West
-192 = South
-```
-
-TURN is live at arbitrary settled native tile-center positions. It does not call `Game_advanceTurn`, `Game_executeTile`, legacy `finishRotation`, entity/monster gameplay or facing refresh.
-
-Canonical spawn proof:
-
-```text
-N / angle64: frame ba3e5182 viewport 9206eb24 HUD 6c2aa46f
-E / angle0 : frame 8cfdfe34 viewport 17c48c15 HUD 1d908304
-S / angle192: frame da1c4297 viewport 582c2ad8 HUD a78d0f96
-W / angle128: frame 23ee0954 viewport de06a408 HUD 9281a6d1
-N / angle64 round-trip: frame ba3e5182 viewport 9206eb24 HUD 6c2aa46f exact
-```
-
-## Hardware-proven native cardinal movement + collision
-
-Permanent compact results:
-
-```text
-EspNativeGameplayCollisionResult = 16 B
-EspNativeGameplayMoveResult      = 24 B
-EspPlayerViewState               = 44 B
-```
-
-Fresh Junction neighbors:
-
-```text
-FORWARD      943->911 delta=0,-64 flags=08 CLEAR
-BACK         943->975 delta=0,+64 flags=1c CLEAR
-STRAFE_LEFT  943->942 delta=-64,0 flags=01 WALL
-STRAFE_RIGHT 943->944 delta=+64,0 flags=01 WALL
-openLines=0
-```
-
-Real linked-entity blocker witnesses include:
-
-```text
-FORWARD 911->910 collision=ENTITY blocker=24 type=7
-FORWARD 752->784 collision=ENTITY blocker=32 type=7
-```
-
-Blocked actions keep the framebuffer and position exact. Opened native lines remain deliberately fail-closed until dynamic line/entity relinking has its own milestone.
-
-## Hardware-proven gameplay renderer hot path
-
-Merged permanent boundary:
-
-```text
-EspNativeGameplayFrameStats = 104 B
-world viewport = 160x80 @0,20
-temporary HUD save = 0 B
-world route physical present = none
-final physical present = exactly one
-HUD bands preserved in place during world/sprite redraw
-```
-
-Canonical framebuffer contract:
+Canonical native gameplay framebuffer:
 
 ```text
 frame=ba3e5182
 viewport=9206eb24
-HUD=6c2aa46f
-tempHud=0
-routeNoPresent=1
-finalPresent=1
-exact=yes
+HUD bands=6c2aa46f
+HUD stateFNV=4756db9c
 ```
 
-## Merged persistent gameplay render resource cache
-
-PR #96 permanent owner:
+## Renderer/storage baseline inherited from merged PR #97
 
 ```text
-physical default PAK owner = persistent during native gameplay
-logical world/sprite/HUD leases = open/close compatible
-full PAK validation = once at resident begin
-entry descriptor cache slots = 24
-exact range payload = 16384 B
-exact range key capacity = 256
-small cacheable range max = 1024 B
-owner struct = 21160 B
-runtime ZIP = forbidden
-shapeData = NULL
-mediaTexels = NULL
-```
-
-Merged implementation hardware witness:
-
-```text
-cache=9225/16384 B after canonical cold frame
-range entries=195/256
-physicalResident=yes
-logicalPackClosed=yes
-```
-
-Canonical warm North before the new large-range class:
-
-```text
-sdReads=22
-sdBytes=45056
-22 x 2048 B
-world~204-209 ms in recent runs
-sprites~9.4 ms
-HUD~1.3 ms warm
-present~34.9 ms
-frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
-```
-
-## Current shared-payload exact 2048 B cache
-
-No second permanent heap owner is allocated.
-
-Layout:
-
-```text
-small <=1024 B ranges grow upward
-large exact 2048 B ranges grow downward
-small ranges retain priority
-large entries use the same 256-record table
-activation allocates nothing
-```
-
-Canonical real-CYD proof:
-
-```text
-BASE  sdReads=22 sdBytes=45056 cache=9225/16384 B entries=195/256 large=off
-LEARN slots=3 sdReads=22 sdBytes=45056 range=350H/22M/3S/19B
-      cache=15369/16384 B entries=198/256 large=3 exact=yes
-WARM  slots=3 sdReads=19 sdBytes=38912 range=353H/19M/0S/19B
-      cache=15369/16384 B entries=198/256 large=3 exact=yes
-READY savedReads=3 savedBytes=6144 ownerDelta=0 heapStable=yes
-      frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
-```
-
-The measured strict-frame total was about `232.9 ms` once the three retained large ranges were warm. The user reports gameplay is playable, but the perceptual gain from this cache alone is modest.
-
-## Native wall packed-index boundary and final guard
-
-Unrestricted roaming exposed the first exact bounded-wall overread at:
-
-```text
-view=992,1568,36
-angle=64
-line=90
-logical=66
-actual=140
-flags=00002000
-source=98304
-packedIndex=2048
-```
-
-This witness is **not** a double-height wall (`0x00010000` is absent). The previously attempted double-height continuation hypothesis is retired.
-
-Recovered legacy behavior:
-
-```text
-required actual wall blocks were sorted by source offset
- -> packed contiguously into legacy mediaTexels
- -> local block index 2048 therefore addressed byte 0 of the next admitted block
-```
-
-Permanent native repair:
-
-```text
-LegacyWallGuard = 16 B BSS
-no extra 2048 B buffer
-no FirstFrameWork growth
-no PAK read from sampleWallSpan()
-exact index 2048 only
-all unrelated OOB stays fail-closed
-```
-
-Recovery flow:
-
-```text
-SPAN_OOB 2048
- -> renderer unwinds
- -> resolve next admitted compact wall block outside raster stack
- -> read one packed byte
- -> publish 16 B guard
- -> retry viewport frame
-```
-
-Explicit final real-CYD witness:
-
-```text
-logical=15
-actual=40
-source=20480
-successorActual=108
-successorSource=61440
-byte=aa
-guard owner=BSS bytes=16
-retry line=33
-recovered=yes
-```
-
-The corresponding move then succeeded:
-
-```text
-pos 992,1696 -> 992,1760
-tile 847 -> 879
-frame ece49fb2 -> ea36efee
-legacyStable=yes
-residentStable=yes
-orientationStable=yes
-```
-
-The user then roamed throughout the level on the same firmware. The Serial excerpt is partial because the run produced too much output; do not invent missing per-position fingerprints.
-
-## Final RAM / stack truth for current candidate
-
-Stable long-run witness from hardware-tested SHA `1273f020...`:
-
-```text
-heap=105424
-heap8=39756
-largest8=14836
-stackHighWater=924
-MOVE execScratch=540 B
-TURN execScratch=484 B
-```
-
-The immediately preceding stable pre-guard heap was `39772 B`. The exact `16 B` reduction matches `sizeof(LegacyWallGuard)`.
-
-Across the long roaming run:
-
-```text
-heap stable
-largest stable
-legacyStable=yes
-residentStable=yes
+persistent PAK/render owner=yes
+small exact cache <=1024 B=yes
+shared exact 2048 B tail cache=yes
+large retained slots=3
+canonical warm reads=19 x 2048 B
+saved versus predecessor=3 reads / 6144 B
+legacy cross-block wall guard=16 B BSS
 shapeData=NULL
 mediaTexels=NULL
-no Guru Meditation
-no reboot
 ```
 
-## Known visual anomaly deliberately NOT closed by this milestone
+The earlier wall packed-index recovery remains hardware-proven and unchanged by this milestone.
 
-The user still observes a confusing renderer/view symptom around the start/arrival door:
+## Native transition / gameplay chain
 
-- when backing away while oriented away from the door, the view can appear as if a half-turn occurred;
-- a similarly confusing view can appear when facing/approaching the door.
-
-Serial semantic orientation remains coherent and MOVE preserves it. TURN changes it only by the proven cardinal `+/-64` steps. Therefore do **not** alter `EspPlayerViewState` or gameplay orientation merely to hide the visual symptom.
-
-Treat this as the preferred next renderer investigation: camera transform / BSP visibility / wall orientation / geometry relationship around that door needs a small dedicated hardware witness.
-
-## Hardware-selected classic CYD presentation
+Hardware-proven high-level chain:
 
 ```text
-framebuffer       = raw RGB565
-logical size      = 160x120
-physical size     = 320x240
-resampling        = exact nearest-neighbour x2
-software sat/gamma transform = none
-software R/B swap = none
-TFT byte swap     = ON
-panel inversion   = ON
-TFT_RGB_ORDER     = TFT_BGR
-ILI9341 driver    = ILI9341_2_DRIVER
-SPI frequency     = 55 MHz
-gamma             = 00 15 17 07 11 06 2b 56 3c 05 10 0f 3f 3f 0f
+native map transition/residency
+ -> spawn/player/view ownership
+ -> post-load native ST_PLAYING
+ -> PLAYING service
+ -> sparse graphics catalog
+ -> walls + textured planes
+ -> BSP-visible billboards + glows
+ -> native HUD
+ -> calibrated touch intent
+ -> TURN_LEFT/TURN_RIGHT
+ -> FORWARD/BACK/STRAFE
+ -> static WALL collision
+ -> compact sprite-entity collision
+ -> closed line-entity collision
+ -> viewport-only gameplay recomposition
+ -> persistent bounded render-resource owner
 ```
+
+Still intentionally absent:
+
+```text
+Game_eventFlagsForMovement
+post-move tile event execution
+actual Game_advanceTurn semantics
+dynamic opened-line/entity relinking
+SELECT interaction / door use
+weapon switching execution
+PASS_TURN execution
+MENU/AUTOMAP gameplay execution
+entity/monster activation and AI
+facing refresh after gameplay actions
+first-person weapon overlay
+native durable save storage
+sound playback
+```
+
+Generic `EspMapOpcodeExecutor` remains limited to opcodes `11/19/20` and fail-closes all others.
+
+## Superseded diagnostic branch
+
+The unmerged branch:
+
+```text
+agent/esp32-native-door-view-witness
+tip=e04195e60a0499a4da3dc189eef98446d074fd92
+base=2aae0676528ab00c3494d142d8b35c22b7685dce
+```
+
+is exactly two commits ahead of the same base and changes only:
+
+```text
+ESP32/platformio.ini                  +6
+ESP32/src/native_door_view_witness.c  +230
+```
+
+It contains the older wrapper-based renderer witness only. The current branch uses a more precise direct diagnostic path and contains the actual permanent closed-line collision fix. No current authoritative document references the old branch, and no cherry-pick from it is required.
+
+Disposition: **safe to abandon/delete after the current candidate is merged**.
 
 ## Current hardware PARK
 
@@ -593,7 +312,6 @@ nativeFirstFrame=yes
 texturedPlanes=yes
 nativeBaseBillboards=yes
 bspVisibleOnly=yes
-intrinsicMode7=yes
 glowCompanions=yes
 nativeHud=yes
 nativeInput=yes
@@ -601,18 +319,15 @@ nativeTurnDispatch=yes
 nativeMovementDispatch=yes
 nativeGameplayViewportHotPath=yes
 persistentRenderResourceOwner=yes
-residentPakPhysical=yes
-logicalRenderPakLeasesClose=yes
 smallExactRangeCache=yes
 largeExact2048RangeCache=yes
 legacyWallGuard=yes
-TURN_LEFT=yes
-TURN_RIGHT=yes
-FORWARD/BACK/STRAFE semantic execution=yes
 static wall collision=yes
-compact linked entity collision=yes
+compact linked sprite-entity collision=yes
+closed line-entity collision=yes
+spawn BACK blocked by line 35=yes
 dynamic opened-line collision=fail-closed
-initialSavePersistencePending=yes
+TURN canonical round-trip=exact
 legacy Game.entities=0
 legacy Game.monsters=0
 Game_advanceTurn=no
@@ -620,63 +335,19 @@ Game_executeTile=no
 facingRefresh=deferred
 ```
 
-## Still intentionally outside
-
-```text
-start-door visual renderer/view anomaly fix
-post-recovery optimization of guard metadata reads
-Game_eventFlagsForMovement
-post-move tile event execution
-actual turn advancement
-dynamic line/entity collision relinking / opened-door collision
-SELECT interaction
-weapon switching execution
-PASS_TURN execution
-MENU/AUTOMAP execution from gameplay
-entity/monster activation and AI
-facing refresh after gameplay actions
-first-person weapon overlay
-native durable save storage
-cross-map durable SAVEGAME route payload
-native queued-event payload ownership for non-empty contexts
-native particle runtime for non-empty contexts
-sound playback
-```
-
-## Probe completion semantics
-
-Historical temporary probes may set `done=1` on terminal failure. `*_isDone()` alone is not a PASS certificate. Downstream code must revalidate exact predecessor owners/world state. Serial logs from the real CYD remain the final truth.
-
 ## Merge recommendation
 
 ```text
-MERGE-READY after docs-only audit
+REAL-CYD HARDWARE PASS
+MERGE-READY after docs-only closeout audit
 ```
 
 Hardware-tested implementation SHA:
 
 ```text
-1273f0205c0ba060972500bedd76effc974077bf
+efea93977d20ba94e2fd5d6981ebce2e7916bc5b
 ```
 
-No code may change after this tested SHA without another hardware run. Documentation commits after it must be `.md` only.
+All commits after that SHA must be documentation-only for this PASS to remain valid.
 
-## Next bounded milestone after merge
-
-After the user merges, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md` and [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md) before branching.
-
-Preferred next milestone: **start-door renderer/view anomaly witness**.
-
-Keep it narrow:
-
-```text
-no semantic orientation mutation until divergence is proven
-capture player view angle/position
-capture transformed renderer viewX/viewY/viewAngle
-capture relevant BSP/line IDs and flags around the door
-compare opposite-facing and BACK/FORWARD views at the same settled tile centers
-keep success path silent
-fail closed
-```
-
-Do not mix this renderer diagnosis with post-move tile events, turn advancement, doors/dynamic line relinking, or other gameplay semantics.
+After merge, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md`, and [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md) before creating the next `agent/*` branch.
