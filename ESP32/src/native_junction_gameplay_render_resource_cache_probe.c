@@ -23,11 +23,13 @@
 #define WORLD_ROWS 80U
 #define HUD_ROWS 20U
 #define BOTTOM_HUD_Y 100U
+#define EXPECTED_CACHE_BYTES 16384U
+#define EXPECTED_CACHE_ENTRIES 256U
 
 static uint8_t probeDone;
 static uint8_t probeFailed;
 
-static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
+static uint32_t fnvUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
     uint32_t i;
     if (p == NULL && bytes != 0U) return 0U;
@@ -38,43 +40,34 @@ static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     return hash;
 }
 
-static uint32_t fnv1a(const void* data, uint32_t bytes) {
-    return fnv1aUpdate(2166136261U, data, bytes);
+static uint32_t fnv(const void* data, uint32_t bytes) {
+    return fnvUpdate(2166136261U, data, bytes);
 }
 
 static uint32_t frameFNV(void) {
-    const void* framebuffer = Esp32PlatformVideo_framebuffer();
+    const void* fb = Esp32PlatformVideo_framebuffer();
     const size_t bytes = Esp32PlatformVideo_framebufferSizeBytes();
     const size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
                             DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
-    if (framebuffer == NULL || bytes != expected) return 0U;
-    return fnv1a(framebuffer, (uint32_t)bytes);
+    return fb != NULL && bytes == expected ? fnv(fb, (uint32_t)bytes) : 0U;
 }
 
 static uint32_t viewportFNV(void) {
-    const uint16_t* framebuffer =
-        (const uint16_t*)Esp32PlatformVideo_framebuffer();
-    if (framebuffer == NULL ||
-        Esp32PlatformVideo_framebufferSizeBytes() !=
-            (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
-                sizeof(uint16_t)) return 0U;
-    return fnv1a(framebuffer + WORLD_Y * DOOMRPG_LOGICAL_WIDTH,
-                 DOOMRPG_LOGICAL_WIDTH * WORLD_ROWS * sizeof(uint16_t));
+    const uint16_t* fb = (const uint16_t*)Esp32PlatformVideo_framebuffer();
+    if (fb == NULL) return 0U;
+    return fnv(fb + WORLD_Y * DOOMRPG_LOGICAL_WIDTH,
+               DOOMRPG_LOGICAL_WIDTH * WORLD_ROWS * sizeof(uint16_t));
 }
 
-static uint32_t hudBandsFNV(void) {
-    const uint16_t* framebuffer =
-        (const uint16_t*)Esp32PlatformVideo_framebuffer();
+static uint32_t hudFNV(void) {
+    const uint16_t* fb = (const uint16_t*)Esp32PlatformVideo_framebuffer();
     uint32_t hash = 2166136261U;
-    if (framebuffer == NULL ||
-        Esp32PlatformVideo_framebufferSizeBytes() !=
-            (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
-                sizeof(uint16_t)) return 0U;
-    hash = fnv1aUpdate(hash, framebuffer,
-                       DOOMRPG_LOGICAL_WIDTH * HUD_ROWS * sizeof(uint16_t));
-    return fnv1aUpdate(hash,
-                       framebuffer + BOTTOM_HUD_Y * DOOMRPG_LOGICAL_WIDTH,
-                       DOOMRPG_LOGICAL_WIDTH * HUD_ROWS * sizeof(uint16_t));
+    if (fb == NULL) return 0U;
+    hash = fnvUpdate(hash, fb,
+                     DOOMRPG_LOGICAL_WIDTH * HUD_ROWS * sizeof(uint16_t));
+    return fnvUpdate(hash,
+                     fb + BOTTOM_HUD_Y * DOOMRPG_LOGICAL_WIDTH,
+                     DOOMRPG_LOGICAL_WIDTH * HUD_ROWS * sizeof(uint16_t));
 }
 
 static uint32_t heap8(void) {
@@ -86,28 +79,34 @@ static uint32_t largest8(void) {
 }
 
 static void failProbe(const char* reason) {
-    EspAssetPackResidentStats resident;
-    memset(&resident, 0, sizeof(resident));
-    EspAssetPack_residentGetStats(&resident);
+    EspAssetPackResidentStats stats;
+    memset(&stats, 0, sizeof(stats));
+    EspAssetPack_residentGetStats(&stats);
     printf("[RENDERCACHEPROBE] FAILED %s frame=%08x viewport=%08x hud=%08x pack=%d resident=%u reads=%u hits=%u cache=%u/%uB\n",
-           reason,
-           (unsigned int)frameFNV(),
-           (unsigned int)viewportFNV(),
-           (unsigned int)hudBandsFNV(),
-           EspAssetPack_isOpen(),
-           (unsigned int)resident.ready,
-           (unsigned int)resident.physicalReads,
-           (unsigned int)resident.rangeCacheHits,
-           (unsigned int)resident.rangeCacheBytesUsed,
-           (unsigned int)resident.rangeCacheCapacityBytes);
+           reason, (unsigned int)frameFNV(), (unsigned int)viewportFNV(),
+           (unsigned int)hudFNV(), EspAssetPack_isOpen(),
+           (unsigned int)stats.ready, (unsigned int)stats.physicalReads,
+           (unsigned int)stats.rangeCacheHits,
+           (unsigned int)stats.rangeCacheBytesUsed,
+           (unsigned int)stats.rangeCacheCapacityBytes);
     probeFailed = 1U;
     probeDone = 1U;
 }
 
+static int exactFrame(const EspNativeGameplayFrameStats* frame) {
+    return frame != NULL && frameFNV() == EXPECTED_FRAME_FNV &&
+           viewportFNV() == EXPECTED_VIEWPORT_FNV &&
+           hudFNV() == EXPECTED_HUD_BANDS_FNV &&
+           frame->frameAfterFNV == EXPECTED_FRAME_FNV &&
+           frame->viewportAfterSpritesFNV == EXPECTED_VIEWPORT_FNV &&
+           frame->hudBandsAfterFNV == EXPECTED_HUD_BANDS_FNV &&
+           frame->temporaryHudBytes == 0U &&
+           frame->worldRouteNoPresent == 1U &&
+           frame->finalPresented == 1U && frame->active == 1U;
+}
+
 void Esp32JunctionGameplayRenderResourceCacheProbe_reset(void) {
-    if (!EspAssetPack_isOpen()) {
-        (void)EspAssetPack_residentEnd();
-    }
+    if (!EspAssetPack_isOpen()) (void)EspAssetPack_residentEnd();
     probeDone = 0U;
     probeFailed = 0U;
 }
@@ -123,23 +122,18 @@ void Esp32JunctionGameplayRenderResourceCacheProbe_service(
     EspPlayerViewState viewBefore;
     EspNativeGameplayFrameStats coldFrame;
     EspNativeGameplayFrameStats warmFrame;
+    EspAssetPackResidentStats owner;
     EspAssetPackResidentStats coldPack;
     EspAssetPackResidentStats warmPack;
-    EspAssetPackResidentStats owner;
     uint32_t heapBefore;
     uint32_t heapResident;
-    uint32_t heapAfterCold;
-    uint32_t heapAfterWarm;
-    uint32_t largestBefore;
     uint32_t largestResident;
-    uint32_t largestAfterCold;
-    uint32_t largestAfterWarm;
 
     if (probeDone || probeFailed ||
         !Esp32JunctionGameplayRenderHotpathProbe_isDone()) return;
 
     printf("\n=== Doom RPG ESP32-native persistent gameplay render resource cache ===\n");
-    printf("[RENDERCACHEPROBE] CONTRACT retain exactly one validated default PAK backing store across world/sprite/HUD leases and across TURN redraws; cache only exact immutable ranges <=1024B in one bounded owner; keep large world texels PAK-backed; cold and warm canonical North must remain bit-exact with shapeData/mediaTexels NULL, logical PAK closed after each frame, no per-frame heap drift, and warm physical SD reads strictly below cold.\n");
+    printf("[RENDERCACHEPROBE] CONTRACT one validated resident default PAK; exact immutable ranges <=1024B cached in a bounded owner; large world texels stay PAK-backed; cold/warm North remain bit-exact, logical PAK closes after every phase, shapeData/mediaTexels stay NULL, heap stays stable after owner creation, and warm physical reads must be lower than cold.\n");
 
     view = EspPlayerView_view();
     if (doomRpg == NULL || doomRpg->render == NULL || view == NULL ||
@@ -147,20 +141,18 @@ void Esp32JunctionGameplayRenderResourceCacheProbe_service(
         view->viewAngle != 64 || view->destAngle != 64 ||
         frameFNV() != EXPECTED_FRAME_FNV ||
         viewportFNV() != EXPECTED_VIEWPORT_FNV ||
-        hudBandsFNV() != EXPECTED_HUD_BANDS_FNV ||
-        doomRpg->render->shapeData != NULL ||
-        doomRpg->render->mediaTexels != NULL ||
-        EspAssetPack_isOpen() || EspAssetPack_isResident()) {
+        hudFNV() != EXPECTED_HUD_BANDS_FNV || EspAssetPack_isOpen() ||
+        EspAssetPack_isResident() || doomRpg->render->shapeData != NULL ||
+        doomRpg->render->mediaTexels != NULL) {
         failProbe("activation boundary");
         return;
     }
 
     viewBefore = *view;
     heapBefore = heap8();
-    largestBefore = largest8();
     if (!EspAssetPack_residentBegin() || EspAssetPack_isOpen() ||
         !EspAssetPack_isResident()) {
-        failProbe("resident owner begin");
+        failProbe("resident begin");
         return;
     }
     heapResident = heap8();
@@ -169,129 +161,87 @@ void Esp32JunctionGameplayRenderResourceCacheProbe_service(
     EspAssetPack_residentGetStats(&owner);
     if (owner.enabled != 1U || owner.ready != 1U ||
         owner.physicalOpens != 1U || owner.validationPasses != 1U ||
-        owner.ownerBytes == 0U || owner.rangeCacheCapacityBytes != 16384U ||
-        owner.rangeCacheEntryCapacity != 128U) {
+        owner.ownerBytes == 0U ||
+        owner.rangeCacheCapacityBytes != EXPECTED_CACHE_BYTES ||
+        owner.rangeCacheEntryCapacity != EXPECTED_CACHE_ENTRIES) {
         failProbe("resident owner contract");
         return;
     }
 
     memset(&coldFrame, 0, sizeof(coldFrame));
-    memset(&coldPack, 0, sizeof(coldPack));
     EspAssetPack_residentResetStats();
     if (!EspNativeGameplayFrame_renderTurn(doomRpg->render, 64U, &coldFrame)) {
-        failProbe("cold cached render");
+        failProbe("cold render");
         return;
     }
+    memset(&coldPack, 0, sizeof(coldPack));
     EspAssetPack_residentGetStats(&coldPack);
-    heapAfterCold = heap8();
-    largestAfterCold = largest8();
-
     view = EspPlayerView_view();
-    if (view == NULL || memcmp(view, &viewBefore, sizeof(viewBefore)) != 0 ||
-        frameFNV() != EXPECTED_FRAME_FNV ||
-        viewportFNV() != EXPECTED_VIEWPORT_FNV ||
-        hudBandsFNV() != EXPECTED_HUD_BANDS_FNV ||
-        coldFrame.frameAfterFNV != EXPECTED_FRAME_FNV ||
-        coldFrame.viewportAfterSpritesFNV != EXPECTED_VIEWPORT_FNV ||
-        coldFrame.hudBandsAfterFNV != EXPECTED_HUD_BANDS_FNV ||
-        coldFrame.temporaryHudBytes != 0U ||
-        coldFrame.worldRouteNoPresent != 1U ||
-        coldFrame.finalPresented != 1U || coldFrame.active != 1U ||
+    if (!exactFrame(&coldFrame) || view == NULL ||
+        memcmp(view, &viewBefore, sizeof(viewBefore)) != 0 ||
         EspAssetPack_isOpen() || !EspAssetPack_isResident() ||
         coldPack.physicalOpens != 0U || coldPack.validationPasses != 0U ||
         coldPack.residentReuses < 3U || coldPack.physicalReads == 0U ||
-        coldPack.rangeCacheStores == 0U ||
-        heapAfterCold != heapResident || largestAfterCold != largestResident ||
-        doomRpg->render->shapeData != NULL ||
+        coldPack.rangeCacheStores == 0U || heap8() != heapResident ||
+        largest8() != largestResident || doomRpg->render->shapeData != NULL ||
         doomRpg->render->mediaTexels != NULL) {
         failProbe("cold postcondition");
         return;
     }
 
     memset(&warmFrame, 0, sizeof(warmFrame));
-    memset(&warmPack, 0, sizeof(warmPack));
     EspAssetPack_residentResetStats();
     if (!EspNativeGameplayFrame_renderTurn(doomRpg->render, 64U, &warmFrame)) {
-        failProbe("warm cached render");
+        failProbe("warm render");
         return;
     }
+    memset(&warmPack, 0, sizeof(warmPack));
     EspAssetPack_residentGetStats(&warmPack);
-    heapAfterWarm = heap8();
-    largestAfterWarm = largest8();
-
     view = EspPlayerView_view();
-    if (view == NULL || memcmp(view, &viewBefore, sizeof(viewBefore)) != 0 ||
-        frameFNV() != EXPECTED_FRAME_FNV ||
-        viewportFNV() != EXPECTED_VIEWPORT_FNV ||
-        hudBandsFNV() != EXPECTED_HUD_BANDS_FNV ||
-        warmFrame.frameAfterFNV != EXPECTED_FRAME_FNV ||
-        warmFrame.viewportAfterSpritesFNV != EXPECTED_VIEWPORT_FNV ||
-        warmFrame.hudBandsAfterFNV != EXPECTED_HUD_BANDS_FNV ||
-        warmFrame.temporaryHudBytes != 0U ||
-        warmFrame.worldRouteNoPresent != 1U ||
-        warmFrame.finalPresented != 1U || warmFrame.active != 1U ||
+    if (!exactFrame(&warmFrame) || view == NULL ||
+        memcmp(view, &viewBefore, sizeof(viewBefore)) != 0 ||
         EspAssetPack_isOpen() || !EspAssetPack_isResident() ||
         warmPack.physicalOpens != 0U || warmPack.validationPasses != 0U ||
-        warmPack.residentReuses < 3U ||
-        warmPack.rangeCacheHits == 0U || warmPack.entryCacheHits == 0U ||
+        warmPack.residentReuses < 3U || warmPack.rangeCacheHits == 0U ||
+        warmPack.entryCacheHits == 0U ||
         warmPack.physicalReads >= coldPack.physicalReads ||
-        heapAfterWarm != heapResident || largestAfterWarm != largestResident ||
+        heap8() != heapResident || largest8() != largestResident ||
         doomRpg->render->shapeData != NULL ||
         doomRpg->render->mediaTexels != NULL) {
         failProbe("warm postcondition");
         return;
     }
 
-    printf("[RENDERCACHE] OWNER struct=%uB heap=%u->%u cost=%u largest=%u->%u cache=%u/%uB entries=%u/%u logicalPackClosed=yes physicalResident=yes\n",
+    printf("[RENDERCACHE] OWNER struct=%uB heap=%u->%u cost=%u largest=%u cache=%u/%uB entries=%u/%u physicalResident=yes logicalPackClosed=yes\n",
            (unsigned int)warmPack.ownerBytes,
-           (unsigned int)heapBefore,
-           (unsigned int)heapResident,
-           (unsigned int)(heapBefore >= heapResident
-                              ? heapBefore - heapResident
-                              : 0U),
-           (unsigned int)largestBefore,
+           (unsigned int)heapBefore, (unsigned int)heapResident,
+           (unsigned int)(heapBefore >= heapResident ? heapBefore - heapResident : 0U),
            (unsigned int)largestResident,
            (unsigned int)warmPack.rangeCacheBytesUsed,
            (unsigned int)warmPack.rangeCacheCapacityBytes,
            (unsigned int)warmPack.rangeCacheEntries,
            (unsigned int)warmPack.rangeCacheEntryCapacity);
-    printf("[RENDERCACHE] COLD pack leases=%u reuse=%u physicalOpen=%u validate=%u sdReads=%u sdBytes=%u entry=%uH/%uM range=%uH/%uM/%uS/%uB timeUs=world:%u sprite:%u hud:%u present:%u total:%u heapStable=yes exact=yes\n",
-           (unsigned int)coldPack.logicalOpens,
-           (unsigned int)coldPack.residentReuses,
-           (unsigned int)coldPack.physicalOpens,
-           (unsigned int)coldPack.validationPasses,
-           (unsigned int)coldPack.physicalReads,
-           (unsigned int)coldPack.physicalBytes,
-           (unsigned int)coldPack.entryCacheHits,
-           (unsigned int)coldPack.entryCacheMisses,
-           (unsigned int)coldPack.rangeCacheHits,
-           (unsigned int)coldPack.rangeCacheMisses,
-           (unsigned int)coldPack.rangeCacheStores,
-           (unsigned int)coldPack.rangeCacheBypasses,
-           (unsigned int)coldFrame.worldMicros,
-           (unsigned int)coldFrame.spriteMicros,
-           (unsigned int)coldFrame.hudMicros,
-           (unsigned int)coldFrame.presentMicros,
+    printf("[RENDERCACHE] COLD leases=%u reuse=%u physicalOpen=%u validate=%u sdReads=%u sdBytes=%u entry=%uH/%uM range=%uH/%uM/%uS/%uB timeUs=%u/%u/%u/%u total=%u exact=yes\n",
+           (unsigned int)coldPack.logicalOpens, (unsigned int)coldPack.residentReuses,
+           (unsigned int)coldPack.physicalOpens, (unsigned int)coldPack.validationPasses,
+           (unsigned int)coldPack.physicalReads, (unsigned int)coldPack.physicalBytes,
+           (unsigned int)coldPack.entryCacheHits, (unsigned int)coldPack.entryCacheMisses,
+           (unsigned int)coldPack.rangeCacheHits, (unsigned int)coldPack.rangeCacheMisses,
+           (unsigned int)coldPack.rangeCacheStores, (unsigned int)coldPack.rangeCacheBypasses,
+           (unsigned int)coldFrame.worldMicros, (unsigned int)coldFrame.spriteMicros,
+           (unsigned int)coldFrame.hudMicros, (unsigned int)coldFrame.presentMicros,
            (unsigned int)coldFrame.totalMicros);
-    printf("[RENDERCACHE] WARM pack leases=%u reuse=%u physicalOpen=%u validate=%u sdReads=%u sdBytes=%u entry=%uH/%uM range=%uH/%uM/%uS/%uB timeUs=world:%u sprite:%u hud:%u present:%u total:%u heapStable=yes exact=yes\n",
-           (unsigned int)warmPack.logicalOpens,
-           (unsigned int)warmPack.residentReuses,
-           (unsigned int)warmPack.physicalOpens,
-           (unsigned int)warmPack.validationPasses,
-           (unsigned int)warmPack.physicalReads,
-           (unsigned int)warmPack.physicalBytes,
-           (unsigned int)warmPack.entryCacheHits,
-           (unsigned int)warmPack.entryCacheMisses,
-           (unsigned int)warmPack.rangeCacheHits,
-           (unsigned int)warmPack.rangeCacheMisses,
-           (unsigned int)warmPack.rangeCacheStores,
-           (unsigned int)warmPack.rangeCacheBypasses,
-           (unsigned int)warmFrame.worldMicros,
-           (unsigned int)warmFrame.spriteMicros,
-           (unsigned int)warmFrame.hudMicros,
-           (unsigned int)warmFrame.presentMicros,
+    printf("[RENDERCACHE] WARM leases=%u reuse=%u physicalOpen=%u validate=%u sdReads=%u sdBytes=%u entry=%uH/%uM range=%uH/%uM/%uS/%uB timeUs=%u/%u/%u/%u total=%u exact=yes\n",
+           (unsigned int)warmPack.logicalOpens, (unsigned int)warmPack.residentReuses,
+           (unsigned int)warmPack.physicalOpens, (unsigned int)warmPack.validationPasses,
+           (unsigned int)warmPack.physicalReads, (unsigned int)warmPack.physicalBytes,
+           (unsigned int)warmPack.entryCacheHits, (unsigned int)warmPack.entryCacheMisses,
+           (unsigned int)warmPack.rangeCacheHits, (unsigned int)warmPack.rangeCacheMisses,
+           (unsigned int)warmPack.rangeCacheStores, (unsigned int)warmPack.rangeCacheBypasses,
+           (unsigned int)warmFrame.worldMicros, (unsigned int)warmFrame.spriteMicros,
+           (unsigned int)warmFrame.hudMicros, (unsigned int)warmFrame.presentMicros,
            (unsigned int)warmFrame.totalMicros);
-    printf("[RENDERCACHE] READY coldReads=%u warmReads=%u saved=%u cacheHits=%u frame=%08x viewport=%08x hud=%08x shapeData=NULL mediaTexels=NULL owner remains resident for interactive MOVE/TURN\n",
+    printf("[RENDERCACHE] READY coldReads=%u warmReads=%u saved=%u cacheHits=%u frame=%08x viewport=%08x hud=%08x heapStable=yes shapeData=NULL mediaTexels=NULL owner stays resident for MOVE/TURN\n",
            (unsigned int)coldPack.physicalReads,
            (unsigned int)warmPack.physicalReads,
            (unsigned int)(coldPack.physicalReads - warmPack.physicalReads),
@@ -299,6 +249,5 @@ void Esp32JunctionGameplayRenderResourceCacheProbe_service(
            (unsigned int)warmFrame.frameAfterFNV,
            (unsigned int)warmFrame.viewportAfterSpritesFNV,
            (unsigned int)warmFrame.hudBandsAfterFNV);
-
     probeDone = 1U;
 }
