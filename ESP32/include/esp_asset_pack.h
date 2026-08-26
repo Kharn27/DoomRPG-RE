@@ -41,8 +41,8 @@ typedef struct EspAssetPackResidentStats_s {
     uint32_t ownerBytes;
     uint8_t enabled;
     uint8_t ready;
-    uint8_t reserved0;
-    uint8_t reserved1;
+    uint8_t largeRangeEnabled;
+    uint8_t largeRangeEntries;
 } EspAssetPackResidentStats;
 
 /* Opens and validates the ESP32-native asset pack on the SD card.
@@ -60,14 +60,24 @@ uint32_t EspAssetPack_dataOffset(void);
  * open/close contract remains unchanged until begin succeeds. In resident mode
  * close releases only the logical lease on the default PAK; the already
  * validated SD File stays owned for the next phase/turn. Small exact immutable
- * ranges are cached in one bounded owner; large world texel reads keep streaming
- * directly from the PAK. End is fail-closed while a logical lease is open.
+ * ranges are cached in one bounded owner. End is fail-closed while a logical
+ * lease is open.
  */
 int EspAssetPack_residentBegin(void);
 int EspAssetPack_residentEnd(void);
 int EspAssetPack_isResident(void);
 void EspAssetPack_residentResetStats(void);
 void EspAssetPack_residentGetStats(EspAssetPackResidentStats* outStats);
+
+/* Optional second-stage cache for exact immutable 2048-byte ranges. It borrows
+ * only unused tail bytes from the existing 16 KiB resident payload: no second
+ * heap owner is allocated. Small-range entries retain priority and may evict
+ * large tail entries when they need payload space. Begin/end require the
+ * resident default PAK to be logically closed.
+ */
+int EspAssetPack_residentLargeRangeBegin(void);
+int EspAssetPack_residentLargeRangeEnd(void);
+int EspAssetPack_isResidentLargeRangeEnabled(void);
 
 /* Returns one fixed-size index record by ordinal. The index itself remains on
  * SD and is never materialized as a resident array.
