@@ -1,5 +1,6 @@
 #include <SDL.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "DoomRPG.h"
@@ -149,9 +150,11 @@ int EspNativeGameplayFrame_renderTurn(
     EspNativeFirstFrameState* world = &frameScratch.world;
     uint32_t renderBeforeSpritesFNV;
     uint32_t renderAfterSpritesFNV;
+    uint32_t hudAfterWorldFNV;
     int64_t totalStart;
     int64_t phaseStart;
     int strictSpriteWitness;
+    int doorProbeOk;
     int ok = 0;
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
@@ -178,6 +181,10 @@ int EspNativeGameplayFrame_renderTurn(
     stats->hudBandsBeforeFNV = hudBandsFNV();
     if (stats->frameBeforeFNV == 0U || stats->viewportBeforeFNV == 0U ||
         stats->hudBandsBeforeFNV == 0U) {
+        printf("[TURNFRAME] DIAG fail=PRE_WORLD_FNV frame=%08x viewport=%08x hud=%08x\n",
+               (unsigned int)stats->frameBeforeFNV,
+               (unsigned int)stats->viewportBeforeFNV,
+               (unsigned int)stats->hudBandsBeforeFNV);
         goto done;
     }
 
@@ -185,26 +192,62 @@ int EspNativeGameplayFrame_renderTurn(
     EspNativePlaneRenderer_reset();
     if (EspNativeFirstFrame_renderGameplayViewport(render, view, world) !=
         ESP_NATIVE_FIRST_FRAME_OK) {
+        printf("[TURNFRAME] DIAG fail=WORLD_RENDER player=%d,%d angle=%d\n",
+               (int)view->viewX,
+               (int)view->viewY,
+               (int)view->viewAngle);
         goto done;
     }
     stats->worldMicros = elapsedMicros(phaseStart);
     stats->worldRouteNoPresent = 1U;
 
-    planes = EspNativePlaneRenderer_view();
-    if (planes == NULL || world->presented != 0U || world->rendered != 1U) {
-        goto done;
-    }
+    /* Diagnostic branch only. Observe the world result immediately after the
+     * recursive BSP/raster stack has unwound, before any compositor guard can
+     * hide the failing frame. The probe is strictly non-fatal. */
     stats->worldFrameFNV = world->frameAfterFNV;
     stats->viewportAfterWorldFNV = viewportFNV();
     stats->wallDraws = world->wallDraws;
     stats->wallPixels = world->pixelsDrawn;
-    stats->planePixels = planes->pixelsRendered;
-    if (hudBandsFNV() != stats->hudBandsBeforeFNV) goto done;
+    hudAfterWorldFNV = hudBandsFNV();
+    printf("[DOORVIEW] ARMED build=postworld-v2 player=%d,%d,%d angle=%d viewport=%08x hud=%08x->%08x world=rendered:%u presented:%u frame:%08x walls:%u pixels:%u\n",
+           (int)view->viewX,
+           (int)view->viewY,
+           (int)view->viewZ,
+           (int)view->viewAngle,
+           (unsigned int)stats->viewportAfterWorldFNV,
+           (unsigned int)stats->hudBandsBeforeFNV,
+           (unsigned int)hudAfterWorldFNV,
+           (unsigned int)world->rendered,
+           (unsigned int)world->presented,
+           (unsigned int)world->frameAfterFNV,
+           (unsigned int)world->wallDraws,
+           (unsigned int)world->pixelsDrawn);
+    doorProbeOk = EspNativeDoorViewProbe_log(render,
+                                              stats->viewportAfterWorldFNV);
 
-    /* Diagnostic branch only: deep world/BSP/raster stack is fully unwound here.
-     * The probe is observational; failure to produce a witness never changes
-     * gameplay/render success. */
-    (void)EspNativeDoorViewProbe_log(render, stats->viewportAfterWorldFNV);
+    planes = EspNativePlaneRenderer_view();
+    printf("[TURNFRAME] DIAG postWorld probe=%s planes=%s rendered=%u presented=%u hudExact=%s viewport=%08x\n",
+           doorProbeOk ? "ok" : "no-witness",
+           planes != NULL ? "yes" : "no",
+           (unsigned int)world->rendered,
+           (unsigned int)world->presented,
+           hudAfterWorldFNV == stats->hudBandsBeforeFNV ? "yes" : "NO",
+           (unsigned int)stats->viewportAfterWorldFNV);
+
+    if (planes == NULL || world->presented != 0U || world->rendered != 1U) {
+        printf("[TURNFRAME] DIAG fail=WORLD_POST planes=%s rendered=%u presented=%u\n",
+               planes != NULL ? "yes" : "no",
+               (unsigned int)world->rendered,
+               (unsigned int)world->presented);
+        goto done;
+    }
+    stats->planePixels = planes->pixelsRendered;
+    if (hudAfterWorldFNV != stats->hudBandsBeforeFNV) {
+        printf("[TURNFRAME] DIAG fail=HUD_AFTER_WORLD before=%08x after=%08x\n",
+               (unsigned int)stats->hudBandsBeforeFNV,
+               (unsigned int)hudAfterWorldFNV);
+        goto done;
+    }
 
     phaseStart = esp_timer_get_time();
     renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
@@ -215,6 +258,10 @@ int EspNativeGameplayFrame_renderTurn(
         if (!spriteViewAccountingComplete(sprites) ||
             renderAfterSpritesFNV != renderBeforeSpritesFNV ||
             EspAssetPack_isOpen()) {
+            printf("[TURNFRAME] DIAG fail=SPRITES strict=no complete=%s renderStable=%s pack=%u\n",
+                   spriteViewAccountingComplete(sprites) ? "yes" : "no",
+                   renderAfterSpritesFNV == renderBeforeSpritesFNV ? "yes" : "no",
+                   (unsigned int)EspAssetPack_isOpen());
             goto done;
         }
         printf("[TURNFRAME] SPRITES viewComplete=yes strictFixedPoseWitness=no objects=%u candidates=%u modes=%u/%u base=%u+%u+%u glows=%u:%u+%u+%u unsupported=%u deferred=%u renderStable=yes\n",
@@ -233,6 +280,7 @@ int EspNativeGameplayFrame_renderTurn(
                (unsigned int)sprites->glowDeferred);
     }
     else if (renderAfterSpritesFNV != renderBeforeSpritesFNV) {
+        printf("[TURNFRAME] DIAG fail=SPRITE_RENDER_SCRATCH strict=yes\n");
         goto done;
     }
 
@@ -247,10 +295,19 @@ int EspNativeGameplayFrame_renderTurn(
      * bit-exact. This replaces the old 12.8 KiB save/restore bridge. */
     stats->temporaryHudBytes = 0U;
     stats->hudBandsRestoredFNV = hudBandsFNV();
-    if (stats->hudBandsRestoredFNV != stats->hudBandsBeforeFNV) goto done;
+    if (stats->hudBandsRestoredFNV != stats->hudBandsBeforeFNV) {
+        printf("[TURNFRAME] DIAG fail=HUD_AFTER_SPRITES before=%08x after=%08x\n",
+               (unsigned int)stats->hudBandsBeforeFNV,
+               (unsigned int)stats->hudBandsRestoredFNV);
+        goto done;
+    }
 
     phaseStart = esp_timer_get_time();
-    if (!EspNativeGameplayHudDirection_render(angle, hud)) goto done;
+    if (!EspNativeGameplayHudDirection_render(angle, hud)) {
+        printf("[TURNFRAME] DIAG fail=HUD_DIRECTION angle=%u\n",
+               (unsigned int)angle);
+        goto done;
+    }
     stats->hudMicros = elapsedMicros(phaseStart);
     stats->hudPackReads = hud->packReads;
     stats->hudPixels = hud->pixelsWritten;
@@ -259,11 +316,18 @@ int EspNativeGameplayFrame_renderTurn(
     stats->frameAfterFNV = frameFNV();
     if (stats->frameAfterFNV == 0U || stats->viewportAfterSpritesFNV == 0U ||
         stats->hudBandsAfterFNV == 0U) {
+        printf("[TURNFRAME] DIAG fail=POST_HUD_FNV frame=%08x viewport=%08x hud=%08x\n",
+               (unsigned int)stats->frameAfterFNV,
+               (unsigned int)stats->viewportAfterSpritesFNV,
+               (unsigned int)stats->hudBandsAfterFNV);
         goto done;
     }
 
     phaseStart = esp_timer_get_time();
-    if (!Esp32PlatformVideo_present()) goto done;
+    if (!Esp32PlatformVideo_present()) {
+        printf("[TURNFRAME] DIAG fail=PRESENT\n");
+        goto done;
+    }
     stats->presentMicros = elapsedMicros(phaseStart);
     stats->finalPresented = 1U;
     stats->active = 1U;
