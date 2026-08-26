@@ -21,6 +21,30 @@ typedef struct EspAssetPackEntry_s {
     uint32_t flags;
 } EspAssetPackEntry;
 
+typedef struct EspAssetPackResidentStats_s {
+    uint32_t logicalOpens;
+    uint32_t physicalOpens;
+    uint32_t validationPasses;
+    uint32_t residentReuses;
+    uint32_t physicalReads;
+    uint32_t physicalBytes;
+    uint32_t entryCacheHits;
+    uint32_t entryCacheMisses;
+    uint32_t rangeCacheHits;
+    uint32_t rangeCacheMisses;
+    uint32_t rangeCacheStores;
+    uint32_t rangeCacheBypasses;
+    uint32_t rangeCacheBytesUsed;
+    uint32_t rangeCacheCapacityBytes;
+    uint32_t rangeCacheEntries;
+    uint32_t rangeCacheEntryCapacity;
+    uint32_t ownerBytes;
+    uint8_t enabled;
+    uint8_t ready;
+    uint8_t reserved0;
+    uint8_t reserved1;
+} EspAssetPackResidentStats;
+
 /* Opens and validates the ESP32-native asset pack on the SD card.
  * Pack v2 keeps its complete fixed-size index on SD. Only the Arduino File
  * object and a handful of scalar fields remain resident in RAM.
@@ -31,6 +55,19 @@ int EspAssetPack_isOpen(void);
 uint32_t EspAssetPack_fileSize(void);
 int EspAssetPack_entryCount(void);
 uint32_t EspAssetPack_dataOffset(void);
+
+/* Opt-in backing-store residency for the native gameplay renderer. The normal
+ * open/close contract remains unchanged until begin succeeds. In resident mode
+ * close releases only the logical lease on the default PAK; the already
+ * validated SD File stays owned for the next phase/turn. Small exact immutable
+ * ranges are cached in one bounded owner; large world texel reads keep streaming
+ * directly from the PAK. End is fail-closed while a logical lease is open.
+ */
+int EspAssetPack_residentBegin(void);
+int EspAssetPack_residentEnd(void);
+int EspAssetPack_isResident(void);
+void EspAssetPack_residentResetStats(void);
+void EspAssetPack_residentGetStats(EspAssetPackResidentStats* outStats);
 
 /* Returns one fixed-size index record by ordinal. The index itself remains on
  * SD and is never materialized as a resident array.
