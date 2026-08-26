@@ -2,10 +2,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <esp_timer.h>
-
 #include "DoomRPG.h"
 #include "Render.h"
+
+#include <esp_timer.h>
 
 #include "esp_asset_pack.h"
 #include "esp_native_first_frame.h"
