@@ -41,12 +41,15 @@ typedef struct EspNativeGameplayFrameStats_s {
     uint8_t active;
 } EspNativeGameplayFrameStats;
 
+typedef char EspNativeGameplayFrameStats_must_be_104_bytes[
+    sizeof(EspNativeGameplayFrameStats) == 104U ? 1 : -1];
+
 /* Recompose one complete current Junction gameplay frame after a committed
  * cardinal MOVE/TURN. The world phase now uses a viewport-only route: pixels
  * outside 160x80@0,20 are preserved in place, no historical intermediate
  * presentation exists, and no temporary HUD save buffer is allocated. The
- * small compass footprint is repainted only when the requested angle changes,
- * then exactly one final complete-frame presentation is issued.
+ * bounded compass footprint is then repainted for the current angle before
+ * exactly one final complete-frame presentation is issued.
  *
  * Timing witnesses cover the gameplay compositor only (world/sprites/HUD/final
  * present); they intentionally exclude the separate input feedback hold and its
