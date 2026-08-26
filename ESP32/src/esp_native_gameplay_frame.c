@@ -105,10 +105,11 @@ static uint32_t hudBandsFNV(void) {
 /* The historical Junction sprite milestone deliberately required one mode7
  * object and at least one rendered glow because its fixed north-facing pose was
  * proving those families. A runtime cardinal view may legitimately contain no
- * visible mode7/glow at all. If that strict fixed-pose witness is absent, the
- * gameplay compositor accepts the render only when every admitted base/glow
- * object is fully accounted for. Any unsupported object, deferred glow, short
- * draw, or renderer scratch mutation remains fail-closed. */
+ * admitted sprite at all, or no visible mode7/glow. If that strict fixed-pose
+ * witness is absent, the gameplay compositor accepts the render only when every
+ * map sprite is fully classified and every admitted base/glow is accounted for.
+ * Any unsupported object, deferred glow, short draw, or renderer scratch
+ * mutation remains fail-closed. */
 static int spriteViewAccountingComplete(
     const EspNativeJunctionSpriteStats* sprites) {
     uint32_t classified;
@@ -116,8 +117,7 @@ static int spriteViewAccountingComplete(
     uint32_t glowsFinished;
 
     if (sprites == NULL || sprites->objects == 0U ||
-        sprites->bspCandidates == 0U || sprites->unsupported != 0U ||
-        sprites->glowDeferred != 0U) {
+        sprites->unsupported != 0U || sprites->glowDeferred != 0U) {
         return 0;
     }
 
