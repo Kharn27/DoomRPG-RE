@@ -144,6 +144,16 @@ typedef struct FirstFrameFailure_s {
     int32_t value3;
 } FirstFrameFailure;
 
+typedef struct LegacyWallGuard_s {
+    uint16_t logicalId;
+    uint16_t actualId;
+    uint16_t successorActualId;
+    uint8_t packedByte;
+    uint8_t valid;
+    uint32_t sourceOffset;
+    uint32_t successorSourceOffset;
+} LegacyWallGuard;
+
 #define RECORD_FRAME_FAILURE(code_, line_, logical_, actual_, flags_, source_, v0_, v1_, v2_, v3_) \
     do { \
         if (frameFailure.code == FIRST_FRAME_FAIL_NONE) { \
@@ -166,6 +176,10 @@ static EspNativeFirstFrameState frameState;
  * stack boundary. The witness is printed only after renderFrame() has returned
  * and its recursive BSP/raster stack has fully unwound. */
 static FirstFrameFailure frameFailure;
+/* One exact packed byte from the next legacy compact wall block. It is resolved
+ * only after an OOB witness has unwound the renderer stack, then reused by the
+ * bounded sampler on the retry. */
+static LegacyWallGuard legacyWallGuard;
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -248,6 +262,149 @@ static void printFrameFailure(const char* route,
            (int)frameFailure.value1,
            (int)frameFailure.value2,
            (int)frameFailure.value3);
+}
+
+static int prepareLegacyWallGuard(void) {
+    const EspNativeGraphicsCatalogView* catalog;
+    EspAssetPackEntry mappings;
+    EspAssetPackEntry wallTexels;
+    uint8_t mappingHeader[MAPPINGS_HEADER_BYTES];
+    uint8_t idBytes[2];
+    uint8_t pair[MAPPING_PAIR_BYTES];
+    uint8_t packedByte = 0U;
+    uint32_t texelPairs;
+    uint32_t bitShapePairs;
+    uint32_t textureIdCount;
+    uint32_t spriteIdCount;
+    uint32_t textureIdBase;
+    uint32_t nextSource = UINT32_MAX;
+    uint32_t nextActual = UINT32_MAX;
+    uint64_t expectedMappingsBytes;
+    uint16_t i;
+    int currentPresent = 0;
+    int ok = 0;
+
+    memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
+    if (frameFailure.code != FIRST_FRAME_FAIL_SPAN_OOB ||
+        frameFailure.value0 != (int32_t)WALL_PACKED_BYTES ||
+        (frameFailure.sourceOffset & 1U) != 0U ||
+        EspAssetPack_isOpen() || !EspNativeGraphicsCatalog_isReady()) {
+        return 0;
+    }
+
+    catalog = EspNativeGraphicsCatalog_view();
+    if (catalog == NULL || catalog->textureCount == 0U) return 0;
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+
+    if (!EspAssetPack_findEntry("mappings.bin", &mappings) ||
+        !EspAssetPack_findEntry("wtexels.bin", &wallTexels) ||
+        !EspAssetPack_readRange(&mappings, 0U, mappingHeader,
+                                sizeof(mappingHeader))) {
+        goto done;
+    }
+
+    texelPairs = readLe32(mappingHeader);
+    bitShapePairs = readLe32(mappingHeader + 4U);
+    textureIdCount = readLe32(mappingHeader + 8U);
+    spriteIdCount = readLe32(mappingHeader + 12U);
+    expectedMappingsBytes =
+        (uint64_t)MAPPINGS_HEADER_BYTES +
+        ((uint64_t)texelPairs * MAPPING_PAIR_BYTES) +
+        ((uint64_t)bitShapePairs * MAPPING_PAIR_BYTES) +
+        ((uint64_t)textureIdCount * 2U) +
+        ((uint64_t)spriteIdCount * 2U);
+    if (texelPairs == 0U || bitShapePairs == 0U || textureIdCount == 0U ||
+        texelPairs > 4096U || bitShapePairs > 4096U ||
+        textureIdCount > 4096U || spriteIdCount > 4096U ||
+        expectedMappingsBytes != mappings.size) {
+        goto done;
+    }
+
+    textureIdBase = MAPPINGS_HEADER_BYTES +
+                    texelPairs * MAPPING_PAIR_BYTES +
+                    bitShapePairs * MAPPING_PAIR_BYTES;
+
+    for (i = 0U; i < catalog->textureCount; ++i) {
+        uint32_t logical = catalog->textures[i].resourceId;
+        uint32_t lookupLogical = logical;
+        uint32_t baseActual;
+        uint32_t phase;
+
+        if (lookupLogical >= textureIdCount) lookupLogical = textureIdCount - 1U;
+        if (!EspAssetPack_readRange(&mappings,
+                                    textureIdBase + lookupLogical * 2U,
+                                    idBytes,
+                                    sizeof(idBytes))) {
+            goto done;
+        }
+        baseActual = readLe16(idBytes);
+
+        for (phase = 0U; phase < 4U; ++phase) {
+            uint32_t actual = baseActual + phase;
+            int32_t sourceOffset;
+            uint32_t packedOffset;
+
+            if (actual >= texelPairs) goto done;
+            if (!EspAssetPack_readRange(
+                    &mappings,
+                    MAPPINGS_HEADER_BYTES + actual * MAPPING_PAIR_BYTES,
+                    pair,
+                    sizeof(pair))) {
+                goto done;
+            }
+            sourceOffset = (int32_t)readLe32(pair);
+            if (sourceOffset < 0 || (sourceOffset & 1) != 0) goto done;
+            packedOffset = WALL_TEXEL_HEADER_BYTES +
+                           (uint32_t)sourceOffset / 2U;
+            if (packedOffset > wallTexels.size ||
+                WALL_PACKED_BYTES > wallTexels.size - packedOffset) {
+                goto done;
+            }
+
+            if (actual == frameFailure.actualId &&
+                (uint32_t)sourceOffset == frameFailure.sourceOffset) {
+                currentPresent = 1;
+            }
+            if ((uint32_t)sourceOffset > frameFailure.sourceOffset &&
+                (uint32_t)sourceOffset < nextSource) {
+                nextSource = (uint32_t)sourceOffset;
+                nextActual = actual;
+            }
+        }
+    }
+
+    if (!currentPresent || nextSource == UINT32_MAX || nextActual > UINT16_MAX) {
+        goto done;
+    }
+    if (!EspAssetPack_readRange(
+            &wallTexels,
+            WALL_TEXEL_HEADER_BYTES + nextSource / 2U,
+            &packedByte,
+            1U)) {
+        goto done;
+    }
+
+    legacyWallGuard.logicalId = (uint16_t)frameFailure.logicalId;
+    legacyWallGuard.actualId = (uint16_t)frameFailure.actualId;
+    legacyWallGuard.successorActualId = (uint16_t)nextActual;
+    legacyWallGuard.packedByte = packedByte;
+    legacyWallGuard.valid = 1U;
+    legacyWallGuard.sourceOffset = frameFailure.sourceOffset;
+    legacyWallGuard.successorSourceOffset = nextSource;
+    printf("[NATIVEFRAME] LEGACY_GUARD logical=%u actual=%u source=%u successorActual=%u successorSource=%u byte=%02x owner=BSS bytes=%u\n",
+           (unsigned int)legacyWallGuard.logicalId,
+           (unsigned int)legacyWallGuard.actualId,
+           (unsigned int)legacyWallGuard.sourceOffset,
+           (unsigned int)legacyWallGuard.successorActualId,
+           (unsigned int)legacyWallGuard.successorSourceOffset,
+           (unsigned int)legacyWallGuard.packedByte,
+           (unsigned int)sizeof(legacyWallGuard));
+    ok = 1;
+
+done:
+    if (EspAssetPack_isOpen()) EspAssetPack_close();
+    if (!ok) memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
+    return ok;
 }
 
 static void saveRenderScratch(Render_t* render, RenderScratch* scratch) {
@@ -603,19 +760,30 @@ static int sampleWallSpan(FirstFrameWork* work,
         }
         packedIndex = (uint32_t)(localPosition >> 13);
         if (packedIndex >= WALL_PACKED_BYTES) {
-            RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_OOB,
-                                 render->numLines,
-                                 source->logicalId,
-                                 source->actualId,
-                                 0U,
-                                 source->sourceTexelOffset,
-                                 (int32_t)packedIndex,
-                                 (int32_t)localPosition,
-                                 texelStep,
-                                 remaining);
-            return 0;
+            if (packedIndex == WALL_PACKED_BYTES &&
+                legacyWallGuard.valid == 1U &&
+                legacyWallGuard.logicalId == source->logicalId &&
+                legacyWallGuard.actualId == source->actualId &&
+                legacyWallGuard.sourceOffset == source->sourceTexelOffset) {
+                packed = legacyWallGuard.packedByte;
+            }
+            else {
+                RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_OOB,
+                                     render->numLines,
+                                     source->logicalId,
+                                     source->actualId,
+                                     0U,
+                                     source->sourceTexelOffset,
+                                     (int32_t)packedIndex,
+                                     (int32_t)localPosition,
+                                     texelStep,
+                                     remaining);
+                return 0;
+            }
         }
-        packed = texels[packedIndex];
+        else {
+            packed = texels[packedIndex];
+        }
         nibbleShift = (int)((localPosition >> 10) & 4);
         paletteIndex = (uint32_t)((packed >> nibbleShift) & 0x0f);
         *pixels = source->paletteRgb565[paletteIndex];
@@ -1100,9 +1268,38 @@ done:
     return ok;
 }
 
+static int renderFrameWithLegacyGuardRecovery(
+    Render_t* render,
+    const EspPlayerViewState* playerView,
+    EspNativeFirstFrameState* outState,
+    int clearWholeFramebuffer) {
+    if (renderFrame(render, playerView, outState, clearWholeFramebuffer)) {
+        return 1;
+    }
+    if (frameFailure.code != FIRST_FRAME_FAIL_SPAN_OOB ||
+        frameFailure.value0 != (int32_t)WALL_PACKED_BYTES ||
+        !prepareLegacyWallGuard()) {
+        return 0;
+    }
+
+    printf("[NATIVEFRAME] RETRY legacy compact guard after unwound SPAN_OOB line=%u actual=%u\n",
+           (unsigned int)frameFailure.lineIndex,
+           (unsigned int)frameFailure.actualId);
+    if (!renderFrame(render, playerView, outState, clearWholeFramebuffer)) {
+        return 0;
+    }
+    printf("[NATIVEFRAME] RECOVERED legacy compact guard actual=%u successorActual=%u source=%u->%u\n",
+           (unsigned int)legacyWallGuard.actualId,
+           (unsigned int)legacyWallGuard.successorActualId,
+           (unsigned int)legacyWallGuard.sourceOffset,
+           (unsigned int)legacyWallGuard.successorSourceOffset);
+    return 1;
+}
+
 void EspNativeFirstFrame_reset(void) {
     memset(&frameState, 0, sizeof(frameState));
     memset(&frameFailure, 0, sizeof(frameFailure));
+    memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
 }
 
 int EspNativeFirstFrame_isReady(void) {
@@ -1132,7 +1329,7 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_route(
     candidate.targetMapId = JUNCTION_TARGET_MAP_ID;
     if (candidate.frameBeforeFNV == 0U) return ESP_NATIVE_FIRST_FRAME_SOURCE_INVALID;
 
-    if (!renderFrame(render, playerView, &candidate, 1)) {
+    if (!renderFrameWithLegacyGuardRecovery(render, playerView, &candidate, 1)) {
         printFrameFailure("initial", playerView);
         return ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
     }
@@ -1179,7 +1376,7 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport(
         return ESP_NATIVE_FIRST_FRAME_SOURCE_INVALID;
     }
 
-    if (!renderFrame(render, playerView, &candidate, 0)) {
+    if (!renderFrameWithLegacyGuardRecovery(render, playerView, &candidate, 0)) {
         printFrameFailure("gameplay", playerView);
         return ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
     }
