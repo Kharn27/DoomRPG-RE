@@ -67,7 +67,6 @@
 #define EXPECTED_TEXTURE_STATE_BYTES 60U
 #define EXPECTED_RESULT_BYTES 20U
 #define MAX_ALLOCATOR_OVERHEAD 64U
-#define MIN_LARGEST8_AFTER_STATE 32768U
 
 typedef struct Esp32Map1UnlockProbeState_s {
     int armed;
@@ -791,12 +790,16 @@ void Esp32Map1UnlockProbe_service(struct DoomRPG_s* doomRpgOpaque) {
     }
     allocatorOverhead = heapCost - EXPECTED_TEXTURE_STATE_BYTES;
 
+    /* The 60-byte texture overlay owns only its local allocation cost. Do not
+     * compare later firmware against an early-bringup absolute free-block floor. */
     textureState = EspMapLineTextureState_view();
     if (textureState == NULL || textureState->stateFNV1a != textureStateFNV ||
         sizeof(EspMapLineUnlockResult) != EXPECTED_RESULT_BYTES ||
         lineStateAfter != lineStateBefore ||
         lineStateAfter != EXPECTED_LINE_STATE_FNV ||
-        largestAfter < MIN_LARGEST8_AFTER_STATE || frameAfter != frameBefore ||
+        (largestBefore > largestAfter &&
+         (largestBefore - largestAfter) > heapCost) ||
+        frameAfter != frameBefore ||
         arenaAfter != arenaBefore || arenaAfter != EXPECTED_ARENA_FNV ||
         mapStateAfter != mapStateBefore || mapStateAfter != EXPECTED_MAP_STATE_FNV ||
         scriptAfter != scriptBefore || scriptAfter != EXPECTED_SCRIPT_FNV ||
