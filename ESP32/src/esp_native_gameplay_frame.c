@@ -41,6 +41,7 @@ typedef struct GameplayFrameScratch_s {
  * Pixel payload lives only in the shared framebuffer; the gameplay world route
  * no longer allocates or copies a temporary HUD save. */
 static GameplayFrameScratch frameScratch;
+static uint8_t diagnosticBuildPrinted;
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -169,6 +170,11 @@ int EspNativeGameplayFrame_renderTurn(
         return 0;
     }
 
+    if (!diagnosticBuildPrinted) {
+        printf("[DOORVIEW] BUILD postworld-v3-sprite-accounting nonfatal=yes\n");
+        diagnosticBuildPrinted = 1U;
+    }
+
     frameScratch.busy = 1U;
     memset(stats, 0, sizeof(*stats));
     memset(sprites, 0, sizeof(*sprites));
@@ -209,7 +215,7 @@ int EspNativeGameplayFrame_renderTurn(
     stats->wallDraws = world->wallDraws;
     stats->wallPixels = world->pixelsDrawn;
     hudAfterWorldFNV = hudBandsFNV();
-    printf("[DOORVIEW] ARMED build=postworld-v2 player=%d,%d,%d angle=%d viewport=%08x hud=%08x->%08x world=rendered:%u presented:%u frame:%08x walls:%u pixels:%u\n",
+    printf("[DOORVIEW] ARMED build=postworld-v3 player=%d,%d,%d angle=%d viewport=%08x hud=%08x->%08x world=rendered:%u presented:%u frame:%08x walls:%u pixels:%u\n",
            (int)view->viewX,
            (int)view->viewY,
            (int)view->viewZ,
@@ -258,10 +264,33 @@ int EspNativeGameplayFrame_renderTurn(
         if (!spriteViewAccountingComplete(sprites) ||
             renderAfterSpritesFNV != renderBeforeSpritesFNV ||
             EspAssetPack_isOpen()) {
-            printf("[TURNFRAME] DIAG fail=SPRITES strict=no complete=%s renderStable=%s pack=%u\n",
+            printf("[TURNFRAME] DIAG fail=SPRITES strict=no complete=%s renderStable=%s pack=%u objects=%u hidden=%u rejected=%u candidates=%u unsupported=%u modes=%u/%u base=%u+%u+%u glows=%u:%u+%u+%u deferred=%u depth=%u/%u/%u/%u/%u/%u order=%08x reads=%u\n",
                    spriteViewAccountingComplete(sprites) ? "yes" : "no",
                    renderAfterSpritesFNV == renderBeforeSpritesFNV ? "yes" : "no",
-                   (unsigned int)EspAssetPack_isOpen());
+                   (unsigned int)EspAssetPack_isOpen(),
+                   (unsigned int)sprites->objects,
+                   (unsigned int)sprites->hidden,
+                   (unsigned int)sprites->bspRejected,
+                   (unsigned int)sprites->bspCandidates,
+                   (unsigned int)sprites->unsupported,
+                   (unsigned int)sprites->mode0Objects,
+                   (unsigned int)sprites->mode7Objects,
+                   (unsigned int)sprites->draws,
+                   (unsigned int)sprites->nearCulled,
+                   (unsigned int)sprites->clipCulled,
+                   (unsigned int)sprites->glowCompanions,
+                   (unsigned int)sprites->glowDraws,
+                   (unsigned int)sprites->glowNearCulled,
+                   (unsigned int)sprites->glowClipCulled,
+                   (unsigned int)sprites->glowDeferred,
+                   (unsigned int)sprites->depthNodes,
+                   (unsigned int)sprites->depthLeaves,
+                   (unsigned int)sprites->depthNodeCulled,
+                   (unsigned int)sprites->depthLines,
+                   (unsigned int)sprites->depthBackfaceCulled,
+                   (unsigned int)sprites->depthClipCulled,
+                   (unsigned int)sprites->orderFNV1a,
+                   (unsigned int)sprites->packReads);
             goto done;
         }
         printf("[TURNFRAME] SPRITES viewComplete=yes strictFixedPoseWitness=no objects=%u candidates=%u modes=%u/%u base=%u+%u+%u glows=%u:%u+%u+%u unsupported=%u deferred=%u renderStable=yes\n",
