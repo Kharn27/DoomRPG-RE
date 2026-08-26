@@ -41,6 +41,9 @@
 #define SPAWN_Y 1888
 #define MAP_MIN_CENTER 32
 #define MAP_MAX_CENTER 2016
+#define DYNAMIC_LINE_WITNESS_INDEX 35U
+#define DYNAMIC_LINE_WITNESS_SOURCE_TILE 943U
+#define DYNAMIC_LINE_WITNESS_DEST_TILE 975U
 
 typedef struct LegacySnapshot_s {
     uint32_t hud;
@@ -301,6 +304,189 @@ static int scanNeighbor(uint8_t action,
             status == ESP_NATIVE_GAMEPLAY_COLLISION_BLOCKED_ENTITY ? 2 : 0);
 }
 
+static int verifyDynamicLineCollision(DoomRPG_t* doomRpg) {
+    MoveExecutionWorkspace* w = &executionWorkspace;
+    const EspMapLineStateView* lines;
+    const EspPlayerViewState* view;
+    EspNativeGameplayCollisionResult closedResult;
+    EspNativeGameplayCollisionResult openResult;
+    EspNativeGameplayCollisionResult restoredResult;
+    EspNativeGameplayCollisionStatus closedStatus;
+    EspNativeGameplayCollisionStatus openStatus;
+    EspNativeGameplayCollisionStatus restoredStatus;
+    uint32_t stateFNVBefore = 0U;
+    uint32_t stateFNVOpen = 0U;
+    uint32_t openCountBefore = 0U;
+    uint32_t lockedCountBefore = 0U;
+    uint32_t frameBefore = 0U;
+    uint32_t heapBefore = 0U;
+    uint32_t largestBefore = 0U;
+    uint8_t openBit;
+    int opened = 0;
+    const char* failure = "precondition";
+
+    memset(w, 0, sizeof(*w));
+    memset(&closedResult, 0, sizeof(closedResult));
+    memset(&openResult, 0, sizeof(openResult));
+    memset(&restoredResult, 0, sizeof(restoredResult));
+
+    lines = EspMapLineState_view();
+    view = EspPlayerView_view();
+    if (doomRpg == NULL || lines == NULL || view == NULL ||
+        lines->lineCount <= DYNAMIC_LINE_WITNESS_INDEX ||
+        view->viewX != SPAWN_X || view->viewY != SPAWN_Y ||
+        !EspMapLineState_getOpen(DYNAMIC_LINE_WITNESS_INDEX, &openBit) ||
+        openBit != 0U) {
+        goto fail;
+    }
+
+    stateFNVBefore = lines->stateFNV1a;
+    openCountBefore = lines->openCount;
+    lockedCountBefore = lines->lockedCount;
+    frameBefore = frameFNV();
+    heapBefore = heap8();
+    largestBefore = largest8();
+    w->liveBefore = *view;
+    if (frameBefore != EXPECTED_BASE_FRAME_FNV || openCountBefore != 0U ||
+        !legacySnapshot(doomRpg, &w->legacyBefore) ||
+        !EspMapResidentLifecycle_capture(&w->residentBefore) ||
+        !residentCanonical(&w->residentBefore)) {
+        goto fail;
+    }
+
+    closedStatus = EspNativeGameplayCollision_traceCardinalStep(
+        SPAWN_X, SPAWN_Y, SPAWN_X, SPAWN_Y + 64, &closedResult);
+    if (closedStatus != ESP_NATIVE_GAMEPLAY_COLLISION_BLOCKED_ENTITY ||
+        closedResult.sourceTile != DYNAMIC_LINE_WITNESS_SOURCE_TILE ||
+        closedResult.destTile != DYNAMIC_LINE_WITNESS_DEST_TILE ||
+        closedResult.blockerSpriteIndex != ESP_NATIVE_GAMEPLAY_COLLISION_NO_SPRITE ||
+        closedResult.blockerType != 0U ||
+        closedResult.openLineCount != (uint8_t)openCountBefore) {
+        failure = "closed witness";
+        goto fail;
+    }
+    printf("[DYNLINECOLLISION] CLOSED line=%u tile=%u->%u status=%s blocker=%u type=%u openLines=%u stateFNV=%08x\n",
+           (unsigned int)DYNAMIC_LINE_WITNESS_INDEX,
+           (unsigned int)closedResult.sourceTile,
+           (unsigned int)closedResult.destTile,
+           EspNativeGameplayCollision_statusName(closedStatus),
+           (unsigned int)closedResult.blockerSpriteIndex,
+           (unsigned int)closedResult.blockerType,
+           (unsigned int)closedResult.openLineCount,
+           (unsigned int)stateFNVBefore);
+
+    if (!EspMapLineState_setOpen(DYNAMIC_LINE_WITNESS_INDEX, 1U)) {
+        failure = "open mutation";
+        goto fail;
+    }
+    opened = 1;
+    lines = EspMapLineState_view();
+    if (lines == NULL ||
+        !EspMapLineState_getOpen(DYNAMIC_LINE_WITNESS_INDEX, &openBit) ||
+        openBit != 1U || lines->openCount != openCountBefore + 1U ||
+        lines->lockedCount != lockedCountBefore ||
+        lines->stateFNV1a == stateFNVBefore) {
+        failure = "open state";
+        goto fail;
+    }
+    stateFNVOpen = lines->stateFNV1a;
+
+    openStatus = EspNativeGameplayCollision_traceCardinalStep(
+        SPAWN_X, SPAWN_Y, SPAWN_X, SPAWN_Y + 64, &openResult);
+    if (openStatus != ESP_NATIVE_GAMEPLAY_COLLISION_CLEAR ||
+        openResult.sourceTile != DYNAMIC_LINE_WITNESS_SOURCE_TILE ||
+        openResult.destTile != DYNAMIC_LINE_WITNESS_DEST_TILE ||
+        openResult.blockerSpriteIndex != ESP_NATIVE_GAMEPLAY_COLLISION_NO_SPRITE ||
+        openResult.linkedBlockers != 0U ||
+        openResult.openLineCount != (uint8_t)(openCountBefore + 1U)) {
+        failure = "open collision";
+        goto fail;
+    }
+    if (frameFNV() != frameBefore || heap8() != heapBefore ||
+        largest8() != largestBefore || EspPlayerView_view() == NULL ||
+        memcmp(EspPlayerView_view(), &w->liveBefore, sizeof(w->liveBefore)) != 0 ||
+        !legacySnapshot(doomRpg, &w->legacyAfter) ||
+        !legacyEqual(&w->legacyBefore, &w->legacyAfter) ||
+        !EspMapResidentLifecycle_capture(&w->residentAfter) ||
+        memcmp(&w->residentBefore, &w->residentAfter,
+               sizeof(w->residentBefore)) != 0 || EspAssetPack_isOpen()) {
+        failure = "open side effect";
+        goto fail;
+    }
+    printf("[DYNLINECOLLISION] OPEN line=%u tile=%u->%u status=%s blocker=%u openLines=%u stateFNV=%08x frame=%08x heap=%u largest=%u sideEffects=line-open-bit-only\n",
+           (unsigned int)DYNAMIC_LINE_WITNESS_INDEX,
+           (unsigned int)openResult.sourceTile,
+           (unsigned int)openResult.destTile,
+           EspNativeGameplayCollision_statusName(openStatus),
+           (unsigned int)openResult.blockerSpriteIndex,
+           (unsigned int)openResult.openLineCount,
+           (unsigned int)stateFNVOpen,
+           (unsigned int)frameBefore,
+           (unsigned int)heapBefore,
+           (unsigned int)largestBefore);
+
+    if (!EspMapLineState_setOpen(DYNAMIC_LINE_WITNESS_INDEX, 0U)) {
+        failure = "close rollback mutation";
+        goto fail;
+    }
+    opened = 0;
+    lines = EspMapLineState_view();
+    if (lines == NULL ||
+        !EspMapLineState_getOpen(DYNAMIC_LINE_WITNESS_INDEX, &openBit) ||
+        openBit != 0U || lines->openCount != openCountBefore ||
+        lines->lockedCount != lockedCountBefore ||
+        lines->stateFNV1a != stateFNVBefore) {
+        failure = "close rollback state";
+        goto fail;
+    }
+
+    restoredStatus = EspNativeGameplayCollision_traceCardinalStep(
+        SPAWN_X, SPAWN_Y, SPAWN_X, SPAWN_Y + 64, &restoredResult);
+    if (restoredStatus != closedStatus ||
+        memcmp(&closedResult, &restoredResult, sizeof(closedResult)) != 0 ||
+        frameFNV() != frameBefore || heap8() != heapBefore ||
+        largest8() != largestBefore || EspPlayerView_view() == NULL ||
+        memcmp(EspPlayerView_view(), &w->liveBefore, sizeof(w->liveBefore)) != 0 ||
+        !legacySnapshot(doomRpg, &w->legacyAfter) ||
+        !legacyEqual(&w->legacyBefore, &w->legacyAfter) ||
+        !EspMapResidentLifecycle_capture(&w->residentAfter) ||
+        memcmp(&w->residentBefore, &w->residentAfter,
+               sizeof(w->residentBefore)) != 0 ||
+        !runtimeBoundary(doomRpg) || EspAssetPack_isOpen()) {
+        failure = "restored exactness";
+        goto fail;
+    }
+
+    printf("[DYNLINECOLLISION] RESTORED line=%u tile=%u->%u status=%s openLines=%u stateFNV=%08x openFNV=%08x resultExact=yes frameExact=yes viewExact=yes legacyExact=yes residentExact=yes heapExact=yes\n",
+           (unsigned int)DYNAMIC_LINE_WITNESS_INDEX,
+           (unsigned int)restoredResult.sourceTile,
+           (unsigned int)restoredResult.destTile,
+           EspNativeGameplayCollision_statusName(restoredStatus),
+           (unsigned int)restoredResult.openLineCount,
+           (unsigned int)lines->stateFNV1a,
+           (unsigned int)stateFNVOpen);
+    return 1;
+
+fail:
+    if (opened) {
+        if (!EspMapLineState_setOpen(DYNAMIC_LINE_WITNESS_INDEX, 0U)) {
+            failure = "rollback after failure";
+        }
+        opened = 0;
+    }
+    lines = EspMapLineState_view();
+    printf("[DYNLINECOLLISION] FAILED reason=%s line=%u openLines=%u stateFNV=%08x baselineFNV=%08x frame=%08x heap=%u largest=%u\n",
+           failure,
+           (unsigned int)DYNAMIC_LINE_WITNESS_INDEX,
+           (unsigned int)(lines != NULL ? lines->openCount : 0U),
+           (unsigned int)(lines != NULL ? lines->stateFNV1a : 0U),
+           (unsigned int)stateFNVBefore,
+           (unsigned int)frameFNV(),
+           (unsigned int)heap8(),
+           (unsigned int)largest8());
+    return 0;
+}
+
 static int executeConsumedIntent(const EspNativeGameplayInputState* intent) {
     MoveExecutionWorkspace* w = &executionWorkspace;
     EspNativeGameplayDispatchStatus dispatch;
@@ -553,8 +739,8 @@ void Esp32JunctionMoveCollisionProbe_service(struct DoomRPG_s* doomRpgBase) {
         unsigned int blockedCount = 0U;
         if (!Esp32JunctionTurnDispatchProbe_isActive()) return;
 
-        printf("\n=== Doom RPG ESP32-native cardinal movement + collision / viewport hot path ===\n");
-        printf("[MOVEPROBE] CONTRACT cardinal MOVE/collision semantics are unchanged. A CLEAR move still mutates only EspPlayerViewState x/y after compact WALL/entity collision, but gameplay recomposition must now preserve HUD bands in place: no whole-frame clear, no 12.8 KiB HUD save, no intermediate world present. Timing witnesses expose the remaining renderer cost; no tile events, turn advance, entity activation or facing refresh are enabled.\n");
+        printf("\n=== Doom RPG ESP32-native cardinal movement + dynamic line collision / viewport hot path ===\n");
+        printf("[MOVEPROBE] CONTRACT cardinal MOVE semantics and WALL/sprite collision stay unchanged. Line collision now consumes EspMapLineState per-line open bits: a closed line participates, an open line is skipped, and closing relinks it logically without Entity_t/entityDb. Activation temporarily toggles canonical arrival-door line 35 and requires CLOSED->BLOCK, OPEN->CLEAR, CLOSE->identical BLOCK with exact line-state FNV rollback, heap/frame/view/legacy/resident stability. No SELECT, sound, animation, renderer mutation, tile events, turn advance, entity activation or facing refresh are enabled.\n");
 
         heapBefore = heap8();
         largestBefore = largest8();
@@ -564,6 +750,11 @@ void Esp32JunctionMoveCollisionProbe_service(struct DoomRPG_s* doomRpgBase) {
             frameFNV() != EXPECTED_BASE_FRAME_FNV ||
             !runtimeBoundary(doomRpg)) {
             failProbe("activation predecessor");
+            return;
+        }
+
+        if (!verifyDynamicLineCollision(doomRpg)) {
+            failProbe("dynamic line collision witness");
             return;
         }
 
@@ -604,7 +795,7 @@ void Esp32JunctionMoveCollisionProbe_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
 
-        printf("[MOVEPROBE] READY collisionBytes=%u moveResultBytes=%u viewBytes=%u frameStatsBytes=%u execScratchBytes=%u neighbors=clear:%u blocked:%u recommended=%s then %s blockedWitness=%s heap=%u->%u largest=%u->%u stackHighWater=%u dynamicLines=fail-closed renderFromCallback=no gameplayWorldPresent=none tempHud=0\n",
+        printf("[MOVEPROBE] READY collisionBytes=%u moveResultBytes=%u viewBytes=%u frameStatsBytes=%u execScratchBytes=%u neighbors=clear:%u blocked:%u recommended=%s then %s blockedWitness=%s heap=%u->%u largest=%u->%u stackHighWater=%u dynamicLines=per-line-open-skip dynLineWitness=line35:closed-open-close-exact renderFromCallback=no gameplayWorldPresent=none tempHud=0\n",
                (unsigned int)sizeof(EspNativeGameplayCollisionResult),
                (unsigned int)sizeof(EspNativeGameplayMoveResult),
                (unsigned int)sizeof(EspPlayerViewState),

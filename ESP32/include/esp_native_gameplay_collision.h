@@ -39,15 +39,17 @@ typedef struct EspNativeGameplayCollisionResult_s {
  * legacy Entity_t database; the query therefore composes three compact sources:
  *
  * - static wall occupancy from native tile flags;
- * - closed line-derived entities using the immutable /entities.db eType catalog
- *   plus the exact legacy midpoint/nudge link rule;
+ * - line-derived entities using immutable /entities.db eType + exact legacy
+ *   midpoint/nudge placement, with EspMapLineState open bits as link state;
  * - linked compact sprite/entity topology.
  *
  * The recovered Game_trace() movement mask 62087 / 0xf287 blocks entity types
  * 0,1,2,7,9,12,13,14,15. Sprite types 14/15 retain their crossing-plane
- * predicate. Dynamic line/entity relinking is still deliberately outside this
- * boundary: any live open line remains fail-closed with
- * UNSUPPORTED_DYNAMIC_LINES. No owner is mutated.
+ * predicate. Closed lines participate in collision and open lines are skipped,
+ * matching legacy Game_linkEntity()/Game_unlinkEntity() door semantics without
+ * constructing Entity_t or entityDb. The UNSUPPORTED_DYNAMIC_LINES enum value is
+ * retained for API compatibility but is no longer returned merely because a
+ * native line is open. No owner is mutated.
  */
 EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
     int32_t sourceX,
