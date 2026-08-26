@@ -5,26 +5,31 @@ Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHu
 ## Latest merged hardware baseline
 
 ```text
-PR   = #95 — native gameplay renderer viewport hot path
-main = f98a0b8e9eb4cbd38bf5678a1ce60c4989766985
+PR   = #96 — persistent gameplay render resource cache
+main = 377fce3de5381373750a7fba29d0c83b8142c583
 status = MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md`](MAP1_NATIVE_GAMEPLAY_RENDER_HOTPATH.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md).
 
 ## Current candidate milestone
 
 ```text
-branch = agent/esp32-native-gameplay-render-resource-cache
-base   = f98a0b8e9eb4cbd38bf5678a1ce60c4989766985
-hardware-tested implementation SHA = 1e8c6a5f8fd1e6d01588b1c74dd4fc4e3b961e95
+branch = agent/esp32-native-gameplay-large-range-cache
+base   = 377fce3de5381373750a7fba29d0c83b8142c583
+hardware-tested implementation SHA = 1273f0205c0ba060972500bedd76effc974077bf
 status = REAL-CYD HARDWARE PASS
 merge-ready = yes after docs-only closeout audit
 ```
 
-Evidence: [`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md).
+Evidence: [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md).
 
-The real CYD proves that one bounded persistent `/DoomRPG-ESP32.pak` owner plus exact small-range reuse removes the dominant repeated storage latency while keeping the canonical framebuffer bit-exact. Warm canonical North recomposition drops to `264828 us`, and the user reports the game is now clearly more playable.
+The real CYD proves two permanent renderer/storage boundaries in this milestone:
+
+1. exact `2048 B` immutable texture ranges can borrow the unused tail of the existing `16 KiB` resident payload with **zero new heap owner**;
+2. the legacy renderer's one-byte cross-block wall sampling at packed index `2048` can be reproduced with a **16 B BSS guard** after the raster/BSP stack has fully unwound, without restoring map-wide `mediaTexels`.
+
+The user reports being able to roam throughout the level on the final tested firmware.
 
 ## Permanent hardware / memory invariants
 
@@ -131,6 +136,8 @@ CHANGEMAP intent
  -> native FORWARD/BACK/STRAFE + collision
  -> viewport-only native gameplay recomposition
  -> persistent bounded gameplay render resource owner
+ -> shared-payload exact 2048 B reuse
+ -> bounded legacy wall-block guard recovery
 ```
 
 Stable pre-render/player fingerprints:
@@ -220,7 +227,7 @@ completeFrame=b5218f24
 completeViewport=9206eb24
 ```
 
-The movement milestone permanently fixed wall cache raster addressing: `sourceTexelOffset` is PAK lookup/cache identity only; raster sampling stays in local cached texel space. `mediaTexels` remains NULL.
+The movement milestone permanently fixed wall cache raster addressing: `sourceTexelOffset` is PAK lookup/cache identity only; normal raster sampling stays in local cached texel space. `mediaTexels` remains NULL.
 
 ## Native gameplay HUD
 
@@ -234,7 +241,6 @@ health=30/30 armor=0/20 weapon=2 pistol ammoType=1 ammo=8 face=0 direction=N
 EspNativeGameplayHudState=22 B
 stateFNV=4756db9c
 assets=a.bmp,k.bmp,l.bmp,m.bmp,o.bmp
-initial PAK reads=184 bytes=6344 rows=164 pixels=7538
 ```
 
 Canonical framebuffer:
@@ -284,8 +290,6 @@ Feedback contract:
 hold=120 ms
 maxEdits=512
 bounded static feedback storage ~2 KiB
-style=neon double ring + vector glyph
-palette=BLUE/GREEN/YELLOW/RED
 current-frame FNV captured per tap
 reverse exact restore before dispatch
 runtime allocation=0 for feedback
@@ -302,9 +306,18 @@ TURN_RIGHT => -64
 cardinal angles = 0/64/128/192
 ```
 
+Cardinal semantic orientation:
+
+```text
+0   = East
+64  = North
+128 = West
+192 = South
+```
+
 TURN is live at arbitrary settled native tile-center positions. It does not call `Game_advanceTurn`, `Game_executeTile`, legacy `finishRotation`, entity/monster gameplay or facing refresh.
 
-Canonical spawn cardinal proof:
+Canonical spawn proof:
 
 ```text
 N / angle64: frame ba3e5182 viewport 9206eb24 HUD 6c2aa46f
@@ -334,17 +347,14 @@ STRAFE_RIGHT 943->944 delta=+64,0 flags=01 WALL
 openLines=0
 ```
 
-Real linked-entity blocker witness:
+Real linked-entity blocker witnesses include:
 
 ```text
-FORWARD 911->910
-collision=ENTITY
-blocker=24
-type=7
-frame exact / no movement
+FORWARD 911->910 collision=ENTITY blocker=24 type=7
+FORWARD 752->784 collision=ENTITY blocker=32 type=7
 ```
 
-Opened native lines remain deliberately fail-closed until dynamic line/entity relinking has its own milestone.
+Blocked actions keep the framebuffer and position exact. Opened native lines remain deliberately fail-closed until dynamic line/entity relinking has its own milestone.
 
 ## Hardware-proven gameplay renderer hot path
 
@@ -359,13 +369,7 @@ final physical present = exactly one
 HUD bands preserved in place during world/sprite redraw
 ```
 
-Hardware-tested implementation SHA for that merged milestone:
-
-```text
-a07455e34eadbacca7d23fb068ba4308f0b7f80a
-```
-
-Canonical framebuffer contract remains:
+Canonical framebuffer contract:
 
 ```text
 frame=ba3e5182
@@ -377,9 +381,9 @@ finalPresent=1
 exact=yes
 ```
 
-## Hardware-proven persistent gameplay render resource cache
+## Merged persistent gameplay render resource cache
 
-Permanent owner contract:
+PR #96 permanent owner:
 
 ```text
 physical default PAK owner = persistent during native gameplay
@@ -388,148 +392,175 @@ full PAK validation = once at resident begin
 entry descriptor cache slots = 24
 exact range payload = 16384 B
 exact range key capacity = 256
-cacheable range max = 1024 B
-large world ranges = PAK-backed bypass
+small cacheable range max = 1024 B
+owner struct = 21160 B
 runtime ZIP = forbidden
 shapeData = NULL
 mediaTexels = NULL
 ```
 
-Final real-CYD implementation SHA:
+Merged implementation hardware witness:
 
 ```text
-1e8c6a5f8fd1e6d01588b1c74dd4fc4e3b961e95
-```
-
-Owner hardware witness:
-
-```text
-owner struct=21160 B
-heap8=66372->40832
-observed heap cost=25540 B
-largest8=13812 B
 cache=9225/16384 B after canonical cold frame
 range entries=195/256
 physicalResident=yes
 logicalPackClosed=yes
 ```
 
-Canonical North COLD:
+Canonical warm North before the new large-range class:
 
 ```text
-physicalOpen=0 validate=0
-sdReads=280 sdBytes=55541
-entry=6H/9M
-range=155H/195M/195S/22B
-world=1044890 us
-sprites=505972 us
-HUD=378835 us
-present=34925 us
-total=1974252 us
-frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f exact=yes
-```
-
-Canonical North WARM:
-
-```text
-physicalOpen=0 validate=0
-sdReads=22 sdBytes=45056
-entry=15H/0M
-range=350H/0M/0S/22B
-world=209454 us
-sprites=9604 us
-HUD=1317 us
-present=34908 us
-total=264828 us
-frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
-heapStable=yes shapeData=NULL mediaTexels=NULL
-```
-
-Storage reduction:
-
-```text
-280 -> 22 physical reads
-258 reads saved
-~92.1% fewer physical reads
-```
-
-The remaining warm physical traffic is exactly:
-
-```text
-22 reads
-45056 B
+sdReads=22
+sdBytes=45056
 22 x 2048 B
+world~204-209 ms in recent runs
+sprites~9.4 ms
+HUD~1.3 ms warm
+present~34.9 ms
+frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
 ```
 
-That is the deliberate >1024 B bypass class and is now the dominant measured storage debt.
+## Current shared-payload exact 2048 B cache
 
-Interactive hardware samples with the owner kept resident:
+No second permanent heap owner is allocated.
+
+Layout:
 
 ```text
-FORWARD 943->911 total=255050 us
-FORWARD 911->879 total=272550 us
-TURN_RIGHT 64->0 @ tile879 total=160497 us
-TURN_LEFT 0->64 @ tile879 total=272608 us
-TURN_LEFT 64->128 @ tile879 total=260054 us
-TURN_RIGHT 128->64 @ tile879 total=272618 us
-FORWARD 879->847 total=235073 us
-FORWARD 847->815 total=290621 us
-TURN_RIGHT 64->0 @ tile815 total=203124 us
+small <=1024 B ranges grow upward
+large exact 2048 B ranges grow downward
+small ranges retain priority
+large entries use the same 256-record table
+activation allocates nothing
 ```
 
-Across that sequence:
+Canonical real-CYD proof:
 
 ```text
-heap8=40832->40832
-largest8=13812->13812
-tempHud=0
-routeNoPresent=1
-finalPresent=1
+BASE  sdReads=22 sdBytes=45056 cache=9225/16384 B entries=195/256 large=off
+LEARN slots=3 sdReads=22 sdBytes=45056 range=350H/22M/3S/19B
+      cache=15369/16384 B entries=198/256 large=3 exact=yes
+WARM  slots=3 sdReads=19 sdBytes=38912 range=353H/19M/0S/19B
+      cache=15369/16384 B entries=198/256 large=3 exact=yes
+READY savedReads=3 savedBytes=6144 ownerDelta=0 heapStable=yes
+      frame=ba3e5182 viewport=9206eb24 HUD=6c2aa46f
+```
+
+The measured strict-frame total was about `232.9 ms` once the three retained large ranges were warm. The user reports gameplay is playable, but the perceptual gain from this cache alone is modest.
+
+## Native wall packed-index boundary and final guard
+
+Unrestricted roaming exposed the first exact bounded-wall overread at:
+
+```text
+view=992,1568,36
+angle=64
+line=90
+logical=66
+actual=140
+flags=00002000
+source=98304
+packedIndex=2048
+```
+
+This witness is **not** a double-height wall (`0x00010000` is absent). The previously attempted double-height continuation hypothesis is retired.
+
+Recovered legacy behavior:
+
+```text
+required actual wall blocks were sorted by source offset
+ -> packed contiguously into legacy mediaTexels
+ -> local block index 2048 therefore addressed byte 0 of the next admitted block
+```
+
+Permanent native repair:
+
+```text
+LegacyWallGuard = 16 B BSS
+no extra 2048 B buffer
+no FirstFrameWork growth
+no PAK read from sampleWallSpan()
+exact index 2048 only
+all unrelated OOB stays fail-closed
+```
+
+Recovery flow:
+
+```text
+SPAN_OOB 2048
+ -> renderer unwinds
+ -> resolve next admitted compact wall block outside raster stack
+ -> read one packed byte
+ -> publish 16 B guard
+ -> retry viewport frame
+```
+
+Explicit final real-CYD witness:
+
+```text
+logical=15
+actual=40
+source=20480
+successorActual=108
+successorSource=61440
+byte=aa
+guard owner=BSS bytes=16
+retry line=33
+recovered=yes
+```
+
+The corresponding move then succeeded:
+
+```text
+pos 992,1696 -> 992,1760
+tile 847 -> 879
+frame ece49fb2 -> ea36efee
 legacyStable=yes
 residentStable=yes
-Game_advanceTurn=no
-Game_executeTile=no
-facingRefresh=deferred
+orientationStable=yes
 ```
 
-One first West-direction HUD repaint measured `110734 us`; already-warm compass paths measured about `1.3 ms`. Keep this as a hardware witness rather than treating every HUD direction as fully warmed from boot.
+The user then roamed throughout the level on the same firmware. The Serial excerpt is partial because the run produced too much output; do not invent missing per-position fingerprints.
 
-## Current performance truth
+## Final RAM / stack truth for current candidate
 
-Before the resident owner, the immediate predecessor North frame in the same firmware measured:
+Stable long-run witness from hardware-tested SHA `1273f020...`:
 
 ```text
-world=1295232 us
-sprites=1610031 us
-HUD=400296 us
-present=34935 us
-total=3350141 us
+heap=105424
+heap8=39756
+largest8=14836
+stackHighWater=924
+MOVE execScratch=540 B
+TURN execScratch=484 B
 ```
 
-Warm resident North:
+The immediately preceding stable pre-guard heap was `39772 B`. The exact `16 B` reduction matches `sizeof(LegacyWallGuard)`.
+
+Across the long roaming run:
 
 ```text
-world=209454 us
-sprites=9604 us
-HUD=1317 us
-present=34908 us
-total=264828 us
+heap stable
+largest stable
+legacyStable=yes
+residentStable=yes
+shapeData=NULL
+mediaTexels=NULL
+no Guru Meditation
+no reboot
 ```
 
-This is approximately `12.65x` lower total recomposition time, or about `92.1%` lower latency for this strict repeated pose. The user reports that the result is now clearly more playable.
+## Known visual anomaly deliberately NOT closed by this milestone
 
-Warm North phase share is now roughly:
+The user still observes a confusing renderer/view symptom around the start/arrival door:
 
-```text
-world   ~79.1%
-sprites  ~3.6%
-HUD      ~0.5%
-present ~13.2%
-```
+- when backing away while oriented away from the door, the view can appear as if a half-turn occurred;
+- a similarly confusing view can appear when facing/approaching the door.
 
-The next renderer debt is therefore no longer broad repeated metadata/sprite/HUD work. It is the remaining 2048-byte world texture range class plus the fixed physical present cost.
+Serial semantic orientation remains coherent and MOVE preserves it. TURN changes it only by the proven cardinal `+/-64` steps. Therefore do **not** alter `EspPlayerViewState` or gameplay orientation merely to hide the visual symptom.
 
-Do not grow permanent RAM casually: the no-PSRAM hardware now has a proven post-owner witness of only `40832 B` heap8 and `13812 B` largest block.
+Treat this as the preferred next renderer investigation: camera transform / BSP visibility / wall orientation / geometry relationship around that door needs a small dedicated hardware witness.
 
 ## Hardware-selected classic CYD presentation
 
@@ -573,6 +604,8 @@ persistentRenderResourceOwner=yes
 residentPakPhysical=yes
 logicalRenderPakLeasesClose=yes
 smallExactRangeCache=yes
+largeExact2048RangeCache=yes
+legacyWallGuard=yes
 TURN_LEFT=yes
 TURN_RIGHT=yes
 FORWARD/BACK/STRAFE semantic execution=yes
@@ -590,7 +623,8 @@ facingRefresh=deferred
 ## Still intentionally outside
 
 ```text
-2048-byte persistent wall/plane texture range caching
+start-door visual renderer/view anomaly fix
+post-recovery optimization of guard metadata reads
 Game_eventFlagsForMovement
 post-move tile event execution
 actual turn advancement
@@ -622,19 +656,27 @@ MERGE-READY after docs-only audit
 Hardware-tested implementation SHA:
 
 ```text
-1e8c6a5f8fd1e6d01588b1c74dd4fc4e3b961e95
+1273f0205c0ba060972500bedd76effc974077bf
 ```
 
 No code may change after this tested SHA without another hardware run. Documentation commits after it must be `.md` only.
 
 ## Next bounded milestone after merge
 
-After the user merges, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md` and [`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md) before branching.
+After the user merges, recover the exact new `main` SHA and reread this file, `DOCUMENTATION.md` and [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md) before branching.
 
-Preferred renderer frontier: **remaining 2048-byte world texture reads, without increasing permanent RAM unless hardware evidence justifies it**.
+Preferred next milestone: **start-door renderer/view anomaly witness**.
 
-Current warm witness is exactly `22 x 2048 B` physical reads. First investigate whether the already allocated 16 KiB resident payload can be partitioned/reused for a tiny bounded wall/plane cache while retaining the small-range wins. Preserve bit-exact output, explicit ownership, fail-closed behavior and the post-owner RAM floor.
+Keep it narrow:
 
-Do not combine this storage milestone with new gameplay semantics.
+```text
+no semantic orientation mutation until divergence is proven
+capture player view angle/position
+capture transformed renderer viewX/viewY/viewAngle
+capture relevant BSP/line IDs and flags around the door
+compare opposite-facing and BACK/FORWARD views at the same settled tile centers
+keep success path silent
+fail closed
+```
 
-If behavior is prioritized instead, the next coherent semantic family remains post-move `Game_eventFlagsForMovement` / tile-event / turn-advance behavior.
+Do not mix this renderer diagnosis with post-move tile events, turn advancement, doors/dynamic line relinking, or other gameplay semantics.

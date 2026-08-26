@@ -118,7 +118,68 @@ typedef struct RenderScratch_s {
     int columnScale[MAX_SCREEN_WIDTH];
 } RenderScratch;
 
+typedef enum FirstFrameFailureCode_e {
+    FIRST_FRAME_FAIL_NONE = 0,
+    FIRST_FRAME_FAIL_SPAN_SCREEN = 1,
+    FIRST_FRAME_FAIL_SPAN_NEGATIVE = 2,
+    FIRST_FRAME_FAIL_SPAN_OOB = 3,
+    FIRST_FRAME_FAIL_WALL_DEPTH = 4,
+    FIRST_FRAME_FAIL_LINE_FETCH = 5,
+    FIRST_FRAME_FAIL_TEXTURE_MISSING = 6,
+    FIRST_FRAME_FAIL_WALL_LOAD = 7,
+    FIRST_FRAME_FAIL_WALL_RASTER = 8,
+    FIRST_FRAME_FAIL_WALK = 9
+} FirstFrameFailureCode;
+
+typedef struct FirstFrameFailure_s {
+    uint32_t code;
+    uint32_t lineIndex;
+    uint32_t logicalId;
+    uint32_t actualId;
+    uint32_t flags;
+    uint32_t sourceOffset;
+    int32_t value0;
+    int32_t value1;
+    int32_t value2;
+    int32_t value3;
+} FirstFrameFailure;
+
+typedef struct LegacyWallGuard_s {
+    uint16_t logicalId;
+    uint16_t actualId;
+    uint16_t successorActualId;
+    uint8_t packedByte;
+    uint8_t valid;
+    uint32_t sourceOffset;
+    uint32_t successorSourceOffset;
+} LegacyWallGuard;
+
+#define RECORD_FRAME_FAILURE(code_, line_, logical_, actual_, flags_, source_, v0_, v1_, v2_, v3_) \
+    do { \
+        if (frameFailure.code == FIRST_FRAME_FAIL_NONE) { \
+            frameFailure.code = (uint32_t)(code_); \
+            frameFailure.lineIndex = (uint32_t)(line_); \
+            frameFailure.logicalId = (uint32_t)(logical_); \
+            frameFailure.actualId = (uint32_t)(actual_); \
+            frameFailure.flags = (uint32_t)(flags_); \
+            frameFailure.sourceOffset = (uint32_t)(source_); \
+            frameFailure.value0 = (int32_t)(v0_); \
+            frameFailure.value1 = (int32_t)(v1_); \
+            frameFailure.value2 = (int32_t)(v2_); \
+            frameFailure.value3 = (int32_t)(v3_); \
+        } \
+    } while (0)
+
 static EspNativeFirstFrameState frameState;
+/* Failure-only BSS witness. It deliberately adds no fields to FirstFrameWork,
+ * whose large automatic instance is already close to the classic-CYD loopTask
+ * stack boundary. The witness is printed only after renderFrame() has returned
+ * and its recursive BSP/raster stack has fully unwound. */
+static FirstFrameFailure frameFailure;
+/* One exact packed byte from the next legacy compact wall block. It is resolved
+ * only after an OOB witness has unwound the renderer stack, then reused by the
+ * bounded sampler on the retry. */
+static LegacyWallGuard legacyWallGuard;
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -164,6 +225,186 @@ static uint32_t framebufferFNV(const Render_t* render) {
         return 0U;
     }
     return fnv1a32(render->framebuffer, expectedBytes);
+}
+
+static const char* frameFailureName(uint32_t code) {
+    switch ((FirstFrameFailureCode)code) {
+    case FIRST_FRAME_FAIL_SPAN_SCREEN: return "SPAN_SCREEN";
+    case FIRST_FRAME_FAIL_SPAN_NEGATIVE: return "SPAN_NEGATIVE";
+    case FIRST_FRAME_FAIL_SPAN_OOB: return "SPAN_OOB";
+    case FIRST_FRAME_FAIL_WALL_DEPTH: return "WALL_DEPTH";
+    case FIRST_FRAME_FAIL_LINE_FETCH: return "LINE_FETCH";
+    case FIRST_FRAME_FAIL_TEXTURE_MISSING: return "TEXTURE_MISSING";
+    case FIRST_FRAME_FAIL_WALL_LOAD: return "WALL_LOAD";
+    case FIRST_FRAME_FAIL_WALL_RASTER: return "WALL_RASTER";
+    case FIRST_FRAME_FAIL_WALK: return "WALK";
+    default: return "NONE";
+    }
+}
+
+static void printFrameFailure(const char* route,
+                              const EspPlayerViewState* playerView) {
+    if (frameFailure.code == FIRST_FRAME_FAIL_NONE) return;
+    printf("[NATIVEFRAME] FAILED route=%s code=%u/%s view=%d,%d,%d angle=%d line=%u logical=%u actual=%u flags=%08x source=%u v=%d,%d,%d,%d\n",
+           route != NULL ? route : "?",
+           (unsigned int)frameFailure.code,
+           frameFailureName(frameFailure.code),
+           playerView != NULL ? (int)playerView->viewX : -1,
+           playerView != NULL ? (int)playerView->viewY : -1,
+           playerView != NULL ? (int)playerView->viewZ : -1,
+           playerView != NULL ? (int)playerView->viewAngle : -1,
+           (unsigned int)frameFailure.lineIndex,
+           (unsigned int)frameFailure.logicalId,
+           (unsigned int)frameFailure.actualId,
+           (unsigned int)frameFailure.flags,
+           (unsigned int)frameFailure.sourceOffset,
+           (int)frameFailure.value0,
+           (int)frameFailure.value1,
+           (int)frameFailure.value2,
+           (int)frameFailure.value3);
+}
+
+static int prepareLegacyWallGuard(void) {
+    const EspNativeGraphicsCatalogView* catalog;
+    EspAssetPackEntry mappings;
+    EspAssetPackEntry wallTexels;
+    uint8_t mappingHeader[MAPPINGS_HEADER_BYTES];
+    uint8_t idBytes[2];
+    uint8_t pair[MAPPING_PAIR_BYTES];
+    uint8_t packedByte = 0U;
+    uint32_t texelPairs;
+    uint32_t bitShapePairs;
+    uint32_t textureIdCount;
+    uint32_t spriteIdCount;
+    uint32_t textureIdBase;
+    uint32_t nextSource = UINT32_MAX;
+    uint32_t nextActual = UINT32_MAX;
+    uint64_t expectedMappingsBytes;
+    uint16_t i;
+    int currentPresent = 0;
+    int ok = 0;
+
+    memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
+    if (frameFailure.code != FIRST_FRAME_FAIL_SPAN_OOB ||
+        frameFailure.value0 != (int32_t)WALL_PACKED_BYTES ||
+        (frameFailure.sourceOffset & 1U) != 0U ||
+        EspAssetPack_isOpen() || !EspNativeGraphicsCatalog_isReady()) {
+        return 0;
+    }
+
+    catalog = EspNativeGraphicsCatalog_view();
+    if (catalog == NULL || catalog->textureCount == 0U) return 0;
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+
+    if (!EspAssetPack_findEntry("mappings.bin", &mappings) ||
+        !EspAssetPack_findEntry("wtexels.bin", &wallTexels) ||
+        !EspAssetPack_readRange(&mappings, 0U, mappingHeader,
+                                sizeof(mappingHeader))) {
+        goto done;
+    }
+
+    texelPairs = readLe32(mappingHeader);
+    bitShapePairs = readLe32(mappingHeader + 4U);
+    textureIdCount = readLe32(mappingHeader + 8U);
+    spriteIdCount = readLe32(mappingHeader + 12U);
+    expectedMappingsBytes =
+        (uint64_t)MAPPINGS_HEADER_BYTES +
+        ((uint64_t)texelPairs * MAPPING_PAIR_BYTES) +
+        ((uint64_t)bitShapePairs * MAPPING_PAIR_BYTES) +
+        ((uint64_t)textureIdCount * 2U) +
+        ((uint64_t)spriteIdCount * 2U);
+    if (texelPairs == 0U || bitShapePairs == 0U || textureIdCount == 0U ||
+        texelPairs > 4096U || bitShapePairs > 4096U ||
+        textureIdCount > 4096U || spriteIdCount > 4096U ||
+        expectedMappingsBytes != mappings.size) {
+        goto done;
+    }
+
+    textureIdBase = MAPPINGS_HEADER_BYTES +
+                    texelPairs * MAPPING_PAIR_BYTES +
+                    bitShapePairs * MAPPING_PAIR_BYTES;
+
+    for (i = 0U; i < catalog->textureCount; ++i) {
+        uint32_t logical = catalog->textures[i].resourceId;
+        uint32_t lookupLogical = logical;
+        uint32_t baseActual;
+        uint32_t phase;
+
+        if (lookupLogical >= textureIdCount) lookupLogical = textureIdCount - 1U;
+        if (!EspAssetPack_readRange(&mappings,
+                                    textureIdBase + lookupLogical * 2U,
+                                    idBytes,
+                                    sizeof(idBytes))) {
+            goto done;
+        }
+        baseActual = readLe16(idBytes);
+
+        for (phase = 0U; phase < 4U; ++phase) {
+            uint32_t actual = baseActual + phase;
+            int32_t sourceOffset;
+            uint32_t packedOffset;
+
+            if (actual >= texelPairs) goto done;
+            if (!EspAssetPack_readRange(
+                    &mappings,
+                    MAPPINGS_HEADER_BYTES + actual * MAPPING_PAIR_BYTES,
+                    pair,
+                    sizeof(pair))) {
+                goto done;
+            }
+            sourceOffset = (int32_t)readLe32(pair);
+            if (sourceOffset < 0 || (sourceOffset & 1) != 0) goto done;
+            packedOffset = WALL_TEXEL_HEADER_BYTES +
+                           (uint32_t)sourceOffset / 2U;
+            if (packedOffset > wallTexels.size ||
+                WALL_PACKED_BYTES > wallTexels.size - packedOffset) {
+                goto done;
+            }
+
+            if (actual == frameFailure.actualId &&
+                (uint32_t)sourceOffset == frameFailure.sourceOffset) {
+                currentPresent = 1;
+            }
+            if ((uint32_t)sourceOffset > frameFailure.sourceOffset &&
+                (uint32_t)sourceOffset < nextSource) {
+                nextSource = (uint32_t)sourceOffset;
+                nextActual = actual;
+            }
+        }
+    }
+
+    if (!currentPresent || nextSource == UINT32_MAX || nextActual > UINT16_MAX) {
+        goto done;
+    }
+    if (!EspAssetPack_readRange(
+            &wallTexels,
+            WALL_TEXEL_HEADER_BYTES + nextSource / 2U,
+            &packedByte,
+            1U)) {
+        goto done;
+    }
+
+    legacyWallGuard.logicalId = (uint16_t)frameFailure.logicalId;
+    legacyWallGuard.actualId = (uint16_t)frameFailure.actualId;
+    legacyWallGuard.successorActualId = (uint16_t)nextActual;
+    legacyWallGuard.packedByte = packedByte;
+    legacyWallGuard.valid = 1U;
+    legacyWallGuard.sourceOffset = frameFailure.sourceOffset;
+    legacyWallGuard.successorSourceOffset = nextSource;
+    printf("[NATIVEFRAME] LEGACY_GUARD logical=%u actual=%u source=%u successorActual=%u successorSource=%u byte=%02x owner=BSS bytes=%u\n",
+           (unsigned int)legacyWallGuard.logicalId,
+           (unsigned int)legacyWallGuard.actualId,
+           (unsigned int)legacyWallGuard.sourceOffset,
+           (unsigned int)legacyWallGuard.successorActualId,
+           (unsigned int)legacyWallGuard.successorSourceOffset,
+           (unsigned int)legacyWallGuard.packedByte,
+           (unsigned int)sizeof(legacyWallGuard));
+    ok = 1;
+
+done:
+    if (EspAssetPack_isOpen()) EspAssetPack_close();
+    if (!ok) memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
+    return ok;
 }
 
 static void saveRenderScratch(Render_t* render, RenderScratch* scratch) {
@@ -482,7 +723,16 @@ static int sampleWallSpan(FirstFrameWork* work,
     ++work->spanCalls;
     if (pixelCount <= 0) return 1;
     if (x < render->screenLeft || x >= render->screenRight ||
-        y < render->screenTop || y >= render->screenBottom) return 0;
+        y < render->screenTop || y >= render->screenBottom) {
+        RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_SCREEN,
+                             render->numLines,
+                             source->logicalId,
+                             source->actualId,
+                             0U,
+                             source->sourceTexelOffset,
+                             x, y, pixelCount, texelStep);
+        return 0;
+    }
 
     pitch = render->pitch >> 1;
     pixels = (uint16_t*)render->pixels + pitch * y + x;
@@ -495,10 +745,45 @@ static int sampleWallSpan(FirstFrameWork* work,
         uint32_t paletteIndex;
         int nibbleShift;
 
-        if (localPosition < 0) return 0;
+        if (localPosition < 0) {
+            RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_NEGATIVE,
+                                 render->numLines,
+                                 source->logicalId,
+                                 source->actualId,
+                                 0U,
+                                 source->sourceTexelOffset,
+                                 (int32_t)localPosition,
+                                 texelStep,
+                                 remaining,
+                                 x);
+            return 0;
+        }
         packedIndex = (uint32_t)(localPosition >> 13);
-        if (packedIndex >= WALL_PACKED_BYTES) return 0;
-        packed = texels[packedIndex];
+        if (packedIndex >= WALL_PACKED_BYTES) {
+            if (packedIndex == WALL_PACKED_BYTES &&
+                legacyWallGuard.valid == 1U &&
+                legacyWallGuard.logicalId == source->logicalId &&
+                legacyWallGuard.actualId == source->actualId &&
+                legacyWallGuard.sourceOffset == source->sourceTexelOffset) {
+                packed = legacyWallGuard.packedByte;
+            }
+            else {
+                RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_OOB,
+                                     render->numLines,
+                                     source->logicalId,
+                                     source->actualId,
+                                     0U,
+                                     source->sourceTexelOffset,
+                                     (int32_t)packedIndex,
+                                     (int32_t)localPosition,
+                                     texelStep,
+                                     remaining);
+                return 0;
+            }
+        }
+        else {
+            packed = texels[packedIndex];
+        }
         nibbleShift = (int)((localPosition >> 10) & 4);
         paletteIndex = (uint32_t)((packed >> nibbleShift) & 0x0f);
         *pixels = source->paletteRgb565[paletteIndex];
@@ -541,7 +826,16 @@ static int drawProjectedWall(FirstFrameWork* work,
     }
 
     while (i5 < i6) {
-        if (i8 <= 0) return 0;
+        if (i8 <= 0) {
+            RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALL_DEPTH,
+                                 render->numLines,
+                                 source->logicalId,
+                                 source->actualId,
+                                 (uint32_t)line->flags,
+                                 source->sourceTexelOffset,
+                                 i8, i5, i6, i3);
+            return 0;
+        }
         i12 = (0x40000000 / i8) << 2;
         i13 = ((int)(DoomRPG_FixedMul(i7, i12) >> 16)) & 63;
         i8 += i3;
@@ -577,7 +871,21 @@ static int drawProjectedWall(FirstFrameWork* work,
                 i15 = render->screenBottom - i16;
             }
             if (!sampleWallSpan(work, source, texels,
-                                i5, i16, i17, i14, i15)) return 0;
+                                i5, i16, i17, i14, i15)) {
+                if (frameFailure.code != FIRST_FRAME_FAIL_NONE) {
+                    frameFailure.flags = (uint32_t)line->flags;
+                }
+                else {
+                    RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALL_RASTER,
+                                         render->numLines,
+                                         source->logicalId,
+                                         source->actualId,
+                                         (uint32_t)line->flags,
+                                         source->sourceTexelOffset,
+                                         i5, i16, i17, i15);
+                }
+                return 0;
+            }
         }
         ++i5;
     }
@@ -641,7 +949,12 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
     const ResolvedWallTexture* source;
     const uint8_t* texels;
 
-    if (work == NULL || !EspMapRuntime_getLine(lineIndex, &mapLine)) return 0;
+    if (work == NULL || !EspMapRuntime_getLine(lineIndex, &mapLine)) {
+        RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_LINE_FETCH,
+                             lineIndex, 0U, 0U, 0U, 0U,
+                             0, 0, 0, 0);
+        return 0;
+    }
     ++work->lineCandidates;
     buildSourceLine(&mapLine, &projected);
 
@@ -678,14 +991,46 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
     }
 
     source = findResolved(work, mapLine.texture);
-    if (source == NULL) return 0;
+    if (source == NULL) {
+        RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_TEXTURE_MISSING,
+                             lineIndex,
+                             mapLine.texture,
+                             0U,
+                             mapLine.flags,
+                             0U,
+                             0, 0, 0, 0);
+        return 0;
+    }
     projected.texture = (short)source->actualId;
     work->render->spanMode = 0;
     work->render->numLines = (int)lineIndex;
     ++work->wallRequests;
 
-    if (!acquireWall(work, source, &texels)) return 0;
-    if (!drawProjectedWall(work, &projected, source, texels)) return 0;
+    if (!acquireWall(work, source, &texels)) {
+        RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALL_LOAD,
+                             lineIndex,
+                             source->logicalId,
+                             source->actualId,
+                             mapLine.flags,
+                             source->sourceTexelOffset,
+                             0, 0, 0, 0);
+        return 0;
+    }
+    if (!drawProjectedWall(work, &projected, source, texels)) {
+        if (frameFailure.code != FIRST_FRAME_FAIL_NONE) {
+            frameFailure.flags = mapLine.flags;
+        }
+        else {
+            RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALL_RASTER,
+                                 lineIndex,
+                                 source->logicalId,
+                                 source->actualId,
+                                 mapLine.flags,
+                                 source->sourceTexelOffset,
+                                 0, 0, 0, 0);
+        }
+        return 0;
+    }
     ++work->wallDraws;
     return 1;
 }
@@ -792,6 +1137,7 @@ static int renderFrame(Render_t* render,
     int vy;
     int ok = 0;
 
+    memset(&frameFailure, 0, sizeof(frameFailure));
     if (render == NULL || playerView == NULL || outState == NULL ||
         playerView->active != 1U || playerView->targetMapId != JUNCTION_TARGET_MAP_ID ||
         render->framebuffer == NULL || render->columnScale == NULL ||
@@ -872,7 +1218,17 @@ static int renderFrame(Render_t* render,
     render->spanMode = 0;
 
     Render_initColumnScale(render);
-    if (!walkNode(&work, 0U, 0U)) goto done;
+    if (!walkNode(&work, 0U, 0U)) {
+        if (frameFailure.code == FIRST_FRAME_FAIL_NONE) {
+            RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALK,
+                                 UINT32_MAX, 0U, 0U, 0U, 0U,
+                                 render->nodeCount,
+                                 work.lineCandidates,
+                                 work.wallRequests,
+                                 work.wallDraws);
+        }
+        goto done;
+    }
 
     outState->lineCandidates = work.lineCandidates;
     outState->leafNodes = work.leafNodes;
@@ -912,8 +1268,38 @@ done:
     return ok;
 }
 
+static int renderFrameWithLegacyGuardRecovery(
+    Render_t* render,
+    const EspPlayerViewState* playerView,
+    EspNativeFirstFrameState* outState,
+    int clearWholeFramebuffer) {
+    if (renderFrame(render, playerView, outState, clearWholeFramebuffer)) {
+        return 1;
+    }
+    if (frameFailure.code != FIRST_FRAME_FAIL_SPAN_OOB ||
+        frameFailure.value0 != (int32_t)WALL_PACKED_BYTES ||
+        !prepareLegacyWallGuard()) {
+        return 0;
+    }
+
+    printf("[NATIVEFRAME] RETRY legacy compact guard after unwound SPAN_OOB line=%u actual=%u\n",
+           (unsigned int)frameFailure.lineIndex,
+           (unsigned int)frameFailure.actualId);
+    if (!renderFrame(render, playerView, outState, clearWholeFramebuffer)) {
+        return 0;
+    }
+    printf("[NATIVEFRAME] RECOVERED legacy compact guard actual=%u successorActual=%u source=%u->%u\n",
+           (unsigned int)legacyWallGuard.actualId,
+           (unsigned int)legacyWallGuard.successorActualId,
+           (unsigned int)legacyWallGuard.sourceOffset,
+           (unsigned int)legacyWallGuard.successorSourceOffset);
+    return 1;
+}
+
 void EspNativeFirstFrame_reset(void) {
     memset(&frameState, 0, sizeof(frameState));
+    memset(&frameFailure, 0, sizeof(frameFailure));
+    memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
 }
 
 int EspNativeFirstFrame_isReady(void) {
@@ -943,7 +1329,8 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_route(
     candidate.targetMapId = JUNCTION_TARGET_MAP_ID;
     if (candidate.frameBeforeFNV == 0U) return ESP_NATIVE_FIRST_FRAME_SOURCE_INVALID;
 
-    if (!renderFrame(render, playerView, &candidate, 1)) {
+    if (!renderFrameWithLegacyGuardRecovery(render, playerView, &candidate, 1)) {
+        printFrameFailure("initial", playerView);
         return ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
     }
 
@@ -989,7 +1376,8 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport(
         return ESP_NATIVE_FIRST_FRAME_SOURCE_INVALID;
     }
 
-    if (!renderFrame(render, playerView, &candidate, 0)) {
+    if (!renderFrameWithLegacyGuardRecovery(render, playerView, &candidate, 0)) {
+        printFrameFailure("gameplay", playerView);
         return ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
     }
 
