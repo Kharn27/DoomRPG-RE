@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 
 #include "esp_probe_log.h"
+#include "native_committed_transition_probe.h"
 #include "native_entrance_startup_route_probe.h"
 #include "native_intro_dispose.h"
 #include "native_map1_access_probe.h"
@@ -29,6 +30,7 @@
 #include "native_map1_ui_intent_probe.h"
 #include "native_map1_unlock_probe.h"
 #include "native_player_exit_state_probe.h"
+#include "native_resident_handoff_probe.h"
 #include "native_stats_menu_intent_probe.h"
 #include "native_transition_preflight_final_probe.h"
 
@@ -82,6 +84,13 @@ static void resetValidatedEntranceChain(void) {
     Esp32PlayerExitStateProbe_reset();
     Esp32StatsMenuIntentProbe_reset();
     Esp32TransitionPreflightFinalProbe_reset();
+
+    /* Explicitly clear the two destructive historical stages while never
+     * servicing them during startup. This keeps a logical restart deterministic
+     * without relying on a fresh MCU/BSS reset. */
+    Esp32ResidentHandoffProbe_reset();
+    Esp32CommittedTransitionProbe_reset();
+
     Esp32EntranceStartupRouteProbe_reset();
 }
 
