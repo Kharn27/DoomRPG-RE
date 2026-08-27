@@ -3,40 +3,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "esp_native_plane_renderer.h"
 #include "esp_probe_log.h"
+#include "native_entrance_startup_route_probe.h"
 #include "native_intro_dispose.h"
-#include "native_committed_transition_probe.h"
-#include "native_junction_facing_probe.h"
-#include "native_junction_finish_rotation_tile_probe.h"
-#include "native_junction_first_frame_corrected_probe.h"
-#include "native_junction_gameplay_hud_probe.h"
-#include "native_junction_gameplay_input_probe.h"
-#include "native_junction_gameplay_large_range_cache_probe.h"
-#include "native_junction_gameplay_render_hotpath_probe.h"
-#include "native_junction_gameplay_render_resource_cache_probe.h"
-#include "native_junction_graphics_catalog_probe.h"
-#include "native_junction_hud_refresh_probe.h"
-#include "native_junction_initial_tile_probe.h"
-#include "native_junction_move_collision_probe.h"
-#include "native_junction_orientation_probe.h"
-#include "native_junction_player_setup_probe.h"
-#include "native_junction_player_view_probe.h"
-#include "native_junction_playing_service_probe.h"
-#include "native_junction_post_load_event_particle_cleanup_probe.h"
-#include "native_junction_post_load_flag_cleanup_probe.h"
-#include "native_junction_post_load_givemap_probe.h"
-#include "native_junction_post_load_hud_clear_probe.h"
-#include "native_junction_post_load_idle_time_probe.h"
-#include "native_junction_post_load_initial_save_intent_probe.h"
-#include "native_junction_post_load_playing_transition_probe.h"
-#include "native_junction_post_load_view_invalidation_probe.h"
-#include "native_junction_post_load_weapon_select_probe.h"
-#include "native_junction_spawn_probe.h"
-#include "native_junction_sprite_census_probe.h"
-#include "native_junction_sprite_fidelity_probe.h"
-#include "native_junction_sprite_overlay_probe.h"
-#include "native_junction_turn_dispatch_probe.h"
 #include "native_map1_access_probe.h"
 #include "native_map1_bsp_pass1.h"
 #include "native_map1_change_map_probe.h"
@@ -60,7 +29,6 @@
 #include "native_map1_ui_intent_probe.h"
 #include "native_map1_unlock_probe.h"
 #include "native_player_exit_state_probe.h"
-#include "native_resident_handoff_probe.h"
 #include "native_stats_menu_intent_probe.h"
 #include "native_transition_preflight_final_probe.h"
 
@@ -74,15 +42,21 @@ static int fastForwardBlockedLogged;
 void __real_Esp32IntroDispose_reset(void);
 void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
 
-/* Temporary frame-fidelity diagnostic owned by
- * native_first_frame_color_probe_wrappers.c.  The BMP write is deliberately
- * outside the strict renderer integrity contract because first-use stdio/SD
- * may retain a small VFS/libc allocation.
+/*
+ * Production startup boundary after PR #100.
+ *
+ * The historical validation ladder originally continued past the read-only
+ * target preflight into ResidentHandoff -> CommittedTransition -> Junction
+ * spawn/render/gameplay. That was useful while proving each migration layer,
+ * but it accidentally turned the real Entrance level-exit script into a boot
+ * sequence and skipped the first playable map.
+ *
+ * Keep all source-map semantic regression probes through transition preflight;
+ * stop BEFORE any resident teardown. /junction.bsp may be streamed read-only by
+ * the preflight, but /intro.bsp (Entrance) remains the resident map. A later
+ * real gameplay event must own the destructive transition.
  */
-void Esp32FirstFrameDiagnostic_reset(void);
-int Esp32FirstFrameDiagnostic_exportBmp(void);
-
-static void resetValidatedChain(void) {
+static void resetValidatedEntranceChain(void) {
     Esp32Map1BspPass1_reset();
     Esp32Map1RuntimeLoad_reset();
     Esp32Map1AccessProbe_reset();
@@ -108,43 +82,10 @@ static void resetValidatedChain(void) {
     Esp32PlayerExitStateProbe_reset();
     Esp32StatsMenuIntentProbe_reset();
     Esp32TransitionPreflightFinalProbe_reset();
-    Esp32ResidentHandoffProbe_reset();
-    Esp32CommittedTransitionProbe_reset();
-    Esp32JunctionSpawnProbe_reset();
-    Esp32JunctionPlayerViewProbe_reset();
-    Esp32JunctionHudRefreshProbe_reset();
-    Esp32JunctionPlayerSetupProbe_reset();
-    Esp32JunctionInitialTileProbe_reset();
-    Esp32JunctionOrientationProbe_reset();
-    Esp32JunctionFinishRotationTileProbe_reset();
-    Esp32JunctionFacingProbe_reset();
-    Esp32JunctionPostLoadHudClearProbe_reset();
-    Esp32JunctionPostLoadGiveMapProbe_reset();
-    Esp32JunctionPostLoadWeaponSelectProbe_reset();
-    Esp32JunctionPostLoadInitialSaveIntentProbe_reset();
-    Esp32JunctionPostLoadFlagCleanupProbe_reset();
-    Esp32JunctionPostLoadEventParticleCleanupProbe_reset();
-    Esp32JunctionPostLoadViewInvalidationProbe_reset();
-    Esp32JunctionPostLoadPlayingTransitionProbe_reset();
-    Esp32JunctionPostLoadIdleTimeProbe_reset();
-    Esp32JunctionPlayingServiceProbe_reset();
-    Esp32JunctionGraphicsCatalogProbe_reset();
-    Esp32JunctionFirstFrameCorrectedProbe_reset();
-    Esp32JunctionSpriteCensusProbe_reset();
-    Esp32JunctionSpriteFidelityProbe_reset();
-    Esp32JunctionSpriteOverlayProbe_reset();
-    Esp32JunctionGameplayHudProbe_reset();
-    Esp32JunctionGameplayInputProbe_reset();
-    Esp32JunctionTurnDispatchProbe_reset();
-    Esp32JunctionMoveCollisionProbe_reset();
-    Esp32JunctionGameplayRenderHotpathProbe_reset();
-    Esp32JunctionGameplayRenderResourceCacheProbe_reset();
-    Esp32JunctionGameplayLargeRangeCacheProbe_reset();
-    EspNativePlaneRenderer_reset();
-    Esp32FirstFrameDiagnostic_reset();
+    Esp32EntranceStartupRouteProbe_reset();
 }
 
-static void serviceValidatedPredecessors(struct DoomRPG_s* doomRpg) {
+static void serviceValidatedEntrancePredecessors(struct DoomRPG_s* doomRpg) {
     Esp32Map1RuntimeLoad_service(doomRpg);
     Esp32Map1AccessProbe_service(doomRpg);
     Esp32Map1StateProbe_service(doomRpg);
@@ -169,27 +110,6 @@ static void serviceValidatedPredecessors(struct DoomRPG_s* doomRpg) {
     Esp32PlayerExitStateProbe_service(doomRpg);
     Esp32StatsMenuIntentProbe_service(doomRpg);
     Esp32TransitionPreflightFinalProbe_service(doomRpg);
-    Esp32ResidentHandoffProbe_service(doomRpg);
-    Esp32CommittedTransitionProbe_service(doomRpg);
-    Esp32JunctionSpawnProbe_service(doomRpg);
-    Esp32JunctionPlayerViewProbe_service(doomRpg);
-    Esp32JunctionHudRefreshProbe_service(doomRpg);
-    Esp32JunctionPlayerSetupProbe_service(doomRpg);
-    Esp32JunctionInitialTileProbe_service(doomRpg);
-    Esp32JunctionOrientationProbe_service(doomRpg);
-    Esp32JunctionFinishRotationTileProbe_service(doomRpg);
-    Esp32JunctionFacingProbe_service(doomRpg);
-    Esp32JunctionPostLoadHudClearProbe_service(doomRpg);
-    Esp32JunctionPostLoadGiveMapProbe_service(doomRpg);
-    Esp32JunctionPostLoadWeaponSelectProbe_service(doomRpg);
-    Esp32JunctionPostLoadInitialSaveIntentProbe_service(doomRpg);
-    Esp32JunctionPostLoadFlagCleanupProbe_service(doomRpg);
-    Esp32JunctionPostLoadEventParticleCleanupProbe_service(doomRpg);
-    Esp32JunctionPostLoadViewInvalidationProbe_service(doomRpg);
-    Esp32JunctionPostLoadPlayingTransitionProbe_service(doomRpg);
-    Esp32JunctionPostLoadIdleTimeProbe_service(doomRpg);
-    Esp32JunctionPlayingServiceProbe_service(doomRpg);
-    Esp32JunctionGraphicsCatalogProbe_service(doomRpg);
 }
 
 void __wrap_Esp32IntroDispose_reset(void) {
@@ -200,7 +120,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     fastForwardReadyLogged = 0;
     fastForwardWaitLogged = 0;
     fastForwardBlockedLogged = 0;
-    resetValidatedChain();
+    resetValidatedEntranceChain();
 }
 
 void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
@@ -208,24 +128,22 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
 
     __real_Esp32IntroDispose_service(doomRpg);
 
-    /* Historical probes remain executable source-of-truth checks, but their
-     * successful chatter is no longer useful on every firmware flash. Pipeline
-     * the already hardware-proven owners once BSP pass-1 is complete. A probe-
-     * level FAILED/ERROR latches the fast-forward and forbids current-frame
-     * execution even if that historical probe marks itself done after recovery.
+    /* Keep the already hardware-proven Entrance source semantics as silent
+     * executable regression checks. The loop ends at the read-only transition
+     * preflight and can never service resident handoff or committed transition.
      */
     EspProbeLog_setQuiet(1);
     Esp32Map1BspPass1_service(doomRpg);
 
     if (!EspProbeLog_hasBlockingFailure() &&
         Esp32Map1BspPass1_isDone() &&
-        !Esp32JunctionGraphicsCatalogProbe_isDone()) {
+        !Esp32TransitionPreflightFinalProbe_isDone()) {
         for (pass = 0U;
              pass < VALIDATED_FAST_FORWARD_MAX_PASSES &&
-             !Esp32JunctionGraphicsCatalogProbe_isDone() &&
+             !Esp32TransitionPreflightFinalProbe_isDone() &&
              !EspProbeLog_hasBlockingFailure();
              ++pass) {
-            serviceValidatedPredecessors(doomRpg);
+            serviceValidatedEntrancePredecessors(doomRpg);
             ++fastForwardTotalPasses;
             if (!EspProbeLog_hasBlockingFailure()) vTaskDelay(1);
         }
@@ -233,15 +151,8 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     EspProbeLog_setQuiet(0);
 
     if (EspProbeLog_hasBlockingFailure()) {
-        /* A current gameplay-probe failure must still allow the already-drawn
-         * transient touch overlay to expire and restore its saved pixels. This
-         * service performs no gameplay dispatch when the input probe is merely
-         * active; it only completes its bounded feedback timer/restore path. */
-        if (Esp32JunctionGameplayInputProbe_isActive()) {
-            Esp32JunctionGameplayInputProbe_service(doomRpg);
-        }
         if (!fastForwardBlockedLogged) {
-            printf("[NATIVEBOOT] BLOCKED predecessor probe failure after %u silent passes; current first-frame probe NOT started\n",
+            printf("[NATIVEBOOT] BLOCKED Entrance predecessor probe failure after %u silent passes; resident handoff/committed transition forbidden\n",
                    fastForwardTotalPasses);
             fastForwardBlockedLogged = 1;
         }
@@ -250,9 +161,9 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
 
     if (!Esp32Map1BspPass1_isDone()) return;
 
-    if (!Esp32JunctionGraphicsCatalogProbe_isDone()) {
+    if (!Esp32TransitionPreflightFinalProbe_isDone()) {
         if (!fastForwardWaitLogged) {
-            printf("[NATIVEBOOT] WAIT validated predecessor chain incomplete after %u silent passes\n",
+            printf("[NATIVEBOOT] WAIT Entrance source validation incomplete after %u silent passes; no map swap attempted\n",
                    fastForwardTotalPasses);
             fastForwardWaitLogged = 1;
         }
@@ -260,43 +171,10 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     }
 
     if (!fastForwardReadyLogged) {
-        printf("[NATIVEBOOT] READY validated predecessors silent passes=%u catalog=969d5a77; current first-frame fidelity probe starts now\n",
+        printf("[NATIVEBOOT] ENTRANCE source validation complete silent passes=%u; production startup stops before ResidentHandoff/CommittedTransition\n",
                fastForwardTotalPasses);
         fastForwardReadyLogged = 1;
     }
 
-    Esp32JunctionFirstFrameCorrectedProbe_service(doomRpg);
-
-    /* Only a strict PARK may trigger diagnostics. The first-frame probe has
-     * already captured heap/largest/PAK integrity before these calls. */
-    if (Esp32JunctionFirstFrameCorrectedProbe_isDone()) {
-        (void)Esp32FirstFrameDiagnostic_exportBmp();
-        Esp32JunctionSpriteCensusProbe_service();
-        Esp32JunctionSpriteFidelityProbe_preOverlayService(doomRpg);
-        if (Esp32JunctionSpriteFidelityProbe_preOverlayDone()) {
-            Esp32JunctionSpriteOverlayProbe_service(doomRpg);
-            Esp32JunctionSpriteFidelityProbe_postOverlayService(doomRpg);
-            if (Esp32JunctionSpriteFidelityProbe_postOverlayDone()) {
-                Esp32JunctionGameplayHudProbe_service(doomRpg);
-                if (Esp32JunctionGameplayHudProbe_isDone()) {
-                    Esp32JunctionGameplayInputProbe_service(doomRpg);
-                    if (Esp32JunctionGameplayInputProbe_isActive()) {
-                        Esp32JunctionTurnDispatchProbe_service(doomRpg);
-                        if (Esp32JunctionTurnDispatchProbe_isActive()) {
-                            Esp32JunctionMoveCollisionProbe_service(doomRpg);
-                            if (Esp32JunctionMoveCollisionProbe_isActive()) {
-                                Esp32JunctionGameplayRenderHotpathProbe_service(doomRpg);
-                                if (Esp32JunctionGameplayRenderHotpathProbe_isDone()) {
-                                    Esp32JunctionGameplayRenderResourceCacheProbe_service(doomRpg);
-                                    if (Esp32JunctionGameplayRenderResourceCacheProbe_isDone()) {
-                                        Esp32JunctionGameplayLargeRangeCacheProbe_service(doomRpg);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    Esp32EntranceStartupRouteProbe_service(doomRpg);
 }
