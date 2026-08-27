@@ -5,28 +5,27 @@ Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHu
 ## Latest merged baseline
 
 ```text
-PR   = #101 — generic Entrance startup/gameplay route
-main = 33b05385771b45acabff6dcf14d1da2c18d1818f
+PR   = #102 — native Action/regular-door execution
+main = a8e0b64dfd9c790f8896279f70427ce6fb3e9859
 status = MERGED
 ```
 
-The merged route establishes `/intro.bsp` / Entrance as the first playable map and proves the generic resident-map engine through spawn, renderer, sprites, HUD, cache priming, touch, TURN/MOVE and collision.
+PR #102 merged the generic resident Action door route developed on top of the already hardware-proven Entrance startup/gameplay engine.
 
-## Current candidate — native Action/door execution
+## Current candidate — native Action dialog + resume
 
 ```text
-branch = agent/esp32-native-action-select-exec
-base main = 33b05385771b45acabff6dcf14d1da2c18d1818f
-hardware-tested implementation SHA = ed353c0799520b82464c0066c3a53c731488c168
+branch = agent/esp32-native-action-dialog-resume
+base main = a8e0b64dfd9c790f8896279f70427ce6fb3e9859
+hardware-tested implementation SHA = 5c53a9a02bfb7c92e4dccb0b6eba424e7d015a9b
 status = REAL-CYD HARDWARE PASS
 merge-ready = YES
 post-test commits = documentation-only
 ```
 
-Latest hardware archives:
+Latest hardware archive:
 
-- [`MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md`](MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md)
-- [`MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md`](MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md)
+- [`MAP1_NATIVE_GAMEPLAY_DIALOG_RESUME.md`](MAP1_NATIVE_GAMEPLAY_DIALOG_RESUME.md) — bounded production `EV_DIALOG`, progressive text, paging/fast-forward, close, preflighted state-only continuation, repeated state-gated second dialog.
 
 ## Critical engine rule
 
@@ -40,10 +39,12 @@ Production runtime remains:
  -> compact mutable overlays
  -> EspPlayerView
  -> EspNativeGameplaySession
- -> generic renderer/HUD/input/collision/events/actions
+ -> generic renderer/HUD/input/collision/events/actions/dialog UI
 ```
 
-Do not create permanent Entrance/Junction/level-specific engines. Unsupported data or behavior must be implemented as a bounded generic family, fail closed elsewhere, and be hardware-tested before broadening.
+Historical `MAP1_*`, `ENTRANCE*` and `JUNCTION*` probes/log labels are regression evidence only. Unsupported behavior must be implemented as a bounded generic family and remain fail-closed elsewhere.
+
+After `TransitionPreflightFinal` succeeds, historical startup probes have **no runtime blocking authority**. The live generic gameplay session is the production owner.
 
 ## Permanent memory / architecture invariants
 
@@ -186,6 +187,7 @@ SELECT front-tile resolver/provenance
 bounded SELECT regular-door execution
 bounded MOVE EXIT/ENTER regular-door events
 regular-door visual interpolation
+bounded SELECT EV_DIALOG pause/paging/resume
 ```
 
 Movement/turn examples remain stable:
@@ -208,8 +210,6 @@ result = BLOCKED
 
 ## Generic SELECT regular-door execution — hardware PASS
 
-The production Action/SELECT path now resolves the current front tile, preserves event/filter provenance, and executes only the bounded regular-door family when exactly eligible.
-
 Real-CYD Entrance witness:
 
 ```text
@@ -224,13 +224,9 @@ locked = 0
 final open frame = 7105fa5f
 ```
 
-This is data-driven: tile/event/line identity comes from the resident BSP and compact overlays. There is no Entrance-specific door branch.
+This route is data-driven from resident BSP/event/line state. No Entrance-specific door branch exists.
 
-SELECT remains fail-closed/deferred for unsupported/complex event semantics. Example event 87 on tile 838 correctly resolves `EV_CLOSELINE` as `FLAGS_MISMATCH` for SELECT and does not mutate.
-
-## Generic MOVE door events — hardware PASS
-
-MOVE now reproduces bounded legacy source EXIT and destination ENTER event phases around a cardinal committed move.
+## Generic MOVE door events + animation — hardware PASS
 
 Recovered movement flags:
 
@@ -255,16 +251,9 @@ open = 1 -> 0
 destination tile = 839
 ENTER flags = 0x80000408
 final closed frame = 808e96c7
-rollback lease = closed only after render success
 ```
 
-Only eligible `EV_OPENLINE` / `EV_CLOSELINE` are owned in this movement-event boundary. Unsupported or complex eligible MOVE semantics remain fail-closed/deferred.
-
-## Generic regular-door animation — hardware PASS
-
-Hardware-tested implementation SHA: `ed353c0799520b82464c0066c3a53c731488c168`.
-
-Permanent native animator:
+Permanent regular-door animator:
 
 ```text
 owner = 76 B BSS
@@ -275,59 +264,131 @@ step = 16
 EspMapRuntime mutation = none
 ```
 
-SELECT OPEN sequence on line 275:
+OPEN on line 275:
 
 ```text
-FRAME 1/4 moving frame=6c5debde wallPixels=11297
-FRAME 2/4 moving frame=2d05fe08 wallPixels=10481
-FRAME 3/4 moving frame=a522f925 wallPixels=9665
-FRAME 4/4 stable frame=7105fa5f wallPixels=9339
+6c5debde -> 2d05fe08 -> a522f925 -> 7105fa5f stable
 ```
 
-MOVE CLOSE sequence on the same line:
+CLOSE on line 275:
 
 ```text
-FRAME 1/4 moving frame=35e3784d wallPixels=9340
-FRAME 2/4 moving frame=d005cd93 wallPixels=9556
-FRAME 3/4 moving frame=808e96c7 wallPixels=9652
-FRAME 4/4 stable frame=808e96c7 wallPixels=9652
+35e3784d -> d005cd93 -> 808e96c7 -> 808e96c7 stable
 ```
 
-Both paths report:
+## Native Action dialog + resume — hardware PASS
+
+Hardware-tested implementation SHA: `5c53a9a02bfb7c92e4dccb0b6eba424e7d015a9b`.
+
+Permanent bounded dialog owner:
 
 ```text
-generic=yes
-immutableRuntime=yes
-render=ok
-COMPLETE transitions=1 frames=4 state=stable transaction=committed
+text capacity = 384 B
+page lines = 4
+typewriter cadence = 25 ms / character
+close provenance owner = 12 B
+PAK lease = open only while dialog is active, closed before world redraw
 ```
 
-The world raster and sprite-depth pass both see the same transient animated line geometry. Fully-open lines continue through the generic dynamic line adapter.
+The Action executor accepts a dialog only when the filtered event begins with an eligible `EV_DIALOG` / `EV_DIALOGNOBACK` and has at most one eligible state-only continuation already owned by `EspMapOpcodeExecutor` (11/19/20). Anything broader remains fail-closed before UI presentation.
 
-Stable heartbeat after the supplied animation run:
+The real-CYD proof covers `EV_DIALOG` opcode 8 on Entrance event 88.
+
+State 0:
 
 ```text
-heap = 97448
-heap8 = 31740
-largest8 = 8692
+off 0 global252 opcode 8  EV_DIALOG     string88 = ELIGIBLE
+off 1 global253 opcode 19 EV_NEXTSTATE          = ELIGIBLE
+off 2 global254 opcode 8  string89              = STATE_MISMATCH
+off 3 global255 opcode 11                       = STATE_MISMATCH
 ```
 
-No Guru Meditation or reboot was reported.
+First dialog:
+
+```text
+string = 88
+bytes = 102
+lines = 7
+back = 1
+FASTFORWARD pageStart=0 lines=4 = PASS
+PAGE start=4/7 = PASS
+FASTFORWARD pageStart=4 lines=3 = PASS
+CLOSE packClosed=yes = PASS
+RESUME opcode19 state 0->1 = PASS
+```
+
+State 1 then exposes the second pair:
+
+```text
+off 2 global254 opcode 8  EV_DIALOG string89 = ELIGIBLE
+off 3 global255 opcode 11 EV_CHANGESTATE      = ELIGIBLE
+```
+
+Second dialog:
+
+```text
+string = 89
+bytes = 10
+lines = 1
+CLOSE packClosed=yes = PASS
+RESUME opcode11 state 1->0 = PASS
+```
+
+The tester repeated the complete state 0 -> 1 -> 0 cycle several times successfully.
+
+World redraw after dialog resume remained generic and successful:
+
+```text
+frame = ed061192
+sprites = 6 / 6776
+walls = 3
+wallPixels = 7288
+totalUs ~= 206700
+presented = yes
+```
+
+Stable heartbeat during repeated dialog cycles:
+
+```text
+heap = 96624
+heap8 = 30916
+largest8 = 16372
+```
+
+No later `[NATIVEBOOT] BLOCKED`, stuck input, Guru Meditation or reboot was reported.
+
+## Historical-probe runtime authority fix — hardware PASS
+
+An earlier dialog run proved a stale architectural leak: the historical SELECT front-tile observer was invoked for a dialog-owned SELECT while the dialog legitimately kept the PAK open. Its old precondition failed, set the global probe blocking flag, and the startup bridge still treated that flag as authoritative in live gameplay.
+
+The tested implementation fixes this permanently:
+
+```text
+before TransitionPreflightFinal = startup probes may block startup validation
+after  TransitionPreflightFinal = startup probes are witnesses only
+active dialog SELECT             = not sent to world/front-tile SELECT witness
+EspNativeGameplaySession         = runtime authority
+```
 
 ## Performance observation
 
-The tester considers the door animation correct but slightly slow, similar to navigation latency. This is not a correctness blocker.
+Correctness is hardware-valid, but the tester reports occasional noticeable dialog/navigation latency.
 
-In the supplied run:
+Measured dialog scale:
 
 ```text
-PlatformVideo_present ~= 34 ms
-complete gameplay redraws around this area ~= 0.32-0.35 s
+PlatformVideo_present ~= 34.3 ms
+102-B / 7-line dialog close run:
+  paints = 22
+  fontReads = 3482 .. 3650
+  font/resource bytes = 250626 .. 262722
+DIALOG-RESUME world redraw ~= 206.7 ms
+transient touch feedback = 120 ms
 ```
 
-Therefore future performance work should target bounded recomposition/cache/redraw scheduling and on-demand redraw, not premature optimization of `PlatformVideo_present()`.
+The thousands of font reads for a 102-byte text are an obvious bounded performance target. Future work should reduce redundant font/resource reads and presentation/recomposition cadence while preserving the logical 25-ms typewriter behavior.
 
-No timing tweak belongs in this hardware-PASS closeout.
+Do **not** prematurely optimize `PlatformVideo_present()`. Doom RPG remains turn-based and should continue toward bounded redraw-on-demand.
 
 ## Event/script boundary
 
@@ -339,30 +400,34 @@ Generic `EspMapOpcodeExecutor` remains intentionally limited to:
 20 EV_PREVSTATE
 ```
 
-The new production Action/MOVE door paths do not broad-enable legacy `Game_executeEvent`; they own a separate bounded regular-door semantic family around resident event/filter provenance.
+Production door and dialog Action routes do not broad-enable legacy `Game_executeEvent`; they own bounded native semantic families around resident event/filter provenance.
+
+Hardware-proven dialog opcode in production:
+
+```text
+8 EV_DIALOG
+```
+
+Implemented but not yet hardware-proven in the same bounded dialog family:
+
+```text
+26 EV_DIALOGNOBACK
+```
 
 Still deferred / fail-closed:
 
 ```text
-SELECT dialog/UI families
+EV_FORCEMESSAGE / EV_NOTE production UI semantics
 broad MOVE tile-event opcode execution
+unbounded/mixed dialog continuations
 secret/MOVELINE animation
 door sound playback
 legacy entity relink objects
 PASS_TURN
 menu/automap/weapon gameplay
-combat / monsters / turn advance
+combat / monsters / generic turn advance
 unsupported opcode families
 ```
-
-Two log tokens are now historical/stale rather than semantic truth:
-
-```text
-animation=deferred
-tileEvents=deferred
-```
-
-The regular-door animation and bounded movement-door event path are hardware-live. The strings are intentionally left unchanged in the docs-only closeout so no post-test code commit invalidates the tested SHA.
 
 ## Historical Junction canon remains valid
 
@@ -390,17 +455,24 @@ HUD stateFNV = 4756db9c
 
 ```text
 REAL-CYD HARDWARE PASS
-base main = 33b05385771b45acabff6dcf14d1da2c18d1818f
-hardware-tested implementation SHA = ed353c0799520b82464c0066c3a53c731488c168
+base main = a8e0b64dfd9c790f8896279f70427ce6fb3e9859
+hardware-tested implementation SHA = 5c53a9a02bfb7c92e4dccb0b6eba424e7d015a9b
 Entrance visible/walkable/turnable = YES
 sprites/HUD/touch = YES
 TURN/MOVE/collision = YES
-SELECT EV_OPENLINE = YES
-MOVE EXIT EV_CLOSELINE = YES
+SELECT regular doors = YES
+MOVE regular-door events = YES
 generic regular-door animation = YES
+EV_DIALOG progressive UI = YES
+Action fast-forward/paging = YES
+EV_NEXTSTATE resume 0->1 = YES
+state-gated second dialog = YES
+EV_CHANGESTATE resume 1->0 = YES
+repeated dialog cycle = YES
+historical probes cannot block live gameplay = YES
 immutable runtime = YES
 shapeData/mediaTexels = NULL
 MERGE-READY = YES
 ```
 
-Every commit after `ed353c0799520b82464c0066c3a53c731488c168` must remain documentation-only for this closeout. After merge, recover the exact new `main` SHA before creating the next `agent/*` branch.
+Every commit after `5c53a9a02bfb7c92e4dccb0b6eba424e7d015a9b` must remain documentation-only for this closeout. After merge, recover the exact new `main` SHA before creating the next `agent/*` branch.

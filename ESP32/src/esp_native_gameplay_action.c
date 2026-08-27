@@ -5,12 +5,22 @@
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_line_state.h"
+#include "esp_map_opcode_executor.h"
 #include "esp_map_script_state.h"
+#include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_select.h"
 
+#define SELECT_REMOVE_FLAG 0x00000200UL
+
 typedef char EspNativeGameplayActionResult_must_be_28_bytes[
     sizeof(EspNativeGameplayActionResult) == 28U ? 1 : -1];
+
+typedef enum SelectFamily_e {
+    SELECT_FAMILY_NONE = 0,
+    SELECT_FAMILY_DOOR = 1,
+    SELECT_FAMILY_DIALOG = 2
+} SelectFamily;
 
 static int descriptorMatchesSelect(
     const EspMapEventDescriptor* descriptor,
@@ -21,6 +31,16 @@ static int descriptorMatchesSelect(
            descriptor->firstCommandIndex == select->firstCommandIndex &&
            descriptor->commandEndIndex == select->commandEndIndex &&
            descriptor->commandCount == select->commandCount;
+}
+
+static int isDoorOpcode(uint8_t codeId) {
+    return codeId == ESP_MAP_OPCODE_OPENLINE ||
+           codeId == ESP_MAP_OPCODE_CLOSELINE;
+}
+
+static int isDialogOpcode(uint8_t codeId) {
+    return codeId == ESP_MAP_OPCODE_DIALOG ||
+           codeId == ESP_MAP_OPCODE_DIALOG_NO_BACK;
 }
 
 EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
@@ -34,10 +54,13 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     EspMapEventCommandFilterResult filtered;
     EspMapLineDoorResult door;
     EspMapLineDoorStatus doorStatus;
+    SelectFamily family = SELECT_FAMILY_NONE;
     uint32_t selectedOffset = UINT32_MAX;
     uint16_t selectedGlobal = 0U;
     uint8_t selectedRemoved = 0U;
+    uint8_t selectedCodeId = 0U;
     uint8_t eligibleCount = 0U;
+    uint8_t dialogResumeEligible = 0U;
     uint32_t offset;
 
     if (outResult == NULL) return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
@@ -84,7 +107,18 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
         return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
     }
 
-    /* Preflight the complete eligible command set before world mutation. */
+    /*
+     * Preflight the complete eligible command set before any mutation.
+     *
+     * Door events remain exactly-one-command. Dialog events may have one
+     * following eligible state-only continuation because legacy pauses on the
+     * dialog and resumes at source+1; the dialog session independently
+     * revalidates that continuation before presentation and again at resume.
+     *
+     * Removable dialog commands are intentionally outside this first presenter
+     * boundary. Legacy removes them immediately after the handled dialog opcode;
+     * fail closed rather than silently losing that script mutation.
+     */
     for (offset = 0U; offset < descriptor.commandCount; ++offset) {
         uint32_t global = (uint32_t)descriptor.firstCommandIndex + offset;
         uint8_t removed;
@@ -102,23 +136,65 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
 
         if (eligibleCount != UINT8_MAX) ++eligibleCount;
         outResult->eligibleCount = eligibleCount;
-        if (filtered.codeId != ESP_MAP_OPCODE_OPENLINE &&
-            filtered.codeId != ESP_MAP_OPCODE_CLOSELINE) {
-            outResult->unsupportedCodeId = filtered.codeId;
-            return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
+
+        if (selectedOffset == UINT32_MAX) {
+            selectedOffset = offset;
+            selectedGlobal = filtered.globalCommandIndex;
+            selectedRemoved = removed;
+            selectedCodeId = filtered.codeId;
+            if (isDoorOpcode(filtered.codeId)) {
+                family = SELECT_FAMILY_DOOR;
+            }
+            else if (isDialogOpcode(filtered.codeId)) {
+                if ((filtered.arg2 & SELECT_REMOVE_FLAG) != 0U) {
+                    outResult->unsupportedCodeId = filtered.codeId;
+                    return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
+                }
+                family = SELECT_FAMILY_DIALOG;
+            }
+            else {
+                outResult->unsupportedCodeId = filtered.codeId;
+                return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
+            }
+            continue;
         }
-        if (selectedOffset != UINT32_MAX) {
+
+        if (family == SELECT_FAMILY_DOOR) {
             return ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT;
         }
-        selectedOffset = offset;
-        selectedGlobal = filtered.globalCommandIndex;
-        selectedRemoved = removed;
+
+        if (family == SELECT_FAMILY_DIALOG) {
+            if (dialogResumeEligible != 0U ||
+                !EspMapOpcodeExecutor_supports(filtered.codeId)) {
+                outResult->unsupportedCodeId = filtered.codeId;
+                return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
+            }
+            dialogResumeEligible = 1U;
+            continue;
+        }
+
+        return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
     }
 
     if (selectedOffset == UINT32_MAX || eligibleCount == 0U) {
         return ESP_NATIVE_GAMEPLAY_ACTION_NO_ELIGIBLE;
     }
-    if (eligibleCount != 1U) {
+
+    outResult->globalCommandIndex = selectedGlobal;
+    outResult->commandOffset = (uint8_t)selectedOffset;
+    outResult->codeId = selectedCodeId;
+    outResult->removedBefore = selectedRemoved;
+    outResult->removedAfter = selectedRemoved;
+
+    if (family == SELECT_FAMILY_DIALOG) {
+        if (selectedOffset > UINT8_MAX || !isDialogOpcode(selectedCodeId)) {
+            return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
+        }
+        return ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY;
+    }
+
+    if (family != SELECT_FAMILY_DOOR || eligibleCount != 1U ||
+        selectedOffset > UINT8_MAX) {
         return ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT;
     }
 
@@ -126,10 +202,8 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     doorStatus = EspMapLineState_applyDoorCommand(
         &descriptor, selectedOffset, &door);
 
-    outResult->globalCommandIndex = selectedGlobal;
     outResult->lineIndex = door.lineIndex;
     outResult->soundId = door.soundId;
-    outResult->commandOffset = (uint8_t)selectedOffset;
     outResult->codeId = door.codeId;
     outResult->openBefore = door.openBefore;
     outResult->openAfter = door.openAfter;
@@ -137,8 +211,6 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     outResult->mutated = door.mutated;
     outResult->effectFlags = door.effectFlags;
     outResult->removeIfHandled = door.removeCommandIfHandled;
-    outResult->removedBefore = selectedRemoved;
-    outResult->removedAfter = selectedRemoved;
 
     if (doorStatus == ESP_MAP_LINE_DOOR_LOCKED) {
         return ESP_NATIVE_GAMEPLAY_ACTION_DOOR_LOCKED;
@@ -174,8 +246,8 @@ int EspNativeGameplayAction_rollbackSelect(
 
     if (result == NULL || result->handled != 1U || result->mutated != 1U ||
         result->rollbackAvailable != 1U ||
-        result->codeId != ESP_MAP_OPCODE_OPENLINE &&
-            result->codeId != ESP_MAP_OPCODE_CLOSELINE) {
+        (result->codeId != ESP_MAP_OPCODE_OPENLINE &&
+         result->codeId != ESP_MAP_OPCODE_CLOSELINE)) {
         return 0;
     }
     if (!EspMapLineState_getOpen(result->lineIndex, &openNow) ||
@@ -214,6 +286,7 @@ const char* EspNativeGameplayAction_statusName(
     case ESP_NATIVE_GAMEPLAY_ACTION_DOOR_LOCKED: return "DOOR_LOCKED";
     case ESP_NATIVE_GAMEPLAY_ACTION_DOOR_ALREADY_TARGET: return "DOOR_ALREADY_TARGET";
     case ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK: return "DOOR_OK";
+    case ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY: return "DIALOG_READY";
     default: return "UNKNOWN";
     }
 }

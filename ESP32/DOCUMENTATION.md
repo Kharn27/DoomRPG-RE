@@ -17,26 +17,30 @@ If chat history and repository state disagree, the repository wins.
 ## Latest merged boundary
 
 ```text
-PR   = #101 — generic Entrance startup/gameplay route
-main = 33b05385771b45acabff6dcf14d1da2c18d1818f
+PR   = #102 — native Action/regular-door execution
+main = a8e0b64dfd9c790f8896279f70427ce6fb3e9859
 status = MERGED
 ```
 
 ## Current candidate boundary
 
 ```text
-branch = agent/esp32-native-action-select-exec
-base main = 33b05385771b45acabff6dcf14d1da2c18d1818f
-hardware-tested implementation SHA = ed353c0799520b82464c0066c3a53c731488c168
+branch = agent/esp32-native-action-dialog-resume
+base main = a8e0b64dfd9c790f8896279f70427ce6fb3e9859
+hardware-tested implementation SHA = 5c53a9a02bfb7c92e4dccb0b6eba424e7d015a9b
 status = REAL-CYD HARDWARE PASS
 merge-ready = YES
 post-test commits = documentation-only
 ```
 
-Latest hardware archives:
+Latest hardware archive:
 
-- [`MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md`](MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md) — generic MOVE source/EXIT `EV_CLOSELINE` transaction.
-- [`MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md`](MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md) — generic regular-door 4-frame visual interpolation on SELECT OPEN and MOVE CLOSE.
+- [`MAP1_NATIVE_GAMEPLAY_DIALOG_RESUME.md`](MAP1_NATIVE_GAMEPLAY_DIALOG_RESUME.md) — production `EV_DIALOG` pause/typewriter/paging/fast-forward/close + bounded state-only resume, including repeated event state 0 -> 1 -> 0.
+
+Previous relevant door archives:
+
+- [`MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md`](MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md)
+- [`MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md`](MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md)
 
 ## Permanent architectural conclusion
 
@@ -52,10 +56,23 @@ Production runtime is:
  -> compact mutable overlays
  -> EspPlayerView
  -> EspNativeGameplaySession
- -> generic renderer/HUD/input/collision/events/actions
+ -> generic renderer/HUD/input/collision/events/actions/dialog UI
 ```
 
-Historical `MAP1_*`, `ENTRANCE*` and `JUNCTION*` probes/log labels remain evidence only. New permanent runtime behavior must be map-generic and data-driven.
+Historical `MAP1_*`, `ENTRANCE*` and `JUNCTION*` probes/log labels remain evidence only.
+
+A second permanent conclusion is now hardware-proven:
+
+```text
+before TransitionPreflightFinal:
+  startup regression probes may fail-closed the startup validation
+
+after TransitionPreflightFinal:
+  probes are witnesses only
+  EspNativeGameplaySession owns runtime authority
+```
+
+A historical probe must never stop a live gameplay session again.
 
 ## Current real-CYD hardware proof
 
@@ -76,8 +93,7 @@ Generic session has reached:
 first world frame = YES
 sprites/glows = YES
 native HUD = YES
-resident small cache = YES
-exact 2048-B cache = YES
+resident render caches = YES
 touch = YES
 TURN/MOVE = YES
 native collision = YES
@@ -85,6 +101,11 @@ SELECT front-tile provenance = YES
 SELECT regular-door execution = YES
 MOVE EXIT/ENTER regular-door events = YES
 regular-door animation = YES
+SELECT EV_DIALOG = YES
+progressive dialog text = YES
+Action fast-forward = YES
+4-line paging = YES
+dialog close + script resume = YES
 shapeData = NULL
 mediaTexels = NULL
 legacy entities = 0
@@ -101,36 +122,111 @@ spawn/player/view
 planes/walls
 sprites/glows
 HUD
-12-zone calibrated touch + transient feedback
+12-zone calibrated touch + transient 120-ms feedback
 TURN_LEFT/TURN_RIGHT
 FORWARD/BACK/STRAFE
 static/entity/line collision
 dynamic per-line collision
 SELECT front-tile resolver/provenance
-bounded SELECT EV_OPENLINE/EV_CLOSELINE door semantics when eligible
-bounded MOVE source EXIT + destination ENTER door events
+bounded SELECT EV_OPENLINE/EV_CLOSELINE
+bounded MOVE source EXIT + destination ENTER regular-door events
 generic regular-door visual interpolation
+bounded SELECT EV_DIALOG / EV_DIALOGNOBACK preflight path
+native dialog owner/typewriter/paging/fast-forward/close
+zero-or-one state-only dialog continuation using opcodes 11/19/20
 ```
 
-The current door executor remains intentionally narrow. It does not broad-enable legacy `Game_executeEvent`.
+The current hardware proof covers `EV_DIALOG` opcode 8. `EV_DIALOGNOBACK` is implemented in the same bounded family but is not yet claimed hardware-proven.
+
+The engine still does **not** broad-enable legacy `Game_executeEvent`.
 
 Semantically deferred / fail-closed:
 
 ```text
-SELECT dialog/UI families
+EV_FORCEMESSAGE / EV_NOTE production UI semantics
 broad MOVE tile-event opcode execution
+unbounded/mixed dialog continuations
 secret/MOVELINE animation
 door sound playback
 legacy entity relink objects
 PASS_TURN
 menu/automap/weapon gameplay
-combat / monsters / turn advance
+combat / monsters / generic turn advance
 unsupported opcode families
 ```
 
+## Native dialog hardware proof
+
+Real resident Entrance event 88, front tile 841:
+
+```text
+state 0:
+  cmd0 opcode 8  EV_DIALOG string88 = ELIGIBLE
+  cmd1 opcode 19 EV_NEXTSTATE       = ELIGIBLE
+
+state 1:
+  cmd2 opcode 8  EV_DIALOG string89 = ELIGIBLE
+  cmd3 opcode 11 EV_CHANGESTATE     = ELIGIBLE
+```
+
+First dialog:
+
+```text
+string88
+102 B
+7 lines
+4-line pages
+back allowed
+PAK open only during active dialog
+```
+
+Hardware behavior:
+
+```text
+Action during typewriter -> FASTFORWARD current page
+next Action             -> PAGE start=4/7
+Action on complete end  -> CLOSE packClosed=yes
+resume                  -> EV_NEXTSTATE state 0->1
+world redraw            -> success
+```
+
+Second SELECT at state 1 opens `string89`, then close resumes `EV_CHANGESTATE` state 1->0.
+
+The tester repeated the complete pair several times successfully.
+
+Stable dialog-run heartbeat:
+
+```text
+heap=96624
+heap8=30916
+largest8=16372
+```
+
+No stuck input, later `[NATIVEBOOT] BLOCKED`, Guru Meditation or reboot was reported.
+
+## Dialog performance note
+
+Correctness is accepted, but the tester reports some noticeable latency while text types and around Action clicks.
+
+Measured scale:
+
+```text
+PlatformVideo_present ~= 34.3 ms
+102-B / 7-line dialog:
+  paints = 22
+  fontReads = 3482 .. 3650
+  resource bytes = 250626 .. 262722
+DIALOG-RESUME world redraw ~= 206.7 ms
+touch feedback hold = 120 ms
+```
+
+The thousands of font reads for a 102-byte source string are a concrete bounded optimization target. Prefer reducing redundant font/resource reads and presentation/recomposition cadence while preserving the recovered logical 25-ms-per-character timeline.
+
+Do not prematurely optimize `PlatformVideo_present()` itself. Doom RPG is turn-based; redraw-on-demand remains the long-term direction.
+
 ## Generic door Action proof
 
-Real resident Entrance data, not hard-coded gameplay, produced:
+Real resident Entrance data produced:
 
 ```text
 SELECT front tile 837
@@ -140,77 +236,29 @@ SELECT front tile 837
  -> open 0 -> 1
 ```
 
-A SELECT issued at tile 838 sees event 87 / `EV_CLOSELINE`, but its flags do not match SELECT and the action correctly remains `NO_ELIGIBLE` with no mutation.
-
-## Generic MOVE event proof
-
-Backing away from tile 838 produced the bounded legacy EXIT/ENTER route:
+MOVE source EXIT later produced:
 
 ```text
 EXIT tile 838 flags=0x00000420
  -> event 87
  -> EV_CLOSELINE line275
  -> open 1 -> 0
-
-ENTER tile 839 flags=0x80000408
- -> NO_EVENT
 ```
 
-Both phases are preflighted before mutation. Unsupported/complex eligible commands keep MOVE deferred/fail-closed. The view/door transaction rollback lease closes only after the rendered frame succeeds.
-
-## Generic regular-door animation proof
-
-Hardware-tested SHA: `ed353c0799520b82464c0066c3a53c731488c168`.
-
-Permanent owner:
+Regular-door animation remains hardware-valid:
 
 ```text
-76 B BSS
-max 8 active regular-door lines
-4 total frames
-3 moving frames
-step 16
-immutable EspMapRuntime
+OPEN  6c5debde -> 2d05fe08 -> a522f925 -> 7105fa5f
+CLOSE 35e3784d -> d005cd93 -> 808e96c7 -> 808e96c7
 ```
 
-OPEN on line 275:
-
-```text
-6c5debde -> 2d05fe08 -> a522f925 -> 7105fa5f stable
-```
-
-CLOSE on line 275:
-
-```text
-35e3784d -> d005cd93 -> 808e96c7 -> 808e96c7 stable
-```
-
-Both report `generic=yes`, `immutableRuntime=yes`, `render=ok` and finish with `state=stable transaction=committed`.
-
-The renderer applies animation only to transient line geometry. No map-wide legacy `Line_t`/`Vertex_t` ownership is introduced. World raster and sprite-depth see the same animated read view.
-
-## Performance note
-
-The hardware tester considers both door animation and general navigation a little slow, but correct.
-
-Observed scale in the supplied run:
-
-```text
-PlatformVideo_present ~= 34 ms
-complete gameplay redraw around current views ~= 0.32-0.35 s
-```
-
-This points future optimization toward recomposition/cache/redraw scheduling and redraw-on-demand rather than premature TFT-present tuning.
-
-No timing change is part of this validated closeout.
+Permanent animator owner remains 76 B BSS, max 8 active lines, immutable `EspMapRuntime`.
 
 ## Render-cache hardware canon
 
 ```text
 owner=21160 B
 payload=16384 B
-heap8 after owner=31956
-largest8 after owner=8692
 SMALL-COLD=2119886 us
 SMALL-WARM=256807 us
 LARGE-LEARN=247770 us
@@ -218,7 +266,7 @@ LARGE-WARM=229719 us
 large entries=2
 ```
 
-The plane renderer does not require one contiguous 12288-B allocation; it uses bounded 2048-B leases.
+The plane renderer uses bounded 2048-B leases rather than requiring one contiguous map-wide texture allocation.
 
 ## Stable Entrance canons
 
@@ -238,14 +286,6 @@ spawn=904
 direction=64
 ```
 
-Animation-run stable heartbeat:
-
-```text
-heap=97448
-heap8=31740
-largest8=8692
-```
-
 ## Event/script executor boundary
 
 Generic `EspMapOpcodeExecutor` remains intentionally limited to:
@@ -256,16 +296,19 @@ Generic `EspMapOpcodeExecutor` remains intentionally limited to:
 20 EV_PREVSTATE
 ```
 
-Production regular-door Action/MOVE semantics are a separate bounded native route around resident event/filter provenance. Unsupported broad event execution remains fail-closed.
+Production door and dialog Action routes are separate bounded native semantics around resident event/filter provenance; they do not broad-enable the desktop executor.
 
-Two old production log tokens are now stale diagnostics, not current capability statements:
+Hardware-proven production UI opcode:
 
 ```text
-animation=deferred
-tileEvents=deferred
+8 EV_DIALOG
 ```
 
-They are intentionally not changed after the hardware-tested SHA so the closeout remains docs-only.
+Implemented but not yet hardware-proven in this production path:
+
+```text
+26 EV_DIALOGNOBACK
+```
 
 ## Historical Junction canons remain valid
 
@@ -302,17 +345,19 @@ unsupported semantic families fail closed
 
 ## Recommended next direction
 
-Correctness-wise, this branch has reached a coherent merge boundary. After merge and exact `main` recovery, choose one bounded next family from the real resident data rather than broadening everything at once.
+Correctness-wise, the current branch is a coherent merge boundary.
 
-Likely candidates:
+After merge and exact `main` recovery, a good next bounded milestone is one of:
 
 ```text
-SELECT UI/dialog intent family
-or
-bounded redraw/performance work preserving turn-based redraw-on-demand architecture
+1. dialog performance: bounded font/resource cache + reduced redraw/present cadence
+   while preserving 25-ms logical typewriter behavior
+
+2. next UI opcode family from real resident data:
+   EV_FORCEMESSAGE / EV_NOTE, still without broad Game_executeEvent
 ```
 
-Do not enable all of legacy `Game_executeEvent` and do not optimize `PlatformVideo_present()` merely because navigation currently feels slow.
+The performance path is particularly well motivated by the measured 3.5k font reads / ~250 KB resource traffic for a 102-B dialog.
 
 ## Milestone archive groups
 
@@ -330,25 +375,30 @@ Transition preflight, resident handoff/committed transition, spawn/player view, 
 
 ### Render/performance
 
-Graphics catalog, first frame, sprites/glows, gameplay hotpath, resident small cache, exact 2048-B large-range cache, dynamic-line rendering, regular-door animation.
+Graphics catalog, first frame, sprites/glows, gameplay hotpath, resident caches, dynamic-line rendering, regular-door animation.
 
 ### Gameplay
 
-HUD, touch input, TURN, MOVE/collision, SELECT provenance/action, bounded movement events, regular doors.
+HUD, touch input, TURN, MOVE/collision, SELECT provenance/action, bounded movement events, regular doors, native dialog/paging/resume.
 
 ## Merge boundary
 
 ```text
-base main = 33b05385771b45acabff6dcf14d1da2c18d1818f
-hardware-tested implementation SHA = ed353c0799520b82464c0066c3a53c731488c168
+base main = a8e0b64dfd9c790f8896279f70427ce6fb3e9859
+hardware-tested implementation SHA = 5c53a9a02bfb7c92e4dccb0b6eba424e7d015a9b
 REAL-CYD HARDWARE PASS
 Entrance visible/walkable/turnable = YES
 sprites/HUD/touch/TURN/MOVE/collision = YES
-SELECT EV_OPENLINE = YES
-MOVE EXIT EV_CLOSELINE = YES
+SELECT regular doors = YES
+MOVE regular-door events = YES
 generic regular-door animation = YES
+EV_DIALOG progressive UI = YES
+fast-forward + paging = YES
+dialog close + state continuation = YES
+state 0->1->0 repeated = YES
+historical probes cannot block live gameplay = YES
 immutable runtime = YES
 MERGE-READY = YES
 ```
 
-All commits after `ed353c0799520b82464c0066c3a53c731488c168` are documentation-only closeout. After merge, recover the exact new `main` SHA before creating the next `agent/*` branch.
+All commits after `5c53a9a02bfb7c92e4dccb0b6eba424e7d015a9b` are documentation-only closeout. After merge, recover the exact new `main` SHA before creating the next `agent/*` branch.
