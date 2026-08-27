@@ -3,28 +3,14 @@
 #include "esp_native_gameplay_input.h"
 #include "platform_video_config.h"
 
-#define GAMEPLAY_ZONE_COUNT 12U
+#define GAMEPLAY_TOP_HUD_HEIGHT 20
+#define GAMEPLAY_VIEW_BOTTOM 99
+#define GAMEPLAY_MENU_RIGHT 31
+#define GAMEPLAY_PASS_TURN_LEFT 32
+#define GAMEPLAY_PASS_TURN_RIGHT 127
+#define GAMEPLAY_AUTOMAP_LEFT 128
 
 static EspNativeGameplayInputState inputState;
-
-/* The one permanent native CYD gameplay geometry. Hit-testing and the visible
- * control compositor both enumerate this exact table so touch semantics cannot
- * drift away from what is drawn on screen. Bottom HUD y=100..119 deliberately
- * has no gameplay hit zone. */
-static const EspNativeGameplayTouchHit gameplayZones[GAMEPLAY_ZONE_COUNT] = {
-    {ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN,   ESP_NATIVE_GAMEPLAY_ZONE_MENU,        0,   0,  31, 19},
-    {ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN,   ESP_NATIVE_GAMEPLAY_ZONE_PASS_TURN,  32,   0, 127, 19},
-    {ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP,     ESP_NATIVE_GAMEPLAY_ZONE_AUTOMAP,    128,  0, 159, 19},
-    {ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT,   ESP_NATIVE_GAMEPLAY_ZONE_MOVE_LEFT,   0,  20,  52, 45},
-    {ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD,ESP_NATIVE_GAMEPLAY_ZONE_MOVE_FORWARD,53, 20, 105, 45},
-    {ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT,  ESP_NATIVE_GAMEPLAY_ZONE_MOVE_RIGHT,106, 20, 159, 45},
-    {ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT,   ESP_NATIVE_GAMEPLAY_ZONE_TURN_LEFT,   0,  46,  52, 72},
-    {ESP_NATIVE_GAMEPLAY_ACTION_SELECT,      ESP_NATIVE_GAMEPLAY_ZONE_SELECT,     53,  46, 105, 72},
-    {ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT,  ESP_NATIVE_GAMEPLAY_ZONE_TURN_RIGHT,106, 46, 159, 72},
-    {ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON, ESP_NATIVE_GAMEPLAY_ZONE_PREV_WEAPON, 0,  73,  52, 99},
-    {ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK,   ESP_NATIVE_GAMEPLAY_ZONE_MOVE_BACK,  53,  73, 105, 99},
-    {ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON, ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON,106, 73, 159, 99}
-};
 
 /* Temporary milestone observer. Keeping this as an unresolved weak declaration
  * means the permanent input owner has no extra queue, callback storage or
@@ -60,30 +46,57 @@ static int supportedAction(uint8_t action) {
     }
 }
 
+static void setHit(EspNativeGameplayTouchHit* hit,
+                   uint8_t action,
+                   uint8_t zone,
+                   uint8_t left,
+                   uint8_t top,
+                   uint8_t right,
+                   uint8_t bottom) {
+    hit->action = action;
+    hit->zone = zone;
+    hit->left = left;
+    hit->top = top;
+    hit->right = right;
+    hit->bottom = bottom;
+}
+
 void EspNativeGameplayInput_reset(void) {
     memset(&inputState, 0, sizeof(inputState));
-}
-
-uint8_t EspNativeGameplayInput_zoneCount(void) {
-    return GAMEPLAY_ZONE_COUNT;
-}
-
-EspNativeGameplayInputStatus EspNativeGameplayInput_zoneAt(
-    uint8_t ordinal,
-    EspNativeGameplayTouchHit* outHit) {
-    if (outHit == NULL || ordinal >= GAMEPLAY_ZONE_COUNT) {
-        if (outHit != NULL) memset(outHit, 0, sizeof(*outHit));
-        return ESP_NATIVE_GAMEPLAY_INPUT_INVALID;
-    }
-    *outHit = gameplayZones[ordinal];
-    return ESP_NATIVE_GAMEPLAY_INPUT_OK;
 }
 
 EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
     int logicalX,
     int logicalY,
     EspNativeGameplayTouchHit* outHit) {
-    uint8_t i;
+    static const uint8_t actions[3][3] = {
+        {ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT,
+         ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD,
+         ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT},
+        {ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT,
+         ESP_NATIVE_GAMEPLAY_ACTION_SELECT,
+         ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT},
+        {ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON,
+         ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK,
+         ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON}
+    };
+    static const uint8_t zones[3][3] = {
+        {ESP_NATIVE_GAMEPLAY_ZONE_MOVE_LEFT,
+         ESP_NATIVE_GAMEPLAY_ZONE_MOVE_FORWARD,
+         ESP_NATIVE_GAMEPLAY_ZONE_MOVE_RIGHT},
+        {ESP_NATIVE_GAMEPLAY_ZONE_TURN_LEFT,
+         ESP_NATIVE_GAMEPLAY_ZONE_SELECT,
+         ESP_NATIVE_GAMEPLAY_ZONE_TURN_RIGHT},
+        {ESP_NATIVE_GAMEPLAY_ZONE_PREV_WEAPON,
+         ESP_NATIVE_GAMEPLAY_ZONE_MOVE_BACK,
+         ESP_NATIVE_GAMEPLAY_ZONE_NEXT_WEAPON}
+    };
+    static const uint8_t xLeft[3] = {0, 53, 106};
+    static const uint8_t xRight[3] = {52, 105, 159};
+    static const uint8_t yTop[3] = {20, 46, 73};
+    static const uint8_t yBottom[3] = {45, 72, 99};
+    int column;
+    int row;
 
     if (outHit == NULL) return ESP_NATIVE_GAMEPLAY_INPUT_INVALID;
     memset(outHit, 0, sizeof(*outHit));
@@ -93,15 +106,46 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
         return ESP_NATIVE_GAMEPLAY_INPUT_INVALID;
     }
 
-    for (i = 0U; i < GAMEPLAY_ZONE_COUNT; ++i) {
-        const EspNativeGameplayTouchHit* hit = &gameplayZones[i];
-        if (logicalX >= hit->left && logicalX <= hit->right &&
-            logicalY >= hit->top && logicalY <= hit->bottom) {
-            *outHit = *hit;
+    if (logicalY < GAMEPLAY_TOP_HUD_HEIGHT) {
+        if (logicalX <= GAMEPLAY_MENU_RIGHT) {
+            setHit(outHit, ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN,
+                   ESP_NATIVE_GAMEPLAY_ZONE_MENU,
+                   0, 0, GAMEPLAY_MENU_RIGHT, GAMEPLAY_TOP_HUD_HEIGHT - 1);
             return ESP_NATIVE_GAMEPLAY_INPUT_OK;
         }
+        if (logicalX >= GAMEPLAY_AUTOMAP_LEFT) {
+            setHit(outHit, ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP,
+                   ESP_NATIVE_GAMEPLAY_ZONE_AUTOMAP,
+                   GAMEPLAY_AUTOMAP_LEFT, 0,
+                   DOOMRPG_LOGICAL_WIDTH - 1, GAMEPLAY_TOP_HUD_HEIGHT - 1);
+            return ESP_NATIVE_GAMEPLAY_INPUT_OK;
+        }
+        if (logicalX >= GAMEPLAY_PASS_TURN_LEFT &&
+            logicalX <= GAMEPLAY_PASS_TURN_RIGHT) {
+            setHit(outHit, ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN,
+                   ESP_NATIVE_GAMEPLAY_ZONE_PASS_TURN,
+                   GAMEPLAY_PASS_TURN_LEFT, 0,
+                   GAMEPLAY_PASS_TURN_RIGHT, GAMEPLAY_TOP_HUD_HEIGHT - 1);
+            return ESP_NATIVE_GAMEPLAY_INPUT_OK;
+        }
+        return ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT;
     }
-    return ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT;
+
+    if (logicalY > GAMEPLAY_VIEW_BOTTOM) {
+        return ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT;
+    }
+
+    if (logicalX <= xRight[0]) column = 0;
+    else if (logicalX <= xRight[1]) column = 1;
+    else column = 2;
+
+    if (logicalY <= yBottom[0]) row = 0;
+    else if (logicalY <= yBottom[1]) row = 1;
+    else row = 2;
+
+    setHit(outHit, actions[row][column], zones[row][column],
+           xLeft[column], yTop[row], xRight[column], yBottom[row]);
+    return ESP_NATIVE_GAMEPLAY_INPUT_OK;
 }
 
 EspNativeGameplayInputStatus EspNativeGameplayInput_route(
