@@ -27,96 +27,153 @@ If chat history and repository state disagree, current GitHub `main` + `PORTING_
 | [`MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_RENDER_RESOURCE_CACHE.md) | persistent bounded PAK/render-resource owner | #96 | `377fce3de5381373750a7fba29d0c83b8142c583` |
 | [`MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md`](MAP1_NATIVE_GAMEPLAY_LARGE_RANGE_CACHE.md) | shared exact 2048 B reuse + bounded legacy wall-block guard | #97 | `2aae0676528ab00c3494d142d8b35c22b7685dce` |
 | [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md) | recover closed line-derived gameplay collision | #98 | `3b17a400c35338e434fab16ae0c2a3a63ab47e3e` |
+| [`MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md) | per-line dynamic open/closed collision topology | #99 | `e0a250f0bfd6e5519298f942f4bed65c230c3652` |
 
 Older archives remain available in Git history; `PORTING_STATUS.md` is the preferred recovery entry point.
 
 ## Latest merged boundary
 
-PR #98 is the current merged hardware baseline:
+PR #99 is the current merged hardware baseline:
 
 ```text
-main=3b17a400c35338e434fab16ae0c2a3a63ab47e3e
-closed line-derived collision=yes
-spawn BACK 943->975 blocked by line 35
-line entity type=0 / defTile=312
+main=e0a250f0bfd6e5519298f942f4bed65c230c3652
+closed line collision=yes
+open line skipped by collision=yes
+close restores collision=yes
 shapeData=NULL
 mediaTexels=NULL
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_CLOSED_LINE_COLLISION.md).
+Merged evidence: [`MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md).
 
 ## Current candidate milestone
 
-[`MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md) records the permanent per-line dynamic collision topology.
+[`MAP1_NATIVE_GAMEPLAY_SELECT_FRONT_TILE.md`](MAP1_NATIVE_GAMEPLAY_SELECT_FRONT_TILE.md) records the first live SELECT front-tile observer on Junction.
 
 ```text
-branch=agent/esp32-native-gameplay-dynamic-line-collision
-base=3b17a400c35338e434fab16ae0c2a3a63ab47e3e
-hardware-tested implementation SHA=52ddbf979e33f99be27c8344eb4e0572ac4d0547
+branch=agent/esp32-native-gameplay-select-front-tile
+base=e0a250f0bfd6e5519298f942f4bed65c230c3652
+hardware-tested implementation SHA=ca5560c0eb849c8a11b21eb8c117e7a8fc4c60ff
 status=REAL-CYD HARDWARE PASS
 merge-ready=yes after docs-only closeout audit
 ```
 
 ### Behavior recovered
 
-Legacy door collision is not a separate geometry pass: opening a line unlinks its line-derived entity; closing it links that entity again. Native collision now consumes `EspMapLineState` directly to reproduce that topology:
+The first legacy SELECT step is now mirrored read-only on the live native gameplay path:
 
 ```text
-closed -> participates in collision
-open   -> skipped
-closed -> participates again
+SELECT
+ -> current dest + viewStep
+ -> front tile
+ -> run flags 1280 / 0x500
+ -> event lookup + descriptor + mutable current state + filter provenance
+ -> optional line-derived entity witness on same front tile
 ```
 
-No legacy entity world is created.
+No bytecode executes and no world state changes.
 
-### Strict activation witness
-
-Canonical Junction line `35` is temporarily toggled only during activation:
+Permanent ABI:
 
 ```text
-CLOSED -> BLOCKED_ENTITY
-OPEN   -> CLEAR
-CLOSE  -> exact original BLOCKED_ENTITY result
+EspNativeGameplaySelectResult=28 B
+EspMapLineTopologyRef=16 B
+persistent heap=0 B
 ```
 
-The witness then restores the exact baseline before interactive gameplay begins.
+### Fresh spawn hardware proof
 
-### First-hardware probe correction
-
-Implementation `429a86d...` incorrectly required the resident snapshot to remain byte-identical while intentionally changing `lineStateFNV1a`. The first real-CYD run correctly failed the witness and blocked native gameplay activation.
-
-Fix `52ddbf9...` permits exactly that one resident field to change while OPEN and requires full exactness again after CLOSE.
-
-Post-fix physical-CYD logs show repeated successful MOVE and TURN execution with stable memory and side-effect guards, proving the activation witness completed and gameplay remained live:
+North-facing SELECT at canonical spawn:
 
 ```text
-heap8=38928 stable
+front=992,1824
+tile=911
+event=59
+opcode=4 / UNOWNED
+decision=FLAGS_MISMATCH
+frame=ba3e5182 exact=yes
+heap8=38924 stable
+largest8=29684 stable
+legacyExact=yes
+residentExact=yes
+```
+
+### Arrival door hardware proof
+
+After two right turns, SELECT South at the arrival door proved:
+
+```text
+front=992,1952
+tile=975
+event=63
+line=35
+texture=7
+flags=00000505
+open=0
+locked=1
+linked=1
+type=0
+defTile=312
+```
+
+The one eligible event command is:
+
+```text
+opcode=15 / EV_OPENLINE
+arg1=35
+arg2=00000100
+decision=ELIGIBLE
+```
+
+This establishes the exact interaction chain:
+
+```text
+SELECT -> Junction tile975 -> event63 -> EV_OPENLINE(35) -> line35 LOCKED
+```
+
+The observer correctly performs no mutation. Legacy locked-door refusal remains a separate later execution boundary.
+
+### Important corpus correction
+
+Do not reuse `/intro.bsp` event bounds as Junction runtime facts. A pre-test prediction that tile975 had no event was invalid because the active resident runtime is `/junction.bsp`.
+
+Real CYD truth:
+
+```text
+Junction tile975 has event63
+```
+
+### Live interaction corpus
+
+Physical SELECTs while walking around Junction exposed real multi-state script families:
+
+```text
+tile878 event56 commands=18: EV_DIALOG / EV_CHANGESTATE / EV_NEXTSTATE
+tile845 event49 commands=14: EV_DIALOG / EV_CHANGESTATE + linked line98 type7 unlocked
+tile816 event45 commands=12: EV_DIALOG / EV_CHANGESTATE
+```
+
+The user reached visible scientist/computer/soldier interaction targets while these logs were captured. The observer does not yet map those physical labels to permanent entity identities; it only records the proven front-tile/script provenance.
+
+### Regression proof
+
+Normal MOVE/TURN remained live throughout the same physical session:
+
+```text
+canonical North round-trip frame=ba3e5182 exact
+MOVE 943->911 OK
+MOVE 911->879 OK
+MOVE 847->846 OK
+MOVE 846->847 OK
+MOVE 847->815 OK
+heap8=38924 stable
 largest8=29684 stable
 stackHighWater=860
 legacyStable=yes
 residentStable=yes
-turnAdvance=no
-tileDispatch=no
 ```
 
-The supplied post-fix excerpt begins after activation, so the exact OPEN-state line FNV is intentionally not recorded here.
-
-## Why there is still no door the user can open
-
-This milestone is collision plumbing, not SELECT gameplay.
-
-Current touch SELECT remains:
-
-```text
-action=SELECT
-consumedBy=probe
-dispatch=observer
-gameplay=no
-```
-
-The line-35 witness is invisible and fully rolled back before gameplay. Also, canonical line 35 has flags `0x505`, including the `LOCKED` bit `0x400`.
-
-Legacy `Game_performDoorEvent()` refuses a locked line before toggling the open bit. Therefore a future native SELECT path must preserve key/lock semantics instead of directly toggling colored doors.
+No SELECT probe failure, Guru Meditation, reboot or memory drift was observed.
 
 ## Stable recovery canons
 
@@ -163,10 +220,10 @@ original behavior/data
  -> static WALL + sprite-entity collision         [hardware-proven]
  -> closed line-derived collision                 [hardware-proven]
  -> dynamic per-line open/close collision         [hardware-proven]
- -> SELECT front-tile/interaction routing         [next]
- -> lock/key-aware native interaction             [later]
- -> real EV_OPENLINE/CLOSELINE gameplay trigger   [later]
+ -> SELECT front-tile/event/line provenance       [hardware-proven]
+ -> lock-aware EV_OPENLINE/CLOSELINE execution    [next]
  -> door visual animation consumer                [later]
+ -> live dialogue/UI SELECT execution             [later]
  -> post-move turn/tile events                    [later]
  -> entity/monster gameplay                       [later]
 ```
@@ -194,10 +251,14 @@ static wall collision=yes
 compact linked sprite-entity collision=yes
 closed line-derived collision=yes
 dynamic opened-line collision=yes
+SELECT front-tile observer=yes
+SELECT runFlags=0x500
+event/filter provenance=yes
+front line provenance=yes
+arrival door event63/EV_OPENLINE35/LOCKED=yes
 player-operated door=no
-SELECT gameplay=no
 Game_advanceTurn=no
-Game_executeTile=no
+postMoveTileDispatch=no
 facingRefresh=deferred
 shapeData=NULL
 mediaTexels=NULL
@@ -208,25 +269,26 @@ mediaTexels=NULL
 Preferred next boundary:
 
 ```text
-SELECT intent
- -> current cardinal facing
- -> identify front tile / front line / event descriptor
- -> recover legacy interaction flag 1280 routing
- -> emit compact native interaction result
- -> LOCKED remains fail-closed
- -> no invented keys
- -> no sound/animation yet
- -> no broad legacy Game_executeEvent
+SELECT eligible command
+ -> support only opcode 15 EV_OPENLINE and opcode 16 EV_CLOSELINE
+ -> resolve line target
+ -> apply recovered LOCKED guard before mutation
+ -> locked line: refuse, exact no-op
+ -> unlocked line: mutate compact EspMapLineState only
+ -> existing native collision immediately consumes new open state
+ -> unrelated opcodes remain fail-closed
 ```
 
-This gives a hardware-testable SELECT path without pretending that Junction's colored locked doors are already openable.
+Keep sound, visual animation, broad entity/combat fallback, unrelated script opcodes and fake key ownership out of that milestone.
+
+For the positive open/close witness, discover and use a real unlocked Junction line/event; do not bypass the lock on arrival line35.
 
 ## Merge boundary
 
 Final hardware-tested implementation SHA:
 
 ```text
-52ddbf979e33f99be27c8344eb4e0572ac4d0547
+ca5560c0eb849c8a11b21eb8c117e7a8fc4c60ff
 ```
 
 Status:
@@ -236,4 +298,4 @@ REAL-CYD HARDWARE PASS
 MERGE-READY after docs-only closeout audit
 ```
 
-All later commits on the candidate branch must remain documentation-only. After merge, recover the exact new `main` SHA and reread `PORTING_STATUS.md`, this file, and [`MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md`](MAP1_NATIVE_GAMEPLAY_DYNAMIC_LINE_COLLISION.md) before branching again.
+All later commits on the candidate branch must remain documentation-only. After merge, recover the exact new `main` SHA and reread `PORTING_STATUS.md`, this file, and [`MAP1_NATIVE_GAMEPLAY_SELECT_FRONT_TILE.md`](MAP1_NATIVE_GAMEPLAY_SELECT_FRONT_TILE.md) before branching again.
