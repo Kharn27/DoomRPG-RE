@@ -13,8 +13,8 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_present_gate.h"
-#include "esp_native_junction_sprite_renderer.h"
 #include "esp_native_plane_renderer.h"
+#include "esp_native_sprite_renderer.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -28,7 +28,7 @@
 
 typedef struct GameplayFrameScratch_s {
     EspNativeGameplayFrameStats stats;
-    EspNativeJunctionSpriteStats sprites;
+    EspNativeSpriteStats sprites;
     EspNativeGameplayHudDirectionStats hud;
     EspNativeFirstFrameState world;
     uint8_t busy;
@@ -38,9 +38,13 @@ typedef struct GameplayFrameScratch_s {
 /* Single gameplay service, non-reentrant by contract. The scratch is permanent
  * bounded BSS so repeated MOVE/TURN rendering does not deepen loopTask stack.
  * Pixel payload lives only in the shared framebuffer; the gameplay world route
- * no longer allocates or copies a temporary HUD save. */
+ * no longer allocates or copies a temporary HUD save.
+ *
+ * Storage/cache activation is deliberately NOT owned here. A frame compositor
+ * must be deterministic whether the PAK is in normal or resident lease mode;
+ * the generic gameplay session owns the proven cold/warm/large-cache lifecycle.
+ */
 static GameplayFrameScratch frameScratch;
-static uint8_t renderCacheReadyLogged;
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -104,51 +108,12 @@ static uint32_t hudBandsFNV(void) {
         HUD_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
 }
 
-/* PR #96/#97 made this the permanent gameplay render-resource owner. The old
- * Junction validation ladder used to activate it before gameplay. Entrance now
- * reaches the same generic compositor without that probe, so the compositor
- * itself owns the invariant: once gameplay recomposition starts, the validated
- * PAK file and bounded exact-range caches stay resident across MOVE/TURN frames.
- * No map-wide texel pool is introduced and the optional 2048-byte range tier
- * borrows only unused bytes from the existing 16 KiB payload. */
-static int ensureResidentRenderCache(void) {
-    EspAssetPackResidentStats cache;
-
-    if (EspAssetPack_isOpen()) return 0;
-    if (!EspAssetPack_isResident() && !EspAssetPack_residentBegin()) return 0;
-    if (!EspAssetPack_isResidentLargeRangeEnabled() &&
-        !EspAssetPack_residentLargeRangeBegin()) {
-        return 0;
-    }
-    if (!EspAssetPack_isResident() ||
-        !EspAssetPack_isResidentLargeRangeEnabled() || EspAssetPack_isOpen()) {
-        return 0;
-    }
-
-    if (!renderCacheReadyLogged) {
-        memset(&cache, 0, sizeof(cache));
-        EspAssetPack_residentGetStats(&cache);
-        printf("[RENDERCACHE] READY owner=%uB payload=%uB entries=%u large=on physicalOpen=%u validate=%u\n",
-               (unsigned int)cache.ownerBytes,
-               (unsigned int)cache.rangeCacheCapacityBytes,
-               (unsigned int)cache.rangeCacheEntryCapacity,
-               (unsigned int)cache.physicalOpens,
-               (unsigned int)cache.validationPasses);
-        renderCacheReadyLogged = 1U;
-    }
-    return 1;
-}
-
-/* The historical Junction sprite milestone deliberately required one mode7
- * object and at least one rendered glow because its fixed north-facing pose was
- * proving those families. A runtime cardinal view may legitimately contain no
- * admitted sprite at all, or no visible mode7/glow. If that strict fixed-pose
- * witness is absent, the gameplay compositor accepts the render only when every
- * map sprite is fully classified and every admitted base/glow is accounted for.
- * Any unsupported object, deferred glow, short draw, or renderer scratch
- * mutation remains fail-closed. */
-static int spriteViewAccountingComplete(
-    const EspNativeJunctionSpriteStats* sprites) {
+/* The historical fixed Junction pose deliberately required one mode7 object
+ * and a glow. A normal resident-map view may contain neither. Production accepts
+ * a non-strict result only when every map sprite is classified and every admitted
+ * base/glow is fully accounted for. Unsupported/deferred work remains fail-closed.
+ */
+static int spriteViewAccountingComplete(const EspNativeSpriteStats* sprites) {
     uint32_t classified;
     uint32_t basesFinished;
     uint32_t glowsFinished;
@@ -180,11 +145,9 @@ int EspNativeGameplayFrame_renderTurn(
     const EspPlayerViewState* view = EspPlayerView_view();
     const EspNativePlaneRenderStats* planes;
     EspNativeGameplayFrameStats* stats = &frameScratch.stats;
-    EspNativeJunctionSpriteStats* sprites = &frameScratch.sprites;
+    EspNativeSpriteStats* sprites = &frameScratch.sprites;
     EspNativeGameplayHudDirectionStats* hud = &frameScratch.hud;
     EspNativeFirstFrameState* world = &frameScratch.world;
-    EspAssetPackResidentStats cacheBefore;
-    EspAssetPackResidentStats cacheAfter;
     uint32_t renderBeforeSpritesFNV;
     uint32_t renderAfterSpritesFNV;
     uint32_t hudAfterWorldFNV;
@@ -204,17 +167,6 @@ int EspNativeGameplayFrame_renderTurn(
         EspAssetPack_isOpen() || EspNativeGameplayPresentGate_isArmed()) {
         return 0;
     }
-    if (!ensureResidentRenderCache()) {
-        printf("[TURNFRAME] DIAG fail=RENDER_CACHE resident=%u large=%u packOpen=%u\n",
-               (unsigned int)EspAssetPack_isResident(),
-               (unsigned int)EspAssetPack_isResidentLargeRangeEnabled(),
-               (unsigned int)EspAssetPack_isOpen());
-        return 0;
-    }
-
-    memset(&cacheBefore, 0, sizeof(cacheBefore));
-    memset(&cacheAfter, 0, sizeof(cacheAfter));
-    EspAssetPack_residentGetStats(&cacheBefore);
 
     frameScratch.busy = 1U;
     memset(stats, 0, sizeof(*stats));
@@ -248,10 +200,6 @@ int EspNativeGameplayFrame_renderTurn(
     stats->worldMicros = elapsedMicros(phaseStart);
     stats->worldRouteNoPresent = 1U;
 
-    /* Permanent post-world invariants. The temporary door/BSP witness that
-     * diagnosed the arrival collision is intentionally absent from this normal
-     * gameplay path: do not perform a second visibility traversal or success
-     * logging after an already successful world render. */
     stats->worldFrameFNV = world->frameAfterFNV;
     stats->viewportAfterWorldFNV = viewportFNV();
     stats->wallDraws = world->wallDraws;
@@ -276,7 +224,7 @@ int EspNativeGameplayFrame_renderTurn(
 
     phaseStart = esp_timer_get_time();
     renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
-    strictSpriteWitness = EspNativeJunctionSprite_render(render, sprites);
+    strictSpriteWitness = EspNativeSpriteRenderer_render(render, sprites);
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     stats->spriteMicros = elapsedMicros(phaseStart);
     if (!strictSpriteWitness) {
@@ -325,8 +273,6 @@ int EspNativeGameplayFrame_renderTurn(
     stats->spritePackReads = sprites->packReads;
     stats->viewportAfterSpritesFNV = viewportFNV();
 
-    /* The viewport-only world and sprite routes must leave both HUD bands
-     * bit-exact. This replaces the old 12.8 KiB save/restore bridge. */
     stats->temporaryHudBytes = 0U;
     stats->hudBandsRestoredFNV = hudBandsFNV();
     if (stats->hudBandsRestoredFNV != stats->hudBandsBeforeFNV) {
@@ -370,23 +316,6 @@ int EspNativeGameplayFrame_renderTurn(
 done:
     if (EspAssetPack_isOpen()) EspAssetPack_close();
     stats->totalMicros = elapsedMicros(totalStart);
-    EspAssetPack_residentGetStats(&cacheAfter);
-    printf("[RENDERCACHE] FRAME angle=%u physical=%u/%uB entry=%uH/%uM range=%uH/%uM/%uS/%uB cache=%u/%uB entries=%u/%u large=%u totalUs=%u\n",
-           (unsigned int)angle,
-           (unsigned int)(cacheAfter.physicalReads - cacheBefore.physicalReads),
-           (unsigned int)(cacheAfter.physicalBytes - cacheBefore.physicalBytes),
-           (unsigned int)(cacheAfter.entryCacheHits - cacheBefore.entryCacheHits),
-           (unsigned int)(cacheAfter.entryCacheMisses - cacheBefore.entryCacheMisses),
-           (unsigned int)(cacheAfter.rangeCacheHits - cacheBefore.rangeCacheHits),
-           (unsigned int)(cacheAfter.rangeCacheMisses - cacheBefore.rangeCacheMisses),
-           (unsigned int)(cacheAfter.rangeCacheStores - cacheBefore.rangeCacheStores),
-           (unsigned int)(cacheAfter.rangeCacheBypasses - cacheBefore.rangeCacheBypasses),
-           (unsigned int)cacheAfter.rangeCacheBytesUsed,
-           (unsigned int)cacheAfter.rangeCacheCapacityBytes,
-           (unsigned int)cacheAfter.rangeCacheEntries,
-           (unsigned int)cacheAfter.rangeCacheEntryCapacity,
-           (unsigned int)cacheAfter.largeRangeEntries,
-           (unsigned int)stats->totalMicros);
     if (!ok) stats->active = 0U;
     *outStats = *stats;
     frameScratch.busy = 0U;
