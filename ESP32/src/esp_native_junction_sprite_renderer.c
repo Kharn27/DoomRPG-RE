@@ -19,7 +19,7 @@
 #define TEXEL_HEADER 4U
 #define PAIR_BYTES 8U
 #define SHAPE_HEADER 12U
-#define MAX_SPRITES 64U
+#define MAX_VISIBLE_SPRITES 64U
 #define MAX_DIM 64
 #define MAX_MASK 512U
 #define MAX_TEXELS 2048U
@@ -112,7 +112,7 @@ typedef struct Scratch_s {
 
 typedef struct SpriteWorkspace_s {
     Frame frame;
-    Order order[MAX_SPRITES];
+    Order order[MAX_VISIBLE_SPRITES];
     uint32_t seenLogical[8];
     EspNativeBspVisibilityState visibility;
 } SpriteWorkspace;
@@ -478,7 +478,7 @@ static int loadFrame(const Sources* sources,
 static int buildOrder(Render_t* render,
                       const EspMapRuntimeView* runtime,
                       const EspNativeBspVisibilityState* visibility,
-                      Order order[MAX_SPRITES],
+                      Order order[MAX_VISIBLE_SPRITES],
                       EspNativeJunctionSpriteStats* stats,
                       uint32_t* outCount) {
     uint32_t i;
@@ -486,7 +486,7 @@ static int buildOrder(Render_t* render,
     uint32_t hash = 2166136261U;
 
     if (runtime == NULL || visibility == NULL || stats == NULL ||
-        outCount == NULL || runtime->mapSpriteCount > MAX_SPRITES) {
+        outCount == NULL) {
         return 0;
     }
 
@@ -535,6 +535,10 @@ static int buildOrder(Render_t* render,
             ++stats->unsupported;
             return 0;
         }
+        if (count >= MAX_VISIBLE_SPRITES) {
+            ++stats->unsupported;
+            return 0;
+        }
 
         if (spriteRenderMode((uint16_t)id) == RENDER_MODE_ADD) {
             ++stats->mode7Objects;
@@ -567,7 +571,7 @@ static int buildOrder(Render_t* render,
     }
     stats->orderFNV1a = hash;
     *outCount = count;
-    return count > 0U;
+    return 1;
 }
 
 static int spans(Render_t* render,
