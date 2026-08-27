@@ -174,7 +174,12 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     }
     EspProbeLog_setQuiet(0);
 
-    if (EspProbeLog_hasBlockingFailure()) {
+    /* Probe failures are startup authority only. Once the read-only transition
+     * preflight has completed, production ownership has crossed into Entrance
+     * spawn / generic gameplay. A later regression witness must never suspend
+     * or kill that live session. */
+    if (!Esp32TransitionPreflightFinalProbe_isDone() &&
+        EspProbeLog_hasBlockingFailure()) {
         if (!fastForwardBlockedLogged) {
             printf("[NATIVEBOOT] BLOCKED Entrance predecessor probe failure after %u silent passes; resident handoff/committed transition forbidden\n",
                    fastForwardTotalPasses);
@@ -195,7 +200,7 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     }
 
     if (!fastForwardReadyLogged) {
-        printf("[NATIVEBOOT] ENTRANCE source validation complete silent passes=%u; production startup stops before ResidentHandoff/CommittedTransition and continues into Entrance spawn then generic gameplay session\n",
+        printf("[NATIVEBOOT] ENTRANCE source validation complete silent passes=%u; probe-block authority retired; production startup stops before ResidentHandoff/CommittedTransition and continues into Entrance spawn then generic gameplay session\n",
                fastForwardTotalPasses);
         fastForwardReadyLogged = 1;
     }
