@@ -378,6 +378,11 @@ int EspNativeGameplayWeapon_render(
     int scale;
     int anchorX;
     int anchorY;
+    int savedScreenLeft = 0;
+    int savedScreenTop = 0;
+    int savedScreenRight = 0;
+    int savedScreenBottom = 0;
+    int clipSaved = 0;
     int opened = 0;
     int ok = 0;
 
@@ -388,16 +393,18 @@ int EspNativeGameplayWeapon_render(
     if (weaponWorkspace.busy || render == NULL || outStats == NULL ||
         render->framebuffer == NULL || render->screenX != 0 ||
         render->screenY != 20 || render->screenWidth != 160 ||
-        render->screenHeight != 80 || render->screenLeft != 0 ||
-        render->screenTop != 0 || render->screenRight != 160 ||
-        render->screenBottom != 80 || render->shapeData != NULL ||
+        render->screenHeight != 80 || render->shapeData != NULL ||
         render->mediaTexels != NULL || EspAssetPack_isOpen()) {
-        printf("[WEAPON] FAILED contract weapon=%u screen=%d,%d/%dx%d shapeData=%p mediaTexels=%p pack=%u\n",
+        printf("[WEAPON] FAILED contract weapon=%u screen=%d,%d/%dx%d clip=%d,%d..%d,%d shapeData=%p mediaTexels=%p pack=%u\n",
                (unsigned int)weapon,
                render != NULL ? render->screenX : -1,
                render != NULL ? render->screenY : -1,
                render != NULL ? render->screenWidth : -1,
                render != NULL ? render->screenHeight : -1,
+               render != NULL ? render->screenLeft : -1,
+               render != NULL ? render->screenTop : -1,
+               render != NULL ? render->screenRight : -1,
+               render != NULL ? render->screenBottom : -1,
                render != NULL ? (void*)render->shapeData : NULL,
                render != NULL ? (void*)render->mediaTexels : NULL,
                (unsigned int)EspAssetPack_isOpen());
@@ -442,6 +449,20 @@ int EspNativeGameplayWeapon_render(
     stats.anchorX = (int16_t)anchorX;
     stats.anchorY = (int16_t)anchorY;
 
+    /* World/sprite owners restore the caller's Render_t scratch exactly.  The
+     * caller's clip is therefore not a stable gameplay-frame invariant.  Own a
+     * full viewport clip only while drawing this screen-space layer, then put
+     * every field back before the compositor checks Render_t byte stability. */
+    savedScreenLeft = render->screenLeft;
+    savedScreenTop = render->screenTop;
+    savedScreenRight = render->screenRight;
+    savedScreenBottom = render->screenBottom;
+    render->screenLeft = 0;
+    render->screenTop = 0;
+    render->screenRight = render->screenWidth;
+    render->screenBottom = render->screenHeight;
+    clipSaved = 1;
+
     if (!rasterizeIdle(render, frame, anchorX, anchorY, &stats)) {
         printf("[WEAPON] FAILED raster weapon=%u logical=%u actual=%u\n",
                (unsigned int)weapon,
@@ -454,6 +475,12 @@ int EspNativeGameplayWeapon_render(
     ok = 1;
 
 done:
+    if (clipSaved) {
+        render->screenLeft = savedScreenLeft;
+        render->screenTop = savedScreenTop;
+        render->screenRight = savedScreenRight;
+        render->screenBottom = savedScreenBottom;
+    }
     if (opened) EspAssetPack_close();
     if (ok) {
         printf("[WEAPON] DRAW weapon=%u logical=%u actual=%u idle=%d,%d anchor=%d,%d bounds=%d..%d,%d..%d active=%u pixels=%u reads=%u frameBytes=%u ownerBytes=%u packClosed=%s\n",
