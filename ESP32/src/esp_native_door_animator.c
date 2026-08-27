@@ -36,6 +36,14 @@ EspMapLineDoorStatus __real_EspMapLineState_applyDoorCommand(
     uint32_t commandOffset,
     EspMapLineDoorResult* outResult);
 
+static void clearBatchPreserveCounters(void) {
+    uint32_t scheduled = animator.view.scheduledTransitions;
+    uint32_t completed = animator.view.completedTransitions;
+    memset(&animator, 0, sizeof(animator));
+    animator.view.scheduledTransitions = scheduled;
+    animator.view.completedTransitions = completed;
+}
+
 static int slotForLine(uint16_t lineIndex) {
     uint32_t i;
     for (i = 0U; i < ESP_NATIVE_DOOR_ANIMATION_MAX_LINES; ++i) {
@@ -56,11 +64,7 @@ static int freeSlot(void) {
 }
 
 void EspNativeDoorAnimator_reset(void) {
-    uint32_t scheduled = animator.view.scheduledTransitions;
-    uint32_t completed = animator.view.completedTransitions;
     memset(&animator, 0, sizeof(animator));
-    animator.view.scheduledTransitions = scheduled;
-    animator.view.completedTransitions = completed;
 }
 
 EspNativeDoorAnimationStatus EspNativeDoorAnimator_begin(
@@ -129,7 +133,7 @@ int EspNativeDoorAnimator_validateLineState(void) {
     if (!EspNativeDoorAnimator_hasPendingFrames()) return 1;
     if (!EspMapRuntime_isLoaded() || !EspMapLineState_isReady()) {
         printf("[DOORANIM] CANCEL reason=runtime-not-ready\n");
-        EspNativeDoorAnimator_reset();
+        clearBatchPreserveCounters();
         return 0;
     }
 
@@ -142,7 +146,7 @@ int EspNativeDoorAnimator_validateLineState(void) {
             printf("[DOORANIM] CANCEL line=%u expectedOpen=%u reason=outer-rollback\n",
                    (unsigned int)slot->lineIndex,
                    (unsigned int)slot->targetOpen);
-            EspNativeDoorAnimator_reset();
+            clearBatchPreserveCounters();
             return 0;
         }
     }
@@ -202,7 +206,7 @@ int EspNativeDoorAnimator_finishFrame(int renderOk) {
     ++animator.view.completedFrames;
     if (animator.view.completedFrames == ESP_NATIVE_DOOR_ANIMATION_FRAMES) {
         animator.view.completedTransitions += animator.view.activeLines;
-        EspNativeDoorAnimator_reset();
+        clearBatchPreserveCounters();
     }
     return 1;
 }
@@ -247,6 +251,7 @@ EspMapLineDoorStatus __wrap_EspMapLineState_applyDoorCommand(
                                                   outResult->openBefore,
                                                   outResult->openAfter);
     if (animationStatus == ESP_NATIVE_DOOR_ANIMATION_INVALID) {
+        clearBatchPreserveCounters();
         if (!EspMapLineState_setOpen(outResult->lineIndex,
                                      outResult->openBefore)) {
             return ESP_MAP_LINE_DOOR_INVALID;
