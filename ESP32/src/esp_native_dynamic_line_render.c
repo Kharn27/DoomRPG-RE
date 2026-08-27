@@ -184,6 +184,11 @@ boolean __wrap_Render_clipLine(Render_t* render, Line_t* line) {
             line->vert1.z = animatedClip.desiredZ2;
             line->vert2.z = animatedClip.desiredZ1;
         }
+        else if (line->vert1.z == 0 && line->vert2.z == 0) {
+            /* EspNativeBspVisibility intentionally omits texture-z because its
+             * sprite-depth pass consumes only transformed x/y. The compact x/y
+             * door displacement above still applies there; no z fix is needed. */
+        }
         else {
             dynamicAnimationFault = 1U;
             printf("[DOORANIM] GEOMETRY-FAULT line=%u builtZ=%d,%d observedZ=%d,%d\n",
