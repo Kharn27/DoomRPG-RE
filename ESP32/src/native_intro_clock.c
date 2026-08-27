@@ -11,6 +11,7 @@
 
 #include "native_intro_clock.h"
 #include "native_intro_dispose.h"
+#include "native_intro_input.h"
 #include "native_sprite_lru_cache.h"
 #include "native_story_fit.h"
 #include "native_wall_lru_cache.h"
@@ -295,6 +296,7 @@ void Esp32IntroClock_service(void) {
     }
 
     DoomRPG_flushGraphics(clockState.doomRpg);
+    Esp32IntroInput_notifyFramePresented();
 
     if (clockState.renderedFrames <= 3U ||
         (targetTick % INTRO_CLOCK_CHECKPOINT_TICKS) == 0U) {
