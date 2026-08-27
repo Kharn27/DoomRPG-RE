@@ -139,7 +139,8 @@ void Esp32EntranceStartupRouteProbe_service(struct DoomRPG_s* doomRpgBase) {
 
     runtime = EspMapRuntime_view();
     startupFile = doomRpg->game != NULL && doomRpg->doomCanvas != NULL &&
-                          doomRpg->doomCanvas->startupMap > 0
+                          doomRpg->doomCanvas->startupMap >= MAP_INTRO &&
+                          doomRpg->doomCanvas->startupMap <= MAP_END_GAME
                       ? doomRpg->game->mapFiles[doomRpg->doomCanvas->startupMap - 1]
                       : NULL;
 
