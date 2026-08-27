@@ -180,6 +180,10 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
     if (tile >= 1024U || runFlags == 0U) {
         return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
     }
+    if (!EspNativeGameplayStatusMessage_isReady()) {
+        EspNativeGameplayStatusMessage_reset();
+        EspNativeGameplayStatusMessage_logCorpus();
+    }
     if (!EspMapRuntime_isLoaded() || !EspMapScriptState_isReady() ||
         !EspMapLineState_isReady() ||
         !EspNativeGameplayStatusMessage_isReady()) {
