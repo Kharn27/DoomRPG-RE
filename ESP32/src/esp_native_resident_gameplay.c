@@ -11,10 +11,12 @@
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_controls.h"
+#include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_select.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
 #include "platform_touch_events.h"
@@ -27,6 +29,9 @@ typedef struct EspNativeResidentGameplayState_s {
     uint32_t turns;
     uint32_t moves;
     uint32_t selects;
+    uint32_t dialogs;
+    uint32_t dialogResumes;
+    uint32_t dialogCancels;
     uint32_t blocked;
     uint32_t deferred;
     uint32_t selectRefused;
@@ -41,6 +46,7 @@ static void disableGameplay(const char* reason) {
     if (EspNativeGameplayControls_isActive()) {
         (void)EspNativeGameplayControls_restore(1, NULL);
     }
+    EspNativeGameplayDialog_reset();
     gameplayState.failed = 1U;
     gameplayState.active = 0U;
     PlatformInput_setTapCallback(NULL);
@@ -99,12 +105,13 @@ static void onGameplayTap(int16_t screenX,
             disableGameplay("touch-feedback-draw");
             return;
         }
-        printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=%s zone=%u logical=%d,%d\n",
+        printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=%s zone=%u logical=%d,%d context=%s\n",
                (unsigned int)gameplayState.taps,
                EspNativeGameplayInput_actionName(hit.action),
                (unsigned int)hit.zone,
                logicalX,
-               logicalY);
+               logicalY,
+               EspNativeGameplayDialog_isActive() ? "DIALOG" : "WORLD");
         printf("[TOUCHFEEDBACK] FLASH zone=%u action=%s edits=%u hold=%ums frame=%08x->%08x style=junction-neon-double-ring+vector-glyph\n",
                (unsigned int)feedbackStats.zone,
                EspNativeGameplayInput_actionName(feedbackStats.action),
@@ -255,7 +262,7 @@ static void serviceMove(Render_t* render,
     }
 
     ++gameplayState.moves;
-    printf("[RESIDENTGAMEPLAY] MOVE n=%u seq=%u action=%s tile=%u->%u delta=%d,%d pos=%d,%d tileEvents=deferred committed=yes\n",
+    printf("[RESIDENTGAMEPLAY] MOVE n=%u seq=%u action=%s tile=%u->%u delta=%d,%d pos=%d,%d moveEvents=door15/16-live-other-deferred committed=yes\n",
            (unsigned int)gameplayState.moves,
            (unsigned int)result.sequence,
            EspNativeGameplayInput_actionName(intent->action),
@@ -289,6 +296,32 @@ static void serviceSelect(Render_t* render,
            (unsigned int)result.eligibleCount,
            (unsigned int)result.unsupportedCodeId);
 
+    if (status == ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY) {
+        EspNativeGameplayDialogBeginStatus dialogStatus =
+            EspNativeGameplayDialog_begin(
+                result.eventIndex,
+                result.commandOffset,
+                ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS);
+        if (dialogStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] SELECT-DIALOG-DEFER n=%u seq=%u event=%u cmd=%u status=%s mutation=no\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)intent->sequence,
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.commandOffset,
+                   EspNativeGameplayDialog_beginStatusName(dialogStatus));
+            return;
+        }
+        ++gameplayState.selects;
+        ++gameplayState.dialogs;
+        printf("[RESIDENTGAMEPLAY] SELECT-DIALOG n=%u seq=%u event=%u cmd=%u active=yes pauseScript=yes skipTurn=yes continuation=preflighted worldMutation=no\n",
+               (unsigned int)gameplayState.dialogs,
+               (unsigned int)intent->sequence,
+               (unsigned int)result.eventIndex,
+               (unsigned int)result.commandOffset);
+        return;
+    }
+
     if (status == ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK) {
         if (!renderCurrent(render, (uint8_t)view->viewAngle, "SELECT-DOOR")) {
             if (!EspNativeGameplayAction_rollbackSelect(&result) ||
@@ -315,7 +348,7 @@ static void serviceSelect(Render_t* render,
                (unsigned int)result.removedAfter,
                (unsigned int)result.effectFlags,
                (unsigned int)result.soundId);
-        printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u door=%u committed=yes redraw=yes collision=live animation=deferred sound=deferred entityRelink=deferred turnAdvance=deferred\n",
+        printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u door=%u committed=yes redraw=yes collision=live animation=regular4frame-live sound=deferred entityRelink=deferred turnAdvance=deferred\n",
                (unsigned int)gameplayState.selects,
                (unsigned int)intent->sequence,
                (unsigned int)result.lineIndex);
@@ -344,7 +377,7 @@ static void serviceSelect(Render_t* render,
         status == ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT ||
         status == ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT) {
         ++gameplayState.deferred;
-        printf("[RESIDENTGAMEPLAY] SELECT-DEFER n=%u seq=%u status=%s unsupported=%u broadEntity/dialog/otherSemantics=deferred mutation=no\n",
+        printf("[RESIDENTGAMEPLAY] SELECT-DEFER n=%u seq=%u status=%s unsupported=%u entity/otherSemantics=deferred mutation=no\n",
                (unsigned int)gameplayState.deferred,
                (unsigned int)intent->sequence,
                EspNativeGameplayAction_statusName(status),
@@ -355,11 +388,108 @@ static void serviceSelect(Render_t* render,
     disableGameplay(EspNativeGameplayAction_statusName(status));
 }
 
+static void serviceDialogAction(Render_t* render,
+                                const EspNativeGameplayInputState* intent) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayDialogClose close;
+    EspNativeGameplayDialogResumeResult resume;
+    EspNativeGameplayDialogInputStatus inputStatus;
+    EspNativeGameplayDialogResumeStatus resumeStatus;
+
+    memset(&close, 0, sizeof(close));
+    memset(&resume, 0, sizeof(resume));
+    if (render == NULL || intent == NULL || view == NULL ||
+        view->active != 1U || view->viewAngle != view->destAngle ||
+        (view->viewAngle & 63) != 0 ||
+        !EspNativeGameplayDialog_isActive()) {
+        disableGameplay("dialog-action-context");
+        return;
+    }
+
+    inputStatus = EspNativeGameplayDialog_handleAction(intent->action, &close);
+    if (inputStatus == ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_INVALID) {
+        disableGameplay("dialog-input");
+        return;
+    }
+    if (inputStatus == ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_IGNORED) {
+        printf("[RESIDENTGAMEPLAY] DIALOG-IGNORE seq=%u action=%s active=yes\n",
+               (unsigned int)intent->sequence,
+               EspNativeGameplayInput_actionName(intent->action));
+        return;
+    }
+    if (inputStatus == ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_REDRAWN) {
+        printf("[RESIDENTGAMEPLAY] DIALOG-INPUT seq=%u action=%s active=yes redraw=dialog-only\n",
+               (unsigned int)intent->sequence,
+               EspNativeGameplayInput_actionName(intent->action));
+        return;
+    }
+
+    if (inputStatus == ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_CANCEL) {
+        if (!renderCurrent(render, (uint8_t)view->viewAngle, "DIALOG-CANCEL")) {
+            disableGameplay("dialog-cancel-render");
+            return;
+        }
+        ++gameplayState.dialogCancels;
+        printf("[RESIDENTGAMEPLAY] DIALOG-CANCEL n=%u seq=%u event=%u resume=no stateMutation=no turnAdvance=no\n",
+               (unsigned int)gameplayState.dialogCancels,
+               (unsigned int)intent->sequence,
+               (unsigned int)close.sourceEventIndex);
+        return;
+    }
+
+    if (inputStatus != ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_RESUME) {
+        disableGameplay("dialog-input-status");
+        return;
+    }
+
+    resumeStatus = EspNativeGameplayDialog_resume(&close, &resume);
+    if (resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+        resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
+        printf("[RESIDENTGAMEPLAY] DIALOG-RESUME-FAILED seq=%u event=%u offset=%u status=%s\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)close.sourceEventIndex,
+               (unsigned int)close.resumeCommandOffset,
+               EspNativeGameplayDialog_resumeStatusName(resumeStatus));
+        disableGameplay("dialog-resume");
+        return;
+    }
+
+    if (!renderCurrent(render, (uint8_t)view->viewAngle, "DIALOG-RESUME")) {
+        if (resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+            resume.rollbackAvailable != 0U &&
+            EspNativeGameplayDialog_rollbackResume(&resume) &&
+            renderCurrent(render, (uint8_t)view->viewAngle,
+                          "DIALOG-RESUME-ROLLBACK")) {
+            printf("[RESIDENTGAMEPLAY] DIALOG ROLLBACK seq=%u event=%u opcode=%u restored=yes\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)close.sourceEventIndex,
+                   (unsigned int)resume.codeId);
+            return;
+        }
+        disableGameplay("dialog-resume-render-rollback");
+        return;
+    }
+
+    ++gameplayState.dialogResumes;
+    printf("[RESIDENTGAMEPLAY] DIALOG-RESUME n=%u seq=%u event=%u offset=%u opcode=%u stateMutation=%u redraw=yes turnAdvance=deferred dialog=closed\n",
+           (unsigned int)gameplayState.dialogResumes,
+           (unsigned int)intent->sequence,
+           (unsigned int)close.sourceEventIndex,
+           (unsigned int)close.resumeCommandOffset,
+           (unsigned int)(resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK
+                              ? resume.codeId
+                              : 0U),
+           (unsigned int)(resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK
+                              ? resume.mutated
+                              : 0U));
+}
+
 void EspNativeResidentGameplay_reset(void) {
     PlatformInput_setTapCallback(NULL);
     if (EspNativeGameplayControls_isActive()) {
         (void)EspNativeGameplayControls_restore(0, NULL);
     }
+    EspNativeGameplayDialog_reset();
     EspNativeGameplayControls_reset();
     EspNativeGameplayInput_reset();
     memset(&gameplayState, 0, sizeof(gameplayState));
@@ -397,12 +527,13 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
 
+        EspNativeGameplayDialog_reset();
         EspNativeGameplayControls_reset();
         EspNativeGameplayInput_reset();
         gameplayState.active = 1U;
         PlatformInput_setTapCallback(onGameplayTap);
         printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16 collision=native/entityDefs=%u tileEvents=deferred SELECT-dialog/entity/turn-advance/menu/automap/weapons=deferred\n",
+        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26 collision=native/entityDefs=%u moveEvents=door15/16-live-other-deferred doorAnimation=regular4frame-live SELECT-entity/other/turn-advance/menu/automap/weapons=deferred\n",
                (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         return;
     }
@@ -426,6 +557,12 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)feedbackStats.baselineFNV);
     }
 
+    if (EspNativeGameplayDialog_isActive() &&
+        !EspNativeGameplayDialog_tick()) {
+        disableGameplay("dialog-tick");
+        return;
+    }
+
     if (EspNativeGameplayInput_peek() == NULL ||
         EspNativeGameplayInput_peek()->pending == 0U) {
         return;
@@ -438,6 +575,11 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
     ++gameplayState.actions;
+
+    if (EspNativeGameplayDialog_isActive()) {
+        serviceDialogAction(doomRpg->render, &intent);
+        return;
+    }
 
     switch (intent.action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT:
