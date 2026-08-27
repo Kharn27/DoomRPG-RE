@@ -102,9 +102,12 @@ EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_rollbackTurn(
 /*
  * Prepare cardinal translation for FORWARD/BACK/STRAFE only. The permanent
  * orientation owner supplies the exact 64-unit step vectors. Collision is
- * checked before an EspPlayerViewState candidate is exposed. A blocked move is
- * a semantic no-op and returns COLLISION_BLOCKED; dynamic opened-line collision
- * remains fail-closed as COLLISION_UNSUPPORTED until its dedicated milestone.
+ * checked before an EspPlayerViewState candidate is exposed. Closed native
+ * line entities block; hardware validation proved an EspMapLineState-open line
+ * is skipped so the same mutable door owner drives both render and collision.
+ * Source EXIT / destination ENTER tile-event execution is layered around the
+ * commit by the bounded move-event owner and remains fail-closed outside its
+ * explicitly supported opcode families.
  */
 EspNativeGameplayDispatchStatus EspNativeGameplayDispatch_prepareMove(
     const EspNativeGameplayInputState* intent,

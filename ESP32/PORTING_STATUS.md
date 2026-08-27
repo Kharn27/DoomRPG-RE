@@ -1,71 +1,67 @@
 # Doom RPG ESP32 CYD porting status
 
-Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHub `main` + this file + [`NATIVE_ENGINE_RECOVERY.md`](NATIVE_ENGINE_RECOVERY.md) + `DOCUMENTATION.md` override chat memory.
+Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHub `main` + this file + [`NATIVE_ENGINE_RECOVERY.md`](NATIVE_ENGINE_RECOVERY.md) + [`DOCUMENTATION.md`](DOCUMENTATION.md) + the latest relevant milestone archive override chat memory.
 
 ## Latest merged baseline
 
 ```text
-PR   = #100 — native gameplay SELECT front-tile
-main = be4a9a666245663da7866a8aa0aa40b98339d076
+PR   = #101 — generic Entrance startup/gameplay route
+main = 33b05385771b45acabff6dcf14d1da2c18d1818f
 status = MERGED
 ```
 
-Merged evidence: [`MAP1_NATIVE_GAMEPLAY_SELECT_FRONT_TILE.md`](MAP1_NATIVE_GAMEPLAY_SELECT_FRONT_TILE.md).
+The merged route establishes `/intro.bsp` / Entrance as the first playable map and proves the generic resident-map engine through spawn, renderer, sprites, HUD, cache priming, touch, TURN/MOVE and collision.
 
-## Current candidate — generic Entrance gameplay engine
+## Current candidate — native Action/door execution
 
 ```text
-branch = agent/esp32-native-entrance-startup-route
-base   = be4a9a666245663da7866a8aa0aa40b98339d076
-hardware-tested implementation SHA = 300561cfc9b4d06af769fda54613d837fa738f58
+branch = agent/esp32-native-action-select-exec
+base main = 33b05385771b45acabff6dcf14d1da2c18d1818f
+hardware-tested implementation SHA = ed353c0799520b82464c0066c3a53c731488c168
 status = REAL-CYD HARDWARE PASS
 merge-ready = YES
 post-test commits = documentation-only
 ```
 
-The original startup correction, Entrance spawn, first frame, HUD, renderer, caches and native gameplay have now been carried through to one map-generic production lifecycle. The compact permanent contract is documented in [`NATIVE_ENGINE_RECOVERY.md`](NATIVE_ENGINE_RECOVERY.md).
+Latest hardware archives:
 
-## Hardware-proven production route
-
-Real classic CYD now runs:
-
-```text
-cinematic intro
- -> startupMap=1
- -> /intro.bsp / Entrance resident
- -> BSP header spawn tile 904 / direction 64
- -> settled EspPlayerView
- -> generic EspNativeGameplaySession
- -> graphics catalog
- -> first world frame
- -> native HUD
- -> sprite dependency closure
- -> resident small cache cold/warm
- -> exact 2048-B large-range learn/warm
- -> collision catalog
- -> touch + TURN/MOVE gameplay
-```
-
-No automatic `ResidentHandoff` or `CommittedTransition` to Junction occurs at boot.
-
-Historical per-milestone probes remain regression witnesses only. Production gameplay must not require them.
+- [`MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md`](MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md)
+- [`MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md`](MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md)
 
 ## Critical engine rule
 
 **A new BSP is not a new engine.**
 
-Future maps must follow the same resident-map pipeline:
+Production runtime remains:
 
 ```text
-PAK BSP
- -> compact EspMapRuntime
+/DoomRPG-ESP32.pak
+ -> compact immutable EspMapRuntime
  -> compact mutable overlays
- -> player/view
+ -> EspPlayerView
  -> EspNativeGameplaySession
- -> renderer/HUD/input/collision/events
+ -> generic renderer/HUD/input/collision/events/actions
 ```
 
-Do not create permanent `ENTRANCE_*`, `JUNCTION_*` or `LEVEL_X_*` gameplay/render/cache pipelines. If a later BSP exposes unsupported data or behavior, implement that family generically, fail closed elsewhere, hardware-test it, then reuse it across all maps.
+Do not create permanent Entrance/Junction/level-specific engines. Unsupported data or behavior must be implemented as a bounded generic family, fail closed elsewhere, and be hardware-tested before broadening.
+
+## Permanent memory / architecture invariants
+
+```text
+board       = ESP32-2432S028R classic CYD
+MCU         = ESP32-D0WD-V3 dual core 240 MHz
+flash       = 4 MB
+PSRAM       = none
+framebuffer = 160x120 RGB565 = 38400 B
+shapeData   = NULL
+mediaTexels = NULL
+runtime ZIP = forbidden for migrated paths
+backing     = /DoomRPG-ESP32.pak
+legacy Game.entities = 0
+legacy Game.monsters = 0
+```
+
+Prefer compact immutable arenas, explicit small mutable owners, bounded caches and small buffers. Never reintroduce map-wide decoded graphics or pointer-heavy desktop ownership just to recover one behavior.
 
 ## Entrance resident canon
 
@@ -113,7 +109,7 @@ legacy Game.entities = 0
 legacy Game.monsters = 0
 ```
 
-## Initial player/view hardware canon
+## Initial player/view canon
 
 ```text
 spawn tile = 904
@@ -126,9 +122,7 @@ gameplayLoadMapId = 1
 source = BSP HEADER
 ```
 
-The two startup tile-event lookups found event 90 but it was ineligible, so startup required no additional opcode family.
-
-## Generic renderer/HUD hardware proof
+## Generic renderer/HUD/cache hardware proof
 
 Entrance initial graphics catalog:
 
@@ -139,13 +133,9 @@ storage = 3120 B
 FNV = 29ffc14a
 ```
 
-After renderer dependency closure:
+After dependency closure: sprites = 46.
 
-```text
-sprites = 46
-```
-
-Initial frame:
+Initial world frame:
 
 ```text
 map = 1
@@ -168,63 +158,44 @@ pixels = 7538
 presented = yes
 ```
 
-Sprites render correctly across multiple Entrance views. Hardware examples include 13 draws / 3789 pixels, 8 / 3049, 6 / 6776 and valid zero-visible-sprite frames.
-
-## Render-cache hardware canon
-
-The permanent storage lifecycle is now explicit and map-generic:
-
-```text
-small owner begin
- -> SMALL-COLD
- -> SMALL-WARM
- -> enable exact 2048-B ranges with zero owner growth
- -> LARGE-LEARN
- -> LARGE-WARM
- -> arm gameplay
-```
-
-Entrance real-CYD evidence:
+Permanent render-cache lifecycle is hardware-proven:
 
 ```text
 resident owner = 21160 B
 payload = 16384 B
 range records = 256
-heap8 after owner = 31956
-largest8 after owner = 8692
-
-SMALL-COLD  total = 2119886 us
-SMALL-WARM  total = 256807 us
-LARGE-LEARN total = 247770 us
-LARGE-WARM  total = 229719 us
-
+SMALL-COLD  = 2119886 us
+SMALL-WARM  = 256807 us
+LARGE-LEARN = 247770 us
+LARGE-WARM  = 229719 us
 payload after prime = 14645 / 16384 B
 large entries = 2
 ```
 
-The plane renderer no longer relies on one contiguous 12288-B frame allocation; its six 2048-B cache slots are bounded small leases, so Entrance does not fail merely because the post-cache heap is fragmented.
-
 ## Native gameplay hardware proof
 
-The generic resident gameplay service is active on Entrance:
+Production-enabled on Entrance:
 
 ```text
-touch = invisible 12-zone + 120 ms transient feedback
-TURN_LEFT / TURN_RIGHT = active
-FORWARD / BACK / STRAFE = active
-collision = native topology + entity defs + dynamic line state
+12-zone calibrated touch + 120 ms transient feedback
+TURN_LEFT / TURN_RIGHT
+FORWARD / BACK / STRAFE
+native topology/entity/line collision
+dynamic per-line collision
+SELECT front-tile resolver/provenance
+bounded SELECT regular-door execution
+bounded MOVE EXIT/ENTER regular-door events
+regular-door visual interpolation
 ```
 
-Hardware movement/turn examples:
+Movement/turn examples remain stable:
 
 ```text
 904 -> 872 -> 840
 angle 64 -> 0 -> 192 -> 128 -> 64
 ```
 
-Movement back to tile 904 and repeated redraws remained stable.
-
-Closed/locked Entrance line collision is proven:
+Closed/locked Entrance collision witness:
 
 ```text
 source = 904
@@ -232,43 +203,131 @@ dest = 936
 line = 258
 texture = 7
 flags = 0x00000505
-type = 0
-defTile = 312
 result = BLOCKED
 ```
 
-Stable post-prime heartbeat from the supplied run:
+## Generic SELECT regular-door execution — hardware PASS
+
+The production Action/SELECT path now resolves the current front tile, preserves event/filter provenance, and executes only the bounded regular-door family when exactly eligible.
+
+Real-CYD Entrance witness:
 
 ```text
-heap = 97664
-heap8 = 31956
+front = 352,1696
+tile = 837
+event = 86
+line = 275
+line flags = 0x00000205
+opcode = 15 / EV_OPENLINE
+open = 0 -> 1
+locked = 0
+final open frame = 7105fa5f
+```
+
+This is data-driven: tile/event/line identity comes from the resident BSP and compact overlays. There is no Entrance-specific door branch.
+
+SELECT remains fail-closed/deferred for unsupported/complex event semantics. Example event 87 on tile 838 correctly resolves `EV_CLOSELINE` as `FLAGS_MISMATCH` for SELECT and does not mutate.
+
+## Generic MOVE door events — hardware PASS
+
+MOVE now reproduces bounded legacy source EXIT and destination ENTER event phases around a cardinal committed move.
+
+Recovered movement flags:
+
+```text
++X EXIT 0x20 / ENTER 0x08
+-X EXIT 0x80 / ENTER 0x02
+-Y EXIT 0x10 / ENTER 0x04
++Y EXIT 0x40 / ENTER 0x01
+both phases include 0x400
+ENTER also includes cardinal facing flag
+```
+
+Real-CYD close witness after opening line 275:
+
+```text
+source tile = 838
+EXIT flags = 0x00000420
+event = 87
+opcode = 16 / EV_CLOSELINE
+line = 275
+open = 1 -> 0
+destination tile = 839
+ENTER flags = 0x80000408
+final closed frame = 808e96c7
+rollback lease = closed only after render success
+```
+
+Only eligible `EV_OPENLINE` / `EV_CLOSELINE` are owned in this movement-event boundary. Unsupported or complex eligible MOVE semantics remain fail-closed/deferred.
+
+## Generic regular-door animation — hardware PASS
+
+Hardware-tested implementation SHA: `ed353c0799520b82464c0066c3a53c731488c168`.
+
+Permanent native animator:
+
+```text
+owner = 76 B BSS
+max active lines = 8
+legacy animFrames = 4
+moving frames = 3
+step = 16
+EspMapRuntime mutation = none
+```
+
+SELECT OPEN sequence on line 275:
+
+```text
+FRAME 1/4 moving frame=6c5debde wallPixels=11297
+FRAME 2/4 moving frame=2d05fe08 wallPixels=10481
+FRAME 3/4 moving frame=a522f925 wallPixels=9665
+FRAME 4/4 stable frame=7105fa5f wallPixels=9339
+```
+
+MOVE CLOSE sequence on the same line:
+
+```text
+FRAME 1/4 moving frame=35e3784d wallPixels=9340
+FRAME 2/4 moving frame=d005cd93 wallPixels=9556
+FRAME 3/4 moving frame=808e96c7 wallPixels=9652
+FRAME 4/4 stable frame=808e96c7 wallPixels=9652
+```
+
+Both paths report:
+
+```text
+generic=yes
+immutableRuntime=yes
+render=ok
+COMPLETE transitions=1 frames=4 state=stable transaction=committed
+```
+
+The world raster and sprite-depth pass both see the same transient animated line geometry. Fully-open lines continue through the generic dynamic line adapter.
+
+Stable heartbeat after the supplied animation run:
+
+```text
+heap = 97448
+heap8 = 31740
 largest8 = 8692
-shapeData = NULL
-mediaTexels = NULL
 ```
 
-No Guru Meditation or reboot was reported during the walk/turn interaction sequence.
+No Guru Meditation or reboot was reported.
 
-## SELECT / Action boundary
+## Performance observation
 
-The Action/SELECT touch zone is classified and the map-generic front-tile resolver is active, but semantic execution is deliberately deferred.
+The tester considers the door animation correct but slightly slow, similar to navigation latency. This is not a correctness blocker.
 
-Entrance hardware evidence:
+In the supplied run:
 
 ```text
-front tile 841 -> event 88
-eligible = EV_DIALOG + EV_NEXTSTATE
-
-front tile 936 -> event 91
-line 258 locked
-eligible = EV_OPENLINE(258)
+PlatformVideo_present ~= 34 ms
+complete gameplay redraws around this area ~= 0.32-0.35 s
 ```
 
-The resolver preserves frame, heap, resident owners and line state exactly; it does not execute bytecode or mutate doors. The gameplay service currently reports `SELECT ... semantic-not-enabled`.
+Therefore future performance work should target bounded recomposition/cache/redraw scheduling and on-demand redraw, not premature optimization of `PlatformVideo_present()`.
 
-**Recommended next milestone:** enable the Action/SELECT button through bounded native execution of the already-recovered safe families needed by Entrance. Do not broad-enable legacy `Game_executeEvent`.
-
-`PASS_TURN`, menu, automap, weapon actions and ordinary MOVE tile-event execution also remain deferred until dedicated gameplay milestones own their semantics.
+No timing tweak belongs in this hardware-PASS closeout.
 
 ## Event/script boundary
 
@@ -280,13 +339,34 @@ Generic `EspMapOpcodeExecutor` remains intentionally limited to:
 20 EV_PREVSTATE
 ```
 
-All unsupported opcode families remain fail-closed until their dedicated permanent owner/API is enabled.
+The new production Action/MOVE door paths do not broad-enable legacy `Game_executeEvent`; they own a separate bounded regular-door semantic family around resident event/filter provenance.
 
-Historical `MAP1_*` semantic probes have already recovered UI/string/status/dialog/notebook, key/password, line door/unlock, automap grant, save/change-map, show/hide and exit-state behavior. These are evidence and reusable native components, not boot prerequisites.
+Still deferred / fail-closed:
+
+```text
+SELECT dialog/UI families
+broad MOVE tile-event opcode execution
+secret/MOVELINE animation
+door sound playback
+legacy entity relink objects
+PASS_TURN
+menu/automap/weapon gameplay
+combat / monsters / turn advance
+unsupported opcode families
+```
+
+Two log tokens are now historical/stale rather than semantic truth:
+
+```text
+animation=deferred
+tileEvents=deferred
+```
+
+The regular-door animation and bounded movement-door event path are hardware-live. The strings are intentionally left unchanged in the docs-only closeout so no post-test code commit invalidates the tested SHA.
 
 ## Historical Junction canon remains valid
 
-The startup correction and Entrance generic-engine proof do not invalidate prior Junction hardware work.
+Junction is a second hardware corpus for the same generic engine, not an engine identity.
 
 ```text
 resource = /junction.bsp
@@ -306,41 +386,21 @@ HUD bands = 6c2aa46f
 HUD stateFNV = 4756db9c
 ```
 
-Junction is now a second hardware corpus for the same engine, not the engine identity.
-
-## Permanent memory / architecture invariants
-
-```text
-board       = ESP32-2432S028R classic CYD
-MCU         = ESP32-D0WD-V3 dual core 240 MHz
-flash       = 4 MB
-PSRAM       = none
-framebuffer = 160x120 RGB565 = 38400 B
-shapeData   = NULL
-mediaTexels = NULL
-runtime ZIP = forbidden for migrated map/graphics paths
-backing     = /DoomRPG-ESP32.pak
-legacy Game.entities = 0
-legacy Game.monsters = 0
-```
-
-Prefer compact immutable arenas, explicit small mutable owners, bounded caches and small buffers. Do not reintroduce pointer-heavy desktop ownership or map-wide decoded graphics.
-
 ## Merge recommendation
 
 ```text
 REAL-CYD HARDWARE PASS
-hardware-tested implementation SHA = 300561cfc9b4d06af769fda54613d837fa738f58
-Entrance visible = YES
-Entrance walkable/turnable = YES
-sprites = YES
-HUD = YES
-touch = YES
-TURN/MOVE = YES
-collision = YES
-render cache prime = YES
+base main = 33b05385771b45acabff6dcf14d1da2c18d1818f
+hardware-tested implementation SHA = ed353c0799520b82464c0066c3a53c731488c168
+Entrance visible/walkable/turnable = YES
+sprites/HUD/touch = YES
+TURN/MOVE/collision = YES
+SELECT EV_OPENLINE = YES
+MOVE EXIT EV_CLOSELINE = YES
+generic regular-door animation = YES
+immutable runtime = YES
 shapeData/mediaTexels = NULL
 MERGE-READY = YES
 ```
 
-Every commit after `300561cfc9b4d06af769fda54613d837fa738f58` is documentation-only closeout. After merge, recover the exact new `main` SHA, reread this file + `NATIVE_ENGINE_RECOVERY.md` + `DOCUMENTATION.md`, then branch for the bounded native Action/SELECT execution milestone.
+Every commit after `ed353c0799520b82464c0066c3a53c731488c168` must remain documentation-only for this closeout. After merge, recover the exact new `main` SHA before creating the next `agent/*` branch.

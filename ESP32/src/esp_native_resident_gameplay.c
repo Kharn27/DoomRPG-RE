@@ -9,6 +9,7 @@
 #include "esp_asset_pack.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_native_first_frame.h"
+#include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
@@ -25,8 +26,10 @@ typedef struct EspNativeResidentGameplayState_s {
     uint32_t actions;
     uint32_t turns;
     uint32_t moves;
+    uint32_t selects;
     uint32_t blocked;
     uint32_t deferred;
+    uint32_t selectRefused;
     uint8_t active;
     uint8_t failed;
     uint8_t reserved[2];
@@ -264,6 +267,94 @@ static void serviceMove(Render_t* render,
            (int)afterView.viewY);
 }
 
+static void serviceSelect(Render_t* render,
+                          const EspNativeGameplayInputState* intent) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayActionResult result;
+    EspNativeGameplayActionStatus status;
+
+    memset(&result, 0, sizeof(result));
+    if (view == NULL || view->active != 1U ||
+        view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0) {
+        disableGameplay("select-unsettled-view");
+        return;
+    }
+
+    status = EspNativeGameplayAction_executeSelect(intent, &result);
+    printf("[ACTION] SELECT seq=%u status=%s tile=%u event=%u eligible=%u unsupported=%u\n",
+           (unsigned int)intent->sequence,
+           EspNativeGameplayAction_statusName(status),
+           (unsigned int)result.frontTile,
+           (unsigned int)result.eventIndex,
+           (unsigned int)result.eligibleCount,
+           (unsigned int)result.unsupportedCodeId);
+
+    if (status == ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK) {
+        if (!renderCurrent(render, (uint8_t)view->viewAngle, "SELECT-DOOR")) {
+            if (!EspNativeGameplayAction_rollbackSelect(&result) ||
+                !renderCurrent(render, (uint8_t)view->viewAngle,
+                               "SELECT-DOOR-ROLLBACK")) {
+                disableGameplay("select-door-render-rollback");
+                return;
+            }
+            printf("[RESIDENTGAMEPLAY] SELECT ROLLBACK seq=%u line=%u open=%u restored=yes\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)result.lineIndex,
+                   (unsigned int)result.openBefore);
+            return;
+        }
+
+        ++gameplayState.selects;
+        printf("[ACTION] DOOR line=%u opcode=%u status=OK open=%u->%u locked=%u removed=%u->%u effects=%02x sound=%u\n",
+               (unsigned int)result.lineIndex,
+               (unsigned int)result.codeId,
+               (unsigned int)result.openBefore,
+               (unsigned int)result.openAfter,
+               (unsigned int)result.locked,
+               (unsigned int)result.removedBefore,
+               (unsigned int)result.removedAfter,
+               (unsigned int)result.effectFlags,
+               (unsigned int)result.soundId);
+        printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u door=%u committed=yes redraw=yes collision=live animation=deferred sound=deferred entityRelink=deferred turnAdvance=deferred\n",
+               (unsigned int)gameplayState.selects,
+               (unsigned int)intent->sequence,
+               (unsigned int)result.lineIndex);
+        return;
+    }
+
+    if (status == ESP_NATIVE_GAMEPLAY_ACTION_DOOR_LOCKED ||
+        status == ESP_NATIVE_GAMEPLAY_ACTION_DOOR_ALREADY_TARGET) {
+        ++gameplayState.selectRefused;
+        printf("[ACTION] DOOR line=%u opcode=%u status=%s open=%u->%u locked=%u mutation=no broadFallback=deferred\n",
+               (unsigned int)result.lineIndex,
+               (unsigned int)result.codeId,
+               EspNativeGameplayAction_statusName(status),
+               (unsigned int)result.openBefore,
+               (unsigned int)result.openAfter,
+               (unsigned int)result.locked);
+        printf("[RESIDENTGAMEPLAY] SELECT-REFUSED n=%u seq=%u status=%s worldStable=yes turnAdvance=no\n",
+               (unsigned int)gameplayState.selectRefused,
+               (unsigned int)intent->sequence,
+               EspNativeGameplayAction_statusName(status));
+        return;
+    }
+
+    if (status == ESP_NATIVE_GAMEPLAY_ACTION_NO_EVENT ||
+        status == ESP_NATIVE_GAMEPLAY_ACTION_NO_ELIGIBLE ||
+        status == ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT ||
+        status == ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT) {
+        ++gameplayState.deferred;
+        printf("[RESIDENTGAMEPLAY] SELECT-DEFER n=%u seq=%u status=%s unsupported=%u broadEntity/dialog/otherSemantics=deferred mutation=no\n",
+               (unsigned int)gameplayState.deferred,
+               (unsigned int)intent->sequence,
+               EspNativeGameplayAction_statusName(status),
+               (unsigned int)result.unsupportedCodeId);
+        return;
+    }
+
+    disableGameplay(EspNativeGameplayAction_statusName(status));
+}
+
 void EspNativeResidentGameplay_reset(void) {
     PlatformInput_setTapCallback(NULL);
     if (EspNativeGameplayControls_isActive()) {
@@ -311,7 +402,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         gameplayState.active = 1U;
         PlatformInput_setTapCallback(onGameplayTap);
         printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-junction-feedback dispatch=TURN+MOVE collision=native/entityDefs=%u tileEvents=deferred SELECT/menu/automap/weapons=deferred\n",
+        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16 collision=native/entityDefs=%u tileEvents=deferred SELECT-dialog/entity/turn-advance/menu/automap/weapons=deferred\n",
                (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         return;
     }
@@ -359,6 +450,10 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT:
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT:
         serviceMove(doomRpg->render, &intent);
+        break;
+
+    case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
+        serviceSelect(doomRpg->render, &intent);
         break;
 
     default:
