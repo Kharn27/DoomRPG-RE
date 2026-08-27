@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_status_message.h"
 
 #ifdef __cplusplus
