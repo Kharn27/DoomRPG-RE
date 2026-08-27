@@ -1,3 +1,4 @@
+#include <SDL.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -27,7 +28,11 @@ typedef struct EspNativeGameplayNotePrefixState_s {
     uint8_t reserved;
 } EspNativeGameplayNotePrefixState;
 
-static EspNativeGameplayNotePrefixState notePrefix;
+/* NOTE is not needed during boot/prologue.  Keep only a pointer in BSS and
+ * acquire this bounded map-local owner on the first actual NOTE+dialog pair.
+ * It is then reused across the session/map changes with the existing map-id
+ * reset semantics, so no per-event allocation is introduced. */
+static EspNativeGameplayNotePrefixState* notePrefix;
 
 extern EspNativeGameplayDialogBeginStatus
 __real_EspNativeGameplayDialog_begin(uint16_t eventIndex,
@@ -132,6 +137,7 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
     EspAssetPackEntry mapEntry;
     EspMapNotebookApplyStatus applyStatus;
     EspNativeGameplayDialogBeginStatus dialogStatus;
+    EspNativeGameplayNotePrefixState* state = notePrefix;
     const char* mapName;
     size_t readLength = 0U;
     uint16_t global = UINT16_MAX;
@@ -141,7 +147,7 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
     int prefixStatus;
     int removedChanged = 0;
 
-    if (notePrefix.busy != 0U) {
+    if (state != NULL && state->busy != 0U) {
         return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
     }
 
@@ -167,30 +173,44 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
         return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
     }
 
-    if (notePrefix.active == 0U ||
-        notePrefix.targetMapId != view->targetMapId) {
-        EspMapNotebook_reset(&notePrefix.notebook);
-        notePrefix.active = 1U;
-        notePrefix.targetMapId = view->targetMapId;
+    if (state == NULL) {
+        state = (EspNativeGameplayNotePrefixState*)SDL_calloc(1, sizeof(*state));
+        if (state == NULL) {
+            printf("[NOTE] DEFER event=%u dialogCmd=%u reason=owner-allocation bytes=%u\n",
+                   (unsigned int)eventIndex,
+                   (unsigned int)commandOffset,
+                   (unsigned int)sizeof(*state));
+            return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
+        }
+        notePrefix = state;
+        printf("[NOTE] OWNER bytes=%u allocation=lazy-gameplay\n",
+               (unsigned int)sizeof(*state));
     }
 
-    notePrefix.busy = 1U;
-    notePrefix.candidate = notePrefix.notebook;
-    beforeLength = EspMapNotebook_length(&notePrefix.notebook);
+    if (state->active == 0U ||
+        state->targetMapId != view->targetMapId) {
+        EspMapNotebook_reset(&state->notebook);
+        state->active = 1U;
+        state->targetMapId = view->targetMapId;
+    }
+
+    state->busy = 1U;
+    state->candidate = state->notebook;
+    beforeLength = EspMapNotebook_length(&state->notebook);
     mapName = EspMapCatalog_nameForId(view->targetMapId);
     if (mapName == NULL || !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
-        notePrefix.busy = 0U;
+        state->busy = 0U;
         return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_IO_FAILED;
     }
 
     memset(&mapEntry, 0, sizeof(mapEntry));
     applyStatus = ESP_MAP_NOTEBOOK_APPLY_IO_ERROR;
     if (EspAssetPack_findEntry(mapName, &mapEntry)) {
-        applyStatus = EspMapNotebook_apply(&notePrefix.candidate,
+        applyStatus = EspMapNotebook_apply(&state->candidate,
                                            &mapEntry,
                                            &noteIntent,
-                                           notePrefix.scratch,
-                                           sizeof(notePrefix.scratch),
+                                           state->scratch,
+                                           sizeof(state->scratch),
                                            &readLength);
     }
     EspAssetPack_close();
@@ -201,7 +221,7 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
                (unsigned int)noteIntent.text.index,
                (int)applyStatus,
                (unsigned int)readLength);
-        notePrefix.busy = 0U;
+        state->busy = 0U;
         return applyStatus == ESP_MAP_NOTEBOOK_APPLY_BUFFER_TOO_SMALL
                    ? ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_TEXT_TOO_LARGE
                    : ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_IO_FAILED;
@@ -209,7 +229,7 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
 
     if (removeIfHandled != 0U && removedBefore == 0U) {
         if (!EspMapScriptState_setCommandRemoved(global, 1U)) {
-            notePrefix.busy = 0U;
+            state->busy = 0U;
             return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
         }
         removedChanged = 1;
@@ -226,11 +246,11 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
                    (unsigned int)noteIntent.sourceCommandOffset,
                    (unsigned int)global);
         }
-        notePrefix.busy = 0U;
+        state->busy = 0U;
         return dialogStatus;
     }
 
-    notePrefix.notebook = notePrefix.candidate;
+    state->notebook = state->candidate;
     printf("[NOTE] APPEND event=%u cmd=%u global=%u string=%u bytes=%u len=%u->%u removed=%u->%u ownerBytes=%u dialogCmd=%u commit=dialog-open\n",
            (unsigned int)eventIndex,
            (unsigned int)noteIntent.sourceCommandOffset,
@@ -238,11 +258,11 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
            (unsigned int)noteIntent.text.index,
            (unsigned int)readLength,
            (unsigned int)beforeLength,
-           (unsigned int)EspMapNotebook_length(&notePrefix.notebook),
+           (unsigned int)EspMapNotebook_length(&state->notebook),
            (unsigned int)removedBefore,
            (unsigned int)(removedChanged != 0 ? 1U : removedBefore),
            (unsigned int)sizeof(EspMapNotebookState),
            (unsigned int)commandOffset);
-    notePrefix.busy = 0U;
+    state->busy = 0U;
     return dialogStatus;
 }
