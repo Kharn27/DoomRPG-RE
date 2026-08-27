@@ -78,14 +78,6 @@ typedef struct EspNativeGameplayInputState_s {
 
 void EspNativeGameplayInput_reset(void);
 
-/* Permanent geometry source of truth shared by hit-testing and the visual
- * virtual-control overlay. Ordinals are stable only as an enumeration aid;
- * semantic callers must use hit.zone/action. */
-uint8_t EspNativeGameplayInput_zoneCount(void);
-EspNativeGameplayInputStatus EspNativeGameplayInput_zoneAt(
-    uint8_t ordinal,
-    EspNativeGameplayTouchHit* outHit);
-
 EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
     int logicalX,
     int logicalY,
