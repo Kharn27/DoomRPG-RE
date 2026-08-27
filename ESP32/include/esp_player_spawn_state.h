@@ -35,11 +35,11 @@ typedef enum EspPlayerSpawnStatus_e {
 /*
  * Pointer-free projection of recovered Game_spawnPlayer() placement writes.
  *
- * For a fresh committed map transition (loadType == 0, gameIsLoaded == 0),
- * spawnParam == 0 falls back to the BSP header spawnIndex/spawnDirection.
- * A non-zero spawnParam overrides tile X/Y/angle with the recovered bit layout
- * and would be cleared by legacy Game_spawnPlayer(); overrideUsed records that
- * semantic while sourceSpawnParam preserves the durable input value.
+ * For a fresh map (loadType == 0, gameIsLoaded == 0), spawnParam == 0 falls
+ * back to the BSP header spawnIndex/spawnDirection. A non-zero spawnParam
+ * overrides tile X/Y/angle with the recovered bit layout and would be cleared
+ * by legacy Game_spawnPlayer(); overrideUsed records that semantic while
+ * sourceSpawnParam preserves the durable input value.
  *
  * worldX/worldY are both the projected view and destination coordinates.
  * angle is both projected viewAngle and destAngle. viewZ/viewZOld mirror the
@@ -71,6 +71,20 @@ typedef struct EspPlayerSpawnState_s {
 } EspPlayerSpawnState;
 
 void EspPlayerSpawn_reset(EspPlayerSpawnState* state);
+
+/*
+ * Prepare the initial startup-map placement from the already resident BSP.
+ * This is the cinematic-intro -> startupMap path and intentionally has no
+ * committed-transition prerequisite. It supports only the fresh-map context,
+ * requires an exact resident/inventory match, and always uses the BSP header
+ * spawn because no CHANGEMAP spawnParam exists at initial startup.
+ */
+EspPlayerSpawnStatus EspPlayerSpawn_prepareInitial(
+    uint8_t targetMapId,
+    const EspBspInventory* targetInventory,
+    uint8_t loadType,
+    uint8_t gameIsLoaded,
+    EspPlayerSpawnState* outState);
 
 /*
  * Prepare fresh-map player placement from one already COMMITTED transition.
