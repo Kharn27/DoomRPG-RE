@@ -249,6 +249,14 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
         selectedOffset = offset;
         selectedGlobal = filtered.globalCommandIndex;
         selectedRemoved = removed;
+
+        /* Legacy Game_runEvent() stops the current pass as soon as a dialog
+         * sets saveTileEvent. Commands after the dialog belong to the saved
+         * continuation and must not make this movement preflight look complex.
+         * EspNativeGameplayDialog preflights/resumes them after close. */
+        if (isDialogCode(filtered.codeId)) {
+            break;
+        }
     }
 
     if (selectedOffset == UINT32_MAX || eligibleCount == 0U) {
