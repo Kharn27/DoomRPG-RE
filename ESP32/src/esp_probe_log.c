@@ -68,6 +68,10 @@ static int blocksFastForward(const char* text) {
  * Normal first-frame development no longer needs a transcript of already
  * hardware-proven menu/intro decode, animation, touch and heartbeat activity.
  * Keep the current native-frame tags visible and always surface real failures.
+ *
+ * [MAINSTART] is intentionally visible for the current Start Game memory
+ * regression: its existing before/cleanup/after-select witnesses expose the
+ * exact heap8/largest8 boundary without changing the production transition.
  */
 static int routineBootNoise(const char* text) {
     static const char* prefixes[] = {
@@ -75,7 +79,6 @@ static int routineBootNoise(const char* text) {
         "[VIDEO] Present",
         "[MENUTOUCH]",
         "[TOUCH]",
-        "[MAINSTART]",
         "[ZIP]",
         "[BMP]",
         "[SDL] Adopt",
