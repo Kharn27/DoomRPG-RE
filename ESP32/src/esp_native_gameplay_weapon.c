@@ -71,7 +71,11 @@ typedef struct WeaponWorkspace_s {
     uint8_t reserved[3];
 } WeaponWorkspace;
 
-static WeaponWorkspace weaponWorkspace;
+/* The intro has a tighter contiguous-heap requirement than resident gameplay.
+ * Do not charge this 2.5 KiB decode workspace to BSS from boot: acquire it once
+ * on the first real weapon frame, after the legacy prologue has been disposed,
+ * then keep/reuse that one bounded owner for the rest of the session. */
+static WeaponWorkspace* weaponWorkspace;
 
 static uint16_t le16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -373,7 +377,8 @@ int EspNativeGameplayWeapon_render(
     Render_t* render = (Render_t*)renderBase;
     EspNativeGameplayWeaponStats stats;
     WeaponSources sources;
-    WeaponFrame* frame = &weaponWorkspace.frame;
+    WeaponWorkspace* workspace = weaponWorkspace;
+    WeaponFrame* frame = NULL;
     uint16_t logical;
     int scale;
     int anchorX;
@@ -390,7 +395,8 @@ int EspNativeGameplayWeapon_render(
     stats.weapon = weapon;
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
 
-    if (weaponWorkspace.busy || render == NULL || outStats == NULL ||
+    if ((workspace != NULL && workspace->busy) ||
+        render == NULL || outStats == NULL ||
         render->framebuffer == NULL || render->screenX != 0 ||
         render->screenY != 20 || render->screenWidth != 160 ||
         render->screenHeight != 80 || render->shapeData != NULL ||
@@ -422,7 +428,20 @@ int EspNativeGameplayWeapon_render(
         return 0;
     }
 
-    weaponWorkspace.busy = 1U;
+    if (workspace == NULL) {
+        workspace = (WeaponWorkspace*)SDL_calloc(1, sizeof(*workspace));
+        if (workspace == NULL) {
+            printf("[WEAPON] FAILED workspace-allocation ownerBytes=%u\n",
+                   (unsigned int)sizeof(*workspace));
+            return 0;
+        }
+        weaponWorkspace = workspace;
+        printf("[WEAPON] WORKSPACE ownerBytes=%u allocation=lazy-gameplay\n",
+               (unsigned int)sizeof(*workspace));
+    }
+
+    frame = &workspace->frame;
+    workspace->busy = 1U;
     logical = (uint16_t)(WEAPON_SPRITE_BASE + weapon);
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         printf("[WEAPON] FAILED pack-open weapon=%u logical=%u\n",
@@ -495,10 +514,10 @@ done:
                (unsigned int)stats.pixelsWritten,
                (unsigned int)stats.packReads,
                (unsigned int)stats.frameBytes,
-               (unsigned int)sizeof(weaponWorkspace),
+               (unsigned int)sizeof(*workspace),
                EspAssetPack_isOpen() ? "no" : "yes");
     }
     *outStats = stats;
-    weaponWorkspace.busy = 0U;
+    workspace->busy = 0U;
     return ok;
 }
