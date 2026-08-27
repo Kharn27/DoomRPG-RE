@@ -5,7 +5,6 @@
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_line_state.h"
-#include "esp_map_opcode_executor.h"
 #include "esp_map_script_state.h"
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_action.h"
@@ -64,7 +63,6 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     uint8_t selectedRemoved = 0U;
     uint8_t selectedCodeId = 0U;
     uint8_t eligibleCount = 0U;
-    uint8_t dialogResumeEligible = 0U;
     uint8_t notePrefixEligible = 0U;
     uint32_t offset;
 
@@ -113,17 +111,13 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     }
 
     /*
-     * Preflight the complete eligible command set before any mutation.
-     *
-     * Door events remain exactly-one-command. A SELECT dialog may now have one
-     * eligible EV_NOTE prefix. Legacy executes NOTE immediately, then reaches
-     * DIALOG and pauses; the production dialog-begin wrapper owns the NOTE
-     * transaction and commits it only if the dialog actually opens. A dialog
-     * may still have one following state-only continuation because resume starts
-     * at source+1 and the dialog session independently revalidates it.
-     *
-     * NOTE without a following dialog, multiple NOTE prefixes, NOTE after the
-     * dialog, removable dialogs, and every other mixed family stay fail-closed.
+     * Match the actual Game_runEvent pause boundary, not the old probe-era
+     * whole-event simplification.  Door events still require one eligible
+     * command.  For dialogs we validate only an optional NOTE prefix plus the
+     * first eligible DIALOG/DIALOGNOBACK, then STOP preflight at the dialog.
+     * Legacy saveTileEvent returns from Game_runEvent at that exact point; all
+     * commands after it belong to the saved continuation and are owned by the
+     * bounded dialog continuation runner after close.
      */
     for (offset = 0U; offset < descriptor.commandCount; ++offset) {
         uint32_t global = (uint32_t)descriptor.firstCommandIndex + offset;
@@ -179,6 +173,7 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
                     return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
                 }
                 family = SELECT_FAMILY_DIALOG;
+                break;
             }
             else {
                 outResult->unsupportedCodeId = filtered.codeId;
@@ -190,17 +185,6 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
         if (family == SELECT_FAMILY_DOOR) {
             return ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT;
         }
-
-        if (family == SELECT_FAMILY_DIALOG) {
-            if (isNoteOpcode(filtered.codeId) || dialogResumeEligible != 0U ||
-                !EspMapOpcodeExecutor_supports(filtered.codeId)) {
-                outResult->unsupportedCodeId = filtered.codeId;
-                return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
-            }
-            dialogResumeEligible = 1U;
-            continue;
-        }
-
         return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
     }
 
