@@ -7,6 +7,7 @@
 #include "freertos/task.h"
 
 #include "esp_native_first_frame.h"
+#include "esp_native_gameplay_frame.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_player_view_state.h"
 #include "esp_probe_log.h"
@@ -49,6 +50,7 @@ static int fastForwardWaitLogged;
 static int fastForwardBlockedLogged;
 static int entranceCatalogLogged;
 static int entranceFirstFrameAttempted;
+static int entranceCompositeAttempted;
 
 void __real_Esp32IntroDispose_reset(void);
 void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
@@ -193,7 +195,7 @@ static void serviceEntranceFirstVisibleFrame(struct DoomRPG_s* doomRpgBase) {
         return;
     }
 
-    printf("[ENTRANCEFRAME] READY targetMap=%u frame=%08x->%08x walls=%u pixels=%u leaves=%u candidates=%u cache=%uH/%uM presented=%u next=HUD+touch\n",
+    printf("[ENTRANCEFRAME] READY targetMap=%u frame=%08x->%08x walls=%u pixels=%u leaves=%u candidates=%u cache=%uH/%uM presented=%u next=generic-compositor\n",
            (unsigned int)frame->targetMapId,
            (unsigned int)frame->frameBeforeFNV,
            (unsigned int)frame->frameAfterFNV,
@@ -206,6 +208,75 @@ static void serviceEntranceFirstVisibleFrame(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)frame->presented);
 }
 
+static void serviceEntranceGameplayComposite(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* view;
+    const EspNativeGraphicsCatalogView* catalog;
+    EspNativeGraphicsCatalogStatus dependencyStatus;
+    EspNativeGameplayFrameStats stats;
+
+    if (entranceCompositeAttempted || !EspNativeFirstFrame_isReady()) return;
+    entranceCompositeAttempted = 1;
+
+    if (doomRpg == NULL || doomRpg->render == NULL) {
+        printf("[ENTRANCECOMPOSITE] FAILED missing DoomRPG/render owner\n");
+        return;
+    }
+    view = EspPlayerView_view();
+    if (view == NULL || view->active != 1U ||
+        view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0) {
+        printf("[ENTRANCECOMPOSITE] FAILED unsettled player view=%p\n",
+               (const void*)view);
+        return;
+    }
+
+    dependencyStatus = EspNativeGraphicsCatalog_expandSpriteDependencies();
+    if (dependencyStatus != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+        dependencyStatus != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
+        printf("[ENTRANCECOMPOSITE] FAILED sprite dependency status=%d\n",
+               (int)dependencyStatus);
+        return;
+    }
+    catalog = EspNativeGraphicsCatalog_view();
+    if (catalog == NULL) {
+        printf("[ENTRANCECOMPOSITE] FAILED catalog missing after dependency closure\n");
+        return;
+    }
+
+    printf("\n=== Doom RPG ESP32-native resident gameplay composite ===\n");
+    printf("[ENTRANCECOMPOSITE] CONTRACT reuse generic resident world + BSP-visible bounded sprite candidates + HUD direction; mapSpriteCount may exceed 64, only simultaneously visible candidates are bounded to 64; fail closed on overflow/unsupported visible sprite\n");
+    printf("[ENTRANCECOMPOSITE] CATALOG textures=%u sprites=%u storage=%u fnv=%08x dependencyStatus=%d\n",
+           (unsigned int)catalog->textureCount,
+           (unsigned int)catalog->spriteCount,
+           (unsigned int)catalog->storageBytes,
+           (unsigned int)catalog->stateFNV1a,
+           (int)dependencyStatus);
+
+    if (!EspNativeGameplayFrame_renderTurn(
+            doomRpg->render, (uint8_t)view->viewAngle, &stats)) {
+        printf("[ENTRANCECOMPOSITE] FAILED render angle=%d\n",
+               (int)view->viewAngle);
+        return;
+    }
+
+    printf("[ENTRANCECOMPOSITE] READY map=%u angle=%u frame=%08x sprites=%u/%u glow=%u/%u walls=%u/%u planes=%u hudPixels=%u packReads=%u+%u totalUs=%u presented=%u next=full-HUD+touch+TURN+MOVE\n",
+           (unsigned int)view->targetMapId,
+           (unsigned int)stats.angle,
+           (unsigned int)stats.frameAfterFNV,
+           (unsigned int)stats.spriteDraws,
+           (unsigned int)stats.spritePixels,
+           (unsigned int)stats.glowDraws,
+           (unsigned int)stats.glowPixels,
+           (unsigned int)stats.wallDraws,
+           (unsigned int)stats.wallPixels,
+           (unsigned int)stats.planePixels,
+           (unsigned int)stats.hudPixels,
+           (unsigned int)stats.spritePackReads,
+           (unsigned int)stats.hudPackReads,
+           (unsigned int)stats.totalMicros,
+           (unsigned int)stats.finalPresented);
+}
+
 void __wrap_Esp32IntroDispose_reset(void) {
     __real_Esp32IntroDispose_reset();
     EspProbeLog_setQuiet(0);
@@ -216,6 +287,7 @@ void __wrap_Esp32IntroDispose_reset(void) {
     fastForwardBlockedLogged = 0;
     entranceCatalogLogged = 0;
     entranceFirstFrameAttempted = 0;
+    entranceCompositeAttempted = 0;
     resetValidatedEntranceChain();
 }
 
@@ -278,5 +350,8 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     }
     if (Esp32EntranceSpawnChainProbe_isReady()) {
         serviceEntranceFirstVisibleFrame(doomRpg);
+    }
+    if (EspNativeFirstFrame_isReady()) {
+        serviceEntranceGameplayComposite(doomRpg);
     }
 }
