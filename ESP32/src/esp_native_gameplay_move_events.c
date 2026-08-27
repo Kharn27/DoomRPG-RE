@@ -33,8 +33,10 @@ typedef struct MoveEventTransaction_s {
     EspNativeGameplayMoveEventResult enterResult;
     uint8_t exitRollback;
     uint8_t enterRollback;
+    uint8_t dialogPending;
+    uint8_t worldRendered;
     uint8_t active;
-    uint8_t reserved;
+    uint8_t reserved[3];
 } MoveEventTransaction;
 
 static MoveEventTransaction transaction;
@@ -111,6 +113,11 @@ static int phaseUnsafe(EspNativeGameplayMoveEventStatus status) {
 static int phaseHandled(EspNativeGameplayMoveEventStatus status) {
     return status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK ||
            status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK;
+}
+
+static int isDialogCode(uint8_t codeId) {
+    return codeId == ESP_MAP_OPCODE_DIALOG ||
+           codeId == ESP_MAP_OPCODE_DIALOG_NO_BACK;
 }
 
 static void logPhase(const char* phase,
@@ -230,7 +237,9 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
         outResult->eligibleCount = eligibleCount;
         if (filtered.codeId != ESP_MAP_OPCODE_OPENLINE &&
             filtered.codeId != ESP_MAP_OPCODE_CLOSELINE &&
-            filtered.codeId != ESP_MAP_OPCODE_FORCE_MESSAGE) {
+            filtered.codeId != ESP_MAP_OPCODE_FORCE_MESSAGE &&
+            filtered.codeId != ESP_MAP_OPCODE_DIALOG &&
+            filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK) {
             outResult->unsupportedCodeId = filtered.codeId;
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
         }
@@ -255,6 +264,8 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
     outResult->codeId = command.id;
     outResult->removedBefore = selectedRemoved;
     outResult->removedAfter = selectedRemoved;
+    outResult->removeIfHandled =
+        (uint8_t)((command.arg2 & ESP_MAP_COMMAND_FLAG_REMOVE) != 0U ? 1U : 0U);
 
     if (command.id == ESP_MAP_OPCODE_FORCE_MESSAGE) {
         memset(&intent, 0, sizeof(intent));
@@ -265,6 +276,19 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
         }
         return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK;
+    }
+
+    if (isDialogCode(command.id)) {
+        memset(&intent, 0, sizeof(intent));
+        if (EspMapUiIntent_build(&descriptor, selectedOffset, &intent) !=
+                ESP_MAP_UI_INTENT_OK ||
+            intent.kind != ESP_MAP_UI_INTENT_DIALOG ||
+            intent.codeId != command.id ||
+            (intent.flags & ESP_MAP_UI_INTENT_FLAG_PAUSE_SCRIPT) == 0U ||
+            (intent.flags & ESP_MAP_UI_INTENT_FLAG_SKIP_ADVANCE_TURN) == 0U) {
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+        }
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY;
     }
 
     lineState = EspMapLineState_view();
@@ -280,8 +304,6 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
     outResult->openBefore = openBefore;
     outResult->openAfter = targetOpen;
     outResult->locked = locked;
-    outResult->removeIfHandled =
-        (uint8_t)((command.arg2 & ESP_MAP_COMMAND_FLAG_REMOVE) != 0U ? 1U : 0U);
     outResult->soundId =
         targetOpen != 0U ? ESP_MAP_LINE_SOUND_OPEN : ESP_MAP_LINE_SOUND_CLOSE;
 
@@ -308,6 +330,20 @@ EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executePhase(
     memset(&inspected, 0, sizeof(inspected));
     status = inspectPhase(tile, runFlags, &inspected);
     *outResult = inspected;
+
+    if (status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY) {
+        if (inspected.removeIfHandled != 0U) {
+            if (!EspMapScriptState_setCommandRemoved(
+                    inspected.globalCommandIndex, 1U)) {
+                return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+            }
+            outResult->removedAfter = 1U;
+            outResult->mutated = 1U;
+            outResult->rollbackAvailable = 1U;
+        }
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY;
+    }
+
     if (!phaseHandled(status)) return status;
 
     memset(&eventRef, 0, sizeof(eventRef));
@@ -392,6 +428,21 @@ int EspNativeGameplayMoveEvents_rollbackPhase(
                          &result->statusMessage);
     }
 
+    if (isDialogCode(result->codeId)) {
+        if (result->rollbackAvailable == 0U) return 1;
+        if (result->removedBefore == result->removedAfter ||
+            !EspMapScriptState_isCommandRemoved(result->globalCommandIndex,
+                                                 &removedNow) ||
+            removedNow != result->removedAfter ||
+            !EspMapScriptState_setCommandRemoved(result->globalCommandIndex,
+                                                  result->removedBefore)) {
+            return 0;
+        }
+        return EspMapScriptState_isCommandRemoved(result->globalCommandIndex,
+                                                   &removedNow) &&
+               removedNow == result->removedBefore;
+    }
+
     if (result->mutated != 1U || result->rollbackAvailable != 1U ||
         (result->codeId != ESP_MAP_OPCODE_OPENLINE &&
          result->codeId != ESP_MAP_OPCODE_CLOSELINE)) {
@@ -436,6 +487,8 @@ const char* EspNativeGameplayMoveEvents_statusName(
     case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK: return "DOOR_OK";
     case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK:
         return "FORCE_MESSAGE_OK";
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY:
+        return "DIALOG_READY";
     default: return "UNKNOWN";
     }
 }
@@ -459,6 +512,15 @@ static int rollbackTransaction(void) {
 void EspNativeGameplayMoveEvents_onFrameResult(int renderOk) {
     if (!transaction.active) return;
     if (renderOk) {
+        if (transaction.dialogPending != 0U) {
+            transaction.worldRendered = 1U;
+            printf("[MOVEEVENT] WORLD-READY seq=%u enterDialog=opcode%u/event%u/cmd%u rollbackLease=pending\n",
+                   (unsigned int)transaction.sequence,
+                   (unsigned int)transaction.enterResult.codeId,
+                   (unsigned int)transaction.enterResult.eventIndex,
+                   (unsigned int)transaction.enterResult.commandOffset);
+            return;
+        }
         printf("[MOVEEVENT] COMMIT seq=%u exitEffect=%u enterEffect=%u render=ok rollbackLease=closed\n",
                (unsigned int)transaction.sequence,
                (unsigned int)transaction.exitRollback,
@@ -466,11 +528,48 @@ void EspNativeGameplayMoveEvents_onFrameResult(int renderOk) {
         memset(&transaction, 0, sizeof(transaction));
     }
     else {
-        printf("[MOVEEVENT] FRAME-FAILED seq=%u exitEffect=%u enterEffect=%u rollbackLease=pending\n",
+        printf("[MOVEEVENT] FRAME-FAILED seq=%u exitEffect=%u enterEffect=%u dialog=%u rollbackLease=pending\n",
                (unsigned int)transaction.sequence,
                (unsigned int)transaction.exitRollback,
-               (unsigned int)transaction.enterRollback);
+               (unsigned int)transaction.enterRollback,
+               (unsigned int)transaction.dialogPending);
     }
+}
+
+int EspNativeGameplayMoveEvents_pendingDialog(
+    uint32_t sequence,
+    EspNativeGameplayMoveDialogIntent* outIntent) {
+    if (outIntent != NULL) memset(outIntent, 0, sizeof(*outIntent));
+    if (outIntent == NULL || !transaction.active ||
+        transaction.sequence != sequence ||
+        transaction.dialogPending == 0U ||
+        transaction.worldRendered == 0U ||
+        !isDialogCode(transaction.enterResult.codeId)) {
+        return 0;
+    }
+    outIntent->runFlags = transaction.enterResult.runFlags;
+    outIntent->eventIndex = transaction.enterResult.eventIndex;
+    outIntent->commandOffset = transaction.enterResult.commandOffset;
+    outIntent->codeId = transaction.enterResult.codeId;
+    return 1;
+}
+
+int EspNativeGameplayMoveEvents_finishPendingDialog(uint32_t sequence) {
+    if (!transaction.active || transaction.sequence != sequence ||
+        transaction.dialogPending == 0U ||
+        transaction.worldRendered == 0U ||
+        !isDialogCode(transaction.enterResult.codeId)) {
+        return 0;
+    }
+    printf("[MOVEEVENT] COMMIT seq=%u exitEffect=%u enterEffect=%u dialog=opened opcode=%u event=%u cmd=%u rollbackLease=closed\n",
+           (unsigned int)transaction.sequence,
+           (unsigned int)transaction.exitRollback,
+           (unsigned int)transaction.enterRollback,
+           (unsigned int)transaction.enterResult.codeId,
+           (unsigned int)transaction.enterResult.eventIndex,
+           (unsigned int)transaction.enterResult.commandOffset);
+    memset(&transaction, 0, sizeof(transaction));
+    return 1;
 }
 
 EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
@@ -506,8 +605,13 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
     logPhase("ENTER-PREFLIGHT", ioResult->sequence,
              enterPreflightStatus, &enterPreflight);
 
-    if (phaseUnsafe(exitPreflightStatus) || phaseUnsafe(enterPreflightStatus)) {
-        printf("[MOVEEVENT] DEFER seq=%u reason=unsupported-or-complex exit=%s enter=%s mutation=no moveCommit=no\n",
+    /* A dialog on EXIT starts before legacy destX/destY publication and would
+     * require a separate paused-move boundary. Keep that case fail-closed.
+     * ENTER dialog is the recovered finishMovement route and is supported. */
+    if (phaseUnsafe(exitPreflightStatus) ||
+        phaseUnsafe(enterPreflightStatus) ||
+        exitPreflightStatus == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY) {
+        printf("[MOVEEVENT] DEFER seq=%u reason=unsupported-complex-or-exit-dialog exit=%s enter=%s mutation=no moveCommit=no\n",
                (unsigned int)ioResult->sequence,
                EspNativeGameplayMoveEvents_statusName(exitPreflightStatus),
                EspNativeGameplayMoveEvents_statusName(enterPreflightStatus));
@@ -518,7 +622,8 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
     exitStatus = EspNativeGameplayMoveEvents_executePhase(
         ioResult->sourceTile, exitFlags, &exitResult);
     logPhase("EXIT", ioResult->sequence, exitStatus, &exitResult);
-    if (phaseUnsafe(exitStatus)) {
+    if (phaseUnsafe(exitStatus) ||
+        exitStatus == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY) {
         return ESP_NATIVE_GAMEPLAY_DISPATCH_COMMIT_FAILED;
     }
 
@@ -549,13 +654,17 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
     }
 
     if (exitResult.rollbackAvailable != 0U ||
-        enterResult.rollbackAvailable != 0U) {
+        enterResult.rollbackAvailable != 0U ||
+        enterStatus == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY) {
         memset(&transaction, 0, sizeof(transaction));
         transaction.sequence = ioResult->sequence;
         transaction.exitResult = exitResult;
         transaction.enterResult = enterResult;
         transaction.exitRollback = exitResult.rollbackAvailable;
         transaction.enterRollback = enterResult.rollbackAvailable;
+        transaction.dialogPending =
+            (uint8_t)(enterStatus == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY
+                          ? 1U : 0U);
         transaction.active = 1U;
     }
 
