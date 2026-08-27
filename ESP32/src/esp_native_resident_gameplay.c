@@ -505,6 +505,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     EspNativeGameplayInputStatus inputStatus;
     EspNativeGameplayDispatchStatus dispatchStatus;
     EspNativeGameplayControlsStats feedbackStats;
+    const EspNativeGameplayInputState* pending;
 
     if (gameplayState.failed) return;
 
@@ -557,16 +558,39 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)feedbackStats.baselineFNV);
     }
 
-    if (EspNativeGameplayDialog_isActive() &&
-        !EspNativeGameplayDialog_tick()) {
-        disableGameplay("dialog-tick");
+    pending = EspNativeGameplayInput_peek();
+
+    /*
+     * Dialog input wins over the time-based typewriter after the 120-ms touch
+     * feedback restores its exact framebuffer baseline. This preserves the
+     * semantic state visible when the player tapped SELECT instead of letting
+     * the typewriter advance first and accidentally turn a fast-forward into a
+     * close/resume. With no pending input the typewriter continues normally.
+     */
+    if (EspNativeGameplayDialog_isActive()) {
+        if (pending != NULL && pending->pending != 0U) {
+            memset(&intent, 0, sizeof(intent));
+            inputStatus = EspNativeGameplayInput_consume(&intent);
+            if (inputStatus != ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+                disableGameplay("dialog-input-consume");
+                return;
+            }
+            ++gameplayState.actions;
+            if (intent.action == ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN) {
+                printf("[RESIDENTGAMEPLAY] DIALOG-IGNORE seq=%u action=PASS_TURN reason=legacy-key14-not-dialog-select\n",
+                       (unsigned int)intent.sequence);
+                return;
+            }
+            serviceDialogAction(doomRpg->render, &intent);
+            return;
+        }
+        if (!EspNativeGameplayDialog_tick()) {
+            disableGameplay("dialog-tick");
+        }
         return;
     }
 
-    if (EspNativeGameplayInput_peek() == NULL ||
-        EspNativeGameplayInput_peek()->pending == 0U) {
-        return;
-    }
+    if (pending == NULL || pending->pending == 0U) return;
 
     memset(&intent, 0, sizeof(intent));
     inputStatus = EspNativeGameplayInput_consume(&intent);
@@ -575,11 +599,6 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
     ++gameplayState.actions;
-
-    if (EspNativeGameplayDialog_isActive()) {
-        serviceDialogAction(doomRpg->render, &intent);
-        return;
-    }
 
     switch (intent.action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT:
