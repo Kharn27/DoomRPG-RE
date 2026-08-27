@@ -52,15 +52,18 @@ typedef struct EspNativeGameplayActionResult_s {
  * families at this boundary are:
  *
  *   1. exactly one eligible EV_OPENLINE/EV_CLOSELINE command;
- *   2. a first eligible EV_DIALOG/EV_DIALOGNOBACK pause followed by at most one
- *      eligible state-only continuation already owned by EspMapOpcodeExecutor
- *      (11/19/20). The dialog itself is returned as DIALOG_READY without any
- *      UI or script mutation; the resident dialog session owns presentation and
- *      resume after the user closes it.
+ *   2. an optional single EV_NOTE prefix immediately followed by an eligible
+ *      EV_DIALOG/EV_DIALOGNOBACK pause, then at most one eligible state-only
+ *      continuation already owned by EspMapOpcodeExecutor (11/19/20). NOTE is
+ *      preflighted here but its notebook + removed-bit mutation is committed by
+ *      the dialog-begin transaction only after presentation succeeds.
  *
- * Any other eligible opcode, an unsupported resume, or a multi-command door
- * event remains fail-closed so production never partially executes a script.
- * Native key ownership is still absent, therefore filtering uses playerKeys=0.
+ * The dialog itself is returned as DIALOG_READY without UI mutation in this
+ * function; the resident dialog session owns presentation and resume after the
+ * user closes it. Any other eligible opcode, unsupported resume, NOTE without
+ * the following dialog, or multi-command door event remains fail-closed so
+ * production never partially executes a script. Native key ownership is still
+ * absent, therefore filtering uses playerKeys=0.
  */
 EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
