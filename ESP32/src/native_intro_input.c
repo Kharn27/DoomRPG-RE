@@ -25,6 +25,7 @@ typedef struct Esp32IntroInputState_s {
     uint32_t taps;
     uint32_t misses;
     int active;
+    int finalTextPresented;
 } Esp32IntroInputState;
 
 static Esp32IntroInputState inputState;
@@ -171,6 +172,9 @@ static void onTap(int16_t screenX,
     if (canvas->storyPage == 0 || canvas->storyPage == 2) {
         if (!canvas->showTextDone) {
             canvas->showTextDone = true;
+            if (canvas->storyPage == 2) {
+                inputState.finalTextPresented = 0;
+            }
             printf("[INTROIN] REVEAL page=%d textPage=%d t=%d\n",
                    canvas->storyPage,
                    canvas->storyTextPage,
@@ -204,6 +208,11 @@ static void onTap(int16_t screenX,
                    canvas->storyAnimTime);
         }
         else {
+            if (!inputState.finalTextPresented) {
+                printf("[INTROIN] FINAL-DEFER full final text has not been presented yet; keeping intro active\n");
+                return;
+            }
+
             heapAfter = heap8Free();
             largestAfter = largest8Block();
             if (heapAfter != heapBefore || largestAfter != largestBefore) {
@@ -217,7 +226,7 @@ static void onTap(int16_t screenX,
                 return;
             }
 
-            printf("[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=%d\n",
+            printf("[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=%d fullTextPresented=yes\n",
                    canvas->time);
             Esp32IntroClock_park("intro-exit-ready");
             disarmInternal();
@@ -234,6 +243,7 @@ static void onTap(int16_t screenX,
         canvas->storyPage = 2;
         canvas->storyTextPage = 0;
         canvas->showTextDone = false;
+        inputState.finalTextPresented = 0;
         if (!Esp32IntroClock_rebasePageEpochs()) {
             printf("[INTROIN] FAILED animation skip epoch rebase\n");
             disarmInternal();
@@ -277,6 +287,7 @@ int Esp32IntroInput_arm(struct DoomRPG_s* doomRpgBase) {
     inputState.taps = 0;
     inputState.misses = 0;
     inputState.active = 0;
+    inputState.finalTextPresented = 0;
     PlatformInput_setTapCallback(NULL);
 
     if (!Esp32IntroClock_isActive() || !boundaryIsSafe(doomRpg) ||
@@ -301,8 +312,25 @@ int Esp32IntroInput_arm(struct DoomRPG_s* doomRpgBase) {
            ESP32_STORY_VIEWPORT_X + ESP32_STORY_VIEWPORT_SIZE - 1,
            ESP32_STORY_VIEWPORT_Y,
            ESP32_STORY_VIEWPORT_Y + ESP32_STORY_VIEWPORT_SIZE - 1);
-    printf("[INTROIN] CONTRACT reveal -> More -> page1 animation -> page2 -> final PARK; dispose/map load blocked\n");
+    printf("[INTROIN] CONTRACT reveal -> More -> page1 animation -> page2 -> visible full final text -> final PARK; dispose/map load blocked\n");
     return 1;
+}
+
+void Esp32IntroInput_notifyFramePresented(void) {
+    DoomCanvas_t* canvas;
+
+    if (!inputState.active || inputState.doomRpg == NULL ||
+        inputState.doomRpg->doomCanvas == NULL) {
+        return;
+    }
+
+    canvas = inputState.doomRpg->doomCanvas;
+    if (canvas->storyPage == 2 && canvas->storyTextPage == 0 &&
+        canvas->showTextDone && !inputState.finalTextPresented) {
+        inputState.finalTextPresented = 1;
+        printf("[INTROIN] FINAL-TEXT-PRESENTED t=%d continueUnlocked=yes\n",
+               canvas->time);
+    }
 }
 
 void Esp32IntroInput_disarm(void) {
