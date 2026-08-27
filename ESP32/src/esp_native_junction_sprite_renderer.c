@@ -165,6 +165,10 @@ static uint16_t glowFor(uint16_t logical) {
     return 0U;
 }
 
+static int isLegacyCrossLogical(uint16_t logical) {
+    return logical >= 82U && logical <= 90U && (logical & 1U) == 0U;
+}
+
 static int readRange(const EspAssetPackEntry* entry,
                      uint32_t offset,
                      void* destination,
@@ -506,6 +510,8 @@ static int buildOrder(Render_t* render,
         uint16_t ordinal;
         uint32_t info;
         uint32_t id;
+        uint16_t resourceLogical;
+        int recoveredCross;
         uint32_t leaf = UINT32_MAX;
         uint32_t position;
         int visible;
@@ -536,20 +542,24 @@ static int buildOrder(Render_t* render,
         }
         ++stats->bspCandidates;
 
-        if (id >= 82U && id <= 90U && (id & 1U) == 0U) info |= CROSS;
-        if ((info & (TILE | CROSS | SKIP_RESOURCE)) != 0U ||
-            EspNativeGraphicsCatalog_findSprite((uint16_t)id) == NULL) {
+        recoveredCross = isLegacyCrossLogical((uint16_t)id);
+        if (recoveredCross) info |= CROSS;
+        resourceLogical = recoveredCross ? (uint16_t)(id - 1U) : (uint16_t)id;
+        if ((info & (TILE | SKIP_RESOURCE)) != 0U ||
+            ((info & CROSS) != 0U && !recoveredCross) ||
+            EspNativeGraphicsCatalog_findSprite(resourceLogical) == NULL) {
             ++stats->unsupported;
-            printf("[NATIVESPRITE] UNSUPPORTED index=%u id=%u info=%08x leaf=%u tile=%u cross=%u orient=%06x special=%u catalog=%u\n",
+            printf("[NATIVESPRITE] UNSUPPORTED index=%u id=%u resource=%u info=%08x leaf=%u tile=%u cross=%u orient=%06x special=%u catalog=%u\n",
                    (unsigned int)i,
                    (unsigned int)id,
+                   (unsigned int)resourceLogical,
                    (unsigned int)info,
                    (unsigned int)leaf,
                    (unsigned int)((info & TILE) != 0U),
                    (unsigned int)((info & CROSS) != 0U),
                    (unsigned int)(info & ORIENT_MASK),
                    (unsigned int)((info & SKIP_RESOURCE) != 0U),
-                   (unsigned int)(EspNativeGraphicsCatalog_findSprite((uint16_t)id) != NULL));
+                   (unsigned int)(EspNativeGraphicsCatalog_findSprite(resourceLogical) != NULL));
             return 0;
         }
         if (count >= MAX_VISIBLE_SPRITES) {
@@ -561,7 +571,7 @@ static int buildOrder(Render_t* render,
             return 0;
         }
 
-        if (spriteRenderMode((uint16_t)id) == RENDER_MODE_ADD) {
+        if (spriteRenderMode(resourceLogical) == RENDER_MODE_ADD) {
             ++stats->mode7Objects;
         }
         else {
@@ -749,6 +759,8 @@ static int drawAt(Render_t* render,
                   uint16_t logical,
                   uint8_t renderMode,
                   int glow,
+                  int offsetX,
+                  int offsetY,
                   Frame* frame,
                   uint32_t seenLogical[8],
                   EspNativeJunctionSpriteStats* stats) {
@@ -759,8 +771,12 @@ static int drawAt(Render_t* render,
     uint32_t animation;
     int minimum;
     int maximum;
+    int spriteX;
+    int spriteY;
 
     if (!EspMapRuntime_getMapSprite(parent->index, &sprite)) return 0;
+    spriteX = sprite.x + offsetX;
+    spriteY = sprite.y + offsetY;
 
     animation = (parent->info & FIXED_ANIM) != 0U
                     ? ((parent->info & 0x1e00U) >> 9)
@@ -778,8 +794,8 @@ static int drawAt(Render_t* render,
 
     if ((parent->info & ORIENT_MASK) == 0U) {
         memset(&center, 0, sizeof(center));
-        center.x = sprite.x;
-        center.y = sprite.y;
+        center.x = spriteX;
+        center.y = spriteY;
         Render_transform2DVerts(render, &center);
         center.x -= 0x100000;
         if (center.x < 0x40000) {
@@ -798,28 +814,28 @@ static int drawAt(Render_t* render,
         const int flip = (parent->info & FLIP_HORIZONTAL) != 0U;
 
         if ((parent->info & ORIENT_NORTH) != 0U) {
-            line.vert1.x = flip ? sprite.x - minimum : sprite.x + minimum;
-            line.vert2.x = flip ? sprite.x - maximum : sprite.x + maximum;
-            line.vert1.y = sprite.y;
-            line.vert2.y = sprite.y;
+            line.vert1.x = flip ? spriteX - minimum : spriteX + minimum;
+            line.vert2.x = flip ? spriteX - maximum : spriteX + maximum;
+            line.vert1.y = spriteY;
+            line.vert2.y = spriteY;
         }
         else if ((parent->info & ORIENT_SOUTH) != 0U) {
-            line.vert1.x = flip ? sprite.x + minimum : sprite.x - minimum;
-            line.vert2.x = flip ? sprite.x + maximum : sprite.x - maximum;
-            line.vert1.y = sprite.y;
-            line.vert2.y = sprite.y;
+            line.vert1.x = flip ? spriteX + minimum : spriteX - minimum;
+            line.vert2.x = flip ? spriteX + maximum : spriteX - maximum;
+            line.vert1.y = spriteY;
+            line.vert2.y = spriteY;
         }
         else if ((parent->info & ORIENT_WEST) != 0U) {
-            line.vert1.y = flip ? sprite.y - minimum : sprite.y + minimum;
-            line.vert2.y = flip ? sprite.y - maximum : sprite.y + maximum;
-            line.vert1.x = sprite.x;
-            line.vert2.x = sprite.x;
+            line.vert1.y = flip ? spriteY - minimum : spriteY + minimum;
+            line.vert2.y = flip ? spriteY - maximum : spriteY + maximum;
+            line.vert1.x = spriteX;
+            line.vert2.x = spriteX;
         }
         else if ((parent->info & ORIENT_EAST) != 0U) {
-            line.vert1.y = flip ? sprite.y + minimum : sprite.y - minimum;
-            line.vert2.y = flip ? sprite.y + maximum : sprite.y - maximum;
-            line.vert1.x = sprite.x;
-            line.vert2.x = sprite.x;
+            line.vert1.y = flip ? spriteY + minimum : spriteY - minimum;
+            line.vert2.y = flip ? spriteY + maximum : spriteY - maximum;
+            line.vert1.x = spriteX;
+            line.vert2.x = spriteX;
         }
         else {
             ++stats->unsupported;
@@ -861,6 +877,75 @@ static int drawAt(Render_t* render,
     return 1;
 }
 
+static int drawLegacyCross(Render_t* render,
+                           const Sources* sources,
+                           const Order* parent,
+                           Frame* frame,
+                           uint32_t seenLogical[8],
+                           EspNativeJunctionSpriteStats* stats) {
+    static const int8_t offsets[4][2] = {
+        {16, 0}, {-16, 0}, {0, 16}, {0, -16}
+    };
+    uint16_t resourceLogical;
+    uint32_t drawsBefore;
+    uint32_t nearBefore;
+    uint32_t clipBefore;
+    uint32_t subDraws;
+    uint32_t subNear;
+    uint32_t subClip;
+    uint32_t i;
+
+    if (parent == NULL || !isLegacyCrossLogical(parent->logical) ||
+        (parent->info & CROSS) == 0U ||
+        (parent->info & ORIENT_MASK) != 0U) {
+        ++stats->unsupported;
+        return 0;
+    }
+
+    resourceLogical = (uint16_t)(parent->logical - 1U);
+    if (spriteRenderMode(resourceLogical) != RENDER_MODE_NORMAL ||
+        glowFor(resourceLogical) != 0U ||
+        EspNativeGraphicsCatalog_findSprite(resourceLogical) == NULL) {
+        ++stats->unsupported;
+        return 0;
+    }
+
+    drawsBefore = stats->draws;
+    nearBefore = stats->nearCulled;
+    clipBefore = stats->clipCulled;
+    for (i = 0U; i < 4U; ++i) {
+        if (!drawAt(render, sources, parent, resourceLogical,
+                    RENDER_MODE_NORMAL, 0,
+                    offsets[i][0], offsets[i][1],
+                    frame, seenLogical, stats)) {
+            return 0;
+        }
+    }
+
+    subDraws = stats->draws - drawsBefore;
+    subNear = stats->nearCulled - nearBefore;
+    subClip = stats->clipCulled - clipBefore;
+
+    /* Four physical billboards are one map-sprite candidate. Collapse only the
+     * object accounting counters back to one logical result; pixels/spans/frame
+     * loads intentionally retain the real work performed by all four copies. */
+    stats->draws = drawsBefore;
+    stats->nearCulled = nearBefore;
+    stats->clipCulled = clipBefore;
+    if (subDraws != 0U) ++stats->draws;
+    else if (subNear != 0U) ++stats->nearCulled;
+    else ++stats->clipCulled;
+
+    printf("[NATIVESPRITE] CROSS index=%u id=%u resource=%u copies=4 draws=%u near=%u clip=%u accounting=1\n",
+           (unsigned int)parent->index,
+           (unsigned int)parent->logical,
+           (unsigned int)resourceLogical,
+           (unsigned int)subDraws,
+           (unsigned int)subNear,
+           (unsigned int)subClip);
+    return 1;
+}
+
 static int drawParentAndGlow(Render_t* render,
                              const Sources* sources,
                              const Order* parent,
@@ -869,8 +954,13 @@ static int drawParentAndGlow(Render_t* render,
                              EspNativeJunctionSpriteStats* stats) {
     uint16_t glowLogical;
 
+    if ((parent->info & CROSS) != 0U) {
+        return drawLegacyCross(render, sources, parent,
+                               frame, seenLogical, stats);
+    }
+
     if (!drawAt(render, sources, parent, parent->logical,
-                spriteRenderMode(parent->logical), 0,
+                spriteRenderMode(parent->logical), 0, 0, 0,
                 frame, seenLogical, stats)) {
         return 0;
     }
@@ -883,7 +973,8 @@ static int drawParentAndGlow(Render_t* render,
         return 0;
     }
     return drawAt(render, sources, parent, glowLogical,
-                  RENDER_MODE_ADD, 1, frame, seenLogical, stats);
+                  RENDER_MODE_ADD, 1, 0, 0,
+                  frame, seenLogical, stats);
 }
 
 int EspNativeJunctionSprite_render(struct Render_s* renderBase,
