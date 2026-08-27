@@ -3,6 +3,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "DoomRPG.h"
+
+#include "esp_native_first_frame.h"
+#include "esp_native_graphics_catalog.h"
+#include "esp_player_view_state.h"
 #include "esp_probe_log.h"
 #include "native_committed_transition_probe.h"
 #include "native_entrance_spawn_chain_probe.h"
@@ -41,6 +46,8 @@ static unsigned int fastForwardTotalPasses;
 static int fastForwardReadyLogged;
 static int fastForwardWaitLogged;
 static int fastForwardBlockedLogged;
+static int entranceCatalogLogged;
+static int entranceFirstFrameAttempted;
 
 void __real_Esp32IntroDispose_reset(void);
 void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
@@ -57,8 +64,9 @@ void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
  * Keep all source-map semantic regression probes through transition preflight;
  * stop BEFORE any resident teardown. /junction.bsp may be streamed read-only by
  * the preflight, but /intro.bsp (Entrance) remains the resident map. Initial
- * startup then proceeds through the dedicated Entrance spawn chain. A later
- * real gameplay event must own the destructive transition away from Entrance.
+ * startup then proceeds through the dedicated Entrance spawn chain and directly
+ * presents one native Entrance world frame. A later real gameplay event must
+ * own the destructive transition away from Entrance.
  */
 static void resetValidatedEntranceChain(void) {
     Esp32Map1BspPass1_reset();
@@ -95,6 +103,8 @@ static void resetValidatedEntranceChain(void) {
 
     Esp32EntranceStartupRouteProbe_reset();
     Esp32EntranceSpawnChainProbe_reset();
+    EspNativeGraphicsCatalog_reset();
+    EspNativeFirstFrame_reset();
 }
 
 static void serviceValidatedEntrancePredecessors(struct DoomRPG_s* doomRpg) {
@@ -124,6 +134,77 @@ static void serviceValidatedEntrancePredecessors(struct DoomRPG_s* doomRpg) {
     Esp32TransitionPreflightFinalProbe_service(doomRpg);
 }
 
+static void serviceEntranceFirstVisibleFrame(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* view;
+    const EspNativeGraphicsCatalogView* catalog;
+    const EspNativeFirstFrameState* frame;
+    EspNativeGraphicsCatalogStatus catalogStatus;
+    EspNativeFirstFrameStatus frameStatus;
+
+    if (entranceFirstFrameAttempted || EspNativeFirstFrame_isReady()) return;
+    if (doomRpg == NULL || doomRpg->render == NULL) {
+        entranceFirstFrameAttempted = 1;
+        printf("[ENTRANCEFRAME] FAILED missing DoomRPG/render owner\n");
+        return;
+    }
+
+    if (!EspNativeGraphicsCatalog_isReady()) {
+        catalogStatus = EspNativeGraphicsCatalog_buildFromRuntime();
+        if (catalogStatus != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+            catalogStatus != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
+            entranceFirstFrameAttempted = 1;
+            printf("[ENTRANCEFRAME] FAILED graphics catalog status=%d\n",
+                   (int)catalogStatus);
+            return;
+        }
+    }
+
+    catalog = EspNativeGraphicsCatalog_view();
+    if (catalog == NULL) {
+        entranceFirstFrameAttempted = 1;
+        printf("[ENTRANCEFRAME] FAILED graphics catalog missing after build\n");
+        return;
+    }
+    if (!entranceCatalogLogged) {
+        printf("[ENTRANCEFRAME] CATALOG textures=%u sprites=%u storage=%u fnv=%08x packClosed=yes\n",
+               (unsigned int)catalog->textureCount,
+               (unsigned int)catalog->spriteCount,
+               (unsigned int)catalog->storageBytes,
+               (unsigned int)catalog->stateFNV1a);
+        entranceCatalogLogged = 1;
+    }
+
+    view = EspPlayerView_view();
+    entranceFirstFrameAttempted = 1;
+    printf("\n=== Doom RPG ESP32-native Entrance first visible frame ===\n");
+    frameStatus = EspNativeFirstFrame_route(doomRpg->render, view);
+    if (frameStatus != ESP_NATIVE_FIRST_FRAME_OK) {
+        printf("[ENTRANCEFRAME] FAILED route status=%d view=%p\n",
+               (int)frameStatus,
+               (const void*)view);
+        return;
+    }
+
+    frame = EspNativeFirstFrame_view();
+    if (frame == NULL) {
+        printf("[ENTRANCEFRAME] FAILED route returned OK without published frame\n");
+        return;
+    }
+
+    printf("[ENTRANCEFRAME] READY targetMap=%u frame=%08x->%08x walls=%u pixels=%u leaves=%u candidates=%u cache=%uH/%uM presented=%u next=HUD+touch\n",
+           (unsigned int)frame->targetMapId,
+           (unsigned int)frame->frameBeforeFNV,
+           (unsigned int)frame->frameAfterFNV,
+           (unsigned int)frame->wallDraws,
+           (unsigned int)frame->pixelsDrawn,
+           (unsigned int)frame->leafNodes,
+           (unsigned int)frame->lineCandidates,
+           (unsigned int)frame->cacheHits,
+           (unsigned int)frame->cacheMisses,
+           (unsigned int)frame->presented);
+}
+
 void __wrap_Esp32IntroDispose_reset(void) {
     __real_Esp32IntroDispose_reset();
     EspProbeLog_setQuiet(0);
@@ -132,6 +213,8 @@ void __wrap_Esp32IntroDispose_reset(void) {
     fastForwardReadyLogged = 0;
     fastForwardWaitLogged = 0;
     fastForwardBlockedLogged = 0;
+    entranceCatalogLogged = 0;
+    entranceFirstFrameAttempted = 0;
     resetValidatedEntranceChain();
 }
 
@@ -191,5 +274,8 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     Esp32EntranceStartupRouteProbe_service(doomRpg);
     if (Esp32EntranceStartupRouteProbe_isDone()) {
         Esp32EntranceSpawnChainProbe_service(doomRpg);
+    }
+    if (Esp32EntranceSpawnChainProbe_isDone()) {
+        serviceEntranceFirstVisibleFrame(doomRpg);
     }
 }
