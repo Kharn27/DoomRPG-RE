@@ -9,6 +9,20 @@
 #define BMP_INFO_MIN_BYTES 40U
 #define BMP_PALETTE_ENTRY_BYTES 4U
 #define BMP_TRANSPARENT_MAGENTA_RGB565 0xf81fU
+#define BMP_BLIT_RANGE_BYTES 1024U
+
+#if BMP_BLIT_RANGE_BYTES < ESP_NATIVE_INDEXED_BMP_MAX_ROW_BYTES
+#error "Indexed BMP blit scratch must hold at least one complete source row"
+#endif
+
+/*
+ * Permanent bounded scratch for one indexed-BMP blit chunk. Native rendering
+ * and UI presentation are serialized through the gameplay service, so this
+ * module does not need a second per-call heap/stack owner. Keeping the chunk at
+ * 1 KiB also matches the resident PAK small-range tier: compact glyph bands such
+ * as Doom's 9x12 font become one exact cached range instead of twelve row reads.
+ */
+static uint8_t blitRows[BMP_BLIT_RANGE_BYTES];
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -195,13 +209,15 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
     int16_t destinationY,
     uint8_t transparentMagenta,
     EspNativeIndexedBmpStats* stats) {
-    uint8_t row[ESP_NATIVE_INDEXED_BMP_MAX_ROW_BYTES];
     uint32_t sourceRight;
     uint32_t sourceBottom;
-    uint16_t y;
+    uint16_t rowsPerChunk;
+    uint16_t yBase;
 
     if (bmp == NULL || framebuffer == NULL || framebufferWidth == 0U ||
-        framebufferHeight == 0U || width == 0U || height == 0U) {
+        framebufferHeight == 0U || width == 0U || height == 0U ||
+        bmp->filePitch == 0U ||
+        bmp->filePitch > ESP_NATIVE_INDEXED_BMP_MAX_ROW_BYTES) {
         return ESP_NATIVE_INDEXED_BMP_INVALID;
     }
     sourceRight = (uint32_t)sourceX + width;
@@ -210,30 +226,66 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
         return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
     }
 
-    for (y = 0U; y < height; ++y) {
-        int32_t dy = (int32_t)destinationY + y;
-        uint16_t x;
-        if (dy < 0 || dy >= framebufferHeight) continue;
-        if (!readSourceRow(bmp, (uint16_t)(sourceY + y), row, stats)) {
+    rowsPerChunk = (uint16_t)(BMP_BLIT_RANGE_BYTES / bmp->filePitch);
+    if (rowsPerChunk == 0U) rowsPerChunk = 1U;
+
+    for (yBase = 0U; yBase < height;) {
+        uint16_t chunkRows = (uint16_t)(height - yBase);
+        uint16_t sourceChunkY = (uint16_t)(sourceY + yBase);
+        uint32_t fileFirstY;
+        uint32_t fileOffset;
+        uint32_t chunkBytes;
+        uint16_t localY;
+
+        if (chunkRows > rowsPerChunk) chunkRows = rowsPerChunk;
+
+        fileFirstY = bmp->topDown
+                         ? (uint32_t)sourceChunkY
+                         : ((uint32_t)bmp->height -
+                            ((uint32_t)sourceChunkY + chunkRows));
+        fileOffset = bmp->pixelOffset +
+                     fileFirstY * (uint32_t)bmp->filePitch;
+        chunkBytes = (uint32_t)chunkRows * (uint32_t)bmp->filePitch;
+
+        if (chunkBytes > BMP_BLIT_RANGE_BYTES ||
+            !readRange(&bmp->entry, fileOffset,
+                       blitRows, chunkBytes, stats)) {
             return ESP_NATIVE_INDEXED_BMP_READ_FAILED;
         }
-        for (x = 0U; x < width; ++x) {
-            int32_t dx = (int32_t)destinationX + x;
-            uint16_t index;
-            uint16_t color;
-            if (dx < 0 || dx >= framebufferWidth) continue;
-            index = sampleIndex(bmp, row, (uint16_t)(sourceX + x));
-            if (index >= bmp->paletteCount) {
-                return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
+        if (stats != NULL) stats->rowsRead += chunkRows;
+
+        for (localY = 0U; localY < chunkRows; ++localY) {
+            uint16_t logicalY = (uint16_t)(yBase + localY);
+            int32_t dy = (int32_t)destinationY + logicalY;
+            uint16_t storedRow = bmp->topDown
+                                     ? localY
+                                     : (uint16_t)(chunkRows - 1U - localY);
+            const uint8_t* row =
+                &blitRows[(uint32_t)storedRow * bmp->filePitch];
+            uint16_t x;
+
+            if (dy < 0 || dy >= framebufferHeight) continue;
+            for (x = 0U; x < width; ++x) {
+                int32_t dx = (int32_t)destinationX + x;
+                uint16_t index;
+                uint16_t color;
+                if (dx < 0 || dx >= framebufferWidth) continue;
+                index = sampleIndex(bmp, row, (uint16_t)(sourceX + x));
+                if (index >= bmp->paletteCount) {
+                    return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
+                }
+                color = bmp->paletteRgb565[index];
+                if (transparentMagenta != 0U &&
+                    color == BMP_TRANSPARENT_MAGENTA_RGB565) {
+                    continue;
+                }
+                framebuffer[(uint32_t)dy * framebufferWidth +
+                            (uint32_t)dx] = color;
+                if (stats != NULL) ++stats->pixelsWritten;
             }
-            color = bmp->paletteRgb565[index];
-            if (transparentMagenta != 0U &&
-                color == BMP_TRANSPARENT_MAGENTA_RGB565) {
-                continue;
-            }
-            framebuffer[(uint32_t)dy * framebufferWidth + (uint32_t)dx] = color;
-            if (stats != NULL) ++stats->pixelsWritten;
         }
+
+        yBase = (uint16_t)(yBase + chunkRows);
     }
     return ESP_NATIVE_INDEXED_BMP_OK;
 }
