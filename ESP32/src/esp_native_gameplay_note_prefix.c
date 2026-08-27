@@ -13,6 +13,7 @@
 #include "esp_map_script_state.h"
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_dialog.h"
+#include "esp_native_gameplay_event_chain.h"
 #include "esp_player_view_state.h"
 
 #define NOTE_REMOVE_FLAG 0x00000200UL
@@ -53,6 +54,47 @@ static int eventDescriptorForIndex(uint16_t eventIndex,
     ref.tileIndex = (uint16_t)(eventValue & ESP_MAP_EVENT_TILE_MASK);
     ref.value = eventValue;
     return EspMapEvents_describe(&ref, outDescriptor);
+}
+
+/* The dialog owner's historical preflight accepts only zero/one state opcode.
+ * The permanent chain layer now proves the whole saved continuation first.  We
+ * temporarily hide that already-proven continuation from the old preflight,
+ * open the dialog, then restore the removed-bit overlay immediately.  No world
+ * command executes before the dialog closes. */
+static EspNativeGameplayDialogBeginStatus beginWithChainPreflight(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint32_t runFlags) {
+    EspNativeGameplayEventChainMask mask;
+    EspNativeGameplayEventChainPreflightStatus chainStatus;
+    EspNativeGameplayDialogBeginStatus dialogStatus;
+
+    memset(&mask, 0, sizeof(mask));
+    chainStatus = EspNativeGameplayEventChain_maskForDialogBegin(
+        eventIndex, (uint8_t)(commandOffset + 1U), runFlags, &mask);
+    if (chainStatus != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
+        printf("[DIALOGCHAIN] BEGIN-DEFER event=%u dialogCmd=%u status=%d mutation=no\n",
+               (unsigned int)eventIndex,
+               (unsigned int)commandOffset,
+               (int)chainStatus);
+        return chainStatus == ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY
+                   ? ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY
+                   : ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_UNSUPPORTED_RESUME;
+    }
+
+    dialogStatus = __real_EspNativeGameplayDialog_begin(eventIndex,
+                                                        commandOffset,
+                                                        runFlags);
+    if (!EspNativeGameplayEventChain_restoreDialogMask(&mask)) {
+        printf("[DIALOGCHAIN] FAILED begin-mask-restore event=%u dialogCmd=%u\n",
+               (unsigned int)eventIndex,
+               (unsigned int)commandOffset);
+        if (dialogStatus == ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+            EspNativeGameplayDialog_reset();
+        }
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    }
+    return dialogStatus;
 }
 
 /*
@@ -162,9 +204,7 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
         return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
     }
     if (prefixStatus == 0) {
-        return __real_EspNativeGameplayDialog_begin(eventIndex,
-                                                    commandOffset,
-                                                    runFlags);
+        return beginWithChainPreflight(eventIndex, commandOffset, runFlags);
     }
 
     if (view == NULL || view->active != 1U ||
@@ -235,9 +275,7 @@ __wrap_EspNativeGameplayDialog_begin(uint16_t eventIndex,
         removedChanged = 1;
     }
 
-    dialogStatus = __real_EspNativeGameplayDialog_begin(eventIndex,
-                                                        commandOffset,
-                                                        runFlags);
+    dialogStatus = beginWithChainPreflight(eventIndex, commandOffset, runFlags);
     if (dialogStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
         if (removedChanged != 0 &&
             !EspMapScriptState_setCommandRemoved(global, removedBefore)) {
