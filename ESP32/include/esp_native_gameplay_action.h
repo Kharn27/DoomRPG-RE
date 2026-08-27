@@ -18,7 +18,8 @@ typedef enum EspNativeGameplayActionStatus_e {
     ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT = 5,
     ESP_NATIVE_GAMEPLAY_ACTION_DOOR_LOCKED = 6,
     ESP_NATIVE_GAMEPLAY_ACTION_DOOR_ALREADY_TARGET = 7,
-    ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK = 8
+    ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK = 8,
+    ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY = 9
 } EspNativeGameplayActionStatus;
 
 typedef struct EspNativeGameplayActionResult_s {
@@ -45,19 +46,21 @@ typedef struct EspNativeGameplayActionResult_s {
 } EspNativeGameplayActionResult;
 
 /*
- * Execute only the first bounded production SELECT semantic family.
+ * Execute only bounded production SELECT semantic families.
  *
- * The complete front-tile event is filtered before any mutation. Exactly one
- * eligible command is accepted, and it must be EV_OPENLINE/EV_CLOSELINE.
- * Any other eligible opcode or multi-command eligible event remains fail-closed
- * so production never partially executes a script that the native engine does
- * not yet completely own.
+ * The complete front-tile event is filtered before any mutation. Supported
+ * families at this boundary are:
  *
- * Native key ownership is still absent, therefore filtering deliberately uses
- * playerKeys=0. Door lock/already-target outcomes match legacy false/no-op.
- * A successful door command mutates only EspMapLineState and, when requested by
- * source arg2 0x200, the compact removed-command bit. Sound/animation/entity
- * relink and turn advancement are returned/deferred, never performed here.
+ *   1. exactly one eligible EV_OPENLINE/EV_CLOSELINE command;
+ *   2. a first eligible EV_DIALOG/EV_DIALOGNOBACK pause followed by at most one
+ *      eligible state-only continuation already owned by EspMapOpcodeExecutor
+ *      (11/19/20). The dialog itself is returned as DIALOG_READY without any
+ *      UI or script mutation; the resident dialog session owns presentation and
+ *      resume after the user closes it.
+ *
+ * Any other eligible opcode, an unsupported resume, or a multi-command door
+ * event remains fail-closed so production never partially executes a script.
+ * Native key ownership is still absent, therefore filtering uses playerKeys=0.
  */
 EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
