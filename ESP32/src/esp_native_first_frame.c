@@ -8,6 +8,7 @@
 #include "Render.h"
 
 #include "esp_asset_pack.h"
+#include "esp_map_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_first_frame.h"
@@ -15,11 +16,6 @@
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
-
-#define JUNCTION_RESOURCE_NAME "/junction.bsp"
-#define JUNCTION_TARGET_MAP_ID 9U
-#define JUNCTION_SOURCE_BYTES 21051U
-#define JUNCTION_SOURCE_CRC32 0x4a2c5800U
 
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
@@ -1127,10 +1123,11 @@ static int renderFrame(Render_t* render,
     RenderScratch scratch;
     EspAssetPackEntry mappings;
     EspAssetPackEntry palettes;
-    EspAssetPackEntry junction;
+    EspAssetPackEntry mapEntry;
     uint8_t wallHeader[WALL_TEXEL_HEADER_BYTES];
     uint8_t bspHeader[BSP_HEADER_BYTES];
     const EspMapLineStateView* lineState;
+    const char* resourceName;
     int sin_;
     int cos_;
     int vx;
@@ -1139,7 +1136,8 @@ static int renderFrame(Render_t* render,
 
     memset(&frameFailure, 0, sizeof(frameFailure));
     if (render == NULL || playerView == NULL || outState == NULL ||
-        playerView->active != 1U || playerView->targetMapId != JUNCTION_TARGET_MAP_ID ||
+        playerView->active != 1U ||
+        !EspMapCatalog_isValidId(playerView->targetMapId) ||
         render->framebuffer == NULL || render->columnScale == NULL ||
         render->screenWidth <= 0 || render->screenWidth > (int)MAX_SCREEN_WIDTH ||
         render->screenHeight <= 0 ||
@@ -1157,10 +1155,10 @@ static int renderFrame(Render_t* render,
     memset(&work, 0, sizeof(work));
     work.render = render;
     work.runtime = EspMapRuntime_view();
+    resourceName = EspMapCatalog_nameForId(playerView->targetMapId);
     if (work.runtime == NULL || work.runtime->lineCount == 0U ||
-        work.runtime->nodeCount == 0U ||
-        work.runtime->sourceBytes != JUNCTION_SOURCE_BYTES ||
-        work.runtime->sourceCrc32 != JUNCTION_SOURCE_CRC32) return 0;
+        work.runtime->nodeCount == 0U || work.runtime->sourceBytes == 0U ||
+        work.runtime->sourceCrc32 == 0U || resourceName == NULL) return 0;
 
     saveRenderScratch(render, &scratch);
 
@@ -1168,11 +1166,11 @@ static int renderFrame(Render_t* render,
     if (!EspAssetPack_findEntry("mappings.bin", &mappings) ||
         !EspAssetPack_findEntry("palettes.bin", &palettes) ||
         !EspAssetPack_findEntry("wtexels.bin", &work.wallTexels) ||
-        !EspAssetPack_findEntry(JUNCTION_RESOURCE_NAME, &junction) ||
-        junction.size != JUNCTION_SOURCE_BYTES ||
-        junction.crc32 != JUNCTION_SOURCE_CRC32 ||
+        !EspAssetPack_findEntry(resourceName, &mapEntry) ||
+        mapEntry.size != work.runtime->sourceBytes ||
+        mapEntry.crc32 != work.runtime->sourceCrc32 ||
         !EspAssetPack_readRange(&work.wallTexels, 0U, wallHeader, sizeof(wallHeader)) ||
-        !EspAssetPack_readRange(&junction, 0U, bspHeader, sizeof(bspHeader))) {
+        !EspAssetPack_readRange(&mapEntry, 0U, bspHeader, sizeof(bspHeader))) {
         goto done;
     }
 
@@ -1239,7 +1237,9 @@ static int renderFrame(Render_t* render,
     outState->cacheHits = work.cacheHits;
     outState->cacheMisses = work.cacheMisses;
 
-    printf("[NATIVEFRAME] BSP nodes=%u leaves=%u nodeCull=%u lines=%u backface=%u clip=%u occluder=%u spriteSpanDeferred=%u\n",
+    printf("[NATIVEFRAME] BSP map=%u resource=%s nodes=%u leaves=%u nodeCull=%u lines=%u backface=%u clip=%u occluder=%u spriteSpanDeferred=%u\n",
+           (unsigned int)playerView->targetMapId,
+           resourceName,
            (unsigned int)render->nodeCount,
            (unsigned int)work.leafNodes,
            (unsigned int)work.nodeCulled,
@@ -1304,7 +1304,8 @@ void EspNativeFirstFrame_reset(void) {
 
 int EspNativeFirstFrame_isReady(void) {
     return frameState.active == 1U && frameState.rendered == 1U &&
-           frameState.presented == 1U && frameState.targetMapId == JUNCTION_TARGET_MAP_ID;
+           frameState.presented == 1U &&
+           EspMapCatalog_isValidId(frameState.targetMapId);
 }
 
 const EspNativeFirstFrameState* EspNativeFirstFrame_view(void) {
@@ -1326,7 +1327,7 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_route(
 
     memset(&candidate, 0, sizeof(candidate));
     candidate.frameBeforeFNV = framebufferFNV(render);
-    candidate.targetMapId = JUNCTION_TARGET_MAP_ID;
+    candidate.targetMapId = playerView->targetMapId;
     if (candidate.frameBeforeFNV == 0U) return ESP_NATIVE_FIRST_FRAME_SOURCE_INVALID;
 
     if (!renderFrameWithLegacyGuardRecovery(render, playerView, &candidate, 1)) {
@@ -1371,7 +1372,7 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport(
 
     memset(&candidate, 0, sizeof(candidate));
     candidate.frameBeforeFNV = framebufferFNV(render);
-    candidate.targetMapId = JUNCTION_TARGET_MAP_ID;
+    candidate.targetMapId = playerView->targetMapId;
     if (candidate.frameBeforeFNV == 0U) {
         return ESP_NATIVE_FIRST_FRAME_SOURCE_INVALID;
     }
