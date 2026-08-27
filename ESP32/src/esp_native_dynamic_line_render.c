@@ -4,6 +4,7 @@
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_move_events.h"
 
 #define RENDER_LINE_FLAG_SPRITE_SPAN 0x00000002UL
 #define RENDER_LINE_FLAG_OCCLUDER_ONLY 0x20000000UL
@@ -68,6 +69,7 @@ int __wrap_EspNativeGameplayFrame_renderTurn(
     dynamicFrameActive = 1U;
     ok = __real_EspNativeGameplayFrame_renderTurn(render, angle, outStats);
     dynamicFrameActive = 0U;
+    EspNativeGameplayMoveEvents_onFrameResult(ok);
 
     if (openCount != 0U || dynamicOpenLineReads != 0U) {
         printf("[DYNAMICLINES] FRAME angle=%u open=%u adaptedReads=%u render=%s immutableRuntime=yes\n",
