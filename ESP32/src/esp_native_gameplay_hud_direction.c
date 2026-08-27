@@ -5,6 +5,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_hud_direction.h"
+#include "esp_native_gameplay_status_message.h"
 #include "esp_native_indexed_bmp.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -155,6 +156,12 @@ int EspNativeGameplayHudDirection_render(
                                 sizeof(uint16_t)) {
         return 0;
     }
+
+    /* FORCE_MESSAGE is a top-bar fallback, not a separate popup. Repaint its
+     * dirty owner before the final HUD direction pass; this function still
+     * performs no present, so the enclosing gameplay frame owns the one screen
+     * presentation and can roll the semantic owner back on frame failure. */
+    if (!EspNativeGameplayStatusMessage_paintIfDirty()) return 0;
 
     /* Each EspNativeIndexedBmp carries a 256-entry RGB565 palette. Keep the
      * three metadata objects in one bounded transient heap block instead of
