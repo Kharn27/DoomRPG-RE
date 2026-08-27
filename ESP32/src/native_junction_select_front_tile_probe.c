@@ -14,6 +14,7 @@
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_key_gate.h"
+#include "esp_map_line_topology_query.h"
 #include "esp_map_resident_lifecycle.h"
 #include "esp_map_runtime.h"
 #include "esp_map_script_state.h"
@@ -148,6 +149,7 @@ void Esp32NativeGameplaySelectProbe_observeConsumed(
     const EspNativeGameplayInputState* intent) {
     EspNativeGameplaySelectResult selectResult;
     EspNativeGameplaySelectStatus selectStatus;
+    EspMapLineTopologyRef lineRef;
     EspMapResidentSnapshot residentBefore;
     EspMapResidentSnapshot residentAfter;
     LegacySnapshot legacyBefore;
@@ -162,6 +164,7 @@ void Esp32NativeGameplaySelectProbe_observeConsumed(
     unsigned int keyGateCount = 0U;
     unsigned int blockedKeyCount = 0U;
     unsigned int i;
+    int lineQuery = 0;
     int inspectionOk = 1;
 
     if (intent == NULL || intent->action != ESP_NATIVE_GAMEPLAY_ACTION_SELECT ||
@@ -169,9 +172,10 @@ void Esp32NativeGameplaySelectProbe_observeConsumed(
 
     if (!probeState.readyLogged) {
         printf("\n=== Doom RPG ESP32-native SELECT front-tile observer ===\n");
-        printf("[SELECTPROBE] CONTRACT legacy SELECT first step only: dest+viewStep -> Game_executeTile flags=0x500 -> native tile/event/filter provenance. Read-only observer; current native key context is 0 because pickup/inventory gameplay is not owned yet. No bytecode execution, no door mutation, no entity trace/combat fallback, no HUD message, no sound, no animation, no render, no turn advance.\n");
-        printf("[SELECTPROBE] READY resultBytes=%u runFlags=%08x keyBits=%02x keySource=native-unowned-zero callbackPhase=pre-feedback-draw allocation=none\n",
+        printf("[SELECTPROBE] CONTRACT legacy SELECT first step only: dest+viewStep -> Game_executeTile flags=0x500 -> native tile/event/filter provenance; line-derived entity fallback is resolved with recovered line link geometry/order when the tile-event path does not identify the interaction. Read-only observer; current native key context is 0 because pickup/inventory gameplay is not owned yet. No bytecode execution, no door mutation, no broad entity trace/combat fallback, no HUD message, no sound, no animation, no render, no turn advance.\n");
+        printf("[SELECTPROBE] READY resultBytes=%u lineRefBytes=%u runFlags=%08x keyBits=%02x keySource=native-unowned-zero callbackPhase=pre-feedback-draw allocation=none arrivalDoorWitness=tile975/line35\n",
                (unsigned int)sizeof(EspNativeGameplaySelectResult),
+               (unsigned int)sizeof(EspMapLineTopologyRef),
                (unsigned int)ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS,
                (unsigned int)SELECT_KEY_BITS);
         probeState.readyLogged = 1U;
@@ -193,6 +197,8 @@ void Esp32NativeGameplaySelectProbe_observeConsumed(
         return;
     }
 
+    memset(&lineRef, 0, sizeof(lineRef));
+    lineRef.lineIndex = ESP_MAP_LINE_TOPOLOGY_NO_LINE;
     selectStatus = EspNativeGameplaySelect_resolve(intent, &selectResult);
     printf("[SELECT] RESOLVE n=%u seq=%u status=%s front=%d,%d tile=%u flags=%08x event=%s%u state=%u eventFlags=%u commands=%u range=%u..%u\n",
            (unsigned int)probeState.selects,
@@ -208,6 +214,27 @@ void Esp32NativeGameplaySelectProbe_observeConsumed(
            (unsigned int)selectResult.commandCount,
            (unsigned int)selectResult.firstCommandIndex,
            (unsigned int)selectResult.commandEndIndex);
+
+    if (selectStatus == ESP_NATIVE_GAMEPLAY_SELECT_TILE_EVENT ||
+        selectStatus == ESP_NATIVE_GAMEPLAY_SELECT_NO_TILE_EVENT) {
+        lineQuery = EspMapLineTopologyQuery_findLinkedOnTile(
+            selectResult.frontTile, &lineRef);
+        if (lineQuery < 0) {
+            inspectionOk = 0;
+        }
+        else if (lineQuery > 0) {
+            printf("[SELECT] LINE tile=%u line=%u texture=%u flags=%08x type=%u defTile=%u open=%u locked=%u linked=%u topology=legacy-line-entity\n",
+                   (unsigned int)lineRef.tileIndex,
+                   (unsigned int)lineRef.lineIndex,
+                   (unsigned int)lineRef.texture,
+                   (unsigned int)lineRef.flags,
+                   (unsigned int)lineRef.entityType,
+                   (unsigned int)lineRef.entityDefTile,
+                   (unsigned int)lineRef.open,
+                   (unsigned int)lineRef.locked,
+                   (unsigned int)lineRef.linked);
+        }
+    }
 
     if (selectStatus == ESP_NATIVE_GAMEPLAY_SELECT_TILE_EVENT) {
         EspMapEventRef eventRef;
@@ -301,7 +328,15 @@ void Esp32NativeGameplaySelectProbe_observeConsumed(
         }
     }
     else if (selectStatus == ESP_NATIVE_GAMEPLAY_SELECT_NO_TILE_EVENT) {
-        printf("[SELECT] FALLBACK tileEvent=none entityTrace=UNSUPPORTED failClosed=yes\n");
+        if (lineQuery > 0) {
+            printf("[SELECT] FALLBACK tileEvent=none lineEntity=present line=%u locked=%u interaction=%s mutation=no entityTraceBeyondLine=UNSUPPORTED\n",
+                   (unsigned int)lineRef.lineIndex,
+                   (unsigned int)lineRef.locked,
+                   lineRef.locked ? "LOCKED_FAIL_CLOSED" : "LINE_IDENTIFIED_ONLY");
+        }
+        else {
+            printf("[SELECT] FALLBACK tileEvent=none lineEntity=none entityTrace=UNSUPPORTED failClosed=yes\n");
+        }
     }
     else if (selectStatus == ESP_NATIVE_GAMEPLAY_SELECT_OUT_OF_BOUNDS) {
         printf("[SELECT] FALLBACK front=out-of-bounds entityTrace=UNSUPPORTED failClosed=yes\n");
@@ -336,11 +371,15 @@ void Esp32NativeGameplaySelectProbe_observeConsumed(
         return;
     }
 
-    printf("[SELECT] RESULT n=%u seq=%u status=%s eventFound=%u eligible=%u keyGates=%u blockedKeys=%u frame=%08x exact=yes heap=%u->%u largest=%u->%u legacyExact=yes residentExact=yes packClosed=yes bytecodeExec=no doorMutation=no entityTrace=no turnAdvance=no render=no\n",
+    printf("[SELECT] RESULT n=%u seq=%u status=%s eventFound=%u lineFound=%u line=%u locked=%u eligible=%u keyGates=%u blockedKeys=%u frame=%08x exact=yes heap=%u->%u largest=%u->%u legacyExact=yes residentExact=yes packClosed=yes bytecodeExec=no doorMutation=no broadEntityTrace=no turnAdvance=no render=no\n",
            (unsigned int)probeState.selects,
            (unsigned int)intent->sequence,
            EspNativeGameplaySelect_statusName(selectStatus),
            (unsigned int)selectResult.eventFound,
+           lineQuery > 0 ? 1U : 0U,
+           lineQuery > 0 ? (unsigned int)lineRef.lineIndex :
+                           (unsigned int)ESP_MAP_LINE_TOPOLOGY_NO_LINE,
+           lineQuery > 0 ? (unsigned int)lineRef.locked : 0U,
            eligibleCount, keyGateCount, blockedKeyCount,
            (unsigned int)frameAfter,
            (unsigned int)heapBefore, (unsigned int)heapAfter,
