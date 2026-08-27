@@ -157,11 +157,13 @@ int EspNativeGameplayHudDirection_render(
         return 0;
     }
 
-    /* FORCE_MESSAGE is a top-bar fallback, not a separate popup. Repaint its
-     * dirty owner before the final HUD direction pass; this function still
-     * performs no present, so the enclosing gameplay frame owns the one screen
-     * presentation and can roll the semantic owner back on frame failure. */
-    if (!EspNativeGameplayStatusMessage_paintIfDirty()) return 0;
+    /* Cache-priming frames precede interactive gameplay and must remain byte
+     * identical. FORCE_MESSAGE is armed lazily by the first MOVE; once armed,
+     * only a dirty owner repaints the top bar before this frame's final present. */
+    if (EspNativeGameplayStatusMessage_isReady() &&
+        !EspNativeGameplayStatusMessage_paintIfDirty()) {
+        return 0;
+    }
 
     /* Each EspNativeIndexedBmp carries a 256-entry RGB565 palette. Keep the
      * three metadata objects in one bounded transient heap block instead of
