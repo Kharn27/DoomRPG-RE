@@ -1,9 +1,10 @@
+#include <SDL.h>
 #include <stdio.h>
+
+#include "DoomRPG.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
-#include "DoomRPG.h"
 
 #include "esp_native_first_frame.h"
 #include "esp_native_graphics_catalog.h"
@@ -275,7 +276,7 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
     if (Esp32EntranceStartupRouteProbe_isDone()) {
         Esp32EntranceSpawnChainProbe_service(doomRpg);
     }
-    if (Esp32EntranceSpawnChainProbe_isDone()) {
+    if (Esp32EntranceSpawnChainProbe_isReady()) {
         serviceEntranceFirstVisibleFrame(doomRpg);
     }
 }
