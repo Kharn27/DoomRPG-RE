@@ -99,9 +99,11 @@ static int movementFlags(const EspNativeGameplayMoveResult* move,
     return 1;
 }
 
-static int phaseFatal(EspNativeGameplayMoveEventStatus status) {
+static int phaseUnsafe(EspNativeGameplayMoveEventStatus status) {
     return status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID ||
-           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_NOT_READY;
+           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_NOT_READY ||
+           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED ||
+           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_COMPLEX;
 }
 
 static void logPhase(const char* phase,
@@ -128,21 +130,24 @@ static void logPhase(const char* phase,
            result->mutated != 0U ? "yes" : "no");
 }
 
-EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executeDoorPhase(
+static EspNativeGameplayMoveEventStatus inspectDoorPhase(
     uint16_t tile,
     uint32_t runFlags,
     EspNativeGameplayMoveEventResult* outResult) {
+    const EspMapLineStateView* lineState;
     EspMapEventRef eventRef;
     EspMapEventDescriptor descriptor;
     EspMapEventFilterPlan plan;
     EspMapEventCommandFilterResult filtered;
-    EspMapLineDoorResult door;
-    EspMapLineDoorStatus doorStatus;
+    EspMapByteCode command;
     uint32_t selectedOffset = UINT32_MAX;
     uint16_t selectedGlobal = 0U;
     uint8_t selectedRemoved = 0U;
     uint8_t currentState;
     uint8_t eligibleCount = 0U;
+    uint8_t openBefore;
+    uint8_t locked;
+    uint8_t targetOpen;
     uint32_t offset;
 
     if (outResult == NULL) return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
@@ -215,49 +220,93 @@ EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executeDoorPhase(
     if (selectedOffset == UINT32_MAX || eligibleCount == 0U) {
         return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_NO_ELIGIBLE;
     }
-    if (eligibleCount != 1U) {
+    if (eligibleCount != 1U || selectedOffset > UINT8_MAX ||
+        !EspMapEvents_getCommand(&descriptor, selectedOffset, &command)) {
         return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_COMPLEX;
+    }
+
+    lineState = EspMapLineState_view();
+    if (lineState == NULL || command.arg1 > UINT16_MAX ||
+        command.arg1 >= lineState->lineCount ||
+        !EspMapLineState_getOpen(command.arg1, &openBefore) ||
+        !EspMapLineState_getLocked(command.arg1, &locked)) {
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+    }
+
+    targetOpen = command.id == ESP_MAP_OPCODE_OPENLINE ? 1U : 0U;
+    outResult->globalCommandIndex = selectedGlobal;
+    outResult->lineIndex = (uint16_t)command.arg1;
+    outResult->commandOffset = (uint8_t)selectedOffset;
+    outResult->codeId = command.id;
+    outResult->openBefore = openBefore;
+    outResult->openAfter = targetOpen;
+    outResult->locked = locked;
+    outResult->removedBefore = selectedRemoved;
+    outResult->removedAfter = selectedRemoved;
+    outResult->removeIfHandled =
+        (uint8_t)((command.arg2 & ESP_MAP_COMMAND_FLAG_REMOVE) != 0U ? 1U : 0U);
+    outResult->soundId =
+        targetOpen != 0U ? ESP_MAP_LINE_SOUND_OPEN : ESP_MAP_LINE_SOUND_CLOSE;
+
+    if (locked != 0U) {
+        outResult->openAfter = openBefore;
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_LOCKED;
+    }
+    if (openBefore == targetOpen) {
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_ALREADY_TARGET;
+    }
+    return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK;
+}
+
+EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executeDoorPhase(
+    uint16_t tile,
+    uint32_t runFlags,
+    EspNativeGameplayMoveEventResult* outResult) {
+    EspNativeGameplayMoveEventResult inspected;
+    EspNativeGameplayMoveEventStatus status;
+    EspMapEventRef eventRef;
+    EspMapEventDescriptor descriptor;
+    EspMapLineDoorResult door;
+    EspMapLineDoorStatus doorStatus;
+
+    if (outResult == NULL) return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+    memset(&inspected, 0, sizeof(inspected));
+    status = inspectDoorPhase(tile, runFlags, &inspected);
+    *outResult = inspected;
+    if (status != ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK) return status;
+
+    memset(&eventRef, 0, sizeof(eventRef));
+    if (!EspMapEvents_findByTile(tile, &eventRef) ||
+        eventRef.index != inspected.eventIndex ||
+        !EspMapEvents_describe(&eventRef, &descriptor)) {
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
     }
 
     memset(&door, 0, sizeof(door));
     doorStatus = EspMapLineState_applyDoorCommand(
-        &descriptor, selectedOffset, &door);
-
-    outResult->globalCommandIndex = selectedGlobal;
-    outResult->lineIndex = door.lineIndex;
-    outResult->soundId = door.soundId;
-    outResult->commandOffset = (uint8_t)selectedOffset;
-    outResult->codeId = door.codeId;
-    outResult->openBefore = door.openBefore;
-    outResult->openAfter = door.openAfter;
-    outResult->locked = door.locked;
-    outResult->mutated = door.mutated;
-    outResult->removeIfHandled = door.removeCommandIfHandled;
-    outResult->removedBefore = selectedRemoved;
-    outResult->removedAfter = selectedRemoved;
-
-    if (doorStatus == ESP_MAP_LINE_DOOR_LOCKED) {
-        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_LOCKED;
-    }
-    if (doorStatus == ESP_MAP_LINE_DOOR_ALREADY_TARGET) {
-        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_ALREADY_TARGET;
-    }
-    if (doorStatus == ESP_MAP_LINE_DOOR_NOT_READY) {
-        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_NOT_READY;
-    }
-    if (doorStatus != ESP_MAP_LINE_DOOR_OK || door.mutated != 1U) {
+        &descriptor, inspected.commandOffset, &door);
+    if (doorStatus != ESP_MAP_LINE_DOOR_OK || door.mutated != 1U ||
+        door.lineIndex != inspected.lineIndex ||
+        door.globalCommandIndex != inspected.globalCommandIndex ||
+        door.codeId != inspected.codeId ||
+        door.openBefore != inspected.openBefore ||
+        door.openAfter != inspected.openAfter ||
+        door.locked != inspected.locked) {
+        if (doorStatus == ESP_MAP_LINE_DOOR_OK && door.mutated != 0U) {
+            (void)EspMapLineState_setOpen(door.lineIndex, door.openBefore);
+        }
         return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
     }
 
+    outResult->mutated = 1U;
+    outResult->soundId = door.soundId;
+    outResult->removeIfHandled = door.removeCommandIfHandled;
     if (door.removeCommandIfHandled != 0U) {
-        if (!EspMapScriptState_setCommandRemoved(selectedGlobal, 1U)) {
+        if (!EspMapScriptState_setCommandRemoved(
+                door.globalCommandIndex, 1U)) {
             (void)EspMapLineState_setOpen(door.lineIndex, door.openBefore);
-            memset(outResult, 0, sizeof(*outResult));
-            outResult->tile = tile;
-            outResult->runFlags = runFlags;
-            outResult->eventIndex = descriptor.eventIndex;
-            outResult->globalCommandIndex = UINT16_MAX;
-            outResult->lineIndex = UINT16_MAX;
+            outResult->mutated = 0U;
+            outResult->openAfter = door.openBefore;
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
         }
         outResult->removedAfter = 1U;
@@ -356,8 +405,12 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
     const EspPlayerViewState* expectedBeforeView,
     const EspPlayerViewState* preparedAfterView,
     EspNativeGameplayMoveResult* ioResult) {
+    EspNativeGameplayMoveEventResult exitPreflight;
+    EspNativeGameplayMoveEventResult enterPreflight;
     EspNativeGameplayMoveEventResult exitResult;
     EspNativeGameplayMoveEventResult enterResult;
+    EspNativeGameplayMoveEventStatus exitPreflightStatus;
+    EspNativeGameplayMoveEventStatus enterPreflightStatus;
     EspNativeGameplayMoveEventStatus exitStatus;
     EspNativeGameplayMoveEventStatus enterStatus;
     EspNativeGameplayDispatchStatus dispatchStatus;
@@ -370,11 +423,30 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
         return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
     }
 
+    memset(&exitPreflight, 0, sizeof(exitPreflight));
+    memset(&enterPreflight, 0, sizeof(enterPreflight));
+    exitPreflightStatus = inspectDoorPhase(
+        ioResult->sourceTile, exitFlags, &exitPreflight);
+    enterPreflightStatus = inspectDoorPhase(
+        ioResult->destTile, enterFlags, &enterPreflight);
+    logPhase("EXIT-PREFLIGHT", ioResult->sequence,
+             exitPreflightStatus, &exitPreflight);
+    logPhase("ENTER-PREFLIGHT", ioResult->sequence,
+             enterPreflightStatus, &enterPreflight);
+
+    if (phaseUnsafe(exitPreflightStatus) || phaseUnsafe(enterPreflightStatus)) {
+        printf("[MOVEEVENT] DEFER seq=%u reason=unsupported-or-complex exit=%s enter=%s mutation=no moveCommit=no\n",
+               (unsigned int)ioResult->sequence,
+               EspNativeGameplayMoveEvents_statusName(exitPreflightStatus),
+               EspNativeGameplayMoveEvents_statusName(enterPreflightStatus));
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_DEFERRED;
+    }
+
     memset(&exitResult, 0, sizeof(exitResult));
     exitStatus = EspNativeGameplayMoveEvents_executeDoorPhase(
         ioResult->sourceTile, exitFlags, &exitResult);
     logPhase("EXIT", ioResult->sequence, exitStatus, &exitResult);
-    if (phaseFatal(exitStatus)) {
+    if (phaseUnsafe(exitStatus)) {
         return ESP_NATIVE_GAMEPLAY_DISPATCH_COMMIT_FAILED;
     }
 
@@ -392,7 +464,7 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
     enterStatus = EspNativeGameplayMoveEvents_executeDoorPhase(
         ioResult->destTile, enterFlags, &enterResult);
     logPhase("ENTER", ioResult->sequence, enterStatus, &enterResult);
-    if (phaseFatal(enterStatus)) {
+    if (phaseUnsafe(enterStatus)) {
         EspNativeGameplayDispatchStatus rollbackStatus =
             __real_EspNativeGameplayDispatch_rollbackMove(
                 preparedAfterView, expectedBeforeView, ioResult);
