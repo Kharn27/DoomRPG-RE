@@ -12,6 +12,11 @@ struct DoomRPG_s;
  */
 int Esp32IntroInput_arm(struct DoomRPG_s* doomRpg);
 
+/* Called only after the intro clock has flushed a completed framebuffer. The
+ * final Continue path is not allowed to dispose the intro until at least one
+ * full final-text frame has reached the display. */
+void Esp32IntroInput_notifyFramePresented(void);
+
 /* Drop ownership of the platform tap callback without touching intro assets. */
 void Esp32IntroInput_disarm(void);
 
