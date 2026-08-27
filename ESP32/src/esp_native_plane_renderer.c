@@ -1,7 +1,6 @@
 #include <SDL.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include "DoomRPG.h"
@@ -19,6 +18,7 @@
 #define PLANE_PALETTE_COLORS 16U
 #define MAX_PLANE_TEXTURES 24U
 #define PLANE_CACHE_SLOTS 6U
+#define PLANE_CACHE_BYTES (PLANE_CACHE_SLOTS * PLANE_TEXTURE_BYTES)
 #define EXPECTED_PLANE_MAP_BYTES 2048U
 
 typedef struct PlaneTextureDesc_s {
@@ -49,6 +49,19 @@ typedef struct PlaneWork_s {
 } PlaneWork;
 
 static EspNativePlaneRenderStats planeStats;
+
+/*
+ * Permanent bounded renderer workspace.
+ *
+ * The original native plane milestone allocated 6 x 2048 B for every frame.
+ * That happened to fit after the Junction render-resource owner, but Entrance
+ * has a different heap layout and the same malloc failed once the 21 KiB
+ * resident PAK/cache owner was enabled.  The capacity itself was already
+ * hardware-proven; only its ownership was wrong.  Keep those exact six slots
+ * in BSS so plane rendering is independent of heap fragmentation and performs
+ * no per-frame allocation.
+ */
+static uint8_t planeCacheArena[PLANE_CACHE_BYTES];
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -212,7 +225,6 @@ static int resolveTextures(PlaneWork* work) {
 
 static void releaseCache(PlaneWork* work) {
     if (work == NULL) return;
-    free(work->cacheArena);
     work->cacheArena = NULL;
     memset(work->cache, 0, sizeof(work->cache));
 }
@@ -220,9 +232,7 @@ static void releaseCache(PlaneWork* work) {
 static int initCache(PlaneWork* work) {
     uint32_t i;
     if (work == NULL) return 0;
-    work->cacheArena =
-        (uint8_t*)malloc(PLANE_CACHE_SLOTS * PLANE_TEXTURE_BYTES);
-    if (work->cacheArena == NULL) return 0;
+    work->cacheArena = planeCacheArena;
     memset(work->cache, 0, sizeof(work->cache));
     for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {
         work->cache[i].texels =
