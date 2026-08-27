@@ -19,6 +19,13 @@ static EspNativeGameplayInputState inputState;
 extern void Esp32NativeGameplayInputProbe_observeConsumed(
     const EspNativeGameplayInputState* intent) __attribute__((weak));
 
+/* Read-only SELECT milestone observer. This second weak hook deliberately does
+ * not replace the existing TURN/MOVE observer: current probes can inspect a
+ * consumed SELECT without adding state, callbacks or dependencies to the
+ * permanent input owner. */
+extern void Esp32NativeGameplaySelectProbe_observeConsumed(
+    const EspNativeGameplayInputState* intent) __attribute__((weak));
+
 static int supportedAction(uint8_t action) {
     switch (action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
@@ -181,6 +188,9 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_consume(
     inputState.pending = 0U;
     if (Esp32NativeGameplayInputProbe_observeConsumed != NULL) {
         Esp32NativeGameplayInputProbe_observeConsumed(outIntent);
+    }
+    if (Esp32NativeGameplaySelectProbe_observeConsumed != NULL) {
+        Esp32NativeGameplaySelectProbe_observeConsumed(outIntent);
     }
     return ESP_NATIVE_GAMEPLAY_INPUT_OK;
 }
