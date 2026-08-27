@@ -26,8 +26,8 @@ typedef struct EspNativeDoorAnimatorState_s {
 
 typedef char EspNativeDoorAnimationSlot_must_be_8_bytes[
     sizeof(EspNativeDoorAnimationSlot) == 8U ? 1 : -1];
-typedef char EspNativeDoorAnimatorState_must_be_80_bytes[
-    sizeof(EspNativeDoorAnimatorState) == 80U ? 1 : -1];
+typedef char EspNativeDoorAnimatorState_must_be_76_bytes[
+    sizeof(EspNativeDoorAnimatorState) == 76U ? 1 : -1];
 
 static EspNativeDoorAnimatorState animator;
 
