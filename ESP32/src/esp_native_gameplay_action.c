@@ -11,6 +11,8 @@
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_select.h"
 
+#define SELECT_REMOVE_FLAG 0x00000200UL
+
 typedef char EspNativeGameplayActionResult_must_be_28_bytes[
     sizeof(EspNativeGameplayActionResult) == 28U ? 1 : -1];
 
@@ -112,6 +114,10 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
      * following eligible state-only continuation because legacy pauses on the
      * dialog and resumes at source+1; the dialog session independently
      * revalidates that continuation before presentation and again at resume.
+     *
+     * Removable dialog commands are intentionally outside this first presenter
+     * boundary. Legacy removes them immediately after the handled dialog opcode;
+     * fail closed rather than silently losing that script mutation.
      */
     for (offset = 0U; offset < descriptor.commandCount; ++offset) {
         uint32_t global = (uint32_t)descriptor.firstCommandIndex + offset;
@@ -140,6 +146,10 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
                 family = SELECT_FAMILY_DOOR;
             }
             else if (isDialogOpcode(filtered.codeId)) {
+                if ((filtered.arg2 & SELECT_REMOVE_FLAG) != 0U) {
+                    outResult->unsupportedCodeId = filtered.codeId;
+                    return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
+                }
                 family = SELECT_FAMILY_DIALOG;
             }
             else {
