@@ -35,6 +35,9 @@ typedef struct EspNativeResidentGameplayState_s {
 static EspNativeResidentGameplayState gameplayState;
 
 static void disableGameplay(const char* reason) {
+    if (EspNativeGameplayControls_isActive()) {
+        (void)EspNativeGameplayControls_restore(1, NULL);
+    }
     gameplayState.failed = 1U;
     gameplayState.active = 0U;
     PlatformInput_setTapCallback(NULL);
@@ -60,46 +63,6 @@ static int ensureCollisionCatalog(void) {
     return ok && EspEntityDefTypeCatalog_isReady() && !EspAssetPack_isOpen();
 }
 
-static int drawVirtualControls(Render_t* render,
-                               const char* reason,
-                               int present) {
-    EspNativeGameplayControlsStats stats;
-    const uint32_t framebufferPixels =
-        (uint32_t)DOOMRPG_LOGICAL_WIDTH * (uint32_t)DOOMRPG_LOGICAL_HEIGHT;
-
-    memset(&stats, 0, sizeof(stats));
-    if (render == NULL || render->framebuffer == NULL ||
-        render->framebuffer != Esp32PlatformVideo_framebuffer() ||
-        Esp32PlatformVideo_framebufferSizeBytes() !=
-            (size_t)framebufferPixels * sizeof(uint16_t) ||
-        !EspNativeGameplayControls_draw((uint16_t*)render->framebuffer,
-                                        framebufferPixels, &stats)) {
-        printf("[VCONTROLS] FAILED reason=%s framebuffer=%p platform=%p zones=%u\n",
-               reason != NULL ? reason : "frame",
-               render != NULL ? (void*)render->framebuffer : NULL,
-               Esp32PlatformVideo_framebuffer(),
-               (unsigned int)stats.zonesDrawn);
-        return 0;
-    }
-    if (present && !Esp32PlatformVideo_present()) {
-        printf("[VCONTROLS] FAILED reason=%s present\n",
-               reason != NULL ? reason : "frame");
-        return 0;
-    }
-
-    printf("[VCONTROLS] %s reason=%s zones=%u active=%u deferred=%u pixels=%u border=%u glyph=%u presented=%d style=neon-double-ring+vector-glyph\n",
-           present ? "DRAW" : "READY",
-           reason != NULL ? reason : "frame",
-           (unsigned int)stats.zonesDrawn,
-           (unsigned int)stats.activeActions,
-           (unsigned int)stats.deferredActions,
-           (unsigned int)stats.pixelsTouched,
-           (unsigned int)stats.borderPixels,
-           (unsigned int)stats.glyphPixels,
-           present);
-    return 1;
-}
-
 static void onGameplayTap(int16_t screenX,
                           int16_t screenY,
                           uint16_t pressure,
@@ -107,6 +70,7 @@ static void onGameplayTap(int16_t screenX,
                           uint16_t rawY) {
     EspNativeGameplayTouchHit hit;
     EspNativeGameplayInputStatus status;
+    EspNativeGameplayControlsStats feedbackStats;
     int logicalX;
     int logicalY;
 
@@ -125,12 +89,26 @@ static void onGameplayTap(int16_t screenX,
     ++gameplayState.taps;
     status = EspNativeGameplayInput_route(&hit, logicalX, logicalY);
     if (status == ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+        memset(&feedbackStats, 0, sizeof(feedbackStats));
+        if (!EspNativeGameplayControls_begin(&hit, &feedbackStats) ||
+            !Esp32PlatformVideo_present()) {
+            (void)EspNativeGameplayControls_restore(0, NULL);
+            disableGameplay("touch-feedback-draw");
+            return;
+        }
         printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=%s zone=%u logical=%d,%d\n",
                (unsigned int)gameplayState.taps,
                EspNativeGameplayInput_actionName(hit.action),
                (unsigned int)hit.zone,
                logicalX,
                logicalY);
+        printf("[TOUCHFEEDBACK] FLASH zone=%u action=%s edits=%u hold=%ums frame=%08x->%08x style=junction-neon-double-ring+vector-glyph\n",
+               (unsigned int)feedbackStats.zone,
+               EspNativeGameplayInput_actionName(feedbackStats.action),
+               (unsigned int)feedbackStats.edits,
+               (unsigned int)ESP_NATIVE_GAMEPLAY_FEEDBACK_MS,
+               (unsigned int)feedbackStats.baselineFNV,
+               (unsigned int)feedbackStats.overlayFNV);
     }
     else if (status == ESP_NATIVE_GAMEPLAY_INPUT_BUSY) {
         printf("[RESIDENTGAMEPLAY] BUSY tap=%u action=%s pending=1\n",
@@ -151,13 +129,8 @@ static int renderCurrent(Render_t* render,
                (unsigned int)angle);
         return 0;
     }
-    if (!drawVirtualControls(render, reason, 1)) {
-        printf("[RESIDENTGAMEPLAY] RENDER-FAILED reason=%s controls\n",
-               reason != NULL ? reason : "action");
-        return 0;
-    }
 
-    printf("[RESIDENTGAMEPLAY] FRAME reason=%s angle=%u frame=%08x sprites=%u/%u walls=%u pixels=%u totalUs=%u presented=%u controls=12\n",
+    printf("[RESIDENTGAMEPLAY] FRAME reason=%s angle=%u frame=%08x sprites=%u/%u walls=%u pixels=%u totalUs=%u presented=%u controls=idle-invisible\n",
            reason != NULL ? reason : "action",
            (unsigned int)frame.angle,
            (unsigned int)frame.frameAfterFNV,
@@ -293,6 +266,10 @@ static void serviceMove(Render_t* render,
 
 void EspNativeResidentGameplay_reset(void) {
     PlatformInput_setTapCallback(NULL);
+    if (EspNativeGameplayControls_isActive()) {
+        (void)EspNativeGameplayControls_restore(0, NULL);
+    }
+    EspNativeGameplayControls_reset();
     EspNativeGameplayInput_reset();
     memset(&gameplayState, 0, sizeof(gameplayState));
 }
@@ -306,6 +283,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     EspNativeGameplayInputState intent;
     EspNativeGameplayInputStatus inputStatus;
     EspNativeGameplayDispatchStatus dispatchStatus;
+    EspNativeGameplayControlsStats feedbackStats;
 
     if (gameplayState.failed) return;
 
@@ -328,15 +306,12 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
 
+        EspNativeGameplayControls_reset();
         EspNativeGameplayInput_reset();
-        if (!drawVirtualControls(doomRpg->render, "INITIAL", 1)) {
-            disableGameplay("virtual-controls-initial");
-            return;
-        }
         gameplayState.active = 1U;
         PlatformInput_setTapCallback(onGameplayTap);
         printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-        printf("[RESIDENTGAMEPLAY] READY map=current touch=visible-12-zone-pad dispatch=TURN+MOVE collision=native/entityDefs=%u tileEvents=deferred SELECT/menu/automap/weapons=deferred\n",
+        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-junction-feedback dispatch=TURN+MOVE collision=native/entityDefs=%u tileEvents=deferred SELECT/menu/automap/weapons=deferred\n",
                (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         return;
     }
@@ -344,6 +319,20 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     if (doomRpg == NULL || doomRpg->render == NULL) {
         disableGameplay("missing-render");
         return;
+    }
+
+    if (EspNativeGameplayControls_isActive()) {
+        if (!EspNativeGameplayControls_isExpired()) return;
+        memset(&feedbackStats, 0, sizeof(feedbackStats));
+        if (!EspNativeGameplayControls_restore(1, &feedbackStats)) {
+            disableGameplay("touch-feedback-restore");
+            return;
+        }
+        printf("[TOUCHFEEDBACK] RESTORE zone=%u action=%s edits=%u frame=%08x exact=yes idle=invisible\n",
+               (unsigned int)feedbackStats.zone,
+               EspNativeGameplayInput_actionName(feedbackStats.action),
+               (unsigned int)feedbackStats.edits,
+               (unsigned int)feedbackStats.baselineFNV);
     }
 
     if (EspNativeGameplayInput_peek() == NULL ||
