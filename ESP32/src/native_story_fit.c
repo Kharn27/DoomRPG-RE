@@ -227,13 +227,16 @@ static void drawString2(DoomCanvas_t* doomCanvas,
                         int y,
                         int flags,
                         int startTime) {
+    const int strEnd =
+        startTime < 0 ? -1 : (doomCanvas->time - startTime) / 25;
+
     drawFont(doomCanvas,
              text,
              x,
              y,
              flags,
              0,
-             (doomCanvas->time - startTime) / 25);
+             strEnd);
 }
 
 static void scrollSpaceBG(DoomCanvas_t* doomCanvas) {

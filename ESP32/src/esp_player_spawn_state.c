@@ -43,55 +43,36 @@ static int inventoryMatchesRuntime(const EspBspInventory* inventory) {
            runtime->stringCount == inventory->strings;
 }
 
-void EspPlayerSpawn_reset(EspPlayerSpawnState* state) {
-    if (state != NULL) memset(state, 0, sizeof(*state));
-}
-
-EspPlayerSpawnStatus EspPlayerSpawn_prepareCommitted(
-    const EspMapCommittedTransitionState* transition,
-    const EspBspInventory* targetInventory,
+static EspPlayerSpawnStatus fillSpawn(
+    uint8_t targetMapId,
+    uint8_t gameplayLoadMapId,
+    uint32_t spawnParam,
+    const EspBspInventory* inventory,
     uint8_t loadType,
-    uint8_t gameIsLoaded,
     EspPlayerSpawnState* outState) {
     EspPlayerSpawnState next;
-    uint32_t spawnParam;
     uint32_t tileX;
     uint32_t tileY;
     uint32_t angle;
     uint32_t tileIndex;
 
-    if (outState != NULL) memset(outState, 0, sizeof(*outState));
-    if (transition == NULL || targetInventory == NULL || outState == NULL) {
+    if (inventory == NULL || outState == NULL ||
+        !EspMapCatalog_isValidId(targetMapId) ||
+        gameplayLoadMapId == 0U || gameplayLoadMapId > 32U) {
         return ESP_PLAYER_SPAWN_INVALID;
     }
-    if (!EspMapCommittedTransition_isCommitted(transition) ||
-        transition->phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_COMMITTED ||
-        transition->committed != 1U || transition->pendingConsumed != 1U ||
-        !EspMapCatalog_isValidId(transition->targetMapId)) {
-        return ESP_PLAYER_SPAWN_NOT_COMMITTED;
-    }
-    if (loadType != ESP_PLAYER_SPAWN_LOAD_FRESH_MAP || gameIsLoaded != 0U) {
-        return ESP_PLAYER_SPAWN_UNSUPPORTED_CONTEXT;
-    }
-    if (!inventoryMatchesTransition(transition, targetInventory)) {
-        return ESP_PLAYER_SPAWN_TARGET_MISMATCH;
-    }
-    if (!inventoryMatchesRuntime(targetInventory)) {
-        return ESP_PLAYER_SPAWN_RUNTIME_MISMATCH;
-    }
 
-    spawnParam = transition->spawnParam;
     memset(&next, 0, sizeof(next));
     next.sourceSpawnParam = spawnParam;
 
     if (spawnParam == 0U) {
-        if (targetInventory->spawnIndex >= ESP_PLAYER_SPAWN_TILE_COUNT) {
+        if (inventory->spawnIndex >= ESP_PLAYER_SPAWN_TILE_COUNT) {
             return ESP_PLAYER_SPAWN_SPAWN_INVALID;
         }
-        tileIndex = targetInventory->spawnIndex;
+        tileIndex = inventory->spawnIndex;
         tileX = tileIndex % ESP_PLAYER_SPAWN_MAP_WIDTH;
         tileY = tileIndex / ESP_PLAYER_SPAWN_MAP_WIDTH;
-        angle = targetInventory->spawnDirection;
+        angle = inventory->spawnDirection;
         next.spawnSource = ESP_PLAYER_SPAWN_SOURCE_HEADER;
         next.overrideUsed = 0U;
     }
@@ -119,9 +100,71 @@ EspPlayerSpawnStatus EspPlayerSpawn_prepareCommitted(
     next.playerSetupPending = 1U;
     next.tileEnterPending = 1U;
     next.active = 1U;
-    next.targetMapId = transition->targetMapId;
-    next.gameplayLoadMapId = transition->targetGameplayLoadMapId;
+    next.targetMapId = targetMapId;
+    next.gameplayLoadMapId = gameplayLoadMapId;
 
     *outState = next;
     return ESP_PLAYER_SPAWN_OK;
+}
+
+void EspPlayerSpawn_reset(EspPlayerSpawnState* state) {
+    if (state != NULL) memset(state, 0, sizeof(*state));
+}
+
+EspPlayerSpawnStatus EspPlayerSpawn_prepareInitial(
+    uint8_t targetMapId,
+    const EspBspInventory* targetInventory,
+    uint8_t loadType,
+    uint8_t gameIsLoaded,
+    EspPlayerSpawnState* outState) {
+    if (outState != NULL) memset(outState, 0, sizeof(*outState));
+    if (targetInventory == NULL || outState == NULL ||
+        !EspMapCatalog_isValidId(targetMapId)) {
+        return ESP_PLAYER_SPAWN_INVALID;
+    }
+    if (loadType != ESP_PLAYER_SPAWN_LOAD_FRESH_MAP || gameIsLoaded != 0U) {
+        return ESP_PLAYER_SPAWN_UNSUPPORTED_CONTEXT;
+    }
+    if (!inventoryIsComplete(targetInventory) ||
+        targetInventory->loadMapId == 0U || targetInventory->loadMapId > 32U) {
+        return ESP_PLAYER_SPAWN_TARGET_MISMATCH;
+    }
+    if (!inventoryMatchesRuntime(targetInventory)) {
+        return ESP_PLAYER_SPAWN_RUNTIME_MISMATCH;
+    }
+
+    return fillSpawn(targetMapId, targetInventory->loadMapId, 0U,
+                     targetInventory, loadType, outState);
+}
+
+EspPlayerSpawnStatus EspPlayerSpawn_prepareCommitted(
+    const EspMapCommittedTransitionState* transition,
+    const EspBspInventory* targetInventory,
+    uint8_t loadType,
+    uint8_t gameIsLoaded,
+    EspPlayerSpawnState* outState) {
+    if (outState != NULL) memset(outState, 0, sizeof(*outState));
+    if (transition == NULL || targetInventory == NULL || outState == NULL) {
+        return ESP_PLAYER_SPAWN_INVALID;
+    }
+    if (!EspMapCommittedTransition_isCommitted(transition) ||
+        transition->phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_COMMITTED ||
+        transition->committed != 1U || transition->pendingConsumed != 1U ||
+        !EspMapCatalog_isValidId(transition->targetMapId)) {
+        return ESP_PLAYER_SPAWN_NOT_COMMITTED;
+    }
+    if (loadType != ESP_PLAYER_SPAWN_LOAD_FRESH_MAP || gameIsLoaded != 0U) {
+        return ESP_PLAYER_SPAWN_UNSUPPORTED_CONTEXT;
+    }
+    if (!inventoryMatchesTransition(transition, targetInventory)) {
+        return ESP_PLAYER_SPAWN_TARGET_MISMATCH;
+    }
+    if (!inventoryMatchesRuntime(targetInventory)) {
+        return ESP_PLAYER_SPAWN_RUNTIME_MISMATCH;
+    }
+
+    return fillSpawn(transition->targetMapId,
+                     transition->targetGameplayLoadMapId,
+                     transition->spawnParam, targetInventory, loadType,
+                     outState);
 }

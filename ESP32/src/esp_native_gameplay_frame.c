@@ -13,8 +13,8 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_present_gate.h"
-#include "esp_native_junction_sprite_renderer.h"
 #include "esp_native_plane_renderer.h"
+#include "esp_native_sprite_renderer.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -28,7 +28,7 @@
 
 typedef struct GameplayFrameScratch_s {
     EspNativeGameplayFrameStats stats;
-    EspNativeJunctionSpriteStats sprites;
+    EspNativeSpriteStats sprites;
     EspNativeGameplayHudDirectionStats hud;
     EspNativeFirstFrameState world;
     uint8_t busy;
@@ -38,7 +38,12 @@ typedef struct GameplayFrameScratch_s {
 /* Single gameplay service, non-reentrant by contract. The scratch is permanent
  * bounded BSS so repeated MOVE/TURN rendering does not deepen loopTask stack.
  * Pixel payload lives only in the shared framebuffer; the gameplay world route
- * no longer allocates or copies a temporary HUD save. */
+ * no longer allocates or copies a temporary HUD save.
+ *
+ * Storage/cache activation is deliberately NOT owned here. A frame compositor
+ * must be deterministic whether the PAK is in normal or resident lease mode;
+ * the generic gameplay session owns the proven cold/warm/large-cache lifecycle.
+ */
 static GameplayFrameScratch frameScratch;
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
@@ -103,16 +108,12 @@ static uint32_t hudBandsFNV(void) {
         HUD_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
 }
 
-/* The historical Junction sprite milestone deliberately required one mode7
- * object and at least one rendered glow because its fixed north-facing pose was
- * proving those families. A runtime cardinal view may legitimately contain no
- * admitted sprite at all, or no visible mode7/glow. If that strict fixed-pose
- * witness is absent, the gameplay compositor accepts the render only when every
- * map sprite is fully classified and every admitted base/glow is accounted for.
- * Any unsupported object, deferred glow, short draw, or renderer scratch
- * mutation remains fail-closed. */
-static int spriteViewAccountingComplete(
-    const EspNativeJunctionSpriteStats* sprites) {
+/* The historical fixed Junction pose deliberately required one mode7 object
+ * and a glow. A normal resident-map view may contain neither. Production accepts
+ * a non-strict result only when every map sprite is classified and every admitted
+ * base/glow is fully accounted for. Unsupported/deferred work remains fail-closed.
+ */
+static int spriteViewAccountingComplete(const EspNativeSpriteStats* sprites) {
     uint32_t classified;
     uint32_t basesFinished;
     uint32_t glowsFinished;
@@ -144,7 +145,7 @@ int EspNativeGameplayFrame_renderTurn(
     const EspPlayerViewState* view = EspPlayerView_view();
     const EspNativePlaneRenderStats* planes;
     EspNativeGameplayFrameStats* stats = &frameScratch.stats;
-    EspNativeJunctionSpriteStats* sprites = &frameScratch.sprites;
+    EspNativeSpriteStats* sprites = &frameScratch.sprites;
     EspNativeGameplayHudDirectionStats* hud = &frameScratch.hud;
     EspNativeFirstFrameState* world = &frameScratch.world;
     uint32_t renderBeforeSpritesFNV;
@@ -199,10 +200,6 @@ int EspNativeGameplayFrame_renderTurn(
     stats->worldMicros = elapsedMicros(phaseStart);
     stats->worldRouteNoPresent = 1U;
 
-    /* Permanent post-world invariants. The temporary door/BSP witness that
-     * diagnosed the arrival collision is intentionally absent from this normal
-     * gameplay path: do not perform a second visibility traversal or success
-     * logging after an already successful world render. */
     stats->worldFrameFNV = world->frameAfterFNV;
     stats->viewportAfterWorldFNV = viewportFNV();
     stats->wallDraws = world->wallDraws;
@@ -227,7 +224,7 @@ int EspNativeGameplayFrame_renderTurn(
 
     phaseStart = esp_timer_get_time();
     renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
-    strictSpriteWitness = EspNativeJunctionSprite_render(render, sprites);
+    strictSpriteWitness = EspNativeSpriteRenderer_render(render, sprites);
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     stats->spriteMicros = elapsedMicros(phaseStart);
     if (!strictSpriteWitness) {
@@ -276,8 +273,6 @@ int EspNativeGameplayFrame_renderTurn(
     stats->spritePackReads = sprites->packReads;
     stats->viewportAfterSpritesFNV = viewportFNV();
 
-    /* The viewport-only world and sprite routes must leave both HUD bands
-     * bit-exact. This replaces the old 12.8 KiB save/restore bridge. */
     stats->temporaryHudBytes = 0U;
     stats->hudBandsRestoredFNV = hudBandsFNV();
     if (stats->hudBandsRestoredFNV != stats->hudBandsBeforeFNV) {

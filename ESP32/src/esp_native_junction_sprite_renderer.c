@@ -1,5 +1,6 @@
 #include <SDL.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,7 +20,7 @@
 #define TEXEL_HEADER 4U
 #define PAIR_BYTES 8U
 #define SHAPE_HEADER 12U
-#define MAX_SPRITES 64U
+#define MAX_VISIBLE_SPRITES 64U
 #define MAX_DIM 64
 #define MAX_MASK 512U
 #define MAX_TEXELS 2048U
@@ -33,6 +34,12 @@
 #define SKIP_RESOURCE 0x20000000UL
 #define FIXED_ANIM 0x80000000UL
 #define SORT_BIAS 0x01000000UL
+#define FLIP_HORIZONTAL 0x02000000UL
+#define TWO_SIDED 0x08000000UL
+#define ORIENT_NORTH 0x00080000UL
+#define ORIENT_SOUTH 0x00100000UL
+#define ORIENT_EAST 0x00200000UL
+#define ORIENT_WEST 0x00400000UL
 #define ORIENT_MASK 0x00780000UL
 #define ENEMY_TYPE 1U
 #define RENDER_MODE_NORMAL 0U
@@ -112,7 +119,7 @@ typedef struct Scratch_s {
 
 typedef struct SpriteWorkspace_s {
     Frame frame;
-    Order order[MAX_SPRITES];
+    Order order[MAX_VISIBLE_SPRITES];
     uint32_t seenLogical[8];
     EspNativeBspVisibilityState visibility;
 } SpriteWorkspace;
@@ -478,7 +485,7 @@ static int loadFrame(const Sources* sources,
 static int buildOrder(Render_t* render,
                       const EspMapRuntimeView* runtime,
                       const EspNativeBspVisibilityState* visibility,
-                      Order order[MAX_SPRITES],
+                      Order order[MAX_VISIBLE_SPRITES],
                       EspNativeJunctionSpriteStats* stats,
                       uint32_t* outCount) {
     uint32_t i;
@@ -486,7 +493,7 @@ static int buildOrder(Render_t* render,
     uint32_t hash = 2166136261U;
 
     if (runtime == NULL || visibility == NULL || stats == NULL ||
-        outCount == NULL || runtime->mapSpriteCount > MAX_SPRITES) {
+        outCount == NULL) {
         return 0;
     }
 
@@ -530,9 +537,27 @@ static int buildOrder(Render_t* render,
         ++stats->bspCandidates;
 
         if (id >= 82U && id <= 90U && (id & 1U) == 0U) info |= CROSS;
-        if ((info & (TILE | CROSS | SKIP_RESOURCE | ORIENT_MASK)) != 0U ||
+        if ((info & (TILE | CROSS | SKIP_RESOURCE)) != 0U ||
             EspNativeGraphicsCatalog_findSprite((uint16_t)id) == NULL) {
             ++stats->unsupported;
+            printf("[NATIVESPRITE] UNSUPPORTED index=%u id=%u info=%08x leaf=%u tile=%u cross=%u orient=%06x special=%u catalog=%u\n",
+                   (unsigned int)i,
+                   (unsigned int)id,
+                   (unsigned int)info,
+                   (unsigned int)leaf,
+                   (unsigned int)((info & TILE) != 0U),
+                   (unsigned int)((info & CROSS) != 0U),
+                   (unsigned int)(info & ORIENT_MASK),
+                   (unsigned int)((info & SKIP_RESOURCE) != 0U),
+                   (unsigned int)(EspNativeGraphicsCatalog_findSprite((uint16_t)id) != NULL));
+            return 0;
+        }
+        if (count >= MAX_VISIBLE_SPRITES) {
+            ++stats->unsupported;
+            printf("[NATIVESPRITE] OVERFLOW visibleCandidates>%u mapSprites=%u index=%u\n",
+                   (unsigned int)MAX_VISIBLE_SPRITES,
+                   (unsigned int)runtime->mapSpriteCount,
+                   (unsigned int)i);
             return 0;
         }
 
@@ -567,7 +592,7 @@ static int buildOrder(Render_t* render,
     }
     stats->orderFNV1a = hash;
     *outCount = count;
-    return count > 0U;
+    return 1;
 }
 
 static int spans(Render_t* render,
@@ -729,22 +754,13 @@ static int drawAt(Render_t* render,
                   EspNativeJunctionSpriteStats* stats) {
     EspMapSprite sprite;
     Vertex_t center;
+    Vertex_t swap;
     Line_t line;
     uint32_t animation;
     int minimum;
     int maximum;
 
     if (!EspMapRuntime_getMapSprite(parent->index, &sprite)) return 0;
-    memset(&center, 0, sizeof(center));
-    center.x = sprite.x;
-    center.y = sprite.y;
-    Render_transform2DVerts(render, &center);
-    center.x -= 0x100000;
-    if (center.x < 0x40000) {
-        if (glow) ++stats->glowNearCulled;
-        else ++stats->nearCulled;
-        return 1;
-    }
 
     animation = (parent->info & FIXED_ANIM) != 0U
                     ? ((parent->info & 0x1e00U) >> 9)
@@ -757,11 +773,80 @@ static int drawAt(Render_t* render,
     minimum = frame->xMin - 32;
     maximum = frame->xMax - 32;
     memset(&line, 0, sizeof(line));
-    line.vert1 = center;
-    line.vert2.x = center.x;
-    line.vert2.y = center.y + (maximum << 16);
+    line.vert1.z = 0;
     line.vert2.z = maximum - minimum;
-    line.vert1.y += minimum << 16;
+
+    if ((parent->info & ORIENT_MASK) == 0U) {
+        memset(&center, 0, sizeof(center));
+        center.x = sprite.x;
+        center.y = sprite.y;
+        Render_transform2DVerts(render, &center);
+        center.x -= 0x100000;
+        if (center.x < 0x40000) {
+            if (glow) ++stats->glowNearCulled;
+            else ++stats->nearCulled;
+            return 1;
+        }
+
+        line.vert1 = center;
+        line.vert2.x = center.x;
+        line.vert2.y = center.y + (maximum << 16);
+        line.vert2.z = maximum - minimum;
+        line.vert1.y += minimum << 16;
+    }
+    else {
+        const int flip = (parent->info & FLIP_HORIZONTAL) != 0U;
+
+        if ((parent->info & ORIENT_NORTH) != 0U) {
+            line.vert1.x = flip ? sprite.x - minimum : sprite.x + minimum;
+            line.vert2.x = flip ? sprite.x - maximum : sprite.x + maximum;
+            line.vert1.y = sprite.y;
+            line.vert2.y = sprite.y;
+        }
+        else if ((parent->info & ORIENT_SOUTH) != 0U) {
+            line.vert1.x = flip ? sprite.x + minimum : sprite.x - minimum;
+            line.vert2.x = flip ? sprite.x + maximum : sprite.x - maximum;
+            line.vert1.y = sprite.y;
+            line.vert2.y = sprite.y;
+        }
+        else if ((parent->info & ORIENT_WEST) != 0U) {
+            line.vert1.y = flip ? sprite.y - minimum : sprite.y + minimum;
+            line.vert2.y = flip ? sprite.y - maximum : sprite.y + maximum;
+            line.vert1.x = sprite.x;
+            line.vert2.x = sprite.x;
+        }
+        else if ((parent->info & ORIENT_EAST) != 0U) {
+            line.vert1.y = flip ? sprite.y + minimum : sprite.y - minimum;
+            line.vert2.y = flip ? sprite.y + maximum : sprite.y - maximum;
+            line.vert1.x = sprite.x;
+            line.vert2.x = sprite.x;
+        }
+        else {
+            ++stats->unsupported;
+            printf("[NATIVESPRITE] UNSUPPORTED orient-combination index=%u id=%u info=%08x\n",
+                   (unsigned int)parent->index,
+                   (unsigned int)logical,
+                   (unsigned int)parent->info);
+            return 0;
+        }
+
+        if (((line.vert1.x - render->viewX) *
+             (line.vert2.y - line.vert1.y)) +
+            ((line.vert1.y - render->viewY) *
+             (-(line.vert2.x - line.vert1.x))) <= 0) {
+            if ((parent->info & TWO_SIDED) == 0U) {
+                if (glow) ++stats->glowClipCulled;
+                else ++stats->clipCulled;
+                return 1;
+            }
+            swap = line.vert1;
+            line.vert1 = line.vert2;
+            line.vert2 = swap;
+        }
+
+        Render_transform2DVerts(render, &line.vert1);
+        Render_transform2DVerts(render, &line.vert2);
+    }
 
     if (!Render_clipLine(render, &line)) {
         if (glow) ++stats->glowClipCulled;

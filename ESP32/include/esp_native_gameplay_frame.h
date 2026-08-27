@@ -44,16 +44,21 @@ typedef struct EspNativeGameplayFrameStats_s {
 typedef char EspNativeGameplayFrameStats_must_be_104_bytes[
     sizeof(EspNativeGameplayFrameStats) == 104U ? 1 : -1];
 
-/* Recompose one complete current Junction gameplay frame after a committed
- * cardinal MOVE/TURN. The world phase now uses a viewport-only route: pixels
- * outside 160x80@0,20 are preserved in place, no historical intermediate
- * presentation exists, and no temporary HUD save buffer is allocated. The
- * bounded compass footprint is then repainted for the current angle before
- * exactly one final complete-frame presentation is issued.
+/*
+ * Recompose one complete current resident-map gameplay frame after a committed
+ * cardinal MOVE/TURN, or while priming the gameplay session cache. Map identity
+ * and pose come from EspPlayerView; no fixed Junction/Entrance fingerprint is a
+ * production precondition.
  *
- * Timing witnesses cover the gameplay compositor only (world/sprites/HUD/final
- * present); they intentionally exclude the separate input feedback hold and its
- * feedback/restore presentations. */
+ * The world phase is viewport-only: pixels outside 160x80@0,20 are preserved,
+ * there is no intermediate physical presentation and no temporary HUD save.
+ * Sprites/glows and the bounded HUD direction footprint are then repainted
+ * before exactly one complete-frame presentation.
+ *
+ * Storage/cache policy is owned by EspNativeGameplaySession. This compositor
+ * merely takes logical PAK leases through its world/sprite/HUD children, so it
+ * remains valid in normal or resident PAK mode.
+ */
 int EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,

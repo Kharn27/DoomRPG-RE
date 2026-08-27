@@ -43,7 +43,6 @@ typedef struct PlaneWork_s {
     PlaneTextureDesc textures[MAX_PLANE_TEXTURES];
     uint16_t textureCount;
     PlaneCacheSlot cache[PLANE_CACHE_SLOTS];
-    uint8_t* cacheArena;
     uint32_t cacheClock;
     EspNativePlaneRenderStats stats;
 } PlaneWork;
@@ -62,8 +61,7 @@ static uint32_t readLe32(const uint8_t* p) {
 }
 
 /* Match Render_loadPalettes(): source palettes.bin words have their 5-bit
- * red/blue channels opposite to the RGB565 words used by the framebuffer.
- */
+ * red/blue channels opposite to the RGB565 words used by the framebuffer. */
 static uint16_t sourceToFramebuffer565(uint16_t color) {
     return (uint16_t)(((color & 0x001fU) << 11) |
                       (color & 0x07e0U) |
@@ -210,23 +208,32 @@ static int resolveTextures(PlaneWork* work) {
     return 1;
 }
 
+/* Six independent 2048-byte leases preserve the hardware-proven six-slot LRU
+ * without requiring one contiguous 12288-byte heap block. This matters after
+ * the resident PAK/cache owner is active: Entrance hardware reported largest8
+ * below 12 KiB even though ample total 8-bit heap remained. */
 static void releaseCache(PlaneWork* work) {
+    uint32_t i;
     if (work == NULL) return;
-    free(work->cacheArena);
-    work->cacheArena = NULL;
-    memset(work->cache, 0, sizeof(work->cache));
+    for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {
+        free(work->cache[i].texels);
+        work->cache[i].texels = NULL;
+        work->cache[i].source = NULL;
+        work->cache[i].lastUse = 0U;
+        work->cache[i].valid = 0U;
+    }
 }
 
 static int initCache(PlaneWork* work) {
     uint32_t i;
     if (work == NULL) return 0;
-    work->cacheArena =
-        (uint8_t*)malloc(PLANE_CACHE_SLOTS * PLANE_TEXTURE_BYTES);
-    if (work->cacheArena == NULL) return 0;
     memset(work->cache, 0, sizeof(work->cache));
     for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {
-        work->cache[i].texels =
-            work->cacheArena + i * PLANE_TEXTURE_BYTES;
+        work->cache[i].texels = (uint8_t*)malloc(PLANE_TEXTURE_BYTES);
+        if (work->cache[i].texels == NULL) {
+            releaseCache(work);
+            return 0;
+        }
     }
     return 1;
 }
@@ -240,14 +247,14 @@ static int acquireTexture(PlaneWork* work,
     uint32_t readOffset;
 
     if (outTexels != NULL) *outTexels = NULL;
-    if (work == NULL || source == NULL || outTexels == NULL ||
-        work->cacheArena == NULL) return 0;
+    if (work == NULL || source == NULL || outTexels == NULL) return 0;
 
     ++work->cacheClock;
     if (work->cacheClock == 0U) work->cacheClock = 1U;
 
     for (i = 0U; i < PLANE_CACHE_SLOTS; ++i) {
         PlaneCacheSlot* slot = &work->cache[i];
+        if (slot->texels == NULL) return 0;
         if (slot->valid && slot->source != NULL &&
             slot->source->actualId == source->actualId &&
             slot->source->sourceTexelOffset == source->sourceTexelOffset) {
