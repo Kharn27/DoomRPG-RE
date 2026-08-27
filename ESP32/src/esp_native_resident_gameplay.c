@@ -6,7 +6,10 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+#include "esp_asset_pack.h"
+#include "esp_entity_def_type_catalog.h"
 #include "esp_native_first_frame.h"
+#include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
@@ -14,6 +17,7 @@
 #include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
 #include "platform_touch_events.h"
+#include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
 
 typedef struct EspNativeResidentGameplayState_s {
@@ -36,6 +40,64 @@ static void disableGameplay(const char* reason) {
     PlatformInput_setTapCallback(NULL);
     printf("[RESIDENTGAMEPLAY] FAILED reason=%s\n",
            reason != NULL ? reason : "unknown");
+}
+
+static int ensureCollisionCatalog(void) {
+    EspAssetPackEntry entityDefs;
+    int ok = 0;
+
+    if (EspEntityDefTypeCatalog_isReady()) return 1;
+    if (EspAssetPack_isOpen()) return 0;
+    memset(&entityDefs, 0, sizeof(entityDefs));
+
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+    if (EspAssetPack_findEntry("/entities.db", &entityDefs) &&
+        (entityDefs.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) == 0U &&
+        EspEntityDefTypeCatalog_buildFromPackEntry(&entityDefs)) {
+        ok = 1;
+    }
+    EspAssetPack_close();
+    return ok && EspEntityDefTypeCatalog_isReady() && !EspAssetPack_isOpen();
+}
+
+static int drawVirtualControls(Render_t* render,
+                               const char* reason,
+                               int present) {
+    EspNativeGameplayControlsStats stats;
+    const uint32_t framebufferPixels =
+        (uint32_t)DOOMRPG_LOGICAL_WIDTH * (uint32_t)DOOMRPG_LOGICAL_HEIGHT;
+
+    memset(&stats, 0, sizeof(stats));
+    if (render == NULL || render->framebuffer == NULL ||
+        render->framebuffer != Esp32PlatformVideo_framebuffer() ||
+        Esp32PlatformVideo_framebufferSizeBytes() !=
+            (size_t)framebufferPixels * sizeof(uint16_t) ||
+        !EspNativeGameplayControls_draw((uint16_t*)render->framebuffer,
+                                        framebufferPixels, &stats)) {
+        printf("[VCONTROLS] FAILED reason=%s framebuffer=%p platform=%p zones=%u\n",
+               reason != NULL ? reason : "frame",
+               render != NULL ? (void*)render->framebuffer : NULL,
+               Esp32PlatformVideo_framebuffer(),
+               (unsigned int)stats.zonesDrawn);
+        return 0;
+    }
+    if (present && !Esp32PlatformVideo_present()) {
+        printf("[VCONTROLS] FAILED reason=%s present\n",
+               reason != NULL ? reason : "frame");
+        return 0;
+    }
+
+    printf("[VCONTROLS] %s reason=%s zones=%u active=%u deferred=%u pixels=%u border=%u glyph=%u presented=%d style=neon-double-ring+vector-glyph\n",
+           present ? "DRAW" : "READY",
+           reason != NULL ? reason : "frame",
+           (unsigned int)stats.zonesDrawn,
+           (unsigned int)stats.activeActions,
+           (unsigned int)stats.deferredActions,
+           (unsigned int)stats.pixelsTouched,
+           (unsigned int)stats.borderPixels,
+           (unsigned int)stats.glyphPixels,
+           present);
+    return 1;
 }
 
 static void onGameplayTap(int16_t screenX,
@@ -89,8 +151,13 @@ static int renderCurrent(Render_t* render,
                (unsigned int)angle);
         return 0;
     }
+    if (!drawVirtualControls(render, reason, 1)) {
+        printf("[RESIDENTGAMEPLAY] RENDER-FAILED reason=%s controls\n",
+               reason != NULL ? reason : "action");
+        return 0;
+    }
 
-    printf("[RESIDENTGAMEPLAY] FRAME reason=%s angle=%u frame=%08x sprites=%u/%u walls=%u pixels=%u totalUs=%u presented=%u\n",
+    printf("[RESIDENTGAMEPLAY] FRAME reason=%s angle=%u frame=%08x sprites=%u/%u walls=%u pixels=%u totalUs=%u presented=%u controls=12\n",
            reason != NULL ? reason : "action",
            (unsigned int)frame.angle,
            (unsigned int)frame.frameAfterFNV,
@@ -256,12 +323,21 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 return;
             }
         }
+        if (!ensureCollisionCatalog()) {
+            printf("[RESIDENTGAMEPLAY] WAIT collision catalog entities.db\n");
+            return;
+        }
 
         EspNativeGameplayInput_reset();
+        if (!drawVirtualControls(doomRpg->render, "INITIAL", 1)) {
+            disableGameplay("virtual-controls-initial");
+            return;
+        }
         gameplayState.active = 1U;
         PlatformInput_setTapCallback(onGameplayTap);
         printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-        printf("[RESIDENTGAMEPLAY] READY map=current touch=queue-only dispatch=TURN+MOVE collision=native tileEvents=deferred SELECT/menu/automap/weapons=deferred\n");
+        printf("[RESIDENTGAMEPLAY] READY map=current touch=visible-12-zone-pad dispatch=TURN+MOVE collision=native/entityDefs=%u tileEvents=deferred SELECT/menu/automap/weapons=deferred\n",
+               (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         return;
     }
 
