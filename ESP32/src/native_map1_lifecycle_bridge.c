@@ -1,5 +1,6 @@
 #include <SDL.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "DoomRPG.h"
 
@@ -8,7 +9,9 @@
 
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_hud.h"
 #include "esp_native_graphics_catalog.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
 #include "esp_probe_log.h"
 #include "native_committed_transition_probe.h"
@@ -41,6 +44,7 @@
 #include "native_resident_handoff_probe.h"
 #include "native_stats_menu_intent_probe.h"
 #include "native_transition_preflight_final_probe.h"
+#include "platform_video_c_bridge.h"
 
 #define VALIDATED_FAST_FORWARD_MAX_PASSES 64U
 
@@ -50,7 +54,10 @@ static int fastForwardWaitLogged;
 static int fastForwardBlockedLogged;
 static int entranceCatalogLogged;
 static int entranceFirstFrameAttempted;
+static int entranceHudAttempted;
+static int entranceHudReady;
 static int entranceCompositeAttempted;
+static int entranceCompositeReady;
 
 void __real_Esp32IntroDispose_reset(void);
 void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
@@ -108,6 +115,8 @@ static void resetValidatedEntranceChain(void) {
     Esp32EntranceSpawnChainProbe_reset();
     EspNativeGraphicsCatalog_reset();
     EspNativeFirstFrame_reset();
+    EspNativeGameplayHud_reset();
+    EspNativeResidentGameplay_reset();
 }
 
 static void serviceValidatedEntrancePredecessors(struct DoomRPG_s* doomRpg) {
@@ -195,7 +204,7 @@ static void serviceEntranceFirstVisibleFrame(struct DoomRPG_s* doomRpgBase) {
         return;
     }
 
-    printf("[ENTRANCEFRAME] READY targetMap=%u frame=%08x->%08x walls=%u pixels=%u leaves=%u candidates=%u cache=%uH/%uM presented=%u next=generic-compositor\n",
+    printf("[ENTRANCEFRAME] READY targetMap=%u frame=%08x->%08x walls=%u pixels=%u leaves=%u candidates=%u cache=%uH/%uM presented=%u next=initial-HUD\n",
            (unsigned int)frame->targetMapId,
            (unsigned int)frame->frameBeforeFNV,
            (unsigned int)frame->frameAfterFNV,
@@ -208,6 +217,81 @@ static void serviceEntranceFirstVisibleFrame(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)frame->presented);
 }
 
+static void serviceEntranceInitialHud(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* view;
+    EspNativeGameplayHudModel model;
+    EspNativeGameplayHudStats stats;
+    EspNativeGameplayHudStatus status;
+
+    if (entranceHudAttempted || !EspNativeFirstFrame_isReady()) return;
+    entranceHudAttempted = 1;
+
+    if (doomRpg == NULL || doomRpg->render == NULL) {
+        printf("[ENTRANCEHUD] FAILED missing DoomRPG/render owner\n");
+        return;
+    }
+    view = EspPlayerView_view();
+    if (view == NULL || view->active != 1U ||
+        view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0) {
+        printf("[ENTRANCEHUD] FAILED unsettled player view=%p\n",
+               (const void*)view);
+        return;
+    }
+
+    /* Recovered new-game player model. Map identity/orientation are always
+     * taken from the permanent native view; only the fresh-game combat values
+     * remain this bounded startup contract until native player stats own them. */
+    memset(&model, 0, sizeof(model));
+    model.targetMapId = view->targetMapId;
+    model.gameplayLoadMapId = view->gameplayLoadMapId;
+    model.loadType = view->loadType;
+    model.health = 30U;
+    model.maxHealth = 30U;
+    model.armor = 0U;
+    model.maxArmor = 20U;
+    model.ammo = 8U;
+    model.weapon = 2U;
+    model.ammoType = 1U;
+    model.weaponsPresent = 1U;
+    model.destAngle = (uint8_t)view->destAngle;
+
+    memset(&stats, 0, sizeof(stats));
+    printf("\n=== Doom RPG ESP32-native resident initial HUD ===\n");
+    status = EspNativeGameplayHud_routeInitial(&model, &stats);
+    if (status != ESP_NATIVE_GAMEPLAY_HUD_OK &&
+        status != ESP_NATIVE_GAMEPLAY_HUD_ALREADY_ACTIVE) {
+        printf("[ENTRANCEHUD] FAILED status=%d map=%u loadMap=%u angle=%u\n",
+               (int)status,
+               (unsigned int)model.targetMapId,
+               (unsigned int)model.gameplayLoadMapId,
+               (unsigned int)model.destAngle);
+        return;
+    }
+    if (!EspNativeGameplayHud_isReady()) {
+        printf("[ENTRANCEHUD] FAILED route completed without HUD owner\n");
+        return;
+    }
+    if (!Esp32PlatformVideo_present()) {
+        printf("[ENTRANCEHUD] FAILED present\n");
+        return;
+    }
+
+    entranceHudReady = 1;
+    printf("[ENTRANCEHUD] READY map=%u hp=%u/%u armor=%u/%u weapon=%u ammo=%u angle=%u resources=%u pixels=%u reads=%u presented=1 next=world+sprites composite\n",
+           (unsigned int)model.targetMapId,
+           (unsigned int)model.health,
+           (unsigned int)model.maxHealth,
+           (unsigned int)model.armor,
+           (unsigned int)model.maxArmor,
+           (unsigned int)model.weapon,
+           (unsigned int)model.ammo,
+           (unsigned int)model.destAngle,
+           (unsigned int)stats.resourcesValidated,
+           (unsigned int)stats.pixelsWritten,
+           (unsigned int)stats.packReads);
+}
+
 static void serviceEntranceGameplayComposite(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     const EspPlayerViewState* view;
@@ -215,7 +299,7 @@ static void serviceEntranceGameplayComposite(struct DoomRPG_s* doomRpgBase) {
     EspNativeGraphicsCatalogStatus dependencyStatus;
     EspNativeGameplayFrameStats stats;
 
-    if (entranceCompositeAttempted || !EspNativeFirstFrame_isReady()) return;
+    if (entranceCompositeAttempted || !entranceHudReady) return;
     entranceCompositeAttempted = 1;
 
     if (doomRpg == NULL || doomRpg->render == NULL) {
@@ -244,7 +328,7 @@ static void serviceEntranceGameplayComposite(struct DoomRPG_s* doomRpgBase) {
     }
 
     printf("\n=== Doom RPG ESP32-native resident gameplay composite ===\n");
-    printf("[ENTRANCECOMPOSITE] CONTRACT reuse generic resident world + BSP-visible bounded sprite candidates + HUD direction; mapSpriteCount may exceed 64, only simultaneously visible candidates are bounded to 64; fail closed on overflow/unsupported visible sprite\n");
+    printf("[ENTRANCECOMPOSITE] CONTRACT generic resident world + full initial HUD + BSP-visible max-64 candidate sprite workset; free and N/S/E/W oriented bitshape sprites share one renderer; TILE/CROSS/special remain fail-closed with exact diagnostics\n");
     printf("[ENTRANCECOMPOSITE] CATALOG textures=%u sprites=%u storage=%u fnv=%08x dependencyStatus=%d\n",
            (unsigned int)catalog->textureCount,
            (unsigned int)catalog->spriteCount,
@@ -259,7 +343,8 @@ static void serviceEntranceGameplayComposite(struct DoomRPG_s* doomRpgBase) {
         return;
     }
 
-    printf("[ENTRANCECOMPOSITE] READY map=%u angle=%u frame=%08x sprites=%u/%u glow=%u/%u walls=%u/%u planes=%u hudPixels=%u packReads=%u+%u totalUs=%u presented=%u next=full-HUD+touch+TURN+MOVE\n",
+    entranceCompositeReady = 1;
+    printf("[ENTRANCECOMPOSITE] READY map=%u angle=%u frame=%08x sprites=%u/%u glow=%u/%u walls=%u/%u planes=%u hudPixels=%u packReads=%u+%u totalUs=%u presented=%u next=touch+TURN+MOVE\n",
            (unsigned int)view->targetMapId,
            (unsigned int)stats.angle,
            (unsigned int)stats.frameAfterFNV,
@@ -287,7 +372,10 @@ void __wrap_Esp32IntroDispose_reset(void) {
     fastForwardBlockedLogged = 0;
     entranceCatalogLogged = 0;
     entranceFirstFrameAttempted = 0;
+    entranceHudAttempted = 0;
+    entranceHudReady = 0;
     entranceCompositeAttempted = 0;
+    entranceCompositeReady = 0;
     resetValidatedEntranceChain();
 }
 
@@ -352,6 +440,12 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg) {
         serviceEntranceFirstVisibleFrame(doomRpg);
     }
     if (EspNativeFirstFrame_isReady()) {
+        serviceEntranceInitialHud(doomRpg);
+    }
+    if (entranceHudReady) {
         serviceEntranceGameplayComposite(doomRpg);
+    }
+    if (entranceCompositeReady) {
+        EspNativeResidentGameplay_service(doomRpg);
     }
 }
