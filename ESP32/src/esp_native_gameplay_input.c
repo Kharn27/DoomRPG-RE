@@ -26,6 +26,12 @@ extern void Esp32NativeGameplayInputProbe_observeConsumed(
 extern void Esp32NativeGameplaySelectProbe_observeConsumed(
     const EspNativeGameplayInputState* intent) __attribute__((weak));
 
+/* Temporary observer routing guard. A SELECT consumed while the permanent
+ * native dialog session is active belongs to dialog input, not the world
+ * front-tile observer. Keep this weak so the permanent input owner still has no
+ * hard dependency on the dialog module in builds that omit it. */
+extern int EspNativeGameplayDialog_isActive(void) __attribute__((weak));
+
 static int supportedAction(uint8_t action) {
     switch (action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
@@ -181,6 +187,8 @@ const EspNativeGameplayInputState* EspNativeGameplayInput_peek(void) {
 
 EspNativeGameplayInputStatus EspNativeGameplayInput_consume(
     EspNativeGameplayInputState* outIntent) {
+    int dialogActive = 0;
+
     if (outIntent == NULL) return ESP_NATIVE_GAMEPLAY_INPUT_INVALID;
     memset(outIntent, 0, sizeof(*outIntent));
     if (!inputState.pending) return ESP_NATIVE_GAMEPLAY_INPUT_EMPTY;
@@ -189,7 +197,11 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_consume(
     if (Esp32NativeGameplayInputProbe_observeConsumed != NULL) {
         Esp32NativeGameplayInputProbe_observeConsumed(outIntent);
     }
-    if (Esp32NativeGameplaySelectProbe_observeConsumed != NULL) {
+    if (EspNativeGameplayDialog_isActive != NULL) {
+        dialogActive = EspNativeGameplayDialog_isActive();
+    }
+    if (Esp32NativeGameplaySelectProbe_observeConsumed != NULL &&
+        !dialogActive) {
         Esp32NativeGameplaySelectProbe_observeConsumed(outIntent);
     }
     return ESP_NATIVE_GAMEPLAY_INPUT_OK;
