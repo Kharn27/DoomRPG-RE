@@ -11,8 +11,10 @@
 #include "esp_asset_pack.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_present_gate.h"
+#include "esp_native_gameplay_weapon.h"
 #include "esp_native_plane_renderer.h"
 #include "esp_native_sprite_renderer.h"
 #include "esp_player_view_state.h"
@@ -29,6 +31,7 @@
 typedef struct GameplayFrameScratch_s {
     EspNativeGameplayFrameStats stats;
     EspNativeSpriteStats sprites;
+    EspNativeGameplayWeaponStats weapon;
     EspNativeGameplayHudDirectionStats hud;
     EspNativeFirstFrameState world;
     uint8_t busy;
@@ -144,8 +147,10 @@ int EspNativeGameplayFrame_renderTurn(
     Render_t* render = (Render_t*)renderBase;
     const EspPlayerViewState* view = EspPlayerView_view();
     const EspNativePlaneRenderStats* planes;
+    const EspNativeGameplayHudState* hudState;
     EspNativeGameplayFrameStats* stats = &frameScratch.stats;
     EspNativeSpriteStats* sprites = &frameScratch.sprites;
+    EspNativeGameplayWeaponStats* weapon = &frameScratch.weapon;
     EspNativeGameplayHudDirectionStats* hud = &frameScratch.hud;
     EspNativeFirstFrameState* world = &frameScratch.world;
     uint32_t renderBeforeSpritesFNV;
@@ -171,6 +176,7 @@ int EspNativeGameplayFrame_renderTurn(
     frameScratch.busy = 1U;
     memset(stats, 0, sizeof(*stats));
     memset(sprites, 0, sizeof(*sprites));
+    memset(weapon, 0, sizeof(*weapon));
     memset(hud, 0, sizeof(*hud));
     memset(world, 0, sizeof(*world));
     totalStart = esp_timer_get_time();
@@ -271,12 +277,46 @@ int EspNativeGameplayFrame_renderTurn(
     stats->glowDraws = sprites->glowDraws;
     stats->glowPixels = sprites->glowPixels;
     stats->spritePackReads = sprites->packReads;
+
+    /* First-person weapon is a separate screen-space layer in the original
+     * compositor.  Use the already-owned compact HUD model for its immutable
+     * weapon selection/presence bits; never consult or mutate legacy Player_t. */
+    hudState = EspNativeGameplayHud_view();
+    if (hudState == NULL || hudState->active != 1U || hudState->painted != 1U) {
+        printf("[TURNFRAME] DIAG fail=WEAPON_MODEL hud=%s active=%u painted=%u\n",
+               hudState != NULL ? "yes" : "no",
+               hudState != NULL ? (unsigned int)hudState->active : 0U,
+               hudState != NULL ? (unsigned int)hudState->painted : 0U);
+        goto done;
+    }
+
+    if (!EspNativeGameplayWeapon_render(render,
+                                        hudState->model.weapon,
+                                        hudState->model.weaponsPresent,
+                                        weapon) ||
+        EspAssetPack_isOpen() ||
+        fnv1a(render, (uint32_t)sizeof(*render)) != renderAfterSpritesFNV ||
+        (hudState->model.weaponsPresent != 0U && weapon->drawn != 1U) ||
+        (hudState->model.weaponsPresent == 0U && weapon->skipped != 1U)) {
+        printf("[TURNFRAME] DIAG fail=WEAPON weapon=%u present=%u drawn=%u skipped=%u pack=%u renderStable=%s\n",
+               (unsigned int)hudState->model.weapon,
+               (unsigned int)hudState->model.weaponsPresent,
+               (unsigned int)weapon->drawn,
+               (unsigned int)weapon->skipped,
+               (unsigned int)EspAssetPack_isOpen(),
+               fnv1a(render, (uint32_t)sizeof(*render)) == renderAfterSpritesFNV
+                   ? "yes" : "no");
+        goto done;
+    }
+
+    /* Historical field name retained for the 104-byte stats ABI. It now means
+     * the completed world-sprite + first-person-weapon viewport. */
     stats->viewportAfterSpritesFNV = viewportFNV();
 
     stats->temporaryHudBytes = 0U;
     stats->hudBandsRestoredFNV = hudBandsFNV();
     if (stats->hudBandsRestoredFNV != stats->hudBandsBeforeFNV) {
-        printf("[TURNFRAME] DIAG fail=HUD_AFTER_SPRITES before=%08x after=%08x\n",
+        printf("[TURNFRAME] DIAG fail=HUD_AFTER_WEAPON before=%08x after=%08x\n",
                (unsigned int)stats->hudBandsBeforeFNV,
                (unsigned int)stats->hudBandsRestoredFNV);
         goto done;
