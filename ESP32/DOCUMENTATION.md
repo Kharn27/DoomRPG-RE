@@ -13,24 +13,45 @@ If repository state and chat history disagree, the repository wins.
 ## Current branch
 
 ```text
-latest merged main = 439d963c39d1dc6435ee9bcd91b3292fc5b59c53
-branch = agent/esp32-native-renderer-naming
-base main = 439d963c39d1dc6435ee9bcd91b3292fc5b59c53
-hardware-tested final code HEAD = cc2a8c6e7baa6c1267cde2629feead68cb2602de
+latest merged main = d0643defd772f83fba07e171950a70b104bbeb6f
+latest merged PR = #107 — ESP32 native renderer naming cleanup
+branch = agent/esp32-render-startup-bridge
+base main = d0643defd772f83fba07e171950a70b104bbeb6f
+hardware-tested final code HEAD = 88dc75f9f8e9c7ccd972bf66439eb3dd65b29127
 status = REAL-CYD PASS
 merge-ready = YES
 ```
 
-This branch is a bounded naming cleanup only. It converts the historical
-Junction-named sprite renderer implementation/header/API into the permanent
-map-generic renderer naming, with no intended rendering-behavior change.
+This branch is a bounded compatibility naming cleanup. The retained CYD
+`Render_startup()` path is now owned by the permanent API:
 
-Hardware checkpoints on the normal `esp32-cyd` firmware covered the initial
-physical file rename, the generic API promotion, and the final removal of the
-Junction compatibility header. On the final code HEAD the reported hardware
-behavior remained unchanged with no visible/apparent `FAILED` condition.
+```text
+ESP32/include/esp_render_startup_bridge.h
+ESP32/src/render_startup_bridge.c
+EspRenderStartupBridge_start()
+```
 
-All commits after `cc2a8c6e7baa6c1267cde2629feead68cb2602de` are documentation-only.
+The historical `render_startup_probe.h` header is removed. `main.cpp` and the
+bridge implementation use the permanent API directly. The bridge behavior did
+not change: it reuses PlatformVideo's 160x120 RGB565 framebuffer, leaves desktop
+`piDIB` absent, initializes retained sintable/palette state, and keeps the
+linker wrappers needed by the legacy Render compatibility shell.
+
+Real-CYD PASS was observed on the normal `esp32-cyd` firmware after the final
+shim removal. The boot reached:
+
+```text
+PRERENDER=ready
+RENDER=ready
+MAPPINGS=ready
+MENUBSP=ready
+[NATIVEBOOT] READY ... shapeData=0x0 mediaTexels=0x0
+[ENGINESESSION] READY map=1 ...
+heap=92816 heap8=27052 largest8=16372
+```
+
+No visible/apparent `FAILED`, panic or reboot was reported. All commits after
+`88dc75f9f8e9c7ccd972bf66439eb3dd65b29127` are documentation-only.
 
 ## Build environments
 
@@ -40,8 +61,7 @@ Normal reference environment:
 pio run -e esp32-cyd
 ```
 
-This is the only environment whose RAM/runtime behavior is used as the normal
-hardware authority.
+This is the hardware authority for normal RAM/runtime behavior.
 
 Optional diagnostic environment:
 
@@ -49,8 +69,8 @@ Optional diagnostic environment:
 pio run -e esp32-cyd-bringup
 ```
 
-Bring-up defines additional diagnostics and can perturb memory. Do not use its
-heap figures as production canons.
+Bring-up enables extra diagnostics and can perturb memory. Do not use its heap
+figures as production canons.
 
 ## Source layout
 
@@ -61,6 +81,7 @@ ESP32/src/esp_map_*                native map/runtime/event ownership
 ESP32/src/esp_player_*             native player/view ownership
 ESP32/src/esp_native_gameplay_*    reusable live gameplay semantics
 ESP32/src/esp_native_*renderer*    reusable rendering paths
+ESP32/src/esp_render_startup_bridge.c retained Render compatibility startup
 ESP32/src/esp_asset_pack.cpp       native PAK backing store/cache
 ESP32/src/esp_bsp_reader.c         BSP structural inventory/parser
 ESP32/src/esp_native_startup.c     generic new-game resident/spawn bootstrap
@@ -69,8 +90,8 @@ ESP32/src/native_intro_*           bounded intro compatibility path
 ESP32/src/native_main_menu_*       bounded menu compatibility path
 ```
 
-The active sprite renderer is now fully generic by filename, header, stats type
-and exported render function:
+The active sprite renderer is fully generic by filename, header, stats type and
+exported function:
 
 ```text
 ESP32/src/esp_native_sprite_renderer.c
@@ -79,14 +100,9 @@ EspNativeSpriteStats
 EspNativeSpriteRenderer_render()
 ```
 
-The historical `esp_native_junction_sprite_renderer.*` source/header/API has
-been retired from the active tree. Junction remains only a regression data corpus,
-not a renderer architecture.
-
-The older `native_map1_*`, Junction and Entrance validation ladders were already
-physically removed by the merged native engine cleanup. They are not production
-prerequisites and must not be reintroduced for a new level. Git history remains
-the detailed archaeology.
+Historical MAP1/Entrance/Junction probe ladders and the Junction renderer naming
+have been retired from the active engine. Git history remains the detailed
+archaeological record.
 
 ## Native data path
 
@@ -99,15 +115,14 @@ Map runtime backing store:
 Map loading must use the native pack plus compact resident owners. Do not add a
 new map path that reads/decompresses the old ZIP into map-wide memory.
 
-`/DoomRPG.zip` is still touched by transitional legacy menu/HUD bootstrap code in
-`main.cpp`. That is explicit technical debt, not the desired native map/storage
-architecture. Remove it only when the affected menu/HUD resources have a clean
-PAK-native startup owner; do not create a second parallel loader just to hide the
-dependency.
+`/DoomRPG.zip` is still touched by transitional legacy menu/HUD/bootstrap code in
+`main.cpp`, and the retained render-startup bridge still reaches legacy resource
+loading for `sintable.bin` / `palettes.bin`. This is explicit compatibility debt,
+not permission to move migrated BSP/runtime data back to ZIP ownership.
 
 ## Hardware logging
 
-Serial is the final hardware truth. Useful stable production tags now include:
+Serial is the final hardware truth. Stable production tags include:
 
 ```text
 [NATIVEBOOT]
@@ -120,6 +135,7 @@ Serial is the final hardware truth. Useful stable production tags now include:
 [PICKUPCORPUS]
 [INTERACTMAP]
 [RESIDENTRESET]
+[RENDERSTART]
 ```
 
 Historical one-probe-per-milestone transcripts are not required for normal
@@ -156,41 +172,35 @@ catalog/data recognition only
 0 native_mapN_* gameplay files
 ```
 
-When a later map exposes new behavior, implement the behavior once in a generic
+When another map exposes new behavior, implement the behavior once in a generic
 module and use that map as another regression corpus.
-
-## Recovery of deleted milestone detail
-
-The old `MAP1_*.md` and retired probe sources are historical evidence. Recover
-any exact old transcript/FNV/implementation from Git history around the relevant
-PR/commit rather than restoring those files to the production architecture.
-
-The durable conclusions and currently useful canons have been promoted into
-`ARCHITECTURE.md` and `PORTING_STATUS.md`.
 
 ## Known transitional cleanup items
 
-See `ARCHITECTURE.md` for the full design. The most visible remaining tree debt
-is intentionally explicit:
+See `ARCHITECTURE.md` for the full design. Remaining visible debt is intentionally
+explicit:
 
 ```text
-legacy ZIP-backed menu/HUD startup in main.cpp
-some active legacy-wrapper entry points still named *probe*
+legacy ZIP-backed menu/HUD/bootstrap resources in main.cpp
+pre_render_probe.* still names a real transitional pre-render startup stage
+config_mappings_probe.* still names a live compatibility stage
+menu_bsp_probe.* and related menu graphics probes remain transitional
+native menu sprite/overlay wrappers still carry probe symbols
 live CHANGEMAP/save/password/key/automap promotion incomplete
 combat/monsters/player-stat pickup families incomplete
 ```
 
-The historical Junction renderer naming item is complete and should not return.
-Fix the remaining debt by moving ownership into permanent generic modules, not by
-introducing new level-specific bridges.
+Do not mass-delete these. For each family, identify the real production consumer,
+promote or replace it with a permanent owner when appropriate, hardware-prove
+the resulting normal firmware, then retire only the obsolete compatibility
+surface.
 
 ## After this branch merges
 
-Do not continue from this branch by assumption. Re-read the actual GitHub `main`,
+Do not continue from this branch by assumption. Re-read actual GitHub `main`,
 record its exact merge SHA, then create the next `agent/*` branch from that SHA.
 
-The natural next cleanup is a bounded audit of one remaining active `*probe*`
-compatibility family at a time. Do not mass-delete those modules: determine the
-current production consumer, establish a permanent generic replacement/owner,
-prove it on the normal firmware when behavior changes, then retire only the
-obsolete compatibility surface.
+The natural next cleanup is another single `*probe*` compatibility family. The
+pre-render startup stage is a plausible next audit because it is directly upstream
+of the now-permanent render-startup bridge, but its behavior must be inspected
+before any rename/removal.

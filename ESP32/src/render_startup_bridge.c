@@ -9,7 +9,7 @@
 #include "SDL_Video.h"
 #include "Z_Zip.h"
 #include "platform_video_c_bridge.h"
-#include "render_startup_probe.h"
+#include "esp_render_startup_bridge.h"
 
 /* Include ESP-IDF bool macros only after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
@@ -163,7 +163,7 @@ void __wrap_Render_free(Render_t* render, boolean freePtr) {
     __real_Render_free(render, freePtr);
 }
 
-int DoomRPG_probeRenderStartup(int preRenderReady) {
+int EspRenderStartupBridge_start(int preRenderReady) {
     Render_t* render;
     byte* expectedFramebuffer;
     uint32_t heapBefore;
