@@ -269,7 +269,7 @@ change.
 MOVE source EXIT and destination ENTER event phases are transactionally coupled
 to the committed player move and rendered result.
 
-## 10. Rendering and storage hot path
+## 10. Rendering and retained Render compatibility
 
 Native rendering consumes compact map records and PAK-backed image resources:
 
@@ -280,13 +280,35 @@ Native rendering consumes compact map records and PAK-backed image resources:
 - native HUD/dialog/weapon painters;
 - bounded wall/sprite/resource caches.
 
-The renderer may reuse small recovered fixed-point helpers from legacy `Render.c`
-while keeping legacy BSP arrays NULL. This compatibility shell is temporary API
-reuse, not permission to rebuild legacy map ownership.
+The active sprite renderer is map-generic:
 
-`PlatformVideo` owns the 160x120 RGB565 framebuffer and presents x2 to the
-ILI9341. Do not optimize `PlatformVideo_present()` ahead of measured world/PAK
-hot paths merely because it is visible in profiles.
+```text
+ESP32/src/esp_native_sprite_renderer.c
+ESP32/include/esp_native_sprite_renderer.h
+EspNativeSpriteRenderer_render()
+```
+
+There is no active Junction-specific renderer implementation/API.
+
+A small part of legacy `Render` remains as a compatibility shell for recovered
+fixed-point helpers and startup state while legacy BSP arrays remain NULL. The
+permanent CYD boundary for that retained startup shell is:
+
+```text
+ESP32/src/render_startup_bridge.c
+ESP32/include/esp_render_startup_bridge.h
+EspRenderStartupBridge_start()
+```
+
+This bridge deliberately aliases `Render.framebuffer` to PlatformVideo's
+permanent 160x120 RGB565 framebuffer, keeps desktop `piDIB` absent, and loads the
+legacy sintable/palette resources still required by retained Render helpers. It
+is a generic platform compatibility boundary; it must never become a map loader
+or map-specific owner.
+
+`PlatformVideo` owns the framebuffer and presents x2 to the ILI9341. Do not
+optimize `PlatformVideo_present()` ahead of measured world/PAK hot paths merely
+because it is visible in profiles.
 
 ## 11. Source-tree policy
 
@@ -300,6 +322,7 @@ esp_map_*                  compact map/runtime/event owners
 esp_player_*               durable native player/view owners
 esp_native_gameplay_*      live reusable gameplay semantics
 esp_native_*_renderer      reusable rendering primitives
+esp_render_*               retained generic Render compatibility boundaries
 platform_*                 CYD hardware abstraction
 native_intro_*             still-bounded intro compatibility path
 native_main_menu_*         still-bounded menu compatibility path
@@ -324,18 +347,18 @@ the active tree. Git history is the detailed archaeological archive.
 Normal hardware authority is `esp32-cyd`. Bring-up builds can perturb RAM and do
 not define canonical heap figures.
 
-For a new semantic family:
+For a new semantic family or compatibility promotion:
 
 ```text
-recover exact legacy behavior
- -> design a small reusable native API/owner
+recover exact legacy behavior/current consumer
+ -> design or identify the reusable permanent API/owner
  -> add a temporary strict probe only if needed
  -> keep unsupported cases fail-closed
  -> commit + push agent/*
  -> test normal esp32-cyd on the real CYD
  -> treat Serial output as hardware truth
  -> document only observed results
- -> retire the temporary probe after permanent integration
+ -> retire the temporary probe/shim after permanent integration
 ```
 
 A milestone probe is scaffolding, not architecture.
@@ -345,17 +368,17 @@ A milestone probe is scaffolding, not architecture.
 The cleanup is intentionally incremental. Remaining transitional areas include:
 
 - `main.cpp` still performs old platform/core/layout/menu bring-up and directly
-  indexes `DoomRPG.zip` for legacy menu/HUD startup resources;
-- some active menu/graphics compatibility entry points still carry historical
-  `probe` names because their symbols are wrapped by the legacy shell;
-- the generic sprite renderer implementation still has a historical Junction
-  filename in part of the source tree;
+  indexes `DoomRPG.zip` for legacy menu/HUD/bootstrap resources;
+- `pre_render_probe.*`, `config_mappings_probe.*`, `menu_bsp_probe.*` and some
+  menu/graphics compatibility entry points still carry historical `probe` names;
+- some native menu sprite/overlay wrappers still expose probe-named linker
+  compatibility symbols;
 - live CHANGEMAP/save/password/key/automap promotion is not complete;
 - combat/monsters and several player-stat/inventory families are not native yet.
 
 These are explicit cleanup/feature boundaries. They must be removed by replacing
-them with permanent generic ownership, not by hiding them behind more per-map
-files.
+or promoting them with permanent generic ownership, not by hiding them behind
+more per-map files or deleting live compatibility behavior blindly.
 
 ## 14. Definition of a clean future level
 
