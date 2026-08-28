@@ -13,6 +13,7 @@
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_interaction_inventory.h"
 #include "esp_native_gameplay_pickup.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_resident_gameplay.h"
@@ -398,5 +399,6 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     if (pickup.fatal != 0U) return;
     __real_EspNativeGameplaySession_service(doomRpg);
     EspNativeGameplayPickup_logCorpus();
+    EspNativeGameplayInteractionInventory_log();
     servicePendingMove(doomRpg);
 }
