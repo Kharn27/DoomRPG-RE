@@ -1,12 +1,13 @@
+#include <SDL.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
-#include <esp_heap_caps.h>
-
 #include "DoomRPG.h"
 #include "Render.h"
+
+#include <esp_heap_caps.h>
 
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
