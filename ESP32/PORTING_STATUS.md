@@ -2,8 +2,8 @@
 
 Authoritative recovery/status file for the classic ESP32-2432S028R port.
 Architecture belongs in [`ARCHITECTURE.md`](ARCHITECTURE.md); this file keeps
-only the current Git boundary, hardware facts, canonical resident witnesses and
-the explicit fail-closed frontier.
+the current Git boundary, hardware facts, canonical resident witnesses and the
+explicit fail-closed frontier.
 
 Repository state wins over chat history.
 
@@ -12,73 +12,72 @@ Repository state wins over chat history.
 Latest merged baseline:
 
 ```text
-PR   = #106 — ESP32 native engine cleanup
-main = 439d963c39d1dc6435ee9bcd91b3292fc5b59c53
+PR   = #107 — ESP32 native renderer naming cleanup
+main = d0643defd772f83fba07e171950a70b104bbeb6f
 status = MERGED
 ```
 
 Current branch:
 
 ```text
-branch = agent/esp32-native-renderer-naming
-base main = 439d963c39d1dc6435ee9bcd91b3292fc5b59c53
-physical implementation rename = b192b5fe8039b4afd539b658bd01869e383dd2e5
-generic API promotion = a17dc54bf804bd0113463158ba32a68537294f27
-hardware-tested final code HEAD = cc2a8c6e7baa6c1267cde2629feead68cb2602de
+branch = agent/esp32-render-startup-bridge
+base main = d0643defd772f83fba07e171950a70b104bbeb6f
+API promotion/shim checkpoint = 9b3cdec3e7f84540b5d405d7e31dd8e8c9a89cce
+hardware-tested final code HEAD = 88dc75f9f8e9c7ccd972bf66439eb3dd65b29127
 status = REAL-CYD HARDWARE PASS
 merge-ready = YES after docs-only finalization
 ```
 
-The branch removes the last historical Junction naming from the active sprite
-renderer without changing its rendering algorithm:
+This branch promotes the retained CYD `Render_startup()` compatibility path
+from historical `probe` naming into a permanent bridge API:
 
 ```text
-ESP32/src/esp_native_junction_sprite_renderer.c
- -> ESP32/src/esp_native_sprite_renderer.c
-
-EspNativeJunctionSpriteStats
- -> EspNativeSpriteStats
-
-EspNativeJunctionSprite_render()
- -> EspNativeSpriteRenderer_render()
-
-ESP32/include/esp_native_junction_sprite_renderer.h
- -> removed
+ESP32/include/esp_render_startup_bridge.h
+EspRenderStartupBridge_start()
+ESP32/src/render_startup_bridge.c
 ```
 
-The first physical file rename was bit-for-bit. The API promotion then made
-`esp_native_sprite_renderer.h` the real owner of the stats structure and public
-symbol. The final code checkpoint replaced only the remaining historical
-identifiers in the implementation and physically removed the compatibility
-header.
+The old `ESP32/include/render_startup_probe.h` compatibility shim is physically
+removed. `main.cpp` and the implementation now include/call the permanent API
+directly. The bridge behavior itself is unchanged: it reuses the existing
+160x120 RGB565 PlatformVideo framebuffer, loads the retained sintable/palette
+resources required by legacy Render helpers, keeps `piDIB == NULL`, and owns the
+`Render_startup` / `Render_free` linker compatibility boundary.
 
-### Hardware evidence for renderer naming cleanup
+### Hardware evidence for render-startup bridge cleanup
 
-The normal `esp32-cyd` firmware was rebuilt/flashed and exercised on the real
-classic CYD during the naming pass.
+The normal `esp32-cyd` firmware was rebuilt/flashed on the real classic CYD for
+both bounded naming passes.
 
-At the first rename checkpoint, observed serial/runtime behavior included:
+PASS 1 at `9b3cdec3e7f84540b5d405d7e31dd8e8c9a89cce` proved that the generic API could
+own the compiled symbol while the old header remained only as a source shim.
+Observed heartbeat state was:
 
 ```text
-[RESIDENTGAMEPLAY] READY map=current ...
+PRERENDER=ready
+RENDER=ready
+MAPPINGS=ready
+MENUBSP=ready
+heap=92816
+heap8=27052
+largest8=16372
+```
+
+PASS 2 at final code HEAD `88dc75f9f8e9c7ccd972bf66439eb3dd65b29127`
+removed the shim and switched the two real consumers directly to
+`EspRenderStartupBridge_start()`. The real CYD again reached the generic native
+session successfully:
+
+```text
+[NATIVEBOOT] READY ... shapeData=0x0 mediaTexels=0x0
 [ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes ...
-shapeData=0x0
-mediaTexels=0x0
-heap8 before dialog lazy owner = 27052
-heap8 after dialog lazy owner = 26420
-largest8 = 16372
+[ALIVE] ... PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
+heap=92816 heap8=27052 largest8=16372
 ```
 
-Movement, rotation and scientist dialog event 88 remained functional. The dialog
-opened, fast-forwarded and paged normally with the same lazy owner behavior.
-
-The promoted generic API checkpoint was then hardware-tested successfully. The
-final code HEAD `cc2a8c6e` was also rebuilt/flashed and run on the real CYD; the
-reported result was that the game behaved as before with no visible/apparent
-`FAILED` condition. No new hardware failure was reported.
-
-This establishes `cc2a8c6e` as the hardware-tested code boundary for this branch.
-Commits after it must remain documentation-only.
+No visible/apparent `FAILED`, panic or reboot was reported. The game behaved as
+before. This establishes `88dc75f9` as the hardware-tested code boundary for
+this branch. Commits after it must remain documentation-only.
 
 ## Permanent rule
 
@@ -189,17 +188,17 @@ HUD weapon = 2
 HUD ammo = 8
 ```
 
-Resident render-cache historical canon:
+Resident render-cache stable owner/capacity canon:
 
 ```text
 owner = 21160 B
 payload = 16384 B
-SMALL-COLD  = 2119886 us
-SMALL-WARM  = 256807 us
-LARGE-LEARN = 247770 us
-LARGE-WARM  = 229719 us
-large entries = 2
+large entries after learn = 2
 ```
+
+Timing figures are observational and can vary between runs. The final
+render-startup hardware PASS still showed the expected cold/warm ordering with
+no ownership regression.
 
 Do not optimize `PlatformVideo_present()` without profiling evidence; the game
 is turn-based and redraw/presentation is demand-driven.
@@ -310,33 +309,37 @@ angle = 64
 fresh tile = 943
 ```
 
-There is no longer an active Junction-named sprite renderer source/header/API.
-Do not turn these regression values back into a Junction-specific implementation.
+There is no active Junction-named sprite renderer source/header/API. Do not turn
+these regression values back into a Junction-specific implementation.
 
-## Cleanup milestones
+## Recent cleanup milestones
 
-The major engine cleanup merged as PR #106 and is the current `main` baseline.
-It removed the historical MAP1/Junction/Entrance probe ladders from production
-and deleted their retired source/header archaeology from the active tree.
+Merged PR #106 removed the historical MAP1/Junction/Entrance probe ladders and
+retired their source/header archaeology from the active tree.
 
-The current renderer naming milestone is hardware complete:
+Merged PR #107 completed generic sprite-renderer naming:
 
 ```text
-PASS 1  physical generic renderer implementation filename
-        -> b192b5fe
+ESP32/src/esp_native_sprite_renderer.c
+ESP32/include/esp_native_sprite_renderer.h
+EspNativeSpriteStats
+EspNativeSpriteRenderer_render()
+```
+
+Current render-startup bridge cleanup:
+
+```text
+PASS 1  permanent API ownership + compatibility shim
+        -> 9b3cdec3
         -> real-CYD PASS
 
-PASS 2  generic public stats/API ownership
-        -> a17dc54b
+PASS 2  direct consumers + physical shim removal
+        -> 88dc75f9
         -> real-CYD PASS
 
-PASS 3  remove remaining Junction identifiers + compatibility header
-        -> cc2a8c6e
-        -> real-CYD PASS
-
-RESULT  branch agent/esp32-native-renderer-naming = MERGE-READY
+RESULT  branch agent/esp32-render-startup-bridge = MERGE-READY after docs-only finalization
 ```
 
 After merge, recover the new exact GitHub `main` SHA before starting another
-branch. The next bounded cleanup should audit one active `*probe*` compatibility
-family at a time; do not delete those transitional modules blindly.
+branch. Continue cleanup one active `*probe*` compatibility family at a time;
+do not mass-delete transitional modules blindly.
