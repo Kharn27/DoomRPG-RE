@@ -73,9 +73,12 @@ typedef struct EspNativeGameplayDialogResumeResult_s {
  * reuse the resident range cache; close/cancel always closes it before gameplay
  * rendering resumes.
  *
- * Only a zero-or-one state-op continuation (11/19/20) is accepted in this
- * milestone. That continuation is preflighted before the dialog becomes visible
- * so closing the dialog cannot reveal a partially unsupported script path.
+ * The core dialog owner retains its historical compact zero/one-state resume
+ * fields. Production wraps that narrow preflight with EspNativeGameplayEventChain:
+ * the complete bounded post-dialog SHOW/HIDE/UNLOCK + 11/19/20 continuation is
+ * proven before UI opens, temporarily masked from the compact owner, then
+ * executed transactionally only after CLOSE_RESUME. Unsupported families still
+ * fail closed before the player sees a dialog whose continuation cannot finish.
  */
 void EspNativeGameplayDialog_reset(void);
 int EspNativeGameplayDialog_isActive(void);
@@ -97,7 +100,7 @@ EspNativeGameplayDialogInputStatus EspNativeGameplayDialog_handleAction(
     uint8_t action,
     EspNativeGameplayDialogClose* outClose);
 
-/* Execute the preflighted continuation after CLOSE_RESUME. */
+/* Execute the preflighted production continuation after CLOSE_RESUME. */
 EspNativeGameplayDialogResumeStatus EspNativeGameplayDialog_resume(
     const EspNativeGameplayDialogClose* close,
     EspNativeGameplayDialogResumeResult* outResult);
