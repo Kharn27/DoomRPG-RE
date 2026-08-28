@@ -22,46 +22,45 @@ Current cleanup branch:
 ```text
 branch = agent/esp32-native-engine-cleanup
 base main = b6bb8f99c61afdd61f4a17c079f64c7d540aede6
-```
-
-### Hardware-tested cleanup checkpoint
-
-```text
-SHA = 5d78c65ec2e0fbeeba3db6f93038eab288bc3354
-change = historical MAP1 lifecycle bridge replaced by generic native startup
+firmware cleanup SHA = 008a0d4f5162aa7ff23ead0e560f71cc1ff0ef20
+hardware-tested branch HEAD = 55591327a35cc63bb17b46d2613569d3fe3603db
 status = REAL-CYD HARDWARE PASS
+merge-ready = YES
 ```
 
-Observed by the hardware tester on the normal `esp32-cyd` firmware:
+The firmware cleanup physically removed the retired MAP1/Junction/Entrance probe
+ladders and simplified the production source filter. The later `55591327` commit
+removed the obsolete `MAP1_*.md` archive from the active tree; Git history keeps
+the exact archaeology.
+
+### Hardware evidence for the cleanup
+
+The normal `esp32-cyd` firmware was rebuilt/flashed from the cleaned branch and
+run on the real classic CYD through new-game startup, live movement, scientist
+dialog and a regular door open/traverse/auto-close sequence.
+
+Observed stable witnesses:
 
 ```text
-new game reaches Entrance
-movement works as before
-resident interaction works as before
+[ENGINESESSION] CATALOG map=1 textures=33 sprites=45 storage=3120 fnv=29ffc14a
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINECACHE] LARGE-WARM ... cache=15000/16384B entries=212/256 large=2
 [ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes
 shapeData=0x0
 mediaTexels=0x0
-warm heap8=26928
-warm largest8=16372
-same values repeated at 48.6 s and 53.6 s uptime
+heap8 before dialog lazy owner = 27052
+heap8 after dialog lazy owner = 26420
+largest8 = 16372
 ```
 
-The supplied run also reported the expected native interaction/pickup corpus and
-kept gameplay active. Early `[NATIVEBOOT]` lines were lost when the serial
-console disconnected; they are not reconstructed here.
+Dialog event 88 opened, paged, fast-forwarded, closed and resumed its saved
+continuation with opcode 19 / exact state mutation. A regular door on line 275
+opened through four native animation frames, was traversed, then its MOVE EXIT
+opcode 16 closed it through four frames and committed the movement transaction.
+No panic, reboot, legacy map ownership, or probe-ladder dependency was observed.
 
-### Current cleanup candidate
-
-```text
-code SHA = eaf6c935c4e3a086e920b57f78f77bd5b39f7fa8
-change = retire MAP1/Junction/Entrance historical ladders from production build
-         and remove old global printf/puts probe filter
-status = AWAITING REAL-CYD BUILD/RUN
-merge-ready = NO until this checkpoint passes
-```
-
-`ARCHITECTURE.md` was added after that code commit and does not alter firmware
-behavior.
+This is the hardware proof that the deleted historical scaffolding is not a
+runtime prerequisite of the current native engine.
 
 ## Permanent rule
 
@@ -294,22 +293,26 @@ fresh tile = 943
 
 Do not turn these values back into a Junction-specific implementation.
 
-## Cleanup plan / gate
+## Cleanup milestone complete
 
-Current branch is deliberately using hardware-safe passes:
+The engine cleanup milestone is hardware complete:
 
 ```text
 PASS 1  generic startup replaces probe-built resident lifecycle
         -> hardware PASS at 5d78c65
 
-PASS 2A historical map probes leave normal build + old log wrapper removed
-        -> candidate eaf6c935, hardware test required
+PASS 2  historical MAP1/Junction/Entrance scaffolding retired from production,
+        then physically deleted from the active source tree
+        -> firmware cleanup 008a0d4f
+        -> real-CYD PASS at branch HEAD 55591327
 
-PASS 2B after 2A PASS: physically delete retired probe sources/headers and
-        obsolete MAP1_*.md archaeology; keep Git history + ARCHITECTURE.md
+DOCS    66 MAP1 milestone documents removed from the active tree
+        -> Git history remains the detailed archive
 
-PASS 3  rename remaining production symbols/files that still carry historical
-        Junction/probe names, one bounded behavior-preserving group at a time
+RESULT  branch agent/esp32-native-engine-cleanup = MERGE-READY
 ```
 
-Do not mark this branch merge-ready before PASS 2A is confirmed on the real CYD.
+Next cleanup work should start only after merge/recovery from the new exact
+`main` SHA. The natural bounded follow-up is to rename remaining production
+symbols/files that still carry historical Junction/probe names, without changing
+behavior.
