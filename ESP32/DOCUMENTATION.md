@@ -15,13 +15,18 @@ If repository state and chat history disagree, the repository wins.
 ```text
 base main = b6bb8f99c61afdd61f4a17c079f64c7d540aede6
 branch = agent/esp32-native-engine-cleanup
-hardware-tested generic-startup SHA = 5d78c65ec2e0fbeeba3db6f93038eab288bc3354
-production-build pruning SHA = eaf6c935c4e3a086e920b57f78f77bd5b39f7fa8
-build-pruning status = awaiting real-CYD validation
+firmware cleanup SHA = 008a0d4f5162aa7ff23ead0e560f71cc1ff0ef20
+hardware-tested branch HEAD = 55591327a35cc63bb17b46d2613569d3fe3603db
+cleanup status = REAL-CYD PASS
+merge-ready = YES
 ```
 
-The architecture/status documentation after `eaf6c935` is docs-only. Exact
-hardware observations belong in `PORTING_STATUS.md` after a real run.
+The final hardware run on the normal `esp32-cyd` firmware covered new-game
+startup into Entrance, movement, scientist dialog continuation, regular door
+opening, traversal, automatic close-on-exit and stable resident rendering/cache
+ownership. Exact observations are recorded in `PORTING_STATUS.md`.
+
+The commits after the hardware-tested branch HEAD are documentation-only.
 
 ## Build environments
 
@@ -60,11 +65,10 @@ ESP32/src/native_intro_*           bounded intro compatibility path
 ESP32/src/native_main_menu_*       bounded menu compatibility path
 ```
 
-Historical `native_map1_*`, Junction and Entrance validation ladders are no
-longer production prerequisites. The current cleanup candidate removes those
-translation units from the normal build. After hardware validation they can be
-physically removed from the active tree; Git history remains the detailed
-archive.
+The historical `native_map1_*`, Junction and Entrance validation ladders have
+been physically removed from the active source tree after a real-CYD hardware
+PASS. They are not production prerequisites and must not be reintroduced for a
+new level. Git history remains the detailed archaeology.
 
 ## Native data path
 
@@ -139,10 +143,9 @@ module and use that map as another regression corpus.
 
 ## Recovery of deleted milestone detail
 
-The old `MAP1_*.md` and probe sources are historical evidence. Once this cleanup
-physically removes them, recover any exact old transcript/FNV/implementation from
-Git history around the relevant PR/commit rather than restoring the files to the
-production architecture.
+The old `MAP1_*.md` and retired probe sources are historical evidence. Recover
+any exact old transcript/FNV/implementation from Git history around the relevant
+PR/commit rather than restoring those files to the production architecture.
 
 The durable conclusions and currently useful canons have been promoted into
 `ARCHITECTURE.md` and `PORTING_STATUS.md`.
@@ -162,3 +165,10 @@ combat/monsters/player-stat pickup families incomplete
 
 Fix these by moving ownership into permanent generic modules, not by introducing
 new level-specific bridges.
+
+## After this branch merges
+
+Do not continue from this branch by assumption. Re-read the actual GitHub `main`,
+record its exact merge SHA, then create the next `agent/*` branch from that SHA.
+The natural next cleanup is a bounded naming/compatibility pass over remaining
+production files that still carry historical Junction/probe names.
