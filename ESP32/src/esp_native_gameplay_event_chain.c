@@ -66,8 +66,26 @@ typedef struct ChainTransaction_s {
     uint8_t reserved[2];
 } ChainTransaction;
 
-static ChainTransaction transaction;
+/* The rollback journal is gameplay-only and comparatively large.  Keep only a
+ * pointer in BSS so menu/map startup retains its proven contiguous heap margin;
+ * acquire the reusable owner before the first dialog with a real continuation. */
+static ChainTransaction* transactionOwner;
+#define transaction (*transactionOwner)
+
 static uint8_t corpusLogged;
+
+static int ensureTransactionOwner(void) {
+    if (transactionOwner != NULL) return 1;
+    transactionOwner = (ChainTransaction*)SDL_calloc(1, sizeof(*transactionOwner));
+    if (transactionOwner == NULL) {
+        printf("[DIALOGCHAIN] DEFER reason=owner-allocation bytes=%u\n",
+               (unsigned int)sizeof(*transactionOwner));
+        return 0;
+    }
+    printf("[DIALOGCHAIN] OWNER bytes=%u allocation=lazy-gameplay\n",
+           (unsigned int)sizeof(*transactionOwner));
+    return 1;
+}
 
 static int eventDescriptorForIndex(uint16_t eventIndex,
                                    EspMapEventDescriptor* outDescriptor) {
@@ -169,6 +187,12 @@ EspNativeGameplayEventChain_maskForDialogBegin(
     status = buildPlan(eventIndex, resumeCommandOffset, runFlags, &plan);
     if (status != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) return status;
 
+    /* Prove the rollback owner exists before presentation.  A close/resume must
+     * never discover an allocation failure after the player has seen dialog UI. */
+    if (plan.count != 0U && !ensureTransactionOwner()) {
+        return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY;
+    }
+
     for (i = 0U; i < plan.count; ++i) {
         outMask->global[i] = plan.command[i].global;
         outMask->removedBefore[i] = plan.command[i].removedBefore;
@@ -201,8 +225,11 @@ int EspNativeGameplayEventChain_restoreDialogMask(
 }
 
 static void clearTransaction(void) {
-    uint8_t* backup = transaction.topologyBytes;
-    uint32_t capacity = transaction.topologyCapacity;
+    uint8_t* backup;
+    uint32_t capacity;
+    if (transactionOwner == NULL) return;
+    backup = transaction.topologyBytes;
+    capacity = transaction.topologyCapacity;
     memset(&transaction, 0, sizeof(transaction));
     transaction.topologyBytes = backup;
     transaction.topologyCapacity = capacity;
@@ -211,6 +238,7 @@ static void clearTransaction(void) {
 static int captureTopology(void) {
     const EspMapSpriteTopologyView* view = EspMapSpriteTopology_view();
     uint8_t* next;
+    if (transactionOwner == NULL) return 0;
     if (transaction.topologyCaptured) return 1;
     if (view == NULL || view->storage == NULL || view->storageBytes == 0U) return 0;
     if (transaction.topologyCapacity < view->storageBytes) {
@@ -233,6 +261,7 @@ static int restoreTransaction(void) {
     int ok = 1;
     int i;
 
+    if (transactionOwner == NULL) return 0;
     for (i = (int)transaction.removedCount - 1; i >= 0; --i) {
         if (!EspMapScriptState_setCommandRemoved(
                 transaction.removed[i].global,
@@ -276,6 +305,7 @@ static int restoreTransaction(void) {
 
 static int recordRemoved(uint16_t global, uint8_t before, uint8_t after) {
     ChainRemovedUndo* undo;
+    if (transactionOwner == NULL) return 0;
     if (before == after) return 1;
     if (transaction.removedCount >= ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS)
         return 0;
@@ -316,6 +346,9 @@ static EspNativeGameplayDialogResumeStatus executeChain(
         return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
     }
     if (plan.count == 0U) return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND;
+    if (!ensureTransactionOwner()) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED;
+    }
 
     clearTransaction();
     transaction.active = 1U;
@@ -439,7 +472,8 @@ int __wrap_EspNativeGameplayDialog_rollbackResume(
     const EspNativeGameplayDialogResumeResult* result) {
     int ok;
     if (result == NULL || result->rollbackAvailable != 1U ||
-        transaction.active != 1U || transaction.mutated != 1U ||
+        transactionOwner == NULL || transaction.active != 1U ||
+        transaction.mutated != 1U ||
         result->globalCommandIndex != transaction.firstGlobal) {
         return 0;
     }
