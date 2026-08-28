@@ -12,7 +12,7 @@
 #include "platform_input.h"
 #include "platform_video.h"
 #include "pre_render_probe.h"
-#include "render_startup_probe.h"
+#include "esp_render_startup_bridge.h"
 #include "soft_xpt2046.h"
 #include "Z_Zip.h"
 
@@ -293,7 +293,7 @@ namespace
         enginePreRenderReady =
             DoomRPG_probePreRenderStartup(engineLayoutReady ? 1 : 0) != 0;
         engineRenderStartupReady =
-            DoomRPG_probeRenderStartup(enginePreRenderReady ? 1 : 0) != 0;
+            EspRenderStartupBridge_start(enginePreRenderReady ? 1 : 0) != 0;
 
         if (engineRenderStartupReady)
         {
