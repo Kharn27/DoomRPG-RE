@@ -31,6 +31,7 @@ typedef struct EspNativeGameplayPickupState_s {
     uint8_t* consumedBits;
     uint32_t consumedBytes;
     uint32_t spriteCount;
+    uint32_t arenaFNV;
     uint16_t knownWeapons;
     uint8_t targetMapId;
     uint8_t selectedWeapon;
@@ -67,7 +68,10 @@ static uint16_t tileForView(const EspPlayerViewState* view) {
 }
 
 static int consumed(uint32_t spriteIndex) {
-    return pickup.consumedBits != NULL && spriteIndex < pickup.spriteCount &&
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    return pickup.ready == 1U && runtime != NULL && pickup.arenaFNV != 0U &&
+           runtime->arenaFNV1a == pickup.arenaFNV &&
+           pickup.consumedBits != NULL && spriteIndex < pickup.spriteCount &&
            ((pickup.consumedBits[spriteIndex >> 3] >>
              (spriteIndex & 7U)) & 1U) != 0U;
 }
@@ -92,15 +96,16 @@ static int ensureOwner(uint8_t targetMapId) {
     uint32_t bytes;
     uint8_t* next;
 
-    if (runtime == NULL || hud == NULL || hud->active != 1U ||
-        hud->painted != 1U || targetMapId == 0U ||
-        hud->model.targetMapId != targetMapId ||
+    if (runtime == NULL || runtime->arenaFNV1a == 0U ||
+        hud == NULL || hud->active != 1U || hud->painted != 1U ||
+        targetMapId == 0U || hud->model.targetMapId != targetMapId ||
         runtime->mapSpriteCount == 0U || runtime->mapSpriteCount > UINT16_MAX) {
         return 0;
     }
     bytes = (runtime->mapSpriteCount + 7U) >> 3;
 
     if (!pickup.ready || pickup.targetMapId != targetMapId ||
+        pickup.arenaFNV != runtime->arenaFNV1a ||
         pickup.spriteCount != runtime->mapSpriteCount) {
         if (pickup.consumedBytes < bytes) {
             next = (uint8_t*)heap_caps_realloc(pickup.consumedBits,
@@ -112,6 +117,7 @@ static int ensureOwner(uint8_t targetMapId) {
         }
         memset(pickup.consumedBits, 0, bytes);
         pickup.spriteCount = runtime->mapSpriteCount;
+        pickup.arenaFNV = runtime->arenaFNV1a;
         pickup.targetMapId = targetMapId;
         pickup.knownWeapons = 0U;
         if (hud->model.weaponsPresent != 0U &&
@@ -122,8 +128,9 @@ static int ensureOwner(uint8_t targetMapId) {
         pickup.selectedOverride = 0U;
         pickup.ready = 1U;
         pickup.corpusLogged = 0U;
-        printf("[PICKUP] OWNER map=%u sprites=%u consumedBytes=%u knownWeapons=%04x selected=%u allocation=lazy-gameplay\n",
+        printf("[PICKUP] OWNER map=%u arena=%08x sprites=%u consumedBytes=%u knownWeapons=%04x selected=%u allocation=lazy-gameplay\n",
                (unsigned int)targetMapId,
+               (unsigned int)pickup.arenaFNV,
                (unsigned int)runtime->mapSpriteCount,
                (unsigned int)bytes,
                (unsigned int)pickup.knownWeapons,
@@ -149,7 +156,10 @@ int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
 
 const EspNativeGameplayHudState* __wrap_EspNativeGameplayHud_view(void) {
     const EspNativeGameplayHudState* base = __real_EspNativeGameplayHud_view();
-    if (base == NULL || pickup.ready != 1U || pickup.selectedOverride != 1U ||
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    if (base == NULL || runtime == NULL || pickup.ready != 1U ||
+        pickup.arenaFNV != runtime->arenaFNV1a ||
+        pickup.selectedOverride != 1U ||
         base->model.targetMapId != pickup.targetMapId ||
         pickup.selectedWeapon >= PICKUP_WEAPON_LIMIT) {
         return base;
@@ -377,8 +387,9 @@ void EspNativeGameplayPickup_logCorpus(void) {
         }
     }
 
-    printf("[PICKUPCORPUS] READY map=%u sprites=%u pickupEntities=%u weaponType5=%u worldType3=%u inventoryType4=%u ammoType6=%u ammoType16=%u\n",
+    printf("[PICKUPCORPUS] READY map=%u arena=%08x sprites=%u pickupEntities=%u weaponType5=%u worldType3=%u inventoryType4=%u ammoType6=%u ammoType16=%u\n",
            (unsigned int)view->targetMapId,
+           (unsigned int)pickup.arenaFNV,
            (unsigned int)topology->spriteCount,
            (unsigned int)pickupTotal,
            (unsigned int)counts[PICKUP_ENTITY_TYPE_WEAPON],
