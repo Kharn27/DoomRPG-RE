@@ -4,6 +4,8 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+#include <esp_heap_caps.h>
+
 /*
  * Legacy Render_beginLoadMap() always calls Render_loadMappings().  On desktop
  * that routine opens/decompresses mappings.bin first and only then frees the
@@ -19,6 +21,8 @@
 boolean __real_Render_beginLoadMap(Render_t* render, int mapNameID);
 
 boolean __wrap_Render_beginLoadMap(Render_t* render, int mapNameID) {
+    uint32_t heapBefore = 0U;
+    uint32_t largestBefore = 0U;
     int hadMappings = 0;
 
     if (render != NULL) {
@@ -26,6 +30,11 @@ boolean __wrap_Render_beginLoadMap(Render_t* render, int mapNameID) {
                       render->mediaBitShapeOffsets != NULL ||
                       render->mediaTexturesIds != NULL ||
                       render->mediaSpriteIds != NULL;
+        if (hadMappings) {
+            heapBefore = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+            largestBefore =
+                (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        }
 
         if (render->mediaTexelOffsets != NULL) {
             SDL_free(render->mediaTexelOffsets);
@@ -45,10 +54,14 @@ boolean __wrap_Render_beginLoadMap(Render_t* render, int mapNameID) {
         }
 
         if (hadMappings) {
-            printf("[MAPPINGS] RELEASE-BEFORE-MAP map=%d textureCnt=%d spriteCnt=%d reason=bound-inflate-peak\n",
+            printf("[MAPPINGS] RELEASE-BEFORE-MAP map=%d textureCnt=%d spriteCnt=%d heap8=%u->%u largest8=%u->%u reason=bound-inflate-peak\n",
                    mapNameID,
                    render->textureCnt,
-                   render->spriteCnt);
+                   render->spriteCnt,
+                   (unsigned int)heapBefore,
+                   (unsigned int)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                   (unsigned int)largestBefore,
+                   (unsigned int)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         }
     }
 
