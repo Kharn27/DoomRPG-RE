@@ -16,6 +16,7 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_move_events.h"
 #include "esp_native_gameplay_select.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
@@ -212,11 +213,13 @@ static void serviceMove(Render_t* render,
     EspPlayerViewState beforeView;
     EspPlayerViewState afterView;
     EspNativeGameplayMoveResult result;
+    EspNativeGameplayMoveDialogIntent moveDialog;
     EspNativeGameplayDispatchStatus status;
 
     memset(&beforeView, 0, sizeof(beforeView));
     memset(&afterView, 0, sizeof(afterView));
     memset(&result, 0, sizeof(result));
+    memset(&moveDialog, 0, sizeof(moveDialog));
 
     status = EspNativeGameplayDispatch_prepareMove(
         intent, &beforeView, &afterView, &result);
@@ -241,6 +244,16 @@ static void serviceMove(Render_t* render,
     }
 
     status = EspNativeGameplayDispatch_commitMove(&beforeView, &afterView, &result);
+    if (status == ESP_NATIVE_GAMEPLAY_DISPATCH_DEFERRED) {
+        ++gameplayState.deferred;
+        printf("[RESIDENTGAMEPLAY] MOVE-EVENT-DEFER n=%u seq=%u action=%s tile=%u->%u worldStable=yes gameplayActive=yes\n",
+               (unsigned int)gameplayState.deferred,
+               (unsigned int)result.sequence,
+               EspNativeGameplayInput_actionName(intent->action),
+               (unsigned int)result.sourceTile,
+               (unsigned int)result.destTile);
+        return;
+    }
     if (status != ESP_NATIVE_GAMEPLAY_DISPATCH_OK) {
         disableGameplay("move-commit");
         return;
@@ -261,8 +274,52 @@ static void serviceMove(Render_t* render,
         return;
     }
 
+    if (EspNativeGameplayMoveEvents_pendingDialog(result.sequence, &moveDialog)) {
+        EspNativeGameplayDialogBeginStatus dialogStatus =
+            EspNativeGameplayDialog_begin(
+                moveDialog.eventIndex,
+                moveDialog.commandOffset,
+                moveDialog.runFlags);
+        if (dialogStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+            status = EspNativeGameplayDispatch_rollbackMove(
+                &afterView, &beforeView, &result);
+            if (status != ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK ||
+                !renderCurrent(render, (uint8_t)beforeView.viewAngle,
+                               "MOVE-DIALOG-ROLLBACK")) {
+                disableGameplay("move-dialog-open-rollback");
+                return;
+            }
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] MOVE-DIALOG-DEFER n=%u seq=%u event=%u cmd=%u opcode=%u status=%s moveRolledBack=yes gameplayActive=yes\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)result.sequence,
+                   (unsigned int)moveDialog.eventIndex,
+                   (unsigned int)moveDialog.commandOffset,
+                   (unsigned int)moveDialog.codeId,
+                   EspNativeGameplayDialog_beginStatusName(dialogStatus));
+            return;
+        }
+        if (!EspNativeGameplayMoveEvents_finishPendingDialog(result.sequence)) {
+            disableGameplay("move-dialog-finish-lease");
+            return;
+        }
+        ++gameplayState.moves;
+        ++gameplayState.dialogs;
+        printf("[RESIDENTGAMEPLAY] MOVE-DIALOG n=%u seq=%u action=%s tile=%u->%u event=%u cmd=%u opcode=%u active=yes back=%s pauseScript=yes skipTurn=yes continuation=preflighted committed=yes\n",
+               (unsigned int)gameplayState.dialogs,
+               (unsigned int)result.sequence,
+               EspNativeGameplayInput_actionName(intent->action),
+               (unsigned int)result.sourceTile,
+               (unsigned int)result.destTile,
+               (unsigned int)moveDialog.eventIndex,
+               (unsigned int)moveDialog.commandOffset,
+               (unsigned int)moveDialog.codeId,
+               moveDialog.codeId == ESP_MAP_OPCODE_DIALOG ? "yes" : "no");
+        return;
+    }
+
     ++gameplayState.moves;
-    printf("[RESIDENTGAMEPLAY] MOVE n=%u seq=%u action=%s tile=%u->%u delta=%d,%d pos=%d,%d moveEvents=door15/16-live-other-deferred committed=yes\n",
+    printf("[RESIDENTGAMEPLAY] MOVE n=%u seq=%u action=%s tile=%u->%u delta=%d,%d pos=%d,%d moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred committed=yes\n",
            (unsigned int)gameplayState.moves,
            (unsigned int)result.sequence,
            EspNativeGameplayInput_actionName(intent->action),
@@ -534,7 +591,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         gameplayState.active = 1U;
         PlatformInput_setTapCallback(onGameplayTap);
         printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26 collision=native/entityDefs=%u moveEvents=door15/16-live-other-deferred doorAnimation=regular4frame-live SELECT-entity/other/turn-advance/menu/automap/weapons=deferred\n",
+        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26 collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live SELECT-entity/other/turn-advance/menu/automap/weapons=deferred\n",
                (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         return;
     }

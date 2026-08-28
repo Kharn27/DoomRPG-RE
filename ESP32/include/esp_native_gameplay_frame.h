@@ -52,12 +52,12 @@ typedef char EspNativeGameplayFrameStats_must_be_104_bytes[
  *
  * The world phase is viewport-only: pixels outside 160x80@0,20 are preserved,
  * there is no intermediate physical presentation and no temporary HUD save.
- * Sprites/glows and the bounded HUD direction footprint are then repainted
- * before exactly one complete-frame presentation.
+ * Map sprites/glows, the idle first-person weapon and the bounded HUD direction
+ * footprint are then repainted before exactly one complete-frame presentation.
  *
  * Storage/cache policy is owned by EspNativeGameplaySession. This compositor
- * merely takes logical PAK leases through its world/sprite/HUD children, so it
- * remains valid in normal or resident PAK mode.
+ * merely takes logical PAK leases through its world/sprite/weapon/HUD children,
+ * so it remains valid in normal or resident PAK mode.
  */
 int EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,

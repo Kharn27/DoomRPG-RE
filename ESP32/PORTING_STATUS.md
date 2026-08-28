@@ -5,19 +5,19 @@ Authoritative recovery point for the classic ESP32-2432S028R port. Current GitHu
 ## Latest merged baseline
 
 ```text
-PR   = #103 — native Action dialog + resume
-main = 7ff701245b0fda41de3cda7bd2fb65cad15eb218
+PR   = #104 — native dialog font hotpath
+main = 37d4bc760e0715216f1adaea9d69548a5ab31ab7
 status = MERGED
 ```
 
-PR #103 merged the bounded production `EV_DIALOG` presenter, Action fast-forward/paging, close and state-only script resume on top of the generic resident gameplay engine.
+PR #104 merged the hardware-proven grouped indexed-BMP dialog-font row-read hotpath on top of the resident native gameplay/dialog engine.
 
-## Current candidate — dialog font hotpath
+## Current candidate — gameplay interaction expansion
 
 ```text
-branch = agent/esp32-native-dialog-font-hotpath
-base main = 7ff701245b0fda41de3cda7bd2fb65cad15eb218
-hardware-tested implementation SHA = 777482b038088b232dcbfe64b2421d12aad3de15
+branch = agent/esp32-native-gameplay-force-message
+base main = 37d4bc760e0715216f1adaea9d69548a5ab31ab7
+hardware-tested implementation SHA = 0c6f7ffac0e3cf47a60aa2315da04f551d2a51bc
 status = REAL-CYD HARDWARE PASS
 merge-ready = YES
 post-test commits = documentation-only
@@ -25,10 +25,11 @@ post-test commits = documentation-only
 
 Latest hardware archive:
 
-- [`MAP1_NATIVE_DIALOG_FONT_HOTPATH.md`](MAP1_NATIVE_DIALOG_FONT_HOTPATH.md) — generic indexed-BMP grouped row reads, 1024-B BSS scratch, dialog fingerprints/semantics preserved and large real-CYD fluidity gain.
+- [`MAP1_NATIVE_GAMEPLAY_INTERACTION_EXPANSION.md`](MAP1_NATIVE_GAMEPLAY_INTERACTION_EXPANSION.md) — production FORCE_MESSAGE/NOTE interaction ownership, bounded mixed dialog continuation, native weapon presentation/pickup boundary, systematic corpus diagnostics, and the no-PSRAM mappings reload peak guard.
 
 Previous relevant archives:
 
+- [`MAP1_NATIVE_DIALOG_FONT_HOTPATH.md`](MAP1_NATIVE_DIALOG_FONT_HOTPATH.md)
 - [`MAP1_NATIVE_GAMEPLAY_DIALOG_RESUME.md`](MAP1_NATIVE_GAMEPLAY_DIALOG_RESUME.md)
 - [`MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md`](MAP1_NATIVE_GENERIC_DOOR_ANIMATION.md)
 - [`MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md`](MAP1_NATIVE_GENERIC_DOOR_MOVE_CLOSE.md)
@@ -50,8 +51,6 @@ Production runtime remains:
 
 Historical `MAP1_*`, `ENTRANCE*` and `JUNCTION*` probes/log labels are regression evidence only. Unsupported behavior must be implemented as a bounded generic family and remain fail-closed elsewhere.
 
-After `TransitionPreflightFinal` succeeds, historical startup probes have no runtime blocking authority. `EspNativeGameplaySession` is the live runtime owner.
-
 ## Permanent memory / architecture invariants
 
 ```text
@@ -68,7 +67,7 @@ legacy Game.entities = 0
 legacy Game.monsters = 0
 ```
 
-Prefer compact immutable arenas, explicit small mutable owners, bounded caches and small buffers. Never reintroduce map-wide decoded graphics or pointer-heavy desktop ownership just to recover one behavior.
+Prefer compact immutable arenas, explicit small mutable owners, bounded caches and small buffers. Post-playing owners should be lazy when practical so they do not consume scarce boot/menu memory.
 
 ## Entrance resident canon
 
@@ -116,7 +115,7 @@ legacy Game.entities = 0
 legacy Game.monsters = 0
 ```
 
-## Generic session / renderer / HUD / cache — hardware PASS
+## Generic session / renderer / HUD / cache — hardware proven baseline
 
 Initial player/view:
 
@@ -130,7 +129,7 @@ gameplayLoadMapId = 1
 source = BSP HEADER
 ```
 
-Graphics catalog and initial frame:
+Graphics catalog and initial frame canon:
 
 ```text
 textures = 33
@@ -141,7 +140,7 @@ initial world frame = 71ca7465
 initial walls = 8 / 4430 pixels
 ```
 
-Initial HUD:
+Initial HUD canon:
 
 ```text
 hp = 30/30
@@ -152,7 +151,7 @@ resources = 5
 pixels = 7538
 ```
 
-Permanent render-cache lifecycle:
+Permanent render-cache lifecycle canon:
 
 ```text
 resident owner = 21160 B
@@ -166,44 +165,142 @@ payload after prime = 14645 / 16384 B
 large entries = 2
 ```
 
-Interactive gameplay frames remain view-dependent, commonly around 0.2-0.4 s on the current full-frame compositor. `PlatformVideo_present()` is about 34 ms and is not the principal world-render bottleneck.
+Interactive gameplay frames remain view-dependent. `PlatformVideo_present()` is about 34 ms and is not the principal world-render bottleneck; do not optimize it reflexively.
 
-## Native gameplay boundary — hardware PASS
+## Native gameplay boundary — REAL-CYD hardware PASS
 
-Production-enabled on Entrance:
+Production-enabled on Entrance now includes:
 
 ```text
-12-zone calibrated touch + 120-ms transient feedback
+12-zone calibrated touch + transient feedback
 TURN_LEFT / TURN_RIGHT
 FORWARD / BACK / STRAFE
 native topology/entity/line collision
 dynamic per-line collision
 SELECT front-tile resolver/provenance
 SELECT EV_OPENLINE / EV_CLOSELINE regular doors
-MOVE source EXIT + destination ENTER regular-door events
+MOVE source EXIT + destination ENTER bounded event routes
 regular-door 4-frame visual interpolation
-SELECT EV_DIALOG pause/typewriter/paging/fast-forward/close
-zero-or-one state-only dialog continuation using 11/19/20
+EV_DIALOG / EV_DIALOGNOBACK presenter
+progressive dialog/typewriter/paging/fast-forward/close
+EV_FORCEMESSAGE top-bar fallback owner/painter
+EV_NOTE bounded prefix before dialog
+bounded saved dialog continuation (max 12 eligible commands)
+post-dialog EV_SHOW / EV_HIDE / EV_UNLOCK
+post-dialog state ops 11 / 19 / 20
+native idle first-person weapon rendering
+post-move eType=5 weapon world-remove/ownership/auto-select overlay
+one-shot resident interaction/pickup corpus diagnostics
 ```
 
 The engine still does not broad-enable legacy `Game_executeEvent`.
 
-Semantically deferred / fail-closed:
+### Dialog continuation family
+
+Supported post-dialog opcodes:
 
 ```text
-EV_FORCEMESSAGE / EV_NOTE production UI semantics
-broad MOVE tile-event opcode execution beyond owned door family
-unbounded/mixed dialog continuations
-secret/MOVELINE animation
-door sound playback
-legacy entity relink objects
-PASS_TURN
-menu/automap/weapon gameplay
-combat / monsters / generic turn advance
-unsupported opcode families
+7  EV_SHOW
+18 EV_HIDE
+13 EV_UNLOCK
+11 EV_CHANGESTATE
+19 EV_NEXTSTATE
+20 EV_PREVSTATE
 ```
 
-## Generic regular-door proof
+Transaction rollback covers script removed bits, state mutation, UNLOCK line lock/texture changes and SHOW/HIDE topology changes. Topology snapshot and the main continuation transaction owner are lazy-gameplay allocations.
+
+A real motivating Entrance event is event 60, whose dialog pause is followed by mixed SHOW/state operations and later by DIALOGNOBACK/HIDE/state/UNLOCK/NEXTSTATE. The old zero-or-one-state continuation preflight rejected this valid legacy shape; the candidate now respects the recovered saved-continuation pause boundary.
+
+### FORCE_MESSAGE / NOTE
+
+`EV_FORCEMESSAGE` now drives the real resident 160x20 top-bar fallback without mutating legacy `Hud`. The owner retains a compact map string reference; text scratch is bounded to 384 B and visible text to 21 characters.
+
+`EV_NOTE` remains a bounded prefix route into owned dialog execution. Its notebook/scratch owner is lazy and acquired only on the first real NOTE+dialog pair.
+
+### Weapon presentation / pickup
+
+The resident frame can paint the current idle first-person weapon from bounded PAK reads using recovered weapon sprite semantics (`logical sprite = 240 + weapon`).
+
+Post-committed-move pickup support is intentionally limited to `eType=5` weapons:
+
+```text
+consumed world sprite = native bit overlay
+new weapon ownership = native uint16 mask
+auto-select = native HUD overlay
+rerender/rollback = transactional
+owner scope = exact runtime arena FNV + map
+```
+
+Still deferred inside the weapon-pickup family:
+
+```text
+ammo increment from EntityDef.parm
+first-acquisition popup/dialog
+sound
+```
+
+Other pickup families remain deferred:
+
+```text
+eType 3  world/player-stat item
+eType 4  inventory item
+eType 6  ammo
+eType 16 alternate ammo
+```
+
+## Interaction corpus / fail-closed frontier
+
+Known Entrance opcode IDs:
+
+```text
+2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
+```
+
+Production-bounded families now include the dialog/UI/state/door/topology routes listed above.
+
+Still intentionally production-deferred/fail-closed:
+
+```text
+2  EV_CHANGEMAP  -> transition consumer
+9  EV_GIVEMAP    -> automap production promotion
+10 EV_PASSWORD   -> password input UI
+27 EV_SAVEGAME   -> save consumer
+41 EV_CHECK_KEY  -> native player key owner
+```
+
+Existing probe/intent APIs for these commands do not authorize live execution.
+
+## No-PSRAM mappings reload peak recovery — hardware accepted
+
+The final candidate initially failed during normal boot when `Render_beginLoadMap(MAP_MENU)` invoked a second `Render_loadMappings()`:
+
+```text
+[MAPPINGS] first load success
+heap8 = 34036 B
+largest8 = 9716 B
+mapping payload = 8376 B
+then: out of memory allocating inflate state for mappings.bin
+```
+
+The legacy loader inflates the new `mappings.bin` before freeing the four previously resident mapping arrays, creating avoidable double residency on the classic CYD.
+
+The ESP32-only bounded guard now releases exactly these immutable arrays immediately before the real `Render_beginLoadMap()`:
+
+```text
+mediaTexelOffsets
+mediaBitShapeOffsets
+mediaTexturesIds
+mediaSpriteIds
+```
+
+The real `Render_loadMappings()` still parses/rebuilds them and remains the sole owner. No mappings file format or BSP semantics changed.
+
+The same closeout moved the dialog-chain transaction journal out of fixed BSS into a lazy gameplay allocation.
+
+Tester acceptance at implementation SHA `0c6f7ffac0e3cf47a60aa2315da04f551d2a51bc` establishes the corrected normal `esp32-cyd` hardware boundary. No unreported final heap/FNV values are invented here.
+
+## Generic regular-door proof remains canonical
 
 Entrance OPEN witness:
 
@@ -255,7 +352,7 @@ CLOSE frames:
 35e3784d -> d005cd93 -> 808e96c7 -> 808e96c7
 ```
 
-## Native Action dialog + resume — hardware PASS
+## Native dialog baseline remains canonical
 
 Production dialog owner:
 
@@ -267,32 +364,7 @@ close provenance owner = 12 B
 PAK lease = open only while dialog active, closed before world redraw
 ```
 
-Real Entrance event 88, front tile 841:
-
-```text
-state 0:
-  off0 global252 opcode8  EV_DIALOG string88 = ELIGIBLE
-  off1 global253 opcode19 EV_NEXTSTATE       = ELIGIBLE
-
-state 1:
-  off2 global254 opcode8  EV_DIALOG string89 = ELIGIBLE
-  off3 global255 opcode11 EV_CHANGESTATE     = ELIGIBLE
-```
-
-Hardware behavior:
-
-```text
-string88 = 102 B / 7 lines
-Action during typing -> FASTFORWARD
-next Action -> PAGE start=4/7
-close -> packClosed=yes
-resume opcode19 -> state 0->1
-next SELECT -> string89 = 10 B / 1 line
-close -> resume opcode11 -> state 1->0
-repeated cycle = PASS
-```
-
-Known visual fingerprints remain:
+Previously proven Entrance event 88 behavior and visual fingerprints remain historical regression canons:
 
 ```text
 page1 complete = 1cf6fa50
@@ -301,71 +373,9 @@ page2 complete = 0741a2e6
 world after resume = ed061192
 ```
 
-Historical startup probes cannot block live gameplay after startup validation, and dialog-owned SELECT is not sent to the historical world SELECT witness.
+The grouped dialog font hotpath remains merged and hardware proven; do not replace it with map-wide decoded font storage.
 
-## Dialog font hotpath — hardware PASS
-
-Hardware-tested implementation SHA: `777482b038088b232dcbfe64b2421d12aad3de15`.
-
-Recovered hotpath:
-
-```text
-a.bmp font = 144x72 indexed BMP
-glyph = 9x12
-filePitch = 72 B
-glyph band = 864 B
-```
-
-Before this milestone, one glyph caused twelve `readRange(72 B)` calls. The indexed-BMP renderer now groups consecutive source rows into a bounded 1024-B BSS scratch owner:
-
-```text
-before = 12 range calls / glyph
-now    = 1 range call / 12-row glyph band when it fits
-heap allocation = none
-```
-
-The optimization is generic to `EspNativeIndexedBmp_blit()` and preserves top-down/bottom-up orientation, palette, transparency, clipping and exact framebuffer output.
-
-Previous 102-B dialog scale:
-
-```text
-paints = 22
-fontReads = 3482 .. 3650
-font/resource bytes = 250626 .. 262722
-```
-
-Real-CYD optimized runs:
-
-```text
-natural run:
-  paints = 34
-  fontReads = 583
-  logical bytes = 502050
-
-fast-forwarded run:
-  paints = 17
-  fontReads = 164
-  logical bytes = 140034
-```
-
-The tester reported the dialog as "hyper fluide". The page fingerprints and state 0->1->0 semantics remained exact.
-
-The logical-byte counter is not a direct physical-SD cost metric after grouping: each range request is larger, while the resident exact-range cache can satisfy repeated 864-B requests. The important hardware result is the large reduction in call/range-lookup count and the subjective fluidity gain.
-
-Memory evidence:
-
-```text
-previous dialog heap8 ~= 30916
-hotpath heap8 = 29892
-expected fixed BSS delta = 1024 B
-largest8 = 16372 stable
-```
-
-This is a fixed owner, not a leak.
-
-Do not optimize `PlatformVideo_present()` merely because it remains around 34.3 ms. The accepted hotpath fixed the real bounded asset-I/O overhead without changing presentation semantics.
-
-## Event/script boundary
+## Event/script executor boundary
 
 Generic `EspMapOpcodeExecutor` remains intentionally limited to:
 
@@ -375,19 +385,7 @@ Generic `EspMapOpcodeExecutor` remains intentionally limited to:
 20 EV_PREVSTATE
 ```
 
-Production door and dialog Action routes own separate bounded native semantic families around resident event/filter provenance.
-
-Hardware-proven production UI opcode:
-
-```text
-8 EV_DIALOG
-```
-
-Implemented but not yet hardware-proven in the same bounded family:
-
-```text
-26 EV_DIALOGNOBACK
-```
+Other production semantic families call their own bounded native owners. This separation is intentional.
 
 ## Historical Junction canon remains valid
 
@@ -415,23 +413,22 @@ HUD stateFNV = 4756db9c
 
 ```text
 REAL-CYD HARDWARE PASS
-base main = 7ff701245b0fda41de3cda7bd2fb65cad15eb218
-hardware-tested implementation SHA = 777482b038088b232dcbfe64b2421d12aad3de15
-Entrance visible/walkable/turnable = YES
-sprites/HUD/touch = YES
-TURN/MOVE/collision = YES
-SELECT regular doors = YES
-MOVE regular-door events = YES
-generic regular-door animation = YES
-EV_DIALOG progressive UI/resume = YES
-state 0->1->0 repeated = YES
-indexed-BMP grouped font reads = YES
-dialog visual fingerprints preserved = YES
-dialog subjective fluidity = strong PASS
-historical probes cannot block live gameplay = YES
+base main = 37d4bc760e0715216f1adaea9d69548a5ab31ab7
+hardware-tested implementation SHA = 0c6f7ffac0e3cf47a60aa2315da04f551d2a51bc
+resident gameplay = YES
+FORCE_MESSAGE production top bar = YES
+NOTE prefix = YES
+bounded mixed dialog continuation = YES
+SHOW/HIDE/UNLOCK continuation = YES
+native idle weapon renderer = YES
+eType=5 remove/ownership/auto-select = YES
+interaction corpus diagnostics = YES
+mappings reload peak guard = YES
+ammo/acquisition popup = DEFERRED
+unsupported opcodes remain fail closed = YES
 immutable runtime = YES
 shapeData/mediaTexels = NULL
 MERGE-READY = YES
 ```
 
-Every commit after `777482b038088b232dcbfe64b2421d12aad3de15` must remain documentation-only for this closeout. After merge, recover the exact new `main` SHA before creating the next `agent/*` branch.
+Every commit after `0c6f7ffac0e3cf47a60aa2315da04f551d2a51bc` must remain documentation-only for this closeout. After merge, recover the exact new `main` SHA before creating the next `agent/*` branch.

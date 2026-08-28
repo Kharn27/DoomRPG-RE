@@ -5,6 +5,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_hud_direction.h"
+#include "esp_native_gameplay_status_message.h"
 #include "esp_native_indexed_bmp.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -153,6 +154,14 @@ int EspNativeGameplayHudDirection_render(
         framebufferBytes != (size_t)DOOMRPG_LOGICAL_WIDTH *
                                 (size_t)DOOMRPG_LOGICAL_HEIGHT *
                                 sizeof(uint16_t)) {
+        return 0;
+    }
+
+    /* Cache-priming frames precede interactive gameplay and must remain byte
+     * identical. FORCE_MESSAGE is armed lazily by the first MOVE; once armed,
+     * only a dirty owner repaints the top bar before this frame's final present. */
+    if (EspNativeGameplayStatusMessage_isReady() &&
+        !EspNativeGameplayStatusMessage_paintIfDirty()) {
         return 0;
     }
 

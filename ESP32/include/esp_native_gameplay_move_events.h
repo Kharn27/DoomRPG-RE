@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+#include "esp_map_ui_intent.h"
+#include "esp_native_gameplay_status_message.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -16,7 +19,9 @@ typedef enum EspNativeGameplayMoveEventStatus_e {
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_COMPLEX = 5,
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_LOCKED = 6,
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_ALREADY_TARGET = 7,
-    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK = 8
+    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK = 8,
+    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK = 9,
+    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY = 10
 } EspNativeGameplayMoveEventStatus;
 
 typedef struct EspNativeGameplayMoveEventResult_s {
@@ -38,21 +43,32 @@ typedef struct EspNativeGameplayMoveEventResult_s {
     uint8_t removedAfter;
     uint8_t removeIfHandled;
     uint8_t rollbackAvailable;
+    EspNativeGameplayStatusMessageResult statusMessage;
 } EspNativeGameplayMoveEventResult;
 
+typedef struct EspNativeGameplayMoveDialogIntent_s {
+    uint32_t runFlags;
+    uint16_t eventIndex;
+    uint8_t commandOffset;
+    uint8_t codeId;
+} EspNativeGameplayMoveDialogIntent;
+
 /*
- * Execute the bounded movement tile-event family recovered from
- * Game_executeTile()/Game_runEvent(): exactly one eligible OPENLINE/CLOSELINE
- * command may mutate native line/script state. Any broader eligible event is
- * reported without mutation and remains deferred to its own opcode milestone.
- * Native key ownership is still absent, so playerKeys remains deliberately 0.
+ * Execute the bounded movement tile-event families recovered from
+ * Game_executeTile()/Game_runEvent(): exactly one eligible regular door
+ * OPENLINE/CLOSELINE, FORCE_MESSAGE, or dialog command may be selected.
+ * Dialog presentation is not performed inside the commit wrapper: an ENTER
+ * dialog becomes a tiny pending intent consumed by resident gameplay after the
+ * destination world frame has rendered. Any broader eligible event remains
+ * fail-closed for its own opcode milestone. Native key ownership is still
+ * absent, so playerKeys remains deliberately 0.
  */
-EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executeDoorPhase(
+EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executePhase(
     uint16_t tile,
     uint32_t runFlags,
     EspNativeGameplayMoveEventResult* outResult);
 
-int EspNativeGameplayMoveEvents_rollbackDoorPhase(
+int EspNativeGameplayMoveEvents_rollbackPhase(
     const EspNativeGameplayMoveEventResult* result);
 
 const char* EspNativeGameplayMoveEvents_statusName(
@@ -60,6 +76,15 @@ const char* EspNativeGameplayMoveEvents_statusName(
 
 /* Integration hooks used by the scoped gameplay MOVE/render transaction. */
 void EspNativeGameplayMoveEvents_onFrameResult(int renderOk);
+
+/* A pending dialog is readable only after the destination world frame rendered
+ * successfully. finishPendingDialog() closes the rollback lease only after the
+ * dialog presenter itself has opened successfully. On presenter failure the
+ * caller must rollback the MOVE instead. */
+int EspNativeGameplayMoveEvents_pendingDialog(
+    uint32_t sequence,
+    EspNativeGameplayMoveDialogIntent* outIntent);
+int EspNativeGameplayMoveEvents_finishPendingDialog(uint32_t sequence);
 
 #ifdef __cplusplus
 }
