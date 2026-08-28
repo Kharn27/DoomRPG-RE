@@ -1,17 +1,21 @@
-#include <SDL.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#include <esp_heap_caps.h>
 
 #include "DoomRPG.h"
 #include "Render.h"
 
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
+#include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_pickup.h"
+#include "esp_native_gameplay_session.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
 
 #define PICKUP_ENTITY_TYPE_WORLD_ITEM 3U
@@ -19,22 +23,37 @@
 #define PICKUP_ENTITY_TYPE_WEAPON 5U
 #define PICKUP_ENTITY_TYPE_AMMO 6U
 #define PICKUP_ENTITY_TYPE_AMMO_ALT 16U
+#define PICKUP_HIDDEN_FLAG 0x00010000UL
+#define PICKUP_WEAPON_LIMIT 12U
 
 typedef struct EspNativeGameplayPickupState_s {
     uint8_t* consumedBits;
     uint32_t consumedBytes;
     uint32_t spriteCount;
-    uint16_t weapons;
+    uint16_t knownWeapons;
     uint8_t targetMapId;
+    uint8_t selectedWeapon;
+    uint8_t selectedOverride;
     uint8_t ready;
     uint8_t corpusLogged;
+    uint8_t pendingMove;
+    uint8_t fatal;
     uint8_t reserved;
+    EspPlayerViewState pendingBefore;
+    EspPlayerViewState pendingAfter;
 } EspNativeGameplayPickupState;
 
 static EspNativeGameplayPickupState pickup;
+static EspNativeGameplayHudState hudOverlay;
 
 int __real_EspMapRuntime_getMapSprite(uint32_t index,
                                       EspMapSprite* outSprite);
+const EspNativeGameplayHudState* __real_EspNativeGameplayHud_view(void);
+EspPlayerViewMoveStatus __real_EspPlayerView_commitPreparedMove(
+    const EspPlayerViewState* expectedBefore,
+    const EspPlayerViewState* preparedAfter);
+void __real_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg);
+void __real_EspNativeGameplaySession_reset(void);
 
 static uint16_t tileForView(const EspPlayerViewState* view) {
     uint32_t x;
@@ -60,20 +79,32 @@ static void setConsumed(uint32_t spriteIndex, int value) {
     else pickup.consumedBits[spriteIndex >> 3] &= (uint8_t)~mask;
 }
 
+static void clearPendingMove(void) {
+    pickup.pendingMove = 0U;
+    memset(&pickup.pendingBefore, 0, sizeof(pickup.pendingBefore));
+    memset(&pickup.pendingAfter, 0, sizeof(pickup.pendingAfter));
+}
+
 static int ensureOwner(uint8_t targetMapId) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
-    const EspNativeGameplayHudState* hud = EspNativeGameplayHud_view();
+    const EspNativeGameplayHudState* hud = __real_EspNativeGameplayHud_view();
     uint32_t bytes;
     uint8_t* next;
 
-    if (runtime == NULL || hud == NULL || runtime->mapSpriteCount == 0U ||
-        runtime->mapSpriteCount > UINT16_MAX) return 0;
+    if (runtime == NULL || hud == NULL || hud->active != 1U ||
+        hud->painted != 1U || targetMapId == 0U ||
+        hud->model.targetMapId != targetMapId ||
+        runtime->mapSpriteCount == 0U || runtime->mapSpriteCount > UINT16_MAX) {
+        return 0;
+    }
     bytes = (runtime->mapSpriteCount + 7U) >> 3;
 
     if (!pickup.ready || pickup.targetMapId != targetMapId ||
         pickup.spriteCount != runtime->mapSpriteCount) {
         if (pickup.consumedBytes < bytes) {
-            next = (uint8_t*)SDL_realloc(pickup.consumedBits, bytes);
+            next = (uint8_t*)heap_caps_realloc(pickup.consumedBits,
+                                               bytes,
+                                               MALLOC_CAP_8BIT);
             if (next == NULL) return 0;
             pickup.consumedBits = next;
             pickup.consumedBytes = bytes;
@@ -81,30 +112,51 @@ static int ensureOwner(uint8_t targetMapId) {
         memset(pickup.consumedBits, 0, bytes);
         pickup.spriteCount = runtime->mapSpriteCount;
         pickup.targetMapId = targetMapId;
-        pickup.weapons = (uint16_t)(1U << hud->model.weapon);
+        pickup.knownWeapons = 0U;
+        if (hud->model.weaponsPresent != 0U &&
+            hud->model.weapon < PICKUP_WEAPON_LIMIT) {
+            pickup.knownWeapons = (uint16_t)(1U << hud->model.weapon);
+        }
+        pickup.selectedWeapon = hud->model.weapon;
+        pickup.selectedOverride = 0U;
         pickup.ready = 1U;
         pickup.corpusLogged = 0U;
-        printf("[PICKUP] OWNER map=%u sprites=%u consumedBytes=%u weapons=%04x allocation=lazy-gameplay\n",
+        printf("[PICKUP] OWNER map=%u sprites=%u consumedBytes=%u knownWeapons=%04x selected=%u allocation=lazy-gameplay\n",
                (unsigned int)targetMapId,
                (unsigned int)runtime->mapSpriteCount,
                (unsigned int)bytes,
-               (unsigned int)pickup.weapons);
+               (unsigned int)pickup.knownWeapons,
+               (unsigned int)pickup.selectedWeapon);
     }
     return 1;
 }
 
 void EspNativeGameplayPickup_reset(void) {
-    if (pickup.consumedBits != NULL) SDL_free(pickup.consumedBits);
+    if (pickup.consumedBits != NULL) heap_caps_free(pickup.consumedBits);
     memset(&pickup, 0, sizeof(pickup));
+    memset(&hudOverlay, 0, sizeof(hudOverlay));
 }
 
 int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
                                      EspMapSprite* outSprite) {
     if (!__real_EspMapRuntime_getMapSprite(index, outSprite)) return 0;
     if (outSprite != NULL && consumed(index)) {
-        outSprite->info |= 0x00010000UL;
+        outSprite->info |= PICKUP_HIDDEN_FLAG;
     }
     return 1;
+}
+
+const EspNativeGameplayHudState* __wrap_EspNativeGameplayHud_view(void) {
+    const EspNativeGameplayHudState* base = __real_EspNativeGameplayHud_view();
+    if (base == NULL || pickup.ready != 1U || pickup.selectedOverride != 1U ||
+        base->model.targetMapId != pickup.targetMapId ||
+        pickup.selectedWeapon >= PICKUP_WEAPON_LIMIT) {
+        return base;
+    }
+    hudOverlay = *base;
+    hudOverlay.model.weapon = pickup.selectedWeapon;
+    hudOverlay.model.weaponsPresent = 1U;
+    return &hudOverlay;
 }
 
 static int rerender(DoomRPG_t* doomRpg,
@@ -127,7 +179,7 @@ static int rerender(DoomRPG_t* doomRpg,
            (unsigned int)frame.frameAfterFNV,
            (unsigned int)frame.totalMicros,
            (unsigned int)frame.finalPresented);
-    return 1;
+    return frame.active == 1U && frame.finalPresented == 1U;
 }
 
 static int findWeaponOnTile(uint16_t tile,
@@ -163,83 +215,145 @@ static int findWeaponOnTile(uint16_t tile,
     return 0;
 }
 
-void EspNativeGameplayPickup_onServiceMove(
-    struct DoomRPG_s* doomRpgBase,
-    const EspPlayerViewState* beforeView,
-    const EspPlayerViewState* afterView) {
+static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
+                                const EspPlayerViewState* beforeView,
+                                const EspPlayerViewState* afterView) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    const EspNativeGameplayHudState* hudConst;
-    EspNativeGameplayHudState* hud;
     uint16_t beforeTile;
     uint16_t afterTile;
     uint16_t spriteIndex;
     uint16_t weaponsBefore;
     uint8_t subtype;
-    uint8_t weaponBefore;
-    int isNew;
+    uint8_t selectedBefore;
+    uint8_t overrideBefore;
+    int newToNativeOwner;
 
     if (beforeView == NULL || afterView == NULL ||
         beforeView->active != 1U || afterView->active != 1U ||
-        beforeView->targetMapId != afterView->targetMapId) return;
+        beforeView->targetMapId != afterView->targetMapId) return 1;
     beforeTile = tileForView(beforeView);
     afterTile = tileForView(afterView);
     if (beforeTile == UINT16_MAX || afterTile == UINT16_MAX ||
-        beforeTile == afterTile) return;
+        beforeTile == afterTile) return 1;
     if (!ensureOwner(afterView->targetMapId)) {
         printf("[PICKUP] DEFER tile=%u reason=owner-not-ready\n",
                (unsigned int)afterTile);
-        return;
+        return 1;
     }
-    if (!findWeaponOnTile(afterTile, &spriteIndex, &subtype)) return;
-    if (subtype >= 12U) {
+    if (!findWeaponOnTile(afterTile, &spriteIndex, &subtype)) return 1;
+    if (subtype >= PICKUP_WEAPON_LIMIT) {
         printf("[PICKUP] DEFER tile=%u sprite=%u type=5 subtype=%u reason=weapon-range\n",
                (unsigned int)afterTile,
                (unsigned int)spriteIndex,
                (unsigned int)subtype);
-        return;
+        return 1;
     }
 
-    hudConst = EspNativeGameplayHud_view();
-    if (hudConst == NULL) return;
-    hud = (EspNativeGameplayHudState*)(uintptr_t)hudConst;
-    weaponBefore = hud->model.weapon;
-    weaponsBefore = pickup.weapons;
-    isNew = (pickup.weapons & (uint16_t)(1U << subtype)) == 0U;
+    weaponsBefore = pickup.knownWeapons;
+    selectedBefore = pickup.selectedWeapon;
+    overrideBefore = pickup.selectedOverride;
+    newToNativeOwner =
+        (pickup.knownWeapons & (uint16_t)(1U << subtype)) == 0U;
 
     setConsumed(spriteIndex, 1);
-    pickup.weapons |= (uint16_t)(1U << subtype);
-    if (isNew) hud->model.weapon = subtype;
+    pickup.knownWeapons |= (uint16_t)(1U << subtype);
+    if (newToNativeOwner) {
+        pickup.selectedWeapon = subtype;
+        pickup.selectedOverride = 1U;
+    }
 
     printf("[PICKUP] WEAPON tile=%u sprite=%u subtype=%u new=%s weapons=%04x->%04x selected=%u->%u worldRemove=overlay ammoOwner=deferred legacyDialog=deferred\n",
            (unsigned int)afterTile,
            (unsigned int)spriteIndex,
            (unsigned int)subtype,
-           isNew ? "yes" : "no",
+           newToNativeOwner ? "yes" : "no",
            (unsigned int)weaponsBefore,
-           (unsigned int)pickup.weapons,
-           (unsigned int)weaponBefore,
-           (unsigned int)hud->model.weapon);
+           (unsigned int)pickup.knownWeapons,
+           (unsigned int)selectedBefore,
+           (unsigned int)pickup.selectedWeapon);
 
-    if (!rerender(doomRpg, afterView, "WEAPON-PICKUP")) {
-        setConsumed(spriteIndex, 0);
-        pickup.weapons = weaponsBefore;
-        hud->model.weapon = weaponBefore;
-        printf("[PICKUP] ROLLBACK tile=%u sprite=%u exactState=yes\n",
+    if (rerender(doomRpg, afterView, "WEAPON-PICKUP")) return 1;
+
+    setConsumed(spriteIndex, 0);
+    pickup.knownWeapons = weaponsBefore;
+    pickup.selectedWeapon = selectedBefore;
+    pickup.selectedOverride = overrideBefore;
+    printf("[PICKUP] ROLLBACK tile=%u sprite=%u state=restored\n",
+           (unsigned int)afterTile,
+           (unsigned int)spriteIndex);
+    if (!rerender(doomRpg, afterView, "WEAPON-PICKUP-ROLLBACK")) {
+        printf("[PICKUP] FAILED tile=%u sprite=%u reason=rollback-render fatal=1\n",
                (unsigned int)afterTile,
                (unsigned int)spriteIndex);
-        (void)rerender(doomRpg, afterView, "WEAPON-PICKUP-ROLLBACK");
+        pickup.fatal = 1U;
+        return 0;
     }
+    return 1;
+}
+
+EspPlayerViewMoveStatus __wrap_EspPlayerView_commitPreparedMove(
+    const EspPlayerViewState* expectedBefore,
+    const EspPlayerViewState* preparedAfter) {
+    EspPlayerViewMoveStatus status =
+        __real_EspPlayerView_commitPreparedMove(expectedBefore, preparedAfter);
+
+    if (status != ESP_PLAYER_VIEW_MOVE_OK || expectedBefore == NULL ||
+        preparedAfter == NULL) {
+        return status;
+    }
+
+    /* Dispatch rollback is the exact reverse commit of the pending move. Do not
+     * publish that reverse pair as a second pickup candidate. */
+    if (pickup.pendingMove == 1U &&
+        memcmp(expectedBefore, &pickup.pendingAfter,
+               sizeof(*expectedBefore)) == 0 &&
+        memcmp(preparedAfter, &pickup.pendingBefore,
+               sizeof(*preparedAfter)) == 0) {
+        clearPendingMove();
+        return status;
+    }
+
+    pickup.pendingBefore = *expectedBefore;
+    pickup.pendingAfter = *preparedAfter;
+    pickup.pendingMove = 1U;
+    return status;
+}
+
+static void servicePendingMove(struct DoomRPG_s* doomRpg) {
+    const EspPlayerViewState* live;
+    EspPlayerViewState before;
+    EspPlayerViewState after;
+
+    if (pickup.pendingMove != 1U) return;
+    if (!EspNativeResidentGameplay_isActive()) {
+        clearPendingMove();
+        return;
+    }
+    if (EspNativeGameplayDialog_isActive()) return;
+
+    live = EspPlayerView_view();
+    if (live == NULL ||
+        memcmp(live, &pickup.pendingAfter, sizeof(*live)) != 0) {
+        printf("[PICKUP] DROP-PENDING reason=stale-view\n");
+        clearPendingMove();
+        return;
+    }
+
+    before = pickup.pendingBefore;
+    after = pickup.pendingAfter;
+    clearPendingMove();
+    (void)processCommittedMove(doomRpg, &before, &after);
 }
 
 void EspNativeGameplayPickup_logCorpus(void) {
+    const EspPlayerViewState* view = EspPlayerView_view();
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
     uint32_t counts[17];
     uint32_t i;
     uint32_t pickupTotal = 0U;
 
-    if (topology == NULL) return;
-    if (!ensureOwner(0U == pickup.targetMapId ? 1U : pickup.targetMapId)) return;
-    if (pickup.corpusLogged) return;
+    if (view == NULL || view->active != 1U || topology == NULL ||
+        !ensureOwner(view->targetMapId) || pickup.corpusLogged) return;
     memset(counts, 0, sizeof(counts));
 
     for (i = 0U; i < topology->spriteCount; ++i) {
@@ -262,7 +376,8 @@ void EspNativeGameplayPickup_logCorpus(void) {
         }
     }
 
-    printf("[PICKUPCORPUS] READY sprites=%u pickupEntities=%u weaponType5=%u worldType3=%u inventoryType4=%u ammoType6=%u ammoType16=%u\n",
+    printf("[PICKUPCORPUS] READY map=%u sprites=%u pickupEntities=%u weaponType5=%u worldType3=%u inventoryType4=%u ammoType6=%u ammoType16=%u\n",
+           (unsigned int)view->targetMapId,
            (unsigned int)topology->spriteCount,
            (unsigned int)pickupTotal,
            (unsigned int)counts[PICKUP_ENTITY_TYPE_WEAPON],
@@ -272,4 +387,16 @@ void EspNativeGameplayPickup_logCorpus(void) {
            (unsigned int)counts[PICKUP_ENTITY_TYPE_AMMO_ALT]);
     printf("[PICKUPCORPUS] ROUTES type5=owned/remove+select type3=DEFERRED-player-stats type4=DEFERRED-inventory type6/16=DEFERRED-ammo\n");
     pickup.corpusLogged = 1U;
+}
+
+void __wrap_EspNativeGameplaySession_reset(void) {
+    EspNativeGameplayPickup_reset();
+    __real_EspNativeGameplaySession_reset();
+}
+
+void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
+    if (pickup.fatal != 0U) return;
+    __real_EspNativeGameplaySession_service(doomRpg);
+    EspNativeGameplayPickup_logCorpus();
+    servicePendingMove(doomRpg);
 }
