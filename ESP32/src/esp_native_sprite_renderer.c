@@ -12,7 +12,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_native_bsp_visibility.h"
 #include "esp_native_graphics_catalog.h"
-#include "esp_native_junction_sprite_renderer.h"
+#include "esp_native_sprite_renderer.h"
 #include "esp_player_view_state.h"
 
 #define MAP_HEADER 16U
@@ -173,7 +173,7 @@ static int readRange(const EspAssetPackEntry* entry,
                      uint32_t offset,
                      void* destination,
                      uint32_t bytes,
-                     EspNativeJunctionSpriteStats* stats) {
+                     EspNativeSpriteStats* stats) {
     if (entry == NULL || destination == NULL || stats == NULL ||
         offset > entry->size || bytes > entry->size - offset ||
         !EspAssetPack_readRange(entry, offset, destination, bytes)) {
@@ -291,7 +291,7 @@ static int setupDrawView(Render_t* render,
     return 1;
 }
 
-static int initSources(Sources* sources, EspNativeJunctionSpriteStats* stats) {
+static int initSources(Sources* sources, EspNativeSpriteStats* stats) {
     uint8_t mappingHeader[16];
     uint8_t paletteHeader[4];
     uint8_t wallHeader[4];
@@ -352,7 +352,7 @@ static int loadFrame(const Sources* sources,
                      int glow,
                      Frame* frame,
                      uint32_t seenLogical[8],
-                     EspNativeJunctionSpriteStats* stats) {
+                     EspNativeSpriteStats* stats) {
     uint8_t idBytes[2];
     uint8_t pair[8];
     uint8_t header[12];
@@ -490,7 +490,7 @@ static int buildOrder(Render_t* render,
                       const EspMapRuntimeView* runtime,
                       const EspNativeBspVisibilityState* visibility,
                       Order order[MAX_VISIBLE_SPRITES],
-                      EspNativeJunctionSpriteStats* stats,
+                      EspNativeSpriteStats* stats,
                       uint32_t* outCount) {
     uint32_t i;
     uint32_t count = 0U;
@@ -610,7 +610,7 @@ static int spans(Render_t* render,
                  const Frame* frame,
                  uint8_t renderMode,
                  int glow,
-                 EspNativeJunctionSpriteStats* stats) {
+                 EspNativeSpriteStats* stats) {
     int dx = line->vert2.x - line->vert1.x;
     int step;
     int dSide;
@@ -763,7 +763,7 @@ static int drawAt(Render_t* render,
                   int offsetY,
                   Frame* frame,
                   uint32_t seenLogical[8],
-                  EspNativeJunctionSpriteStats* stats) {
+                  EspNativeSpriteStats* stats) {
     EspMapSprite sprite;
     Vertex_t center;
     Vertex_t swap;
@@ -882,7 +882,7 @@ static int drawLegacyCross(Render_t* render,
                            const Order* parent,
                            Frame* frame,
                            uint32_t seenLogical[8],
-                           EspNativeJunctionSpriteStats* stats) {
+                           EspNativeSpriteStats* stats) {
     static const int8_t offsets[4][2] = {
         {16, 0}, {-16, 0}, {0, 16}, {0, -16}
     };
@@ -951,7 +951,7 @@ static int drawParentAndGlow(Render_t* render,
                              const Order* parent,
                              Frame* frame,
                              uint32_t seenLogical[8],
-                             EspNativeJunctionSpriteStats* stats) {
+                             EspNativeSpriteStats* stats) {
     uint16_t glowLogical;
 
     if ((parent->info & CROSS) != 0U) {
@@ -977,8 +977,8 @@ static int drawParentAndGlow(Render_t* render,
                   frame, seenLogical, stats);
 }
 
-int EspNativeJunctionSprite_render(struct Render_s* renderBase,
-                                   EspNativeJunctionSpriteStats* outStats) {
+int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
+                                   EspNativeSpriteStats* outStats) {
     Render_t* render = (Render_t*)renderBase;
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
@@ -986,7 +986,7 @@ int EspNativeJunctionSprite_render(struct Render_s* renderBase,
     Scratch after;
     Sources sources;
     SpriteWorkspace* workspace = NULL;
-    EspNativeJunctionSpriteStats stats;
+    EspNativeSpriteStats stats;
     uint32_t orderCount = 0U;
     uint32_t i;
     int opened = 0;

@@ -13,20 +13,24 @@ If repository state and chat history disagree, the repository wins.
 ## Current branch
 
 ```text
-base main = b6bb8f99c61afdd61f4a17c079f64c7d540aede6
-branch = agent/esp32-native-engine-cleanup
-firmware cleanup SHA = 008a0d4f5162aa7ff23ead0e560f71cc1ff0ef20
-hardware-tested branch HEAD = 55591327a35cc63bb17b46d2613569d3fe3603db
-cleanup status = REAL-CYD PASS
+latest merged main = 439d963c39d1dc6435ee9bcd91b3292fc5b59c53
+branch = agent/esp32-native-renderer-naming
+base main = 439d963c39d1dc6435ee9bcd91b3292fc5b59c53
+hardware-tested final code HEAD = cc2a8c6e7baa6c1267cde2629feead68cb2602de
+status = REAL-CYD PASS
 merge-ready = YES
 ```
 
-The final hardware run on the normal `esp32-cyd` firmware covered new-game
-startup into Entrance, movement, scientist dialog continuation, regular door
-opening, traversal, automatic close-on-exit and stable resident rendering/cache
-ownership. Exact observations are recorded in `PORTING_STATUS.md`.
+This branch is a bounded naming cleanup only. It converts the historical
+Junction-named sprite renderer implementation/header/API into the permanent
+map-generic renderer naming, with no intended rendering-behavior change.
 
-The commits after the hardware-tested branch HEAD are documentation-only.
+Hardware checkpoints on the normal `esp32-cyd` firmware covered the initial
+physical file rename, the generic API promotion, and the final removal of the
+Junction compatibility header. On the final code HEAD the reported hardware
+behavior remained unchanged with no visible/apparent `FAILED` condition.
+
+All commits after `cc2a8c6e7baa6c1267cde2629feead68cb2602de` are documentation-only.
 
 ## Build environments
 
@@ -65,10 +69,24 @@ ESP32/src/native_intro_*           bounded intro compatibility path
 ESP32/src/native_main_menu_*       bounded menu compatibility path
 ```
 
-The historical `native_map1_*`, Junction and Entrance validation ladders have
-been physically removed from the active source tree after a real-CYD hardware
-PASS. They are not production prerequisites and must not be reintroduced for a
-new level. Git history remains the detailed archaeology.
+The active sprite renderer is now fully generic by filename, header, stats type
+and exported render function:
+
+```text
+ESP32/src/esp_native_sprite_renderer.c
+ESP32/include/esp_native_sprite_renderer.h
+EspNativeSpriteStats
+EspNativeSpriteRenderer_render()
+```
+
+The historical `esp_native_junction_sprite_renderer.*` source/header/API has
+been retired from the active tree. Junction remains only a regression data corpus,
+not a renderer architecture.
+
+The older `native_map1_*`, Junction and Entrance validation ladders were already
+physically removed by the merged native engine cleanup. They are not production
+prerequisites and must not be reintroduced for a new level. Git history remains
+the detailed archaeology.
 
 ## Native data path
 
@@ -158,17 +176,21 @@ is intentionally explicit:
 ```text
 legacy ZIP-backed menu/HUD startup in main.cpp
 some active legacy-wrapper entry points still named *probe*
-historical Junction name in part of the generic sprite renderer implementation
 live CHANGEMAP/save/password/key/automap promotion incomplete
 combat/monsters/player-stat pickup families incomplete
 ```
 
-Fix these by moving ownership into permanent generic modules, not by introducing
-new level-specific bridges.
+The historical Junction renderer naming item is complete and should not return.
+Fix the remaining debt by moving ownership into permanent generic modules, not by
+introducing new level-specific bridges.
 
 ## After this branch merges
 
 Do not continue from this branch by assumption. Re-read the actual GitHub `main`,
 record its exact merge SHA, then create the next `agent/*` branch from that SHA.
-The natural next cleanup is a bounded naming/compatibility pass over remaining
-production files that still carry historical Junction/probe names.
+
+The natural next cleanup is a bounded audit of one remaining active `*probe*`
+compatibility family at a time. Do not mass-delete those modules: determine the
+current production consumer, establish a permanent generic replacement/owner,
+prove it on the normal firmware when behavior changes, then retire only the
+obsolete compatibility surface.

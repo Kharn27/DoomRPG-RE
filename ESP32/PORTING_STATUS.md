@@ -12,40 +12,56 @@ Repository state wins over chat history.
 Latest merged baseline:
 
 ```text
-PR   = #105 — native gameplay interaction expansion
-main = b6bb8f99c61afdd61f4a17c079f64c7d540aede6
+PR   = #106 — ESP32 native engine cleanup
+main = 439d963c39d1dc6435ee9bcd91b3292fc5b59c53
 status = MERGED
 ```
 
-Current cleanup branch:
+Current branch:
 
 ```text
-branch = agent/esp32-native-engine-cleanup
-base main = b6bb8f99c61afdd61f4a17c079f64c7d540aede6
-firmware cleanup SHA = 008a0d4f5162aa7ff23ead0e560f71cc1ff0ef20
-hardware-tested branch HEAD = 55591327a35cc63bb17b46d2613569d3fe3603db
+branch = agent/esp32-native-renderer-naming
+base main = 439d963c39d1dc6435ee9bcd91b3292fc5b59c53
+physical implementation rename = b192b5fe8039b4afd539b658bd01869e383dd2e5
+generic API promotion = a17dc54bf804bd0113463158ba32a68537294f27
+hardware-tested final code HEAD = cc2a8c6e7baa6c1267cde2629feead68cb2602de
 status = REAL-CYD HARDWARE PASS
-merge-ready = YES
+merge-ready = YES after docs-only finalization
 ```
 
-The firmware cleanup physically removed the retired MAP1/Junction/Entrance probe
-ladders and simplified the production source filter. The later `55591327` commit
-removed the obsolete `MAP1_*.md` archive from the active tree; Git history keeps
-the exact archaeology.
-
-### Hardware evidence for the cleanup
-
-The normal `esp32-cyd` firmware was rebuilt/flashed from the cleaned branch and
-run on the real classic CYD through new-game startup, live movement, scientist
-dialog and a regular door open/traverse/auto-close sequence.
-
-Observed stable witnesses:
+The branch removes the last historical Junction naming from the active sprite
+renderer without changing its rendering algorithm:
 
 ```text
-[ENGINESESSION] CATALOG map=1 textures=33 sprites=45 storage=3120 fnv=29ffc14a
-[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
-[ENGINECACHE] LARGE-WARM ... cache=15000/16384B entries=212/256 large=2
-[ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes
+ESP32/src/esp_native_junction_sprite_renderer.c
+ -> ESP32/src/esp_native_sprite_renderer.c
+
+EspNativeJunctionSpriteStats
+ -> EspNativeSpriteStats
+
+EspNativeJunctionSprite_render()
+ -> EspNativeSpriteRenderer_render()
+
+ESP32/include/esp_native_junction_sprite_renderer.h
+ -> removed
+```
+
+The first physical file rename was bit-for-bit. The API promotion then made
+`esp_native_sprite_renderer.h` the real owner of the stats structure and public
+symbol. The final code checkpoint replaced only the remaining historical
+identifiers in the implementation and physically removed the compatibility
+header.
+
+### Hardware evidence for renderer naming cleanup
+
+The normal `esp32-cyd` firmware was rebuilt/flashed and exercised on the real
+classic CYD during the naming pass.
+
+At the first rename checkpoint, observed serial/runtime behavior included:
+
+```text
+[RESIDENTGAMEPLAY] READY map=current ...
+[ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes ...
 shapeData=0x0
 mediaTexels=0x0
 heap8 before dialog lazy owner = 27052
@@ -53,14 +69,16 @@ heap8 after dialog lazy owner = 26420
 largest8 = 16372
 ```
 
-Dialog event 88 opened, paged, fast-forwarded, closed and resumed its saved
-continuation with opcode 19 / exact state mutation. A regular door on line 275
-opened through four native animation frames, was traversed, then its MOVE EXIT
-opcode 16 closed it through four frames and committed the movement transaction.
-No panic, reboot, legacy map ownership, or probe-ladder dependency was observed.
+Movement, rotation and scientist dialog event 88 remained functional. The dialog
+opened, fast-forwarded and paged normally with the same lazy owner behavior.
 
-This is the hardware proof that the deleted historical scaffolding is not a
-runtime prerequisite of the current native engine.
+The promoted generic API checkpoint was then hardware-tested successfully. The
+final code HEAD `cc2a8c6e` was also rebuilt/flashed and run on the real CYD; the
+reported result was that the game behaved as before with no visible/apparent
+`FAILED` condition. No new hardware failure was reported.
+
+This establishes `cc2a8c6e` as the hardware-tested code boundary for this branch.
+Commits after it must remain documentation-only.
 
 ## Permanent rule
 
@@ -81,7 +99,8 @@ Production map path:
  -> generic renderer / HUD / input / events / dialog
 ```
 
-No future level should create another `native_mapN_*` ladder.
+No future level should create another `native_mapN_*` ladder or level-specific
+renderer.
 
 ## Hardware / memory invariants
 
@@ -275,7 +294,7 @@ eType=16 alternate ammo
 
 ## Historical Junction corpus
 
-Junction remains useful as a second regression corpus for the same engine:
+Junction remains useful only as a second regression corpus for the same engine:
 
 ```text
 resource = /junction.bsp
@@ -291,28 +310,33 @@ angle = 64
 fresh tile = 943
 ```
 
-Do not turn these values back into a Junction-specific implementation.
+There is no longer an active Junction-named sprite renderer source/header/API.
+Do not turn these regression values back into a Junction-specific implementation.
 
-## Cleanup milestone complete
+## Cleanup milestones
 
-The engine cleanup milestone is hardware complete:
+The major engine cleanup merged as PR #106 and is the current `main` baseline.
+It removed the historical MAP1/Junction/Entrance probe ladders from production
+and deleted their retired source/header archaeology from the active tree.
+
+The current renderer naming milestone is hardware complete:
 
 ```text
-PASS 1  generic startup replaces probe-built resident lifecycle
-        -> hardware PASS at 5d78c65
+PASS 1  physical generic renderer implementation filename
+        -> b192b5fe
+        -> real-CYD PASS
 
-PASS 2  historical MAP1/Junction/Entrance scaffolding retired from production,
-        then physically deleted from the active source tree
-        -> firmware cleanup 008a0d4f
-        -> real-CYD PASS at branch HEAD 55591327
+PASS 2  generic public stats/API ownership
+        -> a17dc54b
+        -> real-CYD PASS
 
-DOCS    66 MAP1 milestone documents removed from the active tree
-        -> Git history remains the detailed archive
+PASS 3  remove remaining Junction identifiers + compatibility header
+        -> cc2a8c6e
+        -> real-CYD PASS
 
-RESULT  branch agent/esp32-native-engine-cleanup = MERGE-READY
+RESULT  branch agent/esp32-native-renderer-naming = MERGE-READY
 ```
 
-Next cleanup work should start only after merge/recovery from the new exact
-`main` SHA. The natural bounded follow-up is to rename remaining production
-symbols/files that still carry historical Junction/probe names, without changing
-behavior.
+After merge, recover the new exact GitHub `main` SHA before starting another
+branch. The next bounded cleanup should audit one active `*probe*` compatibility
+family at a time; do not delete those transitional modules blindly.
