@@ -2,16 +2,24 @@
 #define DOOMRPG_ESP32_ESP_TIMER_COMPAT_H
 
 /*
- * ESP-IDF's esp_timer.h eventually exposes the C stdbool true/false macros.
- * The recovered Doom RPG headers predate stdbool and declare their own
- * `typedef enum { false, true } boolean;`.  Any ESP32-native source that needs
- * esp_timer after SDL must therefore establish the legacy boolean type first.
+ * Compatibility shim for the recovered Doom RPG C headers.
  *
- * Keep this compatibility boundary ESP32-local: do not alter the desktop/J2ME
- * executable specification just to satisfy an ESP-IDF include-order detail.
+ * IMPORTANT:
+ * - In C, DoomRPG.h must establish its historical
+ *   `typedef enum { false, true } boolean;` before ESP-IDF/stdBool exposes
+ *   false/true macros.
+ * - In C++, false/true are language keywords, so DoomRPG.h MUST NOT be
+ *   injected here. Arduino/FreeRTOS includes esp_timer.h transitively from
+ *   many .cpp translation units.
+ *
+ * This header therefore only establishes the legacy boolean boundary for C
+ * translation units, then forwards to the real ESP-IDF header. Do not include
+ * DoomRPG.h from framework-shadow headers in C++ paths.
  */
+#ifndef __cplusplus
 #include <SDL.h>
 #include "DoomRPG.h"
+#endif
 #include_next <esp_timer.h>
 
 #endif
