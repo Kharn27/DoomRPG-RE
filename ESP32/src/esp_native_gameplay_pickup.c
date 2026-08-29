@@ -11,6 +11,7 @@
 
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
+#include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
@@ -403,6 +404,7 @@ void EspNativeGameplayPickup_logCorpus(void) {
 }
 
 void __wrap_EspNativeGameplaySession_reset(void) {
+    EspNativeGameplayActionEngine_reset();
     EspNativeGameplayPickup_reset();
     __real_EspNativeGameplaySession_reset();
 }
@@ -413,4 +415,8 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayPickup_logCorpus();
     EspNativeGameplayInteractionInventory_log();
     servicePendingMove(doomRpg);
+    if (!EspNativeGameplayActionEngine_service(doomRpg)) {
+        printf("[ACTIONENGINE] FAILED reason=service fatal=1\n");
+        pickup.fatal = 1U;
+    }
 }
