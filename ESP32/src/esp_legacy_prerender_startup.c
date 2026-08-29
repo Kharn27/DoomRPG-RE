@@ -6,7 +6,7 @@
 #include "MenuSystem.h"
 #include "ParticleSystem.h"
 #include "Z_Zip.h"
-#include "pre_render_probe.h"
+#include "esp_legacy_prerender_startup.h"
 
 /* Keep ESP-IDF's C99 bool macros after DoomRPG's legacy boolean typedefs. */
 #include <esp_heap_caps.h>
@@ -84,7 +84,7 @@ static void printStageResult(const char* name, uint32_t before, uint32_t after) 
            (unsigned int)largest8Block());
 }
 
-int DoomRPG_probePreRenderStartup(int layoutReady) {
+int EspLegacyPrerenderStartup_start(int layoutReady) {
     uint32_t heapBefore;
     uint32_t before;
     uint32_t after;
