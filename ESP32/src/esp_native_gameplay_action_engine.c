@@ -687,13 +687,10 @@ int __wrap_Esp32PlatformVideo_present(void) {
             actionState.feedbackShownAtMs = 0U;
         }
     }
-    else if (actionState.feedbackVisible != 0U) {
-        printf("[ACTIONFEEDBACK] CANCEL kind=%u reason=external-present\n",
-               (unsigned int)actionState.feedbackVisibleKind);
-        actionState.feedbackVisible = 0U;
-        actionState.feedbackVisibleKind = ACTION_FEEDBACK_NONE;
-        actionState.feedbackShownAtMs = 0U;
-    }
+    /* A plain external present does not prove that the top message bar was
+     * repainted. Keep the feedback lease alive until its explicit timeout (or
+     * until another feedback paint replaces it), otherwise touch/move presents
+     * can strand the already-painted text forever. */
     return 1;
 }
 
