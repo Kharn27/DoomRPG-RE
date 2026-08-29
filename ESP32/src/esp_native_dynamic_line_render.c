@@ -151,6 +151,30 @@ static int applyAnimatedLine(uint32_t index,
     return 1;
 }
 
+static int resolveDynamicTexture(uint32_t index,
+                                 uint16_t sourceTexture,
+                                 uint16_t* outTexture) {
+    const EspMapLineTextureStateView* state = EspMapLineTextureState_view();
+    uint8_t texture10;
+
+    if (outTexture == NULL || state == NULL || state->texture10Bits == NULL ||
+        index >= state->lineCount) {
+        return 0;
+    }
+
+    if (sourceTexture != ESP_MAP_LINE_TEXTURE_LOCKED &&
+        sourceTexture != ESP_MAP_LINE_TEXTURE_UNLOCKED) {
+        *outTexture = sourceTexture;
+        return 1;
+    }
+
+    texture10 = (uint8_t)((state->texture10Bits[index >> 3] >>
+                           (index & 7U)) & 1U);
+    *outTexture = texture10 != 0U ? ESP_MAP_LINE_TEXTURE_UNLOCKED
+                                  : ESP_MAP_LINE_TEXTURE_LOCKED;
+    return 1;
+}
+
 int __wrap_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine) {
     uint8_t open;
     uint16_t effectiveTexture;
@@ -162,8 +186,11 @@ int __wrap_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine) {
     if (!EspMapLineState_getOpen(index, &open)) return 0;
 
     if (EspMapLineTextureState_isReady()) {
-        if (!EspMapLineTextureState_getEffectiveTexture(index,
-                                                        &effectiveTexture)) {
+        /* The immutable source line is already in outLine. Do not call
+         * EspMapLineTextureState_getEffectiveTexture() here: that getter reads
+         * EspMapRuntime_getLine(), which is this very wrapped boundary during a
+         * dynamic frame and would recurse until the loopTask stack canary. */
+        if (!resolveDynamicTexture(index, outLine->texture, &effectiveTexture)) {
             dynamicAnimationFault = 1U;
             return 0;
         }
