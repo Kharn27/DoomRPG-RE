@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include <esp_timer.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -18,6 +19,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_weapon.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
@@ -64,6 +66,7 @@
 #define FEEDBACK_MAX_VISIBLE_CHARS 21U
 #define FEEDBACK_TRANSPARENT 1U
 #define FEEDBACK_OPAQUE 0U
+#define FEEDBACK_DISPLAY_MS 1200U
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "Native action feedback requires the 160x120 logical framebuffer"
@@ -117,11 +120,14 @@ typedef struct ActionEngineState_s {
     uint32_t noUses;
     uint32_t combatDeferred;
     uint32_t destructibleDeferred;
+    uint32_t feedbackShownAtMs;
     uint16_t spriteCount;
     uint8_t targetMapId;
     uint8_t ready;
     uint8_t feedbackPending;
     uint8_t feedbackKind;
+    uint8_t feedbackVisible;
+    uint8_t feedbackVisibleKind;
 } ActionEngineState;
 
 typedef struct FeedbackScratch_s {
@@ -142,6 +148,10 @@ int __real_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
                                           uint16_t* outLinkState,
                                           uint16_t* outLinkOrder);
 int __real_Esp32PlatformVideo_present(void);
+
+static uint32_t actionNowMs(void) {
+    return (uint32_t)((uint64_t)esp_timer_get_time() / 1000ULL);
+}
 
 static int centeredCoordinate(int32_t value) {
     return value >= TILE_CENTER && value <= MAP_MAX_CENTER &&
@@ -220,7 +230,7 @@ static void logCorpus(void) {
         else if (type == ACTION_ENTITY_DESTRUCTIBLE) ++destructibles;
     }
 
-    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes ammo=deferred monsterCombat=deferred complexDestructibles=deferred\n",
+    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes feedbackMs=%u ammo=deferred monsterCombat=deferred complexDestructibles=deferred\n",
            (unsigned int)actionState.targetMapId,
            (unsigned int)actionState.arenaFNV,
            (unsigned int)actionState.spriteCount,
@@ -230,7 +240,8 @@ static void logCorpus(void) {
            (unsigned int)fires,
            (unsigned int)humans,
            (unsigned int)enemies,
-           (unsigned int)destructibles);
+           (unsigned int)destructibles,
+           (unsigned int)FEEDBACK_DISPLAY_MS);
 }
 
 static int ensureOwner(void) {
@@ -251,6 +262,7 @@ static int ensureOwner(void) {
         actionState.spriteCount != runtime->mapSpriteCount ||
         actionState.targetMapId != view->targetMapId) {
         memset(&actionState, 0, sizeof(actionState));
+        EspNativeGameplayWeapon_cancelAttack();
         actionState.arenaFNV = runtime->arenaFNV1a;
         actionState.spriteCount = (uint16_t)runtime->mapSpriteCount;
         actionState.targetMapId = view->targetMapId;
@@ -568,13 +580,11 @@ static int paintFeedback(uint8_t feedback) {
     const char* text = feedbackText(feedback);
     uint16_t* framebuffer;
     size_t framebufferBytes;
-    size_t length;
-    size_t visible;
+    size_t visible = 0U;
     size_t i;
     int x = FEEDBACK_TEXT_X;
     int ok = 0;
 
-    if (text == NULL) return 1;
     framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     framebufferBytes = Esp32PlatformVideo_framebufferSizeBytes();
     if (framebuffer == NULL ||
@@ -594,37 +604,49 @@ static int paintFeedback(uint8_t feedback) {
             &scratch.bar, framebuffer,
             DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
             0, 0, DOOMRPG_LOGICAL_WIDTH, FEEDBACK_TOP_HEIGHT,
-            FEEDBACK_OPAQUE, &stats) != ESP_NATIVE_INDEXED_BMP_OK ||
-        EspNativeIndexedBmp_open("a.bmp", &scratch.font, &stats) !=
-            ESP_NATIVE_INDEXED_BMP_OK ||
-        scratch.font.width != FEEDBACK_FONT_SOURCE_WIDTH ||
-        scratch.font.height != FEEDBACK_FONT_SOURCE_HEIGHT) {
+            FEEDBACK_OPAQUE, &stats) != ESP_NATIVE_INDEXED_BMP_OK) {
         goto done;
     }
 
-    length = strlen(text);
-    visible = length > FEEDBACK_MAX_VISIBLE_CHARS
-                  ? FEEDBACK_MAX_VISIBLE_CHARS
-                  : length;
-    for (i = 0U; i < visible; ++i) {
-        uint8_t c = (uint8_t)text[i];
-        if (c == ' ') {
-            x += FEEDBACK_FONT_ADVANCE;
-            continue;
-        }
-        if (!drawGlyph(&scratch.font, framebuffer, c,
-                       x, FEEDBACK_TEXT_Y, &stats)) {
+    if (text != NULL) {
+        size_t length;
+        if (EspNativeIndexedBmp_open("a.bmp", &scratch.font, &stats) !=
+                ESP_NATIVE_INDEXED_BMP_OK ||
+            scratch.font.width != FEEDBACK_FONT_SOURCE_WIDTH ||
+            scratch.font.height != FEEDBACK_FONT_SOURCE_HEIGHT) {
             goto done;
         }
-        x += FEEDBACK_FONT_ADVANCE;
-    }
 
-    printf("[ACTIONFEEDBACK] PAINT kind=%u text=\"%s\" chars=%u reads=%u bytes=%u present=caller\n",
-           (unsigned int)feedback,
-           text,
-           (unsigned int)visible,
-           (unsigned int)stats.packReads,
-           (unsigned int)stats.bytesRead);
+        length = strlen(text);
+        visible = length > FEEDBACK_MAX_VISIBLE_CHARS
+                      ? FEEDBACK_MAX_VISIBLE_CHARS
+                      : length;
+        for (i = 0U; i < visible; ++i) {
+            uint8_t c = (uint8_t)text[i];
+            if (c == ' ') {
+                x += FEEDBACK_FONT_ADVANCE;
+                continue;
+            }
+            if (!drawGlyph(&scratch.font, framebuffer, c,
+                           x, FEEDBACK_TEXT_Y, &stats)) {
+                goto done;
+            }
+            x += FEEDBACK_FONT_ADVANCE;
+        }
+
+        printf("[ACTIONFEEDBACK] PAINT kind=%u text=\"%s\" chars=%u reads=%u bytes=%u present=caller durationMs=%u\n",
+               (unsigned int)feedback,
+               text,
+               (unsigned int)visible,
+               (unsigned int)stats.packReads,
+               (unsigned int)stats.bytesRead,
+               (unsigned int)FEEDBACK_DISPLAY_MS);
+    }
+    else {
+        printf("[ACTIONFEEDBACK] CLEAR mode=topbar-only reads=%u bytes=%u present=caller\n",
+               (unsigned int)stats.packReads,
+               (unsigned int)stats.bytesRead);
+    }
     ok = 1;
 
 done:
@@ -633,16 +655,65 @@ done:
 }
 
 int __wrap_Esp32PlatformVideo_present(void) {
+    uint8_t feedback = ACTION_FEEDBACK_NONE;
+    int hadFeedback = 0;
+    int ok;
+
     if (actionState.feedbackPending != 0U) {
-        uint8_t feedback = actionState.feedbackKind;
+        feedback = actionState.feedbackKind;
         if (!paintFeedback(feedback)) {
             printf("[ACTIONFEEDBACK] FAILED kind=%u\n", (unsigned int)feedback);
             return 0;
         }
+        hadFeedback = 1;
+    }
+
+    ok = __real_Esp32PlatformVideo_present();
+    if (!ok) return 0;
+
+    if (hadFeedback) {
         actionState.feedbackPending = 0U;
         actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+        if (feedback != ACTION_FEEDBACK_NONE) {
+            actionState.feedbackVisible = 1U;
+            actionState.feedbackVisibleKind = feedback;
+            actionState.feedbackShownAtMs = actionNowMs();
+        }
+        else {
+            actionState.feedbackVisible = 0U;
+            actionState.feedbackVisibleKind = ACTION_FEEDBACK_NONE;
+            actionState.feedbackShownAtMs = 0U;
+        }
     }
-    return __real_Esp32PlatformVideo_present();
+    else if (actionState.feedbackVisible != 0U) {
+        printf("[ACTIONFEEDBACK] CANCEL kind=%u reason=external-present\n",
+               (unsigned int)actionState.feedbackVisibleKind);
+        actionState.feedbackVisible = 0U;
+        actionState.feedbackVisibleKind = ACTION_FEEDBACK_NONE;
+        actionState.feedbackShownAtMs = 0U;
+    }
+    return 1;
+}
+
+static int serviceFeedbackExpiry(void) {
+    uint32_t now;
+    uint32_t elapsed;
+    uint8_t kind;
+
+    if (actionState.feedbackVisible == 0U) return 1;
+    now = actionNowMs();
+    elapsed = now - actionState.feedbackShownAtMs;
+    if (elapsed < FEEDBACK_DISPLAY_MS) return 1;
+
+    kind = actionState.feedbackVisibleKind;
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+    if (!__wrap_Esp32PlatformVideo_present()) return 0;
+    printf("[ACTIONFEEDBACK] EXPIRE kind=%u elapsedMs=%u targetMs=%u restored=topbar-only\n",
+           (unsigned int)kind,
+           (unsigned int)elapsed,
+           (unsigned int)FEEDBACK_DISPLAY_MS);
+    return 1;
 }
 
 EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
@@ -732,7 +803,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
         actionState.pending.worldChanged = 1U;
         actionState.pending.active = 1U;
         ++actionState.fireClears;
-        printf("[ACTIONENGINE] COMMIT seq=%u sprite=%u effect=fire-remove overlayBytes=%u xp=2-deferred ammoUsage=1-deferred sound=5045-deferred redraw=pending rollback=yes\n",
+        printf("[ACTIONENGINE] COMMIT seq=%u sprite=%u effect=fire-remove overlayBytes=%u xp=2-deferred ammoUsage=1-deferred sound=5045-deferred attackFrame=pending redraw=pending rollback=yes\n",
                (unsigned int)intent->sequence,
                (unsigned int)target.spriteIndex,
                (unsigned int)ACTION_REMOVED_BYTES);
@@ -767,7 +838,29 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
 }
 
 void EspNativeGameplayActionEngine_reset(void) {
+    EspNativeGameplayWeapon_cancelAttack();
     memset(&actionState, 0, sizeof(actionState));
+}
+
+static void logActionFrame(const ActionPending* pending,
+                           const char* phase,
+                           const EspNativeGameplayFrameStats* frame) {
+    if (pending == NULL || phase == NULL || frame == NULL) return;
+    printf("[ACTIONENGINE] FRAME seq=%u route=%s phase=%s frame=%08x worldUs=%u spriteUs=%u hudUs=%u presentUs=%u totalUs=%u sprites=%u pixels=%u spriteReads=%u hudReads=%u presented=%u\n",
+           (unsigned int)pending->sequence,
+           routeName((ActionRoute)pending->route),
+           phase,
+           (unsigned int)frame->frameAfterFNV,
+           (unsigned int)frame->worldMicros,
+           (unsigned int)frame->spriteMicros,
+           (unsigned int)frame->hudMicros,
+           (unsigned int)frame->presentMicros,
+           (unsigned int)frame->totalMicros,
+           (unsigned int)frame->spriteDraws,
+           (unsigned int)frame->spritePixels,
+           (unsigned int)frame->spritePackReads,
+           (unsigned int)frame->hudPackReads,
+           (unsigned int)frame->finalPresented);
 }
 
 int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
@@ -775,6 +868,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     const EspPlayerViewState* view = EspPlayerView_view();
     ActionPending pending;
 
+    if (!serviceFeedbackExpiry()) return 0;
     if (actionState.pending.active == 0U) return 1;
     if (doomRpg == NULL || doomRpg->render == NULL || view == NULL ||
         view->active != 1U || !ensureOwner()) {
@@ -795,11 +889,24 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
     {
         EspNativeGameplayFrameStats frame;
+        int animateWeapon = pending.route == ACTION_ROUTE_FIRE_CLEARED;
+
         memset(&frame, 0, sizeof(frame));
+        if (animateWeapon &&
+            !EspNativeGameplayWeapon_armAttack(pending.weapon)) {
+            setRemoved(pending.spriteIndex, 0);
+            memset(&actionState.pending, 0, sizeof(actionState.pending));
+            printf("[ACTIONENGINE] FAILED seq=%u reason=weapon-attack-arm weapon=%u rollback=yes\n",
+                   (unsigned int)pending.sequence,
+                   (unsigned int)pending.weapon);
+            return 0;
+        }
+
         actionState.feedbackPending = 1U;
         actionState.feedbackKind = pending.feedback;
         if (!EspNativeGameplayFrame_renderTurn(
                 doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
+            EspNativeGameplayWeapon_cancelAttack();
             actionState.feedbackPending = 0U;
             actionState.feedbackKind = ACTION_FEEDBACK_NONE;
             setRemoved(pending.spriteIndex, 0);
@@ -819,20 +926,29 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             return 1;
         }
 
-        printf("[ACTIONENGINE] FRAME seq=%u route=%s frame=%08x worldUs=%u spriteUs=%u hudUs=%u presentUs=%u totalUs=%u sprites=%u pixels=%u spriteReads=%u hudReads=%u presented=%u\n",
-               (unsigned int)pending.sequence,
-               routeName((ActionRoute)pending.route),
-               (unsigned int)frame.frameAfterFNV,
-               (unsigned int)frame.worldMicros,
-               (unsigned int)frame.spriteMicros,
-               (unsigned int)frame.hudMicros,
-               (unsigned int)frame.presentMicros,
-               (unsigned int)frame.totalMicros,
-               (unsigned int)frame.spriteDraws,
-               (unsigned int)frame.spritePixels,
-               (unsigned int)frame.spritePackReads,
-               (unsigned int)frame.hudPackReads,
-               (unsigned int)frame.finalPresented);
+        logActionFrame(&pending, animateWeapon ? "attack" : "commit", &frame);
+
+        if (animateWeapon) {
+            EspNativeGameplayFrameStats settle;
+            memset(&settle, 0, sizeof(settle));
+            actionState.feedbackPending = 1U;
+            actionState.feedbackKind = pending.feedback;
+            if (EspNativeGameplayFrame_renderTurn(
+                    doomRpg->render, (uint8_t)view->viewAngle, &settle)) {
+                logActionFrame(&pending, "settle-idle", &settle);
+                printf("[ACTIONENGINE] ATTACK seq=%u weapon=%u frame=1->0 generic=yes worldCommitted=yes\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.weapon);
+            }
+            else {
+                actionState.feedbackPending = 0U;
+                actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+                EspNativeGameplayWeapon_cancelAttack();
+                printf("[ACTIONENGINE] SETTLE-FAILED seq=%u weapon=%u worldCommitted=yes recovery=next-full-redraw\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.weapon);
+            }
+        }
     }
 
     memset(&actionState.pending, 0, sizeof(actionState.pending));
