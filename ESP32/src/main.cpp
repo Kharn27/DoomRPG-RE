@@ -11,7 +11,7 @@
 #include "native_intro_clock.h"
 #include "platform_input.h"
 #include "platform_video.h"
-#include "pre_render_probe.h"
+#include "esp_legacy_prerender_startup.h"
 #include "esp_render_startup_bridge.h"
 #include "soft_xpt2046.h"
 #include "Z_Zip.h"
@@ -291,7 +291,7 @@ namespace
     void initializeRenderStartup()
     {
         enginePreRenderReady =
-            DoomRPG_probePreRenderStartup(engineLayoutReady ? 1 : 0) != 0;
+            EspLegacyPrerenderStartup_start(engineLayoutReady ? 1 : 0) != 0;
         engineRenderStartupReady =
             EspRenderStartupBridge_start(enginePreRenderReady ? 1 : 0) != 0;
 

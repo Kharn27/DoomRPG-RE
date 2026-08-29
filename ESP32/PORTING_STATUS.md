@@ -12,72 +12,91 @@ Repository state wins over chat history.
 Latest merged baseline:
 
 ```text
-PR   = #107 — ESP32 native renderer naming cleanup
-main = d0643defd772f83fba07e171950a70b104bbeb6f
+PR   = #108 — ESP32 render startup bridge cleanup
+main = d65621cb0c308d648c4b578f2a474aee3cc481a4
 status = MERGED
 ```
 
 Current branch:
 
 ```text
-branch = agent/esp32-render-startup-bridge
-base main = d0643defd772f83fba07e171950a70b104bbeb6f
-API promotion/shim checkpoint = 9b3cdec3e7f84540b5d405d7e31dd8e8c9a89cce
-hardware-tested final code HEAD = 88dc75f9f8e9c7ccd972bf66439eb3dd65b29127
+branch = agent/esp32-legacy-prerender-startup
+base main = d65621cb0c308d648c4b578f2a474aee3cc481a4
+PASS 1 physical implementation rename = 3754ccec31e6f892f93dd936e047fe003d33989b
+hardware-tested final code HEAD = e55465c3f0d93930c7946c1293a1e7ac4f149aae
 status = REAL-CYD HARDWARE PASS
-merge-ready = YES after docs-only finalization
+merge-ready = YES
 ```
 
-This branch promotes the retained CYD `Render_startup()` compatibility path
-from historical `probe` naming into a permanent bridge API:
+This branch retires the historical `pre_render_probe.*` naming from a live
+legacy-compatibility startup stage. The recovered desktop startup order is:
 
 ```text
-ESP32/include/esp_render_startup_bridge.h
-EspRenderStartupBridge_start()
-ESP32/src/render_startup_bridge.c
+DoomCanvas_startup()
+ -> ParticleSystem_startup()
+ -> MenuSystem_startup()
+ -> EntityDef_startup()
+ -> Render_startup()
 ```
 
-The old `ESP32/include/render_startup_probe.h` compatibility shim is physically
-removed. `main.cpp` and the implementation now include/call the permanent API
-directly. The bridge behavior itself is unchanged: it reuses the existing
-160x120 RGB565 PlatformVideo framebuffer, loads the retained sintable/palette
-resources required by legacy Render helpers, keeps `piDIB == NULL`, and owns the
-`Render_startup` / `Render_free` linker compatibility boundary.
-
-### Hardware evidence for render-startup bridge cleanup
-
-The normal `esp32-cyd` firmware was rebuilt/flashed on the real classic CYD for
-both bounded naming passes.
-
-PASS 1 at `9b3cdec3e7f84540b5d405d7e31dd8e8c9a89cce` proved that the generic API could
-own the compiled symbol while the old header remained only as a source shim.
-Observed heartbeat state was:
+The retained CYD stage between validated layout and the already-permanent Render
+bridge is now owned by:
 
 ```text
-PRERENDER=ready
-RENDER=ready
-MAPPINGS=ready
-MENUBSP=ready
-heap=92816
-heap8=27052
-largest8=16372
+ESP32/src/esp_legacy_prerender_startup.c
+ESP32/include/esp_legacy_prerender_startup.h
+EspLegacyPrerenderStartup_start()
 ```
 
-PASS 2 at final code HEAD `88dc75f9f8e9c7ccd972bf66439eb3dd65b29127`
-removed the shim and switched the two real consumers directly to
-`EspRenderStartupBridge_start()`. The real CYD again reached the generic native
-session successfully:
+It still initializes exactly `ParticleSystem`, `MenuSystem` and `EntityDef`,
+preflights the same five ZIP compatibility resources, and stops before
+`Render_startup()`. It is explicitly legacy bootstrap compatibility, not native
+map/gameplay ownership.
+
+### Hardware evidence for legacy pre-render startup cleanup
+
+PASS 1 at `3754ccec31e6f892f93dd936e047fe003d33989b` was a physical source rename only:
 
 ```text
-[NATIVEBOOT] READY ... shapeData=0x0 mediaTexels=0x0
-[ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes ...
-[ALIVE] ... PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
-heap=92816 heap8=27052 largest8=16372
+ESP32/src/pre_render_probe.c
+ -> ESP32/src/esp_legacy_prerender_startup.c
 ```
 
-No visible/apparent `FAILED`, panic or reboot was reported. The game behaved as
-before. This establishes `88dc75f9` as the hardware-tested code boundary for
-this branch. Commits after it must remain documentation-only.
+GitHub detected 0 additions, 0 deletions and 0 content changes; the source blob
+remained `aa431f90c21bab10edf5b140b887834d6524f9da`.
+
+The normal `esp32-cyd` firmware was rebuilt/flashed and exercised on the real
+classic CYD. Observed pre-render startup remained:
+
+```text
+ParticleSystem_startup used = 18712 B
+MenuSystem_startup used = 4492 B
+EntityDef_startup used = 2776 B
+Entity defs = 115
+pre-render total used = 25980 B
+heap8 after pre-render = 50632
+largest8 after pre-render = 32756
+```
+
+PASS 2 at final code HEAD `e55465c3f0d93930c7946c1293a1e7ac4f149aae`
+introduced the permanent header/API, switched `main.cpp` and the implementation
+to it directly, and physically removed `pre_render_probe.h`. No startup order,
+resource, allocation or `[PRERENDER]` diagnostic behavior was changed.
+
+The real CYD subsequently reached the full native gameplay session with:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430
+[ENGINECACHE] OWNER bytes=21160 payload=16384 entries=256
+[ENGINECACHE] PRIMED ... largeEntries=2 heap8=27112 largest8=16372
+[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=92816 heap8=27052 largest8=16372
+PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
+```
+
+No visible/apparent `FAILED`, panic or reboot was reported. This establishes
+`e55465c3` as the hardware-tested code boundary for this branch. Commits after
+it must remain documentation-only.
 
 ## Permanent rule
 
@@ -196,12 +215,9 @@ payload = 16384 B
 large entries after learn = 2
 ```
 
-Timing figures are observational and can vary between runs. The final
-render-startup hardware PASS still showed the expected cold/warm ordering with
-no ownership regression.
-
-Do not optimize `PlatformVideo_present()` without profiling evidence; the game
-is turn-based and redraw/presentation is demand-driven.
+Timing figures are observational and can vary between runs. Do not optimize
+`PlatformVideo_present()` without profiling evidence; Doom RPG is turn-based and
+redraw/presentation is demand-driven.
 
 ## Production gameplay boundary
 
@@ -314,30 +330,24 @@ these regression values back into a Junction-specific implementation.
 
 ## Recent cleanup milestones
 
-Merged PR #106 removed the historical MAP1/Junction/Entrance probe ladders and
-retired their source/header archaeology from the active tree.
-
-Merged PR #107 completed generic sprite-renderer naming:
-
 ```text
-ESP32/src/esp_native_sprite_renderer.c
-ESP32/include/esp_native_sprite_renderer.h
-EspNativeSpriteStats
-EspNativeSpriteRenderer_render()
+PR #106  historical MAP1/Junction/Entrance probe archaeology removed
+PR #107  sprite renderer naming made fully generic
+PR #108  Render startup probe naming retired into EspRenderStartupBridge_start()
 ```
 
-Current render-startup bridge cleanup:
+Current legacy pre-render startup cleanup:
 
 ```text
-PASS 1  permanent API ownership + compatibility shim
-        -> 9b3cdec3
+PASS 1  physical source rename, bit-for-bit
+        -> 3754ccec
         -> real-CYD PASS
 
-PASS 2  direct consumers + physical shim removal
-        -> 88dc75f9
+PASS 2  permanent API + direct consumers + old header removal
+        -> e55465c3
         -> real-CYD PASS
 
-RESULT  branch agent/esp32-render-startup-bridge = MERGE-READY after docs-only finalization
+RESULT  branch agent/esp32-legacy-prerender-startup = MERGE-READY
 ```
 
 After merge, recover the new exact GitHub `main` SHA before starting another

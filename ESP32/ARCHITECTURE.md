@@ -269,7 +269,7 @@ change.
 MOVE source EXIT and destination ENTER event phases are transactionally coupled
 to the committed player move and rendered result.
 
-## 10. Rendering and retained Render compatibility
+## 10. Rendering and retained startup compatibility
 
 Native rendering consumes compact map records and PAK-backed image resources:
 
@@ -290,9 +290,35 @@ EspNativeSpriteRenderer_render()
 
 There is no active Junction-specific renderer implementation/API.
 
-A small part of legacy `Render` remains as a compatibility shell for recovered
-fixed-point helpers and startup state while legacy BSP arrays remain NULL. The
-permanent CYD boundary for that retained startup shell is:
+A bounded part of the original startup still exists because retained menu,
+entity-definition and Render helpers require legacy object/resource state before
+the fully native map path takes over. Those dependencies must be explicit and
+named by responsibility rather than left as permanent probes.
+
+The legacy sequence recovered from desktop is:
+
+```text
+DoomCanvas_startup()
+ -> ParticleSystem_startup()
+ -> MenuSystem_startup()
+ -> EntityDef_startup()
+ -> Render_startup()
+```
+
+On CYD, the retained segment after validated layout and before Render is owned by:
+
+```text
+ESP32/src/esp_legacy_prerender_startup.c
+ESP32/include/esp_legacy_prerender_startup.h
+EspLegacyPrerenderStartup_start()
+```
+
+This bridge initializes exactly `ParticleSystem`, `MenuSystem` and `EntityDef`,
+preflights their still-ZIP-backed compatibility resources, and stops before
+Render. It is not a map loader, gameplay owner or claim that these legacy
+allocations are permanent native architecture.
+
+The following Render startup shell is owned by:
 
 ```text
 ESP32/src/render_startup_bridge.c
@@ -300,11 +326,11 @@ ESP32/include/esp_render_startup_bridge.h
 EspRenderStartupBridge_start()
 ```
 
-This bridge deliberately aliases `Render.framebuffer` to PlatformVideo's
-permanent 160x120 RGB565 framebuffer, keeps desktop `piDIB` absent, and loads the
-legacy sintable/palette resources still required by retained Render helpers. It
-is a generic platform compatibility boundary; it must never become a map loader
-or map-specific owner.
+It deliberately aliases `Render.framebuffer` to PlatformVideo's permanent
+160x120 RGB565 framebuffer, keeps desktop `piDIB` absent, and loads the legacy
+sintable/palette resources still required by retained Render helpers. It is a
+generic platform compatibility boundary; it must never become a map loader or
+map-specific owner.
 
 `PlatformVideo` owns the framebuffer and presents x2 to the ILI9341. Do not
 optimize `PlatformVideo_present()` ahead of measured world/PAK hot paths merely
@@ -313,7 +339,7 @@ because it is visible in profiles.
 ## 11. Source-tree policy
 
 Permanent production names should describe responsibility, not the map on which
-that behavior was discovered.
+that behavior was discovered or the temporary recovery method used to prove it.
 
 Preferred prefixes:
 
@@ -323,6 +349,7 @@ esp_player_*               durable native player/view owners
 esp_native_gameplay_*      live reusable gameplay semantics
 esp_native_*_renderer      reusable rendering primitives
 esp_render_*               retained generic Render compatibility boundaries
+esp_legacy_*               explicit retained legacy compatibility boundaries
 platform_*                 CYD hardware abstraction
 native_intro_*             still-bounded intro compatibility path
 native_main_menu_*         still-bounded menu compatibility path
@@ -334,12 +361,12 @@ Disallowed for new permanent engine code:
 native_map2_*
 native_map3_*
 native_junction_* for map-independent behavior
-*_probe.c as the permanent implementation of gameplay semantics
+*_probe.c as the permanent implementation of gameplay or live compatibility semantics
 ```
 
-Historical `native_map1_*`, Entrance and Junction probe ladders were useful
-recovery instruments. Once a permanent owner exists and hardware proves the
-replacement route, they must leave the production build and can be removed from
+Historical `native_map1_*`, Entrance/Junction probe ladders, and promoted startup
+probe names were useful recovery instruments. Once a permanent owner exists and
+hardware proves the replacement route, the obsolete probe surface should leave
 the active tree. Git history is the detailed archaeological archive.
 
 ## 12. Test policy
@@ -369,16 +396,25 @@ The cleanup is intentionally incremental. Remaining transitional areas include:
 
 - `main.cpp` still performs old platform/core/layout/menu bring-up and directly
   indexes `DoomRPG.zip` for legacy menu/HUD/bootstrap resources;
-- `pre_render_probe.*`, `config_mappings_probe.*`, `menu_bsp_probe.*` and some
-  menu/graphics compatibility entry points still carry historical `probe` names;
+- `EspLegacyPrerenderStartup` still owns ZIP-backed compatibility resources for
+  ParticleSystem/MenuSystem/EntityDef until those systems are replaced or their
+  required assets move to appropriate native owners;
+- `EspRenderStartupBridge` still loads legacy sintable/palette resources needed
+  by retained Render helpers;
+- `config_mappings_probe.*`, `menu_bsp_probe.*` and some menu/graphics
+  compatibility entry points still carry historical `probe` names;
 - some native menu sprite/overlay wrappers still expose probe-named linker
   compatibility symbols;
 - live CHANGEMAP/save/password/key/automap promotion is not complete;
 - combat/monsters and several player-stat/inventory families are not native yet.
 
-These are explicit cleanup/feature boundaries. They must be removed by replacing
-or promoting them with permanent generic ownership, not by hiding them behind
-more per-map files or deleting live compatibility behavior blindly.
+`pre_render_probe.*` is no longer transitional naming debt: its live behavior is
+owned by `EspLegacyPrerenderStartup_start()` and the old source/header names are
+physically retired.
+
+These remaining boundaries must be removed by replacing or promoting them with
+permanent generic ownership, not by hiding them behind more per-map files or
+deleting live compatibility behavior blindly.
 
 ## 14. Definition of a clean future level
 
