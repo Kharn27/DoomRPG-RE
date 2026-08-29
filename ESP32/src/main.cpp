@@ -4,7 +4,7 @@
 #include <TFT_eSPI.h>
 
 #include "board_config.h"
-#include "config_mappings_probe.h"
+#include "esp_legacy_config_mappings_startup.h"
 #include "engine_metrics.h"
 #include "esp32_sdl_platform.h"
 #include "menu_bsp_probe.h"
@@ -308,7 +308,7 @@ namespace
     void initializeConfigMappings()
     {
         engineConfigMappingsReady =
-            DoomRPG_probeConfigAndMappings(engineRenderStartupReady ? 1 : 0) != 0;
+            EspLegacyConfigMappingsStartup_start(engineRenderStartupReady ? 1 : 0) != 0;
 
         if (engineConfigMappingsReady)
         {

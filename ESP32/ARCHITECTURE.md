@@ -41,9 +41,9 @@ compact immutable EspMapRuntime
 ```
 
 Adding level 3, 4, ... must not create `native_map3_*`, `native_map4_*`, or
-another level-specific renderer. A new source module is justified only by a
-new **behavior family**, storage format, renderer primitive, or explicit owner
-that is reusable by every map that needs it.
+another level-specific renderer. A new source module is justified only by a new
+**behavior family**, storage format, renderer primitive, or explicit owner that
+is reusable by every map that needs it.
 
 ## 2. Hardware and memory contract
 
@@ -293,53 +293,54 @@ There is no active Junction-specific renderer implementation/API.
 A bounded part of the original startup still exists because retained menu,
 entity-definition and Render helpers require legacy object/resource state before
 the fully native map path takes over. Those dependencies must be explicit and
-named by responsibility rather than left as permanent probes.
+named by responsibility rather than left as permanent production probes.
 
-The legacy sequence recovered from desktop is:
-
-```text
-DoomCanvas_startup()
- -> ParticleSystem_startup()
- -> MenuSystem_startup()
- -> EntityDef_startup()
- -> Render_startup()
-```
-
-On CYD, the retained segment after validated layout and before Render is owned by:
+The retained startup chain is currently:
 
 ```text
-ESP32/src/esp_legacy_prerender_startup.c
-ESP32/include/esp_legacy_prerender_startup.h
-EspLegacyPrerenderStartup_start()
+DoomCanvas/layout startup
+ -> EspLegacyPrerenderStartup_start()
+      -> ParticleSystem_startup()
+      -> MenuSystem_startup()
+      -> EntityDef_startup()
+ -> EspRenderStartupBridge_start()
+ -> EspLegacyConfigMappingsStartup_start()
+      -> Game_loadConfig()
+      -> inspect mappings.bin allocation plan
+      -> Render_loadMappings()
+ -> menu BSP/menu compatibility stage
 ```
 
-This bridge initializes exactly `ParticleSystem`, `MenuSystem` and `EntityDef`,
-preflights their still-ZIP-backed compatibility resources, and stops before
-Render. It is not a map loader, gameplay owner or claim that these legacy
-allocations are permanent native architecture.
+`EspLegacyPrerenderStartup` initializes exactly `ParticleSystem`, `MenuSystem`
+and `EntityDef`, preflights their still-ZIP-backed compatibility resources, and
+stops before Render. It is not a map loader or gameplay owner.
 
-The following Render startup shell is owned by:
+`EspRenderStartupBridge` aliases `Render.framebuffer` to PlatformVideo's
+permanent 160x120 RGB565 framebuffer, keeps desktop `piDIB` absent, and loads the
+legacy sintable/palette resources still required by retained Render helpers.
 
-```text
-ESP32/src/render_startup_bridge.c
-ESP32/include/esp_render_startup_bridge.h
-EspRenderStartupBridge_start()
-```
+`EspLegacyConfigMappingsStartup` owns the retained config/mapping stage. It
+allows a missing first-boot Config file, validates the legacy `mappings.bin`
+allocation plan against current no-PSRAM heap, executes the real
+`Render_loadMappings()`, validates its four mapping arrays/counts, and stops
+before BSP loading.
 
-It deliberately aliases `Render.framebuffer` to PlatformVideo's permanent
-160x120 RGB565 framebuffer, keeps desktop `piDIB` absent, and loads the legacy
-sintable/palette resources still required by retained Render helpers. It is a
-generic platform compatibility boundary; it must never become a map loader or
-map-specific owner.
+`esp_render_mapping_reload_guard.c` is a separate bounded memory guard. Just
+before the real `Render_beginLoadMap()`, it releases only the four mapping arrays
+that `Render_loadMappings()` will immediately rebuild, preventing an avoidable
+inflate peak. It does not own parsing or map semantics.
+
+These are compatibility boundaries, not permission to move migrated world data
+back to ZIP ownership.
 
 `PlatformVideo` owns the framebuffer and presents x2 to the ILI9341. Do not
 optimize `PlatformVideo_present()` ahead of measured world/PAK hot paths merely
 because it is visible in profiles.
 
-## 11. Source-tree policy
+## 11. Source-tree and diagnostics policy
 
-Permanent production names should describe responsibility, not the map on which
-that behavior was discovered or the temporary recovery method used to prove it.
+Permanent **production** names should describe responsibility, not the map on
+which behavior was discovered or the temporary recovery method used to prove it.
 
 Preferred prefixes:
 
@@ -355,19 +356,33 @@ native_intro_*             still-bounded intro compatibility path
 native_main_menu_*         still-bounded menu compatibility path
 ```
 
-Disallowed for new permanent engine code:
+Disallowed for new permanent production engine code:
 
 ```text
 native_map2_*
 native_map3_*
 native_junction_* for map-independent behavior
-*_probe.c as the permanent implementation of gameplay or live compatibility semantics
+*_probe.c as the permanent always-built implementation of gameplay/live compatibility semantics
 ```
 
-Historical `native_map1_*`, Entrance/Junction probe ladders, and promoted startup
-probe names were useful recovery instruments. Once a permanent owner exists and
-hardware proves the replacement route, the obsolete probe surface should leave
-the active tree. Git history is the detailed archaeological archive.
+That rule does **not** ban useful diagnostics. The project has two distinct
+build intents:
+
+```text
+esp32-cyd          normal production/runtime hardware authority
+esp32-cyd-bringup  optional diagnostic profile with extra probes/overlays
+```
+
+Bringup-only probes, regression witnesses and bounded instrumentation may retain
+probe naming while they provide useful observability. They are not cleanup debt
+merely because their names contain `probe`. Before removing or renaming any
+remaining probe family, classify its real consumers: normal production,
+bringup-only diagnostics, linker compatibility, or regression tooling.
+
+Historical MAP1/Entrance/Junction probe ladders were removed because they had
+become obsolete production scaffolding after permanent generic owners existed.
+That is different from deleting active diagnostic instrumentation during an
+unfinished engine port.
 
 ## 12. Test policy
 
@@ -378,6 +393,7 @@ For a new semantic family or compatibility promotion:
 
 ```text
 recover exact legacy behavior/current consumer
+ -> classify normal-runtime vs bringup/regression use
  -> design or identify the reusable permanent API/owner
  -> add a temporary strict probe only if needed
  -> keep unsupported cases fail-closed
@@ -385,10 +401,11 @@ recover exact legacy behavior/current consumer
  -> test normal esp32-cyd on the real CYD
  -> treat Serial output as hardware truth
  -> document only observed results
- -> retire the temporary probe/shim after permanent integration
+ -> retire only obsolete production probe/shim surface
 ```
 
-A milestone probe is scaffolding, not architecture.
+A milestone probe used as scaffolding should have an exit plan. A deliberate
+bringup diagnostic instead needs a clear diagnostic purpose and build scope.
 
 ## 13. What is still transitional
 
@@ -401,20 +418,22 @@ The cleanup is intentionally incremental. Remaining transitional areas include:
   required assets move to appropriate native owners;
 - `EspRenderStartupBridge` still loads legacy sintable/palette resources needed
   by retained Render helpers;
-- `config_mappings_probe.*`, `menu_bsp_probe.*` and some menu/graphics
-  compatibility entry points still carry historical `probe` names;
+- `EspLegacyConfigMappingsStartup` still reads retained config/mapping resources
+  through legacy compatibility APIs;
+- menu BSP/menu graphics compatibility still needs classification into permanent
+  runtime ownership vs useful bringup/regression diagnostics;
 - some native menu sprite/overlay wrappers still expose probe-named linker
-  compatibility symbols;
+  compatibility symbols and must be audited before any cleanup;
 - live CHANGEMAP/save/password/key/automap promotion is not complete;
 - combat/monsters and several player-stat/inventory families are not native yet.
 
-`pre_render_probe.*` is no longer transitional naming debt: its live behavior is
-owned by `EspLegacyPrerenderStartup_start()` and the old source/header names are
-physically retired.
+`pre_render_probe.*` and `config_mappings_probe.*` are no longer transitional
+production naming debt because their live behavior now has permanent explicit
+compatibility owners.
 
-These remaining boundaries must be removed by replacing or promoting them with
-permanent generic ownership, not by hiding them behind more per-map files or
-deleting live compatibility behavior blindly.
+Remaining boundaries must be replaced or promoted carefully. Do not hide them
+behind more per-map files, but also do not delete still-useful diagnostic
+indicators just to reduce file count.
 
 ## 14. Definition of a clean future level
 

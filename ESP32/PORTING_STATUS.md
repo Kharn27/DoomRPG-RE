@@ -12,80 +12,83 @@ Repository state wins over chat history.
 Latest merged baseline:
 
 ```text
-PR   = #108 — ESP32 render startup bridge cleanup
-main = d65621cb0c308d648c4b578f2a474aee3cc481a4
+PR   = #109 — ESP32 legacy pre-render startup cleanup
+main = fc6a271490bd06dad4ae8264ba106281864b53e1
 status = MERGED
 ```
 
 Current branch:
 
 ```text
-branch = agent/esp32-legacy-prerender-startup
-base main = d65621cb0c308d648c4b578f2a474aee3cc481a4
-PASS 1 physical implementation rename = 3754ccec31e6f892f93dd936e047fe003d33989b
-hardware-tested final code HEAD = e55465c3f0d93930c7946c1293a1e7ac4f149aae
+branch = agent/esp32-legacy-config-mappings-startup
+base main = fc6a271490bd06dad4ae8264ba106281864b53e1
+PASS 1 physical implementation rename = 5e678d49610a98bdc0600b9af640f05b1ce2dd9b
+hardware-tested final code HEAD = 571afd1b0665e74ad15f8ae5365433041c55a23e
 status = REAL-CYD HARDWARE PASS
 merge-ready = YES
 ```
 
-This branch retires the historical `pre_render_probe.*` naming from a live
-legacy-compatibility startup stage. The recovered desktop startup order is:
+This branch retires `config_mappings_probe.*` as the permanent production name
+for the retained compatibility stage immediately after Render startup. The live
+stage is now owned by:
 
 ```text
-DoomCanvas_startup()
- -> ParticleSystem_startup()
- -> MenuSystem_startup()
- -> EntityDef_startup()
- -> Render_startup()
+ESP32/src/esp_legacy_config_mappings_startup.c
+ESP32/include/esp_legacy_config_mappings_startup.h
+EspLegacyConfigMappingsStartup_start()
 ```
 
-The retained CYD stage between validated layout and the already-permanent Render
-bridge is now owned by:
+Its behavior is intentionally unchanged:
 
 ```text
-ESP32/src/esp_legacy_prerender_startup.c
-ESP32/include/esp_legacy_prerender_startup.h
-EspLegacyPrerenderStartup_start()
+EspRenderStartupBridge_start()
+ -> Game_loadConfig()
+ -> inspect mappings.bin allocation plan
+ -> Render_loadMappings()
+ -> validate the four mapping arrays/counts
+ -> stop before Render_beginLoadMap()/BSP loading
 ```
 
-It still initializes exactly `ParticleSystem`, `MenuSystem` and `EntityDef`,
-preflights the same five ZIP compatibility resources, and stops before
-`Render_startup()`. It is explicitly legacy bootstrap compatibility, not native
-map/gameplay ownership.
+A missing `Config` file remains valid on first boot. `mappings.bin` is still a
+retained ZIP compatibility dependency. The separate
+`esp_render_mapping_reload_guard.c` remains unchanged and still frees only the
+four immutable mapping arrays immediately before `Render_beginLoadMap()` so the
+legacy reload does not overlap them with the compressed/inflated mapping payload.
 
-### Hardware evidence for legacy pre-render startup cleanup
+### Hardware evidence for config/mappings startup cleanup
 
-PASS 1 at `3754ccec31e6f892f93dd936e047fe003d33989b` was a physical source rename only:
+PASS 1 at `5e678d49610a98bdc0600b9af640f05b1ce2dd9b` was a physical source rename only:
 
 ```text
-ESP32/src/pre_render_probe.c
- -> ESP32/src/esp_legacy_prerender_startup.c
+ESP32/src/config_mappings_probe.c
+ -> ESP32/src/esp_legacy_config_mappings_startup.c
 ```
 
-GitHub detected 0 additions, 0 deletions and 0 content changes; the source blob
-remained `aa431f90c21bab10edf5b140b887834d6524f9da`.
+GitHub detected 0 additions, 0 deletions and 0 content changes. The source blob
+remained `f03d0cec214170f24e1587ea6585569a70604102`.
 
-The normal `esp32-cyd` firmware was rebuilt/flashed and exercised on the real
-classic CYD. Observed pre-render startup remained:
+The real classic CYD normal `esp32-cyd` firmware passed with the retained mapping
+plan and startup route intact:
 
 ```text
-ParticleSystem_startup used = 18712 B
-MenuSystem_startup used = 4492 B
-EntityDef_startup used = 2776 B
-Entity defs = 115
-pre-render total used = 25980 B
-heap8 after pre-render = 50632
-largest8 after pre-render = 32756
+[MAPPINGS] Header texelOffsets=592 bitShapeOffsets=1300 textures=152 sprites=252
+[MAPPINGS] Plan payload=8376B largestAlloc=5200B
+[MAPPINGS] Render_loadMappings result=1
+[CONFIGMAP] READY config path exercised and mappings resident
+[MAPPINGS] RELEASE-BEFORE-MAP ... reason=bound-inflate-peak
 ```
 
-PASS 2 at final code HEAD `e55465c3f0d93930c7946c1293a1e7ac4f149aae`
-introduced the permanent header/API, switched `main.cpp` and the implementation
-to it directly, and physically removed `pre_render_probe.h`. No startup order,
-resource, allocation or `[PRERENDER]` diagnostic behavior was changed.
+PASS 2 at final code HEAD `571afd1b0665e74ad15f8ae5365433041c55a23e`
+introduced the permanent API/header, switched the implementation and `main.cpp`
+to that API directly, and physically removed `config_mappings_probe.h`. No
+config behavior, mapping parser/allocation rule, reload guard or diagnostic log
+semantics changed.
 
-The real CYD subsequently reached the full native gameplay session with:
+The same real-CYD run continued through the bounded intro and native Entrance
+session with canonical runtime ownership intact:
 
 ```text
+[NATIVEBOOT] READY map=1 gameplayLoadMapId=1 spawnTile=904 pos=544,1824 angle=64
 [ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430
 [ENGINECACHE] OWNER bytes=21160 payload=16384 entries=256
 [ENGINECACHE] PRIMED ... largeEntries=2 heap8=27112 largest8=16372
@@ -95,8 +98,27 @@ PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
 ```
 
 No visible/apparent `FAILED`, panic or reboot was reported. This establishes
-`e55465c3` as the hardware-tested code boundary for this branch. Commits after
+`571afd1b` as the hardware-tested code boundary for this branch. Commits after
 it must remain documentation-only.
+
+## Cleanup / diagnostic guardrail
+
+Cleanup is **not** a search-and-delete pass for files containing `probe`.
+
+```text
+esp32-cyd          = production/runtime hardware authority
+esp32-cyd-bringup  = optional diagnostic profile; may intentionally retain probes
+```
+
+A probe-named file is cleanup debt only when it has become a real always-built
+production implementation/consumer whose permanent responsibility is already
+known. Bringup-only diagnostics, regression indicators and bounded observability
+may keep probe naming while they remain useful. Do not remove a diagnostic merely
+because the engine is progressing; first prove whether normal `esp32-cyd`,
+`esp32-cyd-bringup`, linker wrappers or recovery workflows still consume it.
+
+Bringup heap figures are not production RAM canons because extra instrumentation
+can perturb memory.
 
 ## Permanent rule
 
@@ -334,22 +356,25 @@ these regression values back into a Junction-specific implementation.
 PR #106  historical MAP1/Junction/Entrance probe archaeology removed
 PR #107  sprite renderer naming made fully generic
 PR #108  Render startup probe naming retired into EspRenderStartupBridge_start()
+PR #109  pre-render startup naming retired into EspLegacyPrerenderStartup_start()
 ```
 
-Current legacy pre-render startup cleanup:
+Current config/mappings compatibility cleanup:
 
 ```text
 PASS 1  physical source rename, bit-for-bit
-        -> 3754ccec
+        -> 5e678d49
         -> real-CYD PASS
 
 PASS 2  permanent API + direct consumers + old header removal
-        -> e55465c3
+        -> 571afd1b
         -> real-CYD PASS
 
-RESULT  branch agent/esp32-legacy-prerender-startup = MERGE-READY
+RESULT  branch agent/esp32-legacy-config-mappings-startup = MERGE-READY
 ```
 
 After merge, recover the new exact GitHub `main` SHA before starting another
-branch. Continue cleanup one active `*probe*` compatibility family at a time;
-do not mass-delete transitional modules blindly.
+branch. The next cleanup candidate must be **audited**, not assumed: determine
+whether a remaining probe is a production owner, a bringup-only diagnostic, a
+linker/regression witness, or still-needed development instrumentation before
+renaming or removing it.

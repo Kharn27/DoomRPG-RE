@@ -9,7 +9,7 @@
 #include "SDL_Video.h"
 #include "Z_Zip.h"
 
-#include "config_mappings_probe.h"
+#include "esp_legacy_config_mappings_startup.h"
 
 /* ESP-IDF pulls in <stdbool.h>, whose false/true macros collide with
  * DoomRPG.h's legacy `typedef enum { false, true } boolean;`. Keep every
@@ -158,7 +158,7 @@ static int configFilePresent(void) {
     return 1;
 }
 
-int DoomRPG_probeConfigAndMappings(int renderStartupReady) {
+int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
     const zip_entry_t* mappingEntry;
     MappingPlan_t plan;
     Render_t* render;
