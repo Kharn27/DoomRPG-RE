@@ -25,7 +25,7 @@ base main = d65621cb0c308d648c4b578f2a474aee3cc481a4
 PASS 1 physical implementation rename = 3754ccec31e6f892f93dd936e047fe003d33989b
 hardware-tested final code HEAD = e55465c3f0d93930c7946c1293a1e7ac4f149aae
 status = REAL-CYD HARDWARE PASS
-merge-ready = YES after docs-only finalization
+merge-ready = YES
 ```
 
 This branch retires the historical `pre_render_probe.*` naming from a live
@@ -347,7 +347,7 @@ PASS 2  permanent API + direct consumers + old header removal
         -> e55465c3
         -> real-CYD PASS
 
-RESULT  branch agent/esp32-legacy-prerender-startup = MERGE-READY after docs-only finalization
+RESULT  branch agent/esp32-legacy-prerender-startup = MERGE-READY
 ```
 
 After merge, recover the new exact GitHub `main` SHA before starting another
