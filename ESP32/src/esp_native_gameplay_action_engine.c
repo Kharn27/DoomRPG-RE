@@ -1,5 +1,4 @@
 #include <SDL.h>
-#include <esp_timer.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -150,7 +149,10 @@ int __real_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
 int __real_Esp32PlatformVideo_present(void);
 
 static uint32_t actionNowMs(void) {
-    return (uint32_t)((uint64_t)esp_timer_get_time() / 1000ULL);
+    /* Keep legacy/ESP32 header boundaries clean: this recovered runtime clock
+     * is already the canonical millisecond source for the native gameplay
+     * service, so do not pull ESP-IDF timer headers into legacy C units. */
+    return DoomRPG_GetUpTimeMS();
 }
 
 static int centeredCoordinate(int32_t value) {
