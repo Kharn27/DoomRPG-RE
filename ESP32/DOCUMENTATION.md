@@ -19,7 +19,7 @@ branch = agent/esp32-legacy-prerender-startup
 base main = d65621cb0c308d648c4b578f2a474aee3cc481a4
 hardware-tested final code HEAD = e55465c3f0d93930c7946c1293a1e7ac4f149aae
 status = REAL-CYD PASS
-merge-ready = YES after docs-only finalization
+merge-ready = YES
 ```
 
 This branch is a bounded compatibility naming cleanup. The live stage that sits
@@ -57,7 +57,7 @@ PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
 ```
 
 No visible/apparent `FAILED`, panic or reboot was reported. All commits after
-`e55465c3f0d93930c7946c1293a1e7ac4f149aae` must remain documentation-only.
+`e55465c3f0d93930c7946c1293a1e7ac4f149aae` are documentation-only.
 
 ## Build environments
 
