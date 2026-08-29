@@ -20,7 +20,7 @@
 #define PLAYER_WEAPON_COUNT 12U
 #define WEAPON_SPRITE_BASE 240U
 
-/* Combat.c wpinfo fields FLD_WP_IDLEX / FLD_WP_IDLEY.  Keep this tiny table
+/* Combat.c wpinfo fields FLD_WP_IDLEX / FLD_WP_IDLEY. Keep this tiny table
  * local to the screen-space presentation owner; combat stats/attack animation
  * remain deferred and are not imported into native gameplay yet. */
 static const int8_t idleOffsets[PLAYER_WEAPON_COUNT][2] = {
@@ -68,13 +68,19 @@ typedef struct WeaponFrame_s {
 typedef struct WeaponWorkspace_s {
     WeaponFrame frame;
     uint8_t busy;
-    uint8_t reserved[3];
+    uint8_t cachedValid;
+    uint8_t cachedWeapon;
+    uint8_t reserved;
 } WeaponWorkspace;
 
 /* The intro has a tighter contiguous-heap requirement than resident gameplay.
  * Do not charge this 2.5 KiB decode workspace to BSS from boot: acquire it once
  * on the first real weapon frame, after the legacy prologue has been disposed,
- * then keep/reuse that one bounded owner for the rest of the session. */
+ * then keep/reuse that one bounded owner for the rest of the session.
+ *
+ * The exact same allocation now also owns one decoded idle-frame cache. No
+ * second pixel/mask buffer exists: when the selected weapon is unchanged the
+ * already-decoded frame is rasterized again with zero weapon-layer PAK reads. */
 static WeaponWorkspace* weaponWorkspace;
 
 static uint16_t le16(const uint8_t* p) {
@@ -304,7 +310,7 @@ static int rasterizeIdle(Render_t* render,
         return 0;
     }
 
-    /* Render_draw2DSprite uses these two reciprocal fixed-point steps.  The
+    /* Render_draw2DSprite uses these two reciprocal fixed-point steps. The
      * destination rectangles below are the mask-backed equivalent for the
      * already-decoded native frame. */
     sampleScale = 65536 / (32768 / render->screenWidth);
@@ -389,6 +395,7 @@ int EspNativeGameplayWeapon_render(
     int savedScreenBottom = 0;
     int clipSaved = 0;
     int opened = 0;
+    int cacheHit = 0;
     int ok = 0;
 
     memset(&stats, 0, sizeof(stats));
@@ -436,27 +443,42 @@ int EspNativeGameplayWeapon_render(
             return 0;
         }
         weaponWorkspace = workspace;
-        printf("[WEAPON] WORKSPACE ownerBytes=%u allocation=lazy-gameplay\n",
+        printf("[WEAPON] WORKSPACE ownerBytes=%u allocation=lazy-gameplay cache=one-decoded-idle-frame\n",
                (unsigned int)sizeof(*workspace));
     }
 
     frame = &workspace->frame;
     workspace->busy = 1U;
     logical = (uint16_t)(WEAPON_SPRITE_BASE + weapon);
-    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
-        printf("[WEAPON] FAILED pack-open weapon=%u logical=%u\n",
-               (unsigned int)weapon, (unsigned int)logical);
-        goto done;
-    }
-    opened = 1;
 
-    if (!initSources(&sources, &stats) ||
-        !loadIdleFrame(&sources, logical, frame, &stats)) {
-        printf("[WEAPON] FAILED resource weapon=%u logical=%u reads=%u\n",
-               (unsigned int)weapon,
-               (unsigned int)logical,
-               (unsigned int)stats.packReads);
-        goto done;
+    if (workspace->cachedValid != 0U &&
+        workspace->cachedWeapon == weapon &&
+        frame->logical == logical) {
+        stats.logicalSprite = logical;
+        stats.actualSprite = frame->actual;
+        stats.activePixels = frame->active;
+        stats.frameBytes = frame->maskBytes + frame->packedBytes;
+        cacheHit = 1;
+    }
+    else {
+        workspace->cachedValid = 0U;
+        if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+            printf("[WEAPON] FAILED pack-open weapon=%u logical=%u\n",
+                   (unsigned int)weapon, (unsigned int)logical);
+            goto done;
+        }
+        opened = 1;
+
+        if (!initSources(&sources, &stats) ||
+            !loadIdleFrame(&sources, logical, frame, &stats)) {
+            printf("[WEAPON] FAILED resource weapon=%u logical=%u reads=%u\n",
+                   (unsigned int)weapon,
+                   (unsigned int)logical,
+                   (unsigned int)stats.packReads);
+            goto done;
+        }
+        workspace->cachedWeapon = weapon;
+        workspace->cachedValid = 1U;
     }
 
     /* Exact idle caller placement recovered from Combat_drawWeapon(). */
@@ -468,8 +490,8 @@ int EspNativeGameplayWeapon_render(
     stats.anchorX = (int16_t)anchorX;
     stats.anchorY = (int16_t)anchorY;
 
-    /* World/sprite owners restore the caller's Render_t scratch exactly.  The
-     * caller's clip is therefore not a stable gameplay-frame invariant.  Own a
+    /* World/sprite owners restore the caller's Render_t scratch exactly. The
+     * caller's clip is therefore not a stable gameplay-frame invariant. Own a
      * full viewport clip only while drawing this screen-space layer, then put
      * every field back before the compositor checks Render_t byte stability. */
     savedScreenLeft = render->screenLeft;
@@ -502,7 +524,7 @@ done:
     }
     if (opened) EspAssetPack_close();
     if (ok) {
-        printf("[WEAPON] DRAW weapon=%u logical=%u actual=%u idle=%d,%d anchor=%d,%d bounds=%d..%d,%d..%d active=%u pixels=%u reads=%u frameBytes=%u ownerBytes=%u packClosed=%s\n",
+        printf("[WEAPON] DRAW weapon=%u logical=%u actual=%u idle=%d,%d anchor=%d,%d bounds=%d..%d,%d..%d active=%u pixels=%u cache=%s reads=%u frameBytes=%u ownerBytes=%u packClosed=%s\n",
                (unsigned int)weapon,
                (unsigned int)stats.logicalSprite,
                (unsigned int)stats.actualSprite,
@@ -512,6 +534,7 @@ done:
                frame->xMin, frame->xMax, frame->yMin, frame->yMax,
                (unsigned int)stats.activePixels,
                (unsigned int)stats.pixelsWritten,
+               cacheHit ? "hit" : "miss",
                (unsigned int)stats.packReads,
                (unsigned int)stats.frameBytes,
                (unsigned int)sizeof(*workspace),
