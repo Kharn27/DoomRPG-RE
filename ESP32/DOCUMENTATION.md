@@ -84,6 +84,40 @@ flags including `DOOMRPG_ESP32_BRINGUP_PROBES=1` and the touch hitbox overlay.
 Bring-up instrumentation can perturb memory, so its heap figures are not
 production canons.
 
+### Header/include hygiene
+
+The recovered legacy headers predate modern ESP-IDF/Arduino include conventions.
+In particular, `src/DoomRPG.h` declares the historical C type:
+
+```c
+typedef enum { false, true } boolean;
+```
+
+That collides with `stdbool` macros in C and with C++ language keywords if a
+framework header is forced through the wrong compatibility path. Treat this as a
+build-boundary invariant, not as an invitation to patch the legacy executable
+specification.
+
+Rules for native ESP32 code:
+
+```text
+prefer existing project clocks/APIs over importing a new ESP-IDF header
+keep SDL/legacy include order explicit when a C unit needs DoomRPG.h/Render.h
+never shadow ESP-IDF/Arduino framework headers in ESP32/include for a local fix
+never inject DoomRPG.h from a framework-shadow header or transitive C++ path
+if an include collision appears, fix the owning translation unit or add a
+narrow project-named adapter; do not globally intercept framework includes
+```
+
+Why this is strict: `ESP32/include` precedes framework include paths. A file such
+as `ESP32/include/esp_timer.h` would therefore intercept not only one native C
+file but also Arduino -> FreeRTOS -> portmacro includes across unrelated `.cpp`
+translation units. A local workaround can consequently break the whole build.
+
+For elapsed gameplay time, use an already-owned canonical clock such as
+`DoomRPG_GetUpTimeMS()` when its semantics are sufficient instead of adding an
+ESP-IDF timer dependency solely for millisecond timestamps.
+
 ### Cleanup rule for probes
 
 Do **not** remove or rename a file solely because its name contains `probe`.
