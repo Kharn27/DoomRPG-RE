@@ -13,42 +13,46 @@ If repository state and chat history disagree, the repository wins.
 ## Current branch
 
 ```text
-latest merged main = d65621cb0c308d648c4b578f2a474aee3cc481a4
-latest merged PR = #108 — ESP32 render startup bridge cleanup
-branch = agent/esp32-legacy-prerender-startup
-base main = d65621cb0c308d648c4b578f2a474aee3cc481a4
-hardware-tested final code HEAD = e55465c3f0d93930c7946c1293a1e7ac4f149aae
+latest merged main = fc6a271490bd06dad4ae8264ba106281864b53e1
+latest merged PR = #109 — ESP32 legacy pre-render startup cleanup
+branch = agent/esp32-legacy-config-mappings-startup
+base main = fc6a271490bd06dad4ae8264ba106281864b53e1
+PASS 1 physical implementation rename = 5e678d49610a98bdc0600b9af640f05b1ce2dd9b
+hardware-tested final code HEAD = 571afd1b0665e74ad15f8ae5365433041c55a23e
 status = REAL-CYD PASS
 merge-ready = YES
 ```
 
-This branch is a bounded compatibility naming cleanup. The live stage that sits
-between the validated DoomCanvas/layout startup and `EspRenderStartupBridge` is
-not native gameplay; it is retained legacy bootstrap ownership for three systems:
+The config/mappings compatibility stage now has a permanent responsibility-based
+API:
 
 ```text
-ParticleSystem_startup()
-MenuSystem_startup()
-EntityDef_startup()
+ESP32/src/esp_legacy_config_mappings_startup.c
+ESP32/include/esp_legacy_config_mappings_startup.h
+EspLegacyConfigMappingsStartup_start()
 ```
 
-It is now exposed as:
+It still performs exactly the retained startup sequence:
 
 ```text
-ESP32/src/esp_legacy_prerender_startup.c
-ESP32/include/esp_legacy_prerender_startup.h
-EspLegacyPrerenderStartup_start()
+Game_loadConfig()
+ -> inspect mappings.bin sizing against current heap
+ -> Render_loadMappings()
+ -> validate resident mapping arrays/counts
+ -> stop before Render_beginLoadMap()/BSP
 ```
 
-The historical `pre_render_probe.c/.h` naming is retired. The implementation
-still preflights `gibs_24.bmp`, `p.bmp`, `q.bmp`, `j.bmp` and `entities.db` from
-the legacy ZIP compatibility path and stops before Render startup.
+The separate `esp_render_mapping_reload_guard.c` remains untouched. Its bounded
+job is still to release the four mapping arrays immediately before the real
+`Render_beginLoadMap()` reload so the classic CYD does not carry both old tables
+and mapping inflate state at the same time.
 
 The real-CYD normal `esp32-cyd` firmware passed both cleanup stages. Final code
-HEAD `e55465c3...` reached the native Entrance gameplay session with stable
-resident cache ownership and heartbeat:
+HEAD `571afd1b...` continued through intro disposal and the native Entrance
+session with:
 
 ```text
+[NATIVEBOOT] READY map=1 gameplayLoadMapId=1 ... shapeData=0x0 mediaTexels=0x0
 [ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430
 [ENGINECACHE] OWNER bytes=21160 payload=16384 entries=256
 [ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
@@ -57,7 +61,7 @@ PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
 ```
 
 No visible/apparent `FAILED`, panic or reboot was reported. All commits after
-`e55465c3f0d93930c7946c1293a1e7ac4f149aae` are documentation-only.
+`571afd1b0665e74ad15f8ae5365433041c55a23e` are documentation-only.
 
 ## Build environments
 
@@ -75,26 +79,51 @@ Optional diagnostic environment:
 pio run -e esp32-cyd-bringup
 ```
 
-Bring-up enables extra diagnostics and can perturb memory. Do not use its heap
-figures as production canons.
+`esp32-cyd-bringup` extends the normal environment and adds diagnostic compile
+flags including `DOOMRPG_ESP32_BRINGUP_PROBES=1` and the touch hitbox overlay.
+Bring-up instrumentation can perturb memory, so its heap figures are not
+production canons.
+
+### Cleanup rule for probes
+
+Do **not** remove or rename a file solely because its name contains `probe`.
+Classify it first:
+
+```text
+always-built production implementation with known permanent responsibility
+    -> promote to a permanent owner/API and retire obsolete probe surface
+
+bringup-only diagnostic / regression witness / bounded instrumentation
+    -> keep while useful, even if probe-named
+
+unclear consumer or linker wrapper
+    -> audit references/build flags first; no blind deletion
+```
+
+The cleanup goal is a legible future engine for agents, not reduced observability.
+The normal `esp32-cyd` path should not depend on historical probe naming once a
+permanent owner exists, while `esp32-cyd-bringup` may intentionally retain probes
+that accelerate diagnosis.
 
 ## Source layout
 
 Permanent/current source should be read by responsibility:
 
 ```text
-ESP32/src/esp_map_*                    native map/runtime/event ownership
-ESP32/src/esp_player_*                 native player/view ownership
-ESP32/src/esp_native_gameplay_*        reusable live gameplay semantics
-ESP32/src/esp_native_*renderer*        reusable rendering paths
-ESP32/src/esp_legacy_prerender_startup.c retained legacy startup bridge
-ESP32/src/render_startup_bridge.c      retained Render compatibility startup
-ESP32/src/esp_asset_pack.cpp           native PAK backing store/cache
-ESP32/src/esp_bsp_reader.c             BSP structural inventory/parser
-ESP32/src/esp_native_startup.c         generic new-game resident/spawn bootstrap
-ESP32/src/platform_*                   CYD input/video bridges
-ESP32/src/native_intro_*               bounded intro compatibility path
-ESP32/src/native_main_menu_*           bounded menu compatibility path
+ESP32/src/esp_map_*                       native map/runtime/event ownership
+ESP32/src/esp_player_*                    native player/view ownership
+ESP32/src/esp_native_gameplay_*           reusable live gameplay semantics
+ESP32/src/esp_native_*renderer*           reusable rendering paths
+ESP32/src/esp_legacy_prerender_startup.c  retained legacy pre-Render startup
+ESP32/src/render_startup_bridge.c         retained Render compatibility startup
+ESP32/src/esp_legacy_config_mappings_startup.c retained config/mapping startup
+ESP32/src/esp_render_mapping_reload_guard.c bounded retained mapping reload guard
+ESP32/src/esp_asset_pack.cpp              native PAK backing store/cache
+ESP32/src/esp_bsp_reader.c                BSP structural inventory/parser
+ESP32/src/esp_native_startup.c            generic new-game resident/spawn bootstrap
+ESP32/src/platform_*                      CYD input/video bridges
+ESP32/src/native_intro_*                  bounded intro compatibility path
+ESP32/src/native_main_menu_*              bounded menu compatibility path
 ```
 
 The active sprite renderer is fully generic by filename, header, stats type and
@@ -113,9 +142,8 @@ archaeological record.
 
 ## Startup compatibility sequence
 
-The retained desktop-derived startup sequence is being promoted one bounded
-family at a time rather than hidden or deleted wholesale. The currently explicit
-sequence is:
+The retained desktop-derived startup sequence is being made explicit one bounded
+family at a time rather than hidden or deleted wholesale:
 
 ```text
 DoomCanvas/layout startup
@@ -124,13 +152,15 @@ DoomCanvas/layout startup
       -> MenuSystem_startup()
       -> EntityDef_startup()
  -> EspRenderStartupBridge_start()
- -> config/mappings compatibility stage
+ -> EspLegacyConfigMappingsStartup_start()
+      -> Game_loadConfig()
+      -> Render_loadMappings()
  -> menu BSP/menu compatibility stage
 ```
 
-The first two compatibility owners now have permanent non-probe APIs. This does
-not make their ZIP-backed resources part of the desired native map architecture;
-it makes the remaining legacy dependency explicit and bounded.
+These compatibility owners do not make ZIP-backed data part of the desired
+native map architecture. They make retained dependencies explicit so they can be
+replaced safely later.
 
 ## Native data path
 
@@ -144,10 +174,10 @@ Map loading must use the native pack plus compact resident owners. Do not add a
 new map path that reads/decompresses the old ZIP into map-wide memory.
 
 `/DoomRPG.zip` is still touched by transitional menu/HUD/bootstrap compatibility
-code. In particular, `EspLegacyPrerenderStartup` still reaches the five legacy
-resources listed above and `EspRenderStartupBridge` still reaches
-`sintable.bin` / `palettes.bin`. This is explicit compatibility debt, not
-permission to move migrated BSP/runtime data back to ZIP ownership.
+code. `EspLegacyPrerenderStartup`, `EspRenderStartupBridge` and
+`EspLegacyConfigMappingsStartup` still reach bounded legacy resources. This is
+explicit compatibility debt, not permission to move migrated BSP/runtime data
+back to ZIP ownership.
 
 ## Hardware logging
 
@@ -156,6 +186,9 @@ Serial is the final hardware truth. Stable production/compatibility tags include
 ```text
 [PRERENDER]
 [RENDERSTART]
+[CONFIG]
+[MAPPINGS]
+[CONFIGMAP]
 [NATIVEBOOT]
 [ENGINESESSION]
 [ENGINECACHE]
@@ -169,8 +202,8 @@ Serial is the final hardware truth. Stable production/compatibility tags include
 ```
 
 Historical one-probe-per-milestone transcripts are not required for normal
-startup. Failures should be emitted by the permanent owner that actually owns
-the failed boundary.
+startup. Bringup-only diagnostics are different: they may remain intentionally
+available if they provide useful failure localization or visual/serial evidence.
 
 ## Development workflow
 
@@ -178,6 +211,7 @@ For a new capability or cleanup:
 
 ```text
 recover exact legacy behavior/current consumer
+ -> classify production vs bringup/regression instrumentation
  -> choose one bounded reusable semantic/compatibility family
  -> implement or identify the permanent owner/API
  -> temporary strict probe only when it adds real evidence
@@ -186,10 +220,11 @@ recover exact legacy behavior/current consumer
  -> build normal esp32-cyd
  -> test on real CYD
  -> document only observed results
- -> retire obsolete probe/shim after permanent integration
+ -> retire only obsolete production probe/shim surface
 ```
 
-A probe should have an exit plan before it is added.
+A probe should have an exit plan when it is scaffolding. A deliberately retained
+bringup diagnostic instead needs a clear diagnostic purpose and build scope.
 
 ## New-level rule
 
@@ -207,32 +242,29 @@ module and use that map as another regression corpus.
 
 ## Known transitional cleanup items
 
-See `ARCHITECTURE.md` for the full design. Remaining visible debt is intentionally
-explicit:
+Remaining visible debt is intentionally explicit:
 
 ```text
 legacy ZIP-backed menu/HUD/bootstrap resources in main.cpp and retained bridges
-config_mappings_probe.* still names a live compatibility stage
-menu_bsp_probe.* and related menu graphics probes remain transitional
+menu BSP/menu graphics compatibility still requires audit
 native menu sprite/overlay wrappers still carry probe symbols
 live CHANGEMAP/save/password/key/automap promotion incomplete
 combat/monsters/player-stat pickup families incomplete
 ```
 
-`pre_render_probe.*` is no longer active debt: it was replaced by
-`EspLegacyPrerenderStartup_start()` and physically removed.
+`pre_render_probe.*` and `config_mappings_probe.*` are no longer active production
+naming debt. Their live behavior is owned by permanent compatibility APIs.
 
-Do not mass-delete the remaining probe-named families. For each one, identify the
-real production consumer, promote or replace it with a permanent owner when
-appropriate, hardware-prove the resulting normal firmware, then retire only the
-obsolete compatibility surface.
+Do not mass-delete the remaining probe-named families. For each one, first check
+whether it is part of normal `esp32-cyd`, diagnostic-only `esp32-cyd-bringup`, a
+linker compatibility wrapper, or still-needed regression instrumentation. Promote
+or retire only the obsolete production surface.
 
 ## After this branch merges
 
 Do not continue from this branch by assumption. Re-read actual GitHub `main`,
 record its exact merge SHA, then create the next `agent/*` branch from that SHA.
 
-The natural next cleanup candidate is `config_mappings_probe.*`, because it is
-directly downstream of the now-permanent pre-render and Render startup bridges.
-Audit its exact config/mappings ownership and linker/resource behavior before any
-rename or removal.
+A plausible next audit is the menu BSP/menu graphics compatibility area, but it
+is **not** pre-approved for removal. Inspect production consumers, bringup flags,
+wrappers and diagnostic value before choosing the next bounded milestone.
