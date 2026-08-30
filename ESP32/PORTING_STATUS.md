@@ -5,120 +5,31 @@ Architecture belongs in [`ARCHITECTURE.md`](ARCHITECTURE.md); this file keeps
 the current Git boundary, hardware facts, canonical resident witnesses and the
 explicit fail-closed frontier.
 
-Repository state wins over chat history.
+Repository state wins over chat history. Serial logs from the real classic CYD
+are the final runtime authority.
 
 ## Git boundary
 
-Latest merged baseline:
+Current merged baseline:
 
 ```text
-PR   = #109 — ESP32 legacy pre-render startup cleanup
-main = fc6a271490bd06dad4ae8264ba106281864b53e1
-status = MERGED
+main = 45d634449faa511dd02ab25ac5bb980fa4ef86b1
 ```
 
-Current branch:
+Current development branch:
 
 ```text
-branch = agent/esp32-legacy-config-mappings-startup
-base main = fc6a271490bd06dad4ae8264ba106281864b53e1
-PASS 1 physical implementation rename = 5e678d49610a98bdc0600b9af640f05b1ce2dd9b
-hardware-tested final code HEAD = 571afd1b0665e74ad15f8ae5365433041c55a23e
+branch = agent/esp32-native-action-engine
+base main = 45d634449faa511dd02ab25ac5bb980fa4ef86b1
+hardware-tested final code HEAD = 1f88ca6488d78be181fc97b500beefbe0eb9a751
 status = REAL-CYD HARDWARE PASS
-merge-ready = YES
+merge-ready = YES, after documentation-only tail verification
 ```
 
-This branch retires `config_mappings_probe.*` as the permanent production name
-for the retained compatibility stage immediately after Render startup. The live
-stage is now owned by:
-
-```text
-ESP32/src/esp_legacy_config_mappings_startup.c
-ESP32/include/esp_legacy_config_mappings_startup.h
-EspLegacyConfigMappingsStartup_start()
-```
-
-Its behavior is intentionally unchanged:
-
-```text
-EspRenderStartupBridge_start()
- -> Game_loadConfig()
- -> inspect mappings.bin allocation plan
- -> Render_loadMappings()
- -> validate the four mapping arrays/counts
- -> stop before Render_beginLoadMap()/BSP loading
-```
-
-A missing `Config` file remains valid on first boot. `mappings.bin` is still a
-retained ZIP compatibility dependency. The separate
-`esp_render_mapping_reload_guard.c` remains unchanged and still frees only the
-four immutable mapping arrays immediately before `Render_beginLoadMap()` so the
-legacy reload does not overlap them with the compressed/inflated mapping payload.
-
-### Hardware evidence for config/mappings startup cleanup
-
-PASS 1 at `5e678d49610a98bdc0600b9af640f05b1ce2dd9b` was a physical source rename only:
-
-```text
-ESP32/src/config_mappings_probe.c
- -> ESP32/src/esp_legacy_config_mappings_startup.c
-```
-
-GitHub detected 0 additions, 0 deletions and 0 content changes. The source blob
-remained `f03d0cec214170f24e1587ea6585569a70604102`.
-
-The real classic CYD normal `esp32-cyd` firmware passed with the retained mapping
-plan and startup route intact:
-
-```text
-[MAPPINGS] Header texelOffsets=592 bitShapeOffsets=1300 textures=152 sprites=252
-[MAPPINGS] Plan payload=8376B largestAlloc=5200B
-[MAPPINGS] Render_loadMappings result=1
-[CONFIGMAP] READY config path exercised and mappings resident
-[MAPPINGS] RELEASE-BEFORE-MAP ... reason=bound-inflate-peak
-```
-
-PASS 2 at final code HEAD `571afd1b0665e74ad15f8ae5365433041c55a23e`
-introduced the permanent API/header, switched the implementation and `main.cpp`
-to that API directly, and physically removed `config_mappings_probe.h`. No
-config behavior, mapping parser/allocation rule, reload guard or diagnostic log
-semantics changed.
-
-The same real-CYD run continued through the bounded intro and native Entrance
-session with canonical runtime ownership intact:
-
-```text
-[NATIVEBOOT] READY map=1 gameplayLoadMapId=1 spawnTile=904 pos=544,1824 angle=64
-[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430
-[ENGINECACHE] OWNER bytes=21160 payload=16384 entries=256
-[ENGINECACHE] PRIMED ... largeEntries=2 heap8=27112 largest8=16372
-[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
-[ALIVE] ... heap=92816 heap8=27052 largest8=16372
-PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
-```
-
-No visible/apparent `FAILED`, panic or reboot was reported. This establishes
-`571afd1b` as the hardware-tested code boundary for this branch. Commits after
-it must remain documentation-only.
-
-## Cleanup / diagnostic guardrail
-
-Cleanup is **not** a search-and-delete pass for files containing `probe`.
-
-```text
-esp32-cyd          = production/runtime hardware authority
-esp32-cyd-bringup  = optional diagnostic profile; may intentionally retain probes
-```
-
-A probe-named file is cleanup debt only when it has become a real always-built
-production implementation/consumer whose permanent responsibility is already
-known. Bringup-only diagnostics, regression indicators and bounded observability
-may keep probe naming while they remain useful. Do not remove a diagnostic merely
-because the engine is progressing; first prove whether normal `esp32-cyd`,
-`esp32-cyd-bringup`, linker wrappers or recovery workflows still consume it.
-
-Bringup heap figures are not production RAM canons because extra instrumentation
-can perturb memory.
+The branch adds a bounded native Action/Combat presentation frontier without
+broad-enabling legacy combat/world mutation. The permanent direction remains a
+generic action/combat engine; crates, fire and monsters must not become separate
+special-case engines.
 
 ## Permanent rule
 
@@ -136,7 +47,7 @@ Production map path:
  -> explicit compact mutable owners
  -> EspPlayerView
  -> EspNativeGameplaySession
- -> generic renderer / HUD / input / events / dialog
+ -> generic renderer / HUD / input / events / dialog / action
 ```
 
 No future level should create another `native_mapN_*` ladder or level-specific
@@ -172,8 +83,6 @@ crc32 = 623f34e4
 sourceFNV = d5cc751f
 runtime arena = 14095 B
 runtimeFNV = c3882516
-snapshotBytes = 96
-snapshotFNV = b3811f3d
 resident payload = 17891 B
 spawn tile = 904
 spawn direction = 64
@@ -237,9 +146,186 @@ payload = 16384 B
 large entries after learn = 2
 ```
 
-Timing figures are observational and can vary between runs. Do not optimize
-`PlatformVideo_present()` without profiling evidence; Doom RPG is turn-based and
-redraw/presentation is demand-driven.
+## Native Action engine hardware boundary
+
+The real CYD validated the bounded Action engine on Entrance.
+
+### Empty Action / feedback lifetime
+
+An Action into empty space routes to the native top-bar message without world
+mutation or full redraw:
+
+```text
+[ACTIONENGINE] ROUTE seq=1 weapon=2 target=none distance=0 route=NOTHING_TO_USE feedback=screen turnAdvance=deferred
+[ACTIONFEEDBACK] PAINT kind=1 text="Nothing to use" chars=14 reads=36 bytes=10792 present=caller durationMs=1200
+[ACTIONENGINE] PRESENT seq=1 route=NOTHING_TO_USE worldMutation=no fullRedraw=no feedback=yes
+[ACTIONFEEDBACK] CLEAR mode=topbar-only reads=22 bytes=358 present=caller
+[ACTIONFEEDBACK] EXPIRE kind=1 elapsedMs=1203 targetMs=1200 restored=topbar-only
+```
+
+A second real-CYD witness expired at 1204 ms. The feedback lease therefore
+matches the recovered legacy `MSG_DISPLAY_TIME = 1200 ms` contract.
+
+A prior implementation cancelled the lease on any unrelated `Present()`, which
+could strand painted text indefinitely. That is fixed: external presents do not
+implicitly cancel a visible Action message.
+
+### Touch-feedback arbitration
+
+A real-CYD run exposed a second race: if Action feedback expired while the
+120 ms touch-control flash still owned its exact framebuffer snapshot, the
+message clear changed the frame underneath that snapshot and the strict restore
+correctly failed with:
+
+```text
+[RESIDENTGAMEPLAY] FAILED reason=touch-feedback-restore
+```
+
+Final code HEAD `1f88ca6488d78be181fc97b500beefbe0eb9a751`
+defers Action-message expiry while `EspNativeGameplayControls_isActive()`.
+The user subsequently reported the interaction working on hardware. The strict
+control snapshot invariant remains intact; it was not weakened.
+
+### Destructible targeting
+
+Crates/destructibles are found generically by the recovered Action trace, but the
+combat consequence is intentionally fail-closed because native entity health,
+weapon-mask consequence ownership and generic destruction are not yet owned:
+
+```text
+[ACTIONENGINE] TRACE ... weapon=2 distance=1 ... type=12 subtype=2 route=DESTRUCTIBLE_COMBAT_DEFERRED
+[ACTIONENGINE] BACKEND-DEFER ... family=destructible-combat reason=entity-parm-weapon-mask+subtype-consequence-not-owned mutation=no
+```
+
+No crate-specific implementation is permitted. The later generic combat backend
+must own animation, hit/damage, destruction, ammo, sound and turn consequences.
+
+### Fire / extinguisher action
+
+Adjacent fire with weapon 1 is now a real native mutation plus generic weapon
+presentation. Hardware witness:
+
+```text
+[ACTIONENGINE] TRACE seq=102 weapon=1 distance=1 tile=613 target=sprite index=74 line=65535 type=10 subtype=0 route=FIRE_CLEARED
+[ACTIONENGINE] COMMIT seq=102 sprite=74 effect=fire-remove overlayBytes=128 xp=2-deferred ammoUsage=1-deferred sound=5045-deferred attackFrame=pending redraw=pending rollback=yes
+[WEAPON] DRAW weapon=1 logical=241 actual=607 frame=1 pose=attack ... cache=miss reads=10
+[ACTIONENGINE] FRAME seq=102 route=FIRE_CLEARED phase=attack ... presented=1
+[WEAPON] DRAW weapon=1 logical=241 actual=606 frame=0 pose=idle ... cache=miss reads=10
+[ACTIONENGINE] FRAME seq=102 route=FIRE_CLEARED phase=settle-idle ... presented=1
+[ACTIONENGINE] ATTACK seq=102 weapon=1 frame=1->0 generic=yes worldCommitted=yes
+[ACTIONFEEDBACK] EXPIRE kind=2 elapsedMs=1204 targetMs=1200 restored=topbar-only
+```
+
+This materially validates the permanent generic weapon-frame route:
+
+```text
+logical weapon sprite = 240 + weapon
+frame 0 = idle
+frame 1 = attack
+cache key = weapon + animation frame
+```
+
+The fire removal remains a compact 128 B consumed/removed overlay with rollback
+on the first render failure. XP, ammo and sound remain deferred.
+
+### Extinguisher range: current safe divergence
+
+The legacy desktop `SELECT` trace can see targets up to eight tiles away and will
+still call `Player_fireWeapon()` for a fire when the extinguisher is selected.
+The extinguisher has `rangeMin = 0`; `CombatEntity_calcHit()` therefore misses
+when squared world distance exceeds 4096 (more than one cardinal tile). The
+legacy combat path then presents the attack and reports `No effect!`.
+
+The current ESP32 action frontier does not yet own generic miss/ammo/turn combat.
+Therefore final code HEAD intentionally fails closed for fire at `distance > 1`:
+
+```text
+route = FIRE_RANGE_DEFERRED
+mutation = no
+attack presentation = deferred
+```
+
+This is a known temporary behavior difference, not the final Doom RPG contract.
+When generic combat/miss ownership lands, remote extinguisher attempts should
+animate and resolve to the recovered no-effect behavior rather than removing the
+fire.
+
+## Dynamic door texture hardware boundary
+
+The mutable line-texture variant now reaches the renderer without mutating the
+immutable runtime. The first implementation recursively re-entered
+`EspMapRuntime_getLine()` through its linker wrapper and overflowed the loopTask
+stack; the final implementation resolves the 9/10 texture bit directly from the
+already-owned mutable line-texture view.
+
+Real-CYD door animation after unlock:
+
+```text
+[DOORANIM] FRAME 1/4 ... textureVariants=2 ... render=ok
+[DYNAMICLINES] FRAME ... textureVariants=2 render=ok immutableRuntime=yes
+...
+[DOORANIM] FRAME 4/4 ... textureVariants=2 ... render=ok
+[DOORANIM] COMPLETE transitions=1 frames=4 state=stable transaction=committed
+```
+
+The user confirmed the previously red lock indicator becomes green after the
+soldier unlocks the door.
+
+Permanent wrapper rule:
+
+```text
+A linker wrapper must not call a higher-level API that can indirectly re-enter
+that wrapped symbol. Use __real_*, an already materialized owner/view, or an
+explicitly non-reentrant helper.
+```
+
+## Renderer performance evidence
+
+The current correctness frontier is hardware-valid, but the loaded first-fire
+room is visibly slow. Serial timings identify the dominant cost; do not guess.
+
+Adjacent-fire attack frame:
+
+```text
+worldUs   = 178264
+spriteUs  = 544735
+hudUs     = 1304
+presentUs = 46783
+totalUs   = 843825
+spriteReads = 100
+```
+
+Settle-to-idle frame:
+
+```text
+worldUs   = 177817
+spriteUs  = 544602
+hudUs     = 1276
+presentUs = 46678
+totalUs   = 842463
+spriteReads = 100
+```
+
+A move in the same loaded area reached:
+
+```text
+[RESIDENTGAMEPLAY] FRAME ... totalUs=832308 presented=1
+```
+
+Door animation in the same region reached roughly 1.10 s for the final
+`SELECT-DOOR` frame sequence.
+
+Conclusion:
+
+```text
+primary hotspot = sprite rendering / sprite asset reads
+secondary cost  = world render
+small cost       = 160x120 -> 320x240 presentation (~34-47 ms)
+```
+
+Do **not** optimize `PlatformVideo_present()` first. A dedicated bounded sprite
+renderer/cache milestone should profile why a loaded scene still incurs about
+100 sprite pack reads and ~545 ms sprite time per full frame.
 
 ## Production gameplay boundary
 
@@ -254,6 +340,7 @@ SELECT front-tile provenance
 EV_OPENLINE / EV_CLOSELINE
 MOVE source EXIT + destination ENTER bounded event routes
 regular-door bounded visual interpolation
+mutable line texture variants visible in native renderer
 EV_DIALOG / EV_DIALOGNOBACK presentation
 progressive dialog / paging / fast-forward / close
 saved dialog continuation transaction
@@ -262,11 +349,15 @@ state ops 11 / 19 / 20
 EV_FORCEMESSAGE top-bar owner/painter
 EV_NOTE bounded prefix before dialog
 native idle first-person weapon painting
+generic native weapon attack frame 1 -> idle frame 0 presentation
 eType=5 weapon consumed-bit/ownership/auto-select overlay
-resident opcode/pickup corpus diagnostics
+empty/human Action feedback with bounded 1200 ms top-bar lifetime
+adjacent extinguisher fire removal with rollback-safe presentation
+resident opcode/pickup/action diagnostics
 ```
 
-The engine still does **not** broad-enable legacy `Game_executeEvent()`.
+The engine still does **not** broad-enable legacy `Game_executeEvent()` or
+legacy `Combat_performAttack()` as a permanent ESP32 backend.
 
 ## Event frontier
 
@@ -319,62 +410,65 @@ scope = current map/runtime arena
 rollback = exact on redraw failure
 ```
 
+Real-CYD extinguisher pickup witness:
+
+```text
+[PICKUP] WEAPON tile=643 sprite=50 subtype=1 new=yes weapons=0004->0006 selected=2->1 worldRemove=overlay ammoOwner=deferred legacyDialog=deferred
+[WEAPON] DRAW weapon=1 logical=241 actual=606 frame=0 pose=idle ... cache=miss reads=10
+[PICKUP] FRAME reason=WEAPON-PICKUP ... presented=1
+```
+
 Deferred:
 
 ```text
 weapon ammo increment / acquisition feedback / sound
-eType=3 world/player-stat item
+eType=3 world/player-stat item (armor/health-style pickups)
 eType=4 inventory item
 eType=6 ammo
 eType=16 alternate ammo
 ```
 
-## Historical Junction corpus
+The user physically walked over two armor helmets and they were not consumed.
+That is expected at this frontier: player-stat pickup ownership has not been
+implemented yet and must not be patched as a helmet-specific special case.
 
-Junction remains useful only as a second regression corpus for the same engine:
+## Build/include guardrails
 
-```text
-resource = /junction.bsp
-resourceMapId = 9
-gameplayLoadMapId = 2
-sourceBytes = 21051
-sourceCRC32 = 4a2c5800
-sourceFNV = fefaf5ca
-runtimeFNV = bc432a0f
-lineState baseline FNV = 3658710d
-fresh player = 992,1888,36
-angle = 64
-fresh tile = 943
+The recovered legacy headers contain the historical C declaration:
+
+```c
+typedef enum { false, true } boolean;
 ```
 
-There is no active Junction-named sprite renderer source/header/API. Do not turn
-these regression values back into a Junction-specific implementation.
+Never solve an ESP-IDF include problem by shadowing a framework header under
+`ESP32/include`. A temporary `ESP32/include/esp_timer.h` shim once intercepted
+Arduino/FreeRTOS C++ include chains and broke unrelated translation units.
 
-## Recent cleanup milestones
+Prefer existing project clocks such as `DoomRPG_GetUpTimeMS()` when appropriate,
+or add a narrowly project-named adapter. Do not globally intercept framework
+headers.
+
+## Next bounded direction
+
+Correctness work on this branch is hardware-pass. The strongest next performance
+candidate is now evidence-driven:
 
 ```text
-PR #106  historical MAP1/Junction/Entrance probe archaeology removed
-PR #107  sprite renderer naming made fully generic
-PR #108  Render startup probe naming retired into EspRenderStartupBridge_start()
-PR #109  pre-render startup naming retired into EspLegacyPrerenderStartup_start()
+sprite renderer / resident sprite-asset cache audit
 ```
 
-Current config/mappings compatibility cleanup:
+Goal for that milestone should be bounded and measurable: explain and reduce the
+~100 sprite pack reads / ~545 ms sprite phase seen in the loaded fire room while
+preserving the compact resident owner, no-PSRAM target and exact visual output.
+
+Separately, gameplay correctness still needs generic owners for:
 
 ```text
-PASS 1  physical source rename, bit-for-bit
-        -> 5e678d49
-        -> real-CYD PASS
-
-PASS 2  permanent API + direct consumers + old header removal
-        -> 571afd1b
-        -> real-CYD PASS
-
-RESULT  branch agent/esp32-legacy-config-mappings-startup = MERGE-READY
+player-stat pickups
+ammo/inventory pickups
+generic monster/destructible combat
+combat miss / no-effect / ammo / sound / turn consequences
 ```
 
-After merge, recover the new exact GitHub `main` SHA before starting another
-branch. The next cleanup candidate must be **audited**, not assumed: determine
-whether a remaining probe is a production owner, a bringup-only diagnostic, a
-linker/regression witness, or still-needed development instrumentation before
-renaming or removing it.
+After this branch merges, recover the new exact GitHub `main` SHA before starting
+another `agent/*` branch.
