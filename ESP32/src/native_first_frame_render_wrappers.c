@@ -1,7 +1,12 @@
 #include <SDL.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "DoomRPG.h"
 #include "Render.h"
+
+#include <esp_timer.h>
 
 #include "esp_asset_pack.h"
 #include "esp_map_runtime.h"
@@ -35,10 +40,51 @@ static int nativeCompactWorldContext(const Render_t* render) {
            render->shapeData == NULL && render->mediaTexels == NULL;
 }
 
+static uint32_t elapsedMicros(int64_t start) {
+    int64_t elapsed = esp_timer_get_time() - start;
+    if (elapsed <= 0) return 0U;
+    if ((uint64_t)elapsed > UINT32_MAX) return UINT32_MAX;
+    return (uint32_t)elapsed;
+}
+
 void __wrap_Render_initColumnScale(Render_t* render) {
     __real_Render_initColumnScale(render);
     if (nativeCompactWorldContext(render)) {
-        (void)EspNativePlaneRenderer_render(render);
+        EspAssetPackResidentStats before;
+        EspAssetPackResidentStats after;
+        int64_t start;
+        uint32_t micros;
+        int ok;
+
+        memset(&before, 0, sizeof(before));
+        memset(&after, 0, sizeof(after));
+        EspAssetPack_residentGetStats(&before);
+        start = esp_timer_get_time();
+        ok = EspNativePlaneRenderer_render(render);
+        micros = elapsedMicros(start);
+        EspAssetPack_residentGetStats(&after);
+
+        /* Capture time before printing so this diagnostic line is not charged
+         * to the measured plane phase. The existing NATIVEPLANE line remains
+         * inside EspNativePlaneRenderer_render() and is therefore part of the
+         * current production cost being audited. */
+        printf("[PLANEPROFILE] us=%u ok=%u physicalReads=%u physicalBytes=%u range=%uH/%uM/%uS/%uB entry=%uH/%uM resident=%u cache=%u/%u entries=%u/%u large=%u\n",
+               (unsigned int)micros,
+               (unsigned int)(ok != 0),
+               (unsigned int)(after.physicalReads - before.physicalReads),
+               (unsigned int)(after.physicalBytes - before.physicalBytes),
+               (unsigned int)(after.rangeCacheHits - before.rangeCacheHits),
+               (unsigned int)(after.rangeCacheMisses - before.rangeCacheMisses),
+               (unsigned int)(after.rangeCacheStores - before.rangeCacheStores),
+               (unsigned int)(after.rangeCacheBypasses - before.rangeCacheBypasses),
+               (unsigned int)(after.entryCacheHits - before.entryCacheHits),
+               (unsigned int)(after.entryCacheMisses - before.entryCacheMisses),
+               (unsigned int)after.ready,
+               (unsigned int)after.rangeCacheBytesUsed,
+               (unsigned int)after.rangeCacheCapacityBytes,
+               (unsigned int)after.rangeCacheEntries,
+               (unsigned int)after.rangeCacheEntryCapacity,
+               (unsigned int)after.largeRangeEntries);
     }
 }
 
