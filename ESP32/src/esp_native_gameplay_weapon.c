@@ -19,14 +19,21 @@
 #define MAX_TEXELS 2048U
 #define PLAYER_WEAPON_COUNT 12U
 #define WEAPON_SPRITE_BASE 240U
+#define WEAPON_FRAME_IDLE 0U
+#define WEAPON_FRAME_ATTACK 1U
 
-/* Combat.c wpinfo fields FLD_WP_IDLEX / FLD_WP_IDLEY.  Keep this tiny table
- * local to the screen-space presentation owner; combat stats/attack animation
- * remain deferred and are not imported into native gameplay yet. */
+/* Combat.c wpinfo fields FLD_WP_IDLEX / FLD_WP_IDLEY and
+ * FLD_WP_ATKX / FLD_WP_ATKY. This is presentation data only. */
 static const int8_t idleOffsets[PLAYER_WEAPON_COUNT][2] = {
     {20, 25}, {0, 15}, {0, 15}, {0, 12},
     {0, 15},  {0, 15}, {0, 15}, {0, 15},
     {0, 13},  {20, 15}, {20, 15}, {20, 15}
+};
+
+static const int8_t attackOffsets[PLAYER_WEAPON_COUNT][2] = {
+    {20, 0}, {0, 0}, {0, 0}, {0, 0},
+    {0, 0},  {0, 0}, {0, 0}, {0, 0},
+    {0, 5},  {20, 8}, {20, 8}, {20, 8}
 };
 
 typedef struct WeaponSources_s {
@@ -68,14 +75,34 @@ typedef struct WeaponFrame_s {
 typedef struct WeaponWorkspace_s {
     WeaponFrame frame;
     uint8_t busy;
-    uint8_t reserved[3];
+    uint8_t cachedValid;
+    uint8_t cachedWeapon;
+    uint8_t cachedFrame;
 } WeaponWorkspace;
 
 /* The intro has a tighter contiguous-heap requirement than resident gameplay.
  * Do not charge this 2.5 KiB decode workspace to BSS from boot: acquire it once
  * on the first real weapon frame, after the legacy prologue has been disposed,
- * then keep/reuse that one bounded owner for the rest of the session. */
+ * then keep/reuse that one bounded owner for the rest of the session.
+ *
+ * The same allocation caches exactly one decoded pose (idle or attack). There
+ * is no second pixel/mask owner; normal same-weapon idle redraws remain zero
+ * weapon-layer PAK reads. */
 static WeaponWorkspace* weaponWorkspace;
+static uint8_t weaponAttackArmed;
+static uint8_t weaponAttackWeapon;
+
+int EspNativeGameplayWeapon_armAttack(uint8_t weapon) {
+    if (weapon >= PLAYER_WEAPON_COUNT) return 0;
+    weaponAttackWeapon = weapon;
+    weaponAttackArmed = 1U;
+    return 1;
+}
+
+void EspNativeGameplayWeapon_cancelAttack(void) {
+    weaponAttackArmed = 0U;
+    weaponAttackWeapon = 0U;
+}
 
 static uint16_t le16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -166,15 +193,17 @@ static int initSources(WeaponSources* sources,
     return 1;
 }
 
-static int loadIdleFrame(const WeaponSources* sources,
-                         uint16_t logical,
-                         WeaponFrame* frame,
-                         EspNativeGameplayWeaponStats* stats) {
+static int loadFrame(const WeaponSources* sources,
+                     uint16_t logical,
+                     uint8_t animationFrame,
+                     WeaponFrame* frame,
+                     EspNativeGameplayWeaponStats* stats) {
     uint8_t idBytes[2];
     uint8_t pair[8];
     uint8_t header[12];
     uint8_t paletteBytes[32];
     uint32_t actual;
+    uint32_t baseActual;
     uint32_t shapeOffset;
     uint32_t maskOffset;
     int32_t sourceOffset;
@@ -187,6 +216,7 @@ static int loadIdleFrame(const WeaponSources* sources,
     uint32_t p;
 
     if (sources == NULL || frame == NULL || stats == NULL ||
+        animationFrame > WEAPON_FRAME_ATTACK ||
         logical >= sources->spriteIds || logical >= 256U) {
         return 0;
     }
@@ -198,8 +228,12 @@ static int loadIdleFrame(const WeaponSources* sources,
         return 0;
     }
 
-    actual = (uint32_t)le16(idBytes); /* idle animation frame 0 */
-    if (actual >= sources->bitShapePairs || actual > UINT16_MAX ||
+    /* mediaSpriteIds[logical] is the base shape and Render_draw2DSprite adds
+     * the animation frame index. Render_addMapSprites follows the same rule. */
+    baseActual = (uint32_t)le16(idBytes);
+    actual = baseActual + (uint32_t)animationFrame;
+    if (actual < baseActual || actual >= sources->bitShapePairs ||
+        actual > UINT16_MAX ||
         !readRange(&sources->mappings,
                    sources->spritePairBase + actual * PAIR_BYTES,
                    pair, sizeof(pair), stats)) {
@@ -287,11 +321,11 @@ static int legacyAnchorTerm(int value, int scale) {
     return ((((value << 8) * scale) + 0xff00) >> 16);
 }
 
-static int rasterizeIdle(Render_t* render,
-                         const WeaponFrame* frame,
-                         int anchorX,
-                         int anchorY,
-                         EspNativeGameplayWeaponStats* stats) {
+static int rasterizeFrame(Render_t* render,
+                          const WeaponFrame* frame,
+                          int anchorX,
+                          int anchorY,
+                          EspNativeGameplayWeaponStats* stats) {
     uint16_t* framebuffer;
     int pitchPixels;
     int sampleScale;
@@ -304,7 +338,7 @@ static int rasterizeIdle(Render_t* render,
         return 0;
     }
 
-    /* Render_draw2DSprite uses these two reciprocal fixed-point steps.  The
+    /* Render_draw2DSprite uses these two reciprocal fixed-point steps. The
      * destination rectangles below are the mask-backed equivalent for the
      * already-decoded native frame. */
     sampleScale = 65536 / (32768 / render->screenWidth);
@@ -379,7 +413,9 @@ int EspNativeGameplayWeapon_render(
     WeaponSources sources;
     WeaponWorkspace* workspace = weaponWorkspace;
     WeaponFrame* frame = NULL;
+    const int8_t* offsets;
     uint16_t logical;
+    uint8_t animationFrame;
     int scale;
     int anchorX;
     int anchorY;
@@ -389,6 +425,7 @@ int EspNativeGameplayWeapon_render(
     int savedScreenBottom = 0;
     int clipSaved = 0;
     int opened = 0;
+    int cacheHit = 0;
     int ok = 0;
 
     memset(&stats, 0, sizeof(stats));
@@ -428,6 +465,18 @@ int EspNativeGameplayWeapon_render(
         return 0;
     }
 
+    if (weaponAttackArmed != 0U && weaponAttackWeapon != weapon) {
+        EspNativeGameplayWeapon_cancelAttack();
+    }
+    animationFrame = (uint8_t)(weaponAttackArmed != 0U &&
+                               weaponAttackWeapon == weapon
+                                   ? WEAPON_FRAME_ATTACK
+                                   : WEAPON_FRAME_IDLE);
+    stats.animationFrame = animationFrame;
+    offsets = animationFrame == WEAPON_FRAME_ATTACK
+                  ? attackOffsets[weapon]
+                  : idleOffsets[weapon];
+
     if (workspace == NULL) {
         workspace = (WeaponWorkspace*)SDL_calloc(1, sizeof(*workspace));
         if (workspace == NULL) {
@@ -436,40 +485,59 @@ int EspNativeGameplayWeapon_render(
             return 0;
         }
         weaponWorkspace = workspace;
-        printf("[WEAPON] WORKSPACE ownerBytes=%u allocation=lazy-gameplay\n",
+        printf("[WEAPON] WORKSPACE ownerBytes=%u allocation=lazy-gameplay cache=one-decoded-pose\n",
                (unsigned int)sizeof(*workspace));
     }
 
     frame = &workspace->frame;
     workspace->busy = 1U;
     logical = (uint16_t)(WEAPON_SPRITE_BASE + weapon);
-    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
-        printf("[WEAPON] FAILED pack-open weapon=%u logical=%u\n",
-               (unsigned int)weapon, (unsigned int)logical);
-        goto done;
-    }
-    opened = 1;
 
-    if (!initSources(&sources, &stats) ||
-        !loadIdleFrame(&sources, logical, frame, &stats)) {
-        printf("[WEAPON] FAILED resource weapon=%u logical=%u reads=%u\n",
-               (unsigned int)weapon,
-               (unsigned int)logical,
-               (unsigned int)stats.packReads);
-        goto done;
+    if (workspace->cachedValid != 0U &&
+        workspace->cachedWeapon == weapon &&
+        workspace->cachedFrame == animationFrame &&
+        frame->logical == logical) {
+        stats.logicalSprite = logical;
+        stats.actualSprite = frame->actual;
+        stats.activePixels = frame->active;
+        stats.frameBytes = frame->maskBytes + frame->packedBytes;
+        cacheHit = 1;
+    }
+    else {
+        workspace->cachedValid = 0U;
+        if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+            printf("[WEAPON] FAILED pack-open weapon=%u logical=%u frame=%u\n",
+                   (unsigned int)weapon,
+                   (unsigned int)logical,
+                   (unsigned int)animationFrame);
+            goto done;
+        }
+        opened = 1;
+
+        if (!initSources(&sources, &stats) ||
+            !loadFrame(&sources, logical, animationFrame, frame, &stats)) {
+            printf("[WEAPON] FAILED resource weapon=%u logical=%u frame=%u reads=%u\n",
+                   (unsigned int)weapon,
+                   (unsigned int)logical,
+                   (unsigned int)animationFrame,
+                   (unsigned int)stats.packReads);
+            goto done;
+        }
+        workspace->cachedWeapon = weapon;
+        workspace->cachedFrame = animationFrame;
+        workspace->cachedValid = 1U;
     }
 
-    /* Exact idle caller placement recovered from Combat_drawWeapon(). */
     scale = (render->screenWidth << 16) / 0x8000;
     anchorX = (render->screenWidth / 2) +
-              legacyAnchorTerm((int)idleOffsets[weapon][0] - 32, scale);
+              legacyAnchorTerm((int)offsets[0] - 32, scale);
     anchorY = render->screenHeight -
-              legacyAnchorTerm(64 - (int)idleOffsets[weapon][1], scale);
+              legacyAnchorTerm(64 - (int)offsets[1], scale);
     stats.anchorX = (int16_t)anchorX;
     stats.anchorY = (int16_t)anchorY;
 
-    /* World/sprite owners restore the caller's Render_t scratch exactly.  The
-     * caller's clip is therefore not a stable gameplay-frame invariant.  Own a
+    /* World/sprite owners restore the caller's Render_t scratch exactly. The
+     * caller's clip is therefore not a stable gameplay-frame invariant. Own a
      * full viewport clip only while drawing this screen-space layer, then put
      * every field back before the compositor checks Render_t byte stability. */
     savedScreenLeft = render->screenLeft;
@@ -482,16 +550,20 @@ int EspNativeGameplayWeapon_render(
     render->screenBottom = render->screenHeight;
     clipSaved = 1;
 
-    if (!rasterizeIdle(render, frame, anchorX, anchorY, &stats)) {
-        printf("[WEAPON] FAILED raster weapon=%u logical=%u actual=%u\n",
+    if (!rasterizeFrame(render, frame, anchorX, anchorY, &stats)) {
+        printf("[WEAPON] FAILED raster weapon=%u logical=%u actual=%u frame=%u\n",
                (unsigned int)weapon,
                (unsigned int)logical,
-               (unsigned int)frame->actual);
+               (unsigned int)frame->actual,
+               (unsigned int)animationFrame);
         goto done;
     }
 
     stats.drawn = 1U;
     ok = 1;
+    if (animationFrame == WEAPON_FRAME_ATTACK) {
+        EspNativeGameplayWeapon_cancelAttack();
+    }
 
 done:
     if (clipSaved) {
@@ -502,16 +574,19 @@ done:
     }
     if (opened) EspAssetPack_close();
     if (ok) {
-        printf("[WEAPON] DRAW weapon=%u logical=%u actual=%u idle=%d,%d anchor=%d,%d bounds=%d..%d,%d..%d active=%u pixels=%u reads=%u frameBytes=%u ownerBytes=%u packClosed=%s\n",
+        printf("[WEAPON] DRAW weapon=%u logical=%u actual=%u frame=%u pose=%s offset=%d,%d anchor=%d,%d bounds=%d..%d,%d..%d active=%u pixels=%u cache=%s reads=%u frameBytes=%u ownerBytes=%u packClosed=%s\n",
                (unsigned int)weapon,
                (unsigned int)stats.logicalSprite,
                (unsigned int)stats.actualSprite,
-               (int)idleOffsets[weapon][0],
-               (int)idleOffsets[weapon][1],
+               (unsigned int)animationFrame,
+               animationFrame == WEAPON_FRAME_ATTACK ? "attack" : "idle",
+               (int)offsets[0],
+               (int)offsets[1],
                anchorX, anchorY,
                frame->xMin, frame->xMax, frame->yMin, frame->yMax,
                (unsigned int)stats.activePixels,
                (unsigned int)stats.pixelsWritten,
+               cacheHit ? "hit" : "miss",
                (unsigned int)stats.packReads,
                (unsigned int)stats.frameBytes,
                (unsigned int)sizeof(*workspace),

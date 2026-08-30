@@ -7,6 +7,7 @@
 #include "Render.h"
 
 #include "esp_map_line_state.h"
+#include "esp_map_line_texture_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_door_animator.h"
 #include "esp_native_gameplay_frame.h"
@@ -37,16 +38,19 @@ typedef struct AnimatedClipContext_s {
  * frame is being composed.
  *
  * No source/runtime data is mutated. Fully-open lines are copied from the
- * immutable arena and marked as renderer-only non-wall spans. During a regular
- * legacy door animation the compact copy instead receives the recovered x/y
- * displacement, while Render_clipLine receives the matching transient texture
- * z coordinates. The same scoped view is seen by world raster and BSP sprite
- * depth because both run inside renderTurn().
+ * immutable arena and marked as renderer-only non-wall spans. Mutable door
+ * texture variants are overlaid from EspMapLineTextureState on that copy, so
+ * an EV_UNLOCK can change the red/green indicator without touching the arena.
+ * During a regular legacy door animation the compact copy also receives the
+ * recovered x/y displacement, while Render_clipLine receives the matching
+ * transient texture z coordinates. The same scoped view is seen by world
+ * raster and BSP sprite depth because both run inside renderTurn().
  */
 static uint8_t dynamicFrameActive;
 static uint8_t dynamicAnimationFault;
 static uint32_t dynamicOpenLineReads;
 static uint32_t dynamicAnimatedLineReads;
+static uint32_t dynamicTextureVariantReads;
 static EspMapLineStateView renderLineStateView;
 static AnimatedClipContext animatedClip;
 
@@ -147,14 +151,54 @@ static int applyAnimatedLine(uint32_t index,
     return 1;
 }
 
+static int resolveDynamicTexture(uint32_t index,
+                                 uint16_t sourceTexture,
+                                 uint16_t* outTexture) {
+    const EspMapLineTextureStateView* state = EspMapLineTextureState_view();
+    uint8_t texture10;
+
+    if (outTexture == NULL || state == NULL || state->texture10Bits == NULL ||
+        index >= state->lineCount) {
+        return 0;
+    }
+
+    if (sourceTexture != ESP_MAP_LINE_TEXTURE_LOCKED &&
+        sourceTexture != ESP_MAP_LINE_TEXTURE_UNLOCKED) {
+        *outTexture = sourceTexture;
+        return 1;
+    }
+
+    texture10 = (uint8_t)((state->texture10Bits[index >> 3] >>
+                           (index & 7U)) & 1U);
+    *outTexture = texture10 != 0U ? ESP_MAP_LINE_TEXTURE_UNLOCKED
+                                  : ESP_MAP_LINE_TEXTURE_LOCKED;
+    return 1;
+}
+
 int __wrap_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine) {
     uint8_t open;
+    uint16_t effectiveTexture;
     int16_t displacement;
 
     animatedClip.valid = 0U;
     if (!__real_EspMapRuntime_getLine(index, outLine)) return 0;
     if (!dynamicFrameActive) return 1;
     if (!EspMapLineState_getOpen(index, &open)) return 0;
+
+    if (EspMapLineTextureState_isReady()) {
+        /* The immutable source line is already in outLine. Do not call
+         * EspMapLineTextureState_getEffectiveTexture() here: that getter reads
+         * EspMapRuntime_getLine(), which is this very wrapped boundary during a
+         * dynamic frame and would recurse until the loopTask stack canary. */
+        if (!resolveDynamicTexture(index, outLine->texture, &effectiveTexture)) {
+            dynamicAnimationFault = 1U;
+            return 0;
+        }
+        if (outLine->texture != effectiveTexture) {
+            outLine->texture = effectiveTexture;
+            ++dynamicTextureVariantReads;
+        }
+    }
 
     if (EspNativeDoorAnimator_getLineDisplacement(index, &displacement)) {
         if (!applyAnimatedLine(index, outLine, displacement)) {
@@ -224,6 +268,7 @@ static int renderDynamicFrame(struct Render_s* render,
 
     dynamicOpenLineReads = 0U;
     dynamicAnimatedLineReads = 0U;
+    dynamicTextureVariantReads = 0U;
     dynamicAnimationFault = 0U;
     memset(&animatedClip, 0, sizeof(animatedClip));
     dynamicFrameActive = 1U;
@@ -234,7 +279,7 @@ static int renderDynamicFrame(struct Render_s* render,
     if (dynamicAnimationFault != 0U) ok = 0;
 
     if (animationFrame != NULL) {
-        printf("[DOORANIM] FRAME %u/%u angle=%u lines=%u geometry=%s animatedReads=%u openReads=%u frame=%08x render=%s\n",
+        printf("[DOORANIM] FRAME %u/%u angle=%u lines=%u geometry=%s animatedReads=%u openReads=%u textureVariants=%u frame=%08x render=%s\n",
                (unsigned int)animationFrame->ordinal,
                (unsigned int)animationFrame->totalFrames,
                (unsigned int)angle,
@@ -242,17 +287,19 @@ static int renderDynamicFrame(struct Render_s* render,
                animationFrame->geometryActive != 0U ? "moving" : "stable",
                (unsigned int)dynamicAnimatedLineReads,
                (unsigned int)dynamicOpenLineReads,
+               (unsigned int)dynamicTextureVariantReads,
                outStats != NULL ? (unsigned int)outStats->frameAfterFNV : 0U,
                ok ? "ok" : "failed");
     }
 
     if (openCount != 0U || dynamicOpenLineReads != 0U ||
-        dynamicAnimatedLineReads != 0U) {
-        printf("[DYNAMICLINES] FRAME angle=%u open=%u adaptedReads=%u animatedReads=%u render=%s immutableRuntime=yes\n",
+        dynamicAnimatedLineReads != 0U || dynamicTextureVariantReads != 0U) {
+        printf("[DYNAMICLINES] FRAME angle=%u open=%u adaptedReads=%u animatedReads=%u textureVariants=%u render=%s immutableRuntime=yes\n",
                (unsigned int)angle,
                (unsigned int)openCount,
                (unsigned int)dynamicOpenLineReads,
                (unsigned int)dynamicAnimatedLineReads,
+               (unsigned int)dynamicTextureVariantReads,
                ok ? "ok" : "failed");
     }
     return ok;

@@ -5,7 +5,11 @@
 static uint8_t gateArmed;
 static unsigned int suppressedCount;
 
-extern int __real_Esp32PlatformVideo_present(void);
+/* The action layer is a leaf behind this permanent gate.  Keeping the gate as
+ * the sole linker wrapper preserves the already-validated one-shot suppression
+ * contract while allowing Action feedback to decorate a frame immediately
+ * before the physical present. */
+extern int EspNativeGameplayActionEngine_present(void);
 
 int EspNativeGameplayPresentGate_armOne(void) {
     if (gateArmed != 0U) return 0;
@@ -31,5 +35,5 @@ int __wrap_Esp32PlatformVideo_present(void) {
         ++suppressedCount;
         return 1;
     }
-    return __real_Esp32PlatformVideo_present();
+    return EspNativeGameplayActionEngine_present();
 }

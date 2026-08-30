@@ -8,60 +8,43 @@ architecture. Recovery and development should start from this small set:
 3. [`ARCHITECTURE.md`](ARCHITECTURE.md) — permanent native engine design;
 4. this file — build/layout/recovery pointers.
 
-If repository state and chat history disagree, the repository wins.
+If repository state and chat history disagree, the repository wins. Serial logs
+from the real classic CYD are the final runtime truth.
 
 ## Current branch
 
 ```text
-latest merged main = fc6a271490bd06dad4ae8264ba106281864b53e1
-latest merged PR = #109 — ESP32 legacy pre-render startup cleanup
-branch = agent/esp32-legacy-config-mappings-startup
-base main = fc6a271490bd06dad4ae8264ba106281864b53e1
-PASS 1 physical implementation rename = 5e678d49610a98bdc0600b9af640f05b1ce2dd9b
-hardware-tested final code HEAD = 571afd1b0665e74ad15f8ae5365433041c55a23e
+main = 45d634449faa511dd02ab25ac5bb980fa4ef86b1
+branch = agent/esp32-native-action-engine
+base main = 45d634449faa511dd02ab25ac5bb980fa4ef86b1
+hardware-tested final code HEAD = 1f88ca6488d78be181fc97b500beefbe0eb9a751
 status = REAL-CYD PASS
-merge-ready = YES
+merge-ready = YES after docs-only tail verification
 ```
 
-The config/mappings compatibility stage now has a permanent responsibility-based
-API:
+This branch establishes a bounded native Action/Combat presentation frontier:
 
 ```text
-ESP32/src/esp_legacy_config_mappings_startup.c
-ESP32/include/esp_legacy_config_mappings_startup.h
-EspLegacyConfigMappingsStartup_start()
+empty/human Action -> native top-bar feedback
+1200 ms feedback lease -> topbar-only clear
+strict touch-feedback arbitration
+trace -> enemy/destructible fail-closed routing
+adjacent extinguisher -> native fire removal overlay + attack frame + idle settle
+mutable line texture variants -> live door lock visual update
+generic weapon frame cache keyed by weapon + animation frame
 ```
 
-It still performs exactly the retained startup sequence:
+Still deliberately deferred:
 
 ```text
-Game_loadConfig()
- -> inspect mappings.bin sizing against current heap
- -> Render_loadMappings()
- -> validate resident mapping arrays/counts
- -> stop before Render_beginLoadMap()/BSP
+generic monster/destructible HP/damage combat
+ammo/XP/sound/turn consequences
+remote extinguisher miss/no-effect presentation
+player-stat/inventory/ammo pickups
 ```
 
-The separate `esp_render_mapping_reload_guard.c` remains untouched. Its bounded
-job is still to release the four mapping arrays immediately before the real
-`Render_beginLoadMap()` reload so the classic CYD does not carry both old tables
-and mapping inflate state at the same time.
-
-The real-CYD normal `esp32-cyd` firmware passed both cleanup stages. Final code
-HEAD `571afd1b...` continued through intro disposal and the native Entrance
-session with:
-
-```text
-[NATIVEBOOT] READY map=1 gameplayLoadMapId=1 ... shapeData=0x0 mediaTexels=0x0
-[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430
-[ENGINECACHE] OWNER bytes=21160 payload=16384 entries=256
-[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
-[ALIVE] ... heap=92816 heap8=27052 largest8=16372
-PRERENDER=ready RENDER=ready MAPPINGS=ready MENUBSP=ready
-```
-
-No visible/apparent `FAILED`, panic or reboot was reported. All commits after
-`571afd1b0665e74ad15f8ae5365433041c55a23e` are documentation-only.
+The exact hardware evidence, timings and known divergences are recorded in
+[`PORTING_STATUS.md`](PORTING_STATUS.md).
 
 ## Build environments
 
@@ -79,12 +62,208 @@ Optional diagnostic environment:
 pio run -e esp32-cyd-bringup
 ```
 
-`esp32-cyd-bringup` extends the normal environment and adds diagnostic compile
-flags including `DOOMRPG_ESP32_BRINGUP_PROBES=1` and the touch hitbox overlay.
-Bring-up instrumentation can perturb memory, so its heap figures are not
-production canons.
+`esp32-cyd-bringup` extends the normal environment with diagnostics. Bring-up
+instrumentation can perturb memory, so its heap figures are not production
+canons.
 
-### Cleanup rule for probes
+## Header/include hygiene
+
+The recovered legacy headers predate modern ESP-IDF/Arduino include conventions.
+In particular, `src/DoomRPG.h` declares the historical C type:
+
+```c
+typedef enum { false, true } boolean;
+```
+
+That collides with `stdbool` macros in C and with C++ language keywords if a
+framework header is forced through the wrong compatibility path. Treat this as a
+build-boundary invariant, not as an invitation to patch the legacy executable
+specification.
+
+Rules for native ESP32 code:
+
+```text
+prefer existing project clocks/APIs over importing a new ESP-IDF header
+keep SDL/legacy include order explicit when a C unit needs DoomRPG.h/Render.h
+never shadow ESP-IDF/Arduino framework headers in ESP32/include for a local fix
+never inject DoomRPG.h from a framework-shadow header or transitive C++ path
+if an include collision appears, fix the owning translation unit or add a
+narrow project-named adapter; do not globally intercept framework includes
+```
+
+Why this is strict: `ESP32/include` precedes framework include paths. A file such
+as `ESP32/include/esp_timer.h` therefore intercepts not only one native C file
+but also Arduino -> FreeRTOS -> portmacro includes across unrelated `.cpp`
+translation units.
+
+For elapsed gameplay time, use an already-owned canonical clock such as
+`DoomRPG_GetUpTimeMS()` when its semantics are sufficient instead of adding an
+ESP-IDF timer dependency solely for millisecond timestamps.
+
+## Linker-wrapper hygiene
+
+Wrappers are a compatibility boundary, not a license for hidden recursive call
+graphs.
+
+Permanent rule:
+
+```text
+A linker wrapper must not call a higher-level API that can indirectly re-enter
+that wrapped symbol.
+```
+
+Prefer:
+
+```text
+__real_* direct access
+already-materialized immutable/mutable owner views
+small explicitly non-reentrant helpers
+```
+
+Do not call convenience getters from a wrapper unless their complete call graph
+is known not to return through the same wrapped symbol.
+
+This rule was recovered from a real failure: the first mutable line-texture
+renderer wrapper called a texture getter that internally called
+`EspMapRuntime_getLine()` again, producing an infinite wrapper recursion until
+the `loopTask` stack canary fired. The final code resolves the texture bit from
+the already-owned line-texture view instead.
+
+## Framebuffer owner arbitration
+
+The logical framebuffer is shared by several bounded presenters. A temporary
+visual owner that saves exact pixels must not have its snapshot invalidated by
+another subsystem during its lease.
+
+Current example:
+
+```text
+EspNativeGameplayControls_begin()
+ -> saves exact touched pixels
+ -> 120 ms control flash lease
+ -> EspNativeGameplayControls_restore()
+```
+
+Action feedback expiry must therefore wait while the touch-control overlay is
+active. Do not weaken the exact restore/FNV check to hide cross-owner writes;
+arbitrate ownership instead.
+
+## Source layout
+
+Permanent/current source should be read by responsibility:
+
+```text
+ESP32/src/esp_map_*                       native map/runtime/event ownership
+ESP32/src/esp_player_*                    native player/view ownership
+ESP32/src/esp_native_gameplay_*           reusable live gameplay/action semantics
+ESP32/src/esp_native_sprite_renderer.c    reusable sprite renderer
+ESP32/src/esp_native_dynamic_line_render.c mutable line presentation overlay
+ESP32/src/esp_asset_pack.cpp              native PAK backing store/cache
+ESP32/src/esp_bsp_reader.c                BSP structural inventory/parser
+ESP32/src/esp_native_startup.c            generic new-game resident/spawn bootstrap
+ESP32/src/platform_*                      CYD input/video bridges
+ESP32/src/native_intro_*                  bounded intro compatibility path
+ESP32/src/native_main_menu_*              bounded menu compatibility path
+```
+
+Retained desktop compatibility startup remains explicit and bounded rather than
+being treated as the permanent ESP32 architecture.
+
+## Native data path
+
+Map runtime backing store:
+
+```text
+/DoomRPG-ESP32.pak
+```
+
+Map loading must use the native pack plus compact resident owners. Do not add a
+new map path that reads/decompresses the old ZIP into map-wide memory.
+
+`/DoomRPG.zip` is still touched by transitional menu/HUD/bootstrap compatibility
+code. That is explicit compatibility debt, not permission to move migrated BSP
+or runtime data back to ZIP ownership.
+
+## Action / Combat recovery notes
+
+The recovered desktop SELECT behavior is specification input, not the permanent
+ESP32 architecture:
+
+```text
+front tile event first
+ -> trace up to 8 tiles with mask 0x5687
+ -> human: do not attack
+ -> destructible: weapon mask decides attack eligibility
+ -> fire: extinguisher only
+ -> enemy: attack
+ -> otherwise: Nothing to use
+```
+
+Important nuance for fire: the trace can find a fire farther than one tile away,
+and legacy `Player_fireWeapon()` still enters combat. The extinguisher has
+`rangeMin=0`, so `CombatEntity_calcHit()` misses beyond squared distance 4096 and
+the desktop combat path reports `No effect!` after the attack presentation.
+
+Current ESP32 code intentionally does **not** fake that whole combat transaction.
+Until generic miss/ammo/turn ownership exists:
+
+```text
+adjacent fire -> native FIRE_CLEARED transaction
+remote fire   -> FIRE_RANGE_DEFERRED, mutation=no, attack presentation deferred
+```
+
+That is a documented temporary divergence, not final gameplay behavior.
+
+## Pickup frontier
+
+Current production pickup owner:
+
+```text
+eType=5 weapon
+world remove = consumed-sprite bit overlay
+ownership = native uint16 weapon mask
+new weapon select = native HUD overlay
+rollback = exact on redraw failure
+```
+
+Still deferred:
+
+```text
+eType=3 world/player-stat item
+eType=4 inventory item
+eType=6 ammo
+eType=16 alternate ammo
+weapon acquisition ammo/message/sound consequences
+```
+
+Do not implement helmets, health items or ammo boxes as one-off cases. Add a
+small generic player-stat/inventory owner when that family becomes the chosen
+milestone.
+
+## Performance rule
+
+Do not optimize `PlatformVideo_present()` just because the loaded room feels
+slow. Current real-CYD timings in the first fire room show approximately:
+
+```text
+sprite phase  ~545 ms
+world phase   ~178 ms
+present       ~47 ms in full Action frame; raw VIDEO present commonly ~34 ms
+full frame    ~843 ms
+sprite reads  ~100 per full frame
+```
+
+The first bounded performance target is therefore:
+
+```text
+sprite renderer / resident sprite-asset cache audit
+```
+
+The milestone should explain the physical reads and remove avoidable repeated
+sprite asset work while preserving exact visuals, bounded RAM and no-PSRAM
+constraints. Do not add a map-wide texel pool to make the benchmark look good.
+
+## Cleanup rule for probes
 
 Do **not** remove or rename a file solely because its name contains `probe`.
 Classify it first:
@@ -100,131 +279,52 @@ unclear consumer or linker wrapper
     -> audit references/build flags first; no blind deletion
 ```
 
-The cleanup goal is a legible future engine for agents, not reduced observability.
-The normal `esp32-cyd` path should not depend on historical probe naming once a
-permanent owner exists, while `esp32-cyd-bringup` may intentionally retain probes
-that accelerate diagnosis.
-
-## Source layout
-
-Permanent/current source should be read by responsibility:
-
-```text
-ESP32/src/esp_map_*                       native map/runtime/event ownership
-ESP32/src/esp_player_*                    native player/view ownership
-ESP32/src/esp_native_gameplay_*           reusable live gameplay semantics
-ESP32/src/esp_native_*renderer*           reusable rendering paths
-ESP32/src/esp_legacy_prerender_startup.c  retained legacy pre-Render startup
-ESP32/src/render_startup_bridge.c         retained Render compatibility startup
-ESP32/src/esp_legacy_config_mappings_startup.c retained config/mapping startup
-ESP32/src/esp_render_mapping_reload_guard.c bounded retained mapping reload guard
-ESP32/src/esp_asset_pack.cpp              native PAK backing store/cache
-ESP32/src/esp_bsp_reader.c                BSP structural inventory/parser
-ESP32/src/esp_native_startup.c            generic new-game resident/spawn bootstrap
-ESP32/src/platform_*                      CYD input/video bridges
-ESP32/src/native_intro_*                  bounded intro compatibility path
-ESP32/src/native_main_menu_*              bounded menu compatibility path
-```
-
-The active sprite renderer is fully generic by filename, header, stats type and
-exported function:
-
-```text
-ESP32/src/esp_native_sprite_renderer.c
-ESP32/include/esp_native_sprite_renderer.h
-EspNativeSpriteStats
-EspNativeSpriteRenderer_render()
-```
-
-Historical MAP1/Entrance/Junction probe ladders and the Junction renderer naming
-have been retired from the active engine. Git history remains the detailed
-archaeological record.
-
-## Startup compatibility sequence
-
-The retained desktop-derived startup sequence is being made explicit one bounded
-family at a time rather than hidden or deleted wholesale:
-
-```text
-DoomCanvas/layout startup
- -> EspLegacyPrerenderStartup_start()
-      -> ParticleSystem_startup()
-      -> MenuSystem_startup()
-      -> EntityDef_startup()
- -> EspRenderStartupBridge_start()
- -> EspLegacyConfigMappingsStartup_start()
-      -> Game_loadConfig()
-      -> Render_loadMappings()
- -> menu BSP/menu compatibility stage
-```
-
-These compatibility owners do not make ZIP-backed data part of the desired
-native map architecture. They make retained dependencies explicit so they can be
-replaced safely later.
-
-## Native data path
-
-Map runtime backing store:
-
-```text
-/DoomRPG-ESP32.pak
-```
-
-Map loading must use the native pack plus compact resident owners. Do not add a
-new map path that reads/decompresses the old ZIP into map-wide memory.
-
-`/DoomRPG.zip` is still touched by transitional menu/HUD/bootstrap compatibility
-code. `EspLegacyPrerenderStartup`, `EspRenderStartupBridge` and
-`EspLegacyConfigMappingsStartup` still reach bounded legacy resources. This is
-explicit compatibility debt, not permission to move migrated BSP/runtime data
-back to ZIP ownership.
+The cleanup goal is a legible future engine, not reduced observability.
 
 ## Hardware logging
 
-Serial is the final hardware truth. Stable production/compatibility tags include:
+Serial is the final hardware truth. Relevant stable tags now include:
 
 ```text
-[PRERENDER]
-[RENDERSTART]
-[CONFIG]
-[MAPPINGS]
-[CONFIGMAP]
 [NATIVEBOOT]
 [ENGINESESSION]
 [ENGINECACHE]
 [RESIDENTGAMEPLAY]
 [ACTION]
+[ACTIONENGINE]
+[ACTIONFEEDBACK]
+[WEAPON]
+[DOORANIM]
+[DYNAMICLINES]
 [DIALOGCHAIN]
 [PICKUP]
 [PICKUPCORPUS]
 [INTERACTMAP]
-[RESIDENTRESET]
 ```
 
-Historical one-probe-per-milestone transcripts are not required for normal
-startup. Bringup-only diagnostics are different: they may remain intentionally
-available if they provide useful failure localization or visual/serial evidence.
+When performance is under study, preserve per-phase measurements rather than
+replacing them with only one aggregate frame time.
 
 ## Development workflow
 
-For a new capability or cleanup:
+For a new capability or optimization:
 
 ```text
 recover exact legacy behavior/current consumer
- -> classify production vs bringup/regression instrumentation
- -> choose one bounded reusable semantic/compatibility family
- -> implement or identify the permanent owner/API
- -> temporary strict probe only when it adds real evidence
+ -> identify the permanent native owner/API
+ -> choose one bounded reusable family
+ -> add strict observability where needed
  -> fail closed outside supported cases
  -> commit/push agent/*
  -> build normal esp32-cyd
  -> test on real CYD
+ -> use Serial as hardware truth
  -> document only observed results
- -> retire only obsolete production probe/shim surface
+ -> verify post-test commits are docs-only
+ -> declare merge-ready
 ```
 
-A probe should have an exit plan when it is scaffolding. A deliberately retained
-bringup diagnostic instead needs a clear diagnostic purpose and build scope.
+Never claim a local build or hardware pass that did not occur.
 
 ## New-level rule
 
@@ -240,31 +340,11 @@ catalog/data recognition only
 When another map exposes new behavior, implement the behavior once in a generic
 module and use that map as another regression corpus.
 
-## Known transitional cleanup items
-
-Remaining visible debt is intentionally explicit:
-
-```text
-legacy ZIP-backed menu/HUD/bootstrap resources in main.cpp and retained bridges
-menu BSP/menu graphics compatibility still requires audit
-native menu sprite/overlay wrappers still carry probe symbols
-live CHANGEMAP/save/password/key/automap promotion incomplete
-combat/monsters/player-stat pickup families incomplete
-```
-
-`pre_render_probe.*` and `config_mappings_probe.*` are no longer active production
-naming debt. Their live behavior is owned by permanent compatibility APIs.
-
-Do not mass-delete the remaining probe-named families. For each one, first check
-whether it is part of normal `esp32-cyd`, diagnostic-only `esp32-cyd-bringup`, a
-linker compatibility wrapper, or still-needed regression instrumentation. Promote
-or retire only the obsolete production surface.
-
 ## After this branch merges
 
 Do not continue from this branch by assumption. Re-read actual GitHub `main`,
 record its exact merge SHA, then create the next `agent/*` branch from that SHA.
 
-A plausible next audit is the menu BSP/menu graphics compatibility area, but it
-is **not** pre-approved for removal. Inspect production consumers, bringup flags,
-wrappers and diagnostic value before choosing the next bounded milestone.
+Current evidence strongly favors a bounded sprite-render/cache performance audit
+as the next milestone, with player-stat pickups and generic combat remaining
+separate correctness families.
