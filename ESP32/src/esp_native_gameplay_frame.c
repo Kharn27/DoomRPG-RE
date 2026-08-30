@@ -153,6 +153,8 @@ int EspNativeGameplayFrame_renderTurn(
     EspNativeGameplayWeaponStats* weapon = &frameScratch.weapon;
     EspNativeGameplayHudDirectionStats* hud = &frameScratch.hud;
     EspNativeFirstFrameState* world = &frameScratch.world;
+    EspAssetPackResidentStats spriteStorageBefore;
+    EspAssetPackResidentStats spriteStorageAfter;
     uint32_t renderBeforeSpritesFNV;
     uint32_t renderAfterSpritesFNV;
     uint32_t hudAfterWorldFNV;
@@ -179,6 +181,8 @@ int EspNativeGameplayFrame_renderTurn(
     memset(weapon, 0, sizeof(*weapon));
     memset(hud, 0, sizeof(*hud));
     memset(world, 0, sizeof(*world));
+    memset(&spriteStorageBefore, 0, sizeof(spriteStorageBefore));
+    memset(&spriteStorageAfter, 0, sizeof(spriteStorageAfter));
     totalStart = esp_timer_get_time();
 
     stats->frameBeforeFNV = frameFNV();
@@ -228,11 +232,43 @@ int EspNativeGameplayFrame_renderTurn(
         goto done;
     }
 
+    EspAssetPack_residentGetStats(&spriteStorageBefore);
     phaseStart = esp_timer_get_time();
     renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     strictSpriteWitness = EspNativeSpriteRenderer_render(render, sprites);
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     stats->spriteMicros = elapsedMicros(phaseStart);
+    EspAssetPack_residentGetStats(&spriteStorageAfter);
+    printf("[SPRITEPROFILE] us=%u logicalReads=%u frameLoads=%u glowLoads=%u unique=%u frameBytes=%u glowBytes=%u physicalReads=%u physicalBytes=%u range=%uH/%uM/%uS/%uB entry=%uH/%uM resident=%u cache=%u/%u entries=%u/%u large=%u\n",
+           (unsigned int)stats->spriteMicros,
+           (unsigned int)sprites->packReads,
+           (unsigned int)sprites->frameLoads,
+           (unsigned int)sprites->glowFrameLoads,
+           (unsigned int)sprites->uniqueLogical,
+           (unsigned int)sprites->frameBytes,
+           (unsigned int)sprites->glowFrameBytes,
+           (unsigned int)(spriteStorageAfter.physicalReads -
+                          spriteStorageBefore.physicalReads),
+           (unsigned int)(spriteStorageAfter.physicalBytes -
+                          spriteStorageBefore.physicalBytes),
+           (unsigned int)(spriteStorageAfter.rangeCacheHits -
+                          spriteStorageBefore.rangeCacheHits),
+           (unsigned int)(spriteStorageAfter.rangeCacheMisses -
+                          spriteStorageBefore.rangeCacheMisses),
+           (unsigned int)(spriteStorageAfter.rangeCacheStores -
+                          spriteStorageBefore.rangeCacheStores),
+           (unsigned int)(spriteStorageAfter.rangeCacheBypasses -
+                          spriteStorageBefore.rangeCacheBypasses),
+           (unsigned int)(spriteStorageAfter.entryCacheHits -
+                          spriteStorageBefore.entryCacheHits),
+           (unsigned int)(spriteStorageAfter.entryCacheMisses -
+                          spriteStorageBefore.entryCacheMisses),
+           (unsigned int)spriteStorageAfter.ready,
+           (unsigned int)spriteStorageAfter.rangeCacheBytesUsed,
+           (unsigned int)spriteStorageAfter.rangeCacheCapacityBytes,
+           (unsigned int)spriteStorageAfter.rangeCacheEntries,
+           (unsigned int)spriteStorageAfter.rangeCacheEntryCapacity,
+           (unsigned int)spriteStorageAfter.largeRangeEntries);
     if (!strictSpriteWitness) {
         if (!spriteViewAccountingComplete(sprites) ||
             renderAfterSpritesFNV != renderBeforeSpritesFNV ||

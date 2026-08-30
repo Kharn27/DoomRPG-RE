@@ -170,7 +170,7 @@ static EspNativeFirstFrameState frameState;
 /* Failure-only BSS witness. It deliberately adds no fields to FirstFrameWork,
  * whose large automatic instance is already close to the classic-CYD loopTask
  * stack boundary. The witness is printed only after renderFrame() has returned
- * and its recursive BSP/raster stack has fully unwound. */
+ * and its BSP/raster stack has fully unwound. */
 static FirstFrameFailure frameFailure;
 /* One exact packed byte from the next legacy compact wall block. It is resolved
  * only after an OOB witness has unwound the renderer stack, then reused by the
@@ -1031,63 +1031,109 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
     return 1;
 }
 
-static int walkNode(FirstFrameWork* work, uint32_t nodeIndex, uint32_t depth) {
-    EspMapNode compact;
-    Node_t node;
-    uint32_t lineStart;
-    uint32_t lineCount;
-    uint32_t i;
-    uint32_t split;
-    uint32_t first;
-    uint32_t second;
+static int walkNodes(FirstFrameWork* work) {
+    uint16_t nodeStack[MAX_BSP_DEPTH + 1U];
+    uint8_t depthStack[MAX_BSP_DEPTH + 1U];
+    uint32_t pending = 0U;
 
-    if (work == NULL || depth > MAX_BSP_DEPTH ||
-        nodeIndex >= work->runtime->nodeCount ||
-        !EspMapRuntime_getNode(nodeIndex, &compact)) return 0;
-
-    memset(&node, 0, sizeof(node));
-    node.x1 = (short)compact.x1;
-    node.y1 = (short)compact.y1;
-    node.x2 = (short)compact.x2;
-    node.y2 = (short)compact.y2;
-    node.args1 = (int)compact.args1;
-    node.args2 = (int)compact.args2;
-
-    ++work->render->nodeCount;
-    if (Render_cullBoundingBox(work->render, &node)) {
-        ++work->nodeCulled;
-        return 1;
+    if (work == NULL || work->runtime == NULL || work->runtime->nodeCount == 0U ||
+        work->runtime->nodeCount > (uint32_t)UINT16_MAX + 1U) {
+        return 0;
     }
 
-    if ((compact.args1 & 0x30000U) == 0U) {
-        lineStart = compact.args2 & 0xFFFFU;
-        lineCount = (compact.args2 >> 16) & 0xFFFFU;
-        if (lineStart > work->runtime->lineCount ||
-            lineCount > work->runtime->lineCount - lineStart) return 0;
-        ++work->leafNodes;
-        ++work->render->nodeRasterCount;
-        work->render->lineCount += (int)lineCount;
-        for (i = 0U; i < lineCount; ++i) {
-            if (!drawLine(work, lineStart + i)) return 0;
+    nodeStack[pending] = 0U;
+    depthStack[pending] = 0U;
+    ++pending;
+
+    while (pending != 0U) {
+        EspMapNode compact;
+        Node_t node;
+        uint32_t lineStart;
+        uint32_t lineCount;
+        uint32_t i;
+        uint32_t split;
+        uint32_t first;
+        uint32_t second;
+        uint32_t nearNode;
+        uint32_t farNode;
+        uint32_t itemNode;
+        uint32_t itemDepth;
+
+        --pending;
+        itemNode = nodeStack[pending];
+        itemDepth = depthStack[pending];
+
+        if (itemDepth > MAX_BSP_DEPTH ||
+            itemNode >= work->runtime->nodeCount ||
+            !EspMapRuntime_getNode(itemNode, &compact)) {
+            return 0;
         }
-        return 1;
+
+        memset(&node, 0, sizeof(node));
+        node.x1 = (short)compact.x1;
+        node.y1 = (short)compact.y1;
+        node.x2 = (short)compact.x2;
+        node.y2 = (short)compact.y2;
+        node.args1 = (int)compact.args1;
+        node.args2 = (int)compact.args2;
+
+        ++work->render->nodeCount;
+        if (Render_cullBoundingBox(work->render, &node)) {
+            ++work->nodeCulled;
+            continue;
+        }
+
+        if ((compact.args1 & 0x30000U) == 0U) {
+            lineStart = compact.args2 & 0xFFFFU;
+            lineCount = (compact.args2 >> 16) & 0xFFFFU;
+            if (lineStart > work->runtime->lineCount ||
+                lineCount > work->runtime->lineCount - lineStart) {
+                return 0;
+            }
+            ++work->leafNodes;
+            ++work->render->nodeRasterCount;
+            work->render->lineCount += (int)lineCount;
+            for (i = 0U; i < lineCount; ++i) {
+                if (!drawLine(work, lineStart + i)) return 0;
+            }
+            continue;
+        }
+
+        first = (compact.args2 >> 16) & 0xFFFFU;
+        second = compact.args2 & 0xFFFFU;
+        if (first >= work->runtime->nodeCount ||
+            second >= work->runtime->nodeCount ||
+            itemDepth >= MAX_BSP_DEPTH) {
+            return 0;
+        }
+
+        split = compact.args1 & 0xFFFFU;
+        if (((compact.args1 & 0x20000U) == 0U ||
+             work->render->viewY <= (int)split) &&
+            ((compact.args1 & 0x10000U) == 0U ||
+             work->render->viewX <= (int)split)) {
+            nearNode = first;
+            farNode = second;
+        }
+        else {
+            nearNode = second;
+            farNode = first;
+        }
+
+        if (pending + 2U > MAX_BSP_DEPTH + 1U) return 0;
+
+        /* LIFO: push the far child first so the near child is processed next,
+         * exactly matching the old recursive front-to-back traversal. The
+         * compact local stacks cost 195 bytes only while this render is live. */
+        nodeStack[pending] = (uint16_t)farNode;
+        depthStack[pending] = (uint8_t)(itemDepth + 1U);
+        ++pending;
+        nodeStack[pending] = (uint16_t)nearNode;
+        depthStack[pending] = (uint8_t)(itemDepth + 1U);
+        ++pending;
     }
 
-    first = (compact.args2 >> 16) & 0xFFFFU;
-    second = compact.args2 & 0xFFFFU;
-    if (first >= work->runtime->nodeCount || second >= work->runtime->nodeCount) return 0;
-
-    split = compact.args1 & 0xFFFFU;
-    if (((compact.args1 & 0x20000U) == 0U ||
-         work->render->viewY <= (int)split) &&
-        ((compact.args1 & 0x10000U) == 0U ||
-         work->render->viewX <= (int)split)) {
-        return walkNode(work, first, depth + 1U) &&
-               walkNode(work, second, depth + 1U);
-    }
-
-    return walkNode(work, second, depth + 1U) &&
-           walkNode(work, first, depth + 1U);
+    return 1;
 }
 
 static void fillBackground(Render_t* render,
@@ -1216,7 +1262,7 @@ static int renderFrame(Render_t* render,
     render->spanMode = 0;
 
     Render_initColumnScale(render);
-    if (!walkNode(&work, 0U, 0U)) {
+    if (!walkNodes(&work)) {
         if (frameFailure.code == FIRST_FRAME_FAIL_NONE) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALK,
                                  UINT32_MAX, 0U, 0U, 0U, 0U,
