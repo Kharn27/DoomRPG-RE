@@ -150,11 +150,6 @@ typedef struct LegacyWallGuard_s {
     uint32_t successorSourceOffset;
 } LegacyWallGuard;
 
-typedef struct BspWalkItem_s {
-    uint32_t nodeIndex;
-    uint32_t depth;
-} BspWalkItem;
-
 #define RECORD_FRAME_FAILURE(code_, line_, logical_, actual_, flags_, source_, v0_, v1_, v2_, v3_) \
     do { \
         if (frameFailure.code == FIRST_FRAME_FAIL_NONE) { \
@@ -181,11 +176,6 @@ static FirstFrameFailure frameFailure;
  * only after an OOB witness has unwound the renderer stack, then reused by the
  * bounded sampler on the retry. */
 static LegacyWallGuard legacyWallGuard;
-/* The legacy recursive BSP walk could consume the remaining loopTask stack when
- * a recovery retry progressed deeper than the first failed pass. Keep the same
- * front-to-back DFS order in one bounded BSS owner instead. MAX_BSP_DEPTH=64
- * needs at most depth+1 pending nodes, so this is exactly 520 bytes. */
-static BspWalkItem bspWalkStack[MAX_BSP_DEPTH + 1U];
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -1042,14 +1032,17 @@ static int drawLine(FirstFrameWork* work, uint32_t lineIndex) {
 }
 
 static int walkNodes(FirstFrameWork* work) {
+    uint16_t nodeStack[MAX_BSP_DEPTH + 1U];
+    uint8_t depthStack[MAX_BSP_DEPTH + 1U];
     uint32_t pending = 0U;
 
-    if (work == NULL || work->runtime == NULL || work->runtime->nodeCount == 0U) {
+    if (work == NULL || work->runtime == NULL || work->runtime->nodeCount == 0U ||
+        work->runtime->nodeCount > (uint32_t)UINT16_MAX + 1U) {
         return 0;
     }
 
-    bspWalkStack[pending].nodeIndex = 0U;
-    bspWalkStack[pending].depth = 0U;
+    nodeStack[pending] = 0U;
+    depthStack[pending] = 0U;
     ++pending;
 
     while (pending != 0U) {
@@ -1063,11 +1056,16 @@ static int walkNodes(FirstFrameWork* work) {
         uint32_t second;
         uint32_t nearNode;
         uint32_t farNode;
-        BspWalkItem item = bspWalkStack[--pending];
+        uint32_t itemNode;
+        uint32_t itemDepth;
 
-        if (item.depth > MAX_BSP_DEPTH ||
-            item.nodeIndex >= work->runtime->nodeCount ||
-            !EspMapRuntime_getNode(item.nodeIndex, &compact)) {
+        --pending;
+        itemNode = nodeStack[pending];
+        itemDepth = depthStack[pending];
+
+        if (itemDepth > MAX_BSP_DEPTH ||
+            itemNode >= work->runtime->nodeCount ||
+            !EspMapRuntime_getNode(itemNode, &compact)) {
             return 0;
         }
 
@@ -1105,7 +1103,7 @@ static int walkNodes(FirstFrameWork* work) {
         second = compact.args2 & 0xFFFFU;
         if (first >= work->runtime->nodeCount ||
             second >= work->runtime->nodeCount ||
-            item.depth >= MAX_BSP_DEPTH) {
+            itemDepth >= MAX_BSP_DEPTH) {
             return 0;
         }
 
@@ -1125,12 +1123,13 @@ static int walkNodes(FirstFrameWork* work) {
         if (pending + 2U > MAX_BSP_DEPTH + 1U) return 0;
 
         /* LIFO: push the far child first so the near child is processed next,
-         * exactly matching the old recursive front-to-back traversal. */
-        bspWalkStack[pending].nodeIndex = farNode;
-        bspWalkStack[pending].depth = item.depth + 1U;
+         * exactly matching the old recursive front-to-back traversal. The
+         * compact local stacks cost 195 bytes only while this render is live. */
+        nodeStack[pending] = (uint16_t)farNode;
+        depthStack[pending] = (uint8_t)(itemDepth + 1U);
         ++pending;
-        bspWalkStack[pending].nodeIndex = nearNode;
-        bspWalkStack[pending].depth = item.depth + 1U;
+        nodeStack[pending] = (uint16_t)nearNode;
+        depthStack[pending] = (uint8_t)(itemDepth + 1U);
         ++pending;
     }
 
