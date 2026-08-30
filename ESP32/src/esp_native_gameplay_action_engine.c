@@ -15,6 +15,7 @@
 #include "esp_map_state.h"
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
@@ -704,6 +705,12 @@ static int serviceFeedbackExpiry(void) {
     elapsed = now - actionState.feedbackShownAtMs;
     if (elapsed < FEEDBACK_DISPLAY_MS) return 1;
 
+    /* Touch feedback owns a strict framebuffer snapshot until its 120 ms lease
+     * is restored. Do not mutate the top bar underneath that lease: the next
+     * resident service restores the touch overlay first, then this expiry may
+     * safely repaint/present the message bar. */
+    if (EspNativeGameplayControls_isActive()) return 1;
+
     kind = actionState.feedbackVisibleKind;
     actionState.feedbackPending = 1U;
     actionState.feedbackKind = ACTION_FEEDBACK_NONE;
@@ -768,6 +775,31 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
         printf("[ACTIONENGINE] ROUTE seq=%u weapon=%u target=none distance=0 route=NOTHING_TO_USE feedback=screen turnAdvance=deferred\n",
                (unsigned int)intent->sequence,
                (unsigned int)weapon);
+        return status;
+    }
+
+    /* DoomCanvas traces eight tiles, but the legacy extinguisher has rangeMin=0.
+     * CombatEntity_calcHit therefore rejects any target whose squared world
+     * distance exceeds 4096: in this cardinal trace only distance==1 can hit.
+     * Until generic miss/ammo/turn combat is owned, recognize farther fire and
+     * fail closed instead of removing it at range. */
+    if (target.type == ACTION_ENTITY_FIRE && weapon == 1U &&
+        target.distance > 1U) {
+        ++actionState.selects;
+        ++actionState.combatDeferred;
+        printf("[ACTIONENGINE] TRACE seq=%u weapon=%u distance=%u tile=%u target=sprite index=%u line=%u type=%u subtype=%u route=FIRE_RANGE_DEFERRED\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)weapon,
+               (unsigned int)target.distance,
+               (unsigned int)target.tileIndex,
+               (unsigned int)target.spriteIndex,
+               (unsigned int)target.lineIndex,
+               (unsigned int)target.type,
+               (unsigned int)target.subtype);
+        printf("[ACTIONENGINE] BACKEND-DEFER seq=%u sprite=%u family=fire-combat reason=legacy-range-miss+ammo+turn-not-owned distance=%u mutation=no\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)target.spriteIndex,
+               (unsigned int)target.distance);
         return status;
     }
 
