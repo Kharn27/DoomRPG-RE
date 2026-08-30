@@ -1,59 +1,43 @@
 # Doom RPG ESP32 CYD porting status
 
 Authoritative recovery/status file for the classic ESP32-2432S028R port.
-Architecture belongs in [`ARCHITECTURE.md`](ARCHITECTURE.md); this file keeps
-the current Git boundary, hardware facts, canonical resident witnesses and the
-explicit fail-closed frontier.
-
 Repository state wins over chat history. Serial logs from the real classic CYD
 are the final runtime authority.
 
 ## Git boundary
 
-Current merged baseline:
-
 ```text
-main = 45d634449faa511dd02ab25ac5bb980fa4ef86b1
-```
-
-Current development branch:
-
-```text
-branch = agent/esp32-native-action-engine
-base main = 45d634449faa511dd02ab25ac5bb980fa4ef86b1
-hardware-tested final code HEAD = 1f88ca6488d78be181fc97b500beefbe0eb9a751
+main = bb95082917d2bb3504243015de358d40a8d11788
+branch = agent/esp32-sprite-storage-profile
+base main = bb95082917d2bb3504243015de358d40a8d11788
+hardware-tested final code HEAD = abb66f4a44c196b01511df66d1230c72040546e2
 status = REAL-CYD HARDWARE PASS
 merge-ready = YES, after documentation-only tail verification
 ```
 
-The branch adds a bounded native Action/Combat presentation frontier without
-broad-enabling legacy combat/world mutation. The permanent direction remains a
-generic action/combat engine; crates, fire and monsters must not become separate
-special-case engines.
+This branch is a bounded renderer/storage profiling milestone. It does not add a
+new renderer architecture or a new permanent asset pool. It instruments the
+resident sprite pass and fixes one renderer-stack failure exposed while testing.
 
-## Permanent rule
+## Permanent architecture
 
 ```text
 A NEW BSP IS NOT A NEW ENGINE.
 ```
 
-Production map path:
+Production path:
 
 ```text
 /DoomRPG-ESP32.pak
- -> EspBspReader inventory
- -> EspMapResidentLifecycle
+ -> native BSP reader
  -> compact immutable EspMapRuntime
- -> explicit compact mutable owners
+ -> small explicit mutable owners
  -> EspPlayerView
- -> EspNativeGameplaySession
- -> generic renderer / HUD / input / events / dialog / action
+ -> native event/action/gameplay
+ -> native renderer
 ```
 
-No future level should create another `native_mapN_*` ladder or level-specific
-renderer.
-
-## Hardware / memory invariants
+Hard invariants:
 
 ```text
 board       = ESP32-2432S028R classic CYD
@@ -66,13 +50,10 @@ mediaTexels = NULL
 backing     = /DoomRPG-ESP32.pak
 ```
 
-Migrated world data must remain compact/offset-based. Do not reintroduce map-wide
-shape/media texel pools or a desktop Entity pointer graph.
+Do not reintroduce a map-wide texel pool, a desktop Entity pointer graph, or ZIP
+runtime ownership for migrated map data.
 
 ## Entrance canonical resident witness
-
-Entrance remains the hardware corpus for initial new-game startup, not a
-specialized engine path.
 
 ```text
 resourceMapId = 1
@@ -115,12 +96,10 @@ enemies = 30
 destructibles = 13
 ```
 
-These values are regression witnesses only. Production behavior must never
-select an implementation based on them.
+These are regression witnesses only; production behavior must not branch on
+Entrance-specific values.
 
 ## Generic session baseline
-
-Current initial session canon:
 
 ```text
 targetMapId = 1
@@ -138,264 +117,221 @@ HUD weapon = 2
 HUD ammo = 8
 ```
 
-Resident render-cache stable owner/capacity canon:
+Resident asset-cache canon:
 
 ```text
 owner = 21160 B
 payload = 16384 B
-large entries after learn = 2
+entries = 256
+large learned entries = 2 in the normal priming sequence
 ```
 
-## Native Action engine hardware boundary
+## Native Action / gameplay boundary inherited from main
 
-The real CYD validated the bounded Action engine on Entrance.
-
-### Empty Action / feedback lifetime
-
-An Action into empty space routes to the native top-bar message without world
-mutation or full redraw:
-
-```text
-[ACTIONENGINE] ROUTE seq=1 weapon=2 target=none distance=0 route=NOTHING_TO_USE feedback=screen turnAdvance=deferred
-[ACTIONFEEDBACK] PAINT kind=1 text="Nothing to use" chars=14 reads=36 bytes=10792 present=caller durationMs=1200
-[ACTIONENGINE] PRESENT seq=1 route=NOTHING_TO_USE worldMutation=no fullRedraw=no feedback=yes
-[ACTIONFEEDBACK] CLEAR mode=topbar-only reads=22 bytes=358 present=caller
-[ACTIONFEEDBACK] EXPIRE kind=1 elapsedMs=1203 targetMs=1200 restored=topbar-only
-```
-
-A second real-CYD witness expired at 1204 ms. The feedback lease therefore
-matches the recovered legacy `MSG_DISPLAY_TIME = 1200 ms` contract.
-
-A prior implementation cancelled the lease on any unrelated `Present()`, which
-could strand painted text indefinitely. That is fixed: external presents do not
-implicitly cancel a visible Action message.
-
-### Touch-feedback arbitration
-
-A real-CYD run exposed a second race: if Action feedback expired while the
-120 ms touch-control flash still owned its exact framebuffer snapshot, the
-message clear changed the frame underneath that snapshot and the strict restore
-correctly failed with:
-
-```text
-[RESIDENTGAMEPLAY] FAILED reason=touch-feedback-restore
-```
-
-Final code HEAD `1f88ca6488d78be181fc97b500beefbe0eb9a751`
-defers Action-message expiry while `EspNativeGameplayControls_isActive()`.
-The user subsequently reported the interaction working on hardware. The strict
-control snapshot invariant remains intact; it was not weakened.
-
-### Destructible targeting
-
-Crates/destructibles are found generically by the recovered Action trace, but the
-combat consequence is intentionally fail-closed because native entity health,
-weapon-mask consequence ownership and generic destruction are not yet owned:
-
-```text
-[ACTIONENGINE] TRACE ... weapon=2 distance=1 ... type=12 subtype=2 route=DESTRUCTIBLE_COMBAT_DEFERRED
-[ACTIONENGINE] BACKEND-DEFER ... family=destructible-combat reason=entity-parm-weapon-mask+subtype-consequence-not-owned mutation=no
-```
-
-No crate-specific implementation is permitted. The later generic combat backend
-must own animation, hit/damage, destruction, ammo, sound and turn consequences.
-
-### Fire / extinguisher action
-
-Adjacent fire with weapon 1 is now a real native mutation plus generic weapon
-presentation. Hardware witness:
-
-```text
-[ACTIONENGINE] TRACE seq=102 weapon=1 distance=1 tile=613 target=sprite index=74 line=65535 type=10 subtype=0 route=FIRE_CLEARED
-[ACTIONENGINE] COMMIT seq=102 sprite=74 effect=fire-remove overlayBytes=128 xp=2-deferred ammoUsage=1-deferred sound=5045-deferred attackFrame=pending redraw=pending rollback=yes
-[WEAPON] DRAW weapon=1 logical=241 actual=607 frame=1 pose=attack ... cache=miss reads=10
-[ACTIONENGINE] FRAME seq=102 route=FIRE_CLEARED phase=attack ... presented=1
-[WEAPON] DRAW weapon=1 logical=241 actual=606 frame=0 pose=idle ... cache=miss reads=10
-[ACTIONENGINE] FRAME seq=102 route=FIRE_CLEARED phase=settle-idle ... presented=1
-[ACTIONENGINE] ATTACK seq=102 weapon=1 frame=1->0 generic=yes worldCommitted=yes
-[ACTIONFEEDBACK] EXPIRE kind=2 elapsedMs=1204 targetMs=1200 restored=topbar-only
-```
-
-This materially validates the permanent generic weapon-frame route:
-
-```text
-logical weapon sprite = 240 + weapon
-frame 0 = idle
-frame 1 = attack
-cache key = weapon + animation frame
-```
-
-The fire removal remains a compact 128 B consumed/removed overlay with rollback
-on the first render failure. XP, ammo and sound remain deferred.
-
-### Extinguisher range: current safe divergence
-
-The legacy desktop `SELECT` trace can see targets up to eight tiles away and will
-still call `Player_fireWeapon()` for a fire when the extinguisher is selected.
-The extinguisher has `rangeMin = 0`; `CombatEntity_calcHit()` therefore misses
-when squared world distance exceeds 4096 (more than one cardinal tile). The
-legacy combat path then presents the attack and reports `No effect!`.
-
-The current ESP32 action frontier does not yet own generic miss/ammo/turn combat.
-Therefore final code HEAD intentionally fails closed for fire at `distance > 1`:
-
-```text
-route = FIRE_RANGE_DEFERRED
-mutation = no
-attack presentation = deferred
-```
-
-This is a known temporary behavior difference, not the final Doom RPG contract.
-When generic combat/miss ownership lands, remote extinguisher attempts should
-animate and resolve to the recovered no-effect behavior rather than removing the
-fire.
-
-## Dynamic door texture hardware boundary
-
-The mutable line-texture variant now reaches the renderer without mutating the
-immutable runtime. The first implementation recursively re-entered
-`EspMapRuntime_getLine()` through its linker wrapper and overflowed the loopTask
-stack; the final implementation resolves the 9/10 texture bit directly from the
-already-owned mutable line-texture view.
-
-Real-CYD door animation after unlock:
-
-```text
-[DOORANIM] FRAME 1/4 ... textureVariants=2 ... render=ok
-[DYNAMICLINES] FRAME ... textureVariants=2 render=ok immutableRuntime=yes
-...
-[DOORANIM] FRAME 4/4 ... textureVariants=2 ... render=ok
-[DOORANIM] COMPLETE transitions=1 frames=4 state=stable transaction=committed
-```
-
-The user confirmed the previously red lock indicator becomes green after the
-soldier unlocks the door.
-
-Permanent wrapper rule:
-
-```text
-A linker wrapper must not call a higher-level API that can indirectly re-enter
-that wrapped symbol. Use __real_*, an already materialized owner/view, or an
-explicitly non-reentrant helper.
-```
-
-## Renderer performance evidence
-
-The current correctness frontier is hardware-valid, but the loaded first-fire
-room is visibly slow. Serial timings identify the dominant cost; do not guess.
-
-Adjacent-fire attack frame:
-
-```text
-worldUs   = 178264
-spriteUs  = 544735
-hudUs     = 1304
-presentUs = 46783
-totalUs   = 843825
-spriteReads = 100
-```
-
-Settle-to-idle frame:
-
-```text
-worldUs   = 177817
-spriteUs  = 544602
-hudUs     = 1276
-presentUs = 46678
-totalUs   = 842463
-spriteReads = 100
-```
-
-A move in the same loaded area reached:
-
-```text
-[RESIDENTGAMEPLAY] FRAME ... totalUs=832308 presented=1
-```
-
-Door animation in the same region reached roughly 1.10 s for the final
-`SELECT-DOOR` frame sequence.
-
-Conclusion:
-
-```text
-primary hotspot = sprite rendering / sprite asset reads
-secondary cost  = world render
-small cost       = 160x120 -> 320x240 presentation (~34-47 ms)
-```
-
-Do **not** optimize `PlatformVideo_present()` first. A dedicated bounded sprite
-renderer/cache milestone should profile why a loaded scene still incurs about
-100 sprite pack reads and ~545 ms sprite time per full frame.
-
-## Production gameplay boundary
-
-Hardware-proven native gameplay includes:
+Real-CYD hardware already validates:
 
 ```text
 TURN_LEFT / TURN_RIGHT
 FORWARD / BACK / STRAFE
-native topology/entity/line collision
-dynamic line/door collision
-SELECT front-tile provenance
+native collision/topology
+SELECT event-first routing
+EV_SHOW / EV_HIDE / EV_UNLOCK
 EV_OPENLINE / EV_CLOSELINE
-MOVE source EXIT + destination ENTER bounded event routes
-regular-door bounded visual interpolation
-mutable line texture variants visible in native renderer
-EV_DIALOG / EV_DIALOGNOBACK presentation
-progressive dialog / paging / fast-forward / close
-saved dialog continuation transaction
-EV_SHOW / EV_HIDE / EV_UNLOCK continuation
+EV_DIALOG / EV_DIALOGNOBACK
+EV_FORCEMESSAGE / EV_NOTE
 state ops 11 / 19 / 20
-EV_FORCEMESSAGE top-bar owner/painter
-EV_NOTE bounded prefix before dialog
-native idle first-person weapon painting
-generic native weapon attack frame 1 -> idle frame 0 presentation
-eType=5 weapon consumed-bit/ownership/auto-select overlay
-empty/human Action feedback with bounded 1200 ms top-bar lifetime
+regular door animation
+mutable line texture variants in the native renderer
+native idle weapon rendering
+generic weapon attack frame 1 -> idle frame 0
+weapon pickup eType=5
+empty/human Action feedback with ~1200 ms lifetime
 adjacent extinguisher fire removal with rollback-safe presentation
-resident opcode/pickup/action diagnostics
 ```
 
-The engine still does **not** broad-enable legacy `Game_executeEvent()` or
-legacy `Combat_performAttack()` as a permanent ESP32 backend.
-
-## Event frontier
-
-Known Entrance opcode IDs:
+Still fail-closed/deferred:
 
 ```text
-2, 7, 8, 9, 10, 11, 13, 15, 16, 18, 19, 24, 26, 27, 40, 41
+generic monster/destructible HP/damage combat
+ammo/XP/sound/turn consequences
+remote extinguisher miss/no-effect transaction
+player-stat/inventory/ammo pickups
+EV_CHANGEMAP / EV_GIVEMAP / EV_PASSWORD / EV_SAVEGAME / EV_CHECK_KEY
 ```
 
-Currently production-bounded:
+The desktop/J2ME remote-extinguisher contract remains: a farther visible fire
+can enter attack presentation, misses outside the one-tile hit range, and reports
+`No effect!`. Native `FIRE_RANGE_DEFERRED` is a temporary safe divergence until
+generic combat/miss ownership exists.
+
+## Sprite storage profile hardware pass
+
+The new `[SPRITEPROFILE]` instrumentation measures the sprite phase without
+changing renderer output or adding a second resident cache. It reports logical
+frame loads plus deltas from the existing `EspAssetPack` resident cache.
+
+### Cold session witness
+
+On the first cold sprite pass:
 
 ```text
-7  EV_SHOW
-8  EV_DIALOG
-11 EV_CHANGESTATE
-13 EV_UNLOCK
-15 EV_OPENLINE
-16 EV_CLOSELINE
-18 EV_HIDE
-19 EV_NEXTSTATE
-20 EV_PREVSTATE
-24 EV_FORCEMESSAGE
-26 EV_DIALOGNOBACK
-40 EV_NOTE
+[SPRITEPROFILE]
+us=641298
+logicalReads=148
+frameLoads=23
+glowLoads=1
+unique=12
+frameBytes=18991
+glowBytes=796
+physicalReads=81
+physicalBytes=12467
+range=76H/69M/69S/3B
+resident=1
+cache=9175/16384
+entries=176/256
 ```
 
-Still intentionally deferred/fail-closed:
+This proves that the old ~545-640 ms sprite spikes can be caused by cold backing
+storage/cache misses rather than by the sprite rasterizer alone.
+
+### Warm steady-state witnesses
+
+After the existing resident cache is primed, the same logical sprite workload is
+much cheaper:
 
 ```text
-2  EV_CHANGEMAP  -> live transition consumer pending
-9  EV_GIVEMAP    -> automap production route pending
-10 EV_PASSWORD   -> password input UI pending
-27 EV_SAVEGAME   -> save consumer pending
-41 EV_CHECK_KEY  -> native player-key owner pending
+logicalReads=148 frameLoads=23 unique=12
+sprite phase ~= 22-23 ms
+physicalReads=3 physicalBytes=4395
+range ~= 145H/0M/0S/3B
 ```
 
-`EspMapOpcodeExecutor` itself remains intentionally limited to 11/19/20; other
-owned families use their dedicated native semantic modules.
+During the reproduced gameplay route:
+
+```text
+MOVE 904->872: spriteUs=22560 physicalReads=3
+TURN angle 64->0: spriteUs=19475 physicalReads=3
+TURN angle 0->64: spriteUs=22508 physicalReads=3
+MOVE 872->840: spriteUs=19474 physicalReads=3
+```
+
+At the previously crashing virage, after the wall guard recovery:
+
+```text
+[SPRITEPROFILE] us=10598 logicalReads=112 frameLoads=17 glowLoads=1 unique=10
+physicalReads=0 physicalBytes=0 range=112H/0M/0S/0B
+cache=11272/16384 entries=256/256
+```
+
+The immediately following move was even cheaper:
+
+```text
+[SPRITEPROFILE] us=9249 logicalReads=100 frameLoads=15 glowLoads=1 unique=10
+physicalReads=0 physicalBytes=0 range=100H/0M/0S/0B
+```
+
+### Performance conclusion
+
+The previous conclusion that the sprite renderer/storage path was the dominant
+steady-state hotspot is superseded by this hardware evidence.
+
+Current evidence says:
+
+```text
+cold sprite storage misses = can be very expensive (~641 ms observed)
+warm sprite phase          = ~9-23 ms in reproduced route
+raw VIDEO present          = ~34-35 ms here
+normal full gameplay frame = ~208-267 ms here
+recovery TURN frame        = 453208 us because the world pass is retried
+next MOVE frame            = 283531 us
+```
+
+Therefore:
+
+```text
+steady-state primary candidate = world / plane / wall renderer
+sprite steady-state            = secondary/small in this corpus
+PlatformVideo_present          = not the first optimization target
+```
+
+Do not add a large sprite cache based only on `logicalReads`. Logical reads can
+be fully served from the existing resident owner; the physical-read counters are
+the relevant backing-store witness.
+
+## Renderer crash recovery hardware pass
+
+The original test exposed a real renderer failure at the turn from angle 64 to
+128 near tile 840:
+
+```text
+[NATIVEFRAME] LEGACY_GUARD logical=15 actual=40 source=20480 successorActual=68 successorSource=32768 byte=11
+[NATIVEFRAME] RETRY legacy compact guard after unwound SPAN_OOB line=277 actual=40
+Guru Meditation Error: Stack canary watchpoint triggered (loopTask)
+```
+
+The recursive BSP walk could consume the remaining loopTask stack when the retry
+progressed deeper than the first failed pass.
+
+Final code HEAD `abb66f4a44c196b01511df66d1230c72040546e2` keeps the same
+front-to-back DFS order but uses a compact bounded iterative traversal:
+
+```text
+node stack  = 65 x uint16_t = 130 B
+depth stack = 65 x uint8_t  = 65 B
+workspace   = 195 B temporary stack only
+recursion   = none
+new heap allocation = none
+new permanent BSS owner = none
+```
+
+A first iterative version used a 520 B permanent BSS owner. On the real CYD that
+changed boot heap topology by about 528 B and made the transitional ZIP inflater
+fail on `menu.bsp`:
+
+```text
+old healthy MAPSTRUCT heap8 ~= 34996
+bad BSS build MAPSTRUCT heap8 = 34468
+[DOOM ERROR] out of memory allocating inflate state for menu.bsp
+```
+
+That version is superseded. The final transient 195 B traversal restored boot and
+kept the non-recursive renderer.
+
+Real-CYD final witness at the old crash location:
+
+```text
+[NATIVEFRAME] LEGACY_GUARD logical=15 actual=40 source=20480 successorActual=68 successorSource=32768 byte=11 owner=BSS bytes=16
+[NATIVEFRAME] RETRY legacy compact guard after unwound SPAN_OOB line=277 actual=40
+[NATIVEFRAME] BSP map=1 ... nodes=19 leaves=4 ...
+[NATIVEFRAME] WALL requests=19 draws=19 spans=160 pixels=6328 ...
+[NATIVEFRAME] RECOVERED legacy compact guard actual=40 successorActual=68 source=20480->32768
+[RESIDENTGAMEPLAY] TURN n=3 seq=5 action=TURN_LEFT angle=64->128 committed=yes
+```
+
+Gameplay then continued normally:
+
+```text
+[RESIDENTGAMEPLAY] MOVE n=3 seq=6 action=FORWARD tile=840->839 ... committed=yes
+```
+
+No stack canary, no reboot, no renderer disable. This is a hardware PASS.
+
+Permanent renderer rule:
+
+```text
+Do not use unbounded/recursive BSP traversal on classic CYD.
+Keep traversal order explicit, bounded and fail-closed without solving stack
+pressure by repeatedly increasing loopTask stack size.
+```
+
+## Dynamic line / wrapper rule
+
+A linker wrapper must not call a higher-level API that can indirectly re-enter
+that wrapped symbol. Use `__real_*`, an already materialized owner/view, or an
+explicitly non-reentrant helper.
+
+This remains the rule recovered from the earlier dynamic line texture recursion
+failure.
 
 ## Pickup frontier
 
@@ -406,69 +342,52 @@ eType=5 weapon
 world remove = consumed-sprite bit overlay
 ownership = native uint16 weapon mask
 new weapon select = native HUD overlay
-scope = current map/runtime arena
 rollback = exact on redraw failure
-```
-
-Real-CYD extinguisher pickup witness:
-
-```text
-[PICKUP] WEAPON tile=643 sprite=50 subtype=1 new=yes weapons=0004->0006 selected=2->1 worldRemove=overlay ammoOwner=deferred legacyDialog=deferred
-[WEAPON] DRAW weapon=1 logical=241 actual=606 frame=0 pose=idle ... cache=miss reads=10
-[PICKUP] FRAME reason=WEAPON-PICKUP ... presented=1
 ```
 
 Deferred:
 
 ```text
-weapon ammo increment / acquisition feedback / sound
-eType=3 world/player-stat item (armor/health-style pickups)
-eType=4 inventory item
+eType=3 player-stat / world item
+eType=4 inventory
 eType=6 ammo
 eType=16 alternate ammo
+weapon ammo/message/sound acquisition consequences
 ```
 
-The user physically walked over two armor helmets and they were not consumed.
-That is expected at this frontier: player-stat pickup ownership has not been
-implemented yet and must not be patched as a helmet-specific special case.
+Armor helmets are expected not to be consumed at this boundary; do not patch
+individual pickup subtypes.
 
 ## Build/include guardrails
 
-The recovered legacy headers contain the historical C declaration:
-
-```c
-typedef enum { false, true } boolean;
-```
-
-Never solve an ESP-IDF include problem by shadowing a framework header under
-`ESP32/include`. A temporary `ESP32/include/esp_timer.h` shim once intercepted
-Arduino/FreeRTOS C++ include chains and broke unrelated translation units.
-
-Prefer existing project clocks such as `DoomRPG_GetUpTimeMS()` when appropriate,
-or add a narrowly project-named adapter. Do not globally intercept framework
-headers.
+Never shadow ESP-IDF/Arduino framework headers under `ESP32/include` to solve a
+local compatibility problem. Prefer existing project clocks/APIs or a narrowly
+project-named adapter. Do not inject legacy `DoomRPG.h` through a framework
+include chain.
 
 ## Next bounded direction
 
-Correctness work on this branch is hardware-pass. The strongest next performance
-candidate is now evidence-driven:
+After this branch merges, recover the new exact GitHub `main` SHA first.
+
+The strongest next performance milestone is now:
 
 ```text
-sprite renderer / resident sprite-asset cache audit
+world / plane / wall renderer profile and optimization
 ```
 
-Goal for that milestone should be bounded and measurable: explain and reduce the
-~100 sprite pack reads / ~545 ms sprite phase seen in the loaded fire room while
-preserving the compact resident owner, no-PSRAM target and exact visual output.
-
-Separately, gameplay correctness still needs generic owners for:
+Bounded goal:
 
 ```text
-player-stat pickups
-ammo/inventory pickups
-generic monster/destructible combat
-combat miss / no-effect / ammo / sound / turn consequences
+measure the steady-state world phase separately from sprites/present
+identify physical PAK traffic versus CPU raster/projection cost
+preserve exact framebuffer output
+preserve shapeData == NULL and mediaTexels == NULL
+avoid new map-wide or large permanent caches
+keep the legacy-wall guard recovery fail-closed
 ```
 
-After this branch merges, recover the new exact GitHub `main` SHA before starting
-another `agent/*` branch.
+The specific recovery turn is also useful as a secondary corpus because it
+currently pays for a failed world pass plus a retry (~453 ms total frame).
+
+Separate correctness families remain player-stat pickups, ammo/inventory, and
+generic combat/miss/ammo/sound/turn ownership.
