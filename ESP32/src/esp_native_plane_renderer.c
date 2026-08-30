@@ -7,6 +7,8 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+#include <esp_timer.h>
+
 #include "esp_asset_pack.h"
 #include "esp_map_runtime.h"
 #include "esp_native_plane_renderer.h"
@@ -44,10 +46,24 @@ typedef struct PlaneWork_s {
     uint16_t textureCount;
     PlaneCacheSlot cache[PLANE_CACHE_SLOTS];
     uint32_t cacheClock;
+    uint32_t acquireMicros;
     EspNativePlaneRenderStats stats;
 } PlaneWork;
 
 static EspNativePlaneRenderStats planeStats;
+
+static uint32_t elapsedMicros(int64_t start) {
+    int64_t elapsed = esp_timer_get_time() - start;
+    if (elapsed <= 0) return 0U;
+    if ((uint64_t)elapsed > UINT32_MAX) return UINT32_MAX;
+    return (uint32_t)elapsed;
+}
+
+static void accumulateMicros(uint32_t* total, uint32_t delta) {
+    if (total == NULL) return;
+    if (delta > UINT32_MAX - *total) *total = UINT32_MAX;
+    else *total += delta;
+}
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -245,6 +261,8 @@ static int acquireTexture(PlaneWork* work,
     uint32_t oldest = UINT32_MAX;
     uint32_t i;
     uint32_t readOffset;
+    int64_t readStart;
+    uint32_t readMicros;
 
     if (outTexels != NULL) *outTexels = NULL;
     if (work == NULL || source == NULL || outTexels == NULL) return 0;
@@ -282,9 +300,16 @@ static int acquireTexture(PlaneWork* work,
 
     readOffset = WALL_TEXEL_HEADER_BYTES + (source->sourceTexelOffset >> 1);
     if (readOffset > work->wallTexels.size ||
-        PLANE_TEXTURE_BYTES > work->wallTexels.size - readOffset ||
-        !EspAssetPack_readRange(&work->wallTexels, readOffset,
-                                target->texels, PLANE_TEXTURE_BYTES)) return 0;
+        PLANE_TEXTURE_BYTES > work->wallTexels.size - readOffset) return 0;
+
+    readStart = esp_timer_get_time();
+    if (!EspAssetPack_readRange(&work->wallTexels, readOffset,
+                                target->texels, PLANE_TEXTURE_BYTES)) {
+        accumulateMicros(&work->acquireMicros, elapsedMicros(readStart));
+        return 0;
+    }
+    readMicros = elapsedMicros(readStart);
+    accumulateMicros(&work->acquireMicros, readMicros);
 
     target->source = source;
     target->lastUse = work->cacheClock;
@@ -416,6 +441,15 @@ const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void) {
 int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
     Render_t* render = (Render_t*)renderBase;
     PlaneWork work;
+    int64_t totalStart;
+    int64_t phaseStart;
+    uint32_t collectMicros = 0U;
+    uint32_t resolveMicros = 0U;
+    uint32_t allocMicros = 0U;
+    uint32_t rasterMicros = 0U;
+    uint32_t releaseMicros;
+    uint32_t totalMicros;
+    uint32_t rasterCpuMicros;
     int y;
     int ok = 0;
 
@@ -436,22 +470,47 @@ int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
         return 0;
     }
 
-    if (!collectTextures(&work) || !resolveTextures(&work) || !initCache(&work)) {
+    totalStart = esp_timer_get_time();
+
+    phaseStart = esp_timer_get_time();
+    if (!collectTextures(&work)) {
+        collectMicros = elapsedMicros(phaseStart);
         goto done;
     }
+    collectMicros = elapsedMicros(phaseStart);
+
+    phaseStart = esp_timer_get_time();
+    if (!resolveTextures(&work)) {
+        resolveMicros = elapsedMicros(phaseStart);
+        goto done;
+    }
+    resolveMicros = elapsedMicros(phaseStart);
+
+    phaseStart = esp_timer_get_time();
+    if (!initCache(&work)) {
+        allocMicros = elapsedMicros(phaseStart);
+        goto done;
+    }
+    allocMicros = elapsedMicros(phaseStart);
 
     work.stats.uniqueLogicalTextures = work.textureCount;
+    phaseStart = esp_timer_get_time();
     for (y = 0; y < render->halfScreenHeight; ++y) {
         if (!drawPlaneRow(&work, y,
                           work.runtime->planeMap + ESP_MAP_PLANE_CELL_COUNT)) {
+            rasterMicros = elapsedMicros(phaseStart);
             goto done;
         }
         ++work.stats.rowsRendered;
     }
     for (; y < render->screenHeight; ++y) {
-        if (!drawPlaneRow(&work, y, work.runtime->planeMap)) goto done;
+        if (!drawPlaneRow(&work, y, work.runtime->planeMap)) {
+            rasterMicros = elapsedMicros(phaseStart);
+            goto done;
+        }
         ++work.stats.rowsRendered;
     }
+    rasterMicros = elapsedMicros(phaseStart);
 
     if (work.stats.rowsRendered != (uint32_t)render->screenHeight ||
         work.stats.pixelsRendered !=
@@ -464,7 +523,31 @@ int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
     ok = 1;
 
 done:
+    phaseStart = esp_timer_get_time();
     releaseCache(&work);
+    releaseMicros = elapsedMicros(phaseStart);
+    totalMicros = elapsedMicros(totalStart);
+    rasterCpuMicros = rasterMicros >= work.acquireMicros
+                          ? rasterMicros - work.acquireMicros
+                          : 0U;
+
+    /* All timings are captured before either diagnostic printf. `acquire`
+     * covers only the 2048-byte PAK range calls made on the six-slot local LRU
+     * misses; `rasterCpu` is the remaining row/pixel work. No new cache or
+     * persistent owner is introduced by this profile. */
+    printf("[PLANEDETAIL] total=%u collect=%u resolve=%u alloc=%u raster=%u acquire=%u rasterCpu=%u release=%u misses=%u evictions=%u ok=%u\n",
+           (unsigned int)totalMicros,
+           (unsigned int)collectMicros,
+           (unsigned int)resolveMicros,
+           (unsigned int)allocMicros,
+           (unsigned int)rasterMicros,
+           (unsigned int)work.acquireMicros,
+           (unsigned int)rasterCpuMicros,
+           (unsigned int)releaseMicros,
+           (unsigned int)work.stats.cacheMisses,
+           (unsigned int)work.stats.cacheEvictions,
+           (unsigned int)(ok != 0));
+
     if (ok) {
         planeStats = work.stats;
         printf("[NATIVEPLANE] rows=%u pixels=%u textures=%u cache=%uH/%uM/%uE reads=%uB\n",
