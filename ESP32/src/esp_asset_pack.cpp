@@ -262,14 +262,40 @@ void recycleResidentRangeWorkingSet()
         return;
     }
 
-    /* The range cache is a bounded working set, not an append-only history of
-     * the level. Once small ranges exhaust the record table or payload after
-     * all transient 2 KiB ranges have already been sacrificed, recycle only
-     * range records/payload. Preserve the validated resident File, entry cache,
-     * owner allocation and large-range mode so later gameplay can warm the
-     * current view without changing permanent RAM or heap topology. */
-    residentCache->rangeCount = 0U;
-    residentCache->bytesUsed = 0U;
+    /* Keep the range cache as a rolling working set instead of dropping every
+     * warm range at once. Records are append-ordered, so discard the oldest
+     * three eighths of small ranges, retain the newest view-local ranges and
+     * compact their payload back toward the low end. Large 2 KiB ranges are
+     * handled separately by their existing high-tail policy. This changes no
+     * owner size and creates bounded headroom for the next local working set. */
+    const uint32_t targetEvictions =
+        (kResidentRangeEntryCapacity * 3U) / 8U;
+    uint32_t readIndex = 0U;
+    uint32_t writeIndex = 0U;
+    uint32_t evicted = 0U;
+    uint32_t compactOffset = 0U;
+
+    while (readIndex < residentCache->rangeCount) {
+        ResidentRangeRecord record = residentCache->ranges[readIndex++];
+        if (!isLargeResidentRange(record) && evicted < targetEvictions) {
+            ++evicted;
+            continue;
+        }
+
+        if (!isLargeResidentRange(record)) {
+            if (record.dataOffset != compactOffset) {
+                memmove(residentCache->bytes + compactOffset,
+                        residentCache->bytes + record.dataOffset,
+                        record.length);
+            }
+            record.dataOffset = compactOffset;
+            compactOffset += record.length;
+        }
+        residentCache->ranges[writeIndex++] = record;
+    }
+
+    residentCache->rangeCount = writeIndex;
+    residentCache->bytesUsed = compactOffset;
 }
 
 ResidentRangeRecord* findResidentRange(uint32_t nameHash,
