@@ -173,9 +173,7 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
 
     /* A level load pays cache priming exactly once. Gameplay input is armed only
      * after the PR #96/#97 hardware-proven order has completed:
-     * small cold -> small warm -> enable 2048 B tail -> learn -> warm.
-     * The large tail is then released before live input so the existing 16 KiB
-     * owner is fully available to small gameplay ranges. */
+     * small cold -> small warm -> enable 2048 B tail -> learn -> warm. */
     for (;;) {
         if (sessionState.stage == SESSION_STAGE_FIRST_FRAME) {
             EspNativeGraphicsCatalogStatus catalogStatus;
@@ -198,7 +196,7 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
             }
 
             printf("\n=== Doom RPG ESP32-native generic gameplay session ===\n");
-            printf("[ENGINESESSION] CONTRACT current resident runtime + EspPlayerView select map/pose; generic graphics, HUD, small cache cold/warm, shared-payload 2048B learn/warm witness, release large tail, then collision/input/gameplay. Historical Junction/Entrance probes are regression witnesses, never runtime prerequisites.\n");
+            printf("[ENGINESESSION] CONTRACT current resident runtime + EspPlayerView select map/pose; generic graphics, HUD, small cache cold/warm, shared-payload 2048B learn/warm, then collision/input/gameplay. Historical Junction/Entrance probes are regression witnesses, never runtime prerequisites.\n");
             printf("[ENGINESESSION] CATALOG map=%u textures=%u sprites=%u storage=%u fnv=%08x\n",
                    (unsigned int)view->targetMapId,
                    (unsigned int)catalog->textureCount,
@@ -387,8 +385,6 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
         if (sessionState.stage == SESSION_STAGE_LARGE_WARM) {
             EspNativeGameplayFrameStats frame;
             EspAssetPackResidentStats pack;
-            uint32_t heapBefore;
-            uint32_t largestBefore;
             if (!renderCacheWitness(doomRpgBase, view, "LARGE-WARM",
                                     &frame, &pack) ||
                 !EspAssetPack_isResidentLargeRangeEnabled() ||
@@ -397,41 +393,13 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 failSession("large-cache warm frame");
                 return;
             }
-            printf("[ENGINECACHE] PRIMED map=%u angle=%u totalUs=%u largeEntries=%u heap8=%u largest8=%u next=release-large+collision+input\n",
+            printf("[ENGINECACHE] PRIMED map=%u angle=%u totalUs=%u largeEntries=%u heap8=%u largest8=%u next=collision+input\n",
                    (unsigned int)view->targetMapId,
                    (unsigned int)view->viewAngle,
                    (unsigned int)frame.totalMicros,
                    (unsigned int)pack.largeRangeEntries,
                    (unsigned int)heap8(),
                    (unsigned int)largest8());
-
-            /* Hardware A/B policy: retain the proven 2048 B priming witness but
-             * do not let plane-sized ranges occupy the shared 16 KiB payload
-             * during live gameplay. residentLargeRangeEnd() removes only those
-             * tail records; small exact ranges, resident File and owner remain. */
-            heapBefore = heap8();
-            largestBefore = largest8();
-            if (!EspAssetPack_residentLargeRangeEnd() ||
-                EspAssetPack_isResidentLargeRangeEnabled() ||
-                EspAssetPack_isOpen() || heap8() != heapBefore ||
-                largest8() != largestBefore) {
-                failSession("gameplay large-tail release");
-                return;
-            }
-            memset(&pack, 0, sizeof(pack));
-            EspAssetPack_residentGetStats(&pack);
-            if (pack.largeRangeEntries != 0U) {
-                failSession("gameplay large-tail still resident");
-                return;
-            }
-            printf("[ENGINECACHE] GAMEPLAY_POLICY large=off cache=%u/%uB entries=%u/%u owner=%u heap8=%u largest8=%u smallPriority=yes ownerDelta=0\n",
-                   (unsigned int)pack.rangeCacheBytesUsed,
-                   (unsigned int)pack.rangeCacheCapacityBytes,
-                   (unsigned int)pack.rangeCacheEntries,
-                   (unsigned int)pack.rangeCacheEntryCapacity,
-                   (unsigned int)pack.ownerBytes,
-                   (unsigned int)heapBefore,
-                   (unsigned int)largestBefore);
             sessionState.stage = SESSION_STAGE_GAMEPLAY;
             continue;
         }
@@ -440,7 +408,7 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
             EspNativeResidentGameplay_service(doomRpgBase);
             if (EspNativeResidentGameplay_isActive()) {
                 sessionState.stage = SESSION_STAGE_ACTIVE;
-                printf("[ENGINESESSION] READY map=%u angle=%u residentCache=yes largeCache=no smallPriority=yes touch=invisible-120ms TURN+MOVE=armed shapeData=%p mediaTexels=%p\n",
+                printf("[ENGINESESSION] READY map=%u angle=%u residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=%p mediaTexels=%p\n",
                        (unsigned int)view->targetMapId,
                        (unsigned int)view->viewAngle,
                        doomRpg->render != NULL ?
