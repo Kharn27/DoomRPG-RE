@@ -256,6 +256,22 @@ void clearLargeResidentRanges()
     }
 }
 
+void recycleResidentRangeWorkingSet()
+{
+    if (residentCache == nullptr) {
+        return;
+    }
+
+    /* The range cache is a bounded working set, not an append-only history of
+     * the level. Once small ranges exhaust the record table or payload after
+     * all transient 2 KiB ranges have already been sacrificed, recycle only
+     * range records/payload. Preserve the validated resident File, entry cache,
+     * owner allocation and large-range mode so later gameplay can warm the
+     * current view without changing permanent RAM or heap topology. */
+    residentCache->rangeCount = 0U;
+    residentCache->bytesUsed = 0U;
+}
+
 ResidentRangeRecord* findResidentRange(uint32_t nameHash,
                                        uint32_t relativeOffset,
                                        uint32_t length)
@@ -279,6 +295,8 @@ void storeResidentSmallRange(uint32_t nameHash,
                              const void* source,
                              uint32_t length)
 {
+    bool recycled = false;
+
     if (!residentEnabled || residentCache == nullptr || source == nullptr ||
         length == 0U || length > kResidentMaxCachedRangeBytes) {
         ++residentStats.rangeCacheBypasses;
@@ -295,10 +313,16 @@ void storeResidentSmallRange(uint32_t nameHash,
         if (!recordFull && !payloadFull) {
             break;
         }
-        if (!evictLowestLargeRange()) {
-            ++residentStats.rangeCacheBypasses;
-            return;
+        if (evictLowestLargeRange()) {
+            continue;
         }
+        if (!recycled) {
+            recycleResidentRangeWorkingSet();
+            recycled = true;
+            continue;
+        }
+        ++residentStats.rangeCacheBypasses;
+        return;
     }
 
     ResidentRangeRecord* record =
