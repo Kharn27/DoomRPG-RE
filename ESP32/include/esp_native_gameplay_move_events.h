@@ -21,7 +21,8 @@ typedef enum EspNativeGameplayMoveEventStatus_e {
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_ALREADY_TARGET = 7,
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK = 8,
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK = 9,
-    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY = 10
+    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY = 10,
+    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK = 11
 } EspNativeGameplayMoveEventStatus;
 
 typedef struct EspNativeGameplayMoveEventResult_s {
@@ -31,6 +32,7 @@ typedef struct EspNativeGameplayMoveEventResult_s {
     uint16_t globalCommandIndex;
     uint16_t lineIndex;
     uint16_t soundId;
+    uint16_t targetEventIndex;
     uint8_t commandOffset;
     uint8_t codeId;
     uint8_t eligibleCount;
@@ -43,6 +45,8 @@ typedef struct EspNativeGameplayMoveEventResult_s {
     uint8_t removedAfter;
     uint8_t removeIfHandled;
     uint8_t rollbackAvailable;
+    uint8_t stateBefore;
+    uint8_t stateAfter;
     EspNativeGameplayStatusMessageResult statusMessage;
 } EspNativeGameplayMoveEventResult;
 
@@ -56,12 +60,17 @@ typedef struct EspNativeGameplayMoveDialogIntent_s {
 /*
  * Execute the bounded movement tile-event families recovered from
  * Game_executeTile()/Game_runEvent(): exactly one eligible regular door
- * OPENLINE/CLOSELINE, FORCE_MESSAGE, or dialog command may be selected.
+ * OPENLINE/CLOSELINE, FORCE_MESSAGE, dialog command, or compact script-state
+ * mutation (CHANGESTATE/NEXTSTATE/PREVSTATE) may be selected.
+ *
  * Dialog presentation is not performed inside the commit wrapper: an ENTER
  * dialog becomes a tiny pending intent consumed by resident gameplay after the
- * destination world frame has rendered. Any broader eligible event remains
- * fail-closed for its own opcode milestone. Native key ownership is still
- * absent, so playerKeys remains deliberately 0.
+ * destination world frame has rendered. Script-state mutations use the same
+ * permanent EspMapOpcodeExecutor already validated by the native event chain;
+ * the MOVE transaction retains only enough before/after state for exact render
+ * rollback. Any broader eligible event remains fail-closed for its own opcode
+ * milestone. Native key ownership is still absent, so playerKeys remains
+ * deliberately 0.
  */
 EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executePhase(
     uint16_t tile,
