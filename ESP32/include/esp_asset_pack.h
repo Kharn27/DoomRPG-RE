@@ -70,9 +70,9 @@ void EspAssetPack_residentResetStats(void);
 void EspAssetPack_residentGetStats(EspAssetPackResidentStats* outStats);
 
 /* Optional second-stage cache for exact immutable 2048-byte ranges. It borrows
- * only unused tail bytes from the existing 16 KiB resident payload: no second
- * heap owner is allocated. Small-range entries retain priority and may evict
- * large tail entries when they need payload space. Begin/end require the
+ * only unused tail bytes from the configured bounded resident payload: no
+ * second heap owner is allocated. Small-range entries retain priority and may
+ * evict large tail entries when they need payload space. Begin/end require the
  * resident default PAK to be logically closed.
  */
 int EspAssetPack_residentLargeRangeBegin(void);
