@@ -5,6 +5,7 @@
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_line_state.h"
+#include "esp_map_opcode_executor.h"
 #include "esp_map_script_state.h"
 #include "esp_native_gameplay_destructible.h"
 
