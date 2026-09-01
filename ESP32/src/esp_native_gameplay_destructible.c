@@ -9,6 +9,16 @@
 #include "esp_map_script_state.h"
 #include "esp_native_gameplay_destructible.h"
 
+/* Regular OPENLINE gameplay goes through the global door-animation wrapper.
+ * Legacy eType=12/eSubType=3 death does not animate the line: Entity_died()
+ * reports "Door cleared!" and Game_remove()s the destructible.  Keep the same
+ * OPENLINE mutation/rollback semantics here, but deliberately bypass only the
+ * presentation wrapper for this bounded death route. */
+EspMapLineDoorStatus __real_EspMapLineState_applyDoorCommand(
+    const EspMapEventDescriptor* descriptor,
+    uint32_t commandOffset,
+    EspMapLineDoorResult* outResult);
+
 static int descriptorForTile(uint16_t tile,
                              EspMapEventDescriptor* outDescriptor) {
     EspMapEventRef ref;
@@ -153,7 +163,7 @@ EspNativeGameplayDestructible_executeLineDeath(
     if (status != ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_OK) return status;
 
     memset(&door, 0, sizeof(door));
-    if (EspMapLineState_applyDoorCommand(&descriptor, commandOffset, &door) !=
+    if (__real_EspMapLineState_applyDoorCommand(&descriptor, commandOffset, &door) !=
             ESP_MAP_LINE_DOOR_OK ||
         door.mutated != 1U || door.codeId != ESP_MAP_OPCODE_OPENLINE ||
         door.lineIndex != expectedLineIndex ||
