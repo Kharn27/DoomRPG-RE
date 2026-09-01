@@ -4,10 +4,13 @@
 
 #include "esp_asset_pack.h"
 #include "esp_map_catalog.h"
+#include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_runtime.h"
+#include "esp_map_script_state.h"
 #include "esp_map_strings.h"
 #include "esp_native_gameplay_interaction_inventory.h"
+#include "esp_native_gameplay_select.h"
 #include "esp_player_view_state.h"
 
 #define PROBE_OPCODE_CHANGEMAP 2U
@@ -60,6 +63,67 @@ static int readCurrentMapString(uint32_t stringIndex,
     return ok && !EspAssetPack_isOpen();
 }
 
+static int descriptorHasTransitionPair(
+    const EspMapEventDescriptor* descriptor) {
+    uint32_t offset;
+    uint8_t saveSeen = 0U;
+    uint8_t changeSeen = 0U;
+
+    if (descriptor == NULL) return 0;
+    for (offset = 0U; offset < descriptor->commandCount; ++offset) {
+        EspMapByteCode command;
+        memset(&command, 0, sizeof(command));
+        if (!EspMapEvents_getCommand(descriptor, offset, &command)) return 0;
+        if (command.id == PROBE_OPCODE_SAVEGAME) saveSeen = 1U;
+        if (command.id == PROBE_OPCODE_CHANGEMAP) changeSeen = 1U;
+    }
+    return saveSeen != 0U && changeSeen != 0U;
+}
+
+static void logSelectFilter(const EspMapEventDescriptor* descriptor) {
+    EspMapEventFilterPlan plan;
+    uint8_t currentState;
+    uint32_t offset;
+
+    if (descriptor == NULL ||
+        !EspMapScriptState_getEventState(descriptor->eventIndex, &currentState) ||
+        !EspMapEventFilter_prepare(descriptor, currentState, 0U,
+                                   ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS,
+                                   0U, &plan)) {
+        return;
+    }
+
+    for (offset = 0U; offset < descriptor->commandCount; ++offset) {
+        EspMapByteCode command;
+        EspMapEventCommandFilterResult filtered;
+        uint32_t global = (uint32_t)descriptor->firstCommandIndex + offset;
+        uint8_t removed = 0U;
+
+        memset(&command, 0, sizeof(command));
+        memset(&filtered, 0, sizeof(filtered));
+        if (global > UINT16_MAX ||
+            !EspMapEvents_getCommand(descriptor, offset, &command) ||
+            !EspMapScriptState_isCommandRemoved(global, &removed) ||
+            !EspMapEventFilter_evaluate(descriptor, &plan, offset, removed,
+                                        &filtered)) {
+            return;
+        }
+        printf("[CHANGEMAPPROBE] FILTER event=%u tile=%u state=%u runFlags=%08x cmd=%u global=%u opcode=%u arg2=%08x removed=%u decision=%u eligible=%u\n",
+               (unsigned int)descriptor->eventIndex,
+               (unsigned int)descriptor->tileIndex,
+               (unsigned int)currentState,
+               (unsigned int)ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS,
+               (unsigned int)offset,
+               (unsigned int)global,
+               (unsigned int)command.id,
+               (unsigned int)command.arg2,
+               (unsigned int)removed,
+               (unsigned int)filtered.decision,
+               (unsigned int)(filtered.decision ==
+                              ESP_MAP_EVENT_COMMAND_ELIGIBLE));
+    }
+}
+
 static void logTransitionCorpus(void) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     uint32_t eventIndex;
@@ -82,6 +146,9 @@ static void logTransitionCorpus(void) {
         ref.tileIndex = (uint16_t)(rawEvent & ESP_MAP_EVENT_TILE_MASK);
         ref.value = rawEvent;
         if (!EspMapEvents_describe(&ref, &descriptor)) return;
+        if (!descriptorHasTransitionPair(&descriptor)) continue;
+
+        logSelectFilter(&descriptor);
 
         for (offset = 0U; offset < descriptor.commandCount; ++offset) {
             EspMapByteCode command;
@@ -110,7 +177,7 @@ static void logTransitionCorpus(void) {
                 const uint32_t spawnParam = (command.arg1 << 1U) >> 9U;
                 const uint8_t showStats =
                     (uint8_t)((command.arg1 >> 31U) & 1U);
-                printf("[CHANGEMAPPROBE] event=%u tile=%u cmd=%u global=%u opcode=2 raw=%08x arg2=%08x string=%u name=%s nameLen=%u targetMap=%u showStats=%u spawnParam=%u remove=%u action=probe-only-fail-closed\n",
+                printf("[CHANGEMAPPROBE] event=%u tile=%u cmd=%u global=%u opcode=2 raw=%08x arg2=%08x string=%u name=%s nameLen=%u targetMap=%u showStats=%u spawnParam=%u remove=%u action=live-wait-stats-candidate\n",
                        (unsigned int)descriptor.eventIndex,
                        (unsigned int)descriptor.tileIndex,
                        (unsigned int)offset,
@@ -130,7 +197,7 @@ static void logTransitionCorpus(void) {
                 const uint8_t rawX = (uint8_t)(packed & 0xffU);
                 const uint8_t rawY = (uint8_t)((packed >> 8U) & 0xffU);
                 const uint8_t angle = (uint8_t)((packed >> 16U) & 0xffU);
-                printf("[CHANGEMAPPROBE] event=%u tile=%u cmd=%u global=%u opcode=27 raw=%08x arg2=%08x string=%u name=%s nameLen=%u targetMap=%u saveRaw=%u,%u angle=%u savePos=%u,%u remove=%u action=probe-only-fail-closed\n",
+                printf("[CHANGEMAPPROBE] event=%u tile=%u cmd=%u global=%u opcode=27 raw=%08x arg2=%08x string=%u name=%s nameLen=%u targetMap=%u saveRaw=%u,%u angle=%u savePos=%u,%u remove=%u action=live-wait-stats-candidate\n",
                        (unsigned int)descriptor.eventIndex,
                        (unsigned int)descriptor.tileIndex,
                        (unsigned int)offset,
