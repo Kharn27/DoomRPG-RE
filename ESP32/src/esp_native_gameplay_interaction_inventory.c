@@ -2,12 +2,15 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_runtime.h"
+#include "esp_map_script_state.h"
 #include "esp_native_gameplay_interaction_inventory.h"
 
 #define INVENTORY_OPCODE_LIMIT 64U
 #define INVENTORY_IDS_CAPACITY 48U
+#define DEATH_ROUTE_RUN_FLAGS 0x00000100UL
 
 static uint32_t loggedArenaFNV;
 
@@ -110,6 +113,100 @@ static int appendId(char* buffer,
     return 1;
 }
 
+/*
+ * Temporary, side-effect-free recovery witness for legacy Game_remove().
+ * A line-linked entity death calls Game_executeTile(line midpoint, 0x100), so
+ * inspect exactly that filtering context before destructible combat owns any
+ * mutation.  Only eligible commands are logged; no command is executed and no
+ * mutable map state is changed.  This lets hardware reveal the real scripted
+ * consequence of MAP_INTRO's jammed-door event without replaying the level.
+ */
+static void logDeathRouteProbe(const EspMapRuntimeView* runtime) {
+    uint32_t eventIndex;
+    uint32_t eligibleEvents = 0U;
+    uint32_t eligibleCommands = 0U;
+
+    if (runtime == NULL || !EspMapScriptState_isReady()) return;
+
+    printf("[DEATHROUTEPROBE] BEGIN arena=%08x runFlags=%08x events=%u mutation=forbidden\n",
+           (unsigned int)runtime->arenaFNV1a,
+           (unsigned int)DEATH_ROUTE_RUN_FLAGS,
+           (unsigned int)runtime->eventCount);
+
+    for (eventIndex = 0U; eventIndex < runtime->eventCount; ++eventIndex) {
+        uint32_t raw;
+        EspMapEventRef ref;
+        EspMapEventDescriptor descriptor;
+        EspMapEventFilterPlan plan;
+        uint8_t currentState;
+        uint32_t offset;
+        uint32_t eventEligible = 0U;
+
+        if (!EspMapRuntime_getEvent(eventIndex, &raw)) return;
+        ref.index = (uint16_t)eventIndex;
+        ref.tileIndex = (uint16_t)(raw & ESP_MAP_EVENT_TILE_MASK);
+        ref.value = raw;
+        if (!EspMapEvents_describe(&ref, &descriptor) ||
+            !EspMapScriptState_getEventState(descriptor.eventIndex,
+                                             &currentState) ||
+            !EspMapEventFilter_prepare(&descriptor,
+                                       currentState,
+                                       0U,
+                                       DEATH_ROUTE_RUN_FLAGS,
+                                       0U,
+                                       &plan)) {
+            return;
+        }
+
+        for (offset = 0U; offset < descriptor.commandCount; ++offset) {
+            EspMapEventCommandFilterResult filtered;
+            EspMapByteCode command;
+            uint32_t global = (uint32_t)descriptor.firstCommandIndex + offset;
+            uint8_t removed;
+
+            if (global > UINT16_MAX ||
+                !EspMapScriptState_isCommandRemoved(global, &removed) ||
+                !EspMapEventFilter_evaluate(&descriptor,
+                                            &plan,
+                                            offset,
+                                            removed,
+                                            &filtered)) {
+                return;
+            }
+            if (filtered.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) continue;
+            if (!EspMapEvents_getCommand(&descriptor, offset, &command)) return;
+
+            if (eventEligible == 0U) {
+                printf("[DEATHROUTEPROBE] EVENT event=%u tile=%u state=%u initialState=%u commands=%u runFlags=%08x\n",
+                       (unsigned int)descriptor.eventIndex,
+                       (unsigned int)descriptor.tileIndex,
+                       (unsigned int)currentState,
+                       (unsigned int)descriptor.initialState,
+                       (unsigned int)descriptor.commandCount,
+                       (unsigned int)DEATH_ROUTE_RUN_FLAGS);
+                ++eligibleEvents;
+            }
+            ++eventEligible;
+            ++eligibleCommands;
+            printf("[DEATHROUTEPROBE] ELIGIBLE event=%u cmd=%u global=%u opcode=%u/%s arg1=%08x arg2=%08x removed=%u decision=%u\n",
+                   (unsigned int)descriptor.eventIndex,
+                   (unsigned int)offset,
+                   (unsigned int)filtered.globalCommandIndex,
+                   (unsigned int)command.id,
+                   opcodeName(command.id),
+                   (unsigned int)command.arg1,
+                   (unsigned int)command.arg2,
+                   (unsigned int)removed,
+                   (unsigned int)filtered.decision);
+        }
+    }
+
+    printf("[DEATHROUTEPROBE] SUMMARY eligibleEvents=%u eligibleCommands=%u runFlags=%08x mutation=no\n",
+           (unsigned int)eligibleEvents,
+           (unsigned int)eligibleCommands,
+           (unsigned int)DEATH_ROUTE_RUN_FLAGS);
+}
+
 void EspNativeGameplayInteractionInventory_log(void) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     uint16_t counts[INVENTORY_OPCODE_LIMIT];
@@ -195,5 +292,6 @@ void EspNativeGameplayInteractionInventory_log(void) {
                    ? "" : deferredReason((uint8_t)eventIndex));
     }
 
+    logDeathRouteProbe(runtime);
     loggedArenaFNV = runtime->arenaFNV1a;
 }
