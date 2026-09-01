@@ -25,11 +25,9 @@
 #define DOG_PROBE_WEAPON_AXE 0U
 #define DOG_PROBE_AXE_STR_MIN 3
 #define DOG_PROBE_AXE_STR_MAX 12
-#define DOG_PROBE_AXE_RANGE_MIN 0
 #define DOG_PROBE_AXE_RANGE_MAX 70
 #define DOG_PROBE_AXE_DAMAGE_SPLIT 25
 #define DOG_PROBE_AXE_DAMAGE_MULTIPLIER 256
-#define DOG_PROBE_WORLD_DISTANCE 4096
 #define DOG_PROBE_EXPECTED_CALC_HIT 293
 #define DOG_PROBE_EXPECTED_CRIT_LIMIT 14
 
@@ -47,10 +45,10 @@ typedef struct DogProbePending_s {
 
 static DogProbePending dogProbePending;
 
+extern DoomRPG_t* doomRpg;
 EspNativeGameplayActionStatus __real_EspNativeGameplayActionEngine_executeSelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayActionResult* outResult);
-int __real_EspNativeGameplayMonsterState_ensure(DoomRPG_t* doomRpg);
 
 static uint8_t p1Health(uint32_t p) { return (uint8_t)(p & 0xffU); }
 static uint8_t p1MaxHealth(uint32_t p) { return (uint8_t)((p >> 8) & 0xffU); }
@@ -249,7 +247,7 @@ static int dogExp(const EspNativeGameplayMonsterRecord* record) {
               (int)p1MaxArmor(record->param1)) * 5) + 49) / 50;
 }
 
-static void runProbe(DoomRPG_t* doomRpg) {
+static void runProbe(DoomRPG_t* runtime) {
     const EspNativeGameplayMonsterRecord* record;
     Random_t randomBefore;
     uint32_t rngBefore;
@@ -271,7 +269,7 @@ static void runProbe(DoomRPG_t* doomRpg) {
     int xp = 0;
     uint32_t rngCalls = 1U;
 
-    if (doomRpg == NULL || dogProbePending.active == 0U) return;
+    if (runtime == NULL || dogProbePending.active == 0U) return;
     record = EspNativeGameplayMonsterState_find(dogProbePending.spriteIndex);
     if (!witnessRecordExact(record)) {
         printf("[DOGCOMBATPROBE] FAILED seq=%u reason=witness-state-drift mutation=no rngConsumed=0\n",
@@ -280,19 +278,19 @@ static void runProbe(DoomRPG_t* doomRpg) {
         return;
     }
 
-    randomBefore = doomRpg->random;
+    randomBefore = runtime->random;
     rngBefore = randomFNV(&randomBefore);
-    randHit = DoomRPG_randNextByte(&doomRpg->random);
+    randHit = DoomRPG_randNextByte(&runtime->random);
     hitType = calculateHit(record, randHit, &calcHit, &critLimit);
     if (calcHit != DOG_PROBE_EXPECTED_CALC_HIT ||
         critLimit != DOG_PROBE_EXPECTED_CRIT_LIMIT || hitType < 0) {
-        doomRpg->random = randomBefore;
+        runtime->random = randomBefore;
         printf("[DOGCOMBATPROBE] FAILED seq=%u reason=hit-contract calc=%d critLimit=%d randHit=%u rngRollback=%s mutation=no\n",
                (unsigned int)dogProbePending.sequence,
                calcHit,
                critLimit,
                (unsigned int)randHit,
-               memcmp(&doomRpg->random, &randomBefore, sizeof(randomBefore)) == 0
+               memcmp(&runtime->random, &randomBefore, sizeof(randomBefore)) == 0
                    ? "yes" : "NO");
         memset(&dogProbePending, 0, sizeof(dogProbePending));
         return;
@@ -304,14 +302,14 @@ static void runProbe(DoomRPG_t* doomRpg) {
     armorAfter = armorBefore;
 
     if (hitType != 0) {
-        randDamage = DoomRPG_randNextByte(&doomRpg->random);
+        randDamage = DoomRPG_randNextByte(&runtime->random);
         ++rngCalls;
         if (!calculateDamage(record, randDamage, hitType == 2,
                              &damage, &armorDamage)) {
-            doomRpg->random = randomBefore;
+            runtime->random = randomBefore;
             printf("[DOGCOMBATPROBE] FAILED seq=%u reason=damage-contract rngRollback=%s mutation=no\n",
                    (unsigned int)dogProbePending.sequence,
-                   memcmp(&doomRpg->random, &randomBefore, sizeof(randomBefore)) == 0
+                   memcmp(&runtime->random, &randomBefore, sizeof(randomBefore)) == 0
                        ? "yes" : "NO");
             memset(&dogProbePending, 0, sizeof(dogProbePending));
             return;
@@ -331,9 +329,9 @@ static void runProbe(DoomRPG_t* doomRpg) {
         if (lethal) xp = dogExp(record);
     }
 
-    rngConsumed = randomFNV(&doomRpg->random);
-    doomRpg->random = randomBefore;
-    rngAfter = randomFNV(&doomRpg->random);
+    rngConsumed = randomFNV(&runtime->random);
+    runtime->random = randomBefore;
+    rngAfter = randomFNV(&runtime->random);
 
     printf("[DOGCOMBATPROBE] ROLL seq=%u sprite=%u tile=%u weapon=0 distance=1 randHit=%u calcHit=%d critLimit=%d result=%s randDamage=%s%u rngCalls=%u\n",
            (unsigned int)dogProbePending.sequence,
@@ -360,7 +358,7 @@ static void runProbe(DoomRPG_t* doomRpg) {
            (unsigned int)rngBefore,
            (unsigned int)rngConsumed,
            (unsigned int)rngAfter,
-           memcmp(&doomRpg->random, &randomBefore, sizeof(randomBefore)) == 0
+           memcmp(&runtime->random, &randomBefore, sizeof(randomBefore)) == 0
                ? "yes" : "NO",
            witnessRecordExact(record) ? "yes" : "NO");
 
@@ -402,15 +400,6 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
            (unsigned int)intent->sequence,
            (unsigned int)DOG_PROBE_SPRITE,
            (unsigned int)frontTile);
+    runProbe(doomRpg);
     return status;
-}
-
-int __wrap_EspNativeGameplayMonsterState_ensure(DoomRPG_t* doomRpg) {
-    int ready = __real_EspNativeGameplayMonsterState_ensure(doomRpg);
-    if (!ready) {
-        memset(&dogProbePending, 0, sizeof(dogProbePending));
-        return 0;
-    }
-    if (dogProbePending.active != 0U) runProbe(doomRpg);
-    return 1;
 }
