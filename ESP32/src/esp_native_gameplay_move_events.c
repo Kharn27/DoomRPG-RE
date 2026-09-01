@@ -6,6 +6,7 @@
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_line_state.h"
+#include "esp_map_opcode_executor.h"
 #include "esp_map_runtime.h"
 #include "esp_map_script_state.h"
 #include "esp_map_ui_intent.h"
@@ -112,12 +113,17 @@ static int phaseUnsafe(EspNativeGameplayMoveEventStatus status) {
 
 static int phaseHandled(EspNativeGameplayMoveEventStatus status) {
     return status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK ||
-           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK;
+           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK ||
+           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK;
 }
 
 static int isDialogCode(uint8_t codeId) {
     return codeId == ESP_MAP_OPCODE_DIALOG ||
            codeId == ESP_MAP_OPCODE_DIALOG_NO_BACK;
+}
+
+static int isStateCode(uint8_t codeId) {
+    return EspMapOpcodeExecutor_supports(codeId) != 0;
 }
 
 static void logPhase(const char* phase,
@@ -133,7 +139,7 @@ static void logPhase(const char* phase,
         msgActive = msg->active;
         msgString = msg->active != 0U ? msg->text.index : 0U;
     }
-    printf("[MOVEEVENT] %s seq=%u tile=%u flags=%08x status=%s event=%u eligible=%u opcode=%u unsupported=%u line=%u open=%u->%u locked=%u statusMsg=%u/string%u removed=%u->%u mutation=%s rollback=%u\n",
+    printf("[MOVEEVENT] %s seq=%u tile=%u flags=%08x status=%s event=%u eligible=%u opcode=%u unsupported=%u line=%u open=%u->%u locked=%u statusMsg=%u/string%u stateEvent=%u state=%u->%u removed=%u->%u mutation=%s rollback=%u\n",
            phase,
            (unsigned int)sequence,
            (unsigned int)result->tile,
@@ -149,6 +155,9 @@ static void logPhase(const char* phase,
            (unsigned int)result->locked,
            (unsigned int)msgActive,
            (unsigned int)msgString,
+           (unsigned int)result->targetEventIndex,
+           (unsigned int)result->stateBefore,
+           (unsigned int)result->stateAfter,
            (unsigned int)result->removedBefore,
            (unsigned int)result->removedAfter,
            result->mutated != 0U ? "yes" : "no",
@@ -183,6 +192,7 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
     outResult->eventIndex = UINT16_MAX;
     outResult->globalCommandIndex = UINT16_MAX;
     outResult->lineIndex = UINT16_MAX;
+    outResult->targetEventIndex = UINT16_MAX;
 
     if (tile >= 1024U || runFlags == 0U) {
         return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
@@ -239,7 +249,8 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
             filtered.codeId != ESP_MAP_OPCODE_CLOSELINE &&
             filtered.codeId != ESP_MAP_OPCODE_FORCE_MESSAGE &&
             filtered.codeId != ESP_MAP_OPCODE_DIALOG &&
-            filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK) {
+            filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK &&
+            !isStateCode(filtered.codeId)) {
             outResult->unsupportedCodeId = filtered.codeId;
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
         }
@@ -297,6 +308,10 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
         }
         return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY;
+    }
+
+    if (isStateCode(command.id)) {
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK;
     }
 
     lineState = EspMapLineState_view();
@@ -359,6 +374,57 @@ EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executePhase(
         eventRef.index != inspected.eventIndex ||
         !EspMapEvents_describe(&eventRef, &descriptor)) {
         return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+    }
+
+    if (status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK) {
+        EspMapByteCode command;
+        EspMapOpcodeExecResult script;
+        EspMapOpcodeExecStatus scriptStatus;
+        uint8_t removedAfter = inspected.removedBefore;
+
+        memset(&command, 0, sizeof(command));
+        memset(&script, 0, sizeof(script));
+        if (!EspMapEvents_getCommand(&descriptor,
+                                     inspected.commandOffset,
+                                     &command) ||
+            command.id != inspected.codeId ||
+            !isStateCode(command.id)) {
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+        }
+
+        scriptStatus = EspMapOpcodeExecutor_execute(&command, &script);
+        if (scriptStatus != ESP_MAP_OPCODE_EXEC_OK ||
+            script.status != ESP_MAP_OPCODE_EXEC_OK ||
+            script.codeId != inspected.codeId ||
+            script.targetEventIndex == UINT16_MAX) {
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+        }
+
+        outResult->targetEventIndex = script.targetEventIndex;
+        outResult->stateBefore = script.stateBefore;
+        outResult->stateAfter = script.stateAfter;
+
+        if (inspected.removeIfHandled != 0U &&
+            inspected.removedBefore == 0U) {
+            if (!EspMapScriptState_setCommandRemoved(
+                    inspected.globalCommandIndex, 1U)) {
+                if (script.mutated != 0U) {
+                    (void)EspMapScriptState_setEventState(
+                        script.targetEventIndex, script.stateBefore);
+                }
+                return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+            }
+            removedAfter = 1U;
+        }
+
+        outResult->removedAfter = removedAfter;
+        outResult->mutated =
+            (uint8_t)((script.mutated != 0U ||
+                       removedAfter != inspected.removedBefore)
+                          ? 1U
+                          : 0U);
+        outResult->rollbackAvailable = outResult->mutated;
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK;
     }
 
     if (status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK) {
@@ -451,6 +517,42 @@ int EspNativeGameplayMoveEvents_rollbackPhase(
                removedNow == result->removedBefore;
     }
 
+    if (isStateCode(result->codeId)) {
+        uint8_t stateNow;
+        if (result->rollbackAvailable == 0U) return 1;
+        if (result->targetEventIndex == UINT16_MAX ||
+            !EspMapScriptState_getEventState(result->targetEventIndex,
+                                             &stateNow) ||
+            !EspMapScriptState_isCommandRemoved(result->globalCommandIndex,
+                                                 &removedNow) ||
+            stateNow != result->stateAfter ||
+            removedNow != result->removedAfter) {
+            return 0;
+        }
+
+        if (result->stateBefore != result->stateAfter &&
+            !EspMapScriptState_setEventState(result->targetEventIndex,
+                                             result->stateBefore)) {
+            return 0;
+        }
+        if (result->removedBefore != result->removedAfter &&
+            !EspMapScriptState_setCommandRemoved(result->globalCommandIndex,
+                                                  result->removedBefore)) {
+            if (result->stateBefore != result->stateAfter) {
+                (void)EspMapScriptState_setEventState(result->targetEventIndex,
+                                                      result->stateAfter);
+            }
+            return 0;
+        }
+
+        return EspMapScriptState_getEventState(result->targetEventIndex,
+                                               &stateNow) &&
+               EspMapScriptState_isCommandRemoved(result->globalCommandIndex,
+                                                   &removedNow) &&
+               stateNow == result->stateBefore &&
+               removedNow == result->removedBefore;
+    }
+
     if (result->mutated != 1U || result->rollbackAvailable != 1U ||
         (result->codeId != ESP_MAP_OPCODE_OPENLINE &&
          result->codeId != ESP_MAP_OPCODE_CLOSELINE)) {
@@ -497,6 +599,8 @@ const char* EspNativeGameplayMoveEvents_statusName(
         return "FORCE_MESSAGE_OK";
     case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY:
         return "DIALOG_READY";
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK:
+        return "SCRIPT_STATE_OK";
     default: return "UNKNOWN";
     }
 }
