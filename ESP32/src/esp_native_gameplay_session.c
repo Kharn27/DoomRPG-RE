@@ -7,6 +7,7 @@
 #include "Render.h"
 
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 
 #include "esp_asset_pack.h"
 #include "esp_native_first_frame.h"
@@ -32,12 +33,35 @@
 #define SESSION_STAGE_ACTIVE 11U
 #define SESSION_STAGE_FAILED 255U
 
+/* Hardware-budget guardrails for this A/B only. They are deliberately
+ * advisory, not gameplay gates or architectural invariants. DMA-capable memory
+ * overlaps the 8-bit heap on ESP32, so these figures must never be summed with
+ * the capability snapshots as if they were independent pools. */
+#define RESIDENT_OWNER_MAIN_BASELINE_BYTES 21160U
+#define RAM_AUDIO_I2S_DMA_RESERVE_BYTES (16U * 1024U)
+#define RAM_AUDIO_BUFFER_RESERVE_BYTES (8U * 1024U)
+#define RAM_GENERAL_HEADROOM_RESERVE_BYTES (32U * 1024U)
+#define RAM_TOTAL_8BIT_RESERVE_BYTES \
+    (RAM_AUDIO_I2S_DMA_RESERVE_BYTES + RAM_AUDIO_BUFFER_RESERVE_BYTES + \
+     RAM_GENERAL_HEADROOM_RESERVE_BYTES)
+#define RAM_LARGEST_8BIT_TARGET_BYTES (16U * 1024U)
+#define RAM_LARGEST_DMA_TARGET_BYTES (8U * 1024U)
+
+typedef struct EspRamBudgetSnapshot_s {
+    uint32_t heapFree;
+    uint32_t heap8Free;
+    uint32_t largest8;
+    uint32_t dmaFree;
+    uint32_t largestDma;
+} EspRamBudgetSnapshot;
+
 typedef struct EspNativeGameplaySessionState_s {
     EspNativeGameplaySessionConfig config;
+    EspRamBudgetSnapshot gameplayBudgetBefore;
     uint8_t configured;
     uint8_t stage;
     uint8_t failed;
-    uint8_t reserved;
+    uint8_t gameplayBudgetStarted;
 } EspNativeGameplaySessionState;
 
 static EspNativeGameplaySessionState sessionState;
@@ -48,6 +72,37 @@ static uint32_t heap8(void) {
 
 static uint32_t largest8(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+}
+
+static EspRamBudgetSnapshot ramBudgetSnapshot(void) {
+    EspRamBudgetSnapshot snapshot;
+    snapshot.heapFree = (uint32_t)esp_get_free_heap_size();
+    snapshot.heap8Free = heap8();
+    snapshot.largest8 = largest8();
+    snapshot.dmaFree = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_DMA);
+    snapshot.largestDma =
+        (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_DMA);
+    return snapshot;
+}
+
+static uint32_t consumedBytes(uint32_t before, uint32_t after) {
+    return before >= after ? before - after : 0U;
+}
+
+static uint32_t reserveMargin(uint32_t freeBytes, uint32_t reserveBytes) {
+    return freeBytes >= reserveBytes ? freeBytes - reserveBytes : 0U;
+}
+
+static void printRamBudgetSnapshot(const char* label,
+                                   const EspRamBudgetSnapshot* snapshot) {
+    if (label == NULL || snapshot == NULL) return;
+    printf("[RAMBUDGET] %s heap=%u heap8=%u largest8=%u dma=%u largestDMA=%u\n",
+           label,
+           (unsigned int)snapshot->heapFree,
+           (unsigned int)snapshot->heap8Free,
+           (unsigned int)snapshot->largest8,
+           (unsigned int)snapshot->dmaFree,
+           (unsigned int)snapshot->largestDma);
 }
 
 static void failSessionAt(uint8_t stage, const char* reason) {
@@ -289,9 +344,11 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
 
         if (sessionState.stage == SESSION_STAGE_SMALL_BEGIN) {
             EspAssetPackResidentStats owner;
-            uint32_t heapBefore = heap8();
-            uint32_t largestBefore = largest8();
+            EspRamBudgetSnapshot before = ramBudgetSnapshot();
+            EspRamBudgetSnapshot after;
+            uint32_t configuredDelta;
 
+            printRamBudgetSnapshot("CACHE_PRE", &before);
             if (EspAssetPack_isOpen() || EspAssetPack_isResident() ||
                 !EspAssetPack_residentBegin() || EspAssetPack_isOpen() ||
                 !EspAssetPack_isResident() ||
@@ -299,16 +356,33 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 failSession("resident small-cache begin");
                 return;
             }
+            after = ramBudgetSnapshot();
             memset(&owner, 0, sizeof(owner));
             EspAssetPack_residentGetStats(&owner);
+            configuredDelta =
+                owner.ownerBytes >= RESIDENT_OWNER_MAIN_BASELINE_BYTES
+                    ? owner.ownerBytes - RESIDENT_OWNER_MAIN_BASELINE_BYTES
+                    : 0U;
+            printRamBudgetSnapshot("CACHE_POST", &after);
+            printf("[RAMBUDGET] CACHE_DELTA mainOwner=%u owner=%u configured=%u observedHeap=%u observed8=%u observedDMA=%u largest8=%u->%u largestDMA=%u->%u\n",
+                   (unsigned int)RESIDENT_OWNER_MAIN_BASELINE_BYTES,
+                   (unsigned int)owner.ownerBytes,
+                   (unsigned int)configuredDelta,
+                   (unsigned int)consumedBytes(before.heapFree, after.heapFree),
+                   (unsigned int)consumedBytes(before.heap8Free, after.heap8Free),
+                   (unsigned int)consumedBytes(before.dmaFree, after.dmaFree),
+                   (unsigned int)before.largest8,
+                   (unsigned int)after.largest8,
+                   (unsigned int)before.largestDma,
+                   (unsigned int)after.largestDma);
             printf("[ENGINECACHE] OWNER bytes=%u payload=%u entries=%u heap8=%u->%u largest8=%u->%u large=off physicalOpen=%u validate=%u\n",
                    (unsigned int)owner.ownerBytes,
                    (unsigned int)owner.rangeCacheCapacityBytes,
                    (unsigned int)owner.rangeCacheEntryCapacity,
-                   (unsigned int)heapBefore,
-                   (unsigned int)heap8(),
-                   (unsigned int)largestBefore,
-                   (unsigned int)largest8(),
+                   (unsigned int)before.heap8Free,
+                   (unsigned int)after.heap8Free,
+                   (unsigned int)before.largest8,
+                   (unsigned int)after.largest8,
                    (unsigned int)owner.physicalOpens,
                    (unsigned int)owner.validationPasses);
             sessionState.stage = SESSION_STAGE_SMALL_COLD;
@@ -405,8 +479,56 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
         }
 
         if (sessionState.stage == SESSION_STAGE_GAMEPLAY) {
+            if (!sessionState.gameplayBudgetStarted) {
+                sessionState.gameplayBudgetBefore = ramBudgetSnapshot();
+                sessionState.gameplayBudgetStarted = 1U;
+                printRamBudgetSnapshot("LAZY_PRE",
+                                       &sessionState.gameplayBudgetBefore);
+            }
+
             EspNativeResidentGameplay_service(doomRpgBase);
             if (EspNativeResidentGameplay_isActive()) {
+                EspAssetPackResidentStats pack;
+                EspRamBudgetSnapshot after = ramBudgetSnapshot();
+                const EspRamBudgetSnapshot* before =
+                    &sessionState.gameplayBudgetBefore;
+                const int reserveHealthy =
+                    after.heap8Free >= RAM_TOTAL_8BIT_RESERVE_BYTES &&
+                    after.largest8 >= RAM_LARGEST_8BIT_TARGET_BYTES &&
+                    after.dmaFree >= RAM_AUDIO_I2S_DMA_RESERVE_BYTES &&
+                    after.largestDma >= RAM_LARGEST_DMA_TARGET_BYTES;
+
+                memset(&pack, 0, sizeof(pack));
+                EspAssetPack_residentGetStats(&pack);
+                printRamBudgetSnapshot("LAZY_POST", &after);
+                printf("[RAMBUDGET] LAZY_DELTA heap=%u heap8=%u dma=%u largest8=%u->%u largestDMA=%u->%u cache=%u/%uB entries=%u/%u\n",
+                       (unsigned int)consumedBytes(before->heapFree,
+                                                   after.heapFree),
+                       (unsigned int)consumedBytes(before->heap8Free,
+                                                   after.heap8Free),
+                       (unsigned int)consumedBytes(before->dmaFree,
+                                                   after.dmaFree),
+                       (unsigned int)before->largest8,
+                       (unsigned int)after.largest8,
+                       (unsigned int)before->largestDma,
+                       (unsigned int)after.largestDma,
+                       (unsigned int)pack.rangeCacheBytesUsed,
+                       (unsigned int)pack.rangeCacheCapacityBytes,
+                       (unsigned int)pack.rangeCacheEntries,
+                       (unsigned int)pack.rangeCacheEntryCapacity);
+                printf("[RAMBUDGET] RESERVE audioI2SDMA=%u audioBuffers=%u general=%u total8Target=%u largest8Target=%u largestDMATarget=%u margin8=%u marginDMA=%u advisory=%s\n",
+                       (unsigned int)RAM_AUDIO_I2S_DMA_RESERVE_BYTES,
+                       (unsigned int)RAM_AUDIO_BUFFER_RESERVE_BYTES,
+                       (unsigned int)RAM_GENERAL_HEADROOM_RESERVE_BYTES,
+                       (unsigned int)RAM_TOTAL_8BIT_RESERVE_BYTES,
+                       (unsigned int)RAM_LARGEST_8BIT_TARGET_BYTES,
+                       (unsigned int)RAM_LARGEST_DMA_TARGET_BYTES,
+                       (unsigned int)reserveMargin(after.heap8Free,
+                                                   RAM_TOTAL_8BIT_RESERVE_BYTES),
+                       (unsigned int)reserveMargin(after.dmaFree,
+                                                   RAM_AUDIO_I2S_DMA_RESERVE_BYTES),
+                       reserveHealthy ? "HEADROOM_OK" : "REVIEW_HEADROOM");
+
                 sessionState.stage = SESSION_STAGE_ACTIVE;
                 printf("[ENGINESESSION] READY map=%u angle=%u residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=%p mediaTexels=%p\n",
                        (unsigned int)view->targetMapId,
