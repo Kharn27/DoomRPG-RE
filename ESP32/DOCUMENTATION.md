@@ -14,18 +14,16 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main = fe69c2fbcaed874e2cf35828c326d8c8b3465375
-branch = agent/esp32-world-render-profile
-base main = fe69c2fbcaed874e2cf35828c326d8c8b3465375
-code boundary before docs = 9d69272ed8394c230d5eec79a2adc37dd44f3c04
-code tree = 181e084bc8abdea1ebc258a5b411e2b60797b0ce
-hardware-tested equivalent baseline = efaa067fd9881a1c055b83eed4c80d5de0e33aad
-status = renderer/storage profile complete; branch locked
+main = 8a0b74b51a55ea12fa8b35e444e69b972ef1fccb
+branch = agent/esp32-resident-cache-ram-baseline
+base main = 8a0b74b51a55ea12fa8b35e444e69b972ef1fccb
+code boundary before docs = 684b2f52608f4a44cd28e0448f518f43bdb71012
+code tree = 6b0f32cb287001175f75d9423d6f091e9cb0ea5f
+status = resident-cache RAM baseline complete; branch locked
 ```
 
-`9d69272...` is an explicit revert and has the exact same tree as the real-CYD
-validated `efaa067...` baseline. Only documentation commits may follow it on this
-branch.
+`684b2f5...` is the real-CYD validated code boundary. Only documentation commits
+may follow it on this branch.
 
 ## Build environment
 
@@ -52,8 +50,8 @@ native backing store = /DoomRPG-ESP32.pak
 ```
 
 The permanent architectural rule is bounded explicit ownership, not a specific
-cache size. `16 KiB / 256 records` is the current resident-cache implementation,
-not a sacred invariant.
+cache size. The selected implementation is currently `19 KiB / 288 records`, but
+that is not a sacred invariant.
 
 Do not recreate map-wide texel ownership or migrate native runtime data back to
 ZIP. `/DoomRPG.zip` remains transitional bootstrap/menu compatibility debt only.
@@ -83,10 +81,8 @@ Two permanent lessons are hardware-proven:
 2. Large renderer workspaces must not casually live on the 9 KiB loopTask stack.
 ```
 
-The BSP walk already uses a bounded transient iterative stack. During the current
-milestone, `PlaneWork` (~1.1 KiB) also proved too large for a deep render path:
-a real CYD stack canary occurred after `[NATIVEPLANE]` completed but before its
-caller resumed.
+`PlaneWork` (~1.1 KiB) proved too large for a deep render path: a real CYD stack
+canary occurred after `[NATIVEPLANE]` completed but before its caller resumed.
 
 Accepted fix:
 
@@ -114,44 +110,128 @@ non-reentrant helpers.
 Never shadow Arduino/ESP-IDF framework headers under `ESP32/include`; the removed
 `esp_timer.h` shim is the canonical failure mode.
 
+## Selected resident-cache baseline
+
+Current hardware-selected implementation:
+
+```text
+owner = 23592 B
+payload = 19456 B (19 KiB)
+range records = 288
+range record = 12 B
+resident entry slots = 24
+large exact range = 2048 B
+```
+
+`ResidentRangeRecord` is compact:
+
+```text
+uint32_t nameHash
+uint32_t relativeOffset
+uint16_t length
+uint16_t dataOffset
+```
+
+Compile-time assertions keep payload offsets and supported range lengths inside
+16-bit bounds. This recovered 1152 B of metadata relative to 16-byte records;
+1024 B was reinvested into payload while total owner shrank 128 B relative to the
+hardware-stable 18 KiB / 288 candidate.
+
+## Resident-cache A/B history
+
+### 24 KiB / 384 — rejected
+
+```text
+owner = 31400 B
+CACHE_PRE  heap8=55100 largest8=36852
+CACHE_POST heap8=19328 largest8=6900
+observed heap8 delta=35772
+```
+
+The first cold frame passed, but the next warm plane reconstruction failed after
+lazy gameplay ownership. Gameplay controls never armed although raw touch still
+worked. This is a renderer headroom failure, not an input failure.
+
+### 20 KiB / 320 — rejected
+
+General gameplay was noticeably smoother, but the soldier continuation exposed
+lazy rollback ownership:
+
+```text
+before snapshot heap8=21096
+TOPOLOGY-SNAPSHOT ownerBytes=2408
+after snapshot heap8=18672
+NATIVEPLANE FAILED
+rollback exact=yes
+second plane render FAILED
+session FAILED dialog-resume-render-rollback
+```
+
+The topology snapshot is required for exact SHOW/HIDE rollback. Do not delete or
+weaken it to make a larger cache fit.
+
+### 18 KiB / 288 — first full stable corpus
+
+Owner = 23720 B. Real CYD passed regular movement/doors, medkit/tutorial resume,
+repeated soldier dialogue, 2408 B topology snapshot, guard-unlocked door, loaded
+fire room and two fire clears. Post-snapshot steady heap8 was about 21232 B with
+largest8 14324 B.
+
+### 19 KiB / 288 compact — selected
+
+Owner = 23592 B. Real CYD passed the same discriminating corpus again and kept:
+
+```text
+early gameplay heap8 ~= 24416, largest8=14324
+after dialog-chain owner heap8 ~= 23784, largest8=14324
+after topology snapshot heap8 ~= 21360, largest8=14324
+```
+
+No renderer failure, rollback failure, stack canary, reboot, or control loss.
+`shapeData` and `mediaTexels` remained NULL.
+
+Subjectively this is the best global result so far. The loaded room is notably
+fluid, including adjacent extinguisher actions.
+
 ## World/storage profile conclusions
 
 Current real-CYD evidence separates three costs:
 
 ```text
 VIDEO present          ~= 34-35 ms
-plane phase            commonly ~= 80-150 ms, view/read dependent
+plane phase            commonly ~= 70-150 ms, view/read dependent
 warm sprite phase      commonly ~= 6-26 ms
 cold/thrashing sprites ~= 500-870 ms with tens of physical SD reads
 ```
 
-Therefore the loaded fire room is not intrinsically beyond the ESP32. It can run
-around ~280-330 ms/full frame when the asset working set is warm. The visible
-multi-second hitches occur when the resident range cache collapses and must be
-relearned from SD.
-
-Current resident owner:
+The loaded fire room is not intrinsically beyond the ESP32. In the selected
+19 KiB compact run, representative warm work included:
 
 ```text
-owner = 21160 B
-payload = 16384 B
-range records = 256
-large exact range = 2048 B
+loaded-room movement ~= 246-323 ms
+first fire attack/settle ~= 302 / 294 ms
+second fire attack/settle ~= 294 / 293 ms
 ```
 
-The cache currently sacrifices large exact ranges when small storage needs
-headroom, then performs a global small working-set reset if saturation remains.
-Hardware logs show a recurring pattern:
+The remaining visible multi-second hitches occur when the resident exact-range
+working set globally resets and must be relearned from SD.
+
+Two independent saturation modes are now hardware-visible:
 
 ```text
-entries approach ~229-254 / 256
- -> new view/dialog/action adds ranges
- -> 40-90+ physical reads
- -> range table/payload drops to a smaller rebuilt set
- -> next frames become fast again
+payload pressure:
+  cache ~= 19096/19456 B with only ~=214/288 records
+  first turn triggers 62 small stores / 62 misses
+  sprite phase ~= 547 ms, full frame ~= 2.0 s
+
+record pressure:
+  guard-door visibility reaches 286/288 records
+  next frame triggers 84 small stores / 90 physical reads
+  rebuilt set drops to ~=82 records
 ```
 
-This matches subjective gameplay: smooth/playable, sudden hitch, smooth again.
+So the next policy work must distinguish payload retention from record retention.
+Do not assume one scalar capacity solves both.
 
 ## Rejected experiments — do not repeat blindly
 
@@ -167,46 +247,44 @@ b6bf8f64859612517054bad6b6e24849004f91f2
   reverted by 9d69272ed8394c230d5eec79a2adc37dd44f3c04
 ```
 
-Large resident ranges currently provide both plane acceleration and sacrificial
-headroom. Do not remove them without a replacement policy.
+Large resident ranges provide both plane acceleration and sacrificial headroom.
+Do not remove them without a replacement policy.
 
-## New performance-development strategy
+## RAM / audio planning
 
-The next branch should deliberately reverse the previous optimization order:
-
-```text
-first create a comfortably playable bounded configuration
- -> measure real RAM/DMA cost and stutter distribution
- -> identify what cache capacity/records are actually useful
- -> optimize downward afterward
-```
-
-A 24 KiB-class resident payload and/or additional range records is a reasonable
-first A/B candidate, but it is not a predetermined final design.
-
-Before accepting any larger permanent owner, add system-level witnesses:
+Selected startup witness:
 
 ```text
-free heap
-MALLOC_CAP_8BIT free + largest block
-MALLOC_CAP_DMA free + largest block
-lazy gameplay-owner floor
-resident-cache owner delta
-explicit reserve for future I2S/audio DMA
+CACHE_PRE  heap8=55100 largest8=36852
+CACHE_POST heap8=27136 largest8=14324
+structural owner = 23592 B
+configured owner delta vs old main = +2432 B
+observed heap8 delta = 27964 B
 ```
 
-The audio reserve is part of the design budget now, not something to squeeze in
-at the end.
+The structural owner does not include all File/FS/allocator live overhead. Use
+system-level heap witnesses, not only `sizeof(owner)`.
+
+The existing future audio/I2S/general reserves are advisory and intentionally
+conservative. `MALLOC_CAP_DMA` overlaps ordinary 8-bit-capable memory; do not add
+those pools as though they were independent.
+
+Future cache-policy work should first improve reuse inside the selected owner
+rather than increasing permanent RAM again.
 
 ## Profiling rule
 
-Hot-path Serial/`printf` instrumentation has measurable cost and worsens the
-subjective feel, but it does not fabricate dozens of physical PAK reads or
-500-870 ms sprite phases.
+Hot-path Serial/`printf` instrumentation has measurable cost. In particular,
+`totalUs` spans diagnostic work and is not a production-frame benchmark.
 
-Use detailed probes to compare configurations. Once a candidate is stable, run a
-production-like firmware with hot-path profiling disabled/reduced before judging
-final responsiveness.
+However `[SPRITEPROFILE] us=...` is captured immediately after
+`EspNativeSpriteRenderer_render()` and before that profile line is printed. The
+observed 500-800 ms sprite phases that coincide with 50-90 physical reads are
+therefore genuine renderer/storage stalls, not fabricated by the profile print.
+
+Use detailed probes to compare configurations. A future production-like A/B
+should reduce hot diagnostics while keeping the exact selected cache/renderer
+semantics before judging final responsiveness.
 
 Do not optimize `PlatformVideo_present()` first.
 
@@ -227,7 +305,7 @@ player-stat/inventory/ammo pickups
 EV_CHANGEMAP / EV_GIVEMAP / EV_PASSWORD / EV_SAVEGAME / EV_CHECK_KEY
 ```
 
-Do not mix these correctness families into the next cache/memory milestone.
+Do not mix these correctness families into cache-policy work.
 
 ## Development workflow
 
@@ -247,5 +325,17 @@ recover true main + docs
 ## After this branch merges
 
 Re-read actual GitHub `main`, record its exact SHA, and create the next `agent/*`
-branch from that SHA. Do not continue development from this locked profiling
-branch by assumption.
+branch from that SHA.
+
+Recommended next sequence:
+
+```text
+1. production-like profiling A/B, same 19 KiB / 288 / 23592 B owner
+2. quantify subjective response with hot diagnostics reduced
+3. separate bounded milestone for the global-reset cliff
+4. distinguish payload-pressure and record-pressure cases
+5. preserve large-range sacrificial behavior unless replaced deliberately
+6. never reintroduce the rejected FIFO experiment by default
+```
+
+Do not continue development from this locked RAM-baseline branch by assumption.
