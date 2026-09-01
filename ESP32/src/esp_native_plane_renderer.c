@@ -415,58 +415,73 @@ const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void) {
 
 int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
     Render_t* render = (Render_t*)renderBase;
-    PlaneWork work;
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    PlaneWork* work;
     int y;
     int ok = 0;
 
     EspNativePlaneRenderer_reset();
-    memset(&work, 0, sizeof(work));
-    work.render = render;
-    work.runtime = EspMapRuntime_view();
-
-    if (render == NULL || work.runtime == NULL ||
+    if (render == NULL || runtime == NULL ||
         !EspMapRuntime_isLoaded() || !EspAssetPack_isOpen() ||
         render->pixels == NULL || render->framebuffer == NULL ||
         render->screenWidth != 160 || render->screenHeight != 80 ||
         render->screenLeft != 0 || render->screenTop != 0 ||
         render->screenRight != render->screenWidth ||
         render->screenBottom != render->screenHeight ||
-        work.runtime->planeMap == NULL ||
-        work.runtime->planeMapBytes != EXPECTED_PLANE_MAP_BYTES) {
+        runtime->planeMap == NULL ||
+        runtime->planeMapBytes != EXPECTED_PLANE_MAP_BYTES) {
         return 0;
     }
 
-    if (!collectTextures(&work) || !resolveTextures(&work) || !initCache(&work)) {
+    /* PlaneWork is roughly a KiB because it carries the bounded descriptor
+     * table, six LRU slot descriptors and render stats. Keeping that object on
+     * the already-deep loopTask renderer stack crossed the real CYD canary on
+     * valid Entrance views. Lease it only for this render call: no permanent
+     * owner/BSS growth, and the existing six independent 2048-byte texel leases
+     * retain their proven allocation policy. */
+    work = (PlaneWork*)malloc(sizeof(*work));
+    if (work == NULL) {
+        printf("[NATIVEPLANE] FAILED transient workspace allocation bytes=%u\n",
+               (unsigned int)sizeof(*work));
+        return 0;
+    }
+    memset(work, 0, sizeof(*work));
+    work->render = render;
+    work->runtime = runtime;
+
+    if (!collectTextures(work) || !resolveTextures(work) || !initCache(work)) {
         goto done;
     }
 
-    work.stats.uniqueLogicalTextures = work.textureCount;
+    work->stats.uniqueLogicalTextures = work->textureCount;
     for (y = 0; y < render->halfScreenHeight; ++y) {
-        if (!drawPlaneRow(&work, y,
-                          work.runtime->planeMap + ESP_MAP_PLANE_CELL_COUNT)) {
+        if (!drawPlaneRow(work, y,
+                          work->runtime->planeMap + ESP_MAP_PLANE_CELL_COUNT)) {
             goto done;
         }
-        ++work.stats.rowsRendered;
+        ++work->stats.rowsRendered;
     }
     for (; y < render->screenHeight; ++y) {
-        if (!drawPlaneRow(&work, y, work.runtime->planeMap)) goto done;
-        ++work.stats.rowsRendered;
+        if (!drawPlaneRow(work, y, work->runtime->planeMap)) goto done;
+        ++work->stats.rowsRendered;
     }
 
-    if (work.stats.rowsRendered != (uint32_t)render->screenHeight ||
-        work.stats.pixelsRendered !=
+    if (work->stats.rowsRendered != (uint32_t)render->screenHeight ||
+        work->stats.pixelsRendered !=
             (uint32_t)render->screenWidth * (uint32_t)render->screenHeight) {
         goto done;
     }
 
-    work.stats.rendered = 1U;
-    work.stats.active = 1U;
+    work->stats.rendered = 1U;
+    work->stats.active = 1U;
     ok = 1;
 
 done:
-    releaseCache(&work);
+    releaseCache(work);
+    if (ok) planeStats = work->stats;
+    free(work);
+
     if (ok) {
-        planeStats = work.stats;
         printf("[NATIVEPLANE] rows=%u pixels=%u textures=%u cache=%uH/%uM/%uE reads=%uB\n",
                (unsigned int)planeStats.rowsRendered,
                (unsigned int)planeStats.pixelsRendered,

@@ -4,22 +4,27 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port.
 Repository state wins over chat history. Serial logs from the real classic CYD
 are the final runtime authority.
 
-## Git boundary
+## Git boundary — LOCKED milestone
 
 ```text
-main = bb95082917d2bb3504243015de358d40a8d11788
-branch = agent/esp32-sprite-storage-profile
-base main = bb95082917d2bb3504243015de358d40a8d11788
-hardware-tested final code HEAD = abb66f4a44c196b01511df66d1230c72040546e2
-status = REAL-CYD HARDWARE PASS
-merge-ready = YES, after documentation-only tail verification
+main = fe69c2fbcaed874e2cf35828c326d8c8b3465375
+branch = agent/esp32-world-render-profile
+base main = fe69c2fbcaed874e2cf35828c326d8c8b3465375
+current code HEAD before docs = 9d69272ed8394c230d5eec79a2adc37dd44f3c04
+current code tree = 181e084bc8abdea1ebc258a5b411e2b60797b0ce
+hardware-tested equivalent baseline = efaa067fd9881a1c055b83eed4c80d5de0e33aad
+status = REAL-CYD HARDWARE PROFILE COMPLETE
+branch policy = LOCKED; docs-only tail only
 ```
 
-This branch is a bounded renderer/storage profiling milestone. It does not add a
-new renderer architecture or a new permanent asset pool. It instruments the
-resident sprite pass and fixes one renderer-stack failure exposed while testing.
+`9d69272...` is the explicit revert of the rejected `large=off` experiment and
+has the exact same tree as the previously hardware-tested `efaa067...` baseline.
+Do not add another performance experiment to this branch.
 
-## Permanent architecture
+After merge, read the real GitHub `main` SHA again before creating the next
+`agent/*` branch.
+
+## Permanent architecture and hard invariants
 
 ```text
 A NEW BSP IS NOT A NEW ENGINE.
@@ -29,10 +34,9 @@ Production path:
 
 ```text
 /DoomRPG-ESP32.pak
- -> native BSP reader
+ -> native parsers/catalog
  -> compact immutable EspMapRuntime
  -> small explicit mutable owners
- -> EspPlayerView
  -> native event/action/gameplay
  -> native renderer
 ```
@@ -50,10 +54,11 @@ mediaTexels = NULL
 backing     = /DoomRPG-ESP32.pak
 ```
 
-Do not reintroduce a map-wide texel pool, a desktop Entity pointer graph, or ZIP
-runtime ownership for migrated map data.
+Do not reintroduce a map-wide legacy texel pool, desktop pointer graph, or ZIP
+runtime ownership for migrated map data. Cache sizes and record counts are NOT
+hard architectural invariants; they are tunable bounded implementation choices.
 
-## Entrance canonical resident witness
+## Entrance canonical witness
 
 ```text
 resourceMapId = 1
@@ -96,10 +101,7 @@ enemies = 30
 destructibles = 13
 ```
 
-These are regression witnesses only; production behavior must not branch on
-Entrance-specific values.
-
-## Generic session baseline
+Generic session baseline:
 
 ```text
 targetMapId = 1
@@ -110,25 +112,25 @@ graphics sprites = 45 -> 46 after dependency closure
 catalog storage = 3120 B
 catalog FNV = 29ffc14a
 initial world frame = 71ca7465
-initial walls = 8 / 4430 pixels
 HUD hp = 30/30
 HUD armor = 0/20
 HUD weapon = 2
 HUD ammo = 8
 ```
 
-Resident asset-cache canon:
+Current resident asset-cache implementation:
 
 ```text
 owner = 21160 B
 payload = 16384 B
-entries = 256
-large learned entries = 2 in the normal priming sequence
+range records = 256
+large range size = 2048 B
+normal priming learns ~= 2 large ranges
 ```
 
-## Native Action / gameplay boundary inherited from main
+These cache numbers are the current implementation, not permanent memory laws.
 
-Real-CYD hardware already validates:
+## Native gameplay boundary already hardware validated
 
 ```text
 TURN_LEFT / TURN_RIGHT
@@ -141,11 +143,11 @@ EV_DIALOG / EV_DIALOGNOBACK
 EV_FORCEMESSAGE / EV_NOTE
 state ops 11 / 19 / 20
 regular door animation
-mutable line texture variants in the native renderer
+mutable line texture variants
 native idle weapon rendering
 generic weapon attack frame 1 -> idle frame 0
 weapon pickup eType=5
-empty/human Action feedback with ~1200 ms lifetime
+empty/human Action feedback (~1200 ms)
 adjacent extinguisher fire removal with rollback-safe presentation
 ```
 
@@ -159,235 +161,147 @@ player-stat/inventory/ammo pickups
 EV_CHANGEMAP / EV_GIVEMAP / EV_PASSWORD / EV_SAVEGAME / EV_CHECK_KEY
 ```
 
-The desktop/J2ME remote-extinguisher contract remains: a farther visible fire
-can enter attack presentation, misses outside the one-tile hit range, and reports
-`No effect!`. Native `FIRE_RANGE_DEFERRED` is a temporary safe divergence until
-generic combat/miss ownership exists.
+## World-render profiling milestone — hardware results
 
-## Sprite storage profile hardware pass
+### 1. Plane renderer stack failure fixed
 
-The new `[SPRITEPROFILE]` instrumentation measures the sprite phase without
-changing renderer output or adding a second resident cache. It reports logical
-frame loads plus deltas from the existing `EspAssetPack` resident cache.
+A clean real-CYD failure occurred after `[NATIVEPLANE]` returned but before its
+caller resumed. `PlaneWork` was about 1.1 KiB of automatic stack inside an
+already deep 9 KiB `loopTask` renderer path.
 
-### Cold session witness
+Permanent fix: `EspNativePlaneRenderer_render()` leases only `PlaneWork`
+temporarily from heap and frees it before return. The six existing 2048 B plane
+texture buffers remain temporary; no new persistent owner/BSS was added.
 
-On the first cold sprite pass:
-
-```text
-[SPRITEPROFILE]
-us=641298
-logicalReads=148
-frameLoads=23
-glowLoads=1
-unique=12
-frameBytes=18991
-glowBytes=796
-physicalReads=81
-physicalBytes=12467
-range=76H/69M/69S/3B
-resident=1
-cache=9175/16384
-entries=176/256
-```
-
-This proves that the old ~545-640 ms sprite spikes can be caused by cold backing
-storage/cache misses rather than by the sprite rasterizer alone.
-
-### Warm steady-state witnesses
-
-After the existing resident cache is primed, the same logical sprite workload is
-much cheaper:
+Hardware validation on the normal `esp32-cyd` firmware passed:
 
 ```text
-logicalReads=148 frameLoads=23 unique=12
-sprite phase ~= 22-23 ms
-physicalReads=3 physicalBytes=4395
-range ~= 145H/0M/0S/3B
+old guard/retry turn
+first regular door open 4/4
+first regular door close 4/4
+835 -> 834 former crash view
+medkit/dialog open + close + DIALOGCHAIN RESUME
+later guard-unlocked door
+adjacent extinguisher fire clear
 ```
 
-During the reproduced gameplay route:
+No stack canary/reboot. `ALIVE` heap returned to the expected baseline after
+frames. This stack fix is accepted.
+
+Do not solve renderer stack pressure by increasing `loopTask` blindly; the
+transitional no-PSRAM boot heap is fragmentation-sensitive.
+
+### 2. Plane cost is meaningful but not the worst stutter source
+
+Observed gameplay plane phase is commonly about 80-150 ms depending on view and
+physical 2048 B reads; some heavier/cold views approach ~190 ms. Earlier profile
+samples showed strong correlation between plane time and physical PAK reads.
+
+`PlatformVideo_present()` remains around 34-35 ms and is not the primary target.
+
+### 3. Sprite path can be either very warm or catastrophically cold
+
+Same renderer, same room:
 
 ```text
-MOVE 904->872: spriteUs=22560 physicalReads=3
-TURN angle 64->0: spriteUs=19475 physicalReads=3
-TURN angle 0->64: spriteUs=22508 physicalReads=3
-MOVE 872->840: spriteUs=19474 physicalReads=3
+warm sprite phase      ~= 6-26 ms, often 0-7 physical reads
+cold/thrashing phase   ~= 500-870 ms, often 50-98 physical reads
 ```
 
-At the previously crashing virage, after the wall guard recovery:
+The large fire room is therefore not intrinsically too heavy for the ESP32. It
+can render around ~280-330 ms full-frame when its working set is warm, but an
+asset-cache working-set collapse creates visible 0.7-2.1 s stalls.
+
+### 4. Current cache reset is the central performance witness
+
+The resident small-range table/payload is a bounded working set. When it cannot
+store another small range, current code first sacrifices transient large 2048 B
+ranges when available; if still saturated, it resets the small range records and
+payload globally.
+
+Real-CYD witnesses show the characteristic cliff:
 
 ```text
-[SPRITEPROFILE] us=10598 logicalReads=112 frameLoads=17 glowLoads=1 unique=10
-physicalReads=0 physicalBytes=0 range=112H/0M/0S/0B
-cache=11272/16384 entries=256/256
+near saturation: entries ~= 229-254 / 256
+ -> next view/presentation adds new ranges
+ -> many physical reads (often 40-90+)
+ -> entries/bytes collapse to a smaller freshly rebuilt working set
+ -> following frame becomes fast again
 ```
 
-The immediately following move was even cheaper:
+This exactly matches the subjective pattern: playable -> sudden large lag ->
+playable again.
+
+### 5. Rejected cache experiments
+
+Rejected and explicitly reverted:
 
 ```text
-[SPRITEPROFILE] us=9249 logicalReads=100 frameLoads=15 glowLoads=1 unique=10
-physicalReads=0 physicalBytes=0 range=100H/0M/0S/0B
+b6bf8f64859612517054bad6b6e24849004f91f2
+  incremental FIFO-like eviction of oldest 3/8 records
+  hardware result: less predictable / worse subjective stutter
+
+efaa067fd9881a1c055b83eed4c80d5de0e33aad
+  explicit revert back to global-reset baseline
+  hardware result: user confirmed better playability
+
+4df43f6fe96f05bf012172f15afe2a069ee93494
+  release all large 2048 B resident ranges before gameplay
+  hardware result: regression; more direct small-table saturation and large stalls
+
+9d69272ed8394c230d5eec79a2adc37dd44f3c04
+  explicit revert of large-off experiment
+  tree exactly equals efaa067... tested baseline
 ```
 
-### Performance conclusion
+Important lesson: current large 2048 B ranges are not only plane acceleration;
+they also act as sacrificial headroom before the global small working-set reset.
+Do not remove them casually.
 
-The previous conclusion that the sprite renderer/storage path was the dominant
-steady-state hotspot is superseded by this hardware evidence.
+## Memory / audio planning rule for next milestone
 
-Current evidence says:
+Do not confuse current 16 KiB cache size with an invariant. The next performance
+branch may deliberately test a larger bounded resident owner (for example a
+24 KiB-class payload and/or more range records) if it improves gameplay stability.
+
+But do this as a system RAM budget, not as an unbounded cache increase.
+Before accepting a larger permanent owner, instrument and record at least:
 
 ```text
-cold sprite storage misses = can be very expensive (~641 ms observed)
-warm sprite phase          = ~9-23 ms in reproduced route
-raw VIDEO present          = ~34-35 ms here
-normal full gameplay frame = ~208-267 ms here
-recovery TURN frame        = 453208 us because the world pass is retried
-next MOVE frame            = 283531 us
+free heap
+MALLOC_CAP_8BIT free + largest block
+MALLOC_CAP_DMA free + largest block
+steady gameplay lazy-owner floor
+candidate resident-cache owner delta
+explicit reserved headroom for future I2S/audio DMA
 ```
 
-Therefore:
+Goal: first put the game in a stable, reasonably fluid condition, then profile
+which bytes/records are genuinely useful and optimize downward. This is preferred
+over repeatedly forcing a tiny cache to thrash while trying to infer the final
+optimal policy from noisy debug runs.
 
-```text
-steady-state primary candidate = world / plane / wall renderer
-sprite steady-state            = secondary/small in this corpus
-PlatformVideo_present          = not the first optimization target
-```
+## Probe / production-like test rule
 
-Do not add a large sprite cache based only on `logicalReads`. Logical reads can
-be fully served from the existing resident owner; the physical-read counters are
-the relevant backing-store witness.
+Current profiling `printf`/Serial output has non-zero cost and inflates subjective
+latency, but it does not explain 50-98 physical SD reads or 500-870 ms sprite
+phases. Storage thrash is real.
 
-## Renderer crash recovery hardware pass
+Once a candidate memory/cache configuration is stable, run a second
+production-like firmware with hot-path performance probes disabled or strongly
+reduced before judging final responsiveness.
 
-The original test exposed a real renderer failure at the turn from angle 64 to
-128 near tile 840:
+## Next branch direction
 
-```text
-[NATIVEFRAME] LEGACY_GUARD logical=15 actual=40 source=20480 successorActual=68 successorSource=32768 byte=11
-[NATIVEFRAME] RETRY legacy compact guard after unwound SPAN_OOB line=277 actual=40
-Guru Meditation Error: Stack canary watchpoint triggered (loopTask)
-```
+This branch is locked. After it is merged:
 
-The recursive BSP walk could consume the remaining loopTask stack when the retry
-progressed deeper than the first failed pass.
+1. read true GitHub `main` and exact SHA;
+2. create a fresh `agent/*` branch from that SHA;
+3. establish RAM/DMA/audio reserve witnesses;
+4. test a deliberately more generous but bounded resident cache (24 KiB-class is
+   a reasonable first A/B, not a predetermined final value);
+5. test Entrance normal route, medkit/dialog, guard door and loaded fire room;
+6. compare stutter distribution and physical reads, not only average frame time;
+7. only after stable play, optimize cache size/record representation/policy down.
 
-Final code HEAD `abb66f4a44c196b01511df66d1230c72040546e2` keeps the same
-front-to-back DFS order but uses a compact bounded iterative traversal:
-
-```text
-node stack  = 65 x uint16_t = 130 B
-depth stack = 65 x uint8_t  = 65 B
-workspace   = 195 B temporary stack only
-recursion   = none
-new heap allocation = none
-new permanent BSS owner = none
-```
-
-A first iterative version used a 520 B permanent BSS owner. On the real CYD that
-changed boot heap topology by about 528 B and made the transitional ZIP inflater
-fail on `menu.bsp`:
-
-```text
-old healthy MAPSTRUCT heap8 ~= 34996
-bad BSS build MAPSTRUCT heap8 = 34468
-[DOOM ERROR] out of memory allocating inflate state for menu.bsp
-```
-
-That version is superseded. The final transient 195 B traversal restored boot and
-kept the non-recursive renderer.
-
-Real-CYD final witness at the old crash location:
-
-```text
-[NATIVEFRAME] LEGACY_GUARD logical=15 actual=40 source=20480 successorActual=68 successorSource=32768 byte=11 owner=BSS bytes=16
-[NATIVEFRAME] RETRY legacy compact guard after unwound SPAN_OOB line=277 actual=40
-[NATIVEFRAME] BSP map=1 ... nodes=19 leaves=4 ...
-[NATIVEFRAME] WALL requests=19 draws=19 spans=160 pixels=6328 ...
-[NATIVEFRAME] RECOVERED legacy compact guard actual=40 successorActual=68 source=20480->32768
-[RESIDENTGAMEPLAY] TURN n=3 seq=5 action=TURN_LEFT angle=64->128 committed=yes
-```
-
-Gameplay then continued normally:
-
-```text
-[RESIDENTGAMEPLAY] MOVE n=3 seq=6 action=FORWARD tile=840->839 ... committed=yes
-```
-
-No stack canary, no reboot, no renderer disable. This is a hardware PASS.
-
-Permanent renderer rule:
-
-```text
-Do not use unbounded/recursive BSP traversal on classic CYD.
-Keep traversal order explicit, bounded and fail-closed without solving stack
-pressure by repeatedly increasing loopTask stack size.
-```
-
-## Dynamic line / wrapper rule
-
-A linker wrapper must not call a higher-level API that can indirectly re-enter
-that wrapped symbol. Use `__real_*`, an already materialized owner/view, or an
-explicitly non-reentrant helper.
-
-This remains the rule recovered from the earlier dynamic line texture recursion
-failure.
-
-## Pickup frontier
-
-Current production pickup owner:
-
-```text
-eType=5 weapon
-world remove = consumed-sprite bit overlay
-ownership = native uint16 weapon mask
-new weapon select = native HUD overlay
-rollback = exact on redraw failure
-```
-
-Deferred:
-
-```text
-eType=3 player-stat / world item
-eType=4 inventory
-eType=6 ammo
-eType=16 alternate ammo
-weapon ammo/message/sound acquisition consequences
-```
-
-Armor helmets are expected not to be consumed at this boundary; do not patch
-individual pickup subtypes.
-
-## Build/include guardrails
-
-Never shadow ESP-IDF/Arduino framework headers under `ESP32/include` to solve a
-local compatibility problem. Prefer existing project clocks/APIs or a narrowly
-project-named adapter. Do not inject legacy `DoomRPG.h` through a framework
-include chain.
-
-## Next bounded direction
-
-After this branch merges, recover the new exact GitHub `main` SHA first.
-
-The strongest next performance milestone is now:
-
-```text
-world / plane / wall renderer profile and optimization
-```
-
-Bounded goal:
-
-```text
-measure the steady-state world phase separately from sprites/present
-identify physical PAK traffic versus CPU raster/projection cost
-preserve exact framebuffer output
-preserve shapeData == NULL and mediaTexels == NULL
-avoid new map-wide or large permanent caches
-keep the legacy-wall guard recovery fail-closed
-```
-
-The specific recovery turn is also useful as a secondary corpus because it
-currently pays for a failed world pass plus a retry (~453 ms total frame).
-
-Separate correctness families remain player-stat pickups, ammo/inventory, and
-generic combat/miss/ammo/sound/turn ownership.
+Do not continue cache-policy experiments on `agent/esp32-world-render-profile`.
