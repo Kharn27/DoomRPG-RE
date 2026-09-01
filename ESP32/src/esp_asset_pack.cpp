@@ -11,7 +11,7 @@ constexpr uint8_t kMagic[8] = {'D', 'R', 'P', 'G', 'E', 'S', 'P', '2'};
 constexpr uint32_t kVersion = ESP_ASSET_PACK_FORMAT_VERSION;
 constexpr size_t kHeaderBytes = 24;
 constexpr size_t kEntryBytes = 20;
-constexpr uint32_t kResidentRangeCapacityBytes = 18U * 1024U;
+constexpr uint32_t kResidentRangeCapacityBytes = 19U * 1024U;
 constexpr uint32_t kResidentRangeEntryCapacity = 288U;
 constexpr uint32_t kResidentEntryCacheSlots = 24U;
 constexpr uint32_t kResidentMaxCachedRangeBytes = 1024U;
@@ -20,9 +20,16 @@ constexpr uint32_t kResidentLargeRangeBytes = 2048U;
 struct ResidentRangeRecord {
     uint32_t nameHash;
     uint32_t relativeOffset;
-    uint32_t length;
-    uint32_t dataOffset;
+    uint16_t length;
+    uint16_t dataOffset;
 };
+
+static_assert(kResidentRangeCapacityBytes <= UINT16_MAX,
+              "resident payload offsets must fit uint16_t");
+static_assert(kResidentLargeRangeBytes <= UINT16_MAX,
+              "resident range lengths must fit uint16_t");
+static_assert(sizeof(ResidentRangeRecord) == 12U,
+              "resident range metadata must stay compact");
 
 struct ResidentEntryRecord {
     uint32_t nameHash;
@@ -329,8 +336,8 @@ void storeResidentSmallRange(uint32_t nameHash,
         &residentCache->ranges[residentCache->rangeCount++];
     record->nameHash = nameHash;
     record->relativeOffset = relativeOffset;
-    record->length = length;
-    record->dataOffset = residentCache->bytesUsed;
+    record->length = (uint16_t)length;
+    record->dataOffset = (uint16_t)residentCache->bytesUsed;
     memcpy(residentCache->bytes + record->dataOffset, source, length);
     residentCache->bytesUsed += length;
     ++residentStats.rangeCacheStores;
@@ -367,8 +374,8 @@ void storeResidentLargeRange(uint32_t nameHash,
         &residentCache->ranges[residentCache->rangeCount++];
     record->nameHash = nameHash;
     record->relativeOffset = relativeOffset;
-    record->length = length;
-    record->dataOffset = targetOffset;
+    record->length = (uint16_t)length;
+    record->dataOffset = (uint16_t)targetOffset;
     memcpy(residentCache->bytes + targetOffset, source, length);
     ++residentStats.rangeCacheStores;
 }
