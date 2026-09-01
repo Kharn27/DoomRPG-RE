@@ -3,9 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <esp_heap_caps.h>
-
+#include <SDL.h>
 #include "DoomRPG.h"
+#include <esp_heap_caps.h>
 
 #include "esp_asset_pack.h"
 #include "esp_map_runtime.h"
@@ -198,7 +198,6 @@ static void setupEnemyRecord(DoomRPG_t* doomRpg,
     int32_t agilityScale;
     int32_t accuracyScale;
 
-    /* Exact CombatEntity_setupEnemy() random-call order. */
     healthScale = scaledRandomValue(doomRpg, parm, rngCalls);
     defenseScale = scaledRandomValue(doomRpg, parm, rngCalls);
     strengthScale = scaledRandomValue(doomRpg, parm, rngCalls);
@@ -214,8 +213,6 @@ static void setupEnemyRecord(DoomRPG_t* doomRpg,
 
     record->param1 = packParam1(health, health, armor, armor);
     record->param2 = packParam2(defense, strength, agility, accuracy);
-
-    /* Exact Entity_initspawn() post-setup orientation/attack-variant draw. */
     record->alternateAttack =
         (uint8_t)(DoomRPG_randNextByte(&doomRpg->random) & 1U);
     ++(*rngCalls);
@@ -344,7 +341,6 @@ int EspNativeGameplayMonsterState_ensure(DoomRPG_t* doomRpg) {
         ++enemyDefCount;
     }
 
-    /* Exact Game_loadMapEntities() ordering: ascending map-sprite index. */
     for (i = 0U; i < runtime->mapSpriteCount; ++i) {
         if (!EspMapSpriteTopology_getEntity(i, &type, &subtype,
                                             &linkState, &linkOrder)) goto fail;
@@ -448,8 +444,6 @@ const EspNativeGameplayMonsterRecord* EspNativeGameplayMonsterState_find(
     return EspNativeGameplayMonsterState_findMutable(spriteIndex);
 }
 
-/* Keep initialization/reset in front of the already hardware-proven action
- * engine without changing that engine's door/dialog/fire routing. */
 int __real_EspNativeGameplayActionEngine_service(DoomRPG_t* doomRpg);
 void __real_EspNativeGameplayActionEngine_reset(void);
 
