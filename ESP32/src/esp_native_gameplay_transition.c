@@ -174,7 +174,7 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
     if (intent == NULL || outResult == NULL ||
         intent->action != ESP_NATIVE_GAMEPLAY_ACTION_SELECT ||
-        intent->pending != 0U || intent->active == 0U) {
+        intent->pending != 1U || intent->active == 0U) {
         return ESP_NATIVE_GAMEPLAY_TRANSITION_INVALID;
     }
     if (transitionState.active != 0U) {
