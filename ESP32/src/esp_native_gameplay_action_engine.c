@@ -16,6 +16,7 @@
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
+#include "esp_native_gameplay_destructible.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
@@ -35,6 +36,15 @@
 #define ACTION_ENTITY_HUMAN 2U
 #define ACTION_ENTITY_FIRE 10U
 #define ACTION_ENTITY_DESTRUCTIBLE 12U
+#define ACTION_DESTRUCTIBLE_JAMMED_SUBTYPE 3U
+#define ACTION_WEAPON_AXE 0U
+
+/* Legacy Player_reset accuracy=16, Combat_calcHit() derives dummy agility=12
+ * and the axe adds its range term: 170 + 89 = 259. randHit is one byte, so
+ * the first supported jammed-door hit is guaranteed while still consuming the
+ * exact RNG byte. Player-stat/level mutation remains deferred, so this bounded
+ * route is invalidated before any native accuracy mutation can exist. */
+#define ACTION_JAMMED_DOOR_CALC_HIT 259U
 
 #define TILE_SIZE 64
 #define TILE_CENTER 32
@@ -75,7 +85,8 @@
 typedef enum ActionFeedback_e {
     ACTION_FEEDBACK_NONE = 0,
     ACTION_FEEDBACK_NOTHING = 1,
-    ACTION_FEEDBACK_FIRE_CLEARED = 2
+    ACTION_FEEDBACK_FIRE_CLEARED = 2,
+    ACTION_FEEDBACK_DOOR_CLEARED = 3
 } ActionFeedback;
 
 typedef enum ActionRoute_e {
@@ -84,7 +95,8 @@ typedef enum ActionRoute_e {
     ACTION_ROUTE_FIRE_CLEARED = 2,
     ACTION_ROUTE_HUMAN = 3,
     ACTION_ROUTE_ENEMY_DEFERRED = 4,
-    ACTION_ROUTE_DESTRUCTIBLE_DEFERRED = 5
+    ACTION_ROUTE_JAMMED_DOOR_CLEARED = 5,
+    ACTION_ROUTE_DESTRUCTIBLE_DEFERRED = 6
 } ActionRoute;
 
 typedef struct ActionTarget_s {
@@ -101,6 +113,7 @@ typedef struct ActionPending_s {
     uint32_t sequence;
     uint16_t spriteIndex;
     uint16_t tileIndex;
+    uint16_t lineIndex;
     uint8_t route;
     uint8_t feedback;
     uint8_t type;
@@ -114,12 +127,15 @@ typedef struct ActionPending_s {
 typedef struct ActionEngineState_s {
     uint8_t removedBits[ACTION_REMOVED_BYTES];
     ActionPending pending;
+    EspNativeGameplayDestructibleResult destructibleUndo;
     uint32_t arenaFNV;
     uint32_t selects;
     uint32_t fireClears;
+    uint32_t jammedDoorClears;
     uint32_t noUses;
     uint32_t combatDeferred;
     uint32_t destructibleDeferred;
+    uint32_t deferredXp;
     uint32_t feedbackShownAtMs;
     uint16_t spriteCount;
     uint8_t targetMapId;
@@ -233,7 +249,7 @@ static void logCorpus(void) {
         else if (type == ACTION_ENTITY_DESTRUCTIBLE) ++destructibles;
     }
 
-    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes feedbackMs=%u ammo=deferred monsterCombat=deferred complexDestructibles=deferred\n",
+    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes feedbackMs=%u ammo=deferred monsterCombat=deferred jammedDoor3=axe-adjacent-owned otherDestructibles=deferred\n",
            (unsigned int)actionState.targetMapId,
            (unsigned int)actionState.arenaFNV,
            (unsigned int)actionState.spriteCount,
@@ -350,11 +366,13 @@ static int lineEntityTile(const EspMapLine* line, uint16_t* outTile) {
 
 static int findLinkedLineBlocker(uint16_t tile,
                                  uint16_t* outLineIndex,
-                                 uint8_t* outType) {
+                                 uint8_t* outType,
+                                 uint8_t* outSubtype) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     uint32_t i;
 
-    if (runtime == NULL || outLineIndex == NULL || outType == NULL) return -1;
+    if (runtime == NULL || outLineIndex == NULL || outType == NULL ||
+        outSubtype == NULL) return -1;
     i = runtime->lineCount;
     while (i > 0U) {
         EspMapLine line;
@@ -362,6 +380,7 @@ static int findLinkedLineBlocker(uint16_t tile,
         uint16_t lineTile;
         uint8_t open;
         uint8_t type;
+        uint8_t subtype;
         int hasDefinition;
 
         --i;
@@ -370,16 +389,19 @@ static int findLinkedLineBlocker(uint16_t tile,
         if (!EspMapRuntime_getLine(i, &line)) return -1;
         lookup = LINE_ENTITY_DEF_BASE + (uint32_t)line.texture;
         hasDefinition = lookup < ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT &&
-                        EspEntityDefTypeCatalog_getType((uint16_t)lookup, &type);
+                        EspEntityDefTypeCatalog_getTypeAndSubtype(
+                            (uint16_t)lookup, &type, &subtype);
         if (!hasDefinition) {
             if ((line.flags & LINE_ENTITY_FALLBACK_FLAGS) == 0U) continue;
             type = 0U;
+            subtype = 0xffU;
         }
         if (!entityTypeInTraceMask(type)) continue;
         if (!lineEntityTile(&line, &lineTile)) return -1;
         if (lineTile != tile) continue;
         *outLineIndex = (uint16_t)i;
         *outType = type;
+        *outSubtype = subtype;
         return 1;
     }
     return 0;
@@ -493,6 +515,7 @@ static int traceAction(ActionTarget* outTarget) {
         uint8_t tileFlags;
         uint16_t lineIndex;
         uint8_t lineType;
+        uint8_t lineSubtype;
         int lineBlocker;
         int spriteBlocker;
 
@@ -500,7 +523,8 @@ static int traceAction(ActionTarget* outTarget) {
         if (!EspMapState_getTileFlags(tile, &tileFlags)) return -1;
         if ((tileFlags & ESP_MAP_TILE_WALL) != 0U) return 0;
 
-        lineBlocker = findLinkedLineBlocker(tile, &lineIndex, &lineType);
+        lineBlocker = findLinkedLineBlocker(tile, &lineIndex, &lineType,
+                                            &lineSubtype);
         if (lineBlocker < 0) return -1;
         if (lineBlocker > 0) {
             memset(outTarget, 0, sizeof(*outTarget));
@@ -508,7 +532,7 @@ static int traceAction(ActionTarget* outTarget) {
             outTarget->lineIndex = lineIndex;
             outTarget->tileIndex = tile;
             outTarget->type = lineType;
-            outTarget->subtype = 0xffU;
+            outTarget->subtype = lineSubtype;
             outTarget->distance = (uint8_t)distance;
             outTarget->isLine = 1U;
             return 1;
@@ -535,6 +559,11 @@ static ActionRoute routeTarget(const ActionTarget* target, uint8_t weapon) {
     }
     if (target->type == ACTION_ENTITY_ENEMY) return ACTION_ROUTE_ENEMY_DEFERRED;
     if (target->type == ACTION_ENTITY_DESTRUCTIBLE) {
+        if (target->isLine != 0U &&
+            target->subtype == ACTION_DESTRUCTIBLE_JAMMED_SUBTYPE &&
+            weapon == ACTION_WEAPON_AXE && target->distance == 1U) {
+            return ACTION_ROUTE_JAMMED_DOOR_CLEARED;
+        }
         return ACTION_ROUTE_DESTRUCTIBLE_DEFERRED;
     }
     return ACTION_ROUTE_NOTHING;
@@ -546,6 +575,7 @@ static const char* routeName(ActionRoute route) {
     case ACTION_ROUTE_FIRE_CLEARED: return "FIRE_CLEARED";
     case ACTION_ROUTE_HUMAN: return "HUMAN_NO_FIRE";
     case ACTION_ROUTE_ENEMY_DEFERRED: return "ENEMY_COMBAT_DEFERRED";
+    case ACTION_ROUTE_JAMMED_DOOR_CLEARED: return "JAMMED_DOOR_CLEARED";
     case ACTION_ROUTE_DESTRUCTIBLE_DEFERRED:
         return "DESTRUCTIBLE_COMBAT_DEFERRED";
     default: return "INVALID";
@@ -555,6 +585,7 @@ static const char* routeName(ActionRoute route) {
 static const char* feedbackText(uint8_t feedback) {
     if (feedback == ACTION_FEEDBACK_NOTHING) return "Nothing to use";
     if (feedback == ACTION_FEEDBACK_FIRE_CLEARED) return "Fire cleared!";
+    if (feedback == ACTION_FEEDBACK_DOOR_CLEARED) return "Door cleared!";
     return NULL;
 }
 
@@ -766,6 +797,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
         memset(&actionState.pending, 0, sizeof(actionState.pending));
         actionState.pending.sequence = intent->sequence;
         actionState.pending.spriteIndex = ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE;
+        actionState.pending.lineIndex = ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE;
         actionState.pending.route = ACTION_ROUTE_NOTHING;
         actionState.pending.feedback = ACTION_FEEDBACK_NOTHING;
         actionState.pending.weapon = weapon;
@@ -824,6 +856,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
         memset(&actionState.pending, 0, sizeof(actionState.pending));
         actionState.pending.sequence = intent->sequence;
         actionState.pending.spriteIndex = target.spriteIndex;
+        actionState.pending.lineIndex = ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE;
         actionState.pending.tileIndex = target.tileIndex;
         actionState.pending.route = (uint8_t)route;
         actionState.pending.feedback = ACTION_FEEDBACK_FIRE_CLEARED;
@@ -839,10 +872,52 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
                (unsigned int)target.spriteIndex,
                (unsigned int)ACTION_REMOVED_BYTES);
     }
+    else if (route == ACTION_ROUTE_JAMMED_DOOR_CLEARED) {
+        EspNativeGameplayDestructibleResult preflight;
+        EspNativeGameplayDestructibleStatus destructibleStatus;
+        memset(&preflight, 0, sizeof(preflight));
+        destructibleStatus = EspNativeGameplayDestructible_preflightLineDeath(
+            target.tileIndex, target.lineIndex, &preflight);
+        if (destructibleStatus != ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_OK) {
+            ++actionState.destructibleDeferred;
+            printf("[ACTIONENGINE] BACKEND-DEFER seq=%u line=%u family=jammed-door reason=death-event-preflight-%s mutation=no\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.lineIndex,
+                   EspNativeGameplayDestructible_statusName(destructibleStatus));
+            return status;
+        }
+        memset(&actionState.pending, 0, sizeof(actionState.pending));
+        memset(&actionState.destructibleUndo, 0,
+               sizeof(actionState.destructibleUndo));
+        actionState.pending.sequence = intent->sequence;
+        actionState.pending.spriteIndex = ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE;
+        actionState.pending.lineIndex = target.lineIndex;
+        actionState.pending.tileIndex = target.tileIndex;
+        actionState.pending.route = (uint8_t)route;
+        actionState.pending.feedback = ACTION_FEEDBACK_DOOR_CLEARED;
+        actionState.pending.type = target.type;
+        actionState.pending.subtype = target.subtype;
+        actionState.pending.weapon = weapon;
+        actionState.pending.distance = target.distance;
+        actionState.pending.worldChanged = 1U;
+        actionState.pending.active = 1U;
+        printf("[DESTRUCTIBLE] ARM seq=%u tile=%u line=%u event=%u global=%u subtype=%u weapon=%u distance=%u runFlags=%08x hitCalc=%u rng=pending mutation=no rollback=armed\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)target.tileIndex,
+               (unsigned int)target.lineIndex,
+               (unsigned int)preflight.eventIndex,
+               (unsigned int)preflight.globalCommandIndex,
+               (unsigned int)target.subtype,
+               (unsigned int)weapon,
+               (unsigned int)target.distance,
+               (unsigned int)ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_DEATH_RUN_FLAGS,
+               (unsigned int)ACTION_JAMMED_DOOR_CALC_HIT);
+    }
     else if (route == ACTION_ROUTE_NOTHING || route == ACTION_ROUTE_HUMAN) {
         memset(&actionState.pending, 0, sizeof(actionState.pending));
         actionState.pending.sequence = intent->sequence;
         actionState.pending.spriteIndex = target.spriteIndex;
+        actionState.pending.lineIndex = target.lineIndex;
         actionState.pending.tileIndex = target.tileIndex;
         actionState.pending.route = (uint8_t)route;
         actionState.pending.feedback = ACTION_FEEDBACK_NOTHING;
@@ -861,9 +936,10 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     }
     else if (route == ACTION_ROUTE_DESTRUCTIBLE_DEFERRED) {
         ++actionState.destructibleDeferred;
-        printf("[ACTIONENGINE] BACKEND-DEFER seq=%u sprite=%u family=destructible-combat reason=entity-parm-weapon-mask+subtype-consequence-not-owned mutation=no\n",
+        printf("[ACTIONENGINE] BACKEND-DEFER seq=%u sprite=%u line=%u family=destructible-combat reason=generic-hit+hp/subtype-consequence-not-owned mutation=no\n",
                (unsigned int)intent->sequence,
-               (unsigned int)target.spriteIndex);
+               (unsigned int)target.spriteIndex,
+               (unsigned int)target.lineIndex);
     }
     return status;
 }
@@ -920,12 +996,19 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
     {
         EspNativeGameplayFrameStats frame;
-        int animateWeapon = pending.route == ACTION_ROUTE_FIRE_CLEARED;
+        int isFire = pending.route == ACTION_ROUTE_FIRE_CLEARED;
+        int isJammedDoor = pending.route == ACTION_ROUTE_JAMMED_DOOR_CLEARED;
+        int animateWeapon = isFire || isJammedDoor;
+        Random_t randomBefore;
+        uint8_t randomCaptured = 0U;
+        uint8_t randHit = 0U;
+        uint8_t destructibleMutated = 0U;
 
         memset(&frame, 0, sizeof(frame));
+        memset(&randomBefore, 0, sizeof(randomBefore));
         if (animateWeapon &&
             !EspNativeGameplayWeapon_armAttack(pending.weapon)) {
-            setRemoved(pending.spriteIndex, 0);
+            if (isFire) setRemoved(pending.spriteIndex, 0);
             memset(&actionState.pending, 0, sizeof(actionState.pending));
             printf("[ACTIONENGINE] FAILED seq=%u reason=weapon-attack-arm weapon=%u rollback=yes\n",
                    (unsigned int)pending.sequence,
@@ -933,31 +1016,104 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             return 0;
         }
 
+        if (isJammedDoor) {
+            EspNativeGameplayDestructibleStatus destructibleStatus;
+            randomBefore = doomRpg->random;
+            randomCaptured = 1U;
+            randHit = DoomRPG_randNextByte(&doomRpg->random);
+            if ((uint32_t)randHit >= ACTION_JAMMED_DOOR_CALC_HIT) {
+                doomRpg->random = randomBefore;
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[DESTRUCTIBLE] FAILED seq=%u reason=impossible-base-hit rand=%u calc=%u mutation=no rngRollback=yes\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)randHit,
+                       (unsigned int)ACTION_JAMMED_DOOR_CALC_HIT);
+                return 0;
+            }
+            memset(&actionState.destructibleUndo, 0,
+                   sizeof(actionState.destructibleUndo));
+            destructibleStatus = EspNativeGameplayDestructible_executeLineDeath(
+                pending.tileIndex, pending.lineIndex,
+                &actionState.destructibleUndo);
+            if (destructibleStatus != ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_OK) {
+                doomRpg->random = randomBefore;
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[DESTRUCTIBLE] FAILED seq=%u line=%u reason=death-event-%s rand=%u rngRollback=yes mutation=no\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.lineIndex,
+                       EspNativeGameplayDestructible_statusName(destructibleStatus),
+                       (unsigned int)randHit);
+                return 0;
+            }
+            destructibleMutated = 1U;
+            printf("[DESTRUCTIBLE] HIT seq=%u line=%u event=%u global=%u subtype=%u weapon=%u distance=%u rand=%u calc=%u guaranteed=yes open=%u->%u rngConsumed=1 xp=1-pending\n",
+                   (unsigned int)pending.sequence,
+                   (unsigned int)actionState.destructibleUndo.lineIndex,
+                   (unsigned int)actionState.destructibleUndo.eventIndex,
+                   (unsigned int)actionState.destructibleUndo.globalCommandIndex,
+                   (unsigned int)pending.subtype,
+                   (unsigned int)pending.weapon,
+                   (unsigned int)pending.distance,
+                   (unsigned int)randHit,
+                   (unsigned int)ACTION_JAMMED_DOOR_CALC_HIT,
+                   (unsigned int)actionState.destructibleUndo.openBefore,
+                   (unsigned int)actionState.destructibleUndo.openAfter);
+        }
+
         actionState.feedbackPending = 1U;
         actionState.feedbackKind = pending.feedback;
         if (!EspNativeGameplayFrame_renderTurn(
                 doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
+            int rollbackOk = 1;
             EspNativeGameplayWeapon_cancelAttack();
             actionState.feedbackPending = 0U;
             actionState.feedbackKind = ACTION_FEEDBACK_NONE;
-            setRemoved(pending.spriteIndex, 0);
+            if (isFire) {
+                setRemoved(pending.spriteIndex, 0);
+            }
+            else if (isJammedDoor && destructibleMutated != 0U) {
+                rollbackOk = EspNativeGameplayDestructible_rollbackLineDeath(
+                    &actionState.destructibleUndo);
+                if (randomCaptured != 0U) doomRpg->random = randomBefore;
+                memset(&actionState.destructibleUndo, 0,
+                       sizeof(actionState.destructibleUndo));
+            }
             memset(&frame, 0, sizeof(frame));
-            if (!EspNativeGameplayFrame_renderTurn(
+            if (!rollbackOk || !EspNativeGameplayFrame_renderTurn(
                     doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
-                printf("[ACTIONENGINE] FAILED seq=%u reason=render+rollback-render sprite=%u\n",
+                printf("[ACTIONENGINE] FAILED seq=%u reason=render+rollback-render sprite=%u line=%u rollback=%s\n",
                        (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex);
+                       (unsigned int)pending.spriteIndex,
+                       (unsigned int)pending.lineIndex,
+                       rollbackOk ? "yes" : "NO");
                 return 0;
             }
-            printf("[ACTIONENGINE] ROLLBACK seq=%u sprite=%u restored=yes frame=%08x\n",
+            printf("[ACTIONENGINE] ROLLBACK seq=%u sprite=%u line=%u route=%s restored=yes rng=%s frame=%08x\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
+                   (unsigned int)pending.lineIndex,
+                   routeName((ActionRoute)pending.route),
+                   isJammedDoor ? "restored" : "unchanged",
                    (unsigned int)frame.frameAfterFNV);
             memset(&actionState.pending, 0, sizeof(actionState.pending));
             return 1;
         }
 
         logActionFrame(&pending, animateWeapon ? "attack" : "commit", &frame);
+
+        if (isJammedDoor) {
+            ++actionState.jammedDoorClears;
+            ++actionState.deferredXp;
+            printf("[DESTRUCTIBLE] COMMIT seq=%u line=%u event=%u open=0->1 message=\"Door cleared!\" xp=1-deferred xpDeferredTotal=%u sound=5044-deferred turnAdvance=deferred rollback=closed\n",
+                   (unsigned int)pending.sequence,
+                   (unsigned int)pending.lineIndex,
+                   (unsigned int)actionState.destructibleUndo.eventIndex,
+                   (unsigned int)actionState.deferredXp);
+            memset(&actionState.destructibleUndo, 0,
+                   sizeof(actionState.destructibleUndo));
+        }
 
         if (animateWeapon) {
             EspNativeGameplayFrameStats settle;

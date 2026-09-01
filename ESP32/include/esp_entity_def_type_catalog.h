@@ -9,21 +9,30 @@
 extern "C" {
 #endif
 
+/* Highest native lookup tile currently addressable by Doom RPG entity defs.
+ * This remains an API validation bound; the implementation no longer burns
+ * one byte for every sparse tile index. */
 #define ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT 817U
+#define ESP_ENTITY_DEF_TYPE_CATALOG_MAX_DEFINITIONS 128U
 
 /*
- * Global immutable type-only view of /entities.db.
+ * Global immutable compact metadata view of /entities.db.
  *
  * Doom RPG line entities resolve their definition with tileIndex
  * 305 + line.texture before being linked into Game.entityDb. Native gameplay
- * already parses the same database for map-sprite topology; this bounded BSS
- * catalog keeps only the eType byte needed by Game_trace collision semantics.
- * It owns no heap and is independent of the current resident map lifecycle.
+ * needs both eType and selected eSubType behavior while shapeData remains NULL.
+ * The implementation retains only sorted {tileIndex,type,subtype} records and
+ * performs allocation-free binary lookup; no names, parm values or legacy
+ * EntityDef_t pointers survive startup.
  */
 int EspEntityDefTypeCatalog_buildFromPackEntry(
     const EspAssetPackEntry* entityDefsEntry);
 int EspEntityDefTypeCatalog_isReady(void);
 int EspEntityDefTypeCatalog_getType(uint16_t tileIndex, uint8_t* outType);
+int EspEntityDefTypeCatalog_getSubtype(uint16_t tileIndex, uint8_t* outSubtype);
+int EspEntityDefTypeCatalog_getTypeAndSubtype(uint16_t tileIndex,
+                                              uint8_t* outType,
+                                              uint8_t* outSubtype);
 uint32_t EspEntityDefTypeCatalog_definitionCount(void);
 
 #ifdef __cplusplus
