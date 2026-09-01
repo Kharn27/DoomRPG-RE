@@ -9,12 +9,79 @@
 #define ENTITY_DEF_MAX_COUNT 1024U
 #define ENTITY_DEF_LINE_ENTRANCE_TILE_INDEX 312U
 
-static uint8_t entityDefTypes[ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT];
+typedef struct EntityDefMetadata_s {
+    uint16_t tileIndex;
+    uint8_t type;
+    uint8_t subtype;
+} EntityDefMetadata;
+
+typedef char EntityDefMetadata_must_be_4_bytes[
+    sizeof(EntityDefMetadata) == 4U ? 1 : -1];
+
+static EntityDefMetadata
+    entityDefMetadata[ESP_ENTITY_DEF_TYPE_CATALOG_MAX_DEFINITIONS];
 static uint32_t entityDefCount;
+static uint16_t entityDefMetadataCount;
 static uint8_t entityDefTypesReady;
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
+}
+
+static void clearCatalog(void) {
+    memset(entityDefMetadata, 0, sizeof(entityDefMetadata));
+    entityDefCount = 0U;
+    entityDefMetadataCount = 0U;
+    entityDefTypesReady = 0U;
+}
+
+static int insertMetadata(uint16_t tileIndex, uint8_t type, uint8_t subtype) {
+    uint16_t pos = 0U;
+
+    while (pos < entityDefMetadataCount &&
+           entityDefMetadata[pos].tileIndex < tileIndex) {
+        ++pos;
+    }
+    /* Legacy type-only catalog retained the first definition for duplicate
+     * tile indices. Preserve that exact first-wins rule. */
+    if (pos < entityDefMetadataCount &&
+        entityDefMetadata[pos].tileIndex == tileIndex) {
+        return 1;
+    }
+    if (entityDefMetadataCount >= ESP_ENTITY_DEF_TYPE_CATALOG_MAX_DEFINITIONS) {
+        return 0;
+    }
+    if (pos < entityDefMetadataCount) {
+        memmove(&entityDefMetadata[pos + 1U],
+                &entityDefMetadata[pos],
+                (size_t)(entityDefMetadataCount - pos) *
+                    sizeof(entityDefMetadata[0]));
+    }
+    entityDefMetadata[pos].tileIndex = tileIndex;
+    entityDefMetadata[pos].type = type;
+    entityDefMetadata[pos].subtype = subtype;
+    ++entityDefMetadataCount;
+    return 1;
+}
+
+static const EntityDefMetadata* findMetadata(uint16_t tileIndex) {
+    uint16_t lo = 0U;
+    uint16_t hi = entityDefMetadataCount;
+
+    if (!entityDefTypesReady || tileIndex >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT) {
+        return NULL;
+    }
+    while (lo < hi) {
+        uint16_t mid = (uint16_t)(lo + ((hi - lo) >> 1));
+        uint16_t candidate = entityDefMetadata[mid].tileIndex;
+        if (candidate < tileIndex) lo = (uint16_t)(mid + 1U);
+        else hi = mid;
+    }
+    if (lo >= entityDefMetadataCount ||
+        entityDefMetadata[lo].tileIndex != tileIndex) {
+        return NULL;
+    }
+    return &entityDefMetadata[lo];
 }
 
 int EspEntityDefTypeCatalog_buildFromPackEntry(
@@ -24,8 +91,7 @@ int EspEntityDefTypeCatalog_buildFromPackEntry(
     uint32_t count;
     uint32_t sourceBytes;
     uint32_t i;
-    uint16_t tileIndex;
-    uint8_t entranceType = 0xffU;
+    const EntityDefMetadata* entrance;
 
     if (entityDefTypesReady) return 1;
     if (entityDefsEntry == NULL ||
@@ -36,36 +102,41 @@ int EspEntityDefTypeCatalog_buildFromPackEntry(
     }
 
     count = readLe16(header);
-    if (count == 0U || count > ENTITY_DEF_MAX_COUNT) return 0;
+    if (count == 0U || count > ENTITY_DEF_MAX_COUNT ||
+        count > ESP_ENTITY_DEF_TYPE_CATALOG_MAX_DEFINITIONS) {
+        return 0;
+    }
     sourceBytes = 2U + (count * ENTITY_DEF_RECORD_BYTES);
     if (sourceBytes > entityDefsEntry->size) return 0;
 
-    memset(entityDefTypes, 0xff, sizeof(entityDefTypes));
+    clearCatalog();
     for (i = 0U; i < count; ++i) {
+        uint16_t tileIndex;
         if (!EspAssetPack_readRange(entityDefsEntry,
                                     2U + (i * ENTITY_DEF_RECORD_BYTES),
                                     record, sizeof(record))) {
-            memset(entityDefTypes, 0xff, sizeof(entityDefTypes));
-            entityDefCount = 0U;
+            clearCatalog();
             return 0;
         }
         tileIndex = readLe16(record);
-        if (tileIndex < ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT &&
-            entityDefTypes[tileIndex] == 0xffU) {
-            entityDefTypes[tileIndex] = record[2];
+        if (tileIndex >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT) continue;
+        if (!insertMetadata(tileIndex, record[2], record[3])) {
+            clearCatalog();
+            return 0;
         }
     }
 
     entityDefCount = count;
     entityDefTypesReady = 1U;
-    if (ENTITY_DEF_LINE_ENTRANCE_TILE_INDEX < ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT) {
-        entranceType = entityDefTypes[ENTITY_DEF_LINE_ENTRANCE_TILE_INDEX];
-    }
-    printf("[ENTITYDEFTYPE] READY defs=%u cache=%uB tile312=%s%u\n",
+    entrance = findMetadata(ENTITY_DEF_LINE_ENTRANCE_TILE_INDEX);
+    printf("[ENTITYDEFTYPE] READY defs=%u metadata=%u cache=%uB tile312=%s%u subtype=%s%u\n",
            (unsigned int)entityDefCount,
-           (unsigned int)sizeof(entityDefTypes),
-           entranceType == 0xffU ? "none/" : "type/",
-           (unsigned int)entranceType);
+           (unsigned int)entityDefMetadataCount,
+           (unsigned int)sizeof(entityDefMetadata),
+           entrance == NULL ? "none/" : "type/",
+           (unsigned int)(entrance == NULL ? 0xffU : entrance->type),
+           entrance == NULL ? "none/" : "subtype/",
+           (unsigned int)(entrance == NULL ? 0xffU : entrance->subtype));
     return 1;
 }
 
@@ -73,13 +144,34 @@ int EspEntityDefTypeCatalog_isReady(void) {
     return entityDefTypesReady != 0U;
 }
 
+int EspEntityDefTypeCatalog_getTypeAndSubtype(uint16_t tileIndex,
+                                              uint8_t* outType,
+                                              uint8_t* outSubtype) {
+    const EntityDefMetadata* metadata;
+    if (outType == NULL || outSubtype == NULL) return 0;
+    metadata = findMetadata(tileIndex);
+    if (metadata == NULL) return 0;
+    *outType = metadata->type;
+    *outSubtype = metadata->subtype;
+    return 1;
+}
+
 int EspEntityDefTypeCatalog_getType(uint16_t tileIndex, uint8_t* outType) {
-    if (!entityDefTypesReady || outType == NULL ||
-        tileIndex >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT ||
-        entityDefTypes[tileIndex] == 0xffU) {
-        return 0;
-    }
-    *outType = entityDefTypes[tileIndex];
+    const EntityDefMetadata* metadata;
+    if (outType == NULL) return 0;
+    metadata = findMetadata(tileIndex);
+    if (metadata == NULL) return 0;
+    *outType = metadata->type;
+    return 1;
+}
+
+int EspEntityDefTypeCatalog_getSubtype(uint16_t tileIndex,
+                                       uint8_t* outSubtype) {
+    const EntityDefMetadata* metadata;
+    if (outSubtype == NULL) return 0;
+    metadata = findMetadata(tileIndex);
+    if (metadata == NULL) return 0;
+    *outSubtype = metadata->subtype;
     return 1;
 }
 
