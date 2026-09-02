@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-#include "DoomRPG.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+struct DoomRPG_s;
 
 #define ESP_NATIVE_GAMEPLAY_PLAYER_AMMO_TYPES 6U
 #define ESP_NATIVE_GAMEPLAY_PLAYER_INVENTORY_SLOTS 5U
@@ -72,7 +72,7 @@ int EspNativeGameplayPlayerState_addArmor(uint8_t amount,
 int EspNativeGameplayPlayerState_addCredits(uint32_t amount);
 int EspNativeGameplayPlayerState_addKeys(uint32_t keyMask);
 int EspNativeGameplayPlayerState_applyXp(
-    DoomRPG_t* doomRpg,
+    struct DoomRPG_s* doomRpg,
     uint32_t xp,
     EspNativeGameplayPlayerXpResult* outResult);
 
