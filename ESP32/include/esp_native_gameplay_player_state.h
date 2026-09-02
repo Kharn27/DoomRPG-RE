@@ -33,8 +33,8 @@ typedef struct EspNativeGameplayPlayerXpResult_s {
     uint32_t rngCalls;
     uint32_t stateFNVBefore;
     uint32_t stateFNVAfter;
-    uint16_t nextLevelXPBefore;
-    uint16_t nextLevelXPAfter;
+    uint32_t nextLevelXPBefore;
+    uint32_t nextLevelXPAfter;
     uint8_t levelBefore;
     uint8_t levelAfter;
     uint8_t levelUps;
@@ -46,7 +46,7 @@ int EspNativeGameplayPlayerState_ensure(void);
 const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void);
 int EspNativeGameplayPlayerState_snapshot(EspNativeGameplayPlayerState* outState);
 int EspNativeGameplayPlayerState_restore(
-    const EspNativeGameplayPlayerState* expectedSnapshot);
+    const EspNativeGameplayPlayerState* snapshot);
 int EspNativeGameplayPlayerState_adoptWeapon(uint8_t weapon);
 int EspNativeGameplayPlayerState_applyXp(
     DoomRPG_t* doomRpg,
