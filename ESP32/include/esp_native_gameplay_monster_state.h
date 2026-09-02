@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-#include "DoomRPG.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+struct DoomRPG_s;
 
 #define ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT 100U
 #define ESP_NATIVE_GAMEPLAY_MONSTER_NO_SPRITE 0xffffU
@@ -36,7 +36,7 @@ typedef struct EspNativeGameplayMonsterView_s {
 } EspNativeGameplayMonsterView;
 
 void EspNativeGameplayMonsterState_reset(void);
-int EspNativeGameplayMonsterState_ensure(DoomRPG_t* doomRpg);
+int EspNativeGameplayMonsterState_ensure(struct DoomRPG_s* doomRpg);
 int EspNativeGameplayMonsterState_isReady(void);
 const EspNativeGameplayMonsterView* EspNativeGameplayMonsterState_view(void);
 EspNativeGameplayMonsterRecord* EspNativeGameplayMonsterState_findMutable(
@@ -50,7 +50,7 @@ const EspNativeGameplayMonsterRecord* EspNativeGameplayMonsterState_find(
  * leaves so generic monster combat can compose its pending transaction in front
  * without duplicating map initialization or the proven action-engine service.
  */
-int EspNativeGameplayMonsterState_actionService(DoomRPG_t* doomRpg);
+int EspNativeGameplayMonsterState_actionService(struct DoomRPG_s* doomRpg);
 void EspNativeGameplayMonsterState_actionReset(void);
 #define __wrap_EspNativeGameplayActionEngine_service \
     EspNativeGameplayMonsterState_actionService
