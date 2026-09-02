@@ -3,10 +3,10 @@
 Recovery and development should start from:
 
 1. current GitHub `main` and its exact SHA;
-2. [`PORTING_STATUS.md`](PORTING_STATUS.md) — authoritative current tested/candidate boundary;
+2. [`PORTING_STATUS.md`](PORTING_STATUS.md) — authoritative tested/candidate boundary;
 3. [`ARCHITECTURE.md`](ARCHITECTURE.md) — permanent native engine design;
 4. this file — build/layout/recovery pointers;
-5. the latest relevant milestone/source on the active branch.
+5. latest relevant milestone/source on the active branch.
 
 Repository state wins over chat history. Serial logs from the real classic CYD
 are the final runtime truth.
@@ -14,16 +14,16 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main = 6e07187f60a27e197189a47f2cbc7ff4e338cfec
-branch = agent/esp32-native-full-gameplay
-base main = 6e07187f60a27e197189a47f2cbc7ff4e338cfec
-hardware-tested code boundary = feae39c768105b8851a77dab1afa4b52bec231dd
-status = jammed-door destructible subtype-3 hardware complete
+main = 563804b09fda67ba06516c8dc13585a1125a4bb0
+branch = agent/esp32-native-dog-combat
+base main = 563804b09fda67ba06516c8dc13585a1125a4bb0
+hardware-tested code boundary = e56bfcf86489f5b0f9ae10deb29a73fabf098756
+status = generic native type=1 monster combat hardware PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Code after `feae39c...` must not be treated as hardware-tested unless the user
-supplies new real-CYD logs. The current tail is documentation-only.
+Do not treat commits after `e56bfcf...` as hardware-tested code. The tail must
+remain documentation-only until merge.
 
 ## Build environment
 
@@ -50,11 +50,9 @@ native backing store = /DoomRPG-ESP32.pak
 ```
 
 Do not recreate map-wide texel ownership or migrate native runtime data back to
-ZIP. `/DoomRPG.zip` remains transitional bootstrap/menu compatibility debt only.
+ZIP.
 
 ## Selected resident-cache baseline
-
-Hardware-selected implementation remains:
 
 ```text
 owner = 23592 B
@@ -65,51 +63,10 @@ resident entry slots = 24
 large exact range = 2048 B
 ```
 
-The cache still exhibits isolated working-set recycle stalls. Preserve this
-baseline while correctness milestones advance unless a cache milestone is
-explicitly chosen.
+Cache recycle stalls remain separate performance work. Preserve this baseline
+while correctness milestones advance.
 
-## Source layout
-
-```text
-ESP32/src/esp_map_*                        map/runtime/event ownership
-ESP32/src/esp_player_*                     player/view ownership
-ESP32/src/esp_native_gameplay_*            live gameplay/action semantics
-ESP32/src/esp_native_first_frame.c         BSP/wall compatibility renderer
-ESP32/src/esp_native_plane_renderer.c      native floor/ceiling plane renderer
-ESP32/src/esp_native_sprite_renderer.c     native sprite renderer
-ESP32/src/esp_asset_pack.cpp               PAK backing + resident cache
-ESP32/src/esp_native_dynamic_line_render.c mutable line presentation
-ESP32/src/platform_*                       CYD input/video bridges
-```
-
-A new BSP must never create another map-specific engine.
-
-## Renderer stack rules
-
-Two permanent hardware lessons:
-
-```text
-1. BSP traversal must remain explicit, bounded and non-recursive.
-2. Large renderer workspaces must not casually live on the 9 KiB loopTask stack.
-```
-
-`PlaneWork` is a temporary heap lease. Do not increase `loopTask` merely to hide
-renderer stack pressure.
-
-`PlatformVideo_present()` is consistently about 34-35 ms and is not the first
-performance target. Cold sprite/asset working-set rebuilds remain the larger
-stutter source.
-
-## Linker/include hygiene
-
-A linker wrapper must not call a higher-level API that can indirectly re-enter
-its wrapped symbol. Prefer `__real_*`, already-materialized views, or explicit
-non-reentrant helpers.
-
-Never shadow Arduino/ESP-IDF framework headers under `ESP32/include`.
-
-## Current native gameplay correctness frontier
+## Current native gameplay frontier
 
 Hardware-owned behavior includes:
 
@@ -127,73 +84,96 @@ mutable line texture variants
 weapon pickup and native weapon rendering
 attack frame presentation
 adjacent extinguisher fire clear
-jammed-door subtype-3 axe destruction
+jammed-door subtype-3 axe destruction + traversal
+generic compact monster-state initialization
+generic type=1 monster hit / damage / HP / armor
+generic pain / death / unlink presentation
+native player XP ownership / progression state
 ```
 
-The jammed-door milestone is documented in:
+Relevant milestone records:
 
-[`MILESTONE_NATIVE_JAMMED_DOOR.md`](MILESTONE_NATIVE_JAMMED_DOOR.md)
+- [`MILESTONE_NATIVE_JAMMED_DOOR.md`](MILESTONE_NATIVE_JAMMED_DOOR.md)
+- [`MILESTONE_NATIVE_MONSTER_COMBAT.md`](MILESTONE_NATIVE_MONSTER_COMBAT.md)
 
-Final hardware proof on line 201 showed:
+## Generic monster engine, not per-monster routes
+
+The current production combat path is deliberately split into reusable pieces:
 
 ```text
-axe target type=12 subtype=3
-EV_OPENLINE event 72 / line 201
-RNG consumed
-open 0->1 committed
-no DOORANIM after legacy-correct snap fix
-player traversed 654->686 then 686->718
-next opcode 11 state event committed successfully
+MonsterTrace
+ -> CombatMath
+ -> MonsterState + PlayerState
+ -> MonsterCombat transaction
+ -> renderer/liveness overlays
 ```
 
-The compact EntityDef metadata catalog now exposes `{tile,type,subtype}` using a
-512 B bounded owner instead of the older 817 B type-only tile cache.
+`MonsterState` holds compact mutable enemy state; `PlayerState` is the single
+shared player-facing owner intended for combat, pickups, ammo, inventory, keys
+and progression.
 
-## Current next witness — dog combat
-
-Immediately behind destroyed line 201 the CYD reports:
+Real-CYD hardware proves the same backend against at least two distinct ordinary
+monster subtypes:
 
 ```text
-tile = 750
-sprite = 179
-EntityDef type = 1
-EntityDef subtype = 1
-distance = 1
-weapon = 0 (axe)
-route = ENEMY_COMBAT_DEFERRED
+Hellhound subtype 1, sprite 179:
+  6 HP -> 3 HP -> dead
+  pain6 then gib-hidden+unlink
+  XP +5 applied
+
+Zombie subtype 0, sprite 106:
+  7 HP -> dead in one axe hit
+  death4+unlink
+  XP +6 applied
 ```
 
-Current stop is intentional:
+The zombie's later raw `[ACTIONENGINE] TRACE` messages are compatibility-log
+noise: the native combat trace correctly filters its `alive=0` record, so no
+second `[MONSTERCOMBAT] ARM` occurs.
+
+Ordinary new monsters must remain table/data-driven through `subtype/mType`.
+Do not create dog/zombie/imp-specific combat executors.
+
+## Current intentionally deferred combat families
 
 ```text
-reason=native-monster-hp+attack-state-not-owned
-mutation=no
+enemy AI / retaliation / turn advance
+actual sound playback
+corpse-pile trimming
+materialized drops
+ammo-consuming weapon transaction
+chaingun/plasma multi-loop presentation/commit
+rocket/BFG radius damage
+special death consequences for subtypes 7, 8, 12, 13
+Kronos-specific teleport semantics where applicable
 ```
 
-After this branch merges, the preferred next bounded milestone is the first
-native monster combat transaction against this exact dog corpus. Recover the
-legacy contract first; then add compact mutable monster HP/state ownership and
-exact RNG/rollback without reviving desktop entity graphs.
+These are mechanical family boundaries, not individual monster TODOs.
 
-Still deferred separately:
+## Next milestone after merge
+
+Preferred next family is **generic player resources / pickups + standard ammo
+weapons**.
+
+Goal:
 
 ```text
-generic monster combat beyond the first bounded dog case
-monster AI / retaliation / turn advance
-player HP/armor/stat pickups
-ammo pickup/consumption
-XP application / level progression
-sound
-inventory/key ownership and CHECK_KEY
-GIVEMAP
-PASSWORD
-SAVEGAME persistence
-live CHANGEMAP/stats handoff
+EntityDef/player-facing pickup metadata
+ -> one generic pickup/resource executor
+ -> one EspNativeGameplayPlayerState owner
+ -> health / armor / credits / keys / ammo / inventory / weapons
+ -> direct-fire ammo weapons reuse existing CombatMath/MonsterCombat
 ```
+
+The test corpus should deliberately contain several different pickup categories
+and several different weapons. Do not create a PR per item.
+
+Radius damage and genuinely scripted/special item effects remain separate family
+boundaries.
 
 ## CHANGEMAP recovery point
 
-Entrance event 1 / tile 69 is already recovered but intentionally not live yet:
+Entrance event 1 / tile 69 remains recovered but intentionally deferred:
 
 ```text
 SAVEGAME -> /junction.bsp, targetMapId 9, savePos 992,1888 angle 64
@@ -201,17 +181,17 @@ CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
 OPENLINE -> third eligible command
 ```
 
-Do not force this transition before enough native gameplay exists to complete
+Do not force the transition before enough native gameplay exists to complete
 the map normally.
 
 ## Development workflow
 
 ```text
 recover true main + docs
- -> choose one bounded milestone
+ -> choose one bounded behavior FAMILY
  -> recover exact legacy behavior
- -> design a small permanent native owner/API
- -> keep unsupported cases fail-closed
+ -> design small permanent native owner/API
+ -> keep genuinely different families fail-closed
  -> commit/push agent/*
  -> test normal esp32-cyd on real CYD
  -> Serial is truth
