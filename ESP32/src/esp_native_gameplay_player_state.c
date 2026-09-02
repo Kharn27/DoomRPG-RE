@@ -5,8 +5,8 @@
 
 #include "esp_native_gameplay_player_state.h"
 
-#define PLAYER_WEAPON_LIMIT 12U
 #define PLAYER_STAT_MAX 99U
+#define PLAYER_STACK_MAX 99U
 
 static EspNativeGameplayPlayerState playerState;
 
@@ -47,6 +47,13 @@ static uint8_t cappedAdd(uint8_t value, uint8_t amount) {
     return (uint8_t)(sum > PLAYER_STAT_MAX ? PLAYER_STAT_MAX : sum);
 }
 
+static uint8_t stackAdd(uint8_t value, uint8_t amount, uint8_t* outAdded) {
+    uint16_t sum = (uint16_t)value + amount;
+    uint8_t next = (uint8_t)(sum > PLAYER_STACK_MAX ? PLAYER_STACK_MAX : sum);
+    if (outAdded != NULL) *outAdded = (uint8_t)(next - value);
+    return next;
+}
+
 static uint32_t hashByte(uint32_t hash, uint8_t value) {
     hash ^= value;
     return hash * 16777619U;
@@ -78,8 +85,12 @@ uint32_t EspNativeGameplayPlayerState_fingerprint(void) {
     hash = hash16(hash, playerState.weapons);
     hash = hash16(hash, playerState.disabledWeapons);
     hash = hash16(hash, playerState.berserkerTics);
-    for (i = 0U; i < 6U; ++i) hash = hashByte(hash, playerState.ammo[i]);
-    for (i = 0U; i < 5U; ++i) hash = hashByte(hash, playerState.inventory[i]);
+    for (i = 0U; i < ESP_NATIVE_GAMEPLAY_PLAYER_AMMO_TYPES; ++i) {
+        hash = hashByte(hash, playerState.ammo[i]);
+    }
+    for (i = 0U; i < ESP_NATIVE_GAMEPLAY_PLAYER_INVENTORY_SLOTS; ++i) {
+        hash = hashByte(hash, playerState.inventory[i]);
+    }
     hash = hashByte(hash, playerState.level);
     hash = hashByte(hash, playerState.weapon);
     return hashByte(hash, playerState.active);
@@ -98,7 +109,7 @@ void EspNativeGameplayPlayerState_resetFresh(void) {
     playerState.weapon = 2U;
     playerState.weapons = (uint16_t)(1U << 2);
     playerState.active = 1U;
-    printf("[PLAYERSTATE] READY bytes=%u level=1 xp=0/80 hp=30/30 armor=0/20 def=16 str=12 agi=14 acc=16 ammo1=8 weapon=2 weapons=0004 stateFNV=%08x legacyPlayer=no\n",
+    printf("[PLAYERSTATE] READY bytes=%u level=1 xp=0/80 hp=30/30 armor=0/20 def=16 str=12 agi=14 acc=16 ammo1=8 weapon=2 weapons=0004 stateFNV=%08x legacyPlayer=no sharedOwner=combat+pickup+keys\n",
            (unsigned int)sizeof(playerState),
            (unsigned int)EspNativeGameplayPlayerState_fingerprint());
 }
@@ -126,11 +137,105 @@ int EspNativeGameplayPlayerState_restore(
 }
 
 int EspNativeGameplayPlayerState_adoptWeapon(uint8_t weapon) {
-    if (!EspNativeGameplayPlayerState_ensure() || weapon >= PLAYER_WEAPON_LIMIT) {
+    if (!EspNativeGameplayPlayerState_ensure() ||
+        weapon >= ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT) {
         return 0;
     }
     playerState.weapon = weapon;
     playerState.weapons |= (uint16_t)(1U << weapon);
+    return 1;
+}
+
+int EspNativeGameplayPlayerState_consumeAmmo(uint8_t ammoType,
+                                             uint8_t ammoUsage,
+                                             uint8_t* outBefore,
+                                             uint8_t* outAfter) {
+    uint8_t before;
+    if (outBefore != NULL) *outBefore = 0U;
+    if (outAfter != NULL) *outAfter = 0U;
+    if (!EspNativeGameplayPlayerState_ensure() ||
+        ammoType >= ESP_NATIVE_GAMEPLAY_PLAYER_AMMO_TYPES) return 0;
+    before = playerState.ammo[ammoType];
+    if (outBefore != NULL) *outBefore = before;
+    if (ammoUsage > before) {
+        if (outAfter != NULL) *outAfter = before;
+        return 0;
+    }
+    playerState.ammo[ammoType] = (uint8_t)(before - ammoUsage);
+    if (outAfter != NULL) *outAfter = playerState.ammo[ammoType];
+    return 1;
+}
+
+int EspNativeGameplayPlayerState_addAmmo(uint8_t ammoType,
+                                         uint8_t amount,
+                                         uint8_t* outAdded) {
+    if (outAdded != NULL) *outAdded = 0U;
+    if (!EspNativeGameplayPlayerState_ensure() ||
+        ammoType >= ESP_NATIVE_GAMEPLAY_PLAYER_AMMO_TYPES) return 0;
+    if (playerState.ammo[ammoType] == PLAYER_STACK_MAX) return 0;
+    playerState.ammo[ammoType] =
+        stackAdd(playerState.ammo[ammoType], amount, outAdded);
+    return 1;
+}
+
+int EspNativeGameplayPlayerState_addInventory(uint8_t slot,
+                                              uint8_t amount,
+                                              uint8_t* outAdded) {
+    if (outAdded != NULL) *outAdded = 0U;
+    if (!EspNativeGameplayPlayerState_ensure() ||
+        slot >= ESP_NATIVE_GAMEPLAY_PLAYER_INVENTORY_SLOTS) return 0;
+    if (playerState.inventory[slot] == PLAYER_STACK_MAX) return 0;
+    playerState.inventory[slot] =
+        stackAdd(playerState.inventory[slot], amount, outAdded);
+    return 1;
+}
+
+int EspNativeGameplayPlayerState_addHealth(uint8_t amount,
+                                           uint8_t* outAdded) {
+    uint8_t before;
+    uint8_t maxHealth;
+    uint16_t sum;
+    uint8_t next;
+    if (outAdded != NULL) *outAdded = 0U;
+    if (!EspNativeGameplayPlayerState_ensure()) return 0;
+    before = p1Health(playerState.param1);
+    maxHealth = p1MaxHealth(playerState.param1);
+    if (before >= maxHealth) return 0;
+    sum = (uint16_t)before + amount;
+    next = (uint8_t)(sum > maxHealth ? maxHealth : sum);
+    playerState.param1 = (playerState.param1 & 0xffffff00U) | next;
+    if (outAdded != NULL) *outAdded = (uint8_t)(next - before);
+    return 1;
+}
+
+int EspNativeGameplayPlayerState_addArmor(uint8_t amount,
+                                          uint8_t* outAdded) {
+    uint8_t before;
+    uint8_t maxArmor;
+    uint16_t sum;
+    uint8_t next;
+    if (outAdded != NULL) *outAdded = 0U;
+    if (!EspNativeGameplayPlayerState_ensure()) return 0;
+    before = p1Armor(playerState.param1);
+    maxArmor = p1MaxArmor(playerState.param1);
+    if (before >= maxArmor) return 0;
+    sum = (uint16_t)before + amount;
+    next = (uint8_t)(sum > maxArmor ? maxArmor : sum);
+    playerState.param1 = (playerState.param1 & 0xff00ffffU) |
+                         ((uint32_t)next << 16);
+    if (outAdded != NULL) *outAdded = (uint8_t)(next - before);
+    return 1;
+}
+
+int EspNativeGameplayPlayerState_addCredits(uint32_t amount) {
+    if (!EspNativeGameplayPlayerState_ensure()) return 0;
+    playerState.credits += amount;
+    return 1;
+}
+
+int EspNativeGameplayPlayerState_addKeys(uint32_t keyMask) {
+    if (!EspNativeGameplayPlayerState_ensure()) return 0;
+    playerState.keys |= keyMask;
     return 1;
 }
 
@@ -151,34 +256,25 @@ static void nextLevel(DoomRPG_t* doomRpg, uint32_t* rngCalls) {
     uint8_t strength;
     uint8_t agility;
     uint8_t accuracy;
-    uint8_t gainHealth;
-    uint8_t gainArmor;
-    uint8_t gainDefense;
-    uint8_t gainStrength;
-    uint8_t gainAgility;
-    uint8_t gainAccuracy;
 
     ++playerState.level;
     playerState.nextLevelXP = ((uint32_t)playerState.level * 20U) + 60U;
 
-    gainHealth = levelRoll(doomRpg, 3U, 3U, rngCalls);
-    maxHealth = cappedAdd(p1MaxHealth(playerState.param1), gainHealth);
+    maxHealth = cappedAdd(p1MaxHealth(playerState.param1),
+                          levelRoll(doomRpg, 3U, 3U, rngCalls));
+    maxArmor = cappedAdd(p1MaxArmor(playerState.param1),
+                         levelRoll(doomRpg, 3U, 3U, rngCalls));
+    defense = cappedAdd(p2Defense(playerState.param2),
+                        levelRoll(doomRpg, 1U, 2U, rngCalls));
+    strength = cappedAdd(p2Strength(playerState.param2),
+                         levelRoll(doomRpg, 1U, 2U, rngCalls));
+    agility = cappedAdd(p2Agility(playerState.param2),
+                        levelRoll(doomRpg, 1U, 2U, rngCalls));
+    accuracy = cappedAdd(p2Accuracy(playerState.param2),
+                         levelRoll(doomRpg, 1U, 2U, rngCalls));
 
-    gainArmor = levelRoll(doomRpg, 3U, 3U, rngCalls);
-    maxArmor = cappedAdd(p1MaxArmor(playerState.param1), gainArmor);
-
-    gainDefense = levelRoll(doomRpg, 1U, 2U, rngCalls);
-    defense = cappedAdd(p2Defense(playerState.param2), gainDefense);
-
-    gainStrength = levelRoll(doomRpg, 1U, 2U, rngCalls);
-    strength = cappedAdd(p2Strength(playerState.param2), gainStrength);
-
-    gainAgility = levelRoll(doomRpg, 1U, 2U, rngCalls);
-    agility = cappedAdd(p2Agility(playerState.param2), gainAgility);
-
-    gainAccuracy = levelRoll(doomRpg, 1U, 2U, rngCalls);
-    accuracy = cappedAdd(p2Accuracy(playerState.param2), gainAccuracy);
-
+    /* Legacy Player_nextLevel restores health to the new max but does not refill
+     * current armor when max armor increases. */
     playerState.param1 = packParam1(maxHealth,
                                     maxHealth,
                                     p1Armor(playerState.param1),
@@ -254,4 +350,14 @@ uint8_t EspNativeGameplayPlayerState_agility(void) {
 
 uint8_t EspNativeGameplayPlayerState_accuracy(void) {
     return EspNativeGameplayPlayerState_ensure() ? p2Accuracy(playerState.param2) : 0U;
+}
+
+uint8_t EspNativeGameplayPlayerState_ammo(uint8_t ammoType) {
+    if (!EspNativeGameplayPlayerState_ensure() ||
+        ammoType >= ESP_NATIVE_GAMEPLAY_PLAYER_AMMO_TYPES) return 0U;
+    return playerState.ammo[ammoType];
+}
+
+uint16_t EspNativeGameplayPlayerState_weapons(void) {
+    return EspNativeGameplayPlayerState_ensure() ? playerState.weapons : 0U;
 }
