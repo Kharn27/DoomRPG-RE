@@ -17,6 +17,8 @@ typedef struct EspNativeGameplayMonsterRetaliationView_s {
     uint32_t renderRollbacks;
     uint32_t lethalDeferred;
     uint32_t dogFamiliarDeferred;
+    uint32_t activationDeferred;
+    uint32_t activationObserved;
     uint16_t lastAttackerSpriteIndex;
     uint8_t active;
     uint8_t reserved;
