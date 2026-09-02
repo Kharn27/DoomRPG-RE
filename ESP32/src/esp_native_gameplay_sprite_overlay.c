@@ -6,7 +6,9 @@
 
 #define SPRITE_TYPE_ENEMY 1U
 #define SPRITE_HIDDEN 0x00010000UL
+#define SPRITE_SORT_BIAS 0x01000000UL
 #define SPRITE_FIXED_ANIM 0x80000000UL
+#define SPRITE_COMBAT_CORPSE_VISUAL 2U
 #define SPRITE_COMBAT_DEATH_VISUAL 4U
 #define SPRITE_COMBAT_PAIN_VISUAL 6U
 
@@ -43,16 +45,22 @@ int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
     (void)linkState;
     (void)linkOrder;
 
-    /* Native monster combat owns explicit fixed pain/death frames through the
-     * topology visual overlay. The sprite renderer already knows how to add a
-     * fixed animation offset, but previously only honored the immutable BSP
-     * FIXED_ANIM bit. Promote just these combat states into that existing
-     * renderer contract; leave ordinary enemy idle/attack animation untouched. */
+    /* Legacy monster rendering uses explicit visual 6 for pain, visual 4 for
+     * the short death pose and visual 2 for the stable corpse. The native
+     * sprite renderer only advances immutable FIXED_ANIM sprites, so promote
+     * exactly those recovered combat states into its fixed-offset contract.
+     * Non-gib deaths also receive the legacy corpse sort bias without mutating
+     * the immutable BSP sprite. */
     if (type == SPRITE_TYPE_ENEMY) {
         animation = (uint8_t)(visual & 0x0fU);
-        if (animation == SPRITE_COMBAT_DEATH_VISUAL ||
+        if (animation == SPRITE_COMBAT_CORPSE_VISUAL ||
+            animation == SPRITE_COMBAT_DEATH_VISUAL ||
             animation == SPRITE_COMBAT_PAIN_VISUAL) {
             outSprite->info |= SPRITE_FIXED_ANIM;
+        }
+        if (animation == SPRITE_COMBAT_CORPSE_VISUAL ||
+            animation == SPRITE_COMBAT_DEATH_VISUAL) {
+            outSprite->info |= SPRITE_SORT_BIAS;
         }
     }
     return 1;
