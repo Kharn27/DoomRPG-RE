@@ -3,13 +3,14 @@
 
 #include <stdint.h>
 
-#include "DoomRPG.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_state.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+struct DoomRPG_s;
 
 #define ESP_NATIVE_GAMEPLAY_STANDARD_WEAPONS 9U
 #define ESP_NATIVE_GAMEPLAY_MAX_ATTACK_LOOPS 3U
@@ -50,7 +51,7 @@ const EspNativeGameplayWeaponSpec* EspNativeGameplayCombatMath_weapon(
  * standard player weapon. This mutates only DoomRPG.random; callers own the
  * surrounding Random_t snapshot/rollback and all HP/ammo/world mutation. */
 int EspNativeGameplayCombatMath_rollPlayerAttack(
-    DoomRPG_t* doomRpg,
+    struct DoomRPG_s* doomRpg,
     uint8_t weaponIndex,
     const EspNativeGameplayPlayerState* player,
     const EspNativeGameplayMonsterRecord* target,
