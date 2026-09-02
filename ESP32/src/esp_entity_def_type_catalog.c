@@ -13,10 +13,11 @@ typedef struct EntityDefMetadata_s {
     uint16_t tileIndex;
     uint8_t type;
     uint8_t subtype;
+    int32_t parm;
 } EntityDefMetadata;
 
-typedef char EntityDefMetadata_must_be_4_bytes[
-    sizeof(EntityDefMetadata) == 4U ? 1 : -1];
+typedef char EntityDefMetadata_must_be_8_bytes[
+    sizeof(EntityDefMetadata) == 8U ? 1 : -1];
 
 static EntityDefMetadata
     entityDefMetadata[ESP_ENTITY_DEF_TYPE_CATALOG_MAX_DEFINITIONS];
@@ -28,6 +29,14 @@ static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
 
+static int32_t readLe32s(const uint8_t* p) {
+    uint32_t value = (uint32_t)p[0] |
+                     ((uint32_t)p[1] << 8) |
+                     ((uint32_t)p[2] << 16) |
+                     ((uint32_t)p[3] << 24);
+    return (int32_t)value;
+}
+
 static void clearCatalog(void) {
     memset(entityDefMetadata, 0, sizeof(entityDefMetadata));
     entityDefCount = 0U;
@@ -35,7 +44,10 @@ static void clearCatalog(void) {
     entityDefTypesReady = 0U;
 }
 
-static int insertMetadata(uint16_t tileIndex, uint8_t type, uint8_t subtype) {
+static int insertMetadata(uint16_t tileIndex,
+                          uint8_t type,
+                          uint8_t subtype,
+                          int32_t parm) {
     uint16_t pos = 0U;
 
     while (pos < entityDefMetadataCount &&
@@ -43,7 +55,7 @@ static int insertMetadata(uint16_t tileIndex, uint8_t type, uint8_t subtype) {
         ++pos;
     }
     /* Legacy type-only catalog retained the first definition for duplicate
-     * tile indices. Preserve that exact first-wins rule. */
+     * tile indices. Preserve that exact first-wins rule for all metadata. */
     if (pos < entityDefMetadataCount &&
         entityDefMetadata[pos].tileIndex == tileIndex) {
         return 1;
@@ -60,6 +72,7 @@ static int insertMetadata(uint16_t tileIndex, uint8_t type, uint8_t subtype) {
     entityDefMetadata[pos].tileIndex = tileIndex;
     entityDefMetadata[pos].type = type;
     entityDefMetadata[pos].subtype = subtype;
+    entityDefMetadata[pos].parm = parm;
     ++entityDefMetadataCount;
     return 1;
 }
@@ -120,7 +133,8 @@ int EspEntityDefTypeCatalog_buildFromPackEntry(
         }
         tileIndex = readLe16(record);
         if (tileIndex >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT) continue;
-        if (!insertMetadata(tileIndex, record[2], record[3])) {
+        if (!insertMetadata(tileIndex, record[2], record[3],
+                            readLe32s(record + 4U))) {
             clearCatalog();
             return 0;
         }
@@ -129,19 +143,35 @@ int EspEntityDefTypeCatalog_buildFromPackEntry(
     entityDefCount = count;
     entityDefTypesReady = 1U;
     entrance = findMetadata(ENTITY_DEF_LINE_ENTRANCE_TILE_INDEX);
-    printf("[ENTITYDEFTYPE] READY defs=%u metadata=%u cache=%uB tile312=%s%u subtype=%s%u\n",
+    printf("[ENTITYDEFTYPE] READY defs=%u metadata=%u cache=%uB recordBytes=%u tile312=%s%u subtype=%s%u parm=%ld\n",
            (unsigned int)entityDefCount,
            (unsigned int)entityDefMetadataCount,
            (unsigned int)sizeof(entityDefMetadata),
+           (unsigned int)sizeof(entityDefMetadata[0]),
            entrance == NULL ? "none/" : "type/",
            (unsigned int)(entrance == NULL ? 0xffU : entrance->type),
            entrance == NULL ? "none/" : "subtype/",
-           (unsigned int)(entrance == NULL ? 0xffU : entrance->subtype));
+           (unsigned int)(entrance == NULL ? 0xffU : entrance->subtype),
+           (long)(entrance == NULL ? 0 : entrance->parm));
     return 1;
 }
 
 int EspEntityDefTypeCatalog_isReady(void) {
     return entityDefTypesReady != 0U;
+}
+
+int EspEntityDefTypeCatalog_getMetadata(uint16_t tileIndex,
+                                        uint8_t* outType,
+                                        uint8_t* outSubtype,
+                                        int32_t* outParm) {
+    const EntityDefMetadata* metadata;
+    if (outType == NULL || outSubtype == NULL || outParm == NULL) return 0;
+    metadata = findMetadata(tileIndex);
+    if (metadata == NULL) return 0;
+    *outType = metadata->type;
+    *outSubtype = metadata->subtype;
+    *outParm = metadata->parm;
+    return 1;
 }
 
 int EspEntityDefTypeCatalog_getTypeAndSubtype(uint16_t tileIndex,
@@ -172,6 +202,15 @@ int EspEntityDefTypeCatalog_getSubtype(uint16_t tileIndex,
     metadata = findMetadata(tileIndex);
     if (metadata == NULL) return 0;
     *outSubtype = metadata->subtype;
+    return 1;
+}
+
+int EspEntityDefTypeCatalog_getParm(uint16_t tileIndex, int32_t* outParm) {
+    const EntityDefMetadata* metadata;
+    if (outParm == NULL) return 0;
+    metadata = findMetadata(tileIndex);
+    if (metadata == NULL) return 0;
+    *outParm = metadata->parm;
     return 1;
 }
 
