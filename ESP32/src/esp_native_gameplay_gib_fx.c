@@ -11,6 +11,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_player_view_state.h"
@@ -297,14 +298,16 @@ int EspNativeGameplayActionEngine_present(void) {
 }
 
 /* Public gameplay-session wrappers. Run the complete existing player-resource /
- * action / monster-combat service first, then own only the bounded presentation
- * lease. No gameplay state or gameplay RNG is touched by this layer. */
+ * action / monster-combat / turn-probe chain first, then commit the matching
+ * bounded nonlethal retaliation transaction before servicing gib expiry. */
 void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayPlayerResources_sessionService(doomRpg);
+    EspNativeGameplayMonsterRetaliation_service(doomRpg);
     serviceExpiry(doomRpg);
 }
 
 void __wrap_EspNativeGameplaySession_reset(void) {
     EspNativeGameplayPlayerResources_sessionReset();
+    EspNativeGameplayMonsterRetaliation_reset();
     resetFx();
 }

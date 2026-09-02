@@ -7,15 +7,15 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main = 854ade1a7110fff44926099bdae418ca47e55365
-branch = agent/esp32-native-player-resources
-base main = 854ade1a7110fff44926099bdae418ca47e55365
-hardware-tested code boundary = 8152cf8d233067a44b2d705edcaf315845b7744a
-status = REAL-CYD GENERIC PLAYER RESOURCES + PROJECTION + GIB FX PASS
+main = 0d46418a79f66592235fa88fab15b007ccb3a8b2
+branch = agent/esp32-native-monster-turn
+base main = 0d46418a79f66592235fa88fab15b007ccb3a8b2
+hardware-tested code boundary = e08b8a8bf7eca8b602c32a7559f142d44e3e9965
+status = REAL-CYD GENERIC MONSTER TURN + NONLETHAL RETALIATION + RNG REPLAY PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`8152cf8d...` is the last code commit exercised on the real CYD. Commits after
+`e08b8a8b...` is the last code commit exercised on the real CYD. Commits after
 that boundary must remain documentation-only until merge.
 
 After merge, read the real GitHub `main` SHA again before creating the next
@@ -138,19 +138,10 @@ The combat backend is generic for `type=1`; ordinary monsters remain data-driven
 by `subtype/mType` and compact stats. Hellhound and Zombie have both been used as
 hardware corpus witnesses through the same backend.
 
-Owned direct-combat semantics include:
-
-```text
-persistent HP / armor
-legacy integer hit / crit / damage math
-mType resistance/weakness table
-transactional gameplay RNG
-pain visual 6 / 250 ms
-ordinary death visual 4 -> corpse visual 2
-recovered generic overkill/gib classification
-XP application into shared PlayerState
-full monster/player/RNG rollback on render failure
-```
+Owned player-attack semantics include persistent monster HP/armor, exact integer
+hit/crit/damage math, mType resistance/weakness, transactional gameplay RNG,
+pain/death/gib presentation, XP application into PlayerState, and rollback on
+render failure.
 
 ## Shared native PlayerState
 
@@ -168,45 +159,27 @@ inventory[5]
 weapon bits / selected weapon
 ```
 
-Combat, pickups, ammo and progression must continue to share this owner. Do not
-create per-feature or per-item player state islands.
+Combat, pickups, ammo, progression and monster retaliation share this owner. Do
+not create per-feature or per-item player-state islands.
 
-## Generic player resources / pickups — COMPLETE hardware milestone
+## Generic player resources / pickups — hardware PASS
 
 Detailed milestone:
 
 [`MILESTONE_NATIVE_PLAYER_RESOURCES.md`](MILESTONE_NATIVE_PLAYER_RESOURCES.md)
 
-The historical weapon-only bring-up path has been superseded by one generic
-resource executor backed by EntityDef metadata and PlayerState.
-
-### EntityDef metadata
-
-Native metadata now retains compact `{tile,type,subtype,parm}` records. The
-catalog is allocated when native gameplay metadata is built rather than as a
-large boot-time BSS table.
+Native EntityDef metadata retains compact `{tile,type,subtype,parm}` records and
+is allocated only when gameplay metadata is built.
 
 Real-CYD Entrance witness:
 
 ```text
 [ENTITYDEFTYPE] READY defs=115 metadata=115 cache=920B recordBytes=8 ...
-```
-
-This change also fixed the temporary boot fragmentation regression that had made
-`menu.bsp` fail its 10992 B inflate-state allocation. Normal boot is hardware
-validated again.
-
-### Generic corpus
-
-```text
 [PLAYERRES] READY map=1 arena=c3882516 sprites=344 consumedBytes=43 playerBytes=52 ... families=3/4/5/6/16
 [PLAYERRES] CORPUS map=1 arena=c3882516 pickups=114 type3=84 type4=6 type5=3 type6=17 type16=4 routes=all-generic playerOwner=shared
 ```
 
-One map-local consumed bitset owns pickup disappearance; Entrance uses 43 B for
-344 sprites. Player values live in PlayerState, not in that bitset owner.
-
-Hardware-validated resource families:
+Hardware-validated families:
 
 ```text
 type 3  health / armor / credits / keys
@@ -216,93 +189,132 @@ type 6  ammo
 type 16 alternate ammo entries
 ```
 
-Real display witnesses include:
-
-```text
-armor shard: 0 -> 4 -> 8 armor, both sprites disappear
-medkit/inventory: value 0 -> 1, sprite disappears
-extinguisher pickup: selected weapon becomes 1, sprite disappears
-extinguisher recharge: ammo0 10 -> 13, sprite disappears
-credits: 0 -> 1, sprite disappears
-```
-
-HUD health/armor/weapon/ammo projection now reads the same shared PlayerState.
+HUD health/armor/weapon/ammo projection reads the same PlayerState.
 
 ## Extinguisher ammo transaction — hardware PASS
 
-Fire removal now consumes ammo from PlayerState inside the same transactional
-world update:
+Fire removal consumes ammo from PlayerState transactionally:
 
 ```text
-[ACTIONENGINE] FIRE-COMMIT seq=76 sprite=74 ammoType=0 ammo=10->9 playerFNV=a6e115a7->15cb16e4 xp=2-deferred sound=5045-deferred turnAdvance=deferred rollback=closed
+[ACTIONENGINE] FIRE-COMMIT ... ammoType=0 ammo=10->9 ... rollback=closed
 ```
 
-The real HUD decremented from 10 to 9 when the fire was extinguished.
+The real HUD decremented with the same owner. Fire +2 XP and historical
+jammed-door +1 XP remain deferred.
 
-Fire +2 XP remains deferred and is not yet migrated into the permanent
-progression owner. The historical jammed-door +1 XP is also still deferred.
-
-## Generic monster presentation repairs — hardware PASS
-
-Validation of pickups exposed a projection bug where mutable visual state could
-be logged correctly but overwritten before sprite drawing. The projection chain
-is now composed at the final topology/render boundary.
-
-### Pain
-
-Nonlethal hits show visual 6 briefly and return to the normal sprite. This was
-observed physically on the Hellhound.
-
-### Ordinary death
-
-A non-gib ordinary death uses:
+## Generic monster presentation — hardware PASS
 
 ```text
-death visual 4 / 250 ms
- -> stable corpse visual 2
- -> entity remains unlinked/dead
+nonlethal hit
+ -> pain visual 6 / 250 ms
+ -> normal visual
+
+ordinary non-gib death
+ -> death visual 4 / 250 ms
+ -> corpse visual 2, unlinked
+
+overkill/gib death
+ -> death visual 4 / 250 ms
+ -> hidden + bounded native gib burst
+ -> burst expires after 350 ms by world redraw
 ```
 
-This is a generic monster presentation state machine, not a subtype-specific
-route.
+The gib layer is presentation-only and uses local deterministic visual RNG; it
+does not consume gameplay RNG or revive legacy ParticleSystem ownership.
 
-### Overkill / gib
+## Native monster turn / retaliation — hardware PASS
 
-Legacy overkill classification is also generic. A gibbed monster has no corpse:
-after the death pose it becomes hidden and a bounded native presentation-only
-burst replaces it.
+Detailed milestone:
 
-Current native gib FX:
+[`MILESTONE_NATIVE_MONSTER_TURN.md`](MILESTONE_NATIVE_MONSTER_TURN.md)
+
+This is the first live enemy-turn family. It is generic, not dog/zombie-specific.
+A committed MOVE, ROTATE, or PLAYER_ATTACK can schedule a native turn. The
+current bounded executor accepts one unambiguous already-positioned `type=1`
+attacker with cardinal native LOS and a recovered supported monster weapon.
+
+Owned live consequences:
 
 ```text
-owner = 148 B
-chunks = 5
-particle count = bounded by monster max health
-lease = 350 ms
-visual RNG = local deterministic xorshift
-gameplay RNG = untouched
-legacy ParticleSystem = not owned
+stationary cardinal attacker selection
+native tile / line / sprite LOS
+legacy-compatible monster weapon selection
+legacy-compatible AI decision byte where applicable
+legacy-compatible hit / crit / damage / armor math
+nonlethal HP + armor mutation in shared PlayerState
+transactional native redraw
+miss gameplay-RNG commit path
+render/RNG failure rollback
 ```
 
-Final hardware witness at the locked code boundary:
+Still fail-closed inside this family:
 
 ```text
-[MONSTERCOMBAT] DEATH-SETTLE sprite=179 visual=4->hidden delayMs=250 gib=1 gibFX=deferred immutableSprite=yes
-[GIBFX] PAINT sprite=179 subtype=1 particles=17 chunks=5 pixels=86 center=80,52 ownerBytes=148 leaseMs=350 visualRng=local gameplayRng=untouched legacyParticleSystem=no
-[GIBFX] EXPIRE sprite=179 leaseMs=350 frame=1426a13d presented=1 restored=world-redraw gameplayRng=untouched
+multiple ambiguous attackers / activation ordering
+monster movement / pathfinding / mutable positions
+special subtype-10 AI
+player lethal/death transition
+dog-familiar damage redirection
+attack visual / player pain FX / damage text / sound
 ```
 
-The user confirmed the burst disappears automatically without movement or touch.
-Zombie subtype 0 was also exercised through the same generic gib family on the
-preceding code boundary.
+### RNG refill transaction repair
+
+Hardware testing found that `Random_t` alone is not the full legacy RNG state.
+When byte index 127 is crossed, `DoomRPG_setRand()` regenerates the 128-byte table
+using hidden file-static generator state. A speculative probe could therefore
+advance that hidden generator, restore `Random_t`, and receive a different table
+when the live replay crossed the same boundary.
+
+The generic `DoomRPG_randNextByte()` replay guard now makes an immediate exact
+transactional refill idempotent:
+
+```text
+owner = 280 B static bounded state
+allocation = none
+lease = 1000 ms
+first logical refill = advance hidden generator once
+rollback replay = reuse exact cached post-refill Random_t
+normal non-refill sequence = unchanged
+```
+
+Decisive real-CYD witness:
+
+```text
+[RNGGUARD] REFILL refill=1 ... hiddenGenerator=advanced-once rollbackReplay=armed
+[MONSTERTURN] ATTACK-PROBE ... sprite=179 ... firstRandHit=63 firstRandDamage=1 totalDamage=1 armorDamage=1 ... rngRollback=yes playerExact=yes
+[RNGGUARD] REPLAY refill=1 replay=1 ... hiddenGenerator=untouched rollbackSafe=yes
+[MONSTERRETAL] COMMIT ... sprite=179 ... firstRandHit=63 firstRandDamage=1 totalDamage=1 armorDamage=1 playerHP=30->29 armor=12->11 rollback=closed
+```
+
+The replay is byte-for-byte identical across the refill boundary.
+
+Additional hardware corpus through the same backend:
+
+```text
+Hellhound ordinary replay:
+  firstRandHit=149 firstRandDamage=75 damage=1 armorDamage=1
+  HP 29->28 armor 11->10
+
+Zombie ranged hit:
+  aiRand=119 firstRandHit=96 firstRandDamage=45 damage=3 armorDamage=2
+  HP 30->27 armor 14->12
+
+Zombie critical hit:
+  aiRand=46 firstRandHit=11 firstRandDamage=95 crit=1 damage=7 armorDamage=5
+  HP 27->20 armor 12->7
+```
+
+Probe and live commit values matched exactly for those witnesses.
 
 ## Representative final RAM witness
 
-Latest gameplay logs around the final combat test:
+Latest real-CYD gameplay logs at the locked code boundary:
 
 ```text
-heap8 = 19788 B
-largest8 = 14324 B
+heap = 85000 B
+heap8 = 19236 B
+largest8 = 13812 B
 shapeData = NULL
 mediaTexels = NULL
 PSRAM = none
@@ -330,11 +342,12 @@ native idle weapon rendering
 generic attack frame presentation
 move-event state mutation with rollback/commit
 jammed-door destructible subtype-3 destruction and traversal
-generic monster state + combat
+generic monster state + player-attack combat
 generic player resources / pickup disappearance
 shared PlayerState HUD projection
 extinguisher ammo consumption
 generic death / corpse / gib presentation
+bounded generic stationary monster retaliation
 ```
 
 ## Intentionally deferred families
@@ -343,13 +356,15 @@ Still explicit/deferred:
 
 ```text
 pickup sounds/messages/got-face presentation
-combat MISS/HIT/CRIT text feedback
+combat/retaliation MISS/HIT/CRIT text feedback
 fire +2 XP and jammed-door +1 XP migration into PlayerState
 materialized monster drops
 corpse-pile trimming
-enemy retaliation / native monster AI turn
-turn advancement
-audio playback
+monster movement / pathfinding / mutable position owner
+multiple-monster activation/order semantics
+player death/lethal retaliation transition
+monster attack/pain presentation and sound
+full native turn advancement orchestration
 multi-loop chaingun/plasma presentation/commit
 rocket/BFG radius damage
 special death consequences for subtypes 7, 8, 12, 13
@@ -389,14 +404,14 @@ After merge:
 Strong candidates now include:
 
 ```text
-shared combat/action feedback: MISS / HIT / CRIT + pickup messages
-migrate deferred action XP into PlayerState
-standard ammo-consuming direct-fire weapon family
-monster turn / retaliation owner
+monster attack/player-pain presentation + combat feedback
+player lethal/death transition
+native monster movement/pathfinding position owner
+action XP migration into PlayerState
 materialized monster drops
 ```
 
-Choose the next bounded family only after re-reading the merged `main`.
+Choose the next bounded family only after re-reading merged `main`.
 
 ## Development workflow
 
