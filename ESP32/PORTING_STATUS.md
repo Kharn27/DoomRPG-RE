@@ -7,16 +7,16 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main = 563804b09fda67ba06516c8dc13585a1125a4bb0
-branch = agent/esp32-native-dog-combat
-base main = 563804b09fda67ba06516c8dc13585a1125a4bb0
-hardware-tested code boundary = e56bfcf86489f5b0f9ae10deb29a73fabf098756
-status = REAL-CYD GENERIC NATIVE MONSTER COMBAT PASS
+main = 854ade1a7110fff44926099bdae418ca47e55365
+branch = agent/esp32-native-player-resources
+base main = 854ade1a7110fff44926099bdae418ca47e55365
+hardware-tested code boundary = 8152cf8d233067a44b2d705edcaf315845b7744a
+status = REAL-CYD GENERIC PLAYER RESOURCES + PROJECTION + GIB FX PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`e56bfcf...` is the code exercised on the real CYD. Commits after that boundary
-must remain documentation-only until this branch is merged.
+`8152cf8d...` is the last code commit exercised on the real CYD. Commits after
+that boundary must remain documentation-only until merge.
 
 After merge, read the real GitHub `main` SHA again before creating the next
 `agent/*` branch.
@@ -54,7 +54,7 @@ backing     = /DoomRPG-ESP32.pak
 ```
 
 Do not reintroduce map-wide legacy texels, desktop pointer-heavy world ownership,
-or runtime ZIP dependence for migrated map data.
+or runtime ZIP dependence for migrated gameplay/map data.
 
 ## Entrance canonical witness
 
@@ -106,49 +106,55 @@ resident entry slots = 24
 large exact range = 2048 B
 ```
 
-The global cache-reset cliff remains visible and is not fixed by this gameplay
-milestone. Preserve this baseline while correctness work advances.
+The global cache-reset cliff remains separate performance work. Preserve this
+baseline while correctness work advances.
 
-## Generic native monster-state initialization — hardware PASS
+## Generic native monster state/combat — hardware PASS
 
-Entrance monster initialization is now a permanent compact owner rather than a
-legacy `Entity_t`/`CombatEntity_t` graph.
+Detailed milestone:
+
+[`MILESTONE_NATIVE_MONSTER_COMBAT.md`](MILESTONE_NATIVE_MONSTER_COMBAT.md)
+
+Permanent engine split:
 
 ```text
-[MONSTERSTATE] READY arena=c3882516 enemies=30 ownerBytes=480 recordBytes=16 enemyDefs=38 rngCalls=180 rng=e19e2f15->76e68ad6 stateFNV=ff52899c noLegacyEntity=yes packOpen=0
-[MONSTERSTATE] WITNESS sprite=179 defTile=20 subtype=1 mType=1 hp=6/6 armor=2/2 def=10 str=12 agi=10 acc=10 alt=0 alive=1
+MonsterTrace
+ -> CombatMath
+ -> MonsterState + PlayerState
+ -> MonsterCombat transaction
+ -> renderer/liveness overlays
 ```
 
-Canonical owner:
+Entrance monster owner:
 
 ```text
 30 enemies
 16 B / enemy
-480 B total on Entrance
-180 exact legacy RNG calls during initialization
+480 B total
+180 legacy-compatible RNG calls during initialization
 ```
 
-## Generic native monster combat — COMPLETE hardware milestone
+The combat backend is generic for `type=1`; ordinary monsters remain data-driven
+by `subtype/mType` and compact stats. Hellhound and Zombie have both been used as
+hardware corpus witnesses through the same backend.
 
-Detailed milestone record:
-
-[`MILESTONE_NATIVE_MONSTER_COMBAT.md`](MILESTONE_NATIVE_MONSTER_COMBAT.md)
-
-Permanent modules:
+Owned direct-combat semantics include:
 
 ```text
-esp_native_gameplay_monster_state.*   compact mutable enemy HP/armor/stats/liveness
-esp_native_gameplay_monster_trace.*   generic forward target trace
-esp_native_gameplay_combat_math.*     shared hit/crit/damage + weapon/mType tables
-esp_native_gameplay_player_state.*    shared compact player owner
-esp_native_gameplay_monster_combat.*  transaction orchestration + visual/liveness overlay
+persistent HP / armor
+legacy integer hit / crit / damage math
+mType resistance/weakness table
+transactional gameplay RNG
+pain visual 6 / 250 ms
+ordinary death visual 4 -> corpse visual 2
+recovered generic overkill/gib classification
+XP application into shared PlayerState
+full monster/player/RNG rollback on render failure
 ```
 
-The combat backend is generic for `type=1`; ordinary monsters are data-driven by
-`subtype/mType`. The dog was only the first corpus witness, not a permanent
-special route.
+## Shared native PlayerState
 
-The shared `EspNativeGameplayPlayerState` is 52 B and is the intended owner for:
+`EspNativeGameplayPlayerState` is the one 52 B player-facing owner for:
 
 ```text
 HP / max HP
@@ -162,87 +168,147 @@ inventory[5]
 weapon bits / selected weapon
 ```
 
-This owner is deliberately shared by combat, future pickups, keys and progression.
-Do not create per-item or per-feature player mini-owners.
+Combat, pickups, ammo and progression must continue to share this owner. Do not
+create per-feature or per-item player state islands.
 
-### Real-CYD witness A — Hellhound subtype 1
+## Generic player resources / pickups — COMPLETE hardware milestone
 
-First hit, same persistent monster owner:
+Detailed milestone:
 
-```text
-[MONSTERCOMBAT] ARM seq=85 sprite=179 tile=750 subtype=1 mType=1 weapon=0 distance=1 hp=6/6 armor=2/2 def=10 agi=10 playerAcc=16 playerStr=12 backend=generic-type1 rng=pending mutation=no rollback=armed
-[MONSTERCOMBAT] ROLL seq=85 ... firstRandHit=86 firstCalcHit=293 firstCritLimit=14 firstRandDamage=5 totalDamage=3 armorDamage=0 crit=0 rngCalls=3
-[MONSTERCOMBAT] COMMIT seq=85 ... hp=6->3 armor=2->2 alive=1->1 ... visual=pain6/250ms ... xp=0-applied ... rollback=closed
-```
+[`MILESTONE_NATIVE_PLAYER_RESOURCES.md`](MILESTONE_NATIVE_PLAYER_RESOURCES.md)
 
-Second hit kills the same record:
+The historical weapon-only bring-up path has been superseded by one generic
+resource executor backed by EntityDef metadata and PlayerState.
 
-```text
-[MONSTERCOMBAT] ARM seq=86 sprite=179 ... hp=3/6 armor=2/2 ...
-[MONSTERCOMBAT] ROLL seq=86 ... firstRandHit=197 ... firstRandDamage=182 totalDamage=10 armorDamage=1 crit=0 rngCalls=3
-[MONSTERCOMBAT] COMMIT seq=86 ... hp=3->0 armor=2->1 alive=1->0 ... visual=gib-hidden+unlink ... xp=5-applied level=1->1 levelUps=0 dropRoll=value/33ff5932 ... rollback=closed
-```
+### EntityDef metadata
 
-This proves persistent HP mutation, pain presentation, lethal liveness change,
-XP mutation and renderer commit on a real CYD.
+Native metadata now retains compact `{tile,type,subtype,parm}` records. The
+catalog is allocated when native gameplay metadata is built rather than as a
+large boot-time BSS table.
 
-### Real-CYD witness B — Zombie subtype 0
-
-A second subtype used the exact same backend and was killed in one hit:
+Real-CYD Entrance witness:
 
 ```text
-[MONSTERCOMBAT] ARM seq=107 sprite=106 tile=424 subtype=0 mType=0 weapon=0 distance=1 hp=7/7 armor=5/5 def=17 agi=16 playerAcc=16 playerStr=12 backend=generic-type1 rng=pending mutation=no rollback=armed
-[MONSTERCOMBAT] ROLL seq=107 ... firstRandHit=70 firstCalcHit=217 firstCritLimit=10 firstRandDamage=80 totalDamage=11 armorDamage=1 crit=0 rngCalls=4
-[MONSTERCOMBAT] COMMIT seq=107 ... hp=7->0 armor=5->4 alive=1->0 ... visual=death4+unlink ... xp=6-applied level=1->1 levelUps=0 dropRoll=value/02bcbb60 ... rollback=closed
+[ENTITYDEFTYPE] READY defs=115 metadata=115 cache=920B recordBytes=8 ...
 ```
 
-Subsequent SELECTs still show the older compatibility `[ACTIONENGINE] TRACE`
-against raw sprite 106, but no new `[MONSTERCOMBAT] ARM` occurs because native
-combat correctly sees `alive=0`. This is compatibility-log noise, not a liveness
-bug; the zombie is already dead after the first axe hit.
+This change also fixed the temporary boot fragmentation regression that had made
+`menu.bsp` fail its 10992 B inflate-state allocation. Normal boot is hardware
+validated again.
 
-## Combat semantics now owned
-
-For the currently enabled direct single-target family:
+### Generic corpus
 
 ```text
-generic type=1 target trace
-persistent HP / armor
-player accuracy / strength from PlayerState
-legacy integer hit calculation
-legacy crit threshold
-legacy integer damage / armor split
-mType resistance/weakness table
-transactional RNG
-pain visual state 6
-normal death state 4 + unlink
-gib-hidden + unlink where recovered
-permanent XP application
-permanent level/XP owner
-RNG-capable level-up path
-full RNG + monster + player rollback if render fails
+[PLAYERRES] READY map=1 arena=c3882516 sprites=344 consumedBytes=43 playerBytes=52 ... families=3/4/5/6/16
+[PLAYERRES] CORPUS map=1 arena=c3882516 pickups=114 type3=84 type4=6 type5=3 type6=17 type16=4 routes=all-generic playerOwner=shared
 ```
 
-Ordinary monsters must stay table/data-driven. Do not add per-zombie, per-dog,
-per-imp or per-pinky combat handlers.
+One map-local consumed bitset owns pickup disappearance; Entrance uses 43 B for
+344 sprites. Player values live in PlayerState, not in that bitset owner.
 
-## Intentionally deferred combat families
-
-Mechanically distinct families still remain explicit and fail-closed/deferred:
+Hardware-validated resource families:
 
 ```text
-enemy retaliation / native monster AI turn
-actual sound playback
-corpse-pile trimming
-materialized monster drops
-fully enabled ammo-consuming weapon transaction
-multi-loop presentation/commit for chaingun/plasma
-radius damage for rocket/BFG
-special death consequences for subtypes 7, 8, 12, 13
-Kronos-specific hit/teleport semantics where applicable
+type 3  health / armor / credits / keys
+type 4  inventory
+type 5  weapons
+type 6  ammo
+type 16 alternate ammo entries
 ```
 
-These are family boundaries, not a monster-by-monster implementation ladder.
+Real display witnesses include:
+
+```text
+armor shard: 0 -> 4 -> 8 armor, both sprites disappear
+medkit/inventory: value 0 -> 1, sprite disappears
+extinguisher pickup: selected weapon becomes 1, sprite disappears
+extinguisher recharge: ammo0 10 -> 13, sprite disappears
+credits: 0 -> 1, sprite disappears
+```
+
+HUD health/armor/weapon/ammo projection now reads the same shared PlayerState.
+
+## Extinguisher ammo transaction — hardware PASS
+
+Fire removal now consumes ammo from PlayerState inside the same transactional
+world update:
+
+```text
+[ACTIONENGINE] FIRE-COMMIT seq=76 sprite=74 ammoType=0 ammo=10->9 playerFNV=a6e115a7->15cb16e4 xp=2-deferred sound=5045-deferred turnAdvance=deferred rollback=closed
+```
+
+The real HUD decremented from 10 to 9 when the fire was extinguished.
+
+Fire +2 XP remains deferred and is not yet migrated into the permanent
+progression owner. The historical jammed-door +1 XP is also still deferred.
+
+## Generic monster presentation repairs — hardware PASS
+
+Validation of pickups exposed a projection bug where mutable visual state could
+be logged correctly but overwritten before sprite drawing. The projection chain
+is now composed at the final topology/render boundary.
+
+### Pain
+
+Nonlethal hits show visual 6 briefly and return to the normal sprite. This was
+observed physically on the Hellhound.
+
+### Ordinary death
+
+A non-gib ordinary death uses:
+
+```text
+death visual 4 / 250 ms
+ -> stable corpse visual 2
+ -> entity remains unlinked/dead
+```
+
+This is a generic monster presentation state machine, not a subtype-specific
+route.
+
+### Overkill / gib
+
+Legacy overkill classification is also generic. A gibbed monster has no corpse:
+after the death pose it becomes hidden and a bounded native presentation-only
+burst replaces it.
+
+Current native gib FX:
+
+```text
+owner = 148 B
+chunks = 5
+particle count = bounded by monster max health
+lease = 350 ms
+visual RNG = local deterministic xorshift
+gameplay RNG = untouched
+legacy ParticleSystem = not owned
+```
+
+Final hardware witness at the locked code boundary:
+
+```text
+[MONSTERCOMBAT] DEATH-SETTLE sprite=179 visual=4->hidden delayMs=250 gib=1 gibFX=deferred immutableSprite=yes
+[GIBFX] PAINT sprite=179 subtype=1 particles=17 chunks=5 pixels=86 center=80,52 ownerBytes=148 leaseMs=350 visualRng=local gameplayRng=untouched legacyParticleSystem=no
+[GIBFX] EXPIRE sprite=179 leaseMs=350 frame=1426a13d presented=1 restored=world-redraw gameplayRng=untouched
+```
+
+The user confirmed the burst disappears automatically without movement or touch.
+Zombie subtype 0 was also exercised through the same generic gib family on the
+preceding code boundary.
+
+## Representative final RAM witness
+
+Latest gameplay logs around the final combat test:
+
+```text
+heap8 = 19788 B
+largest8 = 14324 B
+shapeData = NULL
+mediaTexels = NULL
+PSRAM = none
+```
+
+The selected resident asset-cache baseline remains unchanged.
 
 ## Existing gameplay boundary retained
 
@@ -262,42 +328,42 @@ regular door open/close animation
 mutable line texture variants
 native idle weapon rendering
 generic attack frame presentation
-weapon pickup eType=5
-adjacent extinguisher fire removal
 move-event state mutation with rollback/commit
 jammed-door destructible subtype-3 destruction and traversal
+generic monster state + combat
+generic player resources / pickup disappearance
+shared PlayerState HUD projection
+extinguisher ammo consumption
+generic death / corpse / gib presentation
 ```
 
-Jammed door still keeps its historical +1 XP deferred; that old route has not yet
-been migrated into the new permanent player progression owner.
+## Intentionally deferred families
 
-## Next milestone after merge — generic resources/pickups + ammo weapons
-
-Do **not** continue code on this locked branch after the hardware PASS.
-
-After merge:
-
-1. read actual GitHub `main` and exact SHA;
-2. create a fresh coherent `agent/*` branch;
-3. recover exact legacy semantics for player-facing pickup families;
-4. route health, armor, credits, keys, ammo, inventory and weapon acquisition
-   through the one `EspNativeGameplayPlayerState` owner;
-5. enable standard ammo-consuming direct-fire weapons through the existing
-   table-driven combat backend;
-6. validate multiple distinct pickup categories and multiple distinct weapons as
-   corpus witnesses for one generic resource engine;
-7. keep radius-damage weapons and materially different scripted effects
-   fail-closed until their family owner exists.
+Still explicit/deferred:
 
 ```text
-NO per-casque ladder.
-NO per-gourde ladder.
-NO per-monster ladder.
+pickup sounds/messages/got-face presentation
+combat MISS/HIT/CRIT text feedback
+fire +2 XP and jammed-door +1 XP migration into PlayerState
+materialized monster drops
+corpse-pile trimming
+enemy retaliation / native monster AI turn
+turn advancement
+audio playback
+multi-loop chaingun/plasma presentation/commit
+rocket/BFG radius damage
+special death consequences for subtypes 7, 8, 12, 13
+Kronos-specific semantics
+password input
+SAVEGAME / CHANGEMAP production transition consumer
 ```
+
+These are mechanical family boundaries, never an item-by-item or monster-by-
+monster implementation ladder.
 
 ## CHANGEMAP remains deferred
 
-Entrance event 1 / tile 69 is already recovered but intentionally not live yet:
+Entrance event 1 / tile 69 remains recovered but intentionally not live yet:
 
 ```text
 SAVEGAME -> /junction.bsp, targetMapId 9, savePos 992,1888 angle 64
@@ -307,6 +373,30 @@ OPENLINE -> third eligible command
 
 Do not force the transition before enough native gameplay exists to complete the
 map normally.
+
+## Next direction after merge
+
+Do **not** continue code on this locked branch.
+
+After merge:
+
+1. read actual GitHub `main` and exact SHA;
+2. create a fresh coherent `agent/*` branch from that SHA;
+3. recover the next gameplay family from legacy behavior;
+4. prefer engine-level consequences that close existing deferred seams rather
+   than per-entity milestones.
+
+Strong candidates now include:
+
+```text
+shared combat/action feedback: MISS / HIT / CRIT + pickup messages
+migrate deferred action XP into PlayerState
+standard ammo-consuming direct-fire weapon family
+monster turn / retaliation owner
+materialized monster drops
+```
+
+Choose the next bounded family only after re-reading the merged `main`.
 
 ## Development workflow
 
