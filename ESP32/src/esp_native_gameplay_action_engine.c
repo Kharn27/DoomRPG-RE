@@ -20,6 +20,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_player_view_state.h"
@@ -38,6 +39,9 @@
 #define ACTION_ENTITY_DESTRUCTIBLE 12U
 #define ACTION_DESTRUCTIBLE_JAMMED_SUBTYPE 3U
 #define ACTION_WEAPON_AXE 0U
+#define ACTION_WEAPON_EXTINGUISHER 1U
+#define ACTION_EXTINGUISHER_AMMO_TYPE 0U
+#define ACTION_EXTINGUISHER_AMMO_USAGE 1U
 
 /* Legacy Player_reset accuracy=16, Combat_calcHit() derives dummy agility=12
  * and the axe adds its range term: 170 + 89 = 259. randHit is one byte, so
@@ -249,7 +253,7 @@ static void logCorpus(void) {
         else if (type == ACTION_ENTITY_DESTRUCTIBLE) ++destructibles;
     }
 
-    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes feedbackMs=%u ammo=deferred monsterCombat=deferred jammedDoor3=axe-adjacent-owned otherDestructibles=deferred\n",
+    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes feedbackMs=%u ammo=playerState monsterCombat=deferred jammedDoor3=axe-adjacent-owned otherDestructibles=deferred\n",
            (unsigned int)actionState.targetMapId,
            (unsigned int)actionState.arenaFNV,
            (unsigned int)actionState.spriteCount,
@@ -555,7 +559,9 @@ static ActionRoute routeTarget(const ActionTarget* target, uint8_t weapon) {
     if (target == NULL) return ACTION_ROUTE_INVALID;
     if (target->type == ACTION_ENTITY_HUMAN) return ACTION_ROUTE_HUMAN;
     if (target->type == ACTION_ENTITY_FIRE) {
-        return weapon == 1U ? ACTION_ROUTE_FIRE_CLEARED : ACTION_ROUTE_NOTHING;
+        return weapon == ACTION_WEAPON_EXTINGUISHER
+                   ? ACTION_ROUTE_FIRE_CLEARED
+                   : ACTION_ROUTE_NOTHING;
     }
     if (target->type == ACTION_ENTITY_ENEMY) return ACTION_ROUTE_ENEMY_DEFERRED;
     if (target->type == ACTION_ENTITY_DESTRUCTIBLE) {
@@ -813,10 +819,10 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     /* DoomCanvas traces eight tiles, but the legacy extinguisher has rangeMin=0.
      * CombatEntity_calcHit therefore rejects any target whose squared world
      * distance exceeds 4096: in this cardinal trace only distance==1 can hit.
-     * Until generic miss/ammo/turn combat is owned, recognize farther fire and
-     * fail closed instead of removing it at range. */
-    if (target.type == ACTION_ENTITY_FIRE && weapon == 1U &&
-        target.distance > 1U) {
+     * Until generic miss/turn combat is owned, recognize farther fire and fail
+     * closed instead of removing it at range. */
+    if (target.type == ACTION_ENTITY_FIRE &&
+        weapon == ACTION_WEAPON_EXTINGUISHER && target.distance > 1U) {
         ++actionState.selects;
         ++actionState.combatDeferred;
         printf("[ACTIONENGINE] TRACE seq=%u weapon=%u distance=%u tile=%u target=sprite index=%u line=%u type=%u subtype=%u route=FIRE_RANGE_DEFERRED\n",
@@ -828,7 +834,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
                (unsigned int)target.lineIndex,
                (unsigned int)target.type,
                (unsigned int)target.subtype);
-        printf("[ACTIONENGINE] BACKEND-DEFER seq=%u sprite=%u family=fire-combat reason=legacy-range-miss+ammo+turn-not-owned distance=%u mutation=no\n",
+        printf("[ACTIONENGINE] BACKEND-DEFER seq=%u sprite=%u family=fire-combat reason=legacy-range-miss+turn-not-owned distance=%u mutation=no\n",
                (unsigned int)intent->sequence,
                (unsigned int)target.spriteIndex,
                (unsigned int)target.distance);
@@ -852,6 +858,19 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     if (route == ACTION_ROUTE_FIRE_CLEARED &&
         target.spriteIndex != ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE &&
         !removed(target.spriteIndex)) {
+        if (!EspNativeGameplayPlayerState_ensure() ||
+            EspNativeGameplayPlayerState_ammo(ACTION_EXTINGUISHER_AMMO_TYPE) <
+                ACTION_EXTINGUISHER_AMMO_USAGE) {
+            printf("[ACTIONENGINE] NOAMMO seq=%u sprite=%u weapon=%u ammoType=%u need=%u have=%u mutation=no\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex,
+                   (unsigned int)weapon,
+                   (unsigned int)ACTION_EXTINGUISHER_AMMO_TYPE,
+                   (unsigned int)ACTION_EXTINGUISHER_AMMO_USAGE,
+                   (unsigned int)EspNativeGameplayPlayerState_ammo(
+                       ACTION_EXTINGUISHER_AMMO_TYPE));
+            return status;
+        }
         setRemoved(target.spriteIndex, 1);
         memset(&actionState.pending, 0, sizeof(actionState.pending));
         actionState.pending.sequence = intent->sequence;
@@ -867,7 +886,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
         actionState.pending.worldChanged = 1U;
         actionState.pending.active = 1U;
         ++actionState.fireClears;
-        printf("[ACTIONENGINE] COMMIT seq=%u sprite=%u effect=fire-remove overlayBytes=%u xp=2-deferred ammoUsage=1-deferred sound=5045-deferred attackFrame=pending redraw=pending rollback=yes\n",
+        printf("[ACTIONENGINE] ARM seq=%u sprite=%u effect=fire-remove overlayBytes=%u xp=2-deferred ammoUsage=1-pending sound=5045-deferred attackFrame=pending redraw=pending rollback=armed\n",
                (unsigned int)intent->sequence,
                (unsigned int)target.spriteIndex,
                (unsigned int)ACTION_REMOVED_BYTES);
@@ -996,15 +1015,22 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
     {
         EspNativeGameplayFrameStats frame;
+        EspNativeGameplayPlayerState playerBefore;
         int isFire = pending.route == ACTION_ROUTE_FIRE_CLEARED;
         int isJammedDoor = pending.route == ACTION_ROUTE_JAMMED_DOOR_CLEARED;
         int animateWeapon = isFire || isJammedDoor;
         Random_t randomBefore;
+        uint32_t playerFNVBefore = 0U;
+        uint32_t playerFNVAfter = 0U;
+        uint8_t ammoBefore = 0U;
+        uint8_t ammoAfter = 0U;
+        uint8_t playerCaptured = 0U;
         uint8_t randomCaptured = 0U;
         uint8_t randHit = 0U;
         uint8_t destructibleMutated = 0U;
 
         memset(&frame, 0, sizeof(frame));
+        memset(&playerBefore, 0, sizeof(playerBefore));
         memset(&randomBefore, 0, sizeof(randomBefore));
         if (animateWeapon &&
             !EspNativeGameplayWeapon_armAttack(pending.weapon)) {
@@ -1014,6 +1040,40 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.weapon);
             return 0;
+        }
+
+        if (isFire) {
+            if (!EspNativeGameplayPlayerState_ensure() ||
+                !EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
+                setRemoved(pending.spriteIndex, 0);
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[ACTIONENGINE] FAILED seq=%u sprite=%u reason=fire-player-snapshot rollback=world+weapon mutation=no\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex);
+                return 0;
+            }
+            playerCaptured = 1U;
+            playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
+            if (!EspNativeGameplayPlayerState_consumeAmmo(
+                    ACTION_EXTINGUISHER_AMMO_TYPE,
+                    ACTION_EXTINGUISHER_AMMO_USAGE,
+                    &ammoBefore,
+                    &ammoAfter)) {
+                (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                setRemoved(pending.spriteIndex, 0);
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[ACTIONENGINE] NOAMMO seq=%u sprite=%u weapon=%u ammoType=%u need=%u have=%u playerRollback=yes worldRollback=yes mutation=no\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       (unsigned int)pending.weapon,
+                       (unsigned int)ACTION_EXTINGUISHER_AMMO_TYPE,
+                       (unsigned int)ACTION_EXTINGUISHER_AMMO_USAGE,
+                       (unsigned int)ammoBefore);
+                return 1;
+            }
+            playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
         }
 
         if (isJammedDoor) {
@@ -1072,6 +1132,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             actionState.feedbackKind = ACTION_FEEDBACK_NONE;
             if (isFire) {
                 setRemoved(pending.spriteIndex, 0);
+                if (playerCaptured != 0U &&
+                    !EspNativeGameplayPlayerState_restore(&playerBefore)) {
+                    rollbackOk = 0;
+                }
             }
             else if (isJammedDoor && destructibleMutated != 0U) {
                 rollbackOk = EspNativeGameplayDestructible_rollbackLineDeath(
@@ -1090,12 +1154,13 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        rollbackOk ? "yes" : "NO");
                 return 0;
             }
-            printf("[ACTIONENGINE] ROLLBACK seq=%u sprite=%u line=%u route=%s restored=yes rng=%s frame=%08x\n",
+            printf("[ACTIONENGINE] ROLLBACK seq=%u sprite=%u line=%u route=%s restored=yes rng=%s player=%s frame=%08x\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
                    (unsigned int)pending.lineIndex,
                    routeName((ActionRoute)pending.route),
                    isJammedDoor ? "restored" : "unchanged",
+                   isFire ? "restored" : "unchanged",
                    (unsigned int)frame.frameAfterFNV);
             memset(&actionState.pending, 0, sizeof(actionState.pending));
             return 1;
@@ -1103,6 +1168,16 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
         logActionFrame(&pending, animateWeapon ? "attack" : "commit", &frame);
 
+        if (isFire) {
+            printf("[ACTIONENGINE] FIRE-COMMIT seq=%u sprite=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x xp=2-deferred sound=5045-deferred turnAdvance=deferred rollback=closed\n",
+                   (unsigned int)pending.sequence,
+                   (unsigned int)pending.spriteIndex,
+                   (unsigned int)ACTION_EXTINGUISHER_AMMO_TYPE,
+                   (unsigned int)ammoBefore,
+                   (unsigned int)ammoAfter,
+                   (unsigned int)playerFNVBefore,
+                   (unsigned int)playerFNVAfter);
+        }
         if (isJammedDoor) {
             ++actionState.jammedDoorClears;
             ++actionState.deferredXp;
