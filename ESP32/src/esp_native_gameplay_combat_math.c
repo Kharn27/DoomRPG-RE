@@ -240,13 +240,17 @@ int EspNativeGameplayCombatMath_rollPlayerAttack(
     baseScale = player->berserkerTics != 0U ? 768 : 256;
 
     for (loop = 0U; loop < weapon->attackLoops; ++loop) {
-        int hitType = calcHit(doomRpg, weapon,
-                              (uint8_t)((player->param2 >> 24) & 0xffU),
-                              p2Agility(target->param2), worldDistance,
-                              &outRoll->randHit[loop],
-                              &outRoll->calcHit[loop],
-                              &outRoll->critLimit[loop],
-                              &outRoll->rngCalls);
+        int hitType;
+        int32_t loopDamage = 0;
+        int32_t loopArmorDamage = 0;
+
+        hitType = calcHit(doomRpg, weapon,
+                          (uint8_t)((player->param2 >> 24) & 0xffU),
+                          p2Agility(target->param2), worldDistance,
+                          &outRoll->randHit[loop],
+                          &outRoll->calcHit[loop],
+                          &outRoll->critLimit[loop],
+                          &outRoll->rngCalls);
         if (hitType < 0) return 0;
         outRoll->hitType[loop] = (uint8_t)hitType;
         if (hitType == HIT_MISS) continue;
@@ -262,25 +266,13 @@ int EspNativeGameplayCombatMath_rollPlayerAttack(
                                                : baseScale,
                         worldDistance,
                         &outRoll->randDamage[loop],
-                        &outRoll->totalDamage,
-                        &outRoll->totalArmorDamage,
+                        &loopDamage,
+                        &loopArmorDamage,
                         &outRoll->rngCalls)) {
             return 0;
         }
-
-        /* calcDamage returns one loop's values. Combat_playerSeq accumulates
-         * those across animation loops, so re-run through temporaries below. */
-        if (weapon->attackLoops > 1U) {
-            int32_t oneDamage = outRoll->totalDamage;
-            int32_t oneArmor = outRoll->totalArmorDamage;
-            uint8_t j;
-            outRoll->totalDamage = oneDamage;
-            outRoll->totalArmorDamage = oneArmor;
-            for (j = 0U; j < loop; ++j) {
-                /* Prior loop totals are stored nowhere else; this branch is
-                 * replaced immediately below by the explicit accumulator. */
-            }
-        }
+        outRoll->totalDamage += loopDamage;
+        outRoll->totalArmorDamage += loopArmorDamage;
     }
 
     return 1;
