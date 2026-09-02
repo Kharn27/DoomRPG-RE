@@ -31,6 +31,24 @@ EspNativeGameplayActionStatus EspNativeGameplayActionEngine_executeSelect(
     EspNativeGameplayActionEngine_executeSelect
 
 /*
+ * The action engine already owns the older fire/destructible topology overlay.
+ * Rename its linker-wrapper implementations into private leaves so permanent
+ * native monster combat can compose a second, explicit monster-liveness/pain
+ * overlay in front of them without duplicating the actual topology owner.
+ */
+int EspNativeGameplayActionEngine_getVisualState(uint32_t spriteIndex,
+                                                 uint8_t* outVisualState);
+int EspNativeGameplayActionEngine_getEntity(uint32_t spriteIndex,
+                                            uint8_t* outType,
+                                            uint8_t* outSubType,
+                                            uint16_t* outLinkState,
+                                            uint16_t* outLinkOrder);
+#define __wrap_EspMapSpriteTopology_getVisualState \
+    EspNativeGameplayActionEngine_getVisualState
+#define __wrap_EspMapSpriteTopology_getEntity \
+    EspNativeGameplayActionEngine_getEntity
+
+/*
  * esp_native_gameplay_present_gate.c remains the sole linker --wrap owner for
  * Esp32PlatformVideo_present().  The action implementation historically names
  * its local leaf as a wrapper; rename that one translation-unit symbol through
