@@ -191,6 +191,9 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 	int i, sig, general, method, namelength, extralength;
 	byte* cdata;
 	int code;
+#ifdef DOOMRPG_ESP32
+	tinfl_decompressor* decomp = NULL;
+#endif
 
 	for (i = 0; i < zipFile->entry_count; i++)
 	{
@@ -235,8 +238,27 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 
 	SDL_RWseek(zipFile->file, namelength + extralength, SEEK_CUR);
 
+#ifdef DOOMRPG_ESP32
+	/*
+	 * Reserve the largest transient allocation first. On the no-PSRAM classic
+	 * CYD, bootstrap textures and mapping arrays leave enough aggregate heap for
+	 * DEFLATE but can fragment the largest 8-bit region. Allocating cdata/udata
+	 * before the 10+ KiB Huffman state can split the only suitable block and
+	 * produce a false OOM even though the total free heap is sufficient.
+	 */
+	if (method == 8) {
+		decomp = SDL_malloc(sizeof(tinfl_decompressor));
+		if (decomp == NULL) {
+			DoomRPG_Error("out of memory allocating inflate state for %s", name);
+		}
+	}
+#endif
+
 	cdata = SDL_malloc(entry->csize);
 	if (cdata == NULL) {
+#ifdef DOOMRPG_ESP32
+		SDL_free(decomp);
+#endif
 		DoomRPG_Error("out of memory reading %s", name);
 	}
 	SDL_RWread(zipFile->file, cdata, sizeof(byte), entry->csize);
@@ -254,6 +276,9 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 		byte* udata = SDL_malloc(entry->usize);
 		if (udata == NULL) {
 			SDL_free(cdata);
+#ifdef DOOMRPG_ESP32
+			SDL_free(decomp);
+#endif
 			DoomRPG_Error("out of memory expanding %s", name);
 		}
 		#ifdef DOOMRPG_ESP32
@@ -262,17 +287,10 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 		 * local variable. That state contains the Huffman tables and is too
 		 * large for Arduino's loopTask stack once DoomCanvas/Hud startup is
 		 * above it in the call chain. Keep the transient inflate state on the
-		 * heap instead; the compressed and uncompressed payloads already live
-		 * there and the state is freed immediately after this entry is decoded.
+		 * heap instead; it was reserved before the payload buffers above and is
+		 * freed immediately after this entry is decoded.
 		 */
-		tinfl_decompressor* decomp = SDL_malloc(sizeof(tinfl_decompressor));
-		if (decomp == NULL) {
-			SDL_free(cdata);
-			SDL_free(udata);
-			DoomRPG_Error("out of memory allocating inflate state for %s", name);
-		}
-
-		printf("[ZIP] inflate %s c=%d u=%d state=%u\n",
+		printf("[ZIP] inflate %s c=%d u=%d state=%u allocation=state-first\n",
 			name, entry->csize, entry->usize,
 			(unsigned int)sizeof(tinfl_decompressor));
 
@@ -332,6 +350,9 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 		return udata;
 	}
 	else {
+#ifdef DOOMRPG_ESP32
+		SDL_free(decomp);
+#endif
 		DoomRPG_Error("unknown zip method: %d", method);
 	}
 
