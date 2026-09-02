@@ -1,6 +1,10 @@
 #ifndef DOOMRPG_ESP32_NATIVE_GAMEPLAY_PICKUP_H
 #define DOOMRPG_ESP32_NATIVE_GAMEPLAY_PICKUP_H
 
+#include <stdint.h>
+
+#include "esp_map_runtime.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -17,6 +21,17 @@ extern "C" {
  */
 void EspNativeGameplayPickup_reset(void);
 void EspNativeGameplayPickup_logCorpus(void);
+
+/*
+ * The pickup implementation historically owned the linker wrapper around
+ * EspMapRuntime_getMapSprite() so consumed weapon sprites could be hidden.
+ * Keep that implementation as a private chain leaf: a generic presentation
+ * overlay now composes combat visual-state requirements in front of it without
+ * duplicating pickup ownership or bypassing its consumed-bit overlay.
+ */
+int EspNativeGameplayPickup_getMapSprite(uint32_t index,
+                                         EspMapSprite* outSprite);
+#define __wrap_EspMapRuntime_getMapSprite EspNativeGameplayPickup_getMapSprite
 
 #ifdef __cplusplus
 }
