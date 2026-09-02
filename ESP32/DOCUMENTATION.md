@@ -14,16 +14,16 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main = 563804b09fda67ba06516c8dc13585a1125a4bb0
-branch = agent/esp32-native-dog-combat
-base main = 563804b09fda67ba06516c8dc13585a1125a4bb0
-hardware-tested code boundary = e56bfcf86489f5b0f9ae10deb29a73fabf098756
-status = generic native type=1 monster combat hardware PASS
+main = 854ade1a7110fff44926099bdae418ca47e55365
+branch = agent/esp32-native-player-resources
+base main = 854ade1a7110fff44926099bdae418ca47e55365
+hardware-tested code boundary = 8152cf8d233067a44b2d705edcaf315845b7744a
+status = generic player resources + shared HUD/ammo projection + generic gib FX hardware PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `e56bfcf...` as hardware-tested code. The tail must
-remain documentation-only until merge.
+Do not treat commits after `8152cf8d...` as new hardware-tested code. The tail
+must remain documentation-only until merge.
 
 ## Build environment
 
@@ -81,95 +81,163 @@ FORCEMESSAGE / NOTE
 state ops 11 / 19 / 20
 regular door animation
 mutable line texture variants
-weapon pickup and native weapon rendering
-attack frame presentation
-adjacent extinguisher fire clear
+native idle weapon rendering / attack frame presentation
 jammed-door subtype-3 axe destruction + traversal
 generic compact monster-state initialization
-generic type=1 monster hit / damage / HP / armor
-generic pain / death / unlink presentation
+generic type=1 hit / miss / damage / HP / armor math
+generic pain presentation
+generic ordinary death -> corpse presentation
+generic overkill/gib classification + bounded native gib FX
 native player XP ownership / progression state
+generic type 3/4/5/6/16 pickup/resource engine
+shared PlayerState health/armor/credits/keys/ammo/inventory/weapons
+consumed-pickup world removal
+HUD projection from PlayerState
+extinguisher ammo consumption + fire removal transaction
 ```
 
 Relevant milestone records:
 
 - [`MILESTONE_NATIVE_JAMMED_DOOR.md`](MILESTONE_NATIVE_JAMMED_DOOR.md)
 - [`MILESTONE_NATIVE_MONSTER_COMBAT.md`](MILESTONE_NATIVE_MONSTER_COMBAT.md)
+- [`MILESTONE_NATIVE_PLAYER_RESOURCES.md`](MILESTONE_NATIVE_PLAYER_RESOURCES.md)
+
+## Generic player resource engine
+
+The resource path is deliberately shared across item categories:
+
+```text
+EntityDef {tile,type,subtype,parm}
+ -> PlayerResources classifier
+ -> one 52 B PlayerState
+ -> one consumed-sprite bitset
+ -> HUD/world projection
+ -> transactional redraw
+```
+
+Entrance hardware corpus:
+
+```text
+114 pickups total
+type3  = 84
+type4  = 6
+type5  = 3
+type6  = 17
+type16 = 4
+consumed bitset = 43 B for 344 sprites
+EntityDef metadata = 115 x 8 B = 920 B
+```
+
+Real-CYD witnesses include armor shards, medkit/inventory, extinguisher weapon,
+extinguisher ammo and credits. The picked sprites disappear physically and the
+same PlayerState values drive the HUD.
+
+Do not create separate health-pickup, armor-pickup, medkit, ammo, credit or
+weapon owners.
+
+## Shared PlayerState
+
+`EspNativeGameplayPlayerState` is 52 B and is the permanent player-facing owner
+for:
+
+```text
+HP / max HP
+armor / max armor
+defense / strength / agility / accuracy
+XP / level / next-level XP
+keys / credits
+ammo[6]
+inventory[5]
+weapon ownership / selected weapon
+```
+
+Combat, resources and future key/script consequences should continue to use this
+same owner.
 
 ## Generic monster engine, not per-monster routes
 
-The current production combat path is deliberately split into reusable pieces:
+Combat remains split into reusable pieces:
 
 ```text
 MonsterTrace
  -> CombatMath
  -> MonsterState + PlayerState
  -> MonsterCombat transaction
- -> renderer/liveness overlays
+ -> visual/liveness projection
 ```
 
-`MonsterState` holds compact mutable enemy state; `PlayerState` is the single
-shared player-facing owner intended for combat, pickups, ammo, inventory, keys
-and progression.
+Ordinary monster differences are data (`subtype`, `mType`, randomized stats),
+not executor code.
 
-Real-CYD hardware proves the same backend against at least two distinct ordinary
-monster subtypes:
+Hardware has exercised the same backend with Hellhound subtype 1 and Zombie
+subtype 0, including hits, misses, pain, lethal XP/liveness and overkill/gib.
+
+### Presentation state machine
 
 ```text
-Hellhound subtype 1, sprite 179:
-  6 HP -> 3 HP -> dead
-  pain6 then gib-hidden+unlink
-  XP +5 applied
+nonlethal hit
+ -> pain visual 6 / 250 ms
+ -> normal visual
 
-Zombie subtype 0, sprite 106:
-  7 HP -> dead in one axe hit
-  death4+unlink
-  XP +6 applied
+ordinary non-gib death
+ -> death visual 4 / 250 ms
+ -> corpse visual 2, unlinked
+
+overkill/gib death
+ -> death visual 4 / 250 ms
+ -> hidden + bounded gib burst
+ -> burst expires after 350 ms via autonomous world redraw
 ```
 
-The zombie's later raw `[ACTIONENGINE] TRACE` messages are compatibility-log
-noise: the native combat trace correctly filters its `alive=0` record, so no
-second `[MONSTERCOMBAT] ARM` occurs.
+The gib layer owns 148 B, uses a local deterministic visual RNG and never consumes
+gameplay RNG. It does not revive the legacy `ParticleSystem`.
 
-Ordinary new monsters must remain table/data-driven through `subtype/mType`.
-Do not create dog/zombie/imp-specific combat executors.
+## Extinguisher transaction
 
-## Current intentionally deferred combat families
+The extinguisher now reads/writes the same ammo owner as pickups/HUD. Hardware
+witness:
 
 ```text
+ammo0 = 10 -> 9
+fire = removed
+HUD = decremented
+rollback = armed/closed
+```
+
+The historical +2 XP consequence remains deferred.
+
+## Representative final RAM
+
+Latest real-CYD gameplay witness:
+
+```text
+heap8 = 19788 B
+largest8 = 14324 B
+shapeData = NULL
+mediaTexels = NULL
+```
+
+No PSRAM is present.
+
+## Current intentionally deferred families
+
+```text
+pickup sounds/messages/got-face presentation
+combat MISS/HIT/CRIT text feedback
+action XP migration: extinguisher +2, jammed door +1
+materialized monster drops
+corpse-pile trimming
 enemy AI / retaliation / turn advance
 actual sound playback
-corpse-pile trimming
-materialized drops
-ammo-consuming weapon transaction
 chaingun/plasma multi-loop presentation/commit
 rocket/BFG radius damage
 special death consequences for subtypes 7, 8, 12, 13
-Kronos-specific teleport semantics where applicable
+Kronos-specific semantics
+password input
+SAVEGAME / CHANGEMAP production route
 ```
 
-These are mechanical family boundaries, not individual monster TODOs.
-
-## Next milestone after merge
-
-Preferred next family is **generic player resources / pickups + standard ammo
-weapons**.
-
-Goal:
-
-```text
-EntityDef/player-facing pickup metadata
- -> one generic pickup/resource executor
- -> one EspNativeGameplayPlayerState owner
- -> health / armor / credits / keys / ammo / inventory / weapons
- -> direct-fire ammo weapons reuse existing CombatMath/MonsterCombat
-```
-
-The test corpus should deliberately contain several different pickup categories
-and several different weapons. Do not create a PR per item.
-
-Radius damage and genuinely scripted/special item effects remain separate family
-boundaries.
+These are mechanical family boundaries, not individual monster/item TODOs.
 
 ## CHANGEMAP recovery point
 
@@ -181,8 +249,24 @@ CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
 OPENLINE -> third eligible command
 ```
 
-Do not force the transition before enough native gameplay exists to complete
-the map normally.
+Do not force the transition before enough native gameplay exists to complete the
+map normally.
+
+## After this merge
+
+Do not continue code on this locked branch.
+
+When the merge is announced:
+
+1. read the true GitHub `main` and exact SHA;
+2. re-read `PORTING_STATUS.md`, this file and the latest milestone;
+3. create a fresh coherent `agent/*` branch from that SHA;
+4. choose the next bounded gameplay family from the actual merged frontier.
+
+Likely high-value families include shared combat/action text feedback, migration
+of deferred XP consequences into PlayerState, standard ammo-consuming direct-fire
+weapons, monster turn/retaliation ownership, or materialized drops. Decide only
+after reading merged `main`.
 
 ## Development workflow
 
