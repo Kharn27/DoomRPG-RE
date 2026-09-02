@@ -1,7 +1,9 @@
+#include <SDL.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
+#include "DoomRPG.h"
 #include "esp_native_gameplay_combat_math.h"
 
 #define HIT_MISS 0U
