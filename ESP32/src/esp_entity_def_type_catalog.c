@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <esp_heap_caps.h>
+
 #include "esp_entity_def_type_catalog.h"
 
 #define ENTITY_DEF_RECORD_BYTES 24U
@@ -19,8 +21,8 @@ typedef struct EntityDefMetadata_s {
 typedef char EntityDefMetadata_must_be_8_bytes[
     sizeof(EntityDefMetadata) == 8U ? 1 : -1];
 
-static EntityDefMetadata
-    entityDefMetadata[ESP_ENTITY_DEF_TYPE_CATALOG_MAX_DEFINITIONS];
+static EntityDefMetadata* entityDefMetadata;
+static uint16_t entityDefMetadataCapacity;
 static uint32_t entityDefCount;
 static uint16_t entityDefMetadataCount;
 static uint8_t entityDefTypesReady;
@@ -37,11 +39,49 @@ static int32_t readLe32s(const uint8_t* p) {
     return (int32_t)value;
 }
 
-static void clearCatalog(void) {
-    memset(entityDefMetadata, 0, sizeof(entityDefMetadata));
+static void clearCatalogFields(void) {
     entityDefCount = 0U;
     entityDefMetadataCount = 0U;
     entityDefTypesReady = 0U;
+}
+
+static void clearCatalog(void) {
+    if (entityDefMetadata != NULL && entityDefMetadataCapacity != 0U) {
+        memset(entityDefMetadata, 0,
+               (size_t)entityDefMetadataCapacity * sizeof(*entityDefMetadata));
+    }
+    clearCatalogFields();
+}
+
+static void releaseCatalog(void) {
+    if (entityDefMetadata != NULL) heap_caps_free(entityDefMetadata);
+    entityDefMetadata = NULL;
+    entityDefMetadataCapacity = 0U;
+    clearCatalogFields();
+}
+
+static int ensureCatalogCapacity(uint16_t capacity) {
+    EntityDefMetadata* next;
+    size_t oldBytes;
+    size_t newBytes;
+
+    if (capacity == 0U) return 0;
+    if (entityDefMetadata != NULL && entityDefMetadataCapacity >= capacity) {
+        return 1;
+    }
+
+    oldBytes = (size_t)entityDefMetadataCapacity * sizeof(*entityDefMetadata);
+    newBytes = (size_t)capacity * sizeof(*entityDefMetadata);
+    next = (EntityDefMetadata*)heap_caps_realloc(entityDefMetadata,
+                                                  newBytes,
+                                                  MALLOC_CAP_8BIT);
+    if (next == NULL) return 0;
+    if (newBytes > oldBytes) {
+        memset((uint8_t*)next + oldBytes, 0, newBytes - oldBytes);
+    }
+    entityDefMetadata = next;
+    entityDefMetadataCapacity = capacity;
+    return 1;
 }
 
 static int insertMetadata(uint16_t tileIndex,
@@ -50,6 +90,7 @@ static int insertMetadata(uint16_t tileIndex,
                           int32_t parm) {
     uint16_t pos = 0U;
 
+    if (entityDefMetadata == NULL) return 0;
     while (pos < entityDefMetadataCount &&
            entityDefMetadata[pos].tileIndex < tileIndex) {
         ++pos;
@@ -60,7 +101,7 @@ static int insertMetadata(uint16_t tileIndex,
         entityDefMetadata[pos].tileIndex == tileIndex) {
         return 1;
     }
-    if (entityDefMetadataCount >= ESP_ENTITY_DEF_TYPE_CATALOG_MAX_DEFINITIONS) {
+    if (entityDefMetadataCount >= entityDefMetadataCapacity) {
         return 0;
     }
     if (pos < entityDefMetadataCount) {
@@ -81,7 +122,8 @@ static const EntityDefMetadata* findMetadata(uint16_t tileIndex) {
     uint16_t lo = 0U;
     uint16_t hi = entityDefMetadataCount;
 
-    if (!entityDefTypesReady || tileIndex >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT) {
+    if (!entityDefTypesReady || entityDefMetadata == NULL ||
+        tileIndex >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT) {
         return NULL;
     }
     while (lo < hi) {
@@ -123,19 +165,23 @@ int EspEntityDefTypeCatalog_buildFromPackEntry(
     if (sourceBytes > entityDefsEntry->size) return 0;
 
     clearCatalog();
+    if (!ensureCatalogCapacity((uint16_t)count)) {
+        releaseCatalog();
+        return 0;
+    }
     for (i = 0U; i < count; ++i) {
         uint16_t tileIndex;
         if (!EspAssetPack_readRange(entityDefsEntry,
                                     2U + (i * ENTITY_DEF_RECORD_BYTES),
                                     record, sizeof(record))) {
-            clearCatalog();
+            releaseCatalog();
             return 0;
         }
         tileIndex = readLe16(record);
         if (tileIndex >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT) continue;
         if (!insertMetadata(tileIndex, record[2], record[3],
                             readLe32s(record + 4U))) {
-            clearCatalog();
+            releaseCatalog();
             return 0;
         }
     }
@@ -146,8 +192,9 @@ int EspEntityDefTypeCatalog_buildFromPackEntry(
     printf("[ENTITYDEFTYPE] READY defs=%u metadata=%u cache=%uB recordBytes=%u tile312=%s%u subtype=%s%u parm=%ld\n",
            (unsigned int)entityDefCount,
            (unsigned int)entityDefMetadataCount,
-           (unsigned int)sizeof(entityDefMetadata),
-           (unsigned int)sizeof(entityDefMetadata[0]),
+           (unsigned int)((uint32_t)entityDefMetadataCapacity *
+                          (uint32_t)sizeof(*entityDefMetadata)),
+           (unsigned int)sizeof(*entityDefMetadata),
            entrance == NULL ? "none/" : "type/",
            (unsigned int)(entrance == NULL ? 0xffU : entrance->type),
            entrance == NULL ? "none/" : "subtype/",
