@@ -29,12 +29,15 @@
 #define MONSTER_TYPE_ENEMY 1U
 #define MONSTER_SUBTYPE_COUNT 14U
 #define MONSTER_NO_SPRITE 0xffffU
-#define MONSTER_PAIN_VISUAL 6U
+#define MONSTER_CORPSE_VISUAL 2U
 #define MONSTER_DEATH_VISUAL 4U
+#define MONSTER_PAIN_VISUAL 6U
 #define MONSTER_VISUAL_HIDDEN 0x80U
 #define MONSTER_PAIN_MS 250U
+#define MONSTER_DEATH_MS 250U
 #define MONSTER_MAX_SPRITES 1024U
 #define MONSTER_GIB_BITS_BYTES (MONSTER_MAX_SPRITES / 8U)
+#define MONSTER_CORPSE_BITS_BYTES (MONSTER_MAX_SPRITES / 8U)
 
 /* Direct single-target standard weapons currently have complete native combat
  * semantics. Multi-loop presentation (chaingun/plasma), radial damage
@@ -63,7 +66,12 @@ typedef struct MonsterCombatOwner_s {
     EspNativeGameplayMonsterCombatView view;
     MonsterCombatPending pending;
     uint32_t painUntilMs;
+    uint32_t deathUntilMs;
+    uint16_t deathSpriteIndex;
+    uint8_t visualRedrawPending;
+    uint8_t deathFinalGib;
     uint8_t gibbedBits[MONSTER_GIB_BITS_BYTES];
+    uint8_t corpseBits[MONSTER_CORPSE_BITS_BYTES];
 } MonsterCombatOwner;
 
 static const uint16_t painSounds[MONSTER_SUBTYPE_COUNT] = {
@@ -153,12 +161,57 @@ static void setGibbed(uint16_t spriteIndex, int value) {
     else combatOwner.gibbedBits[spriteIndex >> 3] &= (uint8_t)~mask;
 }
 
+static int corpseReady(uint16_t spriteIndex) {
+    return spriteIndex < MONSTER_MAX_SPRITES &&
+           ((combatOwner.corpseBits[spriteIndex >> 3] >>
+             (spriteIndex & 7U)) & 1U) != 0U;
+}
+
+static void setCorpseReady(uint16_t spriteIndex, int value) {
+    uint8_t mask;
+    if (spriteIndex >= MONSTER_MAX_SPRITES) return;
+    mask = (uint8_t)(1U << (spriteIndex & 7U));
+    if (value) combatOwner.corpseBits[spriteIndex >> 3] |= mask;
+    else combatOwner.corpseBits[spriteIndex >> 3] &= (uint8_t)~mask;
+}
+
 static void expirePain(void) {
     if (combatOwner.view.painSpriteIndex == MONSTER_NO_SPRITE) return;
     if ((int32_t)(DoomRPG_GetUpTimeMS() - combatOwner.painUntilMs) >= 0) {
         combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
         combatOwner.painUntilMs = 0U;
     }
+}
+
+static int promoteDeathIfDue(void) {
+    uint16_t spriteIndex;
+    uint8_t finalGib;
+    if (combatOwner.deathSpriteIndex == MONSTER_NO_SPRITE) return 0;
+    if ((int32_t)(DoomRPG_GetUpTimeMS() - combatOwner.deathUntilMs) < 0) {
+        return 0;
+    }
+    spriteIndex = combatOwner.deathSpriteIndex;
+    finalGib = combatOwner.deathFinalGib;
+    if (finalGib != 0U) {
+        setGibbed(spriteIndex, 1);
+        setCorpseReady(spriteIndex, 0);
+    }
+    else {
+        setGibbed(spriteIndex, 0);
+        setCorpseReady(spriteIndex, 1);
+    }
+    combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
+    combatOwner.deathUntilMs = 0U;
+    combatOwner.deathFinalGib = 0U;
+    combatOwner.visualRedrawPending = 1U;
+    printf("[MONSTERCOMBAT] DEATH-SETTLE sprite=%u visual=%u->%s delayMs=%u gib=%u gibFX=%s immutableSprite=yes\n",
+           (unsigned int)spriteIndex,
+           (unsigned int)MONSTER_DEATH_VISUAL,
+           finalGib != 0U ? "hidden" : "corpse2",
+           (unsigned int)MONSTER_DEATH_MS,
+           (unsigned int)finalGib,
+           finalGib != 0U ? "deferred" : "n/a");
+    return 1;
 }
 
 static int syncOwner(void) {
@@ -182,19 +235,22 @@ static int syncOwner(void) {
         combatOwner.view.sourceArenaFNV1a = arena;
         combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
         combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
+        combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
         combatOwner.view.standardWeaponsOwned =
             (uint8_t)STANDARD_WEAPON_DIRECT_MASK;
         combatOwner.view.currentMonsterFNV1a = currentMonsterFNV();
         combatOwner.view.active = 1U;
-        printf("[MONSTERCOMBAT] READY arena=%08x monsters=%u backend=type1-generic subtypes=0..13 trace=shared combatMath=shared playerState=%uB playerFNV=%08x directWeaponMask=%02x specialDeathMask=%04x legacyEntity=no\n",
+        printf("[MONSTERCOMBAT] READY arena=%08x monsters=%u backend=type1-generic subtypes=0..13 trace=shared combatMath=shared playerState=%uB playerFNV=%08x directWeaponMask=%02x specialDeathMask=%04x deathVisual=4->(corpse2|gibHidden)/%ums gibFX=deferred legacyEntity=no\n",
                (unsigned int)arena,
                (unsigned int)monsters->count,
                (unsigned int)sizeof(*player),
                (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
                (unsigned int)combatOwner.view.standardWeaponsOwned,
-               (unsigned int)SPECIAL_DEATH_MASK);
+               (unsigned int)SPECIAL_DEATH_MASK,
+               (unsigned int)MONSTER_DEATH_MS);
     }
     expirePain();
+    if (combatOwner.pending.active == 0U) (void)promoteDeathIfDue();
     return 1;
 }
 
@@ -202,6 +258,7 @@ void EspNativeGameplayMonsterCombat_reset(void) {
     memset(&combatOwner, 0, sizeof(combatOwner));
     combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
+    combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
 }
 
 int EspNativeGameplayMonsterCombat_isReady(void) {
@@ -313,6 +370,29 @@ static void logFrame(const MonsterCombatPending* pending,
            (unsigned int)frame->presentMicros,
            (unsigned int)frame->totalMicros,
            (unsigned int)frame->finalPresented);
+}
+
+static int serviceVisualRedraw(DoomRPG_t* runtime) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayFrameStats frame;
+
+    if (combatOwner.visualRedrawPending == 0U) return 1;
+    if (runtime == NULL || runtime->render == NULL || view == NULL ||
+        view->active != 1U || view->viewAngle != view->destAngle) {
+        return 0;
+    }
+    memset(&frame, 0, sizeof(frame));
+    if (!EspNativeGameplayFrame_renderTurn(runtime->render,
+                                           (uint8_t)view->viewAngle,
+                                           &frame)) {
+        printf("[MONSTERCOMBAT] DEATH-REDRAW-FAILED recovery=next-service\n");
+        return 1;
+    }
+    combatOwner.visualRedrawPending = 0U;
+    printf("[MONSTERCOMBAT] DEATH-FRAME frame=%08x presented=%u\n",
+           (unsigned int)frame.frameAfterFNV,
+           (unsigned int)frame.finalPresented);
+    return 1;
 }
 
 static int servicePending(DoomRPG_t* runtime) {
@@ -436,12 +516,39 @@ static int servicePending(DoomRPG_t* runtime) {
         }
 
         if (lethal) {
+            uint16_t previousDeathSprite;
+            uint8_t previousDeathGib;
+
             gib = prospectiveGib(&targetBefore,
                                  roll.totalDamage,
                                  roll.totalArmorDamage,
                                  pending.distance);
             target->alive = 0U;
-            setGibbed(target->spriteIndex, gib);
+
+            /* One generic presentation state machine owns every ordinary
+             * monster death. Even overkill/gib deaths first render the recovered
+             * legacy death pose (visual 4). Only after that 250 ms lease do they
+             * become either corpse2 or hidden. The eventual native particle/gib
+             * effect remains a separate presentation family. */
+            setGibbed(target->spriteIndex, 0);
+            setCorpseReady(target->spriteIndex, 0);
+            previousDeathSprite = combatOwner.deathSpriteIndex;
+            previousDeathGib = combatOwner.deathFinalGib;
+            if (previousDeathSprite != MONSTER_NO_SPRITE &&
+                previousDeathSprite != target->spriteIndex) {
+                if (previousDeathGib != 0U) {
+                    setGibbed(previousDeathSprite, 1);
+                    setCorpseReady(previousDeathSprite, 0);
+                }
+                else {
+                    setGibbed(previousDeathSprite, 0);
+                    setCorpseReady(previousDeathSprite, 1);
+                }
+            }
+            combatOwner.deathSpriteIndex = target->spriteIndex;
+            combatOwner.deathFinalGib = gib ? 1U : 0U;
+            combatOwner.deathUntilMs = DoomRPG_GetUpTimeMS() +
+                                       MONSTER_DEATH_MS;
 
             /* Exact Entity_died() ordering: XP/possible level-up RNG first,
              * then death-sound RNG (unless gibbed), then one drop RNG word. */
@@ -539,6 +646,7 @@ static int servicePending(DoomRPG_t* runtime) {
     }
 
     logFrame(&pending, "attack", &attackFrame);
+    if (lethal) (void)promoteDeathIfDue();
     printf("[MONSTERCOMBAT] COMMIT seq=%u sprite=%u subtype=%u hp=%d->%d armor=%d->%d alive=%u->%u monsterFNV=%08x->%08x playerFNV=%08x->%08x ammo=%u->%u visual=%s attackSound=%u-deferred consequenceSound=%u-deferred xp=%u-applied level=%u->%u levelUps=%u dropRoll=%s%08x dropMaterialize=deferred corpseTrim=deferred turnAdvance=deferred AI=deferred rollback=closed\n",
            (unsigned int)pending.sequence,
            (unsigned int)pending.spriteIndex,
@@ -555,7 +663,8 @@ static int servicePending(DoomRPG_t* runtime) {
            (unsigned int)playerFNVAfter,
            (unsigned int)ammoBefore,
            (unsigned int)ammoAfter,
-           lethal ? (gib ? "gib-hidden+unlink" : "death4+unlink")
+           lethal ? (gib ? "death4->gib-hidden/250ms+unlink,gibFX-deferred"
+                         : "death4->corpse2/250ms+unlink")
                   : (roll.hitLoops != 0U ? "pain6/250ms" : "none"),
            pending.weapon == 0U ? 5136U : weapon->resourceId,
            (unsigned int)consequenceSound,
@@ -571,6 +680,9 @@ static int servicePending(DoomRPG_t* runtime) {
                                           (uint8_t)view->viewAngle,
                                           &settleFrame)) {
         logFrame(&pending, "settle-idle", &settleFrame);
+        if (combatOwner.visualRedrawPending != 0U) {
+            combatOwner.visualRedrawPending = 0U;
+        }
         printf("[MONSTERCOMBAT] ATTACK seq=%u weapon=%u genericMonster=yes worldCommitted=yes\n",
                (unsigned int)pending.sequence,
                (unsigned int)pending.weapon);
@@ -700,7 +812,9 @@ int __wrap_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
         }
         else {
             *outVisualState = (uint8_t)((*outVisualState & 0xf0U) |
-                                        MONSTER_DEATH_VISUAL);
+                                        (corpseReady((uint16_t)spriteIndex)
+                                             ? MONSTER_CORPSE_VISUAL
+                                             : MONSTER_DEATH_VISUAL));
         }
     }
     else if (combatOwner.view.painSpriteIndex == spriteIndex) {
@@ -740,7 +854,7 @@ int __wrap_EspNativeGameplayActionEngine_service(DoomRPG_t* runtime) {
     if (combatOwner.pending.active != 0U) {
         return servicePending(runtime);
     }
-    return 1;
+    return serviceVisualRedraw(runtime);
 }
 
 void __wrap_EspNativeGameplayActionEngine_reset(void) {

@@ -50,13 +50,13 @@ int EspNativeGameplayActionEngine_getEntity(uint32_t spriteIndex,
 
 /*
  * esp_native_gameplay_present_gate.c remains the sole linker --wrap owner for
- * Esp32PlatformVideo_present().  The action implementation historically names
- * its local leaf as a wrapper; rename that one translation-unit symbol through
- * this header so the gate can chain into it without creating a second linker
- * wrapper.  Other users of this header never reference the private token.
+ * Esp32PlatformVideo_present(). The historical action implementation is now a
+ * private base leaf: compact native presentation families may compose in front
+ * of it without becoming a second linker wrapper or bypassing action feedback.
  */
 int EspNativeGameplayActionEngine_present(void);
-#define __wrap_Esp32PlatformVideo_present EspNativeGameplayActionEngine_present
+int EspNativeGameplayActionEngine_presentBase(void);
+#define __wrap_Esp32PlatformVideo_present EspNativeGameplayActionEngine_presentBase
 
 #ifdef __cplusplus
 }

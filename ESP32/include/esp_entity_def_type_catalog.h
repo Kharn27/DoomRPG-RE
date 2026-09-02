@@ -20,19 +20,25 @@ extern "C" {
  *
  * Doom RPG line entities resolve their definition with tileIndex
  * 305 + line.texture before being linked into Game.entityDb. Native gameplay
- * needs both eType and selected eSubType behavior while shapeData remains NULL.
- * The implementation retains only sorted {tileIndex,type,subtype} records and
- * performs allocation-free binary lookup; no names, parm values or legacy
- * EntityDef_t pointers survive startup.
+ * needs eType/eSubType and the data-driven parm used by pickups, keys and other
+ * bounded gameplay families while shapeData remains NULL. The implementation
+ * retains only sorted {tileIndex,type,subtype,parm} records and performs
+ * allocation-free binary lookup; no names or legacy EntityDef_t pointers
+ * survive startup.
  */
 int EspEntityDefTypeCatalog_buildFromPackEntry(
     const EspAssetPackEntry* entityDefsEntry);
 int EspEntityDefTypeCatalog_isReady(void);
 int EspEntityDefTypeCatalog_getType(uint16_t tileIndex, uint8_t* outType);
 int EspEntityDefTypeCatalog_getSubtype(uint16_t tileIndex, uint8_t* outSubtype);
+int EspEntityDefTypeCatalog_getParm(uint16_t tileIndex, int32_t* outParm);
 int EspEntityDefTypeCatalog_getTypeAndSubtype(uint16_t tileIndex,
                                               uint8_t* outType,
                                               uint8_t* outSubtype);
+int EspEntityDefTypeCatalog_getMetadata(uint16_t tileIndex,
+                                        uint8_t* outType,
+                                        uint8_t* outSubtype,
+                                        int32_t* outParm);
 uint32_t EspEntityDefTypeCatalog_definitionCount(void);
 
 #ifdef __cplusplus
