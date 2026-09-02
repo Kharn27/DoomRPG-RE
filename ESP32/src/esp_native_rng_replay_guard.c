@@ -19,8 +19,6 @@ typedef struct EspNativeRngReplayGuard_s {
 
 static EspNativeRngReplayGuard rngReplayGuard;
 
-void __real_DoomRPG_setRand(Random_t* rand);
-
 static int leaseActive(uint32_t now) {
     return rngReplayGuard.valid != 0U &&
            (int32_t)(now - rngReplayGuard.validUntilMs) < 0;
@@ -59,7 +57,7 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
         }
         else {
             rngReplayGuard.preRefill = *rand;
-            __real_DoomRPG_setRand(rand);
+            DoomRPG_setRand(rand);
             rngReplayGuard.postRefill = *rand;
             rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
             rngReplayGuard.valid = 1U;
