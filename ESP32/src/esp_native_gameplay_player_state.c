@@ -1,8 +1,10 @@
+#include <SDL.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "DoomRPG.h"
 #include "esp_native_gameplay_player_state.h"
 
 #define PLAYER_STAT_MAX 99U
