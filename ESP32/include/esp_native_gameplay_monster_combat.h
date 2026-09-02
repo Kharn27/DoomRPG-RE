@@ -14,13 +14,13 @@ typedef struct EspNativeGameplayMonsterCombatView_s {
     uint32_t crits;
     uint32_t misses;
     uint32_t kills;
-    uint32_t deferredXp;
+    uint32_t xpApplied;
     uint32_t currentMonsterFNV1a;
     uint16_t pendingSpriteIndex;
     uint16_t painSpriteIndex;
     uint8_t pending;
     uint8_t active;
-    uint8_t weaponFamiliesOwned;
+    uint8_t standardWeaponsOwned;
     uint8_t reserved;
 } EspNativeGameplayMonsterCombatView;
 
