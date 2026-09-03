@@ -11,6 +11,7 @@
 #include "esp_asset_pack.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_present_gate.h"
@@ -380,6 +381,7 @@ int EspNativeGameplayFrame_renderTurn(
     }
 
     phaseStart = esp_timer_get_time();
+    EspNativeGameplayActionEngine_markFreshFrame();
     if (!Esp32PlatformVideo_present()) {
         printf("[TURNFRAME] DIAG fail=PRESENT\n");
         goto done;

@@ -64,6 +64,7 @@ typedef struct ResourceApplied_s {
     uint32_t beforeValue;
     uint32_t afterValue;
     uint16_t spriteIndex;
+    uint16_t defTile;
     uint8_t type;
     uint8_t subtype;
     uint8_t action;
@@ -323,6 +324,7 @@ static int applyCandidate(const ResourceCandidate* candidate,
         !EspNativeGameplayPlayerState_ensure()) return -1;
     memset(applied, 0, sizeof(*applied));
     applied->spriteIndex = candidate->spriteIndex;
+    applied->defTile = candidate->defTile;
     applied->type = candidate->type;
     applied->subtype = candidate->subtype;
     applied->slot = 0xffU;
@@ -505,6 +507,9 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     uint8_t i;
     uint32_t playerFNVBefore;
     uint32_t playerFNVAfter;
+    char pickupName[17];
+    char pickupMessage[24];
+    int feedbackQueued = 0;
 
     if (beforeView == NULL || afterView == NULL ||
         beforeView->active != 1U || afterView->active != 1U ||
@@ -569,11 +574,33 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     }
 
     if (appliedCount == 0U) return 1;
+
+    memset(pickupName, 0, sizeof(pickupName));
+    memset(pickupMessage, 0, sizeof(pickupMessage));
+    if (!EspEntityDefTypeCatalog_readName(applied[0].defTile,
+                                pickupName,
+                                sizeof(pickupName)) ||
+        snprintf(pickupMessage, sizeof(pickupMessage), "Got %s", pickupName) <= 0 ||
+        !EspNativeGameplayActionEngine_queueTextFeedback(
+  ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP,
+  pickupMessage, 500U)) {
+        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+        while (appliedCount > 0U) {
+  --appliedCount;
+  setConsumed(applied[appliedCount].spriteIndex, 0);
+        }
+        resources.view.playerFNV1a = EspNativeGameplayPlayerState_fingerprint();
+        printf("[PLAYERRES] DEFER tile=%u reason=pickup-feedback-not-ready playerRollback=yes worldRemove=yes mutation=no\n",
+     (unsigned int)afterTile);
+        return 1;
+    }
+    feedbackQueued = 1;
+
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     resources.view.playerFNV1a = playerFNVAfter;
 
     if (rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {
-        printf("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=deferred gotFace=deferred rollback=closed\n",
+        printf("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=pickup-live flash=white-500ms gotFace=deferred rollback=closed\n",
                (unsigned int)afterTile,
                (unsigned int)candidateCount,
                (unsigned int)appliedCount,
@@ -593,9 +620,17 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                (unsigned int)EspNativeGameplayPlayerState_ammo(4U),
                (unsigned int)EspNativeGameplayPlayerState_view()->keys,
                (unsigned int)EspNativeGameplayPlayerState_view()->credits);
+        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=white-border/500ms viewport=160x80 border=2px gotFace=deferred additionalMessages=%u-deferred\n",
+               (unsigned int)afterTile, pickupMessage,
+               (unsigned int)applied[0].defTile,
+               (unsigned int)(appliedCount > 0U ? appliedCount - 1U : 0U));
         return 1;
     }
 
+    if (feedbackQueued) {
+        (void)EspNativeGameplayActionEngine_cancelQueuedFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP);
+    }
     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
     while (appliedCount > 0U) {
         --appliedCount;

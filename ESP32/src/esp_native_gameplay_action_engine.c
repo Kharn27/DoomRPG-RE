@@ -81,6 +81,14 @@
 #define FEEDBACK_TRANSPARENT 1U
 #define FEEDBACK_OPAQUE 0U
 #define FEEDBACK_DISPLAY_MS 1200U
+#define FEEDBACK_DYNAMIC_TEXT_BYTES 24U
+#define FEEDBACK_VIEW_Y FEEDBACK_TOP_HEIGHT
+#define FEEDBACK_VIEW_HEIGHT (DOOMRPG_LOGICAL_HEIGHT - (FEEDBACK_TOP_HEIGHT * 2U))
+#define FEEDBACK_BORDER_THICKNESS 2U
+#define FEEDBACK_BORDER_PIXELS \
+    ((DOOMRPG_LOGICAL_WIDTH * FEEDBACK_BORDER_THICKNESS * 2U) + \
+     ((FEEDBACK_VIEW_HEIGHT - (FEEDBACK_BORDER_THICKNESS * 2U)) * \
+      FEEDBACK_BORDER_THICKNESS * 2U))
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "Native action feedback requires the 160x120 logical framebuffer"
@@ -92,6 +100,7 @@ typedef EspNativeGameplayActionFeedback ActionFeedback;
 #define ACTION_FEEDBACK_FIRE_CLEARED ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_FIRE_CLEARED
 #define ACTION_FEEDBACK_DOOR_CLEARED ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DOOR_CLEARED
 #define ACTION_FEEDBACK_PASS_TURN ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN
+#define ACTION_FEEDBACK_PICKUP ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP
 
 typedef enum ActionRoute_e {
     ACTION_ROUTE_INVALID = 0,
@@ -148,6 +157,13 @@ typedef struct ActionEngineState_s {
     uint8_t feedbackKind;
     uint8_t feedbackVisible;
     uint8_t feedbackVisibleKind;
+    uint32_t viewportFlashShownAtMs;
+    uint16_t viewportFlashDurationMs;
+    uint8_t viewportFlashPending;
+    uint8_t viewportFlashVisible;
+    uint8_t viewportFlashSnapshotValid;
+    uint8_t framebufferFresh;
+    char feedbackText[FEEDBACK_DYNAMIC_TEXT_BYTES];
 } ActionEngineState;
 
 typedef struct FeedbackScratch_s {
@@ -156,6 +172,7 @@ typedef struct FeedbackScratch_s {
 } FeedbackScratch;
 
 static ActionEngineState actionState;
+static uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];
 
 EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
@@ -303,8 +320,31 @@ int EspNativeGameplayActionEngine_queueFeedback(
         actionState.feedbackPending != 0U) {
         return 0;
     }
+    actionState.feedbackText[0] = '\0';
     actionState.feedbackPending = 1U;
     actionState.feedbackKind = (uint8_t)feedback;
+    return 1;
+}
+
+int EspNativeGameplayActionEngine_queueTextFeedback(
+    EspNativeGameplayActionFeedback feedback,
+    const char* text,
+    uint16_t viewportFlashMs) {
+    size_t len;
+    if (feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP || text == NULL ||
+        !ensureOwner() || actionState.pending.active != 0U ||
+        actionState.feedbackPending != 0U) {
+        return 0;
+    }
+    len = strnlen(text, FEEDBACK_DYNAMIC_TEXT_BYTES);
+    if (len == 0U || len >= FEEDBACK_DYNAMIC_TEXT_BYTES) return 0;
+    memcpy(actionState.feedbackText, text, len + 1U);
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = (uint8_t)feedback;
+    if (viewportFlashMs != 0U) {
+        actionState.viewportFlashPending = 1U;
+        actionState.viewportFlashDurationMs = viewportFlashMs;
+    }
     return 1;
 }
 
@@ -316,7 +356,16 @@ int EspNativeGameplayActionEngine_cancelQueuedFeedback(
     }
     actionState.feedbackPending = 0U;
     actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+    actionState.feedbackText[0] = '\0';
+    actionState.viewportFlashPending = 0U;
+    if (actionState.viewportFlashVisible == 0U) {
+        actionState.viewportFlashDurationMs = 0U;
+    }
     return 1;
+}
+
+void EspNativeGameplayActionEngine_markFreshFrame(void) {
+    actionState.framebufferFresh = 1U;
 }
 
 int __wrap_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
@@ -617,6 +666,9 @@ static const char* feedbackText(uint8_t feedback) {
     if (feedback == ACTION_FEEDBACK_FIRE_CLEARED) return "Fire cleared!";
     if (feedback == ACTION_FEEDBACK_DOOR_CLEARED) return "Door cleared!";
     if (feedback == ACTION_FEEDBACK_PASS_TURN) return "Turn passed.";
+    if (feedback == ACTION_FEEDBACK_PICKUP && actionState.feedbackText[0] != '\0') {
+        return actionState.feedbackText;
+    }
     return NULL;
 }
 
@@ -637,6 +689,76 @@ static int drawGlyph(const EspNativeIndexedBmp* font,
                FEEDBACK_FONT_WIDTH, FEEDBACK_FONT_HEIGHT,
                (int16_t)x, (int16_t)y,
                FEEDBACK_TRANSPARENT, stats) == ESP_NATIVE_INDEXED_BMP_OK;
+}
+
+static int visitViewportBorder(uint16_t* framebuffer,
+                     int restore) {
+    uint32_t pos = 0U;
+    uint32_t x;
+    uint32_t y;
+    uint32_t top = FEEDBACK_VIEW_Y;
+    uint32_t bottom = FEEDBACK_VIEW_Y + FEEDBACK_VIEW_HEIGHT;
+    uint32_t leftEnd = FEEDBACK_BORDER_THICKNESS;
+    uint32_t rightBegin = DOOMRPG_LOGICAL_WIDTH - FEEDBACK_BORDER_THICKNESS;
+
+    if (framebuffer == NULL) return 0;
+    for (y = top; y < top + FEEDBACK_BORDER_THICKNESS; ++y) {
+        for (x = 0U; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
+  uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+  if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
+  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+  ++pos;
+        }
+    }
+    for (y = bottom - FEEDBACK_BORDER_THICKNESS; y < bottom; ++y) {
+        for (x = 0U; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
+  uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+  if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
+  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+  ++pos;
+        }
+    }
+    for (y = top + FEEDBACK_BORDER_THICKNESS;
+         y < bottom - FEEDBACK_BORDER_THICKNESS; ++y) {
+        for (x = 0U; x < leftEnd; ++x) {
+  uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+  if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
+  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+  ++pos;
+        }
+        for (x = rightBegin; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
+  uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+  if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
+  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+  ++pos;
+        }
+    }
+    return pos == FEEDBACK_BORDER_PIXELS;
+}
+
+static int paintViewportFlash(void) {
+    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
+            DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
+    if (framebuffer == NULL || Esp32PlatformVideo_framebufferSizeBytes() != expected) {
+        return 0;
+    }
+    if (!visitViewportBorder(framebuffer, 0)) return 0;
+    actionState.viewportFlashSnapshotValid = 1U;
+    return 1;
+}
+
+static int restoreViewportFlash(void) {
+    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
+            DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
+    if (actionState.viewportFlashSnapshotValid == 0U) return 1;
+    if (framebuffer == NULL || Esp32PlatformVideo_framebufferSizeBytes() != expected ||
+        !visitViewportBorder(framebuffer, 1)) {
+        return 0;
+    }
+    actionState.viewportFlashSnapshotValid = 0U;
+    return 1;
 }
 
 static int paintFeedback(uint8_t feedback) {
@@ -722,6 +844,7 @@ done:
 int __wrap_Esp32PlatformVideo_present(void) {
     uint8_t feedback = ACTION_FEEDBACK_NONE;
     int hadFeedback = 0;
+    int flashPainted = 0;
     int ok;
 
     if (actionState.feedbackPending != 0U) {
@@ -733,8 +856,33 @@ int __wrap_Esp32PlatformVideo_present(void) {
         hadFeedback = 1;
     }
 
+    if ((actionState.viewportFlashPending != 0U ||
+         actionState.viewportFlashVisible != 0U) &&
+        (actionState.viewportFlashPending != 0U ||
+         actionState.framebufferFresh != 0U)) {
+        if (!paintViewportFlash()) {
+  printf("[PICKUPFLASH] FAILED phase=paint\n");
+  return 0;
+        }
+        flashPainted = 1;
+    }
+
     ok = __real_Esp32PlatformVideo_present();
     if (!ok) return 0;
+
+    if (flashPainted && actionState.viewportFlashPending != 0U) {
+        actionState.viewportFlashPending = 0U;
+        actionState.viewportFlashVisible = 1U;
+        actionState.viewportFlashShownAtMs = actionNowMs();
+        printf("[PICKUPFLASH] PAINT color=white565/ffff viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller\n",
+     (unsigned int)FEEDBACK_VIEW_Y,
+     (unsigned int)DOOMRPG_LOGICAL_WIDTH,
+     (unsigned int)FEEDBACK_VIEW_HEIGHT,
+     (unsigned int)FEEDBACK_BORDER_THICKNESS,
+     (unsigned int)FEEDBACK_BORDER_PIXELS,
+     (unsigned int)actionState.viewportFlashDurationMs);
+    }
+    actionState.framebufferFresh = 0U;
 
     if (hadFeedback) {
         actionState.feedbackPending = 0U;
@@ -757,11 +905,36 @@ int __wrap_Esp32PlatformVideo_present(void) {
     return 1;
 }
 
+static int serviceViewportFlashExpiry(void) {
+    uint32_t now;
+    uint32_t elapsed;
+    uint16_t duration;
+
+    if (actionState.viewportFlashVisible == 0U) return 1;
+    now = actionNowMs();
+    elapsed = now - actionState.viewportFlashShownAtMs;
+    duration = actionState.viewportFlashDurationMs;
+    if (duration == 0U || elapsed < duration) return 1;
+    if (EspNativeGameplayControls_isActive()) return 1;
+    if (!restoreViewportFlash()) {
+        printf("[PICKUPFLASH] FAILED phase=restore\n");
+        return 0;
+    }
+    if (!__real_Esp32PlatformVideo_present()) return 0;
+    actionState.viewportFlashVisible = 0U;
+    actionState.viewportFlashShownAtMs = 0U;
+    actionState.viewportFlashDurationMs = 0U;
+    printf("[PICKUPFLASH] EXPIRE elapsedMs=%u targetMs=%u restored=viewport-border-only\n",
+ (unsigned int)elapsed, (unsigned int)duration);
+    return 1;
+}
+
 static int serviceFeedbackExpiry(void) {
     uint32_t now;
     uint32_t elapsed;
     uint8_t kind;
 
+    if (!serviceViewportFlashExpiry()) return 0;
     if (actionState.feedbackVisible == 0U) return 1;
     now = actionNowMs();
     elapsed = now - actionState.feedbackShownAtMs;
