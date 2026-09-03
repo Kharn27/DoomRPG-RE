@@ -14,15 +14,15 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main = c377f89d75bb9a3f8efe7398bd7e993757380700
-branch = agent/esp32-native-monster-movement-live
-base main = c377f89d75bb9a3f8efe7398bd7e993757380700
-hardware-tested code boundary = bc39044a2d6931899f3f10097d34522996897db0
-status = live monster movement position + topology + renderer + RNG commit hardware PASS
+main = 7f799ab9bac2bb60f7cffb65719131f0f9877ae0
+branch = agent/esp32-native-pass-turn
+base main = 7f799ab9bac2bb60f7cffb65719131f0f9877ae0
+hardware-tested code boundary = 40a19ba56ee946477ba107d237e644b7bac2e9ef
+status = native PASS TURN + top-bar feedback + monster move/retaliation hardware PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `bc39044a...` as new hardware-tested code. The tail
+Do not treat commits after `40a19ba...` as new hardware-tested code. The tail
 must remain documentation-only until merge.
 
 ## Build environment
@@ -36,9 +36,10 @@ pio run -e esp32-cyd
 Bring-up diagnostics perturb RAM and are not the production memory canon. Never
 claim a local build or hardware pass that did not occur.
 
-A future GitHub Actions workflow may run the same `esp32-cyd` build before
-hardware testing, but CI build success will not replace real-CYD serial
-validation.
+GitHub Actions now runs the normal `esp32-cyd` PlatformIO build through
+`.github/workflows/esp32-cyd.yml` on the active development branches and uploads
+firmware artifacts. CI build success is a compile/link gate only; it never
+replaces real-CYD serial validation.
 
 ## Hardware / permanent memory rules
 
@@ -98,6 +99,9 @@ HUD projection from PlayerState
 extinguisher ammo consumption + fire removal transaction
 generic stationary monster-turn scheduling and LOS recovery
 live nonlethal monster retaliation into PlayerState
+native PASS_TURN scheduling without player movement/rotation
+exact transient "Turn passed." top-bar feedback / 1200 ms expiry
+PASS_TURN-driven live monster movement plus hit/miss retaliation
 transaction-safe RNG refill replay across the legacy 128-byte table boundary
 compact mutable native monster position ownership
 legacy-compatible bounded monster movement planner probe
@@ -113,6 +117,7 @@ Relevant milestone records:
 - [`MILESTONE_NATIVE_MONSTER_COMBAT.md`](MILESTONE_NATIVE_MONSTER_COMBAT.md)
 - [`MILESTONE_NATIVE_PLAYER_RESOURCES.md`](MILESTONE_NATIVE_PLAYER_RESOURCES.md)
 - [`MILESTONE_NATIVE_MONSTER_TURN.md`](MILESTONE_NATIVE_MONSTER_TURN.md)
+- [`MILESTONE_NATIVE_PASS_TURN.md`](MILESTONE_NATIVE_PASS_TURN.md)
 - [`MILESTONE_NATIVE_MONSTER_MOVEMENT.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT.md)
 - [`MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md)
 
@@ -179,7 +184,7 @@ MonsterTrace
 Enemy-turn side:
 
 ```text
-committed player action
+committed movement / rotation / player attack / PASS_TURN
  -> MonsterTurn schedule
  -> candidate + cardinal LOS recovery
  -> exact rollback probe
@@ -236,7 +241,7 @@ monster that is cardinally aligned with the player and has native line of sight.
 Owned now:
 
 ```text
-MOVE / ROTATE / PLAYER_ATTACK scheduling
+MOVE / ROTATE / PLAYER_ATTACK / PASS_TURN scheduling
 stationary cardinal candidate recovery
 native tile/line/sprite LOS
 subtype + alternateAttack weapon selection
@@ -399,6 +404,7 @@ The selected resident graphics-cache geometry remains unchanged.
 ## Current intentionally deferred families
 
 ```text
+PASS_TURN current-tile type10/11 Entity_touched semantics
 pickup sounds/messages/got-face presentation
 combat/retaliation MISS/HIT/CRIT text feedback
 action XP migration: extinguisher +2, jammed door +1
@@ -442,8 +448,9 @@ When the merge is announced:
 
 1. read the true GitHub `main` and exact SHA;
 2. re-read `PORTING_STATUS.md`, this file,
-   `MILESTONE_NATIVE_MONSTER_MOVEMENT.md`, and
-   `MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`;
+   `MILESTONE_NATIVE_MONSTER_MOVEMENT.md`,
+   `MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`, and
+   `MILESTONE_NATIVE_PASS_TURN.md`;
 3. create a fresh coherent `agent/*` branch from that SHA;
 4. choose the next bounded gameplay family from the actual merged frontier.
 

@@ -7,15 +7,15 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main = c377f89d75bb9a3f8efe7398bd7e993757380700
-branch = agent/esp32-native-monster-movement-live
-base main = c377f89d75bb9a3f8efe7398bd7e993757380700
-hardware-tested code boundary = bc39044a2d6931899f3f10097d34522996897db0
-status = REAL-CYD LIVE MONSTER MOVEMENT POSITION + TOPOLOGY + RENDER + RNG COMMIT PASS
+main = 7f799ab9bac2bb60f7cffb65719131f0f9877ae0
+branch = agent/esp32-native-pass-turn
+base main = 7f799ab9bac2bb60f7cffb65719131f0f9877ae0
+hardware-tested code boundary = 40a19ba56ee946477ba107d237e644b7bac2e9ef
+status = REAL-CYD NATIVE PASS TURN + TOPBAR FEEDBACK + MONSTER MOVE/RETALIATION PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`bc39044a...` is the last code commit exercised on the real CYD. Commits after
+`40a19ba...` is the last code commit exercised on the real CYD. Commits after
 that boundary must remain documentation-only until merge.
 
 After merge, read the real GitHub `main` SHA again before creating the next
@@ -257,6 +257,80 @@ dog-familiar damage redirection
 attack visual / player pain FX / damage text / sound
 ```
 
+## Native PASS TURN — hardware PASS
+
+Detailed milestone:
+
+[`MILESTONE_NATIVE_PASS_TURN.md`](MILESTONE_NATIVE_PASS_TURN.md)
+
+The native resident gameplay dispatcher now owns the bounded legacy PASS TURN
+route without moving or rotating the player. It first checks the recovered
+`Game_touchTile(..., false)` precondition and fails closed if a linked type 10 or
+11 entity occupies the player's current tile. When that unowned touch family is
+absent, it queues the exact transient top-bar message and schedules the existing
+generic monster-turn backend:
+
+```text
+PASS_TURN input
+ -> current player tile / settled view validation
+ -> type 10/11 current-tile touch precondition check
+ -> queue "Turn passed." in existing ActionEngine top-bar owner
+ -> request MonsterTurn reason=PASS_TURN
+ -> generic movement or retaliation transaction
+```
+
+The feedback path is allocation-free and reuses the already hardware-proven
+160x20 top-bar renderer. The message is visible for 1200 ms and is explicitly
+cleared back to the normal top bar. The player position/angle is not mutated by
+PASS TURN itself.
+
+Decisive real-CYD witness:
+
+```text
+[PASSTURN] REQUEST seq=86 tile=654 pos=928,1312 angle=192
+  tileTouch=none type10/11=absent message="Turn passed."-queued
+  monsterTurn=requested playerMutation=no
+[ACTIONFEEDBACK] PAINT kind=4 text="Turn passed." chars=12
+  reads=35 bytes=9928 durationMs=1200
+[MONSTERTURN] SCHEDULE n=35 reason=PASS_TURN passSeq=86
+[MONSTERMOVELIVE] COMMIT sprite=179 tile=750->718
+  pos=928,1504->928,1440 rngCalls=1 randomCommitted=yes
+  positionFNV=61296c4a->10cf73aa topologyFNV=bb1d78a4->b40ad9d9
+  renderer=snap-destination projected=yes rollback=closed
+[ACTIONFEEDBACK] EXPIRE kind=4 elapsedMs=1204 targetMs=1200
+  restored=topbar-only
+```
+
+A second PASS TURN moved the same Hellhound `718->686`. Subsequent PASS TURNs
+then exercised both retaliation outcomes while the player remained fixed at
+`928,1312`, angle `192`:
+
+```text
+MISS: probe=1 reason=PASS_TURN firstRandHit=235 rngCalls=2
+      playerHP=30 armor=8 playerMutation=no gameplayRngCommitted=yes
+HIT : probe=2 reason=PASS_TURN firstRandHit=80 firstRandDamage=111
+      totalDamage=2 armorDamage=2 playerHP=30->28 armor=8->6
+      frame=798a3e8f presented=1 rollback=closed
+```
+
+The refill-boundary movement path was also crossed on the first PASS TURN:
+`PROBE-REFILL -> MONSTERMOVE -> PROBE-COMMIT -> MONSTERMOVELIVE`, preserving the
+existing exact gameplay-RNG transaction contract.
+
+Still deliberately deferred:
+
+```text
+current-tile type 10/11 Entity_touched semantics
+monster attack animation / player pain FX / damage text / sound
+player lethal/death transition
+multiple-monster activation/movement ordering
+full legacy turn orchestration outside the now-owned PASS TURN route
+```
+
+The missing Hellhound attack animation is therefore not part of this PASS. The
+hit/miss consequences are live; visual attack presentation remains a separate
+bounded family.
+
 ## Native monster position + movement planner — hardware PASS
 
 Detailed probe milestone:
@@ -414,6 +488,8 @@ shared PlayerState HUD projection
 extinguisher ammo consumption
 generic death / corpse / gib presentation
 bounded generic stationary monster retaliation
+native PASS_TURN scheduling + exact "Turn passed." top-bar feedback
+PASS_TURN-driven live monster movement / hit / miss consequences
 compact mutable monster-position ownership
 bounded legacy-compatible monster movement planner probe
 persistent boundary-safe RNG reservation/replay
@@ -427,6 +503,7 @@ native renderer projection of committed moved position
 Still explicit/deferred:
 
 ```text
+PASS_TURN current-tile type10/11 Entity_touched semantics
 pickup sounds/messages/got-face presentation
 combat/retaliation MISS/HIT/CRIT text feedback
 fire +2 XP and jammed-door +1 XP migration into PlayerState
