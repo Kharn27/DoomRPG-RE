@@ -22,6 +22,9 @@ typedef struct EspNativePlaneRenderStats_s {
 } EspNativePlaneRenderStats;
 
 void EspNativePlaneRenderer_reset(void);
+/* The renderer preserves exact sampling with an adaptive bounded LRU: up to
+ * six 2048-byte transient leases are used when available, with one slot as the
+ * fail-closed minimum under later gameplay memory pressure. */
 int EspNativePlaneRenderer_render(struct Render_s* render);
 const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void);
 
