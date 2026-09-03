@@ -82,6 +82,7 @@
 #define FEEDBACK_OPAQUE 0U
 #define FEEDBACK_DISPLAY_MS 1200U
 #define FEEDBACK_DYNAMIC_TEXT_BYTES 24U
+#define FEEDBACK_DAMAGE_RED565 0xb800U
 #define FEEDBACK_VIEW_Y FEEDBACK_TOP_HEIGHT
 #define FEEDBACK_VIEW_HEIGHT (DOOMRPG_LOGICAL_HEIGHT - (FEEDBACK_TOP_HEIGHT * 2U))
 #define FEEDBACK_BORDER_THICKNESS 2U
@@ -101,6 +102,7 @@ typedef EspNativeGameplayActionFeedback ActionFeedback;
 #define ACTION_FEEDBACK_DOOR_CLEARED ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DOOR_CLEARED
 #define ACTION_FEEDBACK_PASS_TURN ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN
 #define ACTION_FEEDBACK_PICKUP ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP
+#define ACTION_FEEDBACK_DAMAGE ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE
 
 typedef enum ActionRoute_e {
     ACTION_ROUTE_INVALID = 0,
@@ -159,6 +161,7 @@ typedef struct ActionEngineState_s {
     uint8_t feedbackVisibleKind;
     uint32_t viewportFlashShownAtMs;
     uint16_t viewportFlashDurationMs;
+    uint16_t viewportFlashColor565;
     uint8_t viewportFlashPending;
     uint8_t viewportFlashVisible;
     uint8_t viewportFlashSnapshotValid;
@@ -331,7 +334,8 @@ int EspNativeGameplayActionEngine_queueTextFeedback(
     const char* text,
     uint16_t viewportFlashMs) {
     size_t len;
-    if (feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP || text == NULL ||
+    if ((feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP &&
+         feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE) || text == NULL ||
         !ensureOwner() || actionState.pending.active != 0U ||
         actionState.feedbackPending != 0U) {
         return 0;
@@ -344,6 +348,9 @@ int EspNativeGameplayActionEngine_queueTextFeedback(
     if (viewportFlashMs != 0U) {
         actionState.viewportFlashPending = 1U;
         actionState.viewportFlashDurationMs = viewportFlashMs;
+        actionState.viewportFlashColor565 =
+            feedback == ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE
+                ? FEEDBACK_DAMAGE_RED565 : 0xffffU;
     }
     return 1;
 }
@@ -360,6 +367,7 @@ int EspNativeGameplayActionEngine_cancelQueuedFeedback(
     actionState.viewportFlashPending = 0U;
     if (actionState.viewportFlashVisible == 0U) {
         actionState.viewportFlashDurationMs = 0U;
+        actionState.viewportFlashColor565 = 0U;
     }
     return 1;
 }
@@ -666,7 +674,9 @@ static const char* feedbackText(uint8_t feedback) {
     if (feedback == ACTION_FEEDBACK_FIRE_CLEARED) return "Fire cleared!";
     if (feedback == ACTION_FEEDBACK_DOOR_CLEARED) return "Door cleared!";
     if (feedback == ACTION_FEEDBACK_PASS_TURN) return "Turn passed.";
-    if (feedback == ACTION_FEEDBACK_PICKUP && actionState.feedbackText[0] != '\0') {
+    if ((feedback == ACTION_FEEDBACK_PICKUP ||
+         feedback == ACTION_FEEDBACK_DAMAGE) &&
+        actionState.feedbackText[0] != '\0') {
         return actionState.feedbackText;
     }
     return NULL;
@@ -692,7 +702,8 @@ static int drawGlyph(const EspNativeIndexedBmp* font,
 }
 
 static int visitViewportBorder(uint16_t* framebuffer,
-                     int restore) {
+                               int restore,
+                               uint16_t flashColor) {
     uint32_t pos = 0U;
     uint32_t x;
     uint32_t y;
@@ -706,7 +717,7 @@ static int visitViewportBorder(uint16_t* framebuffer,
         for (x = 0U; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
   uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
   if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
-  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = flashColor; }
   ++pos;
         }
     }
@@ -714,7 +725,7 @@ static int visitViewportBorder(uint16_t* framebuffer,
         for (x = 0U; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
   uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
   if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
-  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = flashColor; }
   ++pos;
         }
     }
@@ -723,13 +734,13 @@ static int visitViewportBorder(uint16_t* framebuffer,
         for (x = 0U; x < leftEnd; ++x) {
   uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
   if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
-  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = flashColor; }
   ++pos;
         }
         for (x = rightBegin; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
   uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
   if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
-  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = flashColor; }
   ++pos;
         }
     }
@@ -743,7 +754,9 @@ static int paintViewportFlash(void) {
     if (framebuffer == NULL || Esp32PlatformVideo_framebufferSizeBytes() != expected) {
         return 0;
     }
-    if (!visitViewportBorder(framebuffer, 0)) return 0;
+    if (!visitViewportBorder(framebuffer, 0,
+                            actionState.viewportFlashColor565 != 0U
+                                ? actionState.viewportFlashColor565 : 0xffffU)) return 0;
     actionState.viewportFlashSnapshotValid = 1U;
     return 1;
 }
@@ -754,7 +767,7 @@ static int restoreViewportFlash(void) {
             DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
     if (actionState.viewportFlashSnapshotValid == 0U) return 1;
     if (framebuffer == NULL || Esp32PlatformVideo_framebufferSizeBytes() != expected ||
-        !visitViewportBorder(framebuffer, 1)) {
+        !visitViewportBorder(framebuffer, 1, 0U)) {
         return 0;
     }
     actionState.viewportFlashSnapshotValid = 0U;
@@ -861,7 +874,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
         (actionState.viewportFlashPending != 0U ||
          actionState.framebufferFresh != 0U)) {
         if (!paintViewportFlash()) {
-  printf("[PICKUPFLASH] FAILED phase=paint\n");
+  printf("[VIEWFLASH] FAILED phase=paint\n");
   return 0;
         }
         flashPainted = 1;
@@ -874,13 +887,15 @@ int __wrap_Esp32PlatformVideo_present(void) {
         actionState.viewportFlashPending = 0U;
         actionState.viewportFlashVisible = 1U;
         actionState.viewportFlashShownAtMs = actionNowMs();
-        printf("[PICKUPFLASH] PAINT color=white565/ffff viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller\n",
+        printf("[VIEWFLASH] PAINT color565=%04x viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller feedback=%u\n",
+     (unsigned int)actionState.viewportFlashColor565,
      (unsigned int)FEEDBACK_VIEW_Y,
      (unsigned int)DOOMRPG_LOGICAL_WIDTH,
      (unsigned int)FEEDBACK_VIEW_HEIGHT,
      (unsigned int)FEEDBACK_BORDER_THICKNESS,
      (unsigned int)FEEDBACK_BORDER_PIXELS,
-     (unsigned int)actionState.viewportFlashDurationMs);
+     (unsigned int)actionState.viewportFlashDurationMs,
+     (unsigned int)feedback);
     }
     actionState.framebufferFresh = 0U;
 
@@ -917,15 +932,17 @@ static int serviceViewportFlashExpiry(void) {
     if (duration == 0U || elapsed < duration) return 1;
     if (EspNativeGameplayControls_isActive()) return 1;
     if (!restoreViewportFlash()) {
-        printf("[PICKUPFLASH] FAILED phase=restore\n");
+        printf("[VIEWFLASH] FAILED phase=restore\n");
         return 0;
     }
     if (!__real_Esp32PlatformVideo_present()) return 0;
+    printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=viewport-border-only\n",
+ (unsigned int)elapsed, (unsigned int)duration,
+ (unsigned int)actionState.viewportFlashColor565);
     actionState.viewportFlashVisible = 0U;
     actionState.viewportFlashShownAtMs = 0U;
     actionState.viewportFlashDurationMs = 0U;
-    printf("[PICKUPFLASH] EXPIRE elapsedMs=%u targetMs=%u restored=viewport-border-only\n",
- (unsigned int)elapsed, (unsigned int)duration);
+    actionState.viewportFlashColor565 = 0U;
     return 1;
 }
 

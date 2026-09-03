@@ -16,6 +16,7 @@
 #include "esp_native_gameplay_combat_math.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_hazard_touch.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_interaction_inventory.h"
 #include "esp_native_gameplay_player_resources.h"
@@ -522,6 +523,18 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
         printf("[PLAYERRES] DEFER tile=%u reason=owner-not-ready mutation=no\n",
                (unsigned int)afterTile);
         return 1;
+    }
+    {
+        EspNativeGameplayHazardTouchStatus hazardStatus =
+            EspNativeGameplayHazardTouch_processMove(doomRpg, beforeView, afterView);
+        if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_FATAL) {
+            resources.view.fatal = 1U;
+            return 0;
+        }
+        if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED ||
+            hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED) {
+            return 1;
+        }
     }
     memset(candidates, 0, sizeof(candidates));
     memset(applied, 0, sizeof(applied));
