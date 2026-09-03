@@ -17,6 +17,7 @@
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_move_events.h"
+#include "esp_native_gameplay_pass_turn.h"
 #include "esp_native_gameplay_select.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
@@ -591,7 +592,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         gameplayState.active = 1U;
         PlatformInput_setTapCallback(onGameplayTap);
         printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26 collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live SELECT-entity/other/turn-advance/menu/automap/weapons=deferred\n",
+        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26+PASS_TURN collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live SELECT-entity/other/menu/automap/weapons=deferred PASS_TURN-message+type10/11-touch=deferred\n",
                (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         return;
     }
@@ -672,6 +673,10 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
     case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
         serviceSelect(doomRpg->render, &intent);
+        break;
+
+    case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN:
+        (void)EspNativeGameplayPassTurn_execute(&intent);
         break;
 
     default:
