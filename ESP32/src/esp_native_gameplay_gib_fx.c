@@ -11,6 +11,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
@@ -297,17 +298,22 @@ int EspNativeGameplayActionEngine_present(void) {
     return EspNativeGameplayActionEngine_presentBase();
 }
 
-/* Public gameplay-session wrappers. Run the complete existing player-resource /
- * action / monster-combat / turn-probe chain first, then commit the matching
- * bounded nonlethal retaliation transaction before servicing gib expiry. */
+/* Public gameplay-session wrapper and explicit permanent composition point.
+ * Run player resources/action/monster combat/turn first, then retaliation, then
+ * the bounded movement probe adapter, and finally presentation-only gib expiry.
+ * The adapter borrows an exact reserved post-refill RNG table when a movement
+ * turn lands on nextRand==127, then restores the live Random_t byte-for-byte;
+ * the already-proven byte RNG guard owns the future exact live replay. */
 void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayPlayerResources_sessionService(doomRpg);
     EspNativeGameplayMonsterRetaliation_service(doomRpg);
+    EspNativeGameplayMonsterMovementProbe_service(doomRpg);
     serviceExpiry(doomRpg);
 }
 
 void __wrap_EspNativeGameplaySession_reset(void) {
     EspNativeGameplayPlayerResources_sessionReset();
     EspNativeGameplayMonsterRetaliation_reset();
+    EspNativeGameplayMonsterMovementProbe_reset();
     resetFx();
 }
