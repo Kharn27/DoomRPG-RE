@@ -7,15 +7,15 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main = 0d46418a79f66592235fa88fab15b007ccb3a8b2
-branch = agent/esp32-native-monster-turn
-base main = 0d46418a79f66592235fa88fab15b007ccb3a8b2
-hardware-tested code boundary = e08b8a8bf7eca8b602c32a7559f142d44e3e9965
-status = REAL-CYD GENERIC MONSTER TURN + NONLETHAL RETALIATION + RNG REPLAY PASS
+main = 65dea748ef8d2e5a6f3823676ac05ee62fb89407
+branch = agent/esp32-native-monster-movement
+base main = 65dea748ef8d2e5a6f3823676ac05ee62fb89407
+hardware-tested code boundary = 7dd7faa3994969e43ccb27b5450ee828ade3c323
+status = REAL-CYD NATIVE MONSTER POSITION + MOVEMENT PLANNER PROBE + RNG RESERVATION PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`e08b8a8b...` is the last code commit exercised on the real CYD. Commits after
+`7dd7faa...` is the last code commit exercised on the real CYD. Commits after
 that boundary must remain documentation-only until merge.
 
 After merge, read the real GitHub `main` SHA again before creating the next
@@ -230,8 +230,8 @@ Detailed milestone:
 
 This is the first live enemy-turn family. It is generic, not dog/zombie-specific.
 A committed MOVE, ROTATE, or PLAYER_ATTACK can schedule a native turn. The
-current bounded executor accepts one unambiguous already-positioned `type=1`
-attacker with cardinal native LOS and a recovered supported monster weapon.
+bounded executor accepts one unambiguous active `type=1` attacker with cardinal
+native LOS and a recovered supported monster weapon.
 
 Owned live consequences:
 
@@ -247,73 +247,114 @@ miss gameplay-RNG commit path
 render/RNG failure rollback
 ```
 
-Still fail-closed inside this family:
+Still fail-closed inside retaliation:
 
 ```text
 multiple ambiguous attackers / activation ordering
-monster movement / pathfinding / mutable positions
 special subtype-10 AI
 player lethal/death transition
 dog-familiar damage redirection
 attack visual / player pain FX / damage text / sound
 ```
 
-### RNG refill transaction repair
+## Native monster position + movement planner — hardware PASS
 
-Hardware testing found that `Random_t` alone is not the full legacy RNG state.
-When byte index 127 is crossed, `DoomRPG_setRand()` regenerates the 128-byte table
-using hidden file-static generator state. A speculative probe could therefore
-advance that hidden generator, restore `Random_t`, and receive a different table
-when the live replay crossed the same boundary.
+Detailed milestone:
 
-The generic `DoomRPG_randNextByte()` replay guard now makes an immediate exact
-transactional refill idempotent:
+[`MILESTONE_NATIVE_MONSTER_MOVEMENT.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT.md)
+
+A permanent compact spatial owner now exists independently of immutable BSP
+sprite coordinates:
 
 ```text
-owner = 280 B static bounded state
+record = {spriteIndex,tileIndex,worldX,worldY}
+recordBytes = 8
+Entrance records = 30
+payload = 240 B
+initial source = native topology tile center
+allocation = one load/session allocation
+```
+
+The recovered generic movement planner owns the first bounded
+`Entity_aiThink`/`Entity_aiGoal_MOVE` behavior:
+
+```text
+attack LOS mask = 0x5687
+movement mask = 0xff87 with legacy subtype adjustments
+2-step calcPath greedy look-ahead
+legacy east/west/south/north ordering
+legacy north closestPathDist quirk preserved
+visit choice = visitOrder[(rand & 3) % visitCount]
+NO-IMMEDIATE-ATTACK and RANGED-AI producer paths
+```
+
+The current milestone is still **probe-only**: one active ordinary monster may
+prepare and commit one cardinal position, fingerprint it, then rollback exactly.
+No renderer publication, topology relink, interpolation, or visible monster
+movement occurs yet.
+
+Decisive real-CYD position witness:
+
+```text
+sprite=179 subtype=1 weapon=12
+sourceTile=750 source=928,1504
+destTile=718 delta=0,-64
+tieRand=217 choice=0 mask=ff87 rngCalls=1
+randomLiveUntouched=yes
+positionFNV=61296c4a->10cf73aa->61296c4a
+positionRollback=yes
+rendererPublish=deferred topologyRelink=deferred liveMove=no mutation=no
+```
+
+## RNG refill transaction + movement reservation — hardware PASS
+
+Hardware testing previously proved that `Random_t` alone is not the full legacy
+RNG state. `DoomRPG_setRand()` regenerates the 128-byte table using hidden
+file-static generator state.
+
+The generic guard now supports two bounded replay modes:
+
+```text
+ordinary rollback lease = 1000 ms
+persistent movement-probe reservation = exact live Random_t pointer + pre/post table
+hidden generator = advances once per logical refill
 allocation = none
-lease = 1000 ms
-first logical refill = advance hidden generator once
-rollback replay = reuse exact cached post-refill Random_t
-normal non-refill sequence = unchanged
+current static guard owner = 284 B on 32-bit ESP32
 ```
 
-Decisive real-CYD witness:
+The movement reservation may survive well beyond the ordinary 1000 ms lease. A
+probe temporarily borrows the reserved post-refill state, restores live
+`Random_t` exactly, and leaves the table reserved for the next true byte-boundary
+draw.
+
+A hardware test caught an important second-order bug: consuming the reservation
+at the monster-turn **probe** was too early because that probe itself rolls RNG
+back. The final code converts `PROBE-REPLAY` into the ordinary rollback lease so
+live retaliation can reuse the exact same table.
+
+Decisive final real-CYD chain:
 
 ```text
-[RNGGUARD] REFILL refill=1 ... hiddenGenerator=advanced-once rollbackReplay=armed
-[MONSTERTURN] ATTACK-PROBE ... sprite=179 ... firstRandHit=63 firstRandDamage=1 totalDamage=1 armorDamage=1 ... rngRollback=yes playerExact=yes
-[RNGGUARD] REPLAY refill=1 replay=1 ... hiddenGenerator=untouched rollbackSafe=yes
-[MONSTERRETAL] COMMIT ... sprite=179 ... firstRandHit=63 firstRandDamage=1 totalDamage=1 armorDamage=1 playerHP=30->29 armor=12->11 rollback=closed
+[RNGGUARD] PROBE-REFILL refill=1 ... hiddenGenerator=advanced-once ...
+[MONSTERMOVE] PROBE ... tieRand=217 ... randomLiveUntouched=yes ... positionRollback=yes
+[RNGGUARD] PROBE-RESTORE refill=1 liveRandomExact=yes reservation=pending ...
+[RNGGUARD] PROBE-REPLAY refill=1 replay=1 leaseMs=1000 ... reservation=consumed rollbackReplay=armed sequenceExact=yes
+[MONSTERTURN] ATTACK-PROBE ... firstRandHit=217 ... missProjectileRng=1 rngRollback=yes playerExact=yes
+[RNGGUARD] REPLAY refill=1 replay=2 leaseMs=1000 ... hiddenGenerator=untouched rollbackSafe=yes
+[MONSTERRETAL] MISS-COMMIT ... firstRandHit=217 ... gameplayRngCommitted=yes playerMutation=no
 ```
 
-The replay is byte-for-byte identical across the refill boundary.
-
-Additional hardware corpus through the same backend:
-
-```text
-Hellhound ordinary replay:
-  firstRandHit=149 firstRandDamage=75 damage=1 armorDamage=1
-  HP 29->28 armor 11->10
-
-Zombie ranged hit:
-  aiRand=119 firstRandHit=96 firstRandDamage=45 damage=3 armorDamage=2
-  HP 30->27 armor 14->12
-
-Zombie critical hit:
-  aiRand=46 firstRandHit=11 firstRandDamage=95 crit=1 damage=7 armorDamage=5
-  HP 27->20 armor 12->7
-```
-
-Probe and live commit values matched exactly for those witnesses.
+A subsequent ordinary retaliation in the same session matched probe/live with
+`firstRandHit=203`, `firstRandDamage=213`, `damage=2`, `armorDamage=2`, committing
+player `HP 30->28`, `armor 12->10`.
 
 ## Representative final RAM witness
 
 Latest real-CYD gameplay logs at the locked code boundary:
 
 ```text
-heap = 85000 B
-heap8 = 19236 B
+heap = 84648 B
+heap8 = 18884 B
 largest8 = 13812 B
 shapeData = NULL
 mediaTexels = NULL
@@ -348,6 +389,9 @@ shared PlayerState HUD projection
 extinguisher ammo consumption
 generic death / corpse / gib presentation
 bounded generic stationary monster retaliation
+compact mutable monster-position ownership
+bounded legacy-compatible monster movement planner probe
+persistent boundary-safe RNG reservation/replay
 ```
 
 ## Intentionally deferred families
@@ -360,8 +404,11 @@ combat/retaliation MISS/HIT/CRIT text feedback
 fire +2 XP and jammed-door +1 XP migration into PlayerState
 materialized monster drops
 corpse-pile trimming
-monster movement / pathfinding / mutable position owner
-multiple-monster activation/order semantics
+live monster movement publication into topology/renderer
+monster movement interpolation/animation
+multiple-monster activation/movement ordering
+unsupported special calcPath plane corpus
+special subtype-10 AI
 player death/lethal retaliation transition
 monster attack/pain presentation and sound
 full native turn advancement orchestration
@@ -397,21 +444,20 @@ After merge:
 
 1. read actual GitHub `main` and exact SHA;
 2. create a fresh coherent `agent/*` branch from that SHA;
-3. recover the next gameplay family from legacy behavior;
-4. prefer engine-level consequences that close existing deferred seams rather
-   than per-entity milestones.
+3. re-read this status, `DOCUMENTATION.md`, and the movement milestone;
+4. choose the next bounded gameplay family from the merged frontier.
 
 Strong candidates now include:
 
 ```text
-monster attack/player-pain presentation + combat feedback
+live monster movement publication / topology relink / renderer projection
+monster attack + player-pain presentation and combat feedback
 player lethal/death transition
-native monster movement/pathfinding position owner
 action XP migration into PlayerState
 materialized monster drops
 ```
 
-Choose the next bounded family only after re-reading merged `main`.
+Choose only after re-reading merged `main`.
 
 ## Development workflow
 
