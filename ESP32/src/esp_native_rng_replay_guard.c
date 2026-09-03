@@ -126,6 +126,7 @@ int EspNativeRngReplayGuard_commitProbeBoundary(Random_t* liveRandom,
                                                 const Random_t* saved,
                                                 uint8_t prepared,
                                                 uint32_t consumedBytes) {
+    uint32_t now;
     int expectedNext;
 
     if (prepared == 0U) return 1;
@@ -144,13 +145,15 @@ int EspNativeRngReplayGuard_commitProbeBoundary(Random_t* liveRandom,
         return 0;
     }
 
+    now = DoomRPG_GetUpTimeMS();
     rngReplayGuard.probeReserved = 0U;
     rngReplayGuard.probeReservedRand = NULL;
-    rngReplayGuard.valid = 0U;
-    rngReplayGuard.validUntilMs = 0U;
-    printf("[RNGGUARD] PROBE-COMMIT refill=%u bytes=%u hiddenGenerator=advanced-once-total reservation=consumed sequenceExact=yes\n",
+    rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
+    rngReplayGuard.valid = 1U;
+    printf("[RNGGUARD] PROBE-COMMIT refill=%u bytes=%u leaseMs=%u hiddenGenerator=advanced-once-total reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
            (unsigned int)rngReplayGuard.realRefills,
-           (unsigned int)consumedBytes);
+           (unsigned int)consumedBytes,
+           (unsigned int)RNG_REPLAY_GUARD_LEASE_MS);
     return 1;
 }
 
