@@ -1224,11 +1224,11 @@ static int renderFrame(Render_t* render,
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
     if (!EspAssetPack_findEntry("mappings.bin", &mappings) ||
         !EspAssetPack_findEntry("palettes.bin", &palettes) ||
-        !EspAssetPack_findEntry("wtexels.bin", work->wallTexels) ||
+        !EspAssetPack_findEntry("wtexels.bin", &work->wallTexels) ||
         !EspAssetPack_findEntry(resourceName, &mapEntry) ||
         mapEntry.size != work->runtime->sourceBytes ||
         mapEntry.crc32 != work->runtime->sourceCrc32 ||
-        !EspAssetPack_readRange(work->wallTexels, 0U, wallHeader, sizeof(wallHeader)) ||
+        !EspAssetPack_readRange(&work->wallTexels, 0U, wallHeader, sizeof(wallHeader)) ||
         !EspAssetPack_readRange(&mapEntry, 0U, bspHeader, sizeof(bspHeader))) {
         goto done;
     }
