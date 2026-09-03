@@ -2,6 +2,7 @@
 
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
+#include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_player_resources.h"
 
 #define SPRITE_TYPE_ENEMY 1U
@@ -17,6 +18,7 @@ int __real_EspMapRuntime_getMapSprite(uint32_t index,
 
 int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
                                       EspMapSprite* outSprite) {
+    const EspNativeGameplayMonsterPositionRecord* monsterPosition;
     uint8_t visual;
     uint8_t type;
     uint8_t subtype;
@@ -42,8 +44,25 @@ int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
     }
 
     (void)subtype;
-    (void)linkState;
     (void)linkOrder;
+
+    /*
+     * Native MonsterPosition is the mutable logical spatial owner. Once an
+     * enemy has been relinked, project its committed tile-center x/y into the
+     * existing immutable-sprite overlay. The BSP record itself is never changed.
+     * Interpolation is deliberately separate; this milestone snaps the rendered
+     * sprite to the committed logical destination.
+     */
+    if (type == SPRITE_TYPE_ENEMY &&
+        (linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
+        monsterPosition = EspNativeGameplayMonsterPosition_find((uint16_t)index);
+        if (monsterPosition != NULL &&
+            monsterPosition->tileIndex ==
+                (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK)) {
+            outSprite->x = monsterPosition->worldX;
+            outSprite->y = monsterPosition->worldY;
+        }
+    }
 
     /* Legacy monster rendering uses explicit visual 6 for pain, visual 4 for
      * the short death pose and visual 2 for the stable corpse. The native
