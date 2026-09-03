@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_trace.h"
 #include "esp_native_gameplay_monster_turn.h"
 
@@ -32,6 +33,14 @@ static int isActivated(uint16_t spriteIndex) {
              (spriteIndex & 7U)) & 1U) != 0U;
 }
 
+int EspNativeGameplayMonsterActivation_isActive(uint16_t spriteIndex) {
+    return activationOwner.active != 0U && isActivated(spriteIndex);
+}
+
+uint32_t EspNativeGameplayMonsterActivation_count(void) {
+    return activationOwner.active != 0U ? activationOwner.activatedCount : 0U;
+}
+
 static void setActivated(uint16_t spriteIndex) {
     uint8_t mask;
     if (spriteIndex >= MONSTER_ACTIVATION_MAX_SPRITES ||
@@ -49,7 +58,7 @@ static void resetForArena(uint32_t arena) {
     activationOwner.filtered.lastAttackerSpriteIndex =
         MONSTER_ACTIVATION_NO_SPRITE;
     activationOwner.active = 1U;
-    printf("[MONSTERACT] READY arena=%08x ownerBytes=%u bitset=%uB maxSprites=%u source=forward-visible conservative=yes persistence=map-session inactiveAttack=fail-closed legacyRenderActivation=yes\n",
+    printf("[MONSTERACT] READY arena=%08x ownerBytes=%u bitset=%uB maxSprites=%u source=forward-visible conservative=yes persistence=map-session inactiveAttack=fail-closed legacyRenderActivation=yes movementQuery=read-only\n",
            (unsigned int)arena,
            (unsigned int)sizeof(activationOwner),
            (unsigned int)MONSTER_ACTIVATION_BYTES,
