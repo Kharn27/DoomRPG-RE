@@ -62,8 +62,11 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_route(
  * Gameplay-only world route over the same hardware-proven BSP/wall/plane path.
  * It writes only render->screenX/Y/Width/Height pixels, never clears pixels
  * outside that logical viewport, never presents, and never mutates the global
- * historical first-frame state.  The caller receives the local render witness
- * in outState and owns the later sprite/HUD/final-present composition.
+ * historical first-frame state. The implementation uses one bounded,
+ * non-reentrant BSS work/render scratch so deep gameplay/combat call chains do
+ * not place the large wall resolver and column-scale save on loopTask stack.
+ * The caller receives the local render witness in outState and owns the later
+ * sprite/HUD/final-present composition.
  */
 EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport(
     struct Render_s* render,
