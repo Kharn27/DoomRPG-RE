@@ -63,6 +63,18 @@ typedef struct EspMapSpriteTopologyView_s {
     uint16_t nextLinkOrder;
 } EspMapSpriteTopologyView;
 
+typedef struct EspMapSpriteTopologyRelink_s {
+    uint16_t spriteIndex;
+    uint16_t sourceTile;
+    uint16_t destTile;
+    uint16_t linkStateBefore;
+    uint16_t linkStateAfter;
+    uint16_t linkOrderBefore;
+    uint16_t linkOrderAfter;
+    uint16_t nextLinkOrderBefore;
+    uint16_t nextLinkOrderAfter;
+} EspMapSpriteTopologyRelink;
+
 typedef struct EspMapShowResult_s {
     uint16_t sourceEventIndex;
     uint16_t globalCommandIndex;
@@ -119,6 +131,20 @@ int EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
                                    uint8_t* outSubType,
                                    uint16_t* outLinkState,
                                    uint16_t* outLinkOrder);
+
+/*
+ * Transactional equivalent of legacy Game_unlinkEntity()+Game_linkEntity().
+ * Prepare is side-effect free. Commit moves one already-linked entity to the
+ * destination tile and allocates the next compact link order; rollback restores
+ * both the exact entity link state/order and the global nextLinkOrder counter.
+ */
+int EspMapSpriteTopology_prepareRelink(uint16_t spriteIndex,
+                                      uint16_t destTile,
+                                      EspMapSpriteTopologyRelink* outRelink);
+int EspMapSpriteTopology_commitPreparedRelink(
+    const EspMapSpriteTopologyRelink* relink);
+int EspMapSpriteTopology_rollbackPreparedRelink(
+    const EspMapSpriteTopologyRelink* relink);
 
 /* Execute only the final MAP_INTRO sprite/entity-topology families. */
 EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
