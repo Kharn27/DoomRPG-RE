@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "esp_native_gameplay_combat_math.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_weapon_control.h"
 
