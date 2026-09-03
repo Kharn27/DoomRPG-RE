@@ -14,15 +14,15 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main = 7f799ab9bac2bb60f7cffb65719131f0f9877ae0
-branch = agent/esp32-native-pass-turn
-base main = 7f799ab9bac2bb60f7cffb65719131f0f9877ae0
-hardware-tested code boundary = 40a19ba56ee946477ba107d237e644b7bac2e9ef
-status = native PASS TURN + top-bar feedback + monster move/retaliation hardware PASS
+main = 8b9f23324ff314bf207cc3ffab01f11f76438515
+branch = agent/esp32-native-weapon-control
+base main = 8b9f23324ff314bf207cc3ffab01f11f76438515
+hardware-tested code boundary = 17c30561bd7c080cdd55436caa6d67cae7250970
+status = generic NEXT weapon control + live Pistol firing hardware PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `40a19ba...` as new hardware-tested code. The tail
+Do not treat commits after `17c30561...` as new hardware-tested code. The tail
 must remain documentation-only until merge.
 
 ## Build environment
@@ -109,6 +109,9 @@ persistent movement-probe RNG refill reservation + rollback replay chaining
 live one-monster movement RNG commit
 live MonsterPosition commit + SpriteTopology relink
 native renderer projection of committed moved position
+generic NEXT weapon cycling through shared PlayerState
+live selected-weapon HUD / first-person redraw without turn advancement
+live Pistol ammo consumption + generic monster combat commit
 ```
 
 Relevant milestone records:
@@ -118,6 +121,7 @@ Relevant milestone records:
 - [`MILESTONE_NATIVE_PLAYER_RESOURCES.md`](MILESTONE_NATIVE_PLAYER_RESOURCES.md)
 - [`MILESTONE_NATIVE_MONSTER_TURN.md`](MILESTONE_NATIVE_MONSTER_TURN.md)
 - [`MILESTONE_NATIVE_PASS_TURN.md`](MILESTONE_NATIVE_PASS_TURN.md)
+- [`MILESTONE_NATIVE_WEAPON_CONTROL.md`](MILESTONE_NATIVE_WEAPON_CONTROL.md)
 - [`MILESTONE_NATIVE_MONSTER_MOVEMENT.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT.md)
 - [`MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md)
 
@@ -372,6 +376,34 @@ MONSTERMOVERNG COMMIT reservation=consumed-by-live-move randomLive=advanced-exac
 The earlier probe/retaliation `PROBE-RESTORE -> PROBE-REPLAY -> REPLAY` chain
 remains a hardware regression witness for speculative rollback behavior.
 
+## Native generic weapon-control boundary
+
+The permanent selector reuses the shared PlayerState and the existing generic
+CombatMath weapon metadata rather than creating per-weapon state. Selection is
+circular over slots 0..11 and follows the legacy owned + ammo-present gate.
+Commit redraws the complete current frame and rolls the PlayerState snapshot back
+if rendering fails. It never advances the turn by itself.
+
+Real-CYD NEXT chain:
+
+```text
+Axe 0 -> Extinguisher 1 -> Pistol 2
+weapons = 0007
+Pistol ammo before shot = 12
+Pistol attack pose = logical 242 / actual 611 / frame 1
+Pistol combat = damage 5 + armorDamage 3
+Pistol ammo after shot = 11
+Hellhound = hp 6->0, armor 2->0, alive 1->0
+```
+
+The serial witness does not independently exercise PREV. Direct generic combat
+is currently live for Axe, Pistol, Shotgun and Super Shotgun. Multi-loop
+Chaingun/Plasma, radial Rocket/BFG, and familiar attacks remain separate
+mechanical families.
+
+The observed post-kill `activeCount=1` / `candidates=0` conservative defer belongs
+to monster activation/order cleanup and does not invalidate the committed shot.
+
 ## Extinguisher transaction
 
 The extinguisher reads/writes the same ammo owner as pickups/HUD. Hardware
@@ -417,8 +449,10 @@ special subtype-10 AI
 player lethal/death retaliation transition
 monster attack/player pain animation and FX
 actual sound playback
+independent PREV_WEAPON real-CYD witness
 chaingun/plasma multi-loop presentation/commit
 rocket/BFG radius damage
+familiar weapon attack semantics for slots 9..11
 special death consequences for subtypes 7, 8, 12, 13
 Kronos-specific semantics
 password input
@@ -449,15 +483,18 @@ When the merge is announced:
 1. read the true GitHub `main` and exact SHA;
 2. re-read `PORTING_STATUS.md`, this file,
    `MILESTONE_NATIVE_MONSTER_MOVEMENT.md`,
-   `MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`, and
-   `MILESTONE_NATIVE_PASS_TURN.md`;
+   `MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`,
+   `MILESTONE_NATIVE_PASS_TURN.md`, and
+   `MILESTONE_NATIVE_WEAPON_CONTROL.md`;
 3. create a fresh coherent `agent/*` branch from that SHA;
 4. choose the next bounded gameplay family from the actual merged frontier.
 
-Likely high-value next families are monster movement interpolation/animation,
-multiple-monster activation/movement ordering, monster attack/player-pain
-presentation, player lethal/death transition, deferred action XP migration, or
-materialized monster drops. Decide only after reading merged `main`.
+Likely high-value next families are the remaining generic weapon mechanics
+(Chaingun/Plasma multi-loop, then Rocket/BFG radial), monster movement
+interpolation/animation, multiple-monster activation/movement ordering, monster
+attack/player-pain presentation, player lethal/death transition, deferred action
+XP migration, or materialized monster drops. Decide only after reading merged
+`main`.
 
 ## Development workflow
 
