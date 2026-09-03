@@ -18,7 +18,9 @@
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_move_events.h"
 #include "esp_native_gameplay_pass_turn.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_select.h"
+#include "esp_native_gameplay_weapon_control.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
 #include "platform_touch_events.h"
@@ -330,6 +332,94 @@ static void serviceMove(Render_t* render,
            (int)result.deltaY,
            (int)afterView.viewX,
            (int)afterView.viewY);
+}
+
+static void serviceWeaponControl(Render_t* render,
+                                 const EspNativeGameplayInputState* intent) {
+    EspNativeGameplayWeaponControlResult result;
+    EspNativeGameplayWeaponControlStatus status;
+    EspNativeGameplayPlayerState before;
+    EspNativeGameplayPlayerState after;
+    const EspPlayerViewState* view;
+    uint32_t fnvAfter;
+
+    memset(&result, 0, sizeof(result));
+    memset(&before, 0, sizeof(before));
+    memset(&after, 0, sizeof(after));
+    status = EspNativeGameplayWeaponControl_prepare(intent, &result);
+
+    if (status == ESP_NATIVE_GAMEPLAY_WEAPON_CONTROL_UNCHANGED) {
+        printf("[WEAPONCONTROL] UNCHANGED seq=%u action=%s weapon=%u weapons=%04x inspected=%u reason=no-other-owned-usable mutation=no turn=no\n",
+               (unsigned int)intent->sequence,
+               EspNativeGameplayInput_actionName(intent->action),
+               (unsigned int)result.weaponBefore,
+               (unsigned int)result.weapons,
+               (unsigned int)result.inspected);
+        return;
+    }
+    if (status != ESP_NATIVE_GAMEPLAY_WEAPON_CONTROL_PREPARED ||
+        !EspNativeGameplayPlayerState_snapshot(&before)) {
+        ++gameplayState.deferred;
+        printf("[WEAPONCONTROL] DEFER seq=%u action=%s status=%s mutation=no turn=no\n",
+               (unsigned int)intent->sequence,
+               EspNativeGameplayInput_actionName(intent->action),
+               EspNativeGameplayWeaponControl_statusName(status));
+        return;
+    }
+
+    after = before;
+    if (after.weapon != result.weaponBefore ||
+        result.weaponAfter >= ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT) {
+        ++gameplayState.deferred;
+        printf("[WEAPONCONTROL] DEFER seq=%u action=%s reason=stale-player-state expected=%u actual=%u mutation=no turn=no\n",
+               (unsigned int)intent->sequence,
+               EspNativeGameplayInput_actionName(intent->action),
+               (unsigned int)result.weaponBefore,
+               (unsigned int)after.weapon);
+        return;
+    }
+    after.weapon = result.weaponAfter;
+    if (!EspNativeGameplayPlayerState_restore(&after)) {
+        disableGameplay("weapon-control-commit");
+        return;
+    }
+
+    view = EspPlayerView_view();
+    if (view == NULL || view->active != 1U ||
+        view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0 ||
+        !renderCurrent(render, (uint8_t)view->viewAngle, "WEAPON-CYCLE")) {
+        if (!EspNativeGameplayPlayerState_restore(&before)) {
+            disableGameplay("weapon-control-rollback-state");
+            return;
+        }
+        view = EspPlayerView_view();
+        if (view == NULL || view->active != 1U ||
+            !renderCurrent(render, (uint8_t)view->viewAngle,
+                           "WEAPON-CYCLE-ROLLBACK")) {
+            disableGameplay("weapon-control-render-rollback");
+            return;
+        }
+        printf("[WEAPONCONTROL] ROLLBACK seq=%u action=%s weapon=%u->%u playerFNV=%08x restored=yes turn=no\n",
+               (unsigned int)intent->sequence,
+               EspNativeGameplayInput_actionName(intent->action),
+               (unsigned int)result.weaponBefore,
+               (unsigned int)result.weaponAfter,
+               (unsigned int)result.playerFNVBefore);
+        return;
+    }
+
+    fnvAfter = EspNativeGameplayPlayerState_fingerprint();
+    printf("[WEAPONCONTROL] COMMIT seq=%u action=%s weapon=%u->%u weapons=%04x ammoType=%u ammo=%u inspected=%u playerFNV=%08x->%08x redraw=yes turn=no rollback=closed\n",
+           (unsigned int)intent->sequence,
+           EspNativeGameplayInput_actionName(intent->action),
+           (unsigned int)result.weaponBefore,
+           (unsigned int)result.weaponAfter,
+           (unsigned int)result.weapons,
+           (unsigned int)result.ammoTypeAfter,
+           (unsigned int)result.ammoAfter,
+           (unsigned int)result.inspected,
+           (unsigned int)result.playerFNVBefore,
+           (unsigned int)fnvAfter);
 }
 
 static void serviceSelect(Render_t* render,
@@ -677,6 +767,11 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
     case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN:
         (void)EspNativeGameplayPassTurn_execute(&intent);
+        break;
+
+    case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
+    case ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON:
+        serviceWeaponControl(doomRpg->render, &intent);
         break;
 
     default:
