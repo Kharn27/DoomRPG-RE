@@ -16,6 +16,8 @@
 #define PUBLISH_MOVE_TILE_SIZE 64
 #define PUBLISH_MOVE_WEAPON_COUNT 19U
 #define PUBLISH_MOVE_SPECIAL_AI 10U
+#define PUBLISH_PROJECT_WORDS \
+    ((ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT + 31U) / 32U)
 
 typedef struct MovementPublishCapture_s {
     EspNativeGameplayMonsterPositionRecord before;
@@ -25,6 +27,7 @@ typedef struct MovementPublishCapture_s {
 } MovementPublishCapture;
 
 static MovementPublishCapture publishCapture;
+static uint32_t projectedBits[PUBLISH_PROJECT_WORDS];
 
 /* Exact CombatEntity.c subtype -> primary/alternate weapon table. */
 static const uint8_t monsterAttacks[28] = {
@@ -43,12 +46,32 @@ static const uint8_t monsterWeaponValid[PUBLISH_MOVE_WEAPON_COUNT] = {
     0U, 0U, 1U, 1U, 1U, 1U, 1U, 1U, 0U
 };
 
+static void setProjected(uint16_t spriteIndex, int projected) {
+    uint32_t word;
+    uint32_t mask;
+    if (spriteIndex >= ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) return;
+    word = (uint32_t)spriteIndex >> 5;
+    mask = 1UL << ((uint32_t)spriteIndex & 31U);
+    if (projected) projectedBits[word] |= mask;
+    else projectedBits[word] &= ~mask;
+}
+
+int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t spriteIndex) {
+    uint32_t word;
+    uint32_t mask;
+    if (spriteIndex >= ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) return 0;
+    word = (uint32_t)spriteIndex >> 5;
+    mask = 1UL << ((uint32_t)spriteIndex & 31U);
+    return (projectedBits[word] & mask) != 0U;
+}
+
 void EspNativeGameplayMonsterMovementPublish_beginCycle(void) {
     memset(&publishCapture, 0, sizeof(publishCapture));
 }
 
 void EspNativeGameplayMonsterMovementPublish_reset(void) {
     EspNativeGameplayMonsterMovementPublish_beginCycle();
+    memset(projectedBits, 0, sizeof(projectedBits));
 }
 
 void EspNativeGameplayMonsterMovementPublish_capturePrepared(
@@ -119,10 +142,12 @@ static int movementRngCalls(const char* trigger,
 static int restorePublishedOwners(
     const EspMapSpriteTopologyRelink* relink,
     const EspNativeGameplayMonsterPositionRecord* before,
-    const EspNativeGameplayMonsterPositionRecord* after) {
+    const EspNativeGameplayMonsterPositionRecord* after,
+    int projectedBefore) {
     int topologyExact;
     int positionExact;
 
+    setProjected(before->spriteIndex, projectedBefore);
     topologyExact = EspMapSpriteTopology_rollbackPreparedRelink(relink);
     positionExact = EspNativeGameplayMonsterPosition_rollbackPrepared(after, before);
     return topologyExact && positionExact;
@@ -161,6 +186,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
     uint16_t linkState;
     uint16_t linkOrder;
     uint32_t i;
+    int projectedBefore;
     int recoveryRendered = 0;
 
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
@@ -231,6 +257,8 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
         return 0;
     }
 
+    projectedBefore = EspNativeGameplayMonsterMovementPublish_isProjected(
+        publishCapture.before.spriteIndex);
     outResult->positionFNVBefore = EspNativeGameplayMonsterPosition_fingerprint();
     outResult->topologyFNVBefore = topology->stateFNV1a;
 
@@ -262,17 +290,19 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
                (unsigned int)publishCapture.before.spriteIndex);
         return 0;
     }
+    setProjected(publishCapture.after.spriteIndex, 1);
 
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
                                            (uint8_t)player->viewAngle,
                                            &frame)) {
         int ownersExact = restorePublishedOwners(&relink, &publishCapture.before,
-                                                 &publishCapture.after);
+                                                 &publishCapture.after,
+                                                 projectedBefore);
         doomRpg->random = replayStart;
         recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
         outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
-        printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u tile=%u->%u ownersExact=%s randomExact=yes recoveryRender=%s interpolation=deferred mutation=no\n",
+        printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u tile=%u->%u ownersExact=%s randomExact=yes projectionExact=yes recoveryRender=%s interpolation=deferred mutation=no\n",
                (unsigned int)publishCapture.before.spriteIndex,
                (unsigned int)publishCapture.before.tileIndex,
                (unsigned int)publishCapture.after.tileIndex,
@@ -287,6 +317,8 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
     if (topology == NULL || currentPosition == NULL ||
         memcmp(currentPosition, &publishCapture.after,
                sizeof(publishCapture.after)) != 0 ||
+        !EspNativeGameplayMonsterMovementPublish_isProjected(
+            publishCapture.after.spriteIndex) ||
         !EspMapSpriteTopology_getEntity(publishCapture.after.spriteIndex,
                                         &type, &subtype,
                                         &linkState, &linkOrder) ||
@@ -294,7 +326,8 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
             publishCapture.after.tileIndex ||
         linkOrder != relink.linkOrderAfter) {
         int ownersExact = restorePublishedOwners(&relink, &publishCapture.before,
-                                                 &publishCapture.after);
+                                                 &publishCapture.after,
+                                                 projectedBefore);
         doomRpg->random = replayStart;
         recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
         outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
@@ -311,7 +344,8 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
                 &doomRpg->random, boundarySaved, boundaryPrepared, rngCalls)) {
             int ownersExact = restorePublishedOwners(&relink,
                                                      &publishCapture.before,
-                                                     &publishCapture.after);
+                                                     &publishCapture.after,
+                                                     projectedBefore);
             doomRpg->random = replayStart;
             recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
             outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
@@ -329,7 +363,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
     outResult->topologyFNVAfter = topology != NULL ? topology->stateFNV1a : 0U;
     outResult->rngCalls = rngCalls;
     outResult->committed = 1U;
-    printf("[MONSTERMOVELIVE] COMMIT trigger=%s sprite=%u tile=%u->%u pos=%u,%u->%u,%u rngCalls=%u randomCommitted=yes positionFNV=%08x->%08x topologyFNV=%08x->%08x linkOrder=%u->%u renderer=snap-destination frame=%08x presented=%u interpolation=deferred rollback=closed\n",
+    printf("[MONSTERMOVELIVE] COMMIT trigger=%s sprite=%u tile=%u->%u pos=%u,%u->%u,%u rngCalls=%u randomCommitted=yes positionFNV=%08x->%08x topologyFNV=%08x->%08x linkOrder=%u->%u renderer=snap-destination projected=yes frame=%08x presented=%u interpolation=deferred rollback=closed\n",
            trigger,
            (unsigned int)publishCapture.before.spriteIndex,
            (unsigned int)publishCapture.before.tileIndex,
