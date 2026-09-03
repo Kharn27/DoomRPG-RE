@@ -296,11 +296,6 @@ static int blockingSpriteOnTile(uint16_t tile,
     return found;
 }
 
-/* Mirrors the already hardware-proven native cardinal LOS used by monster turn.
- * strictSpecial is used only by the recovered calcPath look-ahead because that
- * legacy helper traces from tile origins while the compact runtime owns tile
- * centers; rather than guess thin-plane crossing, fail closed for that rare
- * path cell until a dedicated special-plane movement corpus exists. */
 static int cardinalTraceClear(int32_t sourceX,
                               int32_t sourceY,
                               int32_t destX,
@@ -434,10 +429,6 @@ static int probeNextByte(ProbeRng* rng, uint8_t* outValue) {
     int next;
     if (rng == NULL || outValue == NULL) return 0;
     next = rng->state.nextRand;
-    /* DoomRPG_randNextByte() refills when nextRand+1 >= RANDTABLESIZE. A probe
-     * has no matching live commit yet, so crossing that boundary would advance
-     * hidden resetRand/_seed. Refuse it instead of pretending Random_t is a full
-     * snapshot. */
     if (next < 0 || next + (int)sizeof(byte) >= RANDTABLESIZE) {
         rng->boundary = 1U;
         return 0;
@@ -531,8 +522,6 @@ static int aiGoalPlan(uint16_t attackerSprite,
     if (clear > 0) {
         path = calcPath(attackerSprite, mask, sX, sY - 1, dX, dY);
         if (path.status < 0) return path.status;
-        /* Preserve the recovered legacy quirk: unlike west/south, the north
-         * branch does not update closestPathDist when it becomes the new best. */
         if (path.distance < closestPathDist) {
             visitCount = 1U;
             visitOrder[0] = 0U;
@@ -559,10 +548,6 @@ static int aiGoalPlan(uint16_t attackerSprite,
     return 1;
 }
 
-/* Select the single map-session-active monster conservatively. Activation is a
- * permanent generic bitset owned by the already-proven gate; movement does not
- * activate anything itself. Full active-list ordering remains deferred, so more
- * than one eligible active monster is intentionally ambiguous/fail-closed. */
 static int findCandidate(const EspPlayerViewState* playerView,
                          MovementCandidate* outCandidate,
                          uint32_t* outCandidates) {
@@ -730,6 +715,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     uint8_t aiDecisionUsed = 0U;
     uint8_t closeDecision = 0U;
     uint8_t closeDecisionUsed = 0U;
+    int rangedTrigger = 0;
     int immediateAttack;
     int i7;
     int i8;
@@ -780,6 +766,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
         movementView.observedMovementDeferredTurns = deferredCount;
+        rangedTrigger = 1;
         trigger = "RANGED-AI";
         triggerCount = deferredCount;
     }
@@ -839,18 +826,22 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)candidate.monster->spriteIndex);
         return;
     }
+    if ((rangedTrigger != 0 && !immediateAttack) ||
+        (rangedTrigger == 0 && immediateAttack)) {
+        ++movementView.collisionDeferred;
+        printf("[MONSTERMOVE] REPLAY-MISMATCH trigger=%s n=%u sprite=%u immediateAttack=%s producerPath=%s mutation=no rngConsumed=0\n",
+               trigger, (unsigned int)triggerCount,
+               (unsigned int)candidate.monster->spriteIndex,
+               immediateAttack ? "yes" : "no",
+               rangedTrigger != 0 ? "ranged-ai" : "no-attack");
+        return;
+    }
 
     liveRandomBefore = doomRpg->random;
     memset(&probeRng, 0, sizeof(probeRng));
     probeRng.state = liveRandomBefore;
     i7 = (1 + (int)movementWeapons[candidate.weaponId].rangeMin) / 2;
 
-    /* Exact Entity_aiThink branch:
-     *   if (!z || (i7 != 0 && rand >= 217)) -> movement
-     * No-immediate-attack (z=false) consumes no AI decision byte. A ranged
-     * immediate attack consumes exactly one byte and enters movement only when
-     * that value is >=217. Melee i7==0 attacks immediately and cannot arrive via
-     * the movement branch. */
     if (immediateAttack) {
         if (i7 == 0) {
             ++movementView.collisionDeferred;
@@ -876,13 +867,6 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)aiDecision);
             return;
         }
-    }
-    else if (deferredCount != movementView.observedMovementDeferredTurns) {
-        ++movementView.collisionDeferred;
-        printf("[MONSTERMOVE] REPLAY-MISMATCH trigger=%s n=%u sprite=%u immediateAttack=no producerExpected=ranged-ai mutation=no rngConsumed=0\n",
-               trigger, (unsigned int)triggerCount,
-               (unsigned int)candidate.monster->spriteIndex);
-        return;
     }
 
     i8 = (i7 * MOVE_TILE_SIZE) * (i7 * MOVE_TILE_SIZE);
@@ -1023,9 +1007,6 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
 void __real_EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpg);
 void __real_EspNativeGameplayMonsterRetaliation_reset(void);
 
-/* Compose the movement recovery immediately after the already hardware-proven
- * retaliation layer. It observes only turn counters and never changes the live
- * player/RNG/render/topology state. */
 void __wrap_EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpg) {
     __real_EspNativeGameplayMonsterRetaliation_service(doomRpg);
     EspNativeGameplayMonsterMovement_service(doomRpg);
