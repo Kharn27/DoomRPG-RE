@@ -167,10 +167,8 @@ typedef struct LegacyWallGuard_s {
     } while (0)
 
 static EspNativeFirstFrameState frameState;
-/* Failure-only BSS witness. It deliberately adds no fields to FirstFrameWork,
- * whose large automatic instance is already close to the classic-CYD loopTask
- * stack boundary. The witness is printed only after renderFrame() has returned
- * and its BSP/raster stack has fully unwound. */
+static uint8_t frameScratchLogged;
+/* Failure-only BSS witness, printed after renderer work has unwound. */
 static FirstFrameFailure frameFailure;
 /* One exact packed byte from the next legacy compact wall block. It is resolved
  * only after an OOB witness has unwound the renderer stack, then reused by the
@@ -1165,8 +1163,9 @@ static int renderFrame(Render_t* render,
                        const EspPlayerViewState* playerView,
                        EspNativeFirstFrameState* outState,
                        int clearWholeFramebuffer) {
-    FirstFrameWork work;
+    FirstFrameWork* work = NULL;
     RenderScratch scratch;
+    const EspMapRuntimeView* runtime;
     EspAssetPackEntry mappings;
     EspAssetPackEntry palettes;
     EspAssetPackEntry mapEntry;
@@ -1198,31 +1197,43 @@ static int renderFrame(Render_t* render,
     lineState = EspMapLineState_view();
     if (lineState == NULL || lineState->openCount != 0U) return 0;
 
-    memset(&work, 0, sizeof(work));
-    work.render = render;
-    work.runtime = EspMapRuntime_view();
+    runtime = EspMapRuntime_view();
     resourceName = EspMapCatalog_nameForId(playerView->targetMapId);
-    if (work.runtime == NULL || work.runtime->lineCount == 0U ||
-        work.runtime->nodeCount == 0U || work.runtime->sourceBytes == 0U ||
-        work.runtime->sourceCrc32 == 0U || resourceName == NULL) return 0;
+    if (runtime == NULL || runtime->lineCount == 0U ||
+        runtime->nodeCount == 0U || runtime->sourceBytes == 0U ||
+        runtime->sourceCrc32 == 0U || resourceName == NULL) return 0;
 
+    work = (FirstFrameWork*)calloc(1U, sizeof(*work));
+    if (work == NULL) {
+        printf("[NATIVEFRAME] SCRATCH-ALLOC failed bytes=%u owner=heap-transient\n",
+               (unsigned int)sizeof(*work));
+        return 0;
+    }
+    work->render = render;
+    work->runtime = runtime;
     saveRenderScratch(render, &scratch);
+    if (frameScratchLogged == 0U) {
+        printf("[NATIVEFRAME] SCRATCH owner=heap-transient bytes=%u stackRender=%u lifetime=one-render\n",
+               (unsigned int)sizeof(*work),
+               (unsigned int)sizeof(scratch));
+        frameScratchLogged = 1U;
+    }
 
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
     if (!EspAssetPack_findEntry("mappings.bin", &mappings) ||
         !EspAssetPack_findEntry("palettes.bin", &palettes) ||
-        !EspAssetPack_findEntry("wtexels.bin", &work.wallTexels) ||
+        !EspAssetPack_findEntry("wtexels.bin", &work->wallTexels) ||
         !EspAssetPack_findEntry(resourceName, &mapEntry) ||
-        mapEntry.size != work.runtime->sourceBytes ||
-        mapEntry.crc32 != work.runtime->sourceCrc32 ||
-        !EspAssetPack_readRange(&work.wallTexels, 0U, wallHeader, sizeof(wallHeader)) ||
+        mapEntry.size != work->runtime->sourceBytes ||
+        mapEntry.crc32 != work->runtime->sourceCrc32 ||
+        !EspAssetPack_readRange(&work->wallTexels, 0U, wallHeader, sizeof(wallHeader)) ||
         !EspAssetPack_readRange(&mapEntry, 0U, bspHeader, sizeof(bspHeader))) {
         goto done;
     }
 
-    work.wallTexelDataBytes = readLe32(wallHeader);
-    if (work.wallTexelDataBytes + WALL_TEXEL_HEADER_BYTES != work.wallTexels.size ||
-        !buildResolvedTextures(&work, &mappings, &palettes)) {
+    work->wallTexelDataBytes = readLe32(wallHeader);
+    if (work->wallTexelDataBytes + WALL_TEXEL_HEADER_BYTES != work->wallTexels.size ||
+        !buildResolvedTextures(work, &mappings, &palettes)) {
         goto done;
     }
 
@@ -1262,55 +1273,56 @@ static int renderFrame(Render_t* render,
     render->spanMode = 0;
 
     Render_initColumnScale(render);
-    if (!walkNodes(&work)) {
+    if (!walkNodes(work)) {
         if (frameFailure.code == FIRST_FRAME_FAIL_NONE) {
             RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_WALK,
                                  UINT32_MAX, 0U, 0U, 0U, 0U,
                                  render->nodeCount,
-                                 work.lineCandidates,
-                                 work.wallRequests,
-                                 work.wallDraws);
+                                 work->lineCandidates,
+                                 work->wallRequests,
+                                 work->wallDraws);
         }
         goto done;
     }
 
-    outState->lineCandidates = work.lineCandidates;
-    outState->leafNodes = work.leafNodes;
-    outState->wallRequests = work.wallRequests;
-    outState->wallDraws = work.wallDraws;
-    outState->spanCalls = work.spanCalls;
-    outState->pixelsDrawn = work.pixelsDrawn;
-    outState->cacheHits = work.cacheHits;
-    outState->cacheMisses = work.cacheMisses;
+    outState->lineCandidates = work->lineCandidates;
+    outState->leafNodes = work->leafNodes;
+    outState->wallRequests = work->wallRequests;
+    outState->wallDraws = work->wallDraws;
+    outState->spanCalls = work->spanCalls;
+    outState->pixelsDrawn = work->pixelsDrawn;
+    outState->cacheHits = work->cacheHits;
+    outState->cacheMisses = work->cacheMisses;
 
     printf("[NATIVEFRAME] BSP map=%u resource=%s nodes=%u leaves=%u nodeCull=%u lines=%u backface=%u clip=%u occluder=%u spriteSpanDeferred=%u\n",
            (unsigned int)playerView->targetMapId,
            resourceName,
            (unsigned int)render->nodeCount,
-           (unsigned int)work.leafNodes,
-           (unsigned int)work.nodeCulled,
-           (unsigned int)work.lineCandidates,
-           (unsigned int)work.backfaceCulled,
-           (unsigned int)work.clipCulled,
-           (unsigned int)work.occluderOnly,
-           (unsigned int)work.spriteSpanSkipped);
+           (unsigned int)work->leafNodes,
+           (unsigned int)work->nodeCulled,
+           (unsigned int)work->lineCandidates,
+           (unsigned int)work->backfaceCulled,
+           (unsigned int)work->clipCulled,
+           (unsigned int)work->occluderOnly,
+           (unsigned int)work->spriteSpanSkipped);
     printf("[NATIVEFRAME] WALL requests=%u draws=%u spans=%u pixels=%u cache=%uH/%uM/%uE resolvedTextures=%u animationTime=%u\n",
-           (unsigned int)work.wallRequests,
-           (unsigned int)work.wallDraws,
-           (unsigned int)work.spanCalls,
-           (unsigned int)work.pixelsDrawn,
-           (unsigned int)work.cacheHits,
-           (unsigned int)work.cacheMisses,
-           (unsigned int)work.cacheEvictions,
-           (unsigned int)work.resolvedCount,
+           (unsigned int)work->wallRequests,
+           (unsigned int)work->wallDraws,
+           (unsigned int)work->spanCalls,
+           (unsigned int)work->pixelsDrawn,
+           (unsigned int)work->cacheHits,
+           (unsigned int)work->cacheMisses,
+           (unsigned int)work->cacheEvictions,
+           (unsigned int)work->resolvedCount,
            (unsigned int)FIRST_FRAME_ANIMATION_TIME);
 
-    ok = work.wallDraws > 0U && work.pixelsDrawn > 0U;
+    ok = work->wallDraws > 0U && work->pixelsDrawn > 0U;
 
 done:
-    releaseCache(&work);
+    releaseCache(work);
     if (EspAssetPack_isOpen()) EspAssetPack_close();
     restoreRenderScratch(render, &scratch);
+    free(work);
     return ok;
 }
 
@@ -1346,6 +1358,7 @@ void EspNativeFirstFrame_reset(void) {
     memset(&frameState, 0, sizeof(frameState));
     memset(&frameFailure, 0, sizeof(frameFailure));
     memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
+    frameScratchLogged = 0U;
 }
 
 int EspNativeFirstFrame_isReady(void) {

@@ -39,6 +39,11 @@ int EspEntityDefTypeCatalog_getMetadata(uint16_t tileIndex,
                                         uint8_t* outType,
                                         uint8_t* outSubtype,
                                         int32_t* outParm);
+/* Read the historical 16-byte EntityDef name on demand from /entities.db in
+ * DoomRPG-ESP32.pak. Names are never retained per definition in RAM. */
+int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
+                                     char* outName,
+                                     uint32_t capacity);
 uint32_t EspEntityDefTypeCatalog_definitionCount(void);
 
 #ifdef __cplusplus

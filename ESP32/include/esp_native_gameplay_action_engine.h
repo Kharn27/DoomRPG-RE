@@ -14,7 +14,8 @@ typedef enum EspNativeGameplayActionFeedback_e {
     ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NOTHING = 1,
     ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_FIRE_CLEARED = 2,
     ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DOOR_CLEARED = 3,
-    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN = 4
+    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN = 4,
+    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP = 5
 } EspNativeGameplayActionFeedback;
 
 /* Allocation-free transient top-bar queue shared by native gameplay actions.
@@ -22,8 +23,18 @@ typedef enum EspNativeGameplayActionFeedback_e {
  * feedback is still pending and has not yet been presented. */
 int EspNativeGameplayActionEngine_queueFeedback(
     EspNativeGameplayActionFeedback feedback);
+/* Dynamic text remains a bounded transient presentation lease. Pickup feedback
+ * may request the recovered 2 px / 500 ms white viewport border; its 944 RGB565
+ * border pixels are snapshotted in 1888 B bounded static storage, never heap. */
+int EspNativeGameplayActionEngine_queueTextFeedback(
+    EspNativeGameplayActionFeedback feedback,
+    const char* text,
+    uint16_t viewportFlashMs);
 int EspNativeGameplayActionEngine_cancelQueuedFeedback(
     EspNativeGameplayActionFeedback feedback);
+/* Full native frame producers call this immediately before present so an active
+ * viewport flash can refresh its small border snapshot from fresh world pixels. */
+void EspNativeGameplayActionEngine_markFreshFrame(void);
 
 /*
  * Permanent native SELECT fallback behind the already-validated tile-event

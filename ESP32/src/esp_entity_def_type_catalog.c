@@ -8,6 +8,8 @@
 #include "esp_entity_def_type_catalog.h"
 
 #define ENTITY_DEF_RECORD_BYTES 24U
+#define ENTITY_DEF_NAME_OFFSET 8U
+#define ENTITY_DEF_NAME_BYTES 16U
 #define ENTITY_DEF_MAX_COUNT 1024U
 #define ENTITY_DEF_LINE_ENTRANCE_TILE_INDEX 312U
 
@@ -22,6 +24,10 @@ typedef char EntityDefMetadata_must_be_8_bytes[
     sizeof(EntityDefMetadata) == 8U ? 1 : -1];
 
 static EntityDefMetadata* entityDefMetadata;
+/* Count is capped at 128, so the source record index is exactly one byte.
+ * This preserves compact 8 B resident metadata while allowing names to be
+ * fetched from the PAK only when presentation actually needs one. */
+static uint8_t entityDefSourceIndex[ESP_ENTITY_DEF_TYPE_CATALOG_MAX_DEFINITIONS];
 static uint16_t entityDefMetadataCapacity;
 static uint32_t entityDefCount;
 static uint16_t entityDefMetadataCount;
@@ -50,6 +56,7 @@ static void clearCatalog(void) {
         memset(entityDefMetadata, 0,
                (size_t)entityDefMetadataCapacity * sizeof(*entityDefMetadata));
     }
+    memset(entityDefSourceIndex, 0xff, sizeof(entityDefSourceIndex));
     clearCatalogFields();
 }
 
@@ -87,7 +94,8 @@ static int ensureCatalogCapacity(uint16_t capacity) {
 static int insertMetadata(uint16_t tileIndex,
                           uint8_t type,
                           uint8_t subtype,
-                          int32_t parm) {
+                          int32_t parm,
+                          uint8_t sourceIndex) {
     uint16_t pos = 0U;
 
     if (entityDefMetadata == NULL) return 0;
@@ -109,11 +117,15 @@ static int insertMetadata(uint16_t tileIndex,
                 &entityDefMetadata[pos],
                 (size_t)(entityDefMetadataCount - pos) *
                     sizeof(entityDefMetadata[0]));
+        memmove(&entityDefSourceIndex[pos + 1U],
+                &entityDefSourceIndex[pos],
+                (size_t)(entityDefMetadataCount - pos));
     }
     entityDefMetadata[pos].tileIndex = tileIndex;
     entityDefMetadata[pos].type = type;
     entityDefMetadata[pos].subtype = subtype;
     entityDefMetadata[pos].parm = parm;
+    entityDefSourceIndex[pos] = sourceIndex;
     ++entityDefMetadataCount;
     return 1;
 }
@@ -180,7 +192,7 @@ int EspEntityDefTypeCatalog_buildFromPackEntry(
         tileIndex = readLe16(record);
         if (tileIndex >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT) continue;
         if (!insertMetadata(tileIndex, record[2], record[3],
-                            readLe32s(record + 4U))) {
+                            readLe32s(record + 4U), (uint8_t)i)) {
             releaseCatalog();
             return 0;
         }
@@ -259,6 +271,53 @@ int EspEntityDefTypeCatalog_getParm(uint16_t tileIndex, int32_t* outParm) {
     if (metadata == NULL) return 0;
     *outParm = metadata->parm;
     return 1;
+}
+
+int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
+                           char* outName,
+                           uint32_t capacity) {
+    const EntityDefMetadata* metadata;
+    EspAssetPackEntry entry;
+    uint8_t raw[ENTITY_DEF_NAME_BYTES];
+    uint16_t pos;
+    uint8_t sourceIndex;
+    uint32_t copy = 0U;
+    int ok = 0;
+
+    if (outName == NULL || capacity < 2U) return 0;
+    outName[0] = '\0';
+    metadata = findMetadata(tileIndex);
+    if (metadata == NULL || entityDefMetadata == NULL || EspAssetPack_isOpen()) {
+        return 0;
+    }
+    pos = (uint16_t)(metadata - entityDefMetadata);
+    if (pos >= entityDefMetadataCount) return 0;
+    sourceIndex = entityDefSourceIndex[pos];
+    if (sourceIndex == 0xffU) return 0;
+
+    memset(&entry, 0, sizeof(entry));
+    memset(raw, 0, sizeof(raw));
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+    if (!EspAssetPack_findEntry("/entities.db", &entry) ||
+        (entry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U ||
+        !EspAssetPack_readRange(&entry,
+                      2U + ((uint32_t)sourceIndex * ENTITY_DEF_RECORD_BYTES) +
+                          ENTITY_DEF_NAME_OFFSET,
+                      raw, sizeof(raw))) {
+        goto done;
+    }
+    while (copy + 1U < capacity && copy < ENTITY_DEF_NAME_BYTES &&
+ raw[copy] != 0U) {
+        outName[copy] = (char)raw[copy];
+        ++copy;
+    }
+    outName[copy] = '\0';
+    ok = copy != 0U;
+
+done:
+    EspAssetPack_close();
+    if (!ok) outName[0] = '\0';
+    return ok;
 }
 
 uint32_t EspEntityDefTypeCatalog_definitionCount(void) {
