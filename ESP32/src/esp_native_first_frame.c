@@ -167,12 +167,6 @@ typedef struct LegacyWallGuard_s {
     } while (0)
 
 static EspNativeFirstFrameState frameState;
-/* renderFrame() is reachable below gameplay/combat. Its large bounded work and
- * render-save scratch must not live on loopTask stack. Single-threaded native
- * rendering permits one non-reentrant BSS workspace. */
-static FirstFrameWork frameWorkScratch;
-static RenderScratch frameRenderScratch;
-static uint8_t frameRenderBusy;
 static uint8_t frameScratchLogged;
 /* Failure-only BSS witness, printed after renderer work has unwound. */
 static FirstFrameFailure frameFailure;
@@ -1169,8 +1163,9 @@ static int renderFrame(Render_t* render,
                        const EspPlayerViewState* playerView,
                        EspNativeFirstFrameState* outState,
                        int clearWholeFramebuffer) {
-    FirstFrameWork* work = &frameWorkScratch;
-    RenderScratch* scratch = &frameRenderScratch;
+    FirstFrameWork* work = NULL;
+    RenderScratch scratch;
+    const EspMapRuntimeView* runtime;
     EspAssetPackEntry mappings;
     EspAssetPackEntry palettes;
     EspAssetPackEntry mapEntry;
@@ -1200,24 +1195,27 @@ static int renderFrame(Render_t* render,
     }
 
     lineState = EspMapLineState_view();
-    if (lineState == NULL || lineState->openCount != 0U ||
-        frameRenderBusy != 0U) return 0;
+    if (lineState == NULL || lineState->openCount != 0U) return 0;
 
-    memset(work, 0, sizeof(*work));
-    work->render = render;
-    work->runtime = EspMapRuntime_view();
+    runtime = EspMapRuntime_view();
     resourceName = EspMapCatalog_nameForId(playerView->targetMapId);
-    if (work->runtime == NULL || work->runtime->lineCount == 0U ||
-        work->runtime->nodeCount == 0U || work->runtime->sourceBytes == 0U ||
-        work->runtime->sourceCrc32 == 0U || resourceName == NULL) return 0;
+    if (runtime == NULL || runtime->lineCount == 0U ||
+        runtime->nodeCount == 0U || runtime->sourceBytes == 0U ||
+        runtime->sourceCrc32 == 0U || resourceName == NULL) return 0;
 
-    frameRenderBusy = 1U;
-    saveRenderScratch(render, scratch);
+    work = (FirstFrameWork*)calloc(1U, sizeof(*work));
+    if (work == NULL) {
+        printf("[NATIVEFRAME] SCRATCH-ALLOC failed bytes=%u owner=heap-transient\n",
+               (unsigned int)sizeof(*work));
+        return 0;
+    }
+    work->render = render;
+    work->runtime = runtime;
+    saveRenderScratch(render, &scratch);
     if (frameScratchLogged == 0U) {
-        printf("[NATIVEFRAME] SCRATCH owner=BSS bytes=%u work=%u render=%u stack=bounded reentrant=no\n",
-               (unsigned int)(sizeof(frameWorkScratch) + sizeof(frameRenderScratch)),
-               (unsigned int)sizeof(frameWorkScratch),
-               (unsigned int)sizeof(frameRenderScratch));
+        printf("[NATIVEFRAME] SCRATCH owner=heap-transient bytes=%u stackRender=%u lifetime=one-render\n",
+               (unsigned int)sizeof(*work),
+               (unsigned int)sizeof(scratch));
         frameScratchLogged = 1U;
     }
 
@@ -1323,8 +1321,8 @@ static int renderFrame(Render_t* render,
 done:
     releaseCache(work);
     if (EspAssetPack_isOpen()) EspAssetPack_close();
-    restoreRenderScratch(render, scratch);
-    frameRenderBusy = 0U;
+    restoreRenderScratch(render, &scratch);
+    free(work);
     return ok;
 }
 
@@ -1360,11 +1358,7 @@ void EspNativeFirstFrame_reset(void) {
     memset(&frameState, 0, sizeof(frameState));
     memset(&frameFailure, 0, sizeof(frameFailure));
     memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
-    if (frameRenderBusy == 0U) {
-        memset(&frameWorkScratch, 0, sizeof(frameWorkScratch));
-        memset(&frameRenderScratch, 0, sizeof(frameRenderScratch));
-        frameScratchLogged = 0U;
-    }
+    frameScratchLogged = 0U;
 }
 
 int EspNativeFirstFrame_isReady(void) {
