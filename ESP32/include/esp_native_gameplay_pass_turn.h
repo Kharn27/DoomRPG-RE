@@ -7,9 +7,10 @@
 extern "C" {
 #endif
 
-/* Native PASS TURN owns only the turn request when the legacy
- * Game_touchTile(..., false) type-10/11 precondition is absent. The legacy
- * "Turn passed." HUD message remains a separate presentation milestone. */
+/* Native PASS TURN owns the monster-turn request when the legacy
+ * Game_touchTile(..., false) type-10/11 precondition is absent, and queues the
+ * exact legacy "Turn passed." text through the shared transient top-bar owner.
+ * Neither operation mutates player position/facing or allocates memory. */
 typedef enum EspNativeGameplayPassTurnStatus_e {
     ESP_NATIVE_GAMEPLAY_PASS_TURN_OK = 0,
     ESP_NATIVE_GAMEPLAY_PASS_TURN_INVALID = 1,
