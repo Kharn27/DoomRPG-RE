@@ -67,7 +67,7 @@ EspNativeFirstFrameStatus EspNativeFirstFrame_route(
  * deep gameplay/combat loopTask stack without reserving permanent BSS RAM.
  * The smaller column-scale save remains stack-local. Allocation failure is a
  * fail-closed render failure. The caller receives the local render witness and
- * sprite/HUD/final-present composition.
+ * owns the later sprite/HUD/final-present composition.
  */
 EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport(
     struct Render_s* render,
