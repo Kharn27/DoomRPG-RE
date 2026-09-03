@@ -46,22 +46,43 @@ static const uint8_t monsterWeaponValid[PUBLISH_MOVE_WEAPON_COUNT] = {
     0U, 0U, 1U, 1U, 1U, 1U, 1U, 1U, 0U
 };
 
+static int projectionRecordIndex(uint16_t spriteIndex, uint32_t* outIndex) {
+    const EspNativeGameplayMonsterView* monsters =
+        EspNativeGameplayMonsterState_view();
+    uint32_t i;
+
+    if (outIndex != NULL) *outIndex = 0U;
+    if (monsters == NULL || monsters->records == NULL || outIndex == NULL ||
+        monsters->count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) {
+        return 0;
+    }
+    for (i = 0U; i < monsters->count; ++i) {
+        if (monsters->records[i].spriteIndex == spriteIndex) {
+            *outIndex = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void setProjected(uint16_t spriteIndex, int projected) {
+    uint32_t index;
     uint32_t word;
     uint32_t mask;
-    if (spriteIndex >= ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) return;
-    word = (uint32_t)spriteIndex >> 5;
-    mask = 1UL << ((uint32_t)spriteIndex & 31U);
+    if (!projectionRecordIndex(spriteIndex, &index)) return;
+    word = index >> 5;
+    mask = 1UL << (index & 31U);
     if (projected) projectedBits[word] |= mask;
     else projectedBits[word] &= ~mask;
 }
 
 int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t spriteIndex) {
+    uint32_t index;
     uint32_t word;
     uint32_t mask;
-    if (spriteIndex >= ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) return 0;
-    word = (uint32_t)spriteIndex >> 5;
-    mask = 1UL << ((uint32_t)spriteIndex & 31U);
+    if (!projectionRecordIndex(spriteIndex, &index)) return 0;
+    word = index >> 5;
+    mask = 1UL << (index & 31U);
     return (projectedBits[word] & mask) != 0U;
 }
 
