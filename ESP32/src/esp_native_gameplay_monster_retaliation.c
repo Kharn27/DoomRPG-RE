@@ -116,6 +116,7 @@ static const char* reasonName(uint8_t reason) {
     case ESP_NATIVE_GAMEPLAY_MONSTER_TURN_MOVE: return "MOVE";
     case ESP_NATIVE_GAMEPLAY_MONSTER_TURN_ROTATE: return "ROTATE";
     case ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK: return "PLAYER_ATTACK";
+    case ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN: return "PASS_TURN";
     default: return "NONE";
     }
 }

@@ -118,9 +118,11 @@ typedef struct MonsterTurnOwner_s {
     int32_t lastViewY;
     int32_t lastViewAngle;
     uint32_t observedCombatAttacks;
+    uint32_t pendingPassSequence;
     uint8_t viewBaseline;
     uint8_t combatBaseline;
-    uint8_t reserved[2];
+    uint8_t passPending;
+    uint8_t reserved;
 } MonsterTurnOwner;
 
 static MonsterTurnOwner turnOwner;
@@ -162,6 +164,7 @@ static const char* reasonName(uint8_t reason) {
     case ESP_NATIVE_GAMEPLAY_MONSTER_TURN_MOVE: return "MOVE";
     case ESP_NATIVE_GAMEPLAY_MONSTER_TURN_ROTATE: return "ROTATE";
     case ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK: return "PLAYER_ATTACK";
+    case ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN: return "PASS_TURN";
     default: return "NONE";
     }
 }
@@ -542,7 +545,7 @@ static int syncOwner(void) {
         turnOwner.view.sourceArenaFNV1a = arena;
         turnOwner.view.lastAttackerSpriteIndex = TURN_NO_SPRITE;
         turnOwner.view.active = 1U;
-        printf("[MONSTERTURN] READY arena=%08x ownerBytes=%u mode=probe+rollback schedule=MOVE+ROTATE+PLAYER_ATTACK attackFamily=stationary-cardinal-generic traceMask=%04x playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=deferred mutation=no\n",
+        printf("[MONSTERTURN] READY arena=%08x ownerBytes=%u mode=probe+rollback schedule=MOVE+ROTATE+PLAYER_ATTACK+PASS_TURN attackFamily=stationary-cardinal-generic traceMask=%04x playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=deferred mutation=no\n",
                (unsigned int)arena,
                (unsigned int)sizeof(turnOwner),
                (unsigned int)TURN_TRACE_MASK);
@@ -819,23 +822,58 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
         }
     }
 
+    if (turnOwner.passPending != 0U) {
+        if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_NONE) {
+            reason = ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN;
+        }
+        else {
+            printf("[MONSTERTURN] PASS-DEFER seq=%u conflict=%s pending=cleared mutation=no\n",
+                   (unsigned int)turnOwner.pendingPassSequence,
+                   reasonName(reason));
+            turnOwner.passPending = 0U;
+            turnOwner.pendingPassSequence = 0U;
+        }
+    }
+
     if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_NONE) return;
     if (EspNativeGameplayDialog_isActive()) {
         printf("[MONSTERTURN] SKIP reason=%s dialog=active legacySkipTurn=yes mutation=no\n",
                reasonName(reason));
+        if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN) {
+            turnOwner.passPending = 0U;
+            turnOwner.pendingPassSequence = 0U;
+        }
         return;
     }
 
-    ++turnOwner.view.scheduledTurns;
-    printf("[MONSTERTURN] SCHEDULE n=%u reason=%s player=%d,%d angle=%d playerFNV=%08x monsterFNV=%08x mode=probe rollback=required\n",
-           (unsigned int)turnOwner.view.scheduledTurns,
-           reasonName(reason),
-           playerView != NULL ? (int)playerView->viewX : -1,
-           playerView != NULL ? (int)playerView->viewY : -1,
-           playerView != NULL ? (int)playerView->viewAngle : -1,
-           (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
-           combat != NULL ? (unsigned int)combat->currentMonsterFNV1a : 0U);
+    {
+        uint32_t passSequence =
+            reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN
+                ? turnOwner.pendingPassSequence
+                : 0U;
+        if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN) {
+            turnOwner.passPending = 0U;
+            turnOwner.pendingPassSequence = 0U;
+        }
+        ++turnOwner.view.scheduledTurns;
+        printf("[MONSTERTURN] SCHEDULE n=%u reason=%s passSeq=%u player=%d,%d angle=%d playerFNV=%08x monsterFNV=%08x mode=probe rollback=required\n",
+               (unsigned int)turnOwner.view.scheduledTurns,
+               reasonName(reason),
+               (unsigned int)passSequence,
+               playerView != NULL ? (int)playerView->viewX : -1,
+               playerView != NULL ? (int)playerView->viewY : -1,
+               playerView != NULL ? (int)playerView->viewAngle : -1,
+               (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
+               combat != NULL ? (unsigned int)combat->currentMonsterFNV1a : 0U);
+    }
     runProbe(doomRpg, reason);
+}
+
+int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence) {
+    if (!syncOwner() || turnOwner.passPending != 0U) return 0;
+    turnOwner.pendingPassSequence = inputSequence;
+    turnOwner.passPending = 1U;
+    return 1;
 }
 
 void EspNativeGameplayMonsterTurn_reset(void) {

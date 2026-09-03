@@ -86,12 +86,12 @@
 #error "Native action feedback requires the 160x120 logical framebuffer"
 #endif
 
-typedef enum ActionFeedback_e {
-    ACTION_FEEDBACK_NONE = 0,
-    ACTION_FEEDBACK_NOTHING = 1,
-    ACTION_FEEDBACK_FIRE_CLEARED = 2,
-    ACTION_FEEDBACK_DOOR_CLEARED = 3
-} ActionFeedback;
+typedef EspNativeGameplayActionFeedback ActionFeedback;
+#define ACTION_FEEDBACK_NONE ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NONE
+#define ACTION_FEEDBACK_NOTHING ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NOTHING
+#define ACTION_FEEDBACK_FIRE_CLEARED ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_FIRE_CLEARED
+#define ACTION_FEEDBACK_DOOR_CLEARED ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DOOR_CLEARED
+#define ACTION_FEEDBACK_PASS_TURN ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN
 
 typedef enum ActionRoute_e {
     ACTION_ROUTE_INVALID = 0,
@@ -292,6 +292,30 @@ static int ensureOwner(void) {
         actionState.ready = 1U;
         logCorpus();
     }
+    return 1;
+}
+
+int EspNativeGameplayActionEngine_queueFeedback(
+    EspNativeGameplayActionFeedback feedback) {
+    if (feedback <= ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NONE ||
+        feedback > ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN ||
+        !ensureOwner() || actionState.pending.active != 0U ||
+        actionState.feedbackPending != 0U) {
+        return 0;
+    }
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = (uint8_t)feedback;
+    return 1;
+}
+
+int EspNativeGameplayActionEngine_cancelQueuedFeedback(
+    EspNativeGameplayActionFeedback feedback) {
+    if (actionState.feedbackPending == 0U ||
+        actionState.feedbackKind != (uint8_t)feedback) {
+        return 0;
+    }
+    actionState.feedbackPending = 0U;
+    actionState.feedbackKind = ACTION_FEEDBACK_NONE;
     return 1;
 }
 
@@ -592,6 +616,7 @@ static const char* feedbackText(uint8_t feedback) {
     if (feedback == ACTION_FEEDBACK_NOTHING) return "Nothing to use";
     if (feedback == ACTION_FEEDBACK_FIRE_CLEARED) return "Fire cleared!";
     if (feedback == ACTION_FEEDBACK_DOOR_CLEARED) return "Door cleared!";
+    if (feedback == ACTION_FEEDBACK_PASS_TURN) return "Turn passed.";
     return NULL;
 }
 
@@ -995,6 +1020,12 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     ActionPending pending;
 
     if (!serviceFeedbackExpiry()) return 0;
+    /* PASS TURN and future non-SELECT actions may queue transient feedback
+     * without owning an ActionPending transaction. If no gameplay redraw has
+     * consumed it yet, present the existing framebuffer with the queued topbar. */
+    if (actionState.pending.active == 0U && actionState.feedbackPending != 0U) {
+        if (!__wrap_Esp32PlatformVideo_present()) return 0;
+    }
     if (actionState.pending.active == 0U) return 1;
     if (doomRpg == NULL || doomRpg->render == NULL || view == NULL ||
         view->active != 1U || !ensureOwner()) {

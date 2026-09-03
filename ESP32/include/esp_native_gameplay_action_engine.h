@@ -9,6 +9,22 @@ extern "C" {
 
 struct DoomRPG_s;
 
+typedef enum EspNativeGameplayActionFeedback_e {
+    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NONE = 0,
+    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NOTHING = 1,
+    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_FIRE_CLEARED = 2,
+    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DOOR_CLEARED = 3,
+    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN = 4
+} EspNativeGameplayActionFeedback;
+
+/* Allocation-free transient top-bar queue shared by native gameplay actions.
+ * Queue/cancel form a tiny transaction: cancel succeeds only while the same
+ * feedback is still pending and has not yet been presented. */
+int EspNativeGameplayActionEngine_queueFeedback(
+    EspNativeGameplayActionFeedback feedback);
+int EspNativeGameplayActionEngine_cancelQueuedFeedback(
+    EspNativeGameplayActionFeedback feedback);
+
 /*
  * Permanent native SELECT fallback behind the already-validated tile-event
  * action path. The legacy ordering remains event first, then an 8-tile trace.

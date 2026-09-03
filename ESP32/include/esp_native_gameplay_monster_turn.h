@@ -11,7 +11,8 @@ typedef enum EspNativeGameplayMonsterTurnReason_e {
     ESP_NATIVE_GAMEPLAY_MONSTER_TURN_NONE = 0,
     ESP_NATIVE_GAMEPLAY_MONSTER_TURN_MOVE = 1,
     ESP_NATIVE_GAMEPLAY_MONSTER_TURN_ROTATE = 2,
-    ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK = 3
+    ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK = 3,
+    ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN = 4
 } EspNativeGameplayMonsterTurnReason;
 
 typedef struct EspNativeGameplayMonsterTurnView_s {
@@ -29,6 +30,7 @@ typedef struct EspNativeGameplayMonsterTurnView_s {
 } EspNativeGameplayMonsterTurnView;
 
 void EspNativeGameplayMonsterTurn_reset(void);
+int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence);
 const EspNativeGameplayMonsterTurnView* EspNativeGameplayMonsterTurn_view(void);
 
 #ifdef __cplusplus
