@@ -122,6 +122,38 @@ int EspNativeRngReplayGuard_endProbeBoundary(Random_t* liveRandom,
     return exact;
 }
 
+int EspNativeRngReplayGuard_commitProbeBoundary(Random_t* liveRandom,
+                                                const Random_t* saved,
+                                                uint8_t prepared,
+                                                uint32_t consumedBytes) {
+    int expectedNext;
+
+    if (prepared == 0U) return 1;
+    if (liveRandom == NULL || saved == NULL || consumedBytes == 0U ||
+        consumedBytes >= RANDTABLESIZE ||
+        rngReplayGuard.probeReserved == 0U ||
+        rngReplayGuard.probeReservedRand != liveRandom ||
+        memcmp(saved, &rngReplayGuard.preRefill, sizeof(*saved)) != 0 ||
+        memcmp(liveRandom->randTable, rngReplayGuard.postRefill.randTable,
+               RANDTABLESIZE) != 0) {
+        return 0;
+    }
+
+    expectedNext = rngReplayGuard.postRefill.nextRand + (int)consumedBytes;
+    if (expectedNext >= RANDTABLESIZE || liveRandom->nextRand != expectedNext) {
+        return 0;
+    }
+
+    rngReplayGuard.probeReserved = 0U;
+    rngReplayGuard.probeReservedRand = NULL;
+    rngReplayGuard.valid = 0U;
+    rngReplayGuard.validUntilMs = 0U;
+    printf("[RNGGUARD] PROBE-COMMIT refill=%u bytes=%u hiddenGenerator=advanced-once-total reservation=consumed sequenceExact=yes\n",
+           (unsigned int)rngReplayGuard.realRefills,
+           (unsigned int)consumedBytes);
+    return 1;
+}
+
 /*
  * The legacy byte RNG has hidden refill state outside Random_t: DoomRPG_setRand()
  * advances the file-static resetRand/_seed generator in DoomRPG.c. Native
