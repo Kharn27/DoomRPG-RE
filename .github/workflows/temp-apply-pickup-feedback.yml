@@ -1,0 +1,470 @@
+name: Temporary Pickup Feedback Patch
+
+on:
+  push:
+    branches:
+      - 'agent/esp32-native-pickup-feedback'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'tooling: apply native pickup feedback patch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/esp32-native-pickup-feedback
+          fetch-depth: 0
+
+      - name: Apply bounded native pickup feedback
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one anchor, got {count}: {old[:120]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          # Compact EntityDef name lookup: keep names in the PAK and retain only
+          # one source-record byte per definition.
+          replace_once(
+              'ESP32/include/esp_entity_def_type_catalog.h',
+              'int EspEntityDefTypeCatalog_getMetadata(uint16_t tileIndex,\n                                        uint8_t* outType,\n                                        uint8_t* outSubtype,\n                                        int32_t* outParm);\nuint32_t EspEntityDefTypeCatalog_definitionCount(void);',
+              'int EspEntityDefTypeCatalog_getMetadata(uint16_t tileIndex,\n                                        uint8_t* outType,\n                                        uint8_t* outSubtype,\n                                        int32_t* outParm);\n/* Read the historical 16-byte EntityDef name on demand from /entities.db in\n * DoomRPG-ESP32.pak. Names are never retained per definition in RAM. */\nint EspEntityDefTypeCatalog_readName(uint16_t tileIndex,\n                                     char* outName,\n                                     uint32_t capacity);\nuint32_t EspEntityDefTypeCatalog_definitionCount(void);')
+
+          replace_once(
+              'ESP32/src/esp_entity_def_type_catalog.c',
+              '#define ENTITY_DEF_RECORD_BYTES 24U\n#define ENTITY_DEF_MAX_COUNT 1024U',
+              '#define ENTITY_DEF_RECORD_BYTES 24U\n#define ENTITY_DEF_NAME_OFFSET 8U\n#define ENTITY_DEF_NAME_BYTES 16U\n#define ENTITY_DEF_MAX_COUNT 1024U')
+          replace_once(
+              'ESP32/src/esp_entity_def_type_catalog.c',
+              'static EntityDefMetadata* entityDefMetadata;\nstatic uint16_t entityDefMetadataCapacity;',
+              'static EntityDefMetadata* entityDefMetadata;\n/* Count is capped at 128, so the source record index is exactly one byte.\n * This preserves compact 8 B resident metadata while allowing names to be\n * fetched from the PAK only when presentation actually needs one. */\nstatic uint8_t entityDefSourceIndex[ESP_ENTITY_DEF_TYPE_CATALOG_MAX_DEFINITIONS];\nstatic uint16_t entityDefMetadataCapacity;')
+          replace_once(
+              'ESP32/src/esp_entity_def_type_catalog.c',
+              'static void clearCatalog(void) {\n    if (entityDefMetadata != NULL && entityDefMetadataCapacity != 0U) {\n        memset(entityDefMetadata, 0,\n               (size_t)entityDefMetadataCapacity * sizeof(*entityDefMetadata));\n    }\n    clearCatalogFields();\n}',
+              'static void clearCatalog(void) {\n    if (entityDefMetadata != NULL && entityDefMetadataCapacity != 0U) {\n        memset(entityDefMetadata, 0,\n               (size_t)entityDefMetadataCapacity * sizeof(*entityDefMetadata));\n    }\n    memset(entityDefSourceIndex, 0xff, sizeof(entityDefSourceIndex));\n    clearCatalogFields();\n}')
+          replace_once(
+              'ESP32/src/esp_entity_def_type_catalog.c',
+              'static int insertMetadata(uint16_t tileIndex,\n                          uint8_t type,\n                          uint8_t subtype,\n                          int32_t parm) {',
+              'static int insertMetadata(uint16_t tileIndex,\n                          uint8_t type,\n                          uint8_t subtype,\n                          int32_t parm,\n                          uint8_t sourceIndex) {')
+          replace_once(
+              'ESP32/src/esp_entity_def_type_catalog.c',
+              '    if (pos < entityDefMetadataCount) {\n        memmove(&entityDefMetadata[pos + 1U],\n                &entityDefMetadata[pos],\n                (size_t)(entityDefMetadataCount - pos) *\n                    sizeof(entityDefMetadata[0]));\n    }\n    entityDefMetadata[pos].tileIndex = tileIndex;\n    entityDefMetadata[pos].type = type;\n    entityDefMetadata[pos].subtype = subtype;\n    entityDefMetadata[pos].parm = parm;\n    ++entityDefMetadataCount;',
+              '    if (pos < entityDefMetadataCount) {\n        memmove(&entityDefMetadata[pos + 1U],\n                &entityDefMetadata[pos],\n                (size_t)(entityDefMetadataCount - pos) *\n                    sizeof(entityDefMetadata[0]));\n        memmove(&entityDefSourceIndex[pos + 1U],\n                &entityDefSourceIndex[pos],\n                (size_t)(entityDefMetadataCount - pos));\n    }\n    entityDefMetadata[pos].tileIndex = tileIndex;\n    entityDefMetadata[pos].type = type;\n    entityDefMetadata[pos].subtype = subtype;\n    entityDefMetadata[pos].parm = parm;\n    entityDefSourceIndex[pos] = sourceIndex;\n    ++entityDefMetadataCount;')
+          replace_once(
+              'ESP32/src/esp_entity_def_type_catalog.c',
+              '        if (!insertMetadata(tileIndex, record[2], record[3],\n                            readLe32s(record + 4U))) {',
+              '        if (!insertMetadata(tileIndex, record[2], record[3],\n                            readLe32s(record + 4U), (uint8_t)i)) {')
+          replace_once(
+              'ESP32/src/esp_entity_def_type_catalog.c',
+              'uint32_t EspEntityDefTypeCatalog_definitionCount(void) {\n    return entityDefTypesReady ? entityDefCount : 0U;\n}',
+              '''int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
+                                     char* outName,
+                                     uint32_t capacity) {
+    const EntityDefMetadata* metadata;
+    EspAssetPackEntry entry;
+    uint8_t raw[ENTITY_DEF_NAME_BYTES];
+    uint16_t pos;
+    uint8_t sourceIndex;
+    uint32_t copy = 0U;
+    int ok = 0;
+
+    if (outName == NULL || capacity < 2U) return 0;
+    outName[0] = '\\0';
+    metadata = findMetadata(tileIndex);
+    if (metadata == NULL || entityDefMetadata == NULL || EspAssetPack_isOpen()) {
+        return 0;
+    }
+    pos = (uint16_t)(metadata - entityDefMetadata);
+    if (pos >= entityDefMetadataCount) return 0;
+    sourceIndex = entityDefSourceIndex[pos];
+    if (sourceIndex == 0xffU) return 0;
+
+    memset(&entry, 0, sizeof(entry));
+    memset(raw, 0, sizeof(raw));
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+    if (!EspAssetPack_findEntry("/entities.db", &entry) ||
+        (entry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U ||
+        !EspAssetPack_readRange(&entry,
+                                2U + ((uint32_t)sourceIndex * ENTITY_DEF_RECORD_BYTES) +
+                                    ENTITY_DEF_NAME_OFFSET,
+                                raw, sizeof(raw))) {
+        goto done;
+    }
+    while (copy + 1U < capacity && copy < ENTITY_DEF_NAME_BYTES &&
+           raw[copy] != 0U) {
+        outName[copy] = (char)raw[copy];
+        ++copy;
+    }
+    outName[copy] = '\\0';
+    ok = copy != 0U;
+
+done:
+    EspAssetPack_close();
+    if (!ok) outName[0] = '\\0';
+    return ok;
+}
+
+uint32_t EspEntityDefTypeCatalog_definitionCount(void) {
+    return entityDefTypesReady ? entityDefCount : 0U;
+}''')
+
+          # Extend the already hardware-proven top-bar feedback owner with one
+          # bounded dynamic text route and the legacy white viewport flash.
+          replace_once(
+              'ESP32/include/esp_native_gameplay_action_engine.h',
+              '    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DOOR_CLEARED = 3,\n    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN = 4\n',
+              '    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DOOR_CLEARED = 3,\n    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN = 4,\n    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP = 5\n')
+          replace_once(
+              'ESP32/include/esp_native_gameplay_action_engine.h',
+              'int EspNativeGameplayActionEngine_queueFeedback(\n    EspNativeGameplayActionFeedback feedback);\nint EspNativeGameplayActionEngine_cancelQueuedFeedback(\n    EspNativeGameplayActionFeedback feedback);',
+              'int EspNativeGameplayActionEngine_queueFeedback(\n    EspNativeGameplayActionFeedback feedback);\n/* Dynamic text remains a bounded transient presentation lease; the caller may\n * request a temporary white viewport-border flash in the same transaction. */\nint EspNativeGameplayActionEngine_queueTextFeedback(\n    EspNativeGameplayActionFeedback feedback,\n    const char* text,\n    uint16_t viewportFlashMs);\nint EspNativeGameplayActionEngine_cancelQueuedFeedback(\n    EspNativeGameplayActionFeedback feedback);\n/* Full native frame producers call this immediately before present so an active\n * viewport flash can refresh its small border snapshot from fresh world pixels. */\nvoid EspNativeGameplayActionEngine_markFreshFrame(void);')
+
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              '#define FEEDBACK_DISPLAY_MS 1200U\n',
+              '#define FEEDBACK_DISPLAY_MS 1200U\n#define FEEDBACK_DYNAMIC_TEXT_BYTES 24U\n#define FEEDBACK_VIEW_Y FEEDBACK_TOP_HEIGHT\n#define FEEDBACK_VIEW_HEIGHT (DOOMRPG_LOGICAL_HEIGHT - (FEEDBACK_TOP_HEIGHT * 2U))\n#define FEEDBACK_BORDER_THICKNESS 2U\n#define FEEDBACK_BORDER_PIXELS \\\n    ((DOOMRPG_LOGICAL_WIDTH * FEEDBACK_BORDER_THICKNESS * 2U) + \\\n     ((FEEDBACK_VIEW_HEIGHT - (FEEDBACK_BORDER_THICKNESS * 2U)) * \\\n      FEEDBACK_BORDER_THICKNESS * 2U))\n')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              '#define ACTION_FEEDBACK_PASS_TURN ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN\n',
+              '#define ACTION_FEEDBACK_PASS_TURN ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN\n#define ACTION_FEEDBACK_PICKUP ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP\n')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              '    uint8_t feedbackPending;\n    uint8_t feedbackKind;\n    uint8_t feedbackVisible;\n    uint8_t feedbackVisibleKind;\n} ActionEngineState;',
+              '    uint8_t feedbackPending;\n    uint8_t feedbackKind;\n    uint8_t feedbackVisible;\n    uint8_t feedbackVisibleKind;\n    uint32_t viewportFlashShownAtMs;\n    uint16_t viewportFlashDurationMs;\n    uint8_t viewportFlashPending;\n    uint8_t viewportFlashVisible;\n    uint8_t viewportFlashSnapshotValid;\n    uint8_t framebufferFresh;\n    char feedbackText[FEEDBACK_DYNAMIC_TEXT_BYTES];\n} ActionEngineState;')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              'static ActionEngineState actionState;\n',
+              'static ActionEngineState actionState;\nstatic uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];\n')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              '    if (feedback == ACTION_FEEDBACK_PASS_TURN) return "Turn passed.";\n    return NULL;\n}',
+              '    if (feedback == ACTION_FEEDBACK_PASS_TURN) return "Turn passed.";\n    if (feedback == ACTION_FEEDBACK_PICKUP && actionState.feedbackText[0] != \'\\0\') {\n        return actionState.feedbackText;\n    }\n    return NULL;\n}')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              '''int EspNativeGameplayActionEngine_queueFeedback(
+    EspNativeGameplayActionFeedback feedback) {
+    if (feedback <= ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NONE ||
+        feedback > ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN ||
+        !ensureOwner() || actionState.pending.active != 0U ||
+        actionState.feedbackPending != 0U) {
+        return 0;
+    }
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = (uint8_t)feedback;
+    return 1;
+}
+
+int EspNativeGameplayActionEngine_cancelQueuedFeedback(
+    EspNativeGameplayActionFeedback feedback) {
+    if (actionState.feedbackPending == 0U ||
+        actionState.feedbackKind != (uint8_t)feedback) {
+        return 0;
+    }
+    actionState.feedbackPending = 0U;
+    actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+    return 1;
+}''',
+              '''int EspNativeGameplayActionEngine_queueFeedback(
+    EspNativeGameplayActionFeedback feedback) {
+    if (feedback <= ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NONE ||
+        feedback > ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN ||
+        !ensureOwner() || actionState.pending.active != 0U ||
+        actionState.feedbackPending != 0U) {
+        return 0;
+    }
+    actionState.feedbackText[0] = '\\0';
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = (uint8_t)feedback;
+    return 1;
+}
+
+int EspNativeGameplayActionEngine_queueTextFeedback(
+    EspNativeGameplayActionFeedback feedback,
+    const char* text,
+    uint16_t viewportFlashMs) {
+    size_t len;
+    if (feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP || text == NULL ||
+        !ensureOwner() || actionState.pending.active != 0U ||
+        actionState.feedbackPending != 0U) {
+        return 0;
+    }
+    len = strnlen(text, FEEDBACK_DYNAMIC_TEXT_BYTES);
+    if (len == 0U || len >= FEEDBACK_DYNAMIC_TEXT_BYTES) return 0;
+    memcpy(actionState.feedbackText, text, len + 1U);
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = (uint8_t)feedback;
+    if (viewportFlashMs != 0U) {
+        actionState.viewportFlashPending = 1U;
+        actionState.viewportFlashDurationMs = viewportFlashMs;
+    }
+    return 1;
+}
+
+int EspNativeGameplayActionEngine_cancelQueuedFeedback(
+    EspNativeGameplayActionFeedback feedback) {
+    if (actionState.feedbackPending == 0U ||
+        actionState.feedbackKind != (uint8_t)feedback) {
+        return 0;
+    }
+    actionState.feedbackPending = 0U;
+    actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+    actionState.feedbackText[0] = '\\0';
+    actionState.viewportFlashPending = 0U;
+    if (actionState.viewportFlashVisible == 0U) {
+        actionState.viewportFlashDurationMs = 0U;
+    }
+    return 1;
+}
+
+void EspNativeGameplayActionEngine_markFreshFrame(void) {
+    actionState.framebufferFresh = 1U;
+}''')
+
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              'static int paintFeedback(uint8_t feedback) {',
+              '''static int visitViewportBorder(uint16_t* framebuffer,
+                               int restore) {
+    uint32_t pos = 0U;
+    uint32_t x;
+    uint32_t y;
+    uint32_t top = FEEDBACK_VIEW_Y;
+    uint32_t bottom = FEEDBACK_VIEW_Y + FEEDBACK_VIEW_HEIGHT;
+    uint32_t leftEnd = FEEDBACK_BORDER_THICKNESS;
+    uint32_t rightBegin = DOOMRPG_LOGICAL_WIDTH - FEEDBACK_BORDER_THICKNESS;
+
+    if (framebuffer == NULL) return 0;
+    for (y = top; y < top + FEEDBACK_BORDER_THICKNESS; ++y) {
+        for (x = 0U; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
+            uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+            if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
+            else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+            ++pos;
+        }
+    }
+    for (y = bottom - FEEDBACK_BORDER_THICKNESS; y < bottom; ++y) {
+        for (x = 0U; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
+            uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+            if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
+            else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+            ++pos;
+        }
+    }
+    for (y = top + FEEDBACK_BORDER_THICKNESS;
+         y < bottom - FEEDBACK_BORDER_THICKNESS; ++y) {
+        for (x = 0U; x < leftEnd; ++x) {
+            uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+            if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
+            else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+            ++pos;
+        }
+        for (x = rightBegin; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
+            uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+            if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
+            else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = 0xffffU; }
+            ++pos;
+        }
+    }
+    return pos == FEEDBACK_BORDER_PIXELS;
+}
+
+static int paintViewportFlash(void) {
+    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
+                      DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
+    if (framebuffer == NULL || Esp32PlatformVideo_framebufferSizeBytes() != expected) {
+        return 0;
+    }
+    if (!visitViewportBorder(framebuffer, 0)) return 0;
+    actionState.viewportFlashSnapshotValid = 1U;
+    return 1;
+}
+
+static int restoreViewportFlash(void) {
+    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
+                      DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
+    if (actionState.viewportFlashSnapshotValid == 0U) return 1;
+    if (framebuffer == NULL || Esp32PlatformVideo_framebufferSizeBytes() != expected ||
+        !visitViewportBorder(framebuffer, 1)) {
+        return 0;
+    }
+    actionState.viewportFlashSnapshotValid = 0U;
+    return 1;
+}
+
+static int paintFeedback(uint8_t feedback) {''')
+
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              '    int hadFeedback = 0;\n    int ok;\n',
+              '    int hadFeedback = 0;\n    int flashPainted = 0;\n    int ok;\n')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              '    ok = __real_Esp32PlatformVideo_present();\n    if (!ok) return 0;\n\n    if (hadFeedback) {',
+              '''    if ((actionState.viewportFlashPending != 0U ||
+         actionState.viewportFlashVisible != 0U) &&
+        (actionState.viewportFlashPending != 0U ||
+         actionState.framebufferFresh != 0U)) {
+        if (!paintViewportFlash()) {
+            printf("[PICKUPFLASH] FAILED phase=paint\\n");
+            return 0;
+        }
+        flashPainted = 1;
+    }
+
+    ok = __real_Esp32PlatformVideo_present();
+    if (!ok) return 0;
+
+    if (flashPainted && actionState.viewportFlashPending != 0U) {
+        actionState.viewportFlashPending = 0U;
+        actionState.viewportFlashVisible = 1U;
+        actionState.viewportFlashShownAtMs = actionNowMs();
+        printf("[PICKUPFLASH] PAINT color=white565/ffff viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller\\n",
+               (unsigned int)FEEDBACK_VIEW_Y,
+               (unsigned int)DOOMRPG_LOGICAL_WIDTH,
+               (unsigned int)FEEDBACK_VIEW_HEIGHT,
+               (unsigned int)FEEDBACK_BORDER_THICKNESS,
+               (unsigned int)FEEDBACK_BORDER_PIXELS,
+               (unsigned int)actionState.viewportFlashDurationMs);
+    }
+    actionState.framebufferFresh = 0U;
+
+    if (hadFeedback) {''')
+
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              'static int serviceFeedbackExpiry(void) {\n    uint32_t now;',
+              '''static int serviceViewportFlashExpiry(void) {
+    uint32_t now;
+    uint32_t elapsed;
+    uint16_t duration;
+
+    if (actionState.viewportFlashVisible == 0U) return 1;
+    now = actionNowMs();
+    elapsed = now - actionState.viewportFlashShownAtMs;
+    duration = actionState.viewportFlashDurationMs;
+    if (duration == 0U || elapsed < duration) return 1;
+    if (EspNativeGameplayControls_isActive()) return 1;
+    if (!restoreViewportFlash()) {
+        printf("[PICKUPFLASH] FAILED phase=restore\\n");
+        return 0;
+    }
+    if (!__real_Esp32PlatformVideo_present()) return 0;
+    actionState.viewportFlashVisible = 0U;
+    actionState.viewportFlashShownAtMs = 0U;
+    actionState.viewportFlashDurationMs = 0U;
+    printf("[PICKUPFLASH] EXPIRE elapsedMs=%u targetMs=%u restored=viewport-border-only\\n",
+           (unsigned int)elapsed, (unsigned int)duration);
+    return 1;
+}
+
+static int serviceFeedbackExpiry(void) {
+    uint32_t now;''')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              '    uint8_t kind;\n\n    if (actionState.feedbackVisible == 0U) return 1;',
+              '    uint8_t kind;\n\n    if (!serviceViewportFlashExpiry()) return 0;\n    if (actionState.feedbackVisible == 0U) return 1;')
+
+          # Mark complete world/HUD frames so an active flash can refresh its
+          # tiny underlying-border snapshot without mistaking touch-only presents
+          # for a fresh viewport.
+          replace_once(
+              'ESP32/src/esp_native_gameplay_frame.c',
+              '#include "esp_native_gameplay_hud.h"\n',
+              '#include "esp_native_gameplay_action_engine.h"\n#include "esp_native_gameplay_hud.h"\n')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_frame.c',
+              '    phaseStart = esp_timer_get_time();\n    if (!Esp32PlatformVideo_present()) {',
+              '    phaseStart = esp_timer_get_time();\n    EspNativeGameplayActionEngine_markFreshFrame();\n    if (!Esp32PlatformVideo_present()) {')
+
+          # PlayerResources remains the gameplay owner. Add presentation only
+          # after all candidate mutations are prepared and before the transactional
+          # rerender/present closes the pickup.
+          replace_once(
+              'ESP32/src/esp_native_gameplay_player_resources.c',
+              '    uint32_t afterValue;\n    uint16_t spriteIndex;\n',
+              '    uint32_t afterValue;\n    uint16_t spriteIndex;\n    uint16_t defTile;\n')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_player_resources.c',
+              '    applied->spriteIndex = candidate->spriteIndex;\n    applied->type = candidate->type;',
+              '    applied->spriteIndex = candidate->spriteIndex;\n    applied->defTile = candidate->defTile;\n    applied->type = candidate->type;')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_player_resources.c',
+              '    uint32_t playerFNVBefore;\n    uint32_t playerFNVAfter;\n',
+              '    uint32_t playerFNVBefore;\n    uint32_t playerFNVAfter;\n    char pickupName[17];\n    char pickupMessage[24];\n    int feedbackQueued = 0;\n')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_player_resources.c',
+              '    if (appliedCount == 0U) return 1;\n    playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();',
+              '''    if (appliedCount == 0U) return 1;
+
+    memset(pickupName, 0, sizeof(pickupName));
+    memset(pickupMessage, 0, sizeof(pickupMessage));
+    if (!EspEntityDefTypeCatalog_readName(applied[0].defTile,
+                                          pickupName,
+                                          sizeof(pickupName)) ||
+        snprintf(pickupMessage, sizeof(pickupMessage), "Got %s", pickupName) <= 0 ||
+        !EspNativeGameplayActionEngine_queueTextFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP,
+            pickupMessage, 500U)) {
+        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+        while (appliedCount > 0U) {
+            --appliedCount;
+            setConsumed(applied[appliedCount].spriteIndex, 0);
+        }
+        resources.view.playerFNV1a = EspNativeGameplayPlayerState_fingerprint();
+        printf("[PLAYERRES] DEFER tile=%u reason=pickup-feedback-not-ready playerRollback=yes worldRemove=yes mutation=no\\n",
+               (unsigned int)afterTile);
+        return 1;
+    }
+    feedbackQueued = 1;
+
+    playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();''')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_player_resources.c',
+              '               (unsigned int)EspNativeGameplayPlayerState_view()->credits);\n        return 1;',
+              '               (unsigned int)EspNativeGameplayPlayerState_view()->credits);\n        printf("[PLAYERRES] FEEDBACK tile=%u message=\\"%s\\" sourceDefTile=%u flash=white-border/500ms viewport=160x80 border=2px gotFace=deferred additionalMessages=%u-deferred\\n",\n               (unsigned int)afterTile, pickupMessage,\n               (unsigned int)applied[0].defTile,\n               (unsigned int)(appliedCount > 0U ? appliedCount - 1U : 0U));\n        return 1;')
+          replace_once(
+              'ESP32/src/esp_native_gameplay_player_resources.c',
+              '    (void)EspNativeGameplayPlayerState_restore(&playerBefore);\n    while (appliedCount > 0U) {',
+              '    if (feedbackQueued) {\n        (void)EspNativeGameplayActionEngine_cancelQueuedFeedback(\n            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP);\n    }\n    (void)EspNativeGameplayPlayerState_restore(&playerBefore);\n    while (appliedCount > 0U) {')
+
+          # The old commit log advertised both message and got-face as deferred.
+          replace_once(
+              'ESP32/src/esp_native_gameplay_player_resources.c',
+              'sound=deferred message=deferred gotFace=deferred rollback=closed',
+              'sound=deferred message=pickup-live flash=white-500ms gotFace=deferred rollback=closed')
+
+          for path in [
+              'ESP32/include/esp_entity_def_type_catalog.h',
+              'ESP32/src/esp_entity_def_type_catalog.c',
+              'ESP32/include/esp_native_gameplay_action_engine.h',
+              'ESP32/src/esp_native_gameplay_action_engine.c',
+              'ESP32/src/esp_native_gameplay_frame.c',
+              'ESP32/src/esp_native_gameplay_player_resources.c',
+          ]:
+              if '\\x00' in Path(path).read_text():
+                  raise SystemExit(f'NUL in {path}')
+          PY
+
+          git diff --check
+          git rm .github/workflows/temp-apply-pickup-feedback.yml
+          git config user.name "Kharn27"
+          git config user.email "32738307+Kharn27@users.noreply.github.com"
+          git add ESP32/include/esp_entity_def_type_catalog.h \
+                  ESP32/src/esp_entity_def_type_catalog.c \
+                  ESP32/include/esp_native_gameplay_action_engine.h \
+                  ESP32/src/esp_native_gameplay_action_engine.c \
+                  ESP32/src/esp_native_gameplay_frame.c \
+                  ESP32/src/esp_native_gameplay_player_resources.c
+          git commit -m "ESP32: add native pickup HUD feedback"
+          git push origin HEAD:agent/esp32-native-pickup-feedback
