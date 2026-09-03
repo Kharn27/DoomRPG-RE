@@ -128,6 +128,15 @@ static int restorePublishedOwners(
     return topologyExact && positionExact;
 }
 
+static int recoveryRedraw(DoomRPG_t* doomRpg,
+                          const EspPlayerViewState* player,
+                          EspNativeGameplayFrameStats* outFrame) {
+    if (outFrame != NULL) memset(outFrame, 0, sizeof(*outFrame));
+    return doomRpg != NULL && player != NULL && outFrame != NULL &&
+           EspNativeGameplayFrame_renderTurn(
+               doomRpg->render, (uint8_t)player->viewAngle, outFrame);
+}
+
 int EspNativeGameplayMonsterMovementPublish_afterProbe(
     struct DoomRPG_s* doomRpgBase,
     const char* trigger,
@@ -152,8 +161,6 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
     uint16_t linkState;
     uint16_t linkOrder;
     uint32_t i;
-    int ownersCommitted = 0;
-    int boundaryClosed = 0;
     int recoveryRendered = 0;
 
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
@@ -255,21 +262,6 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
                (unsigned int)publishCapture.before.spriteIndex);
         return 0;
     }
-    ownersCommitted = 1;
-
-    if (boundaryPrepared != 0U) {
-        if (boundarySaved == NULL ||
-            !EspNativeRngReplayGuard_commitProbeBoundary(
-                &doomRpg->random, boundarySaved, boundaryPrepared, rngCalls)) {
-            (void)restorePublishedOwners(&relink, &publishCapture.before,
-                                         &publishCapture.after);
-            doomRpg->random = replayStart;
-            printf("[MONSTERMOVELIVE] DEFER sprite=%u cause=rng-boundary-commit rollback=owners mutation=no\n",
-                   (unsigned int)publishCapture.before.spriteIndex);
-            return 0;
-        }
-        boundaryClosed = 1;
-    }
 
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
@@ -277,16 +269,8 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
                                            &frame)) {
         int ownersExact = restorePublishedOwners(&relink, &publishCapture.before,
                                                  &publishCapture.after);
-        if (boundaryPrepared != 0U && boundaryClosed != 0) {
-            doomRpg->random = *boundarySaved;
-        }
-        else {
-            doomRpg->random = replayStart;
-        }
-        memset(&recoveryFrame, 0, sizeof(recoveryFrame));
-        recoveryRendered = EspNativeGameplayFrame_renderTurn(
-            doomRpg->render, (uint8_t)player->viewAngle, &recoveryFrame);
-        outResult->boundaryClosed = (uint8_t)boundaryClosed;
+        doomRpg->random = replayStart;
+        recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
         outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
         printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u tile=%u->%u ownersExact=%s randomExact=yes recoveryRender=%s interpolation=deferred mutation=no\n",
                (unsigned int)publishCapture.before.spriteIndex,
@@ -300,19 +284,51 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
     topology = EspMapSpriteTopology_view();
     currentPosition = EspNativeGameplayMonsterPosition_find(
         publishCapture.after.spriteIndex);
-    if (!ownersCommitted || topology == NULL || currentPosition == NULL ||
+    if (topology == NULL || currentPosition == NULL ||
         memcmp(currentPosition, &publishCapture.after,
-               sizeof(publishCapture.after)) != 0) {
-        printf("[MONSTERMOVELIVE] FATAL sprite=%u cause=post-render-owner-mismatch\n",
-               (unsigned int)publishCapture.after.spriteIndex);
+               sizeof(publishCapture.after)) != 0 ||
+        !EspMapSpriteTopology_getEntity(publishCapture.after.spriteIndex,
+                                        &type, &subtype,
+                                        &linkState, &linkOrder) ||
+        (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) !=
+            publishCapture.after.tileIndex ||
+        linkOrder != relink.linkOrderAfter) {
+        int ownersExact = restorePublishedOwners(&relink, &publishCapture.before,
+                                                 &publishCapture.after);
+        doomRpg->random = replayStart;
+        recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
+        outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
+        printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=post-render-owner-mismatch ownersExact=%s recoveryRender=%s mutation=no\n",
+               (unsigned int)publishCapture.after.spriteIndex,
+               ownersExact ? "yes" : "NO",
+               recoveryRendered ? "yes" : "NO");
         return 0;
     }
 
+    if (boundaryPrepared != 0U) {
+        if (boundarySaved == NULL ||
+            !EspNativeRngReplayGuard_commitProbeBoundary(
+                &doomRpg->random, boundarySaved, boundaryPrepared, rngCalls)) {
+            int ownersExact = restorePublishedOwners(&relink,
+                                                     &publishCapture.before,
+                                                     &publishCapture.after);
+            doomRpg->random = replayStart;
+            recoveryRendered = recoveryRedraw(doomRpg, player, &recoveryFrame);
+            outResult->recoveryRendered = (uint8_t)(recoveryRendered != 0);
+            printf("[MONSTERMOVELIVE] ROLLBACK sprite=%u cause=rng-boundary-close ownersExact=%s recoveryRender=%s mutation=no\n",
+                   (unsigned int)publishCapture.after.spriteIndex,
+                   ownersExact ? "yes" : "NO",
+                   recoveryRendered ? "yes" : "NO");
+            return 0;
+        }
+        outResult->boundaryClosed = 1U;
+    }
+
+    topology = EspMapSpriteTopology_view();
     outResult->positionFNVAfter = EspNativeGameplayMonsterPosition_fingerprint();
-    outResult->topologyFNVAfter = topology->stateFNV1a;
+    outResult->topologyFNVAfter = topology != NULL ? topology->stateFNV1a : 0U;
     outResult->rngCalls = rngCalls;
     outResult->committed = 1U;
-    outResult->boundaryClosed = (uint8_t)boundaryClosed;
     printf("[MONSTERMOVELIVE] COMMIT trigger=%s sprite=%u tile=%u->%u pos=%u,%u->%u,%u rngCalls=%u randomCommitted=yes positionFNV=%08x->%08x topologyFNV=%08x->%08x linkOrder=%u->%u renderer=snap-destination frame=%08x presented=%u interpolation=deferred rollback=closed\n",
            trigger,
            (unsigned int)publishCapture.before.spriteIndex,
