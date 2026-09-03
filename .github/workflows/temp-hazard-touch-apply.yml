@@ -1,0 +1,157 @@
+name: Temporary Hazard Touch Apply
+
+on:
+  push:
+    branches:
+      - agent/esp32-native-hazard-touch
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/esp32-native-hazard-touch
+          fetch-depth: 0
+      - name: Wire hazard touch and red viewport flash
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          action = Path('ESP32/src/esp_native_gameplay_action_engine.c')
+          s = action.read_text()
+
+          def one(old, new, label):
+              global s
+              if s.count(old) != 1:
+                  raise SystemExit(f'{label}: expected 1 match, got {s.count(old)}')
+              s = s.replace(old, new, 1)
+
+          one('#define ACTION_FEEDBACK_PICKUP ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP\n',
+              '#define ACTION_FEEDBACK_PICKUP ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP\n#define ACTION_FEEDBACK_DAMAGE ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE\n',
+              'damage feedback define')
+          one('#define FEEDBACK_DYNAMIC_TEXT_BYTES 24U\n',
+              '#define FEEDBACK_DYNAMIC_TEXT_BYTES 24U\n#define FEEDBACK_DAMAGE_RED565 0xb800U\n',
+              'damage red define')
+          one('    uint16_t viewportFlashDurationMs;\n    uint8_t viewportFlashPending;\n',
+              '    uint16_t viewportFlashDurationMs;\n    uint16_t viewportFlashColor565;\n    uint8_t viewportFlashPending;\n',
+              'flash color owner')
+          one('    if (feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP || text == NULL ||\n',
+              '    if ((feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP &&\n         feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE) || text == NULL ||\n',
+              'dynamic feedback gate')
+          one('    if (viewportFlashMs != 0U) {\n        actionState.viewportFlashPending = 1U;\n        actionState.viewportFlashDurationMs = viewportFlashMs;\n    }\n',
+              '    if (viewportFlashMs != 0U) {\n        actionState.viewportFlashPending = 1U;\n        actionState.viewportFlashDurationMs = viewportFlashMs;\n        actionState.viewportFlashColor565 =\n            feedback == ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE\n                ? FEEDBACK_DAMAGE_RED565 : 0xffffU;\n    }\n',
+              'dynamic flash color')
+          one('    if (actionState.viewportFlashVisible == 0U) {\n        actionState.viewportFlashDurationMs = 0U;\n    }\n',
+              '    if (actionState.viewportFlashVisible == 0U) {\n        actionState.viewportFlashDurationMs = 0U;\n        actionState.viewportFlashColor565 = 0U;\n    }\n',
+              'cancel flash color')
+          one('    if (feedback == ACTION_FEEDBACK_PICKUP && actionState.feedbackText[0] != \'\\0\') {\n',
+              '    if ((feedback == ACTION_FEEDBACK_PICKUP ||\n         feedback == ACTION_FEEDBACK_DAMAGE) &&\n        actionState.feedbackText[0] != \'\\0\') {\n',
+              'dynamic feedback text')
+
+          s, n = re.subn(r'static int visitViewportBorder\(uint16_t\* framebuffer,\s*int restore\) \{',
+                         'static int visitViewportBorder(uint16_t* framebuffer,\\n                               int restore,\\n                               uint16_t flashColor) {', s, count=1)
+          if n != 1:
+              raise SystemExit(f'visitViewportBorder signature: {n}')
+          count = s.count('framebuffer[index] = 0xffffU;')
+          if count != 4:
+              raise SystemExit(f'border paint sites: expected 4, got {count}')
+          s = s.replace('framebuffer[index] = 0xffffU;', 'framebuffer[index] = flashColor;')
+          one('    if (!visitViewportBorder(framebuffer, 0)) return 0;\n',
+              '    if (!visitViewportBorder(framebuffer, 0,\n                            actionState.viewportFlashColor565 != 0U\n                                ? actionState.viewportFlashColor565 : 0xffffU)) return 0;\n',
+              'paint flash color')
+          one('        !visitViewportBorder(framebuffer, 1)) {\n',
+              '        !visitViewportBorder(framebuffer, 1, 0U)) {\n',
+              'restore flash signature')
+          s = s.replace('[PICKUPFLASH] FAILED phase=paint', '[VIEWFLASH] FAILED phase=paint')
+          s = s.replace('[PICKUPFLASH] FAILED phase=restore', '[VIEWFLASH] FAILED phase=restore')
+
+          old_paint = '''        printf("[PICKUPFLASH] PAINT color=white565/ffff viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller\\n",
+     (unsigned int)FEEDBACK_VIEW_Y,
+     (unsigned int)DOOMRPG_LOGICAL_WIDTH,
+     (unsigned int)FEEDBACK_VIEW_HEIGHT,
+     (unsigned int)FEEDBACK_BORDER_THICKNESS,
+     (unsigned int)FEEDBACK_BORDER_PIXELS,
+     (unsigned int)actionState.viewportFlashDurationMs);
+'''
+          new_paint = '''        printf("[VIEWFLASH] PAINT color565=%04x viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller feedback=%u\\n",
+     (unsigned int)actionState.viewportFlashColor565,
+     (unsigned int)FEEDBACK_VIEW_Y,
+     (unsigned int)DOOMRPG_LOGICAL_WIDTH,
+     (unsigned int)FEEDBACK_VIEW_HEIGHT,
+     (unsigned int)FEEDBACK_BORDER_THICKNESS,
+     (unsigned int)FEEDBACK_BORDER_PIXELS,
+     (unsigned int)actionState.viewportFlashDurationMs,
+     (unsigned int)feedback);
+'''
+          one(old_paint, new_paint, 'flash paint log')
+
+          old_expire = '''    actionState.viewportFlashVisible = 0U;
+    actionState.viewportFlashShownAtMs = 0U;
+    actionState.viewportFlashDurationMs = 0U;
+    printf("[PICKUPFLASH] EXPIRE elapsedMs=%u targetMs=%u restored=viewport-border-only\\n",
+ (unsigned int)elapsed, (unsigned int)duration);
+'''
+          new_expire = '''    printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=viewport-border-only\\n",
+ (unsigned int)elapsed, (unsigned int)duration,
+ (unsigned int)actionState.viewportFlashColor565);
+    actionState.viewportFlashVisible = 0U;
+    actionState.viewportFlashShownAtMs = 0U;
+    actionState.viewportFlashDurationMs = 0U;
+    actionState.viewportFlashColor565 = 0U;
+'''
+          one(old_expire, new_expire, 'flash expire log')
+          action.write_text(s)
+
+          resources = Path('ESP32/src/esp_native_gameplay_player_resources.c')
+          r = resources.read_text()
+          old = '#include "esp_native_gameplay_frame.h"\n#include "esp_native_gameplay_hud.h"\n'
+          new = '#include "esp_native_gameplay_frame.h"\n#include "esp_native_gameplay_hazard_touch.h"\n#include "esp_native_gameplay_hud.h"\n'
+          if r.count(old) != 1:
+              raise SystemExit('player resources include anchor')
+          r = r.replace(old, new, 1)
+
+          anchor = '''    if (!ensureOwner(afterView->targetMapId)) {
+        printf("[PLAYERRES] DEFER tile=%u reason=owner-not-ready mutation=no\\n",
+               (unsigned int)afterTile);
+        return 1;
+    }
+    memset(candidates, 0, sizeof(candidates));
+'''
+          replacement = '''    if (!ensureOwner(afterView->targetMapId)) {
+        printf("[PLAYERRES] DEFER tile=%u reason=owner-not-ready mutation=no\\n",
+               (unsigned int)afterTile);
+        return 1;
+    }
+    {
+        EspNativeGameplayHazardTouchStatus hazardStatus =
+            EspNativeGameplayHazardTouch_processMove(doomRpg, beforeView, afterView);
+        if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_FATAL) {
+            resources.view.fatal = 1U;
+            return 0;
+        }
+        if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED ||
+            hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED) {
+            return 1;
+        }
+    }
+    memset(candidates, 0, sizeof(candidates));
+'''
+          if r.count(anchor) != 1:
+              raise SystemExit('player resources hazard anchor')
+          r = r.replace(anchor, replacement, 1)
+          resources.write_text(r)
+
+          wf = Path('.github/workflows/temp-hazard-touch-apply.yml')
+          wf.unlink()
+          PY
+          git config user.name "Kharn27"
+          git config user.email "32738307+Kharn27@users.noreply.github.com"
+          git add ESP32/src/esp_native_gameplay_action_engine.c ESP32/src/esp_native_gameplay_player_resources.c .github/workflows/temp-hazard-touch-apply.yml
+          git commit -m "ESP32: wire native movement hazard touch"
+          git push origin HEAD:agent/esp32-native-hazard-touch
