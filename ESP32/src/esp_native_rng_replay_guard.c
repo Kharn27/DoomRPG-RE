@@ -136,7 +136,10 @@ int EspNativeRngReplayGuard_endProbeBoundary(Random_t* liveRandom,
  * does not advance hidden generator state a second time. A short lease prevents
  * stale ordinary rollback state from surviving unrelated gameplay evolution.
  * Probe reservations are stricter: they are tied to one exact live Random_t
- * pointer/state and persist until that live boundary is replayed.
+ * pointer/state and persist until that live boundary is replayed. Consuming a
+ * persistent reservation downgrades it to the ordinary rollback lease so a
+ * speculative consumer can still roll Random_t back and have its immediate
+ * live commit replay the exact same post-refill table.
  */
 byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
     int next;
@@ -152,11 +155,13 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
                 *rand = rngReplayGuard.postRefill;
                 rngReplayGuard.probeReserved = 0U;
                 rngReplayGuard.probeReservedRand = NULL;
-                rngReplayGuard.valid = 0U;
+                rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
+                rngReplayGuard.valid = 1U;
                 ++rngReplayGuard.replayedRefills;
-                printf("[RNGGUARD] PROBE-REPLAY refill=%u replay=%u next=127->0 hiddenGenerator=untouched reservation=consumed sequenceExact=yes\n",
+                printf("[RNGGUARD] PROBE-REPLAY refill=%u replay=%u leaseMs=%u next=127->0 hiddenGenerator=untouched reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
                        (unsigned int)rngReplayGuard.realRefills,
-                       (unsigned int)rngReplayGuard.replayedRefills);
+                       (unsigned int)rngReplayGuard.replayedRefills,
+                       (unsigned int)RNG_REPLAY_GUARD_LEASE_MS);
             }
             else {
                 printf("[RNGGUARD] FATAL-RESERVATION-MISMATCH next=%d ptrMatch=%s sequenceExact=NO recovery=real-refill\n",
