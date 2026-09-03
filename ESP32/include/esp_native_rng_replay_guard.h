@@ -1,6 +1,7 @@
 #ifndef DOOMRPG_ESP32_NATIVE_RNG_REPLAY_GUARD_H
 #define DOOMRPG_ESP32_NATIVE_RNG_REPLAY_GUARD_H
 
+#include <SDL.h>
 #include <stdint.h>
 
 #include "DoomRPG.h"
