@@ -1,0 +1,29 @@
+name: Temporary First Frame Address Fix
+
+on:
+  push:
+    branches:
+      - 'agent/esp32-native-pickup-feedback'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/esp32-native-pickup-feedback
+          fetch-depth: 0
+      - name: Fix first frame work address uses
+        shell: bash
+        run: |
+          python3 -c "from pathlib import Path; p=Path('ESP32/src/esp_native_first_frame.c'); s=p.read_text(); a='EspAssetPack_findEntry(\"wtexels.bin\", work->wallTexels)'; b='EspAssetPack_findEntry(\"wtexels.bin\", &work->wallTexels)'; c='EspAssetPack_readRange(work->wallTexels, 0U, wallHeader'; d='EspAssetPack_readRange(&work->wallTexels, 0U, wallHeader'; assert s.count(a)==1 and s.count(c)==1; p.write_text(s.replace(a,b,1).replace(c,d,1))"
+          git diff --check
+          git rm .github/workflows/temp-fix-first-frame-address.yml
+          git config user.name "Kharn27"
+          git config user.email "32738307+Kharn27@users.noreply.github.com"
+          git add ESP32/src/esp_native_first_frame.c
+          git commit -m "ESP32: fix first-frame scratch pack addresses"
+          git push origin HEAD:agent/esp32-native-pickup-feedback
