@@ -41,7 +41,7 @@ Framebuffer 160x120 RGB565 = 38400 bytes
 Output      nearest-neighbor 2x
 ```
 
-Native runtime assets are backed by `/DoomRPG-ESP32.pak`; the runtime does not depend on reading the reference ZIP directly.
+`/DoomRPG-ESP32.pak` is the native backing store for the migrated map/gameplay runtime. The current firmware still has a **transitional startup dependency on `/DoomRPG.zip`** for legacy HUD/layout resources and will not complete engine initialization if those ZIP resources are unavailable. Removing that runtime ZIP dependency remains part of the migration toward the fully native ESP32 architecture.
 
 ## Build
 
