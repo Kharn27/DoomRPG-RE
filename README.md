@@ -1,90 +1,91 @@
-# DoomRPG-RE
+# Doom RPG ESP32 CYD
 
-![image](https://github.com/Erick194/DoomRPG-RE/assets/41172072/258e99d9-b122-4cbe-8659-2fd0f4105068)<br />
-https://www.doomworld.com/forum/topic/129997
+A native Doom RPG engine for the **ESP32-2432S028R classic Cheap Yellow Display (CYD)**, targeting the original no-PSRAM board.
 
-## ESP32 CYD port
+> **Status:** active work in progress, developed and validated on real classic CYD hardware.
 
-This repository also contains an actively developed native port for the classic
-ESP32-2432S028R Cheap Yellow Display (CYD), targeting the no-PSRAM board with a
-160x120 RGB565 engine framebuffer, exact 2x TFT output, SD-backed resources and
-bounded ESP32-specific graphics/resource management.
+![ESP32 CYD Build](https://github.com/Kharn27/DoomRPG-RE/actions/workflows/esp32-cyd.yml/badge.svg)
+
+## What this project is
+
+This project is building a purpose-designed embedded Doom RPG runtime for the classic CYD rather than keeping the desktop reverse-engineered engine as the permanent architecture.
+
+The target architecture is:
+
+```text
+original Doom RPG data / behavior
+ -> ESP32-native parsers
+ -> compact immutable map runtime
+ -> small explicit mutable gameplay owners
+ -> native event / gameplay engine
+ -> native renderer
+ -> 160x120 RGB565 framebuffer
+ -> exact 2x presentation on the 320x240 ILI9341
+```
+
+The classic CYD has no PSRAM, so the engine is deliberately designed around bounded RAM ownership, SD-backed assets and compact native state instead of map-wide texture buffers or pointer-heavy desktop structures.
+
+Current hardware-validated work already includes the native map/runtime path, rendering, touch gameplay controls, event execution, doors, pickups/resources, generic monster combat/retaliation and the first live native monster movement publication. The exact current boundary is always recorded in [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md).
+
+## Target hardware
+
+```text
+Board       ESP32-2432S028R classic CYD
+MCU         ESP32-D0WD-V3, dual core @ 240 MHz
+Flash       4 MB
+PSRAM       none
+Display     ILI9341, 320x240
+Touch       XPT2046
+Storage     microSD
+Framebuffer 160x120 RGB565 = 38400 bytes
+Output      nearest-neighbor 2x
+```
+
+Native runtime assets are backed by `/DoomRPG-ESP32.pak`; the runtime does not depend on reading the reference ZIP directly.
+
+## Build
+
+The ESP32 target uses PlatformIO:
+
+```bash
+cd ESP32
+pio run -e esp32-cyd
+```
+
+For flashing, asset preparation and the current hardware workflow, see [`ESP32/README.md`](ESP32/README.md).
+
+GitHub Actions runs the same normal `esp32-cyd` compile as a pre-hardware check. A green CI build means the firmware compiles; **real CYD Serial logs remain the final runtime authority**.
+
+## Documentation
 
 Start here:
 
-- [`ESP32/README.md`](ESP32/README.md) — build, flash and architecture guide
-- [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md) — exact current hardware recovery point
-- [`ESP32/DOCUMENTATION.md`](ESP32/DOCUMENTATION.md) — documentation map and milestone archives
+- [`ESP32/README.md`](ESP32/README.md) — build, flash and ESP32 overview
+- [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md) — authoritative hardware-tested recovery point
+- [`ESP32/DOCUMENTATION.md`](ESP32/DOCUMENTATION.md) — documentation map and milestone archive
+- [`ESP32/ARCHITECTURE.md`](ESP32/ARCHITECTURE.md) — permanent native engine direction
 
-## Español
-Doom RPG ingeniería inversa por [GEC]<br />
-Creado por Erick Vásquez García.
+## Project lineage and credits
 
-Versión actual 0.2.2
+This project would not exist without the **DoomRPG-RE** reverse-engineering work by **Erick Vásquez García / [GEC]**.
 
-Requiere CMake para crear el proyecto.<br />
-Requisitos para el projecto:
-  * SDL2
-  * SDL2-Mixer
-  * Zlib
-  * FluidSynth
+Their project recovered Doom RPG behavior and formats and provides the executable desktop reference used throughout this port:
 
-Configuración por defecto de las teclas.
+- [Erick194/DoomRPG-RE](https://github.com/Erick194/DoomRPG-RE)
+- [Doomworld: Doom RPG Reverse Engineering](https://www.doomworld.com/forum/topic/129997)
 
-Move Forward: Up<br />
-Move Backward: Down<br />
-Move Left: A<br />
-Move Right: D<br />
-Turn Left: Left<br />
-Turn Right: Right<br />
-Atk/Talk/Use: Return<br />
-Next Weapon: Z<br />
-Prev Weapon: X<br />
-Pass Turn: C<br />
-Automap: Tab<br />
-Menu Open/Back: Escape<br />
+That reverse-engineering work belongs to its original authors and contributors. This repository does **not** claim authorship of it.
 
-Trucos originales del juego:
+The work developed here is the new **ESP32-native CYD engine and embedded architecture**: compact storage/runtime formats, explicit memory ownership, native gameplay/event execution, native renderer/input integration and the hardware-specific path required to run Doom RPG on a no-PSRAM classic CYD.
 
-Versión J2ME/BREW:<br />
-Abres menu e ingresa los siguientes numeros.<br />
-3666 -> Abre el menú debug.<br />
-43629 -> Da al jugador maximo de salud y armadura.<br />
-4332 -> Da al jugador todas las llaves, items y armas.<br />
-3366 -> Inicia el testeo de velocidad, "Benchmark".<br />
+During migration, some desktop/J2ME-derived reference code remains in the repository because it is still useful as an executable specification. It is not the intended permanent ESP32 engine architecture and may eventually disappear from the ESP32 build completely.
 
-## English
-Doom RPG Reverse Engineering By [GEC]<br />
-Created by Erick Vásquez García.
+## Game data and trademarks
 
-Current version 0.2.2
+This project is an engine/port and does not grant rights to the original Doom RPG game data. Users are responsible for supplying any required original game assets legally.
 
-You need CMake to make the project.<br />
-What you need for the project is:
-  * SDL2
-  * SDL2-Mixer
-  * Zlib
-  * FluidSynth
+DOOM and Doom RPG are trademarks/properties of their respective owners. This is an independent community project and is not affiliated with or endorsed by id Software, Bethesda or ZeniMax.
 
-Default key configuration:
+## License
 
-Move Forward: Up<br />
-Move Backward: Down<br />
-Move Left: A<br />
-Move Right: D<br />
-Turn Left: Left<br />
-Turn Right: Right<br />
-Atk/Talk/Use: Return<br />
-Next Weapon: Z<br />
-Prev Weapon: X<br />
-Pass Turn: C<br />
-Automap: Tab<br />
-Menu Open/Back: Escape<br />
-
-Original game cheat codes:
-
-J2ME/BREW Version:<br />
-3666 -> Opens debug menu.<br />
-43629 -> Gives max health and armor to the player.<br />
-4332 -> Gives all keys, items and weapons.<br />
-3366 -> Starts speed test "Benchmark".<br />
+The repository is distributed under the existing [GNU GPL v3](LICENSE). See the repository history and upstream project for authorship and attribution of inherited reverse-engineered source material.
