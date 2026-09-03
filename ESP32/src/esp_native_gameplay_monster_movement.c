@@ -12,6 +12,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_dispatch.h"
+#include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_retaliation.h"
@@ -95,6 +96,7 @@ typedef struct PathResult_s {
 } PathResult;
 
 static EspNativeGameplayMonsterMovementView movementView;
+static uint32_t observedNoAttackTurns;
 
 static int centeredCoordinate(int32_t value) {
     return value >= MOVE_TILE_CENTER &&
@@ -557,6 +559,10 @@ static int aiGoalPlan(uint16_t attackerSprite,
     return 1;
 }
 
+/* Select the single map-session-active monster conservatively. Activation is a
+ * permanent generic bitset owned by the already-proven gate; movement does not
+ * activate anything itself. Full active-list ordering remains deferred, so more
+ * than one eligible active monster is intentionally ambiguous/fail-closed. */
 static int findCandidate(const EspPlayerViewState* playerView,
                          MovementCandidate* outCandidate,
                          uint32_t* outCandidates) {
@@ -585,12 +591,12 @@ static int findCandidate(const EspPlayerViewState* playerView,
         uint8_t weaponId;
         int64_t dx;
         int64_t dy;
-        uint32_t worldDistance;
-        int attackRange;
-        int los;
 
         if (monster->alive == 0U || monster->subtype >= 14U ||
-            monster->subtype == MOVE_SUBTYPE_SPECIAL_AI) continue;
+            monster->subtype == MOVE_SUBTYPE_SPECIAL_AI ||
+            !EspNativeGameplayMonsterActivation_isActive(monster->spriteIndex)) {
+            continue;
+        }
         if (!EspMapSpriteTopology_getEntity(monster->spriteIndex,
                                             &type, &subtype,
                                             &linkState, &linkOrder)) return 0;
@@ -614,30 +620,51 @@ static int findCandidate(const EspPlayerViewState* playerView,
         }
         dx = (int64_t)position->worldX - playerView->destX;
         dy = (int64_t)position->worldY - playerView->destY;
-        if (dx != 0 && dy != 0) continue;
         if (dx == 0 && dy == 0) continue;
-        worldDistance = (uint32_t)(dx * dx + dy * dy);
-        attackRange = (1 + (int)movementWeapons[weaponId].rangeMin) * MOVE_TILE_SIZE;
-        if (worldDistance > (uint32_t)(attackRange * attackRange)) continue;
-        los = cardinalTraceClear((int32_t)position->worldX,
-                                 (int32_t)position->worldY,
-                                 playerView->destX, playerView->destY,
-                                 monster->spriteIndex,
-                                 MOVE_TRACE_ATTACK_MASK, 0);
-        if (los < 0) return 0;
-        if (los == 0) continue;
 
         ++candidates;
         if (candidates == 1U) {
             outCandidate->monster = monster;
             outCandidate->position = position;
-            outCandidate->worldDistance = worldDistance;
+            outCandidate->worldDistance = (uint32_t)(dx * dx + dy * dy);
             outCandidate->tileIndex = position->tileIndex;
             outCandidate->weaponId = weaponId;
         }
     }
 
     *outCandidates = candidates;
+    return 1;
+}
+
+static int attackReady(const MovementCandidate* candidate,
+                       const EspPlayerViewState* playerView,
+                       int* outReady) {
+    int64_t dx;
+    int64_t dy;
+    int attackRange;
+    int los;
+
+    if (candidate == NULL || candidate->monster == NULL ||
+        candidate->position == NULL || playerView == NULL || outReady == NULL ||
+        candidate->weaponId >= MOVE_WEAPON_COUNT ||
+        movementWeapons[candidate->weaponId].valid == 0U) {
+        return 0;
+    }
+    *outReady = 0;
+    dx = (int64_t)candidate->position->worldX - playerView->destX;
+    dy = (int64_t)candidate->position->worldY - playerView->destY;
+    if (dx != 0 && dy != 0) return 1;
+    if (dx == 0 && dy == 0) return 1;
+    attackRange = (1 + (int)movementWeapons[candidate->weaponId].rangeMin) *
+                  MOVE_TILE_SIZE;
+    if (candidate->worldDistance > (uint32_t)(attackRange * attackRange)) return 1;
+    los = cardinalTraceClear((int32_t)candidate->position->worldX,
+                             (int32_t)candidate->position->worldY,
+                             playerView->destX, playerView->destY,
+                             candidate->monster->spriteIndex,
+                             MOVE_TRACE_ATTACK_MASK, 0);
+    if (los < 0) return 0;
+    *outReady = los > 0;
     return 1;
 }
 
@@ -659,12 +686,14 @@ static int syncOwner(void) {
         movementView.sourceArenaFNV1a != turn->sourceArenaFNV1a) {
         memset(&movementView, 0, sizeof(movementView));
         movementView.sourceArenaFNV1a = turn->sourceArenaFNV1a;
+        movementView.observedMovementDeferredTurns = turn->movementDeferredTurns;
+        observedNoAttackTurns = turn->noAttackTurns;
         movementView.lastSpriteIndex = MOVE_NO_SPRITE;
         movementView.lastSourceTile = MOVE_NO_SPRITE;
         movementView.lastDestTile = MOVE_NO_SPRITE;
         movementView.lastPositionFNV1a = positions->stateFNV1a;
         movementView.active = 1U;
-        printf("[MONSTERMOVE] READY arena=%08x ownerBytes=%u positionRecordBytes=%u mode=planner-probe+position-rollback trigger=MONSTERTURN-MOVE-DEFER aiGoal=legacy-cardinal calcPath=2-step traceMask=%04x subtypeMask=legacy rng=local-copy-boundary-fail-closed rendererPublish=deferred topologyRelink=deferred liveMove=no\n",
+        printf("[MONSTERMOVE] READY arena=%08x ownerBytes=%u positionRecordBytes=%u mode=planner-probe+position-rollback trigger=no-immediate-attack|ranged-ai>=217 activation=shared-map-session-single-active aiGoal=legacy-cardinal calcPath=2-step traceMask=%04x subtypeMask=legacy rng=local-copy-boundary-fail-closed rendererPublish=deferred topologyRelink=deferred liveMove=no\n",
                (unsigned int)movementView.sourceArenaFNV1a,
                (unsigned int)positions->ownerBytes,
                (unsigned int)sizeof(EspNativeGameplayMonsterPositionRecord),
@@ -675,6 +704,7 @@ static int syncOwner(void) {
 
 void EspNativeGameplayMonsterMovement_reset(void) {
     memset(&movementView, 0, sizeof(movementView));
+    observedNoAttackTurns = 0U;
     movementView.lastSpriteIndex = MOVE_NO_SPRITE;
     movementView.lastSourceTile = MOVE_NO_SPRITE;
     movementView.lastDestTile = MOVE_NO_SPRITE;
@@ -692,10 +722,15 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     MovementCandidate candidate;
     uint32_t candidates;
     uint32_t deferredCount;
+    uint32_t noAttackCount;
+    uint32_t triggerCount;
+    const char* trigger;
     ProbeRng probeRng;
-    uint8_t aiDecision;
+    uint8_t aiDecision = 0U;
+    uint8_t aiDecisionUsed = 0U;
     uint8_t closeDecision = 0U;
     uint8_t closeDecisionUsed = 0U;
+    int immediateAttack;
     int i7;
     int i8;
     int32_t targetX;
@@ -716,17 +751,52 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     turn = EspNativeGameplayMonsterTurn_view();
     if (turn == NULL) return;
     deferredCount = turn->movementDeferredTurns;
-    if (deferredCount == movementView.observedMovementDeferredTurns) return;
+    noAttackCount = turn->noAttackTurns;
+    if (deferredCount == movementView.observedMovementDeferredTurns &&
+        noAttackCount == observedNoAttackTurns) {
+        return;
+    }
 
-    if (deferredCount != movementView.observedMovementDeferredTurns + 1U) {
-        printf("[MONSTERMOVE] DEFER observed=%u current=%u cause=movement-turn-gap mutation=no rngConsumed=0\n",
+    if (deferredCount != movementView.observedMovementDeferredTurns &&
+        noAttackCount != observedNoAttackTurns) {
+        printf("[MONSTERMOVE] DEFER moveObserved=%u moveCurrent=%u noAttackObserved=%u noAttackCurrent=%u cause=dual-trigger-or-sequence-gap mutation=no rngConsumed=0\n",
                (unsigned int)movementView.observedMovementDeferredTurns,
-               (unsigned int)deferredCount);
+               (unsigned int)deferredCount,
+               (unsigned int)observedNoAttackTurns,
+               (unsigned int)noAttackCount);
         movementView.observedMovementDeferredTurns = deferredCount;
+        observedNoAttackTurns = noAttackCount;
         ++movementView.ambiguousGeometry;
         return;
     }
-    movementView.observedMovementDeferredTurns = deferredCount;
+
+    if (deferredCount != movementView.observedMovementDeferredTurns) {
+        if (deferredCount != movementView.observedMovementDeferredTurns + 1U) {
+            printf("[MONSTERMOVE] DEFER observed=%u current=%u cause=movement-turn-gap mutation=no rngConsumed=0\n",
+                   (unsigned int)movementView.observedMovementDeferredTurns,
+                   (unsigned int)deferredCount);
+            movementView.observedMovementDeferredTurns = deferredCount;
+            ++movementView.ambiguousGeometry;
+            return;
+        }
+        movementView.observedMovementDeferredTurns = deferredCount;
+        trigger = "RANGED-AI";
+        triggerCount = deferredCount;
+    }
+    else {
+        if (noAttackCount != observedNoAttackTurns + 1U) {
+            printf("[MONSTERMOVE] DEFER observed=%u current=%u cause=no-attack-turn-gap mutation=no rngConsumed=0\n",
+                   (unsigned int)observedNoAttackTurns,
+                   (unsigned int)noAttackCount);
+            observedNoAttackTurns = noAttackCount;
+            ++movementView.ambiguousGeometry;
+            return;
+        }
+        observedNoAttackTurns = noAttackCount;
+        trigger = "NO-IMMEDIATE-ATTACK";
+        triggerCount = noAttackCount;
+    }
+
     movementView.lastReason = turn->lastReason;
     ++movementView.probes;
 
@@ -741,46 +811,80 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
           (dispatch->viewStepX == 0 && dispatch->viewStepY == MOVE_TILE_SIZE) ||
           (dispatch->viewStepX == 0 && dispatch->viewStepY == -MOVE_TILE_SIZE))) {
         ++movementView.collisionDeferred;
-        printf("[MONSTERMOVE] DEFER n=%u cause=player-orientation-not-ready mutation=no rngConsumed=0\n",
-               (unsigned int)deferredCount);
+        printf("[MONSTERMOVE] DEFER trigger=%s n=%u cause=player-orientation-not-ready mutation=no rngConsumed=0\n",
+               trigger, (unsigned int)triggerCount);
         return;
     }
 
     memset(&candidate, 0, sizeof(candidate));
     if (!findCandidate(playerView, &candidate, &candidates)) {
         ++movementView.collisionDeferred;
-        printf("[MONSTERMOVE] DEFER n=%u cause=candidate-trace-not-ready mutation=no rngConsumed=0\n",
-               (unsigned int)deferredCount);
+        printf("[MONSTERMOVE] DEFER trigger=%s n=%u cause=candidate-state-not-ready mutation=no rngConsumed=0\n",
+               trigger, (unsigned int)triggerCount);
         return;
     }
     if (candidates != 1U || candidate.monster == NULL || candidate.position == NULL) {
         ++movementView.ambiguousGeometry;
-        printf("[MONSTERMOVE] DEFER n=%u candidates=%u cause=attacker-order-ambiguous mutation=no rngConsumed=0\n",
-               (unsigned int)deferredCount, (unsigned int)candidates);
+        printf("[MONSTERMOVE] DEFER trigger=%s n=%u candidates=%u activeCount=%u cause=active-order-not-owned mutation=no rngConsumed=0\n",
+               trigger, (unsigned int)triggerCount,
+               (unsigned int)candidates,
+               (unsigned int)EspNativeGameplayMonsterActivation_count());
+        return;
+    }
+
+    if (!attackReady(&candidate, playerView, &immediateAttack)) {
+        ++movementView.collisionDeferred;
+        printf("[MONSTERMOVE] DEFER trigger=%s n=%u sprite=%u cause=attack-readiness-not-ready mutation=no rngConsumed=0\n",
+               trigger, (unsigned int)triggerCount,
+               (unsigned int)candidate.monster->spriteIndex);
         return;
     }
 
     liveRandomBefore = doomRpg->random;
     memset(&probeRng, 0, sizeof(probeRng));
     probeRng.state = liveRandomBefore;
-    if (!probeNextByte(&probeRng, &aiDecision)) {
-        ++movementView.rngBoundaryDeferred;
-        printf("[MONSTERMOVE] RNG-BOUNDARY-DEFER n=%u sprite=%u nextRand=%d stage=ai-decision hiddenGenerator=untouched-by-movement-probe mutation=no\n",
-               (unsigned int)deferredCount,
-               (unsigned int)candidate.monster->spriteIndex,
-               liveRandomBefore.nextRand);
-        return;
+    i7 = (1 + (int)movementWeapons[candidate.weaponId].rangeMin) / 2;
+
+    /* Exact Entity_aiThink branch:
+     *   if (!z || (i7 != 0 && rand >= 217)) -> movement
+     * No-immediate-attack (z=false) consumes no AI decision byte. A ranged
+     * immediate attack consumes exactly one byte and enters movement only when
+     * that value is >=217. Melee i7==0 attacks immediately and cannot arrive via
+     * the movement branch. */
+    if (immediateAttack) {
+        if (i7 == 0) {
+            ++movementView.collisionDeferred;
+            printf("[MONSTERMOVE] REPLAY-MISMATCH trigger=%s n=%u sprite=%u immediateAttack=yes rangeGate=0 expected=attack mutation=no rngConsumed=0\n",
+                   trigger, (unsigned int)triggerCount,
+                   (unsigned int)candidate.monster->spriteIndex);
+            return;
+        }
+        if (!probeNextByte(&probeRng, &aiDecision)) {
+            ++movementView.rngBoundaryDeferred;
+            printf("[MONSTERMOVE] RNG-BOUNDARY-DEFER trigger=%s n=%u sprite=%u nextRand=%d stage=ai-decision hiddenGenerator=untouched-by-movement-probe mutation=no\n",
+                   trigger, (unsigned int)triggerCount,
+                   (unsigned int)candidate.monster->spriteIndex,
+                   liveRandomBefore.nextRand);
+            return;
+        }
+        aiDecisionUsed = 1U;
+        if (aiDecision < 217U) {
+            ++movementView.collisionDeferred;
+            printf("[MONSTERMOVE] REPLAY-MISMATCH trigger=%s n=%u sprite=%u aiRand=%u expected=>=217 randomLive=untouched mutation=no\n",
+                   trigger, (unsigned int)triggerCount,
+                   (unsigned int)candidate.monster->spriteIndex,
+                   (unsigned int)aiDecision);
+            return;
+        }
     }
-    if (aiDecision < 217U) {
+    else if (deferredCount != movementView.observedMovementDeferredTurns) {
         ++movementView.collisionDeferred;
-        printf("[MONSTERMOVE] REPLAY-MISMATCH n=%u sprite=%u aiRand=%u expected=>=217 randomLive=untouched mutation=no\n",
-               (unsigned int)deferredCount,
-               (unsigned int)candidate.monster->spriteIndex,
-               (unsigned int)aiDecision);
+        printf("[MONSTERMOVE] REPLAY-MISMATCH trigger=%s n=%u sprite=%u immediateAttack=no producerExpected=ranged-ai mutation=no rngConsumed=0\n",
+               trigger, (unsigned int)triggerCount,
+               (unsigned int)candidate.monster->spriteIndex);
         return;
     }
 
-    i7 = (1 + (int)movementWeapons[candidate.weaponId].rangeMin) / 2;
     i8 = (i7 * MOVE_TILE_SIZE) * (i7 * MOVE_TILE_SIZE);
     targetX = playerView->destX + dispatch->viewStepX;
     targetY = playerView->destY + dispatch->viewStepY;
@@ -789,8 +893,8 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
          candidate.position->worldY == (uint16_t)playerView->destY)) {
         if (!probeNextByte(&probeRng, &closeDecision)) {
             ++movementView.rngBoundaryDeferred;
-            printf("[MONSTERMOVE] RNG-BOUNDARY-DEFER n=%u sprite=%u nextRand=%d stage=close-bias rngCalls=%u hiddenGenerator=untouched-by-movement-probe mutation=no\n",
-                   (unsigned int)deferredCount,
+            printf("[MONSTERMOVE] RNG-BOUNDARY-DEFER trigger=%s n=%u sprite=%u nextRand=%d stage=close-bias rngCalls=%u hiddenGenerator=untouched-by-movement-probe mutation=no\n",
+                   trigger, (unsigned int)triggerCount,
                    (unsigned int)candidate.monster->spriteIndex,
                    probeRng.state.nextRand,
                    (unsigned int)probeRng.calls);
@@ -813,16 +917,16 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
                             targetX, targetY, &probeRng, &plan);
     if (planStatus == -3 || probeRng.boundary != 0U) {
         ++movementView.rngBoundaryDeferred;
-        printf("[MONSTERMOVE] RNG-BOUNDARY-DEFER n=%u sprite=%u stage=visit-choice rngCalls=%u hiddenGenerator=untouched-by-movement-probe mutation=no\n",
-               (unsigned int)deferredCount,
+        printf("[MONSTERMOVE] RNG-BOUNDARY-DEFER trigger=%s n=%u sprite=%u stage=visit-choice rngCalls=%u hiddenGenerator=untouched-by-movement-probe mutation=no\n",
+               trigger, (unsigned int)triggerCount,
                (unsigned int)candidate.monster->spriteIndex,
                (unsigned int)probeRng.calls);
         return;
     }
     if (planStatus == -2) {
         ++movementView.collisionDeferred;
-        printf("[MONSTERMOVE] DEFER n=%u sprite=%u cause=calcPath-special-plane-corpus-needed mask=%04x rngCalls=%u mutation=no\n",
-               (unsigned int)deferredCount,
+        printf("[MONSTERMOVE] DEFER trigger=%s n=%u sprite=%u cause=calcPath-special-plane-corpus-needed mask=%04x rngCalls=%u mutation=no\n",
+               trigger, (unsigned int)triggerCount,
                (unsigned int)candidate.monster->spriteIndex,
                (unsigned int)movementMaskForSubtype(candidate.monster->subtype),
                (unsigned int)probeRng.calls);
@@ -830,16 +934,16 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     }
     if (planStatus < 0) {
         ++movementView.collisionDeferred;
-        printf("[MONSTERMOVE] DEFER n=%u sprite=%u cause=planner-not-ready rngCalls=%u mutation=no\n",
-               (unsigned int)deferredCount,
+        printf("[MONSTERMOVE] DEFER trigger=%s n=%u sprite=%u cause=planner-not-ready rngCalls=%u mutation=no\n",
+               trigger, (unsigned int)triggerCount,
                (unsigned int)candidate.monster->spriteIndex,
                (unsigned int)probeRng.calls);
         return;
     }
     if (planStatus == 0) {
         ++movementView.collisionDeferred;
-        printf("[MONSTERMOVE] NO-MOVE n=%u sprite=%u sourceTile=%u target=%d,%d mask=%04x visitCount=0 rngCalls=%u legacyFallbackAttack=deferred randomLive=untouched mutation=no\n",
-               (unsigned int)deferredCount,
+        printf("[MONSTERMOVE] NO-MOVE trigger=%s n=%u sprite=%u sourceTile=%u target=%d,%d mask=%04x visitCount=0 rngCalls=%u legacyFallbackAttack=deferred randomLive=untouched mutation=no\n",
+               trigger, (unsigned int)triggerCount,
                (unsigned int)candidate.monster->spriteIndex,
                (unsigned int)candidate.position->tileIndex,
                (int)targetX, (int)targetY,
@@ -857,16 +961,16 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
         !EspNativeGameplayMonsterPosition_commitPrepared(&positionBefore,
                                                          &positionAfter)) {
         ++movementView.collisionDeferred;
-        printf("[MONSTERMOVE] DEFER n=%u sprite=%u cause=position-transaction-prepare-or-commit mutation=no-published rngLive=untouched\n",
-               (unsigned int)deferredCount,
+        printf("[MONSTERMOVE] DEFER trigger=%s n=%u sprite=%u cause=position-transaction-prepare-or-commit mutation=no-published rngLive=untouched\n",
+               trigger, (unsigned int)triggerCount,
                (unsigned int)candidate.monster->spriteIndex);
         return;
     }
     positionFNVCommitted = EspNativeGameplayMonsterPosition_fingerprint();
     if (!EspNativeGameplayMonsterPosition_rollbackPrepared(&positionAfter,
                                                            &positionBefore)) {
-        printf("[MONSTERMOVE] FATAL-PROBE n=%u sprite=%u cause=position-rollback-failed liveMove=NO rendererPublish=deferred\n",
-               (unsigned int)deferredCount,
+        printf("[MONSTERMOVE] FATAL-PROBE trigger=%s n=%u sprite=%u cause=position-rollback-failed liveMove=NO rendererPublish=deferred\n",
+               trigger, (unsigned int)triggerCount,
                (unsigned int)candidate.monster->spriteIndex);
         return;
     }
@@ -886,8 +990,9 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     movementView.lastDestTile = plan.destTile;
     movementView.lastPositionFNV1a = positionFNVAfter;
 
-    printf("[MONSTERMOVE] PROBE n=%u reason=%u sprite=%u subtype=%u weapon=%u sourceTile=%u source=%u,%u target=%d,%d destTile=%u delta=%d,%d aiRand=%u closeRand=%s%u visitCount=%u tieRand=%u choice=%u mask=%04x rngCalls=%u rngBoundary=no randomLiveUntouched=%s positionFNV=%08x->%08x->%08x positionRollback=%s rendererPublish=deferred topologyRelink=deferred liveMove=no mutation=no\n",
-           (unsigned int)deferredCount,
+    printf("[MONSTERMOVE] PROBE trigger=%s n=%u reason=%u sprite=%u subtype=%u weapon=%u sourceTile=%u source=%u,%u target=%d,%d destTile=%u delta=%d,%d immediateAttack=%s aiRand=%s%u closeRand=%s%u visitCount=%u tieRand=%u choice=%u mask=%04x rngCalls=%u rngBoundary=no randomLiveUntouched=%s positionFNV=%08x->%08x->%08x positionRollback=%s rendererPublish=deferred topologyRelink=deferred liveMove=no mutation=no\n",
+           trigger,
+           (unsigned int)triggerCount,
            (unsigned int)turn->lastReason,
            (unsigned int)candidate.monster->spriteIndex,
            (unsigned int)candidate.monster->subtype,
@@ -898,6 +1003,8 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
            (int)targetX, (int)targetY,
            (unsigned int)plan.destTile,
            (int)plan.deltaX, (int)plan.deltaY,
+           immediateAttack ? "yes" : "no",
+           aiDecisionUsed != 0U ? "value/" : "unused/",
            (unsigned int)aiDecision,
            closeDecisionUsed != 0U ? "value/" : "unused/",
            (unsigned int)closeDecision,
