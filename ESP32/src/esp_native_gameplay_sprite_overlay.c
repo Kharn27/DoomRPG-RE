@@ -2,6 +2,7 @@
 
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
+#include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_player_resources.h"
 
@@ -47,13 +48,15 @@ int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
     (void)linkOrder;
 
     /*
-     * Native MonsterPosition is the mutable logical spatial owner. Once an
-     * enemy has been relinked, project its committed tile-center x/y into the
-     * existing immutable-sprite overlay. The BSP record itself is never changed.
-     * Interpolation is deliberately separate; this milestone snaps the rendered
-     * sprite to the committed logical destination.
+     * Native MonsterPosition is the mutable logical spatial owner. Only sprites
+     * whose first live movement transaction has committed enter this projection;
+     * all untouched enemies preserve the exact pre-milestone BSP rendering.
+     * Interpolation is deliberately separate, so a published sprite snaps to
+     * its committed logical destination for now.
      */
     if (type == SPRITE_TYPE_ENEMY &&
+        index <= UINT16_MAX &&
+        EspNativeGameplayMonsterMovementPublish_isProjected((uint16_t)index) &&
         (linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
         monsterPosition = EspNativeGameplayMonsterPosition_find((uint16_t)index);
         if (monsterPosition != NULL &&
