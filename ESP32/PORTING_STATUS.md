@@ -7,15 +7,15 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main = 65dea748ef8d2e5a6f3823676ac05ee62fb89407
-branch = agent/esp32-native-monster-movement
-base main = 65dea748ef8d2e5a6f3823676ac05ee62fb89407
-hardware-tested code boundary = 7dd7faa3994969e43ccb27b5450ee828ade3c323
-status = REAL-CYD NATIVE MONSTER POSITION + MOVEMENT PLANNER PROBE + RNG RESERVATION PASS
+main = c377f89d75bb9a3f8efe7398bd7e993757380700
+branch = agent/esp32-native-monster-movement-live
+base main = c377f89d75bb9a3f8efe7398bd7e993757380700
+hardware-tested code boundary = bc39044a2d6931899f3f10097d34522996897db0
+status = REAL-CYD LIVE MONSTER MOVEMENT POSITION + TOPOLOGY + RENDER + RNG COMMIT PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`7dd7faa...` is the last code commit exercised on the real CYD. Commits after
+`bc39044a...` is the last code commit exercised on the real CYD. Commits after
 that boundary must remain documentation-only until merge.
 
 After merge, read the real GitHub `main` SHA again before creating the next
@@ -259,12 +259,16 @@ attack visual / player pain FX / damage text / sound
 
 ## Native monster position + movement planner — hardware PASS
 
-Detailed milestone:
+Detailed probe milestone:
 
 [`MILESTONE_NATIVE_MONSTER_MOVEMENT.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT.md)
 
-A permanent compact spatial owner now exists independently of immutable BSP
-sprite coordinates:
+Detailed live-publication milestone:
+
+[`MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md)
+
+A permanent compact spatial owner exists independently of immutable BSP sprite
+coordinates:
 
 ```text
 record = {spriteIndex,tileIndex,worldX,worldY}
@@ -288,73 +292,94 @@ visit choice = visitOrder[(rand & 3) % visitCount]
 NO-IMMEDIATE-ATTACK and RANGED-AI producer paths
 ```
 
-The current milestone is still **probe-only**: one active ordinary monster may
-prepare and commit one cardinal position, fingerprint it, then rollback exactly.
-No renderer publication, topology relink, interpolation, or visible monster
-movement occurs yet.
+The planner remains the rollback-only preflight, but a successful unambiguous
+ordinary-monster move may now be published live. Publication commits the exact
+legacy gameplay RNG bytes, the 8 B `MonsterPosition` record, and a compact
+SpriteTopology relink, then redraws the complete native frame. Immutable BSP
+coordinates are not mutated.
 
-Decisive real-CYD position witness:
+Renderer projection is bounded by a static no-allocation published-position
+bitset: an enemy keeps its historical immutable-runtime render coordinates until
+its first committed native move. Interpolation remains deferred, so the current
+visual behavior is a deliberate destination snap.
+
+Decisive real-CYD live witness:
 
 ```text
-sprite=179 subtype=1 weapon=12
+sprite=179 subtype=1 weapon=13
 sourceTile=750 source=928,1504
 destTile=718 delta=0,-64
-tieRand=217 choice=0 mask=ff87 rngCalls=1
-randomLiveUntouched=yes
-positionFNV=61296c4a->10cf73aa->61296c4a
-positionRollback=yes
-rendererPublish=deferred topologyRelink=deferred liveMove=no mutation=no
+tieRand=204 choice=0 mask=ff87 rngCalls=1
+probe positionFNV=61296c4a->10cf73aa->61296c4a
+probe positionRollback=yes randomLiveUntouched=yes
+
+[RNGGUARD] PROBE-COMMIT refill=1 bytes=1 leaseMs=1000
+  hiddenGenerator=advanced-once-total reservation=consumed
+  rollbackReplay=armed sequenceExact=yes
+
+[MONSTERMOVELIVE] COMMIT trigger=NO-IMMEDIATE-ATTACK
+  sprite=179 tile=750->718 pos=928,1504->928,1440
+  rngCalls=1 randomCommitted=yes
+  positionFNV=61296c4a->10cf73aa
+  topologyFNV=bb1d78a4->b40ad9d9
+  linkOrder=103->211
+  renderer=snap-destination projected=yes
+  frame=5fb03085 presented=1
+  interpolation=deferred rollback=closed
 ```
+
+The dog was visibly observed moving toward the player. More importantly, the
+immediately following `SELECT` traced `sprite=179` on its new **tile 718** and the
+generic combat backend armed against that same moved tile. This proves a real
+gameplay consumer observed the relocated topology, not only a screen-space
+sprite offset.
+
+A direct player-FORWARD collision attempt into occupied tile 718 was not made in
+this run, so that specific consumer is not claimed as independently exercised.
 
 ## RNG refill transaction + movement reservation — hardware PASS
 
-Hardware testing previously proved that `Random_t` alone is not the full legacy
-RNG state. `DoomRPG_setRand()` regenerates the 128-byte table using hidden
-file-static generator state.
+Hardware testing proved that `Random_t` alone is not the full legacy RNG state.
+`DoomRPG_setRand()` regenerates the 128-byte table using hidden file-static
+generator state.
 
-The generic guard now supports two bounded replay modes:
+The generic guard now supports bounded rollback/replay plus live movement commit:
 
 ```text
 ordinary rollback lease = 1000 ms
 persistent movement-probe reservation = exact live Random_t pointer + pre/post table
+live movement boundary commit = consume reserved table exactly once
 hidden generator = advances once per logical refill
 allocation = none
-current static guard owner = 284 B on 32-bit ESP32
+current static guard owner = bounded static state
 ```
 
-The movement reservation may survive well beyond the ordinary 1000 ms lease. A
-probe temporarily borrows the reserved post-refill state, restores live
-`Random_t` exactly, and leaves the table reserved for the next true byte-boundary
-draw.
+The movement reservation may survive beyond the ordinary 1000 ms lease. A probe
+temporarily borrows the reserved post-refill state. If publication does not
+commit, live `Random_t` can still be restored exactly. If the live move commits,
+`PROBE-COMMIT` closes the reservation while retaining the ordinary rollback lease
+needed by downstream transactional consumers.
 
-A hardware test caught an important second-order bug: consuming the reservation
-at the monster-turn **probe** was too early because that probe itself rolls RNG
-back. The final code converts `PROBE-REPLAY` into the ordinary rollback lease so
-live retaliation can reuse the exact same table.
-
-Decisive final real-CYD chain:
+Decisive live-movement boundary chain:
 
 ```text
 [RNGGUARD] PROBE-REFILL refill=1 ... hiddenGenerator=advanced-once ...
-[MONSTERMOVE] PROBE ... tieRand=217 ... randomLiveUntouched=yes ... positionRollback=yes
-[RNGGUARD] PROBE-RESTORE refill=1 liveRandomExact=yes reservation=pending ...
-[RNGGUARD] PROBE-REPLAY refill=1 replay=1 leaseMs=1000 ... reservation=consumed rollbackReplay=armed sequenceExact=yes
-[MONSTERTURN] ATTACK-PROBE ... firstRandHit=217 ... missProjectileRng=1 rngRollback=yes playerExact=yes
-[RNGGUARD] REPLAY refill=1 replay=2 leaseMs=1000 ... hiddenGenerator=untouched rollbackSafe=yes
-[MONSTERRETAL] MISS-COMMIT ... firstRandHit=217 ... gameplayRngCommitted=yes playerMutation=no
+[MONSTERMOVE] PROBE ... tieRand=204 ... randomLiveUntouched=yes ... positionRollback=yes
+[RNGGUARD] PROBE-COMMIT refill=1 bytes=1 leaseMs=1000 ... hiddenGenerator=advanced-once-total ... sequenceExact=yes
+[MONSTERMOVELIVE] COMMIT ... rngCalls=1 randomCommitted=yes ... rollback=closed
+[MONSTERMOVERNG] COMMIT ... reservation=consumed-by-live-move randomLive=advanced-exactly
 ```
 
-A subsequent ordinary retaliation in the same session matched probe/live with
-`firstRandHit=203`, `firstRandDamage=213`, `damage=2`, `armorDamage=2`, committing
-player `HP 30->28`, `armor 12->10`.
+The earlier probe/retaliation boundary sequence remains a retained regression
+witness for rollback/replay behavior.
 
 ## Representative final RAM witness
 
 Latest real-CYD gameplay logs at the locked code boundary:
 
 ```text
-heap = 84648 B
-heap8 = 18884 B
+heap = 84608 B
+heap8 = 18844 B
 largest8 = 13812 B
 shapeData = NULL
 mediaTexels = NULL
@@ -392,6 +417,9 @@ bounded generic stationary monster retaliation
 compact mutable monster-position ownership
 bounded legacy-compatible monster movement planner probe
 persistent boundary-safe RNG reservation/replay
+live one-monster movement RNG commit
+live MonsterPosition commit + SpriteTopology relink
+native renderer projection of committed moved position
 ```
 
 ## Intentionally deferred families
@@ -404,7 +432,6 @@ combat/retaliation MISS/HIT/CRIT text feedback
 fire +2 XP and jammed-door +1 XP migration into PlayerState
 materialized monster drops
 corpse-pile trimming
-live monster movement publication into topology/renderer
 monster movement interpolation/animation
 multiple-monster activation/movement ordering
 unsupported special calcPath plane corpus
@@ -444,13 +471,14 @@ After merge:
 
 1. read actual GitHub `main` and exact SHA;
 2. create a fresh coherent `agent/*` branch from that SHA;
-3. re-read this status, `DOCUMENTATION.md`, and the movement milestone;
+3. re-read this status, `DOCUMENTATION.md`, and both movement milestones;
 4. choose the next bounded gameplay family from the merged frontier.
 
 Strong candidates now include:
 
 ```text
-live monster movement publication / topology relink / renderer projection
+monster movement interpolation / animation
+multiple-monster activation + movement ordering
 monster attack + player-pain presentation and combat feedback
 player lethal/death transition
 action XP migration into PlayerState
