@@ -7,15 +7,15 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main = 7f799ab9bac2bb60f7cffb65719131f0f9877ae0
-branch = agent/esp32-native-pass-turn
-base main = 7f799ab9bac2bb60f7cffb65719131f0f9877ae0
-hardware-tested code boundary = 40a19ba56ee946477ba107d237e644b7bac2e9ef
-status = REAL-CYD NATIVE PASS TURN + TOPBAR FEEDBACK + MONSTER MOVE/RETALIATION PASS
+main = 8b9f23324ff314bf207cc3ffab01f11f76438515
+branch = agent/esp32-native-weapon-control
+base main = 8b9f23324ff314bf207cc3ffab01f11f76438515
+hardware-tested code boundary = 17c30561bd7c080cdd55436caa6d67cae7250970
+status = REAL-CYD GENERIC NEXT WEAPON CONTROL + LIVE PISTOL FIRE PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`40a19ba...` is the last code commit exercised on the real CYD. Commits after
+`17c30561...` is the last code commit exercised on the real CYD. Commits after
 that boundary must remain documentation-only until merge.
 
 After merge, read the real GitHub `main` SHA again before creating the next
@@ -201,6 +201,52 @@ Fire removal consumes ammo from PlayerState transactionally:
 
 The real HUD decremented with the same owner. Fire +2 XP and historical
 jammed-door +1 XP remain deferred.
+
+## Generic native weapon control — hardware PASS
+
+Detailed milestone:
+
+[`MILESTONE_NATIVE_WEAPON_CONTROL.md`](MILESTONE_NATIVE_WEAPON_CONTROL.md)
+
+The resident input path now owns a permanent allocation-free circular weapon
+selector over the historical 12 player slots. Ownership, selected slot and ammo
+remain in the shared 52 B PlayerState. Selection follows the exact legacy gate:
+owned plus `ammoUsage == 0 || ammo[ammoType] > 0`. Weapon cycling itself does not
+schedule a monster turn, and redraw failure rolls PlayerState back exactly.
+
+Real-CYD NEXT witness with `weapons=0007`:
+
+```text
+[WEAPONCONTROL] COMMIT seq=107 action=NEXT_WEAPON
+  weapon=0->1 ammoType=0 ammo=10 inspected=1
+  playerFNV=fa441c23->1e469366 redraw=yes turn=no rollback=closed
+[WEAPONCONTROL] COMMIT seq=108 action=NEXT_WEAPON
+  weapon=1->2 ammoType=1 ammo=12 inspected=1
+  playerFNV=1e469366->464910f5 redraw=yes turn=no rollback=closed
+```
+
+The selected Pistol then fired through the existing generic type-1 combat
+transaction against moved Hellhound sprite 179 at tile 718 / distance 2:
+
+```text
+[MONSTERCOMBAT] ROLL seq=110 weapon=2 worldDist=16384
+  loops=1 hitLoops=1 firstRandHit=22 firstRandDamage=63
+  totalDamage=5 armorDamage=3 crit=0 rngCalls=4
+[WEAPON] DRAW weapon=2 logical=242 actual=611 frame=1 pose=attack
+[MONSTERCOMBAT] COMMIT seq=110 sprite=179 weapon=2
+  hp=6->0 armor=2->0 alive=1->0 ammo=12->11
+  xp=5-applied rollback=closed
+```
+
+The submitted hardware log independently exercises NEXT, not PREV; PREV is
+implemented by the same circular selector in reverse but is not claimed here as
+a separate real-CYD witness. Direct generic single-target weapon combat currently
+owns Axe, Pistol, Shotgun and Super Shotgun. Chaingun/Plasma multi-loop and
+Rocket/BFG radial mechanics remain separate fail-closed families.
+
+After the kill, the activation owner still reported `activeCount=1` while no
+living candidate remained, producing conservative `active-order-not-owned`. This
+is a monster activation/order cleanup boundary, not a weapon-combat failure.
 
 ## Generic monster presentation — hardware PASS
 
@@ -496,6 +542,9 @@ persistent boundary-safe RNG reservation/replay
 live one-monster movement RNG commit
 live MonsterPosition commit + SpriteTopology relink
 native renderer projection of committed moved position
+generic NEXT weapon cycling through owned usable weapons
+live selected-weapon PlayerState + HUD/weapon redraw
+live Pistol ammo consumption + generic combat commit
 ```
 
 ## Intentionally deferred families
@@ -516,8 +565,10 @@ special subtype-10 AI
 player death/lethal retaliation transition
 monster attack/pain presentation and sound
 full native turn advancement orchestration
+independent PREV_WEAPON real-CYD witness
 multi-loop chaingun/plasma presentation/commit
 rocket/BFG radius damage
+familiar weapon attack semantics for slots 9..11
 special death consequences for subtypes 7, 8, 12, 13
 Kronos-specific semantics
 password input
@@ -554,6 +605,7 @@ After merge:
 Strong candidates now include:
 
 ```text
+remaining generic weapon families: chaingun/plasma multi-loop then rocket/BFG radial
 monster movement interpolation / animation
 multiple-monster activation + movement ordering
 monster attack + player-pain presentation and combat feedback
