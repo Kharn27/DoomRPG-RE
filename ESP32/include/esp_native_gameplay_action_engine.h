@@ -23,8 +23,9 @@ typedef enum EspNativeGameplayActionFeedback_e {
  * feedback is still pending and has not yet been presented. */
 int EspNativeGameplayActionEngine_queueFeedback(
     EspNativeGameplayActionFeedback feedback);
-/* Dynamic text remains a bounded transient presentation lease; the caller may
- * request a temporary white viewport-border flash in the same transaction. */
+/* Dynamic text remains a bounded transient presentation lease. Pickup feedback
+ * may request the recovered 2 px / 500 ms white viewport border; its 944 RGB565
+ * border pixels are snapshotted in 1888 B bounded static storage, never heap. */
 int EspNativeGameplayActionEngine_queueTextFeedback(
     EspNativeGameplayActionFeedback feedback,
     const char* text,
