@@ -59,4 +59,5 @@ jobs:
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
