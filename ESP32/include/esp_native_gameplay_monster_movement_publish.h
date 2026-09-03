@@ -34,6 +34,9 @@ void EspNativeGameplayMonsterMovementPublish_capturePrepared(
     const EspNativeGameplayMonsterPositionRecord* before,
     const EspNativeGameplayMonsterPositionRecord* after);
 
+/* True only after a monster position has entered the live renderer projection. */
+int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t spriteIndex);
+
 /*
  * Publish a planner move only after the existing movement service has completed
  * its exact commit+rollback probe. The live transaction replays the planner RNG,
