@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "esp_map_sprite_topology.h"
+#include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_pass_turn.h"
@@ -99,13 +100,23 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_TILE_TOUCH_DEFERRED;
     }
 
-    if (!EspNativeGameplayMonsterTurn_requestPassTurn(intent->sequence)) {
-        printf("[PASSTURN] DEFER seq=%u tile=%u reason=turn-request-busy mutation=no\n",
+    if (!EspNativeGameplayActionEngine_queueFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN)) {
+        printf("[PASSTURN] DEFER seq=%u tile=%u reason=feedback-queue-not-ready mutation=no monsterTurn=no\n",
                (unsigned int)intent->sequence, (unsigned int)tile);
+        return ESP_NATIVE_GAMEPLAY_PASS_TURN_NOT_READY;
+    }
+
+    if (!EspNativeGameplayMonsterTurn_requestPassTurn(intent->sequence)) {
+        int feedbackRollback = EspNativeGameplayActionEngine_cancelQueuedFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN);
+        printf("[PASSTURN] DEFER seq=%u tile=%u reason=turn-request-busy feedbackRollback=%s mutation=no\n",
+               (unsigned int)intent->sequence, (unsigned int)tile,
+               feedbackRollback ? "yes" : "NO");
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_REQUEST_BUSY;
     }
 
-    printf("[PASSTURN] REQUEST seq=%u tile=%u pos=%d,%d angle=%d tileTouch=none type10/11=absent message=\"Turn passed.\"-deferred monsterTurn=requested playerMutation=no\n",
+    printf("[PASSTURN] REQUEST seq=%u tile=%u pos=%d,%d angle=%d tileTouch=none type10/11=absent message=\"Turn passed.\"-queued monsterTurn=requested playerMutation=no\n",
            (unsigned int)intent->sequence,
            (unsigned int)tile,
            (int)view->viewX,
