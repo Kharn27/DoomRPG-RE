@@ -459,6 +459,85 @@ int EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
     return 1;
 }
 
+int EspMapSpriteTopology_prepareRelink(uint16_t spriteIndex,
+                                      uint16_t destTile,
+                                      EspMapSpriteTopologyRelink* outRelink) {
+    uint16_t state;
+    uint16_t order;
+
+    if (outRelink != NULL) memset(outRelink, 0, sizeof(*outRelink));
+    if (!EspMapSpriteTopology_isReady() || outRelink == NULL ||
+        spriteIndex >= topologyView.spriteCount ||
+        destTile > ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK ||
+        topologyView.nextLinkOrder == 0xffffU) {
+        return 0;
+    }
+
+    state = linkStateAt(spriteIndex);
+    order = linkOrderAt(spriteIndex);
+    if ((state & (ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
+                  ESP_MAP_SPRITE_TOPOLOGY_LINKED)) !=
+            (ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
+             ESP_MAP_SPRITE_TOPOLOGY_LINKED) ||
+        order == 0U ||
+        (state & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) == destTile) {
+        return 0;
+    }
+
+    outRelink->spriteIndex = spriteIndex;
+    outRelink->sourceTile =
+        (uint16_t)(state & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
+    outRelink->destTile = destTile;
+    outRelink->linkStateBefore = state;
+    outRelink->linkStateAfter =
+        (uint16_t)((state & (uint16_t)~ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) |
+                   destTile | ESP_MAP_SPRITE_TOPOLOGY_LINKED);
+    outRelink->linkOrderBefore = order;
+    outRelink->linkOrderAfter = (uint16_t)(topologyView.nextLinkOrder + 1U);
+    outRelink->nextLinkOrderBefore = topologyView.nextLinkOrder;
+    outRelink->nextLinkOrderAfter = outRelink->linkOrderAfter;
+    return 1;
+}
+
+int EspMapSpriteTopology_commitPreparedRelink(
+    const EspMapSpriteTopologyRelink* relink) {
+    if (!EspMapSpriteTopology_isReady() || relink == NULL ||
+        relink->spriteIndex >= topologyView.spriteCount ||
+        relink->sourceTile == relink->destTile ||
+        relink->destTile > ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK ||
+        relink->nextLinkOrderAfter != relink->linkOrderAfter ||
+        relink->nextLinkOrderAfter !=
+            (uint16_t)(relink->nextLinkOrderBefore + 1U) ||
+        topologyView.nextLinkOrder != relink->nextLinkOrderBefore ||
+        linkStateAt(relink->spriteIndex) != relink->linkStateBefore ||
+        linkOrderAt(relink->spriteIndex) != relink->linkOrderBefore) {
+        return 0;
+    }
+
+    setLinkState(relink->spriteIndex, relink->linkStateAfter);
+    setLinkOrder(relink->spriteIndex, relink->linkOrderAfter);
+    topologyView.nextLinkOrder = relink->nextLinkOrderAfter;
+    refreshView();
+    return 1;
+}
+
+int EspMapSpriteTopology_rollbackPreparedRelink(
+    const EspMapSpriteTopologyRelink* relink) {
+    if (!EspMapSpriteTopology_isReady() || relink == NULL ||
+        relink->spriteIndex >= topologyView.spriteCount ||
+        topologyView.nextLinkOrder != relink->nextLinkOrderAfter ||
+        linkStateAt(relink->spriteIndex) != relink->linkStateAfter ||
+        linkOrderAt(relink->spriteIndex) != relink->linkOrderAfter) {
+        return 0;
+    }
+
+    setLinkState(relink->spriteIndex, relink->linkStateBefore);
+    setLinkOrder(relink->spriteIndex, relink->linkOrderBefore);
+    topologyView.nextLinkOrder = relink->nextLinkOrderBefore;
+    refreshView();
+    return 1;
+}
+
 EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
     const EspMapEventDescriptor* descriptor,
     uint32_t commandOffset,

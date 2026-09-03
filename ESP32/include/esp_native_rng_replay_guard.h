@@ -19,7 +19,8 @@ extern "C" {
  *
  * Returns 1 on success. outPrepared is 1 only when liveRandom was temporarily
  * replaced with the reserved post-refill state and must later be restored by
- * EspNativeRngReplayGuard_endProbeBoundary().
+ * EspNativeRngReplayGuard_endProbeBoundary() or committed by
+ * EspNativeRngReplayGuard_commitProbeBoundary().
  */
 int EspNativeRngReplayGuard_beginProbeBoundary(Random_t* liveRandom,
                                                Random_t* outSaved,
@@ -30,6 +31,16 @@ int EspNativeRngReplayGuard_beginProbeBoundary(Random_t* liveRandom,
 int EspNativeRngReplayGuard_endProbeBoundary(Random_t* liveRandom,
                                              const Random_t* saved,
                                              uint8_t prepared);
+
+/*
+ * Close a prepared boundary as a real committed consumer after exactly
+ * consumedBytes bytes were consumed from the reserved post-refill table.
+ * This clears the persistent reservation without regenerating the hidden table.
+ */
+int EspNativeRngReplayGuard_commitProbeBoundary(Random_t* liveRandom,
+                                                const Random_t* saved,
+                                                uint8_t prepared,
+                                                uint32_t consumedBytes);
 
 #ifdef __cplusplus
 }

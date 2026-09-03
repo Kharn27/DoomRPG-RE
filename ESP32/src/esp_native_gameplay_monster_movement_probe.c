@@ -7,6 +7,7 @@
 
 #include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
+#include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_rng_replay_guard.h"
@@ -54,8 +55,15 @@ static int exactlyOneProducerAdvanced(
     return 0;
 }
 
+static uint32_t plannedMovesNow(void) {
+    const EspNativeGameplayMonsterMovementView* movement =
+        EspNativeGameplayMonsterMovement_view();
+    return movement != NULL ? movement->plannedMoves : 0U;
+}
+
 void EspNativeGameplayMonsterMovementProbe_reset(void) {
     memset(&compositionOwner, 0, sizeof(compositionOwner));
+    EspNativeGameplayMonsterMovementPublish_reset();
     EspNativeGameplayMonsterMovement_reset();
     EspNativeGameplayMonsterPosition_reset();
 }
@@ -85,26 +93,52 @@ void EspNativeGameplayMonsterMovementProbe_service(struct DoomRPG_s* doomRpgBase
     }
 
     producerAdvanced = exactlyOneProducerAdvanced(turn, &trigger);
-    if (producerAdvanced && doomRpg != NULL && atByteBoundary(&doomRpg->random)) {
-        Random_t saved;
-        uint8_t prepared = 0U;
-        int restoredExact;
+    if (producerAdvanced && doomRpg != NULL) {
+        uint32_t plannedBefore = plannedMovesNow();
+        EspNativeGameplayMonsterMovementPublishResult publish;
 
-        if (EspNativeRngReplayGuard_beginProbeBoundary(&doomRpg->random,
-                                                       &saved,
-                                                       &prepared)) {
-            printf("[MONSTERMOVERNG] ARM trigger=%s next=127->0 prepared=%u liveRandom=temporary-post-refill reservation=persistent\n",
-                   trigger, (unsigned int)prepared);
-            EspNativeGameplayMonsterMovement_service(doomRpgBase);
-            restoredExact = EspNativeRngReplayGuard_endProbeBoundary(
-                &doomRpg->random, &saved, prepared);
-            printf("[MONSTERMOVERNG] RESTORE trigger=%s randomLiveExact=%s reservation=pending-until-real-byte-draw\n",
-                   trigger, restoredExact ? "yes" : "NO");
+        EspNativeGameplayMonsterMovementPublish_beginCycle();
+        memset(&publish, 0, sizeof(publish));
+
+        if (atByteBoundary(&doomRpg->random)) {
+            Random_t saved;
+            uint8_t prepared = 0U;
+            int restoredExact = 0;
+
+            if (EspNativeRngReplayGuard_beginProbeBoundary(&doomRpg->random,
+                                                           &saved,
+                                                           &prepared)) {
+                printf("[MONSTERMOVERNG] ARM trigger=%s next=127->0 prepared=%u liveRandom=temporary-post-refill reservation=persistent\n",
+                       trigger, (unsigned int)prepared);
+                EspNativeGameplayMonsterMovement_service(doomRpgBase);
+                (void)EspNativeGameplayMonsterMovementPublish_afterProbe(
+                    doomRpgBase, trigger, &saved, prepared, plannedBefore, &publish);
+
+                if (prepared != 0U && publish.boundaryClosed == 0U) {
+                    restoredExact = EspNativeRngReplayGuard_endProbeBoundary(
+                        &doomRpg->random, &saved, prepared);
+                    printf("[MONSTERMOVERNG] RESTORE trigger=%s randomLiveExact=%s reservation=pending-until-real-byte-draw\n",
+                           trigger, restoredExact ? "yes" : "NO");
+                }
+                else if (publish.committed != 0U) {
+                    printf("[MONSTERMOVERNG] COMMIT trigger=%s rngCalls=%u reservation=consumed-by-live-move randomLive=advanced-exactly\n",
+                           trigger, (unsigned int)publish.rngCalls);
+                }
+                else if (publish.boundaryClosed != 0U) {
+                    printf("[MONSTERMOVERNG] ROLLBACK trigger=%s reservation=downgraded-to-replay-lease randomLive=restored-pre-refill\n",
+                           trigger);
+                }
+            }
+            else {
+                printf("[MONSTERMOVERNG] DEFER trigger=%s cause=rng-reservation-conflict action=movement-fail-closed\n",
+                       trigger);
+                EspNativeGameplayMonsterMovement_service(doomRpgBase);
+            }
         }
         else {
-            printf("[MONSTERMOVERNG] DEFER trigger=%s cause=rng-reservation-conflict action=movement-fail-closed\n",
-                   trigger);
             EspNativeGameplayMonsterMovement_service(doomRpgBase);
+            (void)EspNativeGameplayMonsterMovementPublish_afterProbe(
+                doomRpgBase, trigger, NULL, 0U, plannedBefore, &publish);
         }
     }
     else {
