@@ -117,41 +117,52 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
     for (i = 0U; i < monsters->count; ++i) {
         const EspNativeGameplayMonsterRecord* monster = &monsters->records[i];
         EspNativeGameplayMonsterPositionRecord* position = &positionRecords[i];
-        EspMapSprite sprite;
         uint8_t type;
         uint8_t subtype;
         uint16_t linkState;
         uint16_t linkOrder;
         uint16_t tile;
-        uint16_t sourceTile;
+        uint16_t canonicalTile;
+        uint32_t tileX;
+        uint32_t tileY;
+        int32_t worldX;
+        int32_t worldY;
 
+        /* EspMapRuntime map-sprite coordinates are immutable BSP source
+         * coordinates and deliberately precede legacy runtime nudges/relinks.
+         * The already-owned topology is the canonical native authority for the
+         * entity's initial tile. Seed the mutable monster position from that
+         * tile center, matching the hardware-proven monster-turn coordinate
+         * model instead of treating raw BSP sprite coordinates as live state. */
         if (monster->spriteIndex >= runtime->mapSpriteCount ||
             !EspMapSpriteTopology_getEntity(monster->spriteIndex,
                                             &type, &subtype,
                                             &linkState, &linkOrder) ||
             type != ESP_MAP_ENTITY_TYPE_ENEMY || subtype != monster->subtype ||
-            (linkState & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U ||
-            !EspMapRuntime_getMapSprite(monster->spriteIndex, &sprite) ||
-            !tileIndexFor((int32_t)sprite.x, (int32_t)sprite.y, &sourceTile)) {
+            (linkState & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U) {
             EspNativeGameplayMonsterPosition_reset();
             return 0;
         }
         (void)linkOrder;
         tile = (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
-        if (sourceTile != tile) {
+        tileX = (uint32_t)tile % POSITION_MAP_WIDTH;
+        tileY = (uint32_t)tile / POSITION_MAP_WIDTH;
+        worldX = (int32_t)(tileX * POSITION_TILE_SIZE + POSITION_TILE_CENTER);
+        worldY = (int32_t)(tileY * POSITION_TILE_SIZE + POSITION_TILE_CENTER);
+        if (!tileIndexFor(worldX, worldY, &canonicalTile) || canonicalTile != tile) {
             EspNativeGameplayMonsterPosition_reset();
             return 0;
         }
 
         position->spriteIndex = monster->spriteIndex;
         position->tileIndex = tile;
-        position->worldX = sprite.x;
-        position->worldY = sprite.y;
+        position->worldX = (uint16_t)worldX;
+        position->worldY = (uint16_t)worldY;
     }
 
     positionView.stateFNV1a = recordsFNV();
     positionView.active = 1U;
-    printf("[MONSTERPOS] READY arena=%08x monsters=%u recordBytes=%u ownerBytes=%u stateFNV=%08x source=runtime+topology centered=yes mutable=probe-transaction rendererPublish=deferred topologyRelink=deferred allocation=load-only\n",
+    printf("[MONSTERPOS] READY arena=%08x monsters=%u recordBytes=%u ownerBytes=%u stateFNV=%08x source=topology-tile-center immutableBspCoords=not-runtime-position centered=yes mutable=probe-transaction rendererPublish=deferred topologyRelink=deferred allocation=load-only\n",
            (unsigned int)positionView.sourceArenaFNV1a,
            (unsigned int)positionView.count,
            (unsigned int)sizeof(EspNativeGameplayMonsterPositionRecord),
