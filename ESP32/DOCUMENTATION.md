@@ -14,23 +14,23 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main = a6a3334c2235f14a69b8c8c9acd9b1c3a0485c01
-branch = agent/esp32-native-flash-pak-backing
-base main = a6a3334c2235f14a69b8c8c9acd9b1c3a0485c01
-hardware-tested code boundary = 3fcd255015315e67222de7bcedf63f76220c7820
-status = current-map raw internal-flash PAK backing PASS
+main = 9bd45cc0eb790a7b0894774426f996ee7ae6ce72
+branch = agent/esp32-native-map-flash-reuse
+base main = 9bd45cc0eb790a7b0894774426f996ee7ae6ce72
+hardware-tested code boundary = 8dd0a06f293b801e9afe3097bf19c57d3e1037b7
+status = generic requested-map raw-flash slot reuse PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `3fcd2550...` as new hardware-tested code. The tail
+Do not treat commits after `8dd0a06f...` as new hardware-tested code. The tail
 must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `33862354211` passed on the exact tested
+Normal GitHub Actions `esp32-cyd` run `33867680174` passed on the exact tested
 SHA and uploaded:
 
 ```text
-doom-rpg-esp32-cyd-3fcd255015315e67222de7bcedf63f76220c7820
-artifact id = 9932634573
+doom-rpg-esp32-cyd-8dd0a06f293b801e9afe3097bf19c57d3e1037b7
+artifact id = 9934627355
 ```
 
 CI is compile/link evidence only; real-CYD serial logs remain authoritative.
@@ -48,15 +48,14 @@ and uploads firmware artifacts. Bring-up diagnostics perturb RAM and are not the
 production memory canon. Never claim a local build or hardware pass that did not
 occur.
 
-The production environment now uses:
+The production environment uses:
 
 ```text
 board_build.partitions = partitions_cyd_raw_pak.csv
 ```
 
-When installing a firmware built with this layout on a board that previously used
-`no_ota.csv`, flash the generated `partitions.bin` as well as `firmware.bin`.
-A firmware-only update leaves the old partition table in place.
+When installing this layout on a board that previously used `no_ota.csv`, flash
+the generated `partitions.bin` as well as `firmware.bin`.
 
 ## Hardware / permanent memory rules
 
@@ -81,22 +80,26 @@ The hardware-proven active gameplay path is:
 
 ```text
 /DoomRPG-ESP32.pak on SD
- -> current-map staging during load
- -> raw internal-flash slot
+ -> derive identity/working-set plan for requested targetMapId
+ -> exact existing raw-slot HIT, or full rebuild on MISS/stale
+ -> raw internal-flash requested-map slot
  -> 19 KiB resident RAM cache
  -> native renderer/gameplay
 ```
 
-The raw slot is single-map backing storage. Gameplay is armed only after the slot
-is complete and flash readback verification succeeds. Active gameplay must not
-silently fall back to SD.
+The raw slot is single-world backing storage, but the prepare policy is generic:
+`EspAssetPack_mapFlashPrepare(targetMapId)` receives the world the runtime is
+actually trying to load. Entrance is only a hardware witness.
 
-The partition is named `spiffs` in the partition table but is intentionally not
-mounted as a filesystem. It is accessed as raw flash via `esp_partition_*`.
+A HIT requires source PAK/index identity, requested map id/hash, exact excluded
+BSP span topology and flash index/payload FNV validation. A slot for another
+world or stale source data rebuilds through the already-proven staging path.
+Active gameplay still never silently falls back to SD.
 
-Detailed milestone:
+Detailed milestones:
 
 - [`MILESTONE_NATIVE_MAP_FLASH_BACKING.md`](MILESTONE_NATIVE_MAP_FLASH_BACKING.md)
+- [`MILESTONE_NATIVE_MAP_FLASH_REUSE.md`](MILESTONE_NATIVE_MAP_FLASH_REUSE.md)
 
 ## Classic CYD flash layout
 
@@ -110,14 +113,17 @@ spiffs    0x150000  0x2A0000  = 2752512 B raw slot
 coredump  0x3F0000  0x010000
 ```
 
-Tested firmware size at the locked boundary:
+The partition named `spiffs` is intentionally not mounted as SPIFFS; it is raw
+storage owned through `esp_partition_*`.
+
+Tested firmware size at the preceding flash-backing boundary:
 
 ```text
 firmware.bin = 644144 B
 app0 margin = 666576 B
 ```
 
-## Entrance flash witness
+## Entrance format witness
 
 ```text
 map=1
@@ -134,16 +140,41 @@ partition=2752512 B
 headroom=491481 B
 ```
 
-Real-CYD staging:
+The first raw-flash build on the real CYD recorded:
 
 ```text
 [MAPFLASH] COPY indexFNV=3a51cc4d payloadFNV=9ec04e22 verified=yes
 [MAPFLASH] READY ... buildUs=8442586 backing=raw-internal-flash
-[MAPFLASH] ARM map=1 active=1 verified=1 resident=1
 ```
 
-The ~8.44 s stage is a deliberate load-time cost. The project explicitly prefers
-that deterministic cost over unpredictable SD stalls during turn-based gameplay.
+That ~8.44 s rebuild remains the correct fallback for a missing/stale/different
+requested-world slot.
+
+## Requested-map reuse witness — real CYD
+
+On exact tested SHA `8dd0a06f...`:
+
+```text
+[MAPFLASH] REUSE HIT requestedMap=1 current=/intro.bsp cachedMap=1
+           sourceIndexFNV=3a51cc4d payloadFNV=9ec04e22
+           verifyUs=361875 rebuild=no
+[MAPFLASH] ARM map=1 active=1 verified=1 reused=1 staged=2248743
+           metadata=12288 prepareUs=363258 buildUs=0 resident=1
+```
+
+No `MAPFLASH ERASE`, `MAPFLASH COPY` or `MAPFLASH MISS` appeared in the supplied
+trace.
+
+Load-time comparison:
+
+```text
+full rebuild = 8442586 us ~= 8.44 s
+validated reuse = 363258 us ~= 0.363 s
+flash verify = 361875 us ~= 0.362 s
+```
+
+The reuse path is about 23.2x faster than the preceding rebuild witness while
+still rereading and FNV-validating the staged flash payload.
 
 ## Selected resident-cache baseline
 
@@ -157,7 +188,7 @@ large exact range = 2048 B
 ```
 
 The 288-record global recycle still exists. It is no longer an SD seek cliff once
-the current-map raw-flash backing is armed.
+the requested-map raw-flash backing is armed.
 
 ## Hardware performance result
 
@@ -170,32 +201,29 @@ frame ~335 ms -> ~736 ms
 VIDEO present ~34.4 ms
 ```
 
-The raw-flash run still exercised a recycle:
+Raw-flash backing removed that cliff without changing the L1 policy. The reuse
+run preserved the same active-gameplay timing class:
 
 ```text
-entries=288/288 SPRITEPROFILE=29824 us
-entries=78/288  SPRITEPROFILE=36084 us
-```
-
-but the large stall did not return. Representative gameplay redraws in the
-provided route were broadly ~178-225 ms, and the user reported the fire room as
-substantially smoother with the former intermittent lag no longer spoiling play.
-
-Startup cache comparison:
-
-```text
-SD SMALL-COLD   = 2100916 us
-flash SMALL-COLD = 228233 us
-
-SD SMALL-WARM   = 324151 us
-flash SMALL-WARM = 178176 us
-
-SD LARGE-WARM   = 298062 us
-flash LARGE-WARM = 177531 us
+SMALL-COLD  = 228559 us
+SMALL-WARM  = 178358 us
+LARGE-LEARN = 178381 us
+LARGE-WARM  = 177638 us
+representative SPRITEPROFILE ~= 30-37 ms
+PAKIO backing=raw-flash after ARM
 ```
 
 `PlatformVideo_present()` remains a stable ~34.4 ms and is not the target of this
-storage milestone.
+storage work.
+
+## Remaining startup storage debt
+
+Before raw-flash ARM, the current bootstrap still performs first-frame/HUD work
+against SD. The reuse run still showed several pre-arm PAKIO batches of hundreds
+of milliseconds.
+
+That is a separate startup-order/performance boundary and is not part of the
+locked requested-map reuse milestone.
 
 ## Current native gameplay frontier
 
@@ -237,7 +265,8 @@ adaptive native plane cache under memory pressure
 movement-side linked type10/type11 hazard damage through shared PlayerState
 live bounded damage text + red viewport-border hazard flash
 safe feedback expiry while a native dialog owns the PAK
-current-map raw-flash PAK backing with no silent gameplay SD fallback
+raw-flash gameplay backing with no silent SD fallback
+generic requested-map committed-slot reuse with strict rebuild on mismatch
 ```
 
 Relevant milestone records:
@@ -254,6 +283,7 @@ Relevant milestone records:
 - [`MILESTONE_NATIVE_HAZARD_TOUCH.md`](MILESTONE_NATIVE_HAZARD_TOUCH.md)
 - [`MILESTONE_NATIVE_MONSTER_PAIN_FEEDBACK.md`](MILESTONE_NATIVE_MONSTER_PAIN_FEEDBACK.md)
 - [`MILESTONE_NATIVE_MAP_FLASH_BACKING.md`](MILESTONE_NATIVE_MAP_FLASH_BACKING.md)
+- [`MILESTONE_NATIVE_MAP_FLASH_REUSE.md`](MILESTONE_NATIVE_MAP_FLASH_REUSE.md)
 
 ## Shared PlayerState
 
@@ -275,27 +305,23 @@ this same owner.
 
 ## Current RAM warning
 
-The raw flash payload is not map-wide RAM, but the existing resident L1 remains a
-real 23.6 KiB owner.
-
-Hardware witness:
+The requested-map reuse path adds no persistent gameplay RAM owner. The existing
+resident L1 remains the main asset owner:
 
 ```text
 CACHE_PRE  heap8=50976 largest8=42996
 CACHE_POST heap8=27368 largest8=20468
 warmup     heap8=24708 largest8=20468
-live       heap8~20840 largest8~18420
 ```
 
-The reserve diagnostic reports `margin8=0` against the provisional
-`audioI2SDMA + audioBuffers + general` target. Audio therefore remains explicitly
-deferred; do not enable it without a dedicated memory milestone.
+The reserve diagnostic still reports `margin8=0` against the provisional audio
+target. Audio remains explicitly deferred.
 
 ## Current intentionally deferred families
 
 ```text
-persistent validated reuse of an already-staged same-map flash slot
-production map-transition flash rebuild/reuse policy
+production SAVEGAME / CHANGEMAP transition ownership
+pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
 PASS_TURN current-tile type10/type11 Entity_touched semantics
 pickup sound playback / got-face presentation
@@ -318,7 +344,8 @@ generic type-12 destructible combat
 special death consequences
 Kronos-specific semantics
 password input
-SAVEGAME / CHANGEMAP production route
+GIVEMAP production route
+CHECK_KEY production route
 ```
 
 These are mechanical family boundaries, not individual monster/item TODOs.
@@ -333,6 +360,10 @@ CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
 OPENLINE -> third eligible command
 ```
 
+The storage layer can now generically prepare target map 9 and rebuild if the
+committed slot belongs to another map. The actual transition still needs a
+bounded production owner for teardown/load/spawn/state transfer.
+
 ## After this merge
 
 Do not continue code on this locked branch.
@@ -344,10 +375,11 @@ When the merge is announced:
 3. create a fresh coherent `agent/*` branch from that SHA;
 4. choose the next bounded family from the actual merged frontier.
 
-A strong storage follow-up is persistent current-map flash-slot reuse. A valid
-committed slot should be identifiable by source-PAK + map identity, then armed
-without the ~8.44 s SD erase/copy stage; a stale/missing slot must rebuild through
-the already-proven path. This must preserve the no-SD-gameplay contract.
+Strong gameplay candidates now include monster attack visual/player-pain
+animation and missing combat presentation assets, generic type-12 destructible
+combat, lethal/death transition, multiple-monster ordering and movement
+interpolation. Choose only after re-reading merged `main` and recovering exact
+legacy behavior for one coherent family.
 
 ## Development workflow
 
