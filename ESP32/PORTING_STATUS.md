@@ -7,19 +7,20 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main = 782bee100bad1169b85cc738c3a860e367e81553
-branch = agent/esp32-native-pickup-feedback
-base main = 782bee100bad1169b85cc738c3a860e367e81553
-hardware-tested code boundary = c9df4d452eae2610701fde839b7aa73cdceda0ac
-status = REAL-CYD PICKUP FEEDBACK + ADAPTIVE PLANE CACHE + REGRESSION CHAIN PASS
+main = a74a6f067cc7a5304a1f940f78317804659c37e8
+branch = agent/esp32-native-hazard-touch
+base main = a74a6f067cc7a5304a1f940f78317804659c37e8
+hardware-tested code boundary = bae9d1a78f40db31c35a8a0aa9a1875692cf5c9e
+status = REAL-CYD MOVEMENT HAZARD TOUCH + RED DAMAGE FEEDBACK PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`c9df4d45...` is the exact code boundary exercised on the real CYD. Commits
+`bae9d1a7...` is the exact code boundary exercised on the real CYD. Commits
 after that SHA must remain documentation-only until merge.
 
-The normal GitHub Actions `esp32-cyd` build also completed successfully for this
-SHA. CI is a compile/link gate only; the hardware logs remain authoritative.
+Normal GitHub Actions `esp32-cyd` run `33845214033` completed successfully for
+this exact SHA. CI is a compile/link gate only; the hardware logs remain
+authoritative.
 
 After merge, read the real GitHub `main` SHA again before creating the next
 `agent/*` branch.
@@ -148,6 +149,8 @@ selected-weapon HUD / first-person redraw without turn advance
 live Pistol ammo consumption + generic combat commit
 live pickup messages + white pickup flash
 adaptive floor/ceiling texture cache under memory pressure
+movement-side linked type10/type11 hazard touch into shared PlayerState
+live bounded damage text + red viewport flash for movement hazards
 ```
 
 Relevant detailed records:
@@ -161,6 +164,7 @@ Relevant detailed records:
 - [`MILESTONE_NATIVE_MONSTER_MOVEMENT.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT.md)
 - [`MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md)
 - [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
+- [`MILESTONE_NATIVE_HAZARD_TOUCH.md`](MILESTONE_NATIVE_HAZARD_TOUCH.md)
 
 ## Shared native PlayerState
 
@@ -224,6 +228,44 @@ snapshot = bounded
 
 The final hardware run continued after multiple pickups with no gameplay failure.
 Pickup sound playback and got-face presentation remain deferred.
+
+## Movement hazard touch — hardware PASS
+
+Movement-side `Game_touchTile(..., true)` now owns linked type 10/11 hazard
+damage through the shared 52 B PlayerState without a new gameplay owner.
+Recovered amounts are `pain(1,2)` for type 10 and `pain(10,10)` for type 11.
+
+The real CYD crossed two independent type-10 flames:
+
+```text
+tile=613 sprite=74 rawDamage=1+2 hp=30->29 armor=8->6
+tile=616 sprite=110 rawDamage=1+2 hp=30->29 armor=6->4
+```
+
+Both produced the bounded dynamic message `"3 damage!"` plus the recovered red
+viewport-border flash:
+
+```text
+color565 = b800
+duration = 500 ms
+viewport = 0,20,160,80
+border = 2 px / 944 pixels
+text duration = 1200 ms
+```
+
+Representative expiry witnesses were 513/523 ms for the red border and
+1205/1214 ms for the text lease. The same session continued through a door,
+a Health Vial pickup and a second flame, then scheduled the normal MOVE monster
+turn after each committed hazard touch.
+
+Mixed resource+hazard tiles, familiar redirection, lethal player transition,
+PASS_TURN current-tile type10/11 touch, secondary burn text, pain face/shake and
+sound remain intentionally fail-closed or deferred.
+
+A Hellhound PASS_TURN hit on this exact firmware also confirms monster retaliation
+damage presentation is still separate: PlayerState damage commits, while the log
+explicitly reports `painFX=deferred damageText=deferred`. No red border or damage
+message is claimed for monster attacks yet.
 
 ## Adaptive native plane cache — hardware PASS
 
@@ -351,7 +393,8 @@ not a newly claimed pointer-value observation from this log.
 ```text
 PASS_TURN current-tile type10/11 Entity_touched semantics
 pickup sound playback / got-face presentation
-combat/retaliation MISS/HIT/CRIT text feedback
+combat/retaliation MISS/HIT/CRIT text feedback + monster-hit red flash
+movement-hazard secondary burn text / pain face / shake / sound
 action XP migration: extinguisher +2, jammed door +1
 materialized monster drops
 corpse-pile trimming
