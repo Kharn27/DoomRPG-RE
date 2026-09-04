@@ -14,15 +14,15 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main = 782bee100bad1169b85cc738c3a860e367e81553
-branch = agent/esp32-native-pickup-feedback
-base main = 782bee100bad1169b85cc738c3a860e367e81553
-hardware-tested code boundary = c9df4d452eae2610701fde839b7aa73cdceda0ac
-status = pickup feedback + adaptive plane cache + gameplay regression PASS
+main = a74a6f067cc7a5304a1f940f78317804659c37e8
+branch = agent/esp32-native-hazard-touch
+base main = a74a6f067cc7a5304a1f940f78317804659c37e8
+hardware-tested code boundary = bae9d1a78f40db31c35a8a0aa9a1875692cf5c9e
+status = movement hazard touch + red damage feedback PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `c9df4d45...` as new hardware-tested code. The tail
+Do not treat commits after `bae9d1a7...` as new hardware-tested code. The tail
 must remain documentation-only until merge.
 
 ## Build environment
@@ -108,6 +108,8 @@ live selected-weapon HUD/first-person redraw without turn advance
 live Pistol ammo consumption + generic monster combat commit
 live generic pickup messages + white viewport-border flash
 adaptive native plane cache under memory pressure
+movement-side linked type10/type11 hazard damage through shared PlayerState
+live bounded `N damage!` top-bar text + red viewport-border hazard flash
 ```
 
 Relevant milestone records:
@@ -121,6 +123,7 @@ Relevant milestone records:
 - [`MILESTONE_NATIVE_MONSTER_MOVEMENT.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT.md)
 - [`MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md)
 - [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
+- [`MILESTONE_NATIVE_HAZARD_TOUCH.md`](MILESTONE_NATIVE_HAZARD_TOUCH.md)
 
 ## Shared PlayerState
 
@@ -185,6 +188,37 @@ snapshot = bounded
 ```
 
 Pickup sound playback and got-face presentation remain deferred.
+
+## Movement hazard touch
+
+Committed movement now runs the owned subset of legacy
+`Game_touchTile(..., true)` for linked type 10/11 hazards before the existing
+monster-turn continuation. Damage mutates the shared PlayerState transactionally;
+no hazard-specific gameplay owner was added.
+
+```text
+type10 = pain(1,2)
+type11 = pain(10,10)
+feedback = bounded dynamic top-bar damage text / 1200 ms
+flash = red RGB565 b800 / 500 ms
+viewport = 0,20,160,80
+border = 2 px / 944 pixels
+```
+
+Real-CYD type-10 witnesses:
+
+```text
+tile613: hp 30->29, armor 8->6, message="3 damage!"
+tile616: hp 30->29, armor 6->4, message="3 damage!"
+```
+
+The user physically observed the red border and damage. Both moves still reached
+normal `MONSTERTURN reason=MOVE` scheduling. The same session also crossed door
+animation and a Health Vial pickup between the two flame contacts.
+
+Monster retaliation remains a distinct presentation boundary: Hellhound damage
+commits correctly, but current logs still state `painFX=deferred damageText=deferred`,
+so monster hits do not yet receive the red flash or damage text.
 
 ## Adaptive plane renderer cache
 
@@ -313,7 +347,8 @@ their NULL values remain hard invariants and retained earlier witnesses.
 ```text
 PASS_TURN current-tile type10/11 Entity_touched semantics
 pickup sound playback / got-face presentation
-combat/retaliation MISS/HIT/CRIT text feedback
+combat/retaliation MISS/HIT/CRIT text feedback + monster-hit red flash
+movement-hazard secondary burn text / pain face / shake / sound
 action XP migration: extinguisher +2, jammed door +1
 materialized monster drops
 corpse-pile trimming
