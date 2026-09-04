@@ -1,0 +1,200 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include <esp_partition.h>
+#include <esp_timer.h>
+
+#include "esp_asset_pack.h"
+
+namespace {
+
+constexpr uint32_t kFlashMetadataReserveBytes = 4096U;
+constexpr uint32_t kReportPhysicalCallThreshold = 32U;
+constexpr uint32_t kReportPhysicalByteThreshold = 64U * 1024U;
+
+struct PakIoSample {
+    uint32_t logicalCalls;
+    uint32_t physicalCalls;
+    uint32_t physicalReadOps;
+    uint32_t physicalBytes;
+    uint64_t logicalMicros;
+    uint64_t physicalMicros;
+    uint32_t maxLogicalMicros;
+    uint32_t maxPhysicalMicros;
+};
+
+PakIoSample ioSample = {};
+bool flashFeasibilityLogged = false;
+
+uint32_t elapsedMicros(int64_t start, int64_t end)
+{
+    if (end <= start) {
+        return 0U;
+    }
+    const uint64_t delta = (uint64_t)(end - start);
+    return delta > UINT32_MAX ? UINT32_MAX : (uint32_t)delta;
+}
+
+void resetIoSample()
+{
+    memset(&ioSample, 0, sizeof(ioSample));
+}
+
+void reportIoSample(const char* reason)
+{
+    if (ioSample.logicalCalls == 0U) {
+        return;
+    }
+
+    const uint64_t avgLogical =
+        ioSample.logicalCalls != 0U
+            ? ioSample.logicalMicros / ioSample.logicalCalls
+            : 0U;
+    const uint64_t avgPhysical =
+        ioSample.physicalCalls != 0U
+            ? ioSample.physicalMicros / ioSample.physicalCalls
+            : 0U;
+
+    printf("[PAKIO] SAMPLE reason=%s logical=%u/%lluus avg=%lluus max=%uus physicalCalls=%u readOps=%u bytes=%u miss=%lluus avgMiss=%lluus maxMiss=%uus\n",
+           reason != nullptr ? reason : "threshold",
+           (unsigned int)ioSample.logicalCalls,
+           (unsigned long long)ioSample.logicalMicros,
+           (unsigned long long)avgLogical,
+           (unsigned int)ioSample.maxLogicalMicros,
+           (unsigned int)ioSample.physicalCalls,
+           (unsigned int)ioSample.physicalReadOps,
+           (unsigned int)ioSample.physicalBytes,
+           (unsigned long long)ioSample.physicalMicros,
+           (unsigned long long)avgPhysical,
+           (unsigned int)ioSample.maxPhysicalMicros);
+    resetIoSample();
+}
+
+void logFlashFeasibility()
+{
+    const esp_partition_t* partition;
+    uint32_t capacity = 0U;
+    const uint32_t packBytes = EspAssetPack_fileSize();
+
+    if (flashFeasibilityLogged || packBytes == 0U) {
+        return;
+    }
+    flashFeasibilityLogged = true;
+
+    partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+                                         ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+                                         "spiffs");
+    if (partition != nullptr && partition->size > kFlashMetadataReserveBytes) {
+        capacity = partition->size - kFlashMetadataReserveBytes;
+    }
+
+    if (partition == nullptr) {
+        printf("[PAKFLASH] FEASIBILITY pack=%u partition=missing reserve=%u capacity=0 fits=no mode=measurement-only\n",
+               (unsigned int)packBytes,
+               (unsigned int)kFlashMetadataReserveBytes);
+        return;
+    }
+
+    const bool fits = packBytes <= capacity;
+    const uint32_t headroom = fits ? capacity - packBytes : 0U;
+    printf("[PAKFLASH] FEASIBILITY pack=%u partition=%s address=%08x size=%u reserve=%u capacity=%u fits=%s headroom=%u mode=measurement-only\n",
+           (unsigned int)packBytes,
+           partition->label,
+           (unsigned int)partition->address,
+           (unsigned int)partition->size,
+           (unsigned int)kFlashMetadataReserveBytes,
+           (unsigned int)capacity,
+           fits ? "yes" : "no",
+           (unsigned int)headroom);
+    printf("[PAKFLASH] CONTRACT no erase/write/cache activation in this milestone; SD remains authoritative backing while readRange miss latency is measured\n");
+}
+
+} // namespace
+
+extern "C" {
+
+int __real_EspAssetPack_open(const char* path);
+int __real_EspAssetPack_readRange(const EspAssetPackEntry* entry,
+                                  uint32_t relativeOffset,
+                                  void* destination,
+                                  size_t length);
+void __real_EspAssetPack_residentResetStats(void);
+int __real_EspAssetPack_residentEnd(void);
+
+int __wrap_EspAssetPack_open(const char* path)
+{
+    const int result = __real_EspAssetPack_open(path);
+    if (result && path != nullptr &&
+        strcmp(path, ESP_ASSET_PACK_DEFAULT_PATH) == 0) {
+        logFlashFeasibility();
+    }
+    return result;
+}
+
+int __wrap_EspAssetPack_readRange(const EspAssetPackEntry* entry,
+                                  uint32_t relativeOffset,
+                                  void* destination,
+                                  size_t length)
+{
+    EspAssetPackResidentStats before = {};
+    EspAssetPackResidentStats after = {};
+    const bool resident = EspAssetPack_isResident() != 0;
+
+    if (resident) {
+        EspAssetPack_residentGetStats(&before);
+    }
+
+    const int64_t start = esp_timer_get_time();
+    const int result = __real_EspAssetPack_readRange(
+        entry, relativeOffset, destination, length);
+    const uint32_t duration = elapsedMicros(start, esp_timer_get_time());
+
+    ++ioSample.logicalCalls;
+    ioSample.logicalMicros += duration;
+    if (duration > ioSample.maxLogicalMicros) {
+        ioSample.maxLogicalMicros = duration;
+    }
+
+    if (resident) {
+        EspAssetPack_residentGetStats(&after);
+        const uint32_t readDelta =
+            after.physicalReads >= before.physicalReads
+                ? after.physicalReads - before.physicalReads
+                : 0U;
+        const uint32_t byteDelta =
+            after.physicalBytes >= before.physicalBytes
+                ? after.physicalBytes - before.physicalBytes
+                : 0U;
+
+        if (readDelta != 0U) {
+            ++ioSample.physicalCalls;
+            ioSample.physicalReadOps += readDelta;
+            ioSample.physicalBytes += byteDelta;
+            ioSample.physicalMicros += duration;
+            if (duration > ioSample.maxPhysicalMicros) {
+                ioSample.maxPhysicalMicros = duration;
+            }
+        }
+    }
+
+    if (ioSample.physicalCalls >= kReportPhysicalCallThreshold ||
+        ioSample.physicalBytes >= kReportPhysicalByteThreshold) {
+        reportIoSample("threshold");
+    }
+    return result;
+}
+
+void __wrap_EspAssetPack_residentResetStats(void)
+{
+    reportIoSample("resident-reset");
+    __real_EspAssetPack_residentResetStats();
+}
+
+int __wrap_EspAssetPack_residentEnd(void)
+{
+    reportIoSample("resident-end");
+    return __real_EspAssetPack_residentEnd();
+}
+
+} // extern "C"
