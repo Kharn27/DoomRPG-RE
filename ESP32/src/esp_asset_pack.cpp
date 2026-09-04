@@ -3,7 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <esp_partition.h>
+#include <esp_timer.h>
+
 #include "esp_asset_pack.h"
+#include "esp_map_catalog.h"
 
 namespace {
 
@@ -16,6 +20,15 @@ constexpr uint32_t kResidentRangeEntryCapacity = 288U;
 constexpr uint32_t kResidentEntryCacheSlots = 24U;
 constexpr uint32_t kResidentMaxCachedRangeBytes = 1024U;
 constexpr uint32_t kResidentLargeRangeBytes = 2048U;
+
+constexpr uint32_t kMapFlashMagic = 0x32464d44U; /* DMF2 */
+constexpr uint16_t kMapFlashVersion = 1U;
+constexpr uint32_t kMapFlashCommitted = 0xa55a3cc3U;
+constexpr uint32_t kMapFlashSectorBytes = 4096U;
+constexpr uint32_t kMapFlashIndexOffset = kMapFlashSectorBytes;
+constexpr uint32_t kMapFlashCopyBufferBytes = 4096U;
+constexpr uint32_t kMapFlashMaxExcludedMaps = ESP_MAP_CATALOG_COUNT - 1U;
+constexpr uint8_t kMapFlashMaxMissLogs = 8U;
 
 struct ResidentRangeRecord {
     uint32_t nameHash;
@@ -45,6 +58,46 @@ struct ResidentCache {
     uint32_t bytesUsed;
 };
 
+struct MapFlashExcludedSpan {
+    uint32_t nameHash;
+    uint32_t sourceOffset;
+    uint32_t size;
+};
+
+struct MapFlashHeader {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t headerBytes;
+    uint32_t committed;
+    uint32_t sourcePackBytes;
+    uint32_t sourceIndexOffset;
+    uint32_t sourceDataOffset;
+    uint32_t entryCount;
+    uint32_t indexFlashOffset;
+    uint32_t indexBytes;
+    uint32_t payloadFlashOffset;
+    uint32_t stagedBytes;
+    uint32_t excludedBytes;
+    uint32_t indexFNV1a;
+    uint32_t payloadFNV1a;
+    uint32_t currentMapHash;
+    uint8_t currentMapId;
+    uint8_t excludedCount;
+    uint16_t reserved;
+    MapFlashExcludedSpan excluded[kMapFlashMaxExcludedMaps];
+};
+
+static_assert(sizeof(MapFlashHeader) <= kMapFlashSectorBytes,
+              "map-flash header must fit one erase sector");
+
+struct MapFlashState {
+    const esp_partition_t* partition;
+    MapFlashHeader header;
+    EspAssetPackMapFlashStats stats;
+    uint8_t active;
+    uint8_t missLogs;
+};
+
 File packFile;
 uint32_t entryCount = 0;
 uint32_t packSize = 0;
@@ -53,10 +106,12 @@ uint32_t dataOffset = 0;
 bool openReady = false;
 bool physicalReady = false;
 bool physicalIsDefault = false;
+bool physicalUsesMapFlash = false;
 bool residentEnabled = false;
 bool residentLargeRangeEnabled = false;
 ResidentCache* residentCache = nullptr;
 EspAssetPackResidentStats residentStats = {};
+MapFlashState mapFlash = {};
 
 uint32_t readLe32(const uint8_t* data)
 {
@@ -64,6 +119,23 @@ uint32_t readLe32(const uint8_t* data)
            ((uint32_t)data[1] << 8) |
            ((uint32_t)data[2] << 16) |
            ((uint32_t)data[3] << 24);
+}
+
+uint32_t fnv1aUpdate(uint32_t hash, const uint8_t* data, size_t length)
+{
+    if (data == nullptr) return hash;
+    for (size_t i = 0U; i < length; ++i) {
+        hash ^= data[i];
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+uint32_t alignSector(uint32_t value)
+{
+    const uint32_t mask = kMapFlashSectorBytes - 1U;
+    if (value > UINT32_MAX - mask) return 0U;
+    return (value + mask) & ~mask;
 }
 
 void clearResidentCache()
@@ -78,7 +150,7 @@ void clearResidentCache()
     residentLargeRangeEnabled = false;
 }
 
-bool readExact(void* destination, size_t length)
+bool readSdExact(void* destination, size_t length)
 {
     if (!packFile || destination == nullptr) {
         return false;
@@ -94,6 +166,20 @@ bool readExact(void* destination, size_t length)
     return true;
 }
 
+void clearMapFlashRuntime(bool clearStats)
+{
+    mapFlash.partition = nullptr;
+    memset(&mapFlash.header, 0, sizeof(mapFlash.header));
+    mapFlash.active = 0U;
+    mapFlash.missLogs = 0U;
+    if (clearStats) {
+        memset(&mapFlash.stats, 0, sizeof(mapFlash.stats));
+    }
+    else {
+        mapFlash.stats.active = 0U;
+    }
+}
+
 void resetPhysicalState()
 {
     if (packFile) {
@@ -106,6 +192,7 @@ void resetPhysicalState()
     openReady = false;
     physicalReady = false;
     physicalIsDefault = false;
+    physicalUsesMapFlash = false;
     clearResidentCache();
 }
 
@@ -120,7 +207,7 @@ void decodeEntry(const uint8_t* raw, EspAssetPackEntry* entry)
 
 bool validateEntry(const EspAssetPackEntry& entry)
 {
-    if (entry.nameHash == 0) {
+    if (entry.nameHash == 0U) {
         return false;
     }
     if (entry.offset < dataOffset || entry.offset > packSize) {
@@ -132,21 +219,76 @@ bool validateEntry(const EspAssetPackEntry& entry)
     return true;
 }
 
+bool mapFlashRead(uint32_t offset, void* destination, size_t length,
+                  bool countRuntime)
+{
+    if (!mapFlash.active || mapFlash.partition == nullptr ||
+        destination == nullptr || offset > mapFlash.partition->size ||
+        length > (size_t)(mapFlash.partition->size - offset)) {
+        return false;
+    }
+    if (esp_partition_read(mapFlash.partition, offset, destination, length) != ESP_OK) {
+        return false;
+    }
+    if (countRuntime) {
+        ++mapFlash.stats.flashReads;
+        mapFlash.stats.flashBytes += (uint32_t)length;
+        if (residentEnabled) {
+            ++residentStats.physicalReads;
+            residentStats.physicalBytes += (uint32_t)length;
+        }
+    }
+    return true;
+}
+
+bool mapFlashHeaderLooksValid(const MapFlashHeader& header,
+                              const esp_partition_t* partition)
+{
+    if (partition == nullptr || header.magic != kMapFlashMagic ||
+        header.version != kMapFlashVersion ||
+        header.headerBytes != sizeof(MapFlashHeader) ||
+        header.committed != kMapFlashCommitted ||
+        header.sourcePackBytes == 0U ||
+        header.entryCount == 0U ||
+        header.entryCount > ESP_ASSET_PACK_MAX_ENTRY_COUNT ||
+        header.indexFlashOffset != kMapFlashIndexOffset ||
+        header.excludedCount > kMapFlashMaxExcludedMaps ||
+        header.sourceDataOffset > header.sourcePackBytes ||
+        header.indexBytes != header.entryCount * (uint32_t)kEntryBytes ||
+        header.payloadFlashOffset < header.indexFlashOffset + header.indexBytes ||
+        header.payloadFlashOffset > partition->size ||
+        header.stagedBytes > partition->size - header.payloadFlashOffset) {
+        return false;
+    }
+    return true;
+}
+
 bool readEntryAt(uint32_t index, EspAssetPackEntry* outEntry)
 {
     uint8_t raw[kEntryBytes];
 
-    if (!packFile || outEntry == nullptr || index >= entryCount) {
+    if (outEntry == nullptr || index >= entryCount) {
         return false;
     }
 
-    const uint64_t absoluteOffset =
-        (uint64_t)indexOffset + ((uint64_t)index * (uint64_t)kEntryBytes);
-    if (absoluteOffset > UINT32_MAX || !packFile.seek((uint32_t)absoluteOffset)) {
-        return false;
+    if (physicalUsesMapFlash) {
+        const uint64_t flashOffset64 =
+            (uint64_t)mapFlash.header.indexFlashOffset +
+            ((uint64_t)index * (uint64_t)kEntryBytes);
+        if (flashOffset64 > UINT32_MAX ||
+            !mapFlashRead((uint32_t)flashOffset64, raw, sizeof(raw), true)) {
+            return false;
+        }
     }
-    if (!readExact(raw, sizeof(raw))) {
-        return false;
+    else {
+        if (!packFile) return false;
+        const uint64_t absoluteOffset =
+            (uint64_t)indexOffset + ((uint64_t)index * (uint64_t)kEntryBytes);
+        if (absoluteOffset > UINT32_MAX ||
+            !packFile.seek((uint32_t)absoluteOffset) ||
+            !readSdExact(raw, sizeof(raw))) {
+            return false;
+        }
     }
 
     decodeEntry(raw, outEntry);
@@ -268,13 +410,6 @@ void recycleResidentRangeWorkingSet()
     if (residentCache == nullptr) {
         return;
     }
-
-    /* The range cache is a bounded working set, not an append-only history of
-     * the level. Once small ranges exhaust the record table or payload after
-     * all transient 2 KiB ranges have already been sacrificed, recycle only
-     * range records/payload. Preserve the validated resident File, entry cache,
-     * owner allocation and large-range mode so later gameplay can warm the
-     * current view without changing permanent RAM or heap topology. */
     residentCache->rangeCount = 0U;
     residentCache->bytesUsed = 0U;
 }
@@ -380,12 +515,132 @@ void storeResidentLargeRange(uint32_t nameHash,
     ++residentStats.rangeCacheStores;
 }
 
+bool copySdRangeToFlash(uint32_t sourceOffset,
+                        uint32_t length,
+                        uint32_t flashOffset,
+                        uint8_t* buffer,
+                        uint32_t* ioFNV)
+{
+    if (!packFile || mapFlash.partition == nullptr || buffer == nullptr ||
+        flashOffset > mapFlash.partition->size ||
+        length > mapFlash.partition->size - flashOffset ||
+        !packFile.seek(sourceOffset)) {
+        return false;
+    }
+
+    uint32_t remaining = length;
+    uint32_t destinationOffset = flashOffset;
+    while (remaining > 0U) {
+        const uint32_t chunk =
+            remaining > kMapFlashCopyBufferBytes
+                ? kMapFlashCopyBufferBytes
+                : remaining;
+        const size_t got = packFile.read(buffer, chunk);
+        if (got != chunk ||
+            esp_partition_write(mapFlash.partition,
+                                destinationOffset,
+                                buffer,
+                                chunk) != ESP_OK) {
+            return false;
+        }
+        if (ioFNV != nullptr) {
+            *ioFNV = fnv1aUpdate(*ioFNV, buffer, chunk);
+        }
+        destinationOffset += chunk;
+        remaining -= chunk;
+    }
+    return true;
+}
+
+bool fnvFlashRange(uint32_t flashOffset,
+                   uint32_t length,
+                   uint8_t* buffer,
+                   uint32_t* outFNV)
+{
+    if (mapFlash.partition == nullptr || buffer == nullptr || outFNV == nullptr ||
+        flashOffset > mapFlash.partition->size ||
+        length > mapFlash.partition->size - flashOffset) {
+        return false;
+    }
+
+    uint32_t hash = 2166136261U;
+    uint32_t remaining = length;
+    uint32_t offset = flashOffset;
+    while (remaining > 0U) {
+        const uint32_t chunk =
+            remaining > kMapFlashCopyBufferBytes
+                ? kMapFlashCopyBufferBytes
+                : remaining;
+        if (esp_partition_read(mapFlash.partition, offset, buffer, chunk) != ESP_OK) {
+            return false;
+        }
+        hash = fnv1aUpdate(hash, buffer, chunk);
+        offset += chunk;
+        remaining -= chunk;
+    }
+    *outFNV = hash;
+    return true;
+}
+
+bool mapFlashTranslate(uint32_t sourceOffset,
+                       uint32_t length,
+                       uint32_t* outFlashOffset)
+{
+    if (!mapFlash.active || outFlashOffset == nullptr ||
+        sourceOffset < mapFlash.header.sourceDataOffset ||
+        sourceOffset > mapFlash.header.sourcePackBytes ||
+        length > mapFlash.header.sourcePackBytes - sourceOffset) {
+        return false;
+    }
+
+    const uint64_t sourceEnd = (uint64_t)sourceOffset + (uint64_t)length;
+    uint32_t removed = 0U;
+    for (uint32_t i = 0U; i < mapFlash.header.excludedCount; ++i) {
+        const MapFlashExcludedSpan& span = mapFlash.header.excluded[i];
+        const uint64_t spanEnd =
+            (uint64_t)span.sourceOffset + (uint64_t)span.size;
+        if (sourceEnd <= span.sourceOffset) {
+            break;
+        }
+        if (sourceOffset >= spanEnd) {
+            removed += span.size;
+            continue;
+        }
+        return false;
+    }
+
+    const uint32_t compactOffset =
+        (sourceOffset - mapFlash.header.sourceDataOffset) - removed;
+    if (compactOffset > mapFlash.header.stagedBytes ||
+        length > mapFlash.header.stagedBytes - compactOffset) {
+        return false;
+    }
+    *outFlashOffset = mapFlash.header.payloadFlashOffset + compactOffset;
+    return true;
+}
+
+void logMapFlashStrictMiss(const EspAssetPackEntry* entry,
+                           uint32_t relativeOffset,
+                           size_t length)
+{
+    ++mapFlash.stats.strictMisses;
+    if (mapFlash.missLogs < kMapFlashMaxMissLogs) {
+        ++mapFlash.missLogs;
+        printf("[MAPFLASH] MISS strict=1 hash=%08x source=%u relative=%u length=%u map=%u fallbackSD=no\n",
+               entry != nullptr ? (unsigned int)entry->nameHash : 0U,
+               entry != nullptr ? (unsigned int)entry->offset : 0U,
+               (unsigned int)relativeOffset,
+               (unsigned int)length,
+               (unsigned int)mapFlash.header.currentMapId);
+    }
+}
+
 } // namespace
 
 int EspAssetPack_open(const char* path)
 {
     uint8_t header[kHeaderBytes];
-    uint32_t previousHash = 0;
+    uint32_t previousHash = 0U;
     bool havePreviousHash = false;
 
     if (path == nullptr || path[0] == '\0') {
@@ -405,6 +660,40 @@ int EspAssetPack_open(const char* path)
 
     resetPhysicalState();
 
+    if (isDefaultPath(path) && mapFlash.active) {
+        if (mapFlash.partition == nullptr ||
+            !mapFlashHeaderLooksValid(mapFlash.header, mapFlash.partition)) {
+            return 0;
+        }
+        packSize = mapFlash.header.sourcePackBytes;
+        entryCount = mapFlash.header.entryCount;
+        indexOffset = mapFlash.header.sourceIndexOffset;
+        dataOffset = mapFlash.header.sourceDataOffset;
+        physicalUsesMapFlash = true;
+        if (residentEnabled) {
+            ++residentStats.physicalOpens;
+        }
+
+        for (uint32_t i = 0U; i < entryCount; ++i) {
+            EspAssetPackEntry entry;
+            if (!readEntryAt(i, &entry) ||
+                (havePreviousHash && entry.nameHash <= previousHash)) {
+                resetPhysicalState();
+                return 0;
+            }
+            previousHash = entry.nameHash;
+            havePreviousHash = true;
+        }
+
+        physicalReady = true;
+        physicalIsDefault = true;
+        openReady = true;
+        if (residentEnabled) {
+            ++residentStats.validationPasses;
+        }
+        return 1;
+    }
+
     packFile = SD.open(path, FILE_READ);
     if (!packFile) {
         return 0;
@@ -414,7 +703,7 @@ int EspAssetPack_open(const char* path)
     }
 
     packSize = (uint32_t)packFile.size();
-    if (packSize < kHeaderBytes || !readExact(header, sizeof(header))) {
+    if (packSize < kHeaderBytes || !readSdExact(header, sizeof(header))) {
         resetPhysicalState();
         return 0;
     }
@@ -429,7 +718,7 @@ int EspAssetPack_open(const char* path)
     indexOffset = readLe32(header + 16);
     dataOffset = readLe32(header + 20);
 
-    if (entryCount == 0 || entryCount > ESP_ASSET_PACK_MAX_ENTRY_COUNT ||
+    if (entryCount == 0U || entryCount > ESP_ASSET_PACK_MAX_ENTRY_COUNT ||
         indexOffset < kHeaderBytes || indexOffset > packSize) {
         resetPhysicalState();
         return 0;
@@ -442,19 +731,16 @@ int EspAssetPack_open(const char* path)
         return 0;
     }
 
-    /* Validate the complete disk index once at physical-open time. Resident
-     * gameplay leases reuse this validated File without rescanning the index.
-     */
     if (!packFile.seek(indexOffset)) {
         resetPhysicalState();
         return 0;
     }
 
-    for (uint32_t i = 0; i < entryCount; ++i) {
+    for (uint32_t i = 0U; i < entryCount; ++i) {
         uint8_t raw[kEntryBytes];
         EspAssetPackEntry entry;
 
-        if (!readExact(raw, sizeof(raw))) {
+        if (!readSdExact(raw, sizeof(raw))) {
             resetPhysicalState();
             return 0;
         }
@@ -472,6 +758,7 @@ int EspAssetPack_open(const char* path)
 
     physicalReady = true;
     physicalIsDefault = isDefaultPath(path);
+    physicalUsesMapFlash = false;
     openReady = true;
     if (residentEnabled) {
         ++residentStats.validationPasses;
@@ -495,7 +782,7 @@ int EspAssetPack_isOpen(void)
 
 uint32_t EspAssetPack_fileSize(void)
 {
-    return openReady ? packSize : 0;
+    return openReady ? packSize : 0U;
 }
 
 int EspAssetPack_entryCount(void)
@@ -505,7 +792,322 @@ int EspAssetPack_entryCount(void)
 
 uint32_t EspAssetPack_dataOffset(void)
 {
-    return openReady ? dataOffset : 0;
+    return openReady ? dataOffset : 0U;
+}
+
+int EspAssetPack_mapFlashStage(uint8_t currentMapId)
+{
+    uint8_t* buffer = nullptr;
+    MapFlashExcludedSpan spans[kMapFlashMaxExcludedMaps] = {};
+    EspAssetPackEntry currentEntry = {};
+    const esp_partition_t* partition = nullptr;
+    const char* currentMapName = nullptr;
+    uint32_t excludedCount = 0U;
+    uint32_t excludedBytes = 0U;
+    uint32_t indexBytes = 0U;
+    uint32_t payloadFlashOffset = 0U;
+    uint32_t stagedBytes = 0U;
+    uint32_t sourceDataBytes = 0U;
+    uint32_t sourcePackBytes = 0U;
+    uint32_t sourceIndexOffset = 0U;
+    uint32_t sourceDataOffset = 0U;
+    uint32_t sourceEntryCount = 0U;
+    uint32_t currentMapHash = 0U;
+    uint32_t indexFNV = 2166136261U;
+    uint32_t payloadFNV = 2166136261U;
+    uint32_t verifyIndexFNV = 0U;
+    uint32_t verifyPayloadFNV = 0U;
+    const int64_t buildStart = esp_timer_get_time();
+
+    if (openReady || residentEnabled || !EspMapCatalog_isValidId(currentMapId)) {
+        printf("[MAPFLASH] FAILED reason=bad-stage-boundary map=%u open=%u resident=%u\n",
+               (unsigned int)currentMapId,
+               (unsigned int)openReady,
+               (unsigned int)residentEnabled);
+        return 0;
+    }
+
+    resetPhysicalState();
+    clearMapFlashRuntime(true);
+
+    partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+                                         ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
+                                         "spiffs");
+    if (partition == nullptr || partition->size <= kMapFlashIndexOffset) {
+        printf("[MAPFLASH] FAILED reason=raw-partition-missing map=%u\n",
+               (unsigned int)currentMapId);
+        return 0;
+    }
+    mapFlash.partition = partition;
+
+    currentMapName = EspMapCatalog_nameForId(currentMapId);
+    if (currentMapName == nullptr || !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        printf("[MAPFLASH] FAILED reason=source-pack-open map=%u\n",
+               (unsigned int)currentMapId);
+        clearMapFlashRuntime(true);
+        return 0;
+    }
+
+    auto failStage = [&](const char* reason) -> int {
+        if (EspAssetPack_isOpen()) EspAssetPack_close();
+        if (buffer != nullptr) free(buffer);
+        printf("[MAPFLASH] FAILED reason=%s map=%u\n",
+               reason != nullptr ? reason : "unknown",
+               (unsigned int)currentMapId);
+        clearMapFlashRuntime(true);
+        return 0;
+    };
+
+    sourcePackBytes = packSize;
+    sourceIndexOffset = indexOffset;
+    sourceDataOffset = dataOffset;
+    sourceEntryCount = entryCount;
+    sourceDataBytes = sourcePackBytes - sourceDataOffset;
+    if (sourceEntryCount > UINT16_MAX) {
+        return failStage("entry-count-overflow");
+    }
+
+    currentMapHash = EspAssetPack_nameHash(currentMapName);
+    if (currentMapHash == 0U ||
+        !EspAssetPack_findEntry(currentMapName, &currentEntry) ||
+        (currentEntry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U ||
+        currentEntry.size == 0U) {
+        return failStage("current-bsp-missing");
+    }
+
+    for (uint8_t mapId = ESP_MAP_CATALOG_FIRST_ID;
+         mapId <= ESP_MAP_CATALOG_LAST_ID; ++mapId) {
+        if (mapId == currentMapId) continue;
+        const char* mapName = EspMapCatalog_nameForId(mapId);
+        EspAssetPackEntry mapEntry = {};
+        if (mapName == nullptr ||
+            !EspAssetPack_findEntry(mapName, &mapEntry)) {
+            continue;
+        }
+        if ((mapEntry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U ||
+            mapEntry.size == 0U || excludedCount >= kMapFlashMaxExcludedMaps) {
+            return failStage("invalid-excluded-bsp");
+        }
+        spans[excludedCount].nameHash = mapEntry.nameHash;
+        spans[excludedCount].sourceOffset = mapEntry.offset;
+        spans[excludedCount].size = mapEntry.size;
+        ++excludedCount;
+    }
+
+    for (uint32_t i = 0U; i < excludedCount; ++i) {
+        for (uint32_t j = i + 1U; j < excludedCount; ++j) {
+            if (spans[j].sourceOffset < spans[i].sourceOffset) {
+                const MapFlashExcludedSpan temp = spans[i];
+                spans[i] = spans[j];
+                spans[j] = temp;
+            }
+        }
+    }
+
+    uint32_t previousEnd = sourceDataOffset;
+    for (uint32_t i = 0U; i < excludedCount; ++i) {
+        const MapFlashExcludedSpan& span = spans[i];
+        if (span.sourceOffset < sourceDataOffset ||
+            span.sourceOffset < previousEnd ||
+            span.sourceOffset > sourcePackBytes ||
+            span.size > sourcePackBytes - span.sourceOffset ||
+            excludedBytes > UINT32_MAX - span.size) {
+            return failStage("excluded-span-invalid");
+        }
+        previousEnd = span.sourceOffset + span.size;
+        excludedBytes += span.size;
+    }
+    if (excludedBytes > sourceDataBytes) {
+        return failStage("excluded-bytes-invalid");
+    }
+
+    indexBytes = sourceEntryCount * (uint32_t)kEntryBytes;
+    payloadFlashOffset = alignSector(kMapFlashIndexOffset + indexBytes);
+    stagedBytes = sourceDataBytes - excludedBytes;
+    if (payloadFlashOffset == 0U || payloadFlashOffset > partition->size ||
+        stagedBytes > partition->size - payloadFlashOffset) {
+        printf("[MAPFLASH] PLAN map=%u current=%s pack=%u entries=%u index=%u metadata=%u data=%u excludeMaps=%u excludeBytes=%u stage=%u partition=%u fits=no\n",
+               (unsigned int)currentMapId,
+               currentMapName,
+               (unsigned int)sourcePackBytes,
+               (unsigned int)sourceEntryCount,
+               (unsigned int)indexBytes,
+               (unsigned int)payloadFlashOffset,
+               (unsigned int)sourceDataBytes,
+               (unsigned int)excludedCount,
+               (unsigned int)excludedBytes,
+               (unsigned int)stagedBytes,
+               (unsigned int)partition->size);
+        return failStage("working-set-does-not-fit");
+    }
+
+    printf("[MAPFLASH] PLAN map=%u current=%s pack=%u entries=%u index=%u metadata=%u data=%u excludeMaps=%u excludeBytes=%u stage=%u partition=%u headroom=%u fits=yes\n",
+           (unsigned int)currentMapId,
+           currentMapName,
+           (unsigned int)sourcePackBytes,
+           (unsigned int)sourceEntryCount,
+           (unsigned int)indexBytes,
+           (unsigned int)payloadFlashOffset,
+           (unsigned int)sourceDataBytes,
+           (unsigned int)excludedCount,
+           (unsigned int)excludedBytes,
+           (unsigned int)stagedBytes,
+           (unsigned int)partition->size,
+           (unsigned int)(partition->size - payloadFlashOffset - stagedBytes));
+    printf("[MAPFLASH] CONTRACT raw-partition single-slot; copy complete current-map gameplay working set before resident gameplay; original index+offset semantics retained; 19KiB RAM cache stays L1; header committed last after flash readback; excluded BSP access fails closed; SD fallback during active gameplay=no\n");
+
+    buffer = (uint8_t*)malloc(kMapFlashCopyBufferBytes);
+    if (buffer == nullptr) {
+        return failStage("copy-buffer-allocation");
+    }
+
+    if (esp_partition_erase_range(partition, 0U, partition->size) != ESP_OK) {
+        return failStage("partition-erase");
+    }
+    printf("[MAPFLASH] ERASE bytes=%u buffer=%u owner=transient\n",
+           (unsigned int)partition->size,
+           (unsigned int)kMapFlashCopyBufferBytes);
+
+    if (!copySdRangeToFlash(sourceIndexOffset,
+                            indexBytes,
+                            kMapFlashIndexOffset,
+                            buffer,
+                            &indexFNV)) {
+        return failStage("index-copy");
+    }
+
+    uint32_t sourceCursor = sourceDataOffset;
+    uint32_t flashCursor = payloadFlashOffset;
+    for (uint32_t i = 0U; i < excludedCount; ++i) {
+        const MapFlashExcludedSpan& span = spans[i];
+        if (span.sourceOffset > sourceCursor) {
+            const uint32_t copyBytes = span.sourceOffset - sourceCursor;
+            if (!copySdRangeToFlash(sourceCursor,
+                                    copyBytes,
+                                    flashCursor,
+                                    buffer,
+                                    &payloadFNV)) {
+                return failStage("payload-copy-before-bsp");
+            }
+            flashCursor += copyBytes;
+        }
+        sourceCursor = span.sourceOffset + span.size;
+    }
+    if (sourceCursor < sourcePackBytes) {
+        const uint32_t copyBytes = sourcePackBytes - sourceCursor;
+        if (!copySdRangeToFlash(sourceCursor,
+                                copyBytes,
+                                flashCursor,
+                                buffer,
+                                &payloadFNV)) {
+            return failStage("payload-copy-tail");
+        }
+        flashCursor += copyBytes;
+    }
+    if (flashCursor != payloadFlashOffset + stagedBytes) {
+        return failStage("payload-size-mismatch");
+    }
+
+    if (!fnvFlashRange(kMapFlashIndexOffset,
+                       indexBytes,
+                       buffer,
+                       &verifyIndexFNV) ||
+        !fnvFlashRange(payloadFlashOffset,
+                       stagedBytes,
+                       buffer,
+                       &verifyPayloadFNV) ||
+        verifyIndexFNV != indexFNV || verifyPayloadFNV != payloadFNV) {
+        return failStage("flash-readback-fnv");
+    }
+
+    MapFlashHeader committed = {};
+    committed.magic = kMapFlashMagic;
+    committed.version = kMapFlashVersion;
+    committed.headerBytes = (uint16_t)sizeof(MapFlashHeader);
+    committed.committed = kMapFlashCommitted;
+    committed.sourcePackBytes = sourcePackBytes;
+    committed.sourceIndexOffset = sourceIndexOffset;
+    committed.sourceDataOffset = sourceDataOffset;
+    committed.entryCount = sourceEntryCount;
+    committed.indexFlashOffset = kMapFlashIndexOffset;
+    committed.indexBytes = indexBytes;
+    committed.payloadFlashOffset = payloadFlashOffset;
+    committed.stagedBytes = stagedBytes;
+    committed.excludedBytes = excludedBytes;
+    committed.indexFNV1a = indexFNV;
+    committed.payloadFNV1a = payloadFNV;
+    committed.currentMapHash = currentMapHash;
+    committed.currentMapId = currentMapId;
+    committed.excludedCount = (uint8_t)excludedCount;
+    for (uint32_t i = 0U; i < excludedCount; ++i) {
+        committed.excluded[i] = spans[i];
+    }
+
+    if (esp_partition_write(partition, 0U, &committed, sizeof(committed)) != ESP_OK) {
+        return failStage("header-commit");
+    }
+    MapFlashHeader readback = {};
+    if (esp_partition_read(partition, 0U, &readback, sizeof(readback)) != ESP_OK ||
+        memcmp(&readback, &committed, sizeof(committed)) != 0 ||
+        !mapFlashHeaderLooksValid(readback, partition)) {
+        return failStage("header-readback");
+    }
+
+    EspAssetPack_close();
+    free(buffer);
+    buffer = nullptr;
+
+    mapFlash.partition = partition;
+    mapFlash.header = readback;
+    mapFlash.active = 1U;
+    mapFlash.missLogs = 0U;
+    memset(&mapFlash.stats, 0, sizeof(mapFlash.stats));
+    mapFlash.stats.partitionBytes = partition->size;
+    mapFlash.stats.sourcePackBytes = sourcePackBytes;
+    mapFlash.stats.sourceDataBytes = sourceDataBytes;
+    mapFlash.stats.indexBytes = indexBytes;
+    mapFlash.stats.metadataBytes = payloadFlashOffset;
+    mapFlash.stats.stagedBytes = stagedBytes;
+    mapFlash.stats.excludedBytes = excludedBytes;
+    mapFlash.stats.buildMicros =
+        (uint32_t)(esp_timer_get_time() - buildStart);
+    mapFlash.stats.entryCount = (uint16_t)sourceEntryCount;
+    mapFlash.stats.currentMapId = currentMapId;
+    mapFlash.stats.excludedMaps = (uint8_t)excludedCount;
+    mapFlash.stats.active = 1U;
+    mapFlash.stats.verified = 1U;
+
+    printf("[MAPFLASH] COPY indexFNV=%08x payloadFNV=%08x verified=yes\n",
+           (unsigned int)indexFNV,
+           (unsigned int)payloadFNV);
+    printf("[MAPFLASH] READY map=%u staged=%u metadata=%u excluded=%u/%u buildUs=%u backing=raw-internal-flash SDGameplayReads=forbidden\n",
+           (unsigned int)currentMapId,
+           (unsigned int)stagedBytes,
+           (unsigned int)payloadFlashOffset,
+           (unsigned int)excludedCount,
+           (unsigned int)excludedBytes,
+           (unsigned int)mapFlash.stats.buildMicros);
+    return 1;
+}
+
+void EspAssetPack_mapFlashDeactivate(void)
+{
+    if (openReady || residentEnabled) {
+        return;
+    }
+    clearMapFlashRuntime(true);
+}
+
+int EspAssetPack_isMapFlashActive(void)
+{
+    return mapFlash.active && mapFlash.partition != nullptr ? 1 : 0;
+}
+
+void EspAssetPack_mapFlashGetStats(EspAssetPackMapFlashStats* outStats)
+{
+    if (outStats == nullptr) return;
+    *outStats = mapFlash.stats;
+    outStats->active = EspAssetPack_isMapFlashActive() ? 1U : 0U;
 }
 
 int EspAssetPack_residentBegin(void)
@@ -551,6 +1153,7 @@ int EspAssetPack_residentEnd(void)
         free(residentCache);
         residentCache = nullptr;
     }
+    clearMapFlashRuntime(true);
     return 1;
 }
 
@@ -628,7 +1231,7 @@ uint32_t EspAssetPack_nameHash(const char* name)
     bool sawByte = false;
 
     if (name == nullptr) {
-        return 0;
+        return 0U;
     }
 
     while (*name == '/' || *name == '\\') {
@@ -642,16 +1245,16 @@ uint32_t EspAssetPack_nameHash(const char* name)
         sawByte = true;
     }
 
-    return sawByte ? hash : 0;
+    return sawByte ? hash : 0U;
 }
 
 int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* outEntry)
 {
-    uint32_t low = 0;
+    uint32_t low = 0U;
     uint32_t high = entryCount;
     const uint32_t wantedHash = EspAssetPack_nameHash(name);
 
-    if (!openReady || outEntry == nullptr || wantedHash == 0) {
+    if (!openReady || outEntry == nullptr || wantedHash == 0U) {
         return 0;
     }
 
@@ -740,8 +1343,18 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry,
     }
 
     const uint32_t absoluteOffset = entry->offset + relativeOffset;
-    if (!packFile.seek(absoluteOffset) || !readExact(destination, length)) {
-        return 0;
+    if (physicalUsesMapFlash) {
+        uint32_t flashOffset = 0U;
+        if (!mapFlashTranslate(absoluteOffset, (uint32_t)length, &flashOffset) ||
+            !mapFlashRead(flashOffset, destination, length, true)) {
+            logMapFlashStrictMiss(entry, relativeOffset, length);
+            return 0;
+        }
+    }
+    else {
+        if (!packFile.seek(absoluteOffset) || !readSdExact(destination, length)) {
+            return 0;
+        }
     }
 
     if (cacheableSmall) {
