@@ -62,6 +62,7 @@ typedef struct EspAssetPackMapFlashStats_s {
     uint8_t excludedMaps;
     uint8_t active;
     uint8_t verified;
+    uint8_t reused;
 } EspAssetPackMapFlashStats;
 
 /* Opens and validates the native asset pack. Before map-flash staging this is
@@ -76,9 +77,22 @@ uint32_t EspAssetPack_fileSize(void);
 int EspAssetPack_entryCount(void);
 uint32_t EspAssetPack_dataOffset(void);
 
-/* Stage one complete gameplay working set into the raw data partition currently
- * labelled "spiffs". The filesystem is never mounted: the partition is used
- * as a single transactional cache slot addressed with esp_partition_*.
+/* Prepare raw-flash backing for the map/world the caller is actually loading.
+ * This is the normal map-load entry point and is deliberately generic: the
+ * requested targetMapId may come from New Game, CHANGEMAP, Save/Load or any
+ * future native transition path.
+ *
+ * A committed slot is reused only when all of these still match the requested
+ * world: map id/hash, authoritative source PAK structural identity/index FNV,
+ * current derived exclusion/layout plan, and flash index+payload FNV readback.
+ * Any mismatch is a cache miss and falls through to the proven full staging
+ * path below. There is never a gameplay-time SD fallback.
+ */
+int EspAssetPack_mapFlashPrepare(uint8_t targetMapId);
+
+/* Force-stage one complete gameplay working set into the raw data partition
+ * currently labelled "spiffs". The filesystem is never mounted: the partition
+ * is used as a single transactional cache slot addressed with esp_partition_*.
  *
  * The staged set is deliberately conservative and dependency-complete: the
  * original PAK index plus every data byte except the other known BSP maps.
@@ -87,8 +101,8 @@ uint32_t EspAssetPack_dataOffset(void);
  * only after copy + flash readback verification. Once active, an attempt to
  * read an excluded range fails closed; it never falls back to SD.
  *
- * Stage requires no logical PAK lease and no resident RAM cache. It may erase
- * and rewrite the raw slot and is therefore a map-loading operation only.
+ * Stage requires no logical PAK lease and no resident RAM cache. It erases and
+ * rewrites the raw slot and is therefore a map-loading operation only.
  */
 int EspAssetPack_mapFlashStage(uint8_t currentMapId);
 void EspAssetPack_mapFlashDeactivate(void);

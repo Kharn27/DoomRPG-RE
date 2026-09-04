@@ -115,13 +115,16 @@ int __real_EspAssetPack_residentEnd(void);
 int __wrap_EspAssetPack_residentBegin(void)
 {
     const EspPlayerViewState* view = EspPlayerView_view();
+    const int64_t prepareStart = esp_timer_get_time();
     if (view == nullptr || view->active != 1U ||
-        !EspAssetPack_mapFlashStage(view->targetMapId)) {
+        !EspAssetPack_mapFlashPrepare(view->targetMapId)) {
         printf("[MAPFLASH] ARM failed view=%u map=%u residentBegin=blocked\n",
                view != nullptr ? (unsigned int)view->active : 0U,
                view != nullptr ? (unsigned int)view->targetMapId : 0U);
         return 0;
     }
+    const uint32_t prepareUs =
+        elapsedMicros(prepareStart, esp_timer_get_time());
 
     const int result = __real_EspAssetPack_residentBegin();
     if (!result) {
@@ -133,12 +136,14 @@ int __wrap_EspAssetPack_residentBegin(void)
 
     EspAssetPackMapFlashStats flash = {};
     EspAssetPack_mapFlashGetStats(&flash);
-    printf("[MAPFLASH] ARM map=%u active=%u verified=%u staged=%u metadata=%u buildUs=%u resident=1\n",
+    printf("[MAPFLASH] ARM map=%u active=%u verified=%u reused=%u staged=%u metadata=%u prepareUs=%u buildUs=%u resident=1\n",
            (unsigned int)flash.currentMapId,
            (unsigned int)flash.active,
            (unsigned int)flash.verified,
+           (unsigned int)flash.reused,
            (unsigned int)flash.stagedBytes,
            (unsigned int)flash.metadataBytes,
+           (unsigned int)prepareUs,
            (unsigned int)flash.buildMicros);
     return 1;
 }
