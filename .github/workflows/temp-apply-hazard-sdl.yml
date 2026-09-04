@@ -1,0 +1,48 @@
+name: Temporary Apply Hazard SDL Shim
+
+on:
+  push:
+    branches:
+      - agent/diag-hazard-ci
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout hazard branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/esp32-native-hazard-touch
+          fetch-depth: 0
+
+      - name: Apply one-line SDL shim include
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='ESP32/src/esp_native_gameplay_hazard_touch.c'
+          if ! grep -qx '#include <SDL.h>' "$file"; then
+            sed -i '1i#include <SDL.h>' "$file"
+          fi
+          git diff --check
+          expected=$'1\t0\tESP32/src/esp_native_gameplay_hazard_touch.c'
+          actual="$(git diff --numstat -- "$file")"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "unexpected diff: $actual"
+            git diff -- "$file"
+            exit 1
+          fi
+          git diff -- "$file"
+
+      - name: Commit and push hazard branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Kharn27'
+          git config user.email '32738307+Kharn27@users.noreply.github.com'
+          git add ESP32/src/esp_native_gameplay_hazard_touch.c
+          git commit -m 'ESP32: include SDL shim for hazard touch'
+          git push origin HEAD:agent/esp32-native-hazard-touch
