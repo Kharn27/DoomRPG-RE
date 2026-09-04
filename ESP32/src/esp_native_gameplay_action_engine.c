@@ -963,6 +963,13 @@ static int serviceFeedbackExpiry(void) {
      * safely repaint/present the message bar. */
     if (EspNativeGameplayControls_isActive()) return 1;
 
+    /* Native dialogs intentionally keep the PAK open for their typewriter
+     * lifetime. The top-bar painter requires an exclusive short PAK lease, so
+     * an expired feedback must wait for the dialog to close instead of turning
+     * a temporary storage-owner conflict into a fatal gameplay failure. The
+     * viewport flash is independent and has already expired above on schedule. */
+    if (EspAssetPack_isOpen()) return 1;
+
     kind = actionState.feedbackVisibleKind;
     actionState.feedbackPending = 1U;
     actionState.feedbackKind = ACTION_FEEDBACK_NONE;
@@ -1212,8 +1219,11 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     if (!serviceFeedbackExpiry()) return 0;
     /* PASS TURN and future non-SELECT actions may queue transient feedback
      * without owning an ActionPending transaction. If no gameplay redraw has
-     * consumed it yet, present the existing framebuffer with the queued topbar. */
+     * consumed it yet, present the existing framebuffer with the queued topbar.
+     * A native dialog may currently own the PAK, in which case the feedback
+     * painter must simply wait for that bounded owner to release it. */
     if (actionState.pending.active == 0U && actionState.feedbackPending != 0U) {
+        if (EspAssetPack_isOpen()) return 1;
         if (!__wrap_Esp32PlatformVideo_present()) return 0;
     }
     if (actionState.pending.active == 0U) return 1;
