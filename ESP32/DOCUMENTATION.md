@@ -14,19 +14,26 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main = 4b95d382ab9b120dcd7e020d4614a48d01001d1c
-branch = agent/esp32-native-monster-pain-feedback
-base main = 4b95d382ab9b120dcd7e020d4614a48d01001d1c
-hardware-tested code boundary = b7bf6bb692f5987f9307a7c02a42601fcf3232e1
-status = monster retaliation player-pain feedback + dialog PAK-lease fix PASS
+main = a6a3334c2235f14a69b8c8c9acd9b1c3a0485c01
+branch = agent/esp32-native-flash-pak-backing
+base main = a6a3334c2235f14a69b8c8c9acd9b1c3a0485c01
+hardware-tested code boundary = 3fcd255015315e67222de7bcedf63f76220c7820
+status = current-map raw internal-flash PAK backing PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `b7bf6bb6...` as new hardware-tested code. The tail
+Do not treat commits after `3fcd2550...` as new hardware-tested code. The tail
 must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `33854099003` passed on the exact tested
-SHA. CI is compile/link evidence only; real-CYD serial logs remain authoritative.
+Normal GitHub Actions `esp32-cyd` run `33862354211` passed on the exact tested
+SHA and uploaded:
+
+```text
+doom-rpg-esp32-cyd-3fcd255015315e67222de7bcedf63f76220c7820
+artifact id = 9932634573
+```
+
+CI is compile/link evidence only; real-CYD serial logs remain authoritative.
 
 ## Build environment
 
@@ -41,6 +48,16 @@ and uploads firmware artifacts. Bring-up diagnostics perturb RAM and are not the
 production memory canon. Never claim a local build or hardware pass that did not
 occur.
 
+The production environment now uses:
+
+```text
+board_build.partitions = partitions_cyd_raw_pak.csv
+```
+
+When installing a firmware built with this layout on a board that previously used
+`no_ota.csv`, flash the generated `partitions.bin` as well as `firmware.bin`.
+A firmware-only update leaves the old partition table in place.
+
 ## Hardware / permanent memory rules
 
 ```text
@@ -51,12 +68,82 @@ PSRAM = none
 logical framebuffer = 160x120 RGB565 = 38400 B
 shapeData == NULL
 mediaTexels == NULL
-native backing store = /DoomRPG-ESP32.pak
 ```
 
 Do not recreate map-wide texel ownership or migrate native gameplay/map data back
-to ZIP. The current firmware still has a transitional `/DoomRPG.zip` startup
-dependency for legacy HUD/layout resources; removal remains migration debt.
+to ZIP. `/DoomRPG-ESP32.pak` on SD remains the authoritative source archive.
+The current firmware still has transitional `/DoomRPG.zip` startup/reference
+debt; removal remains part of the native migration.
+
+## Current native asset backing
+
+The hardware-proven active gameplay path is:
+
+```text
+/DoomRPG-ESP32.pak on SD
+ -> current-map staging during load
+ -> raw internal-flash slot
+ -> 19 KiB resident RAM cache
+ -> native renderer/gameplay
+```
+
+The raw slot is single-map backing storage. Gameplay is armed only after the slot
+is complete and flash readback verification succeeds. Active gameplay must not
+silently fall back to SD.
+
+The partition is named `spiffs` in the partition table but is intentionally not
+mounted as a filesystem. It is accessed as raw flash via `esp_partition_*`.
+
+Detailed milestone:
+
+- [`MILESTONE_NATIVE_MAP_FLASH_BACKING.md`](MILESTONE_NATIVE_MAP_FLASH_BACKING.md)
+
+## Classic CYD flash layout
+
+`ESP32/partitions_cyd_raw_pak.csv`:
+
+```text
+nvs       0x009000  0x005000
+otadata   0x00e000  0x002000
+app0      0x010000  0x140000  = 1310720 B
+spiffs    0x150000  0x2A0000  = 2752512 B raw slot
+coredump  0x3F0000  0x010000
+```
+
+Tested firmware size at the locked boundary:
+
+```text
+firmware.bin = 644144 B
+app0 margin = 666576 B
+```
+
+## Entrance flash witness
+
+```text
+map=1
+resource=/intro.bsp
+runtimeFNV=c3882516
+sourceCRC32=623f34e4
+pack=2457398 B
+entries=241
+index=4820 B
+metadata=12288 B
+excluded other BSPs=12 / 203811 B
+staged payload=2248743 B
+partition=2752512 B
+headroom=491481 B
+```
+
+Real-CYD staging:
+
+```text
+[MAPFLASH] COPY indexFNV=3a51cc4d payloadFNV=9ec04e22 verified=yes
+[MAPFLASH] READY ... buildUs=8442586 backing=raw-internal-flash
+[MAPFLASH] ARM map=1 active=1 verified=1 resident=1
+```
+
+The ~8.44 s stage is a deliberate load-time cost. The project explicitly prefers
+that deterministic cost over unpredictable SD stalls during turn-based gameplay.
 
 ## Selected resident-cache baseline
 
@@ -69,11 +156,50 @@ resident entry slots = 24
 large exact range = 2048 B
 ```
 
-Cache recycle/stall behavior remains separate performance work.
+The 288-record global recycle still exists. It is no longer an SD seek cliff once
+the current-map raw-flash backing is armed.
+
+## Hardware performance result
+
+The preceding SD-backed fire-room witness showed:
+
+```text
+entries 288/288 -> 23/288
+SPRITEPROFILE ~36.7 ms -> ~241.8 ms
+frame ~335 ms -> ~736 ms
+VIDEO present ~34.4 ms
+```
+
+The raw-flash run still exercised a recycle:
+
+```text
+entries=288/288 SPRITEPROFILE=29824 us
+entries=78/288  SPRITEPROFILE=36084 us
+```
+
+but the large stall did not return. Representative gameplay redraws in the
+provided route were broadly ~178-225 ms, and the user reported the fire room as
+substantially smoother with the former intermittent lag no longer spoiling play.
+
+Startup cache comparison:
+
+```text
+SD SMALL-COLD   = 2100916 us
+flash SMALL-COLD = 228233 us
+
+SD SMALL-WARM   = 324151 us
+flash SMALL-WARM = 178176 us
+
+SD LARGE-WARM   = 298062 us
+flash LARGE-WARM = 177531 us
+```
+
+`PlatformVideo_present()` remains a stable ~34.4 ms and is not the target of this
+storage milestone.
 
 ## Current native gameplay frontier
 
-Hardware-owned behavior now includes:
+Hardware-owned behavior includes:
 
 ```text
 movement / turn / strafe
@@ -97,11 +223,10 @@ HUD projection from PlayerState
 extinguisher ammo consumption + fire removal transaction
 stationary monster-turn scheduling + LOS recovery
 live nonlethal monster retaliation
-native PASS_TURN + exact "Turn passed." top-bar feedback
-transaction-safe gameplay RNG replay across 128-byte refill boundary
+native PASS_TURN + exact top-bar feedback
+transaction-safe gameplay RNG replay across refill boundary
 compact mutable MonsterPosition owner
 legacy-compatible bounded movement planner
-persistent movement RNG reservation/replay
 live one-monster movement commit + topology relink
 renderer projection of committed moved monster position
 generic NEXT + PREV weapon cycling
@@ -110,9 +235,9 @@ live Pistol ammo consumption + generic monster combat commit
 live generic pickup messages + white viewport-border flash
 adaptive native plane cache under memory pressure
 movement-side linked type10/type11 hazard damage through shared PlayerState
-live bounded `N damage!` top-bar text + red viewport-border hazard flash
-live monster-retaliation raw damage text + red viewport-border flash
+live bounded damage text + red viewport-border hazard flash
 safe feedback expiry while a native dialog owns the PAK
+current-map raw-flash PAK backing with no silent gameplay SD fallback
 ```
 
 Relevant milestone records:
@@ -128,6 +253,7 @@ Relevant milestone records:
 - [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
 - [`MILESTONE_NATIVE_HAZARD_TOUCH.md`](MILESTONE_NATIVE_HAZARD_TOUCH.md)
 - [`MILESTONE_NATIVE_MONSTER_PAIN_FEEDBACK.md`](MILESTONE_NATIVE_MONSTER_PAIN_FEEDBACK.md)
+- [`MILESTONE_NATIVE_MAP_FLASH_BACKING.md`](MILESTONE_NATIVE_MAP_FLASH_BACKING.md)
 
 ## Shared PlayerState
 
@@ -147,266 +273,34 @@ weapon ownership / selected weapon
 Player attacks, resources, HUD projection, hazards and monster retaliation all use
 this same owner.
 
-## Generic player resources and feedback
+## Current RAM warning
+
+The raw flash payload is not map-wide RAM, but the existing resident L1 remains a
+real 23.6 KiB owner.
+
+Hardware witness:
 
 ```text
-EntityDef {tile,type,subtype,parm}
- -> generic PlayerResources classifier
- -> shared PlayerState
- -> one consumed-sprite bitset
- -> HUD/world projection
- -> bounded pickup feedback
- -> transactional redraw
+CACHE_PRE  heap8=50976 largest8=42996
+CACHE_POST heap8=27368 largest8=20468
+warmup     heap8=24708 largest8=20468
+live       heap8~20840 largest8~18420
 ```
 
-Entrance corpus remains:
-
-```text
-114 pickups total
-type3  = 84
-type4  = 6
-type5  = 3
-type6  = 17
-type16 = 4
-consumed bitset = 43 B for 344 sprites
-EntityDef metadata = 115 x 8 B = 920 B
-```
-
-Pickup presentation contract:
-
-```text
-message = top bar / 1200 ms
-pickup flash = white RGB565 ffff / 500 ms
-flash viewport = 0,20,160,80
-border = 2 px / 944 pixels
-snapshot = bounded
-```
-
-Final-boundary witnesses include an Armor Shard (`armor 5->9`) and Halon Can
-(`ammo0 7->10`). Pickup sound playback and got-face presentation remain deferred.
-
-## Movement hazard touch
-
-Committed movement owns the type10/type11 subset of legacy
-`Game_touchTile(..., true)` before monster-turn continuation.
-
-```text
-type10 = pain(1,2)
-type11 = pain(10,10)
-feedback = bounded dynamic top-bar damage text / 1200 ms
-flash = red RGB565 b800 / 500 ms
-viewport = 0,20,160,80
-border = 2 px / 944 pixels
-```
-
-Earlier real-CYD type10 witnesses remain:
-
-```text
-tile613: hp 30->29, armor 8->6, message="3 damage!"
-tile616: hp 30->29, armor 6->4, message="3 damage!"
-```
-
-PASS_TURN current-tile hazards, secondary burn text, pain face, shake and sound
-remain separate families.
-
-## Monster retaliation player-pain feedback
-
-Enemy-turn path now has a bounded presentation layer after nonlethal retaliation
-commit:
-
-```text
-MonsterTurn probe
- -> exact retaliation RNG replay
- -> shared PlayerState pain mutation
- -> existing ActionEngine DAMAGE feedback
- -> top-bar raw damage text
- -> red viewport-border flash
- -> native redraw/present
-```
-
-Legacy-visible amount is:
-
-```text
-totalDamage + totalArmorDamage
-```
-
-Final real-CYD witness:
-
-```text
-Hellhound sprite=179
-roll: totalDamage=3 armorDamage=3 crit=0
-player: HP 30->27, armor 8->5
-message="6 damage!"
-red flash=b800 / 500 ms
-pass message=legacy-superseded
-rollback=closed
-```
-
-The user physically observed the red border. Attack visual, pain face, shake,
-sound and player death remain deferred/fail-closed.
-
-## Dialog / feedback PAK ownership
-
-Native dialogs intentionally keep the PAK open across typewriter rendering. The
-ActionEngine top-bar painter needs a short exclusive PAK lease. Hardware exposed
-a failure when a pickup message reached its 1200 ms expiry while a dialog was
-active.
-
-The permanent rule is now:
-
-```text
-feedback expiry due
- + PAK currently owned
- -> defer repaint
- -> do not fail gameplay
- -> preserve visible lease state
- -> retry after bounded owner closes PAK
-```
-
-Final real-CYD reproduction:
-
-```text
-"Got Halon Can" feedback active
-white flash expires at 501 ms
-DIALOG OPEN event=83 opcode=26 pack=open
-# stays open beyond 1200 ms feedback lease
-# no ACTIONFEEDBACK FAILED / ACTIONENGINE FAILED
-DIALOG CLOSE ... packClosed=yes
-DIALOGCHAIN RESUME state=1 mutation=1
-DIALOG-RESUME redraw=yes
-ACTIONFEEDBACK EXPIRE kind=5 elapsedMs=2911 restored=topbar-only
-next opcode-8 dialog opens successfully
-```
-
-This confirms the feedback lease waits rather than crashing or disappearing.
-
-## Adaptive plane renderer cache
-
-The floor/ceiling path uses independent 2048 B texture leases. Six slots remain
-the performance ceiling, but any successful prefix from 1..6 is valid.
-
-```text
-max slots = 6
-slot bytes = 2048 B
-minimum valid slots = 1
-reduced capacity = more PAK misses/reads only
-```
-
-The final hardware run repeatedly used 5/6 in normal gameplay and one
-DIALOG-RESUME frame used 4/6 with `PLANEPROFILE us=230457 ok=1`. Reduced cache
-capacity remains a performance concern, not a correctness failure.
-
-## Generic monster engine
-
-Ordinary monster differences are data (`subtype`, `mType`, randomized stats),
-not executor code.
-
-Player-attack side:
-
-```text
-MonsterTrace
- -> CombatMath
- -> MonsterState + PlayerState
- -> MonsterCombat transaction
- -> visual/liveness projection
-```
-
-Enemy-turn side:
-
-```text
-committed movement / rotation / player attack / PASS_TURN
- -> MonsterTurn schedule
- -> candidate + cardinal LOS recovery
- -> exact rollback probe
- -> conservative activation delivery
- -> MonsterRetaliation transaction
- -> PlayerState + damage feedback + redraw
-```
-
-Movement side:
-
-```text
-MonsterState + topology
- -> MonsterPosition {sprite,tile,x,y}
- -> movement trigger/path planner probe
- -> exact gameplay-RNG replay
- -> MonsterPosition commit
- -> SpriteTopology relink
- -> moved-position sprite projection
- -> complete native redraw/present
-```
-
-Projection currently snaps to destination; interpolation/animation remains a
-future family.
-
-## Final combat regression witness
-
-The locked-boundary run independently killed Hellhound sprite 179 with the Axe:
-
-```text
-weapon=0 distance=1 tile=718 sprite=179
-roll: totalDamage=7 armorDamage=1 crit=0 rngCalls=4
-attack pose logical=240 actual=603 frame=1
-commit: hp 6->0, armor 2->1, xp=5, rollback=closed
-settle-idle rendered successfully
-```
-
-The player then moved through the tile, picked up Armor Shard and Halon Can, and
-completed/resumed the computer dialog chain. This is the current cross-family
-renderer/combat/dialog survival witness.
-
-## Representative RAM
-
-Normal gameplay before lazy NOTE/dialog allocation:
-
-```text
-heap = 82516 B
-heap8 = 16784 B
-largest8 = 14324 B
-SD/ZIP/VIDEO/CORE/LAYOUT/PRERENDER/RENDER/MAPPINGS/MENUBSP = ready
-```
-
-Computer interaction explicitly allocates:
-
-```text
-[NOTE] OWNER bytes=1416 allocation=lazy-gameplay
-```
-
-Post-dialog sample:
-
-```text
-heap = 81084 B
-heap8 = 15352 B
-largest8 = 13300 B
-```
-
-This run does not prove a leak. `shapeData == NULL` and `mediaTexels == NULL`
-remain hard invariants and retained earlier witnesses.
-
-## Performance observation
-
-The user reported that the final firmware felt generally slower. Do not dismiss
-that report, but do not attribute it to the correctness hotfix without evidence.
-The serial sample shows:
-
-```text
-previous comparable SPRITEPROFILE ~= 22-25 ms
-final comparable SPRITEPROFILE    ~= 46-49 ms
-VIDEO present remains             ~= 34.4 ms
-normal NATIVEPLANE remains broadly ~= 79-109 ms
-one dialog-resume 4/6 plane frame = 230457 us
-```
-
-The PAK-lease fix itself only adds two `EspAssetPack_isOpen()` guards. Investigate
-sprite/cache/SD timing separately after merge if it remains reproducible.
+The reserve diagnostic reports `margin8=0` against the provisional
+`audioI2SDMA + audioBuffers + general` target. Audio therefore remains explicitly
+deferred; do not enable it without a dedicated memory milestone.
 
 ## Current intentionally deferred families
 
 ```text
+persistent validated reuse of an already-staged same-map flash slot
+production map-transition flash rebuild/reuse policy
+L1 range-record eviction/recycle redesign
 PASS_TURN current-tile type10/type11 Entity_touched semantics
 pickup sound playback / got-face presentation
 movement-hazard secondary burn text / pain face / shake / sound
-action XP migration: extinguisher +2, jammed door +1
+action XP migration
 materialized monster drops
 corpse-pile trimming
 monster movement interpolation/animation
@@ -419,9 +313,9 @@ monster attack sound / actual sound playback
 status-warning presentation
 chaingun/plasma multi-loop mechanics
 rocket/BFG radius damage
-familiar weapon attack semantics for slots 9..11
+familiar weapon attack semantics
 generic type-12 destructible combat
-special death consequences for subtypes 7, 8, 12, 13
+special death consequences
 Kronos-specific semantics
 password input
 SAVEGAME / CHANGEMAP production route
@@ -448,15 +342,12 @@ When the merge is announced:
 1. read the true GitHub `main` and exact SHA;
 2. re-read `PORTING_STATUS.md`, this file and latest relevant milestone(s);
 3. create a fresh coherent `agent/*` branch from that SHA;
-4. choose the next bounded gameplay family from the actual merged frontier.
+4. choose the next bounded family from the actual merged frontier.
 
-High-value candidates now include monster attack visual/player-pain animation,
-generic type-12 destructible combat, player lethal/death transition,
-multiple-monster activation/movement ordering, monster interpolation/animation,
-PASS_TURN hazards, action XP migration, materialized monster drops and a bounded
-performance investigation if the sprite-time slowdown remains reproducible.
-
-Decide only after reading merged `main`.
+A strong storage follow-up is persistent current-map flash-slot reuse. A valid
+committed slot should be identifiable by source-PAK + map identity, then armed
+without the ~8.44 s SD erase/copy stage; a stale/missing slot must rebuild through
+the already-proven path. This must preserve the no-SD-gameplay contract.
 
 ## Development workflow
 
