@@ -198,9 +198,12 @@ EspNativeGameplayHazardTouchStatus EspNativeGameplayHazardTouch_processMove(
     char message[24];
     int feedbackQueued = 0;
 
+    /* This executor is called only from the committed-move service, which
+     * snapshots before/after from one resident gameplay session. Keep its
+     * entry contract local to the two active settled views instead of coupling
+     * hazard damage to a map-owner field that the caller already validated. */
     if (beforeView == NULL || afterView == NULL ||
-        beforeView->active != 1U || afterView->active != 1U ||
-        beforeView->targetMapId != afterView->targetMapId) {
+        beforeView->active != 1U || afterView->active != 1U) {
         return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_NONE;
     }
     beforeTile = tileForView(beforeView);
