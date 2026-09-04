@@ -7,20 +7,21 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main = a74a6f067cc7a5304a1f940f78317804659c37e8
-branch = agent/esp32-native-hazard-touch
-base main = a74a6f067cc7a5304a1f940f78317804659c37e8
-hardware-tested code boundary = bae9d1a78f40db31c35a8a0aa9a1875692cf5c9e
-status = REAL-CYD MOVEMENT HAZARD TOUCH + RED DAMAGE FEEDBACK PASS
+main = 4b95d382ab9b120dcd7e020d4614a48d01001d1c
+branch = agent/esp32-native-monster-pain-feedback
+base main = 4b95d382ab9b120dcd7e020d4614a48d01001d1c
+hardware-tested code boundary = b7bf6bb692f5987f9307a7c02a42601fcf3232e1
+status = REAL-CYD MONSTER RETALIATION PLAYER-PAIN FEEDBACK + DIALOG PAK-LEASE FIX PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`bae9d1a7...` is the exact code boundary exercised on the real CYD. Commits
+`b7bf6bb6...` is the exact code boundary exercised on the real CYD. Commits
 after that SHA must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `33845214033` completed successfully for
-this exact SHA. CI is a compile/link gate only; the hardware logs remain
-authoritative.
+Normal GitHub Actions `esp32-cyd` run `33854099003` completed successfully for
+this exact SHA and uploaded
+`doom-rpg-esp32-cyd-b7bf6bb692f5987f9307a7c02a42601fcf3232e1`.
+CI is a compile/link gate only; the hardware logs remain authoritative.
 
 After merge, read the real GitHub `main` SHA again before creating the next
 `agent/*` branch.
@@ -111,12 +112,12 @@ resident entry slots = 24
 large exact range = 2048 B
 ```
 
-The global cache-reset cliff remains separate performance work. Preserve this
+The global cache-reset/performance cliff remains separate work. Preserve this
 baseline while correctness work advances.
 
 ## Current hardware-owned gameplay frontier
 
-Previously validated behavior retained on the current branch includes:
+Validated behavior retained at the locked boundary includes:
 
 ```text
 TURN_LEFT / TURN_RIGHT
@@ -151,6 +152,8 @@ live pickup messages + white pickup flash
 adaptive floor/ceiling texture cache under memory pressure
 movement-side linked type10/type11 hazard touch into shared PlayerState
 live bounded damage text + red viewport flash for movement hazards
+live nonlethal monster-retaliation raw damage text + red viewport flash
+feedback expiry safely deferred while a native dialog owns the PAK
 ```
 
 Relevant detailed records:
@@ -165,6 +168,7 @@ Relevant detailed records:
 - [`MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md)
 - [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
 - [`MILESTONE_NATIVE_HAZARD_TOUCH.md`](MILESTONE_NATIVE_HAZARD_TOUCH.md)
+- [`MILESTONE_NATIVE_MONSTER_PAIN_FEEDBACK.md`](MILESTONE_NATIVE_MONSTER_PAIN_FEEDBACK.md)
 
 ## Shared native PlayerState
 
@@ -181,8 +185,8 @@ inventory[5]
 weapon bits / selected weapon
 ```
 
-Combat, pickups, HUD, ammo, progression and monster retaliation share this owner.
-Do not create per-feature or per-item state islands.
+Combat, pickups, HUD, ammo, progression, hazards and monster retaliation share
+this owner. Do not create per-feature or per-item state islands.
 
 ## Generic player resources + live pickup feedback — hardware PASS
 
@@ -206,16 +210,6 @@ type 6  ammo
 type 16 alternate ammo entries
 ```
 
-Current real-CYD witnesses include:
-
-```text
-Armor Shard #1  armor 0->4   message="Got Armor Shard"
-Armor Shard #2  armor 4->8   message="Got Armor Shard"
-Bullet Clip      ammo1 8->12  message="Got Bullet Clip"
-Fire Ext         weapon=1     message="Got Fire Ext"
-1 credit         credits 0->1 message="Got 1 credit"
-```
-
 Pickup presentation is bounded:
 
 ```text
@@ -226,55 +220,119 @@ border = 2 px / 944 pixels
 snapshot = bounded
 ```
 
-The final hardware run continued after multiple pickups with no gameplay failure.
+The final boundary independently revalidated:
+
+```text
+Armor Shard: armor 5->9, message="Got Armor Shard"
+Halon Can: ammo0 7->10, message="Got Halon Can"
+```
+
 Pickup sound playback and got-face presentation remain deferred.
 
 ## Movement hazard touch — hardware PASS
 
-Movement-side `Game_touchTile(..., true)` now owns linked type 10/11 hazard
-damage through the shared 52 B PlayerState without a new gameplay owner.
-Recovered amounts are `pain(1,2)` for type 10 and `pain(10,10)` for type 11.
+Movement-side `Game_touchTile(..., true)` owns linked type 10/11 hazard damage
+through the shared PlayerState without a new gameplay owner.
 
-The real CYD crossed two independent type-10 flames:
+```text
+type10 = pain(1,2)
+type11 = pain(10,10)
+feedback text = total raw pair, 1200 ms
+flash = red RGB565 b800 / 500 ms
+viewport = 0,20,160,80
+border = 2 px / 944 pixels
+```
+
+Earlier real-CYD type-10 witnesses remain canonical:
 
 ```text
 tile=613 sprite=74 rawDamage=1+2 hp=30->29 armor=8->6
 tile=616 sprite=110 rawDamage=1+2 hp=30->29 armor=6->4
+message="3 damage!"
 ```
-
-Both produced the bounded dynamic message `"3 damage!"` plus the recovered red
-viewport-border flash:
-
-```text
-color565 = b800
-duration = 500 ms
-viewport = 0,20,160,80
-border = 2 px / 944 pixels
-text duration = 1200 ms
-```
-
-Representative expiry witnesses were 513/523 ms for the red border and
-1205/1214 ms for the text lease. The same session continued through a door,
-a Health Vial pickup and a second flame, then scheduled the normal MOVE monster
-turn after each committed hazard touch.
 
 Mixed resource+hazard tiles, familiar redirection, lethal player transition,
 PASS_TURN current-tile type10/11 touch, secondary burn text, pain face/shake and
 sound remain intentionally fail-closed or deferred.
 
-A Hellhound PASS_TURN hit on this exact firmware also confirms monster retaliation
-damage presentation is still separate: PlayerState damage commits, while the log
-explicitly reports `painFX=deferred damageText=deferred`. No red border or damage
-message is claimed for monster attacks yet.
+## Monster retaliation player-pain feedback — hardware PASS
+
+Legacy `Player_pain(player, totalDamage, totalArmorDamage)` displays the raw pair
+sum. Native retaliation now reuses the existing bounded ActionEngine DAMAGE
+feedback owner after a nonlethal hit commits.
+
+Final real-CYD witness on `b7bf6bb6...`:
+
+```text
+[MONSTERTURN] ATTACK-PROBE reason=PASS_TURN sprite=179
+  firstRandHit=13 firstCalcHit=193 firstRandDamage=243
+  totalDamage=3 armorDamage=3 crit=0
+  playerHP=30->27 armor=8->5
+
+[ACTIONFEEDBACK] PAINT kind=6 text="6 damage!" durationMs=1200
+[VIEWFLASH] PAINT color565=b800 viewport=0,20,160,80
+  thickness=2 pixels=944 durationMs=500
+
+[MONSTERRETAL] COMMIT
+  playerHP=30->27 armor=8->5
+  message="6 damage!" damageTotal=6
+  redFlash=b800/500ms
+  passMessage=legacy-superseded
+  rollback=closed
+  attackVisual=deferred
+  painFace=deferred
+  shake=deferred
+  sound=deferred
+  playerDeath=fail-closed
+
+[VIEWFLASH] EXPIRE elapsedMs=514 targetMs=500 color565=b800
+```
+
+The player physically observed the red border. Monster attack animation is still
+explicitly deferred and its absence is expected at this boundary.
+
+## Dialog / feedback PAK-owner conflict — hardware PASS
+
+The first retaliation-feedback code commit
+`18a76296d9739489cf7806e7dc7beb6a8bd09d1d` passed the new damage presentation,
+but the same hardware session exposed a pre-existing lease conflict:
+
+```text
+pickup top-bar feedback still visible
+ -> native dialog opens and owns PAK
+ -> feedback reaches expiry
+ -> top-bar painter tries to acquire PAK
+ -> ACTIONFEEDBACK FAILED kind=0
+ -> gameplay fatal
+```
+
+Final code boundary `b7bf6bb6...` adds only bounded `EspAssetPack_isOpen()`
+guards: expired feedback waits while a native dialog owns the PAK and is cleaned
+as soon as the dialog releases it. No new allocation or owner was introduced.
+
+Exact final reproduction:
+
+```text
+[PLAYERRES] FEEDBACK tile=782 message="Got Halon Can"
+[VIEWFLASH] EXPIRE elapsedMs=501 targetMs=500 color565=ffff
+[DIALOG] OPEN event=83 cmd=1 resume=2 opcode=26 ... pack=open
+# dialog remains active beyond the 1200 ms top-bar lease
+# no ACTIONFEEDBACK FAILED / ACTIONENGINE FAILED
+[DIALOG] FASTFORWARD pageStart=0 lines=3
+[DIALOG] CLOSE event=83 resume=2 mode=resume ... packClosed=yes
+[DIALOGCHAIN] RESUME event=83 start=2 handled=1 state=1 mutation=1
+[RESIDENTGAMEPLAY] DIALOG-RESUME ... redraw=yes dialog=closed
+[ACTIONFEEDBACK] EXPIRE kind=5 elapsedMs=2911 targetMs=1200 restored=topbar-only
+[DIALOG] OPEN event=83 cmd=3 resume=4 opcode=8 ... pack=open
+```
+
+The second dialog proves the gameplay/dialog chain remains live after the delayed
+feedback cleanup.
 
 ## Adaptive native plane cache — hardware PASS
 
-A real dialog continuation exposed a memory-pressure failure after allocating a
-2408 B topology rollback snapshot. The floor/ceiling renderer previously required
-all six independent 2048 B texture leases and failed the whole frame if any lease
-could not be acquired.
-
-The permanent bounded policy is now:
+The floor/ceiling renderer accepts any successful prefix of 1..6 independent
+2048 B texture leases:
 
 ```text
 max slots = 6
@@ -283,73 +341,39 @@ minimum usable slots = 1
 fewer slots = more PAK misses/reads, not different pixels
 ```
 
-The final real CYD exercised the degraded path repeatedly:
+The final run continued to exercise the 5/6 fallback in normal gameplay. During
+dialog resume one transient frame reached 4/6:
 
 ```text
-[NATIVEPLANE] CACHE-FALLBACK slots=5/6 leaseBytes=2048 totalLeaseBytes=10240
-[NATIVEPLANE] rows=80 pixels=12800 textures=12 ...
-[PLANEPROFILE] ... ok=1
+[NATIVEPLANE] CACHE-FALLBACK slots=4/6 leaseBytes=2048 totalLeaseBytes=8192
+[NATIVEPLANE] ... reads=55296B
+[PLANEPROFILE] us=230457 ok=1
 ```
 
-This occurred during jammed-door destruction, weapon cycling, Pistol combat,
-movement and later pickups. The player reported no recurrence of the soldier
-dialog crash on the final firmware.
+The frame still rendered successfully. This is a performance signal, not a
+correctness failure.
 
-## Generic native weapon control — hardware PASS
-
-The allocation-free circular selector uses the shared PlayerState and the exact
-legacy usability gate `owned && (ammoUsage == 0 || ammo[ammoType] > 0)`.
-Weapon cycling never advances the turn and redraw failure rolls PlayerState back.
-
-Earlier NEXT hardware witness remains valid. The current run independently adds
-PREV:
-
-```text
-[WEAPONCONTROL] COMMIT seq=86 action=PREV_WEAPON
-  weapon=1->0 weapons=0007 redraw=yes turn=no rollback=closed
-[WEAPONCONTROL] COMMIT seq=87 action=PREV_WEAPON
-  weapon=0->2 weapons=0007 ammoType=1 ammo=12 redraw=yes turn=no rollback=closed
-```
+## Generic native weapon/combat regression — hardware PASS
 
 Direct generic single-target combat currently owns Axe, Pistol, Shotgun and Super
 Shotgun. Chaingun/Plasma multi-loop and Rocket/BFG radial behavior remain separate
 families.
 
-## Combat regression chain at locked boundary — hardware PASS
-
-The final run crossed the RNG refill boundary and killed Hellhound sprite 179 with
-the Pistol while the plane cache was already degraded to 5/6:
+The final boundary independently killed Hellhound sprite 179 with the Axe:
 
 ```text
-[ACTIONENGINE] TRACE seq=88 weapon=2 distance=3 tile=750 target=sprite index=179
-[RNGGUARD] REFILL refill=1 ... hiddenGenerator=advanced-once rollbackReplay=armed
-[MONSTERCOMBAT] ROLL seq=88
-  firstRandHit=245 firstRandDamage=79
-  totalDamage=5 armorDamage=3 crit=0 rngCalls=4
-[NATIVEPLANE] CACHE-FALLBACK slots=5/6 ...
-[PLANEPROFILE] ... ok=1
-[WEAPON] DRAW weapon=2 logical=242 actual=611 frame=1 pose=attack
+[MONSTERCOMBAT] ROLL seq=88 sprite=179 weapon=0
+  totalDamage=7 armorDamage=1 crit=0 rngCalls=4
+[WEAPON] DRAW weapon=0 ... frame=1 pose=attack
 [MONSTERCOMBAT] COMMIT seq=88 sprite=179
-  hp=6->0 armor=2->0 alive=1->0 ammo=12->11
-  xp=5-applied rollback=closed
+  hp=6->0 armor=2->1 alive=1->0
+  xp=5-applied level=1->1
+  rollback=closed
+[MONSTERCOMBAT] ATTACK seq=88 weapon=0 genericMonster=yes worldCommitted=yes
 ```
 
-The next world frame also rendered successfully, the player moved, and the same
-session later consumed a credit. This closes the earlier renderer/stack regression
-for this tested path.
-
-The jammed-door Axe route was independently healthy in the same run:
-
-```text
-[DESTRUCTIBLE] HIT seq=84 ... open=0->1 rngConsumed=1
-[PLANEPROFILE] ... ok=1
-[WEAPON] DRAW weapon=0 ... pose=attack
-[DESTRUCTIBLE] COMMIT seq=84 ... message="Door cleared!" rollback=closed
-[ACTIONENGINE] ATTACK seq=84 weapon=0 ... worldCommitted=yes
-```
-
-Historical jammed-door +1 XP and extinguisher +2 XP remain deferred PlayerState
-consequences.
+The player then moved through the former monster tile and continued to pickups and
+dialogue, giving a useful cross-family regression chain.
 
 ## Monster position / turn / movement ownership retained
 
@@ -364,18 +388,18 @@ initial source = native topology tile center
 ```
 
 The movement planner retains exact legacy ordering/masks and speculative RNG
-semantics. A successful unambiguous ordinary-monster move can commit one
+semantics. A successful unambiguous ordinary-monster move commits one
 MonsterPosition record, SpriteTopology relink and exact gameplay RNG bytes, then
-redraw the complete native frame. Renderer projection currently snaps to the
+redraws the complete native frame. Renderer projection currently snaps to the
 destination; interpolation remains deferred.
 
 PASS_TURN and committed MOVE/ROTATE/PLAYER_ATTACK can schedule the bounded native
 monster-turn path. Multiple ambiguous attackers and unowned activation ordering
 still fail closed.
 
-## Representative final RAM witness
+## RAM witnesses
 
-Final real-CYD `ALIVE` lines at the locked boundary repeatedly reported:
+Normal gameplay before lazy NOTE/dialog allocation repeatedly reported:
 
 ```text
 heap = 82516 B
@@ -384,16 +408,47 @@ largest8 = 14324 B
 SD/ZIP/VIDEO/CORE/LAYOUT/PRERENDER/RENDER/MAPPINGS/MENUBSP = ready
 ```
 
-The submitted excerpt does not reprint `shapeData` or `mediaTexels`; their NULL
-values remain hard project invariants and retained earlier regression witnesses,
-not a newly claimed pointer-value observation from this log.
+The computer interaction lazily allocated the existing NOTE owner:
+
+```text
+[NOTE] OWNER bytes=1416 allocation=lazy-gameplay
+```
+
+Post-dialog `ALIVE` then reported:
+
+```text
+heap = 81084 B
+heap8 = 15352 B
+largest8 = 13300 B
+```
+
+This single run does not establish a leak; the delta is consistent with the
+explicit lazy owner allocation. `shapeData == NULL` and `mediaTexels == NULL`
+remain hard project invariants and retained earlier regression witnesses.
+
+## Performance observation to investigate after merge
+
+The user reported a general impression that the final firmware felt slower.
+Serial timing provides a real but not yet explained lead:
+
+```text
+previous comparable SPRITEPROFILE samples ~= 22-25 ms
+final boundary comparable SPRITEPROFILE samples ~= 46-49 ms
+VIDEO present remains ~= 34.4 ms
+normal plane samples remain broadly ~= 79-109 ms
+one dialog-resume 4/6 plane-cache frame = 230457 us
+```
+
+The final PAK-lease hotfix adds only two `EspAssetPack_isOpen()` guards and cannot
+plausibly account for a broad rendering slowdown by itself. Do not claim a cause
+from this sample. Treat sprite-time/cache/SD behavior as a separate performance
+investigation and keep correctness milestones bounded.
 
 ## Intentionally deferred families
 
 ```text
 PASS_TURN current-tile type10/11 Entity_touched semantics
 pickup sound playback / got-face presentation
-combat/retaliation MISS/HIT/CRIT text feedback + monster-hit red flash
 movement-hazard secondary burn text / pain face / shake / sound
 action XP migration: extinguisher +2, jammed door +1
 materialized monster drops
@@ -403,8 +458,9 @@ multiple-monster activation/movement ordering
 unsupported special calcPath plane corpus
 special subtype-10 AI
 player lethal/death retaliation transition
-monster attack/player-pain animation and FX
-actual sound playback
+monster attack visual / player-pain animation and FX
+monster attack sound / actual sound playback
+status-warning presentation
 chaingun/plasma multi-loop presentation/commit
 rocket/BFG radius damage
 familiar weapon attack semantics for slots 9..11
@@ -444,14 +500,17 @@ After merge:
 Strong candidates include:
 
 ```text
-chaingun/plasma multi-loop mechanics
-rocket/BFG radial damage
+monster attack visual / player-pain animation family
+generic type-12 destructible combat
+player lethal/death transition
 multiple-monster activation + movement ordering
 monster movement interpolation / animation
-monster attack + player-pain presentation / combat feedback
-player lethal/death transition
+PASS_TURN current-tile hazards
 action XP migration into PlayerState
 materialized monster drops
+chaingun/plasma multi-loop mechanics
+rocket/BFG radial damage
+performance investigation: sprite profile + plane-cache fallback
 ```
 
 Choose only after re-reading merged `main`.
