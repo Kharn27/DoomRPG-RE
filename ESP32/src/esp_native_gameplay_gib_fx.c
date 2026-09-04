@@ -11,6 +11,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -299,13 +300,16 @@ int EspNativeGameplayActionEngine_present(void) {
 }
 
 /* Public gameplay-session wrapper and explicit permanent composition point.
- * Run player resources/action/monster combat/turn first, then retaliation, then
- * the bounded movement probe adapter, and finally presentation-only gib expiry.
- * The adapter borrows an exact reserved post-refill RNG table when a movement
- * turn lands on nextRand==127, then restores the live Random_t byte-for-byte;
- * the already-proven byte RNG guard owns the future exact live replay. */
+ * Run player resources/action/monster combat/turn first, then arm the bounded
+ * primary monster attack pose before the existing retaliation consumes the same
+ * proven turn probe. Movement probing and presentation-only gib expiry remain
+ * downstream. The movement adapter borrows an exact reserved post-refill RNG
+ * table when a movement turn lands on nextRand==127, then restores the live
+ * Random_t byte-for-byte; the already-proven byte RNG guard owns the future
+ * exact live replay. */
 void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayPlayerResources_sessionService(doomRpg);
+    EspNativeGameplayMonsterAttackVisual_service(doomRpg);
     EspNativeGameplayMonsterRetaliation_service(doomRpg);
     EspNativeGameplayMonsterMovementProbe_service(doomRpg);
     serviceExpiry(doomRpg);
@@ -313,6 +317,7 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
 
 void __wrap_EspNativeGameplaySession_reset(void) {
     EspNativeGameplayPlayerResources_sessionReset();
+    EspNativeGameplayMonsterAttackVisual_reset();
     EspNativeGameplayMonsterRetaliation_reset();
     EspNativeGameplayMonsterMovementProbe_reset();
     resetFx();
