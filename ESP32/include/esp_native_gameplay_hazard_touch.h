@@ -18,7 +18,8 @@ typedef enum EspNativeGameplayHazardTouchStatus_e {
 
 /* Recovered movement-side Game_touchTile(..., true) subset for linked type 10/11
  * hazards. The permanent owner remains the shared PlayerState; this executor has
- * no heap/BSS gameplay owner. Resource/hazard ordering on a mixed tile remains
+ * no heap/BSS gameplay owner. Its caller owns same-session committed before/after
+ * snapshots and map identity. Resource/hazard ordering on a mixed tile remains
  * fail-closed until the complete native TileTouch orchestrator exists. PASS TURN
  * keeps its existing type-10/11 fail-closed guard until native ordered multi-
  * message feedback can preserve "Turn passed." + damage + burn text ordering. */
