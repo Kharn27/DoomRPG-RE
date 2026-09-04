@@ -2,14 +2,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <esp_partition.h>
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
+#include "esp_player_view_state.h"
 
 namespace {
 
-constexpr uint32_t kFlashMetadataReserveBytes = 4096U;
 constexpr uint32_t kReportLogicalCallThreshold = 64U;
 
 struct PakIoSample {
@@ -19,7 +18,6 @@ struct PakIoSample {
 };
 
 PakIoSample ioSample = {};
-bool flashFeasibilityLogged = false;
 bool physicalBaselineValid = false;
 uint32_t baselinePhysicalReads = 0U;
 uint32_t baselinePhysicalBytes = 0U;
@@ -89,8 +87,9 @@ void reportIoSample(const char* reason)
     const uint64_t avgLogical =
         ioSample.logicalMicros / (uint64_t)ioSample.logicalCalls;
 
-    printf("[PAKIO] SAMPLE reason=%s logical=%u totalUs=%lluus avgUs=%lluus maxUs=%uus physicalReads=%u physicalBytes=%u resident=%u\n",
+    printf("[PAKIO] SAMPLE reason=%s backing=%s logical=%u totalUs=%lluus avgUs=%lluus maxUs=%uus physicalReads=%u physicalBytes=%u resident=%u\n",
            reason != nullptr ? reason : "threshold",
+           EspAssetPack_isMapFlashActive() ? "raw-flash" : "sd",
            (unsigned int)ioSample.logicalCalls,
            (unsigned long long)ioSample.logicalMicros,
            (unsigned long long)avgLogical,
@@ -101,50 +100,11 @@ void reportIoSample(const char* reason)
     resetIoSample();
 }
 
-void logFlashFeasibility()
-{
-    const esp_partition_t* partition;
-    uint32_t capacity = 0U;
-    const uint32_t packBytes = EspAssetPack_fileSize();
-
-    if (flashFeasibilityLogged || packBytes == 0U) {
-        return;
-    }
-    flashFeasibilityLogged = true;
-
-    partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
-                                         ESP_PARTITION_SUBTYPE_DATA_SPIFFS,
-                                         "spiffs");
-    if (partition != nullptr && partition->size > kFlashMetadataReserveBytes) {
-        capacity = partition->size - kFlashMetadataReserveBytes;
-    }
-
-    if (partition == nullptr) {
-        printf("[PAKFLASH] FEASIBILITY pack=%u partition=missing reserve=%u capacity=0 fits=no mode=measurement-only\n",
-               (unsigned int)packBytes,
-               (unsigned int)kFlashMetadataReserveBytes);
-        return;
-    }
-
-    const bool fits = packBytes <= capacity;
-    const uint32_t headroom = fits ? capacity - packBytes : 0U;
-    printf("[PAKFLASH] FEASIBILITY pack=%u partition=%s address=%08x size=%u reserve=%u capacity=%u fits=%s headroom=%u mode=measurement-only\n",
-           (unsigned int)packBytes,
-           partition->label,
-           (unsigned int)partition->address,
-           (unsigned int)partition->size,
-           (unsigned int)kFlashMetadataReserveBytes,
-           (unsigned int)capacity,
-           fits ? "yes" : "no",
-           (unsigned int)headroom);
-    printf("[PAKFLASH] CONTRACT no erase/write/cache activation in this milestone; SD remains authoritative backing; PAKIO batches time only real readRange calls and samples cache counters outside the timed section\n");
-}
-
 } // namespace
 
 extern "C" {
 
-int __real_EspAssetPack_open(const char* path);
+int __real_EspAssetPack_residentBegin(void);
 int __real_EspAssetPack_readRange(const EspAssetPackEntry* entry,
                                   uint32_t relativeOffset,
                                   void* destination,
@@ -152,14 +112,35 @@ int __real_EspAssetPack_readRange(const EspAssetPackEntry* entry,
 void __real_EspAssetPack_residentResetStats(void);
 int __real_EspAssetPack_residentEnd(void);
 
-int __wrap_EspAssetPack_open(const char* path)
+int __wrap_EspAssetPack_residentBegin(void)
 {
-    const int result = __real_EspAssetPack_open(path);
-    if (result && path != nullptr &&
-        strcmp(path, ESP_ASSET_PACK_DEFAULT_PATH) == 0) {
-        logFlashFeasibility();
+    const EspPlayerViewState* view = EspPlayerView_view();
+    if (view == nullptr || view->active != 1U ||
+        !EspAssetPack_mapFlashStage(view->targetMapId)) {
+        printf("[MAPFLASH] ARM failed view=%u map=%u residentBegin=blocked\n",
+               view != nullptr ? (unsigned int)view->active : 0U,
+               view != nullptr ? (unsigned int)view->targetMapId : 0U);
+        return 0;
     }
-    return result;
+
+    const int result = __real_EspAssetPack_residentBegin();
+    if (!result) {
+        printf("[MAPFLASH] ARM failed map=%u reason=resident-cache-begin\n",
+               (unsigned int)view->targetMapId);
+        EspAssetPack_mapFlashDeactivate();
+        return 0;
+    }
+
+    EspAssetPackMapFlashStats flash = {};
+    EspAssetPack_mapFlashGetStats(&flash);
+    printf("[MAPFLASH] ARM map=%u active=%u verified=%u staged=%u metadata=%u buildUs=%u resident=1\n",
+           (unsigned int)flash.currentMapId,
+           (unsigned int)flash.active,
+           (unsigned int)flash.verified,
+           (unsigned int)flash.stagedBytes,
+           (unsigned int)flash.metadataBytes,
+           (unsigned int)flash.buildMicros);
+    return 1;
 }
 
 int __wrap_EspAssetPack_readRange(const EspAssetPackEntry* entry,
