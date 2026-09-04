@@ -1,0 +1,55 @@
+name: Temporary Hazard CI Diagnostic
+
+on:
+  push:
+    branches:
+      - agent/diag-hazard-ci
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: ${{ runner.os }}-platformio-${{ hashFiles('ESP32/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-platformio-
+
+      - name: Install PlatformIO Core
+        run: python -m pip install 'platformio>=6.1,<7'
+
+      - name: Capture esp32-cyd build log
+        run: |
+          set +e
+          cd ESP32
+          pio run -e esp32-cyd > ../hazard-ci.log 2>&1
+          status=$?
+          cd ..
+          printf '\n[diagnostic] exit_status=%s\n' "$status" >> hazard-ci.log
+          exit 0
+
+      - name: Upload diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hazard-ci-log-${{ github.sha }}
+          path: hazard-ci.log
+          if-no-files-found: error
+          retention-days: 1
