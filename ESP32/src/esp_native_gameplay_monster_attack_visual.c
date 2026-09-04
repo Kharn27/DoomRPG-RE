@@ -1,3 +1,4 @@
+#include <SDL.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -184,7 +185,6 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
     const EspPlayerViewState* view;
     EspNativeGameplayFrameStats frame;
     EspNativeGameplayFrameStats recoveryFrame;
-    uint32_t now;
     int rngExact = 0;
     int recoveryRngExact = 0;
     int recoveryRendered = 0;
@@ -265,10 +265,8 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         return;
     }
 
-    now = DoomRPG_GetUpTimeMS();
     attackVisual.activeProbe = turn->attackProbes;
     attackVisual.activeSpriteIndex = monster->spriteIndex;
-    attackVisual.clearAtMs = now + ATTACK_VISUAL_FRAME_MS;
     attackVisual.poseActive = 1U;
 
     if (!guardedRender(runtime, view, &frame, &rngExact)) {
@@ -289,6 +287,9 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         return;
     }
 
+    /* Start the lease only after the physical presentation completed so the
+     * requested 150 ms are actually visible rather than consumed by rendering. */
+    attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + ATTACK_VISUAL_FRAME_MS;
     ++attackVisual.presentedAttacks;
     printf("[MONSTERATKVIS] ARM probe=%u reason=%s sprite=%u subtype=%u alt=0 loops=1 visual=%u fixedAnim=yes leaseMs=%u frame=%08x presented=%u rngExact=yes immutableSprite=yes retaliation=continues projectile=deferred attackMessage=deferred sound=deferred gameplayMutation=no\n",
            (unsigned int)turn->attackProbes,
