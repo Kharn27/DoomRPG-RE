@@ -10,22 +10,19 @@
 namespace {
 
 constexpr uint32_t kFlashMetadataReserveBytes = 4096U;
-constexpr uint32_t kReportPhysicalCallThreshold = 32U;
-constexpr uint32_t kReportPhysicalByteThreshold = 64U * 1024U;
+constexpr uint32_t kReportLogicalCallThreshold = 64U;
 
 struct PakIoSample {
     uint32_t logicalCalls;
-    uint32_t physicalCalls;
-    uint32_t physicalReadOps;
-    uint32_t physicalBytes;
     uint64_t logicalMicros;
-    uint64_t physicalMicros;
     uint32_t maxLogicalMicros;
-    uint32_t maxPhysicalMicros;
 };
 
 PakIoSample ioSample = {};
 bool flashFeasibilityLogged = false;
+bool physicalBaselineValid = false;
+uint32_t baselinePhysicalReads = 0U;
+uint32_t baselinePhysicalBytes = 0U;
 
 uint32_t elapsedMicros(int64_t start, int64_t end)
 {
@@ -41,33 +38,66 @@ void resetIoSample()
     memset(&ioSample, 0, sizeof(ioSample));
 }
 
+void invalidatePhysicalBaseline()
+{
+    physicalBaselineValid = false;
+    baselinePhysicalReads = 0U;
+    baselinePhysicalBytes = 0U;
+}
+
+void capturePhysicalBaseline()
+{
+    EspAssetPackResidentStats stats = {};
+    if (!EspAssetPack_isResident()) {
+        invalidatePhysicalBaseline();
+        return;
+    }
+    EspAssetPack_residentGetStats(&stats);
+    baselinePhysicalReads = stats.physicalReads;
+    baselinePhysicalBytes = stats.physicalBytes;
+    physicalBaselineValid = true;
+}
+
 void reportIoSample(const char* reason)
 {
+    EspAssetPackResidentStats stats = {};
+    uint32_t physicalReads = 0U;
+    uint32_t physicalBytes = 0U;
+
     if (ioSample.logicalCalls == 0U) {
         return;
     }
 
-    const uint64_t avgLogical =
-        ioSample.logicalCalls != 0U
-            ? ioSample.logicalMicros / ioSample.logicalCalls
-            : 0U;
-    const uint64_t avgPhysical =
-        ioSample.physicalCalls != 0U
-            ? ioSample.physicalMicros / ioSample.physicalCalls
-            : 0U;
+    if (EspAssetPack_isResident()) {
+        EspAssetPack_residentGetStats(&stats);
+        if (physicalBaselineValid) {
+            physicalReads = stats.physicalReads >= baselinePhysicalReads
+                                ? stats.physicalReads - baselinePhysicalReads
+                                : 0U;
+            physicalBytes = stats.physicalBytes >= baselinePhysicalBytes
+                                ? stats.physicalBytes - baselinePhysicalBytes
+                                : 0U;
+        }
+        baselinePhysicalReads = stats.physicalReads;
+        baselinePhysicalBytes = stats.physicalBytes;
+        physicalBaselineValid = true;
+    }
+    else {
+        invalidatePhysicalBaseline();
+    }
 
-    printf("[PAKIO] SAMPLE reason=%s logical=%u/%lluus avg=%lluus max=%uus physicalCalls=%u readOps=%u bytes=%u miss=%lluus avgMiss=%lluus maxMiss=%uus\n",
+    const uint64_t avgLogical =
+        ioSample.logicalMicros / (uint64_t)ioSample.logicalCalls;
+
+    printf("[PAKIO] SAMPLE reason=%s logical=%u totalUs=%lluus avgUs=%lluus maxUs=%uus physicalReads=%u physicalBytes=%u resident=%u\n",
            reason != nullptr ? reason : "threshold",
            (unsigned int)ioSample.logicalCalls,
            (unsigned long long)ioSample.logicalMicros,
            (unsigned long long)avgLogical,
            (unsigned int)ioSample.maxLogicalMicros,
-           (unsigned int)ioSample.physicalCalls,
-           (unsigned int)ioSample.physicalReadOps,
-           (unsigned int)ioSample.physicalBytes,
-           (unsigned long long)ioSample.physicalMicros,
-           (unsigned long long)avgPhysical,
-           (unsigned int)ioSample.maxPhysicalMicros);
+           (unsigned int)physicalReads,
+           (unsigned int)physicalBytes,
+           (unsigned int)EspAssetPack_isResident());
     resetIoSample();
 }
 
@@ -107,7 +137,7 @@ void logFlashFeasibility()
            (unsigned int)capacity,
            fits ? "yes" : "no",
            (unsigned int)headroom);
-    printf("[PAKFLASH] CONTRACT no erase/write/cache activation in this milestone; SD remains authoritative backing while readRange miss latency is measured\n");
+    printf("[PAKFLASH] CONTRACT no erase/write/cache activation in this milestone; SD remains authoritative backing; PAKIO batches time only real readRange calls and samples cache counters outside the timed section\n");
 }
 
 } // namespace
@@ -137,12 +167,8 @@ int __wrap_EspAssetPack_readRange(const EspAssetPackEntry* entry,
                                   void* destination,
                                   size_t length)
 {
-    EspAssetPackResidentStats before = {};
-    EspAssetPackResidentStats after = {};
-    const bool resident = EspAssetPack_isResident() != 0;
-
-    if (resident) {
-        EspAssetPack_residentGetStats(&before);
+    if (EspAssetPack_isResident() && !physicalBaselineValid) {
+        capturePhysicalBaseline();
     }
 
     const int64_t start = esp_timer_get_time();
@@ -156,30 +182,7 @@ int __wrap_EspAssetPack_readRange(const EspAssetPackEntry* entry,
         ioSample.maxLogicalMicros = duration;
     }
 
-    if (resident) {
-        EspAssetPack_residentGetStats(&after);
-        const uint32_t readDelta =
-            after.physicalReads >= before.physicalReads
-                ? after.physicalReads - before.physicalReads
-                : 0U;
-        const uint32_t byteDelta =
-            after.physicalBytes >= before.physicalBytes
-                ? after.physicalBytes - before.physicalBytes
-                : 0U;
-
-        if (readDelta != 0U) {
-            ++ioSample.physicalCalls;
-            ioSample.physicalReadOps += readDelta;
-            ioSample.physicalBytes += byteDelta;
-            ioSample.physicalMicros += duration;
-            if (duration > ioSample.maxPhysicalMicros) {
-                ioSample.maxPhysicalMicros = duration;
-            }
-        }
-    }
-
-    if (ioSample.physicalCalls >= kReportPhysicalCallThreshold ||
-        ioSample.physicalBytes >= kReportPhysicalByteThreshold) {
+    if (ioSample.logicalCalls >= kReportLogicalCallThreshold) {
         reportIoSample("threshold");
     }
     return result;
@@ -189,11 +192,13 @@ void __wrap_EspAssetPack_residentResetStats(void)
 {
     reportIoSample("resident-reset");
     __real_EspAssetPack_residentResetStats();
+    invalidatePhysicalBaseline();
 }
 
 int __wrap_EspAssetPack_residentEnd(void)
 {
     reportIoSample("resident-end");
+    invalidatePhysicalBaseline();
     return __real_EspAssetPack_residentEnd();
 }
 
