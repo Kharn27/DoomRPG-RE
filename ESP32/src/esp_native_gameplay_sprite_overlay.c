@@ -11,9 +11,10 @@
 #define SPRITE_HIDDEN 0x00010000UL
 #define SPRITE_SORT_BIAS 0x01000000UL
 #define SPRITE_FIXED_ANIM 0x80000000UL
-#define SPRITE_COMBAT_ATTACK_VISUAL 1U
+#define SPRITE_COMBAT_ATTACK_PRIMARY_VISUAL 1U
 #define SPRITE_COMBAT_CORPSE_VISUAL 2U
 #define SPRITE_COMBAT_DEATH_VISUAL 4U
+#define SPRITE_COMBAT_ATTACK_ALTERNATE_VISUAL 5U
 #define SPRITE_COMBAT_PAIN_VISUAL 6U
 
 int __real_EspMapRuntime_getMapSprite(uint32_t index,
@@ -69,16 +70,18 @@ int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
         }
     }
 
-    /* Legacy monster rendering uses explicit visual 1 for the primary attack
-     * pose, visual 6 for pain, visual 4 for the short death pose and visual 2
-     * for the stable corpse. The native sprite renderer only advances immutable
-     * FIXED_ANIM sprites, so promote the attack frame only while the dedicated
-     * presentation owner has that exact sprite leased; combat pain/death states
-     * retain their already-proven fixed-offset contract. Non-gib deaths also
-     * receive the legacy corpse sort bias without mutating the immutable BSP. */
+    /* Legacy monster rendering uses explicit visual 1 for primary attack,
+     * visual 5 for alternate attack, visual 6 for pain, visual 4 for the short
+     * death pose and visual 2 for the stable corpse. The native sprite renderer
+     * only advances immutable FIXED_ANIM sprites, so promote attack frames only
+     * while the dedicated presentation owner has that exact sprite leased;
+     * combat pain/death states retain their already-proven fixed-offset contract.
+     * Non-gib deaths also receive the legacy corpse sort bias without mutating
+     * the immutable BSP. */
     if (type == SPRITE_TYPE_ENEMY) {
         animation = (uint8_t)(visual & 0x0fU);
-        if ((animation == SPRITE_COMBAT_ATTACK_VISUAL &&
+        if ((((animation == SPRITE_COMBAT_ATTACK_PRIMARY_VISUAL) ||
+              (animation == SPRITE_COMBAT_ATTACK_ALTERNATE_VISUAL)) &&
              EspNativeGameplayMonsterAttackVisual_isPoseSprite(index)) ||
             animation == SPRITE_COMBAT_CORPSE_VISUAL ||
             animation == SPRITE_COMBAT_DEATH_VISUAL ||
