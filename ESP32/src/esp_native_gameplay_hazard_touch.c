@@ -319,3 +319,151 @@ EspNativeGameplayHazardTouchStatus EspNativeGameplayHazardTouch_processMove(
     }
     return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
 }
+
+EspNativeGameplayHazardTouchStatus EspNativeGameplayHazardTouch_processPassTurn(
+    EspNativeGameplayHazardPassTurnUndo* outUndo) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    const EspNativeGameplayPlayerState* player;
+    EspNativeGameplayPlayerState playerBefore;
+    uint16_t tile;
+    uint16_t firstSprite;
+    uint16_t healthDamage;
+    uint16_t armorDamage;
+    uint8_t firstType;
+    uint8_t hazards;
+    uint8_t resources;
+    uint8_t healthBefore;
+    uint8_t armorBefore;
+    uint8_t healthAfter;
+    uint8_t armorAfter;
+    uint32_t playerFNVBefore;
+    uint32_t playerFNVAfter;
+    char message[24];
+
+    if (outUndo != NULL) memset(outUndo, 0, sizeof(*outUndo));
+    if (outUndo == NULL || view == NULL || view->active != 1U ||
+        view->viewX != view->destX || view->viewY != view->destY ||
+        view->viewAngle != view->destAngle) {
+        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+    }
+    tile = tileForView(view);
+    if (tile == UINT16_MAX) {
+        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+    }
+    if (!scanTile(tile, &firstSprite, &firstType, &hazards, &resources,
+                  &healthDamage, &armorDamage)) {
+        printf("[HAZARDPASS] DEFER tile=%u reason=topology-query mutation=no monsterTurn=no\n",
+               (unsigned int)tile);
+        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+    }
+    /* Game_touchTile(..., false) calls Entity_touched only for type10/type11.
+     * Resource entities on the same tile are deliberately ignored here. */
+    (void)resources;
+    if (hazards == 0U) return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_NONE;
+
+    if (!EspNativeGameplayPlayerState_ensure() ||
+        !EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
+        printf("[HAZARDPASS] DEFER tile=%u reason=playerstate-not-ready mutation=no monsterTurn=no\n",
+               (unsigned int)tile);
+        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+    }
+    player = EspNativeGameplayPlayerState_view();
+    if (player == NULL) return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+    if (player->weapon >= HAZARD_DOG_WEAPON_FIRST &&
+        player->weapon <= HAZARD_DOG_WEAPON_LAST &&
+        player->ammo[HAZARD_DOG_AMMO_TYPE] != 0U) {
+        printf("[HAZARDPASS] DEFER tile=%u weapon=%u dogAmmo=%u reason=familiar-redirection-unowned mutation=no monsterTurn=no\n",
+               (unsigned int)tile,
+               (unsigned int)player->weapon,
+               (unsigned int)player->ammo[HAZARD_DOG_AMMO_TYPE]);
+        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+    }
+
+    healthBefore = (uint8_t)(playerBefore.param1 & 0xffU);
+    armorBefore = (uint8_t)((playerBefore.param1 >> 16) & 0xffU);
+    prospectivePain(&playerBefore, healthDamage, armorDamage,
+                    &healthAfter, &armorAfter);
+    if (healthAfter == 0U) {
+        printf("[HAZARDPASS] DEFER tile=%u sprite=%u type=%u hazards=%u hp=%u->0 armor=%u->%u reason=player-lethal-transition-unowned mutation=no monsterTurn=no\n",
+               (unsigned int)tile,
+               (unsigned int)firstSprite,
+               (unsigned int)firstType,
+               (unsigned int)hazards,
+               (unsigned int)healthBefore,
+               (unsigned int)armorBefore,
+               (unsigned int)armorAfter);
+        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+    }
+
+    playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
+    if (!commitPain(&playerBefore, healthAfter, armorAfter)) {
+        printf("[HAZARDPASS] DEFER tile=%u reason=playerstate-commit mutation=no monsterTurn=no\n",
+               (unsigned int)tile);
+        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+    }
+    playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
+
+    memset(message, 0, sizeof(message));
+    if (snprintf(message, sizeof(message), "%u damage!",
+                 (unsigned int)(healthDamage + armorDamage)) <= 0 ||
+        !EspNativeGameplayActionEngine_queueTextFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE,
+            message,
+            HAZARD_DAMAGE_FLASH_MS)) {
+        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+        printf("[HAZARDPASS] DEFER tile=%u reason=damage-feedback-not-ready playerRollback=yes mutation=no monsterTurn=no\n",
+               (unsigned int)tile);
+        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+    }
+
+    outUndo->param1Before = playerBefore.param1;
+    outUndo->playerFNVBefore = playerFNVBefore;
+    outUndo->tileIndex = tile;
+    outUndo->feedbackQueued = 1U;
+    outUndo->committed = 1U;
+
+    printf("[HAZARDPASS] COMMIT tile=%u sprite=%u type=%u hazards=%u rawDamage=%u+%u hp=%u->%u armor=%u->%u playerFNV=%08x->%08x message=\"%s\" passMessage=\"Turn passed.\"-legacy-superseded secondary=\"%s\"-deferred flash=red-bb0000/500ms render=feedback-owner-pending painFace=deferred shake=deferred sound=deferred lethal=fail-closed rollback=armed\n",
+           (unsigned int)tile,
+           (unsigned int)firstSprite,
+           (unsigned int)firstType,
+           (unsigned int)hazards,
+           (unsigned int)healthDamage,
+           (unsigned int)armorDamage,
+           (unsigned int)healthBefore,
+           (unsigned int)healthAfter,
+           (unsigned int)armorBefore,
+           (unsigned int)armorAfter,
+           (unsigned int)playerFNVBefore,
+           (unsigned int)playerFNVAfter,
+           message,
+           firstType == HAZARD_TYPE_STRONG ? "It really burns!!" : "It burns!");
+    return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED;
+}
+
+int EspNativeGameplayHazardTouch_rollbackPassTurn(
+    const EspNativeGameplayHazardPassTurnUndo* undo) {
+    EspNativeGameplayPlayerState current;
+    uint32_t finalFNV;
+    int feedbackExact = 1;
+    int playerExact;
+
+    if (undo == NULL || undo->committed == 0U ||
+        !EspNativeGameplayPlayerState_snapshot(&current)) {
+        return 0;
+    }
+    current.param1 = undo->param1Before;
+    if (!EspNativeGameplayPlayerState_restore(&current)) return 0;
+    if (undo->feedbackQueued != 0U) {
+        feedbackExact = EspNativeGameplayActionEngine_cancelQueuedFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE);
+    }
+    finalFNV = EspNativeGameplayPlayerState_fingerprint();
+    playerExact = finalFNV == undo->playerFNVBefore;
+    printf("[HAZARDPASS] ROLLBACK tile=%u playerFNV=%08x expected=%08x exact=%s feedbackRollback=%s\n",
+           (unsigned int)undo->tileIndex,
+           (unsigned int)finalFNV,
+           (unsigned int)undo->playerFNVBefore,
+           playerExact ? "yes" : "NO",
+           feedbackExact ? "yes" : "NO");
+    return playerExact && feedbackExact;
+}

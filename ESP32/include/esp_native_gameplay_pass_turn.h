@@ -7,10 +7,19 @@
 extern "C" {
 #endif
 
-/* Native PASS TURN owns the monster-turn request when the legacy
- * Game_touchTile(..., false) type-10/11 precondition is absent, and queues the
- * exact legacy "Turn passed." text through the shared transient top-bar owner.
- * Neither operation mutates player position/facing or allocates memory. */
+/* Native PASS TURN reproduces the bounded legacy ordering:
+ *
+ *   Hud_addMessage("Turn passed.")
+ *   Game_touchTile(current, false)  -> linked type10/11 only
+ *   Game_advanceTurn()
+ *
+ * The one-slot native top-bar cannot display both messages simultaneously, so
+ * an owned current-tile hazard supersedes the transient "Turn passed." visual
+ * with the already-proven damage feedback while preserving gameplay ordering:
+ * hazard PlayerState mutation is committed before the MonsterTurn request. If
+ * that request cannot be armed, hazard state + queued feedback roll back exactly.
+ * With no hazard, the existing exact "Turn passed." feedback path is unchanged.
+ * Neither route mutates player position/facing or allocates permanent memory. */
 typedef enum EspNativeGameplayPassTurnStatus_e {
     ESP_NATIVE_GAMEPLAY_PASS_TURN_OK = 0,
     ESP_NATIVE_GAMEPLAY_PASS_TURN_INVALID = 1,

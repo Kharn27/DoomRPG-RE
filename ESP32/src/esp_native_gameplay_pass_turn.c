@@ -1,16 +1,17 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_dialog.h"
+#include "esp_native_gameplay_hazard_touch.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_pass_turn.h"
 #include "esp_player_view_state.h"
+#include "platform_video_c_bridge.h"
 
 #define PASS_TURN_MAP_WIDTH 32U
-#define PASS_TURN_TOUCH_TYPE_A 10U
-#define PASS_TURN_TOUCH_TYPE_B 11U
 
 static int tileForView(const EspPlayerViewState* view, uint16_t* outTile) {
     uint32_t x;
@@ -28,48 +29,15 @@ static int tileForView(const EspPlayerViewState* view, uint16_t* outTile) {
     return 1;
 }
 
-static int deferredTileTouch(uint16_t tile,
-                             uint16_t* outSprite,
-                             uint8_t* outType) {
-    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
-    uint32_t i;
-
-    if (outSprite != NULL) *outSprite = UINT16_MAX;
-    if (outType != NULL) *outType = 0U;
-    if (topology == NULL || topology->spriteCount > UINT16_MAX) return -1;
-
-    for (i = 0U; i < topology->spriteCount; ++i) {
-        uint8_t type;
-        uint8_t subtype;
-        uint16_t linkState;
-        uint16_t linkOrder;
-        if (!EspMapSpriteTopology_getEntity(i, &type, &subtype,
-                                            &linkState, &linkOrder)) {
-            return -1;
-        }
-        (void)subtype;
-        (void)linkOrder;
-        if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U ||
-            (linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U ||
-            (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) != tile) {
-            continue;
-        }
-        if (type == PASS_TURN_TOUCH_TYPE_A || type == PASS_TURN_TOUCH_TYPE_B) {
-            if (outSprite != NULL) *outSprite = (uint16_t)i;
-            if (outType != NULL) *outType = type;
-            return 1;
-        }
-    }
-    return 0;
-}
-
 EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
     const EspNativeGameplayInputState* intent) {
     const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayHazardPassTurnUndo hazardUndo;
+    EspNativeGameplayHazardTouchStatus hazardStatus;
     uint16_t tile;
-    uint16_t sprite = UINT16_MAX;
-    uint8_t type = 0U;
-    int touched;
+    int feedbackRollback;
+    int hazardRollback;
+    int feedbackPresented;
 
     if (intent == NULL || intent->action != ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN) {
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_INVALID;
@@ -81,26 +49,19 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_NOT_READY;
     }
 
-    /* Legacy DoomCanvas PASSTURN first calls Game_touchTile(..., false).
-     * That path invokes Entity_touched() only for linked type 10/11 entities on
-     * the player's current tile. Those semantics are not yet natively owned, so
-     * never silently skip them: fail closed before requesting the monster turn. */
-    touched = deferredTileTouch(tile, &sprite, &type);
-    if (touched < 0) {
-        printf("[PASSTURN] DEFER seq=%u tile=%u reason=topology-query mutation=no\n",
-               (unsigned int)intent->sequence, (unsigned int)tile);
-        return ESP_NATIVE_GAMEPLAY_PASS_TURN_NOT_READY;
-    }
-    if (touched > 0) {
-        printf("[PASSTURN] DEFER seq=%u tile=%u sprite=%u type=%u reason=legacy-touchTile-false-unowned mutation=no monsterTurn=no\n",
+    memset(&hazardUndo, 0, sizeof(hazardUndo));
+    hazardStatus = EspNativeGameplayHazardTouch_processPassTurn(&hazardUndo);
+    if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_FATAL ||
+        hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED) {
+        printf("[PASSTURN] DEFER seq=%u tile=%u tileTouch=hazard-deferred status=%u monsterTurn=no mutation=no\n",
                (unsigned int)intent->sequence,
                (unsigned int)tile,
-               (unsigned int)sprite,
-               (unsigned int)type);
+               (unsigned int)hazardStatus);
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_TILE_TOUCH_DEFERRED;
     }
 
-    if (!EspNativeGameplayActionEngine_queueFeedback(
+    if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_NONE &&
+        !EspNativeGameplayActionEngine_queueFeedback(
             ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN)) {
         printf("[PASSTURN] DEFER seq=%u tile=%u reason=feedback-queue-not-ready mutation=no monsterTurn=no\n",
                (unsigned int)intent->sequence, (unsigned int)tile);
@@ -108,19 +69,59 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
     }
 
     if (!EspNativeGameplayMonsterTurn_requestPassTurn(intent->sequence)) {
-        int feedbackRollback = EspNativeGameplayActionEngine_cancelQueuedFeedback(
-            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN);
-        printf("[PASSTURN] DEFER seq=%u tile=%u reason=turn-request-busy feedbackRollback=%s mutation=no\n",
-               (unsigned int)intent->sequence, (unsigned int)tile,
-               feedbackRollback ? "yes" : "NO");
+        feedbackRollback = 1;
+        hazardRollback = 1;
+        if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED) {
+            hazardRollback = EspNativeGameplayHazardTouch_rollbackPassTurn(
+                &hazardUndo);
+        }
+        else {
+            feedbackRollback = EspNativeGameplayActionEngine_cancelQueuedFeedback(
+                ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN);
+        }
+        printf("[PASSTURN] DEFER seq=%u tile=%u reason=turn-request-busy hazard=%s hazardRollback=%s feedbackRollback=%s mutation=%s\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)tile,
+               hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED
+                   ? "committed" : "none",
+               hazardRollback ? "yes" : "NO",
+               feedbackRollback ? "yes" : "NO",
+               (hazardRollback && feedbackRollback) ? "rolled-back" : "ROLLBACK-FAILED");
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_REQUEST_BUSY;
     }
 
-    printf("[PASSTURN] REQUEST seq=%u tile=%u pos=%d,%d angle=%d tileTouch=none type10/11=absent message=\"Turn passed.\"-queued monsterTurn=requested playerMutation=no\n",
-           (unsigned int)intent->sequence,
-           (unsigned int)tile,
-           (int)view->viewX,
-           (int)view->viewY,
-           (int)view->viewAngle);
+    /* The shared feedback service expires the previous visible message before
+     * it paints a newly queued one. If a PASS TURN lands exactly as that older
+     * lease crosses 1200 ms, expiry can otherwise replace the new pending kind
+     * with NONE before the next resident service. Once the monster-turn request
+     * is accepted there is no remaining gameplay rollback edge, so consume the
+     * already-queued feedback through the normal wrapped presenter immediately.
+     * A failed physical present deliberately leaves the feedback pending for the
+     * regular service retry; gameplay state and turn ownership stay committed. */
+    feedbackPresented = Esp32PlatformVideo_present();
+    if (!feedbackPresented) {
+        printf("[PASSTURN] FEEDBACK-DEFER seq=%u tile=%u cause=present-failed pending=retained monsterTurn=requested\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)tile);
+    }
+
+    if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED) {
+        printf("[PASSTURN] REQUEST seq=%u tile=%u pos=%d,%d angle=%d tileTouch=hazard-committed type10/11=owned message=\"Turn passed.\"-legacy-superseded-by-hazard monsterTurn=requested playerMutation=hazard-owned feedbackPresent=%s\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)tile,
+               (int)view->viewX,
+               (int)view->viewY,
+               (int)view->viewAngle,
+               feedbackPresented ? "immediate" : "deferred");
+    }
+    else {
+        printf("[PASSTURN] REQUEST seq=%u tile=%u pos=%d,%d angle=%d tileTouch=none type10/11=absent message=\"Turn passed.\"-queued monsterTurn=requested playerMutation=no feedbackPresent=%s\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)tile,
+               (int)view->viewX,
+               (int)view->viewY,
+               (int)view->viewAngle,
+               feedbackPresented ? "immediate" : "deferred");
+    }
     return ESP_NATIVE_GAMEPLAY_PASS_TURN_OK;
 }

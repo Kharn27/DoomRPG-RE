@@ -702,7 +702,7 @@ static int drawGlyph(const EspNativeIndexedBmp* font,
 }
 
 static int visitViewportBorder(uint16_t* framebuffer,
-                               int restore,
+                               int mode,
                                uint16_t flashColor) {
     uint32_t pos = 0U;
     uint32_t x;
@@ -712,38 +712,39 @@ static int visitViewportBorder(uint16_t* framebuffer,
     uint32_t leftEnd = FEEDBACK_BORDER_THICKNESS;
     uint32_t rightBegin = DOOMRPG_LOGICAL_WIDTH - FEEDBACK_BORDER_THICKNESS;
 
-    if (framebuffer == NULL) return 0;
+    if (framebuffer == NULL || mode < 0 || mode > 2) return 0;
+#define VISIT_BORDER_PIXEL(index_) do { \
+        if (mode == 1) framebuffer[(index_)] = viewportBorderSnapshot[pos]; \
+        else { \
+            if (mode == 0) viewportBorderSnapshot[pos] = framebuffer[(index_)]; \
+            framebuffer[(index_)] = flashColor; \
+        } \
+        ++pos; \
+    } while (0)
     for (y = top; y < top + FEEDBACK_BORDER_THICKNESS; ++y) {
         for (x = 0U; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
-  uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
-  if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
-  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = flashColor; }
-  ++pos;
+            uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+            VISIT_BORDER_PIXEL(index);
         }
     }
     for (y = bottom - FEEDBACK_BORDER_THICKNESS; y < bottom; ++y) {
         for (x = 0U; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
-  uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
-  if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
-  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = flashColor; }
-  ++pos;
+            uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+            VISIT_BORDER_PIXEL(index);
         }
     }
     for (y = top + FEEDBACK_BORDER_THICKNESS;
          y < bottom - FEEDBACK_BORDER_THICKNESS; ++y) {
         for (x = 0U; x < leftEnd; ++x) {
-  uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
-  if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
-  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = flashColor; }
-  ++pos;
+            uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+            VISIT_BORDER_PIXEL(index);
         }
         for (x = rightBegin; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
-  uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
-  if (restore) framebuffer[index] = viewportBorderSnapshot[pos];
-  else { viewportBorderSnapshot[pos] = framebuffer[index]; framebuffer[index] = flashColor; }
-  ++pos;
+            uint32_t index = y * DOOMRPG_LOGICAL_WIDTH + x;
+            VISIT_BORDER_PIXEL(index);
         }
     }
+#undef VISIT_BORDER_PIXEL
     return pos == FEEDBACK_BORDER_PIXELS;
 }
 
@@ -751,13 +752,29 @@ static int paintViewportFlash(void) {
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
             DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
+    uint16_t color = actionState.viewportFlashColor565 != 0U
+                         ? actionState.viewportFlashColor565 : 0xffffU;
+    int preserveSnapshot;
     if (framebuffer == NULL || Esp32PlatformVideo_framebufferSizeBytes() != expected) {
         return 0;
     }
-    if (!visitViewportBorder(framebuffer, 0,
-                            actionState.viewportFlashColor565 != 0U
-                                ? actionState.viewportFlashColor565 : 0xffffU)) return 0;
-    actionState.viewportFlashSnapshotValid = 1U;
+    /* A second damage/pickup flash may arrive before the first 500 ms lease
+     * expires. In that case the framebuffer border is already painted. Never
+     * snapshot those painted pixels as the restore target: keep the original
+     * pre-flash snapshot and only repaint/reset the lease. A real full-frame
+     * redraw marks framebufferFresh, so the snapshot must then be refreshed
+     * from the newly rendered clean border instead. */
+    preserveSnapshot = actionState.viewportFlashVisible != 0U &&
+                       actionState.viewportFlashSnapshotValid != 0U &&
+                       actionState.framebufferFresh == 0U;
+    if (!visitViewportBorder(framebuffer, preserveSnapshot ? 2 : 0, color)) {
+        return 0;
+    }
+    if (!preserveSnapshot) actionState.viewportFlashSnapshotValid = 1U;
+    else {
+        printf("[VIEWFLASH] REFRESH color565=%04x snapshot=preserved framebufferFresh=0\n",
+               (unsigned int)color);
+    }
     return 1;
 }
 
@@ -874,8 +891,8 @@ int __wrap_Esp32PlatformVideo_present(void) {
         (actionState.viewportFlashPending != 0U ||
          actionState.framebufferFresh != 0U)) {
         if (!paintViewportFlash()) {
-  printf("[VIEWFLASH] FAILED phase=paint\n");
-  return 0;
+            printf("[VIEWFLASH] FAILED phase=paint\n");
+            return 0;
         }
         flashPainted = 1;
     }
@@ -888,14 +905,14 @@ int __wrap_Esp32PlatformVideo_present(void) {
         actionState.viewportFlashVisible = 1U;
         actionState.viewportFlashShownAtMs = actionNowMs();
         printf("[VIEWFLASH] PAINT color565=%04x viewport=0,%u,%u,%u thickness=%u pixels=%u durationMs=%u snapshot=bounded present=caller feedback=%u\n",
-     (unsigned int)actionState.viewportFlashColor565,
-     (unsigned int)FEEDBACK_VIEW_Y,
-     (unsigned int)DOOMRPG_LOGICAL_WIDTH,
-     (unsigned int)FEEDBACK_VIEW_HEIGHT,
-     (unsigned int)FEEDBACK_BORDER_THICKNESS,
-     (unsigned int)FEEDBACK_BORDER_PIXELS,
-     (unsigned int)actionState.viewportFlashDurationMs,
-     (unsigned int)feedback);
+               (unsigned int)actionState.viewportFlashColor565,
+               (unsigned int)FEEDBACK_VIEW_Y,
+               (unsigned int)DOOMRPG_LOGICAL_WIDTH,
+               (unsigned int)FEEDBACK_VIEW_HEIGHT,
+               (unsigned int)FEEDBACK_BORDER_THICKNESS,
+               (unsigned int)FEEDBACK_BORDER_PIXELS,
+               (unsigned int)actionState.viewportFlashDurationMs,
+               (unsigned int)feedback);
     }
     actionState.framebufferFresh = 0U;
 
@@ -937,8 +954,8 @@ static int serviceViewportFlashExpiry(void) {
     }
     if (!__real_Esp32PlatformVideo_present()) return 0;
     printf("[VIEWFLASH] EXPIRE elapsedMs=%u targetMs=%u color565=%04x restored=viewport-border-only\n",
- (unsigned int)elapsed, (unsigned int)duration,
- (unsigned int)actionState.viewportFlashColor565);
+           (unsigned int)elapsed, (unsigned int)duration,
+           (unsigned int)actionState.viewportFlashColor565);
     actionState.viewportFlashVisible = 0U;
     actionState.viewportFlashShownAtMs = 0U;
     actionState.viewportFlashDurationMs = 0U;
