@@ -14,26 +14,26 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main at branch creation = 98256de72f2f0d4640b7533122492b8ff1535c8b
-branch = agent/esp32-native-monster-postmove-attack
-base main = 98256de72f2f0d4640b7533122492b8ff1535c8b
-hardware-tested code boundary = f017aff03f93dce7dd66cac91136cc01ad9fe20c
-status = one-step monster post-move same-turn attack PASS
+main at branch creation = 63cc8897e98c1ac6bf597234b35fde87cc2f7570
+branch = agent/esp32-native-pass-turn-hazard-touch
+base main = 63cc8897e98c1ac6bf597234b35fde87cc2f7570
+hardware-tested code boundary = e76183adf8245b465d7c398abba88a6c6a86f627
+status = PASS_TURN current-tile hazard + reentrant VIEWFLASH PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `f017aff0...` as new hardware-tested code. The tail
+Do not treat commits after `e76183ad...` as new hardware-tested code. The tail
 must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `33959809286` / run #119 passed on the
-exact tested SHA. Job `101289595476` built the classic CYD firmware and uploaded
+Normal GitHub Actions `esp32-cyd` run `33969446333` / run #132 passed on the
+exact tested SHA. Job `101315237040` built the classic CYD firmware and uploaded
 artifacts successfully.
 
 CI is compile/link evidence only; real-CYD serial logs remain authoritative.
 
 Latest milestone:
 
-- [`MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`](MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md)
+- [`MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md)
 
 ## Build environment
 
@@ -129,7 +129,7 @@ full rebuild ~= 8.44 s
 validated reuse ~= 0.363 s
 ```
 
-The user reports the map is now materially smoother to walk and test, without the
+The user reports the map is materially smoother to walk and test, without the
 former large SD-backed stalls.
 
 ## Entrance format witness
@@ -208,6 +208,10 @@ extinguisher ammo consumption + fire removal
 stationary MonsterTurn scheduling + LOS
 live nonlethal monster retaliation
 native PASS_TURN feedback
+PASS_TURN current-tile linked type10/type11 hazards
+transaction-safe PASS_TURN hazard rollback
+hazard damage supersedes one-slot "Turn passed." display
+reentrant red/white viewport flash snapshot ownership
 transaction-safe gameplay RNG replay
 compact MonsterPosition
 legacy-compatible bounded monster movement planner
@@ -241,10 +245,49 @@ Milestone index for this frontier:
 - [`MILESTONE_NATIVE_MAP_FLASH_REUSE.md`](MILESTONE_NATIVE_MAP_FLASH_REUSE.md)
 - [`MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md`](MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md)
 - [`MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`](MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md)
+- [`MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md)
 
-## Monster attack visual result
+## PASS_TURN hazard result
 
-Legacy contract hardware-proven for `NUMSHOTS == 1`:
+Recovered bounded legacy order:
+
+```text
+Hud_addMessage("Turn passed.")
+Game_touchTile(current, false)
+Game_advanceTurn()
+```
+
+The touched=false native subset processes linked type-10/type-11 hazards on the
+settled current tile and ignores resources. Hazard PlayerState mutation is
+committed before the existing MonsterTurn request; if that request cannot arm,
+the mutation and queued feedback roll back exactly.
+
+The one-slot native top bar cannot display both `Turn passed.` and hazard damage,
+so hazard damage intentionally wins the visible message while the gameplay order
+remains legacy-compatible.
+
+The hardware test also closed a generic viewport-flash bug. A second flash that
+arrived before the first 500 ms expiry used to snapshot the already-painted red
+border and later restore red forever. The VIEWFLASH owner now preserves the
+original clean snapshot across overlapping refreshes:
+
+```text
+[VIEWFLASH] REFRESH color565=b800 snapshot=preserved framebufferFresh=0
+[VIEWFLASH] PAINT ... durationMs=500 ...
+...
+[VIEWFLASH] EXPIRE elapsedMs=504 targetMs=500 ... restored=viewport-border-only
+```
+
+The user confirmed the border physically disappears after the final lease while
+remaining on the hazard tile.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md)
+
+## Monster attack / movement retained results
+
+Single-loop monster attack presentation remains hardware-proven:
 
 ```text
 alternateAttack == 0 -> visual frame 1
@@ -253,79 +296,26 @@ visible lease = 150 ms after successful physical present
 expiry = exact idle redraw
 ```
 
-Real-CYD witnesses on exact SHA `a1df0a5a...` covered primary Hellhound frame 1,
-alternate Hellhound frame 5 and Zombie frame 1. The user visually confirmed the
-attack pose. No attack-visual rollback or expiry retry appeared in the supplied
-positive traces.
-
-## One-step post-move same-turn attack result
-
-The exact legacy split recovered from `Entity_aiMoveToGoal()` is:
+The exact legacy post-move goal split remains:
 
 ```text
 subtype 1 / 5  -> i = 1
 subtype 4 / 13 -> i = 3
 ```
 
-The earlier recovery note that treated all four as one-step was incorrect. The
-current code intentionally owns only subtype `1/5`; subtype `4/13` remains
-fail-closed until all three possible same-turn movement goals are owned.
+Only subtype `1/5` is currently owned for same-turn post-move attack. Subtype
+`4/13` remains fail-closed until all three possible same-turn movement goals are
+owned as one coherent sequence.
 
-Permanent composition:
+Detailed records:
 
-```text
-MonsterTurn produces movement opportunity
- -> native movement planner probe
- -> live position/topology commit + renderer projection
- -> EspNativeGameplayMonsterTurn_postMoveGoal()
- -> exact committed-destination adjacency + trace gate
- -> new attack probe, no new scheduled turn
- -> existing MonsterActivation gate
- -> existing MonsterAttackVisual
- -> existing MonsterRetaliation live RNG/player commit
-```
-
-Real-CYD Hellhound witness on exact SHA `f017aff0...`:
-
-```text
-first move:
-[MONSTERMOVELIVE] COMMIT ... sprite=179 tile=750->718 ... rollback=closed
-[MONSTERPOSTMOVE] COMPLETE ... distance2=16384 adjacentCardinal=no attack=no
-
-second move:
-[MONSTERMOVELIVE] COMMIT ... sprite=179 tile=718->686 ... rollback=closed
-[MONSTERPOSTMOVE] ATTACK-PROBE reason=PASS_TURN sprite=179 subtype=1
-    weapon=12 alt=0 loops=1 goalStep=1/1 distance2=4096
-    adjacentCardinal=yes trace=clear
-    playerHP=30->27 armor=8->5
-    playerFNV=f58f97ce->f58f97ce
-    rng=f71b27b7->f71b27b7
-    rngRollback=yes playerExact=yes sameTurn=yes
-    movementAlreadyCommitted=yes gameplayMutation=no
-[MONSTERACT] DELIVER ... sprite=179 activated=yes
-[MONSTERATKVIS] ARM ... sprite=179 visual=1 ...
-[MONSTERRETAL] COMMIT ... playerHP=30->27 armor=8->5 ... rollback=closed
-[MONSTERATKVIS] EXPIRE ... sprite=179 visual=1->idle ...
-```
-
-There is no additional `[MONSTERTURN] SCHEDULE` between the second movement commit
-and the post-move attack probe. This is the key same-turn sequencing witness. The
-first move is the matching negative witness proving that the hook does not attack
-before the exact adjacent destination is reached.
-
-The post-move attack probe restores PlayerState and `Random_t` exactly before
-publishing the attack probe; the existing retaliation owner remains the only live
-combat RNG/player-damage commit path. The new hook is not invoked for the ranged
-`RANGED-AI` movement branch.
-
-Detailed record:
-
+- [`MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md`](MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md)
 - [`MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`](MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md)
 
 ## RAM at current boundary
 
-The real-CYD session remained stable through movement, post-move attack, attack
-visual, retaliation, feedback expiry and later player combat:
+The real-CYD session remained stable through repeated hazard touches, rapid
+PASS_TURN refreshes, flash expiry, door animation, SELECT and later movement:
 
 ```text
 heap=86524
@@ -343,9 +333,9 @@ Audio remains deferred and requires its own RAM milestone.
 production SAVEGAME / CHANGEMAP ownership
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
-PASS_TURN current-tile hazard touch
 pickup sound / got-face
-secondary movement-hazard burn/pain/shake/sound
+secondary hazard burn/pain/shake/sound
+complete mixed movement-tile resource/hazard ordering
 action XP migration
 materialized monster drops
 corpse-pile trimming
@@ -362,7 +352,7 @@ player pain face / shake / sound
 status-warning presentation
 chaingun/plasma multi-loop mechanics
 rocket/BFG radius damage
-familiar weapon slots
+familiar weapon slots / hazard redirection
 generic type-12 destructible combat
 special death consequences
 Kronos-specific semantics
@@ -392,13 +382,13 @@ When the user announces the merge:
 
 1. read the true GitHub `main` and exact SHA;
 2. re-read `PORTING_STATUS.md`, this file and
-   `MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`;
+   `MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`;
 3. create the next `agent/*` from that exact SHA;
 4. recover the next bounded legacy family against the true source before coding.
 
-A strong candidate is subtype `4/13`'s exact `i=3` same-turn goal chain. It must
-own the complete movement/RNG sequence and remain separate from presentation-only
-movement interpolation and multiple-monster ordering.
+A strong candidate remains subtype `4/13`'s exact `i=3` same-turn goal chain, but
+it must own the complete movement/RNG sequence and remain separate from
+presentation-only movement interpolation and multiple-monster ordering.
 
 ## Development workflow
 
