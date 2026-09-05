@@ -9,6 +9,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_direction.h"
+#include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_indexed_bmp.h"
@@ -373,9 +374,12 @@ int __wrap_EspNativeGameplayActionEngine_getVisualState(
                                                               outVisualState)) {
         return 0;
     }
-    if (outVisualState != NULL &&
-        EspNativeGameplayPlayerResources_isConsumed(spriteIndex)) {
-        *outVisualState |= PROJECTION_VISUAL_HIDDEN;
+    if (outVisualState != NULL) {
+        if (EspNativeGameplayPlayerResources_isConsumed(spriteIndex)) {
+            *outVisualState |= PROJECTION_VISUAL_HIDDEN;
+        }
+        (void)EspNativeGameplayMonsterAttackVisual_apply(spriteIndex,
+                                                          outVisualState);
     }
     return 1;
 }

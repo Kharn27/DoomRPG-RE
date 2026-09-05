@@ -7,26 +7,22 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main = 9bd45cc0eb790a7b0894774426f996ee7ae6ce72
-branch = agent/esp32-native-map-flash-reuse
-base main = 9bd45cc0eb790a7b0894774426f996ee7ae6ce72
-hardware-tested code boundary = 8dd0a06f293b801e9afe3097bf19c57d3e1037b7
-status = REAL-CYD GENERIC REQUESTED-MAP RAW-FLASH SLOT REUSE PASS
+main at branch creation = 19c3fd3b6ebd66530e92d24a43ec8f09a9c4f803
+branch = agent/esp32-native-monster-attack-visual
+base main = 19c3fd3b6ebd66530e92d24a43ec8f09a9c4f803
+hardware-tested code boundary = a1df0a5ac031b4a0dad6f4da609dd25c6c450007
+status = REAL-CYD SINGLE-LOOP MONSTER ATTACK VISUAL FRAME 1 + FRAME 5 PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`8dd0a06f...` is the exact code boundary exercised on the real classic CYD.
+`a1df0a5a...` is the exact code boundary exercised on the real classic CYD.
 Commits after that SHA must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `33867680174` completed successfully on
-this exact SHA and uploaded:
+Normal GitHub Actions `esp32-cyd` run `33958515531` / run #110 completed
+successfully on this exact SHA. Job `101286108924` (`PlatformIO esp32-cyd`)
+built the classic CYD firmware and uploaded artifacts successfully.
 
-```text
-doom-rpg-esp32-cyd-8dd0a06f293b801e9afe3097bf19c57d3e1037b7
-artifact id = 9934627355
-```
-
-CI is only a compile/link gate. Hardware serial logs remain authoritative.
+CI is compile/link evidence only. Hardware serial logs remain authoritative.
 After merge, read the real GitHub `main` SHA again before creating the next
 `agent/*` branch.
 
@@ -41,8 +37,8 @@ A NEW PICKUP MUST NOT BECOME A NEW MINI-OWNER.
 Target production path:
 
 ```text
-/DoomRPG-ESP32.pak on SD as authoritative source
- -> native parsers/catalog
+Doom RPG original data/behavior
+ -> ESP32-native parsers/catalogs
  -> compact immutable EspMapRuntime
  -> small explicit mutable owners
  -> native event/script engine
@@ -67,71 +63,84 @@ or runtime ZIP dependence for migrated gameplay/map data. `/DoomRPG.zip` remains
 transitional startup/reference debt only; native gameplay/map access must not
 regress to it.
 
-## Native PAK backing hierarchy — hardware PASS
+## Native asset backing — hardware PASS
 
-The active gameplay storage path is:
+Active gameplay storage path:
 
 ```text
-/DoomRPG-ESP32.pak on microSD
-        |
-        | load / source identity
-        v
-raw internal-flash requested-map slot
-        |
-        | active gameplay backing
-        v
-19 KiB resident RAM cache (L1)
-        |
-        v
-native renderer/gameplay
+/DoomRPG-ESP32.pak on microSD (authoritative source)
+ -> generic requested-map raw internal-flash slot
+ -> 19 KiB resident RAM cache (L1)
+ -> native gameplay / renderer
 ```
 
 Contract:
 
 ```text
-- SD remains authoritative source storage.
-- One complete requested-map gameplay working set is present before gameplay arms.
-- Existing slot reuse is keyed to the map actually requested by the runtime.
-- Entrance is a witness only, never a storage special case.
-- Active gameplay does not silently fall back to SD.
-- Original PAK index/offset semantics are retained.
-- Access to intentionally excluded other BSPs fails closed.
-- Flash metadata/header is committed only after copy + readback verification.
-- Reuse revalidates source identity, requested-world layout and flash FNVs.
-- The existing 19 KiB resident RAM cache remains the L1 policy.
+- one requested-map working set is staged/verified before gameplay arms;
+- existing slot reuse is keyed to the map actually requested;
+- active gameplay never silently falls back to SD;
+- original PAK offsets/index semantics are retained;
+- excluded non-current BSP ranges fail closed;
+- slot header is committed only after flash readback verification;
+- reuse revalidates source identity + layout + flash FNVs;
 - shapeData == NULL and mediaTexels == NULL remain mandatory.
 ```
+
+Permanent preparation API:
+
+```text
+EspAssetPack_mapFlashPrepare(targetMapId)
+```
+
+Classic CYD raw partition layout:
+
+```text
+nvs       0x009000  size 0x005000
+otadata   0x00e000  size 0x002000
+app0      0x010000  size 0x140000  = 1310720 B
+spiffs    0x150000  size 0x2A0000  = 2752512 B raw slot
+coredump  0x3F0000  size 0x010000
+```
+
+The partition named `spiffs` is intentionally not mounted as a filesystem and is
+managed through `esp_partition_*`.
+
+Entrance raw-slot witness:
+
+```text
+pack = 2457398 B
+entries = 241
+index = 4820 B
+metadata = 12288 B
+excluded non-current BSPs = 12 / 203811 B
+staged payload = 2248743 B
+partition = 2752512 B
+headroom = 491481 B
+[MAPFLASH] COPY indexFNV=3a51cc4d payloadFNV=9ec04e22 verified=yes
+[MAPFLASH] READY ... buildUs=8442586
+```
+
+Generic requested-map reuse witness:
+
+```text
+[MAPFLASH] REUSE HIT requestedMap=1 current=/intro.bsp cachedMap=1
+           sourceIndexFNV=3a51cc4d payloadFNV=9ec04e22
+           verifyUs=361875 rebuild=no
+[MAPFLASH] ARM map=1 active=1 verified=1 reused=1 staged=2248743
+           metadata=12288 prepareUs=363258 buildUs=0 resident=1
+```
+
+The verified reuse path is about 23.2x faster than the full rebuild witness.
+The user reports that walking/testing through the map is now materially smoother
+and free of the former large storage stalls.
 
 Detailed records:
 
 - [`MILESTONE_NATIVE_MAP_FLASH_BACKING.md`](MILESTONE_NATIVE_MAP_FLASH_BACKING.md)
 - [`MILESTONE_NATIVE_MAP_FLASH_REUSE.md`](MILESTONE_NATIVE_MAP_FLASH_REUSE.md)
 
-## Classic CYD flash layout
-
-`esp32-cyd` uses `ESP32/partitions_cyd_raw_pak.csv`:
-
-```text
-nvs       0x009000  size 0x005000
-otadata   0x00e000  size 0x002000
-app0      0x010000  size 0x140000  = 1310720 B
-spiffs    0x150000  size 0x2A0000  = 2752512 B
-coredump  0x3F0000  size 0x010000
-```
-
-The partition named `spiffs` is intentionally **not mounted as a filesystem**.
-`esp_asset_pack.cpp` owns it as raw flash via `esp_partition_*`.
-
-The flash-backing milestone tested `firmware.bin = 644144 B`, leaving 666576 B
-inside the 1.25 MiB application partition at that boundary.
-
-A board migrating from the old `no_ota.csv` layout must receive the generated
-`partitions.bin`; flashing only `firmware.bin` leaves the old partition table.
-
 ## Entrance canonical witness
-
-Entrance remains the canonical map-format witness, not a generic runtime special
-case:
 
 ```text
 resourceMapId = 1
@@ -168,94 +177,7 @@ automapFNV  = 669b1aa7
 topologyFNV = 3f321e43
 ```
 
-## Current-map flash staging witness
-
-Real-CYD Entrance plan from the preceding backing milestone:
-
-```text
-pack = 2457398 B
-PAK entries = 241
-PAK index = 4820 B
-metadata = 12288 B
-excluded non-current BSPs = 12
-excluded BSP bytes = 203811 B
-staged payload = 2248743 B
-raw partition = 2752512 B
-headroom = 491481 B
-fits = yes
-```
-
-Hardware build/verification:
-
-```text
-[MAPFLASH] ERASE bytes=2752512 buffer=4096 owner=transient
-[MAPFLASH] COPY indexFNV=3a51cc4d payloadFNV=9ec04e22 verified=yes
-[MAPFLASH] READY map=1 staged=2248743 metadata=12288 excluded=12/203811
-           buildUs=8442586 backing=raw-internal-flash SDGameplayReads=forbidden
-```
-
-The ~8.44 s staging cost is the deliberate fallback cost for a missing/stale or
-different-world slot.
-
-## Generic requested-map flash reuse — hardware PASS
-
-The permanent preparation API is now:
-
-```text
-EspAssetPack_mapFlashPrepare(targetMapId)
-```
-
-The caller supplies the world actually being loaded. At the tested bootstrap,
-`EspPlayerView.targetMapId` is passed directly.
-
-A reuse HIT requires agreement on:
-
-```text
-requested targetMapId + BSP name hash
-source PAK byte size / index offset / data offset / entry count
-source PAK index FNV-1a
-payload flash offset + staged byte count
-excluded BSP byte/count + exact excluded-span topology
-flash index readback FNV
-flash payload readback FNV
-```
-
-Any mismatch returns to the already-proven complete staging path. A future save
-pointing at another level must therefore prepare that level; a cached Entrance
-slot cannot be accepted for it.
-
-Real-CYD reuse witness on exact tested SHA:
-
-```text
-[MAPFLASH] REUSE HIT requestedMap=1 current=/intro.bsp cachedMap=1
-           sourceIndexFNV=3a51cc4d payloadFNV=9ec04e22
-           verifyUs=361875 rebuild=no
-[MAPFLASH] ARM map=1 active=1 verified=1 reused=1 staged=2248743
-           metadata=12288 prepareUs=363258 buildUs=0 resident=1
-```
-
-Critical negative witnesses:
-
-```text
-no [MAPFLASH] ERASE
-no [MAPFLASH] COPY
-no [MAPFLASH] MISS
-```
-
-Load-time comparison:
-
-```text
-full rebuild = 8442586 us ~= 8.44 s
-reuse prepare = 363258 us ~= 0.363 s
-reuse verify  = 361875 us ~= 0.362 s
-reuse buildUs = 0
-```
-
-The validated reuse path is about **23.2x faster** than the preceding full
-rebuild witness while still rereading and FNV-validating the staged flash
-payload before accepting it.
-
-## Resident RAM-cache baseline retained
+## Resident cache baseline retained
 
 ```text
 owner = 23592 B
@@ -266,54 +188,13 @@ resident entry slots = 24
 large exact range = 2048 B
 ```
 
-The 288-record global recycle policy still exists. Internal-flash refill prevents
-that recycle from becoming the former SD seek cliff.
-
-## Performance result — hardware PASS
-
-Earlier SD-backed fire-room witness:
-
-```text
-entries 288/288 -> 23/288
-SPRITEPROFILE ~36.7 ms -> ~241.8 ms
-frame ~335 ms -> ~736 ms
-VIDEO present ~34.4 ms
-```
-
-Raw-flash backing witness:
-
-```text
-entries=288/288 SPRITEPROFILE=29824 us
-entries=78/288  SPRITEPROFILE=36084 us
-```
-
-The reuse run preserved the same active-gameplay behavior:
-
-```text
-PAKIO backing = raw-flash
-SMALL-COLD  = 228559 us
-SMALL-WARM  = 178358 us
-LARGE-LEARN = 178381 us
-LARGE-WARM  = 177638 us
-SPRITEPROFILE representative ~= 30-37 ms
-VIDEO present ~= 34.4 ms
-```
-
-Do not optimize `PlatformVideo_present()` from this result; the stable LCD
-transfer is not the source of the former intermittent storage stalls.
-
-## Remaining pre-arm startup storage debt
-
-Before `MAPFLASH ARM`, the current bootstrap still renders some first-frame/HUD
-assets directly from SD. The reuse hardware trace still contains pre-arm PAKIO
-batches of several hundred milliseconds.
-
-That is a separate startup-order/performance boundary. It is not a failure of
-requested-map slot reuse and should not be mixed into this locked milestone.
+The 288-record recycle policy still exists, but internal-flash refill prevents it
+from becoming the former SD seek cliff. `PlatformVideo_present()` remains around
+34.4 ms and is not the current optimization target.
 
 ## Current hardware-owned gameplay frontier
 
-Validated behavior retained at this boundary includes:
+Validated behavior includes:
 
 ```text
 TURN_LEFT / TURN_RIGHT
@@ -327,11 +208,11 @@ EV_FORCEMESSAGE / EV_NOTE
 state ops 11 / 19 / 20
 regular door open/close animation
 mutable line texture variants
-native idle weapon rendering + generic attack pose
+native idle weapon rendering + generic player attack pose
 move-event state mutation with rollback/commit
 jammed-door subtype-3 destruction and traversal
-generic monster state + type-1 player attack combat
-generic player resources / consumed pickup removal
+generic compact MonsterState + type-1 player attack combat
+generic PlayerState resources / consumed pickup removal
 shared 52 B PlayerState + HUD projection
 extinguisher ammo consumption + fire removal
 pain / corpse / gib presentation
@@ -341,17 +222,19 @@ compact mutable MonsterPosition owner
 legacy-compatible movement planner + RNG reservation/replay
 live one-monster movement publication + topology relink
 renderer projection of committed moved monster position
-generic NEXT and PREV weapon cycling
-selected-weapon HUD / first-person redraw without turn advance
+generic NEXT / PREV weapon cycling
+selected-weapon HUD + first-person redraw without turn advance
 live Pistol ammo consumption + generic combat commit
 live pickup messages + white pickup flash
 adaptive floor/ceiling texture cache under memory pressure
-movement-side linked type10/type11 hazard touch into shared PlayerState
-live bounded damage text + red viewport flash for movement hazards
-live nonlethal monster-retaliation raw damage text + red viewport flash
-feedback expiry safely deferred while a native dialog owns the PAK
-raw internal-flash gameplay backing with no silent gameplay SD fallback
+movement-side linked type10/type11 hazard touch into PlayerState
+live bounded movement-hazard damage text + red viewport flash
+live nonlethal monster-retaliation damage text + red viewport flash
+feedback expiry safely deferred while native dialog owns PAK
+raw internal-flash gameplay backing with no silent SD fallback
 generic requested-map committed-slot reuse with strict rebuild on mismatch
+single-loop monster attack visual: primary frame 1 + alternate frame 5
+150 ms attack visual lease with guarded render + exact idle expiry
 ```
 
 Relevant detailed records:
@@ -369,45 +252,96 @@ Relevant detailed records:
 - [`MILESTONE_NATIVE_MONSTER_PAIN_FEEDBACK.md`](MILESTONE_NATIVE_MONSTER_PAIN_FEEDBACK.md)
 - [`MILESTONE_NATIVE_MAP_FLASH_BACKING.md`](MILESTONE_NATIVE_MAP_FLASH_BACKING.md)
 - [`MILESTONE_NATIVE_MAP_FLASH_REUSE.md`](MILESTONE_NATIVE_MAP_FLASH_REUSE.md)
+- [`MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md`](MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md)
 
-## Shared native PlayerState
+## Monster attack visual — hardware PASS
 
-`EspNativeGameplayPlayerState` remains the single 52 B player-facing owner for:
+Exact legacy visual contract:
 
 ```text
-HP / max HP
-armor / max armor
-defense / strength / agility / accuracy
-XP / level / next-level XP
-keys / credits
-ammo[6]
-inventory[5]
-weapon bits / selected weapon
+alternateAttack == 0 -> attackFrame = 1
+alternateAttack != 0 -> attackFrame = 5
+Combat_monsterSeq attack-frame hold = 150 ms
 ```
 
-Combat, pickups, HUD, ammo, progression, hazards and monster retaliation share
-this owner. Do not create per-feature or per-item state islands.
+Native owner `EspNativeGameplayMonsterAttackVisual` consumes the existing
+MonsterTurn attack probe. It owns presentation only and never duplicates combat
+math, player damage or RNG commit semantics.
+
+Primary Hellhound witness:
+
+```text
+[MONSTERTURN] ATTACK-PROBE ... sprite=179 subtype=1 weapon=12 alt=0 loops=1 ...
+[MONSTERATKVIS] ARM probe=1 ... sprite=179 subtype=1 alt=0 loops=1 visual=1 fixedAnim=yes leaseMs=150 ... rngExact=yes ... gameplayMutation=no
+[MONSTERRETAL] COMMIT probe=1 ... rollback=closed ...
+[MONSTERATKVIS] EXPIRE probe=1 sprite=179 visual=1->idle leaseMs=150 ... rngExact=yes gameplayMutation=no
+```
+
+Alternate Hellhound witness:
+
+```text
+[MONSTERTURN] ATTACK-PROBE ... sprite=114 subtype=1 weapon=13 alt=1 loops=1 ...
+[MONSTERATKVIS] ARM probe=6 ... sprite=114 subtype=1 alt=1 loops=1 visual=5 fixedAnim=yes leaseMs=150 ... rngExact=yes ... gameplayMutation=no
+[MONSTERRETAL] COMMIT probe=6 ... rollback=closed ...
+[MONSTERATKVIS] EXPIRE probe=6 sprite=114 visual=5->idle leaseMs=150 ... rngExact=yes gameplayMutation=no
+```
+
+Zombie subtype 0 also exercised the primary frame-1 path. The user visually
+confirmed that monsters now visibly attack.
+
+No `[MONSTERATKVIS] ROLLBACK` or `[MONSTERATKVIS] EXPIRE-RETRY` appeared in the
+provided positive witnesses.
 
 ## RAM witness at current boundary
 
-The reuse path did not add a persistent RAM owner:
+Repeated walking, pickups, monster movement, attack visuals and retaliation on
+the exact tested build remained stable at:
 
 ```text
-CACHE_PRE  heap8=50976 largest8=42996
-CACHE_POST heap8=27368 largest8=20468
-observed cache delta = 23608 B
-configured resident owner = 23592 B
-warmup heap8=24708 largest8=20468
+heap = 86524
+heap8 = 20792
+largest8 = 18420
+shapeData = NULL
+mediaTexels = NULL
 ```
 
-The tested session again reached:
+Audio remains deferred. Do not enable it without its own RAM milestone.
+
+## Newly recovered next gameplay boundary
+
+Real-CYD testing exposed a separate AI sequencing gap after movement.
+
+Legacy `Entity_aiMoveToGoal()` is called again when monster interpolation reaches
+its destination. For subtypes:
 
 ```text
-[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+1, 4, 5, 13
 ```
 
-The provisional audio reserve diagnostic still reports `margin8=0`. Audio
-remains deferred and must not be enabled without a dedicated RAM milestone.
+it uses a one-step post-move goal (`i = 1`) and, if the monster has become
+cardinally adjacent (`distance^2 <= 4096`) with an unobstructed trace, calls
+`Entity_attack()` in the same monster turn.
+
+This explains the observed Hellhound difference: native movement currently snaps
+and commits the destination but does not yet execute the legacy post-move goal,
+so a dog can become adjacent and wait for the player's next turn before attacking.
+
+Important negative witness: a ranged Zombie after a player shot produced
+`aiRand=254 >= 217`, selected the legacy movement branch, moved successfully, and
+did not attack that turn. This is compatible with `Entity_aiThink()` and means the
+next implementation must **not** blindly attack after every movement.
+
+Preferred next bounded milestone after merge:
+
+```text
+native monster post-move goal / same-turn attack
+- recover only exact legacy subtype/adjacency/trace gate;
+- trigger only after a committed live move;
+- feed a new same-turn attack probe into existing activation/visual/retaliation;
+- reuse existing damage/RNG owners;
+- no movement interpolation milestone bundled in;
+- no multiple-monster ordering expansion bundled in.
+```
 
 ## Intentionally deferred families
 
@@ -415,25 +349,27 @@ remains deferred and must not be enabled without a dedicated RAM milestone.
 production SAVEGAME / CHANGEMAP transition ownership
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
-PASS_TURN current-tile type10/11 Entity_touched semantics
+PASS_TURN current-tile type10/type11 Entity_touched semantics
 pickup sound playback / got-face presentation
 movement-hazard secondary burn text / pain face / shake / sound
-action XP migration: extinguisher +2, jammed door +1
+action XP migration
 materialized monster drops
 corpse-pile trimming
 monster movement interpolation/animation
-multiple-monster activation/movement ordering
+multiple-live-monster activation/movement ordering
 unsupported special calcPath plane corpus
 special subtype-10 AI
-player lethal/death retaliation transition
-monster attack visual / player-pain animation and FX
-monster attack sound / actual sound playback
+player lethal/death transition
+three-shot / multi-loop monster attack presentation
+monster projectile visuals
+monster attack message / sound
+player-pain face / shake / sound
 status-warning presentation
-chaingun/plasma multi-loop presentation/commit
+chaingun/plasma multi-loop player mechanics
 rocket/BFG radius damage
-familiar weapon attack semantics for slots 9..11
+familiar weapon slots
 generic type-12 destructible combat
-special death consequences for subtypes 7, 8, 12, 13
+special death consequences
 Kronos-specific semantics
 password input
 EV_GIVEMAP production route
@@ -453,40 +389,21 @@ CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
 OPENLINE -> third eligible command
 ```
 
-The storage side is now generic enough to prepare `targetMapId=9` and rebuild if
-the committed slot belongs to another world. The actual transition still needs
-its own bounded ownership for teardown/load/spawn/state transfer before CHANGEMAP
-can become production-live.
+The storage layer can prepare map 9, but the actual production transition still
+needs bounded teardown/load/spawn/state-transfer ownership.
 
 ## Next direction after merge
 
 Do **not** continue code on this locked branch.
 
-After merge:
+After the user announces the merge:
 
 1. read actual GitHub `main` and exact SHA;
-2. re-read this file, `DOCUMENTATION.md` and the latest relevant milestone(s);
-3. create a fresh coherent `agent/*` branch from that exact SHA;
-4. choose one bounded family from the merged frontier.
-
-Strong gameplay candidates:
-
-```text
-monster attack visual / player-pain animation and FX
-generic type-12 destructible combat
-player lethal/death transition
-multiple-monster activation + movement ordering
-monster movement interpolation / animation
-PASS_TURN current-tile hazards
-action XP migration into PlayerState
-materialized monster drops
-chaingun/plasma multi-loop mechanics
-rocket/BFG radial damage
-```
-
-Given the current user-visible gaps, combat presentation / missing attack sprites
-is a strong next direction, but choose only after re-reading merged `main` and
-recovering the exact legacy family behavior.
+2. re-read this file, `DOCUMENTATION.md` and
+   `MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md`;
+3. create a fresh branch from that exact main SHA;
+4. preferred next branch: native monster post-move goal / same-turn attack;
+5. recover/reuse the exact legacy `Entity_aiMoveToGoal()` semantics only.
 
 ## Development workflow
 
