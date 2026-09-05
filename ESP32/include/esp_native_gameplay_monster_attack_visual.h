@@ -25,22 +25,23 @@ typedef struct EspNativeGameplayMonsterAttackVisualView_s {
 } EspNativeGameplayMonsterAttackVisualView;
 
 /*
- * Presentation-only bridge for the first permanent monster attack pose.
+ * Presentation-only bridge for bounded single-loop monster attack poses.
  *
  * Legacy Combat_performAttack() selects attackFrame=1 for a primary monster
  * attack and attackFrame=5 for alternate/special attacks. Combat_monsterSeq()
- * holds each attack frame for 150 ms. This owner recovers only the primary,
- * single-loop frame-1 family. It never mutates MonsterState, topology, player
- * state, gameplay RNG, BSP sprites, projectiles or audio.
+ * holds each attack frame for 150 ms. This owner recovers both frame families
+ * when NUMSHOTS==1. It never mutates MonsterState, topology, player state,
+ * gameplay RNG, BSP sprites, projectiles or audio.
  *
- * Alternate frame-5 and multi-loop (three-shot) presentation remain fail-closed
- * until their own bounded milestones.
+ * Multi-loop (three-shot) presentation remains fail-closed until its own
+ * bounded milestone. Projectiles, attack messages and sound remain deferred.
  */
 void EspNativeGameplayMonsterAttackVisual_reset(void);
 void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpg);
 
 /* Called by the existing monster visual-state composition leaf. Returns 1 only
- * when this owner currently overrides the requested live enemy to visual 1. */
+ * when this owner currently overrides the requested live enemy to its leased
+ * legacy attack frame (1 primary or 5 alternate). */
 int EspNativeGameplayMonsterAttackVisual_apply(uint32_t spriteIndex,
                                                uint8_t* ioVisualState);
 
