@@ -9,6 +9,7 @@
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_pass_turn.h"
 #include "esp_player_view_state.h"
+#include "platform_video_c_bridge.h"
 
 #define PASS_TURN_MAP_WIDTH 32U
 
@@ -36,6 +37,7 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
     uint16_t tile;
     int feedbackRollback;
     int hazardRollback;
+    int feedbackPresented;
 
     if (intent == NULL || intent->action != ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN) {
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_INVALID;
@@ -88,21 +90,38 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_REQUEST_BUSY;
     }
 
+    /* The shared feedback service expires the previous visible message before
+     * it paints a newly queued one. If a PASS TURN lands exactly as that older
+     * lease crosses 1200 ms, expiry can otherwise replace the new pending kind
+     * with NONE before the next resident service. Once the monster-turn request
+     * is accepted there is no remaining gameplay rollback edge, so consume the
+     * already-queued feedback through the normal wrapped presenter immediately.
+     * A failed physical present deliberately leaves the feedback pending for the
+     * regular service retry; gameplay state and turn ownership stay committed. */
+    feedbackPresented = Esp32PlatformVideo_present();
+    if (!feedbackPresented) {
+        printf("[PASSTURN] FEEDBACK-DEFER seq=%u tile=%u cause=present-failed pending=retained monsterTurn=requested\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)tile);
+    }
+
     if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED) {
-        printf("[PASSTURN] REQUEST seq=%u tile=%u pos=%d,%d angle=%d tileTouch=hazard-committed type10/11=owned message=\"Turn passed.\"-legacy-superseded-by-hazard monsterTurn=requested playerMutation=hazard-owned\n",
+        printf("[PASSTURN] REQUEST seq=%u tile=%u pos=%d,%d angle=%d tileTouch=hazard-committed type10/11=owned message=\"Turn passed.\"-legacy-superseded-by-hazard monsterTurn=requested playerMutation=hazard-owned feedbackPresent=%s\n",
                (unsigned int)intent->sequence,
                (unsigned int)tile,
                (int)view->viewX,
                (int)view->viewY,
-               (int)view->viewAngle);
+               (int)view->viewAngle,
+               feedbackPresented ? "immediate" : "deferred");
     }
     else {
-        printf("[PASSTURN] REQUEST seq=%u tile=%u pos=%d,%d angle=%d tileTouch=none type10/11=absent message=\"Turn passed.\"-queued monsterTurn=requested playerMutation=no\n",
+        printf("[PASSTURN] REQUEST seq=%u tile=%u pos=%d,%d angle=%d tileTouch=none type10/11=absent message=\"Turn passed.\"-queued monsterTurn=requested playerMutation=no feedbackPresent=%s\n",
                (unsigned int)intent->sequence,
                (unsigned int)tile,
                (int)view->viewX,
                (int)view->viewY,
-               (int)view->viewAngle);
+               (int)view->viewAngle,
+               feedbackPresented ? "immediate" : "deferred");
     }
     return ESP_NATIVE_GAMEPLAY_PASS_TURN_OK;
 }
