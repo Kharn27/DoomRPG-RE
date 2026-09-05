@@ -15,6 +15,7 @@
 
 #define ATTACK_VISUAL_NO_SPRITE 0xffffU
 #define ATTACK_VISUAL_PRIMARY_FRAME 1U
+#define ATTACK_VISUAL_ALTERNATE_FRAME 5U
 #define ATTACK_VISUAL_FRAME_MS 150U
 #define ATTACK_VISUAL_SUBTYPE_COUNT 14U
 
@@ -26,6 +27,7 @@ static const uint8_t monsterShots[ATTACK_VISUAL_SUBTYPE_COUNT] = {
 };
 
 static EspNativeGameplayMonsterAttackVisualView attackVisual;
+static uint8_t activeVisualFrame;
 
 static const char* reasonName(uint8_t reason) {
     switch ((EspNativeGameplayMonsterTurnReason)reason) {
@@ -52,14 +54,16 @@ static int syncOwner(void) {
     if (attackVisual.active == 0U ||
         attackVisual.sourceArenaFNV1a != turn->sourceArenaFNV1a) {
         memset(&attackVisual, 0, sizeof(attackVisual));
+        activeVisualFrame = 0U;
         attackVisual.sourceArenaFNV1a = turn->sourceArenaFNV1a;
         attackVisual.observedAttackProbes = turn->attackProbes;
         attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
         attackVisual.active = 1U;
-        printf("[MONSTERATKVIS] READY arena=%08x ownerBytes=%u source=hardware-proven-turn-probe primaryFrame=%u leaseMs=%u singleLoop=yes immutableSprite=yes fixedAnim=overlay gameplayRng=guarded altFrame5=fail-closed multiLoop=fail-closed projectile=deferred attackMessage=deferred sound=deferred\n",
+        printf("[MONSTERATKVIS] READY arena=%08x ownerBytes=%u source=hardware-proven-turn-probe primaryFrame=%u alternateFrame=%u leaseMs=%u singleLoop=yes immutableSprite=yes fixedAnim=overlay gameplayRng=guarded multiLoop=fail-closed projectile=deferred attackMessage=deferred sound=deferred\n",
                (unsigned int)attackVisual.sourceArenaFNV1a,
                (unsigned int)sizeof(attackVisual),
                (unsigned int)ATTACK_VISUAL_PRIMARY_FRAME,
+               (unsigned int)ATTACK_VISUAL_ALTERNATE_FRAME,
                (unsigned int)ATTACK_VISUAL_FRAME_MS);
     }
     return 1;
@@ -101,6 +105,7 @@ static void clearPose(void) {
     attackVisual.activeProbe = 0U;
     attackVisual.clearAtMs = 0U;
     attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
+    activeVisualFrame = 0U;
 }
 
 static void serviceExpiry(DoomRPG_t* runtime) {
@@ -109,6 +114,7 @@ static void serviceExpiry(DoomRPG_t* runtime) {
     uint32_t now;
     uint32_t probe;
     uint16_t spriteIndex;
+    uint8_t visualFrame;
     int rngExact = 0;
 
     if (attackVisual.poseActive == 0U) return;
@@ -127,16 +133,19 @@ static void serviceExpiry(DoomRPG_t* runtime) {
 
     probe = attackVisual.activeProbe;
     spriteIndex = attackVisual.activeSpriteIndex;
+    visualFrame = activeVisualFrame;
     clearPose();
     if (!guardedRender(runtime, view, &frame, &rngExact)) {
         attackVisual.activeProbe = probe;
         attackVisual.activeSpriteIndex = spriteIndex;
         attackVisual.clearAtMs = now + 1U;
         attackVisual.poseActive = 1U;
+        activeVisualFrame = visualFrame;
         ++attackVisual.expiryRetries;
-        printf("[MONSTERATKVIS] EXPIRE-RETRY probe=%u sprite=%u reason=%s rngExact=%s recovery=next-service gameplayMutation=no\n",
+        printf("[MONSTERATKVIS] EXPIRE-RETRY probe=%u sprite=%u visual=%u reason=%s rngExact=%s recovery=next-service gameplayMutation=no\n",
                (unsigned int)probe,
                (unsigned int)spriteIndex,
+               (unsigned int)visualFrame,
                rngExact ? "render-failed" : "render-touched-gameplay-rng",
                rngExact ? "yes" : "NO");
         return;
@@ -145,7 +154,7 @@ static void serviceExpiry(DoomRPG_t* runtime) {
     printf("[MONSTERATKVIS] EXPIRE probe=%u sprite=%u visual=%u->idle leaseMs=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no\n",
            (unsigned int)probe,
            (unsigned int)spriteIndex,
-           (unsigned int)ATTACK_VISUAL_PRIMARY_FRAME,
+           (unsigned int)visualFrame,
            (unsigned int)ATTACK_VISUAL_FRAME_MS,
            (unsigned int)frame.frameAfterFNV,
            (unsigned int)frame.finalPresented);
@@ -153,6 +162,7 @@ static void serviceExpiry(DoomRPG_t* runtime) {
 
 void EspNativeGameplayMonsterAttackVisual_reset(void) {
     memset(&attackVisual, 0, sizeof(attackVisual));
+    activeVisualFrame = 0U;
     attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
 }
 
@@ -164,12 +174,11 @@ EspNativeGameplayMonsterAttackVisual_view(void) {
 int EspNativeGameplayMonsterAttackVisual_apply(uint32_t spriteIndex,
                                                uint8_t* ioVisualState) {
     if (ioVisualState == NULL || attackVisual.active != 1U ||
-        attackVisual.poseActive != 1U ||
+        attackVisual.poseActive != 1U || activeVisualFrame == 0U ||
         spriteIndex != attackVisual.activeSpriteIndex) {
         return 0;
     }
-    *ioVisualState = (uint8_t)((*ioVisualState & 0xf0U) |
-                               ATTACK_VISUAL_PRIMARY_FRAME);
+    *ioVisualState = (uint8_t)((*ioVisualState & 0xf0U) | activeVisualFrame);
     return 1;
 }
 
@@ -185,6 +194,7 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
     const EspPlayerViewState* view;
     EspNativeGameplayFrameStats frame;
     EspNativeGameplayFrameStats recoveryFrame;
+    uint8_t visualFrame;
     int rngExact = 0;
     int recoveryRngExact = 0;
     int recoveryRendered = 0;
@@ -234,24 +244,14 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         return;
     }
 
-    if (monster->alternateAttack != 0U) {
-        ++attackVisual.deferredAlternate;
-        printf("[MONSTERATKVIS] DEFER probe=%u reason=%s sprite=%u subtype=%u alt=%u cause=alternate-frame5 ownedFrame=1 presentation=no gameplayMutation=no\n",
-               (unsigned int)turn->attackProbes,
-               reasonName(turn->lastReason),
-               (unsigned int)monster->spriteIndex,
-               (unsigned int)monster->subtype,
-               (unsigned int)monster->alternateAttack);
-        return;
-    }
-
     if (monsterShots[monster->subtype] != 1U) {
         ++attackVisual.deferredMultiLoop;
-        printf("[MONSTERATKVIS] DEFER probe=%u reason=%s sprite=%u subtype=%u loops=%u cause=multi-loop-presentation ownedLoops=1 presentation=no gameplayMutation=no\n",
+        printf("[MONSTERATKVIS] DEFER probe=%u reason=%s sprite=%u subtype=%u alt=%u loops=%u cause=multi-loop-presentation ownedLoops=1 presentation=no gameplayMutation=no\n",
                (unsigned int)turn->attackProbes,
                reasonName(turn->lastReason),
                (unsigned int)monster->spriteIndex,
                (unsigned int)monster->subtype,
+               (unsigned int)monster->alternateAttack,
                (unsigned int)monsterShots[monster->subtype]);
         return;
     }
@@ -265,20 +265,26 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         return;
     }
 
+    visualFrame = monster->alternateAttack != 0U
+                      ? ATTACK_VISUAL_ALTERNATE_FRAME
+                      : ATTACK_VISUAL_PRIMARY_FRAME;
     attackVisual.activeProbe = turn->attackProbes;
     attackVisual.activeSpriteIndex = monster->spriteIndex;
     attackVisual.poseActive = 1U;
+    activeVisualFrame = visualFrame;
 
     if (!guardedRender(runtime, view, &frame, &rngExact)) {
         clearPose();
         ++attackVisual.renderRollbacks;
         recoveryRendered = guardedRender(runtime, view, &recoveryFrame,
                                          &recoveryRngExact);
-        printf("[MONSTERATKVIS] ROLLBACK probe=%u reason=%s sprite=%u subtype=%u cause=%s poseCleared=yes rngExact=%s recoveryRender=%s recoveryRngExact=%s gameplayMutation=no\n",
+        printf("[MONSTERATKVIS] ROLLBACK probe=%u reason=%s sprite=%u subtype=%u alt=%u visual=%u cause=%s poseCleared=yes rngExact=%s recoveryRender=%s recoveryRngExact=%s gameplayMutation=no\n",
                (unsigned int)turn->attackProbes,
                reasonName(turn->lastReason),
                (unsigned int)monster->spriteIndex,
                (unsigned int)monster->subtype,
+               (unsigned int)monster->alternateAttack,
+               (unsigned int)visualFrame,
                rngExact ? "attack-frame-render-failed" :
                           "render-touched-gameplay-rng",
                rngExact ? "yes" : "NO",
@@ -291,12 +297,13 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
      * requested 150 ms are actually visible rather than consumed by rendering. */
     attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + ATTACK_VISUAL_FRAME_MS;
     ++attackVisual.presentedAttacks;
-    printf("[MONSTERATKVIS] ARM probe=%u reason=%s sprite=%u subtype=%u alt=0 loops=1 visual=%u fixedAnim=yes leaseMs=%u frame=%08x presented=%u rngExact=yes immutableSprite=yes retaliation=continues projectile=deferred attackMessage=deferred sound=deferred gameplayMutation=no\n",
+    printf("[MONSTERATKVIS] ARM probe=%u reason=%s sprite=%u subtype=%u alt=%u loops=1 visual=%u fixedAnim=yes leaseMs=%u frame=%08x presented=%u rngExact=yes immutableSprite=yes retaliation=continues projectile=deferred attackMessage=deferred sound=deferred gameplayMutation=no\n",
            (unsigned int)turn->attackProbes,
            reasonName(turn->lastReason),
            (unsigned int)monster->spriteIndex,
            (unsigned int)monster->subtype,
-           (unsigned int)ATTACK_VISUAL_PRIMARY_FRAME,
+           (unsigned int)monster->alternateAttack,
+           (unsigned int)visualFrame,
            (unsigned int)ATTACK_VISUAL_FRAME_MS,
            (unsigned int)frame.frameAfterFNV,
            (unsigned int)frame.finalPresented);
