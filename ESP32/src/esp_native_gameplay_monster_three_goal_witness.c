@@ -7,16 +7,23 @@
 #define WITNESS_MAP_WIDTH 32U
 #define WITNESS_TILE_SIZE 64U
 #define WITNESS_TILE_CENTER 32U
+#define WITNESS_SUBTYPE_MASK 0x7fU
 
 static uint32_t loggedArenaFNV1a;
 
 const EspNativeGameplayMonsterView*
 __real_EspNativeGameplayMonsterState_view(void);
 
+static uint16_t read16le(const uint8_t* bytes) {
+    if (bytes == NULL) return 0U;
+    return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8U));
+}
+
 const EspNativeGameplayMonsterView*
 __wrap_EspNativeGameplayMonsterState_view(void) {
     const EspNativeGameplayMonsterView* monsters =
         __real_EspNativeGameplayMonsterState_view();
+    const EspMapSpriteTopologyView* topology;
     uint32_t subtype4 = 0U;
     uint32_t subtype13 = 0U;
     uint32_t witnesses = 0U;
@@ -29,13 +36,20 @@ __wrap_EspNativeGameplayMonsterState_view(void) {
         return monsters;
     }
 
+    topology = EspMapSpriteTopology_view();
+    if (topology == NULL || topology->entityTypes == NULL ||
+        topology->entitySubTypes == NULL || topology->linkStatesLE == NULL ||
+        topology->linkOrdersLE == NULL) {
+        return monsters;
+    }
+
     for (i = 0U; i < monsters->count; ++i) {
         const EspNativeGameplayMonsterRecord* monster = &monsters->records[i];
         uint32_t spriteIndex;
-        uint8_t topologyType = 0xffU;
-        uint8_t topologySubtype = 0xffU;
-        uint16_t linkState = 0U;
-        uint16_t linkOrder = 0U;
+        uint8_t topologyType;
+        uint8_t topologySubtype;
+        uint16_t linkState;
+        uint16_t linkOrder;
         uint16_t tile;
         uint32_t tileX;
         uint32_t tileY;
@@ -50,12 +64,20 @@ __wrap_EspNativeGameplayMonsterState_view(void) {
         else ++subtype13;
 
         spriteIndex = monster->spriteIndex;
-        if (!EspMapSpriteTopology_getEntity(spriteIndex,
-                                            &topologyType,
-                                            &topologySubtype,
-                                            &linkState,
-                                            &linkOrder) ||
-            topologyType != ESP_MAP_ENTITY_TYPE_ENEMY ||
+        if (spriteIndex >= topology->spriteCount) {
+            printf("[MONSTER3GOAL] WITNESS-DEFER sprite=%u subtype=%u cause=sprite-range mutation=no allocation=no\n",
+                   (unsigned int)spriteIndex,
+                   (unsigned int)monster->subtype);
+            continue;
+        }
+
+        topologyType = topology->entityTypes[spriteIndex];
+        topologySubtype =
+            topology->entitySubTypes[spriteIndex] & WITNESS_SUBTYPE_MASK;
+        linkState = read16le(&topology->linkStatesLE[spriteIndex * 2U]);
+        linkOrder = read16le(&topology->linkOrdersLE[spriteIndex * 2U]);
+
+        if (topologyType != ESP_MAP_ENTITY_TYPE_ENEMY ||
             topologySubtype != monster->subtype) {
             printf("[MONSTER3GOAL] WITNESS-DEFER sprite=%u subtype=%u topologyType=%u topologySubtype=%u linkState=%04x linkOrder=%u cause=topology-mismatch mutation=no allocation=no\n",
                    (unsigned int)spriteIndex,
@@ -74,7 +96,7 @@ __wrap_EspNativeGameplayMonsterState_view(void) {
         worldY = tileY * WITNESS_TILE_SIZE + WITNESS_TILE_CENTER;
         ++witnesses;
 
-        printf("[MONSTER3GOAL] WITNESS sprite=%u subtype=%u alt=%u tile=%u pos=%u,%u linked=%u topologyAlive=%u linkOrder=%u source=monster-state+topology-getter mutation=no allocation=no\n",
+        printf("[MONSTER3GOAL] WITNESS sprite=%u subtype=%u alt=%u tile=%u pos=%u,%u linked=%u topologyAlive=%u linkOrder=%u source=monster-state+topology-view mutation=no allocation=no\n",
                (unsigned int)spriteIndex,
                (unsigned int)monster->subtype,
                (unsigned int)monster->alternateAttack,
