@@ -61,6 +61,28 @@ static uint32_t plannedMovesNow(void) {
     return movement != NULL ? movement->plannedMoves : 0U;
 }
 
+static void servicePostMoveGoal(
+    struct DoomRPG_s* doomRpg,
+    const char* trigger,
+    const EspNativeGameplayMonsterMovementPublishResult* publish) {
+    if (trigger == NULL || publish == NULL || publish->committed == 0U) return;
+
+    /* The legacy >=217 ranged branch intentionally ends after its successful
+     * move. The same-turn post-move attack gate belongs to aiMoveToGoal's melee
+     * goal family reached from the no-immediate-attack path. */
+    if (strcmp(trigger, "NO-IMMEDIATE-ATTACK") != 0) {
+        printf("[MONSTERPOSTMOVE] SKIP trigger=%s sprite=%u tile=%u->%u cause=ranged-ai-branch legacySameTurnAttack=no mutation=no rngConsumed=0\n",
+               trigger,
+               (unsigned int)publish->spriteIndex,
+               (unsigned int)publish->sourceTile,
+               (unsigned int)publish->destTile);
+        return;
+    }
+
+    (void)EspNativeGameplayMonsterTurn_postMoveGoal(
+        doomRpg, publish->spriteIndex, publish->sourceTile, publish->destTile);
+}
+
 void EspNativeGameplayMonsterMovementProbe_reset(void) {
     memset(&compositionOwner, 0, sizeof(compositionOwner));
     EspNativeGameplayMonsterMovementPublish_reset();
@@ -128,6 +150,7 @@ void EspNativeGameplayMonsterMovementProbe_service(struct DoomRPG_s* doomRpgBase
                     printf("[MONSTERMOVERNG] ROLLBACK trigger=%s reservation=downgraded-to-replay-lease randomLive=restored-pre-refill\n",
                            trigger);
                 }
+                servicePostMoveGoal(doomRpgBase, trigger, &publish);
             }
             else {
                 printf("[MONSTERMOVERNG] DEFER trigger=%s cause=rng-reservation-conflict action=movement-fail-closed\n",
@@ -139,6 +162,7 @@ void EspNativeGameplayMonsterMovementProbe_service(struct DoomRPG_s* doomRpgBase
             EspNativeGameplayMonsterMovement_service(doomRpgBase);
             (void)EspNativeGameplayMonsterMovementPublish_afterProbe(
                 doomRpgBase, trigger, NULL, 0U, plannedBefore, &publish);
+            servicePostMoveGoal(doomRpgBase, trigger, &publish);
         }
     }
     else {
