@@ -7,19 +7,19 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main at branch creation = 19c3fd3b6ebd66530e92d24a43ec8f09a9c4f803
-branch = agent/esp32-native-monster-attack-visual
-base main = 19c3fd3b6ebd66530e92d24a43ec8f09a9c4f803
-hardware-tested code boundary = a1df0a5ac031b4a0dad6f4da609dd25c6c450007
-status = REAL-CYD SINGLE-LOOP MONSTER ATTACK VISUAL FRAME 1 + FRAME 5 PASS
+main at branch creation = 98256de72f2f0d4640b7533122492b8ff1535c8b
+branch = agent/esp32-native-monster-postmove-attack
+base main = 98256de72f2f0d4640b7533122492b8ff1535c8b
+hardware-tested code boundary = f017aff03f93dce7dd66cac91136cc01ad9fe20c
+status = REAL-CYD ONE-STEP MONSTER POST-MOVE SAME-TURN ATTACK PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`a1df0a5a...` is the exact code boundary exercised on the real classic CYD.
+`f017aff0...` is the exact code boundary exercised on the real classic CYD.
 Commits after that SHA must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `33958515531` / run #110 completed
-successfully on this exact SHA. Job `101286108924` (`PlatformIO esp32-cyd`)
+Normal GitHub Actions `esp32-cyd` run `33959809286` / run #119 completed
+successfully on this exact SHA. Job `101289595476` (`PlatformIO esp32-cyd`)
 built the classic CYD firmware and uploaded artifacts successfully.
 
 CI is compile/link evidence only. Hardware serial logs remain authoritative.
@@ -235,6 +235,8 @@ raw internal-flash gameplay backing with no silent SD fallback
 generic requested-map committed-slot reuse with strict rebuild on mismatch
 single-loop monster attack visual: primary frame 1 + alternate frame 5
 150 ms attack visual lease with guarded render + exact idle expiry
+one-step post-move goal for subtype 1/5
+same-turn post-move attack after committed adjacent clear-trace move
 ```
 
 Relevant detailed records:
@@ -253,6 +255,7 @@ Relevant detailed records:
 - [`MILESTONE_NATIVE_MAP_FLASH_BACKING.md`](MILESTONE_NATIVE_MAP_FLASH_BACKING.md)
 - [`MILESTONE_NATIVE_MAP_FLASH_REUSE.md`](MILESTONE_NATIVE_MAP_FLASH_REUSE.md)
 - [`MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md`](MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md)
+- [`MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`](MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md)
 
 ## Monster attack visual — hardware PASS
 
@@ -272,30 +275,74 @@ Primary Hellhound witness:
 
 ```text
 [MONSTERTURN] ATTACK-PROBE ... sprite=179 subtype=1 weapon=12 alt=0 loops=1 ...
-[MONSTERATKVIS] ARM probe=1 ... sprite=179 subtype=1 alt=0 loops=1 visual=1 fixedAnim=yes leaseMs=150 ... rngExact=yes ... gameplayMutation=no
+[MONSTERATKVIS] ARM probe=1 ... sprite=179 subtype=1 alt=0 loops=1 visual=1 ...
 [MONSTERRETAL] COMMIT probe=1 ... rollback=closed ...
-[MONSTERATKVIS] EXPIRE probe=1 sprite=179 visual=1->idle leaseMs=150 ... rngExact=yes gameplayMutation=no
+[MONSTERATKVIS] EXPIRE probe=1 sprite=179 visual=1->idle ...
 ```
 
 Alternate Hellhound witness:
 
 ```text
 [MONSTERTURN] ATTACK-PROBE ... sprite=114 subtype=1 weapon=13 alt=1 loops=1 ...
-[MONSTERATKVIS] ARM probe=6 ... sprite=114 subtype=1 alt=1 loops=1 visual=5 fixedAnim=yes leaseMs=150 ... rngExact=yes ... gameplayMutation=no
+[MONSTERATKVIS] ARM probe=6 ... sprite=114 subtype=1 alt=1 loops=1 visual=5 ...
 [MONSTERRETAL] COMMIT probe=6 ... rollback=closed ...
-[MONSTERATKVIS] EXPIRE probe=6 sprite=114 visual=5->idle leaseMs=150 ... rngExact=yes gameplayMutation=no
+[MONSTERATKVIS] EXPIRE probe=6 sprite=114 visual=5->idle ...
 ```
 
 Zombie subtype 0 also exercised the primary frame-1 path. The user visually
 confirmed that monsters now visibly attack.
 
-No `[MONSTERATKVIS] ROLLBACK` or `[MONSTERATKVIS] EXPIRE-RETRY` appeared in the
-provided positive witnesses.
+## One-step post-move same-turn attack — hardware PASS
+
+The true legacy `Entity_aiMoveToGoal()` goal counts are:
+
+```text
+subtype 1 / 5  -> i = 1
+subtype 4 / 13 -> i = 3
+```
+
+The previous recovery note incorrectly described all four as one-step. The code
+and this status now follow the true legacy split.
+
+This milestone owns the exact `i=1` family only. After a successfully committed
+live move, subtype `1/5` can feed a new attack probe into the existing activation,
+attack-visual and retaliation owners if and only if the committed destination is
+cardinally adjacent (`distance^2 <= 4096`) and the legacy trace is clear.
+
+Real-CYD Hellhound witness on exact SHA `f017aff0...`:
+
+```text
+[MONSTERMOVELIVE] COMMIT ... sprite=179 tile=750->718 ... rollback=closed
+[MONSTERPOSTMOVE] COMPLETE ... tile=750->718 distance2=16384
+    adjacentCardinal=no attack=no rngConsumed=0
+
+[MONSTERMOVELIVE] COMMIT ... sprite=179 tile=718->686 ... rollback=closed
+[MONSTERPOSTMOVE] ATTACK-PROBE reason=PASS_TURN sprite=179 subtype=1
+    tile=718->686 weapon=12 alt=0 loops=1 goalStep=1/1
+    distance2=4096 adjacentCardinal=yes trace=clear
+    playerHP=30->27 armor=8->5
+    playerFNV=f58f97ce->f58f97ce rng=f71b27b7->f71b27b7
+    rngRollback=yes playerExact=yes sameTurn=yes
+    movementAlreadyCommitted=yes gameplayMutation=no
+[MONSTERACT] DELIVER actualProbe=1 deliveredProbe=1 sprite=179 reason=4 activated=yes
+[MONSTERATKVIS] ARM probe=1 ... sprite=179 visual=1 ... gameplayMutation=no
+[MONSTERRETAL] COMMIT probe=1 ... playerHP=30->27 armor=8->5 ... rollback=closed
+[MONSTERATKVIS] EXPIRE probe=1 sprite=179 visual=1->idle ... gameplayMutation=no
+```
+
+There is no additional `[MONSTERTURN] SCHEDULE` between the committed `718->686`
+move and the post-move attack probe. The move and attack are therefore one native
+monster turn. The preceding `750->718` no-attack result proves the adjacency gate
+is not firing early.
+
+The post-move attack probe leaves PlayerState and gameplay RNG byte-for-byte exact
+before the existing retaliation replay becomes the sole live damage/RNG owner.
+A ranged `RANGED-AI` movement path is not routed into this one-step post-move hook.
 
 ## RAM witness at current boundary
 
-Repeated walking, pickups, monster movement, attack visuals and retaliation on
-the exact tested build remained stable at:
+The supplied real-CYD session remained stable before and after the same-turn
+post-move attack, its visual expiry, retaliation feedback and subsequent combat:
 
 ```text
 heap = 86524
@@ -306,42 +353,6 @@ mediaTexels = NULL
 ```
 
 Audio remains deferred. Do not enable it without its own RAM milestone.
-
-## Newly recovered next gameplay boundary
-
-Real-CYD testing exposed a separate AI sequencing gap after movement.
-
-Legacy `Entity_aiMoveToGoal()` is called again when monster interpolation reaches
-its destination. For subtypes:
-
-```text
-1, 4, 5, 13
-```
-
-it uses a one-step post-move goal (`i = 1`) and, if the monster has become
-cardinally adjacent (`distance^2 <= 4096`) with an unobstructed trace, calls
-`Entity_attack()` in the same monster turn.
-
-This explains the observed Hellhound difference: native movement currently snaps
-and commits the destination but does not yet execute the legacy post-move goal,
-so a dog can become adjacent and wait for the player's next turn before attacking.
-
-Important negative witness: a ranged Zombie after a player shot produced
-`aiRand=254 >= 217`, selected the legacy movement branch, moved successfully, and
-did not attack that turn. This is compatible with `Entity_aiThink()` and means the
-next implementation must **not** blindly attack after every movement.
-
-Preferred next bounded milestone after merge:
-
-```text
-native monster post-move goal / same-turn attack
-- recover only exact legacy subtype/adjacency/trace gate;
-- trigger only after a committed live move;
-- feed a new same-turn attack probe into existing activation/visual/retaliation;
-- reuse existing damage/RNG owners;
-- no movement interpolation milestone bundled in;
-- no multiple-monster ordering expansion bundled in.
-```
 
 ## Intentionally deferred families
 
@@ -355,6 +366,7 @@ movement-hazard secondary burn text / pain face / shake / sound
 action XP migration
 materialized monster drops
 corpse-pile trimming
+subtype 4/13 three-goal same-turn movement chain
 monster movement interpolation/animation
 multiple-live-monster activation/movement ordering
 unsupported special calcPath plane corpus
@@ -400,10 +412,14 @@ After the user announces the merge:
 
 1. read actual GitHub `main` and exact SHA;
 2. re-read this file, `DOCUMENTATION.md` and
-   `MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md`;
-3. create a fresh branch from that exact main SHA;
-4. preferred next branch: native monster post-move goal / same-turn attack;
-5. recover/reuse the exact legacy `Entity_aiMoveToGoal()` semantics only.
+   `MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`;
+3. create a fresh `agent/*` from that exact main SHA;
+4. recover the next bounded legacy family before coding.
+
+A strong candidate is the exact subtype `4/13` `i=3` same-turn goal chain, but it
+must own the complete required movement/RNG sequence rather than approximating it
+after one published step. Re-evaluate this against true `main` and legacy source
+before implementation.
 
 ## Development workflow
 
@@ -411,14 +427,14 @@ After the user announces the merge:
 recover true main + docs
  -> choose one bounded behavior FAMILY
  -> recover exact legacy behavior
- -> design small permanent native owner/API
+ -> design small permanent native API/owner
  -> keep genuinely different families fail-closed
  -> commit/push agent/*
  -> test normal esp32-cyd on real CYD
  -> Serial is truth
  -> fix failures directly
  -> after PASS, docs-only tail
- -> verify post-test commits are docs-only
+ -> verify tested SHA + docs-only commits
  -> merge-ready
 ```
 
