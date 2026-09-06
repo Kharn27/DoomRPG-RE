@@ -202,12 +202,8 @@ static void drawClose(uint16_t* framebuffer) {
 }
 
 static void drawInventoryCards(uint16_t* framebuffer, uint8_t selectedRow) {
-    static const int tops[3] = {
-        HUB_UI_ROW0_TOP, HUB_UI_ROW1_TOP, HUB_UI_ROW2_TOP
-    };
-    static const int bottoms[3] = {
-        HUB_UI_ROW0_BOTTOM, HUB_UI_ROW1_BOTTOM, HUB_UI_ROW2_BOTTOM
-    };
+    static const int tops[3] = {33, 46, 59};
+    static const int bottoms[3] = {46, 59, 72};
     int row;
     for (row = 0; row < 3; ++row) {
         uint16_t color = (selectedRow == (uint8_t)row) ? HUB_UI_WHITE
@@ -219,20 +215,21 @@ static void drawInventoryCards(uint16_t* framebuffer, uint8_t selectedRow) {
                  bottoms[row],
                  color);
         if (selectedRow == (uint8_t)row) {
-            putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, tops[row] + 2, HUB_UI_BLUE);
             putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, tops[row] + 3, HUB_UI_BLUE);
             putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, tops[row] + 4, HUB_UI_BLUE);
             putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, tops[row] + 5, HUB_UI_BLUE);
             putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, tops[row] + 6, HUB_UI_BLUE);
             putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, tops[row] + 7, HUB_UI_BLUE);
             putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, tops[row] + 8, HUB_UI_BLUE);
+            putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, tops[row] + 9, HUB_UI_BLUE);
+            putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, tops[row] + 10, HUB_UI_BLUE);
         }
     }
 }
 
 static void drawStatusCards(uint16_t* framebuffer) {
-    static const int tops[5] = {34, 47, 60, 73, 86};
-    static const int bottoms[5] = {45, 58, 71, 84, 97};
+    static const int tops[5] = {33, 46, 59, 72, 85};
+    static const int bottoms[5] = {46, 59, 72, 85, 98};
     int row;
     for (row = 0; row < 5; ++row) {
         drawRect(framebuffer, 2, tops[row], 157, bottoms[row], HUB_UI_DIM_BLUE);
