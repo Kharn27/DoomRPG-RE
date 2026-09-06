@@ -232,7 +232,15 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
         return ESP_NATIVE_GAMEPLAY_ACTION_DOOR_LOCKED;
     }
     if (doorStatus == ESP_MAP_LINE_DOOR_ALREADY_TARGET) {
-        return ESP_NATIVE_GAMEPLAY_ACTION_DOOR_ALREADY_TARGET;
+        /*
+         * Legacy Game_performDoorEvent() returns false for OPENLINE on an
+         * already-open line (and CLOSELINE on an already-closed line).
+         * Game_executeTile() therefore returns false and SELECT continues into
+         * Game_trace()/Player_fireWeapon().  Preserve the event diagnostics in
+         * outResult, but report a non-handled status so the native action/combat
+         * composition takes that exact trace fallback.
+         */
+        return ESP_NATIVE_GAMEPLAY_ACTION_NO_ELIGIBLE;
     }
     if (doorStatus == ESP_MAP_LINE_DOOR_NOT_READY) {
         return ESP_NATIVE_GAMEPLAY_ACTION_NOT_READY;

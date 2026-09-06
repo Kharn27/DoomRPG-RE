@@ -14,7 +14,6 @@
 #include "esp_native_gameplay_move_events.h"
 
 #define RENDER_LINE_FLAG_REGULAR_DOOR  0x00000004UL
-#define RENDER_LINE_FLAG_AXIS_X        0x00000008UL
 #define RENDER_LINE_FLAG_X_NUDGE       0x00000200UL
 #define RENDER_LINE_FLAG_REVERSE_TEX   0x00008000UL
 #define RENDER_LINE_FLAG_SPRITE_SPAN   0x00000002UL
@@ -118,28 +117,19 @@ static int applyAnimatedLine(uint32_t index,
     source = *line;
     compactLineZ(&source, &desiredZ1, &desiredZ2);
 
+    /*
+     * Exact DoomCanvas_updatePlayerAnimDoors() regular-door branch:
+     * flags&512 chooses y1, otherwise x1, and vert2.z retracts by the same
+     * amount.  flags&8 belongs only to the separate non-regular/secret-door
+     * family and must not rotate a regular line in x/y.
+     */
     if ((source.flags & RENDER_LINE_FLAG_X_NUDGE) != 0U) {
-        if ((source.flags & RENDER_LINE_FLAG_AXIS_X) != 0U) {
-            if (!adjustU16(&line->y1, delta) ||
-                !adjustU16(&line->x2, -delta)) {
-                return 0;
-            }
-        }
-        else {
-            if (!adjustU16(&line->y1, delta)) return 0;
-            desiredZ2 -= delta;
-        }
-    }
-    else if ((source.flags & RENDER_LINE_FLAG_AXIS_X) != 0U) {
-        if (!adjustU16(&line->x1, delta)) return 0;
-        desiredZ2 -= delta;
+        if (!adjustU16(&line->y1, delta)) return 0;
     }
     else {
-        if (!adjustU16(&line->x1, delta) ||
-            !adjustU16(&line->y2, -delta)) {
-            return 0;
-        }
+        if (!adjustU16(&line->x1, delta)) return 0;
     }
+    desiredZ2 -= delta;
 
     compactLineZ(line, &builtZ1, &builtZ2);
     animatedClip.builtZ1 = builtZ1;
