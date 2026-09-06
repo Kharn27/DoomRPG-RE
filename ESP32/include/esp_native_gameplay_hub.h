@@ -18,6 +18,12 @@ typedef enum EspNativeGameplayHubStatus_e {
     ESP_NATIVE_GAMEPLAY_HUB_OK = 7
 } EspNativeGameplayHubStatus;
 
+typedef enum EspNativeGameplayHubPage_e {
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY = 0,
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS = 1,
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT = 2
+} EspNativeGameplayHubPage;
+
 typedef struct EspNativeGameplayHubView_s {
     uint32_t opens;
     uint32_t closes;
@@ -32,11 +38,13 @@ typedef struct EspNativeGameplayHubView_s {
 } EspNativeGameplayHubView;
 
 /*
- * First permanent gameplay-hub owner.
+ * Permanent bounded gameplay-hub owner.
  *
- * v1 owns one read-only inventory projection only. It never duplicates or
- * mutates PlayerState and never retains a framebuffer snapshot. The world is
- * restored by the resident gameplay renderer after HUB_CLOSE.
+ * v2 projects two read-only views from the one canonical PlayerState owner:
+ * Inventory and Status. It never duplicates or mutates PlayerState and never
+ * retains a framebuffer snapshot. The hub may paint only the resident 160x80
+ * world viewport (y=20..99); the native HUD bands remain untouched and the
+ * world is restored by the resident gameplay renderer after HUB_CLOSE.
  */
 void EspNativeGameplayHub_reset(void);
 int EspNativeGameplayHub_isActive(void);
