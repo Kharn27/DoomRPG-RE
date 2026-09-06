@@ -14,24 +14,24 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main at branch creation = e6aae5d3a0d3c6564a3f4147b3be71c422dda5d3
-branch = agent/esp32-native-monster-three-goal-turn
-base main = e6aae5d3a0d3c6564a3f4147b3be71c422dda5d3
-hardware-tested code boundary = 8c3bee5ebba013fead9273f10f1a1c3bd015eeda
-status = MULTI-ACTIVE MONSTER SEQUENCE + DOOR/ATTACK REGRESSION PASS
+main at branch creation = dbcbf7b52f9aef851503a919a5a2871743a7de20
+branch = agent/esp32-native-gameplay-hub-inventory-view
+base main = dbcbf7b52f9aef851503a919a5a2871743a7de20
+hardware-tested code boundary = bc136c735c9f5ba173a57fcbbb1f5bea6732b3bd
+status = GAMEPLAY HUB V2 INVENTORY + STATUS READ-ONLY PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `8c3bee5e...` as new hardware-tested code. The tail
+Do not treat commits after `bc136c73...` as new hardware-tested code. The tail
 must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `34047884638` / run #149 passed on the
+Normal GitHub Actions `esp32-cyd` run `34060186783` / run #161 passed on the
 exact tested SHA and produced the firmware artifact. CI is compile/link evidence
 only; real-CYD serial logs remain authoritative.
 
 Latest milestone:
 
-- [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
 
 ## Build environment
 
@@ -222,6 +222,12 @@ multiple active no-immediate-attack monsters delivered in one MonsterTurn
 per-member movement publication before the next active member is planned
 dead active members skipped by later delivery
 open-door attack passthrough preserved with regular four-frame line animation
+28 B native gameplay HUB owner with no framebuffer snapshot
+read-only Inventory + Status projection from the shared 52 B PlayerState
+HUB writes only world viewport y=20..99 and fingerprints untouched HUD bands
+TURN_LEFT/RIGHT page navigation with all HUB input isolated from world dispatch
+Inventory cursor via FORWARD/BACK; Status movement input absorbed
+exact world-frame reconstruction on MENU close
 ```
 
 Milestone index for this frontier:
@@ -243,15 +249,68 @@ Milestone index for this frontier:
 - [`MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`](MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md)
 - [`MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md)
 - [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
 
-## Active-monster sequencing result
+## Native gameplay HUB v2 result
+
+The HUB is deliberately a compact native shell, not permanent adoption of legacy
+`MenuSystem`. The tested ownership is:
+
+```text
+EspNativeGameplayPlayerState = 52 B canonical mutable player state
+EspNativeGameplayHubView = 28 B modal UI state
+HUB framebuffer backup = 0 B
+pages = Inventory, Status
+```
+
+Inventory exposes current weapon/owned bitmask, six ammo counters, five inventory
+slots, keys, credits, level and XP. Status mirrors the useful player portion of
+legacy `Menu_fillStatus()` using the already-owned compact player values:
+health/max, armor/max, level/current XP/next XP, defense, strength, agility,
+accuracy, credits and keys.
+
+The first prototype revealed an important compositor boundary. Gameplay rendering
+preserves the native HUD bands at `y=0..19` and `y=100..119`; therefore a HUB that
+painted all 120 rows left menu traces after close. The permanent solution is
+viewport-only composition:
+
+```text
+HUB writable region = 160x80 / y=20..99
+HUD bands = untouched and FNV-verified before/after every HUB paint
+world close = normal resident gameplay rerender
+```
+
+Real-CYD witness on `bc136c73...`:
+
+```text
+playerFNV=e745fce9 exact=yes
+hudBands=6c2aa46f preserved=yes
+Inventory row0 frame=06138e61
+Status frame=b35c12b9
+Inventory row2 frame=71bffc61
+Inventory row1 frame=1a817e61
+close world frame=22397b55 (same as pre-HUB baseline)
+packClosed=yes
+mutation=no
+turn=no
+```
+
+`FORWARD` on Status was absorbed rather than falling into player movement. Page
+switches and cursor movement were deterministic, and MENU close restored the
+world with no HUD residue.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
+
+## Retained active-monster sequencing result
 
 Legacy sprite rendering activates a monster when an admitted sprite reaches the
 sprite-object renderer. The native equivalent observes activation at the
 BSP-visible admission point and records first-activation order without consuming
 RNG.
 
-For the no-immediate-attack family, the active sequence now closes one full live
+For the no-immediate-attack family, the active sequence closes one full live
 movement transaction per member before the next member is planned:
 
 ```text
@@ -263,17 +322,17 @@ committed its move, then the second dog planned and committed from the updated
 world state. After dog 89 was killed by the existing generic combat backend,
 subsequent delivery contained only dog 114.
 
-The final hardware session also verified that composition wrappers did not break
-regular doors or enemy SELECT passthrough: the door still emitted all four
+The same earlier hardware session verified that composition wrappers did not
+break regular doors or enemy SELECT passthrough: the door still emitted all four
 `DOORANIM` frames and enemy combat remained reachable through the opened line.
 
 Detailed record:
 
 - [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
 
-## Subtype 4/13 three-goal owner on the branch
+## Subtype 4/13 three-goal owner retained
 
-The branch contains a bounded owner for the exact legacy `i=3` movement family:
+The bounded owner for the exact legacy `i=3` movement family remains present:
 
 ```text
 subtype 4 / 13 -> three same-turn movement goals max
@@ -284,19 +343,21 @@ unsupported special calcPath plane -> fail closed
 three-shot / multi-loop attack family -> fail closed
 ```
 
-The latest final regression log exercises the subtype-1 active sequence and does
-not itself create a new subtype-4/13 hardware witness. Keep that distinction when
-recovering this branch later.
+The HUB hardware log does not itself create a new subtype-4/13 witness. Keep that
+distinction when recovering the next branch.
 
 ## RAM at current boundary
 
-The supplied real-CYD session remained stable through regular door animation,
-multiple active monster moves, combat/death and later PASS_TURNs:
+The supplied real-CYD HUB session remained stable through repeated page switches,
+ignored Status movement input, Inventory cursor movement and return to gameplay:
 
 ```text
-heap=86252
-heap8=20520
-largest8=18420
+heap=89280
+heap8=23548
+largest8=20468
+hub owner=28 B
+player owner=52 B
+HUB framebuffer snapshot=0 B
 shapeData=NULL
 mediaTexels=NULL
 ```
@@ -335,6 +396,10 @@ Kronos-specific semantics
 password input
 GIVEMAP production route
 CHECK_KEY production route
+HUB visual chrome + entity/item names
+HUB weapon selection
+HUB consumable confirmation/use + turn consumption
+HUB Notebook / Automap / Save / Load / Options / store
 ```
 
 ## CHANGEMAP recovery point
@@ -358,13 +423,17 @@ When the user announces the merge:
 
 1. read the true GitHub `main` and exact SHA;
 2. re-read `PORTING_STATUS.md`, this file and
-   `MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`;
+   `MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`;
 3. create the next `agent/*` from that exact SHA;
-4. recover the next bounded legacy family against the true source before coding.
+4. recover the next bounded legacy/UI family against the true source before coding.
 
-Strong next candidates are simultaneous attack-ready active-list ordering or the
-separate multi-loop monster attack family. Re-evaluate against true merged `main`
-before selecting either.
+Strong next candidate: a **visual/readability HUB pass** only. The useful legacy
+in-game look is already recovered: black viewport background, dark-blue `0x050A4A`
+8 px grid, white text, compact 12 px rows and a hand/selection affordance. The
+next branch can reproduce that character with bounded native drawing and add
+real Doom RPG entity/item labels, while keeping the 28 B HUB owner,
+`y=20..99` clipping and read-only semantics. Item-use mutation must remain a
+separate milestone.
 
 ## Development workflow
 
