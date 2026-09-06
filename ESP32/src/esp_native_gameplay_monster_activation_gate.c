@@ -33,6 +33,7 @@ static MonsterActivationGateOwner activationOwner;
 
 const EspNativeGameplayMonsterTurnView*
 __real_EspNativeGameplayMonsterTurn_view(void);
+int EspNativeGameplayDestructibleTurn_flush(void);
 
 static int isActivated(uint16_t spriteIndex) {
     return spriteIndex < MONSTER_ACTIVATION_MAX_SPRITES &&
@@ -148,9 +149,14 @@ void EspNativeGameplayMonsterActivation_clearTurnCounterOverride(void) {
 
 const EspNativeGameplayMonsterTurnView*
 __wrap_EspNativeGameplayMonsterTurn_view(void) {
-    const EspNativeGameplayMonsterTurnView* actual =
-        __real_EspNativeGameplayMonsterTurn_view();
+    const EspNativeGameplayMonsterTurnView* actual;
     uint32_t newProbeCount;
+
+    /* A successfully committed destructible player attack uses the existing
+     * pass-request transport only after its action-service rollback window is
+     * closed. The next service iteration then runs the normal monster producer. */
+    (void)EspNativeGameplayDestructibleTurn_flush();
+    actual = __real_EspNativeGameplayMonsterTurn_view();
 
     if (actual == NULL || actual->active != 1U ||
         actual->sourceArenaFNV1a == 0U) {
