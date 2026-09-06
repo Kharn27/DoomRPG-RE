@@ -74,6 +74,14 @@ static uint32_t hudBandsFNV(void) {
         HUB_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
 }
 
+static const char* pageName(uint8_t page) {
+    switch (page) {
+    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY: return "inventory";
+    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS: return "status";
+    default: return "unknown";
+    }
+}
+
 static void putPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {
     if (framebuffer == NULL || x < 0 || x >= DOOMRPG_LOGICAL_WIDTH ||
         y < (int)HUB_TOP_Y || y >= (int)HUB_BOTTOM_Y) {
@@ -150,7 +158,120 @@ static int drawText(const EspNativeIndexedBmp* font,
     return 1;
 }
 
-static EspNativeGameplayHubStatus paintInventory(void) {
+static int paintInventoryContent(const EspNativeGameplayPlayerState* player,
+                                 const EspNativeIndexedBmp* font,
+                                 uint16_t* framebuffer,
+                                 EspNativeIndexedBmpStats* stats) {
+    char line[32];
+    int ok = 1;
+
+    if (player == NULL || font == NULL || framebuffer == NULL || stats == NULL) {
+        return 0;
+    }
+
+    memset(line, 0, sizeof(line));
+    ok = drawText(font, framebuffer, "HUB < INVENTORY >", 4, 21, stats) && ok;
+
+    snprintf(line, sizeof(line), "%cWPN %02u OWN %03X",
+             hub.selectedRow == 0U ? '>' : ' ',
+             (unsigned int)player->weapon,
+             (unsigned int)(player->weapons & 0x0fffU));
+    ok = drawText(font, framebuffer, line, 4, 34, stats) && ok;
+
+    snprintf(line, sizeof(line), "%cA %02u %02u %02u %02u %02u %02u",
+             hub.selectedRow == 1U ? '>' : ' ',
+             (unsigned int)player->ammo[0],
+             (unsigned int)player->ammo[1],
+             (unsigned int)player->ammo[2],
+             (unsigned int)player->ammo[3],
+             (unsigned int)player->ammo[4],
+             (unsigned int)player->ammo[5]);
+    ok = drawText(font, framebuffer, line, 4, 47, stats) && ok;
+
+    snprintf(line, sizeof(line), "%cI %02u %02u %02u %02u %02u",
+             hub.selectedRow == 2U ? '>' : ' ',
+             (unsigned int)player->inventory[0],
+             (unsigned int)player->inventory[1],
+             (unsigned int)player->inventory[2],
+             (unsigned int)player->inventory[3],
+             (unsigned int)player->inventory[4]);
+    ok = drawText(font, framebuffer, line, 4, 60, stats) && ok;
+
+    snprintf(line, sizeof(line), "K%08lX C%lu",
+             (unsigned long)player->keys,
+             (unsigned long)player->credits);
+    ok = drawText(font, framebuffer, line, 4, 73, stats) && ok;
+
+    snprintf(line, sizeof(line), "LV%u XP%lu/%lu",
+             (unsigned int)player->level,
+             (unsigned long)player->currentXP,
+             (unsigned long)player->nextLevelXP);
+    ok = drawText(font, framebuffer, line, 4, 86, stats) && ok;
+    return ok;
+}
+
+static int paintStatusContent(const EspNativeGameplayPlayerState* player,
+                              const EspNativeIndexedBmp* font,
+                              uint16_t* framebuffer,
+                              EspNativeIndexedBmpStats* stats) {
+    char line[32];
+    uint8_t health;
+    uint8_t maxHealth;
+    uint8_t armor;
+    uint8_t maxArmor;
+    uint8_t defense;
+    uint8_t strength;
+    uint8_t agility;
+    uint8_t accuracy;
+    int ok = 1;
+
+    if (player == NULL || font == NULL || framebuffer == NULL || stats == NULL) {
+        return 0;
+    }
+
+    health = (uint8_t)(player->param1 & 0xffU);
+    maxHealth = (uint8_t)((player->param1 >> 8) & 0xffU);
+    armor = (uint8_t)((player->param1 >> 16) & 0xffU);
+    maxArmor = (uint8_t)((player->param1 >> 24) & 0xffU);
+    defense = (uint8_t)(player->param2 & 0xffU);
+    strength = (uint8_t)((player->param2 >> 8) & 0xffU);
+    agility = (uint8_t)((player->param2 >> 16) & 0xffU);
+    accuracy = (uint8_t)((player->param2 >> 24) & 0xffU);
+
+    memset(line, 0, sizeof(line));
+    ok = drawText(font, framebuffer, "HUB < STATUS >", 4, 21, stats) && ok;
+
+    snprintf(line, sizeof(line), "HP %u/%u AR %u/%u",
+             (unsigned int)health,
+             (unsigned int)maxHealth,
+             (unsigned int)armor,
+             (unsigned int)maxArmor);
+    ok = drawText(font, framebuffer, line, 4, 34, stats) && ok;
+
+    snprintf(line, sizeof(line), "LV %u XP %lu/%lu",
+             (unsigned int)player->level,
+             (unsigned long)player->currentXP,
+             (unsigned long)player->nextLevelXP);
+    ok = drawText(font, framebuffer, line, 4, 47, stats) && ok;
+
+    snprintf(line, sizeof(line), "DEF %u STR %u",
+             (unsigned int)defense,
+             (unsigned int)strength);
+    ok = drawText(font, framebuffer, line, 4, 60, stats) && ok;
+
+    snprintf(line, sizeof(line), "AGI %u ACC %u",
+             (unsigned int)agility,
+             (unsigned int)accuracy);
+    ok = drawText(font, framebuffer, line, 4, 73, stats) && ok;
+
+    snprintf(line, sizeof(line), "C %lu K %08lX",
+             (unsigned long)player->credits,
+             (unsigned long)player->keys);
+    ok = drawText(font, framebuffer, line, 4, 86, stats) && ok;
+    return ok;
+}
+
+static EspNativeGameplayHubStatus paintCurrentPage(void) {
     EspNativeGameplayPlayerState before;
     EspNativeGameplayPlayerState after;
     EspNativeIndexedBmp font;
@@ -161,16 +282,14 @@ static EspNativeGameplayHubStatus paintInventory(void) {
     uint32_t paintedFNV;
     uint32_t hudBandsBefore;
     uint32_t hudBandsAfter;
-    char line[32];
-    int ok = 1;
+    int ok;
 
     memset(&before, 0, sizeof(before));
     memset(&after, 0, sizeof(after));
     memset(&font, 0, sizeof(font));
     memset(&stats, 0, sizeof(stats));
-    memset(line, 0, sizeof(line));
 
-    if (hub.active == 0U || hub.page != 0U ||
+    if (hub.active == 0U || hub.page >= ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT ||
         !EspNativeGameplayPlayerState_snapshot(&before) || before.active != 1U) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
@@ -203,49 +322,21 @@ static EspNativeGameplayHubStatus paintInventory(void) {
         return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
     }
 
-    /* The gameplay compositor owns y=0..19 and y=100..119 permanently.  The
-     * hub is a modal UI over the same 160x80 world viewport only, so closing it
-     * needs no framebuffer snapshot and the normal world rerender restores
-     * every pixel the hub was allowed to touch. */
+    /* The gameplay compositor owns y=0..19 and y=100..119 permanently. The
+     * hub is modal only over the resident 160x80 world viewport. No page is
+     * allowed to touch HUD pixels, so close needs no framebuffer snapshot. */
     clearViewport(framebuffer);
     drawBorder(framebuffer);
 
-    snprintf(line, sizeof(line), "DOOM RPG INV LV%u", (unsigned int)before.level);
-    ok = drawText(&font, framebuffer, line, 4, 21, &stats) && ok;
-
-    snprintf(line, sizeof(line), "%cWPN %02u OWN %03X",
-             hub.selectedRow == 0U ? '>' : ' ',
-             (unsigned int)before.weapon,
-             (unsigned int)(before.weapons & 0x0fffU));
-    ok = drawText(&font, framebuffer, line, 4, 34, &stats) && ok;
-
-    snprintf(line, sizeof(line), "%cA %02u %02u %02u %02u %02u %02u",
-             hub.selectedRow == 1U ? '>' : ' ',
-             (unsigned int)before.ammo[0],
-             (unsigned int)before.ammo[1],
-             (unsigned int)before.ammo[2],
-             (unsigned int)before.ammo[3],
-             (unsigned int)before.ammo[4],
-             (unsigned int)before.ammo[5]);
-    ok = drawText(&font, framebuffer, line, 4, 47, &stats) && ok;
-
-    snprintf(line, sizeof(line), "%cI %02u %02u %02u %02u %02u",
-             hub.selectedRow == 2U ? '>' : ' ',
-             (unsigned int)before.inventory[0],
-             (unsigned int)before.inventory[1],
-             (unsigned int)before.inventory[2],
-             (unsigned int)before.inventory[3],
-             (unsigned int)before.inventory[4]);
-    ok = drawText(&font, framebuffer, line, 4, 60, &stats) && ok;
-
-    snprintf(line, sizeof(line), "K%08lX C%lu",
-             (unsigned long)before.keys,
-             (unsigned long)before.credits);
-    ok = drawText(&font, framebuffer, line, 4, 73, &stats) && ok;
-
-    snprintf(line, sizeof(line), "XP%lu M=BK",
-             (unsigned long)before.currentXP);
-    ok = drawText(&font, framebuffer, line, 4, 86, &stats) && ok;
+    if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY) {
+        ok = paintInventoryContent(&before, &font, framebuffer, &stats);
+    }
+    else if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
+        ok = paintStatusContent(&before, &font, framebuffer, &stats);
+    }
+    else {
+        ok = 0;
+    }
 
     EspAssetPack_close();
     if (!ok || EspAssetPack_isOpen()) {
@@ -257,7 +348,8 @@ static EspNativeGameplayHubStatus paintInventory(void) {
     if (!EspNativeGameplayPlayerState_snapshot(&after) ||
         fnvAfter != fnvBefore || memcmp(&before, &after, sizeof(before)) != 0 ||
         hudBandsAfter == 0U || hudBandsAfter != hudBandsBefore) {
-        printf("[HUB] PAINT-DEFER player=%08x->%08x hudBands=%08x->%08x playerExact=%s hudPreserved=%s mutation=no turn=no\n",
+        printf("[HUB] PAINT-DEFER page=%s player=%08x->%08x hudBands=%08x->%08x playerExact=%s hudPreserved=%s mutation=no turn=no\n",
+               pageName(hub.page),
                (unsigned int)fnvBefore,
                (unsigned int)fnvAfter,
                (unsigned int)hudBandsBefore,
@@ -275,8 +367,9 @@ static EspNativeGameplayHubStatus paintInventory(void) {
     ++hub.paints;
     hub.lastPlayerFNV = fnvAfter;
     hub.lastFrameFNV = paintedFNV;
-    printf("[HUB] FRAME paint=%u page=inventory row=%u frame=%08x viewport=160x80/y20..99 hudBands=%08x preserved=yes reads=%u bytes=%u playerFNV=%08x exact=yes packClosed=yes presented=1 mutation=no turn=no\n",
+    printf("[HUB] FRAME paint=%u page=%s row=%u frame=%08x viewport=160x80/y20..99 hudBands=%08x preserved=yes reads=%u bytes=%u playerFNV=%08x exact=yes packClosed=yes presented=1 mutation=no turn=no\n",
            (unsigned int)hub.paints,
+           pageName(hub.page),
            (unsigned int)hub.selectedRow,
            (unsigned int)paintedFNV,
            (unsigned int)hudBandsAfter,
@@ -314,19 +407,21 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
 
     ++hub.opens;
     hub.selectedRow = 0U;
-    hub.page = 0U;
+    hub.page = ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY;
     hub.playerFNVAtOpen = playerFNV;
     hub.lastPlayerFNV = playerFNV;
     hub.active = 1U;
 
-    status = paintInventory();
+    status = paintCurrentPage();
     if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) {
         hub.active = 0U;
         return status;
     }
 
-    printf("[HUB] OPEN n=%u mode=inventory-readonly viewport=160x80/y20..99 hudBands=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
+    printf("[HUB] OPEN n=%u mode=inventory+status-readonly page=%s pages=%u viewport=160x80/y20..99 hudBands=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
            (unsigned int)hub.opens,
+           pageName(hub.page),
+           (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT,
            (unsigned int)sizeof(hub),
            (unsigned int)sizeof(player),
            (unsigned int)playerFNV,
@@ -352,6 +447,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     EspNativeGameplayHubStatus status;
     uint32_t playerFNV;
     uint8_t beforeRow;
+    uint8_t beforePage;
 
     if (hub.active == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
 
@@ -360,8 +456,9 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         hub.active = 0U;
         ++hub.closes;
         hub.lastPlayerFNV = playerFNV;
-        printf("[HUB] CLOSE n=%u playerFNV=%08x->%08x exact=%s mutation=no turn=no worldRedraw=pending viewportOnly=yes hudBands=untouched packClosed=%s\n",
+        printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x exact=%s mutation=no turn=no worldRedraw=pending viewportOnly=yes hudBands=untouched packClosed=%s\n",
                (unsigned int)hub.closes,
+               pageName(hub.page),
                (unsigned int)hub.playerFNVAtOpen,
                (unsigned int)playerFNV,
                playerFNV == hub.playerFNVAtOpen ? "yes" : "NO",
@@ -373,32 +470,64 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     }
 
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_SELECT) {
-        printf("[HUB] SELECT-DEFER row=%u cause=read-only-milestone mutation=no turn=no\n",
+        printf("[HUB] SELECT-DEFER page=%s row=%u cause=read-only-milestone mutation=no turn=no\n",
+               pageName(hub.page),
                (unsigned int)hub.selectedRow);
         return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
     }
 
-    beforeRow = hub.selectedRow;
-    if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD) {
-        hub.selectedRow = (uint8_t)((hub.selectedRow + HUB_ROWS - 1U) % HUB_ROWS);
-    }
-    else if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK) {
-        hub.selectedRow = (uint8_t)((hub.selectedRow + 1U) % HUB_ROWS);
-    }
-    else {
-        printf("[HUB] IGNORE action=%u row=%u worldDispatch=blocked mutation=no turn=no\n",
-               (unsigned int)action,
-               (unsigned int)hub.selectedRow);
-        return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+    if (action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT ||
+        action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT) {
+        beforePage = hub.page;
+        if (action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT) {
+            hub.page = (uint8_t)((hub.page + ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT - 1U) %
+                                 ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT);
+        }
+        else {
+            hub.page = (uint8_t)((hub.page + 1U) %
+                                 ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT);
+        }
+        status = paintCurrentPage();
+        if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) {
+            hub.page = beforePage;
+            return status;
+        }
+        printf("[HUB] PAGE page=%s->%s direction=%s playerMutation=no turn=no worldDispatch=blocked\n",
+               pageName(beforePage),
+               pageName(hub.page),
+               action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT ? "left" : "right");
+        return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
     }
 
-    status = paintInventory();
-    if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) return status;
-    printf("[HUB] CURSOR row=%u->%u direction=%s mutation=no turn=no\n",
-           (unsigned int)beforeRow,
-           (unsigned int)hub.selectedRow,
-           action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ? "up" : "down");
-    return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+    if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
+        (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ||
+         action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK)) {
+        beforeRow = hub.selectedRow;
+        if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD) {
+            hub.selectedRow =
+                (uint8_t)((hub.selectedRow + HUB_ROWS - 1U) % HUB_ROWS);
+        }
+        else {
+            hub.selectedRow = (uint8_t)((hub.selectedRow + 1U) % HUB_ROWS);
+        }
+
+        status = paintCurrentPage();
+        if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) {
+            hub.selectedRow = beforeRow;
+            return status;
+        }
+        printf("[HUB] CURSOR page=inventory row=%u->%u direction=%s mutation=no turn=no\n",
+               (unsigned int)beforeRow,
+               (unsigned int)hub.selectedRow,
+               action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ? "up" : "down");
+        return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+    }
+
+    printf("[HUB] IGNORE action=%u page=%s row=%u worldDispatch=blocked mutation=no turn=no\n",
+           (unsigned int)action,
+           pageName(hub.page),
+           (unsigned int)hub.selectedRow);
+    return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
 }
 
 const char* EspNativeGameplayHub_statusName(EspNativeGameplayHubStatus status) {
