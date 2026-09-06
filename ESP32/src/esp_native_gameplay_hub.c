@@ -5,6 +5,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_hub.h"
+#include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_indexed_bmp.h"
@@ -335,6 +336,12 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
         ok = paintStatusContent(&before, &font, framebuffer, &stats);
     }
     else {
+        ok = 0;
+    }
+
+    if (ok && !EspNativeGameplayHubTouchUi_paint(framebuffer,
+                                                  hub.page,
+                                                  hub.selectedRow)) {
         ok = 0;
     }
 
