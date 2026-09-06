@@ -14,6 +14,7 @@
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_move_events.h"
@@ -50,6 +51,7 @@ static void disableGameplay(const char* reason) {
     if (EspNativeGameplayControls_isActive()) {
         (void)EspNativeGameplayControls_restore(1, NULL);
     }
+    EspNativeGameplayHub_reset();
     EspNativeGameplayDialog_reset();
     gameplayState.failed = 1U;
     gameplayState.active = 0U;
@@ -115,7 +117,9 @@ static void onGameplayTap(int16_t screenX,
                (unsigned int)hit.zone,
                logicalX,
                logicalY,
-               EspNativeGameplayDialog_isActive() ? "DIALOG" : "WORLD");
+               EspNativeGameplayHub_isActive()
+                   ? "HUB"
+                   : (EspNativeGameplayDialog_isActive() ? "DIALOG" : "WORLD"));
         printf("[TOUCHFEEDBACK] FLASH zone=%u action=%s edits=%u hold=%ums frame=%08x->%08x style=junction-neon-double-ring+vector-glyph\n",
                (unsigned int)feedbackStats.zone,
                EspNativeGameplayInput_actionName(feedbackStats.action),
@@ -632,11 +636,21 @@ static void serviceDialogAction(Render_t* render,
                               : 0U));
 }
 
+static int restoreWorldAfterHub(Render_t* render, const char* reason) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    if (render == NULL || view == NULL || view->active != 1U ||
+        view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0) {
+        return 0;
+    }
+    return renderCurrent(render, (uint8_t)view->viewAngle, reason);
+}
+
 void EspNativeResidentGameplay_reset(void) {
     PlatformInput_setTapCallback(NULL);
     if (EspNativeGameplayControls_isActive()) {
         (void)EspNativeGameplayControls_restore(0, NULL);
     }
+    EspNativeGameplayHub_reset();
     EspNativeGameplayDialog_reset();
     EspNativeGameplayControls_reset();
     EspNativeGameplayInput_reset();
@@ -676,13 +690,14 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             return;
         }
 
+        EspNativeGameplayHub_reset();
         EspNativeGameplayDialog_reset();
         EspNativeGameplayControls_reset();
         EspNativeGameplayInput_reset();
         gameplayState.active = 1U;
         PlatformInput_setTapCallback(onGameplayTap);
         printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26+PASS_TURN collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live SELECT-entity/other/menu/automap/weapons=deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
+        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live menu=inventory-readonly-no-turn SELECT-entity/other/automap=deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
                (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         return;
     }
@@ -707,6 +722,11 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     pending = EspNativeGameplayInput_peek();
+
+    if (EspNativeGameplayHub_isActive() && EspNativeGameplayDialog_isActive()) {
+        disableGameplay("hub-dialog-overlap");
+        return;
+    }
 
     /*
      * Dialog input wins over the time-based typewriter after the 120-ms touch
@@ -735,6 +755,53 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         if (!EspNativeGameplayDialog_tick()) {
             disableGameplay("dialog-tick");
         }
+        return;
+    }
+
+    /* HUB owns the input domain while active. No world action is allowed to
+     * fall through this branch, including PASS_TURN, SELECT or weapon cycling. */
+    if (EspNativeGameplayHub_isActive()) {
+        EspNativeGameplayHubStatus hubStatus;
+        if (pending == NULL || pending->pending == 0U) return;
+        memset(&intent, 0, sizeof(intent));
+        inputStatus = EspNativeGameplayInput_consume(&intent);
+        if (inputStatus != ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+            disableGameplay("hub-input-consume");
+            return;
+        }
+        ++gameplayState.actions;
+        hubStatus = EspNativeGameplayHub_handleAction(intent.action);
+        if (hubStatus == ESP_NATIVE_GAMEPLAY_HUB_CLOSED) {
+            if (!restoreWorldAfterHub(doomRpg->render, "HUB-CLOSE")) {
+                disableGameplay("hub-close-world-render");
+                return;
+            }
+            printf("[RESIDENTGAMEPLAY] HUB-CLOSE seq=%u action=%s worldRedraw=yes playerMutation=no turnAdvance=no packClosed=yes\n",
+                   (unsigned int)intent.sequence,
+                   EspNativeGameplayInput_actionName(intent.action));
+            return;
+        }
+        if (hubStatus == ESP_NATIVE_GAMEPLAY_HUB_REDRAWN ||
+            hubStatus == ESP_NATIVE_GAMEPLAY_HUB_IGNORED ||
+            hubStatus == ESP_NATIVE_GAMEPLAY_HUB_OK) {
+            printf("[RESIDENTGAMEPLAY] HUB-INPUT seq=%u action=%s status=%s worldDispatch=blocked turnAdvance=no\n",
+                   (unsigned int)intent.sequence,
+                   EspNativeGameplayInput_actionName(intent.action),
+                   EspNativeGameplayHub_statusName(hubStatus));
+            return;
+        }
+
+        ++gameplayState.deferred;
+        EspNativeGameplayHub_reset();
+        if (!restoreWorldAfterHub(doomRpg->render, "HUB-RECOVER")) {
+            disableGameplay("hub-error-world-render");
+            return;
+        }
+        printf("[RESIDENTGAMEPLAY] HUB-RECOVER n=%u seq=%u action=%s status=%s hubClosed=yes worldRedraw=yes mutation=no turnAdvance=no\n",
+               (unsigned int)gameplayState.deferred,
+               (unsigned int)intent.sequence,
+               EspNativeGameplayInput_actionName(intent.action),
+               EspNativeGameplayHub_statusName(hubStatus));
         return;
     }
 
@@ -773,6 +840,22 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     case ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON:
         serviceWeaponControl(doomRpg->render, &intent);
         break;
+
+    case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN: {
+        EspNativeGameplayHubStatus hubStatus = EspNativeGameplayHub_open();
+        if (hubStatus == ESP_NATIVE_GAMEPLAY_HUB_OK) {
+            printf("[RESIDENTGAMEPLAY] HUB-OPEN seq=%u page=inventory-readonly worldMutation=no turnAdvance=no worldDispatch=blocked packClosed=yes\n",
+                   (unsigned int)intent.sequence);
+        }
+        else {
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] HUB-OPEN-DEFER n=%u seq=%u status=%s mutation=no turnAdvance=no\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)intent.sequence,
+                   EspNativeGameplayHub_statusName(hubStatus));
+        }
+        break;
+    }
 
     default:
         ++gameplayState.deferred;
