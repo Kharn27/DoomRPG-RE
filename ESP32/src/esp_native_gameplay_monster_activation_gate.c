@@ -2,30 +2,38 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_map_runtime.h"
 #include "esp_native_gameplay_monster_activation.h"
-#include "esp_native_gameplay_monster_trace.h"
 #include "esp_native_gameplay_monster_turn.h"
 
 #define MONSTER_ACTIVATION_MAX_SPRITES 1024U
 #define MONSTER_ACTIVATION_BYTES (MONSTER_ACTIVATION_MAX_SPRITES / 8U)
+#define MONSTER_ACTIVATION_MAX_ORDER 64U
 #define MONSTER_ACTIVATION_NO_SPRITE 0xffffU
 
 typedef struct MonsterActivationGateOwner_s {
     EspNativeGameplayMonsterTurnView filtered;
     uint8_t activeBits[MONSTER_ACTIVATION_BYTES];
+    uint16_t activeOrder[MONSTER_ACTIVATION_MAX_ORDER];
     uint32_t sourceArenaFNV1a;
     uint32_t actualAttackProbesSeen;
     uint32_t deliveredAttackProbes;
     uint32_t activatedCount;
     uint32_t deferredCount;
+    uint32_t overrideMovementDeferredTurns;
+    uint32_t overrideNoAttackTurns;
+    uint16_t selectedSprite;
+    uint8_t activeOrderCount;
     uint8_t active;
-    uint8_t reserved[3];
+    uint8_t selectionActive;
+    uint8_t turnCounterOverride;
 } MonsterActivationGateOwner;
 
 static MonsterActivationGateOwner activationOwner;
 
 const EspNativeGameplayMonsterTurnView*
 __real_EspNativeGameplayMonsterTurn_view(void);
+int EspNativeGameplayDestructibleTurn_flush(void);
 
 static int isActivated(uint16_t spriteIndex) {
     return spriteIndex < MONSTER_ACTIVATION_MAX_SPRITES &&
@@ -33,65 +41,122 @@ static int isActivated(uint16_t spriteIndex) {
              (spriteIndex & 7U)) & 1U) != 0U;
 }
 
+static void resetForArena(uint32_t arena) {
+    memset(&activationOwner, 0, sizeof(activationOwner));
+    activationOwner.sourceArenaFNV1a = arena;
+    activationOwner.filtered.lastAttackerSpriteIndex =
+        MONSTER_ACTIVATION_NO_SPRITE;
+    activationOwner.selectedSprite = MONSTER_ACTIVATION_NO_SPRITE;
+    activationOwner.active = 1U;
+    printf("[MONSTERACT] READY arena=%08x ownerBytes=%u bitset=%uB orderBytes=%u maxSprites=%u maxOrdered=%u source=bsp-render-visible persistence=map-session inactiveAttack=fail-closed legacyRenderActivation=yes movementOrder=first-activation\n",
+           (unsigned int)arena,
+           (unsigned int)sizeof(activationOwner),
+           (unsigned int)MONSTER_ACTIVATION_BYTES,
+           (unsigned int)sizeof(activationOwner.activeOrder),
+           (unsigned int)MONSTER_ACTIVATION_MAX_SPRITES,
+           (unsigned int)MONSTER_ACTIVATION_MAX_ORDER);
+}
+
+static int ensureArena(void) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    if (runtime == NULL || runtime->arenaFNV1a == 0U) return 0;
+    if (activationOwner.active == 0U ||
+        activationOwner.sourceArenaFNV1a != runtime->arenaFNV1a) {
+        resetForArena(runtime->arenaFNV1a);
+    }
+    return 1;
+}
+
+static int setActivated(uint16_t spriteIndex) {
+    uint8_t mask;
+    if (spriteIndex >= MONSTER_ACTIVATION_MAX_SPRITES) return 0;
+    if (isActivated(spriteIndex)) return 1;
+    if (activationOwner.activeOrderCount >= MONSTER_ACTIVATION_MAX_ORDER) {
+        ++activationOwner.deferredCount;
+        printf("[MONSTERACT] DEFER sprite=%u cause=activation-order-capacity max=%u mutation=no rngConsumed=0\n",
+               (unsigned int)spriteIndex,
+               (unsigned int)MONSTER_ACTIVATION_MAX_ORDER);
+        return 0;
+    }
+
+    mask = (uint8_t)(1U << (spriteIndex & 7U));
+    activationOwner.activeBits[spriteIndex >> 3] |= mask;
+    activationOwner.activeOrder[activationOwner.activeOrderCount++] = spriteIndex;
+    ++activationOwner.activatedCount;
+    return 1;
+}
+
+int EspNativeGameplayMonsterActivation_observeVisible(uint16_t spriteIndex,
+                                                      uint8_t subtype,
+                                                      uint16_t tileIndex) {
+    uint32_t before;
+    if (!ensureArena()) return 0;
+    if (isActivated(spriteIndex)) return 1;
+    before = activationOwner.activatedCount;
+    if (!setActivated(spriteIndex)) return 0;
+    printf("[MONSTERACT] ACTIVE sprite=%u subtype=%u tile=%u source=bsp-render-visible activeCount=%u activationOrder=%u persistence=map-session mutation=activation-bit+order-only gameplayRng=untouched\n",
+           (unsigned int)spriteIndex,
+           (unsigned int)subtype,
+           (unsigned int)tileIndex,
+           (unsigned int)activationOwner.activatedCount,
+           (unsigned int)before);
+    return 1;
+}
+
 int EspNativeGameplayMonsterActivation_isActive(uint16_t spriteIndex) {
-    return activationOwner.active != 0U && isActivated(spriteIndex);
+    if (activationOwner.active == 0U || !isActivated(spriteIndex)) return 0;
+    if (activationOwner.selectionActive != 0U) {
+        return activationOwner.selectedSprite == spriteIndex;
+    }
+    return 1;
 }
 
 uint32_t EspNativeGameplayMonsterActivation_count(void) {
     return activationOwner.active != 0U ? activationOwner.activatedCount : 0U;
 }
 
-static void setActivated(uint16_t spriteIndex) {
-    uint8_t mask;
-    if (spriteIndex >= MONSTER_ACTIVATION_MAX_SPRITES ||
-        isActivated(spriteIndex)) {
-        return;
+int EspNativeGameplayMonsterActivation_getOrdered(uint32_t ordinal,
+                                                  uint16_t* outSpriteIndex) {
+    if (outSpriteIndex == NULL || activationOwner.active == 0U ||
+        ordinal >= activationOwner.activeOrderCount) {
+        return 0;
     }
-    mask = (uint8_t)(1U << (spriteIndex & 7U));
-    activationOwner.activeBits[spriteIndex >> 3] |= mask;
-    ++activationOwner.activatedCount;
+    *outSpriteIndex = activationOwner.activeOrder[ordinal];
+    return 1;
 }
 
-static void resetForArena(uint32_t arena) {
-    memset(&activationOwner, 0, sizeof(activationOwner));
-    activationOwner.sourceArenaFNV1a = arena;
-    activationOwner.filtered.lastAttackerSpriteIndex =
-        MONSTER_ACTIVATION_NO_SPRITE;
-    activationOwner.active = 1U;
-    printf("[MONSTERACT] READY arena=%08x ownerBytes=%u bitset=%uB maxSprites=%u source=forward-visible conservative=yes persistence=map-session inactiveAttack=fail-closed legacyRenderActivation=yes movementQuery=read-only\n",
-           (unsigned int)arena,
-           (unsigned int)sizeof(activationOwner),
-           (unsigned int)MONSTER_ACTIVATION_BYTES,
-           (unsigned int)MONSTER_ACTIVATION_MAX_SPRITES);
+void EspNativeGameplayMonsterActivation_selectOnly(uint16_t spriteIndex) {
+    activationOwner.selectedSprite = spriteIndex;
+    activationOwner.selectionActive = 1U;
 }
 
-static void observeForwardVisible(void) {
-    EspNativeGameplayMonsterTarget target;
-    EspNativeGameplayMonsterTraceStatus status;
+void EspNativeGameplayMonsterActivation_clearSelection(void) {
+    activationOwner.selectedSprite = MONSTER_ACTIVATION_NO_SPRITE;
+    activationOwner.selectionActive = 0U;
+}
 
-    memset(&target, 0, sizeof(target));
-    target.spriteIndex = MONSTER_ACTIVATION_NO_SPRITE;
-    status = EspNativeGameplayMonsterTrace_forward(&target);
-    if (status != ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_FOUND ||
-        target.spriteIndex == MONSTER_ACTIVATION_NO_SPRITE ||
-        isActivated(target.spriteIndex)) {
-        return;
-    }
+void EspNativeGameplayMonsterActivation_overrideTurnCounters(
+    uint32_t movementDeferredTurns,
+    uint32_t noAttackTurns) {
+    activationOwner.overrideMovementDeferredTurns = movementDeferredTurns;
+    activationOwner.overrideNoAttackTurns = noAttackTurns;
+    activationOwner.turnCounterOverride = 1U;
+}
 
-    setActivated(target.spriteIndex);
-    printf("[MONSTERACT] ACTIVE sprite=%u subtype=%u tile=%u distance=%u source=forward-visible activeCount=%u persistence=map-session mutation=activation-bit-only gameplayRng=untouched\n",
-           (unsigned int)target.spriteIndex,
-           (unsigned int)target.subtype,
-           (unsigned int)target.tileIndex,
-           (unsigned int)target.distance,
-           (unsigned int)activationOwner.activatedCount);
+void EspNativeGameplayMonsterActivation_clearTurnCounterOverride(void) {
+    activationOwner.turnCounterOverride = 0U;
 }
 
 const EspNativeGameplayMonsterTurnView*
 __wrap_EspNativeGameplayMonsterTurn_view(void) {
-    const EspNativeGameplayMonsterTurnView* actual =
-        __real_EspNativeGameplayMonsterTurn_view();
+    const EspNativeGameplayMonsterTurnView* actual;
     uint32_t newProbeCount;
+
+    /* A successfully committed destructible player attack uses the existing
+     * pass-request transport only after its action-service rollback window is
+     * closed. The next service iteration then runs the normal monster producer. */
+    (void)EspNativeGameplayDestructibleTurn_flush();
+    actual = __real_EspNativeGameplayMonsterTurn_view();
 
     if (actual == NULL || actual->active != 1U ||
         actual->sourceArenaFNV1a == 0U) {
@@ -103,12 +168,11 @@ __wrap_EspNativeGameplayMonsterTurn_view(void) {
         resetForArena(actual->sourceArenaFNV1a);
     }
 
-    observeForwardVisible();
     activationOwner.filtered = *actual;
 
     if (actual->attackProbes < activationOwner.actualAttackProbesSeen) {
         /* A producer reset inside the same arena should never happen. Reset the
-         * gate rather than replaying an unknown historical probe. */
+         * delivery counters rather than replaying an unknown historical probe. */
         activationOwner.actualAttackProbesSeen = actual->attackProbes;
         activationOwner.deliveredAttackProbes = 0U;
         printf("[MONSTERACT] RESET producerProbes=%u cause=producer-counter-regressed failClosed=yes\n",
@@ -147,5 +211,11 @@ __wrap_EspNativeGameplayMonsterTurn_view(void) {
 
     activationOwner.filtered.attackProbes =
         activationOwner.deliveredAttackProbes;
+    if (activationOwner.turnCounterOverride != 0U) {
+        activationOwner.filtered.movementDeferredTurns =
+            activationOwner.overrideMovementDeferredTurns;
+        activationOwner.filtered.noAttackTurns =
+            activationOwner.overrideNoAttackTurns;
+    }
     return &activationOwner.filtered;
 }

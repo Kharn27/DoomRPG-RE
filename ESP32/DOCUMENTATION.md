@@ -14,26 +14,24 @@ are the final runtime truth.
 ## Current locked branch
 
 ```text
-main at branch creation = 63cc8897e98c1ac6bf597234b35fde87cc2f7570
-branch = agent/esp32-native-pass-turn-hazard-touch
-base main = 63cc8897e98c1ac6bf597234b35fde87cc2f7570
-hardware-tested code boundary = e76183adf8245b465d7c398abba88a6c6a86f627
-status = PASS_TURN current-tile hazard + reentrant VIEWFLASH PASS
+main at branch creation = e6aae5d3a0d3c6564a3f4147b3be71c422dda5d3
+branch = agent/esp32-native-monster-three-goal-turn
+base main = e6aae5d3a0d3c6564a3f4147b3be71c422dda5d3
+hardware-tested code boundary = 8c3bee5ebba013fead9273f10f1a1c3bd015eeda
+status = MULTI-ACTIVE MONSTER SEQUENCE + DOOR/ATTACK REGRESSION PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `e76183ad...` as new hardware-tested code. The tail
+Do not treat commits after `8c3bee5e...` as new hardware-tested code. The tail
 must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `33969446333` / run #132 passed on the
-exact tested SHA. Job `101315237040` built the classic CYD firmware and uploaded
-artifacts successfully.
-
-CI is compile/link evidence only; real-CYD serial logs remain authoritative.
+Normal GitHub Actions `esp32-cyd` run `34047884638` / run #149 passed on the
+exact tested SHA and produced the firmware artifact. CI is compile/link evidence
+only; real-CYD serial logs remain authoritative.
 
 Latest milestone:
 
-- [`MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md)
+- [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
 
 ## Build environment
 
@@ -125,12 +123,8 @@ staged payload=2248743 B
 partition=2752512 B
 headroom=491481 B
 [MAPFLASH] COPY indexFNV=3a51cc4d payloadFNV=9ec04e22 verified=yes
-full rebuild ~= 8.44 s
 validated reuse ~= 0.363 s
 ```
-
-The user reports the map is materially smoother to walk and test, without the
-former large SD-backed stalls.
 
 ## Entrance format witness
 
@@ -179,9 +173,7 @@ resident entry slots=24
 large exact range=2048 B
 ```
 
-The global range-record recycle still exists, but raw internal-flash refill has
-removed the former SD seek cliff. `PlatformVideo_present()` remains around
-34.4 ms and is not the current target.
+`PlatformVideo_present()` remains around 34.4 ms and is not the current target.
 
 ## Current native gameplay frontier
 
@@ -210,12 +202,11 @@ live nonlethal monster retaliation
 native PASS_TURN feedback
 PASS_TURN current-tile linked type10/type11 hazards
 transaction-safe PASS_TURN hazard rollback
-hazard damage supersedes one-slot "Turn passed." display
 reentrant red/white viewport flash snapshot ownership
 transaction-safe gameplay RNG replay
 compact MonsterPosition
 legacy-compatible bounded monster movement planner
-live one-monster movement + topology relink + renderer projection
+live movement + topology relink + renderer projection
 NEXT / PREV weapon cycling
 live Pistol ammo consumption
 pickup messages + white viewport flash
@@ -226,6 +217,11 @@ raw-flash gameplay backing + generic requested-map reuse
 single-loop monster attack visuals: frame 1 primary + frame 5 alternate
 one-step subtype 1/5 post-move goal
 same-turn post-move monster attack after committed adjacent clear-trace move
+renderer-visible enemy activation persisted in first-activation order
+multiple active no-immediate-attack monsters delivered in one MonsterTurn
+per-member movement publication before the next active member is planned
+dead active members skipped by later delivery
+open-door attack passthrough preserved with regular four-frame line animation
 ```
 
 Milestone index for this frontier:
@@ -246,80 +242,60 @@ Milestone index for this frontier:
 - [`MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md`](MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md)
 - [`MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`](MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md)
 - [`MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md)
+- [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
 
-## PASS_TURN hazard result
+## Active-monster sequencing result
 
-Recovered bounded legacy order:
+Legacy sprite rendering activates a monster when an admitted sprite reaches the
+sprite-object renderer. The native equivalent observes activation at the
+BSP-visible admission point and records first-activation order without consuming
+RNG.
 
-```text
-Hud_addMessage("Turn passed.")
-Game_touchTile(current, false)
-Game_advanceTurn()
-```
-
-The touched=false native subset processes linked type-10/type-11 hazards on the
-settled current tile and ignores resources. Hazard PlayerState mutation is
-committed before the existing MonsterTurn request; if that request cannot arm,
-the mutation and queued feedback roll back exactly.
-
-The one-slot native top bar cannot display both `Turn passed.` and hazard damage,
-so hazard damage intentionally wins the visible message while the gameplay order
-remains legacy-compatible.
-
-The hardware test also closed a generic viewport-flash bug. A second flash that
-arrived before the first 500 ms expiry used to snapshot the already-painted red
-border and later restore red forever. The VIEWFLASH owner now preserves the
-original clean snapshot across overlapping refreshes:
+For the no-immediate-attack family, the active sequence now closes one full live
+movement transaction per member before the next member is planned:
 
 ```text
-[VIEWFLASH] REFRESH color565=b800 snapshot=preserved framebufferFresh=0
-[VIEWFLASH] PAINT ... durationMs=500 ...
-...
-[VIEWFLASH] EXPIRE elapsedMs=504 targetMs=500 ... restored=viewport-border-only
+plan -> RNG commit -> MonsterPosition -> topology relink -> renderer publication
 ```
 
-The user confirmed the border physically disappears after the final lease while
-remaining on the hazard tile.
+The real-CYD witness used subtype-1 Hellhounds `89` and `114`. The first dog
+committed its move, then the second dog planned and committed from the updated
+world state. After dog 89 was killed by the existing generic combat backend,
+subsequent delivery contained only dog 114.
+
+The final hardware session also verified that composition wrappers did not break
+regular doors or enemy SELECT passthrough: the door still emitted all four
+`DOORANIM` frames and enemy combat remained reachable through the opened line.
 
 Detailed record:
 
-- [`MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md)
+- [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
 
-## Monster attack / movement retained results
+## Subtype 4/13 three-goal owner on the branch
 
-Single-loop monster attack presentation remains hardware-proven:
-
-```text
-alternateAttack == 0 -> visual frame 1
-alternateAttack != 0 -> visual frame 5
-visible lease = 150 ms after successful physical present
-expiry = exact idle redraw
-```
-
-The exact legacy post-move goal split remains:
+The branch contains a bounded owner for the exact legacy `i=3` movement family:
 
 ```text
-subtype 1 / 5  -> i = 1
-subtype 4 / 13 -> i = 3
+subtype 4 / 13 -> three same-turn movement goals max
+first goal -> existing movement publisher
+continuation goals -> player settled destination
+successful continuation -> one visit-choice RNG byte
+unsupported special calcPath plane -> fail closed
+three-shot / multi-loop attack family -> fail closed
 ```
 
-Only subtype `1/5` is currently owned for same-turn post-move attack. Subtype
-`4/13` remains fail-closed until all three possible same-turn movement goals are
-owned as one coherent sequence.
-
-Detailed records:
-
-- [`MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md`](MILESTONE_NATIVE_MONSTER_ATTACK_VISUAL.md)
-- [`MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`](MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md)
+The latest final regression log exercises the subtype-1 active sequence and does
+not itself create a new subtype-4/13 hardware witness. Keep that distinction when
+recovering this branch later.
 
 ## RAM at current boundary
 
-The real-CYD session remained stable through repeated hazard touches, rapid
-PASS_TURN refreshes, flash expiry, door animation, SELECT and later movement:
+The supplied real-CYD session remained stable through regular door animation,
+multiple active monster moves, combat/death and later PASS_TURNs:
 
 ```text
-heap=86524
-heap8=20792
+heap=86252
+heap8=20520
 largest8=18420
 shapeData=NULL
 mediaTexels=NULL
@@ -339,9 +315,9 @@ complete mixed movement-tile resource/hazard ordering
 action XP migration
 materialized monster drops
 corpse-pile trimming
-subtype 4/13 three-goal same-turn movement chain
 monster movement interpolation animation
-multiple-live-monster ordering
+simultaneous attack-ready multi-monster ordering
+ranged >=217 active-list expansion beyond current single candidate
 unsupported special calcPath plane corpus
 special subtype-10 AI
 player lethal/death transition
@@ -382,13 +358,13 @@ When the user announces the merge:
 
 1. read the true GitHub `main` and exact SHA;
 2. re-read `PORTING_STATUS.md`, this file and
-   `MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`;
+   `MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`;
 3. create the next `agent/*` from that exact SHA;
 4. recover the next bounded legacy family against the true source before coding.
 
-A strong candidate remains subtype `4/13`'s exact `i=3` same-turn goal chain, but
-it must own the complete movement/RNG sequence and remain separate from
-presentation-only movement interpolation and multiple-monster ordering.
+Strong next candidates are simultaneous attack-ready active-list ordering or the
+separate multi-loop monster attack family. Re-evaluate against true merged `main`
+before selecting either.
 
 ## Development workflow
 
