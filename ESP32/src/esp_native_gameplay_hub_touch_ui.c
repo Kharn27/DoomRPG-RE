@@ -16,22 +16,19 @@
 #define HUB_UI_DIM_BLUE 0x0010U
 #define HUB_UI_BLUE 0x001fU
 #define HUB_UI_WHITE 0xffffU
-#define HUB_UI_RED 0xf800U
 
-#define HUB_UI_INV_LEFT 3
+/* With the redundant viewport X removed, keep the two page tabs centered while
+ * retaining the hardware-proven widths, so touch feedback stays below the
+ * permanent 512-edit bound. */
+#define HUB_UI_INV_LEFT 21
 #define HUB_UI_INV_TOP 21
-#define HUB_UI_INV_RIGHT 46
+#define HUB_UI_INV_RIGHT 64
 #define HUB_UI_INV_BOTTOM 33
 
-#define HUB_UI_STATUS_LEFT 49
+#define HUB_UI_STATUS_LEFT 67
 #define HUB_UI_STATUS_TOP 21
-#define HUB_UI_STATUS_RIGHT 116
+#define HUB_UI_STATUS_RIGHT 134
 #define HUB_UI_STATUS_BOTTOM 33
-
-#define HUB_UI_CLOSE_LEFT 139
-#define HUB_UI_CLOSE_TOP 21
-#define HUB_UI_CLOSE_RIGHT 156
-#define HUB_UI_CLOSE_BOTTOM 33
 
 #define HUB_UI_ROW_LEFT 2
 #define HUB_UI_ROW_RIGHT 157
@@ -101,7 +98,6 @@ static int miniRows(char c, uint8_t rows[5]) {
     static const uint8_t T[5] = {7U, 2U, 2U, 2U, 2U};
     static const uint8_t A[5] = {2U, 5U, 7U, 5U, 5U};
     static const uint8_t U[5] = {5U, 5U, 5U, 5U, 7U};
-    static const uint8_t X[5] = {5U, 5U, 2U, 5U, 5U};
     const uint8_t* source = NULL;
 
     switch (c) {
@@ -112,7 +108,6 @@ static int miniRows(char c, uint8_t rows[5]) {
     case 'T': source = T; break;
     case 'A': source = A; break;
     case 'U': source = U; break;
-    case 'X': source = X; break;
     default: return 0;
     }
     memcpy(rows, source, 5U);
@@ -180,27 +175,6 @@ static void drawTab(uint16_t* framebuffer,
                  HUB_UI_WHITE);
 }
 
-static void drawClose(uint16_t* framebuffer) {
-    fillRect(framebuffer,
-             HUB_UI_CLOSE_LEFT,
-             HUB_UI_CLOSE_TOP,
-             HUB_UI_CLOSE_RIGHT,
-             HUB_UI_CLOSE_BOTTOM,
-             HUB_UI_BLACK);
-    drawRect(framebuffer,
-             HUB_UI_CLOSE_LEFT,
-             HUB_UI_CLOSE_TOP,
-             HUB_UI_CLOSE_RIGHT,
-             HUB_UI_CLOSE_BOTTOM,
-             HUB_UI_RED);
-    drawMiniText(framebuffer,
-                 "X",
-                 (HUB_UI_CLOSE_LEFT + HUB_UI_CLOSE_RIGHT) / 2,
-                 HUB_UI_CLOSE_TOP + 2,
-                 2,
-                 HUB_UI_WHITE);
-}
-
 static void drawInventoryCards(uint16_t* framebuffer, uint8_t selectedRow) {
     static const int tops[3] = {33, 46, 59};
     static const int bottoms[3] = {46, 59, 72};
@@ -244,7 +218,8 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
         return 0;
     }
 
-    /* Replace the prototype text header with persistent visible touch tabs. */
+    /* The close affordance now lives in the real top-left MENU zone. The HUB
+     * viewport only needs page tabs and page content. */
     fillRect(framebuffer, 1, 21, 158, 33, HUB_UI_PANEL);
     drawTab(framebuffer,
             HUB_UI_INV_LEFT,
@@ -260,7 +235,6 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
             HUB_UI_STATUS_BOTTOM,
             "STATUS",
             page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS);
-    drawClose(framebuffer);
 
     if (page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY) {
         drawInventoryCards(framebuffer, selectedRow);
@@ -296,8 +270,6 @@ static uint8_t zoneForAction(uint8_t action) {
         return ESP_NATIVE_GAMEPLAY_ZONE_TURN_LEFT;
     case ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT:
         return ESP_NATIVE_GAMEPLAY_ZONE_TURN_RIGHT;
-    case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN:
-        return ESP_NATIVE_GAMEPLAY_ZONE_MENU;
     case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
         return ESP_NATIVE_GAMEPLAY_ZONE_SELECT;
     default:
@@ -328,21 +300,11 @@ int EspNativeGameplayHubTouchUi_classify(
         return 0;
     }
 
-    /* Keep the physical top HUD available as a backwards-compatible MENU
-     * escape hatch. The HUB owns every touch inside its 160x80 viewport. */
+    /* y=0..19 intentionally falls through to the permanent top-HUD mapping:
+     * the existing x=0..31 MENU zone is now visibly decorated while HUB is
+     * active. The HUB exclusively owns every touch inside y=20..99. */
     if (logicalY < HUB_UI_TOP || logicalY > HUB_UI_BOTTOM) return 0;
     memset(outHit, 0, sizeof(*outHit));
-
-    if (inside(logicalX, logicalY,
-               HUB_UI_CLOSE_LEFT, HUB_UI_CLOSE_TOP,
-               HUB_UI_CLOSE_RIGHT, HUB_UI_CLOSE_BOTTOM)) {
-        setHit(outHit,
-               ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN,
-               ESP_NATIVE_GAMEPLAY_ZONE_MENU,
-               HUB_UI_CLOSE_LEFT, HUB_UI_CLOSE_TOP,
-               HUB_UI_CLOSE_RIGHT, HUB_UI_CLOSE_BOTTOM);
-        return 1;
-    }
 
     if (inside(logicalX, logicalY,
                HUB_UI_INV_LEFT, HUB_UI_INV_TOP,
