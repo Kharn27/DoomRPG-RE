@@ -7,6 +7,7 @@
 #include "esp_native_bsp_visibility.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_movement.h"
+#include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_turn.h"
 
@@ -95,9 +96,21 @@ static void clearCompositionOverrides(void) {
     EspNativeGameplayMonsterActivation_clearTurnCounterOverride();
 }
 
-static void callMovementMember(struct DoomRPG_s* doomRpg,
-                               uint16_t spriteIndex,
-                               int selected) {
+static void primeMovementCounters(struct DoomRPG_s* doomRpg) {
+    EspNativeGameplayMonsterActivation_clearSelection();
+    EspNativeGameplayMonsterActivation_overrideTurnCounters(
+        activeSeq.expandedMovement, activeSeq.expandedNoAttack);
+    __real_EspNativeGameplayMonsterMovement_service(doomRpg);
+    clearCompositionOverrides();
+}
+
+static int callMovementMember(struct DoomRPG_s* doomRpg,
+                              uint16_t spriteIndex,
+                              int selected,
+                              const char* trigger,
+                              uint8_t* outCommitted) {
+    int status;
+    if (outCommitted != NULL) *outCommitted = 0U;
     if (selected) {
         EspNativeGameplayMonsterActivation_selectOnly(spriteIndex);
     }
@@ -106,8 +119,10 @@ static void callMovementMember(struct DoomRPG_s* doomRpg,
     }
     EspNativeGameplayMonsterActivation_overrideTurnCounters(
         activeSeq.expandedMovement, activeSeq.expandedNoAttack);
-    __real_EspNativeGameplayMonsterMovement_service(doomRpg);
+    status = EspNativeGameplayMonsterMovementProbe_serviceMember(
+        doomRpg, trigger, outCommitted);
     clearCompositionOverrides();
+    return status;
 }
 
 static void resetSequencer(const EspNativeGameplayMonsterTurnView* actual,
@@ -124,18 +139,18 @@ static void resetSequencer(const EspNativeGameplayMonsterTurnView* actual,
     /* Prime the existing planner's private observed counters before any player
      * turn delta. This call is a no-op gameplay-wise because both synthetic
      * counters equal their current baselines. */
-    callMovementMember(doomRpg, ACTIVESEQ_NO_SPRITE, 0);
-    printf("[MONSTERACTIVESEQ] READY arena=%08x ownerBytes=%u activationOrder=first-render-activation planner=existing-single-candidate syntheticCounters=movement-private-only multiAttack=still-fail-closed allocation=no\n",
+    primeMovementCounters(doomRpg);
+    printf("[MONSTERACTIVESEQ] READY arena=%08x ownerBytes=%u activationOrder=first-render-activation planner=existing-single-candidate syntheticCounters=movement-private-only publication=per-member-before-next-plan multiAttack=still-fail-closed allocation=no\n",
            (unsigned int)activeSeq.sourceArenaFNV1a,
            (unsigned int)sizeof(activeSeq));
 }
 
-/* Expand one legacy no-immediate-attack monster turn into one call of the
- * already-proven movement planner per active-list member, in first-activation
- * order. Each call sees exactly one activation bit and one monotonically
- * synthetic noAttack counter. RNG/topology publication therefore remains owned
- * by the existing planner/publisher, and the second monster observes the first
- * monster's committed position exactly like Game_monsterAI()'s sequential loop.
+/* Expand one legacy no-immediate-attack monster turn into one transaction per
+ * active-list member, in first-activation order. Each member sees exactly one
+ * activation bit and one monotonically synthetic noAttack counter. Crucially,
+ * its proven planner/publisher transaction closes before the next member is
+ * planned, so live RNG, MonsterPosition and topology all advance sequentially
+ * like Game_monsterAI()'s active-list loop.
  *
  * The ranged >=217 producer remains on its previous single-candidate boundary;
  * simultaneous attack-ready ordering is also deliberately still fail-closed.
@@ -181,6 +196,7 @@ void __wrap_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg) 
     }
 
     if (actual->movementDeferredTurns != activeSeq.actualMovementSeen) {
+        uint8_t committed = 0U;
         if (actual->movementDeferredTurns != activeSeq.actualMovementSeen + 1U) {
             ++activeSeq.deferredTurns;
             printf("[MONSTERACTIVESEQ] DEFER reason=ranged-trigger-gap observed=%u current=%u mutation=no rngConsumed=0\n",
@@ -191,7 +207,8 @@ void __wrap_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg) 
         }
         activeSeq.actualMovementSeen = actual->movementDeferredTurns;
         ++activeSeq.expandedMovement;
-        callMovementMember(doomRpg, ACTIVESEQ_NO_SPRITE, 0);
+        (void)callMovementMember(doomRpg, ACTIVESEQ_NO_SPRITE, 0,
+                                 "RANGED-AI", &committed);
         return;
     }
 
@@ -210,6 +227,8 @@ void __wrap_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg) 
     for (ordinal = 0U; ordinal < activationCount; ++ordinal) {
         uint16_t spriteIndex = ACTIVESEQ_NO_SPRITE;
         const EspNativeGameplayMonsterRecord* monster;
+        uint8_t committed = 0U;
+        int transactionStatus;
 
         if (!EspNativeGameplayMonsterActivation_getOrdered(ordinal,
                                                             &spriteIndex)) {
@@ -228,23 +247,28 @@ void __wrap_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg) 
         }
 
         ++activeSeq.expandedNoAttack;
-        callMovementMember(doomRpg, spriteIndex, 1);
+        transactionStatus = callMovementMember(
+            doomRpg, spriteIndex, 1, "NO-IMMEDIATE-ATTACK", &committed);
         ++delivered;
         ++activeSeq.deliveredMembers;
-        printf("[MONSTERACTIVESEQ] MEMBER turn=%u ordinal=%u/%u sprite=%u subtype=%u syntheticNoAttack=%u sameMonsterTurn=yes planner=existing publication=existing\n",
+        printf("[MONSTERACTIVESEQ] MEMBER turn=%u ordinal=%u/%u sprite=%u subtype=%u syntheticNoAttack=%u sameMonsterTurn=yes planner=existing publication=%s\n",
                (unsigned int)activeSeq.expandedTurns,
                (unsigned int)(ordinal + 1U),
                (unsigned int)activationCount,
                (unsigned int)spriteIndex,
                (unsigned int)monster->subtype,
-               (unsigned int)activeSeq.expandedNoAttack);
+               (unsigned int)activeSeq.expandedNoAttack,
+               committed != 0U ? "committed-before-next" :
+               (transactionStatus != 0 ? "none" : "deferred"));
     }
 
     if (delivered == 0U) {
+        uint8_t committed = 0U;
         ++activeSeq.expandedNoAttack;
-        callMovementMember(doomRpg, ACTIVESEQ_NO_SPRITE, 0);
+        (void)callMovementMember(doomRpg, ACTIVESEQ_NO_SPRITE, 0,
+                                 "NO-IMMEDIATE-ATTACK", &committed);
     }
-    printf("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes multiAttack=deferred\n",
+    printf("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred\n",
            (unsigned int)activeSeq.expandedTurns,
            (unsigned int)actual->lastReason,
            (unsigned int)activationCount,
