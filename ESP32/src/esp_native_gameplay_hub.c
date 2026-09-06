@@ -19,6 +19,12 @@
 #define HUB_FONT_SOURCE_HEIGHT 72U
 #define HUB_FONT_TRANSPARENT 1U
 #define HUB_ROWS 3U
+#define HUB_TOP_Y 20U
+#define HUB_HEIGHT 80U
+#define HUB_BOTTOM_Y (HUB_TOP_Y + HUB_HEIGHT)
+#define HUB_LAST_Y (HUB_BOTTOM_Y - 1U)
+#define HUB_BAND_ROWS 20U
+#define HUB_BAND_PIXELS (DOOMRPG_LOGICAL_WIDTH * HUB_BAND_ROWS)
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "Native gameplay hub is defined for the 160x120 logical framebuffer"
@@ -26,9 +32,8 @@
 
 static EspNativeGameplayHubView hub;
 
-static uint32_t fnv1a32(const void* data, uint32_t bytes) {
+static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
-    uint32_t hash = 2166136261U;
     uint32_t i;
     if (p == NULL && bytes != 0U) return 0U;
     for (i = 0U; i < bytes; ++i) {
@@ -36,6 +41,10 @@ static uint32_t fnv1a32(const void* data, uint32_t bytes) {
         hash *= 16777619U;
     }
     return hash;
+}
+
+static uint32_t fnv1a32(const void* data, uint32_t bytes) {
+    return fnv1aUpdate(2166136261U, data, bytes);
 }
 
 static uint32_t frameFNV(void) {
@@ -47,29 +56,49 @@ static uint32_t frameFNV(void) {
     return fnv1a32(framebuffer, (uint32_t)bytes);
 }
 
+static uint32_t hudBandsFNV(void) {
+    const uint16_t* framebuffer =
+        (const uint16_t*)Esp32PlatformVideo_framebuffer();
+    uint32_t hash = 2166136261U;
+    if (framebuffer == NULL ||
+        Esp32PlatformVideo_framebufferSizeBytes() !=
+            (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                sizeof(uint16_t)) {
+        return 0U;
+    }
+    hash = fnv1aUpdate(hash, framebuffer,
+                       HUB_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
+    return fnv1aUpdate(
+        hash,
+        framebuffer + HUB_BOTTOM_Y * DOOMRPG_LOGICAL_WIDTH,
+        HUB_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
+}
+
 static void putPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {
     if (framebuffer == NULL || x < 0 || x >= DOOMRPG_LOGICAL_WIDTH ||
-        y < 0 || y >= DOOMRPG_LOGICAL_HEIGHT) {
+        y < (int)HUB_TOP_Y || y >= (int)HUB_BOTTOM_Y) {
         return;
     }
     framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
 }
 
-static void clearFrame(uint16_t* framebuffer) {
+static void clearViewport(uint16_t* framebuffer) {
     size_t pixels;
     if (framebuffer == NULL) return;
-    pixels = (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT;
-    memset(framebuffer, 0, pixels * sizeof(uint16_t));
+    pixels = (size_t)DOOMRPG_LOGICAL_WIDTH * HUB_HEIGHT;
+    memset(framebuffer + HUB_TOP_Y * DOOMRPG_LOGICAL_WIDTH,
+           0,
+           pixels * sizeof(uint16_t));
 }
 
 static void drawBorder(uint16_t* framebuffer) {
     int x;
     int y;
     for (x = 0; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
-        putPixel(framebuffer, x, 0, 0xffffU);
-        putPixel(framebuffer, x, DOOMRPG_LOGICAL_HEIGHT - 1, 0xffffU);
+        putPixel(framebuffer, x, (int)HUB_TOP_Y, 0xffffU);
+        putPixel(framebuffer, x, (int)HUB_LAST_Y, 0xffffU);
     }
-    for (y = 0; y < DOOMRPG_LOGICAL_HEIGHT; ++y) {
+    for (y = (int)HUB_TOP_Y; y <= (int)HUB_LAST_Y; ++y) {
         putPixel(framebuffer, 0, y, 0xffffU);
         putPixel(framebuffer, DOOMRPG_LOGICAL_WIDTH - 1, y, 0xffffU);
     }
@@ -82,7 +111,9 @@ static int drawText(const EspNativeIndexedBmp* font,
                     int y,
                     EspNativeIndexedBmpStats* stats) {
     const unsigned char* p = (const unsigned char*)text;
-    if (font == NULL || framebuffer == NULL || text == NULL || stats == NULL) {
+    if (font == NULL || framebuffer == NULL || text == NULL || stats == NULL ||
+        y < (int)HUB_TOP_Y ||
+        y + (int)HUB_FONT_HEIGHT > (int)HUB_BOTTOM_Y) {
         return 0;
     }
     while (*p != '\0') {
@@ -128,6 +159,8 @@ static EspNativeGameplayHubStatus paintInventory(void) {
     uint32_t fnvBefore;
     uint32_t fnvAfter;
     uint32_t paintedFNV;
+    uint32_t hudBandsBefore;
+    uint32_t hudBandsAfter;
     char line[32];
     int ok = 1;
 
@@ -156,6 +189,8 @@ static EspNativeGameplayHubStatus paintInventory(void) {
                 sizeof(uint16_t)) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
+    hudBandsBefore = hudBandsFNV();
+    if (hudBandsBefore == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
 
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
@@ -168,16 +203,21 @@ static EspNativeGameplayHubStatus paintInventory(void) {
         return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
     }
 
-    clearFrame(framebuffer);
+    /* The gameplay compositor owns y=0..19 and y=100..119 permanently.  The
+     * hub is a modal UI over the same 160x80 world viewport only, so closing it
+     * needs no framebuffer snapshot and the normal world rerender restores
+     * every pixel the hub was allowed to touch. */
+    clearViewport(framebuffer);
     drawBorder(framebuffer);
-    ok = drawText(&font, framebuffer, "DOOM RPG // HUB", 4, 3, &stats) && ok;
-    ok = drawText(&font, framebuffer, "INVENTORY VIEW", 4, 16, &stats) && ok;
+
+    snprintf(line, sizeof(line), "DOOM RPG INV LV%u", (unsigned int)before.level);
+    ok = drawText(&font, framebuffer, line, 4, 21, &stats) && ok;
 
     snprintf(line, sizeof(line), "%cWPN %02u OWN %03X",
              hub.selectedRow == 0U ? '>' : ' ',
              (unsigned int)before.weapon,
              (unsigned int)(before.weapons & 0x0fffU));
-    ok = drawText(&font, framebuffer, line, 4, 29, &stats) && ok;
+    ok = drawText(&font, framebuffer, line, 4, 34, &stats) && ok;
 
     snprintf(line, sizeof(line), "%cA %02u %02u %02u %02u %02u %02u",
              hub.selectedRow == 1U ? '>' : ' ',
@@ -187,7 +227,7 @@ static EspNativeGameplayHubStatus paintInventory(void) {
              (unsigned int)before.ammo[3],
              (unsigned int)before.ammo[4],
              (unsigned int)before.ammo[5]);
-    ok = drawText(&font, framebuffer, line, 4, 42, &stats) && ok;
+    ok = drawText(&font, framebuffer, line, 4, 47, &stats) && ok;
 
     snprintf(line, sizeof(line), "%cI %02u %02u %02u %02u %02u",
              hub.selectedRow == 2U ? '>' : ' ',
@@ -196,21 +236,16 @@ static EspNativeGameplayHubStatus paintInventory(void) {
              (unsigned int)before.inventory[2],
              (unsigned int)before.inventory[3],
              (unsigned int)before.inventory[4]);
-    ok = drawText(&font, framebuffer, line, 4, 55, &stats) && ok;
+    ok = drawText(&font, framebuffer, line, 4, 60, &stats) && ok;
 
-    snprintf(line, sizeof(line), "KEYS %08lX",
-             (unsigned long)before.keys);
-    ok = drawText(&font, framebuffer, line, 4, 68, &stats) && ok;
-
-    snprintf(line, sizeof(line), "CRED %lu",
+    snprintf(line, sizeof(line), "K%08lX C%lu",
+             (unsigned long)before.keys,
              (unsigned long)before.credits);
-    ok = drawText(&font, framebuffer, line, 4, 81, &stats) && ok;
+    ok = drawText(&font, framebuffer, line, 4, 73, &stats) && ok;
 
-    snprintf(line, sizeof(line), "LV %u XP %lu",
-             (unsigned int)before.level,
+    snprintf(line, sizeof(line), "XP%lu M=BK",
              (unsigned long)before.currentXP);
-    ok = drawText(&font, framebuffer, line, 4, 94, &stats) && ok;
-    ok = drawText(&font, framebuffer, "MENU BACK  UP/DN CUR", 4, 107, &stats) && ok;
+    ok = drawText(&font, framebuffer, line, 4, 86, &stats) && ok;
 
     EspAssetPack_close();
     if (!ok || EspAssetPack_isOpen()) {
@@ -218,8 +253,17 @@ static EspNativeGameplayHubStatus paintInventory(void) {
     }
 
     fnvAfter = EspNativeGameplayPlayerState_fingerprint();
+    hudBandsAfter = hudBandsFNV();
     if (!EspNativeGameplayPlayerState_snapshot(&after) ||
-        fnvAfter != fnvBefore || memcmp(&before, &after, sizeof(before)) != 0) {
+        fnvAfter != fnvBefore || memcmp(&before, &after, sizeof(before)) != 0 ||
+        hudBandsAfter == 0U || hudBandsAfter != hudBandsBefore) {
+        printf("[HUB] PAINT-DEFER player=%08x->%08x hudBands=%08x->%08x playerExact=%s hudPreserved=%s mutation=no turn=no\n",
+               (unsigned int)fnvBefore,
+               (unsigned int)fnvAfter,
+               (unsigned int)hudBandsBefore,
+               (unsigned int)hudBandsAfter,
+               fnvAfter == fnvBefore ? "yes" : "NO",
+               hudBandsAfter == hudBandsBefore ? "yes" : "NO");
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
 
@@ -231,10 +275,11 @@ static EspNativeGameplayHubStatus paintInventory(void) {
     ++hub.paints;
     hub.lastPlayerFNV = fnvAfter;
     hub.lastFrameFNV = paintedFNV;
-    printf("[HUB] FRAME paint=%u page=inventory row=%u frame=%08x reads=%u bytes=%u playerFNV=%08x exact=yes packClosed=yes presented=1 mutation=no turn=no\n",
+    printf("[HUB] FRAME paint=%u page=inventory row=%u frame=%08x viewport=160x80/y20..99 hudBands=%08x preserved=yes reads=%u bytes=%u playerFNV=%08x exact=yes packClosed=yes presented=1 mutation=no turn=no\n",
            (unsigned int)hub.paints,
            (unsigned int)hub.selectedRow,
            (unsigned int)paintedFNV,
+           (unsigned int)hudBandsAfter,
            (unsigned int)stats.packReads,
            (unsigned int)stats.bytesRead,
            (unsigned int)fnvAfter);
@@ -280,7 +325,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
         return status;
     }
 
-    printf("[HUB] OPEN n=%u mode=inventory-readonly ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
+    printf("[HUB] OPEN n=%u mode=inventory-readonly viewport=160x80/y20..99 hudBands=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
            (unsigned int)hub.opens,
            (unsigned int)sizeof(hub),
            (unsigned int)sizeof(player),
@@ -315,7 +360,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         hub.active = 0U;
         ++hub.closes;
         hub.lastPlayerFNV = playerFNV;
-        printf("[HUB] CLOSE n=%u playerFNV=%08x->%08x exact=%s mutation=no turn=no worldRedraw=pending packClosed=%s\n",
+        printf("[HUB] CLOSE n=%u playerFNV=%08x->%08x exact=%s mutation=no turn=no worldRedraw=pending viewportOnly=yes hudBands=untouched packClosed=%s\n",
                (unsigned int)hub.closes,
                (unsigned int)hub.playerFNVAtOpen,
                (unsigned int)playerFNV,
