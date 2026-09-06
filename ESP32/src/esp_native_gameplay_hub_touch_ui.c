@@ -35,6 +35,7 @@
 
 #define HUB_UI_ROW_LEFT 2
 #define HUB_UI_ROW_RIGHT 157
+#define HUB_UI_ROW_TOUCH_RIGHT 105
 #define HUB_UI_ROW0_TOP 34
 #define HUB_UI_ROW0_BOTTOM 45
 #define HUB_UI_ROW1_TOP 47
@@ -384,7 +385,9 @@ int EspNativeGameplayHubTouchUi_classify(
             return -1;
         }
 
-        if (logicalX < HUB_UI_ROW_LEFT || logicalX > HUB_UI_ROW_RIGHT) return -1;
+        if (logicalX < HUB_UI_ROW_LEFT || logicalX > HUB_UI_ROW_TOUCH_RIGHT) {
+            return -1;
+        }
         action = actionToRow(view->selectedRow, targetRow);
         setHit(outHit,
                action,
@@ -392,7 +395,7 @@ int EspNativeGameplayHubTouchUi_classify(
                HUB_UI_ROW_LEFT,
                targetRow == 0U ? HUB_UI_ROW0_TOP
                    : (targetRow == 1U ? HUB_UI_ROW1_TOP : HUB_UI_ROW2_TOP),
-               HUB_UI_ROW_RIGHT,
+               HUB_UI_ROW_TOUCH_RIGHT,
                targetRow == 0U ? HUB_UI_ROW0_BOTTOM
                    : (targetRow == 1U ? HUB_UI_ROW1_BOTTOM : HUB_UI_ROW2_BOTTOM));
         return 1;
