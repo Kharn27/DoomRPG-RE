@@ -39,11 +39,23 @@ int EspEntityDefTypeCatalog_getMetadata(uint16_t tileIndex,
                                         uint8_t* outType,
                                         uint8_t* outSubtype,
                                         int32_t* outParm);
-/* Read the historical 16-byte EntityDef name on demand from /entities.db in
- * DoomRPG-ESP32.pak. Names are never retained per definition in RAM. */
+/* Match legacy EntityDef_find(type, subtype): return the tile index belonging to
+ * the first source-order /entities.db record with that exact pair. The compact
+ * resident catalog remains sorted by tile index, so the implementation uses its
+ * retained one-byte source-record indices to preserve legacy first-wins order. */
+int EspEntityDefTypeCatalog_findTileIndex(uint8_t type,
+                                          uint8_t subtype,
+                                          uint16_t* outTileIndex);
+/* Read the historical 16-byte EntityDef name on demand. The normal variant owns
+ * a short PAK open/close transaction. The FromOpenPack variant is for bounded UI
+ * composition that already owns the PAK; it requires the PAK open and leaves it
+ * open. Neither variant retains names per definition in RAM. */
 int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
                                      char* outName,
                                      uint32_t capacity);
+int EspEntityDefTypeCatalog_readNameFromOpenPack(uint16_t tileIndex,
+                                                 char* outName,
+                                                 uint32_t capacity);
 uint32_t EspEntityDefTypeCatalog_definitionCount(void);
 
 #ifdef __cplusplus
