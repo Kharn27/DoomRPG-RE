@@ -13,7 +13,7 @@
 #include "platform_video_config.h"
 
 #define HUB_FONT_NAME "a.bmp"
-#define HUB_FACE_NAME "l.bmp"
+#define HUB_FACE_NAME "p.bmp"
 #define HUB_FONT_WIDTH 9U
 #define HUB_FONT_HEIGHT 12U
 #define HUB_FONT_ADVANCE 7
@@ -35,8 +35,8 @@
 #define HUB_MENU_RIGHT (HUB_MENU_LEFT + HUB_MENU_WIDTH - 1U)
 #define HUB_MENU_BOTTOM (HUB_MENU_TOP + HUB_MENU_HEIGHT - 1U)
 #define HUB_MENU_PIXELS (HUB_MENU_WIDTH * HUB_MENU_HEIGHT)
-#define HUB_FACE_FRAMES 9U
-#define HUB_FACE_FRAME 3U
+#define HUB_FACE_FRAMES 1U
+#define HUB_FACE_FRAME 0U
 #define HUB_MENU_BG 0x0000U
 #define HUB_MENU_BORDER 0xffffU
 #define HUB_MENU_INNER 0x001fU
@@ -581,7 +581,7 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
     ++hub.paints;
     hub.lastPlayerFNV = fnvAfter;
     hub.lastFrameFNV = paintedFNV;
-    printf("[HUB] FRAME paint=%u page=%s row=%u frame=%08x viewport=160x80/y20..99 hudProtected=%08x preserved=yes menuButton=doom-face asset=l.bmp face=%u menuZone=%08x underlayBytes=%u reads=%u bytes=%u playerFNV=%08x exact=yes packClosed=yes presented=1 mutation=no turn=no\n",
+    printf("[HUB] FRAME paint=%u page=%s row=%u frame=%08x viewport=160x80/y20..99 hudProtected=%08x preserved=yes menuButton=hand asset=p.bmp frame=%u menuZone=%08x underlayBytes=%u reads=%u bytes=%u playerFNV=%08x exact=yes packClosed=yes presented=1 mutation=no turn=no\n",
            (unsigned int)hub.paints,
            pageName(hub.page),
            (unsigned int)hub.selectedRow,
@@ -650,7 +650,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
         return status;
     }
 
-    printf("[HUB] OPEN n=%u mode=inventory+status-readonly page=%s pages=%u viewport=160x80/y20..99 menuButton=doom-face asset=l.bmp face=%u menuUnderlayBytes=%u hudProtected=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
+    printf("[HUB] OPEN n=%u mode=inventory+status-readonly page=%s pages=%u viewport=160x80/y20..99 menuButton=hand asset=p.bmp frame=%u menuUnderlayBytes=%u hudProtected=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
            (unsigned int)hub.opens,
            pageName(hub.page),
            (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT,
