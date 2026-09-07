@@ -300,21 +300,20 @@ int EspEntityDefTypeCatalog_findTileIndex(uint8_t type,
     return 1;
 }
 
-int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
-                           char* outName,
-                           uint32_t capacity) {
+static int readNameFromOpenPack(uint16_t tileIndex,
+                                char* outName,
+                                uint32_t capacity) {
     const EntityDefMetadata* metadata;
     EspAssetPackEntry entry;
     uint8_t raw[ENTITY_DEF_NAME_BYTES];
     uint16_t pos;
     uint8_t sourceIndex;
     uint32_t copy = 0U;
-    int ok = 0;
 
     if (outName == NULL || capacity < 2U) return 0;
     outName[0] = '\0';
     metadata = findMetadata(tileIndex);
-    if (metadata == NULL || entityDefMetadata == NULL || EspAssetPack_isOpen()) {
+    if (metadata == NULL || entityDefMetadata == NULL || !EspAssetPack_isOpen()) {
         return 0;
     }
     pos = (uint16_t)(metadata - entityDefMetadata);
@@ -324,14 +323,13 @@ int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
 
     memset(&entry, 0, sizeof(entry));
     memset(raw, 0, sizeof(raw));
-    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
     if (!EspAssetPack_findEntry("/entities.db", &entry) ||
         (entry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U ||
         !EspAssetPack_readRange(&entry,
                       2U + ((uint32_t)sourceIndex * ENTITY_DEF_RECORD_BYTES) +
                           ENTITY_DEF_NAME_OFFSET,
                       raw, sizeof(raw))) {
-        goto done;
+        return 0;
     }
     while (copy + 1U < capacity && copy < ENTITY_DEF_NAME_BYTES &&
            raw[copy] != 0U) {
@@ -339,9 +337,23 @@ int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
         ++copy;
     }
     outName[copy] = '\0';
-    ok = copy != 0U;
+    return copy != 0U;
+}
 
-done:
+int EspEntityDefTypeCatalog_readNameFromOpenPack(uint16_t tileIndex,
+                                                 char* outName,
+                                                 uint32_t capacity) {
+    return readNameFromOpenPack(tileIndex, outName, capacity);
+}
+
+int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
+                                     char* outName,
+                                     uint32_t capacity) {
+    int ok;
+    if (outName == NULL || capacity < 2U || EspAssetPack_isOpen()) return 0;
+    outName[0] = '\0';
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+    ok = readNameFromOpenPack(tileIndex, outName, capacity);
     EspAssetPack_close();
     if (!ok) outName[0] = '\0';
     return ok;
