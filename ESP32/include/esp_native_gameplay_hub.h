@@ -20,8 +20,9 @@ typedef enum EspNativeGameplayHubStatus_e {
 
 typedef enum EspNativeGameplayHubPage_e {
     ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY = 0,
-    ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS = 1,
-    ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT = 2
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS = 1,
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS = 2,
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT = 3
 } EspNativeGameplayHubPage;
 
 typedef struct EspNativeGameplayHubView_s {
@@ -37,20 +38,11 @@ typedef struct EspNativeGameplayHubView_s {
     uint8_t weaponAtOpen;
 } EspNativeGameplayHubView;
 
-/*
- * Permanent bounded gameplay-hub owner.
- *
- * The 28 B view projects Inventory and Status from the one canonical
- * PlayerState owner. Inventory navigation stays allocation-free; the only
- * enabled mutation is legacy-compatible selection of an already-owned weapon.
- * weaponAtOpen reuses the former reserved byte so the owner remains 28 B and
- * close logs can prove the session's bounded weapon-only mutation. Page content
- * owns only the resident 160x80 world viewport (y=20..99). While the HUB is
- * active, a separate fixed 32x20 / 1280 B underlay temporarily owns the real
- * top-left MENU zone so its close control can be visible; that underlay is
- * restored bit-exact before the normal world compositor resumes. There is no
- * full-frame or HUD-wide framebuffer snapshot.
- */
+/* Permanent bounded gameplay-hub owner. The owner remains 28 B. selectedRow is
+ * page-local transient navigation state: non-weapon Inventory entry index on
+ * Inventory, weapon id 0..11 on Weapons, ignored on Status. weaponAtOpen keeps
+ * the close-time weapon-only mutation witness. No icon/list framebuffer owner
+ * is added; the dedicated Weapons page decodes one bounded icon at a time. */
 void EspNativeGameplayHub_reset(void);
 int EspNativeGameplayHub_isActive(void);
 const EspNativeGameplayHubView* EspNativeGameplayHub_view(void);
