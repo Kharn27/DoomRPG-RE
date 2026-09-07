@@ -5,6 +5,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_hub.h"
+#include "esp_native_gameplay_hub_content.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_player_state.h"
@@ -20,7 +21,6 @@
 #define HUB_FONT_SOURCE_WIDTH 144U
 #define HUB_FONT_SOURCE_HEIGHT 72U
 #define HUB_FONT_TRANSPARENT 1U
-#define HUB_ROWS 3U
 #define HUB_TOP_Y 20U
 #define HUB_HEIGHT 80U
 #define HUB_BOTTOM_Y (HUB_TOP_Y + HUB_HEIGHT)
@@ -358,50 +358,24 @@ static int paintInventoryContent(const EspNativeGameplayPlayerState* player,
                                  uint16_t* framebuffer,
                                  EspNativeIndexedBmpStats* stats) {
     char line[32];
+    uint8_t count;
     int ok = 1;
 
     if (player == NULL || font == NULL || framebuffer == NULL || stats == NULL) {
         return 0;
     }
+    count = EspNativeGameplayHubContent_inventoryEntryCount(player);
+    if (count == 0U || hub.selectedRow >= count) return 0;
 
+    /* The visible tabs and three-card list own y=21..72. Keep the lower area as
+     * a small read-only position/status footer instead of the old prototype
+     * numeric inventory dump. */
     memset(line, 0, sizeof(line));
-    ok = drawText(font, framebuffer, "HUB < INVENTORY >", 4, 21, stats) && ok;
-
-    snprintf(line, sizeof(line), "%cWPN %02u OWN %03X",
-             hub.selectedRow == 0U ? '>' : ' ',
-             (unsigned int)player->weapon,
-             (unsigned int)(player->weapons & 0x0fffU));
-    ok = drawText(font, framebuffer, line, 4, 34, stats) && ok;
-
-    snprintf(line, sizeof(line), "%cA %02u %02u %02u %02u %02u %02u",
-             hub.selectedRow == 1U ? '>' : ' ',
-             (unsigned int)player->ammo[0],
-             (unsigned int)player->ammo[1],
-             (unsigned int)player->ammo[2],
-             (unsigned int)player->ammo[3],
-             (unsigned int)player->ammo[4],
-             (unsigned int)player->ammo[5]);
-    ok = drawText(font, framebuffer, line, 4, 47, stats) && ok;
-
-    snprintf(line, sizeof(line), "%cI %02u %02u %02u %02u %02u",
-             hub.selectedRow == 2U ? '>' : ' ',
-             (unsigned int)player->inventory[0],
-             (unsigned int)player->inventory[1],
-             (unsigned int)player->inventory[2],
-             (unsigned int)player->inventory[3],
-             (unsigned int)player->inventory[4]);
-    ok = drawText(font, framebuffer, line, 4, 60, stats) && ok;
-
-    snprintf(line, sizeof(line), "K%08lX C%lu",
-             (unsigned long)player->keys,
-             (unsigned long)player->credits);
+    snprintf(line, sizeof(line), "ENTRY %u/%u",
+             (unsigned int)hub.selectedRow + 1U,
+             (unsigned int)count);
     ok = drawText(font, framebuffer, line, 4, 73, stats) && ok;
-
-    snprintf(line, sizeof(line), "LV%u XP%lu/%lu",
-             (unsigned int)player->level,
-             (unsigned long)player->currentXP,
-             (unsigned long)player->nextLevelXP);
-    ok = drawText(font, framebuffer, line, 4, 86, stats) && ok;
+    ok = drawText(font, framebuffer, "READ ONLY", 4, 86, stats) && ok;
     return ok;
 }
 
@@ -679,12 +653,14 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
 
 EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     EspNativeGameplayHubStatus status;
+    EspNativeGameplayPlayerState player;
     uint16_t* framebuffer;
     uint32_t playerFNV;
     uint32_t restoredHudBands;
     uint32_t expectedHudBands;
     uint8_t beforeRow;
     uint8_t beforePage;
+    uint8_t inventoryEntries;
     int menuRestored;
 
     if (hub.active == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
@@ -752,13 +728,24 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
         (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ||
          action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK)) {
+        memset(&player, 0, sizeof(player));
+        if (!EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) {
+            return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+        }
+        inventoryEntries =
+            EspNativeGameplayHubContent_inventoryEntryCount(&player);
+        if (inventoryEntries == 0U || hub.selectedRow >= inventoryEntries) {
+            return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+        }
+
         beforeRow = hub.selectedRow;
         if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD) {
-            hub.selectedRow =
-                (uint8_t)((hub.selectedRow + HUB_ROWS - 1U) % HUB_ROWS);
+            hub.selectedRow = (uint8_t)((hub.selectedRow + inventoryEntries - 1U) %
+                                        inventoryEntries);
         }
         else {
-            hub.selectedRow = (uint8_t)((hub.selectedRow + 1U) % HUB_ROWS);
+            hub.selectedRow =
+                (uint8_t)((hub.selectedRow + 1U) % inventoryEntries);
         }
 
         status = paintCurrentPage();
@@ -766,9 +753,10 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
             hub.selectedRow = beforeRow;
             return status;
         }
-        printf("[HUB] CURSOR page=inventory row=%u->%u direction=%s mutation=no turn=no\n",
+        printf("[HUB] CURSOR page=inventory entry=%u->%u entries=%u direction=%s mutation=no turn=no\n",
                (unsigned int)beforeRow,
                (unsigned int)hub.selectedRow,
+               (unsigned int)inventoryEntries,
                action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ? "up" : "down");
         return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
     }
