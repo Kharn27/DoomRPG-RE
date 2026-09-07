@@ -7,24 +7,24 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main at branch creation = bc9e0435f6ee6ea23a68cb4bdbb18324440cf360
-branch = agent/esp32-native-gameplay-hub-touch-ui
-base main = bc9e0435f6ee6ea23a68cb4bdbb18324440cf360
-hardware-tested code boundary = 515bb4b0122c55348251eee726110ec946a4aeb6
-status = REAL-CYD GAMEPLAY HUB TOUCH UI + HAND MENU BUTTON PASS
+main at branch creation = 711f391ea3d319012f919e4ecae0d4b00e9177d1
+branch = agent/esp32-native-gameplay-hub-content-labels
+base main = 711f391ea3d319012f919e4ecae0d4b00e9177d1
+hardware-tested code boundary = 5d8cf35816c279f8968430474d072d2419cc2bea
+status = REAL-CYD GAMEPLAY HUB CONTENT LABELS PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`515bb4b0...` is the exact code boundary exercised on the real classic CYD.
+`5d8cf358...` is the exact code boundary exercised on the real classic CYD.
 Commits after that SHA must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `34091004475` / run #177 completed
+Normal GitHub Actions `esp32-cyd` run `34097802996` / run #192 completed
 successfully on this exact SHA and produced the firmware artifact. CI is
 compile/link evidence only; hardware serial logs remain authoritative.
 
 Latest detailed record:
 
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md)
 
 After merge, read the real GitHub `main` SHA again before creating the next
 `agent/*` branch.
@@ -172,7 +172,7 @@ animation, mutable line textures, native weapon presentation/combat, shared
 MonsterState/MonsterPosition, live monster movement/topology relink, active-list
 sequencing, raw-flash gameplay backing and requested-map reuse.
 
-The latest permanent UI frontier adds:
+The current permanent UI/content frontier adds:
 
 ```text
 native gameplay HUB owner = 28 B
@@ -185,8 +185,12 @@ unsupported HUB actions absorbed / fail closed
 visible MENU close affordance uses original Doom RPG p.bmp hand
 bounded MENU underlay = 32x20 RGB565 = 1280 B
 all other HUD pixels protected by fingerprint
-MENU close restores underlay bit-exact
-normal world rerender restores exact pre-HUB world frame
+MENU close path unchanged and previously bit-exact hardware-proven
+real weapon names from /entities.db through native reverse lookup
+real first-present consumable name from /entities.db
+legacy-compatible ammo labels / ammo usage presentation
+names fetched on demand from native PAK
+persistent name storage = 0 B
 ```
 
 Detailed recent records:
@@ -194,70 +198,89 @@ Detailed recent records:
 - [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md)
 
-## Latest real-CYD HUB touch UI witness
+## Latest real-CYD HUB content-label witness
 
-The exact hardware-tested code boundary is `515bb4b0...`.
+The exact hardware-tested code boundary is `5d8cf358...`.
 
-Deterministic page/menu witnesses:
+The first Inventory paint recovered every legacy player weapon and consumable
+name through the compact native entity-def catalog:
 
 ```text
-Inventory frame = 79bbc30d
-Status frame    = eea0759d
-Inventory again = 79bbc30d
-hudProtectedFNV = bd7588ae
-menuZoneFNV     = 109b46aa
-playerFNV       = e745fce9
+weapon 0  tile 1   Axe
+weapon 1  tile 2   Fire Ext
+weapon 2  tile 9   Pistol
+weapon 3  tile 3   Shotgun
+weapon 4  tile 5   Chaingun
+weapon 5  tile 4   Super Shotgn
+weapon 6  tile 7   Plasma Gun
+weapon 7  tile 6   Rocket Lnchr
+weapon 8  tile 8   BFG
+weapon 9  tile 10  Hellhound
+weapon 10 tile 11  Cerberus
+weapon 11 tile 12  Demon Wolf
+item 25   tile 99  Sm Medkit
+item 26   tile 100 Lg Medkit
+item 27   tile 101 Soul Sphere
+item 28   tile 102 Berserker
+item 29   tile 110 Dog Collar
 ```
 
-Representative Inventory paint:
+Canonical content-catalog witness:
 
 ```text
-[HUB] FRAME paint=3 page=inventory row=0 frame=79bbc30d
-      viewport=160x80/y20..99
-      hudProtected=bd7588ae preserved=yes
-      menuButton=hand asset=p.bmp frame=0
-      menuZone=109b46aa underlayBytes=1280
-      playerFNV=e745fce9 exact=yes
-      packClosed=yes presented=1 mutation=no turn=no
+[HUBCONTENT] READY weapons=12/12 items=5/5
+             names=pak-on-demand persistentNameBytes=0
+             catalogFNV=34d2b7d4
+             packOwnership=preserved-open mutation=no turn=no
 ```
 
-Status reproduced the same protected/menu fingerprints and exact player state.
-Returning to Inventory reproduced `79bbc30d` exactly.
-
-A PASS_TURN touch while the HUB was active was absorbed:
+Fresh Entrance player content resolved as:
 
 ```text
-[HUB] IGNORE action=14 page=inventory row=0
-      worldDispatch=blocked mutation=no turn=no
-[RESIDENTGAMEPLAY] HUB-INPUT ... action=PASS_TURN status=IGNORED
+weapon=2 name="Pistol"
+ammoType=1 ammoLabel="Bullets" ammo=8 usage=1
+item=none count=0
+transientBytes=40
+persistentNameBytes=0
+playerFNV=e745fce9
+```
+
+Selection/page witnesses:
+
+```text
+Inventory row 0 frame = 6b7713d7
+Inventory row 1 frame = a264f40b
+Inventory row 2 frame = 1db33153
+Status frame          = eea0759d
+hudProtectedFNV       = bd7588ae
+menuZoneFNV           = 109b46aa
+playerFNV             = e745fce9
+```
+
+A SELECT on the already-selected weapon card stayed fail-closed:
+
+```text
+[HUB] SELECT-DEFER page=inventory row=0 cause=read-only-milestone
+      mutation=no turn=no
+[RESIDENTGAMEPLAY] HUB-INPUT ... status=IGNORED
       worldDispatch=blocked turnAdvance=no
 ```
 
-Closing through the visible hand restored both the bounded MENU underlay and the
-complete HUD exactly:
+Moving the card selection from row 0 to 1 to 2 redrew only the HUB; every frame
+kept `hudProtected=bd7588ae preserved=yes`, `menuZone=109b46aa`, exact
+`playerFNV=e745fce9`, `packClosed=yes`, `mutation=no`, and `turn=no`.
 
-```text
-[HUB] CLOSE n=3 page=inventory
-      playerFNV=e745fce9->e745fce9 exact=yes
-      menuUnderlayRestore=exact
-      hudBands=6c2aa46f expected=6c2aa46f exact=yes
-      packClosed=yes
-```
-
-The resident gameplay compositor then rebuilt the exact world frame:
-
-```text
-pre-HUB world frame  = 22397b55
-post-HUB world frame = 22397b55
-```
-
-No player/world mutation or turn advance occurred.
+The user confirmed that closing the menu returned cleanly to gameplay. The
+supplied hardware excerpt did not contain the final `[HUB] CLOSE` fingerprint,
+so this milestone does not invent a new close hash; the close implementation was
+unchanged from the preceding bit-exact touch-UI milestone.
 
 ## RAM witness at current boundary
 
-The supplied real-CYD session remained flat before, during and after page
-switching, ignored HUB input and return to gameplay:
+The supplied real-CYD session remained flat while opening the HUB, resolving all
+names, moving the Inventory cursor and switching to Status:
 
 ```text
 heap = 87988
@@ -266,13 +289,12 @@ largest8 = 14324
 hub owner = 28 B
 player owner = 52 B
 MENU underlay = 1280 B
+persistent HUB name bytes = 0 B
 full framebuffer snapshot = 0 B
 ```
 
-The previous HUB-v2 witness was `89280 / 23548 / 20468`; the current free heap is
-1292 B lower after adding the bounded 1280 B MENU underlay and bookkeeping. The
-largest 8-bit block is now 14324 B and must be treated as the current canonical
-hardware witness before future RAM-heavy milestones.
+These heap values exactly match the previous touch-UI boundary: no persistent
+heap loss was observed from the content-label layer.
 
 Audio remains deferred. Do not enable it without its own RAM milestone.
 
@@ -308,7 +330,7 @@ Kronos-specific semantics
 password input
 EV_GIVEMAP production route
 EV_CHECK_KEY production route
-HUB real weapon/ammo/item names and richer content layout
+HUB richer multi-entry inventory content layout
 HUB weapon selection
 HUB consumable confirmation/use + turn consumption
 HUB Notebook / Automap / Save / Load / Options / store
@@ -338,15 +360,16 @@ After the user announces the merge:
 
 1. read actual GitHub `main` and exact SHA;
 2. re-read this file, `DOCUMENTATION.md` and
-   `MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`;
+   `MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md`;
 3. create a fresh `agent/*` from that exact main SHA;
 4. recover the next bounded legacy/UI family before coding.
 
-Strong next HUB milestone: improve **content readability**, not input plumbing.
-Use the now-proven visible touch layer to expose real Doom RPG weapon/ammo/item
-labels through bounded native catalog lookups while preserving read-only
-semantics, the 28 B HUB owner, bounded MENU underlay and no world/turn mutation.
-Item use and weapon mutation remain separate milestones.
+Strong next HUB milestone: keep the content layer read-only but make the
+Inventory richer before enabling mutation — for example bounded owned-weapon and
+carried-item list presentation/selection state derived from PlayerState, still
+with SELECT fail-closed. Weapon selection and consumable use should each remain
+separate semantic milestones unless the recovered legacy contract proves they
+can share one small transaction safely.
 
 ## Development workflow
 
