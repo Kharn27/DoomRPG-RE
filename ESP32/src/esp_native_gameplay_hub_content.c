@@ -10,6 +10,7 @@
 #define HUB_CONTENT_ENTITY_TYPE_WEAPON 5U
 #define HUB_CONTENT_ITEM_SUBTYPE_BASE 25U
 #define HUB_CONTENT_AMMO_TYPES 6U
+#define HUB_CONTENT_KEY_TYPES 4U
 
 /* Exact Combat_init player weapon ammoType/ammoUsage fields for ids 0..11.
  * This table is presentation metadata only and does not own combat semantics. */
@@ -18,6 +19,9 @@ static const uint8_t weaponAmmoType[ESP_NATIVE_GAMEPLAY_HUB_CONTENT_WEAPONS] = {
 };
 static const uint8_t weaponAmmoUsage[ESP_NATIVE_GAMEPLAY_HUB_CONTENT_WEAPONS] = {
     0U, 1U, 1U, 1U, 3U, 2U, 3U, 1U, 15U, 0U, 0U, 0U
+};
+static const char* const keyNames[HUB_CONTENT_KEY_TYPES] = {
+    "Green Key", "Yellow Key", "Blue Key", "Red Key"
 };
 
 static uint32_t fnvUpdate(uint32_t hash, const void* data, uint32_t bytes) {
@@ -54,6 +58,15 @@ static int resolveName(uint8_t type,
     }
     *outTileIndex = tileIndex;
     return 1;
+}
+
+static int copyStatic(char* destination,
+                      uint32_t capacity,
+                      const char* source) {
+    int written;
+    if (destination == NULL || capacity < 2U || source == NULL) return 0;
+    written = snprintf(destination, capacity, "%s", source);
+    return written >= 0 && (uint32_t)written < capacity;
 }
 
 const char* EspNativeGameplayHubContent_ammoLabel(uint8_t ammoType) {
@@ -116,6 +129,245 @@ int EspNativeGameplayHubContent_snapshot(
     }
 
     return EspAssetPack_isOpen() == packWasOpen;
+}
+
+uint8_t EspNativeGameplayHubContent_inventoryEntryCount(
+    const EspNativeGameplayPlayerState* player) {
+    uint8_t count = 2U; /* Notebook + Credits are always present in legacy. */
+    uint8_t i;
+
+    if (player == NULL || player->active != 1U) return 0U;
+    for (i = 0U; i < ESP_NATIVE_GAMEPLAY_HUB_CONTENT_WEAPONS; ++i) {
+        if ((player->weapons & (1U << i)) != 0U) ++count;
+    }
+    for (i = 0U; i < ESP_NATIVE_GAMEPLAY_HUB_CONTENT_ITEMS; ++i) {
+        if (player->inventory[i] != 0U) ++count;
+    }
+    for (i = 0U; i < HUB_CONTENT_KEY_TYPES; ++i) {
+        if ((player->keys & (1UL << i)) != 0U) ++count;
+    }
+    return count <= ESP_NATIVE_GAMEPLAY_HUB_CONTENT_MAX_ENTRIES ? count : 0U;
+}
+
+const char* EspNativeGameplayHubContent_inventoryKindName(uint8_t kind) {
+    switch (kind) {
+    case ESP_NATIVE_GAMEPLAY_HUB_ENTRY_WEAPON: return "weapon";
+    case ESP_NATIVE_GAMEPLAY_HUB_ENTRY_NOTEBOOK: return "notebook";
+    case ESP_NATIVE_GAMEPLAY_HUB_ENTRY_ITEM: return "item";
+    case ESP_NATIVE_GAMEPLAY_HUB_ENTRY_CREDITS: return "credits";
+    case ESP_NATIVE_GAMEPLAY_HUB_ENTRY_KEY: return "key";
+    default: return "unknown";
+    }
+}
+
+int EspNativeGameplayHubContent_inventoryEntryAt(
+    const EspNativeGameplayPlayerState* player,
+    uint8_t entryIndex,
+    EspNativeGameplayHubInventoryEntry* outEntry) {
+    uint8_t cursor = 0U;
+    uint8_t i;
+    uint8_t count;
+    uint16_t tileIndex;
+    int packWasOpen;
+    int written;
+
+    if (player == NULL || outEntry == NULL || player->active != 1U ||
+        !EspEntityDefTypeCatalog_isReady()) {
+        return 0;
+    }
+    count = EspNativeGameplayHubContent_inventoryEntryCount(player);
+    if (count == 0U || entryIndex >= count) return 0;
+    packWasOpen = EspAssetPack_isOpen();
+    memset(outEntry, 0, sizeof(*outEntry));
+
+    for (i = 0U; i < ESP_NATIVE_GAMEPLAY_HUB_CONTENT_WEAPONS; ++i) {
+        uint8_t ammoType;
+        if ((player->weapons & (1U << i)) == 0U) continue;
+        if (cursor++ != entryIndex) continue;
+
+        if (!resolveName(HUB_CONTENT_ENTITY_TYPE_WEAPON,
+                         i,
+                         &tileIndex,
+                         outEntry->name,
+                         sizeof(outEntry->name))) {
+            return 0;
+        }
+        outEntry->kind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_WEAPON;
+        outEntry->sourceId = i;
+        if (i == 0U) {
+            if (!copyStatic(outEntry->value, sizeof(outEntry->value), "--")) {
+                return 0;
+            }
+        }
+        else {
+            ammoType = weaponAmmoType[i];
+            if (ammoType >= HUB_CONTENT_AMMO_TYPES) return 0;
+            written = snprintf(outEntry->value,
+                               sizeof(outEntry->value),
+                               "%u",
+                               (unsigned int)player->ammo[ammoType]);
+            if (written < 0 || (uint32_t)written >= sizeof(outEntry->value)) {
+                return 0;
+            }
+        }
+        return EspAssetPack_isOpen() == packWasOpen;
+    }
+
+    if (cursor++ == entryIndex) {
+        outEntry->kind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_NOTEBOOK;
+        outEntry->sourceId = 0U;
+        return copyStatic(outEntry->name, sizeof(outEntry->name), "Notebook") &&
+               copyStatic(outEntry->value, sizeof(outEntry->value), "--") &&
+               EspAssetPack_isOpen() == packWasOpen;
+    }
+
+    for (i = 0U; i < ESP_NATIVE_GAMEPLAY_HUB_CONTENT_ITEMS; ++i) {
+        if (player->inventory[i] == 0U) continue;
+        if (cursor++ != entryIndex) continue;
+
+        if (!resolveName(HUB_CONTENT_ENTITY_TYPE_ITEM,
+                         (uint8_t)(HUB_CONTENT_ITEM_SUBTYPE_BASE + i),
+                         &tileIndex,
+                         outEntry->name,
+                         sizeof(outEntry->name))) {
+            return 0;
+        }
+        outEntry->kind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_ITEM;
+        outEntry->sourceId = i;
+        written = snprintf(outEntry->value,
+                           sizeof(outEntry->value),
+                           "%u",
+                           (unsigned int)player->inventory[i]);
+        if (written < 0 || (uint32_t)written >= sizeof(outEntry->value)) {
+            return 0;
+        }
+        return EspAssetPack_isOpen() == packWasOpen;
+    }
+
+    if (cursor++ == entryIndex) {
+        outEntry->kind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_CREDITS;
+        outEntry->sourceId = 0U;
+        if (!copyStatic(outEntry->name, sizeof(outEntry->name), "Credits")) {
+            return 0;
+        }
+        written = snprintf(outEntry->value,
+                           sizeof(outEntry->value),
+                           "%lu",
+                           (unsigned long)player->credits);
+        return written >= 0 && (uint32_t)written < sizeof(outEntry->value) &&
+               EspAssetPack_isOpen() == packWasOpen;
+    }
+
+    for (i = 0U; i < HUB_CONTENT_KEY_TYPES; ++i) {
+        if ((player->keys & (1UL << i)) == 0U) continue;
+        if (cursor++ != entryIndex) continue;
+
+        outEntry->kind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_KEY;
+        outEntry->sourceId = i;
+        return copyStatic(outEntry->name, sizeof(outEntry->name), keyNames[i]) &&
+               copyStatic(outEntry->value, sizeof(outEntry->value), "--") &&
+               EspAssetPack_isOpen() == packWasOpen;
+    }
+
+    return 0;
+}
+
+int EspNativeGameplayHubContent_probeInventoryList(void) {
+    EspNativeGameplayPlayerState synthetic;
+    EspNativeGameplayHubInventoryEntry entry;
+    uint32_t hash = 2166136261U;
+    uint8_t count;
+    uint8_t i;
+    int packWasOpen;
+
+    if (!EspEntityDefTypeCatalog_isReady()) return 0;
+    packWasOpen = EspAssetPack_isOpen();
+    memset(&synthetic, 0, sizeof(synthetic));
+    synthetic.active = 1U;
+    synthetic.weapon = 2U;
+    synthetic.weapons = 0x0fffU;
+    synthetic.ammo[0] = 10U;
+    synthetic.ammo[1] = 20U;
+    synthetic.ammo[2] = 30U;
+    synthetic.ammo[3] = 40U;
+    synthetic.ammo[4] = 50U;
+    synthetic.ammo[5] = 60U;
+    synthetic.inventory[0] = 1U;
+    synthetic.inventory[1] = 2U;
+    synthetic.inventory[2] = 3U;
+    synthetic.inventory[3] = 4U;
+    synthetic.inventory[4] = 5U;
+    synthetic.keys = 0x0fU;
+    synthetic.credits = 123U;
+
+    count = EspNativeGameplayHubContent_inventoryEntryCount(&synthetic);
+    if (count != ESP_NATIVE_GAMEPLAY_HUB_CONTENT_MAX_ENTRIES) {
+        printf("[HUBLIST] DEFER reason=max-entry-count actual=%u expected=%u\n",
+               (unsigned int)count,
+               (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_CONTENT_MAX_ENTRIES);
+        return 0;
+    }
+
+    for (i = 0U; i < count; ++i) {
+        uint8_t expectedKind;
+        uint8_t expectedSource;
+        memset(&entry, 0, sizeof(entry));
+        if (!EspNativeGameplayHubContent_inventoryEntryAt(&synthetic, i, &entry)) {
+            printf("[HUBLIST] DEFER entry=%u reason=projection\n",
+                   (unsigned int)i);
+            return 0;
+        }
+
+        if (i < 12U) {
+            expectedKind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_WEAPON;
+            expectedSource = i;
+        }
+        else if (i == 12U) {
+            expectedKind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_NOTEBOOK;
+            expectedSource = 0U;
+        }
+        else if (i < 18U) {
+            expectedKind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_ITEM;
+            expectedSource = (uint8_t)(i - 13U);
+        }
+        else if (i == 18U) {
+            expectedKind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_CREDITS;
+            expectedSource = 0U;
+        }
+        else {
+            expectedKind = ESP_NATIVE_GAMEPLAY_HUB_ENTRY_KEY;
+            expectedSource = (uint8_t)(i - 19U);
+        }
+        if (entry.kind != expectedKind || entry.sourceId != expectedSource) {
+            printf("[HUBLIST] DEFER entry=%u reason=legacy-order kind=%u/%u source=%u/%u\n",
+                   (unsigned int)i,
+                   (unsigned int)entry.kind,
+                   (unsigned int)expectedKind,
+                   (unsigned int)entry.sourceId,
+                   (unsigned int)expectedSource);
+            return 0;
+        }
+
+        hash = fnvUpdate(hash, &entry.kind, sizeof(entry.kind));
+        hash = fnvUpdate(hash, &entry.sourceId, sizeof(entry.sourceId));
+        hash = fnvUpdate(hash, entry.name, (uint32_t)strlen(entry.name) + 1U);
+        hash = fnvUpdate(hash, entry.value, (uint32_t)strlen(entry.value) + 1U);
+        printf("[HUBLIST] PROBE entry=%u kind=%s source=%u name=\"%s\" value=\"%s\"\n",
+               (unsigned int)i,
+               EspNativeGameplayHubContent_inventoryKindName(entry.kind),
+               (unsigned int)entry.sourceId,
+               entry.name,
+               entry.value);
+    }
+
+    if (hash == 0U || EspAssetPack_isOpen() != packWasOpen) return 0;
+    printf("[HUBLIST] READY entries=%u/%u order=legacy-content persistentListBytes=0 transientEntryBytes=%u listFNV=%08x packOwnership=preserved-%s mutation=no turn=no\n",
+           (unsigned int)count,
+           (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_CONTENT_MAX_ENTRIES,
+           (unsigned int)sizeof(entry),
+           (unsigned int)hash,
+           packWasOpen ? "open" : "closed");
+    return 1;
 }
 
 int EspNativeGameplayHubContent_probeCatalog(void) {
