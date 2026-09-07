@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include <stdint.h>
 
 #include "esp_native_gameplay_hub_nonweapon.h"
