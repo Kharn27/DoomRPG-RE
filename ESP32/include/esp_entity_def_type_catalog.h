@@ -46,11 +46,16 @@ int EspEntityDefTypeCatalog_getMetadata(uint16_t tileIndex,
 int EspEntityDefTypeCatalog_findTileIndex(uint8_t type,
                                           uint8_t subtype,
                                           uint16_t* outTileIndex);
-/* Read the historical 16-byte EntityDef name on demand from /entities.db in
- * DoomRPG-ESP32.pak. Names are never retained per definition in RAM. */
+/* Read the historical 16-byte EntityDef name on demand. The normal variant owns
+ * a short PAK open/close transaction. The FromOpenPack variant is for bounded UI
+ * composition that already owns the PAK; it requires the PAK open and leaves it
+ * open. Neither variant retains names per definition in RAM. */
 int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
                                      char* outName,
                                      uint32_t capacity);
+int EspEntityDefTypeCatalog_readNameFromOpenPack(uint16_t tileIndex,
+                                                 char* outName,
+                                                 uint32_t capacity);
 uint32_t EspEntityDefTypeCatalog_definitionCount(void);
 
 #ifdef __cplusplus
