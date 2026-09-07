@@ -397,7 +397,6 @@ static int paintStatusContent(const EspNativeGameplayPlayerState* player,
     if (player == NULL || font == NULL || framebuffer == NULL || stats == NULL) {
         return 0;
     }
-
     health = (uint8_t)(player->param1 & 0xffU);
     maxHealth = (uint8_t)((player->param1 >> 8) & 0xffU);
     armor = (uint8_t)((player->param1 >> 16) & 0xffU);
@@ -497,8 +496,6 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
         return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
     }
 
-    /* The HUB owns the resident 160x80 world viewport plus one explicit,
-     * bounded 32x20 MENU underlay. Every other HUD pixel remains protected. */
     clearViewport(framebuffer);
     drawBorder(framebuffer);
 
@@ -802,7 +799,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
                (unsigned int)fnvAfter,
                changed ? "weapon-only" : "no");
 
-        if (directTouch) {
+        if (directTouch || changed != 0U) {
             int restored = 1;
             beforeRow = hub.selectedRow;
             hub.selectedRow = selectRow;
