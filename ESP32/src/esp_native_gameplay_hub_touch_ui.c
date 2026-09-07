@@ -312,11 +312,11 @@ static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedRow) {
     }
 
     /* Remove only the old prototype numeric text inside each proven card. Card
-     * borders/touch geometry stay unchanged, then the original Doom RPG font
-     * draws data-driven names on top. */
-    fillRect(framebuffer, 3, HUB_UI_ROW0_TOP, 156, HUB_UI_ROW0_BOTTOM, HUB_UI_BLACK);
-    fillRect(framebuffer, 3, HUB_UI_ROW1_TOP, 156, HUB_UI_ROW1_BOTTOM, HUB_UI_BLACK);
-    fillRect(framebuffer, 3, HUB_UI_ROW2_TOP, 156, HUB_UI_ROW2_BOTTOM, HUB_UI_BLACK);
+     * borders/touch geometry and the x=3 blue selected-row marker stay intact,
+     * then the original Doom RPG font draws data-driven names on top. */
+    fillRect(framebuffer, 4, HUB_UI_ROW0_TOP, 156, HUB_UI_ROW0_BOTTOM, HUB_UI_BLACK);
+    fillRect(framebuffer, 4, HUB_UI_ROW1_TOP, 156, HUB_UI_ROW1_BOTTOM, HUB_UI_BLACK);
+    fillRect(framebuffer, 4, HUB_UI_ROW2_TOP, 156, HUB_UI_ROW2_BOTTOM, HUB_UI_BLACK);
 
     snprintf(line, sizeof(line), "%c%s",
              selectedRow == 0U ? '>' : ' ', content.weaponName);
