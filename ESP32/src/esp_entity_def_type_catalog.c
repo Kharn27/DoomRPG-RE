@@ -273,6 +273,33 @@ int EspEntityDefTypeCatalog_getParm(uint16_t tileIndex, int32_t* outParm) {
     return 1;
 }
 
+int EspEntityDefTypeCatalog_findTileIndex(uint8_t type,
+                                          uint8_t subtype,
+                                          uint16_t* outTileIndex) {
+    uint16_t pos;
+    uint16_t bestPos = UINT16_MAX;
+    uint8_t bestSource = 0xffU;
+
+    if (outTileIndex == NULL || !entityDefTypesReady ||
+        entityDefMetadata == NULL) {
+        return 0;
+    }
+    for (pos = 0U; pos < entityDefMetadataCount; ++pos) {
+        if (entityDefMetadata[pos].type != type ||
+            entityDefMetadata[pos].subtype != subtype ||
+            entityDefSourceIndex[pos] == 0xffU) {
+            continue;
+        }
+        if (bestPos == UINT16_MAX || entityDefSourceIndex[pos] < bestSource) {
+            bestPos = pos;
+            bestSource = entityDefSourceIndex[pos];
+        }
+    }
+    if (bestPos == UINT16_MAX) return 0;
+    *outTileIndex = entityDefMetadata[bestPos].tileIndex;
+    return 1;
+}
+
 int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
                            char* outName,
                            uint32_t capacity) {
@@ -307,7 +334,7 @@ int EspEntityDefTypeCatalog_readName(uint16_t tileIndex,
         goto done;
     }
     while (copy + 1U < capacity && copy < ENTITY_DEF_NAME_BYTES &&
- raw[copy] != 0U) {
+           raw[copy] != 0U) {
         outName[copy] = (char)raw[copy];
         ++copy;
     }
