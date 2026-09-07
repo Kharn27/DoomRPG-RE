@@ -20,6 +20,7 @@
 #define HUB_UI_PANEL 0x0008U
 #define HUB_UI_DIM_BLUE 0x0010U
 #define HUB_UI_BLUE 0x001fU
+#define HUB_UI_EQUIPPED 0xffe0U
 #define HUB_UI_WHITE 0xffffU
 
 #define HUB_UI_FONT_NAME "a.bmp"
@@ -281,6 +282,76 @@ static int formatEntryLine(char* line,
     return written >= 0 && (uint32_t)written < capacity;
 }
 
+/* The Doom font is blitted over an explicitly cleared black card interior.
+ * Recolor only non-black glyph pixels after the normal blit: this preserves the
+ * font silhouette/spacing and does not touch card borders, focus chrome or any
+ * protected HUD pixel. Focus stays white/blue; equipped state is yellow. */
+static void tintLine(uint16_t* framebuffer,
+                     const char* text,
+                     int x,
+                     int y,
+                     uint16_t color) {
+    size_t length;
+    int right;
+    int bottom;
+    int px;
+    int py;
+
+    if (framebuffer == NULL || text == NULL) return;
+    length = strlen(text);
+    if (length == 0U) return;
+
+    right = x + (int)((length - 1U) * HUB_UI_FONT_ADVANCE) +
+            (int)HUB_UI_FONT_WIDTH - 1;
+    if (right > 156) right = 156;
+    bottom = y + (int)HUB_UI_FONT_HEIGHT - 1;
+    if (bottom > HUB_UI_BOTTOM) bottom = HUB_UI_BOTTOM;
+
+    for (py = y; py <= bottom; ++py) {
+        for (px = x; px <= right; ++px) {
+            uint16_t* pixel = &framebuffer[py * DOOMRPG_LOGICAL_WIDTH + px];
+            if (*pixel != HUB_UI_BLACK) *pixel = color;
+        }
+    }
+}
+
+static int entryIsEquippedWeapon(
+    const EspNativeGameplayHubInventoryEntry* entry,
+    const EspNativeGameplayPlayerState* player) {
+    return entry != NULL && player != NULL &&
+           entry->kind == ESP_NATIVE_GAMEPLAY_HUB_ENTRY_WEAPON &&
+           entry->sourceId == player->weapon;
+}
+
+static int drawInventoryEntryLine(
+    const EspNativeIndexedBmp* font,
+    uint16_t* framebuffer,
+    char* line,
+    uint32_t capacity,
+    char marker,
+    const EspNativeGameplayHubInventoryEntry* entry,
+    const EspNativeGameplayPlayerState* player,
+    int y,
+    EspNativeIndexedBmpStats* stats) {
+    if (!formatEntryLine(line, capacity, marker, entry) ||
+        !drawDoomText(font, framebuffer, line, 4, y, stats)) {
+        return 0;
+    }
+    if (entryIsEquippedWeapon(entry, player)) {
+        tintLine(framebuffer, line, 4, y, HUB_UI_EQUIPPED);
+    }
+    return 1;
+}
+
+static const char* equippedVisibleName(uint8_t slot) {
+    switch (slot) {
+    case 0U: return "prev";
+    case 1U: return "current";
+    case 2U: return "next";
+    default: return "offscreen";
+    }
+}
+
 static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedEntry) {
     const EspNativeGameplayHubView* view = EspNativeGameplayHub_view();
     EspNativeGameplayPlayerState player;
@@ -293,6 +364,7 @@ static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedEntry) {
     uint8_t count;
     uint8_t previousIndex;
     uint8_t nextIndex;
+    uint8_t equippedVisible = 0xffU;
     int ok = 1;
 
     memset(&player, 0, sizeof(player));
@@ -341,16 +413,20 @@ static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedEntry) {
     fillRect(framebuffer, 4, HUB_UI_ROW1_TOP, 156, HUB_UI_ROW1_BOTTOM, HUB_UI_BLACK);
     fillRect(framebuffer, 4, HUB_UI_ROW2_TOP, 156, HUB_UI_ROW2_BOTTOM, HUB_UI_BLACK);
 
-    if (!formatEntryLine(line, sizeof(line), ' ', &previous)) return 0;
-    ok = drawDoomText(&font, framebuffer, line, 4, HUB_UI_ROW0_TOP, &stats) && ok;
-    if (!formatEntryLine(line, sizeof(line), '>', &current)) return 0;
-    ok = drawDoomText(&font, framebuffer, line, 4, HUB_UI_ROW1_TOP, &stats) && ok;
-    if (!formatEntryLine(line, sizeof(line), ' ', &next)) return 0;
-    ok = drawDoomText(&font, framebuffer, line, 4, HUB_UI_ROW2_TOP, &stats) && ok;
+    ok = drawInventoryEntryLine(&font, framebuffer, line, sizeof(line), ' ',
+                                &previous, &player, HUB_UI_ROW0_TOP, &stats) && ok;
+    ok = drawInventoryEntryLine(&font, framebuffer, line, sizeof(line), '>',
+                                &current, &player, HUB_UI_ROW1_TOP, &stats) && ok;
+    ok = drawInventoryEntryLine(&font, framebuffer, line, sizeof(line), ' ',
+                                &next, &player, HUB_UI_ROW2_TOP, &stats) && ok;
 
     if (!ok || !EspAssetPack_isOpen()) return 0;
 
-    printf("[HUBLIST] FRAME entries=%u selected=%u prev=%u/%s/\"%s\"/\"%s\" current=%u/%s/\"%s\"/\"%s\" next=%u/%s/\"%s\"/\"%s\" visibleEntryBytes=%u persistentListBytes=0 fontReads=%u fontBytes=%u packOwnership=preserved-open mutation=no turn=no\n",
+    if (entryIsEquippedWeapon(&previous, &player)) equippedVisible = 0U;
+    else if (entryIsEquippedWeapon(&current, &player)) equippedVisible = 1U;
+    else if (entryIsEquippedWeapon(&next, &player)) equippedVisible = 2U;
+
+    printf("[HUBLIST] FRAME entries=%u selected=%u prev=%u/%s/\"%s\"/\"%s\" current=%u/%s/\"%s\"/\"%s\" next=%u/%s/\"%s\"/\"%s\" equippedWeapon=%u equippedVisible=%s equippedTint=ffe0 visibleEntryBytes=%u persistentListBytes=0 fontReads=%u fontBytes=%u packOwnership=preserved-open mutation=no turn=no\n",
            (unsigned int)count,
            (unsigned int)selectedEntry,
            (unsigned int)previousIndex,
@@ -365,6 +441,8 @@ static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedEntry) {
            EspNativeGameplayHubContent_inventoryKindName(next.kind),
            next.name,
            next.value,
+           (unsigned int)player.weapon,
+           equippedVisibleName(equippedVisible),
            (unsigned int)(sizeof(previous) + sizeof(current) + sizeof(next)),
            (unsigned int)stats.packReads,
            (unsigned int)stats.bytesRead);
