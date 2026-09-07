@@ -447,6 +447,18 @@ static uint8_t zoneForAction(uint8_t action) {
     }
 }
 
+static uint8_t ownedWeaponEntryCount(const EspNativeGameplayPlayerState* player) {
+    uint16_t weapons;
+    uint8_t count = 0U;
+    uint8_t i;
+    if (player == NULL) return 0U;
+    weapons = (uint16_t)(player->weapons & 0x0fffU);
+    for (i = 0U; i < ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT; ++i) {
+        if ((weapons & (uint16_t)(1U << i)) != 0U) ++count;
+    }
+    return count;
+}
+
 int EspNativeGameplayHubTouchUi_classify(
     int logicalX,
     int logicalY,
@@ -456,7 +468,9 @@ int EspNativeGameplayHubTouchUi_classify(
     EspNativeGameplayPlayerState player;
     uint8_t action;
     uint8_t targetRow;
+    uint8_t targetIndex;
     uint8_t count;
+    uint8_t weaponEntries;
 
     if (outHit == NULL || view == NULL || view->active == 0U) return 0;
     if (logicalX < 0 || logicalX >= DOOMRPG_LOGICAL_WIDTH ||
@@ -505,14 +519,17 @@ int EspNativeGameplayHubTouchUi_classify(
         if (logicalY >= HUB_UI_ROW0_TOP && logicalY <= HUB_UI_ROW0_BOTTOM) {
             targetRow = 0U;
             action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD;
+            targetIndex = (uint8_t)((view->selectedRow + count - 1U) % count);
         }
         else if (logicalY >= HUB_UI_ROW1_TOP && logicalY <= HUB_UI_ROW1_BOTTOM) {
             targetRow = 1U;
             action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
+            targetIndex = view->selectedRow;
         }
         else if (logicalY >= HUB_UI_ROW2_TOP && logicalY <= HUB_UI_ROW2_BOTTOM) {
             targetRow = 2U;
             action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK;
+            targetIndex = (uint8_t)((view->selectedRow + 1U) % count);
         }
         else {
             return -1;
@@ -521,6 +538,16 @@ int EspNativeGameplayHubTouchUi_classify(
         if (logicalX < HUB_UI_ROW_LEFT || logicalX > HUB_UI_ROW_TOUCH_RIGHT) {
             return -1;
         }
+
+        /* A visible owned weapon is a real action target, not merely a scroll
+         * affordance. Route any of the three visible weapon cards as SELECT so
+         * touch feedback matches the user's one-tap intent. Non-weapon top and
+         * bottom cards keep their bounded previous/next navigation semantics. */
+        weaponEntries = ownedWeaponEntryCount(&player);
+        if (targetIndex < weaponEntries) {
+            action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
+        }
+
         setHit(outHit,
                action,
                zoneForAction(action),
@@ -534,4 +561,40 @@ int EspNativeGameplayHubTouchUi_classify(
     }
 
     return -1;
+}
+
+int EspNativeGameplayHubTouchUi_consumedSelectTarget(
+    uint8_t selectedRow,
+    uint8_t entryCount,
+    uint8_t* outTargetRow) {
+    const EspNativeGameplayInputState* input = EspNativeGameplayInput_peek();
+    uint8_t target;
+
+    if (outTargetRow == NULL || entryCount == 0U || selectedRow >= entryCount ||
+        input == NULL || input->active == 0U || input->pending != 0U ||
+        input->action != ESP_NATIVE_GAMEPLAY_ACTION_SELECT ||
+        input->zone != ESP_NATIVE_GAMEPLAY_ZONE_SELECT ||
+        input->logicalX < HUB_UI_ROW_LEFT ||
+        input->logicalX > HUB_UI_ROW_TOUCH_RIGHT) {
+        return 0;
+    }
+
+    if (input->logicalY >= HUB_UI_ROW0_TOP &&
+        input->logicalY <= HUB_UI_ROW0_BOTTOM) {
+        target = (uint8_t)((selectedRow + entryCount - 1U) % entryCount);
+    }
+    else if (input->logicalY >= HUB_UI_ROW1_TOP &&
+             input->logicalY <= HUB_UI_ROW1_BOTTOM) {
+        target = selectedRow;
+    }
+    else if (input->logicalY >= HUB_UI_ROW2_TOP &&
+             input->logicalY <= HUB_UI_ROW2_BOTTOM) {
+        target = (uint8_t)((selectedRow + 1U) % entryCount);
+    }
+    else {
+        return 0;
+    }
+
+    *outTargetRow = target;
+    return 1;
 }
