@@ -34,14 +34,17 @@ typedef struct EspNativeGameplayHubView_s {
     uint8_t selectedRow;
     uint8_t active;
     uint8_t page;
-    uint8_t reserved;
+    uint8_t weaponAtOpen;
 } EspNativeGameplayHubView;
 
 /*
  * Permanent bounded gameplay-hub owner.
  *
- * The 28 B view projects read-only Inventory and Status from the one canonical
- * PlayerState owner. It never duplicates or mutates PlayerState. Page content
+ * The 28 B view projects Inventory and Status from the one canonical
+ * PlayerState owner. Inventory navigation stays allocation-free; the only
+ * enabled mutation is legacy-compatible selection of an already-owned weapon.
+ * weaponAtOpen reuses the former reserved byte so the owner remains 28 B and
+ * close logs can prove the session's bounded weapon-only mutation. Page content
  * owns only the resident 160x80 world viewport (y=20..99). While the HUB is
  * active, a separate fixed 32x20 / 1280 B underlay temporarily owns the real
  * top-left MENU zone so its close control can be visible; that underlay is
