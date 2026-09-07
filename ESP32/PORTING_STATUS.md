@@ -7,37 +7,29 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main at branch creation = dbcbf7b52f9aef851503a919a5a2871743a7de20
-branch = agent/esp32-native-gameplay-hub-inventory-view
-base main = dbcbf7b52f9aef851503a919a5a2871743a7de20
-hardware-tested code boundary = bc136c735c9f5ba173a57fcbbb1f5bea6732b3bd
-status = REAL-CYD GAMEPLAY HUB V2 INVENTORY + STATUS READ-ONLY PASS
+main at branch creation = bc9e0435f6ee6ea23a68cb4bdbb18324440cf360
+branch = agent/esp32-native-gameplay-hub-touch-ui
+base main = bc9e0435f6ee6ea23a68cb4bdbb18324440cf360
+hardware-tested code boundary = 515bb4b0122c55348251eee726110ec946a4aeb6
+status = REAL-CYD GAMEPLAY HUB TOUCH UI + HAND MENU BUTTON PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`bc136c73...` is the exact code boundary exercised on the real classic CYD.
+`515bb4b0...` is the exact code boundary exercised on the real classic CYD.
 Commits after that SHA must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `34060186783` / run #161 completed
+Normal GitHub Actions `esp32-cyd` run `34091004475` / run #177 completed
 successfully on this exact SHA and produced the firmware artifact. CI is
 compile/link evidence only; hardware serial logs remain authoritative.
 
 Latest detailed record:
 
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md)
 
 After merge, read the real GitHub `main` SHA again before creating the next
 `agent/*` branch.
 
 ## Permanent architecture and hard invariants
-
-```text
-A NEW BSP IS NOT A NEW ENGINE.
-A NEW MONSTER IS NOT A NEW COMBAT BACKEND.
-A NEW PICKUP MUST NOT BECOME A NEW MINI-OWNER.
-```
-
-Target production path:
 
 ```text
 Doom RPG original data/behavior
@@ -71,9 +63,9 @@ regress to it.
 Active gameplay storage path:
 
 ```text
-/DoomRPG-ESP32.pak on microSD (authoritative source)
+/DoomRPG-ESP32.pak on microSD
  -> generic requested-map raw internal-flash slot
- -> 19 KiB resident RAM cache (L1)
+ -> 19 KiB resident RAM cache
  -> native gameplay / renderer
 ```
 
@@ -110,7 +102,7 @@ headroom = 491481 B
 [MAPFLASH] COPY indexFNV=3a51cc4d payloadFNV=9ec04e22 verified=yes
 ```
 
-Generic requested-map reuse witness:
+Requested-map reuse witness:
 
 ```text
 [MAPFLASH] REUSE HIT requestedMap=1 current=/intro.bsp cachedMap=1
@@ -118,8 +110,7 @@ Generic requested-map reuse witness:
            verifyUs=361875 rebuild=no
 ```
 
-Active gameplay never silently falls back to SD. Slot reuse remains keyed to the
-requested map and revalidates source identity, layout and flash fingerprints.
+Active gameplay never silently falls back to SD.
 
 ## Entrance canonical witness
 
@@ -174,164 +165,114 @@ optimization target.
 
 ## Current hardware-owned gameplay frontier
 
-Validated behavior includes:
+Validated behavior includes movement/turn/strafe, native collision/topology,
+SELECT event-first routing, state/event opcodes already migrated, regular door
+animation, mutable line textures, native weapon presentation/combat, shared
+52 B PlayerState, pickups/resources, hazard touch, feedback flashes, compact
+MonsterState/MonsterPosition, live monster movement/topology relink, active-list
+sequencing, raw-flash gameplay backing and requested-map reuse.
+
+The latest permanent UI frontier adds:
 
 ```text
-TURN_LEFT / TURN_RIGHT
-FORWARD / BACK / STRAFE
-native collision/topology
-SELECT event-first routing
-EV_SHOW / EV_HIDE / EV_UNLOCK
-EV_OPENLINE / EV_CLOSELINE
-EV_DIALOG / EV_DIALOGNOBACK
-EV_FORCEMESSAGE / EV_NOTE
-state ops 11 / 19 / 20
-regular door open/close animation
-mutable line texture variants
-native idle weapon rendering + generic player attack pose
-move-event state mutation with rollback/commit
-jammed-door subtype-3 destruction and traversal
-generic compact MonsterState + type-1 player attack combat
-generic PlayerState resources / consumed pickup removal
-shared 52 B PlayerState + HUD projection
-extinguisher ammo consumption + fire removal
-pain / corpse / gib presentation
-bounded stationary monster retaliation
-native PASS_TURN + exact top-bar feedback
-PASS_TURN current-tile linked type10/type11 hazard touch
-reentrant red/white viewport flash
-compact mutable MonsterPosition owner
-legacy-compatible movement planner + RNG reservation/replay
-live monster movement publication + topology relink
-renderer projection of committed moved monster position
-generic NEXT / PREV weapon cycling
-live Pistol ammo consumption + generic combat commit
-live pickup messages + white pickup flash
-adaptive floor/ceiling texture cache under memory pressure
-movement-side linked type10/type11 hazard touch
-live bounded movement-hazard damage text + red viewport flash
-live nonlethal monster-retaliation damage text + red viewport flash
-feedback expiry safely deferred while native dialog owns PAK
-raw internal-flash gameplay backing with no silent SD fallback
-generic requested-map committed-slot reuse with strict rebuild on mismatch
-single-loop monster attack visual: primary frame 1 + alternate frame 5
-150 ms attack visual lease with guarded render + exact idle expiry
-one-step post-move goal for subtype 1/5
-same-turn post-move attack after committed adjacent clear-trace move
-renderer-visible monster activation persisted in first-activation order
-multiple active no-immediate-attack monsters sequenced in one MonsterTurn
-per-member movement publication before planning the next active monster
-dead active-list members skipped by later delivery
-open-door SELECT attack passthrough preserved while 4-frame slide animation remains live
-native gameplay HUB owner = 28 B, no framebuffer snapshot
-read-only Inventory + Status pages projected from shared 52 B PlayerState
-HUB viewport-only paint = 160x80/y20..99 with top/bottom HUD bands untouched
-TURN_LEFT/RIGHT page navigation with world dispatch blocked
-Inventory FORWARD/BACK cursor navigation; Status movement input absorbed
-MENU close rerenders exact world frame; SELECT remains fail-closed
+native gameplay HUB owner = 28 B
+shared PlayerState owner = 52 B
+read-only Inventory + Status pages
+visible native INV / STATUS touch tabs
+visible Inventory touch cards
+HUB viewport touch ownership isolated from world 3x3 controls
+unsupported HUB actions absorbed / fail closed
+visible MENU close affordance uses original Doom RPG p.bmp hand
+bounded MENU underlay = 32x20 RGB565 = 1280 B
+all other HUD pixels protected by fingerprint
+MENU close restores underlay bit-exact
+normal world rerender restores exact pre-HUB world frame
 ```
 
-Detailed records include:
+Detailed recent records:
 
-- [`MILESTONE_NATIVE_MONSTER_MOVEMENT.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT.md)
-- [`MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md`](MILESTONE_NATIVE_MONSTER_MOVEMENT_LIVE.md)
-- [`MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md`](MILESTONE_NATIVE_MONSTER_POSTMOVE_ATTACK.md)
-- [`MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md`](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md)
 - [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md)
 
-## Latest real-CYD gameplay HUB v2 witness
+## Latest real-CYD HUB touch UI witness
 
-The tested HUB uses the canonical shared `EspNativeGameplayPlayerState` rather
-than a second inventory owner:
+The exact hardware-tested code boundary is `515bb4b0...`.
 
-```text
-hub ownerBytes = 28
-playerStateBytes = 52
-playerFNV = e745fce9
-hudBandsFNV = 6c2aa46f
-```
-
-Inventory and Status repeatedly painted inside the 160x80 world viewport with
-`hudBands=6c2aa46f preserved=yes`, `playerFNV=e745fce9 exact=yes`,
-`packClosed=yes`, `mutation=no` and `turn=no`.
-
-Representative deterministic page frames:
+Deterministic page/menu witnesses:
 
 ```text
-Inventory row 0 = 06138e61
-Status          = b35c12b9
-Inventory row 2 = 71bffc61
-Inventory row 1 = 1a817e61
+Inventory frame = 79bbc30d
+Status frame    = eea0759d
+Inventory again = 79bbc30d
+hudProtectedFNV = bd7588ae
+menuZoneFNV     = 109b46aa
+playerFNV       = e745fce9
 ```
 
-`FORWARD` on Status was absorbed with `worldDispatch=blocked`. Closing from the
-HUB preserved `e745fce9->e745fce9 exact=yes`, kept HUD bands untouched, and the
-normal compositor rebuilt the exact pre-HUB world frame `22397b55`.
-
-The first full-screen prototype had left menu pixels in the top/bottom HUD bands.
-That regression is closed permanently by clipping the HUB to `y=20..99`; no
-12.8 KiB HUD-band backup and no 38.4 KiB framebuffer backup were introduced.
-
-## Retained real-CYD active sequence witness
-
-Two subtype-1 Hellhounds, sprites `89` and `114`, were activated by BSP-render
-visibility. Activation only changed the map-session activation bit/order and did
-not consume gameplay RNG.
-
-During one PASS_TURN the hardware log showed:
+Representative Inventory paint:
 
 ```text
-sprite 89  tile 263 -> 264  rngCalls=1  randomCommitted=yes
- -> publication=committed-before-next
-sprite 114 tile 233 -> 265  rngCalls=1  randomCommitted=yes
- -> publication=committed-before-next
-[MONSTERACTIVESEQ] COMPLETE ... delivered=2 ... ordered=yes publication=per-member
+[HUB] FRAME paint=3 page=inventory row=0 frame=79bbc30d
+      viewport=160x80/y20..99
+      hudProtected=bd7588ae preserved=yes
+      menuButton=hand asset=p.bmp frame=0
+      menuZone=109b46aa underlayBytes=1280
+      playerFNV=e745fce9 exact=yes
+      packClosed=yes presented=1 mutation=no turn=no
 ```
 
-The next turn repeated the ordered publication from the updated positions.
-After the player killed sprite 89 (`hp=6->0`, `alive=1->0`), the same player
-attack turn and later PASS_TURNs delivered movement only for sprite 114. This
-confirms that the active sequence observes current mutable MonsterState rather
-than replaying a stale activation snapshot.
+Status reproduced the same protected/menu fingerprints and exact player state.
+Returning to Inventory reproduced `79bbc30d` exactly.
 
-The same hardware session also confirmed the regression fix on regular doors:
-`DOORANIM` ran all four moving/stable frames and SELECT then reached enemy combat
-through the open door.
-
-## Subtype 4/13 three-goal owner retained
-
-The bounded legacy `Entity_aiMoveToGoal()` `i=3` owner for subtypes `4/13`
-remains present:
+A PASS_TURN touch while the HUB was active was absorbed:
 
 ```text
-first goal = existing committed movement
-continuation goals 2/3 = settled player destination
-successful continuation RNG = one visit-choice byte per goal
-publication = existing live movement transaction
-unsupported special calcPath plane crossing = fail closed
-multi-loop / three-shot attack family = fail closed
+[HUB] IGNORE action=14 page=inventory row=0
+      worldDispatch=blocked mutation=no turn=no
+[RESIDENTGAMEPLAY] HUB-INPUT ... action=PASS_TURN status=IGNORED
+      worldDispatch=blocked turnAdvance=no
 ```
 
-The HUB hardware session does not add a new subtype-4/13 witness; do not infer
-one merely because the binary contains that owner.
+Closing through the visible hand restored both the bounded MENU underlay and the
+complete HUD exactly:
+
+```text
+[HUB] CLOSE n=3 page=inventory
+      playerFNV=e745fce9->e745fce9 exact=yes
+      menuUnderlayRestore=exact
+      hudBands=6c2aa46f expected=6c2aa46f exact=yes
+      packClosed=yes
+```
+
+The resident gameplay compositor then rebuilt the exact world frame:
+
+```text
+pre-HUB world frame  = 22397b55
+post-HUB world frame = 22397b55
+```
+
+No player/world mutation or turn advance occurred.
 
 ## RAM witness at current boundary
 
-The supplied real-CYD HUB session remained flat before, during and after repeated
-page switches, ignored Status movement input, Inventory cursor movement and
-return to the world:
+The supplied real-CYD session remained flat before, during and after page
+switching, ignored HUB input and return to gameplay:
 
 ```text
-heap = 89280
-heap8 = 23548
-largest8 = 20468
+heap = 87988
+heap8 = 22256
+largest8 = 14324
 hub owner = 28 B
 player owner = 52 B
-HUB framebuffer snapshot = 0 B
-shapeData = NULL
-mediaTexels = NULL
+MENU underlay = 1280 B
+full framebuffer snapshot = 0 B
 ```
+
+The previous HUB-v2 witness was `89280 / 23548 / 20468`; the current free heap is
+1292 B lower after adding the bounded 1280 B MENU underlay and bookkeeping. The
+largest 8-bit block is now 14324 B and must be treated as the current canonical
+hardware witness before future RAM-heavy milestones.
 
 Audio remains deferred. Do not enable it without its own RAM milestone.
 
@@ -367,14 +308,14 @@ Kronos-specific semantics
 password input
 EV_GIVEMAP production route
 EV_CHECK_KEY production route
-HUB entity/item names and richer visual chrome
+HUB real weapon/ammo/item names and richer content layout
 HUB weapon selection
 HUB consumable confirmation/use + turn consumption
 HUB Notebook / Automap / Save / Load / Options / store
 ```
 
-These are mechanical family boundaries, never item-by-item or monster-by-monster
-implementation ladders.
+Different mechanical families stay fail-closed rather than being enabled through
+legacy desktop/J2ME ownership.
 
 ## CHANGEMAP remains deferred
 
@@ -397,15 +338,15 @@ After the user announces the merge:
 
 1. read actual GitHub `main` and exact SHA;
 2. re-read this file, `DOCUMENTATION.md` and
-   `MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`;
+   `MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`;
 3. create a fresh `agent/*` from that exact main SHA;
 4. recover the next bounded legacy/UI family before coding.
 
-Strong next milestone: a **visual/readability HUB pass** only. Recover the useful
-legacy in-game menu look (dark blue 8 px grid, proper labels/entity names,
-selection affordance and compact page chrome) while preserving the 28 B owner,
-160x80 viewport-only clipping and read-only semantics. Do not combine this with
-item-use mutations or turn consumption.
+Strong next HUB milestone: improve **content readability**, not input plumbing.
+Use the now-proven visible touch layer to expose real Doom RPG weapon/ammo/item
+labels through bounded native catalog lookups while preserving read-only
+semantics, the 28 B HUB owner, bounded MENU underlay and no world/turn mutation.
+Item use and weapon mutation remain separate milestones.
 
 ## Development workflow
 
