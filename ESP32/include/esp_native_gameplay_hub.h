@@ -40,11 +40,13 @@ typedef struct EspNativeGameplayHubView_s {
 /*
  * Permanent bounded gameplay-hub owner.
  *
- * v2 projects two read-only views from the one canonical PlayerState owner:
- * Inventory and Status. It never duplicates or mutates PlayerState and never
- * retains a framebuffer snapshot. The hub may paint only the resident 160x80
- * world viewport (y=20..99); the native HUD bands remain untouched and the
- * world is restored by the resident gameplay renderer after HUB_CLOSE.
+ * The 28 B view projects read-only Inventory and Status from the one canonical
+ * PlayerState owner. It never duplicates or mutates PlayerState. Page content
+ * owns only the resident 160x80 world viewport (y=20..99). While the HUB is
+ * active, a separate fixed 32x20 / 1280 B underlay temporarily owns the real
+ * top-left MENU zone so its close control can be visible; that underlay is
+ * restored bit-exact before the normal world compositor resumes. There is no
+ * full-frame or HUD-wide framebuffer snapshot.
  */
 void EspNativeGameplayHub_reset(void);
 int EspNativeGameplayHub_isActive(void);

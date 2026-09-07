@@ -32,6 +32,15 @@ extern void Esp32NativeGameplaySelectProbe_observeConsumed(
  * hard dependency on the dialog module in builds that omit it. */
 extern int EspNativeGameplayDialog_isActive(void) __attribute__((weak));
 
+/* The native HUB may replace the world 3x3 touch grid while it is active. The
+ * hook is weak so the permanent input queue remains reusable in builds that do
+ * not include HUB touch chrome. Return >0 for one classified semantic action,
+ * <0 to absorb a HUB-owned non-button touch, and 0 to fall back to world input. */
+extern int EspNativeGameplayHubTouchUi_classify(
+    int logicalX,
+    int logicalY,
+    EspNativeGameplayTouchHit* outHit) __attribute__((weak));
+
 static int supportedAction(uint8_t action) {
     switch (action) {
     case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
@@ -103,6 +112,7 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
     static const uint8_t yBottom[3] = {45, 72, 99};
     int column;
     int row;
+    int hubTouch;
 
     if (outHit == NULL) return ESP_NATIVE_GAMEPLAY_INPUT_INVALID;
     memset(outHit, 0, sizeof(*outHit));
@@ -110,6 +120,15 @@ EspNativeGameplayInputStatus EspNativeGameplayInput_classify(
     if (logicalX < 0 || logicalX >= DOOMRPG_LOGICAL_WIDTH ||
         logicalY < 0 || logicalY >= DOOMRPG_LOGICAL_HEIGHT) {
         return ESP_NATIVE_GAMEPLAY_INPUT_INVALID;
+    }
+
+    if (EspNativeGameplayHubTouchUi_classify != NULL) {
+        hubTouch = EspNativeGameplayHubTouchUi_classify(logicalX, logicalY, outHit);
+        if (hubTouch > 0) return ESP_NATIVE_GAMEPLAY_INPUT_OK;
+        if (hubTouch < 0) {
+            memset(outHit, 0, sizeof(*outHit));
+            return ESP_NATIVE_GAMEPLAY_INPUT_NO_HIT;
+        }
     }
 
     if (logicalY < GAMEPLAY_TOP_HUD_HEIGHT) {

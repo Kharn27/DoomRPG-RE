@@ -5,6 +5,7 @@
 
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_hub.h"
+#include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_indexed_bmp.h"
@@ -12,6 +13,7 @@
 #include "platform_video_config.h"
 
 #define HUB_FONT_NAME "a.bmp"
+#define HUB_FACE_NAME "p.bmp"
 #define HUB_FONT_WIDTH 9U
 #define HUB_FONT_HEIGHT 12U
 #define HUB_FONT_ADVANCE 7
@@ -26,11 +28,34 @@
 #define HUB_BAND_ROWS 20U
 #define HUB_BAND_PIXELS (DOOMRPG_LOGICAL_WIDTH * HUB_BAND_ROWS)
 
+#define HUB_MENU_LEFT 0U
+#define HUB_MENU_TOP 0U
+#define HUB_MENU_WIDTH 32U
+#define HUB_MENU_HEIGHT 20U
+#define HUB_MENU_RIGHT (HUB_MENU_LEFT + HUB_MENU_WIDTH - 1U)
+#define HUB_MENU_BOTTOM (HUB_MENU_TOP + HUB_MENU_HEIGHT - 1U)
+#define HUB_MENU_PIXELS (HUB_MENU_WIDTH * HUB_MENU_HEIGHT)
+#define HUB_FACE_FRAMES 1U
+#define HUB_FACE_FRAME 0U
+#define HUB_MENU_BG 0x0000U
+#define HUB_MENU_BORDER 0xffffU
+#define HUB_MENU_INNER 0x001fU
+
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "Native gameplay hub is defined for the 160x120 logical framebuffer"
 #endif
 
+typedef struct EspNativeGameplayHubMenuOverlay_s {
+    uint16_t underlay[HUB_MENU_PIXELS];
+    uint32_t baselineZoneFNV;
+    uint32_t paintedZoneFNV;
+    uint32_t baselineHudBandsFNV;
+    uint8_t active;
+    uint8_t reserved[3];
+} EspNativeGameplayHubMenuOverlay;
+
 static EspNativeGameplayHubView hub;
+static EspNativeGameplayHubMenuOverlay menuOverlay;
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -47,6 +72,13 @@ static uint32_t fnv1a32(const void* data, uint32_t bytes) {
     return fnv1aUpdate(2166136261U, data, bytes);
 }
 
+static int framebufferReady(void) {
+    return Esp32PlatformVideo_framebuffer() != NULL &&
+           Esp32PlatformVideo_framebufferSizeBytes() ==
+               (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                   sizeof(uint16_t);
+}
+
 static uint32_t frameFNV(void) {
     const void* framebuffer = Esp32PlatformVideo_framebuffer();
     size_t bytes = Esp32PlatformVideo_framebufferSizeBytes();
@@ -60,18 +92,181 @@ static uint32_t hudBandsFNV(void) {
     const uint16_t* framebuffer =
         (const uint16_t*)Esp32PlatformVideo_framebuffer();
     uint32_t hash = 2166136261U;
-    if (framebuffer == NULL ||
-        Esp32PlatformVideo_framebufferSizeBytes() !=
-            (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
-                sizeof(uint16_t)) {
-        return 0U;
-    }
+    if (!framebufferReady()) return 0U;
     hash = fnv1aUpdate(hash, framebuffer,
                        HUB_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
     return fnv1aUpdate(
         hash,
         framebuffer + HUB_BOTTOM_Y * DOOMRPG_LOGICAL_WIDTH,
         HUB_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
+}
+
+static uint32_t hudProtectedFNV(void) {
+    const uint16_t* framebuffer =
+        (const uint16_t*)Esp32PlatformVideo_framebuffer();
+    uint32_t hash = 2166136261U;
+    uint32_t y;
+    if (!framebufferReady()) return 0U;
+
+    for (y = 0U; y < HUB_BAND_ROWS; ++y) {
+        hash = fnv1aUpdate(
+            hash,
+            framebuffer + y * DOOMRPG_LOGICAL_WIDTH + HUB_MENU_WIDTH,
+            (DOOMRPG_LOGICAL_WIDTH - HUB_MENU_WIDTH) *
+                (uint32_t)sizeof(uint16_t));
+    }
+    return fnv1aUpdate(
+        hash,
+        framebuffer + HUB_BOTTOM_Y * DOOMRPG_LOGICAL_WIDTH,
+        HUB_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
+}
+
+static uint32_t menuZoneFNV(const uint16_t* framebuffer) {
+    uint32_t hash = 2166136261U;
+    uint32_t y;
+    if (framebuffer == NULL) return 0U;
+    for (y = 0U; y < HUB_MENU_HEIGHT; ++y) {
+        hash = fnv1aUpdate(
+            hash,
+            framebuffer + y * DOOMRPG_LOGICAL_WIDTH + HUB_MENU_LEFT,
+            HUB_MENU_WIDTH * (uint32_t)sizeof(uint16_t));
+    }
+    return hash;
+}
+
+static int menuOverlayCapture(uint16_t* framebuffer) {
+    uint32_t y;
+    if (framebuffer == NULL || menuOverlay.active) return 0;
+    memset(&menuOverlay, 0, sizeof(menuOverlay));
+    menuOverlay.baselineHudBandsFNV = hudBandsFNV();
+    if (menuOverlay.baselineHudBandsFNV == 0U) return 0;
+
+    for (y = 0U; y < HUB_MENU_HEIGHT; ++y) {
+        memcpy(menuOverlay.underlay + y * HUB_MENU_WIDTH,
+               framebuffer + y * DOOMRPG_LOGICAL_WIDTH + HUB_MENU_LEFT,
+               HUB_MENU_WIDTH * sizeof(uint16_t));
+    }
+    menuOverlay.baselineZoneFNV =
+        fnv1a32(menuOverlay.underlay, sizeof(menuOverlay.underlay));
+    if (menuOverlay.baselineZoneFNV == 0U) {
+        memset(&menuOverlay, 0, sizeof(menuOverlay));
+        return 0;
+    }
+    menuOverlay.active = 1U;
+    return 1;
+}
+
+static int menuOverlayRestore(uint16_t* framebuffer) {
+    uint32_t y;
+    uint32_t zoneFNV;
+    uint32_t bandsFNV;
+    if (!menuOverlay.active) return 1;
+    if (framebuffer == NULL) return 0;
+
+    for (y = 0U; y < HUB_MENU_HEIGHT; ++y) {
+        memcpy(framebuffer + y * DOOMRPG_LOGICAL_WIDTH + HUB_MENU_LEFT,
+               menuOverlay.underlay + y * HUB_MENU_WIDTH,
+               HUB_MENU_WIDTH * sizeof(uint16_t));
+    }
+
+    zoneFNV = menuZoneFNV(framebuffer);
+    bandsFNV = hudBandsFNV();
+    if (zoneFNV != menuOverlay.baselineZoneFNV ||
+        bandsFNV != menuOverlay.baselineHudBandsFNV) {
+        return 0;
+    }
+    menuOverlay.active = 0U;
+    menuOverlay.paintedZoneFNV = 0U;
+    return 1;
+}
+
+static void menuPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {
+    if (framebuffer == NULL || x < (int)HUB_MENU_LEFT ||
+        x > (int)HUB_MENU_RIGHT || y < (int)HUB_MENU_TOP ||
+        y > (int)HUB_MENU_BOTTOM) {
+        return;
+    }
+    framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
+}
+
+static void menuFill(uint16_t* framebuffer,
+                     int left,
+                     int top,
+                     int right,
+                     int bottom,
+                     uint16_t color) {
+    int x;
+    int y;
+    for (y = top; y <= bottom; ++y) {
+        for (x = left; x <= right; ++x) {
+            menuPixel(framebuffer, x, y, color);
+        }
+    }
+}
+
+static void menuRect(uint16_t* framebuffer,
+                     int left,
+                     int top,
+                     int right,
+                     int bottom,
+                     uint16_t color) {
+    int x;
+    int y;
+    for (x = left; x <= right; ++x) {
+        menuPixel(framebuffer, x, top, color);
+        menuPixel(framebuffer, x, bottom, color);
+    }
+    for (y = top + 1; y < bottom; ++y) {
+        menuPixel(framebuffer, left, y, color);
+        menuPixel(framebuffer, right, y, color);
+    }
+}
+
+static int paintMenuButton(const EspNativeIndexedBmp* faces,
+                           uint16_t* framebuffer,
+                           EspNativeIndexedBmpStats* stats) {
+    uint16_t faceHeight;
+    int destinationX;
+    int destinationY;
+
+    if (!menuOverlay.active || faces == NULL || framebuffer == NULL ||
+        stats == NULL || faces->width == 0U ||
+        faces->height == 0U || faces->height % HUB_FACE_FRAMES != 0U) {
+        return 0;
+    }
+
+    faceHeight = (uint16_t)(faces->height / HUB_FACE_FRAMES);
+    if (faces->width > HUB_MENU_WIDTH || faceHeight > HUB_MENU_HEIGHT ||
+        HUB_FACE_FRAME >= HUB_FACE_FRAMES) {
+        return 0;
+    }
+
+    menuFill(framebuffer, 0, 0, 31, 19, HUB_MENU_BG);
+    menuRect(framebuffer, 0, 0, 31, 19, HUB_MENU_BORDER);
+    menuRect(framebuffer, 1, 1, 30, 18, HUB_MENU_INNER);
+
+    destinationX = ((int)HUB_MENU_WIDTH - (int)faces->width) / 2;
+    destinationY = ((int)HUB_MENU_HEIGHT - (int)faceHeight) / 2;
+
+    if (EspNativeIndexedBmp_blit(
+            faces,
+            framebuffer,
+            DOOMRPG_LOGICAL_WIDTH,
+            DOOMRPG_LOGICAL_HEIGHT,
+            0U,
+            (uint16_t)(HUB_FACE_FRAME * faceHeight),
+            faces->width,
+            faceHeight,
+            (int16_t)destinationX,
+            (int16_t)destinationY,
+            1U,
+            stats) != ESP_NATIVE_INDEXED_BMP_OK) {
+        return 0;
+    }
+
+    menuOverlay.paintedZoneFNV = menuZoneFNV(framebuffer);
+    return menuOverlay.paintedZoneFNV != 0U &&
+           menuOverlay.paintedZoneFNV != menuOverlay.baselineZoneFNV;
 }
 
 static const char* pageName(uint8_t page) {
@@ -275,22 +470,27 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
     EspNativeGameplayPlayerState before;
     EspNativeGameplayPlayerState after;
     EspNativeIndexedBmp font;
+    EspNativeIndexedBmp faces;
     EspNativeIndexedBmpStats stats;
     uint16_t* framebuffer;
     uint32_t fnvBefore;
     uint32_t fnvAfter;
     uint32_t paintedFNV;
-    uint32_t hudBandsBefore;
-    uint32_t hudBandsAfter;
+    uint32_t protectedBefore;
+    uint32_t protectedAfter;
+    uint32_t menuBefore;
+    uint32_t menuAfter;
     int ok;
 
     memset(&before, 0, sizeof(before));
     memset(&after, 0, sizeof(after));
     memset(&font, 0, sizeof(font));
+    memset(&faces, 0, sizeof(faces));
     memset(&stats, 0, sizeof(stats));
 
     if (hub.active == 0U || hub.page >= ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT ||
-        !EspNativeGameplayPlayerState_snapshot(&before) || before.active != 1U) {
+        !EspNativeGameplayPlayerState_snapshot(&before) || before.active != 1U ||
+        !menuOverlay.active) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
     fnvBefore = EspNativeGameplayPlayerState_fingerprint();
@@ -302,14 +502,13 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
     }
 
     framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    if (framebuffer == NULL ||
-        Esp32PlatformVideo_framebufferSizeBytes() !=
-            (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
-                sizeof(uint16_t)) {
+    if (!framebufferReady()) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+
+    protectedBefore = hudProtectedFNV();
+    menuBefore = menuZoneFNV(framebuffer);
+    if (protectedBefore == 0U || menuBefore == 0U) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
-    hudBandsBefore = hudBandsFNV();
-    if (hudBandsBefore == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
 
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
@@ -317,14 +516,15 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
     if (EspNativeIndexedBmp_open(HUB_FONT_NAME, &font, &stats) !=
             ESP_NATIVE_INDEXED_BMP_OK ||
         font.width != HUB_FONT_SOURCE_WIDTH ||
-        font.height != HUB_FONT_SOURCE_HEIGHT) {
+        font.height != HUB_FONT_SOURCE_HEIGHT ||
+        EspNativeIndexedBmp_open(HUB_FACE_NAME, &faces, &stats) !=
+            ESP_NATIVE_INDEXED_BMP_OK) {
         EspAssetPack_close();
         return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
     }
 
-    /* The gameplay compositor owns y=0..19 and y=100..119 permanently. The
-     * hub is modal only over the resident 160x80 world viewport. No page is
-     * allowed to touch HUD pixels, so close needs no framebuffer snapshot. */
+    /* The HUB owns the resident 160x80 world viewport plus one explicit,
+     * bounded 32x20 MENU underlay. Every other HUD pixel remains protected. */
     clearViewport(framebuffer);
     drawBorder(framebuffer);
 
@@ -338,24 +538,38 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
         ok = 0;
     }
 
+    if (ok && !EspNativeGameplayHubTouchUi_paint(framebuffer,
+                                                  hub.page,
+                                                  hub.selectedRow)) {
+        ok = 0;
+    }
+    if (ok && !paintMenuButton(&faces, framebuffer, &stats)) {
+        ok = 0;
+    }
+
     EspAssetPack_close();
     if (!ok || EspAssetPack_isOpen()) {
         return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
     }
 
     fnvAfter = EspNativeGameplayPlayerState_fingerprint();
-    hudBandsAfter = hudBandsFNV();
+    protectedAfter = hudProtectedFNV();
+    menuAfter = menuZoneFNV(framebuffer);
     if (!EspNativeGameplayPlayerState_snapshot(&after) ||
         fnvAfter != fnvBefore || memcmp(&before, &after, sizeof(before)) != 0 ||
-        hudBandsAfter == 0U || hudBandsAfter != hudBandsBefore) {
-        printf("[HUB] PAINT-DEFER page=%s player=%08x->%08x hudBands=%08x->%08x playerExact=%s hudPreserved=%s mutation=no turn=no\n",
+        protectedAfter == 0U || protectedAfter != protectedBefore ||
+        menuAfter == 0U || menuAfter != menuOverlay.paintedZoneFNV) {
+        printf("[HUB] PAINT-DEFER page=%s player=%08x->%08x hudProtected=%08x->%08x menuZone=%08x->%08x playerExact=%s hudProtectedExact=%s menuButtonExact=%s mutation=no turn=no\n",
                pageName(hub.page),
                (unsigned int)fnvBefore,
                (unsigned int)fnvAfter,
-               (unsigned int)hudBandsBefore,
-               (unsigned int)hudBandsAfter,
+               (unsigned int)protectedBefore,
+               (unsigned int)protectedAfter,
+               (unsigned int)menuBefore,
+               (unsigned int)menuAfter,
                fnvAfter == fnvBefore ? "yes" : "NO",
-               hudBandsAfter == hudBandsBefore ? "yes" : "NO");
+               protectedAfter == protectedBefore ? "yes" : "NO",
+               menuAfter == menuOverlay.paintedZoneFNV ? "yes" : "NO");
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
 
@@ -367,12 +581,15 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
     ++hub.paints;
     hub.lastPlayerFNV = fnvAfter;
     hub.lastFrameFNV = paintedFNV;
-    printf("[HUB] FRAME paint=%u page=%s row=%u frame=%08x viewport=160x80/y20..99 hudBands=%08x preserved=yes reads=%u bytes=%u playerFNV=%08x exact=yes packClosed=yes presented=1 mutation=no turn=no\n",
+    printf("[HUB] FRAME paint=%u page=%s row=%u frame=%08x viewport=160x80/y20..99 hudProtected=%08x preserved=yes menuButton=hand asset=p.bmp frame=%u menuZone=%08x underlayBytes=%u reads=%u bytes=%u playerFNV=%08x exact=yes packClosed=yes presented=1 mutation=no turn=no\n",
            (unsigned int)hub.paints,
            pageName(hub.page),
            (unsigned int)hub.selectedRow,
            (unsigned int)paintedFNV,
-           (unsigned int)hudBandsAfter,
+           (unsigned int)protectedAfter,
+           (unsigned int)HUB_FACE_FRAME,
+           (unsigned int)menuAfter,
+           (unsigned int)sizeof(menuOverlay.underlay),
            (unsigned int)stats.packReads,
            (unsigned int)stats.bytesRead,
            (unsigned int)fnvAfter);
@@ -380,6 +597,11 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
 }
 
 void EspNativeGameplayHub_reset(void) {
+    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    if (menuOverlay.active && framebufferReady()) {
+        (void)menuOverlayRestore(framebuffer);
+    }
+    memset(&menuOverlay, 0, sizeof(menuOverlay));
     memset(&hub, 0, sizeof(hub));
 }
 
@@ -394,6 +616,7 @@ const EspNativeGameplayHubView* EspNativeGameplayHub_view(void) {
 EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
     EspNativeGameplayPlayerState player;
     EspNativeGameplayHubStatus status;
+    uint16_t* framebuffer;
     uint32_t playerFNV;
 
     memset(&player, 0, sizeof(player));
@@ -403,7 +626,14 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
     playerFNV = EspNativeGameplayPlayerState_fingerprint();
-    if (playerFNV == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+    if (playerFNV == 0U || !framebufferReady()) {
+        return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+    }
+
+    framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    if (!menuOverlayCapture(framebuffer)) {
+        return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+    }
 
     ++hub.opens;
     hub.selectedRow = 0U;
@@ -414,14 +644,18 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
 
     status = paintCurrentPage();
     if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) {
+        (void)menuOverlayRestore(framebuffer);
+        memset(&menuOverlay, 0, sizeof(menuOverlay));
         hub.active = 0U;
         return status;
     }
 
-    printf("[HUB] OPEN n=%u mode=inventory+status-readonly page=%s pages=%u viewport=160x80/y20..99 hudBands=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
+    printf("[HUB] OPEN n=%u mode=inventory+status-readonly page=%s pages=%u viewport=160x80/y20..99 menuButton=hand asset=p.bmp frame=%u menuUnderlayBytes=%u hudProtected=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
            (unsigned int)hub.opens,
            pageName(hub.page),
            (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT,
+           (unsigned int)HUB_FACE_FRAME,
+           (unsigned int)sizeof(menuOverlay.underlay),
            (unsigned int)sizeof(hub),
            (unsigned int)sizeof(player),
            (unsigned int)playerFNV,
@@ -445,25 +679,41 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
 
 EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     EspNativeGameplayHubStatus status;
+    uint16_t* framebuffer;
     uint32_t playerFNV;
+    uint32_t restoredHudBands;
+    uint32_t expectedHudBands;
     uint8_t beforeRow;
     uint8_t beforePage;
+    int menuRestored;
 
     if (hub.active == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
 
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
         playerFNV = EspNativeGameplayPlayerState_fingerprint();
+        framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+        expectedHudBands = menuOverlay.baselineHudBandsFNV;
+        menuRestored = framebufferReady() && menuOverlayRestore(framebuffer);
+        restoredHudBands = hudBandsFNV();
+
         hub.active = 0U;
         ++hub.closes;
         hub.lastPlayerFNV = playerFNV;
-        printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x exact=%s mutation=no turn=no worldRedraw=pending viewportOnly=yes hudBands=untouched packClosed=%s\n",
+        printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x exact=%s mutation=no turn=no worldRedraw=pending viewportOnly=yes menuUnderlayRestore=%s hudBands=%08x expected=%08x exact=%s packClosed=%s\n",
                (unsigned int)hub.closes,
                pageName(hub.page),
                (unsigned int)hub.playerFNVAtOpen,
                (unsigned int)playerFNV,
                playerFNV == hub.playerFNVAtOpen ? "yes" : "NO",
+               menuRestored ? "exact" : "FAILED",
+               (unsigned int)restoredHudBands,
+               (unsigned int)expectedHudBands,
+               restoredHudBands != 0U && restoredHudBands == expectedHudBands
+                   ? "yes" : "NO",
                EspAssetPack_isOpen() ? "NO" : "yes");
         return (playerFNV != 0U && playerFNV == hub.playerFNVAtOpen &&
+                menuRestored && restoredHudBands != 0U &&
+                restoredHudBands == expectedHudBands &&
                 !EspAssetPack_isOpen())
                    ? ESP_NATIVE_GAMEPLAY_HUB_CLOSED
                    : ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
