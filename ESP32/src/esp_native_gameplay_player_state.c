@@ -148,6 +148,20 @@ int EspNativeGameplayPlayerState_adoptWeapon(uint8_t weapon) {
     return 1;
 }
 
+int EspNativeGameplayPlayerState_selectOwnedWeapon(uint8_t weapon,
+                                                   uint8_t* outChanged) {
+    if (outChanged != NULL) *outChanged = 0U;
+    if (!EspNativeGameplayPlayerState_ensure() ||
+        weapon >= ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT ||
+        (playerState.weapons & (uint16_t)(1U << weapon)) == 0U) {
+        return 0;
+    }
+    if (playerState.weapon == weapon) return 1;
+    playerState.weapon = weapon;
+    if (outChanged != NULL) *outChanged = 1U;
+    return 1;
+}
+
 int EspNativeGameplayPlayerState_consumeAmmo(uint8_t ammoType,
                                              uint8_t ammoUsage,
                                              uint8_t* outBefore,
