@@ -37,10 +37,19 @@ static int resolveName(uint8_t type,
                        char* outName,
                        uint32_t capacity) {
     uint16_t tileIndex;
+    int packWasOpen;
+    int ok;
+
     if (outTileIndex == NULL || outName == NULL || capacity < 2U ||
-        !EspEntityDefTypeCatalog_findTileIndex(type, subtype, &tileIndex) ||
-        !EspEntityDefTypeCatalog_readName(tileIndex, outName, capacity) ||
-        outName[0] == '\0' || EspAssetPack_isOpen()) {
+        !EspEntityDefTypeCatalog_findTileIndex(type, subtype, &tileIndex)) {
+        return 0;
+    }
+    packWasOpen = EspAssetPack_isOpen();
+    ok = packWasOpen
+             ? EspEntityDefTypeCatalog_readNameFromOpenPack(
+                   tileIndex, outName, capacity)
+             : EspEntityDefTypeCatalog_readName(tileIndex, outName, capacity);
+    if (!ok || outName[0] == '\0' || EspAssetPack_isOpen() != packWasOpen) {
         return 0;
     }
     *outTileIndex = tileIndex;
@@ -64,12 +73,14 @@ int EspNativeGameplayHubContent_snapshot(
     EspNativeGameplayHubContent* outContent) {
     uint16_t tileIndex;
     uint8_t slot;
+    int packWasOpen;
 
     if (player == NULL || outContent == NULL || player->active != 1U ||
         player->weapon >= ESP_NATIVE_GAMEPLAY_HUB_CONTENT_WEAPONS ||
-        !EspEntityDefTypeCatalog_isReady() || EspAssetPack_isOpen()) {
+        !EspEntityDefTypeCatalog_isReady()) {
         return 0;
     }
+    packWasOpen = EspAssetPack_isOpen();
 
     memset(outContent, 0, sizeof(*outContent));
     if (!resolveName(HUB_CONTENT_ENTITY_TYPE_WEAPON,
@@ -104,7 +115,7 @@ int EspNativeGameplayHubContent_snapshot(
         break;
     }
 
-    return !EspAssetPack_isOpen();
+    return EspAssetPack_isOpen() == packWasOpen;
 }
 
 int EspNativeGameplayHubContent_probeCatalog(void) {
@@ -114,8 +125,10 @@ int EspNativeGameplayHubContent_probeCatalog(void) {
     uint8_t resolvedWeapons = 0U;
     uint8_t resolvedItems = 0U;
     char name[ESP_NATIVE_GAMEPLAY_HUB_CONTENT_NAME_BYTES];
+    int packWasOpen;
 
-    if (!EspEntityDefTypeCatalog_isReady() || EspAssetPack_isOpen()) return 0;
+    if (!EspEntityDefTypeCatalog_isReady()) return 0;
+    packWasOpen = EspAssetPack_isOpen();
 
     for (subtype = 0U;
          subtype < ESP_NATIVE_GAMEPLAY_HUB_CONTENT_WEAPONS;
@@ -172,15 +185,16 @@ int EspNativeGameplayHubContent_probeCatalog(void) {
 
     if (resolvedWeapons != ESP_NATIVE_GAMEPLAY_HUB_CONTENT_WEAPONS ||
         resolvedItems != ESP_NATIVE_GAMEPLAY_HUB_CONTENT_ITEMS ||
-        hash == 0U || EspAssetPack_isOpen()) {
+        hash == 0U || EspAssetPack_isOpen() != packWasOpen) {
         return 0;
     }
 
-    printf("[HUBCONTENT] READY weapons=%u/%u items=%u/%u names=pak-on-demand persistentNameBytes=0 catalogFNV=%08x packClosed=yes mutation=no turn=no\n",
+    printf("[HUBCONTENT] READY weapons=%u/%u items=%u/%u names=pak-on-demand persistentNameBytes=0 catalogFNV=%08x packOwnership=preserved-%s mutation=no turn=no\n",
            (unsigned int)resolvedWeapons,
            (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_CONTENT_WEAPONS,
            (unsigned int)resolvedItems,
            (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_CONTENT_ITEMS,
-           (unsigned int)hash);
+           (unsigned int)hash,
+           packWasOpen ? "open" : "closed");
     return 1;
 }
