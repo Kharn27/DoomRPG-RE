@@ -24,6 +24,16 @@ int EspNativeGameplayHubTouchUi_classify(
     int logicalY,
     struct EspNativeGameplayTouchHit_s* outHit);
 
+/* After the permanent input owner consumes a HUB SELECT tap, recover which of
+ * the three visible previous/current/next cards was actually touched. This is
+ * a read-only interpretation of the already-consumed compact input state; it
+ * adds no queue or target owner. Returns 1 with an exact bounded entry index,
+ * otherwise 0 so callers fail closed to the centered semantic selection. */
+int EspNativeGameplayHubTouchUi_consumedSelectTarget(
+    uint8_t selectedRow,
+    uint8_t entryCount,
+    uint8_t* outTargetRow);
+
 #ifdef __cplusplus
 }
 #endif
