@@ -368,14 +368,14 @@ static int paintInventoryContent(const EspNativeGameplayPlayerState* player,
     if (count == 0U || hub.selectedRow >= count) return 0;
 
     /* The visible tabs and three-card list own y=21..72. Keep the lower area as
-     * a small read-only position/status footer instead of the old prototype
-     * numeric inventory dump. */
+     * a small position/status footer. Weapon SELECT is the only live mutation;
+     * every other entry kind stays fail-closed. */
     memset(line, 0, sizeof(line));
     snprintf(line, sizeof(line), "ENTRY %u/%u",
              (unsigned int)hub.selectedRow + 1U,
              (unsigned int)count);
     ok = drawText(font, framebuffer, line, 4, 73, stats) && ok;
-    ok = drawText(font, framebuffer, "READ ONLY", 4, 86, stats) && ok;
+    ok = drawText(font, framebuffer, "WPN SELECT", 4, 86, stats) && ok;
     return ok;
 }
 
@@ -468,7 +468,7 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
     fnvBefore = EspNativeGameplayPlayerState_fingerprint();
-    if (fnvBefore == 0U || fnvBefore != hub.playerFNVAtOpen ||
+    if (fnvBefore == 0U || fnvBefore != hub.lastPlayerFNV ||
         EspAssetPack_isOpen()) {
         return EspAssetPack_isOpen()
                    ? ESP_NATIVE_GAMEPLAY_HUB_PACK_BUSY
@@ -614,6 +614,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
     hub.page = ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY;
     hub.playerFNVAtOpen = playerFNV;
     hub.lastPlayerFNV = playerFNV;
+    hub.weaponAtOpen = player.weapon;
     hub.active = 1U;
 
     status = paintCurrentPage();
@@ -624,7 +625,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
         return status;
     }
 
-    printf("[HUB] OPEN n=%u mode=inventory+status-readonly page=%s pages=%u viewport=160x80/y20..99 menuButton=hand asset=p.bmp frame=%u menuUnderlayBytes=%u hudProtected=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
+    printf("[HUB] OPEN n=%u mode=inventory-weapon-select+status-readonly page=%s pages=%u viewport=160x80/y20..99 menuButton=hand asset=p.bmp frame=%u menuUnderlayBytes=%u hudProtected=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
            (unsigned int)hub.opens,
            pageName(hub.page),
            (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT,
@@ -666,28 +667,38 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     if (hub.active == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
 
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
+        const char* sessionMutation;
         playerFNV = EspNativeGameplayPlayerState_fingerprint();
+        memset(&player, 0, sizeof(player));
+        if (!EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) {
+            return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+        }
         framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
         expectedHudBands = menuOverlay.baselineHudBandsFNV;
         menuRestored = framebufferReady() && menuOverlayRestore(framebuffer);
         restoredHudBands = hudBandsFNV();
+        sessionMutation = player.weapon == hub.weaponAtOpen ? "no" : "weapon-only";
 
         hub.active = 0U;
         ++hub.closes;
-        hub.lastPlayerFNV = playerFNV;
-        printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x exact=%s mutation=no turn=no worldRedraw=pending viewportOnly=yes menuUnderlayRestore=%s hudBands=%08x expected=%08x exact=%s packClosed=%s\n",
+        printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x expected=%08x exact=%s weapon=%u->%u sessionMutation=%s turn=no worldRedraw=pending viewportOnly=yes menuUnderlayRestore=%s hudBands=%08x expectedHud=%08x exactHud=%s packClosed=%s\n",
                (unsigned int)hub.closes,
                pageName(hub.page),
                (unsigned int)hub.playerFNVAtOpen,
                (unsigned int)playerFNV,
-               playerFNV == hub.playerFNVAtOpen ? "yes" : "NO",
+               (unsigned int)hub.lastPlayerFNV,
+               playerFNV == hub.lastPlayerFNV ? "yes" : "NO",
+               (unsigned int)hub.weaponAtOpen,
+               (unsigned int)player.weapon,
+               sessionMutation,
                menuRestored ? "exact" : "FAILED",
                (unsigned int)restoredHudBands,
                (unsigned int)expectedHudBands,
                restoredHudBands != 0U && restoredHudBands == expectedHudBands
                    ? "yes" : "NO",
                EspAssetPack_isOpen() ? "NO" : "yes");
-        return (playerFNV != 0U && playerFNV == hub.playerFNVAtOpen &&
+        hub.lastPlayerFNV = playerFNV;
+        return (playerFNV != 0U && playerFNV == hub.lastPlayerFNV &&
                 menuRestored && restoredHudBands != 0U &&
                 restoredHudBands == expectedHudBands &&
                 !EspAssetPack_isOpen())
@@ -696,10 +707,91 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     }
 
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_SELECT) {
-        printf("[HUB] SELECT-DEFER page=%s row=%u cause=read-only-milestone mutation=no turn=no\n",
-               pageName(hub.page),
-               (unsigned int)hub.selectedRow);
-        return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+        EspNativeGameplayHubInventoryEntry entry;
+        EspNativeGameplayPlayerState before;
+        EspNativeGameplayPlayerState after;
+        EspNativeGameplayPlayerState expected;
+        uint32_t fnvBefore;
+        uint32_t fnvAfter;
+        uint8_t changed = 0U;
+        uint8_t shouldChange;
+
+        if (hub.page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY) {
+            printf("[HUB] SELECT-DEFER page=%s row=%u cause=unsupported-page mutation=no turn=no\n",
+                   pageName(hub.page),
+                   (unsigned int)hub.selectedRow);
+            return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+        }
+        if (EspAssetPack_isOpen()) return ESP_NATIVE_GAMEPLAY_HUB_PACK_BUSY;
+
+        memset(&before, 0, sizeof(before));
+        memset(&after, 0, sizeof(after));
+        memset(&expected, 0, sizeof(expected));
+        memset(&entry, 0, sizeof(entry));
+        if (!EspNativeGameplayPlayerState_snapshot(&before) || before.active != 1U) {
+            return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+        }
+        fnvBefore = EspNativeGameplayPlayerState_fingerprint();
+        inventoryEntries = EspNativeGameplayHubContent_inventoryEntryCount(&before);
+        if (fnvBefore == 0U || fnvBefore != hub.lastPlayerFNV ||
+            inventoryEntries == 0U || hub.selectedRow >= inventoryEntries ||
+            !EspNativeGameplayHubContent_inventoryEntryAt(
+                &before, hub.selectedRow, &entry) ||
+            EspAssetPack_isOpen()) {
+            return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+        }
+
+        if (entry.kind != ESP_NATIVE_GAMEPLAY_HUB_ENTRY_WEAPON) {
+            printf("[HUB] SELECT-DEFER page=inventory entry=%u kind=%s source=%u cause=unsupported-entry mutation=no turn=no\n",
+                   (unsigned int)hub.selectedRow,
+                   EspNativeGameplayHubContent_inventoryKindName(entry.kind),
+                   (unsigned int)entry.sourceId);
+            return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+        }
+
+        shouldChange = before.weapon == entry.sourceId ? 0U : 1U;
+        expected = before;
+        expected.weapon = entry.sourceId;
+        if (!EspNativeGameplayPlayerState_selectOwnedWeapon(entry.sourceId, &changed)) {
+            printf("[HUBWEAPON] DEFER entry=%u name=\"%s\" weapon=%u target=%u reason=not-owned-or-invalid mutation=no turn=no\n",
+                   (unsigned int)hub.selectedRow,
+                   entry.name,
+                   (unsigned int)before.weapon,
+                   (unsigned int)entry.sourceId);
+            return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+        }
+
+        fnvAfter = EspNativeGameplayPlayerState_fingerprint();
+        if (!EspNativeGameplayPlayerState_snapshot(&after) ||
+            fnvAfter == 0U || changed != shouldChange ||
+            memcmp(&expected, &after, sizeof(after)) != 0 ||
+            (changed == 0U && fnvAfter != fnvBefore)) {
+            int restored = EspNativeGameplayPlayerState_restore(&before) &&
+                           EspNativeGameplayPlayerState_fingerprint() == fnvBefore;
+            printf("[HUBWEAPON] ROLLBACK entry=%u target=%u changed=%u/%u playerFNV=%08x->%08x restored=%s turn=no\n",
+                   (unsigned int)hub.selectedRow,
+                   (unsigned int)entry.sourceId,
+                   (unsigned int)changed,
+                   (unsigned int)shouldChange,
+                   (unsigned int)fnvBefore,
+                   (unsigned int)fnvAfter,
+                   restored ? "exact" : "FAILED");
+            return restored ? ESP_NATIVE_GAMEPLAY_HUB_NOT_READY
+                            : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+        }
+
+        hub.lastPlayerFNV = fnvAfter;
+        printf("[HUBWEAPON] SELECT entry=%u name=\"%s\" weapon=%u->%u status=%s owned=yes playerFNV=%08x->%08x exactOnlyWeapon=yes worldRedraw=on-close mutation=%s turn=no packClosed=yes\n",
+               (unsigned int)hub.selectedRow,
+               entry.name,
+               (unsigned int)before.weapon,
+               (unsigned int)after.weapon,
+               changed ? "CHANGED" : "UNCHANGED",
+               (unsigned int)fnvBefore,
+               (unsigned int)fnvAfter,
+               changed ? "weapon-only" : "no");
+        return changed ? ESP_NATIVE_GAMEPLAY_HUB_OK
+                       : ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
     }
 
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT ||
