@@ -668,6 +668,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
 
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
         const char* sessionMutation;
+        int playerExact;
         playerFNV = EspNativeGameplayPlayerState_fingerprint();
         memset(&player, 0, sizeof(player));
         if (!EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) {
@@ -677,6 +678,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         expectedHudBands = menuOverlay.baselineHudBandsFNV;
         menuRestored = framebufferReady() && menuOverlayRestore(framebuffer);
         restoredHudBands = hudBandsFNV();
+        playerExact = playerFNV != 0U && playerFNV == hub.lastPlayerFNV;
         sessionMutation = player.weapon == hub.weaponAtOpen ? "no" : "weapon-only";
 
         hub.active = 0U;
@@ -687,7 +689,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
                (unsigned int)hub.playerFNVAtOpen,
                (unsigned int)playerFNV,
                (unsigned int)hub.lastPlayerFNV,
-               playerFNV == hub.lastPlayerFNV ? "yes" : "NO",
+               playerExact ? "yes" : "NO",
                (unsigned int)hub.weaponAtOpen,
                (unsigned int)player.weapon,
                sessionMutation,
@@ -697,11 +699,8 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
                restoredHudBands != 0U && restoredHudBands == expectedHudBands
                    ? "yes" : "NO",
                EspAssetPack_isOpen() ? "NO" : "yes");
-        hub.lastPlayerFNV = playerFNV;
-        return (playerFNV != 0U && playerFNV == hub.lastPlayerFNV &&
-                menuRestored && restoredHudBands != 0U &&
-                restoredHudBands == expectedHudBands &&
-                !EspAssetPack_isOpen())
+        return (playerExact && menuRestored && restoredHudBands != 0U &&
+                restoredHudBands == expectedHudBands && !EspAssetPack_isOpen())
                    ? ESP_NATIVE_GAMEPLAY_HUB_CLOSED
                    : ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
