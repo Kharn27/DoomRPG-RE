@@ -368,14 +368,14 @@ static int paintInventoryContent(const EspNativeGameplayPlayerState* player,
     if (count == 0U || hub.selectedRow >= count) return 0;
 
     /* The visible tabs and three-card list own y=21..72. Keep the lower area as
-     * a small position/status footer. Weapon SELECT is the only live mutation;
-     * every other entry kind stays fail-closed. */
+     * a small position/status footer. Weapon selection is live while all other
+     * entry kinds remain fail-closed. */
     memset(line, 0, sizeof(line));
     snprintf(line, sizeof(line), "ENTRY %u/%u",
              (unsigned int)hub.selectedRow + 1U,
              (unsigned int)count);
     ok = drawText(font, framebuffer, line, 4, 73, stats) && ok;
-    ok = drawText(font, framebuffer, "WPN SELECT", 4, 86, stats) && ok;
+    ok = drawText(font, framebuffer, "TAP WPN TO EQUIP", 4, 86, stats) && ok;
     return ok;
 }
 
@@ -714,6 +714,8 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         uint32_t fnvAfter;
         uint8_t changed = 0U;
         uint8_t shouldChange;
+        uint8_t selectRow;
+        uint8_t directTouch;
 
         if (hub.page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY) {
             printf("[HUB] SELECT-DEFER page=%s row=%u cause=unsupported-page mutation=no turn=no\n",
@@ -733,16 +735,26 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         fnvBefore = EspNativeGameplayPlayerState_fingerprint();
         inventoryEntries = EspNativeGameplayHubContent_inventoryEntryCount(&before);
         if (fnvBefore == 0U || fnvBefore != hub.lastPlayerFNV ||
-            inventoryEntries == 0U || hub.selectedRow >= inventoryEntries ||
+            inventoryEntries == 0U || hub.selectedRow >= inventoryEntries) {
+            return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+        }
+
+        selectRow = hub.selectedRow;
+        if (!EspNativeGameplayHubTouchUi_consumedSelectTarget(
+                hub.selectedRow, inventoryEntries, &selectRow)) {
+            selectRow = hub.selectedRow;
+        }
+        directTouch = selectRow != hub.selectedRow ? 1U : 0U;
+        if (selectRow >= inventoryEntries ||
             !EspNativeGameplayHubContent_inventoryEntryAt(
-                &before, hub.selectedRow, &entry) ||
+                &before, selectRow, &entry) ||
             EspAssetPack_isOpen()) {
             return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
         }
 
         if (entry.kind != ESP_NATIVE_GAMEPLAY_HUB_ENTRY_WEAPON) {
             printf("[HUB] SELECT-DEFER page=inventory entry=%u kind=%s source=%u cause=unsupported-entry mutation=no turn=no\n",
-                   (unsigned int)hub.selectedRow,
+                   (unsigned int)selectRow,
                    EspNativeGameplayHubContent_inventoryKindName(entry.kind),
                    (unsigned int)entry.sourceId);
             return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
@@ -753,7 +765,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         expected.weapon = entry.sourceId;
         if (!EspNativeGameplayPlayerState_selectOwnedWeapon(entry.sourceId, &changed)) {
             printf("[HUBWEAPON] DEFER entry=%u name=\"%s\" weapon=%u target=%u reason=not-owned-or-invalid mutation=no turn=no\n",
-                   (unsigned int)hub.selectedRow,
+                   (unsigned int)selectRow,
                    entry.name,
                    (unsigned int)before.weapon,
                    (unsigned int)entry.sourceId);
@@ -768,7 +780,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
             int restored = EspNativeGameplayPlayerState_restore(&before) &&
                            EspNativeGameplayPlayerState_fingerprint() == fnvBefore;
             printf("[HUBWEAPON] ROLLBACK entry=%u target=%u changed=%u/%u playerFNV=%08x->%08x restored=%s turn=no\n",
-                   (unsigned int)hub.selectedRow,
+                   (unsigned int)selectRow,
                    (unsigned int)entry.sourceId,
                    (unsigned int)changed,
                    (unsigned int)shouldChange,
@@ -781,7 +793,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
 
         hub.lastPlayerFNV = fnvAfter;
         printf("[HUBWEAPON] SELECT entry=%u name=\"%s\" weapon=%u->%u status=%s owned=yes playerFNV=%08x->%08x exactOnlyWeapon=yes worldRedraw=on-close mutation=%s turn=no packClosed=yes\n",
-               (unsigned int)hub.selectedRow,
+               (unsigned int)selectRow,
                entry.name,
                (unsigned int)before.weapon,
                (unsigned int)after.weapon,
@@ -789,6 +801,42 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
                (unsigned int)fnvBefore,
                (unsigned int)fnvAfter,
                changed ? "weapon-only" : "no");
+
+        if (directTouch) {
+            int restored = 1;
+            beforeRow = hub.selectedRow;
+            hub.selectedRow = selectRow;
+            status = paintCurrentPage();
+            if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) {
+                hub.selectedRow = beforeRow;
+                if (changed != 0U) {
+                    restored = EspNativeGameplayPlayerState_restore(&before) &&
+                               EspNativeGameplayPlayerState_fingerprint() ==
+                                   fnvBefore;
+                    if (restored) hub.lastPlayerFNV = fnvBefore;
+                }
+                printf("[HUBTOUCH] ONE-TAP-ROLLBACK entry=%u name=\"%s\" row=%u->%u playerFNV=%08x restored=%s status=%s turn=no\n",
+                       (unsigned int)selectRow,
+                       entry.name,
+                       (unsigned int)beforeRow,
+                       (unsigned int)selectRow,
+                       (unsigned int)fnvBefore,
+                       restored ? "exact" : "FAILED",
+                       EspNativeGameplayHub_statusName(status));
+                return restored ? status : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+            }
+            printf("[HUBTOUCH] ONE-TAP-WEAPON entry=%u name=\"%s\" row=%u->%u centered=yes weapon=%u->%u status=%s mutation=%s redraw=hub-only worldRedraw=on-close turn=no\n",
+                   (unsigned int)selectRow,
+                   entry.name,
+                   (unsigned int)beforeRow,
+                   (unsigned int)selectRow,
+                   (unsigned int)before.weapon,
+                   (unsigned int)after.weapon,
+                   changed ? "CHANGED" : "UNCHANGED",
+                   changed ? "weapon-only" : "no");
+            return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+        }
+
         return changed ? ESP_NATIVE_GAMEPLAY_HUB_OK
                        : ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
     }
