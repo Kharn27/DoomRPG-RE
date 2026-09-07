@@ -1,9 +1,14 @@
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
+#include "esp_asset_pack.h"
 #include "esp_native_gameplay_hub.h"
+#include "esp_native_gameplay_hub_content.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_player_state.h"
+#include "esp_native_indexed_bmp.h"
 #include "platform_video_config.h"
 
 #define HUB_UI_TOP 20
@@ -16,6 +21,14 @@
 #define HUB_UI_DIM_BLUE 0x0010U
 #define HUB_UI_BLUE 0x001fU
 #define HUB_UI_WHITE 0xffffU
+
+#define HUB_UI_FONT_NAME "a.bmp"
+#define HUB_UI_FONT_WIDTH 9U
+#define HUB_UI_FONT_HEIGHT 12U
+#define HUB_UI_FONT_ADVANCE 7
+#define HUB_UI_FONT_SOURCE_WIDTH 144U
+#define HUB_UI_FONT_SOURCE_HEIGHT 72U
+#define HUB_UI_FONT_TRANSPARENT 1U
 
 /* With the redundant viewport X removed, keep the two page tabs centered while
  * retaining the hardware-proven widths, so touch feedback stays below the
@@ -210,6 +223,149 @@ static void drawStatusCards(uint16_t* framebuffer) {
     }
 }
 
+static int drawDoomText(const EspNativeIndexedBmp* font,
+                        uint16_t* framebuffer,
+                        const char* text,
+                        int x,
+                        int y,
+                        EspNativeIndexedBmpStats* stats) {
+    const unsigned char* p = (const unsigned char*)text;
+    if (font == NULL || framebuffer == NULL || text == NULL || stats == NULL ||
+        y < HUB_UI_TOP || y + (int)HUB_UI_FONT_HEIGHT > HUB_UI_BOTTOM + 1) {
+        return 0;
+    }
+    while (*p != '\0') {
+        uint8_t c = *p++;
+        if (c == ' ') {
+            x += HUB_UI_FONT_ADVANCE;
+            continue;
+        }
+        if (c < 33U || c > 127U) return 0;
+        {
+            uint8_t glyph = (uint8_t)(c - 33U);
+            uint16_t sourceX =
+                (uint16_t)(HUB_UI_FONT_WIDTH * (glyph & 0x0fU));
+            uint16_t sourceY =
+                (uint16_t)(HUB_UI_FONT_HEIGHT * (glyph >> 4));
+            if (EspNativeIndexedBmp_blit(font,
+                                         framebuffer,
+                                         DOOMRPG_LOGICAL_WIDTH,
+                                         DOOMRPG_LOGICAL_HEIGHT,
+                                         sourceX,
+                                         sourceY,
+                                         HUB_UI_FONT_WIDTH,
+                                         HUB_UI_FONT_HEIGHT,
+                                         (int16_t)x,
+                                         (int16_t)y,
+                                         HUB_UI_FONT_TRANSPARENT,
+                                         stats) != ESP_NATIVE_INDEXED_BMP_OK) {
+                return 0;
+            }
+        }
+        x += HUB_UI_FONT_ADVANCE;
+        if (x >= DOOMRPG_LOGICAL_WIDTH) break;
+    }
+    return 1;
+}
+
+static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedRow) {
+    const EspNativeGameplayHubView* view = EspNativeGameplayHub_view();
+    EspNativeGameplayPlayerState player;
+    EspNativeGameplayHubContent content;
+    EspNativeIndexedBmp font;
+    EspNativeIndexedBmpStats stats;
+    const char* ammoLabel;
+    char line[32];
+    int ok = 1;
+
+    memset(&player, 0, sizeof(player));
+    memset(&content, 0, sizeof(content));
+    memset(&font, 0, sizeof(font));
+    memset(&stats, 0, sizeof(stats));
+    memset(line, 0, sizeof(line));
+
+    if (framebuffer == NULL || view == NULL || view->active == 0U ||
+        !EspAssetPack_isOpen() ||
+        !EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) {
+        return 0;
+    }
+
+    /* Strict first-ever paint witness. It proves the exact legacy type/subtype
+     * reverse mapping and all historical names without adding a probe flag or
+     * persistent string owner: opens==1/paints==0 is already-owned HUB state. */
+    if (view->opens == 1U && view->paints == 0U &&
+        !EspNativeGameplayHubContent_probeCatalog()) {
+        return 0;
+    }
+
+    if (!EspNativeGameplayHubContent_snapshot(&player, &content) ||
+        !EspAssetPack_isOpen()) {
+        return 0;
+    }
+    ammoLabel = EspNativeGameplayHubContent_ammoLabel(content.weaponAmmoType);
+    if (ammoLabel == NULL ||
+        EspNativeIndexedBmp_open(HUB_UI_FONT_NAME, &font, &stats) !=
+            ESP_NATIVE_INDEXED_BMP_OK ||
+        font.width != HUB_UI_FONT_SOURCE_WIDTH ||
+        font.height != HUB_UI_FONT_SOURCE_HEIGHT) {
+        return 0;
+    }
+
+    /* Remove only the old prototype numeric text inside each proven card. Card
+     * borders/touch geometry stay unchanged, then the original Doom RPG font
+     * draws data-driven names on top. */
+    fillRect(framebuffer, 3, HUB_UI_ROW0_TOP, 156, HUB_UI_ROW0_BOTTOM, HUB_UI_BLACK);
+    fillRect(framebuffer, 3, HUB_UI_ROW1_TOP, 156, HUB_UI_ROW1_BOTTOM, HUB_UI_BLACK);
+    fillRect(framebuffer, 3, HUB_UI_ROW2_TOP, 156, HUB_UI_ROW2_BOTTOM, HUB_UI_BLACK);
+
+    snprintf(line, sizeof(line), "%c%s",
+             selectedRow == 0U ? '>' : ' ', content.weaponName);
+    ok = drawDoomText(&font, framebuffer, line, 4, HUB_UI_ROW0_TOP, &stats) && ok;
+
+    if (content.weaponAmmoUsage == 0U) {
+        snprintf(line, sizeof(line), "%cAmmo --",
+                 selectedRow == 1U ? '>' : ' ');
+    }
+    else {
+        snprintf(line, sizeof(line), "%c%s %02u",
+                 selectedRow == 1U ? '>' : ' ',
+                 ammoLabel,
+                 (unsigned int)content.weaponAmmoValue);
+    }
+    ok = drawDoomText(&font, framebuffer, line, 4, HUB_UI_ROW1_TOP, &stats) && ok;
+
+    if (content.hasItem) {
+        snprintf(line, sizeof(line), "%c%s x%02u",
+                 selectedRow == 2U ? '>' : ' ',
+                 content.itemName,
+                 (unsigned int)content.firstItemCount);
+    }
+    else {
+        snprintf(line, sizeof(line), "%cItems none",
+                 selectedRow == 2U ? '>' : ' ');
+    }
+    ok = drawDoomText(&font, framebuffer, line, 4, HUB_UI_ROW2_TOP, &stats) && ok;
+
+    if (!ok || !EspAssetPack_isOpen()) return 0;
+
+    printf("[HUBCONTENT] FRAME weapon=%u name=\"%s\" ammoType=%u ammoLabel=\"%s\" ammo=%u usage=%u item=%s%s%s count=%u selected=%u transientBytes=%u persistentNameBytes=0 fontReads=%u fontBytes=%u packOwnership=preserved-open mutation=no turn=no\n",
+           (unsigned int)player.weapon,
+           content.weaponName,
+           (unsigned int)content.weaponAmmoType,
+           ammoLabel,
+           (unsigned int)content.weaponAmmoValue,
+           (unsigned int)content.weaponAmmoUsage,
+           content.hasItem ? "\"" : "none",
+           content.hasItem ? content.itemName : "",
+           content.hasItem ? "\"" : "",
+           (unsigned int)content.firstItemCount,
+           (unsigned int)selectedRow,
+           (unsigned int)sizeof(content),
+           (unsigned int)stats.packReads,
+           (unsigned int)stats.bytesRead);
+    return 1;
+}
+
 int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
                                       uint8_t page,
                                       uint8_t selectedRow) {
@@ -238,6 +394,7 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
 
     if (page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY) {
         drawInventoryCards(framebuffer, selectedRow);
+        if (!paintInventoryLabels(framebuffer, selectedRow)) return 0;
     }
     else {
         drawStatusCards(framebuffer);
