@@ -697,7 +697,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         gameplayState.active = 1U;
         PlatformInput_setTapCallback(onGameplayTap);
         printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live menu=inventory-readonly-no-turn SELECT-entity/other/automap=deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
+        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live menu=inventory-weapon-select-no-turn SELECT-entity/other/automap=deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
                (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         return;
     }
@@ -776,7 +776,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 disableGameplay("hub-close-world-render");
                 return;
             }
-            printf("[RESIDENTGAMEPLAY] HUB-CLOSE seq=%u action=%s worldRedraw=yes playerMutation=no turnAdvance=no packClosed=yes\n",
+            printf("[RESIDENTGAMEPLAY] HUB-CLOSE seq=%u action=%s worldRedraw=yes closeMutation=no retainedPlayerMutation=weapon-only-possible turnAdvance=no packClosed=yes\n",
                    (unsigned int)intent.sequence,
                    EspNativeGameplayInput_actionName(intent.action));
             return;
@@ -797,7 +797,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             disableGameplay("hub-error-world-render");
             return;
         }
-        printf("[RESIDENTGAMEPLAY] HUB-RECOVER n=%u seq=%u action=%s status=%s hubClosed=yes worldRedraw=yes mutation=no turnAdvance=no\n",
+        printf("[RESIDENTGAMEPLAY] HUB-RECOVER n=%u seq=%u action=%s status=%s hubClosed=yes worldRedraw=yes recoveryMutation=no retainedPlayerMutation=weapon-only-possible turnAdvance=no\n",
                (unsigned int)gameplayState.deferred,
                (unsigned int)intent.sequence,
                EspNativeGameplayInput_actionName(intent.action),
@@ -844,7 +844,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN: {
         EspNativeGameplayHubStatus hubStatus = EspNativeGameplayHub_open();
         if (hubStatus == ESP_NATIVE_GAMEPLAY_HUB_OK) {
-            printf("[RESIDENTGAMEPLAY] HUB-OPEN seq=%u page=inventory-readonly worldMutation=no turnAdvance=no worldDispatch=blocked packClosed=yes\n",
+            printf("[RESIDENTGAMEPLAY] HUB-OPEN seq=%u page=inventory-weapon-select openMutation=no turnAdvance=no worldDispatch=blocked packClosed=yes\n",
                    (unsigned int)intent.sequence);
         }
         else {
