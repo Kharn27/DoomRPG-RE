@@ -7,24 +7,24 @@ are the final runtime authority.
 ## Git boundary — LOCKED milestone
 
 ```text
-main at branch creation = 711f391ea3d319012f919e4ecae0d4b00e9177d1
-branch = agent/esp32-native-gameplay-hub-content-labels
-base main = 711f391ea3d319012f919e4ecae0d4b00e9177d1
-hardware-tested code boundary = 5d8cf35816c279f8968430474d072d2419cc2bea
-status = REAL-CYD GAMEPLAY HUB CONTENT LABELS PASS
+main at branch creation = 9b518a50ec3a977394634121280820853c01089b
+branch = agent/esp32-native-gameplay-hub-inventory-list
+base main = 9b518a50ec3a977394634121280820853c01089b
+hardware-tested code boundary = 20a1c4fe6a08308aee73c1e977316abf358abdb5
+status = REAL-CYD GAMEPLAY HUB INVENTORY LIST PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`5d8cf358...` is the exact code boundary exercised on the real classic CYD.
+`20a1c4fe...` is the exact code boundary exercised on the real classic CYD.
 Commits after that SHA must remain documentation-only until merge.
 
-Normal GitHub Actions `esp32-cyd` run `34097802996` / run #192 completed
+Normal GitHub Actions `esp32-cyd` run `34100083958` / run #202 completed
 successfully on this exact SHA and produced the firmware artifact. CI is
 compile/link evidence only; hardware serial logs remain authoritative.
 
 Latest detailed record:
 
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md)
 
 After merge, read the real GitHub `main` SHA again before creating the next
 `agent/*` branch.
@@ -179,18 +179,19 @@ native gameplay HUB owner = 28 B
 shared PlayerState owner = 52 B
 read-only Inventory + Status pages
 visible native INV / STATUS touch tabs
-visible Inventory touch cards
-HUB viewport touch ownership isolated from world 3x3 controls
-unsupported HUB actions absorbed / fail closed
 visible MENU close affordance uses original Doom RPG p.bmp hand
 bounded MENU underlay = 32x20 RGB565 = 1280 B
 all other HUD pixels protected by fingerprint
-MENU close path unchanged and previously bit-exact hardware-proven
-real weapon names from /entities.db through native reverse lookup
-real first-present consumable name from /entities.db
-legacy-compatible ammo labels / ammo usage presentation
-names fetched on demand from native PAK
+real EntityDef weapon/item names resolved on demand from native PAK
 persistent name storage = 0 B
+bounded Inventory projection max = 23 entries
+persistent Inventory-list storage = 0 B
+one transient projected entry = 31 B
+three visible entries = 93 B transient
+legacy content order = owned weapons, Notebook, carried items, Credits, keys
+three-card viewport = previous / selected / next
+SELECT remains fail-closed
+world dispatch blocked and turn advance disabled while HUB is active
 ```
 
 Detailed recent records:
@@ -199,13 +200,12 @@ Detailed recent records:
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md)
 
-## Latest real-CYD HUB content-label witness
+## EntityDef content corpus retained
 
-The exact hardware-tested code boundary is `5d8cf358...`.
-
-The first Inventory paint recovered every legacy player weapon and consumable
-name through the compact native entity-def catalog:
+The preceding hardware pass recovered all player weapon and consumable names
+through the compact native catalog:
 
 ```text
 weapon 0  tile 1   Axe
@@ -227,60 +227,99 @@ item 28   tile 102 Berserker
 item 29   tile 110 Dog Collar
 ```
 
-Canonical content-catalog witness:
+Canonical content-catalog fingerprint remains:
 
 ```text
-[HUBCONTENT] READY weapons=12/12 items=5/5
-             names=pak-on-demand persistentNameBytes=0
-             catalogFNV=34d2b7d4
-             packOwnership=preserved-open mutation=no turn=no
+catalogFNV = 34d2b7d4
+persistentNameBytes = 0
 ```
 
-Fresh Entrance player content resolved as:
+## Latest real-CYD HUB Inventory-list witness
+
+The exact hardware-tested code boundary is `20a1c4fe...`.
+
+A strict maximum-list probe projected the complete bounded 23-entry shape using
+a local synthetic PlayerState only; canonical gameplay ownership was never
+mutated. Hardware emitted all entries in recovered legacy order and closed with:
 
 ```text
-weapon=2 name="Pistol"
-ammoType=1 ammoLabel="Bullets" ammo=8 usage=1
-item=none count=0
-transientBytes=40
-persistentNameBytes=0
-playerFNV=e745fce9
+[HUBLIST] READY entries=23/23 order=legacy-content
+          persistentListBytes=0 transientEntryBytes=31
+          listFNV=93b6a47c
+          packOwnership=preserved-open mutation=no turn=no
 ```
 
-Selection/page witnesses:
+`listFNV=93b6a47c` is the canonical maximum-list fingerprint.
+
+Fresh Entrance live PlayerState projected exactly three entries:
 
 ```text
-Inventory row 0 frame = 6b7713d7
-Inventory row 1 frame = a264f40b
-Inventory row 2 frame = 1db33153
-Status frame          = eea0759d
-hudProtectedFNV       = bd7588ae
-menuZoneFNV           = 109b46aa
-playerFNV             = e745fce9
+0 weapon   Pistol   8
+1 notebook Notebook --
+2 credits  Credits  0
 ```
 
-A SELECT on the already-selected weapon card stayed fail-closed:
+Real-CYD list windows and frame fingerprints:
+
+```text
+selected 0: prev=Credits current=Pistol   next=Notebook frame=9b93078f
+selected 1: prev=Pistol  current=Notebook next=Credits  frame=eb109d85
+selected 2: prev=Notebook current=Credits next=Pistol   frame=c1795301
+Status frame = eea0759d
+hudProtectedFNV = bd7588ae
+menuZoneFNV = 109b46aa
+playerFNV = e745fce9
+```
+
+Each list frame reported:
+
+```text
+visibleEntryBytes=93
+persistentListBytes=0
+packOwnership=preserved-open
+mutation=no turn=no
+```
+
+The supplied live actions exercised downward selection `0 -> 1 -> 2`. The
+bounded modulo wrap and top-card previous action are implemented by the same
+index route but are not claimed as separately observed in this hardware excerpt.
+
+Repeated SELECT on the centered entry stayed fail-closed:
 
 ```text
 [HUB] SELECT-DEFER page=inventory row=0 cause=read-only-milestone
-      mutation=no turn=no
 [RESIDENTGAMEPLAY] HUB-INPUT ... status=IGNORED
-      worldDispatch=blocked turnAdvance=no
+worldDispatch=blocked
+turnAdvance=no
+mutation=no
 ```
 
-Moving the card selection from row 0 to 1 to 2 redrew only the HUB; every frame
-kept `hudProtected=bd7588ae preserved=yes`, `menuZone=109b46aa`, exact
-`playerFNV=e745fce9`, `packClosed=yes`, `mutation=no`, and `turn=no`.
+## Close / world resume witness
 
-The user confirmed that closing the menu returned cleanly to gameplay. The
-supplied hardware excerpt did not contain the final `[HUB] CLOSE` fingerprint,
-so this milestone does not invent a new close hash; the close implementation was
-unchanged from the preceding bit-exact touch-UI milestone.
+This milestone supplied a complete bit-exact close witness:
+
+```text
+[HUB] CLOSE n=1 page=status
+      playerFNV=e745fce9->e745fce9 exact=yes
+      mutation=no turn=no
+      menuUnderlayRestore=exact
+      hudBands=6c2aa46f expected=6c2aa46f exact=yes
+      packClosed=yes
+```
+
+The compositor restored the exact pre-HUB world frame:
+
+```text
+pre-HUB world frame  = 22397b55
+post-HUB world frame = 22397b55
+```
+
+A subsequent real FORWARD action completed from tile 904 to tile 872, proving
+normal gameplay ownership resumed after closing the HUB.
 
 ## RAM witness at current boundary
 
-The supplied real-CYD session remained flat while opening the HUB, resolving all
-names, moving the Inventory cursor and switching to Status:
+The supplied real-CYD session remained flat before, during and after list use:
 
 ```text
 heap = 87988
@@ -290,11 +329,13 @@ hub owner = 28 B
 player owner = 52 B
 MENU underlay = 1280 B
 persistent HUB name bytes = 0 B
+persistent Inventory-list bytes = 0 B
+visible transient entries = 93 B
 full framebuffer snapshot = 0 B
 ```
 
-These heap values exactly match the previous touch-UI boundary: no persistent
-heap loss was observed from the content-label layer.
+These values exactly match the previous content-label boundary: no persistent
+heap loss was observed from the Inventory-list layer.
 
 Audio remains deferred. Do not enable it without its own RAM milestone.
 
@@ -330,10 +371,10 @@ Kronos-specific semantics
 password input
 EV_GIVEMAP production route
 EV_CHECK_KEY production route
-HUB richer multi-entry inventory content layout
 HUB weapon selection
+HUB Notebook activation
 HUB consumable confirmation/use + turn consumption
-HUB Notebook / Automap / Save / Load / Options / store
+HUB Automap / Save / Load / Options / store
 ```
 
 Different mechanical families stay fail-closed rather than being enabled through
@@ -360,16 +401,17 @@ After the user announces the merge:
 
 1. read actual GitHub `main` and exact SHA;
 2. re-read this file, `DOCUMENTATION.md` and
-   `MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md`;
+   `MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`;
 3. create a fresh `agent/*` from that exact main SHA;
 4. recover the next bounded legacy/UI family before coding.
 
-Strong next HUB milestone: keep the content layer read-only but make the
-Inventory richer before enabling mutation — for example bounded owned-weapon and
-carried-item list presentation/selection state derived from PlayerState, still
-with SELECT fail-closed. Weapon selection and consumable use should each remain
-separate semantic milestones unless the recovered legacy contract proves they
-can share one small transaction safely.
+Strong next HUB milestone: **weapon selection only**. Legacy `MENU_ITEMS` routes a
+weapon entry to `Player_selectWeapon()`, whose core semantic is deliberately
+small: when the id differs it requests a view refresh, then updates the current
+weapon id. The ESP32 milestone should translate that into the canonical
+PlayerState plus explicit native redraw intent without enabling Notebook or item
+use. Consumables remain a separate transaction because they can alter health,
+berserker state, familiar/world state, messages, sounds and turns.
 
 ## Development workflow
 
