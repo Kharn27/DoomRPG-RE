@@ -55,6 +55,13 @@ int EspNativeGameplayPlayerState_restore(
 /* Shared player-facing primitives. Combat, pickups and key/script families all
  * mutate this one compact owner rather than creating per-feature mini owners. */
 int EspNativeGameplayPlayerState_adoptWeapon(uint8_t weapon);
+
+/* Legacy Player_selectWeapon() contract for menu/HUB selection: select only an
+ * already-owned weapon, never grant ownership and never reject for empty ammo.
+ * outChanged is 1 only when the selected id actually changes. */
+int EspNativeGameplayPlayerState_selectOwnedWeapon(uint8_t weapon,
+                                                   uint8_t* outChanged);
+
 int EspNativeGameplayPlayerState_consumeAmmo(uint8_t ammoType,
                                              uint8_t ammoUsage,
                                              uint8_t* outBefore,
