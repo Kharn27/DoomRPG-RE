@@ -31,6 +31,7 @@
 
 #define MAPPINGS_HEADER_BYTES 16U
 #define MAPPING_PAIR_BYTES 8U
+#define MAPPING_ID_BYTES 2U
 #define PALETTES_HEADER_BYTES 4U
 #define BITSHAPE_FILE_HEADER_BYTES 4U
 #define BITSHAPE_FIXED_HEADER_BYTES 12U
@@ -193,16 +194,39 @@ static int findBulletsTile(uint16_t* outTile) {
     return 0;
 }
 
+/* EntityDef.tileIndex is a key into Render.mediaSpriteIds, not a direct
+ * mediaBitShapeOffsets index. Resolve the exact legacy indirection from the
+ * compact mappings.bin tables before touching bitshape data. */
+static int resolveMediaSprite(const EspAssetPackEntry* mappings,
+                              uint32_t spriteIdsBase,
+                              uint32_t spriteCount,
+                              uint32_t bitShapePairs,
+                              uint16_t tileIndex,
+                              uint16_t* outMediaSprite) {
+    uint8_t raw[MAPPING_ID_BYTES];
+    uint32_t offset;
+    uint16_t mediaSprite;
+    if (mappings == NULL || outMediaSprite == NULL ||
+        (uint32_t)tileIndex >= spriteCount) return 0;
+    offset = spriteIdsBase + (uint32_t)tileIndex * MAPPING_ID_BYTES;
+    if (offset > mappings->size || MAPPING_ID_BYTES > mappings->size - offset ||
+        !EspAssetPack_readRange(mappings, offset, raw, sizeof(raw))) return 0;
+    mediaSprite = readLe16(raw);
+    if ((uint32_t)mediaSprite >= bitShapePairs) return 0;
+    *outMediaSprite = mediaSprite;
+    return 1;
+}
+
 static int loadFrame(const EspAssetPackEntry* mappings,
                      const EspAssetPackEntry* palettes,
                      const EspAssetPackEntry* bitshapes,
                      const EspAssetPackEntry* stexels,
-                     uint32_t spritePairBase,
+                     uint32_t bitShapePairBase,
                      uint32_t bitShapePairs,
                      uint32_t paletteEntries,
                      uint32_t spriteBaseTexelOffset,
                      uint32_t spriteDataSize,
-                     uint16_t logicalSprite,
+                     uint16_t mediaSprite,
                      HubWeaponIconWorkspace* workspace,
                      HubWeaponIconFrame* frame) {
     uint8_t pair[MAPPING_PAIR_BYTES];
@@ -222,9 +246,9 @@ static int loadFrame(const EspAssetPackEntry* mappings,
 
     if (mappings == NULL || palettes == NULL || bitshapes == NULL ||
         stexels == NULL || workspace == NULL || frame == NULL ||
-        (uint32_t)logicalSprite >= bitShapePairs) return 0;
+        (uint32_t)mediaSprite >= bitShapePairs) return 0;
 
-    pairOffset = spritePairBase + (uint32_t)logicalSprite * MAPPING_PAIR_BYTES;
+    pairOffset = bitShapePairBase + (uint32_t)mediaSprite * MAPPING_PAIR_BYTES;
     if (pairOffset > mappings->size || MAPPING_PAIR_BYTES > mappings->size - pairOffset ||
         !EspAssetPack_readRange(mappings, pairOffset, pair, sizeof(pair))) return 0;
     sourceOffset = (int32_t)readLe32(pair);
@@ -409,18 +433,24 @@ int EspNativeGameplayHubWeaponGrid_paint(
     uint8_t spriteHeader[TEXEL_FILE_HEADER_BYTES];
     uint32_t texelPairs;
     uint32_t bitShapePairs;
+    uint32_t textureCount;
+    uint32_t spriteCount;
     uint32_t paletteBytes;
     uint32_t paletteEntries;
-    uint32_t spritePairBase;
+    uint32_t bitShapePairBase;
+    uint32_t textureIdsBase;
+    uint32_t spriteIdsBase;
+    uint32_t mappingsEnd;
     uint32_t wallDataSize;
     uint32_t spriteDataSize;
     uint32_t spriteBaseTexelOffset;
     uint32_t assetFNV = 2166136261U;
     uint32_t totalMaskBytes = 0U;
     uint32_t totalTexelBytes = 0U;
-    uint16_t pistolSource = 0U;
+    uint16_t pistolSourceTile = 0U;
+    uint16_t pistolMediaSprite = 0U;
     uint8_t ownedCount = 0U;
-    uint8_t pistolFallback = 0U;
+    uint8_t pistolUsesBullets = 0U;
     uint8_t weapon;
 
     if (framebuffer == NULL || player == NULL || player->active != 1U ||
@@ -441,22 +471,46 @@ int EspNativeGameplayHubWeaponGrid_paint(
 
     texelPairs = readLe32(mappingHeader);
     bitShapePairs = readLe32(mappingHeader + 4U);
+    textureCount = readLe32(mappingHeader + 8U);
+    spriteCount = readLe32(mappingHeader + 12U);
     paletteBytes = readLe32(paletteHeader);
     wallDataSize = readLe32(wallHeader);
     spriteDataSize = readLe32(spriteHeader);
-    if (texelPairs == 0U || bitShapePairs == 0U || bitShapePairs > 4096U ||
+    if (texelPairs == 0U || texelPairs > UINT32_MAX / MAPPING_PAIR_BYTES ||
+        bitShapePairs == 0U || bitShapePairs > 4096U ||
+        bitShapePairs > UINT32_MAX / MAPPING_PAIR_BYTES ||
+        textureCount == 0U || textureCount > UINT32_MAX / MAPPING_ID_BYTES ||
+        spriteCount == 0U || spriteCount > UINT32_MAX / MAPPING_ID_BYTES ||
         (paletteBytes & 1U) != 0U || paletteBytes < 32U ||
         paletteBytes + PALETTES_HEADER_BYTES != palettes.size ||
         wallDataSize > UINT32_MAX / 2U ||
         spriteDataSize + TEXEL_FILE_HEADER_BYTES != stexels.size) return 0;
+
+    bitShapePairBase = MAPPINGS_HEADER_BYTES + texelPairs * MAPPING_PAIR_BYTES;
+    if (bitShapePairBase < MAPPINGS_HEADER_BYTES) return 0;
+    textureIdsBase = bitShapePairBase + bitShapePairs * MAPPING_PAIR_BYTES;
+    if (textureIdsBase < bitShapePairBase) return 0;
+    spriteIdsBase = textureIdsBase + textureCount * MAPPING_ID_BYTES;
+    if (spriteIdsBase < textureIdsBase) return 0;
+    mappingsEnd = spriteIdsBase + spriteCount * MAPPING_ID_BYTES;
+    if (mappingsEnd < spriteIdsBase || mappingsEnd != mappings.size) return 0;
+
     paletteEntries = paletteBytes / 2U;
-    spritePairBase = MAPPINGS_HEADER_BYTES + texelPairs * MAPPING_PAIR_BYTES;
     spriteBaseTexelOffset = wallDataSize * 2U;
+
+    printf("[HUBWGRID] MAPPINGS texelPairs=%u bitShapePairs=%u textures=%u sprites=%u spriteIdsBase=%u bytes=%u contract=tile->mediaSprite->bitshape\n",
+           (unsigned int)texelPairs,
+           (unsigned int)bitShapePairs,
+           (unsigned int)textureCount,
+           (unsigned int)spriteCount,
+           (unsigned int)spriteIdsBase,
+           (unsigned int)mappings.size);
 
     for (weapon = 0U; weapon < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT; ++weapon) {
         uint16_t weaponTile;
         uint16_t iconTile;
-        uint8_t fallback = 0U;
+        uint16_t mediaSprite;
+        uint8_t sourceKind = 0U; /* 0=weapon, 1=bullets, 2=weapon fallback */
         uint8_t left;
         uint8_t top;
         uint8_t right;
@@ -471,27 +525,61 @@ int EspNativeGameplayHubWeaponGrid_paint(
                 GRID_ENTITY_TYPE_WEAPON, weapon, &weaponTile) ||
             !EspEntityDefTypeCatalog_readNameFromOpenPack(
                 weaponTile, name, sizeof(name))) return 0;
+
         iconTile = weaponTile;
-        if (!loadFrame(&mappings, &palettes, &bitshapes, &stexels,
-                       spritePairBase, bitShapePairs, paletteEntries,
-                       spriteBaseTexelOffset, spriteDataSize,
-                       iconTile, &workspace, &frame)) {
-            if (weapon != GRID_PISTOL_WEAPON_ID ||
-                !findBulletsTile(&iconTile) ||
+        mediaSprite = 0U;
+
+        /* The pistol is the default weapon and its weapon EntityDef is not the
+         * most useful inventory picture. Prefer Doom RPG's Bullets pickup icon,
+         * as the touch UI design specifies; fall back to the weapon sprite only
+         * if that source cannot be resolved exactly. */
+        if (weapon == GRID_PISTOL_WEAPON_ID) {
+            uint16_t bulletsTile;
+            uint16_t bulletsMedia;
+            if (findBulletsTile(&bulletsTile) &&
+                resolveMediaSprite(&mappings, spriteIdsBase, spriteCount,
+                                   bitShapePairs, bulletsTile, &bulletsMedia) &&
+                loadFrame(&mappings, &palettes, &bitshapes, &stexels,
+                          bitShapePairBase, bitShapePairs, paletteEntries,
+                          spriteBaseTexelOffset, spriteDataSize,
+                          bulletsMedia, &workspace, &frame)) {
+                iconTile = bulletsTile;
+                mediaSprite = bulletsMedia;
+                sourceKind = 1U;
+                pistolUsesBullets = 1U;
+            }
+            else {
+                if (!resolveMediaSprite(&mappings, spriteIdsBase, spriteCount,
+                                        bitShapePairs, weaponTile, &mediaSprite) ||
+                    !loadFrame(&mappings, &palettes, &bitshapes, &stexels,
+                               bitShapePairBase, bitShapePairs, paletteEntries,
+                               spriteBaseTexelOffset, spriteDataSize,
+                               mediaSprite, &workspace, &frame)) {
+                    printf("[HUBWGRID] DEFER weapon=%u tile=%u name=\"%s\" reason=pistol-icon-source\n",
+                           (unsigned int)weapon,
+                           (unsigned int)weaponTile,
+                           name);
+                    return 0;
+                }
+                sourceKind = 2U;
+            }
+            pistolSourceTile = iconTile;
+            pistolMediaSprite = mediaSprite;
+        }
+        else {
+            if (!resolveMediaSprite(&mappings, spriteIdsBase, spriteCount,
+                                    bitShapePairs, iconTile, &mediaSprite) ||
                 !loadFrame(&mappings, &palettes, &bitshapes, &stexels,
-                           spritePairBase, bitShapePairs, paletteEntries,
+                           bitShapePairBase, bitShapePairs, paletteEntries,
                            spriteBaseTexelOffset, spriteDataSize,
-                           iconTile, &workspace, &frame)) {
-                printf("[HUBWGRID] DEFER weapon=%u tile=%u name=\"%s\" reason=icon-source\n",
+                           mediaSprite, &workspace, &frame)) {
+                printf("[HUBWGRID] DEFER weapon=%u tile=%u name=\"%s\" reason=tile-media-bitshape\n",
                        (unsigned int)weapon,
                        (unsigned int)weaponTile,
                        name);
                 return 0;
             }
-            fallback = 1U;
-            pistolFallback = 1U;
         }
-        if (weapon == GRID_PISTOL_WEAPON_ID) pistolSource = iconTile;
 
         owned = (player->weapons & (uint16_t)(1U << weapon)) != 0U;
         if (owned) ++ownedCount;
@@ -511,7 +599,8 @@ int EspNativeGameplayHubWeaponGrid_paint(
         assetFNV = fnvUpdate(assetFNV, &weapon, sizeof(weapon));
         assetFNV = fnvUpdate(assetFNV, &weaponTile, sizeof(weaponTile));
         assetFNV = fnvUpdate(assetFNV, &iconTile, sizeof(iconTile));
-        assetFNV = fnvUpdate(assetFNV, &fallback, sizeof(fallback));
+        assetFNV = fnvUpdate(assetFNV, &mediaSprite, sizeof(mediaSprite));
+        assetFNV = fnvUpdate(assetFNV, &sourceKind, sizeof(sourceKind));
         assetFNV = fnvUpdate(assetFNV, &frame.width, sizeof(frame.width));
         assetFNV = fnvUpdate(assetFNV, &frame.height, sizeof(frame.height));
         assetFNV = fnvUpdate(assetFNV, &frame.paletteOffset, sizeof(frame.paletteOffset));
@@ -519,10 +608,11 @@ int EspNativeGameplayHubWeaponGrid_paint(
         totalMaskBytes += frame.maskBytes;
         totalTexelBytes += frame.packedBytes;
 
-        printf("[HUBWGRID] ICON weapon=%u tile=%u icon=%u name=\"%s\" size=%ux%u mask=%u texels=%u palette=%u owned=%s equipped=%s render=%s fallback=%s\n",
+        printf("[HUBWGRID] ICON weapon=%u tile=%u iconTile=%u media=%u name=\"%s\" size=%ux%u mask=%u texels=%u palette=%u owned=%s equipped=%s render=%s source=%s\n",
                (unsigned int)weapon,
                (unsigned int)weaponTile,
                (unsigned int)iconTile,
+               (unsigned int)mediaSprite,
                name,
                (unsigned int)frame.width,
                (unsigned int)frame.height,
@@ -532,16 +622,18 @@ int EspNativeGameplayHubWeaponGrid_paint(
                owned ? "yes" : "no",
                weapon == player->weapon ? "yes" : "no",
                owned ? "color" : "gray",
-               fallback ? "bullets" : "weapon");
+               sourceKind == 1U ? "bullets" :
+                   (sourceKind == 2U ? "weapon-fallback" : "weapon"));
     }
 
     if (assetFNV == 0U || !EspAssetPack_isOpen()) return 0;
-    printf("[HUBWGRID] FRAME weapons=12/12 owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray equippedBorder=ffe0 pistolIcon=%s/%u persistentIconBytes=0 scratchBytes=%u scratchOwner=static sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
+    printf("[HUBWGRID] FRAME weapons=12/12 owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray equippedBorder=ffe0 mapping=tile->mediaSprite->bitshape pistolIcon=%s/tile%u/media%u persistentIconBytes=0 scratchBytes=%u scratchOwner=static sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
            (unsigned int)ownedCount,
            (unsigned int)player->weapon,
            (unsigned int)selectedWeapon,
-           pistolFallback ? "bullets" : "weapon",
-           (unsigned int)pistolSource,
+           pistolUsesBullets ? "bullets" : "weapon-fallback",
+           (unsigned int)pistolSourceTile,
+           (unsigned int)pistolMediaSprite,
            (unsigned int)sizeof(workspace),
            (unsigned int)totalMaskBytes,
            (unsigned int)totalTexelBytes,
