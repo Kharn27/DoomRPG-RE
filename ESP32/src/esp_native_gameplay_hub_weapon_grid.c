@@ -398,8 +398,11 @@ int EspNativeGameplayHubWeaponGrid_paint(
     EspAssetPackEntry bitshapes;
     EspAssetPackEntry wtexels;
     EspAssetPackEntry stexels;
-    HubWeaponIconWorkspace workspace;
-    HubWeaponIconFrame frame;
+    /* Bounded render scratch is an explicit static owner: keeping these roughly
+     * 2.7 KiB off the Arduino loopTask stack prevents nested HUB paints from
+     * tripping the ESP32 stack canary. No icon or map-wide texel cache is kept. */
+    static HubWeaponIconWorkspace workspace;
+    static HubWeaponIconFrame frame;
     uint8_t mappingHeader[MAPPINGS_HEADER_BYTES];
     uint8_t paletteHeader[PALETTES_HEADER_BYTES];
     uint8_t wallHeader[TEXEL_FILE_HEADER_BYTES];
@@ -533,7 +536,7 @@ int EspNativeGameplayHubWeaponGrid_paint(
     }
 
     if (assetFNV == 0U || !EspAssetPack_isOpen()) return 0;
-    printf("[HUBWGRID] FRAME weapons=12/12 owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray equippedBorder=ffe0 pistolIcon=%s/%u persistentIconBytes=0 scratchBytes=%u sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
+    printf("[HUBWGRID] FRAME weapons=12/12 owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray equippedBorder=ffe0 pistolIcon=%s/%u persistentIconBytes=0 scratchBytes=%u scratchOwner=static sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
            (unsigned int)ownedCount,
            (unsigned int)player->weapon,
            (unsigned int)selectedWeapon,
