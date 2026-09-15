@@ -1,35 +1,31 @@
 # Doom RPG ESP32 CYD porting status
 
-Authoritative recovery/status file for the classic ESP32-2432S028R port.
-Repository state wins over chat history. Serial logs from the real classic CYD
-are the final runtime authority.
+Authoritative recovery/status file for the classic ESP32-2432S028R port. Repository state wins over chat history. Serial logs from the real classic CYD are the final runtime authority.
 
 ## Git boundary — LOCKED milestone
 
 ```text
-main at branch creation = 9b518a50ec3a977394634121280820853c01089b
-branch = agent/esp32-native-gameplay-hub-inventory-list
-base main = 9b518a50ec3a977394634121280820853c01089b
-hardware-tested code boundary = 20a1c4fe6a08308aee73c1e977316abf358abdb5
-status = REAL-CYD GAMEPLAY HUB INVENTORY LIST PASS
+main at branch creation = d6909793860312397edc7aa1b36f995a5ccbb914
+branch = agent/esp32-native-gameplay-hub-weapon-select
+base main = d6909793860312397edc7aa1b36f995a5ccbb914
+hardware-tested code boundary = 308295c4f56b1741040d1bc5e07ce7f66d245a70
+status = REAL-CYD HUB WPN GRID + DIRECT OWNED-WEAPON SELECT PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-`20a1c4fe...` is the exact code boundary exercised on the real classic CYD.
-Commits after that SHA must remain documentation-only until merge.
+Normal GitHub Actions `esp32-cyd` run #234 / run ID `34947947008` passed on the exact tested SHA and produced artifact:
 
-Normal GitHub Actions `esp32-cyd` run `34100083958` / run #202 completed
-successfully on this exact SHA and produced the firmware artifact. CI is
-compile/link evidence only; hardware serial logs remain authoritative.
+```text
+doom-rpg-esp32-cyd-308295c4f56b1741040d1bc5e07ce7f66d245a70
+```
 
 Latest detailed record:
 
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md)
 
-After merge, read the real GitHub `main` SHA again before creating the next
-`agent/*` branch.
+After merge, read the true GitHub `main` SHA again before creating the next `agent/*` branch.
 
-## Permanent architecture and hard invariants
+## Permanent architecture / hard invariants
 
 ```text
 Doom RPG original data/behavior
@@ -41,8 +37,6 @@ Doom RPG original data/behavior
  -> native renderer
 ```
 
-Hardware / memory invariants:
-
 ```text
 board       = ESP32-2432S028R classic CYD
 MCU         = ESP32-D0WD-V3 dual core 240 MHz
@@ -53,10 +47,7 @@ shapeData   = NULL
 mediaTexels = NULL
 ```
 
-Do not reintroduce map-wide legacy texels, desktop pointer-heavy world ownership,
-or runtime ZIP dependence for migrated gameplay/map data. `/DoomRPG.zip` remains
-transitional startup/reference debt only; native gameplay/map access must not
-regress to it.
+Do not reintroduce map-wide legacy texels, pointer-heavy desktop ownership, runtime ZIP dependence for migrated gameplay/map data, or map-wide decompression. `/DoomRPG-ESP32.pak` is the native backing store.
 
 ## Native asset backing — hardware PASS
 
@@ -64,18 +55,18 @@ Active gameplay storage path:
 
 ```text
 /DoomRPG-ESP32.pak on microSD
- -> generic requested-map raw internal-flash slot
+ -> requested-map raw internal-flash slot
  -> 19 KiB resident RAM cache
  -> native gameplay / renderer
 ```
 
-Permanent preparation API:
+Preparation API:
 
 ```text
 EspAssetPack_mapFlashPrepare(targetMapId)
 ```
 
-Classic CYD raw partition layout:
+Classic CYD raw partition:
 
 ```text
 nvs       0x009000  size 0x005000
@@ -84,9 +75,6 @@ app0      0x010000  size 0x140000  = 1310720 B
 spiffs    0x150000  size 0x2A0000  = 2752512 B raw slot
 coredump  0x3F0000  size 0x010000
 ```
-
-The partition named `spiffs` is intentionally not mounted as a filesystem and is
-managed through `esp_partition_*`.
 
 Entrance raw-slot witness:
 
@@ -101,16 +89,6 @@ partition = 2752512 B
 headroom = 491481 B
 [MAPFLASH] COPY indexFNV=3a51cc4d payloadFNV=9ec04e22 verified=yes
 ```
-
-Requested-map reuse witness:
-
-```text
-[MAPFLASH] REUSE HIT requestedMap=1 current=/intro.bsp cachedMap=1
-           sourceIndexFNV=3a51cc4d payloadFNV=9ec04e22
-           verifyUs=361875 rebuild=no
-```
-
-Active gameplay never silently falls back to SD.
 
 ## Entrance canonical witness
 
@@ -138,7 +116,7 @@ enemies = 30
 destructibles = 13
 ```
 
-Retained owner fingerprints:
+Retained fingerprints:
 
 ```text
 mapStateFNV = cd99b98e
@@ -149,63 +127,213 @@ automapFNV  = 669b1aa7
 topologyFNV = 3f321e43
 ```
 
-## Resident cache baseline retained
+Resident cache baseline:
 
 ```text
 owner = 23592 B
-payload = 19456 B (19 KiB)
-range records = 288
-range record = 12 B
+payload = 19456 B
+range records = 288 x 12 B
 resident entry slots = 24
 large exact range = 2048 B
 ```
 
-`PlatformVideo_present()` remains around 34.4 ms and is not the current
-optimization target.
+`PlatformVideo_present()` remains around 34.4 ms and is not the current optimization target.
 
 ## Current hardware-owned gameplay frontier
 
-Validated behavior includes movement/turn/strafe, native collision/topology,
-SELECT event-first routing, state/event opcodes already migrated, regular door
-animation, mutable line textures, native weapon presentation/combat, shared
-52 B PlayerState, pickups/resources, hazard touch, feedback flashes, compact
-MonsterState/MonsterPosition, live monster movement/topology relink, active-list
-sequencing, raw-flash gameplay backing and requested-map reuse.
+Validated native behavior includes movement/turn/strafe, collision/topology, event-first SELECT routing, migrated state/event families, regular door animation, mutable line textures, native weapon rendering/combat, shared PlayerState, pickups/resources, hazards, touch feedback, compact MonsterState/MonsterPosition, monster activation/sequencing/RNG/dead skip, raw-flash gameplay backing and native HUB interaction.
 
-The current permanent UI/content frontier adds:
+Current HUB architecture:
 
 ```text
-native gameplay HUB owner = 28 B
-shared PlayerState owner = 52 B
-read-only Inventory + Status pages
-visible native INV / STATUS touch tabs
-visible MENU close affordance uses original Doom RPG p.bmp hand
-bounded MENU underlay = 32x20 RGB565 = 1280 B
-all other HUD pixels protected by fingerprint
-real EntityDef weapon/item names resolved on demand from native PAK
-persistent name storage = 0 B
-bounded Inventory projection max = 23 entries
-persistent Inventory-list storage = 0 B
-one transient projected entry = 31 B
-three visible entries = 93 B transient
-legacy content order = owned weapons, Notebook, carried items, Credits, keys
-three-card viewport = previous / selected / next
-SELECT remains fail-closed
-world dispatch blocked and turn advance disabled while HUB is active
+EspNativeGameplayHubView = 28 B
+EspNativeGameplayPlayerState = 52 B
+pages = INV | WPN | STAT
+MENU close = original p.bmp hand
+MENU underlay = 32x20 RGB565 = 1280 B
+all other HUD pixels fingerprint-protected
+world dispatch blocked while HUB active
+turn advance disabled while HUB active
 ```
 
-Detailed recent records:
+### Inventory page
 
-- [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md)
+Weapons are no longer mixed into the scrolling Inventory presentation. INV projects only non-weapon content:
+
+```text
+Notebook
+carried items 25..29
+Credits
+Green / Yellow / Blue / Red keys
+```
+
+Names remain on-demand from the native PAK; no persistent name list is retained.
+
+```text
+one transient projected entry = 31 B
+three visible entries = 93 B
+persistentListBytes = 0
+persistentNameBytes = 0
+catalogFNV = 34d2b7d4
+legacy full-list probe FNV = 93b6a47c
+```
+
+Non-weapon SELECT remains fail-closed.
+
+### Dedicated WPN page — final hardware PASS
+
+The WPN page is a 4x3 direct-touch grid. The first nine slots are the normal arsenal:
+
+```text
+0 Axe
+1 Fire Ext
+2 Pistol
+3 Shotgun
+4 Chaingun
+5 Super Shotgn
+6 Plasma Gun
+7 Rocket Lnchr
+8 BFG
+```
+
+Canonical weapon IDs 9..11 are familiar forms (`Hellhound`, `Cerberus`, `Demon Wolf`). They are intentionally excluded from this normal arsenal presentation; the final row retains three blank, non-selectable cells.
+
+Rendering contract:
+
+```text
+owned = original sprite in color
+unowned = grayscale
+active/equipped = yellow border ffe0
+slots 9..11 = blank
+```
+
+Weapon sprites are streamed by bounded ranges from the native PAK:
+
+```text
+EntityDef.tileIndex
+ -> mappings.bin mediaSpriteIds
+ -> mediaBitShapeOffsets
+ -> bitshapes.bin / palettes.bin / stexels.bin
+```
+
+No ZIP fallback and no persistent icon cache are used.
+
+Pistol uses the real Bullets pickup icon because its weapon EntityDef does not provide a useful unique presentation sprite:
+
+```text
+bullets tile = 83
+media = 318
+sourceSize = 16x11
+drawSize = 16x11
+upscale = no
+```
+
+Large sprites are only downscaled to fit; small sprites are kept at native size.
+
+Final real-CYD WPN witness:
+
+```text
+[HUBWGRID] FRAME weapons=9/9 slots=12 blankSlots=3 icons=9 missing=0
+           owned=1 equipped=2 selected=2
+           ownedRender=color unavailableRender=gray
+           familiarIds=9..11/excluded
+           pistolIcon=bullets-pickup/native-no-upscale
+           persistentIconBytes=0
+           scratchBytes=2690 scratchOwner=static
+           sourceMaskBytes=1447 sourceTexelBytes=2669
+           assetFNV=342db611
+           packOwnership=preserved-open mutation=no turn=no
+```
+
+The user visually confirmed on the real CYD that the three surplus cells are blank, only Pistol is lit on fresh start, and the Pistol icon is correct.
+
+Fresh final WPN frame:
+
+```text
+frame = bcc52568
+```
+
+### Direct owned-weapon selection
+
+Permanent primitive:
+
+```text
+EspNativeGameplayPlayerState_selectOwnedWeapon(weapon, &changed)
+```
+
+Contract:
+
+```text
+requires ownership bit
+changes only player.weapon
+never grants ownership
+never consumes ammo
+same weapon => changed=0
+allocation-free
+no turn
+```
+
+Direct grid selection in both directions was hardware-proven earlier on this branch with Fire Ext + Pistol owned. Representative changed witness:
+
+```text
+[HUBWEAPON] GRID-SELECT target=2 weapon=1->2
+            status=CHANGED owned=yes
+            playerFNV=a6e115a7->16e881bc
+            exactOnlyWeapon=yes
+            worldRedraw=on-close mutation=weapon-only turn=no
+```
+
+The final SHA hardware-reconfirmed the unchanged Pistol select and exact close:
+
+```text
+[HUBWEAPON] GRID-SELECT target=2 weapon=2->2 status=UNCHANGED
+            playerFNV=e745fce9->e745fce9 exactOnlyWeapon=yes
+            mutation=no turn=no
+[HUB] CLOSE ... exact=yes weapon=2->2 sessionMutation=no
+      menuUnderlayRestore=exact hudBands=6c2aa46f exactHud=yes
+      packClosed=yes
+[WEAPON] DRAW weapon=2 ...
+```
+
+## WPN stack-canary fix / scratch ownership
+
+An earlier real-CYD build reset on entry to WPN with:
+
+```text
+Stack canary watchpoint triggered (loopTask)
+```
+
+Cause: ~2690 B icon decode workspace on the nested HUB paint stack. Final design moves this bounded scratch to a static renderer owner:
+
+```text
+scratchBytes = 2690
+scratchOwner = static
+persistentIconBytes = 0
+```
+
+No map-wide texel cache was introduced.
+
+## Final RAM witness
+
+Final fresh-session values remained flat through WPN open/select/close:
+
+```text
+heap = 85228
+heap8 = 19496
+largest8 = 14324
+hub owner = 28 B
+player owner = 52 B
+MENU underlay = 1280 B
+WPN icon scratch = 2690 B static owner
+persistent icon cache = 0 B
+full framebuffer snapshot = 0 B
+```
+
+Do not compare earlier branch heap values as a leak signal: WPN deliberately moved its bounded scratch from stack to static ownership. `largest8` remained 14324.
+
+Audio remains deferred and must keep its own RAM milestone.
 
 ## EntityDef content corpus retained
-
-The preceding hardware pass recovered all player weapon and consumable names
-through the compact native catalog:
 
 ```text
 weapon 0  tile 1   Axe
@@ -227,133 +355,21 @@ item 28   tile 102 Berserker
 item 29   tile 110 Dog Collar
 ```
 
-Canonical content-catalog fingerprint remains:
-
-```text
-catalogFNV = 34d2b7d4
-persistentNameBytes = 0
-```
-
-## Latest real-CYD HUB Inventory-list witness
-
-The exact hardware-tested code boundary is `20a1c4fe...`.
-
-A strict maximum-list probe projected the complete bounded 23-entry shape using
-a local synthetic PlayerState only; canonical gameplay ownership was never
-mutated. Hardware emitted all entries in recovered legacy order and closed with:
-
-```text
-[HUBLIST] READY entries=23/23 order=legacy-content
-          persistentListBytes=0 transientEntryBytes=31
-          listFNV=93b6a47c
-          packOwnership=preserved-open mutation=no turn=no
-```
-
-`listFNV=93b6a47c` is the canonical maximum-list fingerprint.
-
-Fresh Entrance live PlayerState projected exactly three entries:
-
-```text
-0 weapon   Pistol   8
-1 notebook Notebook --
-2 credits  Credits  0
-```
-
-Real-CYD list windows and frame fingerprints:
-
-```text
-selected 0: prev=Credits current=Pistol   next=Notebook frame=9b93078f
-selected 1: prev=Pistol  current=Notebook next=Credits  frame=eb109d85
-selected 2: prev=Notebook current=Credits next=Pistol   frame=c1795301
-Status frame = eea0759d
-hudProtectedFNV = bd7588ae
-menuZoneFNV = 109b46aa
-playerFNV = e745fce9
-```
-
-Each list frame reported:
-
-```text
-visibleEntryBytes=93
-persistentListBytes=0
-packOwnership=preserved-open
-mutation=no turn=no
-```
-
-The supplied live actions exercised downward selection `0 -> 1 -> 2`. The
-bounded modulo wrap and top-card previous action are implemented by the same
-index route but are not claimed as separately observed in this hardware excerpt.
-
-Repeated SELECT on the centered entry stayed fail-closed:
-
-```text
-[HUB] SELECT-DEFER page=inventory row=0 cause=read-only-milestone
-[RESIDENTGAMEPLAY] HUB-INPUT ... status=IGNORED
-worldDispatch=blocked
-turnAdvance=no
-mutation=no
-```
-
-## Close / world resume witness
-
-This milestone supplied a complete bit-exact close witness:
-
-```text
-[HUB] CLOSE n=1 page=status
-      playerFNV=e745fce9->e745fce9 exact=yes
-      mutation=no turn=no
-      menuUnderlayRestore=exact
-      hudBands=6c2aa46f expected=6c2aa46f exact=yes
-      packClosed=yes
-```
-
-The compositor restored the exact pre-HUB world frame:
-
-```text
-pre-HUB world frame  = 22397b55
-post-HUB world frame = 22397b55
-```
-
-A subsequent real FORWARD action completed from tile 904 to tile 872, proving
-normal gameplay ownership resumed after closing the HUB.
-
-## RAM witness at current boundary
-
-The supplied real-CYD session remained flat before, during and after list use:
-
-```text
-heap = 87988
-heap8 = 22256
-largest8 = 14324
-hub owner = 28 B
-player owner = 52 B
-MENU underlay = 1280 B
-persistent HUB name bytes = 0 B
-persistent Inventory-list bytes = 0 B
-visible transient entries = 93 B
-full framebuffer snapshot = 0 B
-```
-
-These values exactly match the previous content-label boundary: no persistent
-heap loss was observed from the Inventory-list layer.
-
-Audio remains deferred. Do not enable it without its own RAM milestone.
-
 ## Intentionally deferred families
 
 ```text
 production SAVEGAME / CHANGEMAP transition ownership
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
-pickup sound playback / got-face presentation
-movement/PASS_TURN hazard secondary burn text / pain face / shake / sound
+pickup sound / got-face
+secondary hazard burn/pain/shake/sound
 complete mixed movement-tile resource/hazard ordering
 action XP migration
 materialized monster drops
 corpse-pile trimming
-monster movement interpolation/animation
+monster movement interpolation animation
 simultaneous attack-ready multi-monster ordering
-ranged >=217 multi-active expansion beyond current single-candidate boundary
+ranged >=217 multi-active expansion
 unsupported special calcPath plane corpus
 special subtype-10 AI
 player lethal/death transition
@@ -371,14 +387,10 @@ Kronos-specific semantics
 password input
 EV_GIVEMAP production route
 EV_CHECK_KEY production route
-HUB weapon selection
 HUB Notebook activation
 HUB consumable confirmation/use + turn consumption
 HUB Automap / Save / Load / Options / store
 ```
-
-Different mechanical families stay fail-closed rather than being enabled through
-legacy desktop/J2ME ownership.
 
 ## CHANGEMAP remains deferred
 
@@ -390,34 +402,26 @@ CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
 OPENLINE -> third eligible command
 ```
 
-The storage layer can prepare map 9, but the actual production transition still
-needs bounded teardown/load/spawn/state-transfer ownership.
+The storage layer can prepare map 9, but production teardown/load/spawn/state-transfer ownership remains separate.
 
 ## Next direction after merge
 
-Do **not** continue code on this locked branch.
+Do not continue code on this locked branch.
 
 After the user announces the merge:
 
 1. read actual GitHub `main` and exact SHA;
-2. re-read this file, `DOCUMENTATION.md` and
-   `MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`;
+2. re-read this file, `DOCUMENTATION.md` and `MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`;
 3. create a fresh `agent/*` from that exact main SHA;
-4. recover the next bounded legacy/UI family before coding.
+4. choose the next bounded production family from the real repo/legacy source.
 
-Strong next HUB milestone: **weapon selection only**. Legacy `MENU_ITEMS` routes a
-weapon entry to `Player_selectWeapon()`, whose core semantic is deliberately
-small: when the id differs it requests a view refresh, then updates the current
-weapon id. The ESP32 milestone should translate that into the canonical
-PlayerState plus explicit native redraw intent without enabling Notebook or item
-use. Consumables remain a separate transaction because they can alter health,
-berserker state, familiar/world state, messages, sounds and turns.
+The HUB weapon UX is now complete enough to stop polishing. Prefer returning to gameplay progression. Strong next candidates are one coherent deferred family such as production map transition ownership, Notebook activation, or another bounded gameplay/event dependency selected after recovery from the merged `main`.
 
 ## Development workflow
 
 ```text
 recover true main + docs
- -> choose one bounded behavior FAMILY
+ -> choose one bounded behavior family
  -> recover exact legacy behavior
  -> design small permanent native API/owner
  -> keep genuinely different families fail-closed
