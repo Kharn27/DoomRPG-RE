@@ -9,7 +9,11 @@
 extern "C" {
 #endif
 
-#define ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT 12U
+/* The dedicated WPN page presents the nine conventional Doom RPG weapons.
+ * Weapon ids 9..11 are captured familiar forms and intentionally stay out of
+ * this arsenal grid; the physical 4x3 layout keeps three blank cells. */
+#define ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT 9U
+#define ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT 12U
 #define ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS 4U
 #define ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_ROWS 3U
 
@@ -20,7 +24,7 @@ int EspNativeGameplayHubWeaponGrid_paint(
 int EspNativeGameplayHubWeaponGrid_hitTest(int logicalX,
                                            int logicalY,
                                            uint8_t* outWeaponId);
-void EspNativeGameplayHubWeaponGrid_cellBounds(uint8_t weaponId,
+void EspNativeGameplayHubWeaponGrid_cellBounds(uint8_t slotId,
                                                 uint8_t* outLeft,
                                                 uint8_t* outTop,
                                                 uint8_t* outRight,
