@@ -22,17 +22,10 @@
 #define GRID_WHITE 0xffffU
 #define GRID_EQUIPPED 0xffe0U
 
-#define GRID_ENTITY_TYPE_ENEMY 1U
 #define GRID_ENTITY_TYPE_WEAPON 5U
 #define GRID_ENTITY_TYPE_AMMO 6U
 #define GRID_BULLETS_AMMO_SUBTYPE 1U
 #define GRID_PISTOL_WEAPON_ID 2U
-#define GRID_HELLHOUND_WEAPON_ID 9U
-#define GRID_CERBERUS_WEAPON_ID 10U
-#define GRID_DEMON_WOLF_WEAPON_ID 11U
-#define GRID_HELLHOUND_PARM 294
-#define GRID_CERBERUS_PARM 467
-
 #define GRID_MAX_SOURCE_DIMENSION 64U
 #define GRID_MAX_MASK_BYTES 512U
 #define GRID_MAX_TEXEL_BYTES 2048U
@@ -45,12 +38,6 @@
 #define BITSHAPE_FILE_HEADER_BYTES 4U
 #define BITSHAPE_FIXED_HEADER_BYTES 12U
 #define TEXEL_FILE_HEADER_BYTES 4U
-
-#define ENTITY_DEF_HEADER_BYTES 2U
-#define ENTITY_DEF_RECORD_BYTES 24U
-#define ENTITY_DEF_NAME_OFFSET 8U
-#define ENTITY_DEF_NAME_BYTES 16U
-#define ENTITY_DEF_MAX_COUNT 1024U
 
 typedef struct HubWeaponIconFrame_s {
     uint16_t palette[GRID_PALETTE_COLORS];
@@ -73,17 +60,6 @@ typedef struct HubWeaponIconWorkspace_s {
     uint16_t prefix[GRID_MAX_SOURCE_DIMENSION + 1U];
 } HubWeaponIconWorkspace;
 
-typedef struct HubWeaponSpecialSources_s {
-    uint16_t bulletsTile;
-    uint16_t hellhoundTile;
-    uint16_t cerberusTile;
-    uint16_t demonWolfTile;
-    uint8_t bulletsFound;
-    uint8_t hellhoundFound;
-    uint8_t cerberusFound;
-    uint8_t demonWolfFound;
-} HubWeaponSpecialSources;
-
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
@@ -93,10 +69,6 @@ static uint32_t readLe32(const uint8_t* p) {
            ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) |
            ((uint32_t)p[3] << 24);
-}
-
-static int32_t readLe32s(const uint8_t* p) {
-    return (int32_t)readLe32(p);
 }
 
 static uint32_t fnvUpdate(uint32_t hash, const void* data, uint32_t bytes) {
@@ -151,7 +123,7 @@ static void drawRect(uint16_t* framebuffer,
     }
 }
 
-void EspNativeGameplayHubWeaponGrid_cellBounds(uint8_t weaponId,
+void EspNativeGameplayHubWeaponGrid_cellBounds(uint8_t slotId,
                                                 uint8_t* outLeft,
                                                 uint8_t* outTop,
                                                 uint8_t* outRight,
@@ -160,9 +132,9 @@ void EspNativeGameplayHubWeaponGrid_cellBounds(uint8_t weaponId,
     uint8_t row;
     int left;
     int top;
-    if (weaponId >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT) return;
-    column = (uint8_t)(weaponId % ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS);
-    row = (uint8_t)(weaponId / ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS);
+    if (slotId >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT) return;
+    column = (uint8_t)(slotId % ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS);
+    row = (uint8_t)(slotId / ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS);
     left = GRID_LEFT + (int)column * GRID_CELL_WIDTH;
     top = GRID_TOP + (int)row * GRID_CELL_HEIGHT;
     if (outLeft != NULL) *outLeft = (uint8_t)left;
@@ -184,6 +156,8 @@ int EspNativeGameplayHubWeaponGrid_hitTest(int logicalX,
     if (column < 0 || column >= (int)ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS ||
         row < 0 || row >= (int)ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_ROWS) return 0;
     id = row * (int)ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS + column;
+    /* The last three physical cells are deliberately blank. Captured familiar
+     * weapon ids 9..11 are not conventional arsenal entries. */
     if (id < 0 || id >= (int)ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT) return 0;
     *outWeaponId = (uint8_t)id;
     return 1;
@@ -196,91 +170,6 @@ static uint16_t grey565(uint16_t color) {
     uint32_t y = (r * 77U + g5 * 150U + b * 29U) >> 8;
     if (y > 31U) y = 31U;
     return (uint16_t)((y << 11) | ((y << 1) << 5) | y);
-}
-
-static int rawNameEquals(const uint8_t* record, const char* expected) {
-    uint32_t i;
-    if (record == NULL || expected == NULL) return 0;
-    for (i = 0U; i < ENTITY_DEF_NAME_BYTES; ++i) {
-        uint8_t actual = record[ENTITY_DEF_NAME_OFFSET + i];
-        uint8_t wanted = (uint8_t)expected[i];
-        if (actual != wanted) return 0;
-        if (wanted == 0U) return 1;
-    }
-    return expected[ENTITY_DEF_NAME_BYTES] == '\0';
-}
-
-/* Scan the authoritative source-order entity records once per WPN paint.
- * The compact type catalog intentionally collapses duplicate tile indices, so
- * it cannot recover presentation-only sources such as the bullets pickup or
- * the three captured familiar forms when those records share tile mappings.
- * This bounded 24 B record scan preserves the PAK as the backing store. */
-static int scanSpecialSources(HubWeaponSpecialSources* out) {
-    EspAssetPackEntry entry;
-    uint8_t header[ENTITY_DEF_HEADER_BYTES];
-    uint8_t record[ENTITY_DEF_RECORD_BYTES];
-    uint32_t count;
-    uint32_t i;
-
-    if (out == NULL || !EspAssetPack_isOpen()) return 0;
-    memset(out, 0, sizeof(*out));
-    if (!EspAssetPack_findEntry("/entities.db", &entry) ||
-        !EspAssetPack_readRange(&entry, 0U, header, sizeof(header))) return 0;
-    count = readLe16(header);
-    if (count == 0U || count > ENTITY_DEF_MAX_COUNT ||
-        ENTITY_DEF_HEADER_BYTES + count * ENTITY_DEF_RECORD_BYTES > entry.size) {
-        return 0;
-    }
-
-    for (i = 0U; i < count; ++i) {
-        uint16_t tile;
-        uint8_t type;
-        uint8_t subtype;
-        int32_t parm;
-        if (!EspAssetPack_readRange(&entry,
-                                    ENTITY_DEF_HEADER_BYTES +
-                                        i * ENTITY_DEF_RECORD_BYTES,
-                                    record, sizeof(record))) return 0;
-        tile = readLe16(record);
-        type = record[2];
-        subtype = record[3];
-        parm = readLe32s(record + 4U);
-
-        if (!out->bulletsFound && type == GRID_ENTITY_TYPE_AMMO &&
-            subtype == GRID_BULLETS_AMMO_SUBTYPE) {
-            out->bulletsTile = tile;
-            out->bulletsFound = 1U;
-        }
-        if (type == GRID_ENTITY_TYPE_ENEMY) {
-            if (!out->hellhoundFound &&
-                (parm == GRID_HELLHOUND_PARM ||
-                 rawNameEquals(record, "Hellhound"))) {
-                out->hellhoundTile = tile;
-                out->hellhoundFound = 1U;
-            }
-            if (!out->cerberusFound &&
-                (parm == GRID_CERBERUS_PARM ||
-                 rawNameEquals(record, "Cerberus"))) {
-                out->cerberusTile = tile;
-                out->cerberusFound = 1U;
-            }
-            if (!out->demonWolfFound && rawNameEquals(record, "Demon Wolf")) {
-                out->demonWolfTile = tile;
-                out->demonWolfFound = 1U;
-            }
-        }
-    }
-
-    printf("[HUBWGRID] SOURCES rawEntityScan=yes bullets=%s%u hellhound=%s%u cerberus=%s%u demonWolf=%s%u\n",
-           out->bulletsFound ? "tile/" : "missing/",
-           (unsigned int)out->bulletsTile,
-           out->hellhoundFound ? "tile/" : "missing/",
-           (unsigned int)out->hellhoundTile,
-           out->cerberusFound ? "tile/" : "missing/",
-           (unsigned int)out->cerberusTile,
-           out->demonWolfFound ? "tile/" : "missing/",
-           (unsigned int)out->demonWolfTile);
-    return 1;
 }
 
 /* EntityDef.tileIndex is a key into Render.mediaSpriteIds, not a direct
@@ -441,7 +330,9 @@ static int drawFrame(uint16_t* framebuffer,
                      uint8_t weaponId,
                      int owned,
                      const HubWeaponIconFrame* frame,
-                     const HubWeaponIconWorkspace* workspace) {
+                     const HubWeaponIconWorkspace* workspace,
+                     uint8_t* outDrawWidth,
+                     uint8_t* outDrawHeight) {
     uint8_t left8;
     uint8_t top8;
     uint8_t right8;
@@ -457,6 +348,8 @@ static int drawFrame(uint16_t* framebuffer,
     int tx;
     int ty;
 
+    if (outDrawWidth != NULL) *outDrawWidth = 0U;
+    if (outDrawHeight != NULL) *outDrawHeight = 0U;
     if (framebuffer == NULL || frame == NULL || workspace == NULL) return 0;
     EspNativeGameplayHubWeaponGrid_cellBounds(
         weaponId, &left8, &top8, &right8, &bottom8);
@@ -481,6 +374,13 @@ static int drawFrame(uint16_t* framebuffer,
     if (targetWidth > GRID_ICON_MAX_WIDTH) targetWidth = GRID_ICON_MAX_WIDTH;
     if (targetHeight > GRID_ICON_MAX_HEIGHT) targetHeight = GRID_ICON_MAX_HEIGHT;
 
+    /* Inventory pickup sprites are already authored for a tiny screen. Never
+     * upscale them: the 16x11 bullets icon should remain 16x11 rather than
+     * balloon to the full 33x17 cell budget. Larger weapon sprites are only
+     * downscaled to fit. */
+    if (targetWidth > (int)frame->width) targetWidth = (int)frame->width;
+    if (targetHeight > (int)frame->height) targetHeight = (int)frame->height;
+
     startX = (left + right - targetWidth + 1) / 2;
     startY = (top + bottom - targetHeight + 1) / 2;
     for (ty = 0; ty < targetHeight; ++ty) {
@@ -499,53 +399,9 @@ static int drawFrame(uint16_t* framebuffer,
             putPixel(framebuffer, startX + tx, startY + ty, color);
         }
     }
+    if (outDrawWidth != NULL) *outDrawWidth = (uint8_t)targetWidth;
+    if (outDrawHeight != NULL) *outDrawHeight = (uint8_t)targetHeight;
     return 1;
-}
-
-static int sourceTileForWeapon(uint8_t weapon,
-                               uint16_t weaponTile,
-                               const HubWeaponSpecialSources* special,
-                               uint16_t* outTile,
-                               const char** outSource) {
-    if (special == NULL || outTile == NULL || outSource == NULL) return 0;
-    switch (weapon) {
-    case GRID_PISTOL_WEAPON_ID:
-        if (!special->bulletsFound) {
-            *outSource = "bullets-missing";
-            return 0;
-        }
-        *outTile = special->bulletsTile;
-        *outSource = "bullets";
-        return 1;
-    case GRID_HELLHOUND_WEAPON_ID:
-        if (!special->hellhoundFound) {
-            *outSource = "hellhound-missing";
-            return 0;
-        }
-        *outTile = special->hellhoundTile;
-        *outSource = "familiar-hellhound";
-        return 1;
-    case GRID_CERBERUS_WEAPON_ID:
-        if (!special->cerberusFound) {
-            *outSource = "cerberus-missing";
-            return 0;
-        }
-        *outTile = special->cerberusTile;
-        *outSource = "familiar-cerberus";
-        return 1;
-    case GRID_DEMON_WOLF_WEAPON_ID:
-        if (!special->demonWolfFound) {
-            *outSource = "demonwolf-missing";
-            return 0;
-        }
-        *outTile = special->demonWolfTile;
-        *outSource = "familiar-demonwolf";
-        return 1;
-    default:
-        *outTile = weaponTile;
-        *outSource = "weapon";
-        return 1;
-    }
 }
 
 int EspNativeGameplayHubWeaponGrid_paint(
@@ -559,7 +415,6 @@ int EspNativeGameplayHubWeaponGrid_paint(
     EspAssetPackEntry stexels;
     static HubWeaponIconWorkspace workspace;
     static HubWeaponIconFrame frame;
-    HubWeaponSpecialSources special;
     uint8_t mappingHeader[MAPPINGS_HEADER_BYTES];
     uint8_t paletteHeader[PALETTES_HEADER_BYTES];
     uint8_t wallHeader[TEXEL_FILE_HEADER_BYTES];
@@ -580,19 +435,21 @@ int EspNativeGameplayHubWeaponGrid_paint(
     uint32_t assetFNV = 2166136261U;
     uint32_t totalMaskBytes = 0U;
     uint32_t totalTexelBytes = 0U;
+    uint16_t bulletsTile;
     uint8_t ownedCount = 0U;
     uint8_t readyIcons = 0U;
     uint8_t missingIcons = 0U;
+    uint8_t slot;
     uint8_t weapon;
 
     if (framebuffer == NULL || player == NULL || player->active != 1U ||
-        player->weapon >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT ||
         selectedWeapon >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT ||
         !EspAssetPack_isOpen() || !EspEntityDefTypeCatalog_isReady()) return 0;
 
     memset(&workspace, 0, sizeof(workspace));
-    memset(&special, 0, sizeof(special));
-    if (!EspAssetPack_findEntry("mappings.bin", &mappings) ||
+    if (!EspEntityDefTypeCatalog_findTileIndex(
+            GRID_ENTITY_TYPE_AMMO, GRID_BULLETS_AMMO_SUBTYPE, &bulletsTile) ||
+        !EspAssetPack_findEntry("mappings.bin", &mappings) ||
         !EspAssetPack_findEntry("palettes.bin", &palettes) ||
         !EspAssetPack_findEntry("bitshapes.bin", &bitshapes) ||
         !EspAssetPack_findEntry("wtexels.bin", &wtexels) ||
@@ -600,8 +457,7 @@ int EspNativeGameplayHubWeaponGrid_paint(
         !EspAssetPack_readRange(&mappings, 0U, mappingHeader, sizeof(mappingHeader)) ||
         !EspAssetPack_readRange(&palettes, 0U, paletteHeader, sizeof(paletteHeader)) ||
         !EspAssetPack_readRange(&wtexels, 0U, wallHeader, sizeof(wallHeader)) ||
-        !EspAssetPack_readRange(&stexels, 0U, spriteHeader, sizeof(spriteHeader)) ||
-        !scanSpecialSources(&special)) return 0;
+        !EspAssetPack_readRange(&stexels, 0U, spriteHeader, sizeof(spriteHeader))) return 0;
 
     texelPairs = readLe32(mappingHeader);
     bitShapePairs = readLe32(mappingHeader + 4U);
@@ -632,6 +488,8 @@ int EspNativeGameplayHubWeaponGrid_paint(
     paletteEntries = paletteBytes / 2U;
     spriteBaseTexelOffset = wallDataSize * 2U;
 
+    printf("[HUBWGRID] SOURCES catalog=yes bullets=tile/%u familiarIds=9..11 display=blank\n",
+           (unsigned int)bulletsTile);
     printf("[HUBWGRID] MAPPINGS texelPairs=%u bitShapePairs=%u textures=%u sprites=%u spriteIdsBase=%u bytes=%u contract=tile->mediaSprite->bitshape\n",
            (unsigned int)texelPairs,
            (unsigned int)bitShapePairs,
@@ -640,18 +498,33 @@ int EspNativeGameplayHubWeaponGrid_paint(
            (unsigned int)spriteIdsBase,
            (unsigned int)mappings.size);
 
+    /* Paint the fixed 4x3 board first. The last three slots remain visibly
+     * present but empty and are not hit-testable. */
+    for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT; ++slot) {
+        uint8_t left;
+        uint8_t top;
+        uint8_t right;
+        uint8_t bottom;
+        EspNativeGameplayHubWeaponGrid_cellBounds(
+            slot, &left, &top, &right, &bottom);
+        fillRect(framebuffer, left, top, right, bottom, GRID_BLACK);
+        drawRect(framebuffer, left, top, right, bottom, GRID_DIM_BLUE);
+    }
+
     for (weapon = 0U; weapon < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT; ++weapon) {
         uint16_t weaponTile;
-        uint16_t iconTile = 0U;
+        uint16_t iconTile;
         uint16_t mediaSprite = 0U;
         uint8_t iconReady = 0U;
+        uint8_t drawWidth = 0U;
+        uint8_t drawHeight = 0U;
         uint8_t left;
         uint8_t top;
         uint8_t right;
         uint8_t bottom;
         uint16_t border;
         int owned;
-        const char* source = "missing";
+        const char* source;
         char name[17];
 
         memset(&frame, 0, sizeof(frame));
@@ -661,16 +534,23 @@ int EspNativeGameplayHubWeaponGrid_paint(
             !EspEntityDefTypeCatalog_readNameFromOpenPack(
                 weaponTile, name, sizeof(name))) return 0;
 
-        if (sourceTileForWeapon(weapon, weaponTile, &special,
-                                &iconTile, &source) &&
-            resolveMediaSprite(&mappings, spriteIdsBase, spriteCount,
+        if (weapon == GRID_PISTOL_WEAPON_ID) {
+            iconTile = bulletsTile;
+            source = "bullets";
+        }
+        else {
+            iconTile = weaponTile;
+            source = "weapon";
+        }
+
+        if (resolveMediaSprite(&mappings, spriteIdsBase, spriteCount,
                                bitShapePairs, iconTile, &mediaSprite) &&
             loadFrame(&mappings, &palettes, &bitshapes, &stexels,
                       bitShapePairBase, bitShapePairs, paletteEntries,
                       spriteBaseTexelOffset, spriteDataSize,
                       mediaSprite, &workspace, &frame)) {
-            /* media 0 is the real Axe. Never let the pistol/familiars silently
-             * alias that shape again: a missing special source paints blank. */
+            /* media 0 is valid only for Axe. A conventional non-Axe weapon
+             * resolving to zero is a missing icon, never an Axe fallback. */
             if (weapon == 0U || mediaSprite != 0U) iconReady = 1U;
         }
 
@@ -691,13 +571,16 @@ int EspNativeGameplayHubWeaponGrid_paint(
                      GRID_WHITE);
         }
         if (iconReady &&
-            !drawFrame(framebuffer, weapon, owned, &frame, &workspace)) return 0;
+            !drawFrame(framebuffer, weapon, owned, &frame, &workspace,
+                       &drawWidth, &drawHeight)) return 0;
 
         assetFNV = fnvUpdate(assetFNV, &weapon, sizeof(weapon));
         assetFNV = fnvUpdate(assetFNV, &weaponTile, sizeof(weaponTile));
         assetFNV = fnvUpdate(assetFNV, &iconTile, sizeof(iconTile));
         assetFNV = fnvUpdate(assetFNV, &mediaSprite, sizeof(mediaSprite));
         assetFNV = fnvUpdate(assetFNV, &iconReady, sizeof(iconReady));
+        assetFNV = fnvUpdate(assetFNV, &drawWidth, sizeof(drawWidth));
+        assetFNV = fnvUpdate(assetFNV, &drawHeight, sizeof(drawHeight));
         if (iconReady) {
             assetFNV = fnvUpdate(assetFNV, &frame.width, sizeof(frame.width));
             assetFNV = fnvUpdate(assetFNV, &frame.height, sizeof(frame.height));
@@ -709,23 +592,25 @@ int EspNativeGameplayHubWeaponGrid_paint(
             totalTexelBytes += frame.packedBytes;
         }
 
-        printf("[HUBWGRID] ICON weapon=%u weaponTile=%u iconTile=%u media=%u name=\"%s\" icon=%s size=%ux%u owned=%s equipped=%s render=%s source=%s\n",
+        printf("[HUBWGRID] ICON weapon=%u weaponTile=%u iconTile=%u media=%u name=\"%s\" icon=%s source=%s sourceSize=%ux%u drawSize=%ux%u upscale=no owned=%s equipped=%s render=%s\n",
                (unsigned int)weapon,
                (unsigned int)weaponTile,
                (unsigned int)iconTile,
                (unsigned int)mediaSprite,
                name,
                iconReady ? "ready" : "missing",
+               source,
                (unsigned int)(iconReady ? frame.width : 0U),
                (unsigned int)(iconReady ? frame.height : 0U),
+               (unsigned int)drawWidth,
+               (unsigned int)drawHeight,
                owned ? "yes" : "no",
                weapon == player->weapon ? "yes" : "no",
-               owned ? "color" : "gray",
-               source);
+               owned ? "color" : "gray");
     }
 
     if (assetFNV == 0U || !EspAssetPack_isOpen()) return 0;
-    printf("[HUBWGRID] FRAME weapons=12/12 icons=%u missing=%u owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray missingRender=blank equippedBorder=ffe0 mapping=tile->mediaSprite->bitshape pistolIcon=bullets-pickup persistentIconBytes=0 scratchBytes=%u scratchOwner=static sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
+    printf("[HUBWGRID] FRAME weapons=9/9 slots=12 blankSlots=3 icons=%u missing=%u owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray familiarIds=9..11/excluded pistolIcon=bullets-pickup/native-no-upscale persistentIconBytes=0 scratchBytes=%u scratchOwner=static sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
            (unsigned int)readyIcons,
            (unsigned int)missingIcons,
            (unsigned int)ownedCount,
