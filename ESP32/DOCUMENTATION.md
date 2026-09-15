@@ -8,8 +8,7 @@ Recovery and development should start from:
 4. this file — build/layout/recovery pointers;
 5. the latest relevant milestone on the active branch.
 
-Repository state wins over chat history. Serial logs from the real classic CYD
-are the final runtime truth.
+Repository state wins over chat history. Serial logs from the real classic CYD are the final runtime truth.
 
 ## Current locked branch
 
@@ -17,18 +16,16 @@ are the final runtime truth.
 main at branch creation = d6909793860312397edc7aa1b36f995a5ccbb914
 branch = agent/esp32-native-gameplay-hub-weapon-select
 base main = d6909793860312397edc7aa1b36f995a5ccbb914
-hardware-tested code boundary = 1a4ab97ef5cfd509663be28db92d22610bd77cf6
-status = REAL-CYD HUB OWNED-WEAPON SELECT PASS
+hardware-tested code boundary = 308295c4f56b1741040d1bc5e07ce7f66d245a70
+status = REAL-CYD HUB WPN GRID + DIRECT OWNED-WEAPON SELECT PASS
 branch policy = LOCKED; docs-only tail only
 ```
 
-Do not treat commits after `1a4ab97...` as new hardware-tested code. The tail
-must remain documentation-only until merge.
+Normal GitHub Actions `esp32-cyd` run #234 / run ID `34947947008` passed on the exact tested SHA and produced artifact:
 
-Normal GitHub Actions `esp32-cyd` run `34108679822` / run #215 passed on the
-exact tested SHA and produced artifact
-`doom-rpg-esp32-cyd-1a4ab97ef5cfd509663be28db92d22610bd77cf6`.
-CI is compile/link evidence only; real-CYD serial logs remain authoritative.
+```text
+doom-rpg-esp32-cyd-308295c4f56b1741040d1bc5e07ce7f66d245a70
+```
 
 Latest milestone:
 
@@ -42,9 +39,7 @@ Normal hardware reference:
 pio run -e esp32-cyd
 ```
 
-GitHub Actions builds this environment through `.github/workflows/esp32-cyd.yml`.
-Bring-up diagnostics perturb RAM and are not the production memory canon. Never
-claim a local build or hardware pass that did not occur.
+GitHub Actions builds this environment through `.github/workflows/esp32-cyd.yml`. Bring-up diagnostics perturb RAM and are not the production memory canon. Never claim a local build or hardware pass that did not occur.
 
 The production environment uses:
 
@@ -52,8 +47,7 @@ The production environment uses:
 board_build.partitions = partitions_cyd_raw_pak.csv
 ```
 
-When installing this layout on a board that previously used `no_ota.csv`, flash
-the generated `partitions.bin` as well as `firmware.bin`.
+When installing this layout on a board that previously used `no_ota.csv`, flash the generated `partitions.bin` as well as `firmware.bin`.
 
 ## Hardware / permanent memory rules
 
@@ -67,8 +61,7 @@ shapeData == NULL
 mediaTexels == NULL
 ```
 
-Do not recreate map-wide texel ownership or migrate native gameplay/map data back
-to ZIP. `/DoomRPG-ESP32.pak` on SD remains the authoritative source archive.
+Do not recreate map-wide texel ownership or migrate native gameplay/map data back to ZIP. `/DoomRPG-ESP32.pak` remains the authoritative native asset source.
 
 ## Current native asset backing
 
@@ -76,9 +69,7 @@ Hardware-proven active gameplay path:
 
 ```text
 /DoomRPG-ESP32.pak on SD
- -> requested-map identity / staging plan
- -> exact raw-slot HIT or full rebuild on mismatch
- -> raw internal-flash requested-map slot
+ -> requested-map raw internal-flash slot
  -> 19 KiB resident RAM cache
  -> native renderer/gameplay
 ```
@@ -111,7 +102,6 @@ staged payload=2248743 B
 partition=2752512 B
 headroom=491481 B
 [MAPFLASH] COPY indexFNV=3a51cc4d payloadFNV=9ec04e22 verified=yes
-validated reuse ~= 0.363 s
 ```
 
 ## Entrance format witness
@@ -165,37 +155,113 @@ large exact range=2048 B
 
 ## Current native gameplay frontier
 
-The hardware-owned engine already includes native movement/collision, event-first
-SELECT routing, migrated event/state families, regular doors, mutable line
-textures, shared PlayerState resources, native weapon/combat presentation,
-pickups, hazards, feedback, compact monster state/position, live monster movement
-and topology relink, active-list sequencing, raw-flash backing and requested-map
-reuse.
+The hardware-owned engine includes native movement/collision, event-first SELECT routing, migrated event/state families, regular doors, mutable line textures, shared PlayerState resources, native weapon/combat presentation, pickups, hazards, feedback, compact monster state/position, monster activation/sequencing, raw-flash backing and requested-map reuse.
 
-The HUB/UI frontier is now:
+Current HUB/UI frontier:
 
 ```text
 EspNativeGameplayHubView = 28 B
 EspNativeGameplayPlayerState = 52 B
-Inventory + Status pages
-visible INV / STATUS tabs
+pages = INV | WPN | STAT
 visible MENU close uses original p.bmp hand
 MENU underlay = 32x20 RGB565 = 1280 B
-all other HUD pixels fingerprint-protected
-real EntityDef weapon/item names are read on demand
-persistent HUB name storage = 0 B
-Inventory max projection = 23 entries
-persistent Inventory-list storage = 0 B
-one transient entry = 31 B
-three visible entries = 93 B transient
-legacy content order is preserved
-visible Inventory window = previous/current/next
-owned-weapon SELECT is live
-non-weapon SELECT stays fail-closed
-no world dispatch / no turn while HUB active
+all other HUD pixels are fingerprint-protected
+world dispatch blocked while HUB is active
+no turn advance while HUB is active
 ```
 
-Milestone index for the latest frontier:
+### INV
+
+Weapons have been removed from the scrolling Inventory presentation. INV contains Notebook, carried items, Credits and keys. Content labels still come from the native PAK on demand.
+
+```text
+persistentNameBytes=0
+persistentListBytes=0
+one projected entry=31 B
+three visible entries=93 B
+catalogFNV=34d2b7d4
+legacy full-list probe FNV=93b6a47c
+```
+
+Non-weapon SELECT remains fail-closed.
+
+### WPN
+
+WPN is a 4x3 direct-touch arsenal grid. Slots 0..8 contain the normal weapons:
+
+```text
+Axe | Fire Ext | Pistol | Shotgun | Chaingun | Super Shotgn |
+Plasma Gun | Rocket Lnchr | BFG
+```
+
+Canonical familiar weapon IDs 9..11 are intentionally not presented as normal arsenal weapons; the last three cells remain blank and non-selectable.
+
+Presentation:
+
+```text
+owned -> original sprite in color
+unowned -> grayscale
+equipped -> yellow border ffe0
+```
+
+Icons stream from the native PAK through:
+
+```text
+EntityDef.tileIndex -> mediaSpriteIds -> bitshape -> palette/stexels
+```
+
+There is no persistent icon cache. The decode workspace is a bounded 2690 B static owner, moved off `loopTask` stack after a real-CYD stack-canary failure.
+
+Pistol uses the real Bullets pickup icon (`tile=83`, `media=318`) and keeps its native `16x11` size; small icons are not upscaled.
+
+Final real-CYD frame summary:
+
+```text
+[HUBWGRID] FRAME weapons=9/9 slots=12 blankSlots=3 icons=9 missing=0
+           owned=1 equipped=2 selected=2
+           familiarIds=9..11/excluded
+           pistolIcon=bullets-pickup/native-no-upscale
+           scratchBytes=2690 scratchOwner=static
+           assetFNV=342db611
+```
+
+The user visually confirmed that the three extra cells are blank, only Pistol is highlighted at fresh start, and the Pistol icon is correct.
+
+### Direct weapon selection
+
+Permanent primitive:
+
+```text
+EspNativeGameplayPlayerState_selectOwnedWeapon()
+```
+
+It requires ownership and changes only `player.weapon`. It never grants a weapon, consumes ammo or advances a turn. Direct grid selection was hardware-proven earlier on this branch in both directions between Fire Ext and Pistol. The final SHA reconfirmed the unchanged Pistol selection and exact close/HUD restore.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md)
+
+## RAM at current boundary
+
+Final real-CYD fresh-session witness:
+
+```text
+heap=85228
+heap8=19496
+largest8=14324
+hub owner=28 B
+player owner=52 B
+MENU underlay=1280 B
+WPN icon scratch=2690 B static owner
+persistent icon cache=0 B
+full framebuffer snapshot=0 B
+```
+
+`largest8` remains 14324. The lower free-heap value versus earlier branch revisions is expected because the WPN scratch was deliberately moved from stack into static ownership.
+
+Audio remains deferred and requires its own RAM milestone.
+
+## Milestone index for recent frontier
 
 - [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
@@ -203,171 +269,6 @@ Milestone index for the latest frontier:
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md)
-
-## Native HUB content / list / weapon-selection result
-
-The compact native EntityDef catalog supports:
-
-```text
-tileIndex -> {type, subtype, parm}
-(type, subtype) -> tileIndex
-```
-
-Historical names are read from `/entities.db` in the native PAK only when needed.
-No per-definition names are retained.
-
-Canonical content/list fingerprints:
-
-```text
-catalogFNV=34d2b7d4
-listFNV=93b6a47c
-persistentNameBytes=0
-persistentListBytes=0
-```
-
-The Inventory projection mirrors legacy `MENU_ITEMS` content order while omitting
-Back/divider rows already represented by native controls:
-
-```text
-owned weapons 0..11
-Notebook
-carried items 25..29
-Credits
-Green Key
-Yellow Key
-Blue Key
-Red Key
-```
-
-Allocation-free projection APIs:
-
-```text
-EspNativeGameplayHubContent_inventoryEntryCount(player)
-EspNativeGameplayHubContent_inventoryEntryAt(player, index, outEntry)
-```
-
-Maximum bounded shape:
-
-```text
-12 weapons + Notebook + 5 items + Credits + 4 keys = 23 entries
-one projected entry = 31 B
-three visible entries = 93 B
-persistentListBytes = 0
-```
-
-The new live mutation is deliberately narrow. The permanent primitive
-`EspNativeGameplayPlayerState_selectOwnedWeapon()`:
-
-```text
-accepts only weapon ids 0..11
-requires the corresponding ownership bit
-changes only player.weapon
-never grants ownership
-never consumes ammo
-returns changed=0 for reselecting the active weapon
-allocates nothing
-consumes no turn
-```
-
-It is intentionally separate from `adoptWeapon()`, which also sets an ownership
-bit and would be incorrect for menu selection.
-
-## Real-CYD weapon selection result
-
-The tested live state contained Fire Ext + Pistol:
-
-```text
-weapon=1
-weapons=006
-ammo=10/12/00/00/00/00
-items=01/00/00/00/00
-playerFNV=a6e115a7
-```
-
-An unchanged select of Fire Ext was observed first. The decisive changed select
-was:
-
-```text
-[HUBWEAPON] SELECT entry=1 name="Pistol"
-            weapon=1->2
-            status=CHANGED
-            owned=yes
-            playerFNV=a6e115a7->16e881bc
-            exactOnlyWeapon=yes
-            worldRedraw=on-close
-            mutation=weapon-only
-            turn=no
-            packClosed=yes
-```
-
-The HUB close validated the new current fingerprint and restored the protected
-HUD exactly:
-
-```text
-playerFNV=a6e115a7->16e881bc
-expected=16e881bc exact=yes
-weapon=1->2
-sessionMutation=weapon-only
-menuUnderlayRestore=exact
-hudBands=c340d7ba expectedHud=c340d7ba exactHud=yes
-packClosed=yes
-```
-
-The normal compositor then emitted:
-
-```text
-[WEAPON] DRAW weapon=2 ... pose=idle
-[RESIDENTGAMEPLAY] FRAME reason=HUB-CLOSE frame=d222e76b presented=1
-```
-
-This proves the selected Pistol became the live gameplay weapon with no turn
-advance and no fallthrough to world dispatch.
-
-Detailed record:
-
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md)
-
-## UX finding from the hardware test
-
-The semantic transaction passes, but the present three-card touch interaction is
-not sufficiently direct:
-
-```text
-top card    -> previous
-center card -> SELECT current
-bottom card -> next
-```
-
-Touching a visible weapon on the top or bottom card merely centers it. The user
-then has to tap the centered card a second time to equip it. This felt
-unintuitive on the real CYD.
-
-Treat this as the next interaction-layer milestone, not as a failure of the
-PlayerState selection transaction. Keep this tested branch locked.
-
-## RAM at current boundary
-
-The real-CYD session stayed flat through changed weapon selection and close:
-
-```text
-heap=87356
-heap8=21624
-largest8=14324
-hub owner=28 B
-player owner=52 B
-MENU underlay=1280 B
-persistent HUB name bytes=0 B
-persistent Inventory-list bytes=0 B
-visible transient entries=93 B
-full framebuffer snapshot=0 B
-```
-
-The preceding Inventory-list milestone recorded `87988 / 22256 / 14324`; the
-current witness is 632 B lower in free heap/8-bit heap with unchanged largest8.
-No persistent HUB owner was added, so do not infer a leak from that delta alone.
-Re-check it before future RAM-heavy work.
-
-Audio remains deferred and requires its own RAM milestone.
 
 ## Current intentionally deferred families
 
@@ -383,7 +284,7 @@ materialized monster drops
 corpse-pile trimming
 monster movement interpolation animation
 simultaneous attack-ready multi-monster ordering
-ranged >=217 active-list expansion beyond current single candidate
+ranged >=217 active-list expansion
 unsupported special calcPath plane corpus
 special subtype-10 AI
 player lethal/death transition
@@ -401,7 +302,6 @@ Kronos-specific semantics
 password input
 GIVEMAP production route
 CHECK_KEY production route
-HUB direct-touch weapon-selection UX
 HUB Notebook activation
 HUB consumable confirmation/use + turn consumption
 HUB Automap / Save / Load / Options / store
@@ -417,8 +317,7 @@ CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
 OPENLINE -> third eligible command
 ```
 
-Storage can prepare target map 9, but transition teardown/load/spawn and state
-transfer remain their own production milestone.
+Storage can prepare target map 9, but transition teardown/load/spawn/state transfer remain their own production milestone.
 
 ## After this merge
 
@@ -427,19 +326,11 @@ Do not continue code on this locked branch.
 When the user announces the merge:
 
 1. read the true GitHub `main` and exact SHA;
-2. re-read `PORTING_STATUS.md`, this file and
-   `MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`;
+2. re-read `PORTING_STATUS.md`, this file and `MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`;
 3. create the next `agent/*` from that exact SHA;
-4. recover the next bounded legacy/UI family against the true source before coding.
+4. pick the next bounded gameplay family from the real repo/legacy source.
 
-Strong next candidate: **direct-touch weapon selection UX only**. Reuse the
-hardware-proven owned-weapon transaction unchanged, but make a tap on a visible
-weapon card equip that weapon in one intentional touch instead of requiring
-center-then-select. Non-weapon entries must remain fail-closed. Preserve the 28 B
-HUB owner, 52 B PlayerState, bounded touch-feedback edit budget, 1280 B MENU
-underlay, no turn and no world dispatch while the HUB is active.
-
-Notebook and consumable semantics remain separate milestones.
+The WPN UX is complete enough to stop polishing. Prefer returning to gameplay progression rather than adding more menu decoration.
 
 ## Development workflow
 
