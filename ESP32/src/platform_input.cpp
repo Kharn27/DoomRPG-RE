@@ -1,6 +1,7 @@
 #include "platform_input.h"
 
 #include "board_config.h"
+#include "esp_native_gameplay_transition_handoff.h"
 #include "platform_touch_events.h"
 
 #ifndef DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
@@ -17,6 +18,14 @@ PlatformTapCallback gTapCallback = nullptr;
 }
 
 extern "C" void PlatformInput_setTapCallback(PlatformTapCallback callback) {
+    /* WAIT_STATS deliberately requests the normal gameplay tap consumer to be
+     * removed. Give the bounded native map-transition bridge first refusal on
+     * that NULL handoff; every other caller keeps the historical setter
+     * semantics unchanged. */
+    if (callback == nullptr &&
+        EspNativeGameplayTransitionHandoff_tryArmNullCallback()) {
+        return;
+    }
     gTapCallback = callback;
 }
 
