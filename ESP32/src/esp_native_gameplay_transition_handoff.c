@@ -74,7 +74,6 @@ static void failHandoff(const char* stage, unsigned int status) {
     handoff.failed = 1U;
     handoff.armed = 0U;
     handoff.busy = 0U;
-    PlatformInput_setTapCallback(NULL);
     printf("[NATIVECHANGEMAP] HANDOFF-FAILED stage=%s status=%u resident=%u packOpen=%u failClosed=yes\n",
            stage != NULL ? stage : "unknown",
            status,
@@ -390,11 +389,16 @@ int EspNativeGameplayTransitionHandoff_tryArmNullCallback(void) {
         transition->committed.statsAcknowledged != 0U ||
         transition->committed.committed != 0U) {
         handoff.armed = 0U;
+        handoff.failed = 0U;
         return 0;
     }
 
+    /* A failed exact WAIT_STATS handoff stays inert until ownership leaves the
+     * state. This prevents the platform NULL callback path from silently
+     * re-arming the same failed transition. */
+    if (handoff.failed) return 0;
+
     handoff.armed = 1U;
-    handoff.failed = 0U;
     PlatformInput_setTapCallback(onStatsAcknowledged);
     printf("[NATIVECHANGEMAP] STATS-BRIDGE phase=WAIT_STATS callback=one-tap sourceMap=%u targetMap=%u sourceResident=%u statsPresentation=deferred\n",
            (unsigned int)transition->committed.sourceMapId,
