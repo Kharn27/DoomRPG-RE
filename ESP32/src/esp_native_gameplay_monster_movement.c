@@ -388,7 +388,7 @@ static PathResult calcPath(uint16_t attackerSprite,
                 continue;
             }
             clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
-                                       attackerSprite, mask, 1);
+                                       attackerSprite, mask, 0);
             if (clear == -2) {
                 result.status = -2;
                 return result;
@@ -678,7 +678,7 @@ static int syncOwner(void) {
         movementView.lastDestTile = MOVE_NO_SPRITE;
         movementView.lastPositionFNV1a = positions->stateFNV1a;
         movementView.active = 1U;
-        printf("[MONSTERMOVE] READY arena=%08x ownerBytes=%u positionRecordBytes=%u mode=planner-probe+position-rollback trigger=no-immediate-attack|ranged-ai>=217 activation=shared-map-session-single-active aiGoal=legacy-cardinal calcPath=2-step traceMask=%04x subtypeMask=legacy rng=local-copy-boundary-fail-closed rendererPublish=deferred topologyRelink=deferred liveMove=no\n",
+        printf("[MONSTERMOVE] READY arena=%08x ownerBytes=%u positionRecordBytes=%u mode=planner-probe+position-rollback trigger=no-immediate-attack|ranged-ai>=217 activation=shared-map-session-single-active aiGoal=legacy-cardinal calcPath=2-step+special-plane traceMask=%04x subtypeMask=legacy rng=local-copy-boundary-fail-closed rendererPublish=deferred topologyRelink=deferred liveMove=no\n",
                (unsigned int)movementView.sourceArenaFNV1a,
                (unsigned int)positions->ownerBytes,
                (unsigned int)sizeof(EspNativeGameplayMonsterPositionRecord),
