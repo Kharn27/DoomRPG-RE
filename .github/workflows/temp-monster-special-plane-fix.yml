@@ -21,75 +21,55 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path('ESP32/src/esp_native_gameplay_monster_movement.c')
           s = p.read_text()
 
-          replacements = [
-              (
-          '''/* Return 1 blocked, 0 clear, -1 not ready, -2 deliberately unsupported special
-           * crossing during calcPath's tile-origin legacy subpath. */'''.replace('           *', ' *'),
-          '''/* Return 1 blocked, 0 clear, -1 not ready. Type 14/15 entities are not
+          old_comment = """/* Return 1 blocked, 0 clear, -1 not ready, -2 deliberately unsupported special
+           * crossing during calcPath's tile-origin legacy subpath. */""".replace('           *', ' *')
+          new_comment = """/* Return 1 blocked, 0 clear, -1 not ready. Type 14/15 entities are not
            * categorically blocking in legacy Game_trace(): with bit 0x20000 set,
            * they count only when the segment crosses the encoded X/Y plane. The
-           * bounded specialEntityBlocks() above mirrors that rule for calcPath too. */'''.replace('           *', ' *')
-              ),
-              (
-          '''                                uint16_t attackerSprite,
-                                          uint16_t mask,
-                                          int strictSpecial) {'''.replace('                                uint16_t', '                                uint16_t', 1),
-          '''                                uint16_t attackerSprite,
-                                          uint16_t mask) {'''.replace('                                uint16_t', '                                uint16_t', 1)
-              ),
-              (
-          '''        if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
-                      if (strictSpecial) return -2;
-                      specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);'''.replace('                      ', '            '),
-          '''        if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
-            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);'''
-              ),
-              (
-          '''                              uint16_t attackerSprite,
-                              uint16_t mask,
-                              int strictSpecial) {''',
-          '''                              uint16_t attackerSprite,
-                              uint16_t mask) {'''
-              ),
-              (
-          '''                                           attackerSprite, mask, strictSpecial);''',
-          '''                                           attackerSprite, mask);'''
-              ),
-              (
-          '''                                       attackerSprite, mask, 1);
-            if (clear == -2) {
+           * bounded specialEntityBlocks() above mirrors that rule for calcPath too. */""".replace('           *', ' *')
+          assert old_comment in s
+          s = s.replace(old_comment, new_comment, 1)
+
+          s, n = re.subn(
+              r'(static int blockingSpriteOnTile\(uint16_t tile,\n(?:.*\n){5}\s+uint16_t mask),\n\s+int strictSpecial\) \{',
+              r'\1) {', s, count=1)
+          assert n == 1, f'blocking signature replacements={n}'
+
+          assert s.count('            if (strictSpecial) return -2;\n') == 1
+          s = s.replace('            if (strictSpecial) return -2;\n', '', 1)
+
+          s, n = re.subn(
+              r'(static int cardinalTraceClear\(int32_t sourceX,\n(?:.*\n){4}\s+uint16_t mask),\n\s+int strictSpecial\) \{',
+              r'\1) {', s, count=1)
+          assert n == 1, f'cardinal signature replacements={n}'
+
+          assert s.count('attackerSprite, mask, strictSpecial);') == 1
+          s = s.replace('attackerSprite, mask, strictSpecial);', 'attackerSprite, mask);', 1)
+
+          assert s.count('attackerSprite, mask, 1);') == 1
+          s = s.replace('attackerSprite, mask, 1);', 'attackerSprite, mask);', 1)
+
+          special_abort = """            if (clear == -2) {
                 result.status = -2;
                 return result;
-            }''',
-          '''                                       attackerSprite, mask);'''
-              ),
-              ('attackerSprite, mask, 0);', 'attackerSprite, mask);'),
-              ('MOVE_TRACE_ATTACK_MASK, 0);', 'MOVE_TRACE_ATTACK_MASK);'),
-          ]
+            }
+"""
+          assert s.count(special_abort) == 1
+          s = s.replace(special_abort, '', 1)
 
-          for old, new in replacements:
-              count = s.count(old)
-              assert count >= 1, f'missing replacement ({count}): {old[:80]!r}'
-              s = s.replace(old, new)
+          assert s.count('attackerSprite, mask, 0);') == 4
+          s = s.replace('attackerSprite, mask, 0);', 'attackerSprite, mask);')
+          assert s.count('MOVE_TRACE_ATTACK_MASK, 0);') == 1
+          s = s.replace('MOVE_TRACE_ATTACK_MASK, 0);', 'MOVE_TRACE_ATTACK_MASK);', 1)
 
-          old = '''    if (planStatus == -2) {
-              ++movementView.collisionDeferred;
-              printf("[MONSTERMOVE] DEFER trigger=%s n=%u sprite=%u cause=calcPath-special-plane-corpus-needed mask=%04x rngCalls=%u mutation=no\\n",
-                     trigger, (unsigned int)triggerCount,
-                     (unsigned int)candidate.monster->spriteIndex,
-                     (unsigned int)movementMaskForSubtype(candidate.monster->subtype),
-                     (unsigned int)probeRng.calls);
-              return;
-          }
-          '''.replace('              ', '        ').replace('                     ', '               ').replace('          }', '    }')
-          # Avoid depending on indentation normalization: remove by bounded markers.
           marker = '    if (planStatus == -2) {'
           start = s.find(marker)
-          assert start >= 0, 'obsolete special-plane defer block missing'
+          assert start >= 0, 'obsolete -2 defer marker missing'
           end = s.find('    if (planStatus < 0) {', start)
           assert end > start, 'planner-not-ready marker missing'
           block = s[start:end]
