@@ -16,12 +16,12 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 main at branch creation = 9b085a9d8ed254edc98463f33f6d1534215326b9
 current main = 9b085a9d8ed254edc98463f33f6d1534215326b9
 branch = agent/esp32-native-gameplay-changemap-transition
-hardware-tested save-v2 code boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
-current code head before docs = 5a1020fd5d160c111ff09ecb8a480f37ea8d0578
-status = REAL-CYD NATIVE CHECKPOINT SAVE/LOAD V2 RESOURCE OVERLAY PASS
+hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
+hardware-tested current code boundary = 5a1020fd5d160c111ff09ecb8a480f37ea8d0578
+status = REAL-CYD CHECKPOINT V2 RESOURCE OVERLAY + HUB FEEDBACK OWNERSHIP PASS
 ```
 
-GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact hardware-tested save-v2 boundary. The later HUB/action-feedback ownership gate also builds successfully in run #267 / run ID `35198140562`, but still needs a real-CYD visual retest.
+GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource boundary. The HUB/action-feedback ownership gate passed CI run #267 / run ID `35198140562` and is now also real-CYD validated. The prior documentation tail `48f8bf50c3f59acf2260d4274467bc78080690a8` passed CI run #268 / run ID `35198645805`.
 
 Latest milestones:
 
@@ -140,7 +140,7 @@ large exact range=2048 B
 
 ## Current native gameplay frontier
 
-The real-CYD-owned engine includes native movement/collision, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, monster state/position/activation/movement/attack families, raw-flash requested-map backing, HUB INV/WPN/STAT and bounded checkpoint save/load.
+The real-CYD-owned engine includes native movement/collision, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, monster state/position/activation/movement/attack families, raw-flash requested-map backing, HUB INV/WPN/STAT, bounded checkpoint save/load, resource consumed-overlay persistence, and hardware-proven HUB/world feedback framebuffer ownership gating.
 
 Player/HUB compact roots:
 
@@ -285,16 +285,16 @@ gameplay RNG
 
 Continue one owner at a time; never dump a raw runtime/legacy object graph.
 
-## HUB/action-feedback visual ownership fix — candidate
+## HUB/action-feedback visual ownership fix — REAL-CYD PASS
 
-During the save-v2 hardware test, a pickup message expired while HUB owned the framebuffer. That produced a stale top-bar fragment under the MENU button and eventually:
+During the save-v2 hardware test, a pickup message could expire while HUB owned the framebuffer. The original bug left a stale `Got ...` fragment over the MENU area and could produce:
 
 ```text
 [HUB] CLOSE ... menuUnderlayRestore=FAILED ... exactHud=NO
 [RESIDENTGAMEPLAY] HUB-RECOVER ...
 ```
 
-This visual issue is independent of save persistence. Current branch code adds a bounded gate so action-feedback / viewport-flash expiry does not restore world pixels while HUB owns the framebuffer:
+The branch adds a bounded ownership gate so action-feedback / viewport-flash expiry does not restore world pixels while HUB owns the framebuffer:
 
 ```text
 8b7a4c04dee1622954f2ea453ca1b15792fbf6fa
@@ -302,7 +302,7 @@ This visual issue is independent of save persistence. Current branch code adds a
 CI #267 SUCCESS
 ```
 
-The timer still uses real elapsed time and resumes after HUB closes. This candidate needs a short real-CYD reproduction test before being promoted to hardware PASS.
+The timer still uses real elapsed time and resumes after HUB closes. The user reproduced the original pickup-message/HUB scenario on the real CYD and confirmed the stale fragment has disappeared. This fix is hardware-valid at `5a1020fd5d160c111ff09ecb8a480f37ea8d0578`.
 
 ## CHANGEMAP candidate on this branch
 
@@ -317,7 +317,7 @@ The branch owns a bounded WAIT_STATS/ACK transition handoff and target resident/
 
 ## Preferred next save-v2 section
 
-After the HUB visual gate is hardware-confirmed, continue with one compact mutable owner. Preferred next candidate:
+Continue with one compact mutable owner. Preferred next candidate:
 
 ```text
 EspMapScriptState / mutable event-command state
@@ -345,7 +345,6 @@ See `PORTING_STATUS.md` for the authoritative list. Important current boundaries
 
 ```text
 save-v2 mutable-world sections beyond each validated owner
-current HUB action-feedback gate hardware retest
 CHANGEMAP hardware level-exit validation
 audio
 password input
