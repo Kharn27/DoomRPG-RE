@@ -8,18 +8,20 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 main at branch creation = 9b085a9d8ed254edc98463f33f6d1534215326b9
 current main = 9b085a9d8ed254edc98463f33f6d1534215326b9
 branch = agent/esp32-native-gameplay-changemap-transition
-hardware-tested code boundary = 1c2cbe13d6001459eb8679f7262e495a51585476
-status = REAL-CYD NATIVE CHECKPOINT SAVE/LOAD V1 PASS
-branch policy = ACTIVE; save-v2 world-state work may continue here
+hardware-tested save-v2 code boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
+current code head before docs = 5a1020fd5d160c111ff09ecb8a480f37ea8d0578
+status = REAL-CYD NATIVE CHECKPOINT SAVE/LOAD V2 RESOURCE OVERLAY PASS
+branch policy = ACTIVE; current HUB feedback-gate fix still needs real-CYD retest
 ```
 
-Normal GitHub Actions `esp32-cyd` run #258 / run ID `35194006759` passed on the exact hardware-tested code SHA.
+Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact hardware-tested save-v2 code boundary. The later HUB/action-feedback ownership gate also builds successfully in run #267 / run ID `35198140562`, but that visual fix is not hardware-validated yet.
 
-Latest detailed record:
+Latest detailed records:
 
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
 
-CHANGEMAP production code is also present on this branch but has **not yet received its dedicated real-CYD exit-transition PASS**. Do not conflate the checkpoint PASS with CHANGEMAP hardware validation.
+CHANGEMAP production code is also present on this branch but has **not yet received its dedicated real-CYD exit-transition PASS**. Do not conflate checkpoint validation with CHANGEMAP hardware validation.
 
 ## Permanent architecture / hard invariants
 
@@ -147,7 +149,7 @@ turn advance disabled while HUB active
 
 ## Native checkpoint save/load v1 — REAL-CYD PASS
 
-One bounded slot is exposed on HUB `STAT`:
+The original one-slot checkpoint established the permanent bounded save path:
 
 ```text
 /sd/DoomRPG-ESP32.sav
@@ -157,32 +159,74 @@ recordBytes = 132
 atomic write = temp + verify + backup rename + commit rename + verify
 ```
 
-The v1 record persists immutable BSP identity, full settled `EspPlayerViewState`, full `EspNativeGameplayPlayerState`, player/runtime fingerprints and a CRC32. It never serializes pointers or a desktop object graph.
-
-Canonical hardware SAVE witness after two Armor Shards:
-
-```text
-[NATIVESAVE] SAVE ... bytes=132 map=1 gameplayLoadMapId=1
-             pos=416,1696 angle=128
-             playerFNV=363261d1 runtimeFNV=c3882516
-             sourceBytes=21823 sourceCrc=623f34e4
-             recordCrc=e2974fa8
-             atomic=temp+backup+rename world=fresh-rebuild
-```
+V1 persists immutable BSP identity, full settled `EspPlayerViewState`, full `EspNativeGameplayPlayerState`, player/runtime fingerprints and CRC32. It never serializes pointers or a desktop object graph.
 
 The final load reprime restores the semantic HUD owners directly after the saved settled view is reconstructed:
 
 ```text
-[NATIVESAVE] REPRIME-HUD map=1 gameplayLoadMapId=1 angle=128
-             refresh=pending clear=ready mutation=owners-only turn=no
+[NATIVESAVE] REPRIME-HUD ... refresh=pending clear=ready mutation=owners-only turn=no
 ```
 
-Real-CYD LOAD then reaches the full native session again:
+V1 hardware validation proved exact player/pose rollback and repeated-load stability, but map-local mutable owners were rebuilt fresh.
+
+## Native checkpoint save/load v2 resources — REAL-CYD PASS
+
+V2 preserves the exact proven v1 core and adds only one explicit pointer-free section:
 
 ```text
-[NATIVESAVE] LOAD ... pos=416,1696 angle=128 playerFNV=363261d1
-[ENGINESESSION] HUD ... armor=8/20 weapon=2 ammo=8
-[ENGINESESSION] SPRITES dependencyStatus=10 catalogSprites=46
+magic = DRPGSAV2
+version = 2
+recordBytes = 276
+v1 read compatibility = retained
+write format = v2
+EspNativeGameplayPlayerResourcesSnapshot = bounded fixed section
+max consumed payload = 128 B / 1024 sprites
+Entrance used payload = 43 B / 344 sprites
+```
+
+The section persists only the semantic consumed-resource overlay plus explicit identity:
+
+```text
+sourceArenaFNV1a
+spriteCount
+consumedCount
+consumedBytes
+targetMapId
+consumedBits[]
+```
+
+Hardware SAVE witness after consuming one Armor Shard:
+
+```text
+[NATIVESAVE] SAVE ... version=2 bytes=276 map=1 gameplayLoadMapId=1
+             pos=480,1696 angle=128
+             playerFNV=548397a5 runtimeFNV=c3882516
+             sourceBytes=21823 sourceCrc=623f34e4
+             recordCrc=4d3bce59
+             resources=1/43B sprites=344
+             atomic=temp+backup+rename
+             world=resources-restored+others-fresh
+```
+
+The user then continued gameplay and consumed additional resources; live player state changed to `playerFNV=549e6620` before LOAD.
+
+Hardware LOAD rebuilt the BSP, restored the saved player root and imported the resource section only after immutable identity validation:
+
+```text
+[PLAYERRES] READY map=1 arena=c3882516 sprites=344 consumedBytes=43 ...
+[PLAYERRES] RESTORE map=1 arena=c3882516 sprites=344 consumed=1 bytes=43
+                 mutation=consumed-overlay-only allocation=owner-bounded
+[NATIVESAVE] LOAD ... version=2 bytes=276
+             pos=480,1696 angle=128 playerFNV=548397a5
+             resources=restored/1/43B
+             world=resources-restored+others-fresh
+```
+
+The complete native session returned successfully:
+
+```text
+[ENGINESESSION] HUD ... hp=30/30 armor=4/20 weapon=2 ammo=8
+[ENGINESESSION] SPRITES ...
 [MAPFLASH] REUSE HIT ... rebuild=no
 [MAPFLASH] ARM ... resident=1
 [ENGINECACHE] PRIMED ...
@@ -190,57 +234,65 @@ Real-CYD LOAD then reaches the full native session again:
 [ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
 ```
 
-Movement, turning, dynamic doors, events and dialog remained live after LOAD.
+### Real-CYD two-direction resource proof
 
-### Exact rollback witness
-
-After the SAVE the user deliberately acquired Fire Ext, ammunition and a Small Medkit. Live state became:
+The required persistence contract is hardware-proven:
 
 ```text
-playerFNV = a6e115a7
-weapon = 1
-weapons = 0006
-ammo = 10/12/00/00/00/00
-items = 01/00/00/00/00
+resource consumed before SAVE -> remains absent after LOAD
+resource consumed after SAVE -> reappears after LOAD
 ```
 
-LOAD restored:
+The user explicitly confirmed this with an Armor Shard and the same behavior with a medkit. This proves the saved consumed bitset is projected through the normal native topology/render path, not merely restored as bookkeeping.
+
+### Current v2 world boundary
+
+Persisted:
 
 ```text
-playerFNV = 363261d1
-weapon = 2
-weapons = 0004
-ammo1 = 8
+settled player pose
+EspNativeGameplayPlayerState
+EspNativeGameplayPlayerResources consumed overlay
 ```
 
-and the next weapon-cycle reported no other owned usable weapon. The Fire Ext acquired after SAVE therefore disappeared exactly as expected.
-
-### Repeated-load RAM witness
-
-Two consecutive completed LOAD cycles stabilized at:
+Still intentionally fresh / not yet persisted:
 
 ```text
-heap8 = 18356
-largest8 = 11764
-```
-
-No monotonic fixed loss per LOAD was observed. Later gameplay initialized extra lazy owners and fragmented the heap further; the following LOAD retained that already-lower boundary rather than consuming a new fixed block. Continue monitoring RAM, but current evidence does not show a systematic checkpoint-load leak.
-
-### V1 world limitation
-
-`world=fresh-rebuild` is intentional and literal. V1 restores pose + player root but rebuilds mutable map-local world owners from the immutable BSP. It does not yet persist:
-
-```text
-resource consumed bits
 script/event mutable state
-line open/locked state and texture variants
+line open/locked state
+line texture variants
 automap reveal state
-monster mutable state/positions/activation
+monster mutable state/positions/activation/combat consequences
 destructibles
 gameplay RNG state
 ```
 
-Consequently a pickup consumed before SAVE can physically reappear after LOAD even though the player benefit saved before LOAD is retained.
+Continue save persistence owner-by-owner. Never replace this with a monolithic world/object dump.
+
+## Independent HUB/action-feedback framebuffer bug — FIX CANDIDATE, HARDWARE RETEST PENDING
+
+The v2 hardware test also exposed an unrelated visual ownership race. A pickup top-bar message could expire while HUB owned the framebuffer, producing:
+
+```text
+[ACTIONFEEDBACK] EXPIRE ... restored=topbar-only
+...
+[HUB] CLOSE ... menuUnderlayRestore=FAILED ... exactHud=NO
+[RESIDENTGAMEPLAY] HUB-RECOVER ...
+```
+
+This did not affect save persistence, but it explains the stale `Got ...` fragment previously observed under the MENU button.
+
+The current branch head contains a bounded fix:
+
+```text
+8b7a4c04dee1622954f2ea453ca1b15792fbf6fa
+  ESP32: pause action feedback while HUB owns framebuffer
+5a1020fd5d160c111ff09ecb8a480f37ea8d0578
+  ESP32: gate world feedback service behind HUB ownership
+CI #267 = SUCCESS
+```
+
+The fix keeps action-feedback/viewport-flash timers on real elapsed time but blocks their framebuffer restore work while HUB owns the screen. It still needs a short real-CYD reproduction test before this branch head can be called hardware-valid.
 
 ## CHANGEMAP code boundary — candidate, hardware exit test still pending
 
@@ -255,41 +307,30 @@ The candidate supports the show-stats WAIT/ACK handoff, resident teardown, targe
 
 ## Next bounded milestone
 
-Continue save persistence owner-by-owner; do not create a monolithic save dump.
+After the HUB visual gate gets its hardware confirmation, continue checkpoint persistence one explicit owner family at a time.
 
 Preferred next slice:
 
 ```text
-EspNativeGameplayPlayerResources consumed bitset
-Entrance: 344 sprites -> 43 B consumed bitset
+EspMapScriptState / mutable event-command state
 ```
 
-Required design:
+Required properties:
 
-- explicit bounded snapshot/restore API;
-- versioned save record/section, no raw pointers;
-- validate target map + immutable runtime identity + sprite count;
+- explicit pointer-free snapshot/restore API;
+- validate map/runtime identity and exact bounded sizes;
 - restore only after fresh resident rebuild;
-- keep unrelated mutable-world families explicitly fresh;
-- preserve fail-closed behavior.
+- preserve command-removed/event-state semantics exactly;
+- keep lines, automap, monsters, destructibles and RNG fresh until their own milestones;
+- fail closed on incompatible/corrupt sections.
 
-Required real-CYD proof:
-
-1. consume a pickup before SAVE;
-2. SAVE;
-3. consume another pickup after SAVE;
-4. LOAD;
-5. pre-SAVE pickup stays absent;
-6. post-SAVE pickup reappears;
-7. exact saved player state/pose still return;
-8. `shapeData == NULL`, `mediaTexels == NULL`.
-
-After this bounded PASS, add further world owners one family at a time (script/event, lines/textures, automap, monsters, RNG, etc.).
+After script/event PASS, candidates are line open/locked + texture variants, automap, monster state/position, then RNG, each as separate milestones.
 
 ## Intentionally deferred / incomplete families
 
 ```text
-full mutable-world persistence beyond each validated save-v2 section
+save-v2 mutable-world persistence beyond each validated section
+current HUB action-feedback gate hardware retest
 CHANGEMAP real-CYD exit validation
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign

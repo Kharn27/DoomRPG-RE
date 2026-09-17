@@ -16,17 +16,19 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 main at branch creation = 9b085a9d8ed254edc98463f33f6d1534215326b9
 current main = 9b085a9d8ed254edc98463f33f6d1534215326b9
 branch = agent/esp32-native-gameplay-changemap-transition
-hardware-tested code boundary = 1c2cbe13d6001459eb8679f7262e495a51585476
-status = REAL-CYD NATIVE CHECKPOINT SAVE/LOAD V1 PASS
+hardware-tested save-v2 code boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
+current code head before docs = 5a1020fd5d160c111ff09ecb8a480f37ea8d0578
+status = REAL-CYD NATIVE CHECKPOINT SAVE/LOAD V2 RESOURCE OVERLAY PASS
 ```
 
-GitHub Actions `esp32-cyd` run #258 / run ID `35194006759` passed on the exact hardware-tested code SHA.
+GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact hardware-tested save-v2 boundary. The later HUB/action-feedback ownership gate also builds successfully in run #267 / run ID `35198140562`, but still needs a real-CYD visual retest.
 
-Latest milestone:
+Latest milestones:
 
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
 
-The branch also contains the production CHANGEMAP candidate. Its dedicated level-exit hardware test is still pending; checkpoint validation does not imply CHANGEMAP PASS.
+The branch also contains the production CHANGEMAP candidate. Its dedicated level-exit hardware test remains pending; checkpoint validation does not imply CHANGEMAP PASS.
 
 ## Build environment
 
@@ -138,7 +140,7 @@ large exact range=2048 B
 
 ## Current native gameplay frontier
 
-The real-CYD-owned engine now includes native movement/collision, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, monster state/position/activation/movement/attack families, raw-flash requested-map backing, HUB INV/WPN/STAT and bounded checkpoint save/load.
+The real-CYD-owned engine includes native movement/collision, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, monster state/position/activation/movement/attack families, raw-flash requested-map backing, HUB INV/WPN/STAT and bounded checkpoint save/load.
 
 Player/HUB compact roots:
 
@@ -156,26 +158,20 @@ world dispatch blocked while HUB active
 turn advance disabled while HUB active
 ```
 
-INV projects Notebook, carried items, Credits and keys. WPN is the 4x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded from the normal weapon grid. STAT currently owns the bounded SAVE/LOAD controls.
+INV projects Notebook, carried items, Credits and keys. WPN is the 4x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded from the normal weapon grid. STAT owns the bounded SAVE/LOAD controls.
 
-## Native checkpoint save/load v1
+## Native checkpoint save/load
 
-Hardware-proven slot:
+### V1 core — hardware proven
 
 ```text
 /sd/DoomRPG-ESP32.sav
-magic=DRPGSAV1
+DRPGSAV1
 version=1
 recordBytes=132
 ```
 
-Atomic write contract:
-
-```text
-temp write -> reread/validate -> old primary to backup -> temp to primary -> reread/validate
-```
-
-Persisted content:
+The v1 semantic core persists:
 
 ```text
 saved BSP sourceBytes + sourceCRC32
@@ -187,15 +183,64 @@ player FNV
 record CRC32
 ```
 
-The final LOAD path rebuilds the BSP from native PAK data, verifies immutable identity, restores the player and pose, then restores the two semantic HUD reprime owners before configuring the gameplay session.
-
-Key real-CYD witness:
+Atomic write contract:
 
 ```text
-[NATIVESAVE] REPRIME-HUD ... refresh=pending clear=ready mutation=owners-only turn=no
-[NATIVESAVE] LOAD ... pos=416,1696 angle=128 playerFNV=363261d1
-[ENGINESESSION] HUD ... armor=8/20 weapon=2 ammo=8
-[ENGINESESSION] SPRITES ...
+temp write -> reread/validate -> old primary to backup -> temp to primary -> reread/validate
+```
+
+The final LOAD path rebuilds the BSP from native PAK data, verifies immutable identity, restores player/pose, then recreates the two semantic HUD reprime owners before configuring the gameplay session.
+
+### V2 resource section — REAL-CYD PASS
+
+Current writes use:
+
+```text
+DRPGSAV2
+version=2
+recordBytes=276
+v1 read compatibility=retained
+```
+
+V2 keeps the exact 132-byte core and appends one explicit `EspNativeGameplayPlayerResourcesSnapshot`. That snapshot is pointer-free and bounded:
+
+```text
+max consumed payload=128 B
+max represented sprites=1024
+Entrance sprites=344
+Entrance used consumed bytes=43
+```
+
+The section stores runtime/map identity, sprite count, consumed count/byte count, and the consumed bitset. It never persists the heap-owned `ResourceOwner` itself.
+
+Hardware SAVE witness:
+
+```text
+[NATIVESAVE] SAVE ... version=2 bytes=276
+             map=1 gameplayLoadMapId=1
+             pos=480,1696 angle=128
+             playerFNV=548397a5 runtimeFNV=c3882516
+             sourceBytes=21823 sourceCrc=623f34e4
+             recordCrc=4d3bce59
+             resources=1/43B sprites=344
+             world=resources-restored+others-fresh
+```
+
+After more gameplay changed the live player to `playerFNV=549e6620`, LOAD restored exactly the saved root and resource overlay:
+
+```text
+[PLAYERRES] READY map=1 arena=c3882516 sprites=344 consumedBytes=43 ...
+[PLAYERRES] RESTORE map=1 arena=c3882516 sprites=344 consumed=1 bytes=43
+[NATIVESAVE] REPRIME-HUD ... refresh=pending clear=ready ...
+[NATIVESAVE] LOAD ... version=2 bytes=276
+             pos=480,1696 angle=128 playerFNV=548397a5
+             resources=restored/1/43B
+```
+
+The complete session came back through HUD, sprite dependencies, raw-flash reuse, cache priming and resident input:
+
+```text
+[ENGINESESSION] HUD ... hp=30/30 armor=4/20 weapon=2 ammo=8
 [MAPFLASH] REUSE HIT ...
 [MAPFLASH] ARM ... resident=1
 [ENGINECACHE] PRIMED ...
@@ -203,19 +248,61 @@ Key real-CYD witness:
 [ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
 ```
 
-A stronger rollback test acquired Fire Ext, ammo and a Small Medkit after SAVE. LOAD restored the prior player root and Fire Ext ownership disappeared, proving exact player rollback rather than a visual-only respawn.
+Most importantly, the real-CYD world behavior proved both directions:
 
-Multiple completed LOAD cycles did not show a fixed monotonic per-load heap loss. Continue to watch `heap8` and `largest8`, especially as further lazy gameplay owners are exercised.
+```text
+pickup consumed before SAVE -> remains absent after LOAD
+pickup consumed after SAVE -> reappears after LOAD
+```
 
-Detailed record:
+The user confirmed this for an Armor Shard and for a medkit. That is the hardware PASS for the v2 resource persistence slice.
 
+Detailed records:
+
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
 
-### V1 limitation
+### Current save-world boundary
 
-The current log states `world=fresh-rebuild`. This means mutable map-local owners are reconstructed fresh. The player/pose checkpoint is durable, but consumed pickups, script state, lines/textures, automap, monsters, destructibles and RNG are not yet serialized.
+Persisted now:
 
-The next save-v2 work must therefore be sectioned owner-by-owner instead of dumping the whole runtime.
+```text
+settled player pose
+EspNativeGameplayPlayerState
+player-resource consumed overlay
+```
+
+Still fresh after LOAD:
+
+```text
+script/event mutable state
+line open/locked state and texture variants
+automap reveal state
+monster state/position/activation/combat consequences
+destructibles
+gameplay RNG
+```
+
+Continue one owner at a time; never dump a raw runtime/legacy object graph.
+
+## HUB/action-feedback visual ownership fix — candidate
+
+During the save-v2 hardware test, a pickup message expired while HUB owned the framebuffer. That produced a stale top-bar fragment under the MENU button and eventually:
+
+```text
+[HUB] CLOSE ... menuUnderlayRestore=FAILED ... exactHud=NO
+[RESIDENTGAMEPLAY] HUB-RECOVER ...
+```
+
+This visual issue is independent of save persistence. Current branch code adds a bounded gate so action-feedback / viewport-flash expiry does not restore world pixels while HUB owns the framebuffer:
+
+```text
+8b7a4c04dee1622954f2ea453ca1b15792fbf6fa
+5a1020fd5d160c111ff09ecb8a480f37ea8d0578
+CI #267 SUCCESS
+```
+
+The timer still uses real elapsed time and resumes after HUB closes. This candidate needs a short real-CYD reproduction test before being promoted to hardware PASS.
 
 ## CHANGEMAP candidate on this branch
 
@@ -230,32 +317,19 @@ The branch owns a bounded WAIT_STATS/ACK transition handoff and target resident/
 
 ## Preferred next save-v2 section
 
-Persist the native player-resource consumed overlay first.
-
-Current owner characteristics:
+After the HUB visual gate is hardware-confirmed, continue with one compact mutable owner. Preferred next candidate:
 
 ```text
-Entrance sprites=344
-consumed bitset bytes=43
-owner is map/runtime-identity scoped
-owner is freed by session reset and recreated after resident rebuild
+EspMapScriptState / mutable event-command state
 ```
 
-The permanent API should export/import bytes explicitly, validate map/runtime/sprite identity, and never expose/save an owner pointer.
+The permanent API should export/import semantic bytes only, validate map/runtime identity and bounds, restore after the fresh resident rebuild, and leave line state, automap, monsters and RNG fresh until their own milestones.
 
-Hardware proof should establish both directions:
-
-```text
-pickup consumed before SAVE -> remains consumed/hidden after LOAD
-pickup consumed after SAVE -> reappears after LOAD
-player root/pose -> exact saved state
-unowned world sections -> still explicitly fresh
-```
-
-After that PASS, choose the next compact mutable owner (script/event state, line state/textures, automap, monster state/position/RNG, etc.) as a separate milestone.
+After script/event PASS, line open/locked + texture variants, automap, monster state/position and RNG remain separate candidates.
 
 ## Recent milestone index
 
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md)
@@ -271,6 +345,7 @@ See `PORTING_STATUS.md` for the authoritative list. Important current boundaries
 
 ```text
 save-v2 mutable-world sections beyond each validated owner
+current HUB action-feedback gate hardware retest
 CHANGEMAP hardware level-exit validation
 audio
 password input
