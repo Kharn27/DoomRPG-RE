@@ -25,107 +25,85 @@ jobs:
           p = Path('ESP32/src/esp_native_gameplay_monster_movement.c')
           s = p.read_text()
 
-          old = '''/* Return 1 blocked, 0 clear, -1 not ready, -2 deliberately unsupported special
-           * crossing during calcPath's tile-origin legacy subpath. */
-          static int blockingSpriteOnTile(uint16_t tile,
-                                          int32_t sourceX,
-                                          int32_t sourceY,
-                                          int32_t destX,
-                                          int32_t destY,
-                                          uint16_t attackerSprite,
+          replacements = [
+              (
+          '''/* Return 1 blocked, 0 clear, -1 not ready, -2 deliberately unsupported special
+           * crossing during calcPath's tile-origin legacy subpath. */'''.replace('           *', ' *'),
+          '''/* Return 1 blocked, 0 clear, -1 not ready. Type 14/15 entities are not
+           * categorically blocking in legacy Game_trace(): with bit 0x20000 set,
+           * they count only when the segment crosses the encoded X/Y plane. The
+           * bounded specialEntityBlocks() above mirrors that rule for calcPath too. */'''.replace('           *', ' *')
+              ),
+              (
+          '''                                uint16_t attackerSprite,
                                           uint16_t mask,
-                                          int strictSpecial) {'''
-          new = '''/* Return 1 blocked, 0 clear, -1 not ready. Type 14/15 entities are not
-           * categorically blocking in the legacy Game_trace(): when bit 0x20000 is
-           * present they count only if the trace crosses the encoded X/Y plane.
-           * specialEntityBlocks() above mirrors that exact rule, so the same bounded
-           * corpus is valid both for the immediate cardinal test and calcPath's
-           * one-tile look-ahead. */
-          static int blockingSpriteOnTile(uint16_t tile,
-                                          int32_t sourceX,
-                                          int32_t sourceY,
-                                          int32_t destX,
-                                          int32_t destY,
-                                          uint16_t attackerSprite,
-                                          uint16_t mask) {'''
-          assert s.count(old) == 1, 'blockingSpriteOnTile signature changed'
-          s = s.replace(old, new, 1)
-
-          old = '''        if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
+                                          int strictSpecial) {'''.replace('                                uint16_t', '                                uint16_t', 1),
+          '''                                uint16_t attackerSprite,
+                                          uint16_t mask) {'''.replace('                                uint16_t', '                                uint16_t', 1)
+              ),
+              (
+          '''        if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
                       if (strictSpecial) return -2;
-                      specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
-          '''
-          new = '''        if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
-                      specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
-          '''
-          assert s.count(old) == 1, 'strict special branch changed'
-          s = s.replace(old, new, 1)
+                      specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);'''.replace('                      ', '            '),
+          '''        if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
+            specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);'''
+              ),
+              (
+          '''                              uint16_t attackerSprite,
+                              uint16_t mask,
+                              int strictSpecial) {''',
+          '''                              uint16_t attackerSprite,
+                              uint16_t mask) {'''
+              ),
+              (
+          '''                                           attackerSprite, mask, strictSpecial);''',
+          '''                                           attackerSprite, mask);'''
+              ),
+              (
+          '''                                       attackerSprite, mask, 1);
+            if (clear == -2) {
+                result.status = -2;
+                return result;
+            }''',
+          '''                                       attackerSprite, mask);'''
+              ),
+              ('attackerSprite, mask, 0);', 'attackerSprite, mask);'),
+              ('MOVE_TRACE_ATTACK_MASK, 0);', 'MOVE_TRACE_ATTACK_MASK);'),
+          ]
 
-          old = '''static int cardinalTraceClear(int32_t sourceX,
-                                        int32_t sourceY,
-                                        int32_t destX,
-                                        int32_t destY,
-                                        uint16_t attackerSprite,
-                                        uint16_t mask,
-                                        int strictSpecial) {'''
-          new = '''static int cardinalTraceClear(int32_t sourceX,
-                                        int32_t sourceY,
-                                        int32_t destX,
-                                        int32_t destY,
-                                        uint16_t attackerSprite,
-                                        uint16_t mask) {'''
-          assert s.count(old) == 1, 'cardinalTraceClear signature changed'
-          s = s.replace(old, new, 1)
-
-          old = '''        spriteBlock = blockingSpriteOnTile(tile,
-                                                   x - stepX, y - stepY, x, y,
-                                                   attackerSprite, mask, strictSpecial);'''
-          new = '''        spriteBlock = blockingSpriteOnTile(tile,
-                                                   x - stepX, y - stepY, x, y,
-                                                   attackerSprite, mask);'''
-          assert s.count(old) == 1, 'blockingSpriteOnTile call changed'
-          s = s.replace(old, new, 1)
-
-          old = '''            clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
-                                               attackerSprite, mask, 1);
-                      if (clear == -2) {
-                          result.status = -2;
-                          return result;
-                      }
-          '''
-          new = '''            clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
-                                               attackerSprite, mask);
-          '''
-          assert s.count(old) == 1, 'calcPath strict special call changed'
-          s = s.replace(old, new, 1)
-
-          # The remaining cardinal callers already use the same exact special-plane
-          # semantics; remove the obsolete strictSpecial selector from each.
-          for old, new, expected in [
-              ('attackerSprite, mask, 0);', 'attackerSprite, mask);', 4),
-              ('MOVE_TRACE_ATTACK_MASK, 0);', 'MOVE_TRACE_ATTACK_MASK);', 1),
-          ]:
-              assert s.count(old) == expected, f'caller count changed for {old}: {s.count(old)}'
+          for old, new in replacements:
+              count = s.count(old)
+              assert count >= 1, f'missing replacement ({count}): {old[:80]!r}'
               s = s.replace(old, new)
 
           old = '''    if (planStatus == -2) {
-                  ++movementView.collisionDeferred;
-                  printf("[MONSTERMOVE] DEFER trigger=%s n=%u sprite=%u cause=calcPath-special-plane-corpus-needed mask=%04x rngCalls=%u mutation=no\\n",
-                         trigger, (unsigned int)triggerCount,
-                         (unsigned int)candidate.monster->spriteIndex,
-                         (unsigned int)movementMaskForSubtype(candidate.monster->subtype),
-                         (unsigned int)probeRng.calls);
-                  return;
-              }
-          '''
-          assert s.count(old) == 1, 'obsolete special-plane defer block changed'
-          s = s.replace(old, '', 1)
+              ++movementView.collisionDeferred;
+              printf("[MONSTERMOVE] DEFER trigger=%s n=%u sprite=%u cause=calcPath-special-plane-corpus-needed mask=%04x rngCalls=%u mutation=no\\n",
+                     trigger, (unsigned int)triggerCount,
+                     (unsigned int)candidate.monster->spriteIndex,
+                     (unsigned int)movementMaskForSubtype(candidate.monster->subtype),
+                     (unsigned int)probeRng.calls);
+              return;
+          }
+          '''.replace('              ', '        ').replace('                     ', '               ').replace('          }', '    }')
+          # Avoid depending on indentation normalization: remove by bounded markers.
+          marker = '    if (planStatus == -2) {'
+          start = s.find(marker)
+          assert start >= 0, 'obsolete special-plane defer block missing'
+          end = s.find('    if (planStatus < 0) {', start)
+          assert end > start, 'planner-not-ready marker missing'
+          block = s[start:end]
+          assert 'calcPath-special-plane-corpus-needed' in block
+          s = s[:start] + s[end:]
 
-          old = 'aiGoal=legacy-cardinal calcPath=2-step traceMask=%04x'
-          new = 'aiGoal=legacy-cardinal calcPath=2-step+special-plane traceMask=%04x'
-          assert s.count(old) == 1, 'READY calcPath witness changed'
-          s = s.replace(old, new, 1)
+          ready_old = 'aiGoal=legacy-cardinal calcPath=2-step traceMask=%04x'
+          assert s.count(ready_old) == 1
+          s = s.replace(ready_old,
+                        'aiGoal=legacy-cardinal calcPath=2-step+special-plane traceMask=%04x',
+                        1)
 
+          assert 'strictSpecial' not in s
+          assert 'calcPath-special-plane-corpus-needed' not in s
           p.write_text(s)
           PY
           git diff --check
