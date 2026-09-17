@@ -1,6 +1,6 @@
 # ESP32 documentation map
 
-Recovery and development should start from:
+Recovery and development must start from:
 
 1. current GitHub `main` and its exact SHA;
 2. [`PORTING_STATUS.md`](PORTING_STATUS.md) — authoritative tested/candidate boundary;
@@ -10,26 +10,23 @@ Recovery and development should start from:
 
 Repository state wins over chat history. Serial logs from the real classic CYD are the final runtime truth.
 
-## Current locked branch
+## Current active branch
 
 ```text
-main at branch creation = d6909793860312397edc7aa1b36f995a5ccbb914
-branch = agent/esp32-native-gameplay-hub-weapon-select
-base main = d6909793860312397edc7aa1b36f995a5ccbb914
-hardware-tested code boundary = 308295c4f56b1741040d1bc5e07ce7f66d245a70
-status = REAL-CYD HUB WPN GRID + DIRECT OWNED-WEAPON SELECT PASS
-branch policy = LOCKED; docs-only tail only
+main at branch creation = 9b085a9d8ed254edc98463f33f6d1534215326b9
+current main = 9b085a9d8ed254edc98463f33f6d1534215326b9
+branch = agent/esp32-native-gameplay-changemap-transition
+hardware-tested code boundary = 1c2cbe13d6001459eb8679f7262e495a51585476
+status = REAL-CYD NATIVE CHECKPOINT SAVE/LOAD V1 PASS
 ```
 
-Normal GitHub Actions `esp32-cyd` run #234 / run ID `34947947008` passed on the exact tested SHA and produced artifact:
-
-```text
-doom-rpg-esp32-cyd-308295c4f56b1741040d1bc5e07ce7f66d245a70
-```
+GitHub Actions `esp32-cyd` run #258 / run ID `35194006759` passed on the exact hardware-tested code SHA.
 
 Latest milestone:
 
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
+
+The branch also contains the production CHANGEMAP candidate. Its dedicated level-exit hardware test is still pending; checkpoint validation does not imply CHANGEMAP PASS.
 
 ## Build environment
 
@@ -47,8 +44,6 @@ The production environment uses:
 board_build.partitions = partitions_cyd_raw_pak.csv
 ```
 
-When installing this layout on a board that previously used `no_ota.csv`, flash the generated `partitions.bin` as well as `firmware.bin`.
-
 ## Hardware / permanent memory rules
 
 ```text
@@ -61,7 +56,7 @@ shapeData == NULL
 mediaTexels == NULL
 ```
 
-Do not recreate map-wide texel ownership or migrate native gameplay/map data back to ZIP. `/DoomRPG-ESP32.pak` remains the authoritative native asset source.
+Do not recreate map-wide texel ownership, pointer-heavy desktop world graphs or native runtime ZIP dependence. `/DoomRPG-ESP32.pak` remains the native asset source/backing store.
 
 ## Current native asset backing
 
@@ -80,16 +75,6 @@ Preparation API:
 EspAssetPack_mapFlashPrepare(targetMapId)
 ```
 
-Classic CYD raw partition:
-
-```text
-nvs       0x009000  0x005000
-otadata   0x00e000  0x002000
-app0      0x010000  0x140000 = 1310720 B
-spiffs    0x150000  0x2A0000 = 2752512 B raw slot
-coredump  0x3F0000  0x010000
-```
-
 Entrance storage witness:
 
 ```text
@@ -101,10 +86,11 @@ excluded other BSPs=12 / 203811 B
 staged payload=2248743 B
 partition=2752512 B
 headroom=491481 B
-[MAPFLASH] COPY indexFNV=3a51cc4d payloadFNV=9ec04e22 verified=yes
+indexFNV=3a51cc4d
+payloadFNV=9ec04e22
 ```
 
-## Entrance format witness
+## Entrance canonical format witness
 
 ```text
 map=1
@@ -140,212 +126,174 @@ automapFNV=669b1aa7
 topologyFNV=3f321e43
 ```
 
-## Resident cache baseline
+Resident cache baseline:
 
 ```text
 owner=23592 B
 payload=19456 B
-range records=288
-range record=12 B
+range records=288 x 12 B
 resident entry slots=24
 large exact range=2048 B
 ```
 
-`PlatformVideo_present()` remains around 34.4 ms and is not the current target.
-
 ## Current native gameplay frontier
 
-The hardware-owned engine includes native movement/collision, event-first SELECT routing, migrated event/state families, regular doors, mutable line textures, shared PlayerState resources, native weapon/combat presentation, pickups, hazards, feedback, compact monster state/position, monster activation/sequencing, raw-flash backing and requested-map reuse.
+The real-CYD-owned engine now includes native movement/collision, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, monster state/position/activation/movement/attack families, raw-flash requested-map backing, HUB INV/WPN/STAT and bounded checkpoint save/load.
 
-Current HUB/UI frontier:
+Player/HUB compact roots:
 
 ```text
-EspNativeGameplayHubView = 28 B
 EspNativeGameplayPlayerState = 52 B
+EspNativeGameplayHubView = 28 B
+```
+
+### HUB
+
+```text
 pages = INV | WPN | STAT
-visible MENU close uses original p.bmp hand
 MENU underlay = 32x20 RGB565 = 1280 B
-all other HUD pixels are fingerprint-protected
-world dispatch blocked while HUB is active
-no turn advance while HUB is active
+world dispatch blocked while HUB active
+turn advance disabled while HUB active
 ```
 
-### INV
+INV projects Notebook, carried items, Credits and keys. WPN is the 4x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded from the normal weapon grid. STAT currently owns the bounded SAVE/LOAD controls.
 
-Weapons have been removed from the scrolling Inventory presentation. INV contains Notebook, carried items, Credits and keys. Content labels still come from the native PAK on demand.
+## Native checkpoint save/load v1
+
+Hardware-proven slot:
 
 ```text
-persistentNameBytes=0
-persistentListBytes=0
-one projected entry=31 B
-three visible entries=93 B
-catalogFNV=34d2b7d4
-legacy full-list probe FNV=93b6a47c
+/sd/DoomRPG-ESP32.sav
+magic=DRPGSAV1
+version=1
+recordBytes=132
 ```
 
-Non-weapon SELECT remains fail-closed.
-
-### WPN
-
-WPN is a 4x3 direct-touch arsenal grid. Slots 0..8 contain the normal weapons:
+Atomic write contract:
 
 ```text
-Axe | Fire Ext | Pistol | Shotgun | Chaingun | Super Shotgn |
-Plasma Gun | Rocket Lnchr | BFG
+temp write -> reread/validate -> old primary to backup -> temp to primary -> reread/validate
 ```
 
-Canonical familiar weapon IDs 9..11 are intentionally not presented as normal arsenal weapons; the last three cells remain blank and non-selectable.
-
-Presentation:
+Persisted content:
 
 ```text
-owned -> original sprite in color
-unowned -> grayscale
-equipped -> yellow border ffe0
+saved BSP sourceBytes + sourceCRC32
+immutable runtime FNV
+map/load identity
+full settled EspPlayerViewState
+full EspNativeGameplayPlayerState
+player FNV
+record CRC32
 ```
 
-Icons stream from the native PAK through:
+The final LOAD path rebuilds the BSP from native PAK data, verifies immutable identity, restores the player and pose, then restores the two semantic HUD reprime owners before configuring the gameplay session.
+
+Key real-CYD witness:
 
 ```text
-EntityDef.tileIndex -> mediaSpriteIds -> bitshape -> palette/stexels
+[NATIVESAVE] REPRIME-HUD ... refresh=pending clear=ready mutation=owners-only turn=no
+[NATIVESAVE] LOAD ... pos=416,1696 angle=128 playerFNV=363261d1
+[ENGINESESSION] HUD ... armor=8/20 weapon=2 ammo=8
+[ENGINESESSION] SPRITES ...
+[MAPFLASH] REUSE HIT ...
+[MAPFLASH] ARM ... resident=1
+[ENGINECACHE] PRIMED ...
+[RESIDENTGAMEPLAY] READY ...
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
 ```
 
-There is no persistent icon cache. The decode workspace is a bounded 2690 B static owner, moved off `loopTask` stack after a real-CYD stack-canary failure.
+A stronger rollback test acquired Fire Ext, ammo and a Small Medkit after SAVE. LOAD restored the prior player root and Fire Ext ownership disappeared, proving exact player rollback rather than a visual-only respawn.
 
-Pistol uses the real Bullets pickup icon (`tile=83`, `media=318`) and keeps its native `16x11` size; small icons are not upscaled.
-
-Final real-CYD frame summary:
-
-```text
-[HUBWGRID] FRAME weapons=9/9 slots=12 blankSlots=3 icons=9 missing=0
-           owned=1 equipped=2 selected=2
-           familiarIds=9..11/excluded
-           pistolIcon=bullets-pickup/native-no-upscale
-           scratchBytes=2690 scratchOwner=static
-           assetFNV=342db611
-```
-
-The user visually confirmed that the three extra cells are blank, only Pistol is highlighted at fresh start, and the Pistol icon is correct.
-
-### Direct weapon selection
-
-Permanent primitive:
-
-```text
-EspNativeGameplayPlayerState_selectOwnedWeapon()
-```
-
-It requires ownership and changes only `player.weapon`. It never grants a weapon, consumes ammo or advances a turn. Direct grid selection was hardware-proven earlier on this branch in both directions between Fire Ext and Pistol. The final SHA reconfirmed the unchanged Pistol selection and exact close/HUD restore.
+Multiple completed LOAD cycles did not show a fixed monotonic per-load heap loss. Continue to watch `heap8` and `largest8`, especially as further lazy gameplay owners are exercised.
 
 Detailed record:
 
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
 
-## RAM at current boundary
+### V1 limitation
 
-Final real-CYD fresh-session witness:
+The current log states `world=fresh-rebuild`. This means mutable map-local owners are reconstructed fresh. The player/pose checkpoint is durable, but consumed pickups, script state, lines/textures, automap, monsters, destructibles and RNG are not yet serialized.
 
-```text
-heap=85228
-heap8=19496
-largest8=14324
-hub owner=28 B
-player owner=52 B
-MENU underlay=1280 B
-WPN icon scratch=2690 B static owner
-persistent icon cache=0 B
-full framebuffer snapshot=0 B
-```
+The next save-v2 work must therefore be sectioned owner-by-owner instead of dumping the whole runtime.
 
-`largest8` remains 14324. The lower free-heap value versus earlier branch revisions is expected because the WPN scratch was deliberately moved from stack into static ownership.
+## CHANGEMAP candidate on this branch
 
-Audio remains deferred and requires its own RAM milestone.
-
-## Milestone index for recent frontier
-
-- [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_CONTENT_LABELS.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md)
-
-## Current intentionally deferred families
-
-```text
-production SAVEGAME / CHANGEMAP ownership
-pre-arm first-frame/HUD SD startup path
-L1 range-record eviction/recycle redesign
-pickup sound / got-face
-secondary hazard burn/pain/shake/sound
-complete mixed movement-tile resource/hazard ordering
-action XP migration
-materialized monster drops
-corpse-pile trimming
-monster movement interpolation animation
-simultaneous attack-ready multi-monster ordering
-ranged >=217 active-list expansion
-unsupported special calcPath plane corpus
-special subtype-10 AI
-player lethal/death transition
-three-shot / multi-loop monster attack presentation
-monster projectiles
-monster attack message / sound
-player pain face / shake / sound
-status-warning presentation
-chaingun/plasma multi-loop mechanics
-rocket/BFG radius damage
-familiar weapon slots / hazard redirection
-generic type-12 destructible combat
-special death consequences
-Kronos-specific semantics
-password input
-GIVEMAP production route
-CHECK_KEY production route
-HUB Notebook activation
-HUB consumable confirmation/use + turn consumption
-HUB Automap / Save / Load / Options / store
-```
-
-## CHANGEMAP recovery point
-
-Entrance event 1 / tile 69 remains recovered but intentionally deferred:
+Entrance level-exit recovery:
 
 ```text
 SAVEGAME -> /junction.bsp, targetMapId 9, savePos 992,1888 angle 64
 CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
-OPENLINE -> third eligible command
 ```
 
-Storage can prepare target map 9, but transition teardown/load/spawn/state transfer remain their own production milestone.
+The branch owns a bounded WAIT_STATS/ACK transition handoff and target resident/session reconstruction with fail-closed errors. Keep it intact while save persistence advances. It still needs its own real-CYD level-exit PASS.
 
-## After this merge
+## Preferred next save-v2 section
 
-Do not continue code on this locked branch.
+Persist the native player-resource consumed overlay first.
 
-When the user announces the merge:
+Current owner characteristics:
 
-1. read the true GitHub `main` and exact SHA;
-2. re-read `PORTING_STATUS.md`, this file and `MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`;
-3. create the next `agent/*` from that exact SHA;
-4. pick the next bounded gameplay family from the real repo/legacy source.
+```text
+Entrance sprites=344
+consumed bitset bytes=43
+owner is map/runtime-identity scoped
+owner is freed by session reset and recreated after resident rebuild
+```
 
-The WPN UX is complete enough to stop polishing. Prefer returning to gameplay progression rather than adding more menu decoration.
+The permanent API should export/import bytes explicitly, validate map/runtime/sprite identity, and never expose/save an owner pointer.
+
+Hardware proof should establish both directions:
+
+```text
+pickup consumed before SAVE -> remains consumed/hidden after LOAD
+pickup consumed after SAVE -> reappears after LOAD
+player root/pose -> exact saved state
+unowned world sections -> still explicitly fresh
+```
+
+After that PASS, choose the next compact mutable owner (script/event state, line state/textures, automap, monster state/position/RNG, etc.) as a separate milestone.
+
+## Recent milestone index
+
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_WEAPON_SELECT.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_INVENTORY_LIST.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_TOUCH_UI.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_V2.md)
+- [`MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md`](MILESTONE_NATIVE_MONSTER_ACTIVE_SEQUENCE.md)
+- [`MILESTONE_NATIVE_MAP_FLASH_REUSE.md`](MILESTONE_NATIVE_MAP_FLASH_REUSE.md)
+- [`MILESTONE_NATIVE_MAP_FLASH_BACKING.md`](MILESTONE_NATIVE_MAP_FLASH_BACKING.md)
+
+## Current intentionally incomplete families
+
+See `PORTING_STATUS.md` for the authoritative list. Important current boundaries include:
+
+```text
+save-v2 mutable-world sections beyond each validated owner
+CHANGEMAP hardware level-exit validation
+audio
+password input
+GIVEMAP production route
+CHECK_KEY production route
+HUB Notebook activation / consumable use / Automap / Options / store
+remaining advanced combat/monster/special-death families
+```
 
 ## Development workflow
 
 ```text
 recover true main + docs
- -> choose one bounded behavior family
- -> recover exact legacy behavior
- -> design a small permanent native API/owner
- -> keep different families fail-closed
+ -> choose one bounded native owner/family
+ -> recover exact legacy behavior where relevant
+ -> design a permanent compact API
+ -> keep unrelated families fail-closed
  -> commit + push agent/*
- -> test normal esp32-cyd on the real CYD
+ -> build esp32-cyd in CI
+ -> test on real CYD
  -> Serial is truth
  -> fix failures directly
  -> after PASS, docs-only tail
- -> verify tested SHA + docs-only commits
  -> merge-ready
 ```
 
