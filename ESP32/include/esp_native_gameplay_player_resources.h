@@ -46,11 +46,13 @@ const EspNativeGameplayPlayerResourcesView*
 EspNativeGameplayPlayerResources_view(void);
 
 /*
- * Export/import only the persistent semantic consumed overlay. Snapshot is
- * allocation-free. Restore validates current immutable runtime identity and
- * initializes the normal ResourceOwner through ensureOwner() before copying
- * the bounded bytes. No PlayerState, topology, renderer or legacy object is
- * mutated by these APIs.
+ * Export/import only the persistent semantic consumed overlay. Snapshot may
+ * initialize the normal small ResourceOwner through ensureOwner() when it has
+ * not been materialized yet; the allocation is bounded by mapSpriteCount/8 and
+ * never becomes part of the persisted record. Restore validates current
+ * immutable runtime identity and initializes the same normal ResourceOwner
+ * before copying the bounded bytes. No PlayerState, topology, renderer or
+ * legacy object is mutated by these APIs.
  */
 int EspNativeGameplayPlayerResources_snapshot(
     EspNativeGameplayPlayerResourcesSnapshot* outSnapshot);
