@@ -8,18 +8,13 @@ This milestone extends the bounded one-slot native checkpoint without serializin
 
 ```text
 branch = agent/esp32-native-gameplay-changemap-transition
-hardware-tested v2 code boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
-CI = esp32-cyd run #265 / run ID 35196771704 / SUCCESS
+hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
+hardware-tested HUB feedback ownership boundary = 5a1020fd5d160c111ff09ecb8a480f37ea8d0578
+docs head before this update = 48f8bf50c3f59acf2260d4274467bc78080690a8
+CI save-v2 = esp32-cyd run #265 / run ID 35196771704 / SUCCESS
+CI HUB feedback fix = esp32-cyd run #267 / run ID 35198140562 / SUCCESS
+CI previous docs tail = esp32-cyd run #268 / run ID 35198645805 / SUCCESS
 ```
-
-Two later code commits address an independent HUB/action-feedback framebuffer ownership bug:
-
-```text
-8b7a4c04dee1622954f2ea453ca1b15792fbf6fa
-5a1020fd5d160c111ff09ecb8a480f37ea8d0578
-```
-
-Those HUB-gate changes built successfully in CI #267 but were not part of this hardware save-v2 proof and still require their own real-CYD retest.
 
 ## Save format
 
@@ -148,9 +143,9 @@ destructibles
 gameplay RNG state
 ```
 
-## Independent HUB visual issue observed during the test
+## HUB/action-feedback ownership bug — REAL-CYD PASS
 
-The save-v2 test firmware also exposed an unrelated framebuffer lease race: action feedback could expire while HUB owned the screen, causing a stale MENU underlay and a recover path:
+The save-v2 test firmware exposed an unrelated framebuffer lease race: action feedback could expire while HUB owned the screen, causing a stale pickup-message fragment over the MENU area and a recover path:
 
 ```text
 [ACTIONFEEDBACK] EXPIRE ... restored=topbar-only
@@ -159,8 +154,17 @@ The save-v2 test firmware also exposed an unrelated framebuffer lease race: acti
 [RESIDENTGAMEPLAY] HUB-RECOVER ...
 ```
 
-This does **not** invalidate resource persistence. The branch now contains a separate HUB ownership gate so world action feedback/flash expiry pauses while HUB owns the framebuffer. CI passes; real-CYD confirmation of that fix remains pending.
+The branch added two bounded ownership commits:
+
+```text
+8b7a4c04dee1622954f2ea453ca1b15792fbf6fa
+  ESP32: pause action feedback while HUB owns framebuffer
+5a1020fd5d160c111ff09ecb8a480f37ea8d0578
+  ESP32: gate world feedback service behind HUB ownership
+```
+
+The fix keeps timers based on real elapsed time but prevents world-feedback restore work from touching framebuffer pixels while HUB owns the screen. CI #267 passed, and the user then reproduced the original pickup-message/HUB sequence on the real CYD and explicitly confirmed that the stale message fragment no longer appears. This visual ownership fix is therefore hardware-valid at `5a1020fd5d160c111ff09ecb8a480f37ea8d0578`.
 
 ## Next bounded persistence slice
 
-Continue owner-by-owner. Do not broaden v2 into a monolithic world dump. A coherent next candidate is native script/event mutable state, followed separately by line state/texture variants, automap, monster state/position, and RNG as independent milestones.
+Continue owner-by-owner. Do not broaden v2 into a monolithic world dump. The next candidate is native script/event mutable state, followed separately by line state/texture variants, automap, monster state/position, and RNG as independent milestones.
