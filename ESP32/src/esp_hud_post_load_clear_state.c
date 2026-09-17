@@ -86,3 +86,41 @@ EspHudPostLoadClearStatus EspHudPostLoadClear_route(void) {
     hudPostLoadClearState = next;
     return ESP_HUD_POST_LOAD_CLEAR_OK;
 }
+
+EspHudPostLoadClearStatus EspHudPostLoadClear_restoreSettled(
+    const EspPlayerViewState* playerView) {
+    EspHudPostLoadClearState next;
+
+    if (EspHudPostLoadClear_isReady()) {
+        return ESP_HUD_POST_LOAD_CLEAR_ALREADY_ACTIVE;
+    }
+    if (playerView == NULL || playerView->active != 1U ||
+        playerView->spawnApplied != 1U) {
+        return ESP_HUD_POST_LOAD_CLEAR_VIEW_INVALID;
+    }
+    if (playerView->loadType != 0U ||
+        playerView->viewX != playerView->destX ||
+        playerView->viewY != playerView->destY ||
+        playerView->viewAngle != playerView->destAngle ||
+        (playerView->viewAngle & 63) != 0) {
+        return ESP_HUD_POST_LOAD_CLEAR_UNSUPPORTED_CONTEXT;
+    }
+    if (playerView->hudRefreshPending != 0U ||
+        playerView->facingRefreshPending != 0U ||
+        playerView->playerSetupPending != 0U ||
+        playerView->tileEnterPending != 0U) {
+        return ESP_HUD_POST_LOAD_CLEAR_UNSUPPORTED_ORDER;
+    }
+
+    memset(&next, 0, sizeof(next));
+    next.targetMapId = playerView->targetMapId;
+    next.gameplayLoadMapId = playerView->gameplayLoadMapId;
+    next.loadType = playerView->loadType;
+    next.messageCount = 0U;
+    next.statBarMessagePresent = 0U;
+    next.logMessageLength = 0U;
+    next.cleared = 1U;
+    next.active = 1U;
+    hudPostLoadClearState = next;
+    return ESP_HUD_POST_LOAD_CLEAR_OK;
+}
