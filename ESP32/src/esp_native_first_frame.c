@@ -640,6 +640,8 @@ static int acquireWall(FirstFrameWork* work,
                        const ResolvedWallTexture* source,
                        const uint8_t** outTexels) {
     WallCacheSlot* target = NULL;
+    WallCacheSlot* oldestTarget = NULL;
+    WallCacheSlot* unallocatedTarget = NULL;
     uint32_t oldest = UINT32_MAX;
     uint32_t i;
 
@@ -664,28 +666,72 @@ static int acquireWall(FirstFrameWork* work,
     ++work->cacheMisses;
     for (i = 0U; i < WALL_CACHE_SLOTS; ++i) {
         WallCacheSlot* slot = &work->cache[i];
-        if (!slot->valid) {
-            target = slot;
-            break;
+        if (slot->texels != NULL) {
+            if (!slot->valid) {
+                target = slot;
+                break;
+            }
+            if (slot->lastUse < oldest) {
+                oldest = slot->lastUse;
+                oldestTarget = slot;
+            }
         }
-        if (slot->lastUse < oldest) {
-            oldest = slot->lastUse;
-            target = slot;
+        else if (slot->lastUse != UINT32_MAX && unallocatedTarget == NULL) {
+            unallocatedTarget = slot;
         }
     }
-    if (target == NULL) return 0;
+
+    /* The three 2048-byte wall leases are a performance target, not
+     * a rendering invariant. Later gameplay owners (notably the
+     * dialog topology rollback snapshot) can leave less contiguous
+     * heap than the original door-animation witness. Keep every wall
+     * lease that was obtained and fall back to an exact narrower LRU
+     * instead of failing the frame. Also reuse an evicted slot's
+     * buffer rather than free+malloc churning the heap. */
+    if (target == NULL && unallocatedTarget != NULL) {
+        unallocatedTarget->texels = (uint8_t*)malloc(WALL_PACKED_BYTES);
+        if (unallocatedTarget->texels != NULL) {
+            target = unallocatedTarget;
+        }
+        else {
+            uint32_t allocated = 0U;
+            unallocatedTarget->lastUse = UINT32_MAX;
+            for (i = 0U; i < WALL_CACHE_SLOTS; ++i) {
+                if (work->cache[i].texels != NULL) ++allocated;
+            }
+            if (allocated == 0U) {
+                printf("[NATIVEFRAME] WALL-CACHE-FAILED slots=0/%u leaseBytes=%u\n",
+                       (unsigned int)WALL_CACHE_SLOTS,
+                       (unsigned int)WALL_PACKED_BYTES);
+                return 0;
+            }
+            printf("[NATIVEFRAME] WALL-CACHE-FALLBACK slots=%u/%u leaseBytes=%u totalLeaseBytes=%u exact=yes\n",
+                   (unsigned int)allocated,
+                   (unsigned int)WALL_CACHE_SLOTS,
+                   (unsigned int)WALL_PACKED_BYTES,
+                   (unsigned int)(allocated * WALL_PACKED_BYTES));
+        }
+    }
+
+    if (target == NULL) target = oldestTarget;
+    if (target == NULL || target->texels == NULL) return 0;
 
     if (target->valid) {
-        free(target->texels);
-        memset(target, 0, sizeof(*target));
+        target->source = NULL;
+        target->lastUse = 0U;
+        target->valid = 0;
         ++work->cacheEvictions;
     }
 
-    target->texels = (uint8_t*)malloc(WALL_PACKED_BYTES);
-    if (target->texels == NULL) return 0;
     if (!loadWallTexels(work, source, target->texels)) {
-        free(target->texels);
-        memset(target, 0, sizeof(*target));
+        printf("[NATIVEFRAME] WALL-CACHE-READ-FAILED logical=%u actual=%u source=%u leaseBytes=%u\n",
+               (unsigned int)source->logicalId,
+               (unsigned int)source->actualId,
+               (unsigned int)source->sourceTexelOffset,
+               (unsigned int)WALL_PACKED_BYTES);
+        target->source = NULL;
+        target->lastUse = 0U;
+        target->valid = 0;
         return 0;
     }
 

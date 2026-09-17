@@ -62,6 +62,15 @@ EspHudPostLoadClearStatus EspHudPostLoadClear_prepare(
 /* Park the semantic HUD clear exactly once. No other owner is mutated. */
 EspHudPostLoadClearStatus EspHudPostLoadClear_route(void);
 
+/*
+ * Restore the already-completed clear semantic after a durable checkpoint has
+ * reconstructed an exact settled PlayerView. No facing trace is replayed: the
+ * checkpoint resumes after that transient query, so the view must already have
+ * every post-spawn pending bit consumed. No legacy HUD object is touched.
+ */
+EspHudPostLoadClearStatus EspHudPostLoadClear_restoreSettled(
+    const EspPlayerViewState* playerView);
+
 #ifdef __cplusplus
 }
 #endif
