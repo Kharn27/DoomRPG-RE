@@ -19,6 +19,17 @@ static uint32_t removedBytesForCount(uint32_t count) {
     return (count + 7U) >> 3;
 }
 
+static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
+    uint32_t hash = 2166136261U;
+    uint32_t i;
+    if (data == NULL && length != 0U) return 0U;
+    for (i = 0U; i < length; ++i) {
+        hash ^= data[i];
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
 static int setPackedEventState(uint32_t eventIndex, uint8_t state) {
     uint32_t byteIndex;
     uint8_t value;
@@ -163,5 +174,102 @@ int EspMapScriptState_setCommandRemoved(uint32_t commandIndex,
     else {
         bits[commandIndex >> 3] &= (uint8_t)~mask;
     }
+    return 1;
+}
+
+uint32_t EspMapScriptState_fingerprint(void) {
+    if (scriptStorage == NULL || scriptView.storageBytes == 0U) return 0U;
+    return fnv1a32(scriptStorage, scriptView.storageBytes);
+}
+
+int EspMapScriptState_snapshot(EspMapScriptStateSnapshot* outSnapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t eventBytes;
+    uint32_t removedBytes;
+    uint32_t storageBytes;
+
+    if (outSnapshot == NULL || runtime == NULL || scriptStorage == NULL ||
+        scriptView.storage != scriptStorage || scriptView.eventStatesPacked == NULL ||
+        scriptView.removedCommandBits == NULL || runtime->arenaFNV1a == 0U ||
+        runtime->eventCount == 0U || runtime->byteCodeCount == 0U ||
+        scriptView.eventCount != runtime->eventCount ||
+        scriptView.byteCodeCount != runtime->byteCodeCount) {
+        return 0;
+    }
+
+    eventBytes = eventStateBytesForCount(runtime->eventCount);
+    removedBytes = removedBytesForCount(runtime->byteCodeCount);
+    storageBytes = eventBytes + removedBytes;
+    if (eventBytes != scriptView.eventStateBytes ||
+        removedBytes != scriptView.removedCommandBytes ||
+        storageBytes != scriptView.storageBytes || storageBytes == 0U ||
+        storageBytes > ESP_MAP_SCRIPT_STATE_SNAPSHOT_MAX_BYTES ||
+        eventBytes > 0xffffU || removedBytes > 0xffffU || storageBytes > 0xffffU) {
+        return 0;
+    }
+
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    outSnapshot->sourceArenaFNV1a = runtime->arenaFNV1a;
+    outSnapshot->eventCount = runtime->eventCount;
+    outSnapshot->byteCodeCount = runtime->byteCodeCount;
+    outSnapshot->eventStateBytes = (uint16_t)eventBytes;
+    outSnapshot->removedCommandBytes = (uint16_t)removedBytes;
+    outSnapshot->storageBytes = (uint16_t)storageBytes;
+    memcpy(outSnapshot->storage, scriptStorage, storageBytes);
+    return 1;
+}
+
+int EspMapScriptState_restore(const EspMapScriptStateSnapshot* snapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t eventBytes;
+    uint32_t removedBytes;
+    uint32_t storageBytes;
+    uint32_t i;
+    uint32_t validTailBits;
+    uint8_t validTailMask;
+
+    if (snapshot == NULL || runtime == NULL || scriptStorage == NULL ||
+        snapshot->reserved0 != 0U || snapshot->sourceArenaFNV1a == 0U ||
+        snapshot->sourceArenaFNV1a != runtime->arenaFNV1a ||
+        snapshot->eventCount != runtime->eventCount ||
+        snapshot->byteCodeCount != runtime->byteCodeCount ||
+        scriptView.eventCount != runtime->eventCount ||
+        scriptView.byteCodeCount != runtime->byteCodeCount) {
+        return 0;
+    }
+
+    eventBytes = eventStateBytesForCount(runtime->eventCount);
+    removedBytes = removedBytesForCount(runtime->byteCodeCount);
+    storageBytes = eventBytes + removedBytes;
+    if (storageBytes == 0U ||
+        storageBytes > ESP_MAP_SCRIPT_STATE_SNAPSHOT_MAX_BYTES ||
+        snapshot->eventStateBytes != eventBytes ||
+        snapshot->removedCommandBytes != removedBytes ||
+        snapshot->storageBytes != storageBytes ||
+        scriptView.eventStateBytes != eventBytes ||
+        scriptView.removedCommandBytes != removedBytes ||
+        scriptView.storageBytes != storageBytes) {
+        return 0;
+    }
+
+    if ((runtime->eventCount & 1U) != 0U &&
+        (snapshot->storage[eventBytes - 1U] & 0xf0U) != 0U) {
+        return 0;
+    }
+
+    validTailBits = runtime->byteCodeCount & 7U;
+    if (validTailBits != 0U) {
+        validTailMask = (uint8_t)((1U << validTailBits) - 1U);
+        if ((snapshot->storage[eventBytes + removedBytes - 1U] &
+             (uint8_t)~validTailMask) != 0U) {
+            return 0;
+        }
+    }
+
+    for (i = storageBytes; i < ESP_MAP_SCRIPT_STATE_SNAPSHOT_MAX_BYTES; ++i) {
+        if (snapshot->storage[i] != 0U) return 0;
+    }
+
+    memcpy(scriptStorage, snapshot->storage, storageBytes);
     return 1;
 }
