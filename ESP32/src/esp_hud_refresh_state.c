@@ -86,6 +86,42 @@ EspHudRefreshStatus EspHudRefresh_routePostSpawn(void) {
     return ESP_HUD_REFRESH_OK;
 }
 
+EspHudRefreshStatus EspHudRefresh_restorePending(
+    const EspPlayerViewState* playerView) {
+    EspHudRefreshState next;
+
+    if (EspHudRefresh_peek() != NULL) return ESP_HUD_REFRESH_ALREADY_ACTIVE;
+    if (playerView == NULL || playerView->active != 1U ||
+        playerView->spawnApplied != 1U ||
+        !EspMapCatalog_isValidId(playerView->targetMapId) ||
+        playerView->gameplayLoadMapId == 0U ||
+        playerView->gameplayLoadMapId > 32U) {
+        return ESP_HUD_REFRESH_VIEW_INVALID;
+    }
+    if (playerView->loadType != ESP_PLAYER_SPAWN_LOAD_FRESH_MAP ||
+        playerView->hudRefreshPending != 0U ||
+        playerView->facingRefreshPending != 0U ||
+        playerView->playerSetupPending != 0U ||
+        playerView->tileEnterPending != 0U ||
+        playerView->viewX != playerView->destX ||
+        playerView->viewY != playerView->destY ||
+        playerView->viewAngle != playerView->destAngle ||
+        (playerView->viewAngle & 63) != 0) {
+        return ESP_HUD_REFRESH_UNSUPPORTED_CONTEXT;
+    }
+
+    memset(&next, 0, sizeof(next));
+    next.reason = ESP_HUD_REFRESH_REASON_POST_SPAWN;
+    next.refreshPending = 1U;
+    next.routed = 1U;
+    next.active = 1U;
+    next.targetMapId = playerView->targetMapId;
+    next.gameplayLoadMapId = playerView->gameplayLoadMapId;
+    next.loadType = playerView->loadType;
+    hudRefreshState = next;
+    return ESP_HUD_REFRESH_OK;
+}
+
 int EspHudRefresh_consumePaint(uint8_t targetMapId,
                                uint8_t gameplayLoadMapId,
                                uint8_t loadType) {
