@@ -1,0 +1,137 @@
+name: Temporary Monster Special Plane Fix
+
+on:
+  push:
+    branches:
+      - 'agent/esp32-native-gameplay-changemap-transition'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/esp32-native-gameplay-changemap-transition
+          fetch-depth: 0
+      - name: Promote exact legacy special-plane tracing into calcPath
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('ESP32/src/esp_native_gameplay_monster_movement.c')
+          s = p.read_text()
+
+          old = '''/* Return 1 blocked, 0 clear, -1 not ready, -2 deliberately unsupported special
+           * crossing during calcPath's tile-origin legacy subpath. */
+          static int blockingSpriteOnTile(uint16_t tile,
+                                          int32_t sourceX,
+                                          int32_t sourceY,
+                                          int32_t destX,
+                                          int32_t destY,
+                                          uint16_t attackerSprite,
+                                          uint16_t mask,
+                                          int strictSpecial) {'''
+          new = '''/* Return 1 blocked, 0 clear, -1 not ready. Type 14/15 entities are not
+           * categorically blocking in the legacy Game_trace(): when bit 0x20000 is
+           * present they count only if the trace crosses the encoded X/Y plane.
+           * specialEntityBlocks() above mirrors that exact rule, so the same bounded
+           * corpus is valid both for the immediate cardinal test and calcPath's
+           * one-tile look-ahead. */
+          static int blockingSpriteOnTile(uint16_t tile,
+                                          int32_t sourceX,
+                                          int32_t sourceY,
+                                          int32_t destX,
+                                          int32_t destY,
+                                          uint16_t attackerSprite,
+                                          uint16_t mask) {'''
+          assert s.count(old) == 1, 'blockingSpriteOnTile signature changed'
+          s = s.replace(old, new, 1)
+
+          old = '''        if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
+                      if (strictSpecial) return -2;
+                      specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
+          '''
+          new = '''        if (type == MOVE_TYPE_SPECIAL_TRACE || type == MOVE_TYPE_SPECIAL_TRACE_2) {
+                      specialBlocks = specialEntityBlocks(i, sourceX, sourceY, destX, destY);
+          '''
+          assert s.count(old) == 1, 'strict special branch changed'
+          s = s.replace(old, new, 1)
+
+          old = '''static int cardinalTraceClear(int32_t sourceX,
+                                        int32_t sourceY,
+                                        int32_t destX,
+                                        int32_t destY,
+                                        uint16_t attackerSprite,
+                                        uint16_t mask,
+                                        int strictSpecial) {'''
+          new = '''static int cardinalTraceClear(int32_t sourceX,
+                                        int32_t sourceY,
+                                        int32_t destX,
+                                        int32_t destY,
+                                        uint16_t attackerSprite,
+                                        uint16_t mask) {'''
+          assert s.count(old) == 1, 'cardinalTraceClear signature changed'
+          s = s.replace(old, new, 1)
+
+          old = '''        spriteBlock = blockingSpriteOnTile(tile,
+                                                   x - stepX, y - stepY, x, y,
+                                                   attackerSprite, mask, strictSpecial);'''
+          new = '''        spriteBlock = blockingSpriteOnTile(tile,
+                                                   x - stepX, y - stepY, x, y,
+                                                   attackerSprite, mask);'''
+          assert s.count(old) == 1, 'blockingSpriteOnTile call changed'
+          s = s.replace(old, new, 1)
+
+          old = '''            clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
+                                               attackerSprite, mask, 1);
+                      if (clear == -2) {
+                          result.status = -2;
+                          return result;
+                      }
+          '''
+          new = '''            clear = cardinalTraceClear(worldX, worldY, worldDestX, worldDestY,
+                                               attackerSprite, mask);
+          '''
+          assert s.count(old) == 1, 'calcPath strict special call changed'
+          s = s.replace(old, new, 1)
+
+          # The remaining cardinal callers already use the same exact special-plane
+          # semantics; remove the obsolete strictSpecial selector from each.
+          for old, new, expected in [
+              ('attackerSprite, mask, 0);', 'attackerSprite, mask);', 4),
+              ('MOVE_TRACE_ATTACK_MASK, 0);', 'MOVE_TRACE_ATTACK_MASK);', 1),
+          ]:
+              assert s.count(old) == expected, f'caller count changed for {old}: {s.count(old)}'
+              s = s.replace(old, new)
+
+          old = '''    if (planStatus == -2) {
+                  ++movementView.collisionDeferred;
+                  printf("[MONSTERMOVE] DEFER trigger=%s n=%u sprite=%u cause=calcPath-special-plane-corpus-needed mask=%04x rngCalls=%u mutation=no\\n",
+                         trigger, (unsigned int)triggerCount,
+                         (unsigned int)candidate.monster->spriteIndex,
+                         (unsigned int)movementMaskForSubtype(candidate.monster->subtype),
+                         (unsigned int)probeRng.calls);
+                  return;
+              }
+          '''
+          assert s.count(old) == 1, 'obsolete special-plane defer block changed'
+          s = s.replace(old, '', 1)
+
+          old = 'aiGoal=legacy-cardinal calcPath=2-step traceMask=%04x'
+          new = 'aiGoal=legacy-cardinal calcPath=2-step+special-plane traceMask=%04x'
+          assert s.count(old) == 1, 'READY calcPath witness changed'
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+          git diff --check
+          git rm .github/workflows/temp-monster-special-plane-fix.yml
+          git config user.name "Kharn27"
+          git config user.email "32738307+Kharn27@users.noreply.github.com"
+          git add ESP32/src/esp_native_gameplay_monster_movement.c
+          git commit -m "ESP32: trace special planes in monster calcPath"
+          git push origin HEAD:agent/esp32-native-gameplay-changemap-transition
