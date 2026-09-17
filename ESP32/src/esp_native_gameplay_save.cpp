@@ -16,6 +16,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_player_facing_state.h"
@@ -34,8 +35,10 @@ constexpr char kSavePath[] = "/DoomRPG-ESP32.sav";
 constexpr char kTempPath[] = "/DoomRPG-ESP32.sav.tmp";
 constexpr char kBackupPath[] = "/DoomRPG-ESP32.sav.bak";
 constexpr char kLogPath[] = "/sd/DoomRPG-ESP32.sav";
-constexpr uint8_t kMagic[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '1'};
-constexpr uint16_t kVersion = 1U;
+constexpr uint8_t kMagicV1[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '1'};
+constexpr uint8_t kMagicV2[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '2'};
+constexpr uint16_t kVersionV1 = 1U;
+constexpr uint16_t kVersionV2 = 2U;
 constexpr uint8_t kFamiliarAmmoType = 5U;
 constexpr uint8_t kStatusSave = 0U;
 constexpr uint8_t kStatusLoad = 1U;
@@ -45,7 +48,10 @@ constexpr int kOverlayTop = 70;
 constexpr int kOverlayRight = 158;
 constexpr int kOverlayBottom = 98;
 
-struct NativeSaveRecord {
+/* Exact on-disk v1 prefix. Keep this byte-for-byte compatible with the
+ * hardware-proven 132-byte DRPGSAV1 record so existing checkpoints remain
+ * loadable after v2 is introduced. */
+struct NativeSaveCore {
     uint8_t magic[8];
     uint16_t version;
     uint16_t recordBytes;
@@ -62,8 +68,26 @@ struct NativeSaveRecord {
     EspNativeGameplayPlayerState player;
 };
 
-static_assert(sizeof(NativeSaveRecord) <= 192U,
-              "native save v1 must remain a tiny fixed record");
+struct NativeSaveRecordV2 {
+    NativeSaveCore core;
+    EspNativeGameplayPlayerResourcesSnapshot resources;
+};
+
+struct LoadedSaveRecord {
+    NativeSaveCore core;
+    EspNativeGameplayPlayerResourcesSnapshot resources;
+    uint16_t fileBytes;
+    uint8_t hasResources;
+};
+
+static_assert(sizeof(NativeSaveCore) == 132U,
+              "native save v1 compatibility requires the proven 132-byte prefix");
+static_assert(sizeof(NativeSaveRecordV2) ==
+                  sizeof(NativeSaveCore) +
+                      sizeof(EspNativeGameplayPlayerResourcesSnapshot),
+              "native save v2 must remain a packed semantic prefix + section");
+static_assert(sizeof(NativeSaveRecordV2) <= 320U,
+              "native save v2 must remain a tiny fixed record");
 
 uint8_t statusCursor;
 uint8_t lastOperation;
@@ -84,22 +108,47 @@ uint32_t crc32Bytes(const uint8_t* data, size_t bytes) {
     return ~crc;
 }
 
-uint32_t recordCrc(const NativeSaveRecord& input) {
-    NativeSaveRecord record = input;
+uint32_t recordCrcV1(const NativeSaveCore& input) {
+    NativeSaveCore record = input;
     record.recordCrc32 = 0U;
     return crc32Bytes(reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+}
+
+uint32_t recordCrcV2(const NativeSaveRecordV2& input) {
+    NativeSaveRecordV2 record = input;
+    record.core.recordCrc32 = 0U;
+    return crc32Bytes(reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+}
+
+uint32_t countBits(const uint8_t* bits, uint32_t bytes) {
+    uint32_t count = 0U;
+    uint32_t i;
+    uint8_t value;
+    if (bits == nullptr) return 0U;
+    for (i = 0U; i < bytes; ++i) {
+        value = bits[i];
+        while (value != 0U) {
+            count += (uint32_t)(value & 1U);
+            value >>= 1U;
+        }
+    }
+    return count;
 }
 
 bool runtimeCoordinate(int32_t value) {
     return value >= 32 && value <= 2016 && (value & 63) == 32;
 }
 
-bool recordShapeValid(const NativeSaveRecord& record) {
+bool coreShapeValid(const NativeSaveCore& record,
+                    const uint8_t expectedMagic[8],
+                    uint16_t expectedVersion,
+                    uint16_t expectedBytes) {
     const EspPlayerViewState& view = record.view;
-    if (memcmp(record.magic, kMagic, sizeof(kMagic)) != 0 ||
-        record.version != kVersion ||
-        record.recordBytes != sizeof(NativeSaveRecord) ||
-        record.recordCrc32 == 0U || record.recordCrc32 != recordCrc(record) ||
+    if (memcmp(record.magic, expectedMagic, 8U) != 0 ||
+        record.version != expectedVersion ||
+        record.recordBytes != expectedBytes ||
+        record.recordCrc32 == 0U ||
+        record.reserved0 != 0U ||
         !EspMapCatalog_isValidId(record.targetMapId) ||
         record.gameplayLoadMapId == 0U || record.gameplayLoadMapId > 32U ||
         record.loadType != ESP_PLAYER_SPAWN_LOAD_FRESH_MAP ||
@@ -126,25 +175,98 @@ bool recordShapeValid(const NativeSaveRecord& record) {
     return true;
 }
 
-bool readRecordPath(const char* path, NativeSaveRecord* outRecord) {
-    File file;
-    NativeSaveRecord record;
-    size_t got;
-    if (path == nullptr || outRecord == nullptr || !SD.exists(path)) return false;
-    file = SD.open(path, FILE_READ);
-    if (!file || file.size() != sizeof(record)) {
-        if (file) file.close();
+bool resourceShapeValid(
+    const EspNativeGameplayPlayerResourcesSnapshot& resources,
+    const NativeSaveCore& core) {
+    const uint32_t maxBytes =
+        ESP_NATIVE_GAMEPLAY_PLAYER_RESOURCES_SNAPSHOT_MAX_BYTES;
+    uint32_t expectedBytes;
+    uint32_t validTailBits;
+    uint8_t validTailMask;
+    uint32_t i;
+
+    if (resources.reserved0 != 0U ||
+        resources.sourceArenaFNV1a != core.runtimeFNV1a ||
+        resources.targetMapId != core.targetMapId ||
+        resources.spriteCount == 0U || resources.spriteCount > maxBytes * 8U ||
+        resources.consumedCount > resources.spriteCount) {
         return false;
     }
-    memset(&record, 0, sizeof(record));
-    got = file.read(reinterpret_cast<uint8_t*>(&record), sizeof(record));
-    file.close();
-    if (got != sizeof(record) || !recordShapeValid(record)) return false;
-    *outRecord = record;
+    expectedBytes = (resources.spriteCount + 7U) >> 3;
+    if (expectedBytes == 0U || expectedBytes > maxBytes ||
+        resources.consumedBytes != expectedBytes ||
+        countBits(resources.consumedBits, expectedBytes) !=
+            resources.consumedCount) {
+        return false;
+    }
+    validTailBits = resources.spriteCount & 7U;
+    if (validTailBits != 0U) {
+        validTailMask = (uint8_t)((1U << validTailBits) - 1U);
+        if ((resources.consumedBits[expectedBytes - 1U] &
+             (uint8_t)~validTailMask) != 0U) {
+            return false;
+        }
+    }
+    for (i = expectedBytes; i < maxBytes; ++i) {
+        if (resources.consumedBits[i] != 0U) return false;
+    }
     return true;
 }
 
-bool readBestRecord(NativeSaveRecord* outRecord, bool* outRecoveredBackup) {
+bool recordV1Valid(const NativeSaveCore& record) {
+    return coreShapeValid(record, kMagicV1, kVersionV1,
+                          (uint16_t)sizeof(NativeSaveCore)) &&
+           record.recordCrc32 == recordCrcV1(record);
+}
+
+bool recordV2Valid(const NativeSaveRecordV2& record) {
+    return coreShapeValid(record.core, kMagicV2, kVersionV2,
+                          (uint16_t)sizeof(NativeSaveRecordV2)) &&
+           record.core.recordCrc32 == recordCrcV2(record) &&
+           resourceShapeValid(record.resources, record.core);
+}
+
+bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
+    File file;
+    size_t got;
+    size_t fileBytes;
+
+    if (path == nullptr || outRecord == nullptr || !SD.exists(path)) return false;
+    file = SD.open(path, FILE_READ);
+    if (!file) return false;
+    fileBytes = (size_t)file.size();
+    memset(outRecord, 0, sizeof(*outRecord));
+
+    if (fileBytes == sizeof(NativeSaveCore)) {
+        NativeSaveCore v1;
+        memset(&v1, 0, sizeof(v1));
+        got = file.read(reinterpret_cast<uint8_t*>(&v1), sizeof(v1));
+        file.close();
+        if (got != sizeof(v1) || !recordV1Valid(v1)) return false;
+        outRecord->core = v1;
+        outRecord->fileBytes = (uint16_t)sizeof(v1);
+        outRecord->hasResources = 0U;
+        return true;
+    }
+
+    if (fileBytes == sizeof(NativeSaveRecordV2)) {
+        NativeSaveRecordV2 v2;
+        memset(&v2, 0, sizeof(v2));
+        got = file.read(reinterpret_cast<uint8_t*>(&v2), sizeof(v2));
+        file.close();
+        if (got != sizeof(v2) || !recordV2Valid(v2)) return false;
+        outRecord->core = v2.core;
+        outRecord->resources = v2.resources;
+        outRecord->fileBytes = (uint16_t)sizeof(v2);
+        outRecord->hasResources = 1U;
+        return true;
+    }
+
+    file.close();
+    return false;
+}
+
+bool readBestRecord(LoadedSaveRecord* outRecord, bool* outRecoveredBackup) {
     if (outRecoveredBackup != nullptr) *outRecoveredBackup = false;
     if (readRecordPath(kSavePath, outRecord)) return true;
     if (!readRecordPath(kBackupPath, outRecord)) return false;
@@ -152,7 +274,7 @@ bool readBestRecord(NativeSaveRecord* outRecord, bool* outRecoveredBackup) {
     return true;
 }
 
-bool writeExact(const char* path, const NativeSaveRecord& record) {
+bool writeExactV2(const char* path, const NativeSaveRecordV2& record) {
     File file = SD.open(path, FILE_WRITE);
     size_t wrote;
     if (!file) return false;
@@ -162,14 +284,27 @@ bool writeExact(const char* path, const NativeSaveRecord& record) {
     return wrote == sizeof(record);
 }
 
-bool commitRecordAtomic(const NativeSaveRecord& record) {
-    NativeSaveRecord verify;
+bool readExactV2(const char* path, NativeSaveRecordV2* outRecord) {
+    LoadedSaveRecord loaded;
+    if (outRecord == nullptr || !readRecordPath(path, &loaded) ||
+        loaded.hasResources != 1U || loaded.core.version != kVersionV2 ||
+        loaded.fileBytes != sizeof(NativeSaveRecordV2)) {
+        return false;
+    }
+    memset(outRecord, 0, sizeof(*outRecord));
+    outRecord->core = loaded.core;
+    outRecord->resources = loaded.resources;
+    return true;
+}
+
+bool commitRecordAtomic(const NativeSaveRecordV2& record) {
+    NativeSaveRecordV2 verify;
     bool movedOld = false;
 
     if (SD.exists(kTempPath)) (void)SD.remove(kTempPath);
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
-    if (!writeExact(kTempPath, record) ||
-        !readRecordPath(kTempPath, &verify) ||
+    if (!writeExactV2(kTempPath, record) ||
+        !readExactV2(kTempPath, &verify) ||
         memcmp(&verify, &record, sizeof(record)) != 0) {
         (void)SD.remove(kTempPath);
         return false;
@@ -191,16 +326,24 @@ bool commitRecordAtomic(const NativeSaveRecord& record) {
         return false;
     }
 
-    if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
     memset(&verify, 0, sizeof(verify));
-    return readRecordPath(kSavePath, &verify) &&
-           memcmp(&verify, &record, sizeof(record)) == 0;
+    if (!readExactV2(kSavePath, &verify) ||
+        memcmp(&verify, &record, sizeof(record)) != 0) {
+        (void)SD.remove(kSavePath);
+        if (movedOld && SD.exists(kBackupPath)) {
+            (void)SD.rename(kBackupPath, kSavePath);
+        }
+        return false;
+    }
+
+    if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
+    return true;
 }
 
-bool captureRecord(NativeSaveRecord* outRecord) {
+bool captureRecord(NativeSaveRecordV2* outRecord) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
-    NativeSaveRecord record;
+    NativeSaveRecordV2 record;
 
     if (outRecord == nullptr || EspAssetPack_isOpen() ||
         runtime == nullptr || view == nullptr ||
@@ -209,54 +352,61 @@ bool captureRecord(NativeSaveRecord* outRecord) {
     }
 
     memset(&record, 0, sizeof(record));
-    if (!EspNativeGameplayPlayerState_snapshot(&record.player)) return false;
+    if (!EspNativeGameplayPlayerState_snapshot(&record.core.player) ||
+        !EspNativeGameplayPlayerResources_snapshot(&record.resources)) {
+        return false;
+    }
     if (view->active != 1U || view->targetMapId == 0U ||
         runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
         runtime->arenaFNV1a == 0U) {
         return false;
     }
 
-    memcpy(record.magic, kMagic, sizeof(kMagic));
-    record.version = kVersion;
-    record.recordBytes = (uint16_t)sizeof(record);
-    record.sourceBytes = runtime->sourceBytes;
-    record.sourceCrc32 = runtime->sourceCrc32;
-    record.runtimeFNV1a = runtime->arenaFNV1a;
-    record.playerFNV1a = EspNativeGameplayPlayerState_fingerprint();
-    record.targetMapId = view->targetMapId;
-    record.gameplayLoadMapId = view->gameplayLoadMapId;
-    record.loadType = view->loadType;
-    record.view = *view;
-    record.recordCrc32 = recordCrc(record);
-    if (!recordShapeValid(record)) return false;
+    memcpy(record.core.magic, kMagicV2, sizeof(kMagicV2));
+    record.core.version = kVersionV2;
+    record.core.recordBytes = (uint16_t)sizeof(record);
+    record.core.sourceBytes = runtime->sourceBytes;
+    record.core.sourceCrc32 = runtime->sourceCrc32;
+    record.core.runtimeFNV1a = runtime->arenaFNV1a;
+    record.core.playerFNV1a = EspNativeGameplayPlayerState_fingerprint();
+    record.core.targetMapId = view->targetMapId;
+    record.core.gameplayLoadMapId = view->gameplayLoadMapId;
+    record.core.loadType = view->loadType;
+    record.core.view = *view;
+    record.core.recordCrc32 = recordCrcV2(record);
+    if (!recordV2Valid(record)) return false;
     *outRecord = record;
     return true;
 }
 
 bool saveNow(void) {
-    NativeSaveRecord record;
+    NativeSaveRecordV2 record;
     if (!captureRecord(&record) || !commitRecordAtomic(record)) {
-        printf("[NATIVESAVE] SAVE-FAILED path=%s failClosed=yes\n", kLogPath);
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=2 section=resources failClosed=yes\n",
+               kLogPath);
         return false;
     }
-    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx atomic=temp+backup+rename world=fresh-rebuild\n",
+    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u atomic=temp+backup+rename world=resources-restored+others-fresh\n",
            kLogPath,
-           (unsigned int)record.version,
+           (unsigned int)record.core.version,
            (unsigned int)sizeof(record),
-           (unsigned int)record.targetMapId,
-           (unsigned int)record.gameplayLoadMapId,
-           (long)record.view.viewX,
-           (long)record.view.viewY,
-           (long)record.view.viewAngle,
-           (unsigned long)record.playerFNV1a,
-           (unsigned long)record.runtimeFNV1a,
-           (unsigned long)record.sourceBytes,
-           (unsigned long)record.sourceCrc32,
-           (unsigned long)record.recordCrc32);
+           (unsigned int)record.core.targetMapId,
+           (unsigned int)record.core.gameplayLoadMapId,
+           (long)record.core.view.viewX,
+           (long)record.core.view.viewY,
+           (long)record.core.view.viewAngle,
+           (unsigned long)record.core.playerFNV1a,
+           (unsigned long)record.core.runtimeFNV1a,
+           (unsigned long)record.core.sourceBytes,
+           (unsigned long)record.core.sourceCrc32,
+           (unsigned long)record.core.recordCrc32,
+           (unsigned int)record.resources.consumedCount,
+           (unsigned int)record.resources.consumedBytes,
+           (unsigned int)record.resources.spriteCount);
     return true;
 }
 
-bool inventoryForRecord(const NativeSaveRecord& record,
+bool inventoryForRecord(const NativeSaveCore& record,
                         EspBspInventory* outInventory) {
     const char* name;
     bool ok = false;
@@ -294,7 +444,13 @@ void resetSpawnOwners(void) {
     EspNativeGameplayDispatch_reset();
 }
 
-bool restoreView(const NativeSaveRecord& record) {
+void resetFailedLoad(void) {
+    EspNativeGameplaySession_reset();
+    EspMapResidentLifecycle_resetAll();
+    resetSpawnOwners();
+}
+
+bool restoreView(const NativeSaveCore& record) {
     EspPlayerSpawnState spawn;
     const EspPlayerViewState* live;
     uint32_t tileX = (uint32_t)record.view.viewX >> 6;
@@ -392,7 +548,8 @@ bool sessionConfigForPlayer(const EspNativeGameplayPlayerState& player,
 }
 
 bool loadNow(void) {
-    NativeSaveRecord record;
+    LoadedSaveRecord loaded;
+    const NativeSaveCore* record;
     EspBspInventory inventory;
     EspMapResidentSnapshot snapshot;
     EspNativeGameplaySessionConfig config;
@@ -401,38 +558,38 @@ bool loadNow(void) {
     const char* name;
     EspMapResidentLifecycleStatus residentStatus;
 
-    memset(&record, 0, sizeof(record));
+    memset(&loaded, 0, sizeof(loaded));
     memset(&inventory, 0, sizeof(inventory));
     memset(&snapshot, 0, sizeof(snapshot));
     memset(&config, 0, sizeof(config));
 
-    if (!readBestRecord(&record, &recoveredBackup)) {
+    if (!readBestRecord(&loaded, &recoveredBackup)) {
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=READ reason=missing-or-invalid failClosed=yes\n",
                kLogPath);
         return false;
     }
-    name = EspMapCatalog_nameForId(record.targetMapId);
+    record = &loaded.core;
+    name = EspMapCatalog_nameForId(record->targetMapId);
     if (name == nullptr || name[0] == '\0') {
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=MAP_ID map=%u failClosed=yes\n",
-               kLogPath, (unsigned int)record.targetMapId);
+               kLogPath, (unsigned int)record->targetMapId);
         return false;
     }
 
-    /*
-     * This first durable checkpoint deliberately rebuilds the saved BSP from
-     * immutable PAK data before restoring pose/player state. Map-local mutable
-     * overlays are therefore fresh in v1; the log says so explicitly.
-     */
+    /* Rebuild immutable map/runtime first. V1 checkpoints intentionally stop at
+     * player+pose. V2 then restores exactly one extra semantic owner: the
+     * consumed player-resource overlay. Every other mutable world family remains
+     * fresh and is named as such in the success log. */
     EspNativeGameplaySession_reset();
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
 
-    if (!inventoryForRecord(record, &inventory)) {
+    if (!inventoryForRecord(*record, &inventory)) {
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=BSP_ID map=%u sourceBytes=%lu sourceCrc=%08lx failClosed=yes\n",
                kLogPath,
-               (unsigned int)record.targetMapId,
-               (unsigned long)record.sourceBytes,
-               (unsigned long)record.sourceCrc32);
+               (unsigned int)record->targetMapId,
+               (unsigned long)record->sourceBytes,
+               (unsigned long)record->sourceCrc32);
         return false;
     }
 
@@ -441,50 +598,63 @@ bool loadNow(void) {
     runtime = EspMapRuntime_view();
     if (residentStatus != ESP_MAP_RESIDENT_OK ||
         runtime == nullptr ||
-        runtime->sourceBytes != record.sourceBytes ||
-        runtime->sourceCrc32 != record.sourceCrc32 ||
-        runtime->arenaFNV1a != record.runtimeFNV1a ||
+        runtime->sourceBytes != record->sourceBytes ||
+        runtime->sourceCrc32 != record->sourceCrc32 ||
+        runtime->arenaFNV1a != record->runtimeFNV1a ||
         !EspMapResidentLifecycle_isReady()) {
         const unsigned long actualRuntime =
             runtime != nullptr ? (unsigned long)runtime->arenaFNV1a : 0UL;
-        EspMapResidentLifecycle_resetAll();
+        resetFailedLoad();
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESIDENT status=%u map=%u expectedRuntime=%08lx actualRuntime=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)residentStatus,
-               (unsigned int)record.targetMapId,
-               (unsigned long)record.runtimeFNV1a,
+               (unsigned int)record->targetMapId,
+               (unsigned long)record->runtimeFNV1a,
                actualRuntime);
         return false;
     }
 
-    if (!EspNativeGameplayPlayerState_restore(&record.player) ||
-        EspNativeGameplayPlayerState_fingerprint() != record.playerFNV1a ||
-        !restoreView(record) ||
-        !sessionConfigForPlayer(record.player, &config) ||
+    if (!EspNativeGameplayPlayerState_restore(&record->player) ||
+        EspNativeGameplayPlayerState_fingerprint() != record->playerFNV1a ||
+        !restoreView(*record) ||
+        (loaded.hasResources == 1U &&
+         !EspNativeGameplayPlayerResources_restore(&loaded.resources)) ||
+        !sessionConfigForPlayer(record->player, &config) ||
         !EspNativeGameplaySession_configure(&config)) {
-        EspMapResidentLifecycle_resetAll();
-        resetSpawnOwners();
-        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u playerFNV=%08lx failClosed=yes\n",
+        resetFailedLoad();
+        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s playerFNV=%08lx failClosed=yes\n",
                kLogPath,
-               (unsigned int)record.targetMapId,
-               (unsigned long)record.playerFNV1a);
+               (unsigned int)record->targetMapId,
+               (unsigned int)record->version,
+               loaded.hasResources == 1U ? "required" : "legacy-v1-none",
+               (unsigned long)record->playerFNV1a);
         return false;
     }
 
-    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s world=fresh-rebuild session=reprime-pending\n",
+    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB world=%s session=reprime-pending\n",
            kLogPath,
-           (unsigned int)record.version,
-           (unsigned int)sizeof(record),
-           (unsigned int)record.targetMapId,
-           (unsigned int)record.gameplayLoadMapId,
-           (long)record.view.viewX,
-           (long)record.view.viewY,
-           (long)record.view.viewAngle,
-           (unsigned long)record.playerFNV1a,
-           (unsigned long)record.runtimeFNV1a,
-           (unsigned long)record.sourceBytes,
-           (unsigned long)record.sourceCrc32,
-           recoveredBackup ? "yes" : "no");
+           (unsigned int)record->version,
+           (unsigned int)loaded.fileBytes,
+           (unsigned int)record->targetMapId,
+           (unsigned int)record->gameplayLoadMapId,
+           (long)record->view.viewX,
+           (long)record->view.viewY,
+           (long)record->view.viewAngle,
+           (unsigned long)record->playerFNV1a,
+           (unsigned long)record->runtimeFNV1a,
+           (unsigned long)record->sourceBytes,
+           (unsigned long)record->sourceCrc32,
+           recoveredBackup ? "yes" : "no",
+           loaded.hasResources == 1U ? "restored" : "legacy-none",
+           loaded.hasResources == 1U
+               ? (unsigned int)loaded.resources.consumedCount
+               : 0U,
+           loaded.hasResources == 1U
+               ? (unsigned int)loaded.resources.consumedBytes
+               : 0U,
+           loaded.hasResources == 1U
+               ? "resources-restored+others-fresh"
+               : "fresh-rebuild-v1");
     return true;
 }
 
@@ -649,7 +819,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                                        : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
             }
 
-            NativeSaveRecord probe;
+            LoadedSaveRecord probe;
             bool recoveredBackup = false;
             memset(&probe, 0, sizeof(probe));
             if (!readBestRecord(&probe, &recoveredBackup)) {
@@ -690,7 +860,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
             if (beforePage != ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
                 statusCursor = kStatusSave;
                 lastOperation = 0U;
-                printf("[NATIVESAVE] UI page=status rows=SAVE/LOAD slot=1 path=%s worldScope=fresh-rebuild\n",
+                printf("[NATIVESAVE] UI page=status rows=SAVE/LOAD slot=1 path=%s worldScope=resources-versioned+others-fresh legacyV1=read-only-compatible\n",
                        kLogPath);
             }
             if ((status == ESP_NATIVE_GAMEPLAY_HUB_REDRAWN ||
