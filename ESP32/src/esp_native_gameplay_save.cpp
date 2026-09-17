@@ -10,6 +10,7 @@
 #include "esp_hud_post_load_clear_state.h"
 #include "esp_hud_refresh_state.h"
 #include "esp_map_catalog.h"
+#include "esp_map_line_checkpoint.h"
 #include "esp_map_resident_lifecycle.h"
 #include "esp_map_runtime.h"
 #include "esp_map_script_state.h"
@@ -39,9 +40,11 @@ constexpr char kLogPath[] = "/sd/DoomRPG-ESP32.sav";
 constexpr uint8_t kMagicV1[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '1'};
 constexpr uint8_t kMagicV2[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '2'};
 constexpr uint8_t kMagicV3[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '3'};
+constexpr uint8_t kMagicV4[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '4'};
 constexpr uint16_t kVersionV1 = 1U;
 constexpr uint16_t kVersionV2 = 2U;
 constexpr uint16_t kVersionV3 = 3U;
+constexpr uint16_t kVersionV4 = 4U;
 constexpr uint8_t kFamiliarAmmoType = 5U;
 constexpr uint8_t kStatusSave = 0U;
 constexpr uint8_t kStatusLoad = 1U;
@@ -82,13 +85,22 @@ struct NativeSaveRecordV3 {
     EspMapScriptStateSnapshot script;
 };
 
+struct NativeSaveRecordV4 {
+    NativeSaveCore core;
+    EspNativeGameplayPlayerResourcesSnapshot resources;
+    EspMapScriptStateSnapshot script;
+    EspMapLineCheckpointSnapshot lines;
+};
+
 struct LoadedSaveRecord {
     NativeSaveCore core;
     EspNativeGameplayPlayerResourcesSnapshot resources;
     EspMapScriptStateSnapshot script;
+    EspMapLineCheckpointSnapshot lines;
     uint16_t fileBytes;
     uint8_t hasResources;
     uint8_t hasScript;
+    uint8_t hasLines;
 };
 
 static_assert(sizeof(NativeSaveCore) == 132U,
@@ -104,6 +116,12 @@ static_assert(sizeof(NativeSaveRecordV3) ==
               "native save v3 must append exactly one bounded script section");
 static_assert(sizeof(NativeSaveRecordV3) <= 1536U,
               "native save v3 must remain a bounded compact record");
+static_assert(sizeof(NativeSaveRecordV4) ==
+                  sizeof(NativeSaveRecordV3) +
+                      sizeof(EspMapLineCheckpointSnapshot),
+              "native save v4 must append exactly one bounded line section");
+static_assert(sizeof(NativeSaveRecordV4) <= 1536U,
+              "native save v4 must remain a bounded compact record");
 
 uint8_t statusCursor;
 uint8_t lastOperation;
@@ -149,6 +167,12 @@ uint32_t recordCrcV2(const NativeSaveRecordV2& input) {
 
 uint32_t recordCrcV3(const NativeSaveRecordV3& input) {
     NativeSaveRecordV3 record = input;
+    record.core.recordCrc32 = 0U;
+    return crc32Bytes(reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+}
+
+uint32_t recordCrcV4(const NativeSaveRecordV4& input) {
+    NativeSaveRecordV4 record = input;
     record.core.recordCrc32 = 0U;
     return crc32Bytes(reinterpret_cast<const uint8_t*>(&record), sizeof(record));
 }
@@ -296,6 +320,11 @@ bool scriptShapeValid(const EspMapScriptStateSnapshot& script,
     return true;
 }
 
+bool lineShapeValid(const EspMapLineCheckpointSnapshot& lines,
+                    const NativeSaveCore& core) {
+    return EspMapLineCheckpoint_shapeValid(&lines, core.runtimeFNV1a) != 0;
+}
+
 bool recordV1Valid(const NativeSaveCore& record) {
     return coreShapeValid(record, kMagicV1, kVersionV1,
                           (uint16_t)sizeof(NativeSaveCore)) &&
@@ -317,6 +346,15 @@ bool recordV3Valid(const NativeSaveRecordV3& record) {
            scriptShapeValid(record.script, record.core);
 }
 
+bool recordV4Valid(const NativeSaveRecordV4& record) {
+    return coreShapeValid(record.core, kMagicV4, kVersionV4,
+                          (uint16_t)sizeof(NativeSaveRecordV4)) &&
+           record.core.recordCrc32 == recordCrcV4(record) &&
+           resourceShapeValid(record.resources, record.core) &&
+           scriptShapeValid(record.script, record.core) &&
+           lineShapeValid(record.lines, record.core);
+}
+
 bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
     File file;
     size_t got;
@@ -336,8 +374,6 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         if (got != sizeof(v1) || !recordV1Valid(v1)) return false;
         outRecord->core = v1;
         outRecord->fileBytes = (uint16_t)sizeof(v1);
-        outRecord->hasResources = 0U;
-        outRecord->hasScript = 0U;
         return true;
     }
 
@@ -351,7 +387,6 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         outRecord->resources = v2.resources;
         outRecord->fileBytes = (uint16_t)sizeof(v2);
         outRecord->hasResources = 1U;
-        outRecord->hasScript = 0U;
         return true;
     }
 
@@ -370,6 +405,23 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         return true;
     }
 
+    if (fileBytes == sizeof(NativeSaveRecordV4)) {
+        NativeSaveRecordV4 v4;
+        memset(&v4, 0, sizeof(v4));
+        got = file.read(reinterpret_cast<uint8_t*>(&v4), sizeof(v4));
+        file.close();
+        if (got != sizeof(v4) || !recordV4Valid(v4)) return false;
+        outRecord->core = v4.core;
+        outRecord->resources = v4.resources;
+        outRecord->script = v4.script;
+        outRecord->lines = v4.lines;
+        outRecord->fileBytes = (uint16_t)sizeof(v4);
+        outRecord->hasResources = 1U;
+        outRecord->hasScript = 1U;
+        outRecord->hasLines = 1U;
+        return true;
+    }
+
     file.close();
     return false;
 }
@@ -382,7 +434,7 @@ bool readBestRecord(LoadedSaveRecord* outRecord, bool* outRecoveredBackup) {
     return true;
 }
 
-bool writeExactV3(const char* path, const NativeSaveRecordV3& record) {
+bool writeExactV4(const char* path, const NativeSaveRecordV4& record) {
     File file = SD.open(path, FILE_WRITE);
     size_t wrote;
     if (!file) return false;
@@ -392,29 +444,30 @@ bool writeExactV3(const char* path, const NativeSaveRecordV3& record) {
     return wrote == sizeof(record);
 }
 
-bool readExactV3(const char* path, NativeSaveRecordV3* outRecord) {
+bool readExactV4(const char* path, NativeSaveRecordV4* outRecord) {
     LoadedSaveRecord loaded;
     if (outRecord == nullptr || !readRecordPath(path, &loaded) ||
         loaded.hasResources != 1U || loaded.hasScript != 1U ||
-        loaded.core.version != kVersionV3 ||
-        loaded.fileBytes != sizeof(NativeSaveRecordV3)) {
+        loaded.hasLines != 1U || loaded.core.version != kVersionV4 ||
+        loaded.fileBytes != sizeof(NativeSaveRecordV4)) {
         return false;
     }
     memset(outRecord, 0, sizeof(*outRecord));
     outRecord->core = loaded.core;
     outRecord->resources = loaded.resources;
     outRecord->script = loaded.script;
+    outRecord->lines = loaded.lines;
     return true;
 }
 
-bool commitRecordAtomic(const NativeSaveRecordV3& record) {
-    NativeSaveRecordV3 verify;
+bool commitRecordAtomic(const NativeSaveRecordV4& record) {
+    NativeSaveRecordV4 verify;
     bool movedOld = false;
 
     if (SD.exists(kTempPath)) (void)SD.remove(kTempPath);
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
-    if (!writeExactV3(kTempPath, record) ||
-        !readExactV3(kTempPath, &verify) ||
+    if (!writeExactV4(kTempPath, record) ||
+        !readExactV4(kTempPath, &verify) ||
         memcmp(&verify, &record, sizeof(record)) != 0) {
         (void)SD.remove(kTempPath);
         return false;
@@ -437,7 +490,7 @@ bool commitRecordAtomic(const NativeSaveRecordV3& record) {
     }
 
     memset(&verify, 0, sizeof(verify));
-    if (!readExactV3(kSavePath, &verify) ||
+    if (!readExactV4(kSavePath, &verify) ||
         memcmp(&verify, &record, sizeof(record)) != 0) {
         (void)SD.remove(kSavePath);
         if (movedOld && SD.exists(kBackupPath)) {
@@ -450,10 +503,10 @@ bool commitRecordAtomic(const NativeSaveRecordV3& record) {
     return true;
 }
 
-bool captureRecord(NativeSaveRecordV3* outRecord) {
+bool captureRecord(NativeSaveRecordV4* outRecord) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
-    NativeSaveRecordV3 record;
+    NativeSaveRecordV4 record;
 
     if (outRecord == nullptr || EspAssetPack_isOpen() ||
         runtime == nullptr || view == nullptr ||
@@ -464,7 +517,8 @@ bool captureRecord(NativeSaveRecordV3* outRecord) {
     memset(&record, 0, sizeof(record));
     if (!EspNativeGameplayPlayerState_snapshot(&record.core.player) ||
         !EspNativeGameplayPlayerResources_snapshot(&record.resources) ||
-        !EspMapScriptState_snapshot(&record.script)) {
+        !EspMapScriptState_snapshot(&record.script) ||
+        !EspMapLineCheckpoint_snapshot(&record.lines)) {
         return false;
     }
     if (view->active != 1U || view->targetMapId == 0U ||
@@ -473,8 +527,8 @@ bool captureRecord(NativeSaveRecordV3* outRecord) {
         return false;
     }
 
-    memcpy(record.core.magic, kMagicV3, sizeof(kMagicV3));
-    record.core.version = kVersionV3;
+    memcpy(record.core.magic, kMagicV4, sizeof(kMagicV4));
+    record.core.version = kVersionV4;
     record.core.recordBytes = (uint16_t)sizeof(record);
     record.core.sourceBytes = runtime->sourceBytes;
     record.core.sourceCrc32 = runtime->sourceCrc32;
@@ -484,22 +538,30 @@ bool captureRecord(NativeSaveRecordV3* outRecord) {
     record.core.gameplayLoadMapId = view->gameplayLoadMapId;
     record.core.loadType = view->loadType;
     record.core.view = *view;
-    record.core.recordCrc32 = recordCrcV3(record);
-    if (!recordV3Valid(record)) return false;
+    record.core.recordCrc32 = recordCrcV4(record);
+    if (!recordV4Valid(record)) return false;
     *outRecord = record;
     return true;
 }
 
 bool saveNow(void) {
-    NativeSaveRecordV3 record;
+    NativeSaveRecordV4 record;
     uint32_t scriptFNV;
+    uint32_t openCount;
+    uint32_t lockedCount;
+    uint32_t texture10Count;
+
     if (!captureRecord(&record) || !commitRecordAtomic(record)) {
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=3 sections=resources+script failClosed=yes\n",
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=4 sections=resources+script+lines failClosed=yes\n",
                kLogPath);
         return false;
     }
     scriptFNV = fnv1aBytes(record.script.storage, record.script.storageBytes);
-    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx atomic=temp+backup+rename world=resources+script-restored+others-fresh\n",
+    openCount = countBits(record.lines.openBits, record.lines.bitsetBytes);
+    lockedCount = countBits(record.lines.lockedBits, record.lines.bitsetBytes);
+    texture10Count = countBits(record.lines.texture10Bits,
+                               record.lines.bitsetBytes);
+    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx atomic=temp+backup+rename world=resources+script+lines-restored+others-fresh\n",
            kLogPath,
            (unsigned int)record.core.version,
            (unsigned int)sizeof(record),
@@ -519,7 +581,14 @@ bool saveNow(void) {
            (unsigned long)record.script.eventCount,
            (unsigned long)record.script.byteCodeCount,
            (unsigned int)record.script.storageBytes,
-           (unsigned long)scriptFNV);
+           (unsigned long)scriptFNV,
+           (unsigned long)record.lines.lineCount,
+           (unsigned int)record.lines.bitsetBytes,
+           (unsigned long)openCount,
+           (unsigned long)lockedCount,
+           (unsigned long)texture10Count,
+           (unsigned long)record.lines.lineStateFNV1a,
+           (unsigned long)record.lines.textureStateFNV1a);
     return true;
 }
 
@@ -675,6 +744,9 @@ bool loadNow(void) {
     const char* name;
     EspMapResidentLifecycleStatus residentStatus;
     uint32_t expectedScriptFNV = 0U;
+    uint32_t openCount = 0U;
+    uint32_t lockedCount = 0U;
+    uint32_t texture10Count = 0U;
 
     memset(&loaded, 0, sizeof(loaded));
     memset(&inventory, 0, sizeof(inventory));
@@ -696,8 +768,9 @@ bool loadNow(void) {
 
     /* Rebuild immutable map/runtime first. V1 checkpoints stop at player+pose.
      * V2 adds the consumed player-resource overlay. V3 adds the compact native
-     * script/event mutable owner. Every other world family remains fresh until
-     * its own bounded persistence milestone. */
+     * script/event mutable owner. V4 adds the complete compact line family:
+     * open/locked bits plus mutable 9/10 texture variants. Every other world
+     * family remains fresh until its own bounded persistence milestone. */
     EspNativeGameplaySession_reset();
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
@@ -736,6 +809,13 @@ bool loadNow(void) {
         expectedScriptFNV = fnv1aBytes(loaded.script.storage,
                                        loaded.script.storageBytes);
     }
+    if (loaded.hasLines == 1U) {
+        openCount = countBits(loaded.lines.openBits, loaded.lines.bitsetBytes);
+        lockedCount = countBits(loaded.lines.lockedBits,
+                                loaded.lines.bitsetBytes);
+        texture10Count = countBits(loaded.lines.texture10Bits,
+                                   loaded.lines.bitsetBytes);
+    }
 
     if (!EspNativeGameplayPlayerState_restore(&record->player) ||
         EspNativeGameplayPlayerState_fingerprint() != record->playerFNV1a ||
@@ -745,20 +825,28 @@ bool loadNow(void) {
         (loaded.hasScript == 1U &&
          (!EspMapScriptState_restore(&loaded.script) ||
           EspMapScriptState_fingerprint() != expectedScriptFNV)) ||
+        (loaded.hasLines == 1U &&
+         !EspMapLineCheckpoint_restore(&loaded.lines)) ||
         !sessionConfigForPlayer(record->player, &config) ||
         !EspNativeGameplaySession_configure(&config)) {
         resetFailedLoad();
-        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s playerFNV=%08lx failClosed=yes\n",
+        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s playerFNV=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)record->targetMapId,
                (unsigned int)record->version,
                loaded.hasResources == 1U ? "required" : "legacy-none",
                loaded.hasScript == 1U ? "required" : "legacy-none",
+               loaded.hasLines == 1U ? "required" : "legacy-none",
                (unsigned long)record->playerFNV1a);
         return false;
     }
 
-    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx world=%s session=reprime-pending\n",
+    if (loaded.hasScript == 1U && loaded.hasLines == 0U) {
+        printf("[NATIVESAVE] LEGACY-LINE-GAP version=%u lineState=fresh warning=script-may-reference-unpersisted-line-mutations\n",
+               (unsigned int)record->version);
+    }
+
+    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx world=%s session=reprime-pending\n",
            kLogPath,
            (unsigned int)record->version,
            (unsigned int)loaded.fileBytes,
@@ -790,11 +878,25 @@ bool loadNow(void) {
                ? (unsigned int)loaded.script.storageBytes
                : 0U,
            (unsigned long)expectedScriptFNV,
-           loaded.hasScript == 1U
-               ? "resources+script-restored+others-fresh"
-               : (loaded.hasResources == 1U
-                      ? "resources-restored+others-fresh"
-                      : "fresh-rebuild-v1"));
+           loaded.hasLines == 1U ? "restored" : "legacy-none",
+           loaded.hasLines == 1U ? (unsigned long)loaded.lines.lineCount : 0UL,
+           loaded.hasLines == 1U ? (unsigned int)loaded.lines.bitsetBytes : 0U,
+           (unsigned long)openCount,
+           (unsigned long)lockedCount,
+           (unsigned long)texture10Count,
+           loaded.hasLines == 1U
+               ? (unsigned long)loaded.lines.lineStateFNV1a
+               : 0UL,
+           loaded.hasLines == 1U
+               ? (unsigned long)loaded.lines.textureStateFNV1a
+               : 0UL,
+           loaded.hasLines == 1U
+               ? "resources+script+lines-restored+others-fresh"
+               : (loaded.hasScript == 1U
+                      ? "resources+script-restored+lines+others-fresh"
+                      : (loaded.hasResources == 1U
+                             ? "resources-restored+script+lines+others-fresh"
+                             : "fresh-rebuild-v1")));
     return true;
 }
 
@@ -1000,7 +1102,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
             if (beforePage != ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
                 statusCursor = kStatusSave;
                 lastOperation = 0U;
-                printf("[NATIVESAVE] UI page=status rows=SAVE/LOAD slot=1 path=%s worldScope=resources+script-versioned+others-fresh legacyV1V2=read-only-compatible\n",
+                printf("[NATIVESAVE] UI page=status rows=SAVE/LOAD slot=1 path=%s worldScope=resources+script+lines-v4+others-fresh legacyV1V2V3=read-only-compatible\n",
                        kLogPath);
             }
             if ((status == ESP_NATIVE_GAMEPLAY_HUB_REDRAWN ||
