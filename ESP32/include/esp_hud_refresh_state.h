@@ -58,6 +58,16 @@ EspHudRefreshStatus EspHudRefresh_preparePostSpawn(
 EspHudRefreshStatus EspHudRefresh_routePostSpawn(void);
 
 /*
+ * Recreate the same routed-but-unpainted owner after a durable checkpoint has
+ * restored an already-settled PlayerView. The checkpoint record carries the
+ * semantic result of the original post-spawn sequence, so all PlayerView
+ * follow-up bits must already be consumed and the pose must be settled. This
+ * does not mutate PlayerView or any legacy HUD object.
+ */
+EspHudRefreshStatus EspHudRefresh_restorePending(
+    const EspPlayerViewState* playerView);
+
+/*
  * Consume the already-routed dirty request after one native HUD painter has
  * successfully produced the matching map/load context. This is intentionally
  * identity-only: rendering owns no legacy Hud pointer and cannot consume a
