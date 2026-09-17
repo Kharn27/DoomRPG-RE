@@ -8,13 +8,13 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 main at branch creation = 9b085a9d8ed254edc98463f33f6d1534215326b9
 current main = 9b085a9d8ed254edc98463f33f6d1534215326b9
 branch = agent/esp32-native-gameplay-changemap-transition
-hardware-tested save-v2 code boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
-current code head before docs = 5a1020fd5d160c111ff09ecb8a480f37ea8d0578
-status = REAL-CYD NATIVE CHECKPOINT SAVE/LOAD V2 RESOURCE OVERLAY PASS
-branch policy = ACTIVE; current HUB feedback-gate fix still needs real-CYD retest
+hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
+hardware-tested current code boundary = 5a1020fd5d160c111ff09ecb8a480f37ea8d0578
+status = REAL-CYD CHECKPOINT V2 RESOURCE OVERLAY + HUB FEEDBACK OWNERSHIP PASS
+branch policy = ACTIVE; continue bounded save-v2 persistence owner-by-owner
 ```
 
-Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact hardware-tested save-v2 code boundary. The later HUB/action-feedback ownership gate also builds successfully in run #267 / run ID `35198140562`, but that visual fix is not hardware-validated yet.
+Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is now also real-CYD validated. The prior documentation tail at `48f8bf50c3f59acf2260d4274467bc78080690a8` passed CI run #268 / run ID `35198645805`.
 
 Latest detailed records:
 
@@ -130,7 +130,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing and the bounded checkpoint described below.
+Hardware-proven native behavior includes movement/turn/strafe, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, and HUB/world framebuffer ownership gating for transient action feedback.
 
 The player root remains:
 
@@ -269,20 +269,11 @@ gameplay RNG state
 
 Continue save persistence owner-by-owner. Never replace this with a monolithic world/object dump.
 
-## Independent HUB/action-feedback framebuffer bug — FIX CANDIDATE, HARDWARE RETEST PENDING
+## HUB/action-feedback framebuffer ownership — REAL-CYD PASS
 
-The v2 hardware test also exposed an unrelated visual ownership race. A pickup top-bar message could expire while HUB owned the framebuffer, producing:
+The v2 hardware test exposed an unrelated visual ownership race: a pickup top-bar message could expire while HUB owned the framebuffer, leaving a stale `Got ...` fragment over the MENU area and causing a later underlay mismatch/recover path.
 
-```text
-[ACTIONFEEDBACK] EXPIRE ... restored=topbar-only
-...
-[HUB] CLOSE ... menuUnderlayRestore=FAILED ... exactHud=NO
-[RESIDENTGAMEPLAY] HUB-RECOVER ...
-```
-
-This did not affect save persistence, but it explains the stale `Got ...` fragment previously observed under the MENU button.
-
-The current branch head contains a bounded fix:
+The bounded fix is:
 
 ```text
 8b7a4c04dee1622954f2ea453ca1b15792fbf6fa
@@ -292,7 +283,7 @@ The current branch head contains a bounded fix:
 CI #267 = SUCCESS
 ```
 
-The fix keeps action-feedback/viewport-flash timers on real elapsed time but blocks their framebuffer restore work while HUB owns the screen. It still needs a short real-CYD reproduction test before this branch head can be called hardware-valid.
+The timer remains based on real elapsed time, but world feedback/viewport-flash restore work is blocked while HUB owns the framebuffer. The user reproduced the original pickup-message/HUB sequence on the real CYD and confirmed the stale fragment is gone. Therefore `5a1020fd5d160c111ff09ecb8a480f37ea8d0578` is now a hardware-valid code boundary for this ownership fix.
 
 ## CHANGEMAP code boundary — candidate, hardware exit test still pending
 
@@ -307,7 +298,7 @@ The candidate supports the show-stats WAIT/ACK handoff, resident teardown, targe
 
 ## Next bounded milestone
 
-After the HUB visual gate gets its hardware confirmation, continue checkpoint persistence one explicit owner family at a time.
+Continue checkpoint persistence one explicit owner family at a time.
 
 Preferred next slice:
 
@@ -330,7 +321,6 @@ After script/event PASS, candidates are line open/locked + texture variants, aut
 
 ```text
 save-v2 mutable-world persistence beyond each validated section
-current HUB action-feedback gate hardware retest
 CHANGEMAP real-CYD exit validation
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
