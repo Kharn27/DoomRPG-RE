@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define ESP_MAP_SCRIPT_STATE_SNAPSHOT_MAX_BYTES 1024U
+#define ESP_MAP_SCRIPT_STATE_SNAPSHOT_MAX_BYTES 512U
 
 typedef struct EspMapScriptStateView_s {
     const uint8_t* storage;
@@ -27,6 +27,8 @@ typedef struct EspMapScriptStateView_s {
  * Event states and removed-command bits are copied as the compact semantic
  * storage already owned by EspMapScriptState. Runtime identity and exact
  * counts/lengths are carried explicitly; no owner pointer is serialized.
+ * The fixed 512-byte payload keeps save stack/IO bounded and fails closed on
+ * maps whose compact script owner does not fit this versioned section.
  */
 typedef struct EspMapScriptStateSnapshot_s {
     uint32_t sourceArenaFNV1a;
