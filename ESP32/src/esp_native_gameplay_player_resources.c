@@ -221,6 +221,120 @@ EspNativeGameplayPlayerResources_view(void) {
     return &resources.view;
 }
 
+static uint32_t countConsumedBits(const uint8_t* bits, uint32_t bytes) {
+    uint32_t count = 0U;
+    uint32_t i;
+    uint8_t value;
+    if (bits == NULL) return 0U;
+    for (i = 0U; i < bytes; ++i) {
+        value = bits[i];
+        while (value != 0U) {
+            count += (uint32_t)(value & 1U);
+            value >>= 1U;
+        }
+    }
+    return count;
+}
+
+int EspNativeGameplayPlayerResources_snapshot(
+    EspNativeGameplayPlayerResourcesSnapshot* outSnapshot) {
+    const EspPlayerViewState* playerView = EspPlayerView_view();
+    uint32_t bytes;
+
+    if (outSnapshot == NULL || playerView == NULL ||
+        playerView->active != 1U || playerView->spawnApplied != 1U ||
+        !ensureOwner(playerView->targetMapId) ||
+        resources.view.active != 1U || resources.view.fatal != 0U ||
+        resources.view.pendingMove != 0U || resources.consumedBits == NULL ||
+        resources.view.sourceArenaFNV1a == 0U ||
+        resources.view.spriteCount == 0U) {
+        return 0;
+    }
+
+    bytes = resources.view.consumedBytes;
+    if (bytes == 0U ||
+        bytes > ESP_NATIVE_GAMEPLAY_PLAYER_RESOURCES_SNAPSHOT_MAX_BYTES ||
+        resources.view.spriteCount >
+            ESP_NATIVE_GAMEPLAY_PLAYER_RESOURCES_SNAPSHOT_MAX_BYTES * 8U) {
+        return 0;
+    }
+
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    outSnapshot->sourceArenaFNV1a = resources.view.sourceArenaFNV1a;
+    outSnapshot->spriteCount = resources.view.spriteCount;
+    outSnapshot->consumedCount = resources.view.consumedCount;
+    outSnapshot->consumedBytes = (uint16_t)bytes;
+    outSnapshot->targetMapId = resources.view.targetMapId;
+    memcpy(outSnapshot->consumedBits, resources.consumedBits, bytes);
+    return countConsumedBits(outSnapshot->consumedBits, bytes) ==
+           outSnapshot->consumedCount;
+}
+
+int EspNativeGameplayPlayerResources_restore(
+    const EspNativeGameplayPlayerResourcesSnapshot* snapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const EspPlayerViewState* playerView = EspPlayerView_view();
+    uint32_t expectedBytes;
+    uint32_t validTailBits;
+    uint8_t validTailMask;
+    uint32_t counted;
+
+    if (snapshot == NULL || runtime == NULL || playerView == NULL ||
+        playerView->active != 1U || playerView->spawnApplied != 1U ||
+        snapshot->reserved0 != 0U || snapshot->targetMapId == 0U ||
+        snapshot->targetMapId != playerView->targetMapId ||
+        snapshot->sourceArenaFNV1a == 0U ||
+        snapshot->sourceArenaFNV1a != runtime->arenaFNV1a ||
+        snapshot->spriteCount == 0U ||
+        snapshot->spriteCount != runtime->mapSpriteCount ||
+        snapshot->spriteCount >
+            ESP_NATIVE_GAMEPLAY_PLAYER_RESOURCES_SNAPSHOT_MAX_BYTES * 8U) {
+        return 0;
+    }
+
+    expectedBytes = (snapshot->spriteCount + 7U) >> 3;
+    if (expectedBytes == 0U ||
+        expectedBytes > ESP_NATIVE_GAMEPLAY_PLAYER_RESOURCES_SNAPSHOT_MAX_BYTES ||
+        snapshot->consumedBytes != expectedBytes ||
+        snapshot->consumedCount > snapshot->spriteCount) {
+        return 0;
+    }
+
+    validTailBits = snapshot->spriteCount & 7U;
+    if (validTailBits != 0U) {
+        validTailMask = (uint8_t)((1U << validTailBits) - 1U);
+        if ((snapshot->consumedBits[expectedBytes - 1U] &
+             (uint8_t)~validTailMask) != 0U) {
+            return 0;
+        }
+    }
+    counted = countConsumedBits(snapshot->consumedBits, expectedBytes);
+    if (counted != snapshot->consumedCount) return 0;
+
+    if (!ensureOwner(snapshot->targetMapId) ||
+        resources.view.active != 1U || resources.view.pendingMove != 0U ||
+        resources.view.sourceArenaFNV1a != snapshot->sourceArenaFNV1a ||
+        resources.view.spriteCount != snapshot->spriteCount ||
+        resources.view.consumedBytes != expectedBytes ||
+        resources.consumedBits == NULL) {
+        return 0;
+    }
+
+    memset(resources.consumedBits, 0, expectedBytes);
+    memcpy(resources.consumedBits, snapshot->consumedBits, expectedBytes);
+    resources.view.consumedCount = counted;
+    resources.view.playerFNV1a = EspNativeGameplayPlayerState_fingerprint();
+    resources.view.fatal = 0U;
+    resources.corpusLogged = 0U;
+    printf("[PLAYERRES] RESTORE map=%u arena=%08x sprites=%u consumed=%u bytes=%u mutation=consumed-overlay-only allocation=owner-bounded\n",
+           (unsigned int)resources.view.targetMapId,
+           (unsigned int)resources.view.sourceArenaFNV1a,
+           (unsigned int)resources.view.spriteCount,
+           (unsigned int)resources.view.consumedCount,
+           (unsigned int)resources.view.consumedBytes);
+    return 1;
+}
+
 static int rawDefTile(uint32_t spriteIndex, uint16_t* outDefTile) {
     EspMapSprite sprite;
     uint32_t lookup;
