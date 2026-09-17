@@ -1,6 +1,13 @@
 # Native soldier-door wall-cache regression
 
-Status: **CANDIDATE — awaiting real-CYD re-test**.
+Status: **REAL-CYD HARDWARE PASS**.
+
+Hardware-proven code boundary:
+
+```text
+3658e8a6edeb9c3d4f44fe1779e671f71374b0df
+ESP32: make wall cache adaptive under door memory pressure
+```
 
 ## Hardware failure witness
 
@@ -21,11 +28,11 @@ Moving animation frames 1..3 rendered successfully. The final stable-open frame 
 [RESIDENTGAMEPLAY] SELECT ROLLBACK ... line=352 open=0 restored=yes
 ```
 
-The transactional rollback was correct; the regression is the render failure which forces that rollback.
+The transactional rollback was correct; the regression was the render failure which forced that rollback.
 
-The same dialog sequence owns the lazy 2408-byte topology rollback snapshot, and the hardware log shows reduced free 8-bit heap at this point. The native plane cache already degrades its lease count under this kind of pressure, but the three-slot wall cache previously treated every 2048-byte lease as mandatory and also performed `free()+malloc()` on each eviction.
+The same dialog sequence owns the lazy 2408-byte topology rollback snapshot, and the hardware log showed reduced free 8-bit heap at this point. The native plane cache already degraded its lease count under this kind of pressure, but the three-slot wall cache previously treated every 2048-byte lease as mandatory and also performed `free()+malloc()` on each eviction.
 
-## Candidate fix
+## Fix
 
 `EspNativeFirstFrame` now treats the three 2048-byte wall-cache slots as a performance target rather than a rendering invariant:
 
@@ -35,7 +42,7 @@ The same dialog sequence owns the lazy 2408-byte topology rollback snapshot, and
 - still fail closed if zero wall slots can be allocated;
 - still fail closed on an actual PAK wall read failure.
 
-New failure-only diagnostics distinguish heap pressure from storage failure:
+Failure-only diagnostics distinguish heap pressure from storage failure:
 
 ```text
 [NATIVEFRAME] WALL-CACHE-FALLBACK slots=N/3 leaseBytes=2048 totalLeaseBytes=... exact=yes
@@ -45,15 +52,27 @@ New failure-only diagnostics distinguish heap pressure from storage failure:
 
 No line state, script state, immutable BSP data, collision semantics, door transaction semantics, or renderer asset format is changed.
 
-## Required real-CYD test
+## Real-CYD validation
 
-Repeat the exact Entrance witness:
+The user repeated the Entrance soldier sequence from normal gameplay, saved a native V3 checkpoint before opening the unlocked door, then selected line 352 under the same post-dialog memory-pressure boundary.
 
-1. talk to the soldier until event 60 performs `unlock=1`;
-2. face/select door line 352;
-3. observe all four animation frames;
-4. verify the final stable-open frame renders successfully;
-5. verify the door remains open and the player can walk through it;
-6. confirm no `WALL-CACHE-READ-FAILED`, `WALL_LOAD`, `RENDER-FAILED`, or SELECT rollback occurs.
+The machine still showed the expected reduced plane-cache width:
 
-A `WALL-CACHE-FALLBACK` line is expected and useful if the hardware reaches the same memory-pressure boundary; it is not itself an error.
+```text
+[NATIVEPLANE] CACHE-FALLBACK slots=4/6 leaseBytes=2048 totalLeaseBytes=8192
+```
+
+All four regular-door animation frames rendered successfully. The decisive stable-open frame was:
+
+```text
+[DOORANIM] FRAME 4/4 angle=0 lines=1 geometry=stable animatedReads=0 openReads=2 textureVariants=2 frame=c3999885 render=ok
+[DYNAMICLINES] FRAME angle=0 open=1 adaptedReads=2 animatedReads=0 textureVariants=2 render=ok immutableRuntime=yes
+[DOORANIM] COMPLETE transitions=1 frames=4 state=stable transaction=committed
+[RESIDENTGAMEPLAY] FRAME reason=SELECT-DOOR angle=0 frame=c3999885 sprites=17/1172 walls=44 pixels=9612 totalUs=214730 presented=1 controls=idle-invisible
+[ACTION] DOOR line=352 opcode=15 status=OK open=0->1 locked=0 removed=0->0 effects=07 sound=5063
+[RESIDENTGAMEPLAY] SELECT n=6 seq=71 door=352 committed=yes redraw=yes collision=live animation=regular4frame-live sound=deferred entityRelink=deferred turnAdvance=deferred
+```
+
+The door remained open physically. No `WALL_LOAD`, `WALL-CACHE-READ-FAILED`, `RENDER-FAILED`, or SELECT rollback followed.
+
+Therefore the soldier-door wall-cache regression is **REAL-CYD HARDWARE PASS** at `3658e8a6edeb9c3d4f44fe1779e671f71374b0df`.
