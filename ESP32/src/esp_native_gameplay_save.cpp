@@ -533,7 +533,6 @@ bool commitRecordAtomic(const NativeSaveRecordV4& record) {
 bool captureRecord(NativeSaveRecordV4* outRecord) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
-    NativeSaveRecordV4& record = *outRecord;
 
     if (outRecord == nullptr || EspAssetPack_isOpen() ||
         runtime == nullptr || view == nullptr ||
@@ -541,6 +540,7 @@ bool captureRecord(NativeSaveRecordV4* outRecord) {
         return false;
     }
 
+    NativeSaveRecordV4& record = *outRecord;
     memset(outRecord, 0, sizeof(*outRecord));
     if (!EspNativeGameplayPlayerState_snapshot(&record.core.player) ||
         !EspNativeGameplayPlayerResources_snapshot(&record.resources) ||
