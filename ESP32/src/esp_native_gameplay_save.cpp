@@ -127,6 +127,19 @@ uint8_t statusCursor;
 uint8_t lastOperation;
 uint8_t lastOperationOk;
 
+/*
+ * V4 grew the bounded checkpoint record by the line-state section. Keeping a
+ * LoadedSaveRecord automatic inside the HUB wrapper pushed loopTask over its
+ * hardware stack canary before the real STATUS page renderer even returned.
+ *
+ * Save/load dispatch is serialized by the Arduino loop task, so one bounded
+ * non-reentrant BSS read workspace is sufficient for probe, verification and
+ * load. Large checkpoint payloads must not live in the HUB wrapper frame.
+ */
+LoadedSaveRecord readWorkspace;
+static_assert(sizeof(LoadedSaveRecord) <= 1280U,
+              "native save read workspace must stay small and bounded");
+
 uint32_t crc32Bytes(const uint8_t* data, size_t bytes) {
     uint32_t crc = 0xffffffffU;
     size_t i;
@@ -153,28 +166,44 @@ uint32_t fnv1aBytes(const uint8_t* data, size_t bytes) {
     return hash;
 }
 
-uint32_t recordCrcV1(const NativeSaveCore& input) {
-    NativeSaveCore record = input;
-    record.recordCrc32 = 0U;
-    return crc32Bytes(reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+uint32_t recordCrcBytes(const uint8_t* data, size_t bytes) {
+    const size_t zeroOffset = offsetof(NativeSaveCore, recordCrc32);
+    const size_t zeroEnd = zeroOffset + sizeof(uint32_t);
+    uint32_t crc = 0xffffffffU;
+    size_t i;
+    uint32_t bit;
+
+    if (data == nullptr || bytes < zeroEnd) return 0U;
+    for (i = 0U; i < bytes; ++i) {
+        const uint8_t value =
+            (i >= zeroOffset && i < zeroEnd) ? 0U : data[i];
+        crc ^= value;
+        for (bit = 0U; bit < 8U; ++bit) {
+            const uint32_t mask = (uint32_t)-(int32_t)(crc & 1U);
+            crc = (crc >> 1) ^ (0xedb88320U & mask);
+        }
+    }
+    return ~crc;
 }
 
-uint32_t recordCrcV2(const NativeSaveRecordV2& input) {
-    NativeSaveRecordV2 record = input;
-    record.core.recordCrc32 = 0U;
-    return crc32Bytes(reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+uint32_t recordCrcV1(const NativeSaveCore& record) {
+    return recordCrcBytes(reinterpret_cast<const uint8_t*>(&record),
+                          sizeof(record));
 }
 
-uint32_t recordCrcV3(const NativeSaveRecordV3& input) {
-    NativeSaveRecordV3 record = input;
-    record.core.recordCrc32 = 0U;
-    return crc32Bytes(reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+uint32_t recordCrcV2(const NativeSaveRecordV2& record) {
+    return recordCrcBytes(reinterpret_cast<const uint8_t*>(&record),
+                          sizeof(record));
 }
 
-uint32_t recordCrcV4(const NativeSaveRecordV4& input) {
-    NativeSaveRecordV4 record = input;
-    record.core.recordCrc32 = 0U;
-    return crc32Bytes(reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+uint32_t recordCrcV3(const NativeSaveRecordV3& record) {
+    return recordCrcBytes(reinterpret_cast<const uint8_t*>(&record),
+                          sizeof(record));
+}
+
+uint32_t recordCrcV4(const NativeSaveRecordV4& record) {
+    return recordCrcBytes(reinterpret_cast<const uint8_t*>(&record),
+                          sizeof(record));
 }
 
 uint32_t countBits(const uint8_t* bits, uint32_t bytes) {
@@ -444,31 +473,31 @@ bool writeExactV4(const char* path, const NativeSaveRecordV4& record) {
     return wrote == sizeof(record);
 }
 
-bool readExactV4(const char* path, NativeSaveRecordV4* outRecord) {
-    LoadedSaveRecord loaded;
-    if (outRecord == nullptr || !readRecordPath(path, &loaded) ||
+bool readExactV4Matches(const char* path, const NativeSaveRecordV4& expected) {
+    LoadedSaveRecord& loaded = readWorkspace;
+    memset(&loaded, 0, sizeof(loaded));
+    if (!readRecordPath(path, &loaded) ||
         loaded.hasResources != 1U || loaded.hasScript != 1U ||
         loaded.hasLines != 1U || loaded.core.version != kVersionV4 ||
         loaded.fileBytes != sizeof(NativeSaveRecordV4)) {
         return false;
     }
-    memset(outRecord, 0, sizeof(*outRecord));
-    outRecord->core = loaded.core;
-    outRecord->resources = loaded.resources;
-    outRecord->script = loaded.script;
-    outRecord->lines = loaded.lines;
-    return true;
+    return memcmp(&loaded.core, &expected.core, sizeof(expected.core)) == 0 &&
+           memcmp(&loaded.resources, &expected.resources,
+                  sizeof(expected.resources)) == 0 &&
+           memcmp(&loaded.script, &expected.script,
+                  sizeof(expected.script)) == 0 &&
+           memcmp(&loaded.lines, &expected.lines,
+                  sizeof(expected.lines)) == 0;
 }
 
 bool commitRecordAtomic(const NativeSaveRecordV4& record) {
-    NativeSaveRecordV4 verify;
     bool movedOld = false;
 
     if (SD.exists(kTempPath)) (void)SD.remove(kTempPath);
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
     if (!writeExactV4(kTempPath, record) ||
-        !readExactV4(kTempPath, &verify) ||
-        memcmp(&verify, &record, sizeof(record)) != 0) {
+        !readExactV4Matches(kTempPath, record)) {
         (void)SD.remove(kTempPath);
         return false;
     }
@@ -489,9 +518,7 @@ bool commitRecordAtomic(const NativeSaveRecordV4& record) {
         return false;
     }
 
-    memset(&verify, 0, sizeof(verify));
-    if (!readExactV4(kSavePath, &verify) ||
-        memcmp(&verify, &record, sizeof(record)) != 0) {
+    if (!readExactV4Matches(kSavePath, record)) {
         (void)SD.remove(kSavePath);
         if (movedOld && SD.exists(kBackupPath)) {
             (void)SD.rename(kBackupPath, kSavePath);
@@ -506,7 +533,7 @@ bool commitRecordAtomic(const NativeSaveRecordV4& record) {
 bool captureRecord(NativeSaveRecordV4* outRecord) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
-    NativeSaveRecordV4 record;
+    NativeSaveRecordV4& record = *outRecord;
 
     if (outRecord == nullptr || EspAssetPack_isOpen() ||
         runtime == nullptr || view == nullptr ||
@@ -514,7 +541,7 @@ bool captureRecord(NativeSaveRecordV4* outRecord) {
         return false;
     }
 
-    memset(&record, 0, sizeof(record));
+    memset(outRecord, 0, sizeof(*outRecord));
     if (!EspNativeGameplayPlayerState_snapshot(&record.core.player) ||
         !EspNativeGameplayPlayerResources_snapshot(&record.resources) ||
         !EspMapScriptState_snapshot(&record.script) ||
@@ -539,9 +566,7 @@ bool captureRecord(NativeSaveRecordV4* outRecord) {
     record.core.loadType = view->loadType;
     record.core.view = *view;
     record.core.recordCrc32 = recordCrcV4(record);
-    if (!recordV4Valid(record)) return false;
-    *outRecord = record;
-    return true;
+    return recordV4Valid(record);
 }
 
 bool saveNow(void) {
@@ -734,7 +759,7 @@ bool sessionConfigForPlayer(const EspNativeGameplayPlayerState& player,
 }
 
 bool loadNow(void) {
-    LoadedSaveRecord loaded;
+    LoadedSaveRecord& loaded = readWorkspace;
     const NativeSaveCore* record;
     EspBspInventory inventory;
     EspMapResidentSnapshot snapshot;
@@ -1024,6 +1049,15 @@ bool paintSaveOverlay(void) {
 
 }  // namespace
 
+#if defined(__GNUC__)
+__attribute__((noinline))
+#endif
+bool readableSaveExists(void) {
+    bool recoveredBackup = false;
+    memset(&readWorkspace, 0, sizeof(readWorkspace));
+    return readBestRecord(&readWorkspace, &recoveredBackup);
+}
+
 extern "C" EspNativeGameplayHubStatus
 __real_EspNativeGameplayHub_handleAction(uint8_t action);
 
@@ -1061,10 +1095,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                                        : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
             }
 
-            LoadedSaveRecord probe;
-            bool recoveredBackup = false;
-            memset(&probe, 0, sizeof(probe));
-            if (!readBestRecord(&probe, &recoveredBackup)) {
+            if (!readableSaveExists()) {
                 lastOperation = 2U;
                 lastOperationOk = 0U;
                 printf("[NATIVESAVE] LOAD-DEFER path=%s reason=missing-or-invalid mutation=no\n",
