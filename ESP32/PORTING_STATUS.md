@@ -7,18 +7,20 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 main at branch creation = 9b085a9d8ed254edc98463f33f6d1534215326b9
 current main = 9b085a9d8ed254edc98463f33f6d1534215326b9
-branch = agent/esp32-native-gameplay-changemap-transition
+branch = agent/esp32-native-checkpoint-v4-lines
 hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
-hardware-tested current code boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
-status = REAL-CYD CHECKPOINT V3 RESOURCE + SCRIPT STATE PASS
-branch policy = ACTIVE; checkpoint fallback is hardware-proven, CHANGEMAP exit test is next
+hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
+hardware-tested current code boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
+status = REAL-CYD CHECKPOINT V4 RESOURCE + SCRIPT + LINE STATE PASS
+branch policy = ACTIVE; V4 hardware PASS, docs-only tail, merge-ready after docs
 ```
 
-Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is now real-CYD validated in both rollback and persistence directions.
+Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence.
 
 Latest detailed records:
 
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
@@ -134,7 +136,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, and HUB/world framebuffer ownership gating for transient action feedback.
+Hardware-proven native behavior includes movement/turn/strafe, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, and HUB/world framebuffer ownership gating for transient action feedback.
 
 The player root remains:
 
@@ -322,6 +324,88 @@ largest8 = 8692
 
 This remained stable across the final LOAD/replay segment. Fragmentation/headroom remains below the advisory target and should stay on the review list, but the run does not demonstrate a new per-LOAD leak.
 
+## Native checkpoint save/load v4 lines — REAL-CYD PASS
+
+V4 keeps the proven v1/v2/v3 semantic sections and appends one compact line-family snapshot:
+
+```text
+magic = DRPGSAV4
+version = 4
+recordBytes = 1212
+v1/v2/v3 read compatibility = retained
+write format = v4
+line count max = 1024
+line bitset max = 128 B
+Entrance lines = 480
+Entrance bitset bytes = 60
+```
+
+The section persists only:
+
+```text
+open bit per line
+locked bit per line
+mutable locked/unlocked texture-10 variant bit
+runtime identity + exact line count/size
+line-state and texture-state fingerprints
+```
+
+The real-CYD load first rebuilt canonical Entrance line owners at `locked=7`, `texture10=0`, then restored the saved soldier-door state:
+
+```text
+[MAPLINECHECKPOINT] RESTORE ... lines=480 bytes=60
+                    open=0 locked=6 texture10=1
+                    lineFNV=69334d90 textureFNV=bda09634
+[NATIVESAVE] LOAD ... version=4 bytes=1212
+             resources=restored/5/43B
+             script=restored/93/265/81B/26f291e3
+             lines=restored/480/60B/open0/locked6/tex101/69334d90/bda09634
+```
+
+After LOAD, line 352 opened normally with `locked=0` without replaying the soldier unlock script:
+
+```text
+[ACTION] DOOR line=352 opcode=15 status=OK open=0->1 locked=0 ...
+[DOORANIM] COMPLETE ... transaction=committed
+```
+
+The first V4 hardware attempt also exposed a `loopTask` stack-canary reset when entering STAT. The final code boundary moved the large read workspace out of the HUB stack, removed large full-record CRC/verification copies, and passed both CI and the real-CYD INV -> STAT -> LOAD sequence without reset.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md)
+
+### Current v4 world boundary
+
+Persisted:
+
+```text
+settled player pose
+EspNativeGameplayPlayerState
+EspNativeGameplayPlayerResources consumed overlay
+EspMapScriptState event states + removed-command bits
+EspMapLineState open/locked state
+EspMapLineTextureState locked/unlocked texture variants
+```
+
+Still intentionally fresh / not yet persisted:
+
+```text
+automap reveal state
+monster mutable state/positions/activation/combat consequences
+destructibles
+gameplay RNG state
+```
+
+Post-LOAD session invariants remained intact:
+
+```text
+shapeData == NULL
+mediaTexels == NULL
+heap8 = 14076
+largest8 = 6644
+```
+
 ## HUB/action-feedback framebuffer ownership — REAL-CYD PASS
 
 The v2 hardware test exposed an unrelated visual ownership race: a pickup top-bar message could expire while HUB owned the framebuffer, leaving a stale `Got ...` fragment over the MENU area and causing a later underlay mismatch/recover path.
@@ -351,22 +435,19 @@ The candidate supports the show-stats WAIT/ACK handoff, resident teardown, targe
 
 ## Next bounded milestone
 
-The checkpoint fallback path is now hardware-proven through V3. Before adding another mutable owner, perform the already-implemented dedicated real-CYD CHANGEMAP exit-transition test from Entrance to Junction.
+Checkpoint V4 is now hardware-proven and this branch is at a docs-only tail. Do not broaden persistence again before a new bounded milestone is chosen from the real repo/legacy behavior.
 
-Required boundary for that test:
+Two correctness/polish gaps observed against the J2ME reference are now high-priority candidates for the next branch after merge:
 
-- exercise the real Entrance exit event 1 / tile 69;
-- verify SAVEGAME + CHANGEMAP preflight, WAIT_STATS/ACK ownership and target `/junction.bsp` identity;
-- verify resident teardown/rebuild and generic session recovery;
-- confirm `shapeData == NULL` and `mediaTexels == NULL` after Junction is ready;
-- do not broaden any unrelated opcode or persistence family during the test.
+- rotation in place must **not** advance a gameplay/monster turn; current native logs still schedule `MONSTERTURN reason=ROTATE`;
+- player attack feedback still lacks the legacy damage message and enemy-hit blood-pixel feedback.
 
-After CHANGEMAP receives its own PASS, the preferred next checkpoint slice is line open/locked state plus line texture variants as one coherent line-owner family. Automap, monster state/position and RNG remain separate later milestones.
+Treat those as separate bounded behavior milestones unless legacy recovery shows they share one permanent owner. The CHANGEMAP production candidate also remains without its dedicated real-CYD level-exit PASS and must not be called validated until that test occurs.
 
 ## Intentionally deferred / incomplete families
 
 ```text
-save-v3 mutable-world persistence beyond each validated section
+save-v4 mutable-world persistence beyond each validated section
 CHANGEMAP real-CYD exit validation
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
