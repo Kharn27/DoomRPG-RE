@@ -317,7 +317,7 @@ Detailed records:
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
 
-### Current save-world boundary
+### Historical V3 save-world boundary (superseded by V4)
 
 Persisted now:
 
