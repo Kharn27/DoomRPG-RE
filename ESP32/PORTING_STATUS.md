@@ -291,7 +291,7 @@ Detailed record:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md)
 
-### Current v3 world boundary
+### Historical v3 world boundary (superseded by V4)
 
 Persisted:
 
