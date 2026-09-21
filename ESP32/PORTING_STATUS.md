@@ -12,14 +12,14 @@ branch = agent/esp32-native-rotate-no-turn
 hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
-hardware-tested current code boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
+hardware-tested rotation no-turn boundary = b548321f477626777800371f0f82a9f3c2375bd9
+hardware-tested current code boundary = b548321f477626777800371f0f82a9f3c2375bd9
 merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
-rotation no-turn candidate = b548321f477626777800371f0f82a9f3c2375bd9 (real-CYD pending)
-status = REAL-CYD CHECKPOINT V4 PASS; merged mixed-input cursor retest pending; ROTATE no-turn parity candidate pending
-branch policy = ACTIVE; test candidate on normal esp32-cyd before docs-only lock
+status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN PASS; merged mixed-input cursor retest pending
+branch policy = LOCKED; docs-only tail until merge
 ```
 
-Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal push run #311 passed on that exact merged `main`. The merged mixed physical/touch SAVE cursor repair remains CI-proven but not yet separately real-CYD proven.
+Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal push run #311 passed on that exact merged `main`. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal `esp32-cyd` run #313 / `35581250636`; docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` then passed run #318 / `35581419960`. The user subsequently confirmed the corrected behavior on the real classic CYD. The merged mixed physical/touch SAVE cursor repair remains CI-proven but not yet separately real-CYD proven.
 
 Latest detailed records:
 
@@ -140,7 +140,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, and HUB/world framebuffer ownership gating for transient action feedback.
+Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, and HUB/world framebuffer ownership gating for transient action feedback.
 
 The player root remains:
 
@@ -437,32 +437,43 @@ CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
 
 The candidate supports the show-stats WAIT/ACK handoff, resident teardown, target rebuild/spawn and session configure with fail-closed errors. It remains **candidate** until the user performs the dedicated real-CYD level-exit test.
 
+## Native rotation no-turn parity — REAL-CYD PASS
+
+The legacy/J2ME split is now restored:
+
+```text
+movement completion -> advances gameplay turn
+rotation completion -> updates facing/view only
+```
+
+Hardware-tested code boundary:
+
+```text
+b548321f477626777800371f0f82a9f3c2375bd9
+```
+
+The real-CYD test confirmed that turning in place no longer advances monster behavior. The same supplied hardware run reconfirmed that legitimate turn-producing actions still do:
+
+```text
+PLAYER_ATTACK -> [MONSTERTURN] SCHEDULE n=32 reason=PLAYER_ATTACK
+MOVE          -> [MONSTERTURN] SCHEDULE n=33 reason=MOVE
+MOVE          -> [MONSTERTURN] SCHEDULE n=34 reason=MOVE
+MOVE          -> [MONSTERTURN] SCHEDULE n=35 reason=MOVE
+```
+
+The correction adds no allocation, gameplay RNG use, topology mutation, renderer mutation or player mutation on rotation. Detailed record:
+
+- [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
+
 ## Next bounded milestone
 
-The next bounded behavior correction is **rotation must not advance the monster/gameplay turn**.
+This branch is locked to docs-only after the rotation PASS.
 
-Legacy/J2ME recovery is explicit: `DoomCanvas_finishMovement()` calls `Game_advanceTurn()`; `DoomCanvas_finishRotation()` updates facing/tile semantics but does not. The native observer had incorrectly promoted a settled angle delta into `ESP_NATIVE_GAMEPLAY_MONSTER_TURN_ROTATE`.
+After merge, recover the new exact `main` SHA before branching again. The preferred next polish family is player attack feedback: recover the exact legacy damage message first, then the enemy-hit blood-pixel feedback if both can share a small permanent presentation owner without broadening combat semantics.
 
-Candidate:
+The merged SAVE/LOAD touch-cursor review fix still needs one short mixed-input hardware regression check when convenient: move SAVE/LOAD with physical controls, then tap the already-selected row and confirm the authoritative cursor dispatches the intended action without an extra move.
 
-```text
-branch = agent/esp32-native-rotate-no-turn
-code = b548321f477626777800371f0f82a9f3c2375bd9
-milestone = MILESTONE_NATIVE_ROTATE_NO_TURN.md
-status = hardware pending
-```
-
-Angle-only changes now refresh the observer baseline and emit:
-
-```text
-[MONSTERTURN] ROTATE-NO-TURN ... mutation=no rngConsumed=0 legacyAdvance=no
-```
-
-They must not emit `[MONSTERTURN] SCHEDULE ... reason=ROTATE`, move a monster, attack the player, or consume gameplay RNG. MOVE, PLAYER_ATTACK and PASS_TURN remain normal turn reasons.
-
-The merged SAVE/LOAD touch-cursor review fix also still needs one short mixed-input hardware check: move SAVE/LOAD with physical controls, then tap the already-selected row and confirm no extra cursor move or wrong SAVE/LOAD dispatch occurs.
-
-After the rotation PASS, the next parity family is player attack feedback: restore the legacy damage message and enemy-hit blood-pixel feedback as a separate bounded milestone.
+The CHANGEMAP production candidate also remains without its dedicated real-CYD level-exit PASS.
 
 ## Intentionally deferred / incomplete families
 
