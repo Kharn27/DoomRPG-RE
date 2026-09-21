@@ -545,7 +545,7 @@ static int syncOwner(void) {
         turnOwner.view.sourceArenaFNV1a = arena;
         turnOwner.view.lastAttackerSpriteIndex = TURN_NO_SPRITE;
         turnOwner.view.active = 1U;
-        printf("[MONSTERTURN] READY arena=%08x ownerBytes=%u mode=probe+rollback schedule=MOVE+ROTATE+PLAYER_ATTACK+PASS_TURN attackFamily=stationary-cardinal-generic traceMask=%04x playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=deferred mutation=no\n",
+        printf("[MONSTERTURN] READY arena=%08x ownerBytes=%u mode=probe+rollback schedule=MOVE+PLAYER_ATTACK+PASS_TURN rotation=legacy-no-turn attackFamily=stationary-cardinal-generic traceMask=%04x playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=deferred mutation=no\n",
                (unsigned int)arena,
                (unsigned int)sizeof(turnOwner),
                (unsigned int)TURN_TRACE_MASK);
@@ -1012,12 +1012,23 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
             turnOwner.viewBaseline = 1U;
         }
         else {
+            const int32_t previousAngle = turnOwner.lastViewAngle;
             if (playerView->viewX != turnOwner.lastViewX ||
                 playerView->viewY != turnOwner.lastViewY) {
                 reason = ESP_NATIVE_GAMEPLAY_MONSTER_TURN_MOVE;
             }
-            else if (playerView->viewAngle != turnOwner.lastViewAngle) {
-                reason = ESP_NATIVE_GAMEPLAY_MONSTER_TURN_ROTATE;
+            else if (playerView->viewAngle != previousAngle) {
+                /*
+                 * Legacy DoomCanvas_finishRotation() updates facing/tile
+                 * semantics but deliberately does not call Game_advanceTurn().
+                 * Rotation must therefore refresh this observer baseline
+                 * without scheduling monster AI, consuming gameplay RNG or
+                 * mutating the monster/player owners.
+                 */
+                printf("[MONSTERTURN] ROTATE-NO-TURN angle=%d->%d scheduled=%u mutation=no rngConsumed=0 legacyAdvance=no\n",
+                       (int)previousAngle,
+                       (int)playerView->viewAngle,
+                       (unsigned int)turnOwner.view.scheduledTurns);
             }
             turnOwner.lastViewX = playerView->viewX;
             turnOwner.lastViewY = playerView->viewY;
