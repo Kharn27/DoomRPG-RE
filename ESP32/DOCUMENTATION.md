@@ -20,7 +20,8 @@ hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2e
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
 hardware-tested current code boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
-status = REAL-CYD CHECKPOINT V4 RESOURCE + SCRIPT + LINE STATE PASS
+PR-review save-touch cursor candidate = f3dd883e937799eb2ad93812982edb1d4a06bcab
+status = REAL-CYD CHECKPOINT V4 RESOURCE + SCRIPT + LINE STATE PASS; PR-review mixed-input fix pending
 ```
 
 GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource boundary. The HUB/action-feedback ownership gate passed CI run #267 / run ID `35198140562` and is also real-CYD validated. Save-v3 script persistence passed CI run #275 / run ID `35199788280` on exact code boundary `fd206c5238ac2db62939d100bf3d08ac39081c69`. Save-v4 line persistence plus the HUB stack fix passed CI run #293 / run ID `35344853078` on exact code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` and is real-CYD validated.
@@ -451,7 +452,7 @@ The branch owns a bounded WAIT_STATS/ACK transition handoff and target resident/
 
 ## Preferred next milestone
 
-Checkpoint V4 is hardware-proven and this branch is at a docs-only tail.
+Checkpoint V4 is hardware-proven through `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d`. The PR review then found a mixed physical-controls + touch cursor split: `esp_native_gameplay_save_touch.c` mirrored its own SAVE/LOAD row and could emit an extra cursor move before a touch SELECT. Candidate `f3dd883e937799eb2ad93812982edb1d4a06bcab` removes that mirror and consults the authoritative checkpoint cursor. This small review fix needs a targeted real-CYD mixed-input retest before merge.
 
 Before implementing the next behavior branch, recover the exact J2ME/legacy behavior for the newly observed parity gaps. Highest-priority bounded candidates are:
 
