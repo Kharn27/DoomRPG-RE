@@ -5,6 +5,7 @@
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_save_ui.h"
 
 #define SAVE_TOUCH_LEFT 91
 #define SAVE_TOUCH_RIGHT 158
@@ -16,7 +17,6 @@
 #define SAVE_TARGET_SAVE 0U
 #define SAVE_TARGET_LOAD 1U
 
-static uint8_t statusTouchCursor = SAVE_TARGET_SAVE;
 
 int __real_EspNativeGameplayHubTouchUi_classify(
     int logicalX,
@@ -63,7 +63,6 @@ int __wrap_EspNativeGameplayHubTouchUi_classify(
 
     if (hub == NULL || hub->active == 0U ||
         hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
-        statusTouchCursor = SAVE_TARGET_SAVE;
         return __real_EspNativeGameplayHubTouchUi_classify(
             logicalX, logicalY, outHitBase);
     }
@@ -103,7 +102,6 @@ EspNativeGameplayInputStatus __wrap_EspNativeGameplayInput_consume(
     hub = EspNativeGameplayHub_view();
     if (hub == NULL || hub->active == 0U ||
         hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
-        statusTouchCursor = SAVE_TARGET_SAVE;
         return inputStatus;
     }
 
@@ -114,23 +112,36 @@ EspNativeGameplayInputStatus __wrap_EspNativeGameplayInput_consume(
         return inputStatus;
     }
 
-    if (target != statusTouchCursor) {
-        const uint8_t cursorAction =
-            target == SAVE_TARGET_LOAD
-                ? ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK
-                : ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD;
-        EspNativeGameplayHubStatus hubStatus =
-            EspNativeGameplayHub_handleAction(cursorAction);
-        if (hubStatus != ESP_NATIVE_GAMEPLAY_HUB_REDRAWN &&
-            hubStatus != ESP_NATIVE_GAMEPLAY_HUB_OK) {
-            printf("[NATIVESAVE] TOUCH-PRESELECT row=%s status=%s direct=blocked\n",
+    {
+        const uint8_t current = EspNativeGameplaySave_statusCursor();
+        if (current > SAVE_TARGET_LOAD) {
+            printf("[NATIVESAVE] TOUCH-PRESELECT row=%s cursor=%u direct=blocked reason=invalid-owner\n",
                    target == SAVE_TARGET_SAVE ? "SAVE" : "LOAD",
-                   EspNativeGameplayHub_statusName(hubStatus));
+                   (unsigned int)current);
             outIntent->action = ESP_NATIVE_GAMEPLAY_ACTION_NONE;
             outIntent->zone = ESP_NATIVE_GAMEPLAY_ZONE_NONE;
             return inputStatus;
         }
-        statusTouchCursor = target;
+        if (target != current) {
+            const uint8_t cursorAction =
+                target == SAVE_TARGET_LOAD
+                    ? ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK
+                    : ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD;
+            EspNativeGameplayHubStatus hubStatus =
+                EspNativeGameplayHub_handleAction(cursorAction);
+            const uint8_t after = EspNativeGameplaySave_statusCursor();
+            if ((hubStatus != ESP_NATIVE_GAMEPLAY_HUB_REDRAWN &&
+                 hubStatus != ESP_NATIVE_GAMEPLAY_HUB_OK) ||
+                after != target) {
+                printf("[NATIVESAVE] TOUCH-PRESELECT row=%s status=%s cursor=%u->%u direct=blocked\n",
+                       target == SAVE_TARGET_SAVE ? "SAVE" : "LOAD",
+                       EspNativeGameplayHub_statusName(hubStatus),
+                       (unsigned int)current, (unsigned int)after);
+                outIntent->action = ESP_NATIVE_GAMEPLAY_ACTION_NONE;
+                outIntent->zone = ESP_NATIVE_GAMEPLAY_ZONE_NONE;
+                return inputStatus;
+            }
+        }
     }
 
     printf("[NATIVESAVE] TOUCH-DISPATCH row=%s logical=%u,%u action=SELECT direct=yes\n",
