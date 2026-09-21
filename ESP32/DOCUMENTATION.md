@@ -13,21 +13,24 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-main at branch creation = 9b085a9d8ed254edc98463f33f6d1534215326b9
-current main = 9b085a9d8ed254edc98463f33f6d1534215326b9
-branch = agent/esp32-native-checkpoint-v4-lines
+main at branch creation = 23bdd1dfe92f860b62d5d8cede517122ac589464
+current main = 23bdd1dfe92f860b62d5d8cede517122ac589464
+main merge = PR #139
+branch = agent/esp32-native-rotate-no-turn
 hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
 hardware-tested current code boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
-PR-review save-touch cursor candidate = f3dd883e937799eb2ad93812982edb1d4a06bcab
-status = REAL-CYD CHECKPOINT V4 RESOURCE + SCRIPT + LINE STATE PASS; PR-review mixed-input fix pending
+merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
+rotation no-turn candidate = b548321f477626777800371f0f82a9f3c2375bd9 (real-CYD pending)
+status = REAL-CYD CHECKPOINT V4 PASS; merged mixed-input cursor retest pending; ROTATE no-turn parity candidate pending
 ```
 
-GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource boundary. The HUB/action-feedback ownership gate passed CI run #267 / run ID `35198140562` and is also real-CYD validated. Save-v3 script persistence passed CI run #275 / run ID `35199788280` on exact code boundary `fd206c5238ac2db62939d100bf3d08ac39081c69`. Save-v4 line persistence plus the HUB stack fix passed CI run #293 / run ID `35344853078` on exact code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` and is real-CYD validated.
+GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource boundary. The HUB/action-feedback ownership gate passed CI run #267 / run ID `35198140562` and is also real-CYD validated. Save-v3 script persistence passed CI run #275 / run ID `35199788280` on exact code boundary `fd206c5238ac2db62939d100bf3d08ac39081c69`. Save-v4 line persistence plus the HUB stack fix passed CI run #293 / run ID `35344853078` on exact code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` and is real-CYD validated. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal `esp32-cyd` run #311 passed on that exact merged main. The mixed physical/touch SAVE cursor fix is therefore merged and CI-proven, but its dedicated real-CYD mixed-input check is still pending.
 
 Latest milestones:
 
+- [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
@@ -452,22 +455,36 @@ The branch owns a bounded WAIT_STATS/ACK transition handoff and target resident/
 
 ## Preferred next milestone
 
-Checkpoint V4 is hardware-proven through `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d`. The PR review then found a mixed physical-controls + touch cursor split: `esp_native_gameplay_save_touch.c` mirrored its own SAVE/LOAD row and could emit an extra cursor move before a touch SELECT. Candidate `f3dd883e937799eb2ad93812982edb1d4a06bcab` removes that mirror and consults the authoritative checkpoint cursor. This small review fix needs a targeted real-CYD mixed-input retest before merge.
+Current branch: `agent/esp32-native-rotate-no-turn`.
 
-Before implementing the next behavior branch, recover the exact J2ME/legacy behavior for the newly observed parity gaps. Highest-priority bounded candidates are:
+Legacy/J2ME parity requires rotation in place to be view/facing work only, not turn advancement. The reference split is exact:
 
 ```text
-rotation in place must not advance the monster/gameplay turn
-player attack damage message feedback
-enemy hit blood-pixel feedback
+DoomCanvas_finishMovement() -> Game_advanceTurn()
+DoomCanvas_finishRotation() -> no Game_advanceTurn()
 ```
 
-The current native log still shows `MONSTERTURN reason=ROTATE`, which contradicts the J2ME behavior observed on hardware/reference testing. Keep that correction separate from visual attack-feedback work unless legacy recovery demonstrates a shared permanent boundary.
+Candidate `b548321f477626777800371f0f82a9f3c2375bd9` removes angle-only monster-turn scheduling while still updating the observer baseline. Hardware should see:
 
-The production CHANGEMAP candidate remains present but still requires its own dedicated real-CYD level-exit PASS before being called validated.
+```text
+[MONSTERTURN] ROTATE-NO-TURN ... legacyAdvance=no
+```
+
+and must not see `[MONSTERTURN] SCHEDULE ... reason=ROTATE`. MOVE, PLAYER_ATTACK and PASS_TURN remain turn-producing actions.
+
+Detailed candidate record:
+
+- [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
+
+Also retain one pending regression check from the merged PR review: physical SAVE/LOAD cursor navigation followed by direct touch must dispatch the authoritative row without an extra cursor move. The code is already merged in main, but Serial/hardware truth for that exact mixed-input sequence is still pending.
+
+After these checks, the next separate polish family is player attack feedback: damage message first, then enemy-hit blood pixels if the recovered legacy path supports a clean bounded owner.
+
+The production CHANGEMAP candidate remains present and still requires its own dedicated real-CYD level-exit PASS.
 
 ## Recent milestone index
 
+- [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
