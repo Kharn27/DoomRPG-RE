@@ -12,8 +12,9 @@ hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2e
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
 hardware-tested current code boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
-status = REAL-CYD CHECKPOINT V4 RESOURCE + SCRIPT + LINE STATE PASS
-branch policy = ACTIVE; V4 hardware PASS, docs-only tail, merge-ready after docs
+PR-review save-touch cursor candidate = f3dd883e937799eb2ad93812982edb1d4a06bcab
+status = REAL-CYD CHECKPOINT V4 RESOURCE + SCRIPT + LINE STATE PASS; PR-review mixed-input fix pending
+branch policy = ACTIVE; do not merge until targeted physical-navigation + touch SAVE/LOAD retest passes
 ```
 
 Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence.
@@ -435,7 +436,7 @@ The candidate supports the show-stats WAIT/ACK handoff, resident teardown, targe
 
 ## Next bounded milestone
 
-Checkpoint V4 is now hardware-proven and this branch is at a docs-only tail. Do not broaden persistence again before a new bounded milestone is chosen from the real repo/legacy behavior.
+Checkpoint V4 remains hardware-proven through code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d`. A PR-review fix at `f3dd883e937799eb2ad93812982edb1d4a06bcab` removes the duplicate touch-only SAVE/LOAD cursor and routes touch preselection through the authoritative checkpoint cursor. This review fix still needs one targeted real-CYD mixed-input validation before merge. Do not broaden persistence again before that pass.
 
 Two correctness/polish gaps observed against the J2ME reference are now high-priority candidates for the next branch after merge:
 
