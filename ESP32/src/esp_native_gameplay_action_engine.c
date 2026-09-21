@@ -103,6 +103,7 @@ typedef EspNativeGameplayActionFeedback ActionFeedback;
 #define ACTION_FEEDBACK_PASS_TURN ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN
 #define ACTION_FEEDBACK_PICKUP ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP
 #define ACTION_FEEDBACK_DAMAGE ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE
+#define ACTION_FEEDBACK_PLAYER_HIT ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT
 
 typedef enum ActionRoute_e {
     ACTION_ROUTE_INVALID = 0,
@@ -335,8 +336,9 @@ int EspNativeGameplayActionEngine_queueTextFeedback(
     uint16_t viewportFlashMs) {
     size_t len;
     if ((feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP &&
-         feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE) || text == NULL ||
-        !ensureOwner() || actionState.pending.active != 0U ||
+         feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE &&
+         feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT) ||
+        text == NULL || !ensureOwner() || actionState.pending.active != 0U ||
         actionState.feedbackPending != 0U) {
         return 0;
     }
@@ -675,7 +677,8 @@ static const char* feedbackText(uint8_t feedback) {
     if (feedback == ACTION_FEEDBACK_DOOR_CLEARED) return "Door cleared!";
     if (feedback == ACTION_FEEDBACK_PASS_TURN) return "Turn passed.";
     if ((feedback == ACTION_FEEDBACK_PICKUP ||
-         feedback == ACTION_FEEDBACK_DAMAGE) &&
+         feedback == ACTION_FEEDBACK_DAMAGE ||
+         feedback == ACTION_FEEDBACK_PLAYER_HIT) &&
         actionState.feedbackText[0] != '\0') {
         return actionState.feedbackText;
     }
