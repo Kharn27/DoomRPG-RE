@@ -1,6 +1,6 @@
 # Native player hit feedback — outgoing damage text + blood pixels
 
-Status: **CANDIDATE — awaiting real-CYD validation**
+Status: **REAL-CYD PASS**
 
 ## Recovery / code boundary
 
@@ -168,10 +168,10 @@ For a miss:
 
 No `[HITFX] ARM` should occur for that attack.
 
-## Real-CYD evidence before final retest
+## Real-CYD validation
 
-The corrected kinematic spray itself is **hardware-proven visually good** on the
-classic CYD. On a lethal Hellhound hit the real device produced:
+The corrected kinematic spray and the stack-headroom repair are now
+**hardware-proven on the real classic CYD**. A lethal Hellhound hit produced:
 
 ```text
 [MONSTERCOMBAT] ROLL ... totalDamage=5 armorDamage=3 ...
@@ -184,10 +184,10 @@ classic CYD. On a lethal Hellhound hit the real device produced:
 [MONSTERCOMBAT] COMMIT ... hp=6->0 ... visual=death4->corpse2 ...
 ```
 
-The user confirmed the spray now looks correct and is synchronized with impact.
+The user confirmed the spray looks correct and is synchronized with impact.
 
-However, the same firmware later hit a **loopTask stack canary** while attacking
-the first zombie. The decisive sequence was:
+The previous firmware had then hit a **loopTask stack canary** while attacking
+the first zombie. The decisive failing sequence had been:
 
 ```text
 [MONSTERCOMBAT] ROLL seq=37 ... totalDamage=2 armorDamage=1 ...
@@ -196,10 +196,8 @@ the first zombie. The decisive sequence was:
 Guru Meditation Error: Stack canary watchpoint triggered (loopTask)
 ```
 
-There was no `[HITFX] PAINT` for that zombie frame; the panic happened inside
-the nested attack render before the presentation decorator completed. Therefore
-the visual correction is accepted, but the milestone as a whole is **not yet a
-hardware PASS**.
+There was no `[HITFX] PAINT` for that old zombie frame; the panic happened
+inside the nested attack render before the presentation decorator completed.
 
 The exact CI artifact ELF for code boundary
 `6dfe67d3f639e5f9aad7849db6638042b7bdc508` shows
@@ -219,7 +217,8 @@ The stack repair at
   loopTask canary failures in HUB/save paths.
 
 CI #350 passed. The resulting ELF reduces the
-`servicePending()` CFA/automatic frame from **1040 B to 608 B**.
+`servicePending()` CFA/automatic frame from **1040 B to 608 B**. The real CYD
+has now validated that repair too.
 
 Runtime witness now advertises:
 
@@ -228,30 +227,60 @@ Runtime witness now advertises:
                          renderStats=single-frame ...
 ```
 
-## Required real-CYD validation
+## Final real-CYD witnesses
 
-Use normal `esp32-cyd` firmware from the exact code boundary
-`e070057d3b9466f87189c504f86099b7e9f2fb67`.
+The repaired build completed both lethal and nonlethal player-hit paths without
+a reboot.
 
-1. Reproduce the zombie attack that previously tripped the loopTask canary.
-   Confirm the attack reaches `[HITFX] PAINT`, `[MONSTERCOMBAT] COMMIT` and
-   the following `PLAYER_ATTACK` monster turn with no reboot.
-2. Hit a normal enemy without killing it. Confirm a visible `"<N> damage!"`
-   top-bar message and a **spray**, not a compact red blob. Blood should appear
-   on the same attack/pain frame, not one frame after it.
-3. Verify Serial `N` equals `totalDamage + armorDamage` from the preceding
-   `[MONSTERCOMBAT] ROLL`.
-4. Confirm `[HITFX] ARM`, `PAINT` and `EXPIRE`; the world must restore
-   cleanly after the 350 ms lease while the message can remain for its normal
-   1200 ms lease.
-5. Kill an ordinary enemy and confirm the impact spray appears while the death
-   pose is being presented, rather than only after the monster has fallen.
-   Existing corpse/gib behavior must remain intact. The monster-name death suffix
-   is intentionally deferred.
-6. If a miss is encountered, confirm `"Missed!"` and no blood.
-7. If practical, a crit should display `"Crit! <N> damage!"`.
-8. Confirm the already-proven `PLAYER_ATTACK` monster-turn scheduling remains
-   unchanged and no extra gameplay RNG is consumed by hit FX.
+Lethal Hellhound:
 
-Only after the real classic CYD witness should the branch be locked to a
-documentation-only tail.
+```text
+[MONSTERCOMBAT] ROLL seq=84 ... totalDamage=5 armorDamage=3 ...
+[HITFX] ARM seq=84 ... total=8 ... particles=44 ...
+[HITFX] PAINT seq=84 ... pixels=44 ... ageMs=197 ...
+             motion=legacy-kinematic-spray ...
+[MONSTERHITFEEDBACK] ARM ... message=8 damage! ... timing=attack-frame ...
+[MONSTERCOMBAT] COMMIT ... hp=6->0 ... visual=death4->corpse2 ...
+[MONSTERTURN] SCHEDULE ... reason=PLAYER_ATTACK ...
+[HITFX] EXPIRE ... paints=2 pixels=88 ... gameplayRng=untouched
+```
+
+Nonlethal zombie — this is the path that previously tripped the stack canary:
+
+```text
+[MONSTERCOMBAT] ROLL seq=109 ... totalDamage=2 armorDamage=2 ...
+[HITFX] ARM seq=109 ... total=4 ... particles=7 ...
+[HITFX] PAINT seq=109 ... pixels=7 ... ageMs=208 ...
+[MONSTERHITFEEDBACK] ARM ... message=4 damage! ... timing=attack-frame ...
+[MONSTERCOMBAT] COMMIT ... hp=4->2 armor=5->3 alive=1->1 ...
+[MONSTERTURN] SCHEDULE ... reason=PLAYER_ATTACK ...
+[MONSTERRETAL] COMMIT ... playerHP=27->24 armor=10->8 ...
+[HITFX] EXPIRE ... paints=2 pixels=14 ... gameplayRng=untouched
+```
+
+A second zombie hit also completed the lethal branch:
+
+```text
+[MONSTERCOMBAT] ROLL seq=110 ... totalDamage=2 armorDamage=2 ...
+[HITFX] PAINT seq=110 ... pixels=7 ... ageMs=190 ...
+[MONSTERCOMBAT] COMMIT ... hp=2->0 ... visual=death4->corpse2 ...
+[MONSTERTURN] SCHEDULE ... reason=PLAYER_ATTACK ...
+[HITFX] EXPIRE ... paints=2 pixels=14 ...
+```
+
+No stack canary, Guru Meditation or reboot occurred. The damage text exactly
+matches `totalDamage + armorDamage` in the supplied witnesses, the spray is
+presented on the attack frame, its 350 ms lease restores the world cleanly, and
+the 1200 ms top-bar lease remains independent.
+
+Miss and crit formatting remain recovered from the legacy implementation but
+were not required for this hardware PASS because the ordinary nonlethal, lethal,
+retaliation and previously-crashing render paths are all exercised.
+
+## Merge boundary
+
+```text
+hardware-tested code = e070057d3b9466f87189c504f86099b7e9f2fb67
+post-test changes = documentation only
+status = merge-ready
+```
