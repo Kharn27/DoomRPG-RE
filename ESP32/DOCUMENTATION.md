@@ -22,9 +22,9 @@ hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
 hardware-tested rotation no-turn boundary = b548321f477626777800371f0f82a9f3c2375bd9
 hardware-tested current code boundary = b548321f477626777800371f0f82a9f3c2375bd9
-player hit feedback candidate = 6dfe67d3f639e5f9aad7849db6638042b7bdc508 (CI PASS, real-CYD retest pending)
+player hit feedback candidate = e070057d3b9466f87189c504f86099b7e9f2fb67 (CI PASS, real-CYD stack retest pending)
 merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
-status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN PASS; PLAYER HIT FEEDBACK candidate pending
+status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN PASS; HIT SPRAY visually validated, zombie stack-canary repair pending retest
 ```
 
 GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource boundary. The HUB/action-feedback ownership gate passed CI run #267 / run ID `35198140562` and is also real-CYD validated. Save-v3 script persistence passed CI run #275 / run ID `35199788280` on exact code boundary `fd206c5238ac2db62939d100bf3d08ac39081c69`. Save-v4 line persistence plus the HUB stack fix passed CI run #293 / run ID `35344853078` on exact code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` and is real-CYD validated. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal `esp32-cyd` run #311 passed on that exact merged main. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal run #313 / `35581250636`, and docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` passed run #318 / `35581419960`. The real CYD then confirmed the corrected rotation behavior. The mixed physical/touch SAVE cursor fix remains merged and CI-proven, but its dedicated real-CYD mixed-input check is still pending. PR #141 merged the rotation milestone at `5ac68378363b77daf9f98203966726557dc9b0ad`; normal `esp32-cyd` run #334 passed on that exact merged main. The first player-hit feedback build proved the message and owner plumbing on hardware, but its blood burst was late and blob-like. The corrected code boundary `6dfe67d3f639e5f9aad7849db6638042b7bdc508` passed normal `esp32-cyd` run #346 / `35602149336`; it moves rollback-cancellable blood onto the attack frame and uses a recovered kinematic spray. Real-CYD presentation retest remains pending.
@@ -501,11 +501,11 @@ N = totalDamage + totalArmorDamage
 Candidate code:
 
 ```text
-6dfe67d3f639e5f9aad7849db6638042b7bdc508
-esp32-cyd run #346 / 35602149336 = SUCCESS
+e070057d3b9466f87189c504f86099b7e9f2fb67
+esp32-cyd run #350 / 35611816011 = SUCCESS
 ```
 
-Blood is presentation-only: at most 64 deterministic local visual droplets around the cardinal target center, 350 ms lease, red/blue/green color variants recovered from entity subtype/parm, no heap and no gameplay RNG. Hardware showed the original post-frame static cluster was both late and too dense; the candidate now pre-arms a rollback-cancellable impact spray and derives motion from the recovered legacy start/velocity/gravity ranges. A fresh world redraw still preserves an already-visible top-bar feedback lease, allowing the blood overlay to expire without truncating the 1200 ms message.
+Blood is presentation-only: at most 64 deterministic local visual droplets around the cardinal target center, 350 ms lease, red/blue/green color variants recovered from entity subtype/parm, no heap and no gameplay RNG. Hardware confirms the pre-armed legacy-kinematic spray now looks correct. The subsequent zombie attack exposed a loopTask stack canary before sprite/present completion. The failing artifact ELF measured `servicePending()` at 1040 B automatic stack; the current code moves its 324 B rollback owner off-stack and reuses one frame-stat record, reducing the CI #350 ELF frame to 608 B. A real-CYD zombie retest is required before PASS.
 
 Detailed candidate record:
 
