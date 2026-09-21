@@ -8,7 +8,10 @@ Status: **CANDIDATE — awaiting real-CYD validation**
 main = 23bdd1dfe92f860b62d5d8cede517122ac589464
 branch = agent/esp32-native-rotate-no-turn
 candidate code = b548321f477626777800371f0f82a9f3c2375bd9
+CI = esp32-cyd run #313 / 35581250636 SUCCESS
 ```
+
+Run #313 built the normal `esp32-cyd` environment at head `908beb445dd2d025bd6533c6c5545e0c585a54c9`, whose only commit after the candidate code boundary is this milestone document. Therefore the candidate code itself is CI-proven; hardware behavior remains pending.
 
 This branch was created from the exact post-PR-139 `main`.
 
