@@ -21,6 +21,7 @@
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_session.h"
+#include "esp_native_gameplay_save_ui.h"
 #include "esp_player_facing_state.h"
 #include "esp_player_finish_rotation_tile.h"
 #include "esp_player_fresh_map_state.h"
@@ -1048,6 +1049,10 @@ bool paintSaveOverlay(void) {
 }
 
 }  // namespace
+
+extern "C" uint8_t EspNativeGameplaySave_statusCursor(void) {
+    return statusCursor;
+}
 
 #if defined(__GNUC__)
 __attribute__((noinline))
