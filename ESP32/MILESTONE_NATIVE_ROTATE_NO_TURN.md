@@ -1,17 +1,19 @@
 # Native rotation no-turn parity
 
-Status: **CANDIDATE — awaiting real-CYD validation**
+Status: **REAL-CYD HARDWARE PASS**
 
 ## Recovery point
 
 ```text
 main = 23bdd1dfe92f860b62d5d8cede517122ac589464
 branch = agent/esp32-native-rotate-no-turn
-candidate code = b548321f477626777800371f0f82a9f3c2375bd9
+hardware-tested code = b548321f477626777800371f0f82a9f3c2375bd9
 CI = esp32-cyd run #313 / 35581250636 SUCCESS
+docs-only head before PASS record = b004a681cbfbe38d51b1df02fc14436d696f2552
+docs-only head CI = esp32-cyd run #318 / 35581419960 SUCCESS
 ```
 
-Run #313 built the normal `esp32-cyd` environment at head `908beb445dd2d025bd6533c6c5545e0c585a54c9`, whose only commit after the candidate code boundary is this milestone document. Therefore the candidate code itself is CI-proven; hardware behavior remains pending.
+Run #313 built the normal `esp32-cyd` environment at head `908beb445dd2d025bd6533c6c5545e0c585a54c9`, whose only commit after the code boundary is this milestone document. Run #318 later passed on docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552`. The real classic CYD then validated the behavior. The hardware-tested code boundary remains `b548321f477626777800371f0f82a9f3c2375bd9`; every commit after it up to the PASS record is documentation-only.
 
 This branch was created from the exact post-PR-139 `main`.
 
@@ -86,17 +88,59 @@ No new owner, allocation, RNG call, topology mutation, renderer mutation or play
 
 The existing ROTATE enum value is retained for source/history compatibility but is no longer produced by the observer.
 
-## Required real-CYD validation
+## Real-CYD hardware proof
 
-Use a room with at least one already-active mobile/attack-capable monster.
+The user exercised the correction on the real classic CYD and confirmed the rotation behavior is now correct: turning in place no longer lets monsters take a gameplay turn.
 
-1. Capture the monster position/state and a stable `MONSTERTURN` scheduled count.
-2. TURN_LEFT / TURN_RIGHT repeatedly without changing tile.
-3. Confirm each rotation logs `ROTATE-NO-TURN`.
-4. Confirm there is **no** `[MONSTERTURN] SCHEDULE ... reason=ROTATE`.
-5. Confirm monsters neither move nor attack and gameplay RNG is not consumed by rotation.
-6. Then MOVE one tile and confirm a normal `reason=MOVE` turn still occurs.
-7. PASS_TURN and confirm `reason=PASS_TURN` still occurs.
-8. Attack a monster and confirm the existing `reason=PLAYER_ATTACK` path still occurs.
+The decisive behavioral result is:
 
-Only after this witness is observed on the classic CYD may this milestone be marked hardware PASS.
+```text
+TURN_LEFT / TURN_RIGHT
+ -> view angle changes normally
+ -> monster position/state does not advance from the rotation
+ -> no monster retaliation from the rotation
+ -> no gameplay-turn advancement from the rotation
+```
+
+The provided Serial excerpt also reconfirms that the legitimate turn-producing actions still schedule the existing native monster-turn pipeline after the fix.
+
+Player attack remains a turn source:
+
+```text
+[MONSTERTURN] SCHEDULE n=32 reason=PLAYER_ATTACK passSeq=0
+[MONSTERTURN] COMPLETE reason=PLAYER_ATTACK ...
+[MONSTERACTIVESEQ] COMPLETE turn=32 reason=3 ...
+```
+
+Movement remains a turn source on consecutive committed steps:
+
+```text
+[RESIDENTGAMEPLAY] MOVE n=32 seq=97 ... committed=yes
+[MONSTERTURN] SCHEDULE n=33 reason=MOVE ...
+
+[RESIDENTGAMEPLAY] MOVE n=33 seq=98 ... committed=yes
+[MONSTERTURN] SCHEDULE n=34 reason=MOVE ...
+
+[RESIDENTGAMEPLAY] MOVE n=34 seq=99 ... committed=yes
+[MONSTERTURN] SCHEDULE n=35 reason=MOVE ...
+```
+
+The same session preserved normal player combat and world mutation: the Hellhound at sprite 179 was killed through the native monster-combat path, the following movement/event sequence committed correctly, and a later Armor Shard pickup committed normally. No regression was observed in rendering, collision, combat, resource pickup or monster-turn scheduling for real turn-producing actions.
+
+Runtime memory in the provided witness remained stable:
+
+```text
+heap=79808
+heap8=14076
+largest8=12788
+```
+
+No new allocation or persistent owner was added by this correction.
+
+## Merge boundary
+
+`b548321f477626777800371f0f82a9f3c2375bd9` is the real-CYD hardware-tested code boundary for rotation no-turn parity.
+
+Commits after that SHA are documentation-only. The branch may be treated as merge-ready for this bounded milestone once the PASS documentation tail is green in CI.
+
+The merged mixed physical/touch SAVE/LOAD cursor fix remains a separate pending hardware regression check and is not promoted by this milestone.
