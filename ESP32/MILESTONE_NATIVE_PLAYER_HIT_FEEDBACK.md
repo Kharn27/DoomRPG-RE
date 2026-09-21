@@ -8,9 +8,9 @@ Status: **CANDIDATE — awaiting real-CYD validation**
 main = 5ac68378363b77daf9f98203966726557dc9b0ad
 main merge = PR #141
 branch = agent/esp32-native-player-hit-feedback
-candidate code = 6dfe67d3f639e5f9aad7849db6638042b7bdc508
-CI = esp32-cyd run #346 / 35602149336 SUCCESS
-artifact = doom-rpg-esp32-cyd-6dfe67d3f639e5f9aad7849db6638042b7bdc508
+candidate code = e070057d3b9466f87189c504f86099b7e9f2fb67
+CI = esp32-cyd run #350 / 35611816011 SUCCESS
+artifact = doom-rpg-esp32-cyd-e070057d3b9466f87189c504f86099b7e9f2fb67
 ```
 
 The branch was created from the exact post-rotation merge `main`. No combat
@@ -168,25 +168,89 @@ For a miss:
 
 No `[HITFX] ARM` should occur for that attack.
 
+## Real-CYD evidence before final retest
+
+The corrected kinematic spray itself is **hardware-proven visually good** on the
+classic CYD. On a lethal Hellhound hit the real device produced:
+
+```text
+[MONSTERCOMBAT] ROLL ... totalDamage=5 armorDamage=3 ...
+[HITFX] ARM seq=17 ... total=8 ... particles=44 ...
+[HITFX] PAINT seq=17 ... pixels=44 ... ageMs=190 ...
+             motion=legacy-kinematic-spray ...
+[VIDEO] Present ...
+[MONSTERHITFEEDBACK] ARM ... message=8 damage!
+             blood=armed timing=attack-frame ...
+[MONSTERCOMBAT] COMMIT ... hp=6->0 ... visual=death4->corpse2 ...
+```
+
+The user confirmed the spray now looks correct and is synchronized with impact.
+
+However, the same firmware later hit a **loopTask stack canary** while attacking
+the first zombie. The decisive sequence was:
+
+```text
+[MONSTERCOMBAT] ROLL seq=37 ... totalDamage=2 armorDamage=1 ...
+[HITFX] ARM seq=37 ... particles=6 ...
+[NATIVEFRAME] WALL ...
+Guru Meditation Error: Stack canary watchpoint triggered (loopTask)
+```
+
+There was no `[HITFX] PAINT` for that zombie frame; the panic happened inside
+the nested attack render before the presentation decorator completed. Therefore
+the visual correction is accepted, but the milestone as a whole is **not yet a
+hardware PASS**.
+
+The exact CI artifact ELF for code boundary
+`6dfe67d3f639e5f9aad7849db6638042b7bdc508` shows
+`servicePending()` reserving **1040 bytes** of automatic stack while it calls
+the native world/sprite renderer. The largest unnecessary automatic object was
+the 324-byte full `MonsterCombatOwner` rollback snapshot, alongside three
+104-byte frame-stat records.
+
+The stack repair at
+`e070057d3b9466f87189c504f86099b7e9f2fb67`:
+
+- moves only the 324-byte rollback owner to a bounded non-reentrant BSS owner;
+- reuses one 104-byte frame-stat record for attack/rollback/settle instead of
+  three simultaneous automatic records;
+- leaves combat math, hit FX timing, RNG ordering and rollback semantics intact;
+- follows the already-established project pattern used to recover previous
+  loopTask canary failures in HUB/save paths.
+
+CI #350 passed. The resulting ELF reduces the
+`servicePending()` CFA/automatic frame from **1040 B to 608 B**.
+
+Runtime witness now advertises:
+
+```text
+[MONSTERCOMBAT] READY ... rollbackOwner=324B/static
+                         renderStats=single-frame ...
+```
+
 ## Required real-CYD validation
 
-Use normal `esp32-cyd` firmware from the exact code boundary.
+Use normal `esp32-cyd` firmware from the exact code boundary
+`e070057d3b9466f87189c504f86099b7e9f2fb67`.
 
-1. Hit a normal enemy without killing it. Confirm a visible `"<N> damage!"`
+1. Reproduce the zombie attack that previously tripped the loopTask canary.
+   Confirm the attack reaches `[HITFX] PAINT`, `[MONSTERCOMBAT] COMMIT` and
+   the following `PLAYER_ATTACK` monster turn with no reboot.
+2. Hit a normal enemy without killing it. Confirm a visible `"<N> damage!"`
    top-bar message and a **spray**, not a compact red blob. Blood should appear
    on the same attack/pain frame, not one frame after it.
-2. Verify Serial `N` equals `totalDamage + armorDamage` from the preceding
+3. Verify Serial `N` equals `totalDamage + armorDamage` from the preceding
    `[MONSTERCOMBAT] ROLL`.
-3. Confirm `[HITFX] ARM`, `PAINT` and `EXPIRE`; the world must restore
+4. Confirm `[HITFX] ARM`, `PAINT` and `EXPIRE`; the world must restore
    cleanly after the 350 ms lease while the message can remain for its normal
    1200 ms lease.
-4. Kill an ordinary enemy and confirm the impact spray appears while the death
+5. Kill an ordinary enemy and confirm the impact spray appears while the death
    pose is being presented, rather than only after the monster has fallen.
    Existing corpse/gib behavior must remain intact. The monster-name death suffix
    is intentionally deferred.
-5. If a miss is encountered, confirm `"Missed!"` and no blood.
-6. If practical, a crit should display `"Crit! <N> damage!"`.
-7. Confirm the already-proven `PLAYER_ATTACK` monster-turn scheduling remains
+6. If a miss is encountered, confirm `"Missed!"` and no blood.
+7. If practical, a crit should display `"Crit! <N> damage!"`.
+8. Confirm the already-proven `PLAYER_ATTACK` monster-turn scheduling remains
    unchanged and no extra gameplay RNG is consumed by hit FX.
 
 Only after the real classic CYD witness should the branch be locked to a
