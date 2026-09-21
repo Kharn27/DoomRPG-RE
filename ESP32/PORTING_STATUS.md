@@ -5,22 +5,25 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-main at branch creation = 9b085a9d8ed254edc98463f33f6d1534215326b9
-current main = 9b085a9d8ed254edc98463f33f6d1534215326b9
-branch = agent/esp32-native-checkpoint-v4-lines
+main at branch creation = 23bdd1dfe92f860b62d5d8cede517122ac589464
+current main = 23bdd1dfe92f860b62d5d8cede517122ac589464
+main merge = PR #139
+branch = agent/esp32-native-rotate-no-turn
 hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
 hardware-tested current code boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
-PR-review save-touch cursor candidate = f3dd883e937799eb2ad93812982edb1d4a06bcab
-status = REAL-CYD CHECKPOINT V4 RESOURCE + SCRIPT + LINE STATE PASS; PR-review mixed-input fix pending
-branch policy = ACTIVE; do not merge until targeted physical-navigation + touch SAVE/LOAD retest passes
+merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
+rotation no-turn candidate = b548321f477626777800371f0f82a9f3c2375bd9 (real-CYD pending)
+status = REAL-CYD CHECKPOINT V4 PASS; merged mixed-input cursor retest pending; ROTATE no-turn parity candidate pending
+branch policy = ACTIVE; test candidate on normal esp32-cyd before docs-only lock
 ```
 
-Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence.
+Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal push run #311 passed on that exact merged `main`. The merged mixed physical/touch SAVE cursor repair remains CI-proven but not yet separately real-CYD proven.
 
 Latest detailed records:
 
+- [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
@@ -436,14 +439,30 @@ The candidate supports the show-stats WAIT/ACK handoff, resident teardown, targe
 
 ## Next bounded milestone
 
-Checkpoint V4 remains hardware-proven through code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d`. A PR-review fix at `f3dd883e937799eb2ad93812982edb1d4a06bcab` removes the duplicate touch-only SAVE/LOAD cursor and routes touch preselection through the authoritative checkpoint cursor. This review fix still needs one targeted real-CYD mixed-input validation before merge. Do not broaden persistence again before that pass.
+The next bounded behavior correction is **rotation must not advance the monster/gameplay turn**.
 
-Two correctness/polish gaps observed against the J2ME reference are now high-priority candidates for the next branch after merge:
+Legacy/J2ME recovery is explicit: `DoomCanvas_finishMovement()` calls `Game_advanceTurn()`; `DoomCanvas_finishRotation()` updates facing/tile semantics but does not. The native observer had incorrectly promoted a settled angle delta into `ESP_NATIVE_GAMEPLAY_MONSTER_TURN_ROTATE`.
 
-- rotation in place must **not** advance a gameplay/monster turn; current native logs still schedule `MONSTERTURN reason=ROTATE`;
-- player attack feedback still lacks the legacy damage message and enemy-hit blood-pixel feedback.
+Candidate:
 
-Treat those as separate bounded behavior milestones unless legacy recovery shows they share one permanent owner. The CHANGEMAP production candidate also remains without its dedicated real-CYD level-exit PASS and must not be called validated until that test occurs.
+```text
+branch = agent/esp32-native-rotate-no-turn
+code = b548321f477626777800371f0f82a9f3c2375bd9
+milestone = MILESTONE_NATIVE_ROTATE_NO_TURN.md
+status = hardware pending
+```
+
+Angle-only changes now refresh the observer baseline and emit:
+
+```text
+[MONSTERTURN] ROTATE-NO-TURN ... mutation=no rngConsumed=0 legacyAdvance=no
+```
+
+They must not emit `[MONSTERTURN] SCHEDULE ... reason=ROTATE`, move a monster, attack the player, or consume gameplay RNG. MOVE, PLAYER_ATTACK and PASS_TURN remain normal turn reasons.
+
+The merged SAVE/LOAD touch-cursor review fix also still needs one short mixed-input hardware check: move SAVE/LOAD with physical controls, then tap the already-selected row and confirm no extra cursor move or wrong SAVE/LOAD dispatch occurs.
+
+After the rotation PASS, the next parity family is player attack feedback: restore the legacy damage message and enemy-hit blood-pixel feedback as a separate bounded milestone.
 
 ## Intentionally deferred / incomplete families
 
