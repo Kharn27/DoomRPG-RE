@@ -10,9 +10,10 @@ extern "C" {
 /*
  * Presentation-only player->monster impact cue.
  *
- * Arm only after the monster-combat rollback boundary has closed. The owner
- * never mutates combat state or consumes gameplay RNG; it derives a bounded
- * local visual stream from already-committed semantic inputs.
+ * The combat owner may provisionally arm the cue immediately before its attack
+ * frame so blood is painted on the same physical frame as pain/death. If that
+ * render transaction fails, cancel() is called before the rollback redraw.
+ * Neither operation mutates combat state or consumes gameplay RNG.
  */
 int EspNativeGameplayHitFeedback_arm(uint32_t sequence,
                                      uint16_t spriteIndex,
@@ -21,6 +22,7 @@ int EspNativeGameplayHitFeedback_arm(uint32_t sequence,
                                      int32_t armorBefore,
                                      int32_t totalDamage,
                                      int32_t totalArmorDamage);
+int EspNativeGameplayHitFeedback_cancel(uint32_t sequence);
 
 #ifdef __cplusplus
 }
