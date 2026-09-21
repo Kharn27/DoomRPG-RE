@@ -73,6 +73,7 @@ typedef struct HitFxOwner_s {
     uint32_t sourceArenaFNV1a;
     uint32_t sequence;
     uint32_t seed;
+    uint32_t armedAtMs;
     uint32_t clearAtMs;
     uint32_t paints;
     uint32_t pixels;
@@ -276,6 +277,7 @@ int EspNativeGameplayHitFeedback_arm(uint32_t sequence,
                       sequence ^ ((uint32_t)spriteIndex * 0x9e3779b9U) ^
                       0x51ed270bU;
     if (hitFxOwner.seed == 0U) hitFxOwner.seed = 0x6d2b79f5U;
+    hitFxOwner.armedAtMs = DoomRPG_GetUpTimeMS();
     hitFxOwner.active = 1U;
 
     printf("[HITFX] ARM seq=%u sprite=%u subtype=%u distance=%u damage=%d+%d total=%d color565=%04x particles=%u ownerBytes=%u visualRng=local gameplayRng=untouched\n",
@@ -292,18 +294,42 @@ int EspNativeGameplayHitFeedback_arm(uint32_t sequence,
     return 1;
 }
 
+int EspNativeGameplayHitFeedback_cancel(uint32_t sequence) {
+    if (hitFxOwner.active == 0U || hitFxOwner.sequence != sequence) {
+        return 0;
+    }
+    printf("[HITFX] CANCEL seq=%u sprite=%u painted=%u rollback=yes gameplayRng=untouched\n",
+           (unsigned int)hitFxOwner.sequence,
+           (unsigned int)hitFxOwner.spriteIndex,
+           (unsigned int)hitFxOwner.paints);
+    memset(&hitFxOwner, 0, sizeof(hitFxOwner));
+    hitFxOwner.spriteIndex = GIBFX_NO_SPRITE;
+    return 1;
+}
+
+static uint16_t hitDarkColor(uint16_t color) {
+    return (uint16_t)((color >> 1) & 0x7befU);
+}
+
+static int signInt(int value) {
+    return value > 0 ? 1 : (value < 0 ? -1 : 0);
+}
+
 static void drawHitBurst(uint16_t* framebuffer) {
     const EspNativeGameplayMonsterView* view = syncOwner();
     uint32_t seed;
     uint32_t scale;
     uint32_t pixels = 0U;
     uint32_t now;
+    uint32_t ageMs;
     uint32_t i;
+    int gravity;
 
     if (framebuffer == NULL || view == NULL || hitFxOwner.active == 0U ||
         hitFxOwner.sourceArenaFNV1a != view->sourceArenaFNV1a) {
         return;
     }
+
     now = DoomRPG_GetUpTimeMS();
     if (hitFxOwner.clearAtMs != 0U &&
         (int32_t)(now - hitFxOwner.clearAtMs) >= 0) {
@@ -313,38 +339,82 @@ static void drawHitBurst(uint16_t* framebuffer) {
         hitFxOwner.clearAtMs = now + HITFX_DISPLAY_MS;
     }
 
-    seed = hitFxOwner.seed;
+    /*
+     * Recompute a deterministic legacy-shaped particle field for every present
+     * instead of storing 64 ParticleNode objects. The recovered ParticleSystem
+     * ranges are:
+     *   startX -6..6, startY -9..11
+     *   velX   -150..100, velY -160..-60, gravity 10, size 1..4
+     *
+     * Legacy fixed-point integration reduces to approximately:
+     *   dx = velX * ageMs / 1000
+     *   dy = velY * ageMs / 1000 + gravity * ageMs^2 / 25600
+     *
+     * Because armedAtMs is captured before the attack-frame render, the first
+     * physical present already has meaningful particle travel. This avoids the
+     * dense red stamp produced by rendering all particles at their spawn point.
+     */
+    ageMs = now - hitFxOwner.armedAtMs;
+    if (ageMs > HITFX_DISPLAY_MS) ageMs = HITFX_DISPLAY_MS;
     scale = hitDistanceScale(hitFxOwner.distance);
+    gravity = (10 * (int)scale + 128) >> 8;
+    if (gravity < 1) gravity = 1;
+    seed = hitFxOwner.seed;
+
     for (i = 0U; i < hitFxOwner.particleCount; ++i) {
-        uint32_t r = xorshift32(&seed);
-        int startX = (int)(r % 13U) - 6;
-        int startY = (int)((r >> 8) % 21U) - 9;
-        int size = 1 + (int)((r >> 16) & 3U);
+        uint32_t r0 = xorshift32(&seed);
+        uint32_t r1 = xorshift32(&seed);
+        uint32_t r2 = xorshift32(&seed);
+        int startX = (int)(r0 % 13U) - 6;
+        int startY = (int)((r0 >> 8) % 21U) - 9;
+        int velX = -150 + (int)(r1 % 251U);
+        int velY = -160 + (int)((r1 >> 8) % 101U);
+        int size = 1 + (int)(r2 & 3U);
         int x;
         int y;
-        int radius;
+        int tailX;
+        int tailY;
+        uint16_t color = hitFxOwner.color565;
 
         startX = (startX * (int)scale) >> 8;
         startY = (startY * (int)scale) >> 8;
+        velX = (velX * (int)scale) >> 8;
+        velY = (velY * (int)scale) >> 8;
         size = (size * (int)scale + 128) >> 8;
         if (size < 1) size = 1;
-        x = GIBFX_CENTER_X + startX;
-        y = GIBFX_CENTER_Y + startY;
-        radius = size >> 1;
-        drawDisc(framebuffer, x, y, radius,
-                 hitFxOwner.color565, &pixels);
+
+        x = GIBFX_CENTER_X + startX +
+            (int)(((int64_t)velX * (int64_t)ageMs) / 1000);
+        y = GIBFX_CENTER_Y + startY +
+            (int)(((int64_t)velY * (int64_t)ageMs) / 1000) +
+            (int)(((int64_t)gravity * (int64_t)ageMs *
+                   (int64_t)ageMs) / 25600);
+
+        /*
+         * One logical pixel is already 2x2 physical pixels on the CYD. Keep
+         * most droplets one pixel and turn only the larger legacy sizes into a
+         * one-pixel tail. This reads as a spray rather than an opaque blob.
+         */
+        putPixel(framebuffer, x, y, color, &pixels);
+        if (size >= 3) {
+            tailX = x - signInt(velX);
+            tailY = y - signInt(velY);
+            putPixel(framebuffer, tailX, tailY,
+                     hitDarkColor(color), &pixels);
+        }
     }
 
     ++hitFxOwner.paints;
     hitFxOwner.pixels += pixels;
     if (hitFxOwner.paints == 1U) {
-        printf("[HITFX] PAINT seq=%u sprite=%u particles=%u pixels=%u center=%d,%d leaseMs=%u color565=%04x presentOverlay=yes gameplayRng=untouched\n",
+        printf("[HITFX] PAINT seq=%u sprite=%u particles=%u pixels=%u center=%d,%d ageMs=%u leaseMs=%u color565=%04x motion=legacy-kinematic-spray presentOverlay=yes gameplayRng=untouched\n",
                (unsigned int)hitFxOwner.sequence,
                (unsigned int)hitFxOwner.spriteIndex,
                (unsigned int)hitFxOwner.particleCount,
                (unsigned int)pixels,
                GIBFX_CENTER_X,
                GIBFX_CENTER_Y,
+               (unsigned int)ageMs,
                (unsigned int)HITFX_DISPLAY_MS,
                (unsigned int)hitFxOwner.color565);
     }
