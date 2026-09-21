@@ -5,25 +5,26 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-main at branch creation = 23bdd1dfe92f860b62d5d8cede517122ac589464
-current main = 49cc2f9b84fd024ff0b8b6aaac7a3e2b846c7e69
-branch synced current main at merge commit = 165c16ff8c140c189b20621a312148bfb37c6afb
-main changes since branch creation = PR #140 IDE config only
-branch = agent/esp32-native-rotate-no-turn
+main at branch creation = 5ac68378363b77daf9f98203966726557dc9b0ad
+current main = 5ac68378363b77daf9f98203966726557dc9b0ad
+main merge = PR #141
+branch = agent/esp32-native-player-hit-feedback
 hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
 hardware-tested rotation no-turn boundary = b548321f477626777800371f0f82a9f3c2375bd9
 hardware-tested current code boundary = b548321f477626777800371f0f82a9f3c2375bd9
+player hit feedback candidate = 03b28c727a1425960e8dc674392979066ff12095 (CI PASS, real-CYD pending)
 merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
-status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN PASS; merged mixed-input cursor retest pending
-branch policy = LOCKED; docs-only tail until merge
+status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN PASS; PLAYER HIT FEEDBACK candidate pending
+branch policy = ACTIVE; test candidate on normal esp32-cyd before docs-only lock
 ```
 
-Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal push run #311 passed on that exact merged `main`. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal `esp32-cyd` run #313 / `35581250636`; docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` then passed run #318 / `35581419960`. The user subsequently confirmed the corrected behavior on the real classic CYD. The merged mixed physical/touch SAVE cursor repair remains CI-proven but not yet separately real-CYD proven. Current `main` advanced after branch creation only through PR #140 (`ESP32/.vscode/extensions.json`); that main-only IDE change was merged into this branch at `165c16ff8c140c189b20621a312148bfb37c6afb`. Relative to current main, the PR delta remains limited to the tested monster-turn source plus rotation milestone/status/documentation.
+Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal push run #311 passed on that exact merged `main`. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal `esp32-cyd` run #313 / `35581250636`; docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` then passed run #318 / `35581419960`. The user subsequently confirmed the corrected behavior on the real classic CYD. The merged mixed physical/touch SAVE cursor repair remains CI-proven but not yet separately real-CYD proven. PR #141 merged the rotation milestone at `5ac68378363b77daf9f98203966726557dc9b0ad`; normal `esp32-cyd` run #334 passed on that exact merged main. Player-hit feedback candidate `03b28c727a1425960e8dc674392979066ff12095` passed normal `esp32-cyd` run #340 / `35586984397` and produced artifact `doom-rpg-esp32-cyd-03b28c727a1425960e8dc674392979066ff12095`. Hardware validation is still pending.
 
 Latest detailed records:
 
+- [`MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md`](MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md)
 - [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md)
@@ -468,13 +469,34 @@ The correction adds no allocation, gameplay RNG use, topology mutation, renderer
 
 ## Next bounded milestone
 
-This branch is locked to docs-only after the rotation PASS.
+The active bounded polish milestone is **player -> monster hit feedback**.
 
-After merge, recover the new exact `main` SHA before branching again. The preferred next polish family is player attack feedback: recover the exact legacy damage message first, then the enemy-hit blood-pixel feedback if both can share a small permanent presentation owner without broadening combat semantics.
+Legacy recovery from `Combat_playerSeq()` and `Combat_spawnBloodParticles()` established:
 
-The merged SAVE/LOAD touch-cursor review fix still needs one short mixed-input hardware regression check when convenient: move SAVE/LOAD with physical controls, then tap the already-selected row and confirm the authoritative cursor dispatches the intended action without an extra move.
+```text
+normal hit -> "<totalDamage + totalArmorDamage> damage!"
+critical   -> "Crit! <totalDamage + totalArmorDamage> damage!"
+miss       -> "Missed!"
+enemy hit  -> short screen-space blood-particle effect
+```
 
-The CHANGEMAP production candidate also remains without its dedicated real-CYD level-exit PASS.
+Candidate:
+
+```text
+branch = agent/esp32-native-player-hit-feedback
+code = 03b28c727a1425960e8dc674392979066ff12095
+CI = esp32-cyd #340 / 35586984397 SUCCESS
+milestone = MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md
+status = hardware pending
+```
+
+The implementation reuses the proven bounded top-bar feedback owner and adds one tiny presentation-only hit FX owner. Blood uses a deterministic local visual RNG, not gameplay RNG, max 64 pixels/particle primitives, a 350 ms lease, no heap allocation and no legacy `ParticleSystem_t` ownership. It is armed only after the monster-combat attack-frame rollback boundary has closed.
+
+Hardware must prove the visible message, visible blood pixels, clean 350 ms restore, unchanged `PLAYER_ATTACK` monster-turn scheduling, and no gameplay-RNG side effects. A miss should show `"Missed!"` with no blood.
+
+The legacy lethal `" <name> died!"` suffix remains explicitly deferred at this first bounded top-bar width; ordinary death/corpse/gib semantics are unchanged.
+
+The merged SAVE/LOAD touch-cursor review fix still needs one short mixed-input hardware regression check when convenient. The CHANGEMAP production candidate also remains without its dedicated real-CYD level-exit PASS.
 
 ## Intentionally deferred / incomplete families
 
