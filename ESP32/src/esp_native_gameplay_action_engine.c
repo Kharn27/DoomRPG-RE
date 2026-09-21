@@ -888,6 +888,26 @@ int __wrap_Esp32PlatformVideo_present(void) {
         }
         hadFeedback = 1;
     }
+    else if (actionState.feedbackVisible != 0U &&
+             actionState.framebufferFresh != 0U &&
+             !EspAssetPack_isOpen()) {
+        /*
+         * A full gameplay redraw can occur while a 1200 ms top-bar lease is
+         * still active (for example when a short impact overlay expires).
+         * Repaint the already-visible message onto that fresh frame without
+         * restarting its timer. Dialog-owned PAK leases remain authoritative:
+         * in that case defer the repaint instead of escalating a temporary
+         * ownership conflict.
+         */
+        feedback = actionState.feedbackVisibleKind;
+        if (!paintFeedback(feedback)) {
+            printf("[ACTIONFEEDBACK] FAILED kind=%u phase=refresh\n",
+                   (unsigned int)feedback);
+            return 0;
+        }
+        printf("[ACTIONFEEDBACK] REFRESH kind=%u lease=preserved freshFrame=yes\n",
+               (unsigned int)feedback);
+    }
 
     if ((actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
