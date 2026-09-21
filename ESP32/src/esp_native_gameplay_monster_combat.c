@@ -11,6 +11,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_combat_math.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_hit_feedback.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -420,6 +421,9 @@ static int servicePending(DoomRPG_t* runtime) {
     uint16_t consequenceSound = 0U;
     uint8_t ammoBefore = 0U;
     uint8_t ammoAfter = 0U;
+    char hitMessage[24];
+    int hitMessageQueued = 0;
+    int hitFxArmed = 0;
     int32_t healthBefore;
     int32_t armorBefore;
     int32_t healthAfter;
@@ -644,6 +648,56 @@ static int servicePending(DoomRPG_t* runtime) {
                (unsigned int)rollbackFrame.frameAfterFNV);
         return 1;
     }
+
+    /*
+     * The attack frame is the transaction boundary: combat/player/RNG rollback
+     * is no longer possible after this point. Recover legacy player-hit
+     * presentation only now, so a failed attack render can never leave a
+     * message or blood overlay for a rolled-back hit.
+     *
+     * Legacy Combat_playerSeq() reports totalDamage + totalArmorDamage and
+     * prefixes critical hits with "Crit! ". A miss reports "Missed!".
+     * The historical death-name suffix is deliberately not part of this first
+     * bounded lease: the current native top bar owns 21 visible characters.
+     */
+    memset(hitMessage, 0, sizeof(hitMessage));
+    if (roll.hitLoops != 0U) {
+        const int32_t visibleDamage =
+            roll.totalDamage + roll.totalArmorDamage;
+        (void)snprintf(hitMessage, sizeof(hitMessage),
+                       roll.gotCrit != 0U ? "Crit! %d damage!" : "%d damage!",
+                       (int)visibleDamage);
+        hitMessageQueued =
+            EspNativeGameplayActionEngine_queueTextFeedback(
+                ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
+                hitMessage, 0U);
+        hitFxArmed = EspNativeGameplayHitFeedback_arm(
+            pending.sequence,
+            pending.spriteIndex,
+            pending.distance,
+            healthBefore,
+            armorBefore,
+            roll.totalDamage,
+            roll.totalArmorDamage);
+    }
+    else {
+        (void)snprintf(hitMessage, sizeof(hitMessage), "Missed!");
+        hitMessageQueued =
+            EspNativeGameplayActionEngine_queueTextFeedback(
+                ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
+                hitMessage, 0U);
+    }
+    printf("[MONSTERHITFEEDBACK] ARM seq=%u sprite=%u hit=%u crit=%u message=%s textQueued=%s blood=%s deathSuffix=%s mutation=no gameplayRng=untouched\n",
+           (unsigned int)pending.sequence,
+           (unsigned int)pending.spriteIndex,
+           (unsigned int)(roll.hitLoops != 0U),
+           (unsigned int)roll.gotCrit,
+           hitMessage,
+           hitMessageQueued ? "yes" : "deferred-owner-busy",
+           roll.hitLoops != 0U
+               ? (hitFxArmed ? "armed" : "deferred")
+               : "none-miss",
+           lethal ? "deferred-bounded-topbar" : "n/a");
 
     logFrame(&pending, "attack", &attackFrame);
     if (lethal) (void)promoteDeathIfDue();
