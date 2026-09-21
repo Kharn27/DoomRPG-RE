@@ -14,8 +14,9 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 
 ```text
 main at branch creation = 23bdd1dfe92f860b62d5d8cede517122ac589464
-current main = 23bdd1dfe92f860b62d5d8cede517122ac589464
-main merge = PR #139
+current main = 49cc2f9b84fd024ff0b8b6aaac7a3e2b846c7e69
+branch synced current main at merge commit = 165c16ff8c140c189b20621a312148bfb37c6afb
+main changes since branch creation = PR #140 IDE config only
 branch = agent/esp32-native-rotate-no-turn
 hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
@@ -26,7 +27,7 @@ merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS
 status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN PASS; merged mixed-input cursor retest pending
 ```
 
-GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource boundary. The HUB/action-feedback ownership gate passed CI run #267 / run ID `35198140562` and is also real-CYD validated. Save-v3 script persistence passed CI run #275 / run ID `35199788280` on exact code boundary `fd206c5238ac2db62939d100bf3d08ac39081c69`. Save-v4 line persistence plus the HUB stack fix passed CI run #293 / run ID `35344853078` on exact code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` and is real-CYD validated. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal `esp32-cyd` run #311 passed on that exact merged main. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal run #313 / `35581250636`, and docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` passed run #318 / `35581419960`. The real CYD then confirmed the corrected rotation behavior. The mixed physical/touch SAVE cursor fix remains merged and CI-proven, but its dedicated real-CYD mixed-input check is still pending.
+GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource boundary. The HUB/action-feedback ownership gate passed CI run #267 / run ID `35198140562` and is also real-CYD validated. Save-v3 script persistence passed CI run #275 / run ID `35199788280` on exact code boundary `fd206c5238ac2db62939d100bf3d08ac39081c69`. Save-v4 line persistence plus the HUB stack fix passed CI run #293 / run ID `35344853078` on exact code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` and is real-CYD validated. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal `esp32-cyd` run #311 passed on that exact merged main. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal run #313 / `35581250636`, and docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` passed run #318 / `35581419960`. The real CYD then confirmed the corrected rotation behavior. The mixed physical/touch SAVE cursor fix remains merged and CI-proven, but its dedicated real-CYD mixed-input check is still pending. Since branch creation, `main` advanced only through PR #140, which changes the VS Code extension recommendations. That main-only IDE change is already synced into this branch and does not appear in the PR delta against current main.
 
 Latest milestones:
 
