@@ -14,9 +14,9 @@ hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
 hardware-tested rotation no-turn boundary = b548321f477626777800371f0f82a9f3c2375bd9
 hardware-tested current code boundary = b548321f477626777800371f0f82a9f3c2375bd9
-player hit feedback candidate = 6dfe67d3f639e5f9aad7849db6638042b7bdc508 (CI PASS, real-CYD retest pending)
+player hit feedback candidate = e070057d3b9466f87189c504f86099b7e9f2fb67 (CI PASS, real-CYD stack retest pending)
 merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
-status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN PASS; PLAYER HIT FEEDBACK candidate pending
+status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN PASS; HIT SPRAY visually validated, zombie stack-canary repair pending retest
 branch policy = ACTIVE; test candidate on normal esp32-cyd before docs-only lock
 ```
 
@@ -484,13 +484,15 @@ Candidate:
 
 ```text
 branch = agent/esp32-native-player-hit-feedback
-code = 6dfe67d3f639e5f9aad7849db6638042b7bdc508
-CI = esp32-cyd #346 / 35602149336 SUCCESS
+code = e070057d3b9466f87189c504f86099b7e9f2fb67
+CI = esp32-cyd #350 / 35611816011 SUCCESS
 milestone = MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md
 status = hardware retest pending
 ```
 
-The implementation reuses the proven bounded top-bar feedback owner and adds one tiny presentation-only hit FX owner. Blood uses a deterministic local visual RNG, not gameplay RNG, max 64 bounded droplets, a 350 ms lease, no heap allocation and no legacy `ParticleSystem_t` ownership. The first hardware pass showed the post-frame static burst was visually wrong. The corrected candidate provisionally arms blood before the attack frame, cancels it before rollback if that render fails, and draws a recovered velocity/gravity spray rather than a dense spawn-point blob.
+The implementation reuses the proven bounded top-bar feedback owner and adds one tiny presentation-only hit FX owner. Blood uses a deterministic local visual RNG, not gameplay RNG, max 64 bounded droplets, a 350 ms lease, no heap allocation and no legacy `ParticleSystem_t` ownership. Hardware now validates the recovered velocity/gravity spray visually and its attack-frame timing.
+
+That same hardware run exposed a separate loopTask stack canary during the next zombie attack. The exact failing ELF showed `servicePending()` carrying a 1040 B automatic frame while nesting the renderer. The current candidate moves the 324 B combat-owner rollback copy to bounded static BSS and reuses one frame-stats object; CI #350's ELF measures the automatic frame at 608 B. Combat/RNG/FX semantics are unchanged; real-CYD zombie retest is pending.
 
 Hardware must prove the visible message, visible blood pixels, clean 350 ms restore, unchanged `PLAYER_ATTACK` monster-turn scheduling, and no gameplay-RNG side effects. A miss should show `"Missed!"` with no blood.
 
