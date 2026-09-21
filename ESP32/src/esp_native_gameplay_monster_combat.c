@@ -623,6 +623,23 @@ static int servicePending(DoomRPG_t* runtime) {
            (unsigned int)roll.gotCrit,
            (unsigned int)rngCalls);
 
+    /*
+     * Legacy blood is an impact-time effect, not a post-settle decoration.
+     * Provisionally arm it before the attack-frame render so the same physical
+     * present that shows pain/death also carries the spray. If render fails,
+     * the owner is cancelled before the rollback redraw below.
+     */
+    if (roll.hitLoops != 0U) {
+        hitFxArmed = EspNativeGameplayHitFeedback_arm(
+            pending.sequence,
+            pending.spriteIndex,
+            pending.distance,
+            healthBefore,
+            armorBefore,
+            roll.totalDamage,
+            roll.totalArmorDamage);
+    }
+
     memset(&attackFrame, 0, sizeof(attackFrame));
     if (!EspNativeGameplayFrame_renderTurn(runtime->render,
                                            (uint8_t)view->viewAngle,
@@ -633,6 +650,10 @@ static int servicePending(DoomRPG_t* runtime) {
         combatOwner = ownerBefore;
         combatOwner.pending.active = 0U;
         EspNativeGameplayWeapon_cancelAttack();
+        if (hitFxArmed) {
+            (void)EspNativeGameplayHitFeedback_cancel(pending.sequence);
+            hitFxArmed = 0;
+        }
         memset(&rollbackFrame, 0, sizeof(rollbackFrame));
         if (!EspNativeGameplayFrame_renderTurn(runtime->render,
                                                (uint8_t)view->viewAngle,
@@ -650,15 +671,9 @@ static int servicePending(DoomRPG_t* runtime) {
     }
 
     /*
-     * The attack frame is the transaction boundary: combat/player/RNG rollback
-     * is no longer possible after this point. Recover legacy player-hit
-     * presentation only now, so a failed attack render can never leave a
-     * message or blood overlay for a rolled-back hit.
-     *
-     * Legacy Combat_playerSeq() reports totalDamage + totalArmorDamage and
-     * prefixes critical hits with "Crit! ". A miss reports "Missed!".
-     * The historical death-name suffix is deliberately not part of this first
-     * bounded lease: the current native top bar owns 21 visible characters.
+     * Attack-frame render succeeded: gameplay rollback is now closed. Queue the
+     * result text here (legacy stage-2 timing) while the already-armed blood
+     * remains a separate impact-time presentation lease.
      */
     memset(hitMessage, 0, sizeof(hitMessage));
     if (roll.hitLoops != 0U) {
@@ -671,14 +686,6 @@ static int servicePending(DoomRPG_t* runtime) {
             EspNativeGameplayActionEngine_queueTextFeedback(
                 ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
                 hitMessage, 0U);
-        hitFxArmed = EspNativeGameplayHitFeedback_arm(
-            pending.sequence,
-            pending.spriteIndex,
-            pending.distance,
-            healthBefore,
-            armorBefore,
-            roll.totalDamage,
-            roll.totalArmorDamage);
     }
     else {
         (void)snprintf(hitMessage, sizeof(hitMessage), "Missed!");
@@ -687,7 +694,7 @@ static int servicePending(DoomRPG_t* runtime) {
                 ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
                 hitMessage, 0U);
     }
-    printf("[MONSTERHITFEEDBACK] ARM seq=%u sprite=%u hit=%u crit=%u message=%s textQueued=%s blood=%s deathSuffix=%s mutation=no gameplayRng=untouched\n",
+    printf("[MONSTERHITFEEDBACK] ARM seq=%u sprite=%u hit=%u crit=%u message=%s textQueued=%s blood=%s timing=%s deathSuffix=%s mutation=no gameplayRng=untouched\n",
            (unsigned int)pending.sequence,
            (unsigned int)pending.spriteIndex,
            (unsigned int)(roll.hitLoops != 0U),
@@ -697,6 +704,7 @@ static int servicePending(DoomRPG_t* runtime) {
            roll.hitLoops != 0U
                ? (hitFxArmed ? "armed" : "deferred")
                : "none-miss",
+           roll.hitLoops != 0U ? "attack-frame" : "n/a",
            lethal ? "deferred-bounded-topbar" : "n/a");
 
     logFrame(&pending, "attack", &attackFrame);
