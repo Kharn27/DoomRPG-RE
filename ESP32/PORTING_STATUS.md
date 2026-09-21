@@ -5,22 +5,26 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-main at branch creation = 9b085a9d8ed254edc98463f33f6d1534215326b9
-current main = 9b085a9d8ed254edc98463f33f6d1534215326b9
-branch = agent/esp32-native-checkpoint-v4-lines
+main at branch creation = 23bdd1dfe92f860b62d5d8cede517122ac589464
+current main = 49cc2f9b84fd024ff0b8b6aaac7a3e2b846c7e69
+branch synced current main at merge commit = 165c16ff8c140c189b20621a312148bfb37c6afb
+main changes since branch creation = PR #140 IDE config only
+branch = agent/esp32-native-rotate-no-turn
 hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
-hardware-tested current code boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
-PR-review save-touch cursor candidate = f3dd883e937799eb2ad93812982edb1d4a06bcab
-status = REAL-CYD CHECKPOINT V4 RESOURCE + SCRIPT + LINE STATE PASS; PR-review mixed-input fix pending
-branch policy = ACTIVE; do not merge until targeted physical-navigation + touch SAVE/LOAD retest passes
+hardware-tested rotation no-turn boundary = b548321f477626777800371f0f82a9f3c2375bd9
+hardware-tested current code boundary = b548321f477626777800371f0f82a9f3c2375bd9
+merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
+status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN PASS; merged mixed-input cursor retest pending
+branch policy = LOCKED; docs-only tail until merge
 ```
 
-Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence.
+Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal push run #311 passed on that exact merged `main`. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal `esp32-cyd` run #313 / `35581250636`; docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` then passed run #318 / `35581419960`. The user subsequently confirmed the corrected behavior on the real classic CYD. The merged mixed physical/touch SAVE cursor repair remains CI-proven but not yet separately real-CYD proven. Current `main` advanced after branch creation only through PR #140 (`ESP32/.vscode/extensions.json`); that main-only IDE change was merged into this branch at `165c16ff8c140c189b20621a312148bfb37c6afb`. Relative to current main, the PR delta remains limited to the tested monster-turn source plus rotation milestone/status/documentation.
 
 Latest detailed records:
 
+- [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
@@ -137,7 +141,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, and HUB/world framebuffer ownership gating for transient action feedback.
+Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, and HUB/world framebuffer ownership gating for transient action feedback.
 
 The player root remains:
 
@@ -434,16 +438,43 @@ CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
 
 The candidate supports the show-stats WAIT/ACK handoff, resident teardown, target rebuild/spawn and session configure with fail-closed errors. It remains **candidate** until the user performs the dedicated real-CYD level-exit test.
 
+## Native rotation no-turn parity — REAL-CYD PASS
+
+The legacy/J2ME split is now restored:
+
+```text
+movement completion -> advances gameplay turn
+rotation completion -> updates facing/view only
+```
+
+Hardware-tested code boundary:
+
+```text
+b548321f477626777800371f0f82a9f3c2375bd9
+```
+
+The real-CYD test confirmed that turning in place no longer advances monster behavior. The same supplied hardware run reconfirmed that legitimate turn-producing actions still do:
+
+```text
+PLAYER_ATTACK -> [MONSTERTURN] SCHEDULE n=32 reason=PLAYER_ATTACK
+MOVE          -> [MONSTERTURN] SCHEDULE n=33 reason=MOVE
+MOVE          -> [MONSTERTURN] SCHEDULE n=34 reason=MOVE
+MOVE          -> [MONSTERTURN] SCHEDULE n=35 reason=MOVE
+```
+
+The correction adds no allocation, gameplay RNG use, topology mutation, renderer mutation or player mutation on rotation. Detailed record:
+
+- [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
+
 ## Next bounded milestone
 
-Checkpoint V4 remains hardware-proven through code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d`. A PR-review fix at `f3dd883e937799eb2ad93812982edb1d4a06bcab` removes the duplicate touch-only SAVE/LOAD cursor and routes touch preselection through the authoritative checkpoint cursor. This review fix still needs one targeted real-CYD mixed-input validation before merge. Do not broaden persistence again before that pass.
+This branch is locked to docs-only after the rotation PASS.
 
-Two correctness/polish gaps observed against the J2ME reference are now high-priority candidates for the next branch after merge:
+After merge, recover the new exact `main` SHA before branching again. The preferred next polish family is player attack feedback: recover the exact legacy damage message first, then the enemy-hit blood-pixel feedback if both can share a small permanent presentation owner without broadening combat semantics.
 
-- rotation in place must **not** advance a gameplay/monster turn; current native logs still schedule `MONSTERTURN reason=ROTATE`;
-- player attack feedback still lacks the legacy damage message and enemy-hit blood-pixel feedback.
+The merged SAVE/LOAD touch-cursor review fix still needs one short mixed-input hardware regression check when convenient: move SAVE/LOAD with physical controls, then tap the already-selected row and confirm the authoritative cursor dispatches the intended action without an extra move.
 
-Treat those as separate bounded behavior milestones unless legacy recovery shows they share one permanent owner. The CHANGEMAP production candidate also remains without its dedicated real-CYD level-exit PASS and must not be called validated until that test occurs.
+The CHANGEMAP production candidate also remains without its dedicated real-CYD level-exit PASS.
 
 ## Intentionally deferred / incomplete families
 
