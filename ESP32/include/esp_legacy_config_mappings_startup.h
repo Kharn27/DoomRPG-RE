@@ -17,6 +17,13 @@ extern "C" {
  */
 int EspLegacyConfigMappingsStartup_start(int renderStartupReady);
 
+struct Render_s;
+
+/* ESP32 replacement for the legacy whole-file mappings loader. It uses the
+ * already-owned 160x120 framebuffer as transient inflate/output scratch, then
+ * installs the same four persistent mapping arrays. */
+int EspLegacyMappings_load(struct Render_s* render);
+
 #ifdef __cplusplus
 }
 #endif

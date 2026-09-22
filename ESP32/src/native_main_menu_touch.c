@@ -315,6 +315,14 @@ int DoomRPG_esp32MainMenuTouchIsActive(void) {
     return touchActive;
 }
 
+uint32_t DoomRPG_esp32MainMenuSelectionFramebufferFNV(int itemIndex) {
+    if (itemIndex < 0 ||
+        itemIndex >= DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
+        return 0U;
+    }
+    return selectionHashes[itemIndex];
+}
+
 void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
                                      int16_t screenY,
                                      uint16_t pressure,
@@ -387,7 +395,7 @@ void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
                menuSystem->items[hit].textField,
                (unsigned int)confirmCount,
                (unsigned int)hashAfter);
-        printf("[MENUTOUCH] CONFIRM deferred intentionally: MENU_MAIN Start Game can enter the not-yet-migrated gameplay loader\n");
+        printf("[MENUTOUCH] CONFIRM routed to final menu-action gate\n");
         if (hashAfter != hashBefore) {
             printf("[MENUTOUCH] FAILED confirm changed framebuffer before=%08x after=%08x\n",
                    (unsigned int)hashBefore,

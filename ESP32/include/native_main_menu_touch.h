@@ -23,6 +23,10 @@ int DoomRPG_esp32MainMenuTouchActivate(struct DoomRPG_s* doomRpg,
 
 int DoomRPG_esp32MainMenuTouchIsActive(void);
 
+/* Runtime framebuffer witness for a selected row. The label set can evolve
+ * without baking hardware-rendered hashes into every main-menu action. */
+uint32_t DoomRPG_esp32MainMenuSelectionFramebufferFNV(int itemIndex);
+
 /* Signature matches PlatformTapCallback. Physical coordinates are the calibrated
  * 320x240 landscape CYD coordinates emitted by PlatformInput.
  */

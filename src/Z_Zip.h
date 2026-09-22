@@ -34,6 +34,12 @@ void findAndReadZipDir(zip_file_t* zipFile, int startoffset);
 void openZipFile(const char* name, zip_file_t* zipFile);
 void closeZipFile(zip_file_t* zipFile);
 unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* sizep);
+#ifdef DOOMRPG_ESP32
+/* Decode into caller-owned scratch. The buffer must also have room for the
+ * compressed payload after the uncompressed output (capacity >= u+c). */
+int readZipFileEntryInto(const char* name, zip_file_t* zipFile,
+                         unsigned char* destination, int capacity);
+#endif
 
 #ifdef __cplusplus
 }

@@ -410,7 +410,6 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
         return; /* first frame/cache/gameplay starts on the following pass */
     }
 
-    if (startupState.stage == ESP_NATIVE_STARTUP_GAMEPLAY_READY) {
-        EspNativeGameplaySession_service(doomRpgBase);
-    }
+    /* The Arduino loop owns generic session service for both fresh starts and
+     * direct MENU_MAIN checkpoint resumes. */
 }

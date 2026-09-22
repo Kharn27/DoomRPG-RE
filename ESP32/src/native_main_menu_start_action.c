@@ -13,6 +13,7 @@
 
 #include "native_intro_first_frame.h"
 #include "native_main_menu_start_action.h"
+#include "native_main_menu_touch.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
@@ -20,7 +21,6 @@
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
 
-#define EXPECTED_MAIN_START_SELECTED_FNV 0x58a11171U
 #define INTRO_ASSET_COUNT 4
 
 static const char* const introAssetNames[INTRO_ASSET_COUNT] = {
@@ -130,12 +130,23 @@ static void printIntroAssetPlan(void) {
            (unsigned int)totalUncompressed);
 }
 
-static int releaseFreshStartMenuMemory(DoomRPG_t* doomRpg) {
-    DoomCanvas_t* doomCanvas = doomRpg->doomCanvas;
-    Render_t* render = doomRpg->render;
-    uint32_t heapBefore = heap8Free();
-    uint32_t largestBefore = largest8Block();
+int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    DoomCanvas_t* doomCanvas;
+    Render_t* render;
+    uint32_t heapBefore;
+    uint32_t largestBefore;
     int legalsReleased = 0;
+
+    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
+        doomRpg->render == NULL || doomRpg->game == NULL) {
+        return 0;
+    }
+
+    doomCanvas = doomRpg->doomCanvas;
+    render = doomRpg->render;
+    heapBefore = heap8Free();
+    largestBefore = largest8Block();
 
     if (doomCanvas->imgLegals.imgBitmap != NULL) {
         DoomRPG_freeImage(doomRpg, &doomCanvas->imgLegals);
@@ -145,7 +156,7 @@ static int releaseFreshStartMenuMemory(DoomRPG_t* doomRpg) {
     Render_freeRuntime(render);
     Game_unloadMapData(doomRpg->game);
 
-    printf("[MAINSTART] Fresh-start cleanup legals=%s heap8=%u->%u gained=%d largest8=%u->%u nodes=%p lines=%p mapSprites=%p mappings=%p/%p shapeData=%p mediaTexels=%p\n",
+    printf("[MAINMENU] Runtime cleanup legals=%s heap8=%u->%u gained=%d largest8=%u->%u nodes=%p lines=%p mapSprites=%p mappings=%p/%p shapeData=%p mediaTexels=%p\n",
            legalsReleased ? "released" : "already-free",
            (unsigned int)heapBefore,
            (unsigned int)heap8Free(),
@@ -186,6 +197,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     uint32_t largestBefore;
     uint32_t largestAfter;
     int hasExistingSave;
+    uint32_t expectedInputHash;
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Start Game entry ===\n");
 
@@ -199,13 +211,15 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     player = doomRpg->player;
     render = doomRpg->render;
     inputHash = framebufferHash(render);
+    expectedInputHash =
+        DoomRPG_esp32MainMenuSelectionFramebufferFNV(0);
 
     printf("[MAINSTART] Begin menu=%d selected=%d state=%d framebufferFNV=%08x expected=%08x skipIntro=%d startupMap=%d heap8=%u largest8=%u shapeData=%p mediaTexels=%p\n",
            menuSystem->menu,
            menuSystem->selectedIndex,
            doomCanvas->state,
            (unsigned int)inputHash,
-           (unsigned int)EXPECTED_MAIN_START_SELECTED_FNV,
+           (unsigned int)expectedInputHash,
            doomCanvas->skipIntro,
            doomCanvas->startupMap,
            (unsigned int)heap8Free(),
@@ -216,13 +230,13 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     if (menuSystem->menu != MENU_MAIN ||
         menuSystem->selectedIndex != 0 ||
         doomCanvas->state != ST_MENU ||
-        inputHash != EXPECTED_MAIN_START_SELECTED_FNV) {
+        expectedInputHash == 0U || inputHash != expectedInputHash) {
         printf("[MAINSTART] FAILED precondition menu=%d selected=%d state=%d framebuffer=%08x expected=%08x\n",
                menuSystem->menu,
                menuSystem->selectedIndex,
                doomCanvas->state,
                (unsigned int)inputHash,
-               (unsigned int)EXPECTED_MAIN_START_SELECTED_FNV);
+               (unsigned int)expectedInputHash);
         return 0;
     }
 
@@ -243,7 +257,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     printf("[MAINSTART] Existing-save precheck=%s\n",
            hasExistingSave ? "yes -> keep menu runtime" : "no -> fresh cleanup allowed");
 
-    if (!hasExistingSave && !releaseFreshStartMenuMemory(doomRpg)) {
+    if (!hasExistingSave && !DoomRPG_esp32ReleaseMainMenuMemory(doomRpg)) {
         printf("[MAINSTART] FAILED fresh-start menu memory cleanup contract\n");
         return 0;
     }

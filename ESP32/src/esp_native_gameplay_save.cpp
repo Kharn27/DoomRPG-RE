@@ -1476,6 +1476,14 @@ bool readableSaveExists(void) {
     return readBestRecord(&saveWorkspace.loaded, &recoveredBackup);
 }
 
+extern "C" int EspNativeGameplaySave_hasReadableCheckpoint(void) {
+    return readableSaveExists() ? 1 : 0;
+}
+
+extern "C" int EspNativeGameplaySave_loadCheckpoint(void) {
+    return loadNow() ? 1 : 0;
+}
+
 extern "C" EspNativeGameplayHubStatus
 __real_EspNativeGameplayHub_handleAction(uint8_t action);
 
@@ -1513,7 +1521,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                                        : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
             }
 
-            if (!readableSaveExists()) {
+            if (!EspNativeGameplaySave_hasReadableCheckpoint()) {
                 lastOperation = 2U;
                 lastOperationOk = 0U;
                 printf("[NATIVESAVE] LOAD-DEFER path=%s reason=missing-or-invalid mutation=no\n",
@@ -1527,7 +1535,8 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
             if (status != ESP_NATIVE_GAMEPLAY_HUB_CLOSED) return status;
 
             lastOperation = 2U;
-            lastOperationOk = loadNow() ? 1U : 0U;
+            lastOperationOk =
+                EspNativeGameplaySave_loadCheckpoint() ? 1U : 0U;
             statusCursor = kStatusSave;
             if (!lastOperationOk) {
                 printf("[NATIVESAVE] LOAD-TERMINAL result=failed gameplaySession=reset failClosed=yes\n");

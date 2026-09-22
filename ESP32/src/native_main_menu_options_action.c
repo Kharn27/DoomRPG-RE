@@ -12,6 +12,7 @@
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_options_action.h"
+#include "native_main_menu_touch.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
@@ -19,7 +20,6 @@
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
 
-#define EXPECTED_MAIN_OPTIONS_SELECTED_FNV 0x0cf107b1U
 #define OPTIONS_ITEM_COUNT 4
 #define OPTIONS_TEXT_X 28
 #define OPTIONS_GLYPH_HEIGHT 12
@@ -205,6 +205,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
     uint32_t heapAfter;
     uint32_t largestBefore;
     uint32_t largestAfter;
+    uint32_t expectedInputHash;
     int i;
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Options action ===\n");
@@ -217,12 +218,14 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
     menuSystem = doomRpg->menuSystem;
     render = doomRpg->render;
     inputHash = framebufferHash(render);
+    expectedInputHash =
+        DoomRPG_esp32MainMenuSelectionFramebufferFNV(1);
 
     printf("[MAINOPTIONS] Begin menu=%d selected=%d framebufferFNV=%08x expectedSelectedOptionsFNV=%08x heap8=%u largest8=%u shapeData=%p mediaTexels=%p\n",
            menuSystem->menu,
            menuSystem->selectedIndex,
            (unsigned int)inputHash,
-           (unsigned int)EXPECTED_MAIN_OPTIONS_SELECTED_FNV,
+           (unsigned int)expectedInputHash,
            (unsigned int)heap8Free(),
            (unsigned int)largest8Block(),
            (void*)render->shapeData,
@@ -230,12 +233,12 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
 
     if (menuSystem->menu != MENU_MAIN ||
         menuSystem->selectedIndex != 1 ||
-        inputHash != EXPECTED_MAIN_OPTIONS_SELECTED_FNV) {
+        expectedInputHash == 0U || inputHash != expectedInputHash) {
         printf("[MAINOPTIONS] FAILED precondition menu=%d selected=%d framebuffer=%08x expected=%08x\n",
                menuSystem->menu,
                menuSystem->selectedIndex,
                (unsigned int)inputHash,
-               (unsigned int)EXPECTED_MAIN_OPTIONS_SELECTED_FNV);
+               (unsigned int)expectedInputHash);
         return 0;
     }
 
