@@ -200,6 +200,10 @@ static int configureSession(const EspNativeGameplaySessionConfig* config,
         config->armor > config->maxArmor) {
         return 0;
     }
+    if (checkpointResume != 0U &&
+        !EspNativeResidentGameplay_armCheckpointResume()) {
+        return 0;
+    }
     sessionState.config = *config;
     sessionState.configured = 1U;
     sessionState.checkpointResume = checkpointResume;
