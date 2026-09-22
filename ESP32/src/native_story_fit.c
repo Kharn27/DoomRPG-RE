@@ -15,9 +15,9 @@
 
 static int geometryLogged;
 
-static int scaleOffsetFloor(int value) {
+static int scaleOffsetFloor(int value, int viewportSize) {
     const int64_t numerator =
-        (int64_t)value * (int64_t)ESP32_STORY_VIEWPORT_SIZE;
+        (int64_t)value * (int64_t)viewportSize;
 
     if (numerator >= 0) {
         return (int)(numerator / ESP32_STORY_VIRTUAL_SIZE);
@@ -37,12 +37,14 @@ static int virtualTop(const DoomCanvas_t* doomCanvas) {
 
 static int mapX(const DoomCanvas_t* doomCanvas, int x) {
     return ESP32_STORY_VIEWPORT_X +
-           scaleOffsetFloor(x - virtualLeft(doomCanvas));
+           scaleOffsetFloor(x - virtualLeft(doomCanvas),
+                            ESP32_STORY_VIEWPORT_WIDTH);
 }
 
 static int mapY(const DoomCanvas_t* doomCanvas, int y) {
     return ESP32_STORY_VIEWPORT_Y +
-           scaleOffsetFloor(y - virtualTop(doomCanvas));
+           scaleOffsetFloor(y - virtualTop(doomCanvas),
+                            ESP32_STORY_VIEWPORT_HEIGHT);
 }
 
 static void setVirtualClip(DoomCanvas_t* doomCanvas,
@@ -291,9 +293,9 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     top = virtualTop(doomCanvas);
 
     if (!geometryLogged) {
-        printf("[INTROFIT] virtual=128x128 -> viewport=%dx%d@(%d,%d) direct-to-framebuffer; no intermediate buffer\n",
-               ESP32_STORY_VIEWPORT_SIZE,
-               ESP32_STORY_VIEWPORT_SIZE,
+        printf("[INTROFIT] virtual=128x128 -> viewport=%dx%d@(%d,%d) full-screen anisotropic direct-to-framebuffer; extraFrameBytes=0\n",
+               ESP32_STORY_VIEWPORT_WIDTH,
+               ESP32_STORY_VIEWPORT_HEIGHT,
                ESP32_STORY_VIEWPORT_X,
                ESP32_STORY_VIEWPORT_Y);
         geometryLogged = 1;
