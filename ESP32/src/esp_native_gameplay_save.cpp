@@ -15,6 +15,7 @@
 #include "esp_map_resident_lifecycle.h"
 #include "esp_map_runtime.h"
 #include "esp_map_script_state.h"
+#include "esp_map_state.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_combat_math.h"
 #include "esp_native_gameplay_crate_state.h"
@@ -847,6 +848,37 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
     }
 
     file.close();
+    if (fileBytes == kRecordBytesV7) {
+        EspNativeGameplayCrateTransformSnapshot crateTransforms;
+        EspMapAutomapSnapshot automap;
+        memset(&crateTransforms, 0, sizeof(crateTransforms));
+        memset(&automap, 0, sizeof(automap));
+        got = file.read(reinterpret_cast<uint8_t*>(outRecord),
+                        sizeof(NativeSaveRecordV5));
+        if (got == sizeof(NativeSaveRecordV5)) {
+            got = file.read(reinterpret_cast<uint8_t*>(&crateTransforms),
+                            sizeof(crateTransforms));
+        }
+        if (got == sizeof(crateTransforms)) {
+            got = file.read(reinterpret_cast<uint8_t*>(&automap),
+                            sizeof(automap));
+        }
+        file.close();
+        if (got != sizeof(automap) ||
+            !loadedV7Valid(*outRecord, crateTransforms, automap)) {
+            memset(outRecord, 0, sizeof(*outRecord));
+            return false;
+        }
+        outRecord->fileBytes = (uint16_t)kRecordBytesV7;
+        outRecord->hasResources = 1U;
+        outRecord->hasScript = 1U;
+        outRecord->hasLines = 1U;
+        outRecord->hasActionRemoved = 1U;
+        outRecord->hasAutomap = 1U;
+        return true;
+    }
+
+    file.close();
     return false;
 }
 
@@ -858,45 +890,54 @@ bool readBestRecord(LoadedSaveRecord* outRecord, bool* outRecoveredBackup) {
     return true;
 }
 
-bool writeExactV6(
+bool writeExactV7(
     const char* path,
     const NativeSaveRecordV5& prefix,
-    const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap) {
     File file = SD.open(path, FILE_WRITE);
     size_t wrotePrefix;
     size_t wroteCrate;
+    size_t wroteAutomap;
     if (!file) return false;
     wrotePrefix = file.write(reinterpret_cast<const uint8_t*>(&prefix),
                              sizeof(prefix));
     wroteCrate = file.write(reinterpret_cast<const uint8_t*>(&crateTransforms),
                             sizeof(crateTransforms));
+    wroteAutomap = file.write(reinterpret_cast<const uint8_t*>(&automap),
+                              sizeof(automap));
     file.flush();
     file.close();
     return wrotePrefix == sizeof(prefix) &&
-           wroteCrate == sizeof(crateTransforms);
+           wroteCrate == sizeof(crateTransforms) &&
+           wroteAutomap == sizeof(automap);
 }
 
-bool readExactV6Matches(
+bool readExactV7Matches(
     const char* path,
     const NativeSaveRecordV5& expectedPrefix,
-    const EspNativeGameplayCrateTransformSnapshot& expectedCrate) {
+    const EspNativeGameplayCrateTransformSnapshot& expectedCrate,
+    const EspMapAutomapSnapshot& expectedAutomap) {
     File file;
     uint8_t verify[64];
-    const uint8_t* segments[2] = {
+    const uint8_t* segments[3] = {
         reinterpret_cast<const uint8_t*>(&expectedPrefix),
-        reinterpret_cast<const uint8_t*>(&expectedCrate)
+        reinterpret_cast<const uint8_t*>(&expectedCrate),
+        reinterpret_cast<const uint8_t*>(&expectedAutomap)
     };
-    const size_t sizes[2] = {sizeof(expectedPrefix), sizeof(expectedCrate)};
+    const size_t sizes[3] = {
+        sizeof(expectedPrefix), sizeof(expectedCrate), sizeof(expectedAutomap)
+    };
     uint8_t segment;
 
     if (path == nullptr || !SD.exists(path)) return false;
     file = SD.open(path, FILE_READ);
-    if (!file || (size_t)file.size() != kRecordBytesV6) {
+    if (!file || (size_t)file.size() != kRecordBytesV7) {
         if (file) file.close();
         return false;
     }
 
-    for (segment = 0U; segment < 2U; ++segment) {
+    for (segment = 0U; segment < 3U; ++segment) {
         size_t offset = 0U;
         while (offset < sizes[segment]) {
             size_t chunk = sizes[segment] - offset;
@@ -917,13 +958,14 @@ bool readExactV6Matches(
 
 bool commitRecordAtomic(
     const NativeSaveRecordV5& prefix,
-    const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap) {
     bool movedOld = false;
 
     if (SD.exists(kTempPath)) (void)SD.remove(kTempPath);
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
-    if (!writeExactV6(kTempPath, prefix, crateTransforms) ||
-        !readExactV6Matches(kTempPath, prefix, crateTransforms)) {
+    if (!writeExactV7(kTempPath, prefix, crateTransforms, automap) ||
+        !readExactV7Matches(kTempPath, prefix, crateTransforms, automap)) {
         (void)SD.remove(kTempPath);
         return false;
     }
@@ -944,7 +986,7 @@ bool commitRecordAtomic(
         return false;
     }
 
-    if (!readExactV6Matches(kSavePath, prefix, crateTransforms)) {
+    if (!readExactV7Matches(kSavePath, prefix, crateTransforms, automap)) {
         (void)SD.remove(kSavePath);
         if (movedOld && SD.exists(kBackupPath)) {
             (void)SD.rename(kBackupPath, kSavePath);
@@ -956,18 +998,20 @@ bool commitRecordAtomic(
     return true;
 }
 
-bool readV6CrateSection(
+bool readCrateSection(
     const char* path,
     const NativeSaveCore& core,
     EspNativeGameplayCrateTransformSnapshot* outSnapshot) {
     File file;
     size_t got;
     if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
-        core.version != kVersionV6) {
+        (core.version != kVersionV6 && core.version != kVersionV7)) {
         return false;
     }
+    const size_t expectedBytes =
+        core.version == kVersionV7 ? kRecordBytesV7 : kRecordBytesV6;
     file = SD.open(path, FILE_READ);
-    if (!file || (size_t)file.size() != kRecordBytesV6 ||
+    if (!file || (size_t)file.size() != expectedBytes ||
         !file.seek(sizeof(NativeSaveRecordV5))) {
         if (file) file.close();
         return false;
@@ -981,14 +1025,14 @@ bool readV6CrateSection(
                outSnapshot, core.runtimeFNV1a, core.targetMapId);
 }
 
-bool restoreV6CrateSection(
+bool restoreCrateSection(
     const char* path,
     const NativeSaveCore& core,
     uint16_t* outCount,
     uint32_t* outFNV) {
     EspNativeGameplayCrateTransformSnapshot snapshot;
     memset(&snapshot, 0, sizeof(snapshot));
-    if (!readV6CrateSection(path, core, &snapshot) ||
+    if (!readCrateSection(path, core, &snapshot) ||
         !EspNativeGameplayCrateState_restore(&snapshot) ||
         EspNativeGameplayCrateState_fingerprint() != snapshot.stateFNV1a) {
         return false;
@@ -998,13 +1042,95 @@ bool restoreV6CrateSection(
     return true;
 }
 
+static uint8_t snapshotBit(const uint8_t* bits, uint32_t index) {
+    return (uint8_t)((bits[index >> 3U] >> (index & 7U)) & 1U);
+}
+
+bool readV7AutomapSection(
+    const char* path,
+    const NativeSaveCore& core,
+    EspMapAutomapSnapshot* outSnapshot) {
+    File file;
+    size_t got;
+    if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
+        core.version != kVersionV7) {
+        return false;
+    }
+    file = SD.open(path, FILE_READ);
+    if (!file || (size_t)file.size() != kRecordBytesV7 ||
+        !file.seek(kRecordBytesV6)) {
+        if (file) file.close();
+        return false;
+    }
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    got = file.read(reinterpret_cast<uint8_t*>(outSnapshot),
+                    sizeof(*outSnapshot));
+    file.close();
+    return got == sizeof(*outSnapshot) &&
+           automapShapeValid(*outSnapshot, core);
+}
+
+bool restoreV7AutomapSection(
+    const char* path,
+    const NativeSaveCore& core,
+    uint16_t* outLineCount,
+    uint16_t* outSpriteCount,
+    uint16_t* outVisitedCount,
+    uint32_t* outFNV) {
+    EspMapAutomapSnapshot snapshot;
+    const EspMapAutomapStateView* view;
+    uint32_t expectedFNV;
+    uint32_t i;
+    uint16_t visitedCount = 0U;
+
+    memset(&snapshot, 0, sizeof(snapshot));
+    if (!readV7AutomapSection(path, core, &snapshot)) return false;
+    expectedFNV = automapSnapshotFNV(snapshot);
+    if (expectedFNV == 0U ||
+        !EspMapAutomapState_restore(&snapshot)) {
+        return false;
+    }
+
+    view = EspMapAutomapState_view();
+    if (view == nullptr ||
+        view->stateFNV1a != expectedFNV ||
+        view->lineRevealedCount != snapshot.lineRevealedCount ||
+        view->spriteRevealedCount != snapshot.spriteRevealedCount) {
+        return false;
+    }
+
+    for (i = 0U; i < ESP_MAP_STATE_TILE_COUNT; ++i) {
+        uint8_t flags;
+        const uint8_t expectedVisited = snapshotBit(snapshot.visitedBits, i);
+        if (!EspMapState_getTileFlags(i, &flags) ||
+            (((flags & ESP_MAP_TILE_VISITED) != 0U) ? 1U : 0U) !=
+                expectedVisited) {
+            return false;
+        }
+        if (expectedVisited != 0U && visitedCount != UINT16_MAX) {
+            ++visitedCount;
+        }
+    }
+
+    if (outLineCount != nullptr)
+        *outLineCount = snapshot.lineRevealedCount;
+    if (outSpriteCount != nullptr)
+        *outSpriteCount = snapshot.spriteRevealedCount;
+    if (outVisitedCount != nullptr)
+        *outVisitedCount = visitedCount;
+    if (outFNV != nullptr) *outFNV = expectedFNV;
+    return true;
+}
+
 bool captureRecord(
     NativeSaveRecordV5* outPrefix,
-    EspNativeGameplayCrateTransformSnapshot* outCrateTransforms) {
+    EspNativeGameplayCrateTransformSnapshot* outCrateTransforms,
+    EspMapAutomapSnapshot* outAutomap) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
 
     if (outPrefix == nullptr || outCrateTransforms == nullptr ||
+        outAutomap == nullptr ||
         EspAssetPack_isOpen() || runtime == nullptr || view == nullptr ||
         !EspMapResidentLifecycle_isReady()) {
         return false;
@@ -1013,12 +1139,14 @@ bool captureRecord(
     NativeSaveRecordV5& record = *outPrefix;
     memset(outPrefix, 0, sizeof(*outPrefix));
     memset(outCrateTransforms, 0, sizeof(*outCrateTransforms));
+    memset(outAutomap, 0, sizeof(*outAutomap));
     if (!EspNativeGameplayPlayerState_snapshot(&record.core.player) ||
         !EspNativeGameplayPlayerResources_snapshot(&record.resources) ||
         !EspMapScriptState_snapshot(&record.script) ||
         !EspMapLineCheckpoint_snapshot(&record.lines) ||
         !EspNativeGameplayActionEngine_snapshotRemoved(&record.actionRemoved) ||
-        !EspNativeGameplayCrateState_snapshot(outCrateTransforms)) {
+        !EspNativeGameplayCrateState_snapshot(outCrateTransforms) ||
+        !EspMapAutomapState_snapshot(outAutomap)) {
         return false;
     }
     if (view->active != 1U || view->targetMapId == 0U ||
@@ -1027,9 +1155,9 @@ bool captureRecord(
         return false;
     }
 
-    memcpy(record.core.magic, kMagicV6, sizeof(kMagicV6));
-    record.core.version = kVersionV6;
-    record.core.recordBytes = (uint16_t)kRecordBytesV6;
+    memcpy(record.core.magic, kMagicV7, sizeof(kMagicV7));
+    record.core.version = kVersionV7;
+    record.core.recordBytes = (uint16_t)kRecordBytesV7;
     record.core.sourceBytes = runtime->sourceBytes;
     record.core.sourceCrc32 = runtime->sourceCrc32;
     record.core.runtimeFNV1a = runtime->arenaFNV1a;
@@ -1038,24 +1166,29 @@ bool captureRecord(
     record.core.gameplayLoadMapId = view->gameplayLoadMapId;
     record.core.loadType = view->loadType;
     record.core.view = *view;
-    record.core.recordCrc32 = recordCrcV6(record, *outCrateTransforms);
-    return recordV6Valid(record, *outCrateTransforms);
+    record.core.recordCrc32 =
+        recordCrcV7(record, *outCrateTransforms, *outAutomap);
+    return recordV7Valid(record, *outCrateTransforms, *outAutomap);
 }
 
 bool saveNow(void) {
     NativeSaveRecordV5& record = saveWorkspace.write;
     EspNativeGameplayCrateTransformSnapshot crateTransforms;
+    EspMapAutomapSnapshot automap;
     uint32_t scriptFNV;
     uint32_t openCount;
     uint32_t lockedCount;
     uint32_t texture10Count;
     uint32_t removedCount;
+    uint32_t automapFNV;
+    uint32_t automapVisitedCount;
 
     memset(&record, 0, sizeof(record));
     memset(&crateTransforms, 0, sizeof(crateTransforms));
-    if (!captureRecord(&record, &crateTransforms) ||
-        !commitRecordAtomic(record, crateTransforms)) {
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=6 sections=resources+script+lines+action-removals+crate-transforms failClosed=yes\n",
+    memset(&automap, 0, sizeof(automap));
+    if (!captureRecord(&record, &crateTransforms, &automap) ||
+        !commitRecordAtomic(record, crateTransforms, automap)) {
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=7 sections=resources+script+lines+action-removals+crate-transforms+automap failClosed=yes\n",
                kLogPath);
         return false;
     }
@@ -1066,10 +1199,13 @@ bool saveNow(void) {
                                record.lines.bitsetBytes);
     removedCount = countBits(record.actionRemoved.removedBits,
                              record.actionRemoved.removedBytes);
-    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx atomic=temp+backup+rename world=resources+script+lines+action-removals+crate-transforms-restored+others-fresh\n",
+    automapFNV = automapSnapshotFNV(automap);
+    automapVisitedCount =
+        countBits(automap.visitedBits, ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES);
+    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx atomic=temp+backup+rename world=resources+script+lines+action-removals+crate-transforms+automap-restored+others-fresh\n",
            kLogPath,
            (unsigned int)record.core.version,
-           (unsigned int)kRecordBytesV6,
+           (unsigned int)kRecordBytesV7,
            (unsigned int)record.core.targetMapId,
            (unsigned int)record.core.gameplayLoadMapId,
            (long)record.core.view.viewX,
@@ -1100,7 +1236,11 @@ bool saveNow(void) {
            (unsigned int)crateTransforms.transformedCount,
            (unsigned int)crateTransforms.transformedBytes,
            (unsigned int)((crateTransforms.transformedCount + 1U) >> 1U),
-           (unsigned long)crateTransforms.stateFNV1a);
+           (unsigned long)crateTransforms.stateFNV1a,
+           (unsigned int)automap.lineRevealedCount,
+           (unsigned int)automap.spriteRevealedCount,
+           (unsigned long)automapVisitedCount,
+           (unsigned long)automapFNV);
     return true;
 }
 
