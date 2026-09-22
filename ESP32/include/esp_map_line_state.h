@@ -94,7 +94,15 @@ int EspMapLineState_setLocked(uint32_t lineIndex, uint8_t locked);
  * returning false. OK corresponds to its true return. removeCommandIfHandled
  * mirrors the outer Game_runEvent() 0x200 removal condition without mutating
  * EspMapScriptState yet.
+ *
+ * previewDoorCommand() performs the same canonical/lock/target validation and
+ * fills the same before/after intent without mutating the line overlay.
  */
+EspMapLineDoorStatus EspMapLineState_previewDoorCommand(
+    const EspMapEventDescriptor* descriptor,
+    uint32_t commandOffset,
+    EspMapLineDoorResult* outResult);
+
 EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
     const EspMapEventDescriptor* descriptor,
     uint32_t commandOffset,
