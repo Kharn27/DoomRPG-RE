@@ -8,6 +8,8 @@
 
 #include "esp_asset_pack.h"
 #include "esp_entity_def_type_catalog.h"
+#include "esp_map_events.h"
+#include "esp_map_runtime.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_action_engine.h"
@@ -502,6 +504,48 @@ static void serviceWeaponControl(Render_t* render,
            (unsigned int)fnvAfter);
 }
 
+static void logDeferredSelectEvent(uint16_t eventIndex) {
+    uint32_t value;
+    EspMapEventRef ref;
+    EspMapEventDescriptor descriptor;
+    uint32_t offset;
+
+    if (!EspMapRuntime_getEvent(eventIndex, &value)) {
+        printf("[ACTIONTRACE] event=%u unavailable\n",
+               (unsigned int)eventIndex);
+        return;
+    }
+    ref.index = eventIndex;
+    ref.tileIndex = (uint16_t)(value & ESP_MAP_EVENT_TILE_MASK);
+    ref.value = value;
+    memset(&descriptor, 0, sizeof(descriptor));
+    if (!EspMapEvents_describe(&ref, &descriptor)) {
+        printf("[ACTIONTRACE] event=%u tile=%u describe=failed\n",
+               (unsigned int)eventIndex,
+               (unsigned int)ref.tileIndex);
+        return;
+    }
+
+    printf("[ACTIONTRACE] event=%u tile=%u commands=%u firstGlobal=%u raw-sequence",
+           (unsigned int)eventIndex,
+           (unsigned int)descriptor.tileIndex,
+           (unsigned int)descriptor.commandCount,
+           (unsigned int)descriptor.firstCommandIndex);
+    for (offset = 0U; offset < descriptor.commandCount; ++offset) {
+        EspMapByteCode command;
+        if (!EspMapEvents_getCommand(&descriptor, offset, &command)) {
+            printf(" off%u=READFAIL", (unsigned int)offset);
+            continue;
+        }
+        printf(" off%u=id%u/a1=%08x/a2=%08x",
+               (unsigned int)offset,
+               (unsigned int)command.id,
+               (unsigned int)command.arg1,
+               (unsigned int)command.arg2);
+    }
+    printf("\n");
+}
+
 static void serviceSelect(Render_t* render,
                           const EspNativeGameplayInputState* intent) {
     const EspPlayerViewState* view = EspPlayerView_view();
@@ -630,6 +674,10 @@ static void serviceSelect(Render_t* render,
         status == ESP_NATIVE_GAMEPLAY_ACTION_NO_ELIGIBLE ||
         status == ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT ||
         status == ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT) {
+        if (status == ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT ||
+            status == ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT) {
+            logDeferredSelectEvent(result.eventIndex);
+        }
         ++gameplayState.deferred;
         printf("[RESIDENTGAMEPLAY] SELECT-DEFER n=%u seq=%u status=%s unsupported=%u entity/otherSemantics=deferred mutation=no\n",
                (unsigned int)gameplayState.deferred,
