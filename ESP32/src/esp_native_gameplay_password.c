@@ -56,8 +56,12 @@ typedef struct EspNativeGameplayPasswordState_s {
     uint16_t globalCommandIndex;
     uint16_t expectedLength;
     uint16_t promptLength;
+    uint16_t resumeDialogGlobalCommandIndex;
     uint8_t commandOffset;
     uint8_t resumeOffset;
+    uint8_t resumeDialogOffset;
+    uint8_t resumeDialogCodeId;
+    uint8_t resumeIsDialog;
     uint8_t removedBefore;
     uint8_t removedAfter;
     uint8_t removeChanged;
@@ -94,6 +98,48 @@ static int eventDescriptorForIndex(uint16_t eventIndex,
     ref.tileIndex = (uint16_t)(value & ESP_MAP_EVENT_TILE_MASK);
     ref.value = value;
     return EspMapEvents_describe(&ref, outDescriptor);
+}
+
+static int firstEligibleContinuation(
+    const EspMapEventDescriptor* descriptor,
+    uint8_t resumeOffset,
+    uint32_t runFlags,
+    uint8_t* outOffset,
+    uint16_t* outGlobal,
+    uint8_t* outCodeId) {
+    EspMapEventFilterPlan plan;
+    EspMapEventCommandFilterResult filtered;
+    uint8_t currentState;
+    uint32_t offset;
+
+    if (outOffset != NULL) *outOffset = UINT8_MAX;
+    if (outGlobal != NULL) *outGlobal = UINT16_MAX;
+    if (outCodeId != NULL) *outCodeId = 0U;
+    if (descriptor == NULL || outOffset == NULL || outGlobal == NULL ||
+        outCodeId == NULL || resumeOffset > descriptor->commandCount ||
+        !EspMapScriptState_getEventState(descriptor->eventIndex,
+                                         &currentState) ||
+        !EspMapEventFilter_prepare(descriptor, currentState,
+                                   resumeOffset, runFlags, 0U, &plan)) {
+        return -1;
+    }
+
+    for (offset = resumeOffset; offset < descriptor->commandCount; ++offset) {
+        uint32_t global = (uint32_t)descriptor->firstCommandIndex + offset;
+        uint8_t removed;
+        if (offset > UINT8_MAX || global > UINT16_MAX ||
+            !EspMapScriptState_isCommandRemoved(global, &removed) ||
+            !EspMapEventFilter_evaluate(descriptor, &plan, offset,
+                                        removed, &filtered)) {
+            return -1;
+        }
+        if (filtered.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) continue;
+        *outOffset = (uint8_t)offset;
+        *outGlobal = filtered.globalCommandIndex;
+        *outCodeId = filtered.codeId;
+        return 1;
+    }
+    return 0;
 }
 
 static void putPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {
@@ -368,13 +414,18 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     EspMapStringRef promptRef;
     EspAssetPackEntry mapEntry;
     EspNativeGameplayEventChainPreflightStatus chainStatus;
+    EspNativeGameplayDialogBeginStatus dialogChainStatus;
     const char* mapName;
     size_t codeLength = 0U;
     size_t promptLength = 0U;
     uint8_t currentState;
     uint8_t removed;
+    uint8_t resumeDialogOffset = UINT8_MAX;
+    uint8_t resumeDialogCodeId = 0U;
+    uint16_t resumeDialogGlobal = UINT16_MAX;
     uint32_t global;
     uint16_t i;
+    int continuationFound;
 
     if ((passwordState() != NULL &&
          (password.active || password.completion.pending)) ||
@@ -401,16 +452,50 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
         return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_INVALID;
     }
 
-    chainStatus = EspNativeGameplayEventChain_preflight(
-        eventIndex, (uint8_t)(commandOffset + 1U), runFlags);
-    if (chainStatus != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
-        printf("[PASSWORD] BEGIN-DEFER event=%u cmd=%u continuation=%d mutation=no\n",
-               (unsigned int)eventIndex,
-               (unsigned int)commandOffset,
-               (int)chainStatus);
-        return chainStatus == ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY
-                   ? ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_NOT_READY
-                   : ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_UNSUPPORTED_RESUME;
+    continuationFound = firstEligibleContinuation(
+        &descriptor, (uint8_t)(commandOffset + 1U), runFlags,
+        &resumeDialogOffset, &resumeDialogGlobal, &resumeDialogCodeId);
+    if (continuationFound < 0) {
+        return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_INVALID;
+    }
+
+    if (continuationFound > 0 &&
+        (resumeDialogCodeId == ESP_MAP_OPCODE_DIALOG ||
+         resumeDialogCodeId == ESP_MAP_OPCODE_DIALOG_NO_BACK)) {
+        dialogChainStatus =
+            EspNativeGameplayEventChain_preflightDialogCommand(
+                eventIndex, resumeDialogOffset, runFlags);
+        if (dialogChainStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+            printf("[PASSWORD] BEGIN-DEFER event=%u cmd=%u continuation=dialog opcode=%u dialogCmd=%u status=%s mutation=no\n",
+                   (unsigned int)eventIndex,
+                   (unsigned int)commandOffset,
+                   (unsigned int)resumeDialogCodeId,
+                   (unsigned int)resumeDialogOffset,
+                   EspNativeGameplayDialog_beginStatusName(dialogChainStatus));
+            return dialogChainStatus == ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY
+                       ? ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_NOT_READY
+                       : dialogChainStatus ==
+                                 ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_TEXT_TOO_LARGE
+                             ? ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_TEXT_TOO_LARGE
+                             : ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_UNSUPPORTED_RESUME;
+        }
+    }
+    else {
+        resumeDialogOffset = UINT8_MAX;
+        resumeDialogGlobal = UINT16_MAX;
+        resumeDialogCodeId = 0U;
+        chainStatus = EspNativeGameplayEventChain_preflight(
+            eventIndex, (uint8_t)(commandOffset + 1U), runFlags);
+        if (chainStatus != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
+            printf("[PASSWORD] BEGIN-DEFER event=%u cmd=%u continuation=%d mutation=no\n",
+                   (unsigned int)eventIndex,
+                   (unsigned int)commandOffset,
+                   (int)chainStatus);
+            return chainStatus ==
+                           ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY
+                       ? ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_NOT_READY
+                       : ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_UNSUPPORTED_RESUME;
+        }
     }
 
     if (!EspMapStrings_getRef(command.arg1 & 0xffU, &codeRef) ||
@@ -468,6 +553,11 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     password.promptLength = (uint16_t)promptLength;
     password.commandOffset = commandOffset;
     password.resumeOffset = (uint8_t)(commandOffset + 1U);
+    password.resumeDialogOffset = resumeDialogOffset;
+    password.resumeDialogGlobalCommandIndex = resumeDialogGlobal;
+    password.resumeDialogCodeId = resumeDialogCodeId;
+    password.resumeIsDialog =
+        (uint8_t)(resumeDialogOffset != UINT8_MAX ? 1U : 0U);
     password.runFlags = runFlags;
     password.removedBefore = removed;
     password.removedAfter = removed;
@@ -489,7 +579,7 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
         return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_IO_FAILED;
     }
 
-    printf("[PASSWORD] OPEN event=%u cmd=%u resume=%u codeString=%u promptString=%u digits=%u promptBytes=%u removed=%u->%u keypad=3x4 keys=0-9+DEL+VALID framePaint=%u pack=open\n",
+    printf("[PASSWORD] OPEN event=%u cmd=%u resume=%u codeString=%u promptString=%u digits=%u promptBytes=%u removed=%u->%u keypad=3x4 keys=0-9+DEL+VALID continuation=%s resumeOpcode=%u resumeCmd=%u framePaint=%u pack=open\n",
            (unsigned int)eventIndex,
            (unsigned int)commandOffset,
            (unsigned int)password.resumeOffset,
@@ -499,6 +589,11 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
            (unsigned int)password.promptLength,
            (unsigned int)password.removedBefore,
            (unsigned int)password.removedAfter,
+           password.resumeIsDialog ? "dialog-pause" : "sync-chain",
+           (unsigned int)password.resumeDialogCodeId,
+           (unsigned int)(password.resumeIsDialog
+                              ? password.resumeDialogOffset
+                              : password.resumeOffset),
            (unsigned int)password.paintCount);
     return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_OK;
 }
@@ -554,8 +649,11 @@ EspNativeGameplayPasswordTapStatus EspNativeGameplayPassword_handleTap(
         completion.close.sourceCommandOffset = password.commandOffset;
         completion.close.resumeCommandOffset = password.resumeOffset;
         completion.close.dialogCodeId = ESP_MAP_OPCODE_PASSWORD;
-        completion.close.resumeCodeId = 0U;
-        completion.close.resumeHasCommand = 0U;
+        completion.close.resumeGlobalCommandIndex =
+            password.resumeDialogGlobalCommandIndex;
+        completion.close.resumeCodeId = password.resumeDialogCodeId;
+        completion.close.resumeHasCommand = password.resumeIsDialog;
+        completion.resumeDialogOffset = password.resumeDialogOffset;
         completion.close.resumeRequested = correct ? 1U : 0U;
         completion.close.backAllowed = 0U;
         completion.close.removedBefore = password.removedBefore;
