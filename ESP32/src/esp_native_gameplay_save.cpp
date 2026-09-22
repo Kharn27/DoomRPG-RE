@@ -1133,6 +1133,9 @@ bool loadNow(void) {
     uint32_t lockedCount = 0U;
     uint32_t texture10Count = 0U;
     uint32_t actionRemovedCount = 0U;
+    uint16_t crateTransformCount = 0U;
+    uint32_t crateTransformFNV = 0U;
+    const char* selectedPath = nullptr;
 
     memset(&loaded, 0, sizeof(loaded));
     memset(&inventory, 0, sizeof(inventory));
@@ -1145,6 +1148,7 @@ bool loadNow(void) {
         return false;
     }
     record = &loaded.core;
+    selectedPath = recoveredBackup ? kBackupPath : kSavePath;
     name = EspMapCatalog_nameForId(record->targetMapId);
     if (name == nullptr || name[0] == '\0') {
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=MAP_ID map=%u failClosed=yes\n",
@@ -1156,8 +1160,9 @@ bool loadNow(void) {
      * V2 adds the consumed player-resource overlay. V3 adds the compact native
      * script/event mutable owner. V4 adds the complete compact line family:
      * open/locked bits plus mutable 9/10 texture variants. V5 adds the compact
-     * action-engine sprite-removal overlay (fires first). Every other world
-     * family remains fresh until its own bounded persistence milestone. */
+     * action-engine sprite-removal overlay. V6 appends canonical crate
+     * transformed-definition state. Every other world family remains fresh
+     * until its own bounded persistence milestone. */
     EspNativeGameplaySession_reset();
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
@@ -1225,10 +1230,14 @@ bool loadNow(void) {
               &loaded.actionRemoved) ||
           EspNativeGameplayActionEngine_removedFingerprint() !=
               loaded.actionRemoved.stateFNV1a)) ||
+        (record->version == kVersionV6 &&
+         !restoreV6CrateSection(selectedPath, *record,
+                                &crateTransformCount,
+                                &crateTransformFNV)) ||
         !sessionConfigForPlayer(record->player, &config) ||
         !EspNativeGameplaySession_configureResume(&config)) {
         resetFailedLoad();
-        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s playerFNV=%08lx failClosed=yes\n",
+        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s playerFNV=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)record->targetMapId,
                (unsigned int)record->version,
@@ -1248,8 +1257,12 @@ bool loadNow(void) {
         printf("[NATIVESAVE] LEGACY-ACTION-GAP version=%u actionRemoved=fresh warning=fire-clears-and-future-action-removals-not-persisted\n",
                (unsigned int)record->version);
     }
+    if (loaded.hasActionRemoved == 1U && record->version < kVersionV6) {
+        printf("[NATIVESAVE] LEGACY-CRATE-GAP version=%u crateTransforms=fresh warning=transformed-crates-not-persisted\n",
+               (unsigned int)record->version);
+    }
 
-    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx world=%s session=reprime-pending\n",
+    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx world=%s session=reprime-pending\n",
            kLogPath,
            (unsigned int)record->version,
            (unsigned int)loaded.fileBytes,
