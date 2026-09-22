@@ -1,4 +1,3 @@
-#include <SDL.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -12,6 +11,7 @@
 #include "esp_map_script_state.h"
 #include "esp_map_strings.h"
 #include "esp_native_gameplay_event_chain.h"
+#include "esp_native_gameplay_modal_scratch.h"
 #include "esp_native_gameplay_password.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_player_view_state.h"
@@ -44,7 +44,6 @@
 #endif
 
 typedef struct EspNativeGameplayPasswordState_s {
-    EspNativeIndexedBmp font;
     EspNativeGameplayPasswordCompletion completion;
     char prompt[ESP_NATIVE_GAMEPLAY_PASSWORD_PROMPT_CAPACITY];
     char expected[ESP_NATIVE_GAMEPLAY_PASSWORD_MAX_CODE + 1U];
@@ -68,34 +67,18 @@ typedef struct EspNativeGameplayPasswordState_s {
 } EspNativeGameplayPasswordState;
 
 /*
- * Keep this owner off BSS. The classic CYD startup ZIP path has a narrow
- * contiguous-heap phase while mappings.bin coexists with miniz state; a ~1 KB
- * permanent password owner is enough to fragment that phase into failure even
- * though EV_PASSWORD is not reachable until resident gameplay. Allocate only
- * when a password modal is actually opened, then release after completion.
+ * Password state leases the already-existing NOTE transient owner. No new BSS
+ * pointer is introduced: this is required by the hardware-proven 44,832-byte
+ * static-RAM startup boundary. The persistent NOTE notebook sits outside the
+ * leased span and is preserved.
  */
-static EspNativeGameplayPasswordState* passwordOwner;
-#define password (*passwordOwner)
-
-static int ensurePasswordOwner(void) {
-    if (passwordOwner != NULL) return 1;
-    passwordOwner = (EspNativeGameplayPasswordState*)SDL_calloc(
-        1, sizeof(*passwordOwner));
-    if (passwordOwner == NULL) {
-        printf("[PASSWORD] DEFER owner-allocation bytes=%u\n",
-               (unsigned int)sizeof(*passwordOwner));
-        return 0;
-    }
-    printf("[PASSWORD] OWNER bytes=%u allocation=lazy-gameplay\n",
-           (unsigned int)sizeof(*passwordOwner));
-    return 1;
+static EspNativeGameplayPasswordState* passwordState(void) {
+    return (EspNativeGameplayPasswordState*)
+        EspNativeGameplayModalScratch_view(
+            ESP_NATIVE_GAMEPLAY_MODAL_SCRATCH_PASSWORD);
 }
 
-static void releasePasswordOwner(void) {
-    if (passwordOwner == NULL) return;
-    SDL_free(passwordOwner);
-    passwordOwner = NULL;
-}
+#define password (*passwordState())
 
 static int eventDescriptorForIndex(uint16_t eventIndex,
                                    EspMapEventDescriptor* outDescriptor) {
@@ -156,7 +139,8 @@ static void drawRect(uint16_t* framebuffer,
     }
 }
 
-static int drawGlyph(uint16_t* framebuffer,
+static int drawGlyph(const EspNativeIndexedBmp* font,
+                     uint16_t* framebuffer,
                      uint8_t c,
                      int x,
                      int y,
@@ -165,7 +149,7 @@ static int drawGlyph(uint16_t* framebuffer,
     if (c < 33U || c > 127U) return 0;
     glyph = (uint8_t)(c - 33U);
     return EspNativeIndexedBmp_blit(
-               &password.font,
+               font,
                framebuffer,
                DOOMRPG_LOGICAL_WIDTH,
                DOOMRPG_LOGICAL_HEIGHT,
@@ -179,7 +163,8 @@ static int drawGlyph(uint16_t* framebuffer,
                stats) == ESP_NATIVE_INDEXED_BMP_OK;
 }
 
-static int drawLabel(uint16_t* framebuffer,
+static int drawLabel(const EspNativeIndexedBmp* font,
+                     uint16_t* framebuffer,
                      const char* text,
                      int x,
                      int y,
@@ -191,7 +176,7 @@ static int drawLabel(uint16_t* framebuffer,
             x += PASSWORD_FONT_ADVANCE;
         }
         else {
-            if (!drawGlyph(framebuffer, *p, x, y, stats)) return 0;
+            if (!drawGlyph(font, framebuffer, *p, x, y, stats)) return 0;
             x += PASSWORD_FONT_ADVANCE;
         }
         ++p;
@@ -199,7 +184,8 @@ static int drawLabel(uint16_t* framebuffer,
     return 1;
 }
 
-static int drawPrompt(uint16_t* framebuffer,
+static int drawPrompt(const EspNativeIndexedBmp* font,
+                      uint16_t* framebuffer,
                       EspNativeIndexedBmpStats* stats) {
     uint16_t i;
     int x = 2;
@@ -221,13 +207,14 @@ static int drawPrompt(uint16_t* framebuffer,
             x += PASSWORD_FONT_ADVANCE;
             continue;
         }
-        if (!drawGlyph(framebuffer, c, x, y, stats)) return 0;
+        if (!drawGlyph(font, framebuffer, c, x, y, stats)) return 0;
         x += PASSWORD_FONT_ADVANCE;
     }
     return 1;
 }
 
-static int drawCode(uint16_t* framebuffer,
+static int drawCode(const EspNativeIndexedBmp* font,
+                    uint16_t* framebuffer,
                     EspNativeIndexedBmpStats* stats) {
     char display[ESP_NATIVE_GAMEPLAY_PASSWORD_MAX_CODE + 1U];
     uint16_t enteredLength = (uint16_t)strlen(password.entered);
@@ -249,7 +236,7 @@ static int drawCode(uint16_t* framebuffer,
     x = (DOOMRPG_LOGICAL_WIDTH - width) / 2;
     drawRect(framebuffer, 1, 27, DOOMRPG_LOGICAL_WIDTH - 2, 15,
              PASSWORD_COLOR_DIM);
-    return drawLabel(framebuffer, display, x, 29, stats);
+    return drawLabel(font, framebuffer, display, x, 29, stats);
 }
 
 static const char* keyLabel(int row, int col) {
@@ -269,6 +256,7 @@ static const char* keyLabel(int row, int col) {
 static int paintKeypad(void) {
     uint16_t* framebuffer =
         (uint16_t*)Esp32PlatformVideo_framebuffer();
+    EspNativeIndexedBmp font;
     EspNativeIndexedBmpStats stats;
     int row;
     int col;
@@ -281,13 +269,21 @@ static int paintKeypad(void) {
         return 0;
     }
 
+    memset(&font, 0, sizeof(font));
     memset(&stats, 0, sizeof(stats));
+    if (EspNativeIndexedBmp_open(PASSWORD_FONT_NAME, &font, &stats) !=
+            ESP_NATIVE_INDEXED_BMP_OK ||
+        font.width != PASSWORD_FONT_SOURCE_WIDTH ||
+        font.height != PASSWORD_FONT_SOURCE_HEIGHT) {
+        return 0;
+    }
+
     fillRect(framebuffer, 0, 0,
              DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
              PASSWORD_COLOR_BLACK);
 
-    if (!drawPrompt(framebuffer, &stats) ||
-        !drawCode(framebuffer, &stats)) {
+    if (!drawPrompt(&font, framebuffer, &stats) ||
+        !drawCode(&font, framebuffer, &stats)) {
         return 0;
     }
 
@@ -312,7 +308,7 @@ static int paintKeypad(void) {
                      border);
             labelWidth = (int)strlen(label) * PASSWORD_FONT_ADVANCE;
             labelX = x + (width - labelWidth) / 2;
-            if (!drawLabel(framebuffer, label, labelX, y + 2, &stats)) {
+            if (!drawLabel(&font, framebuffer, label, labelX, y + 2, &stats)) {
                 return 0;
             }
         }
@@ -326,7 +322,7 @@ static int paintKeypad(void) {
 }
 
 static void rollbackOpenMutation(void) {
-    if (passwordOwner != NULL &&
+    if (passwordState() != NULL &&
         password.active && password.removeChanged != 0U &&
         EspMapScriptState_isReady()) {
         if (!EspMapScriptState_setCommandRemoved(password.globalCommandIndex,
@@ -339,21 +335,24 @@ static void rollbackOpenMutation(void) {
 }
 
 void EspNativeGameplayPassword_reset(void) {
-    if (passwordOwner == NULL) return;
+    EspNativeGameplayPasswordState* state = passwordState();
+    if (state == NULL) return;
     rollbackOpenMutation();
-    if (password.packOwned != 0U && EspAssetPack_isOpen()) {
+    if (state->packOwned != 0U && EspAssetPack_isOpen()) {
         EspAssetPack_close();
     }
-    memset(passwordOwner, 0, sizeof(*passwordOwner));
-    releasePasswordOwner();
+    (void)EspNativeGameplayModalScratch_release(
+        ESP_NATIVE_GAMEPLAY_MODAL_SCRATCH_PASSWORD, state);
 }
 
 int EspNativeGameplayPassword_isActive(void) {
-    return passwordOwner != NULL && password.active != 0U;
+    EspNativeGameplayPasswordState* state = passwordState();
+    return state != NULL && state->active != 0U;
 }
 
 int EspNativeGameplayPassword_hasPendingCompletion(void) {
-    return passwordOwner != NULL && password.completion.pending != 0U;
+    EspNativeGameplayPasswordState* state = passwordState();
+    return state != NULL && state->completion.pending != 0U;
 }
 
 EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
@@ -368,7 +367,6 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     EspMapStringRef codeRef;
     EspMapStringRef promptRef;
     EspAssetPackEntry mapEntry;
-    EspNativeIndexedBmpStats fontStats;
     EspNativeGameplayEventChainPreflightStatus chainStatus;
     const char* mapName;
     size_t codeLength = 0U;
@@ -378,7 +376,7 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     uint32_t global;
     uint16_t i;
 
-    if ((passwordOwner != NULL &&
+    if ((passwordState() != NULL &&
          (password.active || password.completion.pending)) ||
         EspAssetPack_isOpen() || view == NULL || view->active != 1U ||
         view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0 ||
@@ -428,7 +426,11 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
                    : ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_INVALID;
     }
 
-    if (!ensurePasswordOwner()) {
+    if (EspNativeGameplayModalScratch_acquire(
+            ESP_NATIVE_GAMEPLAY_MODAL_SCRATCH_PASSWORD,
+            sizeof(EspNativeGameplayPasswordState)) == NULL) {
+        printf("[PASSWORD] DEFER reason=shared-modal-scratch bytes=%u mutation=no\n",
+               (unsigned int)sizeof(EspNativeGameplayPasswordState));
         return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_NOT_READY;
     }
     mapName = EspMapCatalog_nameForId(view->targetMapId);
@@ -440,7 +442,6 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     password.packOwned = 1U;
 
     memset(&mapEntry, 0, sizeof(mapEntry));
-    memset(&fontStats, 0, sizeof(fontStats));
     if (!EspAssetPack_findEntry(mapName, &mapEntry) ||
         EspMapStrings_read(&mapEntry, &codeRef,
                            password.expected, sizeof(password.expected),
@@ -449,12 +450,7 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
                            password.prompt, sizeof(password.prompt),
                            &promptLength) != ESP_MAP_STRING_READ_OK ||
         codeLength != codeRef.length ||
-        promptLength != promptRef.length ||
-        EspNativeIndexedBmp_open(PASSWORD_FONT_NAME,
-                                 &password.font,
-                                 &fontStats) != ESP_NATIVE_INDEXED_BMP_OK ||
-        password.font.width != PASSWORD_FONT_SOURCE_WIDTH ||
-        password.font.height != PASSWORD_FONT_SOURCE_HEIGHT) {
+        promptLength != promptRef.length) {
         EspNativeGameplayPassword_reset();
         return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_IO_FAILED;
     }
@@ -475,8 +471,8 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     password.runFlags = runFlags;
     password.removedBefore = removed;
     password.removedAfter = removed;
-    password.fontPackReads = fontStats.packReads;
-    password.fontBytesRead = fontStats.bytesRead;
+    password.fontPackReads = 0U;
+    password.fontBytesRead = 0U;
 
     if ((command.arg2 & PASSWORD_REMOVE_FLAG) != 0U) {
         if (!EspMapScriptState_setCommandRemoved(global, 1U)) {
@@ -489,11 +485,6 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
 
     password.active = 1U;
     if (!paintKeypad()) {
-        rollbackOpenMutation();
-        password.removeChanged = 0U;
-        if (password.packOwned != 0U && EspAssetPack_isOpen()) {
-            EspAssetPack_close();
-        }
         EspNativeGameplayPassword_reset();
         return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_IO_FAILED;
     }
@@ -519,7 +510,7 @@ EspNativeGameplayPasswordTapStatus EspNativeGameplayPassword_handleTap(
     int col;
     uint16_t enteredLength;
 
-    if (passwordOwner == NULL ||
+    if (passwordState() == NULL ||
         !password.active || !password.packOwned || !EspAssetPack_isOpen()) {
         return ESP_NATIVE_GAMEPLAY_PASSWORD_TAP_INVALID;
     }
@@ -617,16 +608,21 @@ EspNativeGameplayPasswordTapStatus EspNativeGameplayPassword_handleTap(
 
 int EspNativeGameplayPassword_takeCompletion(
     EspNativeGameplayPasswordCompletion* outCompletion) {
+    EspNativeGameplayPasswordState* state = passwordState();
     if (outCompletion != NULL) memset(outCompletion, 0, sizeof(*outCompletion));
-    if (outCompletion == NULL || passwordOwner == NULL ||
-        password.completion.pending != 1U ||
-        password.active != 0U || password.packOwned != 0U ||
+    if (outCompletion == NULL || state == NULL ||
+        state->completion.pending != 1U ||
+        state->active != 0U || state->packOwned != 0U ||
         EspAssetPack_isOpen()) {
         return 0;
     }
-    *outCompletion = password.completion;
-    memset(&password.completion, 0, sizeof(password.completion));
-    releasePasswordOwner();
+    *outCompletion = state->completion;
+    memset(&state->completion, 0, sizeof(state->completion));
+    if (!EspNativeGameplayModalScratch_release(
+            ESP_NATIVE_GAMEPLAY_MODAL_SCRATCH_PASSWORD, state)) {
+        memset(outCompletion, 0, sizeof(*outCompletion));
+        return 0;
+    }
     return 1;
 }
 
