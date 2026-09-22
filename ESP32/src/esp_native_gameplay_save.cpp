@@ -850,6 +850,48 @@ bool restoreView(const NativeSaveCore& record) {
            memcmp(live, &record.view, sizeof(*live)) == 0;
 }
 
+bool reprimeHudOwners(const NativeSaveCore& record) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspHudRefreshStatus refreshStatus;
+    EspHudPostLoadClearStatus clearStatus;
+    const EspHudRefreshState* refresh;
+    const EspHudPostLoadClearState* clear;
+
+    if (view == nullptr || memcmp(view, &record.view, sizeof(*view)) != 0) {
+        return false;
+    }
+
+    refreshStatus = EspHudRefresh_restorePending(view);
+    clearStatus = EspHudPostLoadClear_restoreSettled(view);
+    refresh = EspHudRefresh_view();
+    clear = EspHudPostLoadClear_view();
+
+    if (refreshStatus != ESP_HUD_REFRESH_OK ||
+        clearStatus != ESP_HUD_POST_LOAD_CLEAR_OK ||
+        refresh == nullptr || clear == nullptr ||
+        refresh->targetMapId != record.targetMapId ||
+        refresh->gameplayLoadMapId != record.gameplayLoadMapId ||
+        refresh->loadType != record.loadType ||
+        clear->targetMapId != record.targetMapId ||
+        clear->gameplayLoadMapId != record.gameplayLoadMapId ||
+        clear->loadType != record.loadType) {
+        printf("[NATIVESAVE] REPRIME-HUD-FAILED map=%u gameplayLoadMapId=%u refreshStatus=%u clearStatus=%u refresh=%s clear=%s failClosed=yes\n",
+               (unsigned int)record.targetMapId,
+               (unsigned int)record.gameplayLoadMapId,
+               (unsigned int)refreshStatus,
+               (unsigned int)clearStatus,
+               refresh != nullptr ? "ready" : "missing",
+               clear != nullptr ? "ready" : "missing");
+        return false;
+    }
+
+    printf("[NATIVESAVE] REPRIME-HUD map=%u gameplayLoadMapId=%u angle=%ld refresh=pending clear=ready mutation=owners-only turn=no\n",
+           (unsigned int)record.targetMapId,
+           (unsigned int)record.gameplayLoadMapId,
+           (long)view->viewAngle);
+    return true;
+}
+
 bool sessionConfigForPlayer(const EspNativeGameplayPlayerState& player,
                             EspNativeGameplaySessionConfig* outConfig) {
     const EspNativeGameplayWeaponSpec* weaponSpec = nullptr;
@@ -984,6 +1026,7 @@ bool loadNow(void) {
     if (!EspNativeGameplayPlayerState_restore(&record->player) ||
         EspNativeGameplayPlayerState_fingerprint() != record->playerFNV1a ||
         !restoreView(*record) ||
+        !reprimeHudOwners(*record) ||
         (loaded.hasResources == 1U &&
          !EspNativeGameplayPlayerResources_restore(&loaded.resources)) ||
         (loaded.hasScript == 1U &&
