@@ -320,6 +320,10 @@ int EspNativeGameplayPassword_isActive(void) {
     return password.active != 0U;
 }
 
+int EspNativeGameplayPassword_hasPendingCompletion(void) {
+    return password.completion.pending != 0U;
+}
+
 EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     uint16_t eventIndex,
     uint8_t commandOffset,
