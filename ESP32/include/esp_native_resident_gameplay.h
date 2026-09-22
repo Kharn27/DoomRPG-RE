@@ -33,6 +33,11 @@ int EspNativeResidentGameplay_redrawAutomap(
 
 /* Legacy Player_pain leaves ST_AUTOMAP before showing damage. This closes the
  * native Automap to the normal HUD/world presentation when damage commits. */
+/* Close Automap before a modal presenter takes framebuffer/input ownership. */
+int EspNativeResidentGameplay_exitAutomapForModal(
+    struct Render_s* render,
+    const char* reason);
+
 int EspNativeResidentGameplay_exitAutomapForDamage(
     struct Render_s* render,
     const char* reason);
