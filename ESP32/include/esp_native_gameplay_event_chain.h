@@ -51,6 +51,25 @@ EspNativeGameplayEventChain_preflight(
     uint8_t resumeCommandOffset,
     uint32_t runFlags);
 
+/*
+ * A dialog reached after another pause boundary (currently EV_PASSWORD) is not
+ * a synchronous chain command: legacy pauses again at that dialog.  These APIs
+ * prove/open that exact command without replaying any already-handled prefix.
+ * The dialog's own post-dialog continuation is still fully preflighted and
+ * remains fail-closed.
+ */
+EspNativeGameplayDialogBeginStatus
+EspNativeGameplayEventChain_preflightDialogCommand(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint32_t runFlags);
+
+EspNativeGameplayDialogBeginStatus
+EspNativeGameplayEventChain_beginDialogCommand(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint32_t runFlags);
+
 /* One-shot diagnostic over the resident event corpus. Allocation-free and
  * mutation-free; intended to tell hardware testing which opcode families will
  * still fail closed before the player reaches them. */
