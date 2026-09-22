@@ -31,6 +31,7 @@ typedef struct CrateStateOwner_s {
 } CrateStateOwner;
 
 static CrateStateOwner crateState;
+static uint8_t crateProbeDone;
 
 int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
 int __real_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
@@ -100,6 +101,59 @@ static int targetsReady(uint16_t outTiles[9]) {
     return 1;
 }
 
+static int outcomeProbe(void) {
+    static const struct {
+        uint8_t first;
+        uint8_t second;
+        uint8_t secondValid;
+        uint8_t expectedOutcome;
+        uint8_t expectedType;
+        uint8_t expectedSubtype;
+    } cases[] = {
+        {0U,   0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRAPPED_REMOVE, 0U, 0U},
+        {1U,   0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRAPPED_REMOVE, 0U, 0U},
+        {2U,   0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 3U, 23U},
+        {3U,   0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 3U, 23U},
+        {4U,   0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 3U, 22U},
+        {11U,  0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 3U, 22U},
+        {12U,  0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 4U, 25U},
+        {23U,  0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 4U, 25U},
+        {24U,  0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 3U, 21U},
+        {149U, 0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 3U, 21U},
+        {150U, 0U,   1U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 6U, 0U},
+        {150U, 4U,   1U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 6U, 4U},
+        {212U, 255U, 1U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM, 6U, 0U},
+        {213U, 0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_BREAK_REMOVE, 0U, 0U},
+        {255U, 0U,   0U, ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_BREAK_REMOVE, 0U, 0U}
+    };
+    uint32_t i;
+    for (i = 0U; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        EspNativeGameplayCrateOutcome outcome =
+            ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_INVALID;
+        uint16_t tile = 0U;
+        uint8_t type = 0U;
+        uint8_t subtype = 0U;
+        int32_t parm = 0;
+        if (!EspNativeGameplayCrateState_resolveOutcome(
+                cases[i].first, cases[i].second, cases[i].secondValid,
+                &outcome, &tile) ||
+            outcome != (EspNativeGameplayCrateOutcome)cases[i].expectedOutcome) {
+            return 0;
+        }
+        if (outcome == ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM) {
+            if (!EspEntityDefTypeCatalog_getMetadata(
+                    tile, &type, &subtype, &parm) ||
+                type != cases[i].expectedType ||
+                subtype != cases[i].expectedSubtype) {
+                return 0;
+            }
+        }
+    }
+    printf("[CRATEPROBE] READY cases=%u thresholds=0/2/4/12/24/150/213 ammoSecond=150..212 modulo5=yes rngConsumed=0 mutation=no\n",
+           (unsigned int)(sizeof(cases) / sizeof(cases[0])));
+    return 1;
+}
+
 static int findRecord(uint32_t spriteIndex) {
     uint16_t i;
     for (i = 0U; i < crateState.view.transformedCount; ++i) {
@@ -110,6 +164,7 @@ static int findRecord(uint32_t spriteIndex) {
 
 void EspNativeGameplayCrateState_reset(void) {
     memset(&crateState, 0, sizeof(crateState));
+    crateProbeDone = 0U;
 }
 
 int EspNativeGameplayCrateState_ensure(void) {
@@ -180,6 +235,14 @@ int EspNativeGameplayCrateState_ensure(void) {
            crateState.view.fatal == 0U ? (unsigned int)targetTiles[7] : 0U,
            crateState.view.fatal == 0U ? (unsigned int)targetTiles[8] : 0U,
            (unsigned int)crateState.view.fatal);
+    if (crateState.view.fatal == 0U && crateProbeDone == 0U) {
+        crateProbeDone = 1U;
+        if (!outcomeProbe()) {
+            crateState.view.fatal = 1U;
+            printf("[CRATEPROBE] FAILED thresholds-or-target-mapping mutation=no rngConsumed=0 failClosed=yes\n");
+            return 0;
+        }
+    }
     return crateState.view.fatal == 0U;
 }
 
