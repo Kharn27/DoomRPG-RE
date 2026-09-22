@@ -19,7 +19,8 @@ typedef enum EspNativeGameplayActionStatus_e {
     ESP_NATIVE_GAMEPLAY_ACTION_DOOR_LOCKED = 6,
     ESP_NATIVE_GAMEPLAY_ACTION_DOOR_ALREADY_TARGET = 7,
     ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK = 8,
-    ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY = 9
+    ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY = 9,
+    ESP_NATIVE_GAMEPLAY_ACTION_PASSWORD_READY = 10
 } EspNativeGameplayActionStatus;
 
 typedef struct EspNativeGameplayActionResult_s {
@@ -52,7 +53,9 @@ typedef struct EspNativeGameplayActionResult_s {
  *
  *   1. exactly one eligible EV_MOVELINE/EV_OPENLINE/EV_CLOSELINE command;
  *   2. an optional single EV_NOTE prefix immediately followed by the first
- *      eligible EV_DIALOG/EV_DIALOGNOBACK pause.
+ *      eligible EV_DIALOG/EV_DIALOGNOBACK pause;
+ *   3. exactly one first eligible EV_PASSWORD pause, whose native keypad owns
+ *      validation and the saved continuation.
  *
  * SELECT deliberately stops preflight at that first dialog, matching legacy
  * Game_runEvent(): saveTileEvent publishes the continuation and returns at the
