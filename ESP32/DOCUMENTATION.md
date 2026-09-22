@@ -194,7 +194,7 @@ large exact range=2048 B
 
 ## Current native gameplay frontier
 
-The real-CYD-owned engine includes native movement/collision, rotation-in-place without gameplay/monster turn advancement, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, monster state/position/activation/movement/attack families, raw-flash requested-map backing, HUB INV/WPN/STAT, bounded checkpoint save/load, resource consumed-overlay persistence, script/event-state persistence, line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, hardware-proven checkpoint-resume HUD/cache/input rearm, and HUB/world feedback framebuffer ownership gating.
+The real-CYD-owned engine includes native movement/collision, rotation-in-place without gameplay/monster turn advancement, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines including pure multi-line SELECT door batches, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, monster state/position/activation/movement/attack families, raw-flash requested-map backing, HUB INV/WPN/STAT, bounded checkpoint save/load, resource consumed-overlay persistence, script/event-state persistence, line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, hardware-proven checkpoint-resume HUD/cache/input rearm, and HUB/world feedback framebuffer ownership gating.
 
 Player/HUB compact roots:
 
@@ -624,8 +624,32 @@ only. If not, constrain fixes to that transition family.
 Separate pending work still includes the mixed physical/touch SAVE cursor
 regression and unrelated deferred gameplay families.
 
+## Secret-door multi-line SELECT transaction
+
+The hidden door on `/intro.bsp` is a useful legacy case because one SELECT event owns two separate line mutations rather than one. Hardware recovered the exact event as tile `195`, event `10`, with two eligible opcode-15 (`EV_OPENLINE`) commands targeting lines `471` and `470`.
+
+The permanent native SELECT rule is therefore not “exactly one door command”. It is:
+
+- the eligible event must remain a pure line-command family;
+- the complete batch is preflighted before the first mutation;
+- at most eight lines are allowed, matching `openDoors[8]`;
+- commit occurs in event order with exact line/script removed-bit rollback available;
+- mixed opcode families and unsupported sequential duplicate-line semantics remain fail-closed.
+
+The real CYD produced:
+
+```text
+[ACTION] DOOR-BATCH event=10 count=2 status=OK [0]line=471/op=15/open=0->1/removed=0->1 [1]line=470/op=15/open=0->1/removed=0->1
+[DYNAMICLINES] FRAME angle=64 open=4 ... render=ok immutableRuntime=yes
+```
+
+Both lines reported `DOORANIM SNAP` because their immutable flags do not mark regular animated doors. The visual/world result was correct: the secret door opened, the player crossed it, and later movement over tile `195` reported `NO_ELIGIBLE`, proving the remove-if-handled state was committed for both commands.
+
+See `MILESTONE_NATIVE_SECRET_DOOR_BATCH.md` for the exact hardware evidence and transaction boundary.
+
 ## Recent milestone index
 
+- [`MILESTONE_NATIVE_SECRET_DOOR_BATCH.md`](MILESTONE_NATIVE_SECRET_DOOR_BATCH.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
 
 - [`MILESTONE_NATIVE_CRATE_SUBTYPE2.md`](MILESTONE_NATIVE_CRATE_SUBTYPE2.md)
