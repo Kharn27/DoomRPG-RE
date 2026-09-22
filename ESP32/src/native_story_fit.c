@@ -47,6 +47,12 @@ static int mapBackgroundX(const DoomCanvas_t* doomCanvas, int x) {
                             ESP32_STORY_BACKGROUND_WIDTH);
 }
 
+static int mapTextX(const DoomCanvas_t* doomCanvas, int x) {
+    return ESP32_STORY_TEXT_X +
+           scaleOffsetFloor(x - virtualLeft(doomCanvas),
+                            ESP32_STORY_TEXT_WIDTH);
+}
+
 static int mapY(const DoomCanvas_t* doomCanvas, int y) {
     return ESP32_STORY_VIEWPORT_Y +
            scaleOffsetFloor(y - virtualTop(doomCanvas),
@@ -168,6 +174,40 @@ static void drawBackgroundImage(DoomCanvas_t* doomCanvas,
     drawImageSpecialMapped(doomCanvas, img, 0, 0, 0, 0, x, y, 0, 1);
 }
 
+static void drawTextGlyph(DoomCanvas_t* doomCanvas,
+                          Image_t* img,
+                          int xSrc,
+                          int ySrc,
+                          int width,
+                          int height,
+                          int xDst,
+                          int yDst) {
+    SDL_Rect source;
+    SDL_Rect destination;
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    if (img == NULL || img->imgBitmap == NULL) return;
+
+    left = mapTextX(doomCanvas, xDst);
+    top = mapY(doomCanvas, yDst);
+    right = mapTextX(doomCanvas, xDst + width);
+    bottom = mapY(doomCanvas, yDst + height);
+    if (right <= left || bottom <= top) return;
+
+    source.x = xSrc;
+    source.y = ySrc;
+    source.w = width;
+    source.h = height;
+    destination.x = doomCanvas->displayRect.x + left;
+    destination.y = doomCanvas->displayRect.y + top;
+    destination.w = right - left;
+    destination.h = bottom - top;
+    SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &source, &destination);
+}
+
 static void drawFont(DoomCanvas_t* doomCanvas,
                      const char* text,
                      int x,
@@ -229,15 +269,14 @@ static void drawFont(DoomCanvas_t* doomCanvas,
         if (c != ' ') {
             const int glyph = (int)c - 33;
 
-            drawImageSpecial(doomCanvas,
-                             imgFont,
-                             STORY_FONT_WIDTH * (glyph & 0x0f),
-                             STORY_FONT_HEIGHT * ((glyph >> 4) & 0x0f),
-                             STORY_FONT_WIDTH,
-                             STORY_FONT_HEIGHT,
-                             xpos,
-                             y,
-                             0);
+            drawTextGlyph(doomCanvas,
+                          imgFont,
+                          STORY_FONT_WIDTH * (glyph & 0x0f),
+                          STORY_FONT_HEIGHT * ((glyph >> 4) & 0x0f),
+                          STORY_FONT_WIDTH,
+                          STORY_FONT_HEIGHT,
+                          xpos,
+                          y);
         }
 
         xpos += STORY_FONT_ADVANCE;
@@ -329,14 +368,17 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     top = virtualTop(doomCanvas);
 
     if (!geometryLogged) {
-        printf("[INTROFIT] virtual=128x128 content=%dx%d@(%d,%d) background=%dx%d@(%d,0) aspect=preserved-content full-width-starfield extraFrameBytes=0\n",
+        printf("[INTROFIT] virtual=128x128 content=%dx%d@(%d,%d) background=%dx%d@(%d,0) text=%dx%d@(%d,0) aspect=preserved-images full-width-starfield+text extraFrameBytes=0\n",
                ESP32_STORY_VIEWPORT_SIZE,
                ESP32_STORY_VIEWPORT_SIZE,
                ESP32_STORY_VIEWPORT_X,
                ESP32_STORY_VIEWPORT_Y,
                ESP32_STORY_BACKGROUND_WIDTH,
                DOOMRPG_LOGICAL_HEIGHT,
-               ESP32_STORY_BACKGROUND_X);
+               ESP32_STORY_BACKGROUND_X,
+               ESP32_STORY_TEXT_WIDTH,
+               DOOMRPG_LOGICAL_HEIGHT,
+               ESP32_STORY_TEXT_X);
         geometryLogged = 1;
     }
 
@@ -382,6 +424,14 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         }
 
         scrollSpaceBG(doomCanvas);
+
+        /* Text is the one element intentionally wider than the 120x120 image
+         * viewport. Widen its clip as well as its glyph mapping so the extra
+         * horizontal pixels are visible instead of being clipped at x=20/139. */
+        DoomRPG_setClipTrue(doomCanvas->doomRpg,
+                            0, 0,
+                            DOOMRPG_LOGICAL_WIDTH,
+                            DOOMRPG_LOGICAL_HEIGHT);
 
         if (doomCanvas->showTextDone) {
             drawString2(doomCanvas,
