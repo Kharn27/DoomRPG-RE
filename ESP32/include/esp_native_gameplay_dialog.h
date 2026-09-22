@@ -87,6 +87,15 @@ EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(
     uint8_t commandOffset,
     uint32_t runFlags);
 
+/*
+ * Present a bounded legacy-owned informational dialog that has no BSP event
+ * continuation. Used for original pickup help text such as first-time weapon
+ * acquisition. SELECT pages/closes it through the normal dialog input owner;
+ * closing returns to gameplay with no script mutation or turn advance.
+ */
+EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_beginStandalone(
+    const char* text);
+
 /* Advance the recovered 25-ms/character typewriter and present only on change. */
 int EspNativeGameplayDialog_tick(void);
 
