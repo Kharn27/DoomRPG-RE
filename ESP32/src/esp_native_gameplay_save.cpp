@@ -812,23 +812,27 @@ bool readV6CrateSection(
                outSnapshot, core.runtimeFNV1a, core.targetMapId);
 }
 
-bool captureRecord(NativeSaveRecordV5* outRecord) {
+bool captureRecord(
+    NativeSaveRecordV5* outPrefix,
+    EspNativeGameplayCrateTransformSnapshot* outCrateTransforms) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
 
-    if (outRecord == nullptr || EspAssetPack_isOpen() ||
-        runtime == nullptr || view == nullptr ||
+    if (outPrefix == nullptr || outCrateTransforms == nullptr ||
+        EspAssetPack_isOpen() || runtime == nullptr || view == nullptr ||
         !EspMapResidentLifecycle_isReady()) {
         return false;
     }
 
-    NativeSaveRecordV5& record = *outRecord;
-    memset(outRecord, 0, sizeof(*outRecord));
+    NativeSaveRecordV5& record = *outPrefix;
+    memset(outPrefix, 0, sizeof(*outPrefix));
+    memset(outCrateTransforms, 0, sizeof(*outCrateTransforms));
     if (!EspNativeGameplayPlayerState_snapshot(&record.core.player) ||
         !EspNativeGameplayPlayerResources_snapshot(&record.resources) ||
         !EspMapScriptState_snapshot(&record.script) ||
         !EspMapLineCheckpoint_snapshot(&record.lines) ||
-        !EspNativeGameplayActionEngine_snapshotRemoved(&record.actionRemoved)) {
+        !EspNativeGameplayActionEngine_snapshotRemoved(&record.actionRemoved) ||
+        !EspNativeGameplayCrateState_snapshot(outCrateTransforms)) {
         return false;
     }
     if (view->active != 1U || view->targetMapId == 0U ||
@@ -837,9 +841,9 @@ bool captureRecord(NativeSaveRecordV5* outRecord) {
         return false;
     }
 
-    memcpy(record.core.magic, kMagicV5, sizeof(kMagicV5));
-    record.core.version = kVersionV5;
-    record.core.recordBytes = (uint16_t)sizeof(record);
+    memcpy(record.core.magic, kMagicV6, sizeof(kMagicV6));
+    record.core.version = kVersionV6;
+    record.core.recordBytes = (uint16_t)kRecordBytesV6;
     record.core.sourceBytes = runtime->sourceBytes;
     record.core.sourceCrc32 = runtime->sourceCrc32;
     record.core.runtimeFNV1a = runtime->arenaFNV1a;
@@ -848,12 +852,13 @@ bool captureRecord(NativeSaveRecordV5* outRecord) {
     record.core.gameplayLoadMapId = view->gameplayLoadMapId;
     record.core.loadType = view->loadType;
     record.core.view = *view;
-    record.core.recordCrc32 = recordCrcV5(record);
-    return recordV5Valid(record);
+    record.core.recordCrc32 = recordCrcV6(record, *outCrateTransforms);
+    return recordV6Valid(record, *outCrateTransforms);
 }
 
 bool saveNow(void) {
     NativeSaveRecordV5& record = saveWorkspace.write;
+    EspNativeGameplayCrateTransformSnapshot crateTransforms;
     uint32_t scriptFNV;
     uint32_t openCount;
     uint32_t lockedCount;
@@ -861,8 +866,10 @@ bool saveNow(void) {
     uint32_t removedCount;
 
     memset(&record, 0, sizeof(record));
-    if (!captureRecord(&record) || !commitRecordAtomic(record)) {
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=5 sections=resources+script+lines+action-removals failClosed=yes\n",
+    memset(&crateTransforms, 0, sizeof(crateTransforms));
+    if (!captureRecord(&record, &crateTransforms) ||
+        !commitRecordAtomic(record, crateTransforms)) {
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=6 sections=resources+script+lines+action-removals+crate-transforms failClosed=yes\n",
                kLogPath);
         return false;
     }
@@ -873,10 +880,10 @@ bool saveNow(void) {
                                record.lines.bitsetBytes);
     removedCount = countBits(record.actionRemoved.removedBits,
                              record.actionRemoved.removedBytes);
-    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx atomic=temp+backup+rename world=resources+script+lines+action-removals-restored+others-fresh\n",
+    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx atomic=temp+backup+rename world=resources+script+lines+action-removals+crate-transforms-restored+others-fresh\n",
            kLogPath,
            (unsigned int)record.core.version,
-           (unsigned int)sizeof(record),
+           (unsigned int)kRecordBytesV6,
            (unsigned int)record.core.targetMapId,
            (unsigned int)record.core.gameplayLoadMapId,
            (long)record.core.view.viewX,
@@ -903,7 +910,11 @@ bool saveNow(void) {
            (unsigned long)record.lines.textureStateFNV1a,
            (unsigned long)removedCount,
            (unsigned int)record.actionRemoved.removedBytes,
-           (unsigned long)record.actionRemoved.stateFNV1a);
+           (unsigned long)record.actionRemoved.stateFNV1a,
+           (unsigned int)crateTransforms.transformedCount,
+           (unsigned int)crateTransforms.transformedBytes,
+           (unsigned int)((crateTransforms.transformedCount + 1U) >> 1U),
+           (unsigned long)crateTransforms.stateFNV1a);
     return true;
 }
 
