@@ -9,6 +9,7 @@
 #include "esp_map_events.h"
 #include "esp_map_runtime.h"
 #include "esp_map_script_state.h"
+#include "esp_map_ui_intent.h"
 #include "esp_map_strings.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_modal_scratch.h"
