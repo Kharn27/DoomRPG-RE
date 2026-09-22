@@ -40,10 +40,15 @@
 #define HUD_ORIENTATION_ARROW_X 128
 #define HUD_LINE1_X 33
 #define HUD_LINE2_X 155
-#define HUD_TOP_TOUCH_SPLIT1_X 32
-#define HUD_TOP_TOUCH_SPLIT2_X 128
-#define HUD_TOP_TOUCH_NOTCH_Y0 18
-#define HUD_TOP_TOUCH_NOTCH_Y1 19
+#define HUD_TOP_MENU_LEFT 0
+#define HUD_TOP_MENU_RIGHT 31
+#define HUD_TOP_PASS_LEFT 32
+#define HUD_TOP_PASS_RIGHT 127
+#define HUD_TOP_AUTOMAP_LEFT 128
+#define HUD_TOP_AUTOMAP_RIGHT 159
+#define HUD_TOP_TOUCH_NOTCH_TOP 1
+#define HUD_TOP_TOUCH_NOTCH_BOTTOM 18
+#define HUD_TOP_TOUCH_NOTCH_LENGTH 3
 
 static EspNativeGameplayHudState hudState;
 
@@ -105,6 +110,44 @@ static void drawVerticalLine(uint16_t* framebuffer,
         framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
         if (stats != NULL) ++stats->pixelsWritten;
     }
+}
+
+static void drawHorizontalLine(uint16_t* framebuffer,
+                               int x0,
+                               int x1,
+                               int y,
+                               uint16_t color,
+                               EspNativeGameplayHudStats* stats) {
+    int x;
+    if (framebuffer == NULL || y < 0 || y >= DOOMRPG_LOGICAL_HEIGHT) return;
+    if (x0 < 0) x0 = 0;
+    if (x1 >= DOOMRPG_LOGICAL_WIDTH) x1 = DOOMRPG_LOGICAL_WIDTH - 1;
+    if (x1 < x0) return;
+    for (x = x0; x <= x1; ++x) {
+        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
+        if (stats != NULL) ++stats->pixelsWritten;
+    }
+}
+
+static void drawTopTouchButtonCorners(uint16_t* framebuffer,
+                                      int left,
+                                      int right,
+                                      uint16_t color,
+                                      EspNativeGameplayHudStats* stats) {
+    const int top = HUD_TOP_TOUCH_NOTCH_TOP;
+    const int bottom = HUD_TOP_TOUCH_NOTCH_BOTTOM;
+    const int last = HUD_TOP_TOUCH_NOTCH_LENGTH - 1;
+
+    /* Four isolated L-shaped corner notches. The full edge stays untouched. */
+    drawVerticalLine(framebuffer, left, top, top + last, color, stats);
+    drawHorizontalLine(framebuffer, left, left + last, top, color, stats);
+    drawVerticalLine(framebuffer, right, top, top + last, color, stats);
+    drawHorizontalLine(framebuffer, right - last, right, top, color, stats);
+
+    drawVerticalLine(framebuffer, left, bottom - last, bottom, color, stats);
+    drawHorizontalLine(framebuffer, left, left + last, bottom, color, stats);
+    drawVerticalLine(framebuffer, right, bottom - last, bottom, color, stats);
+    drawHorizontalLine(framebuffer, right - last, right, bottom, color, stats);
 }
 
 static EspNativeGameplayHudStatus openAsset(
@@ -277,15 +320,22 @@ static EspNativeGameplayHudStatus paintPrepared(
     }
     mergeBmpStats(stats, &local);
 
-    /* Only the three top touch zones get a permanent delimiter hint. Keep the
-     * gameplay viewport itself clean: these are two 1x2 logical-pixel notches
-     * exactly at MENU|PASS and PASS|AUTOMAP boundaries. */
-    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT1_X,
-                     HUD_TOP_TOUCH_NOTCH_Y0, HUD_TOP_TOUCH_NOTCH_Y1,
-                     rgb565(0x808591U), stats);
-    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT2_X,
-                     HUD_TOP_TOUCH_NOTCH_Y0, HUD_TOP_TOUCH_NOTCH_Y1,
-                     rgb565(0x808591U), stats);
+    /* Subtle top-button locator chrome. Each touch zone gets only four small
+     * 3-pixel L-shaped corner notches; no complete border is drawn and the
+     * semantic hit boxes remain exactly 0..31 | 32..127 | 128..159. */
+    {
+        const uint16_t notch = rgb565(0x808591U);
+        drawTopTouchButtonCorners(framebuffer,
+                                  HUD_TOP_MENU_LEFT, HUD_TOP_MENU_RIGHT,
+                                  notch, stats);
+        drawTopTouchButtonCorners(framebuffer,
+                                  HUD_TOP_PASS_LEFT, HUD_TOP_PASS_RIGHT,
+                                  notch, stats);
+        drawTopTouchButtonCorners(framebuffer,
+                                  HUD_TOP_AUTOMAP_LEFT,
+                                  HUD_TOP_AUTOMAP_RIGHT,
+                                  notch, stats);
+    }
 
     drawVerticalLine(framebuffer, HUD_LINE1_X + cx, HUD_BOTTOM_Y,
                      DOOMRPG_LOGICAL_HEIGHT - 1, rgb565(0x313131U), stats);
