@@ -10,6 +10,7 @@
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_events.h"
 #include "esp_map_runtime.h"
+#include "esp_map_ui_intent.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_action_engine.h"
