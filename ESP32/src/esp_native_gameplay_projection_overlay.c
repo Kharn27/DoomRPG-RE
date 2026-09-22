@@ -7,6 +7,7 @@
 #include "esp_asset_pack.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hud_direction.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
@@ -392,6 +393,10 @@ int __wrap_EspNativeGameplayActionEngine_getEntity(
     uint16_t* outLinkOrder) {
     if (!__real_EspNativeGameplayActionEngine_getEntity(
             spriteIndex, outType, outSubType, outLinkState, outLinkOrder)) {
+        return 0;
+    }
+    if (!EspNativeGameplayCrateState_applyEntity(
+            spriteIndex, outType, outSubType, outLinkState)) {
         return 0;
     }
     if (outLinkState != NULL &&

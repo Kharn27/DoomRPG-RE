@@ -16,10 +16,13 @@
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
+#include "esp_native_gameplay_combat_math.h"
+#include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_destructible.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_indexed_bmp.h"
@@ -37,11 +40,15 @@
 #define ACTION_ENTITY_HUMAN 2U
 #define ACTION_ENTITY_FIRE 10U
 #define ACTION_ENTITY_DESTRUCTIBLE 12U
+#define ACTION_DESTRUCTIBLE_CRATE_SUBTYPE 2U
 #define ACTION_DESTRUCTIBLE_JAMMED_SUBTYPE 3U
 #define ACTION_WEAPON_AXE 0U
 #define ACTION_WEAPON_EXTINGUISHER 1U
 #define ACTION_EXTINGUISHER_AMMO_TYPE 0U
 #define ACTION_EXTINGUISHER_AMMO_USAGE 1U
+#define ACTION_SPRITE_DEF_MASK 511U
+#define ACTION_SPRITE_DEF_TILE_FLAG 0x00040000UL
+#define ACTION_SPRITE_DEF_TILE_BASE 305U
 
 /* Legacy Player_reset accuracy=16, Combat_calcHit() derives dummy agility=12
  * and the axe adds its range term: 170 + 89 = 259. randHit is one byte, so
@@ -104,6 +111,9 @@ typedef EspNativeGameplayActionFeedback ActionFeedback;
 #define ACTION_FEEDBACK_PICKUP ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP
 #define ACTION_FEEDBACK_DAMAGE ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE
 #define ACTION_FEEDBACK_PLAYER_HIT ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT
+#define ACTION_FEEDBACK_NO_EFFECT ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NO_EFFECT
+#define ACTION_FEEDBACK_TRAPPED ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_TRAPPED
+#define ACTION_FEEDBACK_NO_AMMO ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NO_AMMO
 
 typedef enum ActionRoute_e {
     ACTION_ROUTE_INVALID = 0,
@@ -112,7 +122,8 @@ typedef enum ActionRoute_e {
     ACTION_ROUTE_HUMAN = 3,
     ACTION_ROUTE_ENEMY_DEFERRED = 4,
     ACTION_ROUTE_JAMMED_DOOR_CLEARED = 5,
-    ACTION_ROUTE_DESTRUCTIBLE_DEFERRED = 6
+    ACTION_ROUTE_DESTRUCTIBLE_DEFERRED = 6,
+    ACTION_ROUTE_CRATE_SUBTYPE2 = 7
 } ActionRoute;
 
 typedef struct ActionTarget_s {
@@ -181,6 +192,7 @@ static uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];
 EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayActionResult* outResult);
+int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
 int __real_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                                uint8_t* outVisualState);
 int __real_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
@@ -316,6 +328,10 @@ static int actionGetEntity(uint32_t spriteIndex,
         *outLinkState &= (uint16_t)~(ESP_MAP_SPRITE_TOPOLOGY_LINKED |
                                      ESP_MAP_SPRITE_TOPOLOGY_ALIVE);
     }
+    if (!EspNativeGameplayCrateState_applyEntity(
+            spriteIndex, outType, outSubType, outLinkState)) {
+        return 0;
+    }
     return 1;
 }
 
@@ -343,7 +359,7 @@ static void logCorpus(void) {
         else if (type == ACTION_ENTITY_DESTRUCTIBLE) ++destructibles;
     }
 
-    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes feedbackMs=%u ammo=playerState monsterCombat=deferred jammedDoor3=axe-adjacent-owned otherDestructibles=deferred\n",
+    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes feedbackMs=%u ammo=playerState monsterCombat=deferred crate2=parm+generic-combat+loot-owned/radial-deferred jammedDoor3=axe-adjacent-owned otherDestructibles=deferred\n",
            (unsigned int)actionState.targetMapId,
            (unsigned int)actionState.arenaFNV,
            (unsigned int)actionState.spriteCount,
@@ -435,7 +451,7 @@ uint32_t EspNativeGameplayActionEngine_removedFingerprint(void) {
 int EspNativeGameplayActionEngine_queueFeedback(
     EspNativeGameplayActionFeedback feedback) {
     if (feedback <= ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NONE ||
-        feedback > ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN ||
+        feedback > ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NO_AMMO ||
         !ensureOwner() || actionState.pending.active != 0U ||
         actionState.feedbackPending != 0U) {
         return 0;
@@ -754,6 +770,70 @@ static int traceAction(ActionTarget* outTarget) {
     return 0;
 }
 
+static int spriteDefinition(uint16_t spriteIndex,
+                            uint16_t* outDefTile,
+                            uint8_t* outType,
+                            uint8_t* outSubtype,
+                            int32_t* outParm) {
+    EspMapSprite sprite;
+    uint32_t lookup;
+    if (!__real_EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return 0;
+    lookup = sprite.info & ACTION_SPRITE_DEF_MASK;
+    if ((sprite.info & ACTION_SPRITE_DEF_TILE_FLAG) != 0U) {
+        lookup += ACTION_SPRITE_DEF_TILE_BASE;
+    }
+    if (lookup >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT ||
+        !EspEntityDefTypeCatalog_getMetadata((uint16_t)lookup,
+                                             outType, outSubtype, outParm)) {
+        return 0;
+    }
+    if (outDefTile != NULL) *outDefTile = (uint16_t)lookup;
+    return 1;
+}
+
+static int crateWeaponEligible(const ActionTarget* target,
+                               uint8_t weapon,
+                               uint16_t* outDefTile,
+                               int32_t* outParm) {
+    uint8_t type;
+    uint8_t subtype;
+    int32_t parm;
+    uint16_t defTile;
+    if (target == NULL || target->isLine != 0U ||
+        target->spriteIndex == ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE ||
+        weapon >= 32U ||
+        !spriteDefinition(target->spriteIndex, &defTile,
+                          &type, &subtype, &parm) ||
+        type != ACTION_ENTITY_DESTRUCTIBLE ||
+        subtype != ACTION_DESTRUCTIBLE_CRATE_SUBTYPE) {
+        return -1;
+    }
+    if (outDefTile != NULL) *outDefTile = defTile;
+    if (outParm != NULL) *outParm = parm;
+    return (((uint32_t)parm & (1UL << weapon)) != 0U) ? 1 : 0;
+}
+
+static int targetWorldDistance(const ActionTarget* target,
+                               const EspPlayerViewState* view,
+                               uint32_t* outWorldDistance) {
+    EspMapSprite sprite;
+    int64_t dx;
+    int64_t dy;
+    int64_t distance;
+    if (target == NULL || view == NULL || outWorldDistance == NULL ||
+        target->isLine != 0U ||
+        target->spriteIndex == ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE ||
+        !__real_EspMapRuntime_getMapSprite(target->spriteIndex, &sprite)) {
+        return 0;
+    }
+    dx = (int64_t)(int32_t)sprite.x - (int64_t)view->viewX;
+    dy = (int64_t)(int32_t)sprite.y - (int64_t)view->viewY;
+    distance = dx * dx + dy * dy;
+    if (distance < 0 || distance > 0xffffffffLL) return 0;
+    *outWorldDistance = (uint32_t)distance;
+    return 1;
+}
+
 static ActionRoute routeTarget(const ActionTarget* target, uint8_t weapon) {
     if (target == NULL) return ACTION_ROUTE_INVALID;
     if (target->type == ACTION_ENTITY_HUMAN) return ACTION_ROUTE_HUMAN;
@@ -769,6 +849,10 @@ static ActionRoute routeTarget(const ActionTarget* target, uint8_t weapon) {
             weapon == ACTION_WEAPON_AXE && target->distance == 1U) {
             return ACTION_ROUTE_JAMMED_DOOR_CLEARED;
         }
+        if (target->isLine == 0U &&
+            target->subtype == ACTION_DESTRUCTIBLE_CRATE_SUBTYPE) {
+            return ACTION_ROUTE_CRATE_SUBTYPE2;
+        }
         return ACTION_ROUTE_DESTRUCTIBLE_DEFERRED;
     }
     return ACTION_ROUTE_NOTHING;
@@ -783,6 +867,8 @@ static const char* routeName(ActionRoute route) {
     case ACTION_ROUTE_JAMMED_DOOR_CLEARED: return "JAMMED_DOOR_CLEARED";
     case ACTION_ROUTE_DESTRUCTIBLE_DEFERRED:
         return "DESTRUCTIBLE_COMBAT_DEFERRED";
+    case ACTION_ROUTE_CRATE_SUBTYPE2:
+        return "CRATE_SUBTYPE2";
     default: return "INVALID";
     }
 }
@@ -792,6 +878,9 @@ static const char* feedbackText(uint8_t feedback) {
     if (feedback == ACTION_FEEDBACK_FIRE_CLEARED) return "Fire cleared!";
     if (feedback == ACTION_FEEDBACK_DOOR_CLEARED) return "Door cleared!";
     if (feedback == ACTION_FEEDBACK_PASS_TURN) return "Turn passed.";
+    if (feedback == ACTION_FEEDBACK_NO_EFFECT) return "No effect!";
+    if (feedback == ACTION_FEEDBACK_TRAPPED) return "Trapped!";
+    if (feedback == ACTION_FEEDBACK_NO_AMMO) return "Not enough ammo!";
     if ((feedback == ACTION_FEEDBACK_PICKUP ||
          feedback == ACTION_FEEDBACK_DAMAGE ||
          feedback == ACTION_FEEDBACK_PLAYER_HIT) &&
@@ -1146,6 +1235,9 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     ActionRoute route;
     const EspNativeGameplayHudState* hud;
     int traceStatus;
+    int crateEligibility = -1;
+    int32_t crateParm = 0;
+    uint16_t crateDefTile = 0U;
     uint8_t weapon;
 
     if (status != ESP_NATIVE_GAMEPLAY_ACTION_NO_EVENT &&
@@ -1220,6 +1312,18 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     }
 
     route = routeTarget(&target, weapon);
+    if (route == ACTION_ROUTE_CRATE_SUBTYPE2) {
+        crateEligibility = crateWeaponEligible(
+            &target, weapon, &crateDefTile, &crateParm);
+        if (crateEligibility < 0) {
+            ++actionState.destructibleDeferred;
+            printf("[CRATE] DEFER seq=%u sprite=%u reason=source-definition-not-ready mutation=no\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex);
+            return status;
+        }
+        if (crateEligibility == 0) route = ACTION_ROUTE_NOTHING;
+    }
     printf("[ACTIONENGINE] TRACE seq=%u weapon=%u distance=%u tile=%u target=%s index=%u line=%u type=%u subtype=%u route=%s\n",
            (unsigned int)intent->sequence,
            (unsigned int)weapon,
@@ -1310,6 +1414,87 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
                (unsigned int)ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_DEATH_RUN_FLAGS,
                (unsigned int)ACTION_JAMMED_DOOR_CALC_HIT);
     }
+    else if (route == ACTION_ROUTE_CRATE_SUBTYPE2) {
+        const EspNativeGameplayPlayerState* player;
+        const EspNativeGameplayWeaponSpec* weaponSpec;
+        const EspPlayerViewState* playerView;
+        uint32_t worldDistance = 0U;
+        uint8_t haveAmmo;
+
+        player = EspNativeGameplayPlayerState_view();
+        weaponSpec = EspNativeGameplayCombatMath_weapon(weapon);
+        playerView = EspPlayerView_view();
+        if (!EspNativeGameplayCrateState_ensure() ||
+            player == NULL || player->active != 1U ||
+            playerView == NULL || playerView->active != 1U ||
+            weaponSpec == NULL || weapon >= ESP_NATIVE_GAMEPLAY_STANDARD_WEAPONS ||
+            EspNativeGameplayCrateState_isTransformed(target.spriteIndex) ||
+            removed(target.spriteIndex) ||
+            !targetWorldDistance(&target, playerView, &worldDistance)) {
+            ++actionState.destructibleDeferred;
+            printf("[CRATE] DEFER seq=%u sprite=%u reason=owner-or-standard-weapon-preflight weapon=%u mutation=no\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex,
+                   (unsigned int)weapon);
+            return status;
+        }
+        if (weaponSpec->radialDamage != 0U) {
+            ++actionState.destructibleDeferred;
+            printf("[CRATE] DEFER seq=%u sprite=%u weapon=%u reason=radius-damage-family-not-owned mutation=no rngConsumed=0 ammoConsumed=0\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex,
+                   (unsigned int)weapon);
+            return status;
+        }
+
+        haveAmmo = EspNativeGameplayPlayerState_ammo(weaponSpec->ammoType);
+        if (weaponSpec->ammoUsage != 0U && haveAmmo < weaponSpec->ammoUsage) {
+            if (!EspNativeGameplayActionEngine_queueFeedback(
+                    ACTION_FEEDBACK_NO_AMMO)) {
+                ++actionState.destructibleDeferred;
+                printf("[CRATE] DEFER seq=%u sprite=%u reason=no-ammo-feedback-busy mutation=no\n",
+                       (unsigned int)intent->sequence,
+                       (unsigned int)target.spriteIndex);
+                return status;
+            }
+            printf("[CRATE] NOAMMO seq=%u sprite=%u weapon=%u ammoType=%u need=%u have=%u message=\"Not enough ammo!\" mutation=no rngConsumed=0 turnAdvance=no\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex,
+                   (unsigned int)weapon,
+                   (unsigned int)weaponSpec->ammoType,
+                   (unsigned int)weaponSpec->ammoUsage,
+                   (unsigned int)haveAmmo);
+            return status;
+        }
+
+        memset(&actionState.pending, 0, sizeof(actionState.pending));
+        actionState.pending.sequence = intent->sequence;
+        actionState.pending.spriteIndex = target.spriteIndex;
+        actionState.pending.lineIndex = ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE;
+        actionState.pending.tileIndex = target.tileIndex;
+        actionState.pending.route = (uint8_t)route;
+        actionState.pending.feedback = ACTION_FEEDBACK_NONE;
+        actionState.pending.type = target.type;
+        actionState.pending.subtype = target.subtype;
+        actionState.pending.weapon = weapon;
+        actionState.pending.distance = target.distance;
+        /* Service owns the actual world mutation after RNG/combat preflight.
+         * This flag means full transactional action service is required. */
+        actionState.pending.worldChanged = 1U;
+        actionState.pending.active = 1U;
+        printf("[CRATE] ARM seq=%u sprite=%u tile=%u defTile=%u parm=%08x weapon=%u distanceTiles=%u worldDist=%u ammoType=%u ammoUsage=%u loops=%u radial=0 transformPersistence=deferred rollback=player+rng+world\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)target.spriteIndex,
+               (unsigned int)target.tileIndex,
+               (unsigned int)crateDefTile,
+               (unsigned int)crateParm,
+               (unsigned int)weapon,
+               (unsigned int)target.distance,
+               (unsigned int)worldDistance,
+               (unsigned int)weaponSpec->ammoType,
+               (unsigned int)weaponSpec->ammoUsage,
+               (unsigned int)weaponSpec->attackLoops);
+    }
     else if (route == ACTION_ROUTE_NOTHING || route == ACTION_ROUTE_HUMAN) {
         memset(&actionState.pending, 0, sizeof(actionState.pending));
         actionState.pending.sequence = intent->sequence;
@@ -1343,6 +1528,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
 
 void EspNativeGameplayActionEngine_reset(void) {
     EspNativeGameplayWeapon_cancelAttack();
+    EspNativeGameplayCrateState_reset();
     memset(&actionState, 0, sizeof(actionState));
 }
 
@@ -1365,6 +1551,20 @@ static void logActionFrame(const ActionPending* pending,
            (unsigned int)frame->spritePackReads,
            (unsigned int)frame->hudPackReads,
            (unsigned int)frame->finalPresented);
+}
+
+static const char* crateOutcomeName(
+    EspNativeGameplayCrateOutcome outcome) {
+    switch (outcome) {
+    case ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRAPPED_REMOVE:
+        return "TRAPPED_REMOVE";
+    case ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM:
+        return "TRANSFORM";
+    case ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_BREAK_REMOVE:
+        return "BREAK_REMOVE";
+    default:
+        return "NO_EFFECT";
+    }
 }
 
 int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
@@ -1403,21 +1603,36 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     {
         EspNativeGameplayFrameStats frame;
         EspNativeGameplayPlayerState playerBefore;
+        EspNativeGameplayAttackRoll crateRoll;
+        EspNativeGameplayCrateOutcome crateOutcome =
+            ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_INVALID;
+        const EspNativeGameplayWeaponSpec* crateWeapon = NULL;
         int isFire = pending.route == ACTION_ROUTE_FIRE_CLEARED;
         int isJammedDoor = pending.route == ACTION_ROUTE_JAMMED_DOOR_CLEARED;
-        int animateWeapon = isFire || isJammedDoor;
+        int isCrate = pending.route == ACTION_ROUTE_CRATE_SUBTYPE2;
+        int animateWeapon = isFire || isJammedDoor || isCrate;
         Random_t randomBefore;
         uint32_t playerFNVBefore = 0U;
         uint32_t playerFNVAfter = 0U;
+        uint32_t crateWorldDistance = 0U;
+        uint32_t crateCombatRng = 0U;
+        uint16_t crateEffectiveDefTile = 0U;
         uint8_t ammoBefore = 0U;
         uint8_t ammoAfter = 0U;
         uint8_t playerCaptured = 0U;
         uint8_t randomCaptured = 0U;
         uint8_t randHit = 0U;
         uint8_t destructibleMutated = 0U;
+        uint8_t crateRandFirst = 0U;
+        uint8_t crateRandSecond = 0U;
+        uint8_t crateRandSecondValid = 0U;
+        uint8_t crateTransformed = 0U;
+        uint8_t crateRemoved = 0U;
+        uint8_t crateTurnRequested = 0U;
 
         memset(&frame, 0, sizeof(frame));
         memset(&playerBefore, 0, sizeof(playerBefore));
+        memset(&crateRoll, 0, sizeof(crateRoll));
         memset(&randomBefore, 0, sizeof(randomBefore));
         if (animateWeapon &&
             !EspNativeGameplayWeapon_armAttack(pending.weapon)) {
@@ -1509,8 +1724,185 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)actionState.destructibleUndo.openAfter);
         }
 
-        actionState.feedbackPending = 1U;
-        actionState.feedbackKind = pending.feedback;
+        if (isCrate) {
+            ActionTarget crateTarget;
+            const EspNativeGameplayPlayerState* player;
+
+            memset(&crateTarget, 0, sizeof(crateTarget));
+            crateTarget.spriteIndex = pending.spriteIndex;
+            crateTarget.tileIndex = pending.tileIndex;
+            crateTarget.lineIndex = pending.lineIndex;
+            crateTarget.type = pending.type;
+            crateTarget.subtype = pending.subtype;
+            crateTarget.distance = pending.distance;
+            crateTarget.isLine = 0U;
+
+            crateWeapon = EspNativeGameplayCombatMath_weapon(pending.weapon);
+            player = EspNativeGameplayPlayerState_view();
+            if (crateWeapon == NULL || crateWeapon->radialDamage != 0U ||
+                player == NULL || player->active != 1U ||
+                !EspNativeGameplayCrateState_ensure() ||
+                EspNativeGameplayCrateState_isTransformed(pending.spriteIndex) ||
+                removed(pending.spriteIndex) ||
+                !targetWorldDistance(&crateTarget, view, &crateWorldDistance) ||
+                !EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[CRATE] FAILED seq=%u sprite=%u reason=transaction-preflight mutation=no rngConsumed=0\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex);
+                return 0;
+            }
+
+            playerCaptured = 1U;
+            randomCaptured = 1U;
+            randomBefore = doomRpg->random;
+            playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
+            ammoBefore = EspNativeGameplayPlayerState_ammo(crateWeapon->ammoType);
+            ammoAfter = ammoBefore;
+            if (crateWeapon->ammoUsage != 0U &&
+                !EspNativeGameplayPlayerState_consumeAmmo(
+                    crateWeapon->ammoType, crateWeapon->ammoUsage,
+                    &ammoBefore, &ammoAfter)) {
+                (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                doomRpg->random = randomBefore;
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[CRATE] FAILED seq=%u sprite=%u reason=ammo-preflight-race playerRollback=yes rngRollback=yes mutation=no\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex);
+                return 0;
+            }
+            player = EspNativeGameplayPlayerState_view();
+            if (player == NULL ||
+                !EspNativeGameplayCombatMath_rollDestructibleAttack(
+                    doomRpg, pending.weapon, player,
+                    crateWorldDistance, &crateRoll)) {
+                (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                doomRpg->random = randomBefore;
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[CRATE] FAILED seq=%u sprite=%u reason=combat-roll playerRollback=yes rngRollback=yes mutation=no\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex);
+                return 0;
+            }
+            crateCombatRng = crateRoll.rngCalls;
+            playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
+
+            if (crateRoll.hitLoops == 0U ||
+                crateRoll.totalDamage + crateRoll.totalArmorDamage == 0) {
+                pending.feedback = ACTION_FEEDBACK_NO_EFFECT;
+                printf("[CRATE] NO-EFFECT seq=%u sprite=%u weapon=%u worldDist=%u loops=%u hits=%u damage=%ld armorDamage=%ld rngCombat=%u firstHitRand=%u firstCalc=%ld ammo=%u->%u consequenceRng=0 mutation=no\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       (unsigned int)pending.weapon,
+                       (unsigned int)crateWorldDistance,
+                       (unsigned int)crateRoll.loops,
+                       (unsigned int)crateRoll.hitLoops,
+                       (long)crateRoll.totalDamage,
+                       (long)crateRoll.totalArmorDamage,
+                       (unsigned int)crateRoll.rngCalls,
+                       (unsigned int)crateRoll.randHit[0],
+                       (long)crateRoll.calcHit[0],
+                       (unsigned int)ammoBefore,
+                       (unsigned int)ammoAfter);
+            }
+            else {
+                crateRandFirst = DoomRPG_randNextByte(&doomRpg->random);
+                if (EspNativeGameplayCrateState_requiresSecondRng(
+                        crateRandFirst)) {
+                    crateRandSecond = DoomRPG_randNextByte(&doomRpg->random);
+                    crateRandSecondValid = 1U;
+                }
+                if (!EspNativeGameplayCrateState_resolveOutcome(
+                        crateRandFirst, crateRandSecond,
+                        crateRandSecondValid, &crateOutcome,
+                        &crateEffectiveDefTile)) {
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    doomRpg->random = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[CRATE] FAILED seq=%u sprite=%u reason=outcome-resolve first=%u second=%u secondValid=%u playerRollback=yes rngRollback=yes mutation=no\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex,
+                           (unsigned int)crateRandFirst,
+                           (unsigned int)crateRandSecond,
+                           (unsigned int)crateRandSecondValid);
+                    return 0;
+                }
+
+                if (crateOutcome == ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM) {
+                    if (!EspNativeGameplayCrateState_transform(
+                            pending.spriteIndex, crateEffectiveDefTile)) {
+                        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                        doomRpg->random = randomBefore;
+                        EspNativeGameplayWeapon_cancelAttack();
+                        memset(&actionState.pending, 0, sizeof(actionState.pending));
+                        printf("[CRATE] FAILED seq=%u sprite=%u reason=transform-commit defTile=%u playerRollback=yes rngRollback=yes mutation=no\n",
+                               (unsigned int)pending.sequence,
+                               (unsigned int)pending.spriteIndex,
+                               (unsigned int)crateEffectiveDefTile);
+                        return 0;
+                    }
+                    crateTransformed = 1U;
+                }
+                else {
+                    setRemoved(pending.spriteIndex, 1);
+                    crateRemoved = 1U;
+                    if (crateOutcome ==
+                        ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRAPPED_REMOVE) {
+                        pending.feedback = ACTION_FEEDBACK_TRAPPED;
+                    }
+                }
+
+                printf("[CRATE] CONSEQUENCE seq=%u sprite=%u first=%u second=%u secondValid=%u outcome=%s effectiveDefTile=%u rngCombat=%u rngConsequence=%u damage=%ld armorDamage=%ld mutation=%s explosion=%s message=%s persistence=%s\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       (unsigned int)crateRandFirst,
+                       (unsigned int)crateRandSecond,
+                       (unsigned int)crateRandSecondValid,
+                       crateOutcomeName(crateOutcome),
+                       (unsigned int)crateEffectiveDefTile,
+                       (unsigned int)crateCombatRng,
+                       (unsigned int)(1U + crateRandSecondValid),
+                       (long)crateRoll.totalDamage,
+                       (long)crateRoll.totalArmorDamage,
+                       crateTransformed != 0U ? "transform-overlay" : "removed-overlay",
+                       crateOutcome == ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRAPPED_REMOVE
+                           ? "deferred" : "none",
+                       pending.feedback == ACTION_FEEDBACK_TRAPPED
+                           ? "Trapped!" : "none",
+                       crateTransformed != 0U ? "deferred-v6" : "v5-removal-owner");
+            }
+
+            if (!EspNativeGameplayMonsterTurn_requestPlayerAttack(
+                    pending.sequence)) {
+                int rollbackOk = 1;
+                if (crateTransformed != 0U) {
+                    rollbackOk = EspNativeGameplayCrateState_rollbackTransform(
+                        pending.spriteIndex, crateEffectiveDefTile);
+                }
+                if (crateRemoved != 0U) setRemoved(pending.spriteIndex, 0);
+                if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
+                    rollbackOk = 0;
+                }
+                doomRpg->random = randomBefore;
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[CRATE] FAILED seq=%u sprite=%u reason=monster-turn-request-busy rollback=%s player=yes rng=yes world=yes\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       rollbackOk ? "yes" : "NO");
+                return rollbackOk ? 1 : 0;
+            }
+            crateTurnRequested = 1U;
+        }
+
+        if (pending.feedback != ACTION_FEEDBACK_NONE) {
+            actionState.feedbackPending = 1U;
+            actionState.feedbackKind = pending.feedback;
+        }
         if (!EspNativeGameplayFrame_renderTurn(
                 doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
             int rollbackOk = 1;
@@ -1531,6 +1923,24 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 memset(&actionState.destructibleUndo, 0,
                        sizeof(actionState.destructibleUndo));
             }
+            else if (isCrate) {
+                if (crateTurnRequested != 0U &&
+                    !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
+                        pending.sequence)) {
+                    rollbackOk = 0;
+                }
+                if (crateTransformed != 0U &&
+                    !EspNativeGameplayCrateState_rollbackTransform(
+                        pending.spriteIndex, crateEffectiveDefTile)) {
+                    rollbackOk = 0;
+                }
+                if (crateRemoved != 0U) setRemoved(pending.spriteIndex, 0);
+                if (playerCaptured != 0U &&
+                    !EspNativeGameplayPlayerState_restore(&playerBefore)) {
+                    rollbackOk = 0;
+                }
+                if (randomCaptured != 0U) doomRpg->random = randomBefore;
+            }
             memset(&frame, 0, sizeof(frame));
             if (!rollbackOk || !EspNativeGameplayFrame_renderTurn(
                     doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
@@ -1546,8 +1956,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)pending.spriteIndex,
                    (unsigned int)pending.lineIndex,
                    routeName((ActionRoute)pending.route),
-                   isJammedDoor ? "restored" : "unchanged",
-                   isFire ? "restored" : "unchanged",
+                   (isJammedDoor || isCrate) ? "restored" : "unchanged",
+                   (isFire || isCrate) ? "restored" : "unchanged",
                    (unsigned int)frame.frameAfterFNV);
             memset(&actionState.pending, 0, sizeof(actionState.pending));
             return 1;
@@ -1576,18 +1986,55 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             memset(&actionState.destructibleUndo, 0,
                    sizeof(actionState.destructibleUndo));
         }
+        if (isCrate) {
+            uint8_t effectiveType = 0U;
+            uint8_t effectiveSubtype = 0U;
+            int32_t effectiveParm = 0;
+            if (crateTransformed != 0U) {
+                (void)EspEntityDefTypeCatalog_getMetadata(
+                    crateEffectiveDefTile, &effectiveType,
+                    &effectiveSubtype, &effectiveParm);
+            }
+            printf("[CRATE] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngConsequence=%u outcome=%s effective=%u/%u/def%u removed=%u transformed=%u sound=%u-deferred particles=deferred radius=not-applicable turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
+                   (unsigned int)pending.sequence,
+                   (unsigned int)pending.spriteIndex,
+                   (unsigned int)pending.weapon,
+                   crateWeapon != NULL ? (unsigned int)crateWeapon->ammoType : 0U,
+                   (unsigned int)ammoBefore,
+                   (unsigned int)ammoAfter,
+                   (unsigned int)playerFNVBefore,
+                   (unsigned int)playerFNVAfter,
+                   (unsigned int)crateRoll.loops,
+                   (unsigned int)crateRoll.hitLoops,
+                   (unsigned int)crateRoll.rngCalls,
+                   crateOutcome != ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_INVALID
+                       ? (unsigned int)(1U + crateRandSecondValid) : 0U,
+                   crateOutcomeName(crateOutcome),
+                   (unsigned int)effectiveType,
+                   (unsigned int)effectiveSubtype,
+                   (unsigned int)crateEffectiveDefTile,
+                   (unsigned int)crateRemoved,
+                   (unsigned int)crateTransformed,
+                   crateWeapon != NULL ? (unsigned int)crateWeapon->resourceId : 0U);
+            (void)effectiveParm;
+        }
 
         if (animateWeapon) {
             EspNativeGameplayFrameStats settle;
             memset(&settle, 0, sizeof(settle));
-            actionState.feedbackPending = 1U;
-            actionState.feedbackKind = pending.feedback;
+            if (pending.feedback != ACTION_FEEDBACK_NONE) {
+                actionState.feedbackPending = 1U;
+                actionState.feedbackKind = pending.feedback;
+            }
             if (EspNativeGameplayFrame_renderTurn(
                     doomRpg->render, (uint8_t)view->viewAngle, &settle)) {
                 logActionFrame(&pending, "settle-idle", &settle);
-                printf("[ACTIONENGINE] ATTACK seq=%u weapon=%u frame=1->0 generic=yes worldCommitted=yes\n",
+                printf("[ACTIONENGINE] ATTACK seq=%u weapon=%u frame=1->0 generic=yes worldCommitted=%s\n",
                        (unsigned int)pending.sequence,
-                       (unsigned int)pending.weapon);
+                       (unsigned int)pending.weapon,
+                       isCrate && crateOutcome ==
+                                     ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_INVALID
+                           ? "no-effect" : "yes");
             }
             else {
                 actionState.feedbackPending = 0U;

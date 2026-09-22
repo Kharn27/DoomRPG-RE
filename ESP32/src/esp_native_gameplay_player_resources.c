@@ -14,6 +14,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_combat_math.h"
+#include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hazard_touch.h"
@@ -338,8 +339,11 @@ int EspNativeGameplayPlayerResources_restore(
 static int rawDefTile(uint32_t spriteIndex, uint16_t* outDefTile) {
     EspMapSprite sprite;
     uint32_t lookup;
-    if (outDefTile == NULL ||
-        !__real_EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return 0;
+    if (outDefTile == NULL) return 0;
+    if (EspNativeGameplayCrateState_effectiveDefTile(spriteIndex, outDefTile)) {
+        return 1;
+    }
+    if (!__real_EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return 0;
     lookup = sprite.info & RESOURCE_DEF_MASK;
     if ((sprite.info & RESOURCE_DEF_TILE_FLAG) != 0U) {
         lookup += RESOURCE_DEF_TILE_BASE;

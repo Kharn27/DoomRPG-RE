@@ -5,61 +5,65 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-main at branch creation = 1ae140d6082f70b947426ae02893246601400416
-current main = 1ae140d6082f70b947426ae02893246601400416
-main merge = PR #142
-branch = agent/esp32-native-save-v5-world-removals
-hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
-hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
-hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
+main at branch creation = c6605cefa74750b5b745b01d8b22ff500f3a81be
+current main = c6605cefa74750b5b745b01d8b22ff500f3a81be
+main merge = PR #143
+branch = agent/esp32-native-crate-subtype2
 hardware-tested save-v5 action-removal boundary = d65e5b9be9947e92c700b2296790b003ff7b7df0
-hardware-tested current code boundary = d65e5b9be9947e92c700b2296790b003ff7b7df0
-status = REAL-CYD CHECKPOINT V5 ACTION-REMOVALS + CHECKPOINT RESUME PASS
+hardware-tested crate subtype2 boundary = 571a1af81469ff85a88ae3ba94e5dc9535b6648a
+hardware-tested current code boundary = 571a1af81469ff85a88ae3ba94e5dc9535b6648a
+status = REAL-CYD CRATE SUBTYPE2 TRANSFORM + PICKUP PASS
 branch policy = MERGE-READY; post-test tail docs-only
 ```
 
-PR #142 merged the player-hit-feedback work into main at
-`1ae140d6082f70b947426ae02893246601400416`. This V5 branch was created from
-that exact SHA.
+PR #143 merged checkpoint V5 into main at
+`c6605cefa74750b5b745b01d8b22ff500f3a81be`. This crate branch was created
+from that exact SHA.
 
-V5 adds only the compact action-engine removed-sprite overlay to the existing
-V1-V4 checkpoint sections. The final code boundary
-`d65e5b9be9947e92c700b2296790b003ff7b7df0` passed normal
-`esp32-cyd` GitHub Actions run #387 / run ID `35704985512` and is now
-validated on the real classic CYD.
+The crate subtype-2 milestone now owns the bounded legacy path:
 
-The hardware sequence proved: normal startup after the V5 workspace memory
-repair; SAVE of one cleared fire as `actionRemoved=1/43B/a54be373`; LOAD of
-the exact same removal fingerprint; a second never-cleared fire remaining
-present; restored open-line rendering through the production dynamic-line
-wrapper; settled HUD reprime; resident cache reprime; one-shot
-`checkpoint-resume` admission; touch/gameplay rearm; and final
-`[ENGINESESSION] READY` with `shapeData=0x0 mediaTexels=0x0`.
+```text
+EntityDef parm weapon mask
+ -> generic destructible combat
+ -> exact crate consequence RNG
+ -> compact transformed-definition owner
+ -> native renderer/topology projection
+ -> existing player-resource pickup flow
+ -> PLAYER_ATTACK monster-turn scheduling
+```
 
-Hardware also exposed three checkpoint-resume gates that were corrected before
-this PASS: the historical fresh-map first-frame rejected restored open lines,
-the initial HUD owners were missing after settled-view restore, and resident
-gameplay still required the deliberately skipped fresh-first-frame owner. The
-normal fresh-map path remains unchanged.
+The final code boundary
+`571a1af81469ff85a88ae3ba94e5dc9535b6648a` passed normal
+`ESP32 CYD Build` run `35713491939` and is validated on the real classic
+CYD.
 
-Final LOAD memory observation was `heap8=13576`, `largest8=5364`. This is
-below the existing advisory reserve targets and remains a fragmentation/headroom
-review item; the load, render, cache reprime and gameplay rearm nevertheless
-completed successfully.
+Hardware first exposed a startup-memory regression in the earlier candidate
+`77bac6c3...`: adding the ~280 B crate owner to static BSS increased PlatformIO
+RAM from `44824` to `45104` B and made `mappings.bin` inflation fail on
+real hardware. The final owner is map-lazy and freed on reset; static RAM is
+now `44832` B, only +8 B versus merged main, and the real CYD boots normally.
+
+The hardware gameplay witness used Entrance sprite 127 / tile 873. Pistol
+weapon 2 passed `parm=00000fff`, consumed ammo `8->7`, consumed two combat
+RNG bytes plus one consequence byte, and produced `first=82`:
+`TRANSFORM -> defTile 92 -> type 3/subtype 21`. The transformed world object
+then entered the existing pickup path and gave an Armor Shard,
+`armor 0->4`, with normal pickup feedback and resource consumption.
+
+Only that transform bucket is hardware-observed in this run. The strict
+side-effect-free boundary probe covers all recovered crate thresholds, but the
+trapped, ordinary break/remove, ammo-second-byte and other transform buckets
+are not independently claimed as hardware-observed.
 
 Latest detailed records:
 
+- [`MILESTONE_NATIVE_CRATE_SUBTYPE2.md`](MILESTONE_NATIVE_CRATE_SUBTYPE2.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
 - [`MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md`](MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md)
 - [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V3_SCRIPT.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
 
-CHANGEMAP production code is also present but has **not yet received its
-dedicated real-CYD exit-transition PASS**. Do not conflate checkpoint validation
-with CHANGEMAP hardware validation.
+CHANGEMAP production code is still a separate candidate without its dedicated
+real-CYD exit-transition PASS.
 
 ## Permanent architecture / hard invariants
 
@@ -170,7 +174,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, checkpoint-resume HUD/cache/input rearm, and HUB/world framebuffer ownership gating for transient action feedback.
+Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, checkpoint-resume HUD/cache/input rearm, and HUB/world framebuffer ownership gating for transient action feedback.
 
 The player root remains:
 
@@ -590,32 +594,39 @@ The correction adds no allocation, gameplay RNG use, topology mutation, renderer
 
 ## Next bounded milestone
 
-The V5 action-removal checkpoint is hardware-valid and merge-ready. After it is
-merged, recover the new exact `main` SHA before creating the next branch.
+The crate subtype-2 gameplay boundary is hardware-valid and merge-ready. After
+merge, recover the exact new `main` SHA before creating the next branch.
 
-The preferred next bounded gameplay family is **generic type-12 destructibles,
-starting with crate subtype 2**. Legacy recovery already shows that this cannot
-be represented as a simple removed bit: crates can break, explode when trapped,
-or transform into one of several pickup definitions according to exact gameplay
-RNG thresholds.
+The preferred next bounded milestone is **checkpoint V6 persistence for crate
+transform records**.
 
-The next milestone should therefore preserve the existing event-first SELECT
-ordering, honor the EntityDef weapon mask, implement only the exact bounded
-crate/destructible family being claimed, and introduce a compact native mutable
-owner for transformed state. Unsupported destructible subtypes remain
-fail-closed until their own boundary.
+A transformed crate is not removed: it remains in the world with a replacement
+EntityDef and can be picked up. Therefore V5 `removedBits` cannot represent it
+correctly. V6 should append one compact pointer-free section containing only:
 
-Do not make the V5 removal overlay own transformed crates. A crate that becomes
-a pickup is still present in the world and needs its own semantic state and
-eventual persistence section.
+```text
+runtime/map identity
+transformedCount
+{spriteIndex,effectiveDefTile} records
+semantic fingerprint / strict tail validation
+```
 
-The dedicated CHANGEMAP real-CYD exit test and mixed physical/touch SAVE cursor
-regression remain separate pending checks.
+Restore should rebuild the immutable BSP first, validate every source sprite as
+an original crate and every effective tile as an allowed pickup definition,
+then restore into the existing crate transform owner before gameplay/session
+reprime. Older V1-V5 saves remain read-compatible.
+
+Do not serialize legacy `Entity_t` objects and do not broaden this into monster
+or generic mutable-entity persistence.
+
+Separate pending checks remain the dedicated CHANGEMAP real-CYD exit test and
+the mixed physical/touch SAVE cursor regression.
 
 ## Intentionally deferred / incomplete families
 
 ```text
-save-v5 mutable-world persistence beyond each validated section
+save-v5/v6 mutable-world persistence beyond each validated section
+crate transformed-state checkpoint persistence
 CHANGEMAP real-CYD exit validation
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
@@ -634,7 +645,7 @@ multi-loop weapon/monster mechanics
 monster projectiles/messages/sound
 rocket/BFG radius damage
 familiar weapon slots / hazard redirection
-generic type-12 destructible combat
+remaining type-12 destructible subtypes
 special death consequences
 Kronos-specific semantics
 password input
