@@ -565,10 +565,17 @@ bool loadedV6Valid(
 bool recordV6Valid(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
-    LoadedSaveRecord loaded;
-    memset(&loaded, 0, sizeof(loaded));
-    memcpy(&loaded, &prefix, sizeof(prefix));
-    return loadedV6Valid(loaded, crateTransforms);
+    return coreShapeValid(prefix.core, kMagicV6, kVersionV6,
+                          (uint16_t)kRecordBytesV6) &&
+           prefix.core.recordCrc32 == recordCrcV6(prefix, crateTransforms) &&
+           resourceShapeValid(prefix.resources, prefix.core) &&
+           scriptShapeValid(prefix.script, prefix.core) &&
+           lineShapeValid(prefix.lines, prefix.core) &&
+           actionRemovedShapeValid(prefix.actionRemoved, prefix.core) &&
+           EspNativeGameplayCrateState_snapshotShapeValid(
+               &crateTransforms, prefix.core.runtimeFNV1a,
+               prefix.core.targetMapId) &&
+           crateTransformsDisjoint(prefix.actionRemoved, crateTransforms);
 }
 
 bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
@@ -1538,7 +1545,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
             if (beforePage != ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
                 statusCursor = kStatusSave;
                 lastOperation = 0U;
-                printf("[NATIVESAVE] UI page=status rows=SAVE/LOAD slot=1 path=%s worldScope=resources+script+lines+action-removals-v5+others-fresh legacyV1V2V3V4=read-only-compatible\n",
+                printf("[NATIVESAVE] UI page=status rows=SAVE/LOAD slot=1 path=%s worldScope=resources+script+lines+action-removals+crate-transforms-v6+others-fresh legacyV1V2V3V4V5=read-only-compatible\n",
                        kLogPath);
             }
             if ((status == ESP_NATIVE_GAMEPLAY_HUB_REDRAWN ||
