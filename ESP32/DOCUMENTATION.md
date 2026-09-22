@@ -13,44 +13,38 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-original main-menu branch base = 5841b0cb55607428bf74c341112a161213c47c90
-rebased onto origin/main = 630567b9e87b323f8bfe61764ae34b4771e0dd93
-branch = fix/mainMenu
-rebased main-menu load implementation = 8a78bcd
-rebased code boundary = 2eceda2
-upstream hardware-tested boundary = d532ede998c23fcac7e73feefe66d5ce8c755ac9
-main-menu hardware-tested pre-rebase boundary = 18c1cfbdb11236588d7a8160ce643ebe7e00b61d
-post-rebase local build = esp32-cyd SUCCESS / RAM 44944 B / Flash 731237 B
-status = REBASED BUILD PASS; COMBINED REAL-CYD REPLAY PENDING
+current main = bbe9b10c23dcb7a1d6b63db421073c0eeaf1872c
+branch = agent/esp32-native-automap
+hardware-tested Automap boundary = cdd8168588edc5a0d996f19d7cf6c2466ba4a51b
+Automap CI = esp32-cyd #572 SUCCESS / RAM 44832 B / Flash 738613 B
+rebased candidate = 4463b12500defef53447fc8004dc11a1a8e8c793
+rebased CI = esp32-cyd #573 SUCCESS / RAM 44944 B / Flash 741093 B
+status = AUTOMAP CORE REAL-CYD PASS; REBASED COMBINED HASH CI-ONLY
 ```
 
-This branch now combines the hardware-proven resident gameplay-polish work from
-`origin/main` with the main-menu loading work originally validated at
-`18c1cfb`. The rebased code compiles successfully, but `2eceda2` is not labeled
-as a new hardware PASS until the combined firmware is replayed on the CYD.
+The native Automap core is hardware-valid on the real classic CYD. The user
+validated clean open/close ownership, live movement and visited-cell updates,
+pickup handling while the map remains visible, SELECT through regular doors and
+door animation entirely under Automap framebuffer ownership.
 
-The upstream real-CYD run covers the intro display fit, moved-corpse projection,
-native password input and continuation, monster collision against
-shoot-through/movement-solid bars, and the two-line atomic secret-door SELECT
-transaction. Progression reached the first explicit Automap instruction;
-native Automap presentation/input remains the next bounded milestone.
+Render-derived map reveal also matches the original Doom RPG behavior. The user
+cross-checked the surprising cases against the original: geometry can become
+visible behind a closed door once renderer visibility has exposed it, while
+human/special markers appear only after their relevant visibility is reached.
 
-The rebased ESP32 menu replaces J2ME `Exit` and is ordered as `Start Game`,
-`Load Game`, `Options`, `Help/About`. Before the rebase, the user confirmed both
-successful checkpoint resume and the visible red `No Save` fallback on the real
-CYD.
+After that hardware pass, the branch was rebuilt on top of the newer `main`
+that contains the native main-menu `Load Game` work. There were no overlapping
+changed files between the two feature deltas. The combined rebased hash builds
+successfully but is not independently promoted to a new hardware PASS without a
+replay.
 
 The main-menu action shares the V1-V6 checkpoint validator/loader already used
-by `HUB -> STAT`. It releases menu-only runtime, rebuilds the immutable BSP,
-restores the mutable owners and configures a resumed gameplay session without
-replaying the intro. Missing, truncated or invalid records fail closed.
-
-The same branch removes the no-PSRAM `mappings.bin` inflate peak. The ZIP entry
-is decoded into the permanent 38,400-byte framebuffer scratch, after which the
-four immutable mapping arrays are installed once and reused across BSP loads.
+by `HUB -> STAT`; the production menu is `Start Game`, `Load Game`,
+`Options`, `Help/About`.
 
 Latest milestones:
 
+- [`MILESTONE_NATIVE_AUTOMAP.md`](MILESTONE_NATIVE_AUTOMAP.md)
 - [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 - [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
 - [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
@@ -60,8 +54,8 @@ Latest milestones:
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
 
 Late password full-HUD repaint and legacy `Found Secret!` reward candidates
-still need explicit hardware replay. CHANGEMAP remains a separate later
-hardware-validation boundary after Automap.
+still need explicit hardware replay. The next major gameplay candidate is the
+existing CHANGEMAP / Entrance level-exit transition.
 
 ## Build environment
 
@@ -599,20 +593,25 @@ Detailed record:
 
 ## Preferred next milestone
 
-The immediate boundary is a short real-CYD replay of the rebased integration:
+The bounded native Automap core has passed on the real CYD. The next major
+gameplay candidate is the existing **CHANGEMAP / Entrance level-exit
+transition**.
+
+The smallest useful hardware proof is:
 
 ```text
-boot -> main menu order remains correct
-existing checkpoint -> Load Game resumes gameplay
-missing checkpoint -> red No Save and menu remains interactive
-Start Game -> existing upstream intro/gameplay route remains live
+eligible Entrance exit event
+ -> SAVEGAME / target placement semantics
+ -> CHANGEMAP request
+ -> stats handoff when required
+ -> requested-map rebuild
+ -> target player/view placement
+ -> resident gameplay re-arm
 ```
 
-After that replay passes and the branch is merged, recover the exact new `main`
-SHA and branch fresh. The next bounded gameplay milestone is native **Automap
-presentation/input**, matching the first progression gate reached on the real
-CYD. CHANGEMAP remains a later candidate without a dedicated exit-transition
-hardware PASS.
+Keep remaining Automap parity separate: PASS_TURN/other normal playing actions
+while the map is open, hardware execution of `EV_GIVEMAP`, and save persistence
+of reveal state are not claimed by the current Automap milestone.
 
 Separate pending work still includes the mixed physical/touch SAVE cursor
 regression and unrelated deferred gameplay families.
@@ -658,6 +657,7 @@ See `MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md` for the exact geometry and hardwa
 
 ## Recent milestone index
 
+- [`MILESTONE_NATIVE_AUTOMAP.md`](MILESTONE_NATIVE_AUTOMAP.md)
 - [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 - [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
 - [`MILESTONE_NATIVE_SECRET_DOOR_BATCH.md`](MILESTONE_NATIVE_SECRET_DOOR_BATCH.md)
@@ -690,7 +690,8 @@ save-v6 mutable-world sections beyond each validated owner
 CHANGEMAP hardware level-exit validation
 audio
 password late presentation cleanup replay
-GIVEMAP / Automap production route and touch UI
+GIVEMAP hardware execution + remaining Automap action parity
+Automap reveal-state checkpoint persistence
 CHECK_KEY production route
 HUB Notebook activation / consumable use / Options / store
 remaining advanced combat/monster/special-death families
