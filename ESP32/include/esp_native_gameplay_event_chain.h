@@ -70,6 +70,16 @@ EspNativeGameplayEventChain_beginDialogCommand(
     uint8_t commandOffset,
     uint32_t runFlags);
 
+/* Execute one already-preflightable synchronous event suffix without a dialog
+ * owner. Used by SELECT families such as EV_GIVEMAP that are legacy
+ * synchronous commands. The same rollback journal backs render failure. */
+EspNativeGameplayDialogResumeStatus
+EspNativeGameplayEventChain_execute(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint32_t runFlags,
+    EspNativeGameplayDialogResumeResult* outResult);
+
 /* One-shot diagnostic over the resident event corpus. Allocation-free and
  * mutation-free; intended to tell hardware testing which opcode families will
  * still fail closed before the player reaches them. */

@@ -65,6 +65,23 @@ typedef struct EspMapGiveMapResult_s {
     uint8_t removeCommandIfHandled;
 } EspMapGiveMapResult;
 
+#define ESP_MAP_AUTOMAP_SNAPSHOT_MAX_OBJECTS 1024U
+#define ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES \
+    (ESP_MAP_AUTOMAP_SNAPSHOT_MAX_OBJECTS / 8U)
+
+typedef struct EspMapAutomapSnapshot_s {
+    uint32_t sourceArenaFNV1a;
+    uint32_t lineCount;
+    uint32_t spriteCount;
+    uint16_t lineBitsetBytes;
+    uint16_t spriteBitsetBytes;
+    uint16_t lineRevealedCount;
+    uint16_t spriteRevealedCount;
+    uint8_t lineBits[ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES];
+    uint8_t spriteBits[ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES];
+    uint8_t visitedBits[ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES];
+} EspMapAutomapSnapshot;
+
 /*
  * Compact mutable automap reveal owner for the immutable map runtime.
  * One bit per line mirrors source line flag 0x80; one bit per map sprite mirrors
@@ -83,6 +100,12 @@ int EspMapAutomapState_getSpriteRevealed(uint32_t spriteIndex,
                                          uint8_t* outRevealed);
 int EspMapAutomapState_setSpriteRevealed(uint32_t spriteIndex,
                                          uint8_t revealed);
+
+/* Pointer-free transactional snapshot for EV_GIVEMAP rollback and eventual
+ * bounded save persistence. It captures only automap reveal bits plus the
+ * BIT_AM_VISITED projection; structural map flags stay immutable. */
+int EspMapAutomapState_snapshot(EspMapAutomapSnapshot* outSnapshot);
+int EspMapAutomapState_restore(const EspMapAutomapSnapshot* snapshot);
 
 /*
  * Event-independent Game_givemap primitive.

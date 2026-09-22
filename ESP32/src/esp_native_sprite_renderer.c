@@ -8,6 +8,7 @@
 #include "Render.h"
 
 #include "esp_asset_pack.h"
+#include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_bsp_visibility.h"
@@ -1025,6 +1026,22 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
     if (!buildOrder(render, runtime, &workspace->visibility,
                     workspace->order, &stats, &orderCount)) {
         goto done;
+    }
+    if (EspMapAutomapState_isReady()) {
+        uint16_t linesMutated = 0U;
+        uint16_t spritesMutated = 0U;
+        if (!EspNativeBspVisibility_publishAutomap(
+                &workspace->visibility,
+                &linesMutated,
+                &spritesMutated)) {
+            printf("[AUTOMAPVIS] FAILED source=world-render\n");
+            goto done;
+        }
+        if (linesMutated != 0U || spritesMutated != 0U) {
+            printf("[AUTOMAPVIS] PUBLISH source=world-render lines+=%u sprites+=%u mutation=render-derived\n",
+                   (unsigned int)linesMutated,
+                   (unsigned int)spritesMutated);
+        }
     }
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) goto done;
     opened = 1;

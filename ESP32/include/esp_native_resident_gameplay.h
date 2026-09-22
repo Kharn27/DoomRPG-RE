@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 struct DoomRPG_s;
+struct Render_s;
 
 /*
  * Production-oriented resident-map gameplay loop over the permanent native
@@ -22,6 +23,19 @@ void EspNativeResidentGameplay_reset(void);
 int EspNativeResidentGameplay_armCheckpointResume(void);
 void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpg);
 int EspNativeResidentGameplay_isActive(void);
+int EspNativeResidentGameplay_isAutomapActive(void);
+
+/* Repaint the currently-owned Automap after a semantic world/player mutation.
+ * Returns 0 when Automap is not active or presentation fails. */
+int EspNativeResidentGameplay_redrawAutomap(
+    struct Render_s* render,
+    const char* reason);
+
+/* Legacy Player_pain leaves ST_AUTOMAP before showing damage. This closes the
+ * native Automap to the normal HUD/world presentation when damage commits. */
+int EspNativeResidentGameplay_exitAutomapForDamage(
+    struct Render_s* render,
+    const char* reason);
 
 #ifdef __cplusplus
 }

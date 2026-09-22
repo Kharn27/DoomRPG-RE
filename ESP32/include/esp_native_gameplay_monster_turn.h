@@ -39,6 +39,8 @@ void EspNativeGameplayMonsterTurn_reset(void);
 int EspNativeGameplayMonsterTurn_requestPlayerAttack(uint32_t inputSequence);
 int EspNativeGameplayMonsterTurn_cancelPlayerAttack(uint32_t inputSequence);
 int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence);
+int EspNativeGameplayMonsterTurn_requestBlockedAutomapMove(
+    uint32_t inputSequence);
 
 /*
  * Resume the exact one-step legacy Entity_aiMoveToGoal() attack gate after a

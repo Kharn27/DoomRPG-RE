@@ -67,6 +67,7 @@ static int boundedFamily(uint8_t codeId) {
     switch (codeId) {
     case 7U:  /* SHOW, post-dialog chain */
     case 8U:  /* DIALOG */
+    case 9U:  /* GIVEMAP */
     case 11U: /* CHANGESTATE */
     case 13U: /* UNLOCK */
     case 15U: /* OPENLINE */
@@ -135,6 +136,7 @@ void EspNativeGameplayInteractionInventory_log(void) {
         size_t used = 0U;
         uint32_t offset;
         uint8_t eventHasDeferred = 0U;
+        uint8_t eventHasGiveMap = 0U;
         uint8_t firstDeferred = 0U;
 
         memset(ids, 0, sizeof(ids));
@@ -147,6 +149,7 @@ void EspNativeGameplayInteractionInventory_log(void) {
         for (offset = 0U; offset < descriptor.commandCount; ++offset) {
             EspMapByteCode command;
             if (!EspMapEvents_getCommand(&descriptor, offset, &command)) return;
+            if (command.id == 9U) eventHasGiveMap = 1U;
             if (command.id < INVENTORY_OPCODE_LIMIT &&
                 counts[command.id] != UINT16_MAX) {
                 ++counts[command.id];
@@ -162,6 +165,30 @@ void EspNativeGameplayInteractionInventory_log(void) {
                 strncpy(ids, "list-truncated", sizeof(ids));
                 ids[sizeof(ids) - 1U] = '\0';
             }
+        }
+
+        if (eventHasGiveMap) {
+            printf("[GIVEMAPTRACE] event=%u tile=%u raw=%08x flags=%u initialState=%u commands=%u firstGlobal=%u sequence",
+                   (unsigned int)descriptor.eventIndex,
+                   (unsigned int)descriptor.tileIndex,
+                   (unsigned int)descriptor.value,
+                   (unsigned int)descriptor.flags,
+                   (unsigned int)descriptor.initialState,
+                   (unsigned int)descriptor.commandCount,
+                   (unsigned int)descriptor.firstCommandIndex);
+            for (offset = 0U; offset < descriptor.commandCount; ++offset) {
+                EspMapByteCode command;
+                if (!EspMapEvents_getCommand(&descriptor, offset, &command)) {
+                    printf(" off%u=READFAIL", (unsigned int)offset);
+                    continue;
+                }
+                printf(" off%u=id%u/a1=%08x/a2=%08x",
+                       (unsigned int)offset,
+                       (unsigned int)command.id,
+                       (unsigned int)command.arg1,
+                       (unsigned int)command.arg2);
+            }
+            printf("\n");
         }
 
         if (eventHasDeferred) {

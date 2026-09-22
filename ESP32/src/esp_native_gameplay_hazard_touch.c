@@ -11,6 +11,7 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hazard_touch.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_resident_gameplay.h"
 
 #define HAZARD_MAP_WIDTH 32U
 #define HAZARD_TYPE_FIRE 10U
@@ -158,6 +159,21 @@ static int rerender(DoomRPG_t* doomRpg,
     EspNativeGameplayFrameStats frame;
     if (doomRpg == NULL || doomRpg->render == NULL || view == NULL ||
         view->viewAngle < 0 || view->viewAngle > 255) return 0;
+
+    if (EspNativeResidentGameplay_isAutomapActive()) {
+        if (!EspNativeResidentGameplay_exitAutomapForDamage(
+                doomRpg->render, reason)) {
+            printf("[HAZARD] AUTOMAP-EXIT-FAILED reason=%s angle=%d\n",
+                   reason != NULL ? reason : "touch",
+                   (int)view->viewAngle);
+            return 0;
+        }
+        printf("[HAZARD] AUTOMAP-EXIT reason=%s angle=%d worldPresented=1 legacyPlayerPain=yes\n",
+               reason != NULL ? reason : "touch",
+               (int)view->viewAngle);
+        return 1;
+    }
+
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
                                            (uint8_t)view->viewAngle,

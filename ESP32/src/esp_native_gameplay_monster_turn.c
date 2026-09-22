@@ -45,6 +45,10 @@
 #define TURN_HIT_NORMAL 1U
 #define TURN_HIT_CRIT 2U
 
+#define TURN_PENDING_NONE 0U
+#define TURN_PENDING_PASS 1U
+#define TURN_PENDING_AUTOMAP_BLOCKED_MOVE 2U
+
 /* Exact CombatEntity.c subtype -> primary/alternate weapon table. */
 static const uint8_t monsterAttacks[28] = {
     2U, 3U, 12U, 13U, 4U, 4U, 15U, 12U, 13U, 14U, 13U, 12U, 15U, 13U,
@@ -1066,15 +1070,21 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
         }
     }
 
-    if (turnOwner.passPending != 0U) {
+    if (turnOwner.passPending != TURN_PENDING_NONE) {
+        const uint8_t pendingKind = turnOwner.passPending;
         if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_NONE) {
-            reason = ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN;
+            reason = pendingKind == TURN_PENDING_AUTOMAP_BLOCKED_MOVE
+                         ? ESP_NATIVE_GAMEPLAY_MONSTER_TURN_MOVE
+                         : ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN;
         }
         else {
-            printf("[MONSTERTURN] PASS-DEFER seq=%u conflict=%s pending=cleared mutation=no\n",
+            printf("[MONSTERTURN] %s-DEFER seq=%u conflict=%s pending=cleared mutation=no\n",
+                   pendingKind == TURN_PENDING_AUTOMAP_BLOCKED_MOVE
+                       ? "AUTOMAP-BLOCKED"
+                       : "PASS",
                    (unsigned int)turnOwner.pendingPassSequence,
                    reasonName(reason));
-            turnOwner.passPending = 0U;
+            turnOwner.passPending = TURN_PENDING_NONE;
             turnOwner.pendingPassSequence = 0U;
         }
     }
@@ -1083,8 +1093,12 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
     if (EspNativeGameplayDialog_isActive()) {
         printf("[MONSTERTURN] SKIP reason=%s dialog=active legacySkipTurn=yes mutation=no\n",
                reasonName(reason));
-        if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN) {
-            turnOwner.passPending = 0U;
+        if ((reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN &&
+             turnOwner.passPending == TURN_PENDING_PASS) ||
+            (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_MOVE &&
+             turnOwner.passPending ==
+                 TURN_PENDING_AUTOMAP_BLOCKED_MOVE)) {
+            turnOwner.passPending = TURN_PENDING_NONE;
             turnOwner.pendingPassSequence = 0U;
         }
         if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK &&
@@ -1099,7 +1113,8 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
 
     {
         uint32_t passSequence =
-            reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN
+            reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN &&
+                    turnOwner.passPending == TURN_PENDING_PASS
                 ? turnOwner.pendingPassSequence
                 : 0U;
         uint32_t attackSequence =
@@ -1107,8 +1122,14 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
                     turnOwner.attackPending != 0U
                 ? turnOwner.pendingAttackSequence
                 : 0U;
-        if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN) {
-            turnOwner.passPending = 0U;
+        uint32_t blockedMoveSequence =
+            reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_MOVE &&
+                    turnOwner.passPending ==
+                        TURN_PENDING_AUTOMAP_BLOCKED_MOVE
+                ? turnOwner.pendingPassSequence
+                : 0U;
+        if (passSequence != 0U || blockedMoveSequence != 0U) {
+            turnOwner.passPending = TURN_PENDING_NONE;
             turnOwner.pendingPassSequence = 0U;
         }
         if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK &&
@@ -1117,11 +1138,12 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
             turnOwner.pendingAttackSequence = 0U;
         }
         ++turnOwner.view.scheduledTurns;
-        printf("[MONSTERTURN] SCHEDULE n=%u reason=%s passSeq=%u attackSeq=%u player=%d,%d angle=%d playerFNV=%08x monsterFNV=%08x mode=probe rollback=required\n",
+        printf("[MONSTERTURN] SCHEDULE n=%u reason=%s passSeq=%u attackSeq=%u blockedAutomapSeq=%u player=%d,%d angle=%d playerFNV=%08x monsterFNV=%08x mode=probe rollback=required\n",
                (unsigned int)turnOwner.view.scheduledTurns,
                reasonName(reason),
                (unsigned int)passSequence,
                (unsigned int)attackSequence,
+               (unsigned int)blockedMoveSequence,
                playerView != NULL ? (int)playerView->viewX : -1,
                playerView != NULL ? (int)playerView->viewY : -1,
                playerView != NULL ? (int)playerView->viewAngle : -1,
@@ -1153,9 +1175,22 @@ int EspNativeGameplayMonsterTurn_cancelPlayerAttack(uint32_t inputSequence) {
 }
 
 int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence) {
-    if (!syncOwner() || turnOwner.passPending != 0U) return 0;
+    if (!syncOwner() || turnOwner.passPending != TURN_PENDING_NONE) return 0;
     turnOwner.pendingPassSequence = inputSequence;
-    turnOwner.passPending = 1U;
+    turnOwner.passPending = TURN_PENDING_PASS;
+    return 1;
+}
+
+int EspNativeGameplayMonsterTurn_requestBlockedAutomapMove(
+    uint32_t inputSequence) {
+    if (!syncOwner() || inputSequence == 0U ||
+        turnOwner.passPending != TURN_PENDING_NONE) {
+        return 0;
+    }
+    turnOwner.pendingPassSequence = inputSequence;
+    turnOwner.passPending = TURN_PENDING_AUTOMAP_BLOCKED_MOVE;
+    printf("[MONSTERTURN] AUTOMAP-BLOCKED-REQUEST seq=%u legacyAdvance=yes viewMutation=no ownerBytes=unchanged\n",
+           (unsigned int)inputSequence);
     return 1;
 }
 
