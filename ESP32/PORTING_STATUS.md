@@ -5,74 +5,60 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-main at branch creation = a356f4d5c2f94a8838babf21bb69911e3c36b54c
-current main = a356f4d5c2f94a8838babf21bb69911e3c36b54c
-main merge = PR #144
-branch = agent/esp32-native-save-v6-crate-transforms
-hardware-tested crate subtype2 boundary = 571a1af81469ff85a88ae3ba94e5dc9535b6648a
-hardware-tested save-v6 crate-transform boundary = 172055a8bc0f2430f9d5443972ee153aa1bf4ffc
-hardware-tested current code boundary = 172055a8bc0f2430f9d5443972ee153aa1bf4ffc
-status = REAL-CYD SAVE V6 CRATE TRANSFORM PERSISTENCE PASS
-branch policy = MERGE-READY; post-test tail docs-only
-```
-
-PR #144 merged the hardware-proven crate subtype-2 gameplay milestone into
-main at `a356f4d5c2f94a8838babf21bb69911e3c36b54c`. The V6 branch was created
-from that exact SHA.
-
-The final code boundary
-`172055a8bc0f2430f9d5443972ee153aa1bf4ffc` passed normal
-`ESP32 CYD Build` run `35720525109` with:
-
-```text
+main at branch creation = e80851f21382ad13c456b85f01e55bf796c75edf
+current main = 5841b0cb55607428bf74c341112a161213c47c90
+current main tip = PR #147 README-only merge
+branch = agent/esp32-native-display-touch-polish
+hardware-tested current code boundary = d532ede998c23fcac7e73feefe66d5ce8c755ac9
+CI = esp32-cyd #522 / 35765245689 SUCCESS
 static RAM = 44832 B
-flash = 716177 B
+flash = 728653 B
+status = REAL-CYD RESIDENT GAMEPLAY POLISH PASS THROUGH AUTOMAP GATE
+branch relation = 65 commits ahead / 2 commits behind current main
+branch policy = docs-only tail after tested code boundary
 ```
 
-Static RAM is unchanged from the hardware-proven crate gameplay boundary.
+The branch was created from exact main SHA `e80851f21382ad13c456b85f01e55bf796c75edf`.
+Current main later advanced through PR #147 only for README content; no ESP32 gameplay recovery boundary moved.
 
-Checkpoint V6 extends V5 by one streamed, pointer-free 176 B crate transform
-section without growing the persistent save workspace BSS:
+The real-CYD progression run on code head `d532ede998c23fcac7e73feefe66d5ce8c755ac9` validated the resident gameplay-polish boundary up to the first explicit Automap progression gate.
+
+Hardware-confirmed behavior on this branch now includes:
 
 ```text
-DRPGSAV6
-recordBytes = 1532
-V5 semantic prefix = 1356 B
-crate transform section = 176 B
+intro animated scene = full 160x120
+intro story text = centered 156x120
+moved-monster corpse projection = correct death position
+EV_PASSWORD 10 = native keypad live
+invalid password = blocked + "Invalid code!"
+correct password = resumes through EV_DIALOGNOBACK 26 and unlocks intended door
+monster movement = blocked by shoot-through/movement-solid bars
+secret door lines 471/470 = two-line atomic SELECT batch PASS
 ```
 
-The real-CYD non-zero witness transformed Entrance sprite 11 with
-`first=16` into `type4/subtype25/def99`. SAVE captured:
+Normal `esp32-cyd` CI #522 retained the canonical static-RAM boundary:
 
 ```text
-crateTransforms=1/43B/1B/31d6c324
-actionRemoved=1/43B/4a2aa797
+RAM static = 44832 B
+Flash = 728653 B
 ```
 
-LOAD rebuilt the immutable BSP, then restored:
+Two late additions are deliberately **not** promoted to independent hardware PASS without a dedicated replay:
 
 ```text
-[CRATECHECKPOINT] RESTORE ... transformed=1 ... codeBytes=1 stateFNV=31d6c324
-[NATIVESAVE] LOAD ... crateTransforms=restored/1/31d6c324
+password full-HUD repaint after modal close
+legacy "Found Secret!" +5 XP + sound-5133-deferred reward
 ```
 
-The user visually confirmed that the medkit produced by the crate reappeared
-after LOAD rather than reverting to the original crate. The restored resource
-corpus also increased to `pickups=115` / `type4=7`, matching the projected
-pickup.
+The milestone itself remains hardware-valid: neither candidate is used as evidence for the validated password continuation, corpse projection, intro fit, or monster-bar collision result.
 
-The same branch also hardware-proved the V6 removal compatibility path with
-`BREAK_REMOVE`: `actionRemoved=1`, `crateTransforms=0`, then successful
-LOAD of both owners.
+Detailed record:
 
-Latest detailed records:
+- [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
+- [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
+- [`MILESTONE_NATIVE_SECRET_DOOR_BATCH.md`](MILESTONE_NATIVE_SECRET_DOOR_BATCH.md)
 
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
-- [`MILESTONE_NATIVE_CRATE_SUBTYPE2.md`](MILESTONE_NATIVE_CRATE_SUBTYPE2.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
-
-CHANGEMAP production code remains a separate candidate without its dedicated
-real-CYD exit-transition PASS.
+The user has now reached the gameplay instruction that requires consulting the Automap. Native Automap UI/input is intentionally absent, making it the next bounded gameplay milestone. CHANGEMAP remains a separate later hardware validation boundary.
 
 ## Permanent architecture / hard invariants
 
