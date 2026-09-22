@@ -647,8 +647,25 @@ Both lines reported `DOORANIM SNAP` because their immutable flags do not mark re
 
 See `MILESTONE_NATIVE_SECRET_DOOR_BATCH.md` for the exact hardware evidence and transaction boundary.
 
+## Intro display-fit contract
+
+The classic CYD uses a 160x120 logical framebuffer while the original intro composition assumes a 128x128 story space. Hardware review established that one fit rule does not look correct for every intro element.
+
+The permanent split is:
+
+- ordinary story-page image geometry: centered 120x120 aspect-preserving viewport;
+- scrolling starfield: full 160x120;
+- dedicated animated story scene: full 160x120;
+- narrative glyphs: centered 156x120 soft-wide mapping;
+- no intermediate framebuffer.
+
+This keeps the animation visually full on the 4:3 CYD while avoiding the slightly over-stretched text produced by a full 160-pixel text mapping. The real-CYD visual result on `0d21332bd2524bca73d5284f70e053ca8ba6430d` was explicitly accepted as correct.
+
+See `MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md` for the exact geometry and hardware boundary.
+
 ## Recent milestone index
 
+- [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
 - [`MILESTONE_NATIVE_SECRET_DOOR_BATCH.md`](MILESTONE_NATIVE_SECRET_DOOR_BATCH.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
 
