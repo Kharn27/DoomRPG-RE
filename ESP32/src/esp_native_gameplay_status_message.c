@@ -8,6 +8,7 @@
 #include "esp_map_script_state.h"
 #include "esp_map_strings.h"
 #include "esp_map_ui_intent.h"
+#include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_player_view_state.h"
@@ -144,6 +145,8 @@ static int paintTopBar(const char* text,
             x += STATUS_FONT_ADVANCE;
         }
     }
+
+    if (!EspNativeGameplayHud_paintTopTouchNotches()) goto done;
 
     printf("[STATUSBAR] PAINT active=%u string=%u bytes=%u visible=%u reads=%u resourceBytes=%u present=deferred-to-frame\n",
            (unsigned int)(visible != 0U ? 1U : 0U),
