@@ -178,7 +178,7 @@ static int drawPrompt(uint16_t* framebuffer,
 
     for (i = 0U; i < password.promptLength && y <= 14; ++i) {
         uint8_t c = (uint8_t)password.prompt[i];
-        if (c == '|') {
+        if (c == '|' || c == '\n') {
             x = 2;
             y += PASSWORD_FONT_HEIGHT;
             continue;
@@ -494,6 +494,7 @@ EspNativeGameplayPasswordTapStatus EspNativeGameplayPassword_handleTap(
 
     row = (logicalY - PASSWORD_KEYPAD_Y) / PASSWORD_KEY_ROW_HEIGHT;
     col = logicalX / PASSWORD_KEY_COL_WIDTH;
+    if (col >= PASSWORD_KEYPAD_COLS) col = PASSWORD_KEYPAD_COLS - 1;
     if (row < 0 || row >= PASSWORD_KEYPAD_ROWS ||
         col < 0 || col >= PASSWORD_KEYPAD_COLS) {
         return ESP_NATIVE_GAMEPLAY_PASSWORD_TAP_IGNORED;
