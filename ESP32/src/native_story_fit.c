@@ -38,13 +38,19 @@ static int virtualTop(const DoomCanvas_t* doomCanvas) {
 static int mapX(const DoomCanvas_t* doomCanvas, int x) {
     return ESP32_STORY_VIEWPORT_X +
            scaleOffsetFloor(x - virtualLeft(doomCanvas),
-                            ESP32_STORY_VIEWPORT_WIDTH);
+                            ESP32_STORY_VIEWPORT_SIZE);
+}
+
+static int mapBackgroundX(const DoomCanvas_t* doomCanvas, int x) {
+    return ESP32_STORY_BACKGROUND_X +
+           scaleOffsetFloor(x - virtualLeft(doomCanvas),
+                            ESP32_STORY_BACKGROUND_WIDTH);
 }
 
 static int mapY(const DoomCanvas_t* doomCanvas, int y) {
     return ESP32_STORY_VIEWPORT_Y +
            scaleOffsetFloor(y - virtualTop(doomCanvas),
-                            ESP32_STORY_VIEWPORT_HEIGHT);
+                            ESP32_STORY_VIEWPORT_SIZE);
 }
 
 static void setVirtualClip(DoomCanvas_t* doomCanvas,
@@ -61,15 +67,16 @@ static void setVirtualClip(DoomCanvas_t* doomCanvas,
                         bottom - top);
 }
 
-static void drawImageSpecial(DoomCanvas_t* doomCanvas,
-                             Image_t* img,
-                             int xSrc,
-                             int ySrc,
-                             int width,
-                             int height,
-                             int xDst,
-                             int yDst,
-                             int flags) {
+static void drawImageSpecialMapped(DoomCanvas_t* doomCanvas,
+                                   Image_t* img,
+                                   int xSrc,
+                                   int ySrc,
+                                   int width,
+                                   int height,
+                                   int xDst,
+                                   int yDst,
+                                   int flags,
+                                   int wideBackground) {
     SDL_Rect source;
     SDL_Rect destination;
     int left;
@@ -106,9 +113,11 @@ static void drawImageSpecial(DoomCanvas_t* doomCanvas,
         yDst -= height >> 1;
     }
 
-    left = mapX(doomCanvas, xDst);
+    left = wideBackground ? mapBackgroundX(doomCanvas, xDst)
+                          : mapX(doomCanvas, xDst);
     top = mapY(doomCanvas, yDst);
-    right = mapX(doomCanvas, xDst + width);
+    right = wideBackground ? mapBackgroundX(doomCanvas, xDst + width)
+                           : mapX(doomCanvas, xDst + width);
     bottom = mapY(doomCanvas, yDst + height);
 
     if (right <= left || bottom <= top) {
@@ -131,16 +140,36 @@ static void drawImageSpecial(DoomCanvas_t* doomCanvas,
                    &destination);
 }
 
+static void drawImageSpecial(DoomCanvas_t* doomCanvas,
+                             Image_t* img,
+                             int xSrc,
+                             int ySrc,
+                             int width,
+                             int height,
+                             int xDst,
+                             int yDst,
+                             int flags) {
+    drawImageSpecialMapped(doomCanvas, img, xSrc, ySrc, width, height,
+                           xDst, yDst, flags, 0);
+}
+
 static void drawImage(DoomCanvas_t* doomCanvas,
                       Image_t* img,
                       int x,
                       int y,
                       int flags) {
-    drawImageSpecial(doomCanvas, img, 0, 0, 0, 0, x, y, flags);
+    drawImageSpecialMapped(doomCanvas, img, 0, 0, 0, 0, x, y, flags, 0);
+}
+
+static void drawBackgroundImage(DoomCanvas_t* doomCanvas,
+                                Image_t* img,
+                                int x,
+                                int y) {
+    drawImageSpecialMapped(doomCanvas, img, 0, 0, 0, 0, x, y, 0, 1);
 }
 
 static void drawFont(DoomCanvas_t* doomCanvas,
-                     char* text,
+                     const char* text,
                      int x,
                      int y,
                      int flags,
@@ -216,7 +245,7 @@ static void drawFont(DoomCanvas_t* doomCanvas,
 }
 
 static void drawString1(DoomCanvas_t* doomCanvas,
-                        char* text,
+                        const char* text,
                         int x,
                         int y,
                         int flags) {
@@ -224,7 +253,7 @@ static void drawString1(DoomCanvas_t* doomCanvas,
 }
 
 static void drawString2(DoomCanvas_t* doomCanvas,
-                        char* text,
+                        const char* text,
                         int x,
                         int y,
                         int flags,
@@ -252,16 +281,23 @@ static void scrollSpaceBG(DoomCanvas_t* doomCanvas) {
         i2 += 384;
     }
 
-    drawImage(doomCanvas,
-              &doomCanvas->imgSpaceBG,
-              left - i2,
-              top,
-              0);
-    drawImage(doomCanvas,
-              &doomCanvas->imgSpaceBG,
-              left - i3,
-              top,
-              0);
+    DoomRPG_setClipTrue(doomCanvas->doomRpg,
+                        0, 0,
+                        DOOMRPG_LOGICAL_WIDTH,
+                        DOOMRPG_LOGICAL_HEIGHT);
+    drawBackgroundImage(doomCanvas,
+                        &doomCanvas->imgSpaceBG,
+                        left - i2,
+                        top);
+    drawBackgroundImage(doomCanvas,
+                        &doomCanvas->imgSpaceBG,
+                        left - i3,
+                        top);
+    setVirtualClip(doomCanvas,
+                   left,
+                   top,
+                   ESP32_STORY_VIRTUAL_SIZE,
+                   ESP32_STORY_VIRTUAL_SIZE);
 }
 
 static void drawMappedLine(DoomCanvas_t* doomCanvas,
@@ -293,11 +329,14 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     top = virtualTop(doomCanvas);
 
     if (!geometryLogged) {
-        printf("[INTROFIT] virtual=128x128 -> viewport=%dx%d@(%d,%d) full-screen anisotropic direct-to-framebuffer; extraFrameBytes=0\n",
-               ESP32_STORY_VIEWPORT_WIDTH,
-               ESP32_STORY_VIEWPORT_HEIGHT,
+        printf("[INTROFIT] virtual=128x128 content=%dx%d@(%d,%d) background=%dx%d@(%d,0) aspect=preserved-content full-width-starfield extraFrameBytes=0\n",
+               ESP32_STORY_VIEWPORT_SIZE,
+               ESP32_STORY_VIEWPORT_SIZE,
                ESP32_STORY_VIEWPORT_X,
-               ESP32_STORY_VIEWPORT_Y);
+               ESP32_STORY_VIEWPORT_Y,
+               ESP32_STORY_BACKGROUND_WIDTH,
+               DOOMRPG_LOGICAL_HEIGHT,
+               ESP32_STORY_BACKGROUND_X);
         geometryLogged = 1;
     }
 
@@ -326,12 +365,6 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
                      0,
                      doomCanvas->displayRect.w,
                      doomCanvas->displayRect.h);
-
-    setVirtualClip(doomCanvas,
-                   left,
-                   top,
-                   ESP32_STORY_VIRTUAL_SIZE,
-                   ESP32_STORY_VIRTUAL_SIZE);
 
     if (doomCanvas->storyPage == 0 || doomCanvas->storyPage == 2) {
         if (doomCanvas->storyPage == 0) {
@@ -410,11 +443,19 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         const int shipX = left + (elapsedAnim / 142);
         const int shipY = (doomCanvas->SCR_CY + 22) + (elapsedAnim / -333);
 
-        drawImage(doomCanvas,
-                  &doomCanvas->imgSpaceBG,
-                  left - bgOffset,
-                  top,
-                  0);
+        DoomRPG_setClipTrue(doomCanvas->doomRpg,
+                            0, 0,
+                            DOOMRPG_LOGICAL_WIDTH,
+                            DOOMRPG_LOGICAL_HEIGHT);
+        drawBackgroundImage(doomCanvas,
+                            &doomCanvas->imgSpaceBG,
+                            left - bgOffset,
+                            top);
+        setVirtualClip(doomCanvas,
+                       left,
+                       top,
+                       ESP32_STORY_VIRTUAL_SIZE,
+                       ESP32_STORY_VIRTUAL_SIZE);
         drawImage(doomCanvas,
                   &doomCanvas->imgLinesLayer,
                   left - linesOffset,
