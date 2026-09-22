@@ -1,6 +1,6 @@
 # Native player hit feedback — outgoing damage text + blood pixels
 
-Status: **REVIEW-FIX CANDIDATE — prior hardware PASS retained; gib-preservation retest pending**
+Status: **REAL-CYD PASS — gib-preservation review fix validated; merge-ready**
 
 ## Recovery / code boundary
 
@@ -8,9 +8,10 @@ Status: **REVIEW-FIX CANDIDATE — prior hardware PASS retained; gib-preservatio
 main = 5ac68378363b77daf9f98203966726557dc9b0ad
 main merge = PR #141
 branch = agent/esp32-native-player-hit-feedback
-hardware-tested code = e070057d3b9466f87189c504f86099b7e9f2fb67
-review-fix candidate = 13e42a44cb8e08dff05e58cc701943152a12b672
+hardware-tested code = 13e42a44cb8e08dff05e58cc701943152a12b672
+review-fix code = 13e42a44cb8e08dff05e58cc701943152a12b672
 CI = esp32-cyd run #363 / 35697742353 SUCCESS
+hardware = REAL-CYD PASS, including lethal-gib overlap/repaint
 artifact = doom-rpg-esp32-cyd-13e42a44cb8e08dff05e58cc701943152a12b672
 ```
 
@@ -337,14 +338,49 @@ Code boundary:
 13e42a44cb8e08dff05e58cc701943152a12b672
 esp32-cyd #363 / 35697742353 = SUCCESS
 artifact = doom-rpg-esp32-cyd-13e42a44cb8e08dff05e58cc701943152a12b672
-hardware = pending one lethal-gib overlap retest
+hardware = REAL-CYD PASS — lethal-gib overlap/repaint validated
 ```
+
+## Review-fix real-CYD witness
+
+The exact overlap case from the PR review is now hardware-proven on the real
+classic CYD. The lethal close-range Hellhound hit produced the required gib path:
+
+```text
+[MONSTERCOMBAT] ROLL seq=92 ... distance=1 ... totalDamage=6 armorDamage=1 ...
+[HITFX] ARM seq=92 ... total=7 ... particles=64 ...
+[MONSTERCOMBAT] DEATH-SETTLE sprite=179 visual=4->hidden ... gib=1 gibFX=deferred ...
+[MONSTERCOMBAT] COMMIT ... hp=1->0 ... visual=death4->gib-hidden/250ms+unlink,gibFX-deferred ...
+[GIBFX] PAINT sprite=179 ... particles=17 chunks=5 pixels=106 ... leaseMs=350 ...
+```
+
+The independent hit-spray lease then expired and forced the world redraw which
+previously erased the still-live gib burst. The fixed presenter recomposed it:
+
+```text
+[GIBFX] REPAINT sprite=179 particles=17 pixels=106
+        lease=preserved composition=present gameplayRng=untouched
+[HITFX] EXPIRE sprite=179 leaseMs=350 paints=2 pixels=182
+        restored=world-redraw gameplayRng=untouched
+```
+
+The gib owner then reached its own deadline normally:
+
+```text
+[GIBFX] EXPIRE sprite=179 leaseMs=350 repaints=1
+        restored=world-redraw gameplayRng=untouched
+```
+
+This is the exact regression requested by code review: an unrelated full redraw
+inside the gib lease no longer erases the burst. The lease is not restarted or
+extended, the deterministic replay stays bounded, gameplay RNG remains untouched,
+and no reboot occurred.
 
 ## Merge boundary
 
 ```text
-last hardware-tested code = e070057d3b9466f87189c504f86099b7e9f2fb67
-current review-fix code = 13e42a44cb8e08dff05e58cc701943152a12b672
-post-review changes = code + docs
-status = NOT merge-ready until lethal-gib overlap retest
+hardware-tested code = 13e42a44cb8e08dff05e58cc701943152a12b672
+CI = esp32-cyd run #363 / 35697742353 SUCCESS
+post-test tail = docs-only
+status = MERGE-READY
 ```
