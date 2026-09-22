@@ -1,3 +1,4 @@
+#include <SDL.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -66,7 +67,35 @@ typedef struct EspNativeGameplayPasswordState_s {
     uint8_t reserved;
 } EspNativeGameplayPasswordState;
 
-static EspNativeGameplayPasswordState password;
+/*
+ * Keep this owner off BSS. The classic CYD startup ZIP path has a narrow
+ * contiguous-heap phase while mappings.bin coexists with miniz state; a ~1 KB
+ * permanent password owner is enough to fragment that phase into failure even
+ * though EV_PASSWORD is not reachable until resident gameplay. Allocate only
+ * when a password modal is actually opened, then release after completion.
+ */
+static EspNativeGameplayPasswordState* passwordOwner;
+#define password (*passwordOwner)
+
+static int ensurePasswordOwner(void) {
+    if (passwordOwner != NULL) return 1;
+    passwordOwner = (EspNativeGameplayPasswordState*)SDL_calloc(
+        1, sizeof(*passwordOwner));
+    if (passwordOwner == NULL) {
+        printf("[PASSWORD] DEFER owner-allocation bytes=%u\n",
+               (unsigned int)sizeof(*passwordOwner));
+        return 0;
+    }
+    printf("[PASSWORD] OWNER bytes=%u allocation=lazy-gameplay\n",
+           (unsigned int)sizeof(*passwordOwner));
+    return 1;
+}
+
+static void releasePasswordOwner(void) {
+    if (passwordOwner == NULL) return;
+    SDL_free(passwordOwner);
+    passwordOwner = NULL;
+}
 
 static int eventDescriptorForIndex(uint16_t eventIndex,
                                    EspMapEventDescriptor* outDescriptor) {
@@ -297,7 +326,8 @@ static int paintKeypad(void) {
 }
 
 static void rollbackOpenMutation(void) {
-    if (password.active && password.removeChanged != 0U &&
+    if (passwordOwner != NULL &&
+        password.active && password.removeChanged != 0U &&
         EspMapScriptState_isReady()) {
         if (!EspMapScriptState_setCommandRemoved(password.globalCommandIndex,
                                                   password.removedBefore)) {
@@ -309,19 +339,21 @@ static void rollbackOpenMutation(void) {
 }
 
 void EspNativeGameplayPassword_reset(void) {
+    if (passwordOwner == NULL) return;
     rollbackOpenMutation();
     if (password.packOwned != 0U && EspAssetPack_isOpen()) {
         EspAssetPack_close();
     }
-    memset(&password, 0, sizeof(password));
+    memset(passwordOwner, 0, sizeof(*passwordOwner));
+    releasePasswordOwner();
 }
 
 int EspNativeGameplayPassword_isActive(void) {
-    return password.active != 0U;
+    return passwordOwner != NULL && password.active != 0U;
 }
 
 int EspNativeGameplayPassword_hasPendingCompletion(void) {
-    return password.completion.pending != 0U;
+    return passwordOwner != NULL && password.completion.pending != 0U;
 }
 
 EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
@@ -346,7 +378,8 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     uint32_t global;
     uint16_t i;
 
-    if (password.active || password.completion.pending ||
+    if ((passwordOwner != NULL &&
+         (password.active || password.completion.pending)) ||
         EspAssetPack_isOpen() || view == NULL || view->active != 1U ||
         view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0 ||
         !eventDescriptorForIndex(eventIndex, &descriptor) ||
@@ -395,10 +428,13 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
                    : ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_INVALID;
     }
 
-    EspNativeGameplayPassword_reset();
+    if (!ensurePasswordOwner()) {
+        return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_NOT_READY;
+    }
     mapName = EspMapCatalog_nameForId(view->targetMapId);
     if (mapName == NULL ||
         !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        EspNativeGameplayPassword_reset();
         return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_IO_FAILED;
     }
     password.packOwned = 1U;
@@ -458,7 +494,7 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
         if (password.packOwned != 0U && EspAssetPack_isOpen()) {
             EspAssetPack_close();
         }
-        memset(&password, 0, sizeof(password));
+        EspNativeGameplayPassword_reset();
         return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_IO_FAILED;
     }
 
@@ -483,7 +519,8 @@ EspNativeGameplayPasswordTapStatus EspNativeGameplayPassword_handleTap(
     int col;
     uint16_t enteredLength;
 
-    if (!password.active || !password.packOwned || !EspAssetPack_isOpen()) {
+    if (passwordOwner == NULL ||
+        !password.active || !password.packOwned || !EspAssetPack_isOpen()) {
         return ESP_NATIVE_GAMEPLAY_PASSWORD_TAP_INVALID;
     }
     if (logicalX < 0 || logicalX >= DOOMRPG_LOGICAL_WIDTH ||
@@ -581,13 +618,15 @@ EspNativeGameplayPasswordTapStatus EspNativeGameplayPassword_handleTap(
 int EspNativeGameplayPassword_takeCompletion(
     EspNativeGameplayPasswordCompletion* outCompletion) {
     if (outCompletion != NULL) memset(outCompletion, 0, sizeof(*outCompletion));
-    if (outCompletion == NULL || password.completion.pending != 1U ||
+    if (outCompletion == NULL || passwordOwner == NULL ||
+        password.completion.pending != 1U ||
         password.active != 0U || password.packOwned != 0U ||
         EspAssetPack_isOpen()) {
         return 0;
     }
     *outCompletion = password.completion;
     memset(&password.completion, 0, sizeof(password.completion));
+    releasePasswordOwner();
     return 1;
 }
 
