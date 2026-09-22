@@ -1087,6 +1087,13 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
             turnOwner.passPending = 0U;
             turnOwner.pendingPassSequence = 0U;
         }
+        if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK &&
+            turnOwner.attackPending != 0U) {
+            printf("[MONSTERTURN] ATTACK-CANCEL seq=%u cause=dialog-active legacySkipTurn=yes\n",
+                   (unsigned int)turnOwner.pendingAttackSequence);
+            turnOwner.attackPending = 0U;
+            turnOwner.pendingAttackSequence = 0U;
+        }
         return;
     }
 
