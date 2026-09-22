@@ -119,10 +119,11 @@ typedef struct MonsterTurnOwner_s {
     int32_t lastViewAngle;
     uint32_t observedCombatAttacks;
     uint32_t pendingPassSequence;
+    uint32_t pendingAttackSequence;
     uint8_t viewBaseline;
     uint8_t combatBaseline;
     uint8_t passPending;
-    uint8_t reserved;
+    uint8_t attackPending;
 } MonsterTurnOwner;
 
 static MonsterTurnOwner turnOwner;
@@ -1048,6 +1049,23 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
         }
     }
 
+    if (turnOwner.attackPending != 0U) {
+        if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_NONE) {
+            reason = ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK;
+        }
+        else if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK) {
+            /* A future producer may also expose the same attack through the
+             * combat counter. Collapse the duplicate semantic turn exactly. */
+            turnOwner.attackPending = 0U;
+            turnOwner.pendingAttackSequence = 0U;
+        }
+        else {
+            printf("[MONSTERTURN] ATTACK-DEFER seq=%u conflict=%s pending=retained mutation=no\n",
+                   (unsigned int)turnOwner.pendingAttackSequence,
+                   reasonName(reason));
+        }
+    }
+
     if (turnOwner.passPending != 0U) {
         if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_NONE) {
             reason = ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN;
@@ -1077,15 +1095,26 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
             reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN
                 ? turnOwner.pendingPassSequence
                 : 0U;
+        uint32_t attackSequence =
+            reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK &&
+                    turnOwner.attackPending != 0U
+                ? turnOwner.pendingAttackSequence
+                : 0U;
         if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN) {
             turnOwner.passPending = 0U;
             turnOwner.pendingPassSequence = 0U;
         }
+        if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK &&
+            turnOwner.attackPending != 0U) {
+            turnOwner.attackPending = 0U;
+            turnOwner.pendingAttackSequence = 0U;
+        }
         ++turnOwner.view.scheduledTurns;
-        printf("[MONSTERTURN] SCHEDULE n=%u reason=%s passSeq=%u player=%d,%d angle=%d playerFNV=%08x monsterFNV=%08x mode=probe rollback=required\n",
+        printf("[MONSTERTURN] SCHEDULE n=%u reason=%s passSeq=%u attackSeq=%u player=%d,%d angle=%d playerFNV=%08x monsterFNV=%08x mode=probe rollback=required\n",
                (unsigned int)turnOwner.view.scheduledTurns,
                reasonName(reason),
                (unsigned int)passSequence,
+               (unsigned int)attackSequence,
                playerView != NULL ? (int)playerView->viewX : -1,
                playerView != NULL ? (int)playerView->viewY : -1,
                playerView != NULL ? (int)playerView->viewAngle : -1,
@@ -1093,6 +1122,27 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
                combat != NULL ? (unsigned int)combat->currentMonsterFNV1a : 0U);
     }
     runProbe(doomRpg, reason);
+}
+
+int EspNativeGameplayMonsterTurn_requestPlayerAttack(uint32_t inputSequence) {
+    if (!syncOwner() || turnOwner.attackPending != 0U) return 0;
+    turnOwner.pendingAttackSequence = inputSequence;
+    turnOwner.attackPending = 1U;
+    printf("[MONSTERTURN] ATTACK-REQUEST seq=%u source=explicit-native-player-attack rollback=available-until-cancel\n",
+           (unsigned int)inputSequence);
+    return 1;
+}
+
+int EspNativeGameplayMonsterTurn_cancelPlayerAttack(uint32_t inputSequence) {
+    if (turnOwner.attackPending == 0U ||
+        turnOwner.pendingAttackSequence != inputSequence) {
+        return 0;
+    }
+    turnOwner.attackPending = 0U;
+    turnOwner.pendingAttackSequence = 0U;
+    printf("[MONSTERTURN] ATTACK-CANCEL seq=%u cause=action-rollback scheduled=no\n",
+           (unsigned int)inputSequence);
+    return 1;
 }
 
 int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence) {
