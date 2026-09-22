@@ -631,6 +631,36 @@ exposes a defect, patch only that bounded transition family.
 Separate pending work still includes the mixed physical/touch SAVE cursor
 regression and unrelated deferred gameplay families.
 
+## Hardware-validated intro display polish
+
+Real-CYD visual validation on code head `0d21332bd2524bca73d5284f70e053ca8ba6430d` confirmed the permanent native intro fit split:
+
+```text
+logical framebuffer = 160x120 RGB565
+content viewport     = 120x120 centered at x=20
+starfield background = 160x120 full width
+animated intro scene = 160x120 full width
+story text           = 156x120 centered at x=2
+extra framebuffer    = 0 B
+```
+
+The dedicated animated intro scene now maps its starfield/layers/planet/spaceship/line geometry across the full logical display, while ordinary story-page decoration remains in the aspect-preserving 120x120 content viewport. Story glyphs use the separately tuned 156-pixel soft-wide horizontal mapping.
+
+The real-CYD visual verdict for this exact split was PASS ("Superbe"). The production geometry witness is:
+
+```text
+[INTROFIT] ... content=120x120@(20,0) background=160x120@(0,0) animation=160x120@(0,0) text=156x120@(2,0) fit=aspect-content+full-animation+soft-wide-text extraFrameBytes=0
+```
+
+CI for the hardware-tested head retained the canonical no-PSRAM static-RAM boundary:
+
+```text
+RAM static = 44832 B
+Flash      = 724633 B
+```
+
+No second framebuffer or frame-sized staging allocation was introduced.
+
 ## Hardware-validated pure multi-line SELECT door batch
 
 Real-CYD validation on `/intro.bsp` proved the bounded pure-door batch path used by the hidden/secret door.
