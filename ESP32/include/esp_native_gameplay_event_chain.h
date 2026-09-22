@@ -43,6 +43,14 @@ EspNativeGameplayEventChain_maskForDialogBegin(
 int EspNativeGameplayEventChain_restoreDialogMask(
     EspNativeGameplayEventChainMask* mask);
 
+/* Non-mutating full continuation proof for modal owners such as EV_PASSWORD
+ * that do not need the compact dialog owner's temporary removed-bit mask. */
+EspNativeGameplayEventChainPreflightStatus
+EspNativeGameplayEventChain_preflight(
+    uint16_t eventIndex,
+    uint8_t resumeCommandOffset,
+    uint32_t runFlags);
+
 /* One-shot diagnostic over the resident event corpus. Allocation-free and
  * mutation-free; intended to tell hardware testing which opcode families will
  * still fail closed before the player reaches them. */
