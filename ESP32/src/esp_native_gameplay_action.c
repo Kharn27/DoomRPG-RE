@@ -33,7 +33,8 @@ static int descriptorMatchesSelect(
 }
 
 static int isDoorOpcode(uint8_t codeId) {
-    return codeId == ESP_MAP_OPCODE_OPENLINE ||
+    return codeId == ESP_MAP_OPCODE_MOVELINE ||
+           codeId == ESP_MAP_OPCODE_OPENLINE ||
            codeId == ESP_MAP_OPCODE_CLOSELINE;
 }
 
@@ -270,7 +271,8 @@ int EspNativeGameplayAction_rollbackSelect(
 
     if (result == NULL || result->handled != 1U || result->mutated != 1U ||
         result->rollbackAvailable != 1U ||
-        (result->codeId != ESP_MAP_OPCODE_OPENLINE &&
+        (result->codeId != ESP_MAP_OPCODE_MOVELINE &&
+         result->codeId != ESP_MAP_OPCODE_OPENLINE &&
          result->codeId != ESP_MAP_OPCODE_CLOSELINE)) {
         return 0;
     }
