@@ -451,7 +451,7 @@ uint32_t EspNativeGameplayActionEngine_removedFingerprint(void) {
 int EspNativeGameplayActionEngine_queueFeedback(
     EspNativeGameplayActionFeedback feedback) {
     if (feedback <= ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NONE ||
-        feedback > ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN ||
+        feedback > ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NO_AMMO ||
         !ensureOwner() || actionState.pending.active != 0U ||
         actionState.feedbackPending != 0U) {
         return 0;
@@ -1235,6 +1235,9 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     ActionRoute route;
     const EspNativeGameplayHudState* hud;
     int traceStatus;
+    int crateEligibility = -1;
+    int32_t crateParm = 0;
+    uint16_t crateDefTile = 0U;
     uint8_t weapon;
 
     if (status != ESP_NATIVE_GAMEPLAY_ACTION_NO_EVENT &&
@@ -1309,6 +1312,18 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     }
 
     route = routeTarget(&target, weapon);
+    if (route == ACTION_ROUTE_CRATE_SUBTYPE2) {
+        crateEligibility = crateWeaponEligible(
+            &target, weapon, &crateDefTile, &crateParm);
+        if (crateEligibility < 0) {
+            ++actionState.destructibleDeferred;
+            printf("[CRATE] DEFER seq=%u sprite=%u reason=source-definition-not-ready mutation=no\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex);
+            return status;
+        }
+        if (crateEligibility == 0) route = ACTION_ROUTE_NOTHING;
+    }
     printf("[ACTIONENGINE] TRACE seq=%u weapon=%u distance=%u tile=%u target=%s index=%u line=%u type=%u subtype=%u route=%s\n",
            (unsigned int)intent->sequence,
            (unsigned int)weapon,
@@ -1398,6 +1413,84 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
                (unsigned int)target.distance,
                (unsigned int)ESP_NATIVE_GAMEPLAY_DESTRUCTIBLE_DEATH_RUN_FLAGS,
                (unsigned int)ACTION_JAMMED_DOOR_CALC_HIT);
+    }
+    else if (route == ACTION_ROUTE_CRATE_SUBTYPE2) {
+        const EspNativeGameplayPlayerState* player;
+        const EspNativeGameplayWeaponSpec* weaponSpec;
+        const EspPlayerViewState* playerView;
+        uint32_t worldDistance = 0U;
+        uint8_t haveAmmo;
+
+        player = EspNativeGameplayPlayerState_view();
+        weaponSpec = EspNativeGameplayCombatMath_weapon(weapon);
+        playerView = EspPlayerView_view();
+        if (!EspNativeGameplayCrateState_ensure() ||
+            player == NULL || player->active != 1U ||
+            playerView == NULL || playerView->active != 1U ||
+            weaponSpec == NULL || weapon >= ESP_NATIVE_GAMEPLAY_STANDARD_WEAPONS ||
+            EspNativeGameplayCrateState_isTransformed(target.spriteIndex) ||
+            removed(target.spriteIndex) ||
+            !targetWorldDistance(&target, playerView, &worldDistance)) {
+            ++actionState.destructibleDeferred;
+            printf("[CRATE] DEFER seq=%u sprite=%u reason=owner-or-standard-weapon-preflight weapon=%u mutation=no\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex,
+                   (unsigned int)weapon);
+            return status;
+        }
+        if (weaponSpec->radialDamage != 0U) {
+            ++actionState.destructibleDeferred;
+            printf("[CRATE] DEFER seq=%u sprite=%u weapon=%u reason=radius-damage-family-not-owned mutation=no rngConsumed=0 ammoConsumed=0\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex,
+                   (unsigned int)weapon);
+            return status;
+        }
+
+        haveAmmo = EspNativeGameplayPlayerState_ammo(weaponSpec->ammoType);
+        if (weaponSpec->ammoUsage != 0U && haveAmmo < weaponSpec->ammoUsage) {
+            if (!EspNativeGameplayActionEngine_queueFeedback(
+                    ACTION_FEEDBACK_NO_AMMO)) {
+                ++actionState.destructibleDeferred;
+                printf("[CRATE] DEFER seq=%u sprite=%u reason=no-ammo-feedback-busy mutation=no\n",
+                       (unsigned int)intent->sequence,
+                       (unsigned int)target.spriteIndex);
+                return status;
+            }
+            printf("[CRATE] NOAMMO seq=%u sprite=%u weapon=%u ammoType=%u need=%u have=%u message=\"Not enough ammo!\" mutation=no rngConsumed=0 turnAdvance=no\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex,
+                   (unsigned int)weapon,
+                   (unsigned int)weaponSpec->ammoType,
+                   (unsigned int)weaponSpec->ammoUsage,
+                   (unsigned int)haveAmmo);
+            return status;
+        }
+
+        memset(&actionState.pending, 0, sizeof(actionState.pending));
+        actionState.pending.sequence = intent->sequence;
+        actionState.pending.spriteIndex = target.spriteIndex;
+        actionState.pending.lineIndex = ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE;
+        actionState.pending.tileIndex = target.tileIndex;
+        actionState.pending.route = (uint8_t)route;
+        actionState.pending.feedback = ACTION_FEEDBACK_NONE;
+        actionState.pending.type = target.type;
+        actionState.pending.subtype = target.subtype;
+        actionState.pending.weapon = weapon;
+        actionState.pending.distance = target.distance;
+        actionState.pending.active = 1U;
+        printf("[CRATE] ARM seq=%u sprite=%u tile=%u defTile=%u parm=%08x weapon=%u distanceTiles=%u worldDist=%u ammoType=%u ammoUsage=%u loops=%u radial=0 transformPersistence=deferred rollback=player+rng+world\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)target.spriteIndex,
+               (unsigned int)target.tileIndex,
+               (unsigned int)crateDefTile,
+               (unsigned int)crateParm,
+               (unsigned int)weapon,
+               (unsigned int)target.distance,
+               (unsigned int)worldDistance,
+               (unsigned int)weaponSpec->ammoType,
+               (unsigned int)weaponSpec->ammoUsage,
+               (unsigned int)weaponSpec->attackLoops);
     }
     else if (route == ACTION_ROUTE_NOTHING || route == ACTION_ROUTE_HUMAN) {
         memset(&actionState.pending, 0, sizeof(actionState.pending));
