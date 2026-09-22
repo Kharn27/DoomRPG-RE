@@ -487,3 +487,54 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_routeInitial(
     hudState = prepared;
     return ESP_NATIVE_GAMEPLAY_HUD_OK;
 }
+
+EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
+    const EspNativeGameplayHudState* state,
+    EspNativeGameplayHudStats* outStats) {
+    EspNativeGameplayHudState prepared;
+    uint16_t* framebuffer;
+    size_t framebufferBytes;
+    EspNativeGameplayHudStatus status;
+
+    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
+    if (state == NULL || outStats == NULL ||
+        state->active != 1U || state->painted != 1U) {
+        return ESP_NATIVE_GAMEPLAY_HUD_INVALID;
+    }
+
+    status = EspNativeGameplayHud_prepareInitial(&state->model, &prepared);
+    if (status != ESP_NATIVE_GAMEPLAY_HUD_OK) return status;
+
+    framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    framebufferBytes = Esp32PlatformVideo_framebufferSizeBytes();
+    if (framebuffer == NULL ||
+        framebufferBytes != (size_t)DOOMRPG_LOGICAL_WIDTH *
+                                (size_t)DOOMRPG_LOGICAL_HEIGHT *
+                                sizeof(uint16_t)) {
+        return ESP_NATIVE_GAMEPLAY_HUD_FRAMEBUFFER_INVALID;
+    }
+    if (EspAssetPack_isOpen()) return ESP_NATIVE_GAMEPLAY_HUD_PACK_BUSY;
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        return ESP_NATIVE_GAMEPLAY_HUD_PACK_OPEN_FAILED;
+    }
+
+    status = preflightResources(outStats);
+    if (status == ESP_NATIVE_GAMEPLAY_HUD_OK) {
+        status = paintPrepared(&prepared, framebuffer, outStats);
+    }
+    EspAssetPack_close();
+    if (status != ESP_NATIVE_GAMEPLAY_HUD_OK) return status;
+
+    printf("[GAMEPLAYHUD] REPAINT health=%u/%u armor=%u/%u weapon=%u ammo=%u angle=%u pixels=%u reads=%u bytes=%u ownerMutation=no dirtyConsume=no\n",
+           (unsigned int)prepared.model.health,
+           (unsigned int)prepared.model.maxHealth,
+           (unsigned int)prepared.model.armor,
+           (unsigned int)prepared.model.maxArmor,
+           (unsigned int)prepared.model.weapon,
+           (unsigned int)prepared.model.ammo,
+           (unsigned int)prepared.model.destAngle,
+           (unsigned int)outStats->pixelsWritten,
+           (unsigned int)outStats->packReads,
+           (unsigned int)outStats->bytesRead);
+    return ESP_NATIVE_GAMEPLAY_HUD_OK;
+}
