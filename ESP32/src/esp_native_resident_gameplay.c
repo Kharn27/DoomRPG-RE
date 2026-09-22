@@ -42,7 +42,8 @@ typedef struct EspNativeResidentGameplayState_s {
     uint32_t selectRefused;
     uint8_t active;
     uint8_t failed;
-    uint8_t reserved[2];
+    uint8_t checkpointResumeArmed;
+    uint8_t reserved;
 } EspNativeResidentGameplayState;
 
 static EspNativeResidentGameplayState gameplayState;
@@ -657,6 +658,15 @@ void EspNativeResidentGameplay_reset(void) {
     memset(&gameplayState, 0, sizeof(gameplayState));
 }
 
+int EspNativeResidentGameplay_armCheckpointResume(void) {
+    if (gameplayState.active != 0U || gameplayState.failed != 0U ||
+        gameplayState.checkpointResumeArmed != 0U) {
+        return 0;
+    }
+    gameplayState.checkpointResumeArmed = 1U;
+    return 1;
+}
+
 int EspNativeResidentGameplay_isActive(void) {
     return gameplayState.active != 0U && gameplayState.failed == 0U;
 }
@@ -672,8 +682,15 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     if (gameplayState.failed) return;
 
     if (!gameplayState.active) {
+        const int checkpointResume =
+            gameplayState.checkpointResumeArmed != 0U;
         if (doomRpg == NULL || doomRpg->render == NULL ||
-            !EspNativeFirstFrame_isReady() || !EspNativeGameplayHud_isReady()) {
+            !EspNativeGameplayHud_isReady() ||
+            (!EspNativeFirstFrame_isReady() && !checkpointResume) ||
+            (checkpointResume &&
+             (!EspAssetPack_isResident() ||
+              !EspAssetPack_isResidentLargeRangeEnabled() ||
+              EspAssetPack_isOpen()))) {
             return;
         }
         if (!EspNativeGameplayDispatch_isReady()) {
@@ -694,11 +711,16 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         EspNativeGameplayDialog_reset();
         EspNativeGameplayControls_reset();
         EspNativeGameplayInput_reset();
-        gameplayState.active = 1U;
-        PlatformInput_setTapCallback(onGameplayTap);
-        printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-        printf("[RESIDENTGAMEPLAY] READY map=current touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live menu=inventory-weapon-select-no-turn SELECT-entity/other/automap=deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
-               (unsigned int)EspEntityDefTypeCatalog_definitionCount());
+        {
+            const uint8_t resumed = gameplayState.checkpointResumeArmed;
+            gameplayState.checkpointResumeArmed = 0U;
+            gameplayState.active = 1U;
+            PlatformInput_setTapCallback(onGameplayTap);
+            printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
+            printf("[RESIDENTGAMEPLAY] READY map=current entry=%s touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live menu=inventory-weapon-select-no-turn SELECT-entity/other/automap=deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
+                   resumed != 0U ? "checkpoint-resume" : "fresh-first-frame",
+                   (unsigned int)EspEntityDefTypeCatalog_definitionCount());
+        }
         return;
     }
 
