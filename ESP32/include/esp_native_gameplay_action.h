@@ -50,7 +50,7 @@ typedef struct EspNativeGameplayActionResult_s {
  *
  * Supported entry families at this boundary are:
  *
- *   1. exactly one eligible EV_OPENLINE/EV_CLOSELINE command;
+ *   1. exactly one eligible EV_MOVELINE/EV_OPENLINE/EV_CLOSELINE command;
  *   2. an optional single EV_NOTE prefix immediately followed by the first
  *      eligible EV_DIALOG/EV_DIALOGNOBACK pause.
  *
