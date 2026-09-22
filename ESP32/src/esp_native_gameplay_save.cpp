@@ -1667,7 +1667,7 @@ bool loadNow(void) {
                                            ? "resources+script-restored+lines+action-removals+crate-transforms+automap+others-fresh"
                                            : (loaded.hasResources == 1U
                                                   ? "resources-restored+script+lines+action-removals+crate-transforms+automap+others-fresh"
-                                                  : "fresh-rebuild-v1")))));
+                                                  : "fresh-rebuild-v1"))))));
     return true;
 }
 
