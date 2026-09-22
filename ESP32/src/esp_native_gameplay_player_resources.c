@@ -668,6 +668,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     char pickupName[17];
     char pickupMessage[24];
     const char* firstWeaponDialog = NULL;
+    uint8_t firstWeaponDialogSubtype = 0xffU;
     int feedbackQueued = 0;
     int dialogOpened = 0;
 
@@ -759,7 +760,10 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
             ((playerBefore.weapons | playerBefore.disabledWeapons) &
              weaponBit) == 0U) {
             firstWeaponDialog = firstWeaponDialogText(applied[i].subtype);
-            if (firstWeaponDialog != NULL) break;
+            if (firstWeaponDialog != NULL) {
+                firstWeaponDialogSubtype = applied[i].subtype;
+                break;
+            }
         }
     }
 
@@ -801,9 +805,7 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                 dialogOpened = 1;
                 printf("[PLAYERRES] WEAPON-HELP tile=%u subtype=%u status=OPEN firstAcquire=yes continuation=none turnAdvance=no\n",
                        (unsigned int)afterTile,
-                       (unsigned int)(applied[0].type == RESOURCE_TYPE_WEAPON
-                                          ? applied[0].subtype
-                                          : 0U));
+                       (unsigned int)firstWeaponDialogSubtype);
             }
             else {
                 printf("[PLAYERRES] WEAPON-HELP tile=%u status=DEFER begin=%s firstAcquire=yes pickupCommitted=yes\n",
