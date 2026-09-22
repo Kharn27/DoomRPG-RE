@@ -40,6 +40,10 @@
 #define HUD_ORIENTATION_ARROW_X 128
 #define HUD_LINE1_X 33
 #define HUD_LINE2_X 155
+#define HUD_TOP_TOUCH_SPLIT1_X 32
+#define HUD_TOP_TOUCH_SPLIT2_X 128
+#define HUD_TOP_TOUCH_NOTCH_Y0 18
+#define HUD_TOP_TOUCH_NOTCH_Y1 19
 
 static EspNativeGameplayHudState hudState;
 
@@ -272,6 +276,16 @@ static EspNativeGameplayHudStatus paintPrepared(
         return ESP_NATIVE_GAMEPLAY_HUD_RESOURCE_FAILED;
     }
     mergeBmpStats(stats, &local);
+
+    /* Only the three top touch zones get a permanent delimiter hint. Keep the
+     * gameplay viewport itself clean: these are two 1x2 logical-pixel notches
+     * exactly at MENU|PASS and PASS|AUTOMAP boundaries. */
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT1_X,
+                     HUD_TOP_TOUCH_NOTCH_Y0, HUD_TOP_TOUCH_NOTCH_Y1,
+                     rgb565(0x808591U), stats);
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT2_X,
+                     HUD_TOP_TOUCH_NOTCH_Y0, HUD_TOP_TOUCH_NOTCH_Y1,
+                     rgb565(0x808591U), stats);
 
     drawVerticalLine(framebuffer, HUD_LINE1_X + cx, HUD_BOTTOM_Y,
                      DOOMRPG_LOGICAL_HEIGHT - 1, rgb565(0x313131U), stats);
