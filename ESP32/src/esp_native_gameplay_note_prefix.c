@@ -14,6 +14,7 @@
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
+#include "esp_native_gameplay_modal_scratch.h"
 #include "esp_player_view_state.h"
 
 #define NOTE_REMOVE_FLAG 0x00000200UL
@@ -34,6 +35,83 @@ typedef struct EspNativeGameplayNotePrefixState_s {
  * It is then reused across the session/map changes with the existing map-id
  * reset semantics, so no per-event allocation is introduced. */
 static EspNativeGameplayNotePrefixState* notePrefix;
+
+static size_t modalScratchCapacity(void) {
+    return offsetof(EspNativeGameplayNotePrefixState, scratch) +
+           sizeof(((EspNativeGameplayNotePrefixState*)0)->scratch) -
+           offsetof(EspNativeGameplayNotePrefixState, candidate);
+}
+
+void* EspNativeGameplayModalScratch_acquire(uint8_t owner, size_t bytes) {
+    EspNativeGameplayNotePrefixState* state = notePrefix;
+    uint8_t* storage;
+    int allocated = 0;
+
+    if (owner == 0U || owner == 1U || bytes == 0U ||
+        bytes > modalScratchCapacity()) {
+        return NULL;
+    }
+    if (state != NULL && state->busy != 0U) {
+        return NULL;
+    }
+    if (state == NULL) {
+        state = (EspNativeGameplayNotePrefixState*)SDL_calloc(1, sizeof(*state));
+        if (state == NULL) {
+            printf("[MODALSCRATCH] DEFER owner=%u reason=allocation bytes=%u\n",
+                   (unsigned int)owner,
+                   (unsigned int)sizeof(*state));
+            return NULL;
+        }
+        notePrefix = state;
+        allocated = 1;
+    }
+
+    storage = (uint8_t*)&state->candidate;
+    memset(storage, 0, modalScratchCapacity());
+    state->busy = owner;
+    printf("[MODALSCRATCH] ACQUIRE owner=%u bytes=%u capacity=%u backing=note-transient allocation=%s\n",
+           (unsigned int)owner,
+           (unsigned int)bytes,
+           (unsigned int)modalScratchCapacity(),
+           allocated ? "lazy-gameplay" : "reuse");
+    return storage;
+}
+
+void* EspNativeGameplayModalScratch_view(uint8_t owner) {
+    if (owner == 0U || owner == 1U ||
+        notePrefix == NULL || notePrefix->busy != owner) {
+        return NULL;
+    }
+    return (void*)&notePrefix->candidate;
+}
+
+int EspNativeGameplayModalScratch_release(uint8_t owner, void* storage) {
+    EspNativeGameplayNotePrefixState* state = notePrefix;
+    uint8_t* expected;
+
+    if (owner == 0U || owner == 1U || state == NULL ||
+        state->busy != owner) {
+        return 0;
+    }
+    expected = (uint8_t*)&state->candidate;
+    if (storage != (void*)expected) {
+        return 0;
+    }
+
+    memset(expected, 0, modalScratchCapacity());
+    state->busy = 0U;
+    if (state->active == 0U) {
+        SDL_free(state);
+        notePrefix = NULL;
+        printf("[MODALSCRATCH] RELEASE owner=%u backing=freed-no-notebook\n",
+               (unsigned int)owner);
+    }
+    else {
+        printf("[MODALSCRATCH] RELEASE owner=%u backing=note-owner-retained\n",
+               (unsigned int)owner);
+    }
+    return 1;
+}
 
 extern EspNativeGameplayDialogBeginStatus
 __real_EspNativeGameplayDialog_begin(uint16_t eventIndex,
