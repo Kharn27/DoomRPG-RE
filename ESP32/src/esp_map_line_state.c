@@ -240,6 +240,8 @@ EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
     uint8_t openBefore;
     uint8_t locked;
     uint8_t targetOpen;
+    EspMapLine sourceLine;
+    uint32_t effectiveFlags;
 
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
     if (descriptor == NULL || outResult == NULL) {
@@ -253,7 +255,8 @@ EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
         !EspMapEvents_getCommand(descriptor, commandOffset, &command)) {
         return ESP_MAP_LINE_DOOR_INVALID;
     }
-    if (command.id != ESP_MAP_OPCODE_OPENLINE &&
+    if (command.id != ESP_MAP_OPCODE_MOVELINE &&
+        command.id != ESP_MAP_OPCODE_OPENLINE &&
         command.id != ESP_MAP_OPCODE_CLOSELINE) {
         return ESP_MAP_LINE_DOOR_UNSUPPORTED;
     }
@@ -266,7 +269,8 @@ EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
         return ESP_MAP_LINE_DOOR_LINE_OUT_OF_RANGE;
     }
     if (!EspMapLineState_getOpen(lineIndex, &openBefore) ||
-        !EspMapLineState_getLocked(lineIndex, &locked)) {
+        !EspMapLineState_getLocked(lineIndex, &locked) ||
+        !EspMapRuntime_getLine(lineIndex, &sourceLine)) {
         return ESP_MAP_LINE_DOOR_INVALID;
     }
 
@@ -283,9 +287,27 @@ EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
         return ESP_MAP_LINE_DOOR_LOCKED;
     }
 
-    targetOpen = command.id == ESP_MAP_OPCODE_OPENLINE ? 1U : 0U;
-    if (openBefore == targetOpen) {
-        return ESP_MAP_LINE_DOOR_ALREADY_TARGET;
+    if (command.id == ESP_MAP_OPCODE_MOVELINE) {
+        /*
+         * Legacy hidden/selectable doors use EV_MOVELINE. For SELECT the
+         * caller is Game_executeTile(..., 1280), where Game_performDoorEvent
+         * rejects an already-open ordinary line when (flags & 0x58) == 0x40.
+         * Reconstruct those effective flags from immutable line flags plus the
+         * native mutable open bit, then otherwise toggle exactly once.
+         */
+        effectiveFlags =
+            (sourceLine.flags & ~ESP_MAP_LINE_FLAG_OPEN) |
+            (openBefore != 0U ? ESP_MAP_LINE_FLAG_OPEN : 0U);
+        if ((effectiveFlags & 0x58U) == ESP_MAP_LINE_FLAG_OPEN) {
+            return ESP_MAP_LINE_DOOR_ALREADY_TARGET;
+        }
+        targetOpen = openBefore != 0U ? 0U : 1U;
+    }
+    else {
+        targetOpen = command.id == ESP_MAP_OPCODE_OPENLINE ? 1U : 0U;
+        if (openBefore == targetOpen) {
+            return ESP_MAP_LINE_DOOR_ALREADY_TARGET;
+        }
     }
 
     if (!EspMapLineState_setOpen(lineIndex, targetOpen)) {
