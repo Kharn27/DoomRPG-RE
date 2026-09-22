@@ -174,13 +174,21 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)outputHash);
         return 0;
     }
+    if (heapAfter != heapBefore || largestAfter != largestBefore) {
+        printf("[INTRO1] FAILED draw allocation heap8=%u->%u largest8=%u->%u\n",
+               (unsigned int)heapBefore,
+               (unsigned int)heapAfter,
+               (unsigned int)largestBefore,
+               (unsigned int)largestAfter);
+        return 0;
+    }
 
     DoomRPG_flushGraphics(doomRpg);
 
     printf("[INTRO1] READY one deterministic ST_INTRO frame presented once FNV=%08x\n",
            (unsigned int)outputHash);
 
-    if (!Esp32IntroClock_arm(doomRpg)) {
+    if (!Esp32IntroClock_arm(doomRpg, (unsigned int)outputHash)) {
         printf("[INTRO1] FAILED to arm bounded intro clock\n");
         return 0;
     }
