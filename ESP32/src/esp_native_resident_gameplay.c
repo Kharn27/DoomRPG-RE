@@ -15,6 +15,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_dialog.h"
+#include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hub.h"
@@ -800,6 +801,14 @@ static void servicePasswordCompletion(
     EspNativeGameplayDialogResumeResult resume;
     EspNativeGameplayDialogResumeStatus resumeStatus =
         ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND;
+    EspNativeGameplayDialogBeginStatus dialogStatus =
+        ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    const int resumeIntoDialog =
+        completion != NULL && completion->correct != 0U &&
+        completion->close.resumeHasCommand != 0U &&
+        (completion->close.resumeCodeId == ESP_MAP_OPCODE_DIALOG ||
+         completion->close.resumeCodeId == ESP_MAP_OPCODE_DIALOG_NO_BACK) &&
+        completion->resumeDialogOffset != UINT8_MAX;
     int feedbackQueued = 0;
 
     memset(&resume, 0, sizeof(resume));
@@ -811,20 +820,23 @@ static void servicePasswordCompletion(
     }
 
     if (completion->correct != 0U) {
-        resumeStatus =
-            EspNativeGameplayDialog_resume(&completion->close, &resume);
-        if (resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
-            resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
-            printf("[RESIDENTGAMEPLAY] PASSWORD-RESUME-FAILED event=%u offset=%u status=%s\n",
-                   (unsigned int)completion->close.sourceEventIndex,
-                   (unsigned int)completion->close.resumeCommandOffset,
-                   EspNativeGameplayDialog_resumeStatusName(resumeStatus));
-            disableGameplay("password-resume");
-            return;
-        }
         feedbackQueued = EspNativeGameplayActionEngine_queueTextFeedback(
             ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
             "Correct code!", 0U);
+
+        if (!resumeIntoDialog) {
+            resumeStatus =
+                EspNativeGameplayDialog_resume(&completion->close, &resume);
+            if (resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+                resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
+                printf("[RESIDENTGAMEPLAY] PASSWORD-RESUME-FAILED event=%u offset=%u status=%s\n",
+                       (unsigned int)completion->close.sourceEventIndex,
+                       (unsigned int)completion->close.resumeCommandOffset,
+                       EspNativeGameplayDialog_resumeStatusName(resumeStatus));
+                disableGameplay("password-resume");
+                return;
+            }
+        }
     }
     else if (completion->hadInput != 0U) {
         feedbackQueued = EspNativeGameplayActionEngine_queueTextFeedback(
@@ -836,7 +848,7 @@ static void servicePasswordCompletion(
                        completion->correct != 0U
                            ? "PASSWORD-CORRECT"
                            : "PASSWORD-INVALID")) {
-        if (completion->correct != 0U &&
+        if (completion->correct != 0U && !resumeIntoDialog &&
             resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
             resume.rollbackAvailable != 0U &&
             EspNativeGameplayDialog_rollbackResume(&resume) &&
@@ -848,6 +860,34 @@ static void servicePasswordCompletion(
             return;
         }
         disableGameplay("password-render-rollback");
+        return;
+    }
+
+    if (resumeIntoDialog) {
+        dialogStatus = EspNativeGameplayEventChain_beginDialogCommand(
+            completion->close.sourceEventIndex,
+            completion->resumeDialogOffset,
+            completion->close.runFlags);
+        if (dialogStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+            printf("[RESIDENTGAMEPLAY] PASSWORD-DIALOG-DEFER event=%u cmd=%u opcode=%u status=%s worldRedrawn=yes\n",
+                   (unsigned int)completion->close.sourceEventIndex,
+                   (unsigned int)completion->resumeDialogOffset,
+                   (unsigned int)completion->close.resumeCodeId,
+                   EspNativeGameplayDialog_beginStatusName(dialogStatus));
+            disableGameplay("password-dialog-open");
+            return;
+        }
+
+        ++gameplayState.dialogs;
+        printf("[RESIDENTGAMEPLAY] PASSWORD-CLOSE event=%u entered=%u/%u result=correct continuation=dialog-open opcode=%u cmd=%u mutation=0 redraw=yes message=%s dialogActive=yes back=%s turnAdvance=deferred\n",
+               (unsigned int)completion->close.sourceEventIndex,
+               (unsigned int)completion->enteredLength,
+               (unsigned int)completion->expectedLength,
+               (unsigned int)completion->close.resumeCodeId,
+               (unsigned int)completion->resumeDialogOffset,
+               feedbackQueued ? "queued" : "none",
+               completion->close.resumeCodeId == ESP_MAP_OPCODE_DIALOG
+                   ? "yes" : "no");
         return;
     }
 
