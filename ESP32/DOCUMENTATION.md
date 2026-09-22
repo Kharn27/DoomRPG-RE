@@ -23,8 +23,9 @@ hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
 hardware-tested rotation no-turn boundary = b548321f477626777800371f0f82a9f3c2375bd9
 hardware-tested current code boundary = e070057d3b9466f87189c504f86099b7e9f2fb67
 hardware-tested player hit feedback boundary = e070057d3b9466f87189c504f86099b7e9f2fb67
+player hit feedback review-fix candidate = 13e42a44cb8e08dff05e58cc701943152a12b672 (CI PASS, lethal-gib overlap retest pending)
 merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
-status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN + PLAYER HIT FEEDBACK PASS
+status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN + PLAYER HIT FEEDBACK PASS at e070057; gib-preservation review fix pending retest
 ```
 
 GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource boundary. The HUB/action-feedback ownership gate passed CI run #267 / run ID `35198140562` and is also real-CYD validated. Save-v3 script persistence passed CI run #275 / run ID `35199788280` on exact code boundary `fd206c5238ac2db62939d100bf3d08ac39081c69`. Save-v4 line persistence plus the HUB stack fix passed CI run #293 / run ID `35344853078` on exact code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` and is real-CYD validated. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal `esp32-cyd` run #311 passed on that exact merged main. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal run #313 / `35581250636`, and docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` passed run #318 / `35581419960`. The real CYD then confirmed the corrected rotation behavior. The mixed physical/touch SAVE cursor fix remains merged and CI-proven, but its dedicated real-CYD mixed-input check is still pending. PR #141 merged the rotation milestone at `5ac68378363b77daf9f98203966726557dc9b0ad`; normal `esp32-cyd` run #334 passed on that exact merged main. The first player-hit feedback build proved the message path but its blood burst was late and blob-like. The corrected spray boundary `6dfe67d3f639e5f9aad7849db6638042b7bdc508` passed CI #346 and was visually validated on the real CYD. The following zombie attack exposed a loopTask stack canary. Final code boundary `e070057d3b9466f87189c504f86099b7e9f2fb67` moves the 324 B combat rollback owner off-stack and reuses one render-stats record; CI #350 passed. Hardware then completed nonlethal and lethal zombie attacks plus lethal Hellhound feedback with no reboot, correct damage sums, synchronized spray and clean expiry.
@@ -480,40 +481,41 @@ Detailed record:
 
 Current branch: `agent/esp32-native-player-hit-feedback`.
 
-The bounded candidate restores the missing player-to-monster combat presentation without changing combat semantics:
+The player-hit feedback behavior remains hardware-proven at
+`e070057d3b9466f87189c504f86099b7e9f2fb67`, including damage text, synchronized
+kinematic blood spray, zombie nonlethal/lethal paths, retaliation and the
+loopTask stack-headroom repair.
+
+A PR review found one narrow composition edge case for **gib deaths**: the
+hit-spray expiry can force a full redraw while the independent 350 ms gib burst
+is still active. The old presenter only painted newly hidden gib monsters, so an
+already-seen active gib could be erased early by that redraw.
+
+Review-fix candidate:
 
 ```text
-Combat roll/commit stays authoritative
- -> damage result top-bar text
- -> short enemy impact blood overlay
- -> normal PLAYER_ATTACK turn scheduling
+13e42a44cb8e08dff05e58cc701943152a12b672
+esp32-cyd run #363 / 35697742353 = SUCCESS
 ```
 
-Legacy message parity recovered:
+The existing bounded gib owner now stores the active burst's deterministic seed
+and particle count and recomposes that exact burst on later presents until the
+original deadline. It does not allocate, consume gameplay RNG or extend the
+lease. Map identity is checked before replay.
+
+Required hardware retest: trigger a lethal **gib** death and confirm the gib
+effect survives any intervening `[HITFX] EXPIRE`/world redraw until its own
+`[GIBFX] EXPIRE`. Expected additional witness:
 
 ```text
-"<N> damage!"
-"Crit! <N> damage!"
-"Missed!"
-N = totalDamage + totalArmorDamage
+[GIBFX] REPAINT ... lease=preserved composition=present ...
 ```
 
-Candidate code:
+After that one overlap witness, update the milestone/status docs only and restore
+merge-ready.
 
-```text
-e070057d3b9466f87189c504f86099b7e9f2fb67
-esp32-cyd run #350 / 35611816011 = SUCCESS
-```
-
-Blood is presentation-only: at most 64 deterministic local visual droplets around the cardinal target center, 350 ms lease, red/blue/green variants recovered from entity subtype/parm, no heap and no gameplay RNG. Hardware confirms the pre-armed legacy-kinematic spray looks correct. The stack repair reduces `servicePending()` from 1040 B to 608 B automatic frame in the CI ELF and is now hardware-proven by the formerly crashing zombie path. Damage text remains `totalDamage + totalArmorDamage`, and `PLAYER_ATTACK` scheduling/retaliation remain intact.
-
-Detailed candidate record:
-
-- [`MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md`](MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md)
-
-Hardware should exercise a nonlethal hit, lethal hit and preferably a miss/crit. The existing lethal monster-name suffix is intentionally deferred for this first bounded UI width.
-
-A separate pending regression remains from the previous merged PR: mixed physical SAVE/LOAD cursor navigation followed by direct touch still needs its dedicated real-CYD check. The CHANGEMAP candidate also still needs its dedicated hardware level-exit PASS.
+The mixed physical/touch SAVE cursor regression check and dedicated CHANGEMAP
+level-exit PASS remain separate pending items.
 
 ## Recent milestone index
 
