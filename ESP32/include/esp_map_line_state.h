@@ -9,6 +9,7 @@
 extern "C" {
 #endif
 
+#define ESP_MAP_OPCODE_MOVELINE 6U
 #define ESP_MAP_OPCODE_OPENLINE 15U
 #define ESP_MAP_OPCODE_CLOSELINE 16U
 
@@ -81,8 +82,10 @@ int EspMapLineState_setOpen(uint32_t lineIndex, uint8_t open);
 int EspMapLineState_setLocked(uint32_t lineIndex, uint8_t locked);
 
 /*
- * Execute only real 15/EV_OPENLINE and 16/EV_CLOSELINE semantics against the
- * native line overlay. A successful transition owns only the canonical open
+ * Execute real 6/EV_MOVELINE, 15/EV_OPENLINE and 16/EV_CLOSELINE semantics
+ * against the native line overlay. EV_MOVELINE is used by selectable hidden
+ * doors and toggles the current open bit; its SELECT/open special no-op mirrors
+ * Game_performDoorEvent(... flags=1280). A successful transition owns only the canonical open
  * bit mutation; animation, legacy collision-entity relinking and sound are
  * returned as effect flags for later native consumers and are not performed.
  *
