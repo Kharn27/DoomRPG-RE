@@ -99,6 +99,45 @@ static void onGameplayTap(int16_t screenX,
 
     logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     logicalY = screenY / DOOMRPG_INTEGER_SCALE;
+    if (logicalX < 0 || logicalX >= DOOMRPG_LOGICAL_WIDTH ||
+        logicalY < 0 || logicalY >= DOOMRPG_LOGICAL_HEIGHT) {
+        return;
+    }
+
+    /*
+     * Dialog owns the whole touch surface. A tap anywhere means the same
+     * semantic SELECT that the legacy HIT key used: first finish the current
+     * typewriter page, then advance/page/resume on later taps. Keep this route
+     * separate from the world/HUB hit map so no movement, weapon or menu action
+     * can leak through while dialog is active. Deliberately skip the normal
+     * zone-flash overlay here: a full-screen feedback rectangle would be noisy
+     * and would consume the bounded edit owner for no gameplay value.
+     */
+    if (EspNativeGameplayDialog_isActive()) {
+        memset(&hit, 0, sizeof(hit));
+        hit.action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
+        hit.zone = ESP_NATIVE_GAMEPLAY_ZONE_SELECT;
+        hit.left = 0U;
+        hit.top = 0U;
+        hit.right = (uint8_t)(DOOMRPG_LOGICAL_WIDTH - 1);
+        hit.bottom = (uint8_t)(DOOMRPG_LOGICAL_HEIGHT - 1);
+
+        ++gameplayState.taps;
+        status = EspNativeGameplayInput_route(&hit, logicalX, logicalY);
+        if (status == ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+            printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=SELECT zone=%u logical=%d,%d context=DIALOG tapDomain=full-screen feedback=none\n",
+                   (unsigned int)gameplayState.taps,
+                   (unsigned int)hit.zone,
+                   logicalX,
+                   logicalY);
+        }
+        else if (status == ESP_NATIVE_GAMEPLAY_INPUT_BUSY) {
+            printf("[RESIDENTGAMEPLAY] BUSY tap=%u action=SELECT context=DIALOG pending=1\n",
+                   (unsigned int)gameplayState.taps);
+        }
+        return;
+    }
+
     status = EspNativeGameplayInput_classify(logicalX, logicalY, &hit);
     if (status != ESP_NATIVE_GAMEPLAY_INPUT_OK) return;
 
@@ -121,7 +160,7 @@ static void onGameplayTap(int16_t screenX,
                EspNativeGameplayHub_isActive()
                    ? "HUB"
                    : (EspNativeGameplayDialog_isActive() ? "DIALOG" : "WORLD"));
-        printf("[TOUCHFEEDBACK] FLASH zone=%u action=%s edits=%u hold=%ums frame=%08x->%08x style=junction-neon-double-ring+vector-glyph\n",
+        printf("[TOUCHFEEDBACK] FLASH zone=%u action=%s edits=%u hold=%ums frame=%08x->%08x style=semantic-neon-double-ring+vector-glyph\n",
                (unsigned int)feedbackStats.zone,
                EspNativeGameplayInput_actionName(feedbackStats.action),
                (unsigned int)feedbackStats.edits,
