@@ -36,7 +36,7 @@ typedef struct EspNativeGameplayPasswordCompletion_s {
     uint8_t correct;
     uint8_t hadInput;
     uint8_t pending;
-    uint8_t reserved;
+    uint8_t resumeDialogOffset;
 } EspNativeGameplayPasswordCompletion;
 
 /*
