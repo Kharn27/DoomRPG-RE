@@ -68,21 +68,40 @@ static uint32_t nowMs(void) {
 
 static FeedbackPalette feedbackPalette(const EspNativeGameplayTouchHit* hit) {
     FeedbackPalette palette;
-    if (hit == NULL || hit->top < 20U) {
-        palette.halo = NEON_BLUE_HALO;
-        palette.core = NEON_BLUE_CORE;
-    }
-    else if (hit->top < 46U) {
+
+    /* Top-HUD/default blue. World controls are grouped by semantics instead of
+     * by physical row so the invisible 3x3 grid reads consistently on touch. */
+    palette.halo = NEON_BLUE_HALO;
+    palette.core = NEON_BLUE_CORE;
+    if (hit == NULL) return palette;
+
+    switch (hit->action) {
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK:
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT:
+    case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT:
+    case ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT:
+    case ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT:
         palette.halo = NEON_GREEN_HALO;
         palette.core = NEON_GREEN_CORE;
-    }
-    else if (hit->top < 73U) {
-        palette.halo = NEON_YELLOW_HALO;
-        palette.core = NEON_YELLOW_CORE;
-    }
-    else {
+        break;
+
+    case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
         palette.halo = NEON_RED_HALO;
         palette.core = NEON_RED_CORE;
+        break;
+
+    case ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON:
+    case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
+        palette.halo = NEON_YELLOW_HALO;
+        palette.core = NEON_YELLOW_CORE;
+        break;
+
+    case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN:
+    case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN:
+    case ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP:
+    default:
+        break;
     }
     return palette;
 }
