@@ -32,6 +32,11 @@ typedef struct CrateStateOwner_s {
 static CrateStateOwner crateState;
 
 int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
+int __real_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
+                                          uint8_t* outType,
+                                          uint8_t* outSubType,
+                                          uint16_t* outLinkState,
+                                          uint16_t* outLinkOrder);
 
 static int rawDefinition(uint32_t spriteIndex,
                          uint16_t* outDefTile,
@@ -118,6 +123,7 @@ int EspNativeGameplayCrateState_ensure(void) {
         runtime->mapSpriteCount > ESP_MAP_SPRITE_TOPOLOGY_MAX_SPRITES ||
         playerView == NULL || playerView->active != 1U ||
         playerView->targetMapId == 0U ||
+        !EspMapSpriteTopology_isReady() ||
         !EspEntityDefTypeCatalog_isReady()) {
         return 0;
     }
@@ -137,12 +143,16 @@ int EspNativeGameplayCrateState_ensure(void) {
     for (i = 0U; i < runtime->mapSpriteCount; ++i) {
         uint8_t type;
         uint8_t subtype;
-        int32_t parm;
-        if (!rawDefinition(i, NULL, &type, &subtype, &parm)) {
+        uint16_t linkState;
+        uint16_t linkOrder;
+        if (!__real_EspMapSpriteTopology_getEntity(
+                i, &type, &subtype, &linkState, &linkOrder)) {
             crateState.view.fatal = 1U;
             break;
         }
-        if (type == CRATE_ENTITY_TYPE && subtype == CRATE_ENTITY_SUBTYPE) {
+        (void)linkOrder;
+        if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) != 0U &&
+            type == CRATE_ENTITY_TYPE && subtype == CRATE_ENTITY_SUBTYPE) {
             ++crates;
         }
     }
