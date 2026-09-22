@@ -1322,15 +1322,20 @@ bool loadNow(void) {
            loaded.hasActionRemoved == 1U
                ? (unsigned long)loaded.actionRemoved.stateFNV1a
                : 0UL,
-           loaded.hasActionRemoved == 1U
-               ? "resources+script+lines+action-removals-restored+others-fresh"
-               : (loaded.hasLines == 1U
-                      ? "resources+script+lines-restored+action-removals+others-fresh"
-                      : (loaded.hasScript == 1U
-                             ? "resources+script-restored+lines+action-removals+others-fresh"
-                             : (loaded.hasResources == 1U
-                                    ? "resources-restored+script+lines+action-removals+others-fresh"
-                                    : "fresh-rebuild-v1"))));
+           record->version == kVersionV6 ? "restored" : "legacy-none",
+           (unsigned int)crateTransformCount,
+           (unsigned long)crateTransformFNV,
+           record->version == kVersionV6
+               ? "resources+script+lines+action-removals+crate-transforms-restored+others-fresh"
+               : (loaded.hasActionRemoved == 1U
+                      ? "resources+script+lines+action-removals-restored+others-fresh"
+                      : (loaded.hasLines == 1U
+                             ? "resources+script+lines-restored+action-removals+others-fresh"
+                             : (loaded.hasScript == 1U
+                                    ? "resources+script-restored+lines+action-removals+others-fresh"
+                                    : (loaded.hasResources == 1U
+                                           ? "resources-restored+script+lines+action-removals+others-fresh"
+                                           : "fresh-rebuild-v1")))));
     return true;
 }
 
