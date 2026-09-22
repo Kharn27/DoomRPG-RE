@@ -5,26 +5,51 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-main at branch creation = 5ac68378363b77daf9f98203966726557dc9b0ad
-current main = 5ac68378363b77daf9f98203966726557dc9b0ad
-main merge = PR #141
-branch = agent/esp32-native-player-hit-feedback
+main at branch creation = 1ae140d6082f70b947426ae02893246601400416
+current main = 1ae140d6082f70b947426ae02893246601400416
+main merge = PR #142
+branch = agent/esp32-native-save-v5-world-removals
 hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2ec6bf
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
-hardware-tested rotation no-turn boundary = b548321f477626777800371f0f82a9f3c2375bd9
-hardware-tested current code boundary = 13e42a44cb8e08dff05e58cc701943152a12b672
-hardware-tested player hit feedback boundary = 13e42a44cb8e08dff05e58cc701943152a12b672
-player hit feedback review-fix boundary = 13e42a44cb8e08dff05e58cc701943152a12b672 (CI PASS, REAL-CYD lethal-gib overlap PASS)
-merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
-status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN + PLAYER HIT FEEDBACK + GIB PRESERVATION PASS at 13e42a4
+hardware-tested save-v5 action-removal boundary = d65e5b9be9947e92c700b2296790b003ff7b7df0
+hardware-tested current code boundary = d65e5b9be9947e92c700b2296790b003ff7b7df0
+status = REAL-CYD CHECKPOINT V5 ACTION-REMOVALS + CHECKPOINT RESUME PASS
 branch policy = MERGE-READY; post-test tail docs-only
 ```
 
-Normal GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource code boundary. The HUB/action-feedback ownership fix passed CI in run #267 / run ID `35198140562` and is also real-CYD validated. The save-v3 script persistence boundary `fd206c5238ac2db62939d100bf3d08ac39081c69` passed GitHub Actions `esp32-cyd` run #275 / run ID `35199788280` and is real-CYD validated in both rollback and persistence directions. The save-v4 line boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` passed GitHub Actions `esp32-cyd` run #293 / run ID `35344853078` and is real-CYD validated, including the HUB stack fix and soldier-door unlock persistence. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal push run #311 passed on that exact merged `main`. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal `esp32-cyd` run #313 / `35581250636`; docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` then passed run #318 / `35581419960`. The user subsequently confirmed the corrected behavior on the real classic CYD. The merged mixed physical/touch SAVE cursor repair remains CI-proven but not yet separately real-CYD proven. PR #141 merged the rotation milestone at `5ac68378363b77daf9f98203966726557dc9b0ad`; normal `esp32-cyd` run #334 passed on that exact merged main. The first player-hit feedback candidate was hardware-tested and the semantic text path worked, but the blood presentation was visibly late and too blob-like. The corrected spray boundary `6dfe67d3f639e5f9aad7849db6638042b7bdc508` passed CI #346 and the real CYD confirmed the spray/timing visually. That run exposed a loopTask stack canary on the next zombie attack. The final repair `e070057d3b9466f87189c504f86099b7e9f2fb67` moved the 324 B monster-combat rollback owner off loopTask stack and reused one frame-stats record; CI #350 passed. Real-CYD retest then completed a nonlethal zombie hit, retaliation, lethal zombie hit and lethal Hellhound hit with correct damage text, attack-frame spray, clean expiry and no reboot. This is the current hardware-tested boundary. PR review then identified that a fresh redraw during an active gib lease could erase the already-seen gib burst early. Candidate `13e42a44cb8e08dff05e58cc701943152a12b672` stores only a deterministic active-burst replay descriptor in the existing bounded gib owner and recomposes it on presents until the original 350 ms deadline; it does not extend the lease or touch gameplay RNG. Normal `esp32-cyd` run #363 / `35697742353` passed. The real CYD then exercised the exact overlap: close-range lethal Hellhound hit (`gib=1`), `[GIBFX] PAINT`, an intervening hit-effect cleanup world redraw, `[GIBFX] REPAINT ... lease=preserved composition=present`, then `[GIBFX] EXPIRE ... repaints=1`. The gib survived the unrelated redraw until its own 350 ms deadline with gameplay RNG untouched and no reboot. The review fix is hardware-valid and merge-ready.
+PR #142 merged the player-hit-feedback work into main at
+`1ae140d6082f70b947426ae02893246601400416`. This V5 branch was created from
+that exact SHA.
+
+V5 adds only the compact action-engine removed-sprite overlay to the existing
+V1-V4 checkpoint sections. The final code boundary
+`d65e5b9be9947e92c700b2296790b003ff7b7df0` passed normal
+`esp32-cyd` GitHub Actions run #387 / run ID `35704985512` and is now
+validated on the real classic CYD.
+
+The hardware sequence proved: normal startup after the V5 workspace memory
+repair; SAVE of one cleared fire as `actionRemoved=1/43B/a54be373`; LOAD of
+the exact same removal fingerprint; a second never-cleared fire remaining
+present; restored open-line rendering through the production dynamic-line
+wrapper; settled HUD reprime; resident cache reprime; one-shot
+`checkpoint-resume` admission; touch/gameplay rearm; and final
+`[ENGINESESSION] READY` with `shapeData=0x0 mediaTexels=0x0`.
+
+Hardware also exposed three checkpoint-resume gates that were corrected before
+this PASS: the historical fresh-map first-frame rejected restored open lines,
+the initial HUD owners were missing after settled-view restore, and resident
+gameplay still required the deliberately skipped fresh-first-frame owner. The
+normal fresh-map path remains unchanged.
+
+Final LOAD memory observation was `heap8=13576`, `largest8=5364`. This is
+below the existing advisory reserve targets and remains a fragmentation/headroom
+review item; the load, render, cache reprime and gameplay rearm nevertheless
+completed successfully.
 
 Latest detailed records:
 
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
 - [`MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md`](MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md)
 - [`MILESTONE_NATIVE_ROTATE_NO_TURN.md`](MILESTONE_NATIVE_ROTATE_NO_TURN.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md)
@@ -32,7 +57,9 @@ Latest detailed records:
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V2_RESOURCES.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V1.md)
 
-CHANGEMAP production code is also present on this branch but has **not yet received its dedicated real-CYD exit-transition PASS**. Do not conflate checkpoint validation with CHANGEMAP hardware validation.
+CHANGEMAP production code is also present but has **not yet received its
+dedicated real-CYD exit-transition PASS**. Do not conflate checkpoint validation
+with CHANGEMAP hardware validation.
 
 ## Permanent architecture / hard invariants
 
@@ -143,7 +170,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, and HUB/world framebuffer ownership gating for transient action feedback.
+Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, checkpoint-resume HUD/cache/input rearm, and HUB/world framebuffer ownership gating for transient action feedback.
 
 The player root remains:
 
@@ -382,7 +409,7 @@ Detailed record:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V4_LINES.md)
 
-### Current v4 world boundary
+### Historical v4 world boundary (superseded by V5)
 
 Persisted:
 
@@ -412,6 +439,99 @@ mediaTexels == NULL
 heap8 = 14076
 largest8 = 6644
 ```
+
+## Native checkpoint save/load v5 action removals — REAL-CYD PASS
+
+V5 preserves the proven V1-V4 sections and appends one compact
+`EspNativeGameplayActionRemovedSnapshot`:
+
+```text
+magic = DRPGSAV5
+version = 5
+recordBytes = 1356
+V1/V2/V3/V4 read compatibility = retained
+write format = V5
+max removed-sprite payload = 128 B / 1024 sprites
+Entrance payload = 43 B / 344 sprites
+```
+
+The section owns only the action engine's semantic removed-sprite bitset plus
+runtime/map identity and a semantic fingerprint. It does not serialize legacy
+entities, renderer objects or a generic mutable world graph.
+
+Real-CYD SAVE witness:
+
+```text
+[NATIVESAVE] SAVE ... version=5 bytes=1356
+             pos=288,1248 angle=0
+             playerFNV=15cb16e4 runtimeFNV=c3882516
+             resources=5/43B
+             script=93/265/81B scriptFNV=26f291e3
+             lines=480/60B open=1 locked=6 texture10=1
+             lineFNV=c50b0721 textureFNV=bda09634
+             actionRemoved=1/43B/a54be373
+```
+
+LOAD rebuilt the immutable Entrance runtime, restored the exact checkpoint
+owners and reproduced the same action-removal fingerprint:
+
+```text
+[NATIVESAVE] REPRIME-HUD ... refresh=pending clear=ready ...
+[PLAYERRES] RESTORE ... consumed=5 bytes=43
+[MAPLINECHECKPOINT] RESTORE ... open=1 locked=6 texture10=1
+[NATIVESAVE] LOAD ... version=5 bytes=1356
+             actionRemoved=restored/1/43B/a54be373
+[ENGINESESSION] RESUME checkpoint=restored freshFirstFrame=skipped dynamicLines=gameplay-wrapper
+[RESIDENTGAMEPLAY] READY map=current entry=checkpoint-resume ...
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+```
+
+The user visually confirmed that the fire cleared before SAVE stayed absent
+after LOAD while another fire that had never been cleared remained lit. A
+stronger opposite-direction mirror (clear a second fire after SAVE and prove it
+returns on LOAD) was not exercised in the supplied log and is not claimed.
+
+The final code boundary is:
+
+```text
+d65e5b9be9947e92c700b2296790b003ff7b7df0
+esp32-cyd #387 / 35704985512 = SUCCESS
+REAL-CYD = PASS
+```
+
+### Current V5 world boundary
+
+Persisted:
+
+```text
+settled player pose
+EspNativeGameplayPlayerState
+EspNativeGameplayPlayerResources consumed overlay
+EspMapScriptState event states + removed-command bits
+EspMapLineState open/locked state
+EspMapLineTextureState locked/unlocked texture variants
+EspNativeGameplayActionEngine action-owned removed-sprite overlay
+```
+
+Still intentionally fresh / not yet persisted:
+
+```text
+automap reveal state
+monster mutable state/positions/activation/combat consequences
+full entity/sprite dynamic state and transformed definitions
+destructible transformed state such as crate -> pickup
+power-coupling health/death globals
+persistent GSprites
+ceiling/floor color
+other legacy player metadata not yet owned natively
+```
+
+Gameplay RNG is rebuilt fresh, but the recovered original save format does not
+serialize RNG state, so this is not listed as a missing original-save field.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
 
 ## HUB/action-feedback framebuffer ownership — REAL-CYD PASS
 
@@ -470,41 +590,32 @@ The correction adds no allocation, gameplay RNG use, topology mutation, renderer
 
 ## Next bounded milestone
 
-The active bounded polish milestone is **player -> monster hit feedback**.
+The V5 action-removal checkpoint is hardware-valid and merge-ready. After it is
+merged, recover the new exact `main` SHA before creating the next branch.
 
-Legacy recovery from `Combat_playerSeq()` and `Combat_spawnBloodParticles()` established:
+The preferred next bounded gameplay family is **generic type-12 destructibles,
+starting with crate subtype 2**. Legacy recovery already shows that this cannot
+be represented as a simple removed bit: crates can break, explode when trapped,
+or transform into one of several pickup definitions according to exact gameplay
+RNG thresholds.
 
-```text
-normal hit -> "<totalDamage + totalArmorDamage> damage!"
-critical   -> "Crit! <totalDamage + totalArmorDamage> damage!"
-miss       -> "Missed!"
-enemy hit  -> short screen-space blood-particle effect
-```
+The next milestone should therefore preserve the existing event-first SELECT
+ordering, honor the EntityDef weapon mask, implement only the exact bounded
+crate/destructible family being claimed, and introduce a compact native mutable
+owner for transformed state. Unsupported destructible subtypes remain
+fail-closed until their own boundary.
 
-Candidate:
+Do not make the V5 removal overlay own transformed crates. A crate that becomes
+a pickup is still present in the world and needs its own semantic state and
+eventual persistence section.
 
-```text
-branch = agent/esp32-native-player-hit-feedback
-code = e070057d3b9466f87189c504f86099b7e9f2fb67
-CI = esp32-cyd #350 / 35611816011 SUCCESS
-milestone = MILESTONE_NATIVE_PLAYER_HIT_FEEDBACK.md
-status = hardware retest pending
-```
-
-The implementation reuses the proven bounded top-bar feedback owner and adds one tiny presentation-only hit FX owner. Blood uses a deterministic local visual RNG, not gameplay RNG, max 64 bounded droplets, a 350 ms lease, no heap allocation and no legacy `ParticleSystem_t` ownership. Hardware now validates the recovered velocity/gravity spray visually and its attack-frame timing.
-
-That same hardware run exposed a separate loopTask stack canary during the next zombie attack. The exact failing ELF showed `servicePending()` carrying a 1040 B automatic frame while nesting the renderer. The current candidate moves the 324 B combat-owner rollback copy to bounded static BSS and reuses one frame-stats object; CI #350's ELF measures the automatic frame at 608 B. Combat/RNG/FX semantics are unchanged; real-CYD zombie retest is pending.
-
-Hardware must prove the visible message, visible blood pixels, clean 350 ms restore, unchanged `PLAYER_ATTACK` monster-turn scheduling, and no gameplay-RNG side effects. A miss should show `"Missed!"` with no blood.
-
-The legacy lethal `" <name> died!"` suffix remains explicitly deferred at this first bounded top-bar width; ordinary death/corpse/gib semantics are unchanged.
-
-The merged SAVE/LOAD touch-cursor review fix still needs one short mixed-input hardware regression check when convenient. The CHANGEMAP production candidate also remains without its dedicated real-CYD level-exit PASS.
+The dedicated CHANGEMAP real-CYD exit test and mixed physical/touch SAVE cursor
+regression remain separate pending checks.
 
 ## Intentionally deferred / incomplete families
 
 ```text
-save-v4 mutable-world persistence beyond each validated section
+save-v5 mutable-world persistence beyond each validated section
 CHANGEMAP real-CYD exit validation
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
