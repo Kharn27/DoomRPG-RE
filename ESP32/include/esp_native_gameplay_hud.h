@@ -74,6 +74,11 @@ void EspNativeGameplayHud_reset(void);
 int EspNativeGameplayHud_isReady(void);
 const EspNativeGameplayHudState* EspNativeGameplayHud_view(void);
 
+/* Reapply only the permanent corner-notch chrome for the three top touch
+ * zones after another subsystem has repainted the complete 20-row top bar.
+ * No PAK access, owner mutation or presentation is performed. */
+int EspNativeGameplayHud_paintTopTouchNotches(void);
+
 /* Pure validation/face selection; no framebuffer, PAK or owner mutation. */
 EspNativeGameplayHudStatus EspNativeGameplayHud_prepareInitial(
     const EspNativeGameplayHudModel* model,
