@@ -257,7 +257,8 @@ EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
     }
     if (command.id != ESP_MAP_OPCODE_MOVELINE &&
         command.id != ESP_MAP_OPCODE_OPENLINE &&
-        command.id != ESP_MAP_OPCODE_CLOSELINE) {
+        command.id != ESP_MAP_OPCODE_CLOSELINE &&
+        command.id != ESP_MAP_OPCODE_MOVELINE2) {
         return ESP_MAP_LINE_DOOR_UNSUPPORTED;
     }
 
@@ -287,19 +288,19 @@ EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
         return ESP_MAP_LINE_DOOR_LOCKED;
     }
 
-    if (command.id == ESP_MAP_OPCODE_MOVELINE) {
+    if (command.id == ESP_MAP_OPCODE_MOVELINE ||
+        command.id == ESP_MAP_OPCODE_MOVELINE2) {
         /*
-         * Legacy hidden/selectable doors use EV_MOVELINE. For SELECT the
-         * caller is Game_executeTile(..., 1280), where Game_performDoorEvent
-         * rejects an already-open ordinary line when (flags & 0x58) == 0x40.
-         * Reconstruct those effective flags from immutable line flags plus the
-         * native mutable open bit, then otherwise toggle exactly once.
+         * Legacy EV_MOVELINE/EV_MOVELINE2 both toggle. Only EV_MOVELINE has
+         * the SELECT/open special no-op in Game_performDoorEvent().
          */
-        effectiveFlags =
-            (sourceLine.flags & ~ESP_MAP_LINE_FLAG_OPEN) |
-            (openBefore != 0U ? ESP_MAP_LINE_FLAG_OPEN : 0U);
-        if ((effectiveFlags & 0x58U) == ESP_MAP_LINE_FLAG_OPEN) {
-            return ESP_MAP_LINE_DOOR_ALREADY_TARGET;
+        if (command.id == ESP_MAP_OPCODE_MOVELINE) {
+            effectiveFlags =
+                (sourceLine.flags & ~ESP_MAP_LINE_FLAG_OPEN) |
+                (openBefore != 0U ? ESP_MAP_LINE_FLAG_OPEN : 0U);
+            if ((effectiveFlags & 0x58U) == ESP_MAP_LINE_FLAG_OPEN) {
+                return ESP_MAP_LINE_DOOR_ALREADY_TARGET;
+            }
         }
         targetOpen = openBefore != 0U ? 0U : 1U;
     }
