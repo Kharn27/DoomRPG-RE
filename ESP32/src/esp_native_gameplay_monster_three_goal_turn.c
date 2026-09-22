@@ -310,12 +310,54 @@ static int cardinalTraceClear(int32_t sourceX,
     if (distance == 0U || distance > 31U) return 0;
 
     for (i = 1U; i <= distance; ++i) {
+        int32_t prevX = sourceX + stepX * (int32_t)(i - 1U);
+        int32_t prevY = sourceY + stepY * (int32_t)(i - 1U);
         int32_t x = sourceX + stepX * (int32_t)i;
         int32_t y = sourceY + stepY * (int32_t)i;
         uint16_t tile;
         uint8_t flags;
         int lineBlock;
         int spriteBlock;
+
+        /*
+         * Legacy Game_trace() walks the source cell first, then every crossed
+         * destination cell. The previous native planner inspected only the
+         * destination cell, which let a movement-only thin blocker (for
+         * example shoot-through bars linked on the source side) be skipped.
+         * Inspect the original source cell exactly once, then keep the existing
+         * per-destination walk. The attacker itself remains excluded by
+         * blockingSpriteOnTile().
+         */
+        if (i == 1U) {
+            uint16_t sourceTile;
+            uint8_t sourceFlags;
+            if (!tileIndexFor(prevX, prevY, &sourceTile) ||
+                !EspMapState_getTileFlags(sourceTile, &sourceFlags)) {
+                return 0;
+            }
+            if ((sourceFlags & ESP_MAP_TILE_WALL) != 0U) return 0;
+            lineBlock = closedLineBlocksTile(sourceTile, mask);
+            if (lineBlock < 0) return -1;
+            if (lineBlock > 0) {
+                printf("[MONSTER3GOAL] TRACE-BLOCK side=source kind=line tile=%u mask=%04x from=%d,%d to=%d,%d\n",
+                       (unsigned int)sourceTile,
+                       (unsigned int)mask,
+                       (int)prevX, (int)prevY, (int)x, (int)y);
+                return 0;
+            }
+            spriteBlock = blockingSpriteOnTile(sourceTile,
+                                               prevX, prevY, x, y,
+                                               attackerSprite, mask,
+                                               strictSpecial);
+            if (spriteBlock < 0) return spriteBlock;
+            if (spriteBlock > 0) {
+                printf("[MONSTER3GOAL] TRACE-BLOCK side=source kind=entity tile=%u mask=%04x from=%d,%d to=%d,%d\n",
+                       (unsigned int)sourceTile,
+                       (unsigned int)mask,
+                       (int)prevX, (int)prevY, (int)x, (int)y);
+                return 0;
+            }
+        }
 
         if (!tileIndexFor(x, y, &tile) || !EspMapState_getTileFlags(tile, &flags)) {
             return 0;
@@ -325,7 +367,7 @@ static int cardinalTraceClear(int32_t sourceX,
         if (lineBlock < 0) return -1;
         if (lineBlock > 0) return 0;
         spriteBlock = blockingSpriteOnTile(tile,
-                                           x - stepX, y - stepY, x, y,
+                                           prevX, prevY, x, y,
                                            attackerSprite, mask, strictSpecial);
         if (spriteBlock < 0) return spriteBlock;
         if (spriteBlock > 0) return 0;
