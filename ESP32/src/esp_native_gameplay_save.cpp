@@ -812,6 +812,23 @@ bool readV6CrateSection(
                outSnapshot, core.runtimeFNV1a, core.targetMapId);
 }
 
+bool restoreV6CrateSection(
+    const char* path,
+    const NativeSaveCore& core,
+    uint16_t* outCount,
+    uint32_t* outFNV) {
+    EspNativeGameplayCrateTransformSnapshot snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
+    if (!readV6CrateSection(path, core, &snapshot) ||
+        !EspNativeGameplayCrateState_restore(&snapshot) ||
+        EspNativeGameplayCrateState_fingerprint() != snapshot.stateFNV1a) {
+        return false;
+    }
+    if (outCount != nullptr) *outCount = snapshot.transformedCount;
+    if (outFNV != nullptr) *outFNV = snapshot.stateFNV1a;
+    return true;
+}
+
 bool captureRecord(
     NativeSaveRecordV5* outPrefix,
     EspNativeGameplayCrateTransformSnapshot* outCrateTransforms) {
