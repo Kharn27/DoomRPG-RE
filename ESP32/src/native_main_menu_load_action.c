@@ -9,6 +9,7 @@
 #include "Render.h"
 
 #include "esp_native_gameplay_save_ui.h"
+#include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_load_action.h"
 #include "native_main_menu_start_action.h"
 #include "native_main_menu_touch.h"
@@ -16,6 +17,11 @@
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
+
+#define MAIN_LOAD_ITEM_INDEX 1
+#define MAIN_LOAD_GLYPH_ADVANCE 7
+
+static char noSaveLabel[] = "No Save   ";
 
 static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
     uint32_t hash = 2166136261U;
@@ -50,6 +56,30 @@ static int menuBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            !EspNativeSpriteCache_isActive();
 }
 
+static void showNoSaveFeedback(DoomRPG_t* doomRpg) {
+    DoomCanvas_t* canvas = doomRpg->doomCanvas;
+    const int width = (int)(sizeof(noSaveLabel) - 1U) *
+                      MAIN_LOAD_GLYPH_ADVANCE;
+    const int x = canvas->SCR_CX - (width >> 1);
+    const int y = DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y +
+                  (MAIN_LOAD_ITEM_INDEX *
+                   DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT);
+    uint32_t frameFNV;
+
+    DoomRPG_setColor(doomRpg, 0x000000);
+    DoomRPG_fillRect(doomRpg, x, y, width,
+                     DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT);
+    DoomRPG_setFontColor(doomRpg, 0xffff0000);
+    DoomCanvas_drawFont(canvas, noSaveLabel, x, y, 0, 0, -1, false);
+    DoomRPG_setFontColor(doomRpg, 0xffffffff);
+    SDL_RenderPresent(NULL);
+
+    frameFNV = framebufferHash(doomRpg->render);
+    DoomRPG_esp32MainMenuTouchRebaseFrame(MAIN_LOAD_ITEM_INDEX, frameFNV);
+    printf("[MAINLOAD] FEEDBACK text=\"No Save\" color=red framebufferFNV=%08x\n",
+           (unsigned int)frameFNV);
+}
+
 static void restoreMainMenuAfterFailedLoad(DoomRPG_t* doomRpg) {
     uint32_t frameFNV = 0U;
 
@@ -80,9 +110,10 @@ int DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
     }
 
     inputHash = framebufferHash(doomRpg->render);
-    expectedHash = DoomRPG_esp32MainMenuSelectionFramebufferFNV(3);
+    expectedHash = DoomRPG_esp32MainMenuSelectionFramebufferFNV(
+        MAIN_LOAD_ITEM_INDEX);
     if (doomRpg->menuSystem->menu != MENU_MAIN ||
-        doomRpg->menuSystem->selectedIndex != 3 ||
+        doomRpg->menuSystem->selectedIndex != MAIN_LOAD_ITEM_INDEX ||
         doomRpg->doomCanvas->state != ST_MENU ||
         expectedHash == 0U || inputHash != expectedHash) {
         printf("[MAINLOAD] FAILED precondition menu=%d selected=%d state=%d framebuffer=%08x expected=%08x\n",
@@ -96,6 +127,7 @@ int DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
 
     if (!EspNativeGameplaySave_hasReadableCheckpoint()) {
         printf("[MAINLOAD] NO-SAVE missing-or-invalid; MENU_MAIN remains active\n");
+        showNoSaveFeedback(doomRpg);
         return 0;
     }
 

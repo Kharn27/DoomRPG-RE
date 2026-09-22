@@ -203,18 +203,18 @@ static void gatedTap(int16_t screenX,
         }
 
         if (hit == 1) {
-            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=1 action=execute-options\n",
-                   (unsigned int)gateTapCount);
-            lastTappedItem = -1;
-            executeConfirmedOptions();
-            return;
-        }
-
-        if (hit == 3) {
-            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=3 action=load-game\n",
+            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=1 action=load-game\n",
                    (unsigned int)gateTapCount);
             lastTappedItem = -1;
             executeConfirmedLoad();
+            return;
+        }
+
+        if (hit == 2) {
+            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=2 action=execute-options\n",
+                   (unsigned int)gateTapCount);
+            lastTappedItem = -1;
+            executeConfirmedOptions();
             return;
         }
 

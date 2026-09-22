@@ -219,7 +219,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
     render = doomRpg->render;
     inputHash = framebufferHash(render);
     expectedInputHash =
-        DoomRPG_esp32MainMenuSelectionFramebufferFNV(1);
+        DoomRPG_esp32MainMenuSelectionFramebufferFNV(2);
 
     printf("[MAINOPTIONS] Begin menu=%d selected=%d framebufferFNV=%08x expectedSelectedOptionsFNV=%08x heap8=%u largest8=%u shapeData=%p mediaTexels=%p\n",
            menuSystem->menu,
@@ -232,7 +232,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
            (void*)render->mediaTexels);
 
     if (menuSystem->menu != MENU_MAIN ||
-        menuSystem->selectedIndex != 1 ||
+        menuSystem->selectedIndex != 2 ||
         expectedInputHash == 0U || inputHash != expectedInputHash) {
         printf("[MAINOPTIONS] FAILED precondition menu=%d selected=%d framebuffer=%08x expected=%08x\n",
                menuSystem->menu,
@@ -245,6 +245,10 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
     heapBefore = heap8Free();
     largestBefore = largest8Block();
 
+    /* The retained J2ME Menu_select() still assigns Options to semantic row 1.
+     * The ESP32 presentation places Load Game there, so translate only for the
+     * instant in which the original transition is invoked. */
+    menuSystem->selectedIndex = 1;
     MenuSystem_select(menuSystem);
 
     if (!graphicsBoundaryIsSafe(doomRpg) || !validateOptionsModel(menuSystem)) {

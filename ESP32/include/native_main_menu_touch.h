@@ -27,6 +27,11 @@ int DoomRPG_esp32MainMenuTouchIsActive(void);
  * without baking hardware-rendered hashes into every main-menu action. */
 uint32_t DoomRPG_esp32MainMenuSelectionFramebufferFNV(int itemIndex);
 
+/* Rebase deterministic selection witnesses after a bounded in-place status
+ * paint such as the visible "No Save" response. */
+void DoomRPG_esp32MainMenuTouchRebaseFrame(int selectedIndex,
+                                           uint32_t framebufferFNV);
+
 /* Signature matches PlatformTapCallback. Physical coordinates are the calibrated
  * 320x240 landscape CYD coordinates emitted by PlatformInput.
  */

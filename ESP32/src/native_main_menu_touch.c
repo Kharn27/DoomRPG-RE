@@ -323,6 +323,15 @@ uint32_t DoomRPG_esp32MainMenuSelectionFramebufferFNV(int itemIndex) {
     return selectionHashes[itemIndex];
 }
 
+void DoomRPG_esp32MainMenuTouchRebaseFrame(int selectedIndex,
+                                           uint32_t framebufferFNV) {
+    memset(selectionHashes, 0, sizeof(selectionHashes));
+    if (selectedIndex >= 0 &&
+        selectedIndex < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
+        selectionHashes[selectedIndex] = framebufferFNV;
+    }
+}
+
 void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
                                      int16_t screenY,
                                      uint16_t pressure,
