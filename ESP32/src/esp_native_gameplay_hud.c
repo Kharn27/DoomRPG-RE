@@ -132,22 +132,35 @@ static void drawHorizontalLine(uint16_t* framebuffer,
 static void drawTopTouchButtonCorners(uint16_t* framebuffer,
                                       int left,
                                       int right,
-                                      uint16_t color,
                                       EspNativeGameplayHudStats* stats) {
     const int top = HUD_TOP_TOUCH_NOTCH_TOP;
     const int bottom = HUD_TOP_TOUCH_NOTCH_BOTTOM;
     const int last = HUD_TOP_TOUCH_NOTCH_LENGTH - 1;
+    const uint16_t shadow = rgb565(0x282c32U);
+    const uint16_t highlight = rgb565(0xc8d0dcU);
 
-    /* Four isolated L-shaped corner notches. The full edge stays untouched. */
-    drawVerticalLine(framebuffer, left, top, top + last, color, stats);
-    drawHorizontalLine(framebuffer, left, left + last, top, color, stats);
-    drawVerticalLine(framebuffer, right, top, top + last, color, stats);
-    drawHorizontalLine(framebuffer, right - last, right, top, color, stats);
+    /* Four tiny 3x3 bevel corners. The dark outer L plus one bright inset L
+     * remains subtle, but survives the metallic k.bmp pattern at 2x output.
+     * No complete button edge is ever drawn. */
+    drawVerticalLine(framebuffer, left, top, top + last, shadow, stats);
+    drawHorizontalLine(framebuffer, left, left + last, top, shadow, stats);
+    drawVerticalLine(framebuffer, left + 1, top + 1, top + last, highlight, stats);
+    drawHorizontalLine(framebuffer, left + 1, left + last, top + 1, highlight, stats);
 
-    drawVerticalLine(framebuffer, left, bottom - last, bottom, color, stats);
-    drawHorizontalLine(framebuffer, left, left + last, bottom, color, stats);
-    drawVerticalLine(framebuffer, right, bottom - last, bottom, color, stats);
-    drawHorizontalLine(framebuffer, right - last, right, bottom, color, stats);
+    drawVerticalLine(framebuffer, right, top, top + last, shadow, stats);
+    drawHorizontalLine(framebuffer, right - last, right, top, shadow, stats);
+    drawVerticalLine(framebuffer, right - 1, top + 1, top + last, highlight, stats);
+    drawHorizontalLine(framebuffer, right - last, right - 1, top + 1, highlight, stats);
+
+    drawVerticalLine(framebuffer, left, bottom - last, bottom, shadow, stats);
+    drawHorizontalLine(framebuffer, left, left + last, bottom, shadow, stats);
+    drawVerticalLine(framebuffer, left + 1, bottom - last, bottom - 1, highlight, stats);
+    drawHorizontalLine(framebuffer, left + 1, left + last, bottom - 1, highlight, stats);
+
+    drawVerticalLine(framebuffer, right, bottom - last, bottom, shadow, stats);
+    drawHorizontalLine(framebuffer, right - last, right, bottom, shadow, stats);
+    drawVerticalLine(framebuffer, right - 1, bottom - last, bottom - 1, highlight, stats);
+    drawHorizontalLine(framebuffer, right - last, right - 1, bottom - 1, highlight, stats);
 }
 
 static EspNativeGameplayHudStatus openAsset(
@@ -324,17 +337,16 @@ static EspNativeGameplayHudStatus paintPrepared(
      * 3-pixel L-shaped corner notches; no complete border is drawn and the
      * semantic hit boxes remain exactly 0..31 | 32..127 | 128..159. */
     {
-        const uint16_t notch = rgb565(0x808591U);
         drawTopTouchButtonCorners(framebuffer,
                                   HUD_TOP_MENU_LEFT, HUD_TOP_MENU_RIGHT,
-                                  notch, stats);
+                                  stats);
         drawTopTouchButtonCorners(framebuffer,
                                   HUD_TOP_PASS_LEFT, HUD_TOP_PASS_RIGHT,
-                                  notch, stats);
+                                  stats);
         drawTopTouchButtonCorners(framebuffer,
                                   HUD_TOP_AUTOMAP_LEFT,
                                   HUD_TOP_AUTOMAP_RIGHT,
-                                  notch, stats);
+                                  stats);
     }
 
     drawVerticalLine(framebuffer, HUD_LINE1_X + cx, HUD_BOTTOM_Y,
@@ -449,8 +461,6 @@ const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) {
 int EspNativeGameplayHud_paintTopTouchNotches(void) {
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     const size_t framebufferBytes = Esp32PlatformVideo_framebufferSizeBytes();
-    const uint16_t notch = rgb565(0x808591U);
-
     if (framebuffer == NULL ||
         framebufferBytes != (size_t)DOOMRPG_LOGICAL_WIDTH *
                                 (size_t)DOOMRPG_LOGICAL_HEIGHT *
@@ -460,13 +470,13 @@ int EspNativeGameplayHud_paintTopTouchNotches(void) {
 
     drawTopTouchButtonCorners(framebuffer,
                               HUD_TOP_MENU_LEFT, HUD_TOP_MENU_RIGHT,
-                              notch, NULL);
+                              NULL);
     drawTopTouchButtonCorners(framebuffer,
                               HUD_TOP_PASS_LEFT, HUD_TOP_PASS_RIGHT,
-                              notch, NULL);
+                              NULL);
     drawTopTouchButtonCorners(framebuffer,
                               HUD_TOP_AUTOMAP_LEFT, HUD_TOP_AUTOMAP_RIGHT,
-                              notch, NULL);
+                              NULL);
     return 1;
 }
 
