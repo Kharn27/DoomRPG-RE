@@ -224,6 +224,24 @@ int EspNativeGameplayEventChain_restoreDialogMask(
     return ok;
 }
 
+EspNativeGameplayEventChainPreflightStatus
+EspNativeGameplayEventChain_preflight(
+    uint16_t eventIndex,
+    uint8_t resumeCommandOffset,
+    uint32_t runFlags) {
+    ChainPlan plan;
+    EspNativeGameplayEventChainPreflightStatus status =
+        buildPlan(eventIndex, resumeCommandOffset, runFlags, &plan);
+
+    if (status != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
+        return status;
+    }
+    if (plan.count != 0U && !ensureTransactionOwner()) {
+        return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY;
+    }
+    return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK;
+}
+
 static void clearTransaction(void) {
     uint8_t* backup;
     uint32_t capacity;
