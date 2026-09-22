@@ -16,6 +16,7 @@
 #include "esp_map_script_state.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_combat_math.h"
+#include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_input.h"
@@ -44,11 +45,13 @@ constexpr uint8_t kMagicV2[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '2'};
 constexpr uint8_t kMagicV3[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '3'};
 constexpr uint8_t kMagicV4[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '4'};
 constexpr uint8_t kMagicV5[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '5'};
+constexpr uint8_t kMagicV6[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '6'};
 constexpr uint16_t kVersionV1 = 1U;
 constexpr uint16_t kVersionV2 = 2U;
 constexpr uint16_t kVersionV3 = 3U;
 constexpr uint16_t kVersionV4 = 4U;
 constexpr uint16_t kVersionV5 = 5U;
+constexpr uint16_t kVersionV6 = 6U;
 constexpr uint8_t kFamiliarAmmoType = 5U;
 constexpr uint8_t kStatusSave = 0U;
 constexpr uint8_t kStatusLoad = 1U;
@@ -116,6 +119,17 @@ struct LoadedSaveRecord {
     uint8_t hasLines;
     uint8_t hasActionRemoved;
 };
+
+constexpr size_t kRecordBytesV6 =
+    sizeof(NativeSaveRecordV5) +
+    sizeof(EspNativeGameplayCrateTransformSnapshot);
+
+static_assert(sizeof(EspNativeGameplayCrateTransformSnapshot) == 176U,
+              "crate transform checkpoint must remain exactly 176 bytes");
+static_assert(kRecordBytesV6 == 1532U,
+              "native save v6 must remain the bounded 1532-byte streamed record");
+static_assert(kRecordBytesV6 <= 0xffffU,
+              "native save recordBytes field is uint16_t");
 
 static_assert(sizeof(NativeSaveCore) == 132U,
               "native save v1 compatibility requires the proven 132-byte prefix");
@@ -237,6 +251,38 @@ uint32_t recordCrcV4(const NativeSaveRecordV4& record) {
 uint32_t recordCrcV5(const NativeSaveRecordV5& record) {
     return recordCrcBytes(reinterpret_cast<const uint8_t*>(&record),
                           sizeof(record));
+}
+
+uint32_t recordCrcV6(
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
+    const uint8_t* prefixBytes =
+        reinterpret_cast<const uint8_t*>(&prefix);
+    const uint8_t* crateBytes =
+        reinterpret_cast<const uint8_t*>(&crateTransforms);
+    const size_t zeroOffset = offsetof(NativeSaveCore, recordCrc32);
+    const size_t zeroEnd = zeroOffset + sizeof(uint32_t);
+    uint32_t crc = 0xffffffffU;
+    size_t i;
+    uint32_t bit;
+
+    for (i = 0U; i < sizeof(prefix); ++i) {
+        const uint8_t value =
+            (i >= zeroOffset && i < zeroEnd) ? 0U : prefixBytes[i];
+        crc ^= value;
+        for (bit = 0U; bit < 8U; ++bit) {
+            const uint32_t mask = (uint32_t)-(int32_t)(crc & 1U);
+            crc = (crc >> 1) ^ (0xedb88320U & mask);
+        }
+    }
+    for (i = 0U; i < sizeof(crateTransforms); ++i) {
+        crc ^= crateBytes[i];
+        for (bit = 0U; bit < 8U; ++bit) {
+            const uint32_t mask = (uint32_t)-(int32_t)(crc & 1U);
+            crc = (crc >> 1) ^ (0xedb88320U & mask);
+        }
+    }
+    return ~crc;
 }
 
 uint32_t countBits(const uint8_t* bits, uint32_t bytes) {
@@ -478,6 +524,51 @@ bool loadedV5Valid(const LoadedSaveRecord& record) {
            scriptShapeValid(record.script, record.core) &&
            lineShapeValid(record.lines, record.core) &&
            actionRemovedShapeValid(record.actionRemoved, record.core);
+}
+
+bool crateTransformsDisjoint(
+    const EspNativeGameplayActionRemovedSnapshot& actionRemoved,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
+    uint32_t i;
+    if (actionRemoved.spriteCount != crateTransforms.spriteCount ||
+        actionRemoved.removedBytes != crateTransforms.transformedBytes) {
+        return false;
+    }
+    for (i = 0U; i < actionRemoved.removedBytes; ++i) {
+        if ((actionRemoved.removedBits[i] &
+             crateTransforms.transformedBits[i]) != 0U) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool loadedV6Valid(
+    const LoadedSaveRecord& record,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
+    return coreShapeValid(record.core, kMagicV6, kVersionV6,
+                          (uint16_t)kRecordBytesV6) &&
+           record.core.recordCrc32 ==
+               recordCrcV6(
+                   *reinterpret_cast<const NativeSaveRecordV5*>(&record),
+                   crateTransforms) &&
+           resourceShapeValid(record.resources, record.core) &&
+           scriptShapeValid(record.script, record.core) &&
+           lineShapeValid(record.lines, record.core) &&
+           actionRemovedShapeValid(record.actionRemoved, record.core) &&
+           EspNativeGameplayCrateState_snapshotShapeValid(
+               &crateTransforms, record.core.runtimeFNV1a,
+               record.core.targetMapId) &&
+           crateTransformsDisjoint(record.actionRemoved, crateTransforms);
+}
+
+bool recordV6Valid(
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
+    LoadedSaveRecord loaded;
+    memset(&loaded, 0, sizeof(loaded));
+    memcpy(&loaded, &prefix, sizeof(prefix));
+    return loadedV6Valid(loaded, crateTransforms);
 }
 
 bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
