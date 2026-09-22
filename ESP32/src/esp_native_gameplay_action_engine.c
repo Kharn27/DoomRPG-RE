@@ -103,6 +103,7 @@ typedef EspNativeGameplayActionFeedback ActionFeedback;
 #define ACTION_FEEDBACK_PASS_TURN ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN
 #define ACTION_FEEDBACK_PICKUP ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP
 #define ACTION_FEEDBACK_DAMAGE ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE
+#define ACTION_FEEDBACK_PLAYER_HIT ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT
 
 typedef enum ActionRoute_e {
     ACTION_ROUTE_INVALID = 0,
@@ -335,8 +336,9 @@ int EspNativeGameplayActionEngine_queueTextFeedback(
     uint16_t viewportFlashMs) {
     size_t len;
     if ((feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP &&
-         feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE) || text == NULL ||
-        !ensureOwner() || actionState.pending.active != 0U ||
+         feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE &&
+         feedback != ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT) ||
+        text == NULL || !ensureOwner() || actionState.pending.active != 0U ||
         actionState.feedbackPending != 0U) {
         return 0;
     }
@@ -675,7 +677,8 @@ static const char* feedbackText(uint8_t feedback) {
     if (feedback == ACTION_FEEDBACK_DOOR_CLEARED) return "Door cleared!";
     if (feedback == ACTION_FEEDBACK_PASS_TURN) return "Turn passed.";
     if ((feedback == ACTION_FEEDBACK_PICKUP ||
-         feedback == ACTION_FEEDBACK_DAMAGE) &&
+         feedback == ACTION_FEEDBACK_DAMAGE ||
+         feedback == ACTION_FEEDBACK_PLAYER_HIT) &&
         actionState.feedbackText[0] != '\0') {
         return actionState.feedbackText;
     }
@@ -884,6 +887,26 @@ int __wrap_Esp32PlatformVideo_present(void) {
             return 0;
         }
         hadFeedback = 1;
+    }
+    else if (actionState.feedbackVisible != 0U &&
+             actionState.framebufferFresh != 0U &&
+             !EspAssetPack_isOpen()) {
+        /*
+         * A full gameplay redraw can occur while a 1200 ms top-bar lease is
+         * still active (for example when a short impact overlay expires).
+         * Repaint the already-visible message onto that fresh frame without
+         * restarting its timer. Dialog-owned PAK leases remain authoritative:
+         * in that case defer the repaint instead of escalating a temporary
+         * ownership conflict.
+         */
+        feedback = actionState.feedbackVisibleKind;
+        if (!paintFeedback(feedback)) {
+            printf("[ACTIONFEEDBACK] FAILED kind=%u phase=refresh\n",
+                   (unsigned int)feedback);
+            return 0;
+        }
+        printf("[ACTIONFEEDBACK] REFRESH kind=%u lease=preserved freshFrame=yes\n",
+               (unsigned int)feedback);
     }
 
     if ((actionState.viewportFlashPending != 0U ||

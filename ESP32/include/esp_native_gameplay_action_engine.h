@@ -16,7 +16,8 @@ typedef enum EspNativeGameplayActionFeedback_e {
     ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DOOR_CLEARED = 3,
     ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN = 4,
     ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP = 5,
-    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE = 6
+    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE = 6,
+    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT = 7
 } EspNativeGameplayActionFeedback;
 
 /* Allocation-free transient top-bar queue shared by native gameplay actions.
@@ -25,9 +26,11 @@ typedef enum EspNativeGameplayActionFeedback_e {
 int EspNativeGameplayActionEngine_queueFeedback(
     EspNativeGameplayActionFeedback feedback);
 /* Dynamic text remains a bounded transient presentation lease. Pickup feedback
- * requests the recovered 2 px / 500 ms white viewport border; damage feedback
- * uses the recovered legacy 0xBB0000 red border. The 944 RGB565 border pixels
- * are snapshotted in 1888 B bounded static storage, never heap. */
+ * requests the recovered 2 px / 500 ms white viewport border; incoming damage
+ * uses the recovered legacy 0xBB0000 red border. Player-hit text is top-bar
+ * only: enemy blood is owned by a separate bounded viewport overlay. The 944
+ * RGB565 border pixels are snapshotted in 1888 B bounded static storage,
+ * never heap. */
 int EspNativeGameplayActionEngine_queueTextFeedback(
     EspNativeGameplayActionFeedback feedback,
     const char* text,

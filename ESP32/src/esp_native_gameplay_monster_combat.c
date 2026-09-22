@@ -11,6 +11,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_combat_math.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_hit_feedback.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -97,6 +98,18 @@ static const uint16_t deathSounds[MONSTER_SUBTYPE_COUNT][3] = {
 };
 
 static MonsterCombatOwner combatOwner;
+
+/*
+ * servicePending() nests the native world/sprite renderer below its transaction
+ * frame. A full MonsterCombatOwner rollback copy is 324 B on the ESP32 build;
+ * keeping it automatic unnecessarily consumes loopTask stack throughout every
+ * attack render. The gameplay service is serialized on loopTask, so one bounded
+ * non-reentrant BSS rollback owner is sufficient and mirrors the established
+ * HUB/save stack-canary recovery pattern.
+ */
+static MonsterCombatOwner combatRollbackOwner;
+_Static_assert(sizeof(MonsterCombatOwner) <= 384U,
+               "monster combat rollback owner must remain small and bounded");
 
 EspNativeGameplayActionStatus __real_EspNativeGameplayActionEngine_executeSelect(
     const EspNativeGameplayInputState* intent,
@@ -240,14 +253,15 @@ static int syncOwner(void) {
             (uint8_t)STANDARD_WEAPON_DIRECT_MASK;
         combatOwner.view.currentMonsterFNV1a = currentMonsterFNV();
         combatOwner.view.active = 1U;
-        printf("[MONSTERCOMBAT] READY arena=%08x monsters=%u backend=type1-generic subtypes=0..13 trace=shared combatMath=shared playerState=%uB playerFNV=%08x directWeaponMask=%02x specialDeathMask=%04x deathVisual=4->(corpse2|gibHidden)/%ums gibFX=deferred legacyEntity=no\n",
+        printf("[MONSTERCOMBAT] READY arena=%08x monsters=%u backend=type1-generic subtypes=0..13 trace=shared combatMath=shared playerState=%uB playerFNV=%08x directWeaponMask=%02x specialDeathMask=%04x deathVisual=4->(corpse2|gibHidden)/%ums gibFX=deferred rollbackOwner=%uB/static renderStats=single-frame legacyEntity=no\n",
                (unsigned int)arena,
                (unsigned int)monsters->count,
                (unsigned int)sizeof(*player),
                (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
                (unsigned int)combatOwner.view.standardWeaponsOwned,
                (unsigned int)SPECIAL_DEATH_MASK,
-               (unsigned int)MONSTER_DEATH_MS);
+               (unsigned int)MONSTER_DEATH_MS,
+               (unsigned int)sizeof(combatRollbackOwner));
     }
     expirePain();
     if (combatOwner.pending.active == 0U) (void)promoteDeathIfDue();
@@ -256,6 +270,7 @@ static int syncOwner(void) {
 
 void EspNativeGameplayMonsterCombat_reset(void) {
     memset(&combatOwner, 0, sizeof(combatOwner));
+    memset(&combatRollbackOwner, 0, sizeof(combatRollbackOwner));
     combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
@@ -404,12 +419,9 @@ static int servicePending(DoomRPG_t* runtime) {
     EspNativeGameplayPlayerState playerBefore;
     EspNativeGameplayPlayerXpResult xpResult;
     EspNativeGameplayAttackRoll roll;
-    MonsterCombatOwner ownerBefore;
     MonsterCombatPending pending;
     Random_t randomBefore;
-    EspNativeGameplayFrameStats attackFrame;
-    EspNativeGameplayFrameStats rollbackFrame;
-    EspNativeGameplayFrameStats settleFrame;
+    EspNativeGameplayFrameStats frame;
     uint32_t monsterFNVBefore;
     uint32_t monsterFNVAfter;
     uint32_t playerFNVBefore;
@@ -420,6 +432,9 @@ static int servicePending(DoomRPG_t* runtime) {
     uint16_t consequenceSound = 0U;
     uint8_t ammoBefore = 0U;
     uint8_t ammoAfter = 0U;
+    char hitMessage[24];
+    int hitMessageQueued = 0;
+    int hitFxArmed = 0;
     int32_t healthBefore;
     int32_t armorBefore;
     int32_t healthAfter;
@@ -447,7 +462,7 @@ static int servicePending(DoomRPG_t* runtime) {
     }
 
     targetBefore = *target;
-    ownerBefore = combatOwner;
+    combatRollbackOwner = combatOwner;
     randomBefore = runtime->random;
     if (!EspNativeGameplayPlayerState_snapshot(&playerBefore)) return 0;
     monsterFNVBefore = currentMonsterFNV();
@@ -484,7 +499,7 @@ static int servicePending(DoomRPG_t* runtime) {
         runtime->random = randomBefore;
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
         EspNativeGameplayWeapon_cancelAttack();
-        combatOwner = ownerBefore;
+        combatOwner = combatRollbackOwner;
         combatOwner.pending.active = 0U;
         printf("[MONSTERCOMBAT] FAILED seq=%u sprite=%u reason=attack-contract rngRollback=yes playerRollback=yes monsterMutation=no\n",
                (unsigned int)pending.sequence,
@@ -503,7 +518,7 @@ static int servicePending(DoomRPG_t* runtime) {
             runtime->random = randomBefore;
             (void)EspNativeGameplayPlayerState_restore(&playerBefore);
             EspNativeGameplayWeapon_cancelAttack();
-            combatOwner = ownerBefore;
+            combatOwner = combatRollbackOwner;
             combatOwner.pending.active = 0U;
             printf("[MONSTERCOMBAT] DEFER seq=%u sprite=%u subtype=%u reason=special-death-family prospectiveDamage=%d+%d hp=%d->0 rngRollback=yes playerRollback=yes monsterRollback=yes mutation=no\n",
                    (unsigned int)pending.sequence,
@@ -557,7 +572,7 @@ static int servicePending(DoomRPG_t* runtime) {
                 *target = targetBefore;
                 runtime->random = randomBefore;
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-                combatOwner = ownerBefore;
+                combatOwner = combatRollbackOwner;
                 combatOwner.pending.active = 0U;
                 EspNativeGameplayWeapon_cancelAttack();
                 printf("[MONSTERCOMBAT] FAILED seq=%u sprite=%u reason=xp-transaction rngRollback=yes playerRollback=yes monsterRollback=yes\n",
@@ -619,20 +634,41 @@ static int servicePending(DoomRPG_t* runtime) {
            (unsigned int)roll.gotCrit,
            (unsigned int)rngCalls);
 
-    memset(&attackFrame, 0, sizeof(attackFrame));
+    /*
+     * Legacy blood is an impact-time effect, not a post-settle decoration.
+     * Provisionally arm it before the attack-frame render so the same physical
+     * present that shows pain/death also carries the spray. If render fails,
+     * the owner is cancelled before the rollback redraw below.
+     */
+    if (roll.hitLoops != 0U) {
+        hitFxArmed = EspNativeGameplayHitFeedback_arm(
+            pending.sequence,
+            pending.spriteIndex,
+            pending.distance,
+            healthBefore,
+            armorBefore,
+            roll.totalDamage,
+            roll.totalArmorDamage);
+    }
+
+    memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(runtime->render,
                                            (uint8_t)view->viewAngle,
-                                           &attackFrame)) {
+                                           &frame)) {
         *target = targetBefore;
         runtime->random = randomBefore;
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-        combatOwner = ownerBefore;
+        combatOwner = combatRollbackOwner;
         combatOwner.pending.active = 0U;
         EspNativeGameplayWeapon_cancelAttack();
-        memset(&rollbackFrame, 0, sizeof(rollbackFrame));
+        if (hitFxArmed) {
+            (void)EspNativeGameplayHitFeedback_cancel(pending.sequence);
+            hitFxArmed = 0;
+        }
+        memset(&frame, 0, sizeof(frame));
         if (!EspNativeGameplayFrame_renderTurn(runtime->render,
                                                (uint8_t)view->viewAngle,
-                                               &rollbackFrame)) {
+                                               &frame)) {
             printf("[MONSTERCOMBAT] FAILED seq=%u sprite=%u reason=render+rollback-render rngRollback=yes playerRollback=yes monsterRollback=yes\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex);
@@ -641,11 +677,48 @@ static int servicePending(DoomRPG_t* runtime) {
         printf("[MONSTERCOMBAT] ROLLBACK seq=%u sprite=%u rng=yes player=yes monster=yes frame=%08x\n",
                (unsigned int)pending.sequence,
                (unsigned int)pending.spriteIndex,
-               (unsigned int)rollbackFrame.frameAfterFNV);
+               (unsigned int)frame.frameAfterFNV);
         return 1;
     }
 
-    logFrame(&pending, "attack", &attackFrame);
+    /*
+     * Attack-frame render succeeded: gameplay rollback is now closed. Queue the
+     * result text here (legacy stage-2 timing) while the already-armed blood
+     * remains a separate impact-time presentation lease.
+     */
+    memset(hitMessage, 0, sizeof(hitMessage));
+    if (roll.hitLoops != 0U) {
+        const int32_t visibleDamage =
+            roll.totalDamage + roll.totalArmorDamage;
+        (void)snprintf(hitMessage, sizeof(hitMessage),
+                       roll.gotCrit != 0U ? "Crit! %d damage!" : "%d damage!",
+                       (int)visibleDamage);
+        hitMessageQueued =
+            EspNativeGameplayActionEngine_queueTextFeedback(
+                ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
+                hitMessage, 0U);
+    }
+    else {
+        (void)snprintf(hitMessage, sizeof(hitMessage), "Missed!");
+        hitMessageQueued =
+            EspNativeGameplayActionEngine_queueTextFeedback(
+                ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
+                hitMessage, 0U);
+    }
+    printf("[MONSTERHITFEEDBACK] ARM seq=%u sprite=%u hit=%u crit=%u message=%s textQueued=%s blood=%s timing=%s deathSuffix=%s mutation=no gameplayRng=untouched\n",
+           (unsigned int)pending.sequence,
+           (unsigned int)pending.spriteIndex,
+           (unsigned int)(roll.hitLoops != 0U),
+           (unsigned int)roll.gotCrit,
+           hitMessage,
+           hitMessageQueued ? "yes" : "deferred-owner-busy",
+           roll.hitLoops != 0U
+               ? (hitFxArmed ? "armed" : "deferred")
+               : "none-miss",
+           roll.hitLoops != 0U ? "attack-frame" : "n/a",
+           lethal ? "deferred-bounded-topbar" : "n/a");
+
+    logFrame(&pending, "attack", &frame);
     if (lethal) (void)promoteDeathIfDue();
     printf("[MONSTERCOMBAT] COMMIT seq=%u sprite=%u subtype=%u hp=%d->%d armor=%d->%d alive=%u->%u monsterFNV=%08x->%08x playerFNV=%08x->%08x ammo=%u->%u visual=%s attackSound=%u-deferred consequenceSound=%u-deferred xp=%u-applied level=%u->%u levelUps=%u dropRoll=%s%08x dropMaterialize=deferred corpseTrim=deferred turnAdvance=deferred AI=deferred rollback=closed\n",
            (unsigned int)pending.sequence,
@@ -675,11 +748,11 @@ static int servicePending(DoomRPG_t* runtime) {
            lethal ? "value/" : "unused/",
            (unsigned int)dropRoll);
 
-    memset(&settleFrame, 0, sizeof(settleFrame));
+    memset(&frame, 0, sizeof(frame));
     if (EspNativeGameplayFrame_renderTurn(runtime->render,
                                           (uint8_t)view->viewAngle,
-                                          &settleFrame)) {
-        logFrame(&pending, "settle-idle", &settleFrame);
+                                          &frame)) {
+        logFrame(&pending, "settle-idle", &frame);
         if (combatOwner.visualRedrawPending != 0U) {
             combatOwner.visualRedrawPending = 0U;
         }
