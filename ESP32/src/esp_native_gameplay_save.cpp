@@ -159,12 +159,14 @@ uint8_t lastOperationOk;
  * non-reentrant BSS read workspace is sufficient for probe, verification and
  * load. Large checkpoint payloads must not live in the HUB wrapper frame.
  */
-LoadedSaveRecord readWorkspace;
-NativeSaveRecordV5 writeWorkspace;
-static_assert(sizeof(LoadedSaveRecord) <= 1536U,
-              "native save read workspace must stay small and bounded");
-static_assert(sizeof(NativeSaveRecordV5) <= 1536U,
-              "native save write workspace must stay small and bounded");
+union NativeSaveWorkspace {
+    LoadedSaveRecord loaded;
+    NativeSaveRecordV5 write;
+};
+
+NativeSaveWorkspace saveWorkspace;
+static_assert(sizeof(NativeSaveWorkspace) <= 1536U,
+              "native save shared workspace must stay small and bounded");
 
 uint32_t crc32Bytes(const uint8_t* data, size_t bytes) {
     uint32_t crc = 0xffffffffU;
@@ -584,24 +586,33 @@ bool writeExactV5(const char* path, const NativeSaveRecordV5& record) {
 }
 
 bool readExactV5Matches(const char* path, const NativeSaveRecordV5& expected) {
-    LoadedSaveRecord& loaded = readWorkspace;
-    memset(&loaded, 0, sizeof(loaded));
-    if (!readRecordPath(path, &loaded) ||
-        loaded.hasResources != 1U || loaded.hasScript != 1U ||
-        loaded.hasLines != 1U || loaded.hasActionRemoved != 1U ||
-        loaded.core.version != kVersionV5 ||
-        loaded.fileBytes != sizeof(NativeSaveRecordV5)) {
+    File file;
+    const uint8_t* expectedBytes =
+        reinterpret_cast<const uint8_t*>(&expected);
+    uint8_t verify[64];
+    size_t offset = 0U;
+
+    if (path == nullptr || !SD.exists(path)) return false;
+    file = SD.open(path, FILE_READ);
+    if (!file || (size_t)file.size() != sizeof(expected)) {
+        if (file) file.close();
         return false;
     }
-    return memcmp(&loaded.core, &expected.core, sizeof(expected.core)) == 0 &&
-           memcmp(&loaded.resources, &expected.resources,
-                  sizeof(expected.resources)) == 0 &&
-           memcmp(&loaded.script, &expected.script,
-                  sizeof(expected.script)) == 0 &&
-           memcmp(&loaded.lines, &expected.lines,
-                  sizeof(expected.lines)) == 0 &&
-           memcmp(&loaded.actionRemoved, &expected.actionRemoved,
-                  sizeof(expected.actionRemoved)) == 0;
+
+    while (offset < sizeof(expected)) {
+        size_t chunk = sizeof(expected) - offset;
+        size_t got;
+        if (chunk > sizeof(verify)) chunk = sizeof(verify);
+        got = file.read(verify, chunk);
+        if (got != chunk ||
+            memcmp(verify, expectedBytes + offset, chunk) != 0) {
+            file.close();
+            return false;
+        }
+        offset += chunk;
+    }
+    file.close();
+    return true;
 }
 
 bool commitRecordAtomic(const NativeSaveRecordV5& record) {
@@ -684,7 +695,7 @@ bool captureRecord(NativeSaveRecordV5* outRecord) {
 }
 
 bool saveNow(void) {
-    NativeSaveRecordV5& record = writeWorkspace;
+    NativeSaveRecordV5& record = saveWorkspace.write;
     uint32_t scriptFNV;
     uint32_t openCount;
     uint32_t lockedCount;
@@ -880,7 +891,7 @@ bool sessionConfigForPlayer(const EspNativeGameplayPlayerState& player,
 }
 
 bool loadNow(void) {
-    LoadedSaveRecord& loaded = readWorkspace;
+    LoadedSaveRecord& loaded = saveWorkspace.loaded;
     const NativeSaveCore* record;
     EspBspInventory inventory;
     EspMapResidentSnapshot snapshot;
@@ -1206,8 +1217,8 @@ __attribute__((noinline))
 #endif
 bool readableSaveExists(void) {
     bool recoveredBackup = false;
-    memset(&readWorkspace, 0, sizeof(readWorkspace));
-    return readBestRecord(&readWorkspace, &recoveredBackup);
+    memset(&saveWorkspace.loaded, 0, sizeof(saveWorkspace.loaded));
+    return readBestRecord(&saveWorkspace.loaded, &recoveredBackup);
 }
 
 extern "C" EspNativeGameplayHubStatus
