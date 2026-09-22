@@ -13,74 +13,29 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-main at branch creation = a356f4d5c2f94a8838babf21bb69911e3c36b54c
-current main = a356f4d5c2f94a8838babf21bb69911e3c36b54c
-main merge = PR #144
-branch = agent/esp32-native-save-v6-crate-transforms
-hardware-tested crate subtype2 boundary = 571a1af81469ff85a88ae3ba94e5dc9535b6648a
-hardware-tested save-v6 crate-transform boundary = 172055a8bc0f2430f9d5443972ee153aa1bf4ffc
-hardware-tested current code boundary = 172055a8bc0f2430f9d5443972ee153aa1bf4ffc
-status = REAL-CYD SAVE V6 CRATE TRANSFORM PERSISTENCE PASS; merge-ready
-```
-
-PR #144 merged the crate subtype-2 gameplay milestone into main at
-`a356f4d5c2f94a8838babf21bb69911e3c36b54c`. The V6 branch was created
-from that exact SHA.
-
-The final code boundary
-`172055a8bc0f2430f9d5443972ee153aa1bf4ffc` passed normal
-`ESP32 CYD Build` run `35720525109`.
-
-Build memory:
-
-```text
+main at branch creation = e80851f21382ad13c456b85f01e55bf796c75edf
+current main = 5841b0cb55607428bf74c341112a161213c47c90
+current main tip = PR #147 README-only merge
+branch = agent/esp32-native-display-touch-polish
+hardware-tested current code boundary = d532ede998c23fcac7e73feefe66d5ce8c755ac9
+CI = esp32-cyd #522 / 35765245689 SUCCESS
 RAM static = 44832 B
-Flash = 716177 B
+Flash = 728653 B
+status = REAL-CYD PASS THROUGH AUTOMAP PROGRESSION GATE
 ```
 
-The new checkpoint remains BSS-neutral versus the crate gameplay boundary.
+The current branch was created from `e80851f21382ad13c456b85f01e55bf796c75edf`.
+Main has since advanced by a README-only PR, so the gameplay recovery source remains the branch plus `PORTING_STATUS.md` until this work is merged.
 
-V6 writes `1532` bytes as the exact V5 semantic prefix plus one streamed,
-pointer-free 176 B transformed-crate section. V1-V5 remain read-compatible.
+Real-CYD validation on the branch now covers the intro display fit, moved corpse projection, native password input including wrong-code feedback and correct-code door unlock through an `EV_DIALOGNOBACK` continuation, and corrected monster movement collision against shoot-through/movement-solid bars.
 
-Real-CYD non-zero witness:
+The user then progressed until the game explicitly requires opening the Automap. Native Automap presentation/input is not implemented yet, so Automap is the next bounded milestone.
 
-```text
-[CRATE] CONSEQUENCE seq=28 sprite=11 first=16
-        outcome=TRANSFORM effectiveDefTile=99
-[CRATE] COMMIT ... effective=4/25/def99 removed=0 transformed=1
+Latest milestone:
 
-[NATIVESAVE] SAVE ... version=6 bytes=1532
-actionRemoved=1/43B/4a2aa797
-crateTransforms=1/43B/1B/31d6c324
-```
+- [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
 
-LOAD rebuilt the immutable Entrance runtime and restored the exact transform
-fingerprint:
-
-```text
-[CRATECHECKPOINT] RESTORE arena=c3882516 map=1 sprites=344
-                   transformed=1 bytes=43 codeBytes=1
-                   stateFNV=31d6c324
-[NATIVESAVE] LOAD ... version=6 bytes=1532
-crateTransforms=restored/1/31d6c324
-```
-
-The restored resource corpus reported `pickups=115` and `type4=7`, and the
-user visually confirmed that the medkit created by the crate reappeared after
-LOAD rather than the original crate.
-
-A separate real-CYD V6 witness exercised `BREAK_REMOVE`, saving
-`actionRemoved=1` with `crateTransforms=0`, then restoring both successfully.
-
-Latest milestones:
-
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
-- [`MILESTONE_NATIVE_CRATE_SUBTYPE2.md`](MILESTONE_NATIVE_CRATE_SUBTYPE2.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
-
-The production CHANGEMAP candidate still needs its dedicated real-CYD
-level-exit validation.
+Late candidate paths that still need their own explicit replay before being called hardware PASS are the password full-HUD repaint after modal close and the legacy `Found Secret!` +5 XP reward.
 
 ## Build environment
 
@@ -695,10 +650,10 @@ See `PORTING_STATUS.md` for the authoritative list. Important current boundaries
 save-v6 mutable-world sections beyond each validated owner
 CHANGEMAP hardware level-exit validation
 audio
-password input
-GIVEMAP production route
+password late presentation cleanup replay
+GIVEMAP / Automap production route
 CHECK_KEY production route
-HUB Notebook activation / consumable use / Automap / Options / store
+HUB Notebook activation / consumable use / Options / store
 remaining advanced combat/monster/special-death families
 ```
 
