@@ -1252,6 +1252,7 @@ bool loadNow(void) {
                loaded.hasScript == 1U ? "required" : "legacy-none",
                loaded.hasLines == 1U ? "required" : "legacy-none",
                loaded.hasActionRemoved == 1U ? "required" : "legacy-none",
+               record->version == kVersionV6 ? "required" : "legacy-none",
                (unsigned long)record->playerFNV1a);
         return false;
     }
