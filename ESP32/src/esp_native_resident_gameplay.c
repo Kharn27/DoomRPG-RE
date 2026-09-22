@@ -1432,6 +1432,16 @@ int EspNativeResidentGameplay_redrawAutomap(
     return renderAutomapCurrent((Render_t*)render, reason);
 }
 
+int EspNativeResidentGameplay_exitAutomapForModal(
+    struct Render_s* render,
+    const char* reason) {
+    if (!EspNativeResidentGameplay_isAutomapActive()) return 1;
+    printf("[RESIDENTGAMEPLAY] AUTOMAP-MODAL-EXIT reason=%s ownership=world-before-modal turnAdvance=no\n",
+           reason != NULL ? reason : "modal");
+    return closeAutomap((Render_t*)render,
+                        reason != NULL ? reason : "AUTOMAP-MODAL");
+}
+
 int EspNativeResidentGameplay_exitAutomapForDamage(
     struct Render_s* render,
     const char* reason) {
