@@ -62,9 +62,11 @@ typedef struct GibFxOwner_s {
     uint32_t bursts;
     uint32_t pixels;
     uint32_t clearAtMs;
+    uint32_t activeSeed;
+    uint32_t activeRepaints;
     uint16_t activeSpriteIndex;
+    uint8_t activeParticles;
     uint8_t active;
-    uint8_t reserved;
 } GibFxOwner;
 
 static GibFxOwner gibFxOwner;
@@ -420,24 +422,20 @@ static void drawHitBurst(uint16_t* framebuffer) {
     }
 }
 
-static void drawBurst(uint16_t* framebuffer,
-                      const EspNativeGameplayMonsterRecord* monster,
-                      const EspNativeGameplayMonsterView* view) {
-    uint32_t seed;
-    uint32_t particles;
+static uint32_t drawGibPixels(uint16_t* framebuffer,
+                              uint32_t seed,
+                              uint32_t particles) {
     uint32_t pixels = 0U;
     uint32_t i;
 
-    if (framebuffer == NULL || monster == NULL || view == NULL) return;
-    seed = view->sourceArenaFNV1a ^ view->stateFNV1a ^
-           ((uint32_t)monster->spriteIndex * 0x9e3779b9U) ^ 0xa511e9b3U;
-    particles = particleCount(monster);
+    if (framebuffer == NULL || particles == 0U) return 0U;
 
-    /* Legacy Combat_spawnBloodParticles() is a screen-space effect around the
-     * crosshair. Native SELECT combat is currently a cardinal forward trace, so
-     * its victim is centered in the viewport. Keep this owner bounded and
-     * presentation-only; later projection ownership can replace the center
-     * constants without changing monster/gameplay state. */
+    /*
+     * Deterministic presentation-only burst. The seed is captured when a new
+     * hidden/gibbed monster is first observed, so later full world redraws can
+     * repaint the exact same still-active lease without consulting mutable
+     * monster-state fingerprints or extending the lease.
+     */
     for (i = 0U; i < particles; ++i) {
         uint32_t r = xorshift32(&seed);
         int x = GIBFX_CENTER_X + (int)(r % 45U) - 22;
@@ -460,9 +458,34 @@ static void drawBurst(uint16_t* framebuffer,
         drawDisc(framebuffer, x, y, 2, GIBFX_RED_DARK, &pixels);
     }
 
+    return pixels;
+}
+
+static void drawBurst(uint16_t* framebuffer,
+                      const EspNativeGameplayMonsterRecord* monster,
+                      const EspNativeGameplayMonsterView* view) {
+    uint32_t seed;
+    uint32_t particles;
+    uint32_t pixels;
+
+    if (framebuffer == NULL || monster == NULL || view == NULL) return;
+    seed = view->sourceArenaFNV1a ^ view->stateFNV1a ^
+           ((uint32_t)monster->spriteIndex * 0x9e3779b9U) ^ 0xa511e9b3U;
+    particles = particleCount(monster);
+
+    /* Legacy Combat_spawnBloodParticles() is a screen-space effect around the
+     * crosshair. Native SELECT combat is currently a cardinal forward trace, so
+     * its victim is centered in the viewport. Keep this owner bounded and
+     * presentation-only; later projection ownership can replace the center
+     * constants without changing monster/gameplay state. */
+    pixels = drawGibPixels(framebuffer, seed, particles);
+
     ++gibFxOwner.bursts;
     gibFxOwner.pixels += pixels;
+    gibFxOwner.activeSeed = seed;
+    gibFxOwner.activeRepaints = 0U;
     gibFxOwner.activeSpriteIndex = monster->spriteIndex;
+    gibFxOwner.activeParticles = (uint8_t)particles;
     gibFxOwner.clearAtMs = DoomRPG_GetUpTimeMS() + GIBFX_DISPLAY_MS;
     gibFxOwner.active = 1U;
     printf("[GIBFX] PAINT sprite=%u subtype=%u particles=%u chunks=%u pixels=%u center=%d,%d ownerBytes=%u leaseMs=%u visualRng=local gameplayRng=untouched legacyParticleSystem=no\n",
@@ -475,6 +498,41 @@ static void drawBurst(uint16_t* framebuffer,
            GIBFX_CENTER_Y,
            (unsigned int)sizeof(gibFxOwner),
            (unsigned int)GIBFX_DISPLAY_MS);
+}
+
+static void decorateActiveGib(void) {
+    uint16_t* framebuffer;
+    size_t expectedBytes;
+    uint32_t now;
+    uint32_t pixels;
+
+    if (gibFxOwner.active == 0U ||
+        gibFxOwner.activeSpriteIndex == GIBFX_NO_SPRITE ||
+        gibFxOwner.activeParticles == 0U ||
+        gibFxOwner.clearAtMs == 0U) {
+        return;
+    }
+
+    now = DoomRPG_GetUpTimeMS();
+    if ((int32_t)(now - gibFxOwner.clearAtMs) >= 0) return;
+
+    expectedBytes = (size_t)DOOMRPG_LOGICAL_WIDTH *
+                    (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
+    if (Esp32PlatformVideo_framebufferSizeBytes() != expectedBytes) return;
+    framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    if (framebuffer == NULL) return;
+
+    pixels = drawGibPixels(framebuffer,
+                           gibFxOwner.activeSeed,
+                           gibFxOwner.activeParticles);
+    ++gibFxOwner.activeRepaints;
+    gibFxOwner.pixels += pixels;
+    if (gibFxOwner.activeRepaints == 1U) {
+        printf("[GIBFX] REPAINT sprite=%u particles=%u pixels=%u lease=preserved reason=fresh-frame gameplayRng=untouched\n",
+               (unsigned int)gibFxOwner.activeSpriteIndex,
+               (unsigned int)gibFxOwner.activeParticles,
+               (unsigned int)pixels);
+    }
 }
 
 static void decorateActiveHit(void) {
@@ -617,9 +675,10 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
     gibFxOwner.active = 0U;
     gibFxOwner.activeSpriteIndex = GIBFX_NO_SPRITE;
     gibFxOwner.clearAtMs = 0U;
-    printf("[GIBFX] EXPIRE sprite=%u leaseMs=%u frame=%08x presented=%u restored=world-redraw gameplayRng=untouched\n",
+    printf("[GIBFX] EXPIRE sprite=%u leaseMs=%u repaints=%u frame=%08x presented=%u restored=world-redraw gameplayRng=untouched\n",
            (unsigned int)spriteIndex,
            (unsigned int)GIBFX_DISPLAY_MS,
+           (unsigned int)gibFxOwner.activeRepaints,
            (unsigned int)frame.frameAfterFNV,
            (unsigned int)frame.finalPresented);
 }
@@ -630,6 +689,7 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
  * feedback + physical-present chain. */
 int EspNativeGameplayActionEngine_present(void) {
     decorateActiveHit();
+    decorateActiveGib();
     decorateNewGibs();
     return EspNativeGameplayActionEngine_presentBase();
 }
