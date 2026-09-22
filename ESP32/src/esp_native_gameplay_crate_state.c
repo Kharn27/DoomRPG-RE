@@ -158,6 +158,47 @@ static int outcomeProbe(void) {
     return 1;
 }
 
+static uint32_t crateSnapshotFNV(
+    const EspNativeGameplayCrateTransformSnapshot* snapshot) {
+    uint32_t hash = 2166136261U;
+    uint32_t i;
+    uint32_t codeBytes;
+    if (snapshot == NULL) return 0U;
+    for (i = 0U; i < snapshot->transformedBytes; ++i) {
+        hash ^= snapshot->transformedBits[i];
+        hash *= 16777619U;
+    }
+    codeBytes = (snapshot->transformedCount + 1U) >> 1U;
+    for (i = 0U; i < codeBytes; ++i) {
+        hash ^= snapshot->defCodes[i];
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+static int targetCodeForTile(uint16_t tile, uint8_t* outCode) {
+    uint16_t targets[9];
+    uint8_t i;
+    if (outCode == NULL || !targetsReady(targets)) return 0;
+    for (i = 0U; i < 9U; ++i) {
+        if (targets[i] == tile) {
+            *outCode = (uint8_t)(i + 1U);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int targetTileForCode(uint8_t code, uint16_t* outTile) {
+    uint16_t targets[9];
+    if (outTile == NULL || code < 1U || code > 9U ||
+        !targetsReady(targets)) {
+        return 0;
+    }
+    *outTile = targets[code - 1U];
+    return 1;
+}
+
 static int findRecord(uint32_t spriteIndex) {
     uint16_t i;
     if (crateState == NULL) return -1;
@@ -285,6 +326,217 @@ int EspNativeGameplayCrateState_ensure(void) {
 const EspNativeGameplayCrateStateView* EspNativeGameplayCrateState_view(void) {
     return EspNativeGameplayCrateState_ensure() && crateState != NULL
                ? &crateState->view : NULL;
+}
+
+int EspNativeGameplayCrateState_snapshotShapeValid(
+    const EspNativeGameplayCrateTransformSnapshot* snapshot,
+    uint32_t expectedArenaFNV1a,
+    uint8_t expectedTargetMapId) {
+    uint32_t expectedBytes;
+    uint32_t codeBytes;
+    uint32_t validTailBits;
+    uint8_t validTailMask;
+    uint32_t setBits = 0U;
+    uint32_t i;
+    uint16_t ordinal = 0U;
+
+    if (snapshot == NULL || expectedArenaFNV1a == 0U ||
+        expectedTargetMapId == 0U ||
+        snapshot->sourceArenaFNV1a != expectedArenaFNV1a ||
+        snapshot->targetMapId != expectedTargetMapId ||
+        snapshot->reserved0 != 0U ||
+        snapshot->spriteCount == 0U ||
+        snapshot->spriteCount >
+            ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_MAX_SPRITE_BYTES * 8U ||
+        snapshot->transformedCount > ESP_NATIVE_GAMEPLAY_CRATE_MAX_TRANSFORMS ||
+        snapshot->transformedCount > snapshot->spriteCount) {
+        return 0;
+    }
+
+    expectedBytes = (snapshot->spriteCount + 7U) >> 3U;
+    if (expectedBytes == 0U ||
+        expectedBytes > ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_MAX_SPRITE_BYTES ||
+        snapshot->transformedBytes != expectedBytes) {
+        return 0;
+    }
+
+    for (i = 0U; i < expectedBytes; ++i) {
+        uint8_t value = snapshot->transformedBits[i];
+        while (value != 0U) {
+            setBits += (uint32_t)(value & 1U);
+            value >>= 1U;
+        }
+    }
+    if (setBits != snapshot->transformedCount) return 0;
+
+    validTailBits = snapshot->spriteCount & 7U;
+    if (validTailBits != 0U) {
+        validTailMask = (uint8_t)((1U << validTailBits) - 1U);
+        if ((snapshot->transformedBits[expectedBytes - 1U] &
+             (uint8_t)~validTailMask) != 0U) {
+            return 0;
+        }
+    }
+    for (i = expectedBytes;
+         i < ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_MAX_SPRITE_BYTES; ++i) {
+        if (snapshot->transformedBits[i] != 0U) return 0;
+    }
+
+    codeBytes = (snapshot->transformedCount + 1U) >> 1U;
+    if (codeBytes > ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_CODE_BYTES) return 0;
+    for (i = 0U; i < snapshot->spriteCount; ++i) {
+        uint8_t code;
+        uint16_t tile;
+        if ((snapshot->transformedBits[i >> 3U] &
+             (uint8_t)(1U << (i & 7U))) == 0U) {
+            continue;
+        }
+        code = (uint8_t)((ordinal & 1U) == 0U
+                             ? (snapshot->defCodes[ordinal >> 1U] & 0x0fU)
+                             : ((snapshot->defCodes[ordinal >> 1U] >> 4U) &
+                                0x0fU));
+        if (!targetTileForCode(code, &tile)) return 0;
+        ++ordinal;
+    }
+    if (ordinal != snapshot->transformedCount) return 0;
+    if ((snapshot->transformedCount & 1U) != 0U &&
+        (snapshot->defCodes[codeBytes - 1U] & 0xf0U) != 0U) {
+        return 0;
+    }
+    for (i = codeBytes; i < ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_CODE_BYTES; ++i) {
+        if (snapshot->defCodes[i] != 0U) return 0;
+    }
+    return snapshot->stateFNV1a == crateSnapshotFNV(snapshot);
+}
+
+int EspNativeGameplayCrateState_snapshot(
+    EspNativeGameplayCrateTransformSnapshot* outSnapshot) {
+    uint32_t i;
+    uint16_t ordinal = 0U;
+    if (outSnapshot == NULL || !EspNativeGameplayCrateState_ensure() ||
+        crateState == NULL) {
+        return 0;
+    }
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    outSnapshot->sourceArenaFNV1a = crateState->view.sourceArenaFNV1a;
+    outSnapshot->spriteCount = crateState->view.spriteCount;
+    outSnapshot->transformedCount = crateState->view.transformedCount;
+    outSnapshot->transformedBytes =
+        (uint16_t)((outSnapshot->spriteCount + 7U) >> 3U);
+    outSnapshot->targetMapId = crateState->view.targetMapId;
+
+    for (i = 0U; i < outSnapshot->spriteCount; ++i) {
+        int found = findRecord(i);
+        uint8_t code;
+        if (found < 0) continue;
+        if (!targetCodeForTile(crateState->records[found].effectiveDefTile,
+                               &code)) {
+            memset(outSnapshot, 0, sizeof(*outSnapshot));
+            return 0;
+        }
+        outSnapshot->transformedBits[i >> 3U] |=
+            (uint8_t)(1U << (i & 7U));
+        if ((ordinal & 1U) == 0U) {
+            outSnapshot->defCodes[ordinal >> 1U] = code;
+        }
+        else {
+            outSnapshot->defCodes[ordinal >> 1U] |= (uint8_t)(code << 4U);
+        }
+        ++ordinal;
+    }
+    if (ordinal != outSnapshot->transformedCount) {
+        memset(outSnapshot, 0, sizeof(*outSnapshot));
+        return 0;
+    }
+    outSnapshot->stateFNV1a = crateSnapshotFNV(outSnapshot);
+    return EspNativeGameplayCrateState_snapshotShapeValid(
+        outSnapshot, outSnapshot->sourceArenaFNV1a,
+        outSnapshot->targetMapId);
+}
+
+int EspNativeGameplayCrateState_restore(
+    const EspNativeGameplayCrateTransformSnapshot* snapshot) {
+    uint32_t i;
+    uint16_t ordinal = 0U;
+    uint16_t restoreCount = 0U;
+
+    if (!EspNativeGameplayCrateState_ensure() || crateState == NULL ||
+        snapshot == NULL ||
+        !EspNativeGameplayCrateState_snapshotShapeValid(
+            snapshot, crateState->view.sourceArenaFNV1a,
+            crateState->view.targetMapId) ||
+        snapshot->spriteCount != crateState->view.spriteCount ||
+        snapshot->transformedCount > crateState->view.crateCount) {
+        return 0;
+    }
+
+    /* Validate every source crate and target code before mutating the owner. */
+    for (i = 0U; i < snapshot->spriteCount; ++i) {
+        uint8_t sourceType;
+        uint8_t sourceSubtype;
+        int32_t sourceParm;
+        uint8_t code;
+        uint16_t targetTileValue;
+        if ((snapshot->transformedBits[i >> 3U] &
+             (uint8_t)(1U << (i & 7U))) == 0U) {
+            continue;
+        }
+        code = (uint8_t)((ordinal & 1U) == 0U
+                             ? (snapshot->defCodes[ordinal >> 1U] & 0x0fU)
+                             : ((snapshot->defCodes[ordinal >> 1U] >> 4U) &
+                                0x0fU));
+        if (!rawDefinition(i, NULL, &sourceType, &sourceSubtype, &sourceParm) ||
+            sourceType != CRATE_ENTITY_TYPE ||
+            sourceSubtype != CRATE_ENTITY_SUBTYPE ||
+            !targetTileForCode(code, &targetTileValue)) {
+            return 0;
+        }
+        (void)sourceParm;
+        (void)targetTileValue;
+        ++ordinal;
+    }
+    if (ordinal != snapshot->transformedCount) return 0;
+
+    memset(crateState->records, 0, sizeof(crateState->records));
+    crateState->view.transformedCount = 0U;
+    ordinal = 0U;
+    for (i = 0U; i < snapshot->spriteCount; ++i) {
+        uint8_t code;
+        uint16_t targetTileValue;
+        if ((snapshot->transformedBits[i >> 3U] &
+             (uint8_t)(1U << (i & 7U))) == 0U) {
+            continue;
+        }
+        code = (uint8_t)((ordinal & 1U) == 0U
+                             ? (snapshot->defCodes[ordinal >> 1U] & 0x0fU)
+                             : ((snapshot->defCodes[ordinal >> 1U] >> 4U) &
+                                0x0fU));
+        if (!targetTileForCode(code, &targetTileValue)) return 0;
+        crateState->records[restoreCount].spriteIndex = (uint16_t)i;
+        crateState->records[restoreCount].effectiveDefTile = targetTileValue;
+        ++restoreCount;
+        ++ordinal;
+    }
+    crateState->view.transformedCount = restoreCount;
+    if (restoreCount != snapshot->transformedCount ||
+        EspNativeGameplayCrateState_fingerprint() != snapshot->stateFNV1a) {
+        return 0;
+    }
+    printf("[CRATECHECKPOINT] RESTORE arena=%08x map=%u sprites=%u transformed=%u bytes=%u codeBytes=%u stateFNV=%08x mutation=transform-overlay-only allocation=existing-owner\n",
+           (unsigned int)snapshot->sourceArenaFNV1a,
+           (unsigned int)snapshot->targetMapId,
+           (unsigned int)snapshot->spriteCount,
+           (unsigned int)snapshot->transformedCount,
+           (unsigned int)snapshot->transformedBytes,
+           (unsigned int)((snapshot->transformedCount + 1U) >> 1U),
+           (unsigned int)snapshot->stateFNV1a);
+    return 1;
+}
+
+uint32_t EspNativeGameplayCrateState_fingerprint(void) {
+    EspNativeGameplayCrateTransformSnapshot snapshot;
+    if (!EspNativeGameplayCrateState_snapshot(&snapshot)) return 0U;
+    return snapshot.stateFNV1a;
 }
 
 int EspNativeGameplayCrateState_isTransformed(uint32_t spriteIndex) {
