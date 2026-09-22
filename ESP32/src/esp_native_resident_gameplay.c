@@ -41,8 +41,6 @@ typedef struct EspNativeResidentGameplayState_s {
     uint32_t dialogs;
     uint32_t dialogResumes;
     uint32_t dialogCancels;
-    uint32_t passwords;
-    uint32_t passwordResumes;
     uint32_t blocked;
     uint32_t deferred;
     uint32_t selectRefused;
@@ -585,9 +583,8 @@ static void serviceSelect(Render_t* render,
             return;
         }
         ++gameplayState.selects;
-        ++gameplayState.passwords;
-        printf("[RESIDENTGAMEPLAY] SELECT-PASSWORD n=%u seq=%u event=%u cmd=%u active=yes keypad=0-9+DEL+VALID pauseScript=yes skipTurn=yes continuation=preflighted\n",
-               (unsigned int)gameplayState.passwords,
+        printf("[RESIDENTGAMEPLAY] SELECT-PASSWORD select=%u seq=%u event=%u cmd=%u active=yes keypad=0-9+DEL+VALID pauseScript=yes skipTurn=yes continuation=preflighted\n",
+               (unsigned int)gameplayState.selects,
                (unsigned int)intent->sequence,
                (unsigned int)result.eventIndex,
                (unsigned int)result.commandOffset);
@@ -844,9 +841,6 @@ static void servicePasswordCompletion(
         return;
     }
 
-    if (completion->correct != 0U) {
-        ++gameplayState.passwordResumes;
-    }
     printf("[RESIDENTGAMEPLAY] PASSWORD-CLOSE event=%u entered=%u/%u result=%s continuation=%s opcode=%u mutation=%u redraw=yes message=%s turnAdvance=deferred\n",
            (unsigned int)completion->close.sourceEventIndex,
            (unsigned int)completion->enteredLength,
