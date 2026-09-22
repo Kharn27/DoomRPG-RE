@@ -18,6 +18,7 @@
 #define CRATE_DEF_TILE_FLAG 0x00040000UL
 #define CRATE_DEF_TILE_BASE 305U
 #define CRATE_SPRITE_INFO_DEF_CLEAR 0xfffffe00UL
+#define CRATE_MAX_SPRITES 1024U
 
 typedef struct CrateTransformRecord_s {
     uint16_t spriteIndex;
@@ -120,7 +121,7 @@ int EspNativeGameplayCrateState_ensure(void) {
 
     if (runtime == NULL || runtime->arenaFNV1a == 0U ||
         runtime->mapSpriteCount == 0U ||
-        runtime->mapSpriteCount > ESP_MAP_SPRITE_TOPOLOGY_MAX_SPRITES ||
+        runtime->mapSpriteCount > CRATE_MAX_SPRITES ||
         playerView == NULL || playerView->active != 1U ||
         playerView->targetMapId == 0U ||
         !EspMapSpriteTopology_isReady() ||
