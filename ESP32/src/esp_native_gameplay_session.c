@@ -62,6 +62,8 @@ typedef struct EspNativeGameplaySessionState_s {
     uint8_t stage;
     uint8_t failed;
     uint8_t gameplayBudgetStarted;
+    uint8_t checkpointResume;
+    uint8_t reserved[3];
 } EspNativeGameplaySessionState;
 
 static EspNativeGameplaySessionState sessionState;
@@ -190,17 +192,33 @@ void EspNativeGameplaySession_reset(void) {
     memset(&sessionState, 0, sizeof(sessionState));
 }
 
-int EspNativeGameplaySession_configure(
-    const EspNativeGameplaySessionConfig* config) {
-    if (config == NULL || sessionState.configured || sessionState.failed ||
+static int configureSession(const EspNativeGameplaySessionConfig* config,
+                            uint8_t checkpointResume) {
+    if (config == NULL || checkpointResume > 1U ||
+        sessionState.configured || sessionState.failed ||
         config->maxHealth == 0U || config->health > config->maxHealth ||
         config->armor > config->maxArmor) {
         return 0;
     }
+    if (checkpointResume != 0U &&
+        !EspNativeResidentGameplay_armCheckpointResume()) {
+        return 0;
+    }
     sessionState.config = *config;
     sessionState.configured = 1U;
+    sessionState.checkpointResume = checkpointResume;
     sessionState.stage = SESSION_STAGE_FIRST_FRAME;
     return 1;
+}
+
+int EspNativeGameplaySession_configure(
+    const EspNativeGameplaySessionConfig* config) {
+    return configureSession(config, 0U);
+}
+
+int EspNativeGameplaySession_configureResume(
+    const EspNativeGameplaySessionConfig* config) {
+    return configureSession(config, 1U);
 }
 
 int EspNativeGameplaySession_isActive(void) {
@@ -258,6 +276,12 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)catalog->spriteCount,
                    (unsigned int)catalog->storageBytes,
                    (unsigned int)catalog->stateFNV1a);
+
+            if (sessionState.checkpointResume != 0U) {
+                printf("[ENGINESESSION] RESUME checkpoint=restored freshFirstFrame=skipped dynamicLines=gameplay-wrapper\n");
+                sessionState.stage = SESSION_STAGE_HUD;
+                continue;
+            }
 
             frameStatus = EspNativeFirstFrame_route(doomRpg->render, view);
             if (frameStatus != ESP_NATIVE_FIRST_FRAME_OK) {

@@ -13,6 +13,13 @@ struct DoomRPG_s;
  * intent; all view mutation, collision and rendering happen later from service.
  */
 void EspNativeResidentGameplay_reset(void);
+/*
+ * One-shot admission for a durable checkpoint resume. The normal fresh-map
+ * path still requires EspNativeFirstFrame_isReady(). Resume instead requires
+ * the already-restored HUD plus a fully primed resident/large cache before
+ * installing input. The admission bit is consumed on activation.
+ */
+int EspNativeResidentGameplay_armCheckpointResume(void);
 void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpg);
 int EspNativeResidentGameplay_isActive(void);
 

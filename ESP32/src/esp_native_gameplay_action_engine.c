@@ -29,8 +29,8 @@
 
 #define ACTION_TRACE_MASK 0x5687U
 #define ACTION_TRACE_TILES 8U
-#define ACTION_MAX_SPRITES 1024U
-#define ACTION_REMOVED_BYTES (ACTION_MAX_SPRITES / 8U)
+#define ACTION_REMOVED_BYTES ESP_NATIVE_GAMEPLAY_ACTION_REMOVED_SNAPSHOT_MAX_BYTES
+#define ACTION_MAX_SPRITES (ACTION_REMOVED_BYTES * 8U)
 #define ACTION_VISUAL_HIDDEN 0x80U
 
 #define ACTION_ENTITY_ENEMY 1U
@@ -234,6 +234,75 @@ static void setRemoved(uint32_t spriteIndex, int value) {
     else actionState.removedBits[spriteIndex >> 3] &= (uint8_t)~mask;
 }
 
+static uint32_t removedCountBits(const uint8_t* bits, uint16_t bytes) {
+    uint32_t count = 0U;
+    uint16_t i;
+    if (bits == NULL) return 0U;
+    for (i = 0U; i < bytes; ++i) {
+        uint8_t value = bits[i];
+        while (value != 0U) {
+            count += (uint32_t)(value & 1U);
+            value >>= 1U;
+        }
+    }
+    return count;
+}
+
+static uint32_t removedFNV(const uint8_t* bits, uint16_t bytes) {
+    uint32_t hash = 2166136261U;
+    uint16_t i;
+    if (bits == NULL && bytes != 0U) return 0U;
+    for (i = 0U; i < bytes; ++i) {
+        hash ^= bits[i];
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+static int removedSnapshotShapeValid(
+    const EspNativeGameplayActionRemovedSnapshot* snapshot,
+    uint32_t expectedArenaFNV,
+    uint8_t expectedMapId,
+    uint16_t expectedSpriteCount) {
+    uint16_t expectedBytes;
+    uint16_t i;
+    uint32_t validTailBits;
+    uint8_t validTailMask;
+
+    if (snapshot == NULL || snapshot->reserved0 != 0U ||
+        snapshot->sourceArenaFNV1a != expectedArenaFNV ||
+        snapshot->targetMapId != expectedMapId ||
+        snapshot->spriteCount != expectedSpriteCount ||
+        snapshot->spriteCount == 0U ||
+        snapshot->spriteCount > ACTION_MAX_SPRITES ||
+        snapshot->removedCount > snapshot->spriteCount) {
+        return 0;
+    }
+
+    expectedBytes = (uint16_t)((snapshot->spriteCount + 7U) >> 3U);
+    if (expectedBytes == 0U || expectedBytes > ACTION_REMOVED_BYTES ||
+        snapshot->removedBytes != expectedBytes ||
+        removedCountBits(snapshot->removedBits, expectedBytes) !=
+            snapshot->removedCount ||
+        snapshot->stateFNV1a != removedFNV(snapshot->removedBits,
+                                           expectedBytes)) {
+        return 0;
+    }
+
+    validTailBits = snapshot->spriteCount & 7U;
+    if (validTailBits != 0U) {
+        validTailMask = (uint8_t)((1U << validTailBits) - 1U);
+        if ((snapshot->removedBits[expectedBytes - 1U] &
+             (uint8_t)~validTailMask) != 0U) {
+            return 0;
+        }
+    }
+    for (i = expectedBytes; i < ACTION_REMOVED_BYTES; ++i) {
+        if (snapshot->removedBits[i] != 0U) return 0;
+    }
+    return 1;
+}
+
 static int actionGetEntity(uint32_t spriteIndex,
                            uint8_t* outType,
                            uint8_t* outSubType,
@@ -314,6 +383,53 @@ static int ensureOwner(void) {
         logCorpus();
     }
     return 1;
+}
+
+int EspNativeGameplayActionEngine_snapshotRemoved(
+    EspNativeGameplayActionRemovedSnapshot* outSnapshot) {
+    uint16_t usedBytes;
+    if (outSnapshot == NULL || !ensureOwner()) return 0;
+    usedBytes = (uint16_t)((actionState.spriteCount + 7U) >> 3U);
+    if (usedBytes == 0U || usedBytes > ACTION_REMOVED_BYTES) return 0;
+
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    outSnapshot->sourceArenaFNV1a = actionState.arenaFNV;
+    outSnapshot->spriteCount = actionState.spriteCount;
+    outSnapshot->removedBytes = usedBytes;
+    outSnapshot->targetMapId = actionState.targetMapId;
+    memcpy(outSnapshot->removedBits, actionState.removedBits, usedBytes);
+    outSnapshot->removedCount =
+        (uint16_t)removedCountBits(outSnapshot->removedBits, usedBytes);
+    outSnapshot->stateFNV1a =
+        removedFNV(outSnapshot->removedBits, usedBytes);
+    return removedSnapshotShapeValid(outSnapshot,
+                                     actionState.arenaFNV,
+                                     actionState.targetMapId,
+                                     actionState.spriteCount);
+}
+
+int EspNativeGameplayActionEngine_restoreRemoved(
+    const EspNativeGameplayActionRemovedSnapshot* snapshot) {
+    if (!ensureOwner() ||
+        !removedSnapshotShapeValid(snapshot,
+                                   actionState.arenaFNV,
+                                   actionState.targetMapId,
+                                   actionState.spriteCount)) {
+        return 0;
+    }
+    memset(actionState.removedBits, 0, sizeof(actionState.removedBits));
+    memcpy(actionState.removedBits, snapshot->removedBits,
+           snapshot->removedBytes);
+    return removedFNV(actionState.removedBits, snapshot->removedBytes) ==
+           snapshot->stateFNV1a;
+}
+
+uint32_t EspNativeGameplayActionEngine_removedFingerprint(void) {
+    uint16_t usedBytes;
+    if (!ensureOwner()) return 0U;
+    usedBytes = (uint16_t)((actionState.spriteCount + 7U) >> 3U);
+    if (usedBytes == 0U || usedBytes > ACTION_REMOVED_BYTES) return 0U;
+    return removedFNV(actionState.removedBits, usedBytes);
 }
 
 int EspNativeGameplayActionEngine_queueFeedback(

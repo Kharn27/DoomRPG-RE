@@ -28,6 +28,13 @@ typedef struct EspNativeGameplaySessionConfig_s {
 void EspNativeGameplaySession_reset(void);
 int EspNativeGameplaySession_configure(
     const EspNativeGameplaySessionConfig* config);
+/*
+ * Resume a rebuilt checkpoint world. Mutable world overlays have already been
+ * restored by the caller, so this skips only the historical fresh-map
+ * first-frame witness; catalog/HUD/cache/gameplay ownership is reprised.
+ */
+int EspNativeGameplaySession_configureResume(
+    const EspNativeGameplaySessionConfig* config);
 void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg);
 int EspNativeGameplaySession_isActive(void);
 int EspNativeGameplaySession_hasFailed(void);

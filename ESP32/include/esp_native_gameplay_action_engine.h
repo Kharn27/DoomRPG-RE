@@ -9,6 +9,19 @@ extern "C" {
 
 struct DoomRPG_s;
 
+#define ESP_NATIVE_GAMEPLAY_ACTION_REMOVED_SNAPSHOT_MAX_BYTES 128U
+
+typedef struct EspNativeGameplayActionRemovedSnapshot_s {
+    uint32_t sourceArenaFNV1a;
+    uint32_t stateFNV1a;
+    uint16_t spriteCount;
+    uint16_t removedBytes;
+    uint16_t removedCount;
+    uint8_t targetMapId;
+    uint8_t reserved0;
+    uint8_t removedBits[ESP_NATIVE_GAMEPLAY_ACTION_REMOVED_SNAPSHOT_MAX_BYTES];
+} EspNativeGameplayActionRemovedSnapshot;
+
 typedef enum EspNativeGameplayActionFeedback_e {
     ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NONE = 0,
     ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NOTHING = 1,
@@ -49,6 +62,15 @@ void EspNativeGameplayActionEngine_markFreshFrame(void);
  */
 void EspNativeGameplayActionEngine_reset(void);
 int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpg);
+
+/* Pointer-free semantic snapshot of map-local sprite removals owned by the
+ * action engine (currently fire clears; future destructible removals may reuse
+ * the same owner). Transient feedback/animation/counters are never persisted. */
+int EspNativeGameplayActionEngine_snapshotRemoved(
+    EspNativeGameplayActionRemovedSnapshot* outSnapshot);
+int EspNativeGameplayActionEngine_restoreRemoved(
+    const EspNativeGameplayActionRemovedSnapshot* snapshot);
+uint32_t EspNativeGameplayActionEngine_removedFingerprint(void);
 
 /*
  * The linker has one public --wrap owner for EspNativeGameplayAction_executeSelect.
