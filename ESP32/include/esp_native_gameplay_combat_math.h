@@ -58,6 +58,20 @@ int EspNativeGameplayCombatMath_rollPlayerAttack(
     uint32_t worldDistance,
     EspNativeGameplayAttackRoll* outRoll);
 
+/*
+ * Exact legacy generic destructible target math (Combat::aMobj):
+ * agility derives from current player accuracy, defense derives from current
+ * player strength, weapon multiplier is neutral 256, and extinguisher hits are
+ * forced to MISS only after the generic hit RNG byte has been consumed.
+ * This mutates only gameplay RNG; callers own ammo/world rollback.
+ */
+int EspNativeGameplayCombatMath_rollDestructibleAttack(
+    struct DoomRPG_s* doomRpg,
+    uint8_t weaponIndex,
+    const EspNativeGameplayPlayerState* player,
+    uint32_t worldDistance,
+    EspNativeGameplayAttackRoll* outRoll);
+
 uint32_t EspNativeGameplayCombatMath_monsterExp(
     const EspNativeGameplayMonsterRecord* target);
 
