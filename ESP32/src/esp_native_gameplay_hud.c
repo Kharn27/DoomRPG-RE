@@ -446,6 +446,30 @@ const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) {
     return EspNativeGameplayHud_isReady() ? &hudState : NULL;
 }
 
+int EspNativeGameplayHud_paintTopTouchNotches(void) {
+    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    const size_t framebufferBytes = Esp32PlatformVideo_framebufferSizeBytes();
+    const uint16_t notch = rgb565(0x808591U);
+
+    if (framebuffer == NULL ||
+        framebufferBytes != (size_t)DOOMRPG_LOGICAL_WIDTH *
+                                (size_t)DOOMRPG_LOGICAL_HEIGHT *
+                                sizeof(uint16_t)) {
+        return 0;
+    }
+
+    drawTopTouchButtonCorners(framebuffer,
+                              HUD_TOP_MENU_LEFT, HUD_TOP_MENU_RIGHT,
+                              notch, NULL);
+    drawTopTouchButtonCorners(framebuffer,
+                              HUD_TOP_PASS_LEFT, HUD_TOP_PASS_RIGHT,
+                              notch, NULL);
+    drawTopTouchButtonCorners(framebuffer,
+                              HUD_TOP_AUTOMAP_LEFT, HUD_TOP_AUTOMAP_RIGHT,
+                              notch, NULL);
+    return 1;
+}
+
 EspNativeGameplayHudStatus EspNativeGameplayHud_prepareInitial(
     const EspNativeGameplayHudModel* model,
     EspNativeGameplayHudState* outState) {
