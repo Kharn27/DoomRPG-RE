@@ -2,6 +2,7 @@
 
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
+#include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_position.h"
@@ -32,6 +33,10 @@ int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
 
     if (!__real_EspMapRuntime_getMapSprite(index, outSprite)) return 0;
     if (outSprite == NULL) return 1;
+
+    /* A transformed crate remains the same immutable BSP sprite spatially, but
+     * projects the legacy replacement EntityDef tile for rendering. */
+    if (!EspNativeGameplayCrateState_applyMapSprite(index, outSprite)) return 0;
 
     /* One generic map-local consumed overlay serves every player resource
      * family. The immutable BSP sprite remains untouched; renderer and future
