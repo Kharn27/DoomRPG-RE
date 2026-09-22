@@ -1,6 +1,6 @@
 # Native player hit feedback — outgoing damage text + blood pixels
 
-Status: **REAL-CYD PASS**
+Status: **REVIEW-FIX CANDIDATE — prior hardware PASS retained; gib-preservation retest pending**
 
 ## Recovery / code boundary
 
@@ -8,9 +8,10 @@ Status: **REAL-CYD PASS**
 main = 5ac68378363b77daf9f98203966726557dc9b0ad
 main merge = PR #141
 branch = agent/esp32-native-player-hit-feedback
-candidate code = e070057d3b9466f87189c504f86099b7e9f2fb67
-CI = esp32-cyd run #350 / 35611816011 SUCCESS
-artifact = doom-rpg-esp32-cyd-e070057d3b9466f87189c504f86099b7e9f2fb67
+hardware-tested code = e070057d3b9466f87189c504f86099b7e9f2fb67
+review-fix candidate = 13e42a44cb8e08dff05e58cc701943152a12b672
+CI = esp32-cyd run #363 / 35697742353 SUCCESS
+artifact = doom-rpg-esp32-cyd-13e42a44cb8e08dff05e58cc701943152a12b672
 ```
 
 The branch was created from the exact post-rotation merge `main`. No combat
@@ -277,10 +278,73 @@ Miss and crit formatting remain recovered from the legacy implementation but
 were not required for this hardware PASS because the ordinary nonlethal, lethal,
 retaliation and previously-crashing render paths are all exercised.
 
+## PR review follow-up — preserve active gib lease
+
+A PR code review correctly identified one remaining presentation-composition bug.
+On a lethal gib hit, the gib burst owns its own 350 ms lease. The hit-effect
+350 ms expiry can trigger a fresh full-world redraw before the gib lease ends.
+Previously `decorateNewGibs()` skipped the already-seen hidden monster and did
+not repaint the still-active gib burst, so that unrelated redraw could erase the
+gib effect early.
+
+The bounded fix keeps one active burst replay descriptor inside the existing
+fixed gib owner:
+
+```text
+activeSeed
+activeParticles
+activeSpriteIndex
+clearAtMs
+activeRepaints
+```
+
+No particle array, heap allocation or gameplay RNG is added. The seed is captured
+when the gib is first painted. Every physical present may therefore compose the
+same deterministic active burst again while `now < clearAtMs`, without
+restarting or extending the lease.
+
+The present composition is now:
+
+```text
+expired/active hit spray
+ -> active gib replay (if lease still valid)
+ -> detect/arm newly hidden gib monsters
+ -> top-bar feedback
+ -> physical present
+```
+
+`syncOwner()` runs before active-gib replay, so a map/runtime identity change
+invalidates an old short-lived burst before it can be painted onto a new map.
+
+Expected review-fix witness on a gib kill:
+
+```text
+[GIBFX] PAINT ... leaseMs=350 ...
+...
+[GIBFX] REPAINT ... lease=preserved composition=present ...
+...
+[HITFX] EXPIRE ... restored=world-redraw ...
+...
+[GIBFX] EXPIRE ... leaseMs=350 repaints=... restored=world-redraw ...
+```
+
+The important behavior is that `HITFX EXPIRE` or any other full redraw inside
+the gib lease does **not** make the gib disappear early.
+
+Code boundary:
+
+```text
+13e42a44cb8e08dff05e58cc701943152a12b672
+esp32-cyd #363 / 35697742353 = SUCCESS
+artifact = doom-rpg-esp32-cyd-13e42a44cb8e08dff05e58cc701943152a12b672
+hardware = pending one lethal-gib overlap retest
+```
+
 ## Merge boundary
 
 ```text
-hardware-tested code = e070057d3b9466f87189c504f86099b7e9f2fb67
-post-test changes = documentation only
-status = merge-ready
+last hardware-tested code = e070057d3b9466f87189c504f86099b7e9f2fb67
+current review-fix code = 13e42a44cb8e08dff05e58cc701943152a12b672
+post-review changes = code + docs
+status = NOT merge-ready until lethal-gib overlap retest
 ```
