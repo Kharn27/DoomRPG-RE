@@ -10,6 +10,8 @@ extern "C" {
 #endif
 
 #define ESP_NATIVE_GAMEPLAY_CRATE_MAX_TRANSFORMS 64U
+#define ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_MAX_SPRITE_BYTES 128U
+#define ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_CODE_BYTES 32U
 
 typedef enum EspNativeGameplayCrateOutcome_e {
     ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_INVALID = 0,
@@ -17,6 +19,23 @@ typedef enum EspNativeGameplayCrateOutcome_e {
     ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_TRANSFORM = 2,
     ESP_NATIVE_GAMEPLAY_CRATE_OUTCOME_BREAK_REMOVE = 3
 } EspNativeGameplayCrateOutcome;
+
+typedef struct EspNativeGameplayCrateTransformSnapshot_s {
+    uint32_t sourceArenaFNV1a;
+    uint32_t stateFNV1a;
+    uint16_t spriteCount;
+    uint16_t transformedCount;
+    uint16_t transformedBytes;
+    uint8_t targetMapId;
+    uint8_t reserved0;
+    uint8_t transformedBits[ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_MAX_SPRITE_BYTES];
+    /*
+     * One 4-bit target code per transformed sprite, ordered by ascending
+     * spriteIndex among set transformedBits. Codes 1..9 map to the exact
+     * allowed crate pickup targets; 0 and 10..15 are invalid.
+     */
+    uint8_t defCodes[ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_CODE_BYTES];
+} EspNativeGameplayCrateTransformSnapshot;
 
 typedef struct EspNativeGameplayCrateStateView_s {
     uint32_t sourceArenaFNV1a;
@@ -38,6 +57,21 @@ typedef struct EspNativeGameplayCrateStateView_s {
 void EspNativeGameplayCrateState_reset(void);
 int EspNativeGameplayCrateState_ensure(void);
 const EspNativeGameplayCrateStateView* EspNativeGameplayCrateState_view(void);
+
+/*
+ * Pointer-free checkpoint state. Snapshot encoding is canonical and compact:
+ * a sprite bitset plus packed 4-bit target codes in ascending sprite order.
+ * Transient probe/allocator state is never persisted.
+ */
+int EspNativeGameplayCrateState_snapshot(
+    EspNativeGameplayCrateTransformSnapshot* outSnapshot);
+int EspNativeGameplayCrateState_restore(
+    const EspNativeGameplayCrateTransformSnapshot* snapshot);
+int EspNativeGameplayCrateState_snapshotShapeValid(
+    const EspNativeGameplayCrateTransformSnapshot* snapshot,
+    uint32_t expectedArenaFNV1a,
+    uint8_t expectedTargetMapId);
+uint32_t EspNativeGameplayCrateState_fingerprint(void);
 
 int EspNativeGameplayCrateState_isTransformed(uint32_t spriteIndex);
 int EspNativeGameplayCrateState_effectiveDefTile(uint32_t spriteIndex,
