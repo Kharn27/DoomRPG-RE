@@ -47,6 +47,7 @@ typedef struct EspNativeGameplayPasswordCompletion_s {
  */
 void EspNativeGameplayPassword_reset(void);
 int EspNativeGameplayPassword_isActive(void);
+int EspNativeGameplayPassword_hasPendingCompletion(void);
 
 EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     uint16_t eventIndex,
