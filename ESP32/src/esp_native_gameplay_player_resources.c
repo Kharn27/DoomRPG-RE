@@ -595,6 +595,21 @@ static int rerender(DoomRPG_t* doomRpg,
     EspNativeGameplayFrameStats frame;
     if (doomRpg == NULL || doomRpg->render == NULL || view == NULL ||
         view->viewAngle < 0 || view->viewAngle > 255) return 0;
+
+    if (EspNativeResidentGameplay_isAutomapActive()) {
+        if (!EspNativeResidentGameplay_redrawAutomap(
+                doomRpg->render, reason)) {
+            printf("[PLAYERRES] AUTOMAP-RENDER-FAILED reason=%s angle=%d\n",
+                   reason != NULL ? reason : "pickup",
+                   (int)view->viewAngle);
+            return 0;
+        }
+        printf("[PLAYERRES] AUTOMAP-FRAME reason=%s angle=%d presented=1 ownership=retained\n",
+               reason != NULL ? reason : "pickup",
+               (int)view->viewAngle);
+        return 1;
+    }
+
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
                                            (uint8_t)view->viewAngle,

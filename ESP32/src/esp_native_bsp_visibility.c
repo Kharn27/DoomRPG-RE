@@ -6,6 +6,7 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+#include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_bsp_visibility.h"
 #include "esp_player_view_state.h"
@@ -21,6 +22,8 @@
 #define Y_NUDGE 0x00000100UL
 #define X_NUDGE 0x00000200UL
 #define OCCLUDER 0x20000000UL
+
+#define NO_AUTOMAP 0x00000020UL
 
 typedef struct Scratch_s {
     int viewCos_;
@@ -252,6 +255,12 @@ static int depthLine(Render_t* r,
         ++state->spriteSpans;
         return 1;
     }
+    if (lineIndex >= ESP_NATIVE_BSP_VISIBILITY_MAX_LINES) return 0;
+    if ((src.flags & NO_AUTOMAP) == 0U) {
+        state->visibleAutomapLines[lineIndex >> 3] =
+            (uint8_t)(state->visibleAutomapLines[lineIndex >> 3] |
+                      (uint8_t)(1U << (lineIndex & 7U)));
+    }
     return depthColumns(r, &line);
 }
 
@@ -385,7 +394,8 @@ int EspNativeBspVisibility_build(struct Render_s* renderBase,
         render->screenX != 0 || render->screenY != 20 ||
         !EspMapRuntime_isLoaded() || runtime->nodeCount == 0U ||
         runtime->nodeCount > ESP_NATIVE_BSP_VISIBILITY_MAX_NODES ||
-        runtime->lineCount == 0U) {
+        runtime->lineCount == 0U ||
+        runtime->lineCount > ESP_NATIVE_BSP_VISIBILITY_MAX_LINES) {
         return 0;
     }
 
@@ -420,4 +430,54 @@ int EspNativeBspVisibility_mapSpriteVisible(
     }
     if (outLeafIndex != NULL) *outLeafIndex = leaf;
     return (state->visibleLeaves[leaf >> 5] & (1U << (leaf & 31U))) != 0U;
+}
+
+
+int EspNativeBspVisibility_publishAutomap(
+    const EspNativeBspVisibilityState* state,
+    uint16_t* outLinesMutated,
+    uint16_t* outSpritesMutated) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t i;
+    uint16_t linesMutated = 0U;
+    uint16_t spritesMutated = 0U;
+
+    if (outLinesMutated != NULL) *outLinesMutated = 0U;
+    if (outSpritesMutated != NULL) *outSpritesMutated = 0U;
+    if (state == NULL || runtime == NULL ||
+        !EspMapAutomapState_isReady() ||
+        runtime->lineCount > ESP_NATIVE_BSP_VISIBILITY_MAX_LINES) {
+        return 0;
+    }
+
+    for (i = 0U; i < runtime->lineCount; ++i) {
+        uint8_t revealed;
+        if ((state->visibleAutomapLines[i >> 3] &
+             (uint8_t)(1U << (i & 7U))) == 0U) {
+            continue;
+        }
+        if (!EspMapAutomapState_getLineRevealed(i, &revealed)) return 0;
+        if (revealed == 0U) {
+            if (!EspMapAutomapState_setLineRevealed(i, 1U)) return 0;
+            if (linesMutated != UINT16_MAX) ++linesMutated;
+        }
+    }
+
+    for (i = 0U; i < runtime->mapSpriteCount; ++i) {
+        uint32_t leaf = UINT32_MAX;
+        uint8_t revealed;
+        if (!EspNativeBspVisibility_mapSpriteVisible(state, i, &leaf)) {
+            if (leaf == UINT32_MAX) return 0;
+            continue;
+        }
+        if (!EspMapAutomapState_getSpriteRevealed(i, &revealed)) return 0;
+        if (revealed == 0U) {
+            if (!EspMapAutomapState_setSpriteRevealed(i, 1U)) return 0;
+            if (spritesMutated != UINT16_MAX) ++spritesMutated;
+        }
+    }
+
+    if (outLinesMutated != NULL) *outLinesMutated = linesMutated;
+    if (outSpritesMutated != NULL) *outSpritesMutated = spritesMutated;
+    return 1;
 }

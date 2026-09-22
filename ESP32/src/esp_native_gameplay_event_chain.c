@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_map_automap_state.h"
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_line_state.h"
@@ -11,6 +12,7 @@
 #include "esp_map_opcode_executor.h"
 #include "esp_map_runtime.h"
 #include "esp_map_script_state.h"
+#include "esp_map_state.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_dialog.h"
@@ -52,6 +54,7 @@ typedef struct ChainTransaction_s {
     ChainStateUndo states[ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS];
     ChainUnlockUndo unlocks[ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS];
     ChainRemovedUndo removed[ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS];
+    EspMapAutomapSnapshot automapBefore;
     EspMapSpriteTopologyView topologyViewBefore;
     uint8_t* topologyBytes;
     uint32_t topologyCapacity;
@@ -62,9 +65,10 @@ typedef struct ChainTransaction_s {
     uint8_t unlockCount;
     uint8_t removedCount;
     uint8_t topologyCaptured;
+    uint8_t automapCaptured;
     uint8_t active;
     uint8_t mutated;
-    uint8_t reserved[2];
+    uint8_t reserved;
 } ChainTransaction;
 
 /* The rollback journal is gameplay-only and comparatively large.  Keep only a
@@ -105,6 +109,7 @@ static int chainOpcodeSupported(uint8_t codeId) {
     return codeId == ESP_MAP_OPCODE_SHOW ||
            codeId == ESP_MAP_OPCODE_HIDE ||
            codeId == ESP_MAP_OPCODE_UNLOCK ||
+           codeId == ESP_MAP_OPCODE_GIVEMAP ||
            EspMapOpcodeExecutor_supports(codeId);
 }
 
@@ -216,6 +221,10 @@ static EspNativeGameplayEventChainPreflightStatus buildPlan(
         if (filtered.codeId == ESP_MAP_OPCODE_UNLOCK &&
             (!EspMapLineState_isReady() ||
              !EspMapLineTextureState_isReady())) {
+            return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY;
+        }
+        if (filtered.codeId == ESP_MAP_OPCODE_GIVEMAP &&
+            (!EspMapAutomapState_isReady() || !EspMapState_isReady())) {
             return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY;
         }
 
@@ -401,6 +410,18 @@ static int captureTopology(void) {
     return 1;
 }
 
+static int captureAutomap(void) {
+    if (transactionOwner == NULL) return 0;
+    if (transaction.automapCaptured) return 1;
+    memset(&transaction.automapBefore, 0,
+           sizeof(transaction.automapBefore));
+    if (!EspMapAutomapState_snapshot(&transaction.automapBefore)) return 0;
+    transaction.automapCaptured = 1U;
+    printf("[DIALOGCHAIN] AUTOMAP-SNAPSHOT bytes=%u allocation=journal-owner\n",
+           (unsigned int)sizeof(transaction.automapBefore));
+    return 1;
+}
+
 static int restoreTransaction(void) {
     int ok = 1;
     int i;
@@ -444,6 +465,10 @@ static int restoreTransaction(void) {
                 transaction.topologyViewBefore;
         }
     }
+    if (transaction.automapCaptured &&
+        !EspMapAutomapState_restore(&transaction.automapBefore)) {
+        ok = 0;
+    }
     return ok;
 }
 
@@ -470,6 +495,7 @@ static EspNativeGameplayDialogResumeStatus executeChain(
     uint8_t showCount = 0U;
     uint8_t hideCount = 0U;
     uint8_t unlockCount = 0U;
+    uint8_t giveMapCount = 0U;
     uint8_t stateCount = 0U;
     uint8_t removedCount = 0U;
     uint8_t anyMutation = 0U;
@@ -545,6 +571,26 @@ static EspNativeGameplayDialogResumeStatus executeChain(
             if (result.lockMutated != 0U || result.textureMutated != 0U)
                 anyMutation = 1U;
         }
+        else if (command.id == ESP_MAP_OPCODE_GIVEMAP) {
+            EspMapGiveMapResult result;
+            if (!captureAutomap()) goto failed;
+            memset(&result, 0, sizeof(result));
+            if (EspMapAutomapState_applyGiveMapCommand(
+                    &descriptor, plan.command[i].offset, &result) !=
+                ESP_MAP_GIVEMAP_OK) goto failed;
+            ++giveMapCount;
+            if (result.mutated != 0U) anyMutation = 1U;
+            printf("[GIVEMAP] COMMIT event=%u cmd=%u lines=%u/%u sprites=%u/%u entrances=%u/%u remove=%u\n",
+                   (unsigned int)result.sourceEventIndex,
+                   (unsigned int)result.sourceCommandOffset,
+                   (unsigned int)result.linesMutated,
+                   (unsigned int)result.lineTargetCount,
+                   (unsigned int)result.spritesMutated,
+                   (unsigned int)result.spriteTargetCount,
+                   (unsigned int)result.tilesMutated,
+                   (unsigned int)result.entranceTargetCount,
+                   (unsigned int)result.removeCommandIfHandled);
+        }
         else {
             EspMapOpcodeExecResult exec;
             if (transaction.stateCount >=
@@ -582,17 +628,19 @@ static EspNativeGameplayDialogResumeStatus executeChain(
     outResult->mutated = anyMutation;
     outResult->rollbackAvailable = anyMutation;
 
-    printf("[DIALOGCHAIN] RESUME event=%u start=%u handled=%u show=%u hide=%u unlock=%u state=%u removed=%u mutation=%u topologySnapshot=%uB\n",
+    printf("[DIALOGCHAIN] RESUME event=%u start=%u handled=%u show=%u hide=%u unlock=%u givemap=%u state=%u removed=%u mutation=%u topologySnapshot=%uB automapSnapshot=%s\n",
            (unsigned int)close->sourceEventIndex,
            (unsigned int)close->resumeCommandOffset,
            (unsigned int)plan.count,
            (unsigned int)showCount,
            (unsigned int)hideCount,
            (unsigned int)unlockCount,
+           (unsigned int)giveMapCount,
            (unsigned int)stateCount,
            (unsigned int)removedCount,
            (unsigned int)anyMutation,
-           (unsigned int)transaction.topologyBytesUsed);
+           (unsigned int)transaction.topologyBytesUsed,
+           transaction.automapCaptured ? "yes" : "no");
     return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK;
 
 failed:
@@ -604,6 +652,21 @@ failed:
     clearTransaction();
     memset(outResult, 0, sizeof(*outResult));
     return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED;
+}
+
+EspNativeGameplayDialogResumeStatus
+EspNativeGameplayEventChain_execute(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint32_t runFlags,
+    EspNativeGameplayDialogResumeResult* outResult) {
+    EspNativeGameplayDialogClose close;
+    memset(&close, 0, sizeof(close));
+    close.sourceEventIndex = eventIndex;
+    close.resumeCommandOffset = commandOffset;
+    close.runFlags = runFlags;
+    close.resumeRequested = 1U;
+    return executeChain(&close, outResult);
 }
 
 EspNativeGameplayDialogResumeStatus __wrap_EspNativeGameplayDialog_resume(

@@ -299,6 +299,80 @@ int EspMapAutomapState_setSpriteRevealed(uint32_t spriteIndex,
     return 1;
 }
 
+int EspMapAutomapState_snapshot(EspMapAutomapSnapshot* outSnapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t i;
+
+    if (outSnapshot != NULL) memset(outSnapshot, 0, sizeof(*outSnapshot));
+    if (outSnapshot == NULL || runtime == NULL ||
+        !EspMapAutomapState_isReady() || !EspMapState_isReady() ||
+        runtime->lineCount != automapView.lineCount ||
+        runtime->mapSpriteCount != automapView.spriteCount ||
+        automapView.lineBitsetBytes > ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES ||
+        automapView.spriteBitsetBytes > ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES) {
+        return 0;
+    }
+
+    outSnapshot->sourceArenaFNV1a = runtime->arenaFNV1a;
+    outSnapshot->lineCount = automapView.lineCount;
+    outSnapshot->spriteCount = automapView.spriteCount;
+    outSnapshot->lineBitsetBytes = (uint16_t)automapView.lineBitsetBytes;
+    outSnapshot->spriteBitsetBytes = (uint16_t)automapView.spriteBitsetBytes;
+    outSnapshot->lineRevealedCount =
+        (uint16_t)automapView.lineRevealedCount;
+    outSnapshot->spriteRevealedCount =
+        (uint16_t)automapView.spriteRevealedCount;
+    memcpy(outSnapshot->lineBits, automapStorage,
+           automapView.lineBitsetBytes);
+    memcpy(outSnapshot->spriteBits,
+           automapStorage + automapView.lineBitsetBytes,
+           automapView.spriteBitsetBytes);
+
+    for (i = 0U; i < ESP_MAP_STATE_TILE_COUNT; ++i) {
+        uint8_t flags;
+        if (!EspMapState_getTileFlags(i, &flags)) return 0;
+        if ((flags & ESP_MAP_TILE_VISITED) != 0U) {
+            bitSet(outSnapshot->visitedBits, i, 1U);
+        }
+    }
+    return 1;
+}
+
+int EspMapAutomapState_restore(const EspMapAutomapSnapshot* snapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t i;
+
+    if (snapshot == NULL || runtime == NULL ||
+        !EspMapAutomapState_isReady() || !EspMapState_isReady() ||
+        snapshot->sourceArenaFNV1a != runtime->arenaFNV1a ||
+        snapshot->lineCount != automapView.lineCount ||
+        snapshot->spriteCount != automapView.spriteCount ||
+        snapshot->lineBitsetBytes != automapView.lineBitsetBytes ||
+        snapshot->spriteBitsetBytes != automapView.spriteBitsetBytes ||
+        snapshot->lineBitsetBytes > ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES ||
+        snapshot->spriteBitsetBytes > ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES ||
+        snapshot->lineRevealedCount > snapshot->lineCount ||
+        snapshot->spriteRevealedCount > snapshot->spriteCount) {
+        return 0;
+    }
+
+    memcpy(automapStorage, snapshot->lineBits,
+           automapView.lineBitsetBytes);
+    memcpy(automapStorage + automapView.lineBitsetBytes,
+           snapshot->spriteBits, automapView.spriteBitsetBytes);
+    automapView.lineRevealedCount = snapshot->lineRevealedCount;
+    automapView.spriteRevealedCount = snapshot->spriteRevealedCount;
+    refreshFNV();
+
+    for (i = 0U; i < ESP_MAP_STATE_TILE_COUNT; ++i) {
+        if (!EspMapState_setVisited(
+                i, bitGet(snapshot->visitedBits, i))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 EspMapGiveMapStatus EspMapAutomapState_planGiveMapDirect(
     EspMapGiveMapDirectResult* outResult) {
     return planGiveMapDirect(outResult);

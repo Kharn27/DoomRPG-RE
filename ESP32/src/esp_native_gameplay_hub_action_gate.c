@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "esp_native_gameplay_hub.h"
+#include "esp_native_resident_gameplay.h"
 
 struct DoomRPG_s;
 
@@ -23,17 +24,19 @@ int __wrap_EspNativeGameplayMonsterState_actionService(
     struct DoomRPG_s* doomRpg) {
     static uint8_t paused;
 
-    if (EspNativeGameplayHub_isActive()) {
+    if (EspNativeGameplayHub_isActive() ||
+        EspNativeResidentGameplay_isAutomapActive()) {
         if (paused == 0U) {
             paused = 1U;
-            printf("[HUBACTIONGATE] PAUSE worldActionFeedback=yes timer=realtime mutation=no\n");
+            printf("[HUBACTIONGATE] PAUSE owner=%s worldActionFeedback=yes timer=realtime mutation=no\n",
+                   EspNativeGameplayHub_isActive() ? "hub" : "automap");
         }
         return 1;
     }
 
     if (paused != 0U) {
         paused = 0U;
-        printf("[HUBACTIONGATE] RESUME worldActionFeedback=yes timer=realtime mutation=no\n");
+        printf("[HUBACTIONGATE] RESUME owner=world worldActionFeedback=yes timer=realtime mutation=no\n");
     }
     return __real_EspNativeGameplayMonsterState_actionService(doomRpg);
 }

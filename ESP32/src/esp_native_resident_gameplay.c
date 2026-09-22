@@ -12,8 +12,11 @@
 #include "esp_map_runtime.h"
 #include "esp_map_ui_intent.h"
 #include "esp_native_first_frame.h"
+#include "esp_native_bsp_visibility.h"
+#include "esp_native_door_animator.h"
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_automap.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
@@ -23,6 +26,7 @@
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_move_events.h"
+#include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_pass_turn.h"
 #include "esp_native_gameplay_password.h"
 #include "esp_native_gameplay_player_state.h"
@@ -49,10 +53,16 @@ typedef struct EspNativeResidentGameplayState_s {
     uint8_t active;
     uint8_t failed;
     uint8_t checkpointResumeArmed;
-    uint8_t reserved;
+    uint8_t modeFlags;
 } EspNativeResidentGameplayState;
 
 static EspNativeResidentGameplayState gameplayState;
+
+#define RESIDENT_MODE_AUTOMAP 0x01U
+
+static int automapActive(void) {
+    return (gameplayState.modeFlags & RESIDENT_MODE_AUTOMAP) != 0U;
+}
 
 static void disableGameplay(const char* reason) {
     if (EspNativeGameplayControls_isActive()) {
@@ -197,7 +207,9 @@ static void onGameplayTap(int16_t screenX,
                logicalY,
                EspNativeGameplayHub_isActive()
                    ? "HUB"
-                   : (EspNativeGameplayDialog_isActive() ? "DIALOG" : "WORLD"));
+                   : (EspNativeGameplayDialog_isActive()
+                          ? "DIALOG"
+                          : (automapActive() ? "AUTOMAP" : "WORLD")));
         printf("[TOUCHFEEDBACK] FLASH zone=%u action=%s edits=%u hold=%ums frame=%08x->%08x style=semantic-neon-double-ring+vector-glyph\n",
                (unsigned int)feedbackStats.zone,
                EspNativeGameplayInput_actionName(feedbackStats.action),
@@ -239,6 +251,18 @@ static int renderCurrent(Render_t* render,
     return 1;
 }
 
+static int renderAutomapCurrent(Render_t* render, const char* reason);
+static int closeAutomap(Render_t* render, const char* reason);
+
+static int renderActionCurrent(Render_t* render,
+                               uint8_t angle,
+                               const char* reason) {
+    if (automapActive()) {
+        return renderAutomapCurrent(render, reason);
+    }
+    return renderCurrent(render, angle, reason);
+}
+
 static void serviceTurn(Render_t* render,
                         const EspNativeGameplayInputState* intent) {
     EspPlayerViewState beforeView;
@@ -270,11 +294,12 @@ static void serviceTurn(Render_t* render,
         return;
     }
 
-    if (!renderCurrent(render, (uint8_t)afterView.viewAngle, "TURN")) {
+    if (!renderActionCurrent(render, (uint8_t)afterView.viewAngle, "TURN")) {
         status = EspNativeGameplayDispatch_rollbackTurn(
             &afterView, &beforeView, &afterTurn, &beforeTurn, &result);
         if (status != ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK ||
-            !renderCurrent(render, (uint8_t)beforeView.viewAngle, "TURN-ROLLBACK")) {
+            !renderActionCurrent(render, (uint8_t)beforeView.viewAngle,
+                                 "TURN-ROLLBACK")) {
             disableGameplay("turn-render-rollback");
             return;
         }
@@ -300,6 +325,7 @@ static void serviceMove(Render_t* render,
     EspNativeGameplayMoveResult result;
     EspNativeGameplayMoveDialogIntent moveDialog;
     EspNativeGameplayDispatchStatus status;
+    const uint8_t startedInAutomap = automapActive() ? 1U : 0U;
 
     memset(&beforeView, 0, sizeof(beforeView));
     memset(&afterView, 0, sizeof(afterView));
@@ -309,14 +335,27 @@ static void serviceMove(Render_t* render,
     status = EspNativeGameplayDispatch_prepareMove(
         intent, &beforeView, &afterView, &result);
     if (status == ESP_NATIVE_GAMEPLAY_DISPATCH_COLLISION_BLOCKED) {
+        uint8_t legacyAdvance = 0U;
+        if (startedInAutomap != 0U) {
+            legacyAdvance =
+                (uint8_t)(EspNativeGameplayMonsterTurn_requestBlockedAutomapMove(
+                              intent->sequence)
+                              ? 1U
+                              : 0U);
+        }
         ++gameplayState.blocked;
-        printf("[RESIDENTGAMEPLAY] MOVE-BLOCKED n=%u action=%s tile=%u->%u blocker=%u type=%u\n",
+        printf("[RESIDENTGAMEPLAY] MOVE-BLOCKED n=%u seq=%u action=%s tile=%u->%u blocker=%u type=%u context=%s legacyAdvance=%s\n",
                (unsigned int)gameplayState.blocked,
+               (unsigned int)intent->sequence,
                EspNativeGameplayInput_actionName(intent->action),
                (unsigned int)result.sourceTile,
                (unsigned int)result.destTile,
                (unsigned int)result.blockerSpriteIndex,
-               (unsigned int)result.blockerType);
+               (unsigned int)result.blockerType,
+               startedInAutomap != 0U ? "AUTOMAP" : "WORLD",
+               startedInAutomap != 0U
+                   ? (legacyAdvance != 0U ? "yes" : "DEFER")
+                   : "no");
         return;
     }
     if (status != ESP_NATIVE_GAMEPLAY_DISPATCH_PREPARED) {
@@ -344,11 +383,12 @@ static void serviceMove(Render_t* render,
         return;
     }
 
-    if (!renderCurrent(render, (uint8_t)afterView.viewAngle, "MOVE")) {
+    if (!renderActionCurrent(render, (uint8_t)afterView.viewAngle, "MOVE")) {
         status = EspNativeGameplayDispatch_rollbackMove(
             &afterView, &beforeView, &result);
         if (status != ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK ||
-            !renderCurrent(render, (uint8_t)beforeView.viewAngle, "MOVE-ROLLBACK")) {
+            !renderActionCurrent(render, (uint8_t)beforeView.viewAngle,
+                                 "MOVE-ROLLBACK")) {
             disableGameplay("move-render-rollback");
             return;
         }
@@ -360,17 +400,51 @@ static void serviceMove(Render_t* render,
     }
 
     if (EspNativeGameplayMoveEvents_pendingDialog(result.sequence, &moveDialog)) {
-        EspNativeGameplayDialogBeginStatus dialogStatus =
-            EspNativeGameplayDialog_begin(
+        EspNativeGameplayDialogBeginStatus dialogStatus;
+
+        if (startedInAutomap != 0U &&
+            !closeAutomap(render, "AUTOMAP-MOVE-DIALOG")) {
+            status = EspNativeGameplayDispatch_rollbackMove(
+                &afterView, &beforeView, &result);
+            if (status != ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK ||
+                !renderAutomapCurrent(render, "MOVE-DIALOG-CLOSE-ROLLBACK")) {
+                disableGameplay("move-dialog-close-rollback");
+                return;
+            }
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] MOVE-DIALOG-DEFER n=%u seq=%u event=%u cmd=%u opcode=%u status=automap-close-failed moveRolledBack=yes automapRestored=yes\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)result.sequence,
+                   (unsigned int)moveDialog.eventIndex,
+                   (unsigned int)moveDialog.commandOffset,
+                   (unsigned int)moveDialog.codeId);
+            return;
+        }
+
+        dialogStatus = EspNativeGameplayDialog_begin(
                 moveDialog.eventIndex,
                 moveDialog.commandOffset,
                 moveDialog.runFlags);
         if (dialogStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+            int rollbackPresented = 0;
             status = EspNativeGameplayDispatch_rollbackMove(
                 &afterView, &beforeView, &result);
+            if (status == ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK) {
+                if (startedInAutomap != 0U) {
+                    gameplayState.modeFlags =
+                        (uint8_t)(gameplayState.modeFlags |
+                                  RESIDENT_MODE_AUTOMAP);
+                    rollbackPresented =
+                        renderAutomapCurrent(render, "MOVE-DIALOG-ROLLBACK");
+                }
+                else {
+                    rollbackPresented =
+                        renderCurrent(render, (uint8_t)beforeView.viewAngle,
+                                      "MOVE-DIALOG-ROLLBACK");
+                }
+            }
             if (status != ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK ||
-                !renderCurrent(render, (uint8_t)beforeView.viewAngle,
-                               "MOVE-DIALOG-ROLLBACK")) {
+                !rollbackPresented) {
                 disableGameplay("move-dialog-open-rollback");
                 return;
             }
@@ -390,6 +464,17 @@ static void serviceMove(Render_t* render,
         }
         ++gameplayState.moves;
         ++gameplayState.dialogs;
+        if (startedInAutomap == 0U) {
+            uint16_t uncovered = 0U;
+            if (!EspNativeGameplayAutomap_uncoverAt(
+                    afterView.destX, afterView.destY, &uncovered)) {
+                disableGameplay("automap-uncover-move-dialog");
+                return;
+            }
+            printf("[AUTOMAP] UNCOVER reason=MOVE-DIALOG tile=%u mutated=%u state=ready\n",
+                   (unsigned int)result.destTile,
+                   (unsigned int)uncovered);
+        }
         printf("[RESIDENTGAMEPLAY] MOVE-DIALOG n=%u seq=%u action=%s tile=%u->%u event=%u cmd=%u opcode=%u active=yes back=%s pauseScript=yes skipTurn=yes continuation=preflighted committed=yes\n",
                (unsigned int)gameplayState.dialogs,
                (unsigned int)result.sequence,
@@ -403,6 +488,17 @@ static void serviceMove(Render_t* render,
         return;
     }
 
+    if (startedInAutomap == 0U) {
+        uint16_t uncovered = 0U;
+        if (!EspNativeGameplayAutomap_uncoverAt(
+                afterView.destX, afterView.destY, &uncovered)) {
+            disableGameplay("automap-uncover-move");
+            return;
+        }
+        printf("[AUTOMAP] UNCOVER reason=MOVE tile=%u mutated=%u state=ready\n",
+               (unsigned int)result.destTile,
+               (unsigned int)uncovered);
+    }
     ++gameplayState.moves;
     printf("[RESIDENTGAMEPLAY] MOVE n=%u seq=%u action=%s tile=%u->%u delta=%d,%d pos=%d,%d moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred committed=yes\n",
            (unsigned int)gameplayState.moves,
@@ -580,6 +676,7 @@ static void serviceSelect(DoomRPG_t* doomRpg,
     const EspPlayerViewState* view = EspPlayerView_view();
     EspNativeGameplayActionResult result;
     EspNativeGameplayActionStatus status;
+    const uint8_t startedInAutomap = automapActive() ? 1U : 0U;
 
     memset(&result, 0, sizeof(result));
     if (doomRpg == NULL || view == NULL || view->active != 1U ||
@@ -597,13 +694,83 @@ static void serviceSelect(DoomRPG_t* doomRpg,
            (unsigned int)result.eligibleCount,
            (unsigned int)result.unsupportedCodeId);
 
+    if (status == ESP_NATIVE_GAMEPLAY_ACTION_CHAIN_READY) {
+        EspNativeGameplayDialogResumeResult chain;
+        EspNativeGameplayDialogResumeStatus chainStatus;
+        memset(&chain, 0, sizeof(chain));
+        chainStatus = EspNativeGameplayEventChain_execute(
+            result.eventIndex,
+            result.commandOffset,
+            ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS,
+            &chain);
+        if (chainStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+            chainStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] SELECT-CHAIN-DEFER n=%u seq=%u event=%u cmd=%u opcode=%u status=%s mutation=no\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)intent->sequence,
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.commandOffset,
+                   (unsigned int)result.codeId,
+                   EspNativeGameplayDialog_resumeStatusName(chainStatus));
+            return;
+        }
+        if (!renderActionCurrent(render, (uint8_t)view->viewAngle,
+                                 "SELECT-CHAIN")) {
+            if (chainStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+                chain.rollbackAvailable != 0U &&
+                EspNativeGameplayDialog_rollbackResume(&chain) &&
+                renderActionCurrent(render, (uint8_t)view->viewAngle,
+                                    "SELECT-CHAIN-ROLLBACK")) {
+                printf("[RESIDENTGAMEPLAY] SELECT-CHAIN ROLLBACK seq=%u event=%u restored=yes\n",
+                       (unsigned int)intent->sequence,
+                       (unsigned int)result.eventIndex);
+                return;
+            }
+            disableGameplay("select-chain-render");
+            return;
+        }
+        ++gameplayState.selects;
+        printf("[RESIDENTGAMEPLAY] SELECT-CHAIN n=%u seq=%u event=%u startCmd=%u entryOpcode=%u finalOpcode=%u mutation=%u redraw=yes rollback=closed turnAdvance=deferred\n",
+               (unsigned int)gameplayState.selects,
+               (unsigned int)intent->sequence,
+               (unsigned int)result.eventIndex,
+               (unsigned int)result.commandOffset,
+               (unsigned int)result.codeId,
+               (unsigned int)(chainStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK
+                                  ? chain.codeId : 0U),
+               (unsigned int)(chainStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK
+                                  ? chain.mutated : 0U));
+        return;
+    }
+
     if (status == ESP_NATIVE_GAMEPLAY_ACTION_PASSWORD_READY) {
-        EspNativeGameplayPasswordBeginStatus passwordStatus =
-            EspNativeGameplayPassword_begin(
+        EspNativeGameplayPasswordBeginStatus passwordStatus;
+
+        if (startedInAutomap != 0U &&
+            !closeAutomap(render, "AUTOMAP-SELECT-PASSWORD")) {
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] SELECT-PASSWORD-DEFER n=%u seq=%u event=%u cmd=%u status=automap-close-failed mutation=no\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)intent->sequence,
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.commandOffset);
+            return;
+        }
+
+        passwordStatus = EspNativeGameplayPassword_begin(
                 result.eventIndex,
                 result.commandOffset,
                 ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS);
         if (passwordStatus != ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_OK) {
+            if (startedInAutomap != 0U) {
+                gameplayState.modeFlags =
+                    (uint8_t)(gameplayState.modeFlags | RESIDENT_MODE_AUTOMAP);
+                if (!renderAutomapCurrent(render, "SELECT-PASSWORD-ROLLBACK")) {
+                    disableGameplay("select-password-automap-rollback");
+                    return;
+                }
+            }
             ++gameplayState.deferred;
             printf("[RESIDENTGAMEPLAY] SELECT-PASSWORD-DEFER n=%u seq=%u event=%u cmd=%u status=%s mutation=no\n",
                    (unsigned int)gameplayState.deferred,
@@ -623,12 +790,32 @@ static void serviceSelect(DoomRPG_t* doomRpg,
     }
 
     if (status == ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY) {
-        EspNativeGameplayDialogBeginStatus dialogStatus =
-            EspNativeGameplayDialog_begin(
+        EspNativeGameplayDialogBeginStatus dialogStatus;
+
+        if (startedInAutomap != 0U &&
+            !closeAutomap(render, "AUTOMAP-SELECT-DIALOG")) {
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] SELECT-DIALOG-DEFER n=%u seq=%u event=%u cmd=%u status=automap-close-failed mutation=no\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)intent->sequence,
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.commandOffset);
+            return;
+        }
+
+        dialogStatus = EspNativeGameplayDialog_begin(
                 result.eventIndex,
                 result.commandOffset,
                 ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS);
         if (dialogStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+            if (startedInAutomap != 0U) {
+                gameplayState.modeFlags =
+                    (uint8_t)(gameplayState.modeFlags | RESIDENT_MODE_AUTOMAP);
+                if (!renderAutomapCurrent(render, "SELECT-DIALOG-ROLLBACK")) {
+                    disableGameplay("select-dialog-automap-rollback");
+                    return;
+                }
+            }
             ++gameplayState.deferred;
             printf("[RESIDENTGAMEPLAY] SELECT-DIALOG-DEFER n=%u seq=%u event=%u cmd=%u status=%s mutation=no\n",
                    (unsigned int)gameplayState.deferred,
@@ -706,7 +893,8 @@ static void serviceSelect(DoomRPG_t* doomRpg,
             secretFeedbackQueued = 1U;
         }
 
-        if (!renderCurrent(render, (uint8_t)view->viewAngle, "SELECT-DOOR")) {
+        if (!renderActionCurrent(render, (uint8_t)view->viewAngle,
+                                 "SELECT-DOOR")) {
             int feedbackRestored = 1;
             int playerRestored = 1;
             if (secretFeedbackQueued != 0U) {
@@ -721,8 +909,8 @@ static void serviceSelect(DoomRPG_t* doomRpg,
             }
             if (!feedbackRestored || !playerRestored ||
                 !EspNativeGameplayAction_rollbackSelect(&result) ||
-                !renderCurrent(render, (uint8_t)view->viewAngle,
-                               "SELECT-DOOR-ROLLBACK")) {
+                !renderActionCurrent(render, (uint8_t)view->viewAngle,
+                                     "SELECT-DOOR-ROLLBACK")) {
                 disableGameplay("select-door-render-rollback");
                 return;
             }
@@ -1058,6 +1246,146 @@ static void servicePasswordCompletion(
            feedbackQueued ? "queued" : "none");
 }
 
+static int publishCurrentAutomapVisibility(Render_t* render,
+                                           const char* reason) {
+    EspNativeBspVisibilityState* visibility;
+    uint16_t linesMutated = 0U;
+    uint16_t spritesMutated = 0U;
+    int ok;
+
+    if (render == NULL) return 0;
+    visibility = (EspNativeBspVisibilityState*)SDL_malloc(sizeof(*visibility));
+    if (visibility == NULL) {
+        printf("[AUTOMAPVIS] FAILED source=automap reason=owner-allocation bytes=%u\n",
+               (unsigned int)sizeof(*visibility));
+        return 0;
+    }
+    memset(visibility, 0, sizeof(*visibility));
+    ok = EspNativeBspVisibility_build(render, visibility) &&
+         EspNativeBspVisibility_publishAutomap(
+             visibility, &linesMutated, &spritesMutated);
+    SDL_free(visibility);
+    if (!ok) {
+        printf("[AUTOMAPVIS] FAILED source=automap reason=%s\n",
+               reason != NULL ? reason : "frame");
+        return 0;
+    }
+    if (linesMutated != 0U || spritesMutated != 0U) {
+        printf("[AUTOMAPVIS] PUBLISH source=automap reason=%s lines+=%u sprites+=%u owner=transient-no-framebuffer\n",
+               reason != NULL ? reason : "frame",
+               (unsigned int)linesMutated,
+               (unsigned int)spritesMutated);
+    }
+    return 1;
+}
+
+static int renderAutomapCurrent(Render_t* render, const char* reason) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayAutomapStats stats;
+    uint16_t uncovered = 0U;
+    int ok = 0;
+
+    memset(&stats, 0, sizeof(stats));
+    if (view == NULL || view->active != 1U ||
+        view->viewAngle != view->destAngle ||
+        (view->viewAngle & 63) != 0 ||
+        !EspNativeGameplayAutomap_uncoverAt(
+            view->destX, view->destY, &uncovered) ||
+        !publishCurrentAutomapVisibility(render, reason)) {
+        return 0;
+    }
+
+    if (EspNativeDoorAnimator_hasPendingFrames()) {
+        const EspNativeDoorAnimatorView* before = EspNativeDoorAnimator_view();
+        uint32_t completedBefore =
+            before != NULL ? before->completedTransitions : 0U;
+
+        if (!EspNativeDoorAnimator_validateLineState()) {
+            printf("[DOORANIM] AUTOMAP lease-canceled-before-render; presenting stable state\n");
+        }
+
+        while (EspNativeDoorAnimator_hasPendingFrames()) {
+            EspNativeDoorAnimationFrame animationFrame;
+            memset(&animationFrame, 0, sizeof(animationFrame));
+            memset(&stats, 0, sizeof(stats));
+            if (!EspNativeDoorAnimator_prepareFrame(&animationFrame)) {
+                EspNativeDoorAnimator_reset();
+                EspNativeGameplayMoveEvents_onFrameResult(0);
+                printf("[DOORANIM] AUTOMAP FAILED reason=prepare-frame\n");
+                return 0;
+            }
+            ok = EspNativeGameplayAutomap_render(
+                view->viewX, view->viewY, (uint8_t)view->viewAngle, &stats);
+            if (!EspNativeDoorAnimator_finishFrame(ok)) {
+                EspNativeDoorAnimator_reset();
+                EspNativeGameplayMoveEvents_onFrameResult(0);
+                printf("[DOORANIM] AUTOMAP FAILED reason=finish-frame\n");
+                return 0;
+            }
+            printf("[DOORANIM] AUTOMAP-FRAME %u/%u angle=%u lines=%u geometry=%s frame=%08x render=%s\n",
+                   (unsigned int)animationFrame.ordinal,
+                   (unsigned int)animationFrame.totalFrames,
+                   (unsigned int)view->viewAngle,
+                   (unsigned int)animationFrame.activeLines,
+                   animationFrame.geometryActive != 0U ? "moving" : "stable",
+                   (unsigned int)stats.frameFNV1a,
+                   ok ? "ok" : "failed");
+            if (!ok) {
+                EspNativeGameplayMoveEvents_onFrameResult(0);
+                EspNativeDoorAnimator_reset();
+                return 0;
+            }
+        }
+        EspNativeGameplayMoveEvents_onFrameResult(1);
+        {
+            const EspNativeDoorAnimatorView* after = EspNativeDoorAnimator_view();
+            uint32_t completedAfter =
+                after != NULL ? after->completedTransitions : completedBefore;
+            printf("[DOORANIM] AUTOMAP-COMPLETE transitions=%u frames=%u state=stable transaction=committed\n",
+                   (unsigned int)(completedAfter - completedBefore),
+                   (unsigned int)ESP_NATIVE_DOOR_ANIMATION_FRAMES);
+        }
+    }
+    else {
+        ok = EspNativeGameplayAutomap_render(
+            view->viewX, view->viewY, (uint8_t)view->viewAngle, &stats);
+        EspNativeGameplayMoveEvents_onFrameResult(ok);
+        if (!ok) return 0;
+    }
+
+    printf("[RESIDENTGAMEPLAY] AUTOMAP-FRAME reason=%s uncover=%u lines=%u visited=%u player=%u,%u frame=%08x turnAdvance=semantic\n",
+           reason != NULL ? reason : "AUTOMAP",
+           (unsigned int)uncovered,
+           (unsigned int)stats.revealedLines,
+           (unsigned int)stats.visitedCells,
+           (unsigned int)stats.playerX,
+           (unsigned int)stats.playerY,
+           (unsigned int)stats.frameFNV1a);
+    return 1;
+}
+
+static int closeAutomap(Render_t* render, const char* reason) {
+    const EspNativeGameplayHudState* hud = EspNativeGameplayHud_view();
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayHudStats hudStats;
+
+    memset(&hudStats, 0, sizeof(hudStats));
+    if (render == NULL || hud == NULL || view == NULL ||
+        view->active != 1U || view->viewAngle != view->destAngle ||
+        (view->viewAngle & 63) != 0 ||
+        EspNativeGameplayHud_repaint(hud, &hudStats) !=
+            ESP_NATIVE_GAMEPLAY_HUD_OK ||
+        !renderCurrent(render, (uint8_t)view->viewAngle,
+                       reason != NULL ? reason : "AUTOMAP-CLOSE")) {
+        return 0;
+    }
+    gameplayState.modeFlags =
+        (uint8_t)(gameplayState.modeFlags & (uint8_t)~RESIDENT_MODE_AUTOMAP);
+    printf("[RESIDENTGAMEPLAY] AUTOMAP-CLOSE hudPixels=%u worldRedraw=yes mode=world turnAdvance=no\n",
+           (unsigned int)hudStats.pixelsWritten);
+    return 1;
+}
+
 static int restoreWorldAfterHub(Render_t* render, const char* reason) {
     const EspPlayerViewState* view = EspPlayerView_view();
     if (render == NULL || view == NULL || view->active != 1U ||
@@ -1091,6 +1419,27 @@ int EspNativeResidentGameplay_armCheckpointResume(void) {
 
 int EspNativeResidentGameplay_isActive(void) {
     return gameplayState.active != 0U && gameplayState.failed == 0U;
+}
+
+int EspNativeResidentGameplay_isAutomapActive(void) {
+    return EspNativeResidentGameplay_isActive() && automapActive();
+}
+
+int EspNativeResidentGameplay_redrawAutomap(
+    struct Render_s* render,
+    const char* reason) {
+    if (!EspNativeResidentGameplay_isAutomapActive() || render == NULL) return 0;
+    return renderAutomapCurrent((Render_t*)render, reason);
+}
+
+int EspNativeResidentGameplay_exitAutomapForDamage(
+    struct Render_s* render,
+    const char* reason) {
+    if (!EspNativeResidentGameplay_isAutomapActive()) return 1;
+    printf("[RESIDENTGAMEPLAY] AUTOMAP-DAMAGE-EXIT reason=%s legacyPlayerPain=yes\n",
+           reason != NULL ? reason : "damage");
+    return closeAutomap((Render_t*)render,
+                        reason != NULL ? reason : "AUTOMAP-DAMAGE");
 }
 
 void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
@@ -1136,11 +1485,21 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         EspNativeGameplayInput_reset();
         {
             const uint8_t resumed = gameplayState.checkpointResumeArmed;
+            const EspPlayerViewState* view = EspPlayerView_view();
+            uint16_t uncovered = 0U;
+            if (view == NULL ||
+                !EspNativeGameplayAutomap_uncoverAt(
+                    view->destX, view->destY, &uncovered)) {
+                printf("[RESIDENTGAMEPLAY] WAIT automap initial uncover\n");
+                return;
+            }
             gameplayState.checkpointResumeArmed = 0U;
             gameplayState.active = 1U;
             PlatformInput_setTapCallback(onGameplayTap);
+            printf("[AUTOMAP] UNCOVER reason=SESSION-ARM mutated=%u state=ready\n",
+                   (unsigned int)uncovered);
             printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-            printf("[RESIDENTGAMEPLAY] READY map=current entry=%s touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR6/15/16/17+SELECT_DIALOG8/26+PASSWORD10+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live password=touch-keypad-0-9+DEL+VALID menu=inventory-weapon-select-no-turn SELECT-entity/other/automap=deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
+            printf("[RESIDENTGAMEPLAY] READY map=current entry=%s touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR6/15/16/17+SELECT_DIALOG8/26+PASSWORD10+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live password=touch-keypad-0-9+DEL+VALID menu=inventory-weapon-select-no-turn SELECT-entity/other=deferred AUTOMAP=move+turn+select-live/other-actions-deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
                    resumed != 0U ? "checkpoint-resume" : "fresh-first-frame",
                    (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         }
@@ -1169,6 +1528,11 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     pending = EspNativeGameplayInput_peek();
 
     if ((EspNativeGameplayHub_isActive() &&
+         (EspNativeGameplayDialog_isActive() ||
+          EspNativeGameplayPassword_isActive() ||
+          EspNativeGameplayPassword_hasPendingCompletion() ||
+          automapActive())) ||
+        (automapActive() &&
          (EspNativeGameplayDialog_isActive() ||
           EspNativeGameplayPassword_isActive() ||
           EspNativeGameplayPassword_hasPendingCompletion())) ||
@@ -1221,6 +1585,47 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             disableGameplay("dialog-tick");
         }
         return;
+    }
+
+    if (automapActive()) {
+        if (pending == NULL || pending->pending == 0U) return;
+        memset(&intent, 0, sizeof(intent));
+        inputStatus = EspNativeGameplayInput_consume(&intent);
+        if (inputStatus != ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+            disableGameplay("automap-input-consume");
+            return;
+        }
+        ++gameplayState.actions;
+
+        switch (intent.action) {
+        case ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP:
+            if (!closeAutomap(doomRpg->render, "AUTOMAP-CLOSE")) {
+                disableGameplay("automap-close-render");
+            }
+            return;
+
+        case ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT:
+        case ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT:
+            serviceTurn(doomRpg->render, &intent);
+            return;
+
+        case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD:
+        case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK:
+        case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_LEFT:
+        case ESP_NATIVE_GAMEPLAY_ACTION_MOVE_RIGHT:
+            serviceMove(doomRpg->render, &intent);
+            return;
+
+        case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
+            serviceSelect(doomRpg, doomRpg->render, &intent);
+            return;
+
+        default:
+            printf("[RESIDENTGAMEPLAY] AUTOMAP-IGNORE seq=%u action=%s phase=move+turn+select-live otherLegacyActions=deferred mutation=no turnAdvance=no\n",
+                   (unsigned int)intent.sequence,
+                   EspNativeGameplayInput_actionName(intent.action));
+            return;
+        }
     }
 
     /* HUB owns the input domain while active. No world action is allowed to
@@ -1304,6 +1709,23 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
     case ESP_NATIVE_GAMEPLAY_ACTION_PREV_WEAPON:
         serviceWeaponControl(doomRpg->render, &intent);
+        break;
+
+    case ESP_NATIVE_GAMEPLAY_ACTION_AUTOMAP:
+        gameplayState.modeFlags =
+            (uint8_t)(gameplayState.modeFlags | RESIDENT_MODE_AUTOMAP);
+        if (!renderAutomapCurrent(doomRpg->render, "OPEN")) {
+            gameplayState.modeFlags =
+                (uint8_t)(gameplayState.modeFlags &
+                          (uint8_t)~RESIDENT_MODE_AUTOMAP);
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] AUTOMAP-OPEN-DEFER n=%u seq=%u mutation=visit-only-possible turnAdvance=no\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)intent.sequence);
+            return;
+        }
+        printf("[RESIDENTGAMEPLAY] AUTOMAP-OPEN seq=%u mode=view-only worldDispatch=blocked turnAdvance=no fullScreen=yes\n",
+               (unsigned int)intent.sequence);
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN: {

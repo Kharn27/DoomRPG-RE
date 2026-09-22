@@ -12,8 +12,13 @@ extern "C" {
 #define ESP_NATIVE_BSP_VISIBILITY_LEAF_WORDS \
     (ESP_NATIVE_BSP_VISIBILITY_MAX_NODES / 32U)
 
+#define ESP_NATIVE_BSP_VISIBILITY_MAX_LINES 1024U
+#define ESP_NATIVE_BSP_VISIBILITY_LINE_BYTES \
+    (ESP_NATIVE_BSP_VISIBILITY_MAX_LINES / 8U)
+
 typedef struct EspNativeBspVisibilityState_s {
     uint32_t visibleLeaves[ESP_NATIVE_BSP_VISIBILITY_LEAF_WORDS];
+    uint8_t visibleAutomapLines[ESP_NATIVE_BSP_VISIBILITY_LINE_BYTES];
     int32_t columnScale[ESP_NATIVE_BSP_VISIBILITY_COLUMNS];
     uint32_t nodes;
     uint32_t leaves;
@@ -42,6 +47,15 @@ int EspNativeBspVisibility_mapSpriteVisible(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,
     uint32_t* outLeafIndex);
+
+/* Publish the exact legacy render-derived Automap reveal side effects:
+ * normal wall lines admitted by the BSP/clip walk gain line bit 0x80 semantics,
+ * and map sprites in visible leaves gain info bit 0x10000000 semantics.
+ * The state is caller-owned transient scratch; no framebuffer pixels change. */
+int EspNativeBspVisibility_publishAutomap(
+    const EspNativeBspVisibilityState* state,
+    uint16_t* outLinesMutated,
+    uint16_t* outSpritesMutated);
 
 #ifdef __cplusplus
 }
