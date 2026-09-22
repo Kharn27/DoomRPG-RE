@@ -27,7 +27,7 @@
 #define EXPECTED_NATIVE_SCENE_FNV 0xffe0995eU
 #define FAITHFUL_ORIGINAL_MENU_FNV 0x86c38260U
 #define PRIOR_FITTED_MENU_FNV 0x1afa0223U
-#define EXPECTED_MAIN_MENU_MODEL_FNV 0xbbc2149bU
+#define EXPECTED_MAIN_MENU_MODEL_FNV 0x292c7f95U
 #define EXPECTED_LAYOUT_FNV 0x47b3656eU
 #define EXPECTED_BLACK_LOGO_FNV 0x0ac1f9c6U
 #define EXPECTED_FONT_WIDTH 144
@@ -38,10 +38,28 @@
 
 static const char* expectedMainItems[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT] = {
     "Start Game",
+    "Load Game ",
     "Options   ",
-    "Help/About",
-    "Exit      "
+    "Help/About"
 };
+
+static int adaptMainMenuForEsp32(MenuSystem_t* menuSystem) {
+    static char startGameLabel[] = "Start Game";
+    static char loadGameLabel[] = "Load Game ";
+    static char optionsLabel[] = "Options   ";
+    static char helpLabel[] = "Help/About";
+
+    if (menuSystem == NULL || menuSystem->menu != MENU_MAIN ||
+        menuSystem->numItems != DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
+        return 0;
+    }
+
+    MenuItem_Set(&menuSystem->items[0], startGameLabel, 2, 0);
+    MenuItem_Set(&menuSystem->items[1], loadGameLabel, 2, 0);
+    MenuItem_Set(&menuSystem->items[2], optionsLabel, 2, 0);
+    MenuItem_Set(&menuSystem->items[3], helpLabel, 2, 0);
+    return 1;
+}
 
 static uint32_t heap8Free(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -341,7 +359,9 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
     uint32_t composeMs;
     int i;
 
-    if (!validatePresentationContract(doomRpg, &modelHash, &layoutHash)) {
+    if (doomRpg == NULL ||
+        !adaptMainMenuForEsp32(doomRpg->menuSystem) ||
+        !validatePresentationContract(doomRpg, &modelHash, &layoutHash)) {
         printf("[MAINOPAQUE] FAILED presentation contract menu=%d selected=%d\n",
                doomRpg != NULL && doomRpg->menuSystem != NULL
                    ? doomRpg->menuSystem->menu : -999,
@@ -468,6 +488,11 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
     menuSystem->paintMenu = true;
     menuSystem->maxItems = doomCanvas->displayRect.h /
                            DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
+
+    if (!adaptMainMenuForEsp32(menuSystem)) {
+        printf("[MAINTOUCHLAYOUT] FAILED ESP32 MENU_MAIN adaptation\n");
+        return 0;
+    }
 
     if (!validatePresentationContract(doomRpg, &modelHash, &layoutHash)) {
         printf("[MAINTOUCHLAYOUT] FAILED original MENU_MAIN model/layout contract\n");

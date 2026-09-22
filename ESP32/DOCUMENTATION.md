@@ -13,29 +13,55 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-main at branch creation = e80851f21382ad13c456b85f01e55bf796c75edf
-current main = 5841b0cb55607428bf74c341112a161213c47c90
-current main tip = PR #147 README-only merge
-branch = agent/esp32-native-display-touch-polish
-hardware-tested current code boundary = d532ede998c23fcac7e73feefe66d5ce8c755ac9
-CI = esp32-cyd #522 / 35765245689 SUCCESS
-RAM static = 44832 B
-Flash = 728653 B
-status = REAL-CYD PASS THROUGH AUTOMAP PROGRESSION GATE
+original main-menu branch base = 5841b0cb55607428bf74c341112a161213c47c90
+rebased onto origin/main = 630567b9e87b323f8bfe61764ae34b4771e0dd93
+branch = fix/mainMenu
+rebased main-menu load implementation = 8a78bcd
+rebased code boundary = 2eceda2
+upstream hardware-tested boundary = d532ede998c23fcac7e73feefe66d5ce8c755ac9
+main-menu hardware-tested pre-rebase boundary = 18c1cfbdb11236588d7a8160ce643ebe7e00b61d
+post-rebase local build = esp32-cyd SUCCESS / RAM 44944 B / Flash 731237 B
+status = REBASED BUILD PASS; COMBINED REAL-CYD REPLAY PENDING
 ```
 
-The current branch was created from `e80851f21382ad13c456b85f01e55bf796c75edf`.
-Main has since advanced by a README-only PR, so the gameplay recovery source remains the branch plus `PORTING_STATUS.md` until this work is merged.
+This branch now combines the hardware-proven resident gameplay-polish work from
+`origin/main` with the main-menu loading work originally validated at
+`18c1cfb`. The rebased code compiles successfully, but `2eceda2` is not labeled
+as a new hardware PASS until the combined firmware is replayed on the CYD.
 
-Real-CYD validation on the branch now covers the intro display fit, moved corpse projection, native password input including wrong-code feedback and correct-code door unlock through an `EV_DIALOGNOBACK` continuation, and corrected monster movement collision against shoot-through/movement-solid bars.
+The upstream real-CYD run covers the intro display fit, moved-corpse projection,
+native password input and continuation, monster collision against
+shoot-through/movement-solid bars, and the two-line atomic secret-door SELECT
+transaction. Progression reached the first explicit Automap instruction;
+native Automap presentation/input remains the next bounded milestone.
 
-The user then progressed until the game explicitly requires opening the Automap. Native Automap presentation/input is not implemented yet, so Automap is the next bounded milestone.
+The rebased ESP32 menu replaces J2ME `Exit` and is ordered as `Start Game`,
+`Load Game`, `Options`, `Help/About`. Before the rebase, the user confirmed both
+successful checkpoint resume and the visible red `No Save` fallback on the real
+CYD.
 
-Latest milestone:
+The main-menu action shares the V1-V6 checkpoint validator/loader already used
+by `HUB -> STAT`. It releases menu-only runtime, rebuilds the immutable BSP,
+restores the mutable owners and configures a resumed gameplay session without
+replaying the intro. Missing, truncated or invalid records fail closed.
 
+The same branch removes the no-PSRAM `mappings.bin` inflate peak. The ZIP entry
+is decoded into the permanent 38,400-byte framebuffer scratch, after which the
+four immutable mapping arrays are installed once and reused across BSP loads.
+
+Latest milestones:
+
+- [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 - [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
+- [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
+- [`MILESTONE_NATIVE_SECRET_DOOR_BATCH.md`](MILESTONE_NATIVE_SECRET_DOOR_BATCH.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
+- [`MILESTONE_NATIVE_CRATE_SUBTYPE2.md`](MILESTONE_NATIVE_CRATE_SUBTYPE2.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
 
-Late candidate paths that still need their own explicit replay before being called hardware PASS are the password full-HUD repaint after modal close and the legacy `Found Secret!` +5 XP reward.
+Late password full-HUD repaint and legacy `Found Secret!` reward candidates
+still need explicit hardware replay. CHANGEMAP remains a separate later
+hardware-validation boundary after Automap.
 
 ## Build environment
 
@@ -149,7 +175,7 @@ large exact range=2048 B
 
 ## Current native gameplay frontier
 
-The real-CYD-owned engine includes native movement/collision, rotation-in-place without gameplay/monster turn advancement, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines including pure multi-line SELECT door batches, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, monster state/position/activation/movement/attack families, raw-flash requested-map backing, HUB INV/WPN/STAT, bounded checkpoint save/load, resource consumed-overlay persistence, script/event-state persistence, line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, hardware-proven checkpoint-resume HUD/cache/input rearm, and HUB/world feedback framebuffer ownership gating.
+The real-CYD-owned engine includes native movement/collision, rotation-in-place without gameplay/monster turn advancement, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines including pure multi-line SELECT door batches, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, monster state/position/activation/movement/attack families, raw-flash requested-map backing, HUB INV/WPN/STAT, bounded checkpoint save/load from both HUB and the main menu, resource consumed-overlay persistence, script/event-state persistence, line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, hardware-proven checkpoint-resume HUD/cache/input rearm, and HUB/world feedback framebuffer ownership gating.
 
 Player/HUB compact roots:
 
@@ -167,7 +193,26 @@ world dispatch blocked while HUB active
 turn advance disabled while HUB active
 ```
 
-INV projects Notebook, carried items, Credits and keys. WPN is the 4x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded from the normal weapon grid. STAT owns the bounded SAVE/LOAD controls.
+INV projects Notebook, carried items, Credits and keys. WPN is the 4x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded from the normal weapon grid. STAT owns the bounded in-game SAVE/LOAD controls. The main menu exposes a separate LOAD-only entry through the same checkpoint service.
+
+## Main-menu Load Game — REAL-CYD PASS
+
+```text
+Start Game
+Load Game
+Options
+Help/About
+```
+
+The ESP32 presentation replaces the obsolete J2ME `Exit` row and keeps the
+existing double-tap confirmation contract. A successful `Load Game` validates
+the one-slot checkpoint, releases menu-only runtime, restores the native world
+and enters `ST_PLAYING` with intro replay disabled.
+
+When no readable checkpoint exists, the action remains in `MENU_MAIN`, paints
+`No Save` in red on the selected row and rebases the deterministic framebuffer
+witness so further menu taps remain valid. Both outcomes are hardware-proven at
+`18c1cfb`.
 
 ## Native checkpoint save/load
 
@@ -554,27 +599,20 @@ Detailed record:
 
 ## Preferred next milestone
 
-The V6 transformed-crate checkpoint branch is hardware-valid and merge-ready.
-After merge, recover the exact new `main` SHA and branch fresh from it.
-
-The preferred next bounded milestone is the dedicated **CHANGEMAP real-CYD
-level-exit validation**.
-
-Production CHANGEMAP code already exists, but the complete transition has not
-yet received a dedicated hardware PASS. Re-read the merged implementation and
-legacy behavior, then prove the smallest complete route:
+The immediate boundary is a short real-CYD replay of the rebased integration:
 
 ```text
-eligible CHANGEMAP event
- -> target-map/save-position semantics
- -> requested-map handoff
- -> resident rebuild
- -> restored player/view placement
- -> resumed native gameplay
+boot -> main menu order remains correct
+existing checkpoint -> Load Game resumes gameplay
+missing checkpoint -> red No Save and menu remains interactive
+Start Game -> existing upstream intro/gameplay route remains live
 ```
 
-If hardware confirms the existing path, keep the milestone validation/docs
-only. If not, constrain fixes to that transition family.
+After that replay passes and the branch is merged, recover the exact new `main`
+SHA and branch fresh. The next bounded gameplay milestone is native **Automap
+presentation/input**, matching the first progression gate reached on the real
+CYD. CHANGEMAP remains a later candidate without a dedicated exit-transition
+hardware PASS.
 
 Separate pending work still includes the mixed physical/touch SAVE cursor
 regression and unrelated deferred gameplay families.
@@ -620,6 +658,7 @@ See `MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md` for the exact geometry and hardwa
 
 ## Recent milestone index
 
+- [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 - [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
 - [`MILESTONE_NATIVE_SECRET_DOOR_BATCH.md`](MILESTONE_NATIVE_SECRET_DOOR_BATCH.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
@@ -651,7 +690,7 @@ save-v6 mutable-world sections beyond each validated owner
 CHANGEMAP hardware level-exit validation
 audio
 password late presentation cleanup replay
-GIVEMAP / Automap production route
+GIVEMAP / Automap production route and touch UI
 CHECK_KEY production route
 HUB Notebook activation / consumable use / Options / store
 remaining advanced combat/monster/special-death families

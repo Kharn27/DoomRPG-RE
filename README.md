@@ -55,6 +55,10 @@ The current hardware-validated native path includes:
   into pickups;
 - checkpoint save/load V6, including player state, consumed resources, script
   state, line state, action-owned removals and transformed crates;
+- a CYD-specific main menu ordered as `Start Game`, `Load Game`, `Options`,
+  `Help/About`; `Load Game` restores the native checkpoint directly without
+  replaying the intro, while a missing or invalid save leaves the menu active
+  and displays `No Save`;
 - compatibility reads for the earlier V1 to V5 save formats.
 
 The current V6 crate-transform save path has passed both CI and real-CYD
@@ -234,6 +238,10 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
 - les sauvegardes V6, qui conservent l'état du joueur, les ressources ramassées,
   les scripts, les lignes, les suppressions possédées par le moteur d'action et
   les transformations de caisses ;
+- un menu principal propre au CYD, ordonné ainsi : `Start Game`, `Load Game`,
+  `Options`, `Help/About` ; `Load Game` restaure directement le checkpoint natif
+  sans rejouer l'introduction, tandis qu'une sauvegarde absente ou invalide
+  laisse le menu actif et affiche `No Save` ;
 - la lecture des anciennes sauvegardes V1 à V5.
 
 La sauvegarde V6 des transformations de caisses a été validée par la CI et sur

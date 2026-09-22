@@ -35,6 +35,7 @@ typedef struct MappingPlan_s {
 
 static int configMappingsAttempted = 0;
 static int configMappingsReady = 0;
+static MappingPlan_t installedPlan;
 
 static uint32_t heap8Free(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -69,8 +70,9 @@ static uint32_t max4(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
     return result;
 }
 
-static int inspectMappings(const zip_entry_t* entry, MappingPlan_t* plan) {
-    byte* fData;
+static int inspectMappings(const zip_entry_t* entry,
+                           byte* fData,
+                           MappingPlan_t* plan) {
     int dataPos = 0;
     int texelPairs;
     int bitShapePairs;
@@ -80,17 +82,11 @@ static int inspectMappings(const zip_entry_t* entry, MappingPlan_t* plan) {
     uint64_t spriteIdBytes;
     uint64_t persistentBytes;
 
-    if (entry == NULL || plan == NULL || entry->usize < 16) {
+    if (entry == NULL || fData == NULL || plan == NULL || entry->usize < 16) {
         return 0;
     }
 
     memset(plan, 0, sizeof(*plan));
-
-    fData = DoomRPG_fileOpenRead(doomRpg, "/mappings.bin");
-    if (fData == NULL) {
-        printf("[MAPPINGS] ERROR unable to read mappings.bin for header inspection\n");
-        return 0;
-    }
 
     texelPairs = DoomRPG_intAtNext(fData, &dataPos);
     bitShapePairs = DoomRPG_intAtNext(fData, &dataPos);
@@ -103,7 +99,6 @@ static int inspectMappings(const zip_entry_t* entry, MappingPlan_t* plan) {
     if (texelPairs < 0 || bitShapePairs < 0 ||
         plan->textureCnt < 0 || plan->spriteCnt < 0 ||
         texelPairs > 0x3fffffff || bitShapePairs > 0x3fffffff) {
-        SDL_free(fData);
         printf("[MAPPINGS] ERROR invalid negative/overflow count in header\n");
         return 0;
     }
@@ -121,7 +116,6 @@ static int inspectMappings(const zip_entry_t* entry, MappingPlan_t* plan) {
     if (texelOffsetBytes > UINT32_MAX || bitShapeOffsetBytes > UINT32_MAX ||
         textureIdBytes > UINT32_MAX || spriteIdBytes > UINT32_MAX ||
         persistentBytes > UINT32_MAX) {
-        SDL_free(fData);
         printf("[MAPPINGS] ERROR mapping table sizes overflow 32-bit address space\n");
         return 0;
     }
@@ -145,7 +139,111 @@ static int inspectMappings(const zip_entry_t* entry, MappingPlan_t* plan) {
            (unsigned int)plan->heapWithData,
            (unsigned int)plan->largestWithData);
 
-    SDL_free(fData);
+    return plan->persistentBytes + 16U == (uint32_t)entry->usize;
+}
+
+static int inflateMappingsToFramebuffer(const zip_entry_t* entry,
+                                        Render_t* render) {
+    uint32_t scratchBytes;
+    int decodedBytes;
+
+    if (entry == NULL || render == NULL || render->framebuffer == NULL ||
+        render->pitch <= 0 || render->screenHeight <= 0 ||
+        entry->csize <= 0 || entry->usize <= 0) {
+        return 0;
+    }
+
+    scratchBytes = (uint32_t)render->pitch * (uint32_t)render->screenHeight;
+    if ((uint32_t)entry->usize + (uint32_t)entry->csize > scratchBytes) {
+        printf("[MAPPINGS] ERROR framebuffer scratch too small need=%u have=%u\n",
+               (unsigned int)(entry->usize + entry->csize),
+               (unsigned int)scratchBytes);
+        return 0;
+    }
+
+    decodedBytes = readZipFileEntryInto("mappings.bin", &zipFile,
+                                        render->framebuffer,
+                                        (int)scratchBytes);
+    return decodedBytes == entry->usize;
+}
+
+static void releaseMappings(Render_t* render) {
+    SDL_free(render->mediaTexelOffsets);
+    SDL_free(render->mediaBitShapeOffsets);
+    SDL_free(render->mediaTexturesIds);
+    SDL_free(render->mediaSpriteIds);
+    render->mediaTexelOffsets = NULL;
+    render->mediaBitShapeOffsets = NULL;
+    render->mediaTexturesIds = NULL;
+    render->mediaSpriteIds = NULL;
+}
+
+int EspLegacyMappings_load(struct Render_s* renderBase) {
+    Render_t* render = (Render_t*)renderBase;
+    const zip_entry_t* entry;
+    MappingPlan_t plan;
+    byte* data;
+    int dataPos = 16;
+    int i;
+
+    if (render == NULL) return 0;
+    if (render->mediaTexelOffsets != NULL &&
+        render->mediaBitShapeOffsets != NULL &&
+        render->mediaTexturesIds != NULL &&
+        render->mediaSpriteIds != NULL) {
+        printf("[MAPPINGS] REUSE immutable arrays textures=%d sprites=%d reload=no\n",
+               render->textureCnt, render->spriteCnt);
+        return 1;
+    }
+
+    releaseMappings(render);
+    entry = findZipEntry("mappings.bin");
+    if (entry == NULL || !inflateMappingsToFramebuffer(entry, render) ||
+        !inspectMappings(entry, render->framebuffer, &plan)) {
+        printf("[MAPPINGS] ERROR bounded scratch decode/plan failed\n");
+        return 0;
+    }
+
+    render->mediaTexelOffsets = (int*)SDL_malloc(plan.texelOffsetBytes);
+    render->mediaBitShapeOffsets = (int*)SDL_malloc(plan.bitShapeOffsetBytes);
+    render->mediaTexturesIds = (short*)SDL_malloc(plan.textureIdBytes);
+    render->mediaSpriteIds = (short*)SDL_malloc(plan.spriteIdBytes);
+    if (render->mediaTexelOffsets == NULL ||
+        render->mediaBitShapeOffsets == NULL ||
+        render->mediaTexturesIds == NULL ||
+        render->mediaSpriteIds == NULL) {
+        releaseMappings(render);
+        printf("[MAPPINGS] ERROR persistent mapping allocation failed\n");
+        return 0;
+    }
+
+    data = render->framebuffer;
+    render->textureCnt = plan.textureCnt;
+    render->spriteCnt = plan.spriteCnt;
+    for (i = 0; i < plan.texelsCnt; ++i) {
+        render->mediaTexelOffsets[i] = DoomRPG_intAtNext(data, &dataPos);
+    }
+    for (i = 0; i < plan.bitShapeCnt; ++i) {
+        render->mediaBitShapeOffsets[i] = DoomRPG_intAtNext(data, &dataPos);
+    }
+    for (i = 0; i < plan.textureCnt; ++i) {
+        render->mediaTexturesIds[i] = DoomRPG_shortAtNext(data, &dataPos);
+    }
+    for (i = 0; i < plan.spriteCnt; ++i) {
+        render->mediaSpriteIds[i] = DoomRPG_shortAtNext(data, &dataPos);
+    }
+    if (dataPos != entry->usize) {
+        releaseMappings(render);
+        printf("[MAPPINGS] ERROR parser consumed=%d expected=%d\n",
+               dataPos, entry->usize);
+        return 0;
+    }
+
+    installedPlan = plan;
+    printf("[MAPPINGS] INSTALLED payload=%u heap8=%u largest8=%u scratch=framebuffer noInflatedHeap=yes\n",
+           (unsigned int)plan.persistentBytes,
+           (unsigned int)heap8Free(),
+           (unsigned int)largest8Block());
     return 1;
 }
 
@@ -209,17 +307,6 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
            (unsigned int)after,
            (unsigned int)largest8Block());
 
-    if (!inspectMappings(mappingEntry, &plan)) {
-        printf("[MAPPINGS] Header inspection FAILED; Render_loadMappings skipped\n");
-        return 0;
-    }
-
-    if (plan.persistentBytes > plan.heapWithData ||
-        plan.largestAllocation > plan.largestWithData) {
-        printf("[MAPPINGS] REFUSED allocation plan does not fit while mappings.bin is resident\n");
-        return 0;
-    }
-
     render = doomRpg->render;
     heapBeforeMappings = heap8Free();
     largestBeforeMappings = largest8Block();
@@ -229,6 +316,7 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
            (unsigned int)largestBeforeMappings);
 
     mappingsResult = Render_loadMappings(render);
+    plan = installedPlan;
 
     heapAfterMappings = heap8Free();
     printf("[MAPPINGS] Render_loadMappings result=%d used=%u heap8=%u largest8=%u\n",

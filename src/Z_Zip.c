@@ -358,3 +358,81 @@ unsigned char* readZipFileEntry(const char* name, zip_file_t* zipFile, int* size
 
 	return NULL;
 }
+
+#ifdef DOOMRPG_ESP32
+int readZipFileEntryInto(const char* name, zip_file_t* zip,
+                         unsigned char* destination, int capacity)
+{
+	zip_entry_t* entry = NULL;
+	byte* compressed;
+	tinfl_decompressor* decomp;
+	tinfl_status status;
+	size_t inputSize;
+	size_t outputSize;
+	int i, sig, general, method, namelength, extralength;
+
+	if (name == NULL || zip == NULL || destination == NULL || capacity <= 0) {
+		return 0;
+	}
+	for (i = 0; i < zip->entry_count; ++i) {
+		if (!SDL_strcasecmp(name, zip->entry[i].name)) {
+			entry = &zip->entry[i];
+			break;
+		}
+	}
+	if (entry == NULL || entry->csize <= 0 || entry->usize <= 0 ||
+		entry->csize + entry->usize > capacity) {
+		return 0;
+	}
+
+	SDL_RWseek(zip->file, entry->offset, SEEK_SET);
+	sig = File_readLong(zip->file);
+	if (sig != ZIP_LOCAL_FILE_SIG) return 0;
+	File_readShort(zip->file);
+	general = File_readShort(zip->file);
+	if (general & ZIP_ENCRYPTED_FLAG) return 0;
+	method = File_readShort(zip->file);
+	File_readShort(zip->file);
+	File_readShort(zip->file);
+	File_readLong(zip->file);
+	File_readLong(zip->file);
+	File_readLong(zip->file);
+	namelength = File_readShort(zip->file);
+	extralength = File_readShort(zip->file);
+	SDL_RWseek(zip->file, namelength + extralength, SEEK_CUR);
+
+	compressed = destination + capacity - entry->csize;
+	if (SDL_RWread(zip->file, compressed, 1, entry->csize) !=
+		(size_t)entry->csize) {
+		return 0;
+	}
+	if (method == 0) {
+		if (entry->csize != entry->usize) return 0;
+		SDL_memmove(destination, compressed, entry->usize);
+		return entry->usize;
+	}
+	if (method != 8) return 0;
+
+	decomp = SDL_malloc(sizeof(*decomp));
+	if (decomp == NULL) return 0;
+	inputSize = (size_t)entry->csize;
+	outputSize = (size_t)entry->usize;
+	tinfl_init(decomp);
+	status = tinfl_decompress(
+		decomp,
+		(const mz_uint8*)compressed,
+		&inputSize,
+		(mz_uint8*)destination,
+		(mz_uint8*)destination,
+		&outputSize,
+		TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+	SDL_free(decomp);
+
+	printf("[ZIP] inflate-into %s c=%d u=%d state=%u scratch=%d status=%d\n",
+		name, entry->csize, entry->usize,
+		(unsigned int)sizeof(tinfl_decompressor), capacity, (int)status);
+	return status == TINFL_STATUS_DONE &&
+		inputSize == (size_t)entry->csize &&
+		outputSize == (size_t)entry->usize ? entry->usize : 0;
+}
+#endif

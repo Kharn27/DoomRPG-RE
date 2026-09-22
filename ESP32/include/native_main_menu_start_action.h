@@ -7,6 +7,10 @@ extern "C" {
 
 struct DoomRPG_s;
 
+/* Release legacy/menu-only runtime before a native map rebuild. Shared menu
+ * images stay resident for later menu returns. */
+int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpg);
+
 /* Execute the real MENU_MAIN Start Game action up to the next bounded ESP32
  * boundary. On a fresh profile this runs MenuSystem_select(), Menu_startGame(),
  * Player_reset() and DoomCanvas_setState(ST_INTRO), loads the real prologue

@@ -92,7 +92,21 @@ original Doom RPG data / behavior
 
 **A new BSP is data, not a new engine.** Loading another level must not create `native_mapN_*` modules, per-level renderers or another lifecycle ladder. New code is justified by a reusable behavior family or explicit native owner.
 
-## Current normal new-game route
+## Current main-menu routes
+
+The CYD main menu contains, in display order:
+
+```text
+Start Game
+Load Game
+Options
+Help/About
+```
+
+`Exit` from the original application model has no useful meaning on the
+standalone device and is replaced by `Load Game`.
+
+The normal new-game route is:
 
 The historical MAP1 startup probe ladder has been replaced by the generic bootstrap:
 
@@ -108,6 +122,21 @@ Start Game
 ```
 
 The real CYD has hardware-proven this route into Entrance with movement, scientist dialog, regular-door traversal and an ENTER-triggered `EV_DIALOGNOBACK`, while preserving `shapeData == NULL` and `mediaTexels == NULL`.
+
+The alternate resume route is:
+
+```text
+Load Game
+ -> validate the one-slot native checkpoint
+ -> release menu-only runtime
+ -> rebuild the immutable BSP and restore V6 mutable owners
+ -> configure the resumed EspNativeGameplaySession
+ -> ST_PLAYING without replaying the intro
+```
+
+If the checkpoint is missing or invalid, the menu remains active and replaces
+the selected row with a red `No Save` response. Both successful resume and the
+no-save response are hardware-proven on the real CYD at `18c1cfb`.
 
 ## Source-tree rule
 

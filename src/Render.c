@@ -12,6 +12,10 @@
 #include "Render.h"
 #include "SDL_Video.h"
 
+#ifdef DOOMRPG_ESP32
+#include "esp_legacy_config_mappings_startup.h"
+#endif
+
 #define FIXED_VERSION 1
 
 Render_t* Render_init(Render_t* render, DoomRPG_t* doomRpg)
@@ -297,6 +301,9 @@ void Render_setGrayPalettes(Render_t* render)
 
 boolean Render_loadMappings(Render_t* render)
 {
+#ifdef DOOMRPG_ESP32
+	return EspLegacyMappings_load(render) ? true : false;
+#else
 	byte* fData;
 	int dataPos, i;
 	int texelsCnt, bitShapeCnt;
@@ -351,6 +358,7 @@ boolean Render_loadMappings(Render_t* render)
 	//printf("render->mappingMemory %d\n", render->mappingMemory);
 
 	return true;
+#endif
 }
 
 boolean Render_beginLoadMap(Render_t* render, int mapNameID)

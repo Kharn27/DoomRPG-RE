@@ -6,6 +6,7 @@
 #include "board_config.h"
 #include "esp_legacy_config_mappings_startup.h"
 #include "engine_metrics.h"
+#include "esp_native_gameplay_session.h"
 #include "esp32_sdl_platform.h"
 #include "menu_bsp_probe.h"
 #include "native_intro_clock.h"
@@ -15,6 +16,8 @@
 #include "esp_render_startup_bridge.h"
 #include "soft_xpt2046.h"
 #include "Z_Zip.h"
+
+extern struct DoomRPG_s* doomRpg;
 
 #ifndef DOOMRPG_ESP32_SCREEN_DIAGNOSTICS
 #define DOOMRPG_ESP32_SCREEN_DIAGNOSTICS 0
@@ -457,6 +460,10 @@ void setup()
 void loop()
 {
     Esp32IntroClock_service();
+    if (EspNativeGameplaySession_canService())
+    {
+        EspNativeGameplaySession_service(doomRpg);
+    }
     updateTouchDiagnostic();
     printHeartbeat();
     delay(5);

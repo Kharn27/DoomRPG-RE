@@ -35,6 +35,9 @@ int EspNativeGameplaySession_configure(
  */
 int EspNativeGameplaySession_configureResume(
     const EspNativeGameplaySessionConfig* config);
+/* True only when the session is configured and its authoritative PlayerView is
+ * settled. This keeps the composed gameplay wrapper chain out of menus/intro. */
+int EspNativeGameplaySession_canService(void);
 void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg);
 int EspNativeGameplaySession_isActive(void);
 int EspNativeGameplaySession_hasFailed(void);

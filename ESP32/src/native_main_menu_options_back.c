@@ -25,7 +25,6 @@
 #endif
 
 #define EXPECTED_OPTIONS_FRAMEBUFFER_FNV 0x6058d47dU
-#define EXPECTED_OPAQUE_MAIN_FNV 0x58a11171U
 #define OPTIONS_ITEM_COUNT 4
 #define OPTIONS_BACK_ITEM 0
 #define OPTIONS_ROW_TOP 67
@@ -194,7 +193,7 @@ static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
 
     printf("[OPTIONBACK] FAST End framebufferFNV=%08x expected=%08x runtimeFNV=%08x menu=%d selected=%d touchActive=%d repaintMs=%u shapeData=%p mediaTexels=%p\n",
            (unsigned int)finalHash,
-           (unsigned int)EXPECTED_OPAQUE_MAIN_FNV,
+           (unsigned int)DoomRPG_esp32MainMenuSelectionFramebufferFNV(0),
            (unsigned int)framebufferHash(render),
            menuSystem->menu,
            menuSystem->selectedIndex,
@@ -203,7 +202,8 @@ static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
            (void*)render->shapeData,
            (void*)render->mediaTexels);
 
-    if (finalHash != EXPECTED_OPAQUE_MAIN_FNV ||
+    if (finalHash == 0U ||
+        finalHash != DoomRPG_esp32MainMenuSelectionFramebufferFNV(0) ||
         finalHash != framebufferHash(render) ||
         menuSystem->menu != MENU_MAIN ||
         menuSystem->selectedIndex != 0 ||

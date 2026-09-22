@@ -6,6 +6,7 @@
 #include "DoomCanvas.h"
 
 #include "native_main_menu_160x120_layout.h"
+#include "native_main_menu_load_action.h"
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_options_back.h"
 #include "native_main_menu_start_action.h"
@@ -150,6 +151,17 @@ static void executeConfirmedOptions(void) {
     }
 }
 
+static void executeConfirmedLoad(void) {
+    if (doomRpg == NULL) {
+        printf("[MAINLOAD] FAILED global DoomRPG unavailable at confirmed Load tap\n");
+        return;
+    }
+
+    if (!DoomRPG_esp32ActivateMainMenuLoad(doomRpg)) {
+        printf("[MAINLOAD] Load Game not started; menu remains available when recoverable\n");
+    }
+}
+
 static void gatedTap(int16_t screenX,
                      int16_t screenY,
                      uint16_t pressure,
@@ -191,7 +203,15 @@ static void gatedTap(int16_t screenX,
         }
 
         if (hit == 1) {
-            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=1 action=execute-options\n",
+            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=1 action=load-game\n",
+                   (unsigned int)gateTapCount);
+            lastTappedItem = -1;
+            executeConfirmedLoad();
+            return;
+        }
+
+        if (hit == 2) {
+            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=2 action=execute-options\n",
                    (unsigned int)gateTapCount);
             lastTappedItem = -1;
             executeConfirmedOptions();
@@ -251,7 +271,7 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
         registerMainMenuHitboxOverlay();
 #endif
         __real_PlatformInput_setTapCallback(gatedTap);
-        printf("[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm StartY=64..78 startAction=enabled optionsAction=enabled\n");
+        printf("[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm StartY=64..78 startAction=enabled optionsAction=enabled loadAction=enabled\n");
     }
     else {
         downstreamTapCallback = callback;

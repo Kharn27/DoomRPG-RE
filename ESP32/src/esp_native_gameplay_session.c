@@ -221,6 +221,11 @@ int EspNativeGameplaySession_configureResume(
     return configureSession(config, 1U);
 }
 
+int EspNativeGameplaySession_canService(void) {
+    return sessionState.configured != 0U && sessionState.failed == 0U &&
+           settledView(EspPlayerView_view());
+}
+
 int EspNativeGameplaySession_isActive(void) {
     return sessionState.stage == SESSION_STAGE_ACTIVE &&
            sessionState.failed == 0U &&

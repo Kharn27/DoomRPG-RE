@@ -16,6 +16,11 @@ extern "C" {
  */
 uint8_t EspNativeGameplaySave_statusCursor(void);
 
+/* Shared checkpoint entry points used by both HUB -> STAT and MENU_MAIN.
+ * Load rebuilds the native resident world and arms a resumed gameplay session. */
+int EspNativeGameplaySave_hasReadableCheckpoint(void);
+int EspNativeGameplaySave_loadCheckpoint(void);
+
 #ifdef __cplusplus
 }
 #endif

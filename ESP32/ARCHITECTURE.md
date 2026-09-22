@@ -306,8 +306,9 @@ DoomCanvas/layout startup
  -> EspRenderStartupBridge_start()
  -> EspLegacyConfigMappingsStartup_start()
       -> Game_loadConfig()
-      -> inspect mappings.bin allocation plan
-      -> Render_loadMappings()
+      -> validate mappings.bin ZIP metadata and allocation plan
+      -> decode into the permanent framebuffer scratch
+      -> install four immutable persistent mapping arrays
  -> menu BSP/menu compatibility stage
 ```
 
@@ -321,14 +322,18 @@ legacy sintable/palette resources still required by retained Render helpers.
 
 `EspLegacyConfigMappingsStartup` owns the retained config/mapping stage. It
 allows a missing first-boot Config file, validates the legacy `mappings.bin`
-allocation plan against current no-PSRAM heap, executes the real
-`Render_loadMappings()`, validates its four mapping arrays/counts, and stops
-before BSP loading.
+allocation plan, then uses `readZipFileEntryInto()` to decode directly into the
+already-owned 38,400-byte framebuffer. `EspLegacyMappings_load()` parses that
+scratch payload and installs the same four persistent mapping arrays without a
+second inflated heap buffer. ESP32 `Render_loadMappings()` delegates to this
+bounded loader.
 
-`esp_render_mapping_reload_guard.c` is a separate bounded memory guard. Just
-before the real `Render_beginLoadMap()`, it releases only the four mapping arrays
-that `Render_loadMappings()` will immediately rebuild, preventing an avoidable
-inflate peak. It does not own parsing or map semantics.
+The mapping arrays are immutable after installation. They stay resident across
+menu and gameplay BSP loads; a later `Render_loadMappings()` call recognizes a
+complete owner and reports `REUSE` instead of allocating or decoding again.
+`esp_render_mapping_reload_guard.c` preserves this ownership before
+`Render_beginLoadMap()` and emits the `RETAIN-BEFORE-MAP` witness. It no longer
+frees the arrays ahead of each map load.
 
 These are compatibility boundaries, not permission to move migrated world data
 back to ZIP ownership.
