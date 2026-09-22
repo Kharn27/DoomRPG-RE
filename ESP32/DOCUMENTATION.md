@@ -21,11 +21,11 @@ hardware-tested save-v2 resource boundary = f52d3f272e75ed29f68037fd343e40252d2e
 hardware-tested save-v3 script boundary = fd206c5238ac2db62939d100bf3d08ac39081c69
 hardware-tested save-v4 line boundary = 2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d
 hardware-tested rotation no-turn boundary = b548321f477626777800371f0f82a9f3c2375bd9
-hardware-tested current code boundary = e070057d3b9466f87189c504f86099b7e9f2fb67
-hardware-tested player hit feedback boundary = e070057d3b9466f87189c504f86099b7e9f2fb67
-player hit feedback review-fix candidate = 13e42a44cb8e08dff05e58cc701943152a12b672 (CI PASS, lethal-gib overlap retest pending)
+hardware-tested current code boundary = 13e42a44cb8e08dff05e58cc701943152a12b672
+hardware-tested player hit feedback boundary = 13e42a44cb8e08dff05e58cc701943152a12b672
+player hit feedback review-fix boundary = 13e42a44cb8e08dff05e58cc701943152a12b672 (CI PASS, REAL-CYD lethal-gib overlap PASS)
 merged save-touch cursor fix = f3dd883e937799eb2ad93812982edb1d4a06bcab (CI PASS, real-CYD mixed-input retest pending)
-status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN + PLAYER HIT FEEDBACK PASS at e070057; gib-preservation review fix pending retest
+status = REAL-CYD CHECKPOINT V4 + ROTATION NO-TURN + PLAYER HIT FEEDBACK + GIB PRESERVATION PASS at 13e42a4; merge-ready
 ```
 
 GitHub Actions `esp32-cyd` run #265 / run ID `35196771704` passed on the exact save-v2 resource boundary. The HUB/action-feedback ownership gate passed CI run #267 / run ID `35198140562` and is also real-CYD validated. Save-v3 script persistence passed CI run #275 / run ID `35199788280` on exact code boundary `fd206c5238ac2db62939d100bf3d08ac39081c69`. Save-v4 line persistence plus the HUB stack fix passed CI run #293 / run ID `35344853078` on exact code boundary `2efb9634ffc1c2fb433c4c3340ff9c722c5c7b4d` and is real-CYD validated. PR #139 merged at `23bdd1dfe92f860b62d5d8cede517122ac589464`; normal `esp32-cyd` run #311 passed on that exact merged main. Rotation no-turn code boundary `b548321f477626777800371f0f82a9f3c2375bd9` was built by normal run #313 / `35581250636`, and docs-only head `b004a681cbfbe38d51b1df02fc14436d696f2552` passed run #318 / `35581419960`. The real CYD then confirmed the corrected rotation behavior. The mixed physical/touch SAVE cursor fix remains merged and CI-proven, but its dedicated real-CYD mixed-input check is still pending. PR #141 merged the rotation milestone at `5ac68378363b77daf9f98203966726557dc9b0ad`; normal `esp32-cyd` run #334 passed on that exact merged main. The first player-hit feedback build proved the message path but its blood burst was late and blob-like. The corrected spray boundary `6dfe67d3f639e5f9aad7849db6638042b7bdc508` passed CI #346 and was visually validated on the real CYD. The following zombie attack exposed a loopTask stack canary. Final code boundary `e070057d3b9466f87189c504f86099b7e9f2fb67` moves the 324 B combat rollback owner off-stack and reuses one render-stats record; CI #350 passed. Hardware then completed nonlethal and lethal zombie attacks plus lethal Hellhound feedback with no reboot, correct damage sums, synchronized spray and clean expiry.
@@ -503,16 +503,7 @@ and particle count and recomposes that exact burst on later presents until the
 original deadline. It does not allocate, consume gameplay RNG or extend the
 lease. Map identity is checked before replay.
 
-Required hardware retest: trigger a lethal **gib** death and confirm the gib
-effect survives any intervening `[HITFX] EXPIRE`/world redraw until its own
-`[GIBFX] EXPIRE`. Expected additional witness:
-
-```text
-[GIBFX] REPAINT ... lease=preserved composition=present ...
-```
-
-After that one overlap witness, update the milestone/status docs only and restore
-merge-ready.
+Real-CYD retest: **PASS**. A close-range lethal Hellhound hit produced `gib=1`, then `[GIBFX] PAINT`; the intervening hit-effect cleanup world redraw produced `[GIBFX] REPAINT ... lease=preserved composition=present`, and the gib ended only at its own `[GIBFX] EXPIRE ... repaints=1`. Gameplay RNG remained untouched and there was no reboot. The branch is merge-ready; the post-test tail is docs-only.
 
 The mixed physical/touch SAVE cursor regression check and dedicated CHANGEMAP
 level-exit PASS remain separate pending items.
