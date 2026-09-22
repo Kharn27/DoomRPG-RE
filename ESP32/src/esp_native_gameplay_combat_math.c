@@ -280,6 +280,129 @@ int EspNativeGameplayCombatMath_rollPlayerAttack(
     return 1;
 }
 
+static int calcDestructibleDamage(
+    DoomRPG_t* doomRpg,
+    const EspNativeGameplayWeaponSpec* weapon,
+    uint8_t playerStrength,
+    uint8_t targetDefense,
+    int attackScale,
+    uint32_t worldDistance,
+    uint8_t* outRandDamage,
+    int32_t* outDamage,
+    int32_t* outArmorDamage,
+    uint32_t* ioRngCalls) {
+    int randStr;
+    int strength;
+    int defense;
+    int weaponRoll;
+    int calDmg;
+    int calDmgArm;
+    int distance;
+    int distStep;
+    int decDmg;
+
+    if (doomRpg == NULL || weapon == NULL || targetDefense == 0U ||
+        outRandDamage == NULL || outDamage == NULL ||
+        outArmorDamage == NULL || ioRngCalls == NULL) return 0;
+
+    randStr = DoomRPG_randNextByte(&doomRpg->random);
+    ++(*ioRngCalls);
+    *outRandDamage = (uint8_t)randStr;
+    strength = (int)playerStrength << 16;
+    defense = (int)targetDefense << 8;
+    weaponRoll = ((int)weapon->strMin << 8) +
+                 ((randStr * (((int)weapon->strMax -
+                               (int)weapon->strMin) << 8)) >> 8);
+
+    /* Combat::aMobj has mType=-1. CombatEntity_calcWeaponDamage therefore
+     * enters the non-zero branch, matches no monster type and returns 256. */
+    calDmg = (((((((weaponRoll * (strength / defense)) >> 8) *
+                  attackScale) >> 8) * 256) >> 8));
+
+    distance = 4096;
+    distStep = 2;
+    decDmg = (calDmg * 76) >> 8;
+    while (distance < (int)worldDistance - rangeMinToDist(weapon)) {
+        calDmg -= decDmg;
+        ++distStep;
+        distance = (distStep * 64) * (distStep * 64);
+    }
+    if (calDmg < 256) calDmg = 256;
+    else if (calDmg > 255744) calDmg = 255744;
+
+    calDmgArm = (calDmg * (int)weapon->armorSplit) >> 8;
+    *outArmorDamage = (calDmgArm + 128) >> 8;
+    *outDamage = ((calDmg - calDmgArm) + 128) >> 8;
+    return 1;
+}
+
+int EspNativeGameplayCombatMath_rollDestructibleAttack(
+    DoomRPG_t* doomRpg,
+    uint8_t weaponIndex,
+    const EspNativeGameplayPlayerState* player,
+    uint32_t worldDistance,
+    EspNativeGameplayAttackRoll* outRoll) {
+    const EspNativeGameplayWeaponSpec* weapon;
+    uint8_t targetAgility;
+    uint8_t targetDefense;
+    uint8_t loop;
+    int baseScale;
+
+    if (outRoll != NULL) memset(outRoll, 0, sizeof(*outRoll));
+    weapon = EspNativeGameplayCombatMath_weapon(weaponIndex);
+    if (doomRpg == NULL || player == NULL || outRoll == NULL ||
+        weapon == NULL || weapon->attackLoops == 0U ||
+        weapon->attackLoops > ESP_NATIVE_GAMEPLAY_MAX_ATTACK_LOOPS) {
+        return 0;
+    }
+
+    /* Exact Combat_calcHit / Combat_playerSeq dummy-target derivation. */
+    targetAgility = (uint8_t)(((uint32_t)p2Accuracy(player->param2) * 204U) >> 8U);
+    targetDefense = (uint8_t)(((uint32_t)p2Strength(player->param2) * 176U) >> 8U);
+    if (targetAgility == 0U || targetDefense == 0U) return 0;
+
+    outRoll->loops = weapon->attackLoops;
+    baseScale = player->berserkerTics != 0U ? 768 : 256;
+
+    for (loop = 0U; loop < weapon->attackLoops; ++loop) {
+        int hitType;
+        int32_t loopDamage = 0;
+        int32_t loopArmorDamage = 0;
+
+        hitType = calcHit(doomRpg, weapon,
+                          p2Accuracy(player->param2),
+                          targetAgility,
+                          worldDistance,
+                          &outRoll->randHit[loop],
+                          &outRoll->calcHit[loop],
+                          &outRoll->critLimit[loop],
+                          &outRoll->rngCalls);
+        if (hitType < 0) return 0;
+
+        /* Combat_calcHit() performs the generic RNG hit test first, then makes
+         * extinguisher ineffective against every non-fire/non-jammed target. */
+        if (weaponIndex == 1U) hitType = HIT_MISS;
+        outRoll->hitType[loop] = (uint8_t)hitType;
+        if (hitType == HIT_MISS) continue;
+
+        ++outRoll->hitLoops;
+        if (loop == 0U && hitType == HIT_CRIT) outRoll->gotCrit = 1U;
+        if (!calcDestructibleDamage(
+                doomRpg, weapon, p2Strength(player->param2), targetDefense,
+                outRoll->gotCrit != 0U ? ((baseScale * 512) >> 8) : baseScale,
+                worldDistance,
+                &outRoll->randDamage[loop],
+                &loopDamage,
+                &loopArmorDamage,
+                &outRoll->rngCalls)) {
+            return 0;
+        }
+        outRoll->totalDamage += loopDamage;
+        outRoll->totalArmorDamage += loopArmorDamage;
+    }
+    return 1;
+}
+
 uint32_t EspNativeGameplayCombatMath_monsterExp(
     const EspNativeGameplayMonsterRecord* target) {
     if (target == NULL) return 0U;
