@@ -916,6 +916,9 @@ static void servicePasswordCompletion(
     Render_t* render,
     const EspNativeGameplayPasswordCompletion* completion) {
     const EspPlayerViewState* view = EspPlayerView_view();
+    const EspNativeGameplayHudState* hud;
+    EspNativeGameplayHudStats hudStats;
+    EspNativeGameplayHudStatus hudStatus;
     EspNativeGameplayDialogResumeResult resume;
     EspNativeGameplayDialogResumeStatus resumeStatus =
         ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND;
@@ -929,6 +932,7 @@ static void servicePasswordCompletion(
         completion->resumeDialogOffset != UINT8_MAX;
     int feedbackQueued = 0;
 
+    memset(&hudStats, 0, sizeof(hudStats));
     memset(&resume, 0, sizeof(resume));
     if (render == NULL || completion == NULL || completion->pending != 1U ||
         view == NULL || view->active != 1U ||
@@ -936,6 +940,32 @@ static void servicePasswordCompletion(
         disableGameplay("password-completion-context");
         return;
     }
+
+    /*
+     * The keypad is intentionally a full-screen modal and therefore overwrites
+     * both 20-row HUD bands. The gameplay frame compositor preserves those bands
+     * by design, so reconstruct them from the wrapped/current native HUD model
+     * before any world redraw. This is presentation-only: no dirty intent is
+     * consumed and no HUD/player owner is mutated.
+     */
+    hud = EspNativeGameplayHud_view();
+    if (hud == NULL) {
+        disableGameplay("password-hud-view");
+        return;
+    }
+    hudStatus = EspNativeGameplayHud_repaint(hud, &hudStats);
+    if (hudStatus != ESP_NATIVE_GAMEPLAY_HUD_OK) {
+        printf("[RESIDENTGAMEPLAY] PASSWORD-HUD-RESTORE-FAILED event=%u status=%d mutation=no\n",
+               (unsigned int)completion->close.sourceEventIndex,
+               (int)hudStatus);
+        disableGameplay("password-hud-repaint");
+        return;
+    }
+    printf("[RESIDENTGAMEPLAY] PASSWORD-HUD-RESTORE event=%u pixels=%u reads=%u bytes=%u exactSource=current-native-model dirtyConsume=no\n",
+           (unsigned int)completion->close.sourceEventIndex,
+           (unsigned int)hudStats.pixelsWritten,
+           (unsigned int)hudStats.packReads,
+           (unsigned int)hudStats.bytesRead);
 
     if (completion->correct != 0U) {
         feedbackQueued = EspNativeGameplayActionEngine_queueTextFeedback(
