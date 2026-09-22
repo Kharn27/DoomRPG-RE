@@ -5,74 +5,60 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-main at branch creation = a356f4d5c2f94a8838babf21bb69911e3c36b54c
-current main = a356f4d5c2f94a8838babf21bb69911e3c36b54c
-main merge = PR #144
-branch = agent/esp32-native-save-v6-crate-transforms
-hardware-tested crate subtype2 boundary = 571a1af81469ff85a88ae3ba94e5dc9535b6648a
-hardware-tested save-v6 crate-transform boundary = 172055a8bc0f2430f9d5443972ee153aa1bf4ffc
-hardware-tested current code boundary = 172055a8bc0f2430f9d5443972ee153aa1bf4ffc
-status = REAL-CYD SAVE V6 CRATE TRANSFORM PERSISTENCE PASS
-branch policy = MERGE-READY; post-test tail docs-only
-```
-
-PR #144 merged the hardware-proven crate subtype-2 gameplay milestone into
-main at `a356f4d5c2f94a8838babf21bb69911e3c36b54c`. The V6 branch was created
-from that exact SHA.
-
-The final code boundary
-`172055a8bc0f2430f9d5443972ee153aa1bf4ffc` passed normal
-`ESP32 CYD Build` run `35720525109` with:
-
-```text
+main at branch creation = e80851f21382ad13c456b85f01e55bf796c75edf
+current main = 5841b0cb55607428bf74c341112a161213c47c90
+current main tip = PR #147 README-only merge
+branch = agent/esp32-native-display-touch-polish
+hardware-tested current code boundary = d532ede998c23fcac7e73feefe66d5ce8c755ac9
+CI = esp32-cyd #522 / 35765245689 SUCCESS
 static RAM = 44832 B
-flash = 716177 B
+flash = 728653 B
+status = REAL-CYD RESIDENT GAMEPLAY POLISH PASS THROUGH AUTOMAP GATE
+tested-code relation = 65 commits ahead / 2 commits behind current main
+branch policy = docs-only tail after tested code boundary
 ```
 
-Static RAM is unchanged from the hardware-proven crate gameplay boundary.
+The branch was created from exact main SHA `e80851f21382ad13c456b85f01e55bf796c75edf`.
+Current main later advanced through PR #147 only for README content; no ESP32 gameplay recovery boundary moved.
 
-Checkpoint V6 extends V5 by one streamed, pointer-free 176 B crate transform
-section without growing the persistent save workspace BSS:
+The real-CYD progression run on code head `d532ede998c23fcac7e73feefe66d5ce8c755ac9` validated the resident gameplay-polish boundary up to the first explicit Automap progression gate.
+
+Hardware-confirmed behavior on this branch now includes:
 
 ```text
-DRPGSAV6
-recordBytes = 1532
-V5 semantic prefix = 1356 B
-crate transform section = 176 B
+intro animated scene = full 160x120
+intro story text = centered 156x120
+moved-monster corpse projection = correct death position
+EV_PASSWORD 10 = native keypad live
+invalid password = blocked + "Invalid code!"
+correct password = resumes through EV_DIALOGNOBACK 26 and unlocks intended door
+monster movement = blocked by shoot-through/movement-solid bars
+secret door lines 471/470 = two-line atomic SELECT batch PASS
 ```
 
-The real-CYD non-zero witness transformed Entrance sprite 11 with
-`first=16` into `type4/subtype25/def99`. SAVE captured:
+Normal `esp32-cyd` CI #522 retained the canonical static-RAM boundary:
 
 ```text
-crateTransforms=1/43B/1B/31d6c324
-actionRemoved=1/43B/4a2aa797
+RAM static = 44832 B
+Flash = 728653 B
 ```
 
-LOAD rebuilt the immutable BSP, then restored:
+Two late additions are deliberately **not** promoted to independent hardware PASS without a dedicated replay:
 
 ```text
-[CRATECHECKPOINT] RESTORE ... transformed=1 ... codeBytes=1 stateFNV=31d6c324
-[NATIVESAVE] LOAD ... crateTransforms=restored/1/31d6c324
+password full-HUD repaint after modal close
+legacy "Found Secret!" +5 XP + sound-5133-deferred reward
 ```
 
-The user visually confirmed that the medkit produced by the crate reappeared
-after LOAD rather than reverting to the original crate. The restored resource
-corpus also increased to `pickups=115` / `type4=7`, matching the projected
-pickup.
+The milestone itself remains hardware-valid: neither candidate is used as evidence for the validated password continuation, corpse projection, intro fit, or monster-bar collision result.
 
-The same branch also hardware-proved the V6 removal compatibility path with
-`BREAK_REMOVE`: `actionRemoved=1`, `crateTransforms=0`, then successful
-LOAD of both owners.
+Detailed record:
 
-Latest detailed records:
+- [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
+- [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
+- [`MILESTONE_NATIVE_SECRET_DOOR_BATCH.md`](MILESTONE_NATIVE_SECRET_DOOR_BATCH.md)
 
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
-- [`MILESTONE_NATIVE_CRATE_SUBTYPE2.md`](MILESTONE_NATIVE_CRATE_SUBTYPE2.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
-
-CHANGEMAP production code remains a separate candidate without its dedicated
-real-CYD exit-transition PASS.
+The user has now reached the gameplay instruction that requires consulting the Automap. Native Automap UI/input is intentionally absent, making it the next bounded gameplay milestone. CHANGEMAP remains a separate later hardware validation boundary.
 
 ## Permanent architecture / hard invariants
 
@@ -183,7 +169,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, checkpoint-resume HUD/cache/input rearm, and HUB/world framebuffer ownership gating for transient action feedback.
+Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors, hardware-proven pure multi-line SELECT door batches, and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, checkpoint-resume HUD/cache/input rearm, and HUB/world framebuffer ownership gating for transient action feedback.
 
 The player root remains:
 
@@ -630,6 +616,74 @@ exposes a defect, patch only that bounded transition family.
 
 Separate pending work still includes the mixed physical/touch SAVE cursor
 regression and unrelated deferred gameplay families.
+
+## Hardware-validated intro display polish
+
+Real-CYD visual validation on code head `0d21332bd2524bca73d5284f70e053ca8ba6430d` confirmed the permanent native intro fit split:
+
+```text
+logical framebuffer = 160x120 RGB565
+content viewport     = 120x120 centered at x=20
+starfield background = 160x120 full width
+animated intro scene = 160x120 full width
+story text           = 156x120 centered at x=2
+extra framebuffer    = 0 B
+```
+
+The dedicated animated intro scene now maps its starfield/layers/planet/spaceship/line geometry across the full logical display, while ordinary story-page decoration remains in the aspect-preserving 120x120 content viewport. Story glyphs use the separately tuned 156-pixel soft-wide horizontal mapping.
+
+The real-CYD visual verdict for this exact split was PASS ("Superbe"). The production geometry witness is:
+
+```text
+[INTROFIT] ... content=120x120@(20,0) background=160x120@(0,0) animation=160x120@(0,0) text=156x120@(2,0) fit=aspect-content+full-animation+soft-wide-text extraFrameBytes=0
+```
+
+CI for the hardware-tested head retained the canonical no-PSRAM static-RAM boundary:
+
+```text
+RAM static = 44832 B
+Flash      = 724633 B
+```
+
+No second framebuffer or frame-sized staging allocation was introduced.
+
+## Hardware-validated pure multi-line SELECT door batch
+
+Real-CYD validation on `/intro.bsp` proved the bounded pure-door batch path used by the hidden/secret door.
+
+The SELECT hit tile `195`, event `10`, whose complete command sequence is exactly two eligible `EV_OPENLINE` commands:
+
+```text
+[ACTION] SELECT seq=139 status=DOOR_OK tile=195 event=10 eligible=2 unsupported=0
+[DOORANIM] SNAP line=471 open=0->1 flags=00000928 reason=non-regular-door
+[DOORANIM] SNAP line=470 open=0->1 flags=00001110 reason=non-regular-door
+[ACTION] DOOR-BATCH event=10 count=2 status=OK [0]line=471/op=15/open=0->1/removed=0->1 [1]line=470/op=15/open=0->1/removed=0->1
+[RESIDENTGAMEPLAY] SELECT n=10 seq=139 doors=2 firstDoor=471 committed=yes redraw=yes collision=live animation=bounded-batch sound=deferred entityRelink=deferred turnAdvance=deferred
+[DYNAMICLINES] FRAME angle=64 open=4 adaptedReads=6 animatedReads=0 textureVariants=0 render=ok immutableRuntime=yes
+```
+
+Both lines are non-regular door geometry, so the native animator intentionally reports `SNAP` rather than scheduling the four-frame regular-door animation. The line-state transaction still commits both open bits and both remove-if-handled command bits atomically.
+
+Walking through the opened secret-door tile then sees the event as exhausted:
+
+```text
+[MOVEEVENT] ENTER-PREFLIGHT ... tile=195 ... status=NO_ELIGIBLE event=10 eligible=0 ...
+[MOVEEVENT] EXIT-PREFLIGHT ... tile=195 ... status=NO_ELIGIBLE event=10 eligible=0 ...
+```
+
+This validates the permanent rule: a SELECT event may execute a **pure** bounded batch of up to eight eligible line commands (`EV_MOVELINE/OPENLINE/CLOSELINE/MOVELINE2`), matching the legacy/native `openDoors[8]` capacity. The complete batch is previewed before mutation; mixed-family events, duplicate-line batches requiring sequential intermediate-state semantics, and batches beyond the bound remain fail-closed.
+
+Hardware runtime after the traversal remained resident and stable in the submitted log:
+
+```text
+[ALIVE] ... heap=78832 heap8=13280 largest8=12276 ... MAPPINGS=ready MENUBSP=ready
+```
+
+CI for the validated code head retained the canonical static-RAM boundary:
+
+```text
+RAM static = 44832 B
+```
 
 ## Intentionally deferred / incomplete families
 

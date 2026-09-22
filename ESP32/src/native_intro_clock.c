@@ -20,7 +20,6 @@
 
 #include <esp_heap_caps.h>
 
-#define EXPECTED_FIRST_FITTED_FNV 0x56438966U
 #define INTRO_CLOCK_CHECKPOINT_TICKS 20U
 
 typedef struct Esp32IntroClockState_s {
@@ -167,7 +166,8 @@ static int rebasePageEpochsInternal(void) {
     return 1;
 }
 
-int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase) {
+int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase,
+                        unsigned int expectedStartFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     const uint32_t frameHash = framebufferHash();
 
@@ -181,10 +181,10 @@ int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    if (frameHash != EXPECTED_FIRST_FITTED_FNV) {
-        printf("[INTROCLK] FAILED arm FNV=%08x expected=%08x\n",
+    if (expectedStartFNV == 0U || frameHash != (uint32_t)expectedStartFNV) {
+        printf("[INTROCLK] FAILED arm FNV=%08x handoffExpected=%08x\n",
                (unsigned int)frameHash,
-               (unsigned int)EXPECTED_FIRST_FITTED_FNV);
+               expectedStartFNV);
         return 0;
     }
 
@@ -197,7 +197,7 @@ int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase) {
     clockState.armedLargest8 = largest8Block();
     clockState.active = 1;
 
-    printf("[INTROCLK] ARMED step=%u ms startFNV=%08x heap8=%u largest8=%u wallStart=%u\n",
+    printf("[INTROCLK] ARMED step=%u ms startFNV=%08x handoffExact=yes heap8=%u largest8=%u wallStart=%u\n",
            (unsigned int)ESP32_INTRO_CLOCK_STEP_MS,
            (unsigned int)frameHash,
            (unsigned int)clockState.armedHeap8,

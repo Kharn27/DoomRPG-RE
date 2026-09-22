@@ -88,6 +88,16 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_routeInitial(
     const EspNativeGameplayHudModel* model,
     EspNativeGameplayHudStats* outStats);
 
+/*
+ * Repaint both 20-row gameplay HUD bands from one already-valid native HUD
+ * state without consuming a post-load dirty intent and without mutating the
+ * retained HUD owner. Full-screen modal presenters use this before returning
+ * to the world so temporary pixels can never leak into the persistent HUD.
+ */
+EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
+    const EspNativeGameplayHudState* state,
+    EspNativeGameplayHudStats* outStats);
+
 #ifdef __cplusplus
 }
 #endif

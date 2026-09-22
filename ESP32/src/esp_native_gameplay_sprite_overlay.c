@@ -64,12 +64,17 @@ int __wrap_EspMapRuntime_getMapSprite(uint32_t index,
      */
     if (type == SPRITE_TYPE_ENEMY &&
         index <= UINT16_MAX &&
-        EspNativeGameplayMonsterMovementPublish_isProjected((uint16_t)index) &&
-        (linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
+        EspNativeGameplayMonsterMovementPublish_isProjected((uint16_t)index)) {
         monsterPosition = EspNativeGameplayMonsterPosition_find((uint16_t)index);
         if (monsterPosition != NULL &&
             monsterPosition->tileIndex ==
                 (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK)) {
+            /*
+             * Keep the last committed native position after Entity_died-style
+             * unlink. The combat wrapper deliberately clears LINKED/ALIVE but
+             * preserves the topology tile bits; requiring LINKED here made a
+             * moved corpse fall back to the immutable BSP spawn coordinates.
+             */
             outSprite->x = monsterPosition->worldX;
             outSprite->y = monsterPosition->worldY;
         }

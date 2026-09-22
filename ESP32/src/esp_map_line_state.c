@@ -230,19 +230,23 @@ int EspMapLineState_setLocked(uint32_t lineIndex, uint8_t locked) {
     return 1;
 }
 
-EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
+static EspMapLineDoorStatus prepareDoorCommand(
     const EspMapEventDescriptor* descriptor,
     uint32_t commandOffset,
-    EspMapLineDoorResult* outResult) {
+    EspMapLineDoorResult* outResult,
+    uint8_t* outTargetOpen) {
     EspMapByteCode command;
     uint32_t globalCommandIndex;
     uint32_t lineIndex;
     uint8_t openBefore;
     uint8_t locked;
     uint8_t targetOpen;
+    EspMapLine sourceLine;
+    uint32_t effectiveFlags;
 
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
-    if (descriptor == NULL || outResult == NULL) {
+    if (outTargetOpen != NULL) *outTargetOpen = 0U;
+    if (descriptor == NULL || outResult == NULL || outTargetOpen == NULL) {
         return ESP_MAP_LINE_DOOR_INVALID;
     }
     if (!EspMapLineState_isReady()) {
@@ -253,8 +257,10 @@ EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
         !EspMapEvents_getCommand(descriptor, commandOffset, &command)) {
         return ESP_MAP_LINE_DOOR_INVALID;
     }
-    if (command.id != ESP_MAP_OPCODE_OPENLINE &&
-        command.id != ESP_MAP_OPCODE_CLOSELINE) {
+    if (command.id != ESP_MAP_OPCODE_MOVELINE &&
+        command.id != ESP_MAP_OPCODE_OPENLINE &&
+        command.id != ESP_MAP_OPCODE_CLOSELINE &&
+        command.id != ESP_MAP_OPCODE_MOVELINE2) {
         return ESP_MAP_LINE_DOOR_UNSUPPORTED;
     }
 
@@ -266,7 +272,8 @@ EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
         return ESP_MAP_LINE_DOOR_LINE_OUT_OF_RANGE;
     }
     if (!EspMapLineState_getOpen(lineIndex, &openBefore) ||
-        !EspMapLineState_getLocked(lineIndex, &locked)) {
+        !EspMapLineState_getLocked(lineIndex, &locked) ||
+        !EspMapRuntime_getLine(lineIndex, &sourceLine)) {
         return ESP_MAP_LINE_DOOR_INVALID;
     }
 
@@ -283,22 +290,58 @@ EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
         return ESP_MAP_LINE_DOOR_LOCKED;
     }
 
-    targetOpen = command.id == ESP_MAP_OPCODE_OPENLINE ? 1U : 0U;
-    if (openBefore == targetOpen) {
-        return ESP_MAP_LINE_DOOR_ALREADY_TARGET;
+    if (command.id == ESP_MAP_OPCODE_MOVELINE ||
+        command.id == ESP_MAP_OPCODE_MOVELINE2) {
+        if (command.id == ESP_MAP_OPCODE_MOVELINE) {
+            effectiveFlags =
+                (sourceLine.flags & ~ESP_MAP_LINE_FLAG_OPEN) |
+                (openBefore != 0U ? ESP_MAP_LINE_FLAG_OPEN : 0U);
+            if ((effectiveFlags & 0x58U) == ESP_MAP_LINE_FLAG_OPEN) {
+                return ESP_MAP_LINE_DOOR_ALREADY_TARGET;
+            }
+        }
+        targetOpen = openBefore != 0U ? 0U : 1U;
     }
-
-    if (!EspMapLineState_setOpen(lineIndex, targetOpen)) {
-        memset(outResult, 0, sizeof(*outResult));
-        return ESP_MAP_LINE_DOOR_INVALID;
+    else {
+        targetOpen = command.id == ESP_MAP_OPCODE_OPENLINE ? 1U : 0U;
+        if (openBefore == targetOpen) {
+            return ESP_MAP_LINE_DOOR_ALREADY_TARGET;
+        }
     }
 
     outResult->openAfter = targetOpen;
-    outResult->mutated = 1U;
     outResult->soundId =
         targetOpen != 0U ? ESP_MAP_LINE_SOUND_OPEN : ESP_MAP_LINE_SOUND_CLOSE;
     outResult->effectFlags = ESP_MAP_LINE_EFFECT_ALL;
     outResult->removeCommandIfHandled =
         (uint8_t)((command.arg2 & ESP_MAP_COMMAND_FLAG_REMOVE) != 0U ? 1U : 0U);
+    *outTargetOpen = targetOpen;
+    return ESP_MAP_LINE_DOOR_OK;
+}
+
+EspMapLineDoorStatus EspMapLineState_previewDoorCommand(
+    const EspMapEventDescriptor* descriptor,
+    uint32_t commandOffset,
+    EspMapLineDoorResult* outResult) {
+    uint8_t targetOpen;
+    return prepareDoorCommand(descriptor, commandOffset, outResult, &targetOpen);
+}
+
+EspMapLineDoorStatus EspMapLineState_applyDoorCommand(
+    const EspMapEventDescriptor* descriptor,
+    uint32_t commandOffset,
+    EspMapLineDoorResult* outResult) {
+    uint8_t targetOpen;
+    EspMapLineDoorStatus status =
+        prepareDoorCommand(descriptor, commandOffset, outResult, &targetOpen);
+
+    if (status != ESP_MAP_LINE_DOOR_OK) {
+        return status;
+    }
+    if (!EspMapLineState_setOpen(outResult->lineIndex, targetOpen)) {
+        memset(outResult, 0, sizeof(*outResult));
+        return ESP_MAP_LINE_DOOR_INVALID;
+    }
+    outResult->mutated = 1U;
     return ESP_MAP_LINE_DOOR_OK;
 }

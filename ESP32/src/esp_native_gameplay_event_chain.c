@@ -12,6 +12,7 @@
 #include "esp_map_runtime.h"
 #include "esp_map_script_state.h"
 #include "esp_map_sprite_topology.h"
+#include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_resident_gameplay.h"
@@ -105,6 +106,61 @@ static int chainOpcodeSupported(uint8_t codeId) {
            codeId == ESP_MAP_OPCODE_HIDE ||
            codeId == ESP_MAP_OPCODE_UNLOCK ||
            EspMapOpcodeExecutor_supports(codeId);
+}
+
+extern EspNativeGameplayDialogBeginStatus
+__real_EspNativeGameplayDialog_begin(uint16_t eventIndex,
+                                     uint8_t commandOffset,
+                                     uint32_t runFlags);
+
+static EspNativeGameplayDialogBeginStatus validateDialogCommand(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint32_t runFlags) {
+    EspMapEventDescriptor descriptor;
+    EspMapEventFilterPlan filterPlan;
+    EspMapEventCommandFilterResult filtered;
+    EspMapUiIntent intent;
+    uint8_t currentState;
+    uint8_t removed;
+    uint32_t global;
+
+    if (!eventDescriptorForIndex(eventIndex, &descriptor) ||
+        commandOffset >= descriptor.commandCount ||
+        !EspMapScriptState_getEventState(eventIndex, &currentState) ||
+        !EspMapEventFilter_prepare(&descriptor, currentState,
+                                   commandOffset, runFlags, 0U,
+                                   &filterPlan)) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
+    }
+
+    global = (uint32_t)descriptor.firstCommandIndex + commandOffset;
+    if (global > UINT16_MAX ||
+        !EspMapScriptState_isCommandRemoved(global, &removed) ||
+        !EspMapEventFilter_evaluate(&descriptor, &filterPlan,
+                                    commandOffset, removed, &filtered)) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    }
+    if (filtered.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE ||
+        (filtered.codeId != ESP_MAP_OPCODE_DIALOG &&
+         filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK)) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    }
+
+    memset(&intent, 0, sizeof(intent));
+    if (EspMapUiIntent_build(&descriptor, commandOffset, &intent) !=
+            ESP_MAP_UI_INTENT_OK ||
+        intent.kind != ESP_MAP_UI_INTENT_DIALOG ||
+        (intent.codeId != ESP_MAP_OPCODE_DIALOG &&
+         intent.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK) ||
+        intent.text.length + 1U > ESP_NATIVE_GAMEPLAY_DIALOG_TEXT_CAPACITY) {
+        return intent.text.length + 1U >
+                       ESP_NATIVE_GAMEPLAY_DIALOG_TEXT_CAPACITY
+                   ? ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_TEXT_TOO_LARGE
+                   : ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    }
+
+    return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK;
 }
 
 static EspNativeGameplayEventChainPreflightStatus buildPlan(
@@ -222,6 +278,94 @@ int EspNativeGameplayEventChain_restoreDialogMask(
     }
     mask->active = 0U;
     return ok;
+}
+
+EspNativeGameplayEventChainPreflightStatus
+EspNativeGameplayEventChain_preflight(
+    uint16_t eventIndex,
+    uint8_t resumeCommandOffset,
+    uint32_t runFlags) {
+    ChainPlan plan;
+    EspNativeGameplayEventChainPreflightStatus status =
+        buildPlan(eventIndex, resumeCommandOffset, runFlags, &plan);
+
+    if (status != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
+        return status;
+    }
+    if (plan.count != 0U && !ensureTransactionOwner()) {
+        return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY;
+    }
+    return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK;
+}
+
+EspNativeGameplayDialogBeginStatus
+EspNativeGameplayEventChain_preflightDialogCommand(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint32_t runFlags) {
+    EspNativeGameplayEventChainMask mask;
+    EspNativeGameplayEventChainPreflightStatus chainStatus;
+    EspNativeGameplayDialogBeginStatus dialogStatus;
+
+    dialogStatus = validateDialogCommand(eventIndex, commandOffset, runFlags);
+    if (dialogStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+        return dialogStatus;
+    }
+
+    memset(&mask, 0, sizeof(mask));
+    chainStatus = EspNativeGameplayEventChain_maskForDialogBegin(
+        eventIndex, (uint8_t)(commandOffset + 1U), runFlags, &mask);
+    if (chainStatus != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
+        return chainStatus == ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY
+                   ? ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY
+                   : ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_UNSUPPORTED_RESUME;
+    }
+    if (!EspNativeGameplayEventChain_restoreDialogMask(&mask)) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    }
+    return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK;
+}
+
+EspNativeGameplayDialogBeginStatus
+EspNativeGameplayEventChain_beginDialogCommand(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint32_t runFlags) {
+    EspNativeGameplayEventChainMask mask;
+    EspNativeGameplayEventChainPreflightStatus chainStatus;
+    EspNativeGameplayDialogBeginStatus dialogStatus;
+
+    dialogStatus = validateDialogCommand(eventIndex, commandOffset, runFlags);
+    if (dialogStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+        return dialogStatus;
+    }
+
+    memset(&mask, 0, sizeof(mask));
+    chainStatus = EspNativeGameplayEventChain_maskForDialogBegin(
+        eventIndex, (uint8_t)(commandOffset + 1U), runFlags, &mask);
+    if (chainStatus != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
+        printf("[DIALOGCHAIN] BEGIN-DEFER event=%u dialogCmd=%u status=%d mutation=no\n",
+               (unsigned int)eventIndex,
+               (unsigned int)commandOffset,
+               (int)chainStatus);
+        return chainStatus == ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY
+                   ? ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY
+                   : ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_UNSUPPORTED_RESUME;
+    }
+
+    dialogStatus = __real_EspNativeGameplayDialog_begin(eventIndex,
+                                                        commandOffset,
+                                                        runFlags);
+    if (!EspNativeGameplayEventChain_restoreDialogMask(&mask)) {
+        printf("[DIALOGCHAIN] FAILED begin-mask-restore event=%u dialogCmd=%u\n",
+               (unsigned int)eventIndex,
+               (unsigned int)commandOffset);
+        if (dialogStatus == ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+            EspNativeGameplayDialog_reset();
+        }
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    }
+    return dialogStatus;
 }
 
 static void clearTransaction(void) {

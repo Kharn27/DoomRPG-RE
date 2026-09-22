@@ -18,7 +18,6 @@
 
 #include <esp_heap_caps.h>
 
-#define INTRO_PROMPT_HIT_HEIGHT 18
 
 typedef struct Esp32IntroInputState_s {
     DoomRPG_t* doomRpg;
@@ -89,19 +88,6 @@ static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
            !EspNativeSpriteCache_isActive();
 }
 
-static int insideStoryViewport(int logicalX, int logicalY) {
-    return logicalX >= ESP32_STORY_VIEWPORT_X &&
-           logicalX < ESP32_STORY_VIEWPORT_X + ESP32_STORY_VIEWPORT_SIZE &&
-           logicalY >= ESP32_STORY_VIEWPORT_Y &&
-           logicalY < ESP32_STORY_VIEWPORT_Y + ESP32_STORY_VIEWPORT_SIZE;
-}
-
-static int insidePromptBand(int logicalX, int logicalY) {
-    return insideStoryViewport(logicalX, logicalY) &&
-           logicalY >= ESP32_STORY_VIEWPORT_Y + ESP32_STORY_VIEWPORT_SIZE -
-                           INTRO_PROMPT_HIT_HEIGHT;
-}
-
 static void disarmInternal(void) {
     inputState.active = 0;
     PlatformInput_setTapCallback(NULL);
@@ -136,9 +122,8 @@ static void onTap(int16_t screenX,
     canvas = inputState.doomRpg->doomCanvas;
     logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     logicalY = screenY / DOOMRPG_INTEGER_SCALE;
-    accepted = canvas->storyPage == 1
-                   ? insideStoryViewport(logicalX, logicalY)
-                   : insidePromptBand(logicalX, logicalY);
+    accepted = logicalX >= 0 && logicalX < DOOMRPG_LOGICAL_WIDTH &&
+               logicalY >= 0 && logicalY < DOOMRPG_LOGICAL_HEIGHT;
 
     ++inputState.taps;
     printf("[INTROIN] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d page=%d textPage=%d textDone=%d accepted=%d\n",
@@ -157,12 +142,11 @@ static void onTap(int16_t screenX,
 
     if (!accepted) {
         ++inputState.misses;
-        printf("[INTROIN] MISS n=%u page=%d promptBandY=%d..%d\n",
+        printf("[INTROIN] MISS n=%u page=%d logical=%d,%d domain=full-screen\n",
                (unsigned int)inputState.misses,
                canvas->storyPage,
-               ESP32_STORY_VIEWPORT_Y + ESP32_STORY_VIEWPORT_SIZE -
-                   INTRO_PROMPT_HIT_HEIGHT,
-               ESP32_STORY_VIEWPORT_Y + ESP32_STORY_VIEWPORT_SIZE - 1);
+               logicalX,
+               logicalY);
         return;
     }
 
@@ -302,17 +286,10 @@ int Esp32IntroInput_arm(struct DoomRPG_s* doomRpgBase) {
     inputState.active = 1;
     PlatformInput_setTapCallback(onTap);
 
-    printf("[INTROIN] READY semantic press-edge tap armed; stable release rearms next tap; promptLogical=x%d..%d y%d..%d animLogical=x%d..%d y%d..%d\n",
-           ESP32_STORY_VIEWPORT_X,
-           ESP32_STORY_VIEWPORT_X + ESP32_STORY_VIEWPORT_SIZE - 1,
-           ESP32_STORY_VIEWPORT_Y + ESP32_STORY_VIEWPORT_SIZE -
-               INTRO_PROMPT_HIT_HEIGHT,
-           ESP32_STORY_VIEWPORT_Y + ESP32_STORY_VIEWPORT_SIZE - 1,
-           ESP32_STORY_VIEWPORT_X,
-           ESP32_STORY_VIEWPORT_X + ESP32_STORY_VIEWPORT_SIZE - 1,
-           ESP32_STORY_VIEWPORT_Y,
-           ESP32_STORY_VIEWPORT_Y + ESP32_STORY_VIEWPORT_SIZE - 1);
-    printf("[INTROIN] CONTRACT reveal -> More -> page1 animation -> page2 -> visible full final text -> final PARK; dispose/map load blocked\n");
+    printf("[INTROIN] READY semantic press-edge tap armed; stable release rearms next tap; tapDomain=full-screen logical=x0..%d y0..%d\n",
+           DOOMRPG_LOGICAL_WIDTH - 1,
+           DOOMRPG_LOGICAL_HEIGHT - 1);
+    printf("[INTROIN] CONTRACT tap-anywhere reveal -> More -> page1 animation -> page2 -> visible full final text -> final PARK; dispose/map load blocked\n");
     return 1;
 }
 
