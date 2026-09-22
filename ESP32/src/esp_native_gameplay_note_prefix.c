@@ -143,36 +143,8 @@ static EspNativeGameplayDialogBeginStatus beginWithChainPreflight(
     uint16_t eventIndex,
     uint8_t commandOffset,
     uint32_t runFlags) {
-    EspNativeGameplayEventChainMask mask;
-    EspNativeGameplayEventChainPreflightStatus chainStatus;
-    EspNativeGameplayDialogBeginStatus dialogStatus;
-
-    memset(&mask, 0, sizeof(mask));
-    chainStatus = EspNativeGameplayEventChain_maskForDialogBegin(
-        eventIndex, (uint8_t)(commandOffset + 1U), runFlags, &mask);
-    if (chainStatus != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
-        printf("[DIALOGCHAIN] BEGIN-DEFER event=%u dialogCmd=%u status=%d mutation=no\n",
-               (unsigned int)eventIndex,
-               (unsigned int)commandOffset,
-               (int)chainStatus);
-        return chainStatus == ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY
-                   ? ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY
-                   : ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_UNSUPPORTED_RESUME;
-    }
-
-    dialogStatus = __real_EspNativeGameplayDialog_begin(eventIndex,
-                                                        commandOffset,
-                                                        runFlags);
-    if (!EspNativeGameplayEventChain_restoreDialogMask(&mask)) {
-        printf("[DIALOGCHAIN] FAILED begin-mask-restore event=%u dialogCmd=%u\n",
-               (unsigned int)eventIndex,
-               (unsigned int)commandOffset);
-        if (dialogStatus == ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
-            EspNativeGameplayDialog_reset();
-        }
-        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
-    }
-    return dialogStatus;
+    return EspNativeGameplayEventChain_beginDialogCommand(
+        eventIndex, commandOffset, runFlags);
 }
 
 /*
