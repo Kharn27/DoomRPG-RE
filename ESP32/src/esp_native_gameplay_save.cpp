@@ -689,53 +689,72 @@ bool readBestRecord(LoadedSaveRecord* outRecord, bool* outRecoveredBackup) {
     return true;
 }
 
-bool writeExactV5(const char* path, const NativeSaveRecordV5& record) {
+bool writeExactV6(
+    const char* path,
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
     File file = SD.open(path, FILE_WRITE);
-    size_t wrote;
+    size_t wrotePrefix;
+    size_t wroteCrate;
     if (!file) return false;
-    wrote = file.write(reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+    wrotePrefix = file.write(reinterpret_cast<const uint8_t*>(&prefix),
+                             sizeof(prefix));
+    wroteCrate = file.write(reinterpret_cast<const uint8_t*>(&crateTransforms),
+                            sizeof(crateTransforms));
     file.flush();
     file.close();
-    return wrote == sizeof(record);
+    return wrotePrefix == sizeof(prefix) &&
+           wroteCrate == sizeof(crateTransforms);
 }
 
-bool readExactV5Matches(const char* path, const NativeSaveRecordV5& expected) {
+bool readExactV6Matches(
+    const char* path,
+    const NativeSaveRecordV5& expectedPrefix,
+    const EspNativeGameplayCrateTransformSnapshot& expectedCrate) {
     File file;
-    const uint8_t* expectedBytes =
-        reinterpret_cast<const uint8_t*>(&expected);
     uint8_t verify[64];
-    size_t offset = 0U;
+    const uint8_t* segments[2] = {
+        reinterpret_cast<const uint8_t*>(&expectedPrefix),
+        reinterpret_cast<const uint8_t*>(&expectedCrate)
+    };
+    const size_t sizes[2] = {sizeof(expectedPrefix), sizeof(expectedCrate)};
+    uint8_t segment;
 
     if (path == nullptr || !SD.exists(path)) return false;
     file = SD.open(path, FILE_READ);
-    if (!file || (size_t)file.size() != sizeof(expected)) {
+    if (!file || (size_t)file.size() != kRecordBytesV6) {
         if (file) file.close();
         return false;
     }
 
-    while (offset < sizeof(expected)) {
-        size_t chunk = sizeof(expected) - offset;
-        size_t got;
-        if (chunk > sizeof(verify)) chunk = sizeof(verify);
-        got = file.read(verify, chunk);
-        if (got != chunk ||
-            memcmp(verify, expectedBytes + offset, chunk) != 0) {
-            file.close();
-            return false;
+    for (segment = 0U; segment < 2U; ++segment) {
+        size_t offset = 0U;
+        while (offset < sizes[segment]) {
+            size_t chunk = sizes[segment] - offset;
+            size_t got;
+            if (chunk > sizeof(verify)) chunk = sizeof(verify);
+            got = file.read(verify, chunk);
+            if (got != chunk ||
+                memcmp(verify, segments[segment] + offset, chunk) != 0) {
+                file.close();
+                return false;
+            }
+            offset += chunk;
         }
-        offset += chunk;
     }
     file.close();
     return true;
 }
 
-bool commitRecordAtomic(const NativeSaveRecordV5& record) {
+bool commitRecordAtomic(
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
     bool movedOld = false;
 
     if (SD.exists(kTempPath)) (void)SD.remove(kTempPath);
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
-    if (!writeExactV5(kTempPath, record) ||
-        !readExactV5Matches(kTempPath, record)) {
+    if (!writeExactV6(kTempPath, prefix, crateTransforms) ||
+        !readExactV6Matches(kTempPath, prefix, crateTransforms)) {
         (void)SD.remove(kTempPath);
         return false;
     }
@@ -756,7 +775,7 @@ bool commitRecordAtomic(const NativeSaveRecordV5& record) {
         return false;
     }
 
-    if (!readExactV5Matches(kSavePath, record)) {
+    if (!readExactV6Matches(kSavePath, prefix, crateTransforms)) {
         (void)SD.remove(kSavePath);
         if (movedOld && SD.exists(kBackupPath)) {
             (void)SD.rename(kBackupPath, kSavePath);
@@ -766,6 +785,31 @@ bool commitRecordAtomic(const NativeSaveRecordV5& record) {
 
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
     return true;
+}
+
+bool readV6CrateSection(
+    const char* path,
+    const NativeSaveCore& core,
+    EspNativeGameplayCrateTransformSnapshot* outSnapshot) {
+    File file;
+    size_t got;
+    if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
+        core.version != kVersionV6) {
+        return false;
+    }
+    file = SD.open(path, FILE_READ);
+    if (!file || (size_t)file.size() != kRecordBytesV6 ||
+        !file.seek(sizeof(NativeSaveRecordV5))) {
+        if (file) file.close();
+        return false;
+    }
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    got = file.read(reinterpret_cast<uint8_t*>(outSnapshot),
+                    sizeof(*outSnapshot));
+    file.close();
+    return got == sizeof(*outSnapshot) &&
+           EspNativeGameplayCrateState_snapshotShapeValid(
+               outSnapshot, core.runtimeFNV1a, core.targetMapId);
 }
 
 bool captureRecord(NativeSaveRecordV5* outRecord) {
