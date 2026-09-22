@@ -576,6 +576,30 @@ static int applyCandidate(const ResourceCandidate* candidate,
     return take;
 }
 
+static const char* firstWeaponDialogText(uint8_t subtype) {
+    /* Exact legacy Entity_touched() first-acquisition help family. */
+    switch (subtype) {
+    case 0U:
+        return "You got the Axe!|Zombies beware...";
+    case 1U:
+        return "You got the Fire|Extinguisher! It|uses halon can-|isters to put out|fires.";
+    case 3U:
+        return "You got the|Shotgun!";
+    case 4U:
+        return "You got the|Chaingun! Precise|and deadly, but|it's an ammo hog.";
+    case 5U:
+        return "You got the Super|Shotgun! Fierce!";
+    case 6U:
+        return "You got the|Plasma Gun!";
+    case 7U:
+        return "You got the|Rocket Launcher!|w00t!";
+    case 8U:
+        return "You got the BFG!|We could tell you|what BFG stands|for, but this is|a family game.";
+    default:
+        return NULL;
+    }
+}
+
 static const char* actionName(uint8_t action) {
     switch (action) {
     case RESOURCE_ACTION_HEALTH: return "health";
@@ -643,7 +667,9 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     uint32_t playerFNVAfter;
     char pickupName[17];
     char pickupMessage[24];
+    const char* firstWeaponDialog = NULL;
     int feedbackQueued = 0;
+    int dialogOpened = 0;
 
     if (beforeView == NULL || afterView == NULL ||
         beforeView->active != 1U || afterView->active != 1U ||
@@ -721,6 +747,22 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
 
     if (appliedCount == 0U) return 1;
 
+    /* Legacy Entity_touched() opens help only for a weapon that was not
+     * already owned or temporarily disabled before touching this tile. */
+    for (i = 0U; i < appliedCount; ++i) {
+        const uint16_t weaponBit =
+            applied[i].subtype < ESP_NATIVE_GAMEPLAY_PLAYER_WEAPON_LIMIT
+                ? (uint16_t)(1U << applied[i].subtype)
+                : 0U;
+        if (applied[i].type == RESOURCE_TYPE_WEAPON &&
+            weaponBit != 0U &&
+            ((playerBefore.weapons | playerBefore.disabledWeapons) &
+             weaponBit) == 0U) {
+            firstWeaponDialog = firstWeaponDialogText(applied[i].subtype);
+            if (firstWeaponDialog != NULL) break;
+        }
+    }
+
     memset(pickupName, 0, sizeof(pickupName));
     memset(pickupMessage, 0, sizeof(pickupMessage));
     if (!EspEntityDefTypeCatalog_readName(applied[0].defTile,
@@ -746,6 +788,29 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     resources.view.playerFNV1a = playerFNVAfter;
 
     if (rerender(doomRpg, afterView, "RESOURCE-PICKUP")) {
+        if (firstWeaponDialog != NULL) {
+            EspNativeGameplayDialogBeginStatus dialogStatus =
+                ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
+            if (EspNativeResidentGameplay_exitAutomapForModal(
+                    doomRpg != NULL ? doomRpg->render : NULL,
+                    "WEAPON-PICKUP-DIALOG")) {
+                dialogStatus =
+                    EspNativeGameplayDialog_beginStandalone(firstWeaponDialog);
+            }
+            if (dialogStatus == ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+                dialogOpened = 1;
+                printf("[PLAYERRES] WEAPON-HELP tile=%u subtype=%u status=OPEN firstAcquire=yes continuation=none turnAdvance=no\n",
+                       (unsigned int)afterTile,
+                       (unsigned int)(applied[0].type == RESOURCE_TYPE_WEAPON
+                                          ? applied[0].subtype
+                                          : 0U));
+            }
+            else {
+                printf("[PLAYERRES] WEAPON-HELP tile=%u status=DEFER begin=%s firstAcquire=yes pickupCommitted=yes\n",
+                       (unsigned int)afterTile,
+                       EspNativeGameplayDialog_beginStatusName(dialogStatus));
+            }
+        }
         printf("[PLAYERRES] COMMIT tile=%u candidates=%u consumed=%u totalConsumed=%u playerFNV=%08x->%08x hp=%u/%u armor=%u/%u weapon=%u weapons=%04x ammo0=%u ammo1=%u ammo2=%u ammo3=%u ammo4=%u keys=%08x credits=%u sound=deferred message=pickup-live flash=white-500ms gotFace=deferred rollback=closed\n",
                (unsigned int)afterTile,
                (unsigned int)candidateCount,
@@ -766,9 +831,10 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                (unsigned int)EspNativeGameplayPlayerState_ammo(4U),
                (unsigned int)EspNativeGameplayPlayerState_view()->keys,
                (unsigned int)EspNativeGameplayPlayerState_view()->credits);
-        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=white-border/500ms viewport=160x80 border=2px gotFace=deferred additionalMessages=%u-deferred\n",
+        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=white-border/500ms viewport=160x80 border=2px gotFace=deferred weaponHelp=%s additionalMessages=%u-deferred\n",
                (unsigned int)afterTile, pickupMessage,
                (unsigned int)applied[0].defTile,
+               dialogOpened ? "open" : (firstWeaponDialog != NULL ? "deferred" : "none"),
                (unsigned int)(appliedCount > 0U ? appliedCount - 1U : 0U));
         return 1;
     }
