@@ -997,7 +997,7 @@ bool loadNow(void) {
           EspNativeGameplayActionEngine_removedFingerprint() !=
               loaded.actionRemoved.stateFNV1a)) ||
         !sessionConfigForPlayer(record->player, &config) ||
-        !EspNativeGameplaySession_configure(&config)) {
+        !EspNativeGameplaySession_configureResume(&config)) {
         resetFailedLoad();
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s playerFNV=%08lx failClosed=yes\n",
                kLogPath,
