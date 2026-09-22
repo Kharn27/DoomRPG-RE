@@ -546,14 +546,43 @@ static void logDeferredSelectEvent(uint16_t eventIndex) {
     printf("\n");
 }
 
-static void serviceSelect(Render_t* render,
+#define LEGACY_REGULAR_DOOR_FLAG 0x00000004UL
+#define LEGACY_SECRET_XP 5U
+#define LEGACY_SECRET_SOUND 5133U
+
+static int classifySecretDoorBatch(
+    const EspNativeGameplayActionResult* result,
+    uint8_t* outFoundSecret) {
+    uint8_t i;
+
+    if (outFoundSecret != NULL) *outFoundSecret = 0U;
+    if (result == NULL || outFoundSecret == NULL ||
+        result->doorCount == 0U ||
+        result->doorCount > ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS) {
+        return 0;
+    }
+
+    for (i = 0U; i < result->doorCount; ++i) {
+        EspMapLine line;
+        if (!EspMapRuntime_getLine(result->doors[i].lineIndex, &line)) {
+            return 0;
+        }
+        if ((line.flags & LEGACY_REGULAR_DOOR_FLAG) == 0U) {
+            *outFoundSecret = 1U;
+        }
+    }
+    return 1;
+}
+
+static void serviceSelect(DoomRPG_t* doomRpg,
+                          Render_t* render,
                           const EspNativeGameplayInputState* intent) {
     const EspPlayerViewState* view = EspPlayerView_view();
     EspNativeGameplayActionResult result;
     EspNativeGameplayActionStatus status;
 
     memset(&result, 0, sizeof(result));
-    if (view == NULL || view->active != 1U ||
+    if (doomRpg == NULL || view == NULL || view->active != 1U ||
         view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0) {
         disableGameplay("select-unsettled-view");
         return;
@@ -620,17 +649,90 @@ static void serviceSelect(Render_t* render,
     }
 
     if (status == ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK) {
+        EspNativeGameplayPlayerState playerBefore;
+        EspNativeGameplayPlayerXpResult secretXp;
+        Random_t randomBefore;
+        uint8_t foundSecret = 0U;
+        uint8_t playerCaptured = 0U;
+        uint8_t secretFeedbackQueued = 0U;
+
+        memset(&playerBefore, 0, sizeof(playerBefore));
+        memset(&secretXp, 0, sizeof(secretXp));
+
+        if (!classifySecretDoorBatch(&result, &foundSecret)) {
+            if (!EspNativeGameplayAction_rollbackSelect(&result)) {
+                disableGameplay("select-door-secret-classify-rollback");
+                return;
+            }
+            ++gameplayState.deferred;
+            printf("[SECRET] DEFER event=%u doors=%u reason=line-classification mutation=rolled-back\n",
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.doorCount);
+            return;
+        }
+
+        if (foundSecret != 0U) {
+            if (!EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
+                if (!EspNativeGameplayAction_rollbackSelect(&result)) {
+                    disableGameplay("select-door-secret-player-snapshot-rollback");
+                    return;
+                }
+                ++gameplayState.deferred;
+                printf("[SECRET] DEFER event=%u doors=%u reason=player-snapshot mutation=rolled-back\n",
+                       (unsigned int)result.eventIndex,
+                       (unsigned int)result.doorCount);
+                return;
+            }
+            playerCaptured = 1U;
+            randomBefore = doomRpg->random;
+
+            if (!EspNativeGameplayPlayerState_applyXp(
+                    doomRpg, LEGACY_SECRET_XP, &secretXp) ||
+                !EspNativeGameplayActionEngine_queueTextFeedback(
+                    ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
+                    "Found Secret!", 0U)) {
+                doomRpg->random = randomBefore;
+                if (!EspNativeGameplayPlayerState_restore(&playerBefore) ||
+                    !EspNativeGameplayAction_rollbackSelect(&result)) {
+                    disableGameplay("select-door-secret-reward-rollback");
+                    return;
+                }
+                ++gameplayState.deferred;
+                printf("[SECRET] DEFER event=%u doors=%u reason=reward-owner mutation=rolled-back\n",
+                       (unsigned int)result.eventIndex,
+                       (unsigned int)result.doorCount);
+                return;
+            }
+            secretFeedbackQueued = 1U;
+        }
+
         if (!renderCurrent(render, (uint8_t)view->viewAngle, "SELECT-DOOR")) {
-            if (!EspNativeGameplayAction_rollbackSelect(&result) ||
+            int feedbackRestored = 1;
+            int playerRestored = 1;
+            if (secretFeedbackQueued != 0U) {
+                feedbackRestored =
+                    EspNativeGameplayActionEngine_cancelQueuedFeedback(
+                        ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT);
+            }
+            if (playerCaptured != 0U) {
+                doomRpg->random = randomBefore;
+                playerRestored =
+                    EspNativeGameplayPlayerState_restore(&playerBefore);
+            }
+            if (!feedbackRestored || !playerRestored ||
+                !EspNativeGameplayAction_rollbackSelect(&result) ||
                 !renderCurrent(render, (uint8_t)view->viewAngle,
                                "SELECT-DOOR-ROLLBACK")) {
                 disableGameplay("select-door-render-rollback");
                 return;
             }
-            printf("[RESIDENTGAMEPLAY] SELECT ROLLBACK seq=%u doors=%u firstLine=%u restored=yes\n",
+            printf("[RESIDENTGAMEPLAY] SELECT ROLLBACK seq=%u doors=%u firstLine=%u secret=%u xpRestored=%s rngRestored=%s restored=yes\n",
                    (unsigned int)intent->sequence,
                    (unsigned int)result.doorCount,
-                   (unsigned int)result.lineIndex);
+                   (unsigned int)result.lineIndex,
+                   (unsigned int)foundSecret,
+                   foundSecret ? "yes" : "n/a",
+                   foundSecret ? "yes" : "n/a");
             return;
         }
 
@@ -654,11 +756,26 @@ static void serviceSelect(Render_t* render,
             }
             printf("\n");
         }
-        printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u doors=%u firstDoor=%u committed=yes redraw=yes collision=live animation=bounded-batch sound=deferred entityRelink=deferred turnAdvance=deferred\n",
+        if (foundSecret != 0U) {
+            printf("[SECRET] FOUND event=%u doors=%u xp=%u level=%u->%u levelUps=%u rngCalls=%u playerFNV=%08x->%08x message=\"Found Secret!\" sound=%u-deferred commit=yes\n",
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.doorCount,
+                   (unsigned int)secretXp.xpApplied,
+                   (unsigned int)secretXp.levelBefore,
+                   (unsigned int)secretXp.levelAfter,
+                   (unsigned int)secretXp.levelUps,
+                   (unsigned int)secretXp.rngCalls,
+                   (unsigned int)secretXp.stateFNVBefore,
+                   (unsigned int)secretXp.stateFNVAfter,
+                   (unsigned int)LEGACY_SECRET_SOUND);
+        }
+        printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u doors=%u firstDoor=%u committed=yes redraw=yes collision=live animation=bounded-batch secret=%s sound=%s entityRelink=deferred turnAdvance=deferred\n",
                (unsigned int)gameplayState.selects,
                (unsigned int)intent->sequence,
                (unsigned int)result.doorCount,
-               (unsigned int)result.lineIndex);
+               (unsigned int)result.lineIndex,
+               foundSecret ? "found+5xp" : "no",
+               foundSecret ? "5133-deferred" : "door-deferred");
         return;
     }
 
@@ -1147,7 +1264,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_SELECT:
-        serviceSelect(doomRpg->render, &intent);
+        serviceSelect(doomRpg, doomRpg->render, &intent);
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN:
