@@ -16,10 +16,13 @@
 #include "esp_native_gameplay_action.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
+#include "esp_native_gameplay_combat_math.h"
+#include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_destructible.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_indexed_bmp.h"
@@ -37,11 +40,15 @@
 #define ACTION_ENTITY_HUMAN 2U
 #define ACTION_ENTITY_FIRE 10U
 #define ACTION_ENTITY_DESTRUCTIBLE 12U
+#define ACTION_DESTRUCTIBLE_CRATE_SUBTYPE 2U
 #define ACTION_DESTRUCTIBLE_JAMMED_SUBTYPE 3U
 #define ACTION_WEAPON_AXE 0U
 #define ACTION_WEAPON_EXTINGUISHER 1U
 #define ACTION_EXTINGUISHER_AMMO_TYPE 0U
 #define ACTION_EXTINGUISHER_AMMO_USAGE 1U
+#define ACTION_SPRITE_DEF_MASK 511U
+#define ACTION_SPRITE_DEF_TILE_FLAG 0x00040000UL
+#define ACTION_SPRITE_DEF_TILE_BASE 305U
 
 /* Legacy Player_reset accuracy=16, Combat_calcHit() derives dummy agility=12
  * and the axe adds its range term: 170 + 89 = 259. randHit is one byte, so
@@ -104,6 +111,9 @@ typedef EspNativeGameplayActionFeedback ActionFeedback;
 #define ACTION_FEEDBACK_PICKUP ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP
 #define ACTION_FEEDBACK_DAMAGE ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE
 #define ACTION_FEEDBACK_PLAYER_HIT ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT
+#define ACTION_FEEDBACK_NO_EFFECT ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NO_EFFECT
+#define ACTION_FEEDBACK_TRAPPED ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_TRAPPED
+#define ACTION_FEEDBACK_NO_AMMO ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NO_AMMO
 
 typedef enum ActionRoute_e {
     ACTION_ROUTE_INVALID = 0,
@@ -112,7 +122,8 @@ typedef enum ActionRoute_e {
     ACTION_ROUTE_HUMAN = 3,
     ACTION_ROUTE_ENEMY_DEFERRED = 4,
     ACTION_ROUTE_JAMMED_DOOR_CLEARED = 5,
-    ACTION_ROUTE_DESTRUCTIBLE_DEFERRED = 6
+    ACTION_ROUTE_DESTRUCTIBLE_DEFERRED = 6,
+    ACTION_ROUTE_CRATE_SUBTYPE2 = 7
 } ActionRoute;
 
 typedef struct ActionTarget_s {
@@ -181,6 +192,7 @@ static uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];
 EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayActionResult* outResult);
+int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
 int __real_EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                                uint8_t* outVisualState);
 int __real_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
@@ -315,6 +327,10 @@ static int actionGetEntity(uint32_t spriteIndex,
     if (removed(spriteIndex) && outLinkState != NULL) {
         *outLinkState &= (uint16_t)~(ESP_MAP_SPRITE_TOPOLOGY_LINKED |
                                      ESP_MAP_SPRITE_TOPOLOGY_ALIVE);
+    }
+    if (!EspNativeGameplayCrateState_applyEntity(
+            spriteIndex, outType, outSubType, outLinkState)) {
+        return 0;
     }
     return 1;
 }
@@ -754,6 +770,70 @@ static int traceAction(ActionTarget* outTarget) {
     return 0;
 }
 
+static int spriteDefinition(uint16_t spriteIndex,
+                            uint16_t* outDefTile,
+                            uint8_t* outType,
+                            uint8_t* outSubtype,
+                            int32_t* outParm) {
+    EspMapSprite sprite;
+    uint32_t lookup;
+    if (!__real_EspMapRuntime_getMapSprite(spriteIndex, &sprite)) return 0;
+    lookup = sprite.info & ACTION_SPRITE_DEF_MASK;
+    if ((sprite.info & ACTION_SPRITE_DEF_TILE_FLAG) != 0U) {
+        lookup += ACTION_SPRITE_DEF_TILE_BASE;
+    }
+    if (lookup >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT ||
+        !EspEntityDefTypeCatalog_getMetadata((uint16_t)lookup,
+                                             outType, outSubtype, outParm)) {
+        return 0;
+    }
+    if (outDefTile != NULL) *outDefTile = (uint16_t)lookup;
+    return 1;
+}
+
+static int crateWeaponEligible(const ActionTarget* target,
+                               uint8_t weapon,
+                               uint16_t* outDefTile,
+                               int32_t* outParm) {
+    uint8_t type;
+    uint8_t subtype;
+    int32_t parm;
+    uint16_t defTile;
+    if (target == NULL || target->isLine != 0U ||
+        target->spriteIndex == ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE ||
+        weapon >= 32U ||
+        !spriteDefinition(target->spriteIndex, &defTile,
+                          &type, &subtype, &parm) ||
+        type != ACTION_ENTITY_DESTRUCTIBLE ||
+        subtype != ACTION_DESTRUCTIBLE_CRATE_SUBTYPE) {
+        return -1;
+    }
+    if (outDefTile != NULL) *outDefTile = defTile;
+    if (outParm != NULL) *outParm = parm;
+    return (((uint32_t)parm & (1UL << weapon)) != 0U) ? 1 : 0;
+}
+
+static int targetWorldDistance(const ActionTarget* target,
+                               const EspPlayerViewState* view,
+                               uint32_t* outWorldDistance) {
+    EspMapSprite sprite;
+    int64_t dx;
+    int64_t dy;
+    int64_t distance;
+    if (target == NULL || view == NULL || outWorldDistance == NULL ||
+        target->isLine != 0U ||
+        target->spriteIndex == ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE ||
+        !__real_EspMapRuntime_getMapSprite(target->spriteIndex, &sprite)) {
+        return 0;
+    }
+    dx = (int64_t)(int32_t)sprite.x - (int64_t)view->viewX;
+    dy = (int64_t)(int32_t)sprite.y - (int64_t)view->viewY;
+    distance = dx * dx + dy * dy;
+    if (distance < 0 || distance > 0xffffffffLL) return 0;
+    *outWorldDistance = (uint32_t)distance;
+    return 1;
+}
+
 static ActionRoute routeTarget(const ActionTarget* target, uint8_t weapon) {
     if (target == NULL) return ACTION_ROUTE_INVALID;
     if (target->type == ACTION_ENTITY_HUMAN) return ACTION_ROUTE_HUMAN;
@@ -769,6 +849,10 @@ static ActionRoute routeTarget(const ActionTarget* target, uint8_t weapon) {
             weapon == ACTION_WEAPON_AXE && target->distance == 1U) {
             return ACTION_ROUTE_JAMMED_DOOR_CLEARED;
         }
+        if (target->isLine == 0U &&
+            target->subtype == ACTION_DESTRUCTIBLE_CRATE_SUBTYPE) {
+            return ACTION_ROUTE_CRATE_SUBTYPE2;
+        }
         return ACTION_ROUTE_DESTRUCTIBLE_DEFERRED;
     }
     return ACTION_ROUTE_NOTHING;
@@ -783,6 +867,8 @@ static const char* routeName(ActionRoute route) {
     case ACTION_ROUTE_JAMMED_DOOR_CLEARED: return "JAMMED_DOOR_CLEARED";
     case ACTION_ROUTE_DESTRUCTIBLE_DEFERRED:
         return "DESTRUCTIBLE_COMBAT_DEFERRED";
+    case ACTION_ROUTE_CRATE_SUBTYPE2:
+        return "CRATE_SUBTYPE2";
     default: return "INVALID";
     }
 }
@@ -792,6 +878,9 @@ static const char* feedbackText(uint8_t feedback) {
     if (feedback == ACTION_FEEDBACK_FIRE_CLEARED) return "Fire cleared!";
     if (feedback == ACTION_FEEDBACK_DOOR_CLEARED) return "Door cleared!";
     if (feedback == ACTION_FEEDBACK_PASS_TURN) return "Turn passed.";
+    if (feedback == ACTION_FEEDBACK_NO_EFFECT) return "No effect!";
+    if (feedback == ACTION_FEEDBACK_TRAPPED) return "Trapped!";
+    if (feedback == ACTION_FEEDBACK_NO_AMMO) return "Not enough ammo!";
     if ((feedback == ACTION_FEEDBACK_PICKUP ||
          feedback == ACTION_FEEDBACK_DAMAGE ||
          feedback == ACTION_FEEDBACK_PLAYER_HIT) &&
@@ -1343,6 +1432,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
 
 void EspNativeGameplayActionEngine_reset(void) {
     EspNativeGameplayWeapon_cancelAttack();
+    EspNativeGameplayCrateState_reset();
     memset(&actionState, 0, sizeof(actionState));
 }
 
