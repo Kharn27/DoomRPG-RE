@@ -501,12 +501,18 @@ static void drawBurst(uint16_t* framebuffer,
 }
 
 static void decorateActiveGib(void) {
+    const EspNativeGameplayMonsterView* view = syncOwner();
     uint16_t* framebuffer;
     size_t expectedBytes;
     uint32_t now;
     uint32_t pixels;
 
-    if (gibFxOwner.active == 0U ||
+    /*
+     * syncOwner() runs first so a map/runtime identity change invalidates a
+     * short-lived burst before it can be composed onto the new world.
+     */
+    if (view == NULL ||
+        gibFxOwner.active == 0U ||
         gibFxOwner.activeSpriteIndex == GIBFX_NO_SPRITE ||
         gibFxOwner.activeParticles == 0U ||
         gibFxOwner.clearAtMs == 0U) {
@@ -528,7 +534,7 @@ static void decorateActiveGib(void) {
     ++gibFxOwner.activeRepaints;
     gibFxOwner.pixels += pixels;
     if (gibFxOwner.activeRepaints == 1U) {
-        printf("[GIBFX] REPAINT sprite=%u particles=%u pixels=%u lease=preserved reason=fresh-frame gameplayRng=untouched\n",
+        printf("[GIBFX] REPAINT sprite=%u particles=%u pixels=%u lease=preserved composition=present gameplayRng=untouched\n",
                (unsigned int)gibFxOwner.activeSpriteIndex,
                (unsigned int)gibFxOwner.activeParticles,
                (unsigned int)pixels);
