@@ -10,6 +10,7 @@
 #include "esp_entity_def_type_catalog.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_action.h"
+#include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_dispatch.h"
@@ -19,6 +20,7 @@
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_move_events.h"
 #include "esp_native_gameplay_pass_turn.h"
+#include "esp_native_gameplay_password.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_select.h"
 #include "esp_native_gameplay_weapon_control.h"
@@ -37,6 +39,8 @@ typedef struct EspNativeResidentGameplayState_s {
     uint32_t dialogs;
     uint32_t dialogResumes;
     uint32_t dialogCancels;
+    uint32_t passwords;
+    uint32_t passwordResumes;
     uint32_t blocked;
     uint32_t deferred;
     uint32_t selectRefused;
@@ -54,6 +58,7 @@ static void disableGameplay(const char* reason) {
     }
     EspNativeGameplayHub_reset();
     EspNativeGameplayDialog_reset();
+    EspNativeGameplayPassword_reset();
     gameplayState.failed = 1U;
     gameplayState.active = 0U;
     PlatformInput_setTapCallback(NULL);
@@ -101,6 +106,37 @@ static void onGameplayTap(int16_t screenX,
     logicalY = screenY / DOOMRPG_INTEGER_SCALE;
     if (logicalX < 0 || logicalX >= DOOMRPG_LOGICAL_WIDTH ||
         logicalY < 0 || logicalY >= DOOMRPG_LOGICAL_HEIGHT) {
+        return;
+    }
+
+    /*
+     * EV_PASSWORD owns its explicit 3x4 keypad. Keep raw logical taps out of
+     * the normal 12-zone gameplay map, and keep the submitted modal blocked
+     * until the resident service has consumed its continuation result.
+     */
+    if (EspNativeGameplayPassword_isActive()) {
+        EspNativeGameplayPasswordTapStatus passwordStatus;
+
+        ++gameplayState.taps;
+        passwordStatus =
+            EspNativeGameplayPassword_handleTap(logicalX, logicalY);
+        if (passwordStatus == ESP_NATIVE_GAMEPLAY_PASSWORD_TAP_INVALID) {
+            disableGameplay("password-touch");
+            return;
+        }
+        if (passwordStatus != ESP_NATIVE_GAMEPLAY_PASSWORD_TAP_IGNORED) {
+            printf("[RESIDENTGAMEPLAY] PASSWORD-TAP tap=%u logical=%d,%d status=%d modal=%s feedback=keypad-only\n",
+                   (unsigned int)gameplayState.taps,
+                   logicalX,
+                   logicalY,
+                   (int)passwordStatus,
+                   passwordStatus == ESP_NATIVE_GAMEPLAY_PASSWORD_TAP_SUBMITTED
+                       ? "submitted"
+                       : "active");
+        }
+        return;
+    }
+    if (EspNativeGameplayPassword_hasPendingCompletion()) {
         return;
     }
 
@@ -488,6 +524,32 @@ static void serviceSelect(Render_t* render,
            (unsigned int)result.eligibleCount,
            (unsigned int)result.unsupportedCodeId);
 
+    if (status == ESP_NATIVE_GAMEPLAY_ACTION_PASSWORD_READY) {
+        EspNativeGameplayPasswordBeginStatus passwordStatus =
+            EspNativeGameplayPassword_begin(
+                result.eventIndex,
+                result.commandOffset,
+                ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS);
+        if (passwordStatus != ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_OK) {
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] SELECT-PASSWORD-DEFER n=%u seq=%u event=%u cmd=%u status=%s mutation=no\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)intent->sequence,
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.commandOffset,
+                   EspNativeGameplayPassword_beginStatusName(passwordStatus));
+            return;
+        }
+        ++gameplayState.selects;
+        ++gameplayState.passwords;
+        printf("[RESIDENTGAMEPLAY] SELECT-PASSWORD n=%u seq=%u event=%u cmd=%u active=yes keypad=0-9+DEL+VALID pauseScript=yes skipTurn=yes continuation=preflighted\n",
+               (unsigned int)gameplayState.passwords,
+               (unsigned int)intent->sequence,
+               (unsigned int)result.eventIndex,
+               (unsigned int)result.commandOffset);
+        return;
+    }
+
     if (status == ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY) {
         EspNativeGameplayDialogBeginStatus dialogStatus =
             EspNativeGameplayDialog_begin(
@@ -676,6 +738,86 @@ static void serviceDialogAction(Render_t* render,
                               : 0U));
 }
 
+static void servicePasswordCompletion(
+    Render_t* render,
+    const EspNativeGameplayPasswordCompletion* completion) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayDialogResumeResult resume;
+    EspNativeGameplayDialogResumeStatus resumeStatus =
+        ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND;
+    int feedbackQueued = 0;
+
+    memset(&resume, 0, sizeof(resume));
+    if (render == NULL || completion == NULL || completion->pending != 1U ||
+        view == NULL || view->active != 1U ||
+        view->viewAngle != view->destAngle || (view->viewAngle & 63) != 0) {
+        disableGameplay("password-completion-context");
+        return;
+    }
+
+    if (completion->correct != 0U) {
+        resumeStatus =
+            EspNativeGameplayDialog_resume(&completion->close, &resume);
+        if (resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+            resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
+            printf("[RESIDENTGAMEPLAY] PASSWORD-RESUME-FAILED event=%u offset=%u status=%s\n",
+                   (unsigned int)completion->close.sourceEventIndex,
+                   (unsigned int)completion->close.resumeCommandOffset,
+                   EspNativeGameplayDialog_resumeStatusName(resumeStatus));
+            disableGameplay("password-resume");
+            return;
+        }
+        feedbackQueued = EspNativeGameplayActionEngine_queueTextFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
+            "Correct code!", 0U);
+    }
+    else if (completion->hadInput != 0U) {
+        feedbackQueued = EspNativeGameplayActionEngine_queueTextFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
+            "Invalid code!", 0U);
+    }
+
+    if (!renderCurrent(render, (uint8_t)view->viewAngle,
+                       completion->correct != 0U
+                           ? "PASSWORD-CORRECT"
+                           : "PASSWORD-INVALID")) {
+        if (completion->correct != 0U &&
+            resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+            resume.rollbackAvailable != 0U &&
+            EspNativeGameplayDialog_rollbackResume(&resume) &&
+            renderCurrent(render, (uint8_t)view->viewAngle,
+                          "PASSWORD-RESUME-ROLLBACK")) {
+            printf("[RESIDENTGAMEPLAY] PASSWORD ROLLBACK event=%u opcode=%u restored=yes\n",
+                   (unsigned int)completion->close.sourceEventIndex,
+                   (unsigned int)resume.codeId);
+            return;
+        }
+        disableGameplay("password-render-rollback");
+        return;
+    }
+
+    if (completion->correct != 0U) {
+        ++gameplayState.passwordResumes;
+    }
+    printf("[RESIDENTGAMEPLAY] PASSWORD-CLOSE event=%u entered=%u/%u result=%s continuation=%s opcode=%u mutation=%u redraw=yes message=%s turnAdvance=deferred\n",
+           (unsigned int)completion->close.sourceEventIndex,
+           (unsigned int)completion->enteredLength,
+           (unsigned int)completion->expectedLength,
+           completion->correct != 0U ? "correct" : "invalid",
+           completion->correct != 0U
+               ? (resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK
+                      ? "executed"
+                      : "empty")
+               : "blocked",
+           (unsigned int)(resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK
+                              ? resume.codeId
+                              : 0U),
+           (unsigned int)(resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK
+                              ? resume.mutated
+                              : 0U),
+           feedbackQueued ? "queued" : "none");
+}
+
 static int restoreWorldAfterHub(Render_t* render, const char* reason) {
     const EspPlayerViewState* view = EspPlayerView_view();
     if (render == NULL || view == NULL || view->active != 1U ||
@@ -692,6 +834,7 @@ void EspNativeResidentGameplay_reset(void) {
     }
     EspNativeGameplayHub_reset();
     EspNativeGameplayDialog_reset();
+    EspNativeGameplayPassword_reset();
     EspNativeGameplayControls_reset();
     EspNativeGameplayInput_reset();
     memset(&gameplayState, 0, sizeof(gameplayState));
@@ -748,6 +891,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
         EspNativeGameplayHub_reset();
         EspNativeGameplayDialog_reset();
+        EspNativeGameplayPassword_reset();
         EspNativeGameplayControls_reset();
         EspNativeGameplayInput_reset();
         {
@@ -756,7 +900,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             gameplayState.active = 1U;
             PlatformInput_setTapCallback(onGameplayTap);
             printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-            printf("[RESIDENTGAMEPLAY] READY map=current entry=%s touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR15/16+SELECT_DIALOG8/26+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live menu=inventory-weapon-select-no-turn SELECT-entity/other/automap=deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
+            printf("[RESIDENTGAMEPLAY] READY map=current entry=%s touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR6/15/16+SELECT_DIALOG8/26+PASSWORD10+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live password=touch-keypad-0-9+DEL+VALID menu=inventory-weapon-select-no-turn SELECT-entity/other/automap=deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
                    resumed != 0U ? "checkpoint-resume" : "fresh-first-frame",
                    (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         }
@@ -784,8 +928,28 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
     pending = EspNativeGameplayInput_peek();
 
-    if (EspNativeGameplayHub_isActive() && EspNativeGameplayDialog_isActive()) {
-        disableGameplay("hub-dialog-overlap");
+    if ((EspNativeGameplayHub_isActive() &&
+         (EspNativeGameplayDialog_isActive() ||
+          EspNativeGameplayPassword_isActive() ||
+          EspNativeGameplayPassword_hasPendingCompletion())) ||
+        (EspNativeGameplayDialog_isActive() &&
+         (EspNativeGameplayPassword_isActive() ||
+          EspNativeGameplayPassword_hasPendingCompletion()))) {
+        disableGameplay("modal-overlap");
+        return;
+    }
+
+    if (EspNativeGameplayPassword_hasPendingCompletion()) {
+        EspNativeGameplayPasswordCompletion completion;
+        memset(&completion, 0, sizeof(completion));
+        if (!EspNativeGameplayPassword_takeCompletion(&completion)) {
+            disableGameplay("password-completion-consume");
+            return;
+        }
+        servicePasswordCompletion(doomRpg->render, &completion);
+        return;
+    }
+    if (EspNativeGameplayPassword_isActive()) {
         return;
     }
 
