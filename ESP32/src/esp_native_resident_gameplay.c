@@ -625,27 +625,37 @@ static void serviceSelect(Render_t* render,
                 disableGameplay("select-door-render-rollback");
                 return;
             }
-            printf("[RESIDENTGAMEPLAY] SELECT ROLLBACK seq=%u line=%u open=%u restored=yes\n",
+            printf("[RESIDENTGAMEPLAY] SELECT ROLLBACK seq=%u doors=%u firstLine=%u restored=yes\n",
                    (unsigned int)intent->sequence,
-                   (unsigned int)result.lineIndex,
-                   (unsigned int)result.openBefore);
+                   (unsigned int)result.doorCount,
+                   (unsigned int)result.lineIndex);
             return;
         }
 
         ++gameplayState.selects;
-        printf("[ACTION] DOOR line=%u opcode=%u status=OK open=%u->%u locked=%u removed=%u->%u effects=%02x sound=%u\n",
-               (unsigned int)result.lineIndex,
-               (unsigned int)result.codeId,
-               (unsigned int)result.openBefore,
-               (unsigned int)result.openAfter,
-               (unsigned int)result.locked,
-               (unsigned int)result.removedBefore,
-               (unsigned int)result.removedAfter,
-               (unsigned int)result.effectFlags,
-               (unsigned int)result.soundId);
-        printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u door=%u committed=yes redraw=yes collision=live animation=regular4frame-live sound=deferred entityRelink=deferred turnAdvance=deferred\n",
+        {
+            uint8_t doorIndex;
+            printf("[ACTION] DOOR-BATCH event=%u count=%u status=OK",
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.doorCount);
+            for (doorIndex = 0U; doorIndex < result.doorCount; ++doorIndex) {
+                const EspNativeGameplayActionDoorStep* step =
+                    &result.doors[doorIndex];
+                printf(" [%u]line=%u/op=%u/open=%u->%u/removed=%u->%u",
+                       (unsigned int)doorIndex,
+                       (unsigned int)step->lineIndex,
+                       (unsigned int)step->codeId,
+                       (unsigned int)step->openBefore,
+                       (unsigned int)step->openAfter,
+                       (unsigned int)step->removedBefore,
+                       (unsigned int)step->removedAfter);
+            }
+            printf("\n");
+        }
+        printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u doors=%u firstDoor=%u committed=yes redraw=yes collision=live animation=bounded-batch sound=deferred entityRelink=deferred turnAdvance=deferred\n",
                (unsigned int)gameplayState.selects,
                (unsigned int)intent->sequence,
+               (unsigned int)result.doorCount,
                (unsigned int)result.lineIndex);
         return;
     }
