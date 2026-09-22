@@ -40,15 +40,13 @@
 #define HUD_ORIENTATION_ARROW_X 128
 #define HUD_LINE1_X 33
 #define HUD_LINE2_X 155
-#define HUD_TOP_MENU_LEFT 0
-#define HUD_TOP_MENU_RIGHT 31
-#define HUD_TOP_PASS_LEFT 32
-#define HUD_TOP_PASS_RIGHT 127
-#define HUD_TOP_AUTOMAP_LEFT 128
-#define HUD_TOP_AUTOMAP_RIGHT 159
-#define HUD_TOP_TOUCH_NOTCH_TOP 1
-#define HUD_TOP_TOUCH_NOTCH_BOTTOM 18
-#define HUD_TOP_TOUCH_NOTCH_LENGTH 3
+#define HUD_TOP_TOUCH_SPLIT1_X 32
+#define HUD_TOP_TOUCH_SPLIT2_X 128
+#define HUD_TOP_TOUCH_NOTCH_TOP_Y0 1
+#define HUD_TOP_TOUCH_NOTCH_TOP_Y1 2
+#define HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0 17
+#define HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1 18
+#define HUD_TOP_TOUCH_NEON_BLUE 0x001fU
 
 static EspNativeGameplayHudState hudState;
 
@@ -112,55 +110,24 @@ static void drawVerticalLine(uint16_t* framebuffer,
     }
 }
 
-static void drawHorizontalLine(uint16_t* framebuffer,
-                               int x0,
-                               int x1,
-                               int y,
-                               uint16_t color,
-                               EspNativeGameplayHudStats* stats) {
-    int x;
-    if (framebuffer == NULL || y < 0 || y >= DOOMRPG_LOGICAL_HEIGHT) return;
-    if (x0 < 0) x0 = 0;
-    if (x1 >= DOOMRPG_LOGICAL_WIDTH) x1 = DOOMRPG_LOGICAL_WIDTH - 1;
-    if (x1 < x0) return;
-    for (x = x0; x <= x1; ++x) {
-        framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
-        if (stats != NULL) ++stats->pixelsWritten;
-    }
-}
+static void drawTopTouchNotches(uint16_t* framebuffer,
+                                EspNativeGameplayHudStats* stats) {
+    const uint16_t blue = HUD_TOP_TOUCH_NEON_BLUE;
 
-static void drawTopTouchButtonCorners(uint16_t* framebuffer,
-                                      int left,
-                                      int right,
-                                      EspNativeGameplayHudStats* stats) {
-    const int top = HUD_TOP_TOUCH_NOTCH_TOP;
-    const int bottom = HUD_TOP_TOUCH_NOTCH_BOTTOM;
-    const int last = HUD_TOP_TOUCH_NOTCH_LENGTH - 1;
-    const uint16_t shadow = rgb565(0x282c32U);
-    const uint16_t highlight = rgb565(0xc8d0dcU);
-
-    /* Four tiny 3x3 bevel corners. The dark outer L plus one bright inset L
-     * remains subtle, but survives the metallic k.bmp pattern at 2x output.
-     * No complete button edge is ever drawn. */
-    drawVerticalLine(framebuffer, left, top, top + last, shadow, stats);
-    drawHorizontalLine(framebuffer, left, left + last, top, shadow, stats);
-    drawVerticalLine(framebuffer, left + 1, top + 1, top + last, highlight, stats);
-    drawHorizontalLine(framebuffer, left + 1, left + last, top + 1, highlight, stats);
-
-    drawVerticalLine(framebuffer, right, top, top + last, shadow, stats);
-    drawHorizontalLine(framebuffer, right - last, right, top, shadow, stats);
-    drawVerticalLine(framebuffer, right - 1, top + 1, top + last, highlight, stats);
-    drawHorizontalLine(framebuffer, right - last, right - 1, top + 1, highlight, stats);
-
-    drawVerticalLine(framebuffer, left, bottom - last, bottom, shadow, stats);
-    drawHorizontalLine(framebuffer, left, left + last, bottom, shadow, stats);
-    drawVerticalLine(framebuffer, left + 1, bottom - last, bottom - 1, highlight, stats);
-    drawHorizontalLine(framebuffer, left + 1, left + last, bottom - 1, highlight, stats);
-
-    drawVerticalLine(framebuffer, right, bottom - last, bottom, shadow, stats);
-    drawHorizontalLine(framebuffer, right - last, right, bottom, shadow, stats);
-    drawVerticalLine(framebuffer, right - 1, bottom - last, bottom - 1, highlight, stats);
-    drawHorizontalLine(framebuffer, right - last, right - 1, bottom - 1, highlight, stats);
+    /* Tiny split markers only: one logical pixel wide, two pixels long,
+     * using the same neon-blue core as the top-button touch feedback. */
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT1_X,
+                     HUD_TOP_TOUCH_NOTCH_TOP_Y0,
+                     HUD_TOP_TOUCH_NOTCH_TOP_Y1, blue, stats);
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT1_X,
+                     HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0,
+                     HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1, blue, stats);
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT2_X,
+                     HUD_TOP_TOUCH_NOTCH_TOP_Y0,
+                     HUD_TOP_TOUCH_NOTCH_TOP_Y1, blue, stats);
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT2_X,
+                     HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0,
+                     HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1, blue, stats);
 }
 
 static EspNativeGameplayHudStatus openAsset(
@@ -333,21 +300,9 @@ static EspNativeGameplayHudStatus paintPrepared(
     }
     mergeBmpStats(stats, &local);
 
-    /* Subtle top-button locator chrome. Each touch zone gets only four small
-     * 3-pixel L-shaped corner notches; no complete border is drawn and the
-     * semantic hit boxes remain exactly 0..31 | 32..127 | 128..159. */
-    {
-        drawTopTouchButtonCorners(framebuffer,
-                                  HUD_TOP_MENU_LEFT, HUD_TOP_MENU_RIGHT,
-                                  stats);
-        drawTopTouchButtonCorners(framebuffer,
-                                  HUD_TOP_PASS_LEFT, HUD_TOP_PASS_RIGHT,
-                                  stats);
-        drawTopTouchButtonCorners(framebuffer,
-                                  HUD_TOP_AUTOMAP_LEFT,
-                                  HUD_TOP_AUTOMAP_RIGHT,
-                                  stats);
-    }
+    /* Minimal permanent locator chrome at the two semantic split points.
+     * The hit boxes remain exactly 0..31 | 32..127 | 128..159. */
+    drawTopTouchNotches(framebuffer, stats);
 
     drawVerticalLine(framebuffer, HUD_LINE1_X + cx, HUD_BOTTOM_Y,
                      DOOMRPG_LOGICAL_HEIGHT - 1, rgb565(0x313131U), stats);
@@ -468,15 +423,7 @@ int EspNativeGameplayHud_paintTopTouchNotches(void) {
         return 0;
     }
 
-    drawTopTouchButtonCorners(framebuffer,
-                              HUD_TOP_MENU_LEFT, HUD_TOP_MENU_RIGHT,
-                              NULL);
-    drawTopTouchButtonCorners(framebuffer,
-                              HUD_TOP_PASS_LEFT, HUD_TOP_PASS_RIGHT,
-                              NULL);
-    drawTopTouchButtonCorners(framebuffer,
-                              HUD_TOP_AUTOMAP_LEFT, HUD_TOP_AUTOMAP_RIGHT,
-                              NULL);
+    drawTopTouchNotches(framebuffer, NULL);
     return 1;
 }
 
