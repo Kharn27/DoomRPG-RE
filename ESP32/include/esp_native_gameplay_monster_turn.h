@@ -32,6 +32,12 @@ typedef struct EspNativeGameplayMonsterTurnView_s {
 } EspNativeGameplayMonsterTurnView;
 
 void EspNativeGameplayMonsterTurn_reset(void);
+/* Explicit semantic request for non-monster player attacks (for example
+ * destructibles) that still call legacy Game_advanceTurn(). The request is
+ * observed after the action service returns, just like the existing combat
+ * counter path, and can be cancelled while a caller still owns rollback. */
+int EspNativeGameplayMonsterTurn_requestPlayerAttack(uint32_t inputSequence);
+int EspNativeGameplayMonsterTurn_cancelPlayerAttack(uint32_t inputSequence);
 int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence);
 
 /*
