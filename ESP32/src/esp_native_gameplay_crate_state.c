@@ -209,7 +209,29 @@ int EspNativeGameplayCrateState_ensure(void) {
         (void)linkOrder;
         if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) != 0U &&
             type == CRATE_ENTITY_TYPE && subtype == CRATE_ENTITY_SUBTYPE) {
+            EspMapSprite sprite;
+            uint16_t defTile = 0U;
+            int32_t parm = 0;
+            uint8_t defType = 0U;
+            uint8_t defSubtype = 0U;
             ++crates;
+            if (!__real_EspMapRuntime_getMapSprite(i, &sprite) ||
+                !rawDefinition(i, &defTile, &defType, &defSubtype, &parm) ||
+                defType != CRATE_ENTITY_TYPE ||
+                defSubtype != CRATE_ENTITY_SUBTYPE) {
+                crateState.view.fatal = 1U;
+                break;
+            }
+            printf("[CRATESTATE] WITNESS sprite=%u tile=%u pos=%d,%d defTile=%u parm=%08x weaponMask=%08x linked=%u order=%u\n",
+                   (unsigned int)i,
+                   (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                   (int)sprite.x,
+                   (int)sprite.y,
+                   (unsigned int)defTile,
+                   (unsigned int)parm,
+                   (unsigned int)parm,
+                   (unsigned int)((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U),
+                   (unsigned int)linkOrder);
         }
     }
     crateState.view.crateCount = crates;
