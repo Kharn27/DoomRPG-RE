@@ -847,7 +847,6 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         return true;
     }
 
-    file.close();
     if (fileBytes == kRecordBytesV7) {
         EspNativeGameplayCrateTransformSnapshot crateTransforms;
         EspMapAutomapSnapshot automap;
@@ -1444,6 +1443,10 @@ bool loadNow(void) {
     uint32_t actionRemovedCount = 0U;
     uint16_t crateTransformCount = 0U;
     uint32_t crateTransformFNV = 0U;
+    uint16_t automapLineCount = 0U;
+    uint16_t automapSpriteCount = 0U;
+    uint16_t automapVisitedCount = 0U;
+    uint32_t automapFNV = 0U;
     const char* selectedPath = nullptr;
 
     memset(&loaded, 0, sizeof(loaded));
@@ -1470,7 +1473,8 @@ bool loadNow(void) {
      * script/event mutable owner. V4 adds the complete compact line family:
      * open/locked bits plus mutable 9/10 texture variants. V5 adds the compact
      * action-engine sprite-removal overlay. V6 appends canonical crate
-     * transformed-definition state. Every other world family remains fresh
+     * transformed-definition state. V7 appends the compact Automap reveal
+     * snapshot: lines, sprites and BIT_AM_VISITED tiles. Every other world family remains fresh
      * until its own bounded persistence milestone. */
     EspNativeGameplaySession_reset();
     EspMapResidentLifecycle_resetAll();
@@ -1539,14 +1543,21 @@ bool loadNow(void) {
               &loaded.actionRemoved) ||
           EspNativeGameplayActionEngine_removedFingerprint() !=
               loaded.actionRemoved.stateFNV1a)) ||
-        (record->version == kVersionV6 &&
-         !restoreV6CrateSection(selectedPath, *record,
-                                &crateTransformCount,
-                                &crateTransformFNV)) ||
+        ((record->version == kVersionV6 ||
+          record->version == kVersionV7) &&
+         !restoreCrateSection(selectedPath, *record,
+                              &crateTransformCount,
+                              &crateTransformFNV)) ||
+        (record->version == kVersionV7 &&
+         !restoreV7AutomapSection(selectedPath, *record,
+                                  &automapLineCount,
+                                  &automapSpriteCount,
+                                  &automapVisitedCount,
+                                  &automapFNV)) ||
         !sessionConfigForPlayer(record->player, &config) ||
         !EspNativeGameplaySession_configureResume(&config)) {
         resetFailedLoad();
-        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s playerFNV=%08lx failClosed=yes\n",
+        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s automap=%s playerFNV=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)record->targetMapId,
                (unsigned int)record->version,
@@ -1554,7 +1565,11 @@ bool loadNow(void) {
                loaded.hasScript == 1U ? "required" : "legacy-none",
                loaded.hasLines == 1U ? "required" : "legacy-none",
                loaded.hasActionRemoved == 1U ? "required" : "legacy-none",
-               record->version == kVersionV6 ? "required" : "legacy-none",
+               (record->version == kVersionV6 ||
+                record->version == kVersionV7)
+                   ? "required"
+                   : "legacy-none",
+               record->version == kVersionV7 ? "required" : "legacy-none",
                (unsigned long)record->playerFNV1a);
         return false;
     }
@@ -1572,7 +1587,12 @@ bool loadNow(void) {
                (unsigned int)record->version);
     }
 
-    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx world=%s session=reprime-pending\n",
+    if (record->version < kVersionV7) {
+        printf("[NATIVESAVE] LEGACY-AUTOMAP-GAP version=%u automap=fresh warning=reveal-state-not-present-in-record\n",
+               (unsigned int)record->version);
+    }
+
+    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx automap=%s/%uL/%uS/%uV/%08lx world=%s session=reprime-pending\n",
            kLogPath,
            (unsigned int)record->version,
            (unsigned int)loaded.fileBytes,
@@ -1624,20 +1644,30 @@ bool loadNow(void) {
            loaded.hasActionRemoved == 1U
                ? (unsigned long)loaded.actionRemoved.stateFNV1a
                : 0UL,
-           record->version == kVersionV6 ? "restored" : "legacy-none",
+           (record->version == kVersionV6 ||
+            record->version == kVersionV7)
+               ? "restored"
+               : "legacy-none",
            (unsigned int)crateTransformCount,
            (unsigned long)crateTransformFNV,
-           record->version == kVersionV6
-               ? "resources+script+lines+action-removals+crate-transforms-restored+others-fresh"
-               : (loaded.hasActionRemoved == 1U
-                      ? "resources+script+lines+action-removals-restored+others-fresh"
-                      : (loaded.hasLines == 1U
-                             ? "resources+script+lines-restored+action-removals+others-fresh"
-                             : (loaded.hasScript == 1U
-                                    ? "resources+script-restored+lines+action-removals+others-fresh"
-                                    : (loaded.hasResources == 1U
-                                           ? "resources-restored+script+lines+action-removals+others-fresh"
-                                           : "fresh-rebuild-v1")))));
+           record->version == kVersionV7 ? "restored" : "legacy-none",
+           (unsigned int)automapLineCount,
+           (unsigned int)automapSpriteCount,
+           (unsigned int)automapVisitedCount,
+           (unsigned long)automapFNV,
+           record->version == kVersionV7
+               ? "resources+script+lines+action-removals+crate-transforms+automap-restored+others-fresh"
+               : (record->version == kVersionV6
+                      ? "resources+script+lines+action-removals+crate-transforms-restored+automap+others-fresh"
+                      : (loaded.hasActionRemoved == 1U
+                             ? "resources+script+lines+action-removals-restored+crate-transforms+automap+others-fresh"
+                             : (loaded.hasLines == 1U
+                                    ? "resources+script+lines-restored+action-removals+crate-transforms+automap+others-fresh"
+                                    : (loaded.hasScript == 1U
+                                           ? "resources+script-restored+lines+action-removals+crate-transforms+automap+others-fresh"
+                                           : (loaded.hasResources == 1U
+                                                  ? "resources-restored+script+lines+action-removals+crate-transforms+automap+others-fresh"
+                                                  : "fresh-rebuild-v1")))));
     return true;
 }
 
