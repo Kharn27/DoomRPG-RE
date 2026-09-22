@@ -654,6 +654,29 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         return true;
     }
 
+    if (fileBytes == kRecordBytesV6) {
+        EspNativeGameplayCrateTransformSnapshot crateTransforms;
+        memset(&crateTransforms, 0, sizeof(crateTransforms));
+        got = file.read(reinterpret_cast<uint8_t*>(outRecord),
+                        sizeof(NativeSaveRecordV5));
+        if (got == sizeof(NativeSaveRecordV5)) {
+            got = file.read(reinterpret_cast<uint8_t*>(&crateTransforms),
+                            sizeof(crateTransforms));
+        }
+        file.close();
+        if (got != sizeof(crateTransforms) ||
+            !loadedV6Valid(*outRecord, crateTransforms)) {
+            memset(outRecord, 0, sizeof(*outRecord));
+            return false;
+        }
+        outRecord->fileBytes = (uint16_t)kRecordBytesV6;
+        outRecord->hasResources = 1U;
+        outRecord->hasScript = 1U;
+        outRecord->hasLines = 1U;
+        outRecord->hasActionRemoved = 1U;
+        return true;
+    }
+
     file.close();
     return false;
 }
