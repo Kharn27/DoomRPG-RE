@@ -359,7 +359,7 @@ static void logCorpus(void) {
         else if (type == ACTION_ENTITY_DESTRUCTIBLE) ++destructibles;
     }
 
-    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes feedbackMs=%u ammo=playerState monsterCombat=deferred jammedDoor3=axe-adjacent-owned otherDestructibles=deferred\n",
+    printf("[ACTIONENGINE] READY map=%u arena=%08x sprites=%u ownerBytes=%u traceMask=%04x traceTiles=%u fires=%u humans=%u enemies=%u destructibles=%u eventFirst=yes feedbackMs=%u ammo=playerState monsterCombat=deferred crate2=parm+generic-combat+loot-owned/radial-deferred jammedDoor3=axe-adjacent-owned otherDestructibles=deferred\n",
            (unsigned int)actionState.targetMapId,
            (unsigned int)actionState.arenaFNV,
            (unsigned int)actionState.spriteCount,
