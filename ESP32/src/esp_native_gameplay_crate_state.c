@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_entity_def_type_catalog.h"
@@ -28,10 +29,13 @@ typedef struct CrateTransformRecord_s {
 typedef struct CrateStateOwner_s {
     EspNativeGameplayCrateStateView view;
     CrateTransformRecord records[ESP_NATIVE_GAMEPLAY_CRATE_MAX_TRANSFORMS];
+    uint8_t probeDone;
 } CrateStateOwner;
 
-static CrateStateOwner crateState;
-static uint8_t crateProbeDone;
+/* Keep the owner out of startup .bss. Classic CYD mappings.bin inflation needs
+ * the hardware-proven main DRAM boundary intact. This bounded owner exists only
+ * while a native map/player context exists and is freed on map reset. */
+static CrateStateOwner* crateState;
 
 int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
 int __real_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
@@ -156,15 +160,18 @@ static int outcomeProbe(void) {
 
 static int findRecord(uint32_t spriteIndex) {
     uint16_t i;
-    for (i = 0U; i < crateState.view.transformedCount; ++i) {
-        if (crateState.records[i].spriteIndex == spriteIndex) return (int)i;
+    if (crateState == NULL) return -1;
+    for (i = 0U; i < crateState->view.transformedCount; ++i) {
+        if (crateState->records[i].spriteIndex == spriteIndex) return (int)i;
     }
     return -1;
 }
 
 void EspNativeGameplayCrateState_reset(void) {
-    memset(&crateState, 0, sizeof(crateState));
-    crateProbeDone = 0U;
+    if (crateState != NULL) {
+        free(crateState);
+        crateState = NULL;
+    }
 }
 
 int EspNativeGameplayCrateState_ensure(void) {
@@ -183,18 +190,25 @@ int EspNativeGameplayCrateState_ensure(void) {
         !EspEntityDefTypeCatalog_isReady()) {
         return 0;
     }
-    if (crateState.view.active != 0U &&
-        crateState.view.sourceArenaFNV1a == runtime->arenaFNV1a &&
-        crateState.view.spriteCount == runtime->mapSpriteCount &&
-        crateState.view.targetMapId == playerView->targetMapId) {
-        return crateState.view.fatal == 0U;
+    if (crateState != NULL &&
+        crateState->view.active != 0U &&
+        crateState->view.sourceArenaFNV1a == runtime->arenaFNV1a &&
+        crateState->view.spriteCount == runtime->mapSpriteCount &&
+        crateState->view.targetMapId == playerView->targetMapId) {
+        return crateState->view.fatal == 0U;
     }
 
-    memset(&crateState, 0, sizeof(crateState));
-    crateState.view.sourceArenaFNV1a = runtime->arenaFNV1a;
-    crateState.view.spriteCount = (uint16_t)runtime->mapSpriteCount;
-    crateState.view.targetMapId = playerView->targetMapId;
-    crateState.view.active = 1U;
+    EspNativeGameplayCrateState_reset();
+    crateState = (CrateStateOwner*)calloc(1U, sizeof(*crateState));
+    if (crateState == NULL) {
+        printf("[CRATESTATE] OOM ownerBytes=%u allocation=map-lazy failClosed=yes\n",
+               (unsigned int)sizeof(CrateStateOwner));
+        return 0;
+    }
+    crateState->view.sourceArenaFNV1a = runtime->arenaFNV1a;
+    crateState->view.spriteCount = (uint16_t)runtime->mapSpriteCount;
+    crateState->view.targetMapId = playerView->targetMapId;
+    crateState->view.active = 1U;
 
     for (i = 0U; i < runtime->mapSpriteCount; ++i) {
         uint8_t type;
@@ -203,7 +217,7 @@ int EspNativeGameplayCrateState_ensure(void) {
         uint16_t linkOrder;
         if (!__real_EspMapSpriteTopology_getEntity(
                 i, &type, &subtype, &linkState, &linkOrder)) {
-            crateState.view.fatal = 1U;
+            crateState->view.fatal = 1U;
             break;
         }
         (void)linkOrder;
@@ -219,7 +233,7 @@ int EspNativeGameplayCrateState_ensure(void) {
                 !rawDefinition(i, &defTile, &defType, &defSubtype, &parm) ||
                 defType != CRATE_ENTITY_TYPE ||
                 defSubtype != CRATE_ENTITY_SUBTYPE) {
-                crateState.view.fatal = 1U;
+                crateState->view.fatal = 1U;
                 break;
             }
             printf("[CRATESTATE] WITNESS sprite=%u tile=%u pos=%d,%d defTile=%u parm=%08x weaponMask=%08x linked=%u order=%u\n",
@@ -234,47 +248,48 @@ int EspNativeGameplayCrateState_ensure(void) {
                    (unsigned int)linkOrder);
         }
     }
-    crateState.view.crateCount = crates;
+    crateState->view.crateCount = crates;
     if (crates > ESP_NATIVE_GAMEPLAY_CRATE_MAX_TRANSFORMS ||
         !targetsReady(targetTiles)) {
-        crateState.view.fatal = 1U;
+        crateState->view.fatal = 1U;
     }
 
-    printf("[CRATESTATE] READY arena=%08x sprites=%u crates=%u capacity=%u ownerBytes=%u targets=%s tiles=%u/%u/%u/%u ammo=%u/%u/%u/%u/%u persistence=deferred immutableBsp=yes allocation=no fatal=%u\n",
-           (unsigned int)crateState.view.sourceArenaFNV1a,
-           (unsigned int)crateState.view.spriteCount,
-           (unsigned int)crateState.view.crateCount,
+    printf("[CRATESTATE] READY arena=%08x sprites=%u crates=%u capacity=%u ownerBytes=%u targets=%s tiles=%u/%u/%u/%u ammo=%u/%u/%u/%u/%u persistence=deferred immutableBsp=yes allocation=map-lazy fatal=%u\n",
+           (unsigned int)crateState->view.sourceArenaFNV1a,
+           (unsigned int)crateState->view.spriteCount,
+           (unsigned int)crateState->view.crateCount,
            (unsigned int)ESP_NATIVE_GAMEPLAY_CRATE_MAX_TRANSFORMS,
-           (unsigned int)sizeof(crateState),
-           crateState.view.fatal == 0U ? "ready" : "NOT_READY",
-           crateState.view.fatal == 0U ? (unsigned int)targetTiles[0] : 0U,
-           crateState.view.fatal == 0U ? (unsigned int)targetTiles[1] : 0U,
-           crateState.view.fatal == 0U ? (unsigned int)targetTiles[2] : 0U,
-           crateState.view.fatal == 0U ? (unsigned int)targetTiles[3] : 0U,
-           crateState.view.fatal == 0U ? (unsigned int)targetTiles[4] : 0U,
-           crateState.view.fatal == 0U ? (unsigned int)targetTiles[5] : 0U,
-           crateState.view.fatal == 0U ? (unsigned int)targetTiles[6] : 0U,
-           crateState.view.fatal == 0U ? (unsigned int)targetTiles[7] : 0U,
-           crateState.view.fatal == 0U ? (unsigned int)targetTiles[8] : 0U,
-           (unsigned int)crateState.view.fatal);
-    if (crateState.view.fatal == 0U && crateProbeDone == 0U) {
-        crateProbeDone = 1U;
+           (unsigned int)sizeof(*crateState),
+           crateState->view.fatal == 0U ? "ready" : "NOT_READY",
+           crateState->view.fatal == 0U ? (unsigned int)targetTiles[0] : 0U,
+           crateState->view.fatal == 0U ? (unsigned int)targetTiles[1] : 0U,
+           crateState->view.fatal == 0U ? (unsigned int)targetTiles[2] : 0U,
+           crateState->view.fatal == 0U ? (unsigned int)targetTiles[3] : 0U,
+           crateState->view.fatal == 0U ? (unsigned int)targetTiles[4] : 0U,
+           crateState->view.fatal == 0U ? (unsigned int)targetTiles[5] : 0U,
+           crateState->view.fatal == 0U ? (unsigned int)targetTiles[6] : 0U,
+           crateState->view.fatal == 0U ? (unsigned int)targetTiles[7] : 0U,
+           crateState->view.fatal == 0U ? (unsigned int)targetTiles[8] : 0U,
+           (unsigned int)crateState->view.fatal);
+    if (crateState->view.fatal == 0U && crateState->probeDone == 0U) {
+        crateState->probeDone = 1U;
         if (!outcomeProbe()) {
-            crateState.view.fatal = 1U;
+            crateState->view.fatal = 1U;
             printf("[CRATEPROBE] FAILED thresholds-or-target-mapping mutation=no rngConsumed=0 failClosed=yes\n");
             return 0;
         }
     }
-    return crateState.view.fatal == 0U;
+    return crateState->view.fatal == 0U;
 }
 
 const EspNativeGameplayCrateStateView* EspNativeGameplayCrateState_view(void) {
-    return EspNativeGameplayCrateState_ensure() ? &crateState.view : NULL;
+    return EspNativeGameplayCrateState_ensure() && crateState != NULL
+               ? &crateState->view : NULL;
 }
 
 int EspNativeGameplayCrateState_isTransformed(uint32_t spriteIndex) {
     if (!EspNativeGameplayCrateState_ensure() ||
-        spriteIndex >= crateState.view.spriteCount) return 0;
+        spriteIndex >= crateState->view.spriteCount) return 0;
     return findRecord(spriteIndex) >= 0;
 }
 
@@ -282,10 +297,10 @@ int EspNativeGameplayCrateState_effectiveDefTile(uint32_t spriteIndex,
                                                  uint16_t* outDefTile) {
     int found;
     if (outDefTile == NULL || !EspNativeGameplayCrateState_ensure() ||
-        spriteIndex >= crateState.view.spriteCount) return 0;
+        spriteIndex >= crateState->view.spriteCount) return 0;
     found = findRecord(spriteIndex);
     if (found < 0) return 0;
-    *outDefTile = crateState.records[found].effectiveDefTile;
+    *outDefTile = crateState->records[found].effectiveDefTile;
     return 1;
 }
 
@@ -301,7 +316,7 @@ int EspNativeGameplayCrateState_transform(uint16_t spriteIndex,
     int found;
 
     if (!EspNativeGameplayCrateState_ensure() ||
-        spriteIndex >= crateState.view.spriteCount ||
+        spriteIndex >= crateState->view.spriteCount ||
         effectiveDefTile > CRATE_DEF_MASK ||
         !rawDefinition(spriteIndex, &sourceTile, &sourceType, &sourceSubtype,
                        &sourceParm) ||
@@ -317,15 +332,15 @@ int EspNativeGameplayCrateState_transform(uint16_t spriteIndex,
     (void)targetParm;
     found = findRecord(spriteIndex);
     if (found >= 0) {
-        return crateState.records[found].effectiveDefTile == effectiveDefTile;
+        return crateState->records[found].effectiveDefTile == effectiveDefTile;
     }
-    if (crateState.view.transformedCount >= ESP_NATIVE_GAMEPLAY_CRATE_MAX_TRANSFORMS) {
+    if (crateState->view.transformedCount >= ESP_NATIVE_GAMEPLAY_CRATE_MAX_TRANSFORMS) {
         return 0;
     }
-    crateState.records[crateState.view.transformedCount].spriteIndex = spriteIndex;
-    crateState.records[crateState.view.transformedCount].effectiveDefTile =
+    crateState->records[crateState->view.transformedCount].spriteIndex = spriteIndex;
+    crateState->records[crateState->view.transformedCount].effectiveDefTile =
         effectiveDefTile;
-    ++crateState.view.transformedCount;
+    ++crateState->view.transformedCount;
     return 1;
 }
 
@@ -336,14 +351,14 @@ int EspNativeGameplayCrateState_rollbackTransform(uint16_t spriteIndex,
     if (!EspNativeGameplayCrateState_ensure()) return 0;
     found = findRecord(spriteIndex);
     if (found < 0 ||
-        crateState.records[found].effectiveDefTile != effectiveDefTile ||
-        crateState.view.transformedCount == 0U) {
+        crateState->records[found].effectiveDefTile != effectiveDefTile ||
+        crateState->view.transformedCount == 0U) {
         return 0;
     }
-    last = (uint16_t)(crateState.view.transformedCount - 1U);
-    if ((uint16_t)found != last) crateState.records[found] = crateState.records[last];
-    memset(&crateState.records[last], 0, sizeof(crateState.records[last]));
-    --crateState.view.transformedCount;
+    last = (uint16_t)(crateState->view.transformedCount - 1U);
+    if ((uint16_t)found != last) crateState->records[found] = crateState->records[last];
+    memset(&crateState->records[last], 0, sizeof(crateState->records[last]));
+    --crateState->view.transformedCount;
     return 1;
 }
 
