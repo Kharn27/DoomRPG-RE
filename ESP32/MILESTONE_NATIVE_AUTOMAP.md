@@ -204,7 +204,7 @@ PASS_TURN while Automap active
 weapon cycling / combat actions while Automap active
 MENU/HUB transitions from Automap
 hardware execution of EV_GIVEMAP
-checkpoint persistence of Automap reveal state
+checkpoint persistence of Automap reveal state — closed by V7 (`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`)
 advanced/enhanced Automap behavior beyond original parity
 ```
 
@@ -218,6 +218,10 @@ The production architecture now has a native, compact, live-updating Automap
 with hardware-proven open/close ownership, movement, pickup retention, SELECT
 door interaction and legacy-style reveal publication.
 
-The next major gameplay candidate is the already-existing **CHANGEMAP /
-Entrance level-exit real-CYD validation**, while the remaining Automap action
-parity can be completed as its own bounded follow-up when required.
+Automap reveal-state checkpoint persistence is now separately hardware-proven
+by native SAVE V7; see
+[`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md).
+
+The next major gameplay frontier identified during later original-game parity
+review is the permanent **facing-entity top-bar label**. Remaining Automap
+action parity can still be completed as its own bounded follow-up when required.
