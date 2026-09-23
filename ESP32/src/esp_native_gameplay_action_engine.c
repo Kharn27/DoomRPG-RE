@@ -1965,6 +1965,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             actionState.feedbackPending = 1U;
             actionState.feedbackKind = pending.feedback;
         }
+        if (!EspNativeGameplayFacingLabel_refresh("ACTION-WORLD-COMMIT")) {
+            printf("[FACINGLABEL] DEFER reason=ACTION-WORLD-COMMIT worldRender=continue\n");
+        }
         if (!EspNativeGameplayFrame_renderTurn(
                 doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
             int rollbackOk = 1;
@@ -2004,6 +2007,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 if (randomCaptured != 0U) doomRpg->random = randomBefore;
             }
             memset(&frame, 0, sizeof(frame));
+            if (rollbackOk &&
+                !EspNativeGameplayFacingLabel_refresh("ACTION-WORLD-ROLLBACK")) {
+                printf("[FACINGLABEL] DEFER reason=ACTION-WORLD-ROLLBACK worldRender=continue\n");
+            }
             if (!rollbackOk || !EspNativeGameplayFrame_renderTurn(
                     doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
                 printf("[ACTIONENGINE] FAILED seq=%u reason=render+rollback-render sprite=%u line=%u rollback=%s\n",
