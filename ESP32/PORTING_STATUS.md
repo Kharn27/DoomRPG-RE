@@ -5,60 +5,102 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = bbe9b10c23dcb7a1d6b63db421073c0eeaf1872c
-branch = agent/esp32-native-automap
-hardware-tested Automap code head = cdd8168588edc5a0d996f19d7cf6c2466ba4a51b
-hardware-tested Automap CI = esp32-cyd #572 SUCCESS
-hardware-tested Automap static RAM = 44832 B
-hardware-tested Automap flash = 738613 B
-rebased candidate = 4463b12500defef53447fc8004dc11a1a8e8c793
-rebased CI = esp32-cyd #573 SUCCESS
-rebased static RAM = 44944 B
-rebased flash = 741093 B
-branch relation = 1 commit ahead / 0 behind main before docs-only tail
-status = AUTOMAP CORE REAL-CYD PASS; REBASED COMBINED HASH CI-ONLY
+current main = 38a70412b0e28cf5afb8d33aa4a0a82ae73172c6
+branch = agent/esp32-native-automap-save-v7-hud-notches
+hardware-tested combined code head = 2d9dcfcbc022e02a4810da3aa2f3eb60bedf933e
+esp32-cyd CI #602 = SUCCESS
+static RAM = 44944 B
+flash = 745165 B
+post-test policy = docs-only
+status = SAVE V7 AUTOMAP + TOP HUD LOCATORS + FIRST-WEAPON HELP REAL-CYD PASS
 ```
 
-The bounded native Automap core is hardware-valid on the real classic CYD at
-`cdd8168`. The user validated open/close ownership, live map movement,
-visited-cell updates, pickup ownership retention, SELECT through regular doors,
-door animation while Automap owns the framebuffer, and the original Doom RPG
-render-derived reveal behavior.
+This branch closes three bounded parity/polish gaps without changing the permanent
+memory architecture.
 
-The user explicitly compared the seemingly odd reveal semantics with the
-original game: geometry may appear behind a still-closed door once render
-visibility has exposed it, while human/special markers appear only once their
-relevant renderer visibility is reached. This is confirmed legacy parity rather
-than an ESP32-specific defect.
+### SAVE V7 Automap persistence — REAL-CYD PASS
 
-After that hardware pass, the Automap branch was rebuilt on top of the newer
-`main` containing the native main-menu `Load Game` work. GitHub showed no
-overlapping changed files between the main-menu delta and the Automap delta.
-The rebased candidate `4463b12` is CI-valid and zero commits behind main, but
-that combined hash is not independently labeled hardware PASS without a replay.
+Native checkpoints now write `DRPGSAV7`, version 7, with a fixed 1936-byte
+streamed record. V7 appends exactly one 404-byte `EspMapAutomapSnapshot` to the
+hardware-proven V6 record while retaining V1-V6 read compatibility.
 
-Main-menu validation remains hardware-proven on its own pre-merge boundary:
-`Load Game` resumes a readable checkpoint, while a missing/invalid save leaves
-the menu active with red `No Save`. The production menu order is
-`Start Game`, `Load Game`, `Options`, `Help/About`.
+Real-CYD LOAD restored:
 
-Late password full-HUD repaint and legacy `Found Secret!` reward candidates
-still require dedicated hardware replay.
+```text
+automap=restored/50L/46S/39V/08fde8e2
+```
 
-Detailed records:
+and opening Automap afterward immediately showed the saved exploration
+(`lines=50`, `visited=27`) instead of resetting discovery to the current
+player tile.
 
-- [`MILESTONE_NATIVE_AUTOMAP.md`](MILESTONE_NATIVE_AUTOMAP.md)
-- [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
-- [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
-- [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
-- [`MILESTONE_NATIVE_SECRET_DOOR_BATCH.md`](MILESTONE_NATIVE_SECRET_DOOR_BATCH.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
-- [`MILESTONE_NATIVE_CRATE_SUBTYPE2.md`](MILESTONE_NATIVE_CRATE_SUBTYPE2.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
+Detailed record:
 
-The first explicit Automap progression gate is now passed on hardware. The next
-major gameplay candidate is the existing CHANGEMAP / Entrance level-exit path,
-which still needs its dedicated real-CYD transition validation.
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md)
+
+### Top-HUD touch locators
+
+The three semantic top touch zones remain exactly:
+
+```text
+MENU 0..31 | PASS 32..127 | AUTOMAP 128..159
+```
+
+Permanent visual location is intentionally minimal: only the two split points
+`x=32` and `x=128` receive 1-logical-pixel-wide, 2-logical-pixel-long
+markers at the top and bottom edges, using the same neon-blue RGB565 core
+`0x001f` as top-button touch feedback. No complete button border is drawn.
+
+Top-bar temporary-message repaint reapplies these markers so feedback expiry does
+not erase them.
+
+### First-weapon pickup help — REAL-CYD PASS
+
+Legacy first weapon acquisition is restored. The native resource owner checks
+the original gate — weapon absent from both `weapons` and
+`disabledWeapons` before pickup — and opens the recovered help text through the
+existing bounded native dialog presenter.
+
+The Fire Extinguisher hardware run proved:
+
+```text
+[DIALOG] OPEN-STANDALONE ... continuation=none
+[PLAYERRES] WEAPON-HELP ... subtype=1 status=OPEN firstAcquire=yes ...
+...
+[DIALOG] CLOSE event=65535 resume=0 mode=standalone ...
+[RESIDENTGAMEPLAY] DIALOG-STANDALONE-CLOSE ... stateMutation=no redraw=yes turnAdvance=no dialog=closed
+```
+
+The very next `FORWARD` committed normally. The same run then opened and closed
+real BSP dialog event 60, including its normal `DIALOGCHAIN` continuation, so
+script-backed dialogs remain intact.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
+
+### Next recovered parity frontier — facing-entity top-bar label
+
+Original-game retest exposed a still-missing permanent HUD behavior. Legacy
+`DoomCanvas_checkFacingEntity()` recalculates `player->facingEntity` after
+settled movement and settled rotation using a short forward `Game_trace`.
+`Hud_drawTopBar()` then uses the facing entity name as its lowest-priority
+top-bar text:
+
+```text
+timed HUD messages
+ > statBarMessage
+ > logMessage
+ > facingEntity->def->name (ST_PLAYING, eType != 9)
+ > empty
+```
+
+This is why crates, scientists and other eligible objects remain named while
+they stay in the player's field of view, but temporary `Got ...` messages
+temporarily override the label and the label returns afterward.
+
+Implement this as the next bounded native owner/milestone **after this branch is
+merged**. Do not emulate it with a timer or a queued action-feedback message.
 
 ## Permanent architecture / hard invariants
 
