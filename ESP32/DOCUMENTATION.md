@@ -13,72 +13,72 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 38a70412b0e28cf5afb8d33aa4a0a82ae73172c6
-branch = agent/esp32-native-automap-save-v7-hud-notches
-hardware-tested combined code head = 2d9dcfcbc022e02a4810da3aa2f3eb60bedf933e
-esp32-cyd CI #602 = SUCCESS
-static RAM = 44944 B
-flash = 745165 B
+current main = 120449ff3aa02b055d0ead75f9c2c55e799a5851
+branch = agent/esp32-native-facing-label
+hardware-tested code head = ec5207f3b18d7d2d89d6f569cf7aeb25da35270f
+esp32-cyd CI #617 = SUCCESS
+static RAM = 44984 B
+flash = 748213 B
 post-test commits = documentation-only
 ```
 
-Current hardware-proven additions on this branch:
+Current hardware-proven addition on this branch:
 
 ```text
-DRPGSAV7 / version 7 / 1936-byte record
- -> V6 checkpoint state
- -> + 404-byte EspMapAutomapSnapshot
- -> previously explored Automap state survives LOAD
-
-top HUD touch locators
- -> semantic splits x=32 / x=128
- -> 1x2 logical neon-blue markers at top/bottom edges
- -> reapplied after top-bar transient messages
-
-first weapon acquisition help
- -> original weapons|disabledWeapons first-acquire gate
- -> same bounded native dialog presenter as map dialogs
- -> standalone close returns directly to world
- -> no BSP continuation / no extra turn
+native facing-entity top-bar label
+ -> compact 34-byte current-target owner
+ -> no legacy Entity_t pointer
+ -> no resident table of entity names
+ -> on-demand /entities.db name read through DoomRPG-ESP32.pak
+ -> recovered short forward trace: +31-unit origin, 3 tile steps
+ -> sprite + line-entity targets
+ -> type-9 blocker remains label-hidden
+ -> topbar fallback below timed feedback and statBarMessage
 ```
 
-The Fire Extinguisher fix is hardware-valid at the current code head. Its popup
-closed via `DIALOG-STANDALONE-CLOSE`, gameplay immediately accepted the next
-movement, and a subsequent real BSP dialog event 60 still executed its normal
-`DIALOGCHAIN` continuation.
+Real-CYD witnesses:
 
-Latest relevant milestones:
+```text
+Civilian : sprite target, distance=1
+Computer : line target, distance=2 then 1
+Door     : line target, distance=3
+none     : exact label clear after rotation
+HUB close: current Civilian target retained and repainted
+```
+
+Pure TURN retargeting remains non-turn gameplay:
+
+```text
+[MONSTERTURN] ROTATE-NO-TURN ... legacyAdvance=no
+```
+
+The supplied hardware run remained alive with:
+
+```text
+heap=81936
+heap8=16384
+largest8=11764
+```
+
+Latest relevant milestone:
+
+- [`MILESTONE_NATIVE_FACING_LABEL.md`](MILESTONE_NATIVE_FACING_LABEL.md)
+
+Previously merged relevant milestones remain:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md)
 - [`MILESTONE_NATIVE_AUTOMAP.md`](MILESTONE_NATIVE_AUTOMAP.md)
 - [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
 - [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 - [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
-- [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
-- [`MILESTONE_NATIVE_SECRET_DOOR_BATCH.md`](MILESTONE_NATIVE_SECRET_DOOR_BATCH.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
 
-### Next milestone after merge: facing-entity top-bar label
+### Next milestone after merge
 
-Original Doom RPG continuously resolves a short forward-facing entity target
-after settled movement and rotation. When no higher-priority top-bar message is
-active, `Hud_drawTopBar()` displays `facingEntity->def->name` while playing
-(except legacy entity type 9).
-
-Recovered priority:
-
-```text
-timed HUD message
- > statBarMessage
- > logMessage
- > facing entity name
- > empty
-```
-
-This should be implemented as a small permanent native facing-target owner plus
-top-bar fallback presentation, not as another timed feedback queue. Start that
-work only after the current branch is merged and the exact new `main` SHA is
-recovered.
+Recover the exact merged `main`, then select the next bounded gameplay frontier
+from the live repository and the original-game behavior. Keep the facing-label
+work closed: future entity semantics should continue through compact native
+owners rather than broadening this derived HUD target into legacy entity
+ownership.
 
 ## Build environment
 
