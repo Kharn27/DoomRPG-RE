@@ -28,7 +28,8 @@ typedef enum EspNativeGameplayDialogInputStatus_e {
     ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_IGNORED = 1,
     ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_REDRAWN = 2,
     ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_RESUME = 3,
-    ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_CANCEL = 4
+    ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_CANCEL = 4,
+    ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_STANDALONE = 5
 } EspNativeGameplayDialogInputStatus;
 
 typedef enum EspNativeGameplayDialogResumeStatus_e {
@@ -87,12 +88,22 @@ EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(
     uint8_t commandOffset,
     uint32_t runFlags);
 
+/*
+ * Present a bounded legacy-owned informational dialog that has no BSP event
+ * continuation. Used for original pickup help text such as first-time weapon
+ * acquisition. SELECT pages/closes it through the normal dialog input owner;
+ * closing returns to gameplay with no script mutation or turn advance.
+ */
+EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_beginStandalone(
+    const char* text);
+
 /* Advance the recovered 25-ms/character typewriter and present only on change. */
 int EspNativeGameplayDialog_tick(void);
 
 /*
  * Consume gameplay semantic actions while the dialog owns input.
- * SELECT/PASS fast-forward, page, then close+resume. MOVE_FORWARD/BACK scroll.
+ * SELECT/PASS fast-forward, page, then close. BSP dialogs return CLOSE_RESUME;
+ * legacy-owned informational dialogs return CLOSE_STANDALONE. MOVE_FORWARD/BACK scroll.
  * For EV_DIALOG only, TURN_LEFT/RIGHT or MENU cancel through the recovered Back
  * behavior and deliberately do not resume the event continuation.
  */

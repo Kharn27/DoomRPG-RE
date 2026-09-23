@@ -222,6 +222,77 @@ The permanent project invariants remain `shapeData == NULL`, `mediaTexels == NUL
 and no PSRAM. This log excerpt does not independently reprint those pointers, so
 it is not used as a new pointer-value witness.
 
+## First-weapon pickup help — REAL-CYD PASS
+
+Legacy recovery showed that weapon pickups have one additional first-acquisition
+side effect beyond the normal `Got ...` feedback. If the weapon bit was absent
+from both `weapons` and `disabledWeapons`, `Entity_touched()` opens a
+non-scripted informational dialog. The Fire Extinguisher is subtype 1.
+
+The native resource path now preserves that exact first-acquisition gate and
+reuses the existing bounded native dialog presenter. The important ownership
+split is:
+
+```text
+map event dialog
+ -> native dialog presenter
+ -> CLOSE_RESUME
+ -> bounded event-chain continuation
+
+first-weapon help dialog
+ -> same native dialog presenter/input/typewriter/paging
+ -> CLOSE_STANDALONE
+ -> world redraw
+ -> no BSP/script continuation
+ -> no extra turn
+```
+
+The first attempt incorrectly routed the standalone close into
+`EspNativeGameplayDialog_resume()`. Production wraps that function with the
+native event-chain executor, which correctly rejects the sentinel event index
+because there is no BSP event to resume. Hardware exposed the exact failure:
+
+```text
+[DIALOG] CLOSE event=65535 ...
+[RESIDENTGAMEPLAY] DIALOG-RESUME-FAILED ... status=INVALID
+[RESIDENTGAMEPLAY] FAILED reason=dialog-resume
+```
+
+The corrected hardware run at
+`2d9dcfcbc022e02a4810da3aa2f3eb60bedf933e` proves the standalone route:
+
+```text
+[DIALOG] OPEN-STANDALONE bytes=74 lines=5 back=0 continuation=none ...
+[PLAYERRES] WEAPON-HELP tile=643 subtype=1 status=OPEN firstAcquire=yes continuation=none turnAdvance=no
+...
+[DIALOG] CLOSE event=65535 resume=0 mode=standalone ...
+[RESIDENTGAMEPLAY] FRAME reason=DIALOG-STANDALONE-CLOSE ... presented=1
+[RESIDENTGAMEPLAY] DIALOG-STANDALONE-CLOSE ... resume=no stateMutation=no redraw=yes turnAdvance=no dialog=closed
+```
+
+The next `FORWARD` was accepted and committed normally, proving input/gameplay
+ownership returned to the world.
+
+The same run immediately exercised a real BSP dialog (event 60) afterward:
+
+```text
+[DIALOG] OPEN event=60 ... continuation=preflighted
+...
+[DIALOGCHAIN] RESUME event=60 start=1 handled=3 ... mutation=1 ...
+[RESIDENTGAMEPLAY] DIALOG-RESUME ... dialog=closed
+```
+
+That is the regression witness that the new standalone close path does not
+weaken normal script-backed dialog continuation.
+
+Current combined branch build:
+
+```text
+esp32-cyd CI #602 = SUCCESS
+static RAM = 44944 B
+flash = 745165 B
+```
+
 ## Deferred boundaries
 
 This milestone does not broaden into unrelated gameplay families. Still separate:

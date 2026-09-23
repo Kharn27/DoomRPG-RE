@@ -1053,6 +1053,20 @@ static void serviceDialogAction(Render_t* render,
         return;
     }
 
+    if (inputStatus == ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_STANDALONE) {
+        if (!renderCurrent(render, (uint8_t)view->viewAngle,
+                           "DIALOG-STANDALONE-CLOSE")) {
+            disableGameplay("dialog-standalone-close-render");
+            return;
+        }
+        ++gameplayState.dialogResumes;
+        printf("[RESIDENTGAMEPLAY] DIALOG-STANDALONE-CLOSE n=%u seq=%u event=%u resume=no stateMutation=no redraw=yes turnAdvance=no dialog=closed\n",
+               (unsigned int)gameplayState.dialogResumes,
+               (unsigned int)intent->sequence,
+               (unsigned int)close.sourceEventIndex);
+        return;
+    }
+
     if (inputStatus != ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_RESUME) {
         disableGameplay("dialog-input-status");
         return;
@@ -1430,6 +1444,16 @@ int EspNativeResidentGameplay_redrawAutomap(
     const char* reason) {
     if (!EspNativeResidentGameplay_isAutomapActive() || render == NULL) return 0;
     return renderAutomapCurrent((Render_t*)render, reason);
+}
+
+int EspNativeResidentGameplay_exitAutomapForModal(
+    struct Render_s* render,
+    const char* reason) {
+    if (!EspNativeResidentGameplay_isAutomapActive()) return 1;
+    printf("[RESIDENTGAMEPLAY] AUTOMAP-MODAL-EXIT reason=%s ownership=world-before-modal turnAdvance=no\n",
+           reason != NULL ? reason : "modal");
+    return closeAutomap((Render_t*)render,
+                        reason != NULL ? reason : "AUTOMAP-MODAL");
 }
 
 int EspNativeResidentGameplay_exitAutomapForDamage(

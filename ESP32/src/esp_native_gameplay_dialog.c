@@ -22,6 +22,7 @@
 #include "platform_video_config.h"
 
 #define DIALOG_REMOVE_FLAG 0x00000200UL
+#define DIALOG_STANDALONE_EVENT UINT16_MAX
 #define DIALOG_FONT_NAME "a.bmp"
 #define DIALOG_FONT_WIDTH 9U
 #define DIALOG_FONT_HEIGHT 12U
@@ -524,6 +525,83 @@ EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(
     return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK;
 }
 
+EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_beginStandalone(
+    const char* text) {
+    EspNativeIndexedBmpStats fontStats;
+    const EspPlayerViewState* view = EspPlayerView_view();
+    size_t textLength;
+    uint16_t i;
+
+    if (dialog.active || EspAssetPack_isOpen() || view == NULL ||
+        view->active != 1U || !EspMapRuntime_isLoaded() || text == NULL) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
+    }
+
+    textLength = strlen(text);
+    if (textLength == 0U) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    }
+    if (textLength + 1U > ESP_NATIVE_GAMEPLAY_DIALOG_TEXT_CAPACITY) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_TEXT_TOO_LARGE;
+    }
+
+    EspNativeGameplayDialog_reset();
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_IO_FAILED;
+    }
+    dialog.packOwned = 1U;
+
+    memset(&fontStats, 0, sizeof(fontStats));
+    if (EspNativeIndexedBmp_open(DIALOG_FONT_NAME,
+                                 &dialog.font,
+                                 &fontStats) != ESP_NATIVE_INDEXED_BMP_OK ||
+        dialog.font.width != DIALOG_FONT_SOURCE_WIDTH ||
+        dialog.font.height != DIALOG_FONT_SOURCE_HEIGHT) {
+        EspNativeGameplayDialog_reset();
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_IO_FAILED;
+    }
+    dialog.fontPackReads = fontStats.packReads;
+    dialog.fontBytesRead = fontStats.bytesRead;
+
+    memcpy(dialog.text, text, textLength + 1U);
+    dialog.textLength = (uint16_t)textLength;
+    dialog.lineCount = 1U;
+    for (i = 0U; i < dialog.textLength; ++i) {
+        if (dialog.text[i] == '|') ++dialog.lineCount;
+    }
+
+    /* UINT16_MAX is outside every bounded map event table and permanently
+     * identifies a dialog with no script provenance or continuation. */
+    dialog.owner.sourceEventIndex = DIALOG_STANDALONE_EVENT;
+    dialog.owner.sourceCommandOffset = 0U;
+    dialog.owner.resumeCommandOffset = 0U;
+    dialog.resumeGlobalCommandIndex = UINT16_MAX;
+    dialog.runFlags = 0U;
+    dialog.dialogCodeId = ESP_MAP_OPCODE_DIALOG_NO_BACK;
+    dialog.resumeCommandOffset = 0U;
+    dialog.resumeCodeId = 0U;
+    dialog.resumeHasCommand = 0U;
+    dialog.resumeRemovedBefore = 0U;
+    dialog.backAllowed = 0U;
+    dialog.currentDialogLine = 0U;
+    dialog.dialogTypeLineIdx = 0U;
+    dialog.lineStartMs = nowMs();
+    dialog.lastPaintSignature = UINT32_MAX;
+    dialog.active = 1U;
+
+    if (!paintDialog(dialog.lineStartMs)) {
+        EspNativeGameplayDialog_reset();
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_IO_FAILED;
+    }
+
+    printf("[DIALOG] OPEN-STANDALONE bytes=%u lines=%u back=0 continuation=none textCap=%u frame=%08x pack=open\n",
+           (unsigned int)dialog.textLength,
+           (unsigned int)dialog.lineCount,
+           (unsigned int)ESP_NATIVE_GAMEPLAY_DIALOG_TEXT_CAPACITY,
+           (unsigned int)frameFNV());
+    return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK;
+}
+
 int EspNativeGameplayDialog_tick(void) {
     uint32_t now;
     uint32_t signature;
@@ -622,6 +700,10 @@ EspNativeGameplayDialogInputStatus EspNativeGameplayDialog_handleAction(
                    (unsigned int)frameFNV());
             return ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_REDRAWN;
         }
+        if (dialog.owner.sourceEventIndex == DIALOG_STANDALONE_EVENT) {
+            closeActive(outClose, 0U, "standalone");
+            return ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_STANDALONE;
+        }
         closeActive(outClose, 1U, "resume");
         return ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_RESUME;
     }
@@ -674,8 +756,20 @@ EspNativeGameplayDialogResumeStatus EspNativeGameplayDialog_resume(
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
     if (close == NULL || outResult == NULL ||
         close->resumeRequested != 1U || EspNativeGameplayDialog_isActive() ||
-        EspAssetPack_isOpen() ||
-        !eventDescriptorForIndex(close->sourceEventIndex, &descriptor) ||
+        EspAssetPack_isOpen()) {
+        return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
+    }
+
+    if (close->sourceEventIndex == DIALOG_STANDALONE_EVENT) {
+        if (close->sourceCommandOffset != 0U ||
+            close->resumeCommandOffset != 0U ||
+            close->resumeHasCommand != 0U) {
+            return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
+        }
+        return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND;
+    }
+
+    if (!eventDescriptorForIndex(close->sourceEventIndex, &descriptor) ||
         close->resumeCommandOffset > descriptor.commandCount) {
         return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
     }

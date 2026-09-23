@@ -42,8 +42,11 @@
 #define HUD_LINE2_X 155
 #define HUD_TOP_TOUCH_SPLIT1_X 32
 #define HUD_TOP_TOUCH_SPLIT2_X 128
-#define HUD_TOP_TOUCH_NOTCH_Y0 18
-#define HUD_TOP_TOUCH_NOTCH_Y1 19
+#define HUD_TOP_TOUCH_NOTCH_TOP_Y0 1
+#define HUD_TOP_TOUCH_NOTCH_TOP_Y1 2
+#define HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0 17
+#define HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1 18
+#define HUD_TOP_TOUCH_NEON_BLUE 0x001fU
 
 static EspNativeGameplayHudState hudState;
 
@@ -105,6 +108,26 @@ static void drawVerticalLine(uint16_t* framebuffer,
         framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
         if (stats != NULL) ++stats->pixelsWritten;
     }
+}
+
+static void drawTopTouchNotches(uint16_t* framebuffer,
+                                EspNativeGameplayHudStats* stats) {
+    const uint16_t blue = HUD_TOP_TOUCH_NEON_BLUE;
+
+    /* Tiny split markers only: one logical pixel wide, two pixels long,
+     * using the same neon-blue core as the top-button touch feedback. */
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT1_X,
+                     HUD_TOP_TOUCH_NOTCH_TOP_Y0,
+                     HUD_TOP_TOUCH_NOTCH_TOP_Y1, blue, stats);
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT1_X,
+                     HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0,
+                     HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1, blue, stats);
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT2_X,
+                     HUD_TOP_TOUCH_NOTCH_TOP_Y0,
+                     HUD_TOP_TOUCH_NOTCH_TOP_Y1, blue, stats);
+    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT2_X,
+                     HUD_TOP_TOUCH_NOTCH_BOTTOM_Y0,
+                     HUD_TOP_TOUCH_NOTCH_BOTTOM_Y1, blue, stats);
 }
 
 static EspNativeGameplayHudStatus openAsset(
@@ -277,15 +300,9 @@ static EspNativeGameplayHudStatus paintPrepared(
     }
     mergeBmpStats(stats, &local);
 
-    /* Only the three top touch zones get a permanent delimiter hint. Keep the
-     * gameplay viewport itself clean: these are two 1x2 logical-pixel notches
-     * exactly at MENU|PASS and PASS|AUTOMAP boundaries. */
-    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT1_X,
-                     HUD_TOP_TOUCH_NOTCH_Y0, HUD_TOP_TOUCH_NOTCH_Y1,
-                     rgb565(0x808591U), stats);
-    drawVerticalLine(framebuffer, HUD_TOP_TOUCH_SPLIT2_X,
-                     HUD_TOP_TOUCH_NOTCH_Y0, HUD_TOP_TOUCH_NOTCH_Y1,
-                     rgb565(0x808591U), stats);
+    /* Minimal permanent locator chrome at the two semantic split points.
+     * The hit boxes remain exactly 0..31 | 32..127 | 128..159. */
+    drawTopTouchNotches(framebuffer, stats);
 
     drawVerticalLine(framebuffer, HUD_LINE1_X + cx, HUD_BOTTOM_Y,
                      DOOMRPG_LOGICAL_HEIGHT - 1, rgb565(0x313131U), stats);
@@ -394,6 +411,20 @@ int EspNativeGameplayHud_isReady(void) {
 
 const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) {
     return EspNativeGameplayHud_isReady() ? &hudState : NULL;
+}
+
+int EspNativeGameplayHud_paintTopTouchNotches(void) {
+    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    const size_t framebufferBytes = Esp32PlatformVideo_framebufferSizeBytes();
+    if (framebuffer == NULL ||
+        framebufferBytes != (size_t)DOOMRPG_LOGICAL_WIDTH *
+                                (size_t)DOOMRPG_LOGICAL_HEIGHT *
+                                sizeof(uint16_t)) {
+        return 0;
+    }
+
+    drawTopTouchNotches(framebuffer, NULL);
+    return 1;
 }
 
 EspNativeGameplayHudStatus EspNativeGameplayHud_prepareInitial(

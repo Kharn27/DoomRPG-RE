@@ -1072,6 +1072,7 @@ static int paintFeedback(uint8_t feedback) {
                (unsigned int)stats.packReads,
                (unsigned int)stats.bytesRead);
     }
+    if (!EspNativeGameplayHud_paintTopTouchNotches()) goto done;
     ok = 1;
 
 done:
