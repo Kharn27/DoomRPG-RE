@@ -5,102 +5,86 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 38a70412b0e28cf5afb8d33aa4a0a82ae73172c6
-branch = agent/esp32-native-automap-save-v7-hud-notches
-hardware-tested combined code head = 2d9dcfcbc022e02a4810da3aa2f3eb60bedf933e
-esp32-cyd CI #602 = SUCCESS
-static RAM = 44944 B
-flash = 745165 B
+current main = 120449ff3aa02b055d0ead75f9c2c55e799a5851
+branch = agent/esp32-native-facing-label
+hardware-tested code head = ec5207f3b18d7d2d89d6f569cf7aeb25da35270f
+esp32-cyd CI #617 = SUCCESS
+static RAM = 44984 B
+flash = 748213 B
 post-test policy = docs-only
-status = SAVE V7 AUTOMAP + TOP HUD LOCATORS + FIRST-WEAPON HELP REAL-CYD PASS
+status = FACING-ENTITY TOP-BAR LABEL REAL-CYD PASS
 ```
 
-This branch closes three bounded parity/polish gaps without changing the permanent
-memory architecture.
+This branch restores one bounded legacy HUD behavior without changing the
+permanent ESP32-native memory architecture.
 
-### SAVE V7 Automap persistence — REAL-CYD PASS
+### Facing-entity top-bar label — REAL-CYD PASS
 
-Native checkpoints now write `DRPGSAV7`, version 7, with a fixed 1936-byte
-streamed record. V7 appends exactly one 404-byte `EspMapAutomapSnapshot` to the
-hardware-proven V6 record while retaining V1-V6 read compatibility.
-
-Real-CYD LOAD restored:
+Legacy `DoomCanvas_checkFacingEntity()` performs a short forward trace after a
+settled pose. `Hud_drawTopBar()` then uses the current entity definition name
+only as the lowest-priority gameplay fallback:
 
 ```text
-automap=restored/50L/46S/39V/08fde8e2
-```
-
-and opening Automap afterward immediately showed the saved exploration
-(`lines=50`, `visited=27`) instead of resetting discovery to the current
-player tile.
-
-Detailed record:
-
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md)
-
-### Top-HUD touch locators
-
-The three semantic top touch zones remain exactly:
-
-```text
-MENU 0..31 | PASS 32..127 | AUTOMAP 128..159
-```
-
-Permanent visual location is intentionally minimal: only the two split points
-`x=32` and `x=128` receive 1-logical-pixel-wide, 2-logical-pixel-long
-markers at the top and bottom edges, using the same neon-blue RGB565 core
-`0x001f` as top-button touch feedback. No complete button border is drawn.
-
-Top-bar temporary-message repaint reapplies these markers so feedback expiry does
-not erase them.
-
-### First-weapon pickup help — REAL-CYD PASS
-
-Legacy first weapon acquisition is restored. The native resource owner checks
-the original gate — weapon absent from both `weapons` and
-`disabledWeapons` before pickup — and opens the recovered help text through the
-existing bounded native dialog presenter.
-
-The Fire Extinguisher hardware run proved:
-
-```text
-[DIALOG] OPEN-STANDALONE ... continuation=none
-[PLAYERRES] WEAPON-HELP ... subtype=1 status=OPEN firstAcquire=yes ...
-...
-[DIALOG] CLOSE event=65535 resume=0 mode=standalone ...
-[RESIDENTGAMEPLAY] DIALOG-STANDALONE-CLOSE ... stateMutation=no redraw=yes turnAdvance=no dialog=closed
-```
-
-The very next `FORWARD` committed normally. The same run then opened and closed
-real BSP dialog event 60, including its normal `DIALOGCHAIN` continuation, so
-script-backed dialogs remain intact.
-
-Detailed record:
-
-- [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
-
-### Next recovered parity frontier — facing-entity top-bar label
-
-Original-game retest exposed a still-missing permanent HUD behavior. Legacy
-`DoomCanvas_checkFacingEntity()` recalculates `player->facingEntity` after
-settled movement and settled rotation using a short forward `Game_trace`.
-`Hud_drawTopBar()` then uses the facing entity name as its lowest-priority
-top-bar text:
-
-```text
-timed HUD messages
+timed HUD message
  > statBarMessage
  > logMessage
- > facingEntity->def->name (ST_PLAYING, eType != 9)
+ > facingEntity->def->name (eType != 9)
  > empty
 ```
 
-This is why crates, scientists and other eligible objects remain named while
-they stay in the player's field of view, but temporary `Got ...` messages
-temporarily override the label and the label returns afterward.
+The native recovery is pointer-free. It keeps one 34-byte derived owner for the
+current target and reads only that target's historical 16-byte EntityDef name
+from `/entities.db` through the existing PAK-backed catalog. No map-wide name
+table and no legacy `Entity_t*` ownership were introduced.
 
-Implement this as the next bounded native owner/milestone **after this branch is
-merged**. Do not emulate it with a timer or a queued action-feedback message.
+Recovered trace shape:
+
+```text
+origin = player center shifted 31 units forward
+reach = 3 tile steps
+shared-tile ordering = legacy linked order
+line entities = supported
+type 9 = trace blocker / no displayed label
+```
+
+Real-CYD witnesses include:
+
+```text
+Civilian  -> source=sprite index=19 distance=1
+Computer  -> source=line   index=279 distance=2 then distance=1
+Door      -> source=line   index=275 distance=3
+empty     -> active=0 display=0 followed by FACINGLABEL CLEAR
+```
+
+The same run proved that closing the HUB restores the world with the existing
+`Civilian` facing label intact, and pure rotation retargets the label while
+`MONSTERTURN ROTATE-NO-TURN` remains unchanged.
+
+Hardware runtime remained alive at the supplied steady witness:
+
+```text
+heap=81936
+heap8=16384
+largest8=11764
+```
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_FACING_LABEL.md`](MILESTONE_NATIVE_FACING_LABEL.md)
+
+### Previous merged boundary retained
+
+The merged `main` base already contains the validated V7 Automap checkpoint
+persistence, minimal neon-blue top-HUD touch locators and standalone
+first-weapon acquisition help dialog. Those remain part of the hardware-proven
+baseline and are not modified by this milestone.
+
+### Next bounded frontier
+
+After this branch is merged, recover the exact new `main` SHA and re-read the
+live status/docs before selecting the next gameplay milestone. Do not expand the
+facing owner into a generic desktop-style entity graph; keep future behavior
+owner-by-owner and fail-closed where semantics are not yet migrated.
 
 ## Permanent architecture / hard invariants
 
