@@ -1053,6 +1053,20 @@ static void serviceDialogAction(Render_t* render,
         return;
     }
 
+    if (inputStatus == ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_STANDALONE) {
+        if (!renderCurrent(render, (uint8_t)view->viewAngle,
+                           "DIALOG-STANDALONE-CLOSE")) {
+            disableGameplay("dialog-standalone-close-render");
+            return;
+        }
+        ++gameplayState.dialogResumes;
+        printf("[RESIDENTGAMEPLAY] DIALOG-STANDALONE-CLOSE n=%u seq=%u event=%u resume=no stateMutation=no redraw=yes turnAdvance=no dialog=closed\n",
+               (unsigned int)gameplayState.dialogResumes,
+               (unsigned int)intent->sequence,
+               (unsigned int)close.sourceEventIndex);
+        return;
+    }
+
     if (inputStatus != ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_RESUME) {
         disableGameplay("dialog-input-status");
         return;
