@@ -51,6 +51,11 @@ int EspNativeGameplayStatusMessage_rollback(
  * No present occurs here; the enclosing gameplay frame owns presentation. */
 int EspNativeGameplayStatusMessage_paintIfDirty(void);
 
+/* Repaint the current statBarMessage fallback even when its semantic owner did
+ * not change. This is used after a fresh world frame or a higher-priority timed
+ * message expires. No present occurs here. */
+int EspNativeGameplayStatusMessage_repaintCurrent(void);
+
 /* One allocation-free diagnostic dump of the resident FORCE_MESSAGE corpus. */
 void EspNativeGameplayStatusMessage_logCorpus(void);
 
