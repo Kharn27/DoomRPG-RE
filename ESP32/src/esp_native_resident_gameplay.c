@@ -230,6 +230,15 @@ static int renderCurrent(Render_t* render,
                          const char* reason) {
     EspNativeGameplayFrameStats frame;
 
+    /* Legacy checkFacingEntity() runs whenever a settled world view changes.
+     * Keep this as derived presentation state: a failed label refresh must not
+     * invalidate an otherwise healthy gameplay frame. */
+    if (!EspNativeGameplayFacingLabel_refresh(
+            reason != NULL ? reason : "WORLD-REDRAW")) {
+        printf("[FACINGLABEL] DEFER reason=%s worldRender=continue\n",
+               reason != NULL ? reason : "WORLD-REDRAW");
+    }
+
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(render, angle, &frame)) {
         printf("[RESIDENTGAMEPLAY] RENDER-FAILED reason=%s angle=%u\n",
@@ -1417,6 +1426,7 @@ void EspNativeResidentGameplay_reset(void) {
     EspNativeGameplayHub_reset();
     EspNativeGameplayDialog_reset();
     EspNativeGameplayPassword_reset();
+    EspNativeGameplayFacingLabel_reset();
     EspNativeGameplayControls_reset();
     EspNativeGameplayInput_reset();
     memset(&gameplayState, 0, sizeof(gameplayState));
@@ -1505,6 +1515,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         EspNativeGameplayHub_reset();
         EspNativeGameplayDialog_reset();
         EspNativeGameplayPassword_reset();
+        EspNativeGameplayFacingLabel_reset();
         EspNativeGameplayControls_reset();
         EspNativeGameplayInput_reset();
         {
@@ -1515,6 +1526,17 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 !EspNativeGameplayAutomap_uncoverAt(
                     view->destX, view->destY, &uncovered)) {
                 printf("[RESIDENTGAMEPLAY] WAIT automap initial uncover\n");
+                return;
+            }
+            if (!EspNativeGameplayFacingLabel_refresh("SESSION-ARM")) {
+                printf("[RESIDENTGAMEPLAY] WAIT facing-label initial trace\n");
+                return;
+            }
+            /* First-frame rendering precedes resident service arming. Paint the
+             * newly derived fallback immediately so initial standing parity does
+             * not require a first MOVE/TURN. The present wrapper sees dirty=1. */
+            if (!Esp32PlatformVideo_present()) {
+                printf("[RESIDENTGAMEPLAY] WAIT facing-label initial present\n");
                 return;
             }
             gameplayState.checkpointResumeArmed = 0U;

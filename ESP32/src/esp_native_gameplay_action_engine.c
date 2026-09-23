@@ -20,10 +20,12 @@
 #include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_destructible.h"
 #include "esp_native_gameplay_dispatch.h"
+#include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_player_view_state.h"
@@ -1002,6 +1004,8 @@ static int restoreViewportFlash(void) {
 static int paintFeedback(uint8_t feedback) {
     FeedbackScratch scratch;
     EspNativeIndexedBmpStats stats;
+    const EspNativeGameplayFacingLabelView* facingLabel = NULL;
+    const EspMapStatusMessageState* statusMessage = NULL;
     const char* text = feedbackText(feedback);
     uint16_t* framebuffer;
     size_t framebufferBytes;
@@ -1009,6 +1013,27 @@ static int paintFeedback(uint8_t feedback) {
     size_t i;
     int x = FEEDBACK_TEXT_X;
     int ok = 0;
+
+    /*
+     * Legacy Hud_drawTopBar priority after timed action feedback is:
+     * statBarMessage -> logMessage -> facingEntity name -> empty.
+     * A native logMessage owner does not exist yet, but FORCE_MESSAGE is
+     * already permanent. Never let the new facing fallback overwrite it.
+     */
+    if (feedback == ACTION_FEEDBACK_NONE) {
+        statusMessage = EspNativeGameplayStatusMessage_view();
+        if (statusMessage != NULL &&
+            EspMapStatusMessage_isActive(statusMessage)) {
+            if (!EspNativeGameplayStatusMessage_repaintCurrent()) return 0;
+            printf("[TOPBARFALLBACK] PAINT source=status priority=statBarMessage>facing present=caller\n");
+            return 1;
+        }
+
+        facingLabel = EspNativeGameplayFacingLabel_view();
+        if (facingLabel != NULL && facingLabel->displayable != 0U) {
+            text = facingLabel->name;
+        }
+    }
 
     framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     framebufferBytes = Esp32PlatformVideo_framebufferSizeBytes();
@@ -1059,16 +1084,38 @@ static int paintFeedback(uint8_t feedback) {
             x += FEEDBACK_FONT_ADVANCE;
         }
 
-        printf("[ACTIONFEEDBACK] PAINT kind=%u text=\"%s\" chars=%u reads=%u bytes=%u present=caller durationMs=%u\n",
-               (unsigned int)feedback,
-               text,
-               (unsigned int)visible,
+        if (feedback != ACTION_FEEDBACK_NONE) {
+            printf("[ACTIONFEEDBACK] PAINT kind=%u text=\"%s\" chars=%u reads=%u bytes=%u present=caller durationMs=%u\n",
+                   (unsigned int)feedback,
+                   text,
+                   (unsigned int)visible,
+                   (unsigned int)stats.packReads,
+                   (unsigned int)stats.bytesRead,
+                   (unsigned int)FEEDBACK_DISPLAY_MS);
+        }
+        else {
+            printf("[FACINGLABEL] PAINT name=\"%s\" chars=%u source=%s index=%u priority=fallback reads=%u bytes=%u present=caller\n",
+                   text,
+                   (unsigned int)visible,
+                   facingLabel != NULL && facingLabel->isLine != 0U
+                       ? "line" : "sprite",
+                   (unsigned int)(facingLabel != NULL &&
+                                  facingLabel->isLine != 0U
+                                      ? facingLabel->lineIndex
+                                      : (facingLabel != NULL
+                                             ? facingLabel->spriteIndex
+                                             : ESP_NATIVE_GAMEPLAY_FACING_LABEL_NO_INDEX)),
+                   (unsigned int)stats.packReads,
+                   (unsigned int)stats.bytesRead);
+        }
+    }
+    else if (feedback != ACTION_FEEDBACK_NONE) {
+        printf("[ACTIONFEEDBACK] CLEAR mode=topbar-only reads=%u bytes=%u present=caller\n",
                (unsigned int)stats.packReads,
-               (unsigned int)stats.bytesRead,
-               (unsigned int)FEEDBACK_DISPLAY_MS);
+               (unsigned int)stats.bytesRead);
     }
     else {
-        printf("[ACTIONFEEDBACK] CLEAR mode=topbar-only reads=%u bytes=%u present=caller\n",
+        printf("[FACINGLABEL] CLEAR source=none priority=fallback reads=%u bytes=%u present=caller\n",
                (unsigned int)stats.packReads,
                (unsigned int)stats.bytesRead);
     }
@@ -1077,6 +1124,9 @@ static int paintFeedback(uint8_t feedback) {
 
 done:
     if (EspAssetPack_isOpen()) EspAssetPack_close();
+    if (ok && feedback == ACTION_FEEDBACK_NONE) {
+        EspNativeGameplayFacingLabel_markPainted();
+    }
     return ok;
 }
 
@@ -1113,6 +1163,17 @@ int __wrap_Esp32PlatformVideo_present(void) {
         }
         printf("[ACTIONFEEDBACK] REFRESH kind=%u lease=preserved freshFrame=yes\n",
                (unsigned int)feedback);
+    }
+    else if ((actionState.framebufferFresh != 0U ||
+              EspNativeGameplayFacingLabel_isDirty()) &&
+             !EspAssetPack_isOpen()) {
+        /* No timed message owns the top bar. Recompose the permanent fallback
+         * on every fresh world frame, and also when a pose-only refresh changed
+         * the derived facing label before an otherwise plain present. */
+        if (!paintFeedback(ACTION_FEEDBACK_NONE)) {
+            printf("[TOPBARFALLBACK] FAILED phase=refresh\n");
+            return 0;
+        }
     }
 
     if ((actionState.viewportFlashPending != 0U ||
@@ -1904,6 +1965,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             actionState.feedbackPending = 1U;
             actionState.feedbackKind = pending.feedback;
         }
+        if (!EspNativeGameplayFacingLabel_refresh("ACTION-WORLD-COMMIT")) {
+            printf("[FACINGLABEL] DEFER reason=ACTION-WORLD-COMMIT worldRender=continue\n");
+        }
         if (!EspNativeGameplayFrame_renderTurn(
                 doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
             int rollbackOk = 1;
@@ -1943,6 +2007,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 if (randomCaptured != 0U) doomRpg->random = randomBefore;
             }
             memset(&frame, 0, sizeof(frame));
+            if (rollbackOk &&
+                !EspNativeGameplayFacingLabel_refresh("ACTION-WORLD-ROLLBACK")) {
+                printf("[FACINGLABEL] DEFER reason=ACTION-WORLD-ROLLBACK worldRender=continue\n");
+            }
             if (!rollbackOk || !EspNativeGameplayFrame_renderTurn(
                     doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
                 printf("[ACTIONENGINE] FAILED seq=%u reason=render+rollback-render sprite=%u line=%u rollback=%s\n",

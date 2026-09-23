@@ -288,7 +288,7 @@ int EspNativeGameplayStatusMessage_rollback(
     return 1;
 }
 
-int EspNativeGameplayStatusMessage_paintIfDirty(void) {
+static int repaintCurrent(void) {
     EspAssetPackEntry mapEntry;
     EspMapStringRef ref;
     size_t readLength = 0U;
@@ -297,7 +297,6 @@ int EspNativeGameplayStatusMessage_paintIfDirty(void) {
     int ok;
 
     if (!owner.ready) return 0;
-    if (!owner.dirty) return 1;
     memset(textScratch, 0, sizeof(textScratch));
 
     if (EspMapStatusMessage_isActive(&owner.state)) {
@@ -323,6 +322,16 @@ int EspNativeGameplayStatusMessage_paintIfDirty(void) {
     if (!ok) return 0;
     owner.dirty = 0U;
     return 1;
+}
+
+int EspNativeGameplayStatusMessage_paintIfDirty(void) {
+    if (!owner.ready) return 0;
+    if (!owner.dirty) return 1;
+    return repaintCurrent();
+}
+
+int EspNativeGameplayStatusMessage_repaintCurrent(void) {
+    return repaintCurrent();
 }
 
 void EspNativeGameplayStatusMessage_logCorpus(void) {
