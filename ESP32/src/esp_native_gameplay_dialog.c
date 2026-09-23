@@ -700,6 +700,10 @@ EspNativeGameplayDialogInputStatus EspNativeGameplayDialog_handleAction(
                    (unsigned int)frameFNV());
             return ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_REDRAWN;
         }
+        if (dialog.owner.sourceEventIndex == DIALOG_STANDALONE_EVENT) {
+            closeActive(outClose, 0U, "standalone");
+            return ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_STANDALONE;
+        }
         closeActive(outClose, 1U, "resume");
         return ESP_NATIVE_GAMEPLAY_DIALOG_INPUT_CLOSE_RESUME;
     }
