@@ -1,14 +1,11 @@
 #ifndef DOOMRPG_ESP32_NATIVE_MAIN_MENU_160X120_LAYOUT_H
 #define DOOMRPG_ESP32_NATIVE_MAIN_MENU_160X120_LAYOUT_H
 
-/* ESP32/CYD-specific presentation contract for the real Doom RPG main menu.
+/* ESP32/CYD presentation contracts for the real Doom RPG main menu.
  *
- * The original 108x74 logo plus four 12-pixel-high menu rows cannot fit in a
- * 160x120 logical framebuffer without overlap/overflow. Keep the original font,
- * hand cursor and menu model, but scale only the logo and move the rows upward.
- *
- * These constants are intentionally shared so the next touch-input increment can
- * derive hit zones from exactly the same final item geometry.
+ * The legacy fitted constants remain intentionally stable because the existing
+ * Options screen still uses them and owns a hardware-validated framebuffer
+ * witness. MENU_MAIN itself now uses the separate finger-first DASH_* geometry.
  */
 #define DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_WIDTH 108
 #define DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_HEIGHT 74
@@ -29,5 +26,25 @@
 #define DOOMRPG_ESP32_MAIN_MENU_CONTENT_BOTTOM \
     (DOOMRPG_ESP32_MAIN_MENU_LAST_ITEM_Y + \
      DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT)
+
+/* Finger-first MENU_MAIN dashboard. Each card is 74x28 logical pixels, i.e.
+ * 148x56 physical pixels on the classic CYD's exact 2x presentation.
+ */
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH 74
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT 51
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y 2
+
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP 53
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM 54
+
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT 4
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT 77
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT 82
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT 155
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP 56
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM 83
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP 87
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM 114
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_FOOTER_Y 117
 
 #endif

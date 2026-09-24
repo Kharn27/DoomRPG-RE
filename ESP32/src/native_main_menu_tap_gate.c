@@ -51,59 +51,73 @@ void __real_PlatformInput_setTapCallback(PlatformTapCallback callback);
 static int gateHitItem(int16_t screenX, int16_t screenY) {
     const int logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
-    const int relativeY = logicalY - DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y;
+    int col;
+    int row;
 
-    if (logicalX < MENU_TAP_GATE_HIT_LEFT ||
-        logicalX > MENU_TAP_GATE_HIT_RIGHT) {
+    if (logicalX >= DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT &&
+        logicalX <= DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT) {
+        col = 0;
+    }
+    else if (logicalX >= DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT &&
+             logicalX <= DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT) {
+        col = 1;
+    }
+    else {
         return -1;
     }
 
-    /* Real CYD evidence: a deliberate Start Game tap landed at logical y=64,
-     * three pixels above the visual row beginning at y=67. Keep this tolerance
-     * only on the first row so the other three menu rows retain their exact
-     * validated geometry and no rows overlap. */
-    if (logicalY >= (DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y -
-                     MENU_TAP_GATE_START_TOP_TOLERANCE) &&
-        logicalY < DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y) {
-        return 0;
+    if (logicalY >= DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP &&
+        logicalY <= DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM) {
+        row = 0;
     }
-
-    if (relativeY < 0 ||
-        relativeY >= (DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT *
-                      DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT)) {
+    else if (logicalY >= DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP &&
+             logicalY <= DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM) {
+        row = 1;
+    }
+    else {
         return -1;
     }
 
-    return relativeY / DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
+    return (row << 1) | col;
 }
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 static void registerMainMenuHitboxOverlay(void) {
+    static const int16_t left[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT] = {
+        DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT
+    };
+    static const int16_t right[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT] = {
+        DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT
+    };
+    static const int16_t top[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT] = {
+        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP
+    };
+    static const int16_t bottom[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT] = {
+        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM,
+        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM
+    };
     int item;
 
     Esp32PlatformVideo_debugOverlayClear();
-
     for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
-        int top = DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y +
-                  (item * DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT);
-        const int bottom = top + DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT - 1;
-
-        if (item == 0) {
-            top -= MENU_TAP_GATE_START_TOP_TOLERANCE;
-        }
-
         Esp32PlatformVideo_debugOverlaySetZone(item,
-                                               MENU_TAP_GATE_HIT_LEFT,
-                                               (int16_t)top,
-                                               MENU_TAP_GATE_HIT_RIGHT,
-                                               (int16_t)bottom);
+                                               left[item],
+                                               top[item],
+                                               right[item],
+                                               bottom[item]);
     }
-
-    printf("[HITBOX] MAIN overlay registered from final tap gate zones=%d StartY=%d..%d framebuffer=untouched\n",
-           DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT,
-           DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y - MENU_TAP_GATE_START_TOP_TOLERANCE,
-           DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y +
-               DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT - 1);
+    printf("[HITBOX] MAIN dashboard overlay zones=4 target=74x28 logical framebuffer=untouched\n");
 }
 #endif
 
@@ -227,7 +241,12 @@ static void gatedTap(int16_t screenX,
     }
 
     lastTappedItem = hit;
-    printf("[MENUTOUCH] ARM item=%d tap=%u selected=%d awaitingReleasedSecondTap=yes\n",
+    if (!DoomRPG_esp32MainMenuTouchArmSelected(hit)) {
+        printf("[MENUTOUCH] FAILED visible arm item=%d tap=%u\n",
+               hit,
+               (unsigned int)gateTapCount);
+    }
+    printf("[MENUTOUCH] ARM item=%d tap=%u selected=%d awaitingReleasedSecondTap=yes visual=bright-card\n",
            hit,
            (unsigned int)gateTapCount,
            gateSelectedItem);
@@ -271,7 +290,7 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
         registerMainMenuHitboxOverlay();
 #endif
         __real_PlatformInput_setTapCallback(gatedTap);
-        printf("[MENUTOUCH] GATE READY initialSelected=0 firstSameTap=arm secondReleasedSameTap=confirm StartY=64..78 startAction=enabled optionsAction=enabled loadAction=enabled\n");
+        printf("[MENUTOUCH] GATE READY initialSelected=0 dashboard=2x2 firstTap=bright-arm secondReleasedSameTap=confirm startAction=enabled optionsAction=enabled loadAction=enabled\n");
     }
     else {
         downstreamTapCallback = callback;
