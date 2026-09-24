@@ -966,16 +966,16 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
                                   uint8_t* ioCount,
                                   uint8_t* outTriggered,
                                   uint8_t* outPlayerHits,
-                                  uint8_t* outLastPlayerMessageDamage) {
+                                  uint16_t* outPlayerMessageDamage) {
     EspMapSprite source;
     uint8_t n;
     uint8_t triggered = 0U;
     uint8_t playerHits = 0U;
-    uint8_t lastPlayerMessageDamage = 0U;
+    uint16_t playerMessageDamage = 0U;
 
     if (view == NULL || chain == NULL || ioCount == NULL ||
         outTriggered == NULL || outPlayerHits == NULL ||
-        outLastPlayerMessageDamage == NULL || blastDamage == 0U ||
+        outPlayerMessageDamage == NULL || blastDamage == 0U ||
         !__real_EspMapRuntime_getMapSprite(sourceSprite, &source)) {
         return 0;
     }
@@ -1022,13 +1022,14 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
                 return 0;
             }
             ++playerHits;
-            lastPlayerMessageDamage = (uint8_t)(component * 2U);
+            playerMessageDamage =
+                (uint16_t)((uint16_t)component * 2U);
             printf("[BARRELRADIUS] PLAYER-HIT source=%u tile=%u relation=%s component=%u messageDamage=%u hp=%u->%u armor=%u->%u playerFNV=%08x->%08x mutation=yes\n",
                    (unsigned int)sourceSprite,
                    (unsigned int)tile,
                    n < 4U ? "cardinal" : "diagonal",
                    (unsigned int)component,
-                   (unsigned int)lastPlayerMessageDamage,
+                   (unsigned int)playerMessageDamage,
                    (unsigned int)damageResult.healthBefore,
                    (unsigned int)damageResult.healthAfter,
                    (unsigned int)damageResult.armorBefore,
@@ -1054,7 +1055,7 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
     }
     *outTriggered = triggered;
     *outPlayerHits = playerHits;
-    *outLastPlayerMessageDamage = lastPlayerMessageDamage;
+    *outPlayerMessageDamage = playerMessageDamage;
     return 1;
 }
 
@@ -2153,8 +2154,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         uint8_t barrelExpectedChainCount = 0U;
         uint8_t barrelBlastRngCalls = 0U;
         uint8_t barrelPlayerHits = 0U;
-        uint8_t barrelLastPlayerMessageDamage = 0U;
+        uint16_t barrelTotalPlayerMessageDamage = 0U;
         uint16_t barrelChain[ACTION_BARREL_CHAIN_MAX];
+        EspNativeSpriteTransient
+            barrelWaveItems[ACTION_BARREL_CHAIN_MAX];
         int16_t barrelWorldX = 0;
         int16_t barrelWorldY = 0;
         uint8_t crateRandFirst = 0U;
@@ -2432,7 +2435,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 barrelWorldX = barrelSprite.x;
                 barrelWorldY = barrelSprite.y;
                 barrelExplosionArmed = 1U;
-                printf("[BARRELRADIUS] PREFLIGHT seq=%u root=%u chain=%u radius=4-cardinal-full+4-diagonal-half targetFamily=barrel-only unsupported=fail-closed rngWords=%u visual=single-transient-sequential gameplayOrder=legacy-causal\n",
+                printf("[BARRELRADIUS] PREFLIGHT seq=%u root=%u chain=%u radius=4-cardinal-full+4-diagonal-half targetFamily=barrel+player unsupported=fail-closed rngWords=%u visual=wave-batch-concurrent gameplayOrder=legacy-causal\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
                        (unsigned int)barrelExpectedChainCount,
@@ -2856,53 +2859,74 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         logActionFrame(&pending, animateWeapon ? "attack" : "commit", &frame);
 
         if (isBarrel && barrelExplosionArmed != 0U) {
-            uint8_t barrelCursor;
-            for (barrelCursor = 0U;
-                 barrelCursor < barrelChainCount;
-                 ++barrelCursor) {
-                EspMapSprite explodingSprite;
-                uint8_t blastByte = 0U;
-                uint8_t blastDamage;
-                uint8_t triggered = 0U;
-                uint8_t playerHitsThisBlast = 0U;
-                uint8_t playerMessageDamageThisBlast = 0U;
+            uint8_t waveStart = 0U;
+            uint8_t waveOrdinal = 0U;
 
-                if (!__real_EspMapRuntime_getMapSprite(
-                        barrelChain[barrelCursor], &explodingSprite)) {
-                    int rollbackOk = 1;
-                    if (barrelTurnRequested != 0U &&
-                        !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
-                            pending.sequence)) {
-                        rollbackOk = 0;
+            /*
+             * Legacy Game_gsprite_update() lets every barrel killed by the
+             * same radius tick allocate its own gsprite immediately. Those
+             * siblings therefore animate concurrently for the next 450 ms.
+             * Snapshot chainCount at each wave boundary: radius-triggered
+             * barrels are removed immediately, then rendered together as the
+             * next wave before any of their own radius effects execute.
+             */
+            while (waveStart < barrelChainCount) {
+                uint8_t waveEnd = barrelChainCount;
+                uint8_t waveCount = (uint8_t)(waveEnd - waveStart);
+                uint8_t waveItem;
+                uint8_t blastCursor;
+
+                ++waveOrdinal;
+                for (waveItem = 0U; waveItem < waveCount; ++waveItem) {
+                    EspMapSprite explodingSprite;
+                    uint16_t spriteIndex =
+                        barrelChain[(uint8_t)(waveStart + waveItem)];
+                    if (!__real_EspMapRuntime_getMapSprite(
+                            spriteIndex, &explodingSprite)) {
+                        int rollbackOk = 1;
+                        if (barrelTurnRequested != 0U &&
+                            !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
+                                pending.sequence)) {
+                            rollbackOk = 0;
+                        }
+                        barrelRollbackRemoved(
+                            barrelChain, barrelChainCount);
+                        if (!EspNativeGameplayPlayerState_restore(
+                                &playerBefore)) {
+                            rollbackOk = 0;
+                        }
+                        doomRpg->random = randomBefore;
+                        EspNativeGameplayWeapon_cancelAttack();
+                        memset(&actionState.pending, 0,
+                               sizeof(actionState.pending));
+                        printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u reason=wave-sprite-read wave=%u item=%u rollback=%s rng=yes player=yes world=yes\n",
+                               (unsigned int)pending.sequence,
+                               (unsigned int)pending.spriteIndex,
+                               (unsigned int)waveOrdinal,
+                               (unsigned int)waveItem,
+                               rollbackOk ? "yes" : "NO");
+                        return rollbackOk ? 1 : 0;
                     }
-                    barrelRollbackRemoved(barrelChain, barrelChainCount);
-                    if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
-                        rollbackOk = 0;
-                    }
-                    doomRpg->random = randomBefore;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u reason=chain-sprite-read cursor=%u rollback=%s rng=yes player=yes world=yes\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex,
-                           (unsigned int)barrelCursor,
-                           rollbackOk ? "yes" : "NO");
-                    return rollbackOk ? 1 : 0;
+                    barrelWaveItems[waveItem].worldX =
+                        explodingSprite.x;
+                    barrelWaveItems[waveItem].worldY =
+                        explodingSprite.y;
                 }
-                barrelWorldX = explodingSprite.x;
-                barrelWorldY = explodingSprite.y;
 
                 for (barrelExplosionFrame = 0U;
-                     barrelExplosionFrame < ACTION_TRAP_EXPLOSION_FRAMES;
+                     barrelExplosionFrame <
+                         ACTION_TRAP_EXPLOSION_FRAMES;
                      ++barrelExplosionFrame) {
                     memset(&frame, 0, sizeof(frame));
-                    if (!EspNativeSpriteRenderer_armTransient(
+                    if (!EspNativeSpriteRenderer_armTransientBatch(
                             ACTION_TRAP_EXPLOSION_LOGICAL,
                             barrelExplosionFrame,
-                            barrelWorldX,
-                            barrelWorldY) ||
+                            barrelWaveItems,
+                            waveCount) ||
                         !EspNativeGameplayFrame_renderTurn(
-                            doomRpg->render, (uint8_t)view->viewAngle, &frame)) {
+                            doomRpg->render,
+                            (uint8_t)view->viewAngle,
+                            &frame)) {
                         int rollbackOk = 1;
                         EspNativeSpriteRenderer_clearTransient();
                         if (barrelTurnRequested != 0U &&
@@ -2910,117 +2934,160 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 pending.sequence)) {
                             rollbackOk = 0;
                         }
-                        barrelRollbackRemoved(barrelChain, barrelChainCount);
-                        if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
+                        barrelRollbackRemoved(
+                            barrelChain, barrelChainCount);
+                        if (!EspNativeGameplayPlayerState_restore(
+                                &playerBefore)) {
                             rollbackOk = 0;
                         }
                         doomRpg->random = randomBefore;
                         actionState.feedbackPending = 0U;
-                        actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+                        actionState.feedbackKind =
+                            ACTION_FEEDBACK_NONE;
+                        actionState.feedbackText[0] = '\0';
+                        actionState.viewportFlashPending = 0U;
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&frame, 0, sizeof(frame));
                         if (rollbackOk &&
                             EspNativeGameplayFacingLabel_refresh(
                                 "BARREL-ROLLBACK")) {
-                            rollbackOk = EspNativeGameplayFrame_renderTurn(
-                                doomRpg->render,
-                                (uint8_t)view->viewAngle,
-                                &frame);
+                            rollbackOk =
+                                EspNativeGameplayFrame_renderTurn(
+                                    doomRpg->render,
+                                    (uint8_t)view->viewAngle,
+                                    &frame);
                         }
-                        printf("[BARREL] ROLLBACK seq=%u root=%u exploding=%u reason=explosion-frame-%u rollback=%s rng=yes player=yes world=yes stableFrame=%08x\n",
+                        printf("[BARREL] ROLLBACK seq=%u root=%u reason=wave-frame wave=%u active=%u frame=%u rollback=%s rng=yes player=yes world=yes stableFrame=%08x\n",
                                (unsigned int)pending.sequence,
                                (unsigned int)pending.spriteIndex,
-                               (unsigned int)barrelChain[barrelCursor],
+                               (unsigned int)waveOrdinal,
+                               (unsigned int)waveCount,
                                (unsigned int)barrelExplosionFrame,
                                rollbackOk ? "yes" : "NO",
                                rollbackOk
-                                   ? (unsigned int)frame.frameAfterFNV : 0U);
-                        memset(&actionState.pending, 0, sizeof(actionState.pending));
+                                   ? (unsigned int)frame.frameAfterFNV
+                                   : 0U);
+                        memset(&actionState.pending, 0,
+                               sizeof(actionState.pending));
                         return rollbackOk ? 1 : 0;
                     }
-                    printf("[BARREL] FRAME seq=%u root=%u sprite=%u chain=%u/%u ordinal=%u/%u anim=%u logical=%u pos=%d,%d frame=%08x presented=%u\n",
+                    printf("[BARREL] WAVE-FRAME seq=%u root=%u wave=%u active=%u chainRange=%u..%u ordinal=%u/%u anim=%u logical=%u frame=%08x presented=%u\n",
                            (unsigned int)pending.sequence,
                            (unsigned int)pending.spriteIndex,
-                           (unsigned int)barrelChain[barrelCursor],
-                           (unsigned int)(barrelCursor + 1U),
-                           (unsigned int)barrelExpectedChainCount,
+                           (unsigned int)waveOrdinal,
+                           (unsigned int)waveCount,
+                           (unsigned int)(waveStart + 1U),
+                           (unsigned int)waveEnd,
                            (unsigned int)(barrelExplosionFrame + 1U),
                            (unsigned int)ACTION_TRAP_EXPLOSION_FRAMES,
                            (unsigned int)barrelExplosionFrame,
                            (unsigned int)ACTION_TRAP_EXPLOSION_LOGICAL,
-                           (int)barrelWorldX,
-                           (int)barrelWorldY,
                            (unsigned int)frame.frameAfterFNV,
                            (unsigned int)frame.finalPresented);
                 }
                 EspNativeSpriteRenderer_clearTransient();
 
-                if (!explosionConsumeWordLowByte(
-                        &doomRpg->random, &blastByte)) {
-                    int rollbackOk = 1;
-                    if (barrelTurnRequested != 0U &&
-                        !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
-                            pending.sequence)) {
-                        rollbackOk = 0;
+                /*
+                 * All explosions in this wave reach 450 ms together. Their
+                 * radius calls still execute deterministically in allocation
+                 * order, preserving legacy RNG and duplicate-barrel suppression.
+                 * Any newly killed barrel is appended to the next wave.
+                 */
+                for (blastCursor = waveStart;
+                     blastCursor < waveEnd;
+                     ++blastCursor) {
+                    uint8_t blastByte = 0U;
+                    uint8_t blastDamage;
+                    uint8_t triggered = 0U;
+                    uint8_t playerHitsThisBlast = 0U;
+                    uint16_t playerMessageDamageThisBlast = 0U;
+
+                    if (!explosionConsumeWordLowByte(
+                            &doomRpg->random, &blastByte)) {
+                        int rollbackOk = 1;
+                        if (barrelTurnRequested != 0U &&
+                            !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
+                                pending.sequence)) {
+                            rollbackOk = 0;
+                        }
+                        barrelRollbackRemoved(
+                            barrelChain, barrelChainCount);
+                        if (!EspNativeGameplayPlayerState_restore(
+                                &playerBefore)) {
+                            rollbackOk = 0;
+                        }
+                        doomRpg->random = randomBefore;
+                        EspNativeGameplayWeapon_cancelAttack();
+                        memset(&actionState.pending, 0,
+                               sizeof(actionState.pending));
+                        printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u exploding=%u wave=%u reason=rng-word-refill-boundary rollback=%s rng=yes player=yes world=yes\n",
+                               (unsigned int)pending.sequence,
+                               (unsigned int)pending.spriteIndex,
+                               (unsigned int)barrelChain[blastCursor],
+                               (unsigned int)waveOrdinal,
+                               rollbackOk ? "yes" : "NO");
+                        return rollbackOk ? 1 : 0;
                     }
-                    barrelRollbackRemoved(barrelChain, barrelChainCount);
-                    if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
-                        rollbackOk = 0;
+                    ++barrelBlastRngCalls;
+                    blastDamage =
+                        (uint8_t)((blastByte / 11U) + 5U);
+                    if (!barrelTriggerNeighbors(
+                            barrelChain[blastCursor],
+                            view,
+                            blastDamage,
+                            barrelChain,
+                            &barrelChainCount,
+                            &triggered,
+                            &playerHitsThisBlast,
+                            &playerMessageDamageThisBlast)) {
+                        int rollbackOk = 1;
+                        if (barrelTurnRequested != 0U &&
+                            !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
+                                pending.sequence)) {
+                            rollbackOk = 0;
+                        }
+                        barrelRollbackRemoved(
+                            barrelChain, barrelChainCount);
+                        if (!EspNativeGameplayPlayerState_restore(
+                                &playerBefore)) {
+                            rollbackOk = 0;
+                        }
+                        doomRpg->random = randomBefore;
+                        EspNativeGameplayWeapon_cancelAttack();
+                        memset(&actionState.pending, 0,
+                               sizeof(actionState.pending));
+                        printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u exploding=%u wave=%u reason=runtime-radius-contract-or-player-death rollback=%s rng=yes player=yes world=yes\n",
+                               (unsigned int)pending.sequence,
+                               (unsigned int)pending.spriteIndex,
+                               (unsigned int)barrelChain[blastCursor],
+                               (unsigned int)waveOrdinal,
+                               rollbackOk ? "yes" : "NO");
+                        return rollbackOk ? 1 : 0;
                     }
-                    doomRpg->random = randomBefore;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u exploding=%u reason=rng-word-refill-boundary rollback=%s rng=yes player=yes world=yes\n",
+                    barrelPlayerHits =
+                        (uint8_t)(barrelPlayerHits +
+                                  playerHitsThisBlast);
+                    barrelTotalPlayerMessageDamage =
+                        (uint16_t)(
+                            barrelTotalPlayerMessageDamage +
+                            playerMessageDamageThisBlast);
+                    printf("[BARRELRADIUS] BLAST seq=%u root=%u source=%u wave=%u rngByte=%u damage=%u diagonal=%u triggered=%u playerHits=%u playerMessageDamage=%u totalPlayerMessageDamage=%u chainNow=%u/%u sound=5061-deferred shake=200ms-deferred\n",
                            (unsigned int)pending.sequence,
                            (unsigned int)pending.spriteIndex,
-                           (unsigned int)barrelChain[barrelCursor],
-                           rollbackOk ? "yes" : "NO");
-                    return rollbackOk ? 1 : 0;
+                           (unsigned int)barrelChain[blastCursor],
+                           (unsigned int)waveOrdinal,
+                           (unsigned int)blastByte,
+                           (unsigned int)blastDamage,
+                           (unsigned int)(blastDamage >> 1),
+                           (unsigned int)triggered,
+                           (unsigned int)playerHitsThisBlast,
+                           (unsigned int)playerMessageDamageThisBlast,
+                           (unsigned int)barrelTotalPlayerMessageDamage,
+                           (unsigned int)barrelChainCount,
+                           (unsigned int)barrelExpectedChainCount);
                 }
-                ++barrelBlastRngCalls;
-                blastDamage = (uint8_t)((blastByte / 11U) + 5U);
-                if (!barrelTriggerNeighbors(
-                        barrelChain[barrelCursor], view, blastDamage,
-                        barrelChain, &barrelChainCount, &triggered,
-                        &playerHitsThisBlast,
-                        &playerMessageDamageThisBlast)) {
-                    int rollbackOk = 1;
-                    if (barrelTurnRequested != 0U &&
-                        !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
-                            pending.sequence)) {
-                        rollbackOk = 0;
-                    }
-                    barrelRollbackRemoved(barrelChain, barrelChainCount);
-                    if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
-                        rollbackOk = 0;
-                    }
-                    doomRpg->random = randomBefore;
-                    EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u exploding=%u reason=runtime-radius-contract-or-player-death rollback=%s rng=yes player=yes world=yes\n",
-                           (unsigned int)pending.sequence,
-                           (unsigned int)pending.spriteIndex,
-                           (unsigned int)barrelChain[barrelCursor],
-                           rollbackOk ? "yes" : "NO");
-                    return rollbackOk ? 1 : 0;
-                }
-                barrelPlayerHits =
-                    (uint8_t)(barrelPlayerHits + playerHitsThisBlast);
-                if (playerMessageDamageThisBlast != 0U) {
-                    barrelLastPlayerMessageDamage =
-                        playerMessageDamageThisBlast;
-                }
-                printf("[BARRELRADIUS] BLAST seq=%u root=%u source=%u rngByte=%u damage=%u diagonal=%u triggered=%u playerHits=%u chainNow=%u/%u sound=5061-deferred shake=200ms-deferred\n",
-                       (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex,
-                       (unsigned int)barrelChain[barrelCursor],
-                       (unsigned int)blastByte,
-                       (unsigned int)blastDamage,
-                       (unsigned int)(blastDamage >> 1),
-                       (unsigned int)triggered,
-                       (unsigned int)playerHitsThisBlast,
-                       (unsigned int)barrelChainCount,
-                       (unsigned int)barrelExpectedChainCount);
+
+                waveStart = waveEnd;
             }
 
             if (barrelPlayerHits != 0U) {
@@ -3028,17 +3095,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     actionState.feedbackText,
                     sizeof(actionState.feedbackText),
                     "%u damage!",
-                    (unsigned int)barrelLastPlayerMessageDamage);
+                    (unsigned int)barrelTotalPlayerMessageDamage);
                 if (written <= 0 ||
-                    (size_t)written >= sizeof(actionState.feedbackText)) {
+                    (size_t)written >=
+                        sizeof(actionState.feedbackText)) {
                     int rollbackOk = 1;
                     if (barrelTurnRequested != 0U &&
                         !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
                             pending.sequence)) {
                         rollbackOk = 0;
                     }
-                    barrelRollbackRemoved(barrelChain, barrelChainCount);
-                    if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
+                    barrelRollbackRemoved(
+                        barrelChain, barrelChainCount);
+                    if (!EspNativeGameplayPlayerState_restore(
+                            &playerBefore)) {
                         rollbackOk = 0;
                     }
                     doomRpg->random = randomBefore;
@@ -3047,7 +3117,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     actionState.feedbackText[0] = '\0';
                     actionState.viewportFlashPending = 0U;
                     EspNativeGameplayWeapon_cancelAttack();
-                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    memset(&actionState.pending, 0,
+                           sizeof(actionState.pending));
                     printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u reason=player-feedback-format rollback=%s rng=yes player=yes world=yes\n",
                            (unsigned int)pending.sequence,
                            (unsigned int)pending.spriteIndex,
@@ -3063,10 +3134,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     FEEDBACK_DAMAGE_RED565;
                 playerFNVAfter =
                     EspNativeGameplayPlayerState_fingerprint();
-                printf("[BARRELRADIUS] PLAYER-COMMIT seq=%u hits=%u lastMessage=%u playerFNV=%08x->%08x feedback=DAMAGE flash=%ums\n",
+                printf("[BARRELRADIUS] PLAYER-COMMIT seq=%u hits=%u totalMessageDamage=%u playerFNV=%08x->%08x feedback=DAMAGE-AGGREGATED flash=%ums legacyHud=queued-messages/nativeBounded=one-summary\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)barrelPlayerHits,
-                       (unsigned int)barrelLastPlayerMessageDamage,
+                       (unsigned int)barrelTotalPlayerMessageDamage,
                        (unsigned int)playerFNVBefore,
                        (unsigned int)playerFNVAfter,
                        (unsigned int)ACTION_TRAP_DAMAGE_FLASH_MS);
@@ -3079,13 +3150,16 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         pending.sequence)) {
                     rollbackOk = 0;
                 }
-                barrelRollbackRemoved(barrelChain, barrelChainCount);
-                if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
+                barrelRollbackRemoved(
+                    barrelChain, barrelChainCount);
+                if (!EspNativeGameplayPlayerState_restore(
+                        &playerBefore)) {
                     rollbackOk = 0;
                 }
                 doomRpg->random = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
-                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                memset(&actionState.pending, 0,
+                       sizeof(actionState.pending));
                 printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u reason=preflight-runtime-chain-mismatch expected=%u actual=%u rollback=%s rng=yes player=yes world=yes\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
@@ -3309,7 +3383,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         }
 
         if (isBarrel) {
-            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-deferred barrelExplosionSound=5061-deferred radius=barrel-chain+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
+            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-deferred barrelExplosionSound=5061-deferred radius=barrel-chain-wave+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
                    (unsigned int)pending.weapon,
