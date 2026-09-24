@@ -430,7 +430,6 @@ int EspNativeGameplayCrateState_snapshotShapeValid(
 }
 
 int EspNativeGameplayCrateState_snapshot(
-    EspNativeGameplayCrateTransformSnapshot* outSnapshot) {int EspNativeGameplayCrateState_snapshot(
     EspNativeGameplayCrateTransformSnapshot* outSnapshot) {
     uint32_t i;
     uint16_t ordinal = 0U;
