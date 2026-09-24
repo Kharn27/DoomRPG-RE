@@ -2175,10 +2175,19 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                                        : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
             }
 
-            status = __real_EspNativeGameplayHub_handleAction(
-                ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN);
-            if (status != ESP_NATIVE_GAMEPLAY_HUB_CLOSED) return status;
-
+            /*
+             * Do not run the ordinary HUB close path before LOAD. That path
+             * validates restoration of the old HUD/world, but a successful
+             * checkpoint load replaces the entire gameplay session anyway.
+             * loadNow() already owns EspNativeGameplaySession_reset(), whose
+             * resident reset clears the HUB before rebuilding the checkpoint.
+             *
+             * Requiring the normal close first made LOAD fail with NOT_READY
+             * whenever the redesigned HUB's expected HUD-band witness differed
+             * from the current world HUD, even though the save itself had
+             * already passed readableSaveExists().
+             */
+            printf("[NATIVESAVE] LOAD-BEGIN page=system row=LOAD sessionReplace=yes hubClose=session-reset\n");
             lastOperation = 2U;
             lastOperationOk =
                 EspNativeGameplaySave_loadCheckpoint() ? 1U : 0U;
@@ -2188,10 +2197,11 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
             }
             /*
-             * The real HUB is already closed, but returning OK (not CLOSED)
-             * prevents resident gameplay from redrawing the old world after the
-             * session has been replaced. The next top-level session tick starts
-             * the normal FIRST_FRAME -> HUD -> cache prime sequence.
+             * Session reset/load has already cleared the HUB. Returning OK
+             * (not CLOSED) prevents resident gameplay from redrawing the old
+             * world after the session has been replaced. The next top-level
+             * session tick starts the normal FIRST_FRAME -> HUD -> cache-prime
+             * sequence.
              */
             return ESP_NATIVE_GAMEPLAY_HUB_OK;
         }
