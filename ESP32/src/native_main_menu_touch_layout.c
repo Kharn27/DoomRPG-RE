@@ -361,8 +361,10 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
     DoomRPG_setFontColor(doomRpg,
                          selected ? (armed ? 0xffffffffU : 0xffffa000U)
                                   : 0xffffffffU);
+    /* Legacy drawFont takes char* but only reads the glyph string. Keep these
+     * labels in flash/rodata instead of spending writable RAM on four copies. */
     DoomCanvas_drawFont(doomRpg->doomCanvas,
-                        label,
+                        (char*)label,
                         textX,
                         textY,
                         0,
