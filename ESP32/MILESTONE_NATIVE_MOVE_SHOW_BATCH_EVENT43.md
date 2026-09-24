@@ -184,3 +184,85 @@ pending dialog successfully opened -> releaseShowBatchOwnerForTransaction()
 `esp32-cyd` CI #675 passes at 47784 B static RAM and 764129 B flash. This
 review fix is code/CI validated only; the original event43 hardware PASS remains
 anchored to `48accf900d486d6633dd83a7568f781458e7685d`.
+
+
+## 2026-09-24 post-merge stack-headroom regression — REAL-CYD PASS
+
+A later integration run re-exposed a loopTask stack canary while opening the same
+line 102 door, this time during frame 2/4 before the SHOW event executed. The
+SHOW journal itself was already static; the remaining deep renderer peak came
+from two automatic `Scratch` snapshots in the native sprite renderer.
+
+The fix keeps no new large BSS owner:
+
+```text
+saved Scratch  -> bounded heap owner for one render
+after Scratch  -> removed
+restoration    -> compared directly against saved owner
+stack Scratch  -> 0 B
+```
+
+Runtime witness:
+
+```text
+[SPRITEPROFILE] STACK-OWNER scratchBytes=764 storage=heap
+                stackScratchBytes=0 workspaceBytes=4404
+                reason=loopTask-headroom
+```
+
+Real CYD then completed the full door and event43 sequence:
+
+```text
+[DOORANIM] FRAME 1/4 ... render=ok
+[DOORANIM] FRAME 2/4 ... render=ok
+[DOORANIM] FRAME 3/4 ... render=ok
+[DOORANIM] FRAME 4/4 ... render=ok
+[DOORANIM] COMPLETE ... transaction=committed
+
+[MOVEEVENT] ENTER ... tile=377 ... status=SHOW_OK event=43 eligible=4 opcode=7
+[MOVEEVENT] SHOW-BATCH event=43 count=4 ... mutation=yes
+[MOVEEVENT] SHOW-LEASE RELEASE ... reason=frame-commit ... active=1->0
+
+[MOVEEVENT] EXIT ... tile=377 ... status=DOOR_OK event=43 eligible=1 opcode=16 line=102
+[DOORANIM] FRAME 1/4 ... render=ok
+...
+[DOORANIM] FRAME 4/4 ... render=ok
+[MOVEEVENT] COMMIT ... render=ok rollbackLease=closed
+```
+
+Hardware-tested stack-fix code head:
+`30be906f949bc05d4d9dfc899b1de3581dc95e10`.
+
+The Bull Demon / Lost Soul line102 room is not the separate review corner: it
+is `ENTER SHOW event43`, followed on the next move by `EXIT CLOSELINE`.
+
+## EXIT SHOW -> ENTER DIALOG reachability census — REAL-CYD PASS
+
+Rather than continuing to search Entrance manually, a temporary read-only census
+walked all 93 event tiles and all four cardinal adjacencies. For each direction
+it applied the same native event-filter rules twice: once against immutable
+initial BSP state with no removed commands, and once against the current
+restored script state. It looked specifically for:
+
+```text
+source EXIT  = homogeneous eligible EV_SHOW batch, count <= 4
+destination ENTER = first eligible EV_DIALOG or EV_DIALOGNOBACK
+```
+
+It performed no SHOW preflight, no topology mutation, no script mutation and no
+allocation.
+
+Real-CYD witness:
+
+```text
+[MOVEEVENTCENSUS] SUMMARY events=93 candidates=0 mode=initial+current mutation=no allocation=no
+```
+
+Conclusion: **Entrance has no reachable movement pair of this exact shape** in
+either its initial script state or the tested checkpoint state. The review fix
+remains retained as defensive transaction cleanup, but there is no Entrance
+hardware route available to exercise it directly.
+
+The diagnostic commit was then removed. GitHub comparison from the pre-probe
+tree to the post-removal tree reports zero changed files, so no census code is
+left in the merge candidate.

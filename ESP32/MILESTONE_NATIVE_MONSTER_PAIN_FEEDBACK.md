@@ -250,3 +250,18 @@ The code boundary is locked at
 `b7bf6bb692f5987f9307a7c02a42601fcf3232e1`. Only documentation may follow on
 this branch. After merge, recover the exact new GitHub `main` SHA before creating
 the next `agent/*` branch.
+
+## Later real-CYD message witness — Dodged
+
+During the later full Entrance regression run, the user physically observed the
+native monster-miss top-bar message:
+
+```text
+Dodged!
+```
+
+This validates the already-implemented legacy miss branch in
+`EspNativeGameplayMonsterRetaliation`: a committed monster miss consumes its
+combat RNG, leaves PlayerState unchanged, and presents the bounded `"Dodged!"`
+message. This is an additional presentation witness; it does not widen the
+monster attack semantics owned by this milestone.

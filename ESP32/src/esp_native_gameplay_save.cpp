@@ -734,7 +734,7 @@ bool loadedV6Valid(
            scriptShapeValid(record.script, record.core) &&
            lineShapeValid(record.lines, record.core) &&
            actionRemovedShapeValid(record.actionRemoved, record.core) &&
-           EspNativeGameplayCrateState_snapshotShapeValid(
+           EspNativeGameplayCrateState_snapshotFileShapeValid(
                &crateTransforms, record.core.runtimeFNV1a,
                record.core.targetMapId) &&
            crateTransformsDisjoint(record.actionRemoved, crateTransforms);
@@ -770,7 +770,7 @@ bool loadedV7Valid(
            scriptShapeValid(record.script, record.core) &&
            lineShapeValid(record.lines, record.core) &&
            actionRemovedShapeValid(record.actionRemoved, record.core) &&
-           EspNativeGameplayCrateState_snapshotShapeValid(
+           EspNativeGameplayCrateState_snapshotFileShapeValid(
                &crateTransforms, record.core.runtimeFNV1a,
                record.core.targetMapId) &&
            crateTransformsDisjoint(record.actionRemoved, crateTransforms) &&
@@ -801,23 +801,47 @@ bool loadedV8Valid(
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
     const EspNativeGameplayMonsterStateSnapshot& monsters) {
-    return coreShapeValid(record.core, kMagicV8, kVersionV8,
-                          (uint16_t)kRecordBytesV8) &&
-           record.core.recordCrc32 ==
-               recordCrcV8(
-                   *reinterpret_cast<const NativeSaveRecordV5*>(&record),
-                   crateTransforms, automap, monsters) &&
-           resourceShapeValid(record.resources, record.core) &&
-           scriptShapeValid(record.script, record.core) &&
-           lineShapeValid(record.lines, record.core) &&
-           actionRemovedShapeValid(record.actionRemoved, record.core) &&
-           EspNativeGameplayCrateState_snapshotShapeValid(
-               &crateTransforms, record.core.runtimeFNV1a,
-               record.core.targetMapId) &&
-           crateTransformsDisjoint(record.actionRemoved, crateTransforms) &&
-           automapShapeValid(automap, record.core) &&
-           EspNativeGameplayMonsterState_snapshotShapeValid(
-               &monsters, record.core.runtimeFNV1a);
+    const bool coreOk =
+        coreShapeValid(record.core, kMagicV8, kVersionV8,
+                       (uint16_t)kRecordBytesV8);
+    const uint32_t actualCrc =
+        recordCrcV8(*reinterpret_cast<const NativeSaveRecordV5*>(&record),
+                    crateTransforms, automap, monsters);
+    const bool crcOk = record.core.recordCrc32 == actualCrc;
+    const bool resourcesOk = resourceShapeValid(record.resources, record.core);
+    const bool scriptOk = scriptShapeValid(record.script, record.core);
+    const bool linesOk = lineShapeValid(record.lines, record.core);
+    const bool removedOk =
+        actionRemovedShapeValid(record.actionRemoved, record.core);
+    const bool cratesOk =
+        EspNativeGameplayCrateState_snapshotFileShapeValid(
+            &crateTransforms, record.core.runtimeFNV1a,
+            record.core.targetMapId) != 0;
+    const bool disjointOk =
+        crateTransformsDisjoint(record.actionRemoved, crateTransforms);
+    const bool automapOk = automapShapeValid(automap, record.core);
+    const bool monstersOk =
+        EspNativeGameplayMonsterState_snapshotShapeValid(
+            &monsters, record.core.runtimeFNV1a) != 0;
+    const bool valid = coreOk && crcOk && resourcesOk && scriptOk && linesOk &&
+                       removedOk && cratesOk && disjointOk && automapOk &&
+                       monstersOk;
+    if (!valid) {
+        printf("[NATIVESAVE] V8-VALIDATE core=%u crc=%u storedCrc=%08x actualCrc=%08x resources=%u script=%u lines=%u removed=%u cratesFile=%u disjoint=%u automap=%u monsters=%u catalogResolution=deferred failClosed=yes\n",
+               coreOk ? 1U : 0U,
+               crcOk ? 1U : 0U,
+               (unsigned int)record.core.recordCrc32,
+               (unsigned int)actualCrc,
+               resourcesOk ? 1U : 0U,
+               scriptOk ? 1U : 0U,
+               linesOk ? 1U : 0U,
+               removedOk ? 1U : 0U,
+               cratesOk ? 1U : 0U,
+               disjointOk ? 1U : 0U,
+               automapOk ? 1U : 0U,
+               monstersOk ? 1U : 0U);
+    }
+    return valid;
 }
 
 bool recordV8Valid(
@@ -981,12 +1005,37 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
     if (fileBytes == kRecordBytesV8) {
         EspNativeGameplayCrateTransformSnapshot crateTransforms;
         EspMapAutomapSnapshot automap;
-        EspNativeGameplayMonsterStateSnapshot* monsters =
+        EspNativeGameplayMonsterStateSnapshot* monsters;
+
+        /*
+         * Cold MENU_MAIN has substantially less contiguous 8-bit heap than a
+         * resident gameplay session. The SD File handle itself owns temporary
+         * heap, so reserving the 1612-byte V8 monster workspace while that
+         * handle is open can spuriously turn a valid checkpoint into "No Save".
+         *
+         * We already know the exact file length here. Close the size-probe
+         * handle first, reserve the bounded monster workspace, then reopen for
+         * the exact read. Validation and on-disk format remain unchanged.
+         */
+        file.close();
+        monsters =
             (EspNativeGameplayMonsterStateSnapshot*)malloc(sizeof(*monsters));
         if (monsters == nullptr) {
-            file.close();
+            printf("[NATIVESAVE] READABLE-V8 FAILED path=%s stage=monster-workspace bytes=%u failClosed=yes\n",
+                   path,
+                   (unsigned int)sizeof(*monsters));
             return false;
         }
+        file = SD.open(path, FILE_READ);
+        if (!file || (size_t)file.size() != kRecordBytesV8) {
+            if (file) file.close();
+            free(monsters);
+            printf("[NATIVESAVE] READABLE-V8 FAILED path=%s stage=reopen expectedBytes=%u failClosed=yes\n",
+                   path,
+                   (unsigned int)kRecordBytesV8);
+            return false;
+        }
+
         memset(&crateTransforms, 0, sizeof(crateTransforms));
         memset(&automap, 0, sizeof(automap));
         memset(monsters, 0, sizeof(*monsters));
@@ -1008,6 +1057,11 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         const bool valid =
             got == sizeof(*monsters) &&
             loadedV8Valid(*outRecord, crateTransforms, automap, *monsters);
+        printf("[NATIVESAVE] READABLE-V8 path=%s bytes=%u monsterWorkspace=%u allocation=before-reopen crateValidation=file-shape/catalog-deferred result=%s\n",
+               path,
+               (unsigned int)fileBytes,
+               (unsigned int)sizeof(*monsters),
+               valid ? "valid" : "invalid");
         free(monsters);
         if (!valid) {
             memset(outRecord, 0, sizeof(*outRecord));

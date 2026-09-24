@@ -204,10 +204,17 @@ static void clearShowBatchOwner(void) {
     memset(&showBatchOwner, 0, sizeof(showBatchOwner));
 }
 
-static void releaseShowBatchOwnerForTransaction(void) {
+static void releaseShowBatchOwnerForTransaction(const char* reason) {
     if ((transaction.exitResult.codeId == ESP_MAP_OPCODE_SHOW ||
          transaction.enterResult.codeId == ESP_MAP_OPCODE_SHOW) &&
         showBatchOwner.active != 0U) {
+        printf("[MOVEEVENT] SHOW-LEASE RELEASE seq=%u reason=%s event=%u count=%u active=1->0 dialogPending=%u worldRendered=%u\n",
+               (unsigned int)transaction.sequence,
+               reason != NULL ? reason : "unknown",
+               (unsigned int)showBatchOwner.eventIndex,
+               (unsigned int)showBatchOwner.count,
+               (unsigned int)transaction.dialogPending,
+               (unsigned int)transaction.worldRendered);
         clearShowBatchOwner();
     }
 }
@@ -1008,18 +1015,25 @@ void EspNativeGameplayMoveEvents_onFrameResult(int renderOk) {
     if (renderOk) {
         if (transaction.dialogPending != 0U) {
             transaction.worldRendered = 1U;
-            printf("[MOVEEVENT] WORLD-READY seq=%u enterDialog=opcode%u/event%u/cmd%u rollbackLease=pending\n",
+            printf("[MOVEEVENT] WORLD-READY seq=%u enterDialog=opcode%u/event%u/cmd%u rollbackLease=pending showOwnerActive=%u showEvent=%u showCount=%u\n",
                    (unsigned int)transaction.sequence,
                    (unsigned int)transaction.enterResult.codeId,
                    (unsigned int)transaction.enterResult.eventIndex,
-                   (unsigned int)transaction.enterResult.commandOffset);
+                   (unsigned int)transaction.enterResult.commandOffset,
+                   (unsigned int)showBatchOwner.active,
+                   (unsigned int)(showBatchOwner.active != 0U
+                                      ? showBatchOwner.eventIndex
+                                      : UINT16_MAX),
+                   (unsigned int)(showBatchOwner.active != 0U
+                                      ? showBatchOwner.count
+                                      : 0U));
             return;
         }
         printf("[MOVEEVENT] COMMIT seq=%u exitEffect=%u enterEffect=%u render=ok rollbackLease=closed\n",
                (unsigned int)transaction.sequence,
                (unsigned int)transaction.exitRollback,
                (unsigned int)transaction.enterRollback);
-        releaseShowBatchOwnerForTransaction();
+        releaseShowBatchOwnerForTransaction("frame-commit");
         memset(&transaction, 0, sizeof(transaction));
     }
     else {
@@ -1063,7 +1077,7 @@ int EspNativeGameplayMoveEvents_finishPendingDialog(uint32_t sequence) {
            (unsigned int)transaction.enterResult.codeId,
            (unsigned int)transaction.enterResult.eventIndex,
            (unsigned int)transaction.enterResult.commandOffset);
-    releaseShowBatchOwnerForTransaction();
+    releaseShowBatchOwnerForTransaction("dialog-finish");
     memset(&transaction, 0, sizeof(transaction));
     return 1;
 }
@@ -1085,8 +1099,25 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
     uint32_t enterFlags;
 
     if (expectedBeforeView == NULL || preparedAfterView == NULL ||
-        ioResult == NULL || transaction.active || showBatchOwner.active ||
+        ioResult == NULL ||
         !movementFlags(ioResult, preparedAfterView, &exitFlags, &enterFlags)) {
+        return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
+    }
+    if (transaction.active || showBatchOwner.active) {
+        printf("[MOVEEVENT] BLOCK seq=%u reason=%s transactionActive=%u transactionSeq=%u showOwnerActive=%u showEvent=%u showCount=%u failClosed=yes\n",
+               (unsigned int)ioResult->sequence,
+               showBatchOwner.active != 0U && transaction.active == 0U
+                   ? "stale-show-owner"
+                   : "transaction-busy",
+               (unsigned int)transaction.active,
+               (unsigned int)transaction.sequence,
+               (unsigned int)showBatchOwner.active,
+               (unsigned int)(showBatchOwner.active != 0U
+                                  ? showBatchOwner.eventIndex
+                                  : UINT16_MAX),
+               (unsigned int)(showBatchOwner.active != 0U
+                                  ? showBatchOwner.count
+                                  : 0U));
         return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
     }
     clearShowBatchOwner();
@@ -1163,6 +1194,20 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
             (uint8_t)(enterStatus == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY
                           ? 1U : 0U);
         transaction.active = 1U;
+
+        if (transaction.dialogPending != 0U &&
+            exitResult.codeId == ESP_MAP_OPCODE_SHOW) {
+            printf("[MOVEEVENT] SHOW-DIALOG-LEASE ARM seq=%u sourceTile=%u destTile=%u exitEvent=%u showCount=%u enterEvent=%u enterOpcode=%u enterCmd=%u showOwnerActive=%u rollbackLease=pending\n",
+                   (unsigned int)ioResult->sequence,
+                   (unsigned int)ioResult->sourceTile,
+                   (unsigned int)ioResult->destTile,
+                   (unsigned int)exitResult.eventIndex,
+                   (unsigned int)exitResult.showBatchCount,
+                   (unsigned int)enterResult.eventIndex,
+                   (unsigned int)enterResult.codeId,
+                   (unsigned int)enterResult.commandOffset,
+                   (unsigned int)showBatchOwner.active);
+        }
     }
 
     return ESP_NATIVE_GAMEPLAY_DISPATCH_OK;

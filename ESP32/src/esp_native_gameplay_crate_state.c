@@ -328,10 +328,11 @@ const EspNativeGameplayCrateStateView* EspNativeGameplayCrateState_view(void) {
                ? &crateState->view : NULL;
 }
 
-int EspNativeGameplayCrateState_snapshotShapeValid(
+static int snapshotShapeValidInternal(
     const EspNativeGameplayCrateTransformSnapshot* snapshot,
     uint32_t expectedArenaFNV1a,
-    uint8_t expectedTargetMapId) {
+    uint8_t expectedTargetMapId,
+    int requireCatalogTargets) {
     uint32_t expectedBytes;
     uint32_t codeBytes;
     uint32_t validTailBits;
@@ -386,7 +387,6 @@ int EspNativeGameplayCrateState_snapshotShapeValid(
     if (codeBytes > ESP_NATIVE_GAMEPLAY_CRATE_SNAPSHOT_CODE_BYTES) return 0;
     for (i = 0U; i < snapshot->spriteCount; ++i) {
         uint8_t code;
-        uint16_t tile;
         if ((snapshot->transformedBits[i >> 3U] &
              (uint8_t)(1U << (i & 7U))) == 0U) {
             continue;
@@ -395,7 +395,11 @@ int EspNativeGameplayCrateState_snapshotShapeValid(
                              ? (snapshot->defCodes[ordinal >> 1U] & 0x0fU)
                              : ((snapshot->defCodes[ordinal >> 1U] >> 4U) &
                                 0x0fU));
-        if (!targetTileForCode(code, &tile)) return 0;
+        if (code < 1U || code > 9U) return 0;
+        if (requireCatalogTargets != 0) {
+            uint16_t tile;
+            if (!targetTileForCode(code, &tile)) return 0;
+        }
         ++ordinal;
     }
     if (ordinal != snapshot->transformedCount) return 0;
@@ -407,6 +411,22 @@ int EspNativeGameplayCrateState_snapshotShapeValid(
         if (snapshot->defCodes[i] != 0U) return 0;
     }
     return snapshot->stateFNV1a == crateSnapshotFNV(snapshot);
+}
+
+int EspNativeGameplayCrateState_snapshotFileShapeValid(
+    const EspNativeGameplayCrateTransformSnapshot* snapshot,
+    uint32_t expectedArenaFNV1a,
+    uint8_t expectedTargetMapId) {
+    return snapshotShapeValidInternal(
+        snapshot, expectedArenaFNV1a, expectedTargetMapId, 0);
+}
+
+int EspNativeGameplayCrateState_snapshotShapeValid(
+    const EspNativeGameplayCrateTransformSnapshot* snapshot,
+    uint32_t expectedArenaFNV1a,
+    uint8_t expectedTargetMapId) {
+    return snapshotShapeValidInternal(
+        snapshot, expectedArenaFNV1a, expectedTargetMapId, 1);
 }
 
 int EspNativeGameplayCrateState_snapshot(

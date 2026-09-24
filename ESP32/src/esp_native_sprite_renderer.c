@@ -134,6 +134,7 @@ typedef struct TransientWorldSprite_s {
 } TransientWorldSprite;
 
 static TransientWorldSprite transientWorldSprite;
+static uint8_t scratchOwnerLogged;
 
 static uint16_t le16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -271,6 +272,37 @@ static void restoreScratch(Render_t* render, const Scratch* scratch) {
     render->tmpLine = scratch->tmpLine;
     memcpy(render->columnScale, scratch->columnScale,
            sizeof(scratch->columnScale));
+}
+
+static int scratchMatches(const Render_t* render, const Scratch* scratch) {
+    return render != NULL && scratch != NULL &&
+           render->viewCos_ == scratch->viewCos_ &&
+           render->viewSin_ == scratch->viewSin_ &&
+           render->viewTransX == scratch->viewTransX &&
+           render->viewSin == scratch->viewSin &&
+           render->viewCos == scratch->viewCos &&
+           render->viewTransY == scratch->viewTransY &&
+           render->viewX == scratch->viewX &&
+           render->viewY == scratch->viewY &&
+           render->viewZ == scratch->viewZ &&
+           render->viewAngle == scratch->viewAngle &&
+           render->lineCount == scratch->lineCount &&
+           render->lineRasterCount == scratch->lineRasterCount &&
+           render->nodeCount == scratch->nodeCount &&
+           render->nodeRasterCount == scratch->nodeRasterCount &&
+           render->spriteCount == scratch->spriteCount &&
+           render->spriteRasterCount == scratch->spriteRasterCount &&
+           render->screenLeft == scratch->screenLeft &&
+           render->screenTop == scratch->screenTop &&
+           render->screenRight == scratch->screenRight &&
+           render->screenBottom == scratch->screenBottom &&
+           render->numLines == scratch->numLines &&
+           render->spanMode == scratch->spanMode &&
+           render->pixels == scratch->pixels &&
+           memcmp(&render->tmpLine, &scratch->tmpLine,
+                  sizeof(scratch->tmpLine)) == 0 &&
+           memcmp(render->columnScale, scratch->columnScale,
+                  sizeof(scratch->columnScale)) == 0;
 }
 
 static int setupDrawView(Render_t* render,
@@ -1089,8 +1121,7 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
     Render_t* render = (Render_t*)renderBase;
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
-    Scratch saved;
-    Scratch after;
+    Scratch* saved = NULL;
     Sources sources;
     SpriteWorkspace* workspace = NULL;
     EspNativeSpriteStats stats;
@@ -1111,9 +1142,21 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
 
     workspace = (SpriteWorkspace*)malloc(sizeof(*workspace));
     if (workspace == NULL) return 0;
+    saved = (Scratch*)malloc(sizeof(*saved));
+    if (saved == NULL) {
+        free(workspace);
+        return 0;
+    }
     memset(workspace, 0, sizeof(*workspace));
+    memset(saved, 0, sizeof(*saved));
     memset(&stats, 0, sizeof(stats));
-    saveScratch(render, &saved);
+    saveScratch(render, saved);
+    if (scratchOwnerLogged == 0U) {
+        scratchOwnerLogged = 1U;
+        printf("[SPRITEPROFILE] STACK-OWNER scratchBytes=%u storage=heap stackScratchBytes=0 workspaceBytes=%u reason=loopTask-headroom\n",
+               (unsigned int)sizeof(*saved),
+               (unsigned int)sizeof(*workspace));
+    }
 
     if (!EspNativeBspVisibility_build(render, &workspace->visibility) ||
         !setupDrawView(render, view, &workspace->visibility)) {
@@ -1174,9 +1217,9 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
 
 done:
     if (opened || EspAssetPack_isOpen()) EspAssetPack_close();
-    restoreScratch(render, &saved);
-    saveScratch(render, &after);
-    if (memcmp(&saved, &after, sizeof(saved)) != 0) ok = 0;
+    restoreScratch(render, saved);
+    if (!scratchMatches(render, saved)) ok = 0;
+    free(saved);
     free(workspace);
     *outStats = stats;
     return ok;

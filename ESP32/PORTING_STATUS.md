@@ -5,17 +5,22 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = da397ce44dcd75114ca4d031be29b5e7d87e7d5a
-branch = agent/esp32-touch-feedback-facing-race
-hardware-tested code head = 6ab5d25216b52f096563a95749f1dbd8b33712dd
+current main = dcd1ac18bd1eed35433e662933f568c9c1e172fe
+branch = agent/esp32-move-show-dialog-lease-hw
+cold-load hardware-tested code head = 133f67882336f9f70f6294369e1571cde5a07699
+door/event43 stack-fix hardware-tested code head = 30be906f949bc05d4d9dfc899b1de3581dc95e10
 event43 original hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
-esp32-cyd CI #693 = SUCCESS
-static RAM = 45736 B
-flash = 764741 B
-rebased boot status = REAL-CYD PASS
-checkpoint LOAD = REAL-CYD PASS from SYS and cold main menu
-core RNG initial seed = REAL-CYD PASS; first post-LOAD crate consequence first=99
-rebased full event43 regression = not rerun after rebase
+esp32-cyd CI #714 = SUCCESS
+static RAM = 45744 B
+flash = 766865 B
+checkpoint LOAD = REAL-CYD PASS from SYS and cold MENU_MAIN
+cold V8 validation = catalog-independent file-shape PASS; live crate catalog validation retained at restore
+line102 door stack = REAL-CYD PASS after sprite Scratch moved off loopTask stack
+event43 345->377 SHOW x4 + 377->409 CLOSELINE = REAL-CYD PASS on stack-fix head
+Missed + Dodged presentation = REAL-CYD PASS
+SHOW-exit + ENTER-dialog lease fix = defensive code retained; Entrance census found 0 reachable candidate pairs
+temporary SHOW/dialog census = REAL-CYD PASS, then removed exactly
+final code tree after probe removal = hardware-tested 133f678 code + docs only
 status = MERGE-READY
 ```
 
@@ -24,9 +29,36 @@ feedback redesign with the later native gameplay, V8 checkpoint, CHECK_KEY and
 event43 work. The boot-time contiguous-heap regression is fixed, checkpoint
 LOAD has been revalidated from both SYS and the cold main menu, and the missing
 initial RNG seed has been hardware-validated with a non-zero crate consequence.
-The older event43 PASS remains anchored to its original hardware-tested code
-head; do not rewrite it as a post-rebase event43 PASS without a fresh serial
-witness.
+The original event43 PASS remains anchored to its historical code head, and the
+same Entrance sequence has now also been freshly revalidated post-rebase after
+the sprite-renderer stack fix: line102 opens 4/4, event43 commits SHOW x4 on
+345->377, the SHOW lease closes on rendered frame commit, and 377->409 executes
+only CLOSELINE 102 with another complete 4-frame animation.
+
+### SHOW-exit -> ENTER-dialog reachability census — REAL-CYD PASS
+
+The review fix that releases the static SHOW rollback owner after a destination
+dialog opens remains correct defensive transaction hygiene. A temporary,
+allocation-free/read-only census scanned all 93 Entrance events for all four
+cardinal movement directions using both initial BSP script state and the current
+restored checkpoint state.
+
+Real-CYD result:
+
+```text
+[MOVEEVENTCENSUS] SUMMARY events=93 candidates=0 mode=initial+current mutation=no allocation=no
+```
+
+Therefore Entrance contains **no reachable adjacent movement pair** of the exact
+form owned by that review corner: homogeneous EXIT-side EV_SHOW batch followed
+by first-eligible ENTER-side EV_DIALOG/EV_DIALOGNOBACK. The Bull Demon/Lost Soul
+line102 room is confirmed to be a different sequence: ENTER SHOW event43, then
+later EXIT CLOSELINE.
+
+The temporary census was removed after this witness. GitHub comparison confirms
+the add/remove probe commits leave **zero code-file diff** versus the documented
+pre-probe tree; from hardware-tested cold-load code head `133f678...` to the
+post-removal tree, only documentation files differ.
 
 ### In-game HUB redesign — focused REAL-CYD smoke pass
 
