@@ -544,7 +544,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET cards=74x28 logical=148x56 physical labels=START|LOAD|OPTIONS|HELP style=doom-tech-industrial cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET cards=68x23 logical=136x46 physical labels=START|LOAD|OPTIONS|HELP style=doom-tech-industrial cursorPatchBytes=0\n");
 
     SDL_RenderPresent(NULL);
 

@@ -117,7 +117,7 @@ static void registerMainMenuHitboxOverlay(void) {
                                                right[item],
                                                bottom[item]);
     }
-    printf("[HITBOX] MAIN dashboard overlay zones=4 target=74x28 logical framebuffer=untouched\n");
+    printf("[HITBOX] MAIN dashboard overlay zones=4 target=68x23 logical framebuffer=untouched\n");
 }
 #endif
 

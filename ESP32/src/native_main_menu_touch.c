@@ -147,7 +147,7 @@ int DoomRPG_esp32MainMenuTouchPrepare(struct DoomRPG_s* doomRpgBase) {
     confirmCount = 0U;
     missCount = 0U;
 
-    printf("[MENUTOUCH] PREPARED dashboard=2x2 cursorPatchBytes=0 targetLogical=74x28 targetPhysical=148x56\n");
+    printf("[MENUTOUCH] PREPARED dashboard=2x2 cursorPatchBytes=0 targetLogical=68x23 targetPhysical=136x46\n");
     return 1;
 }
 
