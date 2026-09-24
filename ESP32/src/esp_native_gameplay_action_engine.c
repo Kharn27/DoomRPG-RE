@@ -815,15 +815,18 @@ static int findRadiusSpriteOnTile(uint16_t tile, ActionTarget* outTarget) {
 static int barrelRadiusCellSupported(uint16_t tile,
                                      const EspPlayerViewState* view,
                                      ActionTarget* outTarget,
-                                     int* outHasBarrel) {
+                                     int* outHasBarrel,
+                                     int* outIsPlayer) {
     uint16_t lineIndex;
     uint8_t lineType;
     uint8_t lineSubtype;
     int lineResult;
     int spriteResult;
 
-    if (outTarget == NULL || outHasBarrel == NULL || view == NULL) return 0;
+    if (outTarget == NULL || outHasBarrel == NULL || outIsPlayer == NULL ||
+        view == NULL) return 0;
     *outHasBarrel = 0;
+    *outIsPlayer = 0;
     memset(outTarget, 0, sizeof(*outTarget));
     outTarget->spriteIndex = ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE;
     outTarget->lineIndex = ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE;
@@ -831,8 +834,12 @@ static int barrelRadiusCellSupported(uint16_t tile,
 
     if (((uint16_t)(view->destY >> 6) * MAP_WIDTH +
          (uint16_t)(view->destX >> 6)) == tile) {
+        /* Game_findMapEntityXYFlag() tests flags&0x100 and returns the player
+         * before consulting entityDb. Radius z=0 therefore always hurts the
+         * player on this tile, regardless of any line/sprite underneath. */
         outTarget->type = 0xfeU; /* player sentinel for diagnostics */
-        return 0;
+        *outIsPlayer = 1;
+        return 1;
     }
 
     lineResult = findLinkedLineBlocker(tile, &lineIndex, &lineType,
@@ -843,8 +850,12 @@ static int barrelRadiusCellSupported(uint16_t tile,
         outTarget->isLine = 1U;
         outTarget->type = lineType;
         outTarget->subtype = lineSubtype;
-        /* Legacy Game_hurtEntityAt explicitly ignores jammed doors and power
-         * couplings for non-missile barrel blast z=0. */
+        /* A line without an EntityDef but with flags&24 is linked as the
+         * generic type-9 fallback. Entity_initspawn() leaves it non-hurtable,
+         * so Game_hurtEntityAt() finds it first and no-ops. Native
+         * findLinkedLineBlocker() represents that fallback as type=0/sub=255.
+         * Jammed doors and power couplings are also explicit radius no-ops. */
+        if (lineType == 0U && lineSubtype == 0xffU) return 1;
         return lineType == ACTION_ENTITY_DESTRUCTIBLE &&
                (lineSubtype == ACTION_DESTRUCTIBLE_JAMMED_SUBTYPE ||
                 lineSubtype == 4U);
@@ -911,16 +922,19 @@ static int barrelChainPreflight(uint16_t primarySprite,
             uint16_t tile;
             ActionTarget target;
             int hasBarrel;
+            int isPlayer;
 
             if (tileX < 0 || tileX >= MAP_WIDTH ||
                 tileY < 0 || tileY >= MAP_WIDTH) {
                 continue;
             }
             tile = (uint16_t)(tileY * MAP_WIDTH + tileX);
-            if (!barrelRadiusCellSupported(tile, view, &target, &hasBarrel)) {
+            if (!barrelRadiusCellSupported(tile, view, &target,
+                                           &hasBarrel, &isPlayer)) {
                 *outUnsupported = target;
                 return 0;
             }
+            (void)isPlayer;
             if (!hasBarrel || removed(target.spriteIndex) ||
                 barrelChainContains(chain, count, target.spriteIndex)) {
                 continue;
@@ -947,15 +961,21 @@ static void barrelRollbackRemoved(const uint16_t* chain, uint8_t count) {
 
 static int barrelTriggerNeighbors(uint16_t sourceSprite,
                                   const EspPlayerViewState* view,
+                                  uint8_t blastDamage,
                                   uint16_t* chain,
                                   uint8_t* ioCount,
-                                  uint8_t* outTriggered) {
+                                  uint8_t* outTriggered,
+                                  uint8_t* outPlayerHits,
+                                  uint8_t* outLastPlayerMessageDamage) {
     EspMapSprite source;
     uint8_t n;
     uint8_t triggered = 0U;
+    uint8_t playerHits = 0U;
+    uint8_t lastPlayerMessageDamage = 0U;
 
     if (view == NULL || chain == NULL || ioCount == NULL ||
-        outTriggered == NULL ||
+        outTriggered == NULL || outPlayerHits == NULL ||
+        outLastPlayerMessageDamage == NULL || blastDamage == 0U ||
         !__real_EspMapRuntime_getMapSprite(sourceSprite, &source)) {
         return 0;
     }
@@ -966,14 +986,56 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
         uint16_t tile;
         ActionTarget target;
         int hasBarrel;
+        int isPlayer;
 
         if (tileX < 0 || tileX >= MAP_WIDTH ||
             tileY < 0 || tileY >= MAP_WIDTH) {
             continue;
         }
         tile = (uint16_t)(tileY * MAP_WIDTH + tileX);
-        if (!barrelRadiusCellSupported(tile, view, &target, &hasBarrel)) {
+        if (!barrelRadiusCellSupported(tile, view, &target,
+                                       &hasBarrel, &isPlayer)) {
             return 0;
+        }
+        if (isPlayer) {
+            EspNativeGameplayPlayerDamageResult damageResult;
+            EspNativeGameplayPlayerDamageStatus damageStatus;
+            uint8_t component = n < 4U
+                                    ? blastDamage
+                                    : (uint8_t)(blastDamage >> 1U);
+            memset(&damageResult, 0, sizeof(damageResult));
+            if (component == 0U) continue;
+            damageStatus = EspNativeGameplayPlayerState_applyDamageNonlethal(
+                component, component, &damageResult);
+            if (damageStatus != ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK) {
+                printf("[BARRELRADIUS] PLAYER-DEFER source=%u tile=%u relation=%s component=%u status=%u hp=%u armor=%u mutation=%s\n",
+                       (unsigned int)sourceSprite,
+                       (unsigned int)tile,
+                       n < 4U ? "cardinal" : "diagonal",
+                       (unsigned int)component,
+                       (unsigned int)damageStatus,
+                       (unsigned int)damageResult.healthBefore,
+                       (unsigned int)damageResult.armorBefore,
+                       damageStatus ==
+                               ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED
+                           ? "no/lethal-deferred" : "no/invalid");
+                return 0;
+            }
+            ++playerHits;
+            lastPlayerMessageDamage = (uint8_t)(component * 2U);
+            printf("[BARRELRADIUS] PLAYER-HIT source=%u tile=%u relation=%s component=%u messageDamage=%u hp=%u->%u armor=%u->%u playerFNV=%08x->%08x mutation=yes\n",
+                   (unsigned int)sourceSprite,
+                   (unsigned int)tile,
+                   n < 4U ? "cardinal" : "diagonal",
+                   (unsigned int)component,
+                   (unsigned int)lastPlayerMessageDamage,
+                   (unsigned int)damageResult.healthBefore,
+                   (unsigned int)damageResult.healthAfter,
+                   (unsigned int)damageResult.armorBefore,
+                   (unsigned int)damageResult.armorAfter,
+                   (unsigned int)damageResult.stateFNVBefore,
+                   (unsigned int)damageResult.stateFNVAfter);
+            continue;
         }
         if (!hasBarrel || removed(target.spriteIndex)) continue;
         if (barrelChainContains(chain, *ioCount, target.spriteIndex)) {
@@ -991,6 +1053,8 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
                n < 4U ? "cardinal" : "diagonal");
     }
     *outTriggered = triggered;
+    *outPlayerHits = playerHits;
+    *outLastPlayerMessageDamage = lastPlayerMessageDamage;
     return 1;
 }
 
@@ -2088,6 +2152,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         uint8_t barrelChainCount = 0U;
         uint8_t barrelExpectedChainCount = 0U;
         uint8_t barrelBlastRngCalls = 0U;
+        uint8_t barrelPlayerHits = 0U;
+        uint8_t barrelLastPlayerMessageDamage = 0U;
         uint16_t barrelChain[ACTION_BARREL_CHAIN_MAX];
         int16_t barrelWorldX = 0;
         int16_t barrelWorldY = 0;
@@ -2798,6 +2864,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 uint8_t blastByte = 0U;
                 uint8_t blastDamage;
                 uint8_t triggered = 0U;
+                uint8_t playerHitsThisBlast = 0U;
+                uint8_t playerMessageDamageThisBlast = 0U;
 
                 if (!__real_EspMapRuntime_getMapSprite(
                         barrelChain[barrelCursor], &explodingSprite)) {
@@ -2912,8 +2980,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 ++barrelBlastRngCalls;
                 blastDamage = (uint8_t)((blastByte / 11U) + 5U);
                 if (!barrelTriggerNeighbors(
-                        barrelChain[barrelCursor], view,
-                        barrelChain, &barrelChainCount, &triggered)) {
+                        barrelChain[barrelCursor], view, blastDamage,
+                        barrelChain, &barrelChainCount, &triggered,
+                        &playerHitsThisBlast,
+                        &playerMessageDamageThisBlast)) {
                     int rollbackOk = 1;
                     if (barrelTurnRequested != 0U &&
                         !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -2927,14 +2997,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     doomRpg->random = randomBefore;
                     EspNativeGameplayWeapon_cancelAttack();
                     memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u exploding=%u reason=runtime-radius-contract rollback=%s rng=yes player=yes world=yes\n",
+                    printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u exploding=%u reason=runtime-radius-contract-or-player-death rollback=%s rng=yes player=yes world=yes\n",
                            (unsigned int)pending.sequence,
                            (unsigned int)pending.spriteIndex,
                            (unsigned int)barrelChain[barrelCursor],
                            rollbackOk ? "yes" : "NO");
                     return rollbackOk ? 1 : 0;
                 }
-                printf("[BARRELRADIUS] BLAST seq=%u root=%u source=%u rngByte=%u damage=%u diagonal=%u triggered=%u chainNow=%u/%u sound=5061-deferred shake=200ms-deferred\n",
+                barrelPlayerHits =
+                    (uint8_t)(barrelPlayerHits + playerHitsThisBlast);
+                if (playerMessageDamageThisBlast != 0U) {
+                    barrelLastPlayerMessageDamage =
+                        playerMessageDamageThisBlast;
+                }
+                printf("[BARRELRADIUS] BLAST seq=%u root=%u source=%u rngByte=%u damage=%u diagonal=%u triggered=%u playerHits=%u chainNow=%u/%u sound=5061-deferred shake=200ms-deferred\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
                        (unsigned int)barrelChain[barrelCursor],
@@ -2942,8 +3018,58 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)blastDamage,
                        (unsigned int)(blastDamage >> 1),
                        (unsigned int)triggered,
+                       (unsigned int)playerHitsThisBlast,
                        (unsigned int)barrelChainCount,
                        (unsigned int)barrelExpectedChainCount);
+            }
+
+            if (barrelPlayerHits != 0U) {
+                int written = snprintf(
+                    actionState.feedbackText,
+                    sizeof(actionState.feedbackText),
+                    "%u damage!",
+                    (unsigned int)barrelLastPlayerMessageDamage);
+                if (written <= 0 ||
+                    (size_t)written >= sizeof(actionState.feedbackText)) {
+                    int rollbackOk = 1;
+                    if (barrelTurnRequested != 0U &&
+                        !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
+                            pending.sequence)) {
+                        rollbackOk = 0;
+                    }
+                    barrelRollbackRemoved(barrelChain, barrelChainCount);
+                    if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
+                        rollbackOk = 0;
+                    }
+                    doomRpg->random = randomBefore;
+                    actionState.feedbackPending = 0U;
+                    actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+                    actionState.feedbackText[0] = '\0';
+                    actionState.viewportFlashPending = 0U;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u reason=player-feedback-format rollback=%s rng=yes player=yes world=yes\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex,
+                           rollbackOk ? "yes" : "NO");
+                    return rollbackOk ? 1 : 0;
+                }
+                actionState.feedbackPending = 1U;
+                actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
+                actionState.viewportFlashPending = 1U;
+                actionState.viewportFlashDurationMs =
+                    ACTION_TRAP_DAMAGE_FLASH_MS;
+                actionState.viewportFlashColor565 =
+                    FEEDBACK_DAMAGE_RED565;
+                playerFNVAfter =
+                    EspNativeGameplayPlayerState_fingerprint();
+                printf("[BARRELRADIUS] PLAYER-COMMIT seq=%u hits=%u lastMessage=%u playerFNV=%08x->%08x feedback=DAMAGE flash=%ums\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)barrelPlayerHits,
+                       (unsigned int)barrelLastPlayerMessageDamage,
+                       (unsigned int)playerFNVBefore,
+                       (unsigned int)playerFNVAfter,
+                       (unsigned int)ACTION_TRAP_DAMAGE_FLASH_MS);
             }
 
             if (barrelChainCount != barrelExpectedChainCount) {
@@ -3183,7 +3309,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         }
 
         if (isBarrel) {
-            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u explosion=%s sound=%u-deferred barrelExplosionSound=5061-deferred radius=barrel-chain-owned/other-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
+            printf("[BARREL] COMMIT seq=%u sprite=%u weapon=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x loops=%u hits=%u rngCombat=%u rngBlast=%u damage=%ld armorDamage=%ld removed=%u chainRemoved=%u playerRadiusHits=%u explosion=%s sound=%u-deferred barrelExplosionSound=5061-deferred radius=barrel-chain+player-owned/other-hurtable-families-fail-closed turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
                    (unsigned int)pending.weapon,
@@ -3201,6 +3327,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)barrelRemoved,
                    (unsigned int)(barrelExplosionArmed != 0U
                                       ? barrelChainCount : 0U),
+                   (unsigned int)barrelPlayerHits,
                    barrelExplosionArmed != 0U ? "native-180x3-each" : "none",
                    crateWeapon != NULL ? (unsigned int)crateWeapon->resourceId : 0U);
         }
