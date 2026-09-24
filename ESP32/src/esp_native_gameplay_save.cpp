@@ -981,12 +981,37 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
     if (fileBytes == kRecordBytesV8) {
         EspNativeGameplayCrateTransformSnapshot crateTransforms;
         EspMapAutomapSnapshot automap;
-        EspNativeGameplayMonsterStateSnapshot* monsters =
+        EspNativeGameplayMonsterStateSnapshot* monsters;
+
+        /*
+         * Cold MENU_MAIN has substantially less contiguous 8-bit heap than a
+         * resident gameplay session. The SD File handle itself owns temporary
+         * heap, so reserving the 1612-byte V8 monster workspace while that
+         * handle is open can spuriously turn a valid checkpoint into "No Save".
+         *
+         * We already know the exact file length here. Close the size-probe
+         * handle first, reserve the bounded monster workspace, then reopen for
+         * the exact read. Validation and on-disk format remain unchanged.
+         */
+        file.close();
+        monsters =
             (EspNativeGameplayMonsterStateSnapshot*)malloc(sizeof(*monsters));
         if (monsters == nullptr) {
-            file.close();
+            printf("[NATIVESAVE] READABLE-V8 FAILED path=%s stage=monster-workspace bytes=%u failClosed=yes\n",
+                   path,
+                   (unsigned int)sizeof(*monsters));
             return false;
         }
+        file = SD.open(path, FILE_READ);
+        if (!file || (size_t)file.size() != kRecordBytesV8) {
+            if (file) file.close();
+            free(monsters);
+            printf("[NATIVESAVE] READABLE-V8 FAILED path=%s stage=reopen expectedBytes=%u failClosed=yes\n",
+                   path,
+                   (unsigned int)kRecordBytesV8);
+            return false;
+        }
+
         memset(&crateTransforms, 0, sizeof(crateTransforms));
         memset(&automap, 0, sizeof(automap));
         memset(monsters, 0, sizeof(*monsters));
@@ -1008,6 +1033,11 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         const bool valid =
             got == sizeof(*monsters) &&
             loadedV8Valid(*outRecord, crateTransforms, automap, *monsters);
+        printf("[NATIVESAVE] READABLE-V8 path=%s bytes=%u monsterWorkspace=%u allocation=before-reopen result=%s\n",
+               path,
+               (unsigned int)fileBytes,
+               (unsigned int)sizeof(*monsters),
+               valid ? "valid" : "invalid");
         free(monsters);
         if (!valid) {
             memset(outRecord, 0, sizeof(*outRecord));
