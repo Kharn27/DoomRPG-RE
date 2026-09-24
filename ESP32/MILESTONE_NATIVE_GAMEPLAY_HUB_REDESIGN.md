@@ -219,6 +219,9 @@ ESP32-only allocation guard also makes future `mapSprites` OOM fail closed with
 an exact diagnostic instead of dereferencing NULL. The user reports that the
 reboot loop is gone and the firmware appears to work on the real CYD.
 
-Checkpoint note: a save created before this rebase is currently rejected both
-from main-menu Load and from SYS Load after starting gameplay. That compatibility
-issue is explicitly left open; this milestone does not claim it resolved.
+Checkpoint LOAD was subsequently revalidated on the real CYD. The save itself
+was readable; the in-game SYS route had been blocked before `loadNow()` by the
+ordinary HUB-close HUD exactness check. The LOAD path now lets
+`EspNativeGameplaySession_reset()` own HUB teardown/session replacement. The user
+confirmed successful reload both from SYS after gameplay and directly from the
+cold main menu at code head `3911f72636df32a06040f08e57fa2f24fa0c2d92`.

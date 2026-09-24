@@ -7,26 +7,27 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = da397ce44dcd75114ca4d031be29b5e7d87e7d5a
 branch = agent/esp32-touch-feedback-facing-race
-rebased hardware-boot head = 6cd637c370415450dda5e89abcc13e7982368adf
-event43 hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
-esp32-cyd CI #683 = SUCCESS
+hardware-tested code head = 6ab5d25216b52f096563a95749f1dbd8b33712dd
+event43 original hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
+esp32-cyd CI #693 = SUCCESS
 static RAM = 45736 B
-flash = 764349 B
-main HUB boundary = focused REAL-CYD smoke pass inherited from da397ce/5c2e2c6
-rebased boot status = REAL-CYD BOOT RECOVERED after feedback-owner compaction
+flash = 764741 B
+rebased boot status = REAL-CYD PASS
+checkpoint LOAD = REAL-CYD PASS from SYS and cold main menu
+core RNG initial seed = REAL-CYD PASS; first post-LOAD crate consequence first=99
 rebased full event43 regression = not rerun after rebase
-save status = pre-rebase checkpoint currently unreadable from main menu and in-game SYS
-status = MERGE-READY WITH DOCUMENTED SAVE-COMPATIBILITY REGRESSION
+status = MERGE-READY
+```
 ```
 
-This branch is now a rebased integration candidate. It combines the current
-`main` four-page HUB/touch-feedback redesign with the later native gameplay,
-V8 checkpoint, CHECK_KEY and event43 work. The first rebased image exposed a
-boot-time contiguous-heap regression before `menu.bsp` could finish loading.
-That regression is fixed at `6cd637c` and the user reports the firmware now
-boots and appears operational on the real CYD. The older event43 PASS remains
-anchored to its original hardware-tested code head; do not rewrite it as a
-post-rebase event43 PASS without a fresh serial witness.
+This rebased integration combines the current `main` four-page HUB/touch-
+feedback redesign with the later native gameplay, V8 checkpoint, CHECK_KEY and
+event43 work. The boot-time contiguous-heap regression is fixed, checkpoint
+LOAD has been revalidated from both SYS and the cold main menu, and the missing
+initial RNG seed has been hardware-validated with a non-zero crate consequence.
+The older event43 PASS remains anchored to its original hardware-tested code
+head; do not rewrite it as a post-rebase event43 PASS without a fresh serial
+witness.
 
 ### In-game HUB redesign — focused REAL-CYD smoke pass
 
@@ -71,8 +72,10 @@ Detailed record:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md)
 
-The final redesigned SAVE/LOAD execution paths and broader progression beyond
-the first door still require a deliberate regression run.
+The redesigned LOAD execution path is now hardware-proven from both the in-game
+SYS page and the cold main menu. The two-tap SYS route no longer requires an
+ordinary HUB-close HUD restoration before replacing the gameplay session;
+`EspNativeGameplaySession_reset()` owns that transition.
 
 ### Rebased boot regression — REAL-CYD RECOVERY
 
@@ -116,6 +119,57 @@ the exact requested byte count if it ever fails again instead of dereferencing
 NULL. After flashing `6cd637c`, the user reports that the reboot loop is gone
 and the firmware appears to run normally.
 
+### Core gameplay RNG initial seed — REAL-CYD PASS
+
+A long-running crate anomaly exposed a startup bug rather than bad luck: several
+different crates, opened in different orders and even across runs, repeatedly
+resolved as `TRAPPED_REMOVE` with `first=0`, followed by `rngByte=0`, `blast=5`
+and the legacy message `10 damage!`.
+
+The ESP32 bring-up allocates the real `DoomRPG_t` root with `SDL_calloc()`. That
+made the embedded 128-byte `Random_t.randTable` all-zero with `nextRand=0`.
+`DoomRPG_randNextByte()` does not refill until the table boundary, so the first
+128 byte draws were deterministic zeroes. The desktop root is not calloc-zeroed,
+and the native port must explicitly materialize the canonical first table.
+
+Code head `6ab5d25216b52f096563a95749f1dbd8b33712dd` now calls exactly one
+`DoomRPG_setRand(&doomRpg->random)` when the real core root is created. This
+initializes the inherited hidden seed/reset state without changing later byte
+or word draw cadence or the RNG replay guard.
+
+The trap damage message itself was not doubled incorrectly. Legacy explosion
+processing calls `Game_radiusHurtEntities(..., rnd+5, rnd+5, ...)`, and
+`Player_pain()` displays the sum of its health and armor components. Therefore
+`rngByte=0` legitimately gives `5 + 5 = 10 damage`; the bug was the repeated
+zero RNG input.
+
+Real-CYD proof after checkpoint LOAD:
+
+```text
+[CRATE] CONSEQUENCE seq=4 sprite=82
+        first=99 second=0 secondValid=0
+        outcome=TRANSFORM effectiveDefTile=92
+        rngCombat=2 rngConsequence=1
+        attackDamage=6 attackArmorDamage=4
+
+[CRATE] COMMIT ...
+        outcome=TRANSFORM
+        effective=3/21/def92
+        removed=0 transformed=1
+        rollback=closed
+```
+
+`99` lies in the recovered legacy `24..149` bucket, so the resulting
+`type=3/subtype=21` Armor Shard is exact. This proves the live RNG stream is no
+longer the calloc-zero table after boot/load.
+
+Build reference:
+
+```text
+esp32-cyd CI #693 = SUCCESS
+static RAM = 45736 B
+flash = 764741 B
+```
 ### Facing-entity top-bar label — REAL-CYD PASS
 
 Legacy `DoomCanvas_checkFacingEntity()` performs a short forward trace after a
@@ -236,23 +290,23 @@ baseline and are not modified by this milestone.
 
 ### Next bounded frontier
 
-The rebased branch is merge-ready with one explicitly documented regression:
-a checkpoint created before the rebase is currently not accepted by this
-firmware, both from main-menu Load and from the in-game SYS Load path after
-starting a game. Do **not** weaken checkpoint validation to hide this; recover
-the exact rejection reason on the next branch and decide whether the file is
-legitimately incompatible or whether V8 compatibility regressed.
+This branch is merge-ready. After merge, re-read the exact new `main` SHA and
+branch from it.
 
-The Codex review also found a latent transaction corner: EXIT EV_SHOW followed
-by an ENTER dialog retained the SHOW rollback owner after the dialog opened.
-`finishPendingDialog()` now uses the same SHOW-owner release helper as the normal
-render-commit path. CI proves the code compiles; this specific combination has
-not been hardware-reached and is not promoted to a hardware PASS.
+The next major gameplay frontier remains the native **CHANGEMAP / Entrance
+level-exit transition** already identified below. Recover the smallest complete
+real-CYD route and keep unrelated opcode families fail-closed.
 
-The pre-rebase event43 hardware witness remains valid for the bounded SHOW x4
-implementation, but the full 345->377->409 progression was not re-recorded
-after the HUB rebase/boot fix. Keep that distinction when recovering future
-work from this file.
+Two qualifications remain intentionally explicit:
+
+```text
+event43 SHOW x4 PASS is anchored to pre-rebase code head 48accf9
+SHOW-exit + ENTER-dialog Codex lease fix is CI-valid but not directly hardware-reached
+```
+
+Neither qualification blocks this merge because the rebased boot, HUB LOAD
+session replacement, main-menu LOAD, and RNG initialization regressions have
+now been exercised successfully on the real CYD.
 ## Permanent architecture / hard invariants
 
 ```text

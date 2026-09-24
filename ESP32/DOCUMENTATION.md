@@ -15,13 +15,14 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = da397ce44dcd75114ca4d031be29b5e7d87e7d5a
 branch = agent/esp32-touch-feedback-facing-race
-rebased hardware-boot head = 6cd637c370415450dda5e89abcc13e7982368adf
-event43 hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
-esp32-cyd CI #683 = SUCCESS
+hardware-tested code head = 6ab5d25216b52f096563a95749f1dbd8b33712dd
+event43 original hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
+esp32-cyd CI #693 = SUCCESS
 static RAM = 45736 B
-flash = 764349 B
-hardware status = rebased boot-loop fixed; full event43 regression not rerun
-known regression = previous checkpoint unreadable from main menu and SYS
+flash = 764741 B
+hardware status = rebased boot + SYS LOAD + cold main-menu LOAD + initial RNG seed PASS
+status = merge-ready
+```
 ```
 
 Current rebased integration:
@@ -36,6 +37,8 @@ event43 = bounded EV_SHOW x4 MOVE chain retained
 CHECK_KEY = native PlayerState key gate retained
 Codex fix = SHOW rollback lease released after pending dialog finalizes
 boot fix = compact feedback owner restores menu.bsp contiguous heap
+LOAD fix = session replacement bypasses ordinary HUB-close HUD exactness gate
+RNG fix = core creation seeds the inherited 128-byte Random_t table once
 ```
 
 Current continuation also has a real-CYD pass for native EV_CHECK_KEY on the Entrance Yellow Door. Opcode 41 uses the shared PlayerState key bitmask, reports Need Yellow Key for selector 1 / mask 0x02, queues bounded top-bar feedback, and pauses before the following OPENLINE with zero world/script mutation when the key is absent.
@@ -97,17 +100,16 @@ Previously merged relevant milestones remain:
 
 ### Next milestone
 
-After merge, branch from the new exact `main` and diagnose checkpoint
-compatibility first. The user has a pre-rebase save that is rejected both from
-cold main-menu Load and from SYS Load after gameplay has started, so the earlier
-hypothesis of a cold-start-only read path is no longer sufficient. Add
-reason-coded V8 read/validation diagnostics and preserve fail-closed corruption
-handling.
+After merge, re-read the exact new `main` SHA and create the next `agent/*`
+branch from it. The next major gameplay candidate remains the native
+**CHANGEMAP / Entrance level-exit transition**.
 
-The rebased boot itself is recovered on real CYD at `6cd637c`. The historical
-event43 PASS remains anchored to `48accf9`; no fresh post-rebase event43 serial
-witness is claimed here. The Codex SHOW-exit + ENTER-dialog lease fix remains
-CI-valid but not directly hardware-reached.
+Current rebased hardware proof includes successful boot, LOAD from SYS, LOAD
+directly from the cold main menu, and a non-zero first post-LOAD crate outcome
+(`first=99 -> type3/subtype21 Armor Shard`) after fixing the calloc-zero RNG
+table. The historical event43 PASS remains anchored to `48accf9`; no fresh
+post-rebase event43 serial witness is claimed. The Codex SHOW-exit +
+ENTER-dialog lease fix remains CI-valid but not directly hardware-reached.
 ## Build environment
 
 Normal hardware reference:
