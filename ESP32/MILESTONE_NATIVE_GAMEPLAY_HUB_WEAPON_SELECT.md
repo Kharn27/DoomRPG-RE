@@ -1,5 +1,10 @@
 # Native gameplay HUB weapon selection / WPN grid — real-CYD hardware PASS
 
+> Historical hardware boundary: this document records the original three-page
+> 4x3 WPN implementation. The current four-page HUB and complete 3x3 arsenal are
+> documented in
+> [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md).
+
 This milestone completes the native HUB weapon-selection UX on the classic CYD. It keeps the narrow canonical mutation (`player.weapon` only) but moves weapons out of the scrolling Inventory list into a dedicated `WPN` page with direct touch selection and original Doom RPG sprite assets.
 
 ## Git boundary

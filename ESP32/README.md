@@ -129,7 +129,7 @@ The alternate resume route is:
 Load Game
  -> validate the one-slot native checkpoint
  -> release menu-only runtime
- -> rebuild the immutable BSP and restore V6 mutable owners
+ -> rebuild the immutable BSP and restore V7 mutable owners
  -> configure the resumed EspNativeGameplaySession
  -> ST_PLAYING without replaying the intro
 ```
@@ -137,6 +137,28 @@ Load Game
 If the checkpoint is missing or invalid, the menu remains active and replaces
 the selected row with a red `No Save` response. Both successful resume and the
 no-save response are hardware-proven on the real CYD at `18c1cfb`.
+
+## Current in-game HUB
+
+The compact native HUB currently exposes:
+
+```text
+INV | WPN | STAT | SYS
+```
+
+- `INV` presents Notebook, carried items, Credits and keys as a centered
+  previous/current/next card window.
+- `WPN` presents the nine normal weapon IDs 0..8 as a complete 3x3 grid.
+  Familiar IDs 9..11 remain excluded. Source BGR565 weapon palettes are
+  converted to framebuffer RGB565 before drawing.
+- `STAT` remains a read-only player-stat projection.
+- `SYS` owns the dedicated one-slot checkpoint UI. SAVE and LOAD require a
+  second SELECT/tap to confirm; missing checkpoints display `NO SAVE`.
+
+The HUB repaints its industrial title bar while active and reconstructs the
+normal gameplay HUD when closing. Touch feedback is bounded and conflict-aware:
+large checkpoint buttons fit the static edit owner, and newer pickup, message
+or viewport-flash overlays win if they touch the same framebuffer pixels.
 
 ## Source-tree rule
 
