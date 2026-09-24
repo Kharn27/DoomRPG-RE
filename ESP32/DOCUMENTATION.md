@@ -23,7 +23,6 @@ flash = 764741 B
 hardware status = rebased boot + SYS LOAD + cold main-menu LOAD + initial RNG seed PASS
 status = merge-ready
 ```
-```
 
 Current rebased integration:
 

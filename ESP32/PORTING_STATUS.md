@@ -18,7 +18,6 @@ core RNG initial seed = REAL-CYD PASS; first post-LOAD crate consequence first=9
 rebased full event43 regression = not rerun after rebase
 status = MERGE-READY
 ```
-```
 
 This rebased integration combines the current `main` four-page HUB/touch-
 feedback redesign with the later native gameplay, V8 checkpoint, CHECK_KEY and
