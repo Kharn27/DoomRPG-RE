@@ -249,6 +249,30 @@ static int syncOwner(void) {
         combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
         combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
         combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
+        {
+            uint32_t i;
+            uint32_t restoredDead = 0U;
+            /*
+             * When a session owner is reconstructed from a checkpoint, logical
+             * dead/alive state is authoritative but V8 does not yet persist the
+             * transient death-presentation lease (death4/gib bitsets). Normalize
+             * every already-dead record to the stable corpse visual immediately.
+             * getEntity() below also masks LINKED|ALIVE, so these restored corpses
+             * neither block nor reactivate gameplay. Exact corpse-vs-gib replay is
+             * a later presentation-only checkpoint family.
+             */
+            for (i = 0U; i < monsters->count; ++i) {
+                if (monsters->records[i].alive == 0U) {
+                    setGibbed(monsters->records[i].spriteIndex, 0);
+                    setCorpseReady(monsters->records[i].spriteIndex, 1);
+                    ++restoredDead;
+                }
+            }
+            if (restoredDead != 0U) {
+                printf("[MONSTERCOMBAT] RESUME-DEAD normalized=%u visual=corpse2 linked=masked alive=masked exactGibReplay=deferred\n",
+                       (unsigned int)restoredDead);
+            }
+        }
         combatOwner.view.standardWeaponsOwned =
             (uint8_t)STANDARD_WEAPON_DIRECT_MASK;
         combatOwner.view.currentMonsterFNV1a = currentMonsterFNV();

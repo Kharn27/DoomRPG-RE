@@ -64,6 +64,16 @@ typedef struct EspNativeSpriteStats_s {
 int EspNativeSpriteRenderer_render(struct Render_s* render,
                                    EspNativeSpriteStats* outStats);
 
+
+/* One bounded transient world billboard composed by the same native sprite
+ * renderer after immutable map sprites. Gameplay owns lifetime/timing; the
+ * renderer owns only projection and PAK-backed frame decoding. */
+int EspNativeSpriteRenderer_armTransient(uint16_t logical,
+                                         uint8_t animation,
+                                         int16_t worldX,
+                                         int16_t worldY);
+void EspNativeSpriteRenderer_clearTransient(void);
+
 #ifdef __cplusplus
 }
 #endif

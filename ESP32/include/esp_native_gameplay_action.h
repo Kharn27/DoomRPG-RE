@@ -21,7 +21,8 @@ typedef enum EspNativeGameplayActionStatus_e {
     ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK = 8,
     ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY = 9,
     ESP_NATIVE_GAMEPLAY_ACTION_PASSWORD_READY = 10,
-    ESP_NATIVE_GAMEPLAY_ACTION_CHAIN_READY = 11
+    ESP_NATIVE_GAMEPLAY_ACTION_CHAIN_READY = 11,
+    ESP_NATIVE_GAMEPLAY_ACTION_KEY_REQUIRED = 12
 } EspNativeGameplayActionStatus;
 
 #define ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS 8U
@@ -63,7 +64,9 @@ typedef struct EspNativeGameplayActionResult_s {
     uint8_t removeIfHandled;
     uint8_t rollbackAvailable;
     uint8_t doorCount;
-    uint8_t reserved0;
+    uint8_t keyCheckPresent;
+    uint8_t requiredKeyId;
+    uint8_t requiredKeyMask;
     EspNativeGameplayActionDoorStep
         doors[ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS];
 } EspNativeGameplayActionResult;
@@ -78,7 +81,10 @@ typedef struct EspNativeGameplayActionResult_s {
  *   2. an optional single EV_NOTE prefix immediately followed by the first
  *      eligible EV_DIALOG/EV_DIALOGNOBACK pause;
  *   3. exactly one first eligible EV_PASSWORD pause, whose native keypad owns
- *      validation and the saved continuation.
+ *      validation and the saved continuation;
+ *   4. EV_CHECK_KEY followed by a pure 1..8 door batch. A missing key is a
+ *      handled, non-mutating pause with the exact legacy key id/message; an
+ *      owned key admits the complete door suffix to the normal atomic preview.
  *
  * SELECT deliberately stops preflight at that first dialog, matching legacy
  * Game_runEvent(): saveTileEvent publishes the continuation and returns at the
@@ -91,8 +97,8 @@ typedef struct EspNativeGameplayActionResult_s {
  * batches are completely previewed before the first line mutates and remain
  * bounded by the legacy/native openDoors[8] animation capacity. Any mixed
  * event, NOTE without the following dialog, or larger door batch remains
- * fail-closed. Native key ownership is still absent, therefore filtering uses
- * playerKeys=0.
+ * fail-closed. Event filtering consumes the permanent native PlayerState key
+ * bitmask and therefore preserves the recovered legacy key-selector flags.
  */
 EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,

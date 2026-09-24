@@ -45,6 +45,23 @@ typedef struct EspNativeGameplayPlayerXpResult_s {
     uint8_t reserved;
 } EspNativeGameplayPlayerXpResult;
 
+typedef enum EspNativeGameplayPlayerDamageStatus_e {
+    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_INVALID = 0,
+    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED = 1,
+    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK = 2
+} EspNativeGameplayPlayerDamageStatus;
+
+typedef struct EspNativeGameplayPlayerDamageResult_s {
+    uint32_t stateFNVBefore;
+    uint32_t stateFNVAfter;
+    uint16_t damage;
+    uint16_t armorDamage;
+    uint8_t healthBefore;
+    uint8_t healthAfter;
+    uint8_t armorBefore;
+    uint8_t armorAfter;
+} EspNativeGameplayPlayerDamageResult;
+
 void EspNativeGameplayPlayerState_resetFresh(void);
 int EspNativeGameplayPlayerState_ensure(void);
 const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void);
@@ -76,6 +93,15 @@ int EspNativeGameplayPlayerState_addHealth(uint8_t amount,
                                            uint8_t* outAdded);
 int EspNativeGameplayPlayerState_addArmor(uint8_t amount,
                                           uint8_t* outAdded);
+
+/* Exact CombatEntity/Player_pain split used by environmental and monster
+ * damage. Lethal damage is intentionally fail-closed until the native player
+ * death transition owns that semantic; in that case no mutation occurs. */
+EspNativeGameplayPlayerDamageStatus
+EspNativeGameplayPlayerState_applyDamageNonlethal(
+    uint16_t damage,
+    uint16_t armorDamage,
+    EspNativeGameplayPlayerDamageResult* outResult);
 int EspNativeGameplayPlayerState_addCredits(uint32_t amount);
 int EspNativeGameplayPlayerState_addKeys(uint32_t keyMask);
 int EspNativeGameplayPlayerState_applyXp(

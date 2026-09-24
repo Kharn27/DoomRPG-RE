@@ -21,6 +21,7 @@
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_dispatch.h"
+#include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hud.h"
@@ -666,6 +667,17 @@ static void logDeferredSelectEvent(uint16_t eventIndex) {
 #define LEGACY_REGULAR_DOOR_FLAG 0x00000004UL
 #define LEGACY_SECRET_XP 5U
 #define LEGACY_SECRET_SOUND 5133U
+#define LEGACY_KEY_REQUIRED_SOUND 5065U
+
+static const char* keyRequiredMessage(uint8_t keyId) {
+    switch (keyId) {
+    case 0U: return "Need Green Key";
+    case 1U: return "Need Yellow Key";
+    case 2U: return "Need Blue Key";
+    case 3U: return "Need Red Key";
+    default: return NULL;
+    }
+}
 
 static int classifySecretDoorBatch(
     const EspNativeGameplayActionResult* result,
@@ -714,6 +726,34 @@ static void serviceSelect(DoomRPG_t* doomRpg,
            (unsigned int)result.eventIndex,
            (unsigned int)result.eligibleCount,
            (unsigned int)result.unsupportedCodeId);
+
+    if (status == ESP_NATIVE_GAMEPLAY_ACTION_KEY_REQUIRED) {
+        const char* message = keyRequiredMessage(result.requiredKeyId);
+        if (message == NULL || result.keyCheckPresent != 1U ||
+            result.requiredKeyMask == 0U ||
+            !EspNativeGameplayActionEngine_queueTextFeedback(
+                ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_STATUS_TEXT,
+                message, 0U)) {
+            ++gameplayState.deferred;
+            printf("[CHECKKEY] DEFER seq=%u event=%u cmd=%u keyId=%u mask=%02x reason=feedback-or-contract mutation=no\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.commandOffset,
+                   (unsigned int)result.requiredKeyId,
+                   (unsigned int)result.requiredKeyMask);
+            return;
+        }
+        ++gameplayState.selects;
+        printf("[CHECKKEY] BLOCK seq=%u event=%u cmd=%u keyId=%u mask=%02x message=\"%s\" sound=%u-deferred continuation=paused worldMutation=no removedMutation=no turnAdvance=deferred\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)result.eventIndex,
+               (unsigned int)result.commandOffset,
+               (unsigned int)result.requiredKeyId,
+               (unsigned int)result.requiredKeyMask,
+               message,
+               (unsigned int)LEGACY_KEY_REQUIRED_SOUND);
+        return;
+    }
 
     if (status == ESP_NATIVE_GAMEPLAY_ACTION_CHAIN_READY) {
         EspNativeGameplayDialogResumeResult chain;
@@ -978,6 +1018,14 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                    (unsigned int)secretXp.stateFNVAfter,
                    (unsigned int)LEGACY_SECRET_SOUND);
         }
+        if (result.keyCheckPresent != 0U) {
+            printf("[CHECKKEY] PASS seq=%u event=%u keyId=%u mask=%02x continuation=door-batch doors=%u mutation=door-only\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)result.eventIndex,
+                   (unsigned int)result.requiredKeyId,
+                   (unsigned int)result.requiredKeyMask,
+                   (unsigned int)result.doorCount);
+        }
         printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u doors=%u firstDoor=%u committed=yes redraw=yes collision=live animation=bounded-batch secret=%s sound=%s entityRelink=deferred turnAdvance=deferred\n",
                (unsigned int)gameplayState.selects,
                (unsigned int)intent->sequence,
@@ -1153,6 +1201,10 @@ static void servicePasswordCompletion(
         (completion->close.resumeCodeId == ESP_MAP_OPCODE_DIALOG ||
          completion->close.resumeCodeId == ESP_MAP_OPCODE_DIALOG_NO_BACK) &&
         completion->resumeDialogOffset != UINT8_MAX;
+    const int resumeHasPrefix =
+        resumeIntoDialog &&
+        completion->close.resumeCommandOffset <
+            completion->resumeDialogOffset;
     int feedbackQueued = 0;
 
     memset(&hudStats, 0, sizeof(hudStats));
@@ -1195,7 +1247,29 @@ static void servicePasswordCompletion(
             ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
             "Correct code!", 0U);
 
-        if (!resumeIntoDialog) {
+        if (resumeIntoDialog) {
+            if (resumeHasPrefix) {
+                resumeStatus = EspNativeGameplayEventChain_executeRange(
+                    completion->close.sourceEventIndex,
+                    completion->close.resumeCommandOffset,
+                    completion->resumeDialogOffset,
+                    completion->close.runFlags,
+                    &resume);
+                if (resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+                    resumeStatus !=
+                        ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
+                    printf("[RESIDENTGAMEPLAY] PASSWORD-PREFIX-FAILED event=%u start=%u end=%u status=%s\n",
+                           (unsigned int)completion->close.sourceEventIndex,
+                           (unsigned int)completion->close.resumeCommandOffset,
+                           (unsigned int)completion->resumeDialogOffset,
+                           EspNativeGameplayDialog_resumeStatusName(
+                               resumeStatus));
+                    disableGameplay("password-prefix-resume");
+                    return;
+                }
+            }
+        }
+        else {
             resumeStatus =
                 EspNativeGameplayDialog_resume(&completion->close, &resume);
             if (resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
@@ -1219,15 +1293,18 @@ static void servicePasswordCompletion(
                        completion->correct != 0U
                            ? "PASSWORD-CORRECT"
                            : "PASSWORD-INVALID")) {
-        if (completion->correct != 0U && !resumeIntoDialog &&
+        if (completion->correct != 0U &&
             resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
             resume.rollbackAvailable != 0U &&
             EspNativeGameplayDialog_rollbackResume(&resume) &&
             renderCurrent(render, (uint8_t)view->viewAngle,
-                          "PASSWORD-RESUME-ROLLBACK")) {
-            printf("[RESIDENTGAMEPLAY] PASSWORD ROLLBACK event=%u opcode=%u restored=yes\n",
+                          resumeIntoDialog
+                              ? "PASSWORD-PREFIX-ROLLBACK"
+                              : "PASSWORD-RESUME-ROLLBACK")) {
+            printf("[RESIDENTGAMEPLAY] PASSWORD ROLLBACK event=%u opcode=%u prefix=%s restored=yes\n",
                    (unsigned int)completion->close.sourceEventIndex,
-                   (unsigned int)resume.codeId);
+                   (unsigned int)resume.codeId,
+                   resumeIntoDialog ? "yes" : "no");
             return;
         }
         disableGameplay("password-render-rollback");
@@ -1240,22 +1317,36 @@ static void servicePasswordCompletion(
             completion->resumeDialogOffset,
             completion->close.runFlags);
         if (dialogStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
-            printf("[RESIDENTGAMEPLAY] PASSWORD-DIALOG-DEFER event=%u cmd=%u opcode=%u status=%s worldRedrawn=yes\n",
-                   (unsigned int)completion->close.sourceEventIndex,
-                   (unsigned int)completion->resumeDialogOffset,
-                   (unsigned int)completion->close.resumeCodeId,
-                   EspNativeGameplayDialog_beginStatusName(dialogStatus));
+            int rollbackOk = 1;
+            if (resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+                resume.rollbackAvailable != 0U) {
+                rollbackOk =
+                    EspNativeGameplayDialog_rollbackResume(&resume);
+            }
+            if (rollbackOk &&
+                renderCurrent(render, (uint8_t)view->viewAngle,
+                              "PASSWORD-DIALOG-ROLLBACK")) {
+                printf("[RESIDENTGAMEPLAY] PASSWORD-DIALOG-DEFER event=%u cmd=%u opcode=%u status=%s prefixMutation=%u rollback=yes worldRedrawn=yes\n",
+                       (unsigned int)completion->close.sourceEventIndex,
+                       (unsigned int)completion->resumeDialogOffset,
+                       (unsigned int)completion->close.resumeCodeId,
+                       EspNativeGameplayDialog_beginStatusName(dialogStatus),
+                       (unsigned int)resume.mutated);
+                return;
+            }
             disableGameplay("password-dialog-open");
             return;
         }
 
         ++gameplayState.dialogs;
-        printf("[RESIDENTGAMEPLAY] PASSWORD-CLOSE event=%u entered=%u/%u result=correct continuation=dialog-open opcode=%u cmd=%u mutation=0 redraw=yes message=%s dialogActive=yes back=%s turnAdvance=deferred\n",
+        printf("[RESIDENTGAMEPLAY] PASSWORD-CLOSE event=%u entered=%u/%u result=correct continuation=%s opcode=%u cmd=%u prefixMutation=%u redraw=yes message=%s dialogActive=yes back=%s turnAdvance=deferred\n",
                (unsigned int)completion->close.sourceEventIndex,
                (unsigned int)completion->enteredLength,
                (unsigned int)completion->expectedLength,
+               resumeHasPrefix ? "sync-prefix+dialog-open" : "dialog-open",
                (unsigned int)completion->close.resumeCodeId,
                (unsigned int)completion->resumeDialogOffset,
+               (unsigned int)resume.mutated,
                feedbackQueued ? "queued" : "none",
                completion->close.resumeCodeId == ESP_MAP_OPCODE_DIALOG
                    ? "yes" : "no");

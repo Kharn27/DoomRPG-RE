@@ -13,6 +13,7 @@
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_resident_gameplay.h"
@@ -283,7 +284,31 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)catalog->stateFNV1a);
 
             if (sessionState.checkpointResume != 0U) {
-                printf("[ENGINESESSION] RESUME checkpoint=restored freshFirstFrame=skipped dynamicLines=gameplay-wrapper\n");
+                const EspNativeGameplayMonsterView* monsters;
+                /*
+                 * A checkpoint load may stage exact monster records before this
+                 * session begins. Hydrate them now, before HUD/cache witness
+                 * frames are allowed to render BSP enemies. Otherwise the cache
+                 * priming path can publish a fresh alive sprite for a monster
+                 * whose restored record is already dead, leaving that stale
+                 * frame visible until the next world redraw.
+                 *
+                 * Older checkpoints have no staged monster snapshot; ensure()
+                 * deliberately builds their historical fresh owner here.
+                 */
+                if (!EspNativeGameplayMonsterState_ensure(doomRpg)) {
+                    failSession("checkpoint monster state");
+                    return;
+                }
+                monsters = EspNativeGameplayMonsterState_view();
+                if (monsters == NULL || monsters->records == NULL ||
+                    monsters->count == 0U) {
+                    failSession("checkpoint monster state view");
+                    return;
+                }
+                printf("[ENGINESESSION] RESUME checkpoint=restored monsterState=%08x/%u preRender=yes freshFirstFrame=skipped dynamicLines=gameplay-wrapper\n",
+                       (unsigned int)monsters->stateFNV1a,
+                       (unsigned int)monsters->count);
                 sessionState.stage = SESSION_STAGE_HUD;
                 continue;
             }

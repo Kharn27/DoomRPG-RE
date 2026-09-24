@@ -243,6 +243,58 @@ int EspNativeGameplayPlayerState_addArmor(uint8_t amount,
     return 1;
 }
 
+EspNativeGameplayPlayerDamageStatus
+EspNativeGameplayPlayerState_applyDamageNonlethal(
+    uint16_t damage,
+    uint16_t armorDamage,
+    EspNativeGameplayPlayerDamageResult* outResult) {
+    EspNativeGameplayPlayerDamageResult result;
+    int32_t health;
+    int32_t armor;
+    int32_t healthDamage;
+
+    memset(&result, 0, sizeof(result));
+    if (!EspNativeGameplayPlayerState_ensure()) {
+        if (outResult != NULL) *outResult = result;
+        return ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_INVALID;
+    }
+
+    result.stateFNVBefore = EspNativeGameplayPlayerState_fingerprint();
+    result.damage = damage;
+    result.armorDamage = armorDamage;
+    result.healthBefore = p1Health(playerState.param1);
+    result.armorBefore = p1Armor(playerState.param1);
+
+    health = result.healthBefore;
+    armor = result.armorBefore;
+    healthDamage = damage;
+    if (armor < (int32_t)armorDamage) {
+        healthDamage += (int32_t)armorDamage - armor;
+        armor = 0;
+    }
+    else {
+        armor -= armorDamage;
+    }
+    health -= healthDamage;
+    if (health < 0) health = 0;
+
+    result.healthAfter = (uint8_t)health;
+    result.armorAfter = (uint8_t)armor;
+    if (result.healthAfter == 0U &&
+        (damage != 0U || armorDamage != 0U)) {
+        result.stateFNVAfter = result.stateFNVBefore;
+        if (outResult != NULL) *outResult = result;
+        return ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED;
+    }
+
+    playerState.param1 = (playerState.param1 & 0xff00ff00U) |
+                         (uint32_t)result.healthAfter |
+                         ((uint32_t)result.armorAfter << 16);
+    result.stateFNVAfter = EspNativeGameplayPlayerState_fingerprint();
+    if (outResult != NULL) *outResult = result;
+    return ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK;
+}
+
 int EspNativeGameplayPlayerState_addCredits(uint32_t amount) {
     if (!EspNativeGameplayPlayerState_ensure()) return 0;
     playerState.credits += amount;

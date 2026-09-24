@@ -125,6 +125,16 @@ typedef struct SpriteWorkspace_s {
     EspNativeBspVisibilityState visibility;
 } SpriteWorkspace;
 
+typedef struct TransientWorldSprite_s {
+    int16_t worldX;
+    int16_t worldY;
+    uint16_t logical;
+    uint8_t animation;
+    uint8_t active;
+} TransientWorldSprite;
+
+static TransientWorldSprite transientWorldSprite;
+
 static uint16_t le16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 }
@@ -158,6 +168,26 @@ static uint8_t spriteRenderMode(uint16_t logical) {
     return (logical == 136U || logical == 137U || logical == 144U)
                ? RENDER_MODE_ADD
                : RENDER_MODE_NORMAL;
+}
+
+int EspNativeSpriteRenderer_armTransient(uint16_t logical,
+                                         uint8_t animation,
+                                         int16_t worldX,
+                                         int16_t worldY) {
+    if (logical >= 256U || animation > 7U ||
+        EspNativeGraphicsCatalog_findSprite(logical) == NULL) {
+        return 0;
+    }
+    transientWorldSprite.logical = logical;
+    transientWorldSprite.animation = animation;
+    transientWorldSprite.worldX = worldX;
+    transientWorldSprite.worldY = worldY;
+    transientWorldSprite.active = 1U;
+    return 1;
+}
+
+void EspNativeSpriteRenderer_clearTransient(void) {
+    memset(&transientWorldSprite, 0, sizeof(transientWorldSprite));
 }
 
 static uint16_t glowFor(uint16_t logical) {
@@ -754,6 +784,82 @@ static int spans(Render_t* render,
     return 1;
 }
 
+static int drawTransientAt(Render_t* render,
+                           const Sources* sources,
+                           Frame* frame,
+                           uint32_t seenLogical[8],
+                           EspNativeSpriteStats* stats) {
+    Vertex_t center;
+    Line_t line;
+    int minimum;
+    int maximum;
+
+    if (render == NULL || sources == NULL || frame == NULL ||
+        seenLogical == NULL || stats == NULL ||
+        transientWorldSprite.active == 0U) {
+        return 0;
+    }
+    if (!loadFrame(sources,
+                   transientWorldSprite.logical,
+                   transientWorldSprite.animation,
+                   0,
+                   frame,
+                   seenLogical,
+                   stats)) {
+        return 0;
+    }
+
+    minimum = frame->xMin - 32;
+    maximum = frame->xMax - 32;
+    memset(&line, 0, sizeof(line));
+    memset(&center, 0, sizeof(center));
+    center.x = transientWorldSprite.worldX;
+    center.y = transientWorldSprite.worldY;
+    Render_transform2DVerts(render, &center);
+    center.x -= 0x100000;
+    if (center.x < 0x40000) {
+        printf("[NATIVESPRITE] TRANSIENT logical=%u anim=%u pos=%d,%d result=near-culled source=bounded-world-effect\n",
+               (unsigned int)transientWorldSprite.logical,
+               (unsigned int)transientWorldSprite.animation,
+               (int)transientWorldSprite.worldX,
+               (int)transientWorldSprite.worldY);
+        return 1;
+    }
+
+    line.vert1 = center;
+    line.vert2.x = center.x;
+    line.vert2.y = center.y + (maximum << 16);
+    line.vert2.z = maximum - minimum;
+    line.vert1.y += minimum << 16;
+
+    if (!Render_clipLine(render, &line)) {
+        printf("[NATIVESPRITE] TRANSIENT logical=%u anim=%u pos=%d,%d result=clip-culled source=bounded-world-effect\n",
+               (unsigned int)transientWorldSprite.logical,
+               (unsigned int)transientWorldSprite.animation,
+               (int)transientWorldSprite.worldX,
+               (int)transientWorldSprite.worldY);
+        return 1;
+    }
+    Render_projectVertex(render, &line.vert1);
+    Render_projectVertex(render, &line.vert2);
+    if (!spans(render, &line, frame,
+               spriteRenderMode(transientWorldSprite.logical),
+               0, stats)) {
+        return 0;
+    }
+    /* Transients are not immutable BSP candidates. Keep their real frame
+     * loads/span/pixel work in the shared diagnostics, but do not fold them
+     * into draws/nearCulled/clipCulled: those three counters are the exact
+     * completion accounting for stats->bspCandidates. */
+    printf("[NATIVESPRITE] TRANSIENT logical=%u anim=%u pos=%d,%d pixels=%u accounting=out-of-bsp source=bounded-world-effect\n",
+           (unsigned int)transientWorldSprite.logical,
+           (unsigned int)transientWorldSprite.animation,
+           (int)transientWorldSprite.worldX,
+           (int)transientWorldSprite.worldY,
+           (unsigned int)stats->pixelsDrawn);
+    return 1;
+}
+
 static int drawAt(Render_t* render,
                   const Sources* sources,
                   const Order* parent,
@@ -1053,6 +1159,11 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
                                &stats)) {
             goto done;
         }
+    }
+    if (transientWorldSprite.active != 0U &&
+        !drawTransientAt(render, &sources, &workspace->frame,
+                         workspace->seenLogical, &stats)) {
+        goto done;
     }
 
     ok = stats.bspCandidates > 0U && stats.draws > 0U &&

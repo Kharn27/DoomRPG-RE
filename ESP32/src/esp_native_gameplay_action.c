@@ -12,6 +12,7 @@
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_door_animator.h"
 #include "esp_native_gameplay_password.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_select.h"
 
 #define SELECT_REMOVE_FLAG 0x00000200UL
@@ -21,7 +22,8 @@ typedef enum SelectFamily_e {
     SELECT_FAMILY_DOOR = 1,
     SELECT_FAMILY_DIALOG = 2,
     SELECT_FAMILY_PASSWORD = 3,
-    SELECT_FAMILY_CHAIN = 4
+    SELECT_FAMILY_CHAIN = 4,
+    SELECT_FAMILY_KEY_DOOR = 5
 } SelectFamily;
 
 static int descriptorMatchesSelect(
@@ -57,6 +59,20 @@ static int isPasswordOpcode(uint8_t codeId) {
 
 static int isSynchronousChainEntry(uint8_t codeId) {
     return codeId == ESP_MAP_OPCODE_GIVEMAP;
+}
+
+static int decodeKeyCheck(uint32_t arg1, uint8_t* outKeyId,
+                          uint8_t* outKeyMask) {
+    static const uint8_t masks[4] = {
+        ESP_MAP_PLAYER_KEY_GREEN,
+        ESP_MAP_PLAYER_KEY_YELLOW,
+        ESP_MAP_PLAYER_KEY_BLUE,
+        ESP_MAP_PLAYER_KEY_RED
+    };
+    if (outKeyId == NULL || outKeyMask == NULL || arg1 >= 4U) return 0;
+    *outKeyId = (uint8_t)arg1;
+    *outKeyMask = masks[arg1];
+    return 1;
 }
 
 static void copyDoorSummary(EspNativeGameplayActionResult* result,
@@ -106,6 +122,7 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     EspMapEventDescriptor descriptor;
     EspMapEventFilterPlan plan;
     EspMapEventCommandFilterResult filtered;
+    const EspNativeGameplayPlayerState* player;
     SelectFamily family = SELECT_FAMILY_NONE;
     uint32_t selectedOffset = UINT32_MAX;
     uint16_t selectedGlobal = 0U;
@@ -123,6 +140,10 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
         return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
     }
     if (!EspMapScriptState_isReady() || !EspMapLineState_isReady()) {
+        return ESP_NATIVE_GAMEPLAY_ACTION_NOT_READY;
+    }
+    player = EspNativeGameplayPlayerState_view();
+    if (player == NULL || player->active != 1U) {
         return ESP_NATIVE_GAMEPLAY_ACTION_NOT_READY;
     }
 
@@ -154,7 +175,7 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
                                    select.currentState,
                                    0U,
                                    ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS,
-                                   0U,
+                                   player->keys,
                                    &plan)) {
         return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
     }
@@ -225,6 +246,33 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
                 family = SELECT_FAMILY_PASSWORD;
                 break;
             }
+            else if (filtered.codeId == ESP_MAP_OPCODE_CHECK_KEY) {
+                EspMapByteCode keyCommand;
+                uint8_t keyId;
+                uint8_t keyMask;
+                if (notePrefixEligible != 0U ||
+                    (filtered.arg2 & SELECT_REMOVE_FLAG) != 0U ||
+                    !EspMapEvents_getCommand(&descriptor, offset, &keyCommand) ||
+                    keyCommand.id != ESP_MAP_OPCODE_CHECK_KEY ||
+                    !decodeKeyCheck(keyCommand.arg1, &keyId, &keyMask)) {
+                    outResult->unsupportedCodeId = filtered.codeId;
+                    return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
+                }
+                outResult->keyCheckPresent = 1U;
+                outResult->requiredKeyId = keyId;
+                outResult->requiredKeyMask = keyMask;
+                if ((player->keys & keyMask) == 0U) {
+                    outResult->globalCommandIndex = selectedGlobal;
+                    outResult->commandOffset = (uint8_t)selectedOffset;
+                    outResult->codeId = selectedCodeId;
+                    outResult->removedBefore = selectedRemoved;
+                    outResult->removedAfter = selectedRemoved;
+                    outResult->handled = 1U;
+                    return ESP_NATIVE_GAMEPLAY_ACTION_KEY_REQUIRED;
+                }
+                family = SELECT_FAMILY_KEY_DOOR;
+                continue;
+            }
             else if (isSynchronousChainEntry(filtered.codeId)) {
                 if (notePrefixEligible != 0U || selectedOffset > UINT8_MAX) {
                     outResult->unsupportedCodeId = filtered.codeId;
@@ -240,12 +288,16 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
             continue;
         }
 
-        if (family == SELECT_FAMILY_DOOR) {
+        if (family == SELECT_FAMILY_DOOR ||
+            family == SELECT_FAMILY_KEY_DOOR) {
+            uint8_t doorEligible =
+                (uint8_t)(eligibleCount -
+                          (family == SELECT_FAMILY_KEY_DOOR ? 1U : 0U));
             if (!isDoorOpcode(filtered.codeId)) {
                 outResult->unsupportedCodeId = filtered.codeId;
                 return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
             }
-            if (eligibleCount > ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS) {
+            if (doorEligible > ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS) {
                 return ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT;
             }
             continue;
@@ -299,9 +351,15 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
                    : ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
     }
 
-    if (family != SELECT_FAMILY_DOOR ||
-        eligibleCount > ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS) {
+    if ((family != SELECT_FAMILY_DOOR &&
+         family != SELECT_FAMILY_KEY_DOOR) ||
+        eligibleCount > (uint8_t)(ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS +
+                                  (family == SELECT_FAMILY_KEY_DOOR ? 1U : 0U))) {
         return ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT;
+    }
+    if (family == SELECT_FAMILY_KEY_DOOR && eligibleCount == 1U) {
+        outResult->unsupportedCodeId = ESP_MAP_OPCODE_CHECK_KEY;
+        return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
     }
 
     /*
@@ -326,6 +384,12 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
             return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
         }
         if (filtered.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) continue;
+        if (family == SELECT_FAMILY_KEY_DOOR && offset == selectedOffset) {
+            if (filtered.codeId != ESP_MAP_OPCODE_CHECK_KEY) {
+                return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
+            }
+            continue;
+        }
         if (!isDoorOpcode(filtered.codeId) ||
             outResult->doorCount >= ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS) {
             return ESP_NATIVE_GAMEPLAY_ACTION_COMPLEX_EVENT;
@@ -373,7 +437,9 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     }
 
     if (outResult->doorCount == 0U ||
-        outResult->doorCount != eligibleCount) {
+        outResult->doorCount !=
+            (uint8_t)(eligibleCount -
+                      (family == SELECT_FAMILY_KEY_DOOR ? 1U : 0U))) {
         return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
     }
 
@@ -488,6 +554,7 @@ const char* EspNativeGameplayAction_statusName(
     case ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY: return "DIALOG_READY";
     case ESP_NATIVE_GAMEPLAY_ACTION_PASSWORD_READY: return "PASSWORD_READY";
     case ESP_NATIVE_GAMEPLAY_ACTION_CHAIN_READY: return "CHAIN_READY";
+    case ESP_NATIVE_GAMEPLAY_ACTION_KEY_REQUIRED: return "KEY_REQUIRED";
     default: return "UNKNOWN";
     }
 }
