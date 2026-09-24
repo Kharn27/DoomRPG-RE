@@ -5,22 +5,102 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 38dfbbf6310045b1b01604048c61f634e246e0cf
-branch = agent/esp32-main-menu-finger-first
-main-menu redesign hardware-tested code head = cd557d7b727d600cecbff610d6e3e6a21d609853
-esp32-cyd CI #729 = SUCCESS
-static RAM = 44640 B
-flash = 767381 B
-finger-first MENU_MAIN visual/touch = REAL-CYD PASS
-logo = 90x62 logical, restored to the pre-redesign fitted size
-cards = 68x23 logical / 136x46 physical, 2x2 dashboard
-background = true black between independent industrial cards
-cursor patch journal = removed from MENU_MAIN; 0 B permanent patch storage
-historical cold V8 LOAD = REAL-CYD PASS on the inherited main path
-cold MENU_MAIN -> Load Game on cd557d7 = final merge sanity still to replay explicitly
+current main = 08ca1a0fa766fc3caeee39a80fe24866d702f189
+branch = agent/esp32-native-barrel-destructible
+hardware-tested barrel code head = 1b93651699d981e34b2a10318936ddfa0cf7b2e8
+esp32-cyd CI #739 = SUCCESS
+static RAM = 44648 B
+flash = 776205 B
+type12/subtype1 barrel direct attack = REAL-CYD PASS
+three-barrel causal chain = REAL-CYD PASS
+sibling chain explosions = concurrent wave render, REAL-CYD VISUAL PASS
+nonlethal player radius damage = REAL-CYD reached
+lethal player radius = intentionally fail-closed with exact player/RNG/world rollback
+aggregate barrel damage message = candidate only; hardware retest deferred
 post-hardware tail = documentation only
-status = DOCS COMPLETE; awaiting one cold-load sanity before MERGE-READY
+status = BARREL MILESTONE REAL-CYD PASS
 ```
+
+The branch was forked before the already-hardware-approved finger-first
+main-menu branch was merged. Current `main` is therefore one merge commit ahead
+of the barrel branch. GitHub comparison against current `main` shows the
+barrel code delta is confined to the action engine and native sprite-renderer
+transient API/implementation; the main-menu merge does not overlap those code
+files. Keep the exact barrel hardware boundary above authoritative and do not
+rewrite it as though the combined post-merge tree itself had been re-flashed.
+
+### Native barrel subtype 1 — REAL-CYD PASS
+
+The permanent native action route now owns Doom RPG type-12/subtype-1 explosive
+barrels without restoring legacy world/entity ownership.
+
+Hardware-proven transaction:
+
+```text
+native player attack
+ -> root Barrel hit/removal
+ -> logical sprite 180, frames 0..2
+ -> recovered 8-cell radius
+ -> neighboring barrels removed/queued causally
+ -> same-radius sibling barrels animate concurrently
+ -> each explosion consumes its own recovered RNG word
+ -> nonlethal player radius damage uses native PlayerState
+ -> PLAYER_ATTACK monster-turn request
+ -> exact rollback remains available until commit
+```
+
+The chain is bounded to 16 barrels. Radius support is currently barrel + player:
+four cardinal cells use the full blast component, four diagonals use half.
+Other hurtable entity families remain fail-closed.
+
+Distant real-CYD proof on the three-barrel cluster:
+
+```text
+[BARRELRADIUS] PREFLIGHT ... root=283 chain=3 ... visual=wave-batch-concurrent
+[BARREL] WAVE-FRAME ... wave=1 active=1 ... ordinal=1/3
+[BARREL] WAVE-FRAME ... wave=1 active=1 ... ordinal=2/3
+[BARREL] WAVE-FRAME ... wave=1 active=1 ... ordinal=3/3
+[BARRELRADIUS] CHAIN source=283 target=276 ... relation=cardinal
+[BARRELRADIUS] CHAIN source=283 target=303 ... relation=cardinal
+[NATIVESPRITE] TRANSIENT ... anim=0 batch=1/2 pos=1568,1120 ...
+[NATIVESPRITE] TRANSIENT ... anim=0 batch=2/2 pos=1696,1120 ...
+[BARREL] WAVE-FRAME ... wave=2 active=2 ... ordinal=1/3
+[BARREL] WAVE-FRAME ... wave=2 active=2 ... ordinal=2/3
+[BARREL] WAVE-FRAME ... wave=2 active=2 ... ordinal=3/3
+[BARREL] COMMIT ... chainRemoved=3 playerRadiusHits=0 ... rollback=closed
+```
+
+The user explicitly accepted the resulting two-neighbor explosion as visually
+correct. This closes the earlier presentation defect where both neighbors were
+removed together but their explosions were then animated serially.
+
+The close-range run additionally proved real player-radius mutation and the
+current lethal boundary:
+
+```text
+[BARRELRADIUS] PLAYER-HIT source=283 ... relation=cardinal
+    component=12 messageDamage=24 hp=32->20 armor=20->8
+[BARRELRADIUS] PLAYER-HIT source=276 ... relation=diagonal
+    component=10 messageDamage=20 hp=20->8 armor=8->0
+[BARRELRADIUS] PLAYER-DEFER source=303 ... relation=diagonal
+    component=6 status=1 hp=8 armor=0 mutation=no/lethal-deferred
+[MONSTERTURN] ATTACK-CANCEL seq=5 cause=action-rollback scheduled=no
+[BARRELRADIUS] ROLLBACK ... rollback=yes rng=yes player=yes world=yes
+```
+
+Player death is still intentionally outside the native boundary, so the final
+would-be-lethal blast correctly cancels the requested turn and restores the
+owned transaction instead of partially committing unsupported death state.
+
+The aggregate multi-blast `<N> damage!` summary exists as a bounded candidate
+because the full legacy five-message HUD queue is not yet native. It is **not
+hardware-proven**: the close-range test reached lethal rollback before that
+summary could commit. The user explicitly deferred this presentation retest
+until health can be restored conveniently through inventory/medkits.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_BARREL_SUBTYPE1.md`](MILESTONE_NATIVE_BARREL_SUBTYPE1.md)
 
 ### Finger-first main menu redesign — REAL-CYD VISUAL/TOUCH PASS
 
@@ -501,7 +581,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors, hardware-proven pure multi-line SELECT door batches and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, the four-page HUB `INV/WPN/STAT/SYS`, raw-flash backing, bounded checkpoint save/load from both HUB and the main menu, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, checkpoint-resume HUD/cache/input rearm, HUB/world framebuffer ownership gating for transient action feedback, and the bounded native Automap core with live movement, visited-cell reveal, render-derived thin delimiters, pickup ownership retention and SELECT door interaction while the map owns the framebuffer.
+Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors, hardware-proven pure multi-line SELECT door batches and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, type-12/subtype-1 barrel destruction with a bounded three-barrel real-CYD chain, concurrent sibling explosion waves and nonlethal player radius damage, the four-page HUB `INV/WPN/STAT/SYS`, raw-flash backing, bounded checkpoint save/load from both HUB and the main menu, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, checkpoint-resume HUD/cache/input rearm, HUB/world framebuffer ownership gating for transient action feedback, and the bounded native Automap core with live movement, visited-cell reveal, render-derived thin delimiters, pickup ownership retention and SELECT door interaction while the map owns the framebuffer.
 
 The player root remains:
 
@@ -1068,7 +1148,7 @@ multi-loop weapon/monster mechanics
 monster projectiles/messages/sound
 rocket/BFG radius damage
 familiar weapon slots / hazard redirection
-remaining type-12 destructible subtypes
+remaining type-12 destructible/radius families beyond barrel/crate/jammed-door
 special death consequences
 Kronos-specific semantics
 password late full-HUD repaint replay
