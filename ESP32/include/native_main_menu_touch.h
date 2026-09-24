@@ -9,26 +9,26 @@ extern "C" {
 
 struct DoomRPG_s;
 
-/* Capture the four tiny framebuffer patches that live underneath the possible
- * hand-cursor positions. Call after the scaled logo is composed and before menu
- * rows are drawn.
+/* Prepare the four dashboard hit zones. No framebuffer underlay is captured:
+ * selection feedback repaints the bounded dashboard directly.
  */
 int DoomRPG_esp32MainMenuTouchPrepare(struct DoomRPG_s* doomRpg);
 
-/* Arm touch handling after the initial fitted MENU_MAIN frame is fully composed.
- * The initial framebuffer hash becomes the deterministic selected-item-0 hash.
- */
+/* Arm touch handling after the initial MENU_MAIN frame is fully composed. */
 int DoomRPG_esp32MainMenuTouchActivate(struct DoomRPG_s* doomRpg,
                                        uint32_t initialFramebufferFNV);
 
 int DoomRPG_esp32MainMenuTouchIsActive(void);
 
-/* Runtime framebuffer witness for a selected row. The label set can evolve
- * without baking hardware-rendered hashes into every main-menu action. */
+/* First tap on the already-selected boot card needs visible feedback too. */
+int DoomRPG_esp32MainMenuTouchArmSelected(int itemIndex);
+
+/* Runtime framebuffer witness for the selected card. */
 uint32_t DoomRPG_esp32MainMenuSelectionFramebufferFNV(int itemIndex);
 
 /* Rebase deterministic selection witnesses after a bounded in-place status
- * paint such as the visible "No Save" response. */
+ * paint such as the visible "NO SAVE" response.
+ */
 void DoomRPG_esp32MainMenuTouchRebaseFrame(int selectedIndex,
                                            uint32_t framebufferFNV);
 

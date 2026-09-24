@@ -5,24 +5,78 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = dcd1ac18bd1eed35433e662933f568c9c1e172fe
-branch = agent/esp32-move-show-dialog-lease-hw
-cold-load hardware-tested code head = 133f67882336f9f70f6294369e1571cde5a07699
-door/event43 stack-fix hardware-tested code head = 30be906f949bc05d4d9dfc899b1de3581dc95e10
-event43 original hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
-esp32-cyd CI #714 = SUCCESS
-static RAM = 45744 B
-flash = 766865 B
-checkpoint LOAD = REAL-CYD PASS from SYS and cold MENU_MAIN
-cold V8 validation = catalog-independent file-shape PASS; live crate catalog validation retained at restore
-line102 door stack = REAL-CYD PASS after sprite Scratch moved off loopTask stack
-event43 345->377 SHOW x4 + 377->409 CLOSELINE = REAL-CYD PASS on stack-fix head
-Missed + Dodged presentation = REAL-CYD PASS
-SHOW-exit + ENTER-dialog lease fix = defensive code retained; Entrance census found 0 reachable candidate pairs
-temporary SHOW/dialog census = REAL-CYD PASS, then removed exactly
-final code tree after probe removal = hardware-tested 133f678 code + docs only
-status = MERGE-READY
+current main = 38dfbbf6310045b1b01604048c61f634e246e0cf
+branch = agent/esp32-main-menu-finger-first
+main-menu redesign hardware-tested code head = cd557d7b727d600cecbff610d6e3e6a21d609853
+esp32-cyd CI #729 = SUCCESS
+static RAM = 44640 B
+flash = 767381 B
+finger-first MENU_MAIN visual/touch = REAL-CYD PASS
+logo = 90x62 logical, restored to the pre-redesign fitted size
+cards = 68x23 logical / 136x46 physical, 2x2 dashboard
+background = true black between independent industrial cards
+cursor patch journal = removed from MENU_MAIN; 0 B permanent patch storage
+historical cold V8 LOAD = REAL-CYD PASS on the inherited main path
+cold MENU_MAIN -> Load Game on cd557d7 = final merge sanity still to replay explicitly
+post-hardware tail = documentation only
+status = DOCS COMPLETE; awaiting one cold-load sanity before MERGE-READY
 ```
+
+### Finger-first main menu redesign — REAL-CYD VISUAL/TOUCH PASS
+
+The classic-CYD `MENU_MAIN` no longer presents four thin J2ME-style text rows.
+The permanent presentation is a bounded 2x2 finger-first dashboard while the
+existing four-item menu model and action routing remain authoritative:
+
+```text
+START   | LOAD
+OPTIONS | HELP
+```
+
+The real-CYD visual iteration established the final proportions:
+
+```text
+Doom RPG logo = 90x62 logical
+card target   = 68x23 logical = 136x46 physical at exact 2x
+background    = true black between cards
+focus         = amber
+armed tap     = ivory + amber double border
+confirmation  = existing released second tap on the same card
+```
+
+The first 74x28-card candidate was hardware-reviewed as too dominant and forced
+the title down to 74x51. The final layout restores the proven 90x62 title size,
+then removes the full-width grey/blue dashboard slab so the four industrial cards
+float independently on black. The user explicitly accepted this final rendering
+on the real classic CYD.
+
+The old main-menu cursor feedback stored four 13x10 RGB565 underlay patches
+(1040 B plus bookkeeping). The dashboard instead repaints its bounded card band
+allocation-free, so permanent cursor-patch storage is zero. Relative to the
+current main image, CI reports 1104 fewer bytes of static RAM:
+
+```text
+main       = 45744 B static RAM
+redesign   = 44640 B static RAM
+delta      = -1104 B
+flash      = 767381 B
+CI         = esp32-cyd #729 SUCCESS
+code head  = cd557d7b727d600cecbff610d6e3e6a21d609853
+```
+
+`shapeData == NULL` and `mediaTexels == NULL` remain mandatory. The redesign
+does not add a framebuffer, map-wide asset owner, ZIP dependency, or gameplay
+world mutation.
+
+The inherited V8 cold main-menu LOAD path was already hardware-proven before this
+presentation milestone. The final `cd557d7...` polish changed only main-menu
+presentation/touch repaint geometry, but a fresh cold `MENU_MAIN -> Load Game`
+sanity has not yet been explicitly reported on that exact code head. Do not claim
+that replay until the real CYD produces it.
+
+Detailed record:
+
+- [`MILESTONE_MAIN_MENU_FINGER_FIRST.md`](MILESTONE_MAIN_MENU_FINGER_FIRST.md)
 
 This rebased integration combines the current `main` four-page HUB/touch-
 feedback redesign with the later native gameplay, V8 checkpoint, CHECK_KEY and
@@ -490,6 +544,7 @@ the no-save response on the real CYD at `18c1cfb`.
 
 Detailed record:
 
+- [`MILESTONE_MAIN_MENU_FINGER_FIRST.md`](MILESTONE_MAIN_MENU_FINGER_FIRST.md)
 - [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 
 ## Native checkpoint save/load v1 — REAL-CYD PASS

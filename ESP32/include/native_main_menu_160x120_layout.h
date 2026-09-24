@@ -1,14 +1,11 @@
 #ifndef DOOMRPG_ESP32_NATIVE_MAIN_MENU_160X120_LAYOUT_H
 #define DOOMRPG_ESP32_NATIVE_MAIN_MENU_160X120_LAYOUT_H
 
-/* ESP32/CYD-specific presentation contract for the real Doom RPG main menu.
+/* ESP32/CYD presentation contracts for the real Doom RPG main menu.
  *
- * The original 108x74 logo plus four 12-pixel-high menu rows cannot fit in a
- * 160x120 logical framebuffer without overlap/overflow. Keep the original font,
- * hand cursor and menu model, but scale only the logo and move the rows upward.
- *
- * These constants are intentionally shared so the next touch-input increment can
- * derive hit zones from exactly the same final item geometry.
+ * The legacy fitted constants remain intentionally stable because the existing
+ * Options screen still uses them and owns a hardware-validated framebuffer
+ * witness. MENU_MAIN itself now uses the separate finger-first DASH_* geometry.
  */
 #define DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_WIDTH 108
 #define DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_HEIGHT 74
@@ -29,5 +26,26 @@
 #define DOOMRPG_ESP32_MAIN_MENU_CONTENT_BOTTOM \
     (DOOMRPG_ESP32_MAIN_MENU_LAST_ITEM_Y + \
      DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT)
+
+/* Finger-first MENU_MAIN dashboard. Preserve the proven 90x62 title scale:
+ * the logo stays visually dominant while the two card rows remain generous
+ * 68x23 logical / 136x46 physical touch targets.
+ */
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH 90
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT 62
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y 2
+
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP 64
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM 65
+
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT 8
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT 75
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT 84
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT 151
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP 67
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM 89
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP 93
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM 115
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_FOOTER_Y 118
 
 #endif

@@ -13,18 +13,28 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = dcd1ac18bd1eed35433e662933f568c9c1e172fe
-branch = agent/esp32-move-show-dialog-lease-hw
-cold-load hardware-tested code head = 133f67882336f9f70f6294369e1571cde5a07699
-door/event43 stack-fix hardware-tested code head = 30be906f949bc05d4d9dfc899b1de3581dc95e10
-esp32-cyd CI #714 = SUCCESS
-static RAM = 45744 B
-flash = 766865 B
-hardware = cold MENU_MAIN LOAD + line102 4-frame door + event43 SHOW x4/CLOSELINE PASS
-SHOW-exit -> ENTER-dialog Entrance census = 0 candidate pairs, REAL-CYD PASS
-temporary census probe = removed exactly; final code matches hardware-tested tree
-status = merge-ready
+current main = 38dfbbf6310045b1b01604048c61f634e246e0cf
+branch = agent/esp32-main-menu-finger-first
+hardware-tested code head = cd557d7b727d600cecbff610d6e3e6a21d609853
+esp32-cyd CI #729 = SUCCESS
+static RAM = 44640 B
+flash = 767381 B
+hardware = finger-first MENU_MAIN visual/touch PASS
+layout = 90x62 title + 2x2 cards, 68x23 logical / 136x46 physical
+background = black between independent cards
+main-menu cursor patch storage = 0 B
+cold V8 LOAD = inherited/historically REAL-CYD PASS, not freshly replayed on cd557d7
+status = docs complete; one cold MENU_MAIN -> Load Game sanity remains before merge-ready
 ```
+
+Finger-first main-menu presentation is now hardware-approved on the real CYD.
+The four legacy menu actions keep their existing indices and double-tap gate, but
+their presentation is a 2x2 industrial dashboard with full-card hit targets.
+The final visual pass restored the 90x62 Doom RPG title, reduced each card to
+68x23 logical pixels, and removed the full-width grey/blue backing slab so the
+cards float on true black. Selection repaint is allocation-free and the old four
+cursor underlay patches are gone, reducing static RAM by 1104 B versus current
+main. See `MILESTONE_MAIN_MENU_FINGER_FIRST.md`.
 
 Current rebased integration:
 
@@ -86,6 +96,7 @@ largest8=11764
 
 Latest relevant milestones:
 
+- [`MILESTONE_MAIN_MENU_FINGER_FIRST.md`](MILESTONE_MAIN_MENU_FINGER_FIRST.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md)
 - [MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md](MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md)
 - [MILESTONE_NATIVE_CHECK_KEY_YELLOW_DOOR.md](MILESTONE_NATIVE_CHECK_KEY_YELLOW_DOOR.md)
@@ -101,9 +112,15 @@ Previously merged relevant milestones remain:
 
 ### Next milestone
 
+Before merging this presentation branch, replay one cold
+`MENU_MAIN -> Load Game` sanity on the real CYD at `cd557d7...`; the V8 path
+is inherited and already historically proven, but that exact final presentation
+head has not yet been explicitly exercised through LOAD.
+
 After merge, re-read the exact new `main` SHA and create the next `agent/*`
 branch from it. The next major gameplay candidate remains the native
-**CHANGEMAP / Entrance level-exit transition**.
+**CHANGEMAP / Entrance level-exit transition**, which is the natural path toward
+finishing Entrance.
 
 Current rebased hardware proof includes successful boot, LOAD from SYS, LOAD
 directly from the cold main menu, and a non-zero first post-LOAD crate outcome

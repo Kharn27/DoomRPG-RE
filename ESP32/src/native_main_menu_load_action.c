@@ -58,17 +58,23 @@ static int menuBoundaryIsSafe(const DoomRPG_t* doomRpg) {
 
 static void showNoSaveFeedback(DoomRPG_t* doomRpg) {
     DoomCanvas_t* canvas = doomRpg->doomCanvas;
+    const int left = DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT;
+    const int right = DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT;
+    const int top = DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP;
+    const int bottom = DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM;
     const int width = (int)(sizeof(noSaveLabel) - 1U) *
                       MAIN_LOAD_GLYPH_ADVANCE;
-    const int x = canvas->SCR_CX - (width >> 1);
-    const int y = DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y +
-                  (MAIN_LOAD_ITEM_INDEX *
-                   DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT);
+    const int x = ((left + right + 1) >> 1) - (width >> 1);
+    const int y = top + (((bottom - top + 1) -
+                          DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT) >> 1);
     uint32_t frameFNV;
 
     DoomRPG_setColor(doomRpg, 0x000000);
-    DoomRPG_fillRect(doomRpg, x, y, width,
-                     DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT);
+    DoomRPG_fillRect(doomRpg,
+                     left + 5,
+                     top + 4,
+                     right - left - 9,
+                     bottom - top - 7);
     DoomRPG_setFontColor(doomRpg, 0xffff0000);
     DoomCanvas_drawFont(canvas, noSaveLabel, x, y, 0, 0, -1, false);
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
@@ -76,7 +82,7 @@ static void showNoSaveFeedback(DoomRPG_t* doomRpg) {
 
     frameFNV = framebufferHash(doomRpg->render);
     DoomRPG_esp32MainMenuTouchRebaseFrame(MAIN_LOAD_ITEM_INDEX, frameFNV);
-    printf("[MAINLOAD] FEEDBACK text=\"No Save\" color=red framebufferFNV=%08x\n",
+    printf("[MAINLOAD] FEEDBACK text=\"NO SAVE\" card=LOAD color=red framebufferFNV=%08x\n",
            (unsigned int)frameFNV);
 }
 
