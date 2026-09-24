@@ -9,7 +9,8 @@ extern "C" {
 
 /* Visible touch chrome for the native gameplay HUB. This layer owns no gameplay
  * state and no framebuffer snapshot. It paints only logical y=20..99 and maps
- * the INV / WPN / STAT tabs plus page-local touch targets to semantic actions. */
+ * the INV / WPN / STAT / SYS tabs plus page-local touch targets to semantic
+ * actions. */
 int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
                                       uint8_t page,
                                       uint8_t selectedRow);
@@ -23,6 +24,11 @@ int EspNativeGameplayHubTouchUi_classify(
 /* Read the exact weapon cell targeted by an already-consumed HUB SELECT input.
  * No target queue/owner is added; the permanent input owner remains canonical. */
 int EspNativeGameplayHubTouchUi_consumedWeaponTarget(uint8_t* outWeaponId);
+
+/* Resolve the exact tab touched by an already-consumed TURN input. This keeps
+ * all four tabs directly addressable even when the destination is two pages
+ * away in the cyclic keyboard navigation order. */
+int EspNativeGameplayHubTouchUi_consumedPageTarget(uint8_t* outPage);
 
 /* Retained for the non-weapon Inventory previous/current/next window. */
 int EspNativeGameplayHubTouchUi_consumedSelectTarget(

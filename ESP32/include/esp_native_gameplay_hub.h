@@ -22,7 +22,8 @@ typedef enum EspNativeGameplayHubPage_e {
     ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY = 0,
     ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS = 1,
     ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS = 2,
-    ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT = 3
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM = 3,
+    ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT = 4
 } EspNativeGameplayHubPage;
 
 typedef struct EspNativeGameplayHubView_s {
@@ -40,9 +41,10 @@ typedef struct EspNativeGameplayHubView_s {
 
 /* Permanent bounded gameplay-hub owner. The owner remains 28 B. selectedRow is
  * page-local transient navigation state: non-weapon Inventory entry index on
- * Inventory, weapon id 0..11 on Weapons, ignored on Status. weaponAtOpen keeps
- * the close-time weapon-only mutation witness. No icon/list framebuffer owner
- * is added; the dedicated Weapons page decodes one bounded icon at a time. */
+ * Inventory, weapon id 0..8 on Weapons, SAVE/LOAD cursor on System and ignored
+ * on Status. weaponAtOpen keeps the close-time weapon-only mutation witness.
+ * No icon/list framebuffer owner is added; Weapons decodes one bounded icon at
+ * a time and System reuses the existing checkpoint owner. */
 void EspNativeGameplayHub_reset(void);
 int EspNativeGameplayHub_isActive(void);
 const EspNativeGameplayHubView* EspNativeGameplayHub_view(void);

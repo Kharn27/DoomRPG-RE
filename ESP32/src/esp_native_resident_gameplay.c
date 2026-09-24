@@ -193,10 +193,22 @@ static void onGameplayTap(int16_t screenX,
     status = EspNativeGameplayInput_route(&hit, logicalX, logicalY);
     if (status == ESP_NATIVE_GAMEPLAY_INPUT_OK) {
         memset(&feedbackStats, 0, sizeof(feedbackStats));
-        if (!EspNativeGameplayControls_begin(&hit, &feedbackStats) ||
-            !Esp32PlatformVideo_present()) {
+        if (!EspNativeGameplayControls_begin(&hit, &feedbackStats)) {
+            /* Feedback is cosmetic. The semantic input is already queued and
+             * must remain serviceable even if its reversible overlay cannot be
+             * represented (for example after a future larger modal target). */
             (void)EspNativeGameplayControls_restore(0, NULL);
-            disableGameplay("touch-feedback-draw");
+            printf("[TOUCHFEEDBACK] SKIP tap=%u action=%s zone=%u logical=%d,%d reason=overlay-unavailable inputQueued=yes fatal=no\n",
+                   (unsigned int)gameplayState.taps,
+                   EspNativeGameplayInput_actionName(hit.action),
+                   (unsigned int)hit.zone,
+                   logicalX,
+                   logicalY);
+            return;
+        }
+        if (!Esp32PlatformVideo_present()) {
+            (void)EspNativeGameplayControls_restore(0, NULL);
+            disableGameplay("touch-feedback-present");
             return;
         }
         printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=%s zone=%u logical=%d,%d context=%s\n",

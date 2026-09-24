@@ -7,8 +7,10 @@
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_content.h"
 #include "esp_native_gameplay_hub_nonweapon.h"
+#include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_hub_weapon_grid.h"
+#include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_indexed_bmp.h"
@@ -39,9 +41,9 @@
 #define HUB_MENU_PIXELS (HUB_MENU_WIDTH * HUB_MENU_HEIGHT)
 #define HUB_FACE_FRAMES 1U
 #define HUB_FACE_FRAME 0U
-#define HUB_MENU_BG 0x0000U
-#define HUB_MENU_BORDER 0xffffU
-#define HUB_MENU_INNER 0x001fU
+#define HUB_MENU_BG ESP_HUB_COLOR_BG
+#define HUB_MENU_BORDER ESP_HUB_COLOR_STEEL
+#define HUB_MENU_INNER ESP_HUB_COLOR_AMBER
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "Native gameplay hub is defined for the 160x120 logical framebuffer"
@@ -106,18 +108,8 @@ static uint32_t hudBandsFNV(void) {
 static uint32_t hudProtectedFNV(void) {
     const uint16_t* framebuffer =
         (const uint16_t*)Esp32PlatformVideo_framebuffer();
-    uint32_t hash = 2166136261U;
-    uint32_t y;
     if (!framebufferReady()) return 0U;
-    for (y = 0U; y < HUB_BAND_ROWS; ++y) {
-        hash = fnv1aUpdate(
-            hash,
-            framebuffer + y * DOOMRPG_LOGICAL_WIDTH + HUB_MENU_WIDTH,
-            (DOOMRPG_LOGICAL_WIDTH - HUB_MENU_WIDTH) *
-                (uint32_t)sizeof(uint16_t));
-    }
-    return fnv1aUpdate(
-        hash,
+    return fnv1a32(
         framebuffer + HUB_BOTTOM_Y * DOOMRPG_LOGICAL_WIDTH,
         HUB_BAND_PIXELS * (uint32_t)sizeof(uint16_t));
 }
@@ -159,7 +151,6 @@ static int menuOverlayCapture(uint16_t* framebuffer) {
 static int menuOverlayRestore(uint16_t* framebuffer) {
     uint32_t y;
     uint32_t zoneFNV;
-    uint32_t bandsFNV;
     if (!menuOverlay.active) return 1;
     if (framebuffer == NULL) return 0;
     for (y = 0U; y < HUB_MENU_HEIGHT; ++y) {
@@ -168,12 +159,38 @@ static int menuOverlayRestore(uint16_t* framebuffer) {
                HUB_MENU_WIDTH * sizeof(uint16_t));
     }
     zoneFNV = menuZoneFNV(framebuffer);
-    bandsFNV = hudBandsFNV();
-    if (zoneFNV != menuOverlay.baselineZoneFNV ||
-        bandsFNV != menuOverlay.baselineHudBandsFNV) return 0;
+    if (zoneFNV != menuOverlay.baselineZoneFNV) return 0;
     menuOverlay.active = 0U;
     menuOverlay.paintedZoneFNV = 0U;
     return 1;
+}
+
+static int repaintGameplayHud(void) {
+    const EspNativeGameplayHudState* state = EspNativeGameplayHud_view();
+    EspNativeGameplayHudStats stats;
+    memset(&stats, 0, sizeof(stats));
+    if (state == NULL || state->active == 0U || EspAssetPack_isOpen()) return 0;
+    return EspNativeGameplayHud_repaint(state, &stats) ==
+           ESP_NATIVE_GAMEPLAY_HUD_OK;
+}
+
+static void headerPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {
+    if (framebuffer == NULL || x < 0 || x >= DOOMRPG_LOGICAL_WIDTH ||
+        y < 0 || y >= (int)HUB_TOP_Y) return;
+    framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = color;
+}
+
+static void headerFill(uint16_t* framebuffer,
+                       int left,
+                       int top,
+                       int right,
+                       int bottom,
+                       uint16_t color) {
+    int x;
+    int y;
+    for (y = top; y <= bottom; ++y) {
+        for (x = left; x <= right; ++x) headerPixel(framebuffer, x, y, color);
+    }
 }
 
 static void menuPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {
@@ -214,19 +231,31 @@ static void menuRect(uint16_t* framebuffer,
     }
 }
 
-static int paintMenuButton(const EspNativeIndexedBmp* faces,
+static int drawText(const EspNativeIndexedBmp* font,
+                    uint16_t* framebuffer,
+                    const char* text,
+                    int x,
+                    int y,
+                    EspNativeIndexedBmpStats* stats);
+static const char* pageTitle(uint8_t page);
+
+static int paintHubHeader(const EspNativeIndexedBmp* font,
+                          const EspNativeIndexedBmp* faces,
                            uint16_t* framebuffer,
                            EspNativeIndexedBmpStats* stats) {
     uint16_t faceHeight;
     int destinationX;
     int destinationY;
-    if (!menuOverlay.active || faces == NULL || framebuffer == NULL ||
+    if (!menuOverlay.active || font == NULL || faces == NULL ||
+        framebuffer == NULL ||
         stats == NULL || faces->width == 0U || faces->height == 0U ||
         faces->height % HUB_FACE_FRAMES != 0U) return 0;
     faceHeight = (uint16_t)(faces->height / HUB_FACE_FRAMES);
     if (faces->width > HUB_MENU_WIDTH || faceHeight > HUB_MENU_HEIGHT ||
         HUB_FACE_FRAME >= HUB_FACE_FRAMES) return 0;
 
+    headerFill(framebuffer, 0, 0, 159, 19, ESP_HUB_COLOR_PANEL);
+    headerFill(framebuffer, 32, 18, 159, 19, ESP_HUB_COLOR_STEEL_DARK);
     menuFill(framebuffer, 0, 0, 31, 19, HUB_MENU_BG);
     menuRect(framebuffer, 0, 0, 31, 19, HUB_MENU_BORDER);
     menuRect(framebuffer, 1, 1, 30, 18, HUB_MENU_INNER);
@@ -239,6 +268,9 @@ static int paintMenuButton(const EspNativeIndexedBmp* faces,
             faces->width, faceHeight,
             (int16_t)destinationX, (int16_t)destinationY,
             1U, stats) != ESP_NATIVE_INDEXED_BMP_OK) return 0;
+    if (!drawText(font, framebuffer, pageTitle(hub.page), 36, 4, stats)) {
+        return 0;
+    }
     menuOverlay.paintedZoneFNV = menuZoneFNV(framebuffer);
     return menuOverlay.paintedZoneFNV != 0U &&
            menuOverlay.paintedZoneFNV != menuOverlay.baselineZoneFNV;
@@ -249,7 +281,18 @@ static const char* pageName(uint8_t page) {
     case ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY: return "inventory";
     case ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS: return "weapons";
     case ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS: return "status";
+    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM: return "system";
     default: return "unknown";
+    }
+}
+
+static const char* pageTitle(uint8_t page) {
+    switch (page) {
+    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY: return "INVENTORY";
+    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS: return "WEAPONS";
+    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS: return "STATUS";
+    case ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM: return "SYSTEM";
+    default: return "HUB";
     }
 }
 
@@ -260,23 +303,27 @@ static void putPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {
 }
 
 static void clearViewport(uint16_t* framebuffer) {
-    size_t pixels;
+    uint32_t x;
+    uint32_t y;
     if (framebuffer == NULL) return;
-    pixels = (size_t)DOOMRPG_LOGICAL_WIDTH * HUB_HEIGHT;
-    memset(framebuffer + HUB_TOP_Y * DOOMRPG_LOGICAL_WIDTH,
-           0, pixels * sizeof(uint16_t));
+    for (y = HUB_TOP_Y; y < HUB_BOTTOM_Y; ++y) {
+        for (x = 0U; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
+            framebuffer[y * DOOMRPG_LOGICAL_WIDTH + x] = ESP_HUB_COLOR_BG;
+        }
+    }
 }
 
 static void drawBorder(uint16_t* framebuffer) {
     int x;
     int y;
     for (x = 0; x < DOOMRPG_LOGICAL_WIDTH; ++x) {
-        putPixel(framebuffer, x, (int)HUB_TOP_Y, 0xffffU);
-        putPixel(framebuffer, x, (int)HUB_LAST_Y, 0xffffU);
+        putPixel(framebuffer, x, (int)HUB_TOP_Y, ESP_HUB_COLOR_STEEL);
+        putPixel(framebuffer, x, (int)HUB_LAST_Y, ESP_HUB_COLOR_STEEL);
     }
     for (y = (int)HUB_TOP_Y; y <= (int)HUB_LAST_Y; ++y) {
-        putPixel(framebuffer, 0, y, 0xffffU);
-        putPixel(framebuffer, DOOMRPG_LOGICAL_WIDTH - 1, y, 0xffffU);
+        putPixel(framebuffer, 0, y, ESP_HUB_COLOR_STEEL);
+        putPixel(framebuffer, DOOMRPG_LOGICAL_WIDTH - 1, y,
+                 ESP_HUB_COLOR_STEEL);
     }
 }
 
@@ -288,7 +335,7 @@ static int drawText(const EspNativeIndexedBmp* font,
                     EspNativeIndexedBmpStats* stats) {
     const unsigned char* p = (const unsigned char*)text;
     if (font == NULL || framebuffer == NULL || text == NULL || stats == NULL ||
-        y < (int)HUB_TOP_Y || y + (int)HUB_FONT_HEIGHT > (int)HUB_BOTTOM_Y) {
+        y < 0 || y + (int)HUB_FONT_HEIGHT > (int)HUB_BOTTOM_Y) {
         return 0;
     }
     while (*p != '\0') {
@@ -323,20 +370,13 @@ static int paintInventoryContent(const EspNativeGameplayPlayerState* player,
                                  const EspNativeIndexedBmp* font,
                                  uint16_t* framebuffer,
                                  EspNativeIndexedBmpStats* stats) {
-    char line[32];
     uint8_t count;
-    int ok = 1;
     if (player == NULL || font == NULL || framebuffer == NULL || stats == NULL) {
         return 0;
     }
     count = EspNativeGameplayHubNonWeapon_entryCount(player);
     if (count == 0U || hub.selectedRow >= count) return 0;
-    memset(line, 0, sizeof(line));
-    snprintf(line, sizeof(line), "ENTRY %u/%u",
-             (unsigned int)hub.selectedRow + 1U, (unsigned int)count);
-    ok = drawText(font, framebuffer, line, 4, 73, stats) && ok;
-    ok = drawText(font, framebuffer, "READ ONLY", 4, 86, stats) && ok;
-    return ok;
+    return 1;
 }
 
 static int paintStatusContent(const EspNativeGameplayPlayerState* player,
@@ -428,11 +468,10 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
     }
-    if ((hub.page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS &&
-         (EspNativeIndexedBmp_open(HUB_FONT_NAME, &font, &stats) !=
-              ESP_NATIVE_INDEXED_BMP_OK ||
-          font.width != HUB_FONT_SOURCE_WIDTH ||
-          font.height != HUB_FONT_SOURCE_HEIGHT)) ||
+    if (EspNativeIndexedBmp_open(HUB_FONT_NAME, &font, &stats) !=
+            ESP_NATIVE_INDEXED_BMP_OK ||
+        font.width != HUB_FONT_SOURCE_WIDTH ||
+        font.height != HUB_FONT_SOURCE_HEIGHT ||
         EspNativeIndexedBmp_open(HUB_FACE_NAME, &faces, &stats) !=
             ESP_NATIVE_INDEXED_BMP_OK) {
         EspAssetPack_close();
@@ -450,13 +489,16 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
     else if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
         ok = paintStatusContent(&before, &font, framebuffer, &stats);
     }
+    else if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
+        ok = 1;
+    }
     else {
         ok = 0;
     }
 
     if (ok && !EspNativeGameplayHubTouchUi_paint(
                   framebuffer, hub.page, hub.selectedRow)) ok = 0;
-    if (ok && !paintMenuButton(&faces, framebuffer, &stats)) ok = 0;
+    if (ok && !paintHubHeader(&font, &faces, framebuffer, &stats)) ok = 0;
     EspAssetPack_close();
     if (!ok || EspAssetPack_isOpen()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
 
@@ -497,7 +539,10 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
 
 void EspNativeGameplayHub_reset(void) {
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
-    if (menuOverlay.active && framebufferReady()) (void)menuOverlayRestore(framebuffer);
+    if (menuOverlay.active && framebufferReady()) {
+        (void)menuOverlayRestore(framebuffer);
+        (void)repaintGameplayHud();
+    }
     memset(&menuOverlay, 0, sizeof(menuOverlay));
     memset(&hub, 0, sizeof(hub));
 }
@@ -538,12 +583,13 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
     status = paintCurrentPage();
     if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) {
         (void)menuOverlayRestore(framebuffer);
+        (void)repaintGameplayHud();
         memset(&menuOverlay, 0, sizeof(menuOverlay));
         hub.active = 0U;
         return status;
     }
 
-    printf("[HUB] OPEN n=%u mode=inventory+weapons-grid+status-readonly page=%s pages=%u viewport=160x80/y20..99 menuButton=hand asset=p.bmp frame=%u menuUnderlayBytes=%u hudProtected=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
+    printf("[HUB] OPEN n=%u mode=inventory+weapons-grid+status-readonly+system-checkpoint page=%s pages=%u viewport=160x80/y20..99 header=industrial menuButton=hand asset=p.bmp frame=%u menuUnderlayBytes=%u hudBottomProtected=preserved ownerBytes=%u playerStateBytes=%u playerFNV=%08x weapon=%u weapons=%03x ammo=%02u/%02u/%02u/%02u/%02u/%02u items=%02u/%02u/%02u/%02u/%02u keys=%08lx credits=%lu mutation=no turn=no packClosed=yes\n",
            (unsigned int)hub.opens, pageName(hub.page),
            (unsigned int)ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT,
            (unsigned int)HUB_FACE_FRAME,
@@ -678,8 +724,11 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     uint32_t expectedHudBands;
     uint8_t beforeRow;
     uint8_t beforePage;
+    uint8_t touchedPage;
     uint8_t inventoryEntries;
     int menuRestored;
+    int hudRepainted;
+    int touchDirect;
 
     if (hub.active == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
 
@@ -694,22 +743,25 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
         expectedHudBands = menuOverlay.baselineHudBandsFNV;
         menuRestored = framebufferReady() && menuOverlayRestore(framebuffer);
+        hub.active = 0U;
+        hudRepainted = menuRestored && repaintGameplayHud();
         restoredHudBands = hudBandsFNV();
         playerExact = playerFNV != 0U && playerFNV == hub.lastPlayerFNV;
         sessionMutation = player.weapon == hub.weaponAtOpen ? "no" : "weapon-only";
-        hub.active = 0U;
         ++hub.closes;
-        printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x expected=%08x exact=%s weapon=%u->%u sessionMutation=%s turn=no worldRedraw=pending viewportOnly=yes menuUnderlayRestore=%s hudBands=%08x expectedHud=%08x exactHud=%s packClosed=%s\n",
+        printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x expected=%08x exact=%s weapon=%u->%u sessionMutation=%s turn=no worldRedraw=pending viewportOnly=yes menuUnderlayRestore=%s hudRepaint=%s hudBands=%08x expectedHud=%08x exactHud=%s packClosed=%s\n",
                (unsigned int)hub.closes, pageName(hub.page),
                (unsigned int)hub.playerFNVAtOpen, (unsigned int)playerFNV,
                (unsigned int)hub.lastPlayerFNV, playerExact ? "yes" : "NO",
                (unsigned int)hub.weaponAtOpen, (unsigned int)player.weapon,
                sessionMutation, menuRestored ? "exact" : "FAILED",
+               hudRepainted ? "yes" : "FAILED",
                (unsigned int)restoredHudBands, (unsigned int)expectedHudBands,
                restoredHudBands != 0U && restoredHudBands == expectedHudBands
                    ? "yes" : "NO",
                EspAssetPack_isOpen() ? "NO" : "yes");
-        return (playerExact && menuRestored && restoredHudBands != 0U &&
+        return (playerExact && menuRestored && hudRepainted &&
+                restoredHudBands != 0U &&
                 restoredHudBands == expectedHudBands && !EspAssetPack_isOpen())
                    ? ESP_NATIVE_GAMEPLAY_HUB_CLOSED
                    : ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
@@ -735,7 +787,12 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         if (!EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) {
             return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
         }
-        if (action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT) {
+        touchDirect =
+            EspNativeGameplayHubTouchUi_consumedPageTarget(&touchedPage);
+        if (touchDirect) {
+            hub.page = touchedPage;
+        }
+        else if (action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT) {
             hub.page = (uint8_t)((hub.page + ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT - 1U) %
                                  ESP_NATIVE_GAMEPLAY_HUB_PAGE_COUNT);
         }
@@ -759,7 +816,9 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         }
         printf("[HUB] PAGE page=%s->%s direction=%s row=%u playerMutation=no turn=no worldDispatch=blocked\n",
                pageName(beforePage), pageName(hub.page),
-               action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT ? "left" : "right",
+               touchDirect ? "touch-direct" :
+                   (action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT
+                        ? "left" : "right"),
                (unsigned int)hub.selectedRow);
         return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
     }
