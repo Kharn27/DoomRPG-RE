@@ -18,9 +18,10 @@ cold V8 validation = catalog-independent file-shape PASS; live crate catalog val
 line102 door stack = REAL-CYD PASS after sprite Scratch moved off loopTask stack
 event43 345->377 SHOW x4 + 377->409 CLOSELINE = REAL-CYD PASS on stack-fix head
 Missed + Dodged presentation = REAL-CYD PASS
-SHOW-exit + ENTER-dialog lease fix = code/CI valid; exact map pair still not hardware-reached
-status = ACTIVE VALIDATION BRANCH
-```
+SHOW-exit + ENTER-dialog lease fix = defensive code retained; Entrance census found 0 reachable candidate pairs
+temporary SHOW/dialog census = REAL-CYD PASS, then removed exactly
+final code tree after probe removal = hardware-tested 133f678 code + docs only
+status = MERGE-READY
 ```
 
 This rebased integration combines the current `main` four-page HUB/touch-
@@ -28,9 +29,36 @@ feedback redesign with the later native gameplay, V8 checkpoint, CHECK_KEY and
 event43 work. The boot-time contiguous-heap regression is fixed, checkpoint
 LOAD has been revalidated from both SYS and the cold main menu, and the missing
 initial RNG seed has been hardware-validated with a non-zero crate consequence.
-The older event43 PASS remains anchored to its original hardware-tested code
-head; do not rewrite it as a post-rebase event43 PASS without a fresh serial
-witness.
+The original event43 PASS remains anchored to its historical code head, and the
+same Entrance sequence has now also been freshly revalidated post-rebase after
+the sprite-renderer stack fix: line102 opens 4/4, event43 commits SHOW x4 on
+345->377, the SHOW lease closes on rendered frame commit, and 377->409 executes
+only CLOSELINE 102 with another complete 4-frame animation.
+
+### SHOW-exit -> ENTER-dialog reachability census — REAL-CYD PASS
+
+The review fix that releases the static SHOW rollback owner after a destination
+dialog opens remains correct defensive transaction hygiene. A temporary,
+allocation-free/read-only census scanned all 93 Entrance events for all four
+cardinal movement directions using both initial BSP script state and the current
+restored checkpoint state.
+
+Real-CYD result:
+
+```text
+[MOVEEVENTCENSUS] SUMMARY events=93 candidates=0 mode=initial+current mutation=no allocation=no
+```
+
+Therefore Entrance contains **no reachable adjacent movement pair** of the exact
+form owned by that review corner: homogeneous EXIT-side EV_SHOW batch followed
+by first-eligible ENTER-side EV_DIALOG/EV_DIALOGNOBACK. The Bull Demon/Lost Soul
+line102 room is confirmed to be a different sequence: ENTER SHOW event43, then
+later EXIT CLOSELINE.
+
+The temporary census was removed after this witness. GitHub comparison confirms
+the add/remove probe commits leave **zero code-file diff** versus the documented
+pre-probe tree; from hardware-tested cold-load code head `133f678...` to the
+post-removal tree, only documentation files differ.
 
 ### In-game HUB redesign — focused REAL-CYD smoke pass
 

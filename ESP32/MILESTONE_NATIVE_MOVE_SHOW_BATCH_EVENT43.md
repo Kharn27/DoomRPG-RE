@@ -233,6 +233,36 @@ Real CYD then completed the full door and event43 sequence:
 Hardware-tested stack-fix code head:
 `30be906f949bc05d4d9dfc899b1de3581dc95e10`.
 
-The separate review corner `EXIT SHOW -> ENTER DIALOG` remains unreached on
-hardware. The Bull Demon / Lost Soul line102 room is not that pair: it is
-`ENTER SHOW event43`, followed on the next move by `EXIT CLOSELINE`.
+The Bull Demon / Lost Soul line102 room is not the separate review corner: it
+is `ENTER SHOW event43`, followed on the next move by `EXIT CLOSELINE`.
+
+## EXIT SHOW -> ENTER DIALOG reachability census — REAL-CYD PASS
+
+Rather than continuing to search Entrance manually, a temporary read-only census
+walked all 93 event tiles and all four cardinal adjacencies. For each direction
+it applied the same native event-filter rules twice: once against immutable
+initial BSP state with no removed commands, and once against the current
+restored script state. It looked specifically for:
+
+```text
+source EXIT  = homogeneous eligible EV_SHOW batch, count <= 4
+destination ENTER = first eligible EV_DIALOG or EV_DIALOGNOBACK
+```
+
+It performed no SHOW preflight, no topology mutation, no script mutation and no
+allocation.
+
+Real-CYD witness:
+
+```text
+[MOVEEVENTCENSUS] SUMMARY events=93 candidates=0 mode=initial+current mutation=no allocation=no
+```
+
+Conclusion: **Entrance has no reachable movement pair of this exact shape** in
+either its initial script state or the tested checkpoint state. The review fix
+remains retained as defensive transaction cleanup, but there is no Entrance
+hardware route available to exercise it directly.
+
+The diagnostic commit was then removed. GitHub comparison from the pre-probe
+tree to the post-removal tree reports zero changed files, so no census code is
+left in the merge candidate.
