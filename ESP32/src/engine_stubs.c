@@ -236,6 +236,44 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     doomRpg->upTimeMs = 0;
     doomRpg->graphSetCliping = false;
     doomRpg->closeApplet = false;
+
+    /*
+     * The ESP32 core root is deliberately calloc'd, unlike the inherited
+     * desktop DoomRPG_Init() malloc path. Random_t therefore starts as an
+     * all-zero 128-byte table with nextRand=0. DoomRPG_randNextByte() only
+     * refills at the end of the table, so without an explicit first seed the
+     * first 128 byte draws are forced to zero (crate outcome 0 => trapped,
+     * crate blast low byte 0 => minimum blast, identical combat rolls).
+     *
+     * Materialize the canonical legacy table once when the real root is born.
+     * DoomRPG_setRand() also initializes the hidden resetRand/_seed generator;
+     * all later byte/word draws and replay-guard cadence remain unchanged.
+     */
+    DoomRPG_setRand(&doomRpg->random);
+    {
+        uint32_t randomFNV = 2166136261U;
+        uint32_t nonZero = 0U;
+        uint32_t i;
+        for (i = 0U; i < RANDTABLESIZE; ++i) {
+            randomFNV ^= doomRpg->random.randTable[i];
+            randomFNV *= 16777619U;
+            if (doomRpg->random.randTable[i] != 0U) ++nonZero;
+        }
+        if (doomRpg->random.nextRand != 0 || nonZero == 0U) {
+            printf("[CORERNG] FAILED next=%d nonZero=%u tableFNV=%08x failClosed=yes\n",
+                   doomRpg->random.nextRand,
+                   (unsigned int)nonZero,
+                   (unsigned int)randomFNV);
+            failCoreStage(DOOMRPG_CORE_ROOT);
+            if (report != NULL) *report = coreInitReport;
+            return 0;
+        }
+        printf("[CORERNG] SEEDED next=0 bytes=%u nonZero=%u tableFNV=%08x source=legacy-DoomRPG_setRand cadence=unchanged\n",
+               (unsigned int)RANDTABLESIZE,
+               (unsigned int)nonZero,
+               (unsigned int)randomFNV);
+    }
+
     DoomRPG_setDefaultBinds(doomRpg);
 
 #define INIT_CORE_OBJECT(stage, member, expression) \

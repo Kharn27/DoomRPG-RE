@@ -443,10 +443,35 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     }
 
     if (roll.hitLoops == 0U) {
+        int dodgeQueued;
+        int dodgeRendered = 0;
+
+        /*
+         * Legacy Combat_monsterSeq() closes a monster miss with "Dodged!".
+         * The gameplay result here is already fully known and RNG-owned; this
+         * bounded top-bar message is presentation-only and must not mutate the
+         * player or consume additional gameplay RNG.
+         */
+        dodgeQueued = EspNativeGameplayActionEngine_queueTextFeedback(
+            ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_COMBAT_TEXT,
+            "Dodged!", 0U);
+        if (dodgeQueued) {
+            memset(&frame, 0, sizeof(frame));
+            dodgeRendered = EspNativeGameplayFrame_renderTurn(
+                doomRpg->render, (uint8_t)playerView->viewAngle, &frame);
+            if (memcmp(&doomRpg->random,
+                       &randomAfterRoll, sizeof(randomAfterRoll)) != 0) {
+                doomRpg->random = randomAfterRoll;
+                printf("[MONSTERRETAL] MISS-PRESENT-RNG-GUARD probe=%u sprite=%u restored=post-roll\n",
+                       (unsigned int)turn->attackProbes,
+                       (unsigned int)monster->spriteIndex);
+            }
+        }
+
         ++retaliationView.committedAttacks;
         ++retaliationView.committedMisses;
         randomFNVAfter = randomFNV(&doomRpg->random);
-        printf("[MONSTERRETAL] MISS-COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u armor=%u playerFNV=%08x rng=%08x->%08x gameplayRngCommitted=yes playerMutation=no attackVisual=deferred sound=deferred turn=closed\n",
+        printf("[MONSTERRETAL] MISS-COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u armor=%u playerFNV=%08x rng=%08x->%08x message=\"Dodged!\" textQueued=%s rendered=%s frame=%08x gameplayRngCommitted=yes playerMutation=no attackVisual=deferred sound=deferred turn=closed\n",
                (unsigned int)turn->attackProbes,
                reasonName(turn->lastReason),
                (unsigned int)monster->spriteIndex,
@@ -467,7 +492,10 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
                (unsigned int)p1Armor(playerBefore.param1),
                (unsigned int)playerFNVBefore,
                (unsigned int)randomFNVBefore,
-               (unsigned int)randomFNVAfter);
+               (unsigned int)randomFNVAfter,
+               dodgeQueued ? "yes" : "owner-busy",
+               dodgeRendered ? "yes" : "deferred",
+               dodgeRendered ? (unsigned int)frame.frameAfterFNV : 0U);
         return;
     }
 

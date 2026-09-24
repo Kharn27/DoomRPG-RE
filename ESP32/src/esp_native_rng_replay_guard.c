@@ -33,6 +33,11 @@ static int atByteBoundary(const Random_t* rand) {
            (rand->nextRand + (int)sizeof(byte)) >= RANDTABLESIZE;
 }
 
+static int atWordBoundary(const Random_t* rand) {
+    return rand != NULL &&
+           (rand->nextRand + (int)sizeof(uint32_t)) >= RANDTABLESIZE;
+}
+
 /*
  * Materialize the post-refill table only for the duration of a bounded native
  * probe. The hidden resetRand/_seed generator necessarily advances once when a
@@ -236,4 +241,98 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
     next = rand->nextRand;
     rand->nextRand = next + (int)sizeof(byte);
     return rand->randTable[next];
+}
+
+
+/*
+ * The inherited DoomRPG_randNextInt() treats Random_t::nextRand as an int
+ * array index even though every RNG API advances it as a byte offset. That
+ * multiplies the intended address by four: next==4 reads bytes 16..19 instead
+ * of 4..7, and next>=32 reads beyond the 128-byte randTable entirely.
+ *
+ * Keep the recovered stream ownership and refill cadence, but interpret
+ * nextRand consistently as a byte offset. Doom RPG BREW and the ESP32 target
+ * are little-endian, so materialize the 32-bit word explicitly from the four
+ * consecutive table bytes. The same replay guard used by byte draws protects
+ * the hidden DoomRPG_setRand() generator when a transactional word draw crosses
+ * its legacy refill boundary.
+ */
+int __wrap_DoomRPG_randNextInt(Random_t* rand) {
+    int next;
+    uint32_t word;
+
+    if (rand == NULL) return 0;
+
+    if (atWordBoundary(rand)) {
+        uint32_t now = DoomRPG_GetUpTimeMS();
+        int refillFrom = rand->nextRand;
+
+        if (rngReplayGuard.probeReserved != 0U) {
+            if (rngReplayGuard.probeReservedRand == rand &&
+                memcmp(rand, &rngReplayGuard.preRefill, sizeof(*rand)) == 0) {
+                *rand = rngReplayGuard.postRefill;
+                rngReplayGuard.probeReserved = 0U;
+                rngReplayGuard.probeReservedRand = NULL;
+                rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
+                rngReplayGuard.valid = 1U;
+                ++rngReplayGuard.replayedRefills;
+                printf("[RNGGUARD] WORD-PROBE-REPLAY refill=%u replay=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=untouched reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
+                       (unsigned int)rngReplayGuard.realRefills,
+                       (unsigned int)rngReplayGuard.replayedRefills,
+                       (unsigned int)RNG_REPLAY_GUARD_LEASE_MS,
+                       refillFrom);
+            }
+            else {
+                printf("[RNGGUARD] WORD-FATAL-RESERVATION-MISMATCH next=%d ptrMatch=%s sequenceExact=NO recovery=real-refill\n",
+                       rand->nextRand,
+                       rngReplayGuard.probeReservedRand == rand ? "yes" : "no");
+                rngReplayGuard.probeReserved = 0U;
+                rngReplayGuard.probeReservedRand = NULL;
+                rngReplayGuard.valid = 0U;
+                DoomRPG_setRand(rand);
+                ++rngReplayGuard.realRefills;
+            }
+        }
+        else if (leaseActive(now) &&
+                 memcmp(rand, &rngReplayGuard.preRefill, sizeof(*rand)) == 0) {
+            *rand = rngReplayGuard.postRefill;
+            ++rngReplayGuard.replayedRefills;
+            printf("[RNGGUARD] WORD-REPLAY refill=%u replay=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=untouched rollbackSafe=yes\n",
+                   (unsigned int)rngReplayGuard.realRefills,
+                   (unsigned int)rngReplayGuard.replayedRefills,
+                   (unsigned int)RNG_REPLAY_GUARD_LEASE_MS,
+                   refillFrom);
+        }
+        else {
+            rngReplayGuard.preRefill = *rand;
+            DoomRPG_setRand(rand);
+            rngReplayGuard.postRefill = *rand;
+            rngReplayGuard.probeReservedRand = NULL;
+            rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
+            rngReplayGuard.valid = 1U;
+            rngReplayGuard.probeReserved = 0U;
+            ++rngReplayGuard.realRefills;
+            printf("[RNGGUARD] WORD-REFILL refill=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=advanced-once rollbackReplay=armed\n",
+                   (unsigned int)rngReplayGuard.realRefills,
+                   (unsigned int)RNG_REPLAY_GUARD_LEASE_MS,
+                   refillFrom);
+        }
+    }
+
+    next = rand->nextRand;
+    rand->nextRand = next + (int)sizeof(uint32_t);
+    word = (uint32_t)rand->randTable[next] |
+           ((uint32_t)rand->randTable[next + 1] << 8) |
+           ((uint32_t)rand->randTable[next + 2] << 16) |
+           ((uint32_t)rand->randTable[next + 3] << 24);
+
+    if (next >= (RANDTABLESIZE / (int)sizeof(uint32_t))) {
+        printf("[RNGGUARD] WORD-OOB-AVOIDED next=%d correctedOffset=%d legacyOffset=%d value=%08x\n",
+               next,
+               next,
+               next * (int)sizeof(uint32_t),
+               (unsigned int)word);
+    }
+
+    return (int32_t)word;
 }

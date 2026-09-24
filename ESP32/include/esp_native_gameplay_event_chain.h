@@ -51,6 +51,16 @@ EspNativeGameplayEventChain_preflight(
     uint8_t resumeCommandOffset,
     uint32_t runFlags);
 
+/* Bounded synchronous prefix proof used when another pause boundary (for
+ * example DIALOG/DIALOGNOBACK) appears later in the same event. The end offset
+ * is exclusive and no command at/after it is inspected or executed. */
+EspNativeGameplayEventChainPreflightStatus
+EspNativeGameplayEventChain_preflightRange(
+    uint16_t eventIndex,
+    uint8_t resumeCommandOffset,
+    uint16_t endCommandOffsetExclusive,
+    uint32_t runFlags);
+
 /*
  * A dialog reached after another pause boundary (currently EV_PASSWORD) is not
  * a synchronous chain command: legacy pauses again at that dialog.  These APIs
@@ -77,6 +87,14 @@ EspNativeGameplayDialogResumeStatus
 EspNativeGameplayEventChain_execute(
     uint16_t eventIndex,
     uint8_t commandOffset,
+    uint32_t runFlags,
+    EspNativeGameplayDialogResumeResult* outResult);
+
+EspNativeGameplayDialogResumeStatus
+EspNativeGameplayEventChain_executeRange(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint16_t endCommandOffsetExclusive,
     uint32_t runFlags,
     EspNativeGameplayDialogResumeResult* outResult);
 

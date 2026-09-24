@@ -292,6 +292,153 @@ static int spriteRecordPresent(uint16_t resourceId) {
 }
 
 EspNativeGraphicsCatalogStatus
+EspNativeGraphicsCatalog_ensureSprite(uint16_t resourceId) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    EspAssetPackEntry mappings;
+    EspAssetPackEntry palettes;
+    uint8_t mappingHeader[MAPPINGS_HEADER_BYTES];
+    uint8_t paletteHeader[PALETTES_HEADER_BYTES];
+    EspNativeGraphicsCatalogRecord dependency;
+    EspNativeGraphicsCatalogRecord* replacement = NULL;
+    EspNativeGraphicsCatalogRecord* oldArena;
+    uint32_t texelPairs;
+    uint32_t bitShapePairs;
+    uint32_t textureIdCount;
+    uint32_t spriteIdCount;
+    uint32_t paletteBytes;
+    uint32_t paletteEntries;
+    uint32_t spritePairBase;
+    uint64_t expectedMappingsBytes;
+    uint32_t totalCount;
+    uint32_t storageBytes;
+    uint32_t dstIndex;
+    uint32_t oldIndex;
+    uint16_t targetSpriteCount;
+    uint16_t counts[2];
+    uint32_t hash;
+    int inserted = 0;
+    EspNativeGraphicsCatalogStatus status = ESP_NATIVE_GRAPHICS_CATALOG_INVALID;
+
+    if (!EspNativeGraphicsCatalog_isReady() || runtime == NULL ||
+        !EspMapRuntime_isLoaded() || runtime->arena == NULL ||
+        runtime->arenaBytes == 0U) {
+        return ESP_NATIVE_GRAPHICS_CATALOG_RUNTIME_NOT_READY;
+    }
+    if (resourceId >= RESOURCE_ID_COUNT) {
+        return ESP_NATIVE_GRAPHICS_CATALOG_RESOURCE_UNSUPPORTED;
+    }
+    if (spriteRecordPresent(resourceId)) {
+        return ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE;
+    }
+    if (EspAssetPack_isOpen()) return ESP_NATIVE_GRAPHICS_CATALOG_PACK_BUSY;
+    if (catalogView.spriteCount == UINT16_MAX) {
+        return ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+    }
+
+    targetSpriteCount = (uint16_t)(catalogView.spriteCount + 1U);
+    totalCount = (uint32_t)catalogView.textureCount + targetSpriteCount;
+    if (totalCount > UINT32_MAX / (uint32_t)sizeof(*replacement)) {
+        return ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+    }
+    storageBytes = totalCount * (uint32_t)sizeof(*replacement);
+    replacement = (EspNativeGraphicsCatalogRecord*)malloc(storageBytes);
+    if (replacement == NULL) return ESP_NATIVE_GRAPHICS_CATALOG_ALLOC_FAILED;
+    memset(replacement, 0, storageBytes);
+    memset(&dependency, 0, sizeof(dependency));
+
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_PACK_OPEN_FAILED;
+        goto fail;
+    }
+    if (!EspAssetPack_findEntry("mappings.bin", &mappings) ||
+        !EspAssetPack_findEntry("palettes.bin", &palettes)) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_MISSING;
+        goto fail_pack;
+    }
+    if (mappings.size < MAPPINGS_HEADER_BYTES ||
+        palettes.size < PALETTES_HEADER_BYTES ||
+        !EspAssetPack_readRange(&mappings, 0U, mappingHeader,
+                                sizeof(mappingHeader)) ||
+        !EspAssetPack_readRange(&palettes, 0U, paletteHeader,
+                                sizeof(paletteHeader))) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_READ_FAILED;
+        goto fail_pack;
+    }
+
+    texelPairs = readLe32(mappingHeader);
+    bitShapePairs = readLe32(mappingHeader + 4U);
+    textureIdCount = readLe32(mappingHeader + 8U);
+    spriteIdCount = readLe32(mappingHeader + 12U);
+    paletteBytes = readLe32(paletteHeader);
+    expectedMappingsBytes =
+        (uint64_t)MAPPINGS_HEADER_BYTES +
+        ((uint64_t)texelPairs * MAPPING_PAIR_BYTES) +
+        ((uint64_t)bitShapePairs * MAPPING_PAIR_BYTES) +
+        ((uint64_t)textureIdCount * 2U) +
+        ((uint64_t)spriteIdCount * 2U);
+
+    if (texelPairs == 0U || bitShapePairs == 0U ||
+        texelPairs > 4096U || bitShapePairs > 4096U ||
+        textureIdCount > 4096U || spriteIdCount > 4096U ||
+        expectedMappingsBytes != mappings.size ||
+        (paletteBytes & 1U) != 0U || paletteBytes < PALETTE_BYTES ||
+        paletteBytes + PALETTES_HEADER_BYTES != palettes.size) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+        goto fail_pack;
+    }
+
+    paletteEntries = paletteBytes / 2U;
+    spritePairBase = MAPPINGS_HEADER_BYTES + texelPairs * MAPPING_PAIR_BYTES;
+    status = readRecord(&mappings, &palettes,
+                        spritePairBase, bitShapePairs, paletteEntries,
+                        resourceId, &dependency);
+    if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK) goto fail_pack;
+    EspAssetPack_close();
+
+    memcpy(replacement, catalogView.textures,
+           (uint32_t)catalogView.textureCount * sizeof(*replacement));
+    dstIndex = (uint32_t)catalogView.textureCount;
+    for (oldIndex = 0U; oldIndex < catalogView.spriteCount; ++oldIndex) {
+        if (!inserted &&
+            resourceId < catalogView.sprites[oldIndex].resourceId) {
+            replacement[dstIndex++] = dependency;
+            inserted = 1;
+        }
+        replacement[dstIndex++] = catalogView.sprites[oldIndex];
+    }
+    if (!inserted) replacement[dstIndex++] = dependency;
+    if (dstIndex != totalCount) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+        goto fail;
+    }
+
+    counts[0] = catalogView.textureCount;
+    counts[1] = targetSpriteCount;
+    hash = fnvAppend(2166136261U, counts, sizeof(counts));
+    hash = fnvAppend(hash, replacement, storageBytes);
+    if (hash == 0U) {
+        status = ESP_NATIVE_GRAPHICS_CATALOG_SOURCE_INVALID;
+        goto fail;
+    }
+
+    oldArena = catalogArena;
+    catalogArena = replacement;
+    catalogView.textures = catalogArena;
+    catalogView.sprites = catalogArena + catalogView.textureCount;
+    catalogView.spriteCount = targetSpriteCount;
+    catalogView.storageBytes = storageBytes;
+    catalogView.stateFNV1a = hash;
+    free(oldArena);
+    return ESP_NATIVE_GRAPHICS_CATALOG_OK;
+
+fail_pack:
+    EspAssetPack_close();
+fail:
+    free(replacement);
+    return status;
+}
+
+EspNativeGraphicsCatalogStatus
 EspNativeGraphicsCatalog_expandSpriteDependencies(void) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     EspAssetPackEntry mappings;

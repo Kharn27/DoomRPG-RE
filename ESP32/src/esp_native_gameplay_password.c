@@ -101,7 +101,7 @@ static int eventDescriptorForIndex(uint16_t eventIndex,
     return EspMapEvents_describe(&ref, outDescriptor);
 }
 
-static int firstEligibleContinuation(
+static int firstDialogContinuation(
     const EspMapEventDescriptor* descriptor,
     uint8_t resumeOffset,
     uint32_t runFlags,
@@ -135,6 +135,10 @@ static int firstEligibleContinuation(
             return -1;
         }
         if (filtered.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) continue;
+        if (filtered.codeId != ESP_MAP_OPCODE_DIALOG &&
+            filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK) {
+            continue;
+        }
         *outOffset = (uint8_t)offset;
         *outGlobal = filtered.globalCommandIndex;
         *outCodeId = filtered.codeId;
@@ -453,7 +457,7 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
         return ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_INVALID;
     }
 
-    continuationFound = firstEligibleContinuation(
+    continuationFound = firstDialogContinuation(
         &descriptor, (uint8_t)(commandOffset + 1U), runFlags,
         &resumeDialogOffset, &resumeDialogGlobal, &resumeDialogCodeId);
     if (continuationFound < 0) {
@@ -463,11 +467,27 @@ EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     if (continuationFound > 0 &&
         (resumeDialogCodeId == ESP_MAP_OPCODE_DIALOG ||
          resumeDialogCodeId == ESP_MAP_OPCODE_DIALOG_NO_BACK)) {
+        chainStatus = EspNativeGameplayEventChain_preflightRange(
+            eventIndex, (uint8_t)(commandOffset + 1U),
+            resumeDialogOffset, runFlags);
+        if (chainStatus != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
+            printf("[PASSWORD] BEGIN-DEFER event=%u cmd=%u continuation=sync-prefix+dialog prefix=%u..%u opcode=%u reason=prefix-status-%d mutation=no\n",
+                   (unsigned int)eventIndex,
+                   (unsigned int)commandOffset,
+                   (unsigned int)(commandOffset + 1U),
+                   (unsigned int)resumeDialogOffset,
+                   (unsigned int)resumeDialogCodeId,
+                   (int)chainStatus);
+            return chainStatus ==
+                           ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY
+                       ? ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_NOT_READY
+                       : ESP_NATIVE_GAMEPLAY_PASSWORD_BEGIN_UNSUPPORTED_RESUME;
+        }
         dialogChainStatus =
             EspNativeGameplayEventChain_preflightDialogCommand(
                 eventIndex, resumeDialogOffset, runFlags);
         if (dialogChainStatus != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
-            printf("[PASSWORD] BEGIN-DEFER event=%u cmd=%u continuation=dialog opcode=%u dialogCmd=%u status=%s mutation=no\n",
+            printf("[PASSWORD] BEGIN-DEFER event=%u cmd=%u continuation=sync-prefix+dialog opcode=%u dialogCmd=%u status=%s mutation=no\n",
                    (unsigned int)eventIndex,
                    (unsigned int)commandOffset,
                    (unsigned int)resumeDialogCodeId,

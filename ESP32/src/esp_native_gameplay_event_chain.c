@@ -171,6 +171,7 @@ static EspNativeGameplayDialogBeginStatus validateDialogCommand(
 static EspNativeGameplayEventChainPreflightStatus buildPlan(
     uint16_t eventIndex,
     uint8_t resumeCommandOffset,
+    uint16_t endCommandOffsetExclusive,
     uint32_t runFlags,
     ChainPlan* outPlan) {
     EspMapEventDescriptor descriptor;
@@ -181,8 +182,15 @@ static EspNativeGameplayEventChainPreflightStatus buildPlan(
 
     if (outPlan != NULL) memset(outPlan, 0, sizeof(*outPlan));
     if (outPlan == NULL ||
-        !eventDescriptorForIndex(eventIndex, &descriptor) ||
-        resumeCommandOffset > descriptor.commandCount ||
+        !eventDescriptorForIndex(eventIndex, &descriptor)) {
+        return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_INVALID;
+    }
+    if (endCommandOffsetExclusive == UINT16_MAX) {
+        endCommandOffsetExclusive = descriptor.commandCount;
+    }
+    if (resumeCommandOffset > descriptor.commandCount ||
+        endCommandOffsetExclusive > descriptor.commandCount ||
+        resumeCommandOffset > endCommandOffsetExclusive ||
         !EspMapScriptState_getEventState(eventIndex, &currentState) ||
         !EspMapEventFilter_prepare(&descriptor, currentState,
                                    resumeCommandOffset, runFlags, 0U,
@@ -190,7 +198,9 @@ static EspNativeGameplayEventChainPreflightStatus buildPlan(
         return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_INVALID;
     }
 
-    for (offset = resumeCommandOffset; offset < descriptor.commandCount; ++offset) {
+    for (offset = resumeCommandOffset;
+         offset < endCommandOffsetExclusive;
+         ++offset) {
         uint32_t global = (uint32_t)descriptor.firstCommandIndex + offset;
         uint8_t removed;
         ChainCommand* command;
@@ -249,7 +259,8 @@ EspNativeGameplayEventChain_maskForDialogBegin(
 
     if (outMask != NULL) memset(outMask, 0, sizeof(*outMask));
     if (outMask == NULL) return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_INVALID;
-    status = buildPlan(eventIndex, resumeCommandOffset, runFlags, &plan);
+    status = buildPlan(eventIndex, resumeCommandOffset, UINT16_MAX,
+              runFlags, &plan);
     if (status != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) return status;
 
     /* Prove the rollback owner exists before presentation.  A close/resume must
@@ -296,7 +307,28 @@ EspNativeGameplayEventChain_preflight(
     uint32_t runFlags) {
     ChainPlan plan;
     EspNativeGameplayEventChainPreflightStatus status =
-        buildPlan(eventIndex, resumeCommandOffset, runFlags, &plan);
+        buildPlan(eventIndex, resumeCommandOffset, UINT16_MAX,
+              runFlags, &plan);
+
+    if (status != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
+        return status;
+    }
+    if (plan.count != 0U && !ensureTransactionOwner()) {
+        return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY;
+    }
+    return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK;
+}
+
+EspNativeGameplayEventChainPreflightStatus
+EspNativeGameplayEventChain_preflightRange(
+    uint16_t eventIndex,
+    uint8_t resumeCommandOffset,
+    uint16_t endCommandOffsetExclusive,
+    uint32_t runFlags) {
+    ChainPlan plan;
+    EspNativeGameplayEventChainPreflightStatus status =
+        buildPlan(eventIndex, resumeCommandOffset,
+                  endCommandOffsetExclusive, runFlags, &plan);
 
     if (status != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
         return status;
@@ -487,6 +519,7 @@ static int recordRemoved(uint16_t global, uint8_t before, uint8_t after) {
 
 static EspNativeGameplayDialogResumeStatus executeChain(
     const EspNativeGameplayDialogClose* close,
+    uint16_t endCommandOffsetExclusive,
     EspNativeGameplayDialogResumeResult* outResult) {
     EspMapEventDescriptor descriptor;
     ChainPlan plan;
@@ -511,6 +544,7 @@ static EspNativeGameplayDialogResumeStatus executeChain(
 
     preflight = buildPlan(close->sourceEventIndex,
                           close->resumeCommandOffset,
+                          endCommandOffsetExclusive,
                           close->runFlags, &plan);
     if (preflight != ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
         return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
@@ -666,13 +700,29 @@ EspNativeGameplayEventChain_execute(
     close.resumeCommandOffset = commandOffset;
     close.runFlags = runFlags;
     close.resumeRequested = 1U;
-    return executeChain(&close, outResult);
+    return executeChain(&close, UINT16_MAX, outResult);
+}
+
+EspNativeGameplayDialogResumeStatus
+EspNativeGameplayEventChain_executeRange(
+    uint16_t eventIndex,
+    uint8_t commandOffset,
+    uint16_t endCommandOffsetExclusive,
+    uint32_t runFlags,
+    EspNativeGameplayDialogResumeResult* outResult) {
+    EspNativeGameplayDialogClose close;
+    memset(&close, 0, sizeof(close));
+    close.sourceEventIndex = eventIndex;
+    close.resumeCommandOffset = commandOffset;
+    close.runFlags = runFlags;
+    close.resumeRequested = 1U;
+    return executeChain(&close, endCommandOffsetExclusive, outResult);
 }
 
 EspNativeGameplayDialogResumeStatus __wrap_EspNativeGameplayDialog_resume(
     const EspNativeGameplayDialogClose* close,
     EspNativeGameplayDialogResumeResult* outResult) {
-    return executeChain(close, outResult);
+    return executeChain(close, UINT16_MAX, outResult);
 }
 
 int __wrap_EspNativeGameplayDialog_rollbackResume(

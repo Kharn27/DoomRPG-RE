@@ -83,10 +83,19 @@ typedef struct EspMapShowResult_s {
     uint16_t blocker0SpriteIndex;
     uint16_t blocker1SpriteIndex;
     uint16_t effectFlags;
+    uint16_t targetLinkStateBefore;
+    uint16_t targetLinkOrderBefore;
+    uint16_t nextLinkOrderBefore;
+    uint16_t blocker0LinkStateBefore;
+    uint16_t blocker0LinkOrderBefore;
+    uint16_t blocker1LinkStateBefore;
+    uint16_t blocker1LinkOrderBefore;
     uint8_t sourceCommandOffset;
     uint8_t showFlags;
     uint8_t visualBefore;
     uint8_t visualAfter;
+    uint8_t blocker0VisualBefore;
+    uint8_t blocker1VisualBefore;
     uint8_t blockersFound;
     uint8_t blockersRemoved;
     uint8_t blockerNoops;
@@ -151,6 +160,10 @@ EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
     const EspMapEventDescriptor* descriptor,
     uint32_t commandOffset,
     EspMapShowResult* outResult);
+
+/* Exact inverse of one successful applyShow(), used by the MOVE/render
+ * transaction when the destination frame cannot commit. */
+int EspMapSpriteTopology_rollbackShow(const EspMapShowResult* result);
 
 EspMapSpriteTopologyStatus EspMapSpriteTopology_applyHide(
     const EspMapEventDescriptor* descriptor,

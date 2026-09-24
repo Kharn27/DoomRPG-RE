@@ -68,6 +68,17 @@ EspNativeGraphicsCatalogStatus EspNativeGraphicsCatalog_buildFromRuntime(void);
 EspNativeGraphicsCatalogStatus
 EspNativeGraphicsCatalog_expandSpriteDependencies(void);
 
+/*
+ * Ensure one dynamically materialized logical sprite has a compact immutable
+ * catalog record. This is for gameplay-created objects whose resource was not
+ * present in the immutable BSP corpus (for example a crate transforming into
+ * an ammo pickup). Existing records are a no-op. Missing records are inserted
+ * atomically in sorted order from DoomRPG-ESP32.pak; on failure the published
+ * catalog remains unchanged.
+ */
+EspNativeGraphicsCatalogStatus
+EspNativeGraphicsCatalog_ensureSprite(uint16_t resourceId);
+
 int EspNativeGraphicsCatalog_isReady(void);
 const EspNativeGraphicsCatalogView* EspNativeGraphicsCatalog_view(void);
 

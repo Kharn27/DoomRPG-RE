@@ -620,9 +620,22 @@ EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
     outResult->sourceCommandOffset = (uint8_t)commandOffset;
     outResult->showFlags = showFlags;
     outResult->visualBefore = visualStates[spriteIndex];
+    outResult->targetLinkStateBefore = targetState;
+    outResult->targetLinkOrderBefore = linkOrderAt(spriteIndex);
+    outResult->nextLinkOrderBefore = topologyView.nextLinkOrder;
     outResult->targetHasEntity = hasEntity;
     outResult->targetLinkedBefore =
         (uint8_t)((targetState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U);
+    if (blocker0 != ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE) {
+        outResult->blocker0VisualBefore = visualStates[blocker0];
+        outResult->blocker0LinkStateBefore = linkStateAt(blocker0);
+        outResult->blocker0LinkOrderBefore = linkOrderAt(blocker0);
+    }
+    if (blocker1 != ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE) {
+        outResult->blocker1VisualBefore = visualStates[blocker1];
+        outResult->blocker1LinkStateBefore = linkStateAt(blocker1);
+        outResult->blocker1LinkOrderBefore = linkOrderAt(blocker1);
+    }
 
     visualStates[spriteIndex] =
         (uint8_t)((visualStates[spriteIndex] & 0x70U) | showFlags);
@@ -664,6 +677,45 @@ EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
     outResult->effectFlags = effectFlags;
     refreshView();
     return ESP_MAP_SPRITE_TOPOLOGY_OK;
+}
+
+int EspMapSpriteTopology_rollbackShow(const EspMapShowResult* result) {
+    if (!EspMapSpriteTopology_isReady() || result == NULL ||
+        result->spriteIndex >= topologyView.spriteCount) {
+        return 0;
+    }
+
+    visualStates[result->spriteIndex] = result->visualBefore;
+    setLinkState(result->spriteIndex, result->targetLinkStateBefore);
+    setLinkOrder(result->spriteIndex, result->targetLinkOrderBefore);
+
+    if (result->blocker0SpriteIndex != ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE) {
+        if (result->blocker0SpriteIndex >= topologyView.spriteCount) return 0;
+        visualStates[result->blocker0SpriteIndex] =
+            result->blocker0VisualBefore;
+        setLinkState(result->blocker0SpriteIndex,
+                     result->blocker0LinkStateBefore);
+        setLinkOrder(result->blocker0SpriteIndex,
+                     result->blocker0LinkOrderBefore);
+    }
+    if (result->blocker1SpriteIndex != ESP_MAP_SPRITE_TOPOLOGY_NO_SPRITE) {
+        if (result->blocker1SpriteIndex >= topologyView.spriteCount) return 0;
+        visualStates[result->blocker1SpriteIndex] =
+            result->blocker1VisualBefore;
+        setLinkState(result->blocker1SpriteIndex,
+                     result->blocker1LinkStateBefore);
+        setLinkOrder(result->blocker1SpriteIndex,
+                     result->blocker1LinkOrderBefore);
+    }
+
+    topologyView.nextLinkOrder = result->nextLinkOrderBefore;
+    refreshView();
+    return visualStates[result->spriteIndex] == result->visualBefore &&
+           linkStateAt(result->spriteIndex) ==
+               result->targetLinkStateBefore &&
+           linkOrderAt(result->spriteIndex) ==
+               result->targetLinkOrderBefore &&
+           topologyView.nextLinkOrder == result->nextLinkOrderBefore;
 }
 
 EspMapSpriteTopologyStatus EspMapSpriteTopology_applyHide(

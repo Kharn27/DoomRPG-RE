@@ -107,9 +107,19 @@ cosmetic failure disabled resident gameplay:
 [RESIDENTGAMEPLAY] FAILED reason=touch-feedback-draw
 ```
 
-The bounded owner is now 768 entries. More importantly, inability to create a
-cosmetic touch overlay no longer kills gameplay: the queued semantic input is
-preserved and a nonfatal `TOUCHFEEDBACK SKIP` witness is emitted.
+The historical smoke-fix first raised the bounded owner to 768 entries. More
+importantly, inability to create a cosmetic touch overlay no longer kills
+gameplay: the queued semantic input is preserved and a nonfatal
+`TOUCHFEEDBACK SKIP` witness is emitted.
+
+After this milestone was rebased together with later gameplay work, the 768-entry
+6-byte journal proved too expensive for the classic CYD boot heap. The final
+integration keeps the same large-target semantics with **640 compact 4-byte
+entries**. The largest measured SAVE/LOAD target needs about 597 edits. Each
+compact record stores the saved RGB565 value and packs the framebuffer offset
+plus halo/core selector into 16 bits; the touch-painted value is reconstructed
+exactly during reverse restore. This reduces static RAM by 2048 B compared with
+the rebased 768x6 implementation while retaining `newerOverlayWins` semantics.
 
 ## Failure 2: pickup overlays invalidated full-frame restoration
 
@@ -178,3 +188,40 @@ continued progression beyond the first door
 
 Notebook activation, consumable use, Options/store integration and familiar
 weapon presentation remain intentionally outside this milestone.
+
+## Post-rebase boot integration
+
+When this HUB redesign was combined with the later native gameplay branch, the
+first rebased image rebooted in `Render_beginLoadMapData()` before the menu
+could start. ELF symbolization showed `SDL_calloc(mapSprites)` had returned
+NULL; the next write at `src/Render.c:566` caused `StoreProhibited` at address
+zero.
+
+The feedback owner was the exact BSS regression:
+
+```text
+pre-rebase event43 image feedback = 2068 B
+rebased 768x6 feedback           = 4628 B
+delta                            = +2560 B
+```
+
+Final integration code head:
+
+```text
+6cd637c370415450dda5e89abcc13e7982368adf
+esp32-cyd CI #683 = SUCCESS
+static RAM = 45736 B
+flash = 764349 B
+```
+
+The 640x4 compact journal recovers 2048 B versus the failing rebased image. An
+ESP32-only allocation guard also makes future `mapSprites` OOM fail closed with
+an exact diagnostic instead of dereferencing NULL. The user reports that the
+reboot loop is gone and the firmware appears to work on the real CYD.
+
+Checkpoint LOAD was subsequently revalidated on the real CYD. The save itself
+was readable; the in-game SYS route had been blocked before `loadNow()` by the
+ordinary HUB-close HUD exactness check. The LOAD path now lets
+`EspNativeGameplaySession_reset()` own HUB teardown/session replacement. The user
+confirmed successful reload both from SYS after gameplay and directly from the
+cold main menu at code head `3911f72636df32a06040f08e57fa2f24fa0c2d92`.

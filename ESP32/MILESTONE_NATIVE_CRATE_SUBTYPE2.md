@@ -260,3 +260,51 @@ semantic fingerprint
 ```
 
 without serializing legacy entities.
+
+## Post-merge integration finding — initial RNG table
+
+A later real-CYD run exposed repeated trapped crates:
+
+```text
+first=0 -> TRAPPED_REMOVE
+rngByte=0 -> blast=5
+message="10 damage!"
+```
+
+Different crates and different opening orders repeated the same result. This was
+not an error in the crate threshold mapping. The ESP32 bring-up creates the real
+`DoomRPG_t` root with `SDL_calloc()`, leaving its 128-byte `Random_t.randTable`
+all zero. Because `DoomRPG_randNextByte()` only refills at the table boundary,
+the first 128 byte draws were forced to zero.
+
+Integration code head `6ab5d25216b52f096563a95749f1dbd8b33712dd` now calls one
+`DoomRPG_setRand(&doomRpg->random)` when the real core root is created. This is
+the inherited table generator; later RNG cadence and replay-guard semantics are
+unchanged.
+
+The `10 damage!` value is legacy-correct for a minimum trap roll: the original
+explosion calls radius damage with `(rnd+5, rnd+5)`, and `Player_pain()` displays
+their sum. With byte zero that is `5 + 5 = 10`.
+
+Real-CYD proof after checkpoint reload:
+
+```text
+[CRATE] CONSEQUENCE seq=4 sprite=82 first=99 second=0 secondValid=0
+        outcome=TRANSFORM effectiveDefTile=92
+        rngCombat=2 rngConsequence=1
+        attackDamage=6 attackArmorDamage=4
+[CRATE] COMMIT ... outcome=TRANSFORM effective=3/21/def92
+        removed=0 transformed=1 rollback=closed
+```
+
+`first=99` is in the exact recovered `24..149` bucket and produced an Armor
+Shard (`type=3/subtype=21`). This hardware witness proves the live post-boot /
+post-LOAD RNG stream is no longer the calloc-zero table.
+
+Build reference:
+
+```text
+esp32-cyd CI #693 = SUCCESS
+static RAM = 45736 B
+flash = 764741 B
+```
