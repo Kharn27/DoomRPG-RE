@@ -5,21 +5,24 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current origin/main = 9e009c0acbb5185afe6d9cc7eeb9dfa02eeea948
-branch = fix/inventaire
-branch code head = 5c2e2c6805a5da4b0ee1da40c09dd3155cfe41df
-local esp32-cyd build = SUCCESS
-static RAM = 47544 B
-flash = 749913 B
-hardware status = HUB REDESIGN + FEEDBACK COEXISTENCE FOCUSED REAL-CYD SMOKE PASS
-broader gameplay progression = pending
+current main = da397ce44dcd75114ca4d031be29b5e7d87e7d5a
+branch = agent/esp32-touch-feedback-facing-race
+rebased candidate code head = e60211b56edc8ce8188f326b2b20b42e0661466e
+event43 hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
+esp32-cyd CI #675 = SUCCESS
+static RAM = 47784 B
+flash = 764129 B
+main HUB boundary = focused REAL-CYD smoke pass inherited from da397ce/5c2e2c6
+rebased candidate hardware status = NOT YET RETESTED
+status = REBASED ON FOUR-PAGE HUB + CODEX SHOW/DIALOG LEASE FIX; REAL-CYD REGRESSION PENDING
 ```
 
-This branch redesigns the compact native in-game HUB and hardens reversible
-touch feedback against large modal targets and concurrent framebuffer overlays.
-The user exercised the new menu and accepted the post-fix first-door behavior,
-but explicitly did not test substantially farther into the game. Do not promote
-this boundary to an exhaustive gameplay regression pass.
+This branch is now a rebased integration candidate. It combines the current
+`main` four-page HUB/touch-feedback redesign with the later native gameplay,
+V8 checkpoint, CHECK_KEY and event43 work. The HUB smoke pass and event43 PASS
+were obtained on different pre-rebase code heads; do not treat their combination
+as hardware-proven until the rebased candidate is exercised on the real CYD.
+```
 
 ### In-game HUB redesign — focused REAL-CYD smoke pass
 
@@ -58,11 +61,6 @@ Detailed record:
 
 The final redesigned SAVE/LOAD execution paths and broader progression beyond
 the first door still require a deliberate regression run.
-
-### Previous facing-label boundary retained
-
-The merged base restores one bounded legacy HUD behavior without changing the
-permanent ESP32-native memory architecture.
 
 ### Facing-entity top-bar label — REAL-CYD PASS
 
@@ -118,7 +116,64 @@ Detailed record:
 
 - [`MILESTONE_NATIVE_FACING_LABEL.md`](MILESTONE_NATIVE_FACING_LABEL.md)
 
-### Previous V7/Automap boundary retained
+
+### EV_CHECK_KEY / Yellow Door — REAL-CYD PASS (2026-09-24)
+
+The production SELECT route now consumes the permanent native
+`EspNativeGameplayPlayerState.keys` bitmask instead of the old placeholder
+`playerKeys=0`. Opcode 41 is the recovered generic `EV_CHECK_KEY` selector:
+0/1/2/3 = Green/Yellow/Blue/Red.
+
+Real-CYD validation on Entrance event 11 / tile 200 proved the missing-Yellow-Key
+path end to end:
+
+```text
+[ACTION] SELECT seq=62 status=KEY_REQUIRED tile=200 event=11 eligible=1 unsupported=0
+[CHECKKEY] BLOCK seq=62 event=11 cmd=0 keyId=1 mask=02 message="Need Yellow Key" sound=5065-deferred continuation=paused worldMutation=no removedMutation=no turnAdvance=deferred
+[ACTIONFEEDBACK] PAINT kind=12 text="Need Yellow Key" ... durationMs=1200
+```
+
+No line/script/world mutation occurred and the following `EV_OPENLINE` remained
+unexecuted, matching the recovered legacy pause semantics. The owned-key
+continuation remains the same bounded atomic door-batch preview/commit/rollback
+path; non-door variants remain fail-closed.
+
+The previously blocking Entrance tile 377 / event 43 frontier is now hardware proven. The raw event is five commands:
+
+~~~text
+off0 EV_SHOW sprite=1  arg2=0x0000020f
+off1 EV_SHOW sprite=2  arg2=0x0000020f
+off2 EV_SHOW sprite=3  arg2=0x0000020f
+off3 EV_SHOW sprite=4  arg2=0x0000020f
+off4 EV_CLOSELINE line=102 arg2=0x000000e0
+~~~
+
+On ENTER, the four SHOW commands are eligible and execute in order; the CLOSELINE is not. Each SHOW links its target and sets its REMOVE bit. The MOVE transaction uses one bounded static 192-byte SHOW journal, not a stack-resident batch. Preflight applies all four SHOWs then rolls them back in reverse before MOVE commit; the real commit replays the same four results and retains exact rollback until the rendered destination frame commits.
+
+Real-CYD proof at code head 48accf9:
+
+~~~text
+[MOVEEVENT] SHOW-OWNER resultBytes=76 ownerBytes=192 max=4 storage=static stackBatchBytes=0
+[MOVEEVENT] SHOW-BATCH-PREFLIGHT event=43 count=4 ... exact=yes mutation=no
+[MOVEEVENT] ENTER-PREFLIGHT ... tile=377 ... status=SHOW_OK event=43 eligible=4 opcode=7
+[MOVEEVENT] SHOW-BATCH-STEP ... cmd=0 sprite=1 tile=613 ... linked=0->1 ... removed=0->1
+[MOVEEVENT] SHOW-BATCH-STEP ... cmd=1 sprite=2 tile=619 ... linked=0->1 ... removed=0->1
+[MOVEEVENT] SHOW-BATCH-STEP ... cmd=2 sprite=3 tile=455 ... linked=0->1 ... removed=0->1
+[MOVEEVENT] SHOW-BATCH-STEP ... cmd=3 sprite=4 tile=457 ... linked=0->1 ... removed=0->1
+[MOVEEVENT] SHOW-BATCH event=43 count=4 eligible=4 mutation=yes removedCommands=4 rollback=1
+[MOVEEVENT] COMMIT seq=6 exitEffect=0 enterEffect=1 render=ok rollbackLease=closed
+[RESIDENTGAMEPLAY] MOVE ... tile=345->377 ... committed=yes
+~~~
+
+The next step out of tile 377 proves the four REMOVE bits changed eligibility exactly as intended: only the suffix EV_CLOSELINE line=102 remains eligible on EXIT, it closes the door through the normal four-frame door animation, and the MOVE to tile 409 commits.
+
+The first implementation put the SHOW x4 journal inside EspNativeGameplayMoveEventResult, which overflowed the real loopTask stack during the unrelated four-frame door render and tripped the stack canary. The final implementation moved that journal to one bounded static owner. The same door then completed all four frames, Bull Demon combat/retaliation ran normally, and the event43 entry/exit sequence completed without reset.
+
+Detailed record:
+
+- [MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md](MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md)
+
+### Previous merged boundary retained
 
 The merged `main` base already contains the validated V7 Automap checkpoint
 persistence, minimal neon-blue top-HUD touch locators and standalone
@@ -127,12 +182,21 @@ baseline and are not modified by this milestone.
 
 ### Next bounded frontier
 
-Before merging, complete the focused HUB regression checklist: both two-step
-checkpoint operations, `NO SAVE`, repeated open/close, rapid tab navigation and
-continued play beyond the first door. After merge, recover the exact new `main`
-SHA and keep future behavior owner-by-owner and fail-closed where semantics are
-not yet migrated.
+First validate the **rebased** candidate on the real CYD. The focused regression
+should cover the new four-page HUB/SYS open-close path, the line-102 door, Bull
+Demon combat, MOVE 345->377 event43 SHOW x4, and EXIT 377->409 CLOSELINE.
 
+The Codex review also found a latent transaction corner: EXIT EV_SHOW followed
+by an ENTER dialog retained the SHOW rollback owner after the dialog opened.
+`finishPendingDialog()` now uses the same SHOW-owner release helper as the normal
+render-commit path. CI proves the code compiles; this specific combination has
+not been hardware-reached by the event43 witness and is not promoted to a
+hardware PASS.
+
+After the rebased regression, the known gameplay blocker to isolate remains
+**cold main-menu V8 Load**: a valid V8 checkpoint can report `No Save` directly
+after boot while loading correctly through the in-game SYS path after gameplay
+initialization. Preserve fail-closed corrupt-save validation.
 ## Permanent architecture / hard invariants
 
 ```text
@@ -242,7 +306,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors, hardware-proven pure multi-line SELECT door batches and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, the four-page HUB `INV/WPN/STAT/SYS`, raw-flash backing, bounded V7 checkpoint save/load from both HUB and the main menu, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, V6 crate-transform persistence, V7 Automap reveal persistence, checkpoint-resume HUD/cache/input rearm, HUB/world framebuffer ownership gating for transient action feedback, and the bounded native Automap core with live movement, visited-cell reveal, render-derived thin delimiters, pickup ownership retention and SELECT door interaction while the map owns the framebuffer.
+Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors, hardware-proven pure multi-line SELECT door batches and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, the four-page HUB `INV/WPN/STAT/SYS`, raw-flash backing, bounded checkpoint save/load from both HUB and the main menu, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, checkpoint-resume HUD/cache/input rearm, HUB/world framebuffer ownership gating for transient action feedback, and the bounded native Automap core with live movement, visited-cell reveal, render-derived thin delimiters, pickup ownership retention and SELECT door interaction while the map owns the framebuffer.
 
 The player root remains:
 
@@ -255,7 +319,8 @@ The HUB root remains:
 ```text
 EspNativeGameplayHubView = 28 B
 pages = INV | WPN | STAT | SYS
-WPN = complete 3x3 normal arsenal, source BGR565 converted to RGB565
+WPN = complete 3x3 normal arsenal; source BGR565 -> framebuffer RGB565
+STAT = read-only
 SYS = dedicated two-step SAVE/LOAD checkpoint page
 world dispatch blocked while HUB active
 turn advance disabled while HUB active
@@ -273,7 +338,7 @@ The CYD main-menu presentation is now:
 ```
 
 The original J2ME `Exit` row is gone. Double-tap confirmation on `Load Game`
-calls the shared native checkpoint service. A readable V1-V7 record rebuilds
+calls the shared native checkpoint service. Historically, a readable V1-V6 record rebuilt
 the immutable BSP, restores its versioned mutable owners and configures the
 resume session directly in `ST_PLAYING`, without replaying the intro.
 
@@ -598,7 +663,7 @@ esp32-cyd #387 / 35704985512 = SUCCESS
 REAL-CYD = PASS
 ```
 
-### Historical V5 world boundary — superseded by V6/V7
+### Current V5 world boundary
 
 Persisted:
 
@@ -612,7 +677,7 @@ EspMapLineTextureState locked/unlocked texture variants
 EspNativeGameplayActionEngine action-owned removed-sprite overlay
 ```
 
-Still intentionally fresh at the V5 boundary:
+Still intentionally fresh / not yet persisted:
 
 ```text
 automap reveal state
@@ -628,15 +693,9 @@ other legacy player metadata not yet owned natively
 Gameplay RNG is rebuilt fresh, but the recovered original save format does not
 serialize RNG state, so this is not listed as a missing original-save field.
 
-The current V7 writer additionally persists V6 crate transformations and V7
-Automap reveal state. V1-V6 records remain readable and default owners absent
-from their version to fresh state.
-
-Detailed records:
+Detailed record:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md)
 
 ## HUB/action-feedback framebuffer ownership — REAL-CYD PASS
 
@@ -716,12 +775,12 @@ hardware-validation/docs milestone. If hardware exposes a divergence, constrain
 the fix to that transition family.
 
 Automap follow-up parity remains separately bounded: PASS_TURN and other normal
-playing actions while Automap is open and hardware execution of `EV_GIVEMAP`.
-Automap reveal-state checkpoint persistence is already hardware-proven in V7.
+playing actions while Automap is open, hardware execution of `EV_GIVEMAP`, and
+checkpoint persistence of Automap reveal state are not part of the validated
+core milestone.
 
-The mixed physical/touch SAVE cursor fix is retained. This branch replaces its
-old STAT overlay with the dedicated SYS page; the final two-step SAVE/LOAD paths
-still need their focused post-redesign hardware retest.
+Separate pending work still includes the mixed physical/touch SAVE cursor
+regression and unrelated deferred gameplay families.
 
 ## Hardware-validated intro display polish
 
@@ -794,7 +853,7 @@ RAM static = 44832 B
 ## Intentionally deferred / incomplete families
 
 ```text
-save-v7 mutable-world persistence beyond each validated section
+save-v6 mutable-world persistence beyond each validated section
 CHANGEMAP real-CYD exit validation
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
@@ -818,7 +877,7 @@ special death consequences
 Kronos-specific semantics
 password late full-HUD repaint replay
 EV_GIVEMAP hardware execution + remaining Automap action parity
-post-redesign SYS SAVE/LOAD/NO-SAVE hardware regression pass
+Automap reveal-state checkpoint persistence
 EV_CHECK_KEY production route
 HUB Notebook activation
 HUB consumable confirmation/use

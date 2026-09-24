@@ -13,56 +13,96 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current origin/main = 9e009c0acbb5185afe6d9cc7eeb9dfa02eeea948
-branch = fix/inventaire
-branch code head = 5c2e2c6805a5da4b0ee1da40c09dd3155cfe41df
-local esp32-cyd build = SUCCESS
-static RAM = 47544 B
-flash = 749913 B
-hardware status = focused HUB/first-door smoke pass
+current main = da397ce44dcd75114ca4d031be29b5e7d87e7d5a
+branch = agent/esp32-touch-feedback-facing-race
+rebased candidate code head = e60211b56edc8ce8188f326b2b20b42e0661466e
+event43 hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
+esp32-cyd CI #675 = SUCCESS
+static RAM = 47784 B
+flash = 764129 B
+hardware status = combined rebased candidate not yet retested
 ```
 
-Current branch addition:
+Current rebased integration:
 
 ```text
-industrial four-page HUB = INV | WPN | STAT | SYS
+main HUB = INV | WPN | STAT | SYS
 WPN = complete 3x3 normal arsenal
-weapon palette = source BGR565 -> framebuffer RGB565
-SYS = dedicated SAVE/LOAD, second-select confirmation, NO SAVE
-touch feedback = 768 bounded reversible edits
-restore = per-pixel ownership; newer overlays win
+SYS = two-step SAVE/LOAD/NO SAVE
+touch feedback = 768 bounded edits + per-pixel ownership restore
+agent checkpoint = V8 monster-state extension retained
+event43 = bounded EV_SHOW x4 MOVE chain retained
+CHECK_KEY = native PlayerState key gate retained
+Codex fix = SHOW rollback lease released after pending dialog finalizes
+```
 ```
 
-Focused real-CYD sequence:
+Current continuation also has a real-CYD pass for native EV_CHECK_KEY on the Entrance Yellow Door. Opcode 41 uses the shared PlayerState key bitmask, reports Need Yellow Key for selector 1 / mask 0x02, queues bounded top-bar feedback, and pauses before the following OPENLINE with zero world/script mutation when the key is absent.
+
+Entrance tile 377 / event 43 is no longer a progression blocker. Hardware proved the exact bounded MOVE chain EV_SHOW x4 on ENTER followed later by EV_CLOSELINE 102 on EXIT. The SHOW journal is a single 192-byte static owner; the public MOVE result is 76 bytes and carries no batch-sized stack payload. Preflight applies+reverse-rolls-back the four SHOWs before MOVE commit, and the rendered destination frame closes the rollback lease only after success. Exact serial witnesses are in PORTING_STATUS.md and MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md.
+
+Current hardware-proven addition on this branch:
 
 ```text
-world -> INV -> WPN -> STAT -> SYS -> close -> world
-direct INV -> SYS touch
-large LOAD-card feedback failure reproduced and fixed
-Armor Shard feedback + first-door SELECT restore failure reproduced and fixed
-post-fix first-door behavior accepted by the user
-progression substantially beyond first door = not tested
+native facing-entity top-bar label
+ -> compact 34-byte current-target owner
+ -> no legacy Entity_t pointer
+ -> no resident table of entity names
+ -> on-demand /entities.db name read through DoomRPG-ESP32.pak
+ -> recovered short forward trace: +31-unit origin, 3 tile steps
+ -> sprite + line-entity targets
+ -> type-9 blocker remains label-hidden
+ -> topbar fallback below timed feedback and statBarMessage
 ```
 
-Latest relevant milestone:
+Real-CYD witnesses:
+
+```text
+Civilian : sprite target, distance=1
+Computer : line target, distance=2 then 1
+Door     : line target, distance=3
+none     : exact label clear after rotation
+HUB close: current Civilian target retained and repainted
+```
+
+Pure TURN retargeting remains non-turn gameplay:
+
+```text
+[MONSTERTURN] ROTATE-NO-TURN ... legacyAdvance=no
+```
+
+The supplied hardware run remained alive with:
+
+```text
+heap=81936
+heap8=16384
+largest8=11764
+```
+
+Latest relevant milestones:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md)
+- [MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md](MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md)
+- [MILESTONE_NATIVE_CHECK_KEY_YELLOW_DOOR.md](MILESTONE_NATIVE_CHECK_KEY_YELLOW_DOOR.md)
+- [MILESTONE_NATIVE_FACING_LABEL.md](MILESTONE_NATIVE_FACING_LABEL.md)
 
 Previously merged relevant milestones remain:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md)
-- [`MILESTONE_NATIVE_FACING_LABEL.md`](MILESTONE_NATIVE_FACING_LABEL.md)
 - [`MILESTONE_NATIVE_AUTOMAP.md`](MILESTONE_NATIVE_AUTOMAP.md)
 - [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
 - [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 - [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
 
-### Next milestone after merge
+### Next milestone
 
-Before merge, exercise the redesigned SYS SAVE/LOAD/NO-SAVE paths and continued
-gameplay beyond the first door. After merge, recover the exact merged `main`
-before selecting the next bounded gameplay frontier.
+Hardware-regress the rebased candidate before adding new gameplay semantics:
+exercise HUB/SYS open-close and SAVE/LOAD presentation, line-102 door animation,
+Bull Demon combat, event43 MOVE 345->377, and the following 377->409 CLOSELINE.
 
+The Codex SHOW-exit + ENTER-dialog lease fix is CI-valid but has no direct
+hardware witness yet. Once the rebased progression is clean, return to the cold
+main-menu V8 Load regression; do not weaken save validation to make it pass.
 ## Build environment
 
 Normal hardware reference:
@@ -175,7 +215,7 @@ large exact range=2048 B
 
 ## Current native gameplay frontier
 
-The real-CYD-owned engine includes native movement/collision, rotation-in-place without gameplay/monster turn advancement, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines including pure multi-line SELECT door batches, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, monster state/position/activation/movement/attack families, raw-flash requested-map backing, the four-page HUB `INV/WPN/STAT/SYS`, bounded V7 checkpoint save/load from both HUB and the main menu, resource consumed-overlay persistence, script/event-state persistence, line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, V6 crate-transform persistence, V7 Automap reveal persistence, hardware-proven checkpoint-resume HUD/cache/input rearm, and HUB/world feedback framebuffer ownership gating.
+The real-CYD-owned engine includes native movement/collision, rotation-in-place without gameplay/monster turn advancement, event-first SELECT, bounded event/script execution, dialog, dynamic doors/lines including pure multi-line SELECT door batches, mutable line textures, shared PlayerState, pickups/resources, hazards, native weapon rendering/control/combat, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, monster state/position/activation/movement/attack families, raw-flash requested-map backing, the four-page HUB `INV/WPN/STAT/SYS`, bounded checkpoint save/load from both HUB and the main menu, resource consumed-overlay persistence, script/event-state persistence, line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, hardware-proven checkpoint-resume HUD/cache/input rearm, and HUB/world feedback framebuffer ownership gating.
 
 Player/HUB compact roots:
 
@@ -188,16 +228,15 @@ EspNativeGameplayHubView = 28 B
 
 ```text
 pages = INV | WPN | STAT | SYS
+WPN = complete 3x3 normal arsenal
+STAT = read-only
+SYS = two-step SAVE/LOAD checkpoint page
 MENU underlay = 32x20 RGB565 = 1280 B
 world dispatch blocked while HUB active
 turn advance disabled while HUB active
 ```
 
-INV projects Notebook, carried items, Credits and keys. WPN is the complete 3x3
-direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded. Its icon
-path converts source BGR565 palettes to framebuffer RGB565. STAT remains
-read-only. SYS owns the bounded in-game two-step SAVE/LOAD controls. The main
-menu exposes a separate LOAD-only entry through the same V7 checkpoint service.
+INV projects Notebook, carried items, Credits and keys. WPN is the 4x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded from the normal weapon grid. STAT owns the bounded in-game SAVE/LOAD controls. The main menu exposes a separate LOAD-only entry through the same checkpoint service.
 
 ## Main-menu Load Game — REAL-CYD PASS
 
@@ -208,15 +247,9 @@ Options
 Help/About
 ```
 
-The ESP32 presentation replaces the obsolete J2ME `Exit` row and keeps the
-existing double-tap confirmation contract. A successful `Load Game` validates
-the one-slot checkpoint, releases menu-only runtime, restores the native world
-and enters `ST_PLAYING` with intro replay disabled.
+The ESP32 presentation replaces the obsolete J2ME Exit row and keeps the existing double-tap confirmation contract. The original main-menu LOAD milestone was hardware-proven at 18c1cfb for the then-current checkpoint formats: a successful read released menu-only runtime, restored the native world and entered ST_PLAYING with intro replay disabled; missing/invalid saves remained in MENU_MAIN with red No Save.
 
-When no readable checkpoint exists, the action remains in `MENU_MAIN`, paints
-`No Save` in red on the selected row and rebases the deterministic framebuffer
-witness so further menu taps remain valid. Both outcomes are hardware-proven at
-`18c1cfb`.
+**Current qualification:** after the later V8 monster-state extension, the user has reproduced a cold-boot regression where main-menu Load Game reports No Save for a valid V8 file that subsequently loads successfully through HUB/STAT in the same firmware. Therefore the historical main-menu pass must not be treated as a current V8 cold-load proof until that startup-path regression is fixed and retested.
 
 ## Native checkpoint save/load
 
@@ -518,19 +551,7 @@ Detailed record:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
 
-### V6 crate transformations and V7 Automap — REAL-CYD PASS
-
-V6 appends the bounded crate-transform owner. V7 appends the bounded Automap
-line/sprite reveal snapshot. Both preserve the prefix compatibility contract;
-the current reader accepts V1 through V7 and initializes sections absent from
-an older record to their canonical fresh state.
-
-Detailed records:
-
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md)
-
-### Current V7 save-world boundary
+### Current save-world boundary
 
 Persisted now:
 
@@ -542,15 +563,15 @@ EspMapScriptState event states + removed-command bits
 EspMapLineState open/locked state
 EspMapLineTextureState locked/unlocked texture variants
 EspNativeGameplayActionEngine action-owned removed-sprite overlay
-EspNativeGameplayCrateState transformed crates
-EspMapAutomapState reveal bitsets
 ```
 
 Still fresh after LOAD:
 
 ```text
+automap reveal state
 monster mutable state/positions/activation/combat consequences
-full entity/sprite dynamic state outside owned crate transformations
+full entity/sprite dynamic state and transformed definitions
+destructible transformed state such as crate -> pickup
 power-coupling health/death globals
 persistent GSprites
 ceiling/floor color
@@ -580,27 +601,6 @@ CI #267 SUCCESS
 ```
 
 The timer still uses real elapsed time and resumes after HUB closes. The user reproduced the original pickup-message/HUB scenario on the real CYD and confirmed the stale fragment has disappeared. This fix is hardware-valid at `5a1020fd5d160c111ff09ecb8a480f37ea8d0578`.
-
-### Touch-feedback coexistence follow-up — focused REAL-CYD smoke pass
-
-The redesigned SYS cards exposed two additional assumptions in the generic
-120-ms touch overlay: 512 reversible edits were insufficient for a 128x21
-double-ring target, and full-frame FNV equality was invalid while independent
-pickup/message/view-flash owners were active. The current bounded contract is:
-
-```text
-edit capacity = 768
-overlay creation failure = cosmetic/nonfatal; semantic input stays queued
-restore = reverse per-pixel saved/painted ownership
-newer overlay value = preserved
-unrelated framebuffer drift = diagnostic/nonfatal
-framebuffer/presentation failure = fatal
-```
-
-The first-door trace proved the failure occurred before door dispatch at
-`touch-feedback-restore`; the post-fix first-door smoke retest was accepted by
-the user. See
-[`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md).
 
 ## CHANGEMAP candidate on this branch
 
@@ -653,11 +653,11 @@ eligible Entrance exit event
 ```
 
 Keep remaining Automap parity separate: PASS_TURN/other normal playing actions
-while the map is open and hardware execution of `EV_GIVEMAP`. Reveal-state
-checkpoint persistence is already hardware-proven in V7.
+while the map is open, hardware execution of `EV_GIVEMAP`, and save persistence
+of reveal state are not claimed by the current Automap milestone.
 
-The mixed physical/touch SAVE cursor fix is retained. The redesigned SYS page
-still needs its final two-step SAVE/LOAD/NO-SAVE hardware regression pass.
+Separate pending work still includes the mixed physical/touch SAVE cursor
+regression and unrelated deferred gameplay families.
 
 ## Secret-door multi-line SELECT transaction
 
@@ -700,9 +700,6 @@ See `MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md` for the exact geometry and hardwa
 
 ## Recent milestone index
 
-- [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md)
-- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md)
-- [`MILESTONE_NATIVE_FACING_LABEL.md`](MILESTONE_NATIVE_FACING_LABEL.md)
 - [`MILESTONE_NATIVE_AUTOMAP.md`](MILESTONE_NATIVE_AUTOMAP.md)
 - [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 - [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
@@ -732,12 +729,12 @@ See `MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md` for the exact geometry and hardwa
 See `PORTING_STATUS.md` for the authoritative list. Important current boundaries include:
 
 ```text
-save-v7 mutable-world sections beyond each validated owner
+save-v6 mutable-world sections beyond each validated owner
 CHANGEMAP hardware level-exit validation
 audio
 password late presentation cleanup replay
 GIVEMAP hardware execution + remaining Automap action parity
-post-redesign SYS SAVE/LOAD/NO-SAVE hardware regression pass
+Automap reveal-state checkpoint persistence
 CHECK_KEY production route
 HUB Notebook activation / consumable use / Options / store
 remaining advanced combat/monster/special-death families
