@@ -2224,9 +2224,34 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
             if (statusCursor == kStatusSave) {
                 lastOperation = 1U;
                 lastOperationOk = saveNow() ? 1U : 0U;
-                if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
-                return lastOperationOk ? ESP_NATIVE_GAMEPLAY_HUB_REDRAWN
-                                       : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+                if (!lastOperationOk) {
+                    if (!paintSaveOverlay()) {
+                        return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+                    }
+                    return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+                }
+
+                /* A successful confirmation is terminal for the HUB: restore
+                 * its HUD underlay now and let resident gameplay redraw the
+                 * settled world. The action-engine feedback lease is painted
+                 * by that redraw and, on expiry, recomposes the current
+                 * FORCE_MESSAGE/facing-label fallback instead of restoring a
+                 * stale pre-HUB framebuffer snapshot. */
+                status = __real_EspNativeGameplayHub_handleAction(
+                    ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN);
+                if (status != ESP_NATIVE_GAMEPLAY_HUB_CLOSED) return status;
+                if (!EspNativeGameplayActionEngine_queueTextFeedback(
+                        ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_STATUS_TEXT,
+                        "Game saved", 0U)) {
+                    printf("[NATIVESAVE] SAVE-FEEDBACK-DEFER text=\"Game saved\" reason=feedback-busy checkpoint=committed hub=closed\n");
+                }
+                else {
+                    printf("[NATIVESAVE] SAVE-CLOSE result=success hub=closed feedback=\"Game saved\" duration=action-default fallback=status-then-facing turn=no\n");
+                }
+                statusCursor = kStatusSave;
+                lastOperation = 0U;
+                lastOperationOk = 0U;
+                return ESP_NATIVE_GAMEPLAY_HUB_CLOSED;
             }
 
             /*
