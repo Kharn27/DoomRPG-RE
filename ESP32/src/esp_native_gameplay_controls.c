@@ -17,11 +17,22 @@
 #define NEON_RED_HALO    0x4000U
 #define NEON_RED_CORE    0xf800U
 
+#define TOUCH_FEEDBACK_CORE_BIT   0x8000U
+#define TOUCH_FEEDBACK_OFFSET_MASK 0x7fffU
+
 typedef struct TouchFeedbackEdit_s {
-    uint16_t offset;
+    /* 160x120 has only 19200 pixels, so bit 15 is free. Use it to record
+     * whether this edit used the current core or halo additive. The painted
+     * RGB565 value is reconstructed exactly from saved+additive on restore. */
+    uint16_t offsetAndTone;
     uint16_t saved;
-    uint16_t painted;
 } TouchFeedbackEdit;
+
+_Static_assert(sizeof(TouchFeedbackEdit) == 4U,
+               "touch feedback edit must remain compact");
+_Static_assert((DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT) <=
+                   TOUCH_FEEDBACK_CORE_BIT,
+               "logical framebuffer must fit in 15-bit touch offset");
 
 typedef struct TouchFeedback_s {
     TouchFeedbackEdit edits[ESP_NATIVE_GAMEPLAY_FEEDBACK_MAX_EDITS];
@@ -29,6 +40,8 @@ typedef struct TouchFeedback_s {
     uint32_t baselineFNV;
     uint32_t overlayFNV;
     uint16_t count;
+    uint16_t halo;
+    uint16_t core;
     uint8_t action;
     uint8_t zone;
     uint8_t active;
@@ -133,12 +146,14 @@ static int editFeedbackPixel(uint16_t* framebuffer,
     }
 
     offset = (unsigned int)y * DOOMRPG_LOGICAL_WIDTH + (unsigned int)x;
+    if (additive != feedback.halo && additive != feedback.core) return 0;
+
     edit = &feedback.edits[feedback.count++];
     pixel = framebuffer + offset;
-    edit->offset = (uint16_t)offset;
+    edit->offsetAndTone = (uint16_t)offset |
+        (additive == feedback.core ? TOUCH_FEEDBACK_CORE_BIT : 0U);
     edit->saved = *pixel;
     *pixel = glowAdd565(*pixel, additive);
-    edit->painted = *pixel;
     return 1;
 }
 
@@ -340,6 +355,8 @@ int EspNativeGameplayControls_begin(
     feedback.active = 1U;
 
     palette = feedbackPalette(hit);
+    feedback.halo = palette.halo;
+    feedback.core = palette.core;
     innerLeft = (int)hit->left + 1;
     innerTop = (int)hit->top + 1;
     innerRight = (int)hit->right - 1;
@@ -392,12 +409,18 @@ int EspNativeGameplayControls_restore(
     index = feedback.count;
     while (index > 0U) {
         const TouchFeedbackEdit* edit = &feedback.edits[--index];
+        const uint16_t offset =
+            edit->offsetAndTone & TOUCH_FEEDBACK_OFFSET_MASK;
+        const uint16_t additive =
+            (edit->offsetAndTone & TOUCH_FEEDBACK_CORE_BIT) != 0U
+                ? feedback.core : feedback.halo;
+        const uint16_t painted = glowAdd565(edit->saved, additive);
         /* Restore only pixels still carrying the value written by this
          * overlay. A later status message, view flash or modal painter owns
          * any changed value and must win instead of being rolled back. Reverse
          * traversal also preserves the exact stack for duplicate line pixels. */
-        if (framebuffer[edit->offset] == edit->painted) {
-            framebuffer[edit->offset] = edit->saved;
+        if (framebuffer[offset] == painted) {
+            framebuffer[offset] = edit->saved;
         }
         else {
             ++conflicts;
