@@ -275,9 +275,12 @@ matches `totalDamage + armorDamage` in the supplied witnesses, the spray is
 presented on the attack frame, its 350 ms lease restores the world cleanly, and
 the 1200 ms top-bar lease remains independent.
 
-Miss and crit formatting remain recovered from the legacy implementation but
-were not required for this hardware PASS because the ordinary nonlethal, lethal,
-retaliation and previously-crashing render paths are all exercised.
+Miss formatting is now additionally **hardware-proven on the real classic CYD**.
+During the later Entrance regression run the user physically observed the
+native top-bar `"Missed!"` result on a real player attack. This closes the
+previously software-only miss-formatting boundary. Critical-hit formatting
+remains recovered from the legacy implementation but is not newly claimed by
+this witness.
 
 ## PR review follow-up — preserve active gib lease
 
