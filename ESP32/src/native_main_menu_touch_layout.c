@@ -305,10 +305,10 @@ static void chamferCard(Render_t* render,
                         int top,
                         int right,
                         int bottom) {
-    putPixel(render, left, top, ESP_HUB_COLOR_BG);
-    putPixel(render, right, top, ESP_HUB_COLOR_BG);
-    putPixel(render, left, bottom, ESP_HUB_COLOR_BG);
-    putPixel(render, right, bottom, ESP_HUB_COLOR_BG);
+    putPixel(render, left, top, ESP_HUB_COLOR_BLACK);
+    putPixel(render, right, top, ESP_HUB_COLOR_BLACK);
+    putPixel(render, left, bottom, ESP_HUB_COLOR_BLACK);
+    putPixel(render, right, bottom, ESP_HUB_COLOR_BLACK);
 }
 
 static void drawDashboardCard(DoomRPG_t* doomRpg,
@@ -391,18 +391,18 @@ int DoomRPG_esp32MainMenuPaintDashboardSelection(
 
     render = doomRpg->render;
 
+    /* Keep the four touch cards visually independent on the true black menu
+     * background. The previous full-width ESP_HUB_COLOR_BG slab made the lower
+     * half read as one oversized grey panel and visually competed with the
+     * Doom RPG title. Repaint the bounded dashboard band black on every
+     * selection change so no previous focus pixels survive between cards.
+     */
     fillRect565(render,
                 0,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
                 DOOMRPG_LOGICAL_WIDTH - 1,
                 DOOMRPG_LOGICAL_HEIGHT - 1,
-                ESP_HUB_COLOR_BG);
-    fillRect565(render,
-                0,
-                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
-                DOOMRPG_LOGICAL_WIDTH - 1,
-                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
-                ESP_HUB_COLOR_STEEL_DARK);
+                ESP_HUB_COLOR_BLACK);
 
     for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
         drawDashboardCard(doomRpg,
@@ -411,12 +411,6 @@ int DoomRPG_esp32MainMenuPaintDashboardSelection(
                           armed && item == selectedIndex);
     }
 
-    fillRect565(render,
-                4,
-                DOOMRPG_ESP32_MAIN_MENU_DASH_FOOTER_Y,
-                155,
-                DOOMRPG_ESP32_MAIN_MENU_DASH_FOOTER_Y,
-                armed ? ESP_HUB_COLOR_AMBER_DIM : ESP_HUB_COLOR_STEEL_DARK);
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
 
     hash = framebufferHash(render);
@@ -544,7 +538,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET cards=68x23 logical=136x46 physical labels=START|LOAD|OPTIONS|HELP style=doom-tech-industrial cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET cards=68x23 logical=136x46 physical labels=START|LOAD|OPTIONS|HELP style=doom-tech-floating-on-black cursorPatchBytes=0\n");
 
     SDL_RenderPresent(NULL);
 
@@ -581,7 +575,7 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
     render = doomRpg->render;
     sceneHash = framebufferHash(render);
 
-    printf("[MAINTOUCHLAYOUT] Begin sceneFNV=%08x expected=%08x heap8=%u largest8=%u background=opaque-industrial\n",
+    printf("[MAINTOUCHLAYOUT] Begin sceneFNV=%08x expected=%08x heap8=%u largest8=%u background=black-with-floating-cards\n",
            (unsigned int)sceneHash,
            (unsigned int)EXPECTED_NATIVE_SCENE_FNV,
            (unsigned int)heap8Free(),
