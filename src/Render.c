@@ -560,6 +560,17 @@ boolean Render_beginLoadMapData(Render_t* render)
 
 	SDL_free(render->mapSprites);
 	render->mapSprites = SDL_calloc(render->numSprites, sizeof(Sprite_t));
+#ifdef DOOMRPG_ESP32
+	if (render->mapSprites == NULL) {
+		printf("[MAPSTRUCT] OOM mapSprites map=%d numMapSprites=%d numSprites=%d spriteBytes=%u requestBytes=%u failClosed=yes\\n",
+			render->loadMapID,
+			render->numMapSprites,
+			render->numSprites,
+			(unsigned int)sizeof(Sprite_t),
+			(unsigned int)((size_t)render->numSprites * sizeof(Sprite_t)));
+		return false;
+	}
+#endif
 	for (i = 0; i < render->numMapSprites; i++) {
 		mapSprite = &render->mapSprites[i];
 
