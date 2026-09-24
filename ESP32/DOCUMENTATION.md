@@ -13,28 +13,33 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 38dfbbf6310045b1b01604048c61f634e246e0cf
-branch = agent/esp32-main-menu-finger-first
-hardware-tested code head = cd557d7b727d600cecbff610d6e3e6a21d609853
-esp32-cyd CI #729 = SUCCESS
-static RAM = 44640 B
-flash = 767381 B
-hardware = finger-first MENU_MAIN visual/touch PASS
-layout = 90x62 title + 2x2 cards, 68x23 logical / 136x46 physical
-background = black between independent cards
-main-menu cursor patch storage = 0 B
-cold V8 LOAD = inherited/historically REAL-CYD PASS, not freshly replayed on cd557d7
-status = docs complete; one cold MENU_MAIN -> Load Game sanity remains before merge-ready
+current main = 08ca1a0fa766fc3caeee39a80fe24866d702f189
+branch = agent/esp32-native-barrel-destructible
+hardware-tested code head = 1b93651699d981e34b2a10318936ddfa0cf7b2e8
+esp32-cyd CI #739 = SUCCESS
+static RAM = 44648 B
+flash = 776205 B
+hardware = type12/subtype1 barrel chain REAL-CYD PASS
+visual = root wave then simultaneous sibling wave, REAL-CYD accepted
+player radius = nonlethal mutations reached; lethal remains fail-closed rollback
+aggregate damage message = candidate only; hardware retest deferred
+status = barrel milestone hardware-valid; post-test tail docs-only
 ```
 
-Finger-first main-menu presentation is now hardware-approved on the real CYD.
-The four legacy menu actions keep their existing indices and double-tap gate, but
-their presentation is a 2x2 industrial dashboard with full-card hit targets.
-The final visual pass restored the 90x62 Doom RPG title, reduced each card to
-68x23 logical pixels, and removed the full-width grey/blue backing slab so the
-cards float on true black. Selection repaint is allocation-free and the old four
-cursor underlay patches are gone, reducing static RAM by 1104 B versus current
-main. See `MILESTONE_MAIN_MENU_FINGER_FIRST.md`.
+The active barrel milestone is hardware-valid on the real CYD. A distant shot
+proved a complete three-barrel causal chain: the root runs its 3-frame logical
+180 explosion, discovers both cardinal neighbors, then both neighbors animate
+together in one bounded second wave before their radius callbacks execute.
+The user explicitly accepted the visual result.
+
+A close-range run additionally reached native player radius damage twice and
+then the intentionally unsupported lethal/death boundary. The final lethal
+component produced `PLAYER-DEFER`, cancelled the requested monster turn and
+rolled back player/RNG/world ownership exactly. The multi-blast aggregate damage
+message did not get a successful commit in that run and is explicitly deferred
+until healing/medkits make a clean nonlethal retest practical.
+
+See `MILESTONE_NATIVE_BARREL_SUBTYPE1.md` for the exact hardware boundary.
 
 Current rebased integration:
 
@@ -96,6 +101,7 @@ largest8=11764
 
 Latest relevant milestones:
 
+- [`MILESTONE_NATIVE_BARREL_SUBTYPE1.md`](MILESTONE_NATIVE_BARREL_SUBTYPE1.md)
 - [`MILESTONE_MAIN_MENU_FINGER_FIRST.md`](MILESTONE_MAIN_MENU_FINGER_FIRST.md)
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md)
 - [MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md](MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md)
@@ -112,25 +118,22 @@ Previously merged relevant milestones remain:
 
 ### Next milestone
 
-Before merging this presentation branch, replay one cold
-`MENU_MAIN -> Load Game` sanity on the real CYD at `cd557d7...`; the V8 path
-is inherited and already historically proven, but that exact final presentation
-head has not yet been explicitly exercised through LOAD.
+The barrel code boundary `1b93651699d981e34b2a10318936ddfa0cf7b2e8` is
+REAL-CYD validated. Keep the aggregate multi-blast damage-message presentation
+out of the PASS claim until it can be retested nonlethally.
 
-After merge, re-read the exact new `main` SHA and create the next `agent/*`
-branch from it. The next major gameplay candidate remains the native
-**CHANGEMAP / Entrance level-exit transition**, which is the natural path toward
-finishing Entrance.
+Current GitHub `main` is
+`08ca1a0fa766fc3caeee39a80fe24866d702f189`, the merge of the already-tested
+finger-first main menu. The barrel branch was forked before that merge, so it is
+one main commit behind; its code delta versus current main is limited to the
+action engine and native sprite-renderer transient files. Do not pretend the
+combined post-merge tree was hardware-flashed at the barrel SHA.
 
-Current rebased hardware proof includes successful boot, LOAD from SYS, LOAD
-directly from the cold main menu, and a non-zero first post-LOAD crate outcome
-(`first=99 -> type3/subtype21 Armor Shard`) after fixing the calloc-zero RNG
-table. The historical event43 PASS remains anchored to `48accf9`; no fresh
-post-rebase event43 serial witness is claimed. The defensive SHOW-exit + ENTER-dialog lease fix remains in production code,
-but Entrance has now been exhaustively scanned on real hardware and contains no
-candidate movement pair of that exact form. The temporary census reported
-`events=93 candidates=0` for both initial and current restored script state,
-then was removed exactly.
+After the user merges this branch, re-read the exact new `main` SHA before
+creating the next `agent/*`. The next major gameplay candidate remains the
+native **CHANGEMAP / Entrance level-exit transition**. The proper legacy HUD
+message queue / aggregate barrel feedback retest stays a separate later UI
+frontier.
 ## Build environment
 
 Normal hardware reference:
@@ -728,6 +731,7 @@ See `MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md` for the exact geometry and hardwa
 
 ## Recent milestone index
 
+- [`MILESTONE_NATIVE_BARREL_SUBTYPE1.md`](MILESTONE_NATIVE_BARREL_SUBTYPE1.md)
 - [`MILESTONE_NATIVE_AUTOMAP.md`](MILESTONE_NATIVE_AUTOMAP.md)
 - [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 - [`MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md`](MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md)
@@ -759,6 +763,9 @@ See `PORTING_STATUS.md` for the authoritative list. Important current boundaries
 ```text
 save-v6 mutable-world sections beyond each validated owner
 CHANGEMAP hardware level-exit validation
+native player lethal/death transition
+barrel aggregate multi-blast damage-message hardware retest / proper HUD queue
+remaining barrel radius-hurtable families beyond barrel + player
 audio
 password late presentation cleanup replay
 GIVEMAP hardware execution + remaining Automap action parity
