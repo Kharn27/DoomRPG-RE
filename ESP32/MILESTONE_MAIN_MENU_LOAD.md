@@ -85,3 +85,70 @@ result       = SUCCESS
 
 Historical `START_GAME.md` remains an archive of the earlier fresh-start
 milestone and is intentionally not rewritten by this change.
+
+
+## 2026-09-24 cold MENU_MAIN V8 validation regression — REAL-CYD PASS
+
+A later V8 checkpoint exposed a startup-only false negative:
+
+```text
+cold MENU_MAIN -> Load Game
+[NATIVESAVE] READABLE-V8 ... result=invalid
+[MAINLOAD] NO-SAVE missing-or-invalid
+
+start gameplay -> HUB/SYS -> Load Game
+[NATIVESAVE] LOAD ... version=8 ... restored
+```
+
+The file was not corrupt. The cold reader was performing full crate-transform
+validation before the native gameplay EntityDef catalog had been materialized.
+Crate checkpoint codes are canonical packed values 1..9, but
+`EspNativeGameplayCrateState_snapshotShapeValid()` resolved each code through
+the live EntityDef catalog. After gameplay initialization that dependency existed;
+at cold MENU_MAIN it did not.
+
+The permanent split is:
+
+```text
+cold file/readability validation:
+  exact V8 size + CRC
+  resource/script/line/removal shapes
+  crate bitset/count/code(1..9)/padding/FNV
+  automap + monster snapshot shapes
+  no live EntityDef dependency
+
+real restore:
+  rebuild map/runtime + EntityDef catalog
+  full crate code -> live target tile validation
+  restore or fail closed
+```
+
+The V8 monster workspace is also reserved before reopening the SD file, avoiding
+an unnecessary cold-menu allocation peak while preserving the same on-disk
+record and validator semantics.
+
+Real-CYD witness at code head
+`133f67882336f9f70f6294369e1571cde5a07699`:
+
+```text
+[NATIVESAVE] READABLE-V8 path=/DoomRPG-ESP32.sav bytes=3548
+             monsterWorkspace=1612 allocation=before-reopen
+             crateValidation=file-shape/catalog-deferred result=valid
+[MAINMENU] Runtime cleanup ... heap8=9704->65112
+[ENTITYDEFTYPE] READY defs=115 ...
+[CRATECHECKPOINT] RESTORE ... transformed=8 ... stateFNV=a8766473
+[MONSTERSTATE] STAGE-RESTORE ... monsters=30 ...
+[NATIVESAVE] LOAD ... version=8 bytes=3548 ... session=reprime-pending
+[MAINLOAD] READY checkpoint restored; intro=skipped session=resume-pending state=3
+```
+
+The resumed resident session then armed normally with
+`shapeData == NULL` and `mediaTexels == NULL`.
+
+Build reference:
+
+```text
+esp32-cyd CI #714 = SUCCESS
+static RAM = 45744 B
+flash = 766865 B
+```

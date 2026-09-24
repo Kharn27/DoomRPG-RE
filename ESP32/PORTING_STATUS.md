@@ -5,18 +5,22 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = da397ce44dcd75114ca4d031be29b5e7d87e7d5a
-branch = agent/esp32-touch-feedback-facing-race
-hardware-tested code head = 6ab5d25216b52f096563a95749f1dbd8b33712dd
+current main = dcd1ac18bd1eed35433e662933f568c9c1e172fe
+branch = agent/esp32-move-show-dialog-lease-hw
+cold-load hardware-tested code head = 133f67882336f9f70f6294369e1571cde5a07699
+door/event43 stack-fix hardware-tested code head = 30be906f949bc05d4d9dfc899b1de3581dc95e10
 event43 original hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
-esp32-cyd CI #693 = SUCCESS
-static RAM = 45736 B
-flash = 764741 B
-rebased boot status = REAL-CYD PASS
-checkpoint LOAD = REAL-CYD PASS from SYS and cold main menu
-core RNG initial seed = REAL-CYD PASS; first post-LOAD crate consequence first=99
-rebased full event43 regression = not rerun after rebase
-status = MERGE-READY
+esp32-cyd CI #714 = SUCCESS
+static RAM = 45744 B
+flash = 766865 B
+checkpoint LOAD = REAL-CYD PASS from SYS and cold MENU_MAIN
+cold V8 validation = catalog-independent file-shape PASS; live crate catalog validation retained at restore
+line102 door stack = REAL-CYD PASS after sprite Scratch moved off loopTask stack
+event43 345->377 SHOW x4 + 377->409 CLOSELINE = REAL-CYD PASS on stack-fix head
+Missed + Dodged presentation = REAL-CYD PASS
+SHOW-exit + ENTER-dialog lease fix = code/CI valid; exact map pair still not hardware-reached
+status = ACTIVE VALIDATION BRANCH
+```
 ```
 
 This rebased integration combines the current `main` four-page HUB/touch-

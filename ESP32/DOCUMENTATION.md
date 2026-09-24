@@ -13,15 +13,17 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = da397ce44dcd75114ca4d031be29b5e7d87e7d5a
-branch = agent/esp32-touch-feedback-facing-race
-hardware-tested code head = 6ab5d25216b52f096563a95749f1dbd8b33712dd
-event43 original hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
-esp32-cyd CI #693 = SUCCESS
-static RAM = 45736 B
-flash = 764741 B
-hardware status = rebased boot + SYS LOAD + cold main-menu LOAD + initial RNG seed PASS
-status = merge-ready
+current main = dcd1ac18bd1eed35433e662933f568c9c1e172fe
+branch = agent/esp32-move-show-dialog-lease-hw
+cold-load hardware-tested code head = 133f67882336f9f70f6294369e1571cde5a07699
+door/event43 stack-fix hardware-tested code head = 30be906f949bc05d4d9dfc899b1de3581dc95e10
+esp32-cyd CI #714 = SUCCESS
+static RAM = 45744 B
+flash = 766865 B
+hardware = cold MENU_MAIN LOAD + line102 4-frame door + event43 SHOW x4/CLOSELINE PASS
+remaining targeted witness = SHOW-exit + ENTER-dialog lease path not yet located/reached
+status = active validation branch
+```
 ```
 
 Current rebased integration:
