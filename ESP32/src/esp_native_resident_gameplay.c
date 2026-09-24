@@ -1576,11 +1576,15 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             disableGameplay("touch-feedback-restore");
             return;
         }
-        printf("[TOUCHFEEDBACK] RESTORE zone=%u action=%s edits=%u frame=%08x exact=yes idle=invisible\n",
+        printf("[TOUCHFEEDBACK] RESTORE zone=%u action=%s edits=%u conflicts=%u frame=%08x->%08x baselineExact=%s newerOverlayWins=yes idle=invisible\n",
                (unsigned int)feedbackStats.zone,
                EspNativeGameplayInput_actionName(feedbackStats.action),
                (unsigned int)feedbackStats.edits,
-               (unsigned int)feedbackStats.baselineFNV);
+               (unsigned int)feedbackStats.conflicts,
+               (unsigned int)feedbackStats.baselineFNV,
+               (unsigned int)feedbackStats.restoredFNV,
+               feedbackStats.baselineFNV == feedbackStats.restoredFNV
+                   ? "yes" : "no");
     }
 
     pending = EspNativeGameplayInput_peek();

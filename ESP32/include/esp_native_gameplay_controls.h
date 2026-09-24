@@ -19,7 +19,9 @@ extern "C" {
 typedef struct EspNativeGameplayControlsStats_s {
     uint32_t baselineFNV;
     uint32_t overlayFNV;
+    uint32_t restoredFNV;
     uint16_t edits;
+    uint16_t conflicts;
     uint8_t action;
     uint8_t zone;
 } EspNativeGameplayControlsStats;
@@ -29,7 +31,8 @@ typedef struct EspNativeGameplayControlsStats_s {
  * controls are invisible at rest. A routed touch may temporarily decorate only
  * its hit rectangle with the recovered row-coded neon double-ring and action
  * glyph. Every edited RGB565 pixel is saved in a bounded static edit list and
- * restored exactly after 120 ms. No allocation, PAK IO or gameplay mutation.
+ * restored after 120 ms unless a newer overlay has since claimed that exact
+ * pixel. No allocation, PAK IO or gameplay mutation.
  */
 void EspNativeGameplayControls_reset(void);
 
