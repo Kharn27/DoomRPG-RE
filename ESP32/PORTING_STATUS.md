@@ -18,7 +18,6 @@ rebased full event43 regression = not rerun after rebase
 save status = pre-rebase checkpoint currently unreadable from main menu and in-game SYS
 status = MERGE-READY WITH DOCUMENTED SAVE-COMPATIBILITY REGRESSION
 ```
-```
 
 This branch is now a rebased integration candidate. It combines the current
 `main` four-page HUB/touch-feedback redesign with the later native gameplay,
@@ -116,6 +115,7 @@ An ESP32-only fail-closed check now guards the `mapSprites` allocation and logs
 the exact requested byte count if it ever fails again instead of dereferencing
 NULL. After flashing `6cd637c`, the user reports that the reboot loop is gone
 and the firmware appears to run normally.
+
 ### Facing-entity top-bar label — REAL-CYD PASS
 
 Legacy `DoomCanvas_checkFacingEntity()` performs a short forward trace after a
