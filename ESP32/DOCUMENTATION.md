@@ -23,7 +23,6 @@ flash = 764349 B
 hardware status = rebased boot-loop fixed; full event43 regression not rerun
 known regression = previous checkpoint unreadable from main menu and SYS
 ```
-```
 
 Current rebased integration:
 
