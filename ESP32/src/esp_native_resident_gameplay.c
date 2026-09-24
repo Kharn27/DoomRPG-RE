@@ -1647,12 +1647,6 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             PlatformInput_setTapCallback(onGameplayTap);
             printf("[AUTOMAP] UNCOVER reason=SESSION-ARM mutated=%u state=ready\n",
                    (unsigned int)uncovered);
-            if (!EspNativeGameplayMoveEvents_logShowDialogCandidates()) {
-                printf("[RESIDENTGAMEPLAY] WAIT move-event SHOW/dialog census\n");
-                gameplayState.active = 0U;
-                PlatformInput_setTapCallback(NULL);
-                return;
-            }
             printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
             printf("[RESIDENTGAMEPLAY] READY map=current entry=%s touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR6/15/16/17+SELECT_DIALOG8/26+PASSWORD10+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live password=touch-keypad-0-9+DEL+VALID menu=inventory-weapon-select-no-turn SELECT-entity/other=deferred AUTOMAP=move+turn+select-live/other-actions-deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
                    resumed != 0U ? "checkpoint-resume" : "fresh-first-frame",

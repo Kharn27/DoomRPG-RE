@@ -112,9 +112,6 @@ int EspNativeGameplayMoveEvents_pendingDialog(
     EspNativeGameplayMoveDialogIntent* outIntent);
 int EspNativeGameplayMoveEvents_finishPendingDialog(uint32_t sequence);
 
-/* Read-only census for EXIT SHOW -> ENTER DIALOG candidates. */
-int EspNativeGameplayMoveEvents_logShowDialogCandidates(void);
-
 #ifdef __cplusplus
 }
 #endif
