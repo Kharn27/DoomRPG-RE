@@ -740,7 +740,7 @@ bool loadedV6Valid(
            crateTransformsDisjoint(record.actionRemoved, crateTransforms);
 }
 
-bool recordV6Valid(bool recordV6Valid(
+bool recordV6Valid(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
     return coreShapeValid(prefix.core, kMagicV6, kVersionV6,
@@ -777,7 +777,7 @@ bool loadedV7Valid(
            automapShapeValid(automap, record.core);
 }
 
-bool recordV7Valid(bool recordV7Valid(
+bool recordV7Valid(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap) {
@@ -844,7 +844,7 @@ bool loadedV8Valid(
     return valid;
 }
 
-bool recordV8Valid(bool recordV8Valid(
+bool recordV8Valid(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
