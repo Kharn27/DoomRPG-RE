@@ -35,7 +35,6 @@ event43 = bounded EV_SHOW x4 MOVE chain retained
 CHECK_KEY = native PlayerState key gate retained
 Codex fix = SHOW rollback lease released after pending dialog finalizes
 ```
-```
 
 Current continuation also has a real-CYD pass for native EV_CHECK_KEY on the Entrance Yellow Door. Opcode 41 uses the shared PlayerState key bitmask, reports Need Yellow Key for selector 1 / mask 0x02, queues bounded top-bar feedback, and pauses before the following OPENLINE with zero world/script mutation when the key is absent.
 
@@ -103,6 +102,7 @@ Bull Demon combat, event43 MOVE 345->377, and the following 377->409 CLOSELINE.
 The Codex SHOW-exit + ENTER-dialog lease fix is CI-valid but has no direct
 hardware witness yet. Once the rebased progression is clean, return to the cold
 main-menu V8 Load regression; do not weaken save validation to make it pass.
+
 ## Build environment
 
 Normal hardware reference:

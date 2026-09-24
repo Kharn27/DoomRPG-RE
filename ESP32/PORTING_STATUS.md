@@ -22,7 +22,6 @@ This branch is now a rebased integration candidate. It combines the current
 V8 checkpoint, CHECK_KEY and event43 work. The HUB smoke pass and event43 PASS
 were obtained on different pre-rebase code heads; do not treat their combination
 as hardware-proven until the rebased candidate is exercised on the real CYD.
-```
 
 ### In-game HUB redesign — focused REAL-CYD smoke pass
 
