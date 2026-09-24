@@ -7,12 +7,12 @@
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_save_ui.h"
 
-#define SAVE_TOUCH_LEFT 91
-#define SAVE_TOUCH_RIGHT 158
-#define SAVE_TOUCH_TOP 70
-#define SAVE_TOUCH_BOTTOM 84
-#define LOAD_TOUCH_TOP 85
-#define LOAD_TOUCH_BOTTOM 99
+#define SAVE_TOUCH_LEFT 16
+#define SAVE_TOUCH_RIGHT 143
+#define SAVE_TOUCH_TOP 48
+#define SAVE_TOUCH_BOTTOM 68
+#define LOAD_TOUCH_TOP 74
+#define LOAD_TOUCH_BOTTOM 94
 
 #define SAVE_TARGET_SAVE 0U
 #define SAVE_TARGET_LOAD 1U
@@ -62,7 +62,7 @@ int __wrap_EspNativeGameplayHubTouchUi_classify(
     uint8_t bottom;
 
     if (hub == NULL || hub->active == 0U ||
-        hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
+        hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
         return __real_EspNativeGameplayHubTouchUi_classify(
             logicalX, logicalY, outHitBase);
     }
@@ -101,7 +101,7 @@ EspNativeGameplayInputStatus __wrap_EspNativeGameplayInput_consume(
 
     hub = EspNativeGameplayHub_view();
     if (hub == NULL || hub->active == 0U ||
-        hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
+        hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
         return inputStatus;
     }
 

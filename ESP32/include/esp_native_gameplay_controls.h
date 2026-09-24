@@ -10,12 +10,18 @@ extern "C" {
 #endif
 
 #define ESP_NATIVE_GAMEPLAY_FEEDBACK_MS 120U
-#define ESP_NATIVE_GAMEPLAY_FEEDBACK_MAX_EDITS 512U
+/* The largest native HUB actions are the 128x21 SAVE/LOAD cards. Their two
+ * outlines plus the centered action glyph require 597 reversible pixel edits.
+ * Keep bounded headroom so visible feedback remains exact without making a
+ * large touch target a fatal condition. */
+#define ESP_NATIVE_GAMEPLAY_FEEDBACK_MAX_EDITS 768U
 
 typedef struct EspNativeGameplayControlsStats_s {
     uint32_t baselineFNV;
     uint32_t overlayFNV;
+    uint32_t restoredFNV;
     uint16_t edits;
+    uint16_t conflicts;
     uint8_t action;
     uint8_t zone;
 } EspNativeGameplayControlsStats;
@@ -25,7 +31,8 @@ typedef struct EspNativeGameplayControlsStats_s {
  * controls are invisible at rest. A routed touch may temporarily decorate only
  * its hit rectangle with the recovered row-coded neon double-ring and action
  * glyph. Every edited RGB565 pixel is saved in a bounded static edit list and
- * restored exactly after 120 ms. No allocation, PAK IO or gameplay mutation.
+ * restored after 120 ms unless a newer overlay has since claimed that exact
+ * pixel. No allocation, PAK IO or gameplay mutation.
  */
 void EspNativeGameplayControls_reset(void);
 

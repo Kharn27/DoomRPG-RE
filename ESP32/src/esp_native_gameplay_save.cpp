@@ -21,6 +21,7 @@
 #include "esp_native_gameplay_crate_state.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_hub.h"
+#include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
@@ -60,10 +61,17 @@ constexpr uint8_t kFamiliarAmmoType = 5U;
 constexpr uint8_t kStatusSave = 0U;
 constexpr uint8_t kStatusLoad = 1U;
 constexpr uint8_t kStatusCount = 2U;
-constexpr int kOverlayLeft = 91;
-constexpr int kOverlayTop = 70;
-constexpr int kOverlayRight = 158;
-constexpr int kOverlayBottom = 98;
+constexpr uint8_t kNoConfirmation = 0xffU;
+constexpr int kPanelLeft = 8;
+constexpr int kPanelTop = 36;
+constexpr int kPanelRight = 151;
+constexpr int kPanelBottom = 98;
+constexpr int kButtonLeft = 16;
+constexpr int kButtonRight = 143;
+constexpr int kSaveTop = 48;
+constexpr int kSaveBottom = 68;
+constexpr int kLoadTop = 74;
+constexpr int kLoadBottom = 94;
 
 /* Exact on-disk v1 prefix. Keep this byte-for-byte compatible with the
  * hardware-proven 132-byte DRPGSAV1 record so existing checkpoints remain
@@ -175,6 +183,7 @@ static_assert(offsetof(LoadedSaveRecord, fileBytes) ==
 uint8_t statusCursor;
 uint8_t lastOperation;
 uint8_t lastOperationOk;
+uint8_t confirmationTarget = kNoConfirmation;
 
 /*
  * V4 grew the bounded checkpoint record by the line-state section. Keeping a
@@ -1710,20 +1719,40 @@ void drawRect(uint16_t* fb, int left, int top, int right, int bottom,
 
 const uint8_t* glyph(char c) {
     static const uint8_t A[7] = {0x0e,0x11,0x11,0x1f,0x11,0x11,0x11};
+    static const uint8_t C[7] = {0x0e,0x11,0x10,0x10,0x10,0x11,0x0e};
     static const uint8_t D[7] = {0x1e,0x11,0x11,0x11,0x11,0x11,0x1e};
     static const uint8_t E[7] = {0x1f,0x10,0x10,0x1e,0x10,0x10,0x1f};
+    static const uint8_t F[7] = {0x1f,0x10,0x10,0x1e,0x10,0x10,0x10};
+    static const uint8_t H[7] = {0x11,0x11,0x11,0x1f,0x11,0x11,0x11};
+    static const uint8_t I[7] = {0x0e,0x04,0x04,0x04,0x04,0x04,0x0e};
+    static const uint8_t K[7] = {0x11,0x12,0x14,0x18,0x14,0x12,0x11};
     static const uint8_t L[7] = {0x10,0x10,0x10,0x10,0x10,0x10,0x1f};
+    static const uint8_t N[7] = {0x11,0x19,0x19,0x15,0x13,0x13,0x11};
     static const uint8_t O[7] = {0x0e,0x11,0x11,0x11,0x11,0x11,0x0e};
+    static const uint8_t P[7] = {0x1e,0x11,0x11,0x1e,0x10,0x10,0x10};
     static const uint8_t S[7] = {0x0f,0x10,0x10,0x0e,0x01,0x01,0x1e};
+    static const uint8_t T[7] = {0x1f,0x04,0x04,0x04,0x04,0x04,0x04};
     static const uint8_t V[7] = {0x11,0x11,0x11,0x11,0x11,0x0a,0x04};
+    static const uint8_t ONE[7] = {0x04,0x0c,0x14,0x04,0x04,0x04,0x1f};
+    static const uint8_t QUESTION[7] = {0x0e,0x11,0x01,0x02,0x04,0x00,0x04};
     switch (c) {
     case 'A': return A;
+    case 'C': return C;
     case 'D': return D;
     case 'E': return E;
+    case 'F': return F;
+    case 'H': return H;
+    case 'I': return I;
+    case 'K': return K;
     case 'L': return L;
+    case 'N': return N;
     case 'O': return O;
+    case 'P': return P;
     case 'S': return S;
+    case 'T': return T;
     case 'V': return V;
+    case '1': return ONE;
+    case '?': return QUESTION;
     default: return nullptr;
     }
 }
@@ -1755,41 +1784,84 @@ void drawWord(uint16_t* fb, int x, int y, const char* text, uint16_t color) {
     }
 }
 
+void drawCenteredWord(uint16_t* fb, int centerX, int y, const char* text,
+                      uint16_t color) {
+    size_t length;
+    if (text == nullptr) return;
+    length = strlen(text);
+    drawWord(fb, centerX - (int)(length * 6U - (length != 0U ? 1U : 0U)) / 2,
+             y, text, color);
+}
+
 bool paintSaveOverlay(void) {
     const EspNativeGameplayHubView* hub = EspNativeGameplayHub_view();
     uint16_t* fb;
-    uint16_t saveColor;
-    uint16_t loadColor;
+    const char* saveLabel = "SAVE";
+    const char* loadLabel = "LOAD";
+    uint16_t saveColor = ESP_HUB_COLOR_IVORY;
+    uint16_t loadColor = ESP_HUB_COLOR_IVORY;
+    const bool hasSave = EspNativeGameplaySave_hasReadableCheckpoint() != 0;
     size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
                       (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
 
     if (hub == nullptr || hub->active != 1U ||
-        hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS ||
+        hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM ||
         Esp32PlatformVideo_framebuffer() == nullptr ||
         Esp32PlatformVideo_framebufferSizeBytes() != expected) {
         return false;
     }
 
     fb = static_cast<uint16_t*>(Esp32PlatformVideo_framebuffer());
-    saveColor = statusCursor == kStatusSave ? 0x07e0U : 0xffffU;
-    loadColor = statusCursor == kStatusLoad ? 0x07e0U : 0xffffU;
-    fillRect(fb, kOverlayLeft, kOverlayTop, kOverlayRight, kOverlayBottom,
-             0x0000U);
-    drawRect(fb, kOverlayLeft, kOverlayTop, kOverlayRight, kOverlayBottom,
-             0xffffU);
-    if (statusCursor == kStatusSave) {
-        fillRect(fb, kOverlayLeft + 3, 75, kOverlayLeft + 5, 81, 0x07e0U);
+
+    fillRect(fb, 2, 35, 157, 98, ESP_HUB_COLOR_BG);
+    fillRect(fb, kPanelLeft, kPanelTop, kPanelRight, kPanelBottom,
+             ESP_HUB_COLOR_PANEL);
+    drawRect(fb, kPanelLeft, kPanelTop, kPanelRight, kPanelBottom,
+             ESP_HUB_COLOR_STEEL);
+    drawCenteredWord(fb, 80, 38, "CHECKPOINT 1", ESP_HUB_COLOR_STEEL);
+
+    fillRect(fb, kButtonLeft, kSaveTop, kButtonRight, kSaveBottom,
+             statusCursor == kStatusSave ? ESP_HUB_COLOR_PANEL_ALT
+                                         : ESP_HUB_COLOR_BG);
+    fillRect(fb, kButtonLeft, kLoadTop, kButtonRight, kLoadBottom,
+             statusCursor == kStatusLoad ? ESP_HUB_COLOR_PANEL_ALT
+                                         : ESP_HUB_COLOR_BG);
+    drawRect(fb, kButtonLeft, kSaveTop, kButtonRight, kSaveBottom,
+             statusCursor == kStatusSave ? ESP_HUB_COLOR_AMBER
+                                         : ESP_HUB_COLOR_STEEL_DARK);
+    drawRect(fb, kButtonLeft, kLoadTop, kButtonRight, kLoadBottom,
+             statusCursor == kStatusLoad ? ESP_HUB_COLOR_AMBER
+                                         : ESP_HUB_COLOR_STEEL_DARK);
+    fillRect(fb, kButtonLeft + 3,
+             statusCursor == kStatusSave ? kSaveTop + 4 : kLoadTop + 4,
+             kButtonLeft + 5,
+             statusCursor == kStatusSave ? kSaveBottom - 4 : kLoadBottom - 4,
+             ESP_HUB_COLOR_AMBER);
+
+    if (confirmationTarget == kStatusSave) {
+        saveLabel = "SAVE?";
+        saveColor = ESP_HUB_COLOR_AMBER;
     }
-    else {
-        fillRect(fb, kOverlayLeft + 3, 87, kOverlayLeft + 5, 93, 0x07e0U);
+    else if (lastOperation == 1U) {
+        saveLabel = lastOperationOk != 0U ? "SAVED" : "FAILED";
+        saveColor = lastOperationOk != 0U ? ESP_HUB_COLOR_GREEN
+                                          : ESP_HUB_COLOR_RED;
     }
-    drawWord(fb, kOverlayLeft + 10, 75, "SAVE", saveColor);
-    drawWord(fb, kOverlayLeft + 10, 87, "LOAD", loadColor);
-    if (lastOperation != 0U) {
-        const uint16_t opColor = lastOperationOk ? 0x07e0U : 0xf800U;
-        const int y = lastOperation == 1U ? 77 : 89;
-        fillRect(fb, kOverlayRight - 7, y, kOverlayRight - 3, y + 4, opColor);
+    if (!hasSave) {
+        loadLabel = "NO SAVE";
+        loadColor = ESP_HUB_COLOR_STEEL_DARK;
     }
+    else if (confirmationTarget == kStatusLoad) {
+        loadLabel = "LOAD?";
+        loadColor = ESP_HUB_COLOR_AMBER;
+    }
+    else if (lastOperation == 2U && lastOperationOk == 0U) {
+        loadLabel = "FAILED";
+        loadColor = ESP_HUB_COLOR_RED;
+    }
+
+    drawCenteredWord(fb, 80, kSaveTop + 7, saveLabel, saveColor);
+    drawCenteredWord(fb, 80, kLoadTop + 7, loadLabel, loadColor);
     return Esp32PlatformVideo_present();
 }
 
@@ -1826,7 +1898,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
     EspNativeGameplayHubStatus status;
 
     if (before != nullptr && before->active == 1U &&
-        before->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
+        before->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
         if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ||
             action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK) {
             if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD) {
@@ -1837,29 +1909,42 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 statusCursor = (uint8_t)((statusCursor + 1U) % kStatusCount);
             }
             lastOperation = 0U;
+            confirmationTarget = kNoConfirmation;
             if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
-            printf("[NATIVESAVE] CURSOR page=status row=%u action=%s mutation=no turn=no\n",
+            printf("[NATIVESAVE] CURSOR page=system row=%u action=%s mutation=no turn=no\n",
                    (unsigned int)statusCursor,
                    statusCursor == kStatusSave ? "SAVE" : "LOAD");
             return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
         }
 
         if (action == ESP_NATIVE_GAMEPLAY_ACTION_SELECT) {
-            if (statusCursor == kStatusSave) {
-                lastOperation = 1U;
-                lastOperationOk = saveNow() ? 1U : 0U;
-                if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
-                return lastOperationOk ? ESP_NATIVE_GAMEPLAY_HUB_REDRAWN
-                                       : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
-            }
-
-            if (!EspNativeGameplaySave_hasReadableCheckpoint()) {
+            if (statusCursor == kStatusLoad &&
+                !EspNativeGameplaySave_hasReadableCheckpoint()) {
+                confirmationTarget = kNoConfirmation;
                 lastOperation = 2U;
                 lastOperationOk = 0U;
                 printf("[NATIVESAVE] LOAD-DEFER path=%s reason=missing-or-invalid mutation=no\n",
                        kLogPath);
                 if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
                 return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+            }
+
+            if (confirmationTarget != statusCursor) {
+                confirmationTarget = statusCursor;
+                lastOperation = 0U;
+                if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+                printf("[NATIVESAVE] CONFIRM-ARM page=system row=%s mutation=no turn=no\n",
+                       statusCursor == kStatusSave ? "SAVE" : "LOAD");
+                return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+            }
+            confirmationTarget = kNoConfirmation;
+
+            if (statusCursor == kStatusSave) {
+                lastOperation = 1U;
+                lastOperationOk = saveNow() ? 1U : 0U;
+                if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+                return lastOperationOk ? ESP_NATIVE_GAMEPLAY_HUB_REDRAWN
+                                       : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
             }
 
             status = __real_EspNativeGameplayHub_handleAction(
@@ -1888,11 +1973,12 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
     {
         const EspNativeGameplayHubView* after = EspNativeGameplayHub_view();
         if (after != nullptr && after->active == 1U &&
-            after->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
-            if (beforePage != ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
+            after->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
+            if (beforePage != ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
                 statusCursor = kStatusSave;
                 lastOperation = 0U;
-                printf("[NATIVESAVE] UI page=status rows=SAVE/LOAD slot=1 path=%s worldScope=resources+script+lines+action-removals+crate-transforms-v6+others-fresh legacyV1V2V3V4V5=read-only-compatible\n",
+                confirmationTarget = kNoConfirmation;
+                printf("[NATIVESAVE] UI page=system rows=SAVE/LOAD slot=1 path=%s confirmation=double-select worldScope=resources+script+lines+action-removals+crate-transforms+automap-v7+others-fresh legacyV1V2V3V4V5V6=read-only-compatible\n",
                        kLogPath);
             }
             if ((status == ESP_NATIVE_GAMEPLAY_HUB_REDRAWN ||
@@ -1904,6 +1990,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
         else if (after == nullptr || after->active == 0U) {
             statusCursor = kStatusSave;
             lastOperation = 0U;
+            confirmationTarget = kNoConfirmation;
         }
     }
     return status;

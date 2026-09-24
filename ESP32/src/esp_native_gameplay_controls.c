@@ -20,6 +20,7 @@
 typedef struct TouchFeedbackEdit_s {
     uint16_t offset;
     uint16_t saved;
+    uint16_t painted;
 } TouchFeedbackEdit;
 
 typedef struct TouchFeedback_s {
@@ -137,6 +138,7 @@ static int editFeedbackPixel(uint16_t* framebuffer,
     edit->offset = (uint16_t)offset;
     edit->saved = *pixel;
     *pixel = glowAdd565(*pixel, additive);
+    edit->painted = *pixel;
     return 1;
 }
 
@@ -378,7 +380,8 @@ int EspNativeGameplayControls_restore(
     EspNativeGameplayControlsStats* outStats) {
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     uint16_t index;
-    uint32_t expected;
+    uint16_t conflicts = 0U;
+    uint32_t restoredFNV;
     int ok = 1;
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
@@ -386,14 +389,27 @@ int EspNativeGameplayControls_restore(
     if (framebuffer == NULL) return 0;
 
     fillStats(outStats);
-    expected = feedback.baselineFNV;
     index = feedback.count;
     while (index > 0U) {
         const TouchFeedbackEdit* edit = &feedback.edits[--index];
-        framebuffer[edit->offset] = edit->saved;
+        /* Restore only pixels still carrying the value written by this
+         * overlay. A later status message, view flash or modal painter owns
+         * any changed value and must win instead of being rolled back. Reverse
+         * traversal also preserves the exact stack for duplicate line pixels. */
+        if (framebuffer[edit->offset] == edit->painted) {
+            framebuffer[edit->offset] = edit->saved;
+        }
+        else {
+            ++conflicts;
+        }
     }
 
-    if (frameFNV() != expected) ok = 0;
+    restoredFNV = frameFNV();
+    if (restoredFNV == 0U) ok = 0;
+    if (outStats != NULL) {
+        outStats->restoredFNV = restoredFNV;
+        outStats->conflicts = conflicts;
+    }
     if (ok && present && !Esp32PlatformVideo_present()) ok = 0;
     memset(&feedback, 0, sizeof(feedback));
     return ok;

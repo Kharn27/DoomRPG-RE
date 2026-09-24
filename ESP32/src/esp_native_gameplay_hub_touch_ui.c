@@ -6,6 +6,7 @@
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_content.h"
 #include "esp_native_gameplay_hub_nonweapon.h"
+#include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_hub_weapon_grid.h"
 #include "esp_native_gameplay_input.h"
@@ -18,11 +19,13 @@
 #define HUB_UI_LEFT 0
 #define HUB_UI_RIGHT 159
 
-#define HUB_UI_BLACK 0x0000U
-#define HUB_UI_PANEL 0x0008U
-#define HUB_UI_DIM_BLUE 0x0010U
-#define HUB_UI_BLUE 0x001fU
-#define HUB_UI_WHITE 0xffffU
+#define HUB_UI_BLACK ESP_HUB_COLOR_BG
+#define HUB_UI_PANEL ESP_HUB_COLOR_PANEL
+#define HUB_UI_PANEL_ALT ESP_HUB_COLOR_PANEL_ALT
+#define HUB_UI_DIM ESP_HUB_COLOR_STEEL_DARK
+#define HUB_UI_STEEL ESP_HUB_COLOR_STEEL
+#define HUB_UI_TEXT ESP_HUB_COLOR_IVORY
+#define HUB_UI_FOCUS ESP_HUB_COLOR_AMBER
 
 #define HUB_UI_FONT_NAME "a.bmp"
 #define HUB_UI_FONT_WIDTH 9U
@@ -32,28 +35,32 @@
 #define HUB_UI_FONT_SOURCE_HEIGHT 72U
 #define HUB_UI_FONT_TRANSPARENT 1U
 
-#define HUB_UI_INV_LEFT 7
+#define HUB_UI_INV_LEFT 2
 #define HUB_UI_INV_TOP 21
-#define HUB_UI_INV_RIGHT 50
+#define HUB_UI_INV_RIGHT 39
 #define HUB_UI_INV_BOTTOM 33
-#define HUB_UI_WPN_LEFT 58
+#define HUB_UI_WPN_LEFT 41
 #define HUB_UI_WPN_TOP 21
-#define HUB_UI_WPN_RIGHT 100
+#define HUB_UI_WPN_RIGHT 78
 #define HUB_UI_WPN_BOTTOM 33
-#define HUB_UI_STATUS_LEFT 108
+#define HUB_UI_STATUS_LEFT 80
 #define HUB_UI_STATUS_TOP 21
-#define HUB_UI_STATUS_RIGHT 151
+#define HUB_UI_STATUS_RIGHT 117
 #define HUB_UI_STATUS_BOTTOM 33
+#define HUB_UI_SYSTEM_LEFT 119
+#define HUB_UI_SYSTEM_TOP 21
+#define HUB_UI_SYSTEM_RIGHT 157
+#define HUB_UI_SYSTEM_BOTTOM 33
 
 #define HUB_UI_ROW_LEFT 2
 #define HUB_UI_ROW_RIGHT 157
-#define HUB_UI_ROW_TOUCH_RIGHT 105
-#define HUB_UI_ROW0_TOP 34
-#define HUB_UI_ROW0_BOTTOM 45
-#define HUB_UI_ROW1_TOP 47
-#define HUB_UI_ROW1_BOTTOM 58
-#define HUB_UI_ROW2_TOP 60
-#define HUB_UI_ROW2_BOTTOM 71
+#define HUB_UI_ROW_TOUCH_RIGHT 157
+#define HUB_UI_ROW0_TOP 36
+#define HUB_UI_ROW0_BOTTOM 52
+#define HUB_UI_ROW1_TOP 55
+#define HUB_UI_ROW1_BOTTOM 71
+#define HUB_UI_ROW2_TOP 74
+#define HUB_UI_ROW2_BOTTOM 90
 
 static int inside(int x, int y, int left, int top, int right, int bottom) {
     return x >= left && x <= right && y >= top && y <= bottom;
@@ -112,6 +119,7 @@ static int miniRows(char c, uint8_t rows[5]) {
     static const uint8_t S[5] = {7U, 4U, 7U, 1U, 7U};
     static const uint8_t T[5] = {7U, 2U, 2U, 2U, 2U};
     static const uint8_t A[5] = {2U, 5U, 7U, 5U, 5U};
+    static const uint8_t Y[5] = {5U, 5U, 2U, 2U, 2U};
     const uint8_t* source = NULL;
     switch (c) {
     case 'I': source = I; break;
@@ -122,6 +130,7 @@ static int miniRows(char c, uint8_t rows[5]) {
     case 'S': source = S; break;
     case 'T': source = T; break;
     case 'A': source = A; break;
+    case 'Y': source = Y; break;
     default: return 0;
     }
     memcpy(rows, source, 5U);
@@ -178,25 +187,33 @@ static void drawTab(uint16_t* framebuffer,
                     const char* label,
                     int selected) {
     fillRect(framebuffer, left, top, right, bottom,
-             selected ? HUB_UI_DIM_BLUE : HUB_UI_BLACK);
+             selected ? HUB_UI_PANEL_ALT : HUB_UI_PANEL);
     drawRect(framebuffer, left, top, right, bottom,
-             selected ? HUB_UI_WHITE : HUB_UI_BLUE);
+             selected ? HUB_UI_FOCUS : HUB_UI_STEEL);
     drawMiniText(framebuffer, label, (left + right) / 2,
-                 top + 2, 2, HUB_UI_WHITE);
+                 top + 2, 2, selected ? HUB_UI_FOCUS : HUB_UI_TEXT);
 }
 
 static void drawInventoryCards(uint16_t* framebuffer) {
-    static const int tops[3] = {33, 46, 59};
-    static const int bottoms[3] = {46, 59, 72};
+    static const int tops[3] = {
+        HUB_UI_ROW0_TOP, HUB_UI_ROW1_TOP, HUB_UI_ROW2_TOP
+    };
+    static const int bottoms[3] = {
+        HUB_UI_ROW0_BOTTOM, HUB_UI_ROW1_BOTTOM, HUB_UI_ROW2_BOTTOM
+    };
     int row;
     for (row = 0; row < 3; ++row) {
-        uint16_t color = row == 1 ? HUB_UI_WHITE : HUB_UI_DIM_BLUE;
+        fillRect(framebuffer, HUB_UI_ROW_LEFT, tops[row],
+                 HUB_UI_ROW_RIGHT, bottoms[row],
+                 row == 1 ? HUB_UI_PANEL_ALT : HUB_UI_BLACK);
         drawRect(framebuffer, HUB_UI_ROW_LEFT, tops[row],
-                 HUB_UI_ROW_RIGHT, bottoms[row], color);
+                 HUB_UI_ROW_RIGHT, bottoms[row],
+                 row == 1 ? HUB_UI_FOCUS : HUB_UI_DIM);
         if (row == 1) {
             int y;
-            for (y = tops[row] + 3; y <= tops[row] + 10; ++y) {
-                putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, y, HUB_UI_BLUE);
+            for (y = tops[row] + 2; y <= bottoms[row] - 2; ++y) {
+                putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, y, HUB_UI_FOCUS);
+                putPixel(framebuffer, HUB_UI_ROW_LEFT + 2, y, HUB_UI_FOCUS);
             }
         }
     }
@@ -207,7 +224,12 @@ static void drawStatusCards(uint16_t* framebuffer) {
     static const int bottoms[5] = {46, 59, 72, 85, 98};
     int row;
     for (row = 0; row < 5; ++row) {
-        drawRect(framebuffer, 2, tops[row], 157, bottoms[row], HUB_UI_DIM_BLUE);
+        if (row != 0) {
+            int x;
+            for (x = 4; x <= 155; ++x) {
+                putPixel(framebuffer, x, tops[row], HUB_UI_DIM);
+            }
+        }
     }
 }
 
@@ -308,16 +330,19 @@ static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedEntry) {
         font.width != HUB_UI_FONT_SOURCE_WIDTH ||
         font.height != HUB_UI_FONT_SOURCE_HEIGHT) return 0;
 
-    fillRect(framebuffer, 4, HUB_UI_ROW0_TOP, 156, HUB_UI_ROW0_BOTTOM, HUB_UI_BLACK);
-    fillRect(framebuffer, 4, HUB_UI_ROW1_TOP, 156, HUB_UI_ROW1_BOTTOM, HUB_UI_BLACK);
-    fillRect(framebuffer, 4, HUB_UI_ROW2_TOP, 156, HUB_UI_ROW2_BOTTOM, HUB_UI_BLACK);
+    fillRect(framebuffer, 5, HUB_UI_ROW0_TOP + 2, 155, HUB_UI_ROW0_BOTTOM - 1,
+             HUB_UI_BLACK);
+    fillRect(framebuffer, 5, HUB_UI_ROW1_TOP + 2, 155, HUB_UI_ROW1_BOTTOM - 1,
+             HUB_UI_PANEL_ALT);
+    fillRect(framebuffer, 5, HUB_UI_ROW2_TOP + 2, 155, HUB_UI_ROW2_BOTTOM - 1,
+             HUB_UI_BLACK);
 
     ok = formatEntryLine(line, sizeof(line), ' ', &previous) &&
-         drawDoomText(&font, framebuffer, line, 4, HUB_UI_ROW0_TOP, &stats);
+         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW0_TOP + 2, &stats);
     ok = formatEntryLine(line, sizeof(line), '>', &current) &&
-         drawDoomText(&font, framebuffer, line, 4, HUB_UI_ROW1_TOP, &stats) && ok;
+         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW1_TOP + 2, &stats) && ok;
     ok = formatEntryLine(line, sizeof(line), ' ', &next) &&
-         drawDoomText(&font, framebuffer, line, 4, HUB_UI_ROW2_TOP, &stats) && ok;
+         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW2_TOP + 2, &stats) && ok;
     if (!ok || !EspAssetPack_isOpen()) return 0;
 
     printf("[HUBINV] FRAME entries=%u selected=%u prev=%u/%s/\"%s\"/\"%s\" current=%u/%s/\"%s\"/\"%s\" next=%u/%s/\"%s\"/\"%s\" weapons=dedicated-grid persistentListBytes=0 visibleEntryBytes=%u fontReads=%u fontBytes=%u packOwnership=preserved-open mutation=no turn=no\n",
@@ -355,6 +380,9 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
     drawTab(framebuffer, HUB_UI_STATUS_LEFT, HUB_UI_STATUS_TOP,
             HUB_UI_STATUS_RIGHT, HUB_UI_STATUS_BOTTOM, "STAT",
             page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS);
+    drawTab(framebuffer, HUB_UI_SYSTEM_LEFT, HUB_UI_SYSTEM_TOP,
+            HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM, "SYS",
+            page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM);
 
     memset(&player, 0, sizeof(player));
     if (!EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) return 0;
@@ -369,6 +397,7 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
         if (selectedRow >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT) return 0;
         return EspNativeGameplayHubWeaponGrid_paint(framebuffer, &player, selectedRow);
     }
+    if (page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) return 1;
     drawStatusCards(framebuffer);
     return 1;
 }
@@ -466,6 +495,11 @@ int EspNativeGameplayHubTouchUi_classify(
                       HUB_UI_STATUS_LEFT, HUB_UI_STATUS_TOP,
                       HUB_UI_STATUS_RIGHT, HUB_UI_STATUS_BOTTOM, outHit);
     if (tab != 0) return tab;
+    tab = classifyTab(view, logicalX, logicalY,
+                      ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM,
+                      HUB_UI_SYSTEM_LEFT, HUB_UI_SYSTEM_TOP,
+                      HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM, outHit);
+    if (tab != 0) return tab;
 
     if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
         uint8_t weapon;
@@ -533,6 +567,40 @@ int EspNativeGameplayHubTouchUi_consumedWeaponTarget(uint8_t* outWeaponId) {
         input->zone != ESP_NATIVE_GAMEPLAY_ZONE_SELECT) return 0;
     return EspNativeGameplayHubWeaponGrid_hitTest(
         input->logicalX, input->logicalY, outWeaponId);
+}
+
+int EspNativeGameplayHubTouchUi_consumedPageTarget(uint8_t* outPage) {
+    const EspNativeGameplayInputState* input = EspNativeGameplayInput_peek();
+    const EspNativeGameplayHubView* view = EspNativeGameplayHub_view();
+    if (outPage == NULL || input == NULL || view == NULL ||
+        view->active == 0U || input->active == 0U || input->pending != 0U ||
+        (input->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT &&
+         input->action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT)) return 0;
+    if (inside(input->logicalX, input->logicalY,
+               HUB_UI_INV_LEFT, HUB_UI_INV_TOP,
+               HUB_UI_INV_RIGHT, HUB_UI_INV_BOTTOM)) {
+        *outPage = ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY;
+        return 1;
+    }
+    if (inside(input->logicalX, input->logicalY,
+               HUB_UI_WPN_LEFT, HUB_UI_WPN_TOP,
+               HUB_UI_WPN_RIGHT, HUB_UI_WPN_BOTTOM)) {
+        *outPage = ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS;
+        return 1;
+    }
+    if (inside(input->logicalX, input->logicalY,
+               HUB_UI_STATUS_LEFT, HUB_UI_STATUS_TOP,
+               HUB_UI_STATUS_RIGHT, HUB_UI_STATUS_BOTTOM)) {
+        *outPage = ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS;
+        return 1;
+    }
+    if (inside(input->logicalX, input->logicalY,
+               HUB_UI_SYSTEM_LEFT, HUB_UI_SYSTEM_TOP,
+               HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM)) {
+        *outPage = ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM;
+        return 1;
+    }
+    return 0;
 }
 
 int EspNativeGameplayHubTouchUi_consumedSelectTarget(

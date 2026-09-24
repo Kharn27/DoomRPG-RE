@@ -5,22 +5,23 @@
 #include "esp_asset_pack.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_native_gameplay_hub_weapon_grid.h"
+#include "esp_native_gameplay_hub_theme.h"
 #include "platform_video_config.h"
 
 #define GRID_LEFT 2
 #define GRID_TOP 35
-#define GRID_CELL_WIDTH 39
+#define GRID_CELL_WIDTH 52
 #define GRID_CELL_HEIGHT 21
 #define GRID_RIGHT 157
 #define GRID_BOTTOM 97
-#define GRID_ICON_MAX_WIDTH 33
+#define GRID_ICON_MAX_WIDTH 46
 #define GRID_ICON_MAX_HEIGHT 17
 
-#define GRID_BLACK 0x0000U
-#define GRID_DIM_BLUE 0x0010U
-#define GRID_BLUE 0x001fU
-#define GRID_WHITE 0xffffU
-#define GRID_EQUIPPED 0xffe0U
+#define GRID_BLACK ESP_HUB_COLOR_BG
+#define GRID_DIM_BORDER ESP_HUB_COLOR_STEEL_DARK
+#define GRID_OWNED_BORDER ESP_HUB_COLOR_STEEL
+#define GRID_FOCUS ESP_HUB_COLOR_IVORY
+#define GRID_EQUIPPED ESP_HUB_COLOR_AMBER
 
 #define GRID_ENTITY_TYPE_WEAPON 5U
 #define GRID_ENTITY_TYPE_AMMO 6U
@@ -156,8 +157,6 @@ int EspNativeGameplayHubWeaponGrid_hitTest(int logicalX,
     if (column < 0 || column >= (int)ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS ||
         row < 0 || row >= (int)ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_ROWS) return 0;
     id = row * (int)ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS + column;
-    /* The last three physical cells are deliberately blank. Captured familiar
-     * weapon ids 9..11 are not conventional arsenal entries. */
     if (id < 0 || id >= (int)ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT) return 0;
     *outWeaponId = (uint8_t)id;
     return 1;
@@ -299,7 +298,9 @@ static int loadFrame(const EspAssetPackEntry* mappings,
                                 workspace->texels, frame->packedBytes)) return 0;
 
     for (i = 0U; i < GRID_PALETTE_COLORS; ++i) {
-        frame->palette[i] = readLe16(&paletteBytes[i * 2U]);
+        frame->palette[i] =
+            EspNativeGameplayHubTheme_sourceToFramebuffer565(
+                readLe16(&paletteBytes[i * 2U]));
     }
     frame->texelHash = fnv32(workspace->texels, frame->packedBytes);
     return frame->texelHash != 0U;
@@ -498,8 +499,7 @@ int EspNativeGameplayHubWeaponGrid_paint(
            (unsigned int)spriteIdsBase,
            (unsigned int)mappings.size);
 
-    /* Paint the fixed 4x3 board first. The last three slots remain visibly
-     * present but empty and are not hit-testable. */
+    /* Paint the complete 3x3 arsenal board first. */
     for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT; ++slot) {
         uint8_t left;
         uint8_t top;
@@ -508,7 +508,7 @@ int EspNativeGameplayHubWeaponGrid_paint(
         EspNativeGameplayHubWeaponGrid_cellBounds(
             slot, &left, &top, &right, &bottom);
         fillRect(framebuffer, left, top, right, bottom, GRID_BLACK);
-        drawRect(framebuffer, left, top, right, bottom, GRID_DIM_BLUE);
+        drawRect(framebuffer, left, top, right, bottom, GRID_DIM_BORDER);
     }
 
     for (weapon = 0U; weapon < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT; ++weapon) {
@@ -564,11 +564,11 @@ int EspNativeGameplayHubWeaponGrid_paint(
         fillRect(framebuffer, left, top, right, bottom, GRID_BLACK);
         border = weapon == player->weapon
                      ? GRID_EQUIPPED
-                     : (owned ? GRID_BLUE : GRID_DIM_BLUE);
+                     : (owned ? GRID_OWNED_BORDER : GRID_DIM_BORDER);
         drawRect(framebuffer, left, top, right, bottom, border);
         if (weapon == selectedWeapon && weapon != player->weapon) {
             drawRect(framebuffer, left + 1, top + 1, right - 1, bottom - 1,
-                     GRID_WHITE);
+                     GRID_FOCUS);
         }
         if (iconReady &&
             !drawFrame(framebuffer, weapon, owned, &frame, &workspace,
@@ -610,7 +610,7 @@ int EspNativeGameplayHubWeaponGrid_paint(
     }
 
     if (assetFNV == 0U || !EspAssetPack_isOpen()) return 0;
-    printf("[HUBWGRID] FRAME weapons=9/9 slots=12 blankSlots=3 icons=%u missing=%u owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray familiarIds=9..11/excluded pistolIcon=bullets-pickup/native-no-upscale persistentIconBytes=0 scratchBytes=%u scratchOwner=static sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
+    printf("[HUBWGRID] FRAME weapons=9/9 layout=3x3 blankSlots=0 icons=%u missing=%u owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray palette=source-bgr565-to-framebuffer-rgb565 familiarIds=9..11/excluded pistolIcon=bullets-pickup/native-no-upscale persistentIconBytes=0 scratchBytes=%u scratchOwner=static sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
            (unsigned int)readyIcons,
            (unsigned int)missingIcons,
            (unsigned int)ownedCount,

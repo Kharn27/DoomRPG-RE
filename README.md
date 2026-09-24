@@ -45,7 +45,8 @@ The current hardware-validated native path includes:
 - PAK-backed map loading, compact immutable map state and raw internal-flash
   backing for the requested map;
 - native wall, floor/ceiling and sprite rendering with bounded caches;
-- calibrated touch controls, movement, strafing, turning, selection and HUB UI;
+- calibrated touch controls, movement, strafing, turning, selection and a
+  four-page `INV / WPN / STAT / SYS` in-game HUB;
 - collision, events, dialogs, dynamic doors and mutable line state;
 - player resources, pickups, hazards, weapons and direct combat;
 - player attack damage text, blood feedback and gib visual preservation;
@@ -53,17 +54,22 @@ The current hardware-validated native path includes:
   families;
 - destructible subtype-2 crates, including their exact RNG-driven conversion
   into pickups;
-- checkpoint save/load V6, including player state, consumed resources, script
-  state, line state, action-owned removals and transformed crates;
+- checkpoint save/load V7, including player state, consumed resources, script
+  state, line state, action-owned removals, transformed crates and Automap
+  reveal state;
+- a compact industrial HUB presentation with a 3x3 normal-weapon grid,
+  source-palette color correction and a dedicated two-step SAVE/LOAD page;
 - a CYD-specific main menu ordered as `Start Game`, `Load Game`, `Options`,
   `Help/About`; `Load Game` restores the native checkpoint directly without
   replaying the intro, while a missing or invalid save leaves the menu active
   and displays `No Save`;
-- compatibility reads for the earlier V1 to V5 save formats.
+- compatibility reads for the earlier V1 to V6 save formats.
 
-The current V6 crate-transform save path has passed both CI and real-CYD
-testing. The exact tested commit, memory figures, fingerprints and remaining
-boundaries are recorded in
+The V7 Automap checkpoint path has passed both CI and real-CYD testing. The HUB
+redesign and its touch-feedback coexistence fixes have received a focused
+real-CYD smoke test; broader gameplay progression remains to be exercised. The
+exact boundaries, memory figures, fingerprints and remaining limitations are
+recorded in
 [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md).
 
 This is not yet a complete gameplay-parity release. In particular, the complete
@@ -225,7 +231,7 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
   immuable, ainsi qu'une copie de la carte demandée dans la flash interne brute ;
 - le rendu natif des murs, sols/plafonds et sprites avec des caches bornés ;
 - les commandes tactiles calibrées, déplacements, pas latéraux, rotations,
-  sélection et interface HUB ;
+  sélection et interface HUB à quatre pages `INV / WPN / STAT / SYS` ;
 - les collisions, événements, dialogues, portes animées et états de lignes
   mutables ;
 - les ressources du joueur, pickups, dangers, armes et combats directs ;
@@ -235,18 +241,23 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
   d'attaques des monstres ;
 - les caisses destructibles de sous-type 2, y compris leur transformation en
   pickups déterminée par le RNG original ;
-- les sauvegardes V6, qui conservent l'état du joueur, les ressources ramassées,
-  les scripts, les lignes, les suppressions possédées par le moteur d'action et
-  les transformations de caisses ;
+- les sauvegardes V7, qui conservent l'état du joueur, les ressources ramassées,
+  les scripts, les lignes, les suppressions possédées par le moteur d'action,
+  les transformations de caisses et la révélation de l'Automap ;
+- une présentation HUB industrielle et compacte avec une grille d'armes 3x3,
+  la correction des palettes sources et une page SAVE/LOAD dédiée avec
+  confirmation en deux temps ;
 - un menu principal propre au CYD, ordonné ainsi : `Start Game`, `Load Game`,
   `Options`, `Help/About` ; `Load Game` restaure directement le checkpoint natif
   sans rejouer l'introduction, tandis qu'une sauvegarde absente ou invalide
   laisse le menu actif et affiche `No Save` ;
-- la lecture des anciennes sauvegardes V1 à V5.
+- la lecture des anciennes sauvegardes V1 à V6.
 
-La sauvegarde V6 des transformations de caisses a été validée par la CI et sur
-le vrai CYD. Le commit exact testé, les mesures mémoire, les empreintes et les
-limites restantes sont consignés dans
+La sauvegarde V7 de l'Automap a été validée par la CI et sur le vrai CYD. La
+refonte du HUB et les corrections de coexistence des retours tactiles ont reçu
+un test ciblé sur le vrai CYD ; la progression plus loin dans le jeu reste à
+exercer. Les frontières exactes, mesures mémoire, empreintes et limites
+restantes sont consignées dans
 [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md).
 
 Le projet n'est pas encore une version complète avec parité totale du gameplay.

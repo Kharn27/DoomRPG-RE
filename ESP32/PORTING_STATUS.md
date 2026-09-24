@@ -5,17 +5,63 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 120449ff3aa02b055d0ead75f9c2c55e799a5851
-branch = agent/esp32-native-facing-label
-hardware-tested code head = ec5207f3b18d7d2d89d6f569cf7aeb25da35270f
-esp32-cyd CI #617 = SUCCESS
-static RAM = 44984 B
-flash = 748213 B
-post-test policy = docs-only
-status = FACING-ENTITY TOP-BAR LABEL REAL-CYD PASS
+current origin/main = 9e009c0acbb5185afe6d9cc7eeb9dfa02eeea948
+branch = fix/inventaire
+branch code head = 5c2e2c6805a5da4b0ee1da40c09dd3155cfe41df
+local esp32-cyd build = SUCCESS
+static RAM = 47544 B
+flash = 749913 B
+hardware status = HUB REDESIGN + FEEDBACK COEXISTENCE FOCUSED REAL-CYD SMOKE PASS
+broader gameplay progression = pending
 ```
 
-This branch restores one bounded legacy HUD behavior without changing the
+This branch redesigns the compact native in-game HUB and hardens reversible
+touch feedback against large modal targets and concurrent framebuffer overlays.
+The user exercised the new menu and accepted the post-fix first-door behavior,
+but explicitly did not test substantially farther into the game. Do not promote
+this boundary to an exhaustive gameplay regression pass.
+
+### In-game HUB redesign — focused REAL-CYD smoke pass
+
+The current HUB is:
+
+```text
+INV | WPN | STAT | SYS
+```
+
+`INV` uses a centered three-card list. `WPN` is a complete 3x3 grid for normal
+weapon IDs 0..8; familiar IDs 9..11 remain excluded. The weapon icon loader now
+converts source BGR565 palettes to framebuffer RGB565, fixing the red Fire
+Extinguisher and yellow-handled Axe presentation. `STAT` is read-only and no
+longer covered by checkpoint controls. `SYS` owns full-width SAVE/LOAD cards,
+two-step `SAVE?` / `LOAD?` confirmation and `NO SAVE` handling.
+
+All four tabs are directly touch-addressable. The HUB temporarily owns a full
+industrial top title bar and reconstructs the permanent gameplay HUD on close.
+The 28-byte HUB owner and world/turn gating remain unchanged.
+
+Two hardware failures were reproduced and fixed during the smoke pass:
+
+```text
+large 128x21 LOAD target -> 597 edits exceeded old 512-entry feedback owner
+pickup flash/message + SELECT -> legitimate framebuffer drift failed full-FNV restore
+```
+
+The feedback owner is now bounded at 768 edits. Overlay creation failure is
+nonfatal, and restoration is pixel-owned: a pixel is restored only if it still
+contains the value written by touch feedback; newer overlays win. Full-frame
+drift outside the touch overlay is diagnostic, not fatal.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md)
+
+The final redesigned SAVE/LOAD execution paths and broader progression beyond
+the first door still require a deliberate regression run.
+
+### Previous facing-label boundary retained
+
+The merged base restores one bounded legacy HUD behavior without changing the
 permanent ESP32-native memory architecture.
 
 ### Facing-entity top-bar label — REAL-CYD PASS
@@ -72,7 +118,7 @@ Detailed record:
 
 - [`MILESTONE_NATIVE_FACING_LABEL.md`](MILESTONE_NATIVE_FACING_LABEL.md)
 
-### Previous merged boundary retained
+### Previous V7/Automap boundary retained
 
 The merged `main` base already contains the validated V7 Automap checkpoint
 persistence, minimal neon-blue top-HUD touch locators and standalone
@@ -81,10 +127,11 @@ baseline and are not modified by this milestone.
 
 ### Next bounded frontier
 
-After this branch is merged, recover the exact new `main` SHA and re-read the
-live status/docs before selecting the next gameplay milestone. Do not expand the
-facing owner into a generic desktop-style entity graph; keep future behavior
-owner-by-owner and fail-closed where semantics are not yet migrated.
+Before merging, complete the focused HUB regression checklist: both two-step
+checkpoint operations, `NO SAVE`, repeated open/close, rapid tab navigation and
+continued play beyond the first door. After merge, recover the exact new `main`
+SHA and keep future behavior owner-by-owner and fail-closed where semantics are
+not yet migrated.
 
 ## Permanent architecture / hard invariants
 
@@ -195,7 +242,7 @@ large exact range = 2048 B
 
 ## Current hardware-owned gameplay frontier
 
-Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors, hardware-proven pure multi-line SELECT door batches and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, HUB INV/WPN/STAT, raw-flash backing, bounded checkpoint save/load from both HUB and the main menu, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, checkpoint-resume HUD/cache/input rearm, HUB/world framebuffer ownership gating for transient action feedback, and the bounded native Automap core with live movement, visited-cell reveal, render-derived thin delimiters, pickup ownership retention and SELECT door interaction while the map owns the framebuffer.
+Hardware-proven native behavior includes movement/turn/strafe, rotation-in-place without gameplay/monster turn advancement, collision/topology, event-first SELECT, bounded event/script families, dialog, regular doors, hardware-proven pure multi-line SELECT door batches and dynamic lines, mutable line textures, player state/resources, pickups, hazards, native weapon rendering/control/combat, outgoing player damage text plus bounded attack-frame blood spray, compact monster state/position/activation/movement/attack families, type-12/subtype-2 crate combat with exact transform RNG and transformed-pickup projection, the four-page HUB `INV/WPN/STAT/SYS`, raw-flash backing, bounded V7 checkpoint save/load from both HUB and the main menu, resource consumed-overlay persistence, mutable script/event-state persistence, mutable line open/locked + texture-variant persistence, V5 action-owned removed-sprite persistence, V6 crate-transform persistence, V7 Automap reveal persistence, checkpoint-resume HUD/cache/input rearm, HUB/world framebuffer ownership gating for transient action feedback, and the bounded native Automap core with live movement, visited-cell reveal, render-derived thin delimiters, pickup ownership retention and SELECT door interaction while the map owns the framebuffer.
 
 The player root remains:
 
@@ -207,7 +254,9 @@ The HUB root remains:
 
 ```text
 EspNativeGameplayHubView = 28 B
-pages = INV | WPN | STAT
+pages = INV | WPN | STAT | SYS
+WPN = complete 3x3 normal arsenal, source BGR565 converted to RGB565
+SYS = dedicated two-step SAVE/LOAD checkpoint page
 world dispatch blocked while HUB active
 turn advance disabled while HUB active
 ```
@@ -224,7 +273,7 @@ The CYD main-menu presentation is now:
 ```
 
 The original J2ME `Exit` row is gone. Double-tap confirmation on `Load Game`
-calls the shared native checkpoint service. A readable V1-V6 record rebuilds
+calls the shared native checkpoint service. A readable V1-V7 record rebuilds
 the immutable BSP, restores its versioned mutable owners and configures the
 resume session directly in `ST_PLAYING`, without replaying the intro.
 
@@ -549,7 +598,7 @@ esp32-cyd #387 / 35704985512 = SUCCESS
 REAL-CYD = PASS
 ```
 
-### Current V5 world boundary
+### Historical V5 world boundary — superseded by V6/V7
 
 Persisted:
 
@@ -563,7 +612,7 @@ EspMapLineTextureState locked/unlocked texture variants
 EspNativeGameplayActionEngine action-owned removed-sprite overlay
 ```
 
-Still intentionally fresh / not yet persisted:
+Still intentionally fresh at the V5 boundary:
 
 ```text
 automap reveal state
@@ -579,9 +628,15 @@ other legacy player metadata not yet owned natively
 Gameplay RNG is rebuilt fresh, but the recovered original save format does not
 serialize RNG state, so this is not listed as a missing original-save field.
 
-Detailed record:
+The current V7 writer additionally persists V6 crate transformations and V7
+Automap reveal state. V1-V6 records remain readable and default owners absent
+from their version to fresh state.
+
+Detailed records:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V5_ACTION_REMOVALS.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V6_CRATE_TRANSFORMS.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md)
 
 ## HUB/action-feedback framebuffer ownership — REAL-CYD PASS
 
@@ -661,12 +716,12 @@ hardware-validation/docs milestone. If hardware exposes a divergence, constrain
 the fix to that transition family.
 
 Automap follow-up parity remains separately bounded: PASS_TURN and other normal
-playing actions while Automap is open, hardware execution of `EV_GIVEMAP`, and
-checkpoint persistence of Automap reveal state are not part of the validated
-core milestone.
+playing actions while Automap is open and hardware execution of `EV_GIVEMAP`.
+Automap reveal-state checkpoint persistence is already hardware-proven in V7.
 
-Separate pending work still includes the mixed physical/touch SAVE cursor
-regression and unrelated deferred gameplay families.
+The mixed physical/touch SAVE cursor fix is retained. This branch replaces its
+old STAT overlay with the dedicated SYS page; the final two-step SAVE/LOAD paths
+still need their focused post-redesign hardware retest.
 
 ## Hardware-validated intro display polish
 
@@ -739,7 +794,7 @@ RAM static = 44832 B
 ## Intentionally deferred / incomplete families
 
 ```text
-save-v6 mutable-world persistence beyond each validated section
+save-v7 mutable-world persistence beyond each validated section
 CHANGEMAP real-CYD exit validation
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
@@ -763,7 +818,7 @@ special death consequences
 Kronos-specific semantics
 password late full-HUD repaint replay
 EV_GIVEMAP hardware execution + remaining Automap action parity
-Automap reveal-state checkpoint persistence
+post-redesign SYS SAVE/LOAD/NO-SAVE hardware regression pass
 EV_CHECK_KEY production route
 HUB Notebook activation
 HUB consumable confirmation/use
