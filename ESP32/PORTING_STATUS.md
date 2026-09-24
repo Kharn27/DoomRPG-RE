@@ -7,21 +7,27 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = da397ce44dcd75114ca4d031be29b5e7d87e7d5a
 branch = agent/esp32-touch-feedback-facing-race
-rebased candidate code head = e60211b56edc8ce8188f326b2b20b42e0661466e
+rebased hardware-boot head = 6cd637c370415450dda5e89abcc13e7982368adf
 event43 hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
-esp32-cyd CI #675 = SUCCESS
-static RAM = 47784 B
-flash = 764129 B
+esp32-cyd CI #683 = SUCCESS
+static RAM = 45736 B
+flash = 764349 B
 main HUB boundary = focused REAL-CYD smoke pass inherited from da397ce/5c2e2c6
-rebased candidate hardware status = NOT YET RETESTED
-status = REBASED ON FOUR-PAGE HUB + CODEX SHOW/DIALOG LEASE FIX; REAL-CYD REGRESSION PENDING
+rebased boot status = REAL-CYD BOOT RECOVERED after feedback-owner compaction
+rebased full event43 regression = not rerun after rebase
+save status = pre-rebase checkpoint currently unreadable from main menu and in-game SYS
+status = MERGE-READY WITH DOCUMENTED SAVE-COMPATIBILITY REGRESSION
+```
 ```
 
 This branch is now a rebased integration candidate. It combines the current
 `main` four-page HUB/touch-feedback redesign with the later native gameplay,
-V8 checkpoint, CHECK_KEY and event43 work. The HUB smoke pass and event43 PASS
-were obtained on different pre-rebase code heads; do not treat their combination
-as hardware-proven until the rebased candidate is exercised on the real CYD.
+V8 checkpoint, CHECK_KEY and event43 work. The first rebased image exposed a
+boot-time contiguous-heap regression before `menu.bsp` could finish loading.
+That regression is fixed at `6cd637c` and the user reports the firmware now
+boots and appears operational on the real CYD. The older event43 PASS remains
+anchored to its original hardware-tested code head; do not rewrite it as a
+post-rebase event43 PASS without a fresh serial witness.
 
 ### In-game HUB redesign — focused REAL-CYD smoke pass
 
@@ -49,10 +55,18 @@ large 128x21 LOAD target -> 597 edits exceeded old 512-entry feedback owner
 pickup flash/message + SELECT -> legitimate framebuffer drift failed full-FNV restore
 ```
 
-The feedback owner is now bounded at 768 edits. Overlay creation failure is
-nonfatal, and restoration is pixel-owned: a pixel is restored only if it still
-contains the value written by touch feedback; newer overlays win. Full-frame
-drift outside the touch overlay is diagnostic, not fatal.
+The redesign initially enlarged the feedback owner to 768 entries with a
+6-byte `{offset,saved,painted}` record. After rebasing, that added exactly
+2560 B of static RAM versus the event43 hardware-pass image and starved the
+contiguous allocation used by legacy `menu.bsp` sprite structures.
+
+The permanent owner is now bounded at **640 compact 4-byte edits**. Each record
+stores `saved RGB565` plus a 15-bit framebuffer offset and one halo/core bit;
+the painted value is reconstructed exactly with `glowAdd565(saved, additive)`
+during reverse restore. The largest measured SYS card needs 597 edits, so the
+large touch target remains covered while the owner saves 2048 B versus the
+768x6 form. Overlay creation remains nonfatal and restoration remains
+pixel-owned: newer overlays win.
 
 Detailed record:
 
@@ -61,6 +75,47 @@ Detailed record:
 The final redesigned SAVE/LOAD execution paths and broader progression beyond
 the first door still require a deliberate regression run.
 
+### Rebased boot regression — REAL-CYD RECOVERY
+
+The first rebased firmware rebooted continuously while loading the real menu map:
+
+```text
+[MAPSTRUCT] Render_beginLoadMap result=1 heap8=17244 largest8=10740 ...
+[MAPSTRUCT] -> real Render_beginLoadMapData()
+Guru Meditation Error: StoreProhibited
+EXCVADDR: 0x00000000
+```
+
+The exact ELF resolved the fault to `Render_beginLoadMapData()` at `src/Render.c:566`,
+immediately after:
+
+```c
+render->mapSprites = SDL_calloc(render->numSprites, sizeof(Sprite_t));
+mapSprite->x = DoomRPG_shiftCoordAt(...);
+```
+
+`SDL_calloc()` had returned NULL because the rebased static feedback owner had
+consumed the contiguous internal-RAM margin needed by the legacy structural
+loader. ELF/BSS comparison isolated the delta exactly:
+
+```text
+event43 hardware-pass image feedback owner = 2068 B
+first rebased image feedback owner         = 4628 B
+delta                                      = +2560 B
+```
+
+The compact 640x4 journal reduces the production image to:
+
+```text
+CI #683 = SUCCESS
+static RAM = 45736 B
+flash = 764349 B
+```
+
+An ESP32-only fail-closed check now guards the `mapSprites` allocation and logs
+the exact requested byte count if it ever fails again instead of dereferencing
+NULL. After flashing `6cd637c`, the user reports that the reboot loop is gone
+and the firmware appears to run normally.
 ### Facing-entity top-bar label — REAL-CYD PASS
 
 Legacy `DoomCanvas_checkFacingEntity()` performs a short forward trace after a
@@ -181,21 +236,23 @@ baseline and are not modified by this milestone.
 
 ### Next bounded frontier
 
-First validate the **rebased** candidate on the real CYD. The focused regression
-should cover the new four-page HUB/SYS open-close path, the line-102 door, Bull
-Demon combat, MOVE 345->377 event43 SHOW x4, and EXIT 377->409 CLOSELINE.
+The rebased branch is merge-ready with one explicitly documented regression:
+a checkpoint created before the rebase is currently not accepted by this
+firmware, both from main-menu Load and from the in-game SYS Load path after
+starting a game. Do **not** weaken checkpoint validation to hide this; recover
+the exact rejection reason on the next branch and decide whether the file is
+legitimately incompatible or whether V8 compatibility regressed.
 
 The Codex review also found a latent transaction corner: EXIT EV_SHOW followed
 by an ENTER dialog retained the SHOW rollback owner after the dialog opened.
 `finishPendingDialog()` now uses the same SHOW-owner release helper as the normal
 render-commit path. CI proves the code compiles; this specific combination has
-not been hardware-reached by the event43 witness and is not promoted to a
-hardware PASS.
+not been hardware-reached and is not promoted to a hardware PASS.
 
-After the rebased regression, the known gameplay blocker to isolate remains
-**cold main-menu V8 Load**: a valid V8 checkpoint can report `No Save` directly
-after boot while loading correctly through the in-game SYS path after gameplay
-initialization. Preserve fail-closed corrupt-save validation.
+The pre-rebase event43 hardware witness remains valid for the bounded SHOW x4
+implementation, but the full 345->377->409 progression was not re-recorded
+after the HUB rebase/boot fix. Keep that distinction when recovering future
+work from this file.
 ## Permanent architecture / hard invariants
 
 ```text

@@ -15,12 +15,14 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = da397ce44dcd75114ca4d031be29b5e7d87e7d5a
 branch = agent/esp32-touch-feedback-facing-race
-rebased candidate code head = e60211b56edc8ce8188f326b2b20b42e0661466e
+rebased hardware-boot head = 6cd637c370415450dda5e89abcc13e7982368adf
 event43 hardware-tested code head = 48accf900d486d6633dd83a7568f781458e7685d
-esp32-cyd CI #675 = SUCCESS
-static RAM = 47784 B
-flash = 764129 B
-hardware status = combined rebased candidate not yet retested
+esp32-cyd CI #683 = SUCCESS
+static RAM = 45736 B
+flash = 764349 B
+hardware status = rebased boot-loop fixed; full event43 regression not rerun
+known regression = previous checkpoint unreadable from main menu and SYS
+```
 ```
 
 Current rebased integration:
@@ -29,11 +31,12 @@ Current rebased integration:
 main HUB = INV | WPN | STAT | SYS
 WPN = complete 3x3 normal arsenal
 SYS = two-step SAVE/LOAD/NO SAVE
-touch feedback = 768 bounded edits + per-pixel ownership restore
+touch feedback = 640 compact 4-byte edits + per-pixel ownership restore
 agent checkpoint = V8 monster-state extension retained
 event43 = bounded EV_SHOW x4 MOVE chain retained
 CHECK_KEY = native PlayerState key gate retained
 Codex fix = SHOW rollback lease released after pending dialog finalizes
+boot fix = compact feedback owner restores menu.bsp contiguous heap
 ```
 
 Current continuation also has a real-CYD pass for native EV_CHECK_KEY on the Entrance Yellow Door. Opcode 41 uses the shared PlayerState key bitmask, reports Need Yellow Key for selector 1 / mask 0x02, queues bounded top-bar feedback, and pauses before the following OPENLINE with zero world/script mutation when the key is absent.
@@ -95,14 +98,17 @@ Previously merged relevant milestones remain:
 
 ### Next milestone
 
-Hardware-regress the rebased candidate before adding new gameplay semantics:
-exercise HUB/SYS open-close and SAVE/LOAD presentation, line-102 door animation,
-Bull Demon combat, event43 MOVE 345->377, and the following 377->409 CLOSELINE.
+After merge, branch from the new exact `main` and diagnose checkpoint
+compatibility first. The user has a pre-rebase save that is rejected both from
+cold main-menu Load and from SYS Load after gameplay has started, so the earlier
+hypothesis of a cold-start-only read path is no longer sufficient. Add
+reason-coded V8 read/validation diagnostics and preserve fail-closed corruption
+handling.
 
-The Codex SHOW-exit + ENTER-dialog lease fix is CI-valid but has no direct
-hardware witness yet. Once the rebased progression is clean, return to the cold
-main-menu V8 Load regression; do not weaken save validation to make it pass.
-
+The rebased boot itself is recovered on real CYD at `6cd637c`. The historical
+event43 PASS remains anchored to `48accf9`; no fresh post-rebase event43 serial
+witness is claimed here. The Codex SHOW-exit + ENTER-dialog lease fix remains
+CI-valid but not directly hardware-reached.
 ## Build environment
 
 Normal hardware reference:
