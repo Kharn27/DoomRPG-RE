@@ -734,13 +734,13 @@ bool loadedV6Valid(
            scriptShapeValid(record.script, record.core) &&
            lineShapeValid(record.lines, record.core) &&
            actionRemovedShapeValid(record.actionRemoved, record.core) &&
-           EspNativeGameplayCrateState_snapshotShapeValid(
+           EspNativeGameplayCrateState_snapshotFileShapeValid(
                &crateTransforms, record.core.runtimeFNV1a,
                record.core.targetMapId) &&
            crateTransformsDisjoint(record.actionRemoved, crateTransforms);
 }
 
-bool recordV6Valid(
+bool recordV6Valid(bool recordV6Valid(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms) {
     return coreShapeValid(prefix.core, kMagicV6, kVersionV6,
@@ -770,14 +770,14 @@ bool loadedV7Valid(
            scriptShapeValid(record.script, record.core) &&
            lineShapeValid(record.lines, record.core) &&
            actionRemovedShapeValid(record.actionRemoved, record.core) &&
-           EspNativeGameplayCrateState_snapshotShapeValid(
+           EspNativeGameplayCrateState_snapshotFileShapeValid(
                &crateTransforms, record.core.runtimeFNV1a,
                record.core.targetMapId) &&
            crateTransformsDisjoint(record.actionRemoved, crateTransforms) &&
            automapShapeValid(automap, record.core);
 }
 
-bool recordV7Valid(
+bool recordV7Valid(bool recordV7Valid(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap) {
@@ -801,26 +801,50 @@ bool loadedV8Valid(
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
     const EspNativeGameplayMonsterStateSnapshot& monsters) {
-    return coreShapeValid(record.core, kMagicV8, kVersionV8,
-                          (uint16_t)kRecordBytesV8) &&
-           record.core.recordCrc32 ==
-               recordCrcV8(
-                   *reinterpret_cast<const NativeSaveRecordV5*>(&record),
-                   crateTransforms, automap, monsters) &&
-           resourceShapeValid(record.resources, record.core) &&
-           scriptShapeValid(record.script, record.core) &&
-           lineShapeValid(record.lines, record.core) &&
-           actionRemovedShapeValid(record.actionRemoved, record.core) &&
-           EspNativeGameplayCrateState_snapshotShapeValid(
-               &crateTransforms, record.core.runtimeFNV1a,
-               record.core.targetMapId) &&
-           crateTransformsDisjoint(record.actionRemoved, crateTransforms) &&
-           automapShapeValid(automap, record.core) &&
-           EspNativeGameplayMonsterState_snapshotShapeValid(
-               &monsters, record.core.runtimeFNV1a);
+    const bool coreOk =
+        coreShapeValid(record.core, kMagicV8, kVersionV8,
+                       (uint16_t)kRecordBytesV8);
+    const uint32_t actualCrc =
+        recordCrcV8(*reinterpret_cast<const NativeSaveRecordV5*>(&record),
+                    crateTransforms, automap, monsters);
+    const bool crcOk = record.core.recordCrc32 == actualCrc;
+    const bool resourcesOk = resourceShapeValid(record.resources, record.core);
+    const bool scriptOk = scriptShapeValid(record.script, record.core);
+    const bool linesOk = lineShapeValid(record.lines, record.core);
+    const bool removedOk =
+        actionRemovedShapeValid(record.actionRemoved, record.core);
+    const bool cratesOk =
+        EspNativeGameplayCrateState_snapshotFileShapeValid(
+            &crateTransforms, record.core.runtimeFNV1a,
+            record.core.targetMapId) != 0;
+    const bool disjointOk =
+        crateTransformsDisjoint(record.actionRemoved, crateTransforms);
+    const bool automapOk = automapShapeValid(automap, record.core);
+    const bool monstersOk =
+        EspNativeGameplayMonsterState_snapshotShapeValid(
+            &monsters, record.core.runtimeFNV1a) != 0;
+    const bool valid = coreOk && crcOk && resourcesOk && scriptOk && linesOk &&
+                       removedOk && cratesOk && disjointOk && automapOk &&
+                       monstersOk;
+    if (!valid) {
+        printf("[NATIVESAVE] V8-VALIDATE core=%u crc=%u storedCrc=%08x actualCrc=%08x resources=%u script=%u lines=%u removed=%u cratesFile=%u disjoint=%u automap=%u monsters=%u catalogResolution=deferred failClosed=yes\n",
+               coreOk ? 1U : 0U,
+               crcOk ? 1U : 0U,
+               (unsigned int)record.core.recordCrc32,
+               (unsigned int)actualCrc,
+               resourcesOk ? 1U : 0U,
+               scriptOk ? 1U : 0U,
+               linesOk ? 1U : 0U,
+               removedOk ? 1U : 0U,
+               cratesOk ? 1U : 0U,
+               disjointOk ? 1U : 0U,
+               automapOk ? 1U : 0U,
+               monstersOk ? 1U : 0U);
+    }
+    return valid;
 }
 
-bool recordV8Valid(
+bool recordV8Valid(bool recordV8Valid(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
@@ -1033,7 +1057,7 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         const bool valid =
             got == sizeof(*monsters) &&
             loadedV8Valid(*outRecord, crateTransforms, automap, *monsters);
-        printf("[NATIVESAVE] READABLE-V8 path=%s bytes=%u monsterWorkspace=%u allocation=before-reopen result=%s\n",
+        printf("[NATIVESAVE] READABLE-V8 path=%s bytes=%u monsterWorkspace=%u allocation=before-reopen crateValidation=file-shape/catalog-deferred result=%s\n",
                path,
                (unsigned int)fileBytes,
                (unsigned int)sizeof(*monsters),

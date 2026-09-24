@@ -67,6 +67,15 @@ int EspNativeGameplayCrateState_snapshot(
     EspNativeGameplayCrateTransformSnapshot* outSnapshot);
 int EspNativeGameplayCrateState_restore(
     const EspNativeGameplayCrateTransformSnapshot* snapshot);
+/*
+ * File/offline shape validation used before a gameplay EntityDef catalog exists.
+ * It validates the canonical bitset/code representation and fingerprint exactly,
+ * but defers code->tile catalog resolution to snapshotShapeValid()/restore().
+ */
+int EspNativeGameplayCrateState_snapshotFileShapeValid(
+    const EspNativeGameplayCrateTransformSnapshot* snapshot,
+    uint32_t expectedArenaFNV1a,
+    uint8_t expectedTargetMapId);
 int EspNativeGameplayCrateState_snapshotShapeValid(
     const EspNativeGameplayCrateTransformSnapshot* snapshot,
     uint32_t expectedArenaFNV1a,
