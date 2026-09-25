@@ -313,6 +313,14 @@ Help/About
 
 The ESP32 presentation replaces the obsolete J2ME Exit row and keeps the existing double-tap confirmation contract. The original main-menu LOAD milestone was hardware-proven at 18c1cfb for the then-current checkpoint formats: a successful read released menu-only runtime, restored the native world and entered ST_PLAYING with intro replay disabled; missing/invalid saves remained in MENU_MAIN with red No Save.
 
+The `Options` child now shares the main menu's 2x2 finger-first card renderer
+(`BACK | VIDEO` / `INPUT | SOUND`) instead of reverting to legacy text rows.
+Only `BACK` is enabled in the current model; the deferred cards are visibly
+subdued. Back keeps the two-tap contract and uses the runtime framebuffer hash
+returned by the painter, so presentation changes no longer require a duplicated
+hard-coded framebuffer constant. The firmware build passes; real-CYD visual and
+touch validation is pending.
+
 **Current qualification:** after the later V8 monster-state extension, the user has reproduced a cold-boot regression where main-menu Load Game reports No Save for a valid V8 file that subsequently loads successfully through HUB/STAT in the same firmware. Therefore the historical main-menu pass must not be treated as a current V8 cold-load proof until that startup-path regression is fixed and retested.
 
 ## Native checkpoint save/load

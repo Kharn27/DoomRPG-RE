@@ -3,9 +3,9 @@
 
 /* ESP32/CYD presentation contracts for the real Doom RPG main menu.
  *
- * The legacy fitted constants remain intentionally stable because the existing
- * Options screen still uses them and owns a hardware-validated framebuffer
- * witness. MENU_MAIN itself now uses the separate finger-first DASH_* geometry.
+ * The legacy fitted constants remain for historical/reference paths. The
+ * active MENU_MAIN and Options presentations share the finger-first DASH_*
+ * geometry below.
  */
 #define DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_WIDTH 108
 #define DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_HEIGHT 74
