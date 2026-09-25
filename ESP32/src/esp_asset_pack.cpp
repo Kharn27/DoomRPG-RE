@@ -792,27 +792,18 @@ bool copySdRangeToFlash(uint32_t sourceOffset,
 {
     if (!packFile || mapFlash.partition == nullptr || buffer == nullptr ||
         flashOffset > mapFlash.partition->size ||
-        length > mapFlash.partition->size - flashOffset) {
+        length > mapFlash.partition->size - flashOffset ||
+        !packFile.seek(sourceOffset)) {
         return false;
     }
 
     uint32_t remaining = length;
     uint32_t destinationOffset = flashOffset;
-    uint32_t sourceCursor = sourceOffset;
     while (remaining > 0U) {
         const uint32_t chunk =
             remaining > kMapFlashCopyBufferBytes
                 ? kMapFlashCopyBufferBytes
                 : remaining;
-
-        /*
-         * Progress UI is allowed to read the same authoritative SD PAK between
-         * chunks. Re-seek every copy chunk so presentation reads can never
-         * disturb the staging cursor.
-         */
-        if (!packFile.seek(sourceCursor)) {
-            return false;
-        }
         const size_t got = packFile.read(buffer, chunk);
         if (got != chunk ||
             esp_partition_write(mapFlash.partition,
@@ -825,7 +816,6 @@ bool copySdRangeToFlash(uint32_t sourceOffset,
             *ioFNV = fnv1aUpdate(*ioFNV, buffer, chunk);
         }
         destinationOffset += chunk;
-        sourceCursor += chunk;
         remaining -= chunk;
         if (progressDone != nullptr) {
             *progressDone += chunk;
@@ -1530,22 +1520,34 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     if ((partition->size % kMapFlashSectorBytes) != 0U) {
         return failStage("partition-erase-alignment");
     }
-    for (uint32_t eraseOffset = 0U; eraseOffset < partition->size;) {
-        uint32_t eraseBytes = partition->size - eraseOffset;
-        if (eraseBytes > kMapFlashEraseChunkBytes) {
-            eraseBytes = kMapFlashEraseChunkBytes;
-        }
-        if (esp_partition_erase_range(partition, eraseOffset, eraseBytes) != ESP_OK) {
+    if (mapFlashProgressCallback == nullptr) {
+        /* Preserve the hardware-validated cold-load path byte-for-byte when no
+         * presentation heartbeat is requested (notably MENU_MAIN -> Load). */
+        if (esp_partition_erase_range(partition, 0U, partition->size) != ESP_OK) {
             return failStage("partition-erase");
         }
-        eraseOffset += eraseBytes;
-        notifyMapFlashProgress(ESP_ASSET_PACK_MAP_FLASH_PROGRESS_ERASE,
-                               eraseOffset, partition->size);
+        printf("[MAPFLASH] ERASE bytes=%u chunk=all buffer=%u owner=transient progress=off\n",
+               (unsigned int)partition->size,
+               (unsigned int)kMapFlashCopyBufferBytes);
     }
-    printf("[MAPFLASH] ERASE bytes=%u chunk=%u buffer=%u owner=transient progress=chunked\n",
-           (unsigned int)partition->size,
-           (unsigned int)kMapFlashEraseChunkBytes,
-           (unsigned int)kMapFlashCopyBufferBytes);
+    else {
+        for (uint32_t eraseOffset = 0U; eraseOffset < partition->size;) {
+            uint32_t eraseBytes = partition->size - eraseOffset;
+            if (eraseBytes > kMapFlashEraseChunkBytes) {
+                eraseBytes = kMapFlashEraseChunkBytes;
+            }
+            if (esp_partition_erase_range(partition, eraseOffset, eraseBytes) != ESP_OK) {
+                return failStage("partition-erase");
+            }
+            eraseOffset += eraseBytes;
+            notifyMapFlashProgress(ESP_ASSET_PACK_MAP_FLASH_PROGRESS_ERASE,
+                                   eraseOffset, partition->size);
+        }
+        printf("[MAPFLASH] ERASE bytes=%u chunk=%u buffer=%u owner=transient progress=chunked\n",
+               (unsigned int)partition->size,
+               (unsigned int)kMapFlashEraseChunkBytes,
+               (unsigned int)kMapFlashCopyBufferBytes);
+    }
 
     copyProgressTotal = indexBytes + stagedBytes;
     if (!copySdRangeToFlash(sourceIndexOffset,
