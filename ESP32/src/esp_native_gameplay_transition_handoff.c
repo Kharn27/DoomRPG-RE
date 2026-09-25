@@ -17,6 +17,7 @@
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_gameplay_transition_handoff.h"
+#include "esp_native_transition_presentation.h"
 #include "esp_player_facing_state.h"
 #include "esp_player_finish_rotation_tile.h"
 #include "esp_player_fresh_map_state.h"
@@ -70,6 +71,8 @@ static void resetSpawnOwners(void) {
 }
 
 static void failHandoff(const char* stage, unsigned int status) {
+    EspAssetPack_mapFlashSetProgressCallback(NULL);
+    EspNativeTransitionPresentation_endLoading();
     if (EspAssetPack_isOpen()) EspAssetPack_close();
     handoff.failed = 1U;
     handoff.armed = 0U;
@@ -318,10 +321,23 @@ static void onStatsAcknowledged(int16_t screenX,
         return;
     }
 
-    printf("[NATIVECHANGEMAP] STATS-ACK sourceMap=%u targetMap=%u phase=%u presentation=deferred bridge=one-tap\n",
+    printf("[NATIVECHANGEMAP] STATS-ACK sourceMap=%u targetMap=%u phase=%u presentation=native-stats input=one-tap\n",
            (unsigned int)sourceMapId,
            (unsigned int)targetMapId,
            (unsigned int)handoff.committed.phase);
+
+    /*
+     * Cross the visual ownership boundary before the destructive backing
+     * switch. The starfield descriptor is captured while source backing is
+     * still valid; map-flash staging then pumps it from the authoritative SD
+     * PAK between complete erase/copy/verify chunks.
+     */
+    if (!EspNativeTransitionPresentation_beginLoading(targetMapId)) {
+        failHandoff("LOADING_PRESENTATION", targetMapId);
+        return;
+    }
+    EspAssetPack_mapFlashSetProgressCallback(
+        EspNativeTransitionPresentation_progress);
 
     memset(&handoff.targetSnapshot, 0, sizeof(handoff.targetSnapshot));
     committedStatus = EspMapCommittedTransition_commit(
@@ -329,6 +345,7 @@ static void onStatsAcknowledged(int16_t screenX,
         &handoff.sourceInventory,
         &handoff.targetInventory,
         &handoff.targetSnapshot);
+    EspAssetPack_mapFlashSetProgressCallback(NULL);
     if (committedStatus != ESP_MAP_COMMITTED_TRANSITION_OK ||
         handoff.committed.phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_COMMITTED ||
         handoff.committed.committed != 1U ||
@@ -336,6 +353,7 @@ static void onStatsAcknowledged(int16_t screenX,
         failHandoff("RESIDENT_COMMIT", (unsigned int)committedStatus);
         return;
     }
+    EspNativeTransitionPresentation_endLoading();
 
     printf("[NATIVECHANGEMAP] COMMIT sourceMap=%u targetMap=%u gameplayLoadMapId=%u phase=%u arena=%u payload=%u nodes=%u lines=%u sprites=%u events=%u rollback=no\n",
            (unsigned int)sourceMapId,
@@ -395,6 +413,8 @@ int EspNativeGameplayTransitionHandoff_tryArmNullCallback(void) {
         transition->committed.committed != 0U) {
         handoff.armed = 0U;
         handoff.failed = 0U;
+        EspAssetPack_mapFlashSetProgressCallback(NULL);
+        EspNativeTransitionPresentation_reset();
         return 0;
     }
 
@@ -403,9 +423,17 @@ int EspNativeGameplayTransitionHandoff_tryArmNullCallback(void) {
      * re-arming the same failed transition. */
     if (handoff.failed) return 0;
 
+    if (!EspNativeTransitionPresentation_showStats(transition)) {
+        printf("[NATIVECHANGEMAP] STATS-PRESENTATION status=FAILED sourceMap=%u targetMap=%u failClosed=yes\n",
+               (unsigned int)transition->committed.sourceMapId,
+               (unsigned int)transition->committed.targetMapId);
+        handoff.failed = 1U;
+        return 1;
+    }
+
     handoff.armed = 1U;
     PlatformInput_setTapCallback(onStatsAcknowledged);
-    printf("[NATIVECHANGEMAP] STATS-BRIDGE phase=WAIT_STATS callback=one-tap sourceMap=%u targetMap=%u sourceResident=%u statsPresentation=deferred\n",
+    printf("[NATIVECHANGEMAP] STATS-PRESENTATION phase=WAIT_STATS callback=one-tap sourceMap=%u targetMap=%u sourceResident=%u statsPresentation=native-level-complete\n",
            (unsigned int)transition->committed.sourceMapId,
            (unsigned int)transition->committed.targetMapId,
            (unsigned int)EspMapResidentLifecycle_isReady());
