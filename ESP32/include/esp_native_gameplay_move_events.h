@@ -28,7 +28,8 @@ typedef enum EspNativeGameplayMoveEventStatus_e {
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY = 10,
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK = 11,
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SHOW_OK = 12,
-    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK = 13
+    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK = 13,
+    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MESSAGE_READY = 14
 } EspNativeGameplayMoveEventStatus;
 
 typedef struct EspNativeGameplayMoveEventResult_s {
@@ -117,6 +118,12 @@ int EspNativeGameplayMoveEvents_pendingDialog(
     uint32_t sequence,
     EspNativeGameplayMoveDialogIntent* outIntent);
 int EspNativeGameplayMoveEvents_finishPendingDialog(uint32_t sequence);
+
+/* EV_MESSAGE is a bounded ENTER presentation lease: the command is validated
+ * before MOVE commit, but text is published only after the destination frame
+ * rendered successfully. This preserves exact MOVE rollback semantics. */
+int EspNativeGameplayMoveEvents_hasPendingMessage(uint32_t sequence);
+int EspNativeGameplayMoveEvents_finishPendingMessage(uint32_t sequence);
 
 #ifdef __cplusplus
 }

@@ -29,7 +29,11 @@ EspMapTransitionPreflightStatus EspMapTransitionPreflight_run(
     if (resourceName == NULL) {
         return ESP_MAP_TRANSITION_PREFLIGHT_INVALID;
     }
+    if (!EspAssetPack_sourceProbeBegin(resourceName)) {
+        return ESP_MAP_TRANSITION_PREFLIGHT_PACK_OPEN_FAILED;
+    }
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        EspAssetPack_sourceProbeEnd();
         return ESP_MAP_TRANSITION_PREFLIGHT_PACK_OPEN_FAILED;
     }
 
@@ -76,6 +80,7 @@ EspMapTransitionPreflightStatus EspMapTransitionPreflight_run(
 
 done:
     EspAssetPack_close();
+    EspAssetPack_sourceProbeEnd();
     if (status != ESP_MAP_TRANSITION_PREFLIGHT_OK) clearResult(outResult);
     return status;
 }

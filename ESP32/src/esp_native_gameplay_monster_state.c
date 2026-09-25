@@ -59,6 +59,7 @@ static const EnemyTemplate enemyTemplates[ENTITY_SUBTYPE_COUNT] = {
 static EspNativeGameplayMonsterRecord* monsterRecords;
 static EspNativeGameplayMonsterStateSnapshot* pendingRestore;
 static EspNativeGameplayMonsterView monsterView;
+static uint32_t emptyServiceArenaLogged;
 
 _Static_assert(sizeof(EspNativeGameplayMonsterRecord) == 16U,
                "native monster record must remain 16 bytes");
@@ -369,6 +370,7 @@ void EspNativeGameplayMonsterState_reset(void) {
     pendingRestore = NULL;
     memset(&monsterView, 0, sizeof(monsterView));
     monsterView.witnessSpriteIndex = ESP_NATIVE_GAMEPLAY_MONSTER_NO_SPRITE;
+    emptyServiceArenaLogged = 0U;
 }
 
 int EspNativeGameplayMonsterState_ensure(DoomRPG_t* doomRpg) {
@@ -638,6 +640,25 @@ int __real_EspNativeGameplayActionEngine_service(DoomRPG_t* doomRpg);
 void __real_EspNativeGameplayActionEngine_reset(void);
 
 int __wrap_EspNativeGameplayActionEngine_service(DoomRPG_t* doomRpg) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+
+    /* A hub/transition map with no enemy entities is a valid gameplay world.
+     * MonsterState intentionally owns no zero-length heap allocation; simply
+     * bypass the monster-state layer and keep the generic action backend live.
+     * Maps containing enemies retain the exact established ensure/RNG path. */
+    if (doomRpg != NULL && runtime != NULL && topology != NULL &&
+        EspMapRuntime_isLoaded() && EspMapSpriteTopology_isReady() &&
+        runtime->mapSpriteCount == topology->spriteCount &&
+        topology->enemyCount == 0U) {
+        if (emptyServiceArenaLogged != runtime->arenaFNV1a) {
+            emptyServiceArenaLogged = runtime->arenaFNV1a;
+            printf("[MONSTERSTATE] EMPTY arena=%08x enemies=0 ownerBytes=0 rngCalls=0 actionBackend=generic noAllocation=yes\n",
+                   (unsigned int)runtime->arenaFNV1a);
+        }
+        return __real_EspNativeGameplayActionEngine_service(doomRpg);
+    }
+
     if (!EspNativeGameplayMonsterState_ensure(doomRpg)) return 0;
     return __real_EspNativeGameplayActionEngine_service(doomRpg);
 }

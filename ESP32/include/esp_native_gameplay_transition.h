@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "esp_map_committed_transition.h"
+#include "esp_map_line_state.h"
 #include "esp_map_level_exit_stats.h"
 #include "esp_map_save_route.h"
 #include "esp_map_transition_preflight.h"
@@ -21,7 +22,8 @@ typedef enum EspNativeGameplayTransitionStatus_e {
     ESP_NATIVE_GAMEPLAY_TRANSITION_COMPLEX = 3,
     ESP_NATIVE_GAMEPLAY_TRANSITION_UNSUPPORTED = 4,
     ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED = 5,
-    ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS = 6
+    ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS = 6,
+    ESP_NATIVE_GAMEPLAY_TRANSITION_DOOR_READY = 7
 } EspNativeGameplayTransitionStatus;
 
 /*
@@ -40,11 +42,16 @@ typedef struct EspNativeGameplayTransitionState_s {
     EspMapLevelExitStats levelStats;
     EspStatsMenuIntent statsIntent;
     EspMapCommittedTransitionState committed;
+    EspMapLineDoorResult doorResult;
     uint32_t sequence;
     uint16_t frontTile;
     uint16_t eventIndex;
     uint8_t saveCommandOffset;
     uint8_t changeCommandOffset;
+    uint8_t doorCommandOffset;
+    uint8_t doorRemovedBefore;
+    uint8_t doorRemovedAfter;
+    uint8_t waitingDoor;
     uint8_t active;
     uint8_t waitingStats;
 } EspNativeGameplayTransitionState;
@@ -56,6 +63,8 @@ typedef struct EspNativeGameplayTransitionSelectResult_s {
     uint8_t eligibleCount;
     uint8_t saveCommandOffset;
     uint8_t changeCommandOffset;
+    uint8_t doorCommandOffset;
+    uint8_t doorReady;
     uint8_t targetMapId;
     uint8_t targetGameplayLoadMapId;
     uint8_t showStats;
@@ -63,6 +72,7 @@ typedef struct EspNativeGameplayTransitionSelectResult_s {
 } EspNativeGameplayTransitionSelectResult;
 
 void EspNativeGameplayTransition_reset(void);
+int EspNativeGameplayTransition_isWaitingDoor(void);
 int EspNativeGameplayTransition_isWaitingStats(void);
 const EspNativeGameplayTransitionState* EspNativeGameplayTransition_view(void);
 
@@ -80,6 +90,21 @@ const EspNativeGameplayTransitionState* EspNativeGameplayTransition_view(void);
 EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayTransitionSelectResult* outResult);
+
+/*
+ * Complete the real transition-door suffix after the shared bounded door
+ * renderer has drained its four frames. Only the exact staged sequence/event/
+ * line tuple may advance into WAIT_STATS. abortDoor() discards the staged
+ * transition only after the caller has rolled the shared door transaction back.
+ */
+EspNativeGameplayTransitionStatus EspNativeGameplayTransition_finishDoor(
+    uint32_t sequence,
+    uint16_t eventIndex,
+    uint16_t lineIndex);
+int EspNativeGameplayTransition_abortDoor(
+    uint32_t sequence,
+    uint16_t eventIndex,
+    uint16_t lineIndex);
 
 const char* EspNativeGameplayTransition_statusName(
     EspNativeGameplayTransitionStatus status);

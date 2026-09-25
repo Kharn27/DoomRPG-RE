@@ -946,7 +946,19 @@ int __wrap_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
 }
 
 int __wrap_EspNativeGameplayActionEngine_service(DoomRPG_t* runtime) {
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+
     if (!EspNativeGameplayMonsterState_actionService(runtime)) return 0;
+
+    /* The private chain above has already serviced the generic ActionEngine.
+     * With no enemies there is deliberately no MonsterState/MonsterCombat
+     * owner to synchronize; zero-enemy hub maps therefore end successfully
+     * here instead of turning absence of combat state into a fatal error. */
+    if (topology != NULL && EspMapSpriteTopology_isReady() &&
+        topology->enemyCount == 0U) {
+        return 1;
+    }
+
     if (!syncOwner()) return 0;
     if (combatOwner.pending.active != 0U) {
         return servicePending(runtime);
