@@ -768,10 +768,12 @@ static EspNativeGameplayMoveEventStatus commitMixedBatch(
     }
 
     mixedBatchOwner.previewValid = 0U;
-    mixedBatchOwner.active = 1U;
-    if (showBatchOwner.count != 0U) {
-        showBatchOwner.previewValid = 0U;
-        showBatchOwner.active = 1U;
+    if (anyMutation != 0U) {
+        mixedBatchOwner.active = 1U;
+        if (showBatchOwner.count != 0U) {
+            showBatchOwner.previewValid = 0U;
+            showBatchOwner.active = 1U;
+        }
     }
     fillMixedSummary(outResult);
     outResult->mutated = anyMutation;
@@ -786,6 +788,12 @@ static EspNativeGameplayMoveEventStatus commitMixedBatch(
            (unsigned int)doorCount,
            anyMutation != 0U ? "yes" : "no",
            (unsigned int)outResult->rollbackAvailable);
+    if (anyMutation == 0U) {
+        /* A fully handled legacy no-op owns no rollback lease. Retaining the
+         * static mixed owner here would block the next unrelated MOVE. */
+        clearShowBatchOwner();
+        clearMixedBatchOwner();
+    }
     return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK;
 
 rollback:
@@ -1733,7 +1741,10 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
                (unsigned int)ioResult->sequence,
                showBatchOwner.active != 0U && transaction.active == 0U
                    ? "stale-show-owner"
-                   : "transaction-busy",
+                   : (mixedBatchOwner.active != 0U &&
+                      transaction.active == 0U
+                          ? "stale-mixed-owner"
+                          : "transaction-busy"),
                (unsigned int)transaction.active,
                (unsigned int)transaction.sequence,
                (unsigned int)showBatchOwner.active,
@@ -1742,7 +1753,8 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
                                   : UINT16_MAX),
                (unsigned int)(showBatchOwner.active != 0U
                                   ? showBatchOwner.count
-                                  : 0U));
+                                  : 0U),
+               (unsigned int)mixedBatchOwner.active);
         return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
     }
     clearShowBatchOwner();
