@@ -28,6 +28,11 @@
 #define FACING_SOUTH_FLAG     0x40000000UL
 #define FACING_WEST_FLAG      0x80000000UL
 
+#define MOVE_OPCODE_LOCK       12U
+#define MOVE_OPCODE_UNLOCK     13U
+#define MOVE_OPCODE_TOGGLELOCK 14U
+#define MOVE_MIXED_SENTINEL    0xfeU
+
 typedef struct MoveShowStep_s {
     EspMapShowResult show;
     uint8_t removedBefore;
@@ -45,6 +50,35 @@ typedef struct MoveShowBatchOwner_s {
     uint8_t active;
 } MoveShowBatchOwner;
 
+typedef struct MoveMixedStep_s {
+    uint16_t globalCommandIndex;
+    uint16_t targetIndex;
+    uint8_t commandOffset;
+    uint8_t codeId;
+    uint8_t value0Before;
+    uint8_t value0After;
+    uint8_t value1Before;
+    uint8_t value1After;
+    uint8_t removedBefore;
+    uint8_t removedAfter;
+    uint8_t handled;
+    uint8_t mutated;
+} MoveMixedStep;
+
+typedef struct MoveMixedBatchOwner_s {
+    MoveMixedStep step[ESP_NATIVE_GAMEPLAY_MOVE_MIXED_BATCH_MAX];
+    uint32_t runFlags;
+    uint16_t eventIndex;
+    uint16_t tile;
+    uint16_t firstGlobal;
+    uint8_t count;
+    uint8_t committedCount;
+    uint8_t showStart;
+    uint8_t showCount;
+    uint8_t previewValid;
+    uint8_t active;
+} MoveMixedBatchOwner;
+
 typedef struct MoveEventTransaction_s {
     uint32_t sequence;
     EspNativeGameplayMoveEventResult exitResult;
@@ -59,7 +93,9 @@ typedef struct MoveEventTransaction_s {
 
 static MoveEventTransaction transaction;
 static MoveShowBatchOwner showBatchOwner;
+static MoveMixedBatchOwner mixedBatchOwner;
 static uint8_t showBatchOwnerLogged;
+static uint8_t mixedBatchOwnerLogged;
 
 EspNativeGameplayDispatchStatus __real_EspNativeGameplayDispatch_commitMove(
     const EspPlayerViewState* expectedBeforeView,
@@ -134,7 +170,8 @@ static int phaseHandled(EspNativeGameplayMoveEventStatus status) {
     return status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK ||
            status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK ||
            status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK ||
-           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SHOW_OK;
+           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SHOW_OK ||
+           status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK;
 }
 
 static int isDialogCode(uint8_t codeId) {
@@ -200,13 +237,581 @@ static void logComplexSequence(const EspMapEventDescriptor* descriptor,
     }
 }
 
+static EspNativeGameplayMoveEventStatus preflightShowBatch(
+    const EspMapEventDescriptor* descriptor,
+    const uint8_t* offsets,
+    const uint8_t* removedBefore,
+    uint8_t count);
+static int rollbackShowBatchPrefix(uint8_t count);
+
 static void clearShowBatchOwner(void) {
     memset(&showBatchOwner, 0, sizeof(showBatchOwner));
 }
 
+static int isLockCode(uint8_t codeId) {
+    return codeId == MOVE_OPCODE_LOCK ||
+           codeId == MOVE_OPCODE_UNLOCK ||
+           codeId == MOVE_OPCODE_TOGGLELOCK;
+}
+
+static int isDoorBatchCode(uint8_t codeId) {
+    return codeId == ESP_MAP_OPCODE_OPENLINE ||
+           codeId == ESP_MAP_OPCODE_CLOSELINE;
+}
+
+static int isMixedBatchCode(uint8_t codeId) {
+    return isStateCode(codeId) ||
+           codeId == ESP_MAP_OPCODE_SHOW ||
+           isLockCode(codeId) ||
+           isDoorBatchCode(codeId);
+}
+
+static void clearMixedBatchOwner(void) {
+    memset(&mixedBatchOwner, 0, sizeof(mixedBatchOwner));
+    mixedBatchOwner.showStart = 0xffU;
+}
+
+static int previewStateStep(const EspMapByteCode* command,
+                            MoveMixedStep* step,
+                            uint8_t priorCount) {
+    EspMapEventRef target;
+    uint32_t tile;
+    uint8_t before;
+    uint8_t after;
+    int i;
+
+    if (command == NULL || step == NULL) return 0;
+    tile = (command->arg1 & 0xffU) +
+           (((command->arg1 >> 8) & 0xffU) * 32U);
+    if (tile >= ESP_MAP_EVENT_TILE_COUNT ||
+        !EspMapEvents_findByTile(tile, &target)) {
+        return 0;
+    }
+
+    if (!EspMapScriptState_getEventState(target.index, &before)) return 0;
+    for (i = (int)priorCount - 1; i >= 0; --i) {
+        const MoveMixedStep* prior = &mixedBatchOwner.step[i];
+        if (isStateCode(prior->codeId) &&
+            prior->targetIndex == target.index) {
+            before = prior->value0After;
+            break;
+        }
+    }
+
+    after = before;
+    if (command->id == ESP_MAP_OPCODE_CHANGE_STATE) {
+        uint32_t requested = (command->arg1 >> 16) & 0xffU;
+        if (requested > 15U) return 0;
+        after = (uint8_t)requested;
+    }
+    else if (command->id == ESP_MAP_OPCODE_NEXT_STATE) {
+        if (before < 9U) ++after;
+    }
+    else if (command->id == ESP_MAP_OPCODE_PREV_STATE) {
+        if (before > 0U) --after;
+    }
+    else {
+        return 0;
+    }
+
+    step->targetIndex = target.index;
+    step->value0Before = before;
+    step->value0After = after;
+    step->handled = 1U;
+    step->mutated = (uint8_t)(before != after ? 1U : 0U);
+    return 1;
+}
+
+static int previewLineState(uint16_t lineIndex,
+                            uint8_t priorCount,
+                            uint8_t* outOpen,
+                            uint8_t* outLocked) {
+    uint8_t open;
+    uint8_t locked;
+    uint8_t i;
+
+    if (outOpen == NULL || outLocked == NULL ||
+        !EspMapLineState_getOpen(lineIndex, &open) ||
+        !EspMapLineState_getLocked(lineIndex, &locked)) {
+        return 0;
+    }
+
+    for (i = 0U; i < priorCount; ++i) {
+        const MoveMixedStep* prior = &mixedBatchOwner.step[i];
+        if (prior->targetIndex != lineIndex) continue;
+        if (isLockCode(prior->codeId) || isDoorBatchCode(prior->codeId)) {
+            open = prior->value0After;
+            locked = prior->value1After;
+        }
+    }
+    *outOpen = open;
+    *outLocked = locked;
+    return 1;
+}
+
+static void fillMixedSummary(EspNativeGameplayMoveEventResult* outResult) {
+    if (outResult == NULL) return;
+    outResult->tile = mixedBatchOwner.tile;
+    outResult->runFlags = mixedBatchOwner.runFlags;
+    outResult->eventIndex = mixedBatchOwner.eventIndex;
+    outResult->globalCommandIndex = mixedBatchOwner.firstGlobal;
+    outResult->codeId = MOVE_MIXED_SENTINEL;
+    outResult->eligibleCount = mixedBatchOwner.count;
+    outResult->batchCount = mixedBatchOwner.count;
+    outResult->showBatchCount = mixedBatchOwner.showCount;
+}
+
+static EspNativeGameplayMoveEventStatus preflightMixedBatch(
+    const EspMapEventDescriptor* descriptor,
+    const EspMapEventFilterPlan* plan,
+    uint16_t tile,
+    uint32_t runFlags,
+    EspNativeGameplayMoveEventResult* outResult) {
+    uint8_t showOffsets[ESP_NATIVE_GAMEPLAY_MOVE_SHOW_BATCH_MAX];
+    uint8_t showRemoved[ESP_NATIVE_GAMEPLAY_MOVE_SHOW_BATCH_MAX];
+    uint8_t eligibleCount = 0U;
+    uint8_t showCount = 0U;
+    uint8_t showClosed = 0U;
+    uint32_t offset;
+
+    if (descriptor == NULL || plan == NULL || outResult == NULL) {
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+    }
+
+    if (mixedBatchOwner.previewValid != 0U) {
+        if (mixedBatchOwner.eventIndex == descriptor->eventIndex &&
+            mixedBatchOwner.tile == tile &&
+            mixedBatchOwner.runFlags == runFlags) {
+            fillMixedSummary(outResult);
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK;
+        }
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_NOT_READY;
+    }
+    if (mixedBatchOwner.active != 0U || showBatchOwner.active != 0U ||
+        showBatchOwner.previewValid != 0U ||
+        descriptor->commandCount > ESP_NATIVE_GAMEPLAY_MOVE_MIXED_BATCH_MAX) {
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_COMPLEX;
+    }
+
+    clearMixedBatchOwner();
+    memset(showOffsets, 0, sizeof(showOffsets));
+    memset(showRemoved, 0, sizeof(showRemoved));
+    mixedBatchOwner.eventIndex = descriptor->eventIndex;
+    mixedBatchOwner.tile = tile;
+    mixedBatchOwner.runFlags = runFlags;
+
+    for (offset = 0U; offset < descriptor->commandCount; ++offset) {
+        EspMapByteCode command;
+        EspMapEventCommandFilterResult filtered;
+        MoveMixedStep* step;
+        uint32_t global = (uint32_t)descriptor->firstCommandIndex + offset;
+        uint8_t removed;
+        uint8_t openBefore = 0U;
+        uint8_t lockedBefore = 0U;
+        uint8_t legacyHandled = 1U;
+
+        memset(&command, 0, sizeof(command));
+        memset(&filtered, 0, sizeof(filtered));
+        if (global > UINT16_MAX ||
+            !EspMapScriptState_isCommandRemoved(global, &removed) ||
+            !EspMapEventFilter_evaluate(descriptor, plan, offset,
+                                        removed, &filtered)) {
+            clearMixedBatchOwner();
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+        }
+        if (filtered.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) continue;
+        if (eligibleCount >= ESP_NATIVE_GAMEPLAY_MOVE_MIXED_BATCH_MAX ||
+            !EspMapEvents_getCommand(descriptor, offset, &command)) {
+            clearMixedBatchOwner();
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_COMPLEX;
+        }
+        if (!isMixedBatchCode(command.id)) {
+            outResult->unsupportedCodeId = command.id;
+            clearMixedBatchOwner();
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
+        }
+
+        step = &mixedBatchOwner.step[eligibleCount];
+        memset(step, 0, sizeof(*step));
+        step->globalCommandIndex = (uint16_t)global;
+        step->commandOffset = (uint8_t)offset;
+        step->codeId = command.id;
+        step->removedBefore = removed;
+        step->removedAfter = removed;
+
+        if (eligibleCount == 0U) {
+            mixedBatchOwner.firstGlobal = (uint16_t)global;
+        }
+
+        if (isStateCode(command.id)) {
+            showClosed = showCount != 0U ? 1U : showClosed;
+            if (!previewStateStep(&command, step, eligibleCount)) {
+                clearMixedBatchOwner();
+                return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
+            }
+        }
+        else if (command.id == ESP_MAP_OPCODE_SHOW) {
+            if (showClosed != 0U ||
+                showCount >= ESP_NATIVE_GAMEPLAY_MOVE_SHOW_BATCH_MAX) {
+                clearMixedBatchOwner();
+                return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_COMPLEX;
+            }
+            if (showCount == 0U) mixedBatchOwner.showStart = eligibleCount;
+            showOffsets[showCount] = (uint8_t)offset;
+            showRemoved[showCount] = removed;
+            ++showCount;
+            step->handled = 1U;
+        }
+        else {
+            showClosed = showCount != 0U ? 1U : showClosed;
+            if (command.arg1 > UINT16_MAX ||
+                !previewLineState((uint16_t)command.arg1,
+                                  eligibleCount,
+                                  &openBefore, &lockedBefore)) {
+                clearMixedBatchOwner();
+                return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
+            }
+            step->targetIndex = (uint16_t)command.arg1;
+            step->value0Before = openBefore;
+            step->value0After = openBefore;
+            step->value1Before = lockedBefore;
+            step->value1After = lockedBefore;
+
+            if (isLockCode(command.id)) {
+                if (command.id == MOVE_OPCODE_LOCK) step->value1After = 1U;
+                else if (command.id == MOVE_OPCODE_UNLOCK) step->value1After = 0U;
+                else step->value1After = lockedBefore != 0U ? 0U : 1U;
+                step->handled = 1U;
+                step->mutated =
+                    (uint8_t)(step->value1Before != step->value1After ? 1U : 0U);
+            }
+            else {
+                uint8_t targetOpen =
+                    command.id == ESP_MAP_OPCODE_OPENLINE ? 1U : 0U;
+                if (lockedBefore != 0U || openBefore == targetOpen) {
+                    legacyHandled = 0U;
+                    step->handled = 0U;
+                }
+                else {
+                    step->handled = 1U;
+                    step->value0After = targetOpen;
+                    step->mutated = 1U;
+                }
+            }
+        }
+
+        if ((command.arg2 & ESP_MAP_COMMAND_FLAG_REMOVE) != 0U &&
+            legacyHandled != 0U) {
+            step->removedAfter = 1U;
+            if (step->removedBefore != step->removedAfter) step->mutated = 1U;
+        }
+        ++eligibleCount;
+    }
+
+    if (eligibleCount < 2U) {
+        clearMixedBatchOwner();
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_COMPLEX;
+    }
+
+    mixedBatchOwner.count = eligibleCount;
+    mixedBatchOwner.showCount = showCount;
+    if (showCount != 0U) {
+        EspNativeGameplayMoveEventStatus showStatus =
+            preflightShowBatch(descriptor, showOffsets, showRemoved, showCount);
+        uint8_t i;
+        if (showStatus != ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SHOW_OK) {
+            clearMixedBatchOwner();
+            return showStatus;
+        }
+        for (i = 0U; i < showCount; ++i) {
+            MoveMixedStep* step =
+                &mixedBatchOwner.step[mixedBatchOwner.showStart + i];
+            const MoveShowStep* show = &showBatchOwner.step[i];
+            if (show->show.sourceCommandOffset != step->commandOffset ||
+                show->show.globalCommandIndex != step->globalCommandIndex) {
+                clearShowBatchOwner();
+                clearMixedBatchOwner();
+                return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+            }
+            step->removedAfter =
+                show->show.removeCommandIfHandled != 0U ? 1U
+                                                        : step->removedBefore;
+            if (show->show.effectFlags != 0U ||
+                step->removedBefore != step->removedAfter) {
+                step->mutated = 1U;
+            }
+        }
+    }
+
+    mixedBatchOwner.previewValid = 1U;
+    fillMixedSummary(outResult);
+    if (mixedBatchOwnerLogged == 0U) {
+        mixedBatchOwnerLogged = 1U;
+        printf("[MOVEEVENT] MIXED-OWNER stepBytes=%u ownerBytes=%u max=%u showMax=%u storage=static stackJournalBytes=0\n",
+               (unsigned int)sizeof(MoveMixedStep),
+               (unsigned int)sizeof(mixedBatchOwner),
+               (unsigned int)ESP_NATIVE_GAMEPLAY_MOVE_MIXED_BATCH_MAX,
+               (unsigned int)ESP_NATIVE_GAMEPLAY_MOVE_SHOW_BATCH_MAX);
+    }
+    printf("[MOVEEVENT] MIXED-PREFLIGHT event=%u tile=%u eligible=%u show=%u family=state+show+line-lock+open-close order=legacy exactRollback=armed mutation=no\n",
+           (unsigned int)descriptor->eventIndex,
+           (unsigned int)tile,
+           (unsigned int)eligibleCount,
+           (unsigned int)showCount);
+    return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK;
+}
+
+static int restoreRemoved(const MoveMixedStep* step) {
+    uint8_t removedNow;
+    if (step == NULL ||
+        !EspMapScriptState_isCommandRemoved(step->globalCommandIndex,
+                                             &removedNow) ||
+        removedNow != step->removedAfter) {
+        return 0;
+    }
+    if (step->removedBefore != step->removedAfter &&
+        !EspMapScriptState_setCommandRemoved(step->globalCommandIndex,
+                                              step->removedBefore)) {
+        return 0;
+    }
+    return 1;
+}
+
+static int rollbackMixedBatchPrefix(uint8_t count) {
+    int i;
+    uint8_t showRolled = 0U;
+
+    if (count == 0U || count > mixedBatchOwner.count) return 0;
+    for (i = (int)count - 1; i >= 0; --i) {
+        const MoveMixedStep* step = &mixedBatchOwner.step[i];
+
+        if (step->codeId == ESP_MAP_OPCODE_SHOW) {
+            if (showRolled == 0U && showBatchOwner.committedCount != 0U) {
+                if (!rollbackShowBatchPrefix(showBatchOwner.committedCount)) {
+                    return 0;
+                }
+                showBatchOwner.committedCount = 0U;
+                showRolled = 1U;
+            }
+            continue;
+        }
+
+        if (isStateCode(step->codeId)) {
+            uint8_t stateNow;
+            if (!EspMapScriptState_getEventState(step->targetIndex, &stateNow) ||
+                stateNow != step->value0After) {
+                return 0;
+            }
+            if (step->value0Before != step->value0After &&
+                !EspMapScriptState_setEventState(step->targetIndex,
+                                                 step->value0Before)) {
+                return 0;
+            }
+            if (!restoreRemoved(step)) return 0;
+            continue;
+        }
+
+        if (isLockCode(step->codeId)) {
+            uint8_t lockedNow;
+            if (!EspMapLineState_getLocked(step->targetIndex, &lockedNow) ||
+                lockedNow != step->value1After ||
+                !EspMapLineState_setLocked(step->targetIndex,
+                                           step->value1Before) ||
+                !restoreRemoved(step)) {
+                return 0;
+            }
+            continue;
+        }
+
+        if (isDoorBatchCode(step->codeId)) {
+            uint8_t openNow;
+            if (!EspMapLineState_getOpen(step->targetIndex, &openNow) ||
+                openNow != step->value0After ||
+                (step->value0Before != step->value0After &&
+                 !EspMapLineState_setOpen(step->targetIndex,
+                                          step->value0Before)) ||
+                !restoreRemoved(step)) {
+                return 0;
+            }
+            continue;
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static EspNativeGameplayMoveEventStatus commitMixedBatch(
+    const EspMapEventDescriptor* descriptor,
+    EspNativeGameplayMoveEventResult* outResult) {
+    uint8_t i;
+    uint8_t showOrdinal = 0U;
+    uint8_t anyMutation = 0U;
+    uint8_t stateCount = 0U;
+    uint8_t lockCount = 0U;
+    uint8_t doorCount = 0U;
+
+    if (descriptor == NULL || outResult == NULL ||
+        mixedBatchOwner.previewValid == 0U ||
+        mixedBatchOwner.active != 0U ||
+        mixedBatchOwner.eventIndex != descriptor->eventIndex ||
+        mixedBatchOwner.count < 2U) {
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_NOT_READY;
+    }
+
+    mixedBatchOwner.committedCount = 0U;
+    showBatchOwner.committedCount = 0U;
+
+    for (i = 0U; i < mixedBatchOwner.count; ++i) {
+        MoveMixedStep* step = &mixedBatchOwner.step[i];
+        EspMapByteCode command;
+        uint8_t removedNow;
+
+        memset(&command, 0, sizeof(command));
+        if (!EspMapEvents_getCommand(descriptor, step->commandOffset, &command) ||
+            command.id != step->codeId ||
+            !EspMapScriptState_isCommandRemoved(step->globalCommandIndex,
+                                                 &removedNow) ||
+            removedNow != step->removedBefore) {
+            goto rollback;
+        }
+
+        if (isStateCode(step->codeId)) {
+            EspMapOpcodeExecResult script;
+            memset(&script, 0, sizeof(script));
+            if (EspMapOpcodeExecutor_execute(&command, &script) !=
+                    ESP_MAP_OPCODE_EXEC_OK ||
+                script.targetEventIndex != step->targetIndex ||
+                script.stateBefore != step->value0Before ||
+                script.stateAfter != step->value0After) {
+                goto rollback;
+            }
+            ++stateCount;
+        }
+        else if (step->codeId == ESP_MAP_OPCODE_SHOW) {
+            MoveShowStep* expected;
+            EspMapShowResult applied;
+            EspMapSpriteTopologyStatus showStatus;
+            if (showOrdinal >= showBatchOwner.count) goto rollback;
+            expected = &showBatchOwner.step[showOrdinal];
+            memset(&applied, 0, sizeof(applied));
+            showStatus = EspMapSpriteTopology_applyShow(
+                descriptor, step->commandOffset, &applied);
+            if (showStatus != ESP_MAP_SPRITE_TOPOLOGY_OK ||
+                memcmp(&applied, &expected->show, sizeof(applied)) != 0) {
+                goto rollback;
+            }
+            expected->show = applied;
+            expected->removedBefore = step->removedBefore;
+            expected->removedAfter = step->removedBefore;
+            showBatchOwner.committedCount = (uint8_t)(showOrdinal + 1U);
+            ++showOrdinal;
+        }
+        else if (isLockCode(step->codeId)) {
+            uint8_t openNow;
+            uint8_t lockedNow;
+            if (!EspMapLineState_getOpen(step->targetIndex, &openNow) ||
+                !EspMapLineState_getLocked(step->targetIndex, &lockedNow) ||
+                openNow != step->value0Before ||
+                lockedNow != step->value1Before ||
+                !EspMapLineState_setLocked(step->targetIndex,
+                                           step->value1After)) {
+                goto rollback;
+            }
+            ++lockCount;
+        }
+        else if (isDoorBatchCode(step->codeId)) {
+            uint8_t openNow;
+            uint8_t lockedNow;
+            if (!EspMapLineState_getOpen(step->targetIndex, &openNow) ||
+                !EspMapLineState_getLocked(step->targetIndex, &lockedNow) ||
+                openNow != step->value0Before ||
+                lockedNow != step->value1Before) {
+                goto rollback;
+            }
+            if (step->handled != 0U) {
+                EspMapLineDoorResult door;
+                EspMapLineDoorStatus doorStatus;
+                memset(&door, 0, sizeof(door));
+                doorStatus = EspMapLineState_applyDoorCommand(
+                    descriptor, step->commandOffset, &door);
+                if (doorStatus != ESP_MAP_LINE_DOOR_OK ||
+                    door.lineIndex != step->targetIndex ||
+                    door.openBefore != step->value0Before ||
+                    door.openAfter != step->value0After ||
+                    door.locked != step->value1Before) {
+                    goto rollback;
+                }
+            }
+            ++doorCount;
+        }
+        else {
+            goto rollback;
+        }
+
+        /* From here on the primary world effect for this step is live. Keep the
+         * rollback prefix inclusive before touching the command-removal bit so a
+         * failure in that secondary mutation cannot strand topology/line/state. */
+        mixedBatchOwner.committedCount = (uint8_t)(i + 1U);
+
+        if (step->removedBefore != step->removedAfter) {
+            if (!EspMapScriptState_setCommandRemoved(step->globalCommandIndex,
+                                                     step->removedAfter)) {
+                goto rollback;
+            }
+            if (step->codeId == ESP_MAP_OPCODE_SHOW &&
+                showOrdinal != 0U) {
+                showBatchOwner.step[showOrdinal - 1U].removedAfter =
+                    step->removedAfter;
+            }
+        }
+        if (step->mutated != 0U) anyMutation = 1U;
+    }
+
+    mixedBatchOwner.previewValid = 0U;
+    mixedBatchOwner.active = 1U;
+    if (showBatchOwner.count != 0U) {
+        showBatchOwner.previewValid = 0U;
+        showBatchOwner.active = 1U;
+    }
+    fillMixedSummary(outResult);
+    outResult->mutated = anyMutation;
+    outResult->rollbackAvailable = anyMutation;
+    printf("[MOVEEVENT] MIXED-BATCH event=%u tile=%u count=%u state=%u show=%u lock=%u door=%u mutation=%s rollback=%u order=legacy\n",
+           (unsigned int)mixedBatchOwner.eventIndex,
+           (unsigned int)mixedBatchOwner.tile,
+           (unsigned int)mixedBatchOwner.count,
+           (unsigned int)stateCount,
+           (unsigned int)mixedBatchOwner.showCount,
+           (unsigned int)lockCount,
+           (unsigned int)doorCount,
+           anyMutation != 0U ? "yes" : "no",
+           (unsigned int)outResult->rollbackAvailable);
+    return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK;
+
+rollback:
+    if (mixedBatchOwner.committedCount != 0U) {
+        (void)rollbackMixedBatchPrefix(mixedBatchOwner.committedCount);
+    }
+    clearShowBatchOwner();
+    clearMixedBatchOwner();
+    return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+}
+
 static void releaseShowBatchOwnerForTransaction(const char* reason) {
+    if (mixedBatchOwner.active != 0U &&
+        (transaction.exitResult.codeId == MOVE_MIXED_SENTINEL ||
+         transaction.enterResult.codeId == MOVE_MIXED_SENTINEL)) {
+        printf("[MOVEEVENT] MIXED-LEASE RELEASE seq=%u reason=%s event=%u count=%u active=1->0\n",
+               (unsigned int)transaction.sequence,
+               reason != NULL ? reason : "unknown",
+               (unsigned int)mixedBatchOwner.eventIndex,
+               (unsigned int)mixedBatchOwner.count);
+        clearMixedBatchOwner();
+    }
     if ((transaction.exitResult.codeId == ESP_MAP_OPCODE_SHOW ||
-         transaction.enterResult.codeId == ESP_MAP_OPCODE_SHOW) &&
+         transaction.enterResult.codeId == ESP_MAP_OPCODE_SHOW ||
+         transaction.exitResult.codeId == MOVE_MIXED_SENTINEL ||
+         transaction.enterResult.codeId == MOVE_MIXED_SENTINEL) &&
         showBatchOwner.active != 0U) {
         printf("[MOVEEVENT] SHOW-LEASE RELEASE seq=%u reason=%s event=%u count=%u active=1->0 dialogPending=%u worldRendered=%u\n",
                (unsigned int)transaction.sequence,
@@ -499,8 +1104,8 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
             continue;
         }
 
-        logComplexSequence(&descriptor, &plan, tile, runFlags);
-        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_COMPLEX;
+        return preflightMixedBatch(&descriptor, &plan, tile, runFlags,
+                                   outResult);
     }
 
     if (selectedOffset == UINT32_MAX || eligibleCount == 0U) {
@@ -637,6 +1242,10 @@ EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executePhase(
         eventRef.index != inspected.eventIndex ||
         !EspMapEvents_describe(&eventRef, &descriptor)) {
         return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+    }
+
+    if (status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK) {
+        return commitMixedBatch(&descriptor, outResult);
     }
 
     if (status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK) {
@@ -867,6 +1476,20 @@ int EspNativeGameplayMoveEvents_rollbackPhase(
     uint8_t removedNow;
 
     if (result == NULL) return 0;
+    if (result->codeId == MOVE_MIXED_SENTINEL) {
+        int ok;
+        if (result->rollbackAvailable == 0U) return 1;
+        if (mixedBatchOwner.active == 0U ||
+            mixedBatchOwner.eventIndex != result->eventIndex ||
+            mixedBatchOwner.count != result->batchCount ||
+            mixedBatchOwner.committedCount != result->batchCount) {
+            return 0;
+        }
+        ok = rollbackMixedBatchPrefix(mixedBatchOwner.committedCount);
+        clearShowBatchOwner();
+        clearMixedBatchOwner();
+        return ok;
+    }
     if (result->codeId == ESP_MAP_OPCODE_FORCE_MESSAGE) {
         return result->rollbackAvailable == 0U
                    ? 1
@@ -990,6 +1613,8 @@ const char* EspNativeGameplayMoveEvents_statusName(
         return "SCRIPT_STATE_OK";
     case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SHOW_OK:
         return "SHOW_OK";
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK:
+        return "MIXED_BATCH_OK";
     default: return "UNKNOWN";
     }
 }
@@ -1103,8 +1728,8 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
         !movementFlags(ioResult, preparedAfterView, &exitFlags, &enterFlags)) {
         return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
     }
-    if (transaction.active || showBatchOwner.active) {
-        printf("[MOVEEVENT] BLOCK seq=%u reason=%s transactionActive=%u transactionSeq=%u showOwnerActive=%u showEvent=%u showCount=%u failClosed=yes\n",
+    if (transaction.active || showBatchOwner.active || mixedBatchOwner.active) {
+        printf("[MOVEEVENT] BLOCK seq=%u reason=%s transactionActive=%u transactionSeq=%u showOwnerActive=%u showEvent=%u showCount=%u mixedOwnerActive=%u failClosed=yes\n",
                (unsigned int)ioResult->sequence,
                showBatchOwner.active != 0U && transaction.active == 0U
                    ? "stale-show-owner"
@@ -1121,6 +1746,7 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
         return ESP_NATIVE_GAMEPLAY_DISPATCH_INVALID;
     }
     clearShowBatchOwner();
+    clearMixedBatchOwner();
 
     memset(&exitPreflight, 0, sizeof(exitPreflight));
     memset(&enterPreflight, 0, sizeof(enterPreflight));
@@ -1143,6 +1769,8 @@ EspNativeGameplayDispatchStatus __wrap_EspNativeGameplayDispatch_commitMove(
                (unsigned int)ioResult->sequence,
                EspNativeGameplayMoveEvents_statusName(exitPreflightStatus),
                EspNativeGameplayMoveEvents_statusName(enterPreflightStatus));
+        if (showBatchOwner.active == 0U) clearShowBatchOwner();
+        if (mixedBatchOwner.active == 0U) clearMixedBatchOwner();
         return ESP_NATIVE_GAMEPLAY_DISPATCH_DEFERRED;
     }
 

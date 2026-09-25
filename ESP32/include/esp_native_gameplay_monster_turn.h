@@ -27,6 +27,10 @@ typedef struct EspNativeGameplayMonsterTurnView_s {
     uint32_t movementDeferredTurns;
     uint32_t observedPlayerAttacks;
     uint16_t lastAttackerSpriteIndex;
+    /* Exact producer identity for the ranged >=217 movement branch.  This is
+     * distinct from lastAttackerSpriteIndex because no attack probe exists
+     * when the legacy AI chooses movement. */
+    uint16_t lastMovementSpriteIndex;
     uint8_t lastReason;
     uint8_t active;
 } EspNativeGameplayMonsterTurnView;

@@ -18,6 +18,7 @@ typedef struct EspNativeGameplayMonsterAttackVisualView_s {
     uint32_t renderRollbacks;
     uint32_t expiryRetries;
     uint32_t activeProbe;
+    uint32_t completedProbe;
     uint32_t clearAtMs;
     uint16_t activeSpriteIndex;
     uint8_t active;
@@ -25,16 +26,17 @@ typedef struct EspNativeGameplayMonsterAttackVisualView_s {
 } EspNativeGameplayMonsterAttackVisualView;
 
 /*
- * Presentation-only bridge for bounded single-loop monster attack poses.
+ * Presentation-only bridge for generic monster attack animation.
  *
  * Legacy Combat_performAttack() selects attackFrame=1 for a primary monster
  * attack and attackFrame=5 for alternate/special attacks. Combat_monsterSeq()
- * holds each attack frame for 150 ms. This owner recovers both frame families
- * when NUMSHOTS==1. It never mutates MonsterState, topology, player state,
- * gameplay RNG, BSP sprites, projectiles or audio.
+ * then toggles attack/idle using the subtype's monsterWpInfo cadence and repeats
+ * that pair NUMSHOTS times. This owner recovers the same bounded one- or
+ * three-shot visual sequence for every ordinary subtype without importing
+ * legacy Combat ownership. It never mutates MonsterState, topology, player
+ * state, gameplay RNG, BSP sprites, projectiles or audio.
  *
- * Multi-loop (three-shot) presentation remains fail-closed until its own
- * bounded milestone. Projectiles, attack messages and sound remain deferred.
+ * Projectiles, attack messages and sound remain separate/deferred concerns.
  */
 void EspNativeGameplayMonsterAttackVisual_reset(void);
 void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpg);
@@ -48,6 +50,14 @@ int EspNativeGameplayMonsterAttackVisual_apply(uint32_t spriteIndex,
 /* Renderer-side helper used to promote only the actively owned attack pose into
  * the native FIXED_ANIM frame-offset contract. */
 int EspNativeGameplayMonsterAttackVisual_isPoseSprite(uint32_t spriteIndex);
+
+/* ST_COMBAT-style ownership. World input must stay closed while the current
+ * monster attack presentation is still running. */
+int EspNativeGameplayMonsterAttackVisual_isBusy(void);
+
+/* Damage/RNG resolution is allowed only after the matching visual sequence has
+ * returned the attacker to idle, matching legacy Combat_monsterSeq stage 2. */
+int EspNativeGameplayMonsterAttackVisual_isProbeComplete(uint32_t probe);
 
 const EspNativeGameplayMonsterAttackVisualView*
 EspNativeGameplayMonsterAttackVisual_view(void);

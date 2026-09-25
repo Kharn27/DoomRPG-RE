@@ -152,8 +152,11 @@ static void resetSequencer(const EspNativeGameplayMonsterTurnView* actual,
  * planned, so live RNG, MonsterPosition and topology all advance sequentially
  * like Game_monsterAI()'s active-list loop.
  *
- * The ranged >=217 producer remains on its previous single-candidate boundary;
- * simultaneous attack-ready ordering is also deliberately still fail-closed.
+ * The ranged >=217 producer carries the exact source sprite selected by the
+ * MonsterTurn probe.  Replaying that one member through the existing selector
+ * avoids rescanning all active monsters and preserves the legacy per-member
+ * identity even when several enemies are active.  Simultaneous attack-ready
+ * ordering remains a separate turn-sequencing boundary.
  */
 void __wrap_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg) {
     const EspNativeGameplayMonsterTurnView* actual =
@@ -197,6 +200,8 @@ void __wrap_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg) 
 
     if (actual->movementDeferredTurns != activeSeq.actualMovementSeen) {
         uint8_t committed = 0U;
+        uint16_t spriteIndex = actual->lastMovementSpriteIndex;
+        int transactionStatus;
         if (actual->movementDeferredTurns != activeSeq.actualMovementSeen + 1U) {
             ++activeSeq.deferredTurns;
             printf("[MONSTERACTIVESEQ] DEFER reason=ranged-trigger-gap observed=%u current=%u mutation=no rngConsumed=0\n",
@@ -206,9 +211,24 @@ void __wrap_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg) 
             return;
         }
         activeSeq.actualMovementSeen = actual->movementDeferredTurns;
+        if (spriteIndex == ACTIVESEQ_NO_SPRITE ||
+            !EspNativeGameplayMonsterActivation_isActive(spriteIndex)) {
+            ++activeSeq.deferredTurns;
+            printf("[MONSTERACTIVESEQ] DEFER reason=ranged-source-identity sprite=%u active=%s mutation=no rngConsumed=0\n",
+                   (unsigned int)spriteIndex,
+                   spriteIndex != ACTIVESEQ_NO_SPRITE &&
+                           EspNativeGameplayMonsterActivation_isActive(spriteIndex)
+                       ? "yes" : "no");
+            return;
+        }
         ++activeSeq.expandedMovement;
-        (void)callMovementMember(doomRpg, ACTIVESEQ_NO_SPRITE, 0,
-                                 "RANGED-AI", &committed);
+        transactionStatus = callMovementMember(
+            doomRpg, spriteIndex, 1, "RANGED-AI", &committed);
+        printf("[MONSTERACTIVESEQ] RANGED-MEMBER ranged=%u sprite=%u publication=%s exactSource=yes\n",
+               (unsigned int)activeSeq.expandedMovement,
+               (unsigned int)spriteIndex,
+               committed != 0U ? "committed" :
+               (transactionStatus != 0 ? "none" : "deferred"));
         return;
     }
 
