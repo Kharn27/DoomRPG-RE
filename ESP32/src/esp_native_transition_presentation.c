@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <esp_timer.h>
@@ -31,7 +32,7 @@
 #define COLOR_GREEN      0x4d8bU
 
 typedef struct EspNativeTransitionPresentationState_s {
-    EspNativeIndexedBmp star;
+    EspNativeIndexedBmp* star;
     uint32_t loadingStartMs;
     uint32_t lastPresentMs;
     uint32_t frames;
@@ -42,6 +43,13 @@ typedef struct EspNativeTransitionPresentationState_s {
 } EspNativeTransitionPresentationState;
 
 static EspNativeTransitionPresentationState presentation;
+
+static void releasePresentation(void) {
+    if (presentation.star != NULL) {
+        free(presentation.star);
+    }
+    memset(&presentation, 0, sizeof(presentation));
+}
 
 /* Compact 5x7 uppercase font. Rows are five low bits, left to right. Program
  * data only: transition UI adds no second font image or framebuffer owner. */
@@ -239,29 +247,29 @@ static int paintStarfield(uint32_t elapsedMs,
     uint16_t sourceY = 0U;
     uint16_t destY = 0U;
     uint16_t phase;
-    if (fb == NULL || !presentation.starReady ||
-        presentation.star.width == 0U || presentation.star.height == 0U ||
+    if (fb == NULL || !presentation.starReady || presentation.star == NULL ||
+        presentation.star->width == 0U || presentation.star->height == 0U ||
         !EspAssetPack_isOpen()) return 0;
 
     phase = (uint16_t)((elapsedMs / TRANSITION_STAR_STEP_MS) %
-                       presentation.star.width);
+                       presentation.star->width);
     while (destY < DOOMRPG_LOGICAL_HEIGHT) {
-        uint16_t h = presentation.star.height;
+        uint16_t h = presentation.star->height;
         uint16_t x = 0U;
         uint16_t sx =
-            (uint16_t)((presentation.star.width - phase) %
-                       presentation.star.width);
+            (uint16_t)((presentation.star->width - phase) %
+                       presentation.star->width);
         if ((uint32_t)destY + h > DOOMRPG_LOGICAL_HEIGHT) {
             h = (uint16_t)(DOOMRPG_LOGICAL_HEIGHT - destY);
         }
         while (x < DOOMRPG_LOGICAL_WIDTH) {
             uint16_t run =
-                (uint16_t)(presentation.star.width - sx);
+                (uint16_t)(presentation.star->width - sx);
             if ((uint32_t)x + run > DOOMRPG_LOGICAL_WIDTH) {
                 run = (uint16_t)(DOOMRPG_LOGICAL_WIDTH - x);
             }
             if (EspNativeIndexedBmp_blit(
-                    &presentation.star, fb,
+                    presentation.star, fb,
                     DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
                     sx, sourceY, run, h,
                     (int16_t)x, (int16_t)destY, 0U, stats) !=
@@ -388,19 +396,26 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
     if (!EspMapCatalog_isValidId(targetMapId) || !framebufferReady() ||
         presentation.loadingActive) return 0;
 
-    memset(&presentation, 0, sizeof(presentation));
+    releasePresentation();
     memset(&stats, 0, sizeof(stats));
 
+    presentation.star =
+        (EspNativeIndexedBmp*)calloc(1U, sizeof(EspNativeIndexedBmp));
+    if (presentation.star == NULL) return 0;
+
     if (!EspAssetPack_isOpen()) {
-        if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+        if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+            releasePresentation();
+            return 0;
+        }
         openedHere = 1;
     }
     if (EspNativeIndexedBmp_open(TRANSITION_STAR_NAME,
-                                 &presentation.star, &stats) !=
+                                 presentation.star, &stats) !=
             ESP_NATIVE_INDEXED_BMP_OK ||
-        presentation.star.width == 0U || presentation.star.height == 0U) {
+        presentation.star->width == 0U || presentation.star->height == 0U) {
         if (openedHere) EspAssetPack_close();
-        memset(&presentation, 0, sizeof(presentation));
+        releasePresentation();
         return 0;
     }
 
@@ -412,7 +427,7 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
 
     if (!paintLoadingFrame(0U, 0U, 0U, 1)) {
         if (openedHere) EspAssetPack_close();
-        memset(&presentation, 0, sizeof(presentation));
+        releasePresentation();
         return 0;
     }
     if (openedHere) EspAssetPack_close();
@@ -420,11 +435,11 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
     printf("[TRANSITIONLOAD] BEGIN targetMap=%u star=%s size=%ux%u cadence=%ums presentInterval=%ums ownerBytes=%u fullFrameExtra=0\n",
            (unsigned int)targetMapId,
            TRANSITION_STAR_NAME,
-           (unsigned int)presentation.star.width,
-           (unsigned int)presentation.star.height,
+           (unsigned int)presentation.star->width,
+           (unsigned int)presentation.star->height,
            (unsigned int)TRANSITION_STAR_STEP_MS,
            (unsigned int)TRANSITION_PRESENT_INTERVAL_MS,
-           (unsigned int)sizeof(presentation));
+           (unsigned int)(sizeof(presentation) + sizeof(EspNativeIndexedBmp)));
     return 1;
 }
 
@@ -443,7 +458,7 @@ void EspNativeTransitionPresentation_progress(uint8_t phase,
 void EspNativeTransitionPresentation_endLoading(void) {
     uint32_t elapsed;
     if (!presentation.loadingActive) {
-        memset(&presentation, 0, sizeof(presentation));
+        releasePresentation();
         return;
     }
     elapsed = (uint32_t)(nowMs() - presentation.loadingStartMs);
@@ -451,9 +466,9 @@ void EspNativeTransitionPresentation_endLoading(void) {
            (unsigned int)presentation.targetMapId,
            (unsigned int)presentation.frames,
            (unsigned int)elapsed);
-    memset(&presentation, 0, sizeof(presentation));
+    releasePresentation();
 }
 
 void EspNativeTransitionPresentation_reset(void) {
-    memset(&presentation, 0, sizeof(presentation));
+    releasePresentation();
 }
