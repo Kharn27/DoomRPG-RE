@@ -15,6 +15,8 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_session.h"
+#include "esp_native_gameplay_status_message.h"
+#include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_gameplay_transition_handoff.h"
 #include "esp_native_transition_presentation.h"
@@ -422,6 +424,12 @@ int EspNativeGameplayTransitionHandoff_tryArmNullCallback(void) {
      * state. This prevents the platform NULL callback path from silently
      * re-arming the same failed transition. */
     if (handoff.failed) return 0;
+
+    /* WAIT_STATS owns the full framebuffer. Clear source-map top-bar fallback
+     * owners before the opaque stats frame so neither a stale FORCE_MESSAGE nor
+     * a facing label can repaint over the transition UI. */
+    EspNativeGameplayStatusMessage_reset();
+    EspNativeGameplayFacingLabel_reset();
 
     if (!EspNativeTransitionPresentation_showStats(transition)) {
         printf("[NATIVECHANGEMAP] STATS-PRESENTATION status=FAILED sourceMap=%u targetMap=%u failClosed=yes\n",
