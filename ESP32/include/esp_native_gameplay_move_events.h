@@ -11,7 +11,8 @@
 extern "C" {
 #endif
 
-#define ESP_NATIVE_GAMEPLAY_MOVE_SHOW_BATCH_MAX 4U
+#define ESP_NATIVE_GAMEPLAY_MOVE_SHOW_BATCH_MAX 8U
+#define ESP_NATIVE_GAMEPLAY_MOVE_MIXED_BATCH_MAX 16U
 
 typedef enum EspNativeGameplayMoveEventStatus_e {
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID = 0,
@@ -26,7 +27,8 @@ typedef enum EspNativeGameplayMoveEventStatus_e {
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK = 9,
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY = 10,
     ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK = 11,
-    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SHOW_OK = 12
+    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SHOW_OK = 12,
+    ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK = 13
 } EspNativeGameplayMoveEventStatus;
 
 typedef struct EspNativeGameplayMoveEventResult_s {
@@ -52,7 +54,7 @@ typedef struct EspNativeGameplayMoveEventResult_s {
     uint8_t stateBefore;
     uint8_t stateAfter;
     uint8_t showBatchCount;
-    uint8_t reservedResult;
+    uint8_t batchCount;
     union {
         EspNativeGameplayStatusMessageResult statusMessage;
         EspMapShowResult show;
@@ -70,8 +72,12 @@ typedef struct EspNativeGameplayMoveDialogIntent_s {
  * Execute the bounded movement tile-event families recovered from
  * Game_executeTile()/Game_runEvent(): exactly one eligible regular door
  * OPENLINE/CLOSELINE, FORCE_MESSAGE, dialog command, compact script-state
- * mutation (CHANGESTATE/NEXTSTATE/PREVSTATE), or one homogeneous EV_SHOW batch
- * of at most ESP_NATIVE_GAMEPLAY_MOVE_SHOW_BATCH_MAX eligible commands.
+ * mutation (CHANGESTATE/NEXTSTATE/PREVSTATE), one homogeneous EV_SHOW batch,
+ * or one bounded mixed world batch of up to
+ * ESP_NATIVE_GAMEPLAY_MOVE_MIXED_BATCH_MAX eligible commands. Mixed batches are
+ * deliberately limited to permanent native world owners already implemented:
+ * script-state mutations, EV_SHOW, LOCK/UNLOCK/TOGGLELOCK and OPENLINE/CLOSELINE.
+ * UI/pause/random/player-damage families remain fail-closed.
  *
  * EV_SHOW batches are fully replay-probed against the compact topology and
  * rolled back exactly before MOVE commit. Their at-most-four rollback records
@@ -79,7 +85,7 @@ typedef struct EspNativeGameplayMoveDialogIntent_s {
  * the loopTask stack does not grow with the batch journal. The real commit
  * applies SHOWs in legacy order and retains every per-step rollback record plus
  * removed command bit until render/view commit. A second simultaneous SHOW
- * batch, mixed eligible opcode sequences, and larger batches remain fail-closed.
+ * batch and larger/unsupported mixed sequences remain fail-closed.
  *
  * Dialog presentation is not performed inside the commit wrapper: an ENTER
  * dialog becomes a tiny pending intent consumed by resident gameplay after the

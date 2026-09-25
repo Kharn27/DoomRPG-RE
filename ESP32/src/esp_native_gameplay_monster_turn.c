@@ -549,6 +549,7 @@ static int syncOwner(void) {
         memset(&turnOwner, 0, sizeof(turnOwner));
         turnOwner.view.sourceArenaFNV1a = arena;
         turnOwner.view.lastAttackerSpriteIndex = TURN_NO_SPRITE;
+        turnOwner.view.lastMovementSpriteIndex = TURN_NO_SPRITE;
         turnOwner.view.active = 1U;
         printf("[MONSTERTURN] READY arena=%08x ownerBytes=%u mode=probe+rollback schedule=MOVE+PLAYER_ATTACK+PASS_TURN rotation=legacy-no-turn attackFamily=stationary-cardinal-generic traceMask=%04x playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=deferred mutation=no\n",
                (unsigned int)arena,
@@ -668,6 +669,7 @@ static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
     ++turnOwner.view.probes;
     turnOwner.view.lastReason = reason;
     turnOwner.view.lastAttackerSpriteIndex = TURN_NO_SPRITE;
+    turnOwner.view.lastMovementSpriteIndex = TURN_NO_SPRITE;
 
     if (doomRpg == NULL || playerView == NULL || player == NULL ||
         !EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
@@ -710,6 +712,8 @@ static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
         ++aiRngCalls;
         if (aiDecision >= 217U) {
             doomRpg->random = randomBefore;
+            turnOwner.view.lastMovementSpriteIndex =
+                candidate.monster->spriteIndex;
             ++turnOwner.view.movementDeferredTurns;
             randomFNVAfter = randomFNV(&doomRpg->random);
             printf("[MONSTERTURN] MOVE-DEFER reason=%s sprite=%u subtype=%u tile=%u weapon=%u aiRand=%u threshold=217 movementPositions=not-owned rngCalls=%u rng=%08x->%08x rollback=yes mutation=no\n",
@@ -1197,6 +1201,7 @@ int EspNativeGameplayMonsterTurn_requestBlockedAutomapMove(
 void EspNativeGameplayMonsterTurn_reset(void) {
     memset(&turnOwner, 0, sizeof(turnOwner));
     turnOwner.view.lastAttackerSpriteIndex = TURN_NO_SPRITE;
+    turnOwner.view.lastMovementSpriteIndex = TURN_NO_SPRITE;
 }
 
 const EspNativeGameplayMonsterTurnView* EspNativeGameplayMonsterTurn_view(void) {

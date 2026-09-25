@@ -5,18 +5,135 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 8e1a8cb62bb28ffa0c6d14ff39ebd12dd056949d
-branch = fix/mainMenu
-rebased feature base = c398959
-hardware-tested correction = lower-HUD close integrity + SAVE return feedback
-local esp32-cyd build = SUCCESS
-static RAM = 44648 B
-flash = 776669 B
-SYS SAVE success = close HUB immediately + 1200 ms Game saved
-top-bar expiry = permanent status -> current facing label -> empty
-hardware result = Game saved then Door restored, REAL-CYD PASS 2026-09-25
-status = SAVE RETURN REAL-CYD PASS
+current main = b77513309a38a970a5d59195ce76424a3f44a7cb
+branch = agent/esp32-native-monster-turn-ordinary-completion
+rebased code boundary = e87097d7544ea63104049003c55e19a7158bfad3
+hardware-tested code boundary = a5b30a12b4bb51cd4f016d53212b74e967c19d6d
+hardware = Yellow Key trap + attack-after-animation + rotated SYS SAVE return REAL-CYD PASS
+CI = esp32-cyd #767 SUCCESS
+static RAM = 45096 B
+flash = 782505 B (post-review local build)
+post-review candidate = attack-arm retry + final-idle cadence
+status = TESTED SHA RETAINED; REVIEW FIXES BUILD-VALID / REAL-CYD RETEST PENDING
 ```
+
+### Ordinary attack post-review corrections — build-valid candidate
+
+Two code-review findings after the hardware PASS exposed edge cases in the
+presentation/resolution handshake:
+
+1. A failed first `guardedRender()` consumed `observedAttackProbes`, cleared the
+   visual sequence and left retaliation waiting forever for a completion that
+   could no longer be published. The visual owner now advances the observed
+   probe only after the first attack frame is presented. Until then the probe
+   remains retryable and `isBusy()` keeps world input closed.
+2. The last attack-to-idle redraw published completion immediately. The owner
+   now holds that final idle pose for the subtype's full recovered 200–500 ms
+   cadence before setting `completedProbe`, matching the legacy
+   `Combat_monsterSeq()` transition into stage 2 / `Player_pain`.
+
+Local `esp32-cyd` compilation succeeds at 45096 B static RAM and 782505 B flash.
+These exact edge corrections remain candidates until exercised again on the
+real CYD; they do not retroactively alter the earlier hardware evidence.
+
+### SYS SAVE live-compass close correction — REAL-CYD PASS
+
+A later real-CYD progression run exposed one remaining SAVE-return regression
+that the earlier facing-label test did not cover: after the player had rotated,
+the retained full-HUD model still carried the historical compass angle while the
+live player view had a newer settled angle. HUB close repainted the stale full
+HUD before checking the protected lower band, so a valid checkpoint could commit
+but the close transaction returned `NOT_READY` before `Game saved` was queued.
+
+Hardware failure signature:
+
+```text
+[NATIVESAVE] SAVE ... angle=64 ...
+[GAMEPLAYHUD] REPAINT ... angle=192 ...
+[HUB] CLOSE ... exactBottom=NO ...
+[RESIDENTGAMEPLAY] HUB-RECOVER ... status=NOT_READY
+```
+
+The permanent close path now reuses the already-bounded compass dirty painter
+after the base HUD repaint, sourcing the cardinal angle from the settled
+`EspPlayerViewState`. No new retained owner or framebuffer-sized scratch was
+added.
+
+The real classic CYD validated the corrected sequence at code head
+`a5b30a12b4bb51cd4f016d53212b74e967c19d6d`:
+
+```text
+[NATIVESAVE] SAVE ... angle=128 ...
+[GAMEPLAYHUD] REPAINT ... angle=64 ...
+[HUB] CLOSE ... hudBottom=5da12662 expectedBottom=5da12662 exactBottom=yes ...
+[NATIVESAVE] SAVE-CLOSE ... feedback="Game saved" ...
+[ACTIONFEEDBACK] PAINT kind=12 text="Game saved" ... durationMs=1200
+[RESIDENTGAMEPLAY] HUB-CLOSE ... worldRedraw=yes ...
+[ACTIONFEEDBACK] EXPIRE ... restored=topbar-only
+```
+
+The stale `GAMEPLAYHUD REPAINT angle=64` line is expected: it describes the
+base retained HUD repaint before the live compass rectangle is reapplied. The
+authoritative close witness is `exactBottom=yes`, followed by
+`SAVE-CLOSE`, the 1200 ms message, and the normal facing-label fallback.
+
+Build witness for the exact tested code:
+
+```text
+esp32-cyd CI #767 = SUCCESS
+static RAM = 45096 B
+flash = 782141 B
+```
+
+### Ordinary monster attack resolution — REAL-CYD PASS
+
+The current ordinary monster attack path now resolves gameplay only after its
+presentation lease completes. The attack probe remains transactional; while the
+animation is active, player HP/armor and gameplay RNG remain unchanged and world
+input is blocked.
+
+Current rebased real-CYD witness:
+
+```text
+[MONSTERATKVIS] ARM ... sprite=315 ... visual=5 ... phaseMs=500 ...
+[MONSTERRETAL] WAIT ... resolution=after-animation playerMutation=no rngConsumed=0 worldInput=blocked
+[MONSTERATKVIS] COMPLETE ... visual=5->idle ... resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT ... playerHP=23->19 armor=11->7 ... attackVisual=complete-before-resolution
+```
+
+The earlier multi-loop Troop test also visually proved the generic repeated-shot
+presentation. Its perceived slowness remains a separate system-level performance
+issue rather than a reason to retune this owner in isolation.
+
+### Entrance event 74 mixed MOVE batch — REAL-CYD PASS
+
+The Yellow Key trap on Entrance tile 697 uses a real mixed MOVE script:
+state changes, SHOW commands and line lock/open operations. After the trap has
+already fired, a later traversal can legitimately reduce to a completely handled
+no-op batch with `mutation=no rollback=0`.
+
+The first implementation still retained the static mixed rollback owner in that
+case, so the next unrelated MOVE failed closed. The current code arms rollback
+owners only for real mutations, immediately releases no-op mixed owners, and
+passes the actual `mixedBatchOwner.active` value to the BLOCK diagnostic.
+
+The real-CYD retest continued successfully from tile 697 through 665, 633, 601
+and back to 633, with subsequent monster movement and combat. No
+`stale-mixed-owner`, `transaction-busy` or
+`FAILED reason=move-commit` recurred.
+
+Runtime remained alive at the supplied tail:
+
+```text
+heap=81788
+heap8=16236
+largest8=8692
+```
+
+Detailed records:
+
+- [`MILESTONE_NATIVE_MONSTER_ATTACK_RESOLUTION.md`](MILESTONE_NATIVE_MONSTER_ATTACK_RESOLUTION.md)
+- [`MILESTONE_NATIVE_MOVE_MIXED_EVENT74.md`](MILESTONE_NATIVE_MOVE_MIXED_EVENT74.md)
 
 The earlier barrel values below remain historical hardware boundaries. Their
 code is now merged into `main`; keep the exact barrel SHA and its narrower PASS

@@ -27,6 +27,7 @@
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_move_events.h"
+#include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_pass_turn.h"
 #include "esp_native_gameplay_password.h"
@@ -119,6 +120,18 @@ static void onGameplayTap(int16_t screenX,
     logicalY = screenY / DOOMRPG_INTEGER_SCALE;
     if (logicalX < 0 || logicalX >= DOOMRPG_LOGICAL_WIDTH ||
         logicalY < 0 || logicalY >= DOOMRPG_LOGICAL_HEIGHT) {
+        return;
+    }
+
+    /* Legacy ST_COMBAT owns input until the monster sequence reaches stage 2.
+     * Do not buffer a world action behind the animation: a tap made while the
+     * enemy is attacking is intentionally discarded. */
+    if (EspNativeGameplayMonsterAttackVisual_isBusy()) {
+        ++gameplayState.taps;
+        printf("[RESIDENTGAMEPLAY] COMBAT-INPUT-BLOCK tap=%u logical=%d,%d owner=monster-attack-animation queued=no feedback=none\n",
+               (unsigned int)gameplayState.taps,
+               logicalX,
+               logicalY);
         return;
     }
 
@@ -1679,6 +1692,24 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     pending = EspNativeGameplayInput_peek();
+
+    /* Defensive race closure: the tap callback normally rejects combat-time
+     * input, but if an IRQ queued one immediately before the visual owner armed,
+     * discard it rather than replaying it after combat returns to idle. */
+    if (EspNativeGameplayMonsterAttackVisual_isBusy()) {
+        if (pending != NULL && pending->pending != 0U) {
+            memset(&intent, 0, sizeof(intent));
+            inputStatus = EspNativeGameplayInput_consume(&intent);
+            if (inputStatus != ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+                disableGameplay("combat-input-discard");
+                return;
+            }
+            printf("[RESIDENTGAMEPLAY] COMBAT-PENDING-DROP seq=%u action=%s owner=monster-attack-animation queued=no turnAdvance=no\n",
+                   (unsigned int)intent.sequence,
+                   EspNativeGameplayInput_actionName(intent.action));
+        }
+        return;
+    }
 
     if ((EspNativeGameplayHub_isActive() &&
          (EspNativeGameplayDialog_isActive() ||

@@ -19,15 +19,33 @@
 #define ATTACK_VISUAL_FRAME_MS 150U
 #define ATTACK_VISUAL_SUBTYPE_COUNT 14U
 
-/* Exact Combat monsterWpInfo NUMSHOTS field. Multi-loop presentation is kept
- * fail-closed here even though the already-owned retaliation math resolves all
- * loops transactionally. */
+/* Exact Combat monsterWpInfo table split into its two semantic fields.
+ *
+ * Legacy Combat_monsterSeq() toggles the attack/idle visual once per
+ * (10 * delay) ms and decrements NUMSHOTS on every attack pose.  The separate
+ * 150 ms frameTime controls projectile/sound timing, not when the sprite returns
+ * to idle; every recovered delay is >= 200 ms, so the visual phase cadence is
+ * simply the second monsterWpInfo field * 10.
+ *
+ * Keeping this table here makes attack presentation generic for every ordinary
+ * monster subtype, including the three-shot families, without importing the
+ * legacy Combat state machine or allocating per-enemy animation objects. */
 static const uint8_t monsterShots[ATTACK_VISUAL_SUBTYPE_COUNT] = {
     1U, 1U, 3U, 1U, 3U, 1U, 3U, 1U, 1U, 1U, 1U, 1U, 1U, 3U
+};
+static const uint16_t monsterPhaseMs[ATTACK_VISUAL_SUBTYPE_COUNT] = {
+    500U, 500U, 200U, 500U, 250U, 500U, 250U,
+    300U, 500U, 500U, 500U, 500U, 500U, 250U
 };
 
 static EspNativeGameplayMonsterAttackVisualView attackVisual;
 static uint8_t activeVisualFrame;
+static uint8_t activeAttackFrame;
+static uint8_t activeSequence;
+static uint8_t activeTotalLoops;
+static uint8_t activeCompletedLoops;
+static uint8_t activeFinalIdle;
+static uint16_t activePhaseMs;
 
 static const char* reasonName(uint8_t reason) {
     switch ((EspNativeGameplayMonsterTurnReason)reason) {
@@ -55,11 +73,17 @@ static int syncOwner(void) {
         attackVisual.sourceArenaFNV1a != turn->sourceArenaFNV1a) {
         memset(&attackVisual, 0, sizeof(attackVisual));
         activeVisualFrame = 0U;
+        activeAttackFrame = 0U;
+        activeSequence = 0U;
+        activeTotalLoops = 0U;
+        activeCompletedLoops = 0U;
+        activeFinalIdle = 0U;
+        activePhaseMs = 0U;
         attackVisual.sourceArenaFNV1a = turn->sourceArenaFNV1a;
         attackVisual.observedAttackProbes = turn->attackProbes;
         attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
         attackVisual.active = 1U;
-        printf("[MONSTERATKVIS] READY arena=%08x ownerBytes=%u source=hardware-proven-turn-probe primaryFrame=%u alternateFrame=%u leaseMs=%u singleLoop=yes immutableSprite=yes fixedAnim=overlay gameplayRng=guarded multiLoop=fail-closed projectile=deferred attackMessage=deferred sound=deferred\n",
+        printf("[MONSTERATKVIS] READY arena=%08x ownerBytes=%u source=turn-probe primaryFrame=%u alternateFrame=%u projectileFrameMs=%u sequence=generic-1or3-loop cadence=legacy-monsterWpInfo immutableSprite=yes fixedAnim=overlay gameplayRng=guarded projectile=deferred attackMessage=deferred sound=deferred\n",
                (unsigned int)attackVisual.sourceArenaFNV1a,
                (unsigned int)sizeof(attackVisual),
                (unsigned int)ATTACK_VISUAL_PRIMARY_FRAME,
@@ -100,30 +124,40 @@ static int guardedRender(DoomRPG_t* runtime,
     return rendered && exact;
 }
 
-static void clearPose(void) {
+static void clearSequence(void) {
     attackVisual.poseActive = 0U;
     attackVisual.activeProbe = 0U;
     attackVisual.clearAtMs = 0U;
     attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
     activeVisualFrame = 0U;
+    activeAttackFrame = 0U;
+    activeSequence = 0U;
+    activeTotalLoops = 0U;
+    activeCompletedLoops = 0U;
+    activeFinalIdle = 0U;
+    activePhaseMs = 0U;
 }
 
-static void serviceExpiry(DoomRPG_t* runtime) {
+static void serviceTimeline(DoomRPG_t* runtime) {
     const EspPlayerViewState* view;
     EspNativeGameplayFrameStats frame;
     uint32_t now;
     uint32_t probe;
     uint16_t spriteIndex;
-    uint8_t visualFrame;
+    uint8_t attackFrame;
+    uint8_t totalLoops;
+    uint8_t completedLoops;
+    uint16_t phaseMs;
+    int wasAttackPose;
     int rngExact = 0;
 
-    if (attackVisual.poseActive == 0U) return;
+    if (activeSequence == 0U || attackVisual.clearAtMs == 0U) return;
     now = DoomRPG_GetUpTimeMS();
     if ((int32_t)(now - attackVisual.clearAtMs) < 0) return;
 
-    /* The touch-feedback owner keeps a short framebuffer snapshot. Repainting
-     * underneath that lease would allow its restore path to resurrect the
-     * attack pose, so retry after touch feedback releases ownership. */
+    /* Touch feedback owns a bounded framebuffer snapshot.  A world redraw under
+     * that lease could be resurrected when the snapshot restores, so all attack
+     * timeline transitions retry after touch feedback releases ownership. */
     if (EspNativeGameplayControls_isActive()) return;
 
     view = EspPlayerView_view();
@@ -133,29 +167,103 @@ static void serviceExpiry(DoomRPG_t* runtime) {
 
     probe = attackVisual.activeProbe;
     spriteIndex = attackVisual.activeSpriteIndex;
-    visualFrame = activeVisualFrame;
-    clearPose();
-    if (!guardedRender(runtime, view, &frame, &rngExact)) {
-        attackVisual.activeProbe = probe;
-        attackVisual.activeSpriteIndex = spriteIndex;
-        attackVisual.clearAtMs = now + 1U;
-        attackVisual.poseActive = 1U;
-        activeVisualFrame = visualFrame;
-        ++attackVisual.expiryRetries;
-        printf("[MONSTERATKVIS] EXPIRE-RETRY probe=%u sprite=%u visual=%u reason=%s rngExact=%s recovery=next-service gameplayMutation=no\n",
+    attackFrame = activeAttackFrame;
+    totalLoops = activeTotalLoops;
+    completedLoops = activeCompletedLoops;
+    phaseMs = activePhaseMs;
+    wasAttackPose = attackVisual.poseActive != 0U;
+
+    if (wasAttackPose) {
+        /* Attack -> idle. Every idle pose, including the final one, owns the
+         * exact recovered subtype cadence before either the next attack or
+         * stage-2 retaliation resolution may begin. */
+        attackVisual.poseActive = 0U;
+        activeVisualFrame = 0U;
+        if (!guardedRender(runtime, view, &frame, &rngExact)) {
+            attackVisual.poseActive = 1U;
+            activeVisualFrame = attackFrame;
+            attackVisual.clearAtMs = now + 1U;
+            ++attackVisual.expiryRetries;
+            printf("[MONSTERATKVIS] STEP-RETRY probe=%u sprite=%u shot=%u/%u phase=attack->idle cause=%s rngExact=%s gameplayMutation=no\n",
+                   (unsigned int)probe,
+                   (unsigned int)spriteIndex,
+                   (unsigned int)completedLoops,
+                   (unsigned int)totalLoops,
+                   rngExact ? "render-failed" : "render-touched-gameplay-rng",
+                   rngExact ? "yes" : "NO");
+            return;
+        }
+
+        if (completedLoops >= totalLoops) {
+            activeFinalIdle = 1U;
+            attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + phaseMs;
+            printf("[MONSTERATKVIS] STEP probe=%u sprite=%u shot=%u/%u phase=final-idle phaseMs=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no resolution=pending-after-idle-cadence\n",
+                   (unsigned int)probe,
+                   (unsigned int)spriteIndex,
+                   (unsigned int)completedLoops,
+                   (unsigned int)totalLoops,
+                   (unsigned int)phaseMs,
+                   (unsigned int)frame.frameAfterFNV,
+                   (unsigned int)frame.finalPresented);
+            return;
+        }
+
+        attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + phaseMs;
+        printf("[MONSTERATKVIS] STEP probe=%u sprite=%u shot=%u/%u phase=idle nextShot=%u phaseMs=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no\n",
                (unsigned int)probe,
                (unsigned int)spriteIndex,
-               (unsigned int)visualFrame,
+               (unsigned int)completedLoops,
+               (unsigned int)totalLoops,
+               (unsigned int)(completedLoops + 1U),
+               (unsigned int)phaseMs,
+               (unsigned int)frame.frameAfterFNV,
+               (unsigned int)frame.finalPresented);
+        return;
+    }
+
+    if (activeFinalIdle != 0U) {
+        /* Legacy Combat_monsterSeq() sets animEndTime when it draws the final
+         * idle pose and does not enter stage 2 / Player_pain until that final
+         * cadence expires. Publish completion only now; no redraw is needed
+         * because the idle pose has remained visible for the whole lease. */
+        attackVisual.completedProbe = probe;
+        printf("[MONSTERATKVIS] COMPLETE probe=%u sprite=%u loops=%u phase=final-idle-expired phaseMs=%u redraw=no gameplayMutation=no resolution=unblocked-after-animation\n",
+               (unsigned int)probe,
+               (unsigned int)spriteIndex,
+               (unsigned int)totalLoops,
+               (unsigned int)phaseMs);
+        clearSequence();
+        return;
+    }
+
+    /* Idle -> next attack shot. */
+    attackVisual.poseActive = 1U;
+    activeVisualFrame = attackFrame;
+    ++activeCompletedLoops;
+    if (!guardedRender(runtime, view, &frame, &rngExact)) {
+        --activeCompletedLoops;
+        attackVisual.poseActive = 0U;
+        activeVisualFrame = 0U;
+        attackVisual.clearAtMs = now + 1U;
+        ++attackVisual.expiryRetries;
+        printf("[MONSTERATKVIS] STEP-RETRY probe=%u sprite=%u shot=%u/%u phase=idle->attack cause=%s rngExact=%s gameplayMutation=no\n",
+               (unsigned int)probe,
+               (unsigned int)spriteIndex,
+               (unsigned int)(completedLoops + 1U),
+               (unsigned int)totalLoops,
                rngExact ? "render-failed" : "render-touched-gameplay-rng",
                rngExact ? "yes" : "NO");
         return;
     }
 
-    printf("[MONSTERATKVIS] EXPIRE probe=%u sprite=%u visual=%u->idle leaseMs=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no\n",
+    attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + phaseMs;
+    printf("[MONSTERATKVIS] STEP probe=%u sprite=%u shot=%u/%u phase=attack visual=%u phaseMs=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no\n",
            (unsigned int)probe,
            (unsigned int)spriteIndex,
-           (unsigned int)visualFrame,
-           (unsigned int)ATTACK_VISUAL_FRAME_MS,
+           (unsigned int)activeCompletedLoops,
+           (unsigned int)totalLoops,
+           (unsigned int)attackFrame,
+           (unsigned int)phaseMs,
            (unsigned int)frame.frameAfterFNV,
            (unsigned int)frame.finalPresented);
 }
@@ -163,6 +271,12 @@ static void serviceExpiry(DoomRPG_t* runtime) {
 void EspNativeGameplayMonsterAttackVisual_reset(void) {
     memset(&attackVisual, 0, sizeof(attackVisual));
     activeVisualFrame = 0U;
+    activeAttackFrame = 0U;
+    activeSequence = 0U;
+    activeTotalLoops = 0U;
+    activeCompletedLoops = 0U;
+    activeFinalIdle = 0U;
+    activePhaseMs = 0U;
     attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
 }
 
@@ -187,6 +301,26 @@ int EspNativeGameplayMonsterAttackVisual_isPoseSprite(uint32_t spriteIndex) {
            spriteIndex == attackVisual.activeSpriteIndex;
 }
 
+int EspNativeGameplayMonsterAttackVisual_isBusy(void) {
+    const EspNativeGameplayMonsterTurnView* turn;
+    if (attackVisual.active != 1U) return 0;
+    if (activeSequence != 0U) return 1;
+
+    /* A newly published attack probe remains combat-owned until its first
+     * attack frame arms successfully. observedAttackProbes advances only after
+     * that presentation succeeds, so transient guardedRender() rollback is a
+     * retry state and cannot reopen world input or strand retaliation. */
+    turn = EspNativeGameplayMonsterTurn_view();
+    return turn != NULL && turn->active == 1U &&
+           turn->sourceArenaFNV1a == attackVisual.sourceArenaFNV1a &&
+           turn->attackProbes == attackVisual.observedAttackProbes + 1U;
+}
+
+int EspNativeGameplayMonsterAttackVisual_isProbeComplete(uint32_t probe) {
+    return attackVisual.active == 1U && probe != 0U &&
+           attackVisual.completedProbe == probe && activeSequence == 0U;
+}
+
 void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* runtime = (DoomRPG_t*)doomRpgBase;
     const EspNativeGameplayMonsterTurnView* turn;
@@ -200,7 +334,7 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
     int recoveryRendered = 0;
 
     if (!syncOwner()) return;
-    serviceExpiry(runtime);
+    serviceTimeline(runtime);
 
     turn = EspNativeGameplayMonsterTurn_view();
     if (turn == NULL || turn->attackProbes == attackVisual.observedAttackProbes) {
@@ -214,16 +348,16 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         attackVisual.observedAttackProbes = turn->attackProbes;
         return;
     }
-    attackVisual.observedAttackProbes = turn->attackProbes;
-
-    if (attackVisual.poseActive != 0U) {
-        printf("[MONSTERATKVIS] DEFER probe=%u reason=%s sprite=%u cause=pose-overlap activeProbe=%u activeSprite=%u presentation=no gameplayMutation=no\n",
+    if (activeSequence != 0U) {
+        printf("[MONSTERATKVIS] REPLACE probe=%u reason=%s sprite=%u priorProbe=%u priorSprite=%u priorShot=%u/%u cause=new-turn-probe presentation=continues gameplayMutation=no\n",
                (unsigned int)turn->attackProbes,
                reasonName(turn->lastReason),
                (unsigned int)turn->lastAttackerSpriteIndex,
                (unsigned int)attackVisual.activeProbe,
-               (unsigned int)attackVisual.activeSpriteIndex);
-        return;
+               (unsigned int)attackVisual.activeSpriteIndex,
+               (unsigned int)activeCompletedLoops,
+               (unsigned int)activeTotalLoops);
+        clearSequence();
     }
 
     if (runtime == NULL || runtime->render == NULL ||
@@ -244,18 +378,6 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         return;
     }
 
-    if (monsterShots[monster->subtype] != 1U) {
-        ++attackVisual.deferredMultiLoop;
-        printf("[MONSTERATKVIS] DEFER probe=%u reason=%s sprite=%u subtype=%u alt=%u loops=%u cause=multi-loop-presentation ownedLoops=1 presentation=no gameplayMutation=no\n",
-               (unsigned int)turn->attackProbes,
-               reasonName(turn->lastReason),
-               (unsigned int)monster->spriteIndex,
-               (unsigned int)monster->subtype,
-               (unsigned int)monster->alternateAttack,
-               (unsigned int)monsterShots[monster->subtype]);
-        return;
-    }
-
     view = EspPlayerView_view();
     if (!settledPlayerView(view)) {
         printf("[MONSTERATKVIS] DEFER probe=%u reason=%s sprite=%u cause=unsettled-player-view presentation=no gameplayMutation=no\n",
@@ -268,17 +390,23 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
     visualFrame = monster->alternateAttack != 0U
                       ? ATTACK_VISUAL_ALTERNATE_FRAME
                       : ATTACK_VISUAL_PRIMARY_FRAME;
+    attackVisual.completedProbe = 0U;
     attackVisual.activeProbe = turn->attackProbes;
     attackVisual.activeSpriteIndex = monster->spriteIndex;
     attackVisual.poseActive = 1U;
     activeVisualFrame = visualFrame;
+    activeAttackFrame = visualFrame;
+    activeSequence = 1U;
+    activeTotalLoops = monsterShots[monster->subtype];
+    activeCompletedLoops = 1U;
+    activePhaseMs = monsterPhaseMs[monster->subtype];
 
     if (!guardedRender(runtime, view, &frame, &rngExact)) {
-        clearPose();
+        clearSequence();
         ++attackVisual.renderRollbacks;
         recoveryRendered = guardedRender(runtime, view, &recoveryFrame,
                                          &recoveryRngExact);
-        printf("[MONSTERATKVIS] ROLLBACK probe=%u reason=%s sprite=%u subtype=%u alt=%u visual=%u cause=%s poseCleared=yes rngExact=%s recoveryRender=%s recoveryRngExact=%s gameplayMutation=no\n",
+        printf("[MONSTERATKVIS] ROLLBACK probe=%u reason=%s sprite=%u subtype=%u alt=%u visual=%u cause=%s poseCleared=yes probeConsumed=no retry=yes worldInput=blocked rngExact=%s recoveryRender=%s recoveryRngExact=%s gameplayMutation=no\n",
                (unsigned int)turn->attackProbes,
                reasonName(turn->lastReason),
                (unsigned int)monster->spriteIndex,
@@ -293,17 +421,23 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         return;
     }
 
-    /* Start the lease only after the physical presentation completed so the
-     * requested 150 ms are actually visible rather than consumed by rendering. */
-    attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + ATTACK_VISUAL_FRAME_MS;
+    /* Start the first visual phase only after physical presentation so render
+     * cost cannot consume the recovered attack cadence. Retaliation remains a
+     * separate gameplay transaction but cannot resolve until the final idle
+     * phase has held for its full recovered cadence. */
+    attackVisual.observedAttackProbes = turn->attackProbes;
+    attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + activePhaseMs;
     ++attackVisual.presentedAttacks;
-    printf("[MONSTERATKVIS] ARM probe=%u reason=%s sprite=%u subtype=%u alt=%u loops=1 visual=%u fixedAnim=yes leaseMs=%u frame=%08x presented=%u rngExact=yes immutableSprite=yes retaliation=continues projectile=deferred attackMessage=deferred sound=deferred gameplayMutation=no\n",
+    printf("[MONSTERATKVIS] ARM probe=%u reason=%s sprite=%u subtype=%u alt=%u loops=%u shot=1/%u phase=attack visual=%u fixedAnim=yes phaseMs=%u projectileFrameMs=%u frame=%08x presented=%u rngExact=yes immutableSprite=yes retaliation=blocked-until-final-idle projectile=deferred attackMessage=deferred sound=deferred gameplayMutation=no\n",
            (unsigned int)turn->attackProbes,
            reasonName(turn->lastReason),
            (unsigned int)monster->spriteIndex,
            (unsigned int)monster->subtype,
            (unsigned int)monster->alternateAttack,
+           (unsigned int)activeTotalLoops,
+           (unsigned int)activeTotalLoops,
            (unsigned int)visualFrame,
+           (unsigned int)activePhaseMs,
            (unsigned int)ATTACK_VISUAL_FRAME_MS,
            (unsigned int)frame.frameAfterFNV,
            (unsigned int)frame.finalPresented);

@@ -11,6 +11,8 @@
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_hub_weapon_grid.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_hud_direction.h"
+#include "esp_player_view_state.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_indexed_bmp.h"
@@ -170,11 +172,36 @@ static int menuOverlayRestore(uint16_t* framebuffer) {
 
 static int repaintGameplayHud(void) {
     const EspNativeGameplayHudState* state = EspNativeGameplayHud_view();
+    const EspPlayerViewState* view = EspPlayerView_view();
     EspNativeGameplayHudStats stats;
+    EspNativeGameplayHudDirectionStats directionStats;
+
     memset(&stats, 0, sizeof(stats));
-    if (state == NULL || state->active == 0U || EspAssetPack_isOpen()) return 0;
-    return EspNativeGameplayHud_repaint(state, &stats) ==
-           ESP_NATIVE_GAMEPLAY_HUD_OK;
+    memset(&directionStats, 0, sizeof(directionStats));
+    if (state == NULL || state->active == 0U || view == NULL ||
+        view->active != 1U || view->viewAngle != view->destAngle ||
+        (view->viewAngle & 63) != 0 || EspAssetPack_isOpen()) {
+        return 0;
+    }
+    if (EspNativeGameplayHud_repaint(state, &stats) !=
+        ESP_NATIVE_GAMEPLAY_HUD_OK) {
+        return 0;
+    }
+
+    /*
+     * The retained full-HUD model is the original/fresh-map baseline. TURN
+     * updates the live compass through the bounded direction painter without
+     * mutating that retained model, so its destAngle may legitimately differ
+     * from the settled player view after gameplay has rotated.
+     *
+     * HUB never paints y=100..119. Repainting the stale baseline at close can
+     * therefore corrupt an otherwise exactly preserved lower HUD band and make
+     * the close transaction fail its integrity check before SAVE feedback is
+     * queued. Reapply only the live compass dirty rectangle after the full HUD
+     * reconstruction so the protected band matches the pre-HUB world again.
+     */
+    return EspNativeGameplayHudDirection_render(
+        (uint8_t)view->viewAngle, &directionStats);
 }
 
 static void headerPixel(uint16_t* framebuffer, int x, int y, uint16_t color) {

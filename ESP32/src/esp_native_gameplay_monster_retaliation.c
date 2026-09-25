@@ -9,6 +9,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_monster_retaliation.h"
+#include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_state.h"
@@ -84,6 +85,7 @@ static const MonsterWeaponSpec monsterWeapons[RETALIATION_MONSTER_WEAPON_COUNT] 
 };
 
 static EspNativeGameplayMonsterRetaliationView retaliationView;
+static uint32_t waitingVisualProbe;
 
 static uint8_t p1Health(uint32_t p) { return (uint8_t)(p & 0xffU); }
 static uint8_t p1Armor(uint32_t p) { return (uint8_t)((p >> 16) & 0xffU); }
@@ -260,6 +262,7 @@ static int syncOwner(void) {
     if (retaliationView.active == 0U ||
         retaliationView.sourceArenaFNV1a != turn->sourceArenaFNV1a) {
         memset(&retaliationView, 0, sizeof(retaliationView));
+        waitingVisualProbe = 0U;
         retaliationView.sourceArenaFNV1a = turn->sourceArenaFNV1a;
         retaliationView.observedAttackProbes = turn->attackProbes;
         retaliationView.lastAttackerSpriteIndex = RETALIATION_NO_SPRITE;
@@ -273,6 +276,7 @@ static int syncOwner(void) {
 
 void EspNativeGameplayMonsterRetaliation_reset(void) {
     memset(&retaliationView, 0, sizeof(retaliationView));
+    waitingVisualProbe = 0U;
     retaliationView.lastAttackerSpriteIndex = RETALIATION_NO_SPRITE;
 }
 
@@ -322,6 +326,25 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         retaliationView.observedAttackProbes = turn->attackProbes;
         return;
     }
+    /*
+     * Legacy Combat_monsterSeq does not apply Player_pain until stage 2, after
+     * every attack/idle loop has completed.  Keep the turn transaction open:
+     * no live RNG or player mutation is committed while the visual owner is
+     * still presenting this exact probe.
+     */
+    if (!EspNativeGameplayMonsterAttackVisual_isProbeComplete(
+            turn->attackProbes)) {
+        if (waitingVisualProbe != turn->attackProbes) {
+            waitingVisualProbe = turn->attackProbes;
+            printf("[MONSTERRETAL] WAIT probe=%u reason=%s sprite=%u phase=attack-animation resolution=after-animation playerMutation=no rngConsumed=0 worldInput=blocked\n",
+                   (unsigned int)turn->attackProbes,
+                   reasonName(turn->lastReason),
+                   (unsigned int)turn->lastAttackerSpriteIndex);
+        }
+        return;
+    }
+
+    waitingVisualProbe = 0U;
     retaliationView.observedAttackProbes = turn->attackProbes;
     retaliationView.lastAttackerSpriteIndex = turn->lastAttackerSpriteIndex;
 
@@ -471,7 +494,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         ++retaliationView.committedAttacks;
         ++retaliationView.committedMisses;
         randomFNVAfter = randomFNV(&doomRpg->random);
-        printf("[MONSTERRETAL] MISS-COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u armor=%u playerFNV=%08x rng=%08x->%08x message=\"Dodged!\" textQueued=%s rendered=%s frame=%08x gameplayRngCommitted=yes playerMutation=no attackVisual=deferred sound=deferred turn=closed\n",
+        printf("[MONSTERRETAL] MISS-COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u armor=%u playerFNV=%08x rng=%08x->%08x message=\"Dodged!\" textQueued=%s rendered=%s frame=%08x gameplayRngCommitted=yes playerMutation=no attackVisual=complete-before-resolution sound=deferred turn=closed\n",
                (unsigned int)turn->attackProbes,
                reasonName(turn->lastReason),
                (unsigned int)monster->spriteIndex,
@@ -564,7 +587,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     ++retaliationView.committedAttacks;
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     randomFNVAfter = randomFNV(&doomRpg->random);
-    printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=deferred attackMessage=deferred painFace=deferred shake=deferred sound=deferred statusWarnings=deferred playerDeath=fail-closed turn=closed\n",
+    printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=deferred shake=deferred sound=deferred statusWarnings=deferred playerDeath=fail-closed turn=closed\n",
            (unsigned int)turn->attackProbes,
            reasonName(turn->lastReason),
            (unsigned int)monster->spriteIndex,
