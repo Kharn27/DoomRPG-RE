@@ -329,7 +329,11 @@ The current HUB is:
 INV | WPN | STAT | SYS
 ```
 
-`INV` uses a centered three-card list. `WPN` is a complete 3x3 grid for normal
+`INV` uses a derived four-row scrolling list containing Notebook, carried
+items and owned keys. Key rows reuse the same green/yellow/blue/red mini-card
+language as STAT; Credits remain exclusive to STAT, while its key display is a
+deliberate quick-status mirror. Any populated row can be selected directly by touch. No persistent list/scroll
+owner was added, and item activation remains deferred. `WPN` is a complete 3x3 grid for normal
 weapon IDs 0..8; familiar IDs 9..11 remain excluded. The weapon icon loader now
 converts source BGR565 palettes to framebuffer RGB565, fixing the red Fire
 Extinguisher and yellow-handled Axe presentation. `STAT` is read-only and no
@@ -342,14 +346,14 @@ The 28-byte HUB owner and world/turn gating remain unchanged.
 
 The current full-height candidate also reclaims the lower 20 logical rows while
 the HUB is open: the gameplay portrait/status strip is hidden, and the writable
-menu surface is now 160x100 at `y=20..119`. INV uses taller three-row cards, WPN
+menu surface is now 160x100 at `y=20..119`. INV uses four 19-row cards, WPN
 uses a 3x3 grid extending to row 118, STAT distributes its read-only groups over
 the added space without enlarging its HP/Armor cards, and SYS uses taller
 SAVE/LOAD targets. Ordinary close still reconstructs the retained gameplay HUD,
 reapplies the settled live compass, and requires the lower-HUD fingerprint to
 match the pre-open witness exactly. Successful LOAD keeps its existing
 whole-session replacement path. Local `esp32-cyd` compilation succeeds at
-45200 B static RAM and 789597 B flash; real-CYD presentation and restoration
+45200 B static RAM and 789933 B flash; real-CYD presentation and restoration
 remain to be exercised.
 
 The tab labels now use native 5x7 glyphs instead of a 3x5 bitmap enlarged in

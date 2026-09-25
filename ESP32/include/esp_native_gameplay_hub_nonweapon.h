@@ -11,8 +11,9 @@ extern "C" {
 #endif
 
 /* Read-only projection of the legacy Inventory content after the owned-weapon
- * prefix. Weapons now have a dedicated grid page; Notebook/items/Credits/keys
- * keep their original relative order without a second persistent list owner. */
+ * prefix: Notebook, carried items 25..29 and owned keys. Weapons have a
+ * dedicated grid page; Credits remain in STAT, which also mirrors keys as a
+ * quick summary. No second persistent list owner is retained. */
 uint8_t EspNativeGameplayHubNonWeapon_entryCount(
     const EspNativeGameplayPlayerState* player);
 int EspNativeGameplayHubNonWeapon_entryAt(

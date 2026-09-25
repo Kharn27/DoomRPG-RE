@@ -31,8 +31,9 @@ int EspNativeGameplayHubTouchUi_consumedWeaponTarget(uint8_t* outWeaponId);
  * away in the cyclic keyboard navigation order. */
 int EspNativeGameplayHubTouchUi_consumedPageTarget(uint8_t* outPage);
 
-/* Retained for the non-weapon Inventory previous/current/next window. */
-int EspNativeGameplayHubTouchUi_consumedSelectTarget(
+/* Resolve the exact row touched in the four-line Inventory window. Physical
+ * up/down actions have no row coordinate and keep cyclic navigation. */
+int EspNativeGameplayHubTouchUi_consumedInventoryTarget(
     uint8_t selectedRow,
     uint8_t entryCount,
     uint8_t* outTargetRow);

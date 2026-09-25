@@ -169,8 +169,12 @@ All four tab labels use the same native 5x7 pixel font as the primary STAT
 values, avoiding the blurry double-scaled 3x5 glyphs while preserving the full
 38x13 logical touch targets.
 
-- `INV` presents Notebook, carried items, Credits and keys as a centered
-  previous/current/next card window using the reclaimed lower rows.
+- `INV` presents Notebook, carried items and owned key cards in a four-row scrolling window.
+  Every visible row is directly touch-selectable; item counts use a compact
+  `Xn` label and keys reuse their green/yellow/blue/red mini-card icon. Weapons
+  remain in WPN and Credits remain in STAT; STAT also keeps its useful key
+  summary. Notebook opening and consumable use are
+  deliberately deferred until their native interaction/turn owners exist.
 - `WPN` presents the nine normal weapon IDs 0..8 as a complete 3x3 grid.
   Familiar IDs 9..11 remain excluded. Source BGR565 weapon palettes are
   converted to framebuffer RGB565 before drawing; its three rows now extend to

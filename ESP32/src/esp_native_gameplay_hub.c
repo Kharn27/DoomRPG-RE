@@ -714,6 +714,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     uint8_t beforeRow;
     uint8_t beforePage;
     uint8_t touchedPage;
+    uint8_t touchedInventoryRow;
     uint8_t inventoryEntries;
     int menuRestored;
     int hudRepainted;
@@ -832,7 +833,12 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
             return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
         }
         beforeRow = hub.selectedRow;
-        if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD) {
+        touchDirect = EspNativeGameplayHubTouchUi_consumedInventoryTarget(
+            hub.selectedRow, inventoryEntries, &touchedInventoryRow);
+        if (touchDirect) {
+            hub.selectedRow = touchedInventoryRow;
+        }
+        else if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD) {
             hub.selectedRow = (uint8_t)((hub.selectedRow + inventoryEntries - 1U) %
                                         inventoryEntries);
         }
@@ -847,7 +853,9 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         printf("[HUB] CURSOR page=inventory entry=%u->%u entries=%u direction=%s mutation=no turn=no\n",
                (unsigned int)beforeRow, (unsigned int)hub.selectedRow,
                (unsigned int)inventoryEntries,
-               action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ? "up" : "down");
+               touchDirect ? "touch-direct" :
+                   (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD
+                        ? "up" : "down"));
         return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
     }
 
