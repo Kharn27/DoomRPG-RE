@@ -501,7 +501,7 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_finishDoor(
 
     transitionState.waitingDoor = 0U;
     transitionState.waitingStats = 1U;
-    printf("[NATIVECHANGEMAP] DOOR-COMPLETE seq=%u event=%u line=%u open=%u phase=WAIT_STATS sourceResident=%u statsPresentation=deferred\n",
+    printf("[NATIVECHANGEMAP] DOOR-COMPLETE seq=%u event=%u line=%u open=%u phase=WAIT_STATS sourceResident=%u statsPresentation=native-pending-arm\n",
            (unsigned int)sequence,
            (unsigned int)eventIndex,
            (unsigned int)lineIndex,
@@ -509,10 +509,10 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_finishDoor(
            (unsigned int)EspMapResidentLifecycle_isReady());
 
     /*
-     * The platform NULL-callback wrapper recognizes WAIT_STATS and installs
-     * the bounded one-tap stats-ack bridge. A later milestone will replace
-     * that bridge with the full stats presentation without changing this
-     * transition ownership boundary.
+     * The platform NULL-callback wrapper recognizes WAIT_STATS and hands
+     * framebuffer/input ownership to the bounded native level-complete
+     * presenter. Its one tap advances into the loading presentation without
+     * changing this transition ownership boundary.
      */
     PlatformInput_setTapCallback(NULL);
     return ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS;
@@ -635,7 +635,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
         PlatformInput_setTapCallback(NULL);
         printf("[NATIVECHANGEMAP] INPUT-PAUSE seq=%u state=WAIT_STATS callback=NULL worldMutation=no sourceResident=yes\n",
                (unsigned int)transition.sequence);
-        printf("[NATIVECHANGEMAP] COMPAT residentSelectStatus=UNSUPPORTED_EVENT reason=stats-wait-service-state-not-enabled-yet transitionHandled=yes\n");
+        printf("[NATIVECHANGEMAP] COMPAT residentSelectStatus=UNSUPPORTED_EVENT reason=transition-ui-owns-wait-stats transitionHandled=yes\n");
         return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
     }
 
