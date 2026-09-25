@@ -89,11 +89,13 @@ SYS owns one full checkpoint panel with large SAVE and LOAD cards:
 first SELECT  -> SAVE? / LOAD?
 second SELECT -> execute the operation
 missing save  -> NO SAVE; LOAD remains fail-closed
-save result   -> SAVED / FAILED
+save success  -> close HUB + gameplay `Game saved` lease
+save failure  -> FAILED
 ```
 
-The existing V7 checkpoint service and on-disk compatibility remain unchanged;
-this milestone changes only presentation and confirmation routing.
+The current V8 checkpoint retains the V7 mutable owners and legacy V1..V7 read
+compatibility; this milestone changes only presentation and confirmation
+routing.
 
 ## Failure 1: large checkpoint target exhausted touch feedback
 
@@ -178,13 +180,15 @@ Before promoting this branch beyond its focused smoke boundary, exercise on the
 real CYD:
 
 ```text
-SAVE? -> SAVED
 LOAD? -> checkpoint resume
 NO SAVE response
 rapid tab changes and repeated HUB open/close
 pickup feedback followed immediately by MOVE/TURN/SELECT
 continued progression beyond the first door
 ```
+
+The successful `SAVE? -> gameplay -> Game saved -> facing label` sequence is no
+longer pending; it passed on the real CYD on 2026-09-25 and is recorded below.
 
 Notebook activation, consumable use, Options/store integration and familiar
 weapon presentation remain intentionally outside this milestone.
@@ -225,3 +229,28 @@ ordinary HUB-close HUD exactness check. The LOAD path now lets
 `EspNativeGameplaySession_reset()` own HUB teardown/session replacement. The user
 confirmed successful reload both from SYS after gameplay and directly from the
 cold main menu at code head `3911f72636df32a06040f08e57fa2f24fa0c2d92`.
+
+## Successful SAVE return and top-bar fallback — REAL-CYD PASS
+
+The final SYS SAVE interaction no longer keeps the player on a `SAVED` card.
+The first selection arms `SAVE?`; after the second selection commits the V8
+record, the HUB closes immediately and the world frame presents `Game saved`
+through the shared 1200 ms `STATUS_TEXT` lease.
+
+The first hardware attempt saved correctly but returned `NOT_READY` from HUB
+close because the full HUD-band hash included a pre-HUB facing label (`Door`).
+The menu had restored its underlay and repainted the HUD correctly; only that
+derived top-bar hash differed. The permanent close contract now checks the
+protected lower HUD band exactly and leaves top-bar reconstruction to the next
+world frame.
+
+The user accepted the complete real-CYD result on 2026-09-25:
+
+```text
+facing label -> SAVE -> SAVE? -> gameplay -> Game saved
+             -> about 1200 ms -> same facing label
+```
+
+Expiry is semantic, not snapshot-based. It restores an active permanent status
+message first, otherwise the freshly derived facing-entity label, otherwise an
+empty top bar. SAVE remains a no-turn action.

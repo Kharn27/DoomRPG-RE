@@ -5,29 +5,23 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 08ca1a0fa766fc3caeee39a80fe24866d702f189
-branch = agent/esp32-native-barrel-destructible
-hardware-tested barrel code head = 1b93651699d981e34b2a10318936ddfa0cf7b2e8
-esp32-cyd CI #739 = SUCCESS
+current main = 8e1a8cb62bb28ffa0c6d14ff39ebd12dd056949d
+branch = fix/mainMenu
+rebased feature base = c398959
+hardware-tested correction = lower-HUD close integrity + SAVE return feedback
+local esp32-cyd build = SUCCESS
 static RAM = 44648 B
-flash = 776205 B
-type12/subtype1 barrel direct attack = REAL-CYD PASS
-three-barrel causal chain = REAL-CYD PASS
-sibling chain explosions = concurrent wave render, REAL-CYD VISUAL PASS
-nonlethal player radius damage = REAL-CYD reached
-lethal player radius = intentionally fail-closed with exact player/RNG/world rollback
-aggregate barrel damage message = candidate only; hardware retest deferred
-post-hardware tail = documentation only
-status = BARREL MILESTONE REAL-CYD PASS
+flash = 776669 B
+SYS SAVE success = close HUB immediately + 1200 ms Game saved
+top-bar expiry = permanent status -> current facing label -> empty
+hardware result = Game saved then Door restored, REAL-CYD PASS 2026-09-25
+status = SAVE RETURN REAL-CYD PASS
 ```
 
-The branch was forked before the already-hardware-approved finger-first
-main-menu branch was merged. Current `main` is therefore one merge commit ahead
-of the barrel branch. GitHub comparison against current `main` shows the
-barrel code delta is confined to the action engine and native sprite-renderer
-transient API/implementation; the main-menu merge does not overlap those code
-files. Keep the exact barrel hardware boundary above authoritative and do not
-rewrite it as though the combined post-merge tree itself had been re-flashed.
+The earlier barrel values below remain historical hardware boundaries. Their
+code is now merged into `main`; keep the exact barrel SHA and its narrower PASS
+claims when diagnosing that feature, independently of the current SAVE-return
+validation.
 
 ### Native barrel subtype 1 — REAL-CYD PASS
 
@@ -241,6 +235,39 @@ The redesigned LOAD execution path is now hardware-proven from both the in-game
 SYS page and the cold main menu. The two-tap SYS route no longer requires an
 ordinary HUB-close HUD restoration before replacing the gameplay session;
 `EspNativeGameplaySession_reset()` owns that transition.
+
+### SYS SAVE return and facing-label fallback — REAL-CYD PASS (2026-09-25)
+
+The successful two-tap SAVE route now closes the HUB immediately instead of
+leaving `SAVED` on the SYS card. The first SELECT still arms `SAVE?`; the second
+commits the V8 checkpoint, returns to the settled world and queues `Game saved`
+through the shared bounded `STATUS_TEXT` feedback lease for about 1200 ms.
+
+The first real-CYD run exposed a close-time false negative rather than a save
+failure:
+
+```text
+[NATIVESAVE] SAVE ... version=8 ...
+[HUB] CLOSE ... menuUnderlayRestore=exact hudRepaint=yes ... exactHud=NO
+[RESIDENTGAMEPLAY] HUB-RECOVER ... status=NOT_READY
+```
+
+The full top band hash legitimately differed because it contained the derived
+`Door` facing label. Repainting the base HUD before the next world frame cannot
+be byte-identical to that old derived top-bar presentation. HUB close integrity
+therefore now validates the exact protected lower HUD band; the top bar is
+explicitly recomposed by the following world render.
+
+The user then validated the complete visual sequence on the real classic CYD:
+
+```text
+Door -> SAVE -> SAVE? -> successful checkpoint -> gameplay
+     -> Game saved -> timeout -> Door
+```
+
+Feedback expiry uses the normal top-bar priority rather than a stale framebuffer
+snapshot: permanent FORCE_MESSAGE status first, current facing-entity label
+second, empty bar last. Saving does not advance the gameplay or monster turn.
 
 ### Rebased boot regression — REAL-CYD RECOVERY
 

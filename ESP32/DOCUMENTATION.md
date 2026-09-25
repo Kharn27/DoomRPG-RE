@@ -13,20 +13,17 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 08ca1a0fa766fc3caeee39a80fe24866d702f189
-branch = agent/esp32-native-barrel-destructible
-hardware-tested code head = 1b93651699d981e34b2a10318936ddfa0cf7b2e8
-esp32-cyd CI #739 = SUCCESS
+current main = 8e1a8cb62bb28ffa0c6d14ff39ebd12dd056949d
+branch = fix/mainMenu
+rebased feature base = c398959
+hardware-tested correction = lower-HUD close integrity + SAVE return feedback
 static RAM = 44648 B
-flash = 776205 B
-hardware = type12/subtype1 barrel chain REAL-CYD PASS
-visual = root wave then simultaneous sibling wave, REAL-CYD accepted
-player radius = nonlethal mutations reached; lethal remains fail-closed rollback
-aggregate damage message = candidate only; hardware retest deferred
-status = barrel milestone hardware-valid; post-test tail docs-only
+flash = 776669 B
+hardware = SYS SAVE return + transient Game saved + facing-label restore REAL-CYD PASS
+status = save-return behavior accepted on the real classic CYD, 2026-09-25
 ```
 
-The active barrel milestone is hardware-valid on the real CYD. A distant shot
+The merged barrel milestone remains hardware-valid on the real CYD. A distant shot
 proved a complete three-barrel causal chain: the root runs its 3-frame logical
 180 explosion, discovers both cardinal neighbors, then both neighbors animate
 together in one bounded second wave before their radius callbacks execute.
@@ -54,6 +51,9 @@ CHECK_KEY = native PlayerState key gate retained
 Codex fix = SHOW rollback lease released after pending dialog finalizes
 boot fix = compact feedback owner restores menu.bsp contiguous heap
 LOAD fix = session replacement bypasses ordinary HUB-close HUD exactness gate
+SAVE fix = successful confirmation closes HUB and queues 1200 ms Game saved
+SAVE fallback = permanent status, then current facing label, then empty
+HUB close integrity = bottom HUD exact; top bar recomposed by world redraw
 RNG fix = core creation seeds the inherited 128-byte Random_t table once
 ```
 
@@ -118,22 +118,13 @@ Previously merged relevant milestones remain:
 
 ### Next milestone
 
-The barrel code boundary `1b93651699d981e34b2a10318936ddfa0cf7b2e8` is
-REAL-CYD validated. Keep the aggregate multi-blast damage-message presentation
-out of the PASS claim until it can be retested nonlethally.
+The SYS SAVE return is now real-CYD validated. Keep its code and documentation
+in the same merge boundary, then re-read the resulting `main` SHA before
+creating the next branch. The next major gameplay candidate remains the native
+**CHANGEMAP / Entrance level-exit transition**. The barrel aggregate-damage-
+message retest remains a separate UI frontier; the historical barrel code
+boundary stays `1b93651699d981e34b2a10318936ddfa0cf7b2e8`.
 
-Current GitHub `main` is
-`08ca1a0fa766fc3caeee39a80fe24866d702f189`, the merge of the already-tested
-finger-first main menu. The barrel branch was forked before that merge, so it is
-one main commit behind; its code delta versus current main is limited to the
-action engine and native sprite-renderer transient files. Do not pretend the
-combined post-merge tree was hardware-flashed at the barrel SHA.
-
-After the user merges this branch, re-read the exact new `main` SHA before
-creating the next `agent/*`. The next major gameplay candidate remains the
-native **CHANGEMAP / Entrance level-exit transition**. The proper legacy HUD
-message queue / aggregate barrel feedback retest stays a separate later UI
-frontier.
 ## Build environment
 
 Normal hardware reference:
@@ -261,13 +252,13 @@ EspNativeGameplayHubView = 28 B
 pages = INV | WPN | STAT | SYS
 WPN = complete 3x3 normal arsenal
 STAT = read-only
-SYS = two-step SAVE/LOAD checkpoint page
+SYS = two-step SAVE/LOAD checkpoint page; SAVE success returns to gameplay
 MENU underlay = 32x20 RGB565 = 1280 B
 world dispatch blocked while HUB active
 turn advance disabled while HUB active
 ```
 
-INV projects Notebook, carried items, Credits and keys. WPN is the 4x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded from the normal weapon grid. STAT owns the bounded in-game SAVE/LOAD controls. The main menu exposes a separate LOAD-only entry through the same checkpoint service.
+INV projects Notebook, carried items, Credits and keys. WPN is the 3x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded from the normal weapon grid. STAT is read-only. SYS owns the bounded in-game SAVE/LOAD controls. After the second SAVE selection succeeds, the HUB closes immediately and gameplay shows `Game saved` for about 1200 ms. Expiry recomposes the permanent status-message fallback, then the current facing-entity label, then an empty bar. The main menu exposes a separate LOAD-only entry through the same checkpoint service.
 
 ## Main-menu Load Game — REAL-CYD PASS
 

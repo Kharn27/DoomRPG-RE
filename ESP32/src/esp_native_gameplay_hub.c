@@ -54,6 +54,7 @@ typedef struct EspNativeGameplayHubMenuOverlay_s {
     uint32_t baselineZoneFNV;
     uint32_t paintedZoneFNV;
     uint32_t baselineHudBandsFNV;
+    uint32_t baselineProtectedFNV;
     uint8_t active;
     uint8_t reserved[3];
 } EspNativeGameplayHubMenuOverlay;
@@ -132,7 +133,9 @@ static int menuOverlayCapture(uint16_t* framebuffer) {
     if (framebuffer == NULL || menuOverlay.active) return 0;
     memset(&menuOverlay, 0, sizeof(menuOverlay));
     menuOverlay.baselineHudBandsFNV = hudBandsFNV();
-    if (menuOverlay.baselineHudBandsFNV == 0U) return 0;
+    menuOverlay.baselineProtectedFNV = hudProtectedFNV();
+    if (menuOverlay.baselineHudBandsFNV == 0U ||
+        menuOverlay.baselineProtectedFNV == 0U) return 0;
     for (y = 0U; y < HUB_MENU_HEIGHT; ++y) {
         memcpy(menuOverlay.underlay + y * HUB_MENU_WIDTH,
                framebuffer + y * DOOMRPG_LOGICAL_WIDTH + HUB_MENU_LEFT,
@@ -722,6 +725,8 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     uint32_t playerFNV;
     uint32_t restoredHudBands;
     uint32_t expectedHudBands;
+    uint32_t restoredProtected;
+    uint32_t expectedProtected;
     uint8_t beforeRow;
     uint8_t beforePage;
     uint8_t touchedPage;
@@ -742,14 +747,16 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         }
         framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
         expectedHudBands = menuOverlay.baselineHudBandsFNV;
+        expectedProtected = menuOverlay.baselineProtectedFNV;
         menuRestored = framebufferReady() && menuOverlayRestore(framebuffer);
         hub.active = 0U;
         hudRepainted = menuRestored && repaintGameplayHud();
         restoredHudBands = hudBandsFNV();
+        restoredProtected = hudProtectedFNV();
         playerExact = playerFNV != 0U && playerFNV == hub.lastPlayerFNV;
         sessionMutation = player.weapon == hub.weaponAtOpen ? "no" : "weapon-only";
         ++hub.closes;
-        printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x expected=%08x exact=%s weapon=%u->%u sessionMutation=%s turn=no worldRedraw=pending viewportOnly=yes menuUnderlayRestore=%s hudRepaint=%s hudBands=%08x expectedHud=%08x exactHud=%s packClosed=%s\n",
+        printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x expected=%08x exact=%s weapon=%u->%u sessionMutation=%s turn=no worldRedraw=pending viewportOnly=yes menuUnderlayRestore=%s hudRepaint=%s hudBands=%08x expectedHud=%08x exactHud=%s hudBottom=%08x expectedBottom=%08x exactBottom=%s topBar=recompose-on-world-redraw packClosed=%s\n",
                (unsigned int)hub.closes, pageName(hub.page),
                (unsigned int)hub.playerFNVAtOpen, (unsigned int)playerFNV,
                (unsigned int)hub.lastPlayerFNV, playerExact ? "yes" : "NO",
@@ -759,10 +766,16 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
                (unsigned int)restoredHudBands, (unsigned int)expectedHudBands,
                restoredHudBands != 0U && restoredHudBands == expectedHudBands
                    ? "yes" : "NO",
+               (unsigned int)restoredProtected,
+               (unsigned int)expectedProtected,
+               restoredProtected != 0U &&
+                       restoredProtected == expectedProtected
+                   ? "yes" : "NO",
                EspAssetPack_isOpen() ? "NO" : "yes");
         return (playerExact && menuRestored && hudRepainted &&
-                restoredHudBands != 0U &&
-                restoredHudBands == expectedHudBands && !EspAssetPack_isOpen())
+                restoredProtected != 0U &&
+                restoredProtected == expectedProtected &&
+                !EspAssetPack_isOpen())
                    ? ESP_NATIVE_GAMEPLAY_HUB_CLOSED
                    : ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
