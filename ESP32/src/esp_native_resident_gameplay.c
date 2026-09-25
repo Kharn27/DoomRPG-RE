@@ -33,6 +33,7 @@
 #include "esp_native_gameplay_password.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_select.h"
+#include "esp_native_gameplay_transition.h"
 #include "esp_native_gameplay_weapon_control.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
@@ -434,6 +435,26 @@ static void serviceMove(Render_t* render,
         return;
     }
 
+    if (EspNativeGameplayMoveEvents_hasPendingMessage(result.sequence)) {
+        if (!EspNativeGameplayMoveEvents_finishPendingMessage(result.sequence)) {
+            status = EspNativeGameplayDispatch_rollbackMove(
+                &afterView, &beforeView, &result);
+            if (status != ESP_NATIVE_GAMEPLAY_DISPATCH_ROLLED_BACK ||
+                !renderActionCurrent(render, (uint8_t)beforeView.viewAngle,
+                                     "MOVE-MESSAGE-ROLLBACK")) {
+                disableGameplay("move-message-finish-rollback");
+                return;
+            }
+            ++gameplayState.deferred;
+            printf("[RESIDENTGAMEPLAY] MOVE-MESSAGE-DEFER n=%u seq=%u tile=%u->%u moveRolledBack=yes gameplayActive=yes\n",
+                   (unsigned int)gameplayState.deferred,
+                   (unsigned int)result.sequence,
+                   (unsigned int)result.sourceTile,
+                   (unsigned int)result.destTile);
+            return;
+        }
+    }
+
     if (EspNativeGameplayMoveEvents_pendingDialog(result.sequence, &moveDialog)) {
         EspNativeGameplayDialogBeginStatus dialogStatus;
 
@@ -535,7 +556,7 @@ static void serviceMove(Render_t* render,
                (unsigned int)uncovered);
     }
     ++gameplayState.moves;
-    printf("[RESIDENTGAMEPLAY] MOVE n=%u seq=%u action=%s tile=%u->%u delta=%d,%d pos=%d,%d moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred committed=yes\n",
+    printf("[RESIDENTGAMEPLAY] MOVE n=%u seq=%u action=%s tile=%u->%u delta=%d,%d pos=%d,%d moveEvents=door15/16+message4+force24+enter-dialog8/26-live-other-deferred committed=yes\n",
            (unsigned int)gameplayState.moves,
            (unsigned int)result.sequence,
            EspNativeGameplayInput_actionName(intent->action),
@@ -916,11 +937,14 @@ static void serviceSelect(DoomRPG_t* doomRpg,
         uint8_t foundSecret = 0U;
         uint8_t playerCaptured = 0U;
         uint8_t secretFeedbackQueued = 0U;
+        const uint8_t transitionDoor =
+            EspNativeGameplayTransition_isWaitingDoor() ? 1U : 0U;
 
         memset(&playerBefore, 0, sizeof(playerBefore));
         memset(&secretXp, 0, sizeof(secretXp));
 
-        if (!classifySecretDoorBatch(&result, &foundSecret)) {
+        if (transitionDoor == 0U &&
+            !classifySecretDoorBatch(&result, &foundSecret)) {
             if (!EspNativeGameplayAction_rollbackSelect(&result)) {
                 disableGameplay("select-door-secret-classify-rollback");
                 return;
@@ -971,6 +995,9 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                                  "SELECT-DOOR")) {
             int feedbackRestored = 1;
             int playerRestored = 1;
+            int actionRestored;
+            int transitionOwnerReset = 1;
+            int rollbackRendered = 0;
             if (secretFeedbackQueued != 0U) {
                 feedbackRestored =
                     EspNativeGameplayActionEngine_cancelQueuedFeedback(
@@ -981,24 +1008,70 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                 playerRestored =
                     EspNativeGameplayPlayerState_restore(&playerBefore);
             }
-            if (!feedbackRestored || !playerRestored ||
-                !EspNativeGameplayAction_rollbackSelect(&result) ||
-                !renderActionCurrent(render, (uint8_t)view->viewAngle,
-                                     "SELECT-DOOR-ROLLBACK")) {
+
+            /*
+             * A CHANGEMAP door is staged before this shared render. If the
+             * render fails and the line/script mutation is rolled back, the
+             * transition owner must be aborted as part of the same rollback;
+             * otherwise waitingDoor survives with a world state that no
+             * longer matches its staged door result and the exit cannot be
+             * retried.
+             */
+            actionRestored = EspNativeGameplayAction_rollbackSelect(&result);
+            if (actionRestored && transitionDoor != 0U) {
+                transitionOwnerReset =
+                    EspNativeGameplayTransition_abortDoor(
+                        intent->sequence, result.eventIndex, result.lineIndex);
+            }
+            if (actionRestored && transitionOwnerReset) {
+                rollbackRendered =
+                    renderActionCurrent(render, (uint8_t)view->viewAngle,
+                                        "SELECT-DOOR-ROLLBACK");
+            }
+            if (!feedbackRestored || !playerRestored || !actionRestored ||
+                !transitionOwnerReset || !rollbackRendered) {
                 disableGameplay("select-door-render-rollback");
                 return;
             }
-            printf("[RESIDENTGAMEPLAY] SELECT ROLLBACK seq=%u doors=%u firstLine=%u secret=%u xpRestored=%s rngRestored=%s restored=yes\n",
+            printf("[RESIDENTGAMEPLAY] SELECT ROLLBACK seq=%u doors=%u firstLine=%u secret=%u xpRestored=%s rngRestored=%s transitionOwner=%s restored=yes\n",
                    (unsigned int)intent->sequence,
                    (unsigned int)result.doorCount,
                    (unsigned int)result.lineIndex,
                    (unsigned int)foundSecret,
                    foundSecret ? "yes" : "n/a",
-                   foundSecret ? "yes" : "n/a");
+                   foundSecret ? "yes" : "n/a",
+                   transitionDoor ? "aborted" : "n/a");
             return;
         }
 
         ++gameplayState.selects;
+
+        if (transitionDoor != 0U) {
+            EspNativeGameplayTransitionStatus transitionStatus =
+                EspNativeGameplayTransition_finishDoor(
+                    intent->sequence, result.eventIndex, result.lineIndex);
+            if (transitionStatus != ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS) {
+                const int rolledBack =
+                    EspNativeGameplayAction_rollbackSelect(&result);
+                const int ownerReset =
+                    EspNativeGameplayTransition_abortDoor(
+                        intent->sequence, result.eventIndex, result.lineIndex);
+                if (!rolledBack || !ownerReset ||
+                    !renderActionCurrent(render, (uint8_t)view->viewAngle,
+                                         "SELECT-CHANGEMAP-ROLLBACK")) {
+                    disableGameplay("select-changemap-door-finish");
+                    return;
+                }
+                ++gameplayState.deferred;
+                printf("[NATIVECHANGEMAP] ROLLBACK seq=%u event=%u line=%u reason=door-finish status=%s restored=yes\n",
+                       (unsigned int)intent->sequence,
+                       (unsigned int)result.eventIndex,
+                       (unsigned int)result.lineIndex,
+                       EspNativeGameplayTransition_statusName(transitionStatus));
+                return;
+            }
+        }
+
         {
             uint8_t doorIndex;
             printf("[ACTION] DOOR-BATCH event=%u count=%u status=OK",
@@ -1044,8 +1117,10 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                (unsigned int)intent->sequence,
                (unsigned int)result.doorCount,
                (unsigned int)result.lineIndex,
-               foundSecret ? "found+5xp" : "no",
-               foundSecret ? "5133-deferred" : "door-deferred");
+               foundSecret ? "found+5xp" :
+                   (transitionDoor ? "transition-no-secret" : "no"),
+               foundSecret ? "5133-deferred" :
+                   (transitionDoor ? "5068-transition-deferred" : "door-deferred"));
         return;
     }
 
@@ -1661,7 +1736,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             printf("[AUTOMAP] UNCOVER reason=SESSION-ARM mutated=%u state=ready\n",
                    (unsigned int)uncovered);
             printf("\n=== Doom RPG ESP32-native resident gameplay service ===\n");
-            printf("[RESIDENTGAMEPLAY] READY map=current entry=%s touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR6/15/16/17+SELECT_DIALOG8/26+PASSWORD10+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live password=touch-keypad-0-9+DEL+VALID menu=inventory-weapon-select-no-turn SELECT-entity/other=deferred AUTOMAP=move+turn+select-live/other-actions-deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
+            printf("[RESIDENTGAMEPLAY] READY map=current entry=%s touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR6/15/16/17+SELECT_DIALOG8/26+PASSWORD10+PASS_TURN+MENU_HUB collision=native/entityDefs=%u moveEvents=door15/16+message4+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live password=touch-keypad-0-9+DEL+VALID menu=inventory-weapon-select-no-turn SELECT-entity/other=deferred AUTOMAP=move+turn+select-live/other-actions-deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred\n",
                    resumed != 0U ? "checkpoint-resume" : "fresh-first-frame",
                    (unsigned int)EspEntityDefTypeCatalog_definitionCount());
         }

@@ -109,6 +109,22 @@ void EspAssetPack_mapFlashDeactivate(void);
 int EspAssetPack_isMapFlashActive(void);
 void EspAssetPack_mapFlashGetStats(EspAssetPackMapFlashStats* outStats);
 
+/* Explicit read-only lease on one exact entry in the authoritative SD PAK.
+ *
+ * This exists for map-load / CHANGEMAP preflight while the current gameplay
+ * slot remains staged in raw flash. It never changes the active gameplay
+ * backing, never provides a general SD fallback, and EspAssetPack_readRange()
+ * will use it only when the requested entry hash+offset+size+CRC+flags exactly
+ * match the entry bound by sourceProbeBegin().
+ *
+ * Callers must keep the normal logical PAK lease closed when beginning/ending
+ * the probe. The lease is synchronous and single-entry; renderer/gameplay
+ * steady-state code must not use it.
+ */
+int EspAssetPack_sourceProbeBegin(const char* resourceName);
+void EspAssetPack_sourceProbeEnd(void);
+int EspAssetPack_isSourceProbeActive(void);
+
 /* Opt-in backing-store residency for the native gameplay renderer. The normal
  * open/close contract remains unchanged until begin succeeds. In resident mode
  * close releases only the logical lease on the default PAK; the already

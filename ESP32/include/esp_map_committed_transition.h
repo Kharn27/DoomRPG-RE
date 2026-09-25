@@ -92,11 +92,15 @@ EspMapCommittedTransitionStatus EspMapCommittedTransition_ackStats(
  *
  * Both inventories must already exist before this call. They are validated
  * against the live source runtime and the preflight-bound target before any
- * resetAll(). Once validation succeeds the function explicitly releases the
- * source and builds the target. A successful build leaves the target resident.
+ * storage boundary. Once validation succeeds the function releases the source
+ * resident PAK cache, prepares the exact target raw-flash slot, then resetAll()
+ * releases the compact source runtime and builds the target. A successful build
+ * leaves the target compact runtime resident; the gameplay session may then
+ * re-arm its L1 cache on that target slot.
  *
- * If target construction fails after source release, the function attempts to
- * rebuild the source from sourceInventory. Successful recovery leaves phase
+ * If target preparation/construction fails after source backing release, the
+ * function restages the source slot before attempting source recovery from
+ * sourceInventory. Successful recovery leaves phase
  * ROLLED_BACK; failed recovery leaves phase FAILED. No legacy Game/Menu/Render
  * object, DoomCanvas state or player position is touched here.
  */

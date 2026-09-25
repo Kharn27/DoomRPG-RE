@@ -87,8 +87,13 @@ static int inventoryForMap(uint8_t mapId, EspBspInventory* outInventory) {
     name = EspMapCatalog_nameForId(mapId);
     if (name == NULL || name[0] == '\0') return 0;
     memset(outInventory, 0, sizeof(*outInventory));
-    return EspBspReader_inventoryPackEntry(name, outInventory) &&
+    if (!EspAssetPack_sourceProbeBegin(name)) return 0;
+    const int inventoryOk =
+        EspBspReader_inventoryPackEntry(name, outInventory);
+    EspAssetPack_sourceProbeEnd();
+    return inventoryOk &&
            !EspAssetPack_isOpen() &&
+           !EspAssetPack_isSourceProbeActive() &&
            outInventory->sourceBytes != 0U &&
            outInventory->consumedBytes == outInventory->sourceBytes &&
            outInventory->trailingBytes == 0U &&

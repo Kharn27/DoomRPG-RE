@@ -1165,16 +1165,70 @@ CI #267 = SUCCESS
 
 The timer remains based on real elapsed time, but world feedback/viewport-flash restore work is blocked while HUB owns the framebuffer. The user reproduced the original pickup-message/HUB sequence on the real CYD and confirmed the stale fragment is gone. Therefore `5a1020fd5d160c111ff09ecb8a480f37ea8d0578` is a hardware-valid code boundary for this ownership fix.
 
-## CHANGEMAP code boundary — candidate, hardware exit test still pending
+## Entrance -> Junction CHANGEMAP — REAL-CYD PASS
 
-Entrance event 1 / tile 69 is owned by the branch transition path:
+Final hardware-tested branch boundary:
+
+```text
+code head = e4acb92403dd48810f3c4e989d4dee16605125e3
+main = 6cd8b6804cbec75538becab0d6cbe66e3c79d238
+CI #829 = SUCCESS
+RAM static = 45200 B
+Flash = 789345 B
+artifact id = 10873930025
+```
+
+Entrance event 1 / tile 69 now owns the first hardware-validated native
+world-to-world transition:
 
 ```text
 SAVEGAME -> /junction.bsp, targetMapId 9, savePos 992,1888 angle 64
 CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
+OPENLINE -> line 459, shared regular four-frame animation
 ```
 
-The candidate supports the show-stats WAIT/ACK handoff, resident teardown, target rebuild/spawn and session configure with fail-closed errors. It remains **candidate** until the user performs the dedicated real-CYD level-exit test.
+The real CYD proved the complete bounded route: exact target BSP inventory is
+read through a scoped authoritative-SD source probe while Entrance raw-flash
+gameplay backing remains untouched; WAIT_STATS uses the current explicit one-tap
+bridge; map-flash world identity then MISSes map 1 and rebuilds map 9 before the
+source runtime is destroyed; Junction rebuilds from raw internal flash, spawns
+at tile 943 / position 992,1888 / angle 64, primes the resident cache and reaches
+the generic gameplay service with `shapeData=0x0` and `mediaTexels=0x0`.
+
+The final hardware run reconfirmed the first Junction movement. EXIT tile 943
+contains a locked `CLOSELINE`; matching legacy behavior, that failed line close
+does not abort movement. ENTER tile 911 contains opcode 4 `MESSAGE`; the native
+transaction commits the destination frame first and only then publishes
+`"Junction"`. The player reaches tile 911 at position 992,1824 and gameplay
+remains active.
+
+The same final code head then proved that Junction dialog/continuation gameplay
+remains live after the transition. Facing the Scientist on tile 878 selected
+event 56 as `DIALOG_READY`; the native dialog opened a 97-byte / six-line
+opcode-8 payload, handled fast-forward and page advance, closed with the pack
+released, then resumed command offset 1. `DIALOGCHAIN` executed one bounded
+state command and `DIALOG-RESUME` reported opcode 11 / `CHANGESTATE` with
+`stateMutation=1`, followed by a successful world redraw. The dialog pipeline
+now preserves the live PlayerState key context across validation, NOTE-prefix
+filtering and continuation planning. The earlier Marine event 45 regression
+that exposed the key-context mismatch was not itself replayed in the final
+supplied trace; the final hardware witness is Scientist event 56.
+
+Post-PASS code review found one failure-only rollback leak: if the shared
+`SELECT-DOOR` render failed after staging the transition door, the line/script
+rollback could succeed while the transition owner remained in `waitingDoor`.
+The rebased code head now aborts that owner after successful world/script
+rollback and before rendering `SELECT-DOOR-ROLLBACK`. The hardware-proven
+successful path is unchanged; the reviewed render-failure path itself was not
+hardware-triggered.
+
+The statistics screen presentation itself is still deferred; only the explicit
+WAIT_STATS acknowledgement bridge is claimed here. Generic Junction -> level
+exits and unrelated opcode-4 MESSAGE routes remain separate milestones.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_CHANGEMAP_ENTRANCE_JUNCTION.md`](MILESTONE_NATIVE_CHANGEMAP_ENTRANCE_JUNCTION.md)
 
 ## Native rotation no-turn parity — REAL-CYD PASS
 
@@ -1206,33 +1260,25 @@ The correction adds no allocation, gameplay RNG use, topology mutation, renderer
 
 ## Next bounded milestone
 
-The bounded native Automap core is now hardware-valid. The next major gameplay
-candidate is the existing **CHANGEMAP / Entrance level-exit transition**.
+After this branch merges, re-read the exact resulting `main` SHA before opening
+the next `agent/*` branch.
 
-Do not expand the scope first. Re-read the merged/main implementation and prove
-the smallest complete real-CYD route:
+The first world-to-world transition is hardware-proven only for the bounded
+Entrance event 1 route. Keep the next transition work equally narrow. Strong
+candidates are:
 
 ```text
-eligible Entrance level-exit event
- -> SAVEGAME / target-position semantics
- -> CHANGEMAP request
- -> optional stats WAIT/ACK handoff
- -> requested-map rebuild
- -> player/view placement
- -> resident gameplay re-arm on target map
+- restore the real statistics presentation for showStats=1 before removing the
+  temporary one-tap WAIT_STATS bridge; or
+- generalize and hardware-prove one exact Junction -> LevelXX exit while keeping
+  the other CHANGEMAP script shapes fail-closed.
 ```
 
-If the existing CHANGEMAP path is already correct, this can remain primarily a
-hardware-validation/docs milestone. If hardware exposes a divergence, constrain
-the fix to that transition family.
-
-Automap follow-up parity remains separately bounded: PASS_TURN and other normal
-playing actions while Automap is open, hardware execution of `EV_GIVEMAP`, and
-checkpoint persistence of Automap reveal state are not part of the validated
-core milestone.
-
-Separate pending work still includes the mixed physical/touch SAVE cursor
-regression and unrelated deferred gameplay families.
+Do not infer generic CHANGEMAP coverage from the Entrance -> Junction PASS.
+Unrelated deferred Junction families such as OPENSTORE, INCSTAT, PLAYSOUND,
+CHECK_COMPLETED_LEVEL and general MESSAGE handling remain separate milestones.
+The final log additionally proves one normal Junction DIALOG + CHANGESTATE
+continuation, not arbitrary Junction dialog/script coverage.
 
 ## Hardware-validated intro display polish
 
@@ -1306,7 +1352,7 @@ RAM static = 44832 B
 
 ```text
 save-v6 mutable-world persistence beyond each validated section
-CHANGEMAP real-CYD exit validation
+generic CHANGEMAP routes beyond hardware-proven Entrance -> Junction
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
 audio

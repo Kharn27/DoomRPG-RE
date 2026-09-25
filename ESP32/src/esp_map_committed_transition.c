@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "esp_asset_pack.h"
@@ -199,6 +200,40 @@ EspMapCommittedTransitionStatus EspMapCommittedTransition_commit(
     }
 
     next = *state;
+
+    /* The live source session still owns the resident L1 and its current-map
+     * raw-flash slot. All semantic validation above is complete before crossing
+     * this storage boundary. Release only that backing owner, then prepare the
+     * exact target map slot while the source compact runtime is still intact.
+     * No source-map read is permitted between the successful target prepare
+     * and resetAll(). */
+    if (EspAssetPack_isResident() && !EspAssetPack_residentEnd()) {
+        return ESP_MAP_COMMITTED_TRANSITION_TARGET_BUILD_FAILED;
+    }
+    if (EspAssetPack_isOpen() || EspAssetPack_isResident() ||
+        EspAssetPack_isSourceProbeActive() ||
+        !EspAssetPack_mapFlashPrepare(state->targetMapId) ||
+        !EspAssetPack_isMapFlashActive()) {
+        if (!EspAssetPack_isOpen() && !EspAssetPack_isResident() &&
+            !EspAssetPack_isSourceProbeActive() &&
+            EspAssetPack_mapFlashPrepare(state->sourceMapId) &&
+            EspAssetPack_isMapFlashActive() &&
+            EspMapResidentLifecycle_isReady()) {
+            next.phase = ESP_MAP_COMMITTED_TRANSITION_PHASE_ROLLED_BACK;
+            next.committed = 0U;
+            *state = next;
+            return ESP_MAP_COMMITTED_TRANSITION_ROLLED_BACK;
+        }
+        next.phase = ESP_MAP_COMMITTED_TRANSITION_PHASE_FAILED;
+        next.committed = 0U;
+        *state = next;
+        return ESP_MAP_COMMITTED_TRANSITION_RECOVERY_FAILED;
+    }
+
+    printf("[MAPTRANSITION] BACKING sourceMap=%u targetMap=%u targetFlash=ready resident=0 sourceRuntime=still-resident switch-before-reset=yes\n",
+           (unsigned int)state->sourceMapId,
+           (unsigned int)state->targetMapId);
+
     EspMapResidentLifecycle_resetAll();
     residentStatus = EspMapResidentLifecycle_loadFromEmpty(
         targetName, targetInventory, &targetSnapshot);
@@ -215,6 +250,16 @@ EspMapCommittedTransitionStatus EspMapCommittedTransition_commit(
     }
 
     EspMapResidentLifecycle_resetAll();
+    if (EspAssetPack_isOpen()) EspAssetPack_close();
+    if (EspAssetPack_isResident()) (void)EspAssetPack_residentEnd();
+    if (EspAssetPack_isSourceProbeActive()) EspAssetPack_sourceProbeEnd();
+    if (!EspAssetPack_mapFlashPrepare(state->sourceMapId) ||
+        !EspAssetPack_isMapFlashActive()) {
+        next.phase = ESP_MAP_COMMITTED_TRANSITION_PHASE_FAILED;
+        next.committed = 0U;
+        *state = next;
+        return ESP_MAP_COMMITTED_TRANSITION_RECOVERY_FAILED;
+    }
     residentStatus = EspMapResidentLifecycle_loadFromEmpty(
         sourceName, sourceInventory, &recoveredSnapshot);
     if (residentStatus == ESP_MAP_RESIDENT_OK &&

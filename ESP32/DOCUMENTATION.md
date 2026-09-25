@@ -126,14 +126,41 @@ settled `EspPlayerViewState`. The real CYD produced `exactBottom=yes`,
 `SAVE-CLOSE`, `Game saved` for 1200 ms and then the current `Door` facing
 label. CI #767 reports 45096 B static RAM and 782141 B flash.
 
-### Next milestone
+### Current transition milestone
 
-The SYS SAVE return is now real-CYD validated. Keep its code and documentation
-in the same merge boundary, then re-read the resulting `main` SHA before
-creating the next branch. The next major gameplay candidate remains the native
-**CHANGEMAP / Entrance level-exit transition**. The barrel aggregate-damage-
-message retest remains a separate UI frontier; the historical barrel code
-boundary stays `1b93651699d981e34b2a10318936ddfa0cf7b2e8`.
+The native Entrance -> Junction level exit is real-CYD validated on final code
+head `e4acb92403dd48810f3c4e989d4dee16605125e3`, rebased directly on
+`main@6cd8b6804cbec75538becab0d6cbe66e3c79d238`. CI #829 succeeds in the
+normal `esp32-cyd` environment with 45200 B static RAM and 789345 B flash.
+
+The tested route owns the exact Entrance event-1
+SAVEGAME/CHANGEMAP/OPENLINE sequence, the WAIT_STATS one-tap bridge,
+requested-map raw-flash rebuild, Junction compact-runtime reconstruction,
+spawn/session re-arm, and the first committed Junction step with ENTER
+`EV_MESSAGE "Junction"`.
+
+The same final hardware trace continues into ordinary Junction gameplay and
+proves one complete native NPC dialog continuation: Scientist tile 878 /
+event 56 opens opcode-8 DIALOG, supports fast-forward/page advance, closes with
+the pack released, then resumes at command offset 1 and commits opcode 11
+`CHANGESTATE` with `stateMutation=1` before a successful world redraw.
+Dialog/NOTE/continuation filtering on this code head now carries the live shared
+PlayerState key context instead of silently revalidating with `keys=0`. The
+earlier Marine event 45 failure that exposed this mismatch was not replayed in
+the final supplied trace, so only the event-56 hardware witness is claimed.
+
+Post-PASS review also closed a render-failure-only transaction leak: after a
+successful SELECT-door world/script rollback, a staged CHANGEMAP door owner is
+now aborted before the rollback frame is presented. This does not alter the
+hardware-proven happy path and that failure-only cleanup path was not
+hardware-triggered.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_CHANGEMAP_ENTRANCE_JUNCTION.md`](MILESTONE_NATIVE_CHANGEMAP_ENTRANCE_JUNCTION.md)
+
+The barrel aggregate-damage-message retest remains a separate UI frontier; its
+historical code boundary stays `1b93651699d981e34b2a10318936ddfa0cf7b2e8`.
 
 ## Current continuation — real-CYD validated
 
@@ -674,16 +701,60 @@ CI #267 SUCCESS
 
 The timer still uses real elapsed time and resumes after HUB closes. The user reproduced the original pickup-message/HUB scenario on the real CYD and confirmed the stale fragment has disappeared. This fix is hardware-valid at `5a1020fd5d160c111ff09ecb8a480f37ea8d0578`.
 
-## CHANGEMAP candidate on this branch
+## Entrance -> Junction CHANGEMAP — REAL-CYD PASS
 
-Entrance level-exit recovery:
+Hardware-tested happy-path boundary:
+
+```text
+code SHA = 2b7c4dcf6d0d00abf176b797b8fb335c3f332a61
+CI #807 = SUCCESS
+RAM static = 45200 B
+Flash = 787865 B
+artifact id = 10869413761
+```
+
+Current rebased code boundary:
+
+```text
+main = 6cd8b6804cbec75538becab0d6cbe66e3c79d238
+code head = 455e1da6032d9b9086a00e39d338d3218f8b58f4
+```
+
+Recovered Entrance event:
 
 ```text
 SAVEGAME -> /junction.bsp, targetMapId 9, savePos 992,1888 angle 64
 CHANGEMAP -> /junction.bsp, targetMapId 9, showStats 1, spawnParam 0
+OPENLINE -> line 459, regular four-frame door
 ```
 
-The branch owns a bounded WAIT_STATS/ACK transition handoff and target resident/session reconstruction with fail-closed errors. Keep it intact. It still needs its own real-CYD level-exit PASS.
+Target BSP inventory is read through one exact authoritative-SD source-probe
+lease while the active Entrance raw-flash gameplay backing remains untouched.
+After the explicit WAIT_STATS acknowledgement, map-flash preparation correctly
+MISSes world identity from map 1 to map 9, rebuilds the Junction slot, and only
+then releases the source runtime. Junction rebuilds from raw internal flash,
+spawns at tile 943 / position 992,1888 / angle 64, primes the resident cache and
+reaches the generic gameplay service.
+
+The first Junction movement is also hardware-proven. The locked EXIT
+`CLOSELINE` on tile 943 is a non-blocking legacy no-op; the move commits to tile
+911 / position 992,1824, the destination frame renders, and only then opcode-4
+`MESSAGE` publishes `"Junction"`.
+
+Post-PASS code review closed a failure-only rollback leak: if the shared
+`SELECT-DOOR` render fails for the staged transition door, the native code now
+rolls back the line/script mutation, aborts the `waitingDoor` transition owner,
+then renders the restored frame. This keeps the exit retryable. The successful
+hardware path is unchanged; that failure path was not hardware-triggered.
+
+The real statistics screen is still deferred: the current proof includes the
+one-tap WAIT_STATS bridge, not final stats presentation. Generic Junction ->
+Level01..Level07 transitions and unrelated MESSAGE routes are not implied by
+this PASS.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_CHANGEMAP_ENTRANCE_JUNCTION.md`](MILESTONE_NATIVE_CHANGEMAP_ENTRANCE_JUNCTION.md)
 
 ## Rotation no-turn parity — REAL-CYD PASS
 
@@ -708,28 +779,16 @@ Detailed record:
 
 ## Preferred next milestone
 
-The bounded native Automap core has passed on the real CYD. The next major
-gameplay candidate is the existing **CHANGEMAP / Entrance level-exit
-transition**.
+After this branch merges, recover the exact new `main` before continuing.
 
-The smallest useful hardware proof is:
+The Entrance -> Junction transition is hardware-proven, but only for that exact
+script shape. Keep the next boundary narrow: either restore the real statistics
+screen for `showStats=1` and retire the temporary one-tap bridge, or
+hardware-prove one exact Junction -> LevelXX exit while all other transition
+shapes remain fail-closed.
 
-```text
-eligible Entrance exit event
- -> SAVEGAME / target placement semantics
- -> CHANGEMAP request
- -> stats handoff when required
- -> requested-map rebuild
- -> target player/view placement
- -> resident gameplay re-arm
-```
-
-Keep remaining Automap parity separate: PASS_TURN/other normal playing actions
-while the map is open, hardware execution of `EV_GIVEMAP`, and save persistence
-of reveal state are not claimed by the current Automap milestone.
-
-Separate pending work still includes the mixed physical/touch SAVE cursor
-regression and unrelated deferred gameplay families.
+Remaining Automap parity, the mixed physical/touch SAVE cursor regression and
+unrelated Junction opcode families remain separate work.
 
 ## Secret-door multi-line SELECT transaction
 
@@ -803,7 +862,7 @@ See `PORTING_STATUS.md` for the authoritative list. Important current boundaries
 
 ```text
 save-v6 mutable-world sections beyond each validated owner
-CHANGEMAP hardware level-exit validation
+generic CHANGEMAP routes beyond hardware-proven Entrance -> Junction
 native player lethal/death transition
 barrel aggregate multi-blast damage-message hardware retest / proper HUD queue
 remaining barrel radius-hurtable families beyond barrel + player

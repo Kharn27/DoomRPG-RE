@@ -115,6 +115,10 @@ struct MapFlashState {
 };
 
 File packFile;
+File sourceProbeFile;
+EspAssetPackEntry sourceProbeEntry = {};
+bool sourceProbeReady = false;
+uint8_t sourceProbeReadLogged = 0U;
 uint32_t entryCount = 0;
 uint32_t packSize = 0;
 uint32_t indexOffset = 0;
@@ -180,6 +184,26 @@ bool readSdExact(void* destination, size_t length)
         residentStats.physicalBytes += (uint32_t)length;
     }
     return true;
+}
+
+void clearSourceProbe()
+{
+    if (sourceProbeFile) {
+        sourceProbeFile.close();
+    }
+    memset(&sourceProbeEntry, 0, sizeof(sourceProbeEntry));
+    sourceProbeReady = false;
+    sourceProbeReadLogged = 0U;
+}
+
+bool sourceProbeEntryExact(const EspAssetPackEntry& entry)
+{
+    return sourceProbeReady &&
+           entry.nameHash == sourceProbeEntry.nameHash &&
+           entry.offset == sourceProbeEntry.offset &&
+           entry.size == sourceProbeEntry.size &&
+           entry.crc32 == sourceProbeEntry.crc32 &&
+           entry.flags == sourceProbeEntry.flags;
 }
 
 void clearMapFlashRuntime(bool clearStats)
@@ -1029,6 +1053,112 @@ uint32_t EspAssetPack_dataOffset(void)
     return openReady ? dataOffset : 0U;
 }
 
+int EspAssetPack_sourceProbeBegin(const char* resourceName)
+{
+    uint8_t header[kHeaderBytes];
+    uint8_t raw[kEntryBytes];
+    EspAssetPackEntry found = {};
+    uint32_t sourcePackBytes;
+    uint32_t sourceEntryCount;
+    uint32_t sourceIndexOffset;
+    uint32_t sourceDataOffset;
+    uint32_t previousHash = 0U;
+    const uint32_t wantedHash = EspAssetPack_nameHash(resourceName);
+    bool havePreviousHash = false;
+    bool foundEntry = false;
+
+    if (resourceName == nullptr || resourceName[0] == '\0' ||
+        wantedHash == 0U || openReady || sourceProbeReady) {
+        return 0;
+    }
+
+    clearSourceProbe();
+    sourceProbeFile = SD.open(ESP_ASSET_PACK_DEFAULT_PATH, FILE_READ);
+    if (!sourceProbeFile) {
+        return 0;
+    }
+
+    sourcePackBytes = (uint32_t)sourceProbeFile.size();
+    if (sourcePackBytes < kHeaderBytes ||
+        sourceProbeFile.read(header, sizeof(header)) != sizeof(header) ||
+        memcmp(header, kMagic, sizeof(kMagic)) != 0 ||
+        readLe32(header + 8) != kVersion) {
+        clearSourceProbe();
+        return 0;
+    }
+
+    sourceEntryCount = readLe32(header + 12);
+    sourceIndexOffset = readLe32(header + 16);
+    sourceDataOffset = readLe32(header + 20);
+    const uint64_t indexEnd =
+        (uint64_t)sourceIndexOffset +
+        ((uint64_t)sourceEntryCount * (uint64_t)kEntryBytes);
+    if (sourceEntryCount == 0U ||
+        sourceEntryCount > ESP_ASSET_PACK_MAX_ENTRY_COUNT ||
+        sourceIndexOffset < kHeaderBytes ||
+        sourceIndexOffset > sourcePackBytes ||
+        indexEnd > sourcePackBytes ||
+        sourceDataOffset < indexEnd ||
+        sourceDataOffset > sourcePackBytes ||
+        !sourceProbeFile.seek(sourceIndexOffset)) {
+        clearSourceProbe();
+        return 0;
+    }
+
+    for (uint32_t i = 0U; i < sourceEntryCount; ++i) {
+        EspAssetPackEntry entry = {};
+        if (sourceProbeFile.read(raw, sizeof(raw)) != sizeof(raw)) {
+            clearSourceProbe();
+            return 0;
+        }
+        decodeEntry(raw, &entry);
+        if (entry.nameHash == 0U ||
+            entry.offset < sourceDataOffset ||
+            entry.offset > sourcePackBytes ||
+            entry.size > sourcePackBytes - entry.offset ||
+            (havePreviousHash && entry.nameHash <= previousHash)) {
+            clearSourceProbe();
+            return 0;
+        }
+        previousHash = entry.nameHash;
+        havePreviousHash = true;
+        if (entry.nameHash == wantedHash) {
+            found = entry;
+            foundEntry = true;
+        }
+    }
+
+    if (!foundEntry) {
+        clearSourceProbe();
+        return 0;
+    }
+
+    sourceProbeEntry = found;
+    sourceProbeReady = true;
+    sourceProbeReadLogged = 0U;
+    printf("[PAKSOURCE] PROBE-OPEN hash=%08x source=%u size=%u crc32=%08x mapFlash=%u resident=%u scope=exact-entry\n",
+           (unsigned int)found.nameHash,
+           (unsigned int)found.offset,
+           (unsigned int)found.size,
+           (unsigned int)found.crc32,
+           (unsigned int)EspAssetPack_isMapFlashActive(),
+           (unsigned int)EspAssetPack_isResident());
+    return 1;
+}
+
+void EspAssetPack_sourceProbeEnd(void)
+{
+    if (!sourceProbeReady && !sourceProbeFile) {
+        return;
+    }
+    clearSourceProbe();
+}
+
+int EspAssetPack_isSourceProbeActive(void)
+{
+    return sourceProbeReady && sourceProbeFile ? 1 : 0;
+}
+
 int EspAssetPack_mapFlashPrepare(uint8_t targetMapId)
 {
     MapFlashPlan plan = {};
@@ -1689,9 +1819,28 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry,
         return 1;
     }
 
-    cacheableSmall = residentEnabled && residentCache != nullptr &&
+    const bool sourceProbeHash =
+        sourceProbeReady && entry->nameHash == sourceProbeEntry.nameHash;
+    const bool sourceProbeExact =
+        sourceProbeHash && sourceProbeEntryExact(*entry);
+
+    if (sourceProbeHash && !sourceProbeExact) {
+        printf("[PAKSOURCE] PROBE-MISMATCH hash=%08x activeOffset=%u sourceOffset=%u activeSize=%u sourceSize=%u activeCrc=%08x sourceCrc=%08x failClosed=yes\n",
+               (unsigned int)entry->nameHash,
+               (unsigned int)entry->offset,
+               (unsigned int)sourceProbeEntry.offset,
+               (unsigned int)entry->size,
+               (unsigned int)sourceProbeEntry.size,
+               (unsigned int)entry->crc32,
+               (unsigned int)sourceProbeEntry.crc32);
+        return 0;
+    }
+
+    cacheableSmall = !sourceProbeExact &&
+                     residentEnabled && residentCache != nullptr &&
                      length <= kResidentMaxCachedRangeBytes;
-    cacheableLarge = residentEnabled && residentLargeRangeEnabled &&
+    cacheableLarge = !sourceProbeExact &&
+                     residentEnabled && residentLargeRangeEnabled &&
                      residentCache != nullptr &&
                      length == kResidentLargeRangeBytes;
 
@@ -1712,7 +1861,21 @@ int EspAssetPack_readRange(const EspAssetPackEntry* entry,
     }
 
     const uint32_t absoluteOffset = entry->offset + relativeOffset;
-    if (physicalUsesMapFlash) {
+    if (sourceProbeExact) {
+        if (!sourceProbeFile.seek(absoluteOffset) ||
+            sourceProbeFile.read(static_cast<uint8_t*>(destination), length) !=
+                length) {
+            return 0;
+        }
+        if (sourceProbeReadLogged == 0U) {
+            sourceProbeReadLogged = 1U;
+            printf("[PAKSOURCE] PROBE-READ hash=%08x source=%u length=%u backing=sd-authoritative activeMapFlashUntouched=yes cachePollution=no\n",
+                   (unsigned int)entry->nameHash,
+                   (unsigned int)absoluteOffset,
+                   (unsigned int)length);
+        }
+    }
+    else if (physicalUsesMapFlash) {
         uint32_t flashOffset = 0U;
         if (!mapFlashTranslate(absoluteOffset, (uint32_t)length, &flashOffset) ||
             !mapFlashRead(flashOffset, destination, length, true)) {

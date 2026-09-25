@@ -17,6 +17,7 @@
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_native_resident_gameplay.h"
 
 #define CHAIN_REMOVE_FLAG 0x00000200UL
@@ -79,6 +80,15 @@ static ChainTransaction* transactionOwner;
 
 static uint8_t corpusLogged;
 
+static int currentPlayerKeys(uint32_t* outKeys) {
+    const EspNativeGameplayPlayerState* player =
+        EspNativeGameplayPlayerState_view();
+    if (outKeys != NULL) *outKeys = 0U;
+    if (outKeys == NULL || player == NULL || player->active != 1U) return 0;
+    *outKeys = player->keys;
+    return 1;
+}
+
 static int ensureTransactionOwner(void) {
     if (transactionOwner != NULL) return 1;
     transactionOwner = (ChainTransaction*)SDL_calloc(1, sizeof(*transactionOwner));
@@ -129,12 +139,14 @@ static EspNativeGameplayDialogBeginStatus validateDialogCommand(
     uint8_t currentState;
     uint8_t removed;
     uint32_t global;
+    uint32_t playerKeys;
 
     if (!eventDescriptorForIndex(eventIndex, &descriptor) ||
         commandOffset >= descriptor.commandCount ||
         !EspMapScriptState_getEventState(eventIndex, &currentState) ||
+        !currentPlayerKeys(&playerKeys) ||
         !EspMapEventFilter_prepare(&descriptor, currentState,
-                                   commandOffset, runFlags, 0U,
+                                   commandOffset, runFlags, playerKeys,
                                    &filterPlan)) {
         return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_NOT_READY;
     }
@@ -149,6 +161,14 @@ static EspNativeGameplayDialogBeginStatus validateDialogCommand(
     if (filtered.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE ||
         (filtered.codeId != ESP_MAP_OPCODE_DIALOG &&
          filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK)) {
+        printf("[DIALOGCHAIN] FILTER-DEFER event=%u cmd=%u opcode=%u decision=%u keys=%02x effective=%08x runFlags=%08x\n",
+               (unsigned int)eventIndex,
+               (unsigned int)commandOffset,
+               (unsigned int)filtered.codeId,
+               (unsigned int)filtered.decision,
+               (unsigned int)playerKeys,
+               (unsigned int)filterPlan.effectiveFlags,
+               (unsigned int)runFlags);
         return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
     }
 
@@ -178,6 +198,7 @@ static EspNativeGameplayEventChainPreflightStatus buildPlan(
     EspMapEventFilterPlan filterPlan;
     EspMapEventCommandFilterResult filtered;
     uint8_t currentState;
+    uint32_t playerKeys;
     uint32_t offset;
 
     if (outPlan != NULL) memset(outPlan, 0, sizeof(*outPlan));
@@ -192,8 +213,9 @@ static EspNativeGameplayEventChainPreflightStatus buildPlan(
         endCommandOffsetExclusive > descriptor.commandCount ||
         resumeCommandOffset > endCommandOffsetExclusive ||
         !EspMapScriptState_getEventState(eventIndex, &currentState) ||
+        !currentPlayerKeys(&playerKeys) ||
         !EspMapEventFilter_prepare(&descriptor, currentState,
-                                   resumeCommandOffset, runFlags, 0U,
+                                   resumeCommandOffset, runFlags, playerKeys,
                                    &filterPlan)) {
         return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_INVALID;
     }

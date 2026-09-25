@@ -11,10 +11,12 @@
 
 #include "esp_asset_pack.h"
 #include "esp_native_first_frame.h"
+#include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_session.h"
+#include "esp_native_gameplay_status_message.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
@@ -181,6 +183,14 @@ static int renderCacheWitness(struct DoomRPG_s* doomRpgBase,
 }
 
 void EspNativeGameplaySession_reset(void) {
+    /* These owners contain map-local presentation/runtime references and must
+     * never survive a world handoff. In particular FORCE_MESSAGE stores an
+     * EspMapStringRef into the source BSP; repainting it after CHANGEMAP would
+     * interpret the old offset against the target BSP and fail the first
+     * target-frame top-bar composition. ActionEngine also owns timed feedback,
+     * framebufferFresh and transient sprite/weapon state tied to that world. */
+    EspNativeGameplayActionEngine_reset();
+    EspNativeGameplayStatusMessage_reset();
     EspNativeResidentGameplay_reset();
     EspNativeGameplayHud_reset();
     EspNativeFirstFrame_reset();
