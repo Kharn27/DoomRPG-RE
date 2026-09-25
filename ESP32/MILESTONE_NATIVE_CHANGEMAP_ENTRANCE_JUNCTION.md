@@ -2,27 +2,26 @@
 
 ## Hardware-tested boundary
 
-The successful real-CYD path is anchored to:
+The final real-CYD validation boundary for this branch is:
 
 ```text
-hardware-tested code SHA = 2b7c4dcf6d0d00abf176b797b8fb335c3f332a61
-tested base main = 2d9737346c07167dfae9efdfe9e1f49ecc39829e
-CI #807 = SUCCESS
+hardware-tested code SHA = e4acb92403dd48810f3c4e989d4dee16605125e3
+tested base main = 6cd8b6804cbec75538becab0d6cbe66e3c79d238
+CI #829 = SUCCESS
 RAM static = 45200 B / 327680 B = 13.8%
-Flash = 787865 B / 1310720 B = 60.1%
-artifact id = 10869413761
+Flash = 789345 B / 1310720 B = 60.2%
+artifact id = 10873930025
 ```
 
-The current rebased code boundary is:
+This final hardware run reconfirmed the already-proven Entrance -> Junction
+happy path on the rebased branch, including the first committed Junction
+movement and post-render `EV_MESSAGE "Junction"`. It also exercised the final
+native Junction dialog pipeline on a real NPC through OPEN, pagination,
+FASTFORWARD, CLOSE and script RESUME.
 
-```text
-current main = 6cd8b6804cbec75538becab0d6cbe66e3c79d238
-rebased code head = 455e1da6032d9b9086a00e39d338d3218f8b58f4
-```
-
-The rebase preserves the hardware-proven happy path. The rebased code head also
-contains one post-PASS code-review closure on the SELECT-door render-failure
-rollback path; that failure path was not hardware-triggered.
+The same branch still contains the post-PASS code-review closure on the
+SELECT-door render-failure rollback path. That failure-only cleanup path itself
+was not hardware-triggered.
 
 ## Recovered Entrance event
 
@@ -175,6 +174,46 @@ The final native transaction reproduced that order:
 The MESSAGE owner is deliberately bounded and ENTER-only in this milestone.
 Unsupported EXIT MESSAGE presentation remains fail-closed.
 
+## Junction dialog + continuation on final code head
+
+The final real-CYD run also proved that gameplay remains usable beyond the first
+step and that the native dialog owner/continuation machinery survives the map
+transition. The player moved deeper into Junction, faced the Scientist on tile
+878 / event 56, and SELECT opened a six-line opcode-8 dialog:
+
+```text
+[ACTION] SELECT ... status=DIALOG_READY tile=878 event=56 ...
+[DIALOGCHAIN] OWNER bytes=1020 allocation=lazy-gameplay
+[DIALOG] OPEN event=56 cmd=0 resume=1 opcode=8 string=21 bytes=97 lines=6 ...
+[RESIDENTGAMEPLAY] SELECT-DIALOG ... active=yes pauseScript=yes skipTurn=yes
+```
+
+Touch input then exercised both page fast-forward and page advance before close:
+
+```text
+[DIALOG] FASTFORWARD pageStart=0 lines=4 ...
+[DIALOG] PAGE start=4/6 ...
+[DIALOG] FASTFORWARD pageStart=4 lines=2 ...
+[DIALOG] CLOSE event=56 resume=1 mode=resume ... packClosed=yes
+```
+
+The saved continuation resumed natively and committed the following state opcode:
+
+```text
+[DIALOGCHAIN] RESUME event=56 start=1 handled=1
+              show=0 hide=0 unlock=0 givemap=0 state=1 removed=0 mutation=1
+[RESIDENTGAMEPLAY] DIALOG-RESUME ... event=56 offset=1 opcode=11
+                   stateMutation=1 redraw=yes ... dialog=closed
+```
+
+The final fix on this code head makes dialog/NOTE/continuation revalidation use
+the same live `EspNativeGameplayPlayerState.keys` context as the original
+SELECT filter instead of silently rebuilding the filter with `keys=0`. The
+final supplied log hardware-exercised the corrected generic dialog chain on
+event 56. The earlier Marine event 45 regression that originally exposed the
+mismatch was not replayed in the final supplied trace, so this document does not
+claim an exact event-45 retest.
+
 ## Post-PASS code-review rollback closure
 
 Code review identified a failure-only owner leak: if the shared
@@ -217,6 +256,8 @@ generic Junction renderer/HUD/cache/resident gameplay re-arm
 first Junction movement 943 -> 911
 locked EXIT CLOSELINE treated as non-blocking legacy no-op
 ENTER EV_MESSAGE "Junction" published after committed destination render
+Junction Scientist event 56 DIALOG open / page / close / resume
+post-dialog opcode 11 CHANGESTATE mutation + world redraw
 ```
 
 Still deliberately separate:
