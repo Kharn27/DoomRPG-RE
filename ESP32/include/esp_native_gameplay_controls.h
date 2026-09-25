@@ -10,8 +10,8 @@ extern "C" {
 #endif
 
 #define ESP_NATIVE_GAMEPLAY_FEEDBACK_MS 120U
-/* The largest native HUB actions are the 128x21 SAVE/LOAD cards. Their two
- * outlines plus the centered action glyph require 597 reversible pixel edits.
+/* The largest native HUB actions are the 128x28 SAVE/LOAD cards. Their two
+ * outlines plus the centered action glyph require 625 reversible pixel edits.
  * 640 keeps bounded headroom while the compact 4-byte edit journal avoids
  * consuming the contiguous boot heap needed by legacy menu.bsp structures. */
 #define ESP_NATIVE_GAMEPLAY_FEEDBACK_MAX_EDITS 640U

@@ -8,7 +8,8 @@ extern "C" {
 #endif
 
 /* Visible touch chrome for the native gameplay HUB. This layer owns no gameplay
- * state and no framebuffer snapshot. It paints only logical y=20..99 and maps
+ * state and no framebuffer snapshot. It paints logical y=20..119 while the HUB
+ * is active; the gameplay HUD underneath is reconstructed on close. It maps
  * the INV / WPN / STAT / SYS tabs plus page-local touch targets to semantic
  * actions. */
 int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,

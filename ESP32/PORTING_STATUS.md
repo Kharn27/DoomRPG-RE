@@ -340,6 +340,23 @@ All four tabs are directly touch-addressable. The HUB temporarily owns a full
 industrial top title bar and reconstructs the permanent gameplay HUD on close.
 The 28-byte HUB owner and world/turn gating remain unchanged.
 
+The current full-height candidate also reclaims the lower 20 logical rows while
+the HUB is open: the gameplay portrait/status strip is hidden, and the writable
+menu surface is now 160x100 at `y=20..119`. INV uses taller three-row cards, WPN
+uses a 3x3 grid extending to row 118, STAT distributes its read-only groups over
+the added space without enlarging its HP/Armor cards, and SYS uses taller
+SAVE/LOAD targets. Ordinary close still reconstructs the retained gameplay HUD,
+reapplies the settled live compass, and requires the lower-HUD fingerprint to
+match the pre-open witness exactly. Successful LOAD keeps its existing
+whole-session replacement path. Local `esp32-cyd` compilation succeeds at
+45200 B static RAM and 789597 B flash; real-CYD presentation and restoration
+remain to be exercised.
+
+The tab labels now use native 5x7 glyphs instead of a 3x5 bitmap enlarged in
+software before the CYD's final 2x presentation. This removes the effective
+4x4 physical pixel blocks that made `INV/WPN/STAT/SYS` appear soft, without
+changing any of their 38x13 logical touch rectangles.
+
 Two hardware failures were reproduced and fixed during the smoke pass:
 
 ```text
@@ -355,8 +372,9 @@ contiguous allocation used by legacy `menu.bsp` sprite structures.
 The permanent owner is now bounded at **640 compact 4-byte edits**. Each record
 stores `saved RGB565` plus a 15-bit framebuffer offset and one halo/core bit;
 the painted value is reconstructed exactly with `glowAdd565(saved, additive)`
-during reverse restore. The largest measured SYS card needs 597 edits, so the
-large touch target remains covered while the owner saves 2048 B versus the
+during reverse restore. The original 128x21 SYS card needed 597 edits; the
+full-height candidate's 128x28 card needs 625, still within the same fixed owner
+without spending another byte of static RAM. The owner saves 2048 B versus the
 768x6 form. Overlay creation remains nonfatal and restoration remains
 pixel-owned: newer overlays win.
 
@@ -374,9 +392,9 @@ health is green (red at critical level) and armor is light blue. The footer no
 longer leaks the internal hexadecimal key mask; owned bits 0..3 render as compact
 green/true-yellow/blue/red key-card icons. Values retain a larger visual weight than
 their labels. No content hitbox was added: the existing `STAT` tab is still the
-page's only touch target. PlatformIO compilation succeeds with static RAM
-unchanged at 45128 B; real-CYD legibility and color balance remain to be
-confirmed.
+page's only touch target. PlatformIO compilation succeeds. With the native 5x7
+tab glyphs included, the image uses 45200 B of static RAM (+72 B versus the
+pre-tab candidate); real-CYD legibility and color balance remain to be confirmed.
 
 The redesigned LOAD execution path is now hardware-proven from both the in-game
 SYS page and the cold main menu. The two-tap SYS route no longer requires an

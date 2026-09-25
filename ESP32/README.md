@@ -159,17 +159,28 @@ The compact native HUB currently exposes:
 INV | WPN | STAT | SYS
 ```
 
+While it is open, the HUB owns the complete 160x100 logical surface below the
+industrial title bar (`y=20..119`). The gameplay portrait/status strip is hidden
+instead of consuming the last 20 rows. Closing the HUB reconstructs the normal
+HUD immediately and validates the lower strip against its pre-open fingerprint;
+the following world frame then recomposes the derived top message band.
+
+All four tab labels use the same native 5x7 pixel font as the primary STAT
+values, avoiding the blurry double-scaled 3x5 glyphs while preserving the full
+38x13 logical touch targets.
+
 - `INV` presents Notebook, carried items, Credits and keys as a centered
-  previous/current/next card window.
+  previous/current/next card window using the reclaimed lower rows.
 - `WPN` presents the nine normal weapon IDs 0..8 as a complete 3x3 grid.
   Familiar IDs 9..11 remain excluded. Source BGR565 weapon palettes are
-  converted to framebuffer RGB565 before drawing.
+  converted to framebuffer RGB565 before drawing; its three rows now extend to
+  the bottom of the HUB surface.
 - `STAT` remains read-only and now uses a denser 3x5 information dashboard:
   slightly raised HP/Armor cards with intermediate 5x7 values and real
   proportional green/red health and blue armor rails, level/XP with progress
-  bar, an aligned 2x2 attribute grid, and a footer that renders owned keys as
-  green/true-yellow/blue/red key cards rather than exposing the internal
-  bitmask. Only the tab remains touch-active.
+  bar, an aligned 2x2 attribute grid, and a lower footer that renders owned
+  keys as green/true-yellow/blue/red key cards rather than exposing the
+  internal bitmask. Only the tab remains touch-active.
   The firmware build passes; the refined typography still awaits its real-CYD
   visual check.
 - `SYS` owns the dedicated one-slot checkpoint UI. SAVE and LOAD require a
@@ -177,8 +188,9 @@ INV | WPN | STAT | SYS
   successful SAVE closes the HUB immediately and queues `Game saved` in the
   gameplay message bar for about 1.2 seconds.
 
-The HUB repaints its industrial title bar while active and reconstructs the
-normal gameplay HUD when closing. Touch feedback is bounded and conflict-aware:
+The HUB repaints its industrial title bar and the former lower-HUD area while
+active, then reconstructs the normal gameplay HUD when closing. Touch feedback
+is bounded and conflict-aware:
 large checkpoint buttons fit the static edit owner, and newer pickup, message
 or viewport-flash overlays win if they touch the same framebuffer pixels.
 The lower HUD band is the close-time integrity boundary; the top message band

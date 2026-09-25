@@ -15,7 +15,7 @@
 #include "platform_video_config.h"
 
 #define HUB_UI_TOP 20
-#define HUB_UI_BOTTOM 99
+#define HUB_UI_BOTTOM 119
 #define HUB_UI_LEFT 0
 #define HUB_UI_RIGHT 159
 
@@ -59,11 +59,11 @@
 #define HUB_UI_ROW_RIGHT 157
 #define HUB_UI_ROW_TOUCH_RIGHT 157
 #define HUB_UI_ROW0_TOP 36
-#define HUB_UI_ROW0_BOTTOM 52
-#define HUB_UI_ROW1_TOP 55
-#define HUB_UI_ROW1_BOTTOM 71
-#define HUB_UI_ROW2_TOP 74
-#define HUB_UI_ROW2_BOTTOM 90
+#define HUB_UI_ROW0_BOTTOM 61
+#define HUB_UI_ROW1_TOP 64
+#define HUB_UI_ROW1_BOTTOM 89
+#define HUB_UI_ROW2_TOP 92
+#define HUB_UI_ROW2_BOTTOM 117
 
 static int inside(int x, int y, int left, int top, int right, int bottom) {
     return x >= left && x <= right && y >= top && y <= bottom;
@@ -185,19 +185,11 @@ static void drawMiniTextAt(uint16_t* framebuffer,
     }
 }
 
-static void drawMiniText(uint16_t* framebuffer,
-                         const char* text,
-                         int centerX,
-                         int top,
-                         int scale,
-                         uint16_t color) {
-    int x;
-    int width;
-    if (framebuffer == NULL || text == NULL || scale <= 0) return;
-    width = miniTextWidth(text, scale);
-    x = centerX - width / 2;
-    drawMiniTextAt(framebuffer, text, x, top, scale, color);
-}
+static void drawCrispText(uint16_t* framebuffer,
+                          const char* text,
+                          int centerX,
+                          int top,
+                          uint16_t color);
 
 static void drawTab(uint16_t* framebuffer,
                     int left,
@@ -210,8 +202,8 @@ static void drawTab(uint16_t* framebuffer,
              selected ? HUB_UI_PANEL_ALT : HUB_UI_PANEL);
     drawRect(framebuffer, left, top, right, bottom,
              selected ? HUB_UI_FOCUS : HUB_UI_STEEL);
-    drawMiniText(framebuffer, label, (left + right) / 2,
-                 top + 2, 2, selected ? HUB_UI_FOCUS : HUB_UI_TEXT);
+    drawCrispText(framebuffer, label, (left + right) / 2,
+                  top + 3, selected ? HUB_UI_FOCUS : HUB_UI_TEXT);
 }
 
 static void drawInventoryCards(uint16_t* framebuffer) {
@@ -249,7 +241,30 @@ static void drawMiniTextRight(uint16_t* framebuffer,
     drawMiniTextAt(framebuffer, text, right - width + 1, top, 1, color);
 }
 
-static int metricRows(char c, uint8_t rows[7]) {
+#define HUB_UI_GLYPH7(a, b, c, d, e, f, g) \
+    (((uint64_t)(a) << 30) | ((uint64_t)(b) << 25) | \
+     ((uint64_t)(c) << 20) | ((uint64_t)(d) << 15) | \
+     ((uint64_t)(e) << 10) | ((uint64_t)(f) << 5) | (uint64_t)(g))
+
+static uint64_t tabLetterBits(char c) {
+    switch (c) {
+    case 'A': return HUB_UI_GLYPH7(14, 17, 17, 31, 17, 17, 17);
+    case 'I': return HUB_UI_GLYPH7(31, 4, 4, 4, 4, 4, 31);
+    case 'N': return HUB_UI_GLYPH7(17, 25, 21, 19, 17, 17, 17);
+    case 'P': return HUB_UI_GLYPH7(30, 17, 17, 30, 16, 16, 16);
+    case 'S': return HUB_UI_GLYPH7(15, 16, 16, 14, 1, 1, 30);
+    case 'T': return HUB_UI_GLYPH7(31, 4, 4, 4, 4, 4, 4);
+    case 'V': return HUB_UI_GLYPH7(17, 17, 17, 17, 17, 10, 4);
+    case 'W': return HUB_UI_GLYPH7(17, 17, 17, 21, 21, 21, 10);
+    case 'X': return HUB_UI_GLYPH7(17, 17, 10, 4, 10, 17, 17);
+    case 'Y': return HUB_UI_GLYPH7(17, 17, 10, 4, 4, 4, 4);
+    default: return 0U;
+    }
+}
+
+#undef HUB_UI_GLYPH7
+
+static int crispRows(char c, uint8_t rows[7]) {
     static const uint8_t digits[10][7] = {
         {14U, 17U, 19U, 21U, 25U, 17U, 14U},
         {4U, 12U, 4U, 4U, 4U, 4U, 14U},
@@ -263,20 +278,30 @@ static int metricRows(char c, uint8_t rows[7]) {
         {14U, 17U, 17U, 15U, 1U, 1U, 14U}
     };
     static const uint8_t slash[7] = {1U, 1U, 2U, 4U, 8U, 16U, 16U};
-    const uint8_t* source;
+    const uint8_t* source = NULL;
+    uint64_t bits;
+    int row;
 
     if (c >= '0' && c <= '9') source = digits[c - '0'];
     else if (c == '/') source = slash;
-    else return 0;
-    memcpy(rows, source, 7U);
+    if (source != NULL) {
+        memcpy(rows, source, 7U);
+        return 1;
+    }
+
+    bits = tabLetterBits(c);
+    if (bits == 0U) return 0;
+    for (row = 0; row < 7; ++row) {
+        rows[row] = (uint8_t)((bits >> ((6 - row) * 5)) & 31U);
+    }
     return 1;
 }
 
-static void drawMetricValue(uint16_t* framebuffer,
-                            const char* text,
-                            int centerX,
-                            int top,
-                            uint16_t color) {
+static void drawCrispText(uint16_t* framebuffer,
+                          const char* text,
+                          int centerX,
+                          int top,
+                          uint16_t color) {
     const int length = text != NULL ? (int)strlen(text) : 0;
     int x;
 
@@ -285,7 +310,7 @@ static void drawMetricValue(uint16_t* framebuffer,
     while (*text != '\0') {
         uint8_t rows[7];
         int row;
-        if (!metricRows(*text, rows)) return;
+        if (!crispRows(*text, rows)) return;
         for (row = 0; row < 7; ++row) {
             int column;
             for (column = 0; column < 5; ++column) {
@@ -326,7 +351,7 @@ static void drawStatusMetricCard(uint16_t* framebuffer,
                  left + 3, gaugeBottom, gaugeColor);
     }
     drawMiniTextAt(framebuffer, label, left + 7, 37, 1, HUB_UI_STEEL);
-    drawMetricValue(framebuffer, value, (left + right) / 2, 44, HUB_UI_TEXT);
+    drawCrispText(framebuffer, value, (left + right) / 2, 44, HUB_UI_TEXT);
 }
 
 static void drawStatusProgress(uint16_t* framebuffer,
@@ -383,14 +408,14 @@ static void drawStatusKeys(uint16_t* framebuffer, uint32_t keys) {
     int key;
     uint32_t visibleKeys = keys & 0x0fU;
 
-    drawMiniTextAt(framebuffer, "KEY", 85, 93, 1, HUB_UI_STEEL);
+    drawMiniTextAt(framebuffer, "KEY", 85, 109, 1, HUB_UI_STEEL);
     if (visibleKeys == 0U) {
-        drawMiniTextRight(framebuffer, "NONE", 152, 93, HUB_UI_DIM);
+        drawMiniTextRight(framebuffer, "NONE", 152, 109, HUB_UI_DIM);
         return;
     }
     for (key = 0; key < 4; ++key) {
         if ((visibleKeys & (1UL << key)) == 0U) continue;
-        drawStatusKeyCard(framebuffer, cursor, 92, colors[key]);
+        drawStatusKeyCard(framebuffer, cursor, 108, colors[key]);
         cursor += 12;
     }
 }
@@ -432,33 +457,33 @@ static int paintStatusDashboard(
     drawStatusMetricCard(framebuffer, 81, 157, "ARMOR", value,
                          armor, maxArmor, HUB_UI_ARMOR);
 
-    fillRect(framebuffer, 2, 56, 157, 70, HUB_UI_PANEL_ALT);
-    drawRect(framebuffer, 2, 56, 157, 70, HUB_UI_DIM);
-    drawMiniTextAt(framebuffer, "LEVEL", 7, 59, 1, HUB_UI_STEEL);
+    fillRect(framebuffer, 2, 57, 157, 74, HUB_UI_PANEL_ALT);
+    drawRect(framebuffer, 2, 57, 157, 74, HUB_UI_DIM);
+    drawMiniTextAt(framebuffer, "LEVEL", 7, 61, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%u", (unsigned int)player->level);
-    drawMiniTextRight(framebuffer, value, 48, 59, HUB_UI_TEXT);
-    drawMiniTextAt(framebuffer, "XP", 55, 59, 1, HUB_UI_STEEL);
+    drawMiniTextRight(framebuffer, value, 48, 61, HUB_UI_TEXT);
+    drawMiniTextAt(framebuffer, "XP", 55, 61, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%lu/%lu",
              (unsigned long)player->currentXP,
              (unsigned long)player->nextLevelXP);
-    drawMiniTextRight(framebuffer, value, 153, 59, HUB_UI_TEXT);
-    drawStatusProgress(framebuffer, 55, 153, 67,
+    drawMiniTextRight(framebuffer, value, 153, 61, HUB_UI_TEXT);
+    drawStatusProgress(framebuffer, 55, 153, 71,
                        player->currentXP, player->nextLevelXP);
 
-    fillRect(framebuffer, 2, 72, 157, 89, HUB_UI_BLACK);
-    drawRect(framebuffer, 2, 72, 157, 89, HUB_UI_DIM);
-    fillRect(framebuffer, 79, 74, 80, 87, HUB_UI_DIM);
-    fillRect(framebuffer, 4, 80, 155, 80, HUB_UI_DIM);
-    drawStatusAttribute(framebuffer, "DEF", defense, 7, 72, 74);
-    drawStatusAttribute(framebuffer, "STR", strength, 86, 151, 74);
-    drawStatusAttribute(framebuffer, "AGI", agility, 7, 72, 82);
-    drawStatusAttribute(framebuffer, "ACC", accuracy, 86, 151, 82);
+    fillRect(framebuffer, 2, 78, 157, 101, HUB_UI_BLACK);
+    drawRect(framebuffer, 2, 78, 157, 101, HUB_UI_DIM);
+    fillRect(framebuffer, 79, 80, 80, 99, HUB_UI_DIM);
+    fillRect(framebuffer, 4, 89, 155, 89, HUB_UI_DIM);
+    drawStatusAttribute(framebuffer, "DEF", defense, 7, 72, 81);
+    drawStatusAttribute(framebuffer, "STR", strength, 86, 151, 81);
+    drawStatusAttribute(framebuffer, "AGI", agility, 7, 72, 93);
+    drawStatusAttribute(framebuffer, "ACC", accuracy, 86, 151, 93);
 
-    fillRect(framebuffer, 2, 91, 157, 98, HUB_UI_PANEL);
-    drawRect(framebuffer, 2, 91, 157, 98, HUB_UI_DIM);
-    drawMiniTextAt(framebuffer, "CRED", 7, 93, 1, HUB_UI_STEEL);
+    fillRect(framebuffer, 2, 105, 157, 117, HUB_UI_PANEL);
+    drawRect(framebuffer, 2, 105, 157, 117, HUB_UI_DIM);
+    drawMiniTextAt(framebuffer, "CRED", 7, 109, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%lu", (unsigned long)player->credits);
-    drawMiniTextRight(framebuffer, value, 74, 93, HUB_UI_TEXT);
+    drawMiniTextRight(framebuffer, value, 74, 109, HUB_UI_TEXT);
     drawStatusKeys(framebuffer, player->keys);
     printf("[HUBSTAT] FRAME layout=compact-read-only font=3x5 vitals=two-card-gauges hpGauge=green-or-red armorGauge=blue xp=progress attributes=2x2 keys=owned-color-cards keyMask=%08lx touchTargets=tab-only mutation=no turn=no\n",
            (unsigned long)player->keys);
@@ -570,11 +595,11 @@ static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedEntry) {
              HUB_UI_BLACK);
 
     ok = formatEntryLine(line, sizeof(line), ' ', &previous) &&
-         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW0_TOP + 2, &stats);
+         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW0_TOP + 7, &stats);
     ok = formatEntryLine(line, sizeof(line), '>', &current) &&
-         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW1_TOP + 2, &stats) && ok;
+         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW1_TOP + 7, &stats) && ok;
     ok = formatEntryLine(line, sizeof(line), ' ', &next) &&
-         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW2_TOP + 2, &stats) && ok;
+         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW2_TOP + 7, &stats) && ok;
     if (!ok || !EspAssetPack_isOpen()) return 0;
 
     printf("[HUBINV] FRAME entries=%u selected=%u prev=%u/%s/\"%s\"/\"%s\" current=%u/%s/\"%s\"/\"%s\" next=%u/%s/\"%s\"/\"%s\" weapons=dedicated-grid persistentListBytes=0 visibleEntryBytes=%u fontReads=%u fontBytes=%u packOwnership=preserved-open mutation=no turn=no\n",
