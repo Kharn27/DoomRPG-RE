@@ -53,6 +53,43 @@ Zombie Pvt sprite 315 exercised the alternate ordinary attack:
 
 The following ordinary input is admitted only after the commit.
 
+## Post-review correctness fixes — build-valid, hardware retest pending
+
+Two later reviews found narrow handshake/timing gaps not exercised by the
+successful hardware witness above.
+
+### First-frame rollback retains the probe
+
+Previously, the visual owner advanced `observedAttackProbes` before attempting
+the first `guardedRender()`. If that render failed transiently, `clearSequence()`
+removed the visual but retaliation continued waiting for the now-unreachable
+completion. World input could reopen because no sequence remained busy.
+
+The observed probe now advances only after successful physical presentation.
+On rollback it remains pending and is retried by the next service pass;
+`EspNativeGameplayMonsterAttackVisual_isBusy()` also treats this one-probe gap
+as combat ownership, so neither input nor a later attack can bypass it.
+
+### Final idle owns its full cadence
+
+Previously, the final attack-to-idle redraw published `completedProbe`
+immediately. Intermediate idle poses waited `phaseMs`, but the last one allowed
+retaliation damage and input 200–500 ms early depending on subtype.
+
+The final idle is now a distinct timed phase. It is drawn once, remains busy for
+the subtype's recovered `phaseMs`, and only then publishes completion without a
+redundant redraw. This matches the legacy final `animEndTime` wait before
+`Combat_monsterSeq()` stage 2 / `Player_pain`.
+
+Local validation:
+
+```text
+esp32-cyd build = SUCCESS
+static RAM = 45096 B
+flash = 782505 B
+hardware status = retest pending for these two review fixes
+```
+
 ## Multi-loop presentation boundary
 
 Before this rebase, the same implementation was exercised on an Entrance Troop

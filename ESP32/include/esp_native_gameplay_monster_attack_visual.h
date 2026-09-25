@@ -51,12 +51,14 @@ int EspNativeGameplayMonsterAttackVisual_apply(uint32_t spriteIndex,
  * the native FIXED_ANIM frame-offset contract. */
 int EspNativeGameplayMonsterAttackVisual_isPoseSprite(uint32_t spriteIndex);
 
-/* ST_COMBAT-style ownership. World input must stay closed while the current
- * monster attack presentation is still running. */
+/* ST_COMBAT-style ownership. World input stays closed while the current
+ * monster attack presentation is running and while a newly observed probe is
+ * waiting for a transiently failed first-frame render to retry. */
 int EspNativeGameplayMonsterAttackVisual_isBusy(void);
 
 /* Damage/RNG resolution is allowed only after the matching visual sequence has
- * returned the attacker to idle, matching legacy Combat_monsterSeq stage 2. */
+ * returned the attacker to idle and held the final idle pose for the recovered
+ * subtype cadence, matching legacy Combat_monsterSeq stage 2. */
 int EspNativeGameplayMonsterAttackVisual_isProbeComplete(uint32_t probe);
 
 const EspNativeGameplayMonsterAttackVisualView*

@@ -19,9 +19,10 @@ rebased code boundary = e87097d7544ea63104049003c55e19a7158bfad3
 hardware-tested code boundary = a5b30a12b4bb51cd4f016d53212b74e967c19d6d
 CI = esp32-cyd #767 SUCCESS
 static RAM = 45096 B
-flash = 782141 B
+flash = 782505 B (post-review local build)
 hardware = Yellow Key mixed trap + attack-after-animation + rotated SYS SAVE return REAL-CYD PASS
-status = code locked at tested SHA; documentation-only tail
+post-review candidate = attack-arm retry + final-idle cadence
+status = tested SHA retained; review fixes build-valid, real-CYD retest pending
 ```
 
 The merged barrel milestone remains hardware-valid on the real CYD. A distant shot

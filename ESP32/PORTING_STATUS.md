@@ -12,9 +12,29 @@ hardware-tested code boundary = a5b30a12b4bb51cd4f016d53212b74e967c19d6d
 hardware = Yellow Key trap + attack-after-animation + rotated SYS SAVE return REAL-CYD PASS
 CI = esp32-cyd #767 SUCCESS
 static RAM = 45096 B
-flash = 782141 B
-status = CODE LOCKED AT TESTED SHA; DOCS-ONLY TAIL
+flash = 782505 B (post-review local build)
+post-review candidate = attack-arm retry + final-idle cadence
+status = TESTED SHA RETAINED; REVIEW FIXES BUILD-VALID / REAL-CYD RETEST PENDING
 ```
+
+### Ordinary attack post-review corrections — build-valid candidate
+
+Two code-review findings after the hardware PASS exposed edge cases in the
+presentation/resolution handshake:
+
+1. A failed first `guardedRender()` consumed `observedAttackProbes`, cleared the
+   visual sequence and left retaliation waiting forever for a completion that
+   could no longer be published. The visual owner now advances the observed
+   probe only after the first attack frame is presented. Until then the probe
+   remains retryable and `isBusy()` keeps world input closed.
+2. The last attack-to-idle redraw published completion immediately. The owner
+   now holds that final idle pose for the subtype's full recovered 200–500 ms
+   cadence before setting `completedProbe`, matching the legacy
+   `Combat_monsterSeq()` transition into stage 2 / `Player_pain`.
+
+Local `esp32-cyd` compilation succeeds at 45096 B static RAM and 782505 B flash.
+These exact edge corrections remain candidates until exercised again on the
+real CYD; they do not retroactively alter the earlier hardware evidence.
 
 ### SYS SAVE live-compass close correction — REAL-CYD PASS
 
