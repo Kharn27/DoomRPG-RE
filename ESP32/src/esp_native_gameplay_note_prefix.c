@@ -15,6 +15,7 @@
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_modal_scratch.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
 
 #define NOTE_REMOVE_FLAG 0x00000200UL
@@ -164,6 +165,8 @@ static int prepareNotePrefix(uint16_t eventIndex,
     EspMapEventFilterPlan plan;
     EspMapEventCommandFilterResult filtered;
     EspMapUiIntent dialogIntent;
+    const EspNativeGameplayPlayerState* player =
+        EspNativeGameplayPlayerState_view();
     uint8_t currentState;
     uint8_t found = 0U;
     uint32_t offset;
@@ -174,11 +177,12 @@ static int prepareNotePrefix(uint16_t eventIndex,
     if (outRemoveIfHandled != NULL) *outRemoveIfHandled = 0U;
     if (outIntent == NULL || outGlobal == NULL || outRemoved == NULL ||
         outRemoveIfHandled == NULL || dialogOffset == 0U ||
+        player == NULL || player->active != 1U ||
         !eventDescriptorForIndex(eventIndex, &descriptor) ||
         dialogOffset >= descriptor.commandCount ||
         !EspMapScriptState_getEventState(eventIndex, &currentState) ||
         !EspMapEventFilter_prepare(&descriptor, currentState, 0U,
-                                   runFlags, 0U, &plan)) {
+                                   runFlags, player->keys, &plan)) {
         return dialogOffset == 0U ? 0 : -1;
     }
 
