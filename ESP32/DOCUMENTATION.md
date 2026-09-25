@@ -293,14 +293,14 @@ EspNativeGameplayHubView = 28 B
 ```text
 pages = INV | WPN | STAT | SYS
 WPN = complete 3x3 normal arsenal
-STAT = read-only
+STAT = compact read-only dashboard; only its tab is touch-active
 SYS = two-step SAVE/LOAD checkpoint page; SAVE success returns to gameplay
 MENU underlay = 32x20 RGB565 = 1280 B
 world dispatch blocked while HUB active
 turn advance disabled while HUB active
 ```
 
-INV projects Notebook, carried items, Credits and keys. WPN is the 3x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded from the normal weapon grid. STAT is read-only. SYS owns the bounded in-game SAVE/LOAD controls. After the second SAVE selection succeeds, the HUB closes immediately and gameplay shows `Game saved` for about 1200 ms. Expiry recomposes the permanent status-message fallback, then the current facing-entity label, then an empty bar. The main menu exposes a separate LOAD-only entry through the same checkpoint service.
+INV projects Notebook, carried items, Credits and keys. WPN is the 3x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded. STAT is read-only: its content uses compact 3x5 labels with intermediate 5x7 HP/Armor values, proportional green/red health and blue armor rails, level/XP progress, an aligned attribute grid, and owned-key mini-cards in green/true-yellow/blue/red instead of the internal hexadecimal bitmask; no content hitboxes are introduced. SYS owns the bounded in-game SAVE/LOAD controls. After the second SAVE selection succeeds, the HUB closes immediately and gameplay shows `Game saved` for about 1200 ms. Expiry recomposes the permanent status-message fallback, then the current facing-entity label, then an empty bar. The main menu exposes a separate LOAD-only entry through the same checkpoint service. The compact STAT layout has a successful firmware build and awaits its real-CYD visual pass.
 
 ## Main-menu Load Game — REAL-CYD PASS
 

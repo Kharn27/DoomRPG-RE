@@ -409,54 +409,6 @@ static int paintInventoryContent(const EspNativeGameplayPlayerState* player,
     return 1;
 }
 
-static int paintStatusContent(const EspNativeGameplayPlayerState* player,
-                              const EspNativeIndexedBmp* font,
-                              uint16_t* framebuffer,
-                              EspNativeIndexedBmpStats* stats) {
-    char line[32];
-    uint8_t health;
-    uint8_t maxHealth;
-    uint8_t armor;
-    uint8_t maxArmor;
-    uint8_t defense;
-    uint8_t strength;
-    uint8_t agility;
-    uint8_t accuracy;
-    int ok = 1;
-    if (player == NULL || font == NULL || framebuffer == NULL || stats == NULL) {
-        return 0;
-    }
-    health = (uint8_t)(player->param1 & 0xffU);
-    maxHealth = (uint8_t)((player->param1 >> 8) & 0xffU);
-    armor = (uint8_t)((player->param1 >> 16) & 0xffU);
-    maxArmor = (uint8_t)((player->param1 >> 24) & 0xffU);
-    defense = (uint8_t)(player->param2 & 0xffU);
-    strength = (uint8_t)((player->param2 >> 8) & 0xffU);
-    agility = (uint8_t)((player->param2 >> 16) & 0xffU);
-    accuracy = (uint8_t)((player->param2 >> 24) & 0xffU);
-
-    memset(line, 0, sizeof(line));
-    snprintf(line, sizeof(line), "HP %u/%u AR %u/%u",
-             (unsigned int)health, (unsigned int)maxHealth,
-             (unsigned int)armor, (unsigned int)maxArmor);
-    ok = drawText(font, framebuffer, line, 4, 34, stats) && ok;
-    snprintf(line, sizeof(line), "LV %u XP %lu/%lu",
-             (unsigned int)player->level,
-             (unsigned long)player->currentXP,
-             (unsigned long)player->nextLevelXP);
-    ok = drawText(font, framebuffer, line, 4, 47, stats) && ok;
-    snprintf(line, sizeof(line), "DEF %u STR %u",
-             (unsigned int)defense, (unsigned int)strength);
-    ok = drawText(font, framebuffer, line, 4, 60, stats) && ok;
-    snprintf(line, sizeof(line), "AGI %u ACC %u",
-             (unsigned int)agility, (unsigned int)accuracy);
-    ok = drawText(font, framebuffer, line, 4, 73, stats) && ok;
-    snprintf(line, sizeof(line), "C %lu K %08lX",
-             (unsigned long)player->credits, (unsigned long)player->keys);
-    ok = drawText(font, framebuffer, line, 4, 86, stats) && ok;
-    return ok;
-}
-
 static EspNativeGameplayHubStatus paintCurrentPage(void) {
     EspNativeGameplayPlayerState before;
     EspNativeGameplayPlayerState after;
@@ -517,7 +469,10 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
         ok = 1;
     }
     else if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS) {
-        ok = paintStatusContent(&before, &font, framebuffer, &stats);
+        /* STATUS is read-only. Its compact dashboard and typography are owned
+         * by the shared HUB presentation layer below, not the legacy 9x12
+         * content font used by interactive inventory rows. */
+        ok = 1;
     }
     else if (hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
         ok = 1;

@@ -164,7 +164,14 @@ INV | WPN | STAT | SYS
 - `WPN` presents the nine normal weapon IDs 0..8 as a complete 3x3 grid.
   Familiar IDs 9..11 remain excluded. Source BGR565 weapon palettes are
   converted to framebuffer RGB565 before drawing.
-- `STAT` remains a read-only player-stat projection.
+- `STAT` remains read-only and now uses a denser 3x5 information dashboard:
+  slightly raised HP/Armor cards with intermediate 5x7 values and real
+  proportional green/red health and blue armor rails, level/XP with progress
+  bar, an aligned 2x2 attribute grid, and a footer that renders owned keys as
+  green/true-yellow/blue/red key cards rather than exposing the internal
+  bitmask. Only the tab remains touch-active.
+  The firmware build passes; the refined typography still awaits its real-CYD
+  visual check.
 - `SYS` owns the dedicated one-slot checkpoint UI. SAVE and LOAD require a
   second SELECT/tap to confirm; missing checkpoints display `NO SAVE`. A
   successful SAVE closes the HUB immediately and queues `Game saved` in the
