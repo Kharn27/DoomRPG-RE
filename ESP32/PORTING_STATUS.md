@@ -1167,20 +1167,15 @@ The timer remains based on real elapsed time, but world feedback/viewport-flash 
 
 ## Entrance -> Junction CHANGEMAP — REAL-CYD PASS
 
-Hardware-tested happy-path boundary:
+Final hardware-tested branch boundary:
 
 ```text
-2b7c4dcf6d0d00abf176b797b8fb335c3f332a61
-CI #807 = SUCCESS
-RAM static = 45200 B
-Flash = 787865 B
-```
-
-Current rebased code boundary:
-
-```text
+code head = e4acb92403dd48810f3c4e989d4dee16605125e3
 main = 6cd8b6804cbec75538becab0d6cbe66e3c79d238
-code head = 455e1da6032d9b9086a00e39d338d3218f8b58f4
+CI #829 = SUCCESS
+RAM static = 45200 B
+Flash = 789345 B
+artifact id = 10873930025
 ```
 
 Entrance event 1 / tile 69 now owns the first hardware-validated native
@@ -1200,12 +1195,24 @@ source runtime is destroyed; Junction rebuilds from raw internal flash, spawns
 at tile 943 / position 992,1888 / angle 64, primes the resident cache and reaches
 the generic gameplay service with `shapeData=0x0` and `mediaTexels=0x0`.
 
-The same hardware run then proved the first Junction movement. EXIT tile 943
+The final hardware run reconfirmed the first Junction movement. EXIT tile 943
 contains a locked `CLOSELINE`; matching legacy behavior, that failed line close
 does not abort movement. ENTER tile 911 contains opcode 4 `MESSAGE`; the native
 transaction commits the destination frame first and only then publishes
 `"Junction"`. The player reaches tile 911 at position 992,1824 and gameplay
 remains active.
+
+The same final code head then proved that Junction dialog/continuation gameplay
+remains live after the transition. Facing the Scientist on tile 878 selected
+event 56 as `DIALOG_READY`; the native dialog opened a 97-byte / six-line
+opcode-8 payload, handled fast-forward and page advance, closed with the pack
+released, then resumed command offset 1. `DIALOGCHAIN` executed one bounded
+state command and `DIALOG-RESUME` reported opcode 11 / `CHANGESTATE` with
+`stateMutation=1`, followed by a successful world redraw. The dialog pipeline
+now preserves the live PlayerState key context across validation, NOTE-prefix
+filtering and continuation planning. The earlier Marine event 45 regression
+that exposed the key-context mismatch was not itself replayed in the final
+supplied trace; the final hardware witness is Scientist event 56.
 
 Post-PASS code review found one failure-only rollback leak: if the shared
 `SELECT-DOOR` render failed after staging the transition door, the line/script
@@ -1270,6 +1277,8 @@ candidates are:
 Do not infer generic CHANGEMAP coverage from the Entrance -> Junction PASS.
 Unrelated deferred Junction families such as OPENSTORE, INCSTAT, PLAYSOUND,
 CHECK_COMPLETED_LEVEL and general MESSAGE handling remain separate milestones.
+The final log additionally proves one normal Junction DIALOG + CHANGESTATE
+continuation, not arbitrary Junction dialog/script coverage.
 
 ## Hardware-validated intro display polish
 
