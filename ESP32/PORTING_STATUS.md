@@ -366,6 +366,20 @@ Detailed record:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md)
 
+#### Compact STAT information layout — BUILD PASS / REAL-CYD PENDING
+
+The read-only `STAT` content no longer spends the viewport on five legacy 9x12
+text rows. It now uses compact 3x5 labels and intermediate 5x7 values in two
+slightly reduced HP/Armor cards, level/XP plus a bounded progress bar, and a consistently aligned
+2x2 DEF/STR/AGI/ACC grid. The slim card rails are real proportional gauges:
+health is green (red at critical level) and armor is light blue. The footer no
+longer leaks the internal hexadecimal key mask; owned bits 0..3 render as compact
+green/true-yellow/blue/red key-card icons. Values retain a larger visual weight than
+their labels. No content hitbox was added: the existing `STAT` tab is still the
+page's only touch target. PlatformIO compilation succeeds with static RAM
+unchanged at 45128 B; real-CYD legibility and color balance remain to be
+confirmed.
+
 The redesigned LOAD execution path is now hardware-proven from both the in-game
 SYS page and the cold main menu. The two-tap SYS route no longer requires an
 ordinary HUB-close HUD restoration before replacing the gameplay session;

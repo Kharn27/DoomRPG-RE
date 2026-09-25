@@ -16,6 +16,8 @@
 #define ESP_HUB_COLOR_AMBER        0xfd20U
 #define ESP_HUB_COLOR_RED          0xc986U
 #define ESP_HUB_COLOR_GREEN        0x4d8bU
+#define ESP_HUB_COLOR_BLUE         0x4d1bU
+#define ESP_HUB_COLOR_YELLOW       0xffe0U
 
 /* palettes.bin stores the legacy 5-bit red/blue channels opposite to the
  * framebuffer's RGB565 order. All raw palette consumers must cross this one
