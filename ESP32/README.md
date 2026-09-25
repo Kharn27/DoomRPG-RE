@@ -129,7 +129,7 @@ The alternate resume route is:
 Load Game
  -> validate the one-slot native checkpoint
  -> release menu-only runtime
- -> rebuild the immutable BSP and restore V7 mutable owners
+ -> rebuild the immutable BSP and restore V8 mutable owners
  -> configure the resumed EspNativeGameplaySession
  -> ST_PLAYING without replaying the intro
 ```
@@ -153,12 +153,18 @@ INV | WPN | STAT | SYS
   converted to framebuffer RGB565 before drawing.
 - `STAT` remains a read-only player-stat projection.
 - `SYS` owns the dedicated one-slot checkpoint UI. SAVE and LOAD require a
-  second SELECT/tap to confirm; missing checkpoints display `NO SAVE`.
+  second SELECT/tap to confirm; missing checkpoints display `NO SAVE`. A
+  successful SAVE closes the HUB immediately and queues `Game saved` in the
+  gameplay message bar for about 1.2 seconds.
 
 The HUB repaints its industrial title bar while active and reconstructs the
 normal gameplay HUD when closing. Touch feedback is bounded and conflict-aware:
 large checkpoint buttons fit the static edit owner, and newer pickup, message
 or viewport-flash overlays win if they touch the same framebuffer pixels.
+The lower HUD band is the close-time integrity boundary; the top message band
+is deliberately recomposed by the following world frame. When `Game saved`
+expires, the normal priority chain restores a permanent status message first,
+otherwise the current facing-entity label, otherwise an empty bar.
 
 ## Source-tree rule
 

@@ -54,21 +54,25 @@ The current hardware-validated native path includes:
   families;
 - destructible subtype-2 crates, including their exact RNG-driven conversion
   into pickups;
-- checkpoint save/load V7, including player state, consumed resources, script
-  state, line state, action-owned removals, transformed crates and Automap
-  reveal state;
+- checkpoint save/load V8, retaining the V7 player/resources/script/line,
+  action-removal, transformed-crate and Automap state plus compact monster
+  state;
 - a compact industrial HUB presentation with a 3x3 normal-weapon grid,
   source-palette color correction and a dedicated two-step SAVE/LOAD page;
+- successful in-game SAVE confirmation closes the HUB immediately, displays
+  `Game saved` for about 1.2 seconds, then restores the permanent status or
+  current facing-entity label;
 - a CYD-specific main menu ordered as `Start Game`, `Load Game`, `Options`,
   `Help/About`; `Load Game` restores the native checkpoint directly without
   replaying the intro, while a missing or invalid save leaves the menu active
   and displays `No Save`;
-- compatibility reads for the earlier V1 to V6 save formats.
+- compatibility reads for the earlier V1 to V7 save formats.
 
-The V7 Automap checkpoint path has passed both CI and real-CYD testing. The HUB
-redesign and its touch-feedback coexistence fixes have received a focused
-real-CYD smoke test; broader gameplay progression remains to be exercised. The
-exact boundaries, memory figures, fingerprints and remaining limitations are
+The V7 Automap checkpoint state remains part of the current V8 format. The HUB
+redesign, its touch-feedback coexistence fixes and the successful SAVE return
+flow have been exercised on the real CYD; broader gameplay progression remains
+to be exercised. The exact boundaries, memory figures, fingerprints and
+remaining limitations are
 recorded in
 [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md).
 
@@ -241,23 +245,26 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
   d'attaques des monstres ;
 - les caisses destructibles de sous-type 2, y compris leur transformation en
   pickups déterminée par le RNG original ;
-- les sauvegardes V7, qui conservent l'état du joueur, les ressources ramassées,
-  les scripts, les lignes, les suppressions possédées par le moteur d'action,
-  les transformations de caisses et la révélation de l'Automap ;
+- les sauvegardes V8, qui reprennent les états joueur, ressources, scripts,
+  lignes, suppressions du moteur d'action, transformations de caisses et
+  révélation de l'Automap de la V7, avec en plus l'état compact des monstres ;
 - une présentation HUB industrielle et compacte avec une grille d'armes 3x3,
   la correction des palettes sources et une page SAVE/LOAD dédiée avec
   confirmation en deux temps ;
+- après confirmation d'une sauvegarde en jeu, la fermeture immédiate du HUB,
+  l'affichage de `Game saved` pendant environ 1,2 seconde, puis le retour du
+  message permanent ou du label de l'entité visée ;
 - un menu principal propre au CYD, ordonné ainsi : `Start Game`, `Load Game`,
   `Options`, `Help/About` ; `Load Game` restaure directement le checkpoint natif
   sans rejouer l'introduction, tandis qu'une sauvegarde absente ou invalide
   laisse le menu actif et affiche `No Save` ;
-- la lecture des anciennes sauvegardes V1 à V6.
+- la lecture des anciennes sauvegardes V1 à V7.
 
-La sauvegarde V7 de l'Automap a été validée par la CI et sur le vrai CYD. La
-refonte du HUB et les corrections de coexistence des retours tactiles ont reçu
-un test ciblé sur le vrai CYD ; la progression plus loin dans le jeu reste à
-exercer. Les frontières exactes, mesures mémoire, empreintes et limites
-restantes sont consignées dans
+L'état Automap de la V7 reste inclus dans le format V8 actuel. La refonte du
+HUB, les corrections de coexistence des retours tactiles et le retour en jeu
+après SAVE ont été testés sur le vrai CYD ; la progression plus loin dans le
+jeu reste à exercer. Les frontières exactes, mesures mémoire, empreintes et
+limites restantes sont consignées dans
 [`ESP32/PORTING_STATUS.md`](ESP32/PORTING_STATUS.md).
 
 Le projet n'est pas encore une version complète avec parité totale du gameplay.
