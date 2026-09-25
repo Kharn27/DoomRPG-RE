@@ -13,14 +13,15 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 8e1a8cb62bb28ffa0c6d14ff39ebd12dd056949d
-branch = fix/mainMenu
-rebased feature base = c398959
-hardware-tested correction = lower-HUD close integrity + SAVE return feedback
-static RAM = 44648 B
-flash = 776669 B
-hardware = SYS SAVE return + transient Game saved + facing-label restore REAL-CYD PASS
-status = save-return behavior accepted on the real classic CYD, 2026-09-25
+current main = b77513309a38a970a5d59195ce76424a3f44a7cb
+branch = agent/esp32-native-monster-turn-ordinary-completion
+rebased code boundary = e87097d7544ea63104049003c55e19a7158bfad3
+hardware-tested code boundary = aa32270adbb22de6666c3ad45c5d63c88fc34db4
+CI = esp32-cyd #757 SUCCESS
+static RAM = 45096 B
+flash = 782081 B
+hardware = Yellow Key mixed trap + continued movement + attack-after-animation REAL-CYD PASS
+status = code locked at tested SHA; documentation-only tail
 ```
 
 The merged barrel milestone remains hardware-valid on the real CYD. A distant shot
@@ -124,6 +125,38 @@ creating the next branch. The next major gameplay candidate remains the native
 **CHANGEMAP / Entrance level-exit transition**. The barrel aggregate-damage-
 message retest remains a separate UI frontier; the historical barrel code
 boundary stays `1b93651699d981e34b2a10318936ddfa0cf7b2e8`.
+
+## Current continuation — real-CYD validated
+
+The branch is rebased directly on `b77513309a38a970a5d59195ce76424a3f44a7cb` and the code head
+`aa32270adbb22de6666c3ad45c5d63c88fc34db4` is the real-CYD validation boundary.
+
+Two gameplay/progression fixes are now hardware-proven:
+
+```text
+ordinary monster attack
+ -> animation lease first
+ -> world input blocked during the lease
+ -> retaliation HP/armor mutation only after animation COMPLETE
+
+Entrance Yellow Key trap event 74
+ -> mixed state + SHOW + line lock/open batch
+ -> later fully-satisfied traversal may be mutation=no / rollback=0
+ -> no rollback owner retained for that no-op
+ -> later movement/combat remains enabled
+```
+
+The user still perceives a broader slowdown. Do not compensate by shortening
+individual dirty-animation timings in isolation. Current logs show many complete
+world frames around 190-240 ms, occasional heavier recovered-render frames above
+300 ms, and physical 160x120 -> 320x240 presentation around 34.5 ms. Treat
+performance as a separate system-level profiling milestone covering render
+cadence, PAK I/O/diagnostics, repeated redraws and presentation.
+
+Latest relevant records:
+
+- [MILESTONE_NATIVE_MONSTER_ATTACK_RESOLUTION.md](MILESTONE_NATIVE_MONSTER_ATTACK_RESOLUTION.md)
+- [MILESTONE_NATIVE_MOVE_MIXED_EVENT74.md](MILESTONE_NATIVE_MOVE_MIXED_EVENT74.md)
 
 ## Build environment
 
