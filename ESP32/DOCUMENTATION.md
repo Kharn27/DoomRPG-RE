@@ -128,10 +128,10 @@ label. CI #767 reports 45096 B static RAM and 782141 B flash.
 
 ### Current transition milestone
 
-The native Entrance -> Junction level exit is real-CYD validated on the
-successful path at `2b7c4dcf6d0d00abf176b797b8fb335c3f332a61`. The current
-branch is rebased on `main@6cd8b6804cbec75538becab0d6cbe66e3c79d238`; its rebased
-code head is `455e1da6032d9b9086a00e39d338d3218f8b58f4`.
+The native Entrance -> Junction level exit is real-CYD validated on final code
+head `e4acb92403dd48810f3c4e989d4dee16605125e3`, rebased directly on
+`main@6cd8b6804cbec75538becab0d6cbe66e3c79d238`. CI #829 succeeds in the
+normal `esp32-cyd` environment with 45200 B static RAM and 789345 B flash.
 
 The tested route owns the exact Entrance event-1
 SAVEGAME/CHANGEMAP/OPENLINE sequence, the WAIT_STATS one-tap bridge,
@@ -139,10 +139,21 @@ requested-map raw-flash rebuild, Junction compact-runtime reconstruction,
 spawn/session re-arm, and the first committed Junction step with ENTER
 `EV_MESSAGE "Junction"`.
 
+The same final hardware trace continues into ordinary Junction gameplay and
+proves one complete native NPC dialog continuation: Scientist tile 878 /
+event 56 opens opcode-8 DIALOG, supports fast-forward/page advance, closes with
+the pack released, then resumes at command offset 1 and commits opcode 11
+`CHANGESTATE` with `stateMutation=1` before a successful world redraw.
+Dialog/NOTE/continuation filtering on this code head now carries the live shared
+PlayerState key context instead of silently revalidating with `keys=0`. The
+earlier Marine event 45 failure that exposed this mismatch was not replayed in
+the final supplied trace, so only the event-56 hardware witness is claimed.
+
 Post-PASS review also closed a render-failure-only transaction leak: after a
 successful SELECT-door world/script rollback, a staged CHANGEMAP door owner is
 now aborted before the rollback frame is presented. This does not alter the
-hardware-proven happy path.
+hardware-proven happy path and that failure-only cleanup path was not
+hardware-triggered.
 
 Detailed record:
 
