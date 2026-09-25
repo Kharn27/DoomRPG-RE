@@ -11,9 +11,9 @@ struct EspNativeGameplayTransitionState_s;
 
 /*
  * Full-frame transition UI owned outside the legacy Menu/DoomCanvas state
- * machine. Stats presentation is source-map only; loading presentation keeps
- * one bounded indexed-BMP descriptor for the original c.bmp starfield and
- * streams its pixels from whichever PAK lease is already authoritative.
+ * machine. Stats presentation is source-map only. Loading renders the original
+ * c.bmp starfield once, then keeps that framebuffer background fixed while a
+ * bounded progress bar is updated without further asset reads.
  */
 int EspNativeTransitionPresentation_showStats(
     const struct EspNativeGameplayTransitionState_s* transition);
