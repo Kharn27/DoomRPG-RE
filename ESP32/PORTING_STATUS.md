@@ -5,18 +5,66 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 8e1a8cb62bb28ffa0c6d14ff39ebd12dd056949d
-branch = fix/mainMenu
-rebased feature base = c398959
-hardware-tested correction = lower-HUD close integrity + SAVE return feedback
-local esp32-cyd build = SUCCESS
-static RAM = 44648 B
-flash = 776669 B
-SYS SAVE success = close HUB immediately + 1200 ms Game saved
-top-bar expiry = permanent status -> current facing label -> empty
-hardware result = Game saved then Door restored, REAL-CYD PASS 2026-09-25
-status = SAVE RETURN REAL-CYD PASS
+current main = b77513309a38a970a5d59195ce76424a3f44a7cb
+branch = agent/esp32-native-monster-turn-ordinary-completion
+rebased code boundary = e87097d7544ea63104049003c55e19a7158bfad3
+hardware-tested code boundary = aa32270adbb22de6666c3ad45c5d63c88fc34db4
+hardware = Entrance Yellow Key trap + post-trap movement + attack-after-animation REAL-CYD PASS
+CI = esp32-cyd #757 SUCCESS
+static RAM = 45096 B
+flash = 782081 B
+status = CODE LOCKED AT TESTED SHA; DOCS-ONLY TAIL
 ```
+
+### Ordinary monster attack resolution — REAL-CYD PASS
+
+The current ordinary monster attack path now resolves gameplay only after its
+presentation lease completes. The attack probe remains transactional; while the
+animation is active, player HP/armor and gameplay RNG remain unchanged and world
+input is blocked.
+
+Current rebased real-CYD witness:
+
+```text
+[MONSTERATKVIS] ARM ... sprite=315 ... visual=5 ... phaseMs=500 ...
+[MONSTERRETAL] WAIT ... resolution=after-animation playerMutation=no rngConsumed=0 worldInput=blocked
+[MONSTERATKVIS] COMPLETE ... visual=5->idle ... resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT ... playerHP=23->19 armor=11->7 ... attackVisual=complete-before-resolution
+```
+
+The earlier multi-loop Troop test also visually proved the generic repeated-shot
+presentation. Its perceived slowness remains a separate system-level performance
+issue rather than a reason to retune this owner in isolation.
+
+### Entrance event 74 mixed MOVE batch — REAL-CYD PASS
+
+The Yellow Key trap on Entrance tile 697 uses a real mixed MOVE script:
+state changes, SHOW commands and line lock/open operations. After the trap has
+already fired, a later traversal can legitimately reduce to a completely handled
+no-op batch with `mutation=no rollback=0`.
+
+The first implementation still retained the static mixed rollback owner in that
+case, so the next unrelated MOVE failed closed. The current code arms rollback
+owners only for real mutations, immediately releases no-op mixed owners, and
+passes the actual `mixedBatchOwner.active` value to the BLOCK diagnostic.
+
+The real-CYD retest continued successfully from tile 697 through 665, 633, 601
+and back to 633, with subsequent monster movement and combat. No
+`stale-mixed-owner`, `transaction-busy` or
+`FAILED reason=move-commit` recurred.
+
+Runtime remained alive at the supplied tail:
+
+```text
+heap=81788
+heap8=16236
+largest8=8692
+```
+
+Detailed records:
+
+- [`MILESTONE_NATIVE_MONSTER_ATTACK_RESOLUTION.md`](MILESTONE_NATIVE_MONSTER_ATTACK_RESOLUTION.md)
+- [`MILESTONE_NATIVE_MOVE_MIXED_EVENT74.md`](MILESTONE_NATIVE_MOVE_MIXED_EVENT74.md)
 
 The earlier barrel values below remain historical hardware boundaries. Their
 code is now merged into `main`; keep the exact barrel SHA and its narrower PASS
