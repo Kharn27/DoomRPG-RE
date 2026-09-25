@@ -7,7 +7,6 @@
 
 #include "esp_asset_pack.h"
 #include "esp_map_catalog.h"
-#include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_native_transition_presentation.h"
@@ -329,16 +328,13 @@ int EspNativeTransitionPresentation_showStats(
     const struct EspNativeGameplayTransitionState_s* transitionBase) {
     const EspNativeGameplayTransitionState* transition =
         (const EspNativeGameplayTransitionState*)transitionBase;
-    const EspNativeGameplayPlayerState* player =
-        EspNativeGameplayPlayerState_view();
     char source[24];
     char value[32];
     uint32_t fnv;
 
     if (transition == NULL || transition->active != 1U ||
         transition->waitingStats != 1U ||
-        transition->levelStats.showStats != 1U ||
-        player == NULL || player->active != 1U || !framebufferReady()) {
+        transition->levelStats.showStats != 1U || !framebufferReady()) {
         return 0;
     }
 
@@ -370,14 +366,11 @@ int EspNativeTransitionPresentation_showStats(
                          transition->levelStats.monstersTotal
                      ? COLOR_GREEN : COLOR_IVORY);
 
-    snprintf(value, sizeof(value), "XP GAINED %u",
-             (unsigned int)player->xpGained);
-    drawCentered(value, 101, 1, COLOR_STEEL);
-    drawCentered("TAP TO CONTINUE", 109, 1, COLOR_AMBER);
+    drawCentered("TAP TO CONTINUE", 105, 1, COLOR_AMBER);
 
     if (!Esp32PlatformVideo_present()) return 0;
     fnv = frameFNV();
-    printf("[LEVELSTATS] PRESENT sourceMap=%u targetMap=%u source=%s secrets=%u/%u monsters=%u/%u xpGained=%u timeMoves=deferred frame=%08x input=one-tap\n",
+    printf("[LEVELSTATS] PRESENT sourceMap=%u targetMap=%u source=%s secrets=%u/%u monsters=%u/%u extended=time+moves+xp-deferred frame=%08x input=one-tap\n",
            (unsigned int)transition->committed.sourceMapId,
            (unsigned int)transition->committed.targetMapId,
            source,
@@ -385,7 +378,6 @@ int EspNativeTransitionPresentation_showStats(
            (unsigned int)transition->levelStats.secretsTotal,
            (unsigned int)transition->levelStats.monstersDead,
            (unsigned int)transition->levelStats.monstersTotal,
-           (unsigned int)player->xpGained,
            (unsigned int)fnv);
     return 1;
 }
