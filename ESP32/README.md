@@ -106,6 +106,19 @@ Help/About
 `Exit` from the original application model has no useful meaning on the
 standalone device and is replaced by `Load Game`.
 
+`Options` reuses the same finger-first 2x2 Doom-tech dashboard instead of
+falling back to the thin J2ME rows:
+
+```text
+BACK  | VIDEO
+INPUT | SOUND
+```
+
+`BACK` keeps the released double-tap confirmation and returns through the real
+menu hierarchy. `VIDEO`, `INPUT` and `SOUND` remain deliberately subdued and
+non-interactive until their settings backends are ported. This redesign builds
+successfully and still awaits its real-CYD visual/touch pass.
+
 The normal new-game route is:
 
 The historical MAP1 startup probe ladder has been replaced by the generic bootstrap:

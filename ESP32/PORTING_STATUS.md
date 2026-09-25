@@ -269,6 +269,24 @@ Detailed record:
 
 - [`MILESTONE_MAIN_MENU_FINGER_FIRST.md`](MILESTONE_MAIN_MENU_FINGER_FIRST.md)
 
+### Options dashboard reuse — BUILD PASS / REAL-CYD PENDING
+
+The `MENU_MAIN_OPTIONS` child now reuses the same bounded 2x2 card renderer and
+geometry as `MENU_MAIN`:
+
+```text
+BACK  | VIDEO
+INPUT | SOUND
+```
+
+`BACK` is the only enabled card until the three settings backends are ported;
+the others remain visible but subdued. Its first tap now paints the same bright
+ivory/amber armed state as the parent dashboard, and the released second tap
+still executes the real `MenuSystem_back()` transition. Touch ownership now
+tracks the painter's runtime framebuffer hash rather than the removed fixed
+Options framebuffer fingerprint. PlatformIO compilation passes; visual and
+touch behavior still require confirmation on the real CYD.
+
 This rebased integration combines the current `main` four-page HUB/touch-
 feedback redesign with the later native gameplay, V8 checkpoint, CHECK_KEY and
 event43 work. The boot-time contiguous-heap regression is fixed, checkpoint

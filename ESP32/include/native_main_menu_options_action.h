@@ -1,6 +1,8 @@
 #ifndef DOOMRPG_ESP32_NATIVE_MAIN_MENU_OPTIONS_ACTION_H
 #define DOOMRPG_ESP32_NATIVE_MAIN_MENU_OPTIONS_ACTION_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -11,7 +13,16 @@ struct DoomRPG_s;
  * the resulting Options model through the bounded ESP32 presentation path.
  * No legacy Render_render() call is allowed here.
  */
-int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpg);
+int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpg,
+                                         uint32_t* finalFramebufferFNV);
+
+/* Repaint the shared dashboard band for Options interaction feedback. Back is
+ * the sole enabled card for now; the other three remain visible and subdued.
+ */
+int DoomRPG_esp32PaintMainMenuOptionsDashboard(
+    struct DoomRPG_s* doomRpg,
+    int backArmed,
+    uint32_t* framebufferFNV);
 
 #ifdef __cplusplus
 }

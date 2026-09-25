@@ -13,6 +13,7 @@
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_touch.h"
+#include "native_main_menu_touch_layout.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
@@ -21,14 +22,21 @@
 #include <esp_heap_caps.h>
 
 #define OPTIONS_ITEM_COUNT 4
-#define OPTIONS_TEXT_X 28
-#define OPTIONS_GLYPH_HEIGHT 12
+#define OPTIONS_BACK_ITEM 0
+#define OPTIONS_ENABLED_MASK (1U << OPTIONS_BACK_ITEM)
 
 static const char* expectedOptionsItems[OPTIONS_ITEM_COUNT] = {
     "Back",
     "Video",
     "Input",
     "Sound"
+};
+
+static const char* optionsDashboardLabels[OPTIONS_ITEM_COUNT] = {
+    "BACK",
+    "VIDEO",
+    "INPUT",
+    "SOUND"
 };
 
 static uint32_t heap8Free(void) {
@@ -135,12 +143,34 @@ static int validateOptionsModel(const MenuSystem_t* menuSystem) {
     return 1;
 }
 
+int DoomRPG_esp32PaintMainMenuOptionsDashboard(
+    struct DoomRPG_s* doomRpgBase,
+    int backArmed,
+    uint32_t* framebufferFNV) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+
+    if (!graphicsBoundaryIsSafe(doomRpg) ||
+        !validateOptionsModel(doomRpg->menuSystem)) {
+        return 0;
+    }
+
+    return DoomRPG_esp32PaintMenuDashboardCards(
+        doomRpg,
+        optionsDashboardLabels,
+        OPTIONS_BACK_ITEM,
+        backArmed,
+        OPTIONS_ENABLED_MASK,
+        framebufferFNV);
+}
+
 static int paintOptionsBounded(DoomRPG_t* doomRpg,
-                               uint32_t stageHashes[OPTIONS_ITEM_COUNT + 1]) {
+                               uint32_t* logoHashOut,
+                               uint32_t* finalHashOut) {
     DoomCanvas_t* doomCanvas = doomRpg->doomCanvas;
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
     SDL_Rect logoDst;
-    int i;
+    uint32_t logoHash;
+    uint32_t finalHash;
 
     DoomRPG_setColor(doomRpg, 0x000000);
     DoomRPG_fillRect(doomRpg,
@@ -151,53 +181,34 @@ static int paintOptionsBounded(DoomRPG_t* doomRpg,
 
     logoDst.x = doomCanvas->displayRect.x +
                 ((doomCanvas->displayRect.w -
-                  DOOMRPG_ESP32_MAIN_MENU_LOGO_WIDTH) >> 1);
+                  DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH) >> 1);
     logoDst.y = doomCanvas->displayRect.y +
-                DOOMRPG_ESP32_MAIN_MENU_LOGO_Y;
-    logoDst.w = DOOMRPG_ESP32_MAIN_MENU_LOGO_WIDTH;
-    logoDst.h = DOOMRPG_ESP32_MAIN_MENU_LOGO_HEIGHT;
+                DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y;
+    logoDst.w = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH;
+    logoDst.h = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT;
 
     if (SDL_RenderCopy(NULL, menuSystem->imgLogo.imgBitmap, NULL, &logoDst) != 0) {
         return 0;
     }
-    stageHashes[0] = framebufferHash(doomRpg->render);
-
-    DoomRPG_setFontColor(doomRpg, 0xffffffff);
-
-    for (i = 0; i < OPTIONS_ITEM_COUNT; ++i) {
-        int x = OPTIONS_TEXT_X;
-        const int y = DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y +
-                      (i * DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT);
-
-        if (i == menuSystem->selectedIndex) {
-            DoomCanvas_drawImage(doomCanvas,
-                                 &menuSystem->imgHand,
-                                 x,
-                                 y + (OPTIONS_GLYPH_HEIGHT >> 1),
-                                 40);
-            x += 2;
-        }
-
-        DoomCanvas_drawFont(doomCanvas,
-                            menuSystem->items[i].textField,
-                            x,
-                            y,
-                            0,
-                            0,
-                            -1,
-                            false);
-        stageHashes[i + 1] = framebufferHash(doomRpg->render);
+    logoHash = framebufferHash(doomRpg->render);
+    if (logoHash == 0U ||
+        !DoomRPG_esp32PaintMainMenuOptionsDashboard(
+            doomRpg, 0, &finalHash) ||
+        finalHash == logoHash) {
+        return 0;
     }
 
-    DoomRPG_setFontColor(doomRpg, 0xffffffff);
+    if (logoHashOut != NULL) *logoHashOut = logoHash;
+    if (finalHashOut != NULL) *finalHashOut = finalHash;
     return 1;
 }
 
-int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
+int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
+                                         uint32_t* finalFramebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     MenuSystem_t* menuSystem;
     Render_t* render;
-    uint32_t stageHashes[OPTIONS_ITEM_COUNT + 1] = {0};
+    uint32_t logoHash = 0U;
     uint32_t inputHash;
     uint32_t finalHash;
     uint32_t optionsModelHash;
@@ -207,6 +218,8 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
     uint32_t largestAfter;
     uint32_t expectedInputHash;
     int i;
+
+    if (finalFramebufferFNV != NULL) *finalFramebufferFNV = 0U;
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Options action ===\n");
 
@@ -277,31 +290,26 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)optionsModelHash);
 
     for (i = 0; i < OPTIONS_ITEM_COUNT; ++i) {
-        printf("[MAINOPTIONS] ITEM index=%d y=%d text=\"%s\" flags=%d action=%d selected=%s\n",
+        printf("[MAINOPTIONS] CARD index=%d col=%d row=%d text=\"%s\" flags=%d action=%d enabled=%s selected=%s\n",
                i,
-               DOOMRPG_ESP32_MAIN_MENU_ITEM_START_Y +
-                   (i * DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT),
+               i & 1,
+               i >> 1,
                menuSystem->items[i].textField,
                menuSystem->items[i].flags,
                menuSystem->items[i].action,
+               i == OPTIONS_BACK_ITEM ? "yes" : "no",
                i == menuSystem->selectedIndex ? "yes" : "no");
     }
 
-    if (!paintOptionsBounded(doomRpg, stageHashes)) {
+    if (!paintOptionsBounded(doomRpg, &logoHash, &finalHash)) {
         printf("[MAINOPTIONS] FAILED bounded Options paint\n");
         return 0;
     }
 
     printf("[MAINOPTIONS] HASH stage=logo fnv=%08x\n",
-           (unsigned int)stageHashes[0]);
-    for (i = 0; i < OPTIONS_ITEM_COUNT; ++i) {
-        printf("[MAINOPTIONS] HASH stage=item%d text=\"%s\" fnv=%08x\n",
-               i,
-               menuSystem->items[i].textField,
-               (unsigned int)stageHashes[i + 1]);
-    }
-
-    finalHash = framebufferHash(render);
+           (unsigned int)logoHash);
+    printf("[MAINOPTIONS] HASH stage=dashboard fnv=%08x\n",
+           (unsigned int)finalHash);
     heapAfter = heap8Free();
     largestAfter = largest8Block();
 
@@ -325,15 +333,9 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    for (i = 1; i < OPTIONS_ITEM_COUNT + 1; ++i) {
-        if (stageHashes[i] == stageHashes[i - 1]) {
-            printf("[MAINOPTIONS] FAILED item %d did not change framebuffer\n", i - 1);
-            return 0;
-        }
-    }
-
     SDL_RenderPresent(NULL);
-    printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with bounded ESP32 paint\n");
+    if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
+    printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared 2x2 dashboard paint\n");
     printf("[MAINOPTIONS] READY MenuSystem_select executed for Options; no legacy Render_render, no map reload, no gameplay loader\n");
     return 1;
 }

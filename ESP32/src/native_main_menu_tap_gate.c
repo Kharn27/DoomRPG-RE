@@ -37,8 +37,6 @@
     (MENU_TAP_GATE_TEXT_X + \
      (MENU_TAP_GATE_LABEL_CHARS * MENU_TAP_GATE_GLYPH_ADVANCE) + \
      MENU_TAP_GATE_PAD_X)
-#define EXPECTED_OPTIONS_FRAMEBUFFER_FNV 0x6058d47dU
-
 static PlatformTapCallback downstreamTapCallback = NULL;
 static int gateSelectedItem = 0;
 static int lastTappedItem = -1;
@@ -143,6 +141,8 @@ static void executeConfirmedStart(void) {
 }
 
 static void executeConfirmedOptions(void) {
+    uint32_t optionsFramebufferFNV = 0U;
+
     /* Remove MENU_MAIN touch before mutating the real menu model. The Options
      * action owns the display transition; after it succeeds, arm only the
      * deliberately narrow Back callback for the new menu.
@@ -154,13 +154,14 @@ static void executeConfirmedOptions(void) {
         return;
     }
 
-    if (!DoomRPG_esp32ActivateMainMenuOptions(doomRpg)) {
+    if (!DoomRPG_esp32ActivateMainMenuOptions(
+            doomRpg, &optionsFramebufferFNV)) {
         printf("[MAINOPTIONS] FAILED confirmed Options action\n");
         return;
     }
 
     if (!DoomRPG_esp32OptionsBackActivate(doomRpg,
-                                          EXPECTED_OPTIONS_FRAMEBUFFER_FNV)) {
+                                          optionsFramebufferFNV)) {
         printf("[OPTIONBACK] FAILED arming Back after Options transition\n");
     }
 }

@@ -313,10 +313,11 @@ static void chamferCard(Render_t* render,
 
 static void drawDashboardCard(DoomRPG_t* doomRpg,
                               int item,
+                              const char* label,
                               int selected,
-                              int armed) {
+                              int armed,
+                              int enabled) {
     Render_t* render = doomRpg->render;
-    const char* label = dashboardLabels[item];
     int left;
     int top;
     int right;
@@ -330,7 +331,12 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
 
     dashboardCardRect(item, &left, &top, &right, &bottom);
 
-    if (armed && selected) {
+    if (!enabled) {
+        panel = ESP_HUB_COLOR_BG;
+        border = ESP_HUB_COLOR_STEEL_DARK;
+        rail = ESP_HUB_COLOR_STEEL_DARK;
+    }
+    else if (armed && selected) {
         panel = ESP_HUB_COLOR_STEEL_DARK;
         border = ESP_HUB_COLOR_IVORY;
     }
@@ -359,8 +365,10 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
     textY = top + (((bottom - top + 1) - DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT) >> 1);
 
     DoomRPG_setFontColor(doomRpg,
-                         selected ? (armed ? 0xffffffffU : 0xffffa000U)
-                                  : 0xffffffffU);
+                         !enabled ? 0xff6f7881U
+                                  : (selected
+                                         ? (armed ? 0xffffffffU : 0xffffa000U)
+                                         : 0xffffffffU));
     /* Legacy drawFont takes char* but only reads the glyph string. Keep these
      * labels in flash/rodata instead of spending writable RAM on four copies. */
     DoomCanvas_drawFont(doomRpg->doomCanvas,
@@ -373,20 +381,26 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
                         false);
 }
 
-int DoomRPG_esp32MainMenuPaintDashboardSelection(
+int DoomRPG_esp32PaintMenuDashboardCards(
     struct DoomRPG_s* doomRpgBase,
+    const char* const labels[4],
     int selectedIndex,
     int armed,
+    uint8_t enabledMask,
     uint32_t* framebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     Render_t* render;
     int item;
     uint32_t hash;
 
-    if (!graphicsBoundaryIsSafe(doomRpg) ||
+    if (!graphicsBoundaryIsSafe(doomRpg) || labels == NULL ||
         selectedIndex < 0 ||
         selectedIndex >= DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
         return 0;
+    }
+
+    for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
+        if (labels[item] == NULL) return 0;
     }
 
     render = doomRpg->render;
@@ -407,8 +421,11 @@ int DoomRPG_esp32MainMenuPaintDashboardSelection(
     for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
         drawDashboardCard(doomRpg,
                           item,
-                          item == selectedIndex,
-                          armed && item == selectedIndex);
+                          labels[item],
+                          item == selectedIndex &&
+                              (enabledMask & (uint8_t)(1U << item)) != 0U,
+                          armed && item == selectedIndex,
+                          (enabledMask & (uint8_t)(1U << item)) != 0U);
     }
 
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
@@ -417,6 +434,20 @@ int DoomRPG_esp32MainMenuPaintDashboardSelection(
     if (hash == 0U) return 0;
     if (framebufferFNV != NULL) *framebufferFNV = hash;
     return 1;
+}
+
+int DoomRPG_esp32MainMenuPaintDashboardSelection(
+    struct DoomRPG_s* doomRpgBase,
+    int selectedIndex,
+    int armed,
+    uint32_t* framebufferFNV) {
+    return DoomRPG_esp32PaintMenuDashboardCards(
+        doomRpgBase,
+        dashboardLabels,
+        selectedIndex,
+        armed,
+        (uint8_t)((1U << DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) - 1U),
+        framebufferFNV);
 }
 
 static int drawTouchReadyMainMenuOpaque(DoomRPG_t* doomRpg,

@@ -66,6 +66,8 @@ The current hardware-validated native path includes:
   `Help/About`; `Load Game` restores the native checkpoint directly without
   replaying the intro, while a missing or invalid save leaves the menu active
   and displays `No Save`;
+- an `Options` child that reuses the same 2x2 finger-first dashboard; `Back` is
+  active with two-tap confirmation while deferred settings remain subdued;
 - compatibility reads for the earlier V1 to V7 save formats.
 
 The V7 Automap checkpoint state remains part of the current V8 format. The HUB
@@ -258,6 +260,9 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
   `Options`, `Help/About` ; `Load Game` restaure directement le checkpoint natif
   sans rejouer l'introduction, tandis qu'une sauvegarde absente ou invalide
   laisse le menu actif et affiche `No Save` ;
+- un sous-menu `Options` qui réutilise la même grille tactile 2x2 ; `Back` reste
+  actif avec confirmation en deux pressions, tandis que les réglages différés
+  sont affichés en retrait ;
 - la lecture des anciennes sauvegardes V1 à V7.
 
 L'état Automap de la V7 reste inclus dans le format V8 actuel. La refonte du
