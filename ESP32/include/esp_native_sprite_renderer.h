@@ -65,13 +65,24 @@ int EspNativeSpriteRenderer_render(struct Render_s* render,
                                    EspNativeSpriteStats* outStats);
 
 
-/* One bounded transient world billboard composed by the same native sprite
- * renderer after immutable map sprites. Gameplay owns lifetime/timing; the
- * renderer owns only projection and PAK-backed frame decoding. */
+typedef struct EspNativeSpriteTransient_s {
+    int16_t worldX;
+    int16_t worldY;
+} EspNativeSpriteTransient;
+
+/* Bounded transient world billboards composed by the same native sprite
+ * renderer after immutable map sprites. Gameplay owns lifetime/timing and the
+ * caller-owned batch storage; renderTurn() consumes the pointer synchronously.
+ * The single-item helper remains for crate traps and other one-shot effects. */
 int EspNativeSpriteRenderer_armTransient(uint16_t logical,
                                          uint8_t animation,
                                          int16_t worldX,
                                          int16_t worldY);
+int EspNativeSpriteRenderer_armTransientBatch(
+    uint16_t logical,
+    uint8_t animation,
+    const EspNativeSpriteTransient* items,
+    uint8_t count);
 void EspNativeSpriteRenderer_clearTransient(void);
 
 #ifdef __cplusplus
