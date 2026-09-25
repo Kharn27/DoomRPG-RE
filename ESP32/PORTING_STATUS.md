@@ -8,12 +8,61 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 current main = b77513309a38a970a5d59195ce76424a3f44a7cb
 branch = agent/esp32-native-monster-turn-ordinary-completion
 rebased code boundary = e87097d7544ea63104049003c55e19a7158bfad3
-hardware-tested code boundary = aa32270adbb22de6666c3ad45c5d63c88fc34db4
-hardware = Entrance Yellow Key trap + post-trap movement + attack-after-animation REAL-CYD PASS
-CI = esp32-cyd #757 SUCCESS
+hardware-tested code boundary = a5b30a12b4bb51cd4f016d53212b74e967c19d6d
+hardware = Yellow Key trap + attack-after-animation + rotated SYS SAVE return REAL-CYD PASS
+CI = esp32-cyd #767 SUCCESS
 static RAM = 45096 B
-flash = 782081 B
+flash = 782141 B
 status = CODE LOCKED AT TESTED SHA; DOCS-ONLY TAIL
+```
+
+### SYS SAVE live-compass close correction — REAL-CYD PASS
+
+A later real-CYD progression run exposed one remaining SAVE-return regression
+that the earlier facing-label test did not cover: after the player had rotated,
+the retained full-HUD model still carried the historical compass angle while the
+live player view had a newer settled angle. HUB close repainted the stale full
+HUD before checking the protected lower band, so a valid checkpoint could commit
+but the close transaction returned `NOT_READY` before `Game saved` was queued.
+
+Hardware failure signature:
+
+```text
+[NATIVESAVE] SAVE ... angle=64 ...
+[GAMEPLAYHUD] REPAINT ... angle=192 ...
+[HUB] CLOSE ... exactBottom=NO ...
+[RESIDENTGAMEPLAY] HUB-RECOVER ... status=NOT_READY
+```
+
+The permanent close path now reuses the already-bounded compass dirty painter
+after the base HUD repaint, sourcing the cardinal angle from the settled
+`EspPlayerViewState`. No new retained owner or framebuffer-sized scratch was
+added.
+
+The real classic CYD validated the corrected sequence at code head
+`a5b30a12b4bb51cd4f016d53212b74e967c19d6d`:
+
+```text
+[NATIVESAVE] SAVE ... angle=128 ...
+[GAMEPLAYHUD] REPAINT ... angle=64 ...
+[HUB] CLOSE ... hudBottom=5da12662 expectedBottom=5da12662 exactBottom=yes ...
+[NATIVESAVE] SAVE-CLOSE ... feedback="Game saved" ...
+[ACTIONFEEDBACK] PAINT kind=12 text="Game saved" ... durationMs=1200
+[RESIDENTGAMEPLAY] HUB-CLOSE ... worldRedraw=yes ...
+[ACTIONFEEDBACK] EXPIRE ... restored=topbar-only
+```
+
+The stale `GAMEPLAYHUD REPAINT angle=64` line is expected: it describes the
+base retained HUD repaint before the live compass rectangle is reapplied. The
+authoritative close witness is `exactBottom=yes`, followed by
+`SAVE-CLOSE`, the 1200 ms message, and the normal facing-label fallback.
+
+Build witness for the exact tested code:
+
+```text
+esp32-cyd CI #767 = SUCCESS
+static RAM = 45096 B
+flash = 782141 B
 ```
 
 ### Ordinary monster attack resolution — REAL-CYD PASS

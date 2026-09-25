@@ -16,11 +16,11 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 current main = b77513309a38a970a5d59195ce76424a3f44a7cb
 branch = agent/esp32-native-monster-turn-ordinary-completion
 rebased code boundary = e87097d7544ea63104049003c55e19a7158bfad3
-hardware-tested code boundary = aa32270adbb22de6666c3ad45c5d63c88fc34db4
-CI = esp32-cyd #757 SUCCESS
+hardware-tested code boundary = a5b30a12b4bb51cd4f016d53212b74e967c19d6d
+CI = esp32-cyd #767 SUCCESS
 static RAM = 45096 B
-flash = 782081 B
-hardware = Yellow Key mixed trap + continued movement + attack-after-animation REAL-CYD PASS
+flash = 782141 B
+hardware = Yellow Key mixed trap + attack-after-animation + rotated SYS SAVE return REAL-CYD PASS
 status = code locked at tested SHA; documentation-only tail
 ```
 
@@ -54,7 +54,7 @@ boot fix = compact feedback owner restores menu.bsp contiguous heap
 LOAD fix = session replacement bypasses ordinary HUB-close HUD exactness gate
 SAVE fix = successful confirmation closes HUB and queues 1200 ms Game saved
 SAVE fallback = permanent status, then current facing label, then empty
-HUB close integrity = bottom HUD exact; top bar recomposed by world redraw
+HUB close integrity = bottom HUD exact after live compass repaint; top bar recomposed by world redraw
 RNG fix = core creation seeds the inherited 128-byte Random_t table once
 ```
 
@@ -116,6 +116,14 @@ Previously merged relevant milestones remain:
 - [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
 - [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
 - [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
+
+The final SYS SAVE close regression is also hardware-closed at
+`a5b30a12b4bb51cd4f016d53212b74e967c19d6d`: when the player's live
+orientation differs from the retained base-HUD angle, HUB close repaints the
+base HUD and then reapplies only the bounded compass dirty rectangle from the
+settled `EspPlayerViewState`. The real CYD produced `exactBottom=yes`,
+`SAVE-CLOSE`, `Game saved` for 1200 ms and then the current `Door` facing
+label. CI #767 reports 45096 B static RAM and 782141 B flash.
 
 ### Next milestone
 

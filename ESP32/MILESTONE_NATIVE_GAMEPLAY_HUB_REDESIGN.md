@@ -254,3 +254,52 @@ facing label -> SAVE -> SAVE? -> gameplay -> Game saved
 Expiry is semantic, not snapshot-based. It restores an active permanent status
 message first, otherwise the freshly derived facing-entity label, otherwise an
 empty top bar. SAVE remains a no-turn action.
+
+
+## Rotated SAVE close / live compass regression — REAL-CYD PASS
+
+A later progression test found a narrower close-time regression after TURN had
+changed the live player direction. The full retained HUD model is intentionally
+a base model; the gameplay TURN path updates only the compass dirty rectangle.
+Therefore a HUB close that repainted the base HUD could temporarily restore an
+old compass angle and fail the protected lower-band fingerprint even though the
+checkpoint write itself was correct.
+
+The close helper now performs:
+
+```text
+base native HUD repaint
+ -> bounded live compass repaint from settled EspPlayerViewState
+ -> protected lower-HUD fingerprint check
+ -> HUB close
+ -> queue Game saved
+ -> world redraw
+```
+
+No persistent owner was added. The compass repaint reuses the existing
+`EspNativeGameplayHudDirection_render()` bounded path.
+
+Real-CYD proof on 2026-09-25 at
+`a5b30a12b4bb51cd4f016d53212b74e967c19d6d`:
+
+```text
+[NATIVESAVE] SAVE ... angle=128 ...
+[GAMEPLAYHUD] REPAINT ... angle=64 ...
+[HUB] CLOSE ... hudBottom=5da12662 expectedBottom=5da12662 exactBottom=yes ...
+[NATIVESAVE] SAVE-CLOSE ... feedback="Game saved" ...
+[ACTIONFEEDBACK] PAINT ... text="Game saved" ... durationMs=1200
+[RESIDENTGAMEPLAY] HUB-CLOSE ... worldRedraw=yes ...
+[FACINGLABEL] PAINT name="Door" ...
+[ACTIONFEEDBACK] EXPIRE ... restored=topbar-only
+```
+
+The differing base-repaint angle in the diagnostic is expected and is precisely
+why the live compass repaint exists. The lower HUD is exact at the transaction
+boundary, the save message is visible, expiry restores the current facing label,
+and SAVE remains a no-turn action.
+
+```text
+esp32-cyd CI #767 = SUCCESS
+static RAM = 45096 B
+flash = 782141 B
+```
