@@ -5,16 +5,14 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = b77513309a38a970a5d59195ce76424a3f44a7cb
-branch = agent/esp32-native-monster-turn-ordinary-completion
-rebased code boundary = e87097d7544ea63104049003c55e19a7158bfad3
-hardware-tested code boundary = a5b30a12b4bb51cd4f016d53212b74e967c19d6d
-hardware = Yellow Key trap + attack-after-animation + rotated SYS SAVE return REAL-CYD PASS
-CI = esp32-cyd #767 SUCCESS
-static RAM = 45096 B
-flash = 782505 B (post-review local build)
-post-review candidate = attack-arm retry + final-idle cadence
-status = TESTED SHA RETAINED; REVIEW FIXES BUILD-VALID / REAL-CYD RETEST PENDING
+current main = 8dd660ce1017540c364591cad54514c9c788acf5
+branch = agent/esp32-native-level-stats-loading
+hardware-tested code boundary = a81dd38a6875154b37b9006a145eef5d73e85a66
+hardware = native level stats + reusable fixed-background loading + checkpoint LOAD presentation REAL-CYD PASS
+CI = esp32-cyd #867 SUCCESS
+static RAM = 45224 B
+flash = 795461 B
+status = HARDWARE PASS; POST-TEST TAIL DOCS-ONLY
 ```
 
 ### Ordinary attack post-review corrections — build-valid candidate
@@ -1347,6 +1345,55 @@ CI for the validated code head retained the canonical static-RAM boundary:
 ```text
 RAM static = 44832 B
 ```
+
+## Native transition presentation — REAL-CYD PASS (2026-09-26)
+
+The reusable native transition presentation is hardware-validated at
+`a81dd38a6875154b37b9006a145eef5d73e85a66`.
+
+It is shared by both native CHANGEMAP and checkpoint LOAD. The public owner
+accepts target-map identity and progress/stage updates; the current visual skin
+remains internal and fixed (`c.bmp` first frame, mini-HUB font, compact
+amber/steel card and progress bar). This means later font/theme polish can be
+implemented as a bounded presentation/config change without altering either
+loading caller.
+
+The final checkpoint regression was an ownership bug: session/input reset
+requested a NULL touch callback, and the WAIT_STATS bridge reset the unrelated
+checkpoint loading owner. The corrected bridge preserves an already-active
+checkpoint loading presentation.
+
+The permanent `Esp32PlatformVideo_present` wrapper now blocks gameplay
+publication before Action/GIB/HIT decorators while loading owns the screen.
+TransitionPresentation itself uses the real present leaf for its own progress
+frames.
+
+The same hardware run exposed a second issue: a monster already dead in the V8
+checkpoint replayed its GIB effect on resume. Checkpoint resume now seeds the
+bounded GIB presentation owner from restored monster state before the first
+gameplay present. Dead restored monsters are historical; live monsters remain
+eligible for future genuine death bursts.
+
+Accepted visual result on the real CYD:
+
+```text
+loading remains full-screen through checkpoint/session priming
+top gameplay bar does not leak through
+bottom gameplay HUD does not leak through
+restored death GIB does not replay
+first visible gameplay frame appears only after loading release
+```
+
+Build witness:
+
+```text
+esp32-cyd CI #867 = SUCCESS
+RAM static = 45224 B
+Flash      = 795461 B
+```
+
+Detailed record:
+[MILESTONE_NATIVE_TRANSITION_PRESENTATION.md](MILESTONE_NATIVE_TRANSITION_PRESENTATION.md)
 
 ## Intentionally deferred / incomplete families
 

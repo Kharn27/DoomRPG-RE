@@ -14,11 +14,13 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_gib_fx.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_resident_gameplay.h"
+#include "esp_native_transition_presentation.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 
@@ -112,6 +114,11 @@ static void printRamBudgetSnapshot(const char* label,
 
 static void failSessionAt(uint8_t stage, const char* reason) {
     if (EspAssetPack_isOpen()) EspAssetPack_close();
+    if (sessionState.checkpointResume != 0U &&
+        EspNativeTransitionPresentation_isLoadingActive()) {
+        EspNativeTransitionPresentation_abortLoading(
+            reason != NULL ? reason : "checkpoint-session-failed");
+    }
     sessionState.failed = 1U;
     sessionState.stage = SESSION_STAGE_FAILED;
     printf("[ENGINESESSION] FAILED stage=%u reason=%s resident=%u large=%u packOpen=%u\n",
@@ -314,6 +321,10 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 if (monsters == NULL || monsters->records == NULL ||
                     monsters->count == 0U) {
                     failSession("checkpoint monster state view");
+                    return;
+                }
+                if (!EspNativeGameplayGibFx_adoptCheckpointState()) {
+                    failSession("checkpoint gib presentation adoption");
                     return;
                 }
                 printf("[ENGINESESSION] RESUME checkpoint=restored monsterState=%08x/%u preRender=yes freshFirstFrame=skipped dynamicLines=gameplay-wrapper\n",
@@ -594,6 +605,23 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                        reserveHealthy ? "HEADROOM_OK" : "REVIEW_HEADROOM");
 
                 sessionState.stage = SESSION_STAGE_ACTIVE;
+                if (sessionState.checkpointResume != 0U &&
+                    EspNativeTransitionPresentation_isLoadingActive()) {
+                    /* All priming frames were intentionally hidden behind the
+                     * fixed loading owner. LARGE-WARM left one complete
+                     * world+HUD frame in the logical framebuffer and
+                     * SESSION-ARM left the facing label dirty. Release only
+                     * now, then let the normal compositor publish that complete
+                     * frame atomically as the first visible resumed frame. */
+                    EspNativeTransitionPresentation_releaseLoading(
+                        "checkpoint-session-active");
+                    if (!Esp32PlatformVideo_present()) {
+                        failSession("checkpoint final world present");
+                        return;
+                    }
+                    printf("[ENGINESESSION] RESUME-VISIBLE map=%u loadingOwner=released finalWorldPresent=yes intermediatePresents=blocked\n",
+                           (unsigned int)view->targetMapId);
+                }
                 printf("[ENGINESESSION] READY map=%u angle=%u residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=%p mediaTexels=%p\n",
                        (unsigned int)view->targetMapId,
                        (unsigned int)view->viewAngle,

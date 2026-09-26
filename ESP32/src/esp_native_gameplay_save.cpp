@@ -29,6 +29,7 @@
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_save_ui.h"
+#include "esp_native_transition_presentation.h"
 #include "esp_player_facing_state.h"
 #include "esp_player_finish_rotation_tile.h"
 #include "esp_player_fresh_map_state.h"
@@ -1713,6 +1714,7 @@ bool loadNow(void) {
     EspNativeGameplaySessionConfig config;
     const EspMapRuntimeView* runtime;
     bool recoveredBackup = false;
+    bool loadingPresentation = false;
     const char* name;
     EspMapResidentLifecycleStatus residentStatus;
     uint32_t expectedScriptFNV = 0U;
@@ -1749,6 +1751,18 @@ bool loadNow(void) {
         return false;
     }
 
+    loadingPresentation =
+        EspNativeTransitionPresentation_beginLoading(record->targetMapId) != 0;
+    if (loadingPresentation) {
+        EspNativeTransitionPresentation_checkpointProgress(10U, "CHECKPOINT");
+        printf("[NATIVESAVE] LOAD-UI targetMap=%u presentation=active progress=10 source=checkpoint\n",
+               (unsigned int)record->targetMapId);
+    }
+    else {
+        printf("[NATIVESAVE] LOAD-UI targetMap=%u presentation=deferred gameplayLoad=continues\n",
+               (unsigned int)record->targetMapId);
+    }
+
     /* Rebuild immutable map/runtime first. V1 checkpoints stop at player+pose.
      * V2 adds the consumed player-resource overlay. V3 adds the compact native
      * script/event mutable owner. V4 adds the complete compact line family:
@@ -1764,12 +1778,18 @@ bool loadNow(void) {
     resetSpawnOwners();
 
     if (!inventoryForRecord(*record, &inventory)) {
+        if (loadingPresentation) {
+            EspNativeTransitionPresentation_abortLoading("BSP_ID");
+        }
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=BSP_ID map=%u sourceBytes=%lu sourceCrc=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)record->targetMapId,
                (unsigned long)record->sourceBytes,
                (unsigned long)record->sourceCrc32);
         return false;
+    }
+    if (loadingPresentation) {
+        EspNativeTransitionPresentation_checkpointProgress(30U, "BSP");
     }
 
     residentStatus = EspMapResidentLifecycle_loadFromEmpty(
@@ -1784,6 +1804,9 @@ bool loadNow(void) {
         const unsigned long actualRuntime =
             runtime != nullptr ? (unsigned long)runtime->arenaFNV1a : 0UL;
         resetFailedLoad();
+        if (loadingPresentation) {
+            EspNativeTransitionPresentation_abortLoading("RESIDENT");
+        }
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESIDENT status=%u map=%u expectedRuntime=%08lx actualRuntime=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)residentStatus,
@@ -1791,6 +1814,9 @@ bool loadNow(void) {
                (unsigned long)record->runtimeFNV1a,
                actualRuntime);
         return false;
+    }
+    if (loadingPresentation) {
+        EspNativeTransitionPresentation_checkpointProgress(65U, "RUNTIME");
     }
 
     if (loaded.hasScript == 1U) {
@@ -1845,6 +1871,9 @@ bool loadNow(void) {
         !sessionConfigForPlayer(record->player, &config) ||
         !EspNativeGameplaySession_configureResume(&config)) {
         resetFailedLoad();
+        if (loadingPresentation) {
+            EspNativeTransitionPresentation_abortLoading("RESTORE");
+        }
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s automap=%s monsters=%s playerFNV=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)record->targetMapId,
@@ -1865,6 +1894,10 @@ bool loadNow(void) {
                record->version == kVersionV8 ? "required" : "legacy-none",
                (unsigned long)record->playerFNV1a);
         return false;
+    }
+
+    if (loadingPresentation) {
+        EspNativeTransitionPresentation_checkpointProgress(90U, "STATE");
     }
 
     if (loaded.hasScript == 1U && loaded.hasLines == 0U) {
@@ -1959,6 +1992,11 @@ bool loadNow(void) {
            (unsigned int)monsterCount,
            (unsigned long)monsterFNV,
            worldSummary);
+    if (loadingPresentation) {
+        EspNativeTransitionPresentation_checkpointProgress(100U, "RESTORE");
+        printf("[NATIVESAVE] LOAD-UI targetMap=%u progress=100 owner=retained-until-session-active gameplayPresents=blocked\n",
+               (unsigned int)record->targetMapId);
+    }
     return true;
 }
 

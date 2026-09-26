@@ -45,6 +45,14 @@ typedef struct EspAssetPackResidentStats_s {
     uint8_t largeRangeEntries;
 } EspAssetPackResidentStats;
 
+#define ESP_ASSET_PACK_MAP_FLASH_PROGRESS_ERASE 1U
+#define ESP_ASSET_PACK_MAP_FLASH_PROGRESS_COPY 2U
+#define ESP_ASSET_PACK_MAP_FLASH_PROGRESS_VERIFY 3U
+
+typedef void (*EspAssetPackMapFlashProgressCallback)(uint8_t phase,
+                                                     uint32_t completed,
+                                                     uint32_t total);
+
 typedef struct EspAssetPackMapFlashStats_s {
     uint32_t partitionBytes;
     uint32_t sourcePackBytes;
@@ -105,6 +113,14 @@ int EspAssetPack_mapFlashPrepare(uint8_t targetMapId);
  * rewrites the raw slot and is therefore a map-loading operation only.
  */
 int EspAssetPack_mapFlashStage(uint8_t currentMapId);
+
+/* Optional synchronous presentation heartbeat for map-load operations. The
+ * callback must stay bounded and must not mutate map/gameplay ownership. It is
+ * invoked only between complete erase/copy/verify chunks, never while a flash
+ * primitive is in flight. NULL disables it. */
+void EspAssetPack_mapFlashSetProgressCallback(
+    EspAssetPackMapFlashProgressCallback callback);
+
 void EspAssetPack_mapFlashDeactivate(void);
 int EspAssetPack_isMapFlashActive(void);
 void EspAssetPack_mapFlashGetStats(EspAssetPackMapFlashStats* outStats);

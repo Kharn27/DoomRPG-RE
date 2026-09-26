@@ -27,6 +27,7 @@ constexpr uint32_t kMapFlashCommitted = 0xa55a3cc3U;
 constexpr uint32_t kMapFlashSectorBytes = 4096U;
 constexpr uint32_t kMapFlashIndexOffset = kMapFlashSectorBytes;
 constexpr uint32_t kMapFlashCopyBufferBytes = 4096U;
+constexpr uint32_t kMapFlashEraseChunkBytes = 64U * 1024U;
 constexpr uint32_t kMapFlashMaxExcludedMaps = ESP_MAP_CATALOG_COUNT - 1U;
 constexpr uint8_t kMapFlashMaxMissLogs = 8U;
 
@@ -132,6 +133,14 @@ bool residentLargeRangeEnabled = false;
 ResidentCache* residentCache = nullptr;
 EspAssetPackResidentStats residentStats = {};
 MapFlashState mapFlash = {};
+EspAssetPackMapFlashProgressCallback mapFlashProgressCallback = nullptr;
+
+void notifyMapFlashProgress(uint8_t phase, uint32_t completed, uint32_t total)
+{
+    if (mapFlashProgressCallback != nullptr) {
+        mapFlashProgressCallback(phase, completed, total);
+    }
+}
 
 uint32_t readLe32(const uint8_t* data)
 {
@@ -777,7 +786,9 @@ bool copySdRangeToFlash(uint32_t sourceOffset,
                         uint32_t length,
                         uint32_t flashOffset,
                         uint8_t* buffer,
-                        uint32_t* ioFNV)
+                        uint32_t* ioFNV,
+                        uint32_t* progressDone,
+                        uint32_t progressTotal)
 {
     if (!packFile || mapFlash.partition == nullptr || buffer == nullptr ||
         flashOffset > mapFlash.partition->size ||
@@ -806,6 +817,11 @@ bool copySdRangeToFlash(uint32_t sourceOffset,
         }
         destinationOffset += chunk;
         remaining -= chunk;
+        if (progressDone != nullptr) {
+            *progressDone += chunk;
+            notifyMapFlashProgress(ESP_ASSET_PACK_MAP_FLASH_PROGRESS_COPY,
+                                   *progressDone, progressTotal);
+        }
     }
     return true;
 }
@@ -835,6 +851,43 @@ bool fnvFlashRange(uint32_t flashOffset,
         hash = fnv1aUpdate(hash, buffer, chunk);
         offset += chunk;
         remaining -= chunk;
+    }
+    *outFNV = hash;
+    return true;
+}
+
+bool fnvFlashRangeProgress(uint32_t flashOffset,
+                           uint32_t length,
+                           uint8_t* buffer,
+                           uint32_t* outFNV,
+                           uint32_t* progressDone,
+                           uint32_t progressTotal)
+{
+    if (mapFlash.partition == nullptr || buffer == nullptr || outFNV == nullptr ||
+        flashOffset > mapFlash.partition->size ||
+        length > mapFlash.partition->size - flashOffset) {
+        return false;
+    }
+
+    uint32_t hash = 2166136261U;
+    uint32_t remaining = length;
+    uint32_t offset = flashOffset;
+    while (remaining > 0U) {
+        const uint32_t chunk =
+            remaining > kMapFlashCopyBufferBytes
+                ? kMapFlashCopyBufferBytes
+                : remaining;
+        if (esp_partition_read(mapFlash.partition, offset, buffer, chunk) != ESP_OK) {
+            return false;
+        }
+        hash = fnv1aUpdate(hash, buffer, chunk);
+        offset += chunk;
+        remaining -= chunk;
+        if (progressDone != nullptr) {
+            *progressDone += chunk;
+            notifyMapFlashProgress(ESP_ASSET_PACK_MAP_FLASH_PROGRESS_VERIFY,
+                                   *progressDone, progressTotal);
+        }
     }
     *outFNV = hash;
     return true;
@@ -1316,6 +1369,10 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
     uint32_t payloadFNV = 2166136261U;
     uint32_t verifyIndexFNV = 0U;
     uint32_t verifyPayloadFNV = 0U;
+    uint32_t copyProgress = 0U;
+    uint32_t copyProgressTotal = 0U;
+    uint32_t verifyProgress = 0U;
+    uint32_t verifyProgressTotal = 0U;
     const int64_t buildStart = esp_timer_get_time();
 
     if (openReady || residentEnabled || !EspMapCatalog_isValidId(currentMapId)) {
@@ -1460,18 +1517,46 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
         return failStage("copy-buffer-allocation");
     }
 
-    if (esp_partition_erase_range(partition, 0U, partition->size) != ESP_OK) {
-        return failStage("partition-erase");
+    if ((partition->size % kMapFlashSectorBytes) != 0U) {
+        return failStage("partition-erase-alignment");
     }
-    printf("[MAPFLASH] ERASE bytes=%u buffer=%u owner=transient\n",
-           (unsigned int)partition->size,
-           (unsigned int)kMapFlashCopyBufferBytes);
+    if (mapFlashProgressCallback == nullptr) {
+        /* Preserve the hardware-validated cold-load path byte-for-byte when no
+         * presentation heartbeat is requested (notably MENU_MAIN -> Load). */
+        if (esp_partition_erase_range(partition, 0U, partition->size) != ESP_OK) {
+            return failStage("partition-erase");
+        }
+        printf("[MAPFLASH] ERASE bytes=%u chunk=all buffer=%u owner=transient progress=off\n",
+               (unsigned int)partition->size,
+               (unsigned int)kMapFlashCopyBufferBytes);
+    }
+    else {
+        for (uint32_t eraseOffset = 0U; eraseOffset < partition->size;) {
+            uint32_t eraseBytes = partition->size - eraseOffset;
+            if (eraseBytes > kMapFlashEraseChunkBytes) {
+                eraseBytes = kMapFlashEraseChunkBytes;
+            }
+            if (esp_partition_erase_range(partition, eraseOffset, eraseBytes) != ESP_OK) {
+                return failStage("partition-erase");
+            }
+            eraseOffset += eraseBytes;
+            notifyMapFlashProgress(ESP_ASSET_PACK_MAP_FLASH_PROGRESS_ERASE,
+                                   eraseOffset, partition->size);
+        }
+        printf("[MAPFLASH] ERASE bytes=%u chunk=%u buffer=%u owner=transient progress=chunked\n",
+               (unsigned int)partition->size,
+               (unsigned int)kMapFlashEraseChunkBytes,
+               (unsigned int)kMapFlashCopyBufferBytes);
+    }
 
+    copyProgressTotal = indexBytes + stagedBytes;
     if (!copySdRangeToFlash(sourceIndexOffset,
                             indexBytes,
                             kMapFlashIndexOffset,
                             buffer,
-                            &indexFNV)) {
+                            &indexFNV,
+                            &copyProgress,
+                            copyProgressTotal)) {
         return failStage("index-copy");
     }
 
@@ -1485,7 +1570,9 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
                                     copyBytes,
                                     flashCursor,
                                     buffer,
-                                    &payloadFNV)) {
+                                    &payloadFNV,
+                                    &copyProgress,
+                                    copyProgressTotal)) {
                 return failStage("payload-copy-before-bsp");
             }
             flashCursor += copyBytes;
@@ -1498,7 +1585,9 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
                                 copyBytes,
                                 flashCursor,
                                 buffer,
-                                &payloadFNV)) {
+                                &payloadFNV,
+                                &copyProgress,
+                                copyProgressTotal)) {
             return failStage("payload-copy-tail");
         }
         flashCursor += copyBytes;
@@ -1507,14 +1596,19 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
         return failStage("payload-size-mismatch");
     }
 
-    if (!fnvFlashRange(kMapFlashIndexOffset,
-                       indexBytes,
-                       buffer,
-                       &verifyIndexFNV) ||
-        !fnvFlashRange(payloadFlashOffset,
-                       stagedBytes,
-                       buffer,
-                       &verifyPayloadFNV) ||
+    verifyProgressTotal = indexBytes + stagedBytes;
+    if (!fnvFlashRangeProgress(kMapFlashIndexOffset,
+                               indexBytes,
+                               buffer,
+                               &verifyIndexFNV,
+                               &verifyProgress,
+                               verifyProgressTotal) ||
+        !fnvFlashRangeProgress(payloadFlashOffset,
+                               stagedBytes,
+                               buffer,
+                               &verifyPayloadFNV,
+                               &verifyProgress,
+                               verifyProgressTotal) ||
         verifyIndexFNV != indexFNV || verifyPayloadFNV != payloadFNV) {
         return failStage("flash-readback-fnv");
     }
@@ -1587,6 +1681,12 @@ int EspAssetPack_mapFlashStage(uint8_t currentMapId)
            (unsigned int)excludedBytes,
            (unsigned int)mapFlash.stats.buildMicros);
     return 1;
+}
+
+void EspAssetPack_mapFlashSetProgressCallback(
+    EspAssetPackMapFlashProgressCallback callback)
+{
+    mapFlashProgressCallback = callback;
 }
 
 void EspAssetPack_mapFlashDeactivate(void)

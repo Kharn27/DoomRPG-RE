@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #include "esp_native_gameplay_present_gate.h"
+#include "esp_native_transition_presentation.h"
 
 static uint8_t gateArmed;
 static unsigned int suppressedCount;
@@ -35,5 +36,17 @@ int __wrap_Esp32PlatformVideo_present(void) {
         ++suppressedCount;
         return 1;
     }
+
+    /*
+     * Full-screen transition loading is a stronger presentation owner than
+     * every gameplay compositor. Stop here, before Action/GIB/HIT decorators
+     * can touch the logical framebuffer and before the physical present.
+     * TransitionPresentation itself uses __real_Esp32PlatformVideo_present()
+     * for its own progress frames, so the loading UI remains publishable.
+     */
+    if (EspNativeTransitionPresentation_isLoadingActive()) {
+        return 1;
+    }
+
     return EspNativeGameplayActionEngine_present();
 }

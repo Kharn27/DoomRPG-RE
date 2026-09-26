@@ -8,7 +8,9 @@
 #include "MenuSystem.h"
 #include "Render.h"
 
+#include "esp_asset_pack.h"
 #include "esp_native_gameplay_save_ui.h"
+#include "esp_native_transition_presentation.h"
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_load_action.h"
 #include "native_main_menu_start_action.h"
@@ -109,6 +111,12 @@ int DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
     uint32_t expectedHash;
 
     printf("\n=== Doom RPG ESP32 MENU_MAIN -> Load Game ===\n");
+
+    /* MENU_MAIN load must never inherit an in-level presentation heartbeat.
+     * Keep its hardware-validated map-flash path synchronous/sequence-only. */
+    EspAssetPack_mapFlashSetProgressCallback(NULL);
+    EspNativeTransitionPresentation_reset();
+    printf("[MAINLOAD] TRANSITION-UI reset=yes mapFlashProgress=off\n");
 
     if (!menuBoundaryIsSafe(doomRpg)) {
         printf("[MAINLOAD] FAILED core/graphics boundary unavailable\n");
