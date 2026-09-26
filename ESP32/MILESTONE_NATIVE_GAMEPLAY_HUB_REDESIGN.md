@@ -19,6 +19,12 @@ hardware status = focused real-CYD smoke pass
 broader gameplay progression = not yet exercised
 ```
 
+> Current-tree addendum (2026-09-25): the layout recorded below is the
+> hardware-proven historical boundary. The later full-height candidate lets the
+> active HUB own `y=20..119`, hiding the lower gameplay HUD and rebuilding it on
+> close behind the same exact lower-band fingerprint gate. See
+> `PORTING_STATUS.md` for its build-valid / real-CYD-pending boundary.
+
 The user confirmed that the final firmware appears to work through the first
 door after reproducing both failures below. This is deliberately recorded as a
 focused smoke pass, not as an exhaustive gameplay or checkpoint regression
