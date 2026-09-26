@@ -13,16 +13,14 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = b77513309a38a970a5d59195ce76424a3f44a7cb
-branch = agent/esp32-native-monster-turn-ordinary-completion
-rebased code boundary = e87097d7544ea63104049003c55e19a7158bfad3
-hardware-tested code boundary = a5b30a12b4bb51cd4f016d53212b74e967c19d6d
-CI = esp32-cyd #767 SUCCESS
-static RAM = 45096 B
-flash = 782505 B (post-review local build)
-hardware = Yellow Key mixed trap + attack-after-animation + rotated SYS SAVE return REAL-CYD PASS
-post-review candidate = attack-arm retry + final-idle cadence
-status = tested SHA retained; review fixes build-valid, real-CYD retest pending
+current main = 8dd660ce1017540c364591cad54514c9c788acf5
+branch = agent/esp32-native-level-stats-loading
+hardware-tested code boundary = a81dd38a6875154b37b9006a145eef5d73e85a66
+CI = esp32-cyd #867 SUCCESS
+static RAM = 45224 B
+flash = 795461 B
+hardware = native transition presentation + checkpoint LOAD ownership REAL-CYD PASS
+status = hardware validated; post-test tail docs-only
 ```
 
 The merged barrel milestone remains hardware-valid on the real CYD. A distant shot
@@ -829,8 +827,28 @@ This keeps the animation visually full on the 4:3 CYD while avoiding the slightl
 
 See `MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md` for the exact geometry and hardware boundary.
 
+## Native transition presentation component
+
+`EspNativeTransitionPresentation` is now the shared full-screen owner for
+native level-change loading and checkpoint LOAD. Its caller-facing API carries
+target map and progress/stage semantics while the current visual skin remains
+encapsulated inside the component. The fixed `c.bmp` background is intentionally
+rendered once; only the bounded progress UI changes afterwards.
+
+Checkpoint resume keeps this owner active through runtime/cache/session priming,
+and the permanent physical-present wrapper suppresses all gameplay compositors
+until explicit release. Restored V8 dead monsters are adopted by the bounded
+GIB presentation owner so their historical death effects are not replayed.
+
+The final real-CYD visual result was explicitly accepted. Font/theme tuning is
+presentation polish and can be done later without changing loading ownership or
+callers.
+
+See [MILESTONE_NATIVE_TRANSITION_PRESENTATION.md](MILESTONE_NATIVE_TRANSITION_PRESENTATION.md).
+
 ## Recent milestone index
 
+- [`MILESTONE_NATIVE_TRANSITION_PRESENTATION.md`](MILESTONE_NATIVE_TRANSITION_PRESENTATION.md)
 - [`MILESTONE_NATIVE_BARREL_SUBTYPE1.md`](MILESTONE_NATIVE_BARREL_SUBTYPE1.md)
 - [`MILESTONE_NATIVE_AUTOMAP.md`](MILESTONE_NATIVE_AUTOMAP.md)
 - [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
