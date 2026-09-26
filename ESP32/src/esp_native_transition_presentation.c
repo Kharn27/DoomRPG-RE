@@ -405,7 +405,7 @@ static void presentOverall(uint8_t percent,
     if (percent < presentation.lastPercent) percent = presentation.lastPercent;
 
     paintProgressBar(percent);
-    if (!__real___real_Esp32PlatformVideo_present()) {
+    if (!__real_Esp32PlatformVideo_present()) {
         printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=present-failed\n",
                stage != NULL ? stage : "LOAD",
                (unsigned int)percent);
