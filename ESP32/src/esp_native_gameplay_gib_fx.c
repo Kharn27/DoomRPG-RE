@@ -14,6 +14,7 @@
 #include "esp_native_gameplay_hit_feedback.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_gib_fx.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_retaliation.h"
@@ -587,6 +588,51 @@ static void decorateNewGibs(void) {
         setSeen(monster->spriteIndex, 1);
         drawBurst(framebuffer, monster, view);
     }
+}
+
+int EspNativeGameplayGibFx_adoptCheckpointState(void) {
+    const EspNativeGameplayMonsterView* view = syncOwner();
+    uint32_t deadSeen = 0U;
+    uint32_t aliveEligible = 0U;
+    uint32_t i;
+
+    if (view == NULL) return 0;
+
+    /*
+     * A restored dead monster is historical world state, not a new death
+     * transition. Prime the present-only seen mask before the first checkpoint
+     * resume present so decorateNewGibs() cannot replay blood for it.
+     *
+     * Alive monsters are explicitly left eligible: normal presentation keeps
+     * clearing their seen bit, so a future live->dead transition still produces
+     * the proven bounded burst.
+     */
+    gibFxOwner.active = 0U;
+    gibFxOwner.activeSpriteIndex = GIBFX_NO_SPRITE;
+    gibFxOwner.activeParticles = 0U;
+    gibFxOwner.activeSeed = 0U;
+    gibFxOwner.activeRepaints = 0U;
+    gibFxOwner.clearAtMs = 0U;
+
+    for (i = 0U; i < view->count; ++i) {
+        const EspNativeGameplayMonsterRecord* monster = &view->records[i];
+        if (monster->spriteIndex >= GIBFX_MAX_SPRITES) return 0;
+        if (monster->alive == 0U) {
+            setSeen(monster->spriteIndex, 1);
+            ++deadSeen;
+        }
+        else {
+            setSeen(monster->spriteIndex, 0);
+            ++aliveEligible;
+        }
+    }
+
+    printf("[GIBFX] CHECKPOINT-ADOPT arena=%08x monsters=%u deadSeen=%u aliveEligible=%u replay=no mutation=presentation-owner-only rng=untouched\n",
+           (unsigned int)view->sourceArenaFNV1a,
+           (unsigned int)view->count,
+           (unsigned int)deadSeen,
+           (unsigned int)aliveEligible);
+    return 1;
 }
 
 static void resetFx(void) {
