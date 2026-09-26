@@ -1993,8 +1993,9 @@ bool loadNow(void) {
            (unsigned long)monsterFNV,
            worldSummary);
     if (loadingPresentation) {
-        EspNativeTransitionPresentation_checkpointProgress(100U, "SESSION");
-        EspNativeTransitionPresentation_endLoading();
+        EspNativeTransitionPresentation_checkpointProgress(100U, "RESTORE");
+        printf("[NATIVESAVE] LOAD-UI targetMap=%u progress=100 owner=retained-until-session-active gameplayPresents=blocked\n",
+               (unsigned int)record->targetMapId);
     }
     return true;
 }
