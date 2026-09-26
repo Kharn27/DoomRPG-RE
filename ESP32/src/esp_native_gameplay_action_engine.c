@@ -29,6 +29,7 @@
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_indexed_bmp.h"
+#include "esp_native_transition_presentation.h"
 #include "esp_native_sprite_renderer.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
@@ -1497,6 +1498,15 @@ int __wrap_Esp32PlatformVideo_present(void) {
     int hadFeedback = 0;
     int flashPainted = 0;
     int ok;
+
+    /* A full-screen loading owner is physically visible while checkpoint
+     * resume/cache priming is allowed to mutate the logical framebuffer behind
+     * it. Treat every gameplay present as acknowledged-but-suppressed until the
+     * session explicitly releases that owner. This also prevents stale
+     * feedback/viewport-flash compositors from painting onto the loading card. */
+    if (EspNativeTransitionPresentation_isLoadingActive()) {
+        return 1;
+    }
 
     /*
      * Touch feedback owns an exact whole-frame baseline from begin() until
