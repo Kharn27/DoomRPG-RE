@@ -33,8 +33,6 @@
 #define TRANSITION_PROGRESS_WIDTH 122
 #define TRANSITION_PROGRESS_HEIGHT 8
 #define TRANSITION_PROGRESS_STEP 5U
-#define TRANSITION_STAR_SCROLL_MS 157U
-#define TRANSITION_STAR_SCROLL_MAX_STEP 8U
 
 #define COLOR_BLACK      ESP_HUB_COLOR_BLACK
 #define COLOR_BG         ESP_HUB_COLOR_BG
@@ -49,9 +47,7 @@
 
 typedef struct EspNativeTransitionPresentationState_s {
     uint32_t loadingStartMs;
-    uint32_t lastScrollMs;
     uint32_t frames;
-    uint32_t scrollPixels;
     uint8_t targetMapId;
     uint8_t lastPercent;
     uint8_t lastPhase;
@@ -65,6 +61,11 @@ typedef struct EspNativeTransitionPaintScratch_s {
 } EspNativeTransitionPaintScratch;
 
 static EspNativeTransitionPresentationState presentation;
+
+/* This module is itself the full-frame presentation owner. Bypass the global
+ * gameplay compositor wrapper so loading/stats frames cannot acquire a stale
+ * top-bar feedback or viewport flash while they are on screen. */
+int __real_Esp32PlatformVideo_present(void);
 
 static uint32_t nowMs(void) {
     return (uint32_t)(esp_timer_get_time() / 1000LL);
@@ -344,51 +345,6 @@ static int drawFixedStarfield(EspNativeIndexedBmp* star,
                0, 0, 0U, stats) == ESP_NATIVE_INDEXED_BMP_OK;
 }
 
-static void scrollRowRight(uint16_t* row, uint8_t pixels) {
-    uint8_t step;
-    if (row == NULL || pixels == 0U) return;
-    for (step = 0U; step < pixels; ++step) {
-        const uint16_t last = row[DOOMRPG_LOGICAL_WIDTH - 1];
-        memmove(row + 1, row,
-                (DOOMRPG_LOGICAL_WIDTH - 1U) * sizeof(uint16_t));
-        row[0] = last;
-    }
-}
-
-static uint8_t scrollVisibleStarfield(void) {
-    uint16_t* fb;
-    uint32_t now;
-    uint32_t elapsed;
-    uint32_t steps;
-    int y;
-
-    if (!presentation.loadingActive || !framebufferReady()) return 0U;
-    now = nowMs();
-    elapsed = now - presentation.lastScrollMs;
-    steps = elapsed / TRANSITION_STAR_SCROLL_MS;
-    if (steps == 0U) return 0U;
-    if (steps > TRANSITION_STAR_SCROLL_MAX_STEP) {
-        steps = TRANSITION_STAR_SCROLL_MAX_STEP;
-    }
-    presentation.lastScrollMs += steps * TRANSITION_STAR_SCROLL_MS;
-    presentation.scrollPixels += steps;
-
-    fb = framebuffer();
-    for (y = 0; y <= 30; ++y) {
-        scrollRowRight(fb + (uint32_t)y * DOOMRPG_LOGICAL_WIDTH,
-                       (uint8_t)steps);
-    }
-    for (y = 77; y <= 85; ++y) {
-        scrollRowRight(fb + (uint32_t)y * DOOMRPG_LOGICAL_WIDTH,
-                       (uint8_t)steps);
-    }
-    for (y = 95; y < DOOMRPG_LOGICAL_HEIGHT; ++y) {
-        scrollRowRight(fb + (uint32_t)y * DOOMRPG_LOGICAL_WIDTH,
-                       (uint8_t)steps);
-    }
-    return (uint8_t)steps;
-}
-
 static const char* phaseName(uint8_t phase) {
     switch (phase) {
     case ESP_ASSET_PACK_MAP_FLASH_PROGRESS_ERASE: return "ERASE";
@@ -442,16 +398,14 @@ static void paintProgressBar(uint8_t percent) {
 static void presentOverall(uint8_t percent,
                            const char* stage,
                            const char* source) {
-    uint8_t scrollStep;
     uint32_t fnv;
 
     if (!presentation.loadingActive) return;
     if (percent > 100U) percent = 100U;
     if (percent < presentation.lastPercent) percent = presentation.lastPercent;
 
-    scrollStep = scrollVisibleStarfield();
     paintProgressBar(percent);
-    if (!Esp32PlatformVideo_present()) {
+    if (!__real___real_Esp32PlatformVideo_present()) {
         printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=present-failed\n",
                stage != NULL ? stage : "LOAD",
                (unsigned int)percent);
@@ -462,12 +416,10 @@ static void presentOverall(uint8_t percent,
     ++presentation.frames;
     fnv = frameFNV();
 
-    printf("[TRANSITIONLOAD] FRAME n=%u stage=%s overall=%u background=scroll-ram starStep=%u starTotal=%u assetReads=0 source=%s frame=%08x\n",
+    printf("[TRANSITIONLOAD] FRAME n=%u stage=%s overall=%u background=fixed assetReads=0 source=%s frame=%08x\n",
            (unsigned int)presentation.frames,
            stage != NULL ? stage : "LOAD",
            (unsigned int)percent,
-           (unsigned int)scrollStep,
-           (unsigned int)presentation.scrollPixels,
            source != NULL ? source : "generic",
            (unsigned int)fnv);
 }
@@ -537,7 +489,7 @@ int EspNativeTransitionPresentation_showStats(
         goto done;
     }
 
-    if (!Esp32PlatformVideo_present()) goto done;
+    if (!__real_Esp32PlatformVideo_present()) goto done;
     fnv = frameFNV();
     printf("[LEVELSTATS] PRESENT sourceMap=%u targetMap=%u source=%s secrets=%u/%u monsters=%u/%u extended=time+moves+xp-deferred style=hub-stat-cards font=game-title+mini-metrics reads=%u bytes=%u fullScreen=yes frame=%08x input=one-tap\n",
            (unsigned int)transition->committed.sourceMapId,
@@ -560,7 +512,6 @@ done:
 int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
     EspNativeTransitionPaintScratch scratch;
     char target[24];
-    char entering[48];
     int openedHere = 0;
     int ok = 0;
 
@@ -577,26 +528,21 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
         openedHere = 1;
     }
 
-    if (!drawFixedStarfield(&scratch.star, &scratch.stats) ||
-        !openFont(&scratch.font, &scratch.stats)) {
-        goto done;
-    }
+    if (!drawFixedStarfield(&scratch.star, &scratch.stats)) goto done;
 
     formatMapLabel(targetMapId, target, sizeof(target));
-    snprintf(entering, sizeof(entering), "ENTERING %s", target);
 
-    fillRect(13, 31, 146, 76, COLOR_PANEL);
-    rect(13, 31, 146, 76, COLOR_STEEL);
-    fillRect(17, 35, 20, 72, COLOR_AMBER);
-    fillRect(24, 35, 135, 36, COLOR_AMBER_DIM);
-    fillRect(24, 70, 135, 71, COLOR_AMBER_DIM);
-
-    if (!drawGameTextCentered(&scratch.font, "LOADING...", 39,
-                              &scratch.stats) ||
-        !drawGameTextCentered(&scratch.font, entering, 56,
-                              &scratch.stats)) {
-        goto done;
-    }
+    /* The loading card deliberately uses the compact HUB mini-font. The game
+     * 9x12 face looked oversized at 160x120 and made this small information
+     * panel feel cramped. Keep the starfield as a single fixed first frame. */
+    fillRect(16, 32, 143, 75, COLOR_PANEL);
+    rect(16, 32, 143, 75, COLOR_STEEL);
+    fillRect(19, 35, 21, 72, COLOR_AMBER);
+    fillRect(25, 35, 135, 36, COLOR_AMBER_DIM);
+    fillRect(25, 71, 135, 72, COLOR_AMBER_DIM);
+    drawMiniTextCentered("LOADING", 80, 40, 2, COLOR_AMBER);
+    drawMiniTextCentered("ENTERING", 80, 55, 1, COLOR_STEEL);
+    drawMiniTextCentered(target, 80, 63, 1, COLOR_IVORY);
 
     rect(TRANSITION_PROGRESS_LEFT, TRANSITION_PROGRESS_TOP,
          TRANSITION_PROGRESS_LEFT + TRANSITION_PROGRESS_WIDTH - 1,
@@ -604,22 +550,19 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
          COLOR_STEEL);
     paintProgressBar(0U);
 
-    if (!Esp32PlatformVideo_present()) goto done;
-
     presentation.targetMapId = targetMapId;
     presentation.lastPercent = 0U;
     presentation.lastPhase = 0U;
     presentation.loadingActive = 1U;
     presentation.loadingStartMs = nowMs();
-    presentation.lastScrollMs = presentation.loadingStartMs;
     presentation.frames = 1U;
 
-    printf("[TRANSITIONLOAD] BEGIN targetMap=%u background=%s mode=scroll-ram cadence=%ums font=%s entering=\"%s\" progress=0%% reads=%u bytes=%u frame=%08x\n",
+    if (!__real_Esp32PlatformVideo_present()) goto done;
+
+    printf("[TRANSITIONLOAD] BEGIN targetMap=%u background=%s mode=fixed font=mini-hub entering=\"ENTERING %s\" progress=0%% reads=%u bytes=%u frame=%08x\n",
            (unsigned int)targetMapId,
            TRANSITION_STAR_NAME,
-           (unsigned int)TRANSITION_STAR_SCROLL_MS,
-           TRANSITION_FONT_NAME,
-           entering,
+           target,
            (unsigned int)scratch.stats.packReads,
            (unsigned int)scratch.stats.bytesRead,
            (unsigned int)frameFNV());
@@ -661,6 +604,10 @@ void EspNativeTransitionPresentation_checkpointProgress(uint8_t percent,
     presentOverall(percent, stage != NULL ? stage : "CHECKPOINT", "checkpoint");
 }
 
+int EspNativeTransitionPresentation_isLoadingActive(void) {
+    return presentation.loadingActive != 0U ? 1 : 0;
+}
+
 void EspNativeTransitionPresentation_abortLoading(const char* reason) {
     if (presentation.loadingActive) {
         printf("[TRANSITIONLOAD] ABORT targetMap=%u frames=%u progress=%u reason=%s framebuffer=caller-owned\n",
@@ -669,6 +616,19 @@ void EspNativeTransitionPresentation_abortLoading(const char* reason) {
                (unsigned int)presentation.lastPercent,
                reason != NULL ? reason : "load-failed");
     }
+    memset(&presentation, 0, sizeof(presentation));
+}
+
+void EspNativeTransitionPresentation_releaseLoading(const char* reason) {
+    uint32_t elapsed;
+    if (!presentation.loadingActive) return;
+    elapsed = (uint32_t)(nowMs() - presentation.loadingStartMs);
+    printf("[TRANSITIONLOAD] RELEASE targetMap=%u frames=%u elapsedMs=%u progress=%u background=fixed owner=gameplay-next-present reason=%s\n",
+           (unsigned int)presentation.targetMapId,
+           (unsigned int)presentation.frames,
+           (unsigned int)elapsed,
+           (unsigned int)presentation.lastPercent,
+           reason != NULL ? reason : "session-ready");
     memset(&presentation, 0, sizeof(presentation));
 }
 
@@ -682,12 +642,11 @@ void EspNativeTransitionPresentation_endLoading(void) {
         presentOverall(100U, "READY", "completion");
     }
     elapsed = (uint32_t)(nowMs() - presentation.loadingStartMs);
-    printf("[TRANSITIONLOAD] END targetMap=%u frames=%u elapsedMs=%u progress=%u background=scroll-ram starTotal=%u assetReadsDuringProgress=0 framebuffer=retained-until-target-frame\n",
+    printf("[TRANSITIONLOAD] END targetMap=%u frames=%u elapsedMs=%u progress=%u background=fixed assetReadsDuringProgress=0 framebuffer=retained-until-target-frame\n",
            (unsigned int)presentation.targetMapId,
            (unsigned int)presentation.frames,
            (unsigned int)elapsed,
-           (unsigned int)presentation.lastPercent,
-           (unsigned int)presentation.scrollPixels);
+           (unsigned int)presentation.lastPercent);
     memset(&presentation, 0, sizeof(presentation));
 }
 
