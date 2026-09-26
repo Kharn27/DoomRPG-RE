@@ -416,7 +416,23 @@ int EspNativeGameplayTransitionHandoff_tryArmNullCallback(void) {
         handoff.armed = 0U;
         handoff.failed = 0U;
         EspAssetPack_mapFlashSetProgressCallback(NULL);
-        EspNativeTransitionPresentation_reset();
+        /*
+         * A MENU_MAIN checkpoint restore legitimately resets the resident
+         * gameplay/input session after beginLoading(). That reset requests a
+         * NULL tap callback too, but it is not a WAIT_STATS ownership change.
+         * Preserve an already-active checkpoint loading frame; otherwise this
+         * generic no-transition cleanup silently drops its presentation owner
+         * before cache/session priming begins.
+         *
+         * Stats presentation never sets loadingActive, so the historical
+         * stale-WAIT_STATS cleanup still resets that path exactly as before.
+         */
+        if (EspNativeTransitionPresentation_isLoadingActive()) {
+            printf("[NATIVECHANGEMAP] NULL-CALLBACK no-wait-stats checkpointLoading=preserved\n");
+        }
+        else {
+            EspNativeTransitionPresentation_reset();
+        }
         return 0;
     }
 
