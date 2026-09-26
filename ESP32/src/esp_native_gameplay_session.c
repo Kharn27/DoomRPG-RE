@@ -14,6 +14,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_gib_fx.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_status_message.h"
@@ -320,6 +321,10 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 if (monsters == NULL || monsters->records == NULL ||
                     monsters->count == 0U) {
                     failSession("checkpoint monster state view");
+                    return;
+                }
+                if (!EspNativeGameplayGibFx_adoptCheckpointState()) {
+                    failSession("checkpoint gib presentation adoption");
                     return;
                 }
                 printf("[ENGINESESSION] RESUME checkpoint=restored monsterState=%08x/%u preRender=yes freshFirstFrame=skipped dynamicLines=gameplay-wrapper\n",
