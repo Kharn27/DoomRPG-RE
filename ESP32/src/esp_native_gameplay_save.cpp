@@ -1562,7 +1562,6 @@ void resetSpawnOwners(void) {
 }
 
 void resetFailedLoad(void) {
-    EspNativeGameplaySession_reset();
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
 }
@@ -1750,6 +1749,14 @@ bool loadNow(void) {
                kLogPath, (unsigned int)record->targetMapId);
         return false;
     }
+
+    /*
+     * The checkpoint restore is one pipeline for MENU_MAIN and in-game HUB.
+     * Tear down any current gameplay/HUB owners before transition presentation
+     * takes the shared framebuffer. No old-session cleanup may run after the
+     * loading owner has begun.
+     */
+    EspNativeGameplaySession_reset();
 
     loadingPresentation =
         EspNativeTransitionPresentation_beginLoading(record->targetMapId) != 0;
