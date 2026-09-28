@@ -436,6 +436,169 @@ const EspMapSpriteTopologyView* EspMapSpriteTopology_view(void) {
     return EspMapSpriteTopology_isReady() ? &topologyView : NULL;
 }
 
+int EspMapSpriteTopology_snapshotShapeValid(
+    const EspMapSpriteTopologySnapshot* snapshot,
+    uint32_t expectedArenaFNV1a) {
+    const uint8_t* linkStates;
+    const uint8_t* linkOrders;
+    uint32_t expectedBytes;
+    uint32_t i;
+
+    if (snapshot == NULL || expectedArenaFNV1a == 0U ||
+        snapshot->sourceArenaFNV1a != expectedArenaFNV1a ||
+        snapshot->stateFNV1a == 0U || snapshot->reserved0 != 0U ||
+        snapshot->spriteCount == 0U ||
+        snapshot->spriteCount >
+            ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_SPRITES) {
+        return 0;
+    }
+
+    expectedBytes =
+        (uint32_t)snapshot->spriteCount *
+        ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_BYTES_PER_SPRITE;
+    if (snapshot->mutableBytes != expectedBytes ||
+        expectedBytes > ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_BYTES) {
+        return 0;
+    }
+
+    linkStates = snapshot->mutableStorage + snapshot->spriteCount;
+    linkOrders = linkStates + ((uint32_t)snapshot->spriteCount * 2U);
+    for (i = 0U; i < snapshot->spriteCount; ++i) {
+        const uint16_t state = readLe16(linkStates + (i * 2U));
+        const uint16_t order = readLe16(linkOrders + (i * 2U));
+        const uint16_t allowed =
+            ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK |
+            ESP_MAP_SPRITE_TOPOLOGY_LINKED |
+            ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT |
+            ESP_MAP_SPRITE_TOPOLOGY_ALIVE |
+            ESP_MAP_SPRITE_TOPOLOGY_EXISTS;
+
+        if ((state & (uint16_t)~allowed) != 0U) return 0;
+        if ((state & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
+            if ((state & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U ||
+                order == 0U || order > snapshot->nextLinkOrder) {
+                return 0;
+            }
+        }
+        else if (order != 0U) {
+            return 0;
+        }
+        if ((state & ESP_MAP_SPRITE_TOPOLOGY_ALIVE) != 0U &&
+            (state & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U) {
+            return 0;
+        }
+        if ((state & ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT) != 0U &&
+            (state & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U) {
+            return 0;
+        }
+    }
+
+    for (i = expectedBytes;
+         i < ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_BYTES; ++i) {
+        if (snapshot->mutableStorage[i] != 0U) return 0;
+    }
+    return 1;
+}
+
+int EspMapSpriteTopology_snapshot(EspMapSpriteTopologySnapshot* outSnapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t mutableBytes;
+
+    if (outSnapshot == NULL || runtime == NULL ||
+        !EspMapSpriteTopology_isReady() ||
+        topologyView.spriteCount == 0U ||
+        topologyView.spriteCount >
+            ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_SPRITES ||
+        topologyView.spriteCount > UINT16_MAX ||
+        topologyView.stateFNV1a == 0U) {
+        return 0;
+    }
+
+    mutableBytes =
+        topologyView.spriteCount *
+        ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_BYTES_PER_SPRITE;
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    outSnapshot->sourceArenaFNV1a = runtime->arenaFNV1a;
+    outSnapshot->stateFNV1a = topologyView.stateFNV1a;
+    outSnapshot->spriteCount = (uint16_t)topologyView.spriteCount;
+    outSnapshot->mutableBytes = (uint16_t)mutableBytes;
+    outSnapshot->nextLinkOrder = topologyView.nextLinkOrder;
+
+    /*
+     * visualStates, linkStatesLE and linkOrdersLE are deliberately contiguous
+     * inside the compact topology owner: 1 + 2 + 2 bytes per map sprite.
+     */
+    memcpy(outSnapshot->mutableStorage, visualStates, mutableBytes);
+    return EspMapSpriteTopology_snapshotShapeValid(
+        outSnapshot, runtime->arenaFNV1a);
+}
+
+int EspMapSpriteTopology_restoreSnapshot(
+    const EspMapSpriteTopologySnapshot* snapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const uint8_t* snapshotLinkStates;
+    uint32_t hash = 2166136261U;
+    uint32_t i;
+
+    if (runtime == NULL || !EspMapSpriteTopology_isReady() ||
+        snapshot == NULL ||
+        !EspMapSpriteTopology_snapshotShapeValid(
+            snapshot, runtime->arenaFNV1a) ||
+        snapshot->spriteCount != topologyView.spriteCount) {
+        return 0;
+    }
+
+    snapshotLinkStates =
+        snapshot->mutableStorage + snapshot->spriteCount;
+
+    /*
+     * EXISTS/HAS_SPRITE_ENT are immutable-derived identity bits. Reject a
+     * checkpoint whose mutable link image disagrees with the topology freshly
+     * rebuilt from the same BSP + entities.db before touching live state.
+     */
+    for (i = 0U; i < topologyView.spriteCount; ++i) {
+        const uint16_t live = linkStateAt(i);
+        const uint16_t saved =
+            readLe16(snapshotLinkStates + (i * 2U));
+        const uint16_t identityMask =
+            ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
+            ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT;
+        if ((live & identityMask) != (saved & identityMask)) return 0;
+    }
+
+    /*
+     * Prove the final full-owner fingerprint before mutation. The saved
+     * mutable bytes are combined with the freshly-derived immutable type /
+     * subtype tables in exactly stateHash() order.
+     */
+    for (i = 0U; i < topologyView.spriteCount; ++i) {
+        hash = hashByte(hash, entityTypes[i]);
+    }
+    for (i = 0U; i < topologyView.spriteCount; ++i) {
+        hash = hashByte(hash, entitySubTypes[i]);
+    }
+    for (i = 0U; i < snapshot->mutableBytes; ++i) {
+        hash = hashByte(hash, snapshot->mutableStorage[i]);
+    }
+    hash = hashByte(hash, (uint8_t)(snapshot->nextLinkOrder & 0xffU));
+    hash = hashByte(
+        hash, (uint8_t)((snapshot->nextLinkOrder >> 8) & 0xffU));
+    if (hash != snapshot->stateFNV1a) return 0;
+
+    memcpy(visualStates, snapshot->mutableStorage, snapshot->mutableBytes);
+    topologyView.nextLinkOrder = snapshot->nextLinkOrder;
+    refreshView();
+    if (topologyView.stateFNV1a != snapshot->stateFNV1a) return 0;
+
+    printf("[MAPSPRITETOPOCHECKPOINT] RESTORE arena=%08x sprites=%u bytes=%u nextOrder=%u stateFNV=%08x mutation=topology-mutable-owner-only allocation=no\n",
+           (unsigned int)snapshot->sourceArenaFNV1a,
+           (unsigned int)snapshot->spriteCount,
+           (unsigned int)snapshot->mutableBytes,
+           (unsigned int)snapshot->nextLinkOrder,
+           (unsigned int)snapshot->stateFNV1a);
+    return 1;
+}
+
 int EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                         uint8_t* outVisualState) {
     if (!EspMapSpriteTopology_isReady() || outVisualState == NULL ||
