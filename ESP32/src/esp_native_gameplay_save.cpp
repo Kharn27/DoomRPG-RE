@@ -1874,16 +1874,6 @@ bool captureRecord(
         return false;
     }
 
-    if (view->active != 1U || view->targetMapId == 0U ||
-        runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
-        runtime->arenaFNV1a == 0U ||
-        !monsterSpatialShapeValid(*outTail, record.core)) {
-        /*
-         * record.core.runtimeFNV1a is filled immediately below; defer the
-         * cross-section arena check until the immutable identity is copied.
-         */
-    }
-
     memcpy(record.core.magic, kMagicV9, sizeof(kMagicV9));
     record.core.version = kVersionV9;
     record.core.recordBytes = (uint16_t)kRecordBytesV9;
