@@ -33,6 +33,12 @@ extern "C" {
 #define ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE 12U
 #define ESP_MAP_ENTITY_SUBTYPE_CRATE 2U
 
+#define ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_SPRITES 1024U
+#define ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_BYTES_PER_SPRITE 5U
+#define ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_BYTES \
+    (ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_SPRITES * \
+     ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_BYTES_PER_SPRITE)
+
 typedef enum EspMapSpriteTopologyStatus_e {
     ESP_MAP_SPRITE_TOPOLOGY_INVALID = 0,
     ESP_MAP_SPRITE_TOPOLOGY_UNSUPPORTED = 1,
@@ -62,6 +68,16 @@ typedef struct EspMapSpriteTopologyView_s {
     uint32_t destructibleCount;
     uint16_t nextLinkOrder;
 } EspMapSpriteTopologyView;
+
+typedef struct EspMapSpriteTopologySnapshot_s {
+    uint32_t sourceArenaFNV1a;
+    uint32_t stateFNV1a;
+    uint16_t spriteCount;
+    uint16_t mutableBytes;
+    uint16_t nextLinkOrder;
+    uint16_t reserved0;
+    uint8_t mutableStorage[ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_BYTES];
+} EspMapSpriteTopologySnapshot;
 
 typedef struct EspMapSpriteTopologyRelink_s {
     uint16_t spriteIndex;
@@ -132,6 +148,19 @@ int EspMapSpriteTopology_buildFromRuntime(const EspAssetPackEntry* entityDefsEnt
 int EspMapSpriteTopology_resetMutableFromRuntime(void);
 int EspMapSpriteTopology_isReady(void);
 const EspMapSpriteTopologyView* EspMapSpriteTopology_view(void);
+
+/*
+ * Exact pointer-free checkpoint of the mutable topology owner. The immutable
+ * entity type/subtype catalog remains derived from the resident BSP +
+ * entities.db; only visual/link state and the global link-order cursor are
+ * serialized. Restore validates the derived immutable identity before mutation.
+ */
+int EspMapSpriteTopology_snapshot(EspMapSpriteTopologySnapshot* outSnapshot);
+int EspMapSpriteTopology_snapshotShapeValid(
+    const EspMapSpriteTopologySnapshot* snapshot,
+    uint32_t expectedArenaFNV1a);
+int EspMapSpriteTopology_restoreSnapshot(
+    const EspMapSpriteTopologySnapshot* snapshot);
 
 int EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                         uint8_t* outVisualState);
