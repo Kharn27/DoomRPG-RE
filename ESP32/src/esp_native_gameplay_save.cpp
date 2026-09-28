@@ -927,6 +927,131 @@ bool recordV8Valid(
                &monsters, prefix.core.runtimeFNV1a);
 }
 
+bool monsterSpatialShapeValid(
+    const NativeSaveRecordV9Tail& tail,
+    const NativeSaveCore& core) {
+    uint32_t i;
+
+    if (!EspNativeGameplayMonsterState_snapshotShapeValid(
+            &tail.monsters, core.runtimeFNV1a) ||
+        !EspMapSpriteTopology_monsterSnapshotShapeValid(
+            &tail.monsterTopology, core.runtimeFNV1a) ||
+        !EspNativeGameplayMonsterPosition_snapshotShapeValid(
+            &tail.monsterPositions, core.runtimeFNV1a) ||
+        !EspNativeGameplayMonsterActivation_snapshotShapeValid(
+            &tail.monsterActivation, core.runtimeFNV1a) ||
+        tail.monsters.count != tail.monsterTopology.count ||
+        tail.monsters.count != tail.monsterPositions.count) {
+        return false;
+    }
+
+    for (i = 0U; i < tail.monsters.count; ++i) {
+        const EspNativeGameplayMonsterRecord& monster =
+            tail.monsters.records[i];
+        const EspMapSpriteTopologyMonsterRecord& topology =
+            tail.monsterTopology.records[i];
+        const EspNativeGameplayMonsterPositionRecord& position =
+            tail.monsterPositions.records[i];
+        const bool topologyAlive =
+            (topology.linkState & ESP_MAP_SPRITE_TOPOLOGY_ALIVE) != 0U;
+        const bool topologyLinked =
+            (topology.linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U;
+
+        if (monster.spriteIndex != topology.spriteIndex ||
+            monster.spriteIndex != position.spriteIndex ||
+            (monster.alive != 0U) != topologyAlive ||
+            (topologyLinked &&
+             position.tileIndex !=
+                 (uint16_t)(topology.linkState &
+                            ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK))) {
+            return false;
+        }
+    }
+
+    for (i = 0U; i < tail.monsterActivation.activeOrderCount; ++i) {
+        const uint16_t activeSprite =
+            tail.monsterActivation.activeOrder[i];
+        uint32_t j;
+        bool found = false;
+        for (j = 0U; j < tail.monsters.count; ++j) {
+            if (tail.monsters.records[j].spriteIndex == activeSprite) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+bool loadedV9Valid(
+    const LoadedSaveRecord& record,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    const bool coreOk =
+        coreShapeValid(record.core, kMagicV9, kVersionV9,
+                       (uint16_t)kRecordBytesV9);
+    const uint32_t actualCrc =
+        recordCrcV9(*reinterpret_cast<const NativeSaveRecordV5*>(&record),
+                    crateTransforms, automap, tail);
+    const bool crcOk = record.core.recordCrc32 == actualCrc;
+    const bool resourcesOk = resourceShapeValid(record.resources, record.core);
+    const bool scriptOk = scriptShapeValid(record.script, record.core);
+    const bool linesOk = lineShapeValid(record.lines, record.core);
+    const bool removedOk =
+        actionRemovedShapeValid(record.actionRemoved, record.core);
+    const bool cratesOk =
+        EspNativeGameplayCrateState_snapshotFileShapeValid(
+            &crateTransforms, record.core.runtimeFNV1a,
+            record.core.targetMapId) != 0;
+    const bool disjointOk =
+        crateTransformsDisjoint(record.actionRemoved, crateTransforms);
+    const bool automapOk = automapShapeValid(automap, record.core);
+    const bool spatialOk = monsterSpatialShapeValid(tail, record.core);
+    const bool valid =
+        coreOk && crcOk && resourcesOk && scriptOk && linesOk &&
+        removedOk && cratesOk && disjointOk && automapOk && spatialOk;
+
+    if (!valid) {
+        printf("[NATIVESAVE] V9-VALIDATE core=%u crc=%u storedCrc=%08x actualCrc=%08x resources=%u script=%u lines=%u removed=%u cratesFile=%u disjoint=%u automap=%u monsterSpatial=%u failClosed=yes\n",
+               coreOk ? 1U : 0U,
+               crcOk ? 1U : 0U,
+               (unsigned int)record.core.recordCrc32,
+               (unsigned int)actualCrc,
+               resourcesOk ? 1U : 0U,
+               scriptOk ? 1U : 0U,
+               linesOk ? 1U : 0U,
+               removedOk ? 1U : 0U,
+               cratesOk ? 1U : 0U,
+               disjointOk ? 1U : 0U,
+               automapOk ? 1U : 0U,
+               spatialOk ? 1U : 0U);
+    }
+    return valid;
+}
+
+bool recordV9Valid(
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    return coreShapeValid(prefix.core, kMagicV9, kVersionV9,
+                          (uint16_t)kRecordBytesV9) &&
+           prefix.core.recordCrc32 ==
+               recordCrcV9(prefix, crateTransforms, automap, tail) &&
+           resourceShapeValid(prefix.resources, prefix.core) &&
+           scriptShapeValid(prefix.script, prefix.core) &&
+           lineShapeValid(prefix.lines, prefix.core) &&
+           actionRemovedShapeValid(prefix.actionRemoved, prefix.core) &&
+           EspNativeGameplayCrateState_snapshotShapeValid(
+               &crateTransforms, prefix.core.runtimeFNV1a,
+               prefix.core.targetMapId) &&
+           crateTransformsDisjoint(prefix.actionRemoved, crateTransforms) &&
+           automapShapeValid(automap, prefix.core) &&
+           monsterSpatialShapeValid(tail, prefix.core);
+}
+
 bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
     File file;
     size_t got;
