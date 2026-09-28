@@ -1841,12 +1841,12 @@ bool captureRecord(
     NativeSaveRecordV5* outPrefix,
     EspNativeGameplayCrateTransformSnapshot* outCrateTransforms,
     EspMapAutomapSnapshot* outAutomap,
-    EspNativeGameplayMonsterStateSnapshot* outMonsters) {
+    NativeSaveRecordV9Tail* outTail) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
 
     if (outPrefix == nullptr || outCrateTransforms == nullptr ||
-        outAutomap == nullptr || outMonsters == nullptr ||
+        outAutomap == nullptr || outTail == nullptr ||
         EspAssetPack_isOpen() || runtime == nullptr || view == nullptr ||
         !EspMapResidentLifecycle_isReady()) {
         return false;
@@ -1856,7 +1856,8 @@ bool captureRecord(
     memset(outPrefix, 0, sizeof(*outPrefix));
     memset(outCrateTransforms, 0, sizeof(*outCrateTransforms));
     memset(outAutomap, 0, sizeof(*outAutomap));
-    memset(outMonsters, 0, sizeof(*outMonsters));
+    memset(outTail, 0, sizeof(*outTail));
+
     if (!EspNativeGameplayPlayerState_snapshot(&record.core.player) ||
         !EspNativeGameplayPlayerResources_snapshot(&record.resources) ||
         !EspMapScriptState_snapshot(&record.script) ||
@@ -1864,18 +1865,28 @@ bool captureRecord(
         !EspNativeGameplayActionEngine_snapshotRemoved(&record.actionRemoved) ||
         !EspNativeGameplayCrateState_snapshot(outCrateTransforms) ||
         !EspMapAutomapState_snapshot(outAutomap) ||
-        !EspNativeGameplayMonsterState_snapshot(outMonsters)) {
-        return false;
-    }
-    if (view->active != 1U || view->targetMapId == 0U ||
-        runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
-        runtime->arenaFNV1a == 0U) {
+        !EspNativeGameplayMonsterState_snapshot(&outTail->monsters) ||
+        !EspMapSpriteTopology_snapshotMonsters(&outTail->monsterTopology) ||
+        !EspNativeGameplayMonsterPosition_snapshot(
+            &outTail->monsterPositions) ||
+        !EspNativeGameplayMonsterActivation_snapshot(
+            &outTail->monsterActivation)) {
         return false;
     }
 
-    memcpy(record.core.magic, kMagicV8, sizeof(kMagicV8));
-    record.core.version = kVersionV8;
-    record.core.recordBytes = (uint16_t)kRecordBytesV8;
+    if (view->active != 1U || view->targetMapId == 0U ||
+        runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
+        runtime->arenaFNV1a == 0U ||
+        !monsterSpatialShapeValid(*outTail, record.core)) {
+        /*
+         * record.core.runtimeFNV1a is filled immediately below; defer the
+         * cross-section arena check until the immutable identity is copied.
+         */
+    }
+
+    memcpy(record.core.magic, kMagicV9, sizeof(kMagicV9));
+    record.core.version = kVersionV9;
+    record.core.recordBytes = (uint16_t)kRecordBytesV9;
     record.core.sourceBytes = runtime->sourceBytes;
     record.core.sourceCrc32 = runtime->sourceCrc32;
     record.core.runtimeFNV1a = runtime->arenaFNV1a;
@@ -1884,10 +1895,18 @@ bool captureRecord(
     record.core.gameplayLoadMapId = view->gameplayLoadMapId;
     record.core.loadType = view->loadType;
     record.core.view = *view;
+
+    if (view->active != 1U || view->targetMapId == 0U ||
+        runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
+        runtime->arenaFNV1a == 0U ||
+        !monsterSpatialShapeValid(*outTail, record.core)) {
+        return false;
+    }
+
     record.core.recordCrc32 =
-        recordCrcV8(record, *outCrateTransforms, *outAutomap, *outMonsters);
-    return recordV8Valid(
-        record, *outCrateTransforms, *outAutomap, *outMonsters);
+        recordCrcV9(record, *outCrateTransforms, *outAutomap, *outTail);
+    return recordV9Valid(
+        record, *outCrateTransforms, *outAutomap, *outTail);
 }
 
 bool saveNow(void) {
