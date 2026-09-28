@@ -1762,6 +1762,81 @@ bool stageV8MonsterSection(
     return ok;
 }
 
+bool restoreV9MonsterSpatialSections(
+    const char* path,
+    const NativeSaveCore& core,
+    uint16_t* outCount,
+    uint32_t* outMonsterFNV,
+    uint32_t* outTopologyFNV,
+    uint32_t* outPositionFNV,
+    uint32_t* outActivationFNV) {
+    File file;
+    size_t got;
+    NativeSaveRecordV9Tail* tail;
+    bool ok = false;
+
+    if (path == nullptr || !SD.exists(path) ||
+        core.version != kVersionV9) {
+        return false;
+    }
+
+    tail = (NativeSaveRecordV9Tail*)malloc(sizeof(*tail));
+    if (tail == nullptr) {
+        printf("[NATIVESAVE] V9-SPATIAL-FAILED stage=workspace bytes=%u failClosed=yes\n",
+               (unsigned int)sizeof(*tail));
+        return false;
+    }
+    memset(tail, 0, sizeof(*tail));
+
+    file = SD.open(path, FILE_READ);
+    if (!file || (size_t)file.size() != kRecordBytesV9 ||
+        !file.seek(kRecordBytesV7)) {
+        if (file) file.close();
+        free(tail);
+        return false;
+    }
+    got = file.read(reinterpret_cast<uint8_t*>(tail), sizeof(*tail));
+    file.close();
+
+    if (got == sizeof(*tail) &&
+        monsterSpatialShapeValid(*tail, core) &&
+        EspNativeGameplayMonsterState_stageRestore(&tail->monsters) &&
+        EspMapSpriteTopology_restoreMonsterSnapshot(&tail->monsterTopology) &&
+        EspNativeGameplayMonsterPosition_stageRestore(
+            &tail->monsterPositions) &&
+        EspNativeGameplayMonsterActivation_restoreSnapshot(
+            &tail->monsterActivation)) {
+        ok = true;
+    }
+
+    if (ok) {
+        if (outCount != nullptr) *outCount = tail->monsters.count;
+        if (outMonsterFNV != nullptr)
+            *outMonsterFNV = tail->monsters.stateFNV1a;
+        if (outTopologyFNV != nullptr)
+            *outTopologyFNV = tail->monsterTopology.stateFNV1a;
+        if (outPositionFNV != nullptr)
+            *outPositionFNV = tail->monsterPositions.stateFNV1a;
+        if (outActivationFNV != nullptr)
+            *outActivationFNV = tail->monsterActivation.stateFNV1a;
+        printf("[NATIVESAVE] V9-SPATIAL-STAGE monsters=%u monsterFNV=%08x topologyFNV=%08x positionFNV=%08x activationFNV=%08x exact=yes\n",
+               (unsigned int)tail->monsters.count,
+               (unsigned int)tail->monsters.stateFNV1a,
+               (unsigned int)tail->monsterTopology.stateFNV1a,
+               (unsigned int)tail->monsterPositions.stateFNV1a,
+               (unsigned int)tail->monsterActivation.stateFNV1a);
+    }
+    else {
+        EspNativeGameplayMonsterPosition_reset();
+        EspNativeGameplayMonsterActivation_reset();
+        EspNativeGameplayMonsterState_reset();
+        printf("[NATIVESAVE] V9-SPATIAL-FAILED stage=validate-or-restore failClosed=yes\n");
+    }
+
+    free(tail);
+    return ok;
+}
+
 bool captureRecord(
     NativeSaveRecordV5* outPrefix,
     EspNativeGameplayCrateTransformSnapshot* outCrateTransforms,
