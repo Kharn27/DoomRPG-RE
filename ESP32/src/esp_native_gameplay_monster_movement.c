@@ -605,6 +605,20 @@ static int findCandidate(const EspPlayerViewState* playerView,
         playerView->viewY != playerView->destY ||
         !centeredCoordinate(playerView->destX) ||
         !centeredCoordinate(playerView->destY)) {
+        printf("[MONSTERMOVE] CANDIDATE-STATE cause=preflight player=%p out=%p countOut=%p monsters=%p records=%p view=%d,%d dest=%d,%d centered=%u/%u\n",
+               (const void*)playerView,
+               (void*)outCandidate,
+               (void*)outCandidates,
+               (const void*)monsters,
+               monsters != NULL ? (const void*)monsters->records : NULL,
+               playerView != NULL ? (int)playerView->viewX : -1,
+               playerView != NULL ? (int)playerView->viewY : -1,
+               playerView != NULL ? (int)playerView->destX : -1,
+               playerView != NULL ? (int)playerView->destY : -1,
+               playerView != NULL ?
+                   (unsigned int)centeredCoordinate(playerView->destX) : 0U,
+               playerView != NULL ?
+                   (unsigned int)centeredCoordinate(playerView->destY) : 0U);
         return 0;
     }
 
@@ -626,7 +640,13 @@ static int findCandidate(const EspPlayerViewState* playerView,
         }
         if (!EspMapSpriteTopology_getEntity(monster->spriteIndex,
                                             &type, &subtype,
-                                            &linkState, &linkOrder)) return 0;
+                                            &linkState, &linkOrder)) {
+            printf("[MONSTERMOVE] CANDIDATE-STATE sprite=%u subtype=%u cause=topology-read-failed positionFNV=%08x\n",
+                   (unsigned int)monster->spriteIndex,
+                   (unsigned int)monster->subtype,
+                   (unsigned int)EspNativeGameplayMonsterPosition_fingerprint());
+            return 0;
+        }
         (void)linkOrder;
         if (type != MOVE_TYPE_ENEMY || subtype != monster->subtype ||
             (linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U ||
@@ -637,6 +657,21 @@ static int findCandidate(const EspPlayerViewState* playerView,
         if (position == NULL ||
             position->tileIndex !=
                 (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK)) {
+            const uint16_t topologyTile =
+                (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
+            printf("[MONSTERMOVE] CANDIDATE-STATE sprite=%u subtype=%u cause=%s posTile=%u topoTile=%u pos=%u,%u link=%04x order=%u positionFNV=%08x projected=%u\n",
+                   (unsigned int)monster->spriteIndex,
+                   (unsigned int)monster->subtype,
+                   position == NULL ? "position-missing" : "position-topology-mismatch",
+                   position != NULL ? (unsigned int)position->tileIndex : 0xffffU,
+                   (unsigned int)topologyTile,
+                   position != NULL ? (unsigned int)position->worldX : 0xffffU,
+                   position != NULL ? (unsigned int)position->worldY : 0xffffU,
+                   (unsigned int)linkState,
+                   (unsigned int)linkOrder,
+                   (unsigned int)EspNativeGameplayMonsterPosition_fingerprint(),
+                   (unsigned int)EspNativeGameplayMonsterMovementPublish_isProjected(
+                       monster->spriteIndex));
             return 0;
         }
 
