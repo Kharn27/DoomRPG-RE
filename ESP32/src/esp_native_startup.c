@@ -352,8 +352,8 @@ static int routeInitialSpawn(DoomRPG_t* doomRpg) {
     }
 
     if (EspNativeTransitionPresentation_isLoadingActive()) {
-        EspNativeTransitionPresentation_checkpointProgress(100U, "PRIME");
-        printf("[NATIVEBOOT] LOADING-PRIME map=%u progress=100 owner=retained-until-session-active\n",
+        EspNativeTransitionPresentation_checkpointProgress(85U, "RESTORE");
+        printf("[NATIVEBOOT] LOADING-PRIME map=%u progress=85 owner=retained-until-session-active primeProgress=session-stages\n",
                (unsigned int)startupState.targetMapId);
     }
 
