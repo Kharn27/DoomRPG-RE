@@ -1994,7 +1994,8 @@ bool loadNow(void) {
            worldSummary);
     if (loadingPresentation) {
         EspNativeTransitionPresentation_checkpointProgress(85U, "RESTORE");
-        printf("[NATIVESAVE] LOAD-UI targetMap=%u progress=85 owner=retained-until-session-active gameplayPresents=blocked final15=session-prime\n",
+        EspNativeTransitionPresentation_checkpointProgress(100U, "PRIME");
+        printf("[NATIVESAVE] LOAD-UI targetMap=%u progress=100 owner=retained-until-session-active gameplayPresents=blocked primeBehindFullBar=yes\n",
                (unsigned int)record->targetMapId);
     }
     return true;
