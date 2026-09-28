@@ -509,6 +509,31 @@ done:
     return ok;
 }
 
+static int paintLoadingSurface(uint8_t targetMapId,
+                               EspNativeTransitionPaintScratch* scratch) {
+    char target[24];
+    if (scratch == NULL || !drawFixedStarfield(&scratch->star, &scratch->stats)) {
+        return 0;
+    }
+
+    formatMapLabel(targetMapId, target, sizeof(target));
+    fillRect(16, 32, 143, 75, COLOR_PANEL);
+    rect(16, 32, 143, 75, COLOR_STEEL);
+    fillRect(19, 35, 21, 72, COLOR_AMBER);
+    fillRect(25, 35, 135, 36, COLOR_AMBER_DIM);
+    fillRect(25, 71, 135, 72, COLOR_AMBER_DIM);
+    drawMiniTextCentered("LOADING", 80, 40, 2, COLOR_AMBER);
+    drawMiniTextCentered("ENTERING", 80, 55, 1, COLOR_STEEL);
+    drawMiniTextCentered(target, 80, 63, 1, COLOR_IVORY);
+
+    rect(TRANSITION_PROGRESS_LEFT, TRANSITION_PROGRESS_TOP,
+         TRANSITION_PROGRESS_LEFT + TRANSITION_PROGRESS_WIDTH - 1,
+         TRANSITION_PROGRESS_TOP + TRANSITION_PROGRESS_HEIGHT - 1,
+         COLOR_STEEL);
+    paintProgressBar(0U);
+    return 1;
+}
+
 int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
     EspNativeTransitionPaintScratch scratch;
     char target[24];
@@ -528,27 +553,8 @@ int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
         openedHere = 1;
     }
 
-    if (!drawFixedStarfield(&scratch.star, &scratch.stats)) goto done;
-
+    if (!paintLoadingSurface(targetMapId, &scratch)) goto done;
     formatMapLabel(targetMapId, target, sizeof(target));
-
-    /* The loading card deliberately uses the compact HUB mini-font. The game
-     * 9x12 face looked oversized at 160x120 and made this small information
-     * panel feel cramped. Keep the starfield as a single fixed first frame. */
-    fillRect(16, 32, 143, 75, COLOR_PANEL);
-    rect(16, 32, 143, 75, COLOR_STEEL);
-    fillRect(19, 35, 21, 72, COLOR_AMBER);
-    fillRect(25, 35, 135, 36, COLOR_AMBER_DIM);
-    fillRect(25, 71, 135, 72, COLOR_AMBER_DIM);
-    drawMiniTextCentered("LOADING", 80, 40, 2, COLOR_AMBER);
-    drawMiniTextCentered("ENTERING", 80, 55, 1, COLOR_STEEL);
-    drawMiniTextCentered(target, 80, 63, 1, COLOR_IVORY);
-
-    rect(TRANSITION_PROGRESS_LEFT, TRANSITION_PROGRESS_TOP,
-         TRANSITION_PROGRESS_LEFT + TRANSITION_PROGRESS_WIDTH - 1,
-         TRANSITION_PROGRESS_TOP + TRANSITION_PROGRESS_HEIGHT - 1,
-         COLOR_STEEL);
-    paintProgressBar(0U);
 
     presentation.targetMapId = targetMapId;
     presentation.lastPercent = 0U;
@@ -602,6 +608,35 @@ void EspNativeTransitionPresentation_checkpointProgress(uint8_t percent,
         return;
     }
     presentOverall(percent, stage != NULL ? stage : "CHECKPOINT", "checkpoint");
+}
+
+int EspNativeTransitionPresentation_checkpointReady(void) {
+    EspNativeTransitionPaintScratch scratch;
+    int openedHere = 0;
+
+    if (!presentation.loadingActive || !framebufferReady()) return 0;
+    memset(&scratch, 0, sizeof(scratch));
+    if (!EspAssetPack_isOpen()) {
+        if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+        openedHere = 1;
+    }
+    if (!paintLoadingSurface(presentation.targetMapId, &scratch)) {
+        if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
+        return 0;
+    }
+    paintProgressBar(100U);
+    if (!__real_Esp32PlatformVideo_present()) {
+        if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
+        return 0;
+    }
+    presentation.lastPercent = 100U;
+    ++presentation.frames;
+    printf("[TRANSITIONLOAD] FRAME n=%u stage=READY overall=100 background=fixed assetReads=%u source=checkpoint-final frame=%08x\n",
+           (unsigned int)presentation.frames,
+           (unsigned int)scratch.stats.packReads,
+           (unsigned int)frameFNV());
+    if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
+    return 1;
 }
 
 int EspNativeTransitionPresentation_isLoadingActive(void) {
