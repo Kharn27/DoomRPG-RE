@@ -380,12 +380,16 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 failSession("initial HUD");
                 return;
             }
-            if (!EspNativeGameplayHud_isReady() ||
+            if (!EspNativeGameplayHud_isReady()) {
+                failSession("initial HUD ready");
+                return;
+            }
+            if (!EspNativeTransitionPresentation_isLoadingActive() &&
                 !Esp32PlatformVideo_present()) {
                 failSession("initial HUD present");
                 return;
             }
-            printf("[ENGINESESSION] HUD map=%u hp=%u/%u armor=%u/%u weapon=%u ammo=%u resources=%u pixels=%u reads=%u presented=1\n",
+            printf("[ENGINESESSION] HUD map=%u hp=%u/%u armor=%u/%u weapon=%u ammo=%u resources=%u pixels=%u reads=%u presented=%u loadingSuppressed=%u\n",
                    (unsigned int)view->targetMapId,
                    (unsigned int)model.health,
                    (unsigned int)model.maxHealth,
@@ -395,7 +399,9 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)model.ammo,
                    (unsigned int)stats.resourcesValidated,
                    (unsigned int)stats.pixelsWritten,
-                   (unsigned int)stats.packReads);
+                   (unsigned int)stats.packReads,
+                   EspNativeTransitionPresentation_isLoadingActive() ? 0U : 1U,
+                   EspNativeTransitionPresentation_isLoadingActive() ? 1U : 0U);
             sessionState.stage = SESSION_STAGE_DEPENDENCIES;
             continue;
         }
