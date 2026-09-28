@@ -26,10 +26,6 @@ void EspNativeTransitionPresentation_progress(uint8_t phase,
  * calls never read assets; beginLoading() must already have succeeded. */
 void EspNativeTransitionPresentation_checkpointProgress(uint8_t percent,
                                                         const char* stage);
-/* Repaint the opaque loading surface and publish the only visible 100% frame.
- * The caller must then rebuild a complete gameplay frame while loading still
- * owns presentation, release the owner, and present that rebuilt frame. */
-int EspNativeTransitionPresentation_checkpointReady(void);
 int EspNativeTransitionPresentation_isLoadingActive(void);
 void EspNativeTransitionPresentation_abortLoading(const char* reason);
 
