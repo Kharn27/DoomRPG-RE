@@ -651,6 +651,28 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                         failSession("transition final frame rebuild");
                         return;
                     }
+                    /*
+                     * renderCacheWitness() rebuilds the 3D world after the
+                     * READY loading repaint, but that render also overwrites
+                     * the HUD bands. Restore both retained HUD bands into the
+                     * completed logical framebuffer before releasing the
+                     * full-screen loading owner.
+                     */
+                    {
+                        const EspNativeGameplayHudState* hud =
+                            EspNativeGameplayHud_view();
+                        EspNativeGameplayHudStats hudStats;
+                        EspNativeGameplayHudStatus hudStatus;
+                        memset(&hudStats, 0, sizeof(hudStats));
+                        hudStatus = EspNativeGameplayHud_repaint(hud, &hudStats);
+                        if (hudStatus != ESP_NATIVE_GAMEPLAY_HUD_OK) {
+                            failSession("transition final HUD repaint");
+                            return;
+                        }
+                        printf("[ENGINESESSION] FINAL-HUD pixels=%u reads=%u bands=top+bottom owner=retained\\n",
+                               (unsigned int)hudStats.pixelsWritten,
+                               (unsigned int)hudStats.packReads);
+                    }
                     EspNativeTransitionPresentation_releaseLoading(releaseReason);
                     if (!Esp32PlatformVideo_present()) {
                         failSession("transition final world present");
