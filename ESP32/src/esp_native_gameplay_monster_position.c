@@ -224,13 +224,19 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
         int32_t worldX;
         int32_t worldY;
         EspMapSprite sourceSprite;
+        uint8_t hiddenSource = 0U;
 
         /*
-         * Linked monsters take their canonical tile from mutable topology.
-         * Hidden EV_SHOW targets start EXISTS+ALIVE but intentionally UNLINKED,
-         * so topology has no live tile yet. Seed those from the immutable raw
-         * BSP sprite tile: EV_SHOW later links the same raw tile, keeping
-         * MonsterPosition and topology coherent from the first revealed turn.
+         * Linked entities already have a canonical mutable topology tile and
+         * that remains the authority after native relinks.
+         *
+         * A legacy hidden enemy (sprite.info bit 0x00010000), however, starts
+         * EXISTS+ALIVE but deliberately UNLINKED. Topology therefore carries no
+         * tile bits until EV_SHOW executes. EV_SHOW links that target using the
+         * immutable raw BSP sprite tile. Seed MonsterPosition from that same raw
+         * tile while the entity is still hidden so the later SHOW does not make
+         * MonsterPosition and topology disagree and fail-close every movement
+         * turn for the revealed monster.
          */
         if (monster->spriteIndex >= runtime->mapSpriteCount ||
             !EspMapRuntime_getMapSprite(monster->spriteIndex, &sourceSprite) ||
@@ -243,13 +249,10 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
             return 0;
         }
         (void)linkOrder;
-        if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
-            tile =
-                (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
-            tileX = (uint32_t)tile % POSITION_MAP_WIDTH;
-            tileY = (uint32_t)tile / POSITION_MAP_WIDTH;
-        }
-        else {
+        hiddenSource =
+            (uint8_t)((sourceSprite.info & 0x00010000UL) != 0U);
+        if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U &&
+            hiddenSource != 0U) {
             tileX = (uint32_t)sourceSprite.x >> 6U;
             tileY = (uint32_t)sourceSprite.y >> 6U;
             if (tileX >= POSITION_MAP_WIDTH || tileY >= POSITION_MAP_WIDTH) {
@@ -257,6 +260,12 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
                 return 0;
             }
             tile = (uint16_t)(tileY * POSITION_MAP_WIDTH + tileX);
+        }
+        else {
+            tile =
+                (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
+            tileX = (uint32_t)tile % POSITION_MAP_WIDTH;
+            tileY = (uint32_t)tile / POSITION_MAP_WIDTH;
         }
         worldX = (int32_t)(tileX * POSITION_TILE_SIZE + POSITION_TILE_CENTER);
         worldY = (int32_t)(tileY * POSITION_TILE_SIZE + POSITION_TILE_CENTER);
@@ -273,7 +282,7 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
 
     positionView.stateFNV1a = recordsFNV();
     positionView.active = 1U;
-    printf("[MONSTERPOS] READY arena=%08x monsters=%u recordBytes=%u ownerBytes=%u stateFNV=%08x source=linked-topology-or-hidden-show-raw-tile centered=yes mutable=probe-transaction rendererPublish=deferred topologyRelink=deferred allocation=load-only\n",
+    printf("[MONSTERPOS] READY arena=%08x monsters=%u recordBytes=%u ownerBytes=%u stateFNV=%08x source=topology-linked+hidden-show-raw-tile centered=yes mutable=probe-transaction rendererPublish=deferred topologyRelink=deferred allocation=load-only\n",
            (unsigned int)positionView.sourceArenaFNV1a,
            (unsigned int)positionView.count,
            (unsigned int)sizeof(EspNativeGameplayMonsterPositionRecord),
