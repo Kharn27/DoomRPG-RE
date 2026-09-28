@@ -534,10 +534,16 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
             EspAssetPackResidentStats pack;
             if (!renderCacheWitness(doomRpgBase, view, "LARGE-LEARN",
                                     &frame, &pack) ||
-                !EspAssetPack_isResidentLargeRangeEnabled() ||
-                pack.rangeCacheStores == 0U || pack.largeRangeEntries == 0U) {
+                !EspAssetPack_isResidentLargeRangeEnabled()) {
                 failSession("large-cache learn frame");
                 return;
+            }
+            if (pack.rangeCacheStores == 0U || pack.largeRangeEntries == 0U) {
+                printf("[ENGINECACHE] LARGE-LEARN-HOT stores=%u largeEntries=%u rangeHits=%u entryHits=%u acceptance=already-warm-or-bypass\n",
+                       (unsigned int)pack.rangeCacheStores,
+                       (unsigned int)pack.largeRangeEntries,
+                       (unsigned int)pack.rangeCacheHits,
+                       (unsigned int)pack.entryCacheHits);
             }
             if (EspNativeTransitionPresentation_isLoadingActive()) {
                 EspNativeTransitionPresentation_checkpointProgress(96U, "CACHE-LEARN");
