@@ -480,6 +480,9 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 failSession("small-cache cold frame");
                 return;
             }
+            if (EspNativeTransitionPresentation_isLoadingActive()) {
+                EspNativeTransitionPresentation_checkpointProgress(90U, "CACHE-COLD");
+            }
             sessionState.stage = SESSION_STAGE_SMALL_WARM;
             continue;
         }
@@ -493,6 +496,9 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 EspAssetPack_isResidentLargeRangeEnabled()) {
                 failSession("small-cache warm frame");
                 return;
+            }
+            if (EspNativeTransitionPresentation_isLoadingActive()) {
+                EspNativeTransitionPresentation_checkpointProgress(93U, "CACHE-WARM");
             }
             sessionState.stage = SESSION_STAGE_LARGE_BEGIN;
             continue;
@@ -532,6 +538,9 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 pack.rangeCacheStores == 0U || pack.largeRangeEntries == 0U) {
                 failSession("large-cache learn frame");
                 return;
+            }
+            if (EspNativeTransitionPresentation_isLoadingActive()) {
+                EspNativeTransitionPresentation_checkpointProgress(96U, "CACHE-LEARN");
             }
             sessionState.stage = SESSION_STAGE_LARGE_WARM;
             continue;
@@ -621,6 +630,21 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                         sessionState.checkpointResume != 0U
                             ? "checkpoint-session-active"
                             : "fresh-session-active";
+                    EspNativeGameplayFrameStats finalFrame;
+                    EspAssetPackResidentStats finalPack;
+
+                    /*
+                     * Show completion only when session ownership is actually
+                     * ready. checkpointProgress() repaints the complete loading
+                     * frame, so rebuild one final gameplay frame behind the
+                     * suppressed present before releasing the owner.
+                     */
+                    EspNativeTransitionPresentation_checkpointProgress(100U, "READY");
+                    if (!renderCacheWitness(doomRpgBase, view, "FINAL-READY",
+                                            &finalFrame, &finalPack)) {
+                        failSession("transition final frame rebuild");
+                        return;
+                    }
                     EspNativeTransitionPresentation_releaseLoading(releaseReason);
                     if (!Esp32PlatformVideo_present()) {
                         failSession("transition final world present");
