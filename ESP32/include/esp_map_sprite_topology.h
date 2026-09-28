@@ -33,11 +33,7 @@ extern "C" {
 #define ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE 12U
 #define ESP_MAP_ENTITY_SUBTYPE_CRATE 2U
 
-#define ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_SPRITES 1024U
-#define ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_BYTES_PER_SPRITE 5U
-#define ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_BYTES \
-    (ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_SPRITES * \
-     ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_BYTES_PER_SPRITE)
+#define ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX 100U
 
 typedef enum EspMapSpriteTopologyStatus_e {
     ESP_MAP_SPRITE_TOPOLOGY_INVALID = 0,
@@ -69,15 +65,24 @@ typedef struct EspMapSpriteTopologyView_s {
     uint16_t nextLinkOrder;
 } EspMapSpriteTopologyView;
 
-typedef struct EspMapSpriteTopologySnapshot_s {
+typedef struct EspMapSpriteTopologyMonsterRecord_s {
+    uint16_t spriteIndex;
+    uint16_t linkState;
+    uint16_t linkOrder;
+    uint8_t visualState;
+    uint8_t reserved0;
+} EspMapSpriteTopologyMonsterRecord;
+
+typedef struct EspMapSpriteTopologyMonsterSnapshot_s {
     uint32_t sourceArenaFNV1a;
     uint32_t stateFNV1a;
-    uint16_t spriteCount;
-    uint16_t mutableBytes;
+    uint16_t count;
+    uint16_t recordBytes;
     uint16_t nextLinkOrder;
     uint16_t reserved0;
-    uint8_t mutableStorage[ESP_MAP_SPRITE_TOPOLOGY_SNAPSHOT_MAX_BYTES];
-} EspMapSpriteTopologySnapshot;
+    EspMapSpriteTopologyMonsterRecord
+        records[ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX];
+} EspMapSpriteTopologyMonsterSnapshot;
 
 typedef struct EspMapSpriteTopologyRelink_s {
     uint16_t spriteIndex;
@@ -150,17 +155,19 @@ int EspMapSpriteTopology_isReady(void);
 const EspMapSpriteTopologyView* EspMapSpriteTopology_view(void);
 
 /*
- * Exact pointer-free checkpoint of the mutable topology owner. The immutable
- * entity type/subtype catalog remains derived from the resident BSP +
- * entities.db; only visual/link state and the global link-order cursor are
- * serialized. Restore validates the derived immutable identity before mutation.
+ * Exact pointer-free checkpoint of mutable topology for enemy entities only.
+ * This is the missing spatial half of the native monster checkpoint: revealed
+ * / hidden linkage, current tile/order, death/link state and visual byte are
+ * preserved together with the global link-order cursor. Non-enemy topology
+ * remains owned by its existing dedicated checkpoint families.
  */
-int EspMapSpriteTopology_snapshot(EspMapSpriteTopologySnapshot* outSnapshot);
-int EspMapSpriteTopology_snapshotShapeValid(
-    const EspMapSpriteTopologySnapshot* snapshot,
+int EspMapSpriteTopology_snapshotMonsters(
+    EspMapSpriteTopologyMonsterSnapshot* outSnapshot);
+int EspMapSpriteTopology_monsterSnapshotShapeValid(
+    const EspMapSpriteTopologyMonsterSnapshot* snapshot,
     uint32_t expectedArenaFNV1a);
-int EspMapSpriteTopology_restoreSnapshot(
-    const EspMapSpriteTopologySnapshot* snapshot);
+int EspMapSpriteTopology_restoreMonsterSnapshot(
+    const EspMapSpriteTopologyMonsterSnapshot* snapshot);
 
 int EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                         uint8_t* outVisualState);
