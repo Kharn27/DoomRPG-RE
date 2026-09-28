@@ -1466,6 +1466,125 @@ bool commitRecordAtomic(
     return true;
 }
 
+bool writeExactV9(
+    const char* path,
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    File file = SD.open(path, FILE_WRITE);
+    size_t wrotePrefix;
+    size_t wroteCrate;
+    size_t wroteAutomap;
+    size_t wroteTail;
+    if (!file) return false;
+    wrotePrefix = file.write(reinterpret_cast<const uint8_t*>(&prefix),
+                             sizeof(prefix));
+    wroteCrate = file.write(reinterpret_cast<const uint8_t*>(&crateTransforms),
+                            sizeof(crateTransforms));
+    wroteAutomap = file.write(reinterpret_cast<const uint8_t*>(&automap),
+                              sizeof(automap));
+    wroteTail = file.write(reinterpret_cast<const uint8_t*>(&tail),
+                           sizeof(tail));
+    file.flush();
+    file.close();
+    return wrotePrefix == sizeof(prefix) &&
+           wroteCrate == sizeof(crateTransforms) &&
+           wroteAutomap == sizeof(automap) &&
+           wroteTail == sizeof(tail);
+}
+
+bool readExactV9Matches(
+    const char* path,
+    const NativeSaveRecordV5& expectedPrefix,
+    const EspNativeGameplayCrateTransformSnapshot& expectedCrate,
+    const EspMapAutomapSnapshot& expectedAutomap,
+    const NativeSaveRecordV9Tail& expectedTail) {
+    File file;
+    uint8_t verify[64];
+    const uint8_t* segments[4] = {
+        reinterpret_cast<const uint8_t*>(&expectedPrefix),
+        reinterpret_cast<const uint8_t*>(&expectedCrate),
+        reinterpret_cast<const uint8_t*>(&expectedAutomap),
+        reinterpret_cast<const uint8_t*>(&expectedTail)
+    };
+    const size_t sizes[4] = {
+        sizeof(expectedPrefix), sizeof(expectedCrate), sizeof(expectedAutomap),
+        sizeof(expectedTail)
+    };
+    uint8_t segment;
+
+    if (path == nullptr || !SD.exists(path)) return false;
+    file = SD.open(path, FILE_READ);
+    if (!file || (size_t)file.size() != kRecordBytesV9) {
+        if (file) file.close();
+        return false;
+    }
+
+    for (segment = 0U; segment < 4U; ++segment) {
+        size_t offset = 0U;
+        while (offset < sizes[segment]) {
+            size_t chunk = sizes[segment] - offset;
+            size_t got;
+            if (chunk > sizeof(verify)) chunk = sizeof(verify);
+            got = file.read(verify, chunk);
+            if (got != chunk ||
+                memcmp(verify, segments[segment] + offset, chunk) != 0) {
+                file.close();
+                return false;
+            }
+            offset += chunk;
+        }
+    }
+    file.close();
+    return true;
+}
+
+bool commitRecordAtomicV9(
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    bool movedOld = false;
+
+    if (SD.exists(kTempPath)) (void)SD.remove(kTempPath);
+    if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
+    if (!writeExactV9(kTempPath, prefix, crateTransforms, automap, tail) ||
+        !readExactV9Matches(
+            kTempPath, prefix, crateTransforms, automap, tail)) {
+        (void)SD.remove(kTempPath);
+        return false;
+    }
+
+    if (SD.exists(kSavePath)) {
+        if (!SD.rename(kSavePath, kBackupPath)) {
+            (void)SD.remove(kTempPath);
+            return false;
+        }
+        movedOld = true;
+    }
+
+    if (!SD.rename(kTempPath, kSavePath)) {
+        if (movedOld && !SD.exists(kSavePath)) {
+            (void)SD.rename(kBackupPath, kSavePath);
+        }
+        (void)SD.remove(kTempPath);
+        return false;
+    }
+
+    if (!readExactV9Matches(
+            kSavePath, prefix, crateTransforms, automap, tail)) {
+        (void)SD.remove(kSavePath);
+        if (movedOld && SD.exists(kBackupPath)) {
+            (void)SD.rename(kBackupPath, kSavePath);
+        }
+        return false;
+    }
+
+    if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
+    return true;
+}
+
 bool readCrateSection(
     const char* path,
     const NativeSaveCore& core,
