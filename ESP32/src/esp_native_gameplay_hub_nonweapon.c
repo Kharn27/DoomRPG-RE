@@ -17,13 +17,16 @@ static uint8_t ownedWeaponCount(const EspNativeGameplayPlayerState* player) {
 
 uint8_t EspNativeGameplayHubNonWeapon_entryCount(
     const EspNativeGameplayPlayerState* player) {
-    uint8_t total;
-    uint8_t weapons;
+    uint8_t total = 1U; /* Notebook is always present. */
+    uint8_t slot;
     if (player == NULL || player->active != 1U) return 0U;
-    total = EspNativeGameplayHubContent_inventoryEntryCount(player);
-    weapons = ownedWeaponCount(player);
-    if (total == 0U || total < weapons) return 0U;
-    return (uint8_t)(total - weapons);
+    for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_HUB_CONTENT_ITEMS; ++slot) {
+        if (player->inventory[slot] != 0U) ++total;
+    }
+    for (slot = 0U; slot < 4U; ++slot) {
+        if ((player->keys & (1UL << slot)) != 0U) ++total;
+    }
+    return total;
 }
 
 int EspNativeGameplayHubNonWeapon_entryAt(
@@ -31,11 +34,23 @@ int EspNativeGameplayHubNonWeapon_entryAt(
     uint8_t entryIndex,
     EspNativeGameplayHubInventoryEntry* outEntry) {
     uint8_t count;
+    uint8_t itemCount = 0U;
+    uint8_t slot;
     uint8_t weapons;
     if (player == NULL || outEntry == NULL || player->active != 1U) return 0;
     count = EspNativeGameplayHubNonWeapon_entryCount(player);
     weapons = ownedWeaponCount(player);
     if (count == 0U || entryIndex >= count) return 0;
+    for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_HUB_CONTENT_ITEMS; ++slot) {
+        if (player->inventory[slot] != 0U) ++itemCount;
+    }
+    /* The complete legacy projection starts with owned weapons, followed by
+     * Notebook, carried items, Credits and keys. Native INV omits only the
+     * Credits row: keys remain inventory objects while STAT mirrors them as a
+     * quick status summary. */
     return EspNativeGameplayHubContent_inventoryEntryAt(
-        player, (uint8_t)(weapons + entryIndex), outEntry);
+        player,
+        (uint8_t)(weapons + entryIndex +
+                  (entryIndex > itemCount ? 1U : 0U)),
+        outEntry);
 }

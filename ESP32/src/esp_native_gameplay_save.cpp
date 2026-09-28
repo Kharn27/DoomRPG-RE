@@ -70,13 +70,13 @@ constexpr uint8_t kNoConfirmation = 0xffU;
 constexpr int kPanelLeft = 8;
 constexpr int kPanelTop = 36;
 constexpr int kPanelRight = 151;
-constexpr int kPanelBottom = 98;
+constexpr int kPanelBottom = 117;
 constexpr int kButtonLeft = 16;
 constexpr int kButtonRight = 143;
-constexpr int kSaveTop = 48;
-constexpr int kSaveBottom = 68;
-constexpr int kLoadTop = 74;
-constexpr int kLoadBottom = 94;
+constexpr int kSaveTop = 50;
+constexpr int kSaveBottom = 77;
+constexpr int kLoadTop = 84;
+constexpr int kLoadBottom = 111;
 
 /* Exact on-disk v1 prefix. Keep this byte-for-byte compatible with the
  * hardware-proven 132-byte DRPGSAV1 record so existing checkpoints remain
@@ -2133,12 +2133,12 @@ bool paintSaveOverlay(void) {
 
     fb = static_cast<uint16_t*>(Esp32PlatformVideo_framebuffer());
 
-    fillRect(fb, 2, 35, 157, 98, ESP_HUB_COLOR_BG);
+    fillRect(fb, 2, 35, 157, 118, ESP_HUB_COLOR_BG);
     fillRect(fb, kPanelLeft, kPanelTop, kPanelRight, kPanelBottom,
              ESP_HUB_COLOR_PANEL);
     drawRect(fb, kPanelLeft, kPanelTop, kPanelRight, kPanelBottom,
              ESP_HUB_COLOR_STEEL);
-    drawCenteredWord(fb, 80, 38, "CHECKPOINT 1", ESP_HUB_COLOR_STEEL);
+    drawCenteredWord(fb, 80, 40, "CHECKPOINT 1", ESP_HUB_COLOR_STEEL);
 
     fillRect(fb, kButtonLeft, kSaveTop, kButtonRight, kSaveBottom,
              statusCursor == kStatusSave ? ESP_HUB_COLOR_PANEL_ALT
@@ -2180,8 +2180,8 @@ bool paintSaveOverlay(void) {
         loadColor = ESP_HUB_COLOR_RED;
     }
 
-    drawCenteredWord(fb, 80, kSaveTop + 7, saveLabel, saveColor);
-    drawCenteredWord(fb, 80, kLoadTop + 7, loadLabel, loadColor);
+    drawCenteredWord(fb, 80, kSaveTop + 10, saveLabel, saveColor);
+    drawCenteredWord(fb, 80, kLoadTop + 10, loadLabel, loadColor);
     return Esp32PlatformVideo_present();
 }
 

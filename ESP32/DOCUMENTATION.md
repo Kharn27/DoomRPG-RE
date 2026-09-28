@@ -54,6 +54,7 @@ LOAD fix = session replacement bypasses ordinary HUB-close HUD exactness gate
 SAVE fix = successful confirmation closes HUB and queues 1200 ms Game saved
 SAVE fallback = permanent status, then current facing label, then empty
 HUB close integrity = bottom HUD exact after live compass repaint; top bar recomposed by world redraw
+HUB active surface = 160x100 at y=20..119; gameplay portrait strip hidden until close
 RNG fix = core creation seeds the inherited 128-byte Random_t table once
 ```
 
@@ -317,6 +318,9 @@ EspNativeGameplayHubView = 28 B
 
 ```text
 pages = INV | WPN | STAT | SYS
+tab labels = native 5x7; touch geometry remains 38x13 logical
+active surface = 160x100 logical at y=20..119; lower gameplay HUD hidden
+INV = four-row direct-touch window; Notebook + carried items + owned keys
 WPN = complete 3x3 normal arsenal
 STAT = compact read-only dashboard; only its tab is touch-active
 SYS = two-step SAVE/LOAD checkpoint page; SAVE success returns to gameplay
@@ -325,7 +329,33 @@ world dispatch blocked while HUB active
 turn advance disabled while HUB active
 ```
 
-INV projects Notebook, carried items, Credits and keys. WPN is the 3x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain excluded. STAT is read-only: its content uses compact 3x5 labels with intermediate 5x7 HP/Armor values, proportional green/red health and blue armor rails, level/XP progress, an aligned attribute grid, and owned-key mini-cards in green/true-yellow/blue/red instead of the internal hexadecimal bitmask; no content hitboxes are introduced. SYS owns the bounded in-game SAVE/LOAD controls. After the second SAVE selection succeeds, the HUB closes immediately and gameplay shows `Game saved` for about 1200 ms. Expiry recomposes the permanent status-message fallback, then the current facing-entity label, then an empty bar. The main menu exposes a separate LOAD-only entry through the same checkpoint service. The compact STAT layout has a successful firmware build and awaits its real-CYD visual pass.
+INV projects Notebook, the five carried-item slots and owned keys in a derived four-row
+scrolling window. A tap on any populated row moves the selection directly; the
+selected row keeps the amber rail and item counts use compact `Xn` labels. No
+scroll owner or duplicated list is retained. Weapons remain in WPN and Credits
+remain in STAT; keys intentionally appear both as inventory objects and as the
+compact STAT summary. Notebook opening and item use are still
+intentionally read-only until their native modal and exact turn/effect
+transactions are implemented.
+
+WPN is the 3x3 direct-touch normal arsenal grid; familiar IDs 9..11 remain
+excluded. STAT is read-only: its content uses compact 3x5 labels with
+intermediate 5x7 HP/Armor values, proportional green/red health and blue armor
+rails, level/XP progress, an aligned attribute grid, and owned-key mini-cards in
+green/true-yellow/blue/red instead of the internal hexadecimal bitmask; no
+content hitboxes are introduced. SYS owns the bounded in-game SAVE/LOAD
+controls. All four pages use the reclaimed logical rows 100..119 while the HUB
+is active. On ordinary close, the full retained gameplay HUD plus live compass
+are rebuilt before the existing exact lower-band integrity check; LOAD remains
+a deliberate whole-session replacement. After the second SAVE selection
+succeeds, the HUB closes immediately and gameplay shows `Game saved` for about
+1200 ms. Expiry recomposes the permanent status-message fallback, then the
+current facing-entity label, then an empty bar. The main menu exposes a separate
+LOAD-only entry through the same checkpoint service. The four-row INV layout
+builds at 45224 B static RAM and 796045 B flash. The full-height HUB, direct
+four-row touch selection, owned-key projection (including the yellow card),
+compact STAT presentation and ordinary HUD restoration have passed a focused
+real-CYD visual/touch check.
 
 ## Main-menu Load Game — REAL-CYD PASS
 
@@ -343,10 +373,13 @@ The `Options` child now shares the main menu's 2x2 finger-first card renderer
 Only `BACK` is enabled in the current model; the deferred cards are visibly
 subdued. Back keeps the two-tap contract and uses the runtime framebuffer hash
 returned by the painter, so presentation changes no longer require a duplicated
-hard-coded framebuffer constant. The firmware build passes; real-CYD visual and
-touch validation is pending.
+hard-coded framebuffer constant. The shared dashboard, deferred-card styling
+and two-tap Back route have passed focused visual/touch testing on the real CYD.
 
-**Current qualification:** after the later V8 monster-state extension, the user has reproduced a cold-boot regression where main-menu Load Game reports No Save for a valid V8 file that subsequently loads successfully through HUB/STAT in the same firmware. Therefore the historical main-menu pass must not be treated as a current V8 cold-load proof until that startup-path regression is fixed and retested.
+The later V8 cold-load regression is no longer current. Catalog-independent
+header validation fixed the false `No Save`, and both valid cold resume and the
+genuine no-save response were revalidated on the real CYD. The exact regression,
+fix and witnesses remain recorded in `MILESTONE_MAIN_MENU_LOAD.md`.
 
 ## Native checkpoint save/load
 

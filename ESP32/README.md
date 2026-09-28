@@ -116,8 +116,9 @@ INPUT | SOUND
 
 `BACK` keeps the released double-tap confirmation and returns through the real
 menu hierarchy. `VIDEO`, `INPUT` and `SOUND` remain deliberately subdued and
-non-interactive until their settings backends are ported. This redesign builds
-successfully and still awaits its real-CYD visual/touch pass.
+non-interactive until their settings backends are ported. The shared dashboard,
+its subdued deferred cards and the two-tap `BACK` route have passed focused
+visual/touch testing on the real CYD.
 
 The normal new-game route is:
 
@@ -159,32 +160,53 @@ The compact native HUB currently exposes:
 INV | WPN | STAT | SYS
 ```
 
-- `INV` presents Notebook, carried items, Credits and keys as a centered
-  previous/current/next card window.
+While it is open, the HUB owns the complete 160x100 logical surface below the
+industrial title bar (`y=20..119`). The gameplay portrait/status strip is hidden
+instead of consuming the last 20 rows. Closing the HUB reconstructs the normal
+HUD immediately and validates the lower strip against its pre-open fingerprint;
+the following world frame then recomposes the derived top message band.
+
+All four tab labels use the same native 5x7 pixel font as the primary STAT
+values, avoiding the blurry double-scaled 3x5 glyphs while preserving the full
+38x13 logical touch targets.
+
+- `INV` presents Notebook, carried items and owned key cards in a four-row scrolling window.
+  Every visible row is directly touch-selectable; item counts use a compact
+  `Xn` label and keys reuse their green/yellow/blue/red mini-card icon. Weapons
+  remain in WPN and Credits remain in STAT; STAT also keeps its useful key
+  summary. Notebook opening and consumable use are
+  deliberately deferred until their native interaction/turn owners exist.
 - `WPN` presents the nine normal weapon IDs 0..8 as a complete 3x3 grid.
   Familiar IDs 9..11 remain excluded. Source BGR565 weapon palettes are
-  converted to framebuffer RGB565 before drawing.
+  converted to framebuffer RGB565 before drawing; its three rows now extend to
+  the bottom of the HUB surface.
 - `STAT` remains read-only and now uses a denser 3x5 information dashboard:
   slightly raised HP/Armor cards with intermediate 5x7 values and real
   proportional green/red health and blue armor rails, level/XP with progress
-  bar, an aligned 2x2 attribute grid, and a footer that renders owned keys as
-  green/true-yellow/blue/red key cards rather than exposing the internal
-  bitmask. Only the tab remains touch-active.
-  The firmware build passes; the refined typography still awaits its real-CYD
-  visual check.
+  bar, an aligned 2x2 attribute grid, and a lower footer that renders owned
+  keys as green/true-yellow/blue/red key cards rather than exposing the
+  internal bitmask. Only the tab remains touch-active.
+  The refined typography and key-card colors have passed focused visual testing
+  on the real CYD.
 - `SYS` owns the dedicated one-slot checkpoint UI. SAVE and LOAD require a
   second SELECT/tap to confirm; missing checkpoints display `NO SAVE`. A
   successful SAVE closes the HUB immediately and queues `Game saved` in the
   gameplay message bar for about 1.2 seconds.
 
-The HUB repaints its industrial title bar while active and reconstructs the
-normal gameplay HUD when closing. Touch feedback is bounded and conflict-aware:
+The HUB repaints its industrial title bar and the former lower-HUD area while
+active, then reconstructs the normal gameplay HUD when closing. Touch feedback
+is bounded and conflict-aware:
 large checkpoint buttons fit the static edit owner, and newer pickup, message
 or viewport-flash overlays win if they touch the same framebuffer pixels.
 The lower HUD band is the close-time integrity boundary; the top message band
 is deliberately recomposed by the following world frame. When `Game saved`
 expires, the normal priority chain restores a permanent status message first,
 otherwise the current facing-entity label, otherwise an empty bar.
+
+The rebased `esp32-cyd` image builds successfully at 45,224 bytes of static RAM
+and 796,045 bytes of flash. The full-height HUB, four-row inventory (including
+the owned yellow card), compact STAT page, tab typography and ordinary HUD
+restoration have passed a focused real-CYD visual/touch check.
 
 ## Source-tree rule
 

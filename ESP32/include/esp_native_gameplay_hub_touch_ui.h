@@ -8,7 +8,8 @@ extern "C" {
 #endif
 
 /* Visible touch chrome for the native gameplay HUB. This layer owns no gameplay
- * state and no framebuffer snapshot. It paints only logical y=20..99 and maps
+ * state and no framebuffer snapshot. It paints logical y=20..119 while the HUB
+ * is active; the gameplay HUD underneath is reconstructed on close. It maps
  * the INV / WPN / STAT / SYS tabs plus page-local touch targets to semantic
  * actions. */
 int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
@@ -30,8 +31,9 @@ int EspNativeGameplayHubTouchUi_consumedWeaponTarget(uint8_t* outWeaponId);
  * away in the cyclic keyboard navigation order. */
 int EspNativeGameplayHubTouchUi_consumedPageTarget(uint8_t* outPage);
 
-/* Retained for the non-weapon Inventory previous/current/next window. */
-int EspNativeGameplayHubTouchUi_consumedSelectTarget(
+/* Resolve the exact row touched in the four-line Inventory window. Physical
+ * up/down actions have no row coordinate and keep cyclic navigation. */
+int EspNativeGameplayHubTouchUi_consumedInventoryTarget(
     uint8_t selectedRow,
     uint8_t entryCount,
     uint8_t* outTargetRow);

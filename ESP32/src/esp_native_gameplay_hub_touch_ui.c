@@ -15,7 +15,7 @@
 #include "platform_video_config.h"
 
 #define HUB_UI_TOP 20
-#define HUB_UI_BOTTOM 99
+#define HUB_UI_BOTTOM 119
 #define HUB_UI_LEFT 0
 #define HUB_UI_RIGHT 159
 
@@ -57,13 +57,25 @@
 
 #define HUB_UI_ROW_LEFT 2
 #define HUB_UI_ROW_RIGHT 157
-#define HUB_UI_ROW_TOUCH_RIGHT 157
+#define HUB_UI_ROW_TOUCH_LEFT 10
+#define HUB_UI_ROW_TOUCH_RIGHT 149
 #define HUB_UI_ROW0_TOP 36
-#define HUB_UI_ROW0_BOTTOM 52
-#define HUB_UI_ROW1_TOP 55
-#define HUB_UI_ROW1_BOTTOM 71
-#define HUB_UI_ROW2_TOP 74
-#define HUB_UI_ROW2_BOTTOM 90
+#define HUB_UI_ROW0_BOTTOM 54
+#define HUB_UI_ROW1_TOP 57
+#define HUB_UI_ROW1_BOTTOM 75
+#define HUB_UI_ROW2_TOP 78
+#define HUB_UI_ROW2_BOTTOM 96
+#define HUB_UI_ROW3_TOP 99
+#define HUB_UI_ROW3_BOTTOM 117
+#define HUB_UI_INVENTORY_ROWS 4U
+
+static const uint8_t inventoryRowTops[HUB_UI_INVENTORY_ROWS] = {
+    HUB_UI_ROW0_TOP, HUB_UI_ROW1_TOP, HUB_UI_ROW2_TOP, HUB_UI_ROW3_TOP
+};
+static const uint8_t inventoryRowBottoms[HUB_UI_INVENTORY_ROWS] = {
+    HUB_UI_ROW0_BOTTOM, HUB_UI_ROW1_BOTTOM,
+    HUB_UI_ROW2_BOTTOM, HUB_UI_ROW3_BOTTOM
+};
 
 static int inside(int x, int y, int left, int top, int right, int bottom) {
     return x >= left && x <= right && y >= top && y <= bottom;
@@ -185,19 +197,11 @@ static void drawMiniTextAt(uint16_t* framebuffer,
     }
 }
 
-static void drawMiniText(uint16_t* framebuffer,
-                         const char* text,
-                         int centerX,
-                         int top,
-                         int scale,
-                         uint16_t color) {
-    int x;
-    int width;
-    if (framebuffer == NULL || text == NULL || scale <= 0) return;
-    width = miniTextWidth(text, scale);
-    x = centerX - width / 2;
-    drawMiniTextAt(framebuffer, text, x, top, scale, color);
-}
+static void drawCrispText(uint16_t* framebuffer,
+                          const char* text,
+                          int centerX,
+                          int top,
+                          uint16_t color);
 
 static void drawTab(uint16_t* framebuffer,
                     int left,
@@ -210,28 +214,52 @@ static void drawTab(uint16_t* framebuffer,
              selected ? HUB_UI_PANEL_ALT : HUB_UI_PANEL);
     drawRect(framebuffer, left, top, right, bottom,
              selected ? HUB_UI_FOCUS : HUB_UI_STEEL);
-    drawMiniText(framebuffer, label, (left + right) / 2,
-                 top + 2, 2, selected ? HUB_UI_FOCUS : HUB_UI_TEXT);
+    drawCrispText(framebuffer, label, (left + right) / 2,
+                  top + 3, selected ? HUB_UI_FOCUS : HUB_UI_TEXT);
 }
 
-static void drawInventoryCards(uint16_t* framebuffer) {
-    static const int tops[3] = {
-        HUB_UI_ROW0_TOP, HUB_UI_ROW1_TOP, HUB_UI_ROW2_TOP
-    };
-    static const int bottoms[3] = {
-        HUB_UI_ROW0_BOTTOM, HUB_UI_ROW1_BOTTOM, HUB_UI_ROW2_BOTTOM
-    };
+static uint8_t inventoryWindowStart(uint8_t selectedEntry, uint8_t entryCount) {
+    if (entryCount <= HUB_UI_INVENTORY_ROWS || selectedEntry <= 1U) return 0U;
+    if ((uint8_t)(selectedEntry + 2U) < entryCount) {
+        return (uint8_t)(selectedEntry - 1U);
+    }
+    return (uint8_t)(entryCount - HUB_UI_INVENTORY_ROWS);
+}
+
+static int inventoryRowForY(int logicalY) {
     int row;
-    for (row = 0; row < 3; ++row) {
-        fillRect(framebuffer, HUB_UI_ROW_LEFT, tops[row],
-                 HUB_UI_ROW_RIGHT, bottoms[row],
-                 row == 1 ? HUB_UI_PANEL_ALT : HUB_UI_BLACK);
-        drawRect(framebuffer, HUB_UI_ROW_LEFT, tops[row],
-                 HUB_UI_ROW_RIGHT, bottoms[row],
-                 row == 1 ? HUB_UI_FOCUS : HUB_UI_DIM);
-        if (row == 1) {
+    for (row = 0; row < (int)HUB_UI_INVENTORY_ROWS; ++row) {
+        if (logicalY >= (int)inventoryRowTops[row] &&
+            logicalY <= (int)inventoryRowBottoms[row]) return row;
+    }
+    return -1;
+}
+
+static void inventoryRowBounds(int row, uint8_t* outTop, uint8_t* outBottom) {
+    if (row < 0 || row >= (int)HUB_UI_INVENTORY_ROWS) return;
+    if (outTop != NULL) *outTop = inventoryRowTops[row];
+    if (outBottom != NULL) *outBottom = inventoryRowBottoms[row];
+}
+
+static void drawInventoryCards(uint16_t* framebuffer,
+                               uint8_t selectedEntry,
+                               uint8_t entryCount) {
+    const uint8_t windowStart = inventoryWindowStart(selectedEntry, entryCount);
+    int row;
+    for (row = 0; row < (int)HUB_UI_INVENTORY_ROWS; ++row) {
+        const uint8_t entry = (uint8_t)(windowStart + (uint8_t)row);
+        const int populated = entry < entryCount;
+        const int selected = populated && entry == selectedEntry;
+        fillRect(framebuffer, HUB_UI_ROW_LEFT, inventoryRowTops[row],
+                 HUB_UI_ROW_RIGHT, inventoryRowBottoms[row],
+                 selected ? HUB_UI_PANEL_ALT : HUB_UI_BLACK);
+        drawRect(framebuffer, HUB_UI_ROW_LEFT, inventoryRowTops[row],
+                 HUB_UI_ROW_RIGHT, inventoryRowBottoms[row],
+                 selected ? HUB_UI_FOCUS : HUB_UI_DIM);
+        if (selected) {
             int y;
-            for (y = tops[row] + 2; y <= bottoms[row] - 2; ++y) {
+            for (y = (int)inventoryRowTops[row] + 2;
+                 y <= (int)inventoryRowBottoms[row] - 2; ++y) {
                 putPixel(framebuffer, HUB_UI_ROW_LEFT + 1, y, HUB_UI_FOCUS);
                 putPixel(framebuffer, HUB_UI_ROW_LEFT + 2, y, HUB_UI_FOCUS);
             }
@@ -249,7 +277,30 @@ static void drawMiniTextRight(uint16_t* framebuffer,
     drawMiniTextAt(framebuffer, text, right - width + 1, top, 1, color);
 }
 
-static int metricRows(char c, uint8_t rows[7]) {
+#define HUB_UI_GLYPH7(a, b, c, d, e, f, g) \
+    (((uint64_t)(a) << 30) | ((uint64_t)(b) << 25) | \
+     ((uint64_t)(c) << 20) | ((uint64_t)(d) << 15) | \
+     ((uint64_t)(e) << 10) | ((uint64_t)(f) << 5) | (uint64_t)(g))
+
+static uint64_t tabLetterBits(char c) {
+    switch (c) {
+    case 'A': return HUB_UI_GLYPH7(14, 17, 17, 31, 17, 17, 17);
+    case 'I': return HUB_UI_GLYPH7(31, 4, 4, 4, 4, 4, 31);
+    case 'N': return HUB_UI_GLYPH7(17, 25, 21, 19, 17, 17, 17);
+    case 'P': return HUB_UI_GLYPH7(30, 17, 17, 30, 16, 16, 16);
+    case 'S': return HUB_UI_GLYPH7(15, 16, 16, 14, 1, 1, 30);
+    case 'T': return HUB_UI_GLYPH7(31, 4, 4, 4, 4, 4, 4);
+    case 'V': return HUB_UI_GLYPH7(17, 17, 17, 17, 17, 10, 4);
+    case 'W': return HUB_UI_GLYPH7(17, 17, 17, 21, 21, 21, 10);
+    case 'X': return HUB_UI_GLYPH7(17, 17, 10, 4, 10, 17, 17);
+    case 'Y': return HUB_UI_GLYPH7(17, 17, 10, 4, 4, 4, 4);
+    default: return 0U;
+    }
+}
+
+#undef HUB_UI_GLYPH7
+
+static int crispRows(char c, uint8_t rows[7]) {
     static const uint8_t digits[10][7] = {
         {14U, 17U, 19U, 21U, 25U, 17U, 14U},
         {4U, 12U, 4U, 4U, 4U, 4U, 14U},
@@ -263,20 +314,30 @@ static int metricRows(char c, uint8_t rows[7]) {
         {14U, 17U, 17U, 15U, 1U, 1U, 14U}
     };
     static const uint8_t slash[7] = {1U, 1U, 2U, 4U, 8U, 16U, 16U};
-    const uint8_t* source;
+    const uint8_t* source = NULL;
+    uint64_t bits;
+    int row;
 
     if (c >= '0' && c <= '9') source = digits[c - '0'];
     else if (c == '/') source = slash;
-    else return 0;
-    memcpy(rows, source, 7U);
+    if (source != NULL) {
+        memcpy(rows, source, 7U);
+        return 1;
+    }
+
+    bits = tabLetterBits(c);
+    if (bits == 0U) return 0;
+    for (row = 0; row < 7; ++row) {
+        rows[row] = (uint8_t)((bits >> ((6 - row) * 5)) & 31U);
+    }
     return 1;
 }
 
-static void drawMetricValue(uint16_t* framebuffer,
-                            const char* text,
-                            int centerX,
-                            int top,
-                            uint16_t color) {
+static void drawCrispText(uint16_t* framebuffer,
+                          const char* text,
+                          int centerX,
+                          int top,
+                          uint16_t color) {
     const int length = text != NULL ? (int)strlen(text) : 0;
     int x;
 
@@ -285,7 +346,7 @@ static void drawMetricValue(uint16_t* framebuffer,
     while (*text != '\0') {
         uint8_t rows[7];
         int row;
-        if (!metricRows(*text, rows)) return;
+        if (!crispRows(*text, rows)) return;
         for (row = 0; row < 7; ++row) {
             int column;
             for (column = 0; column < 5; ++column) {
@@ -326,7 +387,7 @@ static void drawStatusMetricCard(uint16_t* framebuffer,
                  left + 3, gaugeBottom, gaugeColor);
     }
     drawMiniTextAt(framebuffer, label, left + 7, 37, 1, HUB_UI_STEEL);
-    drawMetricValue(framebuffer, value, (left + right) / 2, 44, HUB_UI_TEXT);
+    drawCrispText(framebuffer, value, (left + right) / 2, 44, HUB_UI_TEXT);
 }
 
 static void drawStatusProgress(uint16_t* framebuffer,
@@ -372,25 +433,30 @@ static void drawStatusKeyCard(uint16_t* framebuffer,
     putPixel(framebuffer, left + 8, top + 4, HUB_UI_BLACK);
 }
 
-static void drawStatusKeys(uint16_t* framebuffer, uint32_t keys) {
+static uint16_t inventoryKeyColor(uint8_t keyId) {
     static const uint16_t colors[4] = {
         ESP_HUB_COLOR_GREEN,
         ESP_HUB_COLOR_YELLOW,
         ESP_HUB_COLOR_BLUE,
         ESP_HUB_COLOR_RED
     };
+    return keyId < 4U ? colors[keyId] : HUB_UI_DIM;
+}
+
+static void drawStatusKeys(uint16_t* framebuffer, uint32_t keys) {
     int cursor = 105;
     int key;
     uint32_t visibleKeys = keys & 0x0fU;
 
-    drawMiniTextAt(framebuffer, "KEY", 85, 93, 1, HUB_UI_STEEL);
+    drawMiniTextAt(framebuffer, "KEY", 85, 109, 1, HUB_UI_STEEL);
     if (visibleKeys == 0U) {
-        drawMiniTextRight(framebuffer, "NONE", 152, 93, HUB_UI_DIM);
+        drawMiniTextRight(framebuffer, "NONE", 152, 109, HUB_UI_DIM);
         return;
     }
     for (key = 0; key < 4; ++key) {
         if ((visibleKeys & (1UL << key)) == 0U) continue;
-        drawStatusKeyCard(framebuffer, cursor, 92, colors[key]);
+        drawStatusKeyCard(framebuffer, cursor, 108,
+                          inventoryKeyColor((uint8_t)key));
         cursor += 12;
     }
 }
@@ -432,33 +498,33 @@ static int paintStatusDashboard(
     drawStatusMetricCard(framebuffer, 81, 157, "ARMOR", value,
                          armor, maxArmor, HUB_UI_ARMOR);
 
-    fillRect(framebuffer, 2, 56, 157, 70, HUB_UI_PANEL_ALT);
-    drawRect(framebuffer, 2, 56, 157, 70, HUB_UI_DIM);
-    drawMiniTextAt(framebuffer, "LEVEL", 7, 59, 1, HUB_UI_STEEL);
+    fillRect(framebuffer, 2, 57, 157, 74, HUB_UI_PANEL_ALT);
+    drawRect(framebuffer, 2, 57, 157, 74, HUB_UI_DIM);
+    drawMiniTextAt(framebuffer, "LEVEL", 7, 61, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%u", (unsigned int)player->level);
-    drawMiniTextRight(framebuffer, value, 48, 59, HUB_UI_TEXT);
-    drawMiniTextAt(framebuffer, "XP", 55, 59, 1, HUB_UI_STEEL);
+    drawMiniTextRight(framebuffer, value, 48, 61, HUB_UI_TEXT);
+    drawMiniTextAt(framebuffer, "XP", 55, 61, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%lu/%lu",
              (unsigned long)player->currentXP,
              (unsigned long)player->nextLevelXP);
-    drawMiniTextRight(framebuffer, value, 153, 59, HUB_UI_TEXT);
-    drawStatusProgress(framebuffer, 55, 153, 67,
+    drawMiniTextRight(framebuffer, value, 153, 61, HUB_UI_TEXT);
+    drawStatusProgress(framebuffer, 55, 153, 71,
                        player->currentXP, player->nextLevelXP);
 
-    fillRect(framebuffer, 2, 72, 157, 89, HUB_UI_BLACK);
-    drawRect(framebuffer, 2, 72, 157, 89, HUB_UI_DIM);
-    fillRect(framebuffer, 79, 74, 80, 87, HUB_UI_DIM);
-    fillRect(framebuffer, 4, 80, 155, 80, HUB_UI_DIM);
-    drawStatusAttribute(framebuffer, "DEF", defense, 7, 72, 74);
-    drawStatusAttribute(framebuffer, "STR", strength, 86, 151, 74);
-    drawStatusAttribute(framebuffer, "AGI", agility, 7, 72, 82);
-    drawStatusAttribute(framebuffer, "ACC", accuracy, 86, 151, 82);
+    fillRect(framebuffer, 2, 78, 157, 101, HUB_UI_BLACK);
+    drawRect(framebuffer, 2, 78, 157, 101, HUB_UI_DIM);
+    fillRect(framebuffer, 79, 80, 80, 99, HUB_UI_DIM);
+    fillRect(framebuffer, 4, 89, 155, 89, HUB_UI_DIM);
+    drawStatusAttribute(framebuffer, "DEF", defense, 7, 72, 81);
+    drawStatusAttribute(framebuffer, "STR", strength, 86, 151, 81);
+    drawStatusAttribute(framebuffer, "AGI", agility, 7, 72, 93);
+    drawStatusAttribute(framebuffer, "ACC", accuracy, 86, 151, 93);
 
-    fillRect(framebuffer, 2, 91, 157, 98, HUB_UI_PANEL);
-    drawRect(framebuffer, 2, 91, 157, 98, HUB_UI_DIM);
-    drawMiniTextAt(framebuffer, "CRED", 7, 93, 1, HUB_UI_STEEL);
+    fillRect(framebuffer, 2, 105, 157, 117, HUB_UI_PANEL);
+    drawRect(framebuffer, 2, 105, 157, 117, HUB_UI_DIM);
+    drawMiniTextAt(framebuffer, "CRED", 7, 109, 1, HUB_UI_STEEL);
     snprintf(value, sizeof(value), "%lu", (unsigned long)player->credits);
-    drawMiniTextRight(framebuffer, value, 74, 93, HUB_UI_TEXT);
+    drawMiniTextRight(framebuffer, value, 74, 109, HUB_UI_TEXT);
     drawStatusKeys(framebuffer, player->keys);
     printf("[HUBSTAT] FRAME layout=compact-read-only font=3x5 vitals=two-card-gauges hpGauge=green-or-red armorGauge=blue xp=progress attributes=2x2 keys=owned-color-cards keyMask=%08lx touchTargets=tab-only mutation=no turn=no\n",
            (unsigned long)player->keys);
@@ -508,38 +574,24 @@ static int drawDoomText(const EspNativeIndexedBmp* font,
     return 1;
 }
 
-static int formatEntryLine(char* line,
-                           uint32_t capacity,
-                           char marker,
-                           const EspNativeGameplayHubInventoryEntry* entry) {
-    int written;
-    if (line == NULL || capacity < 2U || entry == NULL ||
-        entry->name[0] == '\0' || entry->value[0] == '\0') return 0;
-    written = snprintf(line, capacity, "%c%s %s", marker, entry->name, entry->value);
-    return written >= 0 && (uint32_t)written < capacity;
-}
-
 static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedEntry) {
     const EspNativeGameplayHubView* view = EspNativeGameplayHub_view();
     EspNativeGameplayPlayerState player;
-    EspNativeGameplayHubInventoryEntry previous;
-    EspNativeGameplayHubInventoryEntry current;
-    EspNativeGameplayHubInventoryEntry next;
+    EspNativeGameplayHubInventoryEntry visible[HUB_UI_INVENTORY_ROWS];
     EspNativeIndexedBmp font;
     EspNativeIndexedBmpStats stats;
-    char line[40];
+    char value[8];
     uint8_t count;
-    uint8_t previousIndex;
-    uint8_t nextIndex;
+    uint8_t windowStart;
+    uint8_t visibleCount;
+    uint8_t row;
     int ok;
 
     memset(&player, 0, sizeof(player));
-    memset(&previous, 0, sizeof(previous));
-    memset(&current, 0, sizeof(current));
-    memset(&next, 0, sizeof(next));
+    memset(visible, 0, sizeof(visible));
     memset(&font, 0, sizeof(font));
     memset(&stats, 0, sizeof(stats));
-    memset(line, 0, sizeof(line));
+    memset(value, 0, sizeof(value));
 
     if (framebuffer == NULL || view == NULL || view->active == 0U ||
         !EspAssetPack_isOpen() ||
@@ -552,44 +604,57 @@ static int paintInventoryLabels(uint16_t* framebuffer, uint8_t selectedEntry) {
     if (view->opens == 1U && view->paints == 0U &&
         !EspNativeGameplayHubContent_probeInventoryList()) return 0;
 
-    previousIndex = (uint8_t)((selectedEntry + count - 1U) % count);
-    nextIndex = (uint8_t)((selectedEntry + 1U) % count);
-    if (!EspNativeGameplayHubNonWeapon_entryAt(&player, previousIndex, &previous) ||
-        !EspNativeGameplayHubNonWeapon_entryAt(&player, selectedEntry, &current) ||
-        !EspNativeGameplayHubNonWeapon_entryAt(&player, nextIndex, &next) ||
-        EspNativeIndexedBmp_open(HUB_UI_FONT_NAME, &font, &stats) !=
+    windowStart = inventoryWindowStart(selectedEntry, count);
+    visibleCount = (uint8_t)(count - windowStart);
+    if (visibleCount > HUB_UI_INVENTORY_ROWS) {
+        visibleCount = HUB_UI_INVENTORY_ROWS;
+    }
+    for (row = 0U; row < visibleCount; ++row) {
+        if (!EspNativeGameplayHubNonWeapon_entryAt(
+                &player, (uint8_t)(windowStart + row), &visible[row])) return 0;
+    }
+    if (EspNativeIndexedBmp_open(HUB_UI_FONT_NAME, &font, &stats) !=
             ESP_NATIVE_INDEXED_BMP_OK ||
         font.width != HUB_UI_FONT_SOURCE_WIDTH ||
         font.height != HUB_UI_FONT_SOURCE_HEIGHT) return 0;
 
-    fillRect(framebuffer, 5, HUB_UI_ROW0_TOP + 2, 155, HUB_UI_ROW0_BOTTOM - 1,
-             HUB_UI_BLACK);
-    fillRect(framebuffer, 5, HUB_UI_ROW1_TOP + 2, 155, HUB_UI_ROW1_BOTTOM - 1,
-             HUB_UI_PANEL_ALT);
-    fillRect(framebuffer, 5, HUB_UI_ROW2_TOP + 2, 155, HUB_UI_ROW2_BOTTOM - 1,
-             HUB_UI_BLACK);
-
-    ok = formatEntryLine(line, sizeof(line), ' ', &previous) &&
-         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW0_TOP + 2, &stats);
-    ok = formatEntryLine(line, sizeof(line), '>', &current) &&
-         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW1_TOP + 2, &stats) && ok;
-    ok = formatEntryLine(line, sizeof(line), ' ', &next) &&
-         drawDoomText(&font, framebuffer, line, 7, HUB_UI_ROW2_TOP + 2, &stats) && ok;
+    ok = 1;
+    for (row = 0U; row < visibleCount; ++row) {
+        uint8_t top;
+        const uint8_t entryIndex = (uint8_t)(windowStart + row);
+        const uint16_t valueColor = entryIndex == selectedEntry
+                                        ? HUB_UI_FOCUS : HUB_UI_STEEL;
+        inventoryRowBounds((int)row, &top, NULL);
+        if (!drawDoomText(&font, framebuffer, visible[row].name,
+                          8, (int)top + 4, &stats)) {
+            ok = 0;
+            break;
+        }
+        if (visible[row].kind == ESP_NATIVE_GAMEPLAY_HUB_ENTRY_ITEM) {
+            int written = snprintf(value, sizeof(value), "X%s", visible[row].value);
+            if (written < 0 || (uint32_t)written >= sizeof(value)) {
+                ok = 0;
+                break;
+            }
+            drawMiniTextRight(framebuffer, value, 149, (int)top + 7, valueColor);
+        }
+        else if (visible[row].kind == ESP_NATIVE_GAMEPLAY_HUB_ENTRY_KEY) {
+            drawStatusKeyCard(framebuffer, 140, (int)top + 6,
+                              inventoryKeyColor(visible[row].sourceId));
+        }
+        else {
+            drawMiniTextRight(framebuffer, "LOG", 149, (int)top + 7, valueColor);
+        }
+    }
     if (!ok || !EspAssetPack_isOpen()) return 0;
 
-    printf("[HUBINV] FRAME entries=%u selected=%u prev=%u/%s/\"%s\"/\"%s\" current=%u/%s/\"%s\"/\"%s\" next=%u/%s/\"%s\"/\"%s\" weapons=dedicated-grid persistentListBytes=0 visibleEntryBytes=%u fontReads=%u fontBytes=%u packOwnership=preserved-open mutation=no turn=no\n",
+    printf("[HUBINV] FRAME entries=%u selected=%u window=%u..%u rows=%u content=notebook+carried-items+owned-keys credits=stat keyMirror=stat weapons=dedicated-grid persistentListBytes=0 visibleEntryBytes=%u fontReads=%u fontBytes=%u packOwnership=preserved-open mutation=no turn=no\n",
            (unsigned int)count,
            (unsigned int)selectedEntry,
-           (unsigned int)previousIndex,
-           EspNativeGameplayHubContent_inventoryKindName(previous.kind),
-           previous.name, previous.value,
-           (unsigned int)selectedEntry,
-           EspNativeGameplayHubContent_inventoryKindName(current.kind),
-           current.name, current.value,
-           (unsigned int)nextIndex,
-           EspNativeGameplayHubContent_inventoryKindName(next.kind),
-           next.name, next.value,
-           (unsigned int)(sizeof(previous) + sizeof(current) + sizeof(next)),
+           (unsigned int)windowStart,
+           (unsigned int)(windowStart + visibleCount - 1U),
+           (unsigned int)visibleCount,
+           (unsigned int)(visibleCount * sizeof(visible[0])),
            (unsigned int)stats.packReads,
            (unsigned int)stats.bytesRead);
     return 1;
@@ -622,7 +687,7 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
     if (page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY) {
         count = EspNativeGameplayHubNonWeapon_entryCount(&player);
         if (count == 0U || selectedRow >= count) return 0;
-        drawInventoryCards(framebuffer);
+        drawInventoryCards(framebuffer, selectedRow, count);
         return paintInventoryLabels(framebuffer, selectedRow);
     }
     if (page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
@@ -751,37 +816,34 @@ int EspNativeGameplayHubTouchUi_classify(
 
     if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY) {
         uint8_t action;
+        uint8_t windowStart;
+        uint8_t target;
         uint8_t top;
         uint8_t bottom;
+        int row;
         memset(&player, 0, sizeof(player));
         if (!EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) {
             return -1;
         }
         count = EspNativeGameplayHubNonWeapon_entryCount(&player);
         if (count == 0U || view->selectedRow >= count ||
-            logicalX < HUB_UI_ROW_LEFT || logicalX > HUB_UI_ROW_TOUCH_RIGHT) {
+            logicalX < HUB_UI_ROW_TOUCH_LEFT ||
+            logicalX > HUB_UI_ROW_TOUCH_RIGHT) {
             return -1;
         }
-        if (logicalY >= HUB_UI_ROW0_TOP && logicalY <= HUB_UI_ROW0_BOTTOM) {
-            action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD;
-            top = HUB_UI_ROW0_TOP;
-            bottom = HUB_UI_ROW0_BOTTOM;
-        }
-        else if (logicalY >= HUB_UI_ROW1_TOP && logicalY <= HUB_UI_ROW1_BOTTOM) {
-            action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
-            top = HUB_UI_ROW1_TOP;
-            bottom = HUB_UI_ROW1_BOTTOM;
-        }
-        else if (logicalY >= HUB_UI_ROW2_TOP && logicalY <= HUB_UI_ROW2_BOTTOM) {
-            action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK;
-            top = HUB_UI_ROW2_TOP;
-            bottom = HUB_UI_ROW2_BOTTOM;
-        }
-        else {
-            return -1;
-        }
+        row = inventoryRowForY(logicalY);
+        if (row < 0) return -1;
+        windowStart = inventoryWindowStart(view->selectedRow, count);
+        target = (uint8_t)(windowStart + (uint8_t)row);
+        if (target >= count) return -1;
+        action = target == view->selectedRow
+                     ? ESP_NATIVE_GAMEPLAY_ACTION_SELECT
+                     : (target < view->selectedRow
+                            ? ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD
+                            : ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK);
+        inventoryRowBounds(row, &top, &bottom);
         setHit(outHit, action, zoneForAction(action),
-               HUB_UI_ROW_LEFT, top, HUB_UI_ROW_TOUCH_RIGHT, bottom);
+               HUB_UI_ROW_TOUCH_LEFT, top, HUB_UI_ROW_TOUCH_RIGHT, bottom);
         return 1;
     }
 
@@ -834,34 +896,31 @@ int EspNativeGameplayHubTouchUi_consumedPageTarget(uint8_t* outPage) {
     return 0;
 }
 
-int EspNativeGameplayHubTouchUi_consumedSelectTarget(
+int EspNativeGameplayHubTouchUi_consumedInventoryTarget(
     uint8_t selectedRow,
     uint8_t entryCount,
     uint8_t* outTargetRow) {
     const EspNativeGameplayInputState* input = EspNativeGameplayInput_peek();
     const EspNativeGameplayHubView* view = EspNativeGameplayHub_view();
+    uint8_t windowStart;
     uint8_t target;
+    int row;
     if (outTargetRow == NULL || entryCount == 0U || selectedRow >= entryCount ||
         input == NULL || view == NULL || view->active == 0U ||
         view->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY ||
         input->active == 0U || input->pending != 0U ||
-        input->action != ESP_NATIVE_GAMEPLAY_ACTION_SELECT ||
-        input->zone != ESP_NATIVE_GAMEPLAY_ZONE_SELECT ||
-        input->logicalX < HUB_UI_ROW_LEFT ||
+        (input->action != ESP_NATIVE_GAMEPLAY_ACTION_SELECT &&
+         input->action != ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD &&
+         input->action != ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK) ||
+        input->zone != zoneForAction(input->action) ||
+        input->logicalX < HUB_UI_ROW_TOUCH_LEFT ||
         input->logicalX > HUB_UI_ROW_TOUCH_RIGHT) return 0;
 
-    if (input->logicalY >= HUB_UI_ROW0_TOP && input->logicalY <= HUB_UI_ROW0_BOTTOM) {
-        target = (uint8_t)((selectedRow + entryCount - 1U) % entryCount);
-    }
-    else if (input->logicalY >= HUB_UI_ROW1_TOP && input->logicalY <= HUB_UI_ROW1_BOTTOM) {
-        target = selectedRow;
-    }
-    else if (input->logicalY >= HUB_UI_ROW2_TOP && input->logicalY <= HUB_UI_ROW2_BOTTOM) {
-        target = (uint8_t)((selectedRow + 1U) % entryCount);
-    }
-    else {
-        return 0;
-    }
+    row = inventoryRowForY((int)input->logicalY);
+    if (row < 0) return 0;
+    windowStart = inventoryWindowStart(selectedRow, entryCount);
+    target = (uint8_t)(windowStart + (uint8_t)row);
+    if (target >= entryCount) return 0;
     *outTargetRow = target;
     return 1;
 }
