@@ -16,6 +16,7 @@
 #include "esp_map_resident_lifecycle.h"
 #include "esp_map_runtime.h"
 #include "esp_map_script_state.h"
+#include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_combat_math.h"
@@ -24,6 +25,8 @@
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_monster_activation.h"
+#include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
@@ -54,6 +57,7 @@ constexpr uint8_t kMagicV5[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '5'};
 constexpr uint8_t kMagicV6[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '6'};
 constexpr uint8_t kMagicV7[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '7'};
 constexpr uint8_t kMagicV8[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '8'};
+constexpr uint8_t kMagicV9[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '9'};
 constexpr uint16_t kVersionV1 = 1U;
 constexpr uint16_t kVersionV2 = 2U;
 constexpr uint16_t kVersionV3 = 3U;
@@ -62,6 +66,7 @@ constexpr uint16_t kVersionV5 = 5U;
 constexpr uint16_t kVersionV6 = 6U;
 constexpr uint16_t kVersionV7 = 7U;
 constexpr uint16_t kVersionV8 = 8U;
+constexpr uint16_t kVersionV9 = 9U;
 constexpr uint8_t kFamiliarAmmoType = 5U;
 constexpr uint8_t kStatusSave = 0U;
 constexpr uint8_t kStatusLoad = 1U;
@@ -136,7 +141,14 @@ struct LoadedSaveRecord {
     uint8_t hasLines;
     uint8_t hasActionRemoved;
     uint8_t hasAutomap;
-    uint8_t reservedLoaded;
+    uint8_t hasMonsterSpatial;
+};
+
+struct NativeSaveRecordV9Tail {
+    EspNativeGameplayMonsterStateSnapshot monsters;
+    EspMapSpriteTopologyMonsterSnapshot monsterTopology;
+    EspNativeGameplayMonsterPositionSnapshot monsterPositions;
+    EspNativeGameplayMonsterActivationSnapshot monsterActivation;
 };
 
 constexpr size_t kRecordBytesV6 =
@@ -146,6 +158,9 @@ constexpr size_t kRecordBytesV7 =
     kRecordBytesV6 + sizeof(EspMapAutomapSnapshot);
 constexpr size_t kRecordBytesV8 =
     kRecordBytesV7 + sizeof(EspNativeGameplayMonsterStateSnapshot);
+
+constexpr size_t kRecordBytesV9 =
+    kRecordBytesV7 + sizeof(NativeSaveRecordV9Tail);
 
 static_assert(sizeof(EspNativeGameplayCrateTransformSnapshot) == 176U,
               "crate transform checkpoint must remain exactly 176 bytes");
@@ -159,7 +174,17 @@ static_assert(sizeof(EspNativeGameplayMonsterStateSnapshot) == 1612U,
               "monster-state checkpoint must remain exactly 1612 bytes");
 static_assert(kRecordBytesV8 == 3548U,
               "native save v8 must remain the bounded 3548-byte streamed record");
-static_assert(kRecordBytesV8 <= 0xffffU,
+static_assert(sizeof(EspMapSpriteTopologyMonsterSnapshot) == 816U,
+              "monster-topology checkpoint must remain exactly 816 bytes");
+static_assert(sizeof(EspNativeGameplayMonsterPositionSnapshot) == 812U,
+              "monster-position checkpoint must remain exactly 812 bytes");
+static_assert(sizeof(EspNativeGameplayMonsterActivationSnapshot) == 268U,
+              "monster-activation checkpoint must remain exactly 268 bytes");
+static_assert(sizeof(NativeSaveRecordV9Tail) == 3508U,
+              "native save v9 tail must remain exactly 3508 bytes");
+static_assert(kRecordBytesV9 == 5444U,
+              "native save v9 must remain the bounded 5444-byte streamed record");
+static_assert(kRecordBytesV9 <= 0xffffU,
               "native save recordBytes field is uint16_t");
 
 static_assert(sizeof(NativeSaveCore) == 132U,
