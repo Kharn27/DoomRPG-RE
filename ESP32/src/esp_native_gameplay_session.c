@@ -663,17 +663,26 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                             EspNativeGameplayHud_view();
                         EspNativeGameplayHudStats hudStats;
                         EspNativeGameplayHudStatus hudStatus;
+
+                        /*
+                         * The loading owner deliberately suppresses HUD repaint
+                         * while active. FINAL-READY has already rebuilt the
+                         * complete world behind the physical loading screen, so
+                         * release ownership now (without presenting), restore
+                         * both HUD bands into that logical framebuffer, then
+                         * publish exactly once below.
+                         */
+                        EspNativeTransitionPresentation_releaseLoading(releaseReason);
                         memset(&hudStats, 0, sizeof(hudStats));
                         hudStatus = EspNativeGameplayHud_repaint(hud, &hudStats);
                         if (hudStatus != ESP_NATIVE_GAMEPLAY_HUD_OK) {
                             failSession("transition final HUD repaint");
                             return;
                         }
-                        printf("[ENGINESESSION] FINAL-HUD pixels=%u reads=%u bands=top+bottom owner=retained\\n",
+                        printf("[ENGINESESSION] FINAL-HUD pixels=%u reads=%u bands=top+bottom owner=retained afterRelease=yes\\n",
                                (unsigned int)hudStats.pixelsWritten,
                                (unsigned int)hudStats.packReads);
                     }
-                    EspNativeTransitionPresentation_releaseLoading(releaseReason);
                     if (!Esp32PlatformVideo_present()) {
                         failSession("transition final world present");
                         return;
