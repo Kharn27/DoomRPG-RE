@@ -6,9 +6,12 @@
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_turn.h"
 
-#define MONSTER_ACTIVATION_MAX_SPRITES 1024U
-#define MONSTER_ACTIVATION_BYTES (MONSTER_ACTIVATION_MAX_SPRITES / 8U)
-#define MONSTER_ACTIVATION_MAX_ORDER 64U
+#define MONSTER_ACTIVATION_MAX_SPRITES \
+    ESP_NATIVE_GAMEPLAY_MONSTER_ACTIVATION_MAX_SPRITES
+#define MONSTER_ACTIVATION_BYTES \
+    ESP_NATIVE_GAMEPLAY_MONSTER_ACTIVATION_BYTES
+#define MONSTER_ACTIVATION_MAX_ORDER \
+    ESP_NATIVE_GAMEPLAY_MONSTER_ACTIVATION_MAX_ORDER
 #define MONSTER_ACTIVATION_NO_SPRITE 0xffffU
 
 typedef struct MonsterActivationGateOwner_s {
@@ -30,6 +33,30 @@ typedef struct MonsterActivationGateOwner_s {
 } MonsterActivationGateOwner;
 
 static MonsterActivationGateOwner activationOwner;
+
+static uint32_t activationSnapshotFNV(
+    const EspNativeGameplayMonsterActivationSnapshot* snapshot) {
+    uint32_t hash = 2166136261U;
+    uint32_t i;
+    if (snapshot == NULL) return 0U;
+    for (i = 0U; i < sizeof(snapshot->activeBits); ++i) {
+        hash ^= snapshot->activeBits[i];
+        hash *= 16777619U;
+    }
+    for (i = 0U; i < snapshot->activeOrderCount; ++i) {
+        const uint16_t value = snapshot->activeOrder[i];
+        hash ^= (uint8_t)(value & 0xffU);
+        hash *= 16777619U;
+        hash ^= (uint8_t)((value >> 8) & 0xffU);
+        hash *= 16777619U;
+    }
+    hash ^= (uint8_t)(snapshot->activatedCount & 0xffU);
+    hash *= 16777619U;
+    hash ^= (uint8_t)((snapshot->activatedCount >> 8) & 0xffU);
+    hash *= 16777619U;
+    hash ^= snapshot->activeOrderCount;
+    return hash * 16777619U;
+}
 
 const EspNativeGameplayMonsterTurnView*
 __real_EspNativeGameplayMonsterTurn_view(void);
@@ -122,6 +149,96 @@ int EspNativeGameplayMonsterActivation_getOrdered(uint32_t ordinal,
         return 0;
     }
     *outSpriteIndex = activationOwner.activeOrder[ordinal];
+    return 1;
+}
+
+void EspNativeGameplayMonsterActivation_reset(void) {
+    memset(&activationOwner, 0, sizeof(activationOwner));
+    activationOwner.filtered.lastAttackerSpriteIndex =
+        MONSTER_ACTIVATION_NO_SPRITE;
+    activationOwner.selectedSprite = MONSTER_ACTIVATION_NO_SPRITE;
+}
+
+int EspNativeGameplayMonsterActivation_snapshotShapeValid(
+    const EspNativeGameplayMonsterActivationSnapshot* snapshot,
+    uint32_t expectedArenaFNV1a) {
+    uint8_t expectedBits[MONSTER_ACTIVATION_BYTES];
+    uint32_t i;
+
+    if (snapshot == NULL || expectedArenaFNV1a == 0U ||
+        snapshot->sourceArenaFNV1a != expectedArenaFNV1a ||
+        snapshot->stateFNV1a == 0U || snapshot->reserved0 != 0U ||
+        snapshot->activeOrderCount > MONSTER_ACTIVATION_MAX_ORDER ||
+        snapshot->activatedCount != snapshot->activeOrderCount ||
+        activationSnapshotFNV(snapshot) != snapshot->stateFNV1a) {
+        return 0;
+    }
+
+    memset(expectedBits, 0, sizeof(expectedBits));
+    for (i = 0U; i < snapshot->activeOrderCount; ++i) {
+        const uint16_t spriteIndex = snapshot->activeOrder[i];
+        const uint8_t mask = (uint8_t)(1U << (spriteIndex & 7U));
+        if (spriteIndex >= MONSTER_ACTIVATION_MAX_SPRITES ||
+            (expectedBits[spriteIndex >> 3] & mask) != 0U) {
+            return 0;
+        }
+        expectedBits[spriteIndex >> 3] |= mask;
+    }
+    if (memcmp(expectedBits, snapshot->activeBits,
+               sizeof(expectedBits)) != 0) {
+        return 0;
+    }
+    for (i = snapshot->activeOrderCount;
+         i < MONSTER_ACTIVATION_MAX_ORDER; ++i) {
+        if (snapshot->activeOrder[i] != 0U) return 0;
+    }
+    return 1;
+}
+
+int EspNativeGameplayMonsterActivation_snapshot(
+    EspNativeGameplayMonsterActivationSnapshot* outSnapshot) {
+    if (outSnapshot == NULL || !ensureArena()) return 0;
+
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    outSnapshot->sourceArenaFNV1a = activationOwner.sourceArenaFNV1a;
+    memcpy(outSnapshot->activeBits, activationOwner.activeBits,
+           sizeof(outSnapshot->activeBits));
+    memcpy(outSnapshot->activeOrder, activationOwner.activeOrder,
+           activationOwner.activeOrderCount *
+               sizeof(outSnapshot->activeOrder[0]));
+    outSnapshot->activatedCount =
+        (uint16_t)activationOwner.activatedCount;
+    outSnapshot->activeOrderCount = activationOwner.activeOrderCount;
+    outSnapshot->stateFNV1a = activationSnapshotFNV(outSnapshot);
+    return EspNativeGameplayMonsterActivation_snapshotShapeValid(
+        outSnapshot, activationOwner.sourceArenaFNV1a);
+}
+
+int EspNativeGameplayMonsterActivation_restoreSnapshot(
+    const EspNativeGameplayMonsterActivationSnapshot* snapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+
+    if (runtime == NULL || runtime->arenaFNV1a == 0U ||
+        !EspNativeGameplayMonsterActivation_snapshotShapeValid(
+            snapshot, runtime->arenaFNV1a)) {
+        return 0;
+    }
+
+    EspNativeGameplayMonsterActivation_reset();
+    activationOwner.sourceArenaFNV1a = runtime->arenaFNV1a;
+    memcpy(activationOwner.activeBits, snapshot->activeBits,
+           sizeof(activationOwner.activeBits));
+    memcpy(activationOwner.activeOrder, snapshot->activeOrder,
+           sizeof(activationOwner.activeOrder));
+    activationOwner.activatedCount = snapshot->activatedCount;
+    activationOwner.activeOrderCount = snapshot->activeOrderCount;
+    activationOwner.active = 1U;
+
+    printf("[MONSTERACT] RESTORE arena=%08x activeCount=%u orderCount=%u stateFNV=%08x source=checkpoint-v9 producerCounters=fresh selection=clear\n",
+           (unsigned int)activationOwner.sourceArenaFNV1a,
+           (unsigned int)activationOwner.activatedCount,
+           (unsigned int)activationOwner.activeOrderCount,
+           (unsigned int)snapshot->stateFNV1a);
     return 1;
 }
 
