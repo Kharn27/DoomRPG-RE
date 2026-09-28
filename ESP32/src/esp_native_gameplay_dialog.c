@@ -185,11 +185,9 @@ static void wrapStandaloneLines(void) {
             continue;
         }
         if (dialog.text[i] == ' ') lastSpace = i;
-        if ((uint16_t)(i - lineStart + 1U) > maxChars) {
-            uint16_t split = lastSpace;
-            if (split == UINT16_MAX || split < lineStart) {
-                split = i;
-            }
+        if ((uint16_t)(i - lineStart + 1U) > maxChars &&
+            lastSpace != UINT16_MAX && lastSpace >= lineStart) {
+            const uint16_t split = lastSpace;
             dialog.text[split] = '|';
             lineStart = (uint16_t)(split + 1U);
             lastSpace = UINT16_MAX;
