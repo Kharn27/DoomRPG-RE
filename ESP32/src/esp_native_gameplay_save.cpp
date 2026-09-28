@@ -1593,13 +1593,17 @@ bool readCrateSection(
     size_t got;
     if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
         (core.version != kVersionV6 && core.version != kVersionV7 &&
-         core.version != kVersionV8)) {
+         core.version != kVersionV8 && core.version != kVersionV9)) {
         return false;
     }
     const size_t expectedBytes =
-        core.version == kVersionV8
-            ? kRecordBytesV8
-            : (core.version == kVersionV7 ? kRecordBytesV7 : kRecordBytesV6);
+        core.version == kVersionV9
+            ? kRecordBytesV9
+            : (core.version == kVersionV8
+                   ? kRecordBytesV8
+                   : (core.version == kVersionV7
+                          ? kRecordBytesV7
+                          : kRecordBytesV6));
     file = SD.open(path, FILE_READ);
     if (!file || (size_t)file.size() != expectedBytes ||
         !file.seek(sizeof(NativeSaveRecordV5))) {
@@ -1643,11 +1647,14 @@ bool readAutomapSection(
     File file;
     size_t got;
     if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
-        (core.version != kVersionV7 && core.version != kVersionV8)) {
+        (core.version != kVersionV7 && core.version != kVersionV8 &&
+         core.version != kVersionV9)) {
         return false;
     }
     const size_t expectedBytes =
-        core.version == kVersionV8 ? kRecordBytesV8 : kRecordBytesV7;
+        core.version == kVersionV9
+            ? kRecordBytesV9
+            : (core.version == kVersionV8 ? kRecordBytesV8 : kRecordBytesV7);
     file = SD.open(path, FILE_READ);
     if (!file || (size_t)file.size() != expectedBytes ||
         !file.seek(kRecordBytesV6)) {
