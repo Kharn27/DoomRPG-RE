@@ -169,6 +169,35 @@ static int lineSpan(uint16_t lineIndex,
     return 0;
 }
 
+static void wrapStandaloneLines(void) {
+    const uint16_t maxChars =
+        (uint16_t)(((DIALOG_FILL_W - DIALOG_FONT_WIDTH) /
+                    DIALOG_FONT_ADVANCE) + 1);
+    uint16_t lineStart = 0U;
+    uint16_t i = 0U;
+    uint16_t lastSpace = UINT16_MAX;
+
+    while (i < dialog.textLength) {
+        if (dialog.text[i] == '|') {
+            lineStart = (uint16_t)(i + 1U);
+            lastSpace = UINT16_MAX;
+            ++i;
+            continue;
+        }
+        if (dialog.text[i] == ' ') lastSpace = i;
+        if ((uint16_t)(i - lineStart + 1U) > maxChars &&
+            lastSpace != UINT16_MAX && lastSpace >= lineStart) {
+            const uint16_t split = lastSpace;
+            dialog.text[split] = '|';
+            lineStart = (uint16_t)(split + 1U);
+            lastSpace = UINT16_MAX;
+            i = lineStart;
+            continue;
+        }
+        ++i;
+    }
+}
+
 static uint16_t pageLineCount(void) {
     uint16_t remaining;
     if (dialog.currentDialogLine >= dialog.lineCount) return 0U;
@@ -565,6 +594,7 @@ EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_beginStandalone(
 
     memcpy(dialog.text, text, textLength + 1U);
     dialog.textLength = (uint16_t)textLength;
+    wrapStandaloneLines();
     dialog.lineCount = 1U;
     for (i = 0U; i < dialog.textLength; ++i) {
         if (dialog.text[i] == '|') ++dialog.lineCount;

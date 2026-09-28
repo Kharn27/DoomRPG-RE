@@ -380,12 +380,16 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 failSession("initial HUD");
                 return;
             }
-            if (!EspNativeGameplayHud_isReady() ||
+            if (!EspNativeGameplayHud_isReady()) {
+                failSession("initial HUD ready");
+                return;
+            }
+            if (!EspNativeTransitionPresentation_isLoadingActive() &&
                 !Esp32PlatformVideo_present()) {
                 failSession("initial HUD present");
                 return;
             }
-            printf("[ENGINESESSION] HUD map=%u hp=%u/%u armor=%u/%u weapon=%u ammo=%u resources=%u pixels=%u reads=%u presented=1\n",
+            printf("[ENGINESESSION] HUD map=%u hp=%u/%u armor=%u/%u weapon=%u ammo=%u resources=%u pixels=%u reads=%u presented=%u loadingSuppressed=%u\n",
                    (unsigned int)view->targetMapId,
                    (unsigned int)model.health,
                    (unsigned int)model.maxHealth,
@@ -395,7 +399,9 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)model.ammo,
                    (unsigned int)stats.resourcesValidated,
                    (unsigned int)stats.pixelsWritten,
-                   (unsigned int)stats.packReads);
+                   (unsigned int)stats.packReads,
+                   EspNativeTransitionPresentation_isLoadingActive() ? 0U : 1U,
+                   EspNativeTransitionPresentation_isLoadingActive() ? 1U : 0U);
             sessionState.stage = SESSION_STAGE_DEPENDENCIES;
             continue;
         }
@@ -474,6 +480,9 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 failSession("small-cache cold frame");
                 return;
             }
+            if (EspNativeTransitionPresentation_isLoadingActive()) {
+                EspNativeTransitionPresentation_checkpointProgress(90U, "CACHE-COLD");
+            }
             sessionState.stage = SESSION_STAGE_SMALL_WARM;
             continue;
         }
@@ -487,6 +496,9 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 EspAssetPack_isResidentLargeRangeEnabled()) {
                 failSession("small-cache warm frame");
                 return;
+            }
+            if (EspNativeTransitionPresentation_isLoadingActive()) {
+                EspNativeTransitionPresentation_checkpointProgress(93U, "CACHE-WARM");
             }
             sessionState.stage = SESSION_STAGE_LARGE_BEGIN;
             continue;
@@ -522,10 +534,19 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
             EspAssetPackResidentStats pack;
             if (!renderCacheWitness(doomRpgBase, view, "LARGE-LEARN",
                                     &frame, &pack) ||
-                !EspAssetPack_isResidentLargeRangeEnabled() ||
-                pack.rangeCacheStores == 0U || pack.largeRangeEntries == 0U) {
+                !EspAssetPack_isResidentLargeRangeEnabled()) {
                 failSession("large-cache learn frame");
                 return;
+            }
+            if (pack.rangeCacheStores == 0U || pack.largeRangeEntries == 0U) {
+                printf("[ENGINECACHE] LARGE-LEARN-HOT stores=%u largeEntries=%u rangeHits=%u entryHits=%u acceptance=already-warm-or-bypass\n",
+                       (unsigned int)pack.rangeCacheStores,
+                       (unsigned int)pack.largeRangeEntries,
+                       (unsigned int)pack.rangeCacheHits,
+                       (unsigned int)pack.entryCacheHits);
+            }
+            if (EspNativeTransitionPresentation_isLoadingActive()) {
+                EspNativeTransitionPresentation_checkpointProgress(96U, "CACHE-LEARN");
             }
             sessionState.stage = SESSION_STAGE_LARGE_WARM;
             continue;
@@ -537,11 +558,17 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
             if (!renderCacheWitness(doomRpgBase, view, "LARGE-WARM",
                                     &frame, &pack) ||
                 !EspAssetPack_isResidentLargeRangeEnabled() ||
-                pack.rangeCacheHits == 0U || pack.entryCacheHits == 0U ||
-                pack.largeRangeEntries == 0U) {
+                pack.rangeCacheHits == 0U || pack.entryCacheHits == 0U) {
                 failSession("large-cache warm frame");
                 return;
             }
+            /*
+             * A warm render may legitimately evict the learned large-range
+             * entries while still hitting the cache.  The historical witness
+             * only needs LARGE mode active plus real cache hits; requiring a
+             * non-zero post-frame largeRangeEntries count makes session
+             * readiness depend on cache replacement details.
+             */
             printf("[ENGINECACHE] PRIMED map=%u angle=%u totalUs=%u largeEntries=%u heap8=%u largest8=%u next=collision+input\n",
                    (unsigned int)view->targetMapId,
                    (unsigned int)view->viewAngle,
@@ -605,21 +632,69 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                        reserveHealthy ? "HEADROOM_OK" : "REVIEW_HEADROOM");
 
                 sessionState.stage = SESSION_STAGE_ACTIVE;
-                if (sessionState.checkpointResume != 0U &&
-                    EspNativeTransitionPresentation_isLoadingActive()) {
-                    /* All priming frames were intentionally hidden behind the
-                     * fixed loading owner. LARGE-WARM left one complete
-                     * world+HUD frame in the logical framebuffer and
-                     * SESSION-ARM left the facing label dirty. Release only
-                     * now, then let the normal compositor publish that complete
-                     * frame atomically as the first visible resumed frame. */
-                    EspNativeTransitionPresentation_releaseLoading(
-                        "checkpoint-session-active");
-                    if (!Esp32PlatformVideo_present()) {
-                        failSession("checkpoint final world present");
+                if (EspNativeTransitionPresentation_isLoadingActive()) {
+                    /* Both checkpoint resume and fresh intro startup retain the
+                     * same full-screen owner through cache priming. By this
+                     * point LARGE-WARM has left a complete world+HUD frame in
+                     * the logical framebuffer. Release without repainting the
+                     * loading UI, then publish that complete frame atomically. */
+                    const char* releaseReason =
+                        sessionState.checkpointResume != 0U
+                            ? "checkpoint-session-active"
+                            : "fresh-session-active";
+                    EspNativeGameplayFrameStats finalFrame;
+                    EspAssetPackResidentStats finalPack;
+
+                    /*
+                     * Show completion only when session ownership is actually
+                     * ready. checkpointProgress() repaints the complete loading
+                     * frame, so rebuild one final gameplay frame behind the
+                     * suppressed present before releasing the owner.
+                     */
+                    EspNativeTransitionPresentation_checkpointProgress(100U, "READY");
+                    if (!renderCacheWitness(doomRpgBase, view, "FINAL-READY",
+                                            &finalFrame, &finalPack)) {
+                        failSession("transition final frame rebuild");
                         return;
                     }
-                    printf("[ENGINESESSION] RESUME-VISIBLE map=%u loadingOwner=released finalWorldPresent=yes intermediatePresents=blocked\n",
+                    /*
+                     * renderCacheWitness() rebuilds the 3D world after the
+                     * READY loading repaint, but that render also overwrites
+                     * the HUD bands. Restore both retained HUD bands into the
+                     * completed logical framebuffer before releasing the
+                     * full-screen loading owner.
+                     */
+                    {
+                        const EspNativeGameplayHudState* hud =
+                            EspNativeGameplayHud_view();
+                        EspNativeGameplayHudStats hudStats;
+                        EspNativeGameplayHudStatus hudStatus;
+
+                        /*
+                         * The loading owner deliberately suppresses HUD repaint
+                         * while active. FINAL-READY has already rebuilt the
+                         * complete world behind the physical loading screen, so
+                         * release ownership now (without presenting), restore
+                         * both HUD bands into that logical framebuffer, then
+                         * publish exactly once below.
+                         */
+                        EspNativeTransitionPresentation_releaseLoading(releaseReason);
+                        memset(&hudStats, 0, sizeof(hudStats));
+                        hudStatus = EspNativeGameplayHud_repaint(hud, &hudStats);
+                        if (hudStatus != ESP_NATIVE_GAMEPLAY_HUD_OK) {
+                            failSession("transition final HUD repaint");
+                            return;
+                        }
+                        printf("[ENGINESESSION] FINAL-HUD pixels=%u reads=%u bands=top+bottom owner=retained afterRelease=yes\\n",
+                               (unsigned int)hudStats.pixelsWritten,
+                               (unsigned int)hudStats.packReads);
+                    }
+                    if (!Esp32PlatformVideo_present()) {
+                        failSession("transition final world present");
+                        return;
+                    }
+                    printf("[ENGINESESSION] %s-VISIBLE map=%u loadingOwner=released finalWorldPresent=yes intermediatePresents=blocked\n",
+                           sessionState.checkpointResume != 0U ? "RESUME" : "FRESH",
                            (unsigned int)view->targetMapId);
                 }
                 printf("[ENGINESESSION] READY map=%u angle=%u residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=%p mediaTexels=%p\n",

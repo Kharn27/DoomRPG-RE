@@ -4,46 +4,52 @@
 
 Hardware-tested code SHA:
 
-`a81dd38a6875154b37b9006a145eef5d73e85a66`
+`6903431a60700960127be95d95584728698a36c8`
 
-Base main at validation time:
+Current main at this validation tail:
 
-`8dd660ce1017540c364591cad54514c9c788acf5`
+`2af4aab025b6fb0094b31eea9403477f892b796a`
 
 Branch:
 
-`agent/esp32-native-level-stats-loading`
+`agent/esp32-native-transition-polish`
 
-CI:
+Hardware:
 
-`esp32-cyd #867 SUCCESS`
+`ESP32-2432S028R classic CYD, no PSRAM`
 
-Memory/build witness:
+Validation status:
 
-```text
-RAM static = 45224 B / 327680 B (13.8%)
-Flash      = 795461 B / 1310720 B (60.7%)
-```
+`REAL-CYD PASS — checkpoint LOAD from MENU_MAIN and from an already-running gameplay HUB`
+
+No new CI/build-size claim is attached to this post-main polish tail; the real-CYD
+Serial/visual result is the authority for this boundary.
 
 ## Result
 
-The native transition presentation is now hardware-validated on the real classic
-CYD for both level-transition loading and checkpoint LOAD presentation.
+The transition/loading presentation is now validated as one shared ownership
+pipeline rather than two caller-specific load paths.
 
-The user explicitly accepted the final LOAD Game result as clean/professional.
-The previously observed regressions are closed:
+The same checkpoint restore entry point is used whether LOAD is requested from
+the cold main menu or from the in-game SYS HUB. The in-game case first tears down
+the old gameplay/HUB session, then the loading owner acquires the shared logical
+framebuffer. No old-session cleanup is allowed to run after loading ownership
+starts.
 
-- no gameplay top bar appears over the loading frame;
-- no gameplay bottom HUD appears over the loading frame;
-- no stale restored GIB/blood burst is replayed during checkpoint resume;
-- loading remains the visible owner through runtime/cache/session priming;
-- the first visible gameplay image is published only after the loading owner is
-  released.
+Both hardware paths now complete successfully:
+
+- loading remains full-screen throughout restore and cache/session priming;
+- no HUB/gameplay pixels leak into progress frames;
+- progress advances through the long priming tail instead of sitting at 100%;
+- already-warm gameplay caches do not fail the resume witness;
+- the 100% frame is reached before handoff;
+- the first visible resumed gameplay frame contains the complete world and both
+  HUD bands.
 
 ## Reusable component boundary
 
-`EspNativeTransitionPresentation` is a permanent reusable presentation owner,
-not a map-specific screen.
+`EspNativeTransitionPresentation` remains the permanent reusable full-screen
+presentation owner.
 
 Current public API:
 
@@ -58,72 +64,133 @@ EspNativeTransitionPresentation_endLoading()
 EspNativeTransitionPresentation_reset()
 ```
 
-The same loading owner is used by:
+The owner is shared by native transition/loading users including CHANGEMAP,
+checkpoint LOAD, and fresh-start/intro handoff. Target identity and progress
+semantics are caller-owned; the current visual skin remains encapsulated.
 
-1. native CHANGEMAP handoff / raw-map-flash rebuild;
-2. native checkpoint LOAD / session reconstruction.
+Current visual skin:
 
-Parameters already owned by callers include target map identity, generic progress,
-checkpoint stage text, and lifecycle/release reason. The target label is resolved
-from the native map catalog.
-
-The current visual skin is deliberately fixed inside the component:
-
-- `c.bmp` fixed first-frame background;
+- `c.bmp` starfield background;
 - compact HUB mini-font;
 - amber/steel/ivory palette;
-- fixed card/progress geometry.
+- fixed loading card and progress geometry.
 
-That styling is not yet a public theme/config object. A later UI-polish milestone
-may expose a small immutable style/config descriptor without changing the
-loading callers or ownership contract.
+## Shared framebuffer ownership
 
-## Presentation ownership fix
+There is still only one 160x120 RGB565 logical framebuffer. No second framebuffer
+and no PSRAM buffer were introduced.
 
-The final hardware failure exposed an ownership bug rather than a renderer bug.
+Gameplay presentation calls are suppressed while the transition owner is active,
+but gameplay code can still mutate the shared logical framebuffer before reaching
+that present gate. Therefore a retained loading image cannot be trusted between
+progress updates.
 
-The checkpoint path correctly called `beginLoading()`, but session reset later
-requested `PlatformInput_setTapCallback(NULL)`. The generic WAIT_STATS bridge
-interpreted the absence of a level transition as stale transition state and
-called `EspNativeTransitionPresentation_reset()`, silently destroying the
-checkpoint loading owner.
-
-The final code preserves an already-active checkpoint loading owner across this
-unrelated NULL callback.
-
-Additionally, the loading gate now lives at
-`esp_native_gameplay_present_gate.c`, the sole permanent
-`--wrap=Esp32PlatformVideo_present` boundary. While loading owns presentation,
-gameplay presents return acknowledged-but-suppressed before Action/GIB/HIT
-decorators can modify or publish the logical framebuffer.
-
-TransitionPresentation's own progress frames use the real physical-present leaf,
-so progress remains visible.
-
-## Restored GIB ownership fix
-
-The hardware log also identified the apparent "damage splash" as:
+The permanent rule is now:
 
 ```text
-[GIBFX] PAINT sprite=10 ...
+progress update
+ -> reconstruct complete loading frame into logical framebuffer
+ -> real physical present
 ```
 
-A monster already dead in the V8 checkpoint had been interpreted as a newly
-observed death during the first resume present.
+This deliberately repaints `c.bmp` and the complete card for each progress
+publication. It closes the observed in-game contamination where old HUD/HUB
+writers modified the framebuffer behind the loading owner.
 
-Checkpoint resume now adopts the restored monster state into the bounded
-presentation-only GIB owner before any visible gameplay present. Restored dead
-monsters are marked historical; live monsters remain eligible for future genuine
-death bursts.
+Important invariant: do not insert arbitrary loading progress publications after
+the final gameplay framebuffer has been prepared unless the handoff sequence also
+rebuilds that gameplay framebuffer afterwards.
 
-Expected witness:
+## Checkpoint progress contract
+
+Checkpoint resume currently publishes the bounded stages:
 
 ```text
-[GIBFX] CHECKPOINT-ADOPT ... replay=no mutation=presentation-owner-only rng=untouched
+BEGIN          0
+CHECKPOINT    10
+BSP           30
+RUNTIME       60
+STATE         75
+RESTORE       85
+CACHE-COLD    90
+CACHE-WARM    93
+CACHE-LEARN   96
+READY        100
 ```
 
-No gameplay state, monster state, topology, renderer state, or gameplay RNG is
-mutated by this adoption.
+The cache stages are presentation progress, not correctness gates requiring a
+specific cache replacement pattern. A resume from an already-running game may
+enter LARGE-LEARN with the relevant ranges already hot, so zero new stores or
+zero retained large-range entries after the render are not by themselves a load
+failure. Functional readiness still requires the resident mode and actual
+render/cache operation to succeed.
+
+## Unified checkpoint LOAD ordering
+
+The checkpoint loader now has one lifecycle regardless of caller:
+
+```text
+read/validate checkpoint
+ -> EspNativeGameplaySession_reset()
+ -> beginLoading()
+ -> rebuild resident map/runtime
+ -> restore player + mutable overlays + V8 monster snapshot
+ -> configure checkpoint-resume session
+ -> cache/session prime
+ -> READY 100%
+ -> rebuild final gameplay frame
+ -> release loading owner (no present)
+ -> repaint retained top + bottom gameplay HUD
+ -> final gameplay present
+```
+
+Moving session reset before `beginLoading()` is essential for the SYS HUB path:
+the old HUB/session may have presentation cleanup to perform. The main-menu path
+has no old gameplay session, but it intentionally executes the same loader
+ordering.
+
+## Final handoff contract
+
+`READY 100%` reconstructs and physically publishes a complete loading frame.
+That necessarily overwrites the logical framebuffer, so the handoff then
+reconstructs gameplay before release.
+
+The final sequence is:
+
+```text
+[TRANSITIONLOAD] ... stage=READY overall=100
+[ENGINECACHE] FINAL-READY ...
+[TRANSITIONLOAD] RELEASE ...
+[GAMEPLAYHUD] REPAINT ... pixels>0 ...
+[ENGINESESSION] FINAL-HUD ... bands=top+bottom ...
+... facing/status overlay composition as needed ...
+[VIDEO] Present ...
+[ENGINESESSION] RESUME-VISIBLE ...
+```
+
+`releaseLoading()` does not itself present. This creates a safe window where
+HUD reconstruction is allowed again but the physical LCD still shows the 100%
+loading frame. The single following gameplay present publishes the complete
+handoff atomically.
+
+## Hardware evidence / regressions closed
+
+The real CYD exposed and closed these transition-specific regressions during this
+polish tail:
+
+1. in-game HUD/HUB contamination of the loading framebuffer;
+2. progress reaching 100% too early and then waiting through long priming;
+3. warm-cache resume falsely failing LARGE-WARM/LARGE-LEARN witnesses;
+4. final gameplay handoff missing the lower HUD band;
+5. caller-context dependence caused by tearing down the old session after
+   loading ownership had already begun.
+
+The final user validation explicitly covers both checkpoint entry contexts:
+
+```text
+MENU_MAIN -> Load Game : PASS
+running gameplay -> SYS HUB -> Load Game : PASS
+```
 
 ## Permanent constraints retained
 
@@ -132,7 +199,8 @@ mutated by this adoption.
 - no PSRAM;
 - `shapeData == NULL`;
 - `mediaTexels == NULL`;
-- loading background is rendered once and kept fixed;
-- progress updates do not re-read loading assets;
-- gameplay presentation is blocked while the loading owner is active;
-- first resumed gameplay publication happens only after explicit release.
+- runtime checkpoint source remains the native save + `DoomRPG-ESP32.pak`;
+- no runtime ZIP fallback;
+- transition presentation owns physical publication while active;
+- resumed gameplay is published only after explicit ownership release and HUD
+  reconstruction.

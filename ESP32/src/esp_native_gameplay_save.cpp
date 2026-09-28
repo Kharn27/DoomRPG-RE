@@ -1562,7 +1562,6 @@ void resetSpawnOwners(void) {
 }
 
 void resetFailedLoad(void) {
-    EspNativeGameplaySession_reset();
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
 }
@@ -1751,6 +1750,14 @@ bool loadNow(void) {
         return false;
     }
 
+    /*
+     * The checkpoint restore is one pipeline for MENU_MAIN and in-game HUB.
+     * Tear down any current gameplay/HUB owners before transition presentation
+     * takes the shared framebuffer. No old-session cleanup may run after the
+     * loading owner has begun.
+     */
+    EspNativeGameplaySession_reset();
+
     loadingPresentation =
         EspNativeTransitionPresentation_beginLoading(record->targetMapId) != 0;
     if (loadingPresentation) {
@@ -1773,7 +1780,6 @@ bool loadNow(void) {
      * native logical monster records (HP/armor/stats/alternate attack/alive)
      * without rerolling their generation RNG. Monster position/activation
      * remain deliberately fresh until their own bounded checkpoint. */
-    EspNativeGameplaySession_reset();
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
 
@@ -1816,7 +1822,7 @@ bool loadNow(void) {
         return false;
     }
     if (loadingPresentation) {
-        EspNativeTransitionPresentation_checkpointProgress(65U, "RUNTIME");
+        EspNativeTransitionPresentation_checkpointProgress(60U, "RUNTIME");
     }
 
     if (loaded.hasScript == 1U) {
@@ -1897,7 +1903,7 @@ bool loadNow(void) {
     }
 
     if (loadingPresentation) {
-        EspNativeTransitionPresentation_checkpointProgress(90U, "STATE");
+        EspNativeTransitionPresentation_checkpointProgress(75U, "STATE");
     }
 
     if (loaded.hasScript == 1U && loaded.hasLines == 0U) {
@@ -1993,8 +1999,8 @@ bool loadNow(void) {
            (unsigned long)monsterFNV,
            worldSummary);
     if (loadingPresentation) {
-        EspNativeTransitionPresentation_checkpointProgress(100U, "RESTORE");
-        printf("[NATIVESAVE] LOAD-UI targetMap=%u progress=100 owner=retained-until-session-active gameplayPresents=blocked\n",
+        EspNativeTransitionPresentation_checkpointProgress(85U, "RESTORE");
+        printf("[NATIVESAVE] LOAD-UI targetMap=%u progress=85 owner=retained-until-session-active gameplayPresents=blocked primeProgress=session-stages\n",
                (unsigned int)record->targetMapId);
     }
     return true;

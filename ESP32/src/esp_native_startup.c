@@ -18,6 +18,7 @@
 #include "esp_map_resident_lifecycle.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_session.h"
+#include "esp_native_transition_presentation.h"
 #include "esp_player_facing_state.h"
 #include "esp_player_finish_rotation_tile.h"
 #include "esp_player_fresh_map_state.h"
@@ -135,6 +136,10 @@ static void resetSpawnOwners(void) {
 }
 
 static void failStartup(const char* reason) {
+    if (EspNativeTransitionPresentation_isLoadingActive()) {
+        EspNativeTransitionPresentation_abortLoading(
+            reason != NULL ? reason : "native-startup-failed");
+    }
     startupState.stage = ESP_NATIVE_STARTUP_FAILED;
     printf("[NATIVEBOOT] FAILED reason=%s map=%u resident=%d packOpen=%d\n",
            reason != NULL ? reason : "unknown",
@@ -177,6 +182,10 @@ static int loadStartupResident(DoomRPG_t* doomRpg) {
         return -1;
     }
 
+    if (EspNativeTransitionPresentation_isLoadingActive()) {
+        EspNativeTransitionPresentation_checkpointProgress(30U, "BSP");
+    }
+
     status = EspMapResidentLifecycle_loadFromEmpty(
         resourceName, &inventory, &snapshot);
     if (status != ESP_MAP_RESIDENT_OK ||
@@ -194,6 +203,10 @@ static int loadStartupResident(DoomRPG_t* doomRpg) {
         doomRpg->game->numMonsters != 0) {
         failStartup("generic resident load");
         return -1;
+    }
+
+    if (EspNativeTransitionPresentation_isLoadingActive()) {
+        EspNativeTransitionPresentation_checkpointProgress(60U, "RUNTIME");
     }
 
     startupState.targetMapId = targetMapId;
@@ -338,6 +351,12 @@ static int routeInitialSpawn(DoomRPG_t* doomRpg) {
         return 0;
     }
 
+    if (EspNativeTransitionPresentation_isLoadingActive()) {
+        EspNativeTransitionPresentation_checkpointProgress(85U, "RESTORE");
+        printf("[NATIVEBOOT] LOADING-PRIME map=%u progress=85 owner=retained-until-session-active primeProgress=session-stages\n",
+               (unsigned int)startupState.targetMapId);
+    }
+
     startupState.stage = ESP_NATIVE_STARTUP_GAMEPLAY_READY;
     printf("[NATIVEBOOT] READY map=%u gameplayLoadMapId=%u spawnTile=%u pos=%u,%u angle=%u step=%d,%d genericResident=yes genericSpawn=yes probesRequired=no shapeData=%p mediaTexels=%p\n",
            (unsigned int)view->targetMapId,
@@ -398,6 +417,20 @@ void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
                 startupState.waitLogged = 1U;
             }
             return;
+        }
+
+        {
+            const char* resourceName =
+                doomRpg->game->mapFiles[doomRpg->doomCanvas->startupMap - 1];
+            uint8_t targetMapId = 0U;
+            if (resourceName == NULL ||
+                !EspMapCatalog_idForName(resourceName, &targetMapId) ||
+                !EspNativeTransitionPresentation_beginLoading(targetMapId)) {
+                failStartup("intro loading presentation");
+                return;
+            }
+            printf("[NATIVEBOOT] LOADING-TAKEOVER map=%u source=intro-disposed owner=transition-presentation\n",
+                   (unsigned int)targetMapId);
         }
 
         loadResult = loadStartupResident(doomRpg);
