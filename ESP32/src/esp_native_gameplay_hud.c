@@ -9,6 +9,7 @@
 #include "esp_map_catalog.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_indexed_bmp.h"
+#include "esp_native_transition_presentation.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
 
@@ -531,6 +532,11 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
     if (state == NULL || outStats == NULL ||
         state->active != 1U || state->painted != 1U) {
         return ESP_NATIVE_GAMEPLAY_HUD_INVALID;
+    }
+
+    if (EspNativeTransitionPresentation_isLoadingActive()) {
+        printf("[GAMEPLAYHUD] REPAINT-SUPPRESS owner=transition-loading framebufferMutation=no\\n");
+        return ESP_NATIVE_GAMEPLAY_HUD_OK;
     }
 
     status = EspNativeGameplayHud_prepareInitial(&state->model, &prepared);
