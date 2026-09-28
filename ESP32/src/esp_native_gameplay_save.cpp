@@ -1780,7 +1780,6 @@ bool loadNow(void) {
      * native logical monster records (HP/armor/stats/alternate attack/alive)
      * without rerolling their generation RNG. Monster position/activation
      * remain deliberately fresh until their own bounded checkpoint. */
-    EspNativeGameplaySession_reset();
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
 
