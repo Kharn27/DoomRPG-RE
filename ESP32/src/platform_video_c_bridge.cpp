@@ -10,9 +10,11 @@ extern "C" size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
     return PlatformVideo_framebufferSizeBytes();
 }
 
-extern "C" int __real_Esp32PlatformVideo_present(void) {
+extern "C" int Esp32PlatformVideo_present(void) {
     return PlatformVideo_present() ? 1 : 0;
 }
+
+extern "C" int __real_Esp32PlatformVideo_present(void);
 
 extern "C" int __wrap_Esp32PlatformVideo_present(void) {
     if (EspNativeTransitionPresentation_isLoadingActive()) {
