@@ -607,20 +607,35 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 sessionState.stage = SESSION_STAGE_ACTIVE;
                 if (sessionState.checkpointResume != 0U &&
                     EspNativeTransitionPresentation_isLoadingActive()) {
-                    /* All priming frames were intentionally hidden behind the
-                     * fixed loading owner. LARGE-WARM left one complete
-                     * world+HUD frame in the logical framebuffer and
-                     * SESSION-ARM left the facing label dirty. Release only
-                     * now, then let the normal compositor publish that complete
-                     * frame atomically as the first visible resumed frame. */
+                    EspNativeGameplayFrameStats finalFrame;
+
+                    /* Priming deliberately mutates the logical framebuffer while
+                     * the loading owner suppresses gameplay presentation. Restore
+                     * one opaque loading frame at the true completion boundary,
+                     * publish 100%, then rebuild the final world frame while the
+                     * owner is still active. Only that rebuilt frame may become
+                     * visible after release. */
+                    if (!EspNativeTransitionPresentation_checkpointReady()) {
+                        failSession("checkpoint final loading present");
+                        return;
+                    }
+                    memset(&finalFrame, 0, sizeof(finalFrame));
+                    if (!EspNativeGameplayFrame_renderTurn(
+                            doomRpg->render,
+                            (uint8_t)view->viewAngle,
+                            &finalFrame)) {
+                        failSession("checkpoint final world rebuild");
+                        return;
+                    }
                     EspNativeTransitionPresentation_releaseLoading(
                         "checkpoint-session-active");
                     if (!Esp32PlatformVideo_present()) {
                         failSession("checkpoint final world present");
                         return;
                     }
-                    printf("[ENGINESESSION] RESUME-VISIBLE map=%u loadingOwner=released finalWorldPresent=yes intermediatePresents=blocked\n",
-                           (unsigned int)view->targetMapId);
+                    printf("[ENGINESESSION] RESUME-VISIBLE map=%u loadingOwner=released finalWorldRebuild=%08x finalWorldPresent=yes intermediatePresents=blocked\n",
+                           (unsigned int)view->targetMapId,
+                           (unsigned int)finalFrame.frameAfterFNV);
                 }
                 printf("[ENGINESESSION] READY map=%u angle=%u residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=%p mediaTexels=%p\n",
                        (unsigned int)view->targetMapId,
