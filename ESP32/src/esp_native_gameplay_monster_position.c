@@ -19,6 +19,7 @@
 
 static EspNativeGameplayMonsterPositionRecord* positionRecords;
 static EspNativeGameplayMonsterPositionView positionView;
+static EspNativeGameplayMonsterPositionSnapshot* pendingRestore;
 
 _Static_assert(sizeof(EspNativeGameplayMonsterPositionRecord) == 8U,
                "native monster position record must remain 8 bytes");
@@ -39,6 +40,22 @@ static uint32_t recordsFNV(void) {
     if (positionRecords == NULL) return 0U;
     for (i = 0U; i < positionView.count; ++i) {
         const EspNativeGameplayMonsterPositionRecord* record = &positionRecords[i];
+        hash = fnv16(hash, record->spriteIndex);
+        hash = fnv16(hash, record->tileIndex);
+        hash = fnv16(hash, record->worldX);
+        hash = fnv16(hash, record->worldY);
+    }
+    return hash;
+}
+
+static uint32_t snapshotRecordsFNV(
+    const EspNativeGameplayMonsterPositionSnapshot* snapshot) {
+    uint32_t hash = 2166136261U;
+    uint32_t i;
+    if (snapshot == NULL) return 0U;
+    for (i = 0U; i < snapshot->count; ++i) {
+        const EspNativeGameplayMonsterPositionRecord* record =
+            &snapshot->records[i];
         hash = fnv16(hash, record->spriteIndex);
         hash = fnv16(hash, record->tileIndex);
         hash = fnv16(hash, record->worldX);
@@ -75,10 +92,16 @@ static EspNativeGameplayMonsterPositionRecord* findMutable(uint16_t spriteIndex)
     return NULL;
 }
 
-void EspNativeGameplayMonsterPosition_reset(void) {
+static void resetLivePosition(void) {
     if (positionRecords != NULL) heap_caps_free(positionRecords);
     positionRecords = NULL;
     memset(&positionView, 0, sizeof(positionView));
+}
+
+void EspNativeGameplayMonsterPosition_reset(void) {
+    resetLivePosition();
+    if (pendingRestore != NULL) heap_caps_free(pendingRestore);
+    pendingRestore = NULL;
 }
 
 int EspNativeGameplayMonsterPosition_ensure(void) {
@@ -100,6 +123,79 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
     if (positionView.active == 1U && positionRecords != NULL &&
         positionView.sourceArenaFNV1a == runtime->arenaFNV1a &&
         positionView.count == monsters->count) {
+        return 1;
+    }
+
+    if (pendingRestore != NULL) {
+        if (!EspNativeGameplayMonsterPosition_snapshotShapeValid(
+                pendingRestore, runtime->arenaFNV1a) ||
+            pendingRestore->count != monsters->count) {
+            EspNativeGameplayMonsterPosition_reset();
+            printf("[MONSTERPOS] RESTORE-FAILED reason=shape-or-count\n");
+            return 0;
+        }
+
+        resetLivePosition();
+        positionRecords =
+            (EspNativeGameplayMonsterPositionRecord*)heap_caps_malloc(
+                monsters->count * sizeof(*positionRecords), MALLOC_CAP_8BIT);
+        if (positionRecords == NULL) {
+            EspNativeGameplayMonsterPosition_reset();
+            printf("[MONSTERPOS] RESTORE-FAILED reason=allocation\n");
+            return 0;
+        }
+        memcpy(positionRecords, pendingRestore->records,
+               monsters->count * sizeof(*positionRecords));
+        positionView.count = monsters->count;
+        positionView.ownerBytes =
+            monsters->count * (uint32_t)sizeof(*positionRecords);
+        positionView.sourceArenaFNV1a = runtime->arenaFNV1a;
+
+        for (i = 0U; i < monsters->count; ++i) {
+            const EspNativeGameplayMonsterPositionRecord* restored =
+                &positionRecords[i];
+            const EspNativeGameplayMonsterRecord* monster =
+                &monsters->records[i];
+            uint8_t type;
+            uint8_t subtype;
+            uint16_t linkState;
+            uint16_t linkOrder;
+
+            if (restored->spriteIndex != monster->spriteIndex ||
+                restored->spriteIndex >= runtime->mapSpriteCount ||
+                !EspMapSpriteTopology_getEntity(
+                    restored->spriteIndex, &type, &subtype,
+                    &linkState, &linkOrder) ||
+                type != ESP_MAP_ENTITY_TYPE_ENEMY ||
+                subtype != monster->subtype ||
+                (linkState & ESP_MAP_SPRITE_TOPOLOGY_EXISTS) == 0U ||
+                ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U &&
+                 restored->tileIndex !=
+                     (uint16_t)(linkState &
+                                ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK))) {
+                EspNativeGameplayMonsterPosition_reset();
+                printf("[MONSTERPOS] RESTORE-FAILED reason=topology-identity index=%u sprite=%u\n",
+                       (unsigned int)i,
+                       (unsigned int)restored->spriteIndex);
+                return 0;
+            }
+            (void)linkOrder;
+        }
+
+        positionView.stateFNV1a = recordsFNV();
+        positionView.active = 1U;
+        if (positionView.stateFNV1a != pendingRestore->stateFNV1a) {
+            EspNativeGameplayMonsterPosition_reset();
+            printf("[MONSTERPOS] RESTORE-FAILED reason=fingerprint\n");
+            return 0;
+        }
+        heap_caps_free(pendingRestore);
+        pendingRestore = NULL;
+        printf("[MONSTERPOS] RESTORE arena=%08x monsters=%u ownerBytes=%u stateFNV=%08x source=checkpoint-v9 topologyExact=yes\n",
+               (unsigned int)positionView.sourceArenaFNV1a,
+               (unsigned int)positionView.count,
+               (unsigned int)positionView.ownerBytes,
+               (unsigned int)positionView.stateFNV1a);
         return 1;
     }
 
@@ -127,14 +223,17 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
         uint32_t tileY;
         int32_t worldX;
         int32_t worldY;
+        EspMapSprite sourceSprite;
 
-        /* EspMapRuntime map-sprite coordinates are immutable BSP source
-         * coordinates and deliberately precede legacy runtime nudges/relinks.
-         * The already-owned topology is the canonical native authority for the
-         * entity's initial tile. Seed the mutable monster position from that
-         * tile center, matching the hardware-proven monster-turn coordinate
-         * model instead of treating raw BSP sprite coordinates as live state. */
+        /*
+         * Linked monsters take their canonical tile from mutable topology.
+         * Hidden EV_SHOW targets start EXISTS+ALIVE but intentionally UNLINKED,
+         * so topology has no live tile yet. Seed those from the immutable raw
+         * BSP sprite tile: EV_SHOW later links the same raw tile, keeping
+         * MonsterPosition and topology coherent from the first revealed turn.
+         */
         if (monster->spriteIndex >= runtime->mapSpriteCount ||
+            !EspMapRuntime_getMapSprite(monster->spriteIndex, &sourceSprite) ||
             !EspMapSpriteTopology_getEntity(monster->spriteIndex,
                                             &type, &subtype,
                                             &linkState, &linkOrder) ||
@@ -144,9 +243,21 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
             return 0;
         }
         (void)linkOrder;
-        tile = (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
-        tileX = (uint32_t)tile % POSITION_MAP_WIDTH;
-        tileY = (uint32_t)tile / POSITION_MAP_WIDTH;
+        if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
+            tile =
+                (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
+            tileX = (uint32_t)tile % POSITION_MAP_WIDTH;
+            tileY = (uint32_t)tile / POSITION_MAP_WIDTH;
+        }
+        else {
+            tileX = (uint32_t)sourceSprite.x >> 6U;
+            tileY = (uint32_t)sourceSprite.y >> 6U;
+            if (tileX >= POSITION_MAP_WIDTH || tileY >= POSITION_MAP_WIDTH) {
+                EspNativeGameplayMonsterPosition_reset();
+                return 0;
+            }
+            tile = (uint16_t)(tileY * POSITION_MAP_WIDTH + tileX);
+        }
         worldX = (int32_t)(tileX * POSITION_TILE_SIZE + POSITION_TILE_CENTER);
         worldY = (int32_t)(tileY * POSITION_TILE_SIZE + POSITION_TILE_CENTER);
         if (!tileIndexFor(worldX, worldY, &canonicalTile) || canonicalTile != tile) {
@@ -162,7 +273,7 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
 
     positionView.stateFNV1a = recordsFNV();
     positionView.active = 1U;
-    printf("[MONSTERPOS] READY arena=%08x monsters=%u recordBytes=%u ownerBytes=%u stateFNV=%08x source=topology-tile-center immutableBspCoords=not-runtime-position centered=yes mutable=probe-transaction rendererPublish=deferred topologyRelink=deferred allocation=load-only\n",
+    printf("[MONSTERPOS] READY arena=%08x monsters=%u recordBytes=%u ownerBytes=%u stateFNV=%08x source=linked-topology-or-hidden-show-raw-tile centered=yes mutable=probe-transaction rendererPublish=deferred topologyRelink=deferred allocation=load-only\n",
            (unsigned int)positionView.sourceArenaFNV1a,
            (unsigned int)positionView.count,
            (unsigned int)sizeof(EspNativeGameplayMonsterPositionRecord),
@@ -179,6 +290,90 @@ const EspNativeGameplayMonsterPositionRecord* EspNativeGameplayMonsterPosition_f
     uint16_t spriteIndex) {
     if (!EspNativeGameplayMonsterPosition_ensure()) return NULL;
     return findMutable(spriteIndex);
+}
+
+int EspNativeGameplayMonsterPosition_snapshotShapeValid(
+    const EspNativeGameplayMonsterPositionSnapshot* snapshot,
+    uint32_t expectedArenaFNV1a) {
+    uint32_t i;
+
+    if (snapshot == NULL || expectedArenaFNV1a == 0U ||
+        snapshot->sourceArenaFNV1a != expectedArenaFNV1a ||
+        snapshot->stateFNV1a == 0U || snapshot->count == 0U ||
+        snapshot->count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT ||
+        snapshot->recordBytes !=
+            sizeof(EspNativeGameplayMonsterPositionRecord) ||
+        snapshotRecordsFNV(snapshot) != snapshot->stateFNV1a) {
+        return 0;
+    }
+
+    for (i = 0U; i < snapshot->count; ++i) {
+        const EspNativeGameplayMonsterPositionRecord* record =
+            &snapshot->records[i];
+        uint16_t tile;
+        if ((i != 0U &&
+             record->spriteIndex <= snapshot->records[i - 1U].spriteIndex) ||
+            !tileIndexFor((int32_t)record->worldX,
+                          (int32_t)record->worldY, &tile) ||
+            tile != record->tileIndex) {
+            return 0;
+        }
+    }
+
+    for (i = snapshot->count;
+         i < ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT; ++i) {
+        const uint8_t* bytes = (const uint8_t*)&snapshot->records[i];
+        uint32_t j;
+        for (j = 0U; j < sizeof(snapshot->records[i]); ++j) {
+            if (bytes[j] != 0U) return 0;
+        }
+    }
+    return 1;
+}
+
+int EspNativeGameplayMonsterPosition_snapshot(
+    EspNativeGameplayMonsterPositionSnapshot* outSnapshot) {
+    if (outSnapshot == NULL ||
+        !EspNativeGameplayMonsterPosition_ensure() ||
+        positionView.count == 0U ||
+        positionView.count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) {
+        return 0;
+    }
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    outSnapshot->sourceArenaFNV1a = positionView.sourceArenaFNV1a;
+    outSnapshot->count = (uint16_t)positionView.count;
+    outSnapshot->recordBytes =
+        (uint16_t)sizeof(EspNativeGameplayMonsterPositionRecord);
+    memcpy(outSnapshot->records, positionRecords,
+           positionView.count * sizeof(*positionRecords));
+    outSnapshot->stateFNV1a = snapshotRecordsFNV(outSnapshot);
+    return EspNativeGameplayMonsterPosition_snapshotShapeValid(
+        outSnapshot, positionView.sourceArenaFNV1a);
+}
+
+int EspNativeGameplayMonsterPosition_stageRestore(
+    const EspNativeGameplayMonsterPositionSnapshot* snapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    EspNativeGameplayMonsterPositionSnapshot* staged;
+
+    if (runtime == NULL || !EspMapRuntime_isLoaded() ||
+        positionRecords != NULL || pendingRestore != NULL ||
+        !EspNativeGameplayMonsterPosition_snapshotShapeValid(
+            snapshot, runtime->arenaFNV1a)) {
+        return 0;
+    }
+
+    staged = (EspNativeGameplayMonsterPositionSnapshot*)heap_caps_malloc(
+        sizeof(*staged), MALLOC_CAP_8BIT);
+    if (staged == NULL) return 0;
+    memcpy(staged, snapshot, sizeof(*staged));
+    pendingRestore = staged;
+    printf("[MONSTERPOS] STAGE-RESTORE arena=%08x monsters=%u bytes=%u stateFNV=%08x allocation=transient-until-ensure\n",
+           (unsigned int)staged->sourceArenaFNV1a,
+           (unsigned int)staged->count,
+           (unsigned int)sizeof(*staged),
+           (unsigned int)staged->stateFNV1a);
+    return 1;
 }
 
 int EspNativeGameplayMonsterPosition_prepareCardinalMove(
