@@ -1816,7 +1816,7 @@ bool loadNow(void) {
         return false;
     }
     if (loadingPresentation) {
-        EspNativeTransitionPresentation_checkpointProgress(65U, "RUNTIME");
+        EspNativeTransitionPresentation_checkpointProgress(60U, "RUNTIME");
     }
 
     if (loaded.hasScript == 1U) {
@@ -1897,7 +1897,7 @@ bool loadNow(void) {
     }
 
     if (loadingPresentation) {
-        EspNativeTransitionPresentation_checkpointProgress(90U, "STATE");
+        EspNativeTransitionPresentation_checkpointProgress(75U, "STATE");
     }
 
     if (loaded.hasScript == 1U && loaded.hasLines == 0U) {
@@ -1993,8 +1993,8 @@ bool loadNow(void) {
            (unsigned long)monsterFNV,
            worldSummary);
     if (loadingPresentation) {
-        EspNativeTransitionPresentation_checkpointProgress(100U, "RESTORE");
-        printf("[NATIVESAVE] LOAD-UI targetMap=%u progress=100 owner=retained-until-session-active gameplayPresents=blocked\n",
+        EspNativeTransitionPresentation_checkpointProgress(85U, "RESTORE");
+        printf("[NATIVESAVE] LOAD-UI targetMap=%u progress=85 owner=retained-until-session-active gameplayPresents=blocked final15=session-prime\n",
                (unsigned int)record->targetMapId);
     }
     return true;
