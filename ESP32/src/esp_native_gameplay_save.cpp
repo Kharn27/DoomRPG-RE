@@ -428,6 +428,41 @@ uint32_t recordCrcV8(
     return ~crc;
 }
 
+uint32_t recordCrcV9(
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    const uint8_t* segments[4] = {
+        reinterpret_cast<const uint8_t*>(&prefix),
+        reinterpret_cast<const uint8_t*>(&crateTransforms),
+        reinterpret_cast<const uint8_t*>(&automap),
+        reinterpret_cast<const uint8_t*>(&tail)
+    };
+    const size_t sizes[4] = {
+        sizeof(prefix), sizeof(crateTransforms), sizeof(automap), sizeof(tail)
+    };
+    const size_t zeroOffset = offsetof(NativeSaveCore, recordCrc32);
+    const size_t zeroEnd = zeroOffset + sizeof(uint32_t);
+    uint32_t crc = 0xffffffffU;
+    uint8_t segment;
+    size_t i;
+    uint32_t bit;
+
+    for (segment = 0U; segment < 4U; ++segment) {
+        for (i = 0U; i < sizes[segment]; ++i) {
+            uint8_t value = segments[segment][i];
+            if (segment == 0U && i >= zeroOffset && i < zeroEnd) value = 0U;
+            crc ^= value;
+            for (bit = 0U; bit < 8U; ++bit) {
+                const uint32_t mask = (uint32_t)-(int32_t)(crc & 1U);
+                crc = (crc >> 1) ^ (0xedb88320U & mask);
+            }
+        }
+    }
+    return ~crc;
+}
+
 uint32_t countBits(const uint8_t* bits, uint32_t bytes) {
     uint32_t count = 0U;
     uint32_t i;
