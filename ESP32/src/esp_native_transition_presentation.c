@@ -404,24 +404,74 @@ static void presentOverall(uint8_t percent,
     if (percent > 100U) percent = 100U;
     if (percent < presentation.lastPercent) percent = presentation.lastPercent;
 
-    paintProgressBar(percent);
-    if (!__real_Esp32PlatformVideo_present()) {
-        printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=present-failed\n",
+    /*
+     * The logical framebuffer is shared with gameplay.  A suppressed gameplay
+     * present can still have writers that touched that buffer before reaching
+     * the present gate.  Never rely on the previous loading frame remaining
+     * byte-identical: reconstruct the complete loading frame immediately
+     * before every physical progress present.
+     */
+    {
+        EspNativeTransitionPaintScratch scratch;
+        char target[24];
+        int openedHere = 0;
+
+        memset(&scratch, 0, sizeof(scratch));
+        if (!EspAssetPack_isOpen()) {
+            if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+                printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=pack-open\n",
+                       stage != NULL ? stage : "LOAD",
+                       (unsigned int)percent);
+                return;
+            }
+            openedHere = 1;
+        }
+
+        if (!drawFixedStarfield(&scratch.star, &scratch.stats)) {
+            if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
+            printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=background-redraw\n",
+                   stage != NULL ? stage : "LOAD",
+                   (unsigned int)percent);
+            return;
+        }
+
+        formatMapLabel(presentation.targetMapId, target, sizeof(target));
+        fillRect(16, 32, 143, 75, COLOR_PANEL);
+        rect(16, 32, 143, 75, COLOR_STEEL);
+        fillRect(19, 35, 21, 72, COLOR_AMBER);
+        fillRect(25, 35, 135, 36, COLOR_AMBER_DIM);
+        fillRect(25, 71, 135, 72, COLOR_AMBER_DIM);
+        drawMiniTextCentered("LOADING", 80, 40, 2, COLOR_AMBER);
+        drawMiniTextCentered("ENTERING", 80, 55, 1, COLOR_STEEL);
+        drawMiniTextCentered(target, 80, 63, 1, COLOR_IVORY);
+        rect(TRANSITION_PROGRESS_LEFT, TRANSITION_PROGRESS_TOP,
+             TRANSITION_PROGRESS_LEFT + TRANSITION_PROGRESS_WIDTH - 1,
+             TRANSITION_PROGRESS_TOP + TRANSITION_PROGRESS_HEIGHT - 1,
+             COLOR_STEEL);
+        paintProgressBar(percent);
+
+        if (!__real_Esp32PlatformVideo_present()) {
+            if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
+            printf("[TRANSITIONLOAD] FRAME-DEFER stage=%s overall=%u reason=present-failed\n",
+                   stage != NULL ? stage : "LOAD",
+                   (unsigned int)percent);
+            return;
+        }
+
+        if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
+
+        presentation.lastPercent = percent;
+        ++presentation.frames;
+        fnv = frameFNV();
+
+        printf("[TRANSITIONLOAD] FRAME n=%u stage=%s overall=%u background=repainted assetReads=%u source=%s frame=%08x\n",
+               (unsigned int)presentation.frames,
                stage != NULL ? stage : "LOAD",
-               (unsigned int)percent);
-        return;
+               (unsigned int)percent,
+               (unsigned int)scratch.stats.packReads,
+               source != NULL ? source : "generic",
+               (unsigned int)fnv);
     }
-
-    presentation.lastPercent = percent;
-    ++presentation.frames;
-    fnv = frameFNV();
-
-    printf("[TRANSITIONLOAD] FRAME n=%u stage=%s overall=%u background=fixed assetReads=0 source=%s frame=%08x\n",
-           (unsigned int)presentation.frames,
-           stage != NULL ? stage : "LOAD",
-           (unsigned int)percent,
-           source != NULL ? source : "generic",
-           (unsigned int)fnv);
 }
 
 int EspNativeTransitionPresentation_showStats(
