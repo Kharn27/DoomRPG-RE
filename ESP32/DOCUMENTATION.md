@@ -862,20 +862,46 @@ See `MILESTONE_NATIVE_INTRO_DISPLAY_POLISH.md` for the exact geometry and hardwa
 
 ## Native transition presentation component
 
-`EspNativeTransitionPresentation` is now the shared full-screen owner for
-native level-change loading and checkpoint LOAD. Its caller-facing API carries
-target map and progress/stage semantics while the current visual skin remains
-encapsulated inside the component. The fixed `c.bmp` background is intentionally
-rendered once; only the bounded progress UI changes afterwards.
+`EspNativeTransitionPresentation` is the shared full-screen owner for native
+CHANGEMAP/fresh-start loading and checkpoint LOAD. Checkpoint restore itself has
+one implementation: MENU_MAIN and the in-game SYS HUB both enter the same
+`EspNativeGameplaySave_loadCheckpoint()` / restore/session-prime pipeline.
 
-Checkpoint resume keeps this owner active through runtime/cache/session priming,
-and the permanent physical-present wrapper suppresses all gameplay compositors
-until explicit release. Restored V8 dead monsters are adopted by the bounded
-GIB presentation owner so their historical death effects are not replayed.
+The logical 160x120 framebuffer is shared. Suppressing gameplay presents is not
+enough to preserve a retained loading image because gameplay painters may still
+write into that framebuffer. Therefore every visible progress update rebuilds
+the complete `c.bmp` starfield + loading card immediately before the real
+physical present. No second framebuffer or PSRAM is used.
 
-The final real-CYD visual result was explicitly accepted. Font/theme tuning is
-presentation polish and can be done later without changing loading ownership or
-callers.
+Checkpoint progress is currently paced through:
+
+```text
+10 CHECKPOINT
+30 BSP
+60 RUNTIME
+75 STATE
+85 RESTORE
+90 CACHE-COLD
+93 CACHE-WARM
+96 CACHE-LEARN
+100 READY
+```
+
+The final handoff is intentionally asymmetric: `READY 100%` owns the LCD,
+`FINAL-READY` reconstructs the gameplay world in the logical framebuffer,
+loading is released without a present, the retained gameplay HUD repaints both
+top and bottom bands, and only then is the complete gameplay frame published.
+This prevents both stale loading pixels in the lower HUD and gameplay/HUB
+contamination during loading.
+
+For in-game LOAD, the old gameplay/HUB session is torn down before
+`beginLoading()`. The cache witnesses also accept an already-warm resume; cache
+replacement details such as zero new LARGE-LEARN stores or eviction of learned
+large entries are diagnostics, not functional load failures.
+
+Both checkpoint entry contexts are explicitly hardware-validated on the real
+classic CYD at code boundary
+`6903431a60700960127be95d95584728698a36c8`.
 
 See [MILESTONE_NATIVE_TRANSITION_PRESENTATION.md](MILESTONE_NATIVE_TRANSITION_PRESENTATION.md).
 
