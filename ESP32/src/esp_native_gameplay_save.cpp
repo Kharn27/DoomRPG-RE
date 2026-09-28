@@ -2211,6 +2211,9 @@ bool loadNow(void) {
     uint32_t automapFNV = 0U;
     uint16_t monsterCount = 0U;
     uint32_t monsterFNV = 0U;
+    uint32_t monsterTopologyFNV = 0U;
+    uint32_t monsterPositionFNV = 0U;
+    uint32_t monsterActivationFNV = 0U;
     const char* selectedPath = nullptr;
 
     memset(&loaded, 0, sizeof(loaded));
@@ -2260,8 +2263,8 @@ bool loadNow(void) {
      * transformed-definition state. V7 appends the compact Automap reveal
      * snapshot: lines, sprites and BIT_AM_VISITED tiles. V8 appends the exact
      * native logical monster records (HP/armor/stats/alternate attack/alive)
-     * without rerolling their generation RNG. Monster position/activation
-     * remain deliberately fresh until their own bounded checkpoint. */
+     * without rerolling their generation RNG. V9 closes the missing spatial
+     * half: monster topology/linkage, exact positions and activation order. */
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
 
@@ -2342,12 +2345,14 @@ bool loadNow(void) {
               loaded.actionRemoved.stateFNV1a)) ||
         ((record->version == kVersionV6 ||
           record->version == kVersionV7 ||
-          record->version == kVersionV8) &&
+          record->version == kVersionV8 ||
+          record->version == kVersionV9) &&
          !restoreCrateSection(selectedPath, *record,
                               &crateTransformCount,
                               &crateTransformFNV)) ||
         ((record->version == kVersionV7 ||
-          record->version == kVersionV8) &&
+          record->version == kVersionV8 ||
+          record->version == kVersionV9) &&
          !restoreAutomapSection(selectedPath, *record,
                                 &automapLineCount,
                                 &automapSpriteCount,
@@ -2356,13 +2361,19 @@ bool loadNow(void) {
         (record->version == kVersionV8 &&
          !stageV8MonsterSection(selectedPath, *record,
                                 &monsterCount, &monsterFNV)) ||
+        (record->version == kVersionV9 &&
+         !restoreV9MonsterSpatialSections(
+             selectedPath, *record,
+             &monsterCount, &monsterFNV,
+             &monsterTopologyFNV, &monsterPositionFNV,
+             &monsterActivationFNV)) ||
         !sessionConfigForPlayer(record->player, &config) ||
         !EspNativeGameplaySession_configureResume(&config)) {
         resetFailedLoad();
         if (loadingPresentation) {
             EspNativeTransitionPresentation_abortLoading("RESTORE");
         }
-        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s automap=%s monsters=%s playerFNV=%08lx failClosed=yes\n",
+        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s automap=%s monsters=%s monsterSpatial=%s playerFNV=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)record->targetMapId,
                (unsigned int)record->version,
@@ -2372,14 +2383,20 @@ bool loadNow(void) {
                loaded.hasActionRemoved == 1U ? "required" : "legacy-none",
                (record->version == kVersionV6 ||
                 record->version == kVersionV7 ||
-                record->version == kVersionV8)
+                record->version == kVersionV8 ||
+                record->version == kVersionV9)
                    ? "required"
                    : "legacy-none",
                (record->version == kVersionV7 ||
-                record->version == kVersionV8)
+                record->version == kVersionV8 ||
+                record->version == kVersionV9)
                    ? "required"
                    : "legacy-none",
-               record->version == kVersionV8 ? "required" : "legacy-none",
+               (record->version == kVersionV8 ||
+                record->version == kVersionV9)
+                   ? "required"
+                   : "legacy-none",
+               record->version == kVersionV9 ? "required" : "legacy-none",
                (unsigned long)record->playerFNV1a);
         return false;
     }
@@ -2411,14 +2428,21 @@ bool loadNow(void) {
                (unsigned int)record->version);
     }
 
+    if (record->version < kVersionV9) {
+        printf("[NATIVESAVE] LEGACY-MONSTER-SPATIAL-GAP version=%u topology+position+activation=fresh warning=monster-visibility-and-position-cannot-be-restored-exactly-from-this-record\n",
+               (unsigned int)record->version);
+    }
+
     const char* worldSummary =
-        record->version == kVersionV8
-            ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state-restored+monster-position+activation-fresh"
-            : (record->version == kVersionV7
-                   ? "resources+script+lines+action-removals+crate-transforms+automap-restored+monster-state+position+activation-fresh"
-                   : (record->version == kVersionV6
-                          ? "resources+script+lines+action-removals+crate-transforms-restored+automap+monster-state+position+activation-fresh"
-                          : "legacy-partial-world"));
+        record->version == kVersionV9
+            ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation-restored-exact"
+            : (record->version == kVersionV8
+                   ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state-restored+monster-spatial-fresh-lossy"
+                   : (record->version == kVersionV7
+                          ? "resources+script+lines+action-removals+crate-transforms+automap-restored+monster-state+position+activation-fresh"
+                          : (record->version == kVersionV6
+                                 ? "resources+script+lines+action-removals+crate-transforms-restored+automap+monster-state+position+activation-fresh"
+                                 : "legacy-partial-world")));
 
     printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx automap=%s/%uL/%uS/%uV/%08lx monsters=%s/%u/%08lx world=%s session=reprime-pending\n",
            kLogPath,
