@@ -77,6 +77,14 @@ int EspNativeGameplayTransition_isWaitingStats(void);
 const EspNativeGameplayTransitionState* EspNativeGameplayTransition_view(void);
 
 /*
+ * Temporary read-only Junction exit census used to recover the next exact
+ * SAVEGAME/CHANGEMAP script shape before widening the production transition
+ * executor. It is a no-op outside MAP_JUNCTION and mutates no gameplay owner.
+ * Remove after the real-CYD witness has been captured.
+ */
+int EspNativeGameplayTransition_probeJunctionExitCensus(void);
+
+/*
  * Recognize and execute only the bounded SELECT transition family whose
  * eligible commands are exactly SAVEGAME (27) followed by CHANGEMAP (2).
  *
