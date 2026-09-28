@@ -1913,8 +1913,8 @@ bool saveNow(void) {
     NativeSaveRecordV5& record = saveWorkspace.write;
     EspNativeGameplayCrateTransformSnapshot crateTransforms;
     EspMapAutomapSnapshot automap;
-    EspNativeGameplayMonsterStateSnapshot* monsters =
-        (EspNativeGameplayMonsterStateSnapshot*)malloc(sizeof(*monsters));
+    NativeSaveRecordV9Tail* tail =
+        (NativeSaveRecordV9Tail*)malloc(sizeof(*tail));
     uint32_t scriptFNV;
     uint32_t openCount;
     uint32_t lockedCount;
@@ -1922,26 +1922,26 @@ bool saveNow(void) {
     uint32_t removedCount;
     uint32_t automapFNV;
     uint32_t automapVisitedCount;
-    uint16_t monsterCount = 0U;
-    uint32_t monsterFNV = 0U;
 
-    if (monsters == nullptr) {
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=8 stage=monster-workspace failClosed=yes\n",
-               kLogPath);
+    if (tail == nullptr) {
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=9 stage=v9-tail-workspace bytes=%u failClosed=yes\n",
+               kLogPath, (unsigned int)sizeof(*tail));
         return false;
     }
 
     memset(&record, 0, sizeof(record));
     memset(&crateTransforms, 0, sizeof(crateTransforms));
     memset(&automap, 0, sizeof(automap));
-    memset(monsters, 0, sizeof(*monsters));
-    if (!captureRecord(&record, &crateTransforms, &automap, monsters) ||
-        !commitRecordAtomic(record, crateTransforms, automap, *monsters)) {
-        free(monsters);
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=8 sections=resources+script+lines+action-removals+crate-transforms+automap+monster-state failClosed=yes\n",
+    memset(tail, 0, sizeof(*tail));
+
+    if (!captureRecord(&record, &crateTransforms, &automap, tail) ||
+        !commitRecordAtomicV9(record, crateTransforms, automap, *tail)) {
+        free(tail);
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=9 sections=resources+script+lines+action-removals+crate-transforms+automap+monster-state+monster-topology+monster-position+monster-activation failClosed=yes\n",
                kLogPath);
         return false;
     }
+
     scriptFNV = fnv1aBytes(record.script.storage, record.script.storageBytes);
     openCount = countBits(record.lines.openBits, record.lines.bitsetBytes);
     lockedCount = countBits(record.lines.lockedBits,
@@ -1953,13 +1953,11 @@ bool saveNow(void) {
     automapFNV = automapSnapshotFNV(automap);
     automapVisitedCount =
         countBits(automap.visitedBits, ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES);
-    monsterCount = monsters->count;
-    monsterFNV = monsters->stateFNV1a;
 
-    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx monsters=%u/%08lx atomic=temp+backup+rename world=resources+script+lines+action-removals+crate-transforms+automap+monster-state-restored+monster-position+activation-fresh\n",
+    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx monsters=%u/%08lx topology=%u/%08lx positions=%u/%08lx activation=%u/%08lx atomic=temp+backup+rename world=monster-spatial-exact-v9\n",
            kLogPath,
            (unsigned int)record.core.version,
-           (unsigned int)kRecordBytesV8,
+           (unsigned int)kRecordBytesV9,
            (unsigned int)record.core.targetMapId,
            (unsigned int)record.core.gameplayLoadMapId,
            (long)record.core.view.viewX,
@@ -1995,9 +1993,15 @@ bool saveNow(void) {
            (unsigned int)automap.spriteRevealedCount,
            (unsigned long)automapVisitedCount,
            (unsigned long)automapFNV,
-           (unsigned int)monsterCount,
-           (unsigned long)monsterFNV);
-    free(monsters);
+           (unsigned int)tail->monsters.count,
+           (unsigned long)tail->monsters.stateFNV1a,
+           (unsigned int)tail->monsterTopology.count,
+           (unsigned long)tail->monsterTopology.stateFNV1a,
+           (unsigned int)tail->monsterPositions.count,
+           (unsigned long)tail->monsterPositions.stateFNV1a,
+           (unsigned int)tail->monsterActivation.activeOrderCount,
+           (unsigned long)tail->monsterActivation.stateFNV1a);
+    free(tail);
     return true;
 }
 
