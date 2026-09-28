@@ -2444,7 +2444,7 @@ bool loadNow(void) {
                                  ? "resources+script+lines+action-removals+crate-transforms-restored+automap+monster-state+position+activation-fresh"
                                  : "legacy-partial-world")));
 
-    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx automap=%s/%uL/%uS/%uV/%08lx monsters=%s/%u/%08lx world=%s session=reprime-pending\n",
+    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx automap=%s/%uL/%uS/%uV/%08lx monsters=%s/%u/%08lx topology=%s/%08lx positions=%s/%08lx activation=%s/%08lx world=%s session=reprime-pending\n",
            kLogPath,
            (unsigned int)record->version,
            (unsigned int)loaded.fileBytes,
@@ -2489,20 +2489,30 @@ bool loadNow(void) {
                ? (unsigned long)loaded.actionRemoved.stateFNV1a : 0UL,
            (record->version == kVersionV6 ||
             record->version == kVersionV7 ||
-            record->version == kVersionV8)
+            record->version == kVersionV8 ||
+            record->version == kVersionV9)
                ? "restored" : "legacy-none",
            (unsigned int)crateTransformCount,
            (unsigned long)crateTransformFNV,
            (record->version == kVersionV7 ||
-            record->version == kVersionV8)
+            record->version == kVersionV8 ||
+            record->version == kVersionV9)
                ? "restored" : "legacy-none",
            (unsigned int)automapLineCount,
            (unsigned int)automapSpriteCount,
            (unsigned int)automapVisitedCount,
            (unsigned long)automapFNV,
-           record->version == kVersionV8 ? "staged" : "legacy-none",
+           (record->version == kVersionV8 ||
+            record->version == kVersionV9)
+               ? "staged" : "legacy-none",
            (unsigned int)monsterCount,
            (unsigned long)monsterFNV,
+           record->version == kVersionV9 ? "restored" : "legacy-fresh",
+           (unsigned long)monsterTopologyFNV,
+           record->version == kVersionV9 ? "staged" : "legacy-fresh",
+           (unsigned long)monsterPositionFNV,
+           record->version == kVersionV9 ? "restored" : "legacy-fresh",
+           (unsigned long)monsterActivationFNV,
            worldSummary);
     if (loadingPresentation) {
         EspNativeTransitionPresentation_checkpointProgress(85U, "RESTORE");
