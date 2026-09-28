@@ -20,6 +20,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_status_message.h"
+#include "esp_native_gameplay_transition.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_transition_presentation.h"
@@ -723,6 +724,10 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                            (void*)doomRpg->render->shapeData : NULL,
                        doomRpg->render != NULL ?
                            (void*)doomRpg->render->mediaTexels : NULL);
+                /* Temporary read-only recovery probe for the next bounded
+                 * world-transition milestone. It is a no-op outside Junction
+                 * and must never gate gameplay readiness. */
+                (void)EspNativeGameplayTransition_probeJunctionExitCensus();
             }
             return;
         }
