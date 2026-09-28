@@ -12,6 +12,7 @@
 #include "esp_hud_refresh_state.h"
 #include "esp_map_automap_state.h"
 #include "esp_map_catalog.h"
+#include "esp_map_events.h"
 #include "esp_map_line_checkpoint.h"
 #include "esp_map_resident_lifecycle.h"
 #include "esp_map_runtime.h"
@@ -1721,6 +1722,161 @@ bool restoreAutomapSection(
     return true;
 }
 
+bool recoverV8OneShotTopologyFromScript(
+    const NativeSaveCore& core,
+    uint16_t* outShowApplied,
+    uint16_t* outShowAlreadyLinked,
+    uint16_t* outHideApplied) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t eventIndex;
+    uint16_t showApplied = 0U;
+    uint16_t showAlreadyLinked = 0U;
+    uint16_t hideApplied = 0U;
+
+    if (outShowApplied != nullptr) *outShowApplied = 0U;
+    if (outShowAlreadyLinked != nullptr) *outShowAlreadyLinked = 0U;
+    if (outHideApplied != nullptr) *outHideApplied = 0U;
+
+    if (core.version != kVersionV8 || runtime == nullptr ||
+        runtime->arenaFNV1a != core.runtimeFNV1a ||
+        !EspMapScriptState_isReady() ||
+        !EspMapSpriteTopology_isReady()) {
+        return false;
+    }
+
+    /*
+     * V8 persisted the script removed-command bitmap but not mutable sprite
+     * topology. A one-shot SHOW/HIDE with REMOVE set therefore carries enough
+     * durable evidence that the command executed successfully before SAVE.
+     * Replay only that narrow family, in map command order, against the freshly
+     * rebuilt topology. This deliberately does not guess monster movement.
+     */
+    for (eventIndex = 0U; eventIndex < runtime->eventCount; ++eventIndex) {
+        uint32_t rawEvent;
+        EspMapEventRef ref;
+        EspMapEventDescriptor descriptor;
+        uint32_t offset;
+
+        if (!EspMapRuntime_getEvent(eventIndex, &rawEvent)) return false;
+        ref.index = (uint16_t)eventIndex;
+        ref.tileIndex = (uint16_t)(rawEvent & ESP_MAP_EVENT_TILE_MASK);
+        ref.value = rawEvent;
+        if (!EspMapEvents_describe(&ref, &descriptor)) return false;
+
+        for (offset = 0U; offset < descriptor.commandCount; ++offset) {
+            const uint32_t global =
+                (uint32_t)descriptor.firstCommandIndex + offset;
+            EspMapByteCode command;
+            uint8_t removed = 0U;
+
+            if (!EspMapEvents_getCommand(&descriptor, offset, &command) ||
+                !EspMapScriptState_isCommandRemoved(global, &removed)) {
+                return false;
+            }
+            if (removed == 0U ||
+                (command.arg2 &
+                 ESP_MAP_SPRITE_TOPOLOGY_COMMAND_FLAG_REMOVE) == 0U ||
+                (command.id != ESP_MAP_OPCODE_SHOW &&
+                 command.id != ESP_MAP_OPCODE_HIDE)) {
+                continue;
+            }
+
+            if (command.id == ESP_MAP_OPCODE_SHOW) {
+                const uint16_t spriteIndex =
+                    (uint16_t)(command.arg1 & 0xffffU);
+                uint8_t type = 0U;
+                uint8_t subtype = 0U;
+                uint16_t linkState = 0U;
+                uint16_t linkOrder = 0U;
+                EspMapShowResult result;
+                EspMapSpriteTopologyStatus status;
+
+                if (!EspMapSpriteTopology_getEntity(
+                        spriteIndex, &type, &subtype,
+                        &linkState, &linkOrder)) {
+                    return false;
+                }
+                (void)type;
+                (void)subtype;
+                (void)linkOrder;
+
+                if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
+                    ++showAlreadyLinked;
+                    printf("[NATIVESAVE] V8-TOPOLOGY SHOW global=%u event=%u off=%u sprite=%u action=already-linked\n",
+                           (unsigned int)global,
+                           (unsigned int)eventIndex,
+                           (unsigned int)offset,
+                           (unsigned int)spriteIndex);
+                    continue;
+                }
+
+                memset(&result, 0, sizeof(result));
+                status = EspMapSpriteTopology_applyShow(
+                    &descriptor, offset, &result);
+                if (status != ESP_MAP_SPRITE_TOPOLOGY_OK ||
+                    result.removeCommandIfHandled == 0U) {
+                    printf("[NATIVESAVE] V8-TOPOLOGY FAILED global=%u event=%u off=%u opcode=SHOW sprite=%u status=%u remove=%u failClosed=yes\n",
+                           (unsigned int)global,
+                           (unsigned int)eventIndex,
+                           (unsigned int)offset,
+                           (unsigned int)spriteIndex,
+                           (unsigned int)status,
+                           (unsigned int)result.removeCommandIfHandled);
+                    return false;
+                }
+                ++showApplied;
+                printf("[NATIVESAVE] V8-TOPOLOGY SHOW global=%u event=%u off=%u sprite=%u tile=%u linked=%u blockersRemoved=%u\n",
+                       (unsigned int)global,
+                       (unsigned int)eventIndex,
+                       (unsigned int)offset,
+                       (unsigned int)result.spriteIndex,
+                       (unsigned int)result.tileIndex,
+                       (unsigned int)result.targetLinkedAfter,
+                       (unsigned int)result.blockersRemoved);
+            }
+            else {
+                EspMapHideResult result;
+                EspMapSpriteTopologyStatus status;
+                memset(&result, 0, sizeof(result));
+                status = EspMapSpriteTopology_applyHide(
+                    &descriptor, offset, &result);
+                if (status != ESP_MAP_SPRITE_TOPOLOGY_OK ||
+                    result.removeCommandIfHandled == 0U) {
+                    printf("[NATIVESAVE] V8-TOPOLOGY FAILED global=%u event=%u off=%u opcode=HIDE status=%u remove=%u failClosed=yes\n",
+                           (unsigned int)global,
+                           (unsigned int)eventIndex,
+                           (unsigned int)offset,
+                           (unsigned int)status,
+                           (unsigned int)result.removeCommandIfHandled);
+                    return false;
+                }
+                ++hideApplied;
+                printf("[NATIVESAVE] V8-TOPOLOGY HIDE global=%u event=%u off=%u tile=%u hidden=%u\n",
+                       (unsigned int)global,
+                       (unsigned int)eventIndex,
+                       (unsigned int)offset,
+                       (unsigned int)result.tileIndex,
+                       (unsigned int)result.hiddenEntityCount);
+            }
+        }
+    }
+
+    if (outShowApplied != nullptr) *outShowApplied = showApplied;
+    if (outShowAlreadyLinked != nullptr)
+        *outShowAlreadyLinked = showAlreadyLinked;
+    if (outHideApplied != nullptr) *outHideApplied = hideApplied;
+
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+    printf("[NATIVESAVE] V8-TOPOLOGY RECOVER showApplied=%u showAlreadyLinked=%u hideApplied=%u topologyFNV=%08x linked=%u hidden=%u evidence=script-removed+remove-flag movement=not-guessed exactSpatial=no\n",
+           (unsigned int)showApplied,
+           (unsigned int)showAlreadyLinked,
+           (unsigned int)hideApplied,
+           topology != nullptr ? (unsigned int)topology->stateFNV1a : 0U,
+           topology != nullptr ? (unsigned int)topology->linkedCount : 0U,
+           topology != nullptr ? (unsigned int)topology->hiddenCount : 0U);
+    return true;
+}
+
 bool stageV8MonsterSection(
     const char* path,
     const NativeSaveCore& core,
@@ -2201,6 +2357,9 @@ bool loadNow(void) {
     uint32_t automapFNV = 0U;
     uint16_t monsterCount = 0U;
     uint32_t monsterFNV = 0U;
+    uint16_t v8ShowApplied = 0U;
+    uint16_t v8ShowAlreadyLinked = 0U;
+    uint16_t v8HideApplied = 0U;
     uint32_t monsterTopologyFNV = 0U;
     uint32_t monsterPositionFNV = 0U;
     uint32_t monsterActivationFNV = 0U;
@@ -2349,6 +2508,10 @@ bool loadNow(void) {
                                 &automapVisitedCount,
                                 &automapFNV)) ||
         (record->version == kVersionV8 &&
+         !recoverV8OneShotTopologyFromScript(
+             *record, &v8ShowApplied, &v8ShowAlreadyLinked,
+             &v8HideApplied)) ||
+        (record->version == kVersionV8 &&
          !stageV8MonsterSection(selectedPath, *record,
                                 &monsterCount, &monsterFNV)) ||
         (record->version == kVersionV9 &&
@@ -2418,7 +2581,13 @@ bool loadNow(void) {
                (unsigned int)record->version);
     }
 
-    if (record->version < kVersionV9) {
+    if (record->version == kVersionV8) {
+        printf("[NATIVESAVE] LEGACY-MONSTER-SPATIAL-MIGRATION version=8 oneShotShow=%u alreadyLinked=%u oneShotHide=%u topology=recovered-from-script position=fresh-at-recovered-topology activation=fresh warning=historical-monster-movement-not-present-in-v8\n",
+               (unsigned int)v8ShowApplied,
+               (unsigned int)v8ShowAlreadyLinked,
+               (unsigned int)v8HideApplied);
+    }
+    else if (record->version < kVersionV8) {
         printf("[NATIVESAVE] LEGACY-MONSTER-SPATIAL-GAP version=%u topology+position+activation=fresh warning=monster-visibility-and-position-cannot-be-restored-exactly-from-this-record\n",
                (unsigned int)record->version);
     }
