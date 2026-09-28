@@ -116,8 +116,9 @@ INPUT | SOUND
 
 `BACK` keeps the released double-tap confirmation and returns through the real
 menu hierarchy. `VIDEO`, `INPUT` and `SOUND` remain deliberately subdued and
-non-interactive until their settings backends are ported. This redesign builds
-successfully and still awaits its real-CYD visual/touch pass.
+non-interactive until their settings backends are ported. The shared dashboard,
+its subdued deferred cards and the two-tap `BACK` route have passed focused
+visual/touch testing on the real CYD.
 
 The normal new-game route is:
 
@@ -185,8 +186,8 @@ values, avoiding the blurry double-scaled 3x5 glyphs while preserving the full
   bar, an aligned 2x2 attribute grid, and a lower footer that renders owned
   keys as green/true-yellow/blue/red key cards rather than exposing the
   internal bitmask. Only the tab remains touch-active.
-  The firmware build passes; the refined typography still awaits its real-CYD
-  visual check.
+  The refined typography and key-card colors have passed focused visual testing
+  on the real CYD.
 - `SYS` owns the dedicated one-slot checkpoint UI. SAVE and LOAD require a
   second SELECT/tap to confirm; missing checkpoints display `NO SAVE`. A
   successful SAVE closes the HUB immediately and queues `Game saved` in the
@@ -201,6 +202,11 @@ The lower HUD band is the close-time integrity boundary; the top message band
 is deliberately recomposed by the following world frame. When `Game saved`
 expires, the normal priority chain restores a permanent status message first,
 otherwise the current facing-entity label, otherwise an empty bar.
+
+The rebased `esp32-cyd` image builds successfully at 45,224 bytes of static RAM
+and 796,045 bytes of flash. The full-height HUB, four-row inventory (including
+the owned yellow card), compact STAT page, tab typography and ordinary HUD
+restoration have passed a focused real-CYD visual/touch check.
 
 ## Source-tree rule
 

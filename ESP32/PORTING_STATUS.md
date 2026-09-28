@@ -267,7 +267,7 @@ Detailed record:
 
 - [`MILESTONE_MAIN_MENU_FINGER_FIRST.md`](MILESTONE_MAIN_MENU_FINGER_FIRST.md)
 
-### Options dashboard reuse — BUILD PASS / REAL-CYD PENDING
+### Options dashboard reuse — REAL-CYD VISUAL/TOUCH PASS
 
 The `MENU_MAIN_OPTIONS` child now reuses the same bounded 2x2 card renderer and
 geometry as `MENU_MAIN`:
@@ -283,7 +283,8 @@ ivory/amber armed state as the parent dashboard, and the released second tap
 still executes the real `MenuSystem_back()` transition. Touch ownership now
 tracks the painter's runtime framebuffer hash rather than the removed fixed
 Options framebuffer fingerprint. PlatformIO compilation passes; visual and
-touch behavior still require confirmation on the real CYD.
+touch behavior, including the two-tap `BACK` route and subdued deferred cards,
+has passed a focused check on the real CYD.
 
 This rebased integration combines the current `main` four-page HUB/touch-
 feedback redesign with the later native gameplay, V8 checkpoint, CHECK_KEY and
@@ -344,7 +345,7 @@ All four tabs are directly touch-addressable. The HUB temporarily owns a full
 industrial top title bar and reconstructs the permanent gameplay HUD on close.
 The 28-byte HUB owner and world/turn gating remain unchanged.
 
-The current full-height candidate also reclaims the lower 20 logical rows while
+The current full-height layout also reclaims the lower 20 logical rows while
 the HUB is open: the gameplay portrait/status strip is hidden, and the writable
 menu surface is now 160x100 at `y=20..119`. INV uses four 19-row cards, WPN
 uses a 3x3 grid extending to row 118, STAT distributes its read-only groups over
@@ -353,8 +354,9 @@ SAVE/LOAD targets. Ordinary close still reconstructs the retained gameplay HUD,
 reapplies the settled live compass, and requires the lower-HUD fingerprint to
 match the pre-open witness exactly. Successful LOAD keeps its existing
 whole-session replacement path. Local `esp32-cyd` compilation succeeds at
-45200 B static RAM and 789933 B flash; real-CYD presentation and restoration
-remain to be exercised.
+45224 B static RAM and 796045 B flash. Its presentation, direct inventory touch,
+owned yellow-card row and ordinary gameplay-HUD restoration have passed a
+focused real-CYD check.
 
 The tab labels now use native 5x7 glyphs instead of a 3x5 bitmap enlarged in
 software before the CYD's final 2x presentation. This removes the effective
@@ -377,7 +379,7 @@ The permanent owner is now bounded at **640 compact 4-byte edits**. Each record
 stores `saved RGB565` plus a 15-bit framebuffer offset and one halo/core bit;
 the painted value is reconstructed exactly with `glowAdd565(saved, additive)`
 during reverse restore. The original 128x21 SYS card needed 597 edits; the
-full-height candidate's 128x28 card needs 625, still within the same fixed owner
+full-height layout's 128x28 card needs 625, still within the same fixed owner
 without spending another byte of static RAM. The owner saves 2048 B versus the
 768x6 form. Overlay creation remains nonfatal and restoration remains
 pixel-owned: newer overlays win.
@@ -386,7 +388,7 @@ Detailed record:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md)
 
-#### Compact STAT information layout — BUILD PASS / REAL-CYD PENDING
+#### Compact STAT information layout — REAL-CYD VISUAL PASS
 
 The read-only `STAT` content no longer spends the viewport on five legacy 9x12
 text rows. It now uses compact 3x5 labels and intermediate 5x7 values in two
@@ -396,9 +398,10 @@ health is green (red at critical level) and armor is light blue. The footer no
 longer leaks the internal hexadecimal key mask; owned bits 0..3 render as compact
 green/true-yellow/blue/red key-card icons. Values retain a larger visual weight than
 their labels. No content hitbox was added: the existing `STAT` tab is still the
-page's only touch target. PlatformIO compilation succeeds. With the native 5x7
-tab glyphs included, the image uses 45200 B of static RAM (+72 B versus the
-pre-tab candidate); real-CYD legibility and color balance remain to be confirmed.
+page's only touch target. PlatformIO compilation succeeds. The current rebased
+image uses 45224 B of static RAM; real-CYD testing accepted the native 5x7 tab
+legibility, compact value typography, proportional rails and corrected key-card
+colors.
 
 The redesigned LOAD execution path is now hardware-proven from both the in-game
 SYS page and the cold main menu. The two-tap SYS route no longer requires an

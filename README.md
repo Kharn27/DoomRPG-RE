@@ -57,8 +57,12 @@ The current hardware-validated native path includes:
 - checkpoint save/load V8, retaining the V7 player/resources/script/line,
   action-removal, transformed-crate and Automap state plus compact monster
   state;
-- a compact industrial HUB presentation with a 3x3 normal-weapon grid,
-  source-palette color correction and a dedicated two-step SAVE/LOAD page;
+- a full-height compact industrial HUB that temporarily reclaims the lower
+  gameplay strip, uses crisp native 5x7 tab labels, presents Notebook, carried
+  items and owned keys in a four-row scrolling inventory, and restores the
+  gameplay HUD exactly on close;
+- a 3x3 normal-weapon grid with source-palette color correction and a dedicated
+  two-step SAVE/LOAD page;
 - successful in-game SAVE confirmation closes the HUB immediately, displays
   `Game saved` for about 1.2 seconds, then restores the permanent status or
   current facing-entity label;
@@ -250,9 +254,13 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
 - les sauvegardes V8, qui reprennent les états joueur, ressources, scripts,
   lignes, suppressions du moteur d'action, transformations de caisses et
   révélation de l'Automap de la V7, avec en plus l'état compact des monstres ;
-- une présentation HUB industrielle et compacte avec une grille d'armes 3x3,
-  la correction des palettes sources et une page SAVE/LOAD dédiée avec
-  confirmation en deux temps ;
+- une présentation HUB industrielle en pleine hauteur qui récupère
+  temporairement la bande inférieure du gameplay, emploie des onglets natifs
+  5x7 nets, affiche le Notebook, les objets transportés et les cartes d'accès
+  dans un inventaire défilant sur quatre lignes, puis restaure exactement le
+  HUD en se fermant ;
+- une grille d'armes 3x3 avec correction des palettes sources et une page
+  SAVE/LOAD dédiée avec confirmation en deux temps ;
 - après confirmation d'une sauvegarde en jeu, la fermeture immédiate du HUB,
   l'affichage de `Game saved` pendant environ 1,2 seconde, puis le retour du
   message permanent ou du label de l'entité visée ;

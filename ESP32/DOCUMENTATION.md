@@ -351,9 +351,11 @@ a deliberate whole-session replacement. After the second SAVE selection
 succeeds, the HUB closes immediately and gameplay shows `Game saved` for about
 1200 ms. Expiry recomposes the permanent status-message fallback, then the
 current facing-entity label, then an empty bar. The main menu exposes a separate
-LOAD-only entry through the same checkpoint service. The four-row INV candidate
-builds at 45200 B static RAM and 789933 B flash and awaits its real-CYD
-visual/touch pass.
+LOAD-only entry through the same checkpoint service. The four-row INV layout
+builds at 45224 B static RAM and 796045 B flash. The full-height HUB, direct
+four-row touch selection, owned-key projection (including the yellow card),
+compact STAT presentation and ordinary HUD restoration have passed a focused
+real-CYD visual/touch check.
 
 ## Main-menu Load Game — REAL-CYD PASS
 
@@ -371,10 +373,13 @@ The `Options` child now shares the main menu's 2x2 finger-first card renderer
 Only `BACK` is enabled in the current model; the deferred cards are visibly
 subdued. Back keeps the two-tap contract and uses the runtime framebuffer hash
 returned by the painter, so presentation changes no longer require a duplicated
-hard-coded framebuffer constant. The firmware build passes; real-CYD visual and
-touch validation is pending.
+hard-coded framebuffer constant. The shared dashboard, deferred-card styling
+and two-tap Back route have passed focused visual/touch testing on the real CYD.
 
-**Current qualification:** after the later V8 monster-state extension, the user has reproduced a cold-boot regression where main-menu Load Game reports No Save for a valid V8 file that subsequently loads successfully through HUB/STAT in the same firmware. Therefore the historical main-menu pass must not be treated as a current V8 cold-load proof until that startup-path regression is fixed and retested.
+The later V8 cold-load regression is no longer current. Catalog-independent
+header validation fixed the false `No Save`, and both valid cold resume and the
+genuine no-save response were revalidated on the real CYD. The exact regression,
+fix and witnesses remain recorded in `MILESTONE_MAIN_MENU_LOAD.md`.
 
 ## Native checkpoint save/load
 
