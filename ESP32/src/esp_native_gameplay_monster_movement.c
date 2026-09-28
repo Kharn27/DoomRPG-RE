@@ -14,6 +14,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_movement.h"
+#include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_state.h"
