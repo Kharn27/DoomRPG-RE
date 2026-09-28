@@ -146,6 +146,7 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
         }
         memcpy(positionRecords, pendingRestore->records,
                monsters->count * sizeof(*positionRecords));
+        positionView.records = positionRecords;
         positionView.count = monsters->count;
         positionView.ownerBytes =
             monsters->count * (uint32_t)sizeof(*positionRecords);
@@ -205,6 +206,7 @@ int EspNativeGameplayMonsterPosition_ensure(void) {
     if (positionRecords == NULL) return 0;
     memset(positionRecords, 0, monsters->count * sizeof(*positionRecords));
 
+    positionView.records = positionRecords;
     positionView.count = monsters->count;
     positionView.ownerBytes =
         monsters->count * (uint32_t)sizeof(*positionRecords);
