@@ -1262,6 +1262,79 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         return true;
     }
 
+    if (fileBytes == kRecordBytesV9) {
+        EspNativeGameplayCrateTransformSnapshot crateTransforms;
+        EspMapAutomapSnapshot automap;
+        NativeSaveRecordV9Tail* tail;
+
+        /*
+         * Keep the cold MENU_MAIN probe bounded: close the SD size-probe
+         * handle before reserving the 3508-byte V9 tail workspace, then reopen
+         * for the exact read. The largest section remains smaller than the
+         * already-observed classic-CYD contiguous 8-bit heap margin.
+         */
+        file.close();
+        tail = (NativeSaveRecordV9Tail*)malloc(sizeof(*tail));
+        if (tail == nullptr) {
+            printf("[NATIVESAVE] READABLE-V9 FAILED path=%s stage=tail-workspace bytes=%u failClosed=yes\n",
+                   path, (unsigned int)sizeof(*tail));
+            return false;
+        }
+        file = SD.open(path, FILE_READ);
+        if (!file || (size_t)file.size() != kRecordBytesV9) {
+            if (file) file.close();
+            free(tail);
+            printf("[NATIVESAVE] READABLE-V9 FAILED path=%s stage=reopen expectedBytes=%u failClosed=yes\n",
+                   path, (unsigned int)kRecordBytesV9);
+            return false;
+        }
+
+        memset(&crateTransforms, 0, sizeof(crateTransforms));
+        memset(&automap, 0, sizeof(automap));
+        memset(tail, 0, sizeof(*tail));
+        got = file.read(reinterpret_cast<uint8_t*>(outRecord),
+                        sizeof(NativeSaveRecordV5));
+        if (got == sizeof(NativeSaveRecordV5)) {
+            got = file.read(reinterpret_cast<uint8_t*>(&crateTransforms),
+                            sizeof(crateTransforms));
+        }
+        if (got == sizeof(crateTransforms)) {
+            got = file.read(reinterpret_cast<uint8_t*>(&automap),
+                            sizeof(automap));
+        }
+        if (got == sizeof(automap)) {
+            got = file.read(reinterpret_cast<uint8_t*>(tail),
+                            sizeof(*tail));
+        }
+        file.close();
+
+        const bool valid =
+            got == sizeof(*tail) &&
+            loadedV9Valid(*outRecord, crateTransforms, automap, *tail);
+        printf("[NATIVESAVE] READABLE-V9 path=%s bytes=%u tailWorkspace=%u monsterState=%u monsterTopology=%u monsterPosition=%u monsterActivation=%u result=%s\n",
+               path,
+               (unsigned int)fileBytes,
+               (unsigned int)sizeof(*tail),
+               (unsigned int)sizeof(tail->monsters),
+               (unsigned int)sizeof(tail->monsterTopology),
+               (unsigned int)sizeof(tail->monsterPositions),
+               (unsigned int)sizeof(tail->monsterActivation),
+               valid ? "valid" : "invalid");
+        free(tail);
+        if (!valid) {
+            memset(outRecord, 0, sizeof(*outRecord));
+            return false;
+        }
+        outRecord->fileBytes = (uint16_t)kRecordBytesV9;
+        outRecord->hasResources = 1U;
+        outRecord->hasScript = 1U;
+        outRecord->hasLines = 1U;
+        outRecord->hasActionRemoved = 1U;
+        outRecord->hasAutomap = 1U;
+        outRecord->hasMonsterSpatial = 1U;
+        return true;
+    }
+
     file.close();
     return false;
 }
