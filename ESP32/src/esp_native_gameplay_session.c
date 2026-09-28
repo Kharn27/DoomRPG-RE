@@ -605,21 +605,23 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                        reserveHealthy ? "HEADROOM_OK" : "REVIEW_HEADROOM");
 
                 sessionState.stage = SESSION_STAGE_ACTIVE;
-                if (sessionState.checkpointResume != 0U &&
-                    EspNativeTransitionPresentation_isLoadingActive()) {
-                    /* All priming frames were intentionally hidden behind the
-                     * fixed loading owner. LARGE-WARM left one complete
-                     * world+HUD frame in the logical framebuffer and
-                     * SESSION-ARM left the facing label dirty. Release only
-                     * now, then let the normal compositor publish that complete
-                     * frame atomically as the first visible resumed frame. */
-                    EspNativeTransitionPresentation_releaseLoading(
-                        "checkpoint-session-active");
+                if (EspNativeTransitionPresentation_isLoadingActive()) {
+                    /* Both checkpoint resume and fresh intro startup retain the
+                     * same full-screen owner through cache priming. By this
+                     * point LARGE-WARM has left a complete world+HUD frame in
+                     * the logical framebuffer. Release without repainting the
+                     * loading UI, then publish that complete frame atomically. */
+                    const char* releaseReason =
+                        sessionState.checkpointResume != 0U
+                            ? "checkpoint-session-active"
+                            : "fresh-session-active";
+                    EspNativeTransitionPresentation_releaseLoading(releaseReason);
                     if (!Esp32PlatformVideo_present()) {
-                        failSession("checkpoint final world present");
+                        failSession("transition final world present");
                         return;
                     }
-                    printf("[ENGINESESSION] RESUME-VISIBLE map=%u loadingOwner=released finalWorldPresent=yes intermediatePresents=blocked\n",
+                    printf("[ENGINESESSION] %s-VISIBLE map=%u loadingOwner=released finalWorldPresent=yes intermediatePresents=blocked\n",
+                           sessionState.checkpointResume != 0U ? "RESUME" : "FRESH",
                            (unsigned int)view->targetMapId);
                 }
                 printf("[ENGINESESSION] READY map=%u angle=%u residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=%p mediaTexels=%p\n",
