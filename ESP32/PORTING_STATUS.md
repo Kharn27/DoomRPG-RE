@@ -5,15 +5,49 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 8dd660ce1017540c364591cad54514c9c788acf5
-branch = agent/esp32-native-level-stats-loading
-hardware-tested code boundary = a81dd38a6875154b37b9006a145eef5d73e85a66
-hardware = native level stats + reusable fixed-background loading + checkpoint LOAD presentation REAL-CYD PASS
-CI = esp32-cyd #867 SUCCESS
-static RAM = 45224 B
-flash = 795461 B
-status = HARDWARE PASS; POST-TEST TAIL DOCS-ONLY
+current main = 2af4aab025b6fb0094b31eea9403477f892b796a
+branch = agent/esp32-native-transition-polish
+hardware-tested code boundary = 6903431a60700960127be95d95584728698a36c8
+hardware = transition/loading polish + unified checkpoint LOAD from MENU_MAIN and in-game SYS HUB REAL-CYD PASS
+CI/build-size = not re-asserted for this post-main polish tail
+status = HARDWARE PASS; POST-TEST TAIL DOCS-ONLY; MERGE-READY AFTER DOC VERIFICATION
 ```
+
+### Transition/loading polish — REAL-CYD PASS
+
+The real classic CYD has now validated both checkpoint LOAD entry contexts on
+the same native restore pipeline:
+
+```text
+MENU_MAIN -> Load Game             PASS
+running gameplay -> SYS -> LOAD    PASS
+```
+
+The final loading owner remains full-screen through restore and session/cache
+priming. Progress is paced through 10/30/60/75/85/90/93/96/100, and the final
+100% loading frame is followed by a rebuilt gameplay frame, explicit loading
+release, top+bottom HUD repaint, then the first visible gameplay present.
+
+Important ownership corrections in the tested code boundary:
+
+- checkpoint session teardown happens before `beginLoading()`, so the in-game
+  HUB cannot clean up old presentation state after loading has acquired the
+  shared framebuffer;
+- each progress publication reconstructs the complete loading frame because
+  gameplay writers can mutate the shared framebuffer even while their presents
+  are suppressed;
+- warm-cache resume no longer treats zero new LARGE-LEARN stores or post-render
+  large-entry eviction as a functional load failure;
+- `READY 100%` is not the gameplay framebuffer: `FINAL-READY` rebuilds the
+  world, loading ownership is released without presenting, and
+  `EspNativeGameplayHud_repaint()` restores both HUD bands before the final
+  gameplay present.
+
+The hardware-tested code boundary is `6903431a60700960127be95d95584728698a36c8`.
+Subsequent commits on this branch are documentation-only.
+
+Detailed record:
+[MILESTONE_NATIVE_TRANSITION_PRESENTATION.md](MILESTONE_NATIVE_TRANSITION_PRESENTATION.md)
 
 ### Ordinary attack post-review corrections — build-valid candidate
 
