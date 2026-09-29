@@ -255,3 +255,30 @@ complete hardware-pass boundary. One post-LOAD MOVE that reaches
 `MONSTERMOVEACT` / `MONSTERMOVELIVE` (and preferably a subtype-4
 `MONSTER3GOAL` continuation) is still required to prove the reset consumers
 restart cleanly.
+
+
+## Explicit MovementProbe reset composition — REAL-CYD PASS
+
+Candidate `cb45792af62d8ad0946dc4d477b288ef92aecf3a` is now fully hardware
+validated.
+
+The first post-LOAD MOVE starts the movement probe counter at `n=1`, proving
+the reset owner was actually reinitialized rather than merely surviving restore.
+The restored active set then runs all four members in order:
+
+```text
+sprite 218 subtype 3: live COMMIT
+sprite 237 subtype 5: live COMMIT
+sprite 0 subtype 4: first goal + goal 2/3 COMMIT + goal 3/3 COMMIT + COMPLETE
+sprite 1 subtype 4: first goal + goal 2/3 COMMIT + goal 3/3 COMMIT + COMPLETE
+MONSTERACTIVESEQ COMPLETE activeCount=4 delivered=4 ordered=yes
+ALIVE uptime=454330 ms
+```
+
+All continuation probes pass `MONSTERMOVEACT ALLOW`, all publications close
+their rollback/topology transaction, and no stale pre-load movement or
+three-goal state leaks into the restored session.
+
+Therefore removal of
+`--wrap=EspNativeGameplayMonsterMovementProbe_reset` is hardware validated on
+the real classic CYD.
