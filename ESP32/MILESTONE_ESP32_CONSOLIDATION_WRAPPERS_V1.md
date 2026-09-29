@@ -88,3 +88,50 @@ lower-level MonsterPosition owner remains independent.
 That next code must preserve RNG cadence, commit/rollback, topology publication
 and activation ordering, and requires a separate real-CYD test before being
 called hardware validated.
+
+
+## Active-wrap replacement: hardware finding and correction
+
+Candidate `3d15ba1393da6883f0af2903699d687c2e1e64fc` removed the active linker
+`--wrap=EspNativeGameplayMonsterPosition_prepareCardinalMove` and replaced the
+ordinary movement planner call with the explicit
+`EspNativeGameplayMonsterMovementActivation_prepareCardinalMove()` boundary.
+
+The real CYD proved that ordinary multi-active movement still worked: sprites
+218 and 237 each passed `MONSTERMOVEACT ALLOW`, committed live movement, and
+the active sequence completed in order. After SHOW event 51 exposed two subtype
+4 monsters, all four active members were serviced in order.
+
+The same trace also exposed a missed dependency on the historical linker wrap.
+Subtype-4 first goals committed, but their goal-2 continuation emitted:
+
+```text
+[MONSTER3GOAL] PLAN ... publish=pending
+[MONSTERMOVELIVE] DEFER cause=probe-sequence-or-capture-mismatch
+[MONSTER3GOAL] DEFER ... cause=continuation-not-published
+```
+
+This is a hardware regression, so `3d15ba...` is NOT a hardware-pass boundary.
+
+Root cause: `esp_native_gameplay_monster_three_goal_turn.c` had its own direct
+call to `EspNativeGameplayMonsterPosition_prepareCardinalMove()`. The removed
+linker wrapper had implicitly supplied activation gating + publication capture
+for that call too. Ordinary movement was converted to the explicit boundary,
+but the three-goal continuation was initially missed.
+
+Commit `aa7cb5c778264e1bb61d442d1c9864c09e6f37a3` routes that continuation
+through the same explicit movement-activation boundary. The fix changes only
+the include and prepare call site; planner logic, RNG, commit/rollback and
+publication logic are unchanged.
+
+Expected hardware witness for the corrected candidate:
+
+```text
+MONSTER3GOAL PLAN ... goal=2/3 ... publish=pending
+MONSTERMOVELIVE COMMIT ...
+MONSTER3GOAL COMMIT ... goal=2/3 ...
+```
+
+and, when geometry permits, the same sequence for goal 3/3. Until observed on
+the real CYD, the authoritative hardware-tested code boundary remains
+`4731d8265e90da19dc6d911739c4bf5574117a4d`.
