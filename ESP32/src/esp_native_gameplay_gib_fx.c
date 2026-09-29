@@ -592,17 +592,27 @@ static void decorateNewGibs(void) {
 }
 
 int EspNativeGameplayGibFx_adoptCheckpointState(void) {
-    const EspNativeGameplayMonsterView* view = syncOwner();
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+    const EspNativeGameplayMonsterView* view = NULL;
     uint32_t deadSeen = 0U;
     uint32_t aliveEligible = 0U;
     uint32_t i;
 
-    if (view == NULL) return 0;
+    if (runtime == NULL || topology == NULL || !EspMapRuntime_isLoaded() ||
+        !EspMapSpriteTopology_isReady() ||
+        runtime->arenaFNV1a == 0U ||
+        runtime->mapSpriteCount != topology->spriteCount) {
+        return 0;
+    }
 
     /*
      * A restored dead monster is historical world state, not a new death
      * transition. Prime the present-only seen mask before the first checkpoint
      * resume present so decorateNewGibs() cannot replay blood for it.
+     *
+     * A zero-enemy map owns no MonsterState allocation by design. Reset the
+     * present-only owner and accept that empty world directly.
      *
      * Alive monsters are explicitly left eligible: normal presentation keeps
      * clearing their seen bit, so a future live->dead transition still produces
@@ -614,6 +624,19 @@ int EspNativeGameplayGibFx_adoptCheckpointState(void) {
     gibFxOwner.activeSeed = 0U;
     gibFxOwner.activeRepaints = 0U;
     gibFxOwner.clearAtMs = 0U;
+    memset(gibFxOwner.seenBits, 0, sizeof(gibFxOwner.seenBits));
+
+    if (topology->enemyCount == 0U) {
+        printf("[GIBFX] CHECKPOINT-ADOPT arena=%08x monsters=0 deadSeen=0 aliveEligible=0 replay=no mutation=presentation-owner-only rng=untouched empty=yes\n",
+               (unsigned int)runtime->arenaFNV1a);
+        return 1;
+    }
+
+    view = syncOwner();
+    if (view == NULL || view->records == NULL ||
+        view->count != topology->enemyCount) {
+        return 0;
+    }
 
     for (i = 0U; i < view->count; ++i) {
         const EspNativeGameplayMonsterRecord* monster = &view->records[i];
