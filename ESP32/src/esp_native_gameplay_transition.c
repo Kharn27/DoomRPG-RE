@@ -202,11 +202,22 @@ void EspNativeGameplayTransition_reset(void) {
 }
 
 int EspNativeGameplayTransition_isWaitingDoor(void) {
-    return transitionState.active == 1U &&
-           transitionState.waitingDoor == 1U &&
-           transitionState.waitingStats == 0U &&
-           transitionState.committed.phase ==
-               ESP_MAP_COMMITTED_TRANSITION_PHASE_WAIT_STATS;
+    if (transitionState.active != 1U ||
+        transitionState.waitingDoor != 1U ||
+        transitionState.waitingStats != 0U) {
+        return 0;
+    }
+
+    /*
+     * A transition door can precede either a stats pause (showStats=1) or a
+     * direct handoff (showStats=0). The committed phase already reflects that
+     * semantic split before the visual door suffix is drained.
+     */
+    return transitionState.changeResult.showStats != 0U
+               ? transitionState.committed.phase ==
+                     ESP_MAP_COMMITTED_TRANSITION_PHASE_WAIT_STATS
+               : transitionState.committed.phase ==
+                     ESP_MAP_COMMITTED_TRANSITION_PHASE_READY;
 }
 
 int EspNativeGameplayTransition_isWaitingStats(void) {
