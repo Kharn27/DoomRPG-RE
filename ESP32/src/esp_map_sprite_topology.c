@@ -531,9 +531,18 @@ int EspMapSpriteTopology_snapshotMonsters(
 
     for (i = 0U; i < topologyView.spriteCount; ++i) {
         EspMapSpriteTopologyMonsterRecord* record;
-        if (entityTypes[i] != ESP_MAP_ENTITY_TYPE_ENEMY) continue;
+        const uint8_t type = entityTypes[i];
+        if (type != ESP_MAP_ENTITY_TYPE_ENEMY &&
+            type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE) {
+            continue;
+        }
         if (count >= ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX ||
             i > UINT16_MAX) {
+            printf("[MAPCHECKPOINTTOPO] SNAPSHOT-FAILED reason=capacity tracked=%u cap=%u enemies=%u destructibles=%u failClosed=yes\n",
+                   (unsigned int)(count + 1U),
+                   (unsigned int)ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX,
+                   (unsigned int)topologyView.enemyCount,
+                   (unsigned int)topologyView.destructibleCount);
             return 0;
         }
         record = &outSnapshot->records[count++];
@@ -556,7 +565,9 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
     if (runtime == NULL || !EspMapSpriteTopology_isReady() ||
         !EspMapSpriteTopology_monsterSnapshotShapeValid(
             snapshot, runtime->arenaFNV1a) ||
-        snapshot->count != topologyView.enemyCount) {
+        snapshot->count !=
+            (uint16_t)(topologyView.enemyCount +
+                       topologyView.destructibleCount)) {
         return 0;
     }
 
@@ -568,8 +579,10 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
             ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
             ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT;
 
+        const uint8_t type = entityTypes[record->spriteIndex];
         if (record->spriteIndex >= topologyView.spriteCount ||
-            entityTypes[record->spriteIndex] != ESP_MAP_ENTITY_TYPE_ENEMY ||
+            (type != ESP_MAP_ENTITY_TYPE_ENEMY &&
+             type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE) ||
             (live & identityMask) !=
                 (record->linkState & identityMask)) {
             return 0;
@@ -594,9 +607,11 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
         }
     }
 
-    printf("[MAPMONSTERTOPO] RESTORE arena=%08x monsters=%u nextOrder=%u stateFNV=%08x mutation=monster-topology-only allocation=no\n",
+    printf("[MAPCHECKPOINTTOPO] RESTORE arena=%08x tracked=%u enemies=%u destructibles=%u nextOrder=%u stateFNV=%08x mutation=enemy+destructible-topology allocation=no\n",
            (unsigned int)snapshot->sourceArenaFNV1a,
            (unsigned int)snapshot->count,
+           (unsigned int)topologyView.enemyCount,
+           (unsigned int)topologyView.destructibleCount,
            (unsigned int)snapshot->nextLinkOrder,
            (unsigned int)snapshot->stateFNV1a);
     return 1;
