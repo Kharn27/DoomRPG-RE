@@ -4,8 +4,8 @@
 
 ```text
 branch = agent/esp32-native-checkpoint-monster-spatial-v9
-hardware-tested code boundary = 6425c30278d83407bf859db642c759ca826a3b41
-esp32-cyd CI #961/#962 = SUCCESS
+hardware-tested code boundary = 7b3efeb8d590c027b94f08ac7c31c886938709d4
+esp32-cyd CI #980/#981 = SUCCESS
 ```
 
 The branch contains the complete prior
@@ -73,6 +73,66 @@ previous V8 checkpoint remains readable
 yellow-card revealed monsters remain present after V8 LOAD
 ```
 
-The V8 migration and V9 SAVE path are hardware-proven. An exact
-SAVE-V9 -> mutate -> LOAD-V9 round-trip is not yet separately hardware-proven
-and must not be described as validated until that specific test passes.
+## REAL-CYD PASS: final V9 enemy + destructible spatial round-trip
+
+Code review identified two remaining V9 ownership holes after the first SAVE
+PASS:
+
+1. an EV_SHOW blocker enemy can be topology-dead while MonsterState still says
+   alive because gameplay death side effects are deliberately deferred;
+2. EV_SHOW can also remove a deterministic destructible, while the first V9
+   topology snapshot contained enemies only.
+
+The final bounded correction keeps the live gameplay owners unchanged while
+making the checkpoint image coherent:
+
+- a topology-dead enemy is reconciled to logical-dead in the snapshot copy
+  before the MonsterState checkpoint FNV is calculated;
+- the V9 topology snapshot contains both enemies and destructibles;
+- the provisional enemy-only V9 produced by earlier branch commits remains
+  readable through the existing consumed SHOW/HIDE replay compatibility path.
+
+Entrance hardware witness on the real classic CYD:
+
+```text
+SAVE:
+version=9
+bytes=5444
+monsters=30
+topology=43
+positions=30
+activation=0
+world=monster-spatial-exact-v9
+
+LOAD:
+[MAPCHECKPOINTTOPO] RESTORE
+  tracked=43
+  enemies=30
+  destructibles=13
+  scope=enemy+destructible-v9
+  stateFNV=7a4b0217
+
+[NATIVESAVE] V9-SPATIAL-STAGE
+  monsters=30
+  topologyTracked=43
+  monsterFNV=dcda5880
+  topologyFNV=7a4b0217
+  positionFNV=a369df86
+  activationFNV=a91415b7
+  legacyReplay=0/0/0
+  exact=yes
+
+[ENGINESESSION] READY
+  shapeData=0x0
+  mediaTexels=0x0
+```
+
+The user performed a new V9 SAVE, then a V9 LOAD from that exact file. The
+checkpoint restored the full 43-record enemy+destructible topology and the
+30-record monster position owner, reached READY, released the loading
+presentation, and resumed resident gameplay. This closes the two review findings
+and hardware-validates the final V9 spatial checkpoint round-trip at
+`7b3efeb8d590c027b94f08ac7c31c886938709d4`.
+
+V8 migration, V9 SAVE, and V9 LOAD are now real-CYD PASS at the bounded scope
+above.
