@@ -4,8 +4,8 @@
 
 ```text
 branch = agent/esp32-native-checkpoint-monster-spatial-v9
-hardware-tested code boundary = cb9f7b3f97314524b01d52c45d9a209b7c5bcb87
-esp32-cyd CI #954 = SUCCESS
+hardware-tested code boundary = 6425c30278d83407bf859db642c759ca826a3b41
+esp32-cyd CI #961/#962 = SUCCESS
 ```
 
 The branch contains the complete prior
@@ -57,6 +57,22 @@ Cross-owner identity/fingerprint mismatches fail closed. No pointer-heavy legacy
 entity graph is serialized and no `shapeData` / `mediaTexels` owner is
 introduced.
 
-The V8 migration above is hardware-proven. An exact SAVE-V9 -> mutate -> LOAD-V9
-round-trip is not yet hardware-proven and must not be described as validated
-until that specific test passes.
+A real-CYD SAVE-V9 attempt exposed one cross-owner validation bug: logical
+monster death is authoritative in `MonsterState`, while the raw compact
+topology may still retain ALIVE/LINKED bits that are masked by the combat
+overlay. Requiring raw topology ALIVE to equal logical alive therefore rejected
+valid current state. The final code accepts the intentional logical-dead overlay
+while still rejecting the inverse inconsistency (logically alive with raw
+topology ALIVE cleared), and adds stage-specific capture diagnostics.
+
+Hardware result at the final code boundary:
+
+```text
+SAVE V9 succeeds on the real classic CYD
+previous V8 checkpoint remains readable
+yellow-card revealed monsters remain present after V8 LOAD
+```
+
+The V8 migration and V9 SAVE path are hardware-proven. An exact
+SAVE-V9 -> mutate -> LOAD-V9 round-trip is not yet separately hardware-proven
+and must not be described as validated until that specific test passes.
