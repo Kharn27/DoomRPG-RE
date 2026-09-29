@@ -81,7 +81,6 @@ int __real_EspNativeGameplayMonsterTurn_postMoveGoal(
     uint16_t spriteIndex,
     uint16_t sourceTile,
     uint16_t destTile);
-void __real_EspNativeGameplayMonsterMovementProbe_reset(void);
 
 static int centeredCoordinate(int32_t value) {
     return value >= THREEGOAL_TILE_CENTER &&
@@ -1043,7 +1042,3 @@ int __wrap_EspNativeGameplayMonsterTurn_postMoveGoal(
     }
 }
 
-void __wrap_EspNativeGameplayMonsterMovementProbe_reset(void) {
-    EspNativeGameplayMonsterThreeGoalTurn_reset();
-    __real_EspNativeGameplayMonsterMovementProbe_reset();
-}
