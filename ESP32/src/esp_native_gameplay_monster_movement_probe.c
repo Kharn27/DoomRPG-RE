@@ -9,6 +9,7 @@
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_position.h"
+#include "esp_native_gameplay_monster_three_goal_turn.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_rng_replay_guard.h"
 
@@ -48,6 +49,12 @@ static void servicePostMoveGoal(
 }
 
 void EspNativeGameplayMonsterMovementProbe_reset(void) {
+    /*
+     * Permanent reset composition for the movement domain. Keep the exact
+     * historical wrapper order: three-goal continuation state must be cleared
+     * before the publisher/planner/position owners it observes.
+     */
+    EspNativeGameplayMonsterThreeGoalTurn_reset();
     EspNativeGameplayMonsterMovementPublish_reset();
     EspNativeGameplayMonsterMovement_reset();
     EspNativeGameplayMonsterPosition_reset();

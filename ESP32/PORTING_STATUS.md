@@ -5,16 +5,157 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = fbacb595170e85b736bcb4e8c97cc22390eba1d8
-branch = agent/esp32-consolidation-v1
-hardware-tested code boundary = 7d64839a31376c4ca0a3ec4f0f5ae10395b04635
-CI = esp32-cyd #1009 SUCCESS
+current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
+branch = agent/esp32-consolidation-dead-wrap-cleanup
+hardware-tested code boundary = 560e54bd2d32fe1f5d704cd9ef0d3737c57f765b
+CI = esp32-cyd #1028 SUCCESS
+static RAM = 45784 B
+flash = 816509 B
+artifact id = 11043841537
+translation units = 174
+active --wrap flags = 62
+hardware = explicit synthetic MovementView publication PASS with two complete subtype-4 three-goal chains inside ordered 4-monster turn
+status = HARDWARE PASS for three active native linker seams removed; branch remains active for bounded consolidation
+```
+
+### Explicit synthetic MovementView publication — REAL-CYD PASS (2026-09-29)
+
+Commit `560e54bd2d32fe1f5d704cd9ef0d3737c57f765b` removes the active
+`--wrap=EspNativeGameplayMonsterMovement_view`.
+
+The three-goal continuation no longer intercepts the global movement view.
+Instead, the publisher exposes the bounded permanent API
+`EspNativeGameplayMonsterMovementPublish_afterProbeWithView(...)`, and the
+three-goal owner passes its synthetic movement view explicitly only for the
+continuation transaction. The normal movement path continues to publish against
+the real `EspNativeGameplayMonsterMovement_view()`.
+
+CI #1028 succeeds with 45784 B static RAM and 816509 B flash. The active linker
+wrap count is now 62, down from 65 on merged main.
+
+The real classic CYD proves both subtype-4 chains through the explicit view seam:
+
+```text
+sprite 0:
+  first goal 470 -> 471 COMMIT
+  goal 2/3 471 -> 439 COMMIT
+  goal 3/3 439 -> 440 COMMIT
+  MONSTER3GOAL COMPLETE
+
+sprite 1:
+  first goal 534 -> 535 COMMIT
+  goal 2/3 535 -> 536 COMMIT
+  goal 3/3 536 -> 537 COMMIT
+  MONSTER3GOAL COMPLETE
+
+MONSTERACTIVESEQ COMPLETE activeCount=4 delivered=4 ordered=yes
+ALIVE remains steady through uptime=55893 ms
+```
+
+Every continuation still passes `MONSTERMOVEACT ALLOW`, every live publication
+closes RNG/position/topology/rollback state, and no
+`probe-sequence-or-capture-mismatch` occurs. This candidate is therefore the
+current authoritative hardware-tested code boundary.
+
+Remaining monster-domain active linker wraps after this PASS:
+
+```text
+EspNativeGameplayMonsterState_actionService
+EspNativeGameplayMonsterTurn_view
+EspNativeGameplayMonsterMovement_service
+EspNativeGameplayMonsterTurn_postMoveGoal
+EspNativeGameplayMonsterState_view
+```
+
+### Explicit MovementProbe reset composition — REAL-CYD PASS (2026-09-29)
+
+Candidate `cb45792af62d8ad0946dc4d477b288ef92aecf3a` removes the active
+`--wrap=EspNativeGameplayMonsterMovementProbe_reset` and places the same
+ThreeGoal -> Publish -> Movement -> Position reset order directly in the
+permanent MovementProbe reset API.
+
+CI #1022 succeeds at 45784 B static RAM / 816509 B flash with 63 active linker
+wraps. Real-CYD SAVE/LOAD proves full resident teardown, exact V9 monster
+state/topology/position/activation restore, owner READY reinitialization and
+`ENGINESESSION READY` with `shapeData=0x0 mediaTexels=0x0`.
+
+The first MOVE after LOAD then proves consumers restart cleanly: movement probe
+counter restarts at n=1, four restored active monsters are delivered in order,
+all live moves commit, and both subtype-4 monsters complete goals 2/3 and 3/3
+through the explicit movement activation/publication path. The turn closes with
+`activeCount=4 delivered=4 ordered=yes` and a steady `[ALIVE]` witness.
+This candidate is therefore hardware validated.
+
+### Active MonsterPosition prepare wrap removal — REAL-CYD PASS (2026-09-29)
+
+The active linker interception of
+`EspNativeGameplayMonsterPosition_prepareCardinalMove` is now replaced by the
+explicit permanent movement-domain API
+`EspNativeGameplayMonsterMovementActivation_prepareCardinalMove`.
+
+The first candidate `3d15ba1393...` converted ordinary movement but missed the
+subtype-4/13 three-goal continuation call site. The real CYD caught that exact
+dependency through `probe-sequence-or-capture-mismatch`; that candidate is
+explicitly rejected as a hardware boundary.
+
+Commit `aa7cb5c778264e1bb61d442d1c9864c09e6f37a3` routes the continuation through
+the same explicit activation + publication-capture boundary. A complete
+monster-source audit then found no gameplay caller bypassing it.
+
+The corrected real-CYD run proves:
+
+```text
+activeCount=4 delivered=4 ordered=yes
+sprite 0 subtype 4: first goal + goal 2/3 COMMIT + goal 3/3 COMMIT + COMPLETE
+sprite 1 subtype 4: first goal + goal 2/3 COMMIT + goal 3/3 COMMIT + COMPLETE
+all continuation moves pass MONSTERMOVEACT ALLOW
+all live moves close rollback and topology publication
+ALIVE uptime=340952 ms
+```
+
+CI #1020 succeeds on docs-only descendant `25cfb5f9...` with unchanged
+45784 B static RAM and 816517 B flash. The active linker wrap count is now 64,
+down from 65 at merged main, with no RAM/flash growth.
+
+### Structural consolidation v2 / dead wrapper cleanup — REAL-CYD PASS (2026-09-29)
+
+The post-merge audit starts from exact `main`
+`3de74fc1899ea619874b9f2bce8fb3679016c1a4`. The production tree contains
+175 ESP32 C/C++ translation units, 17 legacy `src/*.c` implementation units
+still compiled for ESP32, and 65 linker `--wrap` entries. 50 of those linker
+entries target native `Esp*` symbols, so native-to-native composition is now a
+first-class consolidation target.
+
+The first bounded cleanup removed the dormant historical
+`EspNativeGameplayMonsterRetaliation_* -> EspNativeGameplayMonsterMovement_*`
+wrapper footer and the link-only
+`esp_native_gameplay_monster_movement_wrap_compat.c`. Those Retaliation
+symbols were no longer present in the active `--wrap` list.
+
+```text
+translation units = 175 -> 174
+active --wrap flags = unchanged at 65
+CI #1015 attempt 2 = SUCCESS
 static RAM = 45784 B
 flash = 816517 B
-artifact id = 11037553080
-hardware = Junction zero-enemy PASS + Junction -> Sector 1 playable PASS + live SAVE return-route persistence PASS + Sector 1 V9 SAVE/LOAD PASS
-status = HARDWARE PASS for exercised paths; edge-clamped facing review fix is build-valid but its exact map-edge case was not hardware-triggered; POST-TEST TAIL DOCS-ONLY; PR/MERGE-READY
 ```
+
+The RAM/flash totals are byte-for-byte identical to a clean build of merged
+`main`, consistent with this compatibility code already being dead at final
+link.
+
+The real classic CYD then exercised Sector 1 through a complete monster
+hit/death transaction, a `PLAYER_ATTACK` monster turn, active-sequence service,
+a committed MOVE from tile 508 -> 507, another MOVE-triggered monster turn, and
+a steady `[ALIVE]` witness at about 99 seconds. No reboot or gameplay
+regression was observed.
+
+This validates only code through `4731d826...`. Later consolidation commits on
+this still-active branch remain candidates until separately tested.
+
+Detailed record:
+
+- [`MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md`](MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md)
 
 ### Consolidation-v1 progression recovery — REAL-CYD PASS (2026-09-29)
 

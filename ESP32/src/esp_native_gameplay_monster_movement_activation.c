@@ -2,17 +2,12 @@
 #include <stdio.h>
 
 #include "esp_native_gameplay_monster_activation.h"
+#include "esp_native_gameplay_monster_movement_activation.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
-#include "esp_native_gameplay_monster_position.h"
-
-int __real_EspNativeGameplayMonsterPosition_prepareCardinalMove(
-    uint16_t spriteIndex,
-    int32_t deltaX,
-    int32_t deltaY,
-    EspNativeGameplayMonsterPositionRecord* outBefore,
-    EspNativeGameplayMonsterPositionRecord* outAfter);
 
 /*
+ * Permanent movement-side composition boundary.
+ *
  * Movement may mutate only the compact position owner for monsters that the
  * already hardware-proven conservative activation gate has observed. The
  * activation bit persists for the map session, matching the recovered legacy
@@ -21,8 +16,12 @@ int __real_EspNativeGameplayMonsterPosition_prepareCardinalMove(
  *
  * A successful prepare is captured for the publication layer, but the proven
  * movement service still performs its original commit+rollback probe first.
+ *
+ * This used to be expressed as a linker --wrap around the lower-level
+ * MonsterPosition owner. Keep that owner independent and compose it explicitly
+ * here instead.
  */
-int __wrap_EspNativeGameplayMonsterPosition_prepareCardinalMove(
+int EspNativeGameplayMonsterMovementActivation_prepareCardinalMove(
     uint16_t spriteIndex,
     int32_t deltaX,
     int32_t deltaY,
@@ -36,7 +35,7 @@ int __wrap_EspNativeGameplayMonsterPosition_prepareCardinalMove(
         return 0;
     }
 
-    prepared = __real_EspNativeGameplayMonsterPosition_prepareCardinalMove(
+    prepared = EspNativeGameplayMonsterPosition_prepareCardinalMove(
         spriteIndex, deltaX, deltaY, outBefore, outAfter);
     if (prepared) {
         EspNativeGameplayMonsterMovementPublish_capturePrepared(outBefore, outAfter);

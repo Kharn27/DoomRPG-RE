@@ -14,9 +14,9 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_movement.h"
+#include "esp_native_gameplay_monster_movement_activation.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_position.h"
-#include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_player_view_state.h"
@@ -1015,7 +1015,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     positionFNVBefore = EspNativeGameplayMonsterPosition_fingerprint();
-    if (!EspNativeGameplayMonsterPosition_prepareCardinalMove(
+    if (!EspNativeGameplayMonsterMovementActivation_prepareCardinalMove(
             candidate.monster->spriteIndex, plan.deltaX, plan.deltaY,
             &positionBefore, &positionAfter) ||
         positionBefore.tileIndex != plan.sourceTile ||
@@ -1082,16 +1082,3 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
            positionExact ? "yes" : "NO");
 }
 
-void __real_EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpg);
-void __real_EspNativeGameplayMonsterRetaliation_reset(void);
-
-void __wrap_EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpg) {
-    __real_EspNativeGameplayMonsterRetaliation_service(doomRpg);
-    EspNativeGameplayMonsterMovement_service(doomRpg);
-}
-
-void __wrap_EspNativeGameplayMonsterRetaliation_reset(void) {
-    EspNativeGameplayMonsterMovement_reset();
-    EspNativeGameplayMonsterPosition_reset();
-    __real_EspNativeGameplayMonsterRetaliation_reset();
-}

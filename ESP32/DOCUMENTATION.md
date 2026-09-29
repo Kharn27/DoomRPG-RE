@@ -13,16 +13,59 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = fbacb595170e85b736bcb4e8c97cc22390eba1d8
-branch = agent/esp32-consolidation-v1
-hardware-tested code boundary = 934d0e2f9becd51a93df61d44dd6e01380fae6b4
-CI = esp32-cyd #1005 SUCCESS
-static RAM = 45688 B
-flash = 815821 B
-artifact id = 11035238982
-hardware = Junction zero-enemy SAVE/LOAD/PASS_TURN + Junction -> Sector 1 playable REAL-CYD PASS
-status = hardware validated; post-test tail docs-only; PR/merge-ready
+current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
+branch = agent/esp32-consolidation-dead-wrap-cleanup
+hardware-tested code boundary = 560e54bd2d32fe1f5d704cd9ef0d3737c57f765b
+CI = esp32-cyd #1028 SUCCESS
+static RAM = 45784 B
+flash = 816509 B
+artifact id = 11043841537
+translation units = 174
+active --wrap flags = 62
+hardware = three active native linker seams replaced by explicit APIs and hardware validated
+status = branch active; continue bounded wrapper consolidation without merging main
 ```
+
+Current consolidation result from merged-main baseline:
+
+```text
+ESP32 translation units: 175 -> 174
+active linker --wraps:   65 -> 62
+static RAM:              45784 B -> 45784 B
+flash:                   816517 B -> 816509 B
+```
+
+The dead historical Retaliation compatibility translation unit is gone. Three
+formerly active native-to-native linker seams are now explicit permanent APIs:
+
+1. `EspNativeGameplayMonsterPosition_prepareCardinalMove`:
+   activation gating + publication capture now pass through
+   `EspNativeGameplayMonsterMovementActivation_prepareCardinalMove`.
+2. `EspNativeGameplayMonsterMovementProbe_reset`:
+   reset ownership is explicit in MovementProbe with exact
+   ThreeGoal -> Publish -> Movement -> Position ordering.
+3. `EspNativeGameplayMonsterMovement_view`:
+   three-goal continuations pass their synthetic movement view explicitly to
+   `EspNativeGameplayMonsterMovementPublish_afterProbeWithView`; the global
+   movement view is no longer intercepted.
+
+All three active-wrap removals have real-CYD proof. The latest witness runs an
+ordered four-monster turn in Sector 1 and completes goals 2/3 and 3/3 for both
+subtype-4 monsters with live publication, topology relink and rollback closure,
+followed by steady `[ALIVE]`.
+
+Five monster-domain linker wraps remain active:
+
+```text
+EspNativeGameplayMonsterState_actionService
+EspNativeGameplayMonsterTurn_view
+EspNativeGameplayMonsterMovement_service
+EspNativeGameplayMonsterTurn_postMoveGoal
+EspNativeGameplayMonsterState_view
+```
+
+See [MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md](MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md)
+for the exact regression history, CI artifacts and hardware witnesses.
 
 The merged barrel milestone remains hardware-valid on the real CYD. A distant shot
 proved a complete three-barrel causal chain: the root runs its 3-frame logical
