@@ -1535,9 +1535,15 @@ MonsterPosition
 MonsterActivation order
 ```
 
-Important validation boundary: V8 compatibility recovery is hardware-proven.
-Exact SAVE-V9 -> mutate -> LOAD-V9 restoration is not yet hardware-proven and
-must remain explicitly pending until tested on the real CYD.
+The real CYD also now completes a V9 SAVE at the final code boundary. The final
+fix permits the intentional logical-dead MonsterState overlay over raw compact
+topology while keeping the inverse inconsistency fail-closed, and adds precise
+capture-stage diagnostics.
+
+Important validation boundary: V8 compatibility recovery and V9 SAVE are
+hardware-proven. Exact SAVE-V9 -> mutate -> LOAD-V9 restoration is not yet
+separately hardware-proven and must remain explicitly pending until tested on
+the real CYD.
 
 Detailed record:
 
