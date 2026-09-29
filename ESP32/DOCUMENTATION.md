@@ -15,13 +15,13 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
 branch = agent/esp32-consolidation-dead-wrap-cleanup
-hardware-tested code boundary = aa7cb5c778264e1bb61d442d1c9864c09e6f37a3
-CI = esp32-cyd #1020 SUCCESS on docs-only head 25cfb5f9f09c95cff2a6edc716ea1f51c518d432
+hardware-tested code boundary = cb45792af62d8ad0946dc4d477b288ef92aecf3a
+CI = esp32-cyd #1022 SUCCESS
 static RAM = 45784 B
-flash = 816517 B
-artifact id = 11041812545
-hardware = explicit movement activation/capture boundary PASS with ordered 4-monster + complete subtype-4 3-goal chains
-status = active MonsterPosition prepare linker wrap removed and hardware validated; branch continues
+flash = 816509 B
+artifact id = 11042258257
+hardware = explicit MovementProbe reset composition PASS across SAVE/LOAD and post-load 4-monster / subtype-4 3-goal movement
+status = two active native linker seams removed and hardware validated; branch continues
 ```
 
 The first active native-to-native consolidation is now hardware validated.
