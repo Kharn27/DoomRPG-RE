@@ -135,3 +135,10 @@ MONSTER3GOAL COMMIT ... goal=2/3 ...
 and, when geometry permits, the same sequence for goal 3/3. Until observed on
 the real CYD, the authoritative hardware-tested code boundary remains
 `4731d8265e90da19dc6d911739c4bf5574117a4d`.
+
+
+A follow-up source-family audit after the correction scanned all 15
+`ESP32/src/*monster*.c|cpp` units. The only remaining textual occurrences of
+`EspNativeGameplayMonsterPosition_prepareCardinalMove` are the permanent
+movement-activation composition boundary and the lower-level position owner's
+own implementation. No monster-domain caller bypasses the explicit boundary.
