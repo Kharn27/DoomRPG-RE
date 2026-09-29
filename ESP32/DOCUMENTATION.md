@@ -13,30 +13,32 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
-branch = agent/esp32-consolidation-dead-wrap-cleanup
-hardware-tested code boundary = 560e54bd2d32fe1f5d704cd9ef0d3737c57f765b
-CI = esp32-cyd #1028 SUCCESS
+current main = 0e66004c755cc050c5fa3f6eac91f85f943e4c8d
+branch = agent/esp32-consolidation-monster-wraps-v2
+hardware-tested code boundary = 2976cf9f157fa3dfd1649efaaec77986450648cc
+CI = esp32-cyd #1036 SUCCESS
 static RAM = 45784 B
-flash = 816509 B
-artifact id = 11043841537
+flash = 816545 B
+artifact id = 11044812987
 translation units = 174
-active --wrap flags = 62
-hardware = three active native linker seams replaced by explicit APIs and hardware validated
+active --wrap flags = 61
+hardware = four active native linker seams replaced by explicit APIs and hardware validated
 status = branch active; continue bounded wrapper consolidation without merging main
 ```
 
-Current consolidation result from merged-main baseline:
+Current consolidation result from merged main
+`0e66004c755cc050c5fa3f6eac91f85f943e4c8d`:
 
 ```text
-ESP32 translation units: 175 -> 174
-active linker --wraps:   65 -> 62
+ESP32 translation units: 174 -> 174
+active linker --wraps:   62 -> 61
 static RAM:              45784 B -> 45784 B
-flash:                   816517 B -> 816509 B
+flash:                   816509 B -> 816545 B
 ```
 
-The dead historical Retaliation compatibility translation unit is gone. Three
-formerly active native-to-native linker seams are now explicit permanent APIs:
+The dead historical Retaliation compatibility translation unit remains gone.
+Four formerly active native-to-native linker seams are now explicit permanent
+APIs:
 
 1. `EspNativeGameplayMonsterPosition_prepareCardinalMove`:
    activation gating + publication capture now pass through
@@ -48,19 +50,22 @@ formerly active native-to-native linker seams are now explicit permanent APIs:
    three-goal continuations pass their synthetic movement view explicitly to
    `EspNativeGameplayMonsterMovementPublish_afterProbeWithView`; the global
    movement view is no longer intercepted.
+4. `EspNativeGameplayMonsterTurn_postMoveGoal`:
+   `MonsterTurn` owns ordinary-vs-three-goal dispatch explicitly and calls
+   `EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal` only for subtype 4/13.
 
-All three active-wrap removals have real-CYD proof. The latest witness runs an
-ordered four-monster turn in Sector 1 and completes goals 2/3 and 3/3 for both
-subtype-4 monsters with live publication, topology relink and rollback closure,
-followed by steady `[ALIVE]`.
+All four active-wrap removals have real-CYD proof. The latest witness begins
+after V9 LOAD, restarts movement at `n=1`, serves four active monsters in order
+and completes goals 2/3 and 3/3 for both subtype-4 monsters with live
+publication, one committed RNG byte per continuation, topology relink and
+rollback closure, followed by steady `[ALIVE]`.
 
-Five monster-domain linker wraps remain active:
+Four monster-domain linker wraps remain active:
 
 ```text
 EspNativeGameplayMonsterState_actionService
 EspNativeGameplayMonsterTurn_view
 EspNativeGameplayMonsterMovement_service
-EspNativeGameplayMonsterTurn_postMoveGoal
 EspNativeGameplayMonsterState_view
 ```
 
