@@ -624,7 +624,7 @@ int EspNativeGameplayGibFx_adoptCheckpointState(void) {
     gibFxOwner.activeSeed = 0U;
     gibFxOwner.activeRepaints = 0U;
     gibFxOwner.clearAtMs = 0U;
-    memset(gibFxOwner.seenBits, 0, sizeof(gibFxOwner.seenBits));
+    memset(gibFxOwner.seenHidden, 0, sizeof(gibFxOwner.seenHidden));
 
     if (topology->enemyCount == 0U) {
         printf("[GIBFX] CHECKPOINT-ADOPT arena=%08x monsters=0 deadSeen=0 aliveEligible=0 replay=no mutation=presentation-owner-only rng=untouched empty=yes\n",
