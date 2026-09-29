@@ -2052,6 +2052,10 @@ bool restoreV9MonsterSpatialSections(
     size_t got;
     NativeSaveRecordV9Tail* tail;
     bool ok = false;
+    uint8_t legacyEnemyOnly = 0U;
+    uint16_t replayShow = 0U;
+    uint16_t replayAlreadyLinked = 0U;
+    uint16_t replayHide = 0U;
 
     if (path == nullptr || !SD.exists(path) ||
         core.version != kVersionV9) {
@@ -2077,14 +2081,34 @@ bool restoreV9MonsterSpatialSections(
     file.close();
 
     if (got == sizeof(*tail) &&
-        monsterSpatialShapeValid(*tail, core) &&
-        EspNativeGameplayMonsterState_stageRestore(&tail->monsters) &&
-        EspMapSpriteTopology_restoreMonsterSnapshot(&tail->monsterTopology) &&
-        EspNativeGameplayMonsterPosition_stageRestore(
-            &tail->monsterPositions) &&
-        EspNativeGameplayMonsterActivation_restoreSnapshot(
-            &tail->monsterActivation)) {
-        ok = true;
+        monsterSpatialShapeValid(*tail, core)) {
+        const EspMapSpriteTopologyView* liveTopology =
+            EspMapSpriteTopology_view();
+
+        if (liveTopology == nullptr) {
+            ok = false;
+        }
+        else {
+            legacyEnemyOnly =
+                (uint8_t)(liveTopology->destructibleCount != 0U &&
+                          tail->monsterTopology.count ==
+                              liveTopology->enemyCount);
+            if (legacyEnemyOnly != 0U &&
+                !recoverOneShotTopologyFromScript(
+                    core, &replayShow, &replayAlreadyLinked, &replayHide)) {
+                ok = false;
+            }
+            else if (EspNativeGameplayMonsterState_stageRestore(
+                         &tail->monsters) &&
+                     EspMapSpriteTopology_restoreMonsterSnapshot(
+                         &tail->monsterTopology) &&
+                     EspNativeGameplayMonsterPosition_stageRestore(
+                         &tail->monsterPositions) &&
+                     EspNativeGameplayMonsterActivation_restoreSnapshot(
+                         &tail->monsterActivation)) {
+                ok = true;
+            }
+        }
     }
 
     if (ok) {
@@ -2097,12 +2121,21 @@ bool restoreV9MonsterSpatialSections(
             *outPositionFNV = tail->monsterPositions.stateFNV1a;
         if (outActivationFNV != nullptr)
             *outActivationFNV = tail->monsterActivation.stateFNV1a;
-        printf("[NATIVESAVE] V9-SPATIAL-STAGE monsters=%u monsterFNV=%08x topologyFNV=%08x positionFNV=%08x activationFNV=%08x exact=yes\n",
+        printf("[NATIVESAVE] V9-SPATIAL-STAGE monsters=%u topologyTracked=%u monsterFNV=%08x topologyFNV=%08x positionFNV=%08x activationFNV=%08x scope=%s legacyReplay=%u/%u/%u exact=%s\n",
                (unsigned int)tail->monsters.count,
+               (unsigned int)tail->monsterTopology.count,
                (unsigned int)tail->monsters.stateFNV1a,
                (unsigned int)tail->monsterTopology.stateFNV1a,
                (unsigned int)tail->monsterPositions.stateFNV1a,
-               (unsigned int)tail->monsterActivation.stateFNV1a);
+               (unsigned int)tail->monsterActivation.stateFNV1a,
+               legacyEnemyOnly != 0U
+                   ? "enemy-only-legacy-v9+script-replay"
+                   : "enemy+destructible-v9",
+               (unsigned int)replayShow,
+               (unsigned int)replayAlreadyLinked,
+               (unsigned int)replayHide,
+               legacyEnemyOnly != 0U ? "tracked-enemy+replayed-nonenemy"
+                                     : "yes");
     }
     else {
         EspNativeGameplayMonsterPosition_reset();
