@@ -974,11 +974,11 @@ Never merge into `main` without explicit user request.
 
 ## Checkpoint monster spatial state: V8 compatibility and V9 owner
 
-Hardware-tested V8 compatibility boundary:
+Hardware-tested boundary:
 
 ```text
-cb9f7b3f97314524b01d52c45d9a209b7c5bcb87
-esp32-cyd CI #954 = SUCCESS
+6425c30278d83407bf859db642c759ca826a3b41
+esp32-cyd CI #961/#962 = SUCCESS
 ```
 
 V8 checkpoints contain logical monster state and script state, but not the
@@ -1000,8 +1000,13 @@ V8 save.
 
 The new V9 record adds exact compact ownership for monster topology, position
 and activation order alongside `MonsterState`. Cross-owner identity and
-fingerprints are validated fail-closed. The V9 exact SAVE/LOAD round-trip still
-needs a dedicated hardware witness before it is considered validated.
+fingerprints are validated fail-closed. A real-CYD V9 SAVE now succeeds. The
+final cross-owner rule treats logical death in `MonsterState` as authoritative
+over raw compact topology, matching the existing combat projection, while still
+rejecting a logically alive monster whose raw topology ALIVE bit is cleared.
+
+The V9 exact SAVE/LOAD round-trip still needs a dedicated hardware witness before
+it is considered validated.
 
 See
 [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md).
