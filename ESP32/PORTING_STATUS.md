@@ -1513,8 +1513,8 @@ Never merge into `main` without explicit user request.
 Hardware-tested code boundary:
 
 ```text
-cb9f7b3f97314524b01d52c45d9a209b7c5bcb87
-esp32-cyd CI #954 = SUCCESS
+7b3efeb8d590c027b94f08ac7c31c886938709d4
+esp32-cyd CI #980/#981 = SUCCESS
 ```
 
 This branch retains the complete prior Junction census history through
@@ -1535,15 +1535,29 @@ MonsterPosition
 MonsterActivation order
 ```
 
-The real CYD also now completes a V9 SAVE at the final code boundary. The final
-fix permits the intentional logical-dead MonsterState overlay over raw compact
-topology while keeping the inverse inconsistency fail-closed, and adds precise
-capture-stage diagnostics.
+The final real-CYD V9 round-trip is now hardware-proven at
+`7b3efeb8d590c027b94f08ac7c31c886938709d4`. Entrance writes a 43-record
+topology snapshot covering its 30 enemies plus 13 destructibles, then restores
+that exact scope on LOAD:
 
-Important validation boundary: V8 compatibility recovery and V9 SAVE are
-hardware-proven. Exact SAVE-V9 -> mutate -> LOAD-V9 restoration is not yet
-separately hardware-proven and must remain explicitly pending until tested on
-the real CYD.
+```text
+SAVE  topology=43/7a4b0217 monsters=30/dcda5880
+LOAD  tracked=43 enemies=30 destructibles=13
+      scope=enemy+destructible-v9
+      topologyFNV=7a4b0217
+      positionFNV=a369df86
+      exact=yes
+ENGINESESSION READY shapeData=0x0 mediaTexels=0x0
+```
+
+The review corner where EV_SHOW kills an enemy blocker is reconciled in the
+checkpoint MonsterState snapshot only; no live gameplay side effects are
+fabricated. EV_SHOW-mutated destructibles are included in the V9 topology
+owner. The provisional enemy-only V9 remains readable through bounded one-shot
+SHOW/HIDE replay compatibility.
+
+Validation boundary: V8 compatibility recovery, V9 SAVE, and V9 LOAD of the
+final enemy+destructible spatial checkpoint are all hardware-proven.
 
 Detailed record:
 
