@@ -5,17 +5,67 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = da8c3632162ad8dc7a0a83e7c398d815a0fbfea2
-branch = agent/esp32-consolidation-monster-wraps-v3
-hardware-tested code boundary = b2c22ee699213a04429669c6b3ca63c479918d1f
-CI = esp32-cyd #1049 SUCCESS
+current main = 8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56
+branch = agent/esp32-consolidation-monster-wraps-v4
+hardware-tested code boundary = 3f9b862bcbca3d2217efe0b388e3c9914d1d4b23
+CI = esp32-cyd #1056 SUCCESS
 static RAM = 45776 B
 flash = 815609 B
-artifact id = 11045807444
+artifact id = 11052390593
 translation units = 173
-active --wrap flags = 60
-hardware = obsolete MonsterState_view diagnostic witness removed; ordered four-monster turn and both subtype-4 three-goal chains remain exact on real CYD
-status = HARDWARE PASS for five active native linker seams removed; branch ready for documentation-only close
+active --wrap flags = 59
+hardware = HUB/automap world-feedback gate made explicit; both overlay pause paths and ordered four-monster resume path PASS on real CYD
+status = HARDWARE PASS for six active native linker seams retired/replaced; branch ready for documentation-only close
+```
+
+### Explicit HUB/automap action-feedback gate — REAL-CYD PASS (2026-09-29)
+
+Commit `3f9b862bcbca3d2217efe0b388e3c9914d1d4b23` removes
+`--wrap=EspNativeGameplayMonsterState_actionService` and replaces the hidden
+linker interception with the explicit permanent API
+`EspNativeGameplayHubActionGate_service(...)`.
+
+The composition order is preserved exactly:
+
+```text
+MonsterCombat service
+ -> HubActionGate service
+ -> MonsterState actionService
+ -> ActionEngine service
+```
+
+The gate still pauses only world/action feedback expiry while HUB or automap owns
+the framebuffer; it does not rebase elapsed time and it resumes the unchanged
+MonsterState/ActionEngine chain once world presentation is active again.
+
+CI #1056 succeeds with byte-for-byte identical 45776 B static RAM and 815609 B
+flash relative to merged main `8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56`.
+Translation units remain 173 and active linker wraps drop 60 -> 59.
+
+The real classic CYD validates both overlay branches:
+
+```text
+[HUBACTIONGATE] PAUSE owner=hub ...
+[HUBACTIONGATE] PAUSE owner=automap ...
+```
+
+The second PAUSE itself proves the earlier HUB pause cycle returned through
+RESUME, because the gate logs PAUSE only on a 0 -> 1 paused transition. After
+the overlays, normal world movement and monster service resume: the same
+four-member ordered turn runs, both subtype-4 three-goal chains complete, and:
+
+```text
+[MONSTERACTIVESEQ] COMPLETE turn=1 reason=1 activeCount=4 delivered=4
+sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred
+[ALIVE] uptime=79136 ms heap=82704 heap8=17152 largest8=10228
+[ALIVE] uptime=84137 ms heap=82704 heap8=17152 largest8=10228
+```
+
+Remaining monster-domain active linker wraps:
+
+```text
+EspNativeGameplayMonsterTurn_view
+EspNativeGameplayMonsterMovement_service
 ```
 
 ### Obsolete MonsterState view witness retirement — REAL-CYD PASS (2026-09-29)
