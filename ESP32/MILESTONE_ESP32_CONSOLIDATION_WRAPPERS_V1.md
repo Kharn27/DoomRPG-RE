@@ -204,59 +204,6 @@ Therefore removal of
 validated on the real classic CYD.
 
 
-## Explicit movement reset composition — partial REAL-CYD validation
-
-Candidate `cb45792af62d8ad0946dc4d477b288ef92aecf3a` removes
-`--wrap=EspNativeGameplayMonsterMovementProbe_reset` and moves the exact reset
-order into the permanent `EspNativeGameplayMonsterMovementProbe_reset()` API:
-
-```text
-ThreeGoalTurn_reset
-MovementPublish_reset
-MonsterMovement_reset
-MonsterPosition_reset
-```
-
-CI #1022 succeeds with 45784 B static RAM and 816509 B flash. The active linker
-wrap count is 63.
-
-The real CYD validates the pre-reset side and the checkpoint reset/restore path:
-
-```text
-before SAVE:
-  activeCount=4 delivered=4 ordered=yes
-  subtype-4 goals 2/3 and 3/3 commit for sprites 0 and 1
-
-SAVE V9:
-  monsters=50
-  topology=65
-  positions=50
-  activation=4
-
-LOAD:
-  RESIDENTRESET ... after=0/0/0/0/0/0/0 empty=1
-  MONSTERSTATE STAGE-RESTORE ... exact saved FNV
-  MAPCHECKPOINTTOPO RESTORE ... exact saved FNV
-  MONSTERPOS STAGE-RESTORE ... exact saved FNV
-  MONSTERACT RESTORE activeCount=4 orderCount=4 ... selection=clear
-  MONSTERSTATE RESTORE
-  MONSTERPOS RESTORE
-  MONSTERMOVE READY
-  MONSTERACTIVESEQ READY
-  ENGINESESSION READY ... shapeData=0x0 mediaTexels=0x0
-```
-
-This proves that the explicit reset sequence does not break checkpoint teardown,
-V9 spatial restoration, owner reinitialization, cache priming or session resume.
-
-The supplied trace ends immediately after `ENGINESESSION READY`, before any
-post-LOAD monster movement is serviced. Therefore `cb45792...` is NOT yet a
-complete hardware-pass boundary. One post-LOAD MOVE that reaches
-`MONSTERMOVEACT` / `MONSTERMOVELIVE` (and preferably a subtype-4
-`MONSTER3GOAL` continuation) is still required to prove the reset consumers
-restart cleanly.
-
-
 ## Explicit MovementProbe reset composition — REAL-CYD PASS
 
 Candidate `cb45792af62d8ad0946dc4d477b288ef92aecf3a` is now fully hardware
@@ -282,3 +229,100 @@ three-goal state leaks into the restored session.
 Therefore removal of
 `--wrap=EspNativeGameplayMonsterMovementProbe_reset` is hardware validated on
 the real classic CYD.
+
+
+## Explicit synthetic MovementView publication — REAL-CYD PASS
+
+Commit `560e54bd2d32fe1f5d704cd9ef0d3737c57f765b` removes
+`--wrap=EspNativeGameplayMonsterMovement_view`.
+
+Previously, the three-goal owner temporarily intercepted the global movement
+view and returned `syntheticMovementView` while the existing publisher
+validated a continuation. That implicit global dependency is replaced by the
+explicit permanent API:
+
+```text
+EspNativeGameplayMonsterMovementPublish_afterProbeWithView(...)
+```
+
+Normal movement still calls the ordinary publisher, which reads the real
+movement owner. Only the bounded three-goal continuation passes its synthetic
+view explicitly. The temporary `syntheticMovementActive` interception state
+and the `__wrap/__real` Movement_view pair are gone.
+
+Build witness:
+
+```text
+esp32-cyd CI #1028 = SUCCESS
+static RAM = 45784 B
+flash = 816509 B
+artifact id = 11043841537
+active --wrap entries = 62
+```
+
+Real-CYD witness, sprite 0 subtype 4:
+
+```text
+MONSTER3GOAL ARM chain=1
+first goal 470 -> 471 COMMIT
+goal 2/3: PLAN 471 -> 439, MONSTERMOVELIVE COMMIT, MONSTER3GOAL COMMIT
+goal 3/3: PLAN 439 -> 440, MONSTERMOVELIVE COMMIT, MONSTER3GOAL COMMIT
+MONSTER3GOAL COMPLETE
+```
+
+Real-CYD witness, sprite 1 subtype 4:
+
+```text
+MONSTER3GOAL ARM chain=2
+first goal 534 -> 535 COMMIT
+goal 2/3: PLAN 535 -> 536, MONSTERMOVELIVE COMMIT, MONSTER3GOAL COMMIT
+goal 3/3: PLAN 536 -> 537, MONSTERMOVELIVE COMMIT, MONSTER3GOAL COMMIT
+MONSTER3GOAL COMPLETE
+```
+
+The same turn closes with:
+
+```text
+MONSTERACTIVESEQ COMPLETE turn=1 reason=1 activeCount=4 delivered=4
+sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred
+ALIVE stable through uptime=55893 ms
+```
+
+No publication mismatch appears. Activation capture, one-byte continuation RNG,
+position rollback, topology relink and renderer publication all remain intact.
+Therefore the Movement_view linker interception is fully hardware validated.
+
+## Consolidation checkpoint after three active-wrap removals
+
+Relative to merged main
+`3de74fc1899ea619874b9f2bce8fb3679016c1a4`:
+
+```text
+translation units = 175 -> 174
+active --wrap flags = 65 -> 62
+static RAM = 45784 B
+flash = 816517 B -> 816509 B
+```
+
+Hardware-tested code boundaries in order:
+
+```text
+4731d826... dormant Retaliation compatibility removal
+aa7cb5c7... explicit MonsterPosition prepare activation/capture boundary
+cb45792a... explicit MovementProbe reset composition
+560e54bd... explicit synthetic MovementView publication
+```
+
+The remaining active monster-domain wrappers are:
+
+```text
+EspNativeGameplayMonsterState_actionService
+EspNativeGameplayMonsterTurn_view
+EspNativeGameplayMonsterMovement_service
+EspNativeGameplayMonsterTurn_postMoveGoal
+EspNativeGameplayMonsterState_view
+```
+
+The branch remains active. Continue by replacing the smallest coherent
+native-to-native composition seam; do not optimize for wrapper count alone and
+do not merge into main without explicit user request.

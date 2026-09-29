@@ -7,13 +7,64 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
 branch = agent/esp32-consolidation-dead-wrap-cleanup
-hardware-tested code boundary = cb45792af62d8ad0946dc4d477b288ef92aecf3a
-CI = esp32-cyd #1022 SUCCESS
+hardware-tested code boundary = 560e54bd2d32fe1f5d704cd9ef0d3737c57f765b
+CI = esp32-cyd #1028 SUCCESS
 static RAM = 45784 B
 flash = 816509 B
-artifact id = 11042258257
-hardware = explicit MovementProbe reset composition PASS incl. SAVE/LOAD + post-load 4-member ordered movement + subtype-4 goals 2/3 and 3/3
-status = HARDWARE PASS for active MovementProbe reset wrap removal; branch remains active for further bounded consolidation
+artifact id = 11043841537
+translation units = 174
+active --wrap flags = 62
+hardware = explicit synthetic MovementView publication PASS with two complete subtype-4 three-goal chains inside ordered 4-monster turn
+status = HARDWARE PASS for three active native linker seams removed; branch remains active for bounded consolidation
+```
+
+### Explicit synthetic MovementView publication — REAL-CYD PASS (2026-09-29)
+
+Commit `560e54bd2d32fe1f5d704cd9ef0d3737c57f765b` removes the active
+`--wrap=EspNativeGameplayMonsterMovement_view`.
+
+The three-goal continuation no longer intercepts the global movement view.
+Instead, the publisher exposes the bounded permanent API
+`EspNativeGameplayMonsterMovementPublish_afterProbeWithView(...)`, and the
+three-goal owner passes its synthetic movement view explicitly only for the
+continuation transaction. The normal movement path continues to publish against
+the real `EspNativeGameplayMonsterMovement_view()`.
+
+CI #1028 succeeds with 45784 B static RAM and 816509 B flash. The active linker
+wrap count is now 62, down from 65 on merged main.
+
+The real classic CYD proves both subtype-4 chains through the explicit view seam:
+
+```text
+sprite 0:
+  first goal 470 -> 471 COMMIT
+  goal 2/3 471 -> 439 COMMIT
+  goal 3/3 439 -> 440 COMMIT
+  MONSTER3GOAL COMPLETE
+
+sprite 1:
+  first goal 534 -> 535 COMMIT
+  goal 2/3 535 -> 536 COMMIT
+  goal 3/3 536 -> 537 COMMIT
+  MONSTER3GOAL COMPLETE
+
+MONSTERACTIVESEQ COMPLETE activeCount=4 delivered=4 ordered=yes
+ALIVE remains steady through uptime=55893 ms
+```
+
+Every continuation still passes `MONSTERMOVEACT ALLOW`, every live publication
+closes RNG/position/topology/rollback state, and no
+`probe-sequence-or-capture-mismatch` occurs. This candidate is therefore the
+current authoritative hardware-tested code boundary.
+
+Remaining monster-domain active linker wraps after this PASS:
+
+```text
+EspNativeGameplayMonsterState_actionService
+EspNativeGameplayMonsterTurn_view
+EspNativeGameplayMonsterMovement_service
+EspNativeGameplayMonsterTurn_postMoveGoal
+EspNativeGameplayMonsterState_view
 ```
 
 ### Explicit MovementProbe reset composition — REAL-CYD PASS (2026-09-29)
