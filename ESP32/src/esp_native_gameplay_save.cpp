@@ -958,13 +958,35 @@ bool monsterSpatialShapeValid(
         const bool topologyLinked =
             (topology.linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U;
 
+        /*
+         * MonsterState is the authoritative logical death owner. The current
+         * combat integration intentionally projects a dead monster as
+         * !ALIVE+!LINKED through the getEntity() wrapper without rewriting the
+         * compact raw topology owner. Therefore raw topology ALIVE=1 for a
+         * logically dead monster is a valid current-state representation and
+         * must be checkpointed exactly.
+         *
+         * The inverse is not valid: a logically alive monster may not sit on a
+         * raw topology record whose ALIVE bit is already cleared.
+         */
         if (monster.spriteIndex != topology.spriteIndex ||
             monster.spriteIndex != position.spriteIndex ||
-            (monster.alive != 0U) != topologyAlive ||
+            (monster.alive != 0U && !topologyAlive) ||
             (topologyLinked &&
              position.tileIndex !=
                  (uint16_t)(topology.linkState &
                             ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK))) {
+            printf("[NATIVESAVE] V9-SPATIAL-MISMATCH ordinal=%u sprite=%u topoSprite=%u posSprite=%u monsterAlive=%u topologyAlive=%u topologyLinked=%u topoTile=%u posTile=%u\n",
+                   (unsigned int)i,
+                   (unsigned int)monster.spriteIndex,
+                   (unsigned int)topology.spriteIndex,
+                   (unsigned int)position.spriteIndex,
+                   (unsigned int)monster.alive,
+                   topologyAlive ? 1U : 0U,
+                   topologyLinked ? 1U : 0U,
+                   (unsigned int)(topology.linkState &
+                                  ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                   (unsigned int)position.tileIndex);
             return false;
         }
     }
@@ -2014,19 +2036,52 @@ bool captureRecord(
     memset(outAutomap, 0, sizeof(*outAutomap));
     memset(outTail, 0, sizeof(*outTail));
 
-    if (!EspNativeGameplayPlayerState_snapshot(&record.core.player) ||
-        !EspNativeGameplayPlayerResources_snapshot(&record.resources) ||
-        !EspMapScriptState_snapshot(&record.script) ||
-        !EspMapLineCheckpoint_snapshot(&record.lines) ||
-        !EspNativeGameplayActionEngine_snapshotRemoved(&record.actionRemoved) ||
-        !EspNativeGameplayCrateState_snapshot(outCrateTransforms) ||
-        !EspMapAutomapState_snapshot(outAutomap) ||
-        !EspNativeGameplayMonsterState_snapshot(&outTail->monsters) ||
-        !EspMapSpriteTopology_snapshotMonsters(&outTail->monsterTopology) ||
-        !EspNativeGameplayMonsterPosition_snapshot(
-            &outTail->monsterPositions) ||
-        !EspNativeGameplayMonsterActivation_snapshot(
+    if (!EspNativeGameplayPlayerState_snapshot(&record.core.player)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=player-state\n");
+        return false;
+    }
+    if (!EspNativeGameplayPlayerResources_snapshot(&record.resources)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=resources\n");
+        return false;
+    }
+    if (!EspMapScriptState_snapshot(&record.script)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=script\n");
+        return false;
+    }
+    if (!EspMapLineCheckpoint_snapshot(&record.lines)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=lines\n");
+        return false;
+    }
+    if (!EspNativeGameplayActionEngine_snapshotRemoved(
+            &record.actionRemoved)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=action-removed\n");
+        return false;
+    }
+    if (!EspNativeGameplayCrateState_snapshot(outCrateTransforms)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=crate-transforms\n");
+        return false;
+    }
+    if (!EspMapAutomapState_snapshot(outAutomap)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=automap\n");
+        return false;
+    }
+    if (!EspNativeGameplayMonsterState_snapshot(&outTail->monsters)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-state\n");
+        return false;
+    }
+    if (!EspMapSpriteTopology_snapshotMonsters(
+            &outTail->monsterTopology)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-topology\n");
+        return false;
+    }
+    if (!EspNativeGameplayMonsterPosition_snapshot(
+            &outTail->monsterPositions)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-position\n");
+        return false;
+    }
+    if (!EspNativeGameplayMonsterActivation_snapshot(
             &outTail->monsterActivation)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-activation\n");
         return false;
     }
 
@@ -2044,8 +2099,21 @@ bool captureRecord(
 
     if (view->active != 1U || view->targetMapId == 0U ||
         runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
-        runtime->arenaFNV1a == 0U ||
-        !monsterSpatialShapeValid(*outTail, record.core)) {
+        runtime->arenaFNV1a == 0U) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=core-runtime-shape viewActive=%u map=%u sourceBytes=%u sourceCrc=%08x arena=%08x\n",
+               (unsigned int)view->active,
+               (unsigned int)view->targetMapId,
+               (unsigned int)runtime->sourceBytes,
+               (unsigned int)runtime->sourceCrc32,
+               (unsigned int)runtime->arenaFNV1a);
+        return false;
+    }
+    if (!monsterSpatialShapeValid(*outTail, record.core)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-spatial-cross-check monsters=%u topology=%u positions=%u activation=%u\n",
+               (unsigned int)outTail->monsters.count,
+               (unsigned int)outTail->monsterTopology.count,
+               (unsigned int)outTail->monsterPositions.count,
+               (unsigned int)outTail->monsterActivation.activeOrderCount);
         return false;
     }
 
