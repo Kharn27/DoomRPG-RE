@@ -283,6 +283,93 @@ uint32_t automapSnapshotFNV(const EspMapAutomapSnapshot& automap) {
     return fnv1aAppend(hash, automap.spriteBits, automap.spriteBitsetBytes);
 }
 
+uint32_t checkpointFNVByte(uint32_t hash, uint8_t value) {
+    hash ^= value;
+    return hash * 16777619U;
+}
+
+uint32_t checkpointFNV16(uint32_t hash, uint16_t value) {
+    hash = checkpointFNVByte(hash, (uint8_t)(value & 0xffU));
+    return checkpointFNVByte(hash, (uint8_t)((value >> 8) & 0xffU));
+}
+
+uint32_t checkpointFNV32(uint32_t hash, uint32_t value) {
+    hash = checkpointFNV16(hash, (uint16_t)(value & 0xffffU));
+    return checkpointFNV16(hash, (uint16_t)((value >> 16) & 0xffffU));
+}
+
+uint32_t monsterStateSnapshotFNV(
+    const EspNativeGameplayMonsterStateSnapshot& snapshot) {
+    uint32_t hash = 2166136261U;
+    uint32_t i;
+    if (snapshot.count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) return 0U;
+    for (i = 0U; i < snapshot.count; ++i) {
+        const EspNativeGameplayMonsterRecord& record = snapshot.records[i];
+        hash = checkpointFNV32(hash, record.param1);
+        hash = checkpointFNV32(hash, record.param2);
+        hash = checkpointFNV16(hash, record.spriteIndex);
+        hash = checkpointFNV16(hash, record.defTile);
+        hash = checkpointFNVByte(hash, record.subtype);
+        hash = checkpointFNVByte(hash, record.mType);
+        hash = checkpointFNVByte(hash, record.alternateAttack);
+        hash = checkpointFNVByte(hash, record.alive);
+    }
+    return hash;
+}
+
+bool reconcileMonsterSnapshotWithTopology(
+    EspNativeGameplayMonsterStateSnapshot* monsters,
+    const EspMapSpriteTopologyMonsterSnapshot& topology,
+    uint16_t* outReconciled) {
+    uint32_t monsterIndex;
+    uint32_t topologyIndex = 0U;
+    uint16_t reconciled = 0U;
+
+    if (outReconciled != nullptr) *outReconciled = 0U;
+    if (monsters == nullptr ||
+        topology.count < monsters->count ||
+        topology.count > ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX) {
+        return false;
+    }
+
+    for (monsterIndex = 0U; monsterIndex < monsters->count; ++monsterIndex) {
+        EspNativeGameplayMonsterRecord& monster =
+            monsters->records[monsterIndex];
+
+        while (topologyIndex < topology.count &&
+               topology.records[topologyIndex].spriteIndex <
+                   monster.spriteIndex) {
+            ++topologyIndex;
+        }
+        if (topologyIndex >= topology.count ||
+            topology.records[topologyIndex].spriteIndex !=
+                monster.spriteIndex) {
+            return false;
+        }
+
+        /*
+         * EV_SHOW blocker removal intentionally mutates compact topology first
+         * and defers the legacy enemy gameplay consequences. For checkpoint
+         * persistence, however, a topology-dead enemy must resume logically
+         * dead as well or V9 would either reject the save or resurrect it on
+         * LOAD. Reconcile only the snapshot copy: no XP/drop/sound/RNG is
+         * synthesized and the live gameplay owner remains untouched.
+         */
+        if ((topology.records[topologyIndex].linkState &
+             ESP_MAP_SPRITE_TOPOLOGY_ALIVE) == 0U &&
+            monster.alive != 0U) {
+            monster.alive = 0U;
+            ++reconciled;
+        }
+    }
+
+    monsters->stateFNV1a = monsterStateSnapshotFNV(*monsters);
+    if (outReconciled != nullptr) *outReconciled = reconciled;
+    return monsters->stateFNV1a != 0U &&
+           EspNativeGameplayMonsterState_snapshotShapeValid(
+               monsters, monsters->sourceArenaFNV1a);
+}
+
 uint32_t recordCrcBytes(const uint8_t* data, size_t bytes) {
     const size_t zeroOffset = offsetof(NativeSaveCore, recordCrc32);
     const size_t zeroEnd = zeroOffset + sizeof(uint32_t);
@@ -932,6 +1019,7 @@ bool monsterSpatialShapeValid(
     const NativeSaveRecordV9Tail& tail,
     const NativeSaveCore& core) {
     uint32_t i;
+    uint32_t topologyCursor = 0U;
 
     if (!EspNativeGameplayMonsterState_snapshotShapeValid(
             &tail.monsters, core.runtimeFNV1a) ||
@@ -941,36 +1029,46 @@ bool monsterSpatialShapeValid(
             &tail.monsterPositions, core.runtimeFNV1a) ||
         !EspNativeGameplayMonsterActivation_snapshotShapeValid(
             &tail.monsterActivation, core.runtimeFNV1a) ||
-        tail.monsters.count != tail.monsterTopology.count ||
-        tail.monsters.count != tail.monsterPositions.count) {
+        tail.monsters.count != tail.monsterPositions.count ||
+        tail.monsterTopology.count < tail.monsters.count) {
         return false;
     }
 
     for (i = 0U; i < tail.monsters.count; ++i) {
         const EspNativeGameplayMonsterRecord& monster =
             tail.monsters.records[i];
-        const EspMapSpriteTopologyMonsterRecord& topology =
-            tail.monsterTopology.records[i];
         const EspNativeGameplayMonsterPositionRecord& position =
             tail.monsterPositions.records[i];
+
+        while (topologyCursor < tail.monsterTopology.count &&
+               tail.monsterTopology.records[topologyCursor].spriteIndex <
+                   monster.spriteIndex) {
+            ++topologyCursor;
+        }
+        if (topologyCursor >= tail.monsterTopology.count ||
+            tail.monsterTopology.records[topologyCursor].spriteIndex !=
+                monster.spriteIndex) {
+            printf("[NATIVESAVE] V9-SPATIAL-MISMATCH ordinal=%u sprite=%u reason=monster-topology-record-missing topologyCount=%u\n",
+                   (unsigned int)i,
+                   (unsigned int)monster.spriteIndex,
+                   (unsigned int)tail.monsterTopology.count);
+            return false;
+        }
+
+        const EspMapSpriteTopologyMonsterRecord& topology =
+            tail.monsterTopology.records[topologyCursor];
         const bool topologyAlive =
             (topology.linkState & ESP_MAP_SPRITE_TOPOLOGY_ALIVE) != 0U;
         const bool topologyLinked =
             (topology.linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U;
 
         /*
-         * MonsterState is the authoritative logical death owner. The current
-         * combat integration intentionally projects a dead monster as
-         * !ALIVE+!LINKED through the getEntity() wrapper without rewriting the
-         * compact raw topology owner. Therefore raw topology ALIVE=1 for a
-         * logically dead monster is a valid current-state representation and
-         * must be checkpointed exactly.
-         *
-         * The inverse is not valid: a logically alive monster may not sit on a
-         * raw topology record whose ALIVE bit is already cleared.
+         * MonsterState owns logical death. Ordinary combat can leave the raw
+         * topology ALIVE bit set while the combat projection masks it, so
+         * logical-dead + raw-alive is valid. The inverse is reconciled in the
+         * checkpoint snapshot before this validator runs.
          */
-        if (monster.spriteIndex != topology.spriteIndex ||
-            monster.spriteIndex != position.spriteIndex ||
+        if (monster.spriteIndex != position.spriteIndex ||
             (monster.alive != 0U && !topologyAlive) ||
             (topologyLinked &&
              position.tileIndex !=
@@ -2073,6 +2171,19 @@ bool captureRecord(
             &outTail->monsterTopology)) {
         printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-topology\n");
         return false;
+    }
+    {
+        uint16_t reconciledShowDeaths = 0U;
+        if (!reconcileMonsterSnapshotWithTopology(
+                &outTail->monsters, outTail->monsterTopology,
+                &reconciledShowDeaths)) {
+            printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-topology-reconcile\n");
+            return false;
+        }
+        if (reconciledShowDeaths != 0U) {
+            printf("[NATIVESAVE] V9-MONSTER-RECONCILE topologyDeadToLogicalDead=%u sideEffects=not-synthesized snapshotOnly=yes\n",
+                   (unsigned int)reconciledShowDeaths);
+        }
     }
     if (!EspNativeGameplayMonsterPosition_snapshot(
             &outTail->monsterPositions)) {
