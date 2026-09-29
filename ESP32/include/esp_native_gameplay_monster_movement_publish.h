@@ -29,7 +29,7 @@ typedef struct EspNativeGameplayMonsterMovementPublishResult_s {
 /* Clear the one-service capture before invoking the proven movement planner. */
 void EspNativeGameplayMonsterMovementPublish_beginCycle(void);
 
-/* Called only by the activation-gated position prepare wrapper. */
+/* Called only by the explicit activation-gated movement prepare boundary. */
 void EspNativeGameplayMonsterMovementPublish_capturePrepared(
     const EspNativeGameplayMonsterPositionRecord* before,
     const EspNativeGameplayMonsterPositionRecord* after);
