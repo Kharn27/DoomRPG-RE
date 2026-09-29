@@ -13,6 +13,7 @@
 #include "esp_map_state.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_movement.h"
+#include "esp_native_gameplay_monster_movement_activation.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_position.h"
@@ -742,7 +743,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
     }
 
     positionFNVBefore = EspNativeGameplayMonsterPosition_fingerprint();
-    if (!EspNativeGameplayMonsterPosition_prepareCardinalMove(
+    if (!EspNativeGameplayMonsterMovementActivation_prepareCardinalMove(
             spriteIndex, plan.deltaX, plan.deltaY,
             &positionBefore, &positionAfter) ||
         positionBefore.tileIndex != plan.sourceTile ||
