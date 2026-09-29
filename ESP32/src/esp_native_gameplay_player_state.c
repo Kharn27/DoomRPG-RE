@@ -6,6 +6,7 @@
 
 #include "DoomRPG.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_save_ui.h"
 
 #define PLAYER_STAT_MAX 99U
 #define PLAYER_STACK_MAX 99U
@@ -99,6 +100,9 @@ uint32_t EspNativeGameplayPlayerState_fingerprint(void) {
 }
 
 void EspNativeGameplayPlayerState_resetFresh(void) {
+    /* New-game player ownership starts a new legacy save-route lifetime too.
+     * Ordinary map/session resets never call this function. */
+    EspNativeGameplaySave_clearTransitionRoute();
     memset(&playerState, 0, sizeof(playerState));
     playerState.param1 = packParam1(30U, 30U, 0U, 20U);
     playerState.param2 = packParam2(16U, 12U, 14U, 16U);

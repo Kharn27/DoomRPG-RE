@@ -15,6 +15,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_session.h"
+#include "esp_native_gameplay_save_ui.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_transition.h"
@@ -44,6 +45,7 @@ typedef struct EspNativeGameplayTransitionHandoffScratch_s {
     EspBspInventory targetInventory;
     EspMapResidentSnapshot targetSnapshot;
     EspMapCommittedTransitionState committed;
+    EspMapSaveRouteState saveRoute;
     EspPlayerSpawnState spawn;
     EspNativeGameplaySessionConfig sessionConfig;
     uint32_t playerKeys;
@@ -335,7 +337,18 @@ static void performHandoff(uint8_t acknowledgeStats) {
         }
     }
 
+    if (!EspMapSaveRoute_isActive(&transition->saveRoute) ||
+        transition->saveRoute.mapNameLength == 0U ||
+        transition->saveRoute.mapNameLength >=
+            ESP_MAP_SAVE_ROUTE_NAME_CAPACITY ||
+        transition->saveRoute.mapName[
+            transition->saveRoute.mapNameLength] != '\0') {
+        failHandoff("SAVE_ROUTE_OWNER", 0U);
+        return;
+    }
+
     handoff.committed = transition->committed;
+    handoff.saveRoute = transition->saveRoute;
     sourceMapId = handoff.committed.sourceMapId;
     targetMapId = handoff.committed.targetMapId;
 
@@ -418,10 +431,20 @@ static void performHandoff(uint8_t acknowledgeStats) {
            (unsigned int)handoff.targetSnapshot.eventCount);
 
     /*
+     * Publish EV_SAVEGAME's independent return route into the SAVE subsystem
+     * before Session_reset() clears the source transition/input owner. This
+     * copy is inline and map-independent; no source BSP string ref survives.
+     */
+    if (!EspNativeGameplaySave_adoptTransitionRoute(&handoff.saveRoute)) {
+        failHandoff("SAVE_ROUTE_PERSIST", 0U);
+        return;
+    }
+
+    /*
      * Tear down only transient source-map gameplay/session owners. The shared
-     * compact player root survives this reset and supplied sessionConfig above.
-     * Input reset also clears the old transition owner; the committed copy in
-     * this static scratch remains the authoritative handoff witness below.
+     * compact player root and SAVE return-route owner survive this reset.
+     * Input reset clears the old transition owner; the committed copy in this
+     * static scratch remains the authoritative handoff witness below.
      */
     EspNativeGameplaySession_reset();
     resetSpawnOwners();
