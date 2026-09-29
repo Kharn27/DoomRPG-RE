@@ -16,6 +16,23 @@ hardware = explicit monster-movement activation boundary PASS incl. 4-member ord
 status = HARDWARE PASS for active MonsterPosition prepare wrap removal; branch remains active for further bounded consolidation
 ```
 
+### Explicit MovementProbe reset composition — REAL-CYD PARTIAL (2026-09-29)
+
+Candidate `cb45792af62d8ad0946dc4d477b288ef92aecf3a` removes the active
+`--wrap=EspNativeGameplayMonsterMovementProbe_reset` and places the same
+ThreeGoal -> Publish -> Movement -> Position reset order directly in the
+permanent MovementProbe reset API.
+
+CI #1022 succeeds at 45784 B static RAM / 816509 B flash with 63 active linker
+wraps. Real-CYD SAVE/LOAD proves full resident teardown, exact V9 monster
+state/topology/position/activation restore, owner READY reinitialization and
+`ENGINESESSION READY` with `shapeData=0x0 mediaTexels=0x0`.
+
+The provided trace stops before the first post-LOAD MOVE, so this candidate is
+only PARTIALLY hardware validated. The authoritative complete hardware boundary
+remains `aa7cb5c778264e1bb61d442d1c9864c09e6f37a3` until post-LOAD monster
+movement is observed.
+
 ### Active MonsterPosition prepare wrap removal — REAL-CYD PASS (2026-09-29)
 
 The active linker interception of
