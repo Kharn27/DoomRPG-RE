@@ -13,14 +13,15 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 8dd660ce1017540c364591cad54514c9c788acf5
-branch = agent/esp32-native-level-stats-loading
-hardware-tested code boundary = a81dd38a6875154b37b9006a145eef5d73e85a66
-CI = esp32-cyd #867 SUCCESS
-static RAM = 45224 B
-flash = 795461 B
-hardware = native transition presentation + checkpoint LOAD ownership REAL-CYD PASS
-status = hardware validated; post-test tail docs-only
+current main = fbacb595170e85b736bcb4e8c97cc22390eba1d8
+branch = agent/esp32-consolidation-v1
+hardware-tested code boundary = 934d0e2f9becd51a93df61d44dd6e01380fae6b4
+CI = esp32-cyd #1005 SUCCESS
+static RAM = 45688 B
+flash = 815821 B
+artifact id = 11035238982
+hardware = Junction zero-enemy SAVE/LOAD/PASS_TURN + Junction -> Sector 1 playable REAL-CYD PASS
+status = hardware validated; post-test tail docs-only; PR/merge-ready
 ```
 
 The merged barrel milestone remains hardware-valid on the real CYD. A distant shot
@@ -124,6 +125,37 @@ base HUD and then reapplies only the bounded compass dirty rectangle from the
 settled `EspPlayerViewState`. The real CYD produced `exactBottom=yes`,
 `SAVE-CLOSE`, `Game saved` for 1200 ms and then the current `Door` facing
 label. CI #767 reports 45096 B static RAM and 782141 B flash.
+
+### Current progression boundary — Junction -> Sector 1 REAL-CYD PASS
+
+The current branch did not complete its original large structural-consolidation
+goal. Its durable result is a sequence of generic correctness fixes discovered
+while extending real progression.
+
+Current real-CYD boundary:
+
+```text
+/junction.bsp  = Junction, map 9, gameplayLoadMapId 2
+/level01.bsp   = Sector 1, map 2, gameplayLoadMapId 3
+Sector 1 spawn = tile 477, dir 192
+```
+
+The user has validated zero-enemy PASS_TURN, V9 SAVE and V9 LOAD in Junction,
+the direct `showStats=0` transition into Level01, first movement away from the
+Sector-1 spawn, a second movement after rotation, monster activation, and
+ordered live monster movement.
+
+Generic coverage added on the way:
+
+```text
+SAVEGAME route != CHANGEMAP target is valid
+transition door -> READY direct handoff for showStats=0
+fresh-map spawn owns all four cardinal directions
+spawn tile may execute EV_FORCEMESSAGE transactionally
+mixed MOVEEVENT may include EV_FORCEMESSAGE with state/show/lock/door families
+```
+
+See [MILESTONE_NATIVE_JUNCTION_SECTOR1.md](MILESTONE_NATIVE_JUNCTION_SECTOR1.md).
 
 ### Current transition milestone
 
@@ -810,16 +842,14 @@ Detailed record:
 
 ## Preferred next milestone
 
-After this branch merges, recover the exact new `main` before continuing.
+After this branch merges, recover the exact new GitHub `main` SHA before any
+new branch is created.
 
-The Entrance -> Junction transition is hardware-proven, but only for that exact
-script shape. Keep the next boundary narrow: either restore the real statistics
-screen for `showStats=1` and retire the temporary one-tap bridge, or
-hardware-prove one exact Junction -> LevelXX exit while all other transition
-shapes remain fail-closed.
-
-Remaining Automap parity, the mixed physical/touch SAVE cursor regression and
-unrelated Junction opcode families remain separate work.
+Resume the structural consolidation objective: reduce ESP32 translation-unit
+sprawl and native->native linker wrappers by permanent domain, then reduce
+legacy implementation dependencies family by family. Preserve the now
+hardware-proven Entrance -> Junction -> Sector 1 progression, Junction
+zero-enemy checkpoint semantics and Level01 first movement as regression guards.
 
 ## Secret-door multi-line SELECT transaction
 
@@ -939,7 +969,7 @@ See `PORTING_STATUS.md` for the authoritative list. Important current boundaries
 
 ```text
 save-v6 mutable-world sections beyond each validated owner
-generic CHANGEMAP routes beyond hardware-proven Entrance -> Junction
+CHANGEMAP/script shapes beyond hardware-proven Entrance -> Junction -> Sector 1
 native player lethal/death transition
 barrel aggregate multi-blast damage-message hardware retest / proper HUD queue
 remaining barrel radius-hurtable families beyond barrel + player
