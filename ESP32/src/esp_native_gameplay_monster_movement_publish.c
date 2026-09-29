@@ -90,6 +90,24 @@ void EspNativeGameplayMonsterMovementPublish_beginCycle(void) {
     memset(&publishCapture, 0, sizeof(publishCapture));
 }
 
+
+int EspNativeGameplayMonsterMovementPublish_afterProbe(
+    struct DoomRPG_s* doomRpgBase,
+    const char* trigger,
+    const struct Random_s* boundarySavedBase,
+    uint8_t boundaryPrepared,
+    uint32_t plannedMovesBefore,
+    EspNativeGameplayMonsterMovementPublishResult* outResult) {
+    return EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
+        doomRpgBase,
+        trigger,
+        boundarySavedBase,
+        boundaryPrepared,
+        plannedMovesBefore,
+        EspNativeGameplayMonsterMovement_view(),
+        outResult);
+}
+
 void EspNativeGameplayMonsterMovementPublish_reset(void) {
     EspNativeGameplayMonsterMovementPublish_beginCycle();
     memset(projectedBits, 0, sizeof(projectedBits));
@@ -183,16 +201,16 @@ static int recoveryRedraw(DoomRPG_t* doomRpg,
                doomRpg->render, (uint8_t)player->viewAngle, outFrame);
 }
 
-int EspNativeGameplayMonsterMovementPublish_afterProbe(
+int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     struct DoomRPG_s* doomRpgBase,
     const char* trigger,
     const struct Random_s* boundarySavedBase,
     uint8_t boundaryPrepared,
     uint32_t plannedMovesBefore,
+    const EspNativeGameplayMonsterMovementView* movement,
     EspNativeGameplayMonsterMovementPublishResult* outResult) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     const Random_t* boundarySaved = (const Random_t*)boundarySavedBase;
-    const EspNativeGameplayMonsterMovementView* movement;
     const EspNativeGameplayMonsterRecord* monster;
     const EspNativeGameplayMonsterPositionRecord* currentPosition;
     const EspPlayerViewState* player;
@@ -213,7 +231,6 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
     if (outResult != NULL) memset(outResult, 0, sizeof(*outResult));
     if (doomRpg == NULL || outResult == NULL) return 0;
 
-    movement = EspNativeGameplayMonsterMovement_view();
     if (movement == NULL || movement->plannedMoves == plannedMovesBefore) {
         return 1;
     }

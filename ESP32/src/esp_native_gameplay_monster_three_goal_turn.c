@@ -72,10 +72,7 @@ typedef struct ThreeGoalPathResult_s {
 
 static EspNativeGameplayMonsterThreeGoalTurnView threeGoalView;
 static EspNativeGameplayMonsterMovementView syntheticMovementView;
-static uint8_t syntheticMovementActive;
 
-const EspNativeGameplayMonsterMovementView*
-__real_EspNativeGameplayMonsterMovement_view(void);
 int __real_EspNativeGameplayMonsterTurn_postMoveGoal(
     struct DoomRPG_s* doomRpg,
     uint16_t spriteIndex,
@@ -599,22 +596,11 @@ static int syncOwner(void) {
 void EspNativeGameplayMonsterThreeGoalTurn_reset(void) {
     memset(&threeGoalView, 0, sizeof(threeGoalView));
     memset(&syntheticMovementView, 0, sizeof(syntheticMovementView));
-    syntheticMovementActive = 0U;
 }
 
 const EspNativeGameplayMonsterThreeGoalTurnView*
 EspNativeGameplayMonsterThreeGoalTurn_view(void) {
     return syncOwner() ? &threeGoalView : NULL;
-}
-
-/* The existing live publisher requires the proven movement planner view to
- * advance by exactly one probe. Continuation planning is a bounded extension of
- * that same planner contract; expose a synthetic one-call delta only while the
- * existing publisher validates/commits this captured continuation step. */
-const EspNativeGameplayMonsterMovementView*
-__wrap_EspNativeGameplayMonsterMovement_view(void) {
-    if (syntheticMovementActive != 0U) return &syntheticMovementView;
-    return __real_EspNativeGameplayMonsterMovement_view();
 }
 
 static int exactCommittedPosition(uint16_t spriteIndex,
@@ -688,7 +674,7 @@ static int probeContinuationGoal(DoomRPG_t* doomRpg,
         return -1;
     }
 
-    realMovement = __real_EspNativeGameplayMonsterMovement_view();
+    realMovement = EspNativeGameplayMonsterMovement_view();
     if (realMovement == NULL || realMovement->active != 1U ||
         realMovement->sourceArenaFNV1a != threeGoalView.sourceArenaFNV1a ||
         realMovement->plannedMoves != plannedMovesBefore) {
@@ -827,7 +813,7 @@ static int publishContinuationGoal(DoomRPG_t* doomRpg,
 
     if (outPublish != NULL) memset(outPublish, 0, sizeof(*outPublish));
     if (doomRpg == NULL || outPublish == NULL) return -1;
-    realMovement = __real_EspNativeGameplayMonsterMovement_view();
+    realMovement = EspNativeGameplayMonsterMovement_view();
     if (realMovement == NULL || realMovement->active != 1U) return -1;
     plannedBefore = realMovement->plannedMoves;
     EspNativeGameplayMonsterMovementPublish_beginCycle();
@@ -849,11 +835,9 @@ static int publishContinuationGoal(DoomRPG_t* doomRpg,
         planStatus = probeContinuationGoal(doomRpg, spriteIndex, goalStep,
                                            plannedBefore);
         if (planStatus == 1) {
-            syntheticMovementActive = 1U;
-            publishOk = EspNativeGameplayMonsterMovementPublish_afterProbe(
+            publishOk = EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
                 doomRpg, "NO-IMMEDIATE-ATTACK", &saved, prepared,
-                plannedBefore, outPublish);
-            syntheticMovementActive = 0U;
+                plannedBefore, &syntheticMovementView, outPublish);
         }
         else {
             publishOk = 0;
@@ -883,11 +867,9 @@ static int publishContinuationGoal(DoomRPG_t* doomRpg,
         planStatus = probeContinuationGoal(doomRpg, spriteIndex, goalStep,
                                            plannedBefore);
         if (planStatus <= 0) return planStatus;
-        syntheticMovementActive = 1U;
-        publishOk = EspNativeGameplayMonsterMovementPublish_afterProbe(
+        publishOk = EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
             doomRpg, "NO-IMMEDIATE-ATTACK", NULL, 0U,
-            plannedBefore, outPublish);
-        syntheticMovementActive = 0U;
+            plannedBefore, &syntheticMovementView, outPublish);
         if (!publishOk || outPublish->committed == 0U) return -1;
     }
 

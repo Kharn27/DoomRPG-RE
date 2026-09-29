@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_position.h"
 
 #ifdef __cplusplus
@@ -49,6 +50,20 @@ int EspNativeGameplayMonsterMovementPublish_afterProbe(
     const struct Random_s* boundarySaved,
     uint8_t boundaryPrepared,
     uint32_t plannedMovesBefore,
+    EspNativeGameplayMonsterMovementPublishResult* outResult);
+
+/*
+ * Same publication transaction, but validate against an explicit movement view.
+ * This is the permanent bounded seam for synthetic continuation planners; it
+ * avoids globally intercepting EspNativeGameplayMonsterMovement_view().
+ */
+int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
+    struct DoomRPG_s* doomRpg,
+    const char* trigger,
+    const struct Random_s* boundarySaved,
+    uint8_t boundaryPrepared,
+    uint32_t plannedMovesBefore,
+    const EspNativeGameplayMonsterMovementView* movement,
     EspNativeGameplayMonsterMovementPublishResult* outResult);
 
 void EspNativeGameplayMonsterMovementPublish_reset(void);
