@@ -77,7 +77,7 @@ The user reports normal behavior. The supplied Sector 1 trace includes:
 Rendering, weapon presentation, hit FX, action feedback and facing-label updates
 also continue normally. This cleanup is therefore hardware validated.
 
-## Next step on this same branch
+## Historical next candidate (completed below)
 
 The next bounded candidate removes the active native linker wrapper around
 `EspNativeGameplayMonsterPosition_prepareCardinalMove`. Its semantics are
@@ -132,8 +132,9 @@ MONSTERMOVELIVE COMMIT ...
 MONSTER3GOAL COMMIT ... goal=2/3 ...
 ```
 
-and, when geometry permits, the same sequence for goal 3/3. Until observed on
-the real CYD, the authoritative hardware-tested code boundary remains
+and, when geometry permits, the same sequence for goal 3/3. At that point in
+the investigation, before the corrected hardware run below, the authoritative
+hardware-tested code boundary still remained
 `4731d8265e90da19dc6d911739c4bf5574117a4d`.
 
 
