@@ -13,16 +13,24 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = fbacb595170e85b736bcb4e8c97cc22390eba1d8
-branch = agent/esp32-consolidation-v1
-hardware-tested code boundary = 934d0e2f9becd51a93df61d44dd6e01380fae6b4
-CI = esp32-cyd #1005 SUCCESS
-static RAM = 45688 B
-flash = 815821 B
-artifact id = 11035238982
-hardware = Junction zero-enemy SAVE/LOAD/PASS_TURN + Junction -> Sector 1 playable REAL-CYD PASS
-status = hardware validated; post-test tail docs-only; PR/merge-ready
+current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
+branch = agent/esp32-consolidation-dead-wrap-cleanup
+hardware-tested code boundary = 4731d8265e90da19dc6d911739c4bf5574117a4d
+CI = esp32-cyd #1015 attempt 2 SUCCESS
+static RAM = 45784 B
+flash = 816517 B
+artifact id = 11039313210
+hardware = Sector 1 combat/death + monster-turn service + committed MOVE + steady ALIVE smoke PASS
+status = first structural cleanup hardware validated; branch continues with bounded wrapper consolidation
 ```
+
+The post-merge audit found 175 ESP32 C/C++ translation units, 17 legacy
+`src/*.c` implementation units still compiled for ESP32, and 65 linker
+`--wrap` entries. 50 of those wraps target native `Esp*` symbols. The first
+cleanup removes one dead compatibility translation unit and the historical
+Retaliation->Movement wrapper footer without changing an active linker wrap.
+
+See [MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md](MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md).
 
 The merged barrel milestone remains hardware-valid on the real CYD. A distant shot
 proved a complete three-barrel causal chain: the root runs its 3-frame logical

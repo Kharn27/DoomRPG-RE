@@ -5,16 +5,56 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = fbacb595170e85b736bcb4e8c97cc22390eba1d8
-branch = agent/esp32-consolidation-v1
-hardware-tested code boundary = 7d64839a31376c4ca0a3ec4f0f5ae10395b04635
-CI = esp32-cyd #1009 SUCCESS
+current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
+branch = agent/esp32-consolidation-dead-wrap-cleanup
+hardware-tested code boundary = 4731d8265e90da19dc6d911739c4bf5574117a4d
+CI = esp32-cyd #1015 attempt 2 SUCCESS
 static RAM = 45784 B
 flash = 816517 B
-artifact id = 11037553080
-hardware = Junction zero-enemy PASS + Junction -> Sector 1 playable PASS + live SAVE return-route persistence PASS + Sector 1 V9 SAVE/LOAD PASS
-status = HARDWARE PASS for exercised paths; edge-clamped facing review fix is build-valid but its exact map-edge case was not hardware-triggered; POST-TEST TAIL DOCS-ONLY; PR/MERGE-READY
+artifact id = 11039313210
+hardware = Sector 1 combat/death + monster-turn service + committed MOVE + steady ALIVE smoke PASS
+status = HARDWARE PASS for dormant wrapper removal; branch remains active for further bounded consolidation
 ```
+
+### Structural consolidation v2 / dead wrapper cleanup — REAL-CYD PASS (2026-09-29)
+
+The post-merge audit starts from exact `main`
+`3de74fc1899ea619874b9f2bce8fb3679016c1a4`. The production tree contains
+175 ESP32 C/C++ translation units, 17 legacy `src/*.c` implementation units
+still compiled for ESP32, and 65 linker `--wrap` entries. 50 of those linker
+entries target native `Esp*` symbols, so native-to-native composition is now a
+first-class consolidation target.
+
+The first bounded cleanup removed the dormant historical
+`EspNativeGameplayMonsterRetaliation_* -> EspNativeGameplayMonsterMovement_*`
+wrapper footer and the link-only
+`esp_native_gameplay_monster_movement_wrap_compat.c`. Those Retaliation
+symbols were no longer present in the active `--wrap` list.
+
+```text
+translation units = 175 -> 174
+active --wrap flags = unchanged at 65
+CI #1015 attempt 2 = SUCCESS
+static RAM = 45784 B
+flash = 816517 B
+```
+
+The RAM/flash totals are byte-for-byte identical to a clean build of merged
+`main`, consistent with this compatibility code already being dead at final
+link.
+
+The real classic CYD then exercised Sector 1 through a complete monster
+hit/death transaction, a `PLAYER_ATTACK` monster turn, active-sequence service,
+a committed MOVE from tile 508 -> 507, another MOVE-triggered monster turn, and
+a steady `[ALIVE]` witness at about 99 seconds. No reboot or gameplay
+regression was observed.
+
+This validates only code through `4731d826...`. Later consolidation commits on
+this still-active branch remain candidates until separately tested.
+
+Detailed record:
+
+- [`MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md`](MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md)
 
 ### Consolidation-v1 progression recovery — REAL-CYD PASS (2026-09-29)
 
