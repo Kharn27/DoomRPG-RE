@@ -1842,7 +1842,7 @@ bool restoreAutomapSection(
     return true;
 }
 
-bool recoverV8OneShotTopologyFromScript(
+bool recoverOneShotTopologyFromScript(
     const NativeSaveCore& core,
     uint16_t* outShowApplied,
     uint16_t* outShowAlreadyLinked,
@@ -1857,7 +1857,8 @@ bool recoverV8OneShotTopologyFromScript(
     if (outShowAlreadyLinked != nullptr) *outShowAlreadyLinked = 0U;
     if (outHideApplied != nullptr) *outHideApplied = 0U;
 
-    if (core.version != kVersionV8 || runtime == nullptr ||
+    if ((core.version != kVersionV8 && core.version != kVersionV9) ||
+        runtime == nullptr ||
         runtime->arenaFNV1a != core.runtimeFNV1a ||
         !EspMapScriptState_isReady() ||
         !EspMapSpriteTopology_isReady()) {
@@ -1987,7 +1988,8 @@ bool recoverV8OneShotTopologyFromScript(
     if (outHideApplied != nullptr) *outHideApplied = hideApplied;
 
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
-    printf("[NATIVESAVE] V8-TOPOLOGY RECOVER showApplied=%u showAlreadyLinked=%u hideApplied=%u topologyFNV=%08x linked=%u hidden=%u evidence=script-removed+remove-flag movement=not-guessed exactSpatial=no\n",
+    printf("[NATIVESAVE] LEGACY-TOPOLOGY-REPLAY version=%u showApplied=%u showAlreadyLinked=%u hideApplied=%u topologyFNV=%08x linked=%u hidden=%u evidence=script-removed+remove-flag movement=not-guessed exactSpatial=no\n",
+           (unsigned int)core.version,
            (unsigned int)showApplied,
            (unsigned int)showAlreadyLinked,
            (unsigned int)hideApplied,
@@ -2687,7 +2689,7 @@ bool loadNow(void) {
                                 &automapVisitedCount,
                                 &automapFNV)) ||
         (record->version == kVersionV8 &&
-         !recoverV8OneShotTopologyFromScript(
+         !recoverOneShotTopologyFromScript(
              *record, &v8ShowApplied, &v8ShowAlreadyLinked,
              &v8HideApplied)) ||
         (record->version == kVersionV8 &&
