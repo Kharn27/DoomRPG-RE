@@ -7,14 +7,45 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
 branch = agent/esp32-consolidation-dead-wrap-cleanup
-hardware-tested code boundary = 4731d8265e90da19dc6d911739c4bf5574117a4d
-CI = esp32-cyd #1015 attempt 2 SUCCESS
+hardware-tested code boundary = aa7cb5c778264e1bb61d442d1c9864c09e6f37a3
+CI = esp32-cyd #1020 SUCCESS on docs-only head 25cfb5f9f09c95cff2a6edc716ea1f51c518d432
 static RAM = 45784 B
 flash = 816517 B
-artifact id = 11039313210
-hardware = Sector 1 combat/death + monster-turn service + committed MOVE + steady ALIVE smoke PASS
-status = HARDWARE PASS for dormant wrapper removal; branch remains active for further bounded consolidation
+artifact id = 11041812545
+hardware = explicit monster-movement activation boundary PASS incl. 4-member ordered sequence + subtype-4 goals 2/3 and 3/3
+status = HARDWARE PASS for active MonsterPosition prepare wrap removal; branch remains active for further bounded consolidation
 ```
+
+### Active MonsterPosition prepare wrap removal — REAL-CYD PASS (2026-09-29)
+
+The active linker interception of
+`EspNativeGameplayMonsterPosition_prepareCardinalMove` is now replaced by the
+explicit permanent movement-domain API
+`EspNativeGameplayMonsterMovementActivation_prepareCardinalMove`.
+
+The first candidate `3d15ba1393...` converted ordinary movement but missed the
+subtype-4/13 three-goal continuation call site. The real CYD caught that exact
+dependency through `probe-sequence-or-capture-mismatch`; that candidate is
+explicitly rejected as a hardware boundary.
+
+Commit `aa7cb5c778264e1bb61d442d1c9864c09e6f37a3` routes the continuation through
+the same explicit activation + publication-capture boundary. A complete
+monster-source audit then found no gameplay caller bypassing it.
+
+The corrected real-CYD run proves:
+
+```text
+activeCount=4 delivered=4 ordered=yes
+sprite 0 subtype 4: first goal + goal 2/3 COMMIT + goal 3/3 COMMIT + COMPLETE
+sprite 1 subtype 4: first goal + goal 2/3 COMMIT + goal 3/3 COMMIT + COMPLETE
+all continuation moves pass MONSTERMOVEACT ALLOW
+all live moves close rollback and topology publication
+ALIVE uptime=340952 ms
+```
+
+CI #1020 succeeds on docs-only descendant `25cfb5f9...` with unchanged
+45784 B static RAM and 816517 B flash. The active linker wrap count is now 64,
+down from 65 at merged main, with no RAM/flash growth.
 
 ### Structural consolidation v2 / dead wrapper cleanup — REAL-CYD PASS (2026-09-29)
 

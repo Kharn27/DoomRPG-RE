@@ -142,3 +142,63 @@ A follow-up source-family audit after the correction scanned all 15
 `EspNativeGameplayMonsterPosition_prepareCardinalMove` are the permanent
 movement-activation composition boundary and the lower-level position owner's
 own implementation. No monster-domain caller bypasses the explicit boundary.
+
+
+## Corrected active-wrap replacement — REAL-CYD PASS
+
+The corrected code boundary is
+`aa7cb5c778264e1bb61d442d1c9864c09e6f37a3`. The later branch head
+`25cfb5f9f09c95cff2a6edc716ea1f51c518d432` contains documentation only
+relative to that code and builds successfully in esp32-cyd CI #1020.
+
+```text
+CI #1020 = SUCCESS
+static RAM = 45784 B
+flash = 816517 B
+artifact id = 11041812545
+active --wrap entries = 64
+```
+
+The real classic CYD now proves the exact continuation path that failed in the
+first candidate. After event 51 makes both subtype-4 monsters visible, the
+active set grows to four. Ordinary members 218 and 237 commit first, then both
+subtype-4 members execute complete same-turn three-goal movement.
+
+For sprite 0:
+
+```text
+first goal: tile 436 -> 468 COMMIT
+goal 2/3: 468 -> 469 COMMIT
+goal 3/3: 469 -> 470 COMMIT
+MONSTER3GOAL COMPLETE
+```
+
+For sprite 1:
+
+```text
+first goal: tile 564 -> 532 COMMIT
+goal 2/3: 532 -> 533 COMMIT
+goal 3/3: 533 -> 534 COMMIT
+MONSTER3GOAL COMPLETE
+```
+
+Every continuation is preceded by
+`MONSTERMOVEACT ALLOW ... position-preflight-captured`, proving that the
+explicit replacement supplies the same activation gate and publication capture
+previously supplied implicitly by the linker wrapper.
+
+The turn closes with:
+
+```text
+[MONSTERACTIVESEQ] COMPLETE turn=2 reason=1 activeCount=4 delivered=4
+sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred
+[ALIVE] uptime=340952 ms ...
+```
+
+No `probe-sequence-or-capture-mismatch` remains. RNG replay remains one byte
+per successful continuation, topology relink publishes each move, and rollback
+closes after every live commit.
+
+Therefore removal of
+`--wrap=EspNativeGameplayMonsterPosition_prepareCardinalMove` is hardware
+validated on the real classic CYD.

@@ -15,14 +15,23 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
 branch = agent/esp32-consolidation-dead-wrap-cleanup
-hardware-tested code boundary = 4731d8265e90da19dc6d911739c4bf5574117a4d
-CI = esp32-cyd #1015 attempt 2 SUCCESS
+hardware-tested code boundary = aa7cb5c778264e1bb61d442d1c9864c09e6f37a3
+CI = esp32-cyd #1020 SUCCESS on docs-only head 25cfb5f9f09c95cff2a6edc716ea1f51c518d432
 static RAM = 45784 B
 flash = 816517 B
-artifact id = 11039313210
-hardware = Sector 1 combat/death + monster-turn service + committed MOVE + steady ALIVE smoke PASS
-status = first structural cleanup hardware validated; branch continues with bounded wrapper consolidation
+artifact id = 11041812545
+hardware = explicit movement activation/capture boundary PASS with ordered 4-monster + complete subtype-4 3-goal chains
+status = active MonsterPosition prepare linker wrap removed and hardware validated; branch continues
 ```
+
+The first active native-to-native consolidation is now hardware validated.
+`EspNativeGameplayMonsterPosition_prepareCardinalMove` is no longer wrapped by
+the linker: ordinary movement and subtype-4/13 continuation movement both call
+one explicit movement-domain activation/capture boundary. The real CYD completed
+both goals 2/3 and 3/3 for two subtype-4 monsters inside an ordered four-member
+active turn.
+
+See [MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md](MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md).
 
 The post-merge audit found 175 ESP32 C/C++ translation units, 17 legacy
 `src/*.c` implementation units still compiled for ESP32, and 65 linker
