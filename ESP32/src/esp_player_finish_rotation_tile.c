@@ -45,10 +45,29 @@ static int orientationMatchesView(const EspPlayerOrientationState* orientation,
            orientation->destAngle == (uint8_t)view->destAngle;
 }
 
-static int orientationValuesReady(const EspPlayerOrientationState* orientation) {
-    return orientation != NULL && orientation->destAngle == 64U &&
-           orientation->viewSin == 65536 && orientation->viewCos == 0 &&
-           orientation->viewStepX == 0 && orientation->viewStepY == -64;
+static int orientationValuesReady(
+    const EspPlayerOrientationState* orientation,
+    uint32_t* outFacingFlag) {
+    int32_t viewSin;
+    int32_t viewCos;
+    int32_t viewStepX;
+    int32_t viewStepY;
+    uint32_t facingFlag;
+
+    if (outFacingFlag != NULL) *outFacingFlag = 0U;
+    if (orientation == NULL ||
+        !EspPlayerView_cardinalBasis(orientation->destAngle,
+                                     &viewSin, &viewCos,
+                                     &viewStepX, &viewStepY,
+                                     &facingFlag) ||
+        orientation->viewSin != viewSin ||
+        orientation->viewCos != viewCos ||
+        orientation->viewStepX != viewStepX ||
+        orientation->viewStepY != viewStepY) {
+        return 0;
+    }
+    if (outFacingFlag != NULL) *outFacingFlag = facingFlag;
+    return 1;
 }
 
 static int coordinatesReady(const EspPlayerViewState* view,
@@ -102,6 +121,7 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_prepare(
     EspMapEventFilterPlan filterPlan;
     EspMapEventCommandFilterResult filterResult;
     uint16_t tileIndex;
+    uint32_t facingFlag = 0U;
     uint8_t eventState;
     uint8_t removed;
     uint32_t commandOffset;
@@ -124,9 +144,10 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_prepare(
         return ESP_PLAYER_FINISH_ROTATION_TILE_ORIENTATION_INVALID;
     }
     if (executionBlocked > 1U || executionBlocked != 0U ||
-        playerView->loadType != 0U || playerView->destAngle != 64 ||
+        playerView->loadType != 0U ||
+        playerView->destAngle < 0 || playerView->destAngle > 255 ||
         playerView->viewAngle != playerView->destAngle ||
-        !orientationValuesReady(orientation)) {
+        !orientationValuesReady(orientation, &facingFlag)) {
         return ESP_PLAYER_FINISH_ROTATION_TILE_UNSUPPORTED_CONTEXT;
     }
     if (!viewReady(playerView)) {
@@ -137,7 +158,8 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_prepare(
         return ESP_PLAYER_FINISH_ROTATION_TILE_EVENT_INVALID;
     }
 
-    outState->inputFlags = ESP_PLAYER_FINISH_ROTATION_TILE_FLAGS;
+    outState->inputFlags =
+        ESP_PLAYER_FINISH_ROTATION_TILE_BASE_FLAGS | facingFlag;
     outState->tileIndex = tileIndex;
     outState->eventIndex = ESP_PLAYER_FINISH_ROTATION_TILE_NO_EVENT;
     outState->targetMapId = playerView->targetMapId;

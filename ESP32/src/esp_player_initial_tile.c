@@ -90,6 +90,7 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_prepare(
     EspMapEventFilterPlan filterPlan;
     EspMapEventCommandFilterResult filterResult;
     uint16_t tileIndex;
+    uint32_t facingFlag = 0U;
     uint8_t eventState;
     uint8_t removed;
     uint32_t commandOffset;
@@ -107,7 +108,12 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_prepare(
         return ESP_PLAYER_INITIAL_TILE_SETUP_INVALID;
     }
     if (executionBlocked > 1U || executionBlocked != 0U ||
-        playerView->loadType != 0U || playerView->destAngle != 64) {
+        playerView->loadType != 0U ||
+        playerView->destAngle < 0 || playerView->destAngle > 255 ||
+        playerView->viewAngle != playerView->destAngle ||
+        !EspPlayerView_cardinalBasis((uint8_t)playerView->destAngle,
+                                     NULL, NULL, NULL, NULL,
+                                     &facingFlag)) {
         return ESP_PLAYER_INITIAL_TILE_UNSUPPORTED_CONTEXT;
     }
     if (!viewOrderReady(playerView)) {
@@ -119,8 +125,7 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_prepare(
     }
 
     outState->inputFlags =
-        ESP_PLAYER_INITIAL_TILE_BASE_FLAGS |
-        ESP_PLAYER_INITIAL_TILE_FACING_64_FLAG;
+        ESP_PLAYER_INITIAL_TILE_BASE_FLAGS | facingFlag;
     outState->tileIndex = tileIndex;
     outState->eventIndex = ESP_PLAYER_INITIAL_TILE_NO_EVENT;
     outState->targetMapId = playerView->targetMapId;

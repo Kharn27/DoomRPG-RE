@@ -11,7 +11,8 @@
 extern "C" {
 #endif
 
-#define ESP_PLAYER_FINISH_ROTATION_TILE_FLAGS 0x10000400UL
+#define ESP_PLAYER_FINISH_ROTATION_TILE_BASE_FLAGS 0x00000400UL
+#define ESP_PLAYER_FINISH_ROTATION_TILE_FLAGS 0x10000400UL /* legacy angle-64 witness */
 #define ESP_PLAYER_FINISH_ROTATION_TILE_NO_EVENT 0xffffU
 
 typedef enum EspPlayerFinishRotationTileStatus_e {
@@ -65,7 +66,7 @@ const EspPlayerFinishRotationTileState* EspPlayerFinishRotationTile_view(void);
  * explicit until key ownership moves into the permanent native player root;
  * executionBlocked mirrors the recovered Game.f658b early refusal gate.
  *
- * Only the currently proven angle-64 orientation is enabled. Unsupported
+ * The four exact legacy cardinal orientations are enabled. Unsupported
  * eligible opcodes are reported without mutating script/player owners.
  */
 EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_prepare(

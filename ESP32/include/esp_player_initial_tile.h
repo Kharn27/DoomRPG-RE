@@ -11,7 +11,7 @@ extern "C" {
 #endif
 
 #define ESP_PLAYER_INITIAL_TILE_BASE_FLAGS 0x0000040fUL
-#define ESP_PLAYER_INITIAL_TILE_FACING_64_FLAG 0x10000000UL
+#define ESP_PLAYER_INITIAL_TILE_FACING_64_FLAG 0x10000000UL /* legacy north witness */
 #define ESP_PLAYER_INITIAL_TILE_NO_EVENT 0xffffU
 
 typedef enum EspPlayerInitialTileStatus_e {
@@ -66,9 +66,9 @@ const EspPlayerInitialTileState* EspPlayerInitialTile_view(void);
  * because key ownership has not yet moved into the active native player root.
  * `executionBlocked` mirrors the recovered early Game.f658b refusal gate.
  *
- * For the currently hardware-proven Junction path only destAngle==64 is owned;
- * other facing directions fail closed until their exact legacy mapping receives
- * a dedicated proof. Output is zeroed on refusal when non-NULL.
+ * The four legacy cardinal spawn directions 0/64/128/192 are owned through the
+ * exact DoomCanvas_flagForFacingDir() mapping. Non-cardinal angles still fail
+ * closed. Output is zeroed on refusal when non-NULL.
  *
  * An eligible opcode outside the deliberately tiny native 11/19/20 executor is
  * reported through the optional diagnostics and returns OPCODE_DEFERRED without

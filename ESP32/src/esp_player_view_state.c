@@ -139,6 +139,64 @@ const EspPlayerViewState* EspPlayerView_view(void) {
     return EspPlayerView_isReady() ? &playerViewState : NULL;
 }
 
+int EspPlayerView_cardinalBasis(uint8_t angle,
+                                int32_t* outViewSin,
+                                int32_t* outViewCos,
+                                int32_t* outViewStepX,
+                                int32_t* outViewStepY,
+                                uint32_t* outFacingFlag) {
+    int32_t viewSin;
+    int32_t viewCos;
+    int32_t viewStepX;
+    int32_t viewStepY;
+    uint32_t facingFlag;
+
+    switch (angle) {
+    case 0U:
+        viewSin = 0;
+        viewCos = 65536;
+        viewStepX = 64;
+        viewStepY = 0;
+        facingFlag = 0x20000000UL;
+        break;
+    case 64U:
+        viewSin = 65536;
+        viewCos = 0;
+        viewStepX = 0;
+        viewStepY = -64;
+        facingFlag = 0x10000000UL;
+        break;
+    case 128U:
+        viewSin = 0;
+        viewCos = -65536;
+        viewStepX = -64;
+        viewStepY = 0;
+        facingFlag = 0x80000000UL;
+        break;
+    case 192U:
+        viewSin = -65536;
+        viewCos = 0;
+        viewStepX = 0;
+        viewStepY = 64;
+        facingFlag = 0x40000000UL;
+        break;
+    default:
+        if (outViewSin != NULL) *outViewSin = 0;
+        if (outViewCos != NULL) *outViewCos = 0;
+        if (outViewStepX != NULL) *outViewStepX = 0;
+        if (outViewStepY != NULL) *outViewStepY = 0;
+        if (outFacingFlag != NULL) *outFacingFlag = 0U;
+        return 0;
+    }
+
+    if (outViewSin != NULL) *outViewSin = viewSin;
+    if (outViewCos != NULL) *outViewCos = viewCos;
+    if (outViewStepX != NULL) *outViewStepX = viewStepX;
+    if (outViewStepY != NULL) *outViewStepY = viewStepY;
+    if (outFacingFlag != NULL) *outFacingFlag = facingFlag;
+    return 1;
+}
+
 EspPlayerViewApplyStatus EspPlayerView_applySpawn(
     const EspPlayerSpawnState* spawn) {
     EspPlayerViewState next;
