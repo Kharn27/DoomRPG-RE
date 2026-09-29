@@ -5,15 +5,15 @@ Date: 2026-09-29
 ## Boundary
 
 ```text
-main = da8c3632162ad8dc7a0a83e7c398d815a0fbfea2
-branch = agent/esp32-consolidation-monster-wraps-v3
-hardware-tested code head = b2c22ee699213a04429669c6b3ca63c479918d1f
-esp32-cyd CI #1049 = SUCCESS
+main = 8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56
+branch = agent/esp32-consolidation-monster-wraps-v4
+hardware-tested code head = 3f9b862bcbca3d2217efe0b388e3c9914d1d4b23
+esp32-cyd CI #1056 = SUCCESS
 static RAM = 45776 B
 flash = 815609 B
-artifact id = 11045807444
+artifact id = 11052390593
 translation units = 173
-active --wrap entries = 60
+active --wrap entries = 59
 ```
 
 ## Consolidation method
@@ -426,23 +426,88 @@ remains present.
 Therefore `--wrap=EspNativeGameplayMonsterState_view` and its dedicated
 diagnostic translation unit are fully retired and hardware validated.
 
-## Consolidation checkpoint after five active-wrap removals
+## Explicit HUB/automap action-feedback composition — REAL-CYD PASS
 
-Relative to current merged main
-`da8c3632162ad8dc7a0a83e7c398d815a0fbfea2`:
+After the previous five wrapper retirements were merged, the next audit starts
+from exact main `8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56`.
+
+The remaining `--wrap=EspNativeGameplayMonsterState_actionService` was not
+monster-AI logic. It existed only to pause the world/action feedback leaf while
+HUB or automap owned the framebuffer, preventing delayed top-bar or viewport
+feedback expiry from restoring stale world pixels underneath an overlay.
+
+Commit `3f9b862bcbca3d2217efe0b388e3c9914d1d4b23` replaces that hidden
+linker composition with the explicit permanent API:
 
 ```text
-translation units = 174 -> 173
-active --wrap flags = 61 -> 60
-static RAM = 45784 B -> 45776 B
-flash = 816545 B -> 815609 B
+EspNativeGameplayMonsterCombat service
+ -> EspNativeGameplayHubActionGate_service
+ -> EspNativeGameplayMonsterState_actionService
+ -> generic ActionEngine service
+```
+
+No timing or gameplay rule moves. The gate retains its one-byte paused owner,
+the same realtime lease semantics, the same `HUBACTIONGATE PAUSE/RESUME`
+diagnostics, and the same return behavior.
+
+Build witness:
+
+```text
+esp32-cyd CI #1056 = SUCCESS
+static RAM = 45776 B
+flash = 815609 B
+artifact id = 11052390593
+translation units = 173
+active --wrap entries = 59
+```
+
+RAM and flash are byte-for-byte identical to merged main; only the active linker
+wrap count changes from 60 to 59.
+
+Real-CYD overlay witness:
+
+```text
+[HUBACTIONGATE] PAUSE owner=hub worldActionFeedback=yes timer=realtime mutation=no
+...
+[HUBACTIONGATE] PAUSE owner=automap worldActionFeedback=yes timer=realtime mutation=no
+```
+
+Because PAUSE is logged only when the private paused flag changes 0 -> 1, seeing
+the later automap PAUSE proves the earlier HUB pause cycle already returned
+through the resume path before automap opened. After the overlays, a normal MOVE
+executes the complete permanent monster chain:
+
+```text
+sprite 218 subtype 3: movement COMMIT + MONSTERPOSTMOVE COMPLETE
+sprite 237 subtype 5: movement COMMIT + MONSTERPOSTMOVE COMPLETE
+sprite 0 subtype 4: 470 -> 471 -> 439 -> 440, MONSTER3GOAL COMPLETE
+sprite 1 subtype 4: 534 -> 535 -> 536 -> 537, MONSTER3GOAL COMPLETE
+MONSTERACTIVESEQ COMPLETE turn=1 reason=1 activeCount=4 delivered=4
+sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred
+ALIVE uptime=79136 ms heap=82704 heap8=17152 largest8=10228
+ALIVE uptime=84137 ms heap=82704 heap8=17152 largest8=10228
+```
+
+Therefore the HUB/automap feedback gate is hardware validated as explicit
+native composition and the linker interception is retired.
+
+## Consolidation checkpoint after six active-wrap removals
+
+Relative to current merged main
+`8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56`:
+
+```text
+translation units = 173 -> 173
+active --wrap flags = 60 -> 59
+static RAM = 45776 B -> 45776 B
+flash = 815609 B -> 815609 B
 ```
 
 Across the wider consolidation sequence from the earlier 65-wrap baseline:
 
 ```text
 translation units = 175 -> 173
-active --wrap flags = 65 -> 60
+active --wrap flags = 65 -> 59
 ```
 
 Hardware-tested boundaries in order:
@@ -454,17 +519,18 @@ cb45792a... explicit MovementProbe reset composition
 560e54bd... explicit synthetic MovementView publication
 2976cf9f... explicit MonsterTurn post-move composition
 b2c22ee6... obsolete MonsterState view witness + TU retirement
+3f9b862b... explicit HUB/automap action-feedback gate
 ```
 
-The remaining active monster-domain wrappers are:
+The remaining active monster-domain wrappers are now the two orchestration
+seams:
 
 ```text
-EspNativeGameplayMonsterState_actionService
 EspNativeGameplayMonsterTurn_view
 EspNativeGameplayMonsterMovement_service
 ```
 
 The branch is hardware-pass. Any commit after
-`b2c22ee699213a04429669c6b3ca63c479918d1f` must remain documentation-only
-before merge. Continue future consolidation from the next true merged-main SHA,
-choosing ownership seams rather than optimizing for wrapper count.
+`3f9b862bcbca3d2217efe0b388e3c9914d1d4b23` must remain documentation-only
+before merge. Future work should audit these two seams as an ownership problem,
+not remove them mechanically.

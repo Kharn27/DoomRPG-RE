@@ -13,27 +13,27 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = da8c3632162ad8dc7a0a83e7c398d815a0fbfea2
-branch = agent/esp32-consolidation-monster-wraps-v3
-hardware-tested code boundary = b2c22ee699213a04429669c6b3ca63c479918d1f
-CI = esp32-cyd #1049 SUCCESS
+current main = 8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56
+branch = agent/esp32-consolidation-monster-wraps-v4
+hardware-tested code boundary = 3f9b862bcbca3d2217efe0b388e3c9914d1d4b23
+CI = esp32-cyd #1056 SUCCESS
 static RAM = 45776 B
 flash = 815609 B
-artifact id = 11045807444
+artifact id = 11052390593
 translation units = 173
-active --wrap flags = 60
-hardware = five active native linker seams retired/replaced and hardware validated; obsolete three-goal census TU removed
+active --wrap flags = 59
+hardware = six active native linker seams retired/replaced and hardware validated; HUB/automap action-feedback gate is now explicit
 status = branch hardware-pass; documentation-only close in progress
 ```
 
 Current consolidation result from merged main
-`da8c3632162ad8dc7a0a83e7c398d815a0fbfea2`:
+`8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56`:
 
 ```text
-ESP32 translation units: 174 -> 173
-active linker --wraps:   61 -> 60
-static RAM:              45784 B -> 45776 B
-flash:                   816545 B -> 815609 B
+ESP32 translation units: 173 -> 173
+active linker --wraps:   60 -> 59
+static RAM:              45776 B -> 45776 B
+flash:                   815609 B -> 815609 B
 ```
 
 The dead historical Retaliation compatibility translation unit remains gone.
@@ -56,16 +56,19 @@ made explicit:
    the wrapper was pure one-shot `WITNESS/CENSUS` instrumentation, so the
    wrapper and its 119-line witness translation unit are deleted with no
    replacement API.
+6. `EspNativeGameplayMonsterState_actionService`:
+   HUB/automap framebuffer ownership now composes explicitly through
+   `EspNativeGameplayHubActionGate_service`, which calls the unchanged
+   MonsterState action-service chain only while world presentation is active.
 
-The latest real-CYD witness proves the permanent runtime unchanged: four active
-monsters are delivered in order, ordinary subtype 3/5 post-move completes, both
-subtype-4 monsters finish goals 2/3 and 3/3, publication/rollback remain closed,
-and `[ALIVE]` is steady. The deleted census lines are absent by design.
+The latest real-CYD witness exercises HUB pause, automap pause and normal world
+resume. The second overlay PAUSE proves the previous pause cycle returned to the
+unpaused state, and a following MOVE completes all four active monster members
+in order, including both subtype-4 three-goal chains, with steady `[ALIVE]`.
 
-Three monster-domain linker wraps remain active:
+Two monster-domain linker wraps remain active:
 
 ```text
-EspNativeGameplayMonsterState_actionService
 EspNativeGameplayMonsterTurn_view
 EspNativeGameplayMonsterMovement_service
 ```
