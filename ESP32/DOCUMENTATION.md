@@ -970,3 +970,38 @@ recover true main + docs
 ```
 
 Never merge into `main` without explicit user request.
+
+
+## Checkpoint monster spatial state: V8 compatibility and V9 owner
+
+Hardware-tested V8 compatibility boundary:
+
+```text
+cb9f7b3f97314524b01d52c45d9a209b7c5bcb87
+esp32-cyd CI #954 = SUCCESS
+```
+
+V8 checkpoints contain logical monster state and script state, but not the
+mutable sprite topology/position state created by one-shot `SHOW/HIDE`
+commands. On LOAD, the native compatibility path therefore reconstructs only
+those topology effects that the V8 script snapshot proves were already
+successfully consumed:
+
+```text
+removed-command bit == 1
++ REMOVE-if-handled
++ opcode SHOW/HIDE
+```
+
+This is intentionally narrower than replaying arbitrary scripts and does not
+guess historical monster movement. The real classic CYD confirmed that monsters
+revealed by the yellow-card trigger are present again after loading the existing
+V8 save.
+
+The new V9 record adds exact compact ownership for monster topology, position
+and activation order alongside `MonsterState`. Cross-owner identity and
+fingerprints are validated fail-closed. The V9 exact SAVE/LOAD round-trip still
+needs a dedicated hardware witness before it is considered validated.
+
+See
+[`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md).
