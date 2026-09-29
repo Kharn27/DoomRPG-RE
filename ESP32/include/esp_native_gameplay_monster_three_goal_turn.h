@@ -26,6 +26,17 @@ void EspNativeGameplayMonsterThreeGoalTurn_reset(void);
 const EspNativeGameplayMonsterThreeGoalTurnView*
 EspNativeGameplayMonsterThreeGoalTurn_view(void);
 
+/*
+ * Execute the bounded post-move continuation for legacy i=3 monster families
+ * (subtypes 4/13). MonsterTurn owns ordinary-vs-three-goal dispatch and calls
+ * this entry only after the first goal has already committed.
+ */
+int EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
+    struct DoomRPG_s* doomRpg,
+    uint16_t spriteIndex,
+    uint16_t sourceTile,
+    uint16_t destTile);
+
 #ifdef __cplusplus
 }
 #endif

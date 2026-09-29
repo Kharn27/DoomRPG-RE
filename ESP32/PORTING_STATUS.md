@@ -5,17 +5,54 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
-branch = agent/esp32-consolidation-dead-wrap-cleanup
-hardware-tested code boundary = 560e54bd2d32fe1f5d704cd9ef0d3737c57f765b
-CI = esp32-cyd #1028 SUCCESS
+current main = 0e66004c755cc050c5fa3f6eac91f85f943e4c8d
+branch = agent/esp32-consolidation-monster-wraps-v2
+hardware-tested code boundary = 2976cf9f157fa3dfd1649efaaec77986450648cc
+CI = esp32-cyd #1036 SUCCESS
 static RAM = 45784 B
-flash = 816509 B
-artifact id = 11043841537
+flash = 816545 B
+artifact id = 11044812987
 translation units = 174
-active --wrap flags = 62
-hardware = explicit synthetic MovementView publication PASS with two complete subtype-4 three-goal chains inside ordered 4-monster turn
-status = HARDWARE PASS for three active native linker seams removed; branch remains active for bounded consolidation
+active --wrap flags = 61
+hardware = explicit MonsterTurn post-move dispatch PASS with two complete subtype-4 three-goal chains inside ordered 4-monster turn after V9 LOAD
+status = HARDWARE PASS for four active native linker seams removed; branch remains active for bounded consolidation
+```
+
+### Explicit MonsterTurn post-move composition — REAL-CYD PASS (2026-09-29)
+
+Commit `2976cf9f157fa3dfd1649efaaec77986450648cc` removes the active
+`--wrap=EspNativeGameplayMonsterTurn_postMoveGoal`.
+
+The ordinary-vs-three-goal decision now belongs explicitly to
+`EspNativeGameplayMonsterTurn_postMoveGoal(...)`. Subtypes 4/13 are delegated
+to `EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(...)` before ordinary
+turn-owner sync/probe accounting, preserving the previous wrapper ordering.
+Other monster families continue through the unchanged ordinary post-move path.
+
+CI #1036 succeeds with 45784 B static RAM and 816545 B flash. The active linker
+wrap count is now 61, down from 62 on merged main
+`0e66004c755cc050c5fa3f6eac91f85f943e4c8d`.
+
+The real classic CYD validates this after V9 LOAD: movement restarts at `n=1`,
+four active monsters are delivered in order, sprite 0 completes
+470->471->439->440, sprite 1 completes 534->535->536->537, and both end in
+`MONSTER3GOAL COMPLETE`. Every continuation passes `MONSTERMOVEACT ALLOW`,
+commits exactly one movement RNG byte, publishes topology/position and closes
+rollback before the next member. The turn closes with:
+
+```text
+[MONSTERACTIVESEQ] COMPLETE turn=1 reason=1 activeCount=4 delivered=4
+sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred
+[ALIVE] uptime=49239 ms heap=82696 heap8=17144 largest8=10228
+```
+
+Remaining monster-domain active linker wraps:
+
+```text
+EspNativeGameplayMonsterState_actionService
+EspNativeGameplayMonsterTurn_view
+EspNativeGameplayMonsterMovement_service
+EspNativeGameplayMonsterState_view
 ```
 
 ### Explicit synthetic MovementView publication — REAL-CYD PASS (2026-09-29)
@@ -54,8 +91,8 @@ ALIVE remains steady through uptime=55893 ms
 
 Every continuation still passes `MONSTERMOVEACT ALLOW`, every live publication
 closes RNG/position/topology/rollback state, and no
-`probe-sequence-or-capture-mismatch` occurs. This candidate is therefore the
-current authoritative hardware-tested code boundary.
+`probe-sequence-or-capture-mismatch` occurs. This candidate was therefore the authoritative hardware-tested code boundary
+at that point.
 
 Remaining monster-domain active linker wraps after this PASS:
 

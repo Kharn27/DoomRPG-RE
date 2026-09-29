@@ -14,6 +14,7 @@
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_gameplay_monster_three_goal_turn.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
@@ -844,6 +845,21 @@ int EspNativeGameplayMonsterTurn_postMoveGoal(struct DoomRPG_s* doomRpgBase,
     uint32_t worldDistance;
     int rngExact;
     int playerExact;
+
+    /*
+     * Explicit composition boundary replacing the historical linker wrap.
+     * The legacy i=3 families (subtypes 4/13) own their bounded continuation
+     * transaction in ThreeGoalTurn; all other families stay on the ordinary
+     * one-step post-move path below.
+     *
+     * Perform this dispatch before syncOwner()/probe accounting to preserve
+     * the exact previous wrapper ordering for subtype 4/13.
+     */
+    monster = EspNativeGameplayMonsterState_find(spriteIndex);
+    if (monster != NULL && (monster->subtype == 4U || monster->subtype == 13U)) {
+        return EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
+            doomRpgBase, spriteIndex, sourceTile, destTile);
+    }
 
     if (!syncOwner()) {
         printf("[MONSTERPOSTMOVE] DEFER sprite=%u tile=%u->%u cause=turn-owner-not-ready mutation=no rngConsumed=0\n",
