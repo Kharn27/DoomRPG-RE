@@ -194,8 +194,12 @@ typedef struct ActionEngineState_s {
 } ActionEngineState;
 
 typedef struct FeedbackScratch_s {
-    EspNativeIndexedBmp bar;
-    EspNativeIndexedBmp font;
+    /*
+     * Bar and font metadata are never live at the same time: the bar is tiled
+     * before the font is opened. Reuse one bounded descriptor to cut the
+     * SELECT -> frame -> top-bar stack path without changing presentation.
+     */
+    EspNativeIndexedBmp bmp;
 } FeedbackScratch;
 
 static ActionEngineState actionState;
@@ -1409,11 +1413,11 @@ static int paintFeedback(uint8_t feedback) {
     memset(&scratch, 0, sizeof(scratch));
     memset(&stats, 0, sizeof(stats));
     if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
-    if (EspNativeIndexedBmp_open("k.bmp", &scratch.bar, &stats) !=
+    if (EspNativeIndexedBmp_open("k.bmp", &scratch.bmp, &stats) !=
             ESP_NATIVE_INDEXED_BMP_OK ||
-        scratch.bar.width != 20U || scratch.bar.height != FEEDBACK_TOP_HEIGHT ||
+        scratch.bmp.width != 20U || scratch.bmp.height != FEEDBACK_TOP_HEIGHT ||
         EspNativeIndexedBmp_tile(
-            &scratch.bar, framebuffer,
+            &scratch.bmp, framebuffer,
             DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
             0, 0, DOOMRPG_LOGICAL_WIDTH, FEEDBACK_TOP_HEIGHT,
             FEEDBACK_OPAQUE, &stats) != ESP_NATIVE_INDEXED_BMP_OK) {
@@ -1422,10 +1426,10 @@ static int paintFeedback(uint8_t feedback) {
 
     if (text != NULL) {
         size_t length;
-        if (EspNativeIndexedBmp_open("a.bmp", &scratch.font, &stats) !=
+        if (EspNativeIndexedBmp_open("a.bmp", &scratch.bmp, &stats) !=
                 ESP_NATIVE_INDEXED_BMP_OK ||
-            scratch.font.width != FEEDBACK_FONT_SOURCE_WIDTH ||
-            scratch.font.height != FEEDBACK_FONT_SOURCE_HEIGHT) {
+            scratch.bmp.width != FEEDBACK_FONT_SOURCE_WIDTH ||
+            scratch.bmp.height != FEEDBACK_FONT_SOURCE_HEIGHT) {
             goto done;
         }
 
@@ -1439,7 +1443,7 @@ static int paintFeedback(uint8_t feedback) {
                 x += FEEDBACK_FONT_ADVANCE;
                 continue;
             }
-            if (!drawGlyph(&scratch.font, framebuffer, c,
+            if (!drawGlyph(&scratch.bmp, framebuffer, c,
                            x, FEEDBACK_TEXT_Y, &stats)) {
                 goto done;
             }

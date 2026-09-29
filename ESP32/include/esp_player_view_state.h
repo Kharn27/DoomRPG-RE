@@ -69,6 +69,18 @@ void EspPlayerView_reset(void);
 int EspPlayerView_isReady(void);
 const EspPlayerViewState* EspPlayerView_view(void);
 
+/*
+ * Exact legacy DoomCanvas cardinal basis. Angles outside 0/64/128/192 fail
+ * closed. Any output may be NULL; supplied outputs receive the exact 16.16
+ * sin/cos, 64-unit movement step, and DoomCanvas_flagForFacingDir() bit.
+ */
+int EspPlayerView_cardinalBasis(uint8_t angle,
+                                int32_t* outViewSin,
+                                int32_t* outViewCos,
+                                int32_t* outViewStepX,
+                                int32_t* outViewStepY,
+                                uint32_t* outFacingFlag);
+
 EspPlayerViewApplyStatus EspPlayerView_applySpawn(
     const EspPlayerSpawnState* spawn);
 

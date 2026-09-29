@@ -533,17 +533,33 @@ static void prospectivePlayerPain(const EspNativeGameplayPlayerState* player,
 }
 
 static int syncOwner(void) {
-    const EspNativeGameplayMonsterView* monsters = EspNativeGameplayMonsterState_view();
+    const EspNativeGameplayMonsterView* monsters =
+        EspNativeGameplayMonsterState_view();
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
     uint32_t arena;
 
-    if (monsters == NULL || monsters->records == NULL || monsters->count == 0U ||
-        runtime == NULL || runtime->arenaFNV1a == 0U ||
-        runtime->arenaFNV1a != monsters->sourceArenaFNV1a ||
-        !EspMapSpriteTopology_isReady() || !EspMapState_isReady() ||
-        !EspMapLineState_isReady() || !EspNativeGameplayPlayerState_ensure()) {
+    if (runtime == NULL || topology == NULL || runtime->arenaFNV1a == 0U ||
+        !EspMapSpriteTopology_isReady() ||
+        runtime->mapSpriteCount != topology->spriteCount ||
+        !EspMapState_isReady() || !EspMapLineState_isReady() ||
+        !EspNativeGameplayPlayerState_ensure()) {
         return 0;
     }
+
+    /*
+     * Hub/transition maps with zero enemies are fully valid turn worlds.
+     * MonsterState intentionally owns no zero-length allocation there, so a
+     * missing MonsterState view means "empty enemy set", not "turn owner busy".
+     * Maps that do contain enemies still require the exact arena-bound state.
+     */
+    if (topology->enemyCount != 0U &&
+        (monsters == NULL || monsters->records == NULL ||
+         monsters->count != topology->enemyCount ||
+         runtime->arenaFNV1a != monsters->sourceArenaFNV1a)) {
+        return 0;
+    }
+
     arena = runtime->arenaFNV1a;
     if (turnOwner.view.active == 0U || turnOwner.view.sourceArenaFNV1a != arena) {
         memset(&turnOwner, 0, sizeof(turnOwner));
@@ -551,9 +567,10 @@ static int syncOwner(void) {
         turnOwner.view.lastAttackerSpriteIndex = TURN_NO_SPRITE;
         turnOwner.view.lastMovementSpriteIndex = TURN_NO_SPRITE;
         turnOwner.view.active = 1U;
-        printf("[MONSTERTURN] READY arena=%08x ownerBytes=%u mode=probe+rollback schedule=MOVE+PLAYER_ATTACK+PASS_TURN rotation=legacy-no-turn attackFamily=stationary-cardinal-generic traceMask=%04x playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=deferred mutation=no\n",
+        printf("[MONSTERTURN] READY arena=%08x ownerBytes=%u enemies=%u mode=probe+rollback schedule=MOVE+PLAYER_ATTACK+PASS_TURN rotation=legacy-no-turn attackFamily=stationary-cardinal-generic traceMask=%04x playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=deferred mutation=no\n",
                (unsigned int)arena,
                (unsigned int)sizeof(turnOwner),
+               (unsigned int)topology->enemyCount,
                (unsigned int)TURN_TRACE_MASK);
     }
     return 1;
@@ -568,15 +585,25 @@ static int findCandidate(const EspPlayerViewState* playerView,
     uint32_t specialDeferred = 0U;
     uint32_t i;
 
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+
     if (outCandidate != NULL) memset(outCandidate, 0, sizeof(*outCandidate));
     if (outCandidates != NULL) *outCandidates = 0U;
     if (outSpecialDeferred != NULL) *outSpecialDeferred = 0U;
     if (playerView == NULL || outCandidate == NULL || outCandidates == NULL ||
-        outSpecialDeferred == NULL || monsters == NULL || monsters->records == NULL ||
+        outSpecialDeferred == NULL || topology == NULL ||
         playerView->viewX != playerView->destX ||
         playerView->viewY != playerView->destY ||
         !centeredCoordinate(playerView->destX) ||
         !centeredCoordinate(playerView->destY)) {
+        return 0;
+    }
+
+    if (topology->enemyCount == 0U) {
+        return 1;
+    }
+    if (monsters == NULL || monsters->records == NULL ||
+        monsters->count != topology->enemyCount) {
         return 0;
     }
 

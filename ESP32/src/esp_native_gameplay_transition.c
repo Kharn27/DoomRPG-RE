@@ -27,9 +27,19 @@
 
 #define TRANSITION_NAME_CAPACITY ESP_MAP_SAVE_ROUTE_NAME_CAPACITY
 #define TRANSITION_MIN_ELIGIBLE 2U
-#define TRANSITION_MAX_ELIGIBLE 3U
+#define TRANSITION_MAX_ELIGIBLE \
+    (2U + ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS)
+
+typedef struct EspNativeGameplayTransitionDoorScratch_s {
+    EspMapLineDoorResult preview[ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS];
+    EspMapLineDoorResult applied[ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS];
+    uint8_t offsets[ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS];
+    uint8_t removedBefore[ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS];
+    uint8_t removedAfter[ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS];
+} EspNativeGameplayTransitionDoorScratch;
 
 static EspNativeGameplayTransitionState transitionState;
+static EspNativeGameplayTransitionDoorScratch transitionDoorScratch;
 static uint8_t junctionExitCensusDone;
 
 void __real_EspNativeGameplayInput_reset(void);
@@ -58,13 +68,49 @@ static int descriptorForSelect(const EspNativeGameplaySelectResult* select,
            outDescriptor->commandCount == select->commandCount;
 }
 
+static int isTransitionDoorOpcode(uint8_t codeId) {
+    return codeId == ESP_MAP_OPCODE_MOVELINE ||
+           codeId == ESP_MAP_OPCODE_OPENLINE ||
+           codeId == ESP_MAP_OPCODE_CLOSELINE ||
+           codeId == ESP_MAP_OPCODE_MOVELINE2;
+}
+
+static int rollbackTransitionDoorPrefix(uint8_t count) {
+    int i;
+    int ok = 1;
+
+    if (count > ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS) return 0;
+    for (i = (int)count - 1; i >= 0; --i) {
+        EspMapLineDoorResult* applied = &transitionDoorScratch.applied[i];
+        const EspMapLineDoorResult* preview = &transitionDoorScratch.preview[i];
+        if (transitionDoorScratch.removedAfter[i] !=
+            transitionDoorScratch.removedBefore[i]) {
+            if (!EspMapScriptState_setCommandRemoved(
+                    preview->globalCommandIndex,
+                    transitionDoorScratch.removedBefore[i])) {
+                ok = 0;
+            }
+            transitionDoorScratch.removedAfter[i] =
+                transitionDoorScratch.removedBefore[i];
+        }
+        if (applied->mutated != 0U &&
+            !EspMapLineState_setOpen(preview->lineIndex,
+                                     preview->openBefore)) {
+            ok = 0;
+        }
+    }
+    if (!EspNativeDoorAnimator_validateLineState()) ok = 0;
+    return ok;
+}
+
 static EspNativeGameplayTransitionStatus findTransitionCommands(
     const EspNativeGameplaySelectResult* select,
     const EspMapEventDescriptor* descriptor,
     uint8_t* outSaveOffset,
     uint8_t* outChangeOffset,
     uint8_t* outDoorOffset,
-    uint8_t* outDoorPresent,
+    uint8_t* outDoorOffsets,
+    uint8_t* outDoorCount,
     uint8_t* outEligibleCount) {
     EspMapEventFilterPlan plan;
     EspMapEventCommandFilterResult filtered;
@@ -73,17 +119,21 @@ static EspNativeGameplayTransitionStatus findTransitionCommands(
     uint8_t saveOffset = 0U;
     uint8_t changeOffset = 0U;
     uint8_t doorOffset = 0U;
-    uint8_t doorPresent = 0U;
+    uint8_t doorCount = 0U;
 
     if (outSaveOffset != NULL) *outSaveOffset = 0U;
     if (outChangeOffset != NULL) *outChangeOffset = 0U;
     if (outDoorOffset != NULL) *outDoorOffset = 0U;
-    if (outDoorPresent != NULL) *outDoorPresent = 0U;
+    if (outDoorOffsets != NULL) {
+        memset(outDoorOffsets, 0,
+               ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS);
+    }
+    if (outDoorCount != NULL) *outDoorCount = 0U;
     if (outEligibleCount != NULL) *outEligibleCount = 0U;
     if (select == NULL || descriptor == NULL || outSaveOffset == NULL ||
         outChangeOffset == NULL || outDoorOffset == NULL ||
-        outDoorPresent == NULL || outEligibleCount == NULL ||
-        !EspMapScriptState_isReady() ||
+        outDoorOffsets == NULL || outDoorCount == NULL ||
+        outEligibleCount == NULL || !EspMapScriptState_isReady() ||
         !EspMapEventFilter_prepare(descriptor, select->currentState, 0U,
                                    ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS,
                                    0U, &plan)) {
@@ -116,21 +166,17 @@ static EspNativeGameplayTransitionStatus findTransitionCommands(
             }
             changeOffset = (uint8_t)offset;
         }
-        else if (eligible == 3U) {
-            /*
-             * The real Entrance exit event is SAVEGAME -> CHANGEMAP ->
-             * OPENLINE. Legacy executes all three commands in event order;
-             * Game_changeMap() is consumed only after the transition door has
-             * opened. Own only that exact one-door suffix here.
-             */
-            if (filtered.codeId != ESP_MAP_OPCODE_OPENLINE) {
+        else {
+            if (!isTransitionDoorOpcode(filtered.codeId) ||
+                doorCount >= ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS) {
                 *outEligibleCount = eligible;
                 return ESP_NATIVE_GAMEPLAY_TRANSITION_COMPLEX;
             }
-            doorOffset = (uint8_t)offset;
-            doorPresent = 1U;
+            if (doorCount == 0U) doorOffset = (uint8_t)offset;
+            outDoorOffsets[doorCount++] = (uint8_t)offset;
         }
-        else {
+
+        if (eligible > TRANSITION_MAX_ELIGIBLE) {
             *outEligibleCount = eligible;
             return ESP_NATIVE_GAMEPLAY_TRANSITION_COMPLEX;
         }
@@ -146,7 +192,7 @@ static EspNativeGameplayTransitionStatus findTransitionCommands(
     *outSaveOffset = saveOffset;
     *outChangeOffset = changeOffset;
     *outDoorOffset = doorOffset;
-    *outDoorPresent = doorPresent;
+    *outDoorCount = doorCount;
     return ESP_NATIVE_GAMEPLAY_TRANSITION_NOT_READY;
 }
 
@@ -156,11 +202,22 @@ void EspNativeGameplayTransition_reset(void) {
 }
 
 int EspNativeGameplayTransition_isWaitingDoor(void) {
-    return transitionState.active == 1U &&
-           transitionState.waitingDoor == 1U &&
-           transitionState.waitingStats == 0U &&
-           transitionState.committed.phase ==
-               ESP_MAP_COMMITTED_TRANSITION_PHASE_WAIT_STATS;
+    if (transitionState.active != 1U ||
+        transitionState.waitingDoor != 1U ||
+        transitionState.waitingStats != 0U) {
+        return 0;
+    }
+
+    /*
+     * A transition door can precede either a stats pause (showStats=1) or a
+     * direct handoff (showStats=0). The committed phase already reflects that
+     * semantic split before the visual door suffix is drained.
+     */
+    return transitionState.changeResult.showStats != 0U
+               ? transitionState.committed.phase ==
+                     ESP_MAP_COMMITTED_TRANSITION_PHASE_WAIT_STATS
+               : transitionState.committed.phase ==
+                     ESP_MAP_COMMITTED_TRANSITION_PHASE_READY;
 }
 
 int EspNativeGameplayTransition_isWaitingStats(void) {
@@ -419,14 +476,10 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
     uint8_t saveOffset = 0U;
     uint8_t changeOffset = 0U;
     uint8_t doorOffset = 0U;
-    uint8_t doorPresent = 0U;
-    uint8_t doorRemovedBefore = 0U;
-    uint8_t doorRemovedAfter = 0U;
+    uint8_t doorCount = 0U;
     uint8_t eligibleCount = 0U;
-    EspMapLineDoorResult doorPreview;
-    EspMapLineDoorResult doorApplied;
-    EspMapLineDoorStatus doorStatus;
     uint8_t targetMapId = 0U;
+    uint8_t i;
     EspNativeGameplayTransitionStatus matchStatus;
     EspMapSaveRouteStatus saveStatus;
     EspMapChangeMapStatus changeStatus;
@@ -441,7 +494,8 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
         return ESP_NATIVE_GAMEPLAY_TRANSITION_INVALID;
     }
     if (transitionState.active != 0U) {
-        return EspNativeGameplayTransition_isWaitingStats()
+        return (EspNativeGameplayTransition_isWaitingStats() ||
+                transitionState.directReady != 0U)
                    ? ESP_NATIVE_GAMEPLAY_TRANSITION_NOT_READY
                    : ESP_NATIVE_GAMEPLAY_TRANSITION_INVALID;
     }
@@ -460,12 +514,10 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
         return ESP_NATIVE_GAMEPLAY_TRANSITION_INVALID;
     }
 
-    memset(&doorPreview, 0, sizeof(doorPreview));
-    memset(&doorApplied, 0, sizeof(doorApplied));
-    matchStatus = findTransitionCommands(&select, &descriptor,
-                                         &saveOffset, &changeOffset,
-                                         &doorOffset, &doorPresent,
-                                         &eligibleCount);
+    memset(&transitionDoorScratch, 0, sizeof(transitionDoorScratch));
+    matchStatus = findTransitionCommands(
+        &select, &descriptor, &saveOffset, &changeOffset, &doorOffset,
+        transitionDoorScratch.offsets, &doorCount, &eligibleCount);
     outResult->sequence = intent->sequence;
     outResult->frontTile = select.frontTile;
     outResult->eventIndex = select.eventIndex;
@@ -473,7 +525,8 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
     outResult->saveCommandOffset = saveOffset;
     outResult->changeCommandOffset = changeOffset;
     outResult->doorCommandOffset = doorOffset;
-    outResult->doorReady = doorPresent;
+    outResult->doorCount = doorCount;
+    outResult->doorReady = doorCount != 0U ? 1U : 0U;
     if (matchStatus != ESP_NATIVE_GAMEPLAY_TRANSITION_NOT_READY) {
         return matchStatus;
     }
@@ -490,18 +543,32 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
         return ESP_NATIVE_GAMEPLAY_TRANSITION_INVALID;
     }
 
-    if (doorPresent != 0U) {
+    if (doorCount != 0U && EspNativeDoorAnimator_hasPendingFrames()) {
+        return ESP_NATIVE_GAMEPLAY_TRANSITION_COMPLEX;
+    }
+    for (i = 0U; i < doorCount; ++i) {
+        EspMapLineDoorStatus doorStatus;
+        uint8_t j;
         doorStatus = EspMapLineState_previewDoorCommand(
-            &descriptor, doorOffset, &doorPreview);
+            &descriptor, transitionDoorScratch.offsets[i],
+            &transitionDoorScratch.preview[i]);
         if (doorStatus != ESP_MAP_LINE_DOOR_OK ||
-            doorPreview.codeId != ESP_MAP_OPCODE_OPENLINE ||
-            doorPreview.mutated != 0U ||
+            transitionDoorScratch.preview[i].mutated != 0U ||
+            !isTransitionDoorOpcode(
+                transitionDoorScratch.preview[i].codeId) ||
             !EspMapScriptState_isCommandRemoved(
-                doorPreview.globalCommandIndex, &doorRemovedBefore) ||
-            EspNativeDoorAnimator_hasPendingFrames()) {
+                transitionDoorScratch.preview[i].globalCommandIndex,
+                &transitionDoorScratch.removedBefore[i])) {
             return ESP_NATIVE_GAMEPLAY_TRANSITION_COMPLEX;
         }
-        doorRemovedAfter = doorRemovedBefore;
+        for (j = 0U; j < i; ++j) {
+            if (transitionDoorScratch.preview[j].lineIndex ==
+                transitionDoorScratch.preview[i].lineIndex) {
+                return ESP_NATIVE_GAMEPLAY_TRANSITION_COMPLEX;
+            }
+        }
+        transitionDoorScratch.removedAfter[i] =
+            transitionDoorScratch.removedBefore[i];
     }
 
     memset(&saveRoute, 0, sizeof(saveRoute));
@@ -542,20 +609,18 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
                                       changeName, sizeof(changeName),
                                       &changeNameLength);
     EspAssetPack_close();
+    /*
+     * Legacy EV_SAVEGAME and EV_CHANGEMAP carry independent map strings.
+     * SAVEGAME prepares the future save/return route (newMapName/newDest*),
+     * while CHANGEMAP selects the map loaded now. Entrance -> Junction happened
+     * to use the same resource for both, but hub -> sector transitions do not.
+     */
     if (stringStatus != ESP_MAP_STRING_READ_OK ||
         changeNameLength >= sizeof(changeName) ||
-        saveRoute.mapNameLength != changeNameLength ||
-        strcmp(saveRoute.mapName, changeName) != 0 ||
         !EspMapCatalog_idForName(changeName, &targetMapId) ||
         !EspMapCatalog_isValidId(targetMapId) ||
         targetMapId == view->targetMapId) {
         return ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED;
-    }
-
-    /* Direct-load transitions are intentionally left for the destructive
-     * handoff milestone. The first real Entrance exit is a show-stats route. */
-    if (changeResult.showStats != 1U) {
-        return ESP_NATIVE_GAMEPLAY_TRANSITION_UNSUPPORTED;
     }
 
     preflightStatus = EspMapTransitionPreflight_run(targetMapId, &preflight);
@@ -571,50 +636,62 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
     menuStatus = EspStatsMenuIntent_prepare(
         targetMapId, changeResult.showStats, &statsIntent);
     if (statsStatus != ESP_MAP_LEVEL_EXIT_STATS_OK ||
-        menuStatus != ESP_STATS_MENU_INTENT_OK ||
-        statsIntent.active != 1U || statsIntent.consumePending != 1U) {
+        (changeResult.showStats != 0U
+             ? (menuStatus != ESP_STATS_MENU_INTENT_OK ||
+                statsIntent.active != 1U ||
+                statsIntent.consumePending != 1U)
+             : (menuStatus != ESP_STATS_MENU_INTENT_NOT_APPLICABLE ||
+                statsIntent.active != 0U ||
+                statsIntent.consumePending != 0U ||
+                statsIntent.menuKind != ESP_STATS_MENU_KIND_NONE))) {
         return ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED;
     }
 
     committedStatus = EspMapCommittedTransition_begin(
         &committed, view->targetMapId, &pendingChange, &changeResult,
         &statsIntent, &preflight);
-    if (committedStatus != ESP_MAP_COMMITTED_TRANSITION_WAITING_STATS ||
-        committed.phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_WAIT_STATS ||
+    if ((changeResult.showStats != 0U
+             ? committedStatus != ESP_MAP_COMMITTED_TRANSITION_WAITING_STATS ||
+                   committed.phase !=
+                       ESP_MAP_COMMITTED_TRANSITION_PHASE_WAIT_STATS
+             : committedStatus != ESP_MAP_COMMITTED_TRANSITION_READY ||
+                   committed.phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_READY) ||
         committed.pendingConsumed != 1U || committed.committed != 0U ||
         EspMapChangeMap_isActive(&pendingChange) || EspAssetPack_isOpen() ||
         !EspMapResidentLifecycle_isReady()) {
         return ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED;
     }
 
-    if (doorPresent != 0U) {
-        doorStatus = EspMapLineState_applyDoorCommand(
-            &descriptor, doorOffset, &doorApplied);
+    for (i = 0U; i < doorCount; ++i) {
+        EspMapLineDoorStatus doorStatus =
+            EspMapLineState_applyDoorCommand(
+                &descriptor, transitionDoorScratch.offsets[i],
+                &transitionDoorScratch.applied[i]);
+        const EspMapLineDoorResult* preview =
+            &transitionDoorScratch.preview[i];
+        EspMapLineDoorResult* applied = &transitionDoorScratch.applied[i];
+
         if (doorStatus != ESP_MAP_LINE_DOOR_OK ||
-            doorApplied.mutated != 1U ||
-            doorApplied.codeId != ESP_MAP_OPCODE_OPENLINE ||
-            doorApplied.lineIndex != doorPreview.lineIndex ||
-            doorApplied.globalCommandIndex != doorPreview.globalCommandIndex ||
-            doorApplied.openBefore != doorPreview.openBefore ||
-            doorApplied.openAfter != doorPreview.openAfter) {
-            if (doorApplied.mutated != 0U) {
-                (void)EspMapLineState_setOpen(
-                    doorApplied.lineIndex, doorApplied.openBefore);
-                (void)EspNativeDoorAnimator_validateLineState();
+            applied->mutated != 1U ||
+            applied->codeId != preview->codeId ||
+            applied->lineIndex != preview->lineIndex ||
+            applied->globalCommandIndex != preview->globalCommandIndex ||
+            applied->openBefore != preview->openBefore ||
+            applied->openAfter != preview->openAfter) {
+            if (!rollbackTransitionDoorPrefix((uint8_t)(i + 1U))) {
+                return ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED;
             }
             return ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED;
         }
 
-        if (doorApplied.removeCommandIfHandled != 0U &&
-            doorRemovedBefore == 0U) {
+        if (applied->removeCommandIfHandled != 0U &&
+            transitionDoorScratch.removedBefore[i] == 0U) {
             if (!EspMapScriptState_setCommandRemoved(
-                    doorApplied.globalCommandIndex, 1U)) {
-                (void)EspMapLineState_setOpen(
-                    doorApplied.lineIndex, doorApplied.openBefore);
-                (void)EspNativeDoorAnimator_validateLineState();
+                    applied->globalCommandIndex, 1U)) {
+                (void)rollbackTransitionDoorPrefix((uint8_t)(i + 1U));
                 return ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED;
             }
-            doorRemovedAfter = 1U;
+            transitionDoorScratch.removedAfter[i] = 1U;
         }
     }
 
@@ -631,12 +708,25 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
     next.saveCommandOffset = saveOffset;
     next.changeCommandOffset = changeOffset;
     next.doorCommandOffset = doorOffset;
-    next.doorRemovedBefore = doorRemovedBefore;
-    next.doorRemovedAfter = doorRemovedAfter;
-    next.waitingDoor = doorPresent;
-    if (doorPresent != 0U) next.doorResult = doorApplied;
+    next.doorCount = doorCount;
+    for (i = 0U; i < doorCount; ++i) {
+        next.doorResults[i] = transitionDoorScratch.applied[i];
+        next.doorRemovedBeforeAll[i] =
+            transitionDoorScratch.removedBefore[i];
+        next.doorRemovedAfterAll[i] =
+            transitionDoorScratch.removedAfter[i];
+    }
+    if (doorCount != 0U) {
+        next.doorResult = next.doorResults[0];
+        next.doorRemovedBefore = next.doorRemovedBeforeAll[0];
+        next.doorRemovedAfter = next.doorRemovedAfterAll[0];
+    }
+    next.waitingDoor = doorCount != 0U ? 1U : 0U;
     next.active = 1U;
-    next.waitingStats = doorPresent == 0U ? 1U : 0U;
+    next.waitingStats =
+        (doorCount == 0U && changeResult.showStats != 0U) ? 1U : 0U;
+    next.directReady =
+        (doorCount == 0U && changeResult.showStats == 0U) ? 1U : 0U;
     transitionState = next;
 
     outResult->targetMapId = targetMapId;
@@ -664,78 +754,108 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
            (unsigned int)preflight.sourceCrc32,
            (unsigned int)preflight.sourceFNV1a,
            (unsigned int)changeResult.removeCommandIfHandled);
-    printf("[NATIVECHANGEMAP] STATS sourceMap=%u sourceGameplayLoad=%u secrets=%u/%u monsters=%u/%u completionBit=%08x effects=%02x playerExitApply=deferred reason=authoritative-turn-counter-not-owned\n",
+    printf("[NATIVECHANGEMAP] STATS sourceMap=%u sourceGameplayLoad=%u showStats=%u secrets=%u/%u monsters=%u/%u completionBit=%08x effects=%02x playerExitApply=deferred reason=authoritative-turn-counter-not-owned\n",
            (unsigned int)view->targetMapId,
            (unsigned int)view->gameplayLoadMapId,
+           (unsigned int)changeResult.showStats,
            (unsigned int)levelStats.secretsFound,
            (unsigned int)levelStats.secretsTotal,
            (unsigned int)levelStats.monstersDead,
            (unsigned int)levelStats.monstersTotal,
            (unsigned int)levelStats.completionLevelBit,
            (unsigned int)levelStats.effectFlags);
-    if (doorPresent != 0U) {
-        printf("[NATIVECHANGEMAP] WAIT_DOOR phase=%u menuKind=%u cmd=%u line=%u open=%u->%u removed=%u->%u animation=bounded-4frame sourceResident=%u packOpen=%u statsAck=no\n",
+
+    if (doorCount != 0U) {
+        const EspMapLineDoorResult* first = &next.doorResults[0];
+        printf("[NATIVECHANGEMAP] WAIT_DOOR phase=%u menuKind=%u doors=%u firstCmd=%u firstLine=%u open=%u->%u removed=%u->%u animation=bounded-4frame sourceResident=%u packOpen=%u statsAck=no direct=%u\n",
                (unsigned int)committed.phase,
                (unsigned int)statsIntent.menuKind,
-               (unsigned int)doorOffset,
-               (unsigned int)doorApplied.lineIndex,
-               (unsigned int)doorApplied.openBefore,
-               (unsigned int)doorApplied.openAfter,
-               (unsigned int)doorRemovedBefore,
-               (unsigned int)doorRemovedAfter,
+               (unsigned int)doorCount,
+               (unsigned int)first->sourceCommandOffset,
+               (unsigned int)first->lineIndex,
+               (unsigned int)first->openBefore,
+               (unsigned int)first->openAfter,
+               (unsigned int)next.doorRemovedBeforeAll[0],
+               (unsigned int)next.doorRemovedAfterAll[0],
                (unsigned int)EspMapResidentLifecycle_isReady(),
-               (unsigned int)EspAssetPack_isOpen());
+               (unsigned int)EspAssetPack_isOpen(),
+               (unsigned int)(changeResult.showStats == 0U));
         return ESP_NATIVE_GAMEPLAY_TRANSITION_DOOR_READY;
     }
 
-    printf("[NATIVECHANGEMAP] WAIT_STATS phase=%u menuKind=%u pendingConsumed=%u sourceResident=%u packOpen=%u destructiveHandoff=no statsAck=no\n",
+    if (changeResult.showStats != 0U) {
+        printf("[NATIVECHANGEMAP] WAIT_STATS phase=%u menuKind=%u pendingConsumed=%u sourceResident=%u packOpen=%u destructiveHandoff=no statsAck=no\n",
+               (unsigned int)committed.phase,
+               (unsigned int)statsIntent.menuKind,
+               (unsigned int)committed.pendingConsumed,
+               (unsigned int)EspMapResidentLifecycle_isReady(),
+               (unsigned int)EspAssetPack_isOpen());
+        return ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS;
+    }
+
+    printf("[NATIVECHANGEMAP] HANDOFF-READY phase=%u targetMap=%u pendingConsumed=%u sourceResident=%u packOpen=%u showStats=0 service=next-tick\n",
            (unsigned int)committed.phase,
-           (unsigned int)statsIntent.menuKind,
+           (unsigned int)targetMapId,
            (unsigned int)committed.pendingConsumed,
            (unsigned int)EspMapResidentLifecycle_isReady(),
            (unsigned int)EspAssetPack_isOpen());
-    return ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS;
+    return ESP_NATIVE_GAMEPLAY_TRANSITION_HANDOFF_READY;
 }
 
 EspNativeGameplayTransitionStatus EspNativeGameplayTransition_finishDoor(
     uint32_t sequence,
     uint16_t eventIndex,
     uint16_t lineIndex) {
-    uint8_t openNow;
-    uint8_t removedNow;
+    uint8_t i;
 
     if (!EspNativeGameplayTransition_isWaitingDoor() ||
         transitionState.sequence != sequence ||
         transitionState.eventIndex != eventIndex ||
-        transitionState.doorResult.lineIndex != lineIndex ||
-        transitionState.doorResult.mutated != 1U ||
-        transitionState.doorResult.codeId != ESP_MAP_OPCODE_OPENLINE ||
-        EspNativeDoorAnimator_hasPendingFrames() ||
-        !EspMapLineState_getOpen(lineIndex, &openNow) ||
-        !EspMapScriptState_isCommandRemoved(
-            transitionState.doorResult.globalCommandIndex, &removedNow) ||
-        openNow != transitionState.doorResult.openAfter ||
-        removedNow != transitionState.doorRemovedAfter) {
+        transitionState.doorCount == 0U ||
+        transitionState.doorCount > ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS ||
+        transitionState.doorResults[0].lineIndex != lineIndex ||
+        EspNativeDoorAnimator_hasPendingFrames()) {
         return ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED;
     }
 
+    for (i = 0U; i < transitionState.doorCount; ++i) {
+        uint8_t openNow;
+        uint8_t removedNow;
+        const EspMapLineDoorResult* door = &transitionState.doorResults[i];
+        if (door->mutated != 1U ||
+            !isTransitionDoorOpcode(door->codeId) ||
+            !EspMapLineState_getOpen(door->lineIndex, &openNow) ||
+            !EspMapScriptState_isCommandRemoved(
+                door->globalCommandIndex, &removedNow) ||
+            openNow != door->openAfter ||
+            removedNow != transitionState.doorRemovedAfterAll[i]) {
+            return ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED;
+        }
+    }
+
     transitionState.waitingDoor = 0U;
-    transitionState.waitingStats = 1U;
-    printf("[NATIVECHANGEMAP] DOOR-COMPLETE seq=%u event=%u line=%u open=%u phase=WAIT_STATS sourceResident=%u statsPresentation=native-pending-arm\n",
+    if (transitionState.changeResult.showStats != 0U) {
+        transitionState.waitingStats = 1U;
+        transitionState.directReady = 0U;
+        printf("[NATIVECHANGEMAP] DOOR-COMPLETE seq=%u event=%u doors=%u firstLine=%u phase=WAIT_STATS sourceResident=%u statsPresentation=native-pending-arm\n",
+               (unsigned int)sequence,
+               (unsigned int)eventIndex,
+               (unsigned int)transitionState.doorCount,
+               (unsigned int)lineIndex,
+               (unsigned int)EspMapResidentLifecycle_isReady());
+        PlatformInput_setTapCallback(NULL);
+        return ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS;
+    }
+
+    transitionState.waitingStats = 0U;
+    transitionState.directReady = 1U;
+    printf("[NATIVECHANGEMAP] DOOR-COMPLETE seq=%u event=%u doors=%u firstLine=%u phase=HANDOFF_READY sourceResident=%u showStats=0 service=next-tick\n",
            (unsigned int)sequence,
            (unsigned int)eventIndex,
+           (unsigned int)transitionState.doorCount,
            (unsigned int)lineIndex,
-           (unsigned int)openNow,
            (unsigned int)EspMapResidentLifecycle_isReady());
-
-    /*
-     * The platform NULL-callback wrapper recognizes WAIT_STATS and hands
-     * framebuffer/input ownership to the bounded native level-complete
-     * presenter. Its one tap advances into the loading presentation without
-     * changing this transition ownership boundary.
-     */
-    PlatformInput_setTapCallback(NULL);
-    return ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS;
+    return ESP_NATIVE_GAMEPLAY_TRANSITION_HANDOFF_READY;
 }
 
 int EspNativeGameplayTransition_abortDoor(
@@ -745,7 +865,8 @@ int EspNativeGameplayTransition_abortDoor(
     if (!EspNativeGameplayTransition_isWaitingDoor() ||
         transitionState.sequence != sequence ||
         transitionState.eventIndex != eventIndex ||
-        transitionState.doorResult.lineIndex != lineIndex) {
+        transitionState.doorCount == 0U ||
+        transitionState.doorResults[0].lineIndex != lineIndex) {
         return 0;
     }
     memset(&transitionState, 0, sizeof(transitionState));
@@ -763,6 +884,7 @@ const char* EspNativeGameplayTransition_statusName(
     case ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED: return "FAILED";
     case ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS: return "WAIT_STATS";
     case ESP_NATIVE_GAMEPLAY_TRANSITION_DOOR_READY: return "DOOR_READY";
+    case ESP_NATIVE_GAMEPLAY_TRANSITION_HANDOFF_READY: return "HANDOFF_READY";
     default: return "UNKNOWN";
     }
 }
@@ -795,52 +917,63 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     if (status == ESP_NATIVE_GAMEPLAY_TRANSITION_DOOR_READY) {
         const EspNativeGameplayTransitionState* staged =
             EspNativeGameplayTransition_view();
-        const EspMapLineDoorResult* door;
+        const EspMapLineDoorResult* first;
+        uint8_t i;
 
-        if (staged == NULL || !EspNativeGameplayTransition_isWaitingDoor()) {
+        if (staged == NULL || !EspNativeGameplayTransition_isWaitingDoor() ||
+            staged->doorCount == 0U ||
+            staged->doorCount > ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS) {
             return ESP_NATIVE_GAMEPLAY_ACTION_NOT_READY;
         }
-        door = &staged->doorResult;
+        first = &staged->doorResults[0];
         memset(outResult, 0, sizeof(*outResult));
         outResult->sequence = transition.sequence;
         outResult->frontTile = transition.frontTile;
         outResult->eventIndex = transition.eventIndex;
-        outResult->globalCommandIndex = door->globalCommandIndex;
-        outResult->lineIndex = door->lineIndex;
-        outResult->soundId = door->soundId;
-        outResult->commandOffset = door->sourceCommandOffset;
-        outResult->codeId = door->codeId;
+        outResult->globalCommandIndex = first->globalCommandIndex;
+        outResult->lineIndex = first->lineIndex;
+        outResult->soundId = first->soundId;
+        outResult->commandOffset = first->sourceCommandOffset;
+        outResult->codeId = first->codeId;
         outResult->eligibleCount = transition.eligibleCount;
-        outResult->openBefore = door->openBefore;
-        outResult->openAfter = door->openAfter;
-        outResult->locked = door->locked;
+        outResult->openBefore = first->openBefore;
+        outResult->openAfter = first->openAfter;
+        outResult->locked = first->locked;
         outResult->handled = 1U;
         outResult->mutated = 1U;
-        outResult->effectFlags = door->effectFlags;
-        outResult->removedBefore = staged->doorRemovedBefore;
-        outResult->removedAfter = staged->doorRemovedAfter;
-        outResult->removeIfHandled = door->removeCommandIfHandled;
+        outResult->effectFlags = first->effectFlags;
+        outResult->removedBefore = staged->doorRemovedBeforeAll[0];
+        outResult->removedAfter = staged->doorRemovedAfterAll[0];
+        outResult->removeIfHandled = first->removeCommandIfHandled;
         outResult->rollbackAvailable = 1U;
-        outResult->doorCount = 1U;
-        outResult->doors[0].globalCommandIndex = door->globalCommandIndex;
-        outResult->doors[0].lineIndex = door->lineIndex;
-        outResult->doors[0].soundId = door->soundId;
-        outResult->doors[0].commandOffset = door->sourceCommandOffset;
-        outResult->doors[0].codeId = door->codeId;
-        outResult->doors[0].openBefore = door->openBefore;
-        outResult->doors[0].openAfter = door->openAfter;
-        outResult->doors[0].locked = door->locked;
-        outResult->doors[0].effectFlags = door->effectFlags;
-        outResult->doors[0].removedBefore = staged->doorRemovedBefore;
-        outResult->doors[0].removedAfter = staged->doorRemovedAfter;
-        outResult->doors[0].removeIfHandled = door->removeCommandIfHandled;
-        printf("[NATIVECHANGEMAP] DOOR-READY seq=%u event=%u cmd=%u line=%u open=%u->%u transitionHandled=yes render=shared-door-batch\n",
+        outResult->doorCount = staged->doorCount;
+        for (i = 0U; i < staged->doorCount; ++i) {
+            const EspMapLineDoorResult* door = &staged->doorResults[i];
+            outResult->doors[i].globalCommandIndex =
+                door->globalCommandIndex;
+            outResult->doors[i].lineIndex = door->lineIndex;
+            outResult->doors[i].soundId = door->soundId;
+            outResult->doors[i].commandOffset = door->sourceCommandOffset;
+            outResult->doors[i].codeId = door->codeId;
+            outResult->doors[i].openBefore = door->openBefore;
+            outResult->doors[i].openAfter = door->openAfter;
+            outResult->doors[i].locked = door->locked;
+            outResult->doors[i].effectFlags = door->effectFlags;
+            outResult->doors[i].removedBefore =
+                staged->doorRemovedBeforeAll[i];
+            outResult->doors[i].removedAfter =
+                staged->doorRemovedAfterAll[i];
+            outResult->doors[i].removeIfHandled =
+                door->removeCommandIfHandled;
+        }
+        printf("[NATIVECHANGEMAP] DOOR-READY seq=%u event=%u doors=%u firstCmd=%u firstLine=%u open=%u->%u transitionHandled=yes render=shared-door-batch\n",
                (unsigned int)transition.sequence,
                (unsigned int)transition.eventIndex,
-               (unsigned int)door->sourceCommandOffset,
-               (unsigned int)door->lineIndex,
-               (unsigned int)door->openBefore,
-               (unsigned int)door->openAfter);
+               (unsigned int)staged->doorCount,
+               (unsigned int)first->sourceCommandOffset,
+               (unsigned int)first->lineIndex,
+               (unsigned int)first->openBefore,
+               (unsigned int)first->openAfter);
         return ESP_NATIVE_GAMEPLAY_ACTION_DOOR_OK;
     }
 
@@ -856,6 +989,20 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
         printf("[NATIVECHANGEMAP] INPUT-PAUSE seq=%u state=WAIT_STATS callback=NULL worldMutation=no sourceResident=yes\n",
                (unsigned int)transition.sequence);
         printf("[NATIVECHANGEMAP] COMPAT residentSelectStatus=UNSUPPORTED_EVENT reason=transition-ui-owns-wait-stats transitionHandled=yes\n");
+        return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
+    }
+
+    if (status == ESP_NATIVE_GAMEPLAY_TRANSITION_HANDOFF_READY) {
+        memset(outResult, 0, sizeof(*outResult));
+        outResult->sequence = transition.sequence;
+        outResult->frontTile = transition.frontTile;
+        outResult->eventIndex = transition.eventIndex;
+        outResult->commandOffset = transition.changeCommandOffset;
+        outResult->codeId = ESP_MAP_OPCODE_CHANGE_MAP;
+        outResult->eligibleCount = transition.eligibleCount;
+        printf("[NATIVECHANGEMAP] DIRECT-HANDOFF seq=%u targetMap=%u showStats=0 owner=staged service=next-tick\n",
+               (unsigned int)transition.sequence,
+               (unsigned int)transition.targetMapId);
         return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
     }
 

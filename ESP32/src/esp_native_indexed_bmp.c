@@ -16,13 +16,13 @@
 #endif
 
 /*
- * Permanent bounded scratch for one indexed-BMP blit chunk. Native rendering
- * and UI presentation are serialized through the gameplay service, so this
- * module does not need a second per-call heap/stack owner. Keeping the chunk at
- * 1 KiB also matches the resident PAK small-range tier: compact glyph bands such
- * as Doom's 9x12 font become one exact cached range instead of twelve row reads.
+ * Permanent bounded scratch shared by indexed-BMP metadata decode and blits.
+ * Native rendering/UI presentation is serialized through the gameplay service,
+ * so palette decode and row blitting never overlap. Reusing this exact 1 KiB
+ * owner keeps the 256-entry BGRA palette off loopTask stack without adding RAM.
+ * The same size still matches the resident PAK small-range tier for glyph bands.
  */
-static uint8_t blitRows[BMP_BLIT_RANGE_BYTES];
+static uint8_t indexedBmpScratch[BMP_BLIT_RANGE_BYTES];
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -100,8 +100,6 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
     EspNativeIndexedBmp* outBmp,
     EspNativeIndexedBmpStats* stats) {
     uint8_t header[BMP_HEADER_BYTES];
-    uint8_t paletteRaw[ESP_NATIVE_INDEXED_BMP_MAX_PALETTE *
-                       BMP_PALETTE_ENTRY_BYTES];
     EspAssetPackEntry entry;
     uint32_t dibSize;
     int32_t width;
@@ -174,7 +172,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
         return ESP_NATIVE_INDEXED_BMP_UNSUPPORTED;
     }
 
-    if (!readRange(&entry, paletteOffset, paletteRaw, paletteBytes, stats)) {
+    if (!readRange(&entry, paletteOffset, indexedBmpScratch, paletteBytes, stats)) {
         return ESP_NATIVE_INDEXED_BMP_READ_FAILED;
     }
 
@@ -190,7 +188,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
     outBmp->topDown = signedHeight < 0 ? 1U : 0U;
 
     for (i = 0U; i < paletteCount; ++i) {
-        const uint8_t* bgra = &paletteRaw[i * BMP_PALETTE_ENTRY_BYTES];
+        const uint8_t* bgra = &indexedBmpScratch[i * BMP_PALETTE_ENTRY_BYTES];
         outBmp->paletteRgb565[i] = rgb565(bgra[2], bgra[1], bgra[0]);
     }
     return ESP_NATIVE_INDEXED_BMP_OK;
@@ -249,7 +247,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
 
         if (chunkBytes > BMP_BLIT_RANGE_BYTES ||
             !readRange(&bmp->entry, fileOffset,
-                       blitRows, chunkBytes, stats)) {
+                       indexedBmpScratch, chunkBytes, stats)) {
             return ESP_NATIVE_INDEXED_BMP_READ_FAILED;
         }
         if (stats != NULL) stats->rowsRead += chunkRows;
@@ -261,7 +259,7 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
                                      ? localY
                                      : (uint16_t)(chunkRows - 1U - localY);
             const uint8_t* row =
-                &blitRows[(uint32_t)storedRow * bmp->filePitch];
+                &indexedBmpScratch[(uint32_t)storedRow * bmp->filePitch];
             uint16_t x;
 
             if (dy < 0 || dy >= framebufferHeight) continue;

@@ -72,11 +72,11 @@ int EspPlayerFacing_isReady(void);
 const EspPlayerFacingState* EspPlayerFacing_view(void);
 
 /*
- * Resolve only the currently proven angle-64 durable checkFacingEntity path.
+ * Resolve the four exact cardinal durable checkFacingEntity paths.
  * The routine reads compact native map/topology/line state plus bounded ranges
- * of /entities.db from the ESP32 PAK for line-definition typing. It never
- * allocates, never calls legacy Game_trace(), and closes the PAK before return.
- * Invalid/unsupported input zeroes outState and performs no owner mutation.
+ * of /entities.db for line-definition typing and walks at most three tiles on
+ * one axis. It never allocates, never calls legacy Game_trace(), and closes the
+ * PAK before return. Non-cardinal/invalid input fails closed.
  */
 EspPlayerFacingStatus EspPlayerFacing_prepare(
     const EspPlayerViewState* playerView,

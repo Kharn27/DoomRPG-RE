@@ -29,14 +29,8 @@ typedef enum EspPlayerOrientationStatus_e {
  * recovered DoomCanvas_finishRotation(). The second Game_executeTile() call and
  * the final durable checkFacingEntity() are deliberately outside this owner.
  *
- * The current hardware-proven fresh-map path owns only destAngle==64. Its
- * fixed-point values are exact consequences of the legacy 16.16 sin table:
- *   viewSin   =  65536
- *   viewCos   =      0
- *   viewStepX =      0
- *   viewStepY =    -64
- * Other angles fail closed until their exact native mapping is separately
- * promoted.
+ * The four cardinal angles 0/64/128/192 use the exact legacy 16.16 basis and
+ * 64-unit movement step. Non-cardinal angles fail closed.
  */
 typedef struct EspPlayerOrientationState_s {
     int32_t viewSin;

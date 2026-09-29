@@ -55,16 +55,15 @@ EspPlayerOrientationStatus EspPlayerOrientation_prepare(
     if (!tileMatchesView(initialTile, playerView)) {
         return ESP_PLAYER_ORIENTATION_TILE_INVALID;
     }
-    if (playerView->destAngle != (int32_t)ESP_PLAYER_ORIENTATION_ANGLE_64 ||
-        playerView->viewAngle != playerView->destAngle) {
+    memset(&next, 0, sizeof(next));
+    if (playerView->destAngle < 0 || playerView->destAngle > 255 ||
+        playerView->viewAngle != playerView->destAngle ||
+        !EspPlayerView_cardinalBasis((uint8_t)playerView->destAngle,
+                                     &next.viewSin, &next.viewCos,
+                                     &next.viewStepX, &next.viewStepY,
+                                     NULL)) {
         return ESP_PLAYER_ORIENTATION_UNSUPPORTED_CONTEXT;
     }
-
-    memset(&next, 0, sizeof(next));
-    next.viewSin = (int32_t)ESP_PLAYER_ORIENTATION_FIXED_ONE;
-    next.viewCos = 0;
-    next.viewStepX = 0;
-    next.viewStepY = -(int32_t)ESP_PLAYER_ORIENTATION_STEP_SIZE;
     next.targetMapId = playerView->targetMapId;
     next.gameplayLoadMapId = playerView->gameplayLoadMapId;
     next.loadType = playerView->loadType;

@@ -792,18 +792,29 @@ bool copySdRangeToFlash(uint32_t sourceOffset,
 {
     if (!packFile || mapFlash.partition == nullptr || buffer == nullptr ||
         flashOffset > mapFlash.partition->size ||
-        length > mapFlash.partition->size - flashOffset ||
-        !packFile.seek(sourceOffset)) {
+        length > mapFlash.partition->size - flashOffset) {
         return false;
     }
 
     uint32_t remaining = length;
+    uint32_t sourceCursor = sourceOffset;
     uint32_t destinationOffset = flashOffset;
     while (remaining > 0U) {
         const uint32_t chunk =
             remaining > kMapFlashCopyBufferBytes
                 ? kMapFlashCopyBufferBytes
                 : remaining;
+
+        /*
+         * Progress presentation intentionally reads c.bmp through the same
+         * already-open SD PAK between copy chunks. That read moves packFile's
+         * cursor. Never rely on sequential File.read() position across a
+         * progress callback: re-anchor every chunk to its authoritative source
+         * offset before reading it.
+         */
+        if (!packFile.seek(sourceCursor)) {
+            return false;
+        }
         const size_t got = packFile.read(buffer, chunk);
         if (got != chunk ||
             esp_partition_write(mapFlash.partition,
@@ -815,6 +826,7 @@ bool copySdRangeToFlash(uint32_t sourceOffset,
         if (ioFNV != nullptr) {
             *ioFNV = fnv1aUpdate(*ioFNV, buffer, chunk);
         }
+        sourceCursor += chunk;
         destinationOffset += chunk;
         remaining -= chunk;
         if (progressDone != nullptr) {

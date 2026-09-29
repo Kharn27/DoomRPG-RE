@@ -1050,7 +1050,8 @@ static void serviceSelect(DoomRPG_t* doomRpg,
             EspNativeGameplayTransitionStatus transitionStatus =
                 EspNativeGameplayTransition_finishDoor(
                     intent->sequence, result.eventIndex, result.lineIndex);
-            if (transitionStatus != ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS) {
+            if (transitionStatus != ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS &&
+                transitionStatus != ESP_NATIVE_GAMEPLAY_TRANSITION_HANDOFF_READY) {
                 const int rolledBack =
                     EspNativeGameplayAction_rollbackSelect(&result);
                 const int ownerReset =

@@ -46,6 +46,13 @@ static int traceTypeEnabled(uint8_t type) {
            (ESP_PLAYER_FACING_TRACE_FLAGS & (1UL << type)) != 0U;
 }
 
+static int32_t clampTraceTile(int32_t worldCoord) {
+    int32_t tile = worldCoord >> 6;
+    if (tile < 0) return 0;
+    if (tile >= (int32_t)MAP_WIDTH) return (int32_t)MAP_WIDTH - 1;
+    return tile;
+}
+
 static int spritePlaneCrosses(const EspMapSprite* sprite,
                               int32_t srcX,
                               int32_t srcY,
@@ -152,8 +159,12 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
     uint16_t beforeOrder;
     uint16_t lineTile;
     uint32_t lineIndex;
+    int32_t tileX;
     int32_t tileY;
+    int32_t endTileX;
     int32_t endTileY;
+    int32_t tileStepX;
+    int32_t tileStepY;
     uint8_t blockFlags;
     uint8_t defFound;
     uint8_t type;
@@ -175,6 +186,32 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
     if (runtime == NULL || topology == NULL || lineState == NULL ||
         runtime->lineCount != lineState->lineCount) return ESP_PLAYER_FACING_TOPOLOGY_INVALID;
 
+    /*
+     * Legacy Game_trace() converts source/destination to tile coordinates and
+     * clamps each component independently to [0,31] before deriving pitch/count.
+     * Keep the raw world-space endpoints in state for sprite-plane crossing,
+     * but traverse only the clamped tile range.
+     */
+    tileX = clampTraceTile(state->traceStartX);
+    tileY = clampTraceTile(state->traceStartY);
+    endTileX = clampTraceTile(state->traceEndX);
+    endTileY = clampTraceTile(state->traceEndY);
+    tileStepX = endTileX > tileX ? 1 : (endTileX < tileX ? -1 : 0);
+    tileStepY = endTileY > tileY ? 1 : (endTileY < tileY ? -1 : 0);
+    if (tileStepX != 0 && tileStepY != 0) {
+        return ESP_PLAYER_FACING_UNSUPPORTED_CONTEXT;
+    }
+
+    /* Game_trace() leaves cnt==0 when both clamped endpoints are the same and
+     * therefore visits no entityDb tile. Mirror that as a valid empty trace. */
+    if (tileStepX == 0 && tileStepY == 0) {
+        state->kind = ESP_PLAYER_FACING_KIND_NONE;
+        state->legacyIdentity = 0U;
+        setNoneDefaults(state);
+        state->active = 1U;
+        return ESP_PLAYER_FACING_OK;
+    }
+
     if (EspAssetPack_isOpen() || !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
         return ESP_PLAYER_FACING_STORAGE_ERROR;
     }
@@ -185,13 +222,11 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
         goto cleanup;
     }
 
-    tileY = state->traceStartY >> 6;
-    endTileY = state->traceEndY >> 6;
     stopTrace = 0;
 
-    while (tileY >= endTileY && !stopTrace) {
+    while (!stopTrace) {
         tile = (uint16_t)((uint32_t)tileY * MAP_WIDTH +
-                          ((uint32_t)state->traceStartX >> 6U));
+                          (uint32_t)tileX);
         initialLineEntityPresent = 0;
 
         lineIndex = runtime->lineCount;
@@ -310,7 +345,9 @@ static EspPlayerFacingStatus resolveTrace(EspPlayerFacingState* state) {
             goto cleanup;
         }
 
-        --tileY;
+        if (tileX == endTileX && tileY == endTileY) break;
+        tileX += tileStepX;
+        tileY += tileStepY;
     }
 
     state->kind = ESP_PLAYER_FACING_KIND_NONE;
@@ -344,6 +381,11 @@ EspPlayerFacingStatus EspPlayerFacing_prepare(
     EspPlayerFacingState* outState) {
     EspPlayerFacingState next;
     EspPlayerFacingStatus traceStatus;
+    int32_t expectedSin;
+    int32_t expectedCos;
+    int32_t expectedStepX;
+    int32_t expectedStepY;
+    uint32_t facingFlag;
 
     if (outState != NULL) memset(outState, 0, sizeof(*outState));
     if (playerView == NULL || initialTile == NULL || orientation == NULL ||
@@ -368,11 +410,20 @@ EspPlayerFacingStatus EspPlayerFacing_prepare(
         return ESP_PLAYER_FACING_SECOND_TILE_INVALID;
     }
 
-    if (playerView->loadType != 0U || playerView->destAngle != 64 ||
-        playerView->viewAngle != 64 || orientation->destAngle != 64U ||
-        orientation->viewSin != 65536 || orientation->viewCos != 0 ||
-        orientation->viewStepX != 0 || orientation->viewStepY != -64 ||
-        secondTile->inputFlags != ESP_PLAYER_FINISH_ROTATION_TILE_FLAGS ||
+    if (playerView->loadType != 0U ||
+        playerView->destAngle < 0 || playerView->destAngle > 255 ||
+        playerView->viewAngle != playerView->destAngle ||
+        orientation->destAngle != (uint8_t)playerView->destAngle ||
+        !EspPlayerView_cardinalBasis((uint8_t)playerView->destAngle,
+                                     &expectedSin, &expectedCos,
+                                     &expectedStepX, &expectedStepY,
+                                     &facingFlag) ||
+        orientation->viewSin != expectedSin ||
+        orientation->viewCos != expectedCos ||
+        orientation->viewStepX != expectedStepX ||
+        orientation->viewStepY != expectedStepY ||
+        secondTile->inputFlags !=
+            (ESP_PLAYER_FINISH_ROTATION_TILE_BASE_FLAGS | facingFlag) ||
         playerView->destX != playerView->viewX ||
         playerView->destY != playerView->viewY) {
         return ESP_PLAYER_FACING_UNSUPPORTED_CONTEXT;
@@ -398,12 +449,18 @@ EspPlayerFacingStatus EspPlayerFacing_prepare(
     next.loadType = playerView->loadType;
     setNoneDefaults(&next);
 
-    if (next.traceStartX != next.traceEndX || next.traceStartY <= next.traceEndY ||
-        next.traceStartX < 0 || next.traceStartY < 0 || next.traceEndY < 0 ||
-        next.traceStartX >= MAP_WIDTH * MAP_TILE_SIZE ||
-        next.traceStartY >= MAP_WIDTH * MAP_TILE_SIZE ||
-        next.traceEndY >= MAP_WIDTH * MAP_TILE_SIZE ||
-        (next.traceStartY >> 6) - (next.traceEndY >> 6) > 3) {
+    /*
+     * Do not reject an endpoint merely because the three-step ray leaves the
+     * 32x32 map. Legacy Game_trace() clamps tile coordinates at the boundary.
+     * Preserve only the cardinal three-step shape here; resolveTrace() applies
+     * the exact tile clamp while retaining raw endpoints for plane crossing.
+     */
+    if (!(((next.traceEndX - next.traceStartX == 3 * MAP_TILE_SIZE ||
+             next.traceStartX - next.traceEndX == 3 * MAP_TILE_SIZE) &&
+            next.traceStartY == next.traceEndY) ||
+           ((next.traceEndY - next.traceStartY == 3 * MAP_TILE_SIZE ||
+             next.traceStartY - next.traceEndY == 3 * MAP_TILE_SIZE) &&
+            next.traceStartX == next.traceEndX))) {
         return ESP_PLAYER_FACING_UNSUPPORTED_CONTEXT;
     }
 

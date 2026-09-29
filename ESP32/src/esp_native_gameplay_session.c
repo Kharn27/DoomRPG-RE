@@ -10,6 +10,7 @@
 #include <esp_system.h>
 
 #include "esp_asset_pack.h"
+#include "esp_map_sprite_topology.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_frame.h"
@@ -312,8 +313,11 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)catalog->stateFNV1a);
 
             if (sessionState.checkpointResume != 0U) {
-                const EspNativeGameplayMonsterView* monsters;
-                const EspNativeGameplayMonsterPositionView* positions;
+                const EspMapSpriteTopologyView* topology =
+                    EspMapSpriteTopology_view();
+                const EspNativeGameplayMonsterView* monsters = NULL;
+                const EspNativeGameplayMonsterPositionView* positions = NULL;
+
                 /*
                  * A checkpoint load may stage exact monster records before this
                  * session begins. Hydrate them now, before HUD/cache witness
@@ -322,34 +326,56 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                  * whose restored record is already dead, leaving that stale
                  * frame visible until the next world redraw.
                  *
-                 * Older checkpoints have no staged monster snapshot; ensure()
-                 * deliberately builds their historical fresh owner here.
+                 * A zero-enemy map is different: MonsterState/MonsterPosition
+                 * intentionally own no zero-length allocation. The restored
+                 * empty snapshots are authoritative and checkpoint resume must
+                 * continue without manufacturing live owners.
+                 *
+                 * Older checkpoints with enemies have no staged monster
+                 * snapshot; ensure() deliberately builds their historical fresh
+                 * owner here.
                  */
-                if (!EspNativeGameplayMonsterState_ensure(doomRpg)) {
-                    failSession("checkpoint monster state");
+                if (topology == NULL || !EspMapSpriteTopology_isReady()) {
+                    failSession("checkpoint monster topology");
                     return;
                 }
-                monsters = EspNativeGameplayMonsterState_view();
-                if (monsters == NULL || monsters->records == NULL ||
-                    monsters->count == 0U) {
-                    failSession("checkpoint monster state view");
-                    return;
+
+                if (topology->enemyCount != 0U) {
+                    if (!EspNativeGameplayMonsterState_ensure(doomRpg)) {
+                        failSession("checkpoint monster state");
+                        return;
+                    }
+                    monsters = EspNativeGameplayMonsterState_view();
+                    if (monsters == NULL || monsters->records == NULL ||
+                        monsters->count == 0U ||
+                        monsters->count != topology->enemyCount) {
+                        failSession("checkpoint monster state view");
+                        return;
+                    }
+                    positions = EspNativeGameplayMonsterPosition_view();
+                    if (positions == NULL || positions->records == NULL ||
+                        positions->count != monsters->count ||
+                        positions->sourceArenaFNV1a !=
+                            monsters->sourceArenaFNV1a) {
+                        failSession("checkpoint monster position view");
+                        return;
+                    }
                 }
-                positions = EspNativeGameplayMonsterPosition_view();
-                if (positions == NULL || positions->records == NULL ||
-                    positions->count != monsters->count ||
-                    positions->sourceArenaFNV1a != monsters->sourceArenaFNV1a) {
-                    failSession("checkpoint monster position view");
-                    return;
-                }
+
                 if (!EspNativeGameplayGibFx_adoptCheckpointState()) {
                     failSession("checkpoint gib presentation adoption");
                     return;
                 }
-                printf("[ENGINESESSION] RESUME checkpoint=restored monsterState=%08x/%u monsterPosition=%08x preRender=yes freshFirstFrame=skipped dynamicLines=gameplay-wrapper\n",
-                       (unsigned int)monsters->stateFNV1a,
-                       (unsigned int)monsters->count,
-                       (unsigned int)positions->stateFNV1a);
+
+                if (topology->enemyCount == 0U) {
+                    printf("[ENGINESESSION] RESUME checkpoint=restored monsterState=empty/0 monsterPosition=empty preRender=yes freshFirstFrame=skipped dynamicLines=gameplay-wrapper allocation=none\n");
+                }
+                else {
+                    printf("[ENGINESESSION] RESUME checkpoint=restored monsterState=%08x/%u monsterPosition=%08x preRender=yes freshFirstFrame=skipped dynamicLines=gameplay-wrapper\n",
+                           (unsigned int)monsters->stateFNV1a,
+                           (unsigned int)monsters->count,
+                           (unsigned int)positions->stateFNV1a);
+                }
                 sessionState.stage = SESSION_STAGE_HUD;
                 continue;
             }

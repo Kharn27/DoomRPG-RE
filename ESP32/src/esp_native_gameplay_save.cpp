@@ -222,6 +222,12 @@ uint8_t lastOperation;
 uint8_t lastOperationOk;
 uint8_t confirmationTarget = kNoConfirmation;
 
+/* Legacy Game.newMapName/newDestX/newDestY/newAngle equivalent. Unlike the
+ * transition owner this survives EspNativeGameplaySession_reset(). It remains
+ * intentionally separate from the V9 on-disk checkpoint until that format has
+ * a dedicated route section. */
+EspMapSaveRouteState transitionSaveRoute;
+
 /*
  * V4 grew the bounded checkpoint record by the line-state section. Keeping a
  * LoadedSaveRecord automatic inside the HUB wrapper pushed loopTask over its
@@ -2282,6 +2288,8 @@ bool saveNow(void) {
     uint32_t removedCount;
     uint32_t automapFNV;
     uint32_t automapVisitedCount;
+    const EspMapSaveRouteState* returnRoute =
+        EspNativeGameplaySave_transitionRoute();
 
     if (tail == nullptr) {
         printf("[NATIVESAVE] SAVE-FAILED path=%s version=9 stage=v9-tail-workspace bytes=%u failClosed=yes\n",
@@ -2314,7 +2322,7 @@ bool saveNow(void) {
     automapVisitedCount =
         countBits(automap.visitedBits, ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES);
 
-    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx monsters=%u/%08lx topology=%u/%08lx positions=%u/%08lx activation=%u/%08lx atomic=temp+backup+rename world=monster-spatial-exact-v9\n",
+    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld returnRoute=%s/%u,%u/%u playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx monsters=%u/%08lx topology=%u/%08lx positions=%u/%08lx activation=%u/%08lx atomic=temp+backup+rename world=monster-spatial-exact-v9\n",
            kLogPath,
            (unsigned int)record.core.version,
            (unsigned int)kRecordBytesV9,
@@ -2323,6 +2331,10 @@ bool saveNow(void) {
            (long)record.core.view.viewX,
            (long)record.core.view.viewY,
            (long)record.core.view.viewAngle,
+           returnRoute != nullptr ? returnRoute->mapName : "-",
+           returnRoute != nullptr ? (unsigned int)returnRoute->destinationX : 0U,
+           returnRoute != nullptr ? (unsigned int)returnRoute->destinationY : 0U,
+           returnRoute != nullptr ? (unsigned int)returnRoute->angle : 0U,
            (unsigned long)record.core.playerFNV1a,
            (unsigned long)record.core.runtimeFNV1a,
            (unsigned long)record.core.sourceBytes,
@@ -3082,6 +3094,47 @@ bool paintSaveOverlay(void) {
 
 }  // namespace
 
+extern "C" int EspNativeGameplaySave_adoptTransitionRoute(
+    const EspMapSaveRouteState* route) {
+    uint8_t mapId = 0U;
+    size_t length;
+
+    if (route == nullptr || !EspMapSaveRoute_isActive(route) ||
+        route->mapNameLength == 0U ||
+        route->mapNameLength >= ESP_MAP_SAVE_ROUTE_NAME_CAPACITY ||
+        route->mapName[route->mapNameLength] != '\0') {
+        return 0;
+    }
+    length = strlen(route->mapName);
+    if (length != route->mapNameLength ||
+        !EspMapCatalog_idForName(route->mapName, &mapId) ||
+        !EspMapCatalog_isValidId(mapId)) {
+        return 0;
+    }
+
+    transitionSaveRoute = *route;
+    printf("[NATIVESAVE] ROUTE-ADOPT map=%s mapId=%u pos=%u,%u angle=%u sourceEvent=%u sourceCmd=%u lifetime=player-save-across-session-reset\n",
+           transitionSaveRoute.mapName,
+           (unsigned int)mapId,
+           (unsigned int)transitionSaveRoute.destinationX,
+           (unsigned int)transitionSaveRoute.destinationY,
+           (unsigned int)transitionSaveRoute.angle,
+           (unsigned int)transitionSaveRoute.sourceEventIndex,
+           (unsigned int)transitionSaveRoute.globalCommandIndex);
+    return 1;
+}
+
+extern "C" const EspMapSaveRouteState*
+EspNativeGameplaySave_transitionRoute(void) {
+    return EspMapSaveRoute_isActive(&transitionSaveRoute)
+               ? &transitionSaveRoute
+               : nullptr;
+}
+
+extern "C" void EspNativeGameplaySave_clearTransitionRoute(void) {
+    EspMapSaveRoute_reset(&transitionSaveRoute);
+}
+
 extern "C" uint8_t EspNativeGameplaySave_statusCursor(void) {
     return statusCursor;
 }
@@ -3100,7 +3153,13 @@ extern "C" int EspNativeGameplaySave_hasReadableCheckpoint(void) {
 }
 
 extern "C" int EspNativeGameplaySave_loadCheckpoint(void) {
-    return loadNow() ? 1 : 0;
+    if (!loadNow()) return 0;
+    /*
+     * V1..V9 do not serialize the legacy return route. Never leak a route from
+     * the replaced live session into the restored checkpoint session.
+     */
+    EspNativeGameplaySave_clearTransitionRoute();
+    return 1;
 }
 
 extern "C" EspNativeGameplayHubStatus

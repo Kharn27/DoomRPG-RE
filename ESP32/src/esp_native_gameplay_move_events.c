@@ -74,6 +74,7 @@ typedef struct MoveMixedStep_s {
 
 typedef struct MoveMixedBatchOwner_s {
     MoveMixedStep step[ESP_NATIVE_GAMEPLAY_MOVE_MIXED_BATCH_MAX];
+    EspNativeGameplayStatusMessageResult forceMessage;
     uint32_t runFlags;
     uint16_t eventIndex;
     uint16_t tile;
@@ -82,6 +83,8 @@ typedef struct MoveMixedBatchOwner_s {
     uint8_t committedCount;
     uint8_t showStart;
     uint8_t showCount;
+    uint8_t forceIndex;
+    uint8_t forceCommitted;
     uint8_t previewValid;
     uint8_t active;
 } MoveMixedBatchOwner;
@@ -269,6 +272,7 @@ static int isDoorBatchCode(uint8_t codeId) {
 
 static int isMixedBatchCode(uint8_t codeId) {
     return isStateCode(codeId) ||
+           codeId == ESP_MAP_OPCODE_FORCE_MESSAGE ||
            codeId == ESP_MAP_OPCODE_SHOW ||
            isLockCode(codeId) ||
            isDoorBatchCode(codeId);
@@ -277,6 +281,7 @@ static int isMixedBatchCode(uint8_t codeId) {
 static void clearMixedBatchOwner(void) {
     memset(&mixedBatchOwner, 0, sizeof(mixedBatchOwner));
     mixedBatchOwner.showStart = 0xffU;
+    mixedBatchOwner.forceIndex = 0xffU;
 }
 
 static int previewStateStep(const EspMapByteCode* command,
@@ -380,6 +385,7 @@ static EspNativeGameplayMoveEventStatus preflightMixedBatch(
     uint8_t eligibleCount = 0U;
     uint8_t showCount = 0U;
     uint8_t showClosed = 0U;
+    uint8_t forceCount = 0U;
     uint32_t offset;
 
     if (descriptor == NULL || plan == NULL || outResult == NULL) {
@@ -457,6 +463,22 @@ static EspNativeGameplayMoveEventStatus preflightMixedBatch(
                 clearMixedBatchOwner();
                 return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
             }
+        }
+        else if (command.id == ESP_MAP_OPCODE_FORCE_MESSAGE) {
+            EspMapUiIntent intent;
+            showClosed = showCount != 0U ? 1U : showClosed;
+            memset(&intent, 0, sizeof(intent));
+            if (forceCount != 0U ||
+                EspMapUiIntent_build(descriptor, offset, &intent) !=
+                    ESP_MAP_UI_INTENT_OK ||
+                intent.kind != ESP_MAP_UI_INTENT_FORCE_MESSAGE ||
+                intent.codeId != ESP_MAP_OPCODE_FORCE_MESSAGE) {
+                clearMixedBatchOwner();
+                return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_COMPLEX;
+            }
+            mixedBatchOwner.forceIndex = eligibleCount;
+            ++forceCount;
+            step->handled = 1U;
         }
         else if (command.id == ESP_MAP_OPCODE_SHOW) {
             if (showClosed != 0U ||
@@ -561,11 +583,12 @@ static EspNativeGameplayMoveEventStatus preflightMixedBatch(
                (unsigned int)ESP_NATIVE_GAMEPLAY_MOVE_MIXED_BATCH_MAX,
                (unsigned int)ESP_NATIVE_GAMEPLAY_MOVE_SHOW_BATCH_MAX);
     }
-    printf("[MOVEEVENT] MIXED-PREFLIGHT event=%u tile=%u eligible=%u show=%u family=state+show+line-lock+open-close order=legacy exactRollback=armed mutation=no\n",
+    printf("[MOVEEVENT] MIXED-PREFLIGHT event=%u tile=%u eligible=%u show=%u force=%u family=state+force-message+show+line-lock+open-close order=legacy exactRollback=armed mutation=no\n",
            (unsigned int)descriptor->eventIndex,
            (unsigned int)tile,
            (unsigned int)eligibleCount,
-           (unsigned int)showCount);
+           (unsigned int)showCount,
+           (unsigned int)forceCount);
     return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK;
 }
 
@@ -600,6 +623,19 @@ static int rollbackMixedBatchPrefix(uint8_t count) {
                 }
                 showBatchOwner.committedCount = 0U;
                 showRolled = 1U;
+            }
+            continue;
+        }
+
+        if (step->codeId == ESP_MAP_OPCODE_FORCE_MESSAGE) {
+            if (mixedBatchOwner.forceCommitted != 0U) {
+                if (mixedBatchOwner.forceIndex != (uint8_t)i ||
+                    (mixedBatchOwner.forceMessage.rollbackAvailable != 0U &&
+                     !EspNativeGameplayStatusMessage_rollback(
+                         &mixedBatchOwner.forceMessage))) {
+                    return 0;
+                }
+                mixedBatchOwner.forceCommitted = 0U;
             }
             continue;
         }
@@ -655,6 +691,7 @@ static EspNativeGameplayMoveEventStatus commitMixedBatch(
     uint8_t showOrdinal = 0U;
     uint8_t anyMutation = 0U;
     uint8_t stateCount = 0U;
+    uint8_t forceCount = 0U;
     uint8_t lockCount = 0U;
     uint8_t doorCount = 0U;
 
@@ -694,6 +731,34 @@ static EspNativeGameplayMoveEventStatus commitMixedBatch(
                 goto rollback;
             }
             ++stateCount;
+        }
+        else if (step->codeId == ESP_MAP_OPCODE_FORCE_MESSAGE) {
+            EspNativeGameplayStatusMessageApplyStatus messageStatus;
+            EspNativeGameplayStatusMessageResult message;
+            memset(&message, 0, sizeof(message));
+            if (forceCount != 0U ||
+                mixedBatchOwner.forceIndex != i) {
+                goto rollback;
+            }
+            messageStatus = EspNativeGameplayStatusMessage_apply(
+                descriptor, step->commandOffset, &message);
+            if (messageStatus != ESP_NATIVE_GAMEPLAY_STATUS_MESSAGE_OK ||
+                message.eventIndex != descriptor->eventIndex ||
+                message.globalCommandIndex != step->globalCommandIndex ||
+                message.commandOffset != step->commandOffset ||
+                message.codeId != ESP_MAP_OPCODE_FORCE_MESSAGE ||
+                message.removedBefore != step->removedBefore ||
+                message.removedAfter != step->removedAfter) {
+                if (messageStatus == ESP_NATIVE_GAMEPLAY_STATUS_MESSAGE_OK &&
+                    message.rollbackAvailable != 0U) {
+                    (void)EspNativeGameplayStatusMessage_rollback(&message);
+                }
+                goto rollback;
+            }
+            mixedBatchOwner.forceMessage = message;
+            mixedBatchOwner.forceCommitted = 1U;
+            step->mutated = message.rollbackAvailable;
+            ++forceCount;
         }
         else if (step->codeId == ESP_MAP_OPCODE_SHOW) {
             MoveShowStep* expected;
@@ -761,7 +826,8 @@ static EspNativeGameplayMoveEventStatus commitMixedBatch(
          * failure in that secondary mutation cannot strand topology/line/state. */
         mixedBatchOwner.committedCount = (uint8_t)(i + 1U);
 
-        if (step->removedBefore != step->removedAfter) {
+        if (step->codeId != ESP_MAP_OPCODE_FORCE_MESSAGE &&
+            step->removedBefore != step->removedAfter) {
             if (!EspMapScriptState_setCommandRemoved(step->globalCommandIndex,
                                                      step->removedAfter)) {
                 goto rollback;
@@ -786,11 +852,12 @@ static EspNativeGameplayMoveEventStatus commitMixedBatch(
     fillMixedSummary(outResult);
     outResult->mutated = anyMutation;
     outResult->rollbackAvailable = anyMutation;
-    printf("[MOVEEVENT] MIXED-BATCH event=%u tile=%u count=%u state=%u show=%u lock=%u door=%u mutation=%s rollback=%u order=legacy\n",
+    printf("[MOVEEVENT] MIXED-BATCH event=%u tile=%u count=%u state=%u force=%u show=%u lock=%u door=%u mutation=%s rollback=%u order=legacy\n",
            (unsigned int)mixedBatchOwner.eventIndex,
            (unsigned int)mixedBatchOwner.tile,
            (unsigned int)mixedBatchOwner.count,
            (unsigned int)stateCount,
+           (unsigned int)forceCount,
            (unsigned int)mixedBatchOwner.showCount,
            (unsigned int)lockCount,
            (unsigned int)doorCount,

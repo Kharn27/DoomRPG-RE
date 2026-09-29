@@ -5,13 +5,69 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 2af4aab025b6fb0094b31eea9403477f892b796a
-branch = agent/esp32-native-transition-polish
-hardware-tested code boundary = 6903431a60700960127be95d95584728698a36c8
-hardware = transition/loading polish + unified checkpoint LOAD from MENU_MAIN and in-game SYS HUB REAL-CYD PASS
-CI/build-size = not re-asserted for this post-main polish tail
-status = HARDWARE PASS; POST-TEST TAIL DOCS-ONLY; MERGE-READY AFTER DOC VERIFICATION
+current main = fbacb595170e85b736bcb4e8c97cc22390eba1d8
+branch = agent/esp32-consolidation-v1
+hardware-tested code boundary = 7d64839a31376c4ca0a3ec4f0f5ae10395b04635
+CI = esp32-cyd #1009 SUCCESS
+static RAM = 45784 B
+flash = 816517 B
+artifact id = 11037553080
+hardware = Junction zero-enemy PASS + Junction -> Sector 1 playable PASS + live SAVE return-route persistence PASS + Sector 1 V9 SAVE/LOAD PASS
+status = HARDWARE PASS for exercised paths; edge-clamped facing review fix is build-valid but its exact map-edge case was not hardware-triggered; POST-TEST TAIL DOCS-ONLY; PR/MERGE-READY
 ```
+
+### Consolidation-v1 progression recovery — REAL-CYD PASS (2026-09-29)
+
+The first translation-unit consolidation experiment on this branch was reverted
+exactly; the reproduced stack failure was pre-existing and was fixed separately.
+The lasting branch value is a set of generic runtime corrections exposed by
+progressing from Entrance through Junction into Sector 1.
+
+Hardware-proven current boundary:
+
+```text
+Junction PASS_TURN with enemies=0
+Junction V9 SAVE with monsters=0 / positions=0
+Junction V9 LOAD with empty monster owners
+Junction event 62 direct CHANGEMAP showStats=0
+/level01.bsp = Sector 1, map=2, gameplayLoadMapId=3, spawn=477, dir=192
+Sector 1 first MOVE 477->509 committed
+Sector 1 next MOVE 509->508 committed
+Level01 monster activation and ordered live movement continue
+```
+
+Permanent generic fixes include independent SAVEGAME/CHANGEMAP map strings,
+direct transition-door READY handoff, four-cardinal fresh-map spawn,
+spawn-time EV_FORCEMESSAGE, and EV_FORCEMESSAGE inside the bounded atomic mixed
+MOVEEVENT executor. None of these paths key behavior on Junction, Sector 1 or a
+specific event number.
+
+The post-review real-CYD witness is on
+`7d64839a31376c4ca0a3ec4f0f5ae10395b04635`; CI #1009 succeeds at
+45784 B static RAM and 816517 B flash.
+
+The same hardware run proves the independent EV_SAVEGAME return route survives
+the destructive Junction -> Sector 1 handoff and the session reset. A Sector 1
+checkpoint save reported exactly:
+
+```text
+returnRoute=/junction.bsp/416,1824/192
+```
+
+after a committed Sector 1 MOVE from tile 477 -> 509. The subsequent V9 LOAD
+restored Sector 1 at the saved pose and reached
+`[ENGINESESSION] READY map=2 angle=128 ... TURN+MOVE=armed`.
+
+The review fix that clamps fresh-spawn facing traces at 32x32 map edges mirrors
+legacy `Game_trace()`: source/destination tile components are clamped to
+`[0,31]` while raw world endpoints remain available for sprite-plane crossing.
+CI covers the implementation, but the supplied hardware run did not exercise an
+actual spawn within three facing-trace steps of a map edge; do not claim that
+specific edge case as hardware-proven.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_JUNCTION_SECTOR1.md`](MILESTONE_NATIVE_JUNCTION_SECTOR1.md)
 
 ### Transition/loading polish — REAL-CYD PASS
 
@@ -688,23 +744,16 @@ baseline and are not modified by this milestone.
 
 ### Next bounded frontier
 
-This branch is merge-ready. After merge, re-read the exact new `main` SHA and
-branch from it.
+This branch is merge-ready after the documentation-only tail. It did not finish
+the intended structural consolidation; instead it established stronger generic
+runtime behavior through Sector 1.
 
-The next major gameplay frontier remains the native **CHANGEMAP / Entrance
-level-exit transition** already identified below. Recover the smallest complete
-real-CYD route and keep unrelated opcode families fail-closed.
+After merge, re-read the exact new `main` SHA and resume source/wrapper
+consolidation from that SHA. Treat Entrance -> Junction -> Sector 1, Junction
+zero-enemy SAVE/LOAD/PASS_TURN, and Level01 first movement as hardware
+regression guards while reducing translation units, linker wrappers and legacy
+implementation dependencies.
 
-Two qualifications remain intentionally explicit:
-
-```text
-event43 SHOW x4 PASS is anchored to pre-rebase code head 48accf9
-SHOW-exit + ENTER-dialog Codex lease fix is CI-valid but not directly hardware-reached
-```
-
-Neither qualification blocks this merge because the rebased boot, HUB LOAD
-session replacement, main-menu LOAD, and RNG initialization regressions have
-now been exercised successfully on the real CYD.
 ## Permanent architecture / hard invariants
 
 ```text
@@ -1317,25 +1366,14 @@ The correction adds no allocation, gameplay RNG use, topology mutation, renderer
 
 ## Next bounded milestone
 
-After this branch merges, re-read the exact resulting `main` SHA before opening
-the next `agent/*` branch.
+After this branch merges, re-read the exact resulting `main` SHA before
+opening the next `agent/*` branch.
 
-The first world-to-world transition is hardware-proven only for the bounded
-Entrance event 1 route. Keep the next transition work equally narrow. Strong
-candidates are:
-
-```text
-- restore the real statistics presentation for showStats=1 before removing the
-  temporary one-tap WAIT_STATS bridge; or
-- generalize and hardware-prove one exact Junction -> LevelXX exit while keeping
-  the other CHANGEMAP script shapes fail-closed.
-```
-
-Do not infer generic CHANGEMAP coverage from the Entrance -> Junction PASS.
-Unrelated deferred Junction families such as OPENSTORE, INCSTAT, PLAYSOUND,
-CHECK_COMPLETED_LEVEL and general MESSAGE handling remain separate milestones.
-The final log additionally proves one normal Junction DIALOG + CHANGESTATE
-continuation, not arbitrary Junction dialog/script coverage.
+Resume structural consolidation rather than adding another map-specific
+progression patch. Consolidate by permanent native domain, remove native->native
+linker wrappers where direct composition is clearer, and reduce the remaining
+legacy implementation-unit dependency family by family. The newly proven
+Junction -> Sector 1 path must remain a non-regression witness.
 
 ## Hardware-validated intro display polish
 
@@ -1458,7 +1496,7 @@ Detailed record:
 
 ```text
 save-v6 mutable-world persistence beyond each validated section
-generic CHANGEMAP routes beyond hardware-proven Entrance -> Junction
+CHANGEMAP/script shapes beyond hardware-proven Entrance -> Junction -> Sector 1
 pre-arm first-frame/HUD SD startup path
 L1 range-record eviction/recycle redesign
 audio

@@ -5,6 +5,8 @@
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_opcode_executor.h"
+#include "esp_map_ui_intent.h"
+#include "esp_native_gameplay_status_message.h"
 #include "esp_map_script_state.h"
 #include "esp_player_finish_rotation_tile.h"
 
@@ -45,10 +47,29 @@ static int orientationMatchesView(const EspPlayerOrientationState* orientation,
            orientation->destAngle == (uint8_t)view->destAngle;
 }
 
-static int orientationValuesReady(const EspPlayerOrientationState* orientation) {
-    return orientation != NULL && orientation->destAngle == 64U &&
-           orientation->viewSin == 65536 && orientation->viewCos == 0 &&
-           orientation->viewStepX == 0 && orientation->viewStepY == -64;
+static int orientationValuesReady(
+    const EspPlayerOrientationState* orientation,
+    uint32_t* outFacingFlag) {
+    int32_t viewSin;
+    int32_t viewCos;
+    int32_t viewStepX;
+    int32_t viewStepY;
+    uint32_t facingFlag;
+
+    if (outFacingFlag != NULL) *outFacingFlag = 0U;
+    if (orientation == NULL ||
+        !EspPlayerView_cardinalBasis(orientation->destAngle,
+                                     &viewSin, &viewCos,
+                                     &viewStepX, &viewStepY,
+                                     &facingFlag) ||
+        orientation->viewSin != viewSin ||
+        orientation->viewCos != viewCos ||
+        orientation->viewStepX != viewStepX ||
+        orientation->viewStepY != viewStepY) {
+        return 0;
+    }
+    if (outFacingFlag != NULL) *outFacingFlag = facingFlag;
+    return 1;
 }
 
 static int coordinatesReady(const EspPlayerViewState* view,
@@ -102,8 +123,10 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_prepare(
     EspMapEventFilterPlan filterPlan;
     EspMapEventCommandFilterResult filterResult;
     uint16_t tileIndex;
+    uint32_t facingFlag = 0U;
     uint8_t eventState;
     uint8_t removed;
+    uint8_t forceMessageCount = 0U;
     uint32_t commandOffset;
 
     zeroDiagnostics(outDeferredCodeId, outDeferredCommandOffset);
@@ -124,9 +147,10 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_prepare(
         return ESP_PLAYER_FINISH_ROTATION_TILE_ORIENTATION_INVALID;
     }
     if (executionBlocked > 1U || executionBlocked != 0U ||
-        playerView->loadType != 0U || playerView->destAngle != 64 ||
+        playerView->loadType != 0U ||
+        playerView->destAngle < 0 || playerView->destAngle > 255 ||
         playerView->viewAngle != playerView->destAngle ||
-        !orientationValuesReady(orientation)) {
+        !orientationValuesReady(orientation, &facingFlag)) {
         return ESP_PLAYER_FINISH_ROTATION_TILE_UNSUPPORTED_CONTEXT;
     }
     if (!viewReady(playerView)) {
@@ -137,7 +161,8 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_prepare(
         return ESP_PLAYER_FINISH_ROTATION_TILE_EVENT_INVALID;
     }
 
-    outState->inputFlags = ESP_PLAYER_FINISH_ROTATION_TILE_FLAGS;
+    outState->inputFlags =
+        ESP_PLAYER_FINISH_ROTATION_TILE_BASE_FLAGS | facingFlag;
     outState->tileIndex = tileIndex;
     outState->eventIndex = ESP_PLAYER_FINISH_ROTATION_TILE_NO_EVENT;
     outState->targetMapId = playerView->targetMapId;
@@ -184,16 +209,22 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_prepare(
         }
         ++outState->eligibleCommands;
 
-        if (!EspMapOpcodeExecutor_supports(filterResult.codeId)) {
-            if (outDeferredCodeId != NULL) {
-                *outDeferredCodeId = filterResult.codeId;
-            }
-            if (outDeferredCommandOffset != NULL) {
-                *outDeferredCommandOffset = filterResult.commandOffset;
-            }
-            memset(outState, 0, sizeof(*outState));
-            return ESP_PLAYER_FINISH_ROTATION_TILE_OPCODE_DEFERRED;
+        if (EspMapOpcodeExecutor_supports(filterResult.codeId)) {
+            continue;
         }
+        if (filterResult.codeId == ESP_MAP_OPCODE_FORCE_MESSAGE &&
+            forceMessageCount == 0U) {
+            ++forceMessageCount;
+            continue;
+        }
+        if (outDeferredCodeId != NULL) {
+            *outDeferredCodeId = filterResult.codeId;
+        }
+        if (outDeferredCommandOffset != NULL) {
+            *outDeferredCommandOffset = filterResult.commandOffset;
+        }
+        memset(outState, 0, sizeof(*outState));
+        return ESP_PLAYER_FINISH_ROTATION_TILE_OPCODE_DEFERRED;
     }
 
     outState->active = 1U;
@@ -233,6 +264,7 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_route(
     EspMapEventCommandFilterResult filterResult;
     EspMapByteCode command;
     EspMapOpcodeExecResult execResult;
+    EspNativeGameplayStatusMessageResult forceResult;
     uint16_t mutatedEvents[FINISH_ROTATION_TILE_MAX_COMMANDS];
     uint8_t priorStates[FINISH_ROTATION_TILE_MAX_COMMANDS];
     uint16_t removedCommands[FINISH_ROTATION_TILE_MAX_COMMANDS];
@@ -241,8 +273,11 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_route(
     uint32_t commandOffset;
     uint8_t removed;
     uint8_t initialEventState;
+    uint8_t forceApplied = 0U;
+    uint8_t forceRemoved = 0U;
 
     zeroDiagnostics(outDeferredCodeId, outDeferredCommandOffset);
+    memset(&forceResult, 0, sizeof(forceResult));
     if (EspPlayerFinishRotationTile_isReady()) {
         return ESP_PLAYER_FINISH_ROTATION_TILE_ALREADY_ACTIVE;
     }
@@ -283,15 +318,44 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_route(
             if (filterResult.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) {
                 continue;
             }
-            if (!EspMapEvents_getCommand(&descriptor, commandOffset, &command) ||
-                !EspMapOpcodeExecutor_supports(command.id)) {
+            if (!EspMapEvents_getCommand(&descriptor, commandOffset, &command)) {
+                if (forceApplied != 0U && forceResult.rollbackAvailable != 0U) {
+                    (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                }
                 rollbackScript(mutatedEvents, priorStates, mutationCount,
                                removedCommands, removedCount);
                 return ESP_PLAYER_FINISH_ROTATION_TILE_EXEC_FAILED;
             }
 
-            if (EspMapOpcodeExecutor_execute(&command, &execResult) !=
-                ESP_MAP_OPCODE_EXEC_OK) {
+            if (command.id == ESP_MAP_OPCODE_FORCE_MESSAGE) {
+                if (forceApplied != 0U ||
+                    EspNativeGameplayStatusMessage_apply(
+                        &descriptor, (uint8_t)commandOffset, &forceResult) !=
+                        ESP_NATIVE_GAMEPLAY_STATUS_MESSAGE_OK) {
+                    if (forceApplied != 0U &&
+                        forceResult.rollbackAvailable != 0U) {
+                        (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                    }
+                    rollbackScript(mutatedEvents, priorStates, mutationCount,
+                                   removedCommands, removedCount);
+                    return ESP_PLAYER_FINISH_ROTATION_TILE_EXEC_FAILED;
+                }
+                forceApplied = 1U;
+                forceRemoved =
+                    (uint8_t)(forceResult.removedBefore !=
+                                      forceResult.removedAfter
+                                  ? 1U
+                                  : 0U);
+                ++prepared.executedCommands;
+                continue;
+            }
+
+            if (!EspMapOpcodeExecutor_supports(command.id) ||
+                EspMapOpcodeExecutor_execute(&command, &execResult) !=
+                    ESP_MAP_OPCODE_EXEC_OK) {
+                if (forceApplied != 0U && forceResult.rollbackAvailable != 0U) {
+                    (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                }
                 rollbackScript(mutatedEvents, priorStates, mutationCount,
                                removedCommands, removedCount);
                 return ESP_PLAYER_FINISH_ROTATION_TILE_EXEC_FAILED;
@@ -299,6 +363,10 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_route(
 
             if (execResult.mutated != 0U) {
                 if (mutationCount >= FINISH_ROTATION_TILE_MAX_COMMANDS) {
+                    if (forceApplied != 0U &&
+                        forceResult.rollbackAvailable != 0U) {
+                        (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                    }
                     rollbackScript(mutatedEvents, priorStates, mutationCount,
                                    removedCommands, removedCount);
                     return ESP_PLAYER_FINISH_ROTATION_TILE_EXEC_FAILED;
@@ -312,6 +380,10 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_route(
                 if (removedCount >= FINISH_ROTATION_TILE_MAX_COMMANDS ||
                     !EspMapScriptState_setCommandRemoved(
                         filterResult.globalCommandIndex, 1U)) {
+                    if (forceApplied != 0U &&
+                        forceResult.rollbackAvailable != 0U) {
+                        (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                    }
                     rollbackScript(mutatedEvents, priorStates, mutationCount,
                                    removedCommands, removedCount);
                     return ESP_PLAYER_FINISH_ROTATION_TILE_EXEC_FAILED;
@@ -323,7 +395,7 @@ EspPlayerFinishRotationTileStatus EspPlayerFinishRotationTile_route(
         }
     }
 
-    prepared.removedCommands = (uint8_t)removedCount;
+    prepared.removedCommands = (uint8_t)(removedCount + forceRemoved);
     finishRotationTileState = prepared;
     return ESP_PLAYER_FINISH_ROTATION_TILE_OK;
 }

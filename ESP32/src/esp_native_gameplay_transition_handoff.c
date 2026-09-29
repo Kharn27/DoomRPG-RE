@@ -15,6 +15,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_session.h"
+#include "esp_native_gameplay_save_ui.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_transition.h"
@@ -44,6 +45,7 @@ typedef struct EspNativeGameplayTransitionHandoffScratch_s {
     EspBspInventory targetInventory;
     EspMapResidentSnapshot targetSnapshot;
     EspMapCommittedTransitionState committed;
+    EspMapSaveRouteState saveRoute;
     EspPlayerSpawnState spawn;
     EspNativeGameplaySessionConfig sessionConfig;
     uint32_t playerKeys;
@@ -228,8 +230,23 @@ static int routeCommittedSpawn(void) {
                       ? EspHudPostLoadClear_route()
                       : ESP_HUD_POST_LOAD_CLEAR_FACING_INVALID;
     if (facingStatus != ESP_PLAYER_FACING_OK ||
-        clearStatus != ESP_HUD_POST_LOAD_CLEAR_OK ||
-        !EspNativeGameplayDispatch_adoptView()) {
+        clearStatus != ESP_HUD_POST_LOAD_CLEAR_OK) {
+        printf("[NATIVECHANGEMAP] SPAWN-BLOCKED stage=FINAL facing=%u clear=%u dispatchReady=%u\n",
+               (unsigned int)facingStatus,
+               (unsigned int)clearStatus,
+               (unsigned int)EspNativeGameplayDispatch_isReady());
+        return 0;
+    }
+
+    /*
+     * Legacy loadMap clears Hud.statBarMessage immediately after
+     * Game_spawnPlayer() + finishRotation(). Spawn-tile EV_FORCEMESSAGE is
+     * therefore executed for script parity but must not leak into the first
+     * playable target frame.
+     */
+    EspNativeGameplayStatusMessage_reset();
+
+    if (!EspNativeGameplayDispatch_adoptView()) {
         printf("[NATIVECHANGEMAP] SPAWN-BLOCKED stage=FINAL facing=%u clear=%u dispatchReady=%u\n",
                (unsigned int)facingStatus,
                (unsigned int)clearStatus,
@@ -266,39 +283,72 @@ static int routeCommittedSpawn(void) {
     return 1;
 }
 
-static void onStatsAcknowledged(int16_t screenX,
-                                int16_t screenY,
-                                uint16_t pressure,
-                                uint16_t rawX,
-                                uint16_t rawY) {
+static void performHandoff(uint8_t acknowledgeStats) {
     const EspNativeGameplayTransitionState* transition;
     EspMapCommittedTransitionStatus committedStatus;
     uint8_t sourceMapId;
     uint8_t targetMapId;
 
-    (void)screenX;
-    (void)screenY;
-    (void)pressure;
-    (void)rawX;
-    (void)rawY;
-
-    if (!handoff.armed || handoff.busy || handoff.failed) return;
+    if (handoff.busy || handoff.failed ||
+        (acknowledgeStats != 0U && !handoff.armed)) {
+        return;
+    }
     handoff.busy = 1U;
+
+    /*
+     * Remove the source gameplay callback before crossing the destructive
+     * boundary. tryArmNullCallback() observes busy=1 and therefore cannot
+     * reinterpret this teardown as another stats/direct transition.
+     */
     PlatformInput_setTapCallback(NULL);
 
     transition = EspNativeGameplayTransition_view();
     if (transition == NULL || transition->active != 1U ||
-        transition->waitingStats != 1U ||
-        transition->committed.phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_WAIT_STATS ||
         transition->committed.pendingConsumed != 1U ||
-        transition->committed.statsAcknowledged != 0U ||
         transition->committed.committed != 0U ||
         !EspMapResidentLifecycle_isReady() || EspAssetPack_isOpen()) {
-        failHandoff("WAIT_STATS_OWNER", 0U);
+        failHandoff(acknowledgeStats != 0U
+                        ? "WAIT_STATS_OWNER"
+                        : "DIRECT_OWNER",
+                    0U);
+        return;
+    }
+
+    if (acknowledgeStats != 0U) {
+        if (transition->waitingStats != 1U ||
+            transition->directReady != 0U ||
+            transition->committed.phase !=
+                ESP_MAP_COMMITTED_TRANSITION_PHASE_WAIT_STATS ||
+            transition->committed.statsAcknowledged != 0U) {
+            failHandoff("WAIT_STATS_OWNER", 0U);
+            return;
+        }
+    }
+    else {
+        if (transition->waitingStats != 0U ||
+            transition->waitingDoor != 0U ||
+            transition->directReady != 1U ||
+            transition->committed.phase !=
+                ESP_MAP_COMMITTED_TRANSITION_PHASE_READY ||
+            transition->committed.menuKind != ESP_STATS_MENU_KIND_NONE ||
+            transition->committed.statsAcknowledged != 0U) {
+            failHandoff("DIRECT_OWNER", 0U);
+            return;
+        }
+    }
+
+    if (!EspMapSaveRoute_isActive(&transition->saveRoute) ||
+        transition->saveRoute.mapNameLength == 0U ||
+        transition->saveRoute.mapNameLength >=
+            ESP_MAP_SAVE_ROUTE_NAME_CAPACITY ||
+        transition->saveRoute.mapName[
+            transition->saveRoute.mapNameLength] != '\0') {
+        failHandoff("SAVE_ROUTE_OWNER", 0U);
         return;
     }
 
     handoff.committed = transition->committed;
+    handoff.saveRoute = transition->saveRoute;
     sourceMapId = handoff.committed.sourceMapId;
     targetMapId = handoff.committed.targetMapId;
 
@@ -315,18 +365,28 @@ static void onStatsAcknowledged(int16_t screenX,
         return;
     }
 
-    committedStatus = EspMapCommittedTransition_ackStats(&handoff.committed);
-    if (committedStatus != ESP_MAP_COMMITTED_TRANSITION_READY ||
-        handoff.committed.phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_READY ||
-        handoff.committed.statsAcknowledged != 1U) {
-        failHandoff("STATS_ACK", (unsigned int)committedStatus);
-        return;
-    }
+    if (acknowledgeStats != 0U) {
+        committedStatus = EspMapCommittedTransition_ackStats(&handoff.committed);
+        if (committedStatus != ESP_MAP_COMMITTED_TRANSITION_READY ||
+            handoff.committed.phase !=
+                ESP_MAP_COMMITTED_TRANSITION_PHASE_READY ||
+            handoff.committed.statsAcknowledged != 1U) {
+            failHandoff("STATS_ACK", (unsigned int)committedStatus);
+            return;
+        }
 
-    printf("[NATIVECHANGEMAP] STATS-ACK sourceMap=%u targetMap=%u phase=%u presentation=native-stats input=one-tap\n",
-           (unsigned int)sourceMapId,
-           (unsigned int)targetMapId,
-           (unsigned int)handoff.committed.phase);
+        printf("[NATIVECHANGEMAP] STATS-ACK sourceMap=%u targetMap=%u phase=%u presentation=native-stats input=one-tap\n",
+               (unsigned int)sourceMapId,
+               (unsigned int)targetMapId,
+               (unsigned int)handoff.committed.phase);
+    }
+    else {
+        committedStatus = ESP_MAP_COMMITTED_TRANSITION_READY;
+        printf("[NATIVECHANGEMAP] DIRECT-START sourceMap=%u targetMap=%u phase=%u showStats=0 input=paused service=post-select\n",
+               (unsigned int)sourceMapId,
+               (unsigned int)targetMapId,
+               (unsigned int)handoff.committed.phase);
+    }
 
     /*
      * Cross the visual ownership boundary before the destructive backing
@@ -349,7 +409,8 @@ static void onStatsAcknowledged(int16_t screenX,
         &handoff.targetSnapshot);
     EspAssetPack_mapFlashSetProgressCallback(NULL);
     if (committedStatus != ESP_MAP_COMMITTED_TRANSITION_OK ||
-        handoff.committed.phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_COMMITTED ||
+        handoff.committed.phase !=
+            ESP_MAP_COMMITTED_TRANSITION_PHASE_COMMITTED ||
         handoff.committed.committed != 1U ||
         !EspMapResidentLifecycle_isReady() || EspAssetPack_isOpen()) {
         failHandoff("RESIDENT_COMMIT", (unsigned int)committedStatus);
@@ -369,10 +430,22 @@ static void onStatsAcknowledged(int16_t screenX,
            (unsigned int)handoff.targetSnapshot.spriteCount,
            (unsigned int)handoff.targetSnapshot.eventCount);
 
-    /* Tear down only transient source-map gameplay/session owners. The shared
-     * compact player root survives this reset and supplied sessionConfig above.
-     * Input reset also clears the old transition owner; the committed copy in
-     * this static scratch remains the authoritative handoff witness below. */
+    /*
+     * Publish EV_SAVEGAME's independent return route into the SAVE subsystem
+     * before Session_reset() clears the source transition/input owner. This
+     * copy is inline and map-independent; no source BSP string ref survives.
+     */
+    if (!EspNativeGameplaySave_adoptTransitionRoute(&handoff.saveRoute)) {
+        failHandoff("SAVE_ROUTE_PERSIST", 0U);
+        return;
+    }
+
+    /*
+     * Tear down only transient source-map gameplay/session owners. The shared
+     * compact player root and SAVE return-route owner survive this reset.
+     * Input reset clears the old transition owner; the committed copy in this
+     * static scratch remains the authoritative handoff witness below.
+     */
     EspNativeGameplaySession_reset();
     resetSpawnOwners();
 
@@ -397,6 +470,38 @@ static void onStatsAcknowledged(int16_t screenX,
            (unsigned int)handoff.sessionConfig.maxHealth,
            (unsigned int)handoff.sessionConfig.armor,
            (unsigned int)handoff.sessionConfig.maxArmor);
+}
+
+static void onStatsAcknowledged(int16_t screenX,
+                                int16_t screenY,
+                                uint16_t pressure,
+                                uint16_t rawX,
+                                uint16_t rawY) {
+    (void)screenX;
+    (void)screenY;
+    (void)pressure;
+    (void)rawX;
+    (void)rawY;
+    performHandoff(1U);
+}
+
+void EspNativeGameplayTransitionHandoff_service(void) {
+    const EspNativeGameplayTransitionState* transition;
+
+    if (handoff.busy || handoff.failed) return;
+    transition = EspNativeGameplayTransition_view();
+    if (transition == NULL || transition->active != 1U ||
+        transition->directReady != 1U ||
+        transition->waitingDoor != 0U ||
+        transition->waitingStats != 0U ||
+        transition->committed.phase != ESP_MAP_COMMITTED_TRANSITION_PHASE_READY ||
+        transition->committed.menuKind != ESP_STATS_MENU_KIND_NONE ||
+        transition->committed.pendingConsumed != 1U ||
+        transition->committed.committed != 0U) {
+        return;
+    }
+
+    performHandoff(0U);
 }
 
 int EspNativeGameplayTransitionHandoff_tryArmNullCallback(void) {
