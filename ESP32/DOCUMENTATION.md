@@ -13,32 +13,32 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 0e66004c755cc050c5fa3f6eac91f85f943e4c8d
-branch = agent/esp32-consolidation-monster-wraps-v2
-hardware-tested code boundary = 2976cf9f157fa3dfd1649efaaec77986450648cc
-CI = esp32-cyd #1036 SUCCESS
-static RAM = 45784 B
-flash = 816545 B
-artifact id = 11044812987
-translation units = 174
-active --wrap flags = 61
-hardware = four active native linker seams replaced by explicit APIs and hardware validated
-status = branch active; continue bounded wrapper consolidation without merging main
+current main = da8c3632162ad8dc7a0a83e7c398d815a0fbfea2
+branch = agent/esp32-consolidation-monster-wraps-v3
+hardware-tested code boundary = b2c22ee699213a04429669c6b3ca63c479918d1f
+CI = esp32-cyd #1049 SUCCESS
+static RAM = 45776 B
+flash = 815609 B
+artifact id = 11045807444
+translation units = 173
+active --wrap flags = 60
+hardware = five active native linker seams retired/replaced and hardware validated; obsolete three-goal census TU removed
+status = branch hardware-pass; documentation-only close in progress
 ```
 
 Current consolidation result from merged main
-`0e66004c755cc050c5fa3f6eac91f85f943e4c8d`:
+`da8c3632162ad8dc7a0a83e7c398d815a0fbfea2`:
 
 ```text
-ESP32 translation units: 174 -> 174
-active linker --wraps:   62 -> 61
-static RAM:              45784 B -> 45784 B
-flash:                   816509 B -> 816545 B
+ESP32 translation units: 174 -> 173
+active linker --wraps:   61 -> 60
+static RAM:              45784 B -> 45776 B
+flash:                   816545 B -> 815609 B
 ```
 
 The dead historical Retaliation compatibility translation unit remains gone.
-Four formerly active native-to-native linker seams are now explicit permanent
-APIs:
+Five formerly active native-to-native linker seams have now been retired or
+made explicit:
 
 1. `EspNativeGameplayMonsterPosition_prepareCardinalMove`:
    activation gating + publication capture now pass through
@@ -48,25 +48,26 @@ APIs:
    ThreeGoal -> Publish -> Movement -> Position ordering.
 3. `EspNativeGameplayMonsterMovement_view`:
    three-goal continuations pass their synthetic movement view explicitly to
-   `EspNativeGameplayMonsterMovementPublish_afterProbeWithView`; the global
-   movement view is no longer intercepted.
+   `EspNativeGameplayMonsterMovementPublish_afterProbeWithView`.
 4. `EspNativeGameplayMonsterTurn_postMoveGoal`:
    `MonsterTurn` owns ordinary-vs-three-goal dispatch explicitly and calls
    `EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal` only for subtype 4/13.
+5. `EspNativeGameplayMonsterState_view`:
+   the wrapper was pure one-shot `WITNESS/CENSUS` instrumentation, so the
+   wrapper and its 119-line witness translation unit are deleted with no
+   replacement API.
 
-All four active-wrap removals have real-CYD proof. The latest witness begins
-after V9 LOAD, restarts movement at `n=1`, serves four active monsters in order
-and completes goals 2/3 and 3/3 for both subtype-4 monsters with live
-publication, one committed RNG byte per continuation, topology relink and
-rollback closure, followed by steady `[ALIVE]`.
+The latest real-CYD witness proves the permanent runtime unchanged: four active
+monsters are delivered in order, ordinary subtype 3/5 post-move completes, both
+subtype-4 monsters finish goals 2/3 and 3/3, publication/rollback remain closed,
+and `[ALIVE]` is steady. The deleted census lines are absent by design.
 
-Four monster-domain linker wraps remain active:
+Three monster-domain linker wraps remain active:
 
 ```text
 EspNativeGameplayMonsterState_actionService
 EspNativeGameplayMonsterTurn_view
 EspNativeGameplayMonsterMovement_service
-EspNativeGameplayMonsterState_view
 ```
 
 See [MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md](MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md)
