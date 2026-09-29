@@ -228,8 +228,23 @@ static int routeCommittedSpawn(void) {
                       ? EspHudPostLoadClear_route()
                       : ESP_HUD_POST_LOAD_CLEAR_FACING_INVALID;
     if (facingStatus != ESP_PLAYER_FACING_OK ||
-        clearStatus != ESP_HUD_POST_LOAD_CLEAR_OK ||
-        !EspNativeGameplayDispatch_adoptView()) {
+        clearStatus != ESP_HUD_POST_LOAD_CLEAR_OK) {
+        printf("[NATIVECHANGEMAP] SPAWN-BLOCKED stage=FINAL facing=%u clear=%u dispatchReady=%u\n",
+               (unsigned int)facingStatus,
+               (unsigned int)clearStatus,
+               (unsigned int)EspNativeGameplayDispatch_isReady());
+        return 0;
+    }
+
+    /*
+     * Legacy loadMap clears Hud.statBarMessage immediately after
+     * Game_spawnPlayer() + finishRotation(). Spawn-tile EV_FORCEMESSAGE is
+     * therefore executed for script parity but must not leak into the first
+     * playable target frame.
+     */
+    EspNativeGameplayStatusMessage_reset();
+
+    if (!EspNativeGameplayDispatch_adoptView()) {
         printf("[NATIVECHANGEMAP] SPAWN-BLOCKED stage=FINAL facing=%u clear=%u dispatchReady=%u\n",
                (unsigned int)facingStatus,
                (unsigned int)clearStatus,

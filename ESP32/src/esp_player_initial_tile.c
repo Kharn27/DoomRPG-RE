@@ -5,6 +5,8 @@
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
 #include "esp_map_opcode_executor.h"
+#include "esp_map_ui_intent.h"
+#include "esp_native_gameplay_status_message.h"
 #include "esp_map_script_state.h"
 #include "esp_player_fresh_map_state.h"
 #include "esp_player_initial_tile.h"
@@ -93,6 +95,7 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_prepare(
     uint32_t facingFlag = 0U;
     uint8_t eventState;
     uint8_t removed;
+    uint8_t forceMessageCount = 0U;
     uint32_t commandOffset;
 
     zeroDiagnostics(outDeferredCodeId, outDeferredCommandOffset);
@@ -172,16 +175,22 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_prepare(
         }
         ++outState->eligibleCommands;
 
-        if (!EspMapOpcodeExecutor_supports(filterResult.codeId)) {
-            if (outDeferredCodeId != NULL) {
-                *outDeferredCodeId = filterResult.codeId;
-            }
-            if (outDeferredCommandOffset != NULL) {
-                *outDeferredCommandOffset = filterResult.commandOffset;
-            }
-            memset(outState, 0, sizeof(*outState));
-            return ESP_PLAYER_INITIAL_TILE_OPCODE_DEFERRED;
+        if (EspMapOpcodeExecutor_supports(filterResult.codeId)) {
+            continue;
         }
+        if (filterResult.codeId == ESP_MAP_OPCODE_FORCE_MESSAGE &&
+            forceMessageCount == 0U) {
+            ++forceMessageCount;
+            continue;
+        }
+        if (outDeferredCodeId != NULL) {
+            *outDeferredCodeId = filterResult.codeId;
+        }
+        if (outDeferredCommandOffset != NULL) {
+            *outDeferredCommandOffset = filterResult.commandOffset;
+        }
+        memset(outState, 0, sizeof(*outState));
+        return ESP_PLAYER_INITIAL_TILE_OPCODE_DEFERRED;
     }
 
     outState->active = 1U;
@@ -220,6 +229,7 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_route(
     EspMapEventCommandFilterResult filterResult;
     EspMapByteCode command;
     EspMapOpcodeExecResult execResult;
+    EspNativeGameplayStatusMessageResult forceResult;
     uint16_t mutatedEvents[INITIAL_TILE_MAX_COMMANDS];
     uint8_t priorStates[INITIAL_TILE_MAX_COMMANDS];
     uint16_t removedCommands[INITIAL_TILE_MAX_COMMANDS];
@@ -228,8 +238,11 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_route(
     uint32_t commandOffset;
     uint8_t removed;
     uint8_t initialEventState;
+    uint8_t forceApplied = 0U;
+    uint8_t forceRemoved = 0U;
 
     zeroDiagnostics(outDeferredCodeId, outDeferredCommandOffset);
+    memset(&forceResult, 0, sizeof(forceResult));
     if (EspPlayerInitialTile_isReady()) {
         return ESP_PLAYER_INITIAL_TILE_ALREADY_ACTIVE;
     }
@@ -269,15 +282,44 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_route(
             if (filterResult.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) {
                 continue;
             }
-            if (!EspMapEvents_getCommand(&descriptor, commandOffset, &command) ||
-                !EspMapOpcodeExecutor_supports(command.id)) {
+            if (!EspMapEvents_getCommand(&descriptor, commandOffset, &command)) {
+                if (forceApplied != 0U && forceResult.rollbackAvailable != 0U) {
+                    (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                }
                 rollbackScript(mutatedEvents, priorStates, mutationCount,
                                removedCommands, removedCount);
                 return ESP_PLAYER_INITIAL_TILE_EXEC_FAILED;
             }
 
-            if (EspMapOpcodeExecutor_execute(&command, &execResult) !=
-                ESP_MAP_OPCODE_EXEC_OK) {
+            if (command.id == ESP_MAP_OPCODE_FORCE_MESSAGE) {
+                if (forceApplied != 0U ||
+                    EspNativeGameplayStatusMessage_apply(
+                        &descriptor, (uint8_t)commandOffset, &forceResult) !=
+                        ESP_NATIVE_GAMEPLAY_STATUS_MESSAGE_OK) {
+                    if (forceApplied != 0U &&
+                        forceResult.rollbackAvailable != 0U) {
+                        (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                    }
+                    rollbackScript(mutatedEvents, priorStates, mutationCount,
+                                   removedCommands, removedCount);
+                    return ESP_PLAYER_INITIAL_TILE_EXEC_FAILED;
+                }
+                forceApplied = 1U;
+                forceRemoved =
+                    (uint8_t)(forceResult.removedBefore !=
+                                      forceResult.removedAfter
+                                  ? 1U
+                                  : 0U);
+                ++prepared.executedCommands;
+                continue;
+            }
+
+            if (!EspMapOpcodeExecutor_supports(command.id) ||
+                EspMapOpcodeExecutor_execute(&command, &execResult) !=
+                    ESP_MAP_OPCODE_EXEC_OK) {
+                if (forceApplied != 0U && forceResult.rollbackAvailable != 0U) {
+                    (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                }
                 rollbackScript(mutatedEvents, priorStates, mutationCount,
                                removedCommands, removedCount);
                 return ESP_PLAYER_INITIAL_TILE_EXEC_FAILED;
@@ -285,6 +327,10 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_route(
 
             if (execResult.mutated != 0U) {
                 if (mutationCount >= INITIAL_TILE_MAX_COMMANDS) {
+                    if (forceApplied != 0U &&
+                        forceResult.rollbackAvailable != 0U) {
+                        (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                    }
                     rollbackScript(mutatedEvents, priorStates, mutationCount,
                                    removedCommands, removedCount);
                     return ESP_PLAYER_INITIAL_TILE_EXEC_FAILED;
@@ -298,6 +344,10 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_route(
                 if (removedCount >= INITIAL_TILE_MAX_COMMANDS ||
                     !EspMapScriptState_setCommandRemoved(
                         filterResult.globalCommandIndex, 1U)) {
+                    if (forceApplied != 0U &&
+                        forceResult.rollbackAvailable != 0U) {
+                        (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+                    }
                     rollbackScript(mutatedEvents, priorStates, mutationCount,
                                    removedCommands, removedCount);
                     return ESP_PLAYER_INITIAL_TILE_EXEC_FAILED;
@@ -309,10 +359,13 @@ EspPlayerInitialTileStatus EspPlayerInitialTile_route(
         }
     }
 
-    prepared.removedCommands = (uint8_t)removedCount;
+    prepared.removedCommands = (uint8_t)(removedCount + forceRemoved);
     if (!EspPlayerView_consumeTileEnter(prepared.targetMapId,
                                         prepared.gameplayLoadMapId,
                                         prepared.loadType)) {
+        if (forceApplied != 0U && forceResult.rollbackAvailable != 0U) {
+            (void)EspNativeGameplayStatusMessage_rollback(&forceResult);
+        }
         rollbackScript(mutatedEvents, priorStates, mutationCount,
                        removedCommands, removedCount);
         return ESP_PLAYER_INITIAL_TILE_VIEW_CONSUME_FAILED;
