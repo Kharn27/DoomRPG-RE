@@ -191,7 +191,6 @@ int EspNativeGameplayMonsterState_snapshotShapeValid(
     uint16_t previous = 0U;
     if (snapshot == NULL || expectedArenaFNV1a == 0U ||
         snapshot->sourceArenaFNV1a != expectedArenaFNV1a ||
-        snapshot->count == 0U ||
         snapshot->count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT ||
         snapshot->recordBytes != sizeof(EspNativeGameplayMonsterRecord) ||
         snapshot->stateFNV1a == 0U ||
@@ -228,32 +227,62 @@ int EspNativeGameplayMonsterState_snapshotShapeValid(
 
 int EspNativeGameplayMonsterState_snapshot(
     EspNativeGameplayMonsterStateSnapshot* outSnapshot) {
-    if (outSnapshot == NULL || !EspNativeGameplayMonsterState_isReady() ||
-        monsterView.count == 0U ||
-        monsterView.count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+
+    if (outSnapshot == NULL || runtime == NULL || topology == NULL ||
+        !EspMapRuntime_isLoaded() || !EspMapSpriteTopology_isReady() ||
+        runtime->arenaFNV1a == 0U ||
+        runtime->mapSpriteCount != topology->spriteCount ||
+        topology->enemyCount > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) {
         return 0;
     }
+
     memset(outSnapshot, 0, sizeof(*outSnapshot));
-    outSnapshot->sourceArenaFNV1a = monsterView.sourceArenaFNV1a;
-    outSnapshot->count = (uint16_t)monsterView.count;
+    outSnapshot->sourceArenaFNV1a = runtime->arenaFNV1a;
     outSnapshot->recordBytes =
         (uint16_t)sizeof(EspNativeGameplayMonsterRecord);
+
+    if (topology->enemyCount == 0U) {
+        outSnapshot->stateFNV1a = snapshotRecordsFNV(outSnapshot);
+        return EspNativeGameplayMonsterState_snapshotShapeValid(
+            outSnapshot, runtime->arenaFNV1a);
+    }
+
+    if (!EspNativeGameplayMonsterState_isReady() ||
+        monsterView.count != topology->enemyCount ||
+        monsterView.count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT ||
+        monsterView.sourceArenaFNV1a != runtime->arenaFNV1a) {
+        return 0;
+    }
+
+    outSnapshot->count = (uint16_t)monsterView.count;
     memcpy(outSnapshot->records, monsterRecords,
            monsterView.count * sizeof(*monsterRecords));
     outSnapshot->stateFNV1a = snapshotRecordsFNV(outSnapshot);
     return EspNativeGameplayMonsterState_snapshotShapeValid(
-        outSnapshot, monsterView.sourceArenaFNV1a);
+        outSnapshot, runtime->arenaFNV1a);
 }
 
 int EspNativeGameplayMonsterState_stageRestore(
     const EspNativeGameplayMonsterStateSnapshot* snapshot) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
     EspNativeGameplayMonsterStateSnapshot* staged;
-    if (runtime == NULL || !EspMapRuntime_isLoaded() ||
+    if (runtime == NULL || topology == NULL || !EspMapRuntime_isLoaded() ||
+        !EspMapSpriteTopology_isReady() ||
         monsterRecords != NULL || pendingRestore != NULL ||
         !EspNativeGameplayMonsterState_snapshotShapeValid(
             snapshot, runtime->arenaFNV1a)) {
         return 0;
+    }
+    if (snapshot->count == 0U) {
+        if (topology->enemyCount != 0U) return 0;
+        EspNativeGameplayMonsterState_reset();
+        printf("[MONSTERSTATE] STAGE-RESTORE arena=%08x monsters=0 stateFNV=%08x allocation=none empty=yes rngConsumed=0\n",
+               (unsigned int)snapshot->sourceArenaFNV1a,
+               (unsigned int)snapshot->stateFNV1a);
+        return 1;
     }
     staged = (EspNativeGameplayMonsterStateSnapshot*)heap_caps_malloc(
         sizeof(*staged), MALLOC_CAP_8BIT);
