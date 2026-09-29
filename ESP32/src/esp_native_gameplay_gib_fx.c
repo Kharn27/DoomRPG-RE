@@ -20,6 +20,7 @@
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
+#include "esp_native_gameplay_transition_handoff.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -761,6 +762,9 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayMonsterMovementProbe_service(doomRpg);
     serviceHitExpiry(doomRpg);
     serviceExpiry(doomRpg);
+    /* A showStats=0 CHANGEMAP is staged by resident gameplay and consumed only
+     * after that source-map service has returned from its SELECT transaction. */
+    EspNativeGameplayTransitionHandoff_service();
 }
 
 void __wrap_EspNativeGameplaySession_reset(void) {

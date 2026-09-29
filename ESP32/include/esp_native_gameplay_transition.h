@@ -15,6 +15,8 @@
 extern "C" {
 #endif
 
+#define ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS 8U
+
 typedef enum EspNativeGameplayTransitionStatus_e {
     ESP_NATIVE_GAMEPLAY_TRANSITION_INVALID = 0,
     ESP_NATIVE_GAMEPLAY_TRANSITION_NOT_APPLICABLE = 1,
@@ -23,7 +25,8 @@ typedef enum EspNativeGameplayTransitionStatus_e {
     ESP_NATIVE_GAMEPLAY_TRANSITION_UNSUPPORTED = 4,
     ESP_NATIVE_GAMEPLAY_TRANSITION_FAILED = 5,
     ESP_NATIVE_GAMEPLAY_TRANSITION_WAIT_STATS = 6,
-    ESP_NATIVE_GAMEPLAY_TRANSITION_DOOR_READY = 7
+    ESP_NATIVE_GAMEPLAY_TRANSITION_DOOR_READY = 7,
+    ESP_NATIVE_GAMEPLAY_TRANSITION_HANDOFF_READY = 8
 } EspNativeGameplayTransitionStatus;
 
 /*
@@ -42,7 +45,10 @@ typedef struct EspNativeGameplayTransitionState_s {
     EspMapLevelExitStats levelStats;
     EspStatsMenuIntent statsIntent;
     EspMapCommittedTransitionState committed;
+    /* doorResult/removed* retain the first-door summary for existing callers.
+     * doorResults owns the complete bounded suffix transaction. */
     EspMapLineDoorResult doorResult;
+    EspMapLineDoorResult doorResults[ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS];
     uint32_t sequence;
     uint16_t frontTile;
     uint16_t eventIndex;
@@ -51,9 +57,13 @@ typedef struct EspNativeGameplayTransitionState_s {
     uint8_t doorCommandOffset;
     uint8_t doorRemovedBefore;
     uint8_t doorRemovedAfter;
+    uint8_t doorRemovedBeforeAll[ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS];
+    uint8_t doorRemovedAfterAll[ESP_NATIVE_GAMEPLAY_TRANSITION_MAX_DOORS];
+    uint8_t doorCount;
     uint8_t waitingDoor;
     uint8_t active;
     uint8_t waitingStats;
+    uint8_t directReady;
 } EspNativeGameplayTransitionState;
 
 typedef struct EspNativeGameplayTransitionSelectResult_s {
@@ -64,6 +74,7 @@ typedef struct EspNativeGameplayTransitionSelectResult_s {
     uint8_t saveCommandOffset;
     uint8_t changeCommandOffset;
     uint8_t doorCommandOffset;
+    uint8_t doorCount;
     uint8_t doorReady;
     uint8_t targetMapId;
     uint8_t targetGameplayLoadMapId;

@@ -17,6 +17,14 @@ extern "C" {
  */
 int EspNativeGameplayTransitionHandoff_tryArmNullCallback(void);
 
+/*
+ * Service a showStats=0 committed transition only after the source gameplay
+ * service has returned from the SELECT/door transaction that staged it.
+ * This prevents the destructive resident-map reset from invalidating source
+ * pointers still live on the SELECT stack.
+ */
+void EspNativeGameplayTransitionHandoff_service(void);
+
 #ifdef __cplusplus
 }
 #endif
