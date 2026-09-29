@@ -1506,3 +1506,39 @@ recover true main + docs
 ```
 
 Never merge into `main` without explicit user request.
+
+
+## V8 monster-topology recovery + V9 spatial checkpoint — REAL-CYD PASS for V8 compatibility
+
+Hardware-tested code boundary:
+
+```text
+cb9f7b3f97314524b01d52c45d9a209b7c5bcb87
+esp32-cyd CI #954 = SUCCESS
+```
+
+This branch retains the complete prior Junction census history through
+`49ad2fe9d63f454611f6d41a729e62905f456251`.
+
+A real classic CYD successfully loaded an existing V8 checkpoint created after
+the yellow-card trigger had revealed hidden monsters. The missing V8 spatial
+owner was reconstructed only from durable script evidence: removed-command bit
+set, REMOVE-if-handled set, opcode SHOW/HIDE. The yellow-card monsters were
+present again after LOAD and normal gameplay resumed.
+
+The branch also introduces the bounded V9 monster spatial record:
+
+```text
+MonsterState
+monster topology (linked/unlinked, tile, link order, visual/alive bits)
+MonsterPosition
+MonsterActivation order
+```
+
+Important validation boundary: V8 compatibility recovery is hardware-proven.
+Exact SAVE-V9 -> mutate -> LOAD-V9 restoration is not yet hardware-proven and
+must remain explicitly pending until tested on the real CYD.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md)
