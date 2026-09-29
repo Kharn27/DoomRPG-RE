@@ -7,13 +7,13 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = fbacb595170e85b736bcb4e8c97cc22390eba1d8
 branch = agent/esp32-consolidation-v1
-hardware-tested code boundary = 934d0e2f9becd51a93df61d44dd6e01380fae6b4
-CI = esp32-cyd #1005 SUCCESS
-static RAM = 45688 B
-flash = 815821 B
-artifact id = 11035238982
-hardware = Junction zero-enemy PASS + V9 SAVE/LOAD PASS + Junction -> Sector 1 playable PASS
-status = HARDWARE PASS; POST-TEST TAIL DOCS-ONLY; PR/MERGE-READY
+hardware-tested code boundary = 7d64839a31376c4ca0a3ec4f0f5ae10395b04635
+CI = esp32-cyd #1009 SUCCESS
+static RAM = 45784 B
+flash = 816517 B
+artifact id = 11037553080
+hardware = Junction zero-enemy PASS + Junction -> Sector 1 playable PASS + live SAVE return-route persistence PASS + Sector 1 V9 SAVE/LOAD PASS
+status = HARDWARE PASS for exercised paths; edge-clamped facing review fix is build-valid but its exact map-edge case was not hardware-triggered; POST-TEST TAIL DOCS-ONLY; PR/MERGE-READY
 ```
 
 ### Consolidation-v1 progression recovery — REAL-CYD PASS (2026-09-29)
@@ -42,9 +42,28 @@ spawn-time EV_FORCEMESSAGE, and EV_FORCEMESSAGE inside the bounded atomic mixed
 MOVEEVENT executor. None of these paths key behavior on Junction, Sector 1 or a
 specific event number.
 
-The final real-CYD movement witness is on
-`934d0e2f9becd51a93df61d44dd6e01380fae6b4`; CI #1005 succeeds at
-45688 B static RAM and 815821 B flash.
+The post-review real-CYD witness is on
+`7d64839a31376c4ca0a3ec4f0f5ae10395b04635`; CI #1009 succeeds at
+45784 B static RAM and 816517 B flash.
+
+The same hardware run proves the independent EV_SAVEGAME return route survives
+the destructive Junction -> Sector 1 handoff and the session reset. A Sector 1
+checkpoint save reported exactly:
+
+```text
+returnRoute=/junction.bsp/416,1824/192
+```
+
+after a committed Sector 1 MOVE from tile 477 -> 509. The subsequent V9 LOAD
+restored Sector 1 at the saved pose and reached
+`[ENGINESESSION] READY map=2 angle=128 ... TURN+MOVE=armed`.
+
+The review fix that clamps fresh-spawn facing traces at 32x32 map edges mirrors
+legacy `Game_trace()`: source/destination tile components are clamped to
+`[0,31]` while raw world endpoints remain available for sprite-plane crossing.
+CI covers the implementation, but the supplied hardware run did not exercise an
+actual spawn within three facing-trace steps of a map edge; do not claim that
+specific edge case as hardware-proven.
 
 Detailed record:
 

@@ -155,6 +155,22 @@ spawn tile may execute EV_FORCEMESSAGE transactionally
 mixed MOVEEVENT may include EV_FORCEMESSAGE with state/show/lock/door families
 ```
 
+Post-review, the independent SAVEGAME route is copied into a SAVE-owned bounded
+state before the transition session reset. Real-CYD Sector 1 SAVE proves that
+`/junction.bsp / 416,1824 / 192` survives the Junction -> Sector 1 handoff,
+and the following V9 LOAD returns to a ready Sector 1 gameplay session. Current
+V9 bytes are unchanged; LOAD clears the non-serialized live route to avoid
+cross-session leakage.
+
+Fresh-spawn facing also mirrors legacy `Game_trace()` map-edge behavior by
+clamping source/destination tile components to `[0,31]`. The exact near-edge
+spawn case is build/CI-valid but was not exercised in the supplied real-CYD
+trace, so that narrow edge behavior is not yet a hardware claim.
+
+Current post-review hardware-tested code boundary:
+`7d64839a31376c4ca0a3ec4f0f5ae10395b04635`, esp32-cyd CI #1009,
+45784 B static RAM / 816517 B flash.
+
 See [MILESTONE_NATIVE_JUNCTION_SECTOR1.md](MILESTONE_NATIVE_JUNCTION_SECTOR1.md).
 
 ### Current transition milestone

@@ -15,11 +15,11 @@ Authoritative Git boundary before this documentation-only tail:
 ```text
 main = fbacb595170e85b736bcb4e8c97cc22390eba1d8
 branch = agent/esp32-consolidation-v1
-hardware-tested code head = 934d0e2f9becd51a93df61d44dd6e01380fae6b4
-esp32-cyd CI #1005 = SUCCESS
-static RAM = 45688 B
-flash = 815821 B
-artifact id = 11035238982
+hardware-tested code head = 7d64839a31376c4ca0a3ec4f0f5ae10395b04635
+esp32-cyd CI #1009 = SUCCESS
+static RAM = 45784 B
+flash = 816517 B
+artifact id = 11037553080
 ```
 
 ## Real-CYD progression proved on this branch
@@ -127,7 +127,8 @@ open/close line
 Execution preserves legacy command order and exact reverse rollback. This is a
 generic MOVEEVENT capability; there is no Sector-1/event-43 special case.
 
-Real-CYD proof at code head `934d0e2...`:
+Real-CYD progression proof was first established at `934d0e2...` and is
+reconfirmed after the review fixes on `7d64839...`:
 
 ```text
 MOVE tile=477 -> 509, pos=1888,992, angle=192, committed=yes
@@ -148,6 +149,43 @@ MONSTERACTIVESEQ COMPLETE activeCount=2 delivered=2
 
 So Sector 1 is no longer only loadable: the real CYD entered the map, rendered
 it, moved away from spawn and continued normal monster-session processing.
+
+### Post-review SAVE route lifetime and facing-edge parity
+
+Code review caught two generic edge cases after the first progression PASS.
+
+First, EV_SAVEGAME and EV_CHANGEMAP may name different maps. The transition
+owner already accepted that shape, but its inline SAVEGAME route was cleared by
+the session/input reset during successful handoff. The route is now copied into
+the SAVE subsystem before that destructive reset. The real classic CYD proves
+the lifetime boundary: after Junction -> Sector 1 and one committed MOVE
+477 -> 509, a V9 SAVE logged:
+
+```text
+[NATIVESAVE] SAVE ... map=2 gameplayLoadMapId=3 pos=1888,992 angle=128
+             returnRoute=/junction.bsp/416,1824/192 ...
+```
+
+The same checkpoint then loaded successfully, reprime completed and resident
+gameplay reached:
+
+```text
+[ENGINESESSION] READY map=2 angle=128 ... TURN+MOVE=armed
+```
+
+V9 itself is intentionally unchanged by this review fix. The live return-route
+owner is not serialized in V9; a checkpoint LOAD clears it rather than leaking
+a route from the replaced session. Persisting that legacy return route in the
+on-disk checkpoint, if required, is a separate save-format milestone.
+
+Second, generalized four-cardinal fresh-map facing can project its three-tile
+trace beyond a 32x32 map edge. Legacy `Game_trace()` clamps source and
+destination tile coordinates independently to `[0,31]`. The native facing
+trace now does the same while retaining the raw world endpoints for wall-sprite
+plane crossing. This review correction is CI/build-valid on the tested code
+head, but the supplied hardware path starts at Sector 1 tile 477 and does not
+exercise a spawn within three trace steps of the map boundary. That exact
+map-edge case remains an explicit non-claim.
 
 ## Important non-claims
 
