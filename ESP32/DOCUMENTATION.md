@@ -977,8 +977,8 @@ Never merge into `main` without explicit user request.
 Hardware-tested boundary:
 
 ```text
-6425c30278d83407bf859db642c759ca826a3b41
-esp32-cyd CI #961/#962 = SUCCESS
+7b3efeb8d590c027b94f08ac7c31c886938709d4
+esp32-cyd CI #980/#981 = SUCCESS
 ```
 
 V8 checkpoints contain logical monster state and script state, but not the
@@ -998,15 +998,25 @@ guess historical monster movement. The real classic CYD confirmed that monsters
 revealed by the yellow-card trigger are present again after loading the existing
 V8 save.
 
-The new V9 record adds exact compact ownership for monster topology, position
-and activation order alongside `MonsterState`. Cross-owner identity and
-fingerprints are validated fail-closed. A real-CYD V9 SAVE now succeeds. The
-final cross-owner rule treats logical death in `MonsterState` as authoritative
-over raw compact topology, matching the existing combat projection, while still
-rejecting a logically alive monster whose raw topology ALIVE bit is cleared.
+The final V9 record owns compact monster state/position/activation plus topology
+for both enemies and destructibles. This matters because EV_SHOW can remove
+either an enemy blocker or a deterministic destructible before linking its
+target. Enemy blocker death is reconciled only in the checkpoint copy of
+MonsterState, without synthesizing gameplay side effects; destructible topology
+is serialized directly.
 
-The V9 exact SAVE/LOAD round-trip still needs a dedicated hardware witness before
-it is considered validated.
+Real classic CYD proof at
+`7b3efeb8d590c027b94f08ac7c31c886938709d4`:
+
+```text
+SAVE: topology=43, monsters=30, positions=30
+LOAD: tracked=43, enemies=30, destructibles=13,
+      scope=enemy+destructible-v9, exact=yes
+READY: shapeData=0x0, mediaTexels=0x0
+```
+
+The exact V9 SAVE/LOAD spatial round-trip is therefore hardware-validated for
+this bounded owner set.
 
 See
 [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md).
