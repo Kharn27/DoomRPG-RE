@@ -574,14 +574,16 @@ int EspMapSpriteTopology_restoreMonsterSnapshot(
     for (i = 0U; i < snapshot->count; ++i) {
         const EspMapSpriteTopologyMonsterRecord* record =
             &snapshot->records[i];
-        const uint16_t live = linkStateAt(record->spriteIndex);
         const uint16_t identityMask =
             ESP_MAP_SPRITE_TOPOLOGY_EXISTS |
             ESP_MAP_SPRITE_TOPOLOGY_HAS_SPRITE_ENT;
+        uint16_t live;
+        uint8_t type;
 
-        const uint8_t type = entityTypes[record->spriteIndex];
-        if (record->spriteIndex >= topologyView.spriteCount ||
-            (type != ESP_MAP_ENTITY_TYPE_ENEMY &&
+        if (record->spriteIndex >= topologyView.spriteCount) return 0;
+        live = linkStateAt(record->spriteIndex);
+        type = entityTypes[record->spriteIndex];
+        if ((type != ESP_MAP_ENTITY_TYPE_ENEMY &&
              type != ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE) ||
             (live & identityMask) !=
                 (record->linkState & identityMask)) {
