@@ -7,16 +7,16 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
 branch = agent/esp32-consolidation-dead-wrap-cleanup
-hardware-tested code boundary = aa7cb5c778264e1bb61d442d1c9864c09e6f37a3
-CI = esp32-cyd #1020 SUCCESS on docs-only head 25cfb5f9f09c95cff2a6edc716ea1f51c518d432
+hardware-tested code boundary = cb45792af62d8ad0946dc4d477b288ef92aecf3a
+CI = esp32-cyd #1022 SUCCESS
 static RAM = 45784 B
-flash = 816517 B
-artifact id = 11041812545
-hardware = explicit monster-movement activation boundary PASS incl. 4-member ordered sequence + subtype-4 goals 2/3 and 3/3
-status = HARDWARE PASS for active MonsterPosition prepare wrap removal; branch remains active for further bounded consolidation
+flash = 816509 B
+artifact id = 11042258257
+hardware = explicit MovementProbe reset composition PASS incl. SAVE/LOAD + post-load 4-member ordered movement + subtype-4 goals 2/3 and 3/3
+status = HARDWARE PASS for active MovementProbe reset wrap removal; branch remains active for further bounded consolidation
 ```
 
-### Explicit MovementProbe reset composition — REAL-CYD PARTIAL (2026-09-29)
+### Explicit MovementProbe reset composition — REAL-CYD PASS (2026-09-29)
 
 Candidate `cb45792af62d8ad0946dc4d477b288ef92aecf3a` removes the active
 `--wrap=EspNativeGameplayMonsterMovementProbe_reset` and places the same
@@ -28,10 +28,12 @@ wraps. Real-CYD SAVE/LOAD proves full resident teardown, exact V9 monster
 state/topology/position/activation restore, owner READY reinitialization and
 `ENGINESESSION READY` with `shapeData=0x0 mediaTexels=0x0`.
 
-The provided trace stops before the first post-LOAD MOVE, so this candidate is
-only PARTIALLY hardware validated. The authoritative complete hardware boundary
-remains `aa7cb5c778264e1bb61d442d1c9864c09e6f37a3` until post-LOAD monster
-movement is observed.
+The first MOVE after LOAD then proves consumers restart cleanly: movement probe
+counter restarts at n=1, four restored active monsters are delivered in order,
+all live moves commit, and both subtype-4 monsters complete goals 2/3 and 3/3
+through the explicit movement activation/publication path. The turn closes with
+`activeCount=4 delivered=4 ordered=yes` and a steady `[ALIVE]` witness.
+This candidate is therefore hardware validated.
 
 ### Active MonsterPosition prepare wrap removal — REAL-CYD PASS (2026-09-29)
 
