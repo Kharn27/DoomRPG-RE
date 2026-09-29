@@ -202,3 +202,56 @@ closes after every live commit.
 Therefore removal of
 `--wrap=EspNativeGameplayMonsterPosition_prepareCardinalMove` is hardware
 validated on the real classic CYD.
+
+
+## Explicit movement reset composition — partial REAL-CYD validation
+
+Candidate `cb45792af62d8ad0946dc4d477b288ef92aecf3a` removes
+`--wrap=EspNativeGameplayMonsterMovementProbe_reset` and moves the exact reset
+order into the permanent `EspNativeGameplayMonsterMovementProbe_reset()` API:
+
+```text
+ThreeGoalTurn_reset
+MovementPublish_reset
+MonsterMovement_reset
+MonsterPosition_reset
+```
+
+CI #1022 succeeds with 45784 B static RAM and 816509 B flash. The active linker
+wrap count is 63.
+
+The real CYD validates the pre-reset side and the checkpoint reset/restore path:
+
+```text
+before SAVE:
+  activeCount=4 delivered=4 ordered=yes
+  subtype-4 goals 2/3 and 3/3 commit for sprites 0 and 1
+
+SAVE V9:
+  monsters=50
+  topology=65
+  positions=50
+  activation=4
+
+LOAD:
+  RESIDENTRESET ... after=0/0/0/0/0/0/0 empty=1
+  MONSTERSTATE STAGE-RESTORE ... exact saved FNV
+  MAPCHECKPOINTTOPO RESTORE ... exact saved FNV
+  MONSTERPOS STAGE-RESTORE ... exact saved FNV
+  MONSTERACT RESTORE activeCount=4 orderCount=4 ... selection=clear
+  MONSTERSTATE RESTORE
+  MONSTERPOS RESTORE
+  MONSTERMOVE READY
+  MONSTERACTIVESEQ READY
+  ENGINESESSION READY ... shapeData=0x0 mediaTexels=0x0
+```
+
+This proves that the explicit reset sequence does not break checkpoint teardown,
+V9 spatial restoration, owner reinitialization, cache priming or session resume.
+
+The supplied trace ends immediately after `ENGINESESSION READY`, before any
+post-LOAD monster movement is serviced. Therefore `cb45792...` is NOT yet a
+complete hardware-pass boundary. One post-LOAD MOVE that reaches
+`MONSTERMOVEACT` / `MONSTERMOVELIVE` (and preferably a subtype-4
+`MONSTER3GOAL` continuation) is still required to prove the reset consumers
+restart cleanly.
