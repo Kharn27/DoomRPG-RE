@@ -5,17 +5,59 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 0e66004c755cc050c5fa3f6eac91f85f943e4c8d
-branch = agent/esp32-consolidation-monster-wraps-v2
-hardware-tested code boundary = 2976cf9f157fa3dfd1649efaaec77986450648cc
-CI = esp32-cyd #1036 SUCCESS
-static RAM = 45784 B
-flash = 816545 B
-artifact id = 11044812987
-translation units = 174
-active --wrap flags = 61
-hardware = explicit MonsterTurn post-move dispatch PASS with two complete subtype-4 three-goal chains inside ordered 4-monster turn after V9 LOAD
-status = HARDWARE PASS for four active native linker seams removed; branch remains active for bounded consolidation
+current main = da8c3632162ad8dc7a0a83e7c398d815a0fbfea2
+branch = agent/esp32-consolidation-monster-wraps-v3
+hardware-tested code boundary = b2c22ee699213a04429669c6b3ca63c479918d1f
+CI = esp32-cyd #1049 SUCCESS
+static RAM = 45776 B
+flash = 815609 B
+artifact id = 11045807444
+translation units = 173
+active --wrap flags = 60
+hardware = obsolete MonsterState_view diagnostic witness removed; ordered four-monster turn and both subtype-4 three-goal chains remain exact on real CYD
+status = HARDWARE PASS for five active native linker seams removed; branch ready for documentation-only close
+```
+
+### Obsolete MonsterState view witness retirement — REAL-CYD PASS (2026-09-29)
+
+Commit `b2c22ee699213a04429669c6b3ca63c479918d1f` removes the final
+three-goal census-only translation unit
+`esp_native_gameplay_monster_three_goal_witness.c` after
+`57da58cb23a9de923a2c1bc3cd158e5b5818a7b0` removes
+`--wrap=EspNativeGameplayMonsterState_view`.
+
+The deleted wrapper had no gameplay mutation: it called the real
+`EspNativeGameplayMonsterState_view()`, emitted one-shot subtype 4/13
+`WITNESS/CENSUS` diagnostics, then returned the same view unchanged. No
+replacement API is needed.
+
+CI #1049 succeeds with 45776 B static RAM and 815609 B flash. Relative to merged
+main `da8c3632162ad8dc7a0a83e7c398d815a0fbfea2`, the ESP32 source count drops
+174 -> 173 and active linker wraps drop 61 -> 60.
+
+The real classic CYD proves the gameplay path is unchanged:
+
+```text
+sprite 218 subtype 3: movement COMMIT + MONSTERPOSTMOVE COMPLETE
+sprite 237 subtype 5: movement COMMIT + MONSTERPOSTMOVE COMPLETE
+sprite 0 subtype 4: 470 -> 471 -> 439 -> 440, MONSTER3GOAL COMPLETE
+sprite 1 subtype 4: 534 -> 535 -> 536 -> 537, MONSTER3GOAL COMPLETE
+MONSTERACTIVESEQ COMPLETE activeCount=4 delivered=4 ordered=yes
+ALIVE uptime=56336 ms heap=82704 heap8=17152 largest8=10228
+```
+
+Each subtype-4 continuation still passes `MONSTERMOVEACT ALLOW`, commits one
+movement RNG byte, publishes position/topology and closes rollback before the
+next member. The retired `MONSTER3GOAL WITNESS/CENSUS` lines are absent, as
+expected, while the permanent `MONSTER3GOAL READY/ARM/PLAN/COMMIT/COMPLETE`
+runtime remains intact.
+
+Remaining monster-domain active linker wraps:
+
+```text
+EspNativeGameplayMonsterState_actionService
+EspNativeGameplayMonsterTurn_view
+EspNativeGameplayMonsterMovement_service
 ```
 
 ### Explicit MonsterTurn post-move composition — REAL-CYD PASS (2026-09-29)

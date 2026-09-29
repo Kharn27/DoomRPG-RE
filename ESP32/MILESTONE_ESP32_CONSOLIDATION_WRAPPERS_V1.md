@@ -5,15 +5,15 @@ Date: 2026-09-29
 ## Boundary
 
 ```text
-main = 0e66004c755cc050c5fa3f6eac91f85f943e4c8d
-branch = agent/esp32-consolidation-monster-wraps-v2
-hardware-tested code head = 2976cf9f157fa3dfd1649efaaec77986450648cc
-esp32-cyd CI #1036 = SUCCESS
-static RAM = 45784 B
-flash = 816545 B
-artifact id = 11044812987
-translation units = 174
-active --wrap entries = 61
+main = da8c3632162ad8dc7a0a83e7c398d815a0fbfea2
+branch = agent/esp32-consolidation-monster-wraps-v3
+hardware-tested code head = b2c22ee699213a04429669c6b3ca63c479918d1f
+esp32-cyd CI #1049 = SUCCESS
+static RAM = 45776 B
+flash = 815609 B
+artifact id = 11045807444
+translation units = 173
+active --wrap entries = 60
 ```
 
 ## Consolidation method
@@ -352,26 +352,100 @@ Therefore removal of
 `--wrap=EspNativeGameplayMonsterTurn_postMoveGoal` is hardware validated on
 the real classic CYD.
 
-## Consolidation checkpoint after four active-wrap removals
+## Obsolete MonsterState view witness retirement — REAL-CYD PASS
 
-Relative to merged main
-`0e66004c755cc050c5fa3f6eac91f85f943e4c8d`:
+After the previous four semantic wrapper removals were merged, the next audit
+starts from exact main `da8c3632162ad8dc7a0a83e7c398d815a0fbfea2`.
+Three-goal witness code is now historical instrumentation rather than permanent
+runtime behavior.
+
+`esp_native_gameplay_monster_three_goal_witness.c` contained only:
 
 ```text
-translation units = 174 -> 174
-active --wrap flags = 62 -> 61
-static RAM = 45784 B -> 45784 B
-flash = 816509 B -> 816545 B
+__real_EspNativeGameplayMonsterState_view()
+__wrap_EspNativeGameplayMonsterState_view()
+local topology/read helpers
+MONSTER3GOAL WITNESS / WITNESS-DEFER / CENSUS printf diagnostics
+```
+
+The wrapper always returned the same real `MonsterState_view` pointer and did
+not mutate monster state, RNG, topology, rendering or turn sequencing. Commit
+`57da58cb23a9de923a2c1bc3cd158e5b5818a7b0` removes its linker
+`--wrap`; commit `b2c22ee699213a04429669c6b3ca63c479918d1f`
+deletes the 119-line witness translation unit entirely.
+
+Build witness:
+
+```text
+esp32-cyd CI #1049 = SUCCESS
+static RAM = 45776 B
+flash = 815609 B
+artifact id = 11045807444
+translation units = 173
+active --wrap entries = 60
+```
+
+Compared with merged main, this removes one translation unit and one linker
+interception while saving 8 B static RAM and 936 B flash.
+
+The real classic CYD validates the permanent gameplay path unchanged. One MOVE
+after the existing Sector 1 save executes the same ordered four-monster turn:
+
+```text
+sprite 218 subtype 3:
+  first movement COMMIT
+  MONSTERPOSTMOVE COMPLETE
+
+sprite 237 subtype 5:
+  first movement COMMIT
+  MONSTERPOSTMOVE COMPLETE
+
+sprite 0 subtype 4:
+  first goal 470 -> 471 COMMIT
+  goal 2/3 471 -> 439 COMMIT
+  goal 3/3 439 -> 440 COMMIT
+  MONSTER3GOAL COMPLETE
+
+sprite 1 subtype 4:
+  first goal 534 -> 535 COMMIT
+  goal 2/3 535 -> 536 COMMIT
+  goal 3/3 536 -> 537 COMMIT
+  MONSTER3GOAL COMPLETE
+
+MONSTERACTIVESEQ COMPLETE turn=1 reason=1 activeCount=4 delivered=4
+sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred
+ALIVE uptime=56336 ms heap=82704 heap8=17152 largest8=10228
+```
+
+All subtype-4 continuation moves still pass `MONSTERMOVEACT ALLOW`; each live
+commit consumes exactly one movement RNG byte, publishes position/topology and
+closes rollback. The removed `MONSTER3GOAL WITNESS/CENSUS` diagnostics no
+longer appear, while the permanent `READY/ARM/PLAN/COMMIT/COMPLETE` chain
+remains present.
+
+Therefore `--wrap=EspNativeGameplayMonsterState_view` and its dedicated
+diagnostic translation unit are fully retired and hardware validated.
+
+## Consolidation checkpoint after five active-wrap removals
+
+Relative to current merged main
+`da8c3632162ad8dc7a0a83e7c398d815a0fbfea2`:
+
+```text
+translation units = 174 -> 173
+active --wrap flags = 61 -> 60
+static RAM = 45784 B -> 45776 B
+flash = 816545 B -> 815609 B
 ```
 
 Across the wider consolidation sequence from the earlier 65-wrap baseline:
 
 ```text
-translation units = 175 -> 174
-active --wrap flags = 65 -> 61
+translation units = 175 -> 173
+active --wrap flags = 65 -> 60
 ```
 
-Hardware-tested code boundaries in order:
+Hardware-tested boundaries in order:
 
 ```text
 4731d826... dormant Retaliation compatibility removal
@@ -379,6 +453,7 @@ aa7cb5c7... explicit MonsterPosition prepare activation/capture boundary
 cb45792a... explicit MovementProbe reset composition
 560e54bd... explicit synthetic MovementView publication
 2976cf9f... explicit MonsterTurn post-move composition
+b2c22ee6... obsolete MonsterState view witness + TU retirement
 ```
 
 The remaining active monster-domain wrappers are:
@@ -387,9 +462,9 @@ The remaining active monster-domain wrappers are:
 EspNativeGameplayMonsterState_actionService
 EspNativeGameplayMonsterTurn_view
 EspNativeGameplayMonsterMovement_service
-EspNativeGameplayMonsterState_view
 ```
 
-The branch remains active. Continue by replacing the smallest coherent
-native-to-native composition seam; do not optimize for wrapper count alone and
-do not merge into main without explicit user request.
+The branch is hardware-pass. Any commit after
+`b2c22ee699213a04429669c6b3ca63c479918d1f` must remain documentation-only
+before merge. Continue future consolidation from the next true merged-main SHA,
+choosing ownership seams rather than optimizing for wrapper count.
