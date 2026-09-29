@@ -73,12 +73,6 @@ typedef struct ThreeGoalPathResult_s {
 static EspNativeGameplayMonsterThreeGoalTurnView threeGoalView;
 static EspNativeGameplayMonsterMovementView syntheticMovementView;
 
-int __real_EspNativeGameplayMonsterTurn_postMoveGoal(
-    struct DoomRPG_s* doomRpg,
-    uint16_t spriteIndex,
-    uint16_t sourceTile,
-    uint16_t destTile);
-
 static int centeredCoordinate(int32_t value) {
     return value >= THREEGOAL_TILE_CENTER &&
            value <= (int32_t)(((THREEGOAL_MAP_WIDTH - 1U) * THREEGOAL_TILE_SIZE) +
@@ -899,7 +893,7 @@ static int adjacentLegacyShortcut(const EspPlayerViewState* player,
            distance2 <= (uint32_t)(THREEGOAL_TILE_SIZE * THREEGOAL_TILE_SIZE);
 }
 
-int __wrap_EspNativeGameplayMonsterTurn_postMoveGoal(
+int EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
     struct DoomRPG_s* doomRpgBase,
     uint16_t spriteIndex,
     uint16_t sourceTile,
@@ -915,9 +909,12 @@ int __wrap_EspNativeGameplayMonsterTurn_postMoveGoal(
     uint16_t currentDest = destTile;
     uint8_t goalStep = 1U;
 
+    /*
+     * Explicit special-family entry. Ordinary-vs-three-goal routing is owned
+     * by MonsterTurn; direct misuse remains fail-closed.
+     */
     if (monster == NULL || (monster->subtype != 4U && monster->subtype != 13U)) {
-        return __real_EspNativeGameplayMonsterTurn_postMoveGoal(
-            doomRpgBase, spriteIndex, sourceTile, destTile);
+        return 0;
     }
 
     if (doomRpg == NULL || !syncOwner()) {
