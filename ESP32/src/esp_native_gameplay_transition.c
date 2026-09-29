@@ -598,10 +598,14 @@ EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
                                       changeName, sizeof(changeName),
                                       &changeNameLength);
     EspAssetPack_close();
+    /*
+     * Legacy EV_SAVEGAME and EV_CHANGEMAP carry independent map strings.
+     * SAVEGAME prepares the future save/return route (newMapName/newDest*),
+     * while CHANGEMAP selects the map loaded now. Entrance -> Junction happened
+     * to use the same resource for both, but hub -> sector transitions do not.
+     */
     if (stringStatus != ESP_MAP_STRING_READ_OK ||
         changeNameLength >= sizeof(changeName) ||
-        saveRoute.mapNameLength != changeNameLength ||
-        strcmp(saveRoute.mapName, changeName) != 0 ||
         !EspMapCatalog_idForName(changeName, &targetMapId) ||
         !EspMapCatalog_isValidId(targetMapId) ||
         targetMapId == view->targetMapId) {
