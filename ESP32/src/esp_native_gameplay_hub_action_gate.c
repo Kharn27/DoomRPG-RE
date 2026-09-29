@@ -2,12 +2,9 @@
 #include <stdio.h>
 
 #include "esp_native_gameplay_hub.h"
+#include "esp_native_gameplay_hub_action_gate.h"
+#include "esp_native_gameplay_monster_state.h"
 #include "esp_native_resident_gameplay.h"
-
-struct DoomRPG_s;
-
-int __real_EspNativeGameplayMonsterState_actionService(
-    struct DoomRPG_s* doomRpg);
 
 /*
  * Resident gameplay already gives HUB exclusive input ownership, but the
@@ -20,8 +17,7 @@ int __real_EspNativeGameplayMonsterState_actionService(
  * is not rebased: once HUB closes, the real service observes the actual elapsed
  * lease and expires feedback immediately when it is already due.
  */
-int __wrap_EspNativeGameplayMonsterState_actionService(
-    struct DoomRPG_s* doomRpg) {
+int EspNativeGameplayHubActionGate_service(struct DoomRPG_s* doomRpg) {
     static uint8_t paused;
 
     if (EspNativeGameplayHub_isActive() ||
@@ -38,5 +34,5 @@ int __wrap_EspNativeGameplayMonsterState_actionService(
         paused = 0U;
         printf("[HUBACTIONGATE] RESUME owner=world worldActionFeedback=yes timer=realtime mutation=no\n");
     }
-    return __real_EspNativeGameplayMonsterState_actionService(doomRpg);
+    return EspNativeGameplayMonsterState_actionService(doomRpg);
 }

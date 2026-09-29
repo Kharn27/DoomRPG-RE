@@ -13,6 +13,7 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hit_feedback.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_hub_action_gate.h"
 #include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_trace.h"
@@ -948,7 +949,7 @@ int __wrap_EspMapSpriteTopology_getEntity(uint32_t spriteIndex,
 int __wrap_EspNativeGameplayActionEngine_service(DoomRPG_t* runtime) {
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
 
-    if (!EspNativeGameplayMonsterState_actionService(runtime)) return 0;
+    if (!EspNativeGameplayHubActionGate_service(runtime)) return 0;
 
     /* The private chain above has already serviced the generic ActionEngine.
      * With no enemies there is deliberately no MonsterState/MonsterCombat
