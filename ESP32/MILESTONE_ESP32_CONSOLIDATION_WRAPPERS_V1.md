@@ -5,13 +5,15 @@ Date: 2026-09-29
 ## Boundary
 
 ```text
-main = 3de74fc1899ea619874b9f2bce8fb3679016c1a4
-branch = agent/esp32-consolidation-dead-wrap-cleanup
-hardware-tested code head = 4731d8265e90da19dc6d911739c4bf5574117a4d
-esp32-cyd CI #1015 attempt 2 = SUCCESS
+main = 0e66004c755cc050c5fa3f6eac91f85f943e4c8d
+branch = agent/esp32-consolidation-monster-wraps-v2
+hardware-tested code head = 2976cf9f157fa3dfd1649efaaec77986450648cc
+esp32-cyd CI #1036 = SUCCESS
 static RAM = 45784 B
-flash = 816517 B
-artifact id = 11039313210
+flash = 816545 B
+artifact id = 11044812987
+translation units = 174
+active --wrap entries = 61
 ```
 
 ## Consolidation method
@@ -293,16 +295,80 @@ No publication mismatch appears. Activation capture, one-byte continuation RNG,
 position rollback, topology relink and renderer publication all remain intact.
 Therefore the Movement_view linker interception is fully hardware validated.
 
-## Consolidation checkpoint after three active-wrap removals
+## Explicit MonsterTurn post-move composition — REAL-CYD PASS
+
+Commit `2976cf9f157fa3dfd1649efaaec77986450648cc` removes the active
+`--wrap=EspNativeGameplayMonsterTurn_postMoveGoal`.
+
+The old linker wrapper lived in ThreeGoalTurn and delegated non-4/13 monsters
+through `__real_EspNativeGameplayMonsterTurn_postMoveGoal`. Ownership is now
+explicit: `EspNativeGameplayMonsterTurn_postMoveGoal` dispatches subtype 4/13
+to `EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal`; all other families
+stay on the ordinary implementation. The dispatch occurs before ordinary
+turn-owner sync/probe accounting, preserving the previous wrapper ordering.
+
+Build witness:
+
+```text
+esp32-cyd CI #1036 = SUCCESS
+static RAM = 45784 B
+flash = 816545 B
+artifact id = 11044812987
+active --wrap entries = 61
+translation units = 174
+```
+
+The real classic CYD validates this after V9 LOAD. The first post-load movement
+probe starts at `n=1`, and one MOVE services all four active monsters in order.
+
+```text
+sprite 218 subtype 3: MONSTERMOVELIVE COMMIT + MONSTERPOSTMOVE COMPLETE
+sprite 237 subtype 5: MONSTERMOVELIVE COMMIT + MONSTERPOSTMOVE COMPLETE
+
+sprite 0 subtype 4:
+  first goal 470 -> 471 COMMIT
+  goal 2/3 471 -> 439 COMMIT
+  goal 3/3 439 -> 440 COMMIT
+  MONSTER3GOAL COMPLETE
+
+sprite 1 subtype 4:
+  first goal 534 -> 535 COMMIT
+  goal 2/3 535 -> 536 COMMIT
+  goal 3/3 536 -> 537 COMMIT
+  MONSTER3GOAL COMPLETE
+```
+
+Every subtype-4 continuation passes `MONSTERMOVEACT ALLOW`; each committed
+continuation reports `rngCalls=1`, publishes topology/position and closes
+rollback before the next member. The turn closes with:
+
+```text
+[MONSTERACTIVESEQ] COMPLETE turn=1 reason=1 activeCount=4 delivered=4
+sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred
+[ALIVE] uptime=49239 ms heap=82696 heap8=17144 largest8=10228
+```
+
+Therefore removal of
+`--wrap=EspNativeGameplayMonsterTurn_postMoveGoal` is hardware validated on
+the real classic CYD.
+
+## Consolidation checkpoint after four active-wrap removals
 
 Relative to merged main
-`3de74fc1899ea619874b9f2bce8fb3679016c1a4`:
+`0e66004c755cc050c5fa3f6eac91f85f943e4c8d`:
+
+```text
+translation units = 174 -> 174
+active --wrap flags = 62 -> 61
+static RAM = 45784 B -> 45784 B
+flash = 816509 B -> 816545 B
+```
+
+Across the wider consolidation sequence from the earlier 65-wrap baseline:
 
 ```text
 translation units = 175 -> 174
-active --wrap flags = 65 -> 62
-static RAM = 45784 B
-flash = 816517 B -> 816509 B
+active --wrap flags = 65 -> 61
 ```
 
 Hardware-tested code boundaries in order:
@@ -312,6 +378,7 @@ Hardware-tested code boundaries in order:
 aa7cb5c7... explicit MonsterPosition prepare activation/capture boundary
 cb45792a... explicit MovementProbe reset composition
 560e54bd... explicit synthetic MovementView publication
+2976cf9f... explicit MonsterTurn post-move composition
 ```
 
 The remaining active monster-domain wrappers are:
@@ -320,7 +387,6 @@ The remaining active monster-domain wrappers are:
 EspNativeGameplayMonsterState_actionService
 EspNativeGameplayMonsterTurn_view
 EspNativeGameplayMonsterMovement_service
-EspNativeGameplayMonsterTurn_postMoveGoal
 EspNativeGameplayMonsterState_view
 ```
 
