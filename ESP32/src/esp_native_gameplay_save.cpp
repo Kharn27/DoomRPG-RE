@@ -12,10 +12,12 @@
 #include "esp_hud_refresh_state.h"
 #include "esp_map_automap_state.h"
 #include "esp_map_catalog.h"
+#include "esp_map_events.h"
 #include "esp_map_line_checkpoint.h"
 #include "esp_map_resident_lifecycle.h"
 #include "esp_map_runtime.h"
 #include "esp_map_script_state.h"
+#include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_combat_math.h"
@@ -24,6 +26,8 @@
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_monster_activation.h"
+#include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
@@ -54,6 +58,7 @@ constexpr uint8_t kMagicV5[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '5'};
 constexpr uint8_t kMagicV6[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '6'};
 constexpr uint8_t kMagicV7[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '7'};
 constexpr uint8_t kMagicV8[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '8'};
+constexpr uint8_t kMagicV9[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '9'};
 constexpr uint16_t kVersionV1 = 1U;
 constexpr uint16_t kVersionV2 = 2U;
 constexpr uint16_t kVersionV3 = 3U;
@@ -62,6 +67,7 @@ constexpr uint16_t kVersionV5 = 5U;
 constexpr uint16_t kVersionV6 = 6U;
 constexpr uint16_t kVersionV7 = 7U;
 constexpr uint16_t kVersionV8 = 8U;
+constexpr uint16_t kVersionV9 = 9U;
 constexpr uint8_t kFamiliarAmmoType = 5U;
 constexpr uint8_t kStatusSave = 0U;
 constexpr uint8_t kStatusLoad = 1U;
@@ -136,7 +142,14 @@ struct LoadedSaveRecord {
     uint8_t hasLines;
     uint8_t hasActionRemoved;
     uint8_t hasAutomap;
-    uint8_t reservedLoaded;
+    uint8_t hasMonsterSpatial;
+};
+
+struct NativeSaveRecordV9Tail {
+    EspNativeGameplayMonsterStateSnapshot monsters;
+    EspMapSpriteTopologyMonsterSnapshot monsterTopology;
+    EspNativeGameplayMonsterPositionSnapshot monsterPositions;
+    EspNativeGameplayMonsterActivationSnapshot monsterActivation;
 };
 
 constexpr size_t kRecordBytesV6 =
@@ -146,6 +159,9 @@ constexpr size_t kRecordBytesV7 =
     kRecordBytesV6 + sizeof(EspMapAutomapSnapshot);
 constexpr size_t kRecordBytesV8 =
     kRecordBytesV7 + sizeof(EspNativeGameplayMonsterStateSnapshot);
+
+constexpr size_t kRecordBytesV9 =
+    kRecordBytesV7 + sizeof(NativeSaveRecordV9Tail);
 
 static_assert(sizeof(EspNativeGameplayCrateTransformSnapshot) == 176U,
               "crate transform checkpoint must remain exactly 176 bytes");
@@ -159,7 +175,17 @@ static_assert(sizeof(EspNativeGameplayMonsterStateSnapshot) == 1612U,
               "monster-state checkpoint must remain exactly 1612 bytes");
 static_assert(kRecordBytesV8 == 3548U,
               "native save v8 must remain the bounded 3548-byte streamed record");
-static_assert(kRecordBytesV8 <= 0xffffU,
+static_assert(sizeof(EspMapSpriteTopologyMonsterSnapshot) == 816U,
+              "monster-topology checkpoint must remain exactly 816 bytes");
+static_assert(sizeof(EspNativeGameplayMonsterPositionSnapshot) == 812U,
+              "monster-position checkpoint must remain exactly 812 bytes");
+static_assert(sizeof(EspNativeGameplayMonsterActivationSnapshot) == 268U,
+              "monster-activation checkpoint must remain exactly 268 bytes");
+static_assert(sizeof(NativeSaveRecordV9Tail) == 3508U,
+              "native save v9 tail must remain exactly 3508 bytes");
+static_assert(kRecordBytesV9 == 5444U,
+              "native save v9 must remain the bounded 5444-byte streamed record");
+static_assert(kRecordBytesV9 <= 0xffffU,
               "native save recordBytes field is uint16_t");
 
 static_assert(sizeof(NativeSaveCore) == 132U,
@@ -255,6 +281,93 @@ uint32_t automapSnapshotFNV(const EspMapAutomapSnapshot& automap) {
     hash = fnv1aAppend(hash, automap.lineBits, automap.lineBitsetBytes);
     if (hash == 0U) return 0U;
     return fnv1aAppend(hash, automap.spriteBits, automap.spriteBitsetBytes);
+}
+
+uint32_t checkpointFNVByte(uint32_t hash, uint8_t value) {
+    hash ^= value;
+    return hash * 16777619U;
+}
+
+uint32_t checkpointFNV16(uint32_t hash, uint16_t value) {
+    hash = checkpointFNVByte(hash, (uint8_t)(value & 0xffU));
+    return checkpointFNVByte(hash, (uint8_t)((value >> 8) & 0xffU));
+}
+
+uint32_t checkpointFNV32(uint32_t hash, uint32_t value) {
+    hash = checkpointFNV16(hash, (uint16_t)(value & 0xffffU));
+    return checkpointFNV16(hash, (uint16_t)((value >> 16) & 0xffffU));
+}
+
+uint32_t monsterStateSnapshotFNV(
+    const EspNativeGameplayMonsterStateSnapshot& snapshot) {
+    uint32_t hash = 2166136261U;
+    uint32_t i;
+    if (snapshot.count > ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT) return 0U;
+    for (i = 0U; i < snapshot.count; ++i) {
+        const EspNativeGameplayMonsterRecord& record = snapshot.records[i];
+        hash = checkpointFNV32(hash, record.param1);
+        hash = checkpointFNV32(hash, record.param2);
+        hash = checkpointFNV16(hash, record.spriteIndex);
+        hash = checkpointFNV16(hash, record.defTile);
+        hash = checkpointFNVByte(hash, record.subtype);
+        hash = checkpointFNVByte(hash, record.mType);
+        hash = checkpointFNVByte(hash, record.alternateAttack);
+        hash = checkpointFNVByte(hash, record.alive);
+    }
+    return hash;
+}
+
+bool reconcileMonsterSnapshotWithTopology(
+    EspNativeGameplayMonsterStateSnapshot* monsters,
+    const EspMapSpriteTopologyMonsterSnapshot& topology,
+    uint16_t* outReconciled) {
+    uint32_t monsterIndex;
+    uint32_t topologyIndex = 0U;
+    uint16_t reconciled = 0U;
+
+    if (outReconciled != nullptr) *outReconciled = 0U;
+    if (monsters == nullptr ||
+        topology.count < monsters->count ||
+        topology.count > ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX) {
+        return false;
+    }
+
+    for (monsterIndex = 0U; monsterIndex < monsters->count; ++monsterIndex) {
+        EspNativeGameplayMonsterRecord& monster =
+            monsters->records[monsterIndex];
+
+        while (topologyIndex < topology.count &&
+               topology.records[topologyIndex].spriteIndex <
+                   monster.spriteIndex) {
+            ++topologyIndex;
+        }
+        if (topologyIndex >= topology.count ||
+            topology.records[topologyIndex].spriteIndex !=
+                monster.spriteIndex) {
+            return false;
+        }
+
+        /*
+         * EV_SHOW blocker removal intentionally mutates compact topology first
+         * and defers the legacy enemy gameplay consequences. For checkpoint
+         * persistence, however, a topology-dead enemy must resume logically
+         * dead as well or V9 would either reject the save or resurrect it on
+         * LOAD. Reconcile only the snapshot copy: no XP/drop/sound/RNG is
+         * synthesized and the live gameplay owner remains untouched.
+         */
+        if ((topology.records[topologyIndex].linkState &
+             ESP_MAP_SPRITE_TOPOLOGY_ALIVE) == 0U &&
+            monster.alive != 0U) {
+            monster.alive = 0U;
+            ++reconciled;
+        }
+    }
+
+    monsters->stateFNV1a = monsterStateSnapshotFNV(*monsters);
+    if (outReconciled != nullptr) *outReconciled = reconciled;
+    return monsters->stateFNV1a != 0U &&
+           EspNativeGameplayMonsterState_snapshotShapeValid(
+               monsters, monsters->sourceArenaFNV1a);
 }
 
 uint32_t recordCrcBytes(const uint8_t* data, size_t bytes) {
@@ -381,6 +494,41 @@ uint32_t recordCrcV8(
     const size_t sizes[4] = {
         sizeof(prefix), sizeof(crateTransforms), sizeof(automap),
         sizeof(monsters)
+    };
+    const size_t zeroOffset = offsetof(NativeSaveCore, recordCrc32);
+    const size_t zeroEnd = zeroOffset + sizeof(uint32_t);
+    uint32_t crc = 0xffffffffU;
+    uint8_t segment;
+    size_t i;
+    uint32_t bit;
+
+    for (segment = 0U; segment < 4U; ++segment) {
+        for (i = 0U; i < sizes[segment]; ++i) {
+            uint8_t value = segments[segment][i];
+            if (segment == 0U && i >= zeroOffset && i < zeroEnd) value = 0U;
+            crc ^= value;
+            for (bit = 0U; bit < 8U; ++bit) {
+                const uint32_t mask = (uint32_t)-(int32_t)(crc & 1U);
+                crc = (crc >> 1) ^ (0xedb88320U & mask);
+            }
+        }
+    }
+    return ~crc;
+}
+
+uint32_t recordCrcV9(
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    const uint8_t* segments[4] = {
+        reinterpret_cast<const uint8_t*>(&prefix),
+        reinterpret_cast<const uint8_t*>(&crateTransforms),
+        reinterpret_cast<const uint8_t*>(&automap),
+        reinterpret_cast<const uint8_t*>(&tail)
+    };
+    const size_t sizes[4] = {
+        sizeof(prefix), sizeof(crateTransforms), sizeof(automap), sizeof(tail)
     };
     const size_t zeroOffset = offsetof(NativeSaveCore, recordCrc32);
     const size_t zeroEnd = zeroOffset + sizeof(uint32_t);
@@ -867,6 +1015,164 @@ bool recordV8Valid(
                &monsters, prefix.core.runtimeFNV1a);
 }
 
+bool monsterSpatialShapeValid(
+    const NativeSaveRecordV9Tail& tail,
+    const NativeSaveCore& core) {
+    uint32_t i;
+    uint32_t topologyCursor = 0U;
+
+    if (!EspNativeGameplayMonsterState_snapshotShapeValid(
+            &tail.monsters, core.runtimeFNV1a) ||
+        !EspMapSpriteTopology_monsterSnapshotShapeValid(
+            &tail.monsterTopology, core.runtimeFNV1a) ||
+        !EspNativeGameplayMonsterPosition_snapshotShapeValid(
+            &tail.monsterPositions, core.runtimeFNV1a) ||
+        !EspNativeGameplayMonsterActivation_snapshotShapeValid(
+            &tail.monsterActivation, core.runtimeFNV1a) ||
+        tail.monsters.count != tail.monsterPositions.count ||
+        tail.monsterTopology.count < tail.monsters.count) {
+        return false;
+    }
+
+    for (i = 0U; i < tail.monsters.count; ++i) {
+        const EspNativeGameplayMonsterRecord& monster =
+            tail.monsters.records[i];
+        const EspNativeGameplayMonsterPositionRecord& position =
+            tail.monsterPositions.records[i];
+
+        while (topologyCursor < tail.monsterTopology.count &&
+               tail.monsterTopology.records[topologyCursor].spriteIndex <
+                   monster.spriteIndex) {
+            ++topologyCursor;
+        }
+        if (topologyCursor >= tail.monsterTopology.count ||
+            tail.monsterTopology.records[topologyCursor].spriteIndex !=
+                monster.spriteIndex) {
+            printf("[NATIVESAVE] V9-SPATIAL-MISMATCH ordinal=%u sprite=%u reason=monster-topology-record-missing topologyCount=%u\n",
+                   (unsigned int)i,
+                   (unsigned int)monster.spriteIndex,
+                   (unsigned int)tail.monsterTopology.count);
+            return false;
+        }
+
+        const EspMapSpriteTopologyMonsterRecord& topology =
+            tail.monsterTopology.records[topologyCursor];
+        const bool topologyAlive =
+            (topology.linkState & ESP_MAP_SPRITE_TOPOLOGY_ALIVE) != 0U;
+        const bool topologyLinked =
+            (topology.linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U;
+
+        /*
+         * MonsterState owns logical death. Ordinary combat can leave the raw
+         * topology ALIVE bit set while the combat projection masks it, so
+         * logical-dead + raw-alive is valid. The inverse is reconciled in the
+         * checkpoint snapshot before this validator runs.
+         */
+        if (monster.spriteIndex != position.spriteIndex ||
+            (monster.alive != 0U && !topologyAlive) ||
+            (topologyLinked &&
+             position.tileIndex !=
+                 (uint16_t)(topology.linkState &
+                            ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK))) {
+            printf("[NATIVESAVE] V9-SPATIAL-MISMATCH ordinal=%u sprite=%u topoSprite=%u posSprite=%u monsterAlive=%u topologyAlive=%u topologyLinked=%u topoTile=%u posTile=%u\n",
+                   (unsigned int)i,
+                   (unsigned int)monster.spriteIndex,
+                   (unsigned int)topology.spriteIndex,
+                   (unsigned int)position.spriteIndex,
+                   (unsigned int)monster.alive,
+                   topologyAlive ? 1U : 0U,
+                   topologyLinked ? 1U : 0U,
+                   (unsigned int)(topology.linkState &
+                                  ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                   (unsigned int)position.tileIndex);
+            return false;
+        }
+    }
+
+    for (i = 0U; i < tail.monsterActivation.activeOrderCount; ++i) {
+        const uint16_t activeSprite =
+            tail.monsterActivation.activeOrder[i];
+        uint32_t j;
+        bool found = false;
+        for (j = 0U; j < tail.monsters.count; ++j) {
+            if (tail.monsters.records[j].spriteIndex == activeSprite) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+bool loadedV9Valid(
+    const LoadedSaveRecord& record,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    const bool coreOk =
+        coreShapeValid(record.core, kMagicV9, kVersionV9,
+                       (uint16_t)kRecordBytesV9);
+    const uint32_t actualCrc =
+        recordCrcV9(*reinterpret_cast<const NativeSaveRecordV5*>(&record),
+                    crateTransforms, automap, tail);
+    const bool crcOk = record.core.recordCrc32 == actualCrc;
+    const bool resourcesOk = resourceShapeValid(record.resources, record.core);
+    const bool scriptOk = scriptShapeValid(record.script, record.core);
+    const bool linesOk = lineShapeValid(record.lines, record.core);
+    const bool removedOk =
+        actionRemovedShapeValid(record.actionRemoved, record.core);
+    const bool cratesOk =
+        EspNativeGameplayCrateState_snapshotFileShapeValid(
+            &crateTransforms, record.core.runtimeFNV1a,
+            record.core.targetMapId) != 0;
+    const bool disjointOk =
+        crateTransformsDisjoint(record.actionRemoved, crateTransforms);
+    const bool automapOk = automapShapeValid(automap, record.core);
+    const bool spatialOk = monsterSpatialShapeValid(tail, record.core);
+    const bool valid =
+        coreOk && crcOk && resourcesOk && scriptOk && linesOk &&
+        removedOk && cratesOk && disjointOk && automapOk && spatialOk;
+
+    if (!valid) {
+        printf("[NATIVESAVE] V9-VALIDATE core=%u crc=%u storedCrc=%08x actualCrc=%08x resources=%u script=%u lines=%u removed=%u cratesFile=%u disjoint=%u automap=%u monsterSpatial=%u failClosed=yes\n",
+               coreOk ? 1U : 0U,
+               crcOk ? 1U : 0U,
+               (unsigned int)record.core.recordCrc32,
+               (unsigned int)actualCrc,
+               resourcesOk ? 1U : 0U,
+               scriptOk ? 1U : 0U,
+               linesOk ? 1U : 0U,
+               removedOk ? 1U : 0U,
+               cratesOk ? 1U : 0U,
+               disjointOk ? 1U : 0U,
+               automapOk ? 1U : 0U,
+               spatialOk ? 1U : 0U);
+    }
+    return valid;
+}
+
+bool recordV9Valid(
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    return coreShapeValid(prefix.core, kMagicV9, kVersionV9,
+                          (uint16_t)kRecordBytesV9) &&
+           prefix.core.recordCrc32 ==
+               recordCrcV9(prefix, crateTransforms, automap, tail) &&
+           resourceShapeValid(prefix.resources, prefix.core) &&
+           scriptShapeValid(prefix.script, prefix.core) &&
+           lineShapeValid(prefix.lines, prefix.core) &&
+           actionRemovedShapeValid(prefix.actionRemoved, prefix.core) &&
+           EspNativeGameplayCrateState_snapshotShapeValid(
+               &crateTransforms, prefix.core.runtimeFNV1a,
+               prefix.core.targetMapId) &&
+           crateTransformsDisjoint(prefix.actionRemoved, crateTransforms) &&
+           automapShapeValid(automap, prefix.core) &&
+           monsterSpatialShapeValid(tail, prefix.core);
+}
+
 bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
     File file;
     size_t got;
@@ -1077,6 +1383,79 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         return true;
     }
 
+    if (fileBytes == kRecordBytesV9) {
+        EspNativeGameplayCrateTransformSnapshot crateTransforms;
+        EspMapAutomapSnapshot automap;
+        NativeSaveRecordV9Tail* tail;
+
+        /*
+         * Keep the cold MENU_MAIN probe bounded: close the SD size-probe
+         * handle before reserving the 3508-byte V9 tail workspace, then reopen
+         * for the exact read. The largest section remains smaller than the
+         * already-observed classic-CYD contiguous 8-bit heap margin.
+         */
+        file.close();
+        tail = (NativeSaveRecordV9Tail*)malloc(sizeof(*tail));
+        if (tail == nullptr) {
+            printf("[NATIVESAVE] READABLE-V9 FAILED path=%s stage=tail-workspace bytes=%u failClosed=yes\n",
+                   path, (unsigned int)sizeof(*tail));
+            return false;
+        }
+        file = SD.open(path, FILE_READ);
+        if (!file || (size_t)file.size() != kRecordBytesV9) {
+            if (file) file.close();
+            free(tail);
+            printf("[NATIVESAVE] READABLE-V9 FAILED path=%s stage=reopen expectedBytes=%u failClosed=yes\n",
+                   path, (unsigned int)kRecordBytesV9);
+            return false;
+        }
+
+        memset(&crateTransforms, 0, sizeof(crateTransforms));
+        memset(&automap, 0, sizeof(automap));
+        memset(tail, 0, sizeof(*tail));
+        got = file.read(reinterpret_cast<uint8_t*>(outRecord),
+                        sizeof(NativeSaveRecordV5));
+        if (got == sizeof(NativeSaveRecordV5)) {
+            got = file.read(reinterpret_cast<uint8_t*>(&crateTransforms),
+                            sizeof(crateTransforms));
+        }
+        if (got == sizeof(crateTransforms)) {
+            got = file.read(reinterpret_cast<uint8_t*>(&automap),
+                            sizeof(automap));
+        }
+        if (got == sizeof(automap)) {
+            got = file.read(reinterpret_cast<uint8_t*>(tail),
+                            sizeof(*tail));
+        }
+        file.close();
+
+        const bool valid =
+            got == sizeof(*tail) &&
+            loadedV9Valid(*outRecord, crateTransforms, automap, *tail);
+        printf("[NATIVESAVE] READABLE-V9 path=%s bytes=%u tailWorkspace=%u monsterState=%u monsterTopology=%u monsterPosition=%u monsterActivation=%u result=%s\n",
+               path,
+               (unsigned int)fileBytes,
+               (unsigned int)sizeof(*tail),
+               (unsigned int)sizeof(tail->monsters),
+               (unsigned int)sizeof(tail->monsterTopology),
+               (unsigned int)sizeof(tail->monsterPositions),
+               (unsigned int)sizeof(tail->monsterActivation),
+               valid ? "valid" : "invalid");
+        free(tail);
+        if (!valid) {
+            memset(outRecord, 0, sizeof(*outRecord));
+            return false;
+        }
+        outRecord->fileBytes = (uint16_t)kRecordBytesV9;
+        outRecord->hasResources = 1U;
+        outRecord->hasScript = 1U;
+        outRecord->hasLines = 1U;
+        outRecord->hasActionRemoved = 1U;
+        outRecord->hasAutomap = 1U;
+        outRecord->hasMonsterSpatial = 1U;
+        return true;
+    }
+
     file.close();
     return false;
 }
@@ -1208,6 +1587,125 @@ bool commitRecordAtomic(
     return true;
 }
 
+bool writeExactV9(
+    const char* path,
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    File file = SD.open(path, FILE_WRITE);
+    size_t wrotePrefix;
+    size_t wroteCrate;
+    size_t wroteAutomap;
+    size_t wroteTail;
+    if (!file) return false;
+    wrotePrefix = file.write(reinterpret_cast<const uint8_t*>(&prefix),
+                             sizeof(prefix));
+    wroteCrate = file.write(reinterpret_cast<const uint8_t*>(&crateTransforms),
+                            sizeof(crateTransforms));
+    wroteAutomap = file.write(reinterpret_cast<const uint8_t*>(&automap),
+                              sizeof(automap));
+    wroteTail = file.write(reinterpret_cast<const uint8_t*>(&tail),
+                           sizeof(tail));
+    file.flush();
+    file.close();
+    return wrotePrefix == sizeof(prefix) &&
+           wroteCrate == sizeof(crateTransforms) &&
+           wroteAutomap == sizeof(automap) &&
+           wroteTail == sizeof(tail);
+}
+
+bool readExactV9Matches(
+    const char* path,
+    const NativeSaveRecordV5& expectedPrefix,
+    const EspNativeGameplayCrateTransformSnapshot& expectedCrate,
+    const EspMapAutomapSnapshot& expectedAutomap,
+    const NativeSaveRecordV9Tail& expectedTail) {
+    File file;
+    uint8_t verify[64];
+    const uint8_t* segments[4] = {
+        reinterpret_cast<const uint8_t*>(&expectedPrefix),
+        reinterpret_cast<const uint8_t*>(&expectedCrate),
+        reinterpret_cast<const uint8_t*>(&expectedAutomap),
+        reinterpret_cast<const uint8_t*>(&expectedTail)
+    };
+    const size_t sizes[4] = {
+        sizeof(expectedPrefix), sizeof(expectedCrate), sizeof(expectedAutomap),
+        sizeof(expectedTail)
+    };
+    uint8_t segment;
+
+    if (path == nullptr || !SD.exists(path)) return false;
+    file = SD.open(path, FILE_READ);
+    if (!file || (size_t)file.size() != kRecordBytesV9) {
+        if (file) file.close();
+        return false;
+    }
+
+    for (segment = 0U; segment < 4U; ++segment) {
+        size_t offset = 0U;
+        while (offset < sizes[segment]) {
+            size_t chunk = sizes[segment] - offset;
+            size_t got;
+            if (chunk > sizeof(verify)) chunk = sizeof(verify);
+            got = file.read(verify, chunk);
+            if (got != chunk ||
+                memcmp(verify, segments[segment] + offset, chunk) != 0) {
+                file.close();
+                return false;
+            }
+            offset += chunk;
+        }
+    }
+    file.close();
+    return true;
+}
+
+bool commitRecordAtomicV9(
+    const NativeSaveRecordV5& prefix,
+    const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
+    const EspMapAutomapSnapshot& automap,
+    const NativeSaveRecordV9Tail& tail) {
+    bool movedOld = false;
+
+    if (SD.exists(kTempPath)) (void)SD.remove(kTempPath);
+    if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
+    if (!writeExactV9(kTempPath, prefix, crateTransforms, automap, tail) ||
+        !readExactV9Matches(
+            kTempPath, prefix, crateTransforms, automap, tail)) {
+        (void)SD.remove(kTempPath);
+        return false;
+    }
+
+    if (SD.exists(kSavePath)) {
+        if (!SD.rename(kSavePath, kBackupPath)) {
+            (void)SD.remove(kTempPath);
+            return false;
+        }
+        movedOld = true;
+    }
+
+    if (!SD.rename(kTempPath, kSavePath)) {
+        if (movedOld && !SD.exists(kSavePath)) {
+            (void)SD.rename(kBackupPath, kSavePath);
+        }
+        (void)SD.remove(kTempPath);
+        return false;
+    }
+
+    if (!readExactV9Matches(
+            kSavePath, prefix, crateTransforms, automap, tail)) {
+        (void)SD.remove(kSavePath);
+        if (movedOld && SD.exists(kBackupPath)) {
+            (void)SD.rename(kBackupPath, kSavePath);
+        }
+        return false;
+    }
+
+    if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
+    return true;
+}
+
 bool readCrateSection(
     const char* path,
     const NativeSaveCore& core,
@@ -1216,13 +1714,17 @@ bool readCrateSection(
     size_t got;
     if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
         (core.version != kVersionV6 && core.version != kVersionV7 &&
-         core.version != kVersionV8)) {
+         core.version != kVersionV8 && core.version != kVersionV9)) {
         return false;
     }
     const size_t expectedBytes =
-        core.version == kVersionV8
-            ? kRecordBytesV8
-            : (core.version == kVersionV7 ? kRecordBytesV7 : kRecordBytesV6);
+        core.version == kVersionV9
+            ? kRecordBytesV9
+            : (core.version == kVersionV8
+                   ? kRecordBytesV8
+                   : (core.version == kVersionV7
+                          ? kRecordBytesV7
+                          : kRecordBytesV6));
     file = SD.open(path, FILE_READ);
     if (!file || (size_t)file.size() != expectedBytes ||
         !file.seek(sizeof(NativeSaveRecordV5))) {
@@ -1266,11 +1768,14 @@ bool readAutomapSection(
     File file;
     size_t got;
     if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
-        (core.version != kVersionV7 && core.version != kVersionV8)) {
+        (core.version != kVersionV7 && core.version != kVersionV8 &&
+         core.version != kVersionV9)) {
         return false;
     }
     const size_t expectedBytes =
-        core.version == kVersionV8 ? kRecordBytesV8 : kRecordBytesV7;
+        core.version == kVersionV9
+            ? kRecordBytesV9
+            : (core.version == kVersionV8 ? kRecordBytesV8 : kRecordBytesV7);
     file = SD.open(path, FILE_READ);
     if (!file || (size_t)file.size() != expectedBytes ||
         !file.seek(kRecordBytesV6)) {
@@ -1337,6 +1842,163 @@ bool restoreAutomapSection(
     return true;
 }
 
+bool recoverOneShotTopologyFromScript(
+    const NativeSaveCore& core,
+    uint16_t* outShowApplied,
+    uint16_t* outShowAlreadyLinked,
+    uint16_t* outHideApplied) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t eventIndex;
+    uint16_t showApplied = 0U;
+    uint16_t showAlreadyLinked = 0U;
+    uint16_t hideApplied = 0U;
+
+    if (outShowApplied != nullptr) *outShowApplied = 0U;
+    if (outShowAlreadyLinked != nullptr) *outShowAlreadyLinked = 0U;
+    if (outHideApplied != nullptr) *outHideApplied = 0U;
+
+    if ((core.version != kVersionV8 && core.version != kVersionV9) ||
+        runtime == nullptr ||
+        runtime->arenaFNV1a != core.runtimeFNV1a ||
+        !EspMapScriptState_isReady() ||
+        !EspMapSpriteTopology_isReady()) {
+        return false;
+    }
+
+    /*
+     * V8 persisted the script removed-command bitmap but not mutable sprite
+     * topology. A one-shot SHOW/HIDE with REMOVE set therefore carries enough
+     * durable evidence that the command executed successfully before SAVE.
+     * Replay only that narrow family, in map command order, against the freshly
+     * rebuilt topology. This deliberately does not guess monster movement.
+     */
+    for (eventIndex = 0U; eventIndex < runtime->eventCount; ++eventIndex) {
+        uint32_t rawEvent;
+        EspMapEventRef ref;
+        EspMapEventDescriptor descriptor;
+        uint32_t offset;
+
+        if (!EspMapRuntime_getEvent(eventIndex, &rawEvent)) return false;
+        ref.index = (uint16_t)eventIndex;
+        ref.tileIndex = (uint16_t)(rawEvent & ESP_MAP_EVENT_TILE_MASK);
+        ref.value = rawEvent;
+        if (!EspMapEvents_describe(&ref, &descriptor)) return false;
+
+        for (offset = 0U; offset < descriptor.commandCount; ++offset) {
+            const uint32_t global =
+                (uint32_t)descriptor.firstCommandIndex + offset;
+            EspMapByteCode command;
+            uint8_t removed = 0U;
+
+            if (!EspMapEvents_getCommand(&descriptor, offset, &command) ||
+                !EspMapScriptState_isCommandRemoved(global, &removed)) {
+                return false;
+            }
+            if (removed == 0U ||
+                (command.arg2 &
+                 ESP_MAP_SPRITE_TOPOLOGY_COMMAND_FLAG_REMOVE) == 0U ||
+                (command.id != ESP_MAP_OPCODE_SHOW &&
+                 command.id != ESP_MAP_OPCODE_HIDE)) {
+                continue;
+            }
+
+            if (command.id == ESP_MAP_OPCODE_SHOW) {
+                const uint16_t spriteIndex =
+                    (uint16_t)(command.arg1 & 0xffffU);
+                uint8_t type = 0U;
+                uint8_t subtype = 0U;
+                uint16_t linkState = 0U;
+                uint16_t linkOrder = 0U;
+                EspMapShowResult result;
+                EspMapSpriteTopologyStatus status;
+
+                if (!EspMapSpriteTopology_getEntity(
+                        spriteIndex, &type, &subtype,
+                        &linkState, &linkOrder)) {
+                    return false;
+                }
+                (void)type;
+                (void)subtype;
+                (void)linkOrder;
+
+                if ((linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U) {
+                    ++showAlreadyLinked;
+                    printf("[NATIVESAVE] V8-TOPOLOGY SHOW global=%u event=%u off=%u sprite=%u action=already-linked\n",
+                           (unsigned int)global,
+                           (unsigned int)eventIndex,
+                           (unsigned int)offset,
+                           (unsigned int)spriteIndex);
+                    continue;
+                }
+
+                memset(&result, 0, sizeof(result));
+                status = EspMapSpriteTopology_applyShow(
+                    &descriptor, offset, &result);
+                if (status != ESP_MAP_SPRITE_TOPOLOGY_OK ||
+                    result.removeCommandIfHandled == 0U) {
+                    printf("[NATIVESAVE] V8-TOPOLOGY FAILED global=%u event=%u off=%u opcode=SHOW sprite=%u status=%u remove=%u failClosed=yes\n",
+                           (unsigned int)global,
+                           (unsigned int)eventIndex,
+                           (unsigned int)offset,
+                           (unsigned int)spriteIndex,
+                           (unsigned int)status,
+                           (unsigned int)result.removeCommandIfHandled);
+                    return false;
+                }
+                ++showApplied;
+                printf("[NATIVESAVE] V8-TOPOLOGY SHOW global=%u event=%u off=%u sprite=%u tile=%u linked=%u blockersRemoved=%u\n",
+                       (unsigned int)global,
+                       (unsigned int)eventIndex,
+                       (unsigned int)offset,
+                       (unsigned int)result.spriteIndex,
+                       (unsigned int)result.tileIndex,
+                       (unsigned int)result.targetLinkedAfter,
+                       (unsigned int)result.blockersRemoved);
+            }
+            else {
+                EspMapHideResult result;
+                EspMapSpriteTopologyStatus status;
+                memset(&result, 0, sizeof(result));
+                status = EspMapSpriteTopology_applyHide(
+                    &descriptor, offset, &result);
+                if (status != ESP_MAP_SPRITE_TOPOLOGY_OK ||
+                    result.removeCommandIfHandled == 0U) {
+                    printf("[NATIVESAVE] V8-TOPOLOGY FAILED global=%u event=%u off=%u opcode=HIDE status=%u remove=%u failClosed=yes\n",
+                           (unsigned int)global,
+                           (unsigned int)eventIndex,
+                           (unsigned int)offset,
+                           (unsigned int)status,
+                           (unsigned int)result.removeCommandIfHandled);
+                    return false;
+                }
+                ++hideApplied;
+                printf("[NATIVESAVE] V8-TOPOLOGY HIDE global=%u event=%u off=%u tile=%u hidden=%u\n",
+                       (unsigned int)global,
+                       (unsigned int)eventIndex,
+                       (unsigned int)offset,
+                       (unsigned int)result.tileIndex,
+                       (unsigned int)result.hiddenEntityCount);
+            }
+        }
+    }
+
+    if (outShowApplied != nullptr) *outShowApplied = showApplied;
+    if (outShowAlreadyLinked != nullptr)
+        *outShowAlreadyLinked = showAlreadyLinked;
+    if (outHideApplied != nullptr) *outHideApplied = hideApplied;
+
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+    printf("[NATIVESAVE] LEGACY-TOPOLOGY-REPLAY version=%u showApplied=%u showAlreadyLinked=%u hideApplied=%u topologyFNV=%08x linked=%u hidden=%u evidence=script-removed+remove-flag movement=not-guessed exactSpatial=no\n",
+           (unsigned int)core.version,
+           (unsigned int)showApplied,
+           (unsigned int)showAlreadyLinked,
+           (unsigned int)hideApplied,
+           topology != nullptr ? (unsigned int)topology->stateFNV1a : 0U,
+           topology != nullptr ? (unsigned int)topology->linkedCount : 0U,
+           topology != nullptr ? (unsigned int)topology->hiddenCount : 0U);
+    return true;
+}
+
 bool stageV8MonsterSection(
     const char* path,
     const NativeSaveCore& core,
@@ -1378,16 +2040,124 @@ bool stageV8MonsterSection(
     return ok;
 }
 
+bool restoreV9MonsterSpatialSections(
+    const char* path,
+    const NativeSaveCore& core,
+    uint16_t* outCount,
+    uint32_t* outMonsterFNV,
+    uint32_t* outTopologyFNV,
+    uint32_t* outPositionFNV,
+    uint32_t* outActivationFNV) {
+    File file;
+    size_t got;
+    NativeSaveRecordV9Tail* tail;
+    bool ok = false;
+    uint8_t legacyEnemyOnly = 0U;
+    uint16_t replayShow = 0U;
+    uint16_t replayAlreadyLinked = 0U;
+    uint16_t replayHide = 0U;
+
+    if (path == nullptr || !SD.exists(path) ||
+        core.version != kVersionV9) {
+        return false;
+    }
+
+    tail = (NativeSaveRecordV9Tail*)malloc(sizeof(*tail));
+    if (tail == nullptr) {
+        printf("[NATIVESAVE] V9-SPATIAL-FAILED stage=workspace bytes=%u failClosed=yes\n",
+               (unsigned int)sizeof(*tail));
+        return false;
+    }
+    memset(tail, 0, sizeof(*tail));
+
+    file = SD.open(path, FILE_READ);
+    if (!file || (size_t)file.size() != kRecordBytesV9 ||
+        !file.seek(kRecordBytesV7)) {
+        if (file) file.close();
+        free(tail);
+        return false;
+    }
+    got = file.read(reinterpret_cast<uint8_t*>(tail), sizeof(*tail));
+    file.close();
+
+    if (got == sizeof(*tail) &&
+        monsterSpatialShapeValid(*tail, core)) {
+        const EspMapSpriteTopologyView* liveTopology =
+            EspMapSpriteTopology_view();
+
+        if (liveTopology == nullptr) {
+            ok = false;
+        }
+        else {
+            legacyEnemyOnly =
+                (uint8_t)(liveTopology->destructibleCount != 0U &&
+                          tail->monsterTopology.count ==
+                              liveTopology->enemyCount);
+            if (legacyEnemyOnly != 0U &&
+                !recoverOneShotTopologyFromScript(
+                    core, &replayShow, &replayAlreadyLinked, &replayHide)) {
+                ok = false;
+            }
+            else if (EspNativeGameplayMonsterState_stageRestore(
+                         &tail->monsters) &&
+                     EspMapSpriteTopology_restoreMonsterSnapshot(
+                         &tail->monsterTopology) &&
+                     EspNativeGameplayMonsterPosition_stageRestore(
+                         &tail->monsterPositions) &&
+                     EspNativeGameplayMonsterActivation_restoreSnapshot(
+                         &tail->monsterActivation)) {
+                ok = true;
+            }
+        }
+    }
+
+    if (ok) {
+        if (outCount != nullptr) *outCount = tail->monsters.count;
+        if (outMonsterFNV != nullptr)
+            *outMonsterFNV = tail->monsters.stateFNV1a;
+        if (outTopologyFNV != nullptr)
+            *outTopologyFNV = tail->monsterTopology.stateFNV1a;
+        if (outPositionFNV != nullptr)
+            *outPositionFNV = tail->monsterPositions.stateFNV1a;
+        if (outActivationFNV != nullptr)
+            *outActivationFNV = tail->monsterActivation.stateFNV1a;
+        printf("[NATIVESAVE] V9-SPATIAL-STAGE monsters=%u topologyTracked=%u monsterFNV=%08x topologyFNV=%08x positionFNV=%08x activationFNV=%08x scope=%s legacyReplay=%u/%u/%u exact=%s\n",
+               (unsigned int)tail->monsters.count,
+               (unsigned int)tail->monsterTopology.count,
+               (unsigned int)tail->monsters.stateFNV1a,
+               (unsigned int)tail->monsterTopology.stateFNV1a,
+               (unsigned int)tail->monsterPositions.stateFNV1a,
+               (unsigned int)tail->monsterActivation.stateFNV1a,
+               legacyEnemyOnly != 0U
+                   ? "enemy-only-legacy-v9+script-replay"
+                   : "enemy+destructible-v9",
+               (unsigned int)replayShow,
+               (unsigned int)replayAlreadyLinked,
+               (unsigned int)replayHide,
+               legacyEnemyOnly != 0U ? "tracked-enemy+replayed-nonenemy"
+                                     : "yes");
+    }
+    else {
+        EspNativeGameplayMonsterPosition_reset();
+        EspNativeGameplayMonsterActivation_reset();
+        EspNativeGameplayMonsterState_reset();
+        printf("[NATIVESAVE] V9-SPATIAL-FAILED stage=validate-or-restore failClosed=yes\n");
+    }
+
+    free(tail);
+    return ok;
+}
+
 bool captureRecord(
     NativeSaveRecordV5* outPrefix,
     EspNativeGameplayCrateTransformSnapshot* outCrateTransforms,
     EspMapAutomapSnapshot* outAutomap,
-    EspNativeGameplayMonsterStateSnapshot* outMonsters) {
+    NativeSaveRecordV9Tail* outTail) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
 
     if (outPrefix == nullptr || outCrateTransforms == nullptr ||
-        outAutomap == nullptr || outMonsters == nullptr ||
+        outAutomap == nullptr || outTail == nullptr ||
         EspAssetPack_isOpen() || runtime == nullptr || view == nullptr ||
         !EspMapResidentLifecycle_isReady()) {
         return false;
@@ -1397,26 +2167,73 @@ bool captureRecord(
     memset(outPrefix, 0, sizeof(*outPrefix));
     memset(outCrateTransforms, 0, sizeof(*outCrateTransforms));
     memset(outAutomap, 0, sizeof(*outAutomap));
-    memset(outMonsters, 0, sizeof(*outMonsters));
-    if (!EspNativeGameplayPlayerState_snapshot(&record.core.player) ||
-        !EspNativeGameplayPlayerResources_snapshot(&record.resources) ||
-        !EspMapScriptState_snapshot(&record.script) ||
-        !EspMapLineCheckpoint_snapshot(&record.lines) ||
-        !EspNativeGameplayActionEngine_snapshotRemoved(&record.actionRemoved) ||
-        !EspNativeGameplayCrateState_snapshot(outCrateTransforms) ||
-        !EspMapAutomapState_snapshot(outAutomap) ||
-        !EspNativeGameplayMonsterState_snapshot(outMonsters)) {
+    memset(outTail, 0, sizeof(*outTail));
+
+    if (!EspNativeGameplayPlayerState_snapshot(&record.core.player)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=player-state\n");
         return false;
     }
-    if (view->active != 1U || view->targetMapId == 0U ||
-        runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
-        runtime->arenaFNV1a == 0U) {
+    if (!EspNativeGameplayPlayerResources_snapshot(&record.resources)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=resources\n");
+        return false;
+    }
+    if (!EspMapScriptState_snapshot(&record.script)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=script\n");
+        return false;
+    }
+    if (!EspMapLineCheckpoint_snapshot(&record.lines)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=lines\n");
+        return false;
+    }
+    if (!EspNativeGameplayActionEngine_snapshotRemoved(
+            &record.actionRemoved)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=action-removed\n");
+        return false;
+    }
+    if (!EspNativeGameplayCrateState_snapshot(outCrateTransforms)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=crate-transforms\n");
+        return false;
+    }
+    if (!EspMapAutomapState_snapshot(outAutomap)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=automap\n");
+        return false;
+    }
+    if (!EspNativeGameplayMonsterState_snapshot(&outTail->monsters)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-state\n");
+        return false;
+    }
+    if (!EspMapSpriteTopology_snapshotMonsters(
+            &outTail->monsterTopology)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-topology\n");
+        return false;
+    }
+    {
+        uint16_t reconciledShowDeaths = 0U;
+        if (!reconcileMonsterSnapshotWithTopology(
+                &outTail->monsters, outTail->monsterTopology,
+                &reconciledShowDeaths)) {
+            printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-topology-reconcile\n");
+            return false;
+        }
+        if (reconciledShowDeaths != 0U) {
+            printf("[NATIVESAVE] V9-MONSTER-RECONCILE topologyDeadToLogicalDead=%u sideEffects=not-synthesized snapshotOnly=yes\n",
+                   (unsigned int)reconciledShowDeaths);
+        }
+    }
+    if (!EspNativeGameplayMonsterPosition_snapshot(
+            &outTail->monsterPositions)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-position\n");
+        return false;
+    }
+    if (!EspNativeGameplayMonsterActivation_snapshot(
+            &outTail->monsterActivation)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-activation\n");
         return false;
     }
 
-    memcpy(record.core.magic, kMagicV8, sizeof(kMagicV8));
-    record.core.version = kVersionV8;
-    record.core.recordBytes = (uint16_t)kRecordBytesV8;
+    memcpy(record.core.magic, kMagicV9, sizeof(kMagicV9));
+    record.core.version = kVersionV9;
+    record.core.recordBytes = (uint16_t)kRecordBytesV9;
     record.core.sourceBytes = runtime->sourceBytes;
     record.core.sourceCrc32 = runtime->sourceCrc32;
     record.core.runtimeFNV1a = runtime->arenaFNV1a;
@@ -1425,18 +2242,39 @@ bool captureRecord(
     record.core.gameplayLoadMapId = view->gameplayLoadMapId;
     record.core.loadType = view->loadType;
     record.core.view = *view;
+
+    if (view->active != 1U || view->targetMapId == 0U ||
+        runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
+        runtime->arenaFNV1a == 0U) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=core-runtime-shape viewActive=%u map=%u sourceBytes=%u sourceCrc=%08x arena=%08x\n",
+               (unsigned int)view->active,
+               (unsigned int)view->targetMapId,
+               (unsigned int)runtime->sourceBytes,
+               (unsigned int)runtime->sourceCrc32,
+               (unsigned int)runtime->arenaFNV1a);
+        return false;
+    }
+    if (!monsterSpatialShapeValid(*outTail, record.core)) {
+        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-spatial-cross-check monsters=%u topology=%u positions=%u activation=%u\n",
+               (unsigned int)outTail->monsters.count,
+               (unsigned int)outTail->monsterTopology.count,
+               (unsigned int)outTail->monsterPositions.count,
+               (unsigned int)outTail->monsterActivation.activeOrderCount);
+        return false;
+    }
+
     record.core.recordCrc32 =
-        recordCrcV8(record, *outCrateTransforms, *outAutomap, *outMonsters);
-    return recordV8Valid(
-        record, *outCrateTransforms, *outAutomap, *outMonsters);
+        recordCrcV9(record, *outCrateTransforms, *outAutomap, *outTail);
+    return recordV9Valid(
+        record, *outCrateTransforms, *outAutomap, *outTail);
 }
 
 bool saveNow(void) {
     NativeSaveRecordV5& record = saveWorkspace.write;
     EspNativeGameplayCrateTransformSnapshot crateTransforms;
     EspMapAutomapSnapshot automap;
-    EspNativeGameplayMonsterStateSnapshot* monsters =
-        (EspNativeGameplayMonsterStateSnapshot*)malloc(sizeof(*monsters));
+    NativeSaveRecordV9Tail* tail =
+        (NativeSaveRecordV9Tail*)malloc(sizeof(*tail));
     uint32_t scriptFNV;
     uint32_t openCount;
     uint32_t lockedCount;
@@ -1444,26 +2282,26 @@ bool saveNow(void) {
     uint32_t removedCount;
     uint32_t automapFNV;
     uint32_t automapVisitedCount;
-    uint16_t monsterCount = 0U;
-    uint32_t monsterFNV = 0U;
 
-    if (monsters == nullptr) {
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=8 stage=monster-workspace failClosed=yes\n",
-               kLogPath);
+    if (tail == nullptr) {
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=9 stage=v9-tail-workspace bytes=%u failClosed=yes\n",
+               kLogPath, (unsigned int)sizeof(*tail));
         return false;
     }
 
     memset(&record, 0, sizeof(record));
     memset(&crateTransforms, 0, sizeof(crateTransforms));
     memset(&automap, 0, sizeof(automap));
-    memset(monsters, 0, sizeof(*monsters));
-    if (!captureRecord(&record, &crateTransforms, &automap, monsters) ||
-        !commitRecordAtomic(record, crateTransforms, automap, *monsters)) {
-        free(monsters);
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=8 sections=resources+script+lines+action-removals+crate-transforms+automap+monster-state failClosed=yes\n",
+    memset(tail, 0, sizeof(*tail));
+
+    if (!captureRecord(&record, &crateTransforms, &automap, tail) ||
+        !commitRecordAtomicV9(record, crateTransforms, automap, *tail)) {
+        free(tail);
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=9 sections=resources+script+lines+action-removals+crate-transforms+automap+monster-state+monster-topology+monster-position+monster-activation failClosed=yes\n",
                kLogPath);
         return false;
     }
+
     scriptFNV = fnv1aBytes(record.script.storage, record.script.storageBytes);
     openCount = countBits(record.lines.openBits, record.lines.bitsetBytes);
     lockedCount = countBits(record.lines.lockedBits,
@@ -1475,13 +2313,11 @@ bool saveNow(void) {
     automapFNV = automapSnapshotFNV(automap);
     automapVisitedCount =
         countBits(automap.visitedBits, ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES);
-    monsterCount = monsters->count;
-    monsterFNV = monsters->stateFNV1a;
 
-    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx monsters=%u/%08lx atomic=temp+backup+rename world=resources+script+lines+action-removals+crate-transforms+automap+monster-state-restored+monster-position+activation-fresh\n",
+    printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx monsters=%u/%08lx topology=%u/%08lx positions=%u/%08lx activation=%u/%08lx atomic=temp+backup+rename world=monster-spatial-exact-v9\n",
            kLogPath,
            (unsigned int)record.core.version,
-           (unsigned int)kRecordBytesV8,
+           (unsigned int)kRecordBytesV9,
            (unsigned int)record.core.targetMapId,
            (unsigned int)record.core.gameplayLoadMapId,
            (long)record.core.view.viewX,
@@ -1517,9 +2353,15 @@ bool saveNow(void) {
            (unsigned int)automap.spriteRevealedCount,
            (unsigned long)automapVisitedCount,
            (unsigned long)automapFNV,
-           (unsigned int)monsterCount,
-           (unsigned long)monsterFNV);
-    free(monsters);
+           (unsigned int)tail->monsters.count,
+           (unsigned long)tail->monsters.stateFNV1a,
+           (unsigned int)tail->monsterTopology.count,
+           (unsigned long)tail->monsterTopology.stateFNV1a,
+           (unsigned int)tail->monsterPositions.count,
+           (unsigned long)tail->monsterPositions.stateFNV1a,
+           (unsigned int)tail->monsterActivation.activeOrderCount,
+           (unsigned long)tail->monsterActivation.stateFNV1a);
+    free(tail);
     return true;
 }
 
@@ -1729,6 +2571,12 @@ bool loadNow(void) {
     uint32_t automapFNV = 0U;
     uint16_t monsterCount = 0U;
     uint32_t monsterFNV = 0U;
+    uint16_t v8ShowApplied = 0U;
+    uint16_t v8ShowAlreadyLinked = 0U;
+    uint16_t v8HideApplied = 0U;
+    uint32_t monsterTopologyFNV = 0U;
+    uint32_t monsterPositionFNV = 0U;
+    uint32_t monsterActivationFNV = 0U;
     const char* selectedPath = nullptr;
 
     memset(&loaded, 0, sizeof(loaded));
@@ -1778,8 +2626,8 @@ bool loadNow(void) {
      * transformed-definition state. V7 appends the compact Automap reveal
      * snapshot: lines, sprites and BIT_AM_VISITED tiles. V8 appends the exact
      * native logical monster records (HP/armor/stats/alternate attack/alive)
-     * without rerolling their generation RNG. Monster position/activation
-     * remain deliberately fresh until their own bounded checkpoint. */
+     * without rerolling their generation RNG. V9 closes the missing spatial
+     * half: monster topology/linkage, exact positions and activation order. */
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
 
@@ -1860,27 +2708,39 @@ bool loadNow(void) {
               loaded.actionRemoved.stateFNV1a)) ||
         ((record->version == kVersionV6 ||
           record->version == kVersionV7 ||
-          record->version == kVersionV8) &&
+          record->version == kVersionV8 ||
+          record->version == kVersionV9) &&
          !restoreCrateSection(selectedPath, *record,
                               &crateTransformCount,
                               &crateTransformFNV)) ||
         ((record->version == kVersionV7 ||
-          record->version == kVersionV8) &&
+          record->version == kVersionV8 ||
+          record->version == kVersionV9) &&
          !restoreAutomapSection(selectedPath, *record,
                                 &automapLineCount,
                                 &automapSpriteCount,
                                 &automapVisitedCount,
                                 &automapFNV)) ||
         (record->version == kVersionV8 &&
+         !recoverOneShotTopologyFromScript(
+             *record, &v8ShowApplied, &v8ShowAlreadyLinked,
+             &v8HideApplied)) ||
+        (record->version == kVersionV8 &&
          !stageV8MonsterSection(selectedPath, *record,
                                 &monsterCount, &monsterFNV)) ||
+        (record->version == kVersionV9 &&
+         !restoreV9MonsterSpatialSections(
+             selectedPath, *record,
+             &monsterCount, &monsterFNV,
+             &monsterTopologyFNV, &monsterPositionFNV,
+             &monsterActivationFNV)) ||
         !sessionConfigForPlayer(record->player, &config) ||
         !EspNativeGameplaySession_configureResume(&config)) {
         resetFailedLoad();
         if (loadingPresentation) {
             EspNativeTransitionPresentation_abortLoading("RESTORE");
         }
-        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s automap=%s monsters=%s playerFNV=%08lx failClosed=yes\n",
+        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s automap=%s monsters=%s monsterSpatial=%s playerFNV=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)record->targetMapId,
                (unsigned int)record->version,
@@ -1890,14 +2750,20 @@ bool loadNow(void) {
                loaded.hasActionRemoved == 1U ? "required" : "legacy-none",
                (record->version == kVersionV6 ||
                 record->version == kVersionV7 ||
-                record->version == kVersionV8)
+                record->version == kVersionV8 ||
+                record->version == kVersionV9)
                    ? "required"
                    : "legacy-none",
                (record->version == kVersionV7 ||
-                record->version == kVersionV8)
+                record->version == kVersionV8 ||
+                record->version == kVersionV9)
                    ? "required"
                    : "legacy-none",
-               record->version == kVersionV8 ? "required" : "legacy-none",
+               (record->version == kVersionV8 ||
+                record->version == kVersionV9)
+                   ? "required"
+                   : "legacy-none",
+               record->version == kVersionV9 ? "required" : "legacy-none",
                (unsigned long)record->playerFNV1a);
         return false;
     }
@@ -1929,16 +2795,29 @@ bool loadNow(void) {
                (unsigned int)record->version);
     }
 
-    const char* worldSummary =
-        record->version == kVersionV8
-            ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state-restored+monster-position+activation-fresh"
-            : (record->version == kVersionV7
-                   ? "resources+script+lines+action-removals+crate-transforms+automap-restored+monster-state+position+activation-fresh"
-                   : (record->version == kVersionV6
-                          ? "resources+script+lines+action-removals+crate-transforms-restored+automap+monster-state+position+activation-fresh"
-                          : "legacy-partial-world"));
+    if (record->version == kVersionV8) {
+        printf("[NATIVESAVE] LEGACY-MONSTER-SPATIAL-MIGRATION version=8 oneShotShow=%u alreadyLinked=%u oneShotHide=%u topology=recovered-from-script position=fresh-at-recovered-topology activation=fresh warning=historical-monster-movement-not-present-in-v8\n",
+               (unsigned int)v8ShowApplied,
+               (unsigned int)v8ShowAlreadyLinked,
+               (unsigned int)v8HideApplied);
+    }
+    else if (record->version < kVersionV8) {
+        printf("[NATIVESAVE] LEGACY-MONSTER-SPATIAL-GAP version=%u topology+position+activation=fresh warning=monster-visibility-and-position-cannot-be-restored-exactly-from-this-record\n",
+               (unsigned int)record->version);
+    }
 
-    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx automap=%s/%uL/%uS/%uV/%08lx monsters=%s/%u/%08lx world=%s session=reprime-pending\n",
+    const char* worldSummary =
+        record->version == kVersionV9
+            ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation-restored-exact"
+            : (record->version == kVersionV8
+                   ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state-restored+monster-spatial-fresh-lossy"
+                   : (record->version == kVersionV7
+                          ? "resources+script+lines+action-removals+crate-transforms+automap-restored+monster-state+position+activation-fresh"
+                          : (record->version == kVersionV6
+                                 ? "resources+script+lines+action-removals+crate-transforms-restored+automap+monster-state+position+activation-fresh"
+                                 : "legacy-partial-world")));
+
+    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx automap=%s/%uL/%uS/%uV/%08lx monsters=%s/%u/%08lx topology=%s/%08lx positions=%s/%08lx activation=%s/%08lx world=%s session=reprime-pending\n",
            kLogPath,
            (unsigned int)record->version,
            (unsigned int)loaded.fileBytes,
@@ -1983,20 +2862,30 @@ bool loadNow(void) {
                ? (unsigned long)loaded.actionRemoved.stateFNV1a : 0UL,
            (record->version == kVersionV6 ||
             record->version == kVersionV7 ||
-            record->version == kVersionV8)
+            record->version == kVersionV8 ||
+            record->version == kVersionV9)
                ? "restored" : "legacy-none",
            (unsigned int)crateTransformCount,
            (unsigned long)crateTransformFNV,
            (record->version == kVersionV7 ||
-            record->version == kVersionV8)
+            record->version == kVersionV8 ||
+            record->version == kVersionV9)
                ? "restored" : "legacy-none",
            (unsigned int)automapLineCount,
            (unsigned int)automapSpriteCount,
            (unsigned int)automapVisitedCount,
            (unsigned long)automapFNV,
-           record->version == kVersionV8 ? "staged" : "legacy-none",
+           (record->version == kVersionV8 ||
+            record->version == kVersionV9)
+               ? "staged" : "legacy-none",
            (unsigned int)monsterCount,
            (unsigned long)monsterFNV,
+           record->version == kVersionV9 ? "restored" : "legacy-fresh",
+           (unsigned long)monsterTopologyFNV,
+           record->version == kVersionV9 ? "staged" : "legacy-fresh",
+           (unsigned long)monsterPositionFNV,
+           record->version == kVersionV9 ? "restored" : "legacy-fresh",
+           (unsigned long)monsterActivationFNV,
            worldSummary);
     if (loadingPresentation) {
         EspNativeTransitionPresentation_checkpointProgress(85U, "RESTORE");

@@ -1506,3 +1506,59 @@ recover true main + docs
 ```
 
 Never merge into `main` without explicit user request.
+
+
+## V8 monster-topology recovery + V9 spatial checkpoint — REAL-CYD PASS for V8 compatibility
+
+Hardware-tested code boundary:
+
+```text
+7b3efeb8d590c027b94f08ac7c31c886938709d4
+esp32-cyd CI #980/#981 = SUCCESS
+```
+
+This branch retains the complete prior Junction census history through
+`49ad2fe9d63f454611f6d41a729e62905f456251`.
+
+A real classic CYD successfully loaded an existing V8 checkpoint created after
+the yellow-card trigger had revealed hidden monsters. The missing V8 spatial
+owner was reconstructed only from durable script evidence: removed-command bit
+set, REMOVE-if-handled set, opcode SHOW/HIDE. The yellow-card monsters were
+present again after LOAD and normal gameplay resumed.
+
+The branch also introduces the bounded V9 monster spatial record:
+
+```text
+MonsterState
+monster topology (linked/unlinked, tile, link order, visual/alive bits)
+MonsterPosition
+MonsterActivation order
+```
+
+The final real-CYD V9 round-trip is now hardware-proven at
+`7b3efeb8d590c027b94f08ac7c31c886938709d4`. Entrance writes a 43-record
+topology snapshot covering its 30 enemies plus 13 destructibles, then restores
+that exact scope on LOAD:
+
+```text
+SAVE  topology=43/7a4b0217 monsters=30/dcda5880
+LOAD  tracked=43 enemies=30 destructibles=13
+      scope=enemy+destructible-v9
+      topologyFNV=7a4b0217
+      positionFNV=a369df86
+      exact=yes
+ENGINESESSION READY shapeData=0x0 mediaTexels=0x0
+```
+
+The review corner where EV_SHOW kills an enemy blocker is reconciled in the
+checkpoint MonsterState snapshot only; no live gameplay side effects are
+fabricated. EV_SHOW-mutated destructibles are included in the V9 topology
+owner. The provisional enemy-only V9 remains readable through bounded one-shot
+SHOW/HIDE replay compatibility.
+
+Validation boundary: V8 compatibility recovery, V9 SAVE, and V9 LOAD of the
+final enemy+destructible spatial checkpoint are all hardware-proven.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md)

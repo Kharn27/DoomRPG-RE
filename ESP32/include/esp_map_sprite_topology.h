@@ -33,6 +33,13 @@ extern "C" {
 #define ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE 12U
 #define ESP_MAP_ENTITY_SUBTYPE_CRATE 2U
 
+/*
+ * V9 topology checkpoint tracks every enemy plus every destructible because
+ * EV_SHOW may remove either family from a destination tile. The fixed capacity
+ * stays bounded and fail-closed for maps that exceed it.
+ */
+#define ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX 100U
+
 typedef enum EspMapSpriteTopologyStatus_e {
     ESP_MAP_SPRITE_TOPOLOGY_INVALID = 0,
     ESP_MAP_SPRITE_TOPOLOGY_UNSUPPORTED = 1,
@@ -62,6 +69,29 @@ typedef struct EspMapSpriteTopologyView_s {
     uint32_t destructibleCount;
     uint16_t nextLinkOrder;
 } EspMapSpriteTopologyView;
+
+typedef struct EspMapSpriteTopologyMonsterRecord_s {
+    uint16_t spriteIndex;
+    uint16_t linkState;
+    uint16_t linkOrder;
+    uint8_t visualState;
+    uint8_t reserved0;
+} EspMapSpriteTopologyMonsterRecord;
+
+/*
+ * Historical type name retained to keep the V9 record layout/API stable.
+ * Semantics are enemy + destructible topology, not enemy-only.
+ */
+typedef struct EspMapSpriteTopologyMonsterSnapshot_s {
+    uint32_t sourceArenaFNV1a;
+    uint32_t stateFNV1a;
+    uint16_t count;
+    uint16_t recordBytes;
+    uint16_t nextLinkOrder;
+    uint16_t reserved0;
+    EspMapSpriteTopologyMonsterRecord
+        records[ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX];
+} EspMapSpriteTopologyMonsterSnapshot;
 
 typedef struct EspMapSpriteTopologyRelink_s {
     uint16_t spriteIndex;
@@ -132,6 +162,20 @@ int EspMapSpriteTopology_buildFromRuntime(const EspAssetPackEntry* entityDefsEnt
 int EspMapSpriteTopology_resetMutableFromRuntime(void);
 int EspMapSpriteTopology_isReady(void);
 const EspMapSpriteTopologyView* EspMapSpriteTopology_view(void);
+
+/*
+ * Exact pointer-free checkpoint of mutable topology for enemies and
+ * destructibles. EV_SHOW can remove either family while linking its target, so
+ * both must travel with the V9 spatial checkpoint. Other entity families remain
+ * owned by their existing dedicated checkpoint owners.
+ */
+int EspMapSpriteTopology_snapshotMonsters(
+    EspMapSpriteTopologyMonsterSnapshot* outSnapshot);
+int EspMapSpriteTopology_monsterSnapshotShapeValid(
+    const EspMapSpriteTopologyMonsterSnapshot* snapshot,
+    uint32_t expectedArenaFNV1a);
+int EspMapSpriteTopology_restoreMonsterSnapshot(
+    const EspMapSpriteTopologyMonsterSnapshot* snapshot);
 
 int EspMapSpriteTopology_getVisualState(uint32_t spriteIndex,
                                         uint8_t* outVisualState);

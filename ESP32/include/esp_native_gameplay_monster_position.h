@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "esp_native_gameplay_monster_state.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -15,6 +17,15 @@ typedef struct EspNativeGameplayMonsterPositionRecord_s {
     uint16_t worldX;
     uint16_t worldY;
 } EspNativeGameplayMonsterPositionRecord;
+
+typedef struct EspNativeGameplayMonsterPositionSnapshot_s {
+    uint32_t sourceArenaFNV1a;
+    uint32_t stateFNV1a;
+    uint16_t count;
+    uint16_t recordBytes;
+    EspNativeGameplayMonsterPositionRecord
+        records[ESP_NATIVE_GAMEPLAY_MONSTER_MAX_COUNT];
+} EspNativeGameplayMonsterPositionSnapshot;
 
 typedef struct EspNativeGameplayMonsterPositionView_s {
     const EspNativeGameplayMonsterPositionRecord* records;
@@ -31,6 +42,14 @@ int EspNativeGameplayMonsterPosition_ensure(void);
 const EspNativeGameplayMonsterPositionView* EspNativeGameplayMonsterPosition_view(void);
 const EspNativeGameplayMonsterPositionRecord* EspNativeGameplayMonsterPosition_find(
     uint16_t spriteIndex);
+
+int EspNativeGameplayMonsterPosition_snapshot(
+    EspNativeGameplayMonsterPositionSnapshot* outSnapshot);
+int EspNativeGameplayMonsterPosition_snapshotShapeValid(
+    const EspNativeGameplayMonsterPositionSnapshot* snapshot,
+    uint32_t expectedArenaFNV1a);
+int EspNativeGameplayMonsterPosition_stageRestore(
+    const EspNativeGameplayMonsterPositionSnapshot* snapshot);
 
 /*
  * Permanent mutable spatial owner for native monsters. Prepare is pure and

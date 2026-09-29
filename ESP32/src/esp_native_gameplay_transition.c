@@ -30,6 +30,7 @@
 #define TRANSITION_MAX_ELIGIBLE 3U
 
 static EspNativeGameplayTransitionState transitionState;
+static uint8_t junctionExitCensusDone;
 
 void __real_EspNativeGameplayInput_reset(void);
 
@@ -151,6 +152,7 @@ static EspNativeGameplayTransitionStatus findTransitionCommands(
 
 void EspNativeGameplayTransition_reset(void) {
     memset(&transitionState, 0, sizeof(transitionState));
+    junctionExitCensusDone = 0U;
 }
 
 int EspNativeGameplayTransition_isWaitingDoor(void) {
@@ -171,6 +173,224 @@ int EspNativeGameplayTransition_isWaitingStats(void) {
 
 const EspNativeGameplayTransitionState* EspNativeGameplayTransition_view(void) {
     return transitionState.active != 0U ? &transitionState : NULL;
+}
+
+int EspNativeGameplayTransition_probeJunctionExitCensus(void) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    const char* sourceName;
+    EspAssetPackEntry sourceEntry;
+    uint32_t scriptBefore;
+    uint32_t scriptAfter;
+    uint32_t candidateEvents = 0U;
+    uint32_t saveCommands = 0U;
+    uint32_t changeCommands = 0U;
+    uint32_t targetMask = 0U;
+    uint32_t eventIndex;
+    int ok = 1;
+
+    if (junctionExitCensusDone != 0U) return 1;
+    if (view == NULL || view->targetMapId != ESP_MAP_ID_JUNCTION) return 1;
+    if (runtime == NULL || runtime->eventCount == 0U ||
+        runtime->byteCodeCount == 0U || !EspMapScriptState_isReady() ||
+        EspAssetPack_isOpen()) {
+        printf("[JUNCTIONEXITCENSUS] DEFER map=%u runtime=%u script=%u packOpen=%u\n",
+               view != NULL ? (unsigned int)view->targetMapId : 0U,
+               runtime != NULL ? 1U : 0U,
+               (unsigned int)EspMapScriptState_isReady(),
+               (unsigned int)EspAssetPack_isOpen());
+        return 0;
+    }
+
+    sourceName = EspMapCatalog_nameForId(view->targetMapId);
+    if (sourceName == NULL || sourceName[0] == '\0') return 0;
+
+    memset(&sourceEntry, 0, sizeof(sourceEntry));
+    scriptBefore = EspMapScriptState_fingerprint();
+
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) {
+        printf("[JUNCTIONEXITCENSUS] FAILED stage=PACK_OPEN mutation=no\n");
+        return 0;
+    }
+    if (!EspAssetPack_findEntry(sourceName, &sourceEntry) ||
+        (sourceEntry.flags & ESP_ASSET_PACK_FLAG_DIRECTORY) != 0U) {
+        EspAssetPack_close();
+        printf("[JUNCTIONEXITCENSUS] FAILED stage=SOURCE_ENTRY source=%s mutation=no\n",
+               sourceName);
+        return 0;
+    }
+
+    printf("[JUNCTIONEXITCENSUS] BEGIN map=%u source=%s arena=%08x events=%u commands=%u mode=raw-save+changemap-candidates mutation=no allocation=no-explicit\n",
+           (unsigned int)view->targetMapId,
+           sourceName,
+           (unsigned int)runtime->arenaFNV1a,
+           (unsigned int)runtime->eventCount,
+           (unsigned int)runtime->byteCodeCount);
+
+    for (eventIndex = 0U; eventIndex < runtime->eventCount; ++eventIndex) {
+        EspMapEventRef ref;
+        EspMapEventDescriptor descriptor;
+        uint32_t rawEvent;
+        uint32_t offset;
+        uint8_t currentState = 0U;
+        uint8_t hasSave = 0U;
+        uint8_t hasChange = 0U;
+
+        if (!EspMapRuntime_getEvent(eventIndex, &rawEvent)) {
+            ok = 0;
+            break;
+        }
+        ref.index = (uint16_t)eventIndex;
+        ref.tileIndex = (uint16_t)(rawEvent & ESP_MAP_EVENT_TILE_MASK);
+        ref.value = rawEvent;
+        if (!EspMapEvents_describe(&ref, &descriptor) ||
+            !EspMapScriptState_getEventState(eventIndex, &currentState)) {
+            ok = 0;
+            break;
+        }
+
+        for (offset = 0U; offset < descriptor.commandCount; ++offset) {
+            EspMapByteCode command;
+            if (!EspMapEvents_getCommand(&descriptor, offset, &command)) {
+                ok = 0;
+                break;
+            }
+            if (command.id == ESP_MAP_OPCODE_SAVEGAME) hasSave = 1U;
+            if (command.id == ESP_MAP_OPCODE_CHANGE_MAP) hasChange = 1U;
+        }
+        if (!ok) break;
+        if (hasSave == 0U && hasChange == 0U) continue;
+
+        ++candidateEvents;
+        printf("[JUNCTIONEXITCENSUS] EVENT index=%u tile=%u initialState=%u currentState=%u flags=%u first=%u count=%u hasSave=%u hasChange=%u\n",
+               (unsigned int)descriptor.eventIndex,
+               (unsigned int)descriptor.tileIndex,
+               (unsigned int)descriptor.initialState,
+               (unsigned int)currentState,
+               (unsigned int)descriptor.flags,
+               (unsigned int)descriptor.firstCommandIndex,
+               (unsigned int)descriptor.commandCount,
+               (unsigned int)hasSave,
+               (unsigned int)hasChange);
+
+        for (offset = 0U; offset < descriptor.commandCount; ++offset) {
+            EspMapByteCode command;
+            uint32_t globalCommand;
+            uint8_t removed = 0U;
+            char mapName[TRANSITION_NAME_CAPACITY];
+            uint8_t targetMapId = 0U;
+            const char* mapLabel = "-";
+
+            memset(mapName, 0, sizeof(mapName));
+            if (!EspMapEvents_getCommand(&descriptor, offset, &command)) {
+                ok = 0;
+                break;
+            }
+            globalCommand = (uint32_t)descriptor.firstCommandIndex + offset;
+            if (!EspMapScriptState_isCommandRemoved(globalCommand, &removed)) {
+                ok = 0;
+                break;
+            }
+
+            if (command.id == ESP_MAP_OPCODE_SAVEGAME ||
+                command.id == ESP_MAP_OPCODE_CHANGE_MAP) {
+                EspMapStringRef mapRef;
+                size_t mapLength = 0U;
+                uint32_t stringIndex = command.arg1 & 0xffU;
+
+                if (!EspMapStrings_getRef(stringIndex, &mapRef) ||
+                    mapRef.length >= sizeof(mapName) ||
+                    EspMapStrings_read(&sourceEntry, &mapRef,
+                                       mapName, sizeof(mapName),
+                                       &mapLength) != ESP_MAP_STRING_READ_OK ||
+                    mapLength != mapRef.length) {
+                    ok = 0;
+                    break;
+                }
+                mapLabel = mapName;
+                if (EspMapCatalog_idForName(mapName, &targetMapId) &&
+                    targetMapId < 32U) {
+                    targetMask |= 1UL << targetMapId;
+                }
+            }
+
+            if (command.id == ESP_MAP_OPCODE_SAVEGAME) {
+                uint32_t packed = command.arg1 >> 8U;
+                uint8_t rawX = (uint8_t)(packed & 0xffU);
+                uint8_t rawY = (uint8_t)((packed >> 8U) & 0xffU);
+                uint8_t angle = (uint8_t)((packed >> 16U) & 0xffU);
+                ++saveCommands;
+                printf("[JUNCTIONEXITCENSUS] CMD event=%u off=%u global=%u id=%u/SAVEGAME arg1=%08x arg2=%08x removed=%u map=%s targetMap=%u raw=%u,%u angle=%u dest=%u,%u\n",
+                       (unsigned int)descriptor.eventIndex,
+                       (unsigned int)offset,
+                       (unsigned int)globalCommand,
+                       (unsigned int)command.id,
+                       (unsigned int)command.arg1,
+                       (unsigned int)command.arg2,
+                       (unsigned int)removed,
+                       mapLabel,
+                       (unsigned int)targetMapId,
+                       (unsigned int)rawX,
+                       (unsigned int)rawY,
+                       (unsigned int)angle,
+                       (unsigned int)(32U + ((uint32_t)rawX << 6U)),
+                       (unsigned int)(32U + ((uint32_t)rawY << 6U)));
+            }
+            else if (command.id == ESP_MAP_OPCODE_CHANGE_MAP) {
+                uint8_t showStats =
+                    (uint8_t)((command.arg1 &
+                               ESP_MAP_CHANGE_MAP_SHOW_STATS_BIT) != 0U);
+                uint32_t spawnParam = (command.arg1 << 1U) >> 9U;
+                ++changeCommands;
+                printf("[JUNCTIONEXITCENSUS] CMD event=%u off=%u global=%u id=%u/CHANGEMAP arg1=%08x arg2=%08x removed=%u map=%s targetMap=%u showStats=%u spawnParam=%u\n",
+                       (unsigned int)descriptor.eventIndex,
+                       (unsigned int)offset,
+                       (unsigned int)globalCommand,
+                       (unsigned int)command.id,
+                       (unsigned int)command.arg1,
+                       (unsigned int)command.arg2,
+                       (unsigned int)removed,
+                       mapLabel,
+                       (unsigned int)targetMapId,
+                       (unsigned int)showStats,
+                       (unsigned int)spawnParam);
+            }
+            else {
+                printf("[JUNCTIONEXITCENSUS] CMD event=%u off=%u global=%u id=%u arg1=%08x arg2=%08x removed=%u\n",
+                       (unsigned int)descriptor.eventIndex,
+                       (unsigned int)offset,
+                       (unsigned int)globalCommand,
+                       (unsigned int)command.id,
+                       (unsigned int)command.arg1,
+                       (unsigned int)command.arg2,
+                       (unsigned int)removed);
+            }
+        }
+        if (!ok) break;
+    }
+
+    EspAssetPack_close();
+    scriptAfter = EspMapScriptState_fingerprint();
+
+    if (!ok || scriptBefore == 0U || scriptAfter != scriptBefore ||
+        EspAssetPack_isOpen()) {
+        printf("[JUNCTIONEXITCENSUS] FAILED stage=SCAN candidates=%u script=%08x->%08x packOpen=%u failClosed=yes\n",
+               (unsigned int)candidateEvents,
+               (unsigned int)scriptBefore,
+               (unsigned int)scriptAfter,
+               (unsigned int)EspAssetPack_isOpen());
+        return 0;
+    }
+
+    junctionExitCensusDone = 1U;
+    printf("[JUNCTIONEXITCENSUS] SUMMARY map=%u candidates=%u save=%u changemap=%u targetMask=%08x scriptFNV=%08x exact=yes mutation=no allocation=no-explicit\n",
+           (unsigned int)view->targetMapId,
+           (unsigned int)candidateEvents,
+           (unsigned int)saveCommands,
+           (unsigned int)changeCommands,
+           (unsigned int)targetMask,
+           (unsigned int)scriptAfter);
+    return 1;
 }
 
 EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(

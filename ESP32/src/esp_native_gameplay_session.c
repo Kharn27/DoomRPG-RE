@@ -15,9 +15,12 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_gib_fx.h"
+#include "esp_native_gameplay_monster_activation.h"
+#include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_status_message.h"
+#include "esp_native_gameplay_transition.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_native_transition_presentation.h"
@@ -197,6 +200,14 @@ void EspNativeGameplaySession_reset(void) {
      * target-frame top-bar composition. ActionEngine also owns timed feedback,
      * framebufferFresh and transient sprite/weapon state tied to that world. */
     EspNativeGameplayActionEngine_reset();
+    /*
+     * These two spatial owners are map-session state. Explicitly clear them
+     * here so an in-game LOAD of the same arena cannot inherit position or
+     * activation state merely because the immutable arena FNV is unchanged.
+     * V9 restore repopulates them from checkpoint before session priming.
+     */
+    EspNativeGameplayMonsterPosition_reset();
+    EspNativeGameplayMonsterActivation_reset();
     EspNativeGameplayStatusMessage_reset();
     EspNativeResidentGameplay_reset();
     EspNativeGameplayHud_reset();
@@ -302,6 +313,7 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
 
             if (sessionState.checkpointResume != 0U) {
                 const EspNativeGameplayMonsterView* monsters;
+                const EspNativeGameplayMonsterPositionView* positions;
                 /*
                  * A checkpoint load may stage exact monster records before this
                  * session begins. Hydrate them now, before HUD/cache witness
@@ -323,13 +335,21 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                     failSession("checkpoint monster state view");
                     return;
                 }
+                positions = EspNativeGameplayMonsterPosition_view();
+                if (positions == NULL || positions->records == NULL ||
+                    positions->count != monsters->count ||
+                    positions->sourceArenaFNV1a != monsters->sourceArenaFNV1a) {
+                    failSession("checkpoint monster position view");
+                    return;
+                }
                 if (!EspNativeGameplayGibFx_adoptCheckpointState()) {
                     failSession("checkpoint gib presentation adoption");
                     return;
                 }
-                printf("[ENGINESESSION] RESUME checkpoint=restored monsterState=%08x/%u preRender=yes freshFirstFrame=skipped dynamicLines=gameplay-wrapper\n",
+                printf("[ENGINESESSION] RESUME checkpoint=restored monsterState=%08x/%u monsterPosition=%08x preRender=yes freshFirstFrame=skipped dynamicLines=gameplay-wrapper\n",
                        (unsigned int)monsters->stateFNV1a,
-                       (unsigned int)monsters->count);
+                       (unsigned int)monsters->count,
+                       (unsigned int)positions->stateFNV1a);
                 sessionState.stage = SESSION_STAGE_HUD;
                 continue;
             }
@@ -704,6 +724,10 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                            (void*)doomRpg->render->shapeData : NULL,
                        doomRpg->render != NULL ?
                            (void*)doomRpg->render->mediaTexels : NULL);
+                /* Temporary read-only recovery probe for the next bounded
+                 * world-transition milestone. It is a no-op outside Junction
+                 * and must never gate gameplay readiness. */
+                (void)EspNativeGameplayTransition_probeJunctionExitCensus();
             }
             return;
         }

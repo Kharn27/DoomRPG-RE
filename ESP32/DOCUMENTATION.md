@@ -970,3 +970,53 @@ recover true main + docs
 ```
 
 Never merge into `main` without explicit user request.
+
+
+## Checkpoint monster spatial state: V8 compatibility and V9 owner
+
+Hardware-tested boundary:
+
+```text
+7b3efeb8d590c027b94f08ac7c31c886938709d4
+esp32-cyd CI #980/#981 = SUCCESS
+```
+
+V8 checkpoints contain logical monster state and script state, but not the
+mutable sprite topology/position state created by one-shot `SHOW/HIDE`
+commands. On LOAD, the native compatibility path therefore reconstructs only
+those topology effects that the V8 script snapshot proves were already
+successfully consumed:
+
+```text
+removed-command bit == 1
++ REMOVE-if-handled
++ opcode SHOW/HIDE
+```
+
+This is intentionally narrower than replaying arbitrary scripts and does not
+guess historical monster movement. The real classic CYD confirmed that monsters
+revealed by the yellow-card trigger are present again after loading the existing
+V8 save.
+
+The final V9 record owns compact monster state/position/activation plus topology
+for both enemies and destructibles. This matters because EV_SHOW can remove
+either an enemy blocker or a deterministic destructible before linking its
+target. Enemy blocker death is reconciled only in the checkpoint copy of
+MonsterState, without synthesizing gameplay side effects; destructible topology
+is serialized directly.
+
+Real classic CYD proof at
+`7b3efeb8d590c027b94f08ac7c31c886938709d4`:
+
+```text
+SAVE: topology=43, monsters=30, positions=30
+LOAD: tracked=43, enemies=30, destructibles=13,
+      scope=enemy+destructible-v9, exact=yes
+READY: shapeData=0x0, mediaTexels=0x0
+```
+
+The exact V9 SAVE/LOAD spatial round-trip is therefore hardware-validated for
+this bounded owner set.
+
+See
+[`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md).
