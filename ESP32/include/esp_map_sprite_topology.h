@@ -33,6 +33,11 @@ extern "C" {
 #define ESP_MAP_ENTITY_TYPE_DESTRUCTIBLE 12U
 #define ESP_MAP_ENTITY_SUBTYPE_CRATE 2U
 
+/*
+ * V9 topology checkpoint tracks every enemy plus every destructible because
+ * EV_SHOW may remove either family from a destination tile. The fixed capacity
+ * stays bounded and fail-closed for maps that exceed it.
+ */
 #define ESP_MAP_SPRITE_TOPOLOGY_MONSTER_SNAPSHOT_MAX 100U
 
 typedef enum EspMapSpriteTopologyStatus_e {
@@ -73,6 +78,10 @@ typedef struct EspMapSpriteTopologyMonsterRecord_s {
     uint8_t reserved0;
 } EspMapSpriteTopologyMonsterRecord;
 
+/*
+ * Historical type name retained to keep the V9 record layout/API stable.
+ * Semantics are enemy + destructible topology, not enemy-only.
+ */
 typedef struct EspMapSpriteTopologyMonsterSnapshot_s {
     uint32_t sourceArenaFNV1a;
     uint32_t stateFNV1a;
@@ -155,11 +164,10 @@ int EspMapSpriteTopology_isReady(void);
 const EspMapSpriteTopologyView* EspMapSpriteTopology_view(void);
 
 /*
- * Exact pointer-free checkpoint of mutable topology for enemy entities only.
- * This is the missing spatial half of the native monster checkpoint: revealed
- * / hidden linkage, current tile/order, death/link state and visual byte are
- * preserved together with the global link-order cursor. Non-enemy topology
- * remains owned by its existing dedicated checkpoint families.
+ * Exact pointer-free checkpoint of mutable topology for enemies and
+ * destructibles. EV_SHOW can remove either family while linking its target, so
+ * both must travel with the V9 spatial checkpoint. Other entity families remain
+ * owned by their existing dedicated checkpoint owners.
  */
 int EspMapSpriteTopology_snapshotMonsters(
     EspMapSpriteTopologyMonsterSnapshot* outSnapshot);
