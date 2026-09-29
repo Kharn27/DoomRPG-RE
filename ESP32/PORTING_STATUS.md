@@ -91,8 +91,8 @@ ALIVE remains steady through uptime=55893 ms
 
 Every continuation still passes `MONSTERMOVEACT ALLOW`, every live publication
 closes RNG/position/topology/rollback state, and no
-`probe-sequence-or-capture-mismatch` occurs. This candidate is therefore the
-current authoritative hardware-tested code boundary.
+`probe-sequence-or-capture-mismatch` occurs. This candidate was therefore the authoritative hardware-tested code boundary
+at that point.
 
 Remaining monster-domain active linker wraps after this PASS:
 
