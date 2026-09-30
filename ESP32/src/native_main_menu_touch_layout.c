@@ -13,6 +13,7 @@
 #include "esp_native_gameplay_hub_theme.h"
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_touch.h"
+#include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
@@ -73,24 +74,6 @@ static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 }
 
-static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
-    uint32_t hash = 2166136261U;
-    uint32_t i;
-    for (i = 0; i < length; ++i) {
-        hash ^= data[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-static uint32_t framebufferHash(const Render_t* render) {
-    if (render == NULL || render->framebuffer == NULL || render->pitch <= 0) {
-        return 0U;
-    }
-    return fnv1a32((const uint8_t*)render->framebuffer,
-                   (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
-}
-
 static uint32_t fnvMixU32(uint32_t hash, uint32_t value) {
     int shift;
     for (shift = 0; shift < 32; shift += 8) {
@@ -147,21 +130,6 @@ static uint32_t dashboardLayoutHash(void) {
     return hash;
 }
 
-static int graphicsBoundaryIsSafe(const DoomRPG_t* doomRpg) {
-    const Render_t* render;
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->menuSystem == NULL || doomRpg->menu == NULL ||
-        doomRpg->render == NULL) {
-        return 0;
-    }
-    render = doomRpg->render;
-    return render->framebuffer != NULL &&
-           render->shapeData == NULL &&
-           render->mediaTexels == NULL &&
-           !EspNativeWallCache_isActive() &&
-           !EspNativeSpriteCache_isActive();
-}
-
 static int validateMainMenuModel(const MenuSystem_t* menuSystem) {
     int i;
     if (menuSystem->menu != MENU_MAIN ||
@@ -194,7 +162,7 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
     uint32_t modelHash;
     uint32_t layoutHash;
 
-    if (!graphicsBoundaryIsSafe(doomRpg)) return 0;
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) return 0;
     canvas = doomRpg->doomCanvas;
     menuSystem = doomRpg->menuSystem;
 
@@ -393,7 +361,7 @@ int DoomRPG_esp32PaintMenuDashboardCards(
     int item;
     uint32_t hash;
 
-    if (!graphicsBoundaryIsSafe(doomRpg) || labels == NULL ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) || labels == NULL ||
         selectedIndex < 0 ||
         selectedIndex >= DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
         return 0;
@@ -430,7 +398,7 @@ int DoomRPG_esp32PaintMenuDashboardCards(
 
     DoomRPG_setFontColor(doomRpg, 0xffffffffU);
 
-    hash = framebufferHash(render);
+    hash = DoomRPG_esp32MainMenuFramebufferHash(render);
     if (hash == 0U) return 0;
     if (framebufferFNV != NULL) *framebufferFNV = hash;
     return 1;
@@ -478,7 +446,7 @@ static int drawTouchReadyMainMenuOpaque(DoomRPG_t* doomRpg,
         return 0;
     }
 
-    logoHash = framebufferHash(doomRpg->render);
+    logoHash = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
     if (logoHash == 0U) return 0;
 
     if (!DoomRPG_esp32MainMenuTouchPrepare(doomRpg)) return 0;
@@ -596,7 +564,7 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
 
     printf("\n=== Doom RPG ESP32 MENU_MAIN finger-first dashboard ===\n");
 
-    if (!graphicsBoundaryIsSafe(doomRpg)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINTOUCHLAYOUT] FAILED core/graphics boundary unavailable\n");
         return 0;
     }
@@ -604,7 +572,7 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
     canvas = doomRpg->doomCanvas;
     menuSystem = doomRpg->menuSystem;
     render = doomRpg->render;
-    sceneHash = framebufferHash(render);
+    sceneHash = DoomRPG_esp32MainMenuFramebufferHash(render);
 
     printf("[MAINTOUCHLAYOUT] Begin sceneFNV=%08x expected=%08x heap8=%u largest8=%u background=black-with-floating-cards\n",
            (unsigned int)sceneHash,
