@@ -13,6 +13,7 @@
 #include "native_asset_pack_probe.h"
 #include "native_bitshape_loader.h"
 #include "native_graphics_resource_manager.h"
+#include "native_main_menu_model.h"
 #include "native_main_menu_touch_layout.h"
 #include "native_menu_sprite_frame_probe.h"
 #include "native_menu_wall_frame_probe.h"
@@ -281,12 +282,13 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
     }
 
     /* The menu is now opaque and no longer depends on the historical 3D menu
-     * scene. Initialize the real MENU_MAIN model and paint it directly using the
-     * same bounded painter used by the validated fast Options -> Back path.
+     * scene. Build the bounded native MENU_MAIN model and paint it directly
+     * using the same owner used by runtime return/recovery paths.
      */
-    doomRpg->menuSystem->menu = MENU_MAIN;
-    Menu_initMenu(doomRpg->menu, MENU_MAIN);
-    doomRpg->menuSystem->menu = MENU_MAIN;
+    if (!DoomRPG_esp32MainMenuModelBuildMain(doomRpg)) {
+        printf("[BOOT] FAILED native MENU_MAIN model build\n");
+        return 0;
+    }
 
     if (!DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &mainMenuFNV)) {
         printf("[BOOT] FAILED direct opaque MENU_MAIN presentation\n");
