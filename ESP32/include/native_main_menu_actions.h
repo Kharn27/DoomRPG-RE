@@ -1,6 +1,8 @@
 #ifndef DOOMRPG_ESP32_NATIVE_MAIN_MENU_ACTIONS_H
 #define DOOMRPG_ESP32_NATIVE_MAIN_MENU_ACTIONS_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -26,6 +28,16 @@ typedef enum DoomRpgEsp32MainMenuDispatchResult_e {
 DoomRpgEsp32MainMenuDispatchResult
 DoomRPG_esp32MainMenuDispatchConfirmed(struct DoomRPG_s* doomRpg,
                                        int action);
+
+/* Explicit child -> MENU_MAIN Back action for the bounded pre-game menu domain.
+ * Only HELP and OPTIONS are valid children in this milestone. The caller owns
+ * child-specific touch/frame preconditions; this function owns semantic model
+ * transition, legacy-equivalent Back sound, opaque repaint and touch re-arm.
+ */
+int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpg,
+                                      int expectedChildMenu,
+                                      const char* source,
+                                      uint32_t* finalFramebufferFNV);
 
 #ifdef __cplusplus
 }

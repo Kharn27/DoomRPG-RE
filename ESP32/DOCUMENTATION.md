@@ -1210,3 +1210,31 @@ Hardware-tested boundary:
 See
 [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md).
 
+## Main-menu native Back action
+
+The bounded pre-game main-menu children now return to MENU_MAIN without the
+desktop/J2ME `MenuSystem_back()` hierarchy router.
+
+```text
+HELP / OPTIONS child
+ -> validate expected child + ST_MENU
+ -> direct legacy-equivalent Back cue 5042
+ -> native MENU_MAIN model
+ -> opaque main repaint
+ -> main touch re-arm
+ -> exact FNV/model/graphics invariants
+```
+
+Both HELP and OPTIONS are hardware-proven on the real classic CYD at
+`8d9b6d25f481d76fe4c79bc1af99d59bc314328f`. Each restored the exact main
+framebuffer FNV `522dc605`, rearmed touch, retained
+`shapeData == NULL` / `mediaTexels == NULL`, and kept heap stable.
+
+The linked ESP32 image no longer contains `MenuSystem_back`.
+`MenuSystem_setMenu` remains linked because other retained legacy flows still
+own broader menu/state transitions; it is deliberately not hidden behind a new
+generic native wrapper.
+
+See
+[`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_BACK_V9.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_BACK_V9.md).
+

@@ -33,6 +33,98 @@
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
 
+int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
+                                      int expectedChildMenu,
+                                      const char* source,
+                                      uint32_t* finalFramebufferFNV) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    MenuSystem_t* menuSystem;
+    uint32_t finalFNV = 0U;
+    uint32_t startMs;
+    uint32_t elapsedMs;
+
+    if (finalFramebufferFNV != NULL) *finalFramebufferFNV = 0U;
+
+    if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
+        doomRpg->doomCanvas == NULL ||
+        (expectedChildMenu != MENU_MAIN_OPTIONS &&
+         expectedChildMenu != MENU_MAIN_HELP_ABOUT)) {
+        printf("[MAINBACK] FAILED source=%s child=%d object/model contract\n",
+               source != NULL ? source : "unknown",
+               expectedChildMenu);
+        return 0;
+    }
+
+    menuSystem = doomRpg->menuSystem;
+    printf("\n=== Doom RPG ESP32 native child -> MENU_MAIN Back ===\n");
+    printf("[MAINBACK] BEGIN source=%s child=%d menu=%d old=%d selected=%d state=%d frame=%08x\n",
+           source != NULL ? source : "unknown",
+           expectedChildMenu,
+           menuSystem->menu,
+           menuSystem->oldMenu,
+           menuSystem->selectedIndex,
+           doomRpg->doomCanvas->state,
+           (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render));
+
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
+        doomRpg->doomCanvas->state != ST_MENU ||
+        menuSystem->menu != expectedChildMenu ||
+        menuSystem->oldMenu != MENU_MAIN) {
+        printf("[MAINBACK] FAILED source=%s precondition safe=%d state=%d menu=%d expectedChild=%d old=%d\n",
+               source != NULL ? source : "unknown",
+               DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg),
+               doomRpg->doomCanvas->state,
+               menuSystem->menu,
+               expectedChildMenu,
+               menuSystem->oldMenu);
+        return 0;
+    }
+
+    startMs = (uint32_t)DoomRPG_GetTimeMS();
+
+    /* Exact legacy Back cue, without importing MenuSystem_back() or its generic
+     * MenuSystem_setMenu(oldMenu) hierarchy router.
+     */
+    Sound_playSound(doomRpg->sound, 5042, 0, 3);
+
+    if (!DoomRPG_esp32MainMenuModelEnter(doomRpg, MENU_MAIN) ||
+        !DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalFNV)) {
+        printf("[MAINBACK] FAILED source=%s native model/repaint\n",
+               source != NULL ? source : "unknown");
+        return 0;
+    }
+
+    elapsedMs = (uint32_t)DoomRPG_GetTimeMS() - startMs;
+
+    if (menuSystem->menu != MENU_MAIN ||
+        menuSystem->selectedIndex != 0 ||
+        menuSystem->numItems != 4 ||
+        finalFNV == 0U ||
+        finalFNV != DoomRPG_esp32MainMenuSelectionFramebufferFNV(0) ||
+        finalFNV != DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render) ||
+        !DoomRPG_esp32MainMenuTouchIsActive() ||
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
+        printf("[MAINBACK] FAILED source=%s final invariant menu=%d selected=%d items=%d frame=%08x expected=%08x touch=%d\n",
+               source != NULL ? source : "unknown",
+               menuSystem->menu,
+               menuSystem->selectedIndex,
+               menuSystem->numItems,
+               (unsigned int)finalFNV,
+               (unsigned int)DoomRPG_esp32MainMenuSelectionFramebufferFNV(0),
+               DoomRPG_esp32MainMenuTouchIsActive());
+        return 0;
+    }
+
+    if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalFNV;
+    printf("[MAINBACK] READY source=%s child=%d->%d frame=%08x touch=rearmed elapsedMs=%u sound=5042 router=native noMenuSystemBack=yes noSetMenu=yes\n",
+           source != NULL ? source : "unknown",
+           expectedChildMenu,
+           menuSystem->menu,
+           (unsigned int)finalFNV,
+           (unsigned int)elapsedMs);
+    return 1;
+}
+
 static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomCanvas_t* canvas = doomRpg->doomCanvas;
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
@@ -190,15 +282,12 @@ static void helpTap(int16_t screenX,
     if (logicalX <= MAIN_HELP_BACK_RIGHT) {
         PlatformInput_setTapCallback(NULL);
 
-        /* This is intentionally the remaining next seam. The SELECT milestone
-         * owns entry/dispatch and native Help scrolling; MenuSystem_back()
-         * remains the following bounded cleanup shared with Options.
-         */
-        MenuSystem_back(menuSystem);
-
-        if (menuSystem->menu != MENU_MAIN ||
-            !DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalFNV)) {
-            printf("[MAINHELP] FAILED return to MENU_MAIN menu=%d\n",
+        if (!DoomRPG_esp32MainMenuReturnToMain(
+                doomRpg,
+                MENU_MAIN_HELP_ABOUT,
+                "help",
+                &finalFNV)) {
+            printf("[MAINHELP] FAILED native Back to MENU_MAIN menu=%d\n",
                    menuSystem->menu);
             helpDoomRpg = NULL;
             helpExpectedFrameFNV = 0U;
@@ -206,7 +295,7 @@ static void helpTap(int16_t screenX,
             return;
         }
 
-        printf("[MAINHELP] READY back=MenuSystem_back-transitional mainFNV=%08x touch=armed\n",
+        printf("[MAINHELP] READY back=native mainFNV=%08x touch=armed\n",
                (unsigned int)finalFNV);
         helpDoomRpg = NULL;
         helpExpectedFrameFNV = 0U;
@@ -292,7 +381,7 @@ static int activateHelp(DoomRPG_t* doomRpg) {
     helpExpectedFrameFNV = helpFNV;
     PlatformInput_setTapCallback(helpTap);
 
-    printf("[MAINHELP] READY menu=%d type=%d old=%d frame=%08x input=footer-back+page-up+page-down backOwner=legacy-next-seam\n",
+    printf("[MAINHELP] READY menu=%d type=%d old=%d frame=%08x input=footer-back+page-up+page-down backOwner=native\n",
            menuSystem->menu,
            menuSystem->type,
            menuSystem->oldMenu,

@@ -495,3 +495,26 @@ HELP already owns its paging/input natively, so future visual redesign should be
 a presentation-only change rather than a reason to restore legacy menu
 selection/render orchestration.
 
+## Main-menu Back ownership
+
+Pre-game Back navigation is now semantic rather than generic:
+
+```text
+HELP    -> MENU_MAIN
+OPTIONS -> MENU_MAIN
+```
+
+Both routes use `DoomRPG_esp32MainMenuReturnToMain()`. The child frontend owns
+its local touch/frame preconditions; the action owner owns the parent-state
+contract, Back cue, native model transition, opaque presentation and touch
+handoff.
+
+Do not reintroduce `MenuSystem_back()` for this domain. It is absent from the
+linked ESP32 firmware.
+
+This does **not** imply that generic `MenuSystem_setMenu()` is ready for
+removal. It still has retained callers in desktop-derived state/menu flows, so a
+future milestone must classify and migrate those callers by responsibility.
+Replacing them all with one new generic ESP32 router would merely rename the
+legacy architecture.
+
