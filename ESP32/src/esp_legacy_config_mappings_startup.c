@@ -213,10 +213,10 @@ int EspLegacyMappings_load(struct Render_s* renderBase) {
     for (i = 0; i < plan.spriteCnt; ++i) {
         render->mediaSpriteIds[i] = DoomRPG_shortAtNext(data, &dataPos);
     }
-    if (dataPos != entry->usize) {
+    if ((uint32_t)dataPos != sourceBytes) {
         releaseMappings(render);
-        printf("[MAPPINGS] ERROR parser consumed=%d expected=%d\n",
-               dataPos, entry->usize);
+        printf("[MAPPINGS] ERROR parser consumed=%d expected=%u\n",
+               dataPos, (unsigned int)sourceBytes);
         return 0;
     }
 
@@ -238,7 +238,7 @@ static int configFilePresent(void) {
 }
 
 int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
-    const zip_entry_t* mappingEntry;
+    uint32_t mappingBytes = 0U;
     MappingPlan_t plan;
     Render_t* render;
     uint32_t before;
@@ -266,14 +266,13 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
         return 0;
     }
 
-    mappingEntry = findZipEntry("mappings.bin");
-    if (mappingEntry == NULL) {
+    if (!EspLegacyAssetSource_stat("mappings.bin", &mappingBytes)) {
         printf("[MAPPINGS] MISSING mappings.bin; probe skipped safely\n");
         return 0;
     }
 
-    printf("[MAPPINGS] mappings.bin c=%d u=%d\n",
-           mappingEntry->csize, mappingEntry->usize);
+    printf("[MAPPINGS] mappings.bin bytes=%u backing=pak\n",
+           (unsigned int)mappingBytes);
 
     hasConfig = configFilePresent();
     printf("[CONFIG] Config file present=%s (missing is valid on first boot)\n",
