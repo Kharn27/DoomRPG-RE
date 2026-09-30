@@ -13,27 +13,28 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 9c9388103d033e40c4081b92b509dd08c544ac36
-branch = agent/esp32-consolidation-monster-turn-view-v5
-hardware-tested code boundary = 517c37855e18894c4d2292dab20ec7852107549b
-CI = esp32-cyd #1064 SUCCESS
+current main = c37c66ad800603ea7d0622681a3bfaf5bab0b41d
+branch = agent/esp32-consolidation-monster-movement-service-v6
+hardware-tested code boundary = c27b94e263f4ea0d445e7debeea4d836dbd59e4f
+CI = esp32-cyd #1069 SUCCESS
 static RAM = 45776 B
 flash = 815677 B
-artifact id = 11081649324
+artifact id = 11084465870
 translation units = 173
-active --wrap flags = 58
-hardware = seven active native linker seams retired/replaced; MonsterTurn producer/filter service is explicit and real-CYD validated
-status = branch hardware-pass; documentation-only close in progress
+active --wrap flags = 57
+hardware = final MonsterMovement linker seam replaced by explicit ActiveSequence composition; real-CYD four-member MOVE PASS
+status = branch hardware-pass; zero active EspNativeGameplayMonster* wraps remain; documentation-only close in progress
 ```
 
 Current consolidation result from merged main
-`9c9388103d033e40c4081b92b509dd08c544ac36`:
+`c37c66ad800603ea7d0622681a3bfaf5bab0b41d`:
 
 ```text
-ESP32 translation units: 173 -> 173
-active linker --wraps:   59 -> 58
-static RAM:              45776 B -> 45776 B
-flash:                   815609 B -> 815677 B
+ESP32 translation units:        173 -> 173
+active linker --wraps:          58 -> 57
+EspNativeGameplayMonster wraps:  1 -> 0
+static RAM:                     45776 B -> 45776 B
+flash:                          815677 B -> 815677 B
 ```
 
 The dead historical Retaliation compatibility translation unit remains gone.
@@ -67,19 +68,34 @@ made explicit:
    AttackVisual, Retaliation and ordinary movement read the side-effect-free
    `EspNativeGameplayMonsterActivation_turnView`; ActiveSequence reads the raw
    producer directly.
+8. `EspNativeGameplayMonsterMovement_service`:
+   `MonsterMovementProbe_service` now calls
+   `EspNativeGameplayMonsterActiveSequence_service` explicitly. The sequencer
+   selects one active member at a time; `serviceMember` then invokes the normal
+   Movement planner leaf and closes publication/post-move ownership before the
+   next member is selected.
 
-The latest real-CYD witness covers the full replacement boundary: two ordered
-four-monster movement turns with both subtype-4 three-goal chains, a real
-three-shot subtype-4 attack through `MONSTERACT -> MONSTERATKVIS ->
-MONSTERRETAL`, and the jammed-door deferred turn bridge through
-`DESTRUCTIBLETURN ARM -> REQUEST` only after `DESTRUCTIBLE COMMIT` and
-rollback closure. No transaction-local heap drift is observed.
+The latest real-CYD witness executes one four-member MOVE in activation order.
+Sprites 218 and 237 commit ordinary movement; subtype-4 sprites 0 and 1 complete
+their three-goal chains; the sequence closes with
+`activeCount=4 delivered=4 ordered=yes publication=per-member`. Two following
+ALIVE samples are stable at `heap=82704 heap8=17152 largest8=10228`.
 
-One monster-domain linker wrap remains active:
+There are now no active linker wraps whose target symbol begins with
+`EspNativeGameplayMonster`.
 
-```text
-EspNativeGameplayMonsterMovement_service
-```
+A later real-CYD PASS_TURN also proves a genuine ranged monster attack after
+the refactor: sprite 218 / subtype 3 / weapon 15 follows
+`ATTACK-PROBE -> MONSTERACT -> MONSTERATKVIS -> MONSTERRETAL`, then commits
+`playerHP=22->20 armor=12->10` only after the visual completes. Following
+ALIVE samples remain stable at `heap=82704 heap8=17152 largest8=10228`.
+
+That ranged attack emits no `RANGED-MEMBER`, confirming that
+`RANGED-MEMBER` denotes exact-source ranged-AI movement/repositioning rather
+than the actual attack presentation/resolution path.
+
+See [MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md](MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md)
+for the final monster-wrapper closure.
 
 See [MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md](MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md)
 for the exact regression history, CI artifacts and hardware witnesses.

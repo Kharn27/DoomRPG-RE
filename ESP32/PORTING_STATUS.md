@@ -5,18 +5,61 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 9c9388103d033e40c4081b92b509dd08c544ac36
-branch = agent/esp32-consolidation-monster-turn-view-v5
-hardware-tested code boundary = 517c37855e18894c4d2292dab20ec7852107549b
-CI = esp32-cyd #1064 SUCCESS
+current main = c37c66ad800603ea7d0622681a3bfaf5bab0b41d
+branch = agent/esp32-consolidation-monster-movement-service-v6
+hardware-tested code boundary = c27b94e263f4ea0d445e7debeea4d836dbd59e4f
+CI = esp32-cyd #1069 SUCCESS
 static RAM = 45776 B
 flash = 815677 B
-artifact id = 11081649324
+artifact id = 11084465870
 translation units = 173
-active --wrap flags = 58
-hardware = MonsterTurn producer/filter composition made explicit; ordered movement, real multi-shot attack and deferred jammed-door turn transport PASS on real CYD
-status = HARDWARE PASS; all commits after 517c3785... must remain documentation-only before merge
+active --wrap flags = 57
+hardware = final MonsterMovement linker seam replaced by explicit ActiveSequence composition; ordered four-monster MOVE PASS on real CYD
+status = HARDWARE PASS; zero active EspNativeGameplayMonster* linker wraps remain; all commits after c27b94e... are documentation-only
 ```
+
+### Explicit MonsterMovement ActiveSequence composition — REAL-CYD PASS (2026-09-30)
+
+Commit `c27b94e263f4ea0d445e7debeea4d836dbd59e4f` removes the final active
+monster-domain linker interception,
+`--wrap=EspNativeGameplayMonsterMovement_service`.
+
+Permanent ownership is now explicit:
+
+```text
+GameplaySession_service
+ -> MonsterMovementProbe_service
+ -> MonsterActiveSequence_service
+ -> MonsterMovementProbe_serviceMember
+ -> MonsterMovement_service
+ -> MovementPublish
+ -> postMoveGoal / three-goal continuation
+```
+
+The real classic CYD validates one ordered four-member MOVE: sprites 218 and 237
+commit ordinary movement; subtype-4 sprites 0 and 1 each complete their
+three-goal chains. The turn closes with
+`activeCount=4 delivered=4 sameMonsterTurn=yes ordered=yes publication=per-member`.
+Two following ALIVE samples are identical at
+`heap=82704 heap8=17152 largest8=10228`.
+
+CI #1069 succeeds with unchanged 45776 B static RAM and 815677 B flash.
+Translation units remain 173, active linker wraps drop 58 -> 57, and active
+`EspNativeGameplayMonster*` linker wraps drop 1 -> 0.
+
+A later real-CYD PASS_TURN provides the complementary ranged-attack witness:
+sprite 218 / subtype 3 / weapon 15 runs through
+`ATTACK-PROBE -> MONSTERACT -> MONSTERATKVIS -> MONSTERRETAL`, with
+`playerHP=22->20 armor=12->10` committed only after the visual completes and
+rollback closes. Following ALIVE samples remain stable at
+`heap=82704 heap8=17152 largest8=10228`.
+
+That genuine ranged attack emits no `RANGED-MEMBER`, confirming the boundary:
+`RANGED-MEMBER` denotes the unchanged exact-source ranged-AI
+movement/repositioning branch, not the attack presentation/resolution path.
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md](MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md)
 
 ### Explicit MonsterTurn activation-filter composition — REAL-CYD PASS (2026-09-30)
 
