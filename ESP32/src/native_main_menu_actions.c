@@ -23,6 +23,11 @@
 #include "platform_video_config.h"
 
 #define MAIN_HELP_LINE_HEIGHT 12
+#define MAIN_HELP_CONTENT_BOTTOM 95
+#define MAIN_HELP_VISIBLE_LINES 8
+#define MAIN_HELP_FOOTER_TOP 96
+#define MAIN_HELP_BACK_RIGHT 52
+#define MAIN_HELP_UP_RIGHT 105
 
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
@@ -64,6 +69,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomCanvas_t* canvas = doomRpg->doomCanvas;
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
     int visible;
+    int maxScroll;
+    int end;
     int i;
     int x;
     int y;
@@ -78,6 +85,20 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         return 0;
     }
 
+    menuSystem->maxItems = MAIN_HELP_VISIBLE_LINES;
+    maxScroll = menuSystem->numItems > menuSystem->maxItems
+                    ? menuSystem->numItems - menuSystem->maxItems
+                    : 0;
+    if (menuSystem->scrollIndex < 0) menuSystem->scrollIndex = 0;
+    if (menuSystem->scrollIndex > maxScroll) {
+        menuSystem->scrollIndex = maxScroll;
+    }
+    menuSystem->selectedIndex = menuSystem->scrollIndex;
+
+    visible = menuSystem->numItems - menuSystem->scrollIndex;
+    if (visible > menuSystem->maxItems) visible = menuSystem->maxItems;
+    end = menuSystem->scrollIndex + visible;
+
     DoomRPG_setColor(doomRpg, 0x000000);
     DoomRPG_fillRect(doomRpg,
                      0,
@@ -86,15 +107,9 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
                      canvas->displayRect.h);
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
 
-    menuSystem->scrollIndex = 0;
-    menuSystem->maxItems = canvas->displayRect.h / MAIN_HELP_LINE_HEIGHT;
-    visible = menuSystem->numItems < menuSystem->maxItems
-                  ? menuSystem->numItems
-                  : menuSystem->maxItems;
     x = canvas->SCR_CX - 64;
     y = 0;
-
-    for (i = 0; i < visible; ++i) {
+    for (i = menuSystem->scrollIndex; i < end; ++i) {
         if (menuSystem->items[i].textField[0] != '\0') {
             DoomCanvas_drawFont(canvas,
                                 menuSystem->items[i].textField,
@@ -108,28 +123,60 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         y += MAIN_HELP_LINE_HEIGHT;
     }
 
+    /* Permanent finger-first footer. Keeping it outside the scrolling text
+     * makes all 83 help lines reachable without importing MenuSystem_paint().
+     */
+    DoomRPG_setColor(doomRpg, 0x404040);
+    DoomRPG_drawLine(doomRpg,
+                     0,
+                     MAIN_HELP_FOOTER_TOP,
+                     DOOMRPG_LOGICAL_WIDTH - 1,
+                     MAIN_HELP_FOOTER_TOP);
+    DoomRPG_drawLine(doomRpg,
+                     MAIN_HELP_BACK_RIGHT + 1,
+                     MAIN_HELP_FOOTER_TOP,
+                     MAIN_HELP_BACK_RIGHT + 1,
+                     DOOMRPG_LOGICAL_HEIGHT - 1);
+    DoomRPG_drawLine(doomRpg,
+                     MAIN_HELP_UP_RIGHT + 1,
+                     MAIN_HELP_FOOTER_TOP,
+                     MAIN_HELP_UP_RIGHT + 1,
+                     DOOMRPG_LOGICAL_HEIGHT - 1);
+
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
+    DoomCanvas_drawFont(canvas, "BACK", 8, 102, 0, 0, -1, false);
+    DoomCanvas_drawFont(canvas, "UP", 70, 102, 0, 0, -1, false);
+    DoomCanvas_drawFont(canvas, "DOWN", 118, 102, 0, 0, -1, false);
+    DoomRPG_setFontColor(doomRpg, 0xffffffff);
+
     frameFNV = framebufferHash(doomRpg->render);
     if (frameFNV == 0U) return 0;
 
     SDL_RenderPresent(NULL);
     if (outFrameFNV != NULL) *outFrameFNV = frameFNV;
 
-    printf("[MAINHELP] PAINT lines=%d visible=%d maxItems=%d framebufferFNV=%08x background=opaque-black renderer=native-list\n",
+    printf("[MAINHELP] PAINT lines=%d visible=%d range=%d..%d maxItems=%d maxScroll=%d framebufferFNV=%08x background=opaque-black renderer=native-list footer=BACK|UP|DOWN\n",
            menuSystem->numItems,
            visible,
+           menuSystem->scrollIndex,
+           end > menuSystem->scrollIndex ? end - 1 : menuSystem->scrollIndex,
            menuSystem->maxItems,
+           maxScroll,
            (unsigned int)frameFNV);
     return 1;
 }
 
-static void helpBackTap(int16_t screenX,
-                        int16_t screenY,
-                        uint16_t pressure,
-                        uint16_t rawX,
-                        uint16_t rawY) {
+static void helpTap(int16_t screenX,
+                    int16_t screenY,
+                    uint16_t pressure,
+                    uint16_t rawX,
+                    uint16_t rawY) {
     DoomRPG_t* doomRpg = helpDoomRpg;
     MenuSystem_t* menuSystem;
+    int logicalX;
+    int logicalY;
+    int maxScroll;
+    int beforeScroll;
     uint32_t before;
     uint32_t finalFNV = 0U;
 
@@ -138,47 +185,98 @@ static void helpBackTap(int16_t screenX,
     if (doomRpg == NULL || doomRpg->menuSystem == NULL) return;
     menuSystem = doomRpg->menuSystem;
     before = framebufferHash(doomRpg->render);
-
-    printf("[MAINHELP] BACK tap raw=%u,%u physical=%d,%d frame=%08x expected=%08x menu=%d\n",
-           rawX,
-           rawY,
-           screenX,
-           screenY,
-           (unsigned int)before,
-           (unsigned int)helpExpectedFrameFNV,
-           menuSystem->menu);
-
-    PlatformInput_setTapCallback(NULL);
+    logicalX = screenX / DOOMRPG_INTEGER_SCALE;
+    logicalY = screenY / DOOMRPG_INTEGER_SCALE;
 
     if (!graphicsBoundaryIsSafe(doomRpg) ||
         menuSystem->menu != MENU_MAIN_HELP_ABOUT ||
         helpExpectedFrameFNV == 0U ||
         before != helpExpectedFrameFNV) {
-        printf("[MAINHELP] FAILED back precondition\n");
-        helpDoomRpg = NULL;
-        helpExpectedFrameFNV = 0U;
-        return;
-    }
-
-    /* This is intentionally the remaining next seam. The SELECT milestone owns
-     * entry/dispatch; MenuSystem_back() is retained for the following bounded
-     * cleanup and is shared with Options until then.
-     */
-    MenuSystem_back(menuSystem);
-
-    if (menuSystem->menu != MENU_MAIN ||
-        !DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalFNV)) {
-        printf("[MAINHELP] FAILED return to MENU_MAIN menu=%d\n",
+        printf("[MAINHELP] FAILED touch precondition frame=%08x expected=%08x menu=%d\n",
+               (unsigned int)before,
+               (unsigned int)helpExpectedFrameFNV,
                menuSystem->menu);
+        PlatformInput_setTapCallback(NULL);
         helpDoomRpg = NULL;
         helpExpectedFrameFNV = 0U;
         return;
     }
 
-    printf("[MAINHELP] READY back=MenuSystem_back-transitional mainFNV=%08x touch=armed\n",
+    printf("[MAINHELP] TAP raw=%u,%u physical=%d,%d logical=%d,%d scroll=%d frame=%08x\n",
+           rawX,
+           rawY,
+           screenX,
+           screenY,
+           logicalX,
+           logicalY,
+           menuSystem->scrollIndex,
+           (unsigned int)before);
+
+    if (logicalY < MAIN_HELP_FOOTER_TOP) {
+        printf("[MAINHELP] CONTENT tap=no-action footerTop=%d\n",
+               MAIN_HELP_FOOTER_TOP);
+        return;
+    }
+
+    if (logicalX <= MAIN_HELP_BACK_RIGHT) {
+        PlatformInput_setTapCallback(NULL);
+
+        /* This is intentionally the remaining next seam. The SELECT milestone
+         * owns entry/dispatch and native Help scrolling; MenuSystem_back()
+         * remains the following bounded cleanup shared with Options.
+         */
+        MenuSystem_back(menuSystem);
+
+        if (menuSystem->menu != MENU_MAIN ||
+            !DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalFNV)) {
+            printf("[MAINHELP] FAILED return to MENU_MAIN menu=%d\n",
+                   menuSystem->menu);
+            helpDoomRpg = NULL;
+            helpExpectedFrameFNV = 0U;
+            return;
+        }
+
+        printf("[MAINHELP] READY back=MenuSystem_back-transitional mainFNV=%08x touch=armed\n",
+               (unsigned int)finalFNV);
+        helpDoomRpg = NULL;
+        helpExpectedFrameFNV = 0U;
+        return;
+    }
+
+    beforeScroll = menuSystem->scrollIndex;
+    maxScroll = menuSystem->numItems > MAIN_HELP_VISIBLE_LINES
+                    ? menuSystem->numItems - MAIN_HELP_VISIBLE_LINES
+                    : 0;
+
+    if (logicalX <= MAIN_HELP_UP_RIGHT) {
+        menuSystem->scrollIndex -= MAIN_HELP_VISIBLE_LINES;
+        if (menuSystem->scrollIndex < 0) menuSystem->scrollIndex = 0;
+        printf("[MAINHELP] PAGE-UP scroll=%d->%d\n",
+               beforeScroll,
+               menuSystem->scrollIndex);
+    }
+    else {
+        menuSystem->scrollIndex += MAIN_HELP_VISIBLE_LINES;
+        if (menuSystem->scrollIndex > maxScroll) {
+            menuSystem->scrollIndex = maxScroll;
+        }
+        printf("[MAINHELP] PAGE-DOWN scroll=%d->%d max=%d\n",
+               beforeScroll,
+               menuSystem->scrollIndex,
+               maxScroll);
+    }
+
+    menuSystem->selectedIndex = menuSystem->scrollIndex;
+    if (!paintHelp(doomRpg, &finalFNV)) {
+        printf("[MAINHELP] FAILED repaint scroll=%d\n",
+               menuSystem->scrollIndex);
+        return;
+    }
+
+    helpExpectedFrameFNV = finalFNV;
+    printf("[MAINHELP] READY scroll=%d frame=%08x input=footer-back+page-up+page-down\n",
+           menuSystem->scrollIndex,
            (unsigned int)finalFNV);
-    helpDoomRpg = NULL;
-    helpExpectedFrameFNV = 0U;
 }
 
 static int activateHelp(DoomRPG_t* doomRpg) {
@@ -218,9 +316,9 @@ static int activateHelp(DoomRPG_t* doomRpg) {
 
     helpDoomRpg = doomRpg;
     helpExpectedFrameFNV = helpFNV;
-    PlatformInput_setTapCallback(helpBackTap);
+    PlatformInput_setTapCallback(helpTap);
 
-    printf("[MAINHELP] READY menu=%d type=%d old=%d frame=%08x input=any-tap-back backOwner=legacy-next-seam\n",
+    printf("[MAINHELP] READY menu=%d type=%d old=%d frame=%08x input=footer-back+page-up+page-down backOwner=legacy-next-seam\n",
            menuSystem->menu,
            menuSystem->type,
            menuSystem->oldMenu,
