@@ -178,7 +178,6 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     uint32_t heapAfter;
     uint32_t largestBefore;
     uint32_t largestAfter;
-    int hasExistingSave;
     uint32_t expectedInputHash;
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Start Game entry ===\n");
@@ -234,39 +233,29 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
            player->totalDeaths);
 
     printIntroAssetPlan();
+    /*
+     * START is unconditional on ESP32: the dedicated LOAD card owns checkpoint
+     * resume. A save file must never redirect START into legacy Continue.
+     */
+    printf("[MAINSTART] Route=new-game-only savePresence=ignored loadOwner=dedicated-LOAD-card\n");
 
-    hasExistingSave = Game_checkConfigVersion(doomRpg->game) ? 1 : 0;
-    printf("[MAINSTART] Existing-save precheck=%s\n",
-           hasExistingSave ? "yes -> keep menu runtime" : "no -> fresh cleanup allowed");
-
-    if (!hasExistingSave && !DoomRPG_esp32ReleaseMainMenuMemory(doomRpg)) {
-        printf("[MAINSTART] FAILED fresh-start menu memory cleanup contract\n");
+    if (!DoomRPG_esp32ReleaseMainMenuMemory(doomRpg)) {
+        printf("[MAINSTART] FAILED new-game menu memory cleanup contract\n");
         return 0;
     }
 
     heapBefore = heap8Free();
     largestBefore = largest8Block();
-
     /*
-     * MENU_MAIN has only two Start Game outcomes on ESP32. The action remains
-     * responsible for the real legacy-compatible player/intro transition, while
-     * the compact native menu-model owner performs only the bounded model state
-     * change that MenuSystem_select()/setMenu historically hid.
+     * The dedicated LOAD card owns resume. START always performs the real
+     * legacy-compatible new-game/player/intro transition; the compact native
+     * menu-model owner only closes MENU_MAIN afterward.
      */
     Sound_playSound(doomRpg->sound, 5046, 0, 3);
-    if (hasExistingSave) {
-        if (!DoomRPG_esp32MainMenuModelEnter(
-                doomRpg, MENU_MAIN_CONTINUE)) {
-            printf("[MAINSTART] FAILED entering native CONTINUE model\n");
-            return 0;
-        }
-    }
-    else {
-        Menu_startGame(doomRpg->menu, 1);
-        if (!DoomRPG_esp32MainMenuModelLeave(doomRpg)) {
-            printf("[MAINSTART] FAILED leaving MENU_MAIN model for intro\n");
-            return 0;
-        }
+    Menu_startGame(doomRpg->menu, 1);
+    if (!DoomRPG_esp32MainMenuModelLeave(doomRpg)) {
+        printf("[MAINSTART] FAILED leaving MENU_MAIN model for intro\n");
+        return 0;
     }
 
     outputHash = framebufferHash(render);
@@ -293,11 +282,6 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
                EspNativeWallCache_isActive(),
                EspNativeSpriteCache_isActive());
         return 0;
-    }
-
-    if (menuSystem->menu == MENU_MAIN_CONTINUE) {
-        printf("[MAINSTART] READY existing-save path reached MENU_MAIN_CONTINUE; Continue/New Game painter intentionally deferred\n");
-        return 1;
     }
 
     printf("[MAINSTART] Player after level=%d xp=%d nextXP=%d credits=%d keys=%d ammo1=%u weapon=%d weapons=%08x disabled=%08x deaths=%d\n",
