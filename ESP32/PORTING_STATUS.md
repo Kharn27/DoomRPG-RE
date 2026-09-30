@@ -5,19 +5,19 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 1d2a9d504b258936e58da1f0d1b88128466645d6
-branch = agent/esp32-consolidation-intro-startup-composition-v13
-hardware-tested code boundary = 0f733d1a6ac680b0ff3f7954f4e40bcf44f942f8
-CI = esp32-cyd #1191 SUCCESS
-static RAM = 45224 B
-flash = 782009 B
-firmware.bin = 782368 B
-artifact id = 11117812139
-artifact digest = sha256:0536352fded6c011068d126cee5e3a8b13c2c70915cbddf6d819f6a1d31499fc
-firmware sha256 = 048dc5175861fece86ee3c98fc1d75458c1692c392cd27474f2b106eb5251e29
-ELF sha256 = cce81719d6b6c11e39d18b2ec31cf63192b623c2bdae2af44ec080615b136179
-hardware = START -> native intro clock/input -> resource-only dispose -> explicit native startup bootstrap -> Entrance resident gameplay PASS on real CYD
-status = HARDWARE PASS; active linker wraps 57 -> 55; __wrap_Esp32IntroDispose_reset/service absent; V12 retired legacy START/load-map symbols remain absent
+current main = 9aa3c3a62bb7639d884d036acc0baf54be88541e
+branch = agent/esp32-consolidation-menu-bsp-runtime-retirement-v14
+hardware-tested code boundary = dd4161a40b28d2ed9c88370b2f8281b9045f2980
+CI = esp32-cyd #1197 SUCCESS
+static RAM = 45128 B
+flash = 773089 B
+firmware.bin = 773456 B
+artifact id = 11120007067
+artifact digest = sha256:59e22d286fc5d80e6c1ecaca6ed3783b1726298b3dc606fef47ace01d87891c7
+firmware sha256 = 36a17cba2152a7bbdfaeb15ee2535453abaac45522afe59df41baa79116758a1
+ELF sha256 = 2e381df4b49e6e217bf6c6d52a64570b6fe1503418e1a88188cccd2f4dad9174
+hardware = cold boot -> native opaque MENU_MAIN without menu.bsp runtime -> OPTIONS/HELP Back -> START -> intro -> Entrance resident gameplay -> MOVE PASS
+status = HARDWARE PASS; production menu.bsp runtime retired; active linker wraps 55 -> 52; legacy menu map loader closure absent from final ELF
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2480,3 +2480,98 @@ resident gameplay with legacy render pools still absent:
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_INTRO_STARTUP_COMPOSITION_V13.md](MILESTONE_ESP32_CONSOLIDATION_INTRO_STARTUP_COMPOSITION_V13.md)
+
+
+### Production menu.bsp runtime retirement — REAL-CYD PASS (2026-09-30)
+
+Hardware-tested code head
+`dd4161a40b28d2ed9c88370b2f8281b9045f2980` removes the historical
+`menu.bsp` structural runtime from the normal `esp32-cyd` boot path.
+
+Before V14, normal boot still built the legacy menu map structures through
+`Render_beginLoadMap(MAP_MENU)` / `Render_beginLoadMapData()`, intercepted
+the seventh `DoomCanvas_updateLoadingBar()` callback with `longjmp`, then
+discarded the resulting 3D menu scene visually by painting the opaque native
+dashboard on top.
+
+The normal production path is now direct:
+
+```text
+config + immutable mappings
+ -> DoomRPG_esp32MainMenuModelBuildMain
+ -> DoomRPG_esp32RepaintOpaqueMainMenu
+ -> native touch owner
+```
+
+The historical menu BSP structure/wall/sprite suite remains available only in
+the explicit `esp32-cyd-bringup` profile. Its four linker compatibility flags
+are no longer production flags.
+
+CI #1197 succeeds with:
+
+```text
+                         merged main     V14           delta
+static RAM               45224 B         45128 B        -96 B
+linked Flash            782009 B        773089 B      -8920 B
+firmware.bin            782368 B        773456 B      -8912 B
+active __wrap_*              55             52            -3
+```
+
+Final-ELF inspection of the CI artifact confirms these legacy production symbols
+are absent:
+
+```text
+DoomRPG_probeMenuBspHeader
+DoomRPG_probeMenuMapRuntimeStructures
+DoomCanvas_updateLoadingBar
+Render_beginLoadMap
+Render_beginLoadMapData
+__wrap_DoomCanvas_updateLoadingBar
+__wrap_Render_beginLoadMap
+__wrap_longjmp
+```
+
+The permanent native menu owners remain present:
+
+```text
+DoomRPG_esp32MainMenuModelBuildMain
+DoomRPG_esp32RepaintOpaqueMainMenu
+```
+
+Real classic-CYD cold boot proves the new production boundary:
+
+```text
+[CONFIGMAP] Render_beginLoadMap / BSP still NOT executed
+[MAINOPAQUE] ... finalFNV=522dc605 ... heap8=35656 largest8=23540
+[MAINBOOT] READY owner=native-opaque menuBspRuntime=skipped legacyMapStructures=not-created frame=522dc605
+[ALIVE] ... heap=101580 heap8=35656 largest8=23540 ... MENU=ready
+```
+
+No `[MENUBSP]` or `[MAPSTRUCT]` stage appears in the normal boot log.
+OPTIONS -> Back and HELP -> Back both restore exact MENU_MAIN FNV
+`522dc605` with unchanged `heap8=35656 largest8=23540` and
+`shapeData=0x0 mediaTexels=0x0`.
+
+START confirms that the old menu map structures were never created:
+
+```text
+[MAINSTART] Begin ... heap8=35656 largest8=23540 shapeData=0x0 mediaTexels=0x0
+[MAINMENU] Runtime cleanup ... nodes=0x0 lines=0x0 mapSprites=0x0 ... shapeData=0x0 mediaTexels=0x0
+```
+
+The unchanged intro/disposal/bootstrap path then reaches Entrance with the
+memory invariants intact:
+
+```text
+[INTRODISP] READY ... heap8=43200->76972 recovered=33772 ... noMapLoad=yes
+[NATIVEBOOT] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=93388 heap8=27464 largest8=18420 ...
+[ALIVE] ... heap=93388 heap8=27464 largest8=18420 ...
+```
+
+A following real FORWARD move commits tile `904 -> 872`, renders the new
+frame, services the monster turn, and leaves ALIVE stable at the same values.
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_MENU_BSP_RUNTIME_RETIREMENT_V14.md](MILESTONE_ESP32_CONSOLIDATION_MENU_BSP_RUNTIME_RETIREMENT_V14.md)

@@ -640,3 +640,40 @@ already owns the validated final-exit state machine.
 
 This boundary was hardware-validated without changing static RAM or Flash and
 reduced active linker wraps from 57 to 55.
+
+
+## Production main-menu boot ownership
+
+The opaque native pre-game menu no longer depends on a resident `menu.bsp`
+world in production.
+
+Permanent normal-boot ownership is:
+
+```text
+staged core/layout/startup
+ -> config + immutable mappings
+ -> native fixed MENU_MAIN model
+ -> opaque native dashboard
+ -> native touch/action owners
+```
+
+Do not rebuild the historical 3D menu map merely as a prerequisite for the
+opaque dashboard. In the hardware-tested production image, the menu starts
+without `Render_beginLoadMap(MAP_MENU)`, legacy nodes/lines/mapSprites, or the
+loading-bar/longjmp structural escape.
+
+The old menu BSP structure, wall and sprite probes remain useful regression
+witnesses, but they belong to the explicit `esp32-cyd-bringup` diagnostic
+profile. Diagnostic reachability must not force their loader closure back into
+the normal firmware.
+
+This distinction is deliberate:
+
+```text
+esp32-cyd          permanent product owners only
+esp32-cyd-bringup  historical structural/render probes may be retained
+```
+
+The real CYD validates native MENU_MAIN, OPTIONS/HELP Back, START, complete
+intro/bootstrap, Entrance resident gameplay and a committed move with
+`shapeData == NULL` and `mediaTexels == NULL`.

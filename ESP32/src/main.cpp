@@ -12,6 +12,8 @@
 #include "esp32_sdl_platform.h"
 #include "menu_bsp_probe.h"
 #include "native_intro_clock.h"
+#include "native_main_menu_model.h"
+#include "native_main_menu_touch_layout.h"
 #include "platform_input.h"
 #include "platform_video.h"
 #include "esp_legacy_prerender_startup.h"
@@ -22,6 +24,10 @@ extern struct DoomRPG_s* doomRpg;
 
 #ifndef DOOMRPG_ESP32_SCREEN_DIAGNOSTICS
 #define DOOMRPG_ESP32_SCREEN_DIAGNOSTICS 0
+#endif
+
+#ifndef DOOMRPG_ESP32_BRINGUP_PROBES
+#define DOOMRPG_ESP32_BRINGUP_PROBES 0
 #endif
 
 namespace
@@ -41,7 +47,7 @@ namespace
     bool enginePreRenderReady = false;
     bool engineRenderStartupReady = false;
     bool engineConfigMappingsReady = false;
-    bool engineMenuBspReady = false;
+    bool engineMainMenuReady = false;
     DoomRpgCoreInitReport coreReport{};
     DoomRpgLayoutReport layoutReport{};
     uint32_t lastTouchUpdate = 0;
@@ -302,19 +308,53 @@ namespace
         }
     }
 
-    void initializeMenuBspProbe()
+    void initializeMainMenu()
     {
-        engineMenuBspReady =
-            DoomRPG_probeMenuBspHeader(engineConfigMappingsReady ? 1 : 0) != 0;
+        if (!engineConfigMappingsReady)
+        {
+            engineMainMenuReady = false;
+            return;
+        }
 
-        if (engineMenuBspReady)
+#if DOOMRPG_ESP32_BRINGUP_PROBES
+        /*
+         * Keep the historical menu.bsp structural/render suite available only
+         * in the explicit bring-up profile. Production no longer needs a 3D
+         * menu map before painting the opaque native dashboard.
+         */
+        engineMainMenuReady =
+            DoomRPG_probeMenuBspHeader(1) != 0;
+        if (engineMainMenuReady)
         {
             drawLabel(186, "Engine:", "MENU BSP OK", TFT_GREEN);
         }
-        else if (engineConfigMappingsReady)
+        else
         {
             drawLabel(186, "Engine:", "MENU BSP FAIL", TFT_RED);
         }
+#else
+        uint32_t frameFNV = 0;
+
+        engineMainMenuReady =
+            doomRpg != nullptr &&
+            DoomRPG_esp32MainMenuModelBuildMain(doomRpg) != 0 &&
+            DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &frameFNV) != 0;
+
+        if (engineMainMenuReady)
+        {
+            Serial.printf(
+                "[MAINBOOT] READY owner=native-opaque menuBspRuntime=skipped "
+                "legacyMapStructures=not-created frame=%08x\n",
+                static_cast<unsigned int>(frameFNV));
+            drawLabel(186, "Engine:", "MENU OK", TFT_GREEN);
+        }
+        else
+        {
+            Serial.println(
+                "[MAINBOOT] FAILED native MENU_MAIN model/presentation");
+            drawLabel(186, "Engine:", "MENU FAIL", TFT_RED);
+        }
+#endif
     }
 
     void printSystemInfo()
@@ -392,7 +432,7 @@ namespace
                                    : (assetPackReady ? "partial" : "unavailable");
 
         Serial.printf(
-            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s PAK=%s VIDEO=%s CORE=%s LAYOUT=%s PRERENDER=%s RENDER=%s MAPPINGS=%s MENUBSP=%s touchIRQ=%s\n",
+            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s PAK=%s VIDEO=%s CORE=%s LAYOUT=%s PRERENDER=%s RENDER=%s MAPPINGS=%s MENU=%s touchIRQ=%s\n",
             now, ESP.getFreeHeap(), DoomRPG_getHeap8Free(),
             DoomRPG_getLargest8BitBlock(), sdReady ? "ready" : "unavailable",
             pakState, videoReady ? "ready" : "unavailable",
@@ -401,7 +441,7 @@ namespace
             enginePreRenderReady ? "ready" : "unavailable",
             engineRenderStartupReady ? "ready" : "unavailable",
             engineConfigMappingsReady ? "ready" : "unavailable",
-            engineMenuBspReady ? "ready" : "unavailable",
+            engineMainMenuReady ? "ready" : "unavailable",
             input.touched() ? "active" : "idle");
     }
 
@@ -431,7 +471,7 @@ void setup()
     initializeEngineLayout();
     initializeRenderStartup();
     initializeConfigMappings();
-    initializeMenuBspProbe();
+    initializeMainMenu();
     Serial.println("[READY] Bring-up alive; touch diagnostics are serial-only and TFT is reserved for the game framebuffer.");
 }
 

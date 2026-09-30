@@ -13,16 +13,16 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 1d2a9d504b258936e58da1f0d1b88128466645d6
-branch = agent/esp32-consolidation-intro-startup-composition-v13
-hardware-tested code boundary = 0f733d1a6ac680b0ff3f7954f4e40bcf44f942f8
-CI = esp32-cyd #1191 SUCCESS
-static RAM = 45224 B
-flash = 782009 B
-firmware.bin = 782368 B
-artifact id = 11117812139
-hardware = START -> intro -> resource-only dispose -> explicit EspNativeStartup bootstrap -> Entrance resident gameplay PASS
-status = HARDWARE PASS; 55 active linker wraps; intro-dispose linker interception retired
+current main = 9aa3c3a62bb7639d884d036acc0baf54be88541e
+branch = agent/esp32-consolidation-menu-bsp-runtime-retirement-v14
+hardware-tested code boundary = dd4161a40b28d2ed9c88370b2f8281b9045f2980
+CI = esp32-cyd #1197 SUCCESS
+static RAM = 45128 B
+flash = 773089 B
+firmware.bin = 773456 B
+artifact id = 11120007067
+hardware = normal boot paints native opaque MENU_MAIN directly; no production menu.bsp runtime; START reaches Entrance gameplay and MOVE
+status = HARDWARE PASS; 52 active linker wraps; menu BSP structural/render suite retained only by esp32-cyd-bringup
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1346,3 +1346,31 @@ Entrance native bootstrap and stable resident gameplay at
 
 Detailed milestone:
 [`MILESTONE_ESP32_CONSOLIDATION_INTRO_STARTUP_COMPOSITION_V13.md`](MILESTONE_ESP32_CONSOLIDATION_INTRO_STARTUP_COMPOSITION_V13.md).
+
+
+## Production menu BSP runtime retired — REAL-CYD PASS (2026-09-30)
+
+V14 hardware head `dd4161a40b28d2ed9c88370b2f8281b9045f2980`
+removes the old `menu.bsp` map-runtime construction from normal `esp32-cyd`
+startup. Production now enters the fixed native MENU_MAIN model and opaque
+dashboard directly after config/mappings startup.
+
+The old menu BSP structure/render regression chain is not deleted as a
+diagnostic asset; it is scoped to `esp32-cyd-bringup` only. Normal firmware
+therefore no longer retains `Render_beginLoadMap/Data`,
+`DoomCanvas_updateLoadingBar`, the menu BSP probes or their `longjmp`
+escape closure.
+
+CI #1197 reports 45128 B static RAM / 773089 B Flash / 773456 B firmware.bin,
+a reduction of 96 B RAM and 8920 B linked Flash versus merged main. Final ELF
+wrap count drops 55 -> 52.
+
+The real classic CYD boots directly to framebuffer FNV `522dc605` at
+`heap8=35656 largest8=23540`, with no `MENUBSP/MAPSTRUCT` trace. OPTIONS
+and HELP Back both restore the same frame without allocations. START begins
+with `nodes/lines/mapSprites == NULL`, completes intro disposal, reaches
+Entrance `ENGINESESSION READY`, then commits a real FORWARD move. Stable
+gameplay ALIVE is `heap=93388 heap8=27464 largest8=18420`.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_MENU_BSP_RUNTIME_RETIREMENT_V14.md](MILESTONE_ESP32_CONSOLIDATION_MENU_BSP_RUNTIME_RETIREMENT_V14.md).
