@@ -330,8 +330,7 @@ namespace
         Serial.printf("Heap8: %u free, largest block %u\n",
                       DoomRPG_getHeap8Free(), DoomRPG_getLargest8BitBlock());
         Serial.printf("PSRAM: %u bytes\n", ESP.getPsramSize());
-        Serial.printf("Doom engine linked at: 0x%08x\n",
-                      static_cast<unsigned int>(DoomRPG_engineLinkAnchor()));
+        Serial.println("[LEGACYINIT] STAGED runtime=ESP32-core/layout/startup legacy-DoomRPG_Init-anchor=retired");
         DoomRpgEngineMetrics metrics{};
         DoomRPG_getEngineMetrics(&metrics);
         Serial.printf("Engine structs: Render=%u Game=%u Canvas=%u Total=%u bytes\n",

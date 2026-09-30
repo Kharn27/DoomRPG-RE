@@ -80,7 +80,6 @@ typedef struct DoomRpgLayoutReport_s {
     uint8_t ready;
 } DoomRpgLayoutReport;
 
-uintptr_t DoomRPG_engineLinkAnchor(void);
 void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics);
 int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report);
 const char* DoomRPG_coreStageName(uint8_t stage);

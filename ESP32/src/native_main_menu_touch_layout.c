@@ -12,6 +12,7 @@
 
 #include "esp_native_gameplay_hub_theme.h"
 #include "native_main_menu_160x120_layout.h"
+#include "native_main_menu_model.h"
 #include "native_main_menu_touch.h"
 #include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"
@@ -585,9 +586,10 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    menuSystem->menu = MENU_MAIN;
-    Menu_initMenu(doomRpg->menu, MENU_MAIN);
-    menuSystem->menu = MENU_MAIN;
+    if (!DoomRPG_esp32MainMenuModelBuildMain(doomRpg)) {
+        printf("[MAINTOUCHLAYOUT] FAILED native MENU_MAIN model build\n");
+        return 0;
+    }
     menuSystem->paintMenu = true;
     menuSystem->maxItems = canvas->displayRect.h /
                            DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
@@ -635,4 +637,142 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
     printf("[MAINTOUCHLAYOUT] READY 2x2 dashboard; existing MENU_MAIN model/actions preserved\n");
     printf("[MAINTOUCHLAYOUT] READY same bounded painter reusable by Options Back and failed-load recovery\n");
     return 1;
+}
+
+
+/* Consolidated main-menu presentation invariants/recovery. */
+#include <SDL.h>
+#include <stdint.h>
+#include <stdio.h>
+
+#include "DoomRPG.h"
+#include "DoomCanvas.h"
+#include "Menu.h"
+#include "MenuSystem.h"
+#include "Render.h"
+
+#include "native_main_menu_model.h"
+#include "native_main_menu_present.h"
+#include "native_main_menu_touch_layout.h"
+#include "native_sprite_lru_cache.h"
+#include "native_wall_lru_cache.h"
+#include "platform_touch_events.h"
+#include "platform_video_config.h"
+
+static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
+    uint32_t hash = 2166136261U;
+    uint32_t i;
+
+    for (i = 0; i < length; ++i) {
+        hash ^= data[i];
+        hash *= 16777619U;
+    }
+    return hash;
+}
+
+uint32_t DoomRPG_esp32MainMenuFramebufferHash(const struct Render_s* renderBase) {
+    const Render_t* render = (const Render_t*)renderBase;
+
+    if (render == NULL || render->framebuffer == NULL || render->pitch <= 0) {
+        return 0U;
+    }
+    return fnv1a32((const uint8_t*)render->framebuffer,
+                   (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
+}
+
+int DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(
+    const struct DoomRPG_s* doomRpgBase) {
+    const DoomRPG_t* doomRpg = (const DoomRPG_t*)doomRpgBase;
+    const Render_t* render;
+
+    if (doomRpg == NULL || doomRpg->render == NULL ||
+        doomRpg->doomCanvas == NULL || doomRpg->menuSystem == NULL ||
+        doomRpg->menu == NULL) {
+        return 0;
+    }
+
+    render = doomRpg->render;
+    return render->framebuffer != NULL &&
+           render->shapeData == NULL &&
+           render->mediaTexels == NULL &&
+           !EspNativeWallCache_isActive() &&
+           !EspNativeSpriteCache_isActive();
+}
+
+int DoomRPG_esp32MainMenuRecover(struct DoomRPG_s* doomRpgBase,
+                                 const char* reason) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    uint32_t frameFNV = 0U;
+
+    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
+        doomRpg->menuSystem == NULL) {
+        printf("[MAINRECOVER] FAILED reason=%s objectGraph\n",
+               reason != NULL ? reason : "unknown");
+        return 0;
+    }
+
+    if (doomRpg->doomCanvas->state != ST_MENU) {
+        printf("[MAINRECOVER] REFUSE reason=%s state=%d menu=%d transitionAlreadyLeftMenu=yes\n",
+               reason != NULL ? reason : "unknown",
+               doomRpg->doomCanvas->state,
+               doomRpg->menuSystem->menu);
+        return 0;
+    }
+
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
+        printf("[MAINRECOVER] FAILED reason=%s graphicsBoundary\n",
+               reason != NULL ? reason : "unknown");
+        return 0;
+    }
+
+    PlatformInput_setTapCallback(NULL);
+
+    if (!DoomRPG_esp32MainMenuModelEnter(doomRpg, MENU_MAIN) ||
+        !DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &frameFNV)) {
+        printf("[MAINRECOVER] FAILED reason=%s rebuild/repaint menu=%d state=%d\n",
+               reason != NULL ? reason : "unknown",
+               doomRpg->menuSystem->menu,
+               doomRpg->doomCanvas->state);
+        return 0;
+    }
+
+    printf("[MAINRECOVER] READY reason=%s menu=%d selected=%d frame=%08x touch=rearmed\n",
+           reason != NULL ? reason : "unknown",
+           doomRpg->menuSystem->menu,
+           doomRpg->menuSystem->selectedIndex,
+           (unsigned int)frameFNV);
+    return 1;
+}
+
+
+/* Consolidated native scene -> opaque main-menu bridge. */
+#include <SDL.h>
+#include <stdio.h>
+
+#include "DoomRPG.h"
+#include "Render.h"
+
+#include "native_main_menu_overlay_probe.h"
+#include "native_menu_sprite_frame_probe.h"
+
+extern DoomRPG_t* doomRpg;
+
+/*
+ * Keep the hardware-validated native scene probe untouched. The ESP32 linker
+ * chains the real MENU_MAIN composition only after that probe has completely
+ * validated ffe0995e and torn down both wall/sprite caches.
+ */
+int __real_DoomRPG_probeNativeMenuSpriteFrame(struct Render_s* render);
+
+int __wrap_DoomRPG_probeNativeMenuSpriteFrame(struct Render_s* render) {
+    if (!__real_DoomRPG_probeNativeMenuSpriteFrame(render)) {
+        return 0;
+    }
+
+    if (doomRpg == NULL) {
+        printf("[MAINMENU] FAILED global DoomRPG unavailable after native scene\n");
+        return 0;
+    }
+
+    return DoomRPG_probeNativeMainMenuOverlay(doomRpg);
 }

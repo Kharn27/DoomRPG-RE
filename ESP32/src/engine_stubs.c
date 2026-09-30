@@ -126,12 +126,6 @@ int Z_FreeMemory(void) {
     return (int)heap_caps_get_free_size(MALLOC_CAP_8BIT);
 }
 
-/* The diagnostic references this anchor so the linker validates the complete
- * engine call graph without starting it before resources are available. */
-uintptr_t DoomRPG_engineLinkAnchor(void) {
-    return (uintptr_t)&DoomRPG_Init;
-}
-
 void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
     if (metrics == NULL) return;
     metrics->doomRpg = sizeof(DoomRPG_t);
