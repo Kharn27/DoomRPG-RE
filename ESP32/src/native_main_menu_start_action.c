@@ -146,7 +146,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Start Game entry ===\n");
 
-    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) || doomRpg->player == NULL)  {
         printf("[MAINSTART] FAILED core/graphics boundary unavailable\n");
         return 0;
     }
