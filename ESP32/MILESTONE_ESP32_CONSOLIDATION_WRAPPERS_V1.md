@@ -5,15 +5,16 @@ Date: 2026-09-29
 ## Boundary
 
 ```text
-main = 9c9388103d033e40c4081b92b509dd08c544ac36
-branch = agent/esp32-consolidation-monster-turn-view-v5
-hardware-tested code head = 517c37855e18894c4d2292dab20ec7852107549b
-esp32-cyd CI #1064 = SUCCESS
+main = c37c66ad800603ea7d0622681a3bfaf5bab0b41d
+branch = agent/esp32-consolidation-monster-movement-service-v6
+hardware-tested code head = c27b94e263f4ea0d445e7debeea4d836dbd59e4f
+esp32-cyd CI #1069 = SUCCESS
 static RAM = 45776 B
 flash = 815677 B
-artifact id = 11081649324
+artifact id = 11084465870
 translation units = 173
-active --wrap entries = 58
+active --wrap entries = 57
+active EspNativeGameplayMonster-prefixed wraps = 0
 ```
 
 ## Consolidation method
@@ -622,3 +623,39 @@ The branch is hardware-pass. Any commit after
 `517c37855e18894c4d2292dab20ec7852107549b` must remain documentation-only
 before merge. Future consolidation should audit Movement service as its own
 bounded orchestration milestone rather than remove it mechanically.
+
+
+## Final MonsterMovement wrapper closure — REAL-CYD PASS
+
+The final monster-domain linker seam,
+`--wrap=EspNativeGameplayMonsterMovement_service`, is retired at
+`c27b94e263f4ea0d445e7debeea4d836dbd59e4f`.
+
+The old wrapper was the ActiveSequence orchestrator, not the movement planner.
+Ownership is now explicit:
+
+```text
+MonsterMovementProbe_service
+ -> MonsterActiveSequence_service
+ -> MonsterMovementProbe_serviceMember
+ -> MonsterMovement_service
+```
+
+The real classic CYD validates one ordered four-member MOVE with ordinary
+sprites 218/237 and complete subtype-4 three-goal chains for sprites 0/1. The
+sequence ends with `activeCount=4 delivered=4 ordered=yes
+publication=per-member`, followed by two identical ALIVE samples at
+`heap=82704 heap8=17152 largest8=10228`.
+
+CI #1069 is SUCCESS with 45776 B static RAM, 815677 B flash, 173 translation
+units and 57 active linker wraps.
+
+There are now zero active linker wraps whose target symbol begins with
+`EspNativeGameplayMonster`.
+
+The latest hardware run did not separately hit the unchanged `RANGED-MEMBER`
+branch. Exact details are recorded in
+[MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md](MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md).
+
+Any commit after the hardware-tested code head is documentation-only before
+merge.
