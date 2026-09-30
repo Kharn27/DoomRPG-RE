@@ -57,9 +57,27 @@ heap=82704 heap8=17152 largest8=10228
 heap=82704 heap8=17152 largest8=10228
 ```
 
-The latest run did not separately hit the unchanged RANGED-MEMBER branch.
-That branch represents exact-source ranged-AI movement orchestration, not the
-monster attack presentation/resolution path.
+A later real-CYD PASS_TURN supplied the complementary ranged-attack witness.
+Sprite 218 / subtype 3 / weapon 15 attacked from range directly through the
+attack pipeline:
+
+```text
+[MONSTERTURN] ATTACK-PROBE ... sprite=218 subtype=3 weapon=15 loops=1 ...
+[MONSTERACT] DELIVER actualProbe=5 deliveredProbe=5 sprite=218 reason=4 activated=yes
+[MONSTERATKVIS] ARM ... loops=1 ... gameplayMutation=no
+[MONSTERATKVIS] COMPLETE ... resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT ... playerHP=22->20 armor=12->10 ... rollback=closed
+```
+
+The attack probe itself rolls player/RNG state back exactly, presentation runs
+without gameplay mutation, then retaliation commits only after the attack visual
+completes. Several following ALIVE samples remain stable at
+`heap=82704 heap8=17152 largest8=10228`.
+
+Crucially, this genuine ranged attack emits no `RANGED-MEMBER`. That confirms
+the naming boundary: `RANGED-MEMBER` is the unchanged exact-source ranged-AI
+movement/repositioning branch, not the monster attack
+presentation/resolution path.
 
 ## Result
 
