@@ -8,6 +8,7 @@
 
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_turn.h"
@@ -59,7 +60,7 @@ static const char* reasonName(uint8_t reason) {
 
 static int syncOwner(void) {
     const EspNativeGameplayMonsterTurnView* turn =
-        EspNativeGameplayMonsterTurn_view();
+        EspNativeGameplayMonsterActivation_turnView();
     const EspNativeGameplayMonsterView* monsters =
         EspNativeGameplayMonsterState_view();
 
@@ -310,7 +311,7 @@ int EspNativeGameplayMonsterAttackVisual_isBusy(void) {
      * attack frame arms successfully. observedAttackProbes advances only after
      * that presentation succeeds, so transient guardedRender() rollback is a
      * retry state and cannot reopen world input or strand retaliation. */
-    turn = EspNativeGameplayMonsterTurn_view();
+    turn = EspNativeGameplayMonsterActivation_turnView();
     return turn != NULL && turn->active == 1U &&
            turn->sourceArenaFNV1a == attackVisual.sourceArenaFNV1a &&
            turn->attackProbes == attackVisual.observedAttackProbes + 1U;
@@ -336,7 +337,7 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
     if (!syncOwner()) return;
     serviceTimeline(runtime);
 
-    turn = EspNativeGameplayMonsterTurn_view();
+    turn = EspNativeGameplayMonsterActivation_turnView();
     if (turn == NULL || turn->attackProbes == attackVisual.observedAttackProbes) {
         return;
     }

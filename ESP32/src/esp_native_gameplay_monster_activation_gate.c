@@ -23,13 +23,12 @@ typedef struct MonsterActivationGateOwner_s {
     uint32_t deliveredAttackProbes;
     uint32_t activatedCount;
     uint32_t deferredCount;
-    uint32_t overrideMovementDeferredTurns;
-    uint32_t overrideNoAttackTurns;
+    uint32_t producerMovementDeferredTurns;
+    uint32_t producerNoAttackTurns;
     uint16_t selectedSprite;
     uint8_t activeOrderCount;
     uint8_t active;
     uint8_t selectionActive;
-    uint8_t turnCounterOverride;
 } MonsterActivationGateOwner;
 
 static MonsterActivationGateOwner activationOwner;
@@ -58,8 +57,6 @@ static uint32_t activationSnapshotFNV(
     return hash * 16777619U;
 }
 
-const EspNativeGameplayMonsterTurnView*
-__real_EspNativeGameplayMonsterTurn_view(void);
 int EspNativeGameplayDestructibleTurn_flush(void);
 
 static int isActivated(uint16_t spriteIndex) {
@@ -255,29 +252,34 @@ void EspNativeGameplayMonsterActivation_clearSelection(void) {
 void EspNativeGameplayMonsterActivation_overrideTurnCounters(
     uint32_t movementDeferredTurns,
     uint32_t noAttackTurns) {
-    activationOwner.overrideMovementDeferredTurns = movementDeferredTurns;
-    activationOwner.overrideNoAttackTurns = noAttackTurns;
-    activationOwner.turnCounterOverride = 1U;
+    if (activationOwner.filtered.active != 1U) return;
+    activationOwner.filtered.movementDeferredTurns = movementDeferredTurns;
+    activationOwner.filtered.noAttackTurns = noAttackTurns;
 }
 
 void EspNativeGameplayMonsterActivation_clearTurnCounterOverride(void) {
-    activationOwner.turnCounterOverride = 0U;
+    if (activationOwner.filtered.active != 1U) return;
+    activationOwner.filtered.movementDeferredTurns =
+        activationOwner.producerMovementDeferredTurns;
+    activationOwner.filtered.noAttackTurns =
+        activationOwner.producerNoAttackTurns;
 }
 
-const EspNativeGameplayMonsterTurnView*
-__wrap_EspNativeGameplayMonsterTurn_view(void) {
+int EspNativeGameplayMonsterActivation_serviceTurn(void) {
     const EspNativeGameplayMonsterTurnView* actual;
     uint32_t newProbeCount;
 
     /* A successfully committed destructible player attack uses the existing
      * pass-request transport only after its action-service rollback window is
-     * closed. The next service iteration then runs the normal monster producer. */
+     * closed. This explicit service runs immediately after the MonsterTurn
+     * producer, replacing the historical side effect hidden in Turn_view(). */
     (void)EspNativeGameplayDestructibleTurn_flush();
-    actual = __real_EspNativeGameplayMonsterTurn_view();
+    actual = EspNativeGameplayMonsterTurn_view();
 
     if (actual == NULL || actual->active != 1U ||
         actual->sourceArenaFNV1a == 0U) {
-        return actual;
+        activationOwner.filtered.active = 0U;
+        return 0;
     }
 
     if (activationOwner.active == 0U ||
@@ -286,6 +288,9 @@ __wrap_EspNativeGameplayMonsterTurn_view(void) {
     }
 
     activationOwner.filtered = *actual;
+    activationOwner.producerMovementDeferredTurns =
+        actual->movementDeferredTurns;
+    activationOwner.producerNoAttackTurns = actual->noAttackTurns;
 
     if (actual->attackProbes < activationOwner.actualAttackProbesSeen) {
         /* A producer reset inside the same arena should never happen. Reset the
@@ -328,11 +333,16 @@ __wrap_EspNativeGameplayMonsterTurn_view(void) {
 
     activationOwner.filtered.attackProbes =
         activationOwner.deliveredAttackProbes;
-    if (activationOwner.turnCounterOverride != 0U) {
-        activationOwner.filtered.movementDeferredTurns =
-            activationOwner.overrideMovementDeferredTurns;
-        activationOwner.filtered.noAttackTurns =
-            activationOwner.overrideNoAttackTurns;
+    return 1;
+}
+
+const EspNativeGameplayMonsterTurnView*
+EspNativeGameplayMonsterActivation_turnView(void) {
+    if (activationOwner.filtered.active != 1U ||
+        activationOwner.filtered.sourceArenaFNV1a == 0U ||
+        activationOwner.filtered.sourceArenaFNV1a !=
+            activationOwner.sourceArenaFNV1a) {
+        return NULL;
     }
     return &activationOwner.filtered;
 }

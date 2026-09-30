@@ -8,6 +8,7 @@
 
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -249,7 +250,7 @@ static int commitPlayerPain(const EspNativeGameplayPlayerState* before,
 
 static int syncOwner(void) {
     const EspNativeGameplayMonsterTurnView* turn =
-        EspNativeGameplayMonsterTurn_view();
+        EspNativeGameplayMonsterActivation_turnView();
     const EspNativeGameplayMonsterView* monsters =
         EspNativeGameplayMonsterState_view();
 
@@ -312,7 +313,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     int feedbackRollback;
 
     if (!syncOwner()) return;
-    turn = EspNativeGameplayMonsterTurn_view();
+    turn = EspNativeGameplayMonsterActivation_turnView();
     if (turn == NULL || turn->attackProbes == retaliationView.observedAttackProbes) {
         return;
     }

@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "esp_native_gameplay_monster_turn.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,6 +31,14 @@ typedef struct EspNativeGameplayMonsterActivationSnapshot_s {
  * array so turn consumers can reproduce the legacy circular-list iteration
  * without importing Entity_t / EntityMonster_t pointer ownership.
  */
+/* Explicit composition boundary for MonsterTurn -> activation filtering.
+ * serviceTurn() owns deferred destructible-turn flush and producer/filter sync;
+ * turnView() is side-effect-free and exposes only the last serviced filtered
+ * view to downstream attack/movement consumers. */
+int EspNativeGameplayMonsterActivation_serviceTurn(void);
+const EspNativeGameplayMonsterTurnView*
+EspNativeGameplayMonsterActivation_turnView(void);
+
 int EspNativeGameplayMonsterActivation_observeVisible(uint16_t spriteIndex,
                                                       uint8_t subtype,
                                                       uint16_t tileIndex);
