@@ -7,6 +7,7 @@
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_actions.h"
+#include "native_main_menu_present.h"
 #include "native_main_menu_touch.h"
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
@@ -142,7 +143,15 @@ static void executeConfirmedAction(int item) {
 
     result = DoomRPG_esp32MainMenuDispatchConfirmed(doomRpg, item);
     if (result == DOOMRPG_ESP32_MAIN_MENU_DISPATCH_FAILED) {
-        printf("[MAINACTION] FAILED dispatch item=%d\n", item);
+        printf("[MAINACTION] FAILED dispatch item=%d; recovery=attempt\n", item);
+        if (!DoomRPG_esp32MainMenuRecover(doomRpg, "dispatch-failed")) {
+            printf("[MAINACTION] FAILED recovery item=%d state=%d menu=%d\n",
+                   item,
+                   doomRpg->doomCanvas != NULL
+                       ? doomRpg->doomCanvas->state : -999,
+                   doomRpg->menuSystem != NULL
+                       ? doomRpg->menuSystem->menu : -999);
+        }
     }
     else if (result == DOOMRPG_ESP32_MAIN_MENU_DISPATCH_STAY_MAIN) {
         printf("[MAINACTION] STAY item=%d owner=MENU_MAIN\n", item);
