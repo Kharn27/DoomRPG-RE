@@ -732,7 +732,7 @@ static int attackReady(const MovementCandidate* candidate,
 }
 
 static int syncOwner(void) {
-    const EspNativeGameplayMonsterTurnView* turn = EspNativeGameplayMonsterTurn_view();
+    const EspNativeGameplayMonsterTurnView* turn = EspNativeGameplayMonsterActivation_turnView();
     const EspNativeGameplayMonsterPositionView* positions;
 
     if (turn == NULL || turn->active != 1U || turn->sourceArenaFNV1a == 0U ||
@@ -812,7 +812,7 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     int randomExact;
 
     if (doomRpg == NULL || !syncOwner()) return;
-    turn = EspNativeGameplayMonsterTurn_view();
+    turn = EspNativeGameplayMonsterActivation_turnView();
     if (turn == NULL) return;
     deferredCount = turn->movementDeferredTurns;
     noAttackCount = turn->noAttackTurns;

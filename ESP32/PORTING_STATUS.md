@@ -5,17 +5,100 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56
-branch = agent/esp32-consolidation-monster-wraps-v4
-hardware-tested code boundary = 3f9b862bcbca3d2217efe0b388e3c9914d1d4b23
-CI = esp32-cyd #1056 SUCCESS
+current main = 9c9388103d033e40c4081b92b509dd08c544ac36
+branch = agent/esp32-consolidation-monster-turn-view-v5
+hardware-tested code boundary = 517c37855e18894c4d2292dab20ec7852107549b
+CI = esp32-cyd #1064 SUCCESS
 static RAM = 45776 B
-flash = 815609 B
-artifact id = 11052390593
+flash = 815677 B
+artifact id = 11081649324
 translation units = 173
-active --wrap flags = 59
-hardware = HUB/automap world-feedback gate made explicit; both overlay pause paths and ordered four-monster resume path PASS on real CYD
-status = HARDWARE PASS for six active native linker seams retired/replaced; branch ready for documentation-only close
+active --wrap flags = 58
+hardware = MonsterTurn producer/filter composition made explicit; ordered movement, real multi-shot attack and deferred jammed-door turn transport PASS on real CYD
+status = HARDWARE PASS; all commits after 517c3785... must remain documentation-only before merge
+```
+
+### Explicit MonsterTurn activation-filter composition — REAL-CYD PASS (2026-09-30)
+
+Commit `517c37855e18894c4d2292dab20ec7852107549b` removes
+`--wrap=EspNativeGameplayMonsterTurn_view` and replaces the hidden getter
+interception with an explicit producer/filter service boundary.
+
+The permanent service order is now:
+
+```text
+PlayerResources session service
+ -> MonsterTurn observe/probe producer
+ -> MonsterActivation_serviceTurn
+    -> deferred DestructibleTurn flush
+    -> producer snapshot + attack-probe filtering
+ -> AttackVisual / Retaliation / Movement read MonsterActivation_turnView
+```
+
+`EspNativeGameplayMonsterActivation_turnView()` is side-effect-free and returns
+only the last serviced filtered view. The active-sequence movement orchestrator
+still needs the raw producer counters and now reads the ordinary
+`EspNativeGameplayMonsterTurn_view()` directly, without a linker bypass.
+Synthetic no-attack/movement counter overrides mutate only the bounded filtered
+cache and restore the saved producer counters after each member.
+
+The deferred destructible-turn bridge is no longer triggered by a getter. Its
+flush now runs explicitly in `MonsterActivation_serviceTurn` after the action
+service has returned through its rollback window. The request is therefore
+armed by line death, cancelled on rollback if necessary, and transported only
+after commit.
+
+Build witness for the exact code boundary:
+
+```text
+esp32-cyd CI #1064 = SUCCESS
+static RAM = 45776 B
+flash = 815677 B
+artifact id = 11081649324
+artifact sha256 = d7b2a5c920ac293f10c021e6bb6e22831b21909d4e3d0d138c270278594d0cb3
+translation units = 173
+active --wrap entries = 58
+```
+
+The real classic CYD validates all three relevant paths.
+
+Ordered movement remains intact across two turns. Four active monsters are
+serviced in order; ordinary sprites 218/237 commit normally and both subtype-4
+members execute their bounded three-goal chains. Each turn closes with
+`activeCount=4 delivered=4 sameMonsterTurn=yes ordered=yes`.
+
+A real subtype-4 three-shot attack proves the explicit filtered view reaches
+both consumers:
+
+```text
+[MONSTERACT] DELIVER actualProbe=1 deliveredProbe=1 sprite=1 reason=4 activated=yes
+[MONSTERATKVIS] ARM ... loops=3 ... gameplayMutation=no
+[MONSTERATKVIS] COMPLETE ... resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT ... playerHP=33->30 armor=23->20 ... rollback=closed
+```
+
+The formerly hidden destructible side effect is also exercised directly with an
+adjacent axe hit on a jammed subtype-3 line:
+
+```text
+[ACTIONENGINE] TRACE ... route=JAMMED_DOOR_CLEARED
+[DESTRUCTIBLETURN] ARM ... rollback=armed request=deferred-until-action-service-closed
+[DESTRUCTIBLE] COMMIT ... turnAdvance=deferred rollback=closed
+[DESTRUCTIBLETURN] REQUEST ... rollbackWindow=closed monsterTurn=requested
+[MONSTERTURN] SCHEDULE ... reason=PASS_TURN passSeq=3489661144 ...
+[MONSTERACTIVESEQ] COMPLETE ... activeCount=4 delivered=0 ... ordered=yes
+```
+
+The jammed-door test begins and ends at the same live allocation witness
+(`heap=82664 heap8=17112 largest8=7156`). Earlier movement/attack witnesses are
+also stable at `heap=82704 heap8=17152 largest8=10228`; the different absolute
+largest-block value reflects the later runtime/cache state, not drift during
+the tested transaction.
+
+Only one active monster-domain linker wrapper remains:
+
+```text
+EspNativeGameplayMonsterMovement_service
 ```
 
 ### Explicit HUB/automap action-feedback gate — REAL-CYD PASS (2026-09-29)

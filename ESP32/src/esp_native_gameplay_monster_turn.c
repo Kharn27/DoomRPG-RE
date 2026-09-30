@@ -12,6 +12,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_dialog.h"
+#include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_three_goal_turn.h"
@@ -1257,6 +1258,7 @@ const EspNativeGameplayMonsterTurnView* EspNativeGameplayMonsterTurn_view(void) 
 void __wrap_EspNativeGameplayPlayerResources_sessionService(struct DoomRPG_s* doomRpg) {
     __real_EspNativeGameplayPlayerResources_sessionService(doomRpg);
     observeAndProbe((DoomRPG_t*)doomRpg);
+    (void)EspNativeGameplayMonsterActivation_serviceTurn();
 }
 
 void __wrap_EspNativeGameplayPlayerResources_sessionReset(void) {

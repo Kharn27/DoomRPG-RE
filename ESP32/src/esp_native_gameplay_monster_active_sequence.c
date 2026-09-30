@@ -38,8 +38,6 @@ int __real_EspNativeBspVisibility_mapSpriteVisible(
     uint32_t* outLeafIndex);
 int __real_EspMapRuntime_getMapSprite(uint32_t index, EspMapSprite* outSprite);
 void __real_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg);
-const EspNativeGameplayMonsterTurnView*
-__real_EspNativeGameplayMonsterTurn_view(void);
 
 static uint16_t read16le(const uint8_t* bytes) {
     if (bytes == NULL) return 0U;
@@ -160,7 +158,7 @@ static void resetSequencer(const EspNativeGameplayMonsterTurnView* actual,
  */
 void __wrap_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg) {
     const EspNativeGameplayMonsterTurnView* actual =
-        __real_EspNativeGameplayMonsterTurn_view();
+        EspNativeGameplayMonsterTurn_view();
     uint32_t activationCount;
     uint32_t ordinal;
     uint32_t delivered = 0U;
