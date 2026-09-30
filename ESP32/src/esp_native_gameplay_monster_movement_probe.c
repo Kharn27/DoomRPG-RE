@@ -5,6 +5,7 @@
 
 #include "DoomRPG.h"
 
+#include "esp_native_gameplay_monster_active_sequence.h"
 #include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
@@ -12,8 +13,6 @@
 #include "esp_native_gameplay_monster_three_goal_turn.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_rng_replay_guard.h"
-
-void __real_EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpg);
 
 static int atByteBoundary(const Random_t* rand) {
     return rand != NULL &&
@@ -90,7 +89,7 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
                                                        &prepared)) {
             printf("[MONSTERMOVERNG] ARM trigger=%s next=127->0 prepared=%u liveRandom=temporary-post-refill reservation=persistent\n",
                    trigger, (unsigned int)prepared);
-            __real_EspNativeGameplayMonsterMovement_service(doomRpgBase);
+            EspNativeGameplayMonsterMovement_service(doomRpgBase);
             publishStatus = EspNativeGameplayMonsterMovementPublish_afterProbe(
                 doomRpgBase, trigger, &saved, prepared, plannedBefore, &publish);
 
@@ -115,11 +114,11 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
 
         printf("[MONSTERMOVERNG] DEFER trigger=%s cause=rng-reservation-conflict action=movement-fail-closed\n",
                trigger);
-        __real_EspNativeGameplayMonsterMovement_service(doomRpgBase);
+        EspNativeGameplayMonsterMovement_service(doomRpgBase);
         return 0;
     }
 
-    __real_EspNativeGameplayMonsterMovement_service(doomRpgBase);
+    EspNativeGameplayMonsterMovement_service(doomRpgBase);
     publishStatus = EspNativeGameplayMonsterMovementPublish_afterProbe(
         doomRpgBase, trigger, NULL, 0U, plannedBefore, &publish);
     servicePostMoveGoal(doomRpgBase, trigger, &publish);
@@ -128,8 +127,9 @@ int EspNativeGameplayMonsterMovementProbe_serviceMember(
 }
 
 void EspNativeGameplayMonsterMovementProbe_service(struct DoomRPG_s* doomRpgBase) {
-    /* The active-list wrapper owns producer ordering. It invokes serviceMember
-     * once per selected monster so the one-capture publisher closes position,
-     * topology and RNG before the next member is planned. */
-    EspNativeGameplayMonsterMovement_service(doomRpgBase);
+    /* ActiveSequence explicitly owns producer ordering. It invokes
+     * serviceMember once per selected monster so the one-capture publisher
+     * closes position, topology and RNG before the next member is planned.
+     * serviceMember itself calls the planner leaf directly. */
+    EspNativeGameplayMonsterActiveSequence_service(doomRpgBase);
 }
