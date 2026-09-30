@@ -1168,3 +1168,38 @@ this bounded owner set.
 
 See
 [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md).
+
+## Main-menu semantic dispatcher
+
+The classic-CYD main menu now owns selection semantically rather than routing
+through the desktop/J2ME generic SELECT chain.
+
+```text
+2x2 touch gate
+ -> native semantic dispatcher
+    START   -> always new game
+    LOAD    -> native checkpoint resume
+    OPTIONS -> bounded options dashboard
+    HELP    -> bounded paged help
+```
+
+The produced ESP32 ELF no longer contains `Menu_select` or
+`MenuSystem_select`. `MenuSystem_t` remains a temporary bounded model
+container and `Menu_initMenu` remains transitional while menu construction is
+migrated family by family.
+
+Help is now a native opaque list viewer with eight visible lines and a permanent
+BACK / UP / DOWN footer. The current styling is functional rather than final;
+later visual polish does not require restoring generic legacy menu rendering.
+
+A source audit removed the obsolete START "Continue" branch: it depended on
+`Game_checkConfigVersion()`, which checks the legacy desktop files
+`Config/Player/Player2/World` and cannot identify the native V9 checkpoint.
+START is new-game-only; LOAD exclusively owns resume.
+
+Hardware-tested boundary:
+`cc0e14f7cc9e57c6d9617e715622675fda6de0fb`.
+
+See
+[`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md).
+
