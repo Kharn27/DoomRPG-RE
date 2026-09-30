@@ -5,19 +5,19 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 4c6071ebe7de01f47925bf7792123e8c8f9d7ff5
-branch = agent/esp32-consolidation-main-menu-start-v12
-hardware-tested code boundary = 6b565cd46172e384209a1d93e355c951f4d6c4fa
-CI = esp32-cyd #1185 SUCCESS
+current main = 1d2a9d504b258936e58da1f0d1b88128466645d6
+branch = agent/esp32-consolidation-intro-startup-composition-v13
+hardware-tested code boundary = 0f733d1a6ac680b0ff3f7954f4e40bcf44f942f8
+CI = esp32-cyd #1191 SUCCESS
 static RAM = 45224 B
 flash = 782009 B
 firmware.bin = 782368 B
-artifact id = 11113402480
-artifact digest = sha256:3d8b8c332b780b55a8fdab1874e93759d3e3780f8816f1259da2593170fc9127
-firmware sha256 = 1247ff133519951a616f269395cf5cbfbd05fcd5f0175b0aa0ae9dbaee6ddc84
-ELF sha256 = c38e73687d33656eddb106e4b4e3ba23392a71d381299aab79637cde1afc5d2e
-hardware = START -> full intro including native timed page1->2 -> bounded disposal -> Entrance native bootstrap -> resident gameplay PASS on real CYD
-status = HARDWARE PASS; Menu_startGame / DoomCanvas_loadState / DoomCanvas_changeStoryPage / DoomCanvas_disposeIntro / DoomCanvas_loadMap absent from final ELF; post-test commits must be documentation-only
+artifact id = 11117812139
+artifact digest = sha256:0536352fded6c011068d126cee5e3a8b13c2c70915cbddf6d819f6a1d31499fc
+firmware sha256 = 048dc5175861fece86ee3c98fc1d75458c1692c392cd27474f2b106eb5251e29
+ELF sha256 = cce81719d6b6c11e39d18b2ec31cf63192b623c2bdae2af44ec080615b136179
+hardware = START -> native intro clock/input -> resource-only dispose -> explicit native startup bootstrap -> Entrance resident gameplay PASS on real CYD
+status = HARDWARE PASS; active linker wraps 57 -> 55; __wrap_Esp32IntroDispose_reset/service absent; V12 retired legacy START/load-map symbols remain absent
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2421,3 +2421,62 @@ The final Continue then stays on the native disposal/bootstrap path:
 
 Detailed record:
 [`MILESTONE_ESP32_CONSOLIDATION_NATIVE_START_INTRO_V12.md`](MILESTONE_ESP32_CONSOLIDATION_NATIVE_START_INTRO_V12.md)
+
+
+### Explicit intro-dispose -> native-startup composition — REAL-CYD PASS (2026-09-30)
+
+Commit `0f733d1a6ac680b0ff3f7954f4e40bcf44f942f8` removes the two active
+linker interceptions around the already resource-only intro disposer:
+
+```text
+--wrap=Esp32IntroDispose_reset
+--wrap=Esp32IntroDispose_service
+```
+
+The same ordering is now explicit at the sole live owner boundary:
+
+```text
+Esp32IntroClock_arm
+ -> Esp32IntroDispose_reset
+ -> EspNativeStartup_reset
+
+Esp32IntroClock_service after intro-exit-ready
+ -> Esp32IntroDispose_service
+ -> EspNativeStartup_service
+```
+
+No new translation unit or generic router was added. CI #1191 succeeds with
+unchanged 45224 B static RAM, 782009 B linked Flash and 782368 B firmware.bin.
+The final ELF has 55 active `__wrap_*` symbols, down from 57 on merged main.
+`Esp32IntroDispose_reset/service` and `EspNativeStartup_reset/service` are
+present, while `__wrap_Esp32IntroDispose_reset/service` are absent. The V12
+retired symbols `Menu_startGame`, `DoomCanvas_loadState`,
+`DoomCanvas_changeStoryPage`, `DoomCanvas_disposeIntro` and
+`DoomCanvas_loadMap` remain absent.
+
+The real classic CYD validates the complete path. Native START arms the bootstrap,
+the untouched page-1 animation advances automatically to page 2, final Continue
+parks the clock, and bounded disposal recovers exactly 33772 B of 8-bit heap
+without changing the framebuffer or loading a map:
+
+```text
+[NATIVEBOOT] RESET generic resident bootstrap armed
+[INTROCLK] AUTO-PAGE 1->2 ...
+[INTROCLK] PARK reason=intro-exit-ready ...
+[INTRODISP] READY ... heap8=43104->76876 recovered=33772 ... noMapLoad=yes
+```
+
+The explicit startup service then takes ownership, builds Entrance and reaches
+resident gameplay with legacy render pools still absent:
+
+```text
+[NATIVEBOOT] LOADING-TAKEOVER map=1 source=intro-disposed owner=transition-presentation
+[NATIVEBOOT] RESIDENT map=1 ... arena=14095 ...
+[NATIVEBOOT] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=93076 heap8=27368 largest8=18420 ...
+[ALIVE] ... heap=93076 heap8=27368 largest8=18420 ...
+```
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_INTRO_STARTUP_COMPOSITION_V13.md](MILESTONE_ESP32_CONSOLIDATION_INTRO_STARTUP_COMPOSITION_V13.md)

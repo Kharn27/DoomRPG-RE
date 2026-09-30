@@ -13,16 +13,16 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 4c6071ebe7de01f47925bf7792123e8c8f9d7ff5
-branch = agent/esp32-consolidation-main-menu-start-v12
-hardware-tested code boundary = 6b565cd46172e384209a1d93e355c951f4d6c4fa
-CI = esp32-cyd #1185 SUCCESS
+current main = 1d2a9d504b258936e58da1f0d1b88128466645d6
+branch = agent/esp32-consolidation-intro-startup-composition-v13
+hardware-tested code boundary = 0f733d1a6ac680b0ff3f7954f4e40bcf44f942f8
+CI = esp32-cyd #1191 SUCCESS
 static RAM = 45224 B
 flash = 782009 B
 firmware.bin = 782368 B
-artifact id = 11113402480
-hardware = START -> timed intro page1->2 -> bounded disposal -> Entrance native gameplay PASS
-status = hardware-pass; legacy START/load-map/intro-page escape symbols absent; documentation-only close in progress
+artifact id = 11117812139
+hardware = START -> intro -> resource-only dispose -> explicit EspNativeStartup bootstrap -> Entrance resident gameplay PASS
+status = HARDWARE PASS; 55 active linker wraps; intro-dispose linker interception retired
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1329,3 +1329,20 @@ resident gameplay. Final ALIVE is stable at
 
 Detailed milestone:
 [`MILESTONE_ESP32_CONSOLIDATION_NATIVE_START_INTRO_V12.md`](MILESTONE_ESP32_CONSOLIDATION_NATIVE_START_INTRO_V12.md).
+
+
+## Explicit intro/startup composition — REAL-CYD PASS (2026-09-30)
+
+V13 hardware head `0f733d1a6ac680b0ff3f7954f4e40bcf44f942f8`
+retires the two `Esp32IntroDispose_*` linker wrappers. The intro clock now
+composes the resource-only disposer and the generic native startup owner
+directly, preserving reset and service order without hidden linker routing.
+
+CI #1191 remains byte-for-byte at 45224 B static RAM / 782009 B Flash /
+782368 B firmware.bin. Final-ELF wrap count drops 57 -> 55. The real CYD proves
+START, timed page 1 -> 2, final PARK, 33772 B bounded intro resource recovery,
+Entrance native bootstrap and stable resident gameplay at
+`heap=93076 heap8=27368 largest8=18420`.
+
+Detailed milestone:
+[`MILESTONE_ESP32_CONSOLIDATION_INTRO_STARTUP_COMPOSITION_V13.md`](MILESTONE_ESP32_CONSOLIDATION_INTRO_STARTUP_COMPOSITION_V13.md).
