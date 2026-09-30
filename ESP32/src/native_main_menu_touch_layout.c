@@ -12,6 +12,7 @@
 
 #include "esp_native_gameplay_hub_theme.h"
 #include "native_main_menu_160x120_layout.h"
+#include "native_main_menu_model.h"
 #include "native_main_menu_touch.h"
 #include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"

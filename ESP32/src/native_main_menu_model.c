@@ -28,6 +28,13 @@ static void resetSelectionAccumulator(MenuSystem_t* menuSystem) {
     menuSystem->digitCount = 0;
 }
 
+/* MenuItem_Set() inherits a mutable char* signature from the desktop code, but
+ * only copies the supplied label. Keep the const cast at this single boundary.
+ */
+static void setFixedItem(MenuItem_t* item, const char* text, int flags) {
+    MenuItem_Set(item, (char*)text, flags, 0);
+}
+
 
 static void resetFixedModel(DoomRPG_t* doomRpg) {
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
@@ -60,10 +67,10 @@ int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
      * Preserve the exact legacy MENU_MAIN model here. The finger-first painter
      * still adapts slots 1..3 to LOAD/OPTIONS/HELP before presentation.
      */
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Start Game", 2, 0);
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Options   ", 2, 0);
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Help/About", 2, 0);
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Exit      ", 2, 0);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Start Game", 2);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Options   ", 2);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Help/About", 2);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Exit      ", 2);
     return menuSystem->numItems == 4;
 }
 
@@ -76,9 +83,9 @@ static int buildFixedContinueModel(DoomRPG_t* doomRpg) {
     menuSystem->imgBG = &menuSystem->imgLogo;
     menuSystem->oldMenu = MENU_MAIN;
 
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Continue", 2, 0);
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "New Game", 2, 0);
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Back    ", 2, 0);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Continue", 2);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "New Game", 2);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Back    ", 2);
     return menuSystem->numItems == 3;
 }
 
@@ -91,10 +98,10 @@ static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
     menuSystem->imgBG = &menuSystem->imgLogo;
     menuSystem->oldMenu = MENU_MAIN;
 
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Back", 0, 0);
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Video", 0, 0);
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Input", 0, 0);
-    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Sound", 0, 0);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Back", 0);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Video", 0);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Input", 0);
+    setFixedItem(&menuSystem->items[menuSystem->numItems++], "Sound", 0);
     return menuSystem->numItems == 4;
 }
 
