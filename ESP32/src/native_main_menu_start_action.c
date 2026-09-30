@@ -9,8 +9,8 @@
 #include "MenuSystem.h"
 #include "Player.h"
 #include "Render.h"
-#include "Z_Zip.h"
 
+#include "esp_legacy_asset_source.h"
 #include "native_intro_first_frame.h"
 #include "native_main_menu_start_action.h"
 #include "native_main_menu_touch.h"
@@ -89,45 +89,25 @@ static int playerHasFreshResetContract(const Player_t* player) {
            player->totalDeaths == 0;
 }
 
-static const zip_entry_t* findZipEntry(const char* name) {
-    int i;
-
-    if (name == NULL || zipFile.entry == NULL) {
-        return NULL;
-    }
-
-    for (i = 0; i < zipFile.entry_count; ++i) {
-        const zip_entry_t* entry = &zipFile.entry[i];
-        if (entry->name != NULL && SDL_strcasecmp(name, entry->name) == 0) {
-            return entry;
-        }
-    }
-
-    return NULL;
-}
-
 static void printIntroAssetPlan(void) {
-    uint32_t totalCompressed = 0;
-    uint32_t totalUncompressed = 0;
+    uint32_t totalBytes = 0U;
     int i;
 
-    printf("[MAINSTART] Intro asset ZIP plan (%d files)\n", INTRO_ASSET_COUNT);
+    printf("[MAINSTART] Intro asset PAK plan (%d files)\n", INTRO_ASSET_COUNT);
     for (i = 0; i < INTRO_ASSET_COUNT; ++i) {
-        const zip_entry_t* entry = findZipEntry(introAssetNames[i]);
-        if (entry == NULL) {
+        uint32_t bytes = 0U;
+        if (!EspLegacyAssetSource_stat(introAssetNames[i], &bytes)) {
             printf("[MAINSTART] INTRO-ASSET %-5s MISSING\n", introAssetNames[i]);
             continue;
         }
 
-        totalCompressed += (uint32_t)entry->csize;
-        totalUncompressed += (uint32_t)entry->usize;
-        printf("[MAINSTART] INTRO-ASSET %-5s c=%d u=%d\n",
-               introAssetNames[i], entry->csize, entry->usize);
+        totalBytes += bytes;
+        printf("[MAINSTART] INTRO-ASSET %-5s bytes=%u backing=pak\n",
+               introAssetNames[i], (unsigned int)bytes);
     }
 
-    printf("[MAINSTART] Intro asset ZIP totals c=%u u=%u; loader peak is per-file, not total\n",
-           (unsigned int)totalCompressed,
-           (unsigned int)totalUncompressed);
+    printf("[MAINSTART] Intro asset PAK total=%u; loader peak is per-file, not total\n",
+           (unsigned int)totalBytes);
 }
 
 int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
