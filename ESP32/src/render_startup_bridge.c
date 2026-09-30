@@ -29,7 +29,6 @@ static uint32_t largest8Block(void) {
 }
 
 static int preflightRenderResources(void) {
-static int preflightRenderResources(void) {
     static const char* const required[] = {
         "sintable.bin",
         "palettes.bin",

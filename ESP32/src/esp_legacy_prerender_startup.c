@@ -25,7 +25,6 @@ static uint32_t largest8Block(void) {
 }
 
 static int preflightResources(void) {
-static int preflightResources(void) {
     static const char* const required[] = {
         "gibs_24.bmp",
         "p.bmp",

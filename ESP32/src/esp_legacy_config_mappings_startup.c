@@ -45,7 +45,7 @@ static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 }
 
-static uint32_t max4static uint32_t max4(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+static uint32_t max4(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
     uint32_t result = a;
     if (b > result) result = b;
     if (c > result) result = c;
