@@ -585,9 +585,10 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    menuSystem->menu = MENU_MAIN;
-    Menu_initMenu(doomRpg->menu, MENU_MAIN);
-    menuSystem->menu = MENU_MAIN;
+    if (!DoomRPG_esp32MainMenuModelBuildMain(doomRpg)) {
+        printf("[MAINTOUCHLAYOUT] FAILED native MENU_MAIN model build\n");
+        return 0;
+    }
     menuSystem->paintMenu = true;
     menuSystem->maxItems = canvas->displayRect.h /
                            DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;

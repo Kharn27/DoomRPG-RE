@@ -28,6 +28,76 @@ static void resetSelectionAccumulator(MenuSystem_t* menuSystem) {
     menuSystem->digitCount = 0;
 }
 
+
+static void resetFixedModel(DoomRPG_t* doomRpg) {
+    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+
+    doomRpg->hud->logMessage[0] = '\0';
+    menuSystem->scrollIndex = 0;
+    menuSystem->selectedIndex = 0;
+    menuSystem->numItems = 0;
+    menuSystem->setBind = false;
+}
+
+int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    MenuSystem_t* menuSystem;
+
+    if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
+        doomRpg->hud == NULL) {
+        printf("[MAINMODEL] FAILED build-main objectGraph\n");
+        return 0;
+    }
+
+    menuSystem = doomRpg->menuSystem;
+    resetFixedModel(doomRpg);
+    menuSystem->menu = MENU_MAIN;
+    menuSystem->type = 4;
+    menuSystem->imgBG = &menuSystem->imgLogo;
+    menuSystem->oldMenu = -1;
+
+    /*
+     * Preserve the exact legacy MENU_MAIN model here. The finger-first painter
+     * still adapts slots 1..3 to LOAD/OPTIONS/HELP before presentation.
+     */
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Start Game", 2, 0);
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Options   ", 2, 0);
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Help/About", 2, 0);
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Exit      ", 2, 0);
+    return menuSystem->numItems == 4;
+}
+
+static int buildFixedContinueModel(DoomRPG_t* doomRpg) {
+    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+
+    resetFixedModel(doomRpg);
+    menuSystem->menu = MENU_MAIN_CONTINUE;
+    menuSystem->type = 4;
+    menuSystem->imgBG = &menuSystem->imgLogo;
+    menuSystem->oldMenu = MENU_MAIN;
+
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Continue", 2, 0);
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "New Game", 2, 0);
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Back    ", 2, 0);
+    return menuSystem->numItems == 3;
+}
+
+static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
+    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+
+    resetFixedModel(doomRpg);
+    menuSystem->menu = MENU_MAIN_OPTIONS;
+    menuSystem->type = 7;
+    menuSystem->imgBG = &menuSystem->imgLogo;
+    menuSystem->oldMenu = MENU_MAIN;
+
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Back", 0, 0);
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Video", 0, 0);
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Input", 0, 0);
+    MenuItem_Set(&menuSystem->items[menuSystem->numItems++], "Sound", 0, 0);
+    return menuSystem->numItems == 4;
+}
+
 static int appendHelpLine(MenuSystem_t* menuSystem,
                           const char* line,
                           int length) {
@@ -205,10 +275,19 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
     canvas = doomRpg->doomCanvas;
 
     resetSelectionAccumulator(menuSystem);
-    menuSystem->menu = menuId;
 
-    if (menuId == MENU_MAIN_HELP_ABOUT) {
+    if (menuId == MENU_MAIN) {
+        builder = "native-fixed-main";
+        if (!DoomRPG_esp32MainMenuModelBuildMain(doomRpg)) {
+            printf("[MAINMODEL] FAILED target=%d builder=%s\n",
+                   menuId,
+                   builder);
+            return 0;
+        }
+    }
+    else if (menuId == MENU_MAIN_HELP_ABOUT) {
         builder = "native-bounded-help";
+        menuSystem->menu = menuId;
         if (!buildBoundedHelpModel(doomRpg)) {
             printf("[MAINMODEL] FAILED target=%d builder=%s\n",
                    menuId,
@@ -216,8 +295,23 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
             return 0;
         }
     }
+    else if (menuId == MENU_MAIN_CONTINUE) {
+        builder = "native-fixed-continue";
+        if (!buildFixedContinueModel(doomRpg)) {
+            printf("[MAINMODEL] FAILED target=%d builder=%s\n",
+                   menuId,
+                   builder);
+            return 0;
+        }
+    }
     else {
-        Menu_initMenu(doomRpg->menu, menuId);
+        builder = "native-fixed-options";
+        if (!buildFixedOptionsModel(doomRpg)) {
+            printf("[MAINMODEL] FAILED target=%d builder=%s\n",
+                   menuId,
+                   builder);
+            return 0;
+        }
     }
 
     menuSystem->maxItems = canvas->screenRect.h / 12;
