@@ -13,6 +13,7 @@
 #include "native_main_menu_load_action.h"
 #include "native_main_menu_model.h"
 #include "native_main_menu_options_action.h"
+#include "native_main_menu_present.h"
 #include "native_main_menu_options_back.h"
 #include "native_main_menu_start_action.h"
 #include "native_main_menu_touch.h"
@@ -32,39 +33,6 @@
 static DoomRPG_t* helpDoomRpg;
 static uint32_t helpExpectedFrameFNV;
 
-static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
-    uint32_t hash = 2166136261U;
-    uint32_t i;
-    for (i = 0; i < length; ++i) {
-        hash ^= data[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-static uint32_t framebufferHash(const Render_t* render) {
-    if (render == NULL || render->framebuffer == NULL || render->pitch <= 0) {
-        return 0U;
-    }
-    return fnv1a32((const uint8_t*)render->framebuffer,
-                   (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
-}
-
-static int graphicsBoundaryIsSafe(const DoomRPG_t* doomRpg) {
-    const Render_t* render;
-    if (doomRpg == NULL || doomRpg->render == NULL ||
-        doomRpg->doomCanvas == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->menu == NULL) {
-        return 0;
-    }
-    render = doomRpg->render;
-    return render->framebuffer != NULL &&
-           render->shapeData == NULL &&
-           render->mediaTexels == NULL &&
-           !EspNativeWallCache_isActive() &&
-           !EspNativeSpriteCache_isActive();
-}
-
 static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomCanvas_t* canvas = doomRpg->doomCanvas;
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
@@ -77,7 +45,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     uint32_t frameFNV;
 
     if (outFrameFNV != NULL) *outFrameFNV = 0U;
-    if (!graphicsBoundaryIsSafe(doomRpg) ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         menuSystem->menu != MENU_MAIN_HELP_ABOUT ||
         menuSystem->type != 5 ||
         menuSystem->oldMenu != MENU_MAIN ||
@@ -149,7 +117,7 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomCanvas_drawFont(canvas, "DOWN", 118, 102, 0, 0, -1, false);
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
 
-    frameFNV = framebufferHash(doomRpg->render);
+    frameFNV = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
     if (frameFNV == 0U) return 0;
 
     SDL_RenderPresent(NULL);
@@ -184,11 +152,11 @@ static void helpTap(int16_t screenX,
 
     if (doomRpg == NULL || doomRpg->menuSystem == NULL) return;
     menuSystem = doomRpg->menuSystem;
-    before = framebufferHash(doomRpg->render);
+    before = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
     logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     logicalY = screenY / DOOMRPG_INTEGER_SCALE;
 
-    if (!graphicsBoundaryIsSafe(doomRpg) ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         menuSystem->menu != MENU_MAIN_HELP_ABOUT ||
         helpExpectedFrameFNV == 0U ||
         before != helpExpectedFrameFNV) {
@@ -199,6 +167,7 @@ static void helpTap(int16_t screenX,
         PlatformInput_setTapCallback(NULL);
         helpDoomRpg = NULL;
         helpExpectedFrameFNV = 0U;
+        DoomRPG_esp32MainMenuRecover(doomRpg, "help-touch-precondition");
         return;
     }
 
@@ -233,6 +202,7 @@ static void helpTap(int16_t screenX,
                    menuSystem->menu);
             helpDoomRpg = NULL;
             helpExpectedFrameFNV = 0U;
+            DoomRPG_esp32MainMenuRecover(doomRpg, "help-back-failed");
             return;
         }
 
@@ -270,6 +240,10 @@ static void helpTap(int16_t screenX,
     if (!paintHelp(doomRpg, &finalFNV)) {
         printf("[MAINHELP] FAILED repaint scroll=%d\n",
                menuSystem->scrollIndex);
+        PlatformInput_setTapCallback(NULL);
+        helpDoomRpg = NULL;
+        helpExpectedFrameFNV = 0U;
+        DoomRPG_esp32MainMenuRecover(doomRpg, "help-repaint-failed");
         return;
     }
 
@@ -285,13 +259,13 @@ static int activateHelp(DoomRPG_t* doomRpg) {
     uint32_t expectedFNV;
     uint32_t helpFNV = 0U;
 
-    if (!graphicsBoundaryIsSafe(doomRpg)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINHELP] FAILED graphics boundary\n");
         return 0;
     }
 
     menuSystem = doomRpg->menuSystem;
-    inputFNV = framebufferHash(doomRpg->render);
+    inputFNV = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
     expectedFNV = DoomRPG_esp32MainMenuSelectionFramebufferFNV(
         DOOMRPG_ESP32_MAIN_MENU_ACTION_HELP);
 
@@ -348,15 +322,20 @@ DoomRPG_esp32MainMenuDispatchConfirmed(struct DoomRPG_s* doomRpgBase,
                        ? DOOMRPG_ESP32_MAIN_MENU_DISPATCH_TRANSITIONED
                        : DOOMRPG_ESP32_MAIN_MENU_DISPATCH_FAILED;
 
-        case DOOMRPG_ESP32_MAIN_MENU_ACTION_LOAD:
-            if (DoomRPG_esp32ActivateMainMenuLoad(doomRpg)) {
+        case DOOMRPG_ESP32_MAIN_MENU_ACTION_LOAD: {
+            DoomRpgEsp32MainMenuLoadResult loadResult =
+                DoomRPG_esp32ActivateMainMenuLoad(doomRpg);
+
+            printf("[MAINACTION] LOAD result=%d\n", (int)loadResult);
+            if (loadResult == DOOMRPG_ESP32_MAIN_MENU_LOAD_TRANSITIONED) {
                 return DOOMRPG_ESP32_MAIN_MENU_DISPATCH_TRANSITIONED;
             }
-            if (doomRpg->menuSystem != NULL &&
-                doomRpg->menuSystem->menu == MENU_MAIN) {
+            if (loadResult == DOOMRPG_ESP32_MAIN_MENU_LOAD_NO_SAVE ||
+                loadResult == DOOMRPG_ESP32_MAIN_MENU_LOAD_RECOVERED) {
                 return DOOMRPG_ESP32_MAIN_MENU_DISPATCH_STAY_MAIN;
             }
             return DOOMRPG_ESP32_MAIN_MENU_DISPATCH_FAILED;
+        }
 
         case DOOMRPG_ESP32_MAIN_MENU_ACTION_OPTIONS:
             if (!DoomRPG_esp32ActivateMainMenuOptions(
