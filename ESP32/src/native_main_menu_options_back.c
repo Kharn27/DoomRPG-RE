@@ -9,6 +9,7 @@
 #include "Render.h"
 
 #include "native_main_menu_160x120_layout.h"
+#include "native_main_menu_actions.h"
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_options_back.h"
 #include "native_main_menu_touch.h"
@@ -115,12 +116,10 @@ static int paintBackState(int armed) {
     return 1;
 }
 
-static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
+static int returnToMainMenu(DoomRPG_t* doomRpg) {
     MenuSystem_t* menuSystem = doomRpg->menuSystem;
     Render_t* render = doomRpg->render;
-    uint32_t finalHash = 0;
-    uint32_t repaintStart;
-    uint32_t repaintMs;
+    uint32_t finalHash = 0U;
 
     printf("\n=== Doom RPG ESP32 fast Options -> MENU_MAIN Back ===\n");
     printf("[OPTIONBACK] Begin menu=%d selected=%d old=%d framebufferFNV=%08x shapeData=%p mediaTexels=%p\n",
@@ -145,66 +144,25 @@ static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
         return 0;
     }
 
-    repaintStart = (uint32_t)DoomRPG_GetTimeMS();
-
-    /* Preserve the original hierarchy transition. Only presentation changes:
-     * after MenuSystem_back(), repaint the real MENU_MAIN model directly on an
-     * opaque framebuffer instead of replaying BSP walls and sprites.
-     */
-    MenuSystem_back(menuSystem);
-
-    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
-        menuSystem->menu != MENU_MAIN ||
-        menuSystem->selectedIndex != 0 ||
-        menuSystem->numItems != 4) {
-        printf("[OPTIONBACK] FAILED real MenuSystem_back menu=%d selected=%d items=%d state=%d shapeData=%p mediaTexels=%p\n",
-               menuSystem->menu,
-               menuSystem->selectedIndex,
-               menuSystem->numItems,
-               doomRpg->doomCanvas->state,
-               (void*)render->shapeData,
-               (void*)render->mediaTexels);
+    if (!DoomRPG_esp32MainMenuReturnToMain(
+            doomRpg,
+            MENU_MAIN_OPTIONS,
+            "options",
+            &finalHash)) {
+        printf("[OPTIONBACK] FAILED native Back action\n");
         return 0;
     }
 
-    printf("[OPTIONBACK] MODEL menu=%d type=%d old=%d selected=%d items=%d state=%d\n",
-           menuSystem->menu,
-           menuSystem->type,
-           menuSystem->oldMenu,
-           menuSystem->selectedIndex,
-           menuSystem->numItems,
-           doomRpg->doomCanvas->state);
-
-    if (!DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalHash)) {
-        printf("[OPTIONBACK] FAILED bounded opaque MENU_MAIN repaint\n");
-        return 0;
-    }
-
-    repaintMs = (uint32_t)DoomRPG_GetTimeMS() - repaintStart;
-
-    printf("[OPTIONBACK] FAST End framebufferFNV=%08x expected=%08x runtimeFNV=%08x menu=%d selected=%d touchActive=%d repaintMs=%u shapeData=%p mediaTexels=%p\n",
+    printf("[OPTIONBACK] FAST End framebufferFNV=%08x expected=%08x runtimeFNV=%08x menu=%d selected=%d touchActive=%d shapeData=%p mediaTexels=%p\n",
            (unsigned int)finalHash,
            (unsigned int)DoomRPG_esp32MainMenuSelectionFramebufferFNV(0),
            (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(render),
            menuSystem->menu,
            menuSystem->selectedIndex,
            DoomRPG_esp32MainMenuTouchIsActive(),
-           (unsigned int)repaintMs,
            (void*)render->shapeData,
            (void*)render->mediaTexels);
-
-    if (finalHash == 0U ||
-        finalHash != DoomRPG_esp32MainMenuSelectionFramebufferFNV(0) ||
-        finalHash != DoomRPG_esp32MainMenuFramebufferHash(render) ||
-        menuSystem->menu != MENU_MAIN ||
-        menuSystem->selectedIndex != 0 ||
-        !DoomRPG_esp32MainMenuTouchIsActive() ||
-        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
-        printf("[OPTIONBACK] FAILED fast roundtrip invariant\n");
-        return 0;
-    }
-
-    printf("[OPTIONBACK] READY real MenuSystem_back + opaque bounded repaint; no MENUWALL/MENUSPRITE replay\n");
+    printf("[OPTIONBACK] READY native semantic Back + opaque bounded repaint; no MenuSystem_back, no MENUWALL/MENUSPRITE replay\n");
     printf("[OPTIONBACK] READY MENU_MAIN touch re-armed for another complete cycle\n");
     return 1;
 }
@@ -282,12 +240,12 @@ static void optionsBackTap(int16_t screenX,
         return;
     }
 
-    printf("[OPTIONBACK] CONFIRM Back action=MenuSystem_back+opaque-repaint\n");
+    printf("[OPTIONBACK] CONFIRM Back action=native-semantic-return\n");
     backArmed = 0;
     optionsBackActive = 0;
     PlatformInput_setTapCallback(NULL);
 
-    if (!repaintMainMenuAfterBack(optionsDoomRpg)) {
+    if (!returnToMainMenu(optionsDoomRpg)) {
         printf("[OPTIONBACK] FAILED executing fast Back roundtrip\n");
         DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "options-back-failed");
     }
