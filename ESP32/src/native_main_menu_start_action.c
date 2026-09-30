@@ -185,6 +185,17 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
+    /*
+     * The ESP32 START owner is deliberately new-game + intro only. The
+     * historical skipIntro branch entered DoomCanvas_loadMap(), bypassing the
+     * native resident bootstrap; keep that unsupported route fail-closed before
+     * releasing menu memory or mutating player state.
+     */
+    if (doomCanvas->skipIntro) {
+        printf("[MAINSTART] REFUSE skipIntro=%d\n", doomCanvas->skipIntro);
+        return 0;
+    }
+
     printf("[MAINSTART] Player before level=%d xp=%d nextXP=%d credits=%d keys=%d ammo1=%u weapon=%d weapons=%08x deaths=%d\n",
            player->level,
            player->currentXP,
@@ -211,12 +222,15 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     heapBefore = heap8Free();
     largestBefore = largest8Block();
     /*
-     * The dedicated LOAD card owns resume. START always performs the real
-     * legacy-compatible new-game/player/intro transition; the compact native
-     * menu-model owner only closes MENU_MAIN afterward.
+     * The dedicated LOAD card owns resume. Reproduce only the new-game branch
+     * of legacy Menu_startGame() here so the linker can discard its unrelated
+     * load-state / legacy-load-map branches.
      */
     Sound_playSound(doomRpg->sound, 5046, 0, 3);
-    Menu_startGame(doomRpg->menu, 1);
+    menuSystem->imgBG = NULL;
+    Player_reset(player);
+    player->totalDeaths = 0;
+    DoomCanvas_setState(doomCanvas, ST_INTRO);
     if (!DoomRPG_esp32MainMenuModelLeave(doomRpg)) {
         printf("[MAINSTART] FAILED leaving MENU_MAIN model for intro\n");
         return 0;
@@ -278,7 +292,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    printf("[MAINSTART] READY explicit MENU_MAIN start composition -> Menu_startGame(new) -> Player_reset -> ST_INTRO\n");
+    printf("[MAINSTART] READY native new-game -> Player_reset -> ST_INTRO\n");
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
 
     if (!DoomRPG_esp32RenderFirstIntroFrame(doomRpg)) {

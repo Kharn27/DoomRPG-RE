@@ -5,18 +5,19 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 071febee7ec88958286fb74d82cee9ba61083a85
-branch = agent/esp32-consolidation-legacy-init-anchor-v10
-hardware-tested code boundary = 8cd0b019ebcb80491a27c2ed0bad3cf57f9ad47e
-CI = esp32-cyd #1175 SUCCESS
+current main = 4c6071ebe7de01f47925bf7792123e8c8f9d7ff5
+branch = agent/esp32-consolidation-main-menu-start-v12
+hardware-tested code boundary = 6b565cd46172e384209a1d93e355c951f4d6c4fa
+CI = esp32-cyd #1185 SUCCESS
 static RAM = 45224 B
-flash = 782265 B
-firmware.bin = 782624 B
-artifact id = 11110371227
-firmware sha256 = d66e4a1eac3f7911046916de9aa89dcb9a7d4c8e944f9424f7747534c3f181d0
-ELF sha256 = 00d14a306c726d44737beca1a14aaab395ecd1aa09c0d0d7c7d92b3b84c86d71
-hardware = cold boot + HELP/OPTIONS native round-trip + START -> full intro -> Entrance native bootstrap -> resident gameplay PASS on real CYD
-status = HARDWARE PASS; main-menu sources consolidated 13->7; Menu_initMenu / Menu_LoadHelpResource absent from final ELF; code after 8cd0b019... must be documentation-only
+flash = 782009 B
+firmware.bin = 782368 B
+artifact id = 11113402480
+artifact digest = sha256:3d8b8c332b780b55a8fdab1874e93759d3e3780f8816f1259da2593170fc9127
+firmware sha256 = 1247ff133519951a616f269395cf5cbfbd05fcd5f0175b0aa0ae9dbaee6ddc84
+ELF sha256 = c38e73687d33656eddb106e4b4e3ba23392a71d381299aab79637cde1afc5d2e
+hardware = START -> full intro including native timed page1->2 -> bounded disposal -> Entrance native bootstrap -> resident gameplay PASS on real CYD
+status = HARDWARE PASS; Menu_startGame / DoomCanvas_loadState / DoomCanvas_changeStoryPage / DoomCanvas_disposeIntro / DoomCanvas_loadMap absent from final ELF; post-test commits must be documentation-only
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2349,3 +2350,74 @@ does not change the exact -15424 B CI delta or the final ELF symbol result.
 Detailed record:
 
 - [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_MODEL_V11.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_MODEL_V11.md)
+
+
+## Native START + intro escape closure retirement — REAL-CYD PASS (2026-09-30)
+
+Hardware-tested code boundary:
+
+```text
+base main = 4c6071ebe7de01f47925bf7792123e8c8f9d7ff5
+branch = agent/esp32-consolidation-main-menu-start-v12
+code head = 6b565cd46172e384209a1d93e355c951f4d6c4fa
+esp32-cyd CI #1185 = SUCCESS
+RAM static = 45224 B
+Flash = 782009 B
+firmware.bin = 782368 B
+artifact id = 11113402480
+```
+
+V12 removes the last legacy pre-game START/intro escape closure without adding
+a file or a generic router.
+
+`native_main_menu_start_action.c` now owns only the ESP32 new-game path:
+`imgBG=NULL -> Player_reset -> totalDeaths=0 -> ST_INTRO`. The dedicated LOAD
+card remains the only resume owner, and `skipIntro != 0` fails closed before
+menu cleanup or player mutation rather than entering the desktop load-map path.
+
+`native_story_fit.c` no longer delegates page changes to
+`DoomCanvas_changeStoryPage()`. The renderer owns only the automatic bounded
+animation transition `storyPage 1 -> 2`. The final page-2 Continue remains
+owned by the native input/clock boundary:
+`Esp32IntroClock_park("intro-exit-ready") -> Esp32IntroDispose_service()`.
+
+Authoritative final-ELF inspection:
+
+```text
+Menu_startGame               ABSENT
+DoomCanvas_loadState         ABSENT
+DoomCanvas_changeStoryPage   ABSENT
+DoomCanvas_disposeIntro      ABSENT
+DoomCanvas_loadMap           ABSENT
+```
+
+Against merged main:
+
+```text
+                 main 4c6071e    V12 6b565cd    delta
+static RAM       45224 B         45224 B         0 B
+Flash           782265 B        782009 B      -256 B
+firmware.bin    782624 B        782368 B      -256 B
+```
+
+The real classic CYD exercises the exact new boundary. After entering page 1,
+no touch is sent; the native clock advances it after about 10.1 s:
+
+```text
+[INTROIN] CONTINUE storyPage=0->1 t=1443700 epoch=1443700
+[INTROCLK] AUTO-PAGE 1->2 t=1453800 textPage=0 epoch=1453800
+```
+
+The final Continue then stays on the native disposal/bootstrap path:
+
+```text
+[INTROIN] FINAL-CONTINUE page=2 textPage=0 t=1481600 fullTextPresented=yes
+[INTROCLK] PARK reason=intro-exit-ready ... heap8=43104 largest8=12276
+[INTRODISP] READY ... heap8=43104->76876 recovered=33772 ... noMapLoad=yes
+[NATIVEBOOT] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=93076 heap8=27368 largest8=18420 ...
+```
+
+Detailed record:
+[`MILESTONE_ESP32_CONSOLIDATION_NATIVE_START_INTRO_V12.md`](MILESTONE_ESP32_CONSOLIDATION_NATIVE_START_INTRO_V12.md)
