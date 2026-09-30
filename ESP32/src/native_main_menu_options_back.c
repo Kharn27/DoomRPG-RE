@@ -245,6 +245,7 @@ static void optionsBackTap(int16_t screenX,
                (unsigned int)optionsExpectedFrameFNV);
         optionsBackActive = 0;
         PlatformInput_setTapCallback(NULL);
+        DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "options-touch-precondition");
         return;
     }
 
@@ -253,6 +254,7 @@ static void optionsBackTap(int16_t screenX,
             if (!paintBackState(0)) {
                 optionsBackActive = 0;
                 PlatformInput_setTapCallback(NULL);
+                DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "options-disarm-repaint-failed");
                 return;
             }
             backArmed = 0;
@@ -272,6 +274,7 @@ static void optionsBackTap(int16_t screenX,
         if (!paintBackState(1)) {
             optionsBackActive = 0;
             PlatformInput_setTapCallback(NULL);
+            DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "options-arm-repaint-failed");
             return;
         }
         backArmed = 1;
@@ -286,6 +289,7 @@ static void optionsBackTap(int16_t screenX,
 
     if (!repaintMainMenuAfterBack(optionsDoomRpg)) {
         printf("[OPTIONBACK] FAILED executing fast Back roundtrip\n");
+        DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "options-back-failed");
     }
 }
 
