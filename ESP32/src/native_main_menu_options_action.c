@@ -9,6 +9,7 @@
 #include "MenuItem.h"
 #include "MenuSystem.h"
 #include "Render.h"
+#include "Sound.h"
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_options_action.h"
@@ -258,11 +259,17 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
     heapBefore = heap8Free();
     largestBefore = largest8Block();
 
-    /* The retained J2ME Menu_select() still assigns Options to semantic row 1.
-     * The ESP32 presentation places Load Game there, so translate only for the
-     * instant in which the original transition is invoked. */
-    menuSystem->selectedIndex = 1;
-    MenuSystem_select(menuSystem);
+    /*
+     * Options is a fixed MENU_MAIN transition. Compose it directly instead of
+     * translating the finger-first card index back into the desktop-wide
+     * Menu_select() switch. Preserve MenuSystem_select()'s reset + accept-sound
+     * side effects; MenuSystem_setMenu() rebuilds MENU_MAIN_OPTIONS and resets
+     * its selected/scroll indices exactly as before.
+     */
+    menuSystem->cheatCombo = 0;
+    menuSystem->digitCount = 0;
+    Sound_playSound(doomRpg->sound, 5046, 0, 3);
+    MenuSystem_setMenu(menuSystem, MENU_MAIN_OPTIONS);
 
     if (!graphicsBoundaryIsSafe(doomRpg) || !validateOptionsModel(menuSystem)) {
         printf("[MAINOPTIONS] FAILED real transition menu=%d type=%d old=%d selected=%d scroll=%d items=%d state=%d shapeData=%p mediaTexels=%p\n",
@@ -336,6 +343,6 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
     SDL_RenderPresent(NULL);
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
     printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared 2x2 dashboard paint\n");
-    printf("[MAINOPTIONS] READY MenuSystem_select executed for Options; no legacy Render_render, no map reload, no gameplay loader\n");
+    printf("[MAINOPTIONS] READY explicit MENU_MAIN -> MENU_MAIN_OPTIONS composition; no legacy Render_render, no map reload, no gameplay loader\n");
     return 1;
 }

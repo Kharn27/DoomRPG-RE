@@ -9,6 +9,7 @@
 #include "MenuSystem.h"
 #include "Player.h"
 #include "Render.h"
+#include "Sound.h"
 
 #include "esp_legacy_asset_source.h"
 #include "native_intro_first_frame.h"
@@ -244,7 +245,23 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     heapBefore = heap8Free();
     largestBefore = largest8Block();
-    MenuSystem_select(menuSystem);
+
+    /*
+     * MENU_MAIN has only two Start Game outcomes on ESP32. Compose them
+     * explicitly instead of entering the desktop-wide Menu_select() switch.
+     * Preserve MenuSystem_select()'s semantic side effects exactly: reset the
+     * cheat accumulator and play the same accept sound before the transition.
+     */
+    menuSystem->cheatCombo = 0;
+    menuSystem->digitCount = 0;
+    Sound_playSound(doomRpg->sound, 5046, 0, 3);
+    if (hasExistingSave) {
+        MenuSystem_setMenu(menuSystem, MENU_MAIN_CONTINUE);
+    }
+    else {
+        Menu_startGame(doomRpg->menu, 1);
+        MenuSystem_setMenu(menuSystem, MENU_NONE);
+    }
 
     outputHash = framebufferHash(render);
     heapAfter = heap8Free();
@@ -307,7 +324,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    printf("[MAINSTART] READY real MenuSystem_select -> Menu_startGame(new) -> Player_reset -> ST_INTRO\n");
+    printf("[MAINSTART] READY explicit MENU_MAIN start composition -> Menu_startGame(new) -> Player_reset -> ST_INTRO\n");
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
 
     if (!DoomRPG_esp32RenderFirstIntroFrame(doomRpg)) {
