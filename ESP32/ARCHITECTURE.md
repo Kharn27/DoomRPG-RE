@@ -582,3 +582,33 @@ For future consolidation audits, use final-ELF `nm`/`readelf` as the
 authority for symbol reachability. A `firmware.map` entry at address zero may
 describe a discarded input section and must not be treated as a live final
 symbol.
+
+
+## Pre-game START and intro ownership
+
+The pre-game START path is now a native semantic boundary:
+
+```text
+MENU_MAIN START
+ -> native new-game reset
+ -> ST_INTRO
+ -> native story renderer / clock / input
+ -> native bounded intro disposal
+ -> native transition presentation
+ -> resident map bootstrap
+```
+
+The ESP32 build must not reintroduce `Menu_startGame()` as a generic entry
+point. START owns new-game only; LOAD owns resume. A skip-intro request that
+would bypass the resident native bootstrap is fail-closed until it receives its
+own explicit native route.
+
+The story renderer also must not call a generic legacy page-change helper.
+Renderer-owned automatic progression is bounded to animation page `1 -> 2`.
+Final exit from page 2 belongs to the input/clock owner and then
+`Esp32IntroDispose_service()`, whose contract is resource disposal only and
+explicitly forbids map loading.
+
+The hardware-tested final ELF contains none of
+`Menu_startGame`, `DoomCanvas_loadState`, `DoomCanvas_changeStoryPage`,
+`DoomCanvas_disposeIntro` or `DoomCanvas_loadMap`.

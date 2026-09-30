@@ -13,16 +13,16 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 071febee7ec88958286fb74d82cee9ba61083a85
-branch = agent/esp32-consolidation-legacy-init-anchor-v10
-hardware-tested code boundary = 8cd0b019ebcb80491a27c2ed0bad3cf57f9ad47e
-CI = esp32-cyd #1175 SUCCESS
+current main = 4c6071ebe7de01f47925bf7792123e8c8f9d7ff5
+branch = agent/esp32-consolidation-main-menu-start-v12
+hardware-tested code boundary = 6b565cd46172e384209a1d93e355c951f4d6c4fa
+CI = esp32-cyd #1185 SUCCESS
 static RAM = 45224 B
-flash = 782265 B
-firmware.bin = 782624 B
-artifact id = 11110371227
-hardware = cold boot + HELP/OPTIONS native round-trip + START -> intro -> Entrance native gameplay PASS
-status = hardware-pass; main-menu 13->7 source consolidation + native fixed model ownership; Menu_initMenu absent; documentation-only close in progress
+flash = 782009 B
+firmware.bin = 782368 B
+artifact id = 11113402480
+hardware = START -> timed intro page1->2 -> bounded disposal -> Entrance native gameplay PASS
+status = hardware-pass; legacy START/load-map/intro-page escape symbols absent; documentation-only close in progress
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1296,3 +1296,36 @@ hardware-tested baseline exactly matches the 544 B static-RAM reduction.
 
 See
 [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_MODEL_V11.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_MODEL_V11.md).
+
+
+## Native START / intro escape closure
+
+V12 hardware head `6b565cd46172e384209a1d93e355c951f4d6c4fa`
+finishes ownership of the pre-game START-to-intro transition.
+
+The ESP32 START action directly performs the exact new-game state change
+(`Player_reset`, `totalDeaths=0`, `ST_INTRO`) and no longer calls
+`Menu_startGame()`. The native story renderer owns only the bounded timed
+`storyPage 1 -> 2` transition and no longer calls the legacy
+`DoomCanvas_changeStoryPage()` escape.
+
+The final ELF therefore contains none of:
+
+```text
+Menu_startGame
+DoomCanvas_loadState
+DoomCanvas_changeStoryPage
+DoomCanvas_disposeIntro
+DoomCanvas_loadMap
+```
+
+CI #1185 is 45224 B RAM / 782009 B Flash, a 256 B Flash reduction from merged
+main with unchanged static RAM.
+
+The real CYD proves the timed automatic page transition, final native
+Continue/PARK, bounded resource-only disposal, Entrance native bootstrap and
+resident gameplay. Final ALIVE is stable at
+`heap=93076 heap8=27368 largest8=18420`.
+
+Detailed milestone:
+[`MILESTONE_ESP32_CONSOLIDATION_NATIVE_START_INTRO_V12.md`](MILESTONE_ESP32_CONSOLIDATION_NATIVE_START_INTRO_V12.md).
