@@ -15,14 +15,14 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 071febee7ec88958286fb74d82cee9ba61083a85
 branch = agent/esp32-consolidation-legacy-init-anchor-v10
-hardware-tested code boundary = f9ab3bda2cd9aadee2d1be0fc08d49600b7a9141
-CI = esp32-cyd #1159 SUCCESS
-static RAM = 45768 B
-flash = 797697 B
-firmware.bin = 798064 B
-artifact id = 11101108652
-hardware = HELP/OPTIONS native round-trip + START -> intro -> Entrance native gameplay PASS
-status = hardware-pass; legacy DoomRPG_Init link anchor retired; documentation-only close in progress
+hardware-tested code boundary = 8cd0b019ebcb80491a27c2ed0bad3cf57f9ad47e
+CI = esp32-cyd #1175 SUCCESS
+static RAM = 45224 B
+flash = 782265 B
+firmware.bin = 782624 B
+artifact id = 11110371227
+hardware = cold boot + HELP/OPTIONS native round-trip + START -> intro -> Entrance native gameplay PASS
+status = hardware-pass; main-menu 13->7 source consolidation + native fixed model ownership; Menu_initMenu absent; documentation-only close in progress
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1181,11 +1181,13 @@ through the desktop/J2ME generic SELECT chain.
     HELP    -> bounded paged help
 ```
 
-The produced ESP32 ELF no longer contains `Menu_select` or
-`MenuSystem_select`. `MenuSystem_t` remains a temporary bounded model
-container. `Menu_initMenu` remains transitional for retained fixed menu
-models, but main-menu Help no longer delegates `help.txt` parsing to it: Help
-uses a PAK-backed size/item/line-bounded native parser.
+The produced ESP32 ELF no longer contains `Menu_select`,
+`MenuSystem_select`, `Menu_initMenu` or `Menu_LoadHelpResource`.
+`MenuSystem_t` remains a temporary bounded storage container, but construction
+of the retained pre-game MAIN/CONTINUE/OPTIONS models is now owned explicitly by
+`native_main_menu_model.c`; Help continues to use its PAK-backed
+size/item/line-bounded native parser. No generic native menu factory replaces
+the retired legacy switch.
 
 Help is now a native opaque list viewer with eight visible lines and a permanent
 BACK / UP / DOWN footer. The current styling is functional rather than final;
@@ -1270,3 +1272,27 @@ through intro disposal, Entrance resident loading/cache priming and
 
 See
 [`MILESTONE_ESP32_CONSOLIDATION_LEGACY_INIT_ANCHOR_V10.md`](MILESTONE_ESP32_CONSOLIDATION_LEGACY_INIT_ANCHOR_V10.md).
+
+
+## Main-menu source/model consolidation
+
+Hardware-tested head `8cd0b019ebcb80491a27c2ed0bad3cf57f9ad47e`
+completes two related cleanup steps:
+
+1. `native_main_menu_*.c` is consolidated from 13 source files to 7 without
+   adding replacement wrappers.
+2. fixed pre-game model construction moves into the existing
+   `native_main_menu_model.c`, allowing the final linker to remove the broad
+   desktop `Menu_initMenu()` factory and `Menu_LoadHelpResource()`.
+
+CI #1175 reports 45224 B static RAM and 782265 B Flash. Direct `nm` on the
+artifact ELF confirms `Menu_initMenu` and `Menu_LoadHelpResource` are absent
+while `Menu_startGame` remains present.
+
+The real classic CYD confirms exact menu fingerprints, native-fixed MAIN/OPTIONS
+builders, full START through Entrance `ENGINESESSION READY`, and stable final
+`heap8=27368 largest8=18420`. The +544 B free heap versus the preceding
+hardware-tested baseline exactly matches the 544 B static-RAM reduction.
+
+See
+[`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_MODEL_V11.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_MODEL_V11.md).

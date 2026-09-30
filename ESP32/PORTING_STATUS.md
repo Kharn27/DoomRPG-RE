@@ -7,14 +7,16 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 071febee7ec88958286fb74d82cee9ba61083a85
 branch = agent/esp32-consolidation-legacy-init-anchor-v10
-hardware-tested code boundary = f9ab3bda2cd9aadee2d1be0fc08d49600b7a9141
-CI = esp32-cyd #1159 SUCCESS
-static RAM = 45768 B
-flash = 797697 B
-firmware.bin = 798064 B
-artifact id = 11101108652
-hardware = HELP/OPTIONS native round-trip + START -> full intro -> Entrance native bootstrap -> resident gameplay PASS on real CYD
-status = HARDWARE PASS; DoomRPG_Init / DoomCanvas_setupmenu / MenuSystem_setMenu absent from final ELF; commits after f9ab3bda... are documentation-only
+hardware-tested code boundary = 8cd0b019ebcb80491a27c2ed0bad3cf57f9ad47e
+CI = esp32-cyd #1175 SUCCESS
+static RAM = 45224 B
+flash = 782265 B
+firmware.bin = 782624 B
+artifact id = 11110371227
+firmware sha256 = d66e4a1eac3f7911046916de9aa89dcb9a7d4c8e944f9424f7747534c3f181d0
+ELF sha256 = 00d14a306c726d44737beca1a14aaab395ecd1aa09c0d0d7c7d92b3b84c86d71
+hardware = cold boot + HELP/OPTIONS native round-trip + START -> full intro -> Entrance native bootstrap -> resident gameplay PASS on real CYD
+status = HARDWARE PASS; main-menu sources consolidated 13->7; Menu_initMenu / Menu_LoadHelpResource absent from final ELF; code after 8cd0b019... must be documentation-only
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2252,3 +2254,98 @@ functional without that closure.
 Detailed record:
 
 - [`MILESTONE_ESP32_CONSOLIDATION_LEGACY_INIT_ANCHOR_V10.md`](MILESTONE_ESP32_CONSOLIDATION_LEGACY_INIT_ANCHOR_V10.md)
+
+
+## Native main-menu model ownership — REAL-CYD PASS (2026-09-30)
+
+Hardware-tested code boundary:
+
+```text
+base main = 071febee7ec88958286fb74d82cee9ba61083a85
+branch = agent/esp32-consolidation-legacy-init-anchor-v10
+source-consolidation head = e5c52be0ed24c57df65477a1bed4efbf914d8320
+final code head = 8cd0b019ebcb80491a27c2ed0bad3cf57f9ad47e
+esp32-cyd CI #1175 = SUCCESS
+RAM static = 45224 B
+Flash      = 782265 B
+firmware.bin = 782624 B
+artifact id = 11110371227
+artifact digest = sha256:31e9f777f42f22917fde7a72421c7e216b285a1cdf941949540722532af178c3
+firmware sha256 = d66e4a1eac3f7911046916de9aa89dcb9a7d4c8e944f9424f7747534c3f181d0
+ELF sha256 = 00d14a306c726d44737beca1a14aaab395ecd1aa09c0d0d7c7d92b3b84c86d71
+```
+
+The hardware-validated main-menu implementation is now consolidated from 13
+`native_main_menu_*.c` translation units to 7 without adding a replacement
+wrapper layer. LOAD lives with main actions, the tap gate lives with touch, and
+presentation/recovery/scene bridge code lives with the touch-layout owner.
+The obsolete pre-touch layout and historical overlay probe sources are gone.
+
+On top of that consolidation, the three active ESP32 call sites of
+`Menu_initMenu()` were replaced by bounded model construction in the existing
+`native_main_menu_model.c`. The native owner supports only the pre-game
+models actually needed here: fixed MAIN, fixed CONTINUE, fixed OPTIONS and the
+already-bounded PAK-backed HELP parser. It does not recreate a generic menu
+router.
+
+Authoritative final-ELF inspection:
+
+```text
+Menu_initMenu                         ABSENT
+Menu_LoadHelpResource                 ABSENT
+Menu_startGame                        PRESENT  0x49 = 73 B
+DoomRPG_esp32MainMenuModelBuildMain   PRESENT  0xbb = 187 B
+DoomRPG_esp32MainMenuModelEnter       PRESENT  0x45f = 1119 B
+```
+
+The linker can therefore discard the broader legacy menu-construction closure,
+including `Menu_fillStatus`, `Menu_setStore`, `Menu_setNotes`,
+`MenuSystem_buildDivider`, `Menu_setYesNo` and the static
+`vendingMenuTable`.
+
+Relative to the hardware-tested source-consolidation baseline
+`e5c52be0...`:
+
+```text
+                 e5c52be       8cd0b019       delta
+static RAM       45768 B        45224 B        -544 B
+Flash           797689 B       782265 B      -15424 B
+firmware.bin    798048 B       782624 B      -15424 B
+```
+
+The real CYD exposes the RAM reduction directly. The stable menu heap moves
+from `heap8=20916` to `heap8=21460`, exactly +544 B, and the final gameplay
+ALIVE moves from `heap8=26824` to `heap8=27368`, also exactly +544 B.
+
+Cold boot now also provides the previously-missing hardware witness for the V10
+anchor retirement:
+
+```text
+[LEGACYINIT] STAGED runtime=ESP32-core/layout/startup legacy-DoomRPG_Init-anchor=retired
+```
+
+The new model owner preserves the validated presentation fingerprints:
+
+```text
+MENU_MAIN modelFNV = 292c7f95
+MENU_MAIN finalFNV = 522dc605
+HELP page0 FNV     = 5f22cf6b
+HELP page8 FNV     = d0788359
+OPTIONS modelFNV  = e1ef01f7
+OPTIONS frameFNV  = 162d3999
+```
+
+Real-CYD traces show `builder=native-fixed-main` on HELP/OPTIONS Back and
+`builder=native-fixed-options` entering OPTIONS, with
+`shapeData=0x0 mediaTexels=0x0`. START then traverses the complete intro,
+bounded disposal, Entrance resident load/cache prime and reaches
+`[ENGINESESSION] READY map=1`; final ALIVE is stable at
+`heap=93076 heap8=27368 largest8=18420`.
+
+The local PlatformIO upload build reported 45224 B RAM, 782281 B Flash and a
+782640 B firmware image; the 16-byte absolute Flash/image difference from CI
+does not change the exact -15424 B CI delta or the final ELF symbol result.
+
+Detailed record:
+
+- [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_MODEL_V11.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_MODEL_V11.md)

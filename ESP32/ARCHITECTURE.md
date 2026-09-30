@@ -469,13 +469,16 @@ touch/presentation model
 Do not reintroduce `MenuSystem_select()` or `Menu_select()` as a generic
 routing shortcut. Their ESP32 linked implementations are already gone.
 
-The current model bridge is intentionally transitional: `MenuSystem_t` and
-`Menu_initMenu()` may still provide bounded fixed-item construction while
-permanent native menu-model ownership is completed. Main-menu Help is already
-an exception: its PAK resource is parsed by the bounded native model owner and
-does not call the legacy Help parser. Return navigation still passes through the
-explicit `MenuSystem_back()` seam for OPTIONS and HELP; that is the next
-bounded consolidation target.
+The pre-game model bridge is now explicit and bounded. `MenuSystem_t` remains
+temporary storage, but fixed MAIN/CONTINUE/OPTIONS construction is owned by
+`native_main_menu_model.c` and Help is parsed by the same owner's bounded
+PAK-backed parser. The final ESP32 ELF contains neither `Menu_initMenu()` nor
+`Menu_LoadHelpResource()`. Do not recreate the retired broad switch under a
+new native name.
+
+HELP and OPTIONS Back navigation are also explicit semantic routes through
+`DoomRPG_esp32MainMenuReturnToMain()`; `MenuSystem_back()` is absent from
+the linked ESP32 firmware.
 
 Main-menu presentation invariants now have one owner,
 `native_main_menu_present`, for framebuffer hashing, graphics-boundary checks
@@ -551,3 +554,31 @@ This is an architectural win even when the source files remain compiled as
 behavioral references. Source-level call sites are not evidence of runtime
 ownership; consolidation audits must distinguish source presence, ELF
 reachability and real-CYD execution.
+
+
+## Main-menu model/source ownership
+
+The hardware-tested pre-game menu now follows this permanent direction:
+
+```text
+touch / opaque presentation
+ -> semantic START | LOAD | OPTIONS | HELP actions
+ -> bounded native pre-game model owner
+    -> fixed MAIN / CONTINUE / OPTIONS records
+    -> bounded HELP PAK parser
+```
+
+The implementation was consolidated from 13 `native_main_menu_*.c` translation
+units to 7 before retiring the legacy model factory. Consolidation should keep
+moving toward coherent ownership rather than one file per micro-step.
+
+`Menu_initMenu()` and its broad desktop closure are absent from the final ELF.
+That removal also drops unrelated menu/status/store/note construction helpers
+and the 544 B static `vendingMenuTable`. This is a useful example of the
+project's linker rule: source presence is not runtime ownership, and a small
+explicit owner can let `--gc-sections` remove a much larger legacy closure.
+
+For future consolidation audits, use final-ELF `nm`/`readelf` as the
+authority for symbol reachability. A `firmware.map` entry at address zero may
+describe a discarded input section and must not be treated as a live final
+symbol.
