@@ -27,8 +27,11 @@ hardware = runtime ZIP source retired; bidirectional Entrance/Sector1 SD->raw-fl
 status = hardware-pass; Z_Zip.c + miniz absent from final ELF; documentation-only close in progress
 ```
 
-Current consolidation delta from merged main
-`c735979a1dcd645208946adececc1ef478bf105f`:
+### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
+
+The ESP32 runtime now uses only `/DoomRPG-ESP32.pak` as its asset source.
+`src/Z_Zip.c` is excluded from the ESP32 build and the final ELF contains no
+ZIP parser or miniz decompression symbols.
 
 ```text
 legacy desktop src/*.c units: 17 -> 16
@@ -36,30 +39,277 @@ active linker --wraps:        57 -> 57
 static RAM:                   45776 B -> 45760 B
 flash:                        815677 B -> 807377 B
 runtime ZIP parser:           present -> absent
-miniz inflate in firmware:    present -> absent
 ```
 
-The authoritative runtime data source on ESP32 is now exclusively
-`/DoomRPG-ESP32.pak`. Remaining desktop-derived startup/menu code consumes
-that pack through the bounded transitional `EspLegacyAssetSource` API.
-`src/Z_Zip.c` is no longer compiled for ESP32, and the final ELF contains no
-ZIP parser/decompression symbols.
-
-The real classic CYD validates this beyond boot-only coverage:
-
-```text
-cold boot: HUD/prerender/render/mappings = backing=pak
-Start Game: intro c/d/e/f BMPs = backing=pak
-Sector 1 -> Entrance: MAPFLASH world-identity miss + verified rebuild
-Load V9 -> Sector 1: inverse world-identity miss + verified rebuild
-steady gameplay: raw-flash backing, movement/monster turns/attack all live
-shapeData = NULL
-mediaTexels = NULL
-ALIVE stable = heap 94016 / heap8 28400 / largest8 16372
-```
+The real classic CYD validates cold boot, HUD/pre-render/Render/mappings from
+PAK, Start Game intro assets from PAK, Sector1 -> Entrance SD-to-raw-flash
+restaging, inverse V9 Load back to Sector 1, then live movement/monster combat.
+Both gameplay sessions keep `shapeData == NULL` and `mediaTexels == NULL`.
+Post-load ALIVE is stable at
+`heap=94016 heap8=28400 largest8=16372`.
 
 Detailed milestone:
 [MILESTONE_ESP32_CONSOLIDATION_RUNTIME_ZIP_RETIREMENT.md](MILESTONE_ESP32_CONSOLIDATION_RUNTIME_ZIP_RETIREMENT.md)
+
+
+Current consolidation result from merged main
+`c37c66ad800603ea7d0622681a3bfaf5bab0b41d`:
+
+```text
+ESP32 translation units:        173 -> 173
+active linker --wraps:          58 -> 57
+EspNativeGameplayMonster wraps:  1 -> 0
+static RAM:                     45776 B -> 45776 B
+flash:                          815677 B -> 815677 B
+```
+
+The dead historical Retaliation compatibility translation unit remains gone.
+Five formerly active native-to-native linker seams have now been retired or
+made explicit:
+
+1. `EspNativeGameplayMonsterPosition_prepareCardinalMove`:
+   activation gating + publication capture now pass through
+   `EspNativeGameplayMonsterMovementActivation_prepareCardinalMove`.
+2. `EspNativeGameplayMonsterMovementProbe_reset`:
+   reset ownership is explicit in MovementProbe with exact
+   ThreeGoal -> Publish -> Movement -> Position ordering.
+3. `EspNativeGameplayMonsterMovement_view`:
+   three-goal continuations pass their synthetic movement view explicitly to
+   `EspNativeGameplayMonsterMovementPublish_afterProbeWithView`.
+4. `EspNativeGameplayMonsterTurn_postMoveGoal`:
+   `MonsterTurn` owns ordinary-vs-three-goal dispatch explicitly and calls
+   `EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal` only for subtype 4/13.
+5. `EspNativeGameplayMonsterState_view`:
+   the wrapper was pure one-shot `WITNESS/CENSUS` instrumentation, so the
+   wrapper and its 119-line witness translation unit are deleted with no
+   replacement API.
+6. `EspNativeGameplayMonsterState_actionService`:
+   HUB/automap framebuffer ownership now composes explicitly through
+   `EspNativeGameplayHubActionGate_service`, which calls the unchanged
+   MonsterState action-service chain only while world presentation is active.
+7. `EspNativeGameplayMonsterTurn_view`:
+   `MonsterTurn` remains the raw producer, while
+   `EspNativeGameplayMonsterActivation_serviceTurn` explicitly flushes the
+   deferred destructible-turn intent and builds the filtered cached view.
+   AttackVisual, Retaliation and ordinary movement read the side-effect-free
+   `EspNativeGameplayMonsterActivation_turnView`; ActiveSequence reads the raw
+   producer directly.
+8. `EspNativeGameplayMonsterMovement_service`:
+   `MonsterMovementProbe_service` now calls
+   `EspNativeGameplayMonsterActiveSequence_service` explicitly. The sequencer
+   selects one active member at a time; `serviceMember` then invokes the normal
+   Movement planner leaf and closes publication/post-move ownership before the
+   next member is selected.
+
+The latest real-CYD witness executes one four-member MOVE in activation order.
+Sprites 218 and 237 commit ordinary movement; subtype-4 sprites 0 and 1 complete
+their three-goal chains; the sequence closes with
+`activeCount=4 delivered=4 ordered=yes publication=per-member`. Two following
+ALIVE samples are stable at `heap=82704 heap8=17152 largest8=10228`.
+
+There are now no active linker wraps whose target symbol begins with
+`EspNativeGameplayMonster`.
+
+A later real-CYD PASS_TURN also proves a genuine ranged monster attack after
+the refactor: sprite 218 / subtype 3 / weapon 15 follows
+`ATTACK-PROBE -> MONSTERACT -> MONSTERATKVIS -> MONSTERRETAL`, then commits
+`playerHP=22->20 armor=12->10` only after the visual completes. Following
+ALIVE samples remain stable at `heap=82704 heap8=17152 largest8=10228`.
+
+That ranged attack emits no `RANGED-MEMBER`, confirming that
+`RANGED-MEMBER` denotes exact-source ranged-AI movement/repositioning rather
+than the actual attack presentation/resolution path.
+
+See [MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md](MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md)
+for the final monster-wrapper closure.
+
+See [MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md](MILESTONE_ESP32_CONSOLIDATION_WRAPPERS_V1.md)
+for the exact regression history, CI artifacts and hardware witnesses.
+
+The merged barrel milestone remains hardware-valid on the real CYD. A distant shot
+proved a complete three-barrel causal chain: the root runs its 3-frame logical
+180 explosion, discovers both cardinal neighbors, then both neighbors animate
+together in one bounded second wave before their radius callbacks execute.
+The user explicitly accepted the visual result.
+
+A close-range run additionally reached native player radius damage twice and
+then the intentionally unsupported lethal/death boundary. The final lethal
+component produced `PLAYER-DEFER`, cancelled the requested monster turn and
+rolled back player/RNG/world ownership exactly. The multi-blast aggregate damage
+message did not get a successful commit in that run and is explicitly deferred
+until healing/medkits make a clean nonlethal retest practical.
+
+See `MILESTONE_NATIVE_BARREL_SUBTYPE1.md` for the exact hardware boundary.
+
+Current rebased integration:
+
+```text
+main HUB = INV | WPN | STAT | SYS
+WPN = complete 3x3 normal arsenal
+SYS = two-step SAVE/LOAD/NO SAVE
+touch feedback = 640 compact 4-byte edits + per-pixel ownership restore
+agent checkpoint = V8 monster-state extension retained
+event43 = bounded EV_SHOW x4 MOVE chain retained
+CHECK_KEY = native PlayerState key gate retained
+Codex fix = SHOW rollback lease released after pending dialog finalizes
+boot fix = compact feedback owner restores menu.bsp contiguous heap
+LOAD fix = session replacement bypasses ordinary HUB-close HUD exactness gate
+SAVE fix = successful confirmation closes HUB and queues 1200 ms Game saved
+SAVE fallback = permanent status, then current facing label, then empty
+HUB close integrity = bottom HUD exact after live compass repaint; top bar recomposed by world redraw
+HUB active surface = 160x100 at y=20..119; gameplay portrait strip hidden until close
+RNG fix = core creation seeds the inherited 128-byte Random_t table once
+```
+
+Current continuation also has a real-CYD pass for native EV_CHECK_KEY on the Entrance Yellow Door. Opcode 41 uses the shared PlayerState key bitmask, reports Need Yellow Key for selector 1 / mask 0x02, queues bounded top-bar feedback, and pauses before the following OPENLINE with zero world/script mutation when the key is absent.
+
+Entrance tile 377 / event 43 is no longer a progression blocker. Hardware proved the exact bounded MOVE chain EV_SHOW x4 on ENTER followed later by EV_CLOSELINE 102 on EXIT. The SHOW journal is a single 192-byte static owner; the public MOVE result is 76 bytes and carries no batch-sized stack payload. Preflight applies+reverse-rolls-back the four SHOWs before MOVE commit, and the rendered destination frame closes the rollback lease only after success. Exact serial witnesses are in PORTING_STATUS.md and MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md.
+
+Current hardware-proven addition on this branch:
+
+```text
+native facing-entity top-bar label
+ -> compact 34-byte current-target owner
+ -> no legacy Entity_t pointer
+ -> no resident table of entity names
+ -> on-demand /entities.db name read through DoomRPG-ESP32.pak
+ -> recovered short forward trace: +31-unit origin, 3 tile steps
+ -> sprite + line-entity targets
+ -> type-9 blocker remains label-hidden
+ -> topbar fallback below timed feedback and statBarMessage
+```
+
+Real-CYD witnesses:
+
+```text
+Civilian : sprite target, distance=1
+Computer : line target, distance=2 then 1
+Door     : line target, distance=3
+none     : exact label clear after rotation
+HUB close: current Civilian target retained and repainted
+```
+
+Pure TURN retargeting remains non-turn gameplay:
+
+```text
+[MONSTERTURN] ROTATE-NO-TURN ... legacyAdvance=no
+```
+
+The supplied hardware run remained alive with:
+
+```text
+heap=81936
+heap8=16384
+largest8=11764
+```
+
+Latest relevant milestones:
+
+- [`MILESTONE_NATIVE_BARREL_SUBTYPE1.md`](MILESTONE_NATIVE_BARREL_SUBTYPE1.md)
+- [`MILESTONE_MAIN_MENU_FINGER_FIRST.md`](MILESTONE_MAIN_MENU_FINGER_FIRST.md)
+- [`MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md`](MILESTONE_NATIVE_GAMEPLAY_HUB_REDESIGN.md)
+- [MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md](MILESTONE_NATIVE_MOVE_SHOW_BATCH_EVENT43.md)
+- [MILESTONE_NATIVE_CHECK_KEY_YELLOW_DOOR.md](MILESTONE_NATIVE_CHECK_KEY_YELLOW_DOOR.md)
+- [MILESTONE_NATIVE_FACING_LABEL.md](MILESTONE_NATIVE_FACING_LABEL.md)
+
+Previously merged relevant milestones remain:
+
+- [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V7_AUTOMAP.md)
+- [`MILESTONE_NATIVE_AUTOMAP.md`](MILESTONE_NATIVE_AUTOMAP.md)
+- [`MILESTONE_NATIVE_PICKUP_FEEDBACK.md`](MILESTONE_NATIVE_PICKUP_FEEDBACK.md)
+- [`MILESTONE_MAIN_MENU_LOAD.md`](MILESTONE_MAIN_MENU_LOAD.md)
+- [`MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md`](MILESTONE_NATIVE_RESIDENT_GAMEPLAY_POLISH.md)
+
+The final SYS SAVE close regression is also hardware-closed at
+`a5b30a12b4bb51cd4f016d53212b74e967c19d6d`: when the player's live
+orientation differs from the retained base-HUD angle, HUB close repaints the
+base HUD and then reapplies only the bounded compass dirty rectangle from the
+settled `EspPlayerViewState`. The real CYD produced `exactBottom=yes`,
+`SAVE-CLOSE`, `Game saved` for 1200 ms and then the current `Door` facing
+label. CI #767 reports 45096 B static RAM and 782141 B flash.
+
+### Current progression boundary — Junction -> Sector 1 REAL-CYD PASS
+
+The current branch did not complete its original large structural-consolidation
+goal. Its durable result is a sequence of generic correctness fixes discovered
+while extending real progression.
+
+Current real-CYD boundary:
+
+```text
+/junction.bsp  = Junction, map 9, gameplayLoadMapId 2
+/level01.bsp   = Sector 1, map 2, gameplayLoadMapId 3
+Sector 1 spawn = tile 477, dir 192
+```
+
+The user has validated zero-enemy PASS_TURN, V9 SAVE and V9 LOAD in Junction,
+the direct `showStats=0` transition into Level01, first movement away from the
+Sector-1 spawn, a second movement after rotation, monster activation, and
+ordered live monster movement.
+
+Generic coverage added on the way:
+
+```text
+SAVEGAME route != CHANGEMAP target is valid
+transition door -> READY direct handoff for showStats=0
+fresh-map spawn owns all four cardinal directions
+spawn tile may execute EV_FORCEMESSAGE transactionally
+mixed MOVEEVENT may include EV_FORCEMESSAGE with state/show/lock/door families
+```
+
+Post-review, the independent SAVEGAME route is copied into a SAVE-owned bounded
+state before the transition session reset. Real-CYD Sector 1 SAVE proves that
+`/junction.bsp / 416,1824 / 192` survives the Junction -> Sector 1 handoff,
+and the following V9 LOAD returns to a ready Sector 1 gameplay session. Current
+V9 bytes are unchanged; LOAD clears the non-serialized live route to avoid
+cross-session leakage.
+
+Fresh-spawn facing also mirrors legacy `Game_trace()` map-edge behavior by
+clamping source/destination tile components to `[0,31]`. The exact near-edge
+spawn case is build/CI-valid but was not exercised in the supplied real-CYD
+trace, so that narrow edge behavior is not yet a hardware claim.
+
+Current post-review hardware-tested code boundary:
+`7d64839a31376c4ca0a3ec4f0f5ae10395b04635`, esp32-cyd CI #1009,
+45784 B static RAM / 816517 B flash.
+
+See [MILESTONE_NATIVE_JUNCTION_SECTOR1.md](MILESTONE_NATIVE_JUNCTION_SECTOR1.md).
+
+### Current transition milestone
+
+The native Entrance -> Junction level exit is real-CYD validated on final code
+head `e4acb92403dd48810f3c4e989d4dee16605125e3`, rebased directly on
+`main@6cd8b6804cbec75538becab0d6cbe66e3c79d238`. CI #829 succeeds in the
+normal `esp32-cyd` environment with 45200 B static RAM and 789345 B flash.
+
+The tested route owns the exact Entrance event-1
+SAVEGAME/CHANGEMAP/OPENLINE sequence, the WAIT_STATS one-tap bridge,
+requested-map raw-flash rebuild, Junction compact-runtime reconstruction,
+spawn/session re-arm, and the first committed Junction step with ENTER
+`EV_MESSAGE "Junction"`.
+
+The same final hardware trace continues into ordinary Junction gameplay and
+proves one complete native NPC dialog continuation: Scientist tile 878 /
+event 56 opens opcode-8 DIALOG, supports fast-forward/page advance, closes with
+the pack released, then resumes at command offset 1 and commits opcode 11
+`CHANGESTATE` with `stateMutation=1` before a successful world redraw.
+Dialog/NOTE/continuation filtering on this code head now carries the live shared
+PlayerState key context instead of silently revalidating with `keys=0`. The
+earlier Marine event 45 failure that exposed this mismatch was not replayed in
+the final supplied trace, so only the event-56 hardware witness is claimed.
+
+Post-PASS review also closed a render-failure-only transaction leak: after a
+successful SELECT-door world/script rollback, a staged CHANGEMAP door owner is
+now aborted before the rollback frame is presented. This does not alter the
+hardware-proven happy path and that failure-only cleanup path was not
+hardware-triggered.
+
+Detailed record:
+
+- [`MILESTONE_NATIVE_CHANGEMAP_ENTRANCE_JUNCTION.md`](MILESTONE_NATIVE_CHANGEMAP_ENTRANCE_JUNCTION.md)
+
+The barrel aggregate-damage-message retest remains a separate UI frontier; its
+historical code boundary stays `1b93651699d981e34b2a10318936ddfa0cf7b2e8`.
 
 ## Current continuation — real-CYD validated
 
