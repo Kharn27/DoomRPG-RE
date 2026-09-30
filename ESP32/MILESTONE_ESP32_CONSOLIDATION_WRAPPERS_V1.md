@@ -5,15 +5,15 @@ Date: 2026-09-29
 ## Boundary
 
 ```text
-main = 8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56
-branch = agent/esp32-consolidation-monster-wraps-v4
-hardware-tested code head = 3f9b862bcbca3d2217efe0b388e3c9914d1d4b23
-esp32-cyd CI #1056 = SUCCESS
+main = 9c9388103d033e40c4081b92b509dd08c544ac36
+branch = agent/esp32-consolidation-monster-turn-view-v5
+hardware-tested code head = 517c37855e18894c4d2292dab20ec7852107549b
+esp32-cyd CI #1064 = SUCCESS
 static RAM = 45776 B
-flash = 815609 B
-artifact id = 11052390593
+flash = 815677 B
+artifact id = 11081649324
 translation units = 173
-active --wrap entries = 59
+active --wrap entries = 58
 ```
 
 ## Consolidation method
@@ -491,23 +491,112 @@ ALIVE uptime=84137 ms heap=82704 heap8=17152 largest8=10228
 Therefore the HUB/automap feedback gate is hardware validated as explicit
 native composition and the linker interception is retired.
 
-## Consolidation checkpoint after six active-wrap removals
+## Explicit MonsterTurn producer/filter composition — REAL-CYD PASS
+
+After the previous six active-wrap removals were merged, this audit starts from
+exact main `9c9388103d033e40c4081b92b509dd08c544ac36`.
+
+The old `--wrap=EspNativeGameplayMonsterTurn_view` mixed three responsibilities
+inside a getter: deferred destructible-turn flushing, raw producer observation,
+and activation/attack filtering. Commit
+`517c37855e18894c4d2292dab20ec7852107549b` separates those responsibilities
+without changing the bounded owners.
+
+The explicit permanent order is:
+
+```text
+PlayerResources session
+ -> MonsterTurn observe/probe producer
+ -> MonsterActivation_serviceTurn
+    -> DestructibleTurn_flush
+    -> filtered cached turn snapshot
+ -> MonsterActivation_turnView (pure read)
+    -> AttackVisual
+    -> Retaliation
+    -> ordinary Movement consumers
+```
+
+ActiveSequence deliberately reads the ordinary raw
+`EspNativeGameplayMonsterTurn_view()` because it owns synthetic expansion of
+one no-attack producer turn across the activated movement order. Its bounded
+counter override now edits only the filtered cached view and restores the saved
+producer counters afterward. `EspNativeGameplayMonsterMovement_service`
+remains wrapped and is explicitly outside this milestone.
+
+Build witness for the exact tested code:
+
+```text
+esp32-cyd CI #1064 = SUCCESS
+static RAM = 45776 B
+flash = 815677 B
+artifact id = 11081649324
+artifact sha256 = d7b2a5c920ac293f10c021e6bb6e22831b21909d4e3d0d138c270278594d0cb3
+translation units = 173
+active --wrap entries = 58
+```
+
+Real-CYD movement proof covers two consecutive turns with four active members.
+Sprites 218 and 237 commit their ordinary moves; sprites 0 and 1 (subtype 4)
+complete their bounded three-goal chains. Both turns close with:
+
+```text
+[MONSTERACTIVESEQ] COMPLETE ... activeCount=4 delivered=4
+sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred
+```
+
+Real-CYD attack proof exercises a true three-loop subtype-4 attack:
+
+```text
+[MONSTERACT] DELIVER actualProbe=1 deliveredProbe=1 sprite=1 reason=4 activated=yes
+[MONSTERATKVIS] ARM ... loops=3 ... gameplayMutation=no
+[MONSTERATKVIS] COMPLETE ... resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT ... playerHP=33->30 armor=23->20 ... rollback=closed
+```
+
+This proves the new pure filtered view is visible to both presentation and
+resolution consumers while gameplay mutation remains deferred until the visual
+lease completes.
+
+The final hardware probe targets the exact side effect previously hidden in the
+getter: an adjacent axe hit clears a subtype-3 jammed line. The line-death
+transaction arms the tiny turn intent while rollback is still available, closes
+the world commit, and only then does the explicit activation service flush it:
+
+```text
+[ACTIONENGINE] TRACE seq=44 ... route=JAMMED_DOOR_CLEARED
+[DESTRUCTIBLETURN] ARM n=1 line=216 ... rollback=armed
+[DESTRUCTIBLE] COMMIT seq=44 line=216 ... turnAdvance=deferred rollback=closed
+[DESTRUCTIBLETURN] REQUEST n=1 line=216 ... rollbackWindow=closed monsterTurn=requested
+[MONSTERTURN] SCHEDULE n=24 reason=PASS_TURN passSeq=3489661144 ...
+[MONSTERACTIVESEQ] COMPLETE ... activeCount=4 delivered=0 ... ordered=yes
+```
+
+The jammed-door run begins and ends at
+`heap=82664 heap8=17112 largest8=7156`. Earlier movement and attack runs are
+stable at `heap=82704 heap8=17152 largest8=10228`. The later absolute heap
+shape reflects runtime/cache state; no transaction-local drift appears in the
+tested replacement.
+
+Therefore `--wrap=EspNativeGameplayMonsterTurn_view` is retired and
+hardware-validated on the real classic CYD.
+
+## Consolidation checkpoint after seven active-wrap removals
 
 Relative to current merged main
-`8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56`:
+`9c9388103d033e40c4081b92b509dd08c544ac36`:
 
 ```text
 translation units = 173 -> 173
-active --wrap flags = 60 -> 59
+active --wrap flags = 59 -> 58
 static RAM = 45776 B -> 45776 B
-flash = 815609 B -> 815609 B
+flash = 815609 B -> 815677 B
 ```
 
 Across the wider consolidation sequence from the earlier 65-wrap baseline:
 
 ```text
 translation units = 175 -> 173
-active --wrap flags = 65 -> 59
+active --wrap flags = 65 -> 58
 ```
 
 Hardware-tested boundaries in order:
@@ -520,17 +609,16 @@ cb45792a... explicit MovementProbe reset composition
 2976cf9f... explicit MonsterTurn post-move composition
 b2c22ee6... obsolete MonsterState view witness + TU retirement
 3f9b862b... explicit HUB/automap action-feedback gate
+517c3785... explicit MonsterTurn producer/filter service boundary
 ```
 
-The remaining active monster-domain wrappers are now the two orchestration
-seams:
+The remaining active monster-domain wrapper is now only:
 
 ```text
-EspNativeGameplayMonsterTurn_view
 EspNativeGameplayMonsterMovement_service
 ```
 
 The branch is hardware-pass. Any commit after
-`3f9b862bcbca3d2217efe0b388e3c9914d1d4b23` must remain documentation-only
-before merge. Future work should audit these two seams as an ownership problem,
-not remove them mechanically.
+`517c37855e18894c4d2292dab20ec7852107549b` must remain documentation-only
+before merge. Future consolidation should audit Movement service as its own
+bounded orchestration milestone rather than remove it mechanically.

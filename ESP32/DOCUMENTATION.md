@@ -13,27 +13,27 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56
-branch = agent/esp32-consolidation-monster-wraps-v4
-hardware-tested code boundary = 3f9b862bcbca3d2217efe0b388e3c9914d1d4b23
-CI = esp32-cyd #1056 SUCCESS
+current main = 9c9388103d033e40c4081b92b509dd08c544ac36
+branch = agent/esp32-consolidation-monster-turn-view-v5
+hardware-tested code boundary = 517c37855e18894c4d2292dab20ec7852107549b
+CI = esp32-cyd #1064 SUCCESS
 static RAM = 45776 B
-flash = 815609 B
-artifact id = 11052390593
+flash = 815677 B
+artifact id = 11081649324
 translation units = 173
-active --wrap flags = 59
-hardware = six active native linker seams retired/replaced and hardware validated; HUB/automap action-feedback gate is now explicit
+active --wrap flags = 58
+hardware = seven active native linker seams retired/replaced; MonsterTurn producer/filter service is explicit and real-CYD validated
 status = branch hardware-pass; documentation-only close in progress
 ```
 
 Current consolidation result from merged main
-`8d5bbaf5445fb4557bbf4f66df6aa6d692bb9a56`:
+`9c9388103d033e40c4081b92b509dd08c544ac36`:
 
 ```text
 ESP32 translation units: 173 -> 173
-active linker --wraps:   60 -> 59
+active linker --wraps:   59 -> 58
 static RAM:              45776 B -> 45776 B
-flash:                   815609 B -> 815609 B
+flash:                   815609 B -> 815677 B
 ```
 
 The dead historical Retaliation compatibility translation unit remains gone.
@@ -60,16 +60,24 @@ made explicit:
    HUB/automap framebuffer ownership now composes explicitly through
    `EspNativeGameplayHubActionGate_service`, which calls the unchanged
    MonsterState action-service chain only while world presentation is active.
+7. `EspNativeGameplayMonsterTurn_view`:
+   `MonsterTurn` remains the raw producer, while
+   `EspNativeGameplayMonsterActivation_serviceTurn` explicitly flushes the
+   deferred destructible-turn intent and builds the filtered cached view.
+   AttackVisual, Retaliation and ordinary movement read the side-effect-free
+   `EspNativeGameplayMonsterActivation_turnView`; ActiveSequence reads the raw
+   producer directly.
 
-The latest real-CYD witness exercises HUB pause, automap pause and normal world
-resume. The second overlay PAUSE proves the previous pause cycle returned to the
-unpaused state, and a following MOVE completes all four active monster members
-in order, including both subtype-4 three-goal chains, with steady `[ALIVE]`.
+The latest real-CYD witness covers the full replacement boundary: two ordered
+four-monster movement turns with both subtype-4 three-goal chains, a real
+three-shot subtype-4 attack through `MONSTERACT -> MONSTERATKVIS ->
+MONSTERRETAL`, and the jammed-door deferred turn bridge through
+`DESTRUCTIBLETURN ARM -> REQUEST` only after `DESTRUCTIBLE COMMIT` and
+rollback closure. No transaction-local heap drift is observed.
 
-Two monster-domain linker wraps remain active:
+One monster-domain linker wrap remains active:
 
 ```text
-EspNativeGameplayMonsterTurn_view
 EspNativeGameplayMonsterMovement_service
 ```
 
