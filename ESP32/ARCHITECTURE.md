@@ -612,3 +612,31 @@ explicitly forbids map loading.
 The hardware-tested final ELF contains none of
 `Menu_startGame`, `DoomCanvas_loadState`, `DoomCanvas_changeStoryPage`,
 `DoomCanvas_disposeIntro` or `DoomCanvas_loadMap`.
+
+
+## Intro disposal and native startup composition
+
+The intro disposer is a resource owner, not a bootstrap interception point.
+The permanent ESP32 composition is explicit:
+
+```text
+Esp32IntroClock_arm
+ -> Esp32IntroDispose_reset
+ -> EspNativeStartup_reset
+
+final intro Continue
+ -> Esp32IntroClock PARK
+ -> Esp32IntroDispose_service
+ -> EspNativeStartup_service
+ -> resident map bootstrap
+```
+
+Do not reintroduce linker wrappers around `Esp32IntroDispose_reset()` or
+`Esp32IntroDispose_service()`. The disposer remains bounded to intro images,
+story text and clipping state; it never loads a map. `EspNativeStartup` owns
+resident-map inventory/load, initial spawn routing and handoff toward the generic
+gameplay session. The intro clock is the narrow composition owner because it
+already owns the validated final-exit state machine.
+
+This boundary was hardware-validated without changing static RAM or Flash and
+reduced active linker wraps from 57 to 55.

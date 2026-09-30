@@ -62,9 +62,6 @@ typedef struct EspNativeStartupState_s {
 
 static EspNativeStartupState startupState;
 
-void __real_Esp32IntroDispose_reset(void);
-void __real_Esp32IntroDispose_service(struct DoomRPG_s* doomRpg);
-
 static int introResourcesAreReleased(const DoomCanvas_t* canvas) {
     return canvas != NULL &&
            canvas->imgSpaceBG.imgBitmap == NULL &&
@@ -372,7 +369,12 @@ static int routeInitialSpawn(DoomRPG_t* doomRpg) {
     return 1;
 }
 
-void __wrap_Esp32IntroDispose_reset(void) {
+/*
+ * Narrow explicit composition surface consumed by native_intro_clock.c.
+ * Keep resident/bootstrap ownership here rather than hiding it behind linker
+ * interception of the resource-only intro disposer.
+ */
+void EspNativeStartup_reset(void) {
     static const EspNativeGameplaySessionConfig freshGame = {
         30U, /* health */
         30U, /* maxHealth */
@@ -383,8 +385,6 @@ void __wrap_Esp32IntroDispose_reset(void) {
         1U,  /* ammoType */
         1U   /* weaponsPresent */
     };
-
-    __real_Esp32IntroDispose_reset();
 
     EspNativeGameplaySession_reset();
     EspMapResidentLifecycle_resetAll();
@@ -399,11 +399,9 @@ void __wrap_Esp32IntroDispose_reset(void) {
     printf("[NATIVEBOOT] RESET generic resident bootstrap armed\n");
 }
 
-void __wrap_Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
+void EspNativeStartup_service(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     int loadResult;
-
-    __real_Esp32IntroDispose_service(doomRpgBase);
 
     if (startupState.stage == ESP_NATIVE_STARTUP_FAILED || doomRpg == NULL) {
         return;

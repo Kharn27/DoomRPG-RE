@@ -20,6 +20,13 @@
 
 #include <esp_heap_caps.h>
 
+/*
+ * Internal owner API. The bootstrap has one consumer: the intro clock's
+ * validated exit path. Keep this narrow rather than growing a generic router.
+ */
+void EspNativeStartup_reset(void);
+void EspNativeStartup_service(struct DoomRPG_s* doomRpg);
+
 #define INTRO_CLOCK_CHECKPOINT_TICKS 20U
 
 typedef struct Esp32IntroClockState_s {
@@ -173,6 +180,7 @@ int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase,
 
     SDL_memset(&clockState, 0, sizeof(clockState));
     Esp32IntroDispose_reset();
+    EspNativeStartup_reset();
 
     if (!boundaryIsSafe(doomRpg) ||
         doomRpg->doomCanvas->storyPage != 0 ||
@@ -221,6 +229,7 @@ void Esp32IntroClock_service(void) {
     if (!clockState.active) {
         if (clockState.exitReadyPark) {
             Esp32IntroDispose_service(clockState.doomRpg);
+            EspNativeStartup_service(clockState.doomRpg);
         }
         return;
     }
