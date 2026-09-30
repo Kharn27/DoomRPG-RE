@@ -512,9 +512,42 @@ handoff.
 Do not reintroduce `MenuSystem_back()` for this domain. It is absent from the
 linked ESP32 firmware.
 
-This does **not** imply that generic `MenuSystem_setMenu()` is ready for
-removal. It still has retained callers in desktop-derived state/menu flows, so a
-future milestone must classify and migrate those callers by responsibility.
-Replacing them all with one new generic ESP32 router would merely rename the
-legacy architecture.
+A later linked-runtime audit showed that generic `MenuSystem_setMenu()` was
+not retained by a live menu/state owner after all. Its only remaining linked
+caller was `DoomCanvas_setupmenu()`, itself reachable solely because a
+bring-up diagnostic forced the monolithic desktop `DoomRPG_Init()` into the
+ELF through `DoomRPG_engineLinkAnchor()`. Retiring that diagnostic anchor let
+the linker remove the complete dead closure. Do not recreate
+`MenuSystem_setMenu()` under a native name; semantic menu owners remain the
+permanent direction.
 
+
+
+## Legacy monolithic initialization is not a runtime owner
+
+The ESP32 runtime must not keep `DoomRPG_Init()` alive merely as a linker
+reachability test. Core construction, layout, retained compatibility startup,
+menu ownership, intro handoff and gameplay startup are already explicit staged
+owners.
+
+The retired historical shape was:
+
+```text
+diagnostic address print
+ -> DoomRPG_engineLinkAnchor
+ -> DoomRPG_Init
+ -> legacy setup/menu/map closure
+```
+
+The permanent rule is:
+
+```text
+explicit ESP32 staged owner
+ -> only the dependencies required by that owner
+ -> linker may discard unrelated desktop/J2ME orchestration
+```
+
+This is an architectural win even when the source files remain compiled as
+behavioral references. Source-level call sites are not evidence of runtime
+ownership; consolidation audits must distinguish source presence, ELF
+reachability and real-CYD execution.

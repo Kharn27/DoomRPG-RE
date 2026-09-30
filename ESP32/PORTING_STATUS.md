@@ -5,18 +5,16 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = c735979a1dcd645208946adececc1ef478bf105f
-branch = agent/esp32-consolidation-legacy-runtime-v7
-hardware-tested code boundary = eb18ea2c5fc090161cee148b1f9aea52c7dc91d9
-CI = esp32-cyd #1083 SUCCESS
-static RAM = 45760 B
-flash = 807377 B
-artifact id = 11088820981
-ESP32 translation units = 174
-legacy desktop src/*.c units compiled = 16
-active --wrap flags = 57
-hardware = runtime ZIP source retired; boot + Start Game + Entrance/Sector1 bidirectional SD->flash restaging + V9 LOAD + live gameplay PASS on real CYD
-status = HARDWARE PASS; Z_Zip.c/miniz absent from final ELF; all commits after eb18ea2c... are documentation-only
+current main = 071febee7ec88958286fb74d82cee9ba61083a85
+branch = agent/esp32-consolidation-legacy-init-anchor-v10
+hardware-tested code boundary = f9ab3bda2cd9aadee2d1be0fc08d49600b7a9141
+CI = esp32-cyd #1159 SUCCESS
+static RAM = 45768 B
+flash = 797697 B
+firmware.bin = 798064 B
+artifact id = 11101108652
+hardware = HELP/OPTIONS native round-trip + START -> full intro -> Entrance native bootstrap -> resident gameplay PASS on real CYD
+status = HARDWARE PASS; DoomRPG_Init / DoomCanvas_setupmenu / MenuSystem_setMenu absent from final ELF; commits after f9ab3bda... are documentation-only
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2145,3 +2143,112 @@ Detailed record:
 
 - [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_BACK_V9.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_BACK_V9.md)
 
+
+
+## Legacy DoomRPG_Init link-anchor retirement — REAL-CYD PASS (2026-09-30)
+
+Hardware-tested code boundary:
+
+```text
+base main = 071febee7ec88958286fb74d82cee9ba61083a85
+branch = agent/esp32-consolidation-legacy-init-anchor-v10
+code head = f9ab3bda2cd9aadee2d1be0fc08d49600b7a9141
+esp32-cyd CI #1159 = SUCCESS
+RAM static = 45768 B
+Flash      = 797697 B
+firmware.bin = 798064 B
+artifact id = 11101108652
+firmware sha256 = 0da05325e6549e80fd887e6bab9e398a321022ff0718f47c0303f00671432d43
+ELF sha256 = ea56e4757e9ff940a245fd6963d91a9193e44f4cad06463b347866287aefb8c8
+```
+
+The `MenuSystem_setMenu()` audit separated source-level call sites from the
+actual linked ESP32 runtime. Source still contains legacy callers in menu,
+death, credits, map-stats, store and cheat/debug paths, but the V9 ELF showed
+that all of those enclosing functions were already dead except
+`DoomCanvas_setupmenu()`.
+
+The remaining linked chain was not a live runtime owner:
+
+```text
+main.cpp diagnostic
+ -> DoomRPG_engineLinkAnchor()
+ -> &DoomRPG_Init
+ -> DoomCanvas_setupmenu()
+ -> MenuSystem_setMenu()
+```
+
+`DoomRPG_engineLinkAnchor()` existed only so the bring-up diagnostic could
+print the address of the inherited monolithic `DoomRPG_Init()`. The actual
+ESP32 runtime already constructs and starts the engine through the staged
+`DoomRPG_initEngineCore()`, layout/startup owners and native menu/gameplay
+handoffs. The branch therefore removes only the diagnostic anchor and its API;
+it does not introduce a replacement menu router.
+
+Exact ELF comparison against the hardware-tested V9 artifact:
+
+```text
+V9 present:
+  DoomRPG_Init              597 B
+  DoomRPG_engineLinkAnchor    8 B
+  DoomCanvas_setupmenu      132 B
+  MenuSystem_setMenu        445 B
+
+V10:
+  DoomRPG_Init              ABSENT
+  DoomRPG_engineLinkAnchor  ABSENT
+  DoomCanvas_setupmenu      ABSENT
+  MenuSystem_setMenu        ABSENT
+  MenuSystem_back           ABSENT
+  MenuSystem_select         ABSENT
+  Menu_select               ABSENT
+
+still intentionally present:
+  Menu_initMenu             PRESENT
+  MenuSystem_playSound      PRESENT
+```
+
+The link anchor retirement removes 17 global legacy functions in total and adds
+no new global function. Besides the four symbols above, the dropped closure
+includes `DoomCanvas_LoadMenuMap`, `DoomCanvas_unloadMedia`,
+`Render_setGrayPalettes`, `Game_loadMapEntities`,
+`Entity_initspawn`, `MenuSystem_moveDir` and `Player_selectWeapon`.
+Linked flash and `firmware.bin` both shrink by 3728 B relative to V9 while
+static RAM remains unchanged.
+
+The real classic CYD validates the retained runtime after that link closure is
+gone. HELP pages down/up and returns through the native Back owner; OPTIONS
+returns through the same owner; both reproduce MENU_MAIN framebuffer
+`522dc605`, keep `heap8=20916` / `largest8=10740`, and retain
+`shapeData=0x0 mediaTexels=0x0`.
+
+START then traverses the full native path:
+
+```text
+MENU_MAIN -> START
+ -> ST_INTRO
+ -> native intro clock/input
+ -> bounded intro disposal
+ -> TransitionPresentation loading
+ -> native /intro.bsp resident runtime
+ -> native spawn/session/cache priming
+ -> ENGINESESSION READY map=1
+```
+
+The final session witness is:
+
+```text
+[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] uptime=64666 ms heap=92492 heap8=26824 largest8=18420 ...
+[ALIVE] uptime=69669 ms heap=92492 heap8=26824 largest8=18420 ...
+```
+
+The submitted runtime excerpt starts after cold boot, so it does not contain the
+new informational `[LEGACYINIT] ... anchor=retired` line. That line is not
+claimed as a hardware witness. Static ELF inspection proves the link retirement;
+the real-CYD run proves the retained menu/intro/native-gameplay runtime remains
+functional without that closure.
+
+Detailed record:
+
+- [`MILESTONE_ESP32_CONSOLIDATION_LEGACY_INIT_ANCHOR_V10.md`](MILESTONE_ESP32_CONSOLIDATION_LEGACY_INIT_ANCHOR_V10.md)

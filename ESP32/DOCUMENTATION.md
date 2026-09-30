@@ -13,18 +13,16 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = c735979a1dcd645208946adececc1ef478bf105f
-branch = agent/esp32-consolidation-legacy-runtime-v7
-hardware-tested code boundary = eb18ea2c5fc090161cee148b1f9aea52c7dc91d9
-CI = esp32-cyd #1083 SUCCESS
-static RAM = 45760 B
-flash = 807377 B
-artifact id = 11088820981
-ESP32 translation units = 174
-legacy desktop src/*.c units compiled = 16
-active --wrap flags = 57
-hardware = runtime ZIP source retired; bidirectional Entrance/Sector1 SD->raw-flash restaging + V9 LOAD + live gameplay PASS
-status = hardware-pass; Z_Zip.c + miniz absent from final ELF; documentation-only close in progress
+current main = 071febee7ec88958286fb74d82cee9ba61083a85
+branch = agent/esp32-consolidation-legacy-init-anchor-v10
+hardware-tested code boundary = f9ab3bda2cd9aadee2d1be0fc08d49600b7a9141
+CI = esp32-cyd #1159 SUCCESS
+static RAM = 45768 B
+flash = 797697 B
+firmware.bin = 798064 B
+artifact id = 11101108652
+hardware = HELP/OPTIONS native round-trip + START -> intro -> Entrance native gameplay PASS
+status = hardware-pass; legacy DoomRPG_Init link anchor retired; documentation-only close in progress
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1238,3 +1236,37 @@ generic native wrapper.
 See
 [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_BACK_V9.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_BACK_V9.md).
 
+
+
+## Legacy monolithic init anchor retired
+
+The ESP32 build no longer keeps the inherited `DoomRPG_Init()` call graph alive
+just so a startup diagnostic can print its address.
+
+The old diagnostic closure was:
+
+```text
+DoomRPG_engineLinkAnchor()
+ -> DoomRPG_Init
+ -> DoomCanvas_setupmenu
+ -> MenuSystem_setMenu
+```
+
+The real runtime already uses the staged ESP32 owners
+`DoomRPG_initEngineCore()`, `DoomRPG_startEngineLayout()`, explicit startup
+bridges, the native main-menu dispatcher and the native intro/gameplay session.
+No generic replacement router was added.
+
+At hardware-tested head
+`f9ab3bda2cd9aadee2d1be0fc08d49600b7a9141` / CI #1159, the final ELF contains
+none of `DoomRPG_Init`, `DoomRPG_engineLinkAnchor`,
+`DoomCanvas_setupmenu` or `MenuSystem_setMenu`. Static RAM remains 45768 B;
+linked flash and firmware both shrink by 3728 B from the V9 artifact.
+
+The real classic CYD revalidated HELP/OPTIONS Back and a complete START path
+through intro disposal, Entrance resident loading/cache priming and
+`ENGINESESSION READY`. Final ALIVE samples are stable at
+`heap=92492 heap8=26824 largest8=18420`.
+
+See
+[`MILESTONE_ESP32_CONSOLIDATION_LEGACY_INIT_ANCHOR_V10.md`](MILESTONE_ESP32_CONSOLIDATION_LEGACY_INIT_ANCHOR_V10.md).
