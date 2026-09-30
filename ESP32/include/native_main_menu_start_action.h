@@ -11,11 +11,12 @@ struct DoomRPG_s;
  * images stay resident for later menu returns. */
 int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpg);
 
-/* Execute the real MENU_MAIN Start Game action up to the next bounded ESP32
- * boundary. On a fresh profile this runs MenuSystem_select(), Menu_startGame(),
+/* Execute the MENU_MAIN Start Game action up to the next bounded ESP32
+ * boundary. On a fresh profile the native menu model composes the selection
+ * directly, then the retained narrow Menu_startGame(new) behavior performs
  * Player_reset() and DoomCanvas_setState(ST_INTRO), loads the real prologue
- * resources, then renders/presents exactly one deterministic intro frame.
- * No active DoomCanvas_run() loop, intro input or gameplay/map load is started.
+ * resources, and renders/presents exactly one deterministic intro frame.
+ * No desktop-wide Menu_select()/MenuSystem_select() dispatch is used.
  */
 int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpg);
 

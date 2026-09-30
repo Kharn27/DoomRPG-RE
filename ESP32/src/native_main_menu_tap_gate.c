@@ -4,12 +4,11 @@
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
+#include "MenuSystem.h"
 
 #include "native_main_menu_160x120_layout.h"
-#include "native_main_menu_load_action.h"
-#include "native_main_menu_options_action.h"
-#include "native_main_menu_options_back.h"
-#include "native_main_menu_start_action.h"
+#include "native_main_menu_actions.h"
+#include "native_main_menu_present.h"
 #include "native_main_menu_touch.h"
 #include "platform_touch_events.h"
 #include "platform_video_config.h"
@@ -127,53 +126,39 @@ static void disableMainMenuTouchForTransition(void) {
 #endif
 }
 
-static void executeConfirmedStart(void) {
-    disableMainMenuTouchForTransition();
+static void executeConfirmedAction(int item) {
+    DoomRpgEsp32MainMenuDispatchResult result;
 
     if (doomRpg == NULL) {
-        printf("[MAINSTART] FAILED global DoomRPG unavailable at confirmed Start tap\n");
+        printf("[MAINACTION] FAILED global DoomRPG unavailable item=%d\n", item);
         return;
     }
 
-    if (!DoomRPG_esp32ActivateMainMenuStart(doomRpg)) {
-        printf("[MAINSTART] FAILED confirmed Start Game action\n");
-    }
-}
-
-static void executeConfirmedOptions(void) {
-    uint32_t optionsFramebufferFNV = 0U;
-
-    /* Remove MENU_MAIN touch before mutating the real menu model. The Options
-     * action owns the display transition; after it succeeds, arm only the
-     * deliberately narrow Back callback for the new menu.
+    /* LOAD can fail closed while intentionally leaving MENU_MAIN active (for
+     * example the hardware-tested NO SAVE feedback). Other actions leave the
+     * dashboard on success, so retire its callback before changing ownership.
      */
-    disableMainMenuTouchForTransition();
-
-    if (doomRpg == NULL) {
-        printf("[MAINOPTIONS] FAILED global DoomRPG unavailable at confirmed Options tap\n");
-        return;
+    if (item != DOOMRPG_ESP32_MAIN_MENU_ACTION_LOAD) {
+        disableMainMenuTouchForTransition();
     }
 
-    if (!DoomRPG_esp32ActivateMainMenuOptions(
-            doomRpg, &optionsFramebufferFNV)) {
-        printf("[MAINOPTIONS] FAILED confirmed Options action\n");
-        return;
+    result = DoomRPG_esp32MainMenuDispatchConfirmed(doomRpg, item);
+    if (result == DOOMRPG_ESP32_MAIN_MENU_DISPATCH_FAILED) {
+        printf("[MAINACTION] FAILED dispatch item=%d; recovery=attempt\n", item);
+        if (!DoomRPG_esp32MainMenuRecover(doomRpg, "dispatch-failed")) {
+            printf("[MAINACTION] FAILED recovery item=%d state=%d menu=%d\n",
+                   item,
+                   doomRpg->doomCanvas != NULL
+                       ? doomRpg->doomCanvas->state : -999,
+                   doomRpg->menuSystem != NULL
+                       ? doomRpg->menuSystem->menu : -999);
+        }
     }
-
-    if (!DoomRPG_esp32OptionsBackActivate(doomRpg,
-                                          optionsFramebufferFNV)) {
-        printf("[OPTIONBACK] FAILED arming Back after Options transition\n");
+    else if (result == DOOMRPG_ESP32_MAIN_MENU_DISPATCH_STAY_MAIN) {
+        printf("[MAINACTION] STAY item=%d owner=MENU_MAIN\n", item);
     }
-}
-
-static void executeConfirmedLoad(void) {
-    if (doomRpg == NULL) {
-        printf("[MAINLOAD] FAILED global DoomRPG unavailable at confirmed Load tap\n");
-        return;
-    }
-
-    if (!DoomRPG_esp32ActivateMainMenuLoad(doomRpg)) {
-        printf("[MAINLOAD] Load Game not started; menu remains available when recoverable\n");
+    else {
+        printf("[MAINACTION] COMPLETE item=%d owner=transitioned\n", item);
     }
 }
 
@@ -209,35 +194,11 @@ static void gatedTap(int16_t screenX,
     }
 
     if (lastTappedItem == hit) {
-        if (hit == 0) {
-            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=0 action=execute-start-game\n",
-                   (unsigned int)gateTapCount);
-            lastTappedItem = -1;
-            executeConfirmedStart();
-            return;
-        }
-
-        if (hit == 1) {
-            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=1 action=load-game\n",
-                   (unsigned int)gateTapCount);
-            lastTappedItem = -1;
-            executeConfirmedLoad();
-            return;
-        }
-
-        if (hit == 2) {
-            printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=2 action=execute-options\n",
-                   (unsigned int)gateTapCount);
-            lastTappedItem = -1;
-            executeConfirmedOptions();
-            return;
-        }
-
-        printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=%d action=deferred\n",
+        printf("[MENUTOUCH] GATE tap=%u CONFIRM-PASS item=%d action=native-dispatch\n",
                (unsigned int)gateTapCount,
                hit);
-        downstreamTapCallback(screenX, screenY, pressure, rawX, rawY);
         lastTappedItem = -1;
+        executeConfirmedAction(hit);
         return;
     }
 
@@ -255,7 +216,7 @@ static void gatedTap(int16_t screenX,
 
 /* Intercept only callback registration, not XPT2046 sampling. This keeps the
  * generic PlatformInput driver unaware of menu semantics. MENU_MAIN gets the
- * validated select/confirm gate; other callbacks (currently Options Back only)
+ * validated select/confirm gate; other callbacks (currently bounded Options/Help Back owners)
  * pass through unchanged.
  */
 void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
@@ -291,7 +252,7 @@ void __wrap_PlatformInput_setTapCallback(PlatformTapCallback callback) {
         registerMainMenuHitboxOverlay();
 #endif
         __real_PlatformInput_setTapCallback(gatedTap);
-        printf("[MENUTOUCH] GATE READY initialSelected=0 dashboard=2x2 firstTap=bright-arm secondReleasedSameTap=confirm startAction=enabled optionsAction=enabled loadAction=enabled\n");
+        printf("[MENUTOUCH] GATE READY initialSelected=0 dashboard=2x2 firstTap=bright-arm secondReleasedSameTap=confirm startAction=enabled loadAction=enabled optionsAction=enabled helpAction=enabled\n");
     }
     else {
         downstreamTapCallback = callback;

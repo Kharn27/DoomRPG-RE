@@ -453,3 +453,45 @@ When the engine reaches another BSP, the expected implementation work is:
 If that BSP exposes an unsupported opcode or entity behavior, implement **that
 behavior family once**, test it against every relevant map corpus, and keep the
 map itself as data.
+
+## Main-menu selection ownership
+
+MENU_MAIN selection is now an explicit native composition boundary.
+
+Permanent direction:
+
+```text
+touch/presentation model
+ -> semantic action dispatcher
+ -> START | LOAD | OPTIONS | HELP owners
+```
+
+Do not reintroduce `MenuSystem_select()` or `Menu_select()` as a generic
+routing shortcut. Their ESP32 linked implementations are already gone.
+
+The current model bridge is intentionally transitional: `MenuSystem_t` and
+`Menu_initMenu()` may still provide bounded fixed-item construction while
+permanent native menu-model ownership is completed. Main-menu Help is already
+an exception: its PAK resource is parsed by the bounded native model owner and
+does not call the legacy Help parser. Return navigation still passes through the
+explicit `MenuSystem_back()` seam for OPTIONS and HELP; that is the next
+bounded consolidation target.
+
+Main-menu presentation invariants now have one owner,
+`native_main_menu_present`, for framebuffer hashing, graphics-boundary checks
+and fail-safe return to MENU_MAIN. A recovery may run only while ST_MENU still
+owns the UI; it must never pull ST_INTRO or ST_PLAYING back into menu state.
+
+Action APIs should distinguish expected user outcomes from failures. Main-menu
+LOAD therefore exposes typed NO_SAVE / RECOVERED / TRANSITIONED / FATAL
+results rather than a boolean whose meaning depends on current menu state.
+
+START and LOAD are distinct permanent semantics. START always creates a new
+game. The native checkpoint file is owned only by LOAD; desktop
+`Config/Player/Player2/World` save discovery is not part of the ESP32 runtime
+contract.
+
+HELP already owns its paging/input natively, so future visual redesign should be
+a presentation-only change rather than a reason to restore legacy menu
+selection/render orchestration.
+

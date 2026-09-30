@@ -12,6 +12,7 @@
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_overlay_probe.h"
+#include "native_main_menu_present.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
@@ -44,26 +45,6 @@ static uint32_t heap8Free(void) {
 
 static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-}
-
-static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
-    uint32_t hash = 2166136261U;
-    uint32_t i;
-
-    for (i = 0; i < length; ++i) {
-        hash ^= data[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-static uint32_t framebufferHash(const Render_t* render) {
-    if (render == NULL || render->framebuffer == NULL || render->pitch <= 0) {
-        return 0U;
-    }
-
-    return fnv1a32((const uint8_t*)render->framebuffer,
-                   (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
 }
 
 static uint32_t fnvMixU32(uint32_t hash, uint32_t value) {
@@ -174,7 +155,7 @@ static int drawEsp32MainMenuLayout(
     if (SDL_RenderCopy(NULL, menuSystem->imgLogo.imgBitmap, NULL, &logoDst) != 0) {
         return 0;
     }
-    stageHashes[0] = framebufferHash(doomRpg->render);
+    stageHashes[0] = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
 
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
 
@@ -205,7 +186,7 @@ static int drawEsp32MainMenuLayout(
                             -1,
                             false);
 
-        stageHashes[itemIndex + 1] = framebufferHash(doomRpg->render);
+        stageHashes[itemIndex + 1] = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
     }
 
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
@@ -264,7 +245,7 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    sceneHash = framebufferHash(render);
+    sceneHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     printf("[MAINLAYOUT] Begin sceneFNV=%08x expected=%08x faithfulOriginalFNV=%08x heap8=%u largest8=%u\n",
            (unsigned int)sceneHash,
            (unsigned int)EXPECTED_NATIVE_SCENE_FNV,
@@ -394,7 +375,7 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
                (unsigned int)stageHashes[i + 1]);
     }
 
-    finalHash = framebufferHash(render);
+    finalHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     heapAfter = heap8Free();
     largestAfter = largest8Block();
 

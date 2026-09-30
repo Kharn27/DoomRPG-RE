@@ -9,10 +9,13 @@
 #include "MenuItem.h"
 #include "MenuSystem.h"
 #include "Render.h"
+#include "Sound.h"
 
 #include "native_main_menu_160x120_layout.h"
+#include "native_main_menu_model.h"
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_touch.h"
+#include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
@@ -45,26 +48,6 @@ static uint32_t heap8Free(void) {
 
 static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-}
-
-static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
-    uint32_t hash = 2166136261U;
-    uint32_t i;
-
-    for (i = 0; i < length; ++i) {
-        hash ^= data[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-static uint32_t framebufferHash(const Render_t* render) {
-    if (render == NULL || render->framebuffer == NULL || render->pitch <= 0) {
-        return 0U;
-    }
-
-    return fnv1a32((const uint8_t*)render->framebuffer,
-                   (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
 }
 
 static uint32_t modelHash(const MenuSystem_t* menuSystem) {
@@ -102,23 +85,6 @@ static uint32_t modelHash(const MenuSystem_t* menuSystem) {
     return hash;
 }
 
-static int graphicsBoundaryIsSafe(const DoomRPG_t* doomRpg) {
-    const Render_t* render;
-
-    if (doomRpg == NULL || doomRpg->render == NULL ||
-        doomRpg->doomCanvas == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->menu == NULL) {
-        return 0;
-    }
-
-    render = doomRpg->render;
-    return render->framebuffer != NULL &&
-           render->shapeData == NULL &&
-           render->mediaTexels == NULL &&
-           !EspNativeWallCache_isActive() &&
-           !EspNativeSpriteCache_isActive();
-}
-
 static int validateOptionsModel(const MenuSystem_t* menuSystem) {
     int i;
 
@@ -149,7 +115,7 @@ int DoomRPG_esp32PaintMainMenuOptionsDashboard(
     uint32_t* framebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
 
-    if (!graphicsBoundaryIsSafe(doomRpg) ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         !validateOptionsModel(doomRpg->menuSystem)) {
         return 0;
     }
@@ -190,7 +156,7 @@ static int paintOptionsBounded(DoomRPG_t* doomRpg,
     if (SDL_RenderCopy(NULL, menuSystem->imgLogo.imgBitmap, NULL, &logoDst) != 0) {
         return 0;
     }
-    logoHash = framebufferHash(doomRpg->render);
+    logoHash = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
     if (logoHash == 0U ||
         !DoomRPG_esp32PaintMainMenuOptionsDashboard(
             doomRpg, 0, &finalHash) ||
@@ -223,14 +189,14 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Options action ===\n");
 
-    if (!graphicsBoundaryIsSafe(doomRpg)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINOPTIONS] FAILED core/graphics boundary unavailable\n");
         return 0;
     }
 
     menuSystem = doomRpg->menuSystem;
     render = doomRpg->render;
-    inputHash = framebufferHash(render);
+    inputHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     expectedInputHash =
         DoomRPG_esp32MainMenuSelectionFramebufferFNV(2);
 
@@ -258,13 +224,19 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
     heapBefore = heap8Free();
     largestBefore = largest8Block();
 
-    /* The retained J2ME Menu_select() still assigns Options to semantic row 1.
-     * The ESP32 presentation places Load Game there, so translate only for the
-     * instant in which the original transition is invoked. */
-    menuSystem->selectedIndex = 1;
-    MenuSystem_select(menuSystem);
+    /*
+     * Options is a fixed MENU_MAIN transition. The native model owner rebuilds
+     * only MENU_MAIN_OPTIONS; no desktop-wide selector or setMenu routing is
+     * involved, and the finger-first card index no longer needs translation.
+     */
+    Sound_playSound(doomRpg->sound, 5046, 0, 3);
+    if (!DoomRPG_esp32MainMenuModelEnter(
+            doomRpg, MENU_MAIN_OPTIONS)) {
+        printf("[MAINOPTIONS] FAILED entering native Options model\n");
+        return 0;
+    }
 
-    if (!graphicsBoundaryIsSafe(doomRpg) || !validateOptionsModel(menuSystem)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) || !validateOptionsModel(menuSystem)) {
         printf("[MAINOPTIONS] FAILED real transition menu=%d type=%d old=%d selected=%d scroll=%d items=%d state=%d shapeData=%p mediaTexels=%p\n",
                menuSystem->menu,
                menuSystem->type,
@@ -336,6 +308,6 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
     SDL_RenderPresent(NULL);
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
     printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared 2x2 dashboard paint\n");
-    printf("[MAINOPTIONS] READY MenuSystem_select executed for Options; no legacy Render_render, no map reload, no gameplay loader\n");
+    printf("[MAINOPTIONS] READY explicit MENU_MAIN -> MENU_MAIN_OPTIONS composition; no legacy Render_render, no map reload, no gameplay loader\n");
     return 1;
 }

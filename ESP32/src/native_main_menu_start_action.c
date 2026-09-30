@@ -9,11 +9,14 @@
 #include "MenuSystem.h"
 #include "Player.h"
 #include "Render.h"
+#include "Sound.h"
 
 #include "esp_legacy_asset_source.h"
 #include "native_intro_first_frame.h"
+#include "native_main_menu_model.h"
 #include "native_main_menu_start_action.h"
 #include "native_main_menu_touch.h"
+#include "native_main_menu_present.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
@@ -36,43 +39,6 @@ static uint32_t heap8Free(void) {
 
 static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-}
-
-static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
-    uint32_t hash = 2166136261U;
-    uint32_t i;
-
-    for (i = 0; i < length; ++i) {
-        hash ^= data[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-static uint32_t framebufferHash(const Render_t* render) {
-    if (render == NULL || render->framebuffer == NULL || render->pitch <= 0) {
-        return 0U;
-    }
-
-    return fnv1a32((const uint8_t*)render->framebuffer,
-                   (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
-}
-
-static int graphicsBoundaryIsSafe(const DoomRPG_t* doomRpg) {
-    const Render_t* render;
-
-    if (doomRpg == NULL || doomRpg->render == NULL ||
-        doomRpg->doomCanvas == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->menu == NULL || doomRpg->player == NULL) {
-        return 0;
-    }
-
-    render = doomRpg->render;
-    return render->framebuffer != NULL &&
-           render->shapeData == NULL &&
-           render->mediaTexels == NULL &&
-           !EspNativeWallCache_isActive() &&
-           !EspNativeSpriteCache_isActive();
 }
 
 static int playerHasFreshResetContract(const Player_t* player) {
@@ -176,12 +142,11 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     uint32_t heapAfter;
     uint32_t largestBefore;
     uint32_t largestAfter;
-    int hasExistingSave;
     uint32_t expectedInputHash;
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Start Game entry ===\n");
 
-    if (!graphicsBoundaryIsSafe(doomRpg)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) || doomRpg->player == NULL)  {
         printf("[MAINSTART] FAILED core/graphics boundary unavailable\n");
         return 0;
     }
@@ -190,7 +155,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     menuSystem = doomRpg->menuSystem;
     player = doomRpg->player;
     render = doomRpg->render;
-    inputHash = framebufferHash(render);
+    inputHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     expectedInputHash =
         DoomRPG_esp32MainMenuSelectionFramebufferFNV(0);
 
@@ -232,21 +197,32 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
            player->totalDeaths);
 
     printIntroAssetPlan();
+    /*
+     * START is unconditional on ESP32: the dedicated LOAD card owns checkpoint
+     * resume. A save file must never redirect START into legacy Continue.
+     */
+    printf("[MAINSTART] Route=new-game-only savePresence=ignored loadOwner=dedicated-LOAD-card\n");
 
-    hasExistingSave = Game_checkConfigVersion(doomRpg->game) ? 1 : 0;
-    printf("[MAINSTART] Existing-save precheck=%s\n",
-           hasExistingSave ? "yes -> keep menu runtime" : "no -> fresh cleanup allowed");
-
-    if (!hasExistingSave && !DoomRPG_esp32ReleaseMainMenuMemory(doomRpg)) {
-        printf("[MAINSTART] FAILED fresh-start menu memory cleanup contract\n");
+    if (!DoomRPG_esp32ReleaseMainMenuMemory(doomRpg)) {
+        printf("[MAINSTART] FAILED new-game menu memory cleanup contract\n");
         return 0;
     }
 
     heapBefore = heap8Free();
     largestBefore = largest8Block();
-    MenuSystem_select(menuSystem);
+    /*
+     * The dedicated LOAD card owns resume. START always performs the real
+     * legacy-compatible new-game/player/intro transition; the compact native
+     * menu-model owner only closes MENU_MAIN afterward.
+     */
+    Sound_playSound(doomRpg->sound, 5046, 0, 3);
+    Menu_startGame(doomRpg->menu, 1);
+    if (!DoomRPG_esp32MainMenuModelLeave(doomRpg)) {
+        printf("[MAINSTART] FAILED leaving MENU_MAIN model for intro\n");
+        return 0;
+    }
 
-    outputHash = framebufferHash(render);
+    outputHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     heapAfter = heap8Free();
     largestAfter = largest8Block();
 
@@ -263,18 +239,13 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
            (int)heapBefore - (int)heapAfter,
            (int)largestBefore - (int)largestAfter);
 
-    if (!graphicsBoundaryIsSafe(doomRpg)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINSTART] FAILED graphics boundary changed shapeData=%p mediaTexels=%p wallCache=%d spriteCache=%d\n",
                (void*)render->shapeData,
                (void*)render->mediaTexels,
                EspNativeWallCache_isActive(),
                EspNativeSpriteCache_isActive());
         return 0;
-    }
-
-    if (menuSystem->menu == MENU_MAIN_CONTINUE) {
-        printf("[MAINSTART] READY existing-save path reached MENU_MAIN_CONTINUE; Continue/New Game painter intentionally deferred\n");
-        return 1;
     }
 
     printf("[MAINSTART] Player after level=%d xp=%d nextXP=%d credits=%d keys=%d ammo1=%u weapon=%d weapons=%08x disabled=%08x deaths=%d\n",
@@ -307,7 +278,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    printf("[MAINSTART] READY real MenuSystem_select -> Menu_startGame(new) -> Player_reset -> ST_INTRO\n");
+    printf("[MAINSTART] READY explicit MENU_MAIN start composition -> Menu_startGame(new) -> Player_reset -> ST_INTRO\n");
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
 
     if (!DoomRPG_esp32RenderFirstIntroFrame(doomRpg)) {

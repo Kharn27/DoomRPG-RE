@@ -1168,3 +1168,45 @@ this bounded owner set.
 
 See
 [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md).
+
+## Main-menu semantic dispatcher
+
+The classic-CYD main menu now owns selection semantically rather than routing
+through the desktop/J2ME generic SELECT chain.
+
+```text
+2x2 touch gate
+ -> native semantic dispatcher
+    START   -> always new game
+    LOAD    -> native checkpoint resume
+    OPTIONS -> bounded options dashboard
+    HELP    -> bounded paged help
+```
+
+The produced ESP32 ELF no longer contains `Menu_select` or
+`MenuSystem_select`. `MenuSystem_t` remains a temporary bounded model
+container. `Menu_initMenu` remains transitional for retained fixed menu
+models, but main-menu Help no longer delegates `help.txt` parsing to it: Help
+uses a PAK-backed size/item/line-bounded native parser.
+
+Help is now a native opaque list viewer with eight visible lines and a permanent
+BACK / UP / DOWN footer. The current styling is functional rather than final;
+later visual polish does not require restoring generic legacy menu rendering.
+
+A source audit removed the obsolete START "Continue" branch: it depended on
+`Game_checkConfigVersion()`, which checks the legacy desktop files
+`Config/Player/Player2/World` and cannot identify the native V9 checkpoint.
+START is new-game-only; LOAD exclusively owns resume.
+
+A shared `native_main_menu_present` owner now centralizes framebuffer hashing,
+graphics-boundary validation and MENU_MAIN failure recovery. Recovery rebuilds
+and repaints the main dashboard and re-arms touch only while ST_MENU still owns
+the UI. LOAD reports typed NO_SAVE / RECOVERED / TRANSITIONED / FATAL outcomes
+instead of treating every failure as a normal stay-main condition.
+
+Hardware-tested boundary:
+`cd5f24dd0ff538a85cebc02025de48cb5998401e` (CI #1135/#1136).
+
+See
+[`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md).
+

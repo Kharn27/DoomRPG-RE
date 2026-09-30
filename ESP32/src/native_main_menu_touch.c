@@ -11,6 +11,7 @@
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_touch.h"
+#include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
@@ -35,24 +36,6 @@ static uint32_t heap8Free(void) {
 
 static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-}
-
-static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
-    uint32_t hash = 2166136261U;
-    uint32_t i;
-    for (i = 0; i < length; ++i) {
-        hash ^= data[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-static uint32_t framebufferHash(const Render_t* render) {
-    if (render == NULL || render->framebuffer == NULL || render->pitch <= 0) {
-        return 0U;
-    }
-    return fnv1a32((const uint8_t*)render->framebuffer,
-                   (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
 }
 
 static void cardRect(int item,
@@ -88,20 +71,6 @@ static int findHitItem(int logicalX, int logicalY) {
     return -1;
 }
 
-static int graphicsBoundaryIsSafe(const DoomRPG_t* doomRpg) {
-    const Render_t* render;
-    if (doomRpg == NULL || doomRpg->render == NULL ||
-        doomRpg->doomCanvas == NULL || doomRpg->menuSystem == NULL) {
-        return 0;
-    }
-    render = doomRpg->render;
-    return render->framebuffer != NULL &&
-           render->shapeData == NULL &&
-           render->mediaTexels == NULL &&
-           !EspNativeWallCache_isActive() &&
-           !EspNativeSpriteCache_isActive();
-}
-
 int DoomRPG_esp32MainMenuTouchPrepare(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     int i;
@@ -112,7 +81,7 @@ int DoomRPG_esp32MainMenuTouchPrepare(struct DoomRPG_s* doomRpgBase) {
     PlatformInput_setTapCallback(NULL);
     memset(selectionHashes, 0, sizeof(selectionHashes));
 
-    if (!graphicsBoundaryIsSafe(doomRpg) ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         doomRpg->menuSystem->menu != MENU_MAIN ||
         doomRpg->menuSystem->numItems != DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT ||
         doomRpg->doomCanvas->displayRect.w != DOOMRPG_LOGICAL_WIDTH ||
@@ -157,11 +126,11 @@ int DoomRPG_esp32MainMenuTouchActivate(struct DoomRPG_s* doomRpgBase,
     uint32_t currentHash;
 
     if (!touchPrepared || doomRpg == NULL || doomRpg != touchDoomRpg ||
-        !graphicsBoundaryIsSafe(doomRpg)) {
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MENUTOUCH] FAILED activate prepared=%d sameDoom=%d safe=%d\n",
                touchPrepared,
                doomRpg == touchDoomRpg,
-               graphicsBoundaryIsSafe(doomRpg));
+               DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg));
         return 0;
     }
 
@@ -173,7 +142,7 @@ int DoomRPG_esp32MainMenuTouchActivate(struct DoomRPG_s* doomRpgBase,
         return 0;
     }
 
-    currentHash = framebufferHash(doomRpg->render);
+    currentHash = DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render);
     if (currentHash == 0U || currentHash != initialFramebufferFNV) {
         printf("[MENUTOUCH] FAILED activate framebuffer=%08x supplied=%08x\n",
                (unsigned int)currentHash,
@@ -209,7 +178,7 @@ int DoomRPG_esp32MainMenuTouchArmSelected(int itemIndex) {
     uint32_t frameHash = 0U;
 
     if (!touchActive || touchDoomRpg == NULL ||
-        !graphicsBoundaryIsSafe(touchDoomRpg) ||
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(touchDoomRpg) ||
         touchDoomRpg->menuSystem->menu != MENU_MAIN ||
         touchDoomRpg->menuSystem->selectedIndex != itemIndex ||
         itemIndex < 0 ||
@@ -234,7 +203,7 @@ int DoomRPG_esp32MainMenuTouchArmSelected(int itemIndex) {
     heapAfter = heap8Free();
     largestAfter = largest8Block();
     if (heapAfter != heapBefore || largestAfter != largestBefore ||
-        !graphicsBoundaryIsSafe(touchDoomRpg)) {
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(touchDoomRpg)) {
         printf("[MENUTOUCH] FAILED arm invariant item=%d heap8=%u->%u largest8=%u->%u\n",
                itemIndex,
                (unsigned int)heapBefore,
@@ -293,7 +262,7 @@ void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
     menuSystem = touchDoomRpg->menuSystem;
     render = touchDoomRpg->render;
 
-    if (!graphicsBoundaryIsSafe(touchDoomRpg) ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(touchDoomRpg) ||
         menuSystem->menu != MENU_MAIN ||
         menuSystem->selectedIndex < 0 ||
         menuSystem->selectedIndex >= DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
@@ -311,7 +280,7 @@ void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
     logicalY = screenY / DOOMRPG_INTEGER_SCALE;
     hit = findHitItem(logicalX, logicalY);
     selectedBefore = menuSystem->selectedIndex;
-    hashBefore = framebufferHash(render);
+    hashBefore = DoomRPG_esp32MainMenuFramebufferHash(render);
     tapCount++;
 
     printf("[MENUTOUCH] TAP n=%u raw=%u,%u pressure=%u physical=%d,%d logical=%d,%d hit=%d selectedBefore=%d\n",
@@ -378,7 +347,7 @@ void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
     if (hashAfter == 0U || hashAfter == hashBefore ||
         heapAfter != heapBefore ||
         largestAfter != largestBefore ||
-        !graphicsBoundaryIsSafe(touchDoomRpg)) {
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(touchDoomRpg)) {
         printf("[MENUTOUCH] FAILED selection invariant before=%08x after=%08x heapDelta=%d largestDelta=%d\n",
                (unsigned int)hashBefore,
                (unsigned int)hashAfter,

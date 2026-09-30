@@ -12,6 +12,7 @@
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_options_back.h"
 #include "native_main_menu_touch.h"
+#include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
@@ -34,42 +35,6 @@ static int optionsBackActive = 0;
 static int backArmed = 0;
 static uint32_t optionsTapCount = 0;
 static uint32_t optionsExpectedFrameFNV = 0U;
-
-static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
-    uint32_t hash = 2166136261U;
-    uint32_t i;
-
-    for (i = 0; i < length; ++i) {
-        hash ^= data[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-static uint32_t framebufferHash(const Render_t* render) {
-    if (render == NULL || render->framebuffer == NULL || render->pitch <= 0) {
-        return 0U;
-    }
-
-    return fnv1a32((const uint8_t*)render->framebuffer,
-                   (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
-}
-
-static int graphicsBoundaryIsSafe(const DoomRPG_t* doomRpg) {
-    const Render_t* render;
-
-    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->menuSystem == NULL || doomRpg->render == NULL) {
-        return 0;
-    }
-
-    render = doomRpg->render;
-    return render->framebuffer != NULL &&
-           render->shapeData == NULL &&
-           render->mediaTexels == NULL &&
-           !EspNativeWallCache_isActive() &&
-           !EspNativeSpriteCache_isActive();
-}
 
 static int optionsItemAt(int16_t screenX, int16_t screenY) {
     const int logicalX = screenX / DOOMRPG_INTEGER_SCALE;
@@ -162,20 +127,20 @@ static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
            menuSystem->menu,
            menuSystem->selectedIndex,
            menuSystem->oldMenu,
-           (unsigned int)framebufferHash(render),
+           (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(render),
            (void*)render->shapeData,
            (void*)render->mediaTexels);
 
-    if (!graphicsBoundaryIsSafe(doomRpg) ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         menuSystem->menu != MENU_MAIN_OPTIONS ||
         menuSystem->selectedIndex != OPTIONS_BACK_ITEM ||
         optionsExpectedFrameFNV == 0U ||
-        framebufferHash(render) != optionsExpectedFrameFNV) {
+        DoomRPG_esp32MainMenuFramebufferHash(render) != optionsExpectedFrameFNV) {
         printf("[OPTIONBACK] FAILED precondition safe=%d menu=%d selected=%d framebuffer=%08x expected=%08x\n",
-               graphicsBoundaryIsSafe(doomRpg),
+               DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg),
                menuSystem->menu,
                menuSystem->selectedIndex,
-               (unsigned int)framebufferHash(render),
+               (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(render),
                (unsigned int)optionsExpectedFrameFNV);
         return 0;
     }
@@ -188,7 +153,7 @@ static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
      */
     MenuSystem_back(menuSystem);
 
-    if (!graphicsBoundaryIsSafe(doomRpg) ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         menuSystem->menu != MENU_MAIN ||
         menuSystem->selectedIndex != 0 ||
         menuSystem->numItems != 4) {
@@ -220,7 +185,7 @@ static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
     printf("[OPTIONBACK] FAST End framebufferFNV=%08x expected=%08x runtimeFNV=%08x menu=%d selected=%d touchActive=%d repaintMs=%u shapeData=%p mediaTexels=%p\n",
            (unsigned int)finalHash,
            (unsigned int)DoomRPG_esp32MainMenuSelectionFramebufferFNV(0),
-           (unsigned int)framebufferHash(render),
+           (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(render),
            menuSystem->menu,
            menuSystem->selectedIndex,
            DoomRPG_esp32MainMenuTouchIsActive(),
@@ -230,11 +195,11 @@ static int repaintMainMenuAfterBack(DoomRPG_t* doomRpg) {
 
     if (finalHash == 0U ||
         finalHash != DoomRPG_esp32MainMenuSelectionFramebufferFNV(0) ||
-        finalHash != framebufferHash(render) ||
+        finalHash != DoomRPG_esp32MainMenuFramebufferHash(render) ||
         menuSystem->menu != MENU_MAIN ||
         menuSystem->selectedIndex != 0 ||
         !DoomRPG_esp32MainMenuTouchIsActive() ||
-        !graphicsBoundaryIsSafe(doomRpg)) {
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[OPTIONBACK] FAILED fast roundtrip invariant\n");
         return 0;
     }
@@ -270,16 +235,17 @@ static void optionsBackTap(int16_t screenX,
            item,
            backArmed);
 
-    if (!graphicsBoundaryIsSafe(optionsDoomRpg) ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(optionsDoomRpg) ||
         optionsDoomRpg->menuSystem->menu != MENU_MAIN_OPTIONS ||
         optionsExpectedFrameFNV == 0U ||
-        framebufferHash(optionsDoomRpg->render) != optionsExpectedFrameFNV) {
+        DoomRPG_esp32MainMenuFramebufferHash(optionsDoomRpg->render) != optionsExpectedFrameFNV) {
         printf("[OPTIONBACK] FAILED runtime boundary menu=%d framebuffer=%08x expected=%08x\n",
                optionsDoomRpg->menuSystem->menu,
-               (unsigned int)framebufferHash(optionsDoomRpg->render),
+               (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(optionsDoomRpg->render),
                (unsigned int)optionsExpectedFrameFNV);
         optionsBackActive = 0;
         PlatformInput_setTapCallback(NULL);
+        DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "options-touch-precondition");
         return;
     }
 
@@ -288,6 +254,7 @@ static void optionsBackTap(int16_t screenX,
             if (!paintBackState(0)) {
                 optionsBackActive = 0;
                 PlatformInput_setTapCallback(NULL);
+                DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "options-disarm-repaint-failed");
                 return;
             }
             backArmed = 0;
@@ -307,6 +274,7 @@ static void optionsBackTap(int16_t screenX,
         if (!paintBackState(1)) {
             optionsBackActive = 0;
             PlatformInput_setTapCallback(NULL);
+            DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "options-arm-repaint-failed");
             return;
         }
         backArmed = 1;
@@ -321,6 +289,7 @@ static void optionsBackTap(int16_t screenX,
 
     if (!repaintMainMenuAfterBack(optionsDoomRpg)) {
         printf("[OPTIONBACK] FAILED executing fast Back roundtrip\n");
+        DoomRPG_esp32MainMenuRecover(optionsDoomRpg, "options-back-failed");
     }
 }
 
@@ -334,20 +303,20 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
     optionsTapCount = 0;
     optionsExpectedFrameFNV = 0U;
 
-    if (!graphicsBoundaryIsSafe(doomRpg) ||
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         doomRpg->menuSystem->menu != MENU_MAIN_OPTIONS ||
         doomRpg->menuSystem->selectedIndex != 0 ||
         optionsFramebufferFNV == 0U ||
-        framebufferHash(doomRpg->render) != optionsFramebufferFNV) {
+        DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render) != optionsFramebufferFNV) {
         printf("[OPTIONBACK] FAILED activate safe=%d menu=%d selected=%d supplied=%08x framebuffer=%08x\n",
-               graphicsBoundaryIsSafe(doomRpg),
+               DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg),
                doomRpg != NULL && doomRpg->menuSystem != NULL
                    ? doomRpg->menuSystem->menu : -999,
                doomRpg != NULL && doomRpg->menuSystem != NULL
                    ? doomRpg->menuSystem->selectedIndex : -999,
                (unsigned int)optionsFramebufferFNV,
                doomRpg != NULL && doomRpg->render != NULL
-                   ? (unsigned int)framebufferHash(doomRpg->render) : 0U);
+                   ? (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render) : 0U);
         return 0;
     }
 
