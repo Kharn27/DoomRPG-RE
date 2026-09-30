@@ -192,8 +192,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
      * releasing menu memory or mutating player state.
      */
     if (doomCanvas->skipIntro) {
-        printf("[MAINSTART] REFUSE skipIntro=%d route=legacy-loadMap unsupported-before-mutation\n",
-               doomCanvas->skipIntro);
+        printf("[MAINSTART] REFUSE skipIntro=%d\n", doomCanvas->skipIntro);
         return 0;
     }
 
@@ -232,9 +231,6 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     Player_reset(player);
     player->totalDeaths = 0;
     DoomCanvas_setState(doomCanvas, ST_INTRO);
-    printf("[MAINSTART] NATIVE-NEWGAME playerReset=yes totalDeaths=0 state=%d legacyMenuStart=no\n",
-           doomCanvas->state);
-
     if (!DoomRPG_esp32MainMenuModelLeave(doomRpg)) {
         printf("[MAINSTART] FAILED leaving MENU_MAIN model for intro\n");
         return 0;
@@ -296,7 +292,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    printf("[MAINSTART] READY explicit MENU_MAIN start composition -> native Player_reset -> ST_INTRO; no Menu_startGame\n");
+    printf("[MAINSTART] READY native new-game -> Player_reset -> ST_INTRO\n");
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
 
     if (!DoomRPG_esp32RenderFirstIntroFrame(doomRpg)) {
