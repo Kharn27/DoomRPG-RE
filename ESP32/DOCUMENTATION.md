@@ -1185,8 +1185,9 @@ through the desktop/J2ME generic SELECT chain.
 
 The produced ESP32 ELF no longer contains `Menu_select` or
 `MenuSystem_select`. `MenuSystem_t` remains a temporary bounded model
-container and `Menu_initMenu` remains transitional while menu construction is
-migrated family by family.
+container. `Menu_initMenu` remains transitional for retained fixed menu
+models, but main-menu Help no longer delegates `help.txt` parsing to it: Help
+uses a PAK-backed size/item/line-bounded native parser.
 
 Help is now a native opaque list viewer with eight visible lines and a permanent
 BACK / UP / DOWN footer. The current styling is functional rather than final;
@@ -1197,8 +1198,14 @@ A source audit removed the obsolete START "Continue" branch: it depended on
 `Config/Player/Player2/World` and cannot identify the native V9 checkpoint.
 START is new-game-only; LOAD exclusively owns resume.
 
+A shared `native_main_menu_present` owner now centralizes framebuffer hashing,
+graphics-boundary validation and MENU_MAIN failure recovery. Recovery rebuilds
+and repaints the main dashboard and re-arms touch only while ST_MENU still owns
+the UI. LOAD reports typed NO_SAVE / RECOVERED / TRANSITIONED / FATAL outcomes
+instead of treating every failure as a normal stay-main condition.
+
 Hardware-tested boundary:
-`cc0e14f7cc9e57c6d9617e715622675fda6de0fb`.
+`cd5f24dd0ff538a85cebc02025de48cb5998401e` (CI #1135/#1136).
 
 See
 [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md).
