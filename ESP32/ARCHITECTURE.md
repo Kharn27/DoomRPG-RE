@@ -453,3 +453,34 @@ When the engine reaches another BSP, the expected implementation work is:
 If that BSP exposes an unsupported opcode or entity behavior, implement **that
 behavior family once**, test it against every relevant map corpus, and keep the
 map itself as data.
+
+## Main-menu selection ownership
+
+MENU_MAIN selection is now an explicit native composition boundary.
+
+Permanent direction:
+
+```text
+touch/presentation model
+ -> semantic action dispatcher
+ -> START | LOAD | OPTIONS | HELP owners
+```
+
+Do not reintroduce `MenuSystem_select()` or `Menu_select()` as a generic
+routing shortcut. Their ESP32 linked implementations are already gone.
+
+The current model bridge is intentionally transitional: `MenuSystem_t` and
+`Menu_initMenu()` may still provide bounded item construction while permanent
+native menu-model ownership is completed. Return navigation still passes through
+the explicit `MenuSystem_back()` seam for OPTIONS and HELP; that is the next
+bounded consolidation target.
+
+START and LOAD are distinct permanent semantics. START always creates a new
+game. The native checkpoint file is owned only by LOAD; desktop
+`Config/Player/Player2/World` save discovery is not part of the ESP32 runtime
+contract.
+
+HELP already owns its paging/input natively, so future visual redesign should be
+a presentation-only change rather than a reason to restore legacy menu
+selection/render orchestration.
+
