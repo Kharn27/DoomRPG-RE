@@ -5,7 +5,7 @@
 #include "EntityDef.h"
 #include "MenuSystem.h"
 #include "ParticleSystem.h"
-#include "Z_Zip.h"
+#include "esp_legacy_asset_source.h"
 #include "esp_legacy_prerender_startup.h"
 
 /* Keep ESP-IDF's C99 bool macros after DoomRPG's legacy boolean typedefs. */
@@ -24,23 +24,6 @@ static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 }
 
-static const zip_entry_t* findZipEntry(const char* name) {
-    int i;
-
-    if (name == NULL || zipFile.entry == NULL) {
-        return NULL;
-    }
-
-    for (i = 0; i < zipFile.entry_count; ++i) {
-        const zip_entry_t* entry = &zipFile.entry[i];
-        if (entry->name != NULL && SDL_strcasecmp(entry->name, name) == 0) {
-            return entry;
-        }
-    }
-
-    return NULL;
-}
-
 static int preflightResources(void) {
     static const char* const required[] = {
         "gibs_24.bmp",
@@ -55,15 +38,15 @@ static int preflightResources(void) {
 
     printf("[PRERENDER] Resource preflight (%u files)\n", count);
     for (i = 0; i < count; ++i) {
-        const zip_entry_t* entry = findZipEntry(required[i]);
-        if (entry == NULL) {
+        uint32_t bytes = 0U;
+        if (!EspLegacyAssetSource_stat(required[i], &bytes)) {
             printf("[PRERENDER] MISSING %s\n", required[i]);
             allPresent = 0;
             continue;
         }
 
-        printf("[PRERENDER] %-14s c=%d u=%d\n",
-               required[i], entry->csize, entry->usize);
+        printf("[PRERENDER] %-14s bytes=%u backing=pak\n",
+               required[i], (unsigned int)bytes);
     }
 
     if (!allPresent) {

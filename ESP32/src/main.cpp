@@ -4,6 +4,8 @@
 #include <TFT_eSPI.h>
 
 #include "board_config.h"
+#include "esp_asset_pack.h"
+#include "esp_legacy_asset_source.h"
 #include "esp_legacy_config_mappings_startup.h"
 #include "engine_metrics.h"
 #include "esp_native_gameplay_session.h"
@@ -15,7 +17,6 @@
 #include "esp_legacy_prerender_startup.h"
 #include "esp_render_startup_bridge.h"
 #include "soft_xpt2046.h"
-#include "Z_Zip.h"
 
 extern struct DoomRPG_s* doomRpg;
 
@@ -32,8 +33,8 @@ namespace
     PlatformInput input(touchscreen);
 
     bool sdReady = false;
-    bool archiveReady = false;
-    bool archiveResourcesReady = false;
+    bool assetPackReady = false;
+    bool assetResourcesReady = false;
     bool videoReady = false;
     bool engineCoreReady = false;
     bool engineLayoutReady = false;
@@ -91,34 +92,10 @@ namespace
 #endif
     }
 
-    bool archiveContains(const char *name)
+    bool assetContains(const char *name)
     {
-        if (!archiveReady || zipFile.entry == nullptr)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < zipFile.entry_count; ++i)
-        {
-            const zip_entry_t &entry = zipFile.entry[i];
-            if (entry.name != nullptr && SDL_strcasecmp(name, entry.name) == 0)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    void printArchiveEntries()
-    {
-        Serial.printf("[DATA] ZIP directory (%d entries):\n", zipFile.entry_count);
-        for (int i = 0; i < zipFile.entry_count; ++i)
-        {
-            const zip_entry_t &entry = zipFile.entry[i];
-            Serial.printf("[DATA]   [%d] %s csize=%d usize=%d\n", i,
-                          entry.name != nullptr ? entry.name : "<null>",
-                          entry.csize, entry.usize);
-        }
+        uint32_t bytes = 0U;
+        return EspLegacyAssetSource_stat(name, &bytes) != 0;
     }
 
     bool validateLayoutResources()
@@ -135,7 +112,7 @@ namespace
         bool allPresent = true;
         for (const char *name : requiredHudFiles)
         {
-            if (!archiveContains(name))
+            if (!assetContains(name))
             {
                 Serial.printf("[DATA] MISSING required HUD resource: %s\n", name);
                 allPresent = false;
@@ -144,9 +121,8 @@ namespace
 
         if (!allPresent)
         {
-            printArchiveEntries();
             Serial.println("[DATA] HUD resource preflight FAILED");
-            Serial.println("[DATA] Expected a DoomRPG.zip generated from the original doomrpg.bar with BarToZip");
+            Serial.println("[DATA] DoomRPG-ESP32.pak is missing one or more required HUD assets");
         }
         else
         {
@@ -177,41 +153,44 @@ namespace
         Serial.printf("[SD] Mounted, size=%llu MiB\n", sizeMiB);
     }
 
-    void initializeGameArchive()
+    void initializeGameAssets()
     {
+        uint32_t entryCount = 0U;
+
         if (!sdReady)
         {
             drawLabel(138, "Game data:", "SD unavailable", TFT_ORANGE);
             return;
         }
-        if (!SD.exists("/DoomRPG.zip"))
+        if (!SD.exists(ESP_ASSET_PACK_DEFAULT_PATH))
         {
-            drawLabel(138, "Game data:", "DoomRPG.zip missing", TFT_ORANGE);
-            Serial.println("[DATA] /DoomRPG.zip not found on SD card");
+            drawLabel(138, "Game data:", "native PAK missing", TFT_ORANGE);
+            Serial.printf("[DATA] %s not found on SD card\n", ESP_ASSET_PACK_DEFAULT_PATH);
             return;
         }
 
-        openZipFile("/sd/DoomRPG.zip", &zipFile);
-        archiveReady = zipFile.entry_count > 0;
-        Serial.printf("[DATA] DoomRPG.zip indexed, entries=%d\n", zipFile.entry_count);
+        assetPackReady = EspLegacyAssetSource_validate(&entryCount) != 0;
+        Serial.printf("[DATA] Native PAK indexed, entries=%u\n",
+                      static_cast<unsigned int>(entryCount));
 
-        if (!archiveReady)
+        if (!assetPackReady)
         {
-            drawLabel(138, "Game data:", "ZIP empty", TFT_RED);
+            drawLabel(138, "Game data:", "PAK invalid", TFT_RED);
             return;
         }
 
-        archiveResourcesReady = validateLayoutResources();
+        assetResourcesReady = validateLayoutResources();
 
         char status[32];
-        if (archiveResourcesReady)
+        if (assetResourcesReady)
         {
-            snprintf(status, sizeof(status), "%d ZIP entries", zipFile.entry_count);
+            snprintf(status, sizeof(status), "%u PAK entries",
+                     static_cast<unsigned int>(entryCount));
             drawLabel(138, "Game data:", status, TFT_GREEN);
         }
         else
         {
-            snprintf(status, sizeof(status), "ZIP incomplete (%d)", zipFile.entry_count);
+            snprintf(status, sizeof(status), "PAK incomplete");
             drawLabel(138, "Game data:", status, TFT_ORANGE);
         }
     }
@@ -256,12 +235,12 @@ namespace
         Serial.println();
         Serial.println("=== Doom RPG 160x120 layout + HUD startup probe ===");
 
-        if (!engineCoreReady || !archiveResourcesReady || !videoReady)
+        if (!engineCoreReady || !assetResourcesReady || !videoReady)
         {
             Serial.println("[LAYOUT] Prerequisite unavailable; probe skipped safely");
-            if (!archiveResourcesReady)
+            if (!assetResourcesReady)
             {
-                Serial.println("[LAYOUT] DoomRPG.zip does not contain the HUD resources required by Hud_startup()");
+                Serial.println("[LAYOUT] native PAK does not contain the HUD resources required by Hud_startup()");
             }
             drawLabel(186, "Engine:", "LAYOUT skipped", TFT_ORANGE);
             return;
@@ -409,15 +388,15 @@ namespace
         }
         lastHeartbeat = now;
 
-        const char *zipState = archiveResourcesReady
+        const char *pakState = assetResourcesReady
                                    ? "ready"
-                                   : (archiveReady ? "partial" : "unavailable");
+                                   : (assetPackReady ? "partial" : "unavailable");
 
         Serial.printf(
-            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s ZIP=%s VIDEO=%s CORE=%s LAYOUT=%s PRERENDER=%s RENDER=%s MAPPINGS=%s MENUBSP=%s touchIRQ=%s\n",
+            "[ALIVE] uptime=%lu ms heap=%u heap8=%u largest8=%u SD=%s PAK=%s VIDEO=%s CORE=%s LAYOUT=%s PRERENDER=%s RENDER=%s MAPPINGS=%s MENUBSP=%s touchIRQ=%s\n",
             now, ESP.getFreeHeap(), DoomRPG_getHeap8Free(),
             DoomRPG_getLargest8BitBlock(), sdReady ? "ready" : "unavailable",
-            zipState, videoReady ? "ready" : "unavailable",
+            pakState, videoReady ? "ready" : "unavailable",
             engineCoreReady ? "ready" : "unavailable",
             engineLayoutReady ? "ready" : "unavailable",
             enginePreRenderReady ? "ready" : "unavailable",
@@ -448,7 +427,7 @@ void setup()
 
     initializePlatformVideo();
     initializeSdCard();
-    initializeGameArchive();
+    initializeGameAssets();
     initializeEngineCore();
     initializeEngineLayout();
     initializeRenderStartup();

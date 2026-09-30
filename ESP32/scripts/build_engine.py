@@ -82,11 +82,15 @@ with open(doom_rpg_source, "r", encoding="latin-1") as source_file:
 
 zip_include_needle = '#include "Z_Zip.h"\n'
 zip_include_replacement = (
-    '#include "Z_Zip.h"\n'
     '#include "esp32_bmp.h"\n'
+    '#include "esp_legacy_asset_source.h"\n'
 )
 bmp_call_needle = "SDL_LoadBMP_RW("
 bmp_call_count = doom_rpg_source_text.count(bmp_call_needle)
+zip_read_needle = "readZipFileEntry(fileName, &zipFile, &fSize)"
+zip_read_count = doom_rpg_source_text.count(zip_read_needle)
+zip_close_needle = "\tcloseZipFile(&zipFile);\n"
+zip_close_count = doom_rpg_source_text.count(zip_close_needle)
 
 if doom_rpg_source_text.count(zip_include_needle) != 1:
     raise RuntimeError("Unable to locate Z_Zip.h include in DoomRPG.c")
@@ -95,6 +99,10 @@ if bmp_call_count == 0:
         "Unable to locate SDL_LoadBMP_RW calls in DoomRPG.c; "
         "review the ESP32 image-loader patch before building"
     )
+if zip_read_count != 3 or zip_close_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c ZIP call shape; review native PAK source patch"
+    )
 
 doom_rpg_source_text = doom_rpg_source_text.replace(
     zip_include_needle, zip_include_replacement, 1
@@ -102,13 +110,18 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
 doom_rpg_source_text = doom_rpg_source_text.replace(
     bmp_call_needle, "Esp32Bmp_LoadRW("
 )
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    zip_read_needle, "EspLegacyAssetSource_readAlloc(fileName, &fSize)"
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(zip_close_needle, "")
 
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
 
 print(
-    "[ESP32] DoomRPG generated with indexed BMP loader "
-    f"({bmp_call_count} SDL_LoadBMP_RW call(s) redirected)"
+    "[ESP32] DoomRPG generated with native PAK asset source + indexed BMP loader "
+    f"({zip_read_count} ZIP read(s) retired, "
+    f"{bmp_call_count} SDL_LoadBMP_RW call(s) redirected)"
 )
 
 # The source-tree SDL shim stores every texture as RGB565. That is acceptable
@@ -318,6 +331,7 @@ env.BuildSources(
         "-<SDL_Video.c>",
         "-<Sound.c>",
         "-<Z_Zone.c>",
+        "-<Z_Zip.c>",
         "-<DoomCanvas.c>",
         "-<DoomRPG.c>",
     ],

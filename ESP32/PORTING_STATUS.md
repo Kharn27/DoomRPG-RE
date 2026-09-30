@@ -5,18 +5,64 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = c37c66ad800603ea7d0622681a3bfaf5bab0b41d
-branch = agent/esp32-consolidation-monster-movement-service-v6
-hardware-tested code boundary = c27b94e263f4ea0d445e7debeea4d836dbd59e4f
-CI = esp32-cyd #1069 SUCCESS
-static RAM = 45776 B
-flash = 815677 B
-artifact id = 11084465870
-translation units = 173
+current main = c735979a1dcd645208946adececc1ef478bf105f
+branch = agent/esp32-consolidation-legacy-runtime-v7
+hardware-tested code boundary = eb18ea2c5fc090161cee148b1f9aea52c7dc91d9
+CI = esp32-cyd #1083 SUCCESS
+static RAM = 45760 B
+flash = 807377 B
+artifact id = 11088820981
+ESP32 translation units = 174
+legacy desktop src/*.c units compiled = 16
 active --wrap flags = 57
-hardware = final MonsterMovement linker seam replaced by explicit ActiveSequence composition; ordered four-monster MOVE PASS on real CYD
-status = HARDWARE PASS; zero active EspNativeGameplayMonster* linker wraps remain; all commits after c27b94e... are documentation-only
+hardware = runtime ZIP source retired; boot + Start Game + Entrance/Sector1 bidirectional SD->flash restaging + V9 LOAD + live gameplay PASS on real CYD
+status = HARDWARE PASS; Z_Zip.c/miniz absent from final ELF; all commits after eb18ea2c... are documentation-only
 ```
+
+### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
+
+Commit `eb18ea2c5fc090161cee148b1f9aea52c7dc91d9` removes the ESP32 runtime
+dependency on `DoomRPG.zip`. `src/Z_Zip.c` is excluded from the build and
+the remaining desktop-derived startup/menu consumers use the bounded
+`EspLegacyAssetSource` bridge over the authoritative
+`/DoomRPG-ESP32.pak`.
+
+CI #1083 succeeds at 45760 B static RAM and 807377 B flash, a reduction of
+16 B RAM and 8300 B flash relative to merged main. The produced ELF contains
+none of `zipFile`, `openZipFile`, `closeZipFile`,
+`readZipFileEntry`, `readZipFileEntryInto`, `findAndReadZipDir` or
+`tinfl_decompress`; the ZIP parser and miniz decompressor are genuinely absent.
+
+The real classic CYD validates cold boot entirely from the native PAK:
+HUD/pre-render/Render startup/mappings all report `backing=pak`, the normal
+menu reaches `shapeData=0x0 mediaTexels=0x0`, and ALIVE reports
+`SD=ready PAK=ready`.
+
+Start Game then exercises the four intro BMPs from the PAK and forces a real
+Sector1 -> Entrance raw-flash rebuild:
+
+```text
+[MAPFLASH] REUSE MISS requestedMap=1 ... cachedMap=2 reason=world-identity
+[MAPFLASH] READY map=1 ... backing=raw-internal-flash SDGameplayReads=forbidden
+[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+```
+
+Loading the existing V9 Sector 1 save proves the inverse direction:
+
+```text
+[NATIVESAVE] LOAD ... version=9 ... restored-exact
+[MAPFLASH] REUSE MISS requestedMap=2 ... cachedMap=1 reason=world-identity
+[MAPFLASH] READY map=2 ... backing=raw-internal-flash SDGameplayReads=forbidden
+[ENGINESESSION] READY map=2 ... shapeData=0x0 mediaTexels=0x0
+```
+
+Post-load gameplay then commits player movement, services the ordered four-member
+monster sequence including both subtype-4 three-goal chains, and resolves a real
+Bull Demon attack. ALIVE remains stable at
+`heap=94016 heap8=28400 largest8=16372`.
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_RUNTIME_ZIP_RETIREMENT.md](MILESTONE_ESP32_CONSOLIDATION_RUNTIME_ZIP_RETIREMENT.md)
 
 ### Explicit MonsterMovement ActiveSequence composition — REAL-CYD PASS (2026-09-30)
 

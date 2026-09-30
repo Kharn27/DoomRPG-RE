@@ -7,7 +7,7 @@
 #include "Game.h"
 #include "Render.h"
 #include "SDL_Video.h"
-#include "Z_Zip.h"
+#include "esp_legacy_asset_source.h"
 
 #include "esp_legacy_config_mappings_startup.h"
 
@@ -45,23 +45,6 @@ static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 }
 
-static const zip_entry_t* findZipEntry(const char* name) {
-    int i;
-
-    if (name == NULL || zipFile.entry == NULL) {
-        return NULL;
-    }
-
-    for (i = 0; i < zipFile.entry_count; ++i) {
-        const zip_entry_t* entry = &zipFile.entry[i];
-        if (entry->name != NULL && SDL_strcasecmp(entry->name, name) == 0) {
-            return entry;
-        }
-    }
-
-    return NULL;
-}
-
 static uint32_t max4(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
     uint32_t result = a;
     if (b > result) result = b;
@@ -70,7 +53,7 @@ static uint32_t max4(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
     return result;
 }
 
-static int inspectMappings(const zip_entry_t* entry,
+static int inspectMappings(uint32_t sourceBytes,
                            byte* fData,
                            MappingPlan_t* plan) {
     int dataPos = 0;
@@ -82,7 +65,7 @@ static int inspectMappings(const zip_entry_t* entry,
     uint64_t spriteIdBytes;
     uint64_t persistentBytes;
 
-    if (entry == NULL || fData == NULL || plan == NULL || entry->usize < 16) {
+    if (fData == NULL || plan == NULL || sourceBytes < 16U) {
         return 0;
     }
 
@@ -139,32 +122,31 @@ static int inspectMappings(const zip_entry_t* entry,
            (unsigned int)plan->heapWithData,
            (unsigned int)plan->largestWithData);
 
-    return plan->persistentBytes + 16U == (uint32_t)entry->usize;
+    return plan->persistentBytes + 16U == sourceBytes;
 }
 
-static int inflateMappingsToFramebuffer(const zip_entry_t* entry,
-                                        Render_t* render) {
+static int readMappingsToFramebuffer(Render_t* render,
+                                     uint32_t* outSourceBytes) {
     uint32_t scratchBytes;
-    int decodedBytes;
+    int sourceBytes = 0;
 
-    if (entry == NULL || render == NULL || render->framebuffer == NULL ||
-        render->pitch <= 0 || render->screenHeight <= 0 ||
-        entry->csize <= 0 || entry->usize <= 0) {
+    if (outSourceBytes != NULL) *outSourceBytes = 0U;
+    if (render == NULL || render->framebuffer == NULL ||
+        render->pitch <= 0 || render->screenHeight <= 0) {
         return 0;
     }
 
     scratchBytes = (uint32_t)render->pitch * (uint32_t)render->screenHeight;
-    if ((uint32_t)entry->usize + (uint32_t)entry->csize > scratchBytes) {
-        printf("[MAPPINGS] ERROR framebuffer scratch too small need=%u have=%u\n",
-               (unsigned int)(entry->usize + entry->csize),
-               (unsigned int)scratchBytes);
+    if (!EspLegacyAssetSource_readInto("mappings.bin",
+                                       render->framebuffer,
+                                       scratchBytes,
+                                       &sourceBytes) ||
+        sourceBytes <= 0) {
         return 0;
     }
 
-    decodedBytes = readZipFileEntryInto("mappings.bin", &zipFile,
-                                        render->framebuffer,
-                                        (int)scratchBytes);
-    return decodedBytes == entry->usize;
+    if (outSourceBytes != NULL) *outSourceBytes = (uint32_t)sourceBytes;
+    return 1;
 }
 
 static void releaseMappings(Render_t* render) {
@@ -180,7 +162,7 @@ static void releaseMappings(Render_t* render) {
 
 int EspLegacyMappings_load(struct Render_s* renderBase) {
     Render_t* render = (Render_t*)renderBase;
-    const zip_entry_t* entry;
+    uint32_t sourceBytes = 0U;
     MappingPlan_t plan;
     byte* data;
     int dataPos = 16;
@@ -197,10 +179,9 @@ int EspLegacyMappings_load(struct Render_s* renderBase) {
     }
 
     releaseMappings(render);
-    entry = findZipEntry("mappings.bin");
-    if (entry == NULL || !inflateMappingsToFramebuffer(entry, render) ||
-        !inspectMappings(entry, render->framebuffer, &plan)) {
-        printf("[MAPPINGS] ERROR bounded scratch decode/plan failed\n");
+    if (!readMappingsToFramebuffer(render, &sourceBytes) ||
+        !inspectMappings(sourceBytes, render->framebuffer, &plan)) {
+        printf("[MAPPINGS] ERROR bounded PAK scratch read/plan failed\n");
         return 0;
     }
 
@@ -232,10 +213,10 @@ int EspLegacyMappings_load(struct Render_s* renderBase) {
     for (i = 0; i < plan.spriteCnt; ++i) {
         render->mediaSpriteIds[i] = DoomRPG_shortAtNext(data, &dataPos);
     }
-    if (dataPos != entry->usize) {
+    if ((uint32_t)dataPos != sourceBytes) {
         releaseMappings(render);
-        printf("[MAPPINGS] ERROR parser consumed=%d expected=%d\n",
-               dataPos, entry->usize);
+        printf("[MAPPINGS] ERROR parser consumed=%d expected=%u\n",
+               dataPos, (unsigned int)sourceBytes);
         return 0;
     }
 
@@ -257,7 +238,7 @@ static int configFilePresent(void) {
 }
 
 int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
-    const zip_entry_t* mappingEntry;
+    uint32_t mappingBytes = 0U;
     MappingPlan_t plan;
     Render_t* render;
     uint32_t before;
@@ -285,14 +266,13 @@ int EspLegacyConfigMappingsStartup_start(int renderStartupReady) {
         return 0;
     }
 
-    mappingEntry = findZipEntry("mappings.bin");
-    if (mappingEntry == NULL) {
+    if (!EspLegacyAssetSource_stat("mappings.bin", &mappingBytes)) {
         printf("[MAPPINGS] MISSING mappings.bin; probe skipped safely\n");
         return 0;
     }
 
-    printf("[MAPPINGS] mappings.bin c=%d u=%d\n",
-           mappingEntry->csize, mappingEntry->usize);
+    printf("[MAPPINGS] mappings.bin bytes=%u backing=pak\n",
+           (unsigned int)mappingBytes);
 
     hasConfig = configFilePresent();
     printf("[CONFIG] Config file present=%s (missing is valid on first boot)\n",

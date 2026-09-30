@@ -13,18 +13,44 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = c37c66ad800603ea7d0622681a3bfaf5bab0b41d
-branch = agent/esp32-consolidation-monster-movement-service-v6
-hardware-tested code boundary = c27b94e263f4ea0d445e7debeea4d836dbd59e4f
-CI = esp32-cyd #1069 SUCCESS
-static RAM = 45776 B
-flash = 815677 B
-artifact id = 11084465870
-translation units = 173
+current main = c735979a1dcd645208946adececc1ef478bf105f
+branch = agent/esp32-consolidation-legacy-runtime-v7
+hardware-tested code boundary = eb18ea2c5fc090161cee148b1f9aea52c7dc91d9
+CI = esp32-cyd #1083 SUCCESS
+static RAM = 45760 B
+flash = 807377 B
+artifact id = 11088820981
+ESP32 translation units = 174
+legacy desktop src/*.c units compiled = 16
 active --wrap flags = 57
-hardware = final MonsterMovement linker seam replaced by explicit ActiveSequence composition; real-CYD four-member MOVE PASS
-status = branch hardware-pass; zero active EspNativeGameplayMonster* wraps remain; documentation-only close in progress
+hardware = runtime ZIP source retired; bidirectional Entrance/Sector1 SD->raw-flash restaging + V9 LOAD + live gameplay PASS
+status = hardware-pass; Z_Zip.c + miniz absent from final ELF; documentation-only close in progress
 ```
+
+### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
+
+The ESP32 runtime now uses only `/DoomRPG-ESP32.pak` as its asset source.
+`src/Z_Zip.c` is excluded from the ESP32 build and the final ELF contains no
+ZIP parser or miniz decompression symbols.
+
+```text
+legacy desktop src/*.c units: 17 -> 16
+active linker --wraps:        57 -> 57
+static RAM:                   45776 B -> 45760 B
+flash:                        815677 B -> 807377 B
+runtime ZIP parser:           present -> absent
+```
+
+The real classic CYD validates cold boot, HUD/pre-render/Render/mappings from
+PAK, Start Game intro assets from PAK, Sector1 -> Entrance SD-to-raw-flash
+restaging, inverse V9 Load back to Sector 1, then live movement/monster combat.
+Both gameplay sessions keep `shapeData == NULL` and `mediaTexels == NULL`.
+Post-load ALIVE is stable at
+`heap=94016 heap8=28400 largest8=16372`.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_RUNTIME_ZIP_RETIREMENT.md](MILESTONE_ESP32_CONSOLIDATION_RUNTIME_ZIP_RETIREMENT.md)
+
 
 Current consolidation result from merged main
 `c37c66ad800603ea7d0622681a3bfaf5bab0b41d`:

@@ -7,7 +7,7 @@
 #include "DoomCanvas.h"
 #include "Render.h"
 #include "SDL_Video.h"
-#include "Z_Zip.h"
+#include "esp_legacy_asset_source.h"
 #include "platform_video_c_bridge.h"
 #include "esp_render_startup_bridge.h"
 
@@ -28,23 +28,6 @@ static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 }
 
-static const zip_entry_t* findZipEntry(const char* name) {
-    int i;
-
-    if (name == NULL || zipFile.entry == NULL) {
-        return NULL;
-    }
-
-    for (i = 0; i < zipFile.entry_count; ++i) {
-        const zip_entry_t* entry = &zipFile.entry[i];
-        if (entry->name != NULL && SDL_strcasecmp(entry->name, name) == 0) {
-            return entry;
-        }
-    }
-
-    return NULL;
-}
-
 static int preflightRenderResources(void) {
     static const char* const required[] = {
         "sintable.bin",
@@ -58,15 +41,15 @@ static int preflightRenderResources(void) {
 
     for (i = 0; i < count; ++i) {
         const char* name = required[i];
-        const zip_entry_t* entry = findZipEntry(name);
-        if (entry == NULL) {
+        uint32_t bytes = 0U;
+        if (!EspLegacyAssetSource_stat(name, &bytes)) {
             printf("[RENDERSTART] MISSING %s\n", name);
             allPresent = 0;
             continue;
         }
 
-        printf("[RENDERSTART] %-14s c=%d u=%d\n",
-               name, entry->csize, entry->usize);
+        printf("[RENDERSTART] %-14s bytes=%u backing=pak\n",
+               name, (unsigned int)bytes);
     }
 
     if (!allPresent) {
