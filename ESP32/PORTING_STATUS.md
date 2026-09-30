@@ -47,9 +47,16 @@ CI #1069 succeeds with unchanged 45776 B static RAM and 815677 B flash.
 Translation units remain 173, active linker wraps drop 58 -> 57, and active
 `EspNativeGameplayMonster*` linker wraps drop 1 -> 0.
 
-The latest hardware run does not separately exercise `RANGED-MEMBER`; that
-unchanged branch denotes exact-source ranged-AI movement orchestration, not the
-monster attack presentation/resolution path.
+A later real-CYD PASS_TURN provides the complementary ranged-attack witness:
+sprite 218 / subtype 3 / weapon 15 runs through
+`ATTACK-PROBE -> MONSTERACT -> MONSTERATKVIS -> MONSTERRETAL`, with
+`playerHP=22->20 armor=12->10` committed only after the visual completes and
+rollback closes. Following ALIVE samples remain stable at
+`heap=82704 heap8=17152 largest8=10228`.
+
+That genuine ranged attack emits no `RANGED-MEMBER`, confirming the boundary:
+`RANGED-MEMBER` denotes the unchanged exact-source ranged-AI
+movement/repositioning branch, not the attack presentation/resolution path.
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md](MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md)
