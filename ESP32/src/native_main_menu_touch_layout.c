@@ -12,6 +12,7 @@
 
 #include "esp_native_gameplay_hub_theme.h"
 #include "native_main_menu_160x120_layout.h"
+#include "native_main_menu_model.h"
 #include "native_main_menu_touch.h"
 #include "native_main_menu_present.h"
 #include "native_main_menu_touch_layout.h"
@@ -47,24 +48,6 @@ static const char* dashboardLabels[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT] = {
     "OPTIONS",
     "HELP"
 };
-
-static int adaptMainMenuForEsp32(MenuSystem_t* menuSystem) {
-    static char startGameLabel[] = "Start Game";
-    static char loadGameLabel[] = "Load Game ";
-    static char optionsLabel[] = "Options   ";
-    static char helpLabel[] = "Help/About";
-
-    if (menuSystem == NULL || menuSystem->menu != MENU_MAIN ||
-        menuSystem->numItems != DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
-        return 0;
-    }
-
-    MenuItem_Set(&menuSystem->items[0], startGameLabel, 2, 0);
-    MenuItem_Set(&menuSystem->items[1], loadGameLabel, 2, 0);
-    MenuItem_Set(&menuSystem->items[2], optionsLabel, 2, 0);
-    MenuItem_Set(&menuSystem->items[3], helpLabel, 2, 0);
-    return 1;
-}
 
 static uint32_t heap8Free(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
@@ -481,7 +464,6 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
     uint32_t composeMs;
 
     if (doomRpg == NULL ||
-        !adaptMainMenuForEsp32(doomRpg->menuSystem) ||
         !validatePresentationContract(doomRpg, &modelHash, &layoutHash)) {
         printf("[MAINOPAQUE] FAILED dashboard presentation contract menu=%d selected=%d\n",
                doomRpg != NULL && doomRpg->menuSystem != NULL
@@ -585,15 +567,15 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    menuSystem->menu = MENU_MAIN;
-    Menu_initMenu(doomRpg->menu, MENU_MAIN);
-    menuSystem->menu = MENU_MAIN;
+    if (!DoomRPG_esp32MainMenuModelBuildMain(doomRpg)) {
+        printf("[MAINTOUCHLAYOUT] FAILED native MENU_MAIN model build\n");
+        return 0;
+    }
     menuSystem->paintMenu = true;
     menuSystem->maxItems = canvas->displayRect.h /
                            DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
 
-    if (!adaptMainMenuForEsp32(menuSystem) ||
-        !validatePresentationContract(doomRpg, &modelHash, &layoutHash)) {
+    if (!validatePresentationContract(doomRpg, &modelHash, &layoutHash)) {
         printf("[MAINTOUCHLAYOUT] FAILED MENU_MAIN model/dashboard contract\n");
         return 0;
     }
