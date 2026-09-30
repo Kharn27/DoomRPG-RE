@@ -470,10 +470,21 @@ Do not reintroduce `MenuSystem_select()` or `Menu_select()` as a generic
 routing shortcut. Their ESP32 linked implementations are already gone.
 
 The current model bridge is intentionally transitional: `MenuSystem_t` and
-`Menu_initMenu()` may still provide bounded item construction while permanent
-native menu-model ownership is completed. Return navigation still passes through
-the explicit `MenuSystem_back()` seam for OPTIONS and HELP; that is the next
+`Menu_initMenu()` may still provide bounded fixed-item construction while
+permanent native menu-model ownership is completed. Main-menu Help is already
+an exception: its PAK resource is parsed by the bounded native model owner and
+does not call the legacy Help parser. Return navigation still passes through the
+explicit `MenuSystem_back()` seam for OPTIONS and HELP; that is the next
 bounded consolidation target.
+
+Main-menu presentation invariants now have one owner,
+`native_main_menu_present`, for framebuffer hashing, graphics-boundary checks
+and fail-safe return to MENU_MAIN. A recovery may run only while ST_MENU still
+owns the UI; it must never pull ST_INTRO or ST_PLAYING back into menu state.
+
+Action APIs should distinguish expected user outcomes from failures. Main-menu
+LOAD therefore exposes typed NO_SAVE / RECOVERED / TRANSITIONED / FATAL
+results rather than a boolean whose meaning depends on current menu state.
 
 START and LOAD are distinct permanent semantics. START always creates a new
 game. The native checkpoint file is owned only by LOAD; desktop
