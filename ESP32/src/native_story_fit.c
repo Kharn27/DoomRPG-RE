@@ -15,6 +15,18 @@
 
 static int geometryLogged;
 
+static int advanceAnimationPageBounded(DoomCanvas_t* doomCanvas) {
+    if (doomCanvas == NULL || doomCanvas->storyPage != 1) {
+        return 0;
+    }
+
+    doomCanvas->storyPage = 2;
+    doomCanvas->storyTextPage = 0;
+    doomCanvas->storyAnimTime = -1;
+    doomCanvas->storyTextTime = -1;
+    return 1;
+}
+
 static int scaleOffsetFloor(int value, int viewportSize) {
     const int64_t numerator =
         (int64_t)value * (int64_t)viewportSize;
@@ -465,7 +477,9 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         }
 
         if (textPageCount <= doomCanvas->storyTextPage) {
-            DoomCanvas_changeStoryPage(doomCanvas);
+            printf("[INTROFIT] REFUSE page=%d textPage=%d legacyDispose=no\n",
+                   doomCanvas->storyPage,
+                   doomCanvas->storyTextPage);
             return;
         }
 
@@ -530,7 +544,11 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     }
 
     if (elapsedAnim > 10000) {
-        DoomCanvas_changeStoryPage(doomCanvas);
+        if (!advanceAnimationPageBounded(doomCanvas)) {
+            printf("[INTROFIT] REFUSE auto-page page=%d legacyDispose=no\n",
+                   doomCanvas->storyPage);
+            return;
+        }
     }
 
     {
