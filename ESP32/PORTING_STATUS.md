@@ -2042,3 +2042,44 @@ final enemy+destructible spatial checkpoint are all hardware-proven.
 Detailed record:
 
 - [`MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md`](MILESTONE_NATIVE_GAMEPLAY_SAVE_LOAD_V9_MONSTER_SPATIAL.md)
+
+## Native main-menu SELECT consolidation — REAL-CYD PASS (2026-09-30)
+
+Hardware-tested code boundary:
+
+```text
+cc0e14f7cc9e57c6d9617e715622675fda6de0fb
+esp32-cyd CI #1102 = SUCCESS
+RAM static = 45768 B
+Flash      = 799997 B
+```
+
+The finger-first MENU_MAIN no longer routes selections through
+`MenuSystem_select()` or `Menu_select()`. The four visible actions are now
+composed explicitly as START / LOAD / OPTIONS / HELP by the native dispatcher.
+
+Real-CYD witnesses cover START -> fresh intro -> Entrance gameplay, valid V9
+LOAD -> Sector 1 checkpoint resume, OPTIONS -> Back, and HELP page-down/page-up
+-> Back. Help owns bounded native paging over all 83 loaded lines; visual polish
+is deferred.
+
+Final source review also removed a dead legacy START save precheck.
+`Game_checkConfigVersion()` tests desktop `Config/Player/Player2/World`
+files, not the native `/DoomRPG-ESP32.sav`. START is therefore now
+unconditionally new-game-only and LOAD is the sole resume owner.
+
+Final ELF:
+
+```text
+Menu_select        absent
+MenuSystem_select  absent
+```
+
+Remaining explicit transitional seams include `MenuSystem_back()`,
+`MenuSystem_setMenu()`, `Menu_initMenu()` and `Menu_startGame()`.
+The natural next consolidation target is `MenuSystem_back()`.
+
+Detailed record:
+
+- [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md)
+
