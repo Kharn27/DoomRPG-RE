@@ -13,6 +13,7 @@
 
 #include "esp_legacy_asset_source.h"
 #include "native_intro_first_frame.h"
+#include "native_main_menu_model.h"
 #include "native_main_menu_start_action.h"
 #include "native_main_menu_touch.h"
 #include "native_sprite_lru_cache.h"
@@ -247,20 +248,25 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     largestBefore = largest8Block();
 
     /*
-     * MENU_MAIN has only two Start Game outcomes on ESP32. Compose them
-     * explicitly instead of entering the desktop-wide Menu_select() switch.
-     * Preserve MenuSystem_select()'s semantic side effects exactly: reset the
-     * cheat accumulator and play the same accept sound before the transition.
+     * MENU_MAIN has only two Start Game outcomes on ESP32. The action remains
+     * responsible for the real legacy-compatible player/intro transition, while
+     * the compact native menu-model owner performs only the bounded model state
+     * change that MenuSystem_select()/setMenu historically hid.
      */
-    menuSystem->cheatCombo = 0;
-    menuSystem->digitCount = 0;
     Sound_playSound(doomRpg->sound, 5046, 0, 3);
     if (hasExistingSave) {
-        MenuSystem_setMenu(menuSystem, MENU_MAIN_CONTINUE);
+        if (!DoomRPG_esp32MainMenuModelEnter(
+                doomRpg, MENU_MAIN_CONTINUE)) {
+            printf("[MAINSTART] FAILED entering native CONTINUE model\n");
+            return 0;
+        }
     }
     else {
         Menu_startGame(doomRpg->menu, 1);
-        MenuSystem_setMenu(menuSystem, MENU_NONE);
+        if (!DoomRPG_esp32MainMenuModelLeave(doomRpg)) {
+            printf("[MAINSTART] FAILED leaving MENU_MAIN model for intro\n");
+            return 0;
+        }
     }
 
     outputHash = framebufferHash(render);

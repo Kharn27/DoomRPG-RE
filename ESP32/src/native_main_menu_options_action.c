@@ -12,6 +12,7 @@
 #include "Sound.h"
 
 #include "native_main_menu_160x120_layout.h"
+#include "native_main_menu_model.h"
 #include "native_main_menu_options_action.h"
 #include "native_main_menu_touch.h"
 #include "native_main_menu_touch_layout.h"
@@ -260,16 +261,16 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
     largestBefore = largest8Block();
 
     /*
-     * Options is a fixed MENU_MAIN transition. Compose it directly instead of
-     * translating the finger-first card index back into the desktop-wide
-     * Menu_select() switch. Preserve MenuSystem_select()'s reset + accept-sound
-     * side effects; MenuSystem_setMenu() rebuilds MENU_MAIN_OPTIONS and resets
-     * its selected/scroll indices exactly as before.
+     * Options is a fixed MENU_MAIN transition. The native model owner rebuilds
+     * only MENU_MAIN_OPTIONS; no desktop-wide selector or setMenu routing is
+     * involved, and the finger-first card index no longer needs translation.
      */
-    menuSystem->cheatCombo = 0;
-    menuSystem->digitCount = 0;
     Sound_playSound(doomRpg->sound, 5046, 0, 3);
-    MenuSystem_setMenu(menuSystem, MENU_MAIN_OPTIONS);
+    if (!DoomRPG_esp32MainMenuModelEnter(
+            doomRpg, MENU_MAIN_OPTIONS)) {
+        printf("[MAINOPTIONS] FAILED entering native Options model\n");
+        return 0;
+    }
 
     if (!graphicsBoundaryIsSafe(doomRpg) || !validateOptionsModel(menuSystem)) {
         printf("[MAINOPTIONS] FAILED real transition menu=%d type=%d old=%d selected=%d scroll=%d items=%d state=%d shapeData=%p mediaTexels=%p\n",
