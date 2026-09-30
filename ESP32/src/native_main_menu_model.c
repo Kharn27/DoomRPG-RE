@@ -1,3 +1,4 @@
+#include <SDL.h>
 #include <stdio.h>
 
 #include "DoomRPG.h"
