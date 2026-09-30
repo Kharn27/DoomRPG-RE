@@ -16,6 +16,7 @@
 #include "native_main_menu_model.h"
 #include "native_main_menu_start_action.h"
 #include "native_main_menu_touch.h"
+#include "native_main_menu_present.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_config.h"
@@ -38,43 +39,6 @@ static uint32_t heap8Free(void) {
 
 static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-}
-
-static uint32_t fnv1a32(const uint8_t* data, uint32_t length) {
-    uint32_t hash = 2166136261U;
-    uint32_t i;
-
-    for (i = 0; i < length; ++i) {
-        hash ^= data[i];
-        hash *= 16777619U;
-    }
-    return hash;
-}
-
-static uint32_t framebufferHash(const Render_t* render) {
-    if (render == NULL || render->framebuffer == NULL || render->pitch <= 0) {
-        return 0U;
-    }
-
-    return fnv1a32((const uint8_t*)render->framebuffer,
-                   (uint32_t)render->pitch * DOOMRPG_LOGICAL_HEIGHT);
-}
-
-static int graphicsBoundaryIsSafe(const DoomRPG_t* doomRpg) {
-    const Render_t* render;
-
-    if (doomRpg == NULL || doomRpg->render == NULL ||
-        doomRpg->doomCanvas == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->menu == NULL || doomRpg->player == NULL) {
-        return 0;
-    }
-
-    render = doomRpg->render;
-    return render->framebuffer != NULL &&
-           render->shapeData == NULL &&
-           render->mediaTexels == NULL &&
-           !EspNativeWallCache_isActive() &&
-           !EspNativeSpriteCache_isActive();
 }
 
 static int playerHasFreshResetContract(const Player_t* player) {
@@ -182,7 +146,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Start Game entry ===\n");
 
-    if (!graphicsBoundaryIsSafe(doomRpg)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINSTART] FAILED core/graphics boundary unavailable\n");
         return 0;
     }
@@ -191,7 +155,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     menuSystem = doomRpg->menuSystem;
     player = doomRpg->player;
     render = doomRpg->render;
-    inputHash = framebufferHash(render);
+    inputHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     expectedInputHash =
         DoomRPG_esp32MainMenuSelectionFramebufferFNV(0);
 
@@ -258,7 +222,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    outputHash = framebufferHash(render);
+    outputHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     heapAfter = heap8Free();
     largestAfter = largest8Block();
 
@@ -275,7 +239,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
            (int)heapBefore - (int)heapAfter,
            (int)largestBefore - (int)largestAfter);
 
-    if (!graphicsBoundaryIsSafe(doomRpg)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINSTART] FAILED graphics boundary changed shapeData=%p mediaTexels=%p wallCache=%d spriteCache=%d\n",
                (void*)render->shapeData,
                (void*)render->mediaTexels,
