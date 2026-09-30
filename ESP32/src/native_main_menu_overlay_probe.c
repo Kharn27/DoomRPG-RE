@@ -305,12 +305,13 @@ int DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
     heapBefore = heap8Free();
     largestBefore = largest8Block();
 
-    /* Reuse the original deterministic menu model builder without invoking
-     * MenuSystem_setMenu(), which would also perform state/map transitions.
+    /* Build the bounded ESP32 MENU_MAIN model directly. This remains a pure
+     * model operation: no state transition, map load or presentation occurs.
      */
-    menuSystem->menu = MENU_MAIN;
-    Menu_initMenu(doomRpg->menu, MENU_MAIN);
-    menuSystem->menu = MENU_MAIN;
+    if (!DoomRPG_esp32MainMenuModelBuildMain(doomRpg)) {
+        printf("[MAINMENU] FAILED native MENU_MAIN model build\n");
+        return 0;
+    }
     menuSystem->paintMenu = true;
     menuSystem->maxItems = doomCanvas->displayRect.h / 12;
 
