@@ -54,10 +54,9 @@ static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
     uint8_t* data = NULL;
     uint32_t assetSize = 0U;
     int readSize = 0;
-    uint32_t pos;
-    char line[MAIN_HELP_LINE_MAX_CHARS + 1];
-    int lineLength = 0;
-    int sawTerminator = 0;
+    int declaredItems;
+    int item;
+    uint32_t pos = MAIN_HELP_HEADER_BYTES;
 
     if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
         !EspLegacyAssetSource_stat(MAIN_HELP_ASSET_NAME, &assetSize) ||
@@ -78,6 +77,28 @@ static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
         return 0;
     }
 
+    /*
+     * Preserve the original file format's logical line-count field, but never
+     * trust it for memory access. The desktop parser used this arithmetic as an
+     * unchecked loop bound:
+     *
+     *     data[1] + data[0] * 10 - 528
+     *
+     * Here it is only a declaration. It must fit MenuSystem_t, and every byte
+     * consumed for every declared line is independently bounded by assetSize.
+     */
+    declaredItems = (int)data[1] + ((int)data[0] * 10) - 528;
+    if (declaredItems <= 0 || declaredItems > MAX_MENUITEMS) {
+        printf("[MAINMODEL] HELP-PARSE FAILED declaredItems=%d header=%02x/%02x/%02x itemBound=%d\n",
+               declaredItems,
+               (unsigned int)data[0],
+               (unsigned int)data[1],
+               (unsigned int)data[2],
+               MAX_MENUITEMS);
+        SDL_free(data);
+        return 0;
+    }
+
     menuSystem = doomRpg->menuSystem;
     menuSystem->scrollIndex = 0;
     menuSystem->selectedIndex = 0;
@@ -87,56 +108,60 @@ static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
     menuSystem->oldMenu = MENU_MAIN;
     menuSystem->type = 5;
 
-    for (pos = MAIN_HELP_HEADER_BYTES; pos < assetSize; ++pos) {
-        uint8_t c = data[pos];
+    for (item = 0; item < declaredItems; ++item) {
+        char line[MAIN_HELP_LINE_MAX_CHARS + 1];
+        int lineLength = 0;
+        int terminated = 0;
 
-        if (sawTerminator) {
-            if (c != 0U) {
-                printf("[MAINMODEL] HELP-PARSE FAILED data-after-NUL offset=%u\n",
-                       (unsigned int)pos);
+        while (pos < assetSize) {
+            uint8_t ch = data[pos++];
+
+            if (ch == 0U) {
+                printf("[MAINMODEL] HELP-PARSE FAILED premature-NUL item=%d offset=%u/%u\n",
+                       item,
+                       (unsigned int)(pos - 1U),
+                       (unsigned int)assetSize);
                 SDL_free(data);
                 menuSystem->numItems = 0;
                 return 0;
             }
-            continue;
-        }
 
-        if (c == 0U) {
-            sawTerminator = 1;
-            continue;
-        }
-        if (c == '\r') {
-            continue;
-        }
-        if (c == '\n') {
-            if (!appendHelpLine(menuSystem, line, lineLength)) {
-                printf("[MAINMODEL] HELP-PARSE FAILED line/item bound item=%d len=%d\n",
-                       menuSystem->numItems,
-                       lineLength);
+            if (ch == (uint8_t)'\n') {
+                terminated = 1;
+                break;
+            }
+
+            if (ch == (uint8_t)'\r') {
+                continue;
+            }
+
+            if (lineLength >= MAIN_HELP_LINE_MAX_CHARS) {
+                printf("[MAINMODEL] HELP-PARSE FAILED line-too-long item=%d offset=%u len>%d\n",
+                       item,
+                       (unsigned int)(pos - 1U),
+                       MAIN_HELP_LINE_MAX_CHARS);
                 SDL_free(data);
                 menuSystem->numItems = 0;
                 return 0;
             }
-            lineLength = 0;
-            continue;
+
+            line[lineLength++] =
+                (char)(ch == (uint8_t)'~' ? 0x80U : ch);
         }
 
-        if (lineLength >= MAIN_HELP_LINE_MAX_CHARS) {
-            printf("[MAINMODEL] HELP-PARSE FAILED line-too-long item=%d len>%d\n",
-                   menuSystem->numItems,
-                   MAIN_HELP_LINE_MAX_CHARS);
+        if (!terminated) {
+            printf("[MAINMODEL] HELP-PARSE FAILED truncated item=%d offset=%u/%u\n",
+                   item,
+                   (unsigned int)pos,
+                   (unsigned int)assetSize);
             SDL_free(data);
             menuSystem->numItems = 0;
             return 0;
         }
 
-        line[lineLength++] = (char)(c == (uint8_t)'~' ? 0x80U : c);
-    }
-
-    if (lineLength > 0) {
         if (!appendHelpLine(menuSystem, line, lineLength)) {
-            printf("[MAINMODEL] HELP-PARSE FAILED final-line/item bound item=%d len=%d\n",
-                   menuSystem->numItems,
+            printf("[MAINMODEL] HELP-PARSE FAILED append item=%d len=%d\n",
+                   item,
                    lineLength);
             SDL_free(data);
             menuSystem->numItems = 0;
@@ -144,18 +169,20 @@ static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
         }
     }
 
-    printf("[MAINMODEL] HELP-PARSE bytes=%u header=%02x/%02x/%02x headerTrusted=no items=%d itemBound=%d lineChars<=%d transientFreed=yes source=pak result=%s\n",
+    printf("[MAINMODEL] HELP-PARSE bytes=%u header=%02x/%02x/%02x declared=%d parsed=%d consumed=%u itemBound=%d lineChars<=%d trailing=%u headerTrusted=no source=pak result=valid\n",
            (unsigned int)assetSize,
            (unsigned int)data[0],
            (unsigned int)data[1],
            (unsigned int)data[2],
+           declaredItems,
            menuSystem->numItems,
+           (unsigned int)pos,
            MAX_MENUITEMS,
            MAIN_HELP_LINE_MAX_CHARS,
-           menuSystem->numItems > 0 ? "valid" : "EMPTY");
+           (unsigned int)(assetSize - pos));
 
     SDL_free(data);
-    return menuSystem->numItems > 0;
+    return menuSystem->numItems == declaredItems;
 }
 
 int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
