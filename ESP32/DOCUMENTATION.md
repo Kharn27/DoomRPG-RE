@@ -84,9 +84,15 @@ ALIVE samples are stable at `heap=82704 heap8=17152 largest8=10228`.
 There are now no active linker wraps whose target symbol begins with
 `EspNativeGameplayMonster`.
 
-The latest run does not separately hit the unchanged `RANGED-MEMBER` branch;
-it denotes exact-source ranged-AI movement orchestration rather than the actual
-monster attack presentation/resolution path.
+A later real-CYD PASS_TURN also proves a genuine ranged monster attack after
+the refactor: sprite 218 / subtype 3 / weapon 15 follows
+`ATTACK-PROBE -> MONSTERACT -> MONSTERATKVIS -> MONSTERRETAL`, then commits
+`playerHP=22->20 armor=12->10` only after the visual completes. Following
+ALIVE samples remain stable at `heap=82704 heap8=17152 largest8=10228`.
+
+That ranged attack emits no `RANGED-MEMBER`, confirming that
+`RANGED-MEMBER` denotes exact-source ranged-AI movement/repositioning rather
+than the actual attack presentation/resolution path.
 
 See [MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md](MILESTONE_ESP32_CONSOLIDATION_MONSTER_MOVEMENT_SERVICE.md)
 for the final monster-wrapper closure.
