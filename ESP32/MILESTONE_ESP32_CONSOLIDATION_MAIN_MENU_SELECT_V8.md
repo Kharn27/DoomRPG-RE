@@ -7,17 +7,18 @@ Date: 2026-09-30
 ```text
 base main = 8e80d0c9da4d345b068df24c01505ee54c256717
 branch = agent/esp32-consolidation-main-menu-select-v8
-hardware-tested code head = cc0e14f7cc9e57c6d9617e715622675fda6de0fb
-esp32-cyd CI #1102 = SUCCESS
+hardware-tested code head = cd5f24dd0ff538a85cebc02025de48cb5998401e
+esp32-cyd CI #1135/#1136 = SUCCESS
 static RAM = 45768 B
-flash = 799997 B
-firmware.bin = 800368 B
-artifact id = 11095462691
-artifact sha256 = c8265e77d2065ddce55dbc39a8cce5441c96f12812b8bbcfbe7b7c2288f36497
+flash = 801373 B
+firmware.bin = 801744 B
+artifact id = 11097355233
+artifact sha256 = caa4065b79b3e656fd0c00b37990d3d9c3ffdc5661ee102382562250856538ac
 ```
 
-Relative to the merged base build (#1093, 45760 B RAM / 807377 B flash),
-the final tested code costs 8 B static RAM and saves 7380 B flash.
+Relative to the merged base build (#1093, 45760 B RAM / 807377 B flash,
+807744 B firmware.bin), the final reviewed/tested code costs 8 B static RAM,
+saves 6004 B linked flash, and saves 6000 B in firmware.bin.
 
 ## Goal
 
@@ -50,9 +51,11 @@ finger-first 2x2 touch gate
 ```
 
 A small transitional `native_main_menu_model` still uses `MenuSystem_t` as
-the temporary model container and still calls `Menu_initMenu()` for bounded
-menu construction. That dependency remains visible instead of being hidden
-behind `MenuSystem_select()`.
+the temporary model container. MENU_MAIN and OPTIONS still use
+`Menu_initMenu()` for bounded construction, but HELP no longer does: its
+`help.txt` model is parsed by an ESP32-native bounded reader. The remaining
+legacy construction dependency stays visible instead of being hidden behind
+`MenuSystem_select()`.
 
 The final ELF contains:
 
@@ -151,6 +154,99 @@ BACK restored the exact opaque main-menu framebuffer before rearming touch.
 Visual polish of the Help screen is deliberately deferred; ownership and
 navigation are now native and bounded.
 
+## Review hardening before merge
+
+A pre-merge review found three correctness issues and one structural smell. They
+were fixed before declaring this milestone complete.
+
+### Bounded Help parsing
+
+The first native Help entry still delegated to legacy
+`Menu_LoadHelpResource()`, whose parser had no file-size contract, no
+`MAX_MENUITEMS` bound and unsafe line handling.
+
+The final code reads `help.txt` through the PAK source with explicit bounds:
+
+```text
+asset size >= 3 and <= 4096 bytes
+declared logical records in 1..MAX_MENUITEMS
+every record must find its newline before physical EOF
+every rendered line <= 31 characters
+all malformed/truncated cases fail closed
+temporary asset buffer freed on every path
+```
+
+The file format's original logical record count is retained only as a declared
+count; it is never trusted as an unchecked memory-access bound. This matters
+because valid `help.txt` contains bytes after the 83 logical Help records.
+
+An initial over-parsing implementation correctly failed closed at item 96 on
+the real CYD. That failure also provided the first hardware witness for the
+common menu recovery path:
+
+```text
+[MAINMODEL] HELP-PARSE FAILED line/item bound item=96 len=0
+[MAINACTION] FAILED dispatch item=3; recovery=attempt
+[MAINRECOVER] READY reason=dispatch-failed menu=1 selected=0 frame=522dc605 touch=rearmed
+```
+
+The parser was then corrected to honor the verified logical record count while
+bounding every byte read. The corrected head
+`cd5f24dd0ff538a85cebc02025de48cb5998401e` was re-tested successfully on the
+real classic CYD; Help navigation works again.
+
+### Failure recovery
+
+START/OPTIONS/HELP may disable the main callback before transferring ownership.
+A failed transition now routes through one common
+`DoomRPG_esp32MainMenuRecover()` owner. Recovery is allowed only while
+`ST_MENU` still owns the UI; it refuses to drag a real ST_INTRO/ST_PLAYING
+transition back into the menu.
+
+Recovery rebuilds MENU_MAIN, repaints the opaque dashboard and re-arms touch.
+The real-CYD Help parser failure above proves the previously dangerous
+"visible but inert until reboot" condition is gone for this dispatch boundary.
+
+Secondary Help/Options callback failures also use the same recovery owner.
+
+### Typed LOAD outcomes
+
+Main-menu LOAD no longer collapses all false returns into a recoverable
+STAY_MAIN result. Its action reports:
+
+```text
+NO_SAVE
+RECOVERED
+TRANSITIONED
+FATAL
+```
+
+The semantic dispatcher maps only NO_SAVE/RECOVERED to STAY_MAIN.
+TRANSITIONED transfers ownership to gameplay; FATAL enters the common dispatch
+recovery path when ST_MENU is still recoverable.
+
+The already hardware-proven valid V9 LOAD success path remains unchanged apart
+from this typed return boundary. The NO_SAVE/error-injection branches were not
+artificially forced on hardware for this review.
+
+### Presentation ownership cleanup
+
+The repeated menu-local framebuffer hash and graphics-boundary checks were
+centralized in `native_main_menu_present`, which also owns common recovery.
+The active `native_main_menu_*` sources no longer carry local
+`framebufferHash()` or `graphicsBoundaryIsSafe()` copies.
+
+This moves the domain toward:
+
+```text
+native_main_menu_model
+native_main_menu_present
+native_main_menu_input/touch
+native_main_menu_actions
+```
+
+without forcing a large file split during this milestone.
+
 ## LOAD proof
 
 The dedicated LOAD card continues to own checkpoint resume. The final hardware
@@ -184,5 +280,5 @@ allow a fresh audit of whether `MenuSystem_setMenu()` can disappear or shrink
 from the linked ESP32 image.
 
 Any commit after
-`cc0e14f7cc9e57c6d9617e715622675fda6de0fb` is documentation-only before
+`cd5f24dd0ff538a85cebc02025de48cb5998401e` is documentation-only before
 merge.
