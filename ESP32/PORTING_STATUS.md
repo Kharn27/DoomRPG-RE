@@ -2096,3 +2096,52 @@ Detailed record:
 
 - [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_SELECT_V8.md)
 
+## Native main-menu Back consolidation — REAL-CYD PASS (2026-09-30)
+
+Hardware-tested code boundary:
+
+```text
+8d9b6d25f481d76fe4c79bc1af99d59bc314328f
+esp32-cyd CI #1149 = SUCCESS
+RAM static = 45768 B
+Flash      = 801425 B
+firmware.bin = 801792 B
+```
+
+HELP and OPTIONS no longer return through `MenuSystem_back()`. Both use the
+shared semantic `DoomRPG_esp32MainMenuReturnToMain()` owner, which validates
+the expected child/ST_MENU boundary, plays the exact Back cue 5042, rebuilds
+MENU_MAIN through the native model owner, performs the opaque main repaint, and
+requires exact framebuffer/touch/graphics invariants before success.
+
+Real-CYD HELP proof:
+
+```text
+[MAINBACK] READY source=help child=2->1 frame=522dc605 touch=rearmed ... sound=5042 router=native noMenuSystemBack=yes noSetMenu=yes
+[MAINHELP] READY back=native mainFNV=522dc605 touch=armed
+```
+
+Real-CYD OPTIONS proof:
+
+```text
+[MAINBACK] READY source=options child=7->1 frame=522dc605 touch=rearmed ... sound=5042 router=native noMenuSystemBack=yes noSetMenu=yes
+[OPTIONBACK] FAST End framebufferFNV=522dc605 expected=522dc605 runtimeFNV=522dc605 menu=1 selected=0 touchActive=1 shapeData=0x0 mediaTexels=0x0
+```
+
+Heap stayed at `heap8=20916`, `largest8=10740` in both submitted traces.
+
+Final ELF:
+
+```text
+MenuSystem_back       absent
+MenuSystem_setMenu    present (445 B)
+MenuSystem_playSound  present
+```
+
+`MenuSystem_setMenu()` remains a separate, broader seam with retained callers
+outside this main-menu Back boundary.
+
+Detailed record:
+
+- [`MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_BACK_V9.md`](MILESTONE_ESP32_CONSOLIDATION_MAIN_MENU_BACK_V9.md)
+
