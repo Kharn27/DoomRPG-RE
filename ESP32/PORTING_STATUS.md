@@ -2048,10 +2048,11 @@ Detailed record:
 Hardware-tested code boundary:
 
 ```text
-cc0e14f7cc9e57c6d9617e715622675fda6de0fb
-esp32-cyd CI #1102 = SUCCESS
+cd5f24dd0ff538a85cebc02025de48cb5998401e
+esp32-cyd CI #1135/#1136 = SUCCESS
 RAM static = 45768 B
-Flash      = 799997 B
+Flash      = 801373 B
+firmware.bin = 801744 B
 ```
 
 The finger-first MENU_MAIN no longer routes selections through
@@ -2059,9 +2060,21 @@ The finger-first MENU_MAIN no longer routes selections through
 composed explicitly as START / LOAD / OPTIONS / HELP by the native dispatcher.
 
 Real-CYD witnesses cover START -> fresh intro -> Entrance gameplay, valid V9
-LOAD -> Sector 1 checkpoint resume, OPTIONS -> Back, and HELP page-down/page-up
--> Back. Help owns bounded native paging over all 83 loaded lines; visual polish
+LOAD -> Sector 1 checkpoint resume, OPTIONS -> Back, HELP page-down/page-up ->
+Back, and the common failed-dispatch recovery path. Help now owns both bounded
+PAK parsing and bounded native paging over its 83 logical records; visual polish
 is deferred.
+
+Pre-merge review hardening added:
+- bounded `help.txt` parsing with physical-size/item/line checks;
+- common MENU_MAIN repaint + touch re-arm recovery while ST_MENU still owns UI;
+- typed LOAD results: NO_SAVE / RECOVERED / TRANSITIONED / FATAL;
+- shared `native_main_menu_present` hash/graphics-boundary primitives.
+
+The first bounded-parser attempt intentionally failed closed on the real CYD
+when it over-read past the 83 logical Help records; the log proved recovery
+returned to framebuffer `522dc605` with touch rearmed. The corrected
+`cd5f24dd...` parser was then re-tested successfully on hardware.
 
 Final source review also removed a dead legacy START save precheck.
 `Game_checkConfigVersion()` tests desktop `Config/Player/Player2/World`
