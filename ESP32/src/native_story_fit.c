@@ -477,9 +477,8 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         }
 
         if (textPageCount <= doomCanvas->storyTextPage) {
-            printf("[INTROFIT] REFUSE page=%d textPage=%d legacyDispose=no\n",
-                   doomCanvas->storyPage,
-                   doomCanvas->storyTextPage);
+            printf("[INTROFIT] REFUSE legacy-exit page=%d\n",
+                   doomCanvas->storyPage);
             return;
         }
 
@@ -545,7 +544,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
 
     if (elapsedAnim > 10000) {
         if (!advanceAnimationPageBounded(doomCanvas)) {
-            printf("[INTROFIT] REFUSE auto-page page=%d legacyDispose=no\n",
+            printf("[INTROFIT] REFUSE legacy-exit page=%d\n",
                    doomCanvas->storyPage);
             return;
         }
