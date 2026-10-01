@@ -7,21 +7,81 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = ef8dc9b5f06dd93c34c5179f6b95935dd0af13d2
-CI = esp32-cyd #1247 SUCCESS
+hardware-tested code boundary = 5943974dcf1b5bd1c142e4665340f51fb6fbb19b
+CI = esp32-cyd #1253 SUCCESS
 static RAM = 44936 B
-linked Flash = 757869 B
-firmware.bin = 758240 B
-artifact id = 11189341147
-artifact digest = sha256:42e47397c8792f82f0129c8c85340bd1535374ad42787ec38c0c0a5757febdc0
-firmware sha256 = 6f14c4b71ef9a51a43f0ea26ce480417cd54cf66ec2b6eddb40a11cfb5592833
-ELF sha256 = 76d902338352539e18e6dc640de7d219bac2b942d98e34a85347edb800fea5ed
-hardware = V9 Sector 1 LOAD -> subtype-4 Phantom Fire Ext x2 kill -> subtype-5 Fire Ext hit -> monster retaliation PASS
-status = FIRE EXT MONSTER COMBAT REAL-CYD PASS; weapon 1 uses normal monster combat, Phantom subtype 4 owns gray ce79/15-particle HITFX, other monsters take damage without blood HITFX; gameplay RNG untouched by visual FX; heap stable at 50364/38900; V24 legacy Menu_t retirement remains valid; active linker wraps = 49
+linked Flash = 761949 B
+firmware.bin = 762320 B
+artifact id = 11191212285
+artifact digest = sha256:42b26ff060341d02dbc37954006df9825dc7a12463e7168ed9f09cc68de02966
+firmware sha256 = 0e4cc7b4dee946faaa04a26462f1ae01914bb68251c52412d6f3467b2002ba20
+ELF sha256 = ed1350736fd0f855a1e9f62963e9e9332056cf9c45e28f291a4f0edc65ba4481
+hardware = V9 Sector 1 LOAD -> subtype-4 three-goal shortcut -> native 3-loop monster attack visual -> retaliation commit PASS; Fire Ext Phantom combat regression PASS
+status = THREE-GOAL MULTI-LOOP MONSTER ATTACK REAL-CYD PASS; subtype 4/13 single-probe 3-shot family is live, simultaneous attack-ready monsters remain fail-closed; gameplay RNG rollback/commit exact; heap stable at 50364/38900; shapeData/mediaTexels remain NULL; active linker wraps = 49
 ```
 
 
 
+
+
+### Three-goal subtype 4/13 multi-loop attack — REAL-CYD PASS (2026-10-01)
+
+Commits `f550580369bfdca07631ad33e6b31f2c63dc1f14` and
+`5943974dcf1b5bd1c142e4665340f51fb6fbb19b` connect the already-native
+three-goal movement owner to the existing MonsterTurn -> Activation ->
+AttackVisual -> Retaliation pipeline.
+
+The permanent bounded contract is:
+
+- subtype 4/13 keeps the exact legacy goal count of three;
+- reaching cardinal distance 64 before goal 3 applies the legacy shortcut and
+  skips the remaining movement goals;
+- one rollback-exact three-loop attack probe is published to MonsterTurn;
+- the existing visual owner renders three attack/idle phases before resolution;
+- the retaliation owner replays and commits the exact roll/RNG once;
+- a second attack-ready monster before delivery remains deliberately fail-closed
+  until ordered multi-attacker publication has a dedicated milestone.
+
+CI #1253 succeeds at 44936 B static RAM / 761949 B linked Flash /
+762320 B firmware.bin. Artifact 11191212285 has digest
+`sha256:42b26ff060341d02dbc37954006df9825dc7a12463e7168ed9f09cc68de02966`.
+
+The real classic CYD exercises the shortcut branch directly:
+
+```text
+[MONSTER3GOAL] COMMIT sprite=1 goal=2/3 tile=538->506 ...
+[MONSTER3ATTACK] ATTACK-PROBE reason=MOVE sprite=1 subtype=4 ... weapon=13 ... loops=3 goalStep=2/3 ... hitLoops=2 ... totalDamage=2 armorDamage=2 ... rngCalls=6 ... rngRollback=yes playerExact=yes ...
+[MONSTER3GOAL] ATTACK-PROBE ... frameTime=2->3 goal=2/3 ... shortcut=yes remainingGoals=skipped loops=3 ...
+```
+
+The same probe is then delivered and animated as three real phases:
+
+```text
+[MONSTERACT] DELIVER actualProbe=1 deliveredProbe=1 sprite=1 reason=1 activated=yes
+[MONSTERATKVIS] ARM ... loops=3 shot=1/3 ...
+[MONSTERATKVIS] STEP ... shot=2/3 phase=attack ...
+[MONSTERATKVIS] STEP ... shot=3/3 phase=attack ...
+[MONSTERATKVIS] COMPLETE ... loops=3 ...
+```
+
+Resolution commits the exact prospective result:
+
+```text
+[MONSTERRETAL] COMMIT ... subtype=4 ... weapon=13 ... loops=3 hitLoops=2 ... totalDamage=2 armorDamage=2 ... playerHP=33->31 armor=23->21 ... rngCalls=6 ... rng=39420bce->1a4b8634 ... rollback=closed
+```
+
+Repeated ALIVE samples remain stable at
+`heap=116288 heap8=50364 largest8=38900`. Session readiness also keeps
+`shapeData=0x0 mediaTexels=0x0`.
+
+The same hardware session exposes a separate presentation bug: repeated
+PASS_TURN while standing on a type-10/11 hazard mutates PlayerState and repeats
+damage feedback correctly, but the bottom HUD health/armor digits remain stale
+until a later world movement redraw. That presentation-only bug is the next
+candidate fix and does not invalidate this multi-loop gameplay PASS.
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_MONSTER_THREE_GOAL_MULTI_LOOP_ATTACK.md](MILESTONE_ESP32_NATIVE_MONSTER_THREE_GOAL_MULTI_LOOP_ATTACK.md)
 
 ### Fire Ext monster combat semantics — REAL-CYD PASS (2026-10-01)
 

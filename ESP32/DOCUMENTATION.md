@@ -15,16 +15,43 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = ef8dc9b5f06dd93c34c5179f6b95935dd0af13d2
-CI = esp32-cyd #1247 SUCCESS
+hardware-tested code boundary = 5943974dcf1b5bd1c142e4665340f51fb6fbb19b
+CI = esp32-cyd #1253 SUCCESS
 static RAM = 44936 B
-linked Flash = 757869 B
-firmware.bin = 758240 B
-artifact id = 11189341147
-hardware = V9 Sector 1 LOAD + Fire Ext on subtype-4 and subtype-5 monsters PASS
-status = Fire Ext monster combat semantics REAL-CYD PASS; V24 Menu_t retirement remains valid; 49 active linker wraps
+linked Flash = 761949 B
+firmware.bin = 762320 B
+artifact id = 11191212285
+hardware = Sector 1 subtype-4 three-goal shortcut + native three-loop attack/retaliation PASS
+status = three-goal subtype 4/13 single-probe multi-loop attack REAL-CYD PASS; simultaneous attack-ready ordering remains fail-closed; 49 active linker wraps
 ```
 
+
+
+## Three-goal subtype 4/13 multi-loop attack — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested head `5943974dcf1b5bd1c142e4665340f51fb6fbb19b`
+connects the native three-goal movement chain to the existing native monster
+attack pipeline without creating a parallel combat owner.
+
+A real subtype-4 monster commits goal 2/3 onto the adjacent tile, takes the
+legacy early-shortcut to frameTime 3, publishes one `loops=3` MonsterTurn
+probe, renders all three attack/idle phases, then commits the exact prospective
+retaliation result. Player HP/armor changes `33/23 -> 31/21`; the six combat
+RNG calls advance only at final resolution. Live memory remains
+`heap8=50364 largest8=38900`.
+
+Simultaneous attack-ready publication is intentionally still fail-closed: only
+one undelivered post-move attack probe may exist at a time.
+
+CI #1253: 44936 B static RAM / 761949 B linked Flash / 762320 B firmware.bin,
+artifact 11191212285.
+
+The same test session found a separate PASS_TURN-on-hazard HUD refresh defect:
+gameplay damage commits correctly but the bottom HUD presentation is stale until
+the next movement redraw. That is the next bounded presentation fix.
+
+See
+[MILESTONE_ESP32_NATIVE_MONSTER_THREE_GOAL_MULTI_LOOP_ATTACK.md](MILESTONE_ESP32_NATIVE_MONSTER_THREE_GOAL_MULTI_LOOP_ATTACK.md).
 
 ## Fire Ext monster combat semantics — REAL-CYD PASS (2026-10-01)
 
