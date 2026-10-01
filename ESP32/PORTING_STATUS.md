@@ -6,21 +6,55 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
-branch = agent/esp32-moveevent-diagnostic-visibility-v21-fix
-hardware-tested code boundary = 2c855bd217999453ec21246937ef6730e1697f3c
-CI = esp32-cyd #1230 SUCCESS
-static RAM = 45064 B
-linked Flash = 758389 B
-firmware.bin = 758752 B
-artifact id = 11173629995
-artifact digest = sha256:f124decd87869fd0d4fdfe44cfeb2140cb4f3ca4b9b13ed423678a9e3bc378b8
-firmware sha256 = b13cc46634df5e9ff81ac003bdd5a2d649441a3c2980a1ec3510d8812dee7ac9
-ELF sha256 = 806058fcbb7bbbd38636c580676f73f6ebc3d0f426ad53400d46771601d5e7a7
-hardware = Entrance normal INFO regression path: banal MOVE/TURN, pickups, regular doors, move-event COMMIT, opcode-26 dialog/resume, SELECT dialogs, fire actions, repeated renderer recovery PASS
-status = HARDWARE REGRESSION PASS; routine move phases remain TRACE-only, while INVALID/NOT_READY/UNSUPPORTED/COMPLEX and unknown/divergent phase outcomes are restored to INFO by source classification; no unsafe phase was naturally triggered in this hardware run; active linker wraps = 49
+branch = agent/esp32-retire-legacy-particle-startup-v22
+hardware-tested code boundary = 28cc43cff7d0bee49731ff2c3382939914c75e41
+CI = esp32-cyd #1233 SUCCESS
+static RAM = 44952 B
+linked Flash = 757505 B
+firmware.bin = 757872 B
+artifact id = 11176725567
+artifact digest = sha256:4adda6b89004b7482d052a151e2664a2fdc2cddb51fb38d8d6cd0e0adc1dac83
+firmware sha256 = 2169260cb3288d31aff2bbb66ccaefe6f1bf6b779391b2c7b3374fa2d0516352
+ELF sha256 = 203c3afcfdfe4c50361153b09043c70e6e23520fe1ed0a4a1569155ee9051b0d
+hardware = cold boot -> native MAIN -> START -> complete intro -> Entrance -> MOVE/TURN -> pickups -> regular door -> opcode26 dialog/resume -> renderer recovery PASS
+status = V22 REAL-CYD PASS; legacy ParticleSystem_startup + gibs preflight/load retired; final ELF retains only ParticleSystem_init/free; shapeData/mediaTexels remain NULL; active linker wraps = 49
 ```
 
 
+
+### Legacy ParticleSystem startup retirement V22 — REAL-CYD PASS (2026-10-01)
+
+Commit `28cc43cff7d0bee49731ff2c3382939914c75e41` removes the unused
+desktop-derived `ParticleSystem_startup()` from normal ESP32 prerender startup.
+The production PAK preflight drops `gibs_24.bmp`, and the runtime no longer
+loads or initializes the 64-node legacy particle pool.
+
+CI #1233 succeeds at 44952 B static RAM / 757505 B linked Flash /
+757872 B firmware.bin. Relative to the preceding review-fix image this is
+-112 B static RAM and -884 B linked Flash. The final ELF contains only
+`ParticleSystem_init` and `ParticleSystem_free`; startup, unlink, render,
+spawn and particle-calculation symbols are absent. Active linker wraps remain 49.
+
+The real classic CYD proves the new four-file prerender set
+(`p.bmp/q.bmp/j.bmp/entities.db`), with no gibs resource and no
+`ParticleSystem_startup` stage. Native MAIN remains stable for 100 seconds at
+`heap=120472 heap8=54548 largest8=32756`. Compared with the prior V21 main
+menu witness (`101644/35720/23540`), the retired startup returns 18828 B of
+free heap8 and raises the largest 8-bit block by 9216 B.
+
+START then completes the entire intro and Entrance bootstrap with exact first
+frame FNV `71ca7465`, `shapeData=0x0`, `mediaTexels=0x0`. Resident
+gameplay is stable at `heap=112284 heap8=46360 largest8=36852` before the
+first lazy dialog owner and `111248/45324/36852` after it. MOVE/TURN,
+resource pickups, regular-door open/close, opcode-26 dialog/resume and genuine
+`LEGACY_GUARD -> RETRY -> RECOVERED` renderer recovery all remain live.
+
+The legacy `ParticleSystem_t` object itself is intentionally still allocated
+in this V22 boundary; its core-stage witness is 2280 B. Retiring that dead core
+object is the next bounded step.
+
+Detailed milestone:
+[MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md](MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md)
 
 ### V21 post-review MOVE-event diagnostic visibility fix — REAL-CYD regression PASS (2026-10-01)
 

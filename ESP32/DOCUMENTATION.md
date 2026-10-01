@@ -14,16 +14,34 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
-branch = agent/esp32-moveevent-diagnostic-visibility-v21-fix
-hardware-tested code boundary = 2c855bd217999453ec21246937ef6730e1697f3c
-CI = esp32-cyd #1230 SUCCESS
-static RAM = 45064 B
-linked Flash = 758389 B
-firmware.bin = 758752 B
-artifact id = 11173629995
-hardware = normal INFO regression path preserves compact MOVE/TURN plus door/dialog/pickup/action/recovery behavior
-status = HARDWARE REGRESSION PASS; routine move phases stay TRACE, unsafe/unknown/divergent phase outcomes are classified INFO; unsafe phase not naturally triggered; 49 active linker wraps
+branch = agent/esp32-retire-legacy-particle-startup-v22
+hardware-tested code boundary = 28cc43cff7d0bee49731ff2c3382939914c75e41
+CI = esp32-cyd #1233 SUCCESS
+static RAM = 44952 B
+linked Flash = 757505 B
+firmware.bin = 757872 B
+artifact id = 11176725567
+hardware = cold boot + native MAIN + START/intro + Entrance resident gameplay PASS
+status = V22 REAL-CYD PASS; ParticleSystem resource startup retired, object still allocated for next bounded retirement step; 49 active linker wraps
 ```
+
+## Legacy ParticleSystem startup retired — REAL-CYD PASS (2026-10-01)
+
+V22 removes `ParticleSystem_startup()` from the production ESP32 prerender
+chain and drops `gibs_24.bmp` from the PAK preflight. The final ELF retains
+only the legacy object constructor/destructor pair; no particle startup,
+unlink, render, spawn or calculation code is linked.
+
+CI #1233 is 44952 B static RAM / 757505 B linked Flash / 757872 B firmware.bin,
+with 49 active linker wraps. The real CYD boots with four prerender files,
+holds native MAIN stable at `heap8=54548 largest8=32756`, completes the full
+intro and exact Entrance first frame `71ca7465`, then validates resident
+MOVE/TURN, pickups, door, opcode-26 dialog and renderer recovery. The core graph
+still allocates the dead `ParticleSystem_t` object at 2280 B; this is the next
+retirement target on the same active branch.
+
+See
+[MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md](MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md).
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
 
