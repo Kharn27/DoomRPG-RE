@@ -13,16 +13,46 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
-branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = 13bb05ed09aa217a2263a4f3fb8a521348c96258
-CI = esp32-cyd #1257 SUCCESS
-static RAM = 44936 B
-linked Flash = 762861 B
-artifact id = 11191801698
-hardware = Sector 1 repeated PASS_TURN on type-10 hazard with immediate HP/armor HUD refresh PASS
-status = hazard PASS_TURN HUD refresh REAL-CYD PASS; three-goal multi-loop and Fire Ext remain validated; lethal player transition is the next explicit gameplay boundary; 49 active linker wraps
+current main = 88a5d3fa5bfe96fe16e213e78933493394264dcc
+branch = agent/esp32-native-player-death-core
+hardware-tested code boundary = d6811e23db4580795887c97c3bdf5e6493224268
+CI = esp32-cyd #1274 SUCCESS
+static RAM = 44960 B
+linked Flash = 765497 B
+artifact id = 11193296410
+hardware = Sector 1 lethal PASS_TURN on type-10 hazard: native camera fall + viewport fade-to-black PASS
+status = native player-death core REAL-CYD PASS; HP=0/weapon clear/death RNG/input lock/fall/fade/death-menu-ready owned; no post-death MonsterTurn; death menu UI is the next explicit boundary; 49 active linker wraps
 ```
+
+
+## Native player death core — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested head `d6811e23db4580795887c97c3bdf5e6493224268`
+connects lethal current-tile type-10/11 `PASS_TURN` damage to the first
+permanent native `ST_DYING` owner.
+
+The real CYD proves the terminal sequence
+`HP 1 -> 0 -> PlayerDeath ARM -> camera fall -> viewport fade -> death-menu-ready`.
+The lethal route consumes one legacy death RNG byte, hides the first-person
+weapon by clearing the death-state weapon fields, blocks all resident gameplay
+input and schedules no MonsterTurn. Camera state remains in `EspPlayerView`;
+the fade mutates only the shared 160x80 RGB565 viewport and allocates no second
+framebuffer. `shapeData` and `mediaTexels` remain NULL.
+
+Observed terminal state is `viewZ=6` at the 750 ms handoff and full black at
+about 3004 ms. Live memory stays
+`heap=116264 heap8=50340 largest8=38900`.
+
+The inert HUD after black is intentional for this boundary: death-menu routing
+is still unowned and all world input remains blocked. MOVE-hazard lethal,
+monster-retaliation lethal and explosion/radius lethal producers also remain
+fail-closed until their own wiring milestones.
+
+CI #1274: 44960 B static RAM / 765497 B linked Flash, artifact 11193296410.
+
+See
+[MILESTONE_NATIVE_PLAYER_DEATH_CORE.md](MILESTONE_NATIVE_PLAYER_DEATH_CORE.md).
+
 
 
 
