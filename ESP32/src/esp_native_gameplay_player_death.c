@@ -237,11 +237,20 @@ static int paintDeathMenu(void) {
         int top = DEATH_MENU_ROW0_TOP +
                   row * (DEATH_MENU_ROW_HEIGHT + DEATH_MENU_ROW_GAP);
         int bottom = top + DEATH_MENU_ROW_HEIGHT - 1;
-        uint16_t border = 0x8410U;
-        uint16_t text = 0xffffU;
-        if (row == 0 && deathState.loadAvailable == 0U) {
+        uint16_t border;
+        uint16_t text;
+
+        if (row == 0 && deathState.loadAvailable != 0U) {
+            border = 0xffe0U;
+            text = 0xffffU;
+            fillRect(fb, DEATH_MENU_LEFT + 2, top + 2,
+                     DEATH_MENU_LEFT + 4, bottom - 2, 0xffe0U);
+        }
+        else {
+            border = 0x4208U;
             text = 0x7befU;
         }
+
         drawRect(fb, DEATH_MENU_LEFT, top, DEATH_MENU_RIGHT, bottom, border);
         drawCentered5x7(fb, top + 6, labels[row], text);
     }
