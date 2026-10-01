@@ -7,17 +7,17 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 67950d6310ddb2fe4b48342200603674f6e71815
 branch = agent/esp32-consolidation-interaction-diagnostics-v17
-hardware-tested code boundary = a2dffc4243701a5f78fa02abf39a81da68b5c128
-CI = esp32-cyd #1218 SUCCESS
+hardware-tested code boundary = 552ec9c529d1bd31a656c9847b0b267bacd713fa
+CI = esp32-cyd #1220 SUCCESS
 static RAM = 45064 B
-linked Flash = 762021 B
-firmware.bin = 762384 B
-artifact id = 11155223388
-artifact digest = sha256:647af5bbbc5bda0f091b4a5de83ba05d961cd0774f5ed50a62cfda17d2df6e55
-firmware sha256 = b394438989fcfcfa4c1d63e5142fc7e56c8c017aa7134af65344d7faf336fffb
-ELF sha256 = 540660ede5a2d4e5621e60c2d03c473f7c660ac09041e919e5c548187e7a96ba
-hardware = cold boot -> native MENU_MAIN -> START -> full intro -> Entrance -> FIRST_FRAME/READY -> MOVE/TURN/crate/dialog-resume gameplay PASS
-status = HARDWARE PASS; INTERACTCORPUS wrapper/census is bringup-only; normal resident gameplay service is direct; active linker wraps = 49
+linked Flash = 759197 B
+firmware.bin = 759568 B
+artifact id = 11157510597
+artifact digest = sha256:f891d1f121611cade66ed43eb9064919fa2da5336d39ac27d8a97f924802aded
+firmware sha256 = 956d0593fa16366448736ee602eba321f217a94b106c4dbcf7286503afe976e8
+ELF sha256 = 559f03b35ab5950ce4e9ee51c4fe4c128e81975c708001b6c7aa52952a3b4c10
+hardware = cold boot -> native MENU_MAIN -> START -> full intro -> Entrance -> FIRST_FRAME/READY -> repeated MOVE/TURN/pickup/door gameplay PASS
+status = HARDWARE PASS; hot redraw success telemetry is TRACE-only while failure/recovery witnesses remain INFO/ERROR; active linker wraps = 49
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2903,4 +2903,77 @@ allocations (for example MENU_MAIN `heap8=35720` versus 35712), matching the
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md](MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md)
+
+### Hot redraw success telemetry moved to TRACE V20 — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested code boundary: `552ec9c529d1bd31a656c9847b0b267bacd713fa`.
+
+V20 moves repetitive success-only presentation telemetry out of the normal
+INFO firmware without changing rendering, gameplay, FNV guards, rollback or
+failure/recovery behavior.
+
+The following success families are TRACE-only in normal production:
+
+```text
+[NATIVEFRAME] BSP / WALL
+[WEAPON] DRAW
+[FACINGLABEL] REFRESH / PAINT / CLEAR
+[RESIDENTGAMEPLAY] FRAME
+[ACTIONENGINE] FRAME
+[ACTIONFEEDBACK] PAINT / CLEAR / REFRESH
+[DOORANIM] FRAME
+[DYNAMICLINES] FRAME
+```
+
+Important recovery/error witnesses remain visible, including
+`NATIVEFRAME FAILED`, cache/read failures, `LEGACY_GUARD`, `RETRY`,
+`RECOVERED`, `RESIDENTGAMEPLAY RENDER-FAILED`,
+`ACTIONFEEDBACK FAILED`, `VIEWFLASH FAILED`, plus functional
+`DOORANIM ARM/COMPLETE` boundaries.
+
+CI #1220:
+
+```text
+                         V19              V20           delta
+static RAM               45064 B          45064 B          0 B
+linked Flash            762021 B         759197 B      -2824 B
+firmware.bin            762384 B         759568 B      -2816 B
+active __wrap_*              49               49            0
+```
+
+Artifact `11157510597`:
+`sha256:f891d1f121611cade66ed43eb9064919fa2da5336d39ac27d8a97f924802aded`.
+Firmware SHA-256:
+`956d0593fa16366448736ee602eba321f217a94b106c4dbcf7286503afe976e8`.
+ELF SHA-256:
+`559f03b35ab5950ce4e9ee51c4fe4c128e81975c708001b6c7aa52952a3b4c10`.
+
+The local hardware workstation reports the same 45064 B static RAM and the
+known +16 B environment delta: 759213 B linked Flash / 759584 B firmware.bin.
+
+The real classic CYD validates cold boot, full intro/disposal, exact Entrance
+first frame `71ca7465`, `shapeData=0x0 mediaTexels=0x0`, repeated MOVE/TURN,
+resource pickups and regular-door animation. The hot success lines above are
+absent from the runtime transcript, while a real renderer recovery remains
+visible and succeeds:
+
+```text
+[NATIVEFRAME] LEGACY_GUARD ...
+[NATIVEFRAME] RETRY ...
+[NATIVEFRAME] RECOVERED ...
+```
+
+Gameplay ALIVE remains stable at:
+
+```text
+heap=93448 heap8=27524 largest8=18420
+```
+
+The hardware interaction is subjectively much more responsive after the
+cumulative logging consolidation. V20 specifically removes repeated serial
+traffic from each world redraw; no renderer algorithm or presentation path was
+otherwise optimized.
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md](MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md)
 

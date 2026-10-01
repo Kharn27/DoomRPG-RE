@@ -15,14 +15,14 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 67950d6310ddb2fe4b48342200603674f6e71815
 branch = agent/esp32-consolidation-interaction-diagnostics-v17
-hardware-tested code boundary = a2dffc4243701a5f78fa02abf39a81da68b5c128
-CI = esp32-cyd #1218 SUCCESS
+hardware-tested code boundary = 552ec9c529d1bd31a656c9847b0b267bacd713fa
+CI = esp32-cyd #1220 SUCCESS
 static RAM = 45064 B
-linked Flash = 762021 B
-firmware.bin = 762384 B
-artifact id = 11155223388
-hardware = normal INFO firmware validated through cold boot, intro, Entrance session, MOVE/TURN, crate transform and dialog resume
-status = HARDWARE PASS; interaction-chain corpus wrapper is bringup-only; normal resident gameplay service is direct; 49 active linker wraps
+linked Flash = 759197 B
+firmware.bin = 759568 B
+artifact id = 11157510597
+hardware = normal INFO firmware validated through cold boot, intro, Entrance session and repeated MOVE/TURN/pickup/door gameplay
+status = HARDWARE PASS; repeated redraw success telemetry is TRACE-only; failure/recovery witnesses remain visible; 49 active linker wraps
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1484,4 +1484,23 @@ pre-dialog gameplay heap increases by the exact expected 8 B versus V18.
 
 Detailed milestone:
 [MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md](MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md).
+
+## Hot redraw success telemetry moved to TRACE — REAL-CYD PASS (2026-10-01)
+
+V20 hardware head `552ec9c529d1bd31a656c9847b0b267bacd713fa`
+moves repeated success-only redraw summaries to TRACE while keeping renderer,
+gameplay and recovery logic unchanged.
+
+CI #1220 reports 45064 B static RAM / 759197 B linked Flash /
+759568 B firmware.bin. Active wrappers remain 49.
+
+The real CYD preserves exact Entrance first-frame FNV `71ca7465`,
+`shapeData=0x0 mediaTexels=0x0`, committed MOVE/TURN, resource pickups and
+regular-door operation. Repetitive `NATIVEFRAME`, weapon, facing-label,
+resident-frame, action-frame and dynamic-line success summaries no longer
+flood INFO, while `LEGACY_GUARD -> RETRY -> RECOVERED` remains visible and
+hardware-proven.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md](MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md).
 
