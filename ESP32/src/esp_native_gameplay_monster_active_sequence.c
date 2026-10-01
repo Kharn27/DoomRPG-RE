@@ -10,8 +10,10 @@
 #include "esp_native_gameplay_monster_active_sequence.h"
 #include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
+#include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_turn.h"
+#include "esp_native_gameplay_player_death.h"
 
 #define ACTIVESEQ_TYPE_ENEMY 1U
 #define ACTIVESEQ_SUBTYPE_SPECIAL_AI 10U
@@ -28,8 +30,13 @@ typedef struct ActiveMovementSequencer_s {
     uint32_t expandedTurns;
     uint32_t deliveredMembers;
     uint32_t deferredTurns;
+    uint32_t turnActivationCount;
+    uint32_t turnOrdinal;
+    uint32_t turnDelivered;
+    uint32_t pauseProbe;
     uint8_t active;
-    uint8_t reserved[3];
+    uint8_t turnInProgress;
+    uint8_t reserved[2];
 } ActiveMovementSequencer;
 
 static ActiveMovementSequencer activeSeq;
@@ -139,30 +146,31 @@ static void resetSequencer(const EspNativeGameplayMonsterTurnView* actual,
      * turn delta. This call is a no-op gameplay-wise because both synthetic
      * counters equal their current baselines. */
     primeMovementCounters(doomRpg);
-    printf("[MONSTERACTIVESEQ] READY arena=%08x ownerBytes=%u activationOrder=first-render-activation planner=existing-single-candidate syntheticCounters=movement-private-only publication=per-member-before-next-plan multiAttack=three-goal-single-probe-live/simultaneous-fail-closed allocation=no\n",
+    printf("[MONSTERACTIVESEQ] READY arena=%08x ownerBytes=%u activationOrder=first-render-activation planner=selected-member syntheticCounters=movement-private-only publication=ordinal-pause-resume multiAttack=serialized-one-probe-in-flight allocation=no\n",
            (unsigned int)activeSeq.sourceArenaFNV1a,
            (unsigned int)sizeof(activeSeq));
 }
 
-/* Expand one legacy no-immediate-attack monster turn into one transaction per
- * active-list member, in first-activation order. Each member sees exactly one
- * activation bit and one monotonically synthetic noAttack counter. Crucially,
- * its proven planner/publisher transaction closes before the next member is
- * planned, so live RNG, MonsterPosition and topology all advance sequentially
- * like Game_monsterAI()'s active-list loop.
+/* Expand one legacy monster turn in exact active-list order.
  *
- * The ranged >=217 producer carries the exact source sprite selected by the
- * MonsterTurn probe.  Replaying that one member through the existing selector
- * avoids rescanning all active monsters and preserves the legacy per-member
- * identity even when several enemies are active.  Simultaneous attack-ready
- * ordering remains a separate turn-sequencing boundary.
+ * The producer now publishes only one turn token. Each active member is then
+ * handled independently:
+ *   1. probe its immediate Entity_aiThink attack gate;
+ *   2. if no immediate attack, run its selected movement transaction;
+ *   3. if movement lands on an attack gate, publish that one attack;
+ *   4. pause before the next ordinal until Retaliation resolves the probe.
+ *
+ * This preserves the one-probe-in-flight invariant without starving movers that
+ * appear before or after an already-adjacent attacker. Newly activated monsters
+ * are not appended mid-turn: turnActivationCount snapshots the active-list
+ * prefix when the token begins, matching one bounded Game_monsterAI() pass.
  */
 void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
     const EspNativeGameplayMonsterTurnView* actual =
         EspNativeGameplayMonsterTurn_view();
+    const EspNativeGameplayMonsterRetaliationView* retaliation;
     uint32_t activationCount;
     uint32_t ordinal;
-    uint32_t delivered = 0U;
 
     if (actual == NULL || actual->active != 1U ||
         actual->sourceArenaFNV1a == 0U) {
@@ -179,126 +187,199 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
         return;
     }
 
-    if (actual->noAttackTurns == activeSeq.actualNoAttackSeen &&
-        actual->movementDeferredTurns == activeSeq.actualMovementSeen) {
-        return;
-    }
-
-    if (actual->noAttackTurns != activeSeq.actualNoAttackSeen &&
-        actual->movementDeferredTurns != activeSeq.actualMovementSeen) {
-        ++activeSeq.deferredTurns;
-        printf("[MONSTERACTIVESEQ] DEFER reason=dual-trigger noAttack=%u->%u rangedMove=%u->%u mutation=no rngConsumed=0\n",
-               (unsigned int)activeSeq.actualNoAttackSeen,
-               (unsigned int)actual->noAttackTurns,
-               (unsigned int)activeSeq.actualMovementSeen,
-               (unsigned int)actual->movementDeferredTurns);
-        activeSeq.actualNoAttackSeen = actual->noAttackTurns;
-        activeSeq.actualMovementSeen = actual->movementDeferredTurns;
-        return;
-    }
-
-    if (actual->movementDeferredTurns != activeSeq.actualMovementSeen) {
-        uint8_t committed = 0U;
-        uint16_t spriteIndex = actual->lastMovementSpriteIndex;
-        int transactionStatus;
-        if (actual->movementDeferredTurns != activeSeq.actualMovementSeen + 1U) {
-            ++activeSeq.deferredTurns;
-            printf("[MONSTERACTIVESEQ] DEFER reason=ranged-trigger-gap observed=%u current=%u mutation=no rngConsumed=0\n",
-                   (unsigned int)activeSeq.actualMovementSeen,
-                   (unsigned int)actual->movementDeferredTurns);
-            activeSeq.actualMovementSeen = actual->movementDeferredTurns;
+    if (activeSeq.turnInProgress != 0U) {
+        if (EspNativeGameplayPlayerDeath_isActive()) {
+            printf("[MONSTERACTIVESEQ] TERMINAL turn=%u ordinal=%u/%u probe=%u cause=player-death remaining=discarded sameMonsterTurn=yes\n",
+                   (unsigned int)activeSeq.expandedTurns,
+                   (unsigned int)activeSeq.turnOrdinal,
+                   (unsigned int)activeSeq.turnActivationCount,
+                   (unsigned int)activeSeq.pauseProbe);
+            activeSeq.turnInProgress = 0U;
+            activeSeq.pauseProbe = 0U;
             return;
         }
-        activeSeq.actualMovementSeen = actual->movementDeferredTurns;
-        if (spriteIndex == ACTIVESEQ_NO_SPRITE ||
-            !EspNativeGameplayMonsterActivation_isActive(spriteIndex)) {
+
+        if (activeSeq.pauseProbe != 0U) {
+            retaliation = EspNativeGameplayMonsterRetaliation_view();
+            if (retaliation == NULL ||
+                retaliation->lastResolvedProbe < activeSeq.pauseProbe) {
+                return;
+            }
+            printf("[MONSTERACTIVESEQ] RESUME turn=%u nextOrdinal=%u/%u resolvedProbe=%u delivered=%u sameMonsterTurn=yes\n",
+                   (unsigned int)activeSeq.expandedTurns,
+                   (unsigned int)(activeSeq.turnOrdinal + 1U),
+                   (unsigned int)activeSeq.turnActivationCount,
+                   (unsigned int)activeSeq.pauseProbe,
+                   (unsigned int)activeSeq.turnDelivered);
+            activeSeq.pauseProbe = 0U;
+        }
+    }
+    else {
+        if (actual->noAttackTurns == activeSeq.actualNoAttackSeen) return;
+
+        if (actual->noAttackTurns != activeSeq.actualNoAttackSeen + 1U) {
             ++activeSeq.deferredTurns;
-            printf("[MONSTERACTIVESEQ] DEFER reason=ranged-source-identity sprite=%u active=%s mutation=no rngConsumed=0\n",
-                   (unsigned int)spriteIndex,
-                   spriteIndex != ACTIVESEQ_NO_SPRITE &&
-                           EspNativeGameplayMonsterActivation_isActive(spriteIndex)
-                       ? "yes" : "no");
+            printf("[MONSTERACTIVESEQ] DEFER reason=turn-token-gap observed=%u current=%u mutation=no rngConsumed=0\n",
+                   (unsigned int)activeSeq.actualNoAttackSeen,
+                   (unsigned int)actual->noAttackTurns);
+            activeSeq.actualNoAttackSeen = actual->noAttackTurns;
             return;
         }
-        ++activeSeq.expandedMovement;
-        transactionStatus = callMovementMember(
-            doomRpg, spriteIndex, 1, "RANGED-AI", &committed);
-        printf("[MONSTERACTIVESEQ] RANGED-MEMBER ranged=%u sprite=%u publication=%s exactSource=yes\n",
-               (unsigned int)activeSeq.expandedMovement,
-               (unsigned int)spriteIndex,
-               committed != 0U ? "committed" :
-               (transactionStatus != 0 ? "none" : "deferred"));
-        return;
-    }
 
-    if (actual->noAttackTurns != activeSeq.actualNoAttackSeen + 1U) {
-        ++activeSeq.deferredTurns;
-        printf("[MONSTERACTIVESEQ] DEFER reason=no-attack-trigger-gap observed=%u current=%u mutation=no rngConsumed=0\n",
-               (unsigned int)activeSeq.actualNoAttackSeen,
-               (unsigned int)actual->noAttackTurns);
         activeSeq.actualNoAttackSeen = actual->noAttackTurns;
+        activeSeq.actualMovementSeen = actual->movementDeferredTurns;
+        ++activeSeq.expandedTurns;
+        activeSeq.turnActivationCount =
+            EspNativeGameplayMonsterActivation_count();
+        activeSeq.turnOrdinal = 0U;
+        activeSeq.turnDelivered = 0U;
+        activeSeq.pauseProbe = 0U;
+        activeSeq.turnInProgress = 1U;
+
+        printf("[MONSTERACTIVESEQ] BEGIN turn=%u reason=%u activeCount=%u order=snapshot-prefix perMember=immediate-attack-then-move sameMonsterTurn=yes\n",
+               (unsigned int)activeSeq.expandedTurns,
+               (unsigned int)actual->lastReason,
+               (unsigned int)activeSeq.turnActivationCount);
+    }
+
+    activationCount = activeSeq.turnActivationCount;
+    if (EspNativeGameplayMonsterActivation_count() < activationCount) {
+        ++activeSeq.deferredTurns;
+        activeSeq.turnInProgress = 0U;
+        printf("[MONSTERACTIVESEQ] DEFER turn=%u cause=activation-count-regressed snapshot=%u current=%u mutation=no rngConsumed=0\n",
+               (unsigned int)activeSeq.expandedTurns,
+               (unsigned int)activationCount,
+               (unsigned int)EspNativeGameplayMonsterActivation_count());
         return;
     }
-    activeSeq.actualNoAttackSeen = actual->noAttackTurns;
-    ++activeSeq.expandedTurns;
 
-    activationCount = EspNativeGameplayMonsterActivation_count();
-    for (ordinal = 0U; ordinal < activationCount; ++ordinal) {
+    while (activeSeq.turnOrdinal < activationCount) {
         uint16_t spriteIndex = ACTIVESEQ_NO_SPRITE;
         const EspNativeGameplayMonsterRecord* monster;
+        EspNativeGameplayMonsterMemberProbeStatus memberStatus;
+        const EspNativeGameplayMonsterTurnView* beforeTurn;
+        const EspNativeGameplayMonsterTurnView* afterTurn;
+        uint32_t attackBefore;
+        uint32_t attackAfter;
         uint8_t committed = 0U;
-        int transactionStatus;
+        int transactionStatus = 1;
 
-        if (!EspNativeGameplayMonsterActivation_getOrdered(ordinal,
-                                                            &spriteIndex)) {
+        ordinal = activeSeq.turnOrdinal;
+        if (!EspNativeGameplayMonsterActivation_getOrdered(
+                ordinal, &spriteIndex)) {
             ++activeSeq.deferredTurns;
+            activeSeq.turnInProgress = 0U;
             printf("[MONSTERACTIVESEQ] DEFER turn=%u ordinal=%u activeCount=%u cause=activation-order-read mutation=no rngConsumed=0\n",
                    (unsigned int)activeSeq.expandedTurns,
                    (unsigned int)ordinal,
                    (unsigned int)activationCount);
-            break;
+            return;
         }
+        ++activeSeq.turnOrdinal;
+
         monster = EspNativeGameplayMonsterState_find(spriteIndex);
         if (monster == NULL || monster->alive == 0U ||
-            monster->subtype >= ACTIVESEQ_SUBTYPE_LIMIT ||
-            monster->subtype == ACTIVESEQ_SUBTYPE_SPECIAL_AI) {
+            monster->subtype >= ACTIVESEQ_SUBTYPE_LIMIT) {
+            continue;
+        }
+        if (monster->subtype == ACTIVESEQ_SUBTYPE_SPECIAL_AI) {
+            printf("[MONSTERACTIVESEQ] MEMBER-DEFER turn=%u ordinal=%u/%u sprite=%u subtype=%u cause=special-ai-unowned mutation=no rngConsumed=0\n",
+                   (unsigned int)activeSeq.expandedTurns,
+                   (unsigned int)(ordinal + 1U),
+                   (unsigned int)activationCount,
+                   (unsigned int)spriteIndex,
+                   (unsigned int)monster->subtype);
             continue;
         }
 
-        ++activeSeq.expandedNoAttack;
-        transactionStatus = callMovementMember(
-            doomRpg, spriteIndex, 1, "NO-IMMEDIATE-ATTACK", &committed);
-        ++delivered;
+        beforeTurn = EspNativeGameplayMonsterTurn_view();
+        attackBefore = beforeTurn != NULL ? beforeTurn->attackProbes : 0U;
+        memberStatus = EspNativeGameplayMonsterTurn_probeActiveMember(
+            doomRpg, spriteIndex);
+
+        if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID) {
+            ++activeSeq.deferredTurns;
+            activeSeq.turnInProgress = 0U;
+            printf("[MONSTERACTIVESEQ] DEFER turn=%u ordinal=%u/%u sprite=%u subtype=%u cause=member-probe-failed prefixCommitted=yes mutation=no-additional rngConsumed=0-additional\n",
+                   (unsigned int)activeSeq.expandedTurns,
+                   (unsigned int)(ordinal + 1U),
+                   (unsigned int)activationCount,
+                   (unsigned int)spriteIndex,
+                   (unsigned int)monster->subtype);
+            return;
+        }
+
+        if (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE) {
+            ++activeSeq.expandedMovement;
+            transactionStatus = callMovementMember(
+                doomRpg, spriteIndex, 1, "RANGED-AI", &committed);
+        }
+        else if (memberStatus ==
+                 ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_NO_IMMEDIATE_ATTACK) {
+            ++activeSeq.expandedNoAttack;
+            transactionStatus = callMovementMember(
+                doomRpg, spriteIndex, 1, "NO-IMMEDIATE-ATTACK", &committed);
+        }
+
+        ++activeSeq.turnDelivered;
         ++activeSeq.deliveredMembers;
-        printf("[MONSTERACTIVESEQ] MEMBER turn=%u ordinal=%u/%u sprite=%u subtype=%u syntheticNoAttack=%u sameMonsterTurn=yes planner=existing publication=%s\n",
+        afterTurn = EspNativeGameplayMonsterTurn_view();
+        attackAfter = afterTurn != NULL ? afterTurn->attackProbes : attackBefore;
+
+        printf("[MONSTERACTIVESEQ] MEMBER turn=%u ordinal=%u/%u sprite=%u subtype=%u decision=%s movement=%s attackProbe=%u->%u publication=%s sameMonsterTurn=yes\n",
                (unsigned int)activeSeq.expandedTurns,
                (unsigned int)(ordinal + 1U),
                (unsigned int)activationCount,
                (unsigned int)spriteIndex,
                (unsigned int)monster->subtype,
-               (unsigned int)activeSeq.expandedNoAttack,
-               committed != 0U ? "committed-before-next" :
-               (transactionStatus != 0 ? "none" : "deferred"));
+               memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED
+                   ? "immediate-attack"
+                   : (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE
+                          ? "ranged-move"
+                          : "goal-move"),
+               committed != 0U ? "committed" :
+               (memberStatus == ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED
+                    ? "none"
+                    : (transactionStatus != 0 ? "none" : "deferred")),
+               (unsigned int)attackBefore,
+               (unsigned int)attackAfter,
+               attackAfter > attackBefore ? "probe-before-next" :
+               "closed-before-next");
+
+        if (attackAfter > attackBefore &&
+            activeSeq.turnOrdinal < activationCount) {
+            activeSeq.pauseProbe = attackAfter;
+            printf("[MONSTERACTIVESEQ] PAUSE turn=%u afterOrdinal=%u/%u probe=%u reason=attack-in-flight nextOrdinal=%u sameMonsterTurn=yes\n",
+                   (unsigned int)activeSeq.expandedTurns,
+                   (unsigned int)activeSeq.turnOrdinal,
+                   (unsigned int)activationCount,
+                   (unsigned int)activeSeq.pauseProbe,
+                   (unsigned int)(activeSeq.turnOrdinal + 1U));
+            return;
+        }
     }
 
-    if (delivered == 0U) {
+    if (activeSeq.turnDelivered == 0U) {
         uint8_t committed = 0U;
         ++activeSeq.expandedNoAttack;
         (void)callMovementMember(doomRpg, ACTIVESEQ_NO_SPRITE, 0,
                                  "NO-IMMEDIATE-ATTACK", &committed);
     }
-    if (activationCount == 0U && delivered == 0U) {
-        DRPG_LOGT("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=three-goal-single-probe-live/simultaneous-fail-closed\n",
+
+    activeSeq.turnInProgress = 0U;
+    activeSeq.pauseProbe = 0U;
+    if (activationCount == 0U && activeSeq.turnDelivered == 0U) {
+        DRPG_LOGT("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time\n",
                   (unsigned int)activeSeq.expandedTurns,
                   (unsigned int)actual->lastReason,
                   (unsigned int)activationCount,
-                  (unsigned int)delivered);
+                  (unsigned int)activeSeq.turnDelivered);
     }
     else {
-        DRPG_LOGI("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=three-goal-single-probe-live/simultaneous-fail-closed\n",
+        DRPG_LOGI("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time\n",
                   (unsigned int)activeSeq.expandedTurns,
                   (unsigned int)actual->lastReason,
                   (unsigned int)activationCount,
-                  (unsigned int)delivered);
+                  (unsigned int)activeSeq.turnDelivered);
     }
 }
