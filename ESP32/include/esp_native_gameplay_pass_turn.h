@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+struct DoomRPG_s;
+
 /* Native PASS TURN reproduces the bounded legacy ordering:
  *
  *   Hud_addMessage("Turn passed.")
@@ -29,6 +31,7 @@ typedef enum EspNativeGameplayPassTurnStatus_e {
 } EspNativeGameplayPassTurnStatus;
 
 EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
+    struct DoomRPG_s* doomRpg,
     const EspNativeGameplayInputState* intent);
 
 #ifdef __cplusplus

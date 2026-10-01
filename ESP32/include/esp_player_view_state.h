@@ -136,6 +136,9 @@ EspPlayerViewMoveStatus EspPlayerView_commitPreparedMove(
     const EspPlayerViewState* expectedBefore,
     const EspPlayerViewState* preparedAfter);
 
+int EspPlayerView_commitDeathViewZ(int32_t expectedViewZ,
+                                   int32_t nextViewZ);
+
 #ifdef __cplusplus
 }
 #endif

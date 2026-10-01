@@ -5,17 +5,161 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
-branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = 13bb05ed09aa217a2263a4f3fb8a521348c96258
-CI = esp32-cyd #1257 SUCCESS
-static RAM = 44936 B
-linked Flash = 762861 B
-artifact id = 11191801698
-artifact digest = sha256:22e4479376aac2daed8ef3e6300a633b3f13ef9fa133369586619374f58e2c25
-hardware = Sector 1 PASS_TURN on type-10 hazard x2 -> HUD health/armor repaints immediately; three-goal multi-loop + Fire Ext regressions remain PASS
-status = HAZARD PASS_TURN HUD REFRESH REAL-CYD PASS; current PlayerState overlay repaints bounded HUD bands before immediate feedback present; hp/armor 17/6->16/4->15/2 visible on each turn; heap stable at 50364/38900; lethal player transition remains fail-closed; active linker wraps = 49
+current main = 88a5d3fa5bfe96fe16e213e78933493394264dcc
+branch = agent/esp32-native-player-death-core
+hardware-tested code boundary = 717e7bd980ff7110c227055d940d01c980a5683d
+CI = esp32-cyd #1290 SUCCESS
+static RAM = 44992 B
+linked Flash = 769357 B
+artifact id = 11196908002
+artifact digest = sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5
+hardware = Sector 1 ordered multi-monster turn + serialized attack pause/resume + lethal monster retaliation -> native PlayerDeath + death menu routing + raw-pending-probe input gate PASS
+status = ORDERED MONSTER TURN + MONSTER LETHAL DEATH + P1 INPUT-RACE CLOSURE REAL-CYD PASS; one-probe-in-flight is pause/resume rather than starvation; lethal retaliation commits HP=0 + attack RNG + one death RNG byte and terminates the remaining turn suffix; raw MonsterTurn attackProbes now close world input immediately even before Activation delivers the probe on the next session tick; rapid hardware taps did not stack; LOAD remains live, JUNCTION/RETRY/MAIN remain explicitly fail-closed; heap stable at 50308/38900
 ```
+
+## Ordered monster turn + lethal monster death — REAL-CYD PASS (final review closure 2026-10-02)
+
+Hardware-tested code boundary:
+`717e7bd980ff7110c227055d940d01c980a5683d`.
+
+This closes two intentionally deferred boundaries from the earlier active-sequence
+and player-death milestones.
+
+The monster turn is now serialized in first-activation order instead of choosing
+one global immediate attacker. Each active member executes its own legacy-style
+`Entity_aiThink` slice. If that member publishes an attack probe, the sequence
+pauses, lets AttackVisual + Retaliation resolve it, then resumes at the next
+ordinal in the same semantic monster turn.
+
+Real-CYD witness:
+
+```text
+[MONSTERACTIVESEQ] BEGIN turn=3 ... activeCount=4 ...
+[MONSTERACTIVESEQ] MEMBER ... ordinal=2/4 ... attackProbe=1->2 ...
+[MONSTERACTIVESEQ] PAUSE ... probe=2 ... nextOrdinal=3 ...
+[MONSTERRETAL] MISS-COMMIT probe=2 ... gameplayRngCommitted=yes ...
+[MONSTERACTIVESEQ] RESUME ... resolvedProbe=2 ...
+[MONSTERACTIVESEQ] MEMBER ... ordinal=3/4 ...
+[MONSTERACTIVESEQ] MEMBER ... ordinal=4/4 ... attackProbe=2->3 ...
+[MONSTERACTIVESEQ] COMPLETE ... ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time
+```
+
+The same session proves repeated pause/resume across several attackers and keeps
+three-goal subtype-4 movement/shortcut behavior live. A dead active monster is
+skipped on later turns without disturbing active-list order.
+
+Monster retaliation now owns lethal player damage. On probe 10, the real CYD
+commits the attack RNG and authoritative HP=0, arms the already-native
+PlayerDeath owner, consumes exactly one additional legacy death RNG byte, and
+terminates the remaining active-list suffix:
+
+```text
+[MONSTERTURN] MEMBER-ATTACK-PROBE ... probe=10 ... playerHP=4->0 ... lethal=deferred-player-death ...
+[PLAYERDEATH] ARM seq=10 tile=506 ... hp=0 ... rngByte=87 deathSound=5058-deferred ...
+[MONSTERRETAL] LETHAL-COMMIT probe=10 ... playerHP=4->0 ... rng=41a9a848->f4415a47 attackRngCommitted=yes deathRngCommitted=yes ... deathOwner=armed ... turn=terminal
+[MONSTERACTIVESEQ] TERMINAL turn=7 ordinal=2/4 probe=10 cause=player-death remaining=discarded ...
+[PLAYERDEATH] PHASE ... fall=complete ...
+[PLAYERDEATH] READY ... elapsedMs=3012 ... input=death-menu load=available ...
+```
+
+Death-menu touch routing remains bounded and explicit. LOAD is the only live
+session-replacement route. JUNCTION, RETRY and MAIN classify correctly and
+remain fail-closed with no session mutation. The active LOAD row is visually
+distinguished from the deliberately disabled routes. Earlier hardware on the
+same branch already proved LOAD replaces the dead session with the V9
+checkpoint; this final hardware run revalidates the retained menu routing and
+presentation.
+
+The final code-review P1 closes a one-session-tick input race after a
+post-move attack publication. Session composition services
+`MonsterActivation_serviceTurn()` before `MovementProbe/ActiveSequence`, so a
+post-move member can increment the raw `MonsterTurn.attackProbes` after the
+filtered activation view for that tick has already been copied. Previously,
+`AttackVisual_isBusy()` observed only the filtered view; a very fast world tap
+could therefore enter before the next activation delivery and a new
+`runProbe()` could clear `lastAttackerSpriteIndex`.
+
+Commit `717e7bd980ff7110c227055d940d01c980a5683d` makes the input gate also
+observe the raw MonsterTurn producer. Any producer
+`attackProbes > AttackVisual.observedAttackProbes` is combat-owned
+immediately, while the activation-filtered view remains the normal delivery
+contract on the following service tick. This is intentionally fail-closed for
+an unexpected probe gap and changes no movement, RNG, retaliation or animation
+transaction.
+
+The real CYD regression run kept the four-active-monster ordered movement path
+stable and the user explicitly confirmed rapid taps no longer stack through the
+combat boundary. Representative stable sample remains
+`heap=116232 heap8=50308 largest8=38900`.
+
+CI #1290 succeeds in normal `esp32-cyd` at 44992 B static RAM and 769357 B
+linked Flash. Artifact 11196908002 has digest
+`sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5`.
+
+Repeated live samples remain stable:
+
+```text
+heap=116232
+heap8=50308
+largest8=38900
+```
+
+CI #1290 succeeds in the normal `esp32-cyd` environment at 44992 B static RAM
+and 769357 B linked Flash. Artifact 11196908002 has digest
+`sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5`.
+
+The old "simultaneous attack-ready = fail-closed" and "monster lethal =
+fail-closed" statements remain historically true for their earlier milestones,
+but are superseded by this boundary.
+
+Detailed closure:
+[MILESTONE_NATIVE_MONSTER_ORDER_AND_PLAYER_DEATH.md](MILESTONE_NATIVE_MONSTER_ORDER_AND_PLAYER_DEATH.md)
+
+
+### Native player death core — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested head `d6811e23db4580795887c97c3bdf5e6493224268`
+owns the first bounded native `ST_DYING` path. The producer is deliberately
+limited to a lethal type-10/11 hazard reached through `PASS_TURN`; MOVE
+hazards, monster retaliation and barrel/crate radius damage keep their existing
+fail-closed boundaries until dedicated producer milestones connect them.
+
+The lethal transaction now commits the authoritative PlayerState to health zero,
+keeps exact hazard armor semantics, then arms one 24-byte PlayerDeath owner.
+Arming clears the legacy death-state weapon visibility fields
+(`weapons=0`, `weapon=0`), consumes the single legacy
+`Player_died()` random byte used for death-sound selection, blocks resident
+gameplay input, and explicitly suppresses MonsterTurn after death.
+
+The native presentation reproduces the recovered legacy timing without touching
+desktop render storage: the existing `EspPlayerView` camera falls from
+`viewZ=36` during the first 750 ms, then a bounded RGB565 clamp fades only the
+160x80 world viewport until the 3000 ms death-menu boundary. No new framebuffer,
+`shapeData`, or `mediaTexels` owner is introduced.
+
+Real-CYD witness:
+
+```text
+[HAZARDPASS] LETHAL-COMMIT ... hp=1->0 ... deathOwner=pending rollback=armed monsterTurn=no
+[PLAYERDEATH] ARM ... hp=0 weapons=000f->0000 ... rngByte=65 ... viewZ=36 fallMs=750 fadeMs=750..3000 ... input=blocked ownerBytes=24
+[PASSTURN] DEATH ... deathOwner=armed monsterTurn=no input=blocked ...
+[PLAYERDEATH] PHASE ... elapsedMs=845 fall=complete viewZ=6 fade=begin input=blocked
+[PLAYERDEATH] READY ... elapsedMs=3004 phase=death-menu-ready viewZ=6 fade=0 frames=49 input=blocked menuOwner=deferred
+```
+
+The user confirmed the camera physically falls to the floor and the world then
+fades fully black. The intentionally unowned death menu leaves the post-fade HUD
+non-interactive; that is the next presentation boundary, not a fallback to
+legacy input. Repeated live samples remain stable at
+`heap=116264 heap8=50340 largest8=38900`.
+
+CI #1274 succeeds at 44960 B static RAM / 765497 B linked Flash. Artifact
+11193296410 has digest
+`sha256:5770b336e4c4686fb6ec189a864f234d0017347a87adac83ab5eb0f67d4a24b5`.
+
+Detailed contract:
+[MILESTONE_NATIVE_PLAYER_DEATH_CORE.md](MILESTONE_NATIVE_PLAYER_DEATH_CORE.md)
+
 
 
 

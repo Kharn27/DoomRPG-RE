@@ -579,106 +579,98 @@ static int syncOwner(void) {
     return 1;
 }
 
-static int findCandidate(const EspPlayerViewState* playerView,
-                         MonsterTurnCandidate* outCandidate,
-                         uint32_t* outCandidates,
-                         uint32_t* outSpecialDeferred) {
-    const EspNativeGameplayMonsterView* monsters = EspNativeGameplayMonsterState_view();
-    uint32_t candidates = 0U;
-    uint32_t specialDeferred = 0U;
-    uint32_t i;
-
+static int findCandidateForSprite(
+    const EspPlayerViewState* playerView,
+    uint16_t spriteIndex,
+    MonsterTurnCandidate* outCandidate) {
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+    const EspNativeGameplayMonsterRecord* monster;
+    const MonsterWeaponSpec* weapon;
+    uint8_t type;
+    uint8_t subtype;
+    uint16_t linkState;
+    uint16_t linkOrder;
+    uint16_t tile;
+    uint8_t weaponId;
+    int32_t monsterX;
+    int32_t monsterY;
+    int64_t dx;
+    int64_t dy;
+    uint32_t worldDistance;
+    int attackRange;
 
     if (outCandidate != NULL) memset(outCandidate, 0, sizeof(*outCandidate));
-    if (outCandidates != NULL) *outCandidates = 0U;
-    if (outSpecialDeferred != NULL) *outSpecialDeferred = 0U;
-    if (playerView == NULL || outCandidate == NULL || outCandidates == NULL ||
-        outSpecialDeferred == NULL || topology == NULL ||
+    if (playerView == NULL || outCandidate == NULL || topology == NULL ||
+        playerView->active != 1U ||
         playerView->viewX != playerView->destX ||
         playerView->viewY != playerView->destY ||
+        playerView->viewAngle != playerView->destAngle ||
         !centeredCoordinate(playerView->destX) ||
         !centeredCoordinate(playerView->destY)) {
         return 0;
     }
 
-    if (topology->enemyCount == 0U) {
+    monster = EspNativeGameplayMonsterState_find(spriteIndex);
+    if (monster == NULL || monster->alive == 0U || monster->subtype >= 14U) {
+        return 0;
+    }
+    if (monster->subtype == TURN_SUBTYPE_SPECIAL_AI) {
         return 1;
     }
-    if (monsters == NULL || monsters->records == NULL ||
-        monsters->count != topology->enemyCount) {
+    if (!EspMapSpriteTopology_getEntity(monster->spriteIndex,
+                                        &type, &subtype,
+                                        &linkState, &linkOrder)) {
+        return 0;
+    }
+    (void)linkOrder;
+    if (type != TURN_TYPE_ENEMY || subtype != monster->subtype ||
+        (linkState & (ESP_MAP_SPRITE_TOPOLOGY_LINKED |
+                      ESP_MAP_SPRITE_TOPOLOGY_ALIVE)) !=
+            (ESP_MAP_SPRITE_TOPOLOGY_LINKED |
+             ESP_MAP_SPRITE_TOPOLOGY_ALIVE)) {
         return 0;
     }
 
-    for (i = 0U; i < monsters->count; ++i) {
-        const EspNativeGameplayMonsterRecord* monster = &monsters->records[i];
-        const MonsterWeaponSpec* weapon;
-        uint8_t type;
-        uint8_t subtype;
-        uint16_t linkState;
-        uint16_t linkOrder;
-        uint16_t tile;
-        uint8_t weaponId;
-        int32_t monsterX;
-        int32_t monsterY;
-        int64_t dx;
-        int64_t dy;
-        uint32_t worldDistance;
-        int attackRange;
+    weaponId = monsterAttacks[(uint32_t)monster->subtype * 2U +
+                              (monster->alternateAttack != 0U ? 1U : 0U)];
+    if (weaponId >= TURN_MONSTER_WEAPON_COUNT ||
+        monsterWeapons[weaponId].valid == 0U) {
+        return 1;
+    }
+    weapon = &monsterWeapons[weaponId];
+    tile = (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
+    if (!tileCenter(tile, &monsterX, &monsterY)) return 0;
 
-        if (monster->alive == 0U || monster->subtype >= 14U) continue;
-        if (!EspMapSpriteTopology_getEntity(monster->spriteIndex,
-                                            &type, &subtype,
-                                            &linkState, &linkOrder)) return 0;
-        (void)linkOrder;
-        if (type != TURN_TYPE_ENEMY || subtype != monster->subtype ||
-            (linkState & ESP_MAP_SPRITE_TOPOLOGY_LINKED) == 0U ||
-            (linkState & ESP_MAP_SPRITE_TOPOLOGY_ALIVE) == 0U) {
-            continue;
-        }
-        if (monster->subtype == TURN_SUBTYPE_SPECIAL_AI) {
-            ++specialDeferred;
-            continue;
-        }
+    dx = (int64_t)monsterX - playerView->destX;
+    dy = (int64_t)monsterY - playerView->destY;
+    if ((dx != 0 && dy != 0) || (dx == 0 && dy == 0)) return 1;
 
-        weaponId = monsterAttacks[(uint32_t)monster->subtype * 2U +
-                                  (monster->alternateAttack != 0U ? 1U : 0U)];
-        if (weaponId >= TURN_MONSTER_WEAPON_COUNT ||
-            monsterWeapons[weaponId].valid == 0U) continue;
-        weapon = &monsterWeapons[weaponId];
-        tile = (uint16_t)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
-        if (!tileCenter(tile, &monsterX, &monsterY)) return 0;
-        dx = (int64_t)monsterX - playerView->destX;
-        dy = (int64_t)monsterY - playerView->destY;
-        if (dx != 0 && dy != 0) continue;
-        if (dx == 0 && dy == 0) continue;
-        worldDistance = (uint32_t)(dx * dx + dy * dy);
-        attackRange = (1 + (int)weapon->rangeMin) * TURN_TILE_SIZE;
-        if (worldDistance > (uint32_t)(attackRange * attackRange)) continue;
-        if (!cardinalLosClear(monsterX, monsterY,
-                              playerView->destX, playerView->destY,
-                              monster->spriteIndex)) {
-            continue;
-        }
-
-        ++candidates;
-        if (candidates == 1U) {
-            outCandidate->monster = monster;
-            outCandidate->worldDistance = worldDistance;
-            outCandidate->tileIndex = tile;
-            outCandidate->weaponId = weaponId;
-            outCandidate->loops = monsterShots[monster->subtype];
-        }
+    worldDistance = (uint32_t)(dx * dx + dy * dy);
+    attackRange = (1 + (int)weapon->rangeMin) * TURN_TILE_SIZE;
+    if (worldDistance > (uint32_t)(attackRange * attackRange)) return 1;
+    if (!cardinalLosClear(monsterX, monsterY,
+                          playerView->destX, playerView->destY,
+                          monster->spriteIndex)) {
+        return 1;
     }
 
-    *outCandidates = candidates;
-    *outSpecialDeferred = specialDeferred;
+    outCandidate->monster = monster;
+    outCandidate->worldDistance = worldDistance;
+    outCandidate->tileIndex = tile;
+    outCandidate->weaponId = weaponId;
+    outCandidate->loops = monsterShots[monster->subtype];
     return 1;
 }
 
-static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
+EspNativeGameplayMonsterMemberProbeStatus
+EspNativeGameplayMonsterTurn_probeActiveMember(
+    struct DoomRPG_s* doomRpgBase,
+    uint16_t spriteIndex) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    const EspNativeGameplayMonsterTurnView* delivered;
     const EspPlayerViewState* playerView = EspPlayerView_view();
-    const EspNativeGameplayPlayerState* player = EspNativeGameplayPlayerState_view();
+    const EspNativeGameplayPlayerState* player =
+        EspNativeGameplayPlayerState_view();
     MonsterTurnCandidate candidate;
     MonsterTurnRoll roll;
     EspNativeGameplayPlayerState playerBefore;
@@ -687,82 +679,63 @@ static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
     uint32_t randomFNVAfter;
     uint32_t playerFNVBefore;
     uint32_t playerFNVAfter;
-    uint32_t candidates;
-    uint32_t specialDeferred;
     uint32_t aiRngCalls = 0U;
     uint8_t aiDecision = 0U;
     uint8_t healthAfter;
     uint8_t armorAfter;
+    uint8_t reason;
     int rngExact;
     int playerExact;
 
-    ++turnOwner.view.probes;
-    turnOwner.view.lastReason = reason;
-    turnOwner.view.lastAttackerSpriteIndex = TURN_NO_SPRITE;
-    turnOwner.view.lastMovementSpriteIndex = TURN_NO_SPRITE;
+    if (!syncOwner() || doomRpg == NULL || playerView == NULL ||
+        player == NULL) {
+        return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
+    }
 
-    if (doomRpg == NULL || playerView == NULL || player == NULL ||
-        !EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
-        printf("[MONSTERTURN] PROBE reason=%s status=NOT_READY mutation=no\n",
-               reasonName(reason));
-        return;
+    reason = turnOwner.view.lastReason;
+    delivered = EspNativeGameplayMonsterActivation_turnView();
+    if (delivered == NULL || delivered->active != 1U ||
+        delivered->sourceArenaFNV1a != turnOwner.view.sourceArenaFNV1a ||
+        delivered->attackProbes != turnOwner.view.attackProbes) {
+        printf("[MONSTERTURN] MEMBER-DEFER reason=%s sprite=%u producerProbe=%u deliveredProbe=%u cause=previous-attack-probe-pending mutation=no rngConsumed=0\n",
+               reasonName(reason),
+               (unsigned int)spriteIndex,
+               (unsigned int)turnOwner.view.attackProbes,
+               delivered != NULL ? (unsigned int)delivered->attackProbes : 0U);
+        return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
     }
 
     memset(&candidate, 0, sizeof(candidate));
-    if (!findCandidate(playerView, &candidate, &candidates, &specialDeferred)) {
-        printf("[MONSTERTURN] PROBE reason=%s status=TRACE_NOT_READY mutation=no\n",
-               reasonName(reason));
-        return;
+    if (!findCandidateForSprite(playerView, spriteIndex, &candidate) ||
+        !EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
+        printf("[MONSTERTURN] MEMBER-DEFER reason=%s sprite=%u cause=state-not-ready mutation=no rngConsumed=0\n",
+               reasonName(reason), (unsigned int)spriteIndex);
+        return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
     }
-    if (candidates == 0U) {
-        ++turnOwner.view.noAttackTurns;
-        if (specialDeferred == 0U) {
-            DRPG_LOGT("[MONSTERTURN] COMPLETE reason=%s candidates=0 specialAIDeferred=%u movementPositions=deferred activationOrder=not-needed mutation=no\n",
-                      reasonName(reason), (unsigned int)specialDeferred);
-        }
-        else {
-            DRPG_LOGI("[MONSTERTURN] COMPLETE reason=%s candidates=0 specialAIDeferred=%u movementPositions=deferred activationOrder=not-needed mutation=no\n",
-                      reasonName(reason), (unsigned int)specialDeferred);
-        }
-        return;
-    }
-    if (candidates != 1U || candidate.monster == NULL) {
-        ++turnOwner.view.ambiguousTurns;
-        printf("[MONSTERTURN] DEFER reason=%s candidates=%u specialAIDeferred=%u cause=activation/attacker-order-not-owned mutation=no rngConsumed=0\n",
-               reasonName(reason),
-               (unsigned int)candidates,
-               (unsigned int)specialDeferred);
-        return;
+    if (candidate.monster == NULL) {
+        return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_NO_IMMEDIATE_ATTACK;
     }
 
     randomBefore = doomRpg->random;
     randomFNVBefore = randomFNV(&randomBefore);
     playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
 
-    /* Exact Entity_aiThink immediate-attack gate for an already aligned/in-range
-     * target. rangeMin==0 attacks immediately. Ranged families consume one AI
-     * decision byte; >=217 enters movement/pathfinding, which remains fail-closed
-     * until native mutable monster positions are owned. */
     if (((1U + (uint32_t)monsterWeapons[candidate.weaponId].rangeMin) / 2U) != 0U) {
         aiDecision = DoomRPG_randNextByte(&doomRpg->random);
         ++aiRngCalls;
         if (aiDecision >= 217U) {
             doomRpg->random = randomBefore;
-            turnOwner.view.lastMovementSpriteIndex =
-                candidate.monster->spriteIndex;
-            ++turnOwner.view.movementDeferredTurns;
             randomFNVAfter = randomFNV(&doomRpg->random);
-            printf("[MONSTERTURN] MOVE-DEFER reason=%s sprite=%u subtype=%u tile=%u weapon=%u aiRand=%u threshold=217 movementPositions=not-owned rngCalls=%u rng=%08x->%08x rollback=yes mutation=no\n",
+            printf("[MONSTERTURN] MEMBER-MOVE reason=%s sprite=%u subtype=%u tile=%u weapon=%u aiRand=%u threshold=217 branch=ranged-ai ordered=yes rngCalls=1 rng=%08x->%08x rollback=yes mutation=no\n",
                    reasonName(reason),
                    (unsigned int)candidate.monster->spriteIndex,
                    (unsigned int)candidate.monster->subtype,
                    (unsigned int)candidate.tileIndex,
                    (unsigned int)candidate.weaponId,
                    (unsigned int)aiDecision,
-                   (unsigned int)aiRngCalls,
                    (unsigned int)randomFNVBefore,
                    (unsigned int)randomFNVAfter);
-            return;
+            return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE;
         }
     }
 
@@ -770,10 +743,10 @@ static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
     if (!rollMonsterAttack(doomRpg, candidate.monster, player,
                            candidate.weaponId, candidate.loops, &roll)) {
         doomRpg->random = randomBefore;
-        printf("[MONSTERTURN] PROBE reason=%s sprite=%u status=ROLL_FAILED rollback=yes mutation=no\n",
+        printf("[MONSTERTURN] MEMBER-DEFER reason=%s sprite=%u cause=attack-roll-failed rngRollback=yes mutation=no\n",
                reasonName(reason),
                (unsigned int)candidate.monster->spriteIndex);
-        return;
+        return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
     }
 
     prospectivePlayerPain(player, roll.totalDamage, roll.totalArmorDamage,
@@ -781,13 +754,24 @@ static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
     doomRpg->random = randomBefore;
     randomFNVAfter = randomFNV(&doomRpg->random);
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
-    rngExact = memcmp(&doomRpg->random, &randomBefore, sizeof(randomBefore)) == 0;
+    rngExact = memcmp(&doomRpg->random, &randomBefore,
+                      sizeof(randomBefore)) == 0;
     playerExact = memcmp(EspNativeGameplayPlayerState_view(),
                          &playerBefore, sizeof(playerBefore)) == 0;
+    if (!rngExact || !playerExact) {
+        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+        doomRpg->random = randomBefore;
+        printf("[MONSTERTURN] MEMBER-DEFER reason=%s sprite=%u cause=probe-rollback-not-exact rngExact=%s playerExact=%s mutation=no\n",
+               reasonName(reason),
+               (unsigned int)candidate.monster->spriteIndex,
+               rngExact ? "yes" : "NO",
+               playerExact ? "yes" : "NO");
+        return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
+    }
 
     ++turnOwner.view.attackProbes;
     turnOwner.view.lastAttackerSpriteIndex = candidate.monster->spriteIndex;
-    printf("[MONSTERTURN] ATTACK-PROBE reason=%s sprite=%u subtype=%u mType=%u tile=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u lethal=%s playerFNV=%08x->%08x rng=%08x->%08x rngRollback=%s playerExact=%s activation=probe-only movementPositions=deferred mutation=no\n",
+    printf("[MONSTERTURN] MEMBER-ATTACK-PROBE reason=%s sprite=%u subtype=%u mType=%u tile=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u lethal=%s playerFNV=%08x->%08x rng=%08x->%08x rngRollback=yes playerExact=yes ordered=yes producerProbe=%u gameplayMutation=no\n",
            reasonName(reason),
            (unsigned int)candidate.monster->spriteIndex,
            (unsigned int)candidate.monster->subtype,
@@ -818,8 +802,33 @@ static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
            (unsigned int)playerFNVAfter,
            (unsigned int)randomFNVBefore,
            (unsigned int)randomFNVAfter,
-           rngExact ? "yes" : "NO",
-           playerExact ? "yes" : "NO");
+           (unsigned int)turnOwner.view.attackProbes);
+    return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED;
+}
+
+static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
+    uint32_t activeCount;
+
+    (void)doomRpg;
+    ++turnOwner.view.probes;
+    turnOwner.view.lastReason = reason;
+    turnOwner.view.lastAttackerSpriteIndex = TURN_NO_SPRITE;
+    turnOwner.view.lastMovementSpriteIndex = TURN_NO_SPRITE;
+
+    /*
+     * Permanent ordered-turn boundary. Legacy Game_monsterAI() iterates the
+     * active list and each Entity_aiThink() may move or attack before the next
+     * member is processed. A global "first attacker wins" scan starved earlier
+     * movers whenever any monster was already in range. Publish exactly one
+     * active-list turn token instead; ActiveSequence owns member order and
+     * pauses only while one attack probe is in flight.
+     */
+    ++turnOwner.view.noAttackTurns;
+    activeCount = EspNativeGameplayMonsterActivation_count();
+    DRPG_LOGI("[MONSTERTURN] ORDERED-DISPATCH reason=%s turnToken=%u activeCount=%u producer=active-sequence perMember=immediate-attack-or-move simultaneousProbe=no\n",
+              reasonName(reason),
+              (unsigned int)turnOwner.view.noAttackTurns,
+              (unsigned int)activeCount);
 }
 
 int EspNativeGameplayMonsterTurn_publishThreeGoalAttack(

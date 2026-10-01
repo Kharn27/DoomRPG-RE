@@ -247,6 +247,21 @@ int EspNativeGameplayPlayerState_addArmor(uint8_t amount,
     return 1;
 }
 
+int EspNativeGameplayPlayerState_enterDeath(uint16_t* outWeaponsBefore,
+                                            uint8_t* outWeaponBefore) {
+    if (outWeaponsBefore != NULL) *outWeaponsBefore = 0U;
+    if (outWeaponBefore != NULL) *outWeaponBefore = 0U;
+    if (!EspNativeGameplayPlayerState_ensure() ||
+        p1Health(playerState.param1) != 0U) {
+        return 0;
+    }
+    if (outWeaponsBefore != NULL) *outWeaponsBefore = playerState.weapons;
+    if (outWeaponBefore != NULL) *outWeaponBefore = playerState.weapon;
+    playerState.weapon = 0U;
+    playerState.weapons = 0U;
+    return 1;
+}
+
 EspNativeGameplayPlayerDamageStatus
 EspNativeGameplayPlayerState_applyDamageNonlethal(
     uint16_t damage,

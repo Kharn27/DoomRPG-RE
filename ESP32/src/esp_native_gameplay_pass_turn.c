@@ -9,6 +9,7 @@
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_pass_turn.h"
+#include "esp_native_gameplay_player_death.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 
@@ -75,6 +76,7 @@ static int repaintCurrentHud(uint32_t sequence,
 }
 
 EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
+    struct DoomRPG_s* doomRpg,
     const EspNativeGameplayInputState* intent) {
     const EspPlayerViewState* view = EspPlayerView_view();
     EspNativeGameplayHazardPassTurnUndo hazardUndo;
@@ -85,7 +87,8 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
     int hudRollback;
     int feedbackPresented;
 
-    if (intent == NULL || intent->action != ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN) {
+    if (doomRpg == NULL || intent == NULL ||
+        intent->action != ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN) {
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_INVALID;
     }
     if (EspNativeGameplayDialog_isActive() || !EspMapSpriteTopology_isReady() ||
@@ -104,6 +107,39 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
                (unsigned int)tile,
                (unsigned int)hazardStatus);
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_TILE_TOUCH_DEFERRED;
+    }
+
+    if (hazardStatus ==
+        ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_LETHAL_COMMITTED) {
+        if (!EspNativeGameplayPlayerDeath_arm(
+                doomRpg, intent->sequence, tile)) {
+            hazardRollback =
+                EspNativeGameplayHazardTouch_rollbackPassTurn(&hazardUndo);
+            hudRollback = hazardRollback
+                              ? repaintCurrentHud(intent->sequence, tile,
+                                                  "lethal-arm-rollback")
+                              : 0;
+            printf("[PASSTURN] DEFER seq=%u tile=%u reason=player-death-arm hazardRollback=%s hudRollback=%s monsterTurn=no mutation=%s\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)tile,
+                   hazardRollback ? "yes" : "NO",
+                   hudRollback ? "yes" : "NO",
+                   (hazardRollback && hudRollback)
+                       ? "rolled-back" : "ROLLBACK-FAILED");
+            return ESP_NATIVE_GAMEPLAY_PASS_TURN_TILE_TOUCH_DEFERRED;
+        }
+
+        feedbackPresented = Esp32PlatformVideo_present();
+        if (!feedbackPresented) {
+            printf("[PASSTURN] DEATH-FEEDBACK-DEFER seq=%u tile=%u cause=present-failed death=committed pending=retained\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)tile);
+        }
+        printf("[PASSTURN] DEATH seq=%u tile=%u tileTouch=hazard-lethal-committed deathOwner=armed monsterTurn=no input=blocked feedbackPresent=%s\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)tile,
+               feedbackPresented ? "immediate" : "deferred");
+        return ESP_NATIVE_GAMEPLAY_PASS_TURN_OK;
     }
 
     if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_NONE &&

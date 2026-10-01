@@ -12,10 +12,12 @@ struct DoomRPG_s;
 typedef struct EspNativeGameplayMonsterRetaliationView_s {
     uint32_t sourceArenaFNV1a;
     uint32_t observedAttackProbes;
+    uint32_t lastResolvedProbe;
     uint32_t committedAttacks;
     uint32_t committedMisses;
     uint32_t renderRollbacks;
     uint32_t lethalDeferred;
+    uint32_t lethalCommitted;
     uint32_t dogFamiliarDeferred;
     uint16_t lastAttackerSpriteIndex;
     uint8_t active;

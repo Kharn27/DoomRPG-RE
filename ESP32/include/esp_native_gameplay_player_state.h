@@ -94,6 +94,9 @@ int EspNativeGameplayPlayerState_addHealth(uint8_t amount,
 int EspNativeGameplayPlayerState_addArmor(uint8_t amount,
                                           uint8_t* outAdded);
 
+int EspNativeGameplayPlayerState_enterDeath(uint16_t* outWeaponsBefore,
+                                            uint8_t* outWeaponBefore);
+
 /* Exact CombatEntity/Player_pain split used by environmental and monster
  * damage. Lethal damage is intentionally fail-closed until the native player
  * death transition owns that semantic; in that case no mutation occurs. */

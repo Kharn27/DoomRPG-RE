@@ -17,6 +17,13 @@ typedef enum EspNativeGameplayMonsterTurnReason_e {
     ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN = 4
 } EspNativeGameplayMonsterTurnReason;
 
+typedef enum EspNativeGameplayMonsterMemberProbeStatus_e {
+    ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID = 0,
+    ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_NO_IMMEDIATE_ATTACK = 1,
+    ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED = 2,
+    ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_RANGED_MOVE = 3
+} EspNativeGameplayMonsterMemberProbeStatus;
+
 typedef struct EspNativeGameplayMonsterTurnView_s {
     uint32_t sourceArenaFNV1a;
     uint32_t scheduledTurns;
@@ -45,6 +52,21 @@ int EspNativeGameplayMonsterTurn_cancelPlayerAttack(uint32_t inputSequence);
 int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence);
 int EspNativeGameplayMonsterTurn_requestBlockedAutomapMove(
     uint32_t inputSequence);
+
+/*
+ * Ordered active-list leaf. The turn scheduler calls this for exactly one
+ * activated monster at a time. It performs only Entity_aiThink's immediate
+ * attack gate against the settled player:
+ *   NO_IMMEDIATE_ATTACK -> caller may run aiMoveToGoal
+ *   RANGED_MOVE         -> caller runs the >=217 movement branch
+ *   ATTACK_PUBLISHED    -> one rollback-exact probe is now in flight
+ *
+ * It never scans or chooses another monster.
+ */
+EspNativeGameplayMonsterMemberProbeStatus
+EspNativeGameplayMonsterTurn_probeActiveMember(
+    struct DoomRPG_s* doomRpg,
+    uint16_t spriteIndex);
 
 /*
  * Resume the exact legacy Entity_aiMoveToGoal() attack gate after live movement

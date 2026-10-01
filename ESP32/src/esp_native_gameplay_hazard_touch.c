@@ -400,15 +400,47 @@ EspNativeGameplayHazardTouchStatus EspNativeGameplayHazardTouch_processPassTurn(
     prospectivePain(&playerBefore, healthDamage, armorDamage,
                     &healthAfter, &armorAfter);
     if (healthAfter == 0U) {
-        printf("[HAZARDPASS] DEFER tile=%u sprite=%u type=%u hazards=%u hp=%u->0 armor=%u->%u reason=player-lethal-transition-unowned mutation=no monsterTurn=no\n",
+        playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
+        if (!commitPain(&playerBefore, healthAfter, armorAfter)) {
+            printf("[HAZARDPASS] DEFER tile=%u reason=lethal-playerstate-commit mutation=no monsterTurn=no\n",
+                   (unsigned int)tile);
+            return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+        }
+        playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
+
+        memset(message, 0, sizeof(message));
+        if (snprintf(message, sizeof(message), "%u damage!",
+                     (unsigned int)(healthDamage + armorDamage)) <= 0 ||
+            !EspNativeGameplayActionEngine_queueTextFeedback(
+                ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE,
+                message,
+                HAZARD_DAMAGE_FLASH_MS)) {
+            (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+            printf("[HAZARDPASS] DEFER tile=%u reason=lethal-feedback-not-ready playerRollback=yes mutation=no monsterTurn=no\n",
+                   (unsigned int)tile);
+            return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+        }
+
+        outUndo->param1Before = playerBefore.param1;
+        outUndo->playerFNVBefore = playerFNVBefore;
+        outUndo->tileIndex = tile;
+        outUndo->feedbackQueued = 1U;
+        outUndo->committed = 1U;
+
+        printf("[HAZARDPASS] LETHAL-COMMIT tile=%u sprite=%u type=%u hazards=%u rawDamage=%u+%u hp=%u->0 armor=%u->%u playerFNV=%08x->%08x message=\"%s\" deathOwner=pending rollback=armed monsterTurn=no\n",
                (unsigned int)tile,
                (unsigned int)firstSprite,
                (unsigned int)firstType,
                (unsigned int)hazards,
+               (unsigned int)healthDamage,
+               (unsigned int)armorDamage,
                (unsigned int)healthBefore,
                (unsigned int)armorBefore,
-               (unsigned int)armorAfter);
-        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_DEFERRED;
+               (unsigned int)armorAfter,
+               (unsigned int)playerFNVBefore,
+               (unsigned int)playerFNVAfter,
+               message);
+        return ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_LETHAL_COMMITTED;
     }
 
     playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
