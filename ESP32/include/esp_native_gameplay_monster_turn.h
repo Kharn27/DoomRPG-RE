@@ -47,18 +47,30 @@ int EspNativeGameplayMonsterTurn_requestBlockedAutomapMove(
     uint32_t inputSequence);
 
 /*
- * Resume the exact one-step legacy Entity_aiMoveToGoal() attack gate after a
- * live monster move has committed. This does not schedule a second monster
- * turn: it may append one attack probe to the current turn for the moved sprite.
- *
- * The current bounded family owns only legacy goal-count i==1 subtypes (1 and
- * 5). Subtypes 4 and 13 require three same-turn movement goals and therefore
- * remain fail-closed until native multi-step movement/interpolation is owned.
+ * Resume the exact legacy Entity_aiMoveToGoal() attack gate after live movement
+ * has committed. Ordinary i==1 subtypes (1/5) are handled directly here;
+ * i==3 subtypes (4/13) dispatch to ThreeGoalTurn, which may append one bounded
+ * three-loop attack probe after its committed movement chain.
  */
 int EspNativeGameplayMonsterTurn_postMoveGoal(struct DoomRPG_s* doomRpg,
                                               uint16_t spriteIndex,
                                               uint16_t sourceTile,
                                               uint16_t destTile);
+
+/*
+ * Permanent producer boundary used by ThreeGoalTurn once subtype 4/13 reaches
+ * the exact post-move attack gate. It validates the committed destination,
+ * cardinal trace, three-loop weapon contract and rollback-exact prospective
+ * combat roll, then appends at most one undelivered attack probe to the current
+ * monster turn. A second simultaneous attack remains fail-closed until ordered
+ * multi-attacker delivery has its own owner.
+ */
+int EspNativeGameplayMonsterTurn_publishThreeGoalAttack(
+    struct DoomRPG_s* doomRpg,
+    uint16_t spriteIndex,
+    uint16_t sourceTile,
+    uint16_t destTile,
+    uint8_t goalStep);
 
 const EspNativeGameplayMonsterTurnView* EspNativeGameplayMonsterTurn_view(void);
 

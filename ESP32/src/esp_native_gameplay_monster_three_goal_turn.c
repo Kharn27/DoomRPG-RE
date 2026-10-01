@@ -580,7 +580,7 @@ static int syncOwner(void) {
         threeGoalView.lastSpriteIndex = 0xffffU;
         threeGoalView.lastTile = 0xffffU;
         threeGoalView.active = 1U;
-        printf("[MONSTER3GOAL] READY arena=%08x ownerBytes=%u subtypes=4/13 goalCount=3 continuationTarget=player-dest continuationRng=one-tie-byte-per-successful-goal movementPublish=existing-transaction interpolation=deferred multiLoopAttack=fail-closed\n",
+        printf("[MONSTER3GOAL] READY arena=%08x ownerBytes=%u subtypes=4/13 goalCount=3 continuationTarget=player-dest continuationRng=one-tie-byte-per-successful-goal movementPublish=existing-transaction interpolation=deferred multiLoopAttack=turn-probe-live/simultaneous-fail-closed\n",
                (unsigned int)threeGoalView.sourceArenaFNV1a,
                (unsigned int)sizeof(threeGoalView));
     }
@@ -927,7 +927,7 @@ int EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
 
     ++threeGoalView.observedChains;
     threeGoalView.lastSpriteIndex = spriteIndex;
-    printf("[MONSTER3GOAL] ARM chain=%u sprite=%u subtype=%u firstTile=%u->%u legacyGoalCount=3 frameTime=0 firstGoalAlreadyCommitted=yes continuationGoals=bounded-2 attackLoops=3-fail-closed\n",
+    printf("[MONSTER3GOAL] ARM chain=%u sprite=%u subtype=%u firstTile=%u->%u legacyGoalCount=3 frameTime=0 firstGoalAlreadyCommitted=yes continuationGoals=bounded-2 attackLoops=3-native-probe/simultaneous-fail-closed\n",
            (unsigned int)threeGoalView.observedChains,
            (unsigned int)spriteIndex,
            (unsigned int)monster->subtype,
@@ -959,8 +959,23 @@ int EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
          * frameTime reaches 3, cardinal <=64 proximity jumps it directly to 3
          * and therefore suppresses all remaining movement goals. */
         if (goalStep < THREEGOAL_TOTAL_GOALS && adjacent) {
+            int attackPublished;
             ++threeGoalView.shortcutStops;
-            printf("[MONSTER3GOAL] ATTACK-GATE-DEFER sprite=%u subtype=%u frameTime=%u->3 goal=%u/3 tile=%u distance2=%u adjacentCardinal=yes shortcut=yes remainingGoals=skipped loops=%u cause=multi-loop-attack-family-deferred movementChain=complete sameTurn=yes mutation=no additionalRng=0\n",
+            attackPublished = EspNativeGameplayMonsterTurn_publishThreeGoalAttack(
+                doomRpgBase, spriteIndex, currentSource, currentDest, goalStep);
+            if (!attackPublished) {
+                ++threeGoalView.deferredChains;
+                printf("[MONSTER3GOAL] ATTACK-DEFER sprite=%u subtype=%u frameTime=%u->3 goal=%u/3 tile=%u distance2=%u adjacentCardinal=yes shortcut=yes remainingGoals=skipped loops=%u cause=turn-probe-not-published priorMovesRemainCommitted=yes sameTurn=closed-prefix mutation=no additionalRng=0\n",
+                       (unsigned int)spriteIndex,
+                       (unsigned int)monster->subtype,
+                       (unsigned int)goalStep,
+                       (unsigned int)goalStep,
+                       (unsigned int)currentDest,
+                       (unsigned int)distance2,
+                       (unsigned int)THREEGOAL_MULTI_LOOP_SHOTS);
+                return 0;
+            }
+            printf("[MONSTER3GOAL] ATTACK-PROBE sprite=%u subtype=%u frameTime=%u->3 goal=%u/3 tile=%u distance2=%u adjacentCardinal=yes shortcut=yes remainingGoals=skipped loops=%u producer=MonsterTurn movementChain=complete sameTurn=yes mutation=no additionalRng=0\n",
                    (unsigned int)spriteIndex,
                    (unsigned int)monster->subtype,
                    (unsigned int)goalStep,
@@ -973,7 +988,21 @@ int EspNativeGameplayMonsterThreeGoalTurn_postMoveGoal(
 
         if (goalStep == THREEGOAL_TOTAL_GOALS) {
             if (adjacent) {
-                printf("[MONSTER3GOAL] ATTACK-GATE-DEFER sprite=%u subtype=%u frameTime=3 goal=3/3 tile=%u distance2=%u adjacentCardinal=yes shortcut=no loops=%u cause=multi-loop-attack-family-deferred movementChain=complete sameTurn=yes mutation=no additionalRng=0\n",
+                int attackPublished =
+                    EspNativeGameplayMonsterTurn_publishThreeGoalAttack(
+                        doomRpgBase, spriteIndex, currentSource, currentDest,
+                        goalStep);
+                if (!attackPublished) {
+                    ++threeGoalView.deferredChains;
+                    printf("[MONSTER3GOAL] ATTACK-DEFER sprite=%u subtype=%u frameTime=3 goal=3/3 tile=%u distance2=%u adjacentCardinal=yes shortcut=no loops=%u cause=turn-probe-not-published priorMovesRemainCommitted=yes sameTurn=closed-prefix mutation=no additionalRng=0\n",
+                           (unsigned int)spriteIndex,
+                           (unsigned int)monster->subtype,
+                           (unsigned int)currentDest,
+                           (unsigned int)distance2,
+                           (unsigned int)THREEGOAL_MULTI_LOOP_SHOTS);
+                    return 0;
+                }
+                printf("[MONSTER3GOAL] ATTACK-PROBE sprite=%u subtype=%u frameTime=3 goal=3/3 tile=%u distance2=%u adjacentCardinal=yes shortcut=no loops=%u producer=MonsterTurn movementChain=complete sameTurn=yes mutation=no additionalRng=0\n",
                        (unsigned int)spriteIndex,
                        (unsigned int)monster->subtype,
                        (unsigned int)currentDest,

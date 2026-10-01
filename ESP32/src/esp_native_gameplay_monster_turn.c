@@ -822,6 +822,215 @@ static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
            playerExact ? "yes" : "NO");
 }
 
+int EspNativeGameplayMonsterTurn_publishThreeGoalAttack(
+    struct DoomRPG_s* doomRpgBase,
+    uint16_t spriteIndex,
+    uint16_t sourceTile,
+    uint16_t destTile,
+    uint8_t goalStep) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    const EspNativeGameplayMonsterTurnView* delivered;
+    const EspNativeGameplayMonsterRecord* monster;
+    const EspPlayerViewState* playerView;
+    const EspNativeGameplayPlayerState* player;
+    EspNativeGameplayPlayerState playerBefore;
+    MonsterTurnRoll roll;
+    Random_t randomBefore;
+    uint32_t randomFNVBefore;
+    uint32_t randomFNVAfter;
+    uint32_t playerFNVBefore;
+    uint32_t playerFNVAfter;
+    uint8_t type;
+    uint8_t subtype;
+    uint16_t linkState;
+    uint16_t linkOrder;
+    uint8_t weaponId;
+    uint8_t loops;
+    uint8_t healthAfter;
+    uint8_t armorAfter;
+    uint8_t reason;
+    int32_t monsterX;
+    int32_t monsterY;
+    int64_t dx;
+    int64_t dy;
+    uint32_t worldDistance;
+    int rngExact;
+    int playerExact;
+
+    if (!syncOwner()) {
+        printf("[MONSTER3ATTACK] DEFER sprite=%u tile=%u->%u goal=%u/3 cause=turn-owner-not-ready mutation=no rngConsumed=0\n",
+               (unsigned int)spriteIndex,
+               (unsigned int)sourceTile,
+               (unsigned int)destTile,
+               (unsigned int)goalStep);
+        return 0;
+    }
+
+    reason = turnOwner.view.lastReason;
+    delivered = EspNativeGameplayMonsterActivation_turnView();
+    if (delivered == NULL || delivered->active != 1U ||
+        delivered->sourceArenaFNV1a != turnOwner.view.sourceArenaFNV1a) {
+        printf("[MONSTER3ATTACK] DEFER reason=%s sprite=%u goal=%u/3 cause=activation-filter-not-ready mutation=no rngConsumed=0\n",
+               reasonName(reason),
+               (unsigned int)spriteIndex,
+               (unsigned int)goalStep);
+        return 0;
+    }
+    if (delivered->attackProbes != turnOwner.view.attackProbes) {
+        printf("[MONSTER3ATTACK] DEFER reason=%s sprite=%u goal=%u/3 producerProbe=%u deliveredProbe=%u cause=previous-attack-probe-pending simultaneousAttack=fail-closed mutation=no rngConsumed=0\n",
+               reasonName(reason),
+               (unsigned int)spriteIndex,
+               (unsigned int)goalStep,
+               (unsigned int)turnOwner.view.attackProbes,
+               (unsigned int)delivered->attackProbes);
+        return 0;
+    }
+
+    playerView = EspPlayerView_view();
+    player = EspNativeGameplayPlayerState_view();
+    monster = EspNativeGameplayMonsterState_find(spriteIndex);
+    if (doomRpg == NULL || playerView == NULL || player == NULL ||
+        monster == NULL || monster->alive == 0U ||
+        (monster->subtype != 4U && monster->subtype != 13U) ||
+        goalStep == 0U || goalStep > 3U || sourceTile == destTile ||
+        !EspNativeGameplayPlayerState_snapshot(&playerBefore)) {
+        printf("[MONSTER3ATTACK] DEFER reason=%s sprite=%u tile=%u->%u goal=%u/3 cause=state-not-ready mutation=no rngConsumed=0\n",
+               reasonName(reason),
+               (unsigned int)spriteIndex,
+               (unsigned int)sourceTile,
+               (unsigned int)destTile,
+               (unsigned int)goalStep);
+        return 0;
+    }
+
+    if (playerView->active != 1U ||
+        playerView->viewX != playerView->destX ||
+        playerView->viewY != playerView->destY ||
+        playerView->viewAngle != playerView->destAngle ||
+        !EspMapSpriteTopology_getEntity(spriteIndex, &type, &subtype,
+                                        &linkState, &linkOrder) ||
+        type != TURN_TYPE_ENEMY || subtype != monster->subtype ||
+        (linkState & (ESP_MAP_SPRITE_TOPOLOGY_LINKED |
+                      ESP_MAP_SPRITE_TOPOLOGY_ALIVE)) !=
+            (ESP_MAP_SPRITE_TOPOLOGY_LINKED |
+             ESP_MAP_SPRITE_TOPOLOGY_ALIVE) ||
+        (linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK) != destTile ||
+        linkOrder == 0U || !tileCenter(destTile, &monsterX, &monsterY)) {
+        printf("[MONSTER3ATTACK] DEFER reason=%s sprite=%u subtype=%u tile=%u->%u goal=%u/3 cause=committed-destination-not-exact mutation=no rngConsumed=0\n",
+               reasonName(reason),
+               (unsigned int)spriteIndex,
+               (unsigned int)(monster != NULL ? monster->subtype : 0U),
+               (unsigned int)sourceTile,
+               (unsigned int)destTile,
+               (unsigned int)goalStep);
+        return 0;
+    }
+
+    dx = (int64_t)monsterX - playerView->destX;
+    dy = (int64_t)monsterY - playerView->destY;
+    worldDistance = (uint32_t)(dx * dx + dy * dy);
+    if ((dx != 0 && dy != 0) || (dx == 0 && dy == 0) ||
+        worldDistance > (uint32_t)(TURN_TILE_SIZE * TURN_TILE_SIZE) ||
+        !cardinalLosClear(monsterX, monsterY,
+                          playerView->destX, playerView->destY,
+                          monster->spriteIndex)) {
+        printf("[MONSTER3ATTACK] DEFER reason=%s sprite=%u subtype=%u tile=%u goal=%u/3 distance2=%u cause=attack-gate-not-exact mutation=no rngConsumed=0\n",
+               reasonName(reason),
+               (unsigned int)spriteIndex,
+               (unsigned int)monster->subtype,
+               (unsigned int)destTile,
+               (unsigned int)goalStep,
+               (unsigned int)worldDistance);
+        return 0;
+    }
+
+    weaponId = monsterAttacks[(uint32_t)monster->subtype * 2U +
+                              (monster->alternateAttack != 0U ? 1U : 0U)];
+    loops = monsterShots[monster->subtype];
+    if (weaponId >= TURN_MONSTER_WEAPON_COUNT ||
+        monsterWeapons[weaponId].valid == 0U ||
+        monsterWeapons[weaponId].rangeMin != 0U || loops != 3U) {
+        printf("[MONSTER3ATTACK] DEFER reason=%s sprite=%u subtype=%u weapon=%u loops=%u cause=three-goal-attack-contract-mismatch mutation=no rngConsumed=0\n",
+               reasonName(reason),
+               (unsigned int)spriteIndex,
+               (unsigned int)monster->subtype,
+               (unsigned int)weaponId,
+               (unsigned int)loops);
+        return 0;
+    }
+
+    randomBefore = doomRpg->random;
+    randomFNVBefore = randomFNV(&randomBefore);
+    playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
+    memset(&roll, 0, sizeof(roll));
+    if (!rollMonsterAttack(doomRpg, monster, player, weaponId, loops, &roll)) {
+        doomRpg->random = randomBefore;
+        printf("[MONSTER3ATTACK] DEFER reason=%s sprite=%u subtype=%u goal=%u/3 cause=attack-roll-failed rngRollback=yes mutation=no\n",
+               reasonName(reason),
+               (unsigned int)spriteIndex,
+               (unsigned int)monster->subtype,
+               (unsigned int)goalStep);
+        return 0;
+    }
+
+    prospectivePlayerPain(player, roll.totalDamage, roll.totalArmorDamage,
+                          &healthAfter, &armorAfter);
+    doomRpg->random = randomBefore;
+    randomFNVAfter = randomFNV(&doomRpg->random);
+    playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
+    rngExact = memcmp(&doomRpg->random, &randomBefore, sizeof(randomBefore)) == 0;
+    playerExact = memcmp(EspNativeGameplayPlayerState_view(),
+                         &playerBefore, sizeof(playerBefore)) == 0;
+    if (!rngExact || !playerExact) {
+        (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+        doomRpg->random = randomBefore;
+        printf("[MONSTER3ATTACK] DEFER reason=%s sprite=%u subtype=%u goal=%u/3 cause=probe-rollback-not-exact rngExact=%s playerExact=%s mutation=no\n",
+               reasonName(reason),
+               (unsigned int)spriteIndex,
+               (unsigned int)monster->subtype,
+               (unsigned int)goalStep,
+               rngExact ? "yes" : "NO",
+               playerExact ? "yes" : "NO");
+        return 0;
+    }
+
+    ++turnOwner.view.attackProbes;
+    turnOwner.view.lastAttackerSpriteIndex = monster->spriteIndex;
+    printf("[MONSTER3ATTACK] ATTACK-PROBE reason=%s sprite=%u subtype=%u mType=%u tile=%u->%u weapon=%u alt=%u loops=%u goalStep=%u/3 distance2=%u adjacentCardinal=yes trace=clear hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u rngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u lethal=%s playerFNV=%08x->%08x rng=%08x->%08x rngRollback=yes playerExact=yes sameTurn=yes movementAlreadyCommitted=yes producerProbe=%u gameplayMutation=no\n",
+           reasonName(reason),
+           (unsigned int)monster->spriteIndex,
+           (unsigned int)monster->subtype,
+           (unsigned int)monster->mType,
+           (unsigned int)sourceTile,
+           (unsigned int)destTile,
+           (unsigned int)weaponId,
+           (unsigned int)monster->alternateAttack,
+           (unsigned int)roll.loops,
+           (unsigned int)goalStep,
+           (unsigned int)worldDistance,
+           (unsigned int)roll.hitLoops,
+           (unsigned int)roll.firstRandHit,
+           (int)roll.firstCalcHit,
+           (int)roll.firstCritLimit,
+           (unsigned int)roll.firstRandDamage,
+           (int)roll.totalDamage,
+           (int)roll.totalArmorDamage,
+           (unsigned int)roll.gotCrit,
+           (unsigned int)roll.rngCalls,
+           (unsigned int)roll.missProjectileRngCalls,
+           (unsigned int)p1Health(player->param1),
+           (unsigned int)healthAfter,
+           (unsigned int)p1Armor(player->param1),
+           (unsigned int)armorAfter,
+           healthAfter == 0U ? "deferred-player-death" : "no",
+           (unsigned int)playerFNVBefore,
+           (unsigned int)playerFNVAfter,
+           (unsigned int)randomFNVBefore,
+           (unsigned int)randomFNVAfter,
+           (unsigned int)turnOwner.view.attackProbes);
+    return 1;
+}
+
 int EspNativeGameplayMonsterTurn_postMoveGoal(struct DoomRPG_s* doomRpgBase,
                                               uint16_t spriteIndex,
                                               uint16_t sourceTile,
