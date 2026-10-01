@@ -535,7 +535,7 @@ EspNativeGameplayHudStatus EspNativeGameplayHud_repaint(
     }
 
     if (EspNativeTransitionPresentation_isLoadingActive()) {
-        printf("[GAMEPLAYHUD] REPAINT-SUPPRESS owner=transition-loading framebufferMutation=no\\n");
+        printf("[GAMEPLAYHUD] REPAINT-SUPPRESS owner=transition-loading framebufferMutation=no\n");
         return ESP_NATIVE_GAMEPLAY_HUD_OK;
     }
 

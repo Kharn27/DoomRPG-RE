@@ -139,7 +139,7 @@ static void resetSequencer(const EspNativeGameplayMonsterTurnView* actual,
      * turn delta. This call is a no-op gameplay-wise because both synthetic
      * counters equal their current baselines. */
     primeMovementCounters(doomRpg);
-    printf("[MONSTERACTIVESEQ] READY arena=%08x ownerBytes=%u activationOrder=first-render-activation planner=existing-single-candidate syntheticCounters=movement-private-only publication=per-member-before-next-plan multiAttack=still-fail-closed allocation=no\n",
+    printf("[MONSTERACTIVESEQ] READY arena=%08x ownerBytes=%u activationOrder=first-render-activation planner=existing-single-candidate syntheticCounters=movement-private-only publication=per-member-before-next-plan multiAttack=three-goal-single-probe-live/simultaneous-fail-closed allocation=no\n",
            (unsigned int)activeSeq.sourceArenaFNV1a,
            (unsigned int)sizeof(activeSeq));
 }
@@ -288,14 +288,14 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                                  "NO-IMMEDIATE-ATTACK", &committed);
     }
     if (activationCount == 0U && delivered == 0U) {
-        DRPG_LOGT("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred\n",
+        DRPG_LOGT("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=three-goal-single-probe-live/simultaneous-fail-closed\n",
                   (unsigned int)activeSeq.expandedTurns,
                   (unsigned int)actual->lastReason,
                   (unsigned int)activationCount,
                   (unsigned int)delivered);
     }
     else {
-        DRPG_LOGI("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred\n",
+        DRPG_LOGI("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=three-goal-single-probe-live/simultaneous-fail-closed\n",
                   (unsigned int)activeSeq.expandedTurns,
                   (unsigned int)actual->lastReason,
                   (unsigned int)activationCount,

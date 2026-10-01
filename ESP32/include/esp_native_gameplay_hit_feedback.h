@@ -17,6 +17,7 @@ extern "C" {
  */
 int EspNativeGameplayHitFeedback_arm(uint32_t sequence,
                                      uint16_t spriteIndex,
+                                     uint8_t weaponIndex,
                                      uint8_t distance,
                                      int32_t healthBefore,
                                      int32_t armorBefore,

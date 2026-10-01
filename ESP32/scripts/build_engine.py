@@ -91,6 +91,17 @@ zip_read_needle = "readZipFileEntry(fileName, &zipFile, &fSize)"
 zip_read_count = doom_rpg_source_text.count(zip_read_needle)
 zip_close_needle = "\tcloseZipFile(&zipFile);\n"
 zip_close_count = doom_rpg_source_text.count(zip_close_needle)
+particle_free_needle = """\tif (doomrpg->particleSystem) {
+\t\tParticleSystem_free(doomrpg->particleSystem, true);
+\t}
+\tdoomrpg->particleSystem = NULL;
+"""
+particle_free_replacement = """\t/* ESP32 native gameplay owns bounded gib effects; the inherited
+\t * ParticleSystem object is never constructed. Keep the legacy field NULL
+\t * without retaining the desktop ParticleSystem_free closure. */
+\tdoomrpg->particleSystem = NULL;
+"""
+particle_free_count = doom_rpg_source_text.count(particle_free_needle)
 
 if doom_rpg_source_text.count(zip_include_needle) != 1:
     raise RuntimeError("Unable to locate Z_Zip.h include in DoomRPG.c")
@@ -103,6 +114,11 @@ if zip_read_count != 3 or zip_close_count != 1:
     raise RuntimeError(
         "Unexpected DoomRPG.c ZIP call shape; review native PAK source patch"
     )
+if particle_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c ParticleSystem cleanup shape; "
+        "review retired ESP32 particle ownership"
+    )
 
 doom_rpg_source_text = doom_rpg_source_text.replace(
     zip_include_needle, zip_include_replacement, 1
@@ -114,6 +130,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
     zip_read_needle, "EspLegacyAssetSource_readAlloc(fileName, &fSize)"
 )
 doom_rpg_source_text = doom_rpg_source_text.replace(zip_close_needle, "")
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    particle_free_needle, particle_free_replacement, 1
+)
 
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
@@ -121,7 +140,8 @@ with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_fi
 print(
     "[ESP32] DoomRPG generated with native PAK asset source + indexed BMP loader "
     f"({zip_read_count} ZIP read(s) retired, "
-    f"{bmp_call_count} SDL_LoadBMP_RW call(s) redirected)"
+    f"{bmp_call_count} SDL_LoadBMP_RW call(s) redirected, "
+    f"{particle_free_count} desktop ParticleSystem cleanup retired)"
 )
 
 # The source-tree SDL shim stores every texture as RGB565. That is acceptable

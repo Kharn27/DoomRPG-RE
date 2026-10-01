@@ -6,6 +6,7 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_hazard_touch.h"
+#include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_pass_turn.h"
 #include "esp_player_view_state.h"
@@ -29,6 +30,50 @@ static int tileForView(const EspPlayerViewState* view, uint16_t* outTile) {
     return 1;
 }
 
+static int repaintCurrentHud(uint32_t sequence,
+                             uint16_t tile,
+                             const char* phase) {
+    const EspNativeGameplayHudState* hud = EspNativeGameplayHud_view();
+    EspNativeGameplayHudStats stats;
+    EspNativeGameplayHudStatus status;
+
+    memset(&stats, 0, sizeof(stats));
+    if (hud == NULL || hud->active != 1U || hud->painted != 1U) {
+        printf("[PASSTURN] HUD-REPAINT-DEFER seq=%u tile=%u phase=%s cause=current-hud-not-ready framebufferMutation=unknown\n",
+               (unsigned int)sequence,
+               (unsigned int)tile,
+               phase != NULL ? phase : "unknown");
+        return 0;
+    }
+
+    status = EspNativeGameplayHud_repaint(hud, &stats);
+    if (status != ESP_NATIVE_GAMEPLAY_HUD_OK) {
+        printf("[PASSTURN] HUD-REPAINT-DEFER seq=%u tile=%u phase=%s status=%u health=%u/%u armor=%u/%u framebufferMutation=possible\n",
+               (unsigned int)sequence,
+               (unsigned int)tile,
+               phase != NULL ? phase : "unknown",
+               (unsigned int)status,
+               (unsigned int)hud->model.health,
+               (unsigned int)hud->model.maxHealth,
+               (unsigned int)hud->model.armor,
+               (unsigned int)hud->model.maxArmor);
+        return 0;
+    }
+
+    printf("[PASSTURN] HUD-REPAINT seq=%u tile=%u phase=%s health=%u/%u armor=%u/%u pixels=%u reads=%u bytes=%u source=current-player-overlay dirtyConsume=no present=no\n",
+           (unsigned int)sequence,
+           (unsigned int)tile,
+           phase != NULL ? phase : "unknown",
+           (unsigned int)hud->model.health,
+           (unsigned int)hud->model.maxHealth,
+           (unsigned int)hud->model.armor,
+           (unsigned int)hud->model.maxArmor,
+           (unsigned int)stats.pixelsWritten,
+           (unsigned int)stats.packReads,
+           (unsigned int)stats.bytesRead);
+    return 1;
+}
+
 EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
     const EspNativeGameplayInputState* intent) {
     const EspPlayerViewState* view = EspPlayerView_view();
@@ -37,6 +82,7 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
     uint16_t tile;
     int feedbackRollback;
     int hazardRollback;
+    int hudRollback;
     int feedbackPresented;
 
     if (intent == NULL || intent->action != ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN) {
@@ -68,25 +114,62 @@ EspNativeGameplayPassTurnStatus EspNativeGameplayPassTurn_execute(
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_NOT_READY;
     }
 
+    /*
+     * processPassTurn() intentionally commits only PlayerState + feedback and
+     * leaves a rollback owner armed. Unlike MOVE-on-hazard, PASS_TURN does not
+     * render a fresh world frame before its immediate feedback present. Repaint
+     * the retained HUD bands now from EspNativeGameplayHud_view(); that symbol
+     * is wrapped by PlayerResources and therefore overlays the authoritative
+     * current PlayerState health/armor/weapon values without introducing a
+     * second HUD owner.
+     *
+     * Do this before the MonsterTurn request so a paint failure can still roll
+     * back both gameplay state and framebuffer presentation exactly.
+     */
+    if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED &&
+        !repaintCurrentHud(intent->sequence, tile, "hazard-commit")) {
+        hazardRollback =
+            EspNativeGameplayHazardTouch_rollbackPassTurn(&hazardUndo);
+        hudRollback = hazardRollback
+                          ? repaintCurrentHud(intent->sequence, tile,
+                                              "hazard-paint-rollback")
+                          : 0;
+        printf("[PASSTURN] DEFER seq=%u tile=%u reason=hazard-hud-repaint hazardRollback=%s hudRollback=%s monsterTurn=no mutation=%s\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)tile,
+               hazardRollback ? "yes" : "NO",
+               hudRollback ? "yes" : "NO",
+               (hazardRollback && hudRollback)
+                   ? "rolled-back" : "ROLLBACK-FAILED");
+        return ESP_NATIVE_GAMEPLAY_PASS_TURN_TILE_TOUCH_DEFERRED;
+    }
+
     if (!EspNativeGameplayMonsterTurn_requestPassTurn(intent->sequence)) {
         feedbackRollback = 1;
         hazardRollback = 1;
+        hudRollback = 1;
         if (hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED) {
             hazardRollback = EspNativeGameplayHazardTouch_rollbackPassTurn(
                 &hazardUndo);
+            hudRollback = hazardRollback
+                              ? repaintCurrentHud(intent->sequence, tile,
+                                                  "turn-request-rollback")
+                              : 0;
         }
         else {
             feedbackRollback = EspNativeGameplayActionEngine_cancelQueuedFeedback(
                 ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PASS_TURN);
         }
-        printf("[PASSTURN] DEFER seq=%u tile=%u reason=turn-request-busy hazard=%s hazardRollback=%s feedbackRollback=%s mutation=%s\n",
+        printf("[PASSTURN] DEFER seq=%u tile=%u reason=turn-request-busy hazard=%s hazardRollback=%s hudRollback=%s feedbackRollback=%s mutation=%s\n",
                (unsigned int)intent->sequence,
                (unsigned int)tile,
                hazardStatus == ESP_NATIVE_GAMEPLAY_HAZARD_TOUCH_COMMITTED
                    ? "committed" : "none",
                hazardRollback ? "yes" : "NO",
+               hudRollback ? "yes" : "NO",
                feedbackRollback ? "yes" : "NO",
-               (hazardRollback && feedbackRollback) ? "rolled-back" : "ROLLBACK-FAILED");
+               (hazardRollback && hudRollback && feedbackRollback)
+                   ? "rolled-back" : "ROLLBACK-FAILED");
         return ESP_NATIVE_GAMEPLAY_PASS_TURN_REQUEST_BUSY;
     }
 

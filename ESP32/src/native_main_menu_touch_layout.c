@@ -686,8 +686,7 @@ int DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(
     const Render_t* render;
 
     if (doomRpg == NULL || doomRpg->render == NULL ||
-        doomRpg->doomCanvas == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->menu == NULL) {
+        doomRpg->doomCanvas == NULL || doomRpg->menuSystem == NULL) {
         return 0;
     }
 

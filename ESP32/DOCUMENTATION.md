@@ -13,17 +13,144 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 4a46ea17e3e397bc9870e10c06eda53786ae48b8
-branch = agent/esp32-consolidation-hot-input-turn-telemetry-v21
-hardware-tested code boundary = ac5e11127f294a5e2d7d1127febb21214be94458
-CI = esp32-cyd #1225 SUCCESS
-static RAM = 45064 B
-linked Flash = 757789 B
-firmware.bin = 758160 B
-artifact id = 11165147980
-hardware = normal INFO firmware validated through cold boot, full intro, Entrance banal MOVE/TURN, pickup/dialog/door/block/recovery and V9 Sector 1 live monster movement
-status = HARDWARE PASS; hot input/move/idle-turn success telemetry is TRACE-only; semantic mutation, failure, deferral and recovery witnesses remain visible; 49 active linker wraps
+current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
+branch = agent/esp32-retire-legacy-particle-startup-v22
+hardware-tested code boundary = 13bb05ed09aa217a2263a4f3fb8a521348c96258
+CI = esp32-cyd #1257 SUCCESS
+static RAM = 44936 B
+linked Flash = 762861 B
+artifact id = 11191801698
+hardware = Sector 1 repeated PASS_TURN on type-10 hazard with immediate HP/armor HUD refresh PASS
+status = hazard PASS_TURN HUD refresh REAL-CYD PASS; three-goal multi-loop and Fire Ext remain validated; lethal player transition is the next explicit gameplay boundary; 49 active linker wraps
 ```
+
+
+
+
+## Hazard PASS_TURN HUD refresh — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested head `13bb05ed09aa217a2263a4f3fb8a521348c96258` keeps the existing
+hazard damage transaction unchanged and fixes only retained HUD publication.
+Each committed PASS_TURN damage now repaints both HUD bands from the current
+PlayerState-backed HUD overlay before the immediate damage-feedback present.
+
+Real hardware proves consecutive transitions
+`17/6 -> 16/4 -> 15/2` are visible immediately, with
+`[GAMEPLAYHUD] REPAINT` and `[PASSTURN] HUD-REPAINT` matching the committed
+values. Live memory stays `heap8=50364 largest8=38900`.
+
+CI #1257: 44936 B static RAM / 762861 B linked Flash, artifact 11191801698.
+
+The same session naturally reaches the still-fail-closed native player-death
+boundary from a barrel-radius hit, with exact transaction rollback.
+
+See
+[MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md).
+
+## Three-goal subtype 4/13 multi-loop attack — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested head `5943974dcf1b5bd1c142e4665340f51fb6fbb19b`
+connects the native three-goal movement chain to the existing native monster
+attack pipeline without creating a parallel combat owner.
+
+A real subtype-4 monster commits goal 2/3 onto the adjacent tile, takes the
+legacy early-shortcut to frameTime 3, publishes one `loops=3` MonsterTurn
+probe, renders all three attack/idle phases, then commits the exact prospective
+retaliation result. Player HP/armor changes `33/23 -> 31/21`; the six combat
+RNG calls advance only at final resolution. Live memory remains
+`heap8=50364 largest8=38900`.
+
+Simultaneous attack-ready publication is intentionally still fail-closed: only
+one undelivered post-move attack probe may exist at a time.
+
+CI #1253: 44936 B static RAM / 761949 B linked Flash / 762320 B firmware.bin,
+artifact 11191212285.
+
+The same test session found a separate PASS_TURN-on-hazard HUD refresh defect:
+gameplay damage commits correctly but the bottom HUD presentation is stale until
+the next movement redraw. That is the next bounded presentation fix.
+
+See
+[MILESTONE_ESP32_NATIVE_MONSTER_THREE_GOAL_MULTI_LOOP_ATTACK.md](MILESTONE_ESP32_NATIVE_MONSTER_THREE_GOAL_MULTI_LOOP_ATTACK.md).
+
+## Fire Ext monster combat semantics — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested head `ef8dc9b5f06dd93c34c5179f6b95935dd0af13d2`
+restores the exact legacy weapon-1 split: Fire Ext attacks `eType == 1`
+monsters through the normal generic combat math, while its impact presentation
+is special-cased. Phantom subtype 4 gets a bounded gray `ce79` 15-particle
+HITFX; other monster subtypes take normal damage without blood spray. A real
+miss remains `No effect!`.
+
+The real CYD kills two subtype-4 Phantoms with Fire Ext and then damages a
+subtype-5 monster with the same weapon. The subtype-4 path reports
+`impact=extinguisher-gray-armed`; the subtype-5 path reports
+`impact=none-extinguisher`. Ammo, monster state and GIBFX commit normally,
+visual RNG remains decoupled, and live memory is stable at
+`heap8=50364 largest8=38900`.
+
+CI #1247: 44936 B static RAM / 757869 B linked Flash / 758240 B firmware.bin,
+artifact 11189341147.
+
+See
+[MILESTONE_ESP32_NATIVE_FIRE_EXT_MONSTER_COMBAT.md](MILESTONE_ESP32_NATIVE_FIRE_EXT_MONSTER_COMBAT.md).
+
+## Legacy Menu root retired — REAL-CYD PASS (2026-10-01)
+
+V24 removes the desktop `Menu_t` object from the ESP32 core graph and keeps
+the inherited `doomRpg->menu` field NULL. A first real-CYD attempt exposed one
+stale graphics-boundary check that still required the retired pointer; the
+fail-closed dashboard contract stopped cleanly before presentation. The
+follow-up commit removes only that obsolete requirement.
+
+CI #1239 is 44936 B static RAM / 757585 B linked Flash / 757952 B firmware.bin,
+with 49 active linker wraps. The final ELF contains no `Menu_*` symbols.
+`MenuSystem_init/startup/playSound/free` remain intentionally linked because
+the bounded native menu models still consume that storage/resource owner.
+
+The corrected real-CYD run reaches native MAIN and exercises OPTIONS plus HELP
+entry/paging/back without allocations. Core usage is 53804 B, exactly 76 B less
+than V23, and steady MAIN is `heap8=56972 largest8=32756`.
+
+See
+[MILESTONE_ESP32_RETIRE_LEGACY_MENU_ROOT_V24.md](MILESTONE_ESP32_RETIRE_LEGACY_MENU_ROOT_V24.md).
+
+## Legacy ParticleSystem core object retired — REAL-CYD PASS (2026-10-01)
+
+V23 removes the inherited `ParticleSystem_t` object itself from the ESP32 core
+graph and severs the final desktop cleanup reference. The final ELF contains
+zero `ParticleSystem_*` symbols.
+
+CI #1236: 44944 B static RAM / 757525 B linked Flash / 757888 B firmware.bin,
+49 active linker wraps. The real CYD confirms the core graph shrinks by exactly
+2280 B and native MAIN gains 2304 B free heap8 over V22.
+
+The decisive hardware witness is a real monster death: the native GIBFX owner
+paints, repaints and expires the gib overlay with
+`legacyParticleSystem=no`, while gameplay RNG remains untouched. Thus the
+legacy particle subsystem is fully absent from the production image and its
+visible death-effect responsibility is hardware-proven native.
+
+See the V23 addendum in
+[MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md](MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md).
+
+## Legacy ParticleSystem startup retired — REAL-CYD PASS (2026-10-01)
+
+V22 removes `ParticleSystem_startup()` from the production ESP32 prerender
+chain and drops `gibs_24.bmp` from the PAK preflight. The final ELF retains
+only the legacy object constructor/destructor pair; no particle startup,
+unlink, render, spawn or calculation code is linked.
+
+CI #1233 is 44952 B static RAM / 757505 B linked Flash / 757872 B firmware.bin,
+with 49 active linker wraps. The real CYD boots with four prerender files,
+holds native MAIN stable at `heap8=54548 largest8=32756`, completes the full
+intro and exact Entrance first frame `71ca7465`, then validates resident
+MOVE/TURN, pickups, door, opcode-26 dialog and renderer recovery. The core graph
+still allocates the dead `ParticleSystem_t` object at 2280 B; this is the next
+retirement target on the same active branch.
+
+See
+[MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md](MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md).
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
 
@@ -1534,5 +1661,32 @@ Repeated ALIVE is stable at `heap=93448 heap8=27524 largest8=18420` before
 lazy dialog allocation and `heap=92412 heap8=26488 largest8=18420` afterward.
 
 Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md](MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md).
+
+
+## V21 post-review MOVE-event diagnostic visibility fix — REAL-CYD regression PASS (2026-10-01)
+
+Post-merge review found that V21's generic `logPhase(...)` demotion also
+removed detailed INFO context for fail-closed MOVE-event statuses. Commit
+`2c855bd217999453ec21246937ef6730e1697f3c` keeps ordinary
+`NO_EVENT/NO_ELIGIBLE` and supported success phases at TRACE, but restores
+`INVALID/NOT_READY/UNSUPPORTED/COMPLEX`, unknown statuses, and unexpected
+post-preflight EXIT dialog/message divergence to INFO.
+
+CI #1230: 45064 B static RAM / 758389 B linked Flash / 758752 B firmware.bin,
+49 active linker wraps. The +600 B linked Flash versus V21 is the retained INFO
+diagnostic format; static RAM is unchanged.
+
+The real CYD regression path remains compact across more than twenty MOVE
+commits, turns, pickups, multiple regular doors, opcode-26 and SELECT dialogs,
+fire actions and three genuine renderer compact-guard recoveries. Routine
+`MOVEEVENT EXIT-PREFLIGHT/ENTER-PREFLIGHT/EXIT/ENTER` output remains absent.
+Meaningful `MOVEEVENT COMMIT/WORLD-READY` remains visible.
+
+The hardware run does not naturally trigger an unsafe MOVE-event phase, so the
+new unsafe-status INFO record is source/CI verified, not claimed as a
+hardware-triggered witness.
+
+See the post-review addendum in
 [MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md](MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md).
 

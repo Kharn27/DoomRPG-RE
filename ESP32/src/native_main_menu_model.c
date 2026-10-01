@@ -269,9 +269,8 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
     DoomCanvas_t* canvas;
     const char* builder = "Menu_initMenu-transitional";
 
-    if (doomRpg == NULL || doomRpg->menu == NULL ||
-        doomRpg->menuSystem == NULL || doomRpg->doomCanvas == NULL ||
-        !supportedModel(menuId)) {
+    if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
+        doomRpg->doomCanvas == NULL || !supportedModel(menuId)) {
         printf("[MAINMODEL] FAILED enter target=%d objectGraph=%s\n",
                menuId,
                doomRpg != NULL ? "partial" : "null");

@@ -732,7 +732,7 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                             failSession("transition final HUD repaint");
                             return;
                         }
-                        printf("[ENGINESESSION] FINAL-HUD pixels=%u reads=%u bands=top+bottom owner=retained afterRelease=yes\\n",
+                        printf("[ENGINESESSION] FINAL-HUD pixels=%u reads=%u bands=top+bottom owner=retained afterRelease=yes\n",
                                (unsigned int)hudStats.pixelsWritten,
                                (unsigned int)hudStats.packReads);
                     }

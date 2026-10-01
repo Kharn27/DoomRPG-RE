@@ -1017,6 +1017,38 @@ static EspNativeGameplayMoveEventStatus preflightShowBatch(
     return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SHOW_OK;
 }
 
+static int phaseLogAtInfo(const char* phase,
+                          EspNativeGameplayMoveEventStatus status) {
+    if (phaseUnsafe(status)) return 1;
+
+    switch (status) {
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_NO_EVENT:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_NO_ELIGIBLE:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_LOCKED:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_ALREADY_TARGET:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DOOR_OK:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_FORCE_MESSAGE_OK:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SCRIPT_STATE_OK:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_SHOW_OK:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MIXED_BATCH_OK:
+    case ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MESSAGE_READY:
+        break;
+    default:
+        return 1;
+    }
+
+    /* EXIT dialog/message presentation is rejected before commit. Seeing one
+     * after executePhase() means preflight and execution diverged, so keep the
+     * phase context visible in the normal INFO build. */
+    if (phase != NULL && strcmp(phase, "EXIT") == 0 &&
+        (status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY ||
+         status == ESP_NATIVE_GAMEPLAY_MOVE_EVENT_MESSAGE_READY)) {
+        return 1;
+    }
+    return 0;
+}
+
 static void logPhase(const char* phase,
                      uint32_t sequence,
                      EspNativeGameplayMoveEventStatus status,
@@ -1030,29 +1062,40 @@ static void logPhase(const char* phase,
         msgActive = msg->active;
         msgString = msg->active != 0U ? msg->text.index : 0U;
     }
-    DRPG_LOGT("[MOVEEVENT] %s seq=%u tile=%u flags=%08x status=%s event=%u eligible=%u opcode=%u unsupported=%u line=%u open=%u->%u locked=%u statusMsg=%u/string%u stateEvent=%u state=%u->%u removed=%u->%u mutation=%s rollback=%u\n",
-           phase,
-           (unsigned int)sequence,
-           (unsigned int)result->tile,
-           (unsigned int)result->runFlags,
-           EspNativeGameplayMoveEvents_statusName(status),
-           (unsigned int)result->eventIndex,
-           (unsigned int)result->eligibleCount,
-           (unsigned int)result->codeId,
-           (unsigned int)result->unsupportedCodeId,
-           (unsigned int)result->lineIndex,
-           (unsigned int)result->openBefore,
-           (unsigned int)result->openAfter,
-           (unsigned int)result->locked,
-           (unsigned int)msgActive,
-           (unsigned int)msgString,
-           (unsigned int)result->targetEventIndex,
-           (unsigned int)result->stateBefore,
-           (unsigned int)result->stateAfter,
-           (unsigned int)result->removedBefore,
-           (unsigned int)result->removedAfter,
-           result->mutated != 0U ? "yes" : "no",
-           (unsigned int)result->rollbackAvailable);
+
+#define MOVEEVENT_LOG_PHASE(_log) \
+    _log("[MOVEEVENT] %s seq=%u tile=%u flags=%08x status=%s event=%u eligible=%u opcode=%u unsupported=%u line=%u open=%u->%u locked=%u statusMsg=%u/string%u stateEvent=%u state=%u->%u removed=%u->%u mutation=%s rollback=%u\n", \
+         phase, \
+         (unsigned int)sequence, \
+         (unsigned int)result->tile, \
+         (unsigned int)result->runFlags, \
+         EspNativeGameplayMoveEvents_statusName(status), \
+         (unsigned int)result->eventIndex, \
+         (unsigned int)result->eligibleCount, \
+         (unsigned int)result->codeId, \
+         (unsigned int)result->unsupportedCodeId, \
+         (unsigned int)result->lineIndex, \
+         (unsigned int)result->openBefore, \
+         (unsigned int)result->openAfter, \
+         (unsigned int)result->locked, \
+         (unsigned int)msgActive, \
+         (unsigned int)msgString, \
+         (unsigned int)result->targetEventIndex, \
+         (unsigned int)result->stateBefore, \
+         (unsigned int)result->stateAfter, \
+         (unsigned int)result->removedBefore, \
+         (unsigned int)result->removedAfter, \
+         result->mutated != 0U ? "yes" : "no", \
+         (unsigned int)result->rollbackAvailable)
+
+    if (phaseLogAtInfo(phase, status)) {
+        MOVEEVENT_LOG_PHASE(DRPG_LOGI);
+    }
+    else {
+        MOVEEVENT_LOG_PHASE(DRPG_LOGT);
+    }
+
+#undef MOVEEVENT_LOG_PHASE
 }
 
 static EspNativeGameplayMoveEventStatus inspectPhase(
