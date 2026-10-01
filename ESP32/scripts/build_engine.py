@@ -350,6 +350,11 @@ env.BuildSources(
         "-<Main.c>",
         "-<SDL_Video.c>",
         "-<Sound.c>",
+        // Menu_t and ParticleSystem_t are retired ESP32 owners. Their source
+        // translation units are intentionally excluded rather than relying on
+        // final-link garbage collection to discard every desktop symbol.
+        "-<Menu.c>",
+        "-<ParticleSystem.c>",
         "-<Z_Zone.c>",
         "-<Z_Zip.c>",
         "-<DoomCanvas.c>",
