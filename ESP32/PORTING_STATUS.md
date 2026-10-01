@@ -7,20 +7,20 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 88a5d3fa5bfe96fe16e213e78933493394264dcc
 branch = agent/esp32-native-player-death-core
-hardware-tested code boundary = e97234fb899eaa8d9e5d1099da86b14fad651167
-CI = esp32-cyd #1287 SUCCESS
+hardware-tested code boundary = 717e7bd980ff7110c227055d940d01c980a5683d
+CI = esp32-cyd #1290 SUCCESS
 static RAM = 44992 B
-linked Flash = 769329 B
-artifact id = 11193874992
-artifact digest = sha256:50188d879586565733413f7607b43e96e4c912b40dab1bc16ac213c748e35943
-hardware = Sector 1 four-active-monster ordered turn + serialized multi-attacker resolution + lethal monster retaliation -> native PlayerDeath + death menu routing PASS
-status = ORDERED MONSTER TURN + MONSTER LETHAL DEATH REAL-CYD PASS; one-probe-in-flight is now pause/resume rather than fail-closed starvation; lethal retaliation commits HP=0 + attack RNG + one death RNG byte, aborts remaining active-list suffix, reaches native death-menu-ready; LOAD route remains live, JUNCTION/RETRY/MAIN remain explicitly fail-closed; heap stable at 50308/38900
+linked Flash = 769357 B
+artifact id = 11196908002
+artifact digest = sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5
+hardware = Sector 1 ordered multi-monster turn + serialized attack pause/resume + lethal monster retaliation -> native PlayerDeath + death menu routing + raw-pending-probe input gate PASS
+status = ORDERED MONSTER TURN + MONSTER LETHAL DEATH + P1 INPUT-RACE CLOSURE REAL-CYD PASS; one-probe-in-flight is pause/resume rather than starvation; lethal retaliation commits HP=0 + attack RNG + one death RNG byte and terminates the remaining turn suffix; raw MonsterTurn attackProbes now close world input immediately even before Activation delivers the probe on the next session tick; rapid hardware taps did not stack; LOAD remains live, JUNCTION/RETRY/MAIN remain explicitly fail-closed; heap stable at 50308/38900
 ```
 
-## Ordered monster turn + lethal monster death — REAL-CYD PASS (2026-10-01)
+## Ordered monster turn + lethal monster death — REAL-CYD PASS (final review closure 2026-10-02)
 
 Hardware-tested code boundary:
-`e97234fb899eaa8d9e5d1099da86b14fad651167`.
+`717e7bd980ff7110c227055d940d01c980a5683d`.
 
 This closes two intentionally deferred boundaries from the earlier active-sequence
 and player-death milestones.
@@ -70,6 +70,32 @@ same branch already proved LOAD replaces the dead session with the V9
 checkpoint; this final hardware run revalidates the retained menu routing and
 presentation.
 
+The final code-review P1 closes a one-session-tick input race after a
+post-move attack publication. Session composition services
+`MonsterActivation_serviceTurn()` before `MovementProbe/ActiveSequence`, so a
+post-move member can increment the raw `MonsterTurn.attackProbes` after the
+filtered activation view for that tick has already been copied. Previously,
+`AttackVisual_isBusy()` observed only the filtered view; a very fast world tap
+could therefore enter before the next activation delivery and a new
+`runProbe()` could clear `lastAttackerSpriteIndex`.
+
+Commit `717e7bd980ff7110c227055d940d01c980a5683d` makes the input gate also
+observe the raw MonsterTurn producer. Any producer
+`attackProbes > AttackVisual.observedAttackProbes` is combat-owned
+immediately, while the activation-filtered view remains the normal delivery
+contract on the following service tick. This is intentionally fail-closed for
+an unexpected probe gap and changes no movement, RNG, retaliation or animation
+transaction.
+
+The real CYD regression run kept the four-active-monster ordered movement path
+stable and the user explicitly confirmed rapid taps no longer stack through the
+combat boundary. Representative stable sample remains
+`heap=116232 heap8=50308 largest8=38900`.
+
+CI #1290 succeeds in normal `esp32-cyd` at 44992 B static RAM and 769357 B
+linked Flash. Artifact 11196908002 has digest
+`sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5`.
+
 Repeated live samples remain stable:
 
 ```text
@@ -78,9 +104,9 @@ heap8=50308
 largest8=38900
 ```
 
-CI #1287 succeeds in the normal `esp32-cyd` environment at 44992 B static RAM
-and 769329 B linked Flash. Artifact 11193874992 has digest
-`sha256:50188d879586565733413f7607b43e96e4c912b40dab1bc16ac213c748e35943`.
+CI #1290 succeeds in the normal `esp32-cyd` environment at 44992 B static RAM
+and 769357 B linked Flash. Artifact 11196908002 has digest
+`sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5`.
 
 The old "simultaneous attack-ready = fail-closed" and "monster lethal =
 fail-closed" statements remain historically true for their earlier milestones,

@@ -1,9 +1,9 @@
 # Native ordered monster turn + player death closure
 
-Status: **REAL-CYD PASS — 2026-10-01**
+Status: **REAL-CYD PASS — final review closure 2026-10-02**
 
 Hardware-tested code boundary:
-`e97234fb899eaa8d9e5d1099da86b14fad651167`
+`717e7bd980ff7110c227055d940d01c980a5683d`
 
 Base main:
 `88a5d3fa5bfe96fe16e213e78933493394264dcc`
@@ -108,6 +108,60 @@ boundary:
 [PLAYERDEATH] READY ... elapsedMs=3012 phase=death-menu-ready viewZ=9 fade=0 frames=51 input=death-menu load=available ...
 ```
 
+## Final code-review P1: raw pending-probe input gate
+
+A post-PASS code review identified a real scheduling window in the gameplay
+session order:
+
+```text
+MonsterTurn producer
+ -> MonsterActivation_serviceTurn() copies producer state
+ -> AttackVisual
+ -> Retaliation
+ -> MovementProbe / ActiveSequence
+      -> member movement
+      -> possible post-move attack publication
+```
+
+A movement/post-move attack can therefore increment the raw producer
+`attackProbes` after Activation has already copied the filtered view for that
+tick. The old input busy gate observed only the filtered view. During that one
+tick, a tap could be accepted as another world action; its new `runProbe()`
+would clear `lastAttackerSpriteIndex` before Activation delivered the older
+pending attack, risking a stranded sequencer.
+
+Commit `717e7bd980ff7110c227055d940d01c980a5683d` closes the race at the
+correct ownership boundary: `MonsterAttackVisual_isBusy()` now observes both
+the activation-delivered view and the raw MonsterTurn producer. Any raw
+`attackProbes > observedAttackProbes` closes world input immediately. The
+filtered activation view remains the normal delivery contract on the next
+service tick.
+
+The change is isolated to
+`ESP32/src/esp_native_gameplay_monster_attack_visual.c`; no movement, RNG,
+retaliation, animation cadence, player state or renderer transaction changes.
+
+Real-CYD regression behavior:
+
+- ordered four-monster movement remains live;
+- no input accumulation was observed while deliberately tapping through the
+  combat boundary;
+- the user confirmed taps are not stacked;
+- live memory remains `heap=116232 heap8=50308 largest8=38900`.
+
+The supplied serial excerpt is a non-regression witness for the ordered movement
+path; the no-stacking observation is physical hardware behavior rather than a
+claim that the narrow race was deterministically hit in that excerpt.
+
+Normal `esp32-cyd` CI #1290 succeeds:
+
+```text
+static RAM   = 44992 B
+linked Flash = 769357 B
+artifact     = 11196908002
+digest       = sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5
+```
+
 ## Death menu boundary
 
 The native death menu owns touch classification. Current route status:
@@ -136,18 +190,18 @@ heap8=50308
 largest8=38900
 ```
 
-Normal GitHub Actions `esp32-cyd` run #1287 / run id 36927961457: SUCCESS.
+Normal GitHub Actions `esp32-cyd` run #1290 / run id 36933308681: SUCCESS.
 
 ```text
 static RAM  = 44992 B
-linked Flash = 769329 B
-artifact = 11193874992
-digest = sha256:50188d879586565733413f7607b43e96e4c912b40dab1bc16ac213c748e35943
+linked Flash = 769357 B
+artifact = 11196908002
+digest = sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5
 ```
 
 ## Merge boundary
 
-`e97234fb...` is the final hardware-tested code commit for this branch.
+`717e7bd9...` is the final hardware-tested code commit for this branch.
 The documentation commit following it must be Markdown-only. After merge, the
 next implementation branch must be created from the exact new GitHub `main`
 SHA.
