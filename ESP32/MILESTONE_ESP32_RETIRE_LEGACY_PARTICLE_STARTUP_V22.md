@@ -133,3 +133,70 @@ The next bounded retirement is therefore to leave the legacy
 `DoomRPG_t::particleSystem` pointer NULL on ESP32 and remove its core
 constructor/stage/metrics ownership, while preserving all other object graph
 members and runtime behavior.
+
+
+## V23 addendum — retire the ParticleSystem core object
+
+After the V22 startup retirement passed hardware, the remaining ELF closure was
+only the legacy object constructor/destructor pair. V23 removes that owner too.
+
+Code boundaries:
+
+```text
+15efaaeef2bfb39964e5724dc7dfdbd1f6484c32
+  ESP32: retire legacy ParticleSystem core object
+
+d7eed080766016fdb0870bade94e2b03a98c6990
+  ESP32: sever legacy ParticleSystem cleanup closure
+```
+
+The ESP32 core graph no longer calls `ParticleSystem_init`, removes its core
+stage/metrics ownership, and fail-closes if the inherited
+`doomRpg->particleSystem` field ever becomes non-NULL. The generated ESP32
+copy of `DoomRPG.c` also replaces the unreachable desktop
+`ParticleSystem_free` cleanup with a NULL-field assignment, preventing the
+dead destructor closure from linking.
+
+CI #1236:
+
+```text
+static RAM       44944 B
+linked Flash    757525 B
+firmware.bin    757888 B
+artifact id     11176509542
+artifact digest sha256:24d147048b16417d2601b29690f602ce1d15ac3fe2ebc4bc1eb23d4698006c17
+firmware sha256 3df7c507206457b7c92023b0608827cb508700f6b38f71e241fe0661ab466f0d
+ELF sha256      c69ed16b55f493c86a2f51ae43ec602308dab7fe9279cc7299879fda453616c5
+active wraps    49
+ParticleSystem_* symbols = 0
+```
+
+Real-CYD core graph:
+
+```text
+V22 [CORE] READY objects=12 heap used=56160
+V23 [CORE] READY objects=11 heap used=53880
+delta = -2280 B
+```
+
+Main-menu steady state improves from V22
+`heap8=54548 largest8=32756` to
+`heap8=56852 largest8=32756`.
+
+Entrance pre-dialog steady state improves from V22
+`heap8=46360 largest8=36852` to
+`heap8=48676 largest8=36852`.
+
+The runtime proof goes beyond boot. A real player axe kill produces:
+
+```text
+[MONSTERCOMBAT] COMMIT ... alive=1->0 ... gibFX=deferred ...
+[GIBFX] PAINT ... legacyParticleSystem=no
+[GIBFX] REPAINT ...
+[GIBFX] EXPIRE ... gameplayRng=untouched
+```
+
+This hardware-validates the permanent native ownership boundary:
+`EspNativeGameplayGibFx` owns live gib presentation and the desktop
+ParticleSystem is fully absent from the production ESP32 ELF.
+

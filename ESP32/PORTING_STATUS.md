@@ -7,20 +7,74 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = 28cc43cff7d0bee49731ff2c3382939914c75e41
-CI = esp32-cyd #1233 SUCCESS
-static RAM = 44952 B
-linked Flash = 757505 B
-firmware.bin = 757872 B
-artifact id = 11176725567
-artifact digest = sha256:4adda6b89004b7482d052a151e2664a2fdc2cddb51fb38d8d6cd0e0adc1dac83
-firmware sha256 = 2169260cb3288d31aff2bbb66ccaefe6f1bf6b779391b2c7b3374fa2d0516352
-ELF sha256 = 203c3afcfdfe4c50361153b09043c70e6e23520fe1ed0a4a1569155ee9051b0d
-hardware = cold boot -> native MAIN -> START -> complete intro -> Entrance -> MOVE/TURN -> pickups -> regular door -> opcode26 dialog/resume -> renderer recovery PASS
-status = V22 REAL-CYD PASS; legacy ParticleSystem_startup + gibs preflight/load retired; final ELF retains only ParticleSystem_init/free; shapeData/mediaTexels remain NULL; active linker wraps = 49
+hardware-tested code boundary = d7eed080766016fdb0870bade94e2b03a98c6990
+CI = esp32-cyd #1236 SUCCESS
+static RAM = 44944 B
+linked Flash = 757525 B
+firmware.bin = 757888 B
+artifact id = 11176509542
+artifact digest = sha256:24d147048b16417d2601b29690f602ce1d15ac3fe2ebc4bc1eb23d4698006c17
+firmware sha256 = 3df7c507206457b7c92023b0608827cb508700f6b38f71e241fe0661ab466f0d
+ELF sha256 = c69ed16b55f493c86a2f51ae43ec602308dab7fe9279cc7299879fda453616c5
+hardware = cold boot -> native MAIN -> START -> complete intro -> Entrance -> movement/door/pickup -> real monster attack -> real player kill with native GIBFX paint/repaint/expire PASS
+status = V23 REAL-CYD PASS; ParticleSystem core object/constructor/destructor closure fully retired from ESP32 ELF; doomRpg->particleSystem remains NULL; native GIBFX owns live gib presentation; shapeData/mediaTexels remain NULL; active linker wraps = 49
 ```
 
 
+
+### Legacy ParticleSystem core-object retirement V23 — REAL-CYD PASS (2026-10-01)
+
+Commits `15efaaeef2bfb39964e5724dc7dfdbd1f6484c32` and
+`d7eed080766016fdb0870bade94e2b03a98c6990` complete the ESP32
+ParticleSystem retirement started in V22. The core graph no longer allocates
+`ParticleSystem_t`; the retired field is required to remain NULL; and the
+generated ESP32 DoomRPG cleanup no longer retains `ParticleSystem_free()`.
+
+CI #1236 succeeds at 44944 B static RAM / 757525 B linked Flash /
+757888 B firmware.bin. Direct ELF inspection finds **zero**
+`ParticleSystem_*` symbols. Active linker wraps remain 49.
+
+The real classic CYD proves the exact core-object reduction:
+
+```text
+V22 core used = 56160 B
+V23 core used = 53880 B
+delta          = -2280 B
+```
+
+The boot witness is now:
+
+```text
+[CORE] ParticleSystem retired object=NULL owner=native-gibfx
+[CORE] READY objects=11 ...
+```
+
+Native MAIN is stable at
+`heap=122776 heap8=56852 largest8=32756`, +2304 B heap8 versus the V22
+hardware boundary. After full intro disposal and Entrance bootstrap, resident
+gameplay is stable at `heap=114600 heap8=48676 largest8=36852`, +2316 B
+heap8 versus V22 before lazy dialog owners.
+
+Most importantly, a real combat kill exercises the replacement owner:
+
+```text
+[MONSTERCOMBAT] COMMIT ... alive=1->0 ... gibFX=deferred ...
+[GIBFX] PAINT ... legacyParticleSystem=no
+[GIBFX] REPAINT ...
+[GIBFX] EXPIRE ... gameplayRng=untouched
+```
+
+The same session also validates a real monster attack/retaliation, movement,
+door close/open, resource/weapon pickup, renderer compact-guard recovery and
+post-kill monster movement. The live heap remains stable at
+`heap=111140 heap8=45216 largest8=36852` across the kill/overlay expiry.
+
+This is the hardware proof that the desktop ParticleSystem is no longer merely
+unused: its live gib presentation responsibility is owned by the bounded native
+`EspNativeGameplayGibFx` path.
+
+Detailed milestone:
+[MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md](MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md)
 
 ### Legacy ParticleSystem startup retirement V22 — REAL-CYD PASS (2026-10-01)
 

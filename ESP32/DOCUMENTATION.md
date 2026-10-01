@@ -15,15 +15,34 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = 28cc43cff7d0bee49731ff2c3382939914c75e41
-CI = esp32-cyd #1233 SUCCESS
-static RAM = 44952 B
-linked Flash = 757505 B
-firmware.bin = 757872 B
-artifact id = 11176725567
-hardware = cold boot + native MAIN + START/intro + Entrance resident gameplay PASS
-status = V22 REAL-CYD PASS; ParticleSystem resource startup retired, object still allocated for next bounded retirement step; 49 active linker wraps
+hardware-tested code boundary = d7eed080766016fdb0870bade94e2b03a98c6990
+CI = esp32-cyd #1236 SUCCESS
+static RAM = 44944 B
+linked Flash = 757525 B
+firmware.bin = 757888 B
+artifact id = 11176509542
+hardware = cold boot + MAIN + START/intro + Entrance + real monster/player combat + native gib overlay PASS
+status = V23 REAL-CYD PASS; zero ParticleSystem_* symbols in final ELF, retired root remains NULL, native GIBFX hardware-proven; 49 active linker wraps
 ```
+
+## Legacy ParticleSystem core object retired — REAL-CYD PASS (2026-10-01)
+
+V23 removes the inherited `ParticleSystem_t` object itself from the ESP32 core
+graph and severs the final desktop cleanup reference. The final ELF contains
+zero `ParticleSystem_*` symbols.
+
+CI #1236: 44944 B static RAM / 757525 B linked Flash / 757888 B firmware.bin,
+49 active linker wraps. The real CYD confirms the core graph shrinks by exactly
+2280 B and native MAIN gains 2304 B free heap8 over V22.
+
+The decisive hardware witness is a real monster death: the native GIBFX owner
+paints, repaints and expires the gib overlay with
+`legacyParticleSystem=no`, while gameplay RNG remains untouched. Thus the
+legacy particle subsystem is fully absent from the production image and its
+visible death-effect responsibility is hardware-proven native.
+
+See the V23 addendum in
+[MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md](MILESTONE_ESP32_RETIRE_LEGACY_PARTICLE_STARTUP_V22.md).
 
 ## Legacy ParticleSystem startup retired — REAL-CYD PASS (2026-10-01)
 
