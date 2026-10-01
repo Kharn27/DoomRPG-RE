@@ -1193,6 +1193,28 @@ int EspNativeGameplayMonsterTurn_postMoveGoal(struct DoomRPG_s* doomRpgBase,
         return 0;
     }
 
+    {
+        const EspNativeGameplayMonsterTurnView* delivered =
+            EspNativeGameplayMonsterActivation_turnView();
+        if (delivered == NULL || delivered->active != 1U ||
+            delivered->sourceArenaFNV1a != turnOwner.view.sourceArenaFNV1a) {
+            printf("[MONSTERPOSTMOVE] DEFER reason=%s sprite=%u subtype=%u cause=activation-filter-not-ready mutation=no rngConsumed=0\n",
+                   reasonName(reason),
+                   (unsigned int)spriteIndex,
+                   (unsigned int)monster->subtype);
+            return 0;
+        }
+        if (delivered->attackProbes != turnOwner.view.attackProbes) {
+            printf("[MONSTERPOSTMOVE] DEFER reason=%s sprite=%u subtype=%u producerProbe=%u deliveredProbe=%u cause=previous-attack-probe-pending simultaneousAttack=fail-closed mutation=no rngConsumed=0\n",
+                   reasonName(reason),
+                   (unsigned int)spriteIndex,
+                   (unsigned int)monster->subtype,
+                   (unsigned int)turnOwner.view.attackProbes,
+                   (unsigned int)delivered->attackProbes);
+            return 0;
+        }
+    }
+
     randomBefore = doomRpg->random;
     randomFNVBefore = randomFNV(&randomBefore);
     playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
