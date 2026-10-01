@@ -5,20 +5,80 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 67950d6310ddb2fe4b48342200603674f6e71815
-branch = agent/esp32-consolidation-interaction-diagnostics-v17
-hardware-tested code boundary = 552ec9c529d1bd31a656c9847b0b267bacd713fa
-CI = esp32-cyd #1220 SUCCESS
+current main = 4a46ea17e3e397bc9870e10c06eda53786ae48b8
+branch = agent/esp32-consolidation-hot-input-turn-telemetry-v21
+hardware-tested code boundary = ac5e11127f294a5e2d7d1127febb21214be94458
+CI = esp32-cyd #1225 SUCCESS
 static RAM = 45064 B
-linked Flash = 759197 B
-firmware.bin = 759568 B
-artifact id = 11157510597
-artifact digest = sha256:f891d1f121611cade66ed43eb9064919fa2da5336d39ac27d8a97f924802aded
-firmware sha256 = 956d0593fa16366448736ee602eba321f217a94b106c4dbcf7286503afe976e8
-ELF sha256 = 559f03b35ab5950ce4e9ee51c4fe4c128e81975c708001b6c7aa52952a3b4c10
-hardware = cold boot -> native MENU_MAIN -> START -> full intro -> Entrance -> FIRST_FRAME/READY -> repeated MOVE/TURN/pickup/door gameplay PASS
-status = HARDWARE PASS; hot redraw success telemetry is TRACE-only while failure/recovery witnesses remain INFO/ERROR; active linker wraps = 49
+linked Flash = 757789 B
+firmware.bin = 758160 B
+artifact id = 11165147980
+artifact digest = sha256:2cff56fe041a090e89ef7a2b718d51feaae2240676db9c4932fc545c9e94c6bd
+firmware sha256 = 2ea793c91c6fa23563d434f776b4c85f2d9e156c5374c5a5c07fc25c3d7552ca
+ELF sha256 = 5dd4b8500282a1bd2cfe6d4e740469fb39b6171eb337ede79978e5b7c257ccac
+hardware = cold boot -> START -> full intro -> Entrance -> banal MOVE/TURN -> pickup/dialog/door/block -> renderer recovery -> V9 LOAD Sector 1 -> live ordered monster movement PASS
+status = HARDWARE PASS; hot input/move/idle-turn success telemetry is TRACE-only while semantic mutations, failures, deferrals and recovery witnesses remain INFO/ERROR; active linker wraps = 49
 ```
+
+
+### Hot input / move / idle-turn telemetry V21 — REAL-CYD PASS (2026-10-01)
+
+Commit `ac5e11127f294a5e2d7d1127febb21214be94458` continues the
+compile-time logging consolidation without changing gameplay, rendering,
+rollback, ownership or timing behavior.
+
+Normal INFO no longer emits the high-frequency success-only families:
+
+```text
+[MOVEEVENT] EXIT-PREFLIGHT / ENTER-PREFLIGHT / EXIT / ENTER
+[TOUCHFEEDBACK] FLASH / RESTORE
+[AUTOMAP] UNCOVER reason=MOVE / MOVE-DIALOG
+[MONSTERTURN] ROTATE-NO-TURN
+[MONSTERTURN] SCHEDULE
+```
+
+Three idle monster summaries are conditional rather than globally hidden:
+`MONSTERTURN COMPLETE candidates=0` is TRACE only when
+`specialAIDeferred=0`; `MONSTERMOVE DEFER active-order-not-owned` is TRACE
+only for the strict `candidates=0 activeCount=0` case; and
+`MONSTERACTIVESEQ COMPLETE` is TRACE only for `activeCount=0 delivered=0`.
+Nontrivial cases remain INFO.
+
+The real CYD validates exact Entrance first frame `71ca7465`,
+`shapeData=0x0 mediaTexels=0x0`, banal committed MOVE/TURN with the targeted
+noise absent, blocked movement, pickups, regular-door animation, dialog
+open/resume, and nontrivial move-event witnesses including `WORLD-READY` and
+`COMMIT`.
+
+Two genuine renderer compact-guard incidents still expose and complete the
+critical recovery chain:
+
+```text
+[NATIVEFRAME] LEGACY_GUARD ...
+[NATIVEFRAME] RETRY ...
+[NATIVEFRAME] RECOVERED ...
+```
+
+The same hardware session loads the V9 Sector 1 checkpoint and preserves live
+monster diagnostics: four active members are serviced in order, ordinary
+movement commits, both subtype-4 three-goal chains complete, and
+`MONSTERACTIVESEQ COMPLETE activeCount=4 delivered=4` remains visible.
+A no-attack turn with `specialAIDeferred=2` also remains INFO, proving the
+conditional classification is not hiding meaningful deferred AI state.
+
+Entrance gameplay is initially stable at
+`heap=93448 heap8=27524 largest8=18420`. After the first lazy dialog-chain
+allocation, repeated ALIVE samples remain stable at
+`heap=92412 heap8=26488 largest8=18420`.
+
+CI #1225 succeeds at 45064 B static RAM / 757789 B linked Flash /
+758160 B firmware.bin. Relative to V20, linked Flash drops by 1408 B while
+static RAM and the 49 active linker wraps are unchanged. The hardware workstation
+reports the expected +16 B image delta: 757805 B linked Flash /
+758176 B firmware.bin.
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md](MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md)
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
 

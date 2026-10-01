@@ -13,16 +13,16 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 67950d6310ddb2fe4b48342200603674f6e71815
-branch = agent/esp32-consolidation-interaction-diagnostics-v17
-hardware-tested code boundary = 552ec9c529d1bd31a656c9847b0b267bacd713fa
-CI = esp32-cyd #1220 SUCCESS
+current main = 4a46ea17e3e397bc9870e10c06eda53786ae48b8
+branch = agent/esp32-consolidation-hot-input-turn-telemetry-v21
+hardware-tested code boundary = ac5e11127f294a5e2d7d1127febb21214be94458
+CI = esp32-cyd #1225 SUCCESS
 static RAM = 45064 B
-linked Flash = 759197 B
-firmware.bin = 759568 B
-artifact id = 11157510597
-hardware = normal INFO firmware validated through cold boot, intro, Entrance session and repeated MOVE/TURN/pickup/door gameplay
-status = HARDWARE PASS; repeated redraw success telemetry is TRACE-only; failure/recovery witnesses remain visible; 49 active linker wraps
+linked Flash = 757789 B
+firmware.bin = 758160 B
+artifact id = 11165147980
+hardware = normal INFO firmware validated through cold boot, full intro, Entrance banal MOVE/TURN, pickup/dialog/door/block/recovery and V9 Sector 1 live monster movement
+status = HARDWARE PASS; hot input/move/idle-turn success telemetry is TRACE-only; semantic mutation, failure, deferral and recovery witnesses remain visible; 49 active linker wraps
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1503,4 +1503,36 @@ hardware-proven.
 
 Detailed milestone:
 [MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md](MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md).
+
+
+## Hot input / move / idle-turn telemetry moved to TRACE — REAL-CYD PASS (2026-10-01)
+
+V21 hardware head `ac5e11127f294a5e2d7d1127febb21214be94458` removes
+success-only serial traffic from the hot input/movement path while preserving
+all runtime behavior and the diagnostic branches that matter.
+
+Normal INFO no longer prints generic move-event phase summaries,
+touch-feedback FLASH/RESTORE, per-MOVE automap-uncover success, turn scheduling,
+rotation-no-turn, or strictly idle zero-monster completion summaries.
+Conditional monster summaries remain INFO whenever they carry nontrivial state.
+
+CI #1225 reports 45064 B static RAM / 757789 B linked Flash /
+758160 B firmware.bin; active wrappers remain 49. Versus V20 this is
+0 B static RAM and -1408 B linked Flash.
+
+The real classic CYD preserves exact Entrance first-frame FNV `71ca7465`,
+`shapeData=0x0 mediaTexels=0x0`, banal committed MOVE/TURN, pickups,
+dialog/resume, blocked movement and regular-door operation. Meaningful
+`MOVEEVENT WORLD-READY/COMMIT` remains visible, and two real
+`LEGACY_GUARD -> RETRY -> RECOVERED` renderer recoveries complete normally.
+
+A V9 Sector 1 resume also preserves the live four-member monster sequence,
+movement commits, subtype-4 three-goal chains and the non-idle
+`MONSTERACTIVESEQ COMPLETE activeCount=4 delivered=4` witness.
+
+Repeated ALIVE is stable at `heap=93448 heap8=27524 largest8=18420` before
+lazy dialog allocation and `heap=92412 heap8=26488 largest8=18420` afterward.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md](MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md).
 
