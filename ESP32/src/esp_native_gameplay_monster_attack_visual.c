@@ -303,18 +303,40 @@ int EspNativeGameplayMonsterAttackVisual_isPoseSprite(uint32_t spriteIndex) {
 }
 
 int EspNativeGameplayMonsterAttackVisual_isBusy(void) {
-    const EspNativeGameplayMonsterTurnView* turn;
+    const EspNativeGameplayMonsterTurnView* delivered;
+    const EspNativeGameplayMonsterTurnView* producer;
+
     if (attackVisual.active != 1U) return 0;
     if (activeSequence != 0U) return 1;
 
-    /* A newly published attack probe remains combat-owned until its first
-     * attack frame arms successfully. observedAttackProbes advances only after
-     * that presentation succeeds, so transient guardedRender() rollback is a
-     * retry state and cannot reopen world input or strand retaliation. */
-    turn = EspNativeGameplayMonsterActivation_turnView();
-    return turn != NULL && turn->active == 1U &&
-           turn->sourceArenaFNV1a == attackVisual.sourceArenaFNV1a &&
-           turn->attackProbes == attackVisual.observedAttackProbes + 1U;
+    /*
+     * Movement/ActiveSequence runs after Activation_serviceTurn() in the
+     * gameplay-session composition. A member can therefore publish a raw
+     * MonsterTurn attack probe after the filtered activation view for this tick
+     * has already been copied. World input must close at publication time, not
+     * one service tick later: otherwise a new player action can runProbe(),
+     * clear lastAttackerSpriteIndex and strand the still-undelivered probe.
+     *
+     * Treat any raw producer advance as combat-owned immediately. The filtered
+     * view remains the normal delivery contract once Activation services the
+     * next tick. Using '>' is intentionally fail-closed for an unexpected probe
+     * gap as well.
+     */
+    producer = EspNativeGameplayMonsterTurn_view();
+    if (producer != NULL && producer->active == 1U &&
+        producer->sourceArenaFNV1a == attackVisual.sourceArenaFNV1a &&
+        producer->attackProbes > attackVisual.observedAttackProbes) {
+        return 1;
+    }
+
+    /* A delivered-but-not-yet-armed probe also remains combat-owned until its
+     * first attack frame presents successfully. observedAttackProbes advances
+     * only after that presentation succeeds, so guardedRender() rollback keeps
+     * world input blocked for retry. */
+    delivered = EspNativeGameplayMonsterActivation_turnView();
+    return delivered != NULL && delivered->active == 1U &&
+           delivered->sourceArenaFNV1a == attackVisual.sourceArenaFNV1a &&
+           delivered->attackProbes > attackVisual.observedAttackProbes;
 }
 
 int EspNativeGameplayMonsterAttackVisual_isProbeComplete(uint32_t probe) {
