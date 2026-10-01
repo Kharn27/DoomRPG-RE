@@ -5,17 +5,63 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
-branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = 13bb05ed09aa217a2263a4f3fb8a521348c96258
-CI = esp32-cyd #1257 SUCCESS
-static RAM = 44936 B
-linked Flash = 762861 B
-artifact id = 11191801698
-artifact digest = sha256:22e4479376aac2daed8ef3e6300a633b3f13ef9fa133369586619374f58e2c25
-hardware = Sector 1 PASS_TURN on type-10 hazard x2 -> HUD health/armor repaints immediately; three-goal multi-loop + Fire Ext regressions remain PASS
-status = HAZARD PASS_TURN HUD REFRESH REAL-CYD PASS; current PlayerState overlay repaints bounded HUD bands before immediate feedback present; hp/armor 17/6->16/4->15/2 visible on each turn; heap stable at 50364/38900; lethal player transition remains fail-closed; active linker wraps = 49
+current main = 88a5d3fa5bfe96fe16e213e78933493394264dcc
+branch = agent/esp32-native-player-death-core
+hardware-tested code boundary = d6811e23db4580795887c97c3bdf5e6493224268
+CI = esp32-cyd #1274 SUCCESS
+static RAM = 44960 B
+linked Flash = 765497 B
+artifact id = 11193296410
+artifact digest = sha256:5770b336e4c4686fb6ec189a864f234d0017347a87adac83ab5eb0f67d4a24b5
+hardware = Sector 1 type-10 hazard PASS_TURN lethal path -> camera fall + native fade to black PASS
+status = PLAYER DEATH CORE REAL-CYD PASS; lethal hazard commits HP=0, native ST_DYING blocks input, consumes one legacy death RNG byte, clears weapon visibility, falls viewZ 36->6, fades viewport to black by ~3000 ms, arms death-menu-ready with no MonsterTurn; death-menu UI remains deliberately deferred; heap stable at 50340/38900; active linker wraps = 49
 ```
+
+
+### Native player death core — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested head `d6811e23db4580795887c97c3bdf5e6493224268`
+owns the first bounded native `ST_DYING` path. The producer is deliberately
+limited to a lethal type-10/11 hazard reached through `PASS_TURN`; MOVE
+hazards, monster retaliation and barrel/crate radius damage keep their existing
+fail-closed boundaries until dedicated producer milestones connect them.
+
+The lethal transaction now commits the authoritative PlayerState to health zero,
+keeps exact hazard armor semantics, then arms one 24-byte PlayerDeath owner.
+Arming clears the legacy death-state weapon visibility fields
+(`weapons=0`, `weapon=0`), consumes the single legacy
+`Player_died()` random byte used for death-sound selection, blocks resident
+gameplay input, and explicitly suppresses MonsterTurn after death.
+
+The native presentation reproduces the recovered legacy timing without touching
+desktop render storage: the existing `EspPlayerView` camera falls from
+`viewZ=36` during the first 750 ms, then a bounded RGB565 clamp fades only the
+160x80 world viewport until the 3000 ms death-menu boundary. No new framebuffer,
+`shapeData`, or `mediaTexels` owner is introduced.
+
+Real-CYD witness:
+
+```text
+[HAZARDPASS] LETHAL-COMMIT ... hp=1->0 ... deathOwner=pending rollback=armed monsterTurn=no
+[PLAYERDEATH] ARM ... hp=0 weapons=000f->0000 ... rngByte=65 ... viewZ=36 fallMs=750 fadeMs=750..3000 ... input=blocked ownerBytes=24
+[PASSTURN] DEATH ... deathOwner=armed monsterTurn=no input=blocked ...
+[PLAYERDEATH] PHASE ... elapsedMs=845 fall=complete viewZ=6 fade=begin input=blocked
+[PLAYERDEATH] READY ... elapsedMs=3004 phase=death-menu-ready viewZ=6 fade=0 frames=49 input=blocked menuOwner=deferred
+```
+
+The user confirmed the camera physically falls to the floor and the world then
+fades fully black. The intentionally unowned death menu leaves the post-fade HUD
+non-interactive; that is the next presentation boundary, not a fallback to
+legacy input. Repeated live samples remain stable at
+`heap=116264 heap8=50340 largest8=38900`.
+
+CI #1274 succeeds at 44960 B static RAM / 765497 B linked Flash. Artifact
+11193296410 has digest
+`sha256:5770b336e4c4686fb6ec189a864f234d0017347a87adac83ab5eb0f67d4a24b5`.
+
+Detailed contract:
+[MILESTONE_NATIVE_PLAYER_DEATH_CORE.md](MILESTONE_NATIVE_PLAYER_DEATH_CORE.md)
+
 
 
 
