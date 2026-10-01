@@ -699,3 +699,27 @@ belong to the explicit `esp32-cyd-bringup` profile.
 The hardware-tested direct route preserves the exact Entrance first-frame FNV,
 presentation contract and fail-closed session behavior while removing one
 wrapper, 8 B of static RAM and 928 B of linked Flash.
+
+
+## Compile-time logging policy
+
+ESP32 logging is a diagnostic surface, never evidence of functional ownership.
+Permanent C/C++ code may classify messages through `doomrpg_log.h`:
+
+```text
+ERROR  invariant/fail-closed/OOM/corruption or actionable failure
+INFO   operational transitions and normal hardware-test witnesses
+DEBUG  bounded one-shot census/inventory/audit detail
+TRACE  hot-path timing, periodic profiling and per-read/per-frame telemetry
+```
+
+Normal `esp32-cyd` defaults to INFO; `esp32-cyd-bringup` may explicitly
+enable TRACE. Disabled levels compile away, including format strings, without a
+runtime setting owner.
+
+Instrumentation and ownership must be audited independently. PlatformVideo,
+Render plane/cull and EspAssetPack wrappers retain functional responsibilities
+even when profiling output is disabled. Hot success summaries should generally
+be TRACE, but failure paths from the same owner must remain ERROR/INFO as
+appropriate. ALIVE stays INFO until a separate hardware-validated milestone
+changes its cadence or level.

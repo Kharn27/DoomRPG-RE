@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "esp_entity_def_type_catalog.h"
+#include "doomrpg_log.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_crate_state.h"
@@ -153,7 +154,7 @@ static int outcomeProbe(void) {
             }
         }
     }
-    printf("[CRATEPROBE] READY cases=%u thresholds=0/2/4/12/24/150/213 ammoSecond=150..212 modulo5=yes rngConsumed=0 mutation=no\n",
+    DRPG_LOGD("[CRATEPROBE] READY cases=%u thresholds=0/2/4/12/24/150/213 ammoSecond=150..212 modulo5=yes rngConsumed=0 mutation=no\n",
            (unsigned int)(sizeof(cases) / sizeof(cases[0])));
     return 1;
 }
@@ -242,7 +243,7 @@ int EspNativeGameplayCrateState_ensure(void) {
     EspNativeGameplayCrateState_reset();
     crateState = (CrateStateOwner*)calloc(1U, sizeof(*crateState));
     if (crateState == NULL) {
-        printf("[CRATESTATE] OOM ownerBytes=%u allocation=map-lazy failClosed=yes\n",
+        DRPG_LOGE("[CRATESTATE] OOM ownerBytes=%u allocation=map-lazy failClosed=yes\n",
                (unsigned int)sizeof(CrateStateOwner));
         return 0;
     }
@@ -277,7 +278,7 @@ int EspNativeGameplayCrateState_ensure(void) {
                 crateState->view.fatal = 1U;
                 break;
             }
-            printf("[CRATESTATE] WITNESS sprite=%u tile=%u pos=%d,%d defTile=%u parm=%08x weaponMask=%08x linked=%u order=%u\n",
+            DRPG_LOGD("[CRATESTATE] WITNESS sprite=%u tile=%u pos=%d,%d defTile=%u parm=%08x weaponMask=%08x linked=%u order=%u\n",
                    (unsigned int)i,
                    (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
                    (int)sprite.x,
@@ -295,7 +296,7 @@ int EspNativeGameplayCrateState_ensure(void) {
         crateState->view.fatal = 1U;
     }
 
-    printf("[CRATESTATE] READY arena=%08x sprites=%u crates=%u capacity=%u ownerBytes=%u targets=%s tiles=%u/%u/%u/%u ammo=%u/%u/%u/%u/%u persistence=deferred immutableBsp=yes allocation=map-lazy fatal=%u\n",
+    DRPG_LOGI("[CRATESTATE] READY arena=%08x sprites=%u crates=%u capacity=%u ownerBytes=%u targets=%s tiles=%u/%u/%u/%u ammo=%u/%u/%u/%u/%u persistence=deferred immutableBsp=yes allocation=map-lazy fatal=%u\n",
            (unsigned int)crateState->view.sourceArenaFNV1a,
            (unsigned int)crateState->view.spriteCount,
            (unsigned int)crateState->view.crateCount,
@@ -316,7 +317,7 @@ int EspNativeGameplayCrateState_ensure(void) {
         crateState->probeDone = 1U;
         if (!outcomeProbe()) {
             crateState->view.fatal = 1U;
-            printf("[CRATEPROBE] FAILED thresholds-or-target-mapping mutation=no rngConsumed=0 failClosed=yes\n");
+            DRPG_LOGE("[CRATEPROBE] FAILED thresholds-or-target-mapping mutation=no rngConsumed=0 failClosed=yes\n");
             return 0;
         }
     }
@@ -542,7 +543,7 @@ int EspNativeGameplayCrateState_restore(
         EspNativeGameplayCrateState_fingerprint() != snapshot->stateFNV1a) {
         return 0;
     }
-    printf("[CRATECHECKPOINT] RESTORE arena=%08x map=%u sprites=%u transformed=%u bytes=%u codeBytes=%u stateFNV=%08x mutation=transform-overlay-only allocation=existing-owner\n",
+    DRPG_LOGI("[CRATECHECKPOINT] RESTORE arena=%08x map=%u sprites=%u transformed=%u bytes=%u codeBytes=%u stateFNV=%08x mutation=transform-overlay-only allocation=existing-owner\n",
            (unsigned int)snapshot->sourceArenaFNV1a,
            (unsigned int)snapshot->targetMapId,
            (unsigned int)snapshot->spriteCount,

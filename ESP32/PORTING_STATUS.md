@@ -5,19 +5,19 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = fb3b4ee310ccc54d7301dcdfbba9d4648e17c38a
-branch = agent/esp32-consolidation-first-frame-diagnostic-wrap-v15
-hardware-tested code boundary = 5460c689b708468e3bdd618d0000753159a24109
-CI = esp32-cyd #1202 SUCCESS
-static RAM = 45120 B
-flash = 772161 B
-firmware.bin = 772528 B
-artifact id = 11121161150
-artifact digest = sha256:89e6527638a4471f37b1019589b10624796814bcfecce6a236304c4b96ca68ff
-firmware sha256 = 644d668d8209a8d7ccd3aa6680a5b1fae92f0e90b8a50c799bde3f011ea64f85
-ELF sha256 = de4b561ca07c4200c28f7ffcf924cf169494ff8ef86ff032c79592640e87fb12
-hardware = START -> intro -> Entrance first native frame without production COLORSTATS wrapper -> cache prime -> resident gameplay PASS
-status = HARDWARE PASS; first-frame fidelity wrapper scoped to bringup; active linker wraps 52 -> 51
+current main = 8c208baf2d7e55fc84f13bb59a5b2479703837fd
+branch = agent/esp32-consolidation-log-levels-v16
+hardware-tested code boundary = 5a320d50a5f88646382db1211114a31b671b34b2
+CI = esp32-cyd #1209 SUCCESS
+static RAM = 45080 B
+linked Flash = 767581 B
+firmware.bin = 767952 B
+artifact id = 11151256017
+artifact digest = sha256:25394e93759a5f96ef8ff058ee0d6b5f6f368cfe00930aafebd0464b5d6f3762
+firmware sha256 = acc7838bf3df8421c230f29b9f3cdedd697800b71632bf699fc8b35426a20d63
+ELF sha256 = d0276a7f94cc63e7c41211728ac728495904116cc7b74808940fa7db523c9663
+hardware = cold boot -> native MENU_MAIN -> START -> intro -> Entrance -> FIRST_FRAME/READY -> movement/turn/crate/dialog/door gameplay PASS
+status = HARDWARE PASS; normal firmware logging defaults to INFO, bringup explicitly TRACE; active linker wraps unchanged at 51
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2650,3 +2650,52 @@ The gameplay session then reaches:
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_FIRST_FRAME_DIAGNOSTIC_WRAP_V15.md](MILESTONE_ESP32_CONSOLIDATION_FIRST_FRAME_DIAGNOSTIC_WRAP_V15.md)
+
+
+### Compile-time ESP32 logging policy V16 — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested code boundary: `5a320d50a5f88646382db1211114a31b671b34b2`.
+
+V16 adds the allocation-free `doomrpg_log.h` compile-time policy:
+ERROR / INFO / DEBUG / TRACE. Normal `esp32-cyd` defaults to INFO and
+`esp32-cyd-bringup` explicitly selects TRACE. Disabled DEBUG/TRACE calls and
+their format strings can disappear from the final image.
+
+The bounded migration classifies per-present VIDEO timing, PAKIO SAMPLE,
+PLANEPROFILE, successful periodic NATIVEPLANE summaries, per-frame
+SPRITEPROFILE and expected RNG WORD-OOB-AVOIDED as TRACE. Detailed crate and
+interaction inventories are DEBUG. Failures/OOM/FATAL remain ERROR, while
+operational transitions and ALIVE remain visible at INFO.
+
+No functional seam is removed. Final-ELF `nm` confirms the exact same 51
+`__wrap_*` symbols as merged V15 main, including PlatformVideo, Render
+plane/cull and all four EspAssetPack wrappers.
+
+CI #1209:
+
+```text
+                         V15/main        V16            delta
+static RAM               45120 B         45080 B         -40 B
+linked Flash            772161 B        767581 B       -4580 B
+firmware.bin            772528 B        767952 B       -4576 B
+active __wrap_*              51             51              0
+```
+
+The 40-byte RAM reduction is exactly the normal-build removal of PAKIO profiling
+state. The INFO ELF contains none of the targeted VIDEO/PAKIO/PLANEPROFILE,
+NATIVEPLANE-success, SPRITEPROFILE, RNG WORD-OOB, CRATESTATE WITNESS or
+INTERACTMAP OPCODE strings, while NATIVEPLANE failures, RNG FATAL,
+CRATESTATE OOM/READY, MAPFLASH error/ARM, ALIVE and ENGINESESSION READY remain.
+
+The real classic CYD validates cold boot, native MENU_MAIN, START, full intro
+and disposal, Entrance bootstrap, exact first frame `71ca7465`,
+`ENGINESESSION READY ... shapeData=0x0 mediaTexels=0x0`, committed movement
+and rotation, crate transform/pickup, dialog resume and door open/close
+animation. Multiple ALIVE witnesses remain healthy and none of the targeted
+TRACE spam appears.
+
+Remaining verbose families such as NATIVEFRAME, INTERACTCORPUS and semantic
+gameplay traces were intentionally left outside this bounded milestone.
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_LOG_LEVELS_V16.md](MILESTONE_ESP32_CONSOLIDATION_LOG_LEVELS_V16.md)

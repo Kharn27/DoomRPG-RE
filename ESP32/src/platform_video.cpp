@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "platform_video_config.h"
+#include "doomrpg_log.h"
 
 namespace {
 
@@ -225,7 +226,9 @@ bool PlatformVideo_present() {
     }
 
     uint16_t outputRow[DOOMRPG_PHYSICAL_WIDTH];
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     const uint32_t started = micros();
+#endif
 
     platformDisplay->startWrite();
     platformDisplay->setAddrWindow(0, 0, DOOMRPG_PHYSICAL_WIDTH,
@@ -250,8 +253,8 @@ bool PlatformVideo_present() {
     drawDebugOverlay();
 #endif
 
-    Serial.printf("[VIDEO] Present 160x120 -> 320x240 exact 2x raw RGB565: %lu us\n",
-                  micros() - started);
+    DRPG_LOGT("[VIDEO] Present 160x120 -> 320x240 exact 2x raw RGB565: %lu us\n",
+              micros() - started);
     return true;
 }
 
