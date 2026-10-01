@@ -416,3 +416,21 @@ EspPlayerViewMoveStatus EspPlayerView_commitPreparedMove(
     playerViewState = *preparedAfter;
     return ESP_PLAYER_VIEW_MOVE_OK;
 }
+
+
+int EspPlayerView_commitDeathViewZ(int32_t expectedViewZ,
+                                   int32_t nextViewZ) {
+    EspPlayerViewState next;
+    if (!EspPlayerView_isReady() ||
+        playerViewState.viewX != playerViewState.destX ||
+        playerViewState.viewY != playerViewState.destY ||
+        playerViewState.viewAngle != playerViewState.destAngle ||
+        playerViewState.viewZ != expectedViewZ ||
+        nextViewZ < 0 || nextViewZ > 64) {
+        return 0;
+    }
+    next = playerViewState;
+    next.viewZ = nextViewZ;
+    playerViewState = next;
+    return 1;
+}
