@@ -7,17 +7,17 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 67950d6310ddb2fe4b48342200603674f6e71815
 branch = agent/esp32-consolidation-interaction-diagnostics-v17
-hardware-tested code boundary = 53b548b5adf0d09c2d1e1ed4b673a3ae8054cac2
-CI = esp32-cyd #1214 SUCCESS
+hardware-tested code boundary = 6733395845c289fa9f69cc6c61001c3a68f2d72d
+CI = esp32-cyd #1216 SUCCESS
 static RAM = 45072 B
-linked Flash = 764757 B
-firmware.bin = 765120 B
-artifact id = 11152203158
-artifact digest = sha256:3cf7e77078a257d81394e954f54ba3a12ad8ac3a505046b7f72ad88e03448adf
-firmware sha256 = 06885150bee7ae651340a3b0cfb5557eae161bfc99a394bc9dae8355d2bf6425
-ELF sha256 = 5b9bceb0f42f5391f522ac7a61bee9757310c534305b998c6195a72cafa23b37
-hardware = cold boot -> native MENU_MAIN -> START -> full intro -> Entrance -> FIRST_FRAME/READY -> MOVE/TURN/crate/dialog/resource gameplay PASS
-status = HARDWARE PASS; normal INFO firmware does not execute/link the interaction + CHANGEMAP recovery census; bringup retains it; active linker wraps = 50
+linked Flash = 762617 B
+firmware.bin = 762976 B
+artifact id = 11154118496
+artifact digest = sha256:fa4e82a7305596cfa36ca65897e3802573309db723d15e22e7993636d51d0ec6
+firmware sha256 = fccb055e5d3019612650f8740453480a8f0ad9e418ee5e709031d2b1024d6db0
+ELF sha256 = a8197c29053631f9dcd22968c331eb868f8c3606efca33ec598ac610ea24b8ec
+hardware = cold boot -> native MENU_MAIN -> START -> full intro -> Entrance -> FIRST_FRAME/READY -> MOVE/TURN/crate/resource/door gameplay PASS
+status = HARDWARE PASS; Junction exit census is DEBUG/TRACE-only and absent from normal INFO ELF; active linker wraps = 50
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2771,4 +2771,69 @@ The local PlatformIO build reports the same 45072 B static RAM and a harmless
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_INTERACTION_DIAGNOSTICS_V17.md](MILESTONE_ESP32_CONSOLIDATION_INTERACTION_DIAGNOSTICS_V17.md)
+
+### Junction exit census scoped to DEBUG/TRACE V18 — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested code boundary: `6733395845c289fa9f69cc6c61001c3a68f2d72d`.
+
+V18 removes the historical `EspNativeGameplayTransition_probeJunctionExitCensus()`
+from the normal INFO image. The session call, private
+`junctionExitCensusDone` byte and the full census function are compiled only
+for DEBUG/TRACE. The normal product build therefore neither calls nor links
+this historical Junction SAVEGAME/CHANGEMAP corpus scanner.
+
+The production transition owner is unchanged. In particular
+`EspNativeGameplayTransition_trySelect()` and
+`EspNativeGameplayTransitionHandoff_service()` remain linked and own the
+live transition path.
+
+CI #1216:
+
+```text
+                         V17              V18           delta
+static RAM               45072 B          45072 B          0 B
+linked Flash            764757 B         762617 B      -2140 B
+firmware.bin            765120 B         762976 B      -2144 B
+active __wrap_*              50               50            0
+```
+
+Artifact `11154118496`:
+`sha256:fa4e82a7305596cfa36ca65897e3802573309db723d15e22e7993636d51d0ec6`.
+Firmware SHA-256:
+`fccb055e5d3019612650f8740453480a8f0ad9e418ee5e709031d2b1024d6db0`.
+ELF SHA-256:
+`a8197c29053631f9dcd22968c331eb868f8c3606efca33ec598ac610ea24b8ec`.
+
+Final-ELF inspection proves `EspNativeGameplayTransition_probeJunctionExitCensus`,
+`junctionExitCensusDone` and every `[JUNCTIONEXITCENSUS]` format string are
+absent from normal INFO firmware. The 50-wrapper set is unchanged from V17.
+
+The real classic CYD validates cold boot, START, full intro/disposal, Entrance
+bootstrap and the exact first frame:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+```
+
+The same run reaches `ENGINESESSION READY` with
+`shapeData=0x0 mediaTexels=0x0`, commits multiple moves and rotations,
+transforms a crate into an Armor Shard, picks up two shards, opens a regular
+door with the four-frame native animator, crosses it, then observes its
+four-frame auto-close. ALIVE remains stable at:
+
+```text
+heap=93444 heap8=27520 largest8=18420
+```
+
+No `[JUNCTIONEXITCENSUS]` line appears in the runtime transcript.
+
+The local PlatformIO build reports the same 45072 B static RAM and the known
+16-byte environment difference: 762633 B linked Flash / 762992 B firmware.bin.
+
+The perceived gameplay smoothness is consistent with the cumulative
+compile-time logging/profiling retirement since V16; V18 itself removes a
+one-shot/session-readiness diagnostic rather than a per-frame renderer path.
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md](MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md)
 

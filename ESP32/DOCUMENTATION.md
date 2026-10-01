@@ -15,14 +15,14 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 67950d6310ddb2fe4b48342200603674f6e71815
 branch = agent/esp32-consolidation-interaction-diagnostics-v17
-hardware-tested code boundary = 53b548b5adf0d09c2d1e1ed4b673a3ae8054cac2
-CI = esp32-cyd #1214 SUCCESS
+hardware-tested code boundary = 6733395845c289fa9f69cc6c61001c3a68f2d72d
+CI = esp32-cyd #1216 SUCCESS
 static RAM = 45072 B
-linked Flash = 764757 B
-firmware.bin = 765120 B
-artifact id = 11152203158
-hardware = normal INFO firmware validated through cold boot, intro, Entrance session, MOVE/TURN, crate transform, dialog resume and resource pickup
-status = HARDWARE PASS; temporary interaction/CHANGEMAP recovery diagnostics are bringup-only; 50 active linker wraps
+linked Flash = 762617 B
+firmware.bin = 762976 B
+artifact id = 11154118496
+hardware = normal INFO firmware validated through cold boot, intro, Entrance session, MOVE/TURN, crate transform, resource pickup and bounded door animation
+status = HARDWARE PASS; Junction exit census is DEBUG/TRACE-only; 50 active linker wraps unchanged
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1446,4 +1446,23 @@ diagnostic candidates and were not changed in this milestone.
 
 Detailed milestone:
 [MILESTONE_ESP32_CONSOLIDATION_INTERACTION_DIAGNOSTICS_V17.md](MILESTONE_ESP32_CONSOLIDATION_INTERACTION_DIAGNOSTICS_V17.md).
+
+## Junction exit census scoped to DEBUG/TRACE — REAL-CYD PASS (2026-10-01)
+
+V18 hardware head `6733395845c289fa9f69cc6c61001c3a68f2d72d`
+compile-time gates the historical Junction exit census out of normal INFO
+firmware. The real transition and handoff owners are unchanged.
+
+CI #1216 reports 45072 B static RAM / 762617 B linked Flash /
+762976 B firmware.bin. The wrapper count remains 50. The normal ELF contains no
+`EspNativeGameplayTransition_probeJunctionExitCensus`, no
+`junctionExitCensusDone` and no `[JUNCTIONEXITCENSUS]` strings.
+
+The real CYD preserves exact Entrance first-frame FNV `71ca7465`,
+`shapeData=0x0 mediaTexels=0x0`, committed MOVE/TURN, crate/resource gameplay,
+regular-door open/close animation and stable ALIVE
+`heap=93444 heap8=27520 largest8=18420`.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md](MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md).
 
