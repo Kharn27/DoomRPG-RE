@@ -15,14 +15,87 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 88a5d3fa5bfe96fe16e213e78933493394264dcc
 branch = agent/esp32-native-player-death-core
-hardware-tested code boundary = d6811e23db4580795887c97c3bdf5e6493224268
-CI = esp32-cyd #1274 SUCCESS
-static RAM = 44960 B
-linked Flash = 765497 B
-artifact id = 11193296410
-hardware = Sector 1 lethal PASS_TURN on type-10 hazard: native camera fall + viewport fade-to-black PASS
-status = native player-death core REAL-CYD PASS; HP=0/weapon clear/death RNG/input lock/fall/fade/death-menu-ready owned; no post-death MonsterTurn; death menu UI is the next explicit boundary; 49 active linker wraps
+hardware-tested code boundary = e97234fb899eaa8d9e5d1099da86b14fad651167
+CI = esp32-cyd #1287 SUCCESS
+static RAM = 44992 B
+linked Flash = 769329 B
+artifact id = 11193874992
+artifact digest = sha256:50188d879586565733413f7607b43e96e4c912b40dab1bc16ac213c748e35943
+hardware = Sector 1 four-active-monster ordered turn + serialized multi-attacker resolution + lethal monster retaliation -> native PlayerDeath + death menu routing PASS
+status = ORDERED MONSTER TURN + MONSTER LETHAL DEATH REAL-CYD PASS; one-probe-in-flight is now pause/resume rather than fail-closed starvation; lethal retaliation commits HP=0 + attack RNG + one death RNG byte, aborts remaining active-list suffix, reaches native death-menu-ready; LOAD route remains live, JUNCTION/RETRY/MAIN remain explicitly fail-closed; heap stable at 50308/38900
 ```
+
+## Ordered monster turn + lethal monster death — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested code boundary:
+`e97234fb899eaa8d9e5d1099da86b14fad651167`.
+
+This closes two intentionally deferred boundaries from the earlier active-sequence
+and player-death milestones.
+
+The monster turn is now serialized in first-activation order instead of choosing
+one global immediate attacker. Each active member executes its own legacy-style
+`Entity_aiThink` slice. If that member publishes an attack probe, the sequence
+pauses, lets AttackVisual + Retaliation resolve it, then resumes at the next
+ordinal in the same semantic monster turn.
+
+Real-CYD witness:
+
+```text
+[MONSTERACTIVESEQ] BEGIN turn=3 ... activeCount=4 ...
+[MONSTERACTIVESEQ] MEMBER ... ordinal=2/4 ... attackProbe=1->2 ...
+[MONSTERACTIVESEQ] PAUSE ... probe=2 ... nextOrdinal=3 ...
+[MONSTERRETAL] MISS-COMMIT probe=2 ... gameplayRngCommitted=yes ...
+[MONSTERACTIVESEQ] RESUME ... resolvedProbe=2 ...
+[MONSTERACTIVESEQ] MEMBER ... ordinal=3/4 ...
+[MONSTERACTIVESEQ] MEMBER ... ordinal=4/4 ... attackProbe=2->3 ...
+[MONSTERACTIVESEQ] COMPLETE ... ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time
+```
+
+The same session proves repeated pause/resume across several attackers and keeps
+three-goal subtype-4 movement/shortcut behavior live. A dead active monster is
+skipped on later turns without disturbing active-list order.
+
+Monster retaliation now owns lethal player damage. On probe 10, the real CYD
+commits the attack RNG and authoritative HP=0, arms the already-native
+PlayerDeath owner, consumes exactly one additional legacy death RNG byte, and
+terminates the remaining active-list suffix:
+
+```text
+[MONSTERTURN] MEMBER-ATTACK-PROBE ... probe=10 ... playerHP=4->0 ... lethal=deferred-player-death ...
+[PLAYERDEATH] ARM seq=10 tile=506 ... hp=0 ... rngByte=87 deathSound=5058-deferred ...
+[MONSTERRETAL] LETHAL-COMMIT probe=10 ... playerHP=4->0 ... rng=41a9a848->f4415a47 attackRngCommitted=yes deathRngCommitted=yes ... deathOwner=armed ... turn=terminal
+[MONSTERACTIVESEQ] TERMINAL turn=7 ordinal=2/4 probe=10 cause=player-death remaining=discarded ...
+[PLAYERDEATH] PHASE ... fall=complete ...
+[PLAYERDEATH] READY ... elapsedMs=3012 ... input=death-menu load=available ...
+```
+
+Death-menu touch routing remains bounded and explicit. LOAD is the only live
+session-replacement route. JUNCTION, RETRY and MAIN classify correctly and
+remain fail-closed with no session mutation. The active LOAD row is visually
+distinguished from the deliberately disabled routes. Earlier hardware on the
+same branch already proved LOAD replaces the dead session with the V9
+checkpoint; this final hardware run revalidates the retained menu routing and
+presentation.
+
+Repeated live samples remain stable:
+
+```text
+heap=116232
+heap8=50308
+largest8=38900
+```
+
+CI #1287 succeeds in the normal `esp32-cyd` environment at 44992 B static RAM
+and 769329 B linked Flash. Artifact 11193874992 has digest
+`sha256:50188d879586565733413f7607b43e96e4c912b40dab1bc16ac213c748e35943`.
+
+The old "simultaneous attack-ready = fail-closed" and "monster lethal =
+fail-closed" statements remain historically true for their earlier milestones,
+but are superseded by this boundary.
+
+Detailed closure:
+[MILESTONE_NATIVE_MONSTER_ORDER_AND_PLAYER_DEATH.md](MILESTONE_NATIVE_MONSTER_ORDER_AND_PLAYER_DEATH.md)
 
 
 ## Native player death core — REAL-CYD PASS (2026-10-01)
