@@ -13,16 +13,16 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 9aa3c3a62bb7639d884d036acc0baf54be88541e
-branch = agent/esp32-consolidation-menu-bsp-runtime-retirement-v14
-hardware-tested code boundary = dd4161a40b28d2ed9c88370b2f8281b9045f2980
-CI = esp32-cyd #1197 SUCCESS
-static RAM = 45128 B
-flash = 773089 B
-firmware.bin = 773456 B
-artifact id = 11120007067
-hardware = normal boot paints native opaque MENU_MAIN directly; no production menu.bsp runtime; START reaches Entrance gameplay and MOVE
-status = HARDWARE PASS; 52 active linker wraps; menu BSP structural/render suite retained only by esp32-cyd-bringup
+current main = fb3b4ee310ccc54d7301dcdfbba9d4648e17c38a
+branch = agent/esp32-consolidation-first-frame-diagnostic-wrap-v15
+hardware-tested code boundary = 5460c689b708468e3bdd618d0000753159a24109
+CI = esp32-cyd #1202 SUCCESS
+static RAM = 45120 B
+flash = 772161 B
+firmware.bin = 772528 B
+artifact id = 11121161150
+hardware = production first-frame route executes directly; historical COLORSTATS/BMP interception is bringup-only
+status = HARDWARE PASS; 51 active linker wraps
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1374,3 +1374,25 @@ gameplay ALIVE is `heap=93388 heap8=27464 largest8=18420`.
 
 Detailed milestone:
 [MILESTONE_ESP32_CONSOLIDATION_MENU_BSP_RUNTIME_RETIREMENT_V14.md](MILESTONE_ESP32_CONSOLIDATION_MENU_BSP_RUNTIME_RETIREMENT_V14.md).
+
+
+## First-frame fidelity wrapper scoped to bringup — REAL-CYD PASS (2026-10-01)
+
+V15 hardware head `5460c689b708468e3bdd618d0000753159a24109`
+removes the production linker interception around
+`EspNativeFirstFrame_route()`. The real native first-frame renderer, FNV
+publication, present gate and session checks remain unchanged.
+
+The historical read-only `[JUNCTIONFRAME] COLORSTATS` / optional BMP capture
+continues to exist only in `esp32-cyd-bringup`.
+
+CI #1202 reports 45120 B static RAM / 772161 B Flash / 772528 B firmware.bin,
+saving 8 B RAM and 928 B Flash from merged V14 main. Final wrap count is 51.
+
+Real-CYD START reaches Entrance with exact first-frame FNV `71ca7465`,
+no COLORSTATS line, then `ENGINESESSION READY` with
+`shapeData=0x0 mediaTexels=0x0`. Two ALIVE samples are stable at
+`heap=93396 heap8=27472 largest8=18420`.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_FIRST_FRAME_DIAGNOSTIC_WRAP_V15.md](MILESTONE_ESP32_CONSOLIDATION_FIRST_FRAME_DIAGNOSTIC_WRAP_V15.md).
