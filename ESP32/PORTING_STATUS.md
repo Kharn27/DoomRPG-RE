@@ -5,17 +5,76 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 88a5d3fa5bfe96fe16e213e78933493394264dcc
-branch = agent/esp32-native-player-death-core
-hardware-tested code boundary = 717e7bd980ff7110c227055d940d01c980a5683d
-CI = esp32-cyd #1290 SUCCESS
+current main = 2d981fd14e3b7840ccf71575c47b0e3bd6d123fa
+branch = agent/esp32-retire-dead-menu-particle-tus
+hardware-tested code boundary = bc65cc337000d8c7ef54b5f0451e51d958cf7cef
+CI = esp32-cyd #1298 SUCCESS
 static RAM = 44992 B
 linked Flash = 769357 B
-artifact id = 11196908002
-artifact digest = sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5
-hardware = Sector 1 ordered multi-monster turn + serialized attack pause/resume + lethal monster retaliation -> native PlayerDeath + death menu routing + raw-pending-probe input gate PASS
-status = ORDERED MONSTER TURN + MONSTER LETHAL DEATH + P1 INPUT-RACE CLOSURE REAL-CYD PASS; one-probe-in-flight is pause/resume rather than starvation; lethal retaliation commits HP=0 + attack RNG + one death RNG byte and terminates the remaining turn suffix; raw MonsterTurn attackProbes now close world input immediately even before Activation delivers the probe on the next session tick; rapid hardware taps did not stack; LOAD remains live, JUNCTION/RETRY/MAIN remain explicitly fail-closed; heap stable at 50308/38900
+artifact id = 11201100436
+artifact digest = sha256:3626c14a436d18f6dd386dfa2554d9a7c36ec0f54eb52bb35fd6339b8daf82e0
+hardware = MAIN -> native V9 LOAD -> Sector 1 resume -> MOVE -> ordered four-monster turn -> three-loop monster retaliation PASS
+status = DEAD DESKTOP TRANSLATION-UNIT RETIREMENT REAL-CYD PASS; Menu.c and ParticleSystem.c are no longer compiled on ESP32, final ELF still has zero Menu_* and ParticleSystem_* symbols, runtime image size is unchanged as expected for previously link-dead code; shapeData/mediaTexels remain NULL; resident gameplay stable at heap=116232 heap8=50308 largest8=38900
 ```
+
+## Dead desktop Menu / ParticleSystem translation units — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`bc65cc337000d8c7ef54b5f0451e51d958cf7cef`.
+
+The ESP32 engine build previously used `+<*.c>` for the desktop source directory and
+therefore still compiled `src/Menu.c` and `src/ParticleSystem.c` even though earlier
+hardware milestones had already retired both runtime owners and direct final-ELF
+inspection showed zero `Menu_*` and zero `ParticleSystem_*` symbols.
+
+This milestone changes only `ESP32/scripts/build_engine.py` so those two translation
+units are excluded before compilation. It does not change inherited headers, type
+layouts, `DoomRPG_t` fields, runtime ownership, gameplay, renderer, RNG, input,
+save/load, audio, or death-menu behavior.
+
+Normal `esp32-cyd` CI #1298 succeeds. The compile log no longer contains
+`Menu.c.o` or `ParticleSystem.c.o`. Final metrics remain exactly:
+
+```text
+static RAM   = 44992 B
+linked Flash = 769357 B
+```
+
+The unchanged linked image size is expected: both translation units were already
+fully garbage-collected at link time. This milestone removes build-graph debt rather
+than firmware bytes.
+
+The real classic CYD validates a meaningful runtime path after the compile-graph
+change:
+
+```text
+MAIN -> Load Game
+ -> readable V9 checkpoint
+ -> Sector 1 native session restore
+ -> shapeData=0x0 mediaTexels=0x0
+ -> resident gameplay READY
+ -> MOVE
+ -> ordered four-monster sequence
+ -> subtype-4 three-goal continuation
+ -> three-loop attack animation
+ -> native retaliation commit
+```
+
+Stable hardware witness:
+
+```text
+heap=116232
+heap8=50308
+largest8=38900
+```
+
+A separate presentation gap remains intentionally outside this milestone:
+player MOVE and TURN currently commit directly between settled camera poses rather
+than showing legacy-style interpolation. That is a native presentation milestone,
+not a reason to retain or restore desktop gameplay ownership.
+
+Detailed milestone:
+[MILESTONE_ESP32_RETIRE_DEAD_MENU_PARTICLE_TUS.md](MILESTONE_ESP32_RETIRE_DEAD_MENU_PARTICLE_TUS.md)
 
 ## Ordered monster turn + lethal monster death — REAL-CYD PASS (final review closure 2026-10-02)
 
