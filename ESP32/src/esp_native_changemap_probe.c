@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_map_catalog.h"
 #include "esp_map_event_filter.h"
@@ -12,6 +13,8 @@
 #include "esp_native_gameplay_interaction_inventory.h"
 #include "esp_native_gameplay_select.h"
 #include "esp_player_view_state.h"
+
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
 
 #define PROBE_OPCODE_CHANGEMAP 2U
 #define PROBE_OPCODE_SAVEGAME 27U
@@ -225,3 +228,5 @@ void __wrap_EspNativeGameplayInteractionInventory_log(void) {
     __real_EspNativeGameplayInteractionInventory_log();
     logTransitionCorpus();
 }
+
+#endif /* DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG */
