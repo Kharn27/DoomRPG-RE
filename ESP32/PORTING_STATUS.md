@@ -7,20 +7,67 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = d7eed080766016fdb0870bade94e2b03a98c6990
-CI = esp32-cyd #1236 SUCCESS
-static RAM = 44944 B
-linked Flash = 757525 B
-firmware.bin = 757888 B
-artifact id = 11176509542
-artifact digest = sha256:24d147048b16417d2601b29690f602ce1d15ac3fe2ebc4bc1eb23d4698006c17
-firmware sha256 = 3df7c507206457b7c92023b0608827cb508700f6b38f71e241fe0661ab466f0d
-ELF sha256 = c69ed16b55f493c86a2f51ae43ec602308dab7fe9279cc7299879fda453616c5
-hardware = cold boot -> native MAIN -> START -> complete intro -> Entrance -> movement/door/pickup -> real monster attack -> real player kill with native GIBFX paint/repaint/expire PASS
-status = V23 REAL-CYD PASS; ParticleSystem core object/constructor/destructor closure fully retired from ESP32 ELF; doomRpg->particleSystem remains NULL; native GIBFX owns live gib presentation; shapeData/mediaTexels remain NULL; active linker wraps = 49
+hardware-tested code boundary = 21ee2c95afd351af5c20ba38d6ef897bd81d1d05
+CI = esp32-cyd #1239 SUCCESS
+static RAM = 44936 B
+linked Flash = 757585 B
+firmware.bin = 757952 B
+artifact id = 11179380857
+artifact digest = sha256:c039482dacd4f6af3c491ba3793ea4c6153fdbffef4ea4086d2bde6ec60dd5e4
+firmware sha256 = 35a9987bd83c03c0f6787c0dfb4cde4b2cf994745089c2fa1ec98e74ec3dd807
+ELF sha256 = a8f146550c1610fba2077318b41637a53fd6987088ff60ad8be70e09d48cbc1e
+hardware = cold boot -> native MAIN -> OPTIONS disabled cards + Back -> HELP paging + Back PASS
+status = V24 REAL-CYD PASS; legacy Menu_t root retired and required NULL; final ELF has zero Menu_* symbols while MenuSystem_init/startup/playSound/free remain; core graph objects=10 used=53804 B; shapeData/mediaTexels remain NULL; active linker wraps = 49
 ```
 
 
+
+### Legacy Menu root retirement V24 — REAL-CYD PASS (2026-10-01)
+
+V24 removes the dead desktop `Menu_t` root from the ESP32 core graph. The
+first candidate, `675b4a554498014c666af55205d3355fcbb39ad1`, correctly
+removed the object but the real CYD stopped at:
+
+```text
+[MAINOPAQUE] FAILED dashboard presentation contract menu=1 selected=0
+[MAINBOOT] FAILED native MENU_MAIN model/presentation
+```
+
+The failure was not a hidden consumer of `Menu_t`. The native graphics safety
+gate still contained one historical precondition,
+`doomRpg->menu != NULL`, while using only Render, DoomCanvas, MenuSystem,
+framebuffer and native-cache state. Commit
+`21ee2c95afd351af5c20ba38d6ef897bd81d1d05` removes only that obsolete
+guard.
+
+CI #1239 succeeds at 44936 B static RAM / 757585 B linked Flash /
+757952 B firmware.bin with 49 active linker wraps. Direct final-ELF inspection
+shows zero `Menu_*` symbols. The four intentionally retained legacy
+`MenuSystem_*` symbols are `init/startup/playSound/free`.
+
+The real CYD now boots with:
+
+```text
+[CORE] ParticleSystem retired object=NULL owner=native-gibfx
+[CORE] Menu root retired object=NULL owner=native-menu-models
+[CORE] READY objects=10 heap used=53804 ...
+```
+
+Compared with V23, core usage drops exactly 76 B
+(`53880 -> 53804`), matching the retired `Menu_t` allocation. Native MAIN
+is stable at `heap=122896 heap8=56972 largest8=32756`, +120 B free heap8
+versus the V23 menu boundary.
+
+The hardware run validates OPTIONS entry, all disabled OPTIONS cards, native
+Back, HELP parsing/paging in both directions, and native HELP Back. Both child
+routes repaint the exact main framebuffer FNV `522dc605`, re-arm touch, keep
+`shapeData == NULL` / `mediaTexels == NULL`, and leave heap8/largest8
+unchanged throughout menu interaction.
+
+The corrected code boundary is merge-ready after documentation-only tail.
+
+Detailed milestone:
+[MILESTONE_ESP32_RETIRE_LEGACY_MENU_ROOT_V24.md](MILESTONE_ESP32_RETIRE_LEGACY_MENU_ROOT_V24.md)
 
 ### Legacy ParticleSystem core-object retirement V23 — REAL-CYD PASS (2026-10-01)
 

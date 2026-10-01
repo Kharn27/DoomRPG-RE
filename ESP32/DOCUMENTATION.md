@@ -15,15 +15,35 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = d7eed080766016fdb0870bade94e2b03a98c6990
-CI = esp32-cyd #1236 SUCCESS
-static RAM = 44944 B
-linked Flash = 757525 B
-firmware.bin = 757888 B
-artifact id = 11176509542
-hardware = cold boot + MAIN + START/intro + Entrance + real monster/player combat + native gib overlay PASS
-status = V23 REAL-CYD PASS; zero ParticleSystem_* symbols in final ELF, retired root remains NULL, native GIBFX hardware-proven; 49 active linker wraps
+hardware-tested code boundary = 21ee2c95afd351af5c20ba38d6ef897bd81d1d05
+CI = esp32-cyd #1239 SUCCESS
+static RAM = 44936 B
+linked Flash = 757585 B
+firmware.bin = 757952 B
+artifact id = 11179380857
+hardware = cold boot + native MAIN + OPTIONS/Back + HELP paging/Back PASS
+status = V24 REAL-CYD PASS; Menu_t root retired, Menu_* absent from final ELF, MenuSystem retained for bounded native models/assets; 49 active linker wraps
 ```
+
+## Legacy Menu root retired — REAL-CYD PASS (2026-10-01)
+
+V24 removes the desktop `Menu_t` object from the ESP32 core graph and keeps
+the inherited `doomRpg->menu` field NULL. A first real-CYD attempt exposed one
+stale graphics-boundary check that still required the retired pointer; the
+fail-closed dashboard contract stopped cleanly before presentation. The
+follow-up commit removes only that obsolete requirement.
+
+CI #1239 is 44936 B static RAM / 757585 B linked Flash / 757952 B firmware.bin,
+with 49 active linker wraps. The final ELF contains no `Menu_*` symbols.
+`MenuSystem_init/startup/playSound/free` remain intentionally linked because
+the bounded native menu models still consume that storage/resource owner.
+
+The corrected real-CYD run reaches native MAIN and exercises OPTIONS plus HELP
+entry/paging/back without allocations. Core usage is 53804 B, exactly 76 B less
+than V23, and steady MAIN is `heap8=56972 largest8=32756`.
+
+See
+[MILESTONE_ESP32_RETIRE_LEGACY_MENU_ROOT_V24.md](MILESTONE_ESP32_RETIRE_LEGACY_MENU_ROOT_V24.md).
 
 ## Legacy ParticleSystem core object retired — REAL-CYD PASS (2026-10-01)
 
