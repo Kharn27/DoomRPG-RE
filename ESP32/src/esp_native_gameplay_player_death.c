@@ -261,6 +261,29 @@ int EspNativeGameplayPlayerDeath_isMenuReady(void) {
            deathState.phase == ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_MENU_READY;
 }
 
+int EspNativeGameplayPlayerDeath_handleTap(int logicalX, int logicalY) {
+    int action;
+    if (!EspNativeGameplayPlayerDeath_isMenuReady() ||
+        deathState.menuPainted == 0U ||
+        deathState.pendingAction != 0U ||
+        logicalX < DEATH_MENU_LEFT || logicalX > DEATH_MENU_RIGHT) {
+        return 0;
+    }
+    action = menuRowForY(logicalY);
+    if (action == 0) return 0;
+    deathState.pendingAction = (uint8_t)action;
+    if (deathState.menuTaps != UINT8_MAX) ++deathState.menuTaps;
+    printf("[DEATHMENU] TAP n=%u logical=%d,%d action=%u route=%s queued=yes\n",
+           (unsigned int)deathState.menuTaps,
+           logicalX,
+           logicalY,
+           (unsigned int)deathState.pendingAction,
+           action == DEATH_MENU_LOAD ? "LOAD" :
+           action == DEATH_MENU_JUNCTION ? "JUNCTION" :
+           action == DEATH_MENU_RETRY ? "RETRY" : "MAIN");
+    return 1;
+}
+
 int EspNativeGameplayPlayerDeath_arm(struct DoomRPG_s* doomRpgBase,
                                      uint32_t sequence,
                                      uint16_t tileIndex) {
@@ -331,7 +354,30 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
 
     if (deathState.active == 0U) return 1;
     if (doomRpg == NULL || doomRpg->render == NULL) return 0;
-    if (deathState.phase == ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_MENU_READY) return 1;
+    if (deathState.phase == ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_MENU_READY) {
+        uint8_t action = deathState.pendingAction;
+        if (action == 0U) return 1;
+        deathState.pendingAction = 0U;
+
+        if (action == DEATH_MENU_LOAD) {
+            if (deathState.loadAvailable == 0U) {
+                printf("[DEATHMENU] DEFER action=LOAD reason=no-readable-checkpoint mutation=no sessionReplace=no\n");
+                return 1;
+            }
+            printf("[DEATHMENU] DISPATCH action=LOAD sessionReplace=checkpoint-native input=blocked-until-reset\n");
+            if (!EspNativeGameplaySave_loadCheckpoint()) {
+                printf("[DEATHMENU] FAILED action=LOAD checkpointRestore=no state=fail-closed\n");
+                return 0;
+            }
+            printf("[DEATHMENU] TRANSITION action=LOAD result=session-replaced ownerReset=checkpoint-load\n");
+            return 1;
+        }
+
+        printf("[DEATHMENU] DEFER action=%s reason=route-backend-unowned mutation=no sessionReplace=no menu=retained\n",
+               action == DEATH_MENU_JUNCTION ? "JUNCTION" :
+               action == DEATH_MENU_RETRY ? "RETRY" : "MAIN");
+        return 1;
+    }
 
     now = DoomRPG_GetUpTimeMS();
     elapsed = now - deathState.startedMs;
@@ -342,12 +388,19 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
             deathState.lastFade = 0U;
             ++deathState.framesPresented;
         }
+        deathState.loadAvailable =
+            EspNativeGameplaySave_hasReadableCheckpoint() ? 1U : 0U;
         deathState.phase = ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_MENU_READY;
-        printf("[PLAYERDEATH] READY seq=%u tile=%u elapsedMs=%u phase=death-menu-ready viewZ=%d fade=0 frames=%u input=blocked menuOwner=deferred\n",
+        if (!paintDeathMenu()) return 0;
+        deathState.menuPainted = 1U;
+        ++deathState.framesPresented;
+        printf("[PLAYERDEATH] READY seq=%u tile=%u elapsedMs=%u phase=death-menu-ready viewZ=%d fade=0 frames=%u input=death-menu load=%s routes=LOAD-live/JUNCTION+RETRY+MAIN-fail-closed menuOwner=native\n",
                (unsigned int)deathState.sequence,
                (unsigned int)deathState.tileIndex,
-               (unsigned int)elapsed, (int)deathState.lastViewZ,
-               (unsigned int)deathState.framesPresented);
+               (unsigned int)elapsed,
+               (int)deathState.lastViewZ,
+               (unsigned int)deathState.framesPresented,
+               deathState.loadAvailable ? "available" : "missing");
         return 1;
     }
 
