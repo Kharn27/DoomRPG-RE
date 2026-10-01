@@ -5,19 +5,19 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 8c208baf2d7e55fc84f13bb59a5b2479703837fd
-branch = agent/esp32-consolidation-log-levels-v16
-hardware-tested code boundary = 5a320d50a5f88646382db1211114a31b671b34b2
-CI = esp32-cyd #1209 SUCCESS
-static RAM = 45080 B
-linked Flash = 767581 B
-firmware.bin = 767952 B
-artifact id = 11151256017
-artifact digest = sha256:25394e93759a5f96ef8ff058ee0d6b5f6f368cfe00930aafebd0464b5d6f3762
-firmware sha256 = acc7838bf3df8421c230f29b9f3cdedd697800b71632bf699fc8b35426a20d63
-ELF sha256 = d0276a7f94cc63e7c41211728ac728495904116cc7b74808940fa7db523c9663
-hardware = cold boot -> native MENU_MAIN -> START -> intro -> Entrance -> FIRST_FRAME/READY -> movement/turn/crate/dialog/door gameplay PASS
-status = HARDWARE PASS; normal firmware logging defaults to INFO, bringup explicitly TRACE; active linker wraps unchanged at 51
+current main = 67950d6310ddb2fe4b48342200603674f6e71815
+branch = agent/esp32-consolidation-interaction-diagnostics-v17
+hardware-tested code boundary = 53b548b5adf0d09c2d1e1ed4b673a3ae8054cac2
+CI = esp32-cyd #1214 SUCCESS
+static RAM = 45072 B
+linked Flash = 764757 B
+firmware.bin = 765120 B
+artifact id = 11152203158
+artifact digest = sha256:3cf7e77078a257d81394e954f54ba3a12ad8ac3a505046b7f72ad88e03448adf
+firmware sha256 = 06885150bee7ae651340a3b0cfb5557eae161bfc99a394bc9dae8355d2bf6425
+ELF sha256 = 5b9bceb0f42f5391f522ac7a61bee9757310c534305b998c6195a72cafa23b37
+hardware = cold boot -> native MENU_MAIN -> START -> full intro -> Entrance -> FIRST_FRAME/READY -> MOVE/TURN/crate/dialog/resource gameplay PASS
+status = HARDWARE PASS; normal INFO firmware does not execute/link the interaction + CHANGEMAP recovery census; bringup retains it; active linker wraps = 50
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2699,3 +2699,76 @@ gameplay traces were intentionally left outside this bounded milestone.
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_LOG_LEVELS_V16.md](MILESTONE_ESP32_CONSOLIDATION_LOG_LEVELS_V16.md)
+
+### Interaction / CHANGEMAP recovery diagnostics scoped to bringup V17 — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested code boundary: `53b548b5adf0d09c2d1e1ed4b673a3ae8054cac2`.
+
+V17 removes the temporary production linker interception around
+`EspNativeGameplayInteractionInventory_log()` and prevents the normal INFO
+session chain from executing the one-shot interaction inventory at all.
+`esp_native_changemap_probe.c` is compiled only at DEBUG/TRACE level, while
+`esp32-cyd-bringup` retains the historical
+`--wrap=EspNativeGameplayInteractionInventory_log` witness.
+
+This is diagnostic retirement only. The permanent production transition path
+remains unchanged:
+
+```text
+EspNativeGameplaySession
+ -> EspNativeGameplayPlayerResources_sessionService
+ -> EspNativeResidentGameplay
+ -> EspNativeGameplayTransition
+ -> EspNativeGameplayTransitionHandoff
+```
+
+CI #1214 succeeds with:
+
+```text
+                         merged V16 main   V17           delta
+static RAM               45080 B           45072 B         -8 B
+linked Flash            767581 B          764757 B      -2824 B
+firmware.bin            767952 B          765120 B      -2832 B
+active __wrap_*              51                50           -1
+```
+
+Artifact `11152203158` has digest
+`sha256:3cf7e77078a257d81394e954f54ba3a12ad8ac3a505046b7f72ad88e03448adf`.
+The CI firmware SHA-256 is
+`06885150bee7ae651340a3b0cfb5557eae161bfc99a394bc9dae8355d2bf6425`;
+the ELF SHA-256 is
+`5b9bceb0f42f5391f522ac7a61bee9757310c534305b998c6195a72cafa23b37`.
+
+Final-ELF inspection proves exactly 50 active `__wrap_*` symbols.
+`__wrap_EspNativeGameplayInteractionInventory_log` and
+`EspNativeGameplayInteractionInventory_log` are absent from the linked INFO
+image; the real `EspNativeGameplayTransitionHandoff_service` remains present.
+No `[CHANGEMAPPROBE]` or `[INTERACTMAP]` format string remains in the INFO
+ELF. `[INTERACTCORPUS]` and the older `[JUNCTIONEXITCENSUS]` family remain
+intentionally outside this bounded milestone.
+
+The real classic CYD validates cold boot, native MENU_MAIN, START, full intro
+and disposal, Entrance bootstrap, exact first frame `71ca7465`, and:
+
+```text
+[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+```
+
+The same run commits movement and rotation, transforms a crate, resumes a real
+dialog chain through opcode 19, picks up two Armor Shards, and keeps ALIVE
+healthy. No `CHANGEMAPPROBE` or `INTERACTMAP` line appears.
+
+Observed normal-build memory witnesses include:
+
+```text
+MENU_MAIN heap8=35712 largest8=23540
+intro     heap8=43256 largest8=12276
+gameplay  heap8=27520 largest8=18420   (before later dialog/resource allocations)
+```
+
+The local PlatformIO build reports the same 45072 B static RAM and a harmless
+16-byte size difference from CI: 764773 B linked Flash / 765136 B firmware.bin.
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_INTERACTION_DIAGNOSTICS_V17.md](MILESTONE_ESP32_CONSOLIDATION_INTERACTION_DIAGNOSTICS_V17.md)
+
