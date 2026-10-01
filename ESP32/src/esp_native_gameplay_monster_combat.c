@@ -42,10 +42,12 @@
 #define MONSTER_CORPSE_BITS_BYTES (MONSTER_MAX_SPRITES / 8U)
 
 /* Direct single-target standard weapons currently have complete native combat
- * semantics. Multi-loop presentation (chaingun/plasma), radial damage
- * (rocket/BFG), extinguisher entity rules and dog-familiar weapons are separate
- * mechanical families rather than monster-specific exceptions. */
-#define STANDARD_WEAPON_DIRECT_MASK ((1U << 0) | (1U << 2) | \
+ * semantics. Fire Ext is also direct against eType==1 monsters in the legacy
+ * player combat path; only its impact presentation differs (gray spray on
+ * Phantom subtype 4, no blood spray on other monster subtypes). Multi-loop
+ * presentation (chaingun/plasma), radial damage (rocket/BFG) and dog-familiar
+ * weapons remain separate mechanical families. */
+#define STANDARD_WEAPON_DIRECT_MASK ((1U << 0) | (1U << 1) | (1U << 2) | \
                                      (1U << 3) | (1U << 5))
 
 /* These legacy enemy families have death consequences beyond the generic
@@ -669,6 +671,7 @@ static int servicePending(DoomRPG_t* runtime) {
         hitFxArmed = EspNativeGameplayHitFeedback_arm(
             pending.sequence,
             pending.spriteIndex,
+            pending.weapon,
             pending.distance,
             healthBefore,
             armorBefore,
@@ -724,13 +727,14 @@ static int servicePending(DoomRPG_t* runtime) {
                 hitMessage, 0U);
     }
     else {
-        (void)snprintf(hitMessage, sizeof(hitMessage), "Missed!");
+        (void)snprintf(hitMessage, sizeof(hitMessage),
+                       pending.weapon == 1U ? "No effect!" : "Missed!");
         hitMessageQueued =
             EspNativeGameplayActionEngine_queueTextFeedback(
                 ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PLAYER_HIT,
                 hitMessage, 0U);
     }
-    printf("[MONSTERHITFEEDBACK] ARM seq=%u sprite=%u hit=%u crit=%u message=%s textQueued=%s blood=%s timing=%s deathSuffix=%s mutation=no gameplayRng=untouched\n",
+    printf("[MONSTERHITFEEDBACK] ARM seq=%u sprite=%u hit=%u crit=%u message=%s textQueued=%s impact=%s timing=%s deathSuffix=%s mutation=no gameplayRng=untouched\n",
            (unsigned int)pending.sequence,
            (unsigned int)pending.spriteIndex,
            (unsigned int)(roll.hitLoops != 0U),
@@ -738,7 +742,12 @@ static int servicePending(DoomRPG_t* runtime) {
            hitMessage,
            hitMessageQueued ? "yes" : "deferred-owner-busy",
            roll.hitLoops != 0U
-               ? (hitFxArmed ? "armed" : "deferred")
+               ? (pending.weapon == 1U
+                      ? (targetBefore.subtype == 4U
+                             ? (hitFxArmed ? "extinguisher-gray-armed"
+                                           : "extinguisher-gray-deferred")
+                             : "none-extinguisher")
+                      : (hitFxArmed ? "blood-armed" : "blood-deferred"))
                : "none-miss",
            roll.hitLoops != 0U ? "attack-frame" : "n/a",
            lethal ? "deferred-bounded-topbar" : "n/a");

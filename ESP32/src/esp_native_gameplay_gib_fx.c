@@ -49,6 +49,8 @@
 #define HITFX_RED565 0xb800U
 #define HITFX_GREEN565 0x0600U
 #define HITFX_BLUE565 0x0017U
+#define HITFX_EXTINGUISHER_GRAY565 0xce79U
+#define HITFX_EXTINGUISHER_PARTICLES 15U
 
 #define GIBFX_RED_DARK 0x6000U
 #define GIBFX_RED 0xb800U
@@ -250,6 +252,7 @@ static uint16_t hitBloodColor(const EspNativeGameplayMonsterRecord* monster) {
 
 int EspNativeGameplayHitFeedback_arm(uint32_t sequence,
                                      uint16_t spriteIndex,
+                                     uint8_t weaponIndex,
                                      uint8_t distance,
                                      int32_t healthBefore,
                                      int32_t armorBefore,
@@ -266,9 +269,22 @@ int EspNativeGameplayHitFeedback_arm(uint32_t sequence,
     }
     monster = EspNativeGameplayMonsterState_find(spriteIndex);
     if (monster == NULL) return 0;
-    count = hitParticleCount(monster, healthBefore, armorBefore,
-                             totalDamage, totalArmorDamage, distance);
-    if (count == 0U) return 0;
+
+    /*
+     * Legacy Combat_spawnBloodParticles(): Fire Ext (weapon 1) never emits
+     * normal blood on monsters. Phantom family (subtype 4) gets the dedicated
+     * gray Combat_spawnParticlesFire cue with exactly 15 particles; other
+     * monster subtypes keep gameplay damage but have no impact particles.
+     */
+    if (weaponIndex == 1U) {
+        if (monster->subtype != 4U) return 0;
+        count = HITFX_EXTINGUISHER_PARTICLES;
+    }
+    else {
+        count = hitParticleCount(monster, healthBefore, armorBefore,
+                                 totalDamage, totalArmorDamage, distance);
+        if (count == 0U) return 0;
+    }
 
     memset(&hitFxOwner, 0, sizeof(hitFxOwner));
     hitFxOwner.sourceArenaFNV1a = view->sourceArenaFNV1a;
@@ -276,7 +292,9 @@ int EspNativeGameplayHitFeedback_arm(uint32_t sequence,
     hitFxOwner.spriteIndex = spriteIndex;
     hitFxOwner.distance = distance;
     hitFxOwner.particleCount = (uint8_t)count;
-    hitFxOwner.color565 = hitBloodColor(monster);
+    hitFxOwner.color565 = weaponIndex == 1U
+                              ? HITFX_EXTINGUISHER_GRAY565
+                              : hitBloodColor(monster);
     hitFxOwner.seed = view->sourceArenaFNV1a ^ view->stateFNV1a ^
                       sequence ^ ((uint32_t)spriteIndex * 0x9e3779b9U) ^
                       0x51ed270bU;
@@ -284,10 +302,12 @@ int EspNativeGameplayHitFeedback_arm(uint32_t sequence,
     hitFxOwner.armedAtMs = DoomRPG_GetUpTimeMS();
     hitFxOwner.active = 1U;
 
-    printf("[HITFX] ARM seq=%u sprite=%u subtype=%u distance=%u damage=%d+%d total=%d color565=%04x particles=%u ownerBytes=%u visualRng=local gameplayRng=untouched\n",
+    printf("[HITFX] ARM seq=%u sprite=%u subtype=%u weapon=%u mode=%s distance=%u damage=%d+%d total=%d color565=%04x particles=%u ownerBytes=%u visualRng=local gameplayRng=untouched\n",
            (unsigned int)sequence,
            (unsigned int)spriteIndex,
            (unsigned int)monster->subtype,
+           (unsigned int)weaponIndex,
+           weaponIndex == 1U ? "extinguisher-gray" : "blood",
            (unsigned int)distance,
            (int)totalDamage,
            (int)totalArmorDamage,
