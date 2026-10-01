@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "doomrpg_log.h"
 #include "esp_native_rng_replay_guard.h"
 
 #define RNG_REPLAY_GUARD_LEASE_MS 1000U
@@ -67,14 +68,14 @@ int EspNativeRngReplayGuard_beginProbeBoundary(Random_t* liveRandom,
         if (rngReplayGuard.probeReservedRand != liveRandom ||
             memcmp(liveRandom, &rngReplayGuard.preRefill,
                    sizeof(*liveRandom)) != 0) {
-            printf("[RNGGUARD] PROBE-CONFLICT next=%d reservedPtrMatch=%s preExact=no action=fail-closed hiddenGenerator=untouched\n",
+            DRPG_LOGE("[RNGGUARD] PROBE-CONFLICT next=%d reservedPtrMatch=%s preExact=no action=fail-closed hiddenGenerator=untouched\n",
                    liveRandom->nextRand,
                    rngReplayGuard.probeReservedRand == liveRandom ? "yes" : "no");
             return 0;
         }
         *liveRandom = rngReplayGuard.postRefill;
         *outPrepared = 1U;
-        printf("[RNGGUARD] PROBE-BORROW refill=%u next=127->0 source=persistent-reservation hiddenGenerator=untouched liveRestore=required\n",
+        DRPG_LOGD("[RNGGUARD] PROBE-BORROW refill=%u next=127->0 source=persistent-reservation hiddenGenerator=untouched liveRestore=required\n",
                (unsigned int)rngReplayGuard.realRefills);
         return 1;
     }
@@ -86,7 +87,7 @@ int EspNativeRngReplayGuard_beginProbeBoundary(Random_t* liveRandom,
         rngReplayGuard.probeReservedRand = liveRandom;
         *liveRandom = rngReplayGuard.postRefill;
         *outPrepared = 1U;
-        printf("[RNGGUARD] PROBE-PROMOTE refill=%u next=127->0 source=rollback-lease hiddenGenerator=untouched reservation=until-live-replay\n",
+        DRPG_LOGD("[RNGGUARD] PROBE-PROMOTE refill=%u next=127->0 source=rollback-lease hiddenGenerator=untouched reservation=until-live-replay\n",
                (unsigned int)rngReplayGuard.realRefills);
         return 1;
     }
@@ -101,7 +102,7 @@ int EspNativeRngReplayGuard_beginProbeBoundary(Random_t* liveRandom,
     ++rngReplayGuard.realRefills;
     *liveRandom = rngReplayGuard.postRefill;
     *outPrepared = 1U;
-    printf("[RNGGUARD] PROBE-REFILL refill=%u next=127->0 hiddenGenerator=advanced-once reservation=until-live-replay liveRestore=required\n",
+    DRPG_LOGD("[RNGGUARD] PROBE-REFILL refill=%u next=127->0 hiddenGenerator=advanced-once reservation=until-live-replay liveRestore=required\n",
            (unsigned int)rngReplayGuard.realRefills);
     return 1;
 }
@@ -121,7 +122,7 @@ int EspNativeRngReplayGuard_endProbeBoundary(Random_t* liveRandom,
     exact = memcmp(liveRandom, &rngReplayGuard.postRefill,
                    sizeof(*liveRandom)) == 0;
     *liveRandom = *saved;
-    printf("[RNGGUARD] PROBE-RESTORE refill=%u liveRandomExact=%s reservation=pending hiddenGenerator=advanced-once-total\n",
+    DRPG_LOGD("[RNGGUARD] PROBE-RESTORE refill=%u liveRandomExact=%s reservation=pending hiddenGenerator=advanced-once-total\n",
            (unsigned int)rngReplayGuard.realRefills,
            exact ? "yes" : "NO");
     return exact;
@@ -155,7 +156,7 @@ int EspNativeRngReplayGuard_commitProbeBoundary(Random_t* liveRandom,
     rngReplayGuard.probeReservedRand = NULL;
     rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
     rngReplayGuard.valid = 1U;
-    printf("[RNGGUARD] PROBE-COMMIT refill=%u bytes=%u leaseMs=%u hiddenGenerator=advanced-once-total reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
+    DRPG_LOGD("[RNGGUARD] PROBE-COMMIT refill=%u bytes=%u leaseMs=%u hiddenGenerator=advanced-once-total reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
            (unsigned int)rngReplayGuard.realRefills,
            (unsigned int)consumedBytes,
            (unsigned int)RNG_REPLAY_GUARD_LEASE_MS);
@@ -198,13 +199,13 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
                 rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
                 rngReplayGuard.valid = 1U;
                 ++rngReplayGuard.replayedRefills;
-                printf("[RNGGUARD] PROBE-REPLAY refill=%u replay=%u leaseMs=%u next=127->0 hiddenGenerator=untouched reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
+                DRPG_LOGD("[RNGGUARD] PROBE-REPLAY refill=%u replay=%u leaseMs=%u next=127->0 hiddenGenerator=untouched reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
                        (unsigned int)rngReplayGuard.realRefills,
                        (unsigned int)rngReplayGuard.replayedRefills,
                        (unsigned int)RNG_REPLAY_GUARD_LEASE_MS);
             }
             else {
-                printf("[RNGGUARD] FATAL-RESERVATION-MISMATCH next=%d ptrMatch=%s sequenceExact=NO recovery=real-refill\n",
+                DRPG_LOGE("[RNGGUARD] FATAL-RESERVATION-MISMATCH next=%d ptrMatch=%s sequenceExact=NO recovery=real-refill\n",
                        rand->nextRand,
                        rngReplayGuard.probeReservedRand == rand ? "yes" : "no");
                 rngReplayGuard.probeReserved = 0U;
@@ -218,7 +219,7 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
                  memcmp(rand, &rngReplayGuard.preRefill, sizeof(*rand)) == 0) {
             *rand = rngReplayGuard.postRefill;
             ++rngReplayGuard.replayedRefills;
-            printf("[RNGGUARD] REPLAY refill=%u replay=%u leaseMs=%u next=127->0 hiddenGenerator=untouched rollbackSafe=yes\n",
+            DRPG_LOGD("[RNGGUARD] REPLAY refill=%u replay=%u leaseMs=%u next=127->0 hiddenGenerator=untouched rollbackSafe=yes\n",
                    (unsigned int)rngReplayGuard.realRefills,
                    (unsigned int)rngReplayGuard.replayedRefills,
                    (unsigned int)RNG_REPLAY_GUARD_LEASE_MS);
@@ -232,7 +233,7 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
             rngReplayGuard.valid = 1U;
             rngReplayGuard.probeReserved = 0U;
             ++rngReplayGuard.realRefills;
-            printf("[RNGGUARD] REFILL refill=%u leaseMs=%u next=127->0 hiddenGenerator=advanced-once rollbackReplay=armed\n",
+            DRPG_LOGD("[RNGGUARD] REFILL refill=%u leaseMs=%u next=127->0 hiddenGenerator=advanced-once rollbackReplay=armed\n",
                    (unsigned int)rngReplayGuard.realRefills,
                    (unsigned int)RNG_REPLAY_GUARD_LEASE_MS);
         }
@@ -276,14 +277,14 @@ int __wrap_DoomRPG_randNextInt(Random_t* rand) {
                 rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
                 rngReplayGuard.valid = 1U;
                 ++rngReplayGuard.replayedRefills;
-                printf("[RNGGUARD] WORD-PROBE-REPLAY refill=%u replay=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=untouched reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
+                DRPG_LOGD("[RNGGUARD] WORD-PROBE-REPLAY refill=%u replay=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=untouched reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
                        (unsigned int)rngReplayGuard.realRefills,
                        (unsigned int)rngReplayGuard.replayedRefills,
                        (unsigned int)RNG_REPLAY_GUARD_LEASE_MS,
                        refillFrom);
             }
             else {
-                printf("[RNGGUARD] WORD-FATAL-RESERVATION-MISMATCH next=%d ptrMatch=%s sequenceExact=NO recovery=real-refill\n",
+                DRPG_LOGE("[RNGGUARD] WORD-FATAL-RESERVATION-MISMATCH next=%d ptrMatch=%s sequenceExact=NO recovery=real-refill\n",
                        rand->nextRand,
                        rngReplayGuard.probeReservedRand == rand ? "yes" : "no");
                 rngReplayGuard.probeReserved = 0U;
@@ -297,7 +298,7 @@ int __wrap_DoomRPG_randNextInt(Random_t* rand) {
                  memcmp(rand, &rngReplayGuard.preRefill, sizeof(*rand)) == 0) {
             *rand = rngReplayGuard.postRefill;
             ++rngReplayGuard.replayedRefills;
-            printf("[RNGGUARD] WORD-REPLAY refill=%u replay=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=untouched rollbackSafe=yes\n",
+            DRPG_LOGD("[RNGGUARD] WORD-REPLAY refill=%u replay=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=untouched rollbackSafe=yes\n",
                    (unsigned int)rngReplayGuard.realRefills,
                    (unsigned int)rngReplayGuard.replayedRefills,
                    (unsigned int)RNG_REPLAY_GUARD_LEASE_MS,
@@ -312,7 +313,7 @@ int __wrap_DoomRPG_randNextInt(Random_t* rand) {
             rngReplayGuard.valid = 1U;
             rngReplayGuard.probeReserved = 0U;
             ++rngReplayGuard.realRefills;
-            printf("[RNGGUARD] WORD-REFILL refill=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=advanced-once rollbackReplay=armed\n",
+            DRPG_LOGD("[RNGGUARD] WORD-REFILL refill=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=advanced-once rollbackReplay=armed\n",
                    (unsigned int)rngReplayGuard.realRefills,
                    (unsigned int)RNG_REPLAY_GUARD_LEASE_MS,
                    refillFrom);
@@ -327,7 +328,7 @@ int __wrap_DoomRPG_randNextInt(Random_t* rand) {
            ((uint32_t)rand->randTable[next + 3] << 24);
 
     if (next >= (RANDTABLESIZE / (int)sizeof(uint32_t))) {
-        printf("[RNGGUARD] WORD-OOB-AVOIDED next=%d correctedOffset=%d legacyOffset=%d value=%08x\n",
+        DRPG_LOGT("[RNGGUARD] WORD-OOB-AVOIDED next=%d correctedOffset=%d legacyOffset=%d value=%08x\n",
                next,
                next,
                next * (int)sizeof(uint32_t),

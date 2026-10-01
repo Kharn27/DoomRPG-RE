@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "esp_map_events.h"
+#include "doomrpg_log.h"
 #include "esp_map_runtime.h"
 #include "esp_native_gameplay_interaction_inventory.h"
 
@@ -123,7 +124,7 @@ void EspNativeGameplayInteractionInventory_log(void) {
         runtime->arenaFNV1a == loggedArenaFNV) return;
 
     memset(counts, 0, sizeof(counts));
-    printf("[INTERACTMAP] BEGIN arena=%08x events=%u commands=%u policy=report-all-unbounded-before-player-contact\n",
+    DRPG_LOGD("[INTERACTMAP] BEGIN arena=%08x events=%u commands=%u policy=report-all-unbounded-before-player-contact\n",
            (unsigned int)runtime->arenaFNV1a,
            (unsigned int)runtime->eventCount,
            (unsigned int)runtime->byteCodeCount);
@@ -168,7 +169,7 @@ void EspNativeGameplayInteractionInventory_log(void) {
         }
 
         if (eventHasGiveMap) {
-            printf("[GIVEMAPTRACE] event=%u tile=%u raw=%08x flags=%u initialState=%u commands=%u firstGlobal=%u sequence",
+            DRPG_LOGD("[GIVEMAPTRACE] event=%u tile=%u raw=%08x flags=%u initialState=%u commands=%u firstGlobal=%u sequence",
                    (unsigned int)descriptor.eventIndex,
                    (unsigned int)descriptor.tileIndex,
                    (unsigned int)descriptor.value,
@@ -179,21 +180,21 @@ void EspNativeGameplayInteractionInventory_log(void) {
             for (offset = 0U; offset < descriptor.commandCount; ++offset) {
                 EspMapByteCode command;
                 if (!EspMapEvents_getCommand(&descriptor, offset, &command)) {
-                    printf(" off%u=READFAIL", (unsigned int)offset);
+                    DRPG_LOGD(" off%u=READFAIL", (unsigned int)offset);
                     continue;
                 }
-                printf(" off%u=id%u/a1=%08x/a2=%08x",
+                DRPG_LOGD(" off%u=id%u/a1=%08x/a2=%08x",
                        (unsigned int)offset,
                        (unsigned int)command.id,
                        (unsigned int)command.arg1,
                        (unsigned int)command.arg2);
             }
-            printf("\n");
+            DRPG_LOGD("\n");
         }
 
         if (eventHasDeferred) {
             ++deferredEvents;
-            printf("[INTERACTMAP] DEFER event=%u tile=%u initialState=%u commands=%u range=%u..%u ids=%s reason=%s\n",
+            DRPG_LOGD("[INTERACTMAP] DEFER event=%u tile=%u initialState=%u commands=%u range=%u..%u ids=%s reason=%s\n",
                    (unsigned int)descriptor.eventIndex,
                    (unsigned int)descriptor.tileIndex,
                    (unsigned int)descriptor.initialState,
@@ -205,14 +206,14 @@ void EspNativeGameplayInteractionInventory_log(void) {
         }
     }
 
-    printf("[INTERACTMAP] SUMMARY arena=%08x deferredEvents=%u boundedCommands=%u deferredCommands=%u\n",
+    DRPG_LOGD("[INTERACTMAP] SUMMARY arena=%08x deferredEvents=%u boundedCommands=%u deferredCommands=%u\n",
            (unsigned int)runtime->arenaFNV1a,
            (unsigned int)deferredEvents,
            (unsigned int)boundedCommands,
            (unsigned int)deferredCommands);
     for (eventIndex = 0U; eventIndex < INVENTORY_OPCODE_LIMIT; ++eventIndex) {
         if (counts[eventIndex] == 0U) continue;
-        printf("[INTERACTMAP] OPCODE id=%u name=%s count=%u family=%s%s%s\n",
+        DRPG_LOGD("[INTERACTMAP] OPCODE id=%u name=%s count=%u family=%s%s%s\n",
                (unsigned int)eventIndex,
                opcodeName((uint8_t)eventIndex),
                (unsigned int)counts[eventIndex],
