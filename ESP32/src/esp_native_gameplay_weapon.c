@@ -6,6 +6,7 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+#include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_native_gameplay_weapon.h"
 
@@ -574,7 +575,7 @@ done:
     }
     if (opened) EspAssetPack_close();
     if (ok) {
-        printf("[WEAPON] DRAW weapon=%u logical=%u actual=%u frame=%u pose=%s offset=%d,%d anchor=%d,%d bounds=%d..%d,%d..%d active=%u pixels=%u cache=%s reads=%u frameBytes=%u ownerBytes=%u packClosed=%s\n",
+        DRPG_LOGT("[WEAPON] DRAW weapon=%u logical=%u actual=%u frame=%u pose=%s offset=%d,%d anchor=%d,%d bounds=%d..%d,%d..%d active=%u pixels=%u cache=%s reads=%u frameBytes=%u ownerBytes=%u packClosed=%s\n",
                (unsigned int)weapon,
                (unsigned int)stats.logicalSprite,
                (unsigned int)stats.actualSprite,

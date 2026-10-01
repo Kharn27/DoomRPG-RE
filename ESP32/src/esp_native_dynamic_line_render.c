@@ -6,6 +6,7 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+#include "doomrpg_log.h"
 #include "esp_map_line_state.h"
 #include "esp_map_line_texture_state.h"
 #include "esp_map_runtime.h"
@@ -269,7 +270,7 @@ static int renderDynamicFrame(struct Render_s* render,
     if (dynamicAnimationFault != 0U) ok = 0;
 
     if (animationFrame != NULL) {
-        printf("[DOORANIM] FRAME %u/%u angle=%u lines=%u geometry=%s animatedReads=%u openReads=%u textureVariants=%u frame=%08x render=%s\n",
+        DRPG_LOGT("[DOORANIM] FRAME %u/%u angle=%u lines=%u geometry=%s animatedReads=%u openReads=%u textureVariants=%u frame=%08x render=%s\n",
                (unsigned int)animationFrame->ordinal,
                (unsigned int)animationFrame->totalFrames,
                (unsigned int)angle,
@@ -284,7 +285,7 @@ static int renderDynamicFrame(struct Render_s* render,
 
     if (openCount != 0U || dynamicOpenLineReads != 0U ||
         dynamicAnimatedLineReads != 0U || dynamicTextureVariantReads != 0U) {
-        printf("[DYNAMICLINES] FRAME angle=%u open=%u adaptedReads=%u animatedReads=%u textureVariants=%u render=%s immutableRuntime=yes\n",
+        DRPG_LOGT("[DYNAMICLINES] FRAME angle=%u open=%u adaptedReads=%u animatedReads=%u textureVariants=%u render=%s immutableRuntime=yes\n",
                (unsigned int)angle,
                (unsigned int)openCount,
                (unsigned int)dynamicOpenLineReads,

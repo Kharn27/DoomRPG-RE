@@ -6,6 +6,7 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+#include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_events.h"
@@ -274,7 +275,7 @@ static int renderCurrent(Render_t* render,
         return 0;
     }
 
-    printf("[RESIDENTGAMEPLAY] FRAME reason=%s angle=%u frame=%08x sprites=%u/%u walls=%u pixels=%u totalUs=%u presented=%u controls=idle-invisible\n",
+    DRPG_LOGT("[RESIDENTGAMEPLAY] FRAME reason=%s angle=%u frame=%08x sprites=%u/%u walls=%u pixels=%u totalUs=%u presented=%u controls=idle-invisible\n",
            reason != NULL ? reason : "action",
            (unsigned int)frame.angle,
            (unsigned int)frame.frameAfterFNV,

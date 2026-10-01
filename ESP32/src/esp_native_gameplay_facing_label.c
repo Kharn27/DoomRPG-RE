@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "doomrpg_log.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
@@ -442,7 +443,7 @@ int EspNativeGameplayFacingLabel_refresh(const char* reason) {
     next.dirty = samePresentation(&facing, &next) ? facing.dirty : 1U;
     facing = next;
 
-    printf("[FACINGLABEL] REFRESH reason=%s active=%u display=%u source=%s index=%u tile=%u distance=%u type=%u subtype=%u def=%u name=\"%s\" dirty=%u ownerBytes=%u traceSteps=%u\n",
+    DRPG_LOGT("[FACINGLABEL] REFRESH reason=%s active=%u display=%u source=%s index=%u tile=%u distance=%u type=%u subtype=%u def=%u name=\"%s\" dirty=%u ownerBytes=%u traceSteps=%u\n",
            reason != NULL ? reason : "world",
            (unsigned int)facing.active,
            (unsigned int)facing.displayable,
