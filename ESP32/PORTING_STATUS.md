@@ -7,20 +7,71 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = 21ee2c95afd351af5c20ba38d6ef897bd81d1d05
-CI = esp32-cyd #1239 SUCCESS
+hardware-tested code boundary = ef8dc9b5f06dd93c34c5179f6b95935dd0af13d2
+CI = esp32-cyd #1247 SUCCESS
 static RAM = 44936 B
-linked Flash = 757585 B
-firmware.bin = 757952 B
-artifact id = 11179380857
-artifact digest = sha256:c039482dacd4f6af3c491ba3793ea4c6153fdbffef4ea4086d2bde6ec60dd5e4
-firmware sha256 = 35a9987bd83c03c0f6787c0dfb4cde4b2cf994745089c2fa1ec98e74ec3dd807
-ELF sha256 = a8f146550c1610fba2077318b41637a53fd6987088ff60ad8be70e09d48cbc1e
-hardware = cold boot -> native MAIN -> OPTIONS disabled cards + Back -> HELP paging + Back PASS
-status = V24 REAL-CYD PASS; legacy Menu_t root retired and required NULL; final ELF has zero Menu_* symbols while MenuSystem_init/startup/playSound/free remain; core graph objects=10 used=53804 B; shapeData/mediaTexels remain NULL; active linker wraps = 49
+linked Flash = 757869 B
+firmware.bin = 758240 B
+artifact id = 11189341147
+artifact digest = sha256:42e47397c8792f82f0129c8c85340bd1535374ad42787ec38c0c0a5757febdc0
+firmware sha256 = 6f14c4b71ef9a51a43f0ea26ce480417cd54cf66ec2b6eddb40a11cfb5592833
+ELF sha256 = 76d902338352539e18e6dc640de7d219bac2b942d98e34a85347edb800fea5ed
+hardware = V9 Sector 1 LOAD -> subtype-4 Phantom Fire Ext x2 kill -> subtype-5 Fire Ext hit -> monster retaliation PASS
+status = FIRE EXT MONSTER COMBAT REAL-CYD PASS; weapon 1 uses normal monster combat, Phantom subtype 4 owns gray ce79/15-particle HITFX, other monsters take damage without blood HITFX; gameplay RNG untouched by visual FX; heap stable at 50364/38900; V24 legacy Menu_t retirement remains valid; active linker wraps = 49
 ```
 
 
+
+
+### Fire Ext monster combat semantics — REAL-CYD PASS (2026-10-01)
+
+Commit `ef8dc9b5f06dd93c34c5179f6b95935dd0af13d2` fixes the native
+player-combat gate for weapon 1. Legacy Doom RPG treats Fire Ext as a normal
+direct weapon when the target is an enemy (`eType == 1`); its special entity
+rule applies only outside that monster path.
+
+The permanent native distinction is presentation-only after a successful hit:
+
+- Phantom subtype 4: gray `RGB565 ce79`, exactly 15 local-visual particles;
+- other monster subtypes: normal combat/damage, but no blood/HITFX spray;
+- a true Fire Ext miss uses legacy text `No effect!`;
+- visual FX do not consume gameplay RNG.
+
+CI #1247 succeeds at 44936 B static RAM / 757869 B linked Flash /
+758240 B firmware.bin. The artifact is 11189341147 with digest
+`sha256:42e47397c8792f82f0129c8c85340bd1535374ad42787ec38c0c0a5757febdc0`.
+
+The real classic CYD validates both branches in one loaded Sector 1 session.
+Two subtype-4 Phantoms are hit and killed with weapon 1. Both arm the exact
+gray impact owner:
+
+```text
+[MONSTERCOMBAT] ARM ... subtype=4 ... weapon=1 ...
+[HITFX] ARM ... subtype=4 weapon=1 mode=extinguisher-gray ... color565=ce79 particles=15 ...
+[MONSTERHITFEEDBACK] ... impact=extinguisher-gray-armed ...
+[MONSTERCOMBAT] COMMIT ... alive=1->0 ... ammo=14->13
+```
+
+A following subtype-5 monster is also attacked successfully with Fire Ext:
+
+```text
+[MONSTERCOMBAT] ARM ... subtype=5 ... weapon=1 ...
+[MONSTERCOMBAT] ROLL ... totalDamage=0 armorDamage=1 ...
+[MONSTERHITFEEDBACK] ... impact=none-extinguisher ...
+[MONSTERCOMBAT] COMMIT ... hp=14->14 armor=6->5 ... ammo=12->11
+```
+
+No `reason=weapon-entity-rule-family` appears. Native GIBFX also remains live
+after the Phantom deaths with `legacyParticleSystem=no`. Repeated ALIVE
+samples after movement, two Fire Ext kills, a subtype-5 hit and retaliation
+remain stable at `heap=116288 heap8=50364 largest8=38900`.
+
+The same hardware log exposes the next gameplay boundary directly:
+subtype-4 three-goal movement reaches adjacent-cardinal attack gates but still
+reports `multi-loop-attack-family-deferred` for its three-shot attack family.
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_FIRE_EXT_MONSTER_COMBAT.md](MILESTONE_ESP32_NATIVE_FIRE_EXT_MONSTER_COMBAT.md)
 
 ### Legacy Menu root retirement V24 — REAL-CYD PASS (2026-10-01)
 

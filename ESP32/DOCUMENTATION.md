@@ -15,15 +15,38 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = 21ee2c95afd351af5c20ba38d6ef897bd81d1d05
-CI = esp32-cyd #1239 SUCCESS
+hardware-tested code boundary = ef8dc9b5f06dd93c34c5179f6b95935dd0af13d2
+CI = esp32-cyd #1247 SUCCESS
 static RAM = 44936 B
-linked Flash = 757585 B
-firmware.bin = 757952 B
-artifact id = 11179380857
-hardware = cold boot + native MAIN + OPTIONS/Back + HELP paging/Back PASS
-status = V24 REAL-CYD PASS; Menu_t root retired, Menu_* absent from final ELF, MenuSystem retained for bounded native models/assets; 49 active linker wraps
+linked Flash = 757869 B
+firmware.bin = 758240 B
+artifact id = 11189341147
+hardware = V9 Sector 1 LOAD + Fire Ext on subtype-4 and subtype-5 monsters PASS
+status = Fire Ext monster combat semantics REAL-CYD PASS; V24 Menu_t retirement remains valid; 49 active linker wraps
 ```
+
+
+## Fire Ext monster combat semantics — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested head `ef8dc9b5f06dd93c34c5179f6b95935dd0af13d2`
+restores the exact legacy weapon-1 split: Fire Ext attacks `eType == 1`
+monsters through the normal generic combat math, while its impact presentation
+is special-cased. Phantom subtype 4 gets a bounded gray `ce79` 15-particle
+HITFX; other monster subtypes take normal damage without blood spray. A real
+miss remains `No effect!`.
+
+The real CYD kills two subtype-4 Phantoms with Fire Ext and then damages a
+subtype-5 monster with the same weapon. The subtype-4 path reports
+`impact=extinguisher-gray-armed`; the subtype-5 path reports
+`impact=none-extinguisher`. Ammo, monster state and GIBFX commit normally,
+visual RNG remains decoupled, and live memory is stable at
+`heap8=50364 largest8=38900`.
+
+CI #1247: 44936 B static RAM / 757869 B linked Flash / 758240 B firmware.bin,
+artifact 11189341147.
+
+See
+[MILESTONE_ESP32_NATIVE_FIRE_EXT_MONSTER_COMBAT.md](MILESTONE_ESP32_NATIVE_FIRE_EXT_MONSTER_COMBAT.md).
 
 ## Legacy Menu root retired — REAL-CYD PASS (2026-10-01)
 
