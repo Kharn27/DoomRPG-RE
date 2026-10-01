@@ -13,17 +13,39 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 88a5d3fa5bfe96fe16e213e78933493394264dcc
-branch = agent/esp32-native-player-death-core
-hardware-tested code boundary = 717e7bd980ff7110c227055d940d01c980a5683d
-CI = esp32-cyd #1290 SUCCESS
+current main = 2d981fd14e3b7840ccf71575c47b0e3bd6d123fa
+branch = agent/esp32-retire-dead-menu-particle-tus
+hardware-tested code boundary = bc65cc337000d8c7ef54b5f0451e51d958cf7cef
+CI = esp32-cyd #1298 SUCCESS
 static RAM = 44992 B
 linked Flash = 769357 B
-artifact id = 11196908002
-artifact digest = sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5
-hardware = Sector 1 ordered multi-monster turn + serialized attack pause/resume + lethal monster retaliation -> native PlayerDeath + death menu routing + raw-pending-probe input gate PASS
-status = ORDERED MONSTER TURN + MONSTER LETHAL DEATH + P1 INPUT-RACE CLOSURE REAL-CYD PASS; one-probe-in-flight is pause/resume rather than starvation; lethal retaliation commits HP=0 + attack RNG + one death RNG byte and terminates the remaining turn suffix; raw MonsterTurn attackProbes now close world input immediately even before Activation delivers the probe on the next session tick; rapid hardware taps did not stack; LOAD remains live, JUNCTION/RETRY/MAIN remain explicitly fail-closed; heap stable at 50308/38900
+artifact id = 11201100436
+artifact digest = sha256:3626c14a436d18f6dd386dfa2554d9a7c36ec0f54eb52bb35fd6339b8daf82e0
+hardware = MAIN -> native V9 LOAD -> Sector 1 resume -> MOVE -> ordered four-monster turn -> three-loop retaliation PASS
+status = Menu.c + ParticleSystem.c no longer compile on ESP32; final image unchanged because both units were already link-dead; real CYD regression PASS with shapeData/mediaTexels NULL and resident heap8=50308 largest8=38900
 ```
+
+## Dead Menu / ParticleSystem translation-unit retirement — REAL-CYD PASS (2026-10-02)
+
+Commit `bc65cc337000d8c7ef54b5f0451e51d958cf7cef` removes the already-retired
+desktop `Menu.c` and `ParticleSystem.c` translation units from the ESP32 compile
+graph. Previous milestones had already proven zero final `Menu_*` and
+`ParticleSystem_*` symbols; this milestone stops spending compiler/build surface on
+them at all.
+
+CI #1298 succeeds with exactly the same 44992 B static RAM and 769357 B linked Flash,
+confirming that no linked runtime code changed. The real CYD then loads a V9 Sector 1
+checkpoint, restores the native session, moves the player, services four monsters in
+order, runs subtype-4 continuation and resolves a three-loop attack. Gameplay remains
+stable at `heap=116232 heap8=50308 largest8=38900`, with
+`shapeData == NULL` and `mediaTexels == NULL`.
+
+The known lack of smooth player MOVE/TURN interpolation is recorded separately as a
+native presentation gap. It is not part of this retirement and must not justify
+reintroducing desktop ownership.
+
+See
+[MILESTONE_ESP32_RETIRE_DEAD_MENU_PARTICLE_TUS.md](MILESTONE_ESP32_RETIRE_DEAD_MENU_PARTICLE_TUS.md).
 
 ## Ordered monster turn + lethal monster death — REAL-CYD PASS (final review closure 2026-10-02)
 
