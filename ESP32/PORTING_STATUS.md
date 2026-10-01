@@ -5,19 +5,19 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 9aa3c3a62bb7639d884d036acc0baf54be88541e
-branch = agent/esp32-consolidation-menu-bsp-runtime-retirement-v14
-hardware-tested code boundary = dd4161a40b28d2ed9c88370b2f8281b9045f2980
-CI = esp32-cyd #1197 SUCCESS
-static RAM = 45128 B
-flash = 773089 B
-firmware.bin = 773456 B
-artifact id = 11120007067
-artifact digest = sha256:59e22d286fc5d80e6c1ecaca6ed3783b1726298b3dc606fef47ace01d87891c7
-firmware sha256 = 36a17cba2152a7bbdfaeb15ee2535453abaac45522afe59df41baa79116758a1
-ELF sha256 = 2e381df4b49e6e217bf6c6d52a64570b6fe1503418e1a88188cccd2f4dad9174
-hardware = cold boot -> native opaque MENU_MAIN without menu.bsp runtime -> OPTIONS/HELP Back -> START -> intro -> Entrance resident gameplay -> MOVE PASS
-status = HARDWARE PASS; production menu.bsp runtime retired; active linker wraps 55 -> 52; legacy menu map loader closure absent from final ELF
+current main = fb3b4ee310ccc54d7301dcdfbba9d4648e17c38a
+branch = agent/esp32-consolidation-first-frame-diagnostic-wrap-v15
+hardware-tested code boundary = 5460c689b708468e3bdd618d0000753159a24109
+CI = esp32-cyd #1202 SUCCESS
+static RAM = 45120 B
+flash = 772161 B
+firmware.bin = 772528 B
+artifact id = 11121161150
+artifact digest = sha256:89e6527638a4471f37b1019589b10624796814bcfecce6a236304c4b96ca68ff
+firmware sha256 = 644d668d8209a8d7ccd3aa6680a5b1fae92f0e90b8a50c799bde3f011ea64f85
+ELF sha256 = de4b561ca07c4200c28f7ffcf924cf169494ff8ef86ff032c79592640e87fb12
+hardware = START -> intro -> Entrance first native frame without production COLORSTATS wrapper -> cache prime -> resident gameplay PASS
+status = HARDWARE PASS; first-frame fidelity wrapper scoped to bringup; active linker wraps 52 -> 51
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2575,3 +2575,78 @@ frame, services the monster turn, and leaves ALIVE stable at the same values.
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_MENU_BSP_RUNTIME_RETIREMENT_V14.md](MILESTONE_ESP32_CONSOLIDATION_MENU_BSP_RUNTIME_RETIREMENT_V14.md)
+
+
+### First-frame fidelity wrapper retirement from production — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested code head
+`5460c689b708468e3bdd618d0000753159a24109` removes the production
+`--wrap=EspNativeFirstFrame_route` interception while preserving the real
+native first-frame owner unchanged.
+
+The removed production wrapper did only post-success diagnostics:
+
+```text
+EspNativeFirstFrame_route
+ -> read-only viewport COLORSTATS
+ -> remember Render* for optional BMP export
+```
+
+It did not own renderer state, first-frame publication, FNV calculation,
+presentation, failure handling or gameplay transition. Those remain in the
+real `esp_native_first_frame.c` implementation and are still consumed by
+`EspNativeGameplaySession`.
+
+The wrapper is retained only by `esp32-cyd-bringup` for historical fidelity
+inspection.
+
+CI #1202 succeeds with:
+
+```text
+                         merged V14 main   V15           delta
+static RAM               45128 B           45120 B        -8 B
+linked Flash            773089 B          772161 B      -928 B
+firmware.bin            773456 B          772528 B      -928 B
+active __wrap_*              52                51           -1
+```
+
+Final-ELF inspection confirms:
+
+```text
+EspNativeFirstFrame_route                 PRESENT
+EspNativeFirstFrame_view                  PRESENT
+EspNativeFirstFrame_renderGameplayViewport PRESENT
+__wrap_EspNativeFirstFrame_route          ABSENT
+Esp32FirstFrameDiagnostic_reset           ABSENT
+Esp32FirstFrameDiagnostic_exportBmp       ABSENT
+pendingDumpRender                         ABSENT
+```
+
+The real classic CYD proves that the production first-frame contract is
+unchanged. Entrance still publishes the exact known first frame:
+
+```text
+[NATIVEFRAME] WALL requests=8 draws=8 spans=160 pixels=4430 ...
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+```
+
+No `[JUNCTIONFRAME] COLORSTATS` line appears.
+
+The 8-byte static-RAM reduction is visible exactly in hardware versus V14:
+
+```text
+MENU_MAIN heap8     35656 -> 35664
+intro heap8         43200 -> 43208
+resident ALIVE      27464 -> 27472
+```
+
+The gameplay session then reaches:
+
+```text
+[ENGINESESSION] READY map=1 ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=93396 heap8=27472 largest8=18420 ...
+[ALIVE] ... heap=93396 heap8=27472 largest8=18420 ...
+```
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_FIRST_FRAME_DIAGNOSTIC_WRAP_V15.md](MILESTONE_ESP32_CONSOLIDATION_FIRST_FRAME_DIAGNOSTIC_WRAP_V15.md)

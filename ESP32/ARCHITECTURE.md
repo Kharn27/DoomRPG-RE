@@ -677,3 +677,25 @@ esp32-cyd-bringup  historical structural/render probes may be retained
 The real CYD validates native MENU_MAIN, OPTIONS/HELP Back, START, complete
 intro/bootstrap, Entrance resident gameplay and a committed move with
 `shapeData == NULL` and `mediaTexels == NULL`.
+
+
+## First-frame diagnostics are not production ownership
+
+The permanent first resident world-frame path is the real native owner:
+
+```text
+EspNativeGameplaySession
+ -> EspNativeFirstFrame_route
+ -> native wall/plane renderer
+ -> framebuffer FNV/publication
+ -> Esp32PlatformVideo_present
+ -> EspNativeFirstFrame_view
+```
+
+Production must not interpose a linker wrapper merely to measure viewport color
+statistics or arm an optional BMP dump. Those are regression diagnostics and
+belong to the explicit `esp32-cyd-bringup` profile.
+
+The hardware-tested direct route preserves the exact Entrance first-frame FNV,
+presentation contract and fail-closed session behavior while removing one
+wrapper, 8 B of static RAM and 928 B of linked Flash.
