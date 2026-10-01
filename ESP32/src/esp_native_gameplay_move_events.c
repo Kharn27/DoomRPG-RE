@@ -1064,7 +1064,7 @@ static void logPhase(const char* phase,
     }
 
 #define MOVEEVENT_LOG_PHASE(_log) \
-    _log("[MOVEEVENT] %s seq=%u tile=%u flags=%08x status=%s event=%u eligible=%u opcode=%u unsupported=%u line=%u open=%u->%u locked=%u statusMsg=%u/string%u stateEvent=%u state=%u->%u removed=%u->%u mutation=%s rollback=%u\\n", \
+    _log("[MOVEEVENT] %s seq=%u tile=%u flags=%08x status=%s event=%u eligible=%u opcode=%u unsupported=%u line=%u open=%u->%u locked=%u statusMsg=%u/string%u stateEvent=%u state=%u->%u removed=%u->%u mutation=%s rollback=%u\n", \
          phase, \
          (unsigned int)sequence, \
          (unsigned int)result->tile, \
