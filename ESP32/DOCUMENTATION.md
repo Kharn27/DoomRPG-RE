@@ -15,17 +15,37 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = 5943974dcf1b5bd1c142e4665340f51fb6fbb19b
-CI = esp32-cyd #1253 SUCCESS
+hardware-tested code boundary = 13bb05ed09aa217a2263a4f3fb8a521348c96258
+CI = esp32-cyd #1257 SUCCESS
 static RAM = 44936 B
-linked Flash = 761949 B
-firmware.bin = 762320 B
-artifact id = 11191212285
-hardware = Sector 1 subtype-4 three-goal shortcut + native three-loop attack/retaliation PASS
-status = three-goal subtype 4/13 single-probe multi-loop attack REAL-CYD PASS; simultaneous attack-ready ordering remains fail-closed; 49 active linker wraps
+linked Flash = 762861 B
+artifact id = 11191801698
+hardware = Sector 1 repeated PASS_TURN on type-10 hazard with immediate HP/armor HUD refresh PASS
+status = hazard PASS_TURN HUD refresh REAL-CYD PASS; three-goal multi-loop and Fire Ext remain validated; lethal player transition is the next explicit gameplay boundary; 49 active linker wraps
 ```
 
 
+
+
+## Hazard PASS_TURN HUD refresh — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested head `13bb05ed09aa217a2263a4f3fb8a521348c96258` keeps the existing
+hazard damage transaction unchanged and fixes only retained HUD publication.
+Each committed PASS_TURN damage now repaints both HUD bands from the current
+PlayerState-backed HUD overlay before the immediate damage-feedback present.
+
+Real hardware proves consecutive transitions
+`17/6 -> 16/4 -> 15/2` are visible immediately, with
+`[GAMEPLAYHUD] REPAINT` and `[PASSTURN] HUD-REPAINT` matching the committed
+values. Live memory stays `heap8=50364 largest8=38900`.
+
+CI #1257: 44936 B static RAM / 762861 B linked Flash, artifact 11191801698.
+
+The same session naturally reaches the still-fail-closed native player-death
+boundary from a barrel-radius hit, with exact transaction rollback.
+
+See
+[MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md).
 
 ## Three-goal subtype 4/13 multi-loop attack — REAL-CYD PASS (2026-10-01)
 

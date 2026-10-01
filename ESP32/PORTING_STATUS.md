@@ -7,22 +7,62 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
 branch = agent/esp32-retire-legacy-particle-startup-v22
-hardware-tested code boundary = 5943974dcf1b5bd1c142e4665340f51fb6fbb19b
-CI = esp32-cyd #1253 SUCCESS
+hardware-tested code boundary = 13bb05ed09aa217a2263a4f3fb8a521348c96258
+CI = esp32-cyd #1257 SUCCESS
 static RAM = 44936 B
-linked Flash = 761949 B
-firmware.bin = 762320 B
-artifact id = 11191212285
-artifact digest = sha256:42b26ff060341d02dbc37954006df9825dc7a12463e7168ed9f09cc68de02966
-firmware sha256 = 0e4cc7b4dee946faaa04a26462f1ae01914bb68251c52412d6f3467b2002ba20
-ELF sha256 = ed1350736fd0f855a1e9f62963e9e9332056cf9c45e28f291a4f0edc65ba4481
-hardware = V9 Sector 1 LOAD -> subtype-4 three-goal shortcut -> native 3-loop monster attack visual -> retaliation commit PASS; Fire Ext Phantom combat regression PASS
-status = THREE-GOAL MULTI-LOOP MONSTER ATTACK REAL-CYD PASS; subtype 4/13 single-probe 3-shot family is live, simultaneous attack-ready monsters remain fail-closed; gameplay RNG rollback/commit exact; heap stable at 50364/38900; shapeData/mediaTexels remain NULL; active linker wraps = 49
+linked Flash = 762861 B
+artifact id = 11191801698
+artifact digest = sha256:22e4479376aac2daed8ef3e6300a633b3f13ef9fa133369586619374f58e2c25
+hardware = Sector 1 PASS_TURN on type-10 hazard x2 -> HUD health/armor repaints immediately; three-goal multi-loop + Fire Ext regressions remain PASS
+status = HAZARD PASS_TURN HUD REFRESH REAL-CYD PASS; current PlayerState overlay repaints bounded HUD bands before immediate feedback present; hp/armor 17/6->16/4->15/2 visible on each turn; heap stable at 50364/38900; lethal player transition remains fail-closed; active linker wraps = 49
 ```
 
 
 
 
+
+
+### Hazard PASS_TURN HUD refresh — REAL-CYD PASS (2026-10-01)
+
+Commit `13bb05ed09aa217a2263a4f3fb8a521348c96258` closes the presentation gap
+where repeated PASS_TURN damage on a current-tile type-10/11 hazard mutated the
+authoritative PlayerState but left the retained bottom HUD digits stale until a
+later world redraw.
+
+The fix adds no new HUD/gameplay owner. It reuses the existing wrapped
+`EspNativeGameplayHud_view()` overlay, whose health/armor/ammo/weapon values are
+derived from the current native PlayerState, and repaints only the two retained
+HUD bands before the already-existing immediate feedback present.
+
+Real-CYD witness:
+
+```text
+[HAZARDPASS] COMMIT ... hp=17->16 armor=6->4 ...
+[GAMEPLAYHUD] REPAINT health=16/38 armor=4/28 ...
+[PASSTURN] HUD-REPAINT ... phase=hazard-commit health=16/38 armor=4/28 ... source=current-player-overlay ...
+[PASSTURN] REQUEST ... monsterTurn=requested ... feedbackPresent=immediate
+
+[HAZARDPASS] COMMIT ... hp=16->15 armor=4->2 ...
+[GAMEPLAYHUD] REPAINT health=15/38 armor=2/28 ...
+[PASSTURN] HUD-REPAINT ... phase=hazard-commit health=15/38 armor=2/28 ...
+```
+
+The user confirmed the HUD changes physically on every PASS_TURN. Repeated
+`ALIVE` samples remain stable at
+`heap=116288 heap8=50364 largest8=38900`.
+
+CI #1257 succeeds at 44936 B static RAM / 762861 B linked Flash. Artifact
+11191801698 has digest
+`sha256:22e4479376aac2daed8ef3e6300a633b3f13ef9fa133369586619374f58e2c25`.
+
+The same hardware session reaches the next explicit gameplay boundary through a
+nearby barrel explosion:
+`[BARRELRADIUS] PLAYER-DEFER ... mutation=no/lethal-deferred`, followed by exact
+monster-turn/RNG/player/world rollback. Native player death remains intentionally
+unowned.
+
+Detailed historical hazard contract:
+[MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md](MILESTONE_NATIVE_PASS_TURN_HAZARD_TOUCH.md)
 
 ### Three-goal subtype 4/13 multi-loop attack — REAL-CYD PASS (2026-10-01)
 

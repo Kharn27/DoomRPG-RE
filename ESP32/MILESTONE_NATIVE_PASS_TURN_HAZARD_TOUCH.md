@@ -217,3 +217,42 @@ This milestone does not broaden any of those families.
 the real CYD. Every commit after it on this branch must remain documentation-only.
 After merge, recover the exact new `main` SHA before starting another `agent/*`
 branch.
+
+
+## 2026-10-01 retained-HUD refresh addendum — REAL-CYD PASS
+
+A later consolidation branch found one presentation gap that did not change the
+original PASS_TURN hazard gameplay semantics: after a repeated hazard
+`processPassTurn()` commit, PlayerState was correct but the retained bottom HUD
+still displayed the previous HP/armor values until another full world redraw.
+
+Hardware-tested commit:
+
+```text
+13bb05ed09aa217a2263a4f3fb8a521348c96258
+CI #1257 SUCCESS
+RAM = 44936 B
+Flash = 762861 B
+artifact = 11191801698
+```
+
+The fix reuses the existing current-player HUD overlay and repaints only the HUD
+bands before immediate feedback presentation.
+
+Real-CYD proof:
+
+```text
+[HAZARDPASS] COMMIT ... hp=17->16 armor=6->4 ...
+[GAMEPLAYHUD] REPAINT health=16/38 armor=4/28 ...
+[PASSTURN] HUD-REPAINT ... health=16/38 armor=4/28 ...
+
+[HAZARDPASS] COMMIT ... hp=16->15 armor=4->2 ...
+[GAMEPLAYHUD] REPAINT health=15/38 armor=2/28 ...
+[PASSTURN] HUD-REPAINT ... health=15/38 armor=2/28 ...
+```
+
+The user confirmed both HUD transitions physically. Repeated ALIVE samples remain
+`heap=116288 heap8=50364 largest8=38900`.
+
+This addendum does not broaden hazard gameplay. Lethal player damage remains
+fail-closed.
