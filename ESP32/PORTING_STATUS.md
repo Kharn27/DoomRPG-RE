@@ -5,21 +5,57 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 4a46ea17e3e397bc9870e10c06eda53786ae48b8
-branch = agent/esp32-consolidation-hot-input-turn-telemetry-v21
-hardware-tested code boundary = ac5e11127f294a5e2d7d1127febb21214be94458
-CI = esp32-cyd #1225 SUCCESS
+current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
+branch = agent/esp32-moveevent-diagnostic-visibility-v21-fix
+hardware-tested code boundary = 2c855bd217999453ec21246937ef6730e1697f3c
+CI = esp32-cyd #1230 SUCCESS
 static RAM = 45064 B
-linked Flash = 757789 B
-firmware.bin = 758160 B
-artifact id = 11165147980
-artifact digest = sha256:2cff56fe041a090e89ef7a2b718d51feaae2240676db9c4932fc545c9e94c6bd
-firmware sha256 = 2ea793c91c6fa23563d434f776b4c85f2d9e156c5374c5a5c07fc25c3d7552ca
-ELF sha256 = 5dd4b8500282a1bd2cfe6d4e740469fb39b6171eb337ede79978e5b7c257ccac
-hardware = cold boot -> START -> full intro -> Entrance -> banal MOVE/TURN -> pickup/dialog/door/block -> renderer recovery -> V9 LOAD Sector 1 -> live ordered monster movement PASS
-status = HARDWARE PASS; hot input/move/idle-turn success telemetry is TRACE-only while semantic mutations, failures, deferrals and recovery witnesses remain INFO/ERROR; active linker wraps = 49
+linked Flash = 758389 B
+firmware.bin = 758752 B
+artifact id = 11173629995
+artifact digest = sha256:f124decd87869fd0d4fdfe44cfeb2140cb4f3ca4b9b13ed423678a9e3bc378b8
+firmware sha256 = b13cc46634df5e9ff81ac003bdd5a2d649441a3c2980a1ec3510d8812dee7ac9
+ELF sha256 = 806058fcbb7bbbd38636c580676f73f6ebc3d0f426ad53400d46771601d5e7a7
+hardware = Entrance normal INFO regression path: banal MOVE/TURN, pickups, regular doors, move-event COMMIT, opcode-26 dialog/resume, SELECT dialogs, fire actions, repeated renderer recovery PASS
+status = HARDWARE REGRESSION PASS; routine move phases remain TRACE-only, while INVALID/NOT_READY/UNSUPPORTED/COMPLEX and unknown/divergent phase outcomes are restored to INFO by source classification; no unsafe phase was naturally triggered in this hardware run; active linker wraps = 49
 ```
 
+
+
+### V21 post-review MOVE-event diagnostic visibility fix — REAL-CYD regression PASS (2026-10-01)
+
+Merged V21 correctly removed routine `MOVEEVENT` phase chatter, but its blanket
+`DRPG_LOGT` demotion also hid the detailed phase result for fail-closed
+`INVALID`, `NOT_READY`, `UNSUPPORTED` and `COMPLEX` outcomes. Those
+statuses can occur after preflight and lead directly to
+`ESP_NATIVE_GAMEPLAY_DISPATCH_COMMIT_FAILED`, where the resident caller only
+reports a coarse `reason=move-commit`.
+
+Commit `2c855bd217999453ec21246937ef6730e1697f3c` fixes only this
+diagnostic classification. Routine `NO_EVENT`, `NO_ELIGIBLE` and supported
+success outcomes remain TRACE. Unsafe statuses, unknown statuses, and an
+unexpected post-preflight EXIT dialog/message divergence emit the full phase
+record at INFO, preserving event/opcode/mutation/rollback context.
+
+CI #1230 succeeds at 45064 B static RAM / 758389 B linked Flash /
+758752 B firmware.bin with 49 active linker wraps. The INFO diagnostic format
+costs 600 B linked Flash versus the merged V21 code image and 0 B static RAM.
+
+The real CYD regression run confirms the hot path remains quiet and fast:
+ordinary MOVE/TURN still emit no generic `EXIT-PREFLIGHT / ENTER-PREFLIGHT /
+EXIT / ENTER` lines, while meaningful `MOVEEVENT COMMIT`,
+`WORLD-READY`, door/dialog/action witnesses and repeated
+`LEGACY_GUARD -> RETRY -> RECOVERED` remain visible.
+
+Memory is stable at `heap=93448 heap8=27524 largest8=18420` before lazy
+dialog owners, `92412/26488/18420` after `DIALOGCHAIN`, and
+`89988/24064/18420` after the bounded topology snapshot owner is allocated.
+The test did not naturally encounter an unsafe MOVE-event phase, so visibility
+of `INVALID/NOT_READY/UNSUPPORTED/COMPLEX` is source/CI verified rather than a
+claimed hardware-triggered witness.
+
+Detailed record remains the V21 milestone with its post-review addendum:
+[MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md](MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md)
 
 ### Hot input / move / idle-turn telemetry V21 — REAL-CYD PASS (2026-10-01)
 

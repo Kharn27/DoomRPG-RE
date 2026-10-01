@@ -13,16 +13,16 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 4a46ea17e3e397bc9870e10c06eda53786ae48b8
-branch = agent/esp32-consolidation-hot-input-turn-telemetry-v21
-hardware-tested code boundary = ac5e11127f294a5e2d7d1127febb21214be94458
-CI = esp32-cyd #1225 SUCCESS
+current main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
+branch = agent/esp32-moveevent-diagnostic-visibility-v21-fix
+hardware-tested code boundary = 2c855bd217999453ec21246937ef6730e1697f3c
+CI = esp32-cyd #1230 SUCCESS
 static RAM = 45064 B
-linked Flash = 757789 B
-firmware.bin = 758160 B
-artifact id = 11165147980
-hardware = normal INFO firmware validated through cold boot, full intro, Entrance banal MOVE/TURN, pickup/dialog/door/block/recovery and V9 Sector 1 live monster movement
-status = HARDWARE PASS; hot input/move/idle-turn success telemetry is TRACE-only; semantic mutation, failure, deferral and recovery witnesses remain visible; 49 active linker wraps
+linked Flash = 758389 B
+firmware.bin = 758752 B
+artifact id = 11173629995
+hardware = normal INFO regression path preserves compact MOVE/TURN plus door/dialog/pickup/action/recovery behavior
+status = HARDWARE REGRESSION PASS; routine move phases stay TRACE, unsafe/unknown/divergent phase outcomes are classified INFO; unsafe phase not naturally triggered; 49 active linker wraps
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1534,5 +1534,32 @@ Repeated ALIVE is stable at `heap=93448 heap8=27524 largest8=18420` before
 lazy dialog allocation and `heap=92412 heap8=26488 largest8=18420` afterward.
 
 Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md](MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md).
+
+
+## V21 post-review MOVE-event diagnostic visibility fix — REAL-CYD regression PASS (2026-10-01)
+
+Post-merge review found that V21's generic `logPhase(...)` demotion also
+removed detailed INFO context for fail-closed MOVE-event statuses. Commit
+`2c855bd217999453ec21246937ef6730e1697f3c` keeps ordinary
+`NO_EVENT/NO_ELIGIBLE` and supported success phases at TRACE, but restores
+`INVALID/NOT_READY/UNSUPPORTED/COMPLEX`, unknown statuses, and unexpected
+post-preflight EXIT dialog/message divergence to INFO.
+
+CI #1230: 45064 B static RAM / 758389 B linked Flash / 758752 B firmware.bin,
+49 active linker wraps. The +600 B linked Flash versus V21 is the retained INFO
+diagnostic format; static RAM is unchanged.
+
+The real CYD regression path remains compact across more than twenty MOVE
+commits, turns, pickups, multiple regular doors, opcode-26 and SELECT dialogs,
+fire actions and three genuine renderer compact-guard recoveries. Routine
+`MOVEEVENT EXIT-PREFLIGHT/ENTER-PREFLIGHT/EXIT/ENTER` output remains absent.
+Meaningful `MOVEEVENT COMMIT/WORLD-READY` remains visible.
+
+The hardware run does not naturally trigger an unsafe MOVE-event phase, so the
+new unsafe-status INFO record is source/CI verified, not claimed as a
+hardware-triggered witness.
+
+See the post-review addendum in
 [MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md](MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md).
 

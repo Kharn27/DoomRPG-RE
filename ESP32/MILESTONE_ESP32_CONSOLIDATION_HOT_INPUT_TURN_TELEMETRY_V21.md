@@ -261,3 +261,108 @@ dialogs, doors, live monster work and renderer recovery remain observable.
 The hardware-tested code boundary is
 `ac5e11127f294a5e2d7d1127febb21214be94458`. All commits after that boundary
 for this milestone must be documentation-only before merge.
+
+
+## Post-review diagnostic visibility correction
+
+After V21 merged, code review identified a diagnostic regression in the generic
+MOVE-event phase logger. V21 moved the whole `logPhase(...)` record to TRACE,
+which was correct for routine success/no-event traffic but also removed the
+phase detail for fail-closed statuses:
+
+```text
+INVALID
+NOT_READY
+UNSUPPORTED
+COMPLEX
+```
+
+Those statuses are tested by `phaseUnsafe(...)`. After
+`EspNativeGameplayMoveEvents_executePhase()`, either EXIT or ENTER can return
+one of them and the commit wrapper then returns
+`ESP_NATIVE_GAMEPLAY_DISPATCH_COMMIT_FAILED`. At resident level the remaining
+message is only the coarse move-commit failure, so hiding the phase record lost
+the event/opcode/mutation/rollback context needed to diagnose that failure.
+
+Fix branch:
+
+```text
+base main = 72e351f8d26f4c3ac22d766a086de6646bbaf77b
+branch = agent/esp32-moveevent-diagnostic-visibility-v21-fix
+code = 2c855bd217999453ec21246937ef6730e1697f3c
+commit = ESP32: keep unsafe move-event phases visible
+```
+
+The logger now classifies rather than blanket-demotes:
+
+- `INVALID/NOT_READY/UNSUPPORTED/COMPLEX` -> INFO;
+- unknown status -> INFO;
+- unexpected post-preflight EXIT `DIALOG_READY/MESSAGE_READY` -> INFO;
+- routine `NO_EVENT/NO_ELIGIBLE` and supported success outcomes -> TRACE.
+
+No gameplay, rollback, rendering, timer, owner or event-execution behavior
+changes.
+
+### CI / artifact
+
+CI #1230: **SUCCESS**
+
+```text
+static RAM       45064 B
+linked Flash    758389 B
+firmware.bin    758752 B
+artifact id     11173629995
+artifact digest sha256:f124decd87869fd0d4fdfe44cfeb2140cb4f3ca4b9b13ed423678a9e3bc378b8
+firmware sha256 b13cc46634df5e9ff81ac003bdd5a2d649441a3c2980a1ec3510d8812dee7ac9
+ELF sha256      806058fcbb7bbbd38636c580676f73f6ebc3d0f426ad53400d46771601d5e7a7
+active wraps    49
+```
+
+Relative to the V21 code image, static RAM is unchanged and linked Flash grows
+by 600 B because the detailed phase diagnostic format is intentionally present
+again in the INFO firmware.
+
+### Real-CYD regression validation
+
+The correction is hardware-regression validated on the normal `esp32-cyd`
+firmware. The run exercises ordinary movement, turning, resource pickups,
+regular doors, move-triggered door close, opcode-26 MOVE dialog, multiple SELECT
+dialogs with script-state/topology continuation, fire actions and repeated
+renderer compact-guard recovery.
+
+Routine movement remains compact:
+
+```text
+[RESIDENTGAMEPLAY] QUEUE ...
+[RESIDENTGAMEPLAY] MOVE ... committed=yes
+```
+
+No generic routine `MOVEEVENT EXIT-PREFLIGHT / ENTER-PREFLIGHT / EXIT / ENTER`
+records appear. Meaningful records remain visible:
+
+```text
+[MOVEEVENT] COMMIT ...
+[MOVEEVENT] WORLD-READY ...
+[NATIVEFRAME] LEGACY_GUARD ...
+[NATIVEFRAME] RETRY ...
+[NATIVEFRAME] RECOVERED ...
+```
+
+Memory witnesses remain stable by owner phase:
+
+```text
+before lazy dialog owner:       heap=93448 heap8=27524 largest8=18420
+after DIALOGCHAIN owner:        heap=92412 heap8=26488 largest8=18420
+after topology snapshot owner:  heap=89988 heap8=24064 largest8=18420
+```
+
+The hardware run did **not** naturally trigger
+`INVALID/NOT_READY/UNSUPPORTED/COMPLEX`. Therefore this milestone records the
+unsafe-status INFO classification as source/CI verified, while the real CYD
+proves the correction does not reintroduce hot-path serial spam or regress
+normal gameplay.
+
+The hardware-tested correction boundary is
+`2c855bd217999453ec21246937ef6730e1697f3c`. Commits after this boundary for
+the correction are documentation-only.
+
