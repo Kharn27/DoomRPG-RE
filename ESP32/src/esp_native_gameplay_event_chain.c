@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "doomrpg_log.h"
 #include "esp_map_automap_state.h"
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
@@ -78,7 +79,9 @@ typedef struct ChainTransaction_s {
 static ChainTransaction* transactionOwner;
 #define transaction (*transactionOwner)
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
 static uint8_t corpusLogged;
+#endif
 
 static int currentPlayerKeys(uint32_t* outKeys) {
     const EspNativeGameplayPlayerState* player =
@@ -765,6 +768,7 @@ int __wrap_EspNativeGameplayDialog_rollbackResume(
     return ok;
 }
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
 void EspNativeGameplayEventChain_logCorpus(void) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     uint16_t counts[CHAIN_OPCODE_LIMIT];
@@ -828,3 +832,4 @@ void __wrap_EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayEventChain_logCorpus();
     __real_EspNativeResidentGameplay_service(doomRpg);
 }
+#endif
