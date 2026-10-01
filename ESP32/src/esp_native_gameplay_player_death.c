@@ -11,6 +11,7 @@
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_save_ui.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
 
@@ -20,6 +21,18 @@
 #define DEATH_VIEWPORT_Y 20U
 #define DEATH_VIEWPORT_HEIGHT 80U
 #define DEATH_VIEWPORT_WIDTH 160U
+#define DEATH_SCREEN_HEIGHT 120U
+
+#define DEATH_MENU_LOAD 1U
+#define DEATH_MENU_JUNCTION 2U
+#define DEATH_MENU_RETRY 3U
+#define DEATH_MENU_MAIN 4U
+
+#define DEATH_MENU_LEFT 12
+#define DEATH_MENU_RIGHT 147
+#define DEATH_MENU_ROW0_TOP 26
+#define DEATH_MENU_ROW_HEIGHT 19
+#define DEATH_MENU_ROW_GAP 2
 
 typedef struct EspNativeGameplayPlayerDeathState_s {
     uint32_t sequence;
@@ -32,6 +45,10 @@ typedef struct EspNativeGameplayPlayerDeathState_s {
     uint8_t phase;
     uint8_t deathRand;
     uint8_t lastFade;
+    uint8_t menuPainted;
+    uint8_t loadAvailable;
+    uint8_t pendingAction;
+    uint8_t menuTaps;
 } EspNativeGameplayPlayerDeathState;
 
 static EspNativeGameplayPlayerDeathState deathState;
@@ -86,6 +103,149 @@ static int fadeViewport(uint8_t fade) {
         }
     }
     return 1;
+}
+
+static void fillRect(uint16_t* fb, int left, int top, int right, int bottom,
+                     uint16_t color) {
+    int x;
+    int y;
+    if (fb == NULL) return;
+    for (y = top; y <= bottom; ++y) {
+        if (y < 0 || y >= (int)DEATH_SCREEN_HEIGHT) continue;
+        for (x = left; x <= right; ++x) {
+            if (x < 0 || x >= (int)DEATH_VIEWPORT_WIDTH) continue;
+            fb[y * DEATH_VIEWPORT_WIDTH + x] = color;
+        }
+    }
+}
+
+static void drawRect(uint16_t* fb, int left, int top, int right, int bottom,
+                     uint16_t color) {
+    int x;
+    int y;
+    if (fb == NULL) return;
+    for (x = left; x <= right; ++x) {
+        if (x < 0 || x >= (int)DEATH_VIEWPORT_WIDTH) continue;
+        if (top >= 0 && top < (int)DEATH_SCREEN_HEIGHT)
+            fb[top * DEATH_VIEWPORT_WIDTH + x] = color;
+        if (bottom >= 0 && bottom < (int)DEATH_SCREEN_HEIGHT)
+            fb[bottom * DEATH_VIEWPORT_WIDTH + x] = color;
+    }
+    for (y = top; y <= bottom; ++y) {
+        if (y < 0 || y >= (int)DEATH_SCREEN_HEIGHT) continue;
+        if (left >= 0 && left < (int)DEATH_VIEWPORT_WIDTH)
+            fb[y * DEATH_VIEWPORT_WIDTH + left] = color;
+        if (right >= 0 && right < (int)DEATH_VIEWPORT_WIDTH)
+            fb[y * DEATH_VIEWPORT_WIDTH + right] = color;
+    }
+}
+
+static const uint8_t* glyph5x7(char ch) {
+    static const uint8_t A[7]={0x0e,0x11,0x11,0x1f,0x11,0x11,0x11};
+    static const uint8_t C[7]={0x0e,0x11,0x10,0x10,0x10,0x11,0x0e};
+    static const uint8_t D[7]={0x1e,0x11,0x11,0x11,0x11,0x11,0x1e};
+    static const uint8_t E[7]={0x1f,0x10,0x10,0x1e,0x10,0x10,0x1f};
+    static const uint8_t G[7]={0x0e,0x11,0x10,0x17,0x11,0x11,0x0f};
+    static const uint8_t I[7]={0x0e,0x04,0x04,0x04,0x04,0x04,0x0e};
+    static const uint8_t J[7]={0x07,0x02,0x02,0x02,0x12,0x12,0x0c};
+    static const uint8_t L[7]={0x10,0x10,0x10,0x10,0x10,0x10,0x1f};
+    static const uint8_t M[7]={0x11,0x1b,0x15,0x15,0x11,0x11,0x11};
+    static const uint8_t N[7]={0x11,0x19,0x19,0x15,0x13,0x13,0x11};
+    static const uint8_t O[7]={0x0e,0x11,0x11,0x11,0x11,0x11,0x0e};
+    static const uint8_t R[7]={0x1e,0x11,0x11,0x1e,0x14,0x12,0x11};
+    static const uint8_t S[7]={0x0f,0x10,0x10,0x0e,0x01,0x01,0x1e};
+    static const uint8_t T[7]={0x1f,0x04,0x04,0x04,0x04,0x04,0x04};
+    static const uint8_t U[7]={0x11,0x11,0x11,0x11,0x11,0x11,0x0e};
+    static const uint8_t V[7]={0x11,0x11,0x11,0x11,0x11,0x0a,0x04};
+    static const uint8_t Y[7]={0x11,0x11,0x0a,0x04,0x04,0x04,0x04};
+    static const uint8_t blank[7]={0,0,0,0,0,0,0};
+    switch (ch) {
+        case 'A': return A; case 'C': return C; case 'D': return D;
+        case 'E': return E; case 'G': return G; case 'I': return I;
+        case 'J': return J; case 'L': return L; case 'M': return M;
+        case 'N': return N; case 'O': return O; case 'R': return R;
+        case 'S': return S; case 'T': return T; case 'U': return U;
+        case 'V': return V; case 'Y': return Y; default: return blank;
+    }
+}
+
+static void drawText5x7(uint16_t* fb, int x, int y, const char* text,
+                        uint16_t color) {
+    int cx = x;
+    if (fb == NULL || text == NULL) return;
+    while (*text != '\0') {
+        const uint8_t* g = glyph5x7(*text++);
+        int row;
+        for (row = 0; row < 7; ++row) {
+            int col;
+            for (col = 0; col < 5; ++col) {
+                if ((g[row] & (1U << (4 - col))) != 0U) {
+                    int px = cx + col;
+                    int py = y + row;
+                    if (px >= 0 && px < (int)DEATH_VIEWPORT_WIDTH &&
+                        py >= 0 && py < (int)DEATH_SCREEN_HEIGHT) {
+                        fb[py * DEATH_VIEWPORT_WIDTH + px] = color;
+                    }
+                }
+            }
+        }
+        cx += 6;
+    }
+}
+
+static int textWidth5x7(const char* text) {
+    int n = 0;
+    if (text == NULL) return 0;
+    while (*text++ != '\0') ++n;
+    return n > 0 ? n * 6 - 1 : 0;
+}
+
+static void drawCentered5x7(uint16_t* fb, int y, const char* text,
+                            uint16_t color) {
+    int w = textWidth5x7(text);
+    drawText5x7(fb, ((int)DEATH_VIEWPORT_WIDTH - w) / 2, y, text, color);
+}
+
+static int menuRowForY(int y) {
+    int row;
+    for (row = 0; row < 4; ++row) {
+        int top = DEATH_MENU_ROW0_TOP +
+                  row * (DEATH_MENU_ROW_HEIGHT + DEATH_MENU_ROW_GAP);
+        int bottom = top + DEATH_MENU_ROW_HEIGHT - 1;
+        if (y >= top && y <= bottom) return row + 1;
+    }
+    return 0;
+}
+
+static int paintDeathMenu(void) {
+    uint16_t* fb = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    size_t expected =
+        (size_t)DEATH_VIEWPORT_WIDTH * DEATH_SCREEN_HEIGHT * sizeof(uint16_t);
+    static const char* labels[4] = {
+        "LOAD SAVED GAME", "GO TO JUNCTION", "RETRY SECTOR", "MAIN MENU"
+    };
+    int row;
+
+    if (fb == NULL ||
+        Esp32PlatformVideo_framebufferSizeBytes() != expected) return 0;
+
+    fillRect(fb, 0, 0, DEATH_VIEWPORT_WIDTH - 1,
+             DEATH_SCREEN_HEIGHT - 1, 0x0000U);
+    drawCentered5x7(fb, 8, "YOU DIED", 0xf800U);
+
+    for (row = 0; row < 4; ++row) {
+        int top = DEATH_MENU_ROW0_TOP +
+                  row * (DEATH_MENU_ROW_HEIGHT + DEATH_MENU_ROW_GAP);
+        int bottom = top + DEATH_MENU_ROW_HEIGHT - 1;
+        uint16_t border = 0x8410U;
+        uint16_t text = 0xffffU;
+        if (row == 0 && deathState.loadAvailable == 0U) {
+            text = 0x7befU;
+        }
+        drawRect(fb, DEATH_MENU_LEFT, top, DEATH_MENU_RIGHT, bottom, border);
+        drawCentered5x7(fb, top + 6, labels[row], text);
+    }
+    return Esp32PlatformVideo_present();
 }
 
 void EspNativeGameplayPlayerDeath_reset(void) {
