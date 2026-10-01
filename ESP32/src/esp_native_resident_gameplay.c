@@ -117,18 +117,29 @@ static void onGameplayTap(int16_t screenX,
     (void)rawY;
 
     if (!gameplayState.active || gameplayState.failed) return;
-    if (EspNativeGameplayPlayerDeath_isActive()) {
-        ++gameplayState.taps;
-        printf("[PLAYERDEATH] INPUT-BLOCK tap=%u physical=%d,%d owner=ST_DYING queued=no\n",
-               (unsigned int)gameplayState.taps,
-               (int)screenX,
-               (int)screenY);
-        return;
-    }
     if (screenX < 0 || screenY < 0) return;
 
     logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     logicalY = screenY / DOOMRPG_INTEGER_SCALE;
+
+    if (EspNativeGameplayPlayerDeath_isActive()) {
+        ++gameplayState.taps;
+        if (EspNativeGameplayPlayerDeath_isMenuReady()) {
+            if (!EspNativeGameplayPlayerDeath_handleTap(logicalX, logicalY)) {
+                printf("[DEATHMENU] TAP-IGNORED tap=%u logical=%d,%d queued=no\n",
+                       (unsigned int)gameplayState.taps,
+                       logicalX,
+                       logicalY);
+            }
+        }
+        else {
+            printf("[PLAYERDEATH] INPUT-BLOCK tap=%u logical=%d,%d owner=ST_DYING queued=no\n",
+                   (unsigned int)gameplayState.taps,
+                   logicalX,
+                   logicalY);
+        }
+        return;
+    }
     if (logicalX < 0 || logicalX >= DOOMRPG_LOGICAL_WIDTH ||
         logicalY < 0 || logicalY >= DOOMRPG_LOGICAL_HEIGHT) {
         return;
