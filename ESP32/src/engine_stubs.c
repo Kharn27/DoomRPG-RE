@@ -9,7 +9,6 @@
 #include "Hud.h"
 #include "Menu.h"
 #include "MenuSystem.h"
-#include "ParticleSystem.h"
 #include "Player.h"
 #include "Render.h"
 #include "SDL_Video.h"
@@ -136,7 +135,7 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
     metrics->combat = sizeof(Combat_t);
     metrics->supportObjects = sizeof(Menu_t) + sizeof(MenuSystem_t) +
                               sizeof(Hud_t) + sizeof(Sound_t) +
-                              sizeof(EntityDef_t) + sizeof(ParticleSystem_t);
+                              sizeof(EntityDef_t);
     metrics->totalInitialObjects = metrics->doomRpg + metrics->doomCanvas +
         metrics->render + metrics->game + metrics->player + metrics->combat +
         metrics->supportObjects;
@@ -166,7 +165,7 @@ uint32_t DoomRPG_getLargest8BitBlock(void) {
 const char* DoomRPG_coreStageName(uint8_t stage) {
     static const char* const names[DOOMRPG_CORE_STAGE_COUNT] = {
         "DoomRPG", "DoomCanvas", "Render", "Menu", "MenuSystem", "Hud",
-        "Sound", "EntityDef", "Game", "Player", "ParticleSystem", "Combat"
+        "Sound", "EntityDef", "Game", "Player", "Combat"
     };
     return stage < DOOMRPG_CORE_STAGE_COUNT ? names[stage] : "unknown";
 }
@@ -301,12 +300,32 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
                      Game_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_PLAYER, player,
                      Player_init(NULL, doomRpg));
-    INIT_CORE_OBJECT(DOOMRPG_CORE_PARTICLE_SYSTEM, particleSystem,
-                     ParticleSystem_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_COMBAT, combat,
                      Combat_init(NULL, doomRpg));
 
 #undef INIT_CORE_OBJECT
+
+    /*
+     * Native gameplay owns its bounded gib overlay in EspNativeGameplayGibFx.
+     * The inherited ParticleSystem object is no longer a production owner.
+     * DoomRPG_t is calloc'd, so the legacy pointer must remain NULL forever on
+     * ESP32 unless a future milestone explicitly introduces a native owner.
+     */
+    if (doomRpg->particleSystem != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.bytesUsed =
+            coreInitReport.heapBefore >= coreInitReport.heapAfter
+                ? coreInitReport.heapBefore - coreInitReport.heapAfter
+                : 0;
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED retired ParticleSystem pointer=%p expected=NULL\n",
+               (void*)doomRpg->particleSystem);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] ParticleSystem retired object=NULL owner=native-gibfx\n");
 
     coreInitReport.clipWidth = (uint16_t)doomRpg->doomCanvas->clipRect.w;
     coreInitReport.clipHeight = (uint16_t)doomRpg->doomCanvas->clipRect.h;
