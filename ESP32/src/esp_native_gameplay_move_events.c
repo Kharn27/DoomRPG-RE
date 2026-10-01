@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_map_catalog.h"
 #include "esp_map_event_filter.h"
@@ -1029,7 +1030,7 @@ static void logPhase(const char* phase,
         msgActive = msg->active;
         msgString = msg->active != 0U ? msg->text.index : 0U;
     }
-    printf("[MOVEEVENT] %s seq=%u tile=%u flags=%08x status=%s event=%u eligible=%u opcode=%u unsupported=%u line=%u open=%u->%u locked=%u statusMsg=%u/string%u stateEvent=%u state=%u->%u removed=%u->%u mutation=%s rollback=%u\n",
+    DRPG_LOGT("[MOVEEVENT] %s seq=%u tile=%u flags=%08x status=%s event=%u eligible=%u opcode=%u unsupported=%u line=%u open=%u->%u locked=%u statusMsg=%u/string%u stateEvent=%u state=%u->%u removed=%u->%u mutation=%s rollback=%u\n",
            phase,
            (unsigned int)sequence,
            (unsigned int)result->tile,

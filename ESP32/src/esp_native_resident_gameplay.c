@@ -238,7 +238,7 @@ static void onGameplayTap(int16_t screenX,
                    : (EspNativeGameplayDialog_isActive()
                           ? "DIALOG"
                           : (automapActive() ? "AUTOMAP" : "WORLD")));
-        printf("[TOUCHFEEDBACK] FLASH zone=%u action=%s edits=%u hold=%ums frame=%08x->%08x style=semantic-neon-double-ring+vector-glyph\n",
+        DRPG_LOGT("[TOUCHFEEDBACK] FLASH zone=%u action=%s edits=%u hold=%ums frame=%08x->%08x style=semantic-neon-double-ring+vector-glyph\n",
                (unsigned int)feedbackStats.zone,
                EspNativeGameplayInput_actionName(feedbackStats.action),
                (unsigned int)feedbackStats.edits,
@@ -528,7 +528,7 @@ static void serviceMove(Render_t* render,
                 disableGameplay("automap-uncover-move-dialog");
                 return;
             }
-            printf("[AUTOMAP] UNCOVER reason=MOVE-DIALOG tile=%u mutated=%u state=ready\n",
+            DRPG_LOGT("[AUTOMAP] UNCOVER reason=MOVE-DIALOG tile=%u mutated=%u state=ready\n",
                    (unsigned int)result.destTile,
                    (unsigned int)uncovered);
         }
@@ -552,7 +552,7 @@ static void serviceMove(Render_t* render,
             disableGameplay("automap-uncover-move");
             return;
         }
-        printf("[AUTOMAP] UNCOVER reason=MOVE tile=%u mutated=%u state=ready\n",
+        DRPG_LOGT("[AUTOMAP] UNCOVER reason=MOVE tile=%u mutated=%u state=ready\n",
                (unsigned int)result.destTile,
                (unsigned int)uncovered);
     }
@@ -1757,7 +1757,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             disableGameplay("touch-feedback-restore");
             return;
         }
-        printf("[TOUCHFEEDBACK] RESTORE zone=%u action=%s edits=%u conflicts=%u frame=%08x->%08x baselineExact=%s newerOverlayWins=yes idle=invisible\n",
+        DRPG_LOGT("[TOUCHFEEDBACK] RESTORE zone=%u action=%s edits=%u conflicts=%u frame=%08x->%08x baselineExact=%s newerOverlayWins=yes idle=invisible\n",
                (unsigned int)feedbackStats.zone,
                EspNativeGameplayInput_actionName(feedbackStats.action),
                (unsigned int)feedbackStats.edits,
