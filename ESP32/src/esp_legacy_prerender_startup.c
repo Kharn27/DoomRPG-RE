@@ -4,7 +4,6 @@
 #include "DoomRPG.h"
 #include "EntityDef.h"
 #include "MenuSystem.h"
-#include "ParticleSystem.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_legacy_prerender_startup.h"
 
@@ -26,7 +25,6 @@ static uint32_t largest8Block(void) {
 
 static int preflightResources(void) {
     static const char* const required[] = {
-        "gibs_24.bmp",
         "p.bmp",
         "q.bmp",
         "j.bmp",
@@ -86,8 +84,8 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
         return 0;
     }
 
-    if (doomRpg == NULL || doomRpg->particleSystem == NULL ||
-        doomRpg->menuSystem == NULL || doomRpg->entityDef == NULL) {
+    if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
+        doomRpg->entityDef == NULL) {
         printf("[PRERENDER] Core object graph incomplete; probe refused\n");
         return 0;
     }
@@ -100,12 +98,6 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
     largestBefore = largest8Block();
     printf("[PRERENDER] Begin: heap8=%u largest8=%u\n",
            (unsigned int)heapBefore, (unsigned int)largestBefore);
-
-    before = heap8Free();
-    printf("[PRERENDER] -> ParticleSystem_startup()\n");
-    ParticleSystem_startup(doomRpg->particleSystem);
-    after = heap8Free();
-    printStageResult("ParticleSystem_startup", before, after);
 
     before = heap8Free();
     printf("[PRERENDER] -> MenuSystem_startup()\n");
@@ -137,7 +129,7 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
            (unsigned int)(heapBefore >= heap8Free() ? heapBefore - heap8Free() : 0),
            (unsigned int)heap8Free(),
            (unsigned int)largest8Block());
-    printf("[PRERENDER] Render_startup / Game_loadConfig still NOT executed\n");
+    printf("[PRERENDER] ParticleSystem startup retired; Render_startup / Game_loadConfig still NOT executed\n");
 
     return 1;
 }
