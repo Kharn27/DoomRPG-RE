@@ -31,6 +31,7 @@
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_pass_turn.h"
+#include "esp_native_gameplay_player_death.h"
 #include "esp_native_gameplay_password.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_select.h"
@@ -116,6 +117,14 @@ static void onGameplayTap(int16_t screenX,
     (void)rawY;
 
     if (!gameplayState.active || gameplayState.failed) return;
+    if (EspNativeGameplayPlayerDeath_isActive()) {
+        ++gameplayState.taps;
+        printf("[PLAYERDEATH] INPUT-BLOCK tap=%u physical=%d,%d owner=ST_DYING queued=no\n",
+               (unsigned int)gameplayState.taps,
+               (int)screenX,
+               (int)screenY);
+        return;
+    }
     if (screenX < 0 || screenY < 0) return;
 
     logicalX = screenX / DOOMRPG_INTEGER_SCALE;
@@ -1622,6 +1631,7 @@ void EspNativeResidentGameplay_reset(void) {
     EspNativeGameplayFacingLabel_reset();
     EspNativeGameplayControls_reset();
     EspNativeGameplayInput_reset();
+    EspNativeGameplayPlayerDeath_reset();
     memset(&gameplayState, 0, sizeof(gameplayState));
 }
 
@@ -1747,6 +1757,13 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
 
     if (doomRpg == NULL || doomRpg->render == NULL) {
         disableGameplay("missing-render");
+        return;
+    }
+
+    if (EspNativeGameplayPlayerDeath_isActive()) {
+        if (!EspNativeGameplayPlayerDeath_service(doomRpg)) {
+            disableGameplay("player-death-service");
+        }
         return;
     }
 
@@ -1964,7 +1981,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_PASS_TURN:
-        (void)EspNativeGameplayPassTurn_execute(&intent);
+        (void)EspNativeGameplayPassTurn_execute(doomRpg, &intent);
         break;
 
     case ESP_NATIVE_GAMEPLAY_ACTION_NEXT_WEAPON:
