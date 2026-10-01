@@ -13,16 +13,16 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = fb3b4ee310ccc54d7301dcdfbba9d4648e17c38a
-branch = agent/esp32-consolidation-first-frame-diagnostic-wrap-v15
-hardware-tested code boundary = 5460c689b708468e3bdd618d0000753159a24109
-CI = esp32-cyd #1202 SUCCESS
-static RAM = 45120 B
-flash = 772161 B
-firmware.bin = 772528 B
-artifact id = 11121161150
-hardware = production first-frame route executes directly; historical COLORSTATS/BMP interception is bringup-only
-status = HARDWARE PASS; 51 active linker wraps
+current main = 8c208baf2d7e55fc84f13bb59a5b2479703837fd
+branch = agent/esp32-consolidation-log-levels-v16
+hardware-tested code boundary = 5a320d50a5f88646382db1211114a31b671b34b2
+CI = esp32-cyd #1209 SUCCESS
+static RAM = 45080 B
+linked Flash = 767581 B
+firmware.bin = 767952 B
+artifact id = 11151256017
+hardware = normal INFO logging validated through cold boot, intro, Entrance session and live gameplay
+status = HARDWARE PASS; 51 active linker wraps unchanged
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1396,3 +1396,26 @@ no COLORSTATS line, then `ENGINESESSION READY` with
 
 Detailed milestone:
 [MILESTONE_ESP32_CONSOLIDATION_FIRST_FRAME_DIAGNOSTIC_WRAP_V15.md](MILESTONE_ESP32_CONSOLIDATION_FIRST_FRAME_DIAGNOSTIC_WRAP_V15.md).
+
+
+## Compile-time logging levels — REAL-CYD PASS (2026-10-01)
+
+V16 establishes `ESP32/include/doomrpg_log.h` as the common C/C++ logging
+policy with `DRPG_LOGE/I/D/T`. Normal `esp32-cyd` defaults to INFO;
+`esp32-cyd-bringup` defines TRACE. The policy is compile-time and has no
+runtime owner, allocator, parser or persistence.
+
+The first migration removes always-on hot VIDEO/PAKIO/plane/sprite/RNG
+profiling from the INFO image while preserving errors, operational transitions
+and ALIVE. Crate/interact census detail is DEBUG.
+
+Hardware-tested code: `5a320d50a5f88646382db1211114a31b671b34b2`.
+CI #1209: 45080 B RAM, 767581 B linked Flash, 767952 B firmware.bin.
+All 51 linker wrappers remain the identical set from merged V15 main.
+
+The real CYD reaches FIRST_FRAME and ENGINESESSION READY with
+`shapeData=0x0 mediaTexels=0x0`, then commits multiple gameplay actions with
+the migrated TRACE spam absent from the runtime log.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_LOG_LEVELS_V16.md](MILESTONE_ESP32_CONSOLIDATION_LOG_LEVELS_V16.md).
