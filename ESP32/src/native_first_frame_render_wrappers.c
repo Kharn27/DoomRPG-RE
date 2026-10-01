@@ -8,6 +8,7 @@
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
+#include "doomrpg_log.h"
 #include "esp_map_runtime.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_graphics_catalog.h"
@@ -39,16 +40,19 @@ static int nativeCompactWorldContext(const Render_t* render) {
            render->shapeData == NULL && render->mediaTexels == NULL;
 }
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
 static uint32_t elapsedMicros(int64_t start) {
     int64_t elapsed = esp_timer_get_time() - start;
     if (elapsed <= 0) return 0U;
     if ((uint64_t)elapsed > UINT32_MAX) return UINT32_MAX;
     return (uint32_t)elapsed;
 }
+#endif
 
 void __wrap_Render_initColumnScale(Render_t* render) {
     __real_Render_initColumnScale(render);
     if (nativeCompactWorldContext(render)) {
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
         int64_t start;
         uint32_t micros;
         int ok;
@@ -62,14 +66,12 @@ void __wrap_Render_initColumnScale(Render_t* render) {
         start = esp_timer_get_time();
         ok = EspNativePlaneRenderer_render(render);
         micros = elapsedMicros(start);
-
-        /* Capture time before printing so this diagnostic line is not charged
-         * to the measured plane phase. The existing NATIVEPLANE line remains
-         * inside EspNativePlaneRenderer_render() and is therefore part of the
-         * current production cost being audited. */
-        printf("[PLANEPROFILE] us=%u ok=%u\n",
-               (unsigned int)micros,
-               (unsigned int)(ok != 0));
+        DRPG_LOGT("[PLANEPROFILE] us=%u ok=%u\n",
+                  (unsigned int)micros,
+                  (unsigned int)(ok != 0));
+#else
+        (void)EspNativePlaneRenderer_render(render);
+#endif
     }
 }
 

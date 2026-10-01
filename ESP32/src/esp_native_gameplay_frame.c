@@ -9,6 +9,7 @@
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
+#include "doomrpg_log.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_action_engine.h"
@@ -240,7 +241,7 @@ int EspNativeGameplayFrame_renderTurn(
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     stats->spriteMicros = elapsedMicros(phaseStart);
     EspAssetPack_residentGetStats(&spriteStorageAfter);
-    printf("[SPRITEPROFILE] us=%u logicalReads=%u frameLoads=%u glowLoads=%u unique=%u frameBytes=%u glowBytes=%u physicalReads=%u physicalBytes=%u range=%uH/%uM/%uS/%uB entry=%uH/%uM resident=%u cache=%u/%u entries=%u/%u large=%u\n",
+    DRPG_LOGT("[SPRITEPROFILE] us=%u logicalReads=%u frameLoads=%u glowLoads=%u unique=%u frameBytes=%u glowBytes=%u physicalReads=%u physicalBytes=%u range=%uH/%uM/%uS/%uB entry=%uH/%uM resident=%u cache=%u/%u entries=%u/%u large=%u\n",
            (unsigned int)stats->spriteMicros,
            (unsigned int)sprites->packReads,
            (unsigned int)sprites->frameLoads,

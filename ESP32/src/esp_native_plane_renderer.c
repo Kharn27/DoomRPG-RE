@@ -8,6 +8,7 @@
 #include "Render.h"
 
 #include "esp_asset_pack.h"
+#include "doomrpg_log.h"
 #include "esp_map_runtime.h"
 #include "esp_native_plane_renderer.h"
 
@@ -235,12 +236,12 @@ static int initCache(PlaneWork* work) {
         work->cache[i].texels = (uint8_t*)malloc(PLANE_TEXTURE_BYTES);
         if (work->cache[i].texels == NULL) {
             if (i == 0U) {
-                printf("[NATIVEPLANE] CACHE-FAILED slots=0/%u leaseBytes=%u\n",
+                DRPG_LOGE("[NATIVEPLANE] CACHE-FAILED slots=0/%u leaseBytes=%u\n",
                        (unsigned int)PLANE_CACHE_SLOTS,
                        (unsigned int)PLANE_TEXTURE_BYTES);
                 return 0;
             }
-            printf("[NATIVEPLANE] CACHE-FALLBACK slots=%u/%u leaseBytes=%u totalLeaseBytes=%u\n",
+            DRPG_LOGI("[NATIVEPLANE] CACHE-FALLBACK slots=%u/%u leaseBytes=%u totalLeaseBytes=%u\n",
                    (unsigned int)i,
                    (unsigned int)PLANE_CACHE_SLOTS,
                    (unsigned int)PLANE_TEXTURE_BYTES,
@@ -455,7 +456,7 @@ int EspNativePlaneRenderer_render(struct Render_s* renderBase) {
      * retain their proven allocation policy. */
     work = (PlaneWork*)malloc(sizeof(*work));
     if (work == NULL) {
-        printf("[NATIVEPLANE] FAILED transient workspace allocation bytes=%u\n",
+        DRPG_LOGE("[NATIVEPLANE] FAILED transient workspace allocation bytes=%u\n",
                (unsigned int)sizeof(*work));
         return 0;
     }
@@ -496,7 +497,7 @@ done:
     free(work);
 
     if (ok) {
-        printf("[NATIVEPLANE] rows=%u pixels=%u textures=%u cache=%uH/%uM/%uE reads=%uB\n",
+        DRPG_LOGT("[NATIVEPLANE] rows=%u pixels=%u textures=%u cache=%uH/%uM/%uE reads=%uB\n",
                (unsigned int)planeStats.rowsRendered,
                (unsigned int)planeStats.pixelsRendered,
                (unsigned int)planeStats.uniqueLogicalTextures,
@@ -507,7 +508,7 @@ done:
     }
     else {
         EspNativePlaneRenderer_reset();
-        printf("[NATIVEPLANE] FAILED textured floor/ceiling reconstruction\n");
+        DRPG_LOGE("[NATIVEPLANE] FAILED textured floor/ceiling reconstruction\n");
     }
     return ok;
 }

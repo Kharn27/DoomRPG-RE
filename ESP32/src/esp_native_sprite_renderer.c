@@ -8,6 +8,7 @@
 #include "Render.h"
 
 #include "esp_asset_pack.h"
+#include "doomrpg_log.h"
 #include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
@@ -1179,7 +1180,7 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
     saveScratch(render, saved);
     if (scratchOwnerLogged == 0U) {
         scratchOwnerLogged = 1U;
-        printf("[SPRITEPROFILE] STACK-OWNER scratchBytes=%u storage=heap stackScratchBytes=0 workspaceBytes=%u reason=loopTask-headroom\n",
+        DRPG_LOGD("[SPRITEPROFILE] STACK-OWNER scratchBytes=%u storage=heap stackScratchBytes=0 workspaceBytes=%u reason=loopTask-headroom\n",
                (unsigned int)sizeof(*saved),
                (unsigned int)sizeof(*workspace));
     }
