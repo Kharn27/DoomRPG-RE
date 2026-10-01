@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_map_catalog.h"
 #include "esp_map_change_map_state.h"
@@ -40,7 +41,9 @@ typedef struct EspNativeGameplayTransitionDoorScratch_s {
 
 static EspNativeGameplayTransitionState transitionState;
 static EspNativeGameplayTransitionDoorScratch transitionDoorScratch;
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
 static uint8_t junctionExitCensusDone;
+#endif
 
 void __real_EspNativeGameplayInput_reset(void);
 
@@ -198,7 +201,9 @@ static EspNativeGameplayTransitionStatus findTransitionCommands(
 
 void EspNativeGameplayTransition_reset(void) {
     memset(&transitionState, 0, sizeof(transitionState));
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
     junctionExitCensusDone = 0U;
+#endif
 }
 
 int EspNativeGameplayTransition_isWaitingDoor(void) {
@@ -232,6 +237,7 @@ const EspNativeGameplayTransitionState* EspNativeGameplayTransition_view(void) {
     return transitionState.active != 0U ? &transitionState : NULL;
 }
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
 int EspNativeGameplayTransition_probeJunctionExitCensus(void) {
     const EspPlayerViewState* view = EspPlayerView_view();
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
@@ -449,6 +455,7 @@ int EspNativeGameplayTransition_probeJunctionExitCensus(void) {
            (unsigned int)scriptAfter);
     return 1;
 }
+#endif
 
 EspNativeGameplayTransitionStatus EspNativeGameplayTransition_trySelect(
     const EspNativeGameplayInputState* intent,

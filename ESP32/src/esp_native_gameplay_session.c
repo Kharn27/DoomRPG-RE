@@ -9,6 +9,7 @@
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 
+#include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_first_frame.h"
@@ -750,10 +751,12 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                            (void*)doomRpg->render->shapeData : NULL,
                        doomRpg->render != NULL ?
                            (void*)doomRpg->render->mediaTexels : NULL);
-                /* Temporary read-only recovery probe for the next bounded
-                 * world-transition milestone. It is a no-op outside Junction
-                 * and must never gate gameplay readiness. */
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
+                /* Historical read-only Junction exit census. Keep it available
+                 * in DEBUG/TRACE bringup, but never execute it in normal INFO
+                 * gameplay readiness. */
                 (void)EspNativeGameplayTransition_probeJunctionExitCensus();
+#endif
             }
             return;
         }

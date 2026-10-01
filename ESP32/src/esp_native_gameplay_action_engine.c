@@ -7,6 +7,7 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+#include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
@@ -1451,7 +1452,7 @@ static int paintFeedback(uint8_t feedback) {
         }
 
         if (feedback != ACTION_FEEDBACK_NONE) {
-            printf("[ACTIONFEEDBACK] PAINT kind=%u text=\"%s\" chars=%u reads=%u bytes=%u present=caller durationMs=%u\n",
+            DRPG_LOGT("[ACTIONFEEDBACK] PAINT kind=%u text=\"%s\" chars=%u reads=%u bytes=%u present=caller durationMs=%u\n",
                    (unsigned int)feedback,
                    text,
                    (unsigned int)visible,
@@ -1460,7 +1461,7 @@ static int paintFeedback(uint8_t feedback) {
                    (unsigned int)FEEDBACK_DISPLAY_MS);
         }
         else {
-            printf("[FACINGLABEL] PAINT name=\"%s\" chars=%u source=%s index=%u priority=fallback reads=%u bytes=%u present=caller\n",
+            DRPG_LOGT("[FACINGLABEL] PAINT name=\"%s\" chars=%u source=%s index=%u priority=fallback reads=%u bytes=%u present=caller\n",
                    text,
                    (unsigned int)visible,
                    facingLabel != NULL && facingLabel->isLine != 0U
@@ -1476,12 +1477,12 @@ static int paintFeedback(uint8_t feedback) {
         }
     }
     else if (feedback != ACTION_FEEDBACK_NONE) {
-        printf("[ACTIONFEEDBACK] CLEAR mode=topbar-only reads=%u bytes=%u present=caller\n",
+        DRPG_LOGT("[ACTIONFEEDBACK] CLEAR mode=topbar-only reads=%u bytes=%u present=caller\n",
                (unsigned int)stats.packReads,
                (unsigned int)stats.bytesRead);
     }
     else {
-        printf("[FACINGLABEL] CLEAR source=none priority=fallback reads=%u bytes=%u present=caller\n",
+        DRPG_LOGT("[FACINGLABEL] CLEAR source=none priority=fallback reads=%u bytes=%u present=caller\n",
                (unsigned int)stats.packReads,
                (unsigned int)stats.bytesRead);
     }
@@ -1546,7 +1547,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
                    (unsigned int)feedback);
             return 0;
         }
-        printf("[ACTIONFEEDBACK] REFRESH kind=%u lease=preserved freshFrame=yes\n",
+        DRPG_LOGT("[ACTIONFEEDBACK] REFRESH kind=%u lease=preserved freshFrame=yes\n",
                (unsigned int)feedback);
     }
     else if ((actionState.framebufferFresh != 0U ||
@@ -2062,7 +2063,7 @@ static void logActionFrame(const ActionPending* pending,
                            const char* phase,
                            const EspNativeGameplayFrameStats* frame) {
     if (pending == NULL || phase == NULL || frame == NULL) return;
-    printf("[ACTIONENGINE] FRAME seq=%u route=%s phase=%s frame=%08x worldUs=%u spriteUs=%u hudUs=%u presentUs=%u totalUs=%u sprites=%u pixels=%u spriteReads=%u hudReads=%u presented=%u\n",
+    DRPG_LOGT("[ACTIONENGINE] FRAME seq=%u route=%s phase=%s frame=%08x worldUs=%u spriteUs=%u hudUs=%u presentUs=%u totalUs=%u sprites=%u pixels=%u spriteReads=%u hudReads=%u presented=%u\n",
            (unsigned int)pending->sequence,
            routeName((ActionRoute)pending->route),
            phase,

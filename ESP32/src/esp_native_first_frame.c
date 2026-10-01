@@ -7,6 +7,7 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+#include "doomrpg_log.h"
 #include "esp_asset_pack.h"
 #include "esp_map_catalog.h"
 #include "esp_map_line_state.h"
@@ -1340,7 +1341,7 @@ static int renderFrame(Render_t* render,
     outState->cacheHits = work->cacheHits;
     outState->cacheMisses = work->cacheMisses;
 
-    printf("[NATIVEFRAME] BSP map=%u resource=%s nodes=%u leaves=%u nodeCull=%u lines=%u backface=%u clip=%u occluder=%u spriteSpanDeferred=%u\n",
+    DRPG_LOGT("[NATIVEFRAME] BSP map=%u resource=%s nodes=%u leaves=%u nodeCull=%u lines=%u backface=%u clip=%u occluder=%u spriteSpanDeferred=%u\n",
            (unsigned int)playerView->targetMapId,
            resourceName,
            (unsigned int)render->nodeCount,
@@ -1351,7 +1352,7 @@ static int renderFrame(Render_t* render,
            (unsigned int)work->clipCulled,
            (unsigned int)work->occluderOnly,
            (unsigned int)work->spriteSpanSkipped);
-    printf("[NATIVEFRAME] WALL requests=%u draws=%u spans=%u pixels=%u cache=%uH/%uM/%uE resolvedTextures=%u animationTime=%u\n",
+    DRPG_LOGT("[NATIVEFRAME] WALL requests=%u draws=%u spans=%u pixels=%u cache=%uH/%uM/%uE resolvedTextures=%u animationTime=%u\n",
            (unsigned int)work->wallRequests,
            (unsigned int)work->wallDraws,
            (unsigned int)work->spanCalls,

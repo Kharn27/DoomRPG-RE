@@ -723,3 +723,10 @@ even when profiling output is disabled. Hot success summaries should generally
 be TRACE, but failure paths from the same owner must remain ERROR/INFO as
 appropriate. ALIVE stays INFO until a separate hardware-validated milestone
 changes its cadence or level.
+
+Read-only recovery census code is not production ownership. If an inventory or
+corpus probe is needed only for recovery, the normal INFO image should neither
+execute it nor retain a linker interception solely to reach it. Such probes may
+remain compiled/routed by `esp32-cyd-bringup` at DEBUG/TRACE while the
+permanent gameplay/transition owners stay direct. Map-specific recovery scans
+must never be a prerequisite for session readiness or a live transition.

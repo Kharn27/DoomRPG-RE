@@ -13,16 +13,16 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 8c208baf2d7e55fc84f13bb59a5b2479703837fd
-branch = agent/esp32-consolidation-log-levels-v16
-hardware-tested code boundary = 5a320d50a5f88646382db1211114a31b671b34b2
-CI = esp32-cyd #1209 SUCCESS
-static RAM = 45080 B
-linked Flash = 767581 B
-firmware.bin = 767952 B
-artifact id = 11151256017
-hardware = normal INFO logging validated through cold boot, intro, Entrance session and live gameplay
-status = HARDWARE PASS; 51 active linker wraps unchanged
+current main = 67950d6310ddb2fe4b48342200603674f6e71815
+branch = agent/esp32-consolidation-interaction-diagnostics-v17
+hardware-tested code boundary = 552ec9c529d1bd31a656c9847b0b267bacd713fa
+CI = esp32-cyd #1220 SUCCESS
+static RAM = 45064 B
+linked Flash = 759197 B
+firmware.bin = 759568 B
+artifact id = 11157510597
+hardware = normal INFO firmware validated through cold boot, intro, Entrance session and repeated MOVE/TURN/pickup/door gameplay
+status = HARDWARE PASS; repeated redraw success telemetry is TRACE-only; failure/recovery witnesses remain visible; 49 active linker wraps
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1419,3 +1419,88 @@ the migrated TRACE spam absent from the runtime log.
 
 Detailed milestone:
 [MILESTONE_ESP32_CONSOLIDATION_LOG_LEVELS_V16.md](MILESTONE_ESP32_CONSOLIDATION_LOG_LEVELS_V16.md).
+
+## Interaction / CHANGEMAP recovery diagnostics scoped to bringup — REAL-CYD PASS (2026-10-01)
+
+V17 hardware head `53b548b5adf0d09c2d1e1ed4b673a3ae8054cac2` removes the temporary
+`EspNativeGameplayInteractionInventory_log` wrapper from normal
+`esp32-cyd` and compile-time gates both the session census call and the
+historical CHANGEMAP corpus wrapper behind DEBUG/TRACE.
+
+The real transition engine is unchanged. Normal INFO firmware retains
+`EspNativeGameplayTransitionHandoff_service` and the complete native
+SAVEGAME/CHANGEMAP production route, but no longer executes or links the
+read-only recovery census.
+
+CI #1214 reports 45072 B static RAM / 764757 B linked Flash /
+765120 B firmware.bin. Final wrap count drops 51 -> 50. The reduction versus
+merged V16 main is 8 B RAM and 2824 B linked Flash.
+
+The real CYD reaches exact Entrance first-frame FNV `71ca7465`, then
+`ENGINESESSION READY` with `shapeData=0x0 mediaTexels=0x0`, commits
+MOVE/TURN, crate transform, dialog resume and resource pickup, with stable
+ALIVE witnesses and no `CHANGEMAPPROBE` or `INTERACTMAP` output.
+
+`INTERACTCORPUS` and `JUNCTIONEXITCENSUS` remain separate production
+diagnostic candidates and were not changed in this milestone.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_INTERACTION_DIAGNOSTICS_V17.md](MILESTONE_ESP32_CONSOLIDATION_INTERACTION_DIAGNOSTICS_V17.md).
+
+## Junction exit census scoped to DEBUG/TRACE — REAL-CYD PASS (2026-10-01)
+
+V18 hardware head `6733395845c289fa9f69cc6c61001c3a68f2d72d`
+compile-time gates the historical Junction exit census out of normal INFO
+firmware. The real transition and handoff owners are unchanged.
+
+CI #1216 reports 45072 B static RAM / 762617 B linked Flash /
+762976 B firmware.bin. The wrapper count remains 50. The normal ELF contains no
+`EspNativeGameplayTransition_probeJunctionExitCensus`, no
+`junctionExitCensusDone` and no `[JUNCTIONEXITCENSUS]` strings.
+
+The real CYD preserves exact Entrance first-frame FNV `71ca7465`,
+`shapeData=0x0 mediaTexels=0x0`, committed MOVE/TURN, crate/resource gameplay,
+regular-door open/close animation and stable ALIVE
+`heap=93444 heap8=27520 largest8=18420`.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md](MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md).
+
+## Interaction-chain corpus wrapper scoped to bringup — REAL-CYD PASS (2026-10-01)
+
+V19 hardware head `a2dffc4243701a5f78fa02abf39a81da68b5c128`
+removes the production wrapper around `EspNativeResidentGameplay_service`.
+That wrapper performed only the one-shot `INTERACTCORPUS` recovery scan;
+the normal product now calls the real resident gameplay service directly.
+
+CI #1218 reports 45064 B static RAM / 762021 B linked Flash /
+762384 B firmware.bin. Active wrappers drop 50 -> 49. The final normal ELF has
+no corpus function/state/strings or resident-gameplay diagnostic wrapper.
+
+The real CYD preserves exact Entrance first-frame FNV `71ca7465`,
+`shapeData=0x0 mediaTexels=0x0`, committed MOVE/TURN, crate transform,
+scientist dialog open/close and opcode-19 resume, with stable ALIVE. The
+pre-dialog gameplay heap increases by the exact expected 8 B versus V18.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md](MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md).
+
+## Hot redraw success telemetry moved to TRACE — REAL-CYD PASS (2026-10-01)
+
+V20 hardware head `552ec9c529d1bd31a656c9847b0b267bacd713fa`
+moves repeated success-only redraw summaries to TRACE while keeping renderer,
+gameplay and recovery logic unchanged.
+
+CI #1220 reports 45064 B static RAM / 759197 B linked Flash /
+759568 B firmware.bin. Active wrappers remain 49.
+
+The real CYD preserves exact Entrance first-frame FNV `71ca7465`,
+`shapeData=0x0 mediaTexels=0x0`, committed MOVE/TURN, resource pickups and
+regular-door operation. Repetitive `NATIVEFRAME`, weapon, facing-label,
+resident-frame, action-frame and dynamic-line success summaries no longer
+flood INFO, while `LEGACY_GUARD -> RETRY -> RECOVERED` remains visible and
+hardware-proven.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md](MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md).
+

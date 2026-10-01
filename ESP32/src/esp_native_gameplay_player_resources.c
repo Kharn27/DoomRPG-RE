@@ -9,6 +9,7 @@
 
 #include <esp_heap_caps.h>
 
+#include "doomrpg_log.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
@@ -985,7 +986,9 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     if (resources.view.fatal != 0U) return;
     __real_EspNativeGameplaySession_service(doomRpg);
     logCorpus();
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
     EspNativeGameplayInteractionInventory_log();
+#endif
     servicePendingMove(doomRpg);
     if (!EspNativeGameplayActionEngine_service(doomRpg)) {
         printf("[ACTIONENGINE] FAILED reason=service fatal=1\n");
