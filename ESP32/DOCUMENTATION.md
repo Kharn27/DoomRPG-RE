@@ -15,14 +15,14 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 67950d6310ddb2fe4b48342200603674f6e71815
 branch = agent/esp32-consolidation-interaction-diagnostics-v17
-hardware-tested code boundary = 6733395845c289fa9f69cc6c61001c3a68f2d72d
-CI = esp32-cyd #1216 SUCCESS
-static RAM = 45072 B
-linked Flash = 762617 B
-firmware.bin = 762976 B
-artifact id = 11154118496
-hardware = normal INFO firmware validated through cold boot, intro, Entrance session, MOVE/TURN, crate transform, resource pickup and bounded door animation
-status = HARDWARE PASS; Junction exit census is DEBUG/TRACE-only; 50 active linker wraps unchanged
+hardware-tested code boundary = a2dffc4243701a5f78fa02abf39a81da68b5c128
+CI = esp32-cyd #1218 SUCCESS
+static RAM = 45064 B
+linked Flash = 762021 B
+firmware.bin = 762384 B
+artifact id = 11155223388
+hardware = normal INFO firmware validated through cold boot, intro, Entrance session, MOVE/TURN, crate transform and dialog resume
+status = HARDWARE PASS; interaction-chain corpus wrapper is bringup-only; normal resident gameplay service is direct; 49 active linker wraps
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -1465,4 +1465,23 @@ regular-door open/close animation and stable ALIVE
 
 Detailed milestone:
 [MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md](MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md).
+
+## Interaction-chain corpus wrapper scoped to bringup — REAL-CYD PASS (2026-10-01)
+
+V19 hardware head `a2dffc4243701a5f78fa02abf39a81da68b5c128`
+removes the production wrapper around `EspNativeResidentGameplay_service`.
+That wrapper performed only the one-shot `INTERACTCORPUS` recovery scan;
+the normal product now calls the real resident gameplay service directly.
+
+CI #1218 reports 45064 B static RAM / 762021 B linked Flash /
+762384 B firmware.bin. Active wrappers drop 50 -> 49. The final normal ELF has
+no corpus function/state/strings or resident-gameplay diagnostic wrapper.
+
+The real CYD preserves exact Entrance first-frame FNV `71ca7465`,
+`shapeData=0x0 mediaTexels=0x0`, committed MOVE/TURN, crate transform,
+scientist dialog open/close and opcode-19 resume, with stable ALIVE. The
+pre-dialog gameplay heap increases by the exact expected 8 B versus V18.
+
+Detailed milestone:
+[MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md](MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md).
 

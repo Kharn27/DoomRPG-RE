@@ -7,17 +7,17 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 67950d6310ddb2fe4b48342200603674f6e71815
 branch = agent/esp32-consolidation-interaction-diagnostics-v17
-hardware-tested code boundary = 6733395845c289fa9f69cc6c61001c3a68f2d72d
-CI = esp32-cyd #1216 SUCCESS
-static RAM = 45072 B
-linked Flash = 762617 B
-firmware.bin = 762976 B
-artifact id = 11154118496
-artifact digest = sha256:fa4e82a7305596cfa36ca65897e3802573309db723d15e22e7993636d51d0ec6
-firmware sha256 = fccb055e5d3019612650f8740453480a8f0ad9e418ee5e709031d2b1024d6db0
-ELF sha256 = a8197c29053631f9dcd22968c331eb868f8c3606efca33ec598ac610ea24b8ec
-hardware = cold boot -> native MENU_MAIN -> START -> full intro -> Entrance -> FIRST_FRAME/READY -> MOVE/TURN/crate/resource/door gameplay PASS
-status = HARDWARE PASS; Junction exit census is DEBUG/TRACE-only and absent from normal INFO ELF; active linker wraps = 50
+hardware-tested code boundary = a2dffc4243701a5f78fa02abf39a81da68b5c128
+CI = esp32-cyd #1218 SUCCESS
+static RAM = 45064 B
+linked Flash = 762021 B
+firmware.bin = 762384 B
+artifact id = 11155223388
+artifact digest = sha256:647af5bbbc5bda0f091b4a5de83ba05d961cd0774f5ed50a62cfda17d2df6e55
+firmware sha256 = b394438989fcfcfa4c1d63e5142fc7e56c8c017aa7134af65344d7faf336fffb
+ELF sha256 = 540660ede5a2d4e5621e60c2d03c473f7c660ac09041e919e5c548187e7a96ba
+hardware = cold boot -> native MENU_MAIN -> START -> full intro -> Entrance -> FIRST_FRAME/READY -> MOVE/TURN/crate/dialog-resume gameplay PASS
+status = HARDWARE PASS; INTERACTCORPUS wrapper/census is bringup-only; normal resident gameplay service is direct; active linker wraps = 49
 ```
 
 ### Runtime ZIP asset source retirement — REAL-CYD PASS (2026-09-30)
@@ -2836,4 +2836,71 @@ one-shot/session-readiness diagnostic rather than a per-frame renderer path.
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md](MILESTONE_ESP32_CONSOLIDATION_JUNCTION_EXIT_CENSUS_V18.md)
+
+### Interaction-chain corpus wrapper scoped to bringup V19 — REAL-CYD PASS (2026-10-01)
+
+Hardware-tested code boundary: `a2dffc4243701a5f78fa02abf39a81da68b5c128`.
+
+V19 removes the production linker interception of
+`EspNativeResidentGameplay_service()` that existed only to emit the one-shot
+`[INTERACTCORPUS]` opcode census. The census function, its private
+`corpusLogged` byte and the wrapper are DEBUG/TRACE-only; bringup retains the
+historical interposition.
+
+The real event-chain implementation is unchanged. Dialog preflight, resume,
+rollback and synchronous bounded event-chain execution remain production-owned.
+
+CI #1218:
+
+```text
+                         V18              V19           delta
+static RAM               45072 B          45064 B         -8 B
+linked Flash            762617 B         762021 B       -596 B
+firmware.bin            762976 B         762384 B       -592 B
+active __wrap_*              50               49           -1
+```
+
+Artifact `11155223388`:
+`sha256:647af5bbbc5bda0f091b4a5de83ba05d961cd0774f5ed50a62cfda17d2df6e55`.
+Firmware SHA-256:
+`b394438989fcfcfa4c1d63e5142fc7e56c8c017aa7134af65344d7faf336fffb`.
+ELF SHA-256:
+`540660ede5a2d4e5621e60c2d03c473f7c660ac09041e919e5c548187e7a96ba`.
+
+Final-ELF inspection proves exactly 49 active `__wrap_*` symbols.
+`EspNativeGameplayEventChain_logCorpus`,
+`__wrap_EspNativeResidentGameplay_service`, `corpusLogged` and all
+`[INTERACTCORPUS]` strings are absent. The direct
+`EspNativeResidentGameplay_service`, transition selection and transition
+handoff symbols remain linked.
+
+The real classic CYD validates cold boot, START, full intro/disposal, exact
+Entrance first frame `71ca7465`, and:
+
+```text
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+```
+
+The same run commits MOVE and TURN, transforms the first crate, then opens and
+fully resumes scientist dialog event 88 through opcode 19. ALIVE remains
+stable before dialog at:
+
+```text
+heap=93448 heap8=27524 largest8=18420
+```
+
+and after the lazy dialog-chain owner allocation at:
+
+```text
+heap=92412 heap8=26488 largest8=18420
+```
+
+No `[INTERACTCORPUS]` line appears anywhere in the runtime transcript.
+
+The hardware free-heap witnesses are all +8 B versus V18 before later lazy
+allocations (for example MENU_MAIN `heap8=35720` versus 35712), matching the
+8 B static-RAM reduction reported by CI.
+
+Detailed record:
+[MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md](MILESTONE_ESP32_CONSOLIDATION_INTERACTION_CORPUS_V19.md)
 
