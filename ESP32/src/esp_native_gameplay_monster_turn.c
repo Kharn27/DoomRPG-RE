@@ -6,6 +6,7 @@
 
 #include "DoomRPG.h"
 
+#include "doomrpg_log.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
@@ -715,8 +716,14 @@ static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
     }
     if (candidates == 0U) {
         ++turnOwner.view.noAttackTurns;
-        printf("[MONSTERTURN] COMPLETE reason=%s candidates=0 specialAIDeferred=%u movementPositions=deferred activationOrder=not-needed mutation=no\n",
-               reasonName(reason), (unsigned int)specialDeferred);
+        if (specialDeferred == 0U) {
+            DRPG_LOGT("[MONSTERTURN] COMPLETE reason=%s candidates=0 specialAIDeferred=%u movementPositions=deferred activationOrder=not-needed mutation=no\n",
+                      reasonName(reason), (unsigned int)specialDeferred);
+        }
+        else {
+            DRPG_LOGI("[MONSTERTURN] COMPLETE reason=%s candidates=0 specialAIDeferred=%u movementPositions=deferred activationOrder=not-needed mutation=no\n",
+                      reasonName(reason), (unsigned int)specialDeferred);
+        }
         return;
     }
     if (candidates != 1U || candidate.monster == NULL) {
@@ -1078,7 +1085,7 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
                  * without scheduling monster AI, consuming gameplay RNG or
                  * mutating the monster/player owners.
                  */
-                printf("[MONSTERTURN] ROTATE-NO-TURN angle=%d->%d scheduled=%u mutation=no rngConsumed=0 legacyAdvance=no\n",
+                DRPG_LOGT("[MONSTERTURN] ROTATE-NO-TURN angle=%d->%d scheduled=%u mutation=no rngConsumed=0 legacyAdvance=no\n",
                        (int)previousAngle,
                        (int)playerView->viewAngle,
                        (unsigned int)turnOwner.view.scheduledTurns);
@@ -1186,7 +1193,7 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
             turnOwner.pendingAttackSequence = 0U;
         }
         ++turnOwner.view.scheduledTurns;
-        printf("[MONSTERTURN] SCHEDULE n=%u reason=%s passSeq=%u attackSeq=%u blockedAutomapSeq=%u player=%d,%d angle=%d playerFNV=%08x monsterFNV=%08x mode=probe rollback=required\n",
+        DRPG_LOGT("[MONSTERTURN] SCHEDULE n=%u reason=%s passSeq=%u attackSeq=%u blockedAutomapSeq=%u player=%d,%d angle=%d playerFNV=%08x monsterFNV=%08x mode=probe rollback=required\n",
                (unsigned int)turnOwner.view.scheduledTurns,
                reasonName(reason),
                (unsigned int)passSequence,

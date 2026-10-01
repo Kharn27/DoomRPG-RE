@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "doomrpg_log.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_bsp_visibility.h"
@@ -286,9 +287,18 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
         (void)callMovementMember(doomRpg, ACTIVESEQ_NO_SPRITE, 0,
                                  "NO-IMMEDIATE-ATTACK", &committed);
     }
-    printf("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred\n",
-           (unsigned int)activeSeq.expandedTurns,
-           (unsigned int)actual->lastReason,
-           (unsigned int)activationCount,
-           (unsigned int)delivered);
+    if (activationCount == 0U && delivered == 0U) {
+        DRPG_LOGT("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred\n",
+                  (unsigned int)activeSeq.expandedTurns,
+                  (unsigned int)actual->lastReason,
+                  (unsigned int)activationCount,
+                  (unsigned int)delivered);
+    }
+    else {
+        DRPG_LOGI("[MONSTERACTIVESEQ] COMPLETE turn=%u reason=%u activeCount=%u delivered=%u sameMonsterTurn=yes ordered=yes publication=per-member multiAttack=deferred\n",
+                  (unsigned int)activeSeq.expandedTurns,
+                  (unsigned int)actual->lastReason,
+                  (unsigned int)activationCount,
+                  (unsigned int)delivered);
+    }
 }

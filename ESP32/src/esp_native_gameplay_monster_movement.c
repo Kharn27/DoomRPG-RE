@@ -6,6 +6,7 @@
 
 #include "DoomRPG.h"
 
+#include "doomrpg_log.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_line_state.h"
 #include "esp_map_runtime.h"
@@ -889,11 +890,20 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
     if (candidates != 1U || candidate.monster == NULL || candidate.position == NULL) {
+        uint32_t activeCount = EspNativeGameplayMonsterActivation_count();
         ++movementView.ambiguousGeometry;
-        printf("[MONSTERMOVE] DEFER trigger=%s n=%u candidates=%u activeCount=%u cause=active-order-not-owned mutation=no rngConsumed=0\n",
-               trigger, (unsigned int)triggerCount,
-               (unsigned int)candidates,
-               (unsigned int)EspNativeGameplayMonsterActivation_count());
+        if (candidates == 0U && activeCount == 0U) {
+            DRPG_LOGT("[MONSTERMOVE] DEFER trigger=%s n=%u candidates=%u activeCount=%u cause=active-order-not-owned mutation=no rngConsumed=0\n",
+                      trigger, (unsigned int)triggerCount,
+                      (unsigned int)candidates,
+                      (unsigned int)activeCount);
+        }
+        else {
+            DRPG_LOGI("[MONSTERMOVE] DEFER trigger=%s n=%u candidates=%u activeCount=%u cause=active-order-not-owned mutation=no rngConsumed=0\n",
+                      trigger, (unsigned int)triggerCount,
+                      (unsigned int)candidates,
+                      (unsigned int)activeCount);
+        }
         return;
     }
 
