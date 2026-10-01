@@ -5,10 +5,12 @@
 #include <esp_timer.h>
 
 #include "esp_asset_pack.h"
+#include "doomrpg_log.h"
 #include "esp_player_view_state.h"
 
 namespace {
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
 constexpr uint32_t kReportLogicalCallThreshold = 64U;
 
 struct PakIoSample {
@@ -22,6 +24,8 @@ bool physicalBaselineValid = false;
 uint32_t baselinePhysicalReads = 0U;
 uint32_t baselinePhysicalBytes = 0U;
 
+#endif
+
 uint32_t elapsedMicros(int64_t start, int64_t end)
 {
     if (end <= start) {
@@ -31,6 +35,7 @@ uint32_t elapsedMicros(int64_t start, int64_t end)
     return delta > UINT32_MAX ? UINT32_MAX : (uint32_t)delta;
 }
 
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
 void resetIoSample()
 {
     memset(&ioSample, 0, sizeof(ioSample));
@@ -87,7 +92,7 @@ void reportIoSample(const char* reason)
     const uint64_t avgLogical =
         ioSample.logicalMicros / (uint64_t)ioSample.logicalCalls;
 
-    printf("[PAKIO] SAMPLE reason=%s backing=%s logical=%u totalUs=%lluus avgUs=%lluus maxUs=%uus physicalReads=%u physicalBytes=%u resident=%u\n",
+    DRPG_LOGT("[PAKIO] SAMPLE reason=%s backing=%s logical=%u totalUs=%lluus avgUs=%lluus maxUs=%uus physicalReads=%u physicalBytes=%u resident=%u\n",
            reason != nullptr ? reason : "threshold",
            EspAssetPack_isMapFlashActive() ? "raw-flash" : "sd",
            (unsigned int)ioSample.logicalCalls,
@@ -99,6 +104,7 @@ void reportIoSample(const char* reason)
            (unsigned int)EspAssetPack_isResident());
     resetIoSample();
 }
+#endif
 
 } // namespace
 
@@ -118,7 +124,7 @@ int __wrap_EspAssetPack_residentBegin(void)
     const int64_t prepareStart = esp_timer_get_time();
     if (view == nullptr || view->active != 1U ||
         !EspAssetPack_mapFlashPrepare(view->targetMapId)) {
-        printf("[MAPFLASH] ARM failed view=%u map=%u residentBegin=blocked\n",
+        DRPG_LOGE("[MAPFLASH] ARM failed view=%u map=%u residentBegin=blocked\n",
                view != nullptr ? (unsigned int)view->active : 0U,
                view != nullptr ? (unsigned int)view->targetMapId : 0U);
         return 0;
@@ -128,7 +134,7 @@ int __wrap_EspAssetPack_residentBegin(void)
 
     const int result = __real_EspAssetPack_residentBegin();
     if (!result) {
-        printf("[MAPFLASH] ARM failed map=%u reason=resident-cache-begin\n",
+        DRPG_LOGE("[MAPFLASH] ARM failed map=%u reason=resident-cache-begin\n",
                (unsigned int)view->targetMapId);
         EspAssetPack_mapFlashDeactivate();
         return 0;
@@ -136,7 +142,7 @@ int __wrap_EspAssetPack_residentBegin(void)
 
     EspAssetPackMapFlashStats flash = {};
     EspAssetPack_mapFlashGetStats(&flash);
-    printf("[MAPFLASH] ARM map=%u active=%u verified=%u reused=%u staged=%u metadata=%u prepareUs=%u buildUs=%u resident=1\n",
+    DRPG_LOGI("[MAPFLASH] ARM map=%u active=%u verified=%u reused=%u staged=%u metadata=%u prepareUs=%u buildUs=%u resident=1\n",
            (unsigned int)flash.currentMapId,
            (unsigned int)flash.active,
            (unsigned int)flash.verified,
@@ -153,6 +159,7 @@ int __wrap_EspAssetPack_readRange(const EspAssetPackEntry* entry,
                                   void* destination,
                                   size_t length)
 {
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     if (EspAssetPack_isResident() && !physicalBaselineValid) {
         capturePhysicalBaseline();
     }
@@ -172,19 +179,29 @@ int __wrap_EspAssetPack_readRange(const EspAssetPackEntry* entry,
         reportIoSample("threshold");
     }
     return result;
+#else
+    return __real_EspAssetPack_readRange(
+        entry, relativeOffset, destination, length);
+#endif
 }
 
 void __wrap_EspAssetPack_residentResetStats(void)
 {
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     reportIoSample("resident-reset");
+#endif
     __real_EspAssetPack_residentResetStats();
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     invalidatePhysicalBaseline();
+#endif
 }
 
 int __wrap_EspAssetPack_residentEnd(void)
 {
+#if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_TRACE
     reportIoSample("resident-end");
     invalidatePhysicalBaseline();
+#endif
     return __real_EspAssetPack_residentEnd();
 }
 
