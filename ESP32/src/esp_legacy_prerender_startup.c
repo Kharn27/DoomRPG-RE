@@ -6,6 +6,10 @@
 #include "MenuSystem.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_native_menu_storage.h"
+#ifdef DOOMRPG_ESP32_STORY_TEARDOWN_PROBE
+#include "DoomCanvas.h"
+#include "native_story_fit.h"
+#endif
 #include "esp_legacy_prerender_startup.h"
 
 /* Keep ESP-IDF's C99 bool macros after DoomRPG's legacy boolean typedefs. */
@@ -26,8 +30,6 @@ static uint32_t largest8Block(void) {
 
 static int preflightResources(void) {
     static const char* const required[] = {
-        "p.bmp",
-        "q.bmp",
         "j.bmp",
         "entities.db",
     };
@@ -96,6 +98,34 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
         return 0;
     }
 
+#ifdef DOOMRPG_ESP32_STORY_TEARDOWN_PROBE
+    {
+        DoomCanvas_t syntheticCanvas;
+        uint32_t probeBefore = heap8Free();
+        SDL_memset(&syntheticCanvas, 0, sizeof(syntheticCanvas));
+        syntheticCanvas.doomRpg = doomRpg;
+        printf("[STORYTEARDOWN] BEGIN heap8=%u owner=%d\n",
+               (unsigned int)probeBefore, Esp32StoryFit_hasHand());
+        if (!Esp32StoryFit_prepare(&syntheticCanvas) || !Esp32StoryFit_hasHand()) {
+            printf("[STORYTEARDOWN] FAILED prepare owner=%d\n", Esp32StoryFit_hasHand());
+            return 0;
+        }
+        DoomCanvas_free(&syntheticCanvas, false);
+        if (Esp32StoryFit_hasHand()) {
+            printf("[STORYTEARDOWN] FAILED release owner=stale\n");
+            return 0;
+        }
+        if (heap8Free() != probeBefore) {
+            printf("[STORYTEARDOWN] FAILED heap8=%u->%u delta=%d\n",
+                   (unsigned int)probeBefore, (unsigned int)heap8Free(),
+                   (int)heap8Free() - (int)probeBefore);
+            return 0;
+        }
+        printf("[STORYTEARDOWN] PASS prepare->DoomCanvas_free->released heap8=%u exact=yes\n",
+               (unsigned int)heap8Free());
+    }
+#endif
+
     heapBefore = heap8Free();
     largestBefore = largest8Block();
     printf("[PRERENDER] Begin: heap8=%u largest8=%u\n",
@@ -103,7 +133,7 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
 
     before = heap8Free();
     printf("[PRERENDER] -> EspNativeMenuStorage_startup()\n");
-    menuResult = EspNativeMenuStorage_startup(doomRpg->menuSystem);
+    menuResult = EspNativeMenuStorage_startup(doomRpg->menuSystem, doomRpg);
     after = heap8Free();
     printStageResult("EspNativeMenuStorage_startup", before, after);
     if (!menuResult) {

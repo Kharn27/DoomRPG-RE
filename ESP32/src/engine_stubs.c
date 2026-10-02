@@ -288,7 +288,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     INIT_CORE_OBJECT(DOOMRPG_CORE_RENDER, render,
                      Render_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_MENU_SYSTEM, menuSystem,
-                     EspNativeMenuStorage_init(NULL, doomRpg));
+                     EspNativeMenuStorage_init(NULL));
     INIT_CORE_OBJECT(DOOMRPG_CORE_HUD, hud,
                      Hud_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_SOUND, sound,

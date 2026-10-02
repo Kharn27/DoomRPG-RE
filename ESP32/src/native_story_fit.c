@@ -14,6 +14,59 @@
 #define STORY_FONT_HEIGHT 12
 
 static int geometryLogged;
+static Image_t storyHand;
+static DoomRPG_t* storyHandOwner;
+
+static Image_t* acquireStoryHand(DoomRPG_t* doomRpg) {
+    if (doomRpg == NULL) return NULL;
+    if (storyHand.imgBitmap != NULL && storyHandOwner == doomRpg) {
+        return &storyHand;
+    }
+    if (storyHand.imgBitmap != NULL && storyHandOwner != NULL) {
+        DoomRPG_freeImage(storyHandOwner, &storyHand);
+        SDL_memset(&storyHand, 0, sizeof(storyHand));
+    }
+    DoomRPG_createImage(doomRpg, "p.bmp", true, &storyHand);
+    if (storyHand.imgBitmap == NULL) {
+        storyHandOwner = NULL;
+        printf("[INTROFIT] HAND-FAILED asset=p.bmp owner=native-story\n");
+        return NULL;
+    }
+    storyHandOwner = doomRpg;
+    printf("[INTROFIT] HAND-READY asset=p.bmp bytes=bounded owner=native-story\n");
+    return &storyHand;
+}
+
+int Esp32StoryFit_prepare(struct DoomCanvas_s* doomCanvasBase) {
+    DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
+    uint32_t before;
+    uint32_t after;
+    Image_t* hand;
+    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return 0;
+    before = (uint32_t)SDL_GetTicks();
+    hand = acquireStoryHand(doomCanvas->doomRpg);
+    after = (uint32_t)SDL_GetTicks();
+    if (hand == NULL) return 0;
+    printf("[INTROFIT] PREPARE hand=%dx%d asset=p.bmp owner=native-story elapsedMs=%u drawAllocation=no\n",
+           hand->width, hand->height, (unsigned int)(after - before));
+    return 1;
+}
+
+int Esp32StoryFit_hasHand(void) {
+    return storyHand.imgBitmap != NULL;
+}
+
+void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvasBase) {
+    DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
+    DoomRPG_t* owner = storyHandOwner;
+    if (owner == NULL && doomCanvas != NULL) owner = doomCanvas->doomRpg;
+    if (storyHand.imgBitmap != NULL && owner != NULL) {
+        DoomRPG_freeImage(owner, &storyHand);
+        printf("[INTROFIT] HAND-RELEASE asset=p.bmp owner=native-story\n");
+    }
+    SDL_memset(&storyHand, 0, sizeof(storyHand));
+    storyHandOwner = NULL;
+}
 
 static int advanceAnimationPageBounded(DoomCanvas_t* doomCanvas) {
     if (doomCanvas == NULL || doomCanvas->storyPage != 1) {
@@ -409,6 +462,7 @@ static void drawAnimationMappedLine(DoomCanvas_t* doomCanvas,
 void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
     char** text;
+    Image_t* promptHand;
     int textPageCount;
     int elapsedAnim;
     int elapsedText;
@@ -483,6 +537,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         }
 
         scrollSpaceBG(doomCanvas);
+        promptHand = acquireStoryHand(doomCanvas->doomRpg);
 
         /* Text uses its own hardware-tuned soft-wide mapping: wider than the
          * 120x120 content viewport but slightly narrower than the full display. */
@@ -511,7 +566,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
 
         if (doomCanvas->storyTextPage < textPageCount - 1) {
             drawImage(doomCanvas,
-                      &doomCanvas->doomRpg->menuSystem->imgHand,
+                      promptHand,
                       (doomCanvas->SCR_CX + 36) - 4,
                       (doomCanvas->SCR_CY + 64) - 2,
                       10);
@@ -523,7 +578,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         }
         else {
             drawImage(doomCanvas,
-                      &doomCanvas->doomRpg->menuSystem->imgHand,
+                      promptHand,
                       (doomCanvas->SCR_CX + 8) - 4,
                       (doomCanvas->SCR_CY + 64) - 2,
                       10);

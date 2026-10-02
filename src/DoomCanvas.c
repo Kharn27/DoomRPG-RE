@@ -6,6 +6,9 @@
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
+#ifdef DOOMRPG_ESP32
+#include "native_story_fit.h"
+#endif
 #include "Hud.h"
 #include "Render.h"
 #include "Game.h"
@@ -142,6 +145,9 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg) // 0
 
 void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
 {
+#ifdef DOOMRPG_ESP32
+	Esp32StoryFit_release(doomCanvas);
+#endif
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLargerFont);
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLegals);
@@ -368,7 +374,7 @@ void DoomCanvas_combatState(DoomCanvas_t* doomCanvas)
 		DoomCanvas_drawRGB(doomCanvas);
 	}
 
-	// En el código original esta función está en la función "Hud_drawEffects", pero decidí moverla aquí, 
+	// En el cÃ³digo original esta funciÃ³n estÃ¡ en la funciÃ³n "Hud_drawEffects", pero decidÃ­ moverla aquÃ­, 
 	// esto evita que se superponga a otros objetos dibujados previamente.
 	// 
 	// In the original code this function is in the "Hud_drawEffects" function, but I decided to move it here, 
@@ -427,7 +433,7 @@ void DoomCanvas_dialogState(DoomCanvas_t* doomCanvas)
 	DoomCanvas_updateView(doomCanvas);
 	DoomCanvas_drawRGB(doomCanvas);
 
-	// En el código original esta función está en la función "Hud_drawEffects", pero decidí moverla aquí, 
+	// En el cÃ³digo original esta funciÃ³n estÃ¡ en la funciÃ³n "Hud_drawEffects", pero decidÃ­ moverla aquÃ­, 
 	// esto evita que se superponga a otros objetos dibujados previamente.
 	// 
 	// In the original code this function is in the "Hud_drawEffects" function, but I decided to move it here, 
@@ -548,6 +554,9 @@ void DoomCanvas_disposeEpilogue(DoomCanvas_t* doomCanvas)
 
 void DoomCanvas_disposeIntro(DoomCanvas_t* doomCanvas)
 {
+#ifdef DOOMRPG_ESP32
+	Esp32StoryFit_release(doomCanvas);
+#endif
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgSpaceBG);
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLinesLayer);
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgPlanetLayer);
@@ -1087,11 +1096,15 @@ void DoomCanvas_drawEpilogue(DoomCanvas_t* doomCanvas)
 			doomCanvas->SCR_CX - 64, doomCanvas->SCR_CY - 64, 0, (doomCanvas->showTextDone != 0) ? -1 : doomCanvas->epilogueTextTime);
 
 		if (doomCanvas->epilogueTextPage < 1) {
+#ifndef DOOMRPG_ESP32
 			DoomCanvas_drawImage(doomCanvas, &doomCanvas->menuSystem->imgHand, (doomCanvas->SCR_CX + 36) - 4, doomCanvas->SCR_CY + 64, 10);
+#endif
 			DoomCanvas_drawString1(doomCanvas, "More", (doomCanvas->SCR_CX + 64) - 4, doomCanvas->SCR_CY + 64, 10);
 		}
 		else {
+#ifndef DOOMRPG_ESP32
 			DoomCanvas_drawImage(doomCanvas, &doomCanvas->menuSystem->imgHand, (doomCanvas->SCR_CX + 8) - 4, doomCanvas->SCR_CY + 64, 10);
+#endif
 			DoomCanvas_drawString1(doomCanvas, "Continue", (doomCanvas->SCR_CX + 64) - 4, doomCanvas->SCR_CY + 64, 10);
 		}
 
@@ -1156,11 +1169,15 @@ void DoomCanvas_drawStory(DoomCanvas_t* doomCanvas)
 			}
 
 			if (doomCanvas->storyTextPage < iVar1 - 1) {
+#ifndef DOOMRPG_ESP32
 				DoomCanvas_drawImage(doomCanvas, &doomCanvas->doomRpg->menuSystem->imgHand, (doomCanvas->SCR_CX + 36) - 4, (doomCanvas->SCR_CY + 64) - 2, 10);
+#endif
 				DoomCanvas_drawString1(doomCanvas, "More", (doomCanvas->SCR_CX + 64) - 4, (doomCanvas->SCR_CY + 64), 10);
 			}
 			else {
+#ifndef DOOMRPG_ESP32
 				DoomCanvas_drawImage(doomCanvas, &doomCanvas->doomRpg->menuSystem->imgHand, (doomCanvas->SCR_CX + 8) - 4, (doomCanvas->SCR_CY + 64) - 2, 10);
+#endif
 				DoomCanvas_drawString1(doomCanvas, "Continue", (doomCanvas->SCR_CX + 64) - 4, (doomCanvas->SCR_CY + 64), 10);
 			}
 
@@ -1214,7 +1231,7 @@ void DoomCanvas_drawStory(DoomCanvas_t* doomCanvas)
 void DoomCanvas_drawRGB(DoomCanvas_t* doomCanvas)
 {
 	// Port:
-	// aplicar esta función antes de actualizar el framebuffer
+	// aplicar esta funciÃ³n antes de actualizar el framebuffer
 	// apply this function before updating the framebuffer
 	//if (doomCanvas->doomRpg->player->berserkerTics) {
 		//Render_setBerserkColor(doomCanvas->doomRpg->render);
@@ -1345,8 +1362,10 @@ void DoomCanvas_drawScrollBar(DoomCanvas_t* doomCanvas, int y, int totalHeight, 
 		}
 		int barOffset_y = offSetY + 7;
 
+#ifndef DOOMRPG_ESP32
 		DoomCanvas_drawImageSpecial(doomCanvas, &doomCanvas->doomRpg->menuSystem->imgArrowUpDown, 0, 0, 7, 7, 0, doomCanvas->SCR_CX + 64, y, 9);
 		DoomCanvas_drawImageSpecial(doomCanvas, &doomCanvas->doomRpg->menuSystem->imgArrowUpDown, 0, 7, 7, 7, 0, doomCanvas->SCR_CX + 64, y + totalHeight, 10);
+#endif
 
 		DoomRPG_setColor(doomCanvas->doomRpg, 0x888888);
 		DoomRPG_fillRect(doomCanvas->doomRpg, (doomCanvas->SCR_CX + 64) - 7, y + 7, 7, totalHeight - 14);
@@ -1709,7 +1728,9 @@ void DoomCanvas_handleEvent(DoomCanvas_t* doomCanvas, int i) {
 	if (doomCanvas->benchmarkString) {
 		doomCanvas->benchmarkString = false;
 		doomCanvas->renderOnly = false;
+#ifndef DOOMRPG_ESP32
 		doomCanvas->doomRpg->menuSystem->field_0xc58 = 80;
+#endif
 	}
 
 	switch (doomCanvas->state) {
@@ -2566,7 +2587,7 @@ void DoomCanvas_playingState(DoomCanvas_t* doomCanvas)
 
 			DoomCanvas_updateView(doomCanvas);
 			applyBerserk = true;
-		} // <- Agregué el corchete aquí, ya que necesito que los gráficos se actualicen siempre en cada cuadro, 
+		} // <- AgreguÃ© el corchete aquÃ­, ya que necesito que los grÃ¡ficos se actualicen siempre en cada cuadro, 
 		  //    sin que intervengan las actualizaciones del movimiento del jugador.
 		  // <- I added the bracket here as I need the graphics to always update on every frame, 
 		  //    without player movement updates intervening.
@@ -2585,7 +2606,7 @@ void DoomCanvas_playingState(DoomCanvas_t* doomCanvas)
 
 			DoomCanvas_drawRGB(doomCanvas);
 
-			// En el código original esta función está en la función "Hud_drawEffects", pero decidí moverla aquí, 
+			// En el cÃ³digo original esta funciÃ³n estÃ¡ en la funciÃ³n "Hud_drawEffects", pero decidÃ­ moverla aquÃ­, 
 			// esto evita que se superponga a otros objetos dibujados previamente.
 			// 
 			// In the original code this function is in the "Hud_drawEffects" function, but I decided to move it here, 
@@ -3300,7 +3321,9 @@ void DoomCanvas_startSpeedTest(DoomCanvas_t* doomCanvas, boolean b)
 		doomCanvas->loopAvgMs = 0;
 
 		if (b) {
+#ifndef DOOMRPG_ESP32
 			doomCanvas->doomRpg->menuSystem->field_0xc58 = 4;
+#endif
 		}
 		else {
 			doomCanvas->animAngle = 4;

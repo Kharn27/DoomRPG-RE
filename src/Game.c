@@ -1668,7 +1668,9 @@ boolean Game_executeEvent(Game_t* game, int event, int codeId, int arg1, int arg
 		}
 
 		case EV_OPENSTORE: { // EV_OPENSTORE
+#ifndef DOOMRPG_ESP32
 			game->doomRpg->menuSystem->f749g = arg1;
+#endif
 			MenuSystem_setMenu(game->doomRpg->menuSystem, MENU_STORE_CONFIRM);
 			break;
 		}

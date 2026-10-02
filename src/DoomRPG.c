@@ -400,7 +400,7 @@ static void setBind(int* keyBinds, int keycode)
 {
 	int i;
 
-	// Examina si existe anteriormente, si es asÌ, se desvincular· de la lista
+	// Examina si existe anteriormente, si es as√≠, se desvincular√° de la lista
 	// Examines whether it exists previously, if so, it will be unbind from the list
 	for (i = 0; i < KEYBINDS_MAX; i++) {
 		if (keyBinds[i] == keycode) {
@@ -429,8 +429,10 @@ void DoomRPG_setBind(DoomRPG_t* doomrpg, int mouse_Button, const Uint8* state) {
 			if (state[i]) {
 				keyMapId = doomrpg->menuSystem->items[doomrpg->menuSystem->selectedIndex].action;
 				setBind(keyMappingTemp[keyMapId].keyBinds, i);
+#ifndef DOOMRPG_ESP32
 				doomrpg->menuSystem->setBind = false;
 				doomrpg->menuSystem->paintMenu = true;
+#endif
 				return;
 			}
 		}
@@ -440,8 +442,10 @@ void DoomRPG_setBind(DoomRPG_t* doomrpg, int mouse_Button, const Uint8* state) {
 	if (mouse_Button != MOUSE_BUTTON_INVALID) {
 		keyMapId = doomrpg->menuSystem->items[doomrpg->menuSystem->selectedIndex].action;
 		setBind(keyMappingTemp[keyMapId].keyBinds, mouse_Button | IS_MOUSE_BUTTON);
+#ifndef DOOMRPG_ESP32
 		doomrpg->menuSystem->setBind = false;
 		doomrpg->menuSystem->paintMenu = true;
+#endif
 		return;
 	}
 
@@ -467,8 +471,10 @@ void DoomRPG_setBind(DoomRPG_t* doomrpg, int mouse_Button, const Uint8* state) {
 		if (buttomID != -1) {
 			keyMapId = doomrpg->menuSystem->items[doomrpg->menuSystem->selectedIndex].action;
 			setBind(keyMappingTemp[keyMapId].keyBinds, buttomID | IS_CONTROLLER_BUTTON);
+#ifndef DOOMRPG_ESP32
 			doomrpg->menuSystem->setBind = false;
 			doomrpg->menuSystem->paintMenu = true;
+#endif
 		}
 	}
 }
@@ -514,7 +520,9 @@ int DoomRPG_Init(void) // 0x3141C
 				doomRpg->menuSystem = MenuSystem_init(NULL, doomRpg);
 				if (doomRpg->menuSystem)
 				{
+#ifndef DOOMRPG_ESP32
 					doomRpg->menuSystem->memory = DoomRPG_freeMemory() - mem;
+#endif
 					DoomCanvas_updateLoadingBar(doomRpg->doomCanvas);
 
 					mem = DoomRPG_freeMemory();

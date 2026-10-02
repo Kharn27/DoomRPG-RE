@@ -12,6 +12,7 @@
 #include "native_intro_clock.h"
 #include "native_intro_dispose.h"
 #include "native_intro_input.h"
+#include "native_story_fit.h"
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_video_c_bridge.h"
@@ -124,6 +125,7 @@ static int postDisposeBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            canvas->imgLinesLayer.imgBitmap == NULL &&
            canvas->imgPlanetLayer.imgBitmap == NULL &&
            canvas->imgSpaceship.imgBitmap == NULL &&
+           !Esp32StoryFit_hasHand() &&
            !doomRpg->graphSetCliping &&
            runtimePoolsAreReleased(doomRpg->render);
 }
@@ -226,6 +228,15 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
      * disposer. Preserve that state transition while keeping map loading out.
      */
     canvas->storyPage = 3;
+
+    {
+        const uint32_t before = heap8Free();
+        Esp32StoryFit_release(canvas);
+        printf("[INTRODISP] FREE image=p.bmp/storyHand heap8=%u->%u gain=%d owner=native-story\n",
+               (unsigned int)before,
+               (unsigned int)heap8Free(),
+               (int)heap8Free() - (int)before);
+    }
 
     freeImageMeasured(doomRpg, &canvas->imgSpaceBG, "c.bmp/imgSpaceBG");
     freeImageMeasured(doomRpg, &canvas->imgLinesLayer, "d.bmp/imgLinesLayer");

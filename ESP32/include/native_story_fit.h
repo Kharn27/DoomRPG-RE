@@ -36,7 +36,10 @@ struct DoomCanvas_s;
  * soft-wide mapping: hardware review found 120 too compressed and 160 slightly
  * over-stretched. No intermediate framebuffer or extra frame-sized RAM is used.
  */
+int Esp32StoryFit_prepare(struct DoomCanvas_s* doomCanvas);
 void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvas);
+int Esp32StoryFit_hasHand(void);
+void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvas);
 
 #ifdef __cplusplus
 }
