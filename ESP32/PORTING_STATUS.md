@@ -7,15 +7,82 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 2d981fd14e3b7840ccf71575c47b0e3bd6d123fa
 branch = agent/esp32-retire-dead-menu-particle-tus
-hardware-tested code boundary = bc65cc337000d8c7ef54b5f0451e51d958cf7cef
-CI = esp32-cyd #1298 SUCCESS
-static RAM = 44992 B
-linked Flash = 769357 B
-artifact id = 11201100436
-artifact digest = sha256:3626c14a436d18f6dd386dfa2554d9a7c36ec0f54eb52bb35fd6339b8daf82e0
-hardware = MAIN -> native V9 LOAD -> Sector 1 resume -> MOVE -> ordered four-monster turn -> three-loop monster retaliation PASS
-status = DEAD DESKTOP TRANSLATION-UNIT RETIREMENT REAL-CYD PASS; Menu.c and ParticleSystem.c are no longer compiled on ESP32, final ELF still has zero Menu_* and ParticleSystem_* symbols, runtime image size is unchanged as expected for previously link-dead code; shapeData/mediaTexels remain NULL; resident gameplay stable at heap=116232 heap8=50308 largest8=38900
+hardware-tested code boundary = 2e0193b4e4f82d78f0b361c84e0d2bcd4f8f1cba
+CI = esp32-cyd #1324 SUCCESS
+static RAM = 45000 B
+linked Flash = 769861 B
+artifact id = 11200848779
+artifact digest = sha256:82fdd69dd60c3a8fa22fe15ce82c296bc291a854495807d7ec7d76c8682961dd
+hardware = cold boot -> OPTIONS/Back -> HELP paging/Back -> V9 LOAD -> Sector 1 resident gameplay -> MOVE/ordered monster turn PASS
+status = Menu.c + ParticleSystem.c + MenuSystem.c absent from ESP32 compile graph; final ELF MenuSystem_* = 0; EspNativeMenuStorage + EspNativeAudioIntent REAL-CYD PASS; shapeData/mediaTexels remain NULL; gameplay heap8=50300 largest8=38900
 ```
+
+## Desktop MenuSystem translation unit retirement — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`2e0193b4e4f82d78f0b361c84e0d2bcd4f8f1cba`.
+
+The ESP32 build no longer compiles `src/MenuSystem.c`. The final ELF contains zero
+`MenuSystem_*` symbols. The still-transitional `MenuSystem_t` allocation is now
+owned by `EspNativeMenuStorage`, which performs only the bounded storage/image
+responsibilities still consumed by the native MAIN/OPTIONS/HELP models.
+
+The former menu audio calls are preserved as semantic native intents rather than
+desktop Sound/MenuSystem behavior:
+
+```text
+5046 = select/enter
+5042 = back
+5067 = in-game menu entry companion cue
+```
+
+The backend remains deliberately silent. The real CYD proves call-order publication
+through:
+
+```text
+[AUDIOINTENT] seq=1 resource=5046
+[AUDIOINTENT] seq=2 resource=5042
+[AUDIOINTENT] seq=3 resource=5046
+[AUDIOINTENT] seq=4 resource=5042
+```
+
+Hardware path:
+
+```text
+cold boot
+ -> EspNativeMenuStorage INIT 5532 B / 96 items
+ -> p/q/j asset startup
+ -> MAIN
+ -> OPTIONS -> Back
+ -> HELP -> page down/up -> Back
+ -> V9 LOAD Sector 1
+ -> resident gameplay
+ -> player MOVE
+ -> ordered four-monster movement
+```
+
+CI #1324 succeeds in normal `esp32-cyd`:
+
+```text
+static RAM   = 45000 B
+linked Flash = 769861 B
+artifact id  = 11200848779
+digest       = sha256:82fdd69dd60c3a8fa22fe15ce82c296bc291a854495807d7ec7d76c8682961dd
+```
+
+The +8 B static RAM is the native audio-intent state. Hardware memory moves by the
+same exact amount relative to the previous milestone and fragmentation is unchanged:
+
+```text
+MAIN:     heap=122832 heap8=56908 largest8=32756
+gameplay: heap=116224 heap8=50300 largest8=38900
+```
+
+Critical invariants remain `shapeData == NULL` and `mediaTexels == NULL`.
+
+The next structural question is not `MenuSystem.c` anymore; it is the 5532-byte
+compatibility layout itself. Any compaction must first prove that no linked
+DoomCanvas/DoomRPG path still dereferences fields outside the native model contract.
 
 ## Dead desktop Menu / ParticleSystem translation units — REAL-CYD PASS (2026-10-02)
 
