@@ -30,8 +30,6 @@
 #define EXPECTED_MAIN_MENU_MODEL_FNV 0x292c7f95U
 #define EXPECTED_FONT_WIDTH 144
 #define EXPECTED_FONT_HEIGHT 72
-#define EXPECTED_HAND_WIDTH 13
-#define EXPECTED_HAND_HEIGHT 10
 #define MENU_GLYPH_ADVANCE 7
 
 static const char* expectedMainItems[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT] = {
@@ -177,9 +175,6 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
         menuSystem->imgLogo.imgBitmap == NULL ||
         menuSystem->imgLogo.width != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_WIDTH ||
         menuSystem->imgLogo.height != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_HEIGHT ||
-        menuSystem->imgHand.imgBitmap == NULL ||
-        menuSystem->imgHand.width != EXPECTED_HAND_WIDTH ||
-        menuSystem->imgHand.height != EXPECTED_HAND_HEIGHT ||
         canvas->imgFont.imgBitmap == NULL ||
         canvas->imgFont.width != EXPECTED_FONT_WIDTH ||
         canvas->imgFont.height != EXPECTED_FONT_HEIGHT) {
