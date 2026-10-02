@@ -6,25 +6,25 @@
 #include "MenuSystem.h"
 #include "esp_native_menu_storage.h"
 
-MenuSystem_t* EspNativeMenuStorage_init(MenuSystem_t* storage) {
+EspNativeMenuState_t* EspNativeMenuStorage_init(EspNativeMenuState_t* storage) {
     if (storage == NULL) {
-        storage = (MenuSystem_t*)SDL_calloc(1, sizeof(MenuSystem_t));
+        storage = (EspNativeMenuState_t*)SDL_calloc(1, sizeof(EspNativeMenuState_t));
         if (storage == NULL) return NULL;
     }
     else {
-        SDL_memset(storage, 0, sizeof(MenuSystem_t));
+        SDL_memset(storage, 0, sizeof(EspNativeMenuState_t));
     }
 
     storage->oldMenu = -1;
     storage->menu = MENU_NONE;
 
-    printf("[MENUSTORAGE] INIT bytes=%u items=%u owner=esp-native compatibilityLayout=MenuSystem_t desktopTU=no\n",
-           (unsigned int)sizeof(MenuSystem_t),
+    printf("[MENUSTORAGE] INIT bytes=%u items=%u owner=esp-native compatibilityLayout=EspNativeMenuState_t desktopTU=no\n",
+           (unsigned int)sizeof(EspNativeMenuState_t),
            (unsigned int)MAX_MENUITEMS);
     return storage;
 }
 
-int EspNativeMenuStorage_startup(MenuSystem_t* storage, DoomRPG_t* doomRpg) {
+int EspNativeMenuStorage_startup(EspNativeMenuState_t* storage, DoomRPG_t* doomRpg) {
     if (storage == NULL || doomRpg == NULL) return 0;
 
     DoomRPG_createImage(doomRpg, "j.bmp", true, &storage->imgLogo);
@@ -40,7 +40,7 @@ int EspNativeMenuStorage_startup(MenuSystem_t* storage, DoomRPG_t* doomRpg) {
     return 1;
 }
 
-void EspNativeMenuStorage_free(MenuSystem_t* storage, DoomRPG_t* doomRpg,
+void EspNativeMenuStorage_free(EspNativeMenuState_t* storage, DoomRPG_t* doomRpg,
                                boolean freePtr) {
     if (storage == NULL) return;
     if (doomRpg != NULL) {
