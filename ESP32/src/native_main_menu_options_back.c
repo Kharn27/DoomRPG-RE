@@ -117,7 +117,7 @@ static int paintBackState(int armed) {
 }
 
 static int returnToMainMenu(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
     Render_t* render = doomRpg->render;
     uint32_t finalHash = 0U;
 
