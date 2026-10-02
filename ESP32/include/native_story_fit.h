@@ -38,6 +38,7 @@ struct DoomCanvas_s;
  */
 int Esp32StoryFit_prepare(struct DoomCanvas_s* doomCanvas);
 void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvas);
+int Esp32StoryFit_hasHand(void);
 void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvas);
 
 #ifdef __cplusplus
