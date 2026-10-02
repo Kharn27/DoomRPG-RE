@@ -115,10 +115,12 @@ the drop left uncollected:
 No `TURNFRAME DIAG fail=SPRITES` or TURN rollback remains. This strengthens
 the live-drop PASS without changing drop semantics.
 
-## Explicitly not validated here
+## Explicitly not validated in this historical live-path milestone
 
-- checkpoint persistence of live dynamic drops;
-- deferred pickup secondary-message presentation.
+- checkpoint persistence of live dynamic drops was intentionally deferred here;
+  it is subsequently hardware-validated by
+  [MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md);
+- deferred pickup secondary-message presentation remains outside this milestone.
 
 The sibling LEVEL UP presentation and checkpoint monster-projection fixes are
 now separately hardware-valid in

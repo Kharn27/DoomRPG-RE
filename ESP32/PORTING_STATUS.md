@@ -1,5 +1,100 @@
 # Doom RPG ESP32 CYD porting status
 
+## Native monster-drop checkpoint persistence V11 — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`41665b6676f31372ef67a41257fd8baabc74d8ed`.
+
+Branch:
+`agent/esp32-monster-drop-checkpoint-v11`.
+
+The compact 8-slot `EspNativeGameplayMonsterDrop` owner is now part of the
+native checkpoint. Legacy Doom RPG is the behavioral reference: its World save
+serialized the eight rotating drop entities plus `dropIndex`, and LOAD restored
+that already-materialized state directly rather than calling
+`Entity_spawnDropItem()` or consuming RNG again.
+
+V11 is an append-only checkpoint extension:
+
+```text
+V10 bytes                    = 5460
+monster-drop snapshot        = 144
+V11 bytes                    = 5604
+rotating slots               = 8
+record size                  = 16 B
+CRC coverage                 = full V11 record
+legacy V1..V10 read support  = retained
+```
+
+The snapshot keeps the exact current pool rather than its history: eight compact
+records plus arena identity, `spawnSerial`, `nextSlot` and a semantic FNV.
+`visibleCount` is derived on restore. Records carry only native identity,
+tile/world position and active/taken state; no `Entity_t`, mutable BSP sprite,
+map-wide decompression or ZIP runtime state is introduced.
+
+Session replacement now explicitly resets the drop owner before checkpoint
+restore. This matters for LOAD on the same map, where the rebuilt immutable arena
+has the same FNV and could otherwise retain post-SAVE live state accidentally.
+V1..V10 checkpoints therefore restore an honestly empty dynamic-drop pool.
+
+The real CYD first proves backward compatibility by loading the pre-existing V10
+checkpoint:
+
+```text
+[NATIVESAVE] READABLE-SPATIAL ... bytes=5460 ... result=valid
+[NATIVESAVE] LEGACY-MONSTER-DROP-GAP version=10 dynamicDrops=fresh-empty ... rng=untouched
+[NATIVESAVE] LOAD ... version=10 bytes=5460 ... monsterDrops=legacy-empty/0/00000000/serial0/next0 ...
+```
+
+A lethal zombie attack then materialized Shell Clips in slot 0. The live drop was
+left on the floor and saved:
+
+```text
+[MONSTERDROP] COMMIT roll=b61a3cc5 slot=0 ... type=16 subtype=2 def=86 tile=178 pos=1184,352 visible=1 next=1 ...
+[MONSTERDROP] SAVE version=11 arena=c3882516 serial=1 next=1 visible=1 stateFNV=16550b12 snapshotBytes=144 rng=untouched
+[NATIVESAVE] SAVE ... version=11 bytes=5604 ... recordCrc=3a147996 ...
+```
+
+The player then picked that live drop up after the SAVE. A same-map LOAD of the
+saved checkpoint restored the earlier pool exactly:
+
+```text
+[NATIVESAVE] READABLE-SPATIAL ... bytes=5604 ... result=valid
+[MONSTERDROP] RESTORE version=11 arena=c3882516 serial=1 next=1 visible=1 stateFNV=16550b12 rng=untouched materialize=replay-no
+[NATIVESAVE] LOAD ... version=11 bytes=5604 ... monsterDrops=restored/1/16550b12/serial1/next1 ... monster-drops-restored-exact
+```
+
+The user confirmed the restored presentation is visually correct. Entering the
+saved drop tile then consumed the restored dynamic drop through the normal
+transactional pickup path, together with the co-located static ammo pickup:
+
+```text
+[MONSTERDROP] RENDER-CULL slot=0 tile=178 reason=player-tile pickup=pending-after-commit
+[PLAYERRES] PREPARE ... defTile=86 type=16 subtype=2 ... action=ammo value=25->35 ... worldRemove=dynamic-drop-slot rollback=armed
+[PLAYERRES] PREPARE ... defTile=83 type=6 subtype=1 ... action=ammo value=6->10 ... worldRemove=hidden-overlay rollback=armed
+[PLAYERRES] COMMIT tile=178 candidates=2 consumed=2 ...
+```
+
+This proves the live materialized state survives SAVE/LOAD without RNG replay or
+legacy entity reconstruction, and that same-map session replacement does not leak
+the post-SAVE consumed state into the restored checkpoint. The separate
+`taken-before-SAVE -> LOAD` scenario was not independently replayed in this log;
+the V11 snapshot does persist the current `taken` bit and rotating slot state,
+but that exact scenario is not claimed as a separate hardware witness here.
+
+Normal `esp32-cyd` CI #1540 is SUCCESS:
+
+```text
+static RAM   = 45392 B
+linked Flash = 781433 B
+artifact id  = 11248194036
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md)
+
 ## Native LEVEL UP screen + checkpoint monster projection — REAL-CYD PASS (2026-10-02)
 
 Hardware-tested code boundary:
