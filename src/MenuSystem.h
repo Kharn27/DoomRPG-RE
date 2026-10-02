@@ -12,6 +12,23 @@ struct Image_s;
 #define MAX_MENUITEMS 96
 #endif
 
+#ifdef DOOMRPG_ESP32
+typedef struct EspNativeMenuState_s
+{
+	struct Image_s imgLogo;
+	struct Image_s* imgBG;
+	struct MenuItem_s items[MAX_MENUITEMS];
+	int numItems;
+	int menu;
+	int oldMenu;
+	int selectedIndex;
+	int scrollIndex;
+	int type;
+	int maxItems;
+} EspNativeMenuState_t;
+
+typedef EspNativeMenuState_t MenuSystem_t;
+#else
 typedef struct MenuSystem_s
 {
 #ifndef DOOMRPG_ESP32
@@ -57,6 +74,7 @@ typedef struct MenuSystem_s
 #endif
 
 } MenuSystem_t;
+#endif
 
 
 MenuSystem_t* MenuSystem_init(MenuSystem_t* menuSystem, DoomRPG_t* doomRpg);
