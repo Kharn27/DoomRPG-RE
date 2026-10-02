@@ -7,15 +7,49 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1
 branch = agent/esp32-native-menu-state-root
-hardware-tested code boundary = 862d2f7ca482d74c1fbbd2f7730d0e3479d3c22c
-CI = esp32-cyd #1448 SUCCESS
+hardware-tested code boundary = 7a14a0c8c092f7a24195251e669f020982206755
+CI = esp32-cyd #1458 SUCCESS
 static RAM = 45176 B
 linked Flash = 770193 B
-artifact id = 11223741289
-artifact digest = sha256:09daf578d0c2f854ee27fdfefbf2a7d49be0a45527e976ba03293bb247b11971
+artifact id = 11224131637
+artifact digest = sha256:77ad414bf3e5f0487444260776c527cc239fbaaf1a99f4af4f583c2deb4466bb
 hardware = targeted story teardown probe PASS + normal Start Game intro -> Entrance -> ENGINESESSION READY PASS
 status = DoomCanvas_free now unconditionally releases native story hand; real CYD proves owner cleared and heap8 exact after teardown; MenuSystem_t remains 496 B
 ```
+
+## Native menu runtime APIs typed directly — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`7a14a0c8c092f7a24195251e669f020982206755`.
+
+All permanent ESP32 native menu runtime modules now use
+`EspNativeMenuState_t*` directly rather than the compatibility
+`MenuSystem_t*` alias, including storage, MAIN model/touch/actions,
+OPTIONS/Back, Start action and the core-size accounting probe.
+
+Real-CYD proof:
+
+```text
+[MENUSTORAGE] INIT bytes=496 items=8 owner=esp-native compatibilityLayout=EspNativeMenuState_t
+MAIN FNV=522dc605
+HELP page-up 24->16->8->0 exact FNVs=9213df95/d0788359/5f22cf6b
+HELP -> MAIN FNV=522dc605
+heap8=62112
+largest8=32756
+p.bmp preflight=present
+```
+
+Normal `esp32-cyd` CI #1458 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770193 B
+artifact id  = 11224131637
+digest       = sha256:77ad414bf3e5f0487444260776c527cc239fbaaf1a99f4af4f583c2deb4466bb
+```
+
+This validates direct native typing before moving the native state definition
+out of the legacy `MenuSystem.h` header.
 
 ## Shared p.bmp preflight restored — REAL-CYD PASS (2026-10-02)
 
