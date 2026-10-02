@@ -20,7 +20,6 @@ MenuSystem_t* EspNativeMenuStorage_init(MenuSystem_t* storage,
     storage->doomRpg = doomRpg;
     storage->oldMenu = -1;
     storage->menu = MENU_NONE;
-    storage->field_0xc58 = 0x50;
 
     printf("[MENUSTORAGE] INIT bytes=%u items=%u owner=esp-native compatibilityLayout=MenuSystem_t desktopTU=no\n",
            (unsigned int)sizeof(MenuSystem_t),
