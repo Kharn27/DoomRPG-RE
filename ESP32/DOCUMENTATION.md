@@ -10,6 +10,49 @@ Recovery and development must start from:
 
 Repository state wins over chat history. Serial logs from the real classic CYD are the final runtime truth.
 
+## Native monster dynamic drops — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested head:
+`61b156415829a4f4bc70f76d1ba751effedc29eb`
+on `agent/esp32-levelup-drop-consequences`.
+
+Lethal native monster combat now materializes original Doom RPG drops into an
+8-slot compact map-session owner instead of mutating immutable BSP sprites.
+Drop selection uses the same already-consumed legacy RNG word and type/subtype
+rules as `Entity_spawnDropItem()`. Live records carry only compact identity,
+tile/world position and ownership state; rendering and pickup consume that owner
+without a map-wide entity clone.
+
+The hardware test closes the important renderer/pickup boundary. A pre-fix test
+showed `fail=SPRITES -> MOVE ROLLBACK` when the camera entered a drop tile.
+The tested fix culls that billboard for the committed player tile, allowing the
+normal post-MOVE resource service to consume it transactionally.
+
+Real-CYD witness:
+
+```text
+[MONSTERDROP] COMMIT roll=d8fb13bb ... type=3 subtype=21 def=92 tile=268 ... visible=1
+[MONSTERCOMBAT] COMMIT ... dropMaterialize=live
+[MONSTERDROP] RENDER-CULL slot=0 tile=268 reason=player-tile pickup=pending-after-commit
+[RESIDENTGAMEPLAY] MOVE ... tile=267->268 ... committed=yes
+[PLAYERRES] PREPARE ... type=3 subtype=21 ... action=armor value=1->5 ... worldRemove=dynamic-drop-slot
+[PLAYERRES] PREPARE ... type=3 subtype=20 ... action=health value=26->30 ... worldRemove=hidden-overlay
+[PLAYERRES] COMMIT tile=268 candidates=2 consumed=2 ... hp=30/30 armor=5/20
+```
+
+The same tile therefore proves mixed dynamic + static pickup ordering and
+rollback ownership. Dynamic drop persistence through checkpoint SAVE/LOAD is
+still deliberately deferred (`save-deferred`), so only the live map-session
+path is hardware-owned here.
+
+CI #1524 succeeds at 45352 B static RAM and 776233 B linked flash.
+
+The level-up modal added on this branch remains unvalidated on hardware and is
+not promoted by this section.
+
+See
+[MILESTONE_ESP32_NATIVE_MONSTER_DYNAMIC_DROP.md](MILESTONE_ESP32_NATIVE_MONSTER_DYNAMIC_DROP.md).
+
 ## Mission report and V10 progress — development candidate (2026-10-02)
 
 Changes on `fix/mainMenu`, rebased onto `origin/main` at `0f1cdb0` (native menu

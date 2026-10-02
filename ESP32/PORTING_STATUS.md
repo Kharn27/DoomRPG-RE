@@ -2,6 +2,60 @@
 
 Authoritative recovery/status file for the classic ESP32-2432S028R port. Repository state wins over chat history. Serial logs from the real classic CYD are the final runtime authority.
 
+## Native monster dynamic drops — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`61b156415829a4f4bc70f76d1ba751effedc29eb`.
+
+Branch:
+`agent/esp32-levelup-drop-consequences`.
+
+The native lethal-monster path now owns the original Doom RPG drop resolution
+without mutating immutable BSP sprite/topology state. It keeps the legacy
+8-entry rotating pool as a compact 144 B map-session owner, resolves the exact
+legacy type/subtype selection from the already-consumed drop RNG word, renders
+live drops from that owner, and feeds them through the existing shared
+`EspNativeGameplayPlayerState` pickup path.
+
+A first real-CYD test exposed a renderer boundary bug: entering the drop tile
+projected the dynamic billboard through the camera origin, producing
+`TURNFRAME DIAG fail=SPRITES` and a MOVE rollback. Commit
+`61b156415829a4f4bc70f76d1ba751effedc29eb` fixes that boundary by culling
+a live drop only while it occupies the player's committed tile; pickup service
+then consumes it immediately after the MOVE frame.
+
+The real CYD now proves the complete path with a zombie drop:
+
+```text
+[MONSTERDROP] COMMIT roll=d8fb13bb slot=0 overwriteVisible=0 type=3 subtype=21 def=92 tile=268 pos=800,544 visible=1 next=1 ownerBytes=144 persistence=map-session-live/save-deferred
+[MONSTERCOMBAT] COMMIT ... dropRoll=value/d8fb13bb dropMaterialize=live ...
+[MONSTERDROP] RENDER-CULL slot=0 tile=268 reason=player-tile pickup=pending-after-commit
+[RESIDENTGAMEPLAY] MOVE ... tile=267->268 ... committed=yes
+[PLAYERRES] PREPARE tile=268 sprite=65535 defTile=92 type=3 subtype=21 parm=4 action=armor value=1->5 ... worldRemove=dynamic-drop-slot rollback=armed
+[PLAYERRES] PREPARE tile=268 sprite=148 defTile=91 type=3 subtype=20 parm=4 action=health value=26->30 ... worldRemove=hidden-overlay rollback=armed
+[PLAYERRES] COMMIT tile=268 candidates=2 consumed=2 ... hp=30/30 armor=5/20 ...
+[PLAYERRES] FEEDBACK tile=268 message="Got Armor Shard" sourceDefTile=92 ... additionalMessages=1-deferred
+```
+
+This also validates a dynamic monster drop and an existing static pickup sharing
+one tile in the same transaction. Earlier hardware witnesses on the same branch
+also proved legitimate `dropMaterialize=none` results for legacy no-drop RNG
+values. Dynamic-drop checkpoint persistence remains intentionally deferred and
+is not claimed by this milestone.
+
+Normal `esp32-cyd` CI #1524 is SUCCESS at the tested boundary:
+
+```text
+static RAM   = 45352 B
+linked Flash = 776233 B
+```
+
+The level-up modal code present on this branch is still a development candidate
+until a real-CYD level-up popup is observed; it is not covered by this PASS.
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_MONSTER_DYNAMIC_DROP.md](MILESTONE_ESP32_NATIVE_MONSTER_DYNAMIC_DROP.md)
+
 ## Mission report — USER ACCEPTED; V10 round-trip remains candidate (2026-10-02)
 
 Working branch `fix/mainMenu`, rebased onto `origin/main` at `0f1cdb0` without
