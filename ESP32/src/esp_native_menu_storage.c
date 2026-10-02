@@ -6,9 +6,7 @@
 #include "MenuSystem.h"
 #include "esp_native_menu_storage.h"
 
-MenuSystem_t* EspNativeMenuStorage_init(MenuSystem_t* storage,
-                                        DoomRPG_t* doomRpg) {
-    if (doomRpg == NULL) return NULL;
+MenuSystem_t* EspNativeMenuStorage_init(MenuSystem_t* storage) {
     if (storage == NULL) {
         storage = (MenuSystem_t*)SDL_calloc(1, sizeof(MenuSystem_t));
         if (storage == NULL) return NULL;
@@ -17,7 +15,6 @@ MenuSystem_t* EspNativeMenuStorage_init(MenuSystem_t* storage,
         SDL_memset(storage, 0, sizeof(MenuSystem_t));
     }
 
-    storage->doomRpg = doomRpg;
     storage->oldMenu = -1;
     storage->menu = MENU_NONE;
 
@@ -27,10 +24,10 @@ MenuSystem_t* EspNativeMenuStorage_init(MenuSystem_t* storage,
     return storage;
 }
 
-int EspNativeMenuStorage_startup(MenuSystem_t* storage) {
-    if (storage == NULL || storage->doomRpg == NULL) return 0;
+int EspNativeMenuStorage_startup(MenuSystem_t* storage, DoomRPG_t* doomRpg) {
+    if (storage == NULL || doomRpg == NULL) return 0;
 
-    DoomRPG_createImage(storage->doomRpg, "j.bmp", true, &storage->imgLogo);
+    DoomRPG_createImage(doomRpg, "j.bmp", true, &storage->imgLogo);
     storage->imgBG = NULL;
 
     if (storage->imgLogo.imgBitmap == NULL) {
@@ -43,10 +40,11 @@ int EspNativeMenuStorage_startup(MenuSystem_t* storage) {
     return 1;
 }
 
-void EspNativeMenuStorage_free(MenuSystem_t* storage, boolean freePtr) {
+void EspNativeMenuStorage_free(MenuSystem_t* storage, DoomRPG_t* doomRpg,
+                               boolean freePtr) {
     if (storage == NULL) return;
-    if (storage->doomRpg != NULL) {
-        DoomRPG_freeImage(storage->doomRpg, &storage->imgLogo);
+    if (doomRpg != NULL) {
+        DoomRPG_freeImage(doomRpg, &storage->imgLogo);
     }
     storage->imgBG = NULL;
     if (freePtr) SDL_free(storage);
