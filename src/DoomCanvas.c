@@ -6,6 +6,9 @@
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
+#ifdef DOOMRPG_ESP32
+#include "native_story_fit.h"
+#endif
 #include "Hud.h"
 #include "Render.h"
 #include "Game.h"
@@ -548,6 +551,9 @@ void DoomCanvas_disposeEpilogue(DoomCanvas_t* doomCanvas)
 
 void DoomCanvas_disposeIntro(DoomCanvas_t* doomCanvas)
 {
+#ifdef DOOMRPG_ESP32
+	Esp32StoryFit_release(doomCanvas);
+#endif
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgSpaceBG);
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLinesLayer);
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgPlanetLayer);
