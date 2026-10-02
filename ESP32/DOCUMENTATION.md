@@ -15,14 +15,54 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1
 branch = agent/esp32-native-menu-state-root
-hardware-tested code boundary = f76e3ed415c5d2012fe61cc38b7cca11631ee796
-CI = esp32-cyd #1434 SUCCESS
+hardware-tested code boundary = 862d2f7ca482d74c1fbbd2f7730d0e3479d3c22c
+CI = esp32-cyd #1448 SUCCESS
 static RAM = 45176 B
-linked Flash = 770197 B
-artifact id = 11222798316
-artifact digest = sha256:6b61f9188b2a079e11d527d0cfd357e9062e67927826b500e35e1d597bc4e503
+linked Flash = 770193 B
+artifact id = 11223741289
+artifact digest = sha256:09daf578d0c2f854ee27fdfefbf2a7d49be0a45527e976ba03293bb247b11971
 hardware = targeted story teardown probe PASS + normal Start Game intro -> Entrance -> ENGINESESSION READY PASS
 status = early engine teardown cannot retain native story hand owner; DoomCanvas_free release is hardware-proven with exact heap restoration
+```
+
+## Shared p.bmp preflight restored — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`862d2f7ca482d74c1fbbd2f7730d0e3479d3c22c`.
+
+A review correctly identified that `p.bmp` remained a mandatory shared runtime
+dependency after ownership moved out of the legacy menu shell: native story
+presentation and the gameplay HUB both still require it. Removing it from the
+startup preflight allowed a malformed PAK to pass startup and fail later during
+Start.
+
+The resource remains **not owned by MenuSystem**. Only its presence validation
+is restored:
+
+```text
+[PRERENDER] Resource preflight (3 files)
+[PRERENDER] j.bmp          bytes=4264 backing=pak
+[PRERENDER] p.bmp          bytes=156 backing=pak
+[PRERENDER] entities.db    bytes=2762 backing=pak
+[PRERENDER] Resource preflight OK
+```
+
+The same real-CYD boot reaches the unchanged native MAIN:
+
+```text
+[MENUSTORAGE] INIT bytes=496
+MAIN FNV=522dc605
+heap8=62112
+largest8=32756
+```
+
+Normal `esp32-cyd` CI #1448 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770193 B
+artifact id  = 11223741289
+digest       = sha256:09daf578d0c2f854ee27fdfefbf2a7d49be0a45527e976ba03293bb247b11971
 ```
 
 ## Native menu state root identity — REAL-CYD PASS (2026-10-02)
