@@ -6,6 +6,7 @@
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_level_up.h"
+#include "platform_touch_events.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
 
@@ -179,13 +180,17 @@ int EspNativeGameplayLevelUp_begin(
     levelUp.accuracyGain = xp->lastAccuracyGain;
     levelUp.active = 1U;
 
+    /* Do not let the attack SELECT press (or a noisy release tail) become the
+     * dismissal press for the screen that it just opened. */
+    PlatformInput_requireFreshTapAfterRelease();
+
     if (!paint()) {
         memset(&levelUp, 0, sizeof(levelUp));
         return 0;
     }
     levelUp.frameFNV1a = frameFNV();
 
-    printf("[LEVELUP] PRESENT seq=%u level=%u->%u levelUps=%u gains=hp+%u/armor+%u/def+%u/str+%u/agi+%u/acc+%u health=restored frame=%08x input=one-tap owner=dedicated-fullscreen timer=none\n",
+    printf("[LEVELUP] PRESENT seq=%u level=%u->%u levelUps=%u gains=hp+%u/armor+%u/def+%u/str+%u/agi+%u/acc+%u health=restored frame=%08x input=fresh-release+bottom-cta owner=dedicated-fullscreen timer=none\n",
            (unsigned int)levelUp.sequence,
            (unsigned int)levelUp.levelBefore,
            (unsigned int)levelUp.levelAfter,
@@ -200,8 +205,16 @@ int EspNativeGameplayLevelUp_begin(
     return 1;
 }
 
-int EspNativeGameplayLevelUp_requestDismiss(void) {
-    if (levelUp.active == 0U) return 0;
+int EspNativeGameplayLevelUp_requestDismiss(int16_t logicalX,
+                                            int16_t logicalY) {
+    (void)logicalX;
+    if (levelUp.active == 0U || levelUp.dismissPending != 0U) return 0;
+
+    /* The dedicated screen has an explicit CTA in its bottom strip. Requiring
+     * that strip prevents a lingering combat-center press from ever closing the
+     * screen, even if the resistive panel briefly reports a release/repress. */
+    if (logicalY < 92 || logicalY >= DOOMRPG_LOGICAL_HEIGHT) return 0;
+
     levelUp.dismissPending = 1U;
     return 1;
 }

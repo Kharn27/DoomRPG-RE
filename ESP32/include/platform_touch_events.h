@@ -19,6 +19,12 @@ typedef void (*PlatformTapCallback)(int16_t screenX,
  */
 void PlatformInput_setTapCallback(PlatformTapCallback callback);
 
+/* Modal input barrier: suppress semantic tap callbacks until the touchscreen has
+ * been physically idle for the normal stable-release debounce. This prevents
+ * the press that opened a modal (or a noisy tail of it) from dismissing the
+ * modal as a second tap. Raw touch diagnostics remain readable. */
+void PlatformInput_requireFreshTapAfterRelease(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -15,6 +15,13 @@
 namespace {
 constexpr uint32_t kTapReleaseDebounceMs = 50;
 PlatformTapCallback gTapCallback = nullptr;
+bool gRequireFreshRelease = false;
+uint32_t gFreshReleaseSince = 0;
+}
+
+extern "C" void PlatformInput_requireFreshTapAfterRelease(void) {
+    gRequireFreshRelease = true;
+    gFreshReleaseSince = 0;
 }
 
 extern "C" void PlatformInput_setTapCallback(PlatformTapCallback callback) {
@@ -41,6 +48,23 @@ void PlatformInput::begin() {
 bool PlatformInput::touched() {
     const bool active = touchscreen_.touched();
     const uint32_t now = millis();
+
+    if (gRequireFreshRelease) {
+        if (active) {
+            gFreshReleaseSince = 0;
+            releaseSince_ = 0;
+        }
+        else if (gFreshReleaseSince == 0) {
+            gFreshReleaseSince = now;
+        }
+        else if ((now - gFreshReleaseSince) >= kTapReleaseDebounceMs) {
+            gRequireFreshRelease = false;
+            gFreshReleaseSince = 0;
+            tapDelivered_ = false;
+            releaseSince_ = 0;
+        }
+        return active;
+    }
 
     if (active) {
         releaseSince_ = 0;
@@ -85,7 +109,7 @@ bool PlatformInput::readTouch(PlatformTouchPoint& point) {
     point.y = mapAxis(sample.x, cyd::kTouchRawMinX, cyd::kTouchRawMaxX,
                       cyd::kScreenHeight - 1);
 
-    if (!tapDelivered_) {
+    if (!tapDelivered_ && !gRequireFreshRelease) {
         tapDelivered_ = true;
         releaseSince_ = 0;
 

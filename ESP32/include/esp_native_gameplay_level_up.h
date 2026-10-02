@@ -32,7 +32,8 @@ const EspNativeGameplayLevelUpView* EspNativeGameplayLevelUp_view(void);
 int EspNativeGameplayLevelUp_begin(
     const EspNativeGameplayPlayerXpResult* xp,
     uint32_t sequence);
-int EspNativeGameplayLevelUp_requestDismiss(void);
+int EspNativeGameplayLevelUp_requestDismiss(int16_t logicalX,
+                                            int16_t logicalY);
 int EspNativeGameplayLevelUp_isDismissPending(void);
 
 /* Resident gameplay arms exactly one wrapped world present when closing.

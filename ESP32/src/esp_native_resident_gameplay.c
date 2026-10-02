@@ -151,8 +151,14 @@ static void onGameplayTap(int16_t screenX,
 
     if (EspNativeGameplayLevelUp_isActive()) {
         ++gameplayState.taps;
-        if (EspNativeGameplayLevelUp_requestDismiss()) {
-            printf("[RESIDENTGAMEPLAY] LEVELUP-TAP tap=%u logical=%d,%d dismiss=requested worldAction=no feedback=none\n",
+        if (EspNativeGameplayLevelUp_requestDismiss(logicalX, logicalY)) {
+            printf("[RESIDENTGAMEPLAY] LEVELUP-TAP tap=%u logical=%d,%d dismiss=requested source=bottom-cta worldAction=no feedback=none\n",
+                   (unsigned int)gameplayState.taps,
+                   logicalX,
+                   logicalY);
+        }
+        else {
+            printf("[RESIDENTGAMEPLAY] LEVELUP-TAP-IGNORED tap=%u logical=%d,%d reason=outside-bottom-cta dismiss=no worldAction=no feedback=none\n",
                    (unsigned int)gameplayState.taps,
                    logicalX,
                    logicalY);
@@ -1797,11 +1803,18 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     if (EspNativeGameplayLevelUp_isActive()) {
+        EspNativeGameplayHudStats levelHudStats;
+        const EspNativeGameplayHudState* levelHud;
         if (!EspNativeGameplayLevelUp_isDismissPending()) return;
+        memset(&levelHudStats, 0, sizeof(levelHudStats));
+        levelHud = EspNativeGameplayHud_view();
         {
             const EspPlayerViewState* levelView = EspPlayerView_view();
             if (levelView == NULL || levelView->active != 1U ||
                 levelView->viewAngle != levelView->destAngle ||
+                levelHud == NULL ||
+                EspNativeGameplayHud_repaint(levelHud, &levelHudStats) !=
+                    ESP_NATIVE_GAMEPLAY_HUD_OK ||
                 !EspNativeGameplayLevelUp_armDismissPresent() ||
                 !renderCurrent(doomRpg->render,
                                (uint8_t)levelView->viewAngle,
@@ -1812,7 +1825,10 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         }
         if (!EspNativeGameplayLevelUp_finishDismiss()) {
             disableGameplay("levelup-close-owner");
+            return;
         }
+        printf("[RESIDENTGAMEPLAY] LEVELUP-CLOSE hudRepaint=yes hudPixels=%u worldRedraw=yes fullScreenOwner=released turnAdvance=no\n",
+               (unsigned int)levelHudStats.pixelsWritten);
         return;
     }
 
