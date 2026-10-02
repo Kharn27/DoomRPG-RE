@@ -21,7 +21,9 @@ char* EspNativeText_buildDivider(char out[32], const char* text) {
     }
 
     out[index] = ' ';
-    strncpy(&out[index + 1], text, 32);
+    /* Preserve the legacy visible bytes without reproducing its strncpy(32)
+     * zero-padding past the 32-byte destination. */
+    SDL_memcpy(&out[index + 1], text, (size_t)len);
     index = index + 1 + len;
     out[index] = ' ';
 
