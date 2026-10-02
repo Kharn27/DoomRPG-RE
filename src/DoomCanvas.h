@@ -14,7 +14,11 @@ struct Game_s;
 struct EntityDefManager_s;
 struct Combat_s;
 struct Hud_s;
+#ifdef DOOMRPG_ESP32
+struct EspNativeMenuState_s;
+#else
 struct MenuSystem_s;
+#endif
 struct ParticleSystem_s;
 
 typedef struct DoomCanvas_s
@@ -158,7 +162,11 @@ typedef struct DoomCanvas_s
 	struct EntityDefManager_s* entityDef;
 	struct Combat_s* combat;
 	struct Hud_s* hud;
+#ifdef DOOMRPG_ESP32
+	struct EspNativeMenuState_s* menuSystem;
+#else
 	struct MenuSystem_s* menuSystem;
+#endif
 	struct ParticleSystem_s* particleSystem;
 } DoomCanvas_t;
 
