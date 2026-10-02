@@ -210,6 +210,24 @@ int EspNativeGameplayLevelUp_isDismissPending(void) {
     return levelUp.active != 0U && levelUp.dismissPending != 0U;
 }
 
+int EspNativeGameplayLevelUp_armDismissPresent(void) {
+    if (levelUp.active == 0U || levelUp.dismissPending == 0U ||
+        levelUp.dismissPresentArmed != 0U) {
+        return 0;
+    }
+    levelUp.dismissPresentArmed = 1U;
+    return 1;
+}
+
+int EspNativeGameplayLevelUp_filterGameplayPresent(void) {
+    if (levelUp.active == 0U) return 0;
+    if (levelUp.dismissPresentArmed != 0U) {
+        levelUp.dismissPresentArmed = 0U;
+        return 0;
+    }
+    return 1;
+}
+
 int EspNativeGameplayLevelUp_finishDismiss(void) {
     EspNativeGameplayLevelUpView before;
     if (levelUp.active == 0U || levelUp.dismissPending == 0U) return 0;

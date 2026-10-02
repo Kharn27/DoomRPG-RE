@@ -1802,6 +1802,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             const EspPlayerViewState* levelView = EspPlayerView_view();
             if (levelView == NULL || levelView->active != 1U ||
                 levelView->viewAngle != levelView->destAngle ||
+                !EspNativeGameplayLevelUp_armDismissPresent() ||
                 !renderCurrent(doomRpg->render,
                                (uint8_t)levelView->viewAngle,
                                "LEVELUP-CLOSE")) {

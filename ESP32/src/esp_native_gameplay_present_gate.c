@@ -1,6 +1,7 @@
 #include <stdint.h>
 
 #include "esp_native_gameplay_present_gate.h"
+#include "esp_native_gameplay_level_up.h"
 #include "esp_native_transition_presentation.h"
 
 static uint8_t gateArmed;
@@ -45,6 +46,16 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * for its own progress frames, so the loading UI remains publishable.
      */
     if (EspNativeTransitionPresentation_isLoadingActive()) {
+        return 1;
+    }
+
+    /*
+     * LEVEL UP owns the physical screen until an explicit tap. World/death/gib
+     * code may continue settling its internal framebuffer state, but none of
+     * those gameplay presents can reach the CYD. Resident gameplay arms one
+     * exact bypass only for the full world redraw that closes the modal.
+     */
+    if (EspNativeGameplayLevelUp_filterGameplayPresent()) {
         return 1;
     }
 

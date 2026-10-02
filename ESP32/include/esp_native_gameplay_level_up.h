@@ -22,6 +22,8 @@ typedef struct EspNativeGameplayLevelUpView_s {
     uint8_t accuracyGain;
     uint8_t active;
     uint8_t dismissPending;
+    uint8_t dismissPresentArmed;
+    uint8_t reserved[3];
 } EspNativeGameplayLevelUpView;
 
 void EspNativeGameplayLevelUp_reset(void);
@@ -32,6 +34,13 @@ int EspNativeGameplayLevelUp_begin(
     uint32_t sequence);
 int EspNativeGameplayLevelUp_requestDismiss(void);
 int EspNativeGameplayLevelUp_isDismissPending(void);
+
+/* Resident gameplay arms exactly one wrapped world present when closing.
+ * Every other gameplay present stays physically suppressed while the full-screen
+ * owner is active, including late death/gib/HITFX redraws. */
+int EspNativeGameplayLevelUp_armDismissPresent(void);
+int EspNativeGameplayLevelUp_filterGameplayPresent(void);
+
 int EspNativeGameplayLevelUp_finishDismiss(void);
 
 #ifdef __cplusplus
