@@ -5,7 +5,7 @@
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "Menu.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "Render.h"
 
 #include "native_main_menu_160x120_layout.h"
@@ -117,7 +117,7 @@ static int paintBackState(int armed) {
 }
 
 static int returnToMainMenu(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
     Render_t* render = doomRpg->render;
     uint32_t finalHash = 0U;
 

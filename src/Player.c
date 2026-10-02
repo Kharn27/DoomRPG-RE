@@ -13,7 +13,11 @@
 #include "CombatEntity.h"
 #include "Combat.h"
 #include "Weapon.h"
+#ifndef DOOMRPG_ESP32
 #include "MenuSystem.h"
+#else
+#include "esp_native_text_format.h"
+#endif
 #include "Sound.h"
 #include "SDL_Video.h"
 
@@ -142,6 +146,9 @@ void Player_nextLevel(Player_t* player)
 {
 	CombatEntity_t* ce;
 	char msg[64], text[256];
+#ifdef DOOMRPG_ESP32
+	char divider[32];
+#endif
 	player->level++;
 	player->nextLevelXP = Player_calcLevelXP(player, player->level);
 	ce = &player->ce;
@@ -151,7 +158,11 @@ void Player_nextLevel(Player_t* player)
 		Sound_playSound(player->doomRpg->sound, 5043, SND_FLG_LOOP | SND_FLG_STOPSOUNDS | SND_FLG_ISMUSIC, 6);
 	}
 
+	#ifdef DOOMRPG_ESP32
+	strncpy(text, EspNativeText_buildDivider(divider, "Level up!"), sizeof(text));
+#else
 	strncpy(text, MenuSystem_buildDivider(player->doomRpg->menuSystem, "Level up!"), sizeof(text));
+#endif
 	strncat(text, "|", sizeof(text));
 	SDL_snprintf(msg, sizeof(msg), "Level: %d|", player->level);
 	strncat(text, msg, sizeof(text));
@@ -521,6 +532,9 @@ void Player_pain(Player_t* player, int i, int i2)
 	Combat_t* combat;
 	CombatEntity_t* ce;
 	char msg[64], text[128];
+#ifdef DOOMRPG_ESP32
+	char divider[32];
+#endif
 	boolean dogDied;
 	int armor, h1, h2, damage, dogDamage;
 
@@ -603,13 +617,25 @@ void Player_pain(Player_t* player, int i, int i2)
 		h2 = ((CombatEntity_getHealth(ce) - i) << 16) / (CombatEntity_getMaxHealth(ce) << 8);
 		if (h2 > 0) {
 			if (h1 > 26 && h2 <= 26) {
+				#ifdef DOOMRPG_ESP32
+				Hud_addMessageForce(player->doomRpg->hud, EspNativeText_buildDivider(divider, "Near Death!"), true);
+#else
 				Hud_addMessageForce(player->doomRpg->hud, MenuSystem_buildDivider(player->doomRpg->menuSystem, "Near Death!"), true);
+#endif
 			}
 			else if (h1 > 78 && h2 <= 78) {
+				#ifdef DOOMRPG_ESP32
+				Hud_addMessageForce(player->doomRpg->hud, EspNativeText_buildDivider(divider, "Low Health!"), true);
+#else
 				Hud_addMessageForce(player->doomRpg->hud, MenuSystem_buildDivider(player->doomRpg->menuSystem, "Low Health!"), true);
+#endif
 			}
 			else if (armor > 0 && CombatEntity_getArmor(ce) == 0) {
+				#ifdef DOOMRPG_ESP32
+				Hud_addMessageForce(player->doomRpg->hud, EspNativeText_buildDivider(divider, "Armor Gone!"), true);
+#else
 				Hud_addMessageForce(player->doomRpg->hud, MenuSystem_buildDivider(player->doomRpg->menuSystem, "Armor Gone!"), true);
+#endif
 			}
 		}
 		Player_addHealth(player, -i);

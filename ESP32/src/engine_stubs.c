@@ -7,7 +7,7 @@
 #include "EntityDef.h"
 #include "Game.h"
 #include "Hud.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "Player.h"
 #include "Render.h"
 #include "SDL_Video.h"
@@ -134,7 +134,7 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
     metrics->game = sizeof(Game_t);
     metrics->player = sizeof(Player_t);
     metrics->combat = sizeof(Combat_t);
-    metrics->supportObjects = sizeof(MenuSystem_t) + sizeof(Hud_t) +
+    metrics->supportObjects = sizeof(EspNativeMenuState_t) + sizeof(Hud_t) +
                               sizeof(Sound_t) + sizeof(EntityDef_t);
     metrics->totalInitialObjects = metrics->doomRpg + metrics->doomCanvas +
         metrics->render + metrics->game + metrics->player + metrics->combat +

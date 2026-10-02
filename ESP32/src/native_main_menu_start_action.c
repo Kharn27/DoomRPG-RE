@@ -6,7 +6,7 @@
 #include "DoomCanvas.h"
 #include "Game.h"
 #include "Menu.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "Player.h"
 #include "Render.h"
 #include "esp_native_audio_intent.h"
@@ -134,7 +134,7 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
 int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     DoomCanvas_t* doomCanvas;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     Player_t* player;
     Render_t* render;
     uint32_t inputHash;

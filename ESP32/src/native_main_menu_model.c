@@ -5,7 +5,7 @@
 #include "DoomCanvas.h"
 #include "Hud.h"
 #include "Menu.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 
 #include "esp_legacy_asset_source.h"
 #include "native_main_menu_model.h"
@@ -59,7 +59,7 @@ static void setFixedItem(MenuItem_t* item, const char* text, int flags) {
 
 
 static void resetFixedModel(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
 
     doomRpg->hud->logMessage[0] = '\0';
     menuSystem->scrollIndex = 0;
@@ -69,7 +69,7 @@ static void resetFixedModel(DoomRPG_t* doomRpg) {
 
 int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
 
     if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
         doomRpg->hud == NULL) {
@@ -96,7 +96,7 @@ int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
 }
 
 static int buildFixedContinueModel(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
 
     resetFixedModel(doomRpg);
     menuSystem->menu = MENU_MAIN_CONTINUE;
@@ -111,7 +111,7 @@ static int buildFixedContinueModel(DoomRPG_t* doomRpg) {
 }
 
 static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
 
     resetFixedModel(doomRpg);
     menuSystem->menu = MENU_MAIN_OPTIONS;
@@ -127,7 +127,7 @@ static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
 }
 
 static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     uint8_t* data = NULL;
     uint32_t assetSize = 0U;
     int readSize = 0;
@@ -240,7 +240,7 @@ static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
            helpLineCount,
            (unsigned int)readPos,
            (unsigned int)writePos,
-           MAX_MENUITEMS,
+           ESP_NATIVE_MENU_MAX_ITEMS,
            MAIN_HELP_LINE_MAX_CHARS,
            (unsigned int)(assetSize - readPos));
     return 1;
@@ -249,7 +249,7 @@ static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
 int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
                                     int menuId) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     DoomCanvas_t* canvas;
     const char* builder = "Menu_initMenu-transitional";
 
@@ -309,7 +309,7 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
     if (menuSystem->numItems <= 0 ||
         (menuId == MENU_MAIN_HELP_ABOUT
              ? menuSystem->numItems > MAIN_HELP_MAX_LINES
-             : menuSystem->numItems > MAX_MENUITEMS) ||
+             : menuSystem->numItems > ESP_NATIVE_MENU_MAX_ITEMS) ||
         menuSystem->selectedIndex < 0 ||
         menuSystem->selectedIndex >= menuSystem->numItems) {
         printf("[MAINMODEL] FAILED target=%d items=%d selected=%d\n",
@@ -336,7 +336,7 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
 
 int DoomRPG_esp32MainMenuModelLeave(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     DoomCanvas_t* canvas;
 
     if (doomRpg == NULL || doomRpg->menuSystem == NULL ||

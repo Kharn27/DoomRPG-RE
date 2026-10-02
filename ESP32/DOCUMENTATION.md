@@ -13,17 +13,252 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ## Current active branch
 
 ```text
-current main = 643701bbf26461fb328e03a20302d37598b9e6c9
-branch = agent/esp32-retire-menu-system-shell
-hardware-tested code boundary = f398807df63c88d3d453a71eaf675cd1be2c1dbd
-CI = esp32-cyd #1420 SUCCESS
+current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1
+branch = agent/esp32-native-menu-state-root
+hardware-tested code boundary = ad8fe2f6e1ed8186a1cdd871d241b72623d905c6
+CI = esp32-cyd #1509 SUCCESS
 static RAM = 45176 B
-linked Flash = 770197 B
-artifact id = 11222143129
-artifact digest = sha256:2f99a975d67cf895c54a5d50fbc0714b6829fc91c7ee65215ddb5fe041683911
+linked Flash = 770193 B
+artifact id = 11225823078
+artifact digest = sha256:f37f9fc35cc06b9731ba50f4a41c6d27ccc20a00e61fb1c26743cd683c6cb6fd
 hardware = targeted story teardown probe PASS + normal Start Game intro -> Entrance -> ENGINESESSION READY PASS
 status = early engine teardown cannot retain native story hand owner; DoomCanvas_free release is hardware-proven with exact heap restoration
 ```
+
+## Native divider formatter replaces Player MenuSystem buffer — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`ad8fe2f6e1ed8186a1cdd871d241b72623d905c6`.
+
+ESP32 `Player.c` no longer depends on `MenuSystem_buildDivider()` or the
+legacy `MenuSystem_t::stringBuffer` scratch. The replacement is the
+caller-owned, allocation-free `EspNativeText_buildDivider()`.
+
+The first probe exposed a latent legacy overflow pattern: the original
+`strncpy(..., 32)` zero-padding could write beyond the 32-byte destination
+when reproduced with a local buffer. The native formatter now copies only the
+visible legacy text bytes and writes the suffix/NUL explicitly.
+
+A guarded hardware probe validates all four Player divider strings byte-for-byte
+while checking heap stability and post-buffer guard bytes:
+
+```text
+[DIVIDERPROBE] PASS cases=4 heap8=84048 exact=yes allocation=no owner=caller
+```
+
+The diagnostic firmware then continued normally through prerender, mappings and
+native MAIN with no stack-protector failure.
+
+Normal `esp32-cyd` CI #1509 is SUCCESS at the same code boundary.
+
+## Native menu runtime decoupled from MenuSystem.h — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`35b6986686fa015a4c1ce554b45f1c6d1c865f7d`.
+
+The permanent ESP32 menu runtime modules no longer include the legacy
+`MenuSystem.h` header for state layout or capacity. They include
+`esp_native_menu_state.h` directly and use
+`ESP_NATIVE_MENU_MAX_ITEMS`.
+
+The CI initially exposed two residual `MAX_MENUITEMS` uses in the native menu
+model; these were replaced with the native capacity constant without restoring
+the legacy include.
+
+Real-CYD validation covered the full path:
+
+```text
+boot
+[MENUSTORAGE] INIT bytes=496
+OPTIONS -> Back
+HELP page up/down -> Back
+Start Game
+INTRO1 FNV=ade0195d deltaHeap=0
+intro disposal recovered=33944
+Entrance load
+ENGINESESSION READY
+HUB open -> weapons -> status -> system -> close
+shapeData=NULL
+mediaTexels=NULL
+```
+
+Normal `esp32-cyd` CI #1489 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770193 B
+artifact id  = 11225823078
+digest       = sha256:f37f9fc35cc06b9731ba50f4a41c6d27ccc20a00e61fb1c26743cd683c6cb6fd
+```
+
+This establishes that the native menu runtime no longer depends on the legacy
+menu header for its own state representation.
+
+## Native menu state header extracted — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`d67caf8fe889f39802ca8a4a8499ecac53fb9e3d`.
+
+The permanent ESP32 menu state definition now lives in
+`ESP32/src/esp_native_menu_state.h`.
+`src/MenuSystem.h` no longer owns the native struct layout; on ESP32 it is only
+a compatibility facade that imports the native header and aliases the legacy
+name.
+
+The struct remains layout-identical:
+
+```text
+[MENUSTORAGE] INIT bytes=496 items=8 owner=esp-native compatibilityLayout=EspNativeMenuState_t
+[CORE] MenuSystem used=512
+```
+
+Real-CYD validation covered:
+
+```text
+boot
+OPTIONS -> Back
+HELP page up/down -> Back
+MAIN FNV=522dc605
+Start Game
+INTRO1 FNV=ade0195d deltaHeap=0
+intro disposal recovered=33944
+Entrance load
+ENGINESESSION READY
+shapeData=NULL
+mediaTexels=NULL
+```
+
+Normal `esp32-cyd` CI #1466 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770193 B
+artifact id  = 11223917653
+digest       = sha256:ecd9433708f4f6c3b7dbeb25770faa0f4b87cdd2b7c8733b84c21fe6ddb44021
+```
+
+This proves the native type can live independently of the legacy header before
+native modules drop their own `MenuSystem.h` includes.
+
+## Native menu runtime APIs typed directly — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`7a14a0c8c092f7a24195251e669f020982206755`.
+
+All permanent ESP32 native menu runtime modules now use
+`EspNativeMenuState_t*` directly rather than the compatibility
+`MenuSystem_t*` alias, including storage, MAIN model/touch/actions,
+OPTIONS/Back, Start action and the core-size accounting probe.
+
+Real-CYD proof:
+
+```text
+[MENUSTORAGE] INIT bytes=496 items=8 owner=esp-native compatibilityLayout=EspNativeMenuState_t
+MAIN FNV=522dc605
+HELP page-up 24->16->8->0 exact FNVs=9213df95/d0788359/5f22cf6b
+HELP -> MAIN FNV=522dc605
+heap8=62112
+largest8=32756
+p.bmp preflight=present
+```
+
+Normal `esp32-cyd` CI #1458 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770193 B
+artifact id  = 11224131637
+digest       = sha256:77ad414bf3e5f0487444260776c527cc239fbaaf1a99f4af4f583c2deb4466bb
+```
+
+This validates direct native typing before moving the native state definition
+out of the legacy `MenuSystem.h` header.
+
+## Shared p.bmp preflight restored — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`862d2f7ca482d74c1fbbd2f7730d0e3479d3c22c`.
+
+A review correctly identified that `p.bmp` remained a mandatory shared runtime
+dependency after ownership moved out of the legacy menu shell: native story
+presentation and the gameplay HUB both still require it. Removing it from the
+startup preflight allowed a malformed PAK to pass startup and fail later during
+Start.
+
+The resource remains **not owned by MenuSystem**. Only its presence validation
+is restored:
+
+```text
+[PRERENDER] Resource preflight (3 files)
+[PRERENDER] j.bmp          bytes=4264 backing=pak
+[PRERENDER] p.bmp          bytes=156 backing=pak
+[PRERENDER] entities.db    bytes=2762 backing=pak
+[PRERENDER] Resource preflight OK
+```
+
+The same real-CYD boot reaches the unchanged native MAIN:
+
+```text
+[MENUSTORAGE] INIT bytes=496
+MAIN FNV=522dc605
+heap8=62112
+largest8=32756
+```
+
+Normal `esp32-cyd` CI #1448 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770193 B
+artifact id  = 11223741289
+digest       = sha256:09daf578d0c2f854ee27fdfefbf2a7d49be0a45527e976ba03293bb247b11971
+```
+
+## Native menu state root identity — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`f76e3ed415c5d2012fe61cc38b7cca11631ee796`.
+
+This first root-migration step introduces `EspNativeMenuState_t` as the
+canonical ESP32 menu-state identity while preserving the existing 496-byte
+layout exactly.
+
+On ESP32:
+- `DoomRPG_t::menuSystem` now points to `EspNativeMenuState_s*`;
+- `DoomCanvas_t::menuSystem` now points to `EspNativeMenuState_s*`;
+- `MenuSystem_t` remains only as a compatibility alias for surviving legacy
+  signatures;
+- desktop/J2ME layout remains unchanged.
+
+Real-CYD regression:
+
+```text
+[MENUSTORAGE] INIT bytes=496
+MAIN FNV=522dc605
+HELP0 FNV=5f22cf6b
+HELP8 FNV=d0788359
+HELP16 FNV=9213df95
+HELP24 FNV=b0191189
+HELP32 FNV=4c944ee5
+HELP40 FNV=943f0b77
+OPTIONS FNV=162d3999
+MAIN heap8=62112
+largest8=32756
+shapeData=NULL
+mediaTexels=NULL
+```
+
+Normal `esp32-cyd` CI #1434 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770197 B
+artifact id  = 11222798316
+digest       = sha256:6b61f9188b2a079e11d527d0cfd357e9062e67927826b500e35e1d597bc4e503
+```
+
+No runtime behavior or layout change was observed. This validates the native
+type identity before removing the compatibility alias from native APIs.
 
 ## Story-hand teardown safety — REAL-CYD PASS (2026-10-02)
 

@@ -7,7 +7,7 @@
 #include "DoomCanvas.h"
 #include "Menu.h"
 #include "MenuItem.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "Render.h"
 #include "esp_native_audio_intent.h"
 
@@ -50,7 +50,7 @@ static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 }
 
-static uint32_t modelHash(const MenuSystem_t* menuSystem) {
+static uint32_t modelHash(const EspNativeMenuState_t* menuSystem) {
     uint32_t hash = 2166136261U;
     int i;
 
@@ -85,7 +85,7 @@ static uint32_t modelHash(const MenuSystem_t* menuSystem) {
     return hash;
 }
 
-static int validateOptionsModel(const MenuSystem_t* menuSystem) {
+static int validateOptionsModel(const EspNativeMenuState_t* menuSystem) {
     int i;
 
     if (menuSystem->menu != MENU_MAIN_OPTIONS ||
@@ -133,7 +133,7 @@ static int paintOptionsBounded(DoomRPG_t* doomRpg,
                                uint32_t* logoHashOut,
                                uint32_t* finalHashOut) {
     DoomCanvas_t* doomCanvas = doomRpg->doomCanvas;
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
     SDL_Rect logoDst;
     uint32_t logoHash;
     uint32_t finalHash;
@@ -172,7 +172,7 @@ static int paintOptionsBounded(DoomRPG_t* doomRpg,
 int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
                                          uint32_t* finalFramebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     Render_t* render;
     uint32_t logoHash = 0U;
     uint32_t inputHash;

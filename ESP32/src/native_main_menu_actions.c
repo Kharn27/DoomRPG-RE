@@ -5,7 +5,7 @@
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "Menu.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "Render.h"
 #include "esp_native_audio_intent.h"
 
@@ -38,7 +38,7 @@ int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
                                       const char* source,
                                       uint32_t* finalFramebufferFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     uint32_t finalFNV = 0U;
     uint32_t startMs;
     uint32_t elapsedMs;
@@ -127,7 +127,7 @@ int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
 
 static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomCanvas_t* canvas = doomRpg->doomCanvas;
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
     int visible;
     int maxScroll;
     int end;
@@ -235,7 +235,7 @@ static void helpTap(int16_t screenX,
                     uint16_t rawX,
                     uint16_t rawY) {
     DoomRPG_t* doomRpg = helpDoomRpg;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     int logicalX;
     int logicalY;
     int maxScroll;
@@ -346,7 +346,7 @@ static void helpTap(int16_t screenX,
 }
 
 static int activateHelp(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     uint32_t inputFNV;
     uint32_t expectedFNV;
     uint32_t helpFNV = 0U;
