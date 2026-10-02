@@ -27,6 +27,7 @@
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_monster_activation.h"
+#include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_player_resources.h"
@@ -60,6 +61,7 @@ constexpr uint8_t kMagicV7[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '7'};
 constexpr uint8_t kMagicV8[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '8'};
 constexpr uint8_t kMagicV9[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '9'};
 constexpr uint8_t kMagicV10[8] = {'D', 'R', 'P', 'G', 'S', 'V', '1', '0'};
+constexpr uint8_t kMagicV11[8] = {'D', 'R', 'P', 'G', 'S', 'V', '1', '1'};
 constexpr uint16_t kVersionV1 = 1U;
 constexpr uint16_t kVersionV2 = 2U;
 constexpr uint16_t kVersionV3 = 3U;
@@ -70,6 +72,7 @@ constexpr uint16_t kVersionV7 = 7U;
 constexpr uint16_t kVersionV8 = 8U;
 constexpr uint16_t kVersionV9 = 9U;
 constexpr uint16_t kVersionV10 = 10U;
+constexpr uint16_t kVersionV11 = 11U;
 constexpr uint8_t kFamiliarAmmoType = 5U;
 constexpr uint8_t kStatusSave = 0U;
 constexpr uint8_t kStatusLoad = 1U;
@@ -145,6 +148,7 @@ struct LoadedSaveRecord {
     uint8_t hasActionRemoved;
     uint8_t hasAutomap;
     uint8_t hasMonsterSpatial;
+    uint8_t hasMonsterDrops;
     EspPlayerLevelProgress levelProgress;
 };
 
@@ -166,8 +170,13 @@ constexpr size_t kRecordBytesV8 =
 constexpr size_t kRecordBytesV9 =
     kRecordBytesV7 + sizeof(NativeSaveRecordV9Tail);
 constexpr size_t kRecordBytesV10 = kRecordBytesV9 + sizeof(EspPlayerLevelProgress);
+constexpr size_t kRecordBytesV11 =
+    kRecordBytesV10 + sizeof(EspNativeGameplayMonsterDropSnapshot);
 static_assert(sizeof(EspPlayerLevelProgress) == 16U && kRecordBytesV10 == 5460U,
               "v10 appends only the 16-byte level progress suffix");
+static_assert(sizeof(EspNativeGameplayMonsterDropSnapshot) == 144U &&
+                  kRecordBytesV11 == 5604U,
+              "v11 appends only the 144-byte dynamic monster-drop snapshot");
 
 static_assert(sizeof(EspNativeGameplayCrateTransformSnapshot) == 176U,
               "crate transform checkpoint must remain exactly 176 bytes");
@@ -191,7 +200,7 @@ static_assert(sizeof(NativeSaveRecordV9Tail) == 3508U,
               "native save v9 tail must remain exactly 3508 bytes");
 static_assert(kRecordBytesV9 == 5444U,
               "native save v9 must remain the bounded 5444-byte streamed record");
-static_assert(kRecordBytesV9 <= 0xffffU,
+static_assert(kRecordBytesV11 <= 0xffffU,
               "native save recordBytes field is uint16_t");
 
 static_assert(sizeof(NativeSaveCore) == 132U,
@@ -533,17 +542,20 @@ uint32_t recordCrcV9(
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
     const NativeSaveRecordV9Tail& tail,
-    const EspPlayerLevelProgress* progress = nullptr) {
-    const uint8_t* segments[5] = {
+    const EspPlayerLevelProgress* progress = nullptr,
+    const EspNativeGameplayMonsterDropSnapshot* monsterDrops = nullptr) {
+    const uint8_t* segments[6] = {
         reinterpret_cast<const uint8_t*>(&prefix),
         reinterpret_cast<const uint8_t*>(&crateTransforms),
         reinterpret_cast<const uint8_t*>(&automap),
         reinterpret_cast<const uint8_t*>(&tail),
-        reinterpret_cast<const uint8_t*>(progress)
+        reinterpret_cast<const uint8_t*>(progress),
+        reinterpret_cast<const uint8_t*>(monsterDrops)
     };
-    const size_t sizes[5] = {
+    const size_t sizes[6] = {
         sizeof(prefix), sizeof(crateTransforms), sizeof(automap), sizeof(tail),
-        progress != nullptr ? sizeof(*progress) : 0U
+        progress != nullptr ? sizeof(*progress) : 0U,
+        monsterDrops != nullptr ? sizeof(*monsterDrops) : 0U
     };
     const size_t zeroOffset = offsetof(NativeSaveCore, recordCrc32);
     const size_t zeroEnd = zeroOffset + sizeof(uint32_t);
@@ -552,7 +564,7 @@ uint32_t recordCrcV9(
     size_t i;
     uint32_t bit;
 
-    for (segment = 0U; segment < 5U; ++segment) {
+    for (segment = 0U; segment < 6U; ++segment) {
         for (i = 0U; i < sizes[segment]; ++i) {
             uint8_t value = segments[segment][i];
             if (segment == 0U && i >= zeroOffset && i < zeroEnd) value = 0U;
@@ -1132,18 +1144,30 @@ bool loadedV9Valid(
     const LoadedSaveRecord& record,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
-    const NativeSaveRecordV9Tail& tail) {
+    const NativeSaveRecordV9Tail& tail,
+    const EspNativeGameplayMonsterDropSnapshot* monsterDrops) {
+    const bool v11 = record.core.version == kVersionV11;
     const bool v10 = record.core.version == kVersionV10;
-    const bool coreOk = v10
-        ? coreShapeValid(record.core, kMagicV10, kVersionV10,
-                         (uint16_t)kRecordBytesV10) &&
+    const bool coreOk = v11
+        ? coreShapeValid(record.core, kMagicV11, kVersionV11,
+                         (uint16_t)kRecordBytesV11) &&
           levelProgressShapeValid(record.levelProgress, record.core)
-        : coreShapeValid(record.core, kMagicV9, kVersionV9,
-                         (uint16_t)kRecordBytesV9);
+        : (v10
+               ? coreShapeValid(record.core, kMagicV10, kVersionV10,
+                                (uint16_t)kRecordBytesV10) &&
+                 levelProgressShapeValid(record.levelProgress, record.core)
+               : coreShapeValid(record.core, kMagicV9, kVersionV9,
+                                (uint16_t)kRecordBytesV9));
+    const bool dropsOk =
+        !v11 ||
+        (monsterDrops != nullptr &&
+         EspNativeGameplayMonsterDrop_snapshotShapeValid(
+             monsterDrops, record.core.runtimeFNV1a));
     const uint32_t actualCrc =
         recordCrcV9(*reinterpret_cast<const NativeSaveRecordV5*>(&record),
                     crateTransforms, automap, tail,
-                    v10 ? &record.levelProgress : nullptr);
+                    (v10 || v11) ? &record.levelProgress : nullptr,
+                    v11 ? monsterDrops : nullptr);
     const bool crcOk = record.core.recordCrc32 == actualCrc;
     const bool resourcesOk = resourceShapeValid(record.resources, record.core);
     const bool scriptOk = scriptShapeValid(record.script, record.core);
@@ -1160,10 +1184,11 @@ bool loadedV9Valid(
     const bool spatialOk = monsterSpatialShapeValid(tail, record.core);
     const bool valid =
         coreOk && crcOk && resourcesOk && scriptOk && linesOk &&
-        removedOk && cratesOk && disjointOk && automapOk && spatialOk;
+        removedOk && cratesOk && disjointOk && automapOk && spatialOk &&
+        dropsOk;
 
     if (!valid) {
-        printf("[NATIVESAVE] SPATIAL-VALIDATE version=%u core=%u crc=%u storedCrc=%08x actualCrc=%08x resources=%u script=%u lines=%u removed=%u cratesFile=%u disjoint=%u automap=%u monsterSpatial=%u failClosed=yes\n",
+        printf("[NATIVESAVE] SPATIAL-VALIDATE version=%u core=%u crc=%u storedCrc=%08x actualCrc=%08x resources=%u script=%u lines=%u removed=%u cratesFile=%u disjoint=%u automap=%u monsterSpatial=%u monsterDrops=%u failClosed=yes\n",
                (unsigned int)record.core.version,
                coreOk ? 1U : 0U,
                crcOk ? 1U : 0U,
@@ -1176,7 +1201,8 @@ bool loadedV9Valid(
                cratesOk ? 1U : 0U,
                disjointOk ? 1U : 0U,
                automapOk ? 1U : 0U,
-               spatialOk ? 1U : 0U);
+               spatialOk ? 1U : 0U,
+               dropsOk ? 1U : 0U);
     }
     return valid;
 }
@@ -1186,12 +1212,16 @@ bool recordCurrentValid(
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
     const NativeSaveRecordV9Tail& tail,
-    const EspPlayerLevelProgress& progress) {
-    return coreShapeValid(prefix.core, kMagicV10, kVersionV10,
-                          (uint16_t)kRecordBytesV10) &&
+    const EspPlayerLevelProgress& progress,
+    const EspNativeGameplayMonsterDropSnapshot& monsterDrops) {
+    return coreShapeValid(prefix.core, kMagicV11, kVersionV11,
+                          (uint16_t)kRecordBytesV11) &&
            levelProgressShapeValid(progress, prefix.core) &&
+           EspNativeGameplayMonsterDrop_snapshotShapeValid(
+               &monsterDrops, prefix.core.runtimeFNV1a) &&
            prefix.core.recordCrc32 ==
-               recordCrcV9(prefix, crateTransforms, automap, tail, &progress) &&
+               recordCrcV9(prefix, crateTransforms, automap, tail, &progress,
+                           &monsterDrops) &&
            resourceShapeValid(prefix.resources, prefix.core) &&
            scriptShapeValid(prefix.script, prefix.core) &&
            lineShapeValid(prefix.lines, prefix.core) &&
@@ -1414,9 +1444,11 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         return true;
     }
 
-    if (fileBytes == kRecordBytesV9 || fileBytes == kRecordBytesV10) {
+    if (fileBytes == kRecordBytesV9 || fileBytes == kRecordBytesV10 ||
+        fileBytes == kRecordBytesV11) {
         EspNativeGameplayCrateTransformSnapshot crateTransforms;
         EspMapAutomapSnapshot automap;
+        EspNativeGameplayMonsterDropSnapshot monsterDrops;
         NativeSaveRecordV9Tail* tail;
 
         /*
@@ -1443,6 +1475,7 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
 
         memset(&crateTransforms, 0, sizeof(crateTransforms));
         memset(&automap, 0, sizeof(automap));
+        memset(&monsterDrops, 0, sizeof(monsterDrops));
         memset(tail, 0, sizeof(*tail));
         got = file.read(reinterpret_cast<uint8_t*>(outRecord),
                         sizeof(NativeSaveRecordV5));
@@ -1459,17 +1492,24 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
                             sizeof(*tail));
         }
         bool sectionsRead = got == sizeof(*tail);
-        if (sectionsRead && fileBytes == kRecordBytesV10) {
+        if (sectionsRead &&
+            (fileBytes == kRecordBytesV10 || fileBytes == kRecordBytesV11)) {
             sectionsRead = file.read(
                 reinterpret_cast<uint8_t*>(&outRecord->levelProgress),
                 sizeof(outRecord->levelProgress)) == sizeof(outRecord->levelProgress);
+        }
+        if (sectionsRead && fileBytes == kRecordBytesV11) {
+            sectionsRead = file.read(
+                reinterpret_cast<uint8_t*>(&monsterDrops),
+                sizeof(monsterDrops)) == sizeof(monsterDrops);
         }
         file.close();
 
         const bool valid =
             sectionsRead &&
             outRecord->core.recordBytes == fileBytes &&
-            loadedV9Valid(*outRecord, crateTransforms, automap, *tail);
+            loadedV9Valid(*outRecord, crateTransforms, automap, *tail,
+                          fileBytes == kRecordBytesV11 ? &monsterDrops : nullptr);
         printf("[NATIVESAVE] READABLE-SPATIAL path=%s bytes=%u tailWorkspace=%u monsterState=%u monsterTopology=%u monsterPosition=%u monsterActivation=%u result=%s\n",
                path,
                (unsigned int)fileBytes,
@@ -1491,6 +1531,8 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         outRecord->hasActionRemoved = 1U;
         outRecord->hasAutomap = 1U;
         outRecord->hasMonsterSpatial = 1U;
+        outRecord->hasMonsterDrops =
+            fileBytes == kRecordBytesV11 ? 1U : 0U;
         return true;
     }
 
@@ -1631,13 +1673,15 @@ bool writeExactCurrent(
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
     const NativeSaveRecordV9Tail& tail,
-    const EspPlayerLevelProgress& progress) {
+    const EspPlayerLevelProgress& progress,
+    const EspNativeGameplayMonsterDropSnapshot& monsterDrops) {
     File file = SD.open(path, FILE_WRITE);
     size_t wrotePrefix;
     size_t wroteCrate;
     size_t wroteAutomap;
     size_t wroteTail;
     size_t wroteProgress;
+    size_t wroteMonsterDrops;
     if (!file) return false;
     wrotePrefix = file.write(reinterpret_cast<const uint8_t*>(&prefix),
                              sizeof(prefix));
@@ -1649,12 +1693,16 @@ bool writeExactCurrent(
                            sizeof(tail));
     wroteProgress = file.write(reinterpret_cast<const uint8_t*>(&progress),
                                sizeof(progress));
+    wroteMonsterDrops = file.write(
+        reinterpret_cast<const uint8_t*>(&monsterDrops),
+        sizeof(monsterDrops));
     file.flush();
     file.close();
     return wrotePrefix == sizeof(prefix) &&
            wroteCrate == sizeof(crateTransforms) &&
            wroteAutomap == sizeof(automap) &&
-           wroteTail == sizeof(tail) && wroteProgress == sizeof(progress);
+           wroteTail == sizeof(tail) && wroteProgress == sizeof(progress) &&
+           wroteMonsterDrops == sizeof(monsterDrops);
 }
 
 bool readExactCurrentMatches(
@@ -1663,30 +1711,33 @@ bool readExactCurrentMatches(
     const EspNativeGameplayCrateTransformSnapshot& expectedCrate,
     const EspMapAutomapSnapshot& expectedAutomap,
     const NativeSaveRecordV9Tail& expectedTail,
-    const EspPlayerLevelProgress& expectedProgress) {
+    const EspPlayerLevelProgress& expectedProgress,
+    const EspNativeGameplayMonsterDropSnapshot& expectedMonsterDrops) {
     File file;
     uint8_t verify[64];
-    const uint8_t* segments[5] = {
+    const uint8_t* segments[6] = {
         reinterpret_cast<const uint8_t*>(&expectedPrefix),
         reinterpret_cast<const uint8_t*>(&expectedCrate),
         reinterpret_cast<const uint8_t*>(&expectedAutomap),
         reinterpret_cast<const uint8_t*>(&expectedTail),
-        reinterpret_cast<const uint8_t*>(&expectedProgress)
+        reinterpret_cast<const uint8_t*>(&expectedProgress),
+        reinterpret_cast<const uint8_t*>(&expectedMonsterDrops)
     };
-    const size_t sizes[5] = {
+    const size_t sizes[6] = {
         sizeof(expectedPrefix), sizeof(expectedCrate), sizeof(expectedAutomap),
-        sizeof(expectedTail), sizeof(expectedProgress)
+        sizeof(expectedTail), sizeof(expectedProgress),
+        sizeof(expectedMonsterDrops)
     };
     uint8_t segment;
 
     if (path == nullptr || !SD.exists(path)) return false;
     file = SD.open(path, FILE_READ);
-    if (!file || (size_t)file.size() != kRecordBytesV10) {
+    if (!file || (size_t)file.size() != kRecordBytesV11) {
         if (file) file.close();
         return false;
     }
 
-    for (segment = 0U; segment < 5U; ++segment) {
+    for (segment = 0U; segment < 6U; ++segment) {
         size_t offset = 0U;
         while (offset < sizes[segment]) {
             size_t chunk = sizes[segment] - offset;
@@ -1710,14 +1761,17 @@ bool commitRecordAtomicCurrent(
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
     const NativeSaveRecordV9Tail& tail,
-    const EspPlayerLevelProgress& progress) {
+    const EspPlayerLevelProgress& progress,
+    const EspNativeGameplayMonsterDropSnapshot& monsterDrops) {
     bool movedOld = false;
 
     if (SD.exists(kTempPath)) (void)SD.remove(kTempPath);
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
-    if (!writeExactCurrent(kTempPath, prefix, crateTransforms, automap, tail, progress) ||
+    if (!writeExactCurrent(kTempPath, prefix, crateTransforms, automap, tail,
+                           progress, monsterDrops) ||
         !readExactCurrentMatches(
-            kTempPath, prefix, crateTransforms, automap, tail, progress)) {
+            kTempPath, prefix, crateTransforms, automap, tail, progress,
+            monsterDrops)) {
         (void)SD.remove(kTempPath);
         return false;
     }
@@ -1739,7 +1793,8 @@ bool commitRecordAtomicCurrent(
     }
 
     if (!readExactCurrentMatches(
-            kSavePath, prefix, crateTransforms, automap, tail, progress)) {
+            kSavePath, prefix, crateTransforms, automap, tail, progress,
+            monsterDrops)) {
         (void)SD.remove(kSavePath);
         if (movedOld && SD.exists(kBackupPath)) {
             (void)SD.rename(kBackupPath, kSavePath);
@@ -1760,11 +1815,12 @@ bool readCrateSection(
     if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
         (core.version != kVersionV6 && core.version != kVersionV7 &&
          core.version != kVersionV8 && core.version != kVersionV9 &&
-         core.version != kVersionV10)) {
+         core.version != kVersionV10 && core.version != kVersionV11)) {
         return false;
     }
     const size_t expectedBytes =
-        core.version == kVersionV10 ? kRecordBytesV10 : core.version == kVersionV9
+        core.version == kVersionV11 ? kRecordBytesV11 : core.version == kVersionV10
+            ? kRecordBytesV10 : core.version == kVersionV9
             ? kRecordBytesV9
             : (core.version == kVersionV8
                    ? kRecordBytesV8
@@ -1815,11 +1871,13 @@ bool readAutomapSection(
     size_t got;
     if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
         (core.version != kVersionV7 && core.version != kVersionV8 &&
-         core.version != kVersionV9 && core.version != kVersionV10)) {
+         core.version != kVersionV9 && core.version != kVersionV10 &&
+         core.version != kVersionV11)) {
         return false;
     }
     const size_t expectedBytes =
-        core.version == kVersionV10 ? kRecordBytesV10 : core.version == kVersionV9
+        core.version == kVersionV11 ? kRecordBytesV11 : core.version == kVersionV10
+            ? kRecordBytesV10 : core.version == kVersionV9
             ? kRecordBytesV9
             : (core.version == kVersionV8 ? kRecordBytesV8 : kRecordBytesV7);
     file = SD.open(path, FILE_READ);
@@ -1904,7 +1962,7 @@ bool recoverOneShotTopologyFromScript(
     if (outHideApplied != nullptr) *outHideApplied = 0U;
 
     if ((core.version != kVersionV8 && core.version != kVersionV9 &&
-         core.version != kVersionV10) ||
+         core.version != kVersionV10 && core.version != kVersionV11) ||
         runtime == nullptr ||
         runtime->arenaFNV1a != core.runtimeFNV1a ||
         !EspMapScriptState_isReady() ||
@@ -2105,7 +2163,8 @@ bool restoreV9MonsterSpatialSections(
     uint16_t replayHide = 0U;
 
     if (path == nullptr || !SD.exists(path) ||
-        (core.version != kVersionV9 && core.version != kVersionV10)) {
+        (core.version != kVersionV9 && core.version != kVersionV10 &&
+         core.version != kVersionV11)) {
         return false;
     }
 
@@ -2195,18 +2254,83 @@ bool restoreV9MonsterSpatialSections(
     return ok;
 }
 
+bool readMonsterDropSection(
+    const char* path,
+    const NativeSaveCore& core,
+    EspNativeGameplayMonsterDropSnapshot* outSnapshot) {
+    File file;
+    size_t got;
+
+    if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
+        core.version != kVersionV11 ||
+        core.recordBytes != (uint16_t)kRecordBytesV11) {
+        return false;
+    }
+    file = SD.open(path, FILE_READ);
+    if (!file || (size_t)file.size() != kRecordBytesV11 ||
+        !file.seek(kRecordBytesV10)) {
+        if (file) file.close();
+        return false;
+    }
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    got = file.read(reinterpret_cast<uint8_t*>(outSnapshot),
+                    sizeof(*outSnapshot));
+    file.close();
+    return got == sizeof(*outSnapshot) &&
+           EspNativeGameplayMonsterDrop_snapshotShapeValid(
+               outSnapshot, core.runtimeFNV1a);
+}
+
+bool restoreMonsterDropSection(
+    const char* path,
+    const NativeSaveCore& core,
+    uint8_t* outVisible,
+    uint32_t* outStateFNV,
+    uint32_t* outSpawnSerial,
+    uint8_t* outNextSlot) {
+    EspNativeGameplayMonsterDropSnapshot snapshot;
+    const EspNativeGameplayMonsterDropView* view;
+
+    memset(&snapshot, 0, sizeof(snapshot));
+    if (!readMonsterDropSection(path, core, &snapshot) ||
+        !EspNativeGameplayMonsterDrop_restore(&snapshot)) {
+        EspNativeGameplayMonsterDrop_reset();
+        return false;
+    }
+    view = EspNativeGameplayMonsterDrop_view();
+    if (view == nullptr || view->sourceArenaFNV1a != core.runtimeFNV1a ||
+        view->spawnSerial != snapshot.spawnSerial ||
+        view->nextSlot != snapshot.nextSlot ||
+        EspNativeGameplayMonsterDrop_fingerprint() != snapshot.stateFNV1a) {
+        EspNativeGameplayMonsterDrop_reset();
+        return false;
+    }
+    if (outVisible != nullptr) *outVisible = view->visibleCount;
+    if (outStateFNV != nullptr) *outStateFNV = snapshot.stateFNV1a;
+    if (outSpawnSerial != nullptr) *outSpawnSerial = snapshot.spawnSerial;
+    if (outNextSlot != nullptr) *outNextSlot = snapshot.nextSlot;
+    printf("[MONSTERDROP] RESTORE version=11 arena=%08x serial=%u next=%u visible=%u stateFNV=%08x rng=untouched materialize=replay-no\n",
+           (unsigned int)core.runtimeFNV1a,
+           (unsigned int)snapshot.spawnSerial,
+           (unsigned int)snapshot.nextSlot,
+           (unsigned int)view->visibleCount,
+           (unsigned int)snapshot.stateFNV1a);
+    return true;
+}
+
 bool captureRecord(
     NativeSaveRecordV5* outPrefix,
     EspNativeGameplayCrateTransformSnapshot* outCrateTransforms,
     EspMapAutomapSnapshot* outAutomap,
     NativeSaveRecordV9Tail* outTail,
-    EspPlayerLevelProgress* outProgress) {
+    EspPlayerLevelProgress* outProgress,
+    EspNativeGameplayMonsterDropSnapshot* outMonsterDrops) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
 
     if (outPrefix == nullptr || outCrateTransforms == nullptr ||
         outAutomap == nullptr || outTail == nullptr || outProgress == nullptr ||
-        EspAssetPack_isOpen() || runtime == nullptr || view == nullptr ||
+        outMonsterDrops == nullptr || EspAssetPack_isOpen() || runtime == nullptr || view == nullptr ||
         !EspMapResidentLifecycle_isReady()) {
         return false;
     }
@@ -2216,47 +2340,48 @@ bool captureRecord(
     memset(outCrateTransforms, 0, sizeof(*outCrateTransforms));
     memset(outAutomap, 0, sizeof(*outAutomap));
     memset(outTail, 0, sizeof(*outTail));
+    memset(outMonsterDrops, 0, sizeof(*outMonsterDrops));
 
     if (!EspNativeGameplayPlayerState_snapshot(&record.core.player)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=player-state\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=player-state\n");
         return false;
     }
     if (!EspPlayerFreshMap_snapshotProgress(millis(), outProgress)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=level-progress\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=level-progress\n");
         return false;
     }
     if (!EspNativeGameplayPlayerResources_snapshot(&record.resources)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=resources\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=resources\n");
         return false;
     }
     if (!EspMapScriptState_snapshot(&record.script)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=script\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=script\n");
         return false;
     }
     if (!EspMapLineCheckpoint_snapshot(&record.lines)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=lines\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=lines\n");
         return false;
     }
     if (!EspNativeGameplayActionEngine_snapshotRemoved(
             &record.actionRemoved)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=action-removed\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=action-removed\n");
         return false;
     }
     if (!EspNativeGameplayCrateState_snapshot(outCrateTransforms)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=crate-transforms\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=crate-transforms\n");
         return false;
     }
     if (!EspMapAutomapState_snapshot(outAutomap)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=automap\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=automap\n");
         return false;
     }
     if (!EspNativeGameplayMonsterState_snapshot(&outTail->monsters)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-state\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=monster-state\n");
         return false;
     }
     if (!EspMapSpriteTopology_snapshotMonsters(
             &outTail->monsterTopology)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-topology\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=monster-topology\n");
         return false;
     }
     {
@@ -2264,28 +2389,32 @@ bool captureRecord(
         if (!reconcileMonsterSnapshotWithTopology(
                 &outTail->monsters, outTail->monsterTopology,
                 &reconciledShowDeaths)) {
-            printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-topology-reconcile\n");
+            printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=monster-topology-reconcile\n");
             return false;
         }
         if (reconciledShowDeaths != 0U) {
-            printf("[NATIVESAVE] V10-MONSTER-RECONCILE topologyDeadToLogicalDead=%u sideEffects=not-synthesized snapshotOnly=yes\n",
+            printf("[NATIVESAVE] V11-MONSTER-RECONCILE topologyDeadToLogicalDead=%u sideEffects=not-synthesized snapshotOnly=yes\n",
                    (unsigned int)reconciledShowDeaths);
         }
     }
     if (!EspNativeGameplayMonsterPosition_snapshot(
             &outTail->monsterPositions)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-position\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=monster-position\n");
         return false;
     }
     if (!EspNativeGameplayMonsterActivation_snapshot(
             &outTail->monsterActivation)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-activation\n");
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=monster-activation\n");
+        return false;
+    }
+    if (!EspNativeGameplayMonsterDrop_snapshot(outMonsterDrops)) {
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=monster-drops\n");
         return false;
     }
 
-    memcpy(record.core.magic, kMagicV10, sizeof(kMagicV10));
-    record.core.version = kVersionV10;
-    record.core.recordBytes = (uint16_t)kRecordBytesV10;
+    memcpy(record.core.magic, kMagicV11, sizeof(kMagicV11));
+    record.core.version = kVersionV11;
+    record.core.recordBytes = (uint16_t)kRecordBytesV11;
     record.core.sourceBytes = runtime->sourceBytes;
     record.core.sourceCrc32 = runtime->sourceCrc32;
     record.core.runtimeFNV1a = runtime->arenaFNV1a;
@@ -2298,7 +2427,7 @@ bool captureRecord(
     if (view->active != 1U || view->targetMapId == 0U ||
         runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
         runtime->arenaFNV1a == 0U) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=core-runtime-shape viewActive=%u map=%u sourceBytes=%u sourceCrc=%08x arena=%08x\n",
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=core-runtime-shape viewActive=%u map=%u sourceBytes=%u sourceCrc=%08x arena=%08x\n",
                (unsigned int)view->active,
                (unsigned int)view->targetMapId,
                (unsigned int)runtime->sourceBytes,
@@ -2307,7 +2436,7 @@ bool captureRecord(
         return false;
     }
     if (!monsterSpatialShapeValid(*outTail, record.core)) {
-        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-spatial-cross-check monsters=%u topology=%u positions=%u activation=%u\n",
+        printf("[NATIVESAVE] V11-CAPTURE-FAILED stage=monster-spatial-cross-check monsters=%u topology=%u positions=%u activation=%u\n",
                (unsigned int)outTail->monsters.count,
                (unsigned int)outTail->monsterTopology.count,
                (unsigned int)outTail->monsterPositions.count,
@@ -2316,9 +2445,11 @@ bool captureRecord(
     }
 
     record.core.recordCrc32 =
-        recordCrcV9(record, *outCrateTransforms, *outAutomap, *outTail, outProgress);
+        recordCrcV9(record, *outCrateTransforms, *outAutomap, *outTail,
+                    outProgress, outMonsterDrops);
     return recordCurrentValid(
-        record, *outCrateTransforms, *outAutomap, *outTail, *outProgress);
+        record, *outCrateTransforms, *outAutomap, *outTail, *outProgress,
+        *outMonsterDrops);
 }
 
 bool saveNow(void) {
@@ -2326,6 +2457,7 @@ bool saveNow(void) {
     EspNativeGameplayCrateTransformSnapshot crateTransforms;
     EspMapAutomapSnapshot automap;
     EspPlayerLevelProgress progress;
+    EspNativeGameplayMonsterDropSnapshot monsterDrops;
     NativeSaveRecordV9Tail* tail =
         (NativeSaveRecordV9Tail*)malloc(sizeof(*tail));
     uint32_t scriptFNV;
@@ -2339,7 +2471,7 @@ bool saveNow(void) {
         EspNativeGameplaySave_transitionRoute();
 
     if (tail == nullptr) {
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=10 stage=v9-tail-workspace bytes=%u failClosed=yes\n",
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=11 stage=v9-tail-workspace bytes=%u failClosed=yes\n",
                kLogPath, (unsigned int)sizeof(*tail));
         return false;
     }
@@ -2347,12 +2479,15 @@ bool saveNow(void) {
     memset(&record, 0, sizeof(record));
     memset(&crateTransforms, 0, sizeof(crateTransforms));
     memset(&automap, 0, sizeof(automap));
+    memset(&monsterDrops, 0, sizeof(monsterDrops));
     memset(tail, 0, sizeof(*tail));
 
-    if (!captureRecord(&record, &crateTransforms, &automap, tail, &progress) ||
-        !commitRecordAtomicCurrent(record, crateTransforms, automap, *tail, progress)) {
+    if (!captureRecord(&record, &crateTransforms, &automap, tail, &progress,
+                       &monsterDrops) ||
+        !commitRecordAtomicCurrent(record, crateTransforms, automap, *tail,
+                                   progress, monsterDrops)) {
         free(tail);
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=10 sections=resources+script+lines+action-removals+crate-transforms+automap+monster-state+monster-topology+monster-position+monster-activation failClosed=yes\n",
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=11 sections=resources+script+lines+action-removals+crate-transforms+automap+monster-state+monster-topology+monster-position+monster-activation+monster-drops failClosed=yes\n",
                kLogPath);
         return false;
     }
@@ -2368,6 +2503,18 @@ bool saveNow(void) {
     automapFNV = automapSnapshotFNV(automap);
     automapVisitedCount =
         countBits(automap.visitedBits, ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES);
+    {
+        const EspNativeGameplayMonsterDropView* dropView =
+            EspNativeGameplayMonsterDrop_view();
+        printf("[MONSTERDROP] SAVE version=11 arena=%08x serial=%u next=%u visible=%u stateFNV=%08x snapshotBytes=%u rng=untouched\n",
+               (unsigned int)monsterDrops.sourceArenaFNV1a,
+               (unsigned int)monsterDrops.spawnSerial,
+               (unsigned int)monsterDrops.nextSlot,
+               dropView != nullptr ? (unsigned int)dropView->visibleCount : 0U,
+               (unsigned int)monsterDrops.stateFNV1a,
+               (unsigned int)sizeof(monsterDrops));
+    }
+
     printf("[LEVELPROGRESS] SAVE map=%u elapsedMs=%lu moves=%lu xpBaseline=%lu complete=%u suffixBytes=%u\n",
            (unsigned int)progress.targetMapId, (unsigned long)progress.elapsedMs,
            (unsigned long)progress.moves, (unsigned long)progress.xpBaseline,
@@ -2640,6 +2787,10 @@ bool loadNow(void) {
     uint32_t monsterTopologyFNV = 0U;
     uint32_t monsterPositionFNV = 0U;
     uint32_t monsterActivationFNV = 0U;
+    uint8_t monsterDropVisible = 0U;
+    uint32_t monsterDropFNV = 0U;
+    uint32_t monsterDropSerial = 0U;
+    uint8_t monsterDropNext = 0U;
     const char* selectedPath = nullptr;
 
     memset(&loaded, 0, sizeof(loaded));
@@ -2690,7 +2841,9 @@ bool loadNow(void) {
      * snapshot: lines, sprites and BIT_AM_VISITED tiles. V8 appends the exact
      * native logical monster records (HP/armor/stats/alternate attack/alive)
      * without rerolling their generation RNG. V9 closes the missing spatial
-     * half: monster topology/linkage, exact positions and activation order. */
+     * half: monster topology/linkage, exact positions and activation order.
+     * V10 adds level-progress reporting state. V11 appends the exact compact
+     * eight-slot dynamic monster-drop pool; restore never rerolls or respawns. */
     EspMapResidentLifecycle_resetAll();
     resetSpawnOwners();
 
@@ -2756,7 +2909,7 @@ bool loadNow(void) {
     if (!EspNativeGameplayPlayerState_restore(&record->player) ||
         EspNativeGameplayPlayerState_fingerprint() != record->playerFNV1a ||
         !restoreView(*record) ||
-        (record->version == kVersionV10 &&
+        (record->version >= kVersionV10 &&
          !EspPlayerFreshMap_restoreProgress(&loaded.levelProgress)) ||
         !reprimeHudOwners(*record) ||
         (loaded.hasResources == 1U &&
@@ -2799,13 +2952,17 @@ bool loadNow(void) {
              &monsterCount, &monsterFNV,
              &monsterTopologyFNV, &monsterPositionFNV,
              &monsterActivationFNV)) ||
+        (record->version == kVersionV11 &&
+         !restoreMonsterDropSection(
+             selectedPath, *record, &monsterDropVisible, &monsterDropFNV,
+             &monsterDropSerial, &monsterDropNext)) ||
         !sessionConfigForPlayer(record->player, &config) ||
         !EspNativeGameplaySession_configureResume(&config)) {
         resetFailedLoad();
         if (loadingPresentation) {
             EspNativeTransitionPresentation_abortLoading("RESTORE");
         }
-        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s automap=%s monsters=%s monsterSpatial=%s playerFNV=%08lx failClosed=yes\n",
+        printf("[NATIVESAVE] LOAD-FAILED path=%s stage=RESTORE map=%u version=%u resources=%s script=%s lines=%s actionRemoved=%s crateTransforms=%s automap=%s monsters=%s monsterSpatial=%s monsterDrops=%s playerFNV=%08lx failClosed=yes\n",
                kLogPath,
                (unsigned int)record->targetMapId,
                (unsigned int)record->version,
@@ -2829,6 +2986,7 @@ bool loadNow(void) {
                    ? "required"
                    : "legacy-none",
                record->version >= kVersionV9 ? "required" : "legacy-none",
+               record->version == kVersionV11 ? "required" : "legacy-empty",
                (unsigned long)record->playerFNV1a);
         return false;
     }
@@ -2836,9 +2994,14 @@ bool loadNow(void) {
     if (record->version < kVersionV10) {
         EspPlayerFreshMap_resumeLegacy(record->targetMapId, record->player.xpGained);
     }
+    if (record->version < kVersionV11) {
+        EspNativeGameplayMonsterDrop_reset();
+        printf("[NATIVESAVE] LEGACY-MONSTER-DROP-GAP version=%u dynamicDrops=fresh-empty warning=drop-pool-not-present-in-record rng=untouched\n",
+               (unsigned int)record->version);
+    }
     printf("[LEVELPROGRESS] LOAD map=%u history=%s timer=resume-on-gameplay\n",
            (unsigned int)record->targetMapId,
-           record->version == kVersionV10 && loaded.levelProgress.complete
+           record->version >= kVersionV10 && loaded.levelProgress.complete
                ? "full-level" : "since-load");
     if (loadingPresentation) {
         EspNativeTransitionPresentation_checkpointProgress(75U, "STATE");
@@ -2879,17 +3042,19 @@ bool loadNow(void) {
     }
 
     const char* worldSummary =
-        record->version >= kVersionV9
-            ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation-restored-exact"
-            : (record->version == kVersionV8
-                   ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state-restored+monster-spatial-fresh-lossy"
-                   : (record->version == kVersionV7
-                          ? "resources+script+lines+action-removals+crate-transforms+automap-restored+monster-state+position+activation-fresh"
-                          : (record->version == kVersionV6
-                                 ? "resources+script+lines+action-removals+crate-transforms-restored+automap+monster-state+position+activation-fresh"
-                                 : "legacy-partial-world")));
+        record->version >= kVersionV11
+            ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-restored-exact"
+            : (record->version >= kVersionV9
+                   ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation-restored+monster-drops-fresh-empty"
+                   : (record->version == kVersionV8
+                          ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state-restored+monster-spatial-fresh-lossy"
+                          : (record->version == kVersionV7
+                                 ? "resources+script+lines+action-removals+crate-transforms+automap-restored+monster-state+position+activation-fresh"
+                                 : (record->version == kVersionV6
+                                        ? "resources+script+lines+action-removals+crate-transforms-restored+automap+monster-state+position+activation-fresh"
+                                        : "legacy-partial-world"))));
 
-    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx automap=%s/%uL/%uS/%uV/%08lx monsters=%s/%u/%08lx topology=%s/%08lx positions=%s/%08lx activation=%s/%08lx world=%s session=reprime-pending\n",
+    printf("[NATIVESAVE] LOAD path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx backupRecovery=%s resources=%s/%u/%uB script=%s/%lu/%lu/%uB/%08lx lines=%s/%lu/%uB/open%lu/locked%lu/tex10%lu/%08lx/%08lx actionRemoved=%s/%lu/%uB/%08lx crateTransforms=%s/%u/%08lx automap=%s/%uL/%uS/%uV/%08lx monsters=%s/%u/%08lx topology=%s/%08lx positions=%s/%08lx activation=%s/%08lx monsterDrops=%s/%u/%08lx/serial%u/next%u world=%s session=reprime-pending\n",
            kLogPath,
            (unsigned int)record->version,
            (unsigned int)loaded.fileBytes,
@@ -2958,6 +3123,11 @@ bool loadNow(void) {
            (unsigned long)monsterPositionFNV,
            record->version >= kVersionV9 ? "restored" : "legacy-fresh",
            (unsigned long)monsterActivationFNV,
+           record->version == kVersionV11 ? "restored" : "legacy-empty",
+           (unsigned int)monsterDropVisible,
+           (unsigned long)monsterDropFNV,
+           (unsigned int)monsterDropSerial,
+           (unsigned int)monsterDropNext,
            worldSummary);
     if (loadingPresentation) {
         EspNativeTransitionPresentation_checkpointProgress(85U, "RESTORE");
@@ -3215,7 +3385,7 @@ extern "C" int EspNativeGameplaySave_hasReadableCheckpoint(void) {
 extern "C" int EspNativeGameplaySave_loadCheckpoint(void) {
     if (!loadNow()) return 0;
     /*
-     * V1..V9 do not serialize the legacy return route. Never leak a route from
+     * V1..V11 do not serialize the legacy return route. Never leak a route from
      * the replaced live session into the restored checkpoint session.
      */
     EspNativeGameplaySave_clearTransitionRoute();
@@ -3347,7 +3517,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 statusCursor = kStatusSave;
                 lastOperation = 0U;
                 confirmationTarget = kNoConfirmation;
-                printf("[NATIVESAVE] UI page=system rows=SAVE/LOAD slot=1 path=%s confirmation=double-select worldScope=resources+script+lines+action-removals+crate-transforms+automap+monster-state-v8+position-activation-fresh legacyV1..V7=read-only-compatible\n",
+                printf("[NATIVESAVE] UI page=system rows=SAVE/LOAD slot=1 path=%s confirmation=double-select worldScope=resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-v11 legacyV1..V10=read-compatible\n",
                        kLogPath);
             }
             if ((status == ESP_NATIVE_GAMEPLAY_HUB_REDRAWN ||

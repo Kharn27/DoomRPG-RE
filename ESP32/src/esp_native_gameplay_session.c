@@ -18,6 +18,7 @@
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_gib_fx.h"
 #include "esp_native_gameplay_monster_activation.h"
+#include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -211,6 +212,7 @@ void EspNativeGameplaySession_reset(void) {
      */
     EspNativeGameplayMonsterPosition_reset();
     EspNativeGameplayMonsterActivation_reset();
+    EspNativeGameplayMonsterDrop_reset();
     EspNativeGameplayStatusMessage_reset();
     EspNativeResidentGameplay_reset();
     EspNativeGameplayHud_reset();

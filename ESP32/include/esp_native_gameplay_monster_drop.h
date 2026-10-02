@@ -52,9 +52,24 @@ typedef struct EspNativeGameplayMonsterDropSpawnPlan_s {
 } EspNativeGameplayMonsterDropSpawnPlan;
 
 /*
+ * Pointer-free checkpoint image of the exact rotating pool. visibleCount and
+ * owner-active are derived on restore; all records, including already-taken
+ * slots, remain explicit so subsequent overwrite order stays exact.
+ */
+typedef struct EspNativeGameplayMonsterDropSnapshot_s {
+    EspNativeGameplayMonsterDropRecord
+        records[ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS];
+    uint32_t sourceArenaFNV1a;
+    uint32_t spawnSerial;
+    uint32_t stateFNV1a;
+    uint8_t nextSlot;
+    uint8_t reserved[3];
+} EspNativeGameplayMonsterDropSnapshot;
+
+/*
  * Compact native equivalent of the legacy eight rotating drop entities.
  * Records are map-session mutable overlays; immutable BSP sprites remain
- * untouched. SAVE persistence is a separate checkpoint boundary.
+ * untouched. The bounded snapshot API is the permanent checkpoint boundary.
  */
 void EspNativeGameplayMonsterDrop_reset(void);
 int EspNativeGameplayMonsterDrop_ensure(void);
@@ -70,6 +85,15 @@ int EspNativeGameplayMonsterDrop_commit(
 /* Pickup transaction visibility bit. taken=1 hides/removes the live drop;
  * taken=0 is the exact bounded rollback before a failed pickup redraw. */
 int EspNativeGameplayMonsterDrop_setTaken(uint8_t slot, int taken);
+
+int EspNativeGameplayMonsterDrop_snapshot(
+    EspNativeGameplayMonsterDropSnapshot* outSnapshot);
+int EspNativeGameplayMonsterDrop_snapshotShapeValid(
+    const EspNativeGameplayMonsterDropSnapshot* snapshot,
+    uint32_t sourceArenaFNV1a);
+int EspNativeGameplayMonsterDrop_restore(
+    const EspNativeGameplayMonsterDropSnapshot* snapshot);
+uint32_t EspNativeGameplayMonsterDrop_fingerprint(void);
 
 const char* EspNativeGameplayMonsterDrop_outcomeName(uint8_t outcome);
 
