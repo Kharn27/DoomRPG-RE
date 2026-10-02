@@ -5,7 +5,7 @@
 #include "DoomCanvas.h"
 #include "Hud.h"
 #include "Menu.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 
 #include "esp_legacy_asset_source.h"
 #include "native_main_menu_model.h"
