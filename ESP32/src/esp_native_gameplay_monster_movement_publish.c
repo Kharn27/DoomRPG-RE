@@ -5,6 +5,7 @@
 
 #include "DoomRPG.h"
 
+#include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_monster_movement.h"
@@ -84,6 +85,57 @@ int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t spriteIndex) {
     word = index >> 5;
     mask = 1UL << (index & 31U);
     return (projectedBits[word] & mask) != 0U;
+}
+
+int EspNativeGameplayMonsterMovementPublish_adoptCheckpointPositions(void) {
+    const EspNativeGameplayMonsterPositionView* positions =
+        EspNativeGameplayMonsterPosition_view();
+    const EspNativeGameplayMonsterView* monsters =
+        EspNativeGameplayMonsterState_view();
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint32_t i;
+    uint32_t projected = 0U;
+
+    memset(projectedBits, 0, sizeof(projectedBits));
+    if (runtime == NULL || monsters == NULL || positions == NULL ||
+        positions->records == NULL || monsters->records == NULL ||
+        positions->count != monsters->count ||
+        positions->sourceArenaFNV1a != runtime->arenaFNV1a ||
+        monsters->sourceArenaFNV1a != runtime->arenaFNV1a) {
+        return 0;
+    }
+
+    for (i = 0U; i < positions->count; ++i) {
+        const EspNativeGameplayMonsterPositionRecord* position =
+            &positions->records[i];
+        EspMapSprite raw;
+
+        if (position->spriteIndex >= runtime->mapSpriteCount ||
+            !EspMapRuntime_getMapSprite(position->spriteIndex, &raw)) {
+            memset(projectedBits, 0, sizeof(projectedBits));
+            return 0;
+        }
+
+        /*
+         * With the projection bitset cleared, the sprite overlay returns the
+         * immutable BSP coordinates here. A monster that was moved in the saved
+         * session therefore differs from raw x/y and must be projected from
+         * MonsterPosition on the very first resume frame. If it moved away and
+         * later returned exactly to spawn, projection is visually equivalent
+         * and the next committed movement will set the bit again.
+         */
+        if ((uint16_t)raw.x != position->worldX ||
+            (uint16_t)raw.y != position->worldY) {
+            setProjected(position->spriteIndex, 1);
+            ++projected;
+        }
+    }
+
+    printf("[MONSTERMOVELIVE] CHECKPOINT-PROJECTION arena=%08x monsters=%u projected=%u source=restored-position-v9 inference=raw-bsp-delta firstFrame=exact\n",
+           (unsigned int)runtime->arenaFNV1a,
+           (unsigned int)positions->count,
+           (unsigned int)projected);
+    return 1;
 }
 
 void EspNativeGameplayMonsterMovementPublish_beginCycle(void) {

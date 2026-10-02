@@ -14,8 +14,10 @@
 #include "esp_native_gameplay_hit_feedback.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_hub_action_gate.h"
+#include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_gameplay_monster_trace.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_weapon.h"
@@ -141,6 +143,7 @@ static uint32_t fnv32(uint32_t hash, uint32_t value) {
     hash = fnvByte(hash, (uint8_t)((value >> 16) & 0xffU));
     return fnvByte(hash, (uint8_t)((value >> 24) & 0xffU));
 }
+
 
 static uint32_t currentMonsterFNV(void) {
     const EspNativeGameplayMonsterView* monsters =
@@ -296,6 +299,7 @@ static int syncOwner(void) {
 }
 
 void EspNativeGameplayMonsterCombat_reset(void) {
+    EspNativeGameplayMonsterDrop_reset();
     memset(&combatOwner, 0, sizeof(combatOwner));
     memset(&combatRollbackOwner, 0, sizeof(combatRollbackOwner));
     combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
@@ -445,6 +449,7 @@ static int servicePending(DoomRPG_t* runtime) {
     EspNativeGameplayMonsterRecord targetBefore;
     EspNativeGameplayPlayerState playerBefore;
     EspNativeGameplayPlayerXpResult xpResult;
+    EspNativeGameplayMonsterDropSpawnPlan dropPlan;
     EspNativeGameplayAttackRoll roll;
     MonsterCombatPending pending;
     Random_t randomBefore;
@@ -461,6 +466,8 @@ static int servicePending(DoomRPG_t* runtime) {
     uint8_t ammoAfter = 0U;
     char hitMessage[24];
     int hitMessageQueued = 0;
+    int levelUpPopup = 0;
+    int dropMaterialized = 0;
     int hitFxArmed = 0;
     int32_t healthBefore;
     int32_t armorBefore;
@@ -499,6 +506,7 @@ static int servicePending(DoomRPG_t* runtime) {
     healthAfter = healthBefore;
     armorAfter = armorBefore;
     memset(&xpResult, 0, sizeof(xpResult));
+    memset(&dropPlan, 0, sizeof(dropPlan));
     memset(&roll, 0, sizeof(roll));
 
     if (!EspNativeGameplayPlayerState_consumeAmmo(weapon->ammoType,
@@ -608,6 +616,7 @@ static int servicePending(DoomRPG_t* runtime) {
                 return 1;
             }
             rngCalls += xpResult.rngCalls;
+            if (xpResult.levelUps != 0U) levelUpPopup = 1;
 
             if (gib) {
                 consequenceSound = 5091U;
@@ -619,6 +628,19 @@ static int servicePending(DoomRPG_t* runtime) {
             }
             dropRoll = (uint32_t)DoomRPG_randNextInt(&runtime->random);
             ++rngCalls;
+            if (!EspNativeGameplayMonsterDrop_prepare(
+                    dropRoll, &targetBefore, &dropPlan)) {
+                *target = targetBefore;
+                runtime->random = randomBefore;
+                (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                combatOwner = combatRollbackOwner;
+                combatOwner.pending.active = 0U;
+                EspNativeGameplayWeapon_cancelAttack();
+                printf("[MONSTERDROP] FAILED seq=%u sprite=%u reason=prepare rngRollback=yes playerRollback=yes monsterRollback=yes\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex);
+                return 1;
+            }
             combatOwner.view.xpApplied += xp;
             ++combatOwner.view.kills;
             combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
@@ -710,9 +732,25 @@ static int servicePending(DoomRPG_t* runtime) {
     }
 
     /*
-     * Attack-frame render succeeded: gameplay rollback is now closed. Queue the
-     * result text here (legacy stage-2 timing) while the already-armed blood
-     * remains a separate impact-time presentation lease.
+     * Attack-frame render succeeded: gameplay rollback is now closed. The
+     * legacy drop pool is materialized only now so a failed attack-frame render
+     * never has to roll back a dynamic slot. No other gameplay service can
+     * modify this serialized owner during the synchronous frame render.
+     */
+    if (lethal &&
+        dropPlan.outcome == ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SPAWN) {
+        if (!EspNativeGameplayMonsterDrop_commit(&dropPlan)) {
+            printf("[MONSTERDROP] FAILED seq=%u sprite=%u reason=post-render-commit fatal=yes\n",
+                   (unsigned int)pending.sequence,
+                   (unsigned int)pending.spriteIndex);
+            return 0;
+        }
+        dropMaterialized = 1;
+    }
+
+    /*
+     * Queue the result text here (legacy stage-2 timing) while the already-armed
+     * blood remains a separate impact-time presentation lease.
      */
     memset(hitMessage, 0, sizeof(hitMessage));
     if (roll.hitLoops != 0U) {
@@ -754,7 +792,7 @@ static int servicePending(DoomRPG_t* runtime) {
 
     logFrame(&pending, "attack", &frame);
     if (lethal) (void)promoteDeathIfDue();
-    printf("[MONSTERCOMBAT] COMMIT seq=%u sprite=%u subtype=%u hp=%d->%d armor=%d->%d alive=%u->%u monsterFNV=%08x->%08x playerFNV=%08x->%08x ammo=%u->%u visual=%s attackSound=%u-deferred consequenceSound=%u-deferred xp=%u-applied level=%u->%u levelUps=%u dropRoll=%s%08x dropMaterialize=deferred corpseTrim=deferred turnAdvance=deferred AI=deferred rollback=closed\n",
+    printf("[MONSTERCOMBAT] COMMIT seq=%u sprite=%u subtype=%u hp=%d->%d armor=%d->%d alive=%u->%u monsterFNV=%08x->%08x playerFNV=%08x->%08x ammo=%u->%u visual=%s attackSound=%u-deferred consequenceSound=%u-deferred xp=%u-applied level=%u->%u levelUps=%u dropRoll=%s%08x dropMaterialize=%s corpseTrim=deferred turnAdvance=deferred AI=deferred rollback=closed\n",
            (unsigned int)pending.sequence,
            (unsigned int)pending.spriteIndex,
            (unsigned int)targetBefore.subtype,
@@ -780,7 +818,12 @@ static int servicePending(DoomRPG_t* runtime) {
            (unsigned int)xpResult.levelAfter,
            (unsigned int)xpResult.levelUps,
            lethal ? "value/" : "unused/",
-           (unsigned int)dropRoll);
+           (unsigned int)dropRoll,
+           lethal
+               ? (dropMaterialized != 0
+                      ? "live"
+                      : EspNativeGameplayMonsterDrop_outcomeName(dropPlan.outcome))
+               : "unused");
 
     memset(&frame, 0, sizeof(frame));
     if (EspNativeGameplayFrame_renderTurn(runtime->render,
@@ -799,6 +842,17 @@ static int servicePending(DoomRPG_t* runtime) {
         printf("[MONSTERCOMBAT] SETTLE-FAILED seq=%u sprite=%u worldCommitted=yes recovery=next-full-redraw\n",
                (unsigned int)pending.sequence,
                (unsigned int)pending.spriteIndex);
+    }
+
+    if (levelUpPopup != 0) {
+        const int levelUpOk =
+            EspNativeGameplayLevelUp_begin(&xpResult, pending.sequence);
+        printf("[LEVELUP] ARM seq=%u level=%u->%u levelUps=%u status=%s owner=dedicated-fullscreen continuation=explicit-tap monsterTurn=legacy-skip-while-levelup-active sound=5043-deferred\n",
+               (unsigned int)pending.sequence,
+               (unsigned int)xpResult.levelBefore,
+               (unsigned int)xpResult.levelAfter,
+               (unsigned int)xpResult.levelUps,
+               levelUpOk ? "OK" : "FAILED");
     }
 
     memset(&combatOwner.pending, 0, sizeof(combatOwner.pending));

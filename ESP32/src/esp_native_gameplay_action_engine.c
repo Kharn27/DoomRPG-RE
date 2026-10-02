@@ -24,6 +24,7 @@
 #include "esp_native_gameplay_facing_label.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_player_state.h"
@@ -1619,6 +1620,7 @@ static int serviceViewportFlashExpiry(void) {
     uint16_t duration;
 
     if (actionState.viewportFlashVisible == 0U) return 1;
+    if (EspNativeGameplayLevelUp_isActive()) return 1;
     now = actionNowMs();
     elapsed = now - actionState.viewportFlashShownAtMs;
     duration = actionState.viewportFlashDurationMs;
@@ -1645,6 +1647,7 @@ static int serviceFeedbackExpiry(void) {
     uint8_t kind;
 
     if (!serviceViewportFlashExpiry()) return 0;
+    if (EspNativeGameplayLevelUp_isActive()) return 1;
     if (actionState.feedbackVisible == 0U) return 1;
     now = actionNowMs();
     elapsed = now - actionState.feedbackShownAtMs;

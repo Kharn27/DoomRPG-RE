@@ -38,6 +38,11 @@ void EspNativeGameplayMonsterMovementPublish_capturePrepared(
 /* True only after a monster position has entered the live renderer projection. */
 int EspNativeGameplayMonsterMovementPublish_isProjected(uint16_t spriteIndex);
 
+/* Checkpoint MonsterPosition is authoritative gameplay state, while the
+ * projected bitset is presentation-only. Reconstruct it before the first
+ * resume render by comparing restored positions with immutable BSP positions. */
+int EspNativeGameplayMonsterMovementPublish_adoptCheckpointPositions(void);
+
 /*
  * Publish a planner move only after the existing movement service has completed
  * its exact commit+rollback probe. The live transaction replays the planner RNG,

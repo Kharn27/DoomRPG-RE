@@ -1,6 +1,117 @@
 # Doom RPG ESP32 CYD porting status
 
+## Native LEVEL UP screen + checkpoint monster projection — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`ccce5be96690086d56babc477c88b41faf289c72`.
+
+Branch:
+`agent/esp32-levelup-drop-consequences`.
+
+The legacy level-up dialog has been replaced by a dedicated native full-screen
+presentation owner. The real CYD proves the complete lethal-combat transition:
+
+```text
+[MONSTERCOMBAT] COMMIT ... xp=6-applied level=1->2 levelUps=1 ...
+[LEVELUP] PRESENT seq=1 level=1->2 levelUps=1 gains=hp+5/armor+3/def+1/str+2/agi+1/acc+1 health=restored ... input=fresh-release+fullscreen-tap stats=current+gain-mini owner=dedicated-fullscreen timer=none
+[LEVELUP] ARM seq=1 level=1->2 levelUps=1 status=OK ...
+[MONSTERTURN] SKIP reason=PLAYER_ATTACK levelup=active legacySkipTurn=yes mutation=no
+[RESIDENTGAMEPLAY] LEVELUP-TAP tap=2 ... dismiss=requested source=fresh-fullscreen ...
+[GAMEPLAYHUD] REPAINT health=35/35 armor=11/23 ...
+[LEVELUP] CLOSE seq=1 level=1->2 input=tap worldRedraw=complete turnAdvance=no owner=released
+[RESIDENTGAMEPLAY] LEVELUP-CLOSE hudRepaint=yes ... worldRedraw=yes fullScreenOwner=released turnAdvance=no
+```
+
+Hardware acceptance confirms the screen remains visible until an explicit fresh
+tap, cannot be overwritten by late combat/HITFX/feedback presents, restores both
+HUD bands immediately on close, and resumes gameplay without advancing a
+monster turn. The title visibly reports the real transition as
+`LEVEL 1 -> 2`; each stat card shows the current post-level value plus its
+compact gain instead of a gain in isolation. Health restoration follows the
+legacy Player_nextLevel behavior. Level-up sound 5043 remains intentionally
+deferred.
+
+The same branch also fixes checkpoint-resume monster presentation. V9/V10
+MonsterPosition and collision/topology were already restored exactly, but the
+presentation-only movement projection bitset was previously cleared on session
+reset. That made a moved monster render at its immutable BSP spawn until its
+first live movement. Resume now reconstructs projection before any visible
+world frame by comparing restored native positions with immutable BSP positions:
+
+```text
+[MONSTERPOS] RESTORE ... stateFNV=149e39dd source=checkpoint-v9 topologyExact=yes
+[MONSTERMOVELIVE] CHECKPOINT-PROJECTION arena=c3882516 monsters=30 projected=9 source=restored-position-v9 inference=raw-bsp-delta firstFrame=exact
+```
+
+The real CYD confirms the previously displaced zombie is visually at the saved
+position immediately after LOAD, before any player or monster movement. No SAVE
+format field was added; the projection mask is derived presentation state.
+
+Normal `esp32-cyd` CI #1532 is SUCCESS:
+
+```text
+static RAM   = 45392 B
+linked Flash = 778489 B
+```
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_LEVEL_UP_AND_RESUME_PROJECTION.md](MILESTONE_ESP32_NATIVE_LEVEL_UP_AND_RESUME_PROJECTION.md)
+
 Authoritative recovery/status file for the classic ESP32-2432S028R port. Repository state wins over chat history. Serial logs from the real classic CYD are the final runtime authority.
+
+## Native monster dynamic drops — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`61b156415829a4f4bc70f76d1ba751effedc29eb`.
+
+Branch:
+`agent/esp32-levelup-drop-consequences`.
+
+The native lethal-monster path now owns the original Doom RPG drop resolution
+without mutating immutable BSP sprite/topology state. It keeps the legacy
+8-entry rotating pool as a compact 144 B map-session owner, resolves the exact
+legacy type/subtype selection from the already-consumed drop RNG word, renders
+live drops from that owner, and feeds them through the existing shared
+`EspNativeGameplayPlayerState` pickup path.
+
+A first real-CYD test exposed a renderer boundary bug: entering the drop tile
+projected the dynamic billboard through the camera origin, producing
+`TURNFRAME DIAG fail=SPRITES` and a MOVE rollback. Commit
+`61b156415829a4f4bc70f76d1ba751effedc29eb` fixes that boundary by culling
+a live drop only while it occupies the player's committed tile; pickup service
+then consumes it immediately after the MOVE frame.
+
+The real CYD now proves the complete path with a zombie drop:
+
+```text
+[MONSTERDROP] COMMIT roll=d8fb13bb slot=0 overwriteVisible=0 type=3 subtype=21 def=92 tile=268 pos=800,544 visible=1 next=1 ownerBytes=144 persistence=map-session-live/save-deferred
+[MONSTERCOMBAT] COMMIT ... dropRoll=value/d8fb13bb dropMaterialize=live ...
+[MONSTERDROP] RENDER-CULL slot=0 tile=268 reason=player-tile pickup=pending-after-commit
+[RESIDENTGAMEPLAY] MOVE ... tile=267->268 ... committed=yes
+[PLAYERRES] PREPARE tile=268 sprite=65535 defTile=92 type=3 subtype=21 parm=4 action=armor value=1->5 ... worldRemove=dynamic-drop-slot rollback=armed
+[PLAYERRES] PREPARE tile=268 sprite=148 defTile=91 type=3 subtype=20 parm=4 action=health value=26->30 ... worldRemove=hidden-overlay rollback=armed
+[PLAYERRES] COMMIT tile=268 candidates=2 consumed=2 ... hp=30/30 armor=5/20 ...
+[PLAYERRES] FEEDBACK tile=268 message="Got Armor Shard" sourceDefTile=92 ... additionalMessages=1-deferred
+```
+
+This also validates a dynamic monster drop and an existing static pickup sharing
+one tile in the same transaction. Earlier hardware witnesses on the same branch
+also proved legitimate `dropMaterialize=none` results for legacy no-drop RNG
+values. Dynamic-drop checkpoint persistence remains intentionally deferred and
+is not claimed by this milestone.
+
+Normal `esp32-cyd` CI #1524 is SUCCESS at the tested boundary:
+
+```text
+static RAM   = 45352 B
+linked Flash = 776233 B
+```
+
+A later real-CYD milestone on the same branch hardware-validates the dedicated
+LEVEL UP screen and checkpoint monster projection; see the section above.
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_MONSTER_DYNAMIC_DROP.md](MILESTONE_ESP32_NATIVE_MONSTER_DYNAMIC_DROP.md)
 
 ## Mission report — USER ACCEPTED; V10 round-trip remains candidate (2026-10-02)
 

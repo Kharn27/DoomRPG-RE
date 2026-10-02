@@ -13,6 +13,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_dialog.h"
+#include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_combat.h"
 #include "esp_native_gameplay_monster_state.h"
@@ -1386,9 +1387,12 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
     }
 
     if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_NONE) return;
-    if (EspNativeGameplayDialog_isActive()) {
-        printf("[MONSTERTURN] SKIP reason=%s dialog=active legacySkipTurn=yes mutation=no\n",
-               reasonName(reason));
+    if (EspNativeGameplayDialog_isActive() ||
+        EspNativeGameplayLevelUp_isActive()) {
+        const int levelUpActive = EspNativeGameplayLevelUp_isActive();
+        printf("[MONSTERTURN] SKIP reason=%s %s=active legacySkipTurn=yes mutation=no\n",
+               reasonName(reason),
+               levelUpActive ? "levelup" : "dialog");
         if ((reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN &&
              turnOwner.passPending == TURN_PENDING_PASS) ||
             (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_MOVE &&
@@ -1399,7 +1403,7 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
         }
         if (reason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK &&
             turnOwner.attackPending != 0U) {
-            printf("[MONSTERTURN] ATTACK-CANCEL seq=%u cause=dialog-active legacySkipTurn=yes\n",
+            printf("[MONSTERTURN] ATTACK-CANCEL seq=%u cause=modal-active legacySkipTurn=yes\n",
                    (unsigned int)turnOwner.pendingAttackSequence);
             turnOwner.attackPending = 0U;
             turnOwner.pendingAttackSequence = 0U;
