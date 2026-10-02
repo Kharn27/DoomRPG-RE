@@ -45,6 +45,8 @@
 #define RESOURCE_DEF_TILE_FLAG 0x00040000UL
 #define RESOURCE_DEF_TILE_BASE 305U
 #define RESOURCE_MAX_TOUCHES_PER_TILE 16U
+#define RESOURCE_PICKUP_MESSAGE_MAX ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_QUEUE_MAX
+#define RESOURCE_PICKUP_MESSAGE_BYTES ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_TEXT_BYTES
 
 #define RESOURCE_ACTION_NONE 0U
 #define RESOURCE_ACTION_HEALTH 1U
@@ -762,7 +764,12 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     uint32_t playerFNVBefore;
     uint32_t playerFNVAfter;
     char pickupName[17];
-    char pickupMessage[24];
+    char pickupMessages[RESOURCE_PICKUP_MESSAGE_MAX]
+                       [RESOURCE_PICKUP_MESSAGE_BYTES];
+    const char* pickupMessagePtrs[RESOURCE_PICKUP_MESSAGE_MAX];
+    uint8_t pickupMessageCount = 0U;
+    uint8_t pickupMessageStart = 0U;
+    uint8_t legacyMessagesShifted = 0U;
     const char* firstWeaponDialog = NULL;
     uint8_t firstWeaponDialogSubtype = 0xffU;
     int feedbackQueued = 0;
@@ -877,14 +884,30 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
     }
 
     memset(pickupName, 0, sizeof(pickupName));
-    memset(pickupMessage, 0, sizeof(pickupMessage));
-    if (!EspEntityDefTypeCatalog_readName(applied[0].defTile,
-                                pickupName,
-                                sizeof(pickupName)) ||
-        snprintf(pickupMessage, sizeof(pickupMessage), "Got %s", pickupName) <= 0 ||
-        !EspNativeGameplayActionEngine_queueTextFeedback(
-  ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP,
-  pickupMessage, 500U)) {
+    memset(pickupMessages, 0, sizeof(pickupMessages));
+    memset(pickupMessagePtrs, 0, sizeof(pickupMessagePtrs));
+    if (appliedCount > RESOURCE_PICKUP_MESSAGE_MAX) {
+        pickupMessageStart =
+            (uint8_t)(appliedCount - RESOURCE_PICKUP_MESSAGE_MAX);
+        legacyMessagesShifted = pickupMessageStart;
+    }
+    pickupMessageCount = (uint8_t)(appliedCount - pickupMessageStart);
+    for (i = 0U; i < pickupMessageCount; ++i) {
+        const uint8_t appliedIndex = (uint8_t)(pickupMessageStart + i);
+        memset(pickupName, 0, sizeof(pickupName));
+        if (!EspEntityDefTypeCatalog_readName(applied[appliedIndex].defTile,
+                                              pickupName,
+                                              sizeof(pickupName)) ||
+            snprintf(pickupMessages[i], sizeof(pickupMessages[i]),
+                     "Got %s", pickupName) <= 0) {
+            pickupMessageCount = 0U;
+            break;
+        }
+        pickupMessagePtrs[i] = pickupMessages[i];
+    }
+    if (pickupMessageCount == 0U ||
+        !EspNativeGameplayActionEngine_queuePickupFeedbackBatch(
+            pickupMessagePtrs, pickupMessageCount, 500U)) {
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
         if (!rollbackAppliedWorld(applied, appliedCount)) {
             resources.view.fatal = 1U;
@@ -942,11 +965,16 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                (unsigned int)EspNativeGameplayPlayerState_ammo(4U),
                (unsigned int)EspNativeGameplayPlayerState_view()->keys,
                (unsigned int)EspNativeGameplayPlayerState_view()->credits);
-        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=white-border/500ms viewport=160x80 border=2px gotFace=deferred weaponHelp=%s additionalMessages=%u-deferred\n",
-               (unsigned int)afterTile, pickupMessage,
-               (unsigned int)applied[0].defTile,
+        printf("[PLAYERRES] FEEDBACK tile=%u message=\"%s\" sourceDefTile=%u flash=white-border/500ms viewport=160x80 border=2px gotFace=deferred weaponHelp=%s messages=%u additionalMessages=%u-queued legacyCap=%u shifted=%u\n",
+               (unsigned int)afterTile,
+               pickupMessages[0],
+               (unsigned int)applied[pickupMessageStart].defTile,
                dialogOpened ? "open" : (firstWeaponDialog != NULL ? "deferred" : "none"),
-               (unsigned int)(appliedCount > 0U ? appliedCount - 1U : 0U));
+               (unsigned int)pickupMessageCount,
+               (unsigned int)(pickupMessageCount > 0U
+                                  ? pickupMessageCount - 1U : 0U),
+               (unsigned int)RESOURCE_PICKUP_MESSAGE_MAX,
+               (unsigned int)legacyMessagesShifted);
         return 1;
     }
 

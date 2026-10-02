@@ -100,7 +100,9 @@
 #define FEEDBACK_TRANSPARENT 1U
 #define FEEDBACK_OPAQUE 0U
 #define FEEDBACK_DISPLAY_MS 1200U
-#define FEEDBACK_DYNAMIC_TEXT_BYTES 24U
+#define FEEDBACK_DYNAMIC_TEXT_BYTES ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_TEXT_BYTES
+#define FEEDBACK_LEGACY_QUEUE_MAX ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_QUEUE_MAX
+#define FEEDBACK_FOLLOWUP_MAX (FEEDBACK_LEGACY_QUEUE_MAX - 1U)
 #define FEEDBACK_DAMAGE_RED565 0xb800U
 #define FEEDBACK_VIEW_Y FEEDBACK_TOP_HEIGHT
 #define FEEDBACK_VIEW_HEIGHT (DOOMRPG_LOGICAL_HEIGHT - (FEEDBACK_TOP_HEIGHT * 2U))
@@ -193,6 +195,12 @@ typedef struct ActionEngineState_s {
     uint8_t viewportFlashSnapshotValid;
     uint8_t framebufferFresh;
     char feedbackText[FEEDBACK_DYNAMIC_TEXT_BYTES];
+    char feedbackFollowupText[FEEDBACK_FOLLOWUP_MAX]
+                             [FEEDBACK_DYNAMIC_TEXT_BYTES];
+    uint8_t feedbackFollowupCount;
+    uint8_t feedbackFollowupHead;
+    uint8_t feedbackFollowupKind;
+    uint8_t feedbackFollowupReserved;
 } ActionEngineState;
 
 typedef struct FeedbackScratch_s {
@@ -499,6 +507,15 @@ uint32_t EspNativeGameplayActionEngine_removedFingerprint(void) {
     return removedFNV(actionState.removedBits, usedBytes);
 }
 
+static void clearFeedbackFollowups(void) {
+    memset(actionState.feedbackFollowupText, 0,
+           sizeof(actionState.feedbackFollowupText));
+    actionState.feedbackFollowupCount = 0U;
+    actionState.feedbackFollowupHead = 0U;
+    actionState.feedbackFollowupKind = ACTION_FEEDBACK_NONE;
+    actionState.feedbackFollowupReserved = 0U;
+}
+
 int EspNativeGameplayActionEngine_queueFeedback(
     EspNativeGameplayActionFeedback feedback) {
     if (feedback <= ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_NONE ||
@@ -507,6 +524,7 @@ int EspNativeGameplayActionEngine_queueFeedback(
         actionState.feedbackPending != 0U) {
         return 0;
     }
+    clearFeedbackFollowups();
     actionState.feedbackText[0] = '\0';
     actionState.feedbackPending = 1U;
     actionState.feedbackKind = (uint8_t)feedback;
@@ -529,6 +547,7 @@ int EspNativeGameplayActionEngine_queueTextFeedback(
     }
     len = strnlen(text, FEEDBACK_DYNAMIC_TEXT_BYTES);
     if (len == 0U || len >= FEEDBACK_DYNAMIC_TEXT_BYTES) return 0;
+    clearFeedbackFollowups();
     memcpy(actionState.feedbackText, text, len + 1U);
     actionState.feedbackPending = 1U;
     actionState.feedbackKind = (uint8_t)feedback;
@@ -542,6 +561,55 @@ int EspNativeGameplayActionEngine_queueTextFeedback(
     return 1;
 }
 
+int EspNativeGameplayActionEngine_queuePickupFeedbackBatch(
+    const char* const* texts,
+    uint8_t count,
+    uint16_t viewportFlashMs) {
+    uint8_t i;
+    size_t lengths[FEEDBACK_LEGACY_QUEUE_MAX];
+
+    if (texts == NULL || count == 0U ||
+        count > FEEDBACK_LEGACY_QUEUE_MAX ||
+        !ensureOwner() || actionState.pending.active != 0U ||
+        actionState.feedbackPending != 0U) {
+        return 0;
+    }
+    memset(lengths, 0, sizeof(lengths));
+    for (i = 0U; i < count; ++i) {
+        if (texts[i] == NULL) return 0;
+        lengths[i] = strnlen(texts[i], FEEDBACK_DYNAMIC_TEXT_BYTES);
+        if (lengths[i] == 0U ||
+            lengths[i] >= FEEDBACK_DYNAMIC_TEXT_BYTES) {
+            return 0;
+        }
+    }
+
+    clearFeedbackFollowups();
+    memset(actionState.feedbackText, 0, sizeof(actionState.feedbackText));
+    memcpy(actionState.feedbackText, texts[0], lengths[0] + 1U);
+    for (i = 1U; i < count; ++i) {
+        memcpy(actionState.feedbackFollowupText[i - 1U],
+               texts[i], lengths[i] + 1U);
+    }
+    actionState.feedbackFollowupCount = (uint8_t)(count - 1U);
+    actionState.feedbackFollowupHead = 0U;
+    actionState.feedbackFollowupKind = ACTION_FEEDBACK_PICKUP;
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = ACTION_FEEDBACK_PICKUP;
+    if (viewportFlashMs != 0U) {
+        actionState.viewportFlashPending = 1U;
+        actionState.viewportFlashDurationMs = viewportFlashMs;
+        actionState.viewportFlashColor565 = 0xffffU;
+    }
+    printf("[ACTIONFEEDBACK] QUEUE-BATCH kind=%u count=%u followups=%u flashMs=%u legacyCap=%u owner=bounded-static\n",
+           (unsigned int)ACTION_FEEDBACK_PICKUP,
+           (unsigned int)count,
+           (unsigned int)actionState.feedbackFollowupCount,
+           (unsigned int)viewportFlashMs,
+           (unsigned int)FEEDBACK_LEGACY_QUEUE_MAX);
+    return 1;
+}
+
 int EspNativeGameplayActionEngine_cancelQueuedFeedback(
     EspNativeGameplayActionFeedback feedback) {
     if (actionState.feedbackPending == 0U ||
@@ -551,6 +619,7 @@ int EspNativeGameplayActionEngine_cancelQueuedFeedback(
     actionState.feedbackPending = 0U;
     actionState.feedbackKind = ACTION_FEEDBACK_NONE;
     actionState.feedbackText[0] = '\0';
+    clearFeedbackFollowups();
     actionState.viewportFlashPending = 0U;
     if (actionState.viewportFlashVisible == 0U) {
         actionState.viewportFlashDurationMs = 0U;
@@ -1667,6 +1736,34 @@ static int serviceFeedbackExpiry(void) {
     if (EspAssetPack_isOpen()) return 1;
 
     kind = actionState.feedbackVisibleKind;
+    if (actionState.feedbackFollowupCount != 0U &&
+        actionState.feedbackFollowupKind == kind &&
+        actionState.feedbackFollowupHead < FEEDBACK_FOLLOWUP_MAX) {
+        const uint8_t queueIndex = actionState.feedbackFollowupHead;
+        memcpy(actionState.feedbackText,
+               actionState.feedbackFollowupText[queueIndex],
+               sizeof(actionState.feedbackText));
+        memset(actionState.feedbackFollowupText[queueIndex], 0,
+               sizeof(actionState.feedbackFollowupText[queueIndex]));
+        ++actionState.feedbackFollowupHead;
+        --actionState.feedbackFollowupCount;
+        actionState.feedbackPending = 1U;
+        actionState.feedbackKind = kind;
+        if (!__wrap_Esp32PlatformVideo_present()) return 0;
+        printf("[ACTIONFEEDBACK] ADVANCE kind=%u text=\"%s\" remaining=%u elapsedMs=%u targetMs=%u source=legacy-pickup-fifo\n",
+               (unsigned int)kind,
+               actionState.feedbackText,
+               (unsigned int)actionState.feedbackFollowupCount,
+               (unsigned int)elapsed,
+               (unsigned int)FEEDBACK_DISPLAY_MS);
+        if (actionState.feedbackFollowupCount == 0U) {
+            actionState.feedbackFollowupHead = 0U;
+            actionState.feedbackFollowupKind = ACTION_FEEDBACK_NONE;
+        }
+        return 1;
+    }
+
+    clearFeedbackFollowups();
     actionState.feedbackPending = 1U;
     actionState.feedbackKind = ACTION_FEEDBACK_NONE;
     if (!__wrap_Esp32PlatformVideo_present()) return 0;

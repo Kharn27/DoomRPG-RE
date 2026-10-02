@@ -10,6 +10,8 @@ extern "C" {
 struct DoomRPG_s;
 
 #define ESP_NATIVE_GAMEPLAY_ACTION_REMOVED_SNAPSHOT_MAX_BYTES 128U
+#define ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_QUEUE_MAX 5U
+#define ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_TEXT_BYTES 24U
 
 typedef struct EspNativeGameplayActionRemovedSnapshot_s {
     uint32_t sourceArenaFNV1a;
@@ -52,6 +54,13 @@ int EspNativeGameplayActionEngine_queueFeedback(
 int EspNativeGameplayActionEngine_queueTextFeedback(
     EspNativeGameplayActionFeedback feedback,
     const char* text,
+    uint16_t viewportFlashMs);
+/* Legacy Hud keeps at most five queued messages. This bounded batch API is
+ * intentionally narrow: it lets one committed multi-pickup tile publish the
+ * same ordered "Got ..." sequence without importing Hud_t or heap ownership. */
+int EspNativeGameplayActionEngine_queuePickupFeedbackBatch(
+    const char* const* texts,
+    uint8_t count,
     uint16_t viewportFlashMs);
 int EspNativeGameplayActionEngine_cancelQueuedFeedback(
     EspNativeGameplayActionFeedback feedback);
