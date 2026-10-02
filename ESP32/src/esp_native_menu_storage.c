@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "DoomRPG.h"
+#include "Menu.h"
 #include "MenuSystem.h"
 #include "esp_native_menu_storage.h"
 
