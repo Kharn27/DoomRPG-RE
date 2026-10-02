@@ -7,15 +7,79 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 2d981fd14e3b7840ccf71575c47b0e3bd6d123fa
 branch = agent/esp32-retire-dead-menu-particle-tus
-hardware-tested code boundary = bb04faa839169c559e161ff0dea59b5e8f1e6dbc
-CI = esp32-cyd #1333 SUCCESS
-static RAM = 45208 B
-linked Flash = 769665 B
-artifact id = 11202101528
-artifact digest = sha256:308632475a69248c35d2bd57ceac73e12c7cd432ebbf77884cf83117e9b9cf87
-hardware = cold boot -> OPTIONS/Back -> compact HELP multi-page/Back -> V9 LOAD -> Sector 1 -> MOVE -> ordered monster turn PASS
-status = compact ESP32 menu storage REAL-CYD PASS; MAX_MENUITEMS=8 on ESP32, HELP raw+offset storage hardware-proven, MenuSystem.c absent and MenuSystem_* = 0; gameplay heap8=55024 largest8=38900
+hardware-tested code boundary = 4c4a48230303cef7eeedc9722198fbe2c7506517
+CI = esp32-cyd #1341 SUCCESS
+static RAM = 45160 B
+linked Flash = 769613 B
+artifact id = 11218132618
+artifact digest = sha256:ecf7fb1385a00d7577c85624805d658dadede308802ae0ce7894c9e8fb269448
+hardware = MAIN soak -> OPTIONS/Back -> HELP multi-page/Back -> OPTIONS/Back PASS
+status = Menu.c + MenuItem.c + MenuSystem.c + ParticleSystem.c absent from ESP32 compile graph; final ELF MenuItem_* = 0 and MenuSystem_* = 0; compact menu storage remains hardware-proven
 ```
+
+## Desktop MenuItem helper translation unit retirement — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`4c4a48230303cef7eeedc9722198fbe2c7506517`.
+
+The remaining ESP32 callers of desktop `MenuItem_Set()` / `MenuItem_Set2()`
+were only the already-native fixed main-menu builders. Those trivial writes are
+now local native bounded copies, and `src/MenuItem.c` is excluded from the
+ESP32 compile graph.
+
+Real-CYD validation covers the exact affected surface:
+
+```text
+MAIN stable for >95 s
+ -> OPTIONS -> Back
+ -> HELP page up/down through multiple ranges -> Back
+ -> OPTIONS -> Back again
+```
+
+All previously validated framebuffer/model fingerprints remain exact:
+
+```text
+MAIN        = 522dc605
+OPTIONS     = 162d3999
+HELP page0  = 5f22cf6b
+HELP page8  = d0788359
+HELP page16 = 9213df95
+HELP page24 = b0191189
+```
+
+The menu remains allocation-stable outside the intentionally temporary HELP
+buffer:
+
+```text
+MAIN/OPTIONS heap8=61672 largest8=32756
+HELP active  heap8=60248 largest8=32756
+HELP Back    heap8=61672 largest8=32756
+```
+
+Normal `esp32-cyd` CI #1341 is SUCCESS:
+
+```text
+static RAM   = 45160 B
+linked Flash = 769613 B
+artifact id  = 11218132618
+digest       = sha256:ecf7fb1385a00d7577c85624805d658dadede308802ae0ce7894c9e8fb269448
+```
+
+Direct final-ELF inspection confirms:
+
+```text
+MenuItem_*   = 0
+MenuSystem_* = 0
+```
+
+The ESP32 compile graph now excludes `Menu.c`, `MenuItem.c`,
+`MenuSystem.c`, and `ParticleSystem.c`.
+
+Remaining menu-related cleanup is no longer equivalent dead-helper retirement:
+`imgHand` and `imgArrowUpDown` are still referenced by linked DoomCanvas
+Story/Epilogue/scrollbar paths, while full `MenuSystem_t` root replacement
+crosses multiple compatibility contracts. Those belong to later bounded
+milestones rather than this retirement step.
 
 ## Compact ESP32 menu storage — REAL-CYD PASS (2026-10-02)
 
