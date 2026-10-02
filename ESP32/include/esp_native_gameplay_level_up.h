@@ -20,6 +20,12 @@ typedef struct EspNativeGameplayLevelUpView_s {
     uint8_t strengthGain;
     uint8_t agilityGain;
     uint8_t accuracyGain;
+    uint8_t maxHealthCurrent;
+    uint8_t maxArmorCurrent;
+    uint8_t defenseCurrent;
+    uint8_t strengthCurrent;
+    uint8_t agilityCurrent;
+    uint8_t accuracyCurrent;
     uint8_t active;
     uint8_t dismissPending;
     uint8_t dismissPresentArmed;

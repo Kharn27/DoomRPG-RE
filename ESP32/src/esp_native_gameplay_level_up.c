@@ -91,10 +91,13 @@ static uint32_t frameFNV(void) {
 static void drawGainCard(int left,
                          int top,
                          const char* label,
+                         uint8_t current,
                          uint8_t gain) {
-    char value[8];
+    char currentText[4];
+    char gainText[5];
     const int right = left + 67;
     const int bottom = top + 16;
+    const int center = (left + right) / 2;
     const uint16_t accent = gain != 0U ? COLOR_GREEN : COLOR_STEEL_DARK;
 
     fillRect(left, top, right, bottom, COLOR_PANEL);
@@ -102,10 +105,14 @@ static void drawGainCard(int left,
     fillRect(left + 1, top + 1, left + 2, bottom - 1, accent);
 
     EspNativeGameplayHubTouchUi_drawCrispText(
-        framebuffer(), label, (left + right) / 2, top + 2, COLOR_STEEL);
-    snprintf(value, sizeof(value), "+%u", (unsigned int)gain);
-    EspNativeGameplayHubTouchUi_drawCrispText(
-        framebuffer(), value, (left + right) / 2, top + 9,
+        framebuffer(), label, center, top + 1, COLOR_STEEL);
+
+    snprintf(currentText, sizeof(currentText), "%u", (unsigned int)current);
+    snprintf(gainText, sizeof(gainText), "+%u", (unsigned int)gain);
+    EspNativeGameplayHubTouchUi_drawMiniText(
+        framebuffer(), currentText, center - 10, top + 10, COLOR_IVORY);
+    EspNativeGameplayHubTouchUi_drawMiniText(
+        framebuffer(), gainText, center + 11, top + 10,
         gain != 0U ? COLOR_GREEN : COLOR_STEEL);
 }
 
@@ -131,12 +138,18 @@ static int paint(void) {
     EspNativeGameplayHubTouchUi_drawCrispText(
         framebuffer(), levelText, 80, 19, COLOR_IVORY);
 
-    drawGainCard(10, 34, "MAX HP", levelUp.maxHealthGain);
-    drawGainCard(82, 34, "MAX ARM", levelUp.maxArmorGain);
-    drawGainCard(10, 52, "DEFENSE", levelUp.defenseGain);
-    drawGainCard(82, 52, "STRENGTH", levelUp.strengthGain);
-    drawGainCard(10, 70, "AGILITY", levelUp.agilityGain);
-    drawGainCard(82, 70, "ACCURACY", levelUp.accuracyGain);
+    drawGainCard(10, 34, "MAX HP",
+                 levelUp.maxHealthCurrent, levelUp.maxHealthGain);
+    drawGainCard(82, 34, "MAX ARM",
+                 levelUp.maxArmorCurrent, levelUp.maxArmorGain);
+    drawGainCard(10, 52, "DEFENSE",
+                 levelUp.defenseCurrent, levelUp.defenseGain);
+    drawGainCard(82, 52, "STRENGTH",
+                 levelUp.strengthCurrent, levelUp.strengthGain);
+    drawGainCard(10, 70, "AGILITY",
+                 levelUp.agilityCurrent, levelUp.agilityGain);
+    drawGainCard(82, 70, "ACCURACY",
+                 levelUp.accuracyCurrent, levelUp.accuracyGain);
 
     fillRect(20, 91, 139, 102, COLOR_PANEL_ALT);
     EspNativeGameplayHubTouchUi_drawCrispText(
@@ -178,6 +191,12 @@ int EspNativeGameplayLevelUp_begin(
     levelUp.strengthGain = xp->lastStrengthGain;
     levelUp.agilityGain = xp->lastAgilityGain;
     levelUp.accuracyGain = xp->lastAccuracyGain;
+    levelUp.maxHealthCurrent = EspNativeGameplayPlayerState_maxHealth();
+    levelUp.maxArmorCurrent = EspNativeGameplayPlayerState_maxArmor();
+    levelUp.defenseCurrent = EspNativeGameplayPlayerState_defense();
+    levelUp.strengthCurrent = EspNativeGameplayPlayerState_strength();
+    levelUp.agilityCurrent = EspNativeGameplayPlayerState_agility();
+    levelUp.accuracyCurrent = EspNativeGameplayPlayerState_accuracy();
     levelUp.active = 1U;
 
     /* Do not let the attack SELECT press (or a noisy release tail) become the
@@ -190,7 +209,7 @@ int EspNativeGameplayLevelUp_begin(
     }
     levelUp.frameFNV1a = frameFNV();
 
-    printf("[LEVELUP] PRESENT seq=%u level=%u->%u levelUps=%u gains=hp+%u/armor+%u/def+%u/str+%u/agi+%u/acc+%u health=restored frame=%08x input=fresh-release+bottom-cta owner=dedicated-fullscreen timer=none\n",
+    printf("[LEVELUP] PRESENT seq=%u level=%u->%u levelUps=%u gains=hp+%u/armor+%u/def+%u/str+%u/agi+%u/acc+%u health=restored frame=%08x input=fresh-release+fullscreen-tap stats=current+gain-mini owner=dedicated-fullscreen timer=none\n",
            (unsigned int)levelUp.sequence,
            (unsigned int)levelUp.levelBefore,
            (unsigned int)levelUp.levelAfter,
@@ -208,13 +227,15 @@ int EspNativeGameplayLevelUp_begin(
 int EspNativeGameplayLevelUp_requestDismiss(int16_t logicalX,
                                             int16_t logicalY) {
     (void)logicalX;
+    (void)logicalY;
     if (levelUp.active == 0U || levelUp.dismissPending != 0U) return 0;
 
-    /* The dedicated screen has an explicit CTA in its bottom strip. Requiring
-     * that strip prevents a lingering combat-center press from ever closing the
-     * screen, even if the resistive panel briefly reports a release/repress. */
-    if (logicalY < 92 || logicalY >= DOOMRPG_LOGICAL_HEIGHT) return 0;
-
+    /*
+     * PlatformInput_requireFreshTapAfterRelease() already guarantees that this
+     * cannot be the attack press that opened the screen. Once that barrier has
+     * observed a stable release, the next deliberate tap anywhere is the
+     * expected finger-first dismissal gesture.
+     */
     levelUp.dismissPending = 1U;
     return 1;
 }

@@ -152,13 +152,13 @@ static void onGameplayTap(int16_t screenX,
     if (EspNativeGameplayLevelUp_isActive()) {
         ++gameplayState.taps;
         if (EspNativeGameplayLevelUp_requestDismiss(logicalX, logicalY)) {
-            printf("[RESIDENTGAMEPLAY] LEVELUP-TAP tap=%u logical=%d,%d dismiss=requested source=bottom-cta worldAction=no feedback=none\n",
+            printf("[RESIDENTGAMEPLAY] LEVELUP-TAP tap=%u logical=%d,%d dismiss=requested source=fresh-fullscreen worldAction=no feedback=none\n",
                    (unsigned int)gameplayState.taps,
                    logicalX,
                    logicalY);
         }
         else {
-            printf("[RESIDENTGAMEPLAY] LEVELUP-TAP-IGNORED tap=%u logical=%d,%d reason=outside-bottom-cta dismiss=no worldAction=no feedback=none\n",
+            printf("[RESIDENTGAMEPLAY] LEVELUP-TAP-IGNORED tap=%u logical=%d,%d reason=already-pending-or-inactive dismiss=no worldAction=no feedback=none\n",
                    (unsigned int)gameplayState.taps,
                    logicalX,
                    logicalY);

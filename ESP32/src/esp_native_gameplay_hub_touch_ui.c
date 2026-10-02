@@ -154,6 +154,10 @@ static int miniRows(char c, uint8_t rows[5]) {
     if (c >= '0' && c <= '9') source = digits[c - '0'];
     else if (c >= 'A' && c <= 'Z') source = letters[c - 'A'];
     else if (c == '/') source = slash;
+    else if (c == '+') {
+        static const uint8_t plus[5] = {0U, 2U, 7U, 2U, 0U};
+        source = plus;
+    }
     else return 0;
     memcpy(rows, source, 5U);
     return 1;
@@ -394,6 +398,16 @@ void EspNativeGameplayHubTouchUi_drawCrispText(uint16_t* framebuffer,
                                              int top,
                                              uint16_t color) {
     drawCrispText(framebuffer, text, centerX, top, color);
+}
+
+void EspNativeGameplayHubTouchUi_drawMiniText(uint16_t* framebuffer,
+                                              const char* text,
+                                              int centerX,
+                                              int top,
+                                              uint16_t color) {
+    const int width = miniTextWidth(text, 1);
+    if (framebuffer == NULL || text == NULL || width <= 0) return;
+    drawMiniTextAt(framebuffer, text, centerX - (width / 2), top, 1, color);
 }
 
 static void drawStatusMetricCard(uint16_t* framebuffer,

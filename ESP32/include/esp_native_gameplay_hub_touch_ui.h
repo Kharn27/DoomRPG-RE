@@ -23,6 +23,13 @@ void EspNativeGameplayHubTouchUi_drawCrispText(uint16_t* framebuffer,
                                              int top,
                                              uint16_t color);
 
+/* Shared allocation-free 3x5 face for compact numeric/result annotations. */
+void EspNativeGameplayHubTouchUi_drawMiniText(uint16_t* framebuffer,
+                                              const char* text,
+                                              int centerX,
+                                              int top,
+                                              uint16_t color);
+
 struct EspNativeGameplayTouchHit_s;
 int EspNativeGameplayHubTouchUi_classify(
     int logicalX,
