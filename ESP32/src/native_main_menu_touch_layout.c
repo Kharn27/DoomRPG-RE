@@ -6,7 +6,7 @@
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "Menu.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "Render.h"
 
 #include "esp_native_gameplay_hub_theme.h"
