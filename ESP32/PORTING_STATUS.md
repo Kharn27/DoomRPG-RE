@@ -4,7 +4,8 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 
 ## Mission report + V10 level progress — LOCAL CANDIDATE (2026-10-02)
 
-Working branch `fix/mainMenu`, base `afb7c7e`; no hardware pass claimed yet.
+Working branch `fix/mainMenu`, rebased onto `origin/main` at `0f1cdb0` without
+conflicts or changes to the mission-report implementation; no hardware pass claimed yet.
 The previous hardware-tested boundary below is unchanged.
 
 End-of-stage presentation now shares the HUB palette/crisp 5x7 face and shows
@@ -19,7 +20,8 @@ progress suffix. V1–V9 reads remain compatible. Earlier saves cannot reconstru
 historical counters and display `SINCE LOAD`; that partial flag persists across
 V10 SAVE/LOAD. Old firmware cannot read V10.
 
-Local normal CYD build PASS: static RAM 45208 B; linked flash 771917 B.
+Rebased normal CYD build PASS: static RAM 45208 B; linked flash 771897 B.
+The host progress regression also passes on the rebased tree.
 Host counter regressions, production report rendering and in-memory SD writer/
 CRC/byte-verification checks PASS. Real-CYD layout, map handoff, V10 reboot resume
 and V9 partial-history migration remain to test. Details and the checklist are

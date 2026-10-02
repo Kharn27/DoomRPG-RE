@@ -12,8 +12,10 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 
 ## Mission report and V10 progress — development candidate (2026-10-02)
 
-Local changes on `fix/mainMenu`, based on `afb7c7e`. Not yet validated on the
-real CYD; the hardware boundaries below remain historical witnesses.
+Changes on `fix/mainMenu`, rebased onto `origin/main` at `0f1cdb0` (native menu
+state/header independence and Player divider retirement). The rebase has no
+conflicts and preserves the mission-report implementation unchanged. Not yet
+validated on the real CYD; the hardware boundaries below remain historical witnesses.
 
 The full-screen end-of-stage report now uses the HUB industrial palette and its
 shared crisp 5x7 font: compact `MISSION COMPLETE` header, source sector name,
@@ -52,8 +54,9 @@ at loading and the report shows `SINCE LOAD`. That flag survives re-saving as V1
 until the next map entry. Older firmware cannot load new V10 saves.
 
 Local validation: normal `pio run -e esp32-cyd` succeeds with 45208 B static RAM
-and 771917 B linked flash (respectively +32 B and +1720 B vs the documented
-story-teardown artifact). The included host regression
+and 771897 B linked flash after the rebase (respectively +32 B and +1704 B vs
+the documented native-menu artifact). The host progress regression was rerun
+successfully on the rebased tree. The included host regression
 [`test/test_level_progress.c`](test/test_level_progress.c) covers fresh/reset,
 XP baseline across a level-up, resume, legacy saves, timer wrap and saturation.
 Additional temporary fixtures exercised production C report painting and the
