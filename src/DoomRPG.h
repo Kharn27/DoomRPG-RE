@@ -223,7 +223,11 @@ struct EntityDefManager_s;
 struct Combat_s;
 struct Hud_s;
 struct Menu_s;
+#ifdef DOOMRPG_ESP32
+struct EspNativeMenuState_s;
+#else
 struct MenuSystem_s;
+#endif
 struct ParticleSystem_s;
 struct Sound_s;
 
@@ -239,7 +243,11 @@ typedef struct DoomRPG_s
 	struct Combat_s*		combat;
 	struct Hud_s*			hud;
 	struct Menu_s*			menu;
+#ifdef DOOMRPG_ESP32
+	struct EspNativeMenuState_s*	menuSystem;
+#else
 	struct MenuSystem_s*	menuSystem;
+#endif
 	struct ParticleSystem_s* particleSystem;
 	struct Sound_s*			sound;
 
