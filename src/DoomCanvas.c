@@ -368,7 +368,7 @@ void DoomCanvas_combatState(DoomCanvas_t* doomCanvas)
 		DoomCanvas_drawRGB(doomCanvas);
 	}
 
-	// En el código original esta función está en la función "Hud_drawEffects", pero decidí moverla aquí, 
+	// En el cÃ³digo original esta funciÃ³n estÃ¡ en la funciÃ³n "Hud_drawEffects", pero decidÃ­ moverla aquÃ­, 
 	// esto evita que se superponga a otros objetos dibujados previamente.
 	// 
 	// In the original code this function is in the "Hud_drawEffects" function, but I decided to move it here, 
@@ -427,7 +427,7 @@ void DoomCanvas_dialogState(DoomCanvas_t* doomCanvas)
 	DoomCanvas_updateView(doomCanvas);
 	DoomCanvas_drawRGB(doomCanvas);
 
-	// En el código original esta función está en la función "Hud_drawEffects", pero decidí moverla aquí, 
+	// En el cÃ³digo original esta funciÃ³n estÃ¡ en la funciÃ³n "Hud_drawEffects", pero decidÃ­ moverla aquÃ­, 
 	// esto evita que se superponga a otros objetos dibujados previamente.
 	// 
 	// In the original code this function is in the "Hud_drawEffects" function, but I decided to move it here, 
@@ -1087,11 +1087,15 @@ void DoomCanvas_drawEpilogue(DoomCanvas_t* doomCanvas)
 			doomCanvas->SCR_CX - 64, doomCanvas->SCR_CY - 64, 0, (doomCanvas->showTextDone != 0) ? -1 : doomCanvas->epilogueTextTime);
 
 		if (doomCanvas->epilogueTextPage < 1) {
+#ifndef DOOMRPG_ESP32
 			DoomCanvas_drawImage(doomCanvas, &doomCanvas->menuSystem->imgHand, (doomCanvas->SCR_CX + 36) - 4, doomCanvas->SCR_CY + 64, 10);
+#endif
 			DoomCanvas_drawString1(doomCanvas, "More", (doomCanvas->SCR_CX + 64) - 4, doomCanvas->SCR_CY + 64, 10);
 		}
 		else {
+#ifndef DOOMRPG_ESP32
 			DoomCanvas_drawImage(doomCanvas, &doomCanvas->menuSystem->imgHand, (doomCanvas->SCR_CX + 8) - 4, doomCanvas->SCR_CY + 64, 10);
+#endif
 			DoomCanvas_drawString1(doomCanvas, "Continue", (doomCanvas->SCR_CX + 64) - 4, doomCanvas->SCR_CY + 64, 10);
 		}
 
@@ -1156,11 +1160,15 @@ void DoomCanvas_drawStory(DoomCanvas_t* doomCanvas)
 			}
 
 			if (doomCanvas->storyTextPage < iVar1 - 1) {
+#ifndef DOOMRPG_ESP32
 				DoomCanvas_drawImage(doomCanvas, &doomCanvas->doomRpg->menuSystem->imgHand, (doomCanvas->SCR_CX + 36) - 4, (doomCanvas->SCR_CY + 64) - 2, 10);
+#endif
 				DoomCanvas_drawString1(doomCanvas, "More", (doomCanvas->SCR_CX + 64) - 4, (doomCanvas->SCR_CY + 64), 10);
 			}
 			else {
+#ifndef DOOMRPG_ESP32
 				DoomCanvas_drawImage(doomCanvas, &doomCanvas->doomRpg->menuSystem->imgHand, (doomCanvas->SCR_CX + 8) - 4, (doomCanvas->SCR_CY + 64) - 2, 10);
+#endif
 				DoomCanvas_drawString1(doomCanvas, "Continue", (doomCanvas->SCR_CX + 64) - 4, (doomCanvas->SCR_CY + 64), 10);
 			}
 
@@ -1214,7 +1222,7 @@ void DoomCanvas_drawStory(DoomCanvas_t* doomCanvas)
 void DoomCanvas_drawRGB(DoomCanvas_t* doomCanvas)
 {
 	// Port:
-	// aplicar esta función antes de actualizar el framebuffer
+	// aplicar esta funciÃ³n antes de actualizar el framebuffer
 	// apply this function before updating the framebuffer
 	//if (doomCanvas->doomRpg->player->berserkerTics) {
 		//Render_setBerserkColor(doomCanvas->doomRpg->render);
@@ -2566,7 +2574,7 @@ void DoomCanvas_playingState(DoomCanvas_t* doomCanvas)
 
 			DoomCanvas_updateView(doomCanvas);
 			applyBerserk = true;
-		} // <- Agregué el corchete aquí, ya que necesito que los gráficos se actualicen siempre en cada cuadro, 
+		} // <- AgreguÃ© el corchete aquÃ­, ya que necesito que los grÃ¡ficos se actualicen siempre en cada cuadro, 
 		  //    sin que intervengan las actualizaciones del movimiento del jugador.
 		  // <- I added the bracket here as I need the graphics to always update on every frame, 
 		  //    without player movement updates intervening.
@@ -2585,7 +2593,7 @@ void DoomCanvas_playingState(DoomCanvas_t* doomCanvas)
 
 			DoomCanvas_drawRGB(doomCanvas);
 
-			// En el código original esta función está en la función "Hud_drawEffects", pero decidí moverla aquí, 
+			// En el cÃ³digo original esta funciÃ³n estÃ¡ en la funciÃ³n "Hud_drawEffects", pero decidÃ­ moverla aquÃ­, 
 			// esto evita que se superponga a otros objetos dibujados previamente.
 			// 
 			// In the original code this function is in the "Hud_drawEffects" function, but I decided to move it here, 
