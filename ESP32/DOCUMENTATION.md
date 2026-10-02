@@ -15,14 +15,80 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 643701bbf26461fb328e03a20302d37598b9e6c9
 branch = agent/esp32-retire-menu-system-shell
-hardware-tested code boundary = 31caa46af67a88550adcf2cd01ccbf4124bcf40b
-CI = esp32-cyd #1354 SUCCESS
+hardware-tested code boundary = 9d42d669d274c14bf39fde5a4d8af75df3cbe04b
+CI = esp32-cyd #1360 SUCCESS
 static RAM = 45160 B
-linked Flash = 769585 B
-artifact id = 11218479535
-artifact digest = sha256:8997a4b99c89bc57e149d7dcf8d51e56c88ef9eb6d0f6765829d6659a13bee0b
-hardware = cold boot -> OPTIONS/Back -> HELP multi-page/Back -> V9 LOAD -> Sector 1 ENGINESESSION READY PASS
-status = p.bmp/q.bmp retired from runtime menu startup; j.bmp-only native menu asset contract hardware-proven; MAIN +344 B heap8, gameplay +392 B heap8
+linked Flash = 769573 B
+artifact id = 11219735467
+artifact digest = sha256:ec07fc36ff3aff92080e34444a2066fbb5a221924df0536c5a3eb78c8314f407
+hardware = cold boot -> OPTIONS/Back -> HELP/Back -> V9 LOAD -> Sector 1 ENGINESESSION READY -> HUB four-page navigation PASS
+status = MenuSystem_t ESP32 compatibility shell is 552 B hardware-proven; six dead fields removed; HUB-owned p.bmp explicitly distinct from retired MenuSystem imgHand asset
+```
+
+## MenuSystem compatibility-shell trim — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`9d42d669d274c14bf39fde5a4d8af75df3cbe04b`.
+
+The ESP32-only `MenuSystem_t` layout no longer carries six fields that had no
+surviving reader in either compiled desktop translation units or native ESP32
+code:
+
+```text
+stringBuffer[32]
+bindIndx
+nextMsgTime
+nextMsg
+cheatCombo
+digitCount
+```
+
+The two native writes to `cheatCombo` / `digitCount` were dead resets and
+were removed with the fields. Desktop/J2ME layout remains unchanged outside the
+ESP32 build.
+
+Real-CYD structural witness:
+
+```text
+[MENUSTORAGE] INIT bytes=552 items=8 ...
+[CORE] MenuSystem used=568
+```
+
+Previous hardware-proven values were 604 B / 620 B, so the shell shrank by
+exactly 52 bytes.
+
+Runtime memory on the same hardware:
+
+```text
+MAIN heap8:     62016 -> 62060  (+44 B)
+gameplay heap8: 55416 -> 55456  (+40 B)
+largest8:       38900 -> 38900  (unchanged)
+```
+
+Regression coverage:
+- cold boot and native MAIN exact;
+- OPTIONS -> Back;
+- HELP page down/up -> Back;
+- V9 LOAD -> Sector 1 -> ENGINESESSION READY;
+- native gameplay HUB opened and all four pages rendered.
+
+All relevant menu fingerprints remain exact and
+`shapeData == NULL` / `mediaTexels == NULL` remain true.
+
+Important ownership clarification discovered during the hardware run:
+the native gameplay HUB still intentionally uses `p.bmp` through its own
+`HUB_FACE_NAME` path in `esp_native_gameplay_hub.c`. The earlier
+`p.bmp/q.bmp` retirement applies only to `EspNativeMenuStorage_startup()`
+and the old `MenuSystem_t::imgHand/imgArrowUpDown` ownership; it does not mean
+that `p.bmp` is globally unused.
+
+Normal `esp32-cyd` CI #1360 is SUCCESS:
+
+```text
+static RAM   = 45160 B
+linked Flash = 769573 B
+artifact id  = 11219735467
+digest       = sha256:ec07fc36ff3aff92080e34444a2066fbb5a221924df0536c5a3eb78c8314f407
 ```
 
 ## Legacy menu accessory assets retirement — REAL-CYD PASS (2026-10-02)
