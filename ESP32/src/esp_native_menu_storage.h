@@ -8,8 +8,7 @@
 extern "C" {
 #endif
 
-MenuSystem_t* EspNativeMenuStorage_init(MenuSystem_t* storage,
-                                        DoomRPG_t* doomRpg);
+MenuSystem_t* EspNativeMenuStorage_init(MenuSystem_t* storage);
 int EspNativeMenuStorage_startup(MenuSystem_t* storage, DoomRPG_t* doomRpg);
 void EspNativeMenuStorage_free(MenuSystem_t* storage, DoomRPG_t* doomRpg,
                                boolean freePtr);
