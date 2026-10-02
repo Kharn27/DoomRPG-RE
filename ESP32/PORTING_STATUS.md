@@ -7,15 +7,80 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 2d981fd14e3b7840ccf71575c47b0e3bd6d123fa
 branch = agent/esp32-retire-dead-menu-particle-tus
-hardware-tested code boundary = 2e0193b4e4f82d78f0b361c84e0d2bcd4f8f1cba
-CI = esp32-cyd #1324 SUCCESS
-static RAM = 45000 B
-linked Flash = 769861 B
-artifact id = 11200848779
-artifact digest = sha256:82fdd69dd60c3a8fa22fe15ce82c296bc291a854495807d7ec7d76c8682961dd
-hardware = cold boot -> OPTIONS/Back -> HELP paging/Back -> V9 LOAD -> Sector 1 resident gameplay -> MOVE/ordered monster turn PASS
-status = Menu.c + ParticleSystem.c + MenuSystem.c absent from ESP32 compile graph; final ELF MenuSystem_* = 0; EspNativeMenuStorage + EspNativeAudioIntent REAL-CYD PASS; shapeData/mediaTexels remain NULL; gameplay heap8=50300 largest8=38900
+hardware-tested code boundary = bb04faa839169c559e161ff0dea59b5e8f1e6dbc
+CI = esp32-cyd #1333 SUCCESS
+static RAM = 45208 B
+linked Flash = 769665 B
+artifact id = 11202101528
+artifact digest = sha256:308632475a69248c35d2bd57ceac73e12c7cd432ebbf77884cf83117e9b9cf87
+hardware = cold boot -> OPTIONS/Back -> compact HELP multi-page/Back -> V9 LOAD -> Sector 1 -> MOVE -> ordered monster turn PASS
+status = compact ESP32 menu storage REAL-CYD PASS; MAX_MENUITEMS=8 on ESP32, HELP raw+offset storage hardware-proven, MenuSystem.c absent and MenuSystem_* = 0; gameplay heap8=55024 largest8=38900
 ```
+
+## Compact ESP32 menu storage — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`bb04faa839169c559e161ff0dea59b5e8f1e6dbc`.
+
+The retained compatibility `MenuSystem_t` no longer reserves the desktop
+`MenuItem_t items[96]` array on ESP32. Its ESP32 item capacity is bounded to 8,
+which is sufficient for the fixed native MAIN/OPTIONS/CONTINUE models (4/4/3).
+HELP keeps the original `help.txt` payload compact and uses a bounded native
+line-offset table instead of inflating 83 lines into desktop `MenuItem_t`
+records.
+
+Real-CYD HELP witness:
+
+```text
+[MAINMODEL] HELP-PARSE bytes=1405 ... declared=83 parsed=83
+            compactBytes=1116 menuItemSlots=8 lineChars<=31 result=valid
+[MAINHELP] PAGE-DOWN 0->8 ->16 ->24
+[MAINHELP] PAGE-UP   24->16 ->8 ->0
+[MAINBACK] READY source=help ... frame=522dc605
+```
+
+The fixed OPTIONS path also remains exact and allocation-free:
+
+```text
+MAIN heap8=61624 largest8=32756
+OPTIONS heap8=61624 largest8=32756
+Back -> MAIN frame=522dc605
+```
+
+The V9 LOAD path then restores Sector 1, reaches resident gameplay, executes
+player movement and ordered four-monster movement/three-goal behavior, including
+publication of a three-loop monster attack probe.
+
+Hardware memory improvement versus the previous MenuSystem-retirement boundary:
+
+```text
+MAIN menu: 56908 -> 61624 heap8  (+4716 B)
+gameplay:  50300 -> 55024 heap8  (+4724 B)
+largest8:  38900 -> 38900        (unchanged in gameplay)
+```
+
+HELP cleanup returns exactly to the pre-HELP MAIN value `heap8=61624`, proving
+the compact HELP allocation is not leaked.
+
+Critical invariants remain:
+
+```text
+shapeData == NULL
+mediaTexels == NULL
+```
+
+Normal `esp32-cyd` CI #1333 is SUCCESS:
+
+```text
+static RAM   = 45208 B
+linked Flash = 769665 B
+artifact id  = 11202101528
+digest       = sha256:308632475a69248c35d2bd57ceac73e12c7cd432ebbf77884cf83117e9b9cf87
+```
+
+The remaining `MenuSystem_t` is now a small compatibility shell rather than a
+5.5 KiB desktop menu container. Further retirement must audit each remaining
+field and linked consumer before replacing the root type/pointer entirely.
 
 ## Desktop MenuSystem translation unit retirement — REAL-CYD PASS (2026-10-02)
 
