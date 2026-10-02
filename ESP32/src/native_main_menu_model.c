@@ -59,7 +59,7 @@ static void setFixedItem(MenuItem_t* item, const char* text, int flags) {
 
 
 static void resetFixedModel(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
 
     doomRpg->hud->logMessage[0] = '\0';
     menuSystem->scrollIndex = 0;
@@ -69,7 +69,7 @@ static void resetFixedModel(DoomRPG_t* doomRpg) {
 
 int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
 
     if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
         doomRpg->hud == NULL) {
@@ -96,7 +96,7 @@ int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
 }
 
 static int buildFixedContinueModel(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
 
     resetFixedModel(doomRpg);
     menuSystem->menu = MENU_MAIN_CONTINUE;
@@ -111,7 +111,7 @@ static int buildFixedContinueModel(DoomRPG_t* doomRpg) {
 }
 
 static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
 
     resetFixedModel(doomRpg);
     menuSystem->menu = MENU_MAIN_OPTIONS;
@@ -127,7 +127,7 @@ static int buildFixedOptionsModel(DoomRPG_t* doomRpg) {
 }
 
 static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     uint8_t* data = NULL;
     uint32_t assetSize = 0U;
     int readSize = 0;
@@ -249,7 +249,7 @@ static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
 int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
                                     int menuId) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     DoomCanvas_t* canvas;
     const char* builder = "Menu_initMenu-transitional";
 
@@ -336,7 +336,7 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
 
 int DoomRPG_esp32MainMenuModelLeave(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     DoomCanvas_t* canvas;
 
     if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
