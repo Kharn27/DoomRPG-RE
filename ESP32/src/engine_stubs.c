@@ -7,7 +7,7 @@
 #include "EntityDef.h"
 #include "Game.h"
 #include "Hud.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "Player.h"
 #include "Render.h"
 #include "SDL_Video.h"
