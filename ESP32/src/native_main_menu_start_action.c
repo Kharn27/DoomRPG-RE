@@ -13,6 +13,7 @@
 
 #include "esp_legacy_asset_source.h"
 #include "native_intro_first_frame.h"
+#include "native_story_fit.h"
 #include "native_main_menu_model.h"
 #include "native_main_menu_start_action.h"
 #include "native_main_menu_touch.h"
@@ -294,6 +295,11 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     printf("[MAINSTART] READY native new-game -> Player_reset -> ST_INTRO\n");
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
+
+    if (!Esp32StoryFit_prepare(doomCanvas)) {
+        printf("[MAINSTART] FAILED native story hand prepare before bounded first frame\n");
+        return 0;
+    }
 
     if (!DoomRPG_esp32RenderFirstIntroFrame(doomRpg)) {
         printf("[MAINSTART] FAILED bounded first ST_INTRO frame / clock+input handoff\n");
