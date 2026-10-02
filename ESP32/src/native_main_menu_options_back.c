@@ -5,7 +5,7 @@
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "Menu.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "Render.h"
 
 #include "native_main_menu_160x120_layout.h"
