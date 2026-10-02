@@ -42,6 +42,10 @@ int EspNativeGameplayLevelUp_isDismissPending(void);
 int EspNativeGameplayLevelUp_armDismissPresent(void);
 int EspNativeGameplayLevelUp_filterGameplayPresent(void);
 
+/* Rebuild and physically present the modal from compact owner state after any
+ * hidden gameplay compositor touched the shared framebuffer. */
+int EspNativeGameplayLevelUp_repaintOwned(void);
+
 int EspNativeGameplayLevelUp_finishDismiss(void);
 
 #ifdef __cplusplus

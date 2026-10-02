@@ -56,7 +56,13 @@ int __wrap_Esp32PlatformVideo_present(void) {
      * exact bypass only for the full world redraw that closes the modal.
      */
     if (EspNativeGameplayLevelUp_filterGameplayPresent()) {
-        return 1;
+        /*
+         * Hidden gameplay compositors still draw into the one shared logical
+         * framebuffer before they ask to present. Rebuild the modal here rather
+         * than merely suppressing the physical publish, otherwise a later
+         * direct/bounded presenter could expose that hidden world frame.
+         */
+        return EspNativeGameplayLevelUp_repaintOwned();
     }
 
     return EspNativeGameplayActionEngine_present();

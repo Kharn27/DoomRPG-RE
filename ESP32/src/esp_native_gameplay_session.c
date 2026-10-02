@@ -19,6 +19,7 @@
 #include "esp_native_gameplay_gib_fx.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_position.h"
+#include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_status_message.h"
@@ -359,6 +360,10 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                         positions->sourceArenaFNV1a !=
                             monsters->sourceArenaFNV1a) {
                         failSession("checkpoint monster position view");
+                        return;
+                    }
+                    if (!EspNativeGameplayMonsterMovementPublish_adoptCheckpointPositions()) {
+                        failSession("checkpoint monster projection adoption");
                         return;
                     }
                 }

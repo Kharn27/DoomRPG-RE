@@ -241,6 +241,13 @@ int EspNativeGameplayLevelUp_filterGameplayPresent(void) {
     return 1;
 }
 
+int EspNativeGameplayLevelUp_repaintOwned(void) {
+    if (levelUp.active == 0U || levelUp.dismissPresentArmed != 0U) return 0;
+    if (!paint()) return 0;
+    levelUp.frameFNV1a = frameFNV();
+    return 1;
+}
+
 int EspNativeGameplayLevelUp_finishDismiss(void) {
     EspNativeGameplayLevelUpView before;
     if (levelUp.active == 0U || levelUp.dismissPending == 0U) return 0;
