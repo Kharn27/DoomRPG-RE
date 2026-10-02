@@ -1353,8 +1353,10 @@ void DoomCanvas_drawScrollBar(DoomCanvas_t* doomCanvas, int y, int totalHeight, 
 		}
 		int barOffset_y = offSetY + 7;
 
+#ifndef DOOMRPG_ESP32
 		DoomCanvas_drawImageSpecial(doomCanvas, &doomCanvas->doomRpg->menuSystem->imgArrowUpDown, 0, 0, 7, 7, 0, doomCanvas->SCR_CX + 64, y, 9);
 		DoomCanvas_drawImageSpecial(doomCanvas, &doomCanvas->doomRpg->menuSystem->imgArrowUpDown, 0, 7, 7, 7, 0, doomCanvas->SCR_CX + 64, y + totalHeight, 10);
+#endif
 
 		DoomRPG_setColor(doomCanvas->doomRpg, 0x888888);
 		DoomRPG_fillRect(doomCanvas->doomRpg, (doomCanvas->SCR_CX + 64) - 7, y + 7, 7, totalHeight - 14);
@@ -1717,7 +1719,9 @@ void DoomCanvas_handleEvent(DoomCanvas_t* doomCanvas, int i) {
 	if (doomCanvas->benchmarkString) {
 		doomCanvas->benchmarkString = false;
 		doomCanvas->renderOnly = false;
+#ifndef DOOMRPG_ESP32
 		doomCanvas->doomRpg->menuSystem->field_0xc58 = 80;
+#endif
 	}
 
 	switch (doomCanvas->state) {
@@ -3308,7 +3312,9 @@ void DoomCanvas_startSpeedTest(DoomCanvas_t* doomCanvas, boolean b)
 		doomCanvas->loopAvgMs = 0;
 
 		if (b) {
+#ifndef DOOMRPG_ESP32
 			doomCanvas->doomRpg->menuSystem->field_0xc58 = 4;
+#endif
 		}
 		else {
 			doomCanvas->animAngle = 4;
