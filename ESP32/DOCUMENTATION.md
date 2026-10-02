@@ -15,15 +15,87 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 643701bbf26461fb328e03a20302d37598b9e6c9
 branch = agent/esp32-retire-menu-system-shell
-hardware-tested code boundary = 0a2bcc39656d8b855d777edae4273a368f44307c
-CI = esp32-cyd #1389 SUCCESS
+hardware-tested code boundary = d8d0622eb92d7f32b2e37033cb557b6ba35deb5e
+CI = esp32-cyd #1413 SUCCESS
 static RAM = 45176 B
-linked Flash = 770205 B
-artifact id = 11221054541
-artifact digest = sha256:1a8e220c45c25194375ad2d8a9bfbb8d02c3e5dc8adc6097c9cb08c4b8e025be
-hardware = Start Game -> full intro -> bounded dispose -> Entrance -> ENGINESESSION READY PASS
-status = MenuSystem_t ESP32 compatibility shell=512 B hardware-proven; story p.bmp owner is native, first draw allocation-free, disposal returns exact 176 B hand allocation
+linked Flash = 770189 B
+artifact id = 11221787233
+artifact digest = sha256:aabcf3c22267d1b0866f4b642eee70fa2d81b14236cfed1a7b891bfed4dc0603
+hardware = cold boot -> OPTIONS/Back -> HELP paging/Back -> Start Game -> full intro -> Entrance -> ENGINESESSION READY -> MOVE -> HUB OPEN PASS
+status = final retained MenuSystem_t compatibility shell is 496 B hardware-proven; no dead simple fields remain; next step is a separate native-type/root replacement milestone
 ```
+
+## Final ESP32 MenuSystem compatibility shell — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested production boundary:
+`d8d0622eb92d7f32b2e37033cb557b6ba35deb5e`.
+
+The final simple trim for this milestone removes the ESP32-only
+`MenuSystem_t::doomRpg` backpointer and the write-only `paintMenu` flag.
+`EspNativeMenuStorage_startup/free` now receive the `DoomRPG_t*` owner
+explicitly.
+
+The real CYD reports the final compact shell as:
+
+```text
+[MENUSTORAGE] INIT bytes=496 items=8 owner=esp-native compatibilityLayout=MenuSystem_t desktopTU=no
+[CORE] MenuSystem used=512
+```
+
+The measured struct size is therefore **496 B**, not the conservative 504 B
+estimate. Relative to the original 604 B compact compatibility shell, this
+milestone removes 108 B from the retained ESP32 layout.
+
+Full real-hardware regression on the exact code boundary covered:
+
+```text
+cold boot
+MAIN exact FNV=522dc605
+OPTIONS -> Back
+HELP page 0 -> 8 -> 16 -> 8 -> Back
+Start Game
+full semantic intro
+bounded first ST_INTRO draw with deltaHeap=0
+native story-hand release gain=176 B
+bounded intro disposal heap8=69492 -> 103436 recovered=33944
+/intro.bsp Entrance
+ENGINESESSION READY
+one committed FORWARD move
+native HUB open
+```
+
+The menu presentation fingerprints remain exact:
+`OPTIONS=162d3999`, `HELP0=5f22cf6b`,
+`HELP8=d0788359`, `HELP16=9213df95`.
+
+The story-owner contract remains symmetric and allocation-safe:
+
+```text
+[INTROFIT] PREPARE ... drawAllocation=no
+[INTRO1] Drawn ... deltaHeap=0
+[INTROFIT] HAND-RELEASE asset=p.bmp owner=native-story
+[INTRODISP] FREE image=p.bmp/storyHand ... gain=176
+```
+
+The same run reaches native gameplay with:
+
+```text
+shapeData   = NULL
+mediaTexels = NULL
+```
+
+Normal `esp32-cyd` CI #1413 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770189 B
+artifact id  = 11221787233
+digest       = sha256:aabcf3c22267d1b0866f4b642eee70fa2d81b14236cfed1a7b891bfed4dc0603
+```
+
+This closes the bounded field-pruning phase. The remaining ESP32
+`MenuSystem_t` fields are live native-menu state; replacing the type/root is
+a separate architectural milestone rather than another dead-field cleanup.
 
 ## 512-byte MenuSystem shell + native story hand owner — REAL-CYD PASS (2026-10-02)
 
