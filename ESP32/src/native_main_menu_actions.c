@@ -141,7 +141,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         menuSystem->menu != MENU_MAIN_HELP_ABOUT ||
         menuSystem->type != 5 ||
         menuSystem->oldMenu != MENU_MAIN ||
-        menuSystem->numItems <= 0) {
+        menuSystem->numItems <= 0 ||
+        menuSystem->numItems != DoomRPG_esp32MainMenuHelpLineCount()) {
         return 0;
     }
 
@@ -170,9 +171,11 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     x = canvas->SCR_CX - 64;
     y = 0;
     for (i = menuSystem->scrollIndex; i < end; ++i) {
-        if (menuSystem->items[i].textField[0] != '\0') {
+        const char* line = DoomRPG_esp32MainMenuHelpLine(i);
+        if (line == NULL) return 0;
+        if (line[0] != '\0') {
             DoomCanvas_drawFont(canvas,
-                                menuSystem->items[i].textField,
+                                (char*)line,
                                 x,
                                 y,
                                 0,
