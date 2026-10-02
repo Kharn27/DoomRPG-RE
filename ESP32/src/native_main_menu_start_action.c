@@ -6,7 +6,7 @@
 #include "DoomCanvas.h"
 #include "Game.h"
 #include "Menu.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "Player.h"
 #include "Render.h"
 #include "esp_native_audio_intent.h"
