@@ -37,6 +37,21 @@ static Image_t* acquireStoryHand(DoomRPG_t* doomRpg) {
     return &storyHand;
 }
 
+int Esp32StoryFit_prepare(struct DoomCanvas_s* doomCanvasBase) {
+    DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
+    uint32_t before;
+    uint32_t after;
+    Image_t* hand;
+    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return 0;
+    before = (uint32_t)SDL_GetTicks();
+    hand = acquireStoryHand(doomCanvas->doomRpg);
+    after = (uint32_t)SDL_GetTicks();
+    if (hand == NULL) return 0;
+    printf("[INTROFIT] PREPARE hand=%dx%d asset=p.bmp owner=native-story elapsedMs=%u drawAllocation=no\n",
+           hand->width, hand->height, (unsigned int)(after - before));
+    return 1;
+}
+
 void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvasBase) {
     DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
     DoomRPG_t* owner = storyHandOwner;
