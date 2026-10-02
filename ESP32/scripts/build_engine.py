@@ -64,14 +64,24 @@ if doom_canvas.count(height_needle) != 1:
 doom_canvas = doom_canvas.replace(include_needle, include_replacement, 1)
 doom_canvas = doom_canvas.replace(height_needle, height_replacement, 1)
 
-menu_sound_needle = "\\t\\t\\tMenuSystem_playSound(doomCanvas->menuSystem);\\n\\t\\t\\tSound_playSound(doomCanvas->doomRpg->sound, 5067, 0, 3);\\n"
-menu_sound_replacement = "\\t\\t\\t(void)EspNativeAudioIntent_publish(5042U, 0U, 3U);\\n\\t\\t\\t(void)EspNativeAudioIntent_publish(5067U, 0U, 3U);\\n"
-menu_sound_count = doom_canvas.count(menu_sound_needle)
-if menu_sound_count != 1:
+menu_play_needle = "MenuSystem_playSound(doomCanvas->menuSystem);"
+menu_enter_sound_needle = "Sound_playSound(doomCanvas->doomRpg->sound, 5067, 0, 3);"
+menu_play_count = doom_canvas.count(menu_play_needle)
+menu_enter_sound_count = doom_canvas.count(menu_enter_sound_needle)
+if menu_play_count != 1 or menu_enter_sound_count != 1:
     raise RuntimeError(
-        "Unexpected DoomCanvas ST_MENU sound shape; review native audio intent patch"
+        "Unexpected DoomCanvas ST_MENU sound calls; review native audio intent patch"
     )
-doom_canvas = doom_canvas.replace(menu_sound_needle, menu_sound_replacement, 1)
+doom_canvas = doom_canvas.replace(
+    menu_play_needle,
+    "(void)EspNativeAudioIntent_publish(5042U, 0U, 3U);",
+    1,
+)
+doom_canvas = doom_canvas.replace(
+    menu_enter_sound_needle,
+    "(void)EspNativeAudioIntent_publish(5067U, 0U, 3U);",
+    1,
+)
 
 with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_canvas)
