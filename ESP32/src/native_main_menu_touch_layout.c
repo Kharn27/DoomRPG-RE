@@ -56,7 +56,7 @@ static void setNativeMainItem(MenuItem_t* item, const char* text) {
     item->action = 0;
 }
 
-static int adaptMainMenuForEsp32(MenuSystem_t* menuSystem) {
+static int adaptMainMenuForEsp32(EspNativeMenuState_t* menuSystem) {
     if (menuSystem == NULL || menuSystem->menu != MENU_MAIN ||
         menuSystem->numItems != DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
         return 0;
@@ -97,7 +97,7 @@ static uint32_t fnvMixString(uint32_t hash, const char* text) {
     return hash;
 }
 
-static uint32_t menuModelHash(const MenuSystem_t* menuSystem) {
+static uint32_t menuModelHash(const EspNativeMenuState_t* menuSystem) {
     uint32_t hash = 2166136261U;
     int i;
 
@@ -133,7 +133,7 @@ static uint32_t dashboardLayoutHash(void) {
     return hash;
 }
 
-static int validateMainMenuModel(const MenuSystem_t* menuSystem) {
+static int validateMainMenuModel(const EspNativeMenuState_t* menuSystem) {
     int i;
     if (menuSystem->menu != MENU_MAIN ||
         menuSystem->type != 4 ||
@@ -161,7 +161,7 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
                                         uint32_t* modelHashOut,
                                         uint32_t* layoutHashOut) {
     DoomCanvas_t* canvas;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     uint32_t modelHash;
     uint32_t layoutHash;
 
@@ -421,7 +421,7 @@ static int drawTouchReadyMainMenuOpaque(DoomRPG_t* doomRpg,
                                          uint32_t* logoHashOut,
                                          uint32_t* finalHashOut) {
     DoomCanvas_t* canvas = doomRpg->doomCanvas;
-    MenuSystem_t* menuSystem = doomRpg->menuSystem;
+    EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
     SDL_Rect logoDst;
     uint32_t logoHash;
     uint32_t finalHash;
@@ -553,7 +553,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
 int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     DoomCanvas_t* canvas;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     Render_t* render;
     uint32_t sceneHash;
     uint32_t finalHash = 0U;
