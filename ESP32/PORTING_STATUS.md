@@ -5,17 +5,63 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 643701bbf26461fb328e03a20302d37598b9e6c9
-branch = agent/esp32-retire-menu-system-shell
-hardware-tested code boundary = f398807df63c88d3d453a71eaf675cd1be2c1dbd
-CI = esp32-cyd #1420 SUCCESS
+current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1
+branch = agent/esp32-native-menu-state-root
+hardware-tested code boundary = f76e3ed415c5d2012fe61cc38b7cca11631ee796
+CI = esp32-cyd #1434 SUCCESS
 static RAM = 45176 B
 linked Flash = 770197 B
-artifact id = 11222143129
-artifact digest = sha256:2f99a975d67cf895c54a5d50fbc0714b6829fc91c7ee65215ddb5fe041683911
+artifact id = 11222798316
+artifact digest = sha256:6b61f9188b2a079e11d527d0cfd357e9062e67927826b500e35e1d597bc4e503
 hardware = targeted story teardown probe PASS + normal Start Game intro -> Entrance -> ENGINESESSION READY PASS
 status = DoomCanvas_free now unconditionally releases native story hand; real CYD proves owner cleared and heap8 exact after teardown; MenuSystem_t remains 496 B
 ```
+
+## Native menu state root identity — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`f76e3ed415c5d2012fe61cc38b7cca11631ee796`.
+
+This first root-migration step introduces `EspNativeMenuState_t` as the
+canonical ESP32 menu-state identity while preserving the existing 496-byte
+layout exactly.
+
+On ESP32:
+- `DoomRPG_t::menuSystem` now points to `EspNativeMenuState_s*`;
+- `DoomCanvas_t::menuSystem` now points to `EspNativeMenuState_s*`;
+- `MenuSystem_t` remains only as a compatibility alias for surviving legacy
+  signatures;
+- desktop/J2ME layout remains unchanged.
+
+Real-CYD regression:
+
+```text
+[MENUSTORAGE] INIT bytes=496
+MAIN FNV=522dc605
+HELP0 FNV=5f22cf6b
+HELP8 FNV=d0788359
+HELP16 FNV=9213df95
+HELP24 FNV=b0191189
+HELP32 FNV=4c944ee5
+HELP40 FNV=943f0b77
+OPTIONS FNV=162d3999
+MAIN heap8=62112
+largest8=32756
+shapeData=NULL
+mediaTexels=NULL
+```
+
+Normal `esp32-cyd` CI #1434 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770197 B
+artifact id  = 11222798316
+digest       = sha256:6b61f9188b2a079e11d527d0cfd357e9062e67927826b500e35e1d597bc4e503
+```
+
+No runtime behavior or layout change was observed. This validates the native
+type identity before removing the compatibility alias from native APIs.
 
 ## Story-hand teardown safety — REAL-CYD PASS (2026-10-02)
 
