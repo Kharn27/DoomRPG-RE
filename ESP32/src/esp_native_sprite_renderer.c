@@ -882,11 +882,29 @@ static int drawPersistentDrops(Render_t* render,
         EspNativeGameplayMonsterDrop_view();
     const EspPlayerViewState* playerView = EspPlayerView_view();
     uint16_t playerTile = UINT16_MAX;
+    uint32_t bspDrawsBefore;
+    uint32_t bspNearBefore;
+    uint32_t bspClipBefore;
     uint8_t slot;
 
     if (view == NULL || view->active == 0U || view->visibleCount == 0U) {
         return 1;
     }
+
+    /*
+     * Persistent monster drops are dynamic world billboards, not immutable BSP
+     * sprite candidates. drawWorldDropFrame() reuses the normal projection path
+     * and therefore increments draws/nearCulled/clipCulled. Those three counters
+     * are part of the strict BSP accounting invariant in gameplay_frame.c:
+     *
+     *     draws + nearCulled + clipCulled == bspCandidates
+     *
+     * Preserve the real pixel/span/frame-load work, but keep dynamic drops out
+     * of that BSP-only candidate accounting exactly like transient effects.
+     */
+    bspDrawsBefore = stats->draws;
+    bspNearBefore = stats->nearCulled;
+    bspClipBefore = stats->clipCulled;
     if (playerView != NULL && playerView->active == 1U &&
         playerView->viewX >= 0 && playerView->viewY >= 0 &&
         playerView->viewX < 2048 && playerView->viewY < 2048) {
@@ -940,6 +958,10 @@ static int drawPersistentDrops(Render_t* render,
             }
         }
     }
+
+    stats->draws = bspDrawsBefore;
+    stats->nearCulled = bspNearBefore;
+    stats->clipCulled = bspClipBefore;
     return 1;
 }
 
