@@ -5,17 +5,84 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 2d981fd14e3b7840ccf71575c47b0e3bd6d123fa
-branch = agent/esp32-retire-dead-menu-particle-tus
-hardware-tested code boundary = 4c4a48230303cef7eeedc9722198fbe2c7506517
-CI = esp32-cyd #1341 SUCCESS
+current main = 643701bbf26461fb328e03a20302d37598b9e6c9
+branch = agent/esp32-retire-menu-system-shell
+hardware-tested code boundary = 31caa46af67a88550adcf2cd01ccbf4124bcf40b
+CI = esp32-cyd #1354 SUCCESS
 static RAM = 45160 B
-linked Flash = 769613 B
-artifact id = 11218132618
-artifact digest = sha256:ecf7fb1385a00d7577c85624805d658dadede308802ae0ce7894c9e8fb269448
-hardware = MAIN soak -> OPTIONS/Back -> HELP multi-page/Back -> OPTIONS/Back PASS
-status = Menu.c + MenuItem.c + MenuSystem.c + ParticleSystem.c absent from ESP32 compile graph; final ELF MenuItem_* = 0 and MenuSystem_* = 0; compact menu storage remains hardware-proven
+linked Flash = 769585 B
+artifact id = 11218479535
+artifact digest = sha256:8997a4b99c89bc57e149d7dcf8d51e56c88ef9eb6d0f6765829d6659a13bee0b
+hardware = cold boot -> OPTIONS/Back -> HELP multi-page/Back -> V9 LOAD -> Sector 1 ENGINESESSION READY PASS
+status = p.bmp/q.bmp runtime menu accessory assets retired; only j.bmp retained for native menu logo; MAIN heap8=62016, gameplay heap8=55416 largest8=38900; shapeData/mediaTexels NULL
 ```
+
+## Legacy menu accessory assets retirement — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`31caa46af67a88550adcf2cd01ccbf4124bcf40b`.
+
+The ESP32 runtime no longer preflights or loads the legacy menu accessory BMPs
+`p.bmp` / `imgHand` and `q.bmp` / `imgArrowUpDown`. Direct final-ELF
+inspection of the previous hardware-proven image showed that their remaining
+source references lived only in DoomCanvas Story/Epilogue/scrollbar functions
+that did not survive the link. The native menu keeps only `j.bmp`, which is
+actually presented as the MAIN/OPTIONS logo.
+
+Real-CYD cold boot proves the reduced startup contract:
+
+```text
+[PRERENDER] Resource preflight (2 files)
+[PRERENDER] j.bmp          bytes=4264 backing=pak
+[PRERENDER] entities.db    bytes=2762 backing=pak
+[MENUSTORAGE] STARTUP READY assets=j owner=esp-native
+              legacyAccessoryAssets=p/q-retired
+```
+
+Measured runtime improvement versus the previous hardware-proven boundary:
+
+```text
+EspNativeMenuStorage_startup: 4500 -> 4156 B  (-344 B)
+MAIN heap8:                   61672 -> 62016   (+344 B)
+gameplay heap8:               55024 -> 55416   (+392 B)
+gameplay largest8:            38900 -> 38900   (unchanged)
+```
+
+MENU regression coverage on the real CYD:
+
+```text
+MAIN -> OPTIONS -> Back
+MAIN -> HELP
+HELP page 0 -> 8 -> 16 -> 24 -> 32 -> 24 -> 16 -> 8 -> 0
+HELP -> Back -> MAIN
+MAIN -> LOAD V9 -> Sector 1 -> ENGINESESSION READY
+```
+
+All relevant presentation fingerprints remain exact:
+
+```text
+MAIN        = 522dc605
+OPTIONS     = 162d3999
+HELP page0  = 5f22cf6b
+HELP page8  = d0788359
+HELP page16 = 9213df95
+HELP page24 = b0191189
+HELP page32 = 4c944ee5
+```
+
+Critical invariants remain `shapeData == NULL` and `mediaTexels == NULL`.
+
+Normal `esp32-cyd` CI #1354 is SUCCESS:
+
+```text
+static RAM   = 45160 B
+linked Flash = 769585 B
+artifact id  = 11218479535
+digest       = sha256:8997a4b99c89bc57e149d7dcf8d51e56c88ef9eb6d0f6765829d6659a13bee0b
+```
+
+The retained `imgHand` / `imgArrowUpDown` struct fields are now layout-only
+compatibility residue; no runtime asset is owned behind them.
 
 ## Desktop MenuItem helper translation unit retirement — REAL-CYD PASS (2026-10-02)
 
