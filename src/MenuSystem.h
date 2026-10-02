@@ -13,20 +13,8 @@ struct Image_s;
 #endif
 
 #ifdef DOOMRPG_ESP32
-typedef struct EspNativeMenuState_s
-{
-	struct Image_s imgLogo;
-	struct Image_s* imgBG;
-	struct MenuItem_s items[MAX_MENUITEMS];
-	int numItems;
-	int menu;
-	int oldMenu;
-	int selectedIndex;
-	int scrollIndex;
-	int type;
-	int maxItems;
-} EspNativeMenuState_t;
-
+#include "esp_native_menu_state.h"
+#define MAX_MENUITEMS ESP_NATIVE_MENU_MAX_ITEMS
 typedef EspNativeMenuState_t MenuSystem_t;
 #else
 typedef struct MenuSystem_s
