@@ -65,7 +65,6 @@ static void resetFixedModel(DoomRPG_t* doomRpg) {
     menuSystem->scrollIndex = 0;
     menuSystem->selectedIndex = 0;
     menuSystem->numItems = 0;
-    menuSystem->setBind = false;
 }
 
 int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
@@ -173,7 +172,6 @@ static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
     menuSystem->scrollIndex = 0;
     menuSystem->selectedIndex = 0;
     menuSystem->numItems = declaredItems;
-    menuSystem->setBind = false;
     menuSystem->imgBG = NULL;
     menuSystem->oldMenu = MENU_MAIN;
     menuSystem->type = 5;
