@@ -6,7 +6,11 @@
 struct DoomRPG_s;
 struct Image_s;
 
+#ifdef DOOMRPG_ESP32
+#define MAX_MENUITEMS 8
+#else
 #define MAX_MENUITEMS 96
+#endif
 
 typedef struct MenuSystem_s
 {
