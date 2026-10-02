@@ -5,7 +5,6 @@
 #include "DoomCanvas.h"
 #include "Hud.h"
 #include "Menu.h"
-#include "MenuItem.h"
 #include "MenuSystem.h"
 
 #include "esp_legacy_asset_source.h"
@@ -53,11 +52,14 @@ static void resetSelectionAccumulator(MenuSystem_t* menuSystem) {
     menuSystem->digitCount = 0;
 }
 
-/* MenuItem_Set() inherits a mutable char* signature from the desktop code, but
- * only copies the supplied label. Keep the const cast at this single boundary.
- */
 static void setFixedItem(MenuItem_t* item, const char* text, int flags) {
-    MenuItem_Set(item, (char*)text, flags, 0);
+    if (item == NULL) return;
+    SDL_memset(item, 0, sizeof(*item));
+    if (text != NULL) {
+        SDL_snprintf(item->textField, sizeof(item->textField), "%s", text);
+    }
+    item->flags = (byte)flags;
+    item->action = 0;
 }
 
 
