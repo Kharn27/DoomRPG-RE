@@ -148,3 +148,38 @@ CI #1341 reports 45160 B static RAM and 769613 B linked Flash.
 This closes the easy dead-helper retirement frontier. Image ownership still
 referenced by linked DoomCanvas Story/Epilogue/scrollbar paths and full
 `MenuSystem_t` root replacement are intentionally deferred to later milestones.
+
+## Follow-up closure: MenuSystem shell retirement frontier
+
+The later branch `agent/esp32-retire-menu-system-shell`, based from merged main
+`643701bbf26461fb328e03a20302d37598b9e6c9`, extends this retirement work and
+closes the easy compatibility-shell frontier.
+
+Hardware-tested code boundary:
+`d8d0622eb92d7f32b2e37033cb557b6ba35deb5e`.
+
+Final real-CYD result:
+
+```text
+MenuSystem_t ESP32 sizeof = 496 B
+CORE MenuSystem allocation = 512 B
+MAIN heap8 = 62112
+first ST_INTRO draw deltaHeap = 0
+story hand release = +176 B
+intro disposal = 69492 -> 103436 B
+ENGINESESSION READY
+MOVE committed
+HUB opened
+shapeData = NULL
+mediaTexels = NULL
+```
+
+The shell no longer contains the desktop-only accessory images, bookkeeping,
+binding/message residue, the DoomRPG backpointer, or the write-only paint flag.
+The remaining fields are actively used by the native MAIN/OPTIONS/HELP model and
+logo ownership. Further reduction therefore belongs to a dedicated replacement
+of the `MenuSystem_t` root/type, not to this dead-field cleanup milestone.
+
+Normal `esp32-cyd` CI #1413 is SUCCESS: RAM 45176 B, Flash 770189 B,
+artifact 11221787233, digest
+`sha256:aabcf3c22267d1b0866f4b642eee70fa2d81b14236cfed1a7b891bfed4dc0603`.
