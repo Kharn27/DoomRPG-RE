@@ -31,6 +31,7 @@ static uint32_t largest8Block(void) {
 static int preflightResources(void) {
     static const char* const required[] = {
         "j.bmp",
+        "p.bmp",
         "entities.db",
     };
     const unsigned int count = sizeof(required) / sizeof(required[0]);
