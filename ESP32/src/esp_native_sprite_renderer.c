@@ -120,9 +120,16 @@ typedef struct Scratch_s {
     int columnScale[SCREEN_W];
 } Scratch;
 
+typedef struct PersistentDropOrder_s {
+    uint8_t slot;
+    uint8_t reserved[3];
+    int32_t sortZ;
+} PersistentDropOrder;
+
 typedef struct SpriteWorkspace_s {
     Frame frame;
     Order order[MAX_VISIBLE_SPRITES];
+    PersistentDropOrder dropOrder[ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS];
     uint32_t seenLogical[8];
     EspNativeBspVisibilityState visibility;
 } SpriteWorkspace;
@@ -870,92 +877,119 @@ static int drawWorldDropFrame(Render_t* render,
     return spans(render, &line, frame, renderMode, 0, stats);
 }
 
-static int drawPersistentDrops(Render_t* render,
-                               const Sources* sources,
-                               Frame* frame,
-                               uint32_t seenLogical[8],
-                               EspNativeSpriteStats* stats) {
-    static const int8_t crossOffsets[4][2] = {
-        {16, 0}, {-16, 0}, {0, 16}, {0, -16}
-    };
+static uint16_t currentPlayerTile(void) {
+    const EspPlayerViewState* playerView = EspPlayerView_view();
+    if (playerView == NULL || playerView->active == 0U ||
+        playerView->viewX < 0 || playerView->viewY < 0 ||
+        playerView->viewX >= 2048 || playerView->viewY >= 2048) {
+        return UINT16_MAX;
+    }
+    return (uint16_t)(((uint16_t)(playerView->viewY >> 6) << 5) |
+                      (uint16_t)(playerView->viewX >> 6));
+}
+
+static int buildPersistentDropOrder(
+    Render_t* render,
+    PersistentDropOrder order[ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS],
+    uint32_t* outCount) {
     const EspNativeGameplayMonsterDropView* view =
         EspNativeGameplayMonsterDrop_view();
-    const EspPlayerViewState* playerView = EspPlayerView_view();
-    uint16_t playerTile = UINT16_MAX;
-    uint32_t bspDrawsBefore;
-    uint32_t bspNearBefore;
-    uint32_t bspClipBefore;
+    const uint16_t playerTile = currentPlayerTile();
+    uint32_t count = 0U;
     uint8_t slot;
 
+    if (render == NULL || order == NULL || outCount == NULL) return 0;
+    *outCount = 0U;
     if (view == NULL || view->active == 0U || view->visibleCount == 0U) {
         return 1;
     }
 
-    /*
-     * Persistent monster drops are dynamic world billboards, not immutable BSP
-     * sprite candidates. drawWorldDropFrame() reuses the normal projection path
-     * and therefore increments draws/nearCulled/clipCulled. Those three counters
-     * are part of the strict BSP accounting invariant in gameplay_frame.c:
-     *
-     *     draws + nearCulled + clipCulled == bspCandidates
-     *
-     * Preserve the real pixel/span/frame-load work, but keep dynamic drops out
-     * of that BSP-only candidate accounting exactly like transient effects.
-     */
-    bspDrawsBefore = stats->draws;
-    bspNearBefore = stats->nearCulled;
-    bspClipBefore = stats->clipCulled;
-    if (playerView != NULL && playerView->active == 1U &&
-        playerView->viewX >= 0 && playerView->viewY >= 0 &&
-        playerView->viewX < 2048 && playerView->viewY < 2048) {
-        playerTile = (uint16_t)(((uint16_t)(playerView->viewY >> 6) << 5) |
-                                (uint16_t)(playerView->viewX >> 6));
-    }
-
     for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS; ++slot) {
         const EspNativeGameplayMonsterDropRecord* drop = &view->records[slot];
-        uint16_t logical;
-        uint16_t resourceLogical;
-        uint8_t copies;
-        uint8_t i;
+        uint32_t position;
+        int32_t sortZ;
 
         if (drop->active == 0U || drop->taken != 0U) continue;
-
-        /*
-         * Player-resource pickup is intentionally serviced just after the
-         * committed MOVE frame. A dynamic drop on the destination tile must
-         * therefore be treated like the legacy touch target, not projected as
-         * a billboard through the camera origin during that one intermediate
-         * frame. The next session service consumes it transactionally.
-         */
         if (drop->tileIndex == playerTile) {
             printf("[MONSTERDROP] RENDER-CULL slot=%u tile=%u reason=player-tile pickup=pending-after-commit\n",
                    (unsigned int)slot,
                    (unsigned int)drop->tileIndex);
             continue;
         }
+        if (count >= ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS) return 0;
 
-        logical = drop->defTile;
-        resourceLogical =
-            isLegacyCrossLogical(logical) ? (uint16_t)(logical - 1U) : logical;
-        copies = isLegacyCrossLogical(logical) ? 4U : 1U;
+        sortZ = (int32_t)(((int32_t)drop->worldX * render->viewCos_) +
+                          ((int32_t)drop->worldY * render->viewSin_) +
+                          render->viewTransX);
 
-        if (resourceLogical >= 256U ||
-            EspNativeGraphicsCatalog_findSprite(resourceLogical) == NULL ||
-            !loadFrame(sources, resourceLogical, 0U, 0,
-                       frame, seenLogical, stats)) {
-            return 0;
+        position = count;
+        while (position > 0U && sortZ >= order[position - 1U].sortZ) {
+            order[position] = order[position - 1U];
+            --position;
         }
+        order[position].slot = slot;
+        memset(order[position].reserved, 0, sizeof(order[position].reserved));
+        order[position].sortZ = sortZ;
+        ++count;
+    }
 
-        for (i = 0U; i < copies; ++i) {
-            const int32_t x = (int32_t)drop->worldX +
-                (copies == 4U ? crossOffsets[i][0] : 0);
-            const int32_t y = (int32_t)drop->worldY +
-                (copies == 4U ? crossOffsets[i][1] : 0);
-            if (!drawWorldDropFrame(render, frame, x, y,
-                                    spriteRenderMode(resourceLogical), stats)) {
-                return 0;
-            }
+    *outCount = count;
+    return 1;
+}
+
+static int drawPersistentDrop(Render_t* render,
+                              const Sources* sources,
+                              Frame* frame,
+                              uint32_t seenLogical[8],
+                              EspNativeSpriteStats* stats,
+                              uint8_t slot) {
+    static const int8_t crossOffsets[4][2] = {
+        {16, 0}, {-16, 0}, {0, 16}, {0, -16}
+    };
+    const EspNativeGameplayMonsterDropView* view =
+        EspNativeGameplayMonsterDrop_view();
+    const EspNativeGameplayMonsterDropRecord* drop;
+    uint16_t logical;
+    uint16_t resourceLogical;
+    uint32_t bspDrawsBefore;
+    uint32_t bspNearBefore;
+    uint32_t bspClipBefore;
+    uint8_t copies;
+    uint8_t i;
+
+    if (render == NULL || sources == NULL || frame == NULL ||
+        seenLogical == NULL || stats == NULL || view == NULL ||
+        view->active == 0U ||
+        slot >= ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS) {
+        return 0;
+    }
+    drop = &view->records[slot];
+    if (drop->active == 0U || drop->taken != 0U) return 0;
+
+    bspDrawsBefore = stats->draws;
+    bspNearBefore = stats->nearCulled;
+    bspClipBefore = stats->clipCulled;
+
+    logical = drop->defTile;
+    resourceLogical =
+        isLegacyCrossLogical(logical) ? (uint16_t)(logical - 1U) : logical;
+    copies = isLegacyCrossLogical(logical) ? 4U : 1U;
+
+    if (resourceLogical >= 256U ||
+        EspNativeGraphicsCatalog_findSprite(resourceLogical) == NULL ||
+        !loadFrame(sources, resourceLogical, 0U, 0,
+                   frame, seenLogical, stats)) {
+        return 0;
+    }
+
+    for (i = 0U; i < copies; ++i) {
+        const int32_t x = (int32_t)drop->worldX +
+            (copies == 4U ? crossOffsets[i][0] : 0);
+        const int32_t y = (int32_t)drop->worldY +
+            (copies == 4U ? crossOffsets[i][1] : 0);
+        if (!drawWorldDropFrame(render, frame, x, y,
+                                spriteRenderMode(resourceLogical), stats)) {
+            return 0;
         }
     }
 
@@ -1288,7 +1322,9 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
     SpriteWorkspace* workspace = NULL;
     EspNativeSpriteStats stats;
     uint32_t orderCount = 0U;
+    uint32_t dropOrderCount = 0U;
     uint32_t i;
+    uint32_t dropIndex = 0U;
     int opened = 0;
     int ok = 0;
 
@@ -1338,6 +1374,10 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
                     workspace->order, &stats, &orderCount)) {
         goto done;
     }
+    if (!buildPersistentDropOrder(render, workspace->dropOrder,
+                                  &dropOrderCount)) {
+        goto done;
+    }
     if (EspMapAutomapState_isReady()) {
         uint16_t linesMutated = 0U;
         uint16_t spritesMutated = 0U;
@@ -1358,16 +1398,31 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
     opened = 1;
     if (!initSources(&sources, &stats)) goto done;
 
-    for (i = 0U; i < orderCount; ++i) {
-        if (!drawParentAndGlow(render, &sources, &workspace->order[i],
-                               &workspace->frame, workspace->seenLogical,
-                               &stats)) {
-            goto done;
+    i = 0U;
+    dropIndex = 0U;
+    while (i < orderCount || dropIndex < dropOrderCount) {
+        const int drawDrop =
+            dropIndex < dropOrderCount &&
+            (i >= orderCount ||
+             workspace->dropOrder[dropIndex].sortZ >=
+                 workspace->order[i].sortZ);
+
+        if (drawDrop) {
+            if (!drawPersistentDrop(render, &sources, &workspace->frame,
+                                    workspace->seenLogical, &stats,
+                                    workspace->dropOrder[dropIndex].slot)) {
+                goto done;
+            }
+            ++dropIndex;
         }
-    }
-    if (!drawPersistentDrops(render, &sources, &workspace->frame,
-                             workspace->seenLogical, &stats)) {
-        goto done;
+        else {
+            if (!drawParentAndGlow(render, &sources, &workspace->order[i],
+                                   &workspace->frame, workspace->seenLogical,
+                                   &stats)) {
+                goto done;
+            }
+            ++i;
+        }
     }
     if (transientWorldBatch.active != 0U &&
         !drawTransientBatch(render, &sources, &workspace->frame,
