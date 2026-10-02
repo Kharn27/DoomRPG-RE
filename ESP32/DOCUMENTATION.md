@@ -15,15 +15,58 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1
 branch = agent/esp32-native-menu-state-root
-hardware-tested code boundary = d67caf8fe889f39802ca8a4a8499ecac53fb9e3d
-CI = esp32-cyd #1466 SUCCESS
+hardware-tested code boundary = 35b6986686fa015a4c1ce554b45f1c6d1c865f7d
+CI = esp32-cyd #1489 SUCCESS
 static RAM = 45176 B
 linked Flash = 770193 B
-artifact id = 11223917653
-artifact digest = sha256:ecd9433708f4f6c3b7dbeb25770faa0f4b87cdd2b7c8733b84c21fe6ddb44021
+artifact id = 11225823078
+artifact digest = sha256:f37f9fc35cc06b9731ba50f4a41c6d27ccc20a00e61fb1c26743cd683c6cb6fd
 hardware = targeted story teardown probe PASS + normal Start Game intro -> Entrance -> ENGINESESSION READY PASS
 status = early engine teardown cannot retain native story hand owner; DoomCanvas_free release is hardware-proven with exact heap restoration
 ```
+
+## Native menu runtime decoupled from MenuSystem.h — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`35b6986686fa015a4c1ce554b45f1c6d1c865f7d`.
+
+The permanent ESP32 menu runtime modules no longer include the legacy
+`MenuSystem.h` header for state layout or capacity. They include
+`esp_native_menu_state.h` directly and use
+`ESP_NATIVE_MENU_MAX_ITEMS`.
+
+The CI initially exposed two residual `MAX_MENUITEMS` uses in the native menu
+model; these were replaced with the native capacity constant without restoring
+the legacy include.
+
+Real-CYD validation covered the full path:
+
+```text
+boot
+[MENUSTORAGE] INIT bytes=496
+OPTIONS -> Back
+HELP page up/down -> Back
+Start Game
+INTRO1 FNV=ade0195d deltaHeap=0
+intro disposal recovered=33944
+Entrance load
+ENGINESESSION READY
+HUB open -> weapons -> status -> system -> close
+shapeData=NULL
+mediaTexels=NULL
+```
+
+Normal `esp32-cyd` CI #1489 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770193 B
+artifact id  = 11225823078
+digest       = sha256:f37f9fc35cc06b9731ba50f4a41c6d27ccc20a00e61fb1c26743cd683c6cb6fd
+```
+
+This establishes that the native menu runtime no longer depends on the legacy
+menu header for its own state representation.
 
 ## Native menu state header extracted — REAL-CYD PASS (2026-10-02)
 
