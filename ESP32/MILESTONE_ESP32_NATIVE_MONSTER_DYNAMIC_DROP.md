@@ -92,10 +92,34 @@ Flash: 59.2% (used 776233 bytes from 1310720 bytes)
 
 No local PlatformIO build is claimed.
 
+## Later renderer-accounting regression and closure
+
+A later real-CYD run left a dynamic drop on the floor and exposed a strict
+sprite-accounting mismatch during rotation. Dynamic-drop billboards reused the
+normal projection leaf and incremented BSP-only `draws/nearCulled/clipCulled`
+counters, so the frame invariant compared one extra rendered result against the
+immutable BSP candidate count and rolled TURN back.
+
+Commit `9c204f48de248af1a95d417ea1aadf9088e016ba` keeps the exact drop pixels,
+projection and cache work while restoring those BSP-only counters around the
+dynamic-drop batch. Hardware then proves unrestricted 360-degree navigation with
+the drop left uncollected:
+
+```text
+[RESIDENTGAMEPLAY] TURN ... angle=0->192 committed=yes
+[RESIDENTGAMEPLAY] TURN ... angle=192->128 committed=yes
+[RESIDENTGAMEPLAY] TURN ... angle=128->64 committed=yes
+[RESIDENTGAMEPLAY] TURN ... angle=64->0 committed=yes
+```
+
+No `TURNFRAME DIAG fail=SPRITES` or TURN rollback remains. This strengthens
+the live-drop PASS without changing drop semantics.
+
 ## Explicitly not validated here
 
 - checkpoint persistence of live dynamic drops;
-- level-up popup/modal behavior from the sibling change on this branch;
 - deferred pickup secondary-message presentation.
 
-Those remain separate future boundaries.
+The sibling LEVEL UP presentation and checkpoint monster-projection fixes are
+now separately hardware-valid in
+[MILESTONE_ESP32_NATIVE_LEVEL_UP_AND_RESUME_PROJECTION.md](MILESTONE_ESP32_NATIVE_LEVEL_UP_AND_RESUME_PROJECTION.md).
