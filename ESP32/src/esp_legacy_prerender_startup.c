@@ -90,24 +90,34 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
     {
         static const struct {
             const char* input;
-            const unsigned char expected[16];
+            const unsigned char* expected;
+            unsigned int expectedBytes;
         } cases[] = {
-            { "Level up!",   { 0x80,0x80,' ','L','e','v','e','l',' ','u','p','!',' ',0x80,0x80,0x00 } },
-            { "Near Death!", { 0x80,' ','N','e','a','r',' ','D','e','a','t','h','!',' ',0x80,0x00 } },
-            { "Low Health!", { 0x80,' ','L','o','w',' ','H','e','a','l','t','h','!',' ',0x80,0x00 } },
-            { "Armor Gone!", { 0x80,' ','A','r','m','o','r',' ','G','o','n','e','!',' ',0x80,0x00 } },
+            { "Level up!",   (const unsigned char*)"\x80\x80 Level up! \x80\x80", 16U },
+            { "Near Death!", (const unsigned char*)"\x80 Near Death! \x80", 16U },
+            { "Low Health!", (const unsigned char*)"\x80 Low Health! \x80", 16U },
+            { "Armor Gone!", (const unsigned char*)"\x80 Armor Gone! \x80", 16U },
         };
         unsigned int i;
-        char out[32];
+        unsigned char guarded[40];
+        char* out = (char*)guarded;
         uint32_t before = heap8Free();
 
         for (i = 0; i < (unsigned int)(sizeof(cases) / sizeof(cases[0])); ++i) {
-            SDL_memset(out, 0x5a, sizeof(out));
+            unsigned int g;
+            SDL_memset(guarded, 0x5a, sizeof(guarded));
             EspNativeText_buildDivider(out, cases[i].input);
-            if (SDL_memcmp(out, cases[i].expected, sizeof(cases[i].expected)) != 0) {
-                printf("[DIVIDERPROBE] FAILED case=%u text=\"%s\"\n",
+            if (SDL_memcmp(out, cases[i].expected, cases[i].expectedBytes) != 0) {
+                printf("[DIVIDERPROBE] FAILED bytes case=%u text=\"%s\"\n",
                        i, cases[i].input);
                 return 0;
+            }
+            for (g = 32U; g < (unsigned int)sizeof(guarded); ++g) {
+                if (guarded[g] != 0x5aU) {
+                    printf("[DIVIDERPROBE] FAILED guard case=%u offset=%u value=%02x\n",
+                           i, g, guarded[g]);
+                    return 0;
+                }
             }
         }
 
