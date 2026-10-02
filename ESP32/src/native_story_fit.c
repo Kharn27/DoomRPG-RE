@@ -52,6 +52,10 @@ int Esp32StoryFit_prepare(struct DoomCanvas_s* doomCanvasBase) {
     return 1;
 }
 
+int Esp32StoryFit_hasHand(void) {
+    return storyHand.imgBitmap != NULL;
+}
+
 void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvasBase) {
     DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
     DoomRPG_t* owner = storyHandOwner;
