@@ -5,17 +5,272 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ## Current Git boundary
 
 ```text
-current main = 88a5d3fa5bfe96fe16e213e78933493394264dcc
-branch = agent/esp32-native-player-death-core
-hardware-tested code boundary = 717e7bd980ff7110c227055d940d01c980a5683d
-CI = esp32-cyd #1290 SUCCESS
-static RAM = 44992 B
-linked Flash = 769357 B
-artifact id = 11196908002
-artifact digest = sha256:c250af278aa1d18add1bbd87071e9d7f96d0b575199fb644d269ccc1cc3af5f5
-hardware = Sector 1 ordered multi-monster turn + serialized attack pause/resume + lethal monster retaliation -> native PlayerDeath + death menu routing + raw-pending-probe input gate PASS
-status = ORDERED MONSTER TURN + MONSTER LETHAL DEATH + P1 INPUT-RACE CLOSURE REAL-CYD PASS; one-probe-in-flight is pause/resume rather than starvation; lethal retaliation commits HP=0 + attack RNG + one death RNG byte and terminates the remaining turn suffix; raw MonsterTurn attackProbes now close world input immediately even before Activation delivers the probe on the next session tick; rapid hardware taps did not stack; LOAD remains live, JUNCTION/RETRY/MAIN remain explicitly fail-closed; heap stable at 50308/38900
+current main = 2d981fd14e3b7840ccf71575c47b0e3bd6d123fa
+branch = agent/esp32-retire-dead-menu-particle-tus
+hardware-tested code boundary = 4c4a48230303cef7eeedc9722198fbe2c7506517
+CI = esp32-cyd #1341 SUCCESS
+static RAM = 45160 B
+linked Flash = 769613 B
+artifact id = 11218132618
+artifact digest = sha256:ecf7fb1385a00d7577c85624805d658dadede308802ae0ce7894c9e8fb269448
+hardware = MAIN soak -> OPTIONS/Back -> HELP multi-page/Back -> OPTIONS/Back PASS
+status = Menu.c + MenuItem.c + MenuSystem.c + ParticleSystem.c absent from ESP32 compile graph; final ELF MenuItem_* = 0 and MenuSystem_* = 0; compact menu storage remains hardware-proven
 ```
+
+## Desktop MenuItem helper translation unit retirement — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`4c4a48230303cef7eeedc9722198fbe2c7506517`.
+
+The remaining ESP32 callers of desktop `MenuItem_Set()` / `MenuItem_Set2()`
+were only the already-native fixed main-menu builders. Those trivial writes are
+now local native bounded copies, and `src/MenuItem.c` is excluded from the
+ESP32 compile graph.
+
+Real-CYD validation covers the exact affected surface:
+
+```text
+MAIN stable for >95 s
+ -> OPTIONS -> Back
+ -> HELP page up/down through multiple ranges -> Back
+ -> OPTIONS -> Back again
+```
+
+All previously validated framebuffer/model fingerprints remain exact:
+
+```text
+MAIN        = 522dc605
+OPTIONS     = 162d3999
+HELP page0  = 5f22cf6b
+HELP page8  = d0788359
+HELP page16 = 9213df95
+HELP page24 = b0191189
+```
+
+The menu remains allocation-stable outside the intentionally temporary HELP
+buffer:
+
+```text
+MAIN/OPTIONS heap8=61672 largest8=32756
+HELP active  heap8=60248 largest8=32756
+HELP Back    heap8=61672 largest8=32756
+```
+
+Normal `esp32-cyd` CI #1341 is SUCCESS:
+
+```text
+static RAM   = 45160 B
+linked Flash = 769613 B
+artifact id  = 11218132618
+digest       = sha256:ecf7fb1385a00d7577c85624805d658dadede308802ae0ce7894c9e8fb269448
+```
+
+Direct final-ELF inspection confirms:
+
+```text
+MenuItem_*   = 0
+MenuSystem_* = 0
+```
+
+The ESP32 compile graph now excludes `Menu.c`, `MenuItem.c`,
+`MenuSystem.c`, and `ParticleSystem.c`.
+
+Remaining menu-related cleanup is no longer equivalent dead-helper retirement:
+`imgHand` and `imgArrowUpDown` are still referenced by linked DoomCanvas
+Story/Epilogue/scrollbar paths, while full `MenuSystem_t` root replacement
+crosses multiple compatibility contracts. Those belong to later bounded
+milestones rather than this retirement step.
+
+## Compact ESP32 menu storage — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`bb04faa839169c559e161ff0dea59b5e8f1e6dbc`.
+
+The retained compatibility `MenuSystem_t` no longer reserves the desktop
+`MenuItem_t items[96]` array on ESP32. Its ESP32 item capacity is bounded to 8,
+which is sufficient for the fixed native MAIN/OPTIONS/CONTINUE models (4/4/3).
+HELP keeps the original `help.txt` payload compact and uses a bounded native
+line-offset table instead of inflating 83 lines into desktop `MenuItem_t`
+records.
+
+Real-CYD HELP witness:
+
+```text
+[MAINMODEL] HELP-PARSE bytes=1405 ... declared=83 parsed=83
+            compactBytes=1116 menuItemSlots=8 lineChars<=31 result=valid
+[MAINHELP] PAGE-DOWN 0->8 ->16 ->24
+[MAINHELP] PAGE-UP   24->16 ->8 ->0
+[MAINBACK] READY source=help ... frame=522dc605
+```
+
+The fixed OPTIONS path also remains exact and allocation-free:
+
+```text
+MAIN heap8=61624 largest8=32756
+OPTIONS heap8=61624 largest8=32756
+Back -> MAIN frame=522dc605
+```
+
+The V9 LOAD path then restores Sector 1, reaches resident gameplay, executes
+player movement and ordered four-monster movement/three-goal behavior, including
+publication of a three-loop monster attack probe.
+
+Hardware memory improvement versus the previous MenuSystem-retirement boundary:
+
+```text
+MAIN menu: 56908 -> 61624 heap8  (+4716 B)
+gameplay:  50300 -> 55024 heap8  (+4724 B)
+largest8:  38900 -> 38900        (unchanged in gameplay)
+```
+
+HELP cleanup returns exactly to the pre-HELP MAIN value `heap8=61624`, proving
+the compact HELP allocation is not leaked.
+
+Critical invariants remain:
+
+```text
+shapeData == NULL
+mediaTexels == NULL
+```
+
+Normal `esp32-cyd` CI #1333 is SUCCESS:
+
+```text
+static RAM   = 45208 B
+linked Flash = 769665 B
+artifact id  = 11202101528
+digest       = sha256:308632475a69248c35d2bd57ceac73e12c7cd432ebbf77884cf83117e9b9cf87
+```
+
+The remaining `MenuSystem_t` is now a small compatibility shell rather than a
+5.5 KiB desktop menu container. Further retirement must audit each remaining
+field and linked consumer before replacing the root type/pointer entirely.
+
+## Desktop MenuSystem translation unit retirement — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`2e0193b4e4f82d78f0b361c84e0d2bcd4f8f1cba`.
+
+The ESP32 build no longer compiles `src/MenuSystem.c`. The final ELF contains zero
+`MenuSystem_*` symbols. The still-transitional `MenuSystem_t` allocation is now
+owned by `EspNativeMenuStorage`, which performs only the bounded storage/image
+responsibilities still consumed by the native MAIN/OPTIONS/HELP models.
+
+The former menu audio calls are preserved as semantic native intents rather than
+desktop Sound/MenuSystem behavior:
+
+```text
+5046 = select/enter
+5042 = back
+5067 = in-game menu entry companion cue
+```
+
+The backend remains deliberately silent. The real CYD proves call-order publication
+through:
+
+```text
+[AUDIOINTENT] seq=1 resource=5046
+[AUDIOINTENT] seq=2 resource=5042
+[AUDIOINTENT] seq=3 resource=5046
+[AUDIOINTENT] seq=4 resource=5042
+```
+
+Hardware path:
+
+```text
+cold boot
+ -> EspNativeMenuStorage INIT 5532 B / 96 items
+ -> p/q/j asset startup
+ -> MAIN
+ -> OPTIONS -> Back
+ -> HELP -> page down/up -> Back
+ -> V9 LOAD Sector 1
+ -> resident gameplay
+ -> player MOVE
+ -> ordered four-monster movement
+```
+
+CI #1324 succeeds in normal `esp32-cyd`:
+
+```text
+static RAM   = 45000 B
+linked Flash = 769861 B
+artifact id  = 11200848779
+digest       = sha256:82fdd69dd60c3a8fa22fe15ce82c296bc291a854495807d7ec7d76c8682961dd
+```
+
+The +8 B static RAM is the native audio-intent state. Hardware memory moves by the
+same exact amount relative to the previous milestone and fragmentation is unchanged:
+
+```text
+MAIN:     heap=122832 heap8=56908 largest8=32756
+gameplay: heap=116224 heap8=50300 largest8=38900
+```
+
+Critical invariants remain `shapeData == NULL` and `mediaTexels == NULL`.
+
+The next structural question is not `MenuSystem.c` anymore; it is the 5532-byte
+compatibility layout itself. Any compaction must first prove that no linked
+DoomCanvas/DoomRPG path still dereferences fields outside the native model contract.
+
+## Dead desktop Menu / ParticleSystem translation units — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`bc65cc337000d8c7ef54b5f0451e51d958cf7cef`.
+
+The ESP32 engine build previously used `+<*.c>` for the desktop source directory and
+therefore still compiled `src/Menu.c` and `src/ParticleSystem.c` even though earlier
+hardware milestones had already retired both runtime owners and direct final-ELF
+inspection showed zero `Menu_*` and zero `ParticleSystem_*` symbols.
+
+This milestone changes only `ESP32/scripts/build_engine.py` so those two translation
+units are excluded before compilation. It does not change inherited headers, type
+layouts, `DoomRPG_t` fields, runtime ownership, gameplay, renderer, RNG, input,
+save/load, audio, or death-menu behavior.
+
+Normal `esp32-cyd` CI #1298 succeeds. The compile log no longer contains
+`Menu.c.o` or `ParticleSystem.c.o`. Final metrics remain exactly:
+
+```text
+static RAM   = 44992 B
+linked Flash = 769357 B
+```
+
+The unchanged linked image size is expected: both translation units were already
+fully garbage-collected at link time. This milestone removes build-graph debt rather
+than firmware bytes.
+
+The real classic CYD validates a meaningful runtime path after the compile-graph
+change:
+
+```text
+MAIN -> Load Game
+ -> readable V9 checkpoint
+ -> Sector 1 native session restore
+ -> shapeData=0x0 mediaTexels=0x0
+ -> resident gameplay READY
+ -> MOVE
+ -> ordered four-monster sequence
+ -> subtype-4 three-goal continuation
+ -> three-loop attack animation
+ -> native retaliation commit
+```
+
+Stable hardware witness:
+
+```text
+heap=116232
+heap8=50308
+largest8=38900
+```
+
+A separate presentation gap remains intentionally outside this milestone:
+player MOVE and TURN currently commit directly between settled camera poses rather
+than showing legacy-style interpolation. That is a native presentation milestone,
+not a reason to retain or restore desktop gameplay ownership.
+
+Detailed milestone:
+[MILESTONE_ESP32_RETIRE_DEAD_MENU_PARTICLE_TUS.md](MILESTONE_ESP32_RETIRE_DEAD_MENU_PARTICLE_TUS.md)
 
 ## Ordered monster turn + lethal monster death — REAL-CYD PASS (final review closure 2026-10-02)
 

@@ -7,7 +7,7 @@
 #include "Menu.h"
 #include "MenuSystem.h"
 #include "Render.h"
-#include "Sound.h"
+#include "esp_native_audio_intent.h"
 
 #include "native_main_menu_actions.h"
 #include "native_main_menu_load_action.h"
@@ -85,7 +85,7 @@ int DoomRPG_esp32MainMenuReturnToMain(struct DoomRPG_s* doomRpgBase,
     /* Exact legacy Back cue, without importing MenuSystem_back() or its generic
      * MenuSystem_setMenu(oldMenu) hierarchy router.
      */
-    Sound_playSound(doomRpg->sound, 5042, 0, 3);
+    (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
 
     if (!DoomRPG_esp32MainMenuModelEnter(doomRpg, MENU_MAIN) ||
         !DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalFNV)) {
@@ -141,7 +141,8 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
         menuSystem->menu != MENU_MAIN_HELP_ABOUT ||
         menuSystem->type != 5 ||
         menuSystem->oldMenu != MENU_MAIN ||
-        menuSystem->numItems <= 0) {
+        menuSystem->numItems <= 0 ||
+        menuSystem->numItems != DoomRPG_esp32MainMenuHelpLineCount()) {
         return 0;
     }
 
@@ -170,9 +171,11 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     x = canvas->SCR_CX - 64;
     y = 0;
     for (i = menuSystem->scrollIndex; i < end; ++i) {
-        if (menuSystem->items[i].textField[0] != '\0') {
+        const char* line = DoomRPG_esp32MainMenuHelpLine(i);
+        if (line == NULL) return 0;
+        if (line[0] != '\0') {
             DoomCanvas_drawFont(canvas,
-                                menuSystem->items[i].textField,
+                                (char*)line,
                                 x,
                                 y,
                                 0,
@@ -369,7 +372,7 @@ static int activateHelp(DoomRPG_t* doomRpg) {
         return 0;
     }
 
-    Sound_playSound(doomRpg->sound, 5046, 0, 3);
+    (void)EspNativeAudioIntent_publish(5046U, 0U, 3U);
     if (!DoomRPG_esp32MainMenuModelEnter(
             doomRpg, MENU_MAIN_HELP_ABOUT) ||
         !paintHelp(doomRpg, &helpFNV)) {

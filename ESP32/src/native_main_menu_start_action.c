@@ -9,7 +9,7 @@
 #include "MenuSystem.h"
 #include "Player.h"
 #include "Render.h"
-#include "Sound.h"
+#include "esp_native_audio_intent.h"
 
 #include "esp_legacy_asset_source.h"
 #include "native_intro_first_frame.h"
@@ -226,7 +226,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
      * of legacy Menu_startGame() here so the linker can discard its unrelated
      * load-state / legacy-load-map branches.
      */
-    Sound_playSound(doomRpg->sound, 5046, 0, 3);
+    (void)EspNativeAudioIntent_publish(5046U, 0U, 3U);
     menuSystem->imgBG = NULL;
     Player_reset(player);
     player->totalDeaths = 0;

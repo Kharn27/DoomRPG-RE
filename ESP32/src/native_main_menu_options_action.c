@@ -9,7 +9,7 @@
 #include "MenuItem.h"
 #include "MenuSystem.h"
 #include "Render.h"
-#include "Sound.h"
+#include "esp_native_audio_intent.h"
 
 #include "native_main_menu_160x120_layout.h"
 #include "native_main_menu_model.h"
@@ -229,7 +229,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
      * only MENU_MAIN_OPTIONS; no desktop-wide selector or setMenu routing is
      * involved, and the finger-first card index no longer needs translation.
      */
-    Sound_playSound(doomRpg->sound, 5046, 0, 3);
+    (void)EspNativeAudioIntent_publish(5046U, 0U, 3U);
     if (!DoomRPG_esp32MainMenuModelEnter(
             doomRpg, MENU_MAIN_OPTIONS)) {
         printf("[MAINOPTIONS] FAILED entering native Options model\n");
