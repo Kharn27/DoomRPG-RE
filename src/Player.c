@@ -493,9 +493,6 @@ void Player_selectNextWeapon(Player_t* player)
 
 void Player_painEvent(Player_t* player, Entity_t* entity)
 {
-#ifdef DOOMRPG_ESP32
-	char divider[32];
-#endif
 	DoomCanvas_t* doomCanvas;
 	Sprite_t* sprite;
 	int priority, sndId;
