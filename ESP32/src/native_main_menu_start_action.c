@@ -134,7 +134,7 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
 int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     DoomCanvas_t* doomCanvas;
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     Player_t* player;
     Render_t* render;
     uint32_t inputHash;
