@@ -320,7 +320,6 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
     }
 
     DoomCanvas_setState(canvas, ST_MENU);
-    menuSystem->paintMenu = true;
 
     printf("[MAINMODEL] ENTER target=%d type=%d old=%d items=%d selected=%d scroll=%d maxItems=%d state=%d dispatcher=native builder=%s\n",
            menuSystem->menu,
