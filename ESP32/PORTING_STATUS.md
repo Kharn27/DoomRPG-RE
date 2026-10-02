@@ -7,15 +7,63 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = 643701bbf26461fb328e03a20302d37598b9e6c9
 branch = agent/esp32-retire-menu-system-shell
-hardware-tested code boundary = d8d0622eb92d7f32b2e37033cb557b6ba35deb5e
-CI = esp32-cyd #1413 SUCCESS
+hardware-tested code boundary = f398807df63c88d3d453a71eaf675cd1be2c1dbd
+CI = esp32-cyd #1420 SUCCESS
 static RAM = 45176 B
-linked Flash = 770189 B
-artifact id = 11221787233
-artifact digest = sha256:aabcf3c22267d1b0866f4b642eee70fa2d81b14236cfed1a7b891bfed4dc0603
-hardware = cold boot -> OPTIONS/Back -> HELP paging/Back -> Start Game -> full intro -> Entrance -> ENGINESESSION READY -> MOVE -> HUB OPEN PASS
-status = final simple MenuSystem_t shell trim hardware-proven at 496 B; doomRpg backpointer + write-only paintMenu retired; native story hand symmetric/no-leak; remaining fields are live native-menu state
+linked Flash = 770197 B
+artifact id = 11222143129
+artifact digest = sha256:2f99a975d67cf895c54a5d50fbc0714b6829fc91c7ee65215ddb5fe041683911
+hardware = targeted story teardown probe PASS + normal Start Game intro -> Entrance -> ENGINESESSION READY PASS
+status = DoomCanvas_free now unconditionally releases native story hand; real CYD proves owner cleared and heap8 exact after teardown; MenuSystem_t remains 496 B
 ```
+
+## Story-hand teardown safety — REAL-CYD PASS (2026-10-02)
+
+Production fix boundary:
+`f398807df63c88d3d453a71eaf675cd1be2c1dbd`.
+
+A reviewer correctly identified that the native story-hand owner was only
+released on normal intro disposal. If the engine tore down first, the
+module-global `storyHandOwner` could outlive the `DoomRPG_t` it referenced.
+
+The permanent fix adds an unconditional ESP32 release in
+`DoomCanvas_free()`:
+
+```text
+DoomCanvas_free()
+ -> Esp32StoryFit_release(doomCanvas)
+ -> clear storyHand + storyHandOwner
+ -> continue ordinary canvas teardown
+```
+
+The normal `esp32-cyd` build at this boundary is CI #1420 SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770197 B
+artifact id  = 11222143129
+digest       = sha256:2f99a975d67cf895c54a5d50fbc0714b6829fc91c7ee65215ddb5fe041683911
+```
+
+A dedicated diagnostic env,
+`esp32-cyd-story-teardown-probe`, was then hardware-tested on the real CYD.
+It creates a synthetic canvas, prepares the native story hand, invokes the real
+`DoomCanvas_free(..., false)`, and requires both owner release and exact heap
+restoration.
+
+Real-CYD proof:
+
+```text
+[STORYTEARDOWN] BEGIN heap8=84048 owner=0
+[INTROFIT] HAND-READY asset=p.bmp bytes=bounded owner=native-story
+[INTROFIT] PREPARE hand=13x10 asset=p.bmp owner=native-story ...
+[INTROFIT] HAND-RELEASE asset=p.bmp owner=native-story
+[STORYTEARDOWN] PASS prepare->DoomCanvas_free->released heap8=84048 exact=yes
+```
+
+The same diagnostic firmware then continued through the normal Start Game intro
+and reached native gameplay, confirming that the targeted teardown probe does not
+damage the ordinary path.
 
 ## Final ESP32 MenuSystem compatibility shell — REAL-CYD PASS (2026-10-02)
 
