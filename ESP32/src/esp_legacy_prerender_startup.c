@@ -3,9 +3,11 @@
 
 #include "DoomRPG.h"
 #include "EntityDef.h"
-#include "MenuSystem.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_native_menu_storage.h"
+#ifdef DOOMRPG_ESP32_DIVIDER_PROBE
+#include "esp_native_text_format.h"
+#endif
 #ifdef DOOMRPG_ESP32_STORY_TEARDOWN_PROBE
 #include "DoomCanvas.h"
 #include "native_story_fit.h"
@@ -83,6 +85,42 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
     preRenderAttempted = 1;
 
     printf("\n=== Doom RPG pre-render startup probe ===\n");
+
+#ifdef DOOMRPG_ESP32_DIVIDER_PROBE
+    {
+        static const struct {
+            const char* input;
+            const unsigned char expected[16];
+        } cases[] = {
+            { "Level up!",   { 0x80,0x80,' ','L','e','v','e','l',' ','u','p','!',' ',0x80,0x80,0x00 } },
+            { "Near Death!", { 0x80,' ','N','e','a','r',' ','D','e','a','t','h','!',' ',0x80,0x00 } },
+            { "Low Health!", { 0x80,' ','L','o','w',' ','H','e','a','l','t','h','!',' ',0x80,0x00 } },
+            { "Armor Gone!", { 0x80,' ','A','r','m','o','r',' ','G','o','n','e','!',' ',0x80,0x00 } },
+        };
+        unsigned int i;
+        char out[32];
+        uint32_t before = heap8Free();
+
+        for (i = 0; i < (unsigned int)(sizeof(cases) / sizeof(cases[0])); ++i) {
+            SDL_memset(out, 0x5a, sizeof(out));
+            EspNativeText_buildDivider(out, cases[i].input);
+            if (SDL_memcmp(out, cases[i].expected, sizeof(cases[i].expected)) != 0) {
+                printf("[DIVIDERPROBE] FAILED case=%u text=\"%s\"\n",
+                       i, cases[i].input);
+                return 0;
+            }
+        }
+
+        if (heap8Free() != before) {
+            printf("[DIVIDERPROBE] FAILED heap8=%u->%u\n",
+                   (unsigned int)before, (unsigned int)heap8Free());
+            return 0;
+        }
+
+        printf("[DIVIDERPROBE] PASS cases=4 heap8=%u exact=yes allocation=no owner=caller\n",
+               (unsigned int)heap8Free());
+    }
+#endif
 
     if (!layoutReady) {
         printf("[PRERENDER] Layout is not ready; probe skipped safely\n");
