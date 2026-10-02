@@ -37,6 +37,7 @@ struct DoomCanvas_s;
  * over-stretched. No intermediate framebuffer or extra frame-sized RAM is used.
  */
 void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvas);
+void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvas);
 
 #ifdef __cplusplus
 }
