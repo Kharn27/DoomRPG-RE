@@ -30,15 +30,19 @@ typedef struct MenuSystem_s
 	int type;
 	int maxItems;
 	int f749g;
+#ifndef DOOMRPG_ESP32
 	int cheatCombo;
 	int digitCount;
+#endif
 	boolean paintMenu;
-	char stringBuffer[32];
 
 	boolean setBind;// new
+#ifndef DOOMRPG_ESP32
+	char stringBuffer[32];
 	int bindIndx;// new
 	int nextMsgTime; // New
 	int nextMsg;// new
+#endif
 
 } MenuSystem_t;
 
