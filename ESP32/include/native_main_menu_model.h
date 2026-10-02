@@ -19,6 +19,13 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpg, int menuId);
  */
 int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpg);
 
+/* HELP keeps the original bounded asset compact instead of inflating every
+ * line into a desktop MenuItem_t. Returned text is owned by the active native
+ * help model and remains valid until another model is entered or the model is
+ * left. */
+const char* DoomRPG_esp32MainMenuHelpLine(int index);
+int DoomRPG_esp32MainMenuHelpLineCount(void);
+
 /* Close MENU_MAIN after Menu_startGame() has established its next canvas state.
  * This mirrors only the small model bookkeeping historically hidden in
  * MenuSystem_setMenu(MENU_NONE); map/media ownership is not reintroduced here.
