@@ -14,7 +14,9 @@ struct Image_s;
 
 typedef struct MenuSystem_s
 {
+#ifndef DOOMRPG_ESP32
 	struct DoomRPG_s* doomRpg;
+#endif
 #ifndef DOOMRPG_ESP32
 	int memory;
 	struct Image_s imgHand;
@@ -40,7 +42,9 @@ typedef struct MenuSystem_s
 	int cheatCombo;
 	int digitCount;
 #endif
+#ifndef DOOMRPG_ESP32
 	boolean paintMenu;
+#endif
 
 #ifndef DOOMRPG_ESP32
 	boolean setBind;// new
