@@ -15,8 +15,8 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1
 branch = agent/esp32-native-menu-state-root
-hardware-tested code boundary = 35b6986686fa015a4c1ce554b45f1c6d1c865f7d
-CI = esp32-cyd #1489 SUCCESS
+hardware-tested code boundary = ad8fe2f6e1ed8186a1cdd871d241b72623d905c6
+CI = esp32-cyd #1509 SUCCESS
 static RAM = 45176 B
 linked Flash = 770193 B
 artifact id = 11225823078
@@ -24,6 +24,32 @@ artifact digest = sha256:f37f9fc35cc06b9731ba50f4a41c6d27ccc20a00e61fb1c26743cd6
 hardware = targeted story teardown probe PASS + normal Start Game intro -> Entrance -> ENGINESESSION READY PASS
 status = early engine teardown cannot retain native story hand owner; DoomCanvas_free release is hardware-proven with exact heap restoration
 ```
+
+## Native divider formatter replaces Player MenuSystem buffer — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`ad8fe2f6e1ed8186a1cdd871d241b72623d905c6`.
+
+ESP32 `Player.c` no longer depends on `MenuSystem_buildDivider()` or the
+legacy `MenuSystem_t::stringBuffer` scratch. The replacement is the
+caller-owned, allocation-free `EspNativeText_buildDivider()`.
+
+The first probe exposed a latent legacy overflow pattern: the original
+`strncpy(..., 32)` zero-padding could write beyond the 32-byte destination
+when reproduced with a local buffer. The native formatter now copies only the
+visible legacy text bytes and writes the suffix/NUL explicitly.
+
+A guarded hardware probe validates all four Player divider strings byte-for-byte
+while checking heap stability and post-buffer guard bytes:
+
+```text
+[DIVIDERPROBE] PASS cases=4 heap8=84048 exact=yes allocation=no owner=caller
+```
+
+The diagnostic firmware then continued normally through prerender, mappings and
+native MAIN with no stack-protector failure.
+
+Normal `esp32-cyd` CI #1509 is SUCCESS at the same code boundary.
 
 ## Native menu runtime decoupled from MenuSystem.h — REAL-CYD PASS (2026-10-02)
 
