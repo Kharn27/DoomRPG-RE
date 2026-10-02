@@ -15,28 +15,36 @@ struct Image_s;
 typedef struct MenuSystem_s
 {
 	struct DoomRPG_s* doomRpg;
+#ifndef DOOMRPG_ESP32
 	int memory;
 	struct Image_s imgHand;
 	struct Image_s imgArrowUpDown;
+#endif
 	struct Image_s imgLogo;
 	struct Image_s* imgBG;
 	struct MenuItem_s items[MAX_MENUITEMS];
 	int numItems;
+#ifndef DOOMRPG_ESP32
 	int field_0xc58;
+#endif
 	int menu;
 	int oldMenu;
 	int selectedIndex;
 	int scrollIndex;
 	int type;
 	int maxItems;
+#ifndef DOOMRPG_ESP32
 	int f749g;
+#endif
 #ifndef DOOMRPG_ESP32
 	int cheatCombo;
 	int digitCount;
 #endif
 	boolean paintMenu;
 
+#ifndef DOOMRPG_ESP32
 	boolean setBind;// new
+#endif
 #ifndef DOOMRPG_ESP32
 	char stringBuffer[32];
 	int bindIndx;// new
