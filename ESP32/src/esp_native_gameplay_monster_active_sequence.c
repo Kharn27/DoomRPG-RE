@@ -2,7 +2,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "DoomRPG.h"
+
 #include "doomrpg_log.h"
+#include "esp_native_door_animator.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_bsp_visibility.h"
@@ -14,6 +17,8 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_death.h"
+#include "esp_native_gameplay_frame.h"
+#include "esp_player_view_state.h"
 
 #define ACTIVESEQ_TYPE_ENEMY 1U
 #define ACTIVESEQ_SUBTYPE_SPECIAL_AI 10U
@@ -100,6 +105,44 @@ int __wrap_EspNativeBspVisibility_mapSpriteVisible(
 static void clearCompositionOverrides(void) {
     EspNativeGameplayMonsterActivation_clearSelection();
     EspNativeGameplayMonsterActivation_clearTurnCounterOverride();
+}
+
+static void releaseDeferredDoorVisual(struct DoomRPG_s* doomRpgBase,
+                                      const char* reason) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    const EspPlayerViewState* player;
+    EspNativeGameplayFrameStats frame;
+    uint8_t held = EspNativeDoorAnimator_deferredCloseCount();
+    uint8_t released;
+
+    if (held == 0U) return;
+    released = EspNativeDoorAnimator_releaseDeferredCloses();
+    if (released == 0U) return;
+
+    player = EspPlayerView_view();
+    if (doomRpg == NULL || doomRpg->render == NULL || player == NULL ||
+        player->active != 1U || player->viewX != player->destX ||
+        player->viewY != player->destY ||
+        player->viewAngle != player->destAngle) {
+        printf("[DOORANIM] POST-MONSTER-DEFER lines=%u reason=%s redraw=next-world-frame logical=closed\n",
+               (unsigned int)released,
+               reason != NULL ? reason : "turn-end");
+        return;
+    }
+
+    memset(&frame, 0, sizeof(frame));
+    if (!EspNativeGameplayFrame_renderTurn(
+            doomRpg->render, (uint8_t)player->viewAngle, &frame)) {
+        printf("[DOORANIM] POST-MONSTER-FAILED lines=%u reason=%s logical=closed recovery=stable-next-frame\n",
+               (unsigned int)released,
+               reason != NULL ? reason : "turn-end");
+        return;
+    }
+    printf("[DOORANIM] POST-MONSTER-COMPLETE lines=%u reason=%s frame=%08x presented=%u logical=closed visual=closed\n",
+           (unsigned int)released,
+           reason != NULL ? reason : "turn-end",
+           (unsigned int)frame.frameAfterFNV,
+           (unsigned int)frame.finalPresented);
 }
 
 static void primeMovementCounters(struct DoomRPG_s* doomRpg) {
@@ -196,6 +239,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                    (unsigned int)activeSeq.pauseProbe);
             activeSeq.turnInProgress = 0U;
             activeSeq.pauseProbe = 0U;
+            releaseDeferredDoorVisual(doomRpg, "player-death");
             return;
         }
 
@@ -223,6 +267,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                    (unsigned int)activeSeq.actualNoAttackSeen,
                    (unsigned int)actual->noAttackTurns);
             activeSeq.actualNoAttackSeen = actual->noAttackTurns;
+            releaseDeferredDoorVisual(doomRpg, "turn-token-gap");
             return;
         }
 
@@ -250,6 +295,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                (unsigned int)activeSeq.expandedTurns,
                (unsigned int)activationCount,
                (unsigned int)EspNativeGameplayMonsterActivation_count());
+        releaseDeferredDoorVisual(doomRpg, "activation-count-regressed");
         return;
     }
 
@@ -273,6 +319,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                    (unsigned int)activeSeq.expandedTurns,
                    (unsigned int)ordinal,
                    (unsigned int)activationCount);
+            releaseDeferredDoorVisual(doomRpg, "activation-order-read");
             return;
         }
         ++activeSeq.turnOrdinal;
@@ -306,6 +353,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                    (unsigned int)activationCount,
                    (unsigned int)spriteIndex,
                    (unsigned int)monster->subtype);
+            releaseDeferredDoorVisual(doomRpg, "member-probe-failed");
             return;
         }
 
@@ -346,16 +394,26 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                attackAfter > attackBefore ? "probe-before-next" :
                "closed-before-next");
 
-        if (attackAfter > attackBefore &&
-            activeSeq.turnOrdinal < activationCount) {
-            activeSeq.pauseProbe = attackAfter;
-            printf("[MONSTERACTIVESEQ] PAUSE turn=%u afterOrdinal=%u/%u probe=%u reason=attack-in-flight nextOrdinal=%u sameMonsterTurn=yes\n",
-                   (unsigned int)activeSeq.expandedTurns,
-                   (unsigned int)activeSeq.turnOrdinal,
-                   (unsigned int)activationCount,
-                   (unsigned int)activeSeq.pauseProbe,
-                   (unsigned int)(activeSeq.turnOrdinal + 1U));
-            return;
+        if (attackAfter > attackBefore) {
+            if (activeSeq.turnOrdinal < activationCount) {
+                activeSeq.pauseProbe = attackAfter;
+                printf("[MONSTERACTIVESEQ] PAUSE turn=%u afterOrdinal=%u/%u probe=%u reason=attack-in-flight nextOrdinal=%u sameMonsterTurn=yes\n",
+                       (unsigned int)activeSeq.expandedTurns,
+                       (unsigned int)activeSeq.turnOrdinal,
+                       (unsigned int)activationCount,
+                       (unsigned int)activeSeq.pauseProbe,
+                       (unsigned int)(activeSeq.turnOrdinal + 1U));
+                return;
+            }
+            if (EspNativeDoorAnimator_isHoldingDeferredClose()) {
+                activeSeq.pauseProbe = attackAfter;
+                printf("[MONSTERACTIVESEQ] PAUSE-FINAL turn=%u ordinal=%u/%u probe=%u reason=deferred-door-waits-final-attack sameMonsterTurn=yes\n",
+                       (unsigned int)activeSeq.expandedTurns,
+                       (unsigned int)activeSeq.turnOrdinal,
+                       (unsigned int)activationCount,
+                       (unsigned int)activeSeq.pauseProbe);
+                return;
+            }
         }
     }
 
@@ -382,4 +440,5 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                   (unsigned int)activationCount,
                   (unsigned int)activeSeq.turnDelivered);
     }
+    releaseDeferredDoorVisual(doomRpg, "monster-turn-complete");
 }
