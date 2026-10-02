@@ -15,6 +15,8 @@
 #include "Z_Zone.h"
 #include "Z_Zip.h"
 #include "engine_metrics.h"
+#include "esp_native_audio_intent.h"
+#include "esp_native_menu_storage.h"
 #include "platform_video_config.h"
 
 /* DoomRPG.h defines its original J2ME-style boolean before ESP-IDF brings in
@@ -266,6 +268,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     }
 
     DoomRPG_setDefaultBinds(doomRpg);
+    EspNativeAudioIntent_reset();
 
 #define INIT_CORE_OBJECT(stage, member, expression) \
     do { \
@@ -285,7 +288,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     INIT_CORE_OBJECT(DOOMRPG_CORE_RENDER, render,
                      Render_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_MENU_SYSTEM, menuSystem,
-                     MenuSystem_init(NULL, doomRpg));
+                     EspNativeMenuStorage_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_HUD, hud,
                      Hud_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_SOUND, sound,
