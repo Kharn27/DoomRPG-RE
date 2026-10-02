@@ -880,10 +880,18 @@ static int drawPersistentDrops(Render_t* render,
     };
     const EspNativeGameplayMonsterDropView* view =
         EspNativeGameplayMonsterDrop_view();
+    const EspPlayerViewState* playerView = EspPlayerView_view();
+    uint16_t playerTile = UINT16_MAX;
     uint8_t slot;
 
     if (view == NULL || view->active == 0U || view->visibleCount == 0U) {
         return 1;
+    }
+    if (playerView != NULL && playerView->active == 1U &&
+        playerView->viewX >= 0 && playerView->viewY >= 0 &&
+        playerView->viewX < 2048 && playerView->viewY < 2048) {
+        playerTile = (uint16_t)(((uint16_t)(playerView->viewY >> 6) << 5) |
+                                (uint16_t)(playerView->viewX >> 6));
     }
 
     for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS; ++slot) {
@@ -894,6 +902,21 @@ static int drawPersistentDrops(Render_t* render,
         uint8_t i;
 
         if (drop->active == 0U || drop->taken != 0U) continue;
+
+        /*
+         * Player-resource pickup is intentionally serviced just after the
+         * committed MOVE frame. A dynamic drop on the destination tile must
+         * therefore be treated like the legacy touch target, not projected as
+         * a billboard through the camera origin during that one intermediate
+         * frame. The next session service consumes it transactionally.
+         */
+        if (drop->tileIndex == playerTile) {
+            printf("[MONSTERDROP] RENDER-CULL slot=%u tile=%u reason=player-tile pickup=pending-after-commit\n",
+                   (unsigned int)slot,
+                   (unsigned int)drop->tileIndex);
+            continue;
+        }
+
         logical = drop->defTile;
         resourceLogical =
             isLegacyCrossLogical(logical) ? (uint16_t)(logical - 1U) : logical;
