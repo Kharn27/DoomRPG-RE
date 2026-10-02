@@ -430,11 +430,9 @@ void DoomRPG_setBind(DoomRPG_t* doomrpg, int mouse_Button, const Uint8* state) {
 				keyMapId = doomrpg->menuSystem->items[doomrpg->menuSystem->selectedIndex].action;
 				setBind(keyMappingTemp[keyMapId].keyBinds, i);
 #ifndef DOOMRPG_ESP32
-		#ifndef DOOMRPG_ESP32
-		doomrpg->menuSystem->setBind = false;
-#endif
-#endif
+				doomrpg->menuSystem->setBind = false;
 				doomrpg->menuSystem->paintMenu = true;
+#endif
 				return;
 			}
 		}
@@ -446,8 +444,8 @@ void DoomRPG_setBind(DoomRPG_t* doomrpg, int mouse_Button, const Uint8* state) {
 		setBind(keyMappingTemp[keyMapId].keyBinds, mouse_Button | IS_MOUSE_BUTTON);
 #ifndef DOOMRPG_ESP32
 		doomrpg->menuSystem->setBind = false;
-#endif
 		doomrpg->menuSystem->paintMenu = true;
+#endif
 		return;
 	}
 
@@ -473,10 +471,10 @@ void DoomRPG_setBind(DoomRPG_t* doomrpg, int mouse_Button, const Uint8* state) {
 		if (buttomID != -1) {
 			keyMapId = doomrpg->menuSystem->items[doomrpg->menuSystem->selectedIndex].action;
 			setBind(keyMappingTemp[keyMapId].keyBinds, buttomID | IS_CONTROLLER_BUTTON);
-	#ifndef DOOMRPG_ESP32
-		doomrpg->menuSystem->setBind = false;
-#endif
+#ifndef DOOMRPG_ESP32
+			doomrpg->menuSystem->setBind = false;
 			doomrpg->menuSystem->paintMenu = true;
+#endif
 		}
 	}
 }
