@@ -124,3 +124,27 @@ A separate known presentation gap exists in player MOVE/TURN: the current native
 camera commits directly from one settled pose to the next with no visible
 interpolation. That should be addressed as a native camera/presentation milestone,
 not by restoring desktop gameplay/render ownership.
+
+
+## Follow-up closure on the same bounded retirement branch — REAL-CYD PASS
+
+Hardware-tested code boundary:
+`4c4a48230303cef7eeedc9722198fbe2c7506517`.
+
+After the original dead Menu/ParticleSystem TU retirement, the same branch
+closed two directly adjacent legacy menu helper surfaces without reintroducing
+desktop ownership:
+
+- `MenuSystem.c` retired from the ESP32 compile graph; final `MenuSystem_* = 0`;
+- retained ESP32 menu storage compacted from 96 desktop item slots to 8, with
+  HELP stored as compact raw text plus bounded offsets;
+- `MenuItem.c` retired after the only remaining setters were absorbed by the
+  native fixed menu builders; final `MenuItem_* = 0`.
+
+The final branch hardware witness exercises MAIN, OPTIONS/Back and HELP
+multi-page navigation repeatedly with exact framebuffer hashes and stable heap.
+CI #1341 reports 45160 B static RAM and 769613 B linked Flash.
+
+This closes the easy dead-helper retirement frontier. Image ownership still
+referenced by linked DoomCanvas Story/Epilogue/scrollbar paths and full
+`MenuSystem_t` root replacement are intentionally deferred to later milestones.
