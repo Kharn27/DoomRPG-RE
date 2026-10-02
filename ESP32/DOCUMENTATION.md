@@ -15,14 +15,77 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 ```text
 current main = 643701bbf26461fb328e03a20302d37598b9e6c9
 branch = agent/esp32-retire-menu-system-shell
-hardware-tested code boundary = 9d42d669d274c14bf39fde5a4d8af75df3cbe04b
-CI = esp32-cyd #1360 SUCCESS
-static RAM = 45160 B
-linked Flash = 769573 B
-artifact id = 11219735467
-artifact digest = sha256:ec07fc36ff3aff92080e34444a2066fbb5a221924df0536c5a3eb78c8314f407
-hardware = cold boot -> OPTIONS/Back -> HELP/Back -> V9 LOAD -> Sector 1 ENGINESESSION READY -> HUB four-page navigation PASS
-status = MenuSystem_t ESP32 compatibility shell is 552 B hardware-proven; six dead fields removed; HUB-owned p.bmp explicitly distinct from retired MenuSystem imgHand asset
+hardware-tested code boundary = 0a2bcc39656d8b855d777edae4273a368f44307c
+CI = esp32-cyd #1389 SUCCESS
+static RAM = 45176 B
+linked Flash = 770205 B
+artifact id = 11221054541
+artifact digest = sha256:1a8e220c45c25194375ad2d8a9bfbb8d02c3e5dc8adc6097c9cb08c4b8e025be
+hardware = Start Game -> full intro -> bounded dispose -> Entrance -> ENGINESESSION READY PASS
+status = MenuSystem_t ESP32 compatibility shell=512 B hardware-proven; story p.bmp owner is native, first draw allocation-free, disposal returns exact 176 B hand allocation
+```
+
+## 512-byte MenuSystem shell + native story hand owner — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`0a2bcc39656d8b855d777edae4273a368f44307c`.
+
+The ESP32-only compatibility shell now removes an additional 40 bytes of legacy
+layout residue:
+
+```text
+memory
+imgHand
+imgArrowUpDown
+field_0xc58
+f749g
+setBind
+```
+
+This brings `sizeof(MenuSystem_t)` from 552 B to 512 B on ESP32.
+
+A real remaining consumer of the old `imgHand` was found in
+`native_story_fit.c`. That dependency is now owned natively:
+`p.bmp` is acquired before the bounded first ST_INTRO frame, the draw path is
+allocation-free, and the same owner is released by the bounded native intro
+disposer.
+
+Real-CYD proof:
+
+```text
+[INTROFIT] HAND-READY asset=p.bmp owner=native-story
+[INTROFIT] PREPARE hand=13x10 asset=p.bmp owner=native-story ... drawAllocation=no
+[INTRO1] Drawn ... heap8=69484->69484 deltaHeap=0
+[INTROFIT] HAND-RELEASE asset=p.bmp owner=native-story
+[INTRODISP] FREE image=p.bmp/storyHand heap8=69484->69660 gain=176
+[INTRODISP] READY ... heap8=69484->103428 recovered=33944
+```
+
+The final disposal heap exactly returns to the pre-intro allocation level,
+proving no retained story-hand leak.
+
+The same hardware run continues through:
+- full semantic intro navigation;
+- bounded intro disposal;
+- native transition loading;
+- `/intro.bsp` Entrance runtime creation;
+- fresh generic gameplay session;
+- `ENGINESESSION READY`.
+
+Critical invariants remain:
+
+```text
+shapeData   = NULL
+mediaTexels = NULL
+```
+
+Normal `esp32-cyd` CI #1389 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770205 B
+artifact id  = 11221054541
+digest       = sha256:1a8e220c45c25194375ad2d8a9bfbb8d02c3e5dc8adc6097c9cb08c4b8e025be
 ```
 
 ## MenuSystem compatibility-shell trim — REAL-CYD PASS (2026-10-02)
