@@ -33,6 +33,7 @@ include_needle = '#include "SDL_Video.h"\n'
 include_replacement = (
     '#include "SDL_Video.h"\n'
     '#include "platform_video_config.h"\n'
+    '#include "esp_native_audio_intent.h"\n'
 )
 
 height_needle = (
@@ -63,10 +64,19 @@ if doom_canvas.count(height_needle) != 1:
 doom_canvas = doom_canvas.replace(include_needle, include_replacement, 1)
 doom_canvas = doom_canvas.replace(height_needle, height_replacement, 1)
 
+menu_sound_needle = "\\t\\t\\tMenuSystem_playSound(doomCanvas->menuSystem);\\n\\t\\t\\tSound_playSound(doomCanvas->doomRpg->sound, 5067, 0, 3);\\n"
+menu_sound_replacement = "\\t\\t\\t(void)EspNativeAudioIntent_publish(5042U, 0U, 3U);\\n\\t\\t\\t(void)EspNativeAudioIntent_publish(5067U, 0U, 3U);\\n"
+menu_sound_count = doom_canvas.count(menu_sound_needle)
+if menu_sound_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas ST_MENU sound shape; review native audio intent patch"
+    )
+doom_canvas = doom_canvas.replace(menu_sound_needle, menu_sound_replacement, 1)
+
 with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_canvas)
 
-print("[ESP32] DoomCanvas generated with 160x120-aware minimum height")
+print("[ESP32] DoomCanvas generated with 160x120-aware minimum height + native menu audio intents")
 
 # DoomRPG_createImage() is the central image-loading path used by the game.
 # Desktop SDL handles the original indexed BMP variants, while the deliberately
@@ -84,6 +94,7 @@ zip_include_needle = '#include "Z_Zip.h"\n'
 zip_include_replacement = (
     '#include "esp32_bmp.h"\n'
     '#include "esp_legacy_asset_source.h"\n'
+    '#include "esp_native_menu_storage.h"\n'
 )
 bmp_call_needle = "SDL_LoadBMP_RW("
 bmp_call_count = doom_rpg_source_text.count(bmp_call_needle)
@@ -102,6 +113,9 @@ particle_free_replacement = """\t/* ESP32 native gameplay owns bounded gib effec
 \tdoomrpg->particleSystem = NULL;
 """
 particle_free_count = doom_rpg_source_text.count(particle_free_needle)
+menu_free_needle = "\tif (doomrpg->menuSystem) {\n\t\tMenuSystem_free(doomrpg->menuSystem, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
+menu_free_replacement = "\tif (doomrpg->menuSystem) {\n\t\tEspNativeMenuStorage_free(doomrpg->menuSystem, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
+menu_free_count = doom_rpg_source_text.count(menu_free_needle)
 
 if doom_rpg_source_text.count(zip_include_needle) != 1:
     raise RuntimeError("Unable to locate Z_Zip.h include in DoomRPG.c")
@@ -119,6 +133,11 @@ if particle_free_count != 1:
         "Unexpected DoomRPG.c ParticleSystem cleanup shape; "
         "review retired ESP32 particle ownership"
     )
+if menu_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c MenuSystem cleanup shape; "
+        "review native ESP32 menu storage ownership"
+    )
 
 doom_rpg_source_text = doom_rpg_source_text.replace(
     zip_include_needle, zip_include_replacement, 1
@@ -133,6 +152,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(zip_close_needle, "")
 doom_rpg_source_text = doom_rpg_source_text.replace(
     particle_free_needle, particle_free_replacement, 1
 )
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    menu_free_needle, menu_free_replacement, 1
+)
 
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
@@ -141,7 +163,8 @@ print(
     "[ESP32] DoomRPG generated with native PAK asset source + indexed BMP loader "
     f"({zip_read_count} ZIP read(s) retired, "
     f"{bmp_call_count} SDL_LoadBMP_RW call(s) redirected, "
-    f"{particle_free_count} desktop ParticleSystem cleanup retired)"
+    f"{particle_free_count} desktop ParticleSystem cleanup retired, "
+    f"{menu_free_count} desktop MenuSystem cleanup redirected)"
 )
 
 # The source-tree SDL shim stores every texture as RGB565. That is acceptable
@@ -354,6 +377,7 @@ env.BuildSources(
         # translation units are intentionally excluded rather than relying on
         # final-link garbage collection to discard every desktop symbol.
         "-<Menu.c>",
+        "-<MenuSystem.c>",
         "-<ParticleSystem.c>",
         "-<Z_Zone.c>",
         "-<Z_Zip.c>",
