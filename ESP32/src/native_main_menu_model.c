@@ -240,7 +240,7 @@ static int buildBoundedHelpModel(DoomRPG_t* doomRpg) {
            helpLineCount,
            (unsigned int)readPos,
            (unsigned int)writePos,
-           MAX_MENUITEMS,
+           ESP_NATIVE_MENU_MAX_ITEMS,
            MAIN_HELP_LINE_MAX_CHARS,
            (unsigned int)(assetSize - readPos));
     return 1;
@@ -309,7 +309,7 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
     if (menuSystem->numItems <= 0 ||
         (menuId == MENU_MAIN_HELP_ABOUT
              ? menuSystem->numItems > MAIN_HELP_MAX_LINES
-             : menuSystem->numItems > MAX_MENUITEMS) ||
+             : menuSystem->numItems > ESP_NATIVE_MENU_MAX_ITEMS) ||
         menuSystem->selectedIndex < 0 ||
         menuSystem->selectedIndex >= menuSystem->numItems) {
         printf("[MAINMODEL] FAILED target=%d items=%d selected=%d\n",
