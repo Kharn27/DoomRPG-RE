@@ -5,6 +5,7 @@
 #include "EntityDef.h"
 #include "MenuSystem.h"
 #include "esp_legacy_asset_source.h"
+#include "esp_native_menu_storage.h"
 #include "esp_legacy_prerender_startup.h"
 
 /* Keep ESP-IDF's C99 bool macros after DoomRPG's legacy boolean typedefs. */
@@ -70,6 +71,7 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
     uint32_t before;
     uint32_t after;
     uint32_t largestBefore;
+    int menuResult;
     int entityResult;
 
     if (preRenderAttempted) {
@@ -100,10 +102,14 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
            (unsigned int)heapBefore, (unsigned int)largestBefore);
 
     before = heap8Free();
-    printf("[PRERENDER] -> MenuSystem_startup()\n");
-    MenuSystem_startup(doomRpg->menuSystem);
+    printf("[PRERENDER] -> EspNativeMenuStorage_startup()\n");
+    menuResult = EspNativeMenuStorage_startup(doomRpg->menuSystem);
     after = heap8Free();
-    printStageResult("MenuSystem_startup", before, after);
+    printStageResult("EspNativeMenuStorage_startup", before, after);
+    if (!menuResult) {
+        printf("[PRERENDER] FAILED native menu storage assets\n");
+        return 0;
+    }
 
     before = heap8Free();
     printf("[PRERENDER] -> EntityDef_startup()\n");
