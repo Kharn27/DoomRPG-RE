@@ -2,7 +2,7 @@
 #define ESP_NATIVE_MENU_STORAGE_H
 
 #include "DoomRPG.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 
 #ifdef __cplusplus
 extern "C" {
