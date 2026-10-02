@@ -285,15 +285,36 @@ static void drawMiniTextRight(uint16_t* framebuffer,
 static uint64_t tabLetterBits(char c) {
     switch (c) {
     case 'A': return HUB_UI_GLYPH7(14, 17, 17, 31, 17, 17, 17);
+    case 'B': return HUB_UI_GLYPH7(30, 17, 17, 30, 17, 17, 30);
+    case 'C': return HUB_UI_GLYPH7(14, 17, 16, 16, 16, 17, 14);
+    case 'D': return HUB_UI_GLYPH7(30, 17, 17, 17, 17, 17, 30);
+    case 'E': return HUB_UI_GLYPH7(31, 16, 16, 30, 16, 16, 31);
+    case 'F': return HUB_UI_GLYPH7(31, 16, 16, 30, 16, 16, 16);
+    case 'G': return HUB_UI_GLYPH7(14, 17, 16, 23, 17, 17, 15);
+    case 'H': return HUB_UI_GLYPH7(17, 17, 17, 31, 17, 17, 17);
     case 'I': return HUB_UI_GLYPH7(31, 4, 4, 4, 4, 4, 31);
+    case 'J': return HUB_UI_GLYPH7(7, 2, 2, 2, 2, 18, 12);
+    case 'K': return HUB_UI_GLYPH7(17, 18, 20, 24, 20, 18, 17);
+    case 'L': return HUB_UI_GLYPH7(16, 16, 16, 16, 16, 16, 31);
+    case 'M': return HUB_UI_GLYPH7(17, 27, 21, 21, 17, 17, 17);
     case 'N': return HUB_UI_GLYPH7(17, 25, 21, 19, 17, 17, 17);
+    case 'O': return HUB_UI_GLYPH7(14, 17, 17, 17, 17, 17, 14);
     case 'P': return HUB_UI_GLYPH7(30, 17, 17, 30, 16, 16, 16);
+    case 'Q': return HUB_UI_GLYPH7(14, 17, 17, 17, 21, 18, 13);
+    case 'R': return HUB_UI_GLYPH7(30, 17, 17, 30, 20, 18, 17);
     case 'S': return HUB_UI_GLYPH7(15, 16, 16, 14, 1, 1, 30);
     case 'T': return HUB_UI_GLYPH7(31, 4, 4, 4, 4, 4, 4);
+    case 'U': return HUB_UI_GLYPH7(17, 17, 17, 17, 17, 17, 14);
     case 'V': return HUB_UI_GLYPH7(17, 17, 17, 17, 17, 10, 4);
     case 'W': return HUB_UI_GLYPH7(17, 17, 17, 21, 21, 21, 10);
     case 'X': return HUB_UI_GLYPH7(17, 17, 10, 4, 10, 17, 17);
     case 'Y': return HUB_UI_GLYPH7(17, 17, 10, 4, 4, 4, 4);
+    case 'Z': return HUB_UI_GLYPH7(31, 1, 2, 4, 8, 16, 31);
+    case ':': return HUB_UI_GLYPH7(0, 4, 4, 0, 4, 4, 0);
+    case '+': return HUB_UI_GLYPH7(0, 4, 4, 31, 4, 4, 0);
+    case '-': return HUB_UI_GLYPH7(0, 0, 0, 31, 0, 0, 0);
+    case '%': return HUB_UI_GLYPH7(25, 25, 2, 4, 8, 19, 19);
+    case ' ': return HUB_UI_GLYPH7(0, 0, 0, 0, 0, 0, 0);
     default: return 0U;
     }
 }
@@ -326,7 +347,7 @@ static int crispRows(char c, uint8_t rows[7]) {
     }
 
     bits = tabLetterBits(c);
-    if (bits == 0U) return 0;
+    if (bits == 0U && c != ' ') return 0;
     for (row = 0; row < 7; ++row) {
         rows[row] = (uint8_t)((bits >> ((6 - row) * 5)) & 31U);
     }
@@ -351,13 +372,28 @@ static void drawCrispText(uint16_t* framebuffer,
             int column;
             for (column = 0; column < 5; ++column) {
                 if ((rows[row] & (uint8_t)(1U << (4 - column))) != 0U) {
-                    putPixel(framebuffer, x + column, top + row, color);
+                    const int px = x + column;
+                    const int py = top + row;
+                    /* This shared face also paints full-screen report headers;
+                     * unlike HUB-only chrome it must allow logical y=0..19. */
+                    if (px >= 0 && px < DOOMRPG_LOGICAL_WIDTH &&
+                        py >= 0 && py < DOOMRPG_LOGICAL_HEIGHT) {
+                        framebuffer[py * DOOMRPG_LOGICAL_WIDTH + px] = color;
+                    }
                 }
             }
         }
         x += 6;
         ++text;
     }
+}
+
+void EspNativeGameplayHubTouchUi_drawCrispText(uint16_t* framebuffer,
+                                             const char* text,
+                                             int centerX,
+                                             int top,
+                                             uint16_t color) {
+    drawCrispText(framebuffer, text, centerX, top, color);
 }
 
 static void drawStatusMetricCard(uint16_t* framebuffer,

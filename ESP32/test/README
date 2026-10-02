@@ -1,5 +1,19 @@
 
-This directory is intended for PlatformIO Test Runner and project tests.
+This directory contains project tests.
+
+Level progress host regression (from the repository root):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -I ESP32/include \
+  ESP32/test/test_level_progress.c ESP32/src/esp_player_fresh_map_state.c \
+  ESP32/src/esp_map_catalog.c -o /tmp/test_level_progress
+/tmp/test_level_progress
+```
+
+The production progress owner and map catalog are compiled unchanged; only the
+player/HUD view boundaries are mocked. Tests cover fresh map entry, XP baseline
+across a level-up, elapsed-time resume without offline/loading time, legacy-save
+partial history, rejected malformed suffixes, timer wrap and counter saturation.
 
 Unit Testing is a software testing method by which individual units of
 source code, sets of one or more MCU program modules together with associated

@@ -42,6 +42,8 @@ typedef struct EspPlayerFreshMapState_s {
     uint32_t moves;
     uint32_t xpGained;
     uint32_t berserkerTics;
+    uint32_t xpBaseline;
+    uint32_t elapsedBeforeMs;
 
     uint8_t familiarActive;
     uint8_t notebookEmpty;
@@ -51,7 +53,29 @@ typedef struct EspPlayerFreshMapState_s {
     uint8_t loadType;
     uint8_t setupApplied;
     uint8_t active;
+    uint8_t statsComplete;
+    uint8_t timerRunning;
 } EspPlayerFreshMapState;
+
+/* V10 checkpoint suffix: elapsed duration, never an absolute boot timestamp.
+ * complete=0 identifies an older save whose pre-load counters are unknown. */
+typedef struct EspPlayerLevelProgress_s {
+    uint32_t moves;
+    uint32_t elapsedMs;
+    uint32_t xpBaseline;
+    uint8_t targetMapId;
+    uint8_t complete;
+    uint8_t reserved[2];
+} EspPlayerLevelProgress;
+
+void EspPlayerFreshMap_beginTimer(uint32_t nowMs);
+/* Original "Moves": one count per native Game_advanceTurn-equivalent, not
+ * rotations, menu taps or individual monster-AI probes. */
+void EspPlayerFreshMap_recordMove(void);
+int EspPlayerFreshMap_snapshotProgress(uint32_t nowMs,
+                                      EspPlayerLevelProgress* outProgress);
+int EspPlayerFreshMap_restoreProgress(const EspPlayerLevelProgress* progress);
+void EspPlayerFreshMap_resumeLegacy(uint8_t mapId, uint32_t xpGained);
 
 void EspPlayerFreshMap_reset(void);
 int EspPlayerFreshMap_isReady(void);

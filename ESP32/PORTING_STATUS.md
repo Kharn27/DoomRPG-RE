@@ -2,7 +2,35 @@
 
 Authoritative recovery/status file for the classic ESP32-2432S028R port. Repository state wins over chat history. Serial logs from the real classic CYD are the final runtime authority.
 
-## Current Git boundary
+## Mission report — USER ACCEPTED; V10 round-trip remains candidate (2026-10-02)
+
+Working branch `fix/mainMenu`, rebased onto `origin/main` at `0f1cdb0` without
+conflicts or changes to the mission-report implementation. The user accepted
+the report on the rebased CYD branch at `e0ae824`. No detailed serial evidence
+was provided; this acceptance does not claim full V10 SAVE/LOAD validation.
+The previous hardware/CI witness below remains unchanged.
+
+End-of-stage presentation now shares the HUB palette/crisp 5x7 face and shows
+Secrets/Monsters with real progress bars plus elapsed time, original-style Moves
+(player turns, including attacks/PASS_TURN) and XP earned during the map visit.
+The report adds no asset read, heap allocation, framebuffer or production source.
+Monotonic elapsed time needs no RTC; loading/offline time is excluded, in-level
+menus/dialogs are included. Counters reset at new-map entry.
+
+V10 writes 5460 bytes: the V9 world payload plus a CRC-covered 16-byte level
+progress suffix. V1–V9 reads remain compatible. Earlier saves cannot reconstruct
+historical counters and display `SINCE LOAD`; that partial flag persists across
+V10 SAVE/LOAD. Old firmware cannot read V10.
+
+Rebased normal CYD build PASS: static RAM 45208 B; linked flash 771897 B.
+The host progress regression also passes on the rebased tree.
+Host counter regressions, production report rendering and in-memory SD writer/
+CRC/byte-verification checks PASS. The report is user-accepted on CYD; targeted
+map-handoff/counter checks, V10 reboot resume and V9 partial-history migration
+are not individually confirmed. Details and the checklist are
+in [`DOCUMENTATION.md`](DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
+
+## Previous main hardware/CI witness (before this branch)
 
 ```text
 current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1
@@ -4308,4 +4336,3 @@ otherwise optimized.
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md](MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md)
-

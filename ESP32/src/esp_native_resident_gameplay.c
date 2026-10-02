@@ -5,6 +5,7 @@
 
 #include "DoomRPG.h"
 #include "Render.h"
+#include <esp_timer.h>
 
 #include "doomrpg_log.h"
 #include "esp_asset_pack.h"
@@ -39,6 +40,7 @@
 #include "esp_native_gameplay_weapon_control.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
+#include "esp_player_fresh_map_state.h"
 #include "platform_touch_events.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -1755,6 +1757,8 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
             }
             gameplayState.checkpointResumeArmed = 0U;
             gameplayState.active = 1U;
+            EspPlayerFreshMap_beginTimer(
+                (uint32_t)(esp_timer_get_time() / 1000LL));
             PlatformInput_setTapCallback(onGameplayTap);
             printf("[AUTOMAP] UNCOVER reason=SESSION-ARM mutated=%u state=ready\n",
                    (unsigned int)uncovered);

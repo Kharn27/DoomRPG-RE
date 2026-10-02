@@ -11,7 +11,9 @@ struct EspNativeGameplayTransitionState_s;
 
 /*
  * Full-frame transition UI owned outside the legacy Menu/DoomCanvas state
- * machine. Stats presentation is source-map only. Loading renders the original
+ * machine. Stats presentation is source-map only, shares the HUB crisp font,
+ * and reads no assets. Map-visit time/turns/XP come from the fresh-map owner.
+ * Loading renders the original
  * c.bmp starfield once and keeps that first frame fixed while a bounded progress
  * bar is updated. No asset read occurs after the initial loading frame.
  */

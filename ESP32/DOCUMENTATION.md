@@ -10,7 +10,79 @@ Recovery and development must start from:
 
 Repository state wins over chat history. Serial logs from the real classic CYD are the final runtime truth.
 
-## Current active branch
+## Mission report and V10 progress — development candidate (2026-10-02)
+
+Changes on `fix/mainMenu`, rebased onto `origin/main` at `0f1cdb0` (native menu
+state/header independence and Player divider retirement). The rebase has no
+conflicts and preserves the mission-report implementation unchanged. The user
+accepted the mission report on the rebased CYD branch at `e0ae824` (2026-10-02).
+This is user-confirmed report acceptance, not a serial-log proof of every counter
+or of the V10 checkpoint round-trip. Earlier hardware witnesses remain below.
+
+The full-screen end-of-stage report now uses the HUB industrial palette and its
+shared crisp 5x7 font: compact `MISSION COMPLETE` header, source sector name,
+`SECRETS` and `MONSTERS` cards with proportional completion bars, then `TIME`,
+`MOVES`, and `XP GAINED`. The existing single-tap continuation/handoff remains
+unchanged. The report uses the existing framebuffer, no allocation and no asset
+reads. Unusually long numbers fall back to unscaled 3x5 text to stay in their cards.
+
+Counter ownership stays in `EspPlayerFreshMapState`, not another engine module:
+
+- Duration uses the ESP32 monotonic timer. No RTC, date, network or NTP is needed.
+  It starts when resident gameplay is actually armed, includes time in the HUB
+  and dialogs, and excludes initial loading and time offline between SAVE/LOAD.
+  Formatting is `mm:ss`, then `h:mm:ss`; time/Moves saturate instead of overflowing.
+  A single continuous session must be shorter than the 32-bit millisecond wrap
+  period (about 49.7 days).
+- `MOVES` follows original `Game_advanceTurn -> Player_updateBerserkerTics`:
+  one count at the native player-turn scheduling boundary, including attacks and
+  PASS_TURN, even without enemies. Rotation and menu interaction do not count.
+  Dialog-skipped turns and rolled-back movement do not count; a blocked Automap
+  move that deliberately advances a turn does count.
+- XP is the player's cumulative `xpGained` minus its baseline captured before the
+  new map's initial tile events. A player level-up cannot erase earned XP.
+- Entering another map resets these counters. This is a report for the current
+  map visit, not a new campaign-total/completed-level owner.
+
+New checkpoints are V10 (`DRPGSV10`, 5460 bytes), retaining the exact V9 mutable
+world sections and appending a CRC-covered 16-byte suffix at offset 5444:
+`moves`, elapsed milliseconds, cumulative XP baseline, map ID, complete-history
+flag and two zero reserved bytes. Absolute boot timestamps are never serialized.
+The original 132-byte core and 52-byte player layout/fingerprint are unchanged.
+The streamed spatial workspace remains 3508 bytes and atomic temp/backup/rename
+verification now includes the suffix. Earlier V1–V9 saves remain readable;
+pre-load counters cannot be recovered from them, so the three new metrics start
+at loading and the report shows `SINCE LOAD`. That flag survives re-saving as V10
+until the next map entry. Older firmware cannot load new V10 saves.
+
+Local validation: normal `pio run -e esp32-cyd` succeeds with 45208 B static RAM
+and 771897 B linked flash after the rebase (respectively +32 B and +1704 B vs
+the documented native-menu artifact). The host progress regression was rerun
+successfully on the rebased tree. The included host regression
+[`test/test_level_progress.c`](test/test_level_progress.c) covers fresh/reset,
+XP baseline across a level-up, resume, legacy saves, timer wrap and saturation.
+Additional temporary fixtures exercised production C report painting and the
+C++ checkpoint writer/byte verification with an in-memory SD: normal/partial/max
+values, header above y=20, framebuffer guards, present refusal, suffix layout,
+V9/V10 CRC, truncation/corruption and checkpoint replacement.
+
+CYD validation status:
+
+The user has accepted the end-of-mission screen on the rebased branch. No serial
+log or detailed per-scenario test results accompanied that acceptance; the
+following checklist remains available for targeted regression testing. V10 reboot
+resume and legacy-save migration are not marked hardware-proven.
+
+1. Start a fresh game, perform movement/attacks/PASS_TURN, rotate and visit the HUB;
+   finish a stage and check the report's layout and counters.
+2. Tap once: verify the next map loads, gameplay HUD returns and its report starts
+   with new counters.
+3. SAVE/LOAD V10 mid-stage, including after reboot; verify duration/Moves/XP resume
+   without including offline time. Look for `[LEVELPROGRESS]` and `[LEVELSTATS]`.
+4. LOAD an existing V9 checkpoint, finish its stage and verify `SINCE LOAD`; save
+   as V10 and load again to verify the partial-history flag remains honest.
+
+## Previous main hardware/CI witness (before this branch)
 
 ```text
 current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1
@@ -2587,4 +2659,3 @@ hardware-triggered witness.
 
 See the post-review addendum in
 [MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md](MILESTONE_ESP32_CONSOLIDATION_HOT_INPUT_TURN_TELEMETRY_V21.md).
-
