@@ -244,7 +244,7 @@ void DoomRPG_esp32MainMenuTouchOnTap(int16_t screenX,
                                      uint16_t pressure,
                                      uint16_t rawX,
                                      uint16_t rawY) {
-    MenuSystem_t* menuSystem;
+    EspNativeMenuState_t* menuSystem;
     Render_t* render;
     int logicalX;
     int logicalY;
