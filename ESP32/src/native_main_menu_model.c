@@ -47,11 +47,6 @@ static int supportedModel(int menuId) {
            menuId == MENU_MAIN_OPTIONS;
 }
 
-static void resetSelectionAccumulator(MenuSystem_t* menuSystem) {
-    menuSystem->cheatCombo = 0;
-    menuSystem->digitCount = 0;
-}
-
 static void setFixedItem(MenuItem_t* item, const char* text, int flags) {
     if (item == NULL) return;
     SDL_memset(item, 0, sizeof(*item));
@@ -271,7 +266,6 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
     menuSystem = doomRpg->menuSystem;
     canvas = doomRpg->doomCanvas;
 
-    resetSelectionAccumulator(menuSystem);
     if (menuId != MENU_MAIN_HELP_ABOUT) releaseHelpData();
 
     if (menuId == MENU_MAIN) {
@@ -357,7 +351,6 @@ int DoomRPG_esp32MainMenuModelLeave(struct DoomRPG_s* doomRpgBase) {
     menuSystem = doomRpg->menuSystem;
     canvas = doomRpg->doomCanvas;
 
-    resetSelectionAccumulator(menuSystem);
     releaseHelpData();
     menuSystem->menu = MENU_NONE;
     menuSystem->numItems = 0;
