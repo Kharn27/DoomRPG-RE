@@ -1,5 +1,6 @@
 #include <SDL.h>
 #include <stddef.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_combat_math.h"
+#include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hit_feedback.h"
 #include "esp_native_gameplay_hud.h"
@@ -20,6 +22,7 @@
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_player_view_state.h"
+#include "esp_native_text_format.h"
 
 /* This translation unit is the public linker-wrapper owner. The older action
  * and monster-state wrappers are private chain leaves renamed by their headers. */
@@ -140,6 +143,62 @@ static uint32_t fnv32(uint32_t hash, uint32_t value) {
     hash = fnvByte(hash, (uint8_t)((value >> 8) & 0xffU));
     hash = fnvByte(hash, (uint8_t)((value >> 16) & 0xffU));
     return fnvByte(hash, (uint8_t)((value >> 24) & 0xffU));
+}
+
+
+static int appendLevelText(char* out,
+                           size_t capacity,
+                           size_t* used,
+                           const char* format,
+                           ...) {
+    va_list args;
+    int written;
+    if (out == NULL || used == NULL || format == NULL || *used >= capacity) {
+        return 0;
+    }
+    va_start(args, format);
+    written = vsnprintf(out + *used, capacity - *used, format, args);
+    va_end(args);
+    if (written < 0 || (size_t)written >= capacity - *used) return 0;
+    *used += (size_t)written;
+    return 1;
+}
+
+static int buildLevelUpText(const EspNativeGameplayPlayerXpResult* xp,
+                            char out[256]) {
+    char divider[32];
+    size_t used = 0U;
+    if (xp == NULL || out == NULL || xp->levelUps == 0U) return 0;
+    out[0] = '\0';
+    if (!appendLevelText(out, 256U, &used, "%s|",
+                         EspNativeText_buildDivider(divider, "Level up!")) ||
+        !appendLevelText(out, 256U, &used, "Level: %u|",
+                         (unsigned int)xp->levelAfter)) {
+        return 0;
+    }
+    if (xp->lastMaxHealthGain != 0U &&
+        !appendLevelText(out, 256U, &used, "Max Health: +%u|",
+                         (unsigned int)xp->lastMaxHealthGain)) return 0;
+    if (xp->lastMaxArmorGain != 0U &&
+        !appendLevelText(out, 256U, &used, "Max Armor: +%u|",
+                         (unsigned int)xp->lastMaxArmorGain)) return 0;
+    if (xp->lastDefenseGain != 0U &&
+        !appendLevelText(out, 256U, &used, "Defense: +%u|",
+                         (unsigned int)xp->lastDefenseGain)) return 0;
+    if (xp->lastStrengthGain != 0U &&
+        !appendLevelText(out, 256U, &used, "Strength: +%u|",
+                         (unsigned int)xp->lastStrengthGain)) return 0;
+    if (xp->lastAgilityGain != 0U &&
+        !appendLevelText(out, 256U, &used, "Agility: +%u|",
+                         (unsigned int)xp->lastAgilityGain)) return 0;
+    /*
+     * Preserve the original Player_nextLevel() display quirk: the Accuracy
+     * line is gated by the accuracy gain but prints the agility gain.
+     */
+    if (xp->lastAccuracyGain != 0U &&
+        !appendLevelText(out, 256U, &used, "Accuracy: +%u|",
+                         (unsigned int)xp->lastAgilityGain)) return 0;
+    return appendLevelText(out, 256U, &used, "|Health restored.");
 }
 
 static uint32_t currentMonsterFNV(void) {
@@ -460,7 +519,9 @@ static int servicePending(DoomRPG_t* runtime) {
     uint8_t ammoBefore = 0U;
     uint8_t ammoAfter = 0U;
     char hitMessage[24];
+    char levelUpText[256];
     int hitMessageQueued = 0;
+    int levelUpPopup = 0;
     int hitFxArmed = 0;
     int32_t healthBefore;
     int32_t armorBefore;
@@ -608,6 +669,20 @@ static int servicePending(DoomRPG_t* runtime) {
                 return 1;
             }
             rngCalls += xpResult.rngCalls;
+            if (xpResult.levelUps != 0U) {
+                if (!buildLevelUpText(&xpResult, levelUpText)) {
+                    *target = targetBefore;
+                    runtime->random = randomBefore;
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    combatOwner = combatRollbackOwner;
+                    combatOwner.pending.active = 0U;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    printf("[LEVELUP] FAILED seq=%u reason=text-build rngRollback=yes playerRollback=yes monsterRollback=yes\n",
+                           (unsigned int)pending.sequence);
+                    return 1;
+                }
+                levelUpPopup = 1;
+            }
 
             if (gib) {
                 consequenceSound = 5091U;
@@ -799,6 +874,17 @@ static int servicePending(DoomRPG_t* runtime) {
         printf("[MONSTERCOMBAT] SETTLE-FAILED seq=%u sprite=%u worldCommitted=yes recovery=next-full-redraw\n",
                (unsigned int)pending.sequence,
                (unsigned int)pending.spriteIndex);
+    }
+
+    if (levelUpPopup != 0) {
+        EspNativeGameplayDialogBeginStatus dialogStatus =
+            EspNativeGameplayDialog_beginStandalone(levelUpText);
+        printf("[LEVELUP] MODAL seq=%u level=%u->%u levelUps=%u status=%s continuation=none monsterTurn=legacy-skip-while-dialog-active sound=5043-deferred\n",
+               (unsigned int)pending.sequence,
+               (unsigned int)xpResult.levelBefore,
+               (unsigned int)xpResult.levelAfter,
+               (unsigned int)xpResult.levelUps,
+               EspNativeGameplayDialog_beginStatusName(dialogStatus));
     }
 
     memset(&combatOwner.pending, 0, sizeof(combatOwner.pending));

@@ -42,7 +42,13 @@ typedef struct EspNativeGameplayPlayerXpResult_s {
     uint8_t levelBefore;
     uint8_t levelAfter;
     uint8_t levelUps;
-    uint8_t reserved;
+    uint8_t lastMaxHealthGain;
+    uint8_t lastMaxArmorGain;
+    uint8_t lastDefenseGain;
+    uint8_t lastStrengthGain;
+    uint8_t lastAgilityGain;
+    uint8_t lastAccuracyGain;
+    uint8_t reserved[3];
 } EspNativeGameplayPlayerXpResult;
 
 typedef enum EspNativeGameplayPlayerDamageStatus_e {

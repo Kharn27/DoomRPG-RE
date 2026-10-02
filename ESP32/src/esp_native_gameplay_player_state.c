@@ -336,7 +336,15 @@ static uint8_t levelRoll(DoomRPG_t* doomRpg,
     return (uint8_t)(base + (value % span));
 }
 
-static void nextLevel(DoomRPG_t* doomRpg, uint32_t* rngCalls) {
+static void nextLevel(DoomRPG_t* doomRpg,
+                      uint32_t* rngCalls,
+                      EspNativeGameplayPlayerXpResult* result) {
+    const uint8_t maxHealthBefore = p1MaxHealth(playerState.param1);
+    const uint8_t maxArmorBefore = p1MaxArmor(playerState.param1);
+    const uint8_t defenseBefore = p2Defense(playerState.param2);
+    const uint8_t strengthBefore = p2Strength(playerState.param2);
+    const uint8_t agilityBefore = p2Agility(playerState.param2);
+    const uint8_t accuracyBefore = p2Accuracy(playerState.param2);
     uint8_t maxHealth;
     uint8_t maxArmor;
     uint8_t defense;
@@ -347,26 +355,36 @@ static void nextLevel(DoomRPG_t* doomRpg, uint32_t* rngCalls) {
     ++playerState.level;
     playerState.nextLevelXP = ((uint32_t)playerState.level * 20U) + 60U;
 
-    maxHealth = cappedAdd(p1MaxHealth(playerState.param1),
+    maxHealth = cappedAdd(maxHealthBefore,
                           levelRoll(doomRpg, 3U, 3U, rngCalls));
-    maxArmor = cappedAdd(p1MaxArmor(playerState.param1),
+    maxArmor = cappedAdd(maxArmorBefore,
                          levelRoll(doomRpg, 3U, 3U, rngCalls));
-    defense = cappedAdd(p2Defense(playerState.param2),
+    defense = cappedAdd(defenseBefore,
                         levelRoll(doomRpg, 1U, 2U, rngCalls));
-    strength = cappedAdd(p2Strength(playerState.param2),
+    strength = cappedAdd(strengthBefore,
                          levelRoll(doomRpg, 1U, 2U, rngCalls));
-    agility = cappedAdd(p2Agility(playerState.param2),
+    agility = cappedAdd(agilityBefore,
                         levelRoll(doomRpg, 1U, 2U, rngCalls));
-    accuracy = cappedAdd(p2Accuracy(playerState.param2),
+    accuracy = cappedAdd(accuracyBefore,
                          levelRoll(doomRpg, 1U, 2U, rngCalls));
 
     /* Legacy Player_nextLevel restores health to the new max but does not refill
-     * current armor when max armor increases. */
+     * current armor when max armor increases. Retain the final individual level
+     * deltas so the native modal can reproduce the legacy text even if one XP
+     * grant crosses more than one threshold. */
     playerState.param1 = packParam1(maxHealth,
                                     maxHealth,
                                     p1Armor(playerState.param1),
                                     maxArmor);
     playerState.param2 = packParam2(defense, strength, agility, accuracy);
+    if (result != NULL) {
+        result->lastMaxHealthGain = (uint8_t)(maxHealth - maxHealthBefore);
+        result->lastMaxArmorGain = (uint8_t)(maxArmor - maxArmorBefore);
+        result->lastDefenseGain = (uint8_t)(defense - defenseBefore);
+        result->lastStrengthGain = (uint8_t)(strength - strengthBefore);
+        result->lastAgilityGain = (uint8_t)(agility - agilityBefore);
+        result->lastAccuracyGain = (uint8_t)(accuracy - accuracyBefore);
+    }
 }
 
 int EspNativeGameplayPlayerState_applyXp(
@@ -391,7 +409,7 @@ int EspNativeGameplayPlayerState_applyXp(
 
     while (playerState.currentXP >= playerState.nextLevelXP) {
         playerState.currentXP -= playerState.nextLevelXP;
-        nextLevel(doomRpg, &rngCalls);
+        nextLevel(doomRpg, &rngCalls, outResult);
         if (levelUps != 0xffU) ++levelUps;
     }
 
