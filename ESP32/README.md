@@ -17,8 +17,9 @@ Development candidate (2026-10-02): the mission-complete screen now reuses the
 HUB palette/crisp font and shows Secrets, Monsters, elapsed time, original-style
 Moves (player turns) and XP earned on the map. V10 saves preserve these counters;
 V1–V9 remain readable, with `SINCE LOAD` for counters missing from old saves.
-No RTC/network is needed. Local build and host checks pass; CYD validation is
-pending. See the [report/checkpoint details](DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
+No RTC/network is needed. Local build and host checks pass; the user accepted
+the report on the rebased CYD branch. V10 reboot resume and legacy-save migration
+still await dedicated hardware confirmation. See the [report/checkpoint details](DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
 
 ## Target
 

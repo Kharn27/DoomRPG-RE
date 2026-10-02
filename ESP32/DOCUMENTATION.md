@@ -14,8 +14,10 @@ Repository state wins over chat history. Serial logs from the real classic CYD a
 
 Changes on `fix/mainMenu`, rebased onto `origin/main` at `0f1cdb0` (native menu
 state/header independence and Player divider retirement). The rebase has no
-conflicts and preserves the mission-report implementation unchanged. Not yet
-validated on the real CYD; the hardware boundaries below remain historical witnesses.
+conflicts and preserves the mission-report implementation unchanged. The user
+accepted the mission report on the rebased CYD branch at `e0ae824` (2026-10-02).
+This is user-confirmed report acceptance, not a serial-log proof of every counter
+or of the V10 checkpoint round-trip. Earlier hardware witnesses remain below.
 
 The full-screen end-of-stage report now uses the HUB industrial palette and its
 shared crisp 5x7 font: compact `MISSION COMPLETE` header, source sector name,
@@ -64,7 +66,12 @@ C++ checkpoint writer/byte verification with an in-memory SD: normal/partial/max
 values, header above y=20, framebuffer guards, present refusal, suffix layout,
 V9/V10 CRC, truncation/corruption and checkpoint replacement.
 
-CYD validation still required:
+CYD validation status:
+
+The user has accepted the end-of-mission screen on the rebased branch. No serial
+log or detailed per-scenario test results accompanied that acceptance; the
+following checklist remains available for targeted regression testing. V10 reboot
+resume and legacy-save migration are not marked hardware-proven.
 
 1. Start a fresh game, perform movement/attacks/PASS_TURN, rotate and visit the HUB;
    finish a stage and check the report's layout and counters.
@@ -75,7 +82,7 @@ CYD validation still required:
 4. LOAD an existing V9 checkpoint, finish its stage and verify `SINCE LOAD`; save
    as V10 and load again to verify the partial-history flag remains honest.
 
-## Current active branch
+## Previous main hardware/CI witness (before this branch)
 
 ```text
 current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1

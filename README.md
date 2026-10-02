@@ -94,7 +94,9 @@ now shows Secrets, Monsters, elapsed time, original-style Moves (player turns)
 and XP earned in the current map visit. Time uses a monotonic ESP32 counter,
 without an RTC or network. New V10 checkpoints preserve these metrics; V1–V9
 remain readable and show `SINCE LOAD` when earlier history is unavailable.
-Local build/host checks pass; real-CYD validation is pending. See
+Local build/host checks pass; the user accepted the report on the rebased CYD
+branch. V10 reboot resume and legacy-save migration still await dedicated
+hardware confirmation. See
 [`ESP32/DOCUMENTATION.md`](ESP32/DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
 
 ### Target hardware
@@ -304,8 +306,9 @@ affiche désormais les secrets, monstres, le temps écoulé, les Moves (tours de
 comme dans l'original) et l'XP gagnée pendant la visite du niveau. Le chronomètre
 ESP32 fonctionne sans horloge RTC ni réseau. Les nouvelles sauvegardes V10
 conservent ces compteurs ; les V1–V9 restent lisibles, avec `SINCE LOAD` lorsque
-l'historique antérieur est inconnu. Compilation et tests locaux OK ; validation
-sur le vrai CYD encore à faire. Détails dans
+l'historique antérieur est inconnu. Compilation et tests locaux OK ; bilan
+accepté par l'utilisateur sur le CYD après rebase. La reprise V10 après reboot
+et la migration des anciennes sauvegardes restent à confirmer séparément. Détails dans
 [`ESP32/DOCUMENTATION.md`](ESP32/DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
 
 ### Matériel cible
