@@ -3,7 +3,7 @@
 
 #include "DoomRPG.h"
 #include "Menu.h"
-#include "MenuSystem.h"
+#include "esp_native_menu_state.h"
 #include "esp_native_menu_storage.h"
 
 EspNativeMenuState_t* EspNativeMenuStorage_init(EspNativeMenuState_t* storage) {
@@ -20,7 +20,7 @@ EspNativeMenuState_t* EspNativeMenuStorage_init(EspNativeMenuState_t* storage) {
 
     printf("[MENUSTORAGE] INIT bytes=%u items=%u owner=esp-native compatibilityLayout=EspNativeMenuState_t desktopTU=no\n",
            (unsigned int)sizeof(EspNativeMenuState_t),
-           (unsigned int)MAX_MENUITEMS);
+           (unsigned int)ESP_NATIVE_MENU_MAX_ITEMS);
     return storage;
 }
 
