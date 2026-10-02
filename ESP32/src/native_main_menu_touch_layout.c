@@ -6,7 +6,6 @@
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
 #include "Menu.h"
-#include "MenuItem.h"
 #include "MenuSystem.h"
 #include "Render.h"
 
@@ -49,21 +48,26 @@ static const char* dashboardLabels[DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT] = {
     "HELP"
 };
 
-static int adaptMainMenuForEsp32(MenuSystem_t* menuSystem) {
-    static char startGameLabel[] = "Start Game";
-    static char loadGameLabel[] = "Load Game ";
-    static char optionsLabel[] = "Options   ";
-    static char helpLabel[] = "Help/About";
+static void setNativeMainItem(MenuItem_t* item, const char* text) {
+    if (item == NULL) return;
+    SDL_memset(item, 0, sizeof(*item));
+    if (text != NULL) {
+        SDL_snprintf(item->textField, sizeof(item->textField), "%s", text);
+    }
+    item->flags = 2;
+    item->action = 0;
+}
 
+static int adaptMainMenuForEsp32(MenuSystem_t* menuSystem) {
     if (menuSystem == NULL || menuSystem->menu != MENU_MAIN ||
         menuSystem->numItems != DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT) {
         return 0;
     }
 
-    MenuItem_Set(&menuSystem->items[0], startGameLabel, 2, 0);
-    MenuItem_Set(&menuSystem->items[1], loadGameLabel, 2, 0);
-    MenuItem_Set(&menuSystem->items[2], optionsLabel, 2, 0);
-    MenuItem_Set(&menuSystem->items[3], helpLabel, 2, 0);
+    setNativeMainItem(&menuSystem->items[0], "Start Game");
+    setNativeMainItem(&menuSystem->items[1], "Load Game ");
+    setNativeMainItem(&menuSystem->items[2], "Options   ");
+    setNativeMainItem(&menuSystem->items[3], "Help/About");
     return 1;
 }
 
