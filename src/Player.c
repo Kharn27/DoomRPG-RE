@@ -535,6 +535,9 @@ void Player_pain(Player_t* player, int i, int i2)
 	Combat_t* combat;
 	CombatEntity_t* ce;
 	char msg[64], text[128];
+#ifdef DOOMRPG_ESP32
+	char divider[32];
+#endif
 	boolean dogDied;
 	int armor, h1, h2, damage, dogDamage;
 
