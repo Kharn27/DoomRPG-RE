@@ -101,7 +101,7 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
 
     before = heap8Free();
     printf("[PRERENDER] -> EspNativeMenuStorage_startup()\n");
-    menuResult = EspNativeMenuStorage_startup(doomRpg->menuSystem);
+    menuResult = EspNativeMenuStorage_startup(doomRpg->menuSystem, doomRpg);
     after = heap8Free();
     printStageResult("EspNativeMenuStorage_startup", before, after);
     if (!menuResult) {
