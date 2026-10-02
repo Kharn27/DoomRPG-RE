@@ -14,6 +14,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_native_bsp_visibility.h"
 #include "esp_native_graphics_catalog.h"
+#include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_sprite_renderer.h"
 #include "esp_player_view_state.h"
 
@@ -830,6 +831,95 @@ static int spans(Render_t* render,
     return 1;
 }
 
+static int drawWorldDropFrame(Render_t* render,
+                              Frame* frame,
+                              int32_t worldX,
+                              int32_t worldY,
+                              uint8_t renderMode,
+                              EspNativeSpriteStats* stats) {
+    Vertex_t center;
+    Line_t line;
+    int minimum;
+    int maximum;
+
+    if (render == NULL || frame == NULL || stats == NULL) return 0;
+    minimum = frame->xMin - 32;
+    maximum = frame->xMax - 32;
+    memset(&line, 0, sizeof(line));
+    memset(&center, 0, sizeof(center));
+    center.x = worldX;
+    center.y = worldY;
+    Render_transform2DVerts(render, &center);
+    center.x -= 0x100000;
+    if (center.x < 0x40000) {
+        ++stats->nearCulled;
+        return 1;
+    }
+
+    line.vert1 = center;
+    line.vert2.x = center.x;
+    line.vert2.y = center.y + (maximum << 16);
+    line.vert2.z = maximum - minimum;
+    line.vert1.y += minimum << 16;
+    if (!Render_clipLine(render, &line)) {
+        ++stats->clipCulled;
+        return 1;
+    }
+    Render_projectVertex(render, &line.vert1);
+    Render_projectVertex(render, &line.vert2);
+    return spans(render, &line, frame, renderMode, 0, stats);
+}
+
+static int drawPersistentDrops(Render_t* render,
+                               const Sources* sources,
+                               Frame* frame,
+                               uint32_t seenLogical[8],
+                               EspNativeSpriteStats* stats) {
+    static const int8_t crossOffsets[4][2] = {
+        {16, 0}, {-16, 0}, {0, 16}, {0, -16}
+    };
+    const EspNativeGameplayMonsterDropView* view =
+        EspNativeGameplayMonsterDrop_view();
+    uint8_t slot;
+
+    if (view == NULL || view->active == 0U || view->visibleCount == 0U) {
+        return 1;
+    }
+
+    for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS; ++slot) {
+        const EspNativeGameplayMonsterDropRecord* drop = &view->records[slot];
+        uint16_t logical;
+        uint16_t resourceLogical;
+        uint8_t copies;
+        uint8_t i;
+
+        if (drop->active == 0U || drop->taken != 0U) continue;
+        logical = drop->defTile;
+        resourceLogical =
+            isLegacyCrossLogical(logical) ? (uint16_t)(logical - 1U) : logical;
+        copies = isLegacyCrossLogical(logical) ? 4U : 1U;
+
+        if (resourceLogical >= 256U ||
+            EspNativeGraphicsCatalog_findSprite(resourceLogical) == NULL ||
+            !loadFrame(sources, resourceLogical, 0U, 0,
+                       frame, seenLogical, stats)) {
+            return 0;
+        }
+
+        for (i = 0U; i < copies; ++i) {
+            const int32_t x = (int32_t)drop->worldX +
+                (copies == 4U ? crossOffsets[i][0] : 0);
+            const int32_t y = (int32_t)drop->worldY +
+                (copies == 4U ? crossOffsets[i][1] : 0);
+            if (!drawWorldDropFrame(render, frame, x, y,
+                                    spriteRenderMode(resourceLogical), stats)) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
 static int drawTransientBatch(Render_t* render,
                               const Sources* sources,
                               Frame* frame,
@@ -1229,6 +1319,10 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
                                &stats)) {
             goto done;
         }
+    }
+    if (!drawPersistentDrops(render, &sources, &workspace->frame,
+                             workspace->seenLogical, &stats)) {
+        goto done;
     }
     if (transientWorldBatch.active != 0U &&
         !drawTransientBatch(render, &sources, &workspace->frame,
