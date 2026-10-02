@@ -132,7 +132,7 @@ static int paint(void) {
 
     EspNativeGameplayHubTouchUi_drawCrispText(
         framebuffer(), "LEVEL UP", 80, 9, COLOR_AMBER);
-    snprintf(levelText, sizeof(levelText), "LEVEL %u > %u",
+    snprintf(levelText, sizeof(levelText), "LEVEL %u -> %u",
              (unsigned int)levelUp.levelBefore,
              (unsigned int)levelUp.levelAfter);
     EspNativeGameplayHubTouchUi_drawCrispText(
