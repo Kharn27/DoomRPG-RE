@@ -31,30 +31,22 @@ MenuSystem_t* EspNativeMenuStorage_init(MenuSystem_t* storage,
 int EspNativeMenuStorage_startup(MenuSystem_t* storage) {
     if (storage == NULL || storage->doomRpg == NULL) return 0;
 
-    DoomRPG_createImage(storage->doomRpg, "p.bmp", true, &storage->imgHand);
-    DoomRPG_createImage(storage->doomRpg, "q.bmp", false, &storage->imgArrowUpDown);
     DoomRPG_createImage(storage->doomRpg, "j.bmp", true, &storage->imgLogo);
     storage->imgBG = NULL;
 
-    if (storage->imgHand.imgBitmap == NULL ||
-        storage->imgArrowUpDown.imgBitmap == NULL ||
-        storage->imgLogo.imgBitmap == NULL) {
-        printf("[MENUSTORAGE] STARTUP FAILED hand=%p arrows=%p logo=%p\n",
-               (void*)storage->imgHand.imgBitmap,
-               (void*)storage->imgArrowUpDown.imgBitmap,
+    if (storage->imgLogo.imgBitmap == NULL) {
+        printf("[MENUSTORAGE] STARTUP FAILED logo=%p legacyAccessoryAssets=retired\n",
                (void*)storage->imgLogo.imgBitmap);
         return 0;
     }
 
-    printf("[MENUSTORAGE] STARTUP READY assets=p/q/j owner=esp-native desktopMenuSystemStartup=no\n");
+    printf("[MENUSTORAGE] STARTUP READY assets=j owner=esp-native legacyAccessoryAssets=p/q-retired desktopMenuSystemStartup=no\n");
     return 1;
 }
 
 void EspNativeMenuStorage_free(MenuSystem_t* storage, boolean freePtr) {
     if (storage == NULL) return;
     if (storage->doomRpg != NULL) {
-        DoomRPG_freeImage(storage->doomRpg, &storage->imgHand);
-        DoomRPG_freeImage(storage->doomRpg, &storage->imgArrowUpDown);
         DoomRPG_freeImage(storage->doomRpg, &storage->imgLogo);
     }
     storage->imgBG = NULL;
