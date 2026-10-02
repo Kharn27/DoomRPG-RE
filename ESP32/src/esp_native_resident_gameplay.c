@@ -28,6 +28,7 @@
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_input.h"
+#include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_move_events.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_turn.h"
@@ -77,6 +78,7 @@ static void disableGameplay(const char* reason) {
     }
     EspNativeGameplayHub_reset();
     EspNativeGameplayDialog_reset();
+    EspNativeGameplayLevelUp_reset();
     EspNativeGameplayPassword_reset();
     gameplayState.failed = 1U;
     gameplayState.active = 0U;
@@ -144,6 +146,17 @@ static void onGameplayTap(int16_t screenX,
     }
     if (logicalX < 0 || logicalX >= DOOMRPG_LOGICAL_WIDTH ||
         logicalY < 0 || logicalY >= DOOMRPG_LOGICAL_HEIGHT) {
+        return;
+    }
+
+    if (EspNativeGameplayLevelUp_isActive()) {
+        ++gameplayState.taps;
+        if (EspNativeGameplayLevelUp_requestDismiss()) {
+            printf("[RESIDENTGAMEPLAY] LEVELUP-TAP tap=%u logical=%d,%d dismiss=requested worldAction=no feedback=none\n",
+                   (unsigned int)gameplayState.taps,
+                   logicalX,
+                   logicalY);
+        }
         return;
     }
 
@@ -1640,6 +1653,7 @@ void EspNativeResidentGameplay_reset(void) {
     }
     EspNativeGameplayHub_reset();
     EspNativeGameplayDialog_reset();
+    EspNativeGameplayLevelUp_reset();
     EspNativeGameplayPassword_reset();
     EspNativeGameplayFacingLabel_reset();
     EspNativeGameplayControls_reset();
@@ -1778,6 +1792,25 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     if (EspNativeGameplayPlayerDeath_isActive()) {
         if (!EspNativeGameplayPlayerDeath_service(doomRpg)) {
             disableGameplay("player-death-service");
+        }
+        return;
+    }
+
+    if (EspNativeGameplayLevelUp_isActive()) {
+        if (!EspNativeGameplayLevelUp_isDismissPending()) return;
+        {
+            const EspPlayerViewState* levelView = EspPlayerView_view();
+            if (levelView == NULL || levelView->active != 1U ||
+                levelView->viewAngle != levelView->destAngle ||
+                !renderCurrent(doomRpg->render,
+                               (uint8_t)levelView->viewAngle,
+                               "LEVELUP-CLOSE")) {
+                disableGameplay("levelup-close-render");
+                return;
+            }
+        }
+        if (!EspNativeGameplayLevelUp_finishDismiss()) {
+            disableGameplay("levelup-close-owner");
         }
         return;
     }

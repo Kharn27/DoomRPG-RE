@@ -1,0 +1,41 @@
+#ifndef DOOMRPG_ESP32_NATIVE_GAMEPLAY_LEVEL_UP_H
+#define DOOMRPG_ESP32_NATIVE_GAMEPLAY_LEVEL_UP_H
+
+#include <stdint.h>
+#include "esp_native_gameplay_player_state.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct EspNativeGameplayLevelUpView_s {
+    uint32_t sequence;
+    uint32_t frameFNV1a;
+    uint8_t levelBefore;
+    uint8_t levelAfter;
+    uint8_t levelUps;
+    uint8_t maxHealthGain;
+    uint8_t maxArmorGain;
+    uint8_t defenseGain;
+    uint8_t strengthGain;
+    uint8_t agilityGain;
+    uint8_t accuracyGain;
+    uint8_t active;
+    uint8_t dismissPending;
+} EspNativeGameplayLevelUpView;
+
+void EspNativeGameplayLevelUp_reset(void);
+int EspNativeGameplayLevelUp_isActive(void);
+const EspNativeGameplayLevelUpView* EspNativeGameplayLevelUp_view(void);
+int EspNativeGameplayLevelUp_begin(
+    const EspNativeGameplayPlayerXpResult* xp,
+    uint32_t sequence);
+int EspNativeGameplayLevelUp_requestDismiss(void);
+int EspNativeGameplayLevelUp_isDismissPending(void);
+int EspNativeGameplayLevelUp_finishDismiss(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
