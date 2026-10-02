@@ -54,9 +54,9 @@ The current hardware-validated native path includes:
   families;
 - destructible subtype-2 crates, including their exact RNG-driven conversion
   into pickups;
-- checkpoint save/load V8, retaining the V7 player/resources/script/line,
-  action-removal, transformed-crate and Automap state plus compact monster
-  state;
+- checkpoint save/load V9, retaining the player/resources/script/line,
+  action-removal, transformed-crate and Automap state plus exact monster
+  state, topology, positions and activation;
 - a full-height compact industrial HUB that temporarily reclaims the lower
   gameplay strip, uses crisp native 5x7 tab labels, presents Notebook, carried
   items and owned keys in a four-row scrolling inventory, and restores the
@@ -72,9 +72,9 @@ The current hardware-validated native path includes:
   and displays `No Save`;
 - an `Options` child that reuses the same 2x2 finger-first dashboard; `Back` is
   active with two-tap confirmation while deferred settings remain subdued;
-- compatibility reads for the earlier V1 to V7 save formats.
+- compatibility reads for the earlier V1 to V8 save formats.
 
-The V7 Automap checkpoint state remains part of the current V8 format. The HUB
+The V7 Automap checkpoint state remains part of the hardware-tested V9 format. The HUB
 redesign, its touch-feedback coexistence fixes and the successful SAVE return
 flow have been exercised on the real CYD; broader gameplay progression remains
 to be exercised. The exact boundaries, memory figures, fingerprints and
@@ -86,6 +86,16 @@ This is not yet a complete gameplay-parity release. In particular, the complete
 `CHANGEMAP` level-exit route still awaits its dedicated hardware validation.
 Audio, some advanced weapons and monster behaviors, the player-death path and
 several HUB features also remain intentionally incomplete or fail-closed.
+
+### Mission report — development candidate
+
+Development candidate — mission report: a compact HUB-style full-screen report
+now shows Secrets, Monsters, elapsed time, original-style Moves (player turns)
+and XP earned in the current map visit. Time uses a monotonic ESP32 counter,
+without an RTC or network. New V10 checkpoints preserve these metrics; V1–V9
+remain readable and show `SINCE LOAD` when earlier history is unavailable.
+Local build/host checks pass; real-CYD validation is pending. See
+[`ESP32/DOCUMENTATION.md`](ESP32/DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
 
 ### Target hardware
 
@@ -251,9 +261,10 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
   d'attaques des monstres ;
 - les caisses destructibles de sous-type 2, y compris leur transformation en
   pickups déterminée par le RNG original ;
-- les sauvegardes V8, qui reprennent les états joueur, ressources, scripts,
+- les sauvegardes V9, qui reprennent les états joueur, ressources, scripts,
   lignes, suppressions du moteur d'action, transformations de caisses et
-  révélation de l'Automap de la V7, avec en plus l'état compact des monstres ;
+  révélation de l'Automap, avec en plus l'état exact des monstres, leur topologie,
+  leurs positions et leur activation ;
 - une présentation HUB industrielle en pleine hauteur qui récupère
   temporairement la bande inférieure du gameplay, emploie des onglets natifs
   5x7 nets, affiche le Notebook, les objets transportés et les cartes d'accès
@@ -271,9 +282,9 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
 - un sous-menu `Options` qui réutilise la même grille tactile 2x2 ; `Back` reste
   actif avec confirmation en deux pressions, tandis que les réglages différés
   sont affichés en retrait ;
-- la lecture des anciennes sauvegardes V1 à V7.
+- la lecture des anciennes sauvegardes V1 à V8.
 
-L'état Automap de la V7 reste inclus dans le format V8 actuel. La refonte du
+L'état Automap de la V7 reste inclus dans le format V9 validé sur matériel. La refonte du
 HUB, les corrections de coexistence des retours tactiles et le retour en jeu
 après SAVE ont été testés sur le vrai CYD ; la progression plus loin dans le
 jeu reste à exercer. Les frontières exactes, mesures mémoire, empreintes et
@@ -285,6 +296,17 @@ En particulier, la transition de fin de niveau `CHANGEMAP` attend encore sa
 validation matérielle dédiée. L'audio, certaines armes et IA avancées, la mort
 du joueur et plusieurs fonctions du HUB restent également incomplets ou
 volontairement bloqués lorsqu'ils ne sont pas encore sûrs.
+
+### Bilan de mission — évolution en cours
+
+Évolution en cours — bilan de mission : un écran compact dans le style du HUB
+affiche désormais les secrets, monstres, le temps écoulé, les Moves (tours de jeu,
+comme dans l'original) et l'XP gagnée pendant la visite du niveau. Le chronomètre
+ESP32 fonctionne sans horloge RTC ni réseau. Les nouvelles sauvegardes V10
+conservent ces compteurs ; les V1–V9 restent lisibles, avec `SINCE LOAD` lorsque
+l'historique antérieur est inconnu. Compilation et tests locaux OK ; validation
+sur le vrai CYD encore à faire. Détails dans
+[`ESP32/DOCUMENTATION.md`](ESP32/DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
 
 ### Matériel cible
 

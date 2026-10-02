@@ -2,6 +2,29 @@
 
 Authoritative recovery/status file for the classic ESP32-2432S028R port. Repository state wins over chat history. Serial logs from the real classic CYD are the final runtime authority.
 
+## Mission report + V10 level progress — LOCAL CANDIDATE (2026-10-02)
+
+Working branch `fix/mainMenu`, base `afb7c7e`; no hardware pass claimed yet.
+The previous hardware-tested boundary below is unchanged.
+
+End-of-stage presentation now shares the HUB palette/crisp 5x7 face and shows
+Secrets/Monsters with real progress bars plus elapsed time, original-style Moves
+(player turns, including attacks/PASS_TURN) and XP earned during the map visit.
+The report adds no asset read, heap allocation, framebuffer or production source.
+Monotonic elapsed time needs no RTC; loading/offline time is excluded, in-level
+menus/dialogs are included. Counters reset at new-map entry.
+
+V10 writes 5460 bytes: the V9 world payload plus a CRC-covered 16-byte level
+progress suffix. V1–V9 reads remain compatible. Earlier saves cannot reconstruct
+historical counters and display `SINCE LOAD`; that partial flag persists across
+V10 SAVE/LOAD. Old firmware cannot read V10.
+
+Local normal CYD build PASS: static RAM 45208 B; linked flash 771917 B.
+Host counter regressions, production report rendering and in-memory SD writer/
+CRC/byte-verification checks PASS. Real-CYD layout, map handoff, V10 reboot resume
+and V9 partial-history migration remain to test. Details and the checklist are
+in [`DOCUMENTATION.md`](DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
+
 ## Current Git boundary
 
 ```text
@@ -4308,4 +4331,3 @@ otherwise optimized.
 
 Detailed record:
 [MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md](MILESTONE_ESP32_CONSOLIDATION_HOT_REDRAW_TELEMETRY_V20.md)
-

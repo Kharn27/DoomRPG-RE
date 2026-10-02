@@ -20,6 +20,7 @@
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
+#include "esp_player_fresh_map_state.h"
 
 #define TURN_TRACE_MASK 0x5687U
 #define TURN_MAP_WIDTH 32U
@@ -1433,6 +1434,9 @@ static void observeAndProbe(DoomRPG_t* doomRpg) {
             turnOwner.pendingAttackSequence = 0U;
         }
         ++turnOwner.view.scheduledTurns;
+        /* Legacy Game_advanceTurn -> Player_updateBerserkerTics counts one
+         * "move" per player turn, independently of enemy count/AI probes. */
+        EspPlayerFreshMap_recordMove();
         DRPG_LOGT("[MONSTERTURN] SCHEDULE n=%u reason=%s passSeq=%u attackSeq=%u blockedAutomapSeq=%u player=%d,%d angle=%d playerFNV=%08x monsterFNV=%08x mode=probe rollback=required\n",
                (unsigned int)turnOwner.view.scheduledTurns,
                reasonName(reason),

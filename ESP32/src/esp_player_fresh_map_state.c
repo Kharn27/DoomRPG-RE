@@ -3,9 +3,76 @@
 #include <string.h>
 
 #include "esp_map_catalog.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_player_fresh_map_state.h"
 
 static EspPlayerFreshMapState freshMapState;
+
+_Static_assert(sizeof(EspPlayerLevelProgress) == 16U,
+               "level progress checkpoint suffix must remain 16 bytes");
+
+static uint32_t addSaturated(uint32_t a, uint32_t b) {
+    return b > UINT32_MAX - a ? UINT32_MAX : a + b;
+}
+
+void EspPlayerFreshMap_beginTimer(uint32_t nowMs) {
+    if (!EspPlayerFreshMap_isReady() || freshMapState.timerRunning) return;
+    freshMapState.levelStartTimeMs = nowMs;
+    freshMapState.timerRunning = 1U;
+}
+
+void EspPlayerFreshMap_recordMove(void) {
+    if (EspPlayerFreshMap_isReady() && freshMapState.moves != UINT32_MAX) {
+        ++freshMapState.moves;
+    }
+}
+
+int EspPlayerFreshMap_snapshotProgress(uint32_t nowMs,
+                                      EspPlayerLevelProgress* outProgress) {
+    if (outProgress == NULL) return 0;
+    memset(outProgress, 0, sizeof(*outProgress));
+    if (!EspPlayerFreshMap_isReady()) return 0;
+    outProgress->moves = freshMapState.moves;
+    outProgress->elapsedMs = freshMapState.elapsedBeforeMs;
+    if (freshMapState.timerRunning) {
+        outProgress->elapsedMs = addSaturated(outProgress->elapsedMs,
+            (uint32_t)(nowMs - freshMapState.levelStartTimeMs));
+    }
+    outProgress->xpBaseline = freshMapState.xpBaseline;
+    outProgress->targetMapId = freshMapState.targetMapId;
+    outProgress->complete = freshMapState.statsComplete;
+    return 1;
+}
+
+int EspPlayerFreshMap_restoreProgress(const EspPlayerLevelProgress* progress) {
+    if (progress == NULL || !EspMapCatalog_isValidId(progress->targetMapId) ||
+        progress->complete > 1U || progress->reserved[0] != 0U ||
+        progress->reserved[1] != 0U) return 0;
+    memset(&freshMapState, 0, sizeof(freshMapState));
+    freshMapState.moves = progress->moves;
+    freshMapState.elapsedBeforeMs = progress->elapsedMs;
+    freshMapState.xpBaseline = progress->xpBaseline;
+    freshMapState.targetMapId = progress->targetMapId;
+    {
+        const EspPlayerViewState* view = EspPlayerView_view();
+        if (view != NULL && view->targetMapId == progress->targetMapId) {
+            freshMapState.gameplayLoadMapId = view->gameplayLoadMapId;
+            freshMapState.loadType = view->loadType;
+        }
+    }
+    freshMapState.statsComplete = progress->complete;
+    freshMapState.setupApplied = 1U;
+    freshMapState.active = 1U;
+    return 1;
+}
+
+void EspPlayerFreshMap_resumeLegacy(uint8_t mapId, uint32_t xpGained) {
+    EspPlayerLevelProgress progress;
+    memset(&progress, 0, sizeof(progress));
+    progress.targetMapId = mapId;
+    progress.xpBaseline = xpGained;
+    (void)EspPlayerFreshMap_restoreProgress(&progress);
+}
 
 static int hudIsCanonical(const EspHudRefreshState* hud,
                           const EspPlayerViewState* view) {
@@ -113,5 +180,7 @@ EspPlayerFreshMapStatus EspPlayerFreshMap_route(
     }
 
     freshMapState = next;
+    freshMapState.xpBaseline = EspNativeGameplayPlayerState_view()->xpGained;
+    freshMapState.statsComplete = 1U;
     return ESP_PLAYER_FRESH_MAP_OK;
 }

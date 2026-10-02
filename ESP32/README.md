@@ -11,6 +11,15 @@ Start here:
 - [`NATIVE_ENGINE_RECOVERY.md`](NATIVE_ENGINE_RECOVERY.md) — short restart checklist for a new development session.
 - [`DOCUMENTATION.md`](DOCUMENTATION.md) — build/test/documentation map.
 
+## Mission report — development candidate
+
+Development candidate (2026-10-02): the mission-complete screen now reuses the
+HUB palette/crisp font and shows Secrets, Monsters, elapsed time, original-style
+Moves (player turns) and XP earned on the map. V10 saves preserve these counters;
+V1–V9 remain readable, with `SINCE LOAD` for counters missing from old saves.
+No RTC/network is needed. Local build and host checks pass; CYD validation is
+pending. See the [report/checkpoint details](DOCUMENTATION.md#mission-report-and-v10-progress--development-candidate-2026-10-02).
+
 ## Target
 
 ```text
@@ -143,7 +152,7 @@ The alternate resume route is:
 Load Game
  -> validate the one-slot native checkpoint
  -> release menu-only runtime
- -> rebuild the immutable BSP and restore V8 mutable owners
+ -> rebuild the immutable BSP and restore versioned mutable owners
  -> configure the resumed EspNativeGameplaySession
  -> ST_PLAYING without replaying the intro
 ```

@@ -59,6 +59,7 @@ constexpr uint8_t kMagicV6[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '6'};
 constexpr uint8_t kMagicV7[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '7'};
 constexpr uint8_t kMagicV8[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '8'};
 constexpr uint8_t kMagicV9[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '9'};
+constexpr uint8_t kMagicV10[8] = {'D', 'R', 'P', 'G', 'S', 'V', '1', '0'};
 constexpr uint16_t kVersionV1 = 1U;
 constexpr uint16_t kVersionV2 = 2U;
 constexpr uint16_t kVersionV3 = 3U;
@@ -68,6 +69,7 @@ constexpr uint16_t kVersionV6 = 6U;
 constexpr uint16_t kVersionV7 = 7U;
 constexpr uint16_t kVersionV8 = 8U;
 constexpr uint16_t kVersionV9 = 9U;
+constexpr uint16_t kVersionV10 = 10U;
 constexpr uint8_t kFamiliarAmmoType = 5U;
 constexpr uint8_t kStatusSave = 0U;
 constexpr uint8_t kStatusLoad = 1U;
@@ -143,6 +145,7 @@ struct LoadedSaveRecord {
     uint8_t hasActionRemoved;
     uint8_t hasAutomap;
     uint8_t hasMonsterSpatial;
+    EspPlayerLevelProgress levelProgress;
 };
 
 struct NativeSaveRecordV9Tail {
@@ -162,6 +165,9 @@ constexpr size_t kRecordBytesV8 =
 
 constexpr size_t kRecordBytesV9 =
     kRecordBytesV7 + sizeof(NativeSaveRecordV9Tail);
+constexpr size_t kRecordBytesV10 = kRecordBytesV9 + sizeof(EspPlayerLevelProgress);
+static_assert(sizeof(EspPlayerLevelProgress) == 16U && kRecordBytesV10 == 5460U,
+              "v10 appends only the 16-byte level progress suffix");
 
 static_assert(sizeof(EspNativeGameplayCrateTransformSnapshot) == 176U,
               "crate transform checkpoint must remain exactly 176 bytes");
@@ -526,15 +532,18 @@ uint32_t recordCrcV9(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
-    const NativeSaveRecordV9Tail& tail) {
-    const uint8_t* segments[4] = {
+    const NativeSaveRecordV9Tail& tail,
+    const EspPlayerLevelProgress* progress = nullptr) {
+    const uint8_t* segments[5] = {
         reinterpret_cast<const uint8_t*>(&prefix),
         reinterpret_cast<const uint8_t*>(&crateTransforms),
         reinterpret_cast<const uint8_t*>(&automap),
-        reinterpret_cast<const uint8_t*>(&tail)
+        reinterpret_cast<const uint8_t*>(&tail),
+        reinterpret_cast<const uint8_t*>(progress)
     };
-    const size_t sizes[4] = {
-        sizeof(prefix), sizeof(crateTransforms), sizeof(automap), sizeof(tail)
+    const size_t sizes[5] = {
+        sizeof(prefix), sizeof(crateTransforms), sizeof(automap), sizeof(tail),
+        progress != nullptr ? sizeof(*progress) : 0U
     };
     const size_t zeroOffset = offsetof(NativeSaveCore, recordCrc32);
     const size_t zeroEnd = zeroOffset + sizeof(uint32_t);
@@ -543,7 +552,7 @@ uint32_t recordCrcV9(
     size_t i;
     uint32_t bit;
 
-    for (segment = 0U; segment < 4U; ++segment) {
+    for (segment = 0U; segment < 5U; ++segment) {
         for (i = 0U; i < sizes[segment]; ++i) {
             uint8_t value = segments[segment][i];
             if (segment == 0U && i >= zeroOffset && i < zeroEnd) value = 0U;
@@ -1111,17 +1120,30 @@ bool monsterSpatialShapeValid(
     return true;
 }
 
+bool levelProgressShapeValid(const EspPlayerLevelProgress& progress,
+                              const NativeSaveCore& core) {
+    return progress.targetMapId == core.targetMapId &&
+           progress.xpBaseline <= core.player.xpGained &&
+           progress.complete <= 1U && progress.reserved[0] == 0U &&
+           progress.reserved[1] == 0U;
+}
+
 bool loadedV9Valid(
     const LoadedSaveRecord& record,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
     const NativeSaveRecordV9Tail& tail) {
-    const bool coreOk =
-        coreShapeValid(record.core, kMagicV9, kVersionV9,
-                       (uint16_t)kRecordBytesV9);
+    const bool v10 = record.core.version == kVersionV10;
+    const bool coreOk = v10
+        ? coreShapeValid(record.core, kMagicV10, kVersionV10,
+                         (uint16_t)kRecordBytesV10) &&
+          levelProgressShapeValid(record.levelProgress, record.core)
+        : coreShapeValid(record.core, kMagicV9, kVersionV9,
+                         (uint16_t)kRecordBytesV9);
     const uint32_t actualCrc =
         recordCrcV9(*reinterpret_cast<const NativeSaveRecordV5*>(&record),
-                    crateTransforms, automap, tail);
+                    crateTransforms, automap, tail,
+                    v10 ? &record.levelProgress : nullptr);
     const bool crcOk = record.core.recordCrc32 == actualCrc;
     const bool resourcesOk = resourceShapeValid(record.resources, record.core);
     const bool scriptOk = scriptShapeValid(record.script, record.core);
@@ -1141,7 +1163,8 @@ bool loadedV9Valid(
         removedOk && cratesOk && disjointOk && automapOk && spatialOk;
 
     if (!valid) {
-        printf("[NATIVESAVE] V9-VALIDATE core=%u crc=%u storedCrc=%08x actualCrc=%08x resources=%u script=%u lines=%u removed=%u cratesFile=%u disjoint=%u automap=%u monsterSpatial=%u failClosed=yes\n",
+        printf("[NATIVESAVE] SPATIAL-VALIDATE version=%u core=%u crc=%u storedCrc=%08x actualCrc=%08x resources=%u script=%u lines=%u removed=%u cratesFile=%u disjoint=%u automap=%u monsterSpatial=%u failClosed=yes\n",
+               (unsigned int)record.core.version,
                coreOk ? 1U : 0U,
                crcOk ? 1U : 0U,
                (unsigned int)record.core.recordCrc32,
@@ -1158,15 +1181,17 @@ bool loadedV9Valid(
     return valid;
 }
 
-bool recordV9Valid(
+bool recordCurrentValid(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
-    const NativeSaveRecordV9Tail& tail) {
-    return coreShapeValid(prefix.core, kMagicV9, kVersionV9,
-                          (uint16_t)kRecordBytesV9) &&
+    const NativeSaveRecordV9Tail& tail,
+    const EspPlayerLevelProgress& progress) {
+    return coreShapeValid(prefix.core, kMagicV10, kVersionV10,
+                          (uint16_t)kRecordBytesV10) &&
+           levelProgressShapeValid(progress, prefix.core) &&
            prefix.core.recordCrc32 ==
-               recordCrcV9(prefix, crateTransforms, automap, tail) &&
+               recordCrcV9(prefix, crateTransforms, automap, tail, &progress) &&
            resourceShapeValid(prefix.resources, prefix.core) &&
            scriptShapeValid(prefix.script, prefix.core) &&
            lineShapeValid(prefix.lines, prefix.core) &&
@@ -1389,7 +1414,7 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
         return true;
     }
 
-    if (fileBytes == kRecordBytesV9) {
+    if (fileBytes == kRecordBytesV9 || fileBytes == kRecordBytesV10) {
         EspNativeGameplayCrateTransformSnapshot crateTransforms;
         EspMapAutomapSnapshot automap;
         NativeSaveRecordV9Tail* tail;
@@ -1408,11 +1433,11 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
             return false;
         }
         file = SD.open(path, FILE_READ);
-        if (!file || (size_t)file.size() != kRecordBytesV9) {
+        if (!file || (size_t)file.size() != fileBytes) {
             if (file) file.close();
             free(tail);
             printf("[NATIVESAVE] READABLE-V9 FAILED path=%s stage=reopen expectedBytes=%u failClosed=yes\n",
-                   path, (unsigned int)kRecordBytesV9);
+                   path, (unsigned int)fileBytes);
             return false;
         }
 
@@ -1433,12 +1458,19 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
             got = file.read(reinterpret_cast<uint8_t*>(tail),
                             sizeof(*tail));
         }
+        bool sectionsRead = got == sizeof(*tail);
+        if (sectionsRead && fileBytes == kRecordBytesV10) {
+            sectionsRead = file.read(
+                reinterpret_cast<uint8_t*>(&outRecord->levelProgress),
+                sizeof(outRecord->levelProgress)) == sizeof(outRecord->levelProgress);
+        }
         file.close();
 
         const bool valid =
-            got == sizeof(*tail) &&
+            sectionsRead &&
+            outRecord->core.recordBytes == fileBytes &&
             loadedV9Valid(*outRecord, crateTransforms, automap, *tail);
-        printf("[NATIVESAVE] READABLE-V9 path=%s bytes=%u tailWorkspace=%u monsterState=%u monsterTopology=%u monsterPosition=%u monsterActivation=%u result=%s\n",
+        printf("[NATIVESAVE] READABLE-SPATIAL path=%s bytes=%u tailWorkspace=%u monsterState=%u monsterTopology=%u monsterPosition=%u monsterActivation=%u result=%s\n",
                path,
                (unsigned int)fileBytes,
                (unsigned int)sizeof(*tail),
@@ -1452,7 +1484,7 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
             memset(outRecord, 0, sizeof(*outRecord));
             return false;
         }
-        outRecord->fileBytes = (uint16_t)kRecordBytesV9;
+        outRecord->fileBytes = (uint16_t)fileBytes;
         outRecord->hasResources = 1U;
         outRecord->hasScript = 1U;
         outRecord->hasLines = 1U;
@@ -1593,17 +1625,19 @@ bool commitRecordAtomic(
     return true;
 }
 
-bool writeExactV9(
+bool writeExactCurrent(
     const char* path,
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
-    const NativeSaveRecordV9Tail& tail) {
+    const NativeSaveRecordV9Tail& tail,
+    const EspPlayerLevelProgress& progress) {
     File file = SD.open(path, FILE_WRITE);
     size_t wrotePrefix;
     size_t wroteCrate;
     size_t wroteAutomap;
     size_t wroteTail;
+    size_t wroteProgress;
     if (!file) return false;
     wrotePrefix = file.write(reinterpret_cast<const uint8_t*>(&prefix),
                              sizeof(prefix));
@@ -1613,42 +1647,46 @@ bool writeExactV9(
                               sizeof(automap));
     wroteTail = file.write(reinterpret_cast<const uint8_t*>(&tail),
                            sizeof(tail));
+    wroteProgress = file.write(reinterpret_cast<const uint8_t*>(&progress),
+                               sizeof(progress));
     file.flush();
     file.close();
     return wrotePrefix == sizeof(prefix) &&
            wroteCrate == sizeof(crateTransforms) &&
            wroteAutomap == sizeof(automap) &&
-           wroteTail == sizeof(tail);
+           wroteTail == sizeof(tail) && wroteProgress == sizeof(progress);
 }
 
-bool readExactV9Matches(
+bool readExactCurrentMatches(
     const char* path,
     const NativeSaveRecordV5& expectedPrefix,
     const EspNativeGameplayCrateTransformSnapshot& expectedCrate,
     const EspMapAutomapSnapshot& expectedAutomap,
-    const NativeSaveRecordV9Tail& expectedTail) {
+    const NativeSaveRecordV9Tail& expectedTail,
+    const EspPlayerLevelProgress& expectedProgress) {
     File file;
     uint8_t verify[64];
-    const uint8_t* segments[4] = {
+    const uint8_t* segments[5] = {
         reinterpret_cast<const uint8_t*>(&expectedPrefix),
         reinterpret_cast<const uint8_t*>(&expectedCrate),
         reinterpret_cast<const uint8_t*>(&expectedAutomap),
-        reinterpret_cast<const uint8_t*>(&expectedTail)
+        reinterpret_cast<const uint8_t*>(&expectedTail),
+        reinterpret_cast<const uint8_t*>(&expectedProgress)
     };
-    const size_t sizes[4] = {
+    const size_t sizes[5] = {
         sizeof(expectedPrefix), sizeof(expectedCrate), sizeof(expectedAutomap),
-        sizeof(expectedTail)
+        sizeof(expectedTail), sizeof(expectedProgress)
     };
     uint8_t segment;
 
     if (path == nullptr || !SD.exists(path)) return false;
     file = SD.open(path, FILE_READ);
-    if (!file || (size_t)file.size() != kRecordBytesV9) {
+    if (!file || (size_t)file.size() != kRecordBytesV10) {
         if (file) file.close();
         return false;
     }
 
-    for (segment = 0U; segment < 4U; ++segment) {
+    for (segment = 0U; segment < 5U; ++segment) {
         size_t offset = 0U;
         while (offset < sizes[segment]) {
             size_t chunk = sizes[segment] - offset;
@@ -1667,18 +1705,19 @@ bool readExactV9Matches(
     return true;
 }
 
-bool commitRecordAtomicV9(
+bool commitRecordAtomicCurrent(
     const NativeSaveRecordV5& prefix,
     const EspNativeGameplayCrateTransformSnapshot& crateTransforms,
     const EspMapAutomapSnapshot& automap,
-    const NativeSaveRecordV9Tail& tail) {
+    const NativeSaveRecordV9Tail& tail,
+    const EspPlayerLevelProgress& progress) {
     bool movedOld = false;
 
     if (SD.exists(kTempPath)) (void)SD.remove(kTempPath);
     if (SD.exists(kBackupPath)) (void)SD.remove(kBackupPath);
-    if (!writeExactV9(kTempPath, prefix, crateTransforms, automap, tail) ||
-        !readExactV9Matches(
-            kTempPath, prefix, crateTransforms, automap, tail)) {
+    if (!writeExactCurrent(kTempPath, prefix, crateTransforms, automap, tail, progress) ||
+        !readExactCurrentMatches(
+            kTempPath, prefix, crateTransforms, automap, tail, progress)) {
         (void)SD.remove(kTempPath);
         return false;
     }
@@ -1699,8 +1738,8 @@ bool commitRecordAtomicV9(
         return false;
     }
 
-    if (!readExactV9Matches(
-            kSavePath, prefix, crateTransforms, automap, tail)) {
+    if (!readExactCurrentMatches(
+            kSavePath, prefix, crateTransforms, automap, tail, progress)) {
         (void)SD.remove(kSavePath);
         if (movedOld && SD.exists(kBackupPath)) {
             (void)SD.rename(kBackupPath, kSavePath);
@@ -1720,11 +1759,12 @@ bool readCrateSection(
     size_t got;
     if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
         (core.version != kVersionV6 && core.version != kVersionV7 &&
-         core.version != kVersionV8 && core.version != kVersionV9)) {
+         core.version != kVersionV8 && core.version != kVersionV9 &&
+         core.version != kVersionV10)) {
         return false;
     }
     const size_t expectedBytes =
-        core.version == kVersionV9
+        core.version == kVersionV10 ? kRecordBytesV10 : core.version == kVersionV9
             ? kRecordBytesV9
             : (core.version == kVersionV8
                    ? kRecordBytesV8
@@ -1775,11 +1815,11 @@ bool readAutomapSection(
     size_t got;
     if (path == nullptr || outSnapshot == nullptr || !SD.exists(path) ||
         (core.version != kVersionV7 && core.version != kVersionV8 &&
-         core.version != kVersionV9)) {
+         core.version != kVersionV9 && core.version != kVersionV10)) {
         return false;
     }
     const size_t expectedBytes =
-        core.version == kVersionV9
+        core.version == kVersionV10 ? kRecordBytesV10 : core.version == kVersionV9
             ? kRecordBytesV9
             : (core.version == kVersionV8 ? kRecordBytesV8 : kRecordBytesV7);
     file = SD.open(path, FILE_READ);
@@ -1863,7 +1903,8 @@ bool recoverOneShotTopologyFromScript(
     if (outShowAlreadyLinked != nullptr) *outShowAlreadyLinked = 0U;
     if (outHideApplied != nullptr) *outHideApplied = 0U;
 
-    if ((core.version != kVersionV8 && core.version != kVersionV9) ||
+    if ((core.version != kVersionV8 && core.version != kVersionV9 &&
+         core.version != kVersionV10) ||
         runtime == nullptr ||
         runtime->arenaFNV1a != core.runtimeFNV1a ||
         !EspMapScriptState_isReady() ||
@@ -2064,7 +2105,7 @@ bool restoreV9MonsterSpatialSections(
     uint16_t replayHide = 0U;
 
     if (path == nullptr || !SD.exists(path) ||
-        core.version != kVersionV9) {
+        (core.version != kVersionV9 && core.version != kVersionV10)) {
         return false;
     }
 
@@ -2077,7 +2118,7 @@ bool restoreV9MonsterSpatialSections(
     memset(tail, 0, sizeof(*tail));
 
     file = SD.open(path, FILE_READ);
-    if (!file || (size_t)file.size() != kRecordBytesV9 ||
+    if (!file || (size_t)file.size() != core.recordBytes ||
         !file.seek(kRecordBytesV7)) {
         if (file) file.close();
         free(tail);
@@ -2158,12 +2199,13 @@ bool captureRecord(
     NativeSaveRecordV5* outPrefix,
     EspNativeGameplayCrateTransformSnapshot* outCrateTransforms,
     EspMapAutomapSnapshot* outAutomap,
-    NativeSaveRecordV9Tail* outTail) {
+    NativeSaveRecordV9Tail* outTail,
+    EspPlayerLevelProgress* outProgress) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
     const EspPlayerViewState* view = EspPlayerView_view();
 
     if (outPrefix == nullptr || outCrateTransforms == nullptr ||
-        outAutomap == nullptr || outTail == nullptr ||
+        outAutomap == nullptr || outTail == nullptr || outProgress == nullptr ||
         EspAssetPack_isOpen() || runtime == nullptr || view == nullptr ||
         !EspMapResidentLifecycle_isReady()) {
         return false;
@@ -2176,41 +2218,45 @@ bool captureRecord(
     memset(outTail, 0, sizeof(*outTail));
 
     if (!EspNativeGameplayPlayerState_snapshot(&record.core.player)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=player-state\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=player-state\n");
+        return false;
+    }
+    if (!EspPlayerFreshMap_snapshotProgress(millis(), outProgress)) {
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=level-progress\n");
         return false;
     }
     if (!EspNativeGameplayPlayerResources_snapshot(&record.resources)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=resources\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=resources\n");
         return false;
     }
     if (!EspMapScriptState_snapshot(&record.script)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=script\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=script\n");
         return false;
     }
     if (!EspMapLineCheckpoint_snapshot(&record.lines)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=lines\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=lines\n");
         return false;
     }
     if (!EspNativeGameplayActionEngine_snapshotRemoved(
             &record.actionRemoved)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=action-removed\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=action-removed\n");
         return false;
     }
     if (!EspNativeGameplayCrateState_snapshot(outCrateTransforms)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=crate-transforms\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=crate-transforms\n");
         return false;
     }
     if (!EspMapAutomapState_snapshot(outAutomap)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=automap\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=automap\n");
         return false;
     }
     if (!EspNativeGameplayMonsterState_snapshot(&outTail->monsters)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-state\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-state\n");
         return false;
     }
     if (!EspMapSpriteTopology_snapshotMonsters(
             &outTail->monsterTopology)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-topology\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-topology\n");
         return false;
     }
     {
@@ -2218,28 +2264,28 @@ bool captureRecord(
         if (!reconcileMonsterSnapshotWithTopology(
                 &outTail->monsters, outTail->monsterTopology,
                 &reconciledShowDeaths)) {
-            printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-topology-reconcile\n");
+            printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-topology-reconcile\n");
             return false;
         }
         if (reconciledShowDeaths != 0U) {
-            printf("[NATIVESAVE] V9-MONSTER-RECONCILE topologyDeadToLogicalDead=%u sideEffects=not-synthesized snapshotOnly=yes\n",
+            printf("[NATIVESAVE] V10-MONSTER-RECONCILE topologyDeadToLogicalDead=%u sideEffects=not-synthesized snapshotOnly=yes\n",
                    (unsigned int)reconciledShowDeaths);
         }
     }
     if (!EspNativeGameplayMonsterPosition_snapshot(
             &outTail->monsterPositions)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-position\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-position\n");
         return false;
     }
     if (!EspNativeGameplayMonsterActivation_snapshot(
             &outTail->monsterActivation)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-activation\n");
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-activation\n");
         return false;
     }
 
-    memcpy(record.core.magic, kMagicV9, sizeof(kMagicV9));
-    record.core.version = kVersionV9;
-    record.core.recordBytes = (uint16_t)kRecordBytesV9;
+    memcpy(record.core.magic, kMagicV10, sizeof(kMagicV10));
+    record.core.version = kVersionV10;
+    record.core.recordBytes = (uint16_t)kRecordBytesV10;
     record.core.sourceBytes = runtime->sourceBytes;
     record.core.sourceCrc32 = runtime->sourceCrc32;
     record.core.runtimeFNV1a = runtime->arenaFNV1a;
@@ -2252,7 +2298,7 @@ bool captureRecord(
     if (view->active != 1U || view->targetMapId == 0U ||
         runtime->sourceBytes == 0U || runtime->sourceCrc32 == 0U ||
         runtime->arenaFNV1a == 0U) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=core-runtime-shape viewActive=%u map=%u sourceBytes=%u sourceCrc=%08x arena=%08x\n",
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=core-runtime-shape viewActive=%u map=%u sourceBytes=%u sourceCrc=%08x arena=%08x\n",
                (unsigned int)view->active,
                (unsigned int)view->targetMapId,
                (unsigned int)runtime->sourceBytes,
@@ -2261,7 +2307,7 @@ bool captureRecord(
         return false;
     }
     if (!monsterSpatialShapeValid(*outTail, record.core)) {
-        printf("[NATIVESAVE] V9-CAPTURE-FAILED stage=monster-spatial-cross-check monsters=%u topology=%u positions=%u activation=%u\n",
+        printf("[NATIVESAVE] V10-CAPTURE-FAILED stage=monster-spatial-cross-check monsters=%u topology=%u positions=%u activation=%u\n",
                (unsigned int)outTail->monsters.count,
                (unsigned int)outTail->monsterTopology.count,
                (unsigned int)outTail->monsterPositions.count,
@@ -2270,15 +2316,16 @@ bool captureRecord(
     }
 
     record.core.recordCrc32 =
-        recordCrcV9(record, *outCrateTransforms, *outAutomap, *outTail);
-    return recordV9Valid(
-        record, *outCrateTransforms, *outAutomap, *outTail);
+        recordCrcV9(record, *outCrateTransforms, *outAutomap, *outTail, outProgress);
+    return recordCurrentValid(
+        record, *outCrateTransforms, *outAutomap, *outTail, *outProgress);
 }
 
 bool saveNow(void) {
     NativeSaveRecordV5& record = saveWorkspace.write;
     EspNativeGameplayCrateTransformSnapshot crateTransforms;
     EspMapAutomapSnapshot automap;
+    EspPlayerLevelProgress progress;
     NativeSaveRecordV9Tail* tail =
         (NativeSaveRecordV9Tail*)malloc(sizeof(*tail));
     uint32_t scriptFNV;
@@ -2292,7 +2339,7 @@ bool saveNow(void) {
         EspNativeGameplaySave_transitionRoute();
 
     if (tail == nullptr) {
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=9 stage=v9-tail-workspace bytes=%u failClosed=yes\n",
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=10 stage=v9-tail-workspace bytes=%u failClosed=yes\n",
                kLogPath, (unsigned int)sizeof(*tail));
         return false;
     }
@@ -2302,10 +2349,10 @@ bool saveNow(void) {
     memset(&automap, 0, sizeof(automap));
     memset(tail, 0, sizeof(*tail));
 
-    if (!captureRecord(&record, &crateTransforms, &automap, tail) ||
-        !commitRecordAtomicV9(record, crateTransforms, automap, *tail)) {
+    if (!captureRecord(&record, &crateTransforms, &automap, tail, &progress) ||
+        !commitRecordAtomicCurrent(record, crateTransforms, automap, *tail, progress)) {
         free(tail);
-        printf("[NATIVESAVE] SAVE-FAILED path=%s version=9 sections=resources+script+lines+action-removals+crate-transforms+automap+monster-state+monster-topology+monster-position+monster-activation failClosed=yes\n",
+        printf("[NATIVESAVE] SAVE-FAILED path=%s version=10 sections=resources+script+lines+action-removals+crate-transforms+automap+monster-state+monster-topology+monster-position+monster-activation failClosed=yes\n",
                kLogPath);
         return false;
     }
@@ -2321,11 +2368,15 @@ bool saveNow(void) {
     automapFNV = automapSnapshotFNV(automap);
     automapVisitedCount =
         countBits(automap.visitedBits, ESP_MAP_AUTOMAP_SNAPSHOT_MAX_BYTES);
+    printf("[LEVELPROGRESS] SAVE map=%u elapsedMs=%lu moves=%lu xpBaseline=%lu complete=%u suffixBytes=%u\n",
+           (unsigned int)progress.targetMapId, (unsigned long)progress.elapsedMs,
+           (unsigned long)progress.moves, (unsigned long)progress.xpBaseline,
+           (unsigned int)progress.complete, (unsigned int)sizeof(progress));
 
     printf("[NATIVESAVE] SAVE path=%s version=%u bytes=%u map=%u gameplayLoadMapId=%u pos=%ld,%ld angle=%ld returnRoute=%s/%u,%u/%u playerFNV=%08lx runtimeFNV=%08lx sourceBytes=%lu sourceCrc=%08lx recordCrc=%08lx resources=%u/%uB sprites=%u script=%lu/%lu/%uB scriptFNV=%08lx lines=%lu/%uB open=%lu locked=%lu texture10=%lu lineFNV=%08lx textureFNV=%08lx actionRemoved=%lu/%uB/%08lx crateTransforms=%u/%uB/%uB/%08lx automap=%uL/%uS/%luV/%08lx monsters=%u/%08lx topology=%u/%08lx positions=%u/%08lx activation=%u/%08lx atomic=temp+backup+rename world=monster-spatial-exact-v9\n",
            kLogPath,
            (unsigned int)record.core.version,
-           (unsigned int)kRecordBytesV9,
+           (unsigned int)record.core.recordBytes,
            (unsigned int)record.core.targetMapId,
            (unsigned int)record.core.gameplayLoadMapId,
            (long)record.core.view.viewX,
@@ -2705,6 +2756,8 @@ bool loadNow(void) {
     if (!EspNativeGameplayPlayerState_restore(&record->player) ||
         EspNativeGameplayPlayerState_fingerprint() != record->playerFNV1a ||
         !restoreView(*record) ||
+        (record->version == kVersionV10 &&
+         !EspPlayerFreshMap_restoreProgress(&loaded.levelProgress)) ||
         !reprimeHudOwners(*record) ||
         (loaded.hasResources == 1U &&
          !EspNativeGameplayPlayerResources_restore(&loaded.resources)) ||
@@ -2721,13 +2774,13 @@ bool loadNow(void) {
         ((record->version == kVersionV6 ||
           record->version == kVersionV7 ||
           record->version == kVersionV8 ||
-          record->version == kVersionV9) &&
+          record->version >= kVersionV9) &&
          !restoreCrateSection(selectedPath, *record,
                               &crateTransformCount,
                               &crateTransformFNV)) ||
         ((record->version == kVersionV7 ||
           record->version == kVersionV8 ||
-          record->version == kVersionV9) &&
+          record->version >= kVersionV9) &&
          !restoreAutomapSection(selectedPath, *record,
                                 &automapLineCount,
                                 &automapSpriteCount,
@@ -2740,7 +2793,7 @@ bool loadNow(void) {
         (record->version == kVersionV8 &&
          !stageV8MonsterSection(selectedPath, *record,
                                 &monsterCount, &monsterFNV)) ||
-        (record->version == kVersionV9 &&
+        (record->version >= kVersionV9 &&
          !restoreV9MonsterSpatialSections(
              selectedPath, *record,
              &monsterCount, &monsterFNV,
@@ -2763,23 +2816,30 @@ bool loadNow(void) {
                (record->version == kVersionV6 ||
                 record->version == kVersionV7 ||
                 record->version == kVersionV8 ||
-                record->version == kVersionV9)
+                record->version >= kVersionV9)
                    ? "required"
                    : "legacy-none",
                (record->version == kVersionV7 ||
                 record->version == kVersionV8 ||
-                record->version == kVersionV9)
+                record->version >= kVersionV9)
                    ? "required"
                    : "legacy-none",
                (record->version == kVersionV8 ||
-                record->version == kVersionV9)
+                record->version >= kVersionV9)
                    ? "required"
                    : "legacy-none",
-               record->version == kVersionV9 ? "required" : "legacy-none",
+               record->version >= kVersionV9 ? "required" : "legacy-none",
                (unsigned long)record->playerFNV1a);
         return false;
     }
 
+    if (record->version < kVersionV10) {
+        EspPlayerFreshMap_resumeLegacy(record->targetMapId, record->player.xpGained);
+    }
+    printf("[LEVELPROGRESS] LOAD map=%u history=%s timer=resume-on-gameplay\n",
+           (unsigned int)record->targetMapId,
+           record->version == kVersionV10 && loaded.levelProgress.complete
+               ? "full-level" : "since-load");
     if (loadingPresentation) {
         EspNativeTransitionPresentation_checkpointProgress(75U, "STATE");
     }
@@ -2819,7 +2879,7 @@ bool loadNow(void) {
     }
 
     const char* worldSummary =
-        record->version == kVersionV9
+        record->version >= kVersionV9
             ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation-restored-exact"
             : (record->version == kVersionV8
                    ? "resources+script+lines+action-removals+crate-transforms+automap+monster-state-restored+monster-spatial-fresh-lossy"
@@ -2875,28 +2935,28 @@ bool loadNow(void) {
            (record->version == kVersionV6 ||
             record->version == kVersionV7 ||
             record->version == kVersionV8 ||
-            record->version == kVersionV9)
+            record->version >= kVersionV9)
                ? "restored" : "legacy-none",
            (unsigned int)crateTransformCount,
            (unsigned long)crateTransformFNV,
            (record->version == kVersionV7 ||
             record->version == kVersionV8 ||
-            record->version == kVersionV9)
+            record->version >= kVersionV9)
                ? "restored" : "legacy-none",
            (unsigned int)automapLineCount,
            (unsigned int)automapSpriteCount,
            (unsigned int)automapVisitedCount,
            (unsigned long)automapFNV,
            (record->version == kVersionV8 ||
-            record->version == kVersionV9)
+            record->version >= kVersionV9)
                ? "staged" : "legacy-none",
            (unsigned int)monsterCount,
            (unsigned long)monsterFNV,
-           record->version == kVersionV9 ? "restored" : "legacy-fresh",
+           record->version >= kVersionV9 ? "restored" : "legacy-fresh",
            (unsigned long)monsterTopologyFNV,
-           record->version == kVersionV9 ? "staged" : "legacy-fresh",
+           record->version >= kVersionV9 ? "staged" : "legacy-fresh",
            (unsigned long)monsterPositionFNV,
-           record->version == kVersionV9 ? "restored" : "legacy-fresh",
+           record->version >= kVersionV9 ? "restored" : "legacy-fresh",
            (unsigned long)monsterActivationFNV,
            worldSummary);
     if (loadingPresentation) {

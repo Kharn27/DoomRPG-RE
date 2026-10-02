@@ -16,6 +16,13 @@ int EspNativeGameplayHubTouchUi_paint(uint16_t* framebuffer,
                                       uint8_t page,
                                       uint8_t selectedRow);
 
+/* Shared allocation-free 5x7 face for HUB and full-screen mission reports. */
+void EspNativeGameplayHubTouchUi_drawCrispText(uint16_t* framebuffer,
+                                             const char* text,
+                                             int centerX,
+                                             int top,
+                                             uint16_t color);
+
 struct EspNativeGameplayTouchHit_s;
 int EspNativeGameplayHubTouchUi_classify(
     int logicalX,

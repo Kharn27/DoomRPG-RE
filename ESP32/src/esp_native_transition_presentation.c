@@ -8,6 +8,9 @@
 #include "esp_asset_pack.h"
 #include "esp_map_catalog.h"
 #include "esp_native_gameplay_hub_theme.h"
+#include "esp_native_gameplay_hub_touch_ui.h"
+#include "esp_native_gameplay_player_state.h"
+#include "esp_player_fresh_map_state.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_native_transition_presentation.h"
@@ -19,15 +22,6 @@
 #endif
 
 #define TRANSITION_STAR_NAME "c.bmp"
-#define TRANSITION_FONT_NAME "a.bmp"
-
-#define TRANSITION_FONT_WIDTH 9U
-#define TRANSITION_FONT_HEIGHT 12U
-#define TRANSITION_FONT_ADVANCE 7
-#define TRANSITION_FONT_SOURCE_WIDTH 144U
-#define TRANSITION_FONT_SOURCE_HEIGHT 72U
-#define TRANSITION_TRANSPARENT 1U
-
 #define TRANSITION_PROGRESS_LEFT 19
 #define TRANSITION_PROGRESS_TOP 86
 #define TRANSITION_PROGRESS_WIDTH 122
@@ -56,7 +50,6 @@ typedef struct EspNativeTransitionPresentationState_s {
 
 typedef struct EspNativeTransitionPaintScratch_s {
     EspNativeIndexedBmp star;
-    EspNativeIndexedBmp font;
     EspNativeIndexedBmpStats stats;
 } EspNativeTransitionPaintScratch;
 
@@ -145,6 +138,14 @@ static void formatMapLabel(uint8_t mapId, char* out, size_t capacity) {
         snprintf(out, capacity, "JUNCTION");
         return;
     }
+    if (mapId >= 2U && mapId <= 8U) {
+        snprintf(out, capacity, "SECTOR %u", (unsigned int)(mapId - 1U));
+        return;
+    }
+    if (mapId == 10U) {
+        snprintf(out, capacity, "JUNCTION RUINS");
+        return;
+    }
     resource = EspMapCatalog_nameForId(mapId);
     if (resource == NULL) {
         snprintf(out, capacity, "MAP %u", (unsigned int)mapId);
@@ -157,65 +158,6 @@ static void formatMapLabel(uint8_t mapId, char* out, size_t capacity) {
         out[i++] = c;
     }
     out[i] = '\0';
-}
-
-static int gameTextWidth(const char* text) {
-    const size_t length = text != NULL ? strlen(text) : 0U;
-    return length == 0U
-               ? 0
-               : (int)((length - 1U) * TRANSITION_FONT_ADVANCE +
-                       TRANSITION_FONT_WIDTH);
-}
-
-static int drawGlyph(const EspNativeIndexedBmp* font,
-                     uint8_t c,
-                     int x,
-                     int y,
-                     EspNativeIndexedBmpStats* stats) {
-    uint8_t glyph;
-    if (font == NULL || c < 33U || c > 127U) return 0;
-    glyph = (uint8_t)(c - 33U);
-    return EspNativeIndexedBmp_blit(
-               font, framebuffer(),
-               DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
-               (uint16_t)(TRANSITION_FONT_WIDTH * (glyph & 0x0fU)),
-               (uint16_t)(TRANSITION_FONT_HEIGHT * (glyph >> 4)),
-               TRANSITION_FONT_WIDTH, TRANSITION_FONT_HEIGHT,
-               (int16_t)x, (int16_t)y,
-               TRANSITION_TRANSPARENT, stats) == ESP_NATIVE_INDEXED_BMP_OK;
-}
-
-static int drawGameText(const EspNativeIndexedBmp* font,
-                        const char* text,
-                        int x,
-                        int y,
-                        EspNativeIndexedBmpStats* stats) {
-    const unsigned char* p = (const unsigned char*)text;
-    if (font == NULL || text == NULL || stats == NULL) return 0;
-    while (*p != '\0') {
-        const uint8_t c = *p++;
-        if (c != ' ' && !drawGlyph(font, c, x, y, stats)) return 0;
-        x += TRANSITION_FONT_ADVANCE;
-    }
-    return 1;
-}
-
-static int drawGameTextCentered(const EspNativeIndexedBmp* font,
-                                const char* text,
-                                int y,
-                                EspNativeIndexedBmpStats* stats) {
-    return drawGameText(font, text,
-                        (DOOMRPG_LOGICAL_WIDTH - gameTextWidth(text)) / 2,
-                        y, stats);
-}
-
-static int openFont(EspNativeIndexedBmp* font,
-                    EspNativeIndexedBmpStats* stats) {
-    return font != NULL && stats != NULL &&
-           EspNativeIndexedBmp_open(TRANSITION_FONT_NAME, font, stats) ==
-               ESP_NATIVE_INDEXED_BMP_OK &&
-           font->width == TRANSITION_FONT_SOURCE_WIDTH &&
-           font->height == TRANSITION_FONT_SOURCE_HEIGHT;
 }
 
 static int miniRows(char c, uint8_t rows[5]) {
@@ -242,10 +184,16 @@ static int miniRows(char c, uint8_t rows[5]) {
         {5U,5U,2U,2U,2U}, {7U,1U,2U,4U,7U}
     };
     static const uint8_t slash[5] = {1U,1U,2U,4U,4U};
+    static const uint8_t colon[5] = {0U,2U,0U,2U,0U};
+    static const uint8_t plus[5] = {0U,2U,7U,2U,0U};
+    static const uint8_t dash[5] = {0U,0U,7U,0U,0U};
     const uint8_t* source;
     if (c >= '0' && c <= '9') source = digits[c - '0'];
     else if (c >= 'A' && c <= 'Z') source = letters[c - 'A'];
     else if (c == '/') source = slash;
+    else if (c == ':') source = colon;
+    else if (c == '+') source = plus;
+    else if (c == '-') source = dash;
     else return 0;
     memcpy(rows, source, 5U);
     return 1;
@@ -307,22 +255,41 @@ static void drawMetricCard(int left,
     const int innerRight = right - 4;
     const int width = innerRight - innerLeft + 1;
 
-    fillRect(left, 43, right, 82, COLOR_PANEL);
-    rect(left, 43, right, 82, COLOR_STEEL_DARK);
-    fillRect(left + 1, 44, left + 3, 81, accent);
-    drawMiniTextCentered(label, (left + right) / 2 + 1, 48, 1, COLOR_STEEL);
+    fillRect(left, 33, right, 67, COLOR_PANEL);
+    rect(left, 33, right, 67, COLOR_STEEL_DARK);
+    fillRect(left + 1, 34, left + 2, 66, accent);
+    EspNativeGameplayHubTouchUi_drawCrispText(framebuffer(), label,
+        (left + right) / 2 + 1, 38, COLOR_STEEL);
 
     snprintf(number, sizeof(number), "%u/%u",
              (unsigned int)value, (unsigned int)maximum);
-    drawMiniTextCentered(number, (left + right) / 2 + 1, 59, 2, COLOR_IVORY);
+    if (strlen(number) * 6U - 1U <= (size_t)width) {
+        EspNativeGameplayHubTouchUi_drawCrispText(framebuffer(), number,
+            (left + right) / 2 + 1, 50, COLOR_IVORY);
+    } else {
+        drawMiniTextCentered(number, (left + right) / 2 + 1, 51, 1, COLOR_IVORY);
+    }
 
-    fillRect(innerLeft, 76, innerRight, 78, COLOR_BLACK);
+    fillRect(innerLeft, 61, innerRight, 63, COLOR_BLACK);
     if (maximum != 0U) {
         uint32_t bounded = value > maximum ? maximum : value;
         fill = (uint32_t)(((uint64_t)bounded * (uint64_t)width) / maximum);
     }
     if (fill != 0U) {
-        fillRect(innerLeft, 76, innerLeft + (int)fill - 1, 78, accent);
+        fillRect(innerLeft, 61, innerLeft + (int)fill - 1, 63, accent);
+    }
+}
+
+static void drawReportValue(int left, const char* label, const char* value,
+                            uint16_t accent) {
+    const int right = left + 43;
+    fillRect(left, 72, right, 97, COLOR_PANEL);
+    drawMiniTextCentered(label, left + 21, 76, 1, COLOR_STEEL);
+    if (strlen(value) * 6U - 1U <= 39U) {
+        EspNativeGameplayHubTouchUi_drawCrispText(framebuffer(), value,
+            left + 21, 86, accent);
+    } else {
+        drawMiniTextCentered(value, left + 21, 87, 1, accent);
     }
 }
 
@@ -478,13 +445,18 @@ int EspNativeTransitionPresentation_showStats(
     const struct EspNativeGameplayTransitionState_s* transitionBase) {
     const EspNativeGameplayTransitionState* transition =
         (const EspNativeGameplayTransitionState*)transitionBase;
-    EspNativeTransitionPaintScratch scratch;
     char source[24];
+    char duration[16];
+    char moves[16];
+    char experience[16];
+    EspPlayerLevelProgress progress;
+    const EspNativeGameplayPlayerState* player;
+    uint32_t gained = 0U;
+    uint32_t seconds;
+    int hasProgress;
     uint32_t fnv;
     uint16_t secretAccent;
     uint16_t monsterAccent;
-    int openedHere = 0;
-    int ok = 0;
 
     if (transition == NULL || transition->active != 1U ||
         transition->waitingStats != 1U ||
@@ -492,28 +464,42 @@ int EspNativeTransitionPresentation_showStats(
         return 0;
     }
 
-    memset(&scratch, 0, sizeof(scratch));
-    if (!EspAssetPack_isOpen()) {
-        if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
-        openedHere = 1;
+    player = EspNativeGameplayPlayerState_view();
+    hasProgress = EspPlayerFreshMap_snapshotProgress(nowMs(), &progress) &&
+        progress.targetMapId == transition->committed.sourceMapId &&
+        player != NULL && progress.xpBaseline <= player->xpGained;
+    if (hasProgress) {
+        gained = player->xpGained - progress.xpBaseline;
+        seconds = progress.elapsedMs / 1000U;
+        if (seconds < 3600U) {
+            snprintf(duration, sizeof(duration), "%02lu:%02lu",
+                (unsigned long)(seconds / 60U), (unsigned long)(seconds % 60U));
+        } else {
+            snprintf(duration, sizeof(duration), "%lu:%02lu:%02lu",
+                (unsigned long)(seconds / 3600U),
+                (unsigned long)((seconds / 60U) % 60U),
+                (unsigned long)(seconds % 60U));
+        }
+        snprintf(moves, sizeof(moves), "%lu", (unsigned long)progress.moves);
+        snprintf(experience, sizeof(experience), "+%lu", (unsigned long)gained);
+    } else {
+        snprintf(duration, sizeof(duration), "--");
+        snprintf(moves, sizeof(moves), "--");
+        snprintf(experience, sizeof(experience), "--");
     }
-    if (!openFont(&scratch.font, &scratch.stats)) goto done;
 
     fillRect(0, 0, DOOMRPG_LOGICAL_WIDTH - 1,
              DOOMRPG_LOGICAL_HEIGHT - 1, COLOR_BLACK);
     fillRect(3, 3, 156, 116, COLOR_BG);
     rect(3, 3, 156, 116, COLOR_STEEL_DARK);
 
-    fillRect(8, 8, 151, 34, COLOR_PANEL_ALT);
-    rect(8, 8, 151, 34, COLOR_STEEL_DARK);
-    fillRect(9, 9, 12, 33, COLOR_AMBER);
+    fillRect(8, 7, 151, 28, COLOR_PANEL_ALT);
+    fillRect(8, 7, 10, 28, COLOR_AMBER);
     formatMapLabel(transition->committed.sourceMapId, source, sizeof(source));
 
-    if (!drawGameTextCentered(&scratch.font, "LEVEL COMPLETE", 8,
-                              &scratch.stats) ||
-        !drawGameTextCentered(&scratch.font, source, 21, &scratch.stats)) {
-        goto done;
-    }
+    EspNativeGameplayHubTouchUi_drawCrispText(framebuffer(), "MISSION COMPLETE",
+        81, 10, COLOR_AMBER);
+    drawMiniTextCentered(source, 81, 21, 1, COLOR_IVORY);
 
     secretAccent =
         transition->levelStats.secretsTotal != 0U &&
@@ -533,15 +519,17 @@ int EspNativeTransitionPresentation_showStats(
                    transition->levelStats.monstersTotal,
                    monsterAccent);
 
-    fillRect(15, 90, 144, 91, COLOR_STEEL_DARK);
-    if (!drawGameTextCentered(&scratch.font, "TAP TO CONTINUE", 99,
-                              &scratch.stats)) {
-        goto done;
-    }
+    drawReportValue(10, "TIME", duration, ESP_HUB_COLOR_BLUE);
+    drawReportValue(58, "MOVES", moves, COLOR_IVORY);
+    drawReportValue(106, "XP GAINED", experience, COLOR_GREEN);
+    drawMiniTextCentered(hasProgress && !progress.complete ? "SINCE LOAD" :
+        "SECTOR REPORT", 80, 100, 1, COLOR_STEEL);
+    EspNativeGameplayHubTouchUi_drawCrispText(framebuffer(), "TAP TO CONTINUE",
+        80, 108, COLOR_IVORY);
 
-    if (!__real_Esp32PlatformVideo_present()) goto done;
+    if (!__real_Esp32PlatformVideo_present()) return 0;
     fnv = frameFNV();
-    printf("[LEVELSTATS] PRESENT sourceMap=%u targetMap=%u source=%s secrets=%u/%u monsters=%u/%u extended=time+moves+xp-deferred style=hub-stat-cards font=game-title+mini-metrics reads=%u bytes=%u fullScreen=yes frame=%08x input=one-tap\n",
+    printf("[LEVELSTATS] PRESENT sourceMap=%u targetMap=%u source=%s secrets=%u/%u monsters=%u/%u elapsedMs=%lu moves=%lu xp=%lu counters=%s style=hub-sector-report font=crisp5x7+mini3x5 reads=0 fullScreen=yes frame=%08x input=one-tap\n",
            (unsigned int)transition->committed.sourceMapId,
            (unsigned int)transition->committed.targetMapId,
            source,
@@ -549,14 +537,12 @@ int EspNativeTransitionPresentation_showStats(
            (unsigned int)transition->levelStats.secretsTotal,
            (unsigned int)transition->levelStats.monstersDead,
            (unsigned int)transition->levelStats.monstersTotal,
-           (unsigned int)scratch.stats.packReads,
-           (unsigned int)scratch.stats.bytesRead,
+           (unsigned long)(hasProgress ? progress.elapsedMs : 0U),
+           (unsigned long)(hasProgress ? progress.moves : 0U),
+           (unsigned long)gained,
+           !hasProgress ? "unavailable" : (progress.complete ? "full-level" : "since-load"),
            (unsigned int)fnv);
-    ok = 1;
-
-done:
-    if (openedHere && EspAssetPack_isOpen()) EspAssetPack_close();
-    return ok;
+    return 1;
 }
 
 int EspNativeTransitionPresentation_beginLoading(uint8_t targetMapId) {
