@@ -76,10 +76,22 @@ transactional pickup path, together with the co-located static ammo pickup:
 
 This proves the live materialized state survives SAVE/LOAD without RNG replay or
 legacy entity reconstruction, and that same-map session replacement does not leak
-the post-SAVE consumed state into the restored checkpoint. The separate
-`taken-before-SAVE -> LOAD` scenario was not independently replayed in this log;
-the V11 snapshot does persist the current `taken` bit and rotating slot state,
-but that exact scenario is not claimed as a separate hardware witness here.
+the post-SAVE consumed state into the restored checkpoint.
+
+A second real-CYD run independently closes the opposite checkpoint state:
+the drop was already consumed before SAVE. The saved PlayerResources overlay
+contained 36 consumed resources, and V11 restored the same rotating slot as
+taken:
+
+```text
+[PLAYERRES] RESTORE ... consumed=36 bytes=43 ...
+[MONSTERDROP] RESTORE version=11 arena=c3882516 serial=1 next=1 visible=0 stateFNV=8d1747e5 rng=untouched materialize=replay-no
+[NATIVESAVE] LOAD ... version=11 bytes=5604 ... monsterDrops=restored/0/8d1747e5/serial1/next1 ... monster-drops-restored-exact
+```
+
+The drop did not reappear visually after LOAD. Hardware therefore proves both
+V11 states for the same slot: an untaken saved drop restores visible and
+pickable; a taken saved drop restores invisible and stays consumed.
 
 Normal `esp32-cyd` CI #1540 is SUCCESS:
 

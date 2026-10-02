@@ -125,10 +125,20 @@ This proves the complete hardware path:
 saved drop restoration -> visible/pickable dynamic drop -> normal PlayerState
 pickup`.
 
-The separate scenario where a drop is already `taken` before SAVE and is then
-loaded was not independently repeated in this serial session. V11 stores the
-current taken bit and exact pool state, but this document does not invent a
-separate hardware witness for that case.
+A second real-CYD run then exercised the complementary state: the dynamic drop
+was already taken before SAVE. LOAD restored the PlayerResources consumed overlay
+and the V11 drop slot coherently:
+
+```text
+[PLAYERRES] RESTORE ... consumed=36 bytes=43 ...
+[MONSTERDROP] RESTORE version=11 arena=c3882516 serial=1 next=1 visible=0 stateFNV=8d1747e5 rng=untouched materialize=replay-no
+[NATIVESAVE] LOAD ... version=11 bytes=5604 ... monsterDrops=restored/0/8d1747e5/serial1/next1 ... monster-drops-restored-exact
+```
+
+The user confirmed the consumed drop does not reappear visually after LOAD.
+Together with the first run, hardware now proves both persisted states of the
+same rotating slot: untaken restores visible/pickable; taken restores hidden and
+remains consumed.
 
 ## Architecture
 
