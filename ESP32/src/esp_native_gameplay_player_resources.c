@@ -20,6 +20,7 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hazard_touch.h"
 #include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_gameplay_interaction_inventory.h"
 #include "esp_native_gameplay_player_resources.h"
 #include "esp_native_gameplay_player_state.h"
@@ -56,11 +57,13 @@
 
 typedef struct ResourceCandidate_s {
     int32_t parm;
+    uint32_t linkOrder;
     uint16_t spriteIndex;
     uint16_t defTile;
-    uint16_t linkOrder;
     uint8_t type;
     uint8_t subtype;
+    uint8_t dynamicDrop;
+    uint8_t dropSlot;
 } ResourceCandidate;
 
 typedef struct ResourceApplied_s {
@@ -72,6 +75,9 @@ typedef struct ResourceApplied_s {
     uint8_t subtype;
     uint8_t action;
     uint8_t slot;
+    uint8_t dynamicDrop;
+    uint8_t dropSlot;
+    uint8_t reserved[2];
 } ResourceApplied;
 
 typedef struct ResourceOwner_s {
@@ -412,11 +418,70 @@ static int collectCandidates(uint16_t tile,
         out[pos].parm = parm;
         out[pos].spriteIndex = (uint16_t)i;
         out[pos].defTile = defTile;
-        out[pos].linkOrder = linkOrder;
+        out[pos].linkOrder = (uint32_t)linkOrder;
         out[pos].type = type;
         out[pos].subtype = subtype;
+        out[pos].dynamicDrop = 0U;
+        out[pos].dropSlot = ESP_NATIVE_GAMEPLAY_MONSTER_DROP_NO_SLOT;
         ++count;
     }
+
+    {
+        const EspNativeGameplayMonsterDropView* dropView =
+            EspNativeGameplayMonsterDrop_view();
+        if (dropView != NULL && dropView->active != 0U) {
+            for (i = 0U; i < ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS; ++i) {
+                const EspNativeGameplayMonsterDropRecord* drop =
+                    &dropView->records[i];
+                uint8_t metaType;
+                uint8_t metaSubtype;
+                int32_t parm;
+                uint8_t pos;
+                uint32_t order;
+                if (drop->active == 0U || drop->taken != 0U ||
+                    drop->tileIndex != tile || !isResourceType(drop->type)) {
+                    continue;
+                }
+                if (count >= RESOURCE_MAX_TOUCHES_PER_TILE) {
+                    printf("[PLAYERRES] DEFER tile=%u reason=touch-overflow-with-drops max=%u mutation=no\n",
+                           (unsigned int)tile,
+                           (unsigned int)RESOURCE_MAX_TOUCHES_PER_TILE);
+                    return 0;
+                }
+                if (!EspEntityDefTypeCatalog_getMetadata(drop->defTile,
+                                                         &metaType,
+                                                         &metaSubtype,
+                                                         &parm) ||
+                    metaType != drop->type || metaSubtype != drop->subtype) {
+                    printf("[PLAYERRES] DEFER tile=%u dropSlot=%u type=%u subtype=%u reason=drop-entitydef-metadata mutation=no\n",
+                           (unsigned int)tile,
+                           (unsigned int)i,
+                           (unsigned int)drop->type,
+                           (unsigned int)drop->subtype);
+                    return 0;
+                }
+
+                /* Legacy Game_linkEntity() adds drops after map entities, so a
+                 * dynamic drop wins same-tile pickup ordering. */
+                order = 0x80000000UL | (drop->spawnOrder & 0x7fffffffUL);
+                pos = count;
+                while (pos > 0U && order > out[pos - 1U].linkOrder) {
+                    out[pos] = out[pos - 1U];
+                    --pos;
+                }
+                out[pos].parm = parm;
+                out[pos].linkOrder = order;
+                out[pos].spriteIndex = UINT16_MAX;
+                out[pos].defTile = drop->defTile;
+                out[pos].type = drop->type;
+                out[pos].subtype = drop->subtype;
+                out[pos].dynamicDrop = 1U;
+                out[pos].dropSlot = (uint8_t)i;
+                ++count;
+            }
+        }
+    }
+
     *outCount = count;
     return 1;
 }
@@ -448,6 +513,8 @@ static int applyCandidate(const ResourceCandidate* candidate,
     applied->type = candidate->type;
     applied->subtype = candidate->subtype;
     applied->slot = 0xffU;
+    applied->dynamicDrop = candidate->dynamicDrop;
+    applied->dropSlot = candidate->dropSlot;
     player = EspNativeGameplayPlayerState_view();
     if (player == NULL) return -1;
 
@@ -575,6 +642,34 @@ static int applyCandidate(const ResourceCandidate* candidate,
     }
 
     return take;
+}
+
+static int markCandidateTaken(const ResourceCandidate* candidate) {
+    if (candidate == NULL) return 0;
+    if (candidate->dynamicDrop != 0U) {
+        return candidate->dropSlot < ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS &&
+               EspNativeGameplayMonsterDrop_setTaken(candidate->dropSlot, 1);
+    }
+    if (candidate->spriteIndex == UINT16_MAX) return 0;
+    setConsumed(candidate->spriteIndex, 1);
+    return 1;
+}
+
+static int rollbackAppliedWorld(ResourceApplied* applied, uint8_t count) {
+    int ok = 1;
+    while (count > 0U) {
+        --count;
+        if (applied[count].dynamicDrop != 0U) {
+            if (!EspNativeGameplayMonsterDrop_setTaken(
+                    applied[count].dropSlot, 0)) {
+                ok = 0;
+            }
+        }
+        else {
+            setConsumed(applied[count].spriteIndex, 0);
+        }
+    }
+    return ok;
 }
 
 static const char* firstWeaponDialogText(uint8_t subtype) {
@@ -708,9 +803,9 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
         int take = applyCandidate(&candidates[i], &applied[appliedCount]);
         if (take < 0) {
             (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-            while (appliedCount > 0U) {
-                --appliedCount;
-                setConsumed(applied[appliedCount].spriteIndex, 0);
+            if (!rollbackAppliedWorld(applied, appliedCount)) {
+                resources.view.fatal = 1U;
+                return 0;
             }
             printf("[PLAYERRES] DEFER tile=%u sprite=%u type=%u subtype=%u parm=%ld reason=unsupported-contract playerRollback=yes mutation=no\n",
                    (unsigned int)afterTile,
@@ -729,8 +824,19 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                    (long)candidates[i].parm);
             continue;
         }
-        setConsumed(candidates[i].spriteIndex, 1);
-        printf("[PLAYERRES] PREPARE tile=%u sprite=%u defTile=%u type=%u subtype=%u parm=%ld action=%s value=%u->%u slot=%s%u worldRemove=hidden-overlay rollback=armed\n",
+        if (!markCandidateTaken(&candidates[i])) {
+            (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+            if (!rollbackAppliedWorld(applied, appliedCount)) {
+                resources.view.fatal = 1U;
+                return 0;
+            }
+            printf("[PLAYERRES] DEFER tile=%u sprite=%u dropSlot=%u reason=world-take-owner playerRollback=yes mutation=no\n",
+                   (unsigned int)afterTile,
+                   (unsigned int)candidates[i].spriteIndex,
+                   (unsigned int)candidates[i].dropSlot);
+            return 1;
+        }
+        printf("[PLAYERRES] PREPARE tile=%u sprite=%u defTile=%u type=%u subtype=%u parm=%ld action=%s value=%u->%u slot=%s%u worldRemove=%s rollback=armed\n",
                (unsigned int)afterTile,
                (unsigned int)candidates[i].spriteIndex,
                (unsigned int)candidates[i].defTile,
@@ -743,7 +849,9 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
                applied[appliedCount].slot == 0xffU ? "none/" : "index/",
                (unsigned int)(applied[appliedCount].slot == 0xffU
                                   ? 0U
-                                  : applied[appliedCount].slot));
+                                  : applied[appliedCount].slot),
+               candidates[i].dynamicDrop != 0U
+                   ? "dynamic-drop-slot" : "hidden-overlay");
         ++appliedCount;
     }
 
@@ -778,9 +886,9 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
   ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP,
   pickupMessage, 500U)) {
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-        while (appliedCount > 0U) {
-  --appliedCount;
-  setConsumed(applied[appliedCount].spriteIndex, 0);
+        if (!rollbackAppliedWorld(applied, appliedCount)) {
+            resources.view.fatal = 1U;
+            return 0;
         }
         resources.view.playerFNV1a = EspNativeGameplayPlayerState_fingerprint();
         printf("[PLAYERRES] DEFER tile=%u reason=pickup-feedback-not-ready playerRollback=yes worldRemove=yes mutation=no\n",
@@ -847,9 +955,9 @@ static int processCommittedMove(struct DoomRPG_s* doomRpgBase,
             ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_PICKUP);
     }
     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
-    while (appliedCount > 0U) {
-        --appliedCount;
-        setConsumed(applied[appliedCount].spriteIndex, 0);
+    if (!rollbackAppliedWorld(applied, appliedCount)) {
+        resources.view.fatal = 1U;
+        return 0;
     }
     resources.view.playerFNV1a = EspNativeGameplayPlayerState_fingerprint();
     printf("[PLAYERRES] ROLLBACK tile=%u player=yes worldRemove=yes playerFNV=%08x exact=%s\n",
