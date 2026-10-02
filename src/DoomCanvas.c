@@ -145,6 +145,9 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg) // 0
 
 void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
 {
+#ifdef DOOMRPG_ESP32
+	Esp32StoryFit_release(doomCanvas);
+#endif
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLargerFont);
 	DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLegals);
