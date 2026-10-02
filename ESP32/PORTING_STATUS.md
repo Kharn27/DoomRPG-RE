@@ -7,15 +7,61 @@ Authoritative recovery/status file for the classic ESP32-2432S028R port. Reposit
 ```text
 current main = afb7c7e8034ecb1084c0ed066bd1d5a03aa18ed1
 branch = agent/esp32-native-menu-state-root
-hardware-tested code boundary = 7a14a0c8c092f7a24195251e669f020982206755
-CI = esp32-cyd #1458 SUCCESS
+hardware-tested code boundary = d67caf8fe889f39802ca8a4a8499ecac53fb9e3d
+CI = esp32-cyd #1466 SUCCESS
 static RAM = 45176 B
 linked Flash = 770193 B
-artifact id = 11224131637
-artifact digest = sha256:77ad414bf3e5f0487444260776c527cc239fbaaf1a99f4af4f583c2deb4466bb
+artifact id = 11223917653
+artifact digest = sha256:ecd9433708f4f6c3b7dbeb25770faa0f4b87cdd2b7c8733b84c21fe6ddb44021
 hardware = targeted story teardown probe PASS + normal Start Game intro -> Entrance -> ENGINESESSION READY PASS
 status = DoomCanvas_free now unconditionally releases native story hand; real CYD proves owner cleared and heap8 exact after teardown; MenuSystem_t remains 496 B
 ```
+
+## Native menu state header extracted — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`d67caf8fe889f39802ca8a4a8499ecac53fb9e3d`.
+
+The permanent ESP32 menu state definition now lives in
+`ESP32/src/esp_native_menu_state.h`.
+`src/MenuSystem.h` no longer owns the native struct layout; on ESP32 it is only
+a compatibility facade that imports the native header and aliases the legacy
+name.
+
+The struct remains layout-identical:
+
+```text
+[MENUSTORAGE] INIT bytes=496 items=8 owner=esp-native compatibilityLayout=EspNativeMenuState_t
+[CORE] MenuSystem used=512
+```
+
+Real-CYD validation covered:
+
+```text
+boot
+OPTIONS -> Back
+HELP page up/down -> Back
+MAIN FNV=522dc605
+Start Game
+INTRO1 FNV=ade0195d deltaHeap=0
+intro disposal recovered=33944
+Entrance load
+ENGINESESSION READY
+shapeData=NULL
+mediaTexels=NULL
+```
+
+Normal `esp32-cyd` CI #1466 is SUCCESS:
+
+```text
+static RAM   = 45176 B
+linked Flash = 770193 B
+artifact id  = 11223917653
+digest       = sha256:ecd9433708f4f6c3b7dbeb25770faa0f4b87cdd2b7c8733b84c21fe6ddb44021
+```
+
+This proves the native type can live independently of the legacy header before
+native modules drop their own `MenuSystem.h` includes.
 
 ## Native menu runtime APIs typed directly — REAL-CYD PASS (2026-10-02)
 
