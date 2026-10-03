@@ -1,5 +1,51 @@
 # Doom RPG ESP32 CYD porting status
 
+## Native extinguisher turn parity — REAL-CYD PASS (2026-10-03)
+
+Hardware-tested code boundary:
+`a36edddd5b74b1737991f8fcfecb0ac43da727b8`.
+
+Branch:
+`agent/esp32-player-action-turn-parity`.
+
+Legacy `Player_fireWeapon()` routes a successful player-owned utility attack
+through `ST_COMBAT`; when that player combat finishes,
+`DoomCanvas_combatState()` calls `Game_advanceTurn()` for
+`curAttacker == NULL`. The native extinguisher path previously committed
+`FIRE_CLEARED` with `turnAdvance=deferred`, allowing gameplay to continue
+without explicitly publishing the player turn.
+
+The native fire-clear commit now requests the already-proven
+`PLAYER_ATTACK` monster-turn producer after the world/player transaction is
+prepared. If the transactional world render fails, that pending turn is cancelled
+before the fire removal and PlayerState/ammo rollback are restored. No new turn
+owner, RNG path, heap allocation or legacy entity ownership is introduced.
+
+The scope was deliberately reduced after real-CYD feedback: jammed/destructible
+doors already behaved correctly on hardware, including a monster behind the
+destroyed door taking its turn. That route was therefore left unchanged rather
+than risking a duplicate semantic advance.
+
+Hardware acceptance was functional gameplay acceptance rather than a synthetic
+targeted probe: the user traversed the level and exercised normal combat/gameplay
+on the real CYD and reported the build as tested OK. No claim is made that this
+run specifically captured a fire-clear with an already-active enemy in the
+submitted serial transcript.
+
+Normal `esp32-cyd` CI #1563 is SUCCESS:
+
+```text
+static RAM   = 45496 B
+linked Flash = 784877 B
+artifact id  = 11268746232
+artifact sha256 = a5ba9d656fcd0c468a7c4b489abdc4f6314b900301d41281b45f379fc3d53ed2
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_EXTINGUISHER_TURN_PARITY.md](MILESTONE_ESP32_NATIVE_EXTINGUISHER_TURN_PARITY.md)
+
 ## Native door / monster-turn parity — REAL-CYD PASS (2026-10-03)
 
 Hardware-tested code boundary:
