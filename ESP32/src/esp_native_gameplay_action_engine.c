@@ -2253,6 +2253,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         uint8_t destructibleMutated = 0U;
         uint8_t barrelRemoved = 0U;
         uint8_t barrelTurnRequested = 0U;
+        uint8_t simpleTurnRequested = 0U;
         uint8_t barrelExplosionArmed = 0U;
         uint8_t barrelExplosionFrame = 0U;
         uint8_t barrelChainCount = 0U;
@@ -2875,6 +2876,45 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             crateTurnRequested = 1U;
         }
 
+        /*
+         * Legacy Player_fireWeapon() routes every successful player-owned
+         * attack through ST_COMBAT. DoomCanvas_combatState() calls
+         * Game_advanceTurn() when that combat completes (curAttacker == NULL),
+         * including extinguisher fire clears and jammed-door destruction.
+         * Barrel/crate routes already publish the same semantic turn above.
+         */
+        if (isFire || isJammedDoor) {
+            if (!EspNativeGameplayMonsterTurn_requestPlayerAttack(
+                    pending.sequence)) {
+                int rollbackOk = 1;
+                if (isFire) {
+                    setRemoved(pending.spriteIndex, 0);
+                    if (playerCaptured != 0U &&
+                        !EspNativeGameplayPlayerState_restore(&playerBefore)) {
+                        rollbackOk = 0;
+                    }
+                }
+                else if (destructibleMutated != 0U) {
+                    rollbackOk =
+                        EspNativeGameplayDestructible_rollbackLineDeath(
+                            &actionState.destructibleUndo);
+                    if (randomCaptured != 0U) doomRpg->random = randomBefore;
+                    memset(&actionState.destructibleUndo, 0,
+                           sizeof(actionState.destructibleUndo));
+                }
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                printf("[ACTIONENGINE] FAILED seq=%u route=%s reason=monster-turn-request-busy rollback=%s player=%s rng=%s world=yes\n",
+                       (unsigned int)pending.sequence,
+                       routeName((ActionRoute)pending.route),
+                       rollbackOk ? "yes" : "NO",
+                       isFire ? "yes" : "n/a",
+                       isJammedDoor ? "yes" : "n/a");
+                return rollbackOk ? 1 : 0;
+            }
+            simpleTurnRequested = 1U;
+        }
+
         if (pending.feedback != ACTION_FEEDBACK_NONE) {
             actionState.feedbackPending = 1U;
             actionState.feedbackKind = pending.feedback;
@@ -2887,6 +2927,11 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             int rollbackOk = 1;
             EspNativeGameplayWeapon_cancelAttack();
             actionState.feedbackPending = 0U;
+            if (simpleTurnRequested != 0U &&
+                !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
+                    pending.sequence)) {
+                rollbackOk = 0;
+            }
             actionState.feedbackKind = ACTION_FEEDBACK_NONE;
             if (isFire) {
                 setRemoved(pending.spriteIndex, 0);
@@ -3512,7 +3557,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         }
 
         if (isFire) {
-            printf("[ACTIONENGINE] FIRE-COMMIT seq=%u sprite=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x xp=2-deferred sound=5045-deferred turnAdvance=deferred rollback=closed\n",
+            printf("[ACTIONENGINE] FIRE-COMMIT seq=%u sprite=%u ammoType=%u ammo=%u->%u playerFNV=%08x->%08x xp=2-deferred sound=5045-deferred turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.spriteIndex,
                    (unsigned int)ACTION_EXTINGUISHER_AMMO_TYPE,
@@ -3524,7 +3569,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         if (isJammedDoor) {
             ++actionState.jammedDoorClears;
             ++actionState.deferredXp;
-            printf("[DESTRUCTIBLE] COMMIT seq=%u line=%u event=%u open=0->1 message=\"Door cleared!\" xp=1-deferred xpDeferredTotal=%u sound=5044-deferred turnAdvance=deferred rollback=closed\n",
+            printf("[DESTRUCTIBLE] COMMIT seq=%u line=%u event=%u open=0->1 message=\"Door cleared!\" xp=1-deferred xpDeferredTotal=%u sound=5044-deferred turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.lineIndex,
                    (unsigned int)actionState.destructibleUndo.eventIndex,
