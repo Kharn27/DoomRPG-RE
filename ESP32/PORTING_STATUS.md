@@ -1,5 +1,85 @@
 # Doom RPG ESP32 CYD porting status
 
+## Native door / monster-turn parity — REAL-CYD PASS (2026-10-03)
+
+Hardware-tested code boundary:
+`69ee31a17f2e4900c825cc73ba1fee9400fc8ac5`.
+
+Branch:
+`agent/esp32-monster-drop-checkpoint-v11`.
+
+This closes the remaining native door-turn parity gap against the legacy
+`DoomCanvas SELECT -> Game_executeTile -> Game_advanceTurn` behavior.
+
+Three bounded corrections now compose without reviving legacy world ownership:
+
+- a monster standing on a door line that closes may leave its source tile through
+  the recovered legacy type-0 source-axis exception; destination collision still
+  sees the closed line;
+- MOVE-triggered door closure commits `EspMapLineState=closed` immediately but
+  holds the regular-door visual open through the monster turn, then animates the
+  close after the ordered sequence completes;
+- a successful ordinary SELECT door event explicitly schedules
+  `SELECT_DOOR`, so monsters revealed by the opening render receive the same
+  semantic turn as legacy. CHANGEMAP transition doors remain transition-owned.
+
+The real CYD proves an ordinary opened door with no active monsters is harmless:
+
+```text
+[ACTION] DOOR-BATCH event=65 count=1 status=OK ... open=0->1 ...
+[MONSTERTURN] DOOR-REQUEST seq=83 ... legacyAdvance=yes ...
+[RESIDENTGAMEPLAY] SELECT ... turnAdvance=SELECT_DOOR-requested
+[MONSTERTURN] ORDERED-DISPATCH reason=SELECT_DOOR turnToken=25 activeCount=0 ...
+```
+
+It then opens a two-line secret door whose render activates two monsters. The
+same SELECT immediately owns their ordered turn: sprite 220 attacks, the
+sequencer waits for retaliation to resolve, then sprite 264 moves:
+
+```text
+[MONSTERACT] ACTIVE sprite=220 ... activeCount=1 activationOrder=0 ...
+[MONSTERACT] ACTIVE sprite=264 ... activeCount=2 activationOrder=1 ...
+[MONSTERTURN] DOOR-REQUEST seq=92 ...
+[MONSTERTURN] ORDERED-DISPATCH reason=SELECT_DOOR turnToken=31 activeCount=2 ...
+[MONSTERTURN] MEMBER-ATTACK-PROBE reason=SELECT_DOOR sprite=220 ...
+[MONSTERACTIVESEQ] PAUSE ... probe=1 reason=attack-in-flight ...
+[MONSTERRETAL] COMMIT probe=1 ... playerHP=30->27 armor=8->6 ...
+[MONSTERACTIVESEQ] RESUME ... nextOrdinal=2/2 ...
+[MONSTERMOVELIVE] COMMIT ... sprite=264 tile=694->693 ...
+[MONSTERACTIVESEQ] COMPLETE turn=31 reason=5 activeCount=2 delivered=2 ...
+```
+
+The same hardware session also proves the new close-presentation ordering keeps
+gameplay collision closed while visual closure waits for the monster turn:
+
+```text
+[DOORANIM] HOLD line=234 logical=closed visual=open ... collision=closed-now
+[DOORANIM] HELD-FRAME ... logical=closed visual=open ...
+[MONSTERTURN] ORDERED-DISPATCH reason=MOVE turnToken=28 ...
+[DOORANIM] RELEASE deferredClose=1 phase=after-monster-turn logical=closed ...
+[DOORANIM] COMPLETE transitions=1 frames=4 state=stable transaction=committed
+[DOORANIM] POST-MONSTER-COMPLETE ... logical=closed visual=closed
+```
+
+A preceding real-CYD run had already confirmed the recovered source-line escape
+prevents a monster caught by a closing door from remaining permanently trapped.
+The visual hold was then added so that escape/movement occurs before the player
+sees the door close.
+
+Normal `esp32-cyd` CI #1556 is SUCCESS:
+
+```text
+static RAM   = 45496 B
+linked Flash = 784621 B
+artifact id  = 11266949372
+artifact sha256 = 59d5e1ea7848495f6a936e8c03364f545b8129b116be696160d48fe48302c85c
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_DOOR_MONSTER_TURN_PARITY.md](MILESTONE_ESP32_NATIVE_DOOR_MONSTER_TURN_PARITY.md)
+
 ## Native monster-drop checkpoint persistence V11 — REAL-CYD PASS (2026-10-02)
 
 Hardware-tested code boundary:
