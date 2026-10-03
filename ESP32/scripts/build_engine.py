@@ -123,6 +123,16 @@ particle_free_replacement = """\t/* ESP32 native gameplay owns bounded gib effec
 \tdoomrpg->particleSystem = NULL;
 """
 particle_free_count = doom_rpg_source_text.count(particle_free_needle)
+entity_def_free_needle = """\tif (doomrpg->entityDef) {
+\t\tEntityDef_free(doomrpg->entityDef, true);
+\t}
+\tdoomrpg->entityDef = NULL;
+"""
+entity_def_free_replacement = """\t/* ESP32 native resident maps use EspEntityDefTypeCatalog; the inherited
+\t * EntityDefManager_t object is never constructed. */
+\tdoomrpg->entityDef = NULL;
+"""
+entity_def_free_count = doom_rpg_source_text.count(entity_def_free_needle)
 menu_free_needle = "\tif (doomrpg->menuSystem) {\n\t\tMenuSystem_free(doomrpg->menuSystem, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_replacement = "\tif (doomrpg->menuSystem) {\n\t\tEspNativeMenuStorage_free(doomrpg->menuSystem, doomrpg, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_count = doom_rpg_source_text.count(menu_free_needle)
@@ -142,6 +152,11 @@ if particle_free_count != 1:
     raise RuntimeError(
         "Unexpected DoomRPG.c ParticleSystem cleanup shape; "
         "review retired ESP32 particle ownership"
+    )
+if entity_def_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c EntityDef cleanup shape; "
+        "review retired ESP32 EntityDef ownership"
     )
 if menu_free_count != 1:
     raise RuntimeError(
@@ -163,6 +178,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
     particle_free_needle, particle_free_replacement, 1
 )
 doom_rpg_source_text = doom_rpg_source_text.replace(
+    entity_def_free_needle, entity_def_free_replacement, 1
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(
     menu_free_needle, menu_free_replacement, 1
 )
 
@@ -174,6 +192,7 @@ print(
     f"({zip_read_count} ZIP read(s) retired, "
     f"{bmp_call_count} SDL_LoadBMP_RW call(s) redirected, "
     f"{particle_free_count} desktop ParticleSystem cleanup retired, "
+    f"{entity_def_free_count} desktop EntityDef cleanup retired, "
     f"{menu_free_count} desktop MenuSystem cleanup redirected)"
 )
 
@@ -390,6 +409,7 @@ env.BuildSources(
         "-<MenuItem.c>",
         "-<MenuSystem.c>",
         "-<ParticleSystem.c>",
+        "-<EntityDef.c>",
         "-<Z_Zone.c>",
         "-<Z_Zip.c>",
         "-<DoomCanvas.c>",

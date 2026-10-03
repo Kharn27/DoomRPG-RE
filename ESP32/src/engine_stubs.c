@@ -4,7 +4,6 @@
 #include "DoomRPG.h"
 #include "Combat.h"
 #include "DoomCanvas.h"
-#include "EntityDef.h"
 #include "Game.h"
 #include "Hud.h"
 #include "esp_native_menu_state.h"
@@ -135,7 +134,7 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
     metrics->player = sizeof(Player_t);
     metrics->combat = sizeof(Combat_t);
     metrics->supportObjects = sizeof(EspNativeMenuState_t) + sizeof(Hud_t) +
-                              sizeof(Sound_t) + sizeof(EntityDef_t);
+                              sizeof(Sound_t);
     metrics->totalInitialObjects = metrics->doomRpg + metrics->doomCanvas +
         metrics->render + metrics->game + metrics->player + metrics->combat +
         metrics->supportObjects;
@@ -165,7 +164,7 @@ uint32_t DoomRPG_getLargest8BitBlock(void) {
 const char* DoomRPG_coreStageName(uint8_t stage) {
     static const char* const names[DOOMRPG_CORE_STAGE_COUNT] = {
         "DoomRPG", "DoomCanvas", "Render", "MenuSystem", "Hud", "Sound",
-        "EntityDef", "Game", "Player", "Combat"
+        "Game", "Player", "Combat"
     };
     return stage < DOOMRPG_CORE_STAGE_COUNT ? names[stage] : "unknown";
 }
@@ -293,8 +292,6 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
                      Hud_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_SOUND, sound,
                      Sound_init(NULL, doomRpg));
-    INIT_CORE_OBJECT(DOOMRPG_CORE_ENTITY_DEF, entityDef,
-                     EntityDef_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_GAME, game,
                      Game_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_PLAYER, player,
@@ -303,6 +300,28 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
                      Combat_init(NULL, doomRpg));
 
 #undef INIT_CORE_OBJECT
+
+    /*
+     * Native map/gameplay resolves entity definition metadata through the
+     * compact EspEntityDefTypeCatalog built from /entities.db when a resident
+     * map is loaded. The inherited EntityDefManager_t pointer is therefore a
+     * retired desktop owner and must remain NULL.
+     */
+    if (doomRpg->entityDef != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.bytesUsed =
+            coreInitReport.heapBefore >= coreInitReport.heapAfter
+                ? coreInitReport.heapBefore - coreInitReport.heapAfter
+                : 0;
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED retired EntityDef pointer=%p expected=NULL\n",
+               (void*)doomRpg->entityDef);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] EntityDef retired object=NULL owner=native-entitydef-catalog\n");
 
     /*
      * Native gameplay owns its bounded gib overlay in EspNativeGameplayGibFx.
@@ -482,7 +501,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
 
     layoutReport.ready = 1;
     printf("[LAYOUT] READY real engine layout fits inside 160x120\n");
-    printf("[LAYOUT] EntityDef_startup / Render_startup still NOT executed\n");
+    printf("[LAYOUT] Native EntityDef catalog deferred to resident-map load; Render_startup still NOT executed\n");
 
     if (report != NULL) *report = layoutReport;
     return 1;
