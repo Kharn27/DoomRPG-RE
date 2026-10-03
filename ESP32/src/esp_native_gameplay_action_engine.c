@@ -2883,33 +2883,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
          * including extinguisher fire clears and jammed-door destruction.
          * Barrel/crate routes already publish the same semantic turn above.
          */
-        if (isFire || isJammedDoor) {
+        if (isFire) {
             if (!EspNativeGameplayMonsterTurn_requestPlayerAttack(
                     pending.sequence)) {
                 int rollbackOk = 1;
-                if (isFire) {
-                    setRemoved(pending.spriteIndex, 0);
-                    if (playerCaptured != 0U &&
-                        !EspNativeGameplayPlayerState_restore(&playerBefore)) {
-                        rollbackOk = 0;
-                    }
-                }
-                else if (destructibleMutated != 0U) {
-                    rollbackOk =
-                        EspNativeGameplayDestructible_rollbackLineDeath(
-                            &actionState.destructibleUndo);
-                    if (randomCaptured != 0U) doomRpg->random = randomBefore;
-                    memset(&actionState.destructibleUndo, 0,
-                           sizeof(actionState.destructibleUndo));
+                setRemoved(pending.spriteIndex, 0);
+                if (playerCaptured != 0U &&
+                    !EspNativeGameplayPlayerState_restore(&playerBefore)) {
+                    rollbackOk = 0;
                 }
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
-                printf("[ACTIONENGINE] FAILED seq=%u route=%s reason=monster-turn-request-busy rollback=%s player=%s rng=%s world=yes\n",
+                printf("[ACTIONENGINE] FAILED seq=%u route=FIRE_CLEARED reason=monster-turn-request-busy rollback=%s player=yes world=yes\n",
                        (unsigned int)pending.sequence,
-                       routeName((ActionRoute)pending.route),
-                       rollbackOk ? "yes" : "NO",
-                       isFire ? "yes" : "n/a",
-                       isJammedDoor ? "yes" : "n/a");
+                       rollbackOk ? "yes" : "NO");
                 return rollbackOk ? 1 : 0;
             }
             simpleTurnRequested = 1U;
@@ -3569,7 +3556,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         if (isJammedDoor) {
             ++actionState.jammedDoorClears;
             ++actionState.deferredXp;
-            printf("[DESTRUCTIBLE] COMMIT seq=%u line=%u event=%u open=0->1 message=\"Door cleared!\" xp=1-deferred xpDeferredTotal=%u sound=5044-deferred turnAdvance=PLAYER_ATTACK-requested rollback=closed\n",
+            printf("[DESTRUCTIBLE] COMMIT seq=%u line=%u event=%u open=0->1 message=\"Door cleared!\" xp=1-deferred xpDeferredTotal=%u sound=5044-deferred turnAdvance=deferred rollback=closed\n",
                    (unsigned int)pending.sequence,
                    (unsigned int)pending.lineIndex,
                    (unsigned int)actionState.destructibleUndo.eventIndex,
