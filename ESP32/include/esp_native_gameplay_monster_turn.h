@@ -14,7 +14,8 @@ typedef enum EspNativeGameplayMonsterTurnReason_e {
     ESP_NATIVE_GAMEPLAY_MONSTER_TURN_MOVE = 1,
     ESP_NATIVE_GAMEPLAY_MONSTER_TURN_ROTATE = 2,
     ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PLAYER_ATTACK = 3,
-    ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN = 4
+    ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN = 4,
+    ESP_NATIVE_GAMEPLAY_MONSTER_TURN_SELECT_DOOR = 5
 } EspNativeGameplayMonsterTurnReason;
 
 typedef enum EspNativeGameplayMonsterMemberProbeStatus_e {
@@ -50,6 +51,11 @@ void EspNativeGameplayMonsterTurn_reset(void);
 int EspNativeGameplayMonsterTurn_requestPlayerAttack(uint32_t inputSequence);
 int EspNativeGameplayMonsterTurn_cancelPlayerAttack(uint32_t inputSequence);
 int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence);
+/* Successful SELECT door events call legacy Game_advanceTurn() unless the
+ * script explicitly paused progression (dialog/password). Ordinary native door
+ * commits use this explicit producer after their shared render succeeds, so a
+ * newly revealed monster can participate in the same semantic turn. */
+int EspNativeGameplayMonsterTurn_requestSelectDoor(uint32_t inputSequence);
 int EspNativeGameplayMonsterTurn_requestBlockedAutomapMove(
     uint32_t inputSequence);
 
