@@ -1,5 +1,192 @@
 # Doom RPG ESP32 CYD porting status
 
+## Native door / monster-turn parity — REAL-CYD PASS (2026-10-03)
+
+Hardware-tested code boundary:
+`69ee31a17f2e4900c825cc73ba1fee9400fc8ac5`.
+
+Branch:
+`agent/esp32-monster-drop-checkpoint-v11`.
+
+This closes the remaining native door-turn parity gap against the legacy
+`DoomCanvas SELECT -> Game_executeTile -> Game_advanceTurn` behavior.
+
+Three bounded corrections now compose without reviving legacy world ownership:
+
+- a monster standing on a door line that closes may leave its source tile through
+  the recovered legacy type-0 source-axis exception; destination collision still
+  sees the closed line;
+- MOVE-triggered door closure commits `EspMapLineState=closed` immediately but
+  holds the regular-door visual open through the monster turn, then animates the
+  close after the ordered sequence completes;
+- a successful ordinary SELECT door event explicitly schedules
+  `SELECT_DOOR`, so monsters revealed by the opening render receive the same
+  semantic turn as legacy. CHANGEMAP transition doors remain transition-owned.
+
+The real CYD proves an ordinary opened door with no active monsters is harmless:
+
+```text
+[ACTION] DOOR-BATCH event=65 count=1 status=OK ... open=0->1 ...
+[MONSTERTURN] DOOR-REQUEST seq=83 ... legacyAdvance=yes ...
+[RESIDENTGAMEPLAY] SELECT ... turnAdvance=SELECT_DOOR-requested
+[MONSTERTURN] ORDERED-DISPATCH reason=SELECT_DOOR turnToken=25 activeCount=0 ...
+```
+
+It then opens a two-line secret door whose render activates two monsters. The
+same SELECT immediately owns their ordered turn: sprite 220 attacks, the
+sequencer waits for retaliation to resolve, then sprite 264 moves:
+
+```text
+[MONSTERACT] ACTIVE sprite=220 ... activeCount=1 activationOrder=0 ...
+[MONSTERACT] ACTIVE sprite=264 ... activeCount=2 activationOrder=1 ...
+[MONSTERTURN] DOOR-REQUEST seq=92 ...
+[MONSTERTURN] ORDERED-DISPATCH reason=SELECT_DOOR turnToken=31 activeCount=2 ...
+[MONSTERTURN] MEMBER-ATTACK-PROBE reason=SELECT_DOOR sprite=220 ...
+[MONSTERACTIVESEQ] PAUSE ... probe=1 reason=attack-in-flight ...
+[MONSTERRETAL] COMMIT probe=1 ... playerHP=30->27 armor=8->6 ...
+[MONSTERACTIVESEQ] RESUME ... nextOrdinal=2/2 ...
+[MONSTERMOVELIVE] COMMIT ... sprite=264 tile=694->693 ...
+[MONSTERACTIVESEQ] COMPLETE turn=31 reason=5 activeCount=2 delivered=2 ...
+```
+
+The same hardware session also proves the new close-presentation ordering keeps
+gameplay collision closed while visual closure waits for the monster turn:
+
+```text
+[DOORANIM] HOLD line=234 logical=closed visual=open ... collision=closed-now
+[DOORANIM] HELD-FRAME ... logical=closed visual=open ...
+[MONSTERTURN] ORDERED-DISPATCH reason=MOVE turnToken=28 ...
+[DOORANIM] RELEASE deferredClose=1 phase=after-monster-turn logical=closed ...
+[DOORANIM] COMPLETE transitions=1 frames=4 state=stable transaction=committed
+[DOORANIM] POST-MONSTER-COMPLETE ... logical=closed visual=closed
+```
+
+A preceding real-CYD run had already confirmed the recovered source-line escape
+prevents a monster caught by a closing door from remaining permanently trapped.
+The visual hold was then added so that escape/movement occurs before the player
+sees the door close.
+
+Normal `esp32-cyd` CI #1556 is SUCCESS:
+
+```text
+static RAM   = 45496 B
+linked Flash = 784621 B
+artifact id  = 11266949372
+artifact sha256 = 59d5e1ea7848495f6a936e8c03364f545b8129b116be696160d48fe48302c85c
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_DOOR_MONSTER_TURN_PARITY.md](MILESTONE_ESP32_NATIVE_DOOR_MONSTER_TURN_PARITY.md)
+
+## Native monster-drop checkpoint persistence V11 — REAL-CYD PASS (2026-10-02)
+
+Hardware-tested code boundary:
+`41665b6676f31372ef67a41257fd8baabc74d8ed`.
+
+Branch:
+`agent/esp32-monster-drop-checkpoint-v11`.
+
+The compact 8-slot `EspNativeGameplayMonsterDrop` owner is now part of the
+native checkpoint. Legacy Doom RPG is the behavioral reference: its World save
+serialized the eight rotating drop entities plus `dropIndex`, and LOAD restored
+that already-materialized state directly rather than calling
+`Entity_spawnDropItem()` or consuming RNG again.
+
+V11 is an append-only checkpoint extension:
+
+```text
+V10 bytes                    = 5460
+monster-drop snapshot        = 144
+V11 bytes                    = 5604
+rotating slots               = 8
+record size                  = 16 B
+CRC coverage                 = full V11 record
+legacy V1..V10 read support  = retained
+```
+
+The snapshot keeps the exact current pool rather than its history: eight compact
+records plus arena identity, `spawnSerial`, `nextSlot` and a semantic FNV.
+`visibleCount` is derived on restore. Records carry only native identity,
+tile/world position and active/taken state; no `Entity_t`, mutable BSP sprite,
+map-wide decompression or ZIP runtime state is introduced.
+
+Session replacement now explicitly resets the drop owner before checkpoint
+restore. This matters for LOAD on the same map, where the rebuilt immutable arena
+has the same FNV and could otherwise retain post-SAVE live state accidentally.
+V1..V10 checkpoints therefore restore an honestly empty dynamic-drop pool.
+
+The real CYD first proves backward compatibility by loading the pre-existing V10
+checkpoint:
+
+```text
+[NATIVESAVE] READABLE-SPATIAL ... bytes=5460 ... result=valid
+[NATIVESAVE] LEGACY-MONSTER-DROP-GAP version=10 dynamicDrops=fresh-empty ... rng=untouched
+[NATIVESAVE] LOAD ... version=10 bytes=5460 ... monsterDrops=legacy-empty/0/00000000/serial0/next0 ...
+```
+
+A lethal zombie attack then materialized Shell Clips in slot 0. The live drop was
+left on the floor and saved:
+
+```text
+[MONSTERDROP] COMMIT roll=b61a3cc5 slot=0 ... type=16 subtype=2 def=86 tile=178 pos=1184,352 visible=1 next=1 ...
+[MONSTERDROP] SAVE version=11 arena=c3882516 serial=1 next=1 visible=1 stateFNV=16550b12 snapshotBytes=144 rng=untouched
+[NATIVESAVE] SAVE ... version=11 bytes=5604 ... recordCrc=3a147996 ...
+```
+
+The player then picked that live drop up after the SAVE. A same-map LOAD of the
+saved checkpoint restored the earlier pool exactly:
+
+```text
+[NATIVESAVE] READABLE-SPATIAL ... bytes=5604 ... result=valid
+[MONSTERDROP] RESTORE version=11 arena=c3882516 serial=1 next=1 visible=1 stateFNV=16550b12 rng=untouched materialize=replay-no
+[NATIVESAVE] LOAD ... version=11 bytes=5604 ... monsterDrops=restored/1/16550b12/serial1/next1 ... monster-drops-restored-exact
+```
+
+The user confirmed the restored presentation is visually correct. Entering the
+saved drop tile then consumed the restored dynamic drop through the normal
+transactional pickup path, together with the co-located static ammo pickup:
+
+```text
+[MONSTERDROP] RENDER-CULL slot=0 tile=178 reason=player-tile pickup=pending-after-commit
+[PLAYERRES] PREPARE ... defTile=86 type=16 subtype=2 ... action=ammo value=25->35 ... worldRemove=dynamic-drop-slot rollback=armed
+[PLAYERRES] PREPARE ... defTile=83 type=6 subtype=1 ... action=ammo value=6->10 ... worldRemove=hidden-overlay rollback=armed
+[PLAYERRES] COMMIT tile=178 candidates=2 consumed=2 ...
+```
+
+This proves the live materialized state survives SAVE/LOAD without RNG replay or
+legacy entity reconstruction, and that same-map session replacement does not leak
+the post-SAVE consumed state into the restored checkpoint.
+
+A second real-CYD run independently closes the opposite checkpoint state:
+the drop was already consumed before SAVE. The saved PlayerResources overlay
+contained 36 consumed resources, and V11 restored the same rotating slot as
+taken:
+
+```text
+[PLAYERRES] RESTORE ... consumed=36 bytes=43 ...
+[MONSTERDROP] RESTORE version=11 arena=c3882516 serial=1 next=1 visible=0 stateFNV=8d1747e5 rng=untouched materialize=replay-no
+[NATIVESAVE] LOAD ... version=11 bytes=5604 ... monsterDrops=restored/0/8d1747e5/serial1/next1 ... monster-drops-restored-exact
+```
+
+The drop did not reappear visually after LOAD. Hardware therefore proves both
+V11 states for the same slot: an untaken saved drop restores visible and
+pickable; a taken saved drop restores invisible and stays consumed.
+
+Normal `esp32-cyd` CI #1540 is SUCCESS:
+
+```text
+static RAM   = 45392 B
+linked Flash = 781433 B
+artifact id  = 11248194036
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md)
+
 ## Native LEVEL UP screen + checkpoint monster projection — REAL-CYD PASS (2026-10-02)
 
 Hardware-tested code boundary:

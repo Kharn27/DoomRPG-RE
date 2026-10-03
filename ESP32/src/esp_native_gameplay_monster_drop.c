@@ -17,6 +17,57 @@ static MonsterDropOwner drops;
 
 _Static_assert(sizeof(EspNativeGameplayMonsterDropRecord) == 16U,
                "monster drop record must stay compact");
+_Static_assert(sizeof(EspNativeGameplayMonsterDropSnapshot) == 144U,
+               "monster drop checkpoint must remain exactly 144 bytes");
+
+static uint32_t fnvByte(uint32_t hash, uint8_t value) {
+    hash ^= value;
+    return hash * 16777619U;
+}
+
+static uint32_t fnv16(uint32_t hash, uint16_t value) {
+    hash = fnvByte(hash, (uint8_t)(value & 0xffU));
+    return fnvByte(hash, (uint8_t)((value >> 8) & 0xffU));
+}
+
+static uint32_t fnv32(uint32_t hash, uint32_t value) {
+    hash = fnv16(hash, (uint16_t)(value & 0xffffU));
+    return fnv16(hash, (uint16_t)((value >> 16) & 0xffffU));
+}
+
+static uint32_t snapshotFNV(
+    const EspNativeGameplayMonsterDropSnapshot* snapshot) {
+    uint32_t hash = 2166136261U;
+    uint8_t i;
+
+    if (snapshot == NULL) return 0U;
+    hash = fnv32(hash, snapshot->sourceArenaFNV1a);
+    hash = fnv32(hash, snapshot->spawnSerial);
+    hash = fnvByte(hash, snapshot->nextSlot);
+    for (i = 0U; i < ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS; ++i) {
+        const EspNativeGameplayMonsterDropRecord* record =
+            &snapshot->records[i];
+        hash = fnv32(hash, record->spawnOrder);
+        hash = fnv16(hash, record->tileIndex);
+        hash = fnv16(hash, record->defTile);
+        hash = fnv16(hash, record->worldX);
+        hash = fnv16(hash, record->worldY);
+        hash = fnvByte(hash, record->type);
+        hash = fnvByte(hash, record->subtype);
+        hash = fnvByte(hash, record->active);
+        hash = fnvByte(hash, record->taken);
+    }
+    return hash;
+}
+
+static int recordZero(const EspNativeGameplayMonsterDropRecord* record) {
+    static const EspNativeGameplayMonsterDropRecord zero = {0};
+    return record != NULL && memcmp(record, &zero, sizeof(zero)) == 0;
+}
+
+static int worldCoordinate(uint16_t value) {
+    return value >= 32U && value <= 2016U && (value & 63U) == 32U;
+}
 
 static int resolveDrop(uint32_t rnd,
                        uint8_t monsterSubtype,
@@ -261,6 +312,108 @@ int EspNativeGameplayMonsterDrop_setTaken(uint8_t slotIndex, int taken) {
     }
     record->taken = nextTaken;
     return 1;
+}
+
+int EspNativeGameplayMonsterDrop_snapshotShapeValid(
+    const EspNativeGameplayMonsterDropSnapshot* snapshot,
+    uint32_t sourceArenaFNV1a) {
+    uint8_t slot;
+
+    if (snapshot == NULL || sourceArenaFNV1a == 0U ||
+        snapshot->sourceArenaFNV1a != sourceArenaFNV1a ||
+        snapshot->nextSlot >= ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS ||
+        snapshot->nextSlot !=
+            (uint8_t)(snapshot->spawnSerial %
+                      ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS) ||
+        snapshot->reserved[0] != 0U || snapshot->reserved[1] != 0U ||
+        snapshot->reserved[2] != 0U ||
+        snapshot->stateFNV1a != snapshotFNV(snapshot)) {
+        return 0;
+    }
+
+    for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS; ++slot) {
+        const EspNativeGameplayMonsterDropRecord* record =
+            &snapshot->records[slot];
+        const uint32_t firstOrder = (uint32_t)slot + 1U;
+        uint32_t expectedOrder;
+
+        if (snapshot->spawnSerial < firstOrder) {
+            if (!recordZero(record)) return 0;
+            continue;
+        }
+
+        expectedOrder =
+            snapshot->spawnSerial -
+            ((snapshot->spawnSerial - firstOrder) %
+             ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS);
+        if (record->active != 1U || record->taken > 1U ||
+            record->spawnOrder != expectedOrder ||
+            record->tileIndex >= 1024U ||
+            record->defTile >= ESP_ENTITY_DEF_TYPE_CATALOG_LIMIT ||
+            !worldCoordinate(record->worldX) ||
+            !worldCoordinate(record->worldY) ||
+            record->tileIndex !=
+                (uint16_t)(((uint32_t)(record->worldY >> 6U) * 32U) +
+                           (uint32_t)(record->worldX >> 6U))) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int EspNativeGameplayMonsterDrop_snapshot(
+    EspNativeGameplayMonsterDropSnapshot* outSnapshot) {
+    if (outSnapshot == NULL || !EspNativeGameplayMonsterDrop_ensure()) return 0;
+
+    memset(outSnapshot, 0, sizeof(*outSnapshot));
+    memcpy(outSnapshot->records, drops.records, sizeof(drops.records));
+    outSnapshot->sourceArenaFNV1a = drops.view.sourceArenaFNV1a;
+    outSnapshot->spawnSerial = drops.view.spawnSerial;
+    outSnapshot->nextSlot = drops.view.nextSlot;
+    outSnapshot->stateFNV1a = snapshotFNV(outSnapshot);
+    return EspNativeGameplayMonsterDrop_snapshotShapeValid(
+        outSnapshot, drops.view.sourceArenaFNV1a);
+}
+
+int EspNativeGameplayMonsterDrop_restore(
+    const EspNativeGameplayMonsterDropSnapshot* snapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    uint8_t slot;
+    uint8_t visibleCount = 0U;
+
+    if (runtime == NULL || runtime->arenaFNV1a == 0U ||
+        !EspNativeGameplayMonsterDrop_snapshotShapeValid(
+            snapshot, runtime->arenaFNV1a)) {
+        return 0;
+    }
+
+    for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SLOTS; ++slot) {
+        const EspNativeGameplayMonsterDropRecord* record =
+            &snapshot->records[slot];
+        uint16_t expectedDefTile = 0U;
+        if (record->active == 0U) continue;
+        if (!EspEntityDefTypeCatalog_findTileIndex(
+                record->type, record->subtype, &expectedDefTile) ||
+            expectedDefTile != record->defTile) {
+            return 0;
+        }
+        if (record->taken == 0U) ++visibleCount;
+    }
+
+    EspNativeGameplayMonsterDrop_reset();
+    memcpy(drops.records, snapshot->records, sizeof(drops.records));
+    drops.view.sourceArenaFNV1a = snapshot->sourceArenaFNV1a;
+    drops.view.spawnSerial = snapshot->spawnSerial;
+    drops.view.nextSlot = snapshot->nextSlot;
+    drops.view.visibleCount = visibleCount;
+    drops.view.active = 1U;
+    return EspNativeGameplayMonsterDrop_fingerprint() == snapshot->stateFNV1a;
+}
+
+uint32_t EspNativeGameplayMonsterDrop_fingerprint(void) {
+    EspNativeGameplayMonsterDropSnapshot snapshot;
+    if (!EspNativeGameplayMonsterDrop_snapshot(&snapshot)) return 0U;
+    return snapshot.stateFNV1a;
 }
 
 const char* EspNativeGameplayMonsterDrop_outcomeName(uint8_t outcome) {

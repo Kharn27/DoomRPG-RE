@@ -52,6 +52,22 @@ EspNativeDoorAnimationStatus EspNativeDoorAnimator_begin(
     uint8_t openAfter);
 int EspNativeDoorAnimator_hasPendingFrames(void);
 
+/*
+ * A MOVE-triggered close may commit collision immediately while keeping the
+ * regular door visually at its openBefore position through the monster turn.
+ * This is presentation-only: EspMapLineState remains the gameplay authority.
+ *
+ * The hold is accepted only for an active 1->0 regular-door slot before any
+ * animation frame has been prepared. If every pending slot is held this way,
+ * the dynamic renderer may present their current (fully-open) displacement
+ * without advancing the four-frame animation. The active-monster sequencer
+ * releases the hold only after the turn, including its final attack, is done.
+ */
+int EspNativeDoorAnimator_deferCloseUntilMonsterTurn(uint16_t lineIndex);
+int EspNativeDoorAnimator_isHoldingDeferredClose(void);
+uint8_t EspNativeDoorAnimator_deferredCloseCount(void);
+uint8_t EspNativeDoorAnimator_releaseDeferredCloses(void);
+
 /* Cancel a stale visual lease if its already-committed line state was rolled
  * back by an outer transaction before rendering. Returns 1 when the current
  * batch is still coherent or no batch exists, 0 when a stale batch was reset. */

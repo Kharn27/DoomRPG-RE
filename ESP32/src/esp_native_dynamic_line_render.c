@@ -313,6 +313,27 @@ int __wrap_EspNativeGameplayFrame_renderTurn(
             printf("[DOORANIM] LEASE canceled-before-render; presenting stable state\n");
         }
 
+        /*
+         * MOVE-triggered closes deliberately split gameplay from presentation:
+         * EspMapLineState is already closed for monster pathing, while the
+         * animator keeps its openBefore displacement visible until the complete
+         * monster turn has resolved. Render that held pose once for this caller
+         * without consuming any animation frame.
+         */
+        if (EspNativeDoorAnimator_hasPendingFrames() &&
+            EspNativeDoorAnimator_isHoldingDeferredClose()) {
+            const uint8_t held =
+                EspNativeDoorAnimator_deferredCloseCount();
+            ok = renderDynamicFrame(render, angle, outStats, NULL);
+            EspNativeGameplayMoveEvents_onFrameResult(ok);
+            printf("[DOORANIM] HELD-FRAME lines=%u logical=closed visual=open angle=%u frame=%08x render=%s release=after-monster-turn\n",
+                   (unsigned int)held,
+                   (unsigned int)angle,
+                   outStats != NULL ? (unsigned int)outStats->frameAfterFNV : 0U,
+                   ok ? "ok" : "failed");
+            return ok;
+        }
+
         while (EspNativeDoorAnimator_hasPendingFrames()) {
             EspNativeDoorAnimationFrame animationFrame;
             memset(&animationFrame, 0, sizeof(animationFrame));

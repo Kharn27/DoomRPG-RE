@@ -127,6 +127,77 @@ int EspNativeDoorAnimator_hasPendingFrames(void) {
     return animator.view.activeLines != 0U;
 }
 
+uint8_t EspNativeDoorAnimator_deferredCloseCount(void) {
+    uint32_t i;
+    uint8_t count = 0U;
+    for (i = 0U; i < ESP_NATIVE_DOOR_ANIMATION_MAX_LINES; ++i) {
+        const EspNativeDoorAnimationSlot* slot = &animator.slots[i];
+        if (slot->active != 0U && slot->targetOpen == 0U &&
+            slot->reserved[0] != 0U) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+int EspNativeDoorAnimator_isHoldingDeferredClose(void) {
+    uint32_t i;
+    uint8_t active = 0U;
+
+    if (!EspNativeDoorAnimator_hasPendingFrames()) return 0;
+    for (i = 0U; i < ESP_NATIVE_DOOR_ANIMATION_MAX_LINES; ++i) {
+        const EspNativeDoorAnimationSlot* slot = &animator.slots[i];
+        if (slot->active == 0U) continue;
+        ++active;
+        if (slot->targetOpen != 0U || slot->openBefore != 1U ||
+            slot->reserved[0] == 0U) {
+            return 0;
+        }
+    }
+    return active == animator.view.activeLines;
+}
+
+int EspNativeDoorAnimator_deferCloseUntilMonsterTurn(uint16_t lineIndex) {
+    int index = slotForLine(lineIndex);
+    EspNativeDoorAnimationSlot* slot;
+
+    if (index < 0 || animator.view.framePrepared != 0U ||
+        animator.view.completedFrames != 0U) {
+        return 0;
+    }
+    slot = &animator.slots[index];
+    if (slot->active == 0U || slot->openBefore != 1U ||
+        slot->targetOpen != 0U ||
+        slot->position != ESP_NATIVE_DOOR_ANIMATION_MOVING_FRAMES) {
+        return 0;
+    }
+    slot->reserved[0] = 1U;
+    printf("[DOORANIM] HOLD line=%u logical=closed visual=open position=%u release=after-monster-turn collision=closed-now\n",
+           (unsigned int)lineIndex,
+           (unsigned int)slot->position);
+    return 1;
+}
+
+uint8_t EspNativeDoorAnimator_releaseDeferredCloses(void) {
+    uint32_t i;
+    uint8_t released = 0U;
+
+    for (i = 0U; i < ESP_NATIVE_DOOR_ANIMATION_MAX_LINES; ++i) {
+        EspNativeDoorAnimationSlot* slot = &animator.slots[i];
+        if (slot->active == 0U || slot->targetOpen != 0U ||
+            slot->reserved[0] == 0U) {
+            continue;
+        }
+        slot->reserved[0] = 0U;
+        ++released;
+    }
+    if (released != 0U) {
+        printf("[DOORANIM] RELEASE deferredClose=%u phase=after-monster-turn logical=closed animation=resume-from-open\n",
+               (unsigned int)released);
+    }
+    return released;
+}
+
 int EspNativeDoorAnimator_validateLineState(void) {
     uint32_t i;
 
@@ -214,18 +285,36 @@ int EspNativeDoorAnimator_finishFrame(int renderOk) {
 int EspNativeDoorAnimator_getLineDisplacement(uint32_t lineIndex,
                                                int16_t* outDisplacement) {
     int index;
+    EspNativeDoorAnimationSlot* slot;
+
     if (outDisplacement != NULL) *outDisplacement = 0;
-    if (outDisplacement == NULL || lineIndex > UINT16_MAX ||
-        animator.view.framePrepared != 1U ||
-        animator.view.geometryActive != 1U) {
-        return 0;
-    }
+    if (outDisplacement == NULL || lineIndex > UINT16_MAX) return 0;
 
     index = slotForLine((uint16_t)lineIndex);
     if (index < 0) return 0;
-    *outDisplacement = (int16_t)(
-        animator.slots[index].position * ESP_NATIVE_DOOR_ANIMATION_STEP);
-    return 1;
+    slot = &animator.slots[index];
+
+    if (animator.view.framePrepared == 1U &&
+        animator.view.geometryActive == 1U) {
+        *outDisplacement = (int16_t)(
+            slot->position * ESP_NATIVE_DOOR_ANIMATION_STEP);
+        return 1;
+    }
+
+    /*
+     * Held MOVE-close: gameplay already sees targetOpen==0, but render the
+     * untouched openBefore displacement until the monster turn releases it.
+     * No frame counter or geometry position is advanced on this path.
+     */
+    if (animator.view.framePrepared == 0U &&
+        animator.view.completedFrames == 0U &&
+        slot->targetOpen == 0U && slot->openBefore == 1U &&
+        slot->reserved[0] != 0U) {
+        *outDisplacement = (int16_t)(
+            slot->position * ESP_NATIVE_DOOR_ANIMATION_STEP);
+        return 1;
+    }
+    return 0;
 }
 
 const EspNativeDoorAnimatorView* EspNativeDoorAnimator_view(void) {

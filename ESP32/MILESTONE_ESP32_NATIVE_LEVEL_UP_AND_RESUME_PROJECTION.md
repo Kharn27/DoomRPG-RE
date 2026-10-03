@@ -134,7 +134,9 @@ No local PlatformIO build is claimed.
 ## Explicitly deferred
 
 - level-up sound 5043;
-- live dynamic-drop SAVE/LOAD persistence;
+- live dynamic-drop SAVE/LOAD persistence was deferred by this milestone and is
+  subsequently hardware-validated by
+  [MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md);
 - secondary pickup-message presentation where multiple resources share a tile.
 
 These are not required for this milestone PASS.

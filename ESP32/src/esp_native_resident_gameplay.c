@@ -1155,7 +1155,12 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                    (unsigned int)result.requiredKeyMask,
                    (unsigned int)result.doorCount);
         }
-        printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u doors=%u firstDoor=%u committed=yes redraw=yes collision=live animation=bounded-batch secret=%s sound=%s entityRelink=deferred turnAdvance=deferred\n",
+        if (transitionDoor == 0U &&
+            !EspNativeGameplayMonsterTurn_requestSelectDoor(intent->sequence)) {
+            disableGameplay("select-door-monster-turn-request");
+            return;
+        }
+        printf("[RESIDENTGAMEPLAY] SELECT n=%u seq=%u doors=%u firstDoor=%u committed=yes redraw=yes collision=live animation=bounded-batch secret=%s sound=%s entityRelink=deferred turnAdvance=%s\n",
                (unsigned int)gameplayState.selects,
                (unsigned int)intent->sequence,
                (unsigned int)result.doorCount,
@@ -1163,7 +1168,8 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                foundSecret ? "found+5xp" :
                    (transitionDoor ? "transition-no-secret" : "no"),
                foundSecret ? "5133-deferred" :
-                   (transitionDoor ? "5068-transition-deferred" : "door-deferred"));
+                   (transitionDoor ? "5068-transition-deferred" : "door-deferred"),
+               transitionDoor ? "transition-owned" : "SELECT_DOOR-requested");
         return;
     }
 

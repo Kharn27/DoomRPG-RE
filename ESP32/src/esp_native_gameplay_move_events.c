@@ -14,6 +14,7 @@
 #include "esp_map_script_state.h"
 #include "esp_map_strings.h"
 #include "esp_map_ui_intent.h"
+#include "esp_native_door_animator.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_move_events.h"
@@ -815,6 +816,10 @@ static EspNativeGameplayMoveEventStatus commitMixedBatch(
                     door.locked != step->value1Before) {
                     goto rollback;
                 }
+                if (door.openBefore == 1U && door.openAfter == 0U) {
+                    (void)EspNativeDoorAnimator_deferCloseUntilMonsterTurn(
+                        door.lineIndex);
+                }
             }
             ++doorCount;
         }
@@ -1596,6 +1601,10 @@ EspNativeGameplayMoveEventStatus EspNativeGameplayMoveEvents_executePhase(
                 (void)EspMapLineState_setOpen(door.lineIndex, door.openBefore);
             }
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_INVALID;
+        }
+        if (door.openBefore == 1U && door.openAfter == 0U) {
+            (void)EspNativeDoorAnimator_deferCloseUntilMonsterTurn(
+                door.lineIndex);
         }
 
         outResult->mutated = 1U;
