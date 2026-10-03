@@ -1168,7 +1168,8 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                foundSecret ? "found+5xp" :
                    (transitionDoor ? "transition-no-secret" : "no"),
                foundSecret ? "5133-deferred" :
-                   (transitionDoor ? "5068-transition-deferred" : "door-deferred"));
+                   (transitionDoor ? "5068-transition-deferred" : "door-deferred"),
+               transitionDoor ? "transition-owned" : "SELECT_DOOR-requested");
         return;
     }
 
