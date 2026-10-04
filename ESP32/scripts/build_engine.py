@@ -96,6 +96,24 @@ doom_canvas = doom_canvas.replace(
 )
 doom_canvas = doom_canvas.replace(sound_nextplay_needle, "", 1)
 
+legacy_legals_load_needle = (
+    '\tDoomRPG_createImage(doomCanvas->doomRpg, "g.bmp", false, '
+    '&doomCanvas->imgLegals);\n'
+)
+legacy_legals_load_replacement = (
+    '\t/* ESP32 native boot skips ST_LEGALS and paints MENU_MAIN directly; '
+    'do not retain the 128x512 legacy legal strip. */\n'
+)
+legacy_legals_load_count = doom_canvas.count(legacy_legals_load_needle)
+if legacy_legals_load_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas legacy legal asset load shape; "
+        "review native main-menu ownership"
+    )
+doom_canvas = doom_canvas.replace(
+    legacy_legals_load_needle, legacy_legals_load_replacement, 1
+)
+
 menu_play_needle = "MenuSystem_playSound(doomCanvas->menuSystem);"
 menu_enter_sound_needle = "Sound_playSound(doomCanvas->doomRpg->sound, 5067, 0, 3);"
 menu_play_count = doom_canvas.count(menu_play_needle)
@@ -121,7 +139,8 @@ with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched
 print(
     "[ESP32] DoomCanvas generated with 160x120-aware minimum height + "
     f"native menu audio intents + {legacy_weapon_draw_count} legacy Combat weapon draw retired + "
-    f"{sound_enabled_count + sound_nextplay_count} direct Sound field access(es) retired"
+    f"{sound_enabled_count + sound_nextplay_count} direct Sound field access(es) retired + "
+    f"{legacy_legals_load_count} legacy legal-strip load retired"
 )
 
 # Game_unloadMapData() still clears two fields on the inherited Combat_t during
