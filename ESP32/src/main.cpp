@@ -246,7 +246,7 @@ namespace
             Serial.println("[LAYOUT] Prerequisite unavailable; probe skipped safely");
             if (!assetResourcesReady)
             {
-                Serial.println("[LAYOUT] native PAK does not contain the HUD resources required by Hud_startup()");
+                Serial.println("[LAYOUT] native PAK does not contain the HUD resources required by the native HUD");
             }
             drawLabel(186, "Engine:", "LAYOUT skipped", TFT_ORANGE);
             return;
