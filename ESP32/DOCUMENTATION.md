@@ -1,5 +1,56 @@
 # ESP32 documentation map
 
+## Legacy HUD bitmap residency retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`96813c8333ec07dcfc7343517e6c69764b70f082`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The normal ESP32 layout no longer calls legacy `Hud_startup()` to make six
+desktop HUD bitmaps resident. The compact `Hud_t` compatibility object remains
+temporarily for scalar geometry/message fields, while the production
+`EspNativeGameplayHud` continues to read HUD assets directly from the native
+PAK as bounded on-demand data.
+
+Retired resident images:
+
+```text
+imgStatusBar
+imgStatusBarLarge
+imgHudFaces
+imgIconSheet
+imgAttArrow
+imgStatusArrow
+```
+
+Real-CYD gameplay remains healthy through PASS_TURN, movement, automap-derived
+redraws, repeated armor pickups, collision, regular door open/close and
+top-bar/action feedback. A stable resident witness is:
+
+```text
+[ALIVE] ... heap=127880 heap8=61956 largest8=51188 ...
+```
+
+The previous legal-strip run at a comparable resident boundary reported
+`heap=123632 / heap8=57708`. The observed +4248 B is consistent with removing
+the six packed HUD image allocations plus allocator/image metadata overhead.
+
+Normal `esp32-cyd` CI #1582 is SUCCESS:
+
+```text
+static RAM   = 45472 B
+linked Flash = 782769 B
+artifact id  = 11304071480
+artifact sha256 = ca85db10f8a0595a743f68c27ea02f5ccc8b30bd165ea03ffbd58091a90b243e
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_HUD_BITMAPS.md](MILESTONE_ESP32_RETIRE_LEGACY_HUD_BITMAPS.md)
+
 ## Legacy legal-strip residency retired — REAL-CYD PASS (2026-10-04)
 
 Hardware-tested code boundary:
