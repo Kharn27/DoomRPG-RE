@@ -1,5 +1,59 @@
 # ESP32 documentation map
 
+## Desktop Hud translation unit retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`9efa082d1aacbc137e1e7fcd726f857c0dbae2d6`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The normal `esp32-cyd` build no longer compiles `src/Hud.c`. A bounded
+ESP32 compatibility shim temporarily preserves only the scalar/message ABI
+still referenced by inherited helpers. All legacy HUD raster functions in that
+shim are no-ops; visible HUD composition is owned by
+`EspNativeGameplayHud` and its PAK-backed renderer.
+
+Real-CYD validation covers cold boot, MENU_MAIN, START, the complete bounded
+intro, resident MAP_INTRO load, hub inventory/weapons/status pages, PASS_TURN,
+automap open/close, native dialogs, standalone weapon-help dialog, player
+movement/pickups, monster activation, monster hit/miss retaliation, player
+attack/kill, drop materialization and top-bar feedback.
+
+Representative evidence:
+
+```text
+[HUDCOMPAT] INIT bytes=600 images=NULL renderer=native-pak-stream
+[LAYOUT] HUD legacy bitmaps status=0x0 large=0x0 faces=0x0 icons=0x0 attack=0x0 arrow=0x0 owner=native-pak-stream
+...
+[GAMEPLAYHUD] REPAINT ... ownerMutation=no ...
+...
+[MONSTERRETAL] COMMIT ... message="5 damage!" ...
+[MONSTERRETAL] MISS-COMMIT ... message="Dodged!" ...
+[MONSTERCOMBAT] COMMIT ... alive=1->0 ...
+```
+
+The stable resident witness remains:
+
+```text
+heap=127880 heap8=61956 largest8=51188
+```
+
+Normal `esp32-cyd` CI #1584 is SUCCESS:
+
+```text
+static RAM   = 45472 B
+linked Flash = 781385 B
+artifact id  = 11303743052
+artifact sha256 = d90cb7dc7e4f18db92c0d3317be493ab2ea85ba6af6920d61da913693148886a
+```
+
+This is 1384 B less linked Flash than the preceding HUD-bitmap build.
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DESKTOP_HUD_TU.md](MILESTONE_ESP32_RETIRE_DESKTOP_HUD_TU.md)
+
 ## Legacy HUD bitmap residency retired — REAL-CYD PASS (2026-10-04)
 
 Hardware-tested code boundary:
