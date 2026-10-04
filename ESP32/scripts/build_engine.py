@@ -353,7 +353,7 @@ player_source_text = player_source_text.replace(
     player_hud_reset_needle, player_hud_reset_replacement, 1
 )
 
-with open(player_patched, "w", encoding="latin-1", newline="\\n") as patched_file:
+with open(player_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(player_source_text)
 
 print(
