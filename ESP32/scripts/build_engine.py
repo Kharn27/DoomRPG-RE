@@ -108,6 +108,40 @@ print(
     f"native menu audio intents + {legacy_weapon_draw_count} legacy Combat weapon draw retired"
 )
 
+# Game_unloadMapData() still clears two fields on the inherited Combat_t during
+# START/LOAD menu-runtime teardown. ESP32 deliberately keeps DoomRPG_t::combat
+# NULL, so generate a narrow ESP32 Game.c copy that retires only those obsolete
+# pointer resets. The desktop source remains the behavioral reference.
+game_source = join(engine_dir, "Game.c")
+game_patched = join(patched_dir, "Game.c")
+
+with open(game_source, "r", encoding="latin-1") as source_file:
+    game_source_text = source_file.read()
+
+game_combat_cleanup_needle = """	game->doomRpg->combat->curTarget = NULL;
+	game->doomRpg->combat->curAttacker = NULL;
+"""
+game_combat_cleanup_replacement = """	/* ESP32 native combat has no Combat_t owner. The legacy target/attacker
+	 * reset is obsolete; native combat owners reset independently. */
+"""
+game_combat_cleanup_count = game_source_text.count(game_combat_cleanup_needle)
+if game_combat_cleanup_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_unloadMapData Combat cleanup shape; "
+        "review retired ESP32 Combat ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_combat_cleanup_needle, game_combat_cleanup_replacement, 1
+)
+
+with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
+    patched_file.write(game_source_text)
+
+print(
+    "[ESP32] Game generated with "
+    f"{game_combat_cleanup_count} legacy Combat cleanup reset retired"
+)
+
 # DoomRPG_createImage() is the central image-loading path used by the game.
 # Desktop SDL handles the original indexed BMP variants, while the deliberately
 # small ESP32 SDL shim initially handled only 8-bpp BMPs. Generate an ESP32-only
@@ -450,6 +484,7 @@ env.BuildSources(
         "-<EntityDef.c>",
         "-<Combat.c>",
         "-<Weapon.c>",
+        "-<Game.c>",
         "-<Z_Zone.c>",
         "-<Z_Zip.c>",
         "-<DoomCanvas.c>",
@@ -463,6 +498,7 @@ env.BuildSources(
     src_filter=[
         "+<DoomCanvas.c>",
         "+<DoomRPG.c>",
+        "+<Game.c>",
     ],
 )
 
