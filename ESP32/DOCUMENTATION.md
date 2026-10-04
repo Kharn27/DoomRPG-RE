@@ -1,5 +1,62 @@
 # ESP32 documentation map
 
+## Legacy Sound object retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`fffe6f6d780ae1d7444c49cb08df747fe5f4ca0c`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The classic-CYD runtime no longer constructs the inherited `Sound_t`.
+Audio playback remains intentionally deferred; gameplay/menu code publishes
+bounded `EspNativeAudioIntent` records while compatibility
+`Sound_playSound/stopSounds/freeSounds` calls are NULL-safe no-ops.
+
+The ESP32 generated sources also retire every remaining direct field dereference
+that would require a resident Sound object:
+
+```text
+Game_loadConfig()      -> legacy volume field consumed but not stored in Sound_t
+DoomCanvas_castState() -> legacy soundEnabled branch fixed to playback-disabled behavior
+DoomCanvas_run()       -> legacy nextplay reset removed
+DoomRPG_free()         -> Sound_free ownership removed
+```
+
+Real-CYD boot proves the object is absent:
+
+```text
+[CORE] Sound retired object=NULL owner=native-audio-intent playback=deferred
+[CORE] READY objects=7 heap used=47460 remaining=139760 largest=73716 clip=160x120
+```
+
+START, the full bounded intro, resident MAP_INTRO construction, first frame,
+HUD, caches and resident gameplay all complete successfully with
+`doomRpg->sound == NULL`. The session reaches:
+
+```text
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=123640 heap8=57716 largest8=51188 ... CORE=ready ...
+```
+
+The previous Combat-retirement witness at the same broad gameplay stage was
+`heap=123436`; the observed +204 B is consistent with removing the ~220 B
+Sound allocation, subject to normal allocator/layout variation.
+
+Normal `esp32-cyd` CI #1578 is SUCCESS:
+
+```text
+static RAM   = 45472 B
+linked Flash = 782837 B
+artifact id  = 11302676326
+artifact sha256 = 502243e5bdd8abc9c9b2764428939098440619e44e5f7b3871442925028501e9
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_SOUND.md](MILESTONE_ESP32_RETIRE_LEGACY_SOUND.md)
+
 ## Legacy Combat object retired — REAL-CYD PASS (2026-10-04)
 
 Hardware-tested code boundary:
