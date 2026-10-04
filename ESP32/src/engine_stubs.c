@@ -453,9 +453,17 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
     printf("[LAYOUT] Begin DoomCanvas_startup: heap8=%u largest8=%u\n",
            (unsigned int)layoutReport.heap8Before,
            (unsigned int)layoutReport.largest8Before);
-    printf("[LAYOUT] This stage loads the first real HUD BMP resources\n");
+    printf("[LAYOUT] This stage configures 160x120 HUD geometry; legacy HUD bitmap residency is retired\n");
 
     DoomCanvas_startup(canvas);
+
+    printf("[LAYOUT] HUD legacy bitmaps status=%p large=%p faces=%p icons=%p attack=%p arrow=%p owner=native-pak-stream\n",
+           (void*)hud->imgStatusBar.imgBitmap,
+           (void*)hud->imgStatusBarLarge.imgBitmap,
+           (void*)hud->imgHudFaces.imgBitmap,
+           (void*)hud->imgIconSheet.imgBitmap,
+           (void*)hud->imgAttArrow.imgBitmap,
+           (void*)hud->imgStatusArrow.imgBitmap);
 
     layoutReport.heap8After = coreFreeHeap();
     layoutReport.largest8After = coreLargestBlock();
@@ -517,6 +525,12 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
             layoutReport.displayY + layoutReport.displayHeight ||
         layoutReport.renderWidth != layoutReport.screenWidth ||
         layoutReport.renderHeight != layoutReport.screenHeight ||
+        hud->imgStatusBar.imgBitmap != NULL ||
+        hud->imgStatusBarLarge.imgBitmap != NULL ||
+        hud->imgHudFaces.imgBitmap != NULL ||
+        hud->imgIconSheet.imgBitmap != NULL ||
+        hud->imgAttArrow.imgBitmap != NULL ||
+        hud->imgStatusArrow.imgBitmap != NULL ||
         render->floorColor == NULL || render->ceilingColor == NULL ||
         render->columnScale == NULL) {
         printf("[LAYOUT] FAILED geometry or Render_setup validation\n");
@@ -527,6 +541,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
 
     layoutReport.ready = 1;
     printf("[LAYOUT] READY real engine layout fits inside 160x120\n");
+    printf("[LAYOUT] HUD desktop image owners retired; native HUD reads bounded PAK assets on demand\n");
     printf("[LAYOUT] Native EntityDef catalog deferred to resident-map load; Render_startup still NOT executed\n");
 
     if (report != NULL) *report = layoutReport;

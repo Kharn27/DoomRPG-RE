@@ -114,6 +114,39 @@ doom_canvas = doom_canvas.replace(
     legacy_legals_load_needle, legacy_legals_load_replacement, 1
 )
 
+legacy_hud_startup_needle = (
+    "\tHud_startup(doomCanvas->hud, doomCanvas->largeStatus);\n"
+)
+legacy_hud_startup_replacement = """\t/* ESP32 native HUD streams k/m/l/o/a assets from the PAK on demand.
+\t * Keep only the compact legacy scalar geometry/message compatibility here;
+\t * none of Hud_t's six Image_t owners become resident. */
+\tdoomCanvas->hud->msgMaxChars = (doomCanvas->displayRect.w - 4) / 7;
+\tdoomCanvas->hud->statusTopBarHeight = 20;
+\tdoomCanvas->hud->statusBarHeight = 20;
+\tdoomCanvas->hud->largeHud = false;
+\tdoomCanvas->hud->hudFaceWidth = 18;
+\tdoomCanvas->hud->hudFaceHeight = 20;
+\tdoomCanvas->hud->iconSheetWidth = 13;
+\tdoomCanvas->hud->iconSheetHeight = 13;
+\tdoomCanvas->hud->statusArmorXpos = 35;
+\tdoomCanvas->hud->statusHudFacesXpos = 66;
+\tdoomCanvas->hud->statusAmmoXpos = 85;
+\tdoomCanvas->hud->statusOrientationXpos = 126;
+\tdoomCanvas->hud->statusOrientationArrowXpos = 128;
+\tdoomCanvas->hud->statusLine1Xpos = 33;
+\tdoomCanvas->hud->statusLine2Xpos = 155;
+\tdoomCanvas->hud->statusHealthXpos = 2;
+"""
+legacy_hud_startup_count = doom_canvas.count(legacy_hud_startup_needle)
+if legacy_hud_startup_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas legacy Hud_startup shape; "
+        "review native HUD ownership"
+    )
+doom_canvas = doom_canvas.replace(
+    legacy_hud_startup_needle, legacy_hud_startup_replacement, 1
+)
+
 menu_play_needle = "MenuSystem_playSound(doomCanvas->menuSystem);"
 menu_enter_sound_needle = "Sound_playSound(doomCanvas->doomRpg->sound, 5067, 0, 3);"
 menu_play_count = doom_canvas.count(menu_play_needle)
@@ -140,7 +173,8 @@ print(
     "[ESP32] DoomCanvas generated with 160x120-aware minimum height + "
     f"native menu audio intents + {legacy_weapon_draw_count} legacy Combat weapon draw retired + "
     f"{sound_enabled_count + sound_nextplay_count} direct Sound field access(es) retired + "
-    f"{legacy_legals_load_count} legacy legal-strip load retired"
+    f"{legacy_legals_load_count} legacy legal-strip load retired + "
+    f"{legacy_hud_startup_count} legacy HUD bitmap startup retired"
 )
 
 # Game_unloadMapData() still clears two fields on the inherited Combat_t during
