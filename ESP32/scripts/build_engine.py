@@ -592,6 +592,7 @@ env.BuildSources(
         "-<EntityDef.c>",
         "-<Combat.c>",
         "-<Weapon.c>",
+        "-<Hud.c>",
         "-<Game.c>",
         "-<Z_Zone.c>",
         "-<Z_Zip.c>",
