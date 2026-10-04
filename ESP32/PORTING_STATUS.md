@@ -1,5 +1,84 @@
 # Doom RPG ESP32 CYD porting status
 
+## Legacy Combat object retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`766d1e0cf2280d784f2c073f552e3f57889dc541`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The normal ESP32 runtime no longer constructs the inherited `Combat_t`.
+`Combat.c` and the now-unreferenced desktop `Weapon.c` are excluded from
+the `esp32-cyd` build, `doomRpg->combat` is required to remain `NULL`,
+and the remaining production responsibilities are owned by the native combat
+math, monster combat/retaliation, monster-turn sequencer and native first-person
+weapon renderer.
+
+The pre-retirement ELF retained only three desktop Combat roots:
+`Combat_init`, `Combat_free` and `Combat_drawWeapon`. The native weapon
+renderer already owns the legacy idle/attack offsets and bounded PAK-backed
+decode/cache path, so the ESP32-generated `DoomCanvas.c` no longer calls the
+legacy weapon draw. Generated `DoomRPG.c` likewise no longer retains
+`Combat_free`.
+
+The first hardware attempt exposed one real cleanup dependency rather than a
+combat dependency. START crashed with `StoreProhibited`,
+`EXCVADDR=0x00000004`; symbolization placed the fault in
+`Game_unloadMapData()` during `DoomRPG_esp32ReleaseMainMenuMemory()`.
+That cleanup still wrote `combat->curTarget/curAttacker = NULL`. The final
+ESP32-generated `Game.c` retires only those obsolete writes while preserving
+the rest of menu/map teardown. No `Combat_t` allocation or stub was restored.
+
+Real-CYD acceptance on the final boundary proves START reaches resident gameplay
+and a native player attack remains functional:
+
+```text
+[ACTIONENGINE] TRACE seq=3 weapon=2 distance=1 tile=873 target=sprite index=127 ... route=CRATE_SUBTYPE2
+[CRATE] CONSEQUENCE seq=3 ... outcome=TRANSFORM ... attackDamage=6 attackArmorDamage=4 ...
+[MONSTERTURN] ATTACK-REQUEST seq=3 source=explicit-native-player-attack ...
+[CRATE] COMMIT seq=3 ... ammo=8->7 ... turnAdvance=PLAYER_ATTACK-requested rollback=closed
+[ACTIONENGINE] ATTACK seq=3 weapon=2 frame=1->0 generic=yes worldCommitted=yes
+[MONSTERTURN] ORDERED-DISPATCH reason=PLAYER_ATTACK turnToken=2 activeCount=0 ...
+```
+
+This covers the native weapon attack pose, ammo mutation, generic combat math,
+crate consequence RNG/world mutation and semantic turn publication with
+`doomRpg->combat == NULL`.
+
+The same run remains stable in resident gameplay:
+
+```text
+[ALIVE] ... heap=123436 heap8=57512 largest8=51188 ... CORE=ready ... MENU=ready
+```
+
+A previous comparable early resident-gameplay witness before Combat retirement
+was `heap=122376`; the observed +1060 B is consistent with removing the
+1036-byte `Combat_t` allocation plus allocator overhead. Treat this as a
+hardware consistency witness, not an exact allocator accounting proof.
+
+Normal `esp32-cyd` CI #1575 is SUCCESS:
+
+```text
+static RAM   = 45480 B
+linked Flash = 782773 B
+artifact id  = 11299309172
+artifact sha256 = f0d066fdfa7535ae875e1a9ff06269656103ff5b3952ae6a05ee85378a1d18ab
+```
+
+Versus merged main before the milestone: static RAM is 8 B lower and linked
+Flash is 1800 B lower. More importantly, the 1036-byte desktop Combat object is
+no longer allocated at runtime.
+
+The final ELF contains no `Combat_*` or desktop `Weapon_*` symbols.
+`CombatEntity_*` remains intentionally linked because `Player_t` still uses
+that small stats container; retiring it belongs to a later Player cleanup.
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_COMBAT.md](MILESTONE_ESP32_RETIRE_LEGACY_COMBAT.md)
+
 ## Legacy EntityDef manager retired — REAL-CYD PASS (2026-10-04)
 
 Hardware-tested code boundary:
