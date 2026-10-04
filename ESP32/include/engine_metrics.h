@@ -27,7 +27,6 @@ typedef enum DoomRpgCoreStage_e {
     DOOMRPG_CORE_SOUND,
     DOOMRPG_CORE_GAME,
     DOOMRPG_CORE_PLAYER,
-    DOOMRPG_CORE_COMBAT,
     DOOMRPG_CORE_STAGE_COUNT
 } DoomRpgCoreStage;
 

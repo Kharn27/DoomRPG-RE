@@ -64,6 +64,23 @@ if doom_canvas.count(height_needle) != 1:
 doom_canvas = doom_canvas.replace(include_needle, include_replacement, 1)
 doom_canvas = doom_canvas.replace(height_needle, height_replacement, 1)
 
+legacy_weapon_draw_needle = """	if (doomCanvas->state != ST_CAST) {
+		Combat_drawWeapon(doomCanvas->combat, doomCanvas->shakeX, doomCanvas->shakeY - (doomCanvas->captureState == 2 ? 10 : 0));
+	}
+"""
+legacy_weapon_draw_replacement = """	/* ESP32 resident gameplay owns first-person weapon presentation through
+	 * EspNativeGameplayWeapon. DoomCanvas::combat is intentionally NULL. */
+"""
+legacy_weapon_draw_count = doom_canvas.count(legacy_weapon_draw_needle)
+if legacy_weapon_draw_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas legacy weapon draw shape; "
+        "review retired ESP32 Combat ownership"
+    )
+doom_canvas = doom_canvas.replace(
+    legacy_weapon_draw_needle, legacy_weapon_draw_replacement, 1
+)
+
 menu_play_needle = "MenuSystem_playSound(doomCanvas->menuSystem);"
 menu_enter_sound_needle = "Sound_playSound(doomCanvas->doomRpg->sound, 5067, 0, 3);"
 menu_play_count = doom_canvas.count(menu_play_needle)
@@ -86,7 +103,10 @@ doom_canvas = doom_canvas.replace(
 with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_canvas)
 
-print("[ESP32] DoomCanvas generated with 160x120-aware minimum height + native menu audio intents")
+print(
+    "[ESP32] DoomCanvas generated with 160x120-aware minimum height + "
+    f"native menu audio intents + {legacy_weapon_draw_count} legacy Combat weapon draw retired"
+)
 
 # DoomRPG_createImage() is the central image-loading path used by the game.
 # Desktop SDL handles the original indexed BMP variants, while the deliberately
@@ -133,6 +153,15 @@ entity_def_free_replacement = """\t/* ESP32 native resident maps use EspEntityDe
 \tdoomrpg->entityDef = NULL;
 """
 entity_def_free_count = doom_rpg_source_text.count(entity_def_free_needle)
+combat_free_needle = """	if (doomrpg->combat) {
+		Combat_free(doomrpg->combat, true);
+	}
+	doomrpg->combat = NULL;
+"""
+combat_free_replacement = """	/* ESP32 native combat owners replace the inherited Combat_t object. */
+	doomrpg->combat = NULL;
+"""
+combat_free_count = doom_rpg_source_text.count(combat_free_needle)
 menu_free_needle = "\tif (doomrpg->menuSystem) {\n\t\tMenuSystem_free(doomrpg->menuSystem, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_replacement = "\tif (doomrpg->menuSystem) {\n\t\tEspNativeMenuStorage_free(doomrpg->menuSystem, doomrpg, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_count = doom_rpg_source_text.count(menu_free_needle)
@@ -158,6 +187,11 @@ if entity_def_free_count != 1:
         "Unexpected DoomRPG.c EntityDef cleanup shape; "
         "review retired ESP32 EntityDef ownership"
     )
+if combat_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c Combat cleanup shape; "
+        "review retired ESP32 Combat ownership"
+    )
 if menu_free_count != 1:
     raise RuntimeError(
         "Unexpected DoomRPG.c MenuSystem cleanup shape; "
@@ -181,6 +215,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
     entity_def_free_needle, entity_def_free_replacement, 1
 )
 doom_rpg_source_text = doom_rpg_source_text.replace(
+    combat_free_needle, combat_free_replacement, 1
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(
     menu_free_needle, menu_free_replacement, 1
 )
 
@@ -193,6 +230,7 @@ print(
     f"{bmp_call_count} SDL_LoadBMP_RW call(s) redirected, "
     f"{particle_free_count} desktop ParticleSystem cleanup retired, "
     f"{entity_def_free_count} desktop EntityDef cleanup retired, "
+    f"{combat_free_count} desktop Combat cleanup retired, "
     f"{menu_free_count} desktop MenuSystem cleanup redirected)"
 )
 
@@ -410,6 +448,7 @@ env.BuildSources(
         "-<MenuSystem.c>",
         "-<ParticleSystem.c>",
         "-<EntityDef.c>",
+        "-<Combat.c>",
         "-<Z_Zone.c>",
         "-<Z_Zip.c>",
         "-<DoomCanvas.c>",

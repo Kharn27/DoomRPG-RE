@@ -2,7 +2,6 @@
 #include <stdio.h>
 
 #include "DoomRPG.h"
-#include "Combat.h"
 #include "DoomCanvas.h"
 #include "Game.h"
 #include "Hud.h"
@@ -132,11 +131,11 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
     metrics->render = sizeof(Render_t);
     metrics->game = sizeof(Game_t);
     metrics->player = sizeof(Player_t);
-    metrics->combat = sizeof(Combat_t);
+    metrics->combat = 0U;
     metrics->supportObjects = sizeof(EspNativeMenuState_t) + sizeof(Hud_t) +
                               sizeof(Sound_t);
     metrics->totalInitialObjects = metrics->doomRpg + metrics->doomCanvas +
-        metrics->render + metrics->game + metrics->player + metrics->combat +
+        metrics->render + metrics->game + metrics->player +
         metrics->supportObjects;
 }
 
@@ -164,7 +163,7 @@ uint32_t DoomRPG_getLargest8BitBlock(void) {
 const char* DoomRPG_coreStageName(uint8_t stage) {
     static const char* const names[DOOMRPG_CORE_STAGE_COUNT] = {
         "DoomRPG", "DoomCanvas", "Render", "MenuSystem", "Hud", "Sound",
-        "Game", "Player", "Combat"
+        "Game", "Player"
     };
     return stage < DOOMRPG_CORE_STAGE_COUNT ? names[stage] : "unknown";
 }
@@ -296,8 +295,6 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
                      Game_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_PLAYER, player,
                      Player_init(NULL, doomRpg));
-    INIT_CORE_OBJECT(DOOMRPG_CORE_COMBAT, combat,
-                     Combat_init(NULL, doomRpg));
 
 #undef INIT_CORE_OBJECT
 
@@ -322,6 +319,27 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
         return 0;
     }
     printf("[CORE] EntityDef retired object=NULL owner=native-entitydef-catalog\n");
+
+    /*
+     * Player/monster attacks, retaliation, weapon presentation and damage math
+     * are all owned by bounded native ESP32 subsystems. The inherited Combat_t
+     * object is retired and must remain NULL.
+     */
+    if (doomRpg->combat != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.bytesUsed =
+            coreInitReport.heapBefore >= coreInitReport.heapAfter
+                ? coreInitReport.heapBefore - coreInitReport.heapAfter
+                : 0;
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED retired Combat pointer=%p expected=NULL\n",
+               (void*)doomRpg->combat);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] Combat retired object=NULL owners=native-combat+weapon+monster-turn\n");
 
     /*
      * Native gameplay owns its bounded gib overlay in EspNativeGameplayGibFx.
