@@ -150,11 +150,16 @@ game_source_text = game_source_text.replace(
     game_combat_cleanup_needle, game_combat_cleanup_replacement, 1
 )
 
-game_sound_volume_needle = "\t\t\t\t\tgame->doomRpg->sound->volume = intData;\n"
-game_sound_volume_replacement = (
-    "\t\t\t\t\t/* ESP32 audio playback is deferred; consume the legacy config "
-    "field without retaining Sound_t. */\n"
-)
+game_sound_volume_needle = """\t\t\tintData = File_readInt(rw);
+\t\t\tif (game) {
+\t\t\t\tgame->doomRpg->sound->volume = intData;
+\t\t\t}
+"""
+game_sound_volume_replacement = """\t\t\tintData = File_readInt(rw);
+\t\t\t/* ESP32 audio playback is deferred; consume the legacy config
+\t\t\t * volume field without retaining Sound_t. */
+\t\t\t(void)intData;
+"""
 game_sound_volume_count = game_source_text.count(game_sound_volume_needle)
 if game_sound_volume_count != 1:
     raise RuntimeError(
