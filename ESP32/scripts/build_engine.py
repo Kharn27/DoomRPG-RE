@@ -449,6 +449,7 @@ env.BuildSources(
         "-<ParticleSystem.c>",
         "-<EntityDef.c>",
         "-<Combat.c>",
+        "-<Weapon.c>",
         "-<Z_Zone.c>",
         "-<Z_Zip.c>",
         "-<DoomCanvas.c>",
