@@ -2,7 +2,6 @@
 #include <stdio.h>
 
 #include "DoomRPG.h"
-#include "EntityDef.h"
 #include "esp_legacy_asset_source.h"
 #include "esp_native_menu_storage.h"
 #ifdef DOOMRPG_ESP32_DIVIDER_PROBE
@@ -34,7 +33,6 @@ static int preflightResources(void) {
     static const char* const required[] = {
         "j.bmp",
         "p.bmp",
-        "entities.db",
     };
     const unsigned int count = sizeof(required) / sizeof(required[0]);
     unsigned int i;
@@ -77,7 +75,6 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
     uint32_t after;
     uint32_t largestBefore;
     int menuResult;
-    int entityResult;
 
     if (preRenderAttempted) {
         return preRenderReady;
@@ -137,8 +134,7 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
         return 0;
     }
 
-    if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->entityDef == NULL) {
+    if (doomRpg == NULL || doomRpg->menuSystem == NULL) {
         printf("[PRERENDER] Core object graph incomplete; probe refused\n");
         return 0;
     }
@@ -190,31 +186,14 @@ int EspLegacyPrerenderStartup_start(int layoutReady) {
         return 0;
     }
 
-    before = heap8Free();
-    printf("[PRERENDER] -> EntityDef_startup()\n");
-    entityResult = EntityDef_startup(doomRpg->entityDef);
-    after = heap8Free();
-    printStageResult("EntityDef_startup", before, after);
-
-    if (!entityResult || doomRpg->entityDef->list == NULL ||
-        doomRpg->entityDef->numDefs <= 0) {
-        printf("[PRERENDER] FAILED EntityDef_startup result=%d defs=%d list=%p\n",
-               entityResult,
-               doomRpg->entityDef->numDefs,
-               (void*)doomRpg->entityDef->list);
-        return 0;
-    }
-
-    printf("[PRERENDER] Entity defs=%d table=%uB\n",
-           doomRpg->entityDef->numDefs,
-           (unsigned int)(doomRpg->entityDef->numDefs * sizeof(EntityDef_t)));
+    printf("[PRERENDER] EntityDef desktop startup retired; native catalog builds from PAK at resident-map load\n");
 
     preRenderReady = 1;
     printf("[PRERENDER] READY total used=%u heap8=%u largest8=%u\n",
            (unsigned int)(heapBefore >= heap8Free() ? heapBefore - heap8Free() : 0),
            (unsigned int)heap8Free(),
            (unsigned int)largest8Block());
-    printf("[PRERENDER] ParticleSystem startup retired; Render_startup / Game_loadConfig still NOT executed\n");
+    printf("[PRERENDER] ParticleSystem/EntityDef desktop startup retired; Render_startup / Game_loadConfig still NOT executed\n");
 
     return 1;
 }

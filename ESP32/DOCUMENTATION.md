@@ -1,5 +1,80 @@
 # ESP32 documentation map
 
+## Legacy EntityDef manager retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`9fa46cf86a1e8b4bbb25e20d80cfbf9664ef22db`.
+
+Branch:
+`agent/esp32-retire-legacy-entitydef`.
+
+The ESP32 normal runtime no longer allocates or starts the inherited
+`EntityDefManager_t`. `src/EntityDef.c` is excluded from the normal
+`esp32-cyd` build, `doomRpg->entityDef` is required to remain `NULL`, and
+resident maps resolve all entity metadata through the compact immutable
+`EspEntityDefTypeCatalog` built from `/entities.db` in the native PAK.
+
+This removes the duplicated desktop representation: the retired manager owned a
+heap table of full 24-byte `EntityDef_t` records including persistent 16-byte
+names, while the native catalog retains only compact
+`{tileIndex,type,subtype,parm}` metadata and reads names from the PAK on
+demand.
+
+The final ELF/build graph contains no compiled `EntityDef.c` object and no
+`EntityDef_init/startup/find/lookup/free` symbol. The native
+`EspEntityDefTypeCatalog_*` owner remains linked.
+
+The real CYD validates the consumers that matter rather than only startup:
+
+```text
+[PLAYERRES] PREPARE ... defTile=92 type=3 subtype=21 parm=4 action=armor ...
+[PLAYERRES] FEEDBACK ... message="Got Armor Shard" sourceDefTile=92 ...
+[PLAYERRES] PREPARE ... defTile=1 type=5 subtype=0 parm=0 action=weapon ...
+[PLAYERRES] FEEDBACK ... message="Got Axe" sourceDefTile=1 ...
+```
+
+Those paths require catalog metadata and on-demand definition names. Combat then
+materializes a dynamic monster drop by native type/subtype lookup, and the same
+catalog validates and consumes it:
+
+```text
+[MONSTERDROP] COMMIT ... type=3 subtype=20 def=91 tile=658 ... persistence=map-session-live/save-deferred
+[PLAYERRES] PREPARE tile=658 sprite=65535 defTile=91 type=3 subtype=20 parm=4 action=health ...
+[PLAYERRES] FEEDBACK tile=658 message="Got Health Vial" sourceDefTile=91 ...
+```
+
+The same run also exercises doors, dialogs, secret activation, ordered monster
+combat and post-kill movement without any legacy EntityDef owner.
+
+Observed stable ALIVE samples include:
+
+```text
+heap=122376 heap8=56452 largest8=51188
+heap=118916 heap8=52992 largest8=49140
+```
+
+The first figure is before later lazy gameplay allocations; the second is after
+dialog/combat resources have become resident. They are runtime witnesses, not a
+claim that every byte difference versus an older build belongs to EntityDef.
+
+Normal `esp32-cyd` CI #1568 is SUCCESS:
+
+```text
+static RAM   = 45488 B
+linked Flash = 784573 B
+artifact id  = 11280285689
+artifact sha256 = 3bff6f3b27453ac42a988f918eac3d0d83c1adc6813e091f54b131d855d38785
+```
+
+Static RAM is 8 B lower than the merged pre-milestone boundary. The larger
+memory win is runtime heap: the desktop manager object and its separately
+allocated full definition table are no longer constructed.
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_ENTITYDEF.md](MILESTONE_ESP32_RETIRE_LEGACY_ENTITYDEF.md)
+
 ## Native extinguisher turn parity — REAL-CYD PASS (2026-10-03)
 
 Hardware-tested code boundary:
@@ -26,11 +101,22 @@ doors already behaved correctly on hardware, including a monster behind the
 destroyed door taking its turn. That route was therefore left unchanged rather
 than risking a duplicate semantic advance.
 
-Hardware acceptance was functional gameplay acceptance rather than a synthetic
-targeted probe: the user traversed the level and exercised normal combat/gameplay
-on the real CYD and reported the build as tested OK. No claim is made that this
-run specifically captured a fire-clear with an already-active enemy in the
-submitted serial transcript.
+Hardware acceptance was initially functional gameplay acceptance. A later
+real-CYD run on the merged code supplied a direct serial witness for the
+fire-clear turn producer and dispatch:
+
+```text
+[MONSTERTURN] ATTACK-REQUEST seq=64 source=explicit-native-player-attack rollback=available-until-cancel
+[ACTIONENGINE] FIRE-COMMIT seq=64 ... turnAdvance=PLAYER_ATTACK-requested rollback=closed
+[MONSTERTURN] ORDERED-DISPATCH reason=PLAYER_ATTACK turnToken=19 activeCount=0 ...
+[MONSTERACTIVESEQ] BEGIN turn=19 reason=3 activeCount=0 ...
+```
+
+A second fire in the same session repeats the exact sequence at seq=68 /
+turnToken=23. The witness proves the successful extinguisher action now consumes
+the semantic player turn and dispatches `PLAYER_ATTACK`. Both observed fires
+had `activeCount=0`, so this still does not claim a captured “fire plus
+already-active enemy attacks immediately” scenario.
 
 Normal `esp32-cyd` CI #1563 is SUCCESS:
 
