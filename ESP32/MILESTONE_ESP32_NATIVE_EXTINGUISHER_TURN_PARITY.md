@@ -85,10 +85,26 @@ No new allocation or owner is introduced.
 The user continued normal real-CYD level traversal and combat on the final build
 and reported it as tested OK.
 
-This is a functional acceptance of the final firmware boundary. No dedicated
-serial witness of the specific combination “extinguish fire while an already
-active enemy is in position to act” was supplied, so this milestone does not
-invent or claim such a transcript.
+A later real-CYD run on the merged code provides a direct producer/dispatch
+witness for two separate fire clears:
+
+```text
+[MONSTERTURN] ATTACK-REQUEST seq=64 source=explicit-native-player-attack rollback=available-until-cancel
+[ACTIONENGINE] FIRE-COMMIT seq=64 ... turnAdvance=PLAYER_ATTACK-requested rollback=closed
+[MONSTERTURN] ORDERED-DISPATCH reason=PLAYER_ATTACK turnToken=19 activeCount=0 ...
+[MONSTERACTIVESEQ] BEGIN turn=19 reason=3 activeCount=0 ...
+
+[MONSTERTURN] ATTACK-REQUEST seq=68 source=explicit-native-player-attack rollback=available-until-cancel
+[ACTIONENGINE] FIRE-COMMIT seq=68 ... turnAdvance=PLAYER_ATTACK-requested rollback=closed
+[MONSTERTURN] ORDERED-DISPATCH reason=PLAYER_ATTACK turnToken=23 activeCount=0 ...
+[MONSTERACTIVESEQ] BEGIN turn=23 reason=3 activeCount=0 ...
+```
+
+This directly proves that a successful native extinguisher action publishes and
+dispatches the semantic `PLAYER_ATTACK` turn. Both observed fires had
+`activeCount=0`; the milestone therefore still does not claim a captured
+scenario where an already-active enemy visibly attacks immediately after the
+fire clear.
 
 ## CI
 
