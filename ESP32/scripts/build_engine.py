@@ -81,6 +81,21 @@ doom_canvas = doom_canvas.replace(
     legacy_weapon_draw_needle, legacy_weapon_draw_replacement, 1
 )
 
+sound_enabled_needle = "			if (doomCanvas->doomRpg->sound->soundEnabled != 0) {"
+sound_enabled_replacement = "			if (0) { /* ESP32 audio playback deferred; legacy soundEnabled was false */"
+sound_enabled_count = doom_canvas.count(sound_enabled_needle)
+sound_nextplay_needle = "\tdoomCanvas->doomRpg->sound->nextplay = 0;\n"
+sound_nextplay_count = doom_canvas.count(sound_nextplay_needle)
+if sound_enabled_count != 1 or sound_nextplay_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas direct Sound_t field access shape; "
+        "review retired ESP32 Sound ownership"
+    )
+doom_canvas = doom_canvas.replace(
+    sound_enabled_needle, sound_enabled_replacement, 1
+)
+doom_canvas = doom_canvas.replace(sound_nextplay_needle, "", 1)
+
 menu_play_needle = "MenuSystem_playSound(doomCanvas->menuSystem);"
 menu_enter_sound_needle = "Sound_playSound(doomCanvas->doomRpg->sound, 5067, 0, 3);"
 menu_play_count = doom_canvas.count(menu_play_needle)
@@ -105,7 +120,8 @@ with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched
 
 print(
     "[ESP32] DoomCanvas generated with 160x120-aware minimum height + "
-    f"native menu audio intents + {legacy_weapon_draw_count} legacy Combat weapon draw retired"
+    f"native menu audio intents + {legacy_weapon_draw_count} legacy Combat weapon draw retired + "
+    f"{sound_enabled_count + sound_nextplay_count} direct Sound field access(es) retired"
 )
 
 # Game_unloadMapData() still clears two fields on the inherited Combat_t during
@@ -134,12 +150,28 @@ game_source_text = game_source_text.replace(
     game_combat_cleanup_needle, game_combat_cleanup_replacement, 1
 )
 
+game_sound_volume_needle = "\t\t\t\t\tgame->doomRpg->sound->volume = intData;\n"
+game_sound_volume_replacement = (
+    "\t\t\t\t\t/* ESP32 audio playback is deferred; consume the legacy config "
+    "field without retaining Sound_t. */\n"
+)
+game_sound_volume_count = game_source_text.count(game_sound_volume_needle)
+if game_sound_volume_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_loadConfig Sound volume shape; "
+        "review retired ESP32 Sound ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_sound_volume_needle, game_sound_volume_replacement, 1
+)
+
 with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(game_source_text)
 
 print(
     "[ESP32] Game generated with "
-    f"{game_combat_cleanup_count} legacy Combat cleanup reset retired"
+    f"{game_combat_cleanup_count} legacy Combat cleanup reset retired + "
+    f"{game_sound_volume_count} legacy Sound config field retired"
 )
 
 # DoomRPG_createImage() is the central image-loading path used by the game.
@@ -196,6 +228,15 @@ combat_free_replacement = """	/* ESP32 native combat owners replace the inherite
 	doomrpg->combat = NULL;
 """
 combat_free_count = doom_rpg_source_text.count(combat_free_needle)
+sound_free_needle = """	if (doomrpg->sound) {
+		Sound_free(doomrpg->sound, true);
+	}
+	doomrpg->sound = NULL;
+"""
+sound_free_replacement = """	/* ESP32 audio playback is deferred and Sound_t is never constructed. */
+	doomrpg->sound = NULL;
+"""
+sound_free_count = doom_rpg_source_text.count(sound_free_needle)
 menu_free_needle = "\tif (doomrpg->menuSystem) {\n\t\tMenuSystem_free(doomrpg->menuSystem, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_replacement = "\tif (doomrpg->menuSystem) {\n\t\tEspNativeMenuStorage_free(doomrpg->menuSystem, doomrpg, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_count = doom_rpg_source_text.count(menu_free_needle)
@@ -226,6 +267,11 @@ if combat_free_count != 1:
         "Unexpected DoomRPG.c Combat cleanup shape; "
         "review retired ESP32 Combat ownership"
     )
+if sound_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c Sound cleanup shape; "
+        "review retired ESP32 Sound ownership"
+    )
 if menu_free_count != 1:
     raise RuntimeError(
         "Unexpected DoomRPG.c MenuSystem cleanup shape; "
@@ -252,6 +298,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
     combat_free_needle, combat_free_replacement, 1
 )
 doom_rpg_source_text = doom_rpg_source_text.replace(
+    sound_free_needle, sound_free_replacement, 1
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(
     menu_free_needle, menu_free_replacement, 1
 )
 
@@ -265,6 +314,7 @@ print(
     f"{particle_free_count} desktop ParticleSystem cleanup retired, "
     f"{entity_def_free_count} desktop EntityDef cleanup retired, "
     f"{combat_free_count} desktop Combat cleanup retired, "
+    f"{sound_free_count} desktop Sound cleanup retired, "
     f"{menu_free_count} desktop MenuSystem cleanup redirected)"
 )
 

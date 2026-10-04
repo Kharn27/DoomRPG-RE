@@ -77,17 +77,6 @@ char* SDL_MouseGetNameButton(int id) {
 }
 int SDL_JoystickGetButtonID(void) { return -1; }
 
-Sound_t* Sound_init(Sound_t* sound, DoomRPG_t* doomRpg) {
-    if (sound == NULL) sound = SDL_calloc(1, sizeof(Sound_t));
-    if (sound != NULL) {
-        sound->doomRpg = doomRpg;
-        sound->soundEnabled = false;
-        sound->volume = 0;
-    }
-    return sound;
-}
-
-void Sound_free(Sound_t* sound, boolean freePtr) { if (freePtr) SDL_free(sound); }
 void Sound_stopSounds(Sound_t* sound) { (void)sound; }
 void Sound_freeSound(Sound_t* sound, int chan) { (void)sound; (void)chan; }
 int Sound_getState(Sound_t* sound, int resourceID) { (void)sound; (void)resourceID; return 0; }
@@ -132,8 +121,7 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
     metrics->game = sizeof(Game_t);
     metrics->player = sizeof(Player_t);
     metrics->combat = 0U;
-    metrics->supportObjects = sizeof(EspNativeMenuState_t) + sizeof(Hud_t) +
-                              sizeof(Sound_t);
+    metrics->supportObjects = sizeof(EspNativeMenuState_t) + sizeof(Hud_t);
     metrics->totalInitialObjects = metrics->doomRpg + metrics->doomCanvas +
         metrics->render + metrics->game + metrics->player +
         metrics->supportObjects;
@@ -162,7 +150,7 @@ uint32_t DoomRPG_getLargest8BitBlock(void) {
 
 const char* DoomRPG_coreStageName(uint8_t stage) {
     static const char* const names[DOOMRPG_CORE_STAGE_COUNT] = {
-        "DoomRPG", "DoomCanvas", "Render", "MenuSystem", "Hud", "Sound",
+        "DoomRPG", "DoomCanvas", "Render", "MenuSystem", "Hud",
         "Game", "Player"
     };
     return stage < DOOMRPG_CORE_STAGE_COUNT ? names[stage] : "unknown";
@@ -289,14 +277,34 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
                      EspNativeMenuStorage_init(NULL));
     INIT_CORE_OBJECT(DOOMRPG_CORE_HUD, hud,
                      Hud_init(NULL, doomRpg));
-    INIT_CORE_OBJECT(DOOMRPG_CORE_SOUND, sound,
-                     Sound_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_GAME, game,
                      Game_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_PLAYER, player,
                      Player_init(NULL, doomRpg));
 
 #undef INIT_CORE_OBJECT
+
+    /*
+     * Audio playback remains deferred on classic CYD. Production gameplay
+     * publishes bounded EspNativeAudioIntent records while the inherited
+     * Sound_t owner is retired. Compatibility Sound_playSound/stopSounds calls
+     * are NULL-safe no-ops until a dedicated native audio milestone.
+     */
+    if (doomRpg->sound != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.bytesUsed =
+            coreInitReport.heapBefore >= coreInitReport.heapAfter
+                ? coreInitReport.heapBefore - coreInitReport.heapAfter
+                : 0;
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED retired Sound pointer=%p expected=NULL\n",
+               (void*)doomRpg->sound);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] Sound retired object=NULL owner=native-audio-intent playback=deferred\n");
 
     /*
      * Native map/gameplay resolves entity definition metadata through the
