@@ -182,10 +182,24 @@ legacy_hud_automap_state_count = doom_canvas.count(
     legacy_hud_automap_state_needle
 )
 
-legacy_hud_dying_needle = "\t\tHud_drawBottomBar(doomCanvas->hud);\n"
-legacy_hud_dying_replacement = (
-    "\t\t/* ESP32 native player-death path owns HUD presentation. */\n"
-)
+legacy_hud_dying_needle = """\telse if (stateNum == ST_DYING) {
+\t\tDoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
+\t\tdoomCanvas->deathTime = doomCanvas->time;
+\t\tdoomCanvas->player->weapon = 0;
+\t\tdoomCanvas->player->weapons = 0;
+\t\tHud_drawBottomBar(doomCanvas->hud);
+\t\treturn;
+\t}
+"""
+legacy_hud_dying_replacement = """\telse if (stateNum == ST_DYING) {
+\t\tDoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
+\t\tdoomCanvas->deathTime = doomCanvas->time;
+\t\tdoomCanvas->player->weapon = 0;
+\t\tdoomCanvas->player->weapons = 0;
+\t\t/* ESP32 native player-death path owns HUD presentation. */
+\t\treturn;
+\t}
+"""
 legacy_hud_dying_count = doom_canvas.count(legacy_hud_dying_needle)
 
 hud_object_patch_counts = [
