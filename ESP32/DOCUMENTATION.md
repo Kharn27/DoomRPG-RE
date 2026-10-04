@@ -1,5 +1,48 @@
 # ESP32 documentation map
 
+## Legacy legal-strip residency retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`35c310026484f095448ef926b2bba944c8dbb359`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The normal classic-CYD boot no longer allocates the inherited `g.bmp`
+128x512 legal-screen strip. ESP32 production boot already bypasses
+`ST_LEGALS` and paints the native opaque MENU_MAIN dashboard directly, so
+retaining 32768 packed pixel bytes until START was dead residency.
+
+Real-CYD evidence:
+
+```text
+[LAYOUT] heap8 used=21828 remaining=117932 largest=73716
+...
+[MAINOPAQUE] ... heap8=98772 largest8=73716
+[ALIVE] ... heap=164696 heap8=98772 largest8=73716 ...
+...
+[MAINMENU] Runtime cleanup legals=already-free heap8=98772->107212 gained=8440 ...
+```
+
+The previous Sound-retirement menu witness was `heap8=65888`; the new menu
+witness is `98772`, a +32884 B increase consistent with avoiding the 32768 B
+packed legal strip plus allocator effects. START, intro disposal, MAP_INTRO
+load, native HUD, resident gameplay, pickups and doors remain functional.
+
+Normal `esp32-cyd` CI #1580 is SUCCESS:
+
+```text
+static RAM   = 45472 B
+linked Flash = 782817 B
+artifact id  = 11302983372
+artifact sha256 = 5b53223c103def2db06d252853751e3d512f7e41c3fb00359eb245fee515d25e
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_LEGALS_STRIP.md](MILESTONE_ESP32_RETIRE_LEGACY_LEGALS_STRIP.md)
+
 ## Legacy Sound object retired — REAL-CYD PASS (2026-10-04)
 
 Hardware-tested code boundary:
