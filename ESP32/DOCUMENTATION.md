@@ -646,7 +646,7 @@ No local PlatformIO build is claimed.
 Detailed record:
 [MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md)
 
-## SYS Exit To Menu — development candidate (2026-10-02)
+## SYS Exit To Menu — REAL-CYD lifecycle PASS (2026-10-06)
 
 `CHECKPOINT 1` identified the single SD save slot, not the current level or an
 automatic checkpoint. Its caption is removed to make room for three stacked
@@ -693,18 +693,43 @@ The rebased CYD build passes at 45464 B static RAM / 781645 B flash. SYS touch
 and level-progress regressions pass. A temporary host fixture checks actual
 Exit request/service with both legacy pointers NULL, deferred teardown ordering,
 repeated exit and refusal of missing required core/busy-pack boundaries; engine
-cleanup/menu painters are mocked, so hardware acceptance is still pending.
+cleanup/menu painters are mocked.
 
-Real-CYD acceptance is still pending:
+Real-CYD lifecycle acceptance now passes on code boundary
+`986a703b967e747219334e5f2d04d0bafe0bab6e`. The physical SYS page shows
+`SAVE / LOAD / EXIT TO MENU`; double-select Exit returns to the exact opaque
+main dashboard without a save write. The teardown proves all seven resident map
+owners are empty and releases the expected 18008 B map payload:
 
-1. Open SYS: check the three cards and removal of `CHECKPOINT 1`.
-2. Tap Exit once; tap a gap, switch tab or close/reopen: none may exit. Re-enter
-   SYS and tap Exit twice: confirm return to the normal main dashboard.
-3. After Exit, test Options/Back, Help/Back, then Start Game and a second Exit;
-   no stale gameplay, intro or HUD may repaint over the main menu.
-4. SAVE, make unsaved moves, Exit and main-menu LOAD: recover the saved position,
-   not the later moves. Without a checkpoint, Exit still works and LOAD says
-   `No Save`. Recheck SYS LOAD and SAVE's temporary `Game saved`/label fallback.
+```text
+[RESIDENTRESET] heap8=90480->108488 released=18008 before=1/1/1/1/1/1/1 after=0/0/0/0/0/0/0 empty=1
+[MAINMENU] Runtime cleanup ... nodes=0x0 lines=0x0 mapSprites=0x0 ... shapeData=0x0 mediaTexels=0x0
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+```
+
+The user then exercised the destructive boundary repeatedly through
+`MENU_MAIN -> LOAD -> gameplay -> SYS -> EXIT`. Both complete cycles converge
+to the exact same memory states:
+
+```text
+MENU_MAIN  heap8=108488 largest8=73716
+gameplay   heap8=62580  largest8=51188
+MENU_MAIN  heap8=108488 largest8=73716
+```
+
+The repeated equality is the hardware leak witness for the exercised lifecycle;
+checkpoint V11 also restores the same saved world/player fingerprints on each
+LOAD. No stale gameplay/intro/HUD repaint appears after either Exit.
+
+Remaining acceptance before declaring the whole branch closed:
+
+1. Arm Exit, then cancel through a blank gap/tab switch/HUB close and prove it
+   cannot accidentally exit.
+2. After Exit, exercise Options/Back and Help/Back, then a fresh Start Game and
+   another Exit.
+3. SAVE, make unsaved moves, Exit and main-menu LOAD: recover the saved position,
+   not the later moves. Also test Exit with no checkpoint and the `No Save`
+   main-menu path.
 
 ## Native LEVEL UP screen and checkpoint resume projection — REAL-CYD PASS (2026-10-02)
 
