@@ -721,15 +721,37 @@ The repeated equality is the hardware leak witness for the exercised lifecycle;
 checkpoint V11 also restores the same saved world/player fingerprints on each
 LOAD. No stale gameplay/intro/HUD repaint appears after either Exit.
 
+Additional real-CYD acceptance now also proves confirmation cancellation
+and unsaved-state rollback. Exit was armed, then cancelled by switching away
+from SYS; the HUB was later closed and normal gameplay immediately continued
+through four committed moves and an Armor Shard pickup. No deferred Exit fired.
+The same cancellation was repeated after returning to SYS and arming Exit again.
+
+The unsaved gameplay state then diverged from the checkpoint
+(`pos=1248,352`, armor `15/23`, player FNV `eeda091c`). A confirmed in-game
+LOAD tore down the resident map, rebuilt the V11 checkpoint, and restored the
+saved state exactly:
+
+```text
+[NATIVESAVE] LOAD ... pos=1120,352 ... playerFNV=52c15778 ...
+[ENGINESESSION] HUD ... hp=34/34 armor=11/23 ...
+[RESIDENTGAMEPLAY] READY ... entry=checkpoint-resume ...
+```
+
+After a subsequent Exit, Help/About was opened, paged, and returned through the
+native Back route to exact main-menu FNV `522dc605`, while menu memory remained
+`heap8=108488 largest8=73716`. Options also opened with zero heap delta and its
+Back card armed correctly, but this transcript ends before the second Back tap,
+so Options -> Back is not yet claimed.
+
 Remaining acceptance before declaring the whole branch closed:
 
-1. Arm Exit, then cancel through a blank gap/tab switch/HUB close and prove it
-   cannot accidentally exit.
-2. After Exit, exercise Options/Back and Help/Back, then a fresh Start Game and
-   another Exit.
-3. SAVE, make unsaved moves, Exit and main-menu LOAD: recover the saved position,
-   not the later moves. Also test Exit with no checkpoint and the `No Save`
-   main-menu path.
+1. Complete Options -> Back after Exit.
+2. From MENU_MAIN, run a fresh Start Game and Exit again.
+3. Exercise the no-checkpoint path: Exit still works and main-menu LOAD reports
+   `No Save`. A full SAVE -> unsaved moves -> Exit -> main-menu LOAD route is
+   still useful as an end-to-end variant, although unsaved rollback itself is
+   already hardware-proven by the in-game LOAD above.
 
 ## Native LEVEL UP screen and checkpoint resume projection — REAL-CYD PASS (2026-10-02)
 
