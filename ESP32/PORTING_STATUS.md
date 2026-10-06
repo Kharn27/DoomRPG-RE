@@ -1,5 +1,69 @@
 # Doom RPG ESP32 CYD porting status
 
+## Legacy Player object retired — REAL-CYD PASS (2026-10-06)
+
+Hardware-tested code boundary:
+`9b47b4c141232bc75646d25d04d8b7adf6ecffc2`.
+
+Branch:
+`fix/mainMenu`.
+
+The classic-CYD runtime no longer constructs the inherited `Player_t`.
+`doomRpg->player` remains `NULL`; the 52-byte
+`EspNativeGameplayPlayerState` is the authoritative player owner.
+The normal ESP32 build also excludes `Player.c` and `CombatEntity.c`.
+START now calls `EspNativeGameplayPlayerState_resetFresh()` directly instead
+of resetting a desktop Player object.
+
+The real CYD proves the fresh-game contract with the retired legacy pointer:
+
+```text
+[MAINSTART] Native player before stateFNV=00000000 legacyPlayer=0x0 owner=native-gameplay-player-state
+[PLAYERSTATE] READY bytes=52 level=1 xp=0/80 hp=30/30 armor=0/20 def=16 str=12 agi=14 acc=16 ammo1=8 weapon=2 weapons=0004 stateFNV=e745fce9 legacyPlayer=no
+[MAINSTART] Player after ... hp=30/30 armor=0/20 ... stateFNV=e745fce9 legacyPlayer=0x0
+[MAINSTART] READY native new-game -> PlayerState_resetFresh -> ST_INTRO legacyPlayer=NULL
+```
+
+The same run exercises full intro/disposal, MAP_INTRO resident load, dialogs,
+doors, fire clearing, pickups, secret XP, native monster activation,
+retaliation, live movement, player kill/gib handling and HUB pages with no
+legacy Player object.
+
+Most importantly, the test mutates the native player to
+`stateFNV=4745097e` (HP 22/30, Axe selected/owned, changed resources), performs
+SYS `EXIT TO MENU`, then selects START again. The second START sees the old
+native fingerprint but resets it exactly back to the canonical fresh state:
+
+```text
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+[MAINSTART] Native player before stateFNV=4745097e legacyPlayer=0x0 owner=native-gameplay-player-state
+[PLAYERSTATE] READY ... hp=30/30 armor=0/20 ... weapon=2 weapons=0004 stateFNV=e745fce9 legacyPlayer=no
+[MAINSTART] READY native new-game -> PlayerState_resetFresh -> ST_INTRO legacyPlayer=NULL
+```
+
+This closes the stale dual-owner ambiguity: a new game can no longer reset only
+the desktop Player while leaving the actual native gameplay state dirty.
+
+Memory remains healthy and returns cleanly across the Exit-to-Menu teardown:
+
+```text
+[RESIDENTRESET] heap8=87668->105684 released=18016 ... empty=1
+[MAINOPAQUE] ... heap8=105684 largest8=73716
+...
+[ALIVE] ... heap=125704 heap8=59780 largest8=36852 ... CORE=ready ... MENU=ready
+```
+
+The second resident session has the same total `heap8=59780` as the preceding
+gameplay state, so no leak is indicated. Its largest free block is lower
+(`51188 -> 36852`) after the repeated Exit/START cycle; this remains above the
+16384-byte reserve target and is recorded as fragmentation to watch on future
+multi-cycle tests, not as a failure.
+
+No post-test gameplay code changes are part of this closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_PLAYER_OBJECT.md](MILESTONE_ESP32_RETIRE_LEGACY_PLAYER_OBJECT.md)
+
 ## Legacy Hud object retired — REAL-CYD PASS (2026-10-06)
 
 Hardware-tested code boundary:
