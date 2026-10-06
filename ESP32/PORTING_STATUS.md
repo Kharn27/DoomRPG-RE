@@ -1,5 +1,49 @@
 # Doom RPG ESP32 CYD porting status
 
+## Legacy Hud object retired — REAL-CYD PASS (2026-10-06)
+
+Hardware-tested code boundary:
+`8d0cd7443d2524829128f6ee26b1c19244bd6dbd`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The remaining inherited `Hud_t` compatibility object is now retired from the
+normal classic-CYD runtime. `doomRpg->hud` stays `NULL` by construction;
+visible HUD composition, top-bar/status feedback, dialogs and view flashes are
+owned by the native gameplay UI path. A final stale Hud dependency in the
+native main-menu model was also removed before the tested boundary.
+
+The real CYD validates MENU_MAIN -> START, full intro/disposal, exact Entrance
+first frame `71ca7465`, resident gameplay, chained dialogs including opcode
+19/26, automap open/close with HUD repaint, doors, fire-clear, note/dialog
+resume, pickups and weapon-help, secret feedback, active monster turns,
+committed monster retaliation, live monster movement, player kill/gib/drop and
+dynamic drop pickup.
+
+Representative combat witnesses:
+
+```text
+[MONSTERRETAL] COMMIT ... playerHP=30->27 armor=8->5 ... message="6 damage!" ...
+[MONSTERRETAL] COMMIT ... playerHP=27->24 armor=5->2 ... message="6 damage!" ...
+[MONSTERCOMBAT] COMMIT seq=102 ... hp=5->0 ... alive=1->0 ... xp=5-applied ...
+[MONSTERDROP] COMMIT ... type=3 subtype=21 def=92 tile=658 ...
+[PLAYERRES] COMMIT tile=658 ... armor=6/20 ... rollback=closed
+```
+
+Stable post-lazy-allocation ALIVE:
+
+```text
+heap=123612 heap8=57688 largest8=51188
+```
+
+The normal local PlatformIO build reports 45464 B static RAM and 781017 B
+linked Flash. No completed GitHub Actions result is attached to this exact
+hardware-tested head, so no CI result is claimed for it.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_HUD_OBJECT.md](MILESTONE_ESP32_RETIRE_LEGACY_HUD_OBJECT.md)
+
 ## Desktop Hud translation unit retired — REAL-CYD PASS (2026-10-04)
 
 Hardware-tested code boundary:
