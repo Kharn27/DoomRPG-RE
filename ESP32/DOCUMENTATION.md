@@ -1,5 +1,66 @@
 # ESP32 documentation map
 
+## Desktop Entity / EntityMonster translation units retired — REAL-CYD PASS (2026-10-06)
+
+Hardware-tested code boundary:
+`1442bda7f7f19d578afac81d151edfe2fc85e58a`.
+
+Branch:
+`fix/mainMenu`.
+
+The normal `esp32-cyd` build no longer compiles `src/Entity.c` or
+`src/EntityMonster.c`. The inherited `Game_t` shell remains temporarily for
+config/teardown ABI, but its embedded `Entity_t[400]` and
+`EntityMonster_t[100]` arrays are runtime-dormant: no legacy back-pointers are
+seeded, `numEntities == 0`, `numMonsters == 0`, and active/inactive/combat/
+spawn monster list heads remain NULL. Live map entities and monsters continue
+to be owned by compact native resident-map/gameplay state.
+
+The first retirement attempt at `c332ed12c7078b6a555ab1ebe876e302acc12ce4`
+correctly removed both translation units but exposed one residual linker edge:
+desktop `Game_activate()` still referenced `EntityMonster_getSoundID()`.
+The final boundary keeps the legacy `Game_activate` ABI symbol only as a
+fail-closed no-op; production activation remains
+`EspNativeGameplayMonsterActivation`.
+
+Normal local `esp32-cyd` build on the final boundary:
+
+```text
+static RAM   = 45464 B
+linked Flash = 781517 B
+```
+
+Real-CYD boot proves the legacy entity runtime stays dormant:
+
+```text
+[CORE] Game           used=36484 heap=141040 largest=73716
+[CORE] Legacy entity runtime retired arrays=dormant entities=0 monsters=0 owner=native-resident-map
+[CORE] Player retired object=NULL owner=native-gameplay-player-state bytes=52
+[CORE] READY objects=5 heap used=46188 remaining=141040 largest=73716 clip=160x120
+```
+
+START then traverses the full bounded intro/disposal and resident MAP_INTRO load,
+reaching the exact first-frame witness and native gameplay session:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=0x0 mediaTexels=0x0
+[MONSTERSTATE] READY ... noLegacyEntity=yes ...
+[MONSTERCOMBAT] READY ... legacyEntity=no
+[MONSTERACT] READY ... source=bsp-render-visible persistence=map-session ...
+```
+
+The resident session stabilizes at:
+
+```text
+[ALIVE] ... heap=129164 heap8=63240 largest8=51188 ... CORE=ready ... MENU=ready
+```
+
+No post-test gameplay code change is part of this closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DESKTOP_ENTITY_TUS.md](MILESTONE_ESP32_RETIRE_DESKTOP_ENTITY_TUS.md)
+
 ## Legacy Player object retired — REAL-CYD PASS (2026-10-06)
 
 Hardware-tested code boundary:
@@ -710,7 +771,7 @@ No local PlatformIO build is claimed.
 Detailed record:
 [MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md)
 
-## SYS Exit To Menu — REAL-CYD lifecycle PASS (2026-10-06)
+## SYS Exit To Menu — REAL-CYD PASS, merge accepted (2026-10-06)
 
 `CHECKPOINT 1` identified the single SD save slot, not the current level or an
 automatic checkpoint. Its caption is removed to make room for three stacked
@@ -808,14 +869,14 @@ native Back route to exact main-menu FNV `522dc605`, while menu memory remained
 Back card armed correctly, but this transcript ends before the second Back tap,
 so Options -> Back is not yet claimed.
 
-Remaining acceptance before declaring the whole branch closed:
+A later real-CYD Player-retirement run closes the remaining fresh-game lifecycle
+question: after heavily mutating gameplay, SYS Exit returns to MENU_MAIN and a
+new START resets the authoritative native PlayerState to the canonical fresh
+fingerprint before traversing intro and gameplay again.
 
-1. Complete Options -> Back after Exit.
-2. From MENU_MAIN, run a fresh Start Game and Exit again.
-3. Exercise the no-checkpoint path: Exit still works and main-menu LOAD reports
-   `No Save`. A full SAVE -> unsaved moves -> Exit -> main-menu LOAD route is
-   still useful as an end-to-end variant, although unsaved rollback itself is
-   already hardware-proven by the in-game LOAD above.
+The branch is accepted for merge. Two edge cases remain deliberately unclaimed,
+not blockers: completing the second Options -> Back tap after Exit, and the
+no-checkpoint / main-menu `No Save` path.
 
 ## Native LEVEL UP screen and checkpoint resume projection — REAL-CYD PASS (2026-10-02)
 
