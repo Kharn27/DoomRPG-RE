@@ -693,9 +693,25 @@ loads stabilize at `heap8=62580 largest8=51188`; both exits return exactly to
 `heap8=108488 largest8=73716`. This is the hardware no-leak witness for the
 exercised destructive lifecycle. `shapeData` and `mediaTexels` remain NULL.
 
-Still pending for full branch acceptance: explicit Exit-confirmation
-cancellation via gap/tab/HUB close, Options/Help after Exit plus fresh START,
-and SAVE -> unsaved movement -> Exit -> main-menu LOAD / no-checkpoint behavior.
+Additional real-CYD acceptance proves Exit-confirmation cancellation by
+leaving SYS: after arming Exit, switching pages and later closing the HUB does
+not queue a delayed teardown; normal gameplay resumes and commits movement and
+pickup state. A later in-game LOAD after unsaved movement plus an Armor Shard
+pickup restores the checkpoint exactly from `pos=1248,352 / armor=15/23 /
+playerFNV=eeda091c` back to `pos=1120,352 / armor=11/23 /
+playerFNV=52c15778`.
+
+After another Exit, Help/About opens, pages and returns through the native Back
+route to exact main FNV `522dc605` with menu memory unchanged at
+`heap8=108488 largest8=73716`. Options opens with zero heap delta and its Back
+card arms correctly; the supplied transcript stops before the second Back tap,
+so Options -> Back is not yet claimed.
+
+Still pending for full branch acceptance: complete Options -> Back after Exit,
+fresh START -> gameplay -> Exit, and the no-checkpoint / main-menu `No Save`
+path. The end-to-end SAVE -> unsaved moves -> Exit -> main-menu LOAD variant is
+still useful, although unsaved rollback itself is now hardware-proven via the
+in-game LOAD route.
 
 ## Native LEVEL UP screen + checkpoint monster projection — REAL-CYD PASS (2026-10-02)
 
