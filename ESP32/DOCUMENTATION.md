@@ -1,5 +1,333 @@
 # ESP32 documentation map
 
+## Legacy Hud object retired — REAL-CYD PASS (2026-10-06)
+
+Hardware-tested code boundary:
+`8d0cd7443d2524829128f6ee26b1c19244bd6dbd`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The remaining inherited `Hud_t` compatibility object is now retired from the
+normal classic-CYD runtime. `doomRpg->hud` stays `NULL` by construction;
+visible HUD composition, top-bar/status feedback, dialogs and view flashes are
+owned by the native gameplay UI path. A final stale Hud dependency in the
+native main-menu model was also removed before the tested boundary.
+
+The real CYD validates MENU_MAIN -> START, full intro/disposal, exact Entrance
+first frame `71ca7465`, resident gameplay, chained dialogs including opcode
+19/26, automap open/close with HUD repaint, doors, fire-clear, note/dialog
+resume, pickups and weapon-help, secret feedback, active monster turns,
+committed monster retaliation, live monster movement, player kill/gib/drop and
+dynamic drop pickup.
+
+Representative combat witnesses:
+
+```text
+[MONSTERRETAL] COMMIT ... playerHP=30->27 armor=8->5 ... message="6 damage!" ...
+[MONSTERRETAL] COMMIT ... playerHP=27->24 armor=5->2 ... message="6 damage!" ...
+[MONSTERCOMBAT] COMMIT seq=102 ... hp=5->0 ... alive=1->0 ... xp=5-applied ...
+[MONSTERDROP] COMMIT ... type=3 subtype=21 def=92 tile=658 ...
+[PLAYERRES] COMMIT tile=658 ... armor=6/20 ... rollback=closed
+```
+
+Stable post-lazy-allocation ALIVE:
+
+```text
+heap=123612 heap8=57688 largest8=51188
+```
+
+The normal local PlatformIO build reports 45464 B static RAM and 781017 B
+linked Flash. No completed GitHub Actions result is attached to this exact
+hardware-tested head, so no CI result is claimed for it.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_HUD_OBJECT.md](MILESTONE_ESP32_RETIRE_LEGACY_HUD_OBJECT.md)
+
+## Desktop Hud translation unit retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`9efa082d1aacbc137e1e7fcd726f857c0dbae2d6`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The normal `esp32-cyd` build no longer compiles `src/Hud.c`. A bounded
+ESP32 compatibility shim temporarily preserves only the scalar/message ABI
+still referenced by inherited helpers. All legacy HUD raster functions in that
+shim are no-ops; visible HUD composition is owned by
+`EspNativeGameplayHud` and its PAK-backed renderer.
+
+Real-CYD validation covers cold boot, MENU_MAIN, START, the complete bounded
+intro, resident MAP_INTRO load, hub inventory/weapons/status pages, PASS_TURN,
+automap open/close, native dialogs, standalone weapon-help dialog, player
+movement/pickups, monster activation, monster hit/miss retaliation, player
+attack/kill, drop materialization and top-bar feedback.
+
+Representative evidence:
+
+```text
+[HUDCOMPAT] INIT bytes=600 images=NULL renderer=native-pak-stream
+[LAYOUT] HUD legacy bitmaps status=0x0 large=0x0 faces=0x0 icons=0x0 attack=0x0 arrow=0x0 owner=native-pak-stream
+...
+[GAMEPLAYHUD] REPAINT ... ownerMutation=no ...
+...
+[MONSTERRETAL] COMMIT ... message="5 damage!" ...
+[MONSTERRETAL] MISS-COMMIT ... message="Dodged!" ...
+[MONSTERCOMBAT] COMMIT ... alive=1->0 ...
+```
+
+The stable resident witness remains:
+
+```text
+heap=127880 heap8=61956 largest8=51188
+```
+
+Normal `esp32-cyd` CI #1584 is SUCCESS:
+
+```text
+static RAM   = 45472 B
+linked Flash = 781385 B
+artifact id  = 11303743052
+artifact sha256 = d90cb7dc7e4f18db92c0d3317be493ab2ea85ba6af6920d61da913693148886a
+```
+
+This is 1384 B less linked Flash than the preceding HUD-bitmap build.
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DESKTOP_HUD_TU.md](MILESTONE_ESP32_RETIRE_DESKTOP_HUD_TU.md)
+
+## Legacy HUD bitmap residency retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`96813c8333ec07dcfc7343517e6c69764b70f082`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The normal ESP32 layout no longer calls legacy `Hud_startup()` to make six
+desktop HUD bitmaps resident. The compact `Hud_t` compatibility object remains
+temporarily for scalar geometry/message fields, while the production
+`EspNativeGameplayHud` continues to read HUD assets directly from the native
+PAK as bounded on-demand data.
+
+Retired resident images:
+
+```text
+imgStatusBar
+imgStatusBarLarge
+imgHudFaces
+imgIconSheet
+imgAttArrow
+imgStatusArrow
+```
+
+Real-CYD gameplay remains healthy through PASS_TURN, movement, automap-derived
+redraws, repeated armor pickups, collision, regular door open/close and
+top-bar/action feedback. A stable resident witness is:
+
+```text
+[ALIVE] ... heap=127880 heap8=61956 largest8=51188 ...
+```
+
+The previous legal-strip run at a comparable resident boundary reported
+`heap=123632 / heap8=57708`. The observed +4248 B is consistent with removing
+the six packed HUD image allocations plus allocator/image metadata overhead.
+
+Normal `esp32-cyd` CI #1582 is SUCCESS:
+
+```text
+static RAM   = 45472 B
+linked Flash = 782769 B
+artifact id  = 11304071480
+artifact sha256 = ca85db10f8a0595a743f68c27ea02f5ccc8b30bd165ea03ffbd58091a90b243e
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_HUD_BITMAPS.md](MILESTONE_ESP32_RETIRE_LEGACY_HUD_BITMAPS.md)
+
+## Legacy legal-strip residency retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`35c310026484f095448ef926b2bba944c8dbb359`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The normal classic-CYD boot no longer allocates the inherited `g.bmp`
+128x512 legal-screen strip. ESP32 production boot already bypasses
+`ST_LEGALS` and paints the native opaque MENU_MAIN dashboard directly, so
+retaining 32768 packed pixel bytes until START was dead residency.
+
+Real-CYD evidence:
+
+```text
+[LAYOUT] heap8 used=21828 remaining=117932 largest=73716
+...
+[MAINOPAQUE] ... heap8=98772 largest8=73716
+[ALIVE] ... heap=164696 heap8=98772 largest8=73716 ...
+...
+[MAINMENU] Runtime cleanup legals=already-free heap8=98772->107212 gained=8440 ...
+```
+
+The previous Sound-retirement menu witness was `heap8=65888`; the new menu
+witness is `98772`, a +32884 B increase consistent with avoiding the 32768 B
+packed legal strip plus allocator effects. START, intro disposal, MAP_INTRO
+load, native HUD, resident gameplay, pickups and doors remain functional.
+
+Normal `esp32-cyd` CI #1580 is SUCCESS:
+
+```text
+static RAM   = 45472 B
+linked Flash = 782817 B
+artifact id  = 11302983372
+artifact sha256 = 5b53223c103def2db06d252853751e3d512f7e41c3fb00359eb245fee515d25e
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_LEGALS_STRIP.md](MILESTONE_ESP32_RETIRE_LEGACY_LEGALS_STRIP.md)
+
+## Legacy Sound object retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`fffe6f6d780ae1d7444c49cb08df747fe5f4ca0c`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The classic-CYD runtime no longer constructs the inherited `Sound_t`.
+Audio playback remains intentionally deferred; gameplay/menu code publishes
+bounded `EspNativeAudioIntent` records while compatibility
+`Sound_playSound/stopSounds/freeSounds` calls are NULL-safe no-ops.
+
+The ESP32 generated sources also retire every remaining direct field dereference
+that would require a resident Sound object:
+
+```text
+Game_loadConfig()      -> legacy volume field consumed but not stored in Sound_t
+DoomCanvas_castState() -> legacy soundEnabled branch fixed to playback-disabled behavior
+DoomCanvas_run()       -> legacy nextplay reset removed
+DoomRPG_free()         -> Sound_free ownership removed
+```
+
+Real-CYD boot proves the object is absent:
+
+```text
+[CORE] Sound retired object=NULL owner=native-audio-intent playback=deferred
+[CORE] READY objects=7 heap used=47460 remaining=139760 largest=73716 clip=160x120
+```
+
+START, the full bounded intro, resident MAP_INTRO construction, first frame,
+HUD, caches and resident gameplay all complete successfully with
+`doomRpg->sound == NULL`. The session reaches:
+
+```text
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=123640 heap8=57716 largest8=51188 ... CORE=ready ...
+```
+
+The previous Combat-retirement witness at the same broad gameplay stage was
+`heap=123436`; the observed +204 B is consistent with removing the ~220 B
+Sound allocation, subject to normal allocator/layout variation.
+
+Normal `esp32-cyd` CI #1578 is SUCCESS:
+
+```text
+static RAM   = 45472 B
+linked Flash = 782837 B
+artifact id  = 11302676326
+artifact sha256 = 502243e5bdd8abc9c9b2764428939098440619e44e5f7b3871442925028501e9
+```
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_SOUND.md](MILESTONE_ESP32_RETIRE_LEGACY_SOUND.md)
+
+## Legacy Combat object retired — REAL-CYD PASS (2026-10-04)
+
+Hardware-tested code boundary:
+`766d1e0cf2280d784f2c073f552e3f57889dc541`.
+
+Branch:
+`agent/esp32-retire-legacy-combat`.
+
+The normal ESP32 runtime no longer constructs the inherited `Combat_t`.
+`Combat.c` and the now-unreferenced desktop `Weapon.c` are excluded from
+the `esp32-cyd` build, `doomRpg->combat` is required to remain `NULL`,
+and the remaining production responsibilities are owned by the native combat
+math, monster combat/retaliation, monster-turn sequencer and native first-person
+weapon renderer.
+
+The pre-retirement ELF retained only three desktop Combat roots:
+`Combat_init`, `Combat_free` and `Combat_drawWeapon`. The native weapon
+renderer already owns the legacy idle/attack offsets and bounded PAK-backed
+decode/cache path, so the ESP32-generated `DoomCanvas.c` no longer calls the
+legacy weapon draw. Generated `DoomRPG.c` likewise no longer retains
+`Combat_free`.
+
+The first hardware attempt exposed one real cleanup dependency rather than a
+combat dependency. START crashed with `StoreProhibited`,
+`EXCVADDR=0x00000004`; symbolization placed the fault in
+`Game_unloadMapData()` during `DoomRPG_esp32ReleaseMainMenuMemory()`.
+That cleanup still wrote `combat->curTarget/curAttacker = NULL`. The final
+ESP32-generated `Game.c` retires only those obsolete writes while preserving
+the rest of menu/map teardown. No `Combat_t` allocation or stub was restored.
+
+Real-CYD acceptance on the final boundary proves START reaches resident gameplay
+and a native player attack remains functional:
+
+```text
+[ACTIONENGINE] TRACE seq=3 weapon=2 distance=1 tile=873 target=sprite index=127 ... route=CRATE_SUBTYPE2
+[CRATE] CONSEQUENCE seq=3 ... outcome=TRANSFORM ... attackDamage=6 attackArmorDamage=4 ...
+[MONSTERTURN] ATTACK-REQUEST seq=3 source=explicit-native-player-attack ...
+[CRATE] COMMIT seq=3 ... ammo=8->7 ... turnAdvance=PLAYER_ATTACK-requested rollback=closed
+[ACTIONENGINE] ATTACK seq=3 weapon=2 frame=1->0 generic=yes worldCommitted=yes
+[MONSTERTURN] ORDERED-DISPATCH reason=PLAYER_ATTACK turnToken=2 activeCount=0 ...
+```
+
+This covers the native weapon attack pose, ammo mutation, generic combat math,
+crate consequence RNG/world mutation and semantic turn publication with
+`doomRpg->combat == NULL`.
+
+The same run remains stable in resident gameplay:
+
+```text
+[ALIVE] ... heap=123436 heap8=57512 largest8=51188 ... CORE=ready ... MENU=ready
+```
+
+A previous comparable early resident-gameplay witness before Combat retirement
+was `heap=122376`; the observed +1060 B is consistent with removing the
+1036-byte `Combat_t` allocation plus allocator overhead. Treat this as a
+hardware consistency witness, not an exact allocator accounting proof.
+
+Normal `esp32-cyd` CI #1575 is SUCCESS:
+
+```text
+static RAM   = 45480 B
+linked Flash = 782773 B
+artifact id  = 11299309172
+artifact sha256 = f0d066fdfa7535ae875e1a9ff06269656103ff5b3952ae6a05ee85378a1d18ab
+```
+
+Versus merged main before the milestone: static RAM is 8 B lower and linked
+Flash is 1800 B lower. More importantly, the 1036-byte desktop Combat object is
+no longer allocated at runtime.
+
+The final ELF contains no `Combat_*` or desktop `Weapon_*` symbols.
+`CombatEntity_*` remains intentionally linked because `Player_t` still uses
+that small stats container; retiring it belongs to a later Player cleanup.
+
+No local PlatformIO build is claimed.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_COMBAT.md](MILESTONE_ESP32_RETIRE_LEGACY_COMBAT.md)
+
 ## Legacy EntityDef manager retired — REAL-CYD PASS (2026-10-04)
 
 Hardware-tested code boundary:

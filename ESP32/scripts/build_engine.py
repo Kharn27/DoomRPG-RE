@@ -64,6 +64,185 @@ if doom_canvas.count(height_needle) != 1:
 doom_canvas = doom_canvas.replace(include_needle, include_replacement, 1)
 doom_canvas = doom_canvas.replace(height_needle, height_replacement, 1)
 
+legacy_weapon_draw_needle = """	if (doomCanvas->state != ST_CAST) {
+		Combat_drawWeapon(doomCanvas->combat, doomCanvas->shakeX, doomCanvas->shakeY - (doomCanvas->captureState == 2 ? 10 : 0));
+	}
+"""
+legacy_weapon_draw_replacement = """	/* ESP32 resident gameplay owns first-person weapon presentation through
+	 * EspNativeGameplayWeapon. DoomCanvas::combat is intentionally NULL. */
+"""
+legacy_weapon_draw_count = doom_canvas.count(legacy_weapon_draw_needle)
+if legacy_weapon_draw_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas legacy weapon draw shape; "
+        "review retired ESP32 Combat ownership"
+    )
+doom_canvas = doom_canvas.replace(
+    legacy_weapon_draw_needle, legacy_weapon_draw_replacement, 1
+)
+
+sound_enabled_needle = "			if (doomCanvas->doomRpg->sound->soundEnabled != 0) {"
+sound_enabled_replacement = "			if (0) { /* ESP32 audio playback deferred; legacy soundEnabled was false */"
+sound_enabled_count = doom_canvas.count(sound_enabled_needle)
+sound_nextplay_needle = "\tdoomCanvas->doomRpg->sound->nextplay = 0;\n"
+sound_nextplay_count = doom_canvas.count(sound_nextplay_needle)
+if sound_enabled_count != 1 or sound_nextplay_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas direct Sound_t field access shape; "
+        "review retired ESP32 Sound ownership"
+    )
+doom_canvas = doom_canvas.replace(
+    sound_enabled_needle, sound_enabled_replacement, 1
+)
+doom_canvas = doom_canvas.replace(sound_nextplay_needle, "", 1)
+
+legacy_legals_load_needle = (
+    '\tDoomRPG_createImage(doomCanvas->doomRpg, "g.bmp", false, '
+    '&doomCanvas->imgLegals);\n'
+)
+legacy_legals_load_replacement = (
+    '\t/* ESP32 native boot skips ST_LEGALS and paints MENU_MAIN directly; '
+    'do not retain the 128x512 legacy legal strip. */\n'
+)
+legacy_legals_load_count = doom_canvas.count(legacy_legals_load_needle)
+if legacy_legals_load_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas legacy legal asset load shape; "
+        "review native main-menu ownership"
+    )
+doom_canvas = doom_canvas.replace(
+    legacy_legals_load_needle, legacy_legals_load_replacement, 1
+)
+
+legacy_hud_startup_needle = (
+    "\tHud_startup(doomCanvas->hud, doomCanvas->largeStatus);\n"
+)
+legacy_hud_startup_replacement = """\t/* ESP32 native HUD owns visible HUD composition and fixed 20/80/20
+\t * geometry. The inherited Hud_t owner is retired and remains NULL. */
+"""
+legacy_hud_startup_count = doom_canvas.count(legacy_hud_startup_needle)
+if legacy_hud_startup_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas legacy Hud_startup shape; "
+        "review native HUD ownership"
+    )
+doom_canvas = doom_canvas.replace(
+    legacy_hud_startup_needle, legacy_hud_startup_replacement, 1
+)
+
+legacy_hud_bind_needle = "\tdoomCanvas->hud = doomRpg->hud;\n"
+legacy_hud_bind_replacement = """\t/* ESP32 native HUD state is independent of desktop Hud_t. */
+\tdoomCanvas->hud = NULL;
+"""
+legacy_hud_bind_count = doom_canvas.count(legacy_hud_bind_needle)
+
+legacy_hud_height_needle = (
+    "\theight = (displayH - (doomRpg->hud->statusBarHeight) - "
+    "(doomRpg->hud->statusTopBarHeight));\n"
+)
+legacy_hud_height_replacement = "\theight = displayH - 40;\n"
+legacy_hud_height_count = doom_canvas.count(legacy_hud_height_needle)
+
+legacy_hud_display_height_needle = (
+    "\tdoomCanvas->displayRect.h = (doomRpg->hud->statusBarHeight + "
+    "height + doomRpg->hud->statusTopBarHeight);\n"
+)
+legacy_hud_display_height_replacement = (
+    "\tdoomCanvas->displayRect.h = 20 + height + 20;\n"
+)
+legacy_hud_display_height_count = doom_canvas.count(
+    legacy_hud_display_height_needle
+)
+
+legacy_hud_screen_y_needle = (
+    "\tdoomCanvas->screenRect.y = doomCanvas->displayRect.y + "
+    "doomRpg->hud->statusTopBarHeight;\n"
+)
+legacy_hud_screen_y_replacement = (
+    "\tdoomCanvas->screenRect.y = doomCanvas->displayRect.y + 20;\n"
+)
+legacy_hud_screen_y_count = doom_canvas.count(legacy_hud_screen_y_needle)
+
+legacy_hud_softkey_needle = (
+    "\t\tHud_drawBarTiles(doomCanvas->doomRpg->hud, x, y, "
+    "doomCanvas->clipRect.w, false);\n"
+)
+legacy_hud_softkey_replacement = (
+    "\t\t/* ESP32 native UI owns bars/soft-key surfaces. */\n"
+)
+legacy_hud_softkey_count = doom_canvas.count(legacy_hud_softkey_needle)
+
+legacy_hud_automap_state_needle = """\t\t\tdoomCanvas->doomRpg->hud->isUpdate = true;
+\t\t\tHud_drawTopBar(doomCanvas->doomRpg->hud);
+\t\t\tHud_drawBottomBar(doomCanvas->doomRpg->hud);
+"""
+legacy_hud_automap_state_replacement = """\t\t\t/* ESP32 native dialog/HUD composition repaints explicitly. */
+"""
+legacy_hud_automap_state_count = doom_canvas.count(
+    legacy_hud_automap_state_needle
+)
+
+legacy_hud_dying_needle = """\telse if (stateNum == ST_DYING) {
+\t\tDoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
+\t\tdoomCanvas->deathTime = doomCanvas->time;
+\t\tdoomCanvas->player->weapon = 0;
+\t\tdoomCanvas->player->weapons = 0;
+\t\tHud_drawBottomBar(doomCanvas->hud);
+\t\treturn;
+\t}
+"""
+legacy_hud_dying_replacement = """\telse if (stateNum == ST_DYING) {
+\t\tDoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
+\t\tdoomCanvas->deathTime = doomCanvas->time;
+\t\tdoomCanvas->player->weapon = 0;
+\t\tdoomCanvas->player->weapons = 0;
+\t\t/* ESP32 native player-death path owns HUD presentation. */
+\t\treturn;
+\t}
+"""
+legacy_hud_dying_count = doom_canvas.count(legacy_hud_dying_needle)
+
+hud_object_patch_counts = [
+    legacy_hud_bind_count,
+    legacy_hud_height_count,
+    legacy_hud_display_height_count,
+    legacy_hud_screen_y_count,
+    legacy_hud_softkey_count,
+    legacy_hud_automap_state_count,
+    legacy_hud_dying_count,
+]
+if any(count != 1 for count in hud_object_patch_counts):
+    raise RuntimeError(
+        "Unexpected DoomCanvas direct Hud_t usage shape; "
+        "review retired ESP32 Hud ownership"
+    )
+
+doom_canvas = doom_canvas.replace(
+    legacy_hud_bind_needle, legacy_hud_bind_replacement, 1
+)
+doom_canvas = doom_canvas.replace(
+    legacy_hud_height_needle, legacy_hud_height_replacement, 1
+)
+doom_canvas = doom_canvas.replace(
+    legacy_hud_display_height_needle,
+    legacy_hud_display_height_replacement,
+    1,
+)
+doom_canvas = doom_canvas.replace(
+    legacy_hud_screen_y_needle, legacy_hud_screen_y_replacement, 1
+)
+doom_canvas = doom_canvas.replace(
+    legacy_hud_softkey_needle, legacy_hud_softkey_replacement, 1
+)
+doom_canvas = doom_canvas.replace(
+    legacy_hud_automap_state_needle,
+    legacy_hud_automap_state_replacement,
+    1,
+)
+doom_canvas = doom_canvas.replace(
+    legacy_hud_dying_needle, legacy_hud_dying_replacement, 1
+)
+
 menu_play_needle = "MenuSystem_playSound(doomCanvas->menuSystem);"
 menu_enter_sound_needle = "Sound_playSound(doomCanvas->doomRpg->sound, 5067, 0, 3);"
 menu_play_count = doom_canvas.count(menu_play_needle)
@@ -86,7 +265,101 @@ doom_canvas = doom_canvas.replace(
 with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_canvas)
 
-print("[ESP32] DoomCanvas generated with 160x120-aware minimum height + native menu audio intents")
+print(
+    "[ESP32] DoomCanvas generated with 160x120-aware minimum height + "
+    f"native menu audio intents + {legacy_weapon_draw_count} legacy Combat weapon draw retired + "
+    f"{sound_enabled_count + sound_nextplay_count} direct Sound field access(es) retired + "
+    f"{legacy_legals_load_count} legacy legal-strip load retired + "
+    f"{legacy_hud_startup_count} legacy HUD startup retired + "
+    f"{sum(hud_object_patch_counts)} direct Hud_t use(s) retired"
+)
+
+# Game_unloadMapData() still clears two fields on the inherited Combat_t during
+# START/LOAD menu-runtime teardown. ESP32 deliberately keeps DoomRPG_t::combat
+# NULL, so generate a narrow ESP32 Game.c copy that retires only those obsolete
+# pointer resets. The desktop source remains the behavioral reference.
+game_source = join(engine_dir, "Game.c")
+game_patched = join(patched_dir, "Game.c")
+
+with open(game_source, "r", encoding="latin-1") as source_file:
+    game_source_text = source_file.read()
+
+game_combat_cleanup_needle = """	game->doomRpg->combat->curTarget = NULL;
+	game->doomRpg->combat->curAttacker = NULL;
+"""
+game_combat_cleanup_replacement = """	/* ESP32 native combat has no Combat_t owner. The legacy target/attacker
+	 * reset is obsolete; native combat owners reset independently. */
+"""
+game_combat_cleanup_count = game_source_text.count(game_combat_cleanup_needle)
+if game_combat_cleanup_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_unloadMapData Combat cleanup shape; "
+        "review retired ESP32 Combat ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_combat_cleanup_needle, game_combat_cleanup_replacement, 1
+)
+
+game_sound_volume_needle = """\t\t\tintData = File_readInt(rw);
+\t\t\tif (game) {
+\t\t\t\tgame->doomRpg->sound->volume = intData;
+\t\t\t}
+"""
+game_sound_volume_replacement = """\t\t\tintData = File_readInt(rw);
+\t\t\t/* ESP32 audio playback is deferred; consume the legacy config
+\t\t\t * volume field without retaining Sound_t. */
+\t\t\t(void)intData;
+"""
+game_sound_volume_count = game_source_text.count(game_sound_volume_needle)
+if game_sound_volume_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_loadConfig Sound volume shape; "
+        "review retired ESP32 Sound ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_sound_volume_needle, game_sound_volume_replacement, 1
+)
+
+with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
+    patched_file.write(game_source_text)
+
+print(
+    "[ESP32] Game generated with "
+    f"{game_combat_cleanup_count} legacy Combat cleanup reset retired + "
+    f"{game_sound_volume_count} legacy Sound config field retired"
+)
+
+# Player_reset() still clears the inherited Hud_t message buffers. The native
+# gameplay feedback/message owners reset independently, so generate an ESP32-only
+# Player.c copy without those obsolete Hud_t writes.
+player_source = join(engine_dir, "Player.c")
+player_patched = join(patched_dir, "Player.c")
+
+with open(player_source, "r", encoding="latin-1") as source_file:
+    player_source_text = source_file.read()
+
+player_hud_reset_needle = """\tplayer->doomRpg->hud->logMessage[0] = '\\0';
+\tplayer->doomRpg->hud->msgCount = 0;
+"""
+player_hud_reset_replacement = """\t/* ESP32 native feedback/message owners do not retain Hud_t. */
+"""
+player_hud_reset_count = player_source_text.count(player_hud_reset_needle)
+if player_hud_reset_count != 1:
+    raise RuntimeError(
+        "Unexpected Player_reset Hud_t cleanup shape; "
+        "review retired ESP32 Hud ownership"
+    )
+player_source_text = player_source_text.replace(
+    player_hud_reset_needle, player_hud_reset_replacement, 1
+)
+
+with open(player_patched, "w", encoding="latin-1", newline="\n") as patched_file:
+    patched_file.write(player_source_text)
+
+print(
+    "[ESP32] Player generated with "
+    f"{player_hud_reset_count} legacy Hud reset block retired"
+)
 
 # DoomRPG_createImage() is the central image-loading path used by the game.
 # Desktop SDL handles the original indexed BMP variants, while the deliberately
@@ -133,6 +406,33 @@ entity_def_free_replacement = """\t/* ESP32 native resident maps use EspEntityDe
 \tdoomrpg->entityDef = NULL;
 """
 entity_def_free_count = doom_rpg_source_text.count(entity_def_free_needle)
+combat_free_needle = """	if (doomrpg->combat) {
+		Combat_free(doomrpg->combat, true);
+	}
+	doomrpg->combat = NULL;
+"""
+combat_free_replacement = """	/* ESP32 native combat owners replace the inherited Combat_t object. */
+	doomrpg->combat = NULL;
+"""
+combat_free_count = doom_rpg_source_text.count(combat_free_needle)
+sound_free_needle = """	if (doomrpg->sound) {
+		Sound_free(doomrpg->sound, true);
+	}
+	doomrpg->sound = NULL;
+"""
+sound_free_replacement = """	/* ESP32 audio playback is deferred and Sound_t is never constructed. */
+	doomrpg->sound = NULL;
+"""
+sound_free_count = doom_rpg_source_text.count(sound_free_needle)
+hud_free_needle = """\tif (doomrpg->hud) {
+\t\tHud_free(doomrpg->hud, true);
+\t}
+\tdoomrpg->hud = NULL;
+"""
+hud_free_replacement = """\t/* ESP32 visible HUD is native and Hud_t is never constructed. */
+\tdoomrpg->hud = NULL;
+"""
+hud_free_count = doom_rpg_source_text.count(hud_free_needle)
 menu_free_needle = "\tif (doomrpg->menuSystem) {\n\t\tMenuSystem_free(doomrpg->menuSystem, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_replacement = "\tif (doomrpg->menuSystem) {\n\t\tEspNativeMenuStorage_free(doomrpg->menuSystem, doomrpg, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_count = doom_rpg_source_text.count(menu_free_needle)
@@ -158,6 +458,21 @@ if entity_def_free_count != 1:
         "Unexpected DoomRPG.c EntityDef cleanup shape; "
         "review retired ESP32 EntityDef ownership"
     )
+if combat_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c Combat cleanup shape; "
+        "review retired ESP32 Combat ownership"
+    )
+if sound_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c Sound cleanup shape; "
+        "review retired ESP32 Sound ownership"
+    )
+if hud_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c Hud cleanup shape; "
+        "review retired ESP32 Hud ownership"
+    )
 if menu_free_count != 1:
     raise RuntimeError(
         "Unexpected DoomRPG.c MenuSystem cleanup shape; "
@@ -181,6 +496,15 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
     entity_def_free_needle, entity_def_free_replacement, 1
 )
 doom_rpg_source_text = doom_rpg_source_text.replace(
+    combat_free_needle, combat_free_replacement, 1
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    sound_free_needle, sound_free_replacement, 1
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    hud_free_needle, hud_free_replacement, 1
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(
     menu_free_needle, menu_free_replacement, 1
 )
 
@@ -193,6 +517,9 @@ print(
     f"{bmp_call_count} SDL_LoadBMP_RW call(s) redirected, "
     f"{particle_free_count} desktop ParticleSystem cleanup retired, "
     f"{entity_def_free_count} desktop EntityDef cleanup retired, "
+    f"{combat_free_count} desktop Combat cleanup retired, "
+    f"{sound_free_count} desktop Sound cleanup retired, "
+    f"{hud_free_count} desktop Hud cleanup retired, "
     f"{menu_free_count} desktop MenuSystem cleanup redirected)"
 )
 
@@ -410,6 +737,11 @@ env.BuildSources(
         "-<MenuSystem.c>",
         "-<ParticleSystem.c>",
         "-<EntityDef.c>",
+        "-<Combat.c>",
+        "-<Weapon.c>",
+        "-<Hud.c>",
+        "-<Game.c>",
+        "-<Player.c>",
         "-<Z_Zone.c>",
         "-<Z_Zip.c>",
         "-<DoomCanvas.c>",
@@ -423,6 +755,8 @@ env.BuildSources(
     src_filter=[
         "+<DoomCanvas.c>",
         "+<DoomRPG.c>",
+        "+<Game.c>",
+        "+<Player.c>",
     ],
 )
 

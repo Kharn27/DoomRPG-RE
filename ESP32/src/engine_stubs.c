@@ -2,10 +2,8 @@
 #include <stdio.h>
 
 #include "DoomRPG.h"
-#include "Combat.h"
 #include "DoomCanvas.h"
 #include "Game.h"
-#include "Hud.h"
 #include "esp_native_menu_state.h"
 #include "Player.h"
 #include "Render.h"
@@ -78,17 +76,6 @@ char* SDL_MouseGetNameButton(int id) {
 }
 int SDL_JoystickGetButtonID(void) { return -1; }
 
-Sound_t* Sound_init(Sound_t* sound, DoomRPG_t* doomRpg) {
-    if (sound == NULL) sound = SDL_calloc(1, sizeof(Sound_t));
-    if (sound != NULL) {
-        sound->doomRpg = doomRpg;
-        sound->soundEnabled = false;
-        sound->volume = 0;
-    }
-    return sound;
-}
-
-void Sound_free(Sound_t* sound, boolean freePtr) { if (freePtr) SDL_free(sound); }
 void Sound_stopSounds(Sound_t* sound) { (void)sound; }
 void Sound_freeSound(Sound_t* sound, int chan) { (void)sound; (void)chan; }
 int Sound_getState(Sound_t* sound, int resourceID) { (void)sound; (void)resourceID; return 0; }
@@ -132,11 +119,10 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
     metrics->render = sizeof(Render_t);
     metrics->game = sizeof(Game_t);
     metrics->player = sizeof(Player_t);
-    metrics->combat = sizeof(Combat_t);
-    metrics->supportObjects = sizeof(EspNativeMenuState_t) + sizeof(Hud_t) +
-                              sizeof(Sound_t);
+    metrics->combat = 0U;
+    metrics->supportObjects = sizeof(EspNativeMenuState_t);
     metrics->totalInitialObjects = metrics->doomRpg + metrics->doomCanvas +
-        metrics->render + metrics->game + metrics->player + metrics->combat +
+        metrics->render + metrics->game + metrics->player +
         metrics->supportObjects;
 }
 
@@ -163,8 +149,8 @@ uint32_t DoomRPG_getLargest8BitBlock(void) {
 
 const char* DoomRPG_coreStageName(uint8_t stage) {
     static const char* const names[DOOMRPG_CORE_STAGE_COUNT] = {
-        "DoomRPG", "DoomCanvas", "Render", "MenuSystem", "Hud", "Sound",
-        "Game", "Player", "Combat"
+        "DoomRPG", "DoomCanvas", "Render", "MenuSystem",
+        "Game", "Player"
     };
     return stage < DOOMRPG_CORE_STAGE_COUNT ? names[stage] : "unknown";
 }
@@ -288,18 +274,55 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
                      Render_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_MENU_SYSTEM, menuSystem,
                      EspNativeMenuStorage_init(NULL));
-    INIT_CORE_OBJECT(DOOMRPG_CORE_HUD, hud,
-                     Hud_init(NULL, doomRpg));
-    INIT_CORE_OBJECT(DOOMRPG_CORE_SOUND, sound,
-                     Sound_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_GAME, game,
                      Game_init(NULL, doomRpg));
     INIT_CORE_OBJECT(DOOMRPG_CORE_PLAYER, player,
                      Player_init(NULL, doomRpg));
-    INIT_CORE_OBJECT(DOOMRPG_CORE_COMBAT, combat,
-                     Combat_init(NULL, doomRpg));
 
 #undef INIT_CORE_OBJECT
+
+    /*
+     * Audio playback remains deferred on classic CYD. Production gameplay
+     * publishes bounded EspNativeAudioIntent records while the inherited
+     * Sound_t owner is retired. Compatibility Sound_playSound/stopSounds calls
+     * are NULL-safe no-ops until a dedicated native audio milestone.
+     */
+    if (doomRpg->sound != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.bytesUsed =
+            coreInitReport.heapBefore >= coreInitReport.heapAfter
+                ? coreInitReport.heapBefore - coreInitReport.heapAfter
+                : 0;
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED retired Sound pointer=%p expected=NULL\n",
+               (void*)doomRpg->sound);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] Sound retired object=NULL owner=native-audio-intent playback=deferred\n");
+
+    /*
+     * Visible gameplay HUD composition, top-bar feedback, hub restoration and
+     * status repainting are all native ESP32 owners. The inherited Hud_t
+     * object is retired and must remain NULL.
+     */
+    if (doomRpg->hud != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.bytesUsed =
+            coreInitReport.heapBefore >= coreInitReport.heapAfter
+                ? coreInitReport.heapBefore - coreInitReport.heapAfter
+                : 0;
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED retired Hud pointer=%p expected=NULL\n",
+               (void*)doomRpg->hud);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] Hud retired object=NULL owner=native-gameplay-hud+status-feedback\n");
 
     /*
      * Native map/gameplay resolves entity definition metadata through the
@@ -322,6 +345,27 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
         return 0;
     }
     printf("[CORE] EntityDef retired object=NULL owner=native-entitydef-catalog\n");
+
+    /*
+     * Player/monster attacks, retaliation, weapon presentation and damage math
+     * are all owned by bounded native ESP32 subsystems. The inherited Combat_t
+     * object is retired and must remain NULL.
+     */
+    if (doomRpg->combat != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.bytesUsed =
+            coreInitReport.heapBefore >= coreInitReport.heapAfter
+                ? coreInitReport.heapBefore - coreInitReport.heapAfter
+                : 0;
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED retired Combat pointer=%p expected=NULL\n",
+               (void*)doomRpg->combat);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] Combat retired object=NULL owners=native-combat+weapon+monster-turn\n");
 
     /*
      * Native gameplay owns its bounded gib overlay in EspNativeGameplayGibFx.
@@ -400,8 +444,6 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
 int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
     DoomCanvas_t* canvas;
     Render_t* render;
-    Hud_t* hud;
-
     if (layoutAttempted) {
         if (report != NULL) *report = layoutReport;
         return layoutReport.ready != 0;
@@ -411,7 +453,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
     SDL_memset(&layoutReport, 0, sizeof(layoutReport));
 
     if (!coreInitReport.ready || doomRpg == NULL || doomRpg->doomCanvas == NULL ||
-        doomRpg->render == NULL || doomRpg->hud == NULL) {
+        doomRpg->render == NULL || doomRpg->hud != NULL) {
         printf("[LAYOUT] Core graph is not ready; startup refused\n");
         if (report != NULL) *report = layoutReport;
         return 0;
@@ -419,7 +461,6 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
 
     canvas = doomRpg->doomCanvas;
     render = doomRpg->render;
-    hud = doomRpg->hud;
 
     layoutReport.heap8Before = coreFreeHeap();
     layoutReport.largest8Before = coreLargestBlock();
@@ -427,9 +468,12 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
     printf("[LAYOUT] Begin DoomCanvas_startup: heap8=%u largest8=%u\n",
            (unsigned int)layoutReport.heap8Before,
            (unsigned int)layoutReport.largest8Before);
-    printf("[LAYOUT] This stage loads the first real HUD BMP resources\n");
+    printf("[LAYOUT] This stage configures fixed native HUD geometry; legacy Hud_t is retired\n");
 
     DoomCanvas_startup(canvas);
+
+    printf("[LAYOUT] HUD owner=native-gameplay-hud legacyObject=%p top=20 bottom=20\n",
+           (void*)doomRpg->hud);
 
     layoutReport.heap8After = coreFreeHeap();
     layoutReport.largest8After = coreLargestBlock();
@@ -453,8 +497,8 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
 
     layoutReport.renderWidth = (uint16_t)render->screenWidth;
     layoutReport.renderHeight = (uint16_t)render->screenHeight;
-    layoutReport.statusTopBarHeight = (uint16_t)hud->statusTopBarHeight;
-    layoutReport.statusBarHeight = (uint16_t)hud->statusBarHeight;
+    layoutReport.statusTopBarHeight = 20U;
+    layoutReport.statusBarHeight = 20U;
     layoutReport.renderArrayPayloadBytes =
         (uint32_t)render->screenWidth *
         (uint32_t)(sizeof(short) + sizeof(short) + sizeof(int));
@@ -491,6 +535,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
             layoutReport.displayY + layoutReport.displayHeight ||
         layoutReport.renderWidth != layoutReport.screenWidth ||
         layoutReport.renderHeight != layoutReport.screenHeight ||
+        doomRpg->hud != NULL ||
         render->floorColor == NULL || render->ceilingColor == NULL ||
         render->columnScale == NULL) {
         printf("[LAYOUT] FAILED geometry or Render_setup validation\n");
@@ -501,6 +546,7 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
 
     layoutReport.ready = 1;
     printf("[LAYOUT] READY real engine layout fits inside 160x120\n");
+    printf("[LAYOUT] Hud_t retired; native HUD reads bounded PAK assets on demand\n");
     printf("[LAYOUT] Native EntityDef catalog deferred to resident-map load; Render_startup still NOT executed\n");
 
     if (report != NULL) *report = layoutReport;

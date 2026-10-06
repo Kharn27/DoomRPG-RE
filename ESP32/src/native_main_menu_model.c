@@ -3,7 +3,6 @@
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
-#include "Hud.h"
 #include "Menu.h"
 #include "esp_native_menu_state.h"
 
@@ -61,7 +60,6 @@ static void setFixedItem(MenuItem_t* item, const char* text, int flags) {
 static void resetFixedModel(DoomRPG_t* doomRpg) {
     EspNativeMenuState_t* menuSystem = doomRpg->menuSystem;
 
-    doomRpg->hud->logMessage[0] = '\0';
     menuSystem->scrollIndex = 0;
     menuSystem->selectedIndex = 0;
     menuSystem->numItems = 0;
@@ -71,8 +69,7 @@ int DoomRPG_esp32MainMenuModelBuildMain(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     EspNativeMenuState_t* menuSystem;
 
-    if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->hud == NULL) {
+    if (doomRpg == NULL || doomRpg->menuSystem == NULL) {
         printf("[MAINMODEL] FAILED build-main objectGraph\n");
         return 0;
     }
@@ -340,7 +337,7 @@ int DoomRPG_esp32MainMenuModelLeave(struct DoomRPG_s* doomRpgBase) {
     DoomCanvas_t* canvas;
 
     if (doomRpg == NULL || doomRpg->menuSystem == NULL ||
-        doomRpg->doomCanvas == NULL || doomRpg->hud == NULL) {
+        doomRpg->doomCanvas == NULL) {
         printf("[MAINMODEL] FAILED leave objectGraph\n");
         return 0;
     }
@@ -351,7 +348,6 @@ int DoomRPG_esp32MainMenuModelLeave(struct DoomRPG_s* doomRpgBase) {
     releaseHelpData();
     menuSystem->menu = MENU_NONE;
     menuSystem->numItems = 0;
-    doomRpg->hud->logMessage[0] = '\0';
     DoomCanvas_invalidateRectAndUpdateView(canvas);
 
     printf("[MAINMODEL] LEAVE target=%d state=%d items=%d staleView=%d updateView=%d dispatcher=native\n",
