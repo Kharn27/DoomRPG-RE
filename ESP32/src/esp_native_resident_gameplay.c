@@ -1736,7 +1736,7 @@ void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpgBase) {
      * and neither object belongs to the main-menu cleanup contract. */
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
         doomRpg->render == NULL || doomRpg->game == NULL ||
-        doomRpg->player == NULL || doomRpg->menuSystem == NULL ||
+        doomRpg->menuSystem == NULL || doomRpg->player != NULL ||
         !EspNativeResidentGameplay_isActive() || EspAssetPack_isOpen()) {
         printf("[SYSEXIT] REFUSED reason=core-or-session-boundary teardown=no saveWrite=no\n");
         return;

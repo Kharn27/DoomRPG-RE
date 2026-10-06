@@ -194,9 +194,8 @@ legacy_hud_dying_needle = """\telse if (stateNum == ST_DYING) {
 legacy_hud_dying_replacement = """\telse if (stateNum == ST_DYING) {
 \t\tDoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
 \t\tdoomCanvas->deathTime = doomCanvas->time;
-\t\tdoomCanvas->player->weapon = 0;
-\t\tdoomCanvas->player->weapons = 0;
-\t\t/* ESP32 native player-death path owns HUD presentation. */
+\t\t/* ESP32 native PlayerState + player-death owner hold authoritative
+\t\t * weapon mutation and HUD presentation; Player_t is retired. */
 \t\treturn;
 \t}
 """
@@ -300,6 +299,22 @@ game_source_text = game_source_text.replace(
     game_combat_cleanup_needle, game_combat_cleanup_replacement, 1
 )
 
+game_player_cleanup_needle = """\tgame->doomRpg->player->facingEntity = NULL;
+\tgame->doomRpg->player->dogFamiliar = NULL;
+"""
+game_player_cleanup_replacement = """\t/* ESP32 facing/familiar state is owned by native map-session owners.
+\t * Player_t is retired and remains NULL. */
+"""
+game_player_cleanup_count = game_source_text.count(game_player_cleanup_needle)
+if game_player_cleanup_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_unloadMapData Player cleanup shape; "
+        "review retired ESP32 Player ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_player_cleanup_needle, game_player_cleanup_replacement, 1
+)
+
 game_sound_volume_needle = """\t\t\tintData = File_readInt(rw);
 \t\t\tif (game) {
 \t\t\t\tgame->doomRpg->sound->volume = intData;
@@ -326,39 +341,8 @@ with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
 print(
     "[ESP32] Game generated with "
     f"{game_combat_cleanup_count} legacy Combat cleanup reset retired + "
+    f"{game_player_cleanup_count} legacy Player cleanup reset retired + "
     f"{game_sound_volume_count} legacy Sound config field retired"
-)
-
-# Player_reset() still clears the inherited Hud_t message buffers. The native
-# gameplay feedback/message owners reset independently, so generate an ESP32-only
-# Player.c copy without those obsolete Hud_t writes.
-player_source = join(engine_dir, "Player.c")
-player_patched = join(patched_dir, "Player.c")
-
-with open(player_source, "r", encoding="latin-1") as source_file:
-    player_source_text = source_file.read()
-
-player_hud_reset_needle = """\tplayer->doomRpg->hud->logMessage[0] = '\\0';
-\tplayer->doomRpg->hud->msgCount = 0;
-"""
-player_hud_reset_replacement = """\t/* ESP32 native feedback/message owners do not retain Hud_t. */
-"""
-player_hud_reset_count = player_source_text.count(player_hud_reset_needle)
-if player_hud_reset_count != 1:
-    raise RuntimeError(
-        "Unexpected Player_reset Hud_t cleanup shape; "
-        "review retired ESP32 Hud ownership"
-    )
-player_source_text = player_source_text.replace(
-    player_hud_reset_needle, player_hud_reset_replacement, 1
-)
-
-with open(player_patched, "w", encoding="latin-1", newline="\n") as patched_file:
-    patched_file.write(player_source_text)
-
-print(
-    "[ESP32] Player generated with "
-    f"{player_hud_reset_count} legacy Hud reset block retired"
 )
 
 # DoomRPG_createImage() is the central image-loading path used by the game.
@@ -396,6 +380,16 @@ particle_free_replacement = """\t/* ESP32 native gameplay owns bounded gib effec
 \tdoomrpg->particleSystem = NULL;
 """
 particle_free_count = doom_rpg_source_text.count(particle_free_needle)
+player_free_needle = """\tif (doomrpg->player) {
+\t\tSDL_memset(&doomrpg->player->ce, 0, sizeof(doomrpg->player->ce));
+\t\tSDL_free(doomrpg->player);
+\t}
+\tdoomrpg->player = NULL;
+"""
+player_free_replacement = """\t/* ESP32 authoritative player state is native; Player_t is never constructed. */
+\tdoomrpg->player = NULL;
+"""
+player_free_count = doom_rpg_source_text.count(player_free_needle)
 entity_def_free_needle = """\tif (doomrpg->entityDef) {
 \t\tEntityDef_free(doomrpg->entityDef, true);
 \t}
@@ -458,6 +452,11 @@ if entity_def_free_count != 1:
         "Unexpected DoomRPG.c EntityDef cleanup shape; "
         "review retired ESP32 EntityDef ownership"
     )
+if player_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c Player cleanup shape; "
+        "review retired ESP32 Player ownership"
+    )
 if combat_free_count != 1:
     raise RuntimeError(
         "Unexpected DoomRPG.c Combat cleanup shape; "
@@ -496,6 +495,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
     entity_def_free_needle, entity_def_free_replacement, 1
 )
 doom_rpg_source_text = doom_rpg_source_text.replace(
+    player_free_needle, player_free_replacement, 1
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(
     combat_free_needle, combat_free_replacement, 1
 )
 doom_rpg_source_text = doom_rpg_source_text.replace(
@@ -517,6 +519,7 @@ print(
     f"{bmp_call_count} SDL_LoadBMP_RW call(s) redirected, "
     f"{particle_free_count} desktop ParticleSystem cleanup retired, "
     f"{entity_def_free_count} desktop EntityDef cleanup retired, "
+    f"{player_free_count} desktop Player cleanup retired, "
     f"{combat_free_count} desktop Combat cleanup retired, "
     f"{sound_free_count} desktop Sound cleanup retired, "
     f"{hud_free_count} desktop Hud cleanup retired, "
@@ -739,6 +742,7 @@ env.BuildSources(
         "-<EntityDef.c>",
         "-<Combat.c>",
         "-<Weapon.c>",
+        "-<CombatEntity.c>",
         "-<Hud.c>",
         "-<Game.c>",
         "-<Player.c>",
@@ -756,7 +760,6 @@ env.BuildSources(
         "+<DoomCanvas.c>",
         "+<DoomRPG.c>",
         "+<Game.c>",
-        "+<Player.c>",
     ],
 )
 
