@@ -367,6 +367,67 @@ game_source_text = game_source_text.replace(
     game_entity_init_needle, game_entity_init_replacement, 1
 )
 
+game_activate_needle = """void Game_activate(Game_t* game, Entity_t* entity)
+{
+	EntityMonster_t* monster;
+
+	monster = entity->monster;
+	if ((entity->info & 0x80000) == 0) {
+		if (monster->nextOnList) {
+			if (entity == game->inactiveMonsters && monster->nextOnList == game->inactiveMonsters) {
+				game->inactiveMonsters = NULL;
+			}
+			else {
+				if (entity == game->inactiveMonsters) {
+					game->inactiveMonsters = monster->nextOnList;
+				}
+				monster->nextOnList->monster->prevOnList = monster->prevOnList;
+				monster->prevOnList->monster->nextOnList = monster->nextOnList;
+			}
+		}
+		if (game->activeMonsters == NULL) {
+			monster->nextOnList = entity;
+			monster->prevOnList = entity;
+			game->activeMonsters = entity;
+		}
+		else {
+			monster->prevOnList = game->activeMonsters->monster->prevOnList;
+			monster->nextOnList = game->activeMonsters;
+			game->activeMonsters->monster->prevOnList->monster->nextOnList = entity;
+			game->activeMonsters->monster->prevOnList = entity;
+		}
+		entity->info |= 0x80000;
+
+		// Check Sight Sound
+		if (EntityMonster_getSoundID(entity->monster, 1)) {
+			if ((game->soundMonster == NULL) || (game->soundMonster->def->eSubType < entity->def->eSubType)) {
+				game->soundMonster = entity;
+			}
+		}
+	}
+	else {
+		//printf("activate: already active\\event");
+	}
+}
+"""
+game_activate_replacement = """void Game_activate(Game_t* game, Entity_t* entity)
+{
+	/* ESP32 render/gameplay activation is owned by EspNativeGameplayMonsterActivation.
+	 * Keep this inherited ABI symbol fail-closed for any stale desktop caller. */
+	(void)game;
+	(void)entity;
+}
+"""
+game_activate_count = game_source_text.count(game_activate_needle)
+if game_activate_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_activate legacy monster activation shape; "
+        "review retired ESP32 EntityMonster ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_activate_needle, game_activate_replacement, 1
+)
+
 game_combat_cleanup_needle = """	game->doomRpg->combat->curTarget = NULL;
 	game->doomRpg->combat->curAttacker = NULL;
 """
@@ -444,6 +505,7 @@ with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
 print(
     "[ESP32] Game generated with "
     f"{game_entity_init_count} legacy entity initialization block retired + "
+    f"{game_activate_count} legacy monster activation path retired + "
     f"{game_combat_cleanup_count} legacy Combat cleanup reset retired + "
     f"{game_player_cleanup_count} legacy Player cleanup reset retired + "
     f"{game_entity_reset_count} legacy Entity reset loop retired + "
