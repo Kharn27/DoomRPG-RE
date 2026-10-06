@@ -283,6 +283,90 @@ game_patched = join(patched_dir, "Game.c")
 with open(game_source, "r", encoding="latin-1") as source_file:
     game_source_text = source_file.read()
 
+game_entity_init_needle = """Game_t* Game_init(Game_t* game, DoomRPG_t* doomRpg)
+{
+	int i;
+	EntityMonster_t* entityMonst;
+
+	printf("Game_init\\n");
+
+	if (game == NULL)
+	{
+		game = SDL_malloc(sizeof(Game_t));
+		if (game == NULL) {
+			return NULL;
+		}
+	}
+	SDL_memset(game, 0, sizeof(Game_t));
+
+	SDL_memset(game->entities, 0, (sizeof(Entity_t) * 400));
+	SDL_memset(game->entityMonsters, 0, (sizeof(EntityMonster_t) * 100));
+
+	game->activeMonsters = NULL;
+	game->combatMonsters = NULL;
+	game->inactiveMonsters = NULL;
+	game->spawnMonster = NULL;
+	game->passCode = NULL;
+	game->newMapName[0] = '\\0';
+	game->fileMapName[0] = '\\0';
+	game->waitTime = 0;
+	game->activePortal = false;
+	game->disableAI = 0;
+	game->soundMonster = NULL;
+	game->doomRpg = doomRpg;
+
+	i = 0;
+	do {
+		game->entities[i].doomRpg = doomRpg;
+	} while (++i < 400);
+
+	i = 0;
+	do {
+
+		entityMonst = &game->entityMonsters[i];
+		entityMonst->doomRpg = doomRpg;
+		entityMonst->ce.doomRpg = doomRpg;
+	} while (++i < 100);
+"""
+game_entity_init_replacement = """Game_t* Game_init(Game_t* game, DoomRPG_t* doomRpg)
+{
+	printf("Game_init\\n");
+
+	if (game == NULL)
+	{
+		game = SDL_malloc(sizeof(Game_t));
+		if (game == NULL) {
+			return NULL;
+		}
+	}
+	SDL_memset(game, 0, sizeof(Game_t));
+
+	/* ESP32 native resident-map owners replace the inherited Entity_t and
+	 * EntityMonster_t runtime. Keep the embedded desktop arrays zero/dormant;
+	 * do not seed 500 legacy back-pointers into them. */
+	game->activeMonsters = NULL;
+	game->combatMonsters = NULL;
+	game->inactiveMonsters = NULL;
+	game->spawnMonster = NULL;
+	game->passCode = NULL;
+	game->newMapName[0] = '\\0';
+	game->fileMapName[0] = '\\0';
+	game->waitTime = 0;
+	game->activePortal = false;
+	game->disableAI = 0;
+	game->soundMonster = NULL;
+	game->doomRpg = doomRpg;
+"""
+game_entity_init_count = game_source_text.count(game_entity_init_needle)
+if game_entity_init_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_init legacy entity initialization shape; "
+        "review retired ESP32 Entity ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_entity_init_needle, game_entity_init_replacement, 1
+)
+
 game_combat_cleanup_needle = """	game->doomRpg->combat->curTarget = NULL;
 	game->doomRpg->combat->curAttacker = NULL;
 """
@@ -315,6 +399,25 @@ game_source_text = game_source_text.replace(
     game_player_cleanup_needle, game_player_cleanup_replacement, 1
 )
 
+game_entity_reset_needle = """	for (i = 0; i < game->numEntities; i++) {
+		Entity_reset(&game->entities[i]);
+	}
+"""
+game_entity_reset_replacement = """	/* ESP32 native resident-map teardown owns entity/monster state. The
+	 * embedded legacy arrays remain dormant and are never populated. */
+	game->numEntities = 0;
+	game->numMonsters = 0;
+"""
+game_entity_reset_count = game_source_text.count(game_entity_reset_needle)
+if game_entity_reset_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_unloadMapData Entity_reset shape; "
+        "review retired ESP32 Entity ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_entity_reset_needle, game_entity_reset_replacement, 1
+)
+
 game_sound_volume_needle = """\t\t\tintData = File_readInt(rw);
 \t\t\tif (game) {
 \t\t\t\tgame->doomRpg->sound->volume = intData;
@@ -340,8 +443,10 @@ with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
 
 print(
     "[ESP32] Game generated with "
+    f"{game_entity_init_count} legacy entity initialization block retired + "
     f"{game_combat_cleanup_count} legacy Combat cleanup reset retired + "
     f"{game_player_cleanup_count} legacy Player cleanup reset retired + "
+    f"{game_entity_reset_count} legacy Entity reset loop retired + "
     f"{game_sound_volume_count} legacy Sound config field retired"
 )
 
@@ -740,6 +845,8 @@ env.BuildSources(
         "-<MenuSystem.c>",
         "-<ParticleSystem.c>",
         "-<EntityDef.c>",
+        "-<Entity.c>",
+        "-<EntityMonster.c>",
         "-<Combat.c>",
         "-<Weapon.c>",
         "-<CombatEntity.c>",

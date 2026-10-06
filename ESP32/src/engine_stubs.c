@@ -278,6 +278,32 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
 #undef INIT_CORE_OBJECT
 
     /*
+     * The legacy Game shell is temporarily retained for config/teardown ABI,
+     * but its embedded Entity/EntityMonster stores are retired runtime owners.
+     * They must remain empty; native resident-map state owns all live entities.
+     */
+    if (doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0 ||
+        doomRpg->game->activeMonsters != NULL ||
+        doomRpg->game->inactiveMonsters != NULL ||
+        doomRpg->game->combatMonsters != NULL ||
+        doomRpg->game->spawnMonster != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_GAME;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED legacy entity runtime not dormant entities=%d monsters=%d active=%p inactive=%p combat=%p spawn=%p\n",
+               doomRpg->game->numEntities,
+               doomRpg->game->numMonsters,
+               (void*)doomRpg->game->activeMonsters,
+               (void*)doomRpg->game->inactiveMonsters,
+               (void*)doomRpg->game->combatMonsters,
+               (void*)doomRpg->game->spawnMonster);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] Legacy entity runtime retired arrays=dormant entities=0 monsters=0 owner=native-resident-map\n");
+
+    /*
      * Player state is owned by the compact 52-byte native gameplay owner.
      * The inherited Player_t is not constructed and must remain NULL.
      */
