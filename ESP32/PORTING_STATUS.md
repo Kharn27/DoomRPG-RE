@@ -647,7 +647,7 @@ No local PlatformIO build is claimed.
 Detailed record:
 [MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md)
 
-## SYS Exit To Menu — build/host PASS, REAL-CYD pending (2026-10-02)
+## SYS Exit To Menu — REAL-CYD lifecycle PASS, extended checklist pending (2026-10-06)
 
 The fixed `CHECKPOINT 1` save-slot caption is replaced by three stacked
 `SAVE` / `LOAD` / `EXIT TO MENU` cards. Exit uses two-step confirmation with
@@ -677,7 +677,25 @@ Exit's obsolete non-NULL Hud/Combat admission guards; no legacy owner is restore
 Local CYD build: PASS, 45464 B static RAM / 781645 B flash. SYS touch and
 level-progress tests: PASS. A mocked host lifecycle fixture also passes Exit
 with both legacy pointers NULL, teardown ordering, repeat and core/pack refusal.
-Real-CYD Exit/restart/load acceptance remains pending.
+
+Real-CYD lifecycle acceptance now passes on exact code boundary
+`986a703b967e747219334e5f2d04d0bafe0bab6e`. Double-select EXIT returns from
+resident gameplay to the exact main dashboard with `saveWrite=no` and the
+checkpoint unchanged. The teardown reports:
+
+```text
+[RESIDENTRESET] heap8=90480->108488 released=18008 before=1/1/1/1/1/1/1 after=0/0/0/0/0/0/0 empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+```
+
+The user repeated `MENU_MAIN -> LOAD -> gameplay -> SYS -> EXIT` twice. Both
+loads stabilize at `heap8=62580 largest8=51188`; both exits return exactly to
+`heap8=108488 largest8=73716`. This is the hardware no-leak witness for the
+exercised destructive lifecycle. `shapeData` and `mediaTexels` remain NULL.
+
+Still pending for full branch acceptance: explicit Exit-confirmation
+cancellation via gap/tab/HUB close, Options/Help after Exit plus fresh START,
+and SAVE -> unsaved movement -> Exit -> main-menu LOAD / no-checkpoint behavior.
 
 ## Native LEVEL UP screen + checkpoint monster projection — REAL-CYD PASS (2026-10-02)
 
