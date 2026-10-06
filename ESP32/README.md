@@ -208,7 +208,11 @@ values, avoiding the blurry double-scaled 3x5 glyphs while preserving the full
   `UNSAVED CHANGES LOST`; the second tears down the current session and returns
   to the existing main dashboard, without autosaving or modifying the SD
   checkpoint. Changing rows/tabs or closing the HUB cancels confirmation.
-  This Exit flow passes local build/host checks; real-CYD testing is pending.
+  The destructive lifecycle is now hardware-proven on the real CYD: repeated
+  `LOAD -> gameplay -> EXIT -> MENU_MAIN` cycles return to the exact same
+  `heap8=108488 / largest8=73716` menu state, with resident map owners empty
+  and no save write. Cancellation/Options/Help/fresh-START and unsaved/no-save
+  edge cases remain on the extended acceptance checklist.
 
 The HUB repaints its industrial title bar and the former lower-HUD area while
 active, then reconstructs the normal gameplay HUD when closing. Touch feedback
