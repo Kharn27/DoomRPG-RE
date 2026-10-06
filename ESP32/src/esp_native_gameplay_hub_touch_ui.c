@@ -319,6 +319,7 @@ static uint64_t tabLetterBits(char c) {
     case '-': return HUB_UI_GLYPH7(0, 0, 0, 31, 0, 0, 0);
     case '>': return HUB_UI_GLYPH7(16, 8, 4, 2, 4, 8, 16);
     case '%': return HUB_UI_GLYPH7(25, 25, 2, 4, 8, 19, 19);
+    case '?': return HUB_UI_GLYPH7(14, 17, 1, 2, 4, 0, 4);
     case ' ': return HUB_UI_GLYPH7(0, 0, 0, 0, 0, 0, 0);
     default: return 0U;
     }

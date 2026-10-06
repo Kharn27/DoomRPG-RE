@@ -646,6 +646,66 @@ No local PlatformIO build is claimed.
 Detailed record:
 [MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md)
 
+## SYS Exit To Menu — development candidate (2026-10-02)
+
+`CHECKPOINT 1` identified the single SD save slot, not the current level or an
+automatic checkpoint. Its caption is removed to make room for three stacked
+cards: `SAVE`, `LOAD`, `EXIT TO MENU`, each 128x24 logical pixels (256x48 physical).
+Painting and direct touch share the layout constants in
+`esp_native_gameplay_save_ui.h`; blank content margins/gaps reject touch instead
+of confirming the selected action. Text reuses the HUB's existing crisp 5x7 face.
+
+First Exit SELECT arms `EXIT TO MENU?` with `UNSAVED CHANGES LOST`; the second
+queues exit. Switching rows/pages or ordinary HUB close cancels confirmation.
+There is no autosave, checkpoint deletion or on-disk format change. SAVE's
+`Game saved` return and LOAD/`NO SAVE` behavior remain unchanged.
+
+The exit request is serviced in `main.cpp` only after the complete composed
+`EspNativeGameplaySession_service()` call returns and before touch polling.
+This prevents freeing source-map references underneath a wrapper. Exit parks
+the intro/post-intro clock, clears loading/present gates, resets the session,
+resident map and spawn/view owners, and clears the in-memory transition route.
+It then reuses native main-menu cleanup, model and opaque dashboard presentation
+to enter `MENU_MAIN`/`ST_MENU` with main-menu touch ownership. No new production
+source/owner or legacy menu router is introduced. A failed destructive handoff
+keeps input disabled rather than continuing against a freed world.
+
+Local validation: CYD firmware build passes (45392 B static RAM, 779333 B flash),
+the committed SYS touch regression checks every content pixel and all nine
+cursor/target routes, and the existing level-progress test passes. Temporary
+host fixtures also check guarded framebuffer painting and deferred teardown
+ordering, repeated exit, boundary refusal, painter recovery, fail-closed
+cleanup and cancellation of the already-parked intro startup continuation.
+Host mocks do not validate actual SD/display/menu restart behavior.
+
+Rebase validation (2026-10-04): integrated `origin/main` at `72ec1b2`, preserving
+the V11 monster-drop checkpoint implementation, utility/door turn-parity fixes
+and legacy EntityDef retirement. SYS entry logging now reports V11 and V1–V10
+read compatibility. The rebased CYD build passes at 45488 B static RAM / 785225 B
+flash; SYS touch and level-progress host regressions pass again.
+
+Rebase validation (2026-10-06): integrated `origin/main` at `f01be0b`, retaining
+Combat/Sound/Hud and legacy presentation retirement. Exit no longer requires
+the retired `DoomRPG_t::hud` or `::combat` pointers to be non-NULL; native owners
+reset through the existing session route, and main-menu cleanup uses the
+upstream generated `Game_unloadMapData()` without legacy Combat dereferences.
+The rebased CYD build passes at 45464 B static RAM / 781645 B flash. SYS touch
+and level-progress regressions pass. A temporary host fixture checks actual
+Exit request/service with both legacy pointers NULL, deferred teardown ordering,
+repeated exit and refusal of missing required core/busy-pack boundaries; engine
+cleanup/menu painters are mocked, so hardware acceptance is still pending.
+
+Real-CYD acceptance is still pending:
+
+1. Open SYS: check the three cards and removal of `CHECKPOINT 1`.
+2. Tap Exit once; tap a gap, switch tab or close/reopen: none may exit. Re-enter
+   SYS and tap Exit twice: confirm return to the normal main dashboard.
+3. After Exit, test Options/Back, Help/Back, then Start Game and a second Exit;
+   no stale gameplay, intro or HUD may repaint over the main menu.
+4. SAVE, make unsaved moves, Exit and main-menu LOAD: recover the saved position,
+   not the later moves. Without a checkpoint, Exit still works and LOAD says
+   `No Save`. Recheck SYS LOAD and SAVE's temporary `Game saved`/label fallback.
+
 ## Native LEVEL UP screen and checkpoint resume projection — REAL-CYD PASS (2026-10-02)
 
 Hardware-tested head:
@@ -1987,7 +2047,7 @@ Current rebased integration:
 ```text
 main HUB = INV | WPN | STAT | SYS
 WPN = complete 3x3 normal arsenal
-SYS = two-step SAVE/LOAD/NO SAVE
+SYS = two-step SAVE/LOAD/NO SAVE; Exit To Menu is a development candidate
 touch feedback = 640 compact 4-byte edits + per-pixel ownership restore
 agent checkpoint = V8 monster-state extension retained
 event43 = bounded EV_SHOW x4 MOVE chain retained
@@ -2314,7 +2374,7 @@ active surface = 160x100 logical at y=20..119; lower gameplay HUD hidden
 INV = four-row direct-touch window; Notebook + carried items + owned keys
 WPN = complete 3x3 normal arsenal
 STAT = compact read-only dashboard; only its tab is touch-active
-SYS = two-step SAVE/LOAD checkpoint page; SAVE success returns to gameplay
+SYS = three two-step cards: SAVE / LOAD / EXIT TO MENU (Exit hardware pending)
 MENU underlay = 32x20 RGB565 = 1280 B
 world dispatch blocked while HUB active
 turn advance disabled while HUB active
@@ -2334,8 +2394,9 @@ excluded. STAT is read-only: its content uses compact 3x5 labels with
 intermediate 5x7 HP/Armor values, proportional green/red health and blue armor
 rails, level/XP progress, an aligned attribute grid, and owned-key mini-cards in
 green/true-yellow/blue/red instead of the internal hexadecimal bitmask; no
-content hitboxes are introduced. SYS owns the bounded in-game SAVE/LOAD
-controls. All four pages use the reclaimed logical rows 100..119 while the HUB
+content hitboxes are introduced. SYS owns the bounded in-game SAVE/LOAD and
+Exit To Menu controls (Exit is a development candidate described above).
+All four pages use the reclaimed logical rows 100..119 while the HUB
 is active. On ordinary close, the full retained gameplay HUD plus live compass
 are rebuilt before the existing exact lower-band integrity check; LOAD remains
 a deliberate whole-session replacement. After the second SAVE selection

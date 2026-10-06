@@ -25,6 +25,12 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpg);
 int EspNativeResidentGameplay_isActive(void);
 int EspNativeResidentGameplay_isAutomapActive(void);
 
+/* SYS confirmation only queues this terminal action. The Arduino loop services
+ * it after the entire composed gameplay call has unwound, before new touch
+ * polling, so no world owner is freed beneath a session consumer. */
+int EspNativeResidentGameplay_requestExitToMenu(void);
+void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpg);
+
 /* Repaint the currently-owned Automap after a semantic world/player mutation.
  * Returns 0 when Automap is not active or presentation fails. */
 int EspNativeResidentGameplay_redrawAutomap(

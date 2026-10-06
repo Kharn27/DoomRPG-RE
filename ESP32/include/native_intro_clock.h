@@ -22,7 +22,8 @@ void Esp32IntroClock_service(void);
 int Esp32IntroClock_rebaseTextEpoch(void);
 int Esp32IntroClock_rebasePageEpochs(void);
 
-/* Deliberately stop rendering while retaining the current intro resources/state. */
+/* Stop rendering, retaining intro resources/state. Also stops a parked startup
+ * continuation unless reason is the explicit "intro-exit-ready" handoff. */
 void Esp32IntroClock_park(const char* reason);
 
 int Esp32IntroClock_isActive(void);

@@ -647,6 +647,38 @@ No local PlatformIO build is claimed.
 Detailed record:
 [MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md)
 
+## SYS Exit To Menu — build/host PASS, REAL-CYD pending (2026-10-02)
+
+The fixed `CHECKPOINT 1` save-slot caption is replaced by three stacked
+`SAVE` / `LOAD` / `EXIT TO MENU` cards. Exit uses two-step confirmation with
+`UNSAVED CHANGES LOST`, never autosaves, and leaves the existing SD checkpoint
+untouched. The existing native main dashboard/model/touch route is reused.
+Session/map teardown is deferred until all gameplay service wrappers return;
+intro startup servicing is parked before returning to `MENU_MAIN`/`ST_MENU`.
+No new production source file or legacy menu dependency is added.
+
+Validation: `pio run -e esp32-cyd` passes, 45392 B static RAM / 779333 B flash.
+The committed `test_sys_touch.c` passes all content pixels, gaps/margins, all
+nine cursor/target routes and fail-closed preselection. Level-progress regression
+passes. Temporary host fixtures pass SYS painting/framebuffer guards and mocked
+exit lifecycle/order/repeat/recovery checks, plus parked intro continuation
+cancellation. Hardware restart/load behavior is
+not claimed: the acceptance checklist is in
+[`DOCUMENTATION.md`](DOCUMENTATION.md#sys-exit-to-menu--development-candidate-2026-10-02).
+
+Rebased on `origin/main` `72ec1b2` on 2026-10-04. V11 checkpoint persistence,
+monster utility/door turn parity and legacy EntityDef retirement are retained.
+Post-rebase local CYD build: PASS, 45488 B static RAM / 785225 B flash. SYS touch
+and level-progress host tests: PASS. Exit hardware acceptance remains pending.
+
+Rebased again on `origin/main` `f01be0b` on 2026-10-06. The upstream retirement
+of legacy Combat/Sound/Hud and presentation resources is preserved. Removed
+Exit's obsolete non-NULL Hud/Combat admission guards; no legacy owner is restored.
+Local CYD build: PASS, 45464 B static RAM / 781645 B flash. SYS touch and
+level-progress tests: PASS. A mocked host lifecycle fixture also passes Exit
+with both legacy pointers NULL, teardown ordering, repeat and core/pack refusal.
+Real-CYD Exit/restart/load acceptance remains pending.
+
 ## Native LEVEL UP screen + checkpoint monster projection — REAL-CYD PASS (2026-10-02)
 
 Hardware-tested code boundary:
@@ -3439,7 +3471,7 @@ EspNativeGameplayHubView = 28 B
 pages = INV | WPN | STAT | SYS
 WPN = complete 3x3 normal arsenal; source BGR565 -> framebuffer RGB565
 STAT = read-only
-SYS = dedicated two-step SAVE/LOAD checkpoint page
+SYS = SAVE / LOAD / EXIT TO MENU; Exit candidate awaits real-CYD testing
 world dispatch blocked while HUB active
 turn advance disabled while HUB active
 ```
