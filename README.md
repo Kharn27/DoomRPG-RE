@@ -77,7 +77,10 @@ The current hardware-validated native path includes:
 Development candidate: `SYS` now stacks `SAVE`, `LOAD`, `EXIT TO MENU`, replacing
 the fixed `CHECKPOINT 1` caption. Exit requires a second tap after an unsaved
 progress warning, then returns to the existing main menu without autosaving or
-changing the checkpoint on SD. Build/host checks pass; CYD validation is pending.
+changing the checkpoint on SD. Build/host checks pass, and repeated real-CYD `LOAD -> gameplay -> EXIT`
+cycles now return to the exact same menu memory state with resident map owners
+empty and no save write. Cancellation/Options/Help/fresh-START and unsaved/no-save
+edge cases remain to be checked.
 
 The V7 Automap checkpoint state remains part of the hardware-tested V9 format. The HUB
 redesign, its touch-feedback coexistence fixes and the successful SAVE return
@@ -295,7 +298,12 @@ Le chemin natif actuellement validé sur le vrai CYD comprend notamment :
 la place du titre fixe `CHECKPOINT 1`. Quitter exige une seconde pression après
 l'avertissement de perte des changements non sauvegardés, puis revient au menu
 principal existant sans sauvegarde automatique ni modification du fichier SD.
-Compilation et tests locaux OK ; validation sur CYD encore à faire.
+Compilation et tests locaux OK ; des cycles répétés
+`LOAD -> gameplay -> EXIT` sont désormais validés sur le vrai CYD et
+reviennent exactement au même état mémoire du menu, avec les propriétaires de
+map résidente vidés et sans écriture de sauvegarde. Restent à vérifier les cas
+d'annulation, Options/Help, START frais et les scénarios non sauvegardé/sans
+checkpoint.
 
 L'état Automap de la V7 reste inclus dans le format V9 validé sur matériel. La refonte du
 HUB, les corrections de coexistence des retours tactiles et le retour en jeu
