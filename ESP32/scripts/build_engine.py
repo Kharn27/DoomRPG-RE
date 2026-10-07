@@ -140,6 +140,48 @@ render_source_text = render_source_text.replace(
     1,
 )
 
+# The original Render_beginLoadMap* BSP parser is a desktop/bringup-only
+# diagnostic path. Production already builds the immutable EspMapRuntime from
+# the native PAK backing. Reject accidental calls instead of retaining its
+# 1024-byte Render.mapFlags mirror (or accepting a legacy map-wide decoder).
+render_legacy_map_begin = "boolean Render_beginLoadMap(Render_t* render, int mapNameID)\n{"
+render_legacy_map_data = "boolean Render_beginLoadMapData(Render_t* render)\n{"
+render_legacy_map_end = "boolean Render_loadBitShapes(Render_t* render)\n{"
+if any(render_source_text.count(anchor) != 1 for anchor in
+       (render_legacy_map_begin, render_legacy_map_data, render_legacy_map_end)):
+    raise RuntimeError("Unexpected legacy Render BSP loader source shape")
+render_legacy_map_region = render_source_text[
+    render_source_text.index(render_legacy_map_begin):
+    render_source_text.index(render_legacy_map_end)]
+if (render_source_text.count("render->mapFlags") != 13 or
+        render_legacy_map_region.count("render->mapFlags") != 13):
+    raise RuntimeError("Render.mapFlags gained an unreviewed source consumer")
+render_source_text = render_source_text.replace(
+    render_legacy_map_begin,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+boolean Render_beginLoadMap(Render_t* render, int mapNameID)
+{
+    (void)render;
+    (void)mapNameID;
+    printf("[LEGACYMAP] REJECT Render_beginLoadMap: native BSP owner required\\n");
+    return false;
+}
+
+boolean Render_beginLoadMapData(Render_t* render)
+{
+    (void)render;
+    printf("[LEGACYMAP] REJECT Render_beginLoadMapData: native BSP owner required\\n");
+    return false;
+}
+#else
+""" + render_legacy_map_begin, 1)
+render_source_text = render_source_text.replace(
+    render_legacy_map_end,
+    "#endif /* production legacy BSP loader rejection */\n\n" +
+    render_legacy_map_end, 1)
+print("[ESP32] Legacy Render BSP loader fail-closed in production; "
+      "Render.mapFlags 1024-byte mirror retired (bringup/desktop unchanged)")
+
 with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(render_source_text)
 

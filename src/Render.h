@@ -94,7 +94,12 @@ typedef struct Render_s
 	int* mapByteCode;
 	char** mapStringsIDs;
 	int mapStringCount;
+	/* Legacy BSP tile flags: only the desktop parser and the explicit CYD
+     * bringup parser still retain this 1 KiB map-wide mirror. Production
+     * automap uses EspMapState and EspMapAutomapState instead. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	byte mapFlags[1024];
+#endif
 	char mapName[MAPNAMESTRLEN];
 	short unk1;
 	short mapNameID;
