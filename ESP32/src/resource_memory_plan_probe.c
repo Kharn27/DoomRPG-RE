@@ -22,6 +22,17 @@ extern DoomRPG_t* doomRpg;
 static int resourcePlanAttempted = 0;
 static int resourcePlanReady = 0;
 
+/* Historical ZIP resource-plan log only. Native production has no
+ * Render_t plane descriptors; original count is bringup-only. */
+static int legacyPlaneCount(const Render_t* render) {
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES) && DOOMRPG_ESP32_BRINGUP_PROBES
+    return render != NULL ? legacyPlaneCount(render) : 0;
+#else
+    (void)render;
+    return 0;
+#endif
+}
+
 static uint32_t heap8Free(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
 }
