@@ -14,6 +14,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_gameplay_action_engine.h"
+#include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_hud.h"
 #include "esp_native_gameplay_gib_fx.h"
@@ -215,6 +216,9 @@ void EspNativeGameplaySession_reset(void) {
     EspNativeGameplayMonsterDrop_reset();
     EspNativeGameplayStatusMessage_reset();
     EspNativeResidentGameplay_reset();
+    /* The last rollback opportunity ended with the gameplay owner. Do not
+     * carry its lazy journal or topology snapshot into MENU/LOAD/CHANGEMAP. */
+    EspNativeGameplayEventChain_reset();
     EspNativeGameplayHud_reset();
     EspNativeFirstFrame_reset();
     EspNativeGraphicsCatalog_reset();
