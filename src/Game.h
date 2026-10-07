@@ -16,10 +16,14 @@
 #define GAME_LEGACY_ENTITY_CAPACITY 1
 #define GAME_LEGACY_ENTITY_DB_CAPACITY 1
 #define GAME_LEGACY_MONSTER_CAPACITY 1
+#define GAME_LEGACY_TRACE_CAPACITY 1
+#define GAME_LEGACY_GSPRITE_CAPACITY 1
 #else
 #define GAME_LEGACY_ENTITY_CAPACITY 400
 #define GAME_LEGACY_ENTITY_DB_CAPACITY 1024
 #define GAME_LEGACY_MONSTER_CAPACITY 100
+#define GAME_LEGACY_TRACE_CAPACITY 8
+#define GAME_LEGACY_GSPRITE_CAPACITY MAX_CUSTOM_SPRITES
 #endif
 
 typedef enum
@@ -148,7 +152,7 @@ typedef struct Game_s
 	struct Entity_s entities[GAME_LEGACY_ENTITY_CAPACITY];
 	int numEntities;
 	struct Entity_s* entityDb[GAME_LEGACY_ENTITY_DB_CAPACITY];
-	struct Entity_s* traceEntities[8];
+	struct Entity_s* traceEntities[GAME_LEGACY_TRACE_CAPACITY];
 	int numTraceEntities;
 	struct EntityMonster_s entityMonsters[GAME_LEGACY_MONSTER_CAPACITY];
 	int numMonsters;
@@ -177,7 +181,7 @@ typedef struct Game_s
 	int eventFlags[2];
 	int memory;
 	int entityMemory;
-	struct GameSprite_s gsprites[MAX_CUSTOM_SPRITES];
+	struct GameSprite_s gsprites[GAME_LEGACY_GSPRITE_CAPACITY];
 	int gSpriteDurationTime;
 	int changeMapParam;
 	struct Entity_s* spawnMonster;

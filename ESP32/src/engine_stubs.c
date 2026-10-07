@@ -33,7 +33,11 @@ _Static_assert(GAME_LEGACY_MAP_NAME_CAPACITY == 1,
                "ESP32 Game_t legacy map-name storage must stay compact");
 _Static_assert(GAME_LEGACY_MAP_FILE_CAPACITY == 1,
                "ESP32 Game_t legacy map-file storage must stay compact");
-_Static_assert(sizeof(Game_t) == 768,
+_Static_assert(GAME_LEGACY_TRACE_CAPACITY == 1,
+               "ESP32 Game_t legacy trace storage must stay compact");
+_Static_assert(GAME_LEGACY_GSPRITE_CAPACITY == 1,
+               "ESP32 Game_t legacy GameSprite storage must stay compact");
+_Static_assert(sizeof(Game_t) == 440,
                "ESP32 Game_t layout changed; re-audit live compatibility fields");
 #endif
 
@@ -323,9 +327,12 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
            (unsigned int)GAME_LEGACY_ENTITY_CAPACITY,
            (unsigned int)GAME_LEGACY_ENTITY_DB_CAPACITY,
            (unsigned int)GAME_LEGACY_MONSTER_CAPACITY);
-    printf("[CORE] Legacy Game map tables retired stores=sentinel capacities=%u/%u gameBytes=%u desktopBytes=36468 totalReclaimed=35700 owner=EspMapCatalog\n",
+    printf("[CORE] Legacy Game map tables retired stores=sentinel capacities=%u/%u owner=EspMapCatalog\n",
            (unsigned int)GAME_LEGACY_MAP_NAME_CAPACITY,
-           (unsigned int)GAME_LEGACY_MAP_FILE_CAPACITY,
+           (unsigned int)GAME_LEGACY_MAP_FILE_CAPACITY);
+    printf("[CORE] Legacy Game transient stores retired trace/gsprites=sentinel capacities=%u/%u gameBytes=%u desktopBytes=36468 totalReclaimed=36028 owner=native-collision+gameplay-fx\n",
+           (unsigned int)GAME_LEGACY_TRACE_CAPACITY,
+           (unsigned int)GAME_LEGACY_GSPRITE_CAPACITY,
            (unsigned int)sizeof(Game_t));
 
     /*

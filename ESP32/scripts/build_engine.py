@@ -548,6 +548,58 @@ game_source_text = game_source_text.replace(
     game_activate_needle, game_activate_replacement, 1
 )
 
+game_gsprite_clear_needle = """void Game_gsprite_clear(Game_t* game)
+{
+	for (int i = 0; i < MAX_CUSTOM_SPRITES; i++) {
+		game->gsprites[i].flags = 0;
+		game->gsprites[i].sprite = NULL;
+	}
+	game->activeSprites = 0;
+	game->f684l = 0;
+}
+"""
+game_gsprite_clear_replacement = """void Game_gsprite_clear(Game_t* game)
+{
+	/* ESP32 gameplay/render effects are native. Keep only the compile-time
+	 * GameSprite sentinel plus the two compatibility scalars still observed
+	 * by retained DoomCanvas state code. */
+	game->gsprites[0].flags = 0;
+	game->gsprites[0].sprite = NULL;
+	game->activeSprites = 0;
+	game->f684l = 0;
+}
+"""
+game_gsprite_clear_count = game_source_text.count(game_gsprite_clear_needle)
+if game_gsprite_clear_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_gsprite_clear legacy storage shape; "
+        "review compact ESP32 GameSprite ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_gsprite_clear_needle, game_gsprite_clear_replacement, 1
+)
+
+game_trace_clear_needle = """	for (i = 0; i < 8; i++) {
+		game->traceEntities[i] = NULL;
+	}
+
+"""
+game_trace_clear_replacement = """	/* ESP32 collision/action tracing is native; retain one compile-only
+	 * trace sentinel and clear the scalar count fail-closed. */
+	game->traceEntities[0] = NULL;
+	game->numTraceEntities = 0;
+
+"""
+game_trace_clear_count = game_source_text.count(game_trace_clear_needle)
+if game_trace_clear_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_unloadMapData traceEntities clear shape; "
+        "review compact ESP32 trace ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_trace_clear_needle, game_trace_clear_replacement, 1
+)
+
 game_combat_cleanup_needle = """	game->doomRpg->combat->curTarget = NULL;
 	game->doomRpg->combat->curAttacker = NULL;
 """
@@ -732,7 +784,9 @@ print(
     f"{game_player_deaths_save_count} legacy Player config save field retired + "
     f"{game_resource_map_id_count} legacy mapFiles lookup retired + "
     f"{game_map_table_init_count} legacy map table init retired + "
-    f"{game_save_state_map_file_count} legacy save-state mapFiles access retired"
+    f"{game_save_state_map_file_count} legacy save-state mapFiles access retired + "
+    f"{game_gsprite_clear_count} legacy GameSprite clear compacted + "
+    f"{game_trace_clear_count} legacy trace clear compacted"
 )
 
 # DoomRPG_createImage() is the central image-loading path used by the game.
