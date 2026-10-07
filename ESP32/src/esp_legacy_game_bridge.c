@@ -52,11 +52,9 @@ void Game_loadConfig(Game_t* game)
     if (rw != NULL) {
         version = File_readInt(rw);
         if (version == ESP_LEGACY_CONFIG_VERSION) {
+            /* Retired desktop vibration option: consume for stream compatibility. */
             boolData = File_readByte(rw);
-            if (game != NULL) {
-                game->doomRpg->doomCanvas->vibrateEnabled =
-                    boolData != 0 ? true : false;
-            }
+            (void)boolData;
 
             /* Retired Sound_t volume: consume for stream compatibility. */
             intData = File_readInt(rw);
@@ -85,25 +83,19 @@ void Game_loadConfig(Game_t* game)
 
             sdlVideo.resolutionIndex = File_readInt(rw);
 
+            /* Retired desktop mouse options: consume for stream compatibility. */
             intData = File_readInt(rw);
-            if (game != NULL) {
-                game->doomRpg->doomCanvas->mouseSensitivity = intData;
-            }
+            (void)intData;
 
             boolData = File_readByte(rw);
-            if (game != NULL) {
-                game->doomRpg->doomCanvas->mouseYMove =
-                    boolData != 0 ? true : false;
-            }
+            (void)boolData;
 
             sdlController.deadZoneLeft = File_readInt(rw);
             sdlController.deadZoneRight = File_readInt(rw);
 
+            /* Retired desktop sound-priority option: consume for compatibility. */
             boolData = File_readByte(rw);
-            if (game != NULL) {
-                game->doomRpg->doomCanvas->sndPriority =
-                    boolData != 0 ? true : false;
-            }
+            (void)boolData;
 
             boolData = File_readByte(rw);
             if (game != NULL) {

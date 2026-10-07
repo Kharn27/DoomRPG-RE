@@ -22,13 +22,15 @@
 #define ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES 116U
 #define ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES (7U * sizeof(void*))
 #define ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES 96U
+#define ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES 56U
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -67,8 +69,6 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->oldState = -1;
     doomCanvas->imgFont.imgBitmap = NULL;
     doomCanvas->imgLargerFont.imgBitmap = NULL;
-    doomCanvas->imgLegals.imgBitmap = NULL;
-    doomCanvas->imgMapCursor.imgBitmap = NULL;
     doomCanvas->softKeyRight[0] = '\0';
     doomCanvas->softKeyLeft[0] = '\0';
     doomCanvas->clipRect.x = 0;
@@ -76,12 +76,9 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->clipRect.w = sdlVideo.rendererW;
     doomCanvas->clipRect.h = sdlVideo.rendererH;
     doomCanvas->fontColor = 0xffffffff;
-    doomCanvas->mouseSensitivity = 50;
-    doomCanvas->mouseYMove = true;
-    doomCanvas->vibrateEnabled = true;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=10 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=10 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -89,6 +86,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES,
            doomCanvas->clipRect.w,
            doomCanvas->clipRect.h);
     return doomCanvas;
@@ -104,9 +102,6 @@ void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
     EspNativeIntroState_release(doomCanvas->doomRpg);
     DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
     DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLargerFont);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLegals);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgMapCursor);
-
 
     if (freePtr) {
         SDL_free(doomCanvas);
@@ -315,7 +310,6 @@ void DoomCanvas_drawSoftKeys(DoomCanvas_t* doomCanvas,
         return;
     }
 
-    doomCanvas->restoreSoftKeys = true;
     x1 = x = -doomCanvas->displayRect.x;
     y1 = y = doomCanvas->softKeyY - doomCanvas->displayRect.y;
 
@@ -439,9 +433,6 @@ void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
     }
 
     doomCanvas->state = stateNum;
-    if (stateNum != oldState) {
-        doomCanvas->restoreSoftKeys = false;
-    }
 
     if (stateNum == ST_PLAYING) {
         DoomCanvas_drawSoftKeys(doomCanvas, "Menu", "Map");
@@ -543,7 +534,6 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
     DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
     DoomRPG_createImage(
         doomCanvas->doomRpg, "larger_font.bmp", true, &doomCanvas->imgLargerFont);
-    DoomRPG_createImage(doomCanvas->doomRpg, "b.bmp", true, &doomCanvas->imgMapCursor);
 
     printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native\n",
            doomCanvas->displayRect.w,

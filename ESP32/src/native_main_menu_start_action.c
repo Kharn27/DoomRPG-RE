@@ -92,7 +92,6 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
     Render_t* render;
     uint32_t heapBefore;
     uint32_t largestBefore;
-    int legalsReleased = 0;
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
         doomRpg->render == NULL || doomRpg->game == NULL) {
@@ -104,16 +103,10 @@ int DoomRPG_esp32ReleaseMainMenuMemory(struct DoomRPG_s* doomRpgBase) {
     heapBefore = heap8Free();
     largestBefore = largest8Block();
 
-    if (doomCanvas->imgLegals.imgBitmap != NULL) {
-        DoomRPG_freeImage(doomRpg, &doomCanvas->imgLegals);
-        legalsReleased = 1;
-    }
-
     Render_freeRuntime(render);
     Game_unloadMapData(doomRpg->game);
 
-    printf("[MAINMENU] Runtime cleanup legals=%s heap8=%u->%u gained=%d largest8=%u->%u nodes=%p lines=%p mapSprites=%p mappings=%p/%p shapeData=%p mediaTexels=%p\n",
-           legalsReleased ? "released" : "already-free",
+    printf("[MAINMENU] Runtime cleanup legals=retired heap8=%u->%u gained=%d largest8=%u->%u nodes=%p lines=%p mapSprites=%p mappings=%p/%p shapeData=%p mediaTexels=%p\n",
            (unsigned int)heapBefore,
            (unsigned int)heap8Free(),
            (int)heap8Free() - (int)heapBefore,

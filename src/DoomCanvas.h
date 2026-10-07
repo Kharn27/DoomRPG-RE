@@ -23,10 +23,14 @@ struct ParticleSystem_s;
 
 typedef struct DoomCanvas_s
 {
+#ifndef DOOMRPG_ESP32
 	int memory;
+#endif
 	struct Image_s imgFont;
 	struct Image_s imgLargerFont;
+#ifndef DOOMRPG_ESP32
 	struct Image_s imgMapCursor;
+#endif
 	int SCR_CX;
 	int SCR_CY;
 	int viewX;
@@ -139,7 +143,9 @@ typedef struct DoomCanvas_s
 #else
 	/* ST_INTRO assets/text/page state are transient ESP32-native ownership. */
 #endif
+#ifndef DOOMRPG_ESP32
 	struct Image_s imgLegals;
+#endif
 #ifndef DOOMRPG_ESP32
 	char epilogueText[2][150];
 	int epilogueTextPage;
@@ -188,11 +194,15 @@ typedef struct DoomCanvas_s
 	char softKeyLeft[12];
 	char softKeyRight[12];
 
+#ifndef DOOMRPG_ESP32
 	boolean restoreSoftKeys; // New
+#endif
 	int fontColor; // New
+#ifndef DOOMRPG_ESP32
 	int mouseSensitivity; // New
 	boolean mouseYMove; // New
 	boolean sndPriority; // New
+#endif
 	boolean renderFloorCeilingTextures; // New
 
 	struct DoomRPG_s* doomRpg;
