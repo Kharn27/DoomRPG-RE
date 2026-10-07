@@ -243,6 +243,11 @@ render_source_text = render_source_text.replace(
 print("[ESP32] Legacy Render_render/plane BG fail-closed in production; "
       "Render.planeTextures 2048-byte mirror retired (bringup/desktop unchanged)")
 
+# Every legacy producer/consumer must stay inside the audited closure.
+for field, expected in (("planeTexturesCnt", 7), ("planeTextureIds", 4),
+                        ("planeTexelOffsets", 2), ("planePaletteOffsets", 2)):
+    if len(re.findall(r"render->" + field + r"\b", render_source_text)) != expected:
+        raise RuntimeError("Unreviewed legacy Render plane field: " + field)
 # Production has no legacy plane descriptor metadata; reject legacy helpers.
 plane_draw = "void Render_drawplane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int cnt)\n{"
 plane_end = "void Render_renderBSP(Render_t* render)\n{"
