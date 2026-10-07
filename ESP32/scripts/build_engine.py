@@ -182,6 +182,66 @@ render_source_text = render_source_text.replace(
 print("[ESP32] Legacy Render BSP loader fail-closed in production; "
       "Render.mapFlags 1024-byte mirror retired (bringup/desktop unchanged)")
 
+# Second Render ownership cut: the desktop/J2ME plane-cell array is
+# absent from the normal classic-CYD layout. Production rendering uses the
+# immutable native plane records and the native renderer. Legacy BSP load
+# (already fail-closed above) and legacy world/plane draw must not silently
+# reintroduce another 2048-cell map-wide mirror.
+legacy_render_entry = "void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle)\n{"
+legacy_render_next = "void Render_initColumnScale(Render_t* render)\n{"
+legacy_plane_entry = "void Render_renderFloorAndCeilingBG(Render_t* render)\n{"
+legacy_plane_next = "void Render_drawplane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int cnt)\n{"
+for needle in (legacy_render_entry, legacy_render_next,
+               legacy_plane_entry, legacy_plane_next):
+    if render_source_text.count(needle) != 1:
+        raise RuntimeError("Unexpected legacy Render draw shape: " + needle[:60])
+legacy_plane_use = re.findall(r"render->planeTextures\b", render_source_text)
+if len(legacy_plane_use) != 4:
+    raise RuntimeError("Unexpected legacy Render planeTextures use count")
+legacy_loader_piece = render_source_text[
+    render_source_text.index(render_legacy_map_data):
+    render_source_text.index(render_legacy_map_end)]
+legacy_draw_piece = render_source_text[
+    render_source_text.index(legacy_plane_entry):
+    render_source_text.index(legacy_plane_next)]
+if (len(re.findall(r"render->planeTextures\b", legacy_loader_piece)) != 2 or
+        len(re.findall(r"render->planeTextures\b", legacy_draw_piece)) != 2):
+    raise RuntimeError("Render planeTextures read/write closure changed")
+render_source_text = render_source_text.replace(
+    legacy_render_entry,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle)
+{
+    (void)render;
+    (void)viewx;
+    (void)viewy;
+    (void)viewz;
+    (void)viewangle;
+    printf("[LEGACYRENDER] REJECT Render_render: native world renderer required\\n");
+}
+#else
+""" + legacy_render_entry, 1)
+render_source_text = render_source_text.replace(
+    legacy_render_next,
+    "#endif /* production legacy world renderer rejection */\n\n" +
+    legacy_render_next, 1)
+render_source_text = render_source_text.replace(
+    legacy_plane_entry,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_renderFloorAndCeilingBG(Render_t* render)
+{
+    (void)render;
+    printf("[LEGACYRENDER] REJECT Render_renderFloorAndCeilingBG: native planes required\\n");
+}
+#else
+""" + legacy_plane_entry, 1)
+render_source_text = render_source_text.replace(
+    legacy_plane_next,
+    "#endif /* production legacy plane renderer rejection */\n\n" +
+    legacy_plane_next, 1)
+print("[ESP32] Legacy Render_render/plane BG fail-closed in production; "
+      "Render.planeTextures 2048-byte mirror retired (bringup/desktop unchanged)")
+
 with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(render_source_text)
 

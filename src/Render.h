@@ -201,7 +201,12 @@ typedef struct Render_s
 	#endif
 	int planeTexturesCnt;
 	int planeTextureIds[24];
+	/* This 2048-cell desktop floor/ceiling plane buffer belongs exclusively
+     * to the retired legacy BSP loader/render path. The native CYD world
+     * renderer reads compact plane indices from EspMapRuntime instead. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	PlaneTextureRef_t planeTextures[1024*2];
+#endif
 
 	// New [GEC]
 	// Needed to avoid buffer overflows like in sector 5
