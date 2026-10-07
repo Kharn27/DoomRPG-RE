@@ -27,8 +27,8 @@ typedef struct DoomCanvas_s
 	int memory;
 #endif
 	struct Image_s imgFont;
-	struct Image_s imgLargerFont;
 #ifndef DOOMRPG_ESP32
+	struct Image_s imgLargerFont;
 	struct Image_s imgMapCursor;
 #endif
 	int SCR_CX;
@@ -275,7 +275,9 @@ void DoomCanvas_drawSoftKeys(DoomCanvas_t* doomCanvas, char* softKeyLeft, char* 
 void DoomCanvas_scrollSpaceBG(DoomCanvas_t* doomCanvas);
 void DoomCanvas_drawString1(DoomCanvas_t* doomCanvas, char* text, int x, int y, int flags);
 void DoomCanvas_drawString2(DoomCanvas_t* doomCanvas, char* text, int x, int y, int flags, int param_6);
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_drawFont(DoomCanvas_t* doomCanvas, char* text, int x, int y, int flags, int strBeg, int strEnd, boolean isLargerFont);
+#endif
 void DoomCanvas_dyingState(DoomCanvas_t* doomCanvas);
 void DoomCanvas_sorryState(DoomCanvas_t* doomCanvas);
 void DoomCanvas_finishMovement(DoomCanvas_t* doomCanvas);

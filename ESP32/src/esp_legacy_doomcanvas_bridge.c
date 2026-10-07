@@ -24,6 +24,7 @@
 #define ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES 96U
 #define ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES 56U
 #define ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES 72U
+#define ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES 16U
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
@@ -32,7 +33,8 @@
      ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -68,7 +70,6 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
 
     doomCanvas->doomRpg = doomRpg;
     doomCanvas->imgFont.imgBitmap = NULL;
-    doomCanvas->imgLargerFont.imgBitmap = NULL;
     doomCanvas->clipRect.x = 0;
     doomCanvas->clipRect.y = 0;
     doomCanvas->clipRect.w = sdlVideo.rendererW;
@@ -76,7 +77,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->fontColor = 0xffffffff;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=7 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=6 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -86,6 +87,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES,
            doomCanvas->clipRect.w,
            doomCanvas->clipRect.h);
     return doomCanvas;
@@ -100,7 +102,6 @@ void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
     Esp32StoryFit_release(doomCanvas);
     EspNativeIntroState_release(doomCanvas->doomRpg);
     DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLargerFont);
 
     if (freePtr) {
         SDL_free(doomCanvas);
@@ -202,43 +203,20 @@ void DoomCanvas_drawString1(DoomCanvas_t* doomCanvas,
                             int y,
                             int flags)
 {
-    DoomCanvas_drawFont(doomCanvas, text, x, y, flags, 0, -1, false);
-}
-
-void DoomCanvas_drawFont(DoomCanvas_t* doomCanvas,
-                         char* text,
-                         int x,
-                         int y,
-                         int flags,
-                         int strBeg,
-                         int strEnd,
-                         boolean isLargerFont)
-{
     Image_t* imgFont;
-    int advance;
-    int width;
-    int height;
+    const int advance = 7;
+    const int width = 9;
+    const int height = 12;
     int len;
     int xpos;
     int i;
     unsigned int c;
 
-    if (doomCanvas == NULL || text == NULL || strEnd == 0) {
+    if (doomCanvas == NULL || text == NULL) {
         return;
     }
 
-    if (!isLargerFont) {
-        imgFont = &doomCanvas->imgFont;
-        advance = 7;
-        width = 9;
-        height = 12;
-    } else {
-        imgFont = &doomCanvas->imgLargerFont;
-        advance = 10;
-        width = 13;
-        height = 17;
-    }
-
+    imgFont = &doomCanvas->imgFont;
     if (imgFont->imgBitmap == NULL) {
         return;
     }
@@ -250,14 +228,7 @@ void DoomCanvas_drawFont(DoomCanvas_t* doomCanvas,
         SDL_SetTextureColorMod(imgFont->imgBitmap, r, g, b);
     }
 
-    len = (int)SDL_strlen(text) - strBeg;
-    if (len < 0) {
-        return;
-    }
-    if (len > strEnd && strEnd >= 0) {
-        len = strEnd;
-    }
-
+    len = (int)SDL_strlen(text);
     if ((flags & 8) != 0) {
         x -= len * advance;
     } else if ((flags & 16) != 0) {
@@ -270,9 +241,8 @@ void DoomCanvas_drawFont(DoomCanvas_t* doomCanvas,
         y -= height >> 1;
     }
 
-    len += strBeg;
     xpos = x;
-    for (i = strBeg; i < len; ++i) {
+    for (i = 0; i < len; ++i) {
         c = (unsigned char)text[i];
         if (c == 10U) {
             y += height;
@@ -437,8 +407,6 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
     doomCanvas->skipIntro = false;
 
     DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
-    DoomRPG_createImage(
-        doomCanvas->doomRpg, "larger_font.bmp", true, &doomCanvas->imgLargerFont);
 
     printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native\n",
            doomCanvas->displayRect.w,

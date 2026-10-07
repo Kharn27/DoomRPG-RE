@@ -24,7 +24,6 @@ doom_canvas_bridge_exports = (
     "DoomCanvas_free",
     "DoomCanvas_drawImageSpecial",
     "DoomCanvas_drawString1",
-    "DoomCanvas_drawFont",
     "DoomCanvas_setState",
     "DoomCanvas_startup",
     "DoomCanvas_init",
