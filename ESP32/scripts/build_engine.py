@@ -555,6 +555,16 @@ game_source_text = game_source_text.replace(
     game_player_deaths_save_needle, game_player_deaths_save_replacement, 1
 )
 
+for retired_config_access in (
+    "doomRpg->sound->volume",
+    "doomRpg->player->totalDeaths",
+):
+    if retired_config_access in game_source_text:
+        raise RuntimeError(
+            "Retired ESP32 config owner dereference survived generation: "
+            + retired_config_access
+        )
+
 with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(game_source_text)
 
