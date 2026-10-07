@@ -444,3 +444,61 @@ int EspNativeGameplayFrame_renderVisualPose(
 
     return renderComposed(render, visual, settledAngle, 1, outStats);
 }
+
+
+/*
+ * Two render-only positions along one already committed cardinal step.
+ * Canonical pose must remain equal to the exact prepared destination.
+ */
+int EspNativeGameplayFrame_renderVisualMove(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* beforeBase,
+    const struct EspPlayerViewState_s* afterBase,
+    uint8_t step,
+    EspNativeGameplayFrameStats* outStats) {
+    const EspPlayerViewState* live = EspPlayerView_view();
+    const EspPlayerViewState* before = (const EspPlayerViewState*)beforeBase;
+    const EspPlayerViewState* after = (const EspPlayerViewState*)afterBase;
+    EspPlayerViewState expectedBefore;
+    EspPlayerViewState visual;
+    int32_t dx;
+    int32_t dy;
+
+    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
+    if (before == NULL || after == NULL || live == NULL ||
+        outStats == NULL || step < 1U || step > 2U ||
+        live->active != 1U || after->active != 1U ||
+        memcmp(live, after, sizeof(*after)) != 0 ||
+        after->viewX != after->destX ||
+        after->viewY != after->destY ||
+        after->viewAngle != after->destAngle ||
+        before->viewX != before->destX ||
+        before->viewY != before->destY ||
+        before->viewAngle != before->destAngle ||
+        (after->viewAngle & 63) != 0) {
+        return 0;
+    }
+
+    dx = after->viewX - before->viewX;
+    dy = after->viewY - before->viewY;
+    if (!((dx == 64 || dx == -64) && dy == 0) &&
+        !((dy == 64 || dy == -64) && dx == 0)) {
+        return 0;
+    }
+
+    /* Only position is allowed to differ between preparation snapshots. */
+    expectedBefore = *after;
+    expectedBefore.viewX = before->viewX;
+    expectedBefore.viewY = before->viewY;
+    expectedBefore.destX = before->destX;
+    expectedBefore.destY = before->destY;
+    if (memcmp(&expectedBefore, before, sizeof(*before)) != 0) return 0;
+
+    visual = *after;
+    visual.viewX = before->viewX + dx * (int32_t)step / 3;
+    visual.viewY = before->viewY + dy * (int32_t)step / 3;
+    visual.destX = visual.viewX;
+    visual.destY = visual.viewY;
+    return renderComposed(
+        render, &visual, (uint8_t)after->viewAngle, 1, outStats);
+}
