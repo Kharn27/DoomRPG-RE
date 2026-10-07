@@ -243,6 +243,21 @@ render_source_text = render_source_text.replace(
 print("[ESP32] Legacy Render_render/plane BG fail-closed in production; "
       "Render.planeTextures 2048-byte mirror retired (bringup/desktop unchanged)")
 
+# Production has no legacy plane descriptor metadata; reject legacy helpers.
+plane_draw = "void Render_drawplane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int cnt)\n{"
+plane_end = "void Render_renderBSP(Render_t* render)\n{"
+if render_source_text.count(plane_draw) != 1 or render_source_text.count(plane_end) != 1:
+    raise RuntimeError("Unexpected legacy Render plane helper source")
+render_source_text = render_source_text.replace(plane_draw, """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_drawplane(Render_t* r,int x,int y,PlaneTextureRef_t* p,int n)
+{ (void)r;(void)x;(void)y;(void)p;(void)n; }
+void Render_spanPlane(Render_t* r,int x,int y,PlaneTextureRef_t* p,
+                      int a,int b,int c,int d,int n)
+{ (void)r;(void)x;(void)y;(void)p;(void)a;(void)b;(void)c;(void)d;(void)n; }
+#else
+""" + plane_draw, 1)
+render_source_text = render_source_text.replace(plane_end, "#endif\n\n" + plane_end, 1)
+
 with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(render_source_text)
 
