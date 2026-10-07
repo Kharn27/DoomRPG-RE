@@ -1,5 +1,91 @@
 # ESP32 documentation map
 
+## Desktop Game translation unit retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`e497199152be23b86d98054ca458761f04109b9d`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The normal ESP32 build no longer generates or compiles desktop `src/Game.c`.
+Its only retained ABI roots are now permanently implemented by
+`ESP32/src/esp_legacy_game_bridge.c`:
+
+```text
+Game_init
+Game_loadConfig
+Game_unloadMapData
+Game_activate
+```
+
+Any future dependency on another inherited `Game_*` function now fails at
+link time instead of silently reviving desktop gameplay code.
+
+Normal `esp32-cyd` CI #1615 is SUCCESS:
+
+```text
+[ESP32] Desktop Game.c retired; esp_legacy_game_bridge.c owns Game_init/Game_loadConfig/Game_unloadMapData/Game_activate
+RAM:   45464 B
+Flash: 780881 B
+```
+
+Real-CYD acceptance exercises the bridge responsibilities end-to-end. The
+shortened boot log starts after the core-object banner, but proves the bridge
+`Game_loadConfig()` path reaches config/mappings startup with unchanged heap:
+
+```text
+[CONFIG] -> Game_loadConfig()
+loadConfig
+loadConfig: (unable to open file)
+[CONFIG] DONE heap delta=0 heap8=148768 largest8=110580
+[CONFIGMAP] READY config path exercised and mappings resident
+```
+
+A fresh START traverses intro disposal, catalog-backed MAP_INTRO loading and the
+exact first-frame witness:
+
+```text
+[NATIVEBOOT] RESIDENT map=1 file=/intro.bsp ...
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=165200 heap8=99276 largest8=86004 ...
+```
+
+The same hardware run then exercises native crate transform, pickup, dialog
+open/page/close plus resumed opcode execution, HUB/SYS Exit To Menu, and the
+bridge teardown path:
+
+```text
+[SYS] EXIT-CONFIRMED queued=yes saveWrite=no boundary=after-session
+[RESIDENTRESET] ... empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty ...
+```
+
+Finally the main-menu LOAD path restores a version-11 checkpoint, including
+resources, script, line state, automap, monster state/topology/positions/
+activation and drops, then re-enters resident gameplay successfully:
+
+```text
+[NATIVESAVE] LOAD ... version=11 ... world=resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-restored-exact
+[ENGINESESSION] RESUME ... checkpoint=restored ...
+[ENGINESESSION] READY map=1 angle=0 ... shapeData=0x0 mediaTexels=0x0
+```
+
+The checkpoint-resume session settles at `heap8=98240/largest8=86004`, lower
+than fresh-start gameplay only because the dialog-chain owner and restored
+session owners differ from the fresh path; no regression is observed.
+
+This milestone deliberately keeps the 440-byte `Game_t` compatibility shell
+unchanged. The next architectural blocker is the still-generated full desktop
+`DoomCanvas.c`, whose dead functions force legacy `Game_t` fields to remain
+compilable even though the linked DoomCanvas surface observes only a tiny subset.
+
+No post-test runtime/code change is part of the closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DESKTOP_GAME_TU.md](MILESTONE_ESP32_RETIRE_DESKTOP_GAME_TU.md)
+
 ## Dormant Game transient stores compacted — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:
