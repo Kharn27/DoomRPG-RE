@@ -193,17 +193,15 @@ typedef struct DoomCanvas_s
 
 	struct DoomRPG_s* doomRpg;
 	struct Render_s* render;
+#ifndef DOOMRPG_ESP32
 	struct Player_s* player;
 	struct Game_s* game;
 	struct EntityDefManager_s* entityDef;
 	struct Combat_s* combat;
 	struct Hud_s* hud;
-#ifdef DOOMRPG_ESP32
-	struct EspNativeMenuState_s* menuSystem;
-#else
 	struct MenuSystem_s* menuSystem;
-#endif
 	struct ParticleSystem_s* particleSystem;
+#endif
 } DoomCanvas_t;
 
 

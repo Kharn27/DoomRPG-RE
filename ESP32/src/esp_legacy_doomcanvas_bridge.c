@@ -5,7 +5,6 @@
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
-#include "Player.h"
 #include "Render.h"
 #include "SDL_Video.h"
 
@@ -20,11 +19,13 @@
 #define ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES (300U + 128U)
 #define ESP32_DOOMCANVAS_RETIRED_STATE_FIELD_BYTES 113U
 #define ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES 116U
+#define ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES (7U * sizeof(void*))
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -115,12 +116,13 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->vibrateEnabled = true;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=11 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u retiredStateLayout=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=11 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u retiredStateLayout=%u retiredGraphMirrors=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES,
            doomCanvas->clipRect.w,
            doomCanvas->clipRect.h);
     return doomCanvas;
@@ -528,13 +530,6 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
 
     doomRpg = doomCanvas->doomRpg;
     doomCanvas->render = doomRpg->render;
-    doomCanvas->player = doomRpg->player;
-    doomCanvas->game = doomRpg->game;
-    doomCanvas->entityDef = doomRpg->entityDef;
-    doomCanvas->combat = doomRpg->combat;
-    doomCanvas->hud = NULL;
-    doomCanvas->menuSystem = doomRpg->menuSystem;
-    doomCanvas->particleSystem = doomRpg->particleSystem;
 
     doomCanvas->displayRect.w = 0;
     doomCanvas->displayRect.h = 0;
