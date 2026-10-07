@@ -447,14 +447,16 @@ int EspNativeGameplayFrame_renderVisualPose(
 
 
 /*
- * Two render-only positions along one already committed cardinal step.
- * Canonical pose must remain equal to the exact prepared destination.
+ * One (1/2) or two (1/3, 2/3) render-only positions along one
+ * already committed cardinal step. Canonical pose must remain equal
+ * to the exact prepared destination.
  */
 int EspNativeGameplayFrame_renderVisualMove(
     struct Render_s* render,
     const struct EspPlayerViewState_s* beforeBase,
     const struct EspPlayerViewState_s* afterBase,
     uint8_t step,
+    uint8_t denominator,
     EspNativeGameplayFrameStats* outStats) {
     const EspPlayerViewState* live = EspPlayerView_view();
     const EspPlayerViewState* before = (const EspPlayerViewState*)beforeBase;
@@ -466,7 +468,9 @@ int EspNativeGameplayFrame_renderVisualMove(
 
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
     if (before == NULL || after == NULL || live == NULL ||
-        outStats == NULL || step < 1U || step > 2U ||
+        outStats == NULL ||
+        !((denominator == 2U && step == 1U) ||
+          (denominator == 3U && (step == 1U || step == 2U))) ||
         live->active != 1U || after->active != 1U ||
         memcmp(live, after, sizeof(*after)) != 0 ||
         after->viewX != after->destX ||
@@ -495,8 +499,8 @@ int EspNativeGameplayFrame_renderVisualMove(
     if (memcmp(&expectedBefore, before, sizeof(*before)) != 0) return 0;
 
     visual = *after;
-    visual.viewX = before->viewX + dx * (int32_t)step / 3;
-    visual.viewY = before->viewY + dy * (int32_t)step / 3;
+    visual.viewX = before->viewX + dx * (int32_t)step / denominator;
+    visual.viewY = before->viewY + dy * (int32_t)step / denominator;
     visual.destX = visual.viewX;
     visual.destY = visual.viewY;
     return renderComposed(

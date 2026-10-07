@@ -74,15 +74,17 @@ int EspNativeGameplayFrame_renderVisualPose(
     EspNativeGameplayFrameStats* outStats);
 
 /*
- * MOVE-only preview: two bounded positions between the 64-unit settled
- * cardinal source and committed destination. No gameplay state mutation,
- * automap reveal, activation, checkpoint change or extra framebuffer.
+ * MOVE-only preview: axial moves sample 1/2; strafe samples 1/3 and
+ * 2/3. Only (step=1, denominator=2) and (step=1/2, denominator=3)
+ * are accepted. No gameplay mutation, automap reveal, activation,
+ * checkpoint change or extra framebuffer.
  */
 int EspNativeGameplayFrame_renderVisualMove(
     struct Render_s* render,
     const struct EspPlayerViewState_s* before,
     const struct EspPlayerViewState_s* after,
     uint8_t step,
+    uint8_t denominator,
     EspNativeGameplayFrameStats* outStats);
 
 #ifdef __cplusplus

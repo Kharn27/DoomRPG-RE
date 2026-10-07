@@ -529,42 +529,53 @@ static void serviceMove(Render_t* render,
     }
 
     /*
-     * The gameplay MOVE, collision and tile events have already committed.
-     * Only the camera approaches that settled destination via two local
-     * visual poses. No early monster turn, event execution or automap reveal.
-     * Any preview failure drops directly to the required canonical frame.
+     * Axial movement produces a strong perspective change per image:
+     * two 1/3, 2/3 previews felt like two separate forward/back steps
+     * on physical CYD (~205ms before the final paint). Use a single
+     * midpoint preview for FORWARD/BACK; keep two for STRAFE (hardware UX
+     * already confirmed). All previews remain presentation-only.
      */
     if (startedInAutomap == 0U) {
+        const uint8_t axial =
+            intent->action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ||
+            intent->action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK;
+        const uint8_t denominator = axial ? 2U : 3U;
+        const uint8_t previewCount = axial ? 1U : 2U;
+        const char* profile = axial ? "axial-midpoint" : "strafe-thirds";
         uint8_t step;
         uint8_t previews = 0U;
         uint32_t previewUs = 0U;
 
-        for (step = 1U; step <= 2U; ++step) {
+        for (step = 1U; step <= previewCount; ++step) {
             EspNativeGameplayFrameStats intermediate;
             const int32_t cameraX =
-                beforeView.viewX + result.deltaX * (int32_t)step / 3;
+                beforeView.viewX + result.deltaX * (int32_t)step / denominator;
             const int32_t cameraY =
-                beforeView.viewY + result.deltaY * (int32_t)step / 3;
+                beforeView.viewY + result.deltaY * (int32_t)step / denominator;
             memset(&intermediate, 0, sizeof(intermediate));
             if (!EspNativeGameplayFrame_renderVisualMove(
-                    render, &beforeView, &afterView, step, &intermediate)) {
-                printf("[VIEWANIM] FALLBACK mode=move seq=%u step=%u pos=%d,%d completed=%u finalCardinal=required gameplayStable=yes\n",
-                       (unsigned int)result.sequence,
-                       (unsigned int)step, (int)cameraX, (int)cameraY,
+                    render, &beforeView, &afterView, step, denominator,
+                    &intermediate)) {
+                printf("[VIEWANIM] FALLBACK mode=move profile=%s seq=%u step=%u/%u camera=%d,%d completed=%u finalCardinal=required gameplayStable=yes\n",
+                       profile, (unsigned int)result.sequence,
+                       (unsigned int)step, (unsigned int)previewCount,
+                       (int)cameraX, (int)cameraY,
                        (unsigned int)previews);
                 break;
             }
             ++previews;
             previewUs += intermediate.totalMicros;
-            printf("[VIEWANIM] FRAME mode=move seq=%u step=%u/2 camera=%d,%d logical=%d,%d rendered=yes presented=%u totalUs=%u gameplayStable=yes\n",
-                   (unsigned int)result.sequence, (unsigned int)step,
+            printf("[VIEWANIM] FRAME mode=move profile=%s seq=%u step=%u/%u sample=%u/%u camera=%d,%d logical=%d,%d rendered=yes presented=%u totalUs=%u gameplayStable=yes\n",
+                   profile, (unsigned int)result.sequence,
+                   (unsigned int)step, (unsigned int)previewCount,
+                   (unsigned int)step, (unsigned int)denominator,
                    (int)cameraX, (int)cameraY,
                    (int)afterView.viewX, (int)afterView.viewY,
                    (unsigned int)intermediate.finalPresented,
                    (unsigned int)intermediate.totalMicros);
         }
-        printf("[VIEWANIM] END mode=move seq=%u tile=%u->%u from=%d,%d to=%d,%d intermediates=%u previewUs=%u logicalCommit=once turnAdvance=unchanged finalCardinal=next\n",
-               (unsigned int)result.sequence,
+        printf("[VIEWANIM] END mode=move profile=%s seq=%u tile=%u->%u from=%d,%d to=%d,%d intermediates=%u previewUs=%u logicalCommit=once turnAdvance=unchanged finalCardinal=next\n",
+               profile, (unsigned int)result.sequence,
                (unsigned int)result.sourceTile,
                (unsigned int)result.destTile,
                (int)beforeView.viewX, (int)beforeView.viewY,
