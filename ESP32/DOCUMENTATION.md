@@ -1,5 +1,125 @@
 # ESP32 documentation map
 
+## DoomCanvas intro state moved to transient native owner — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`4635f711b5d2d1128a893a8d266920626df8654d`.
+
+Branch:
+`agent/esp32-intro-state-owner`.
+
+The remaining intro-only payload is no longer permanent state inside
+`DoomCanvas_t`. ESP32 now owns the four prologue images, three story text
+allocations and intro page/timing flags through a bounded
+`EspNativeIntroState_t` that exists only for `ST_INTRO`.
+
+The ownership cut is exact:
+
+```text
+DoomCanvas_t: 368 B -> 272 B
+reclaimed permanent Canvas layout: 96 B
+total reclaimed from desktop 3740 B layout: 3468 B (~92.7%)
+source ABI exports: 11 -> 10
+retired export: DoomCanvas_loadPrologueText
+```
+
+The transient native owner is also pinned to 96 bytes, but it is allocated only
+when a fresh START enters the intro and is destroyed before MAP_INTRO loading.
+The shared Canvas layout/font/softkey/time fields remain in the compatibility
+object; this milestone does not widen ownership into world/entity/render state.
+
+Normal `esp32-cyd` CI #1659 passed on functional commit
+`d6a9f8b4426d20cbbde7fbdb289363690a447e12`:
+
+```text
+[ESP32] Desktop DoomCanvas.c retired; esp_legacy_doomcanvas_bridge.c owns 10 source ABI exports
+RAM:   45056 B
+Flash: 773901 B
+esp32-cyd SUCCESS
+```
+
+Compared with merged main at 45432 B RAM / 772925 B Flash, the functional
+image releases 376 B of static RAM and adds 976 B of linked Flash for the
+explicit transient owner and guards. The hardware-tested head
+`4635f711b5d2d1128a893a8d266920626df8654d` adds only the one-line const-correct startup view check; GitHub
+did not emit a separate CI run for that follow-up.
+
+Real-CYD boot proves the compact object and bridge boundary:
+
+```text
+[DOOMCANVASBRIDGE] INIT exports=10 desktopTU=no bytes=272 ... retiredGraphMirrors=28 retiredIntroState=96 clip=160x120
+[CORE] DoomCanvas     used=288 heap=186968 largest=110580
+[CORE] READY objects=5 heap used=6256 remaining=181380 largest=110580 clip=160x120
+[LAYOUT] heap8 used=17584 remaining=163796 largest=110580
+[CONFIGMAP] mappingPayload=8376 heap8=144636 largest8=110580
+```
+
+Relative to the previous 368-byte hardware boundary, deterministic startup
+free heap increases by 472 bytes:
+
+```text
+CORE READY   180908 -> 181380
+LAYOUT       163324 -> 163796
+mappings     144164 -> 144636
+```
+
+That 472-byte gain is exactly the 96-byte heap object shrink plus the 376-byte
+static-RAM reduction reported by CI.
+
+The fresh START path proves the new transient lifecycle:
+
+```text
+[INTROSTATE] READY bytes=96 owner=native-transient images=4 texts=3 page=0 textPage=0
+[INTRO1] READY one deterministic ST_INTRO frame presented once FNV=ade0195d
+...
+[INTROSTATE] RELEASE owner=native-transient state=NULL
+[INTRODISP] FREE owner=native-intro-state stateBytes=96 heap8=119192->153076 gain=33884 state=NULL
+[INTRODISP] READY ... heap8=119016->153076 recovered=34060 ... owner=NULL assets=NULL texts=NULL ... noMapLoad=yes
+```
+
+The 33884-byte native-intro-owner recovery includes its four decoded images,
+three copied texts and the 96-byte state object. The separate 176-byte story
+hand is released first; total bounded intro disposal therefore recovers 34060
+bytes with the framebuffer unchanged.
+
+The intro then hands off to the native MAP_INTRO loader and preserves the
+canonical first frame and memory invariants:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY map=1 angle=64 ... shapeData=0x0 mediaTexels=0x0
+```
+
+The same acceptance run exercises movement, crate combat/removal, pickups,
+regular door animation, HUB/System and confirmed Exit To Menu. Resident teardown
+is exact:
+
+```text
+[RESIDENTRESET] heap8=131468->149480 released=18012 ... after=0/0/0/0/0/0/0 empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+```
+
+MENU_MAIN -> LOAD then restores the existing version-11 checkpoint and resumes
+the native session. The restore reports exact world ownership, reaches
+`ENGINESESSION READY` again with `shapeData=0x0 mediaTexels=0x0`, accepts
+further movement/pickups, activates a monster through a door, completes the
+ordered attack visual and commits retaliation damage.
+
+The known compact renderer
+`LEGACY_GUARD -> RETRY -> RECOVERED` path appears in both fresh and resumed
+gameplay and recovers normally; it is unrelated to this ownership cut.
+
+The boot line still concatenates
+`retiredDormantText=428retiredStateLayout=116`. This is a cosmetic log
+delimiter defect only. Because the code boundary above is hardware-proven, the
+closure deliberately leaves it for a later code milestone instead of adding an
+untested post-PASS change.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DOOMCANVAS_INTRO_STATE.md](MILESTONE_ESP32_RETIRE_DOOMCANVAS_INTRO_STATE.md)
+
 ## DoomCanvas object-graph mirrors retired — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:
