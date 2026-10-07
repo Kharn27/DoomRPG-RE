@@ -1,3 +1,23 @@
+## DIALOGCHAIN native journal ownership — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code SHA `2aa4ebcb8b932db4f5b803db920fbaae612a088d`; normal `esp32-cyd` CI #1709 SUCCESS
+(static RAM 45056 B, flash 772369 B). A lazily acquired
+`ChainTransaction` journal (1020 B payload, 1036 B heap8) now has an
+idempotent, explicit gameplay-session teardown. Native event 88 opened,
+closed and resumed opcode 19 with `mutation=1` and no topology snapshot.
+On the actual classic CYD, SYS -> double-confirm EXIT emitted
+`[DIALOGCHAIN] OWNER-RELEASE journal=1020 topologyCapacity=0
+activeAtTeardown=1 heap8=118356->119392 recovered=1036 owner=none`.
+`[RESIDENTRESET] ... released=18008 ... empty=1` followed, and menu
+heap8 returned to **164184** with largest8 **110580**, stable
+`MENU_MAIN=522dc605`, `shapeData==NULL`, `mediaTexels==NULL`,
+no save write, session off. The older 163148 menu baseline with a retained
+journal is no longer expected on this SHA. LOAD, CHANGEMAP and repeated
+second-session reallocation were **not** retested on this exact build;
+they remain regression coverage, not claimed hardware PASS.
+Code frozen after hardware PASS; all closure commits docs-only.
+[Milestone](MILESTONE_ESP32_DIALOGCHAIN_OWNER_LIFECYCLE.md).
+
 ## Render BSP view-node sentinel — REAL-CYD PASS (2026-10-08)
 
 Code SHA validated on the physical CYD:
