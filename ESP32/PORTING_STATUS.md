@@ -1,3 +1,43 @@
+## Render BSP viewNodes sentinel retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-proven code SHA:
+`27b253cd7de0c29ea7095971296cf675dd91165d`.
+Normal `esp32-cyd` CI #1701 **SUCCESS** (RAM 45056 B,
+flash 772161 B). Fifth bounded `Render_t` cut excludes the
+44-byte legacy `viewNodes` linked-list sentinel in production;
+its old BSP walk and menu BSP probe fail closed / stay bringup-only.
+Desktop and explicit bringup retain the full original layout.
+Native BSP visibility and rendering are unchanged.
+`Render_t`: 5040 -> 4016 -> 1968 -> 1676 -> 1576 ->
+**1532 bytes**, cumulative **3508 bytes removed**.
+
+Real CYD: CORE heap8 **185116** (+44 versus previous cut);
+LAYOUT **178500**, mappings **159340**, fresh gameplay
+**118288** (+36 versus prior cut after an additional 8 B
+layout allocation cost). First frame `71ca7465`;
+MAP_INTRO arena `c3882516`; MENU_MAIN `522dc605`.
+Help/About navigation, Options/Back, START + intro, movement,
+crate attack/pickup, event 88 dialog -> state opcode 19,
+and SYS EXIT were tested. `[RESIDENTRESET]` released 18008 B
+with `empty=1`, all seven resident owners cleared;
+`shapeData==NULL`, `mediaTexels==NULL`,
+checkpoint unchanged and no save write.
+
+**Heap caveat:** The dialogue lazily acquired the one-time
+`ChainTransaction` journal (1020 B payload; 1036 B heap8
+observed). This owner is reused and remains allocated after
+exit; it is outside the seven resident-map reset owners.
+Actual after-exit menu heap8 **163148** reflects that
+process-lifetime journal; do NOT compare it directly with
+the prior no-dialog 164148 B without accounting for it.
+Audit its intended lifetime/release in a separate milestone;
+no code change is part of this hardware PASS closure.
+Fifth-cut LOAD and monster AI were not retested on this SHA.
+
+[Detailed milestone](MILESTONE_ESP32_RETIRE_RENDER_VIEWNODES.md).
+Post-test closure must be **docs-only**. Merge into main
+is reserved for the user.
+
 ## Render custom/drop sprite mirrors retired — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested code SHA `1a2bdf3edb6cfbd399a30d509e3718346ced0e57`.
