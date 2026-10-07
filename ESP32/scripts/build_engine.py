@@ -180,6 +180,15 @@ render_source_text = render_source_text.replace(
     render_legacy_map_end,
     "#endif /* production legacy BSP loader rejection */\n\n" +
     render_legacy_map_end, 1)
+# Fourth bounded ownership cut: map-wide custom/drop sprite pointer
+# mirrors are only populated within this rejected legacy BSP loader.
+# Native topology and native monster drops carry the production state.
+for field, expected in (("customSprites", 1), ("dropSprites", 1),
+                        ("firstDropSprite", 1)):
+    token = "render->" + field
+    if (render_source_text.count(token) != expected or
+            render_legacy_map_region.count(token) != expected):
+        raise RuntimeError("Unreviewed legacy Render sprite mirror: " + field)
 print("[ESP32] Legacy Render BSP loader fail-closed in production; "
       "Render.mapFlags 1024-byte mirror retired (bringup/desktop unchanged)")
 
