@@ -60,10 +60,9 @@ void Game_loadConfig(Game_t* game)
             intData = File_readInt(rw);
             (void)intData;
 
+            /* Retired desktop animation-frame option: consume for compatibility. */
             intData = File_readInt(rw);
-            if (game != NULL) {
-                DoomCanvas_setAnimFrames(game->doomRpg->doomCanvas, intData);
-            }
+            (void)intData;
 
             /* Retired Player_t totalDeaths: consume for stream compatibility. */
             intData = File_readInt(rw);

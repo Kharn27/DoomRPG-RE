@@ -23,6 +23,7 @@
 #define ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES (7U * sizeof(void*))
 #define ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES 96U
 #define ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES 56U
+#define ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES 72U
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
@@ -30,7 +31,8 @@
      ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -65,12 +67,8 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     SDL_memset(doomCanvas, 0, sizeof(DoomCanvas_t));
 
     doomCanvas->doomRpg = doomRpg;
-    doomCanvas->skipShakeX = false;
-    doomCanvas->oldState = -1;
     doomCanvas->imgFont.imgBitmap = NULL;
     doomCanvas->imgLargerFont.imgBitmap = NULL;
-    doomCanvas->softKeyRight[0] = '\0';
-    doomCanvas->softKeyLeft[0] = '\0';
     doomCanvas->clipRect.x = 0;
     doomCanvas->clipRect.y = 0;
     doomCanvas->clipRect.w = sdlVideo.rendererW;
@@ -78,7 +76,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->fontColor = 0xffffffff;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=10 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=7 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -87,6 +85,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES,
            doomCanvas->clipRect.w,
            doomCanvas->clipRect.h);
     return doomCanvas;
@@ -297,59 +296,6 @@ void DoomCanvas_drawFont(DoomCanvas_t* doomCanvas,
     }
 }
 
-void DoomCanvas_drawSoftKeys(DoomCanvas_t* doomCanvas,
-                             char* softKeyLeft,
-                             char* softKeyRight)
-{
-    int x;
-    int y;
-    int x1;
-    int y1;
-
-    if (doomCanvas == NULL || !doomCanvas->displaySoftKeys) {
-        return;
-    }
-
-    x1 = x = -doomCanvas->displayRect.x;
-    y1 = y = doomCanvas->softKeyY - doomCanvas->displayRect.y;
-
-    if (softKeyLeft == NULL) {
-        doomCanvas->softKeyLeft[0] = '\0';
-    } else {
-        if (doomCanvas->softKeyLeft != softKeyLeft) {
-            strncpy(doomCanvas->softKeyLeft,
-                    softKeyLeft,
-                    sizeof(doomCanvas->softKeyLeft));
-            doomCanvas->softKeyLeft[sizeof(doomCanvas->softKeyLeft) - 1] = '\0';
-        }
-
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x313131);
-        DoomRPG_drawLine(doomCanvas->doomRpg, x1 + 52, y1, x1 + 52, y1 + 19);
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x808591);
-        DoomRPG_drawLine(doomCanvas->doomRpg, x1 + 53, y1, x1 + 53, y1 + 19);
-        DoomCanvas_drawString1(doomCanvas, softKeyLeft, x + 26, y + 5, 17);
-    }
-
-    if (softKeyRight == NULL) {
-        doomCanvas->softKeyRight[0] = '\0';
-    } else {
-        if (doomCanvas->softKeyRight != softKeyRight) {
-            strncpy(doomCanvas->softKeyRight,
-                    softKeyRight,
-                    sizeof(doomCanvas->softKeyRight));
-            doomCanvas->softKeyRight[sizeof(doomCanvas->softKeyRight) - 1] = '\0';
-        }
-
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x313131);
-        x1 += doomCanvas->clipRect.w - 52;
-        DoomRPG_drawLine(doomCanvas->doomRpg, x1, y1, x1, y1 + 19);
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x808591);
-        DoomRPG_drawLine(doomCanvas->doomRpg, x1 + 1, y1, x1 + 1, y1 + 19);
-        DoomCanvas_drawString1(
-            doomCanvas, softKeyRight, doomCanvas->clipRect.w + x - 28, y + 5, 17);
-    }
-}
-
 static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
 {
     if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
@@ -387,17 +333,6 @@ static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
     return 1;
 }
 
-void DoomCanvas_setAnimFrames(DoomCanvas_t* doomCanvas, int frames)
-{
-    if (doomCanvas == NULL || frames <= 0) {
-        return;
-    }
-
-    doomCanvas->animFrames = frames;
-    doomCanvas->animPos = ((64 + frames) - 1) / frames;
-    doomCanvas->animAngle = ((64 + frames) - 1) / frames;
-}
-
 void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
 {
     int oldState;
@@ -426,7 +361,6 @@ void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
     }
 
     if (stateNum == ST_INTRO && stateNum != oldState) {
-        DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
         if (!doomCanvasBeginIntro(doomCanvas)) {
             return;
         }
@@ -434,25 +368,18 @@ void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
 
     doomCanvas->state = stateNum;
 
-    if (stateNum == ST_PLAYING) {
-        DoomCanvas_drawSoftKeys(doomCanvas, "Menu", "Map");
-        doomCanvas->skipCheckState = true;
-    }
-    else if (stateNum == ST_MENU && oldState == ST_PLAYING) {
+    if (stateNum == ST_MENU && oldState == ST_PLAYING) {
         (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
         (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
     }
 }
 void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
 {
-    int frames;
     int map;
     int width;
     int height;
     int displayH;
     int clipH;
-    int deltaH;
-    int softKeyY;
     DoomRPG_t* doomRpg;
 
     if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
@@ -478,20 +405,12 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
         doomCanvas->displayRect.h = DOOMRPG_LOGICAL_HEIGHT;
     }
 
-    doomCanvas->softKeyY = doomCanvas->clipRect.h - 20;
-    doomCanvas->largeStatus = doomCanvas->displayRect.w >= 176;
-
     displayH = doomCanvas->displayRect.h;
     clipH = doomCanvas->clipRect.h;
     height = displayH - 40;
 
-    if (sdlVideo.displaySoftKeys && clipH >= 148) {
-        deltaH = clipH - displayH;
-        if (deltaH < 20) {
-            height -= 20 - deltaH;
-        }
-        doomCanvas->displaySoftKeys = true;
-    }
+    /* Classic CYD logical height is fixed at 120; desktop softkey rows need
+     * >=148 and are permanently retired from the ESP32 Canvas shell. */
 
     if ((height & 1) != 0) {
         --height;
@@ -503,10 +422,6 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
          (doomCanvas->clipRect.w < doomCanvas->displayRect.w)) /
         2;
 
-    if (doomCanvas->displaySoftKeys) {
-        clipH = doomCanvas->softKeyY;
-    }
-
     doomCanvas->displayRect.y = (clipH - doomCanvas->displayRect.h) / 2;
     doomCanvas->SCR_CY = doomCanvas->displayRect.h / 2;
     doomCanvas->SCR_CX = doomCanvas->displayRect.w / 2;
@@ -517,19 +432,9 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
 
     Render_setup(doomCanvas->render, &doomCanvas->screenRect);
 
-    softKeyY = doomCanvas->softKeyY - 1;
-    if (doomCanvas->displayRect.y + doomCanvas->displayRect.h == softKeyY) {
-        doomCanvas->softKeyY = softKeyY;
-    }
-
-    frames = 4;
-    DoomCanvas_setAnimFrames(doomCanvas, frames);
-
     map = 1;
     doomCanvas->startupMap = (short)map;
     doomCanvas->skipIntro = false;
-    doomCanvas->skipShakeX = false;
-    doomCanvas->sndFXOnly = false;
 
     DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
     DoomRPG_createImage(
@@ -543,13 +448,4 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
            doomCanvas->screenRect.x,
            doomCanvas->screenRect.y,
            doomCanvas->startupMap);
-}
-
-void DoomCanvas_invalidateRectAndUpdateView(DoomCanvas_t* doomCanvas)
-{
-    if (doomCanvas == NULL) {
-        return;
-    }
-    doomCanvas->staleView = true;
-    doomCanvas->isUpdateView = true;
 }

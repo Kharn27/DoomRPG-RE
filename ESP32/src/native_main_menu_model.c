@@ -348,13 +348,9 @@ int DoomRPG_esp32MainMenuModelLeave(struct DoomRPG_s* doomRpgBase) {
     releaseHelpData();
     menuSystem->menu = MENU_NONE;
     menuSystem->numItems = 0;
-    DoomCanvas_invalidateRectAndUpdateView(canvas);
-
-    printf("[MAINMODEL] LEAVE target=%d state=%d items=%d staleView=%d updateView=%d dispatcher=native\n",
+    printf("[MAINMODEL] LEAVE target=%d state=%d items=%d viewInvalidation=retired dispatcher=native\n",
            menuSystem->menu,
            canvas->state,
-           menuSystem->numItems,
-           canvas->staleView ? 1 : 0,
-           canvas->isUpdateView ? 1 : 0);
+           menuSystem->numItems);
     return 1;
 }

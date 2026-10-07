@@ -23,14 +23,11 @@ doom_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.
 doom_canvas_bridge_exports = (
     "DoomCanvas_free",
     "DoomCanvas_drawImageSpecial",
-    "DoomCanvas_drawSoftKeys",
     "DoomCanvas_drawString1",
     "DoomCanvas_drawFont",
-    "DoomCanvas_setAnimFrames",
     "DoomCanvas_setState",
     "DoomCanvas_startup",
     "DoomCanvas_init",
-    "DoomCanvas_invalidateRectAndUpdateView",
 )
 if not os.path.isfile(doom_canvas_bridge_source):
     raise RuntimeError("Missing permanent ESP32 DoomCanvas compatibility bridge")

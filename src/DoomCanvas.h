@@ -46,31 +46,33 @@ typedef struct DoomCanvas_s
 	int viewStepX;
 	int viewStepY;
 #endif
+#ifndef DOOMRPG_ESP32
 	int animFrames;
 	int animPos;
 	int animAngle;
 	boolean skipCheckState;
 	boolean isUpdateView;
 	boolean staleView;
+#endif
 #ifndef DOOMRPG_ESP32
 	boolean f438d;
 	boolean automapDrawn;
 	boolean speeds;
 	boolean s_debug;
 #endif
+#ifndef DOOMRPG_ESP32
 	boolean skipShakeX;
-#ifndef DOOMRPG_ESP32
 	boolean slowBlit;
-#endif
 	boolean sndFXOnly;
-#ifndef DOOMRPG_ESP32
 	boolean combatDone;
 	boolean unloadMedia;
-#endif
 	boolean largeStatus;
+#endif
 	int time;
 	int state;
+#ifndef DOOMRPG_ESP32
 	int oldState;
+#endif
 #ifndef DOOMRPG_ESP32
 	short loadMapID;
 #endif
@@ -181,8 +183,8 @@ typedef struct DoomCanvas_s
 #ifndef DOOMRPG_ESP32
 	boolean insufficientSpace;
 #endif
-	boolean displaySoftKeys;
 #ifndef DOOMRPG_ESP32
+	boolean displaySoftKeys;
 	struct Line_s* openDoors[8];
 	int animFrameCount;
 	int openDoorsCount;
@@ -192,11 +194,10 @@ typedef struct DoomCanvas_s
 	SDL_Rect clipRect;
 	SDL_Rect displayRect;
 	SDL_Rect screenRect;
+#ifndef DOOMRPG_ESP32
 	short softKeyY;
 	char softKeyLeft[12];
 	char softKeyRight[12];
-
-#ifndef DOOMRPG_ESP32
 	boolean restoreSoftKeys; // New
 #endif
 	int fontColor; // New
@@ -268,7 +269,9 @@ void DoomCanvas_drawStory(DoomCanvas_t* doomCanvas);
 void DoomCanvas_drawRGB(DoomCanvas_t* doomCanvas);
 void DoomCanvas_drawImageSpecial(DoomCanvas_t* doomCanvas, Image_t* img, int xSrc, int ySrc, int width, int height, int param_7, int xDst, int yDst, int flags);
 void DoomCanvas_drawScrollBar(DoomCanvas_t* doomCanvas, int y, int totalHeight, int i3, int i4, int i5);
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_drawSoftKeys(DoomCanvas_t* doomCanvas, char* softKeyLeft, char* softKeyRight);
+#endif
 void DoomCanvas_scrollSpaceBG(DoomCanvas_t* doomCanvas);
 void DoomCanvas_drawString1(DoomCanvas_t* doomCanvas, char* text, int x, int y, int flags);
 void DoomCanvas_drawString2(DoomCanvas_t* doomCanvas, char* text, int x, int y, int flags, int param_6);
@@ -312,10 +315,14 @@ void DoomCanvas_resume(DoomCanvas_t* doomCanvas);
 void DoomCanvas_runInputEvents(DoomCanvas_t* doomCanvas);
 void DoomCanvas_run(DoomCanvas_t* doomCanvas);
 void DoomCanvas_saveState(DoomCanvas_t* doomCanvas, int i, char* text);
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_setAnimFrames(DoomCanvas_t* doomCanvas, int i);
+#endif
 void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum);
 byte DoomCanvas_checkState(DoomCanvas_t* doomCanvas);
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_invalidateRectAndUpdateView(DoomCanvas_t* doomCanvas);
+#endif
 void DoomCanvas_updateViewTrue(DoomCanvas_t* doomCanvas);
 void DoomCanvas_startDialog(DoomCanvas_t* doomCanvas, char* text, boolean dialogBackSoftKey);
 void DoomCanvas_startDialogPassword(DoomCanvas_t* doomCanvas, char* text);
