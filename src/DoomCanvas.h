@@ -80,7 +80,9 @@ typedef struct DoomCanvas_s
 	int saveType;
 	boolean renderOnly;
 #endif
+#ifndef DOOMRPG_ESP32
 	boolean vibrateEnabled;
+#endif
 	boolean skipIntro;
 #ifndef DOOMRPG_ESP32
 	boolean legalsSkip;
