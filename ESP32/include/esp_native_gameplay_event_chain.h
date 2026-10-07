@@ -98,6 +98,12 @@ EspNativeGameplayEventChain_executeRange(
     uint32_t runFlags,
     EspNativeGameplayDialogResumeResult* outResult);
 
+/* Session-lifetime owner teardown. Call after native gameplay consumers have
+ * returned and the resident gameplay/dialog owners have been reset. Releases
+ * both the lazy rollback journal and its optional topology snapshot; safe to
+ * call again when no journal was acquired. */
+void EspNativeGameplayEventChain_reset(void);
+
 /* One-shot diagnostic over the resident event corpus. Allocation-free and
  * mutation-free; intended to tell hardware testing which opcode families will
  * still fail closed before the player reaches them. */

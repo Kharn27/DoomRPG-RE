@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <esp_heap_caps.h>
+
 #include "doomrpg_log.h"
 #include "esp_map_automap_state.h"
 #include "esp_map_event_filter.h"
@@ -103,6 +105,37 @@ static int ensureTransactionOwner(void) {
     printf("[DIALOGCHAIN] OWNER bytes=%u allocation=lazy-gameplay\n",
            (unsigned int)sizeof(*transactionOwner));
     return 1;
+}
+
+/*
+ * The chain journal belongs to the native gameplay session, not to the whole
+ * process. Session teardown is reached only after active gameplay consumers
+ * return; a pending render-failure rollback is discarded with that session.
+ * Free the optional topology snapshot before the journal itself.
+ */
+void EspNativeGameplayEventChain_reset(void) {
+    uint32_t heapBefore;
+    uint32_t heapAfter;
+    uint32_t topologyCapacity;
+    uint8_t pendingRollback;
+
+    if (transactionOwner == NULL) return;
+    heapBefore = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    topologyCapacity = transaction.topologyCapacity;
+    pendingRollback = transaction.active;
+    SDL_free(transaction.topologyBytes);
+    transaction.topologyBytes = NULL;
+    transaction.topologyCapacity = 0U;
+    SDL_free(transactionOwner);
+    transactionOwner = NULL;
+    heapAfter = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    printf("[DIALOGCHAIN] OWNER-RELEASE journal=%u topologyCapacity=%u activeAtTeardown=%u heap8=%u->%u recovered=%d owner=none\n",
+           (unsigned int)sizeof(ChainTransaction),
+           (unsigned int)topologyCapacity,
+           (unsigned int)pendingRollback,
+           (unsigned int)heapBefore,
+           (unsigned int)heapAfter,
+           (int)heapAfter - (int)heapBefore);
 }
 
 static int eventDescriptorForIndex(uint16_t eventIndex,
