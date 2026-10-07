@@ -147,6 +147,13 @@ typedef struct GameSpriteMissile_s
 	boolean unk0;
 } GameSpriteMissile_t;
 
+#ifdef DOOMRPG_ESP32
+typedef struct Game_s
+{
+    /* Permanent ESP32 compatibility shell. All world/gameplay state is native. */
+    struct DoomRPG_s* doomRpg;
+} Game_t;
+#else
 typedef struct Game_s
 {
 	struct Entity_s entities[GAME_LEGACY_ENTITY_CAPACITY];
@@ -204,6 +211,7 @@ typedef struct Game_s
 	char mapNames[GAME_LEGACY_MAP_NAME_CAPACITY][24];
 	char mapFiles[GAME_LEGACY_MAP_FILE_CAPACITY][24];
 } Game_t;
+#endif
 
 
 int Game_getResourceMapID(Game_t* game, char* mapName);

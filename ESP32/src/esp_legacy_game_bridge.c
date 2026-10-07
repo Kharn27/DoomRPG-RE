@@ -141,14 +141,9 @@ void Game_unloadMapData(Game_t* game)
     }
 
     /*
-     * Native resident/session owners perform the real teardown. Keep the
-     * remaining inherited compatibility shell fail-closed for menu transitions.
+     * Native resident/session owners perform the real teardown. The minimal
+     * ESP32 Game_t has no world/entity/transient storage left to clear.
      */
-    game->gsprites[0].flags = 0;
-    game->gsprites[0].sprite = NULL;
-    game->activeSprites = 0;
-    game->f684l = 0;
-
     if (game->doomRpg != NULL && game->doomRpg->doomCanvas != NULL) {
         DoomCanvas_t* canvas = game->doomRpg->doomCanvas;
         for (int i = 0; i < 8; ++i) {
@@ -157,17 +152,4 @@ void Game_unloadMapData(Game_t* game)
         canvas->openDoorsCount = 0;
         canvas->castEntity = NULL;
     }
-
-    game->inactiveMonsters = NULL;
-    game->activeMonsters = NULL;
-    game->combatMonsters = NULL;
-    game->spawnMonster = NULL;
-    game->tileEvent = 0;
-    game->passCode = NULL;
-
-    game->traceEntities[0] = NULL;
-    game->numTraceEntities = 0;
-    game->entityDb[0] = NULL;
-    game->numEntities = 0;
-    game->numMonsters = 0;
 }

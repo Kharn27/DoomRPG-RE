@@ -261,6 +261,113 @@ doom_canvas = doom_canvas.replace(
     1,
 )
 
+doom_canvas_monsters_turn_needle = (
+    "\t\tif (!doomCanvas->doomRpg->game->monstersTurn) {\n"
+)
+doom_canvas_monsters_turn_replacement = (
+    "\t\tif (1) { /* ESP32 legacy Game monster-turn producer retired */\n"
+)
+doom_canvas_active_sprites_needle = (
+    "\t\tif (doomCanvas->openDoorsCount > 0 || doomCanvas->game->activeSprites || doomCanvas->isUpdateView) {\n"
+)
+doom_canvas_active_sprites_replacement = (
+    "\t\tif (doomCanvas->openDoorsCount > 0 || doomCanvas->isUpdateView) {\n"
+)
+if doom_canvas.count(doom_canvas_monsters_turn_needle) != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas monstersTurn read; review minimal Game shell"
+    )
+if doom_canvas.count(doom_canvas_active_sprites_needle) != 1:
+    raise RuntimeError(
+        "Unexpected DoomCanvas activeSprites read; review minimal Game shell"
+    )
+doom_canvas = doom_canvas.replace(
+    doom_canvas_monsters_turn_needle,
+    doom_canvas_monsters_turn_replacement,
+    1,
+)
+doom_canvas = doom_canvas.replace(
+    doom_canvas_active_sprites_needle,
+    doom_canvas_active_sprites_replacement,
+    1,
+)
+
+def remove_c_function_definition(source_text, function_name):
+    token = function_name + "("
+    search = 0
+    matches = []
+    while True:
+        pos = source_text.find(token, search)
+        if pos < 0:
+            break
+        paren = pos + len(function_name)
+        depth = 0
+        close = -1
+        for i in range(paren, len(source_text)):
+            ch = source_text[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    close = i
+                    break
+        if close < 0:
+            raise RuntimeError("Unbalanced function signature for " + function_name)
+        scan = close + 1
+        while scan < len(source_text) and source_text[scan].isspace():
+            scan += 1
+        if scan < len(source_text) and source_text[scan] == "{":
+            line_start = source_text.rfind("\n", 0, pos) + 1
+            brace_depth = 0
+            body_end = -1
+            for i in range(scan, len(source_text)):
+                ch = source_text[i]
+                if ch == "{":
+                    brace_depth += 1
+                elif ch == "}":
+                    brace_depth -= 1
+                    if brace_depth == 0:
+                        body_end = i + 1
+                        break
+            if body_end < 0:
+                raise RuntimeError("Unbalanced function body for " + function_name)
+            matches.append((line_start, body_end))
+        search = close + 1
+
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Expected one definition for {function_name}, found {len(matches)}"
+        )
+    start, end = matches[0]
+    return source_text[:start] + (
+        "/* ESP32 pruned dead legacy definition: " + function_name + " */\n"
+    ) + source_text[end:]
+
+doom_canvas_dead_game_functions = (
+    "DoomCanvas_attemptMove",
+    "DoomCanvas_automapState",
+    "DoomCanvas_captureDogState",
+    "DoomCanvas_combatState",
+    "DoomCanvas_drawAutomap",
+    "DoomCanvas_finishMovement",
+    "DoomCanvas_handleDialogEvents",
+    "DoomCanvas_handlePasswordEvents",
+    "DoomCanvas_handlePlayingEvents",
+    "DoomCanvas_loadMedia",
+    "DoomCanvas_playingState",
+    "DoomCanvas_prepareDialog",
+    "DoomCanvas_run",
+    "DoomCanvas_checkFacingEntity",
+)
+for dead_function in doom_canvas_dead_game_functions:
+    doom_canvas = remove_c_function_definition(doom_canvas, dead_function)
+
+if "game->" in doom_canvas or "->game->" in doom_canvas:
+    raise RuntimeError(
+        "Direct Game_t field access survived generated DoomCanvas.c minimal-shell pruning"
+    )
+
 with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_canvas)
 
@@ -270,7 +377,51 @@ print(
     f"{sound_enabled_count + sound_nextplay_count} direct Sound field access(es) retired + "
     f"{legacy_legals_load_count} legacy legal-strip load retired + "
     f"{legacy_hud_startup_count} legacy HUD startup retired + "
-    f"{sum(hud_object_patch_counts)} direct Hud_t use(s) retired"
+    f"{sum(hud_object_patch_counts)} direct Hud_t use(s) retired + "
+    f"{len(doom_canvas_dead_game_functions)} dead Game-field function(s) pruned + "
+    "2 retained Game scalar read(s) retired"
+)
+
+# Render_renderSpriteObject() still contains desktop monster activation
+# gating through retired Player_t/Game_t fields. ESP32 native monster activation
+# owns this behavior, so generate a narrow copy with that stale block removed.
+render_source = join(engine_dir, "Render.c")
+render_patched = join(patched_dir, "Render.c")
+
+with open(render_source, "r", encoding="latin-1") as source_file:
+    render_source_text = source_file.read()
+
+render_legacy_activation_needle = """\tif (sprite->ent && sprite->ent->monster &&
+\t\t!(sprite->ent->info & 0x80000) && !(sprite->info & 0x1000000) &&
+\t\t!render->doomRpg->player->noclip && !render->doomRpg->game->disableAI) {
+\t\tGame_activate(render->doomRpg->game, sprite->ent);
+\t}
+
+"""
+render_legacy_activation_replacement = """\t/* ESP32 native monster activation owns visibility/activation state.
+\t * Player_t is retired and Game_activate() is a fail-closed ABI no-op. */
+
+"""
+render_legacy_activation_count = render_source_text.count(
+    render_legacy_activation_needle
+)
+if render_legacy_activation_count != 1:
+    raise RuntimeError(
+        "Unexpected Render_renderSpriteObject activation shape; "
+        "review native monster activation ownership"
+    )
+render_source_text = render_source_text.replace(
+    render_legacy_activation_needle,
+    render_legacy_activation_replacement,
+    1,
+)
+
+with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
+    patched_file.write(render_source_text)
+
+print(
+    "[ESP32] Render generated with "
+    f"{render_legacy_activation_count} legacy Game/Player monster activation block retired"
 )
 
 # The ESP32 firmware no longer compiles a generated copy of desktop Game.c.
@@ -368,6 +519,21 @@ hud_free_count = doom_rpg_source_text.count(hud_free_needle)
 menu_free_needle = "\tif (doomrpg->menuSystem) {\n\t\tMenuSystem_free(doomrpg->menuSystem, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_replacement = "\tif (doomrpg->menuSystem) {\n\t\tEspNativeMenuStorage_free(doomrpg->menuSystem, doomrpg, true);\n\t}\n\tdoomrpg->menuSystem = NULL;\n"
 menu_free_count = doom_rpg_source_text.count(menu_free_needle)
+game_storage_free_needle = """\tif (doomrpg->game) {
+\t\tSDL_memset(&doomrpg->game->entityMonsters, 0, sizeof(doomrpg->game->entityMonsters));
+\t\tSDL_memset(&doomrpg->game->entities, 0, sizeof(doomrpg->game->entities));
+\t\tSDL_free(doomrpg->game);
+\t}
+\tdoomrpg->game = NULL;
+"""
+game_storage_free_replacement = """\tif (doomrpg->game) {
+\t\t/* ESP32 Game_t is a minimal compatibility shell; native owners have
+\t\t * already released world/session state. */
+\t\tSDL_free(doomrpg->game);
+\t}
+\tdoomrpg->game = NULL;
+"""
+game_storage_free_count = doom_rpg_source_text.count(game_storage_free_needle)
 
 if doom_rpg_source_text.count(zip_include_needle) != 1:
     raise RuntimeError("Unable to locate Z_Zip.h include in DoomRPG.c")
@@ -415,6 +581,11 @@ if menu_free_count != 1:
         "Unexpected DoomRPG.c MenuSystem cleanup shape; "
         "review native ESP32 menu storage ownership"
     )
+if game_storage_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c legacy Game storage cleanup shape; "
+        "review minimal ESP32 Game shell ownership"
+    )
 
 doom_rpg_source_text = doom_rpg_source_text.replace(
     zip_include_needle, zip_include_replacement, 1
@@ -447,6 +618,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
 doom_rpg_source_text = doom_rpg_source_text.replace(
     menu_free_needle, menu_free_replacement, 1
 )
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    game_storage_free_needle, game_storage_free_replacement, 1
+)
 
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
@@ -461,7 +635,8 @@ print(
     f"{combat_free_count} desktop Combat cleanup retired, "
     f"{sound_free_count} desktop Sound cleanup retired, "
     f"{hud_free_count} desktop Hud cleanup retired, "
-    f"{menu_free_count} desktop MenuSystem cleanup redirected)"
+    f"{menu_free_count} desktop MenuSystem cleanup redirected, "
+    f"{game_storage_free_count} legacy Game storage cleanup retired)"
 )
 
 # The source-tree SDL shim stores every texture as RGB565. That is acceptable
@@ -685,6 +860,7 @@ env.BuildSources(
         "-<CombatEntity.c>",
         "-<Hud.c>",
         "-<Game.c>",
+        "-<Render.c>",
         "-<Player.c>",
         "-<Z_Zone.c>",
         "-<Z_Zip.c>",
@@ -699,6 +875,7 @@ env.BuildSources(
     src_filter=[
         "+<DoomCanvas.c>",
         "+<DoomRPG.c>",
+        "+<Render.c>",
     ],
 )
 

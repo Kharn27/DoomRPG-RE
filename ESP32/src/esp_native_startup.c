@@ -115,8 +115,7 @@ static int startupBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            canvas->startupMap <= MAP_END_GAME &&
            introResourcesAreReleased(canvas) &&
            legacyRuntimeIsClear(doomRpg->render) &&
-           doomRpg->game->numEntities == 0 &&
-           doomRpg->game->numMonsters == 0 &&
+           doomRpg->game != NULL &&
            !EspAssetPack_isOpen();
 }
 
@@ -197,8 +196,7 @@ static int loadStartupResident(DoomRPG_t* doomRpg) {
         snapshot.stringCount != inventory.strings ||
         EspAssetPack_isOpen() ||
         !legacyRuntimeIsClear(doomRpg->render) ||
-        doomRpg->game->numEntities != 0 ||
-        doomRpg->game->numMonsters != 0) {
+        doomRpg->game == NULL) {
         failStartup("generic resident load");
         return -1;
     }
@@ -252,7 +250,7 @@ static int routeInitialSpawn(DoomRPG_t* doomRpg) {
         !EspMapCatalog_isValidId(startupState.targetMapId) ||
         !EspMapResidentLifecycle_capture(&resident) ||
         !legacyRuntimeIsClear(doomRpg->render) ||
-        doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0 ||
+        doomRpg->game == NULL ||
         EspAssetPack_isOpen()) {
         failStartup("unsafe spawn boundary");
         return 0;

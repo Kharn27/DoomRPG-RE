@@ -20,25 +20,9 @@
 #include <esp_heap_caps.h>
 
 #ifdef DOOMRPG_ESP32
-/* The normal classic-CYD build must never silently regain the 35 KB desktop
- * entity stores. These are compile-only sentinels; native owners hold runtime
- * entity/monster/topology state. */
-_Static_assert(GAME_LEGACY_ENTITY_CAPACITY == 1,
-               "ESP32 Game_t legacy entity storage must stay compact");
-_Static_assert(GAME_LEGACY_ENTITY_DB_CAPACITY == 1,
-               "ESP32 Game_t legacy entityDb storage must stay compact");
-_Static_assert(GAME_LEGACY_MONSTER_CAPACITY == 1,
-               "ESP32 Game_t legacy monster storage must stay compact");
-_Static_assert(GAME_LEGACY_MAP_NAME_CAPACITY == 1,
-               "ESP32 Game_t legacy map-name storage must stay compact");
-_Static_assert(GAME_LEGACY_MAP_FILE_CAPACITY == 1,
-               "ESP32 Game_t legacy map-file storage must stay compact");
-_Static_assert(GAME_LEGACY_TRACE_CAPACITY == 1,
-               "ESP32 Game_t legacy trace storage must stay compact");
-_Static_assert(GAME_LEGACY_GSPRITE_CAPACITY == 1,
-               "ESP32 Game_t legacy GameSprite storage must stay compact");
-_Static_assert(sizeof(Game_t) == 440,
-               "ESP32 Game_t layout changed; re-audit live compatibility fields");
+/* The normal classic-CYD build must never silently grow the retired Game shell. */
+_Static_assert(sizeof(Game_t) == sizeof(void*),
+               "ESP32 Game_t must remain the one-pointer compatibility shell");
 #endif
 
 /* DoomRPG.c owns the real engine root. The desktop header intentionally does
@@ -300,39 +284,11 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
 #undef INIT_CORE_OBJECT
 
     /*
-     * The legacy Game shell is temporarily retained for config/teardown ABI,
-     * but its embedded Entity/EntityMonster stores are retired runtime owners.
-     * They must remain empty; native resident-map state owns all live entities.
+     * Legacy Game world/entity/transient storage is absent by layout on ESP32.
+     * The sole remaining field is the DoomRPG backpointer used by the config/
+     * teardown compatibility bridge.
      */
-    if (doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0 ||
-        doomRpg->game->activeMonsters != NULL ||
-        doomRpg->game->inactiveMonsters != NULL ||
-        doomRpg->game->combatMonsters != NULL ||
-        doomRpg->game->spawnMonster != NULL) {
-        coreInitReport.failedStage = DOOMRPG_CORE_GAME;
-        coreInitReport.heapAfter = coreFreeHeap();
-        coreInitReport.largestBlockAfter = coreLargestBlock();
-        coreInitReport.ready = 0;
-        printf("[CORE] FAILED legacy entity runtime not dormant entities=%d monsters=%d active=%p inactive=%p combat=%p spawn=%p\n",
-               doomRpg->game->numEntities,
-               doomRpg->game->numMonsters,
-               (void*)doomRpg->game->activeMonsters,
-               (void*)doomRpg->game->inactiveMonsters,
-               (void*)doomRpg->game->combatMonsters,
-               (void*)doomRpg->game->spawnMonster);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
-    printf("[CORE] Legacy entity runtime retired stores=sentinel capacities=%u/%u/%u reclaimed=35172 entities=0 monsters=0 owner=native-resident-map\n",
-           (unsigned int)GAME_LEGACY_ENTITY_CAPACITY,
-           (unsigned int)GAME_LEGACY_ENTITY_DB_CAPACITY,
-           (unsigned int)GAME_LEGACY_MONSTER_CAPACITY);
-    printf("[CORE] Legacy Game map tables retired stores=sentinel capacities=%u/%u owner=EspMapCatalog\n",
-           (unsigned int)GAME_LEGACY_MAP_NAME_CAPACITY,
-           (unsigned int)GAME_LEGACY_MAP_FILE_CAPACITY);
-    printf("[CORE] Legacy Game transient stores retired trace/gsprites=sentinel capacities=%u/%u gameBytes=%u desktopBytes=36468 totalReclaimed=36028 owner=native-collision+gameplay-fx\n",
-           (unsigned int)GAME_LEGACY_TRACE_CAPACITY,
-           (unsigned int)GAME_LEGACY_GSPRITE_CAPACITY,
+    printf("[CORE] Legacy Game shell minimal gameBytes=%u desktopBytes=36468 totalReclaimed=36464 fields=doomRpg-only worldOwner=native\n",
            (unsigned int)sizeof(Game_t));
     printf("[CORE] Desktop Game.c retired bridge=esp_legacy_game_bridge roots=4 worldOwner=native\n");
 
