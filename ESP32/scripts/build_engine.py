@@ -26,7 +26,6 @@ doom_canvas_bridge_exports = (
     "DoomCanvas_drawSoftKeys",
     "DoomCanvas_drawString1",
     "DoomCanvas_drawFont",
-    "DoomCanvas_loadPrologueText",
     "DoomCanvas_setAnimFrames",
     "DoomCanvas_setState",
     "DoomCanvas_startup",

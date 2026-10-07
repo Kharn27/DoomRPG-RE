@@ -10,6 +10,7 @@
 #include "esp_native_gameplay_player_state.h"
 #include "Render.h"
 #include "esp_native_audio_intent.h"
+#include "esp_native_intro_state.h"
 
 #include "esp_legacy_asset_source.h"
 #include "native_intro_first_frame.h"
@@ -144,6 +145,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     DoomCanvas_t* doomCanvas;
     EspNativeMenuState_t* menuSystem;
     EspNativeGameplayPlayerState playerState;
+    EspNativeIntroState_t* introState;
     Render_t* render;
     uint32_t inputHash;
     uint32_t outputHash;
@@ -239,6 +241,11 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
     DoomCanvas_setState(doomCanvas, ST_INTRO);
+    introState = EspNativeIntroState_get(doomRpg);
+    if (doomCanvas->state != ST_INTRO || introState == NULL) {
+        printf("[MAINSTART] FAILED native transient intro owner was not established\n");
+        return 0;
+    }
     if (!DoomRPG_esp32MainMenuModelLeave(doomRpg)) {
         printf("[MAINSTART] FAILED leaving MENU_MAIN model for intro\n");
         return 0;
@@ -290,12 +297,12 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)EspNativeGameplayPlayerState_maxArmor(),
            (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
            (void*)doomRpg->player);
-    printf("[MAINSTART] Intro story pointers page0=%p page1=%p story2=%p storyPage=%d storyTextPage=%d\n",
-           (void*)doomCanvas->storyText1[0],
-           (void*)doomCanvas->storyText1[1],
-           (void*)doomCanvas->storyText2,
-           doomCanvas->storyPage,
-           doomCanvas->storyTextPage);
+    printf("[MAINSTART] Intro story pointers page0=%p page1=%p story2=%p storyPage=%d storyTextPage=%d owner=native-transient\n",
+           (void*)introState->storyText1[0],
+           (void*)introState->storyText1[1],
+           (void*)introState->storyText2,
+           introState->storyPage,
+           introState->storyTextPage);
 
     if (menuSystem->menu != MENU_NONE ||
         doomCanvas->state != ST_INTRO ||

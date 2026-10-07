@@ -18,6 +18,7 @@
 #include "esp_map_resident_lifecycle.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_session.h"
+#include "esp_native_intro_state.h"
 #include "esp_native_transition_presentation.h"
 #include "esp_player_facing_state.h"
 #include "esp_player_finish_rotation_tile.h"
@@ -62,15 +63,8 @@ typedef struct EspNativeStartupState_s {
 
 static EspNativeStartupState startupState;
 
-static int introResourcesAreReleased(const DoomCanvas_t* canvas) {
-    return canvas != NULL &&
-           canvas->imgSpaceBG.imgBitmap == NULL &&
-           canvas->imgLinesLayer.imgBitmap == NULL &&
-           canvas->imgPlanetLayer.imgBitmap == NULL &&
-           canvas->imgSpaceship.imgBitmap == NULL &&
-           canvas->storyText1[0] == NULL &&
-           canvas->storyText1[1] == NULL &&
-           canvas->storyText2 == NULL;
+static int introResourcesAreReleased(const DoomRPG_t* doomRpg) {
+    return doomRpg != NULL && EspNativeIntroState_get(doomRpg) == NULL;
 }
 
 static int legacyRuntimeIsClear(const Render_t* render) {
@@ -109,11 +103,9 @@ static int startupBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            !Esp32IntroInput_isActive() &&
            doomRpg->menuSystem->menu == MENU_NONE &&
            canvas->state == ST_INTRO &&
-           canvas->storyPage == 3 &&
-           canvas->storyTextPage == 0 &&
            canvas->startupMap >= MAP_INTRO &&
            canvas->startupMap <= MAP_END_GAME &&
-           introResourcesAreReleased(canvas) &&
+           introResourcesAreReleased(doomRpg) &&
            legacyRuntimeIsClear(doomRpg->render) &&
            doomRpg->game != NULL &&
            !EspAssetPack_isOpen();

@@ -9,6 +9,7 @@
 #include "MenuSystem.h"
 #include "Render.h"
 
+#include "esp_native_intro_state.h"
 #include "native_intro_clock.h"
 #include "native_intro_first_frame.h"
 #include "native_intro_input.h"
@@ -59,6 +60,7 @@ static uint32_t framebufferHash(void) {
 
 static int introBoundaryIsSafe(const DoomRPG_t* doomRpg) {
     const DoomCanvas_t* canvas;
+    const EspNativeIntroState_t* introState;
     const Render_t* render;
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
@@ -68,19 +70,21 @@ static int introBoundaryIsSafe(const DoomRPG_t* doomRpg) {
     }
 
     canvas = doomRpg->doomCanvas;
+    introState = EspNativeIntroState_view(doomRpg);
     render = doomRpg->render;
 
     return canvas->state == ST_INTRO &&
+           introState != NULL &&
            doomRpg->menuSystem->menu == MENU_NONE &&
-           canvas->storyPage == 0 &&
-           canvas->storyTextPage == 0 &&
-           canvas->storyText1[0] != NULL &&
-           canvas->storyText1[1] != NULL &&
-           canvas->storyText2 != NULL &&
-           canvas->imgSpaceBG.imgBitmap != NULL &&
-           canvas->imgLinesLayer.imgBitmap != NULL &&
-           canvas->imgPlanetLayer.imgBitmap != NULL &&
-           canvas->imgSpaceship.imgBitmap != NULL &&
+           introState->storyPage == 0 &&
+           introState->storyTextPage == 0 &&
+           introState->storyText1[0] != NULL &&
+           introState->storyText1[1] != NULL &&
+           introState->storyText2 != NULL &&
+           introState->imgSpaceBG.imgBitmap != NULL &&
+           introState->imgLinesLayer.imgBitmap != NULL &&
+           introState->imgPlanetLayer.imgBitmap != NULL &&
+           introState->imgSpaceship.imgBitmap != NULL &&
            render->nodes == NULL &&
            render->lines == NULL &&
            render->mapSprites == NULL &&
@@ -97,6 +101,7 @@ static int introBoundaryIsSafe(const DoomRPG_t* doomRpg) {
 int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     DoomCanvas_t* canvas;
+    EspNativeIntroState_t* introState;
     Render_t* render;
     uint32_t inputHash;
     uint32_t outputHash;
@@ -113,7 +118,12 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
     }
 
     canvas = doomRpg->doomCanvas;
+    introState = EspNativeIntroState_get(doomRpg);
     render = doomRpg->render;
+    if (introState == NULL) {
+        printf("[INTRO1] FAILED native intro state unavailable\n");
+        return 0;
+    }
     inputHash = framebufferHash();
     heapBefore = heap8Free();
     largestBefore = largest8Block();
@@ -121,8 +131,8 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
     printf("[INTRO1] Begin state=%d menu=%d page=%d textPage=%d frameFNV=%08x expectedEntry=%08x heap8=%u largest8=%u\n",
            canvas->state,
            doomRpg->menuSystem->menu,
-           canvas->storyPage,
-           canvas->storyTextPage,
+           introState->storyPage,
+           introState->storyTextPage,
            (unsigned int)inputHash,
            (unsigned int)EXPECTED_INTRO_ENTRY_FNV,
            (unsigned int)heapBefore,
@@ -136,9 +146,9 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
     }
 
     canvas->time = INTRO_FIRST_FRAME_TIME_MS;
-    canvas->storyTextTime = INTRO_FIRST_FRAME_TIME_MS;
-    canvas->storyAnimTime = INTRO_FIRST_FRAME_TIME_MS;
-    canvas->showTextDone = false;
+    introState->storyTextTime = INTRO_FIRST_FRAME_TIME_MS;
+    introState->storyAnimTime = INTRO_FIRST_FRAME_TIME_MS;
+    introState->showTextDone = false;
 
     Esp32StoryFit_draw(canvas);
 
@@ -154,8 +164,8 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
            (int)heapBefore - (int)heapAfter,
            (int)largestBefore - (int)largestAfter,
            canvas->state,
-           canvas->storyPage,
-           canvas->storyTextPage);
+           introState->storyPage,
+           introState->storyTextPage);
 
     if (!introBoundaryIsSafe(doomRpg)) {
         printf("[INTRO1] FAILED boundary changed after draw nodes=%p lines=%p mapSprites=%p shapeData=%p mediaTexels=%p wallCache=%d spriteCache=%d\n",
@@ -201,7 +211,7 @@ int DoomRPG_esp32RenderFirstIntroFrame(struct DoomRPG_s* doomRpgBase) {
 
     printf("[INTRO1] HANDOFF state=%d page=%d textPage=%d; intro clock+input armed, dispose/map load still blocked\n",
            canvas->state,
-           canvas->storyPage,
-           canvas->storyTextPage);
+           introState->storyPage,
+           introState->storyTextPage);
     return 1;
 }

@@ -9,6 +9,7 @@
 #include "SDL_Video.h"
 
 #include "esp_native_audio_intent.h"
+#include "esp_native_intro_state.h"
 #include "native_story_fit.h"
 #include "platform_video_config.h"
 
@@ -20,12 +21,14 @@
 #define ESP32_DOOMCANVAS_RETIRED_STATE_FIELD_BYTES 113U
 #define ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES 116U
 #define ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES (7U * sizeof(void*))
+#define ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES 96U
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -47,37 +50,6 @@ void Sound_playSound(struct Sound_s* sound, int resourceID, byte flags, int prio
 #define ESP32_SND_FLG_STOPSOUNDS 2U
 #define ESP32_SND_FLG_ISMUSIC    8U
 
-static char storyTextA[] =
-    "You have been\n"
-    "dispatched in re - \n"
-    "sponse to a dis - \n"
-    "tress call from\n"
-    "Union Aerospace\n"
-    "Corporation's re-\n"
-    "search facility\n"
-    "on Mars. The base\n"
-    "is under attack";
-
-static char storyTextB[] =
-    "by an unknown\n"
-    "force and your\n"
-    "mission is to ac-\n"
-    "quire intelli-\n"
-    "gence and neu-\n"
-    "tralize the\n"
-    "threat.";
-
-static char storyTextC[] =
-    "Insertion com-\n"
-    "plete. For fur-\n"
-    "ther instruc-\n"
-    "tions, rendezvous\n"
-    "with the other\n"
-    "Marines at Junc-\n"
-    "tion. Expect\n"
-    "heavy resistance.\n"
-    "Good luck!";
-
 DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
 {
     printf("DoomCanvas_init\n");
@@ -97,13 +69,6 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->imgLargerFont.imgBitmap = NULL;
     doomCanvas->imgLegals.imgBitmap = NULL;
     doomCanvas->imgMapCursor.imgBitmap = NULL;
-    doomCanvas->imgSpaceBG.imgBitmap = NULL;
-    doomCanvas->imgLinesLayer.imgBitmap = NULL;
-    doomCanvas->imgPlanetLayer.imgBitmap = NULL;
-    doomCanvas->imgSpaceship.imgBitmap = NULL;
-    doomCanvas->storyText1[0] = NULL;
-    doomCanvas->storyText1[1] = NULL;
-    doomCanvas->storyText2 = NULL;
     doomCanvas->softKeyRight[0] = '\0';
     doomCanvas->softKeyLeft[0] = '\0';
     doomCanvas->clipRect.x = 0;
@@ -116,13 +81,14 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->vibrateEnabled = true;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=11 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u retiredStateLayout=%u retiredGraphMirrors=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=10 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES,
            doomCanvas->clipRect.w,
            doomCanvas->clipRect.h);
     return doomCanvas;
@@ -135,18 +101,12 @@ void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
     }
 
     Esp32StoryFit_release(doomCanvas);
+    EspNativeIntroState_release(doomCanvas->doomRpg);
     DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
     DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLargerFont);
     DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLegals);
     DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgMapCursor);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgSpaceBG);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLinesLayer);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgPlanetLayer);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgSpaceship);
 
-    SDL_free(doomCanvas->storyText1[0]);
-    SDL_free(doomCanvas->storyText1[1]);
-    SDL_free(doomCanvas->storyText2);
 
     if (freePtr) {
         SDL_free(doomCanvas);
@@ -396,12 +356,10 @@ void DoomCanvas_drawSoftKeys(DoomCanvas_t* doomCanvas,
     }
 }
 
-void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas)
+static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
 {
-    int textLen;
-
-    if (doomCanvas == NULL) {
-        return;
+    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
+        return 0;
     }
 
     DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
@@ -419,33 +377,11 @@ void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas)
                         ESP32_SND_FLG_ISMUSIC,
                     5);
 
-    textLen = (int)SDL_strlen(storyTextA);
-    doomCanvas->storyText1[0] = SDL_calloc((size_t)textLen + 1U, sizeof(char));
-    if (doomCanvas->storyText1[0] != NULL) {
-        strncpy(doomCanvas->storyText1[0], storyTextA, (size_t)textLen);
+    if (!EspNativeIntroState_begin(doomCanvas->doomRpg)) {
+        Sound_stopSounds(doomCanvas->doomRpg->sound);
+        printf("[DOOMCANVASBRIDGE] INTRO-REJECT owner=native-transient allocation/load failed\n");
+        return 0;
     }
-
-    textLen = (int)SDL_strlen(storyTextB);
-    doomCanvas->storyText1[1] = SDL_calloc((size_t)textLen + 1U, sizeof(char));
-    if (doomCanvas->storyText1[1] != NULL) {
-        strncpy(doomCanvas->storyText1[1], storyTextB, (size_t)textLen);
-    }
-
-    textLen = (int)SDL_strlen(storyTextC);
-    doomCanvas->storyText2 = SDL_calloc((size_t)textLen + 1U, sizeof(char));
-    if (doomCanvas->storyText2 != NULL) {
-        strncpy(doomCanvas->storyText2, storyTextC, (size_t)textLen);
-    }
-
-    DoomRPG_createImage(doomCanvas->doomRpg, "c.bmp", false, &doomCanvas->imgSpaceBG);
-    DoomRPG_createImage(doomCanvas->doomRpg, "d.bmp", true, &doomCanvas->imgLinesLayer);
-    DoomRPG_createImage(doomCanvas->doomRpg, "e.bmp", true, &doomCanvas->imgPlanetLayer);
-    DoomRPG_createImage(doomCanvas->doomRpg, "f.bmp", true, &doomCanvas->imgSpaceship);
-    doomCanvas->storyTextTime = -1;
-    doomCanvas->storyAnimTime = -1;
-    doomCanvas->showTextDone = false;
-    doomCanvas->storyPage = 0;
-    doomCanvas->storyTextPage = 0;
 
     DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
     DoomRPG_fillRect(doomCanvas->doomRpg,
@@ -454,6 +390,7 @@ void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas)
                      doomCanvas->displayRect.w,
                      doomCanvas->displayRect.h);
     DoomRPG_flushGraphics(doomCanvas->doomRpg);
+    return 1;
 }
 
 void DoomCanvas_setAnimFrames(DoomCanvas_t* doomCanvas, int frames)
@@ -494,6 +431,13 @@ void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
         Sound_stopSounds(doomCanvas->doomRpg->sound);
     }
 
+    if (stateNum == ST_INTRO && stateNum != oldState) {
+        DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
+        if (!doomCanvasBeginIntro(doomCanvas)) {
+            return;
+        }
+    }
+
     doomCanvas->state = stateNum;
     if (stateNum != oldState) {
         doomCanvas->restoreSoftKeys = false;
@@ -503,11 +447,7 @@ void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
         DoomCanvas_drawSoftKeys(doomCanvas, "Menu", "Map");
         doomCanvas->skipCheckState = true;
     }
-    else if (stateNum == ST_INTRO) {
-        DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
-        DoomCanvas_loadPrologueText(doomCanvas);
-    }
-    else if (oldState == ST_PLAYING) {
+    else if (stateNum == ST_MENU && oldState == ST_PLAYING) {
         (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
         (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
     }

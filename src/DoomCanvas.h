@@ -124,11 +124,11 @@ typedef struct DoomCanvas_s
 	int events[8]; // old short type
 	byte numEvents;
 #endif
+#ifndef DOOMRPG_ESP32
 	struct Image_s imgSpaceBG;
 	struct Image_s imgLinesLayer;
 	struct Image_s imgPlanetLayer;
 	struct Image_s imgSpaceship;
-	struct Image_s imgLegals;
 	int storyTextTime;
 	int storyAnimTime;
 	char *storyText1[2];
@@ -136,6 +136,10 @@ typedef struct DoomCanvas_s
 	int storyPage;
 	int storyTextPage;
 	boolean showTextDone;
+#else
+	/* ST_INTRO assets/text/page state are transient ESP32-native ownership. */
+#endif
+	struct Image_s imgLegals;
 #ifndef DOOMRPG_ESP32
 	char epilogueText[2][150];
 	int epilogueTextPage;
@@ -272,7 +276,9 @@ void DoomCanvas_handlePlayingEvents(DoomCanvas_t* doomCanvas, int i);
 void DoomCanvas_initCredits(DoomCanvas_t* doomCanvas);
 void DoomCanvas_loadEpilogueText(DoomCanvas_t* doomCanvas);
 #endif
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas);
+#endif
 void DoomCanvas_keyPressed(DoomCanvas_t* doomCanvas, int keyCode);
 void DoomCanvas_loadMap(DoomCanvas_t* doomCanvas, int mapID);
 boolean DoomCanvas_loadMedia(DoomCanvas_t* doomCanvas);

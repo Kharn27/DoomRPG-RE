@@ -9,6 +9,7 @@
 #include "MenuSystem.h"
 #include "Render.h"
 
+#include "esp_native_intro_state.h"
 #include "native_intro_clock.h"
 #include "native_intro_dispose.h"
 #include "native_intro_input.h"
@@ -76,17 +77,17 @@ static uint32_t framebufferHash(void) {
     return fnv1a32(framebuffer, (uint32_t)bytes);
 }
 
-static int storyPositionIsSafe(const DoomCanvas_t* canvas) {
-    if (canvas == NULL) {
+static int storyPositionIsSafe(const EspNativeIntroState_t* introState) {
+    if (introState == NULL) {
         return 0;
     }
 
-    switch (canvas->storyPage) {
+    switch (introState->storyPage) {
     case 0:
-        return canvas->storyTextPage >= 0 && canvas->storyTextPage <= 1;
+        return introState->storyTextPage >= 0 && introState->storyTextPage <= 1;
     case 1:
     case 2:
-        return canvas->storyTextPage == 0;
+        return introState->storyTextPage == 0;
     default:
         return 0;
     }
@@ -94,6 +95,7 @@ static int storyPositionIsSafe(const DoomCanvas_t* canvas) {
 
 static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
     const DoomCanvas_t* canvas;
+    const EspNativeIntroState_t* introState;
     const Render_t* render;
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
@@ -103,18 +105,19 @@ static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
     }
 
     canvas = doomRpg->doomCanvas;
+    introState = EspNativeIntroState_view(doomRpg);
     render = doomRpg->render;
 
     return canvas->state == ST_INTRO &&
            doomRpg->menuSystem->menu == MENU_NONE &&
-           storyPositionIsSafe(canvas) &&
-           canvas->storyText1[0] != NULL &&
-           canvas->storyText1[1] != NULL &&
-           canvas->storyText2 != NULL &&
-           canvas->imgSpaceBG.imgBitmap != NULL &&
-           canvas->imgLinesLayer.imgBitmap != NULL &&
-           canvas->imgPlanetLayer.imgBitmap != NULL &&
-           canvas->imgSpaceship.imgBitmap != NULL &&
+           storyPositionIsSafe(introState) &&
+           introState->storyText1[0] != NULL &&
+           introState->storyText1[1] != NULL &&
+           introState->storyText2 != NULL &&
+           introState->imgSpaceBG.imgBitmap != NULL &&
+           introState->imgLinesLayer.imgBitmap != NULL &&
+           introState->imgPlanetLayer.imgBitmap != NULL &&
+           introState->imgSpaceship.imgBitmap != NULL &&
            render->nodes == NULL &&
            render->lines == NULL &&
            render->mapSprites == NULL &&
@@ -132,14 +135,18 @@ static void parkClock(const char* reason) {
     DoomCanvas_t* canvas = clockState.doomRpg != NULL
                                ? clockState.doomRpg->doomCanvas
                                : NULL;
+    EspNativeIntroState_t* introState =
+        clockState.doomRpg != NULL
+            ? EspNativeIntroState_get(clockState.doomRpg)
+            : NULL;
     printf("[INTROCLK] PARK reason=%s tick=%u frames=%u skipped=%u state=%d page=%d textPage=%d heap8=%u largest8=%u\n",
            reason != NULL ? reason : "unknown",
            (unsigned int)clockState.lastTick,
            (unsigned int)clockState.renderedFrames,
            (unsigned int)clockState.skippedTicks,
            canvas != NULL ? canvas->state : -1,
-           canvas != NULL ? canvas->storyPage : -1,
-           canvas != NULL ? canvas->storyTextPage : -1,
+           introState != NULL ? introState->storyPage : -1,
+           introState != NULL ? introState->storyTextPage : -1,
            (unsigned int)heap8Free(),
            (unsigned int)largest8Block());
     clockState.exitReadyPark =
@@ -149,6 +156,7 @@ static void parkClock(const char* reason) {
 
 static int rebaseTextEpochInternal(void) {
     DoomCanvas_t* canvas;
+    EspNativeIntroState_t* introState;
 
     if (!clockState.active || clockState.doomRpg == NULL ||
         clockState.doomRpg->doomCanvas == NULL) {
@@ -156,35 +164,46 @@ static int rebaseTextEpochInternal(void) {
     }
 
     canvas = clockState.doomRpg->doomCanvas;
-    canvas->storyTextTime = canvas->time;
+    introState = EspNativeIntroState_get(clockState.doomRpg);
+    if (introState == NULL) {
+        return 0;
+    }
+    introState->storyTextTime = canvas->time;
     clockState.textDoneLogged = 0;
     return 1;
 }
 
 static int rebasePageEpochsInternal(void) {
     DoomCanvas_t* canvas;
+    EspNativeIntroState_t* introState;
 
     if (!rebaseTextEpochInternal()) {
         return 0;
     }
 
     canvas = clockState.doomRpg->doomCanvas;
-    canvas->storyAnimTime = canvas->time;
+    introState = EspNativeIntroState_get(clockState.doomRpg);
+    if (introState == NULL) {
+        return 0;
+    }
+    introState->storyAnimTime = canvas->time;
     return 1;
 }
 
 int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase,
                         unsigned int expectedStartFNV) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    EspNativeIntroState_t* introState;
     const uint32_t frameHash = framebufferHash();
 
     SDL_memset(&clockState, 0, sizeof(clockState));
     Esp32IntroDispose_reset();
     EspNativeStartup_reset();
 
-    if (!boundaryIsSafe(doomRpg) ||
-        doomRpg->doomCanvas->storyPage != 0 ||
-        doomRpg->doomCanvas->storyTextPage != 0) {
+    introState = EspNativeIntroState_get(doomRpg);
+    if (!boundaryIsSafe(doomRpg) || introState == NULL ||
+        introState->storyPage != 0 ||
+        introState->storyTextPage != 0) {
         printf("[INTROCLK] FAILED arm boundary unavailable\n");
         return 0;
     }
@@ -216,6 +235,7 @@ int Esp32IntroClock_arm(struct DoomRPG_s* doomRpgBase,
 
 void Esp32IntroClock_service(void) {
     DoomCanvas_t* canvas;
+    EspNativeIntroState_t* introState;
     uint32_t now;
     uint32_t elapsed;
     uint32_t targetTick;
@@ -253,29 +273,34 @@ void Esp32IntroClock_service(void) {
     clockState.lastTick = targetTick;
 
     canvas = clockState.doomRpg->doomCanvas;
+    introState = EspNativeIntroState_get(clockState.doomRpg);
+    if (introState == NULL) {
+        parkClock("native-intro-state-missing");
+        return;
+    }
     canvas->time = (int)(targetTick * ESP32_INTRO_CLOCK_STEP_MS);
 
     heapBefore = heap8Free();
     largestBefore = largest8Block();
-    wasTextDone = canvas->showTextDone != 0;
-    pageBefore = canvas->storyPage;
+    wasTextDone = introState->showTextDone != 0;
+    pageBefore = introState->storyPage;
 
     Esp32StoryFit_draw(canvas);
 
-    if (canvas->storyPage != pageBefore) {
-        if (pageBefore == 1 && canvas->storyPage == 2 &&
-            canvas->storyTextPage == 0) {
-            canvas->showTextDone = false;
+    if (introState->storyPage != pageBefore) {
+        if (pageBefore == 1 && introState->storyPage == 2 &&
+            introState->storyTextPage == 0) {
+            introState->showTextDone = false;
             if (!rebasePageEpochsInternal()) {
                 parkClock("auto-page-rebase-failed");
                 return;
             }
             printf("[INTROCLK] AUTO-PAGE %d->%d t=%d textPage=%d epoch=%d\n",
                    pageBefore,
-                   canvas->storyPage,
+                   introState->storyPage,
                    canvas->time,
-                   canvas->storyTextPage,
-                   canvas->storyAnimTime);
+                   introState->storyTextPage,
+                   introState->storyAnimTime);
         }
         else {
             parkClock("unexpected-story-transition");
@@ -317,16 +342,16 @@ void Esp32IntroClock_service(void) {
                (unsigned int)heapAfter,
                (unsigned int)largestAfter,
                (unsigned int)clockState.skippedTicks,
-               canvas->storyPage,
-               canvas->storyTextPage,
-               canvas->showTextDone ? 1 : 0);
+               introState->storyPage,
+               introState->storyTextPage,
+               introState->showTextDone ? 1 : 0);
     }
 
-    if (!wasTextDone && canvas->showTextDone && !clockState.textDoneLogged) {
+    if (!wasTextDone && introState->showTextDone && !clockState.textDoneLogged) {
         clockState.textDoneLogged = 1;
         printf("[INTROCLK] TEXT DONE page=%d textPage=%d tick=%u t=%d frames=%u skipped=%u heap8=%u largest8=%u\n",
-               canvas->storyPage,
-               canvas->storyTextPage,
+               introState->storyPage,
+               introState->storyTextPage,
                (unsigned int)targetTick,
                canvas->time,
                (unsigned int)clockState.renderedFrames,
