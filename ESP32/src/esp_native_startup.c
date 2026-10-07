@@ -64,7 +64,7 @@ typedef struct EspNativeStartupState_s {
 static EspNativeStartupState startupState;
 
 static int introResourcesAreReleased(const DoomRPG_t* doomRpg) {
-    return doomRpg != NULL && EspNativeIntroState_get(doomRpg) == NULL;
+    return doomRpg != NULL && EspNativeIntroState_view(doomRpg) == NULL;
 }
 
 static int legacyRuntimeIsClear(const Render_t* render) {
