@@ -19,6 +19,12 @@
  * the C99 false/true macros. */
 #include <esp_heap_caps.h>
 
+#ifdef DOOMRPG_ESP32
+/* The normal classic-CYD build must never silently grow the retired Game shell. */
+_Static_assert(sizeof(Game_t) == sizeof(void*),
+               "ESP32 Game_t must remain the one-pointer compatibility shell");
+#endif
+
 /* DoomRPG.c owns the real engine root. The desktop header intentionally does
  * not export it, but the ESP32 bring-up must populate that same root so later
  * increments can continue startup instead of constructing a parallel engine. */
@@ -278,30 +284,13 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
 #undef INIT_CORE_OBJECT
 
     /*
-     * The legacy Game shell is temporarily retained for config/teardown ABI,
-     * but its embedded Entity/EntityMonster stores are retired runtime owners.
-     * They must remain empty; native resident-map state owns all live entities.
+     * Legacy Game world/entity/transient storage is absent by layout on ESP32.
+     * The sole remaining field is the DoomRPG backpointer used by the config/
+     * teardown compatibility bridge.
      */
-    if (doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0 ||
-        doomRpg->game->activeMonsters != NULL ||
-        doomRpg->game->inactiveMonsters != NULL ||
-        doomRpg->game->combatMonsters != NULL ||
-        doomRpg->game->spawnMonster != NULL) {
-        coreInitReport.failedStage = DOOMRPG_CORE_GAME;
-        coreInitReport.heapAfter = coreFreeHeap();
-        coreInitReport.largestBlockAfter = coreLargestBlock();
-        coreInitReport.ready = 0;
-        printf("[CORE] FAILED legacy entity runtime not dormant entities=%d monsters=%d active=%p inactive=%p combat=%p spawn=%p\n",
-               doomRpg->game->numEntities,
-               doomRpg->game->numMonsters,
-               (void*)doomRpg->game->activeMonsters,
-               (void*)doomRpg->game->inactiveMonsters,
-               (void*)doomRpg->game->combatMonsters,
-               (void*)doomRpg->game->spawnMonster);
-        if (report != NULL) *report = coreInitReport;
-        return 0;
-    }
-    printf("[CORE] Legacy entity runtime retired arrays=dormant entities=0 monsters=0 owner=native-resident-map\n");
+    printf("[CORE] Legacy Game shell minimal gameBytes=%u desktopBytes=36468 totalReclaimed=36464 fields=doomRpg-only worldOwner=native\n",
+           (unsigned int)sizeof(Game_t));
+    printf("[CORE] Desktop Game.c retired bridge=esp_legacy_game_bridge exports=4 linkedRoots=audit-ELF worldOwner=native\n");
 
     /*
      * Player state is owned by the compact 52-byte native gameplay owner.

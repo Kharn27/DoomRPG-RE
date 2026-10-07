@@ -5,6 +5,27 @@
 #include "Entity.h"
 #include "EntityMonster.h"
 
+/*
+ * The desktop/J2ME Game object embeds the complete mutable entity runtime.
+ * ESP32 production retired that owner: live entities and monsters are held by
+ * compact native resident-map/gameplay state. Keep one compile-only sentinel
+ * slot so unlinked legacy functions still compile against the historical field
+ * names without reserving the 35 KB desktop stores at runtime.
+ */
+#ifdef DOOMRPG_ESP32
+#define GAME_LEGACY_ENTITY_CAPACITY 1
+#define GAME_LEGACY_ENTITY_DB_CAPACITY 1
+#define GAME_LEGACY_MONSTER_CAPACITY 1
+#define GAME_LEGACY_TRACE_CAPACITY 1
+#define GAME_LEGACY_GSPRITE_CAPACITY 1
+#else
+#define GAME_LEGACY_ENTITY_CAPACITY 400
+#define GAME_LEGACY_ENTITY_DB_CAPACITY 1024
+#define GAME_LEGACY_MONSTER_CAPACITY 100
+#define GAME_LEGACY_TRACE_CAPACITY 8
+#define GAME_LEGACY_GSPRITE_CAPACITY MAX_CUSTOM_SPRITES
+#endif
+
 typedef enum
 {
 	MAP_MENU = 0,
@@ -51,6 +72,14 @@ typedef enum
 	MAPNAME_REACTOR,
 	MAPNAME_MAX
 } gameMaps_e;
+
+#ifdef DOOMRPG_ESP32
+#define GAME_LEGACY_MAP_NAME_CAPACITY 1
+#define GAME_LEGACY_MAP_FILE_CAPACITY 1
+#else
+#define GAME_LEGACY_MAP_NAME_CAPACITY MAPNAME_MAX
+#define GAME_LEGACY_MAP_FILE_CAPACITY MAPFILE_MAX
+#endif
 
 #define EV_GOTO			1
 #define EV_CHANGEMAP	2
@@ -118,14 +147,21 @@ typedef struct GameSpriteMissile_s
 	boolean unk0;
 } GameSpriteMissile_t;
 
+#ifdef DOOMRPG_ESP32
 typedef struct Game_s
 {
-	struct Entity_s entities[400];
+    /* Permanent ESP32 compatibility shell. All world/gameplay state is native. */
+    struct DoomRPG_s* doomRpg;
+} Game_t;
+#else
+typedef struct Game_s
+{
+	struct Entity_s entities[GAME_LEGACY_ENTITY_CAPACITY];
 	int numEntities;
-	struct Entity_s* entityDb[1024];
-	struct Entity_s* traceEntities[8];
+	struct Entity_s* entityDb[GAME_LEGACY_ENTITY_DB_CAPACITY];
+	struct Entity_s* traceEntities[GAME_LEGACY_TRACE_CAPACITY];
 	int numTraceEntities;
-	struct EntityMonster_s entityMonsters[100];
+	struct EntityMonster_s entityMonsters[GAME_LEGACY_MONSTER_CAPACITY];
 	int numMonsters;
 	int spawnParam;
 	boolean disableAI;
@@ -152,7 +188,7 @@ typedef struct Game_s
 	int eventFlags[2];
 	int memory;
 	int entityMemory;
-	struct GameSprite_s gsprites[MAX_CUSTOM_SPRITES];
+	struct GameSprite_s gsprites[GAME_LEGACY_GSPRITE_CAPACITY];
 	int gSpriteDurationTime;
 	int changeMapParam;
 	struct Entity_s* spawnMonster;
@@ -172,9 +208,10 @@ typedef struct Game_s
 	struct Entity_s* soundMonster;
 	struct DoomRPG_s* doomRpg;
 
-	char mapNames[MAPNAME_MAX][24];
-	char mapFiles[MAPFILE_MAX][24];
+	char mapNames[GAME_LEGACY_MAP_NAME_CAPACITY][24];
+	char mapFiles[GAME_LEGACY_MAP_FILE_CAPACITY][24];
 } Game_t;
+#endif
 
 
 int Game_getResourceMapID(Game_t* game, char* mapName);

@@ -1,5 +1,435 @@
 # ESP32 documentation map
 
+## DoomCanvas linked-ABI whitelist — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`d34cf007663bbb213f5c4e3f3eea7ae694339217`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The generated ESP32 `DoomCanvas.c` now retains only the source ABI proven to
+survive link-time GC. The desktop source contains 76 public `DoomCanvas_*`
+definitions; the ESP32 generator removes **61** before compilation and retains
+**15 source roots**.
+
+The resulting ELF preserves the same linked DoomCanvas surface as the previous
+accepted build: 15 source functions plus GCC's internal split
+`DoomCanvas_drawFont$part$0`, for 16 binary symbols total.
+
+Normal `esp32-cyd` CI for the tested commit is SUCCESS:
+
+```text
+[ESP32] DoomCanvas generated ... 61 dead public function(s) pruned + 15 source ABI root(s) retained ...
+RAM:   45464 B
+Flash: 780193 B
+esp32-cyd SUCCESS
+```
+
+The real-CYD acceptance run exercises substantially more than boot. It covers:
+
+- fresh START and complete intro handoff;
+- exact MAP_INTRO first-frame witness `71ca7465`;
+- movement, rotation, collision, automap publication and native renderer guard recovery;
+- crate combat/transform and resource pickups;
+- opcode-26 enter-dialog plus resumed opcode-19 state transitions;
+- standalone weapon-help dialog;
+- door open/close animation including deferred post-monster close;
+- native monster activation, attack visualization, retaliation and committed player damage;
+- HUB/System, confirmed Exit To Menu and exact resident teardown;
+- version-11 LOAD and checkpoint restore of resources, scripts, line state/texture,
+  action removals, crate state, automap, monsters, topology, positions, activation
+  order and monster drops;
+- resumed gameplay with the restored 12-monster active set.
+
+Critical invariants remain intact:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 ...
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[RESIDENTRESET] ... empty=1
+[SYSEXIT] MENU-READY ... session=off resident=empty
+[NATIVESAVE] LOAD ... version=11 ... restored-exact
+[ENGINESESSION] RESUME checkpoint=restored ...
+```
+
+The observed renderer compact-span `LEGACY_GUARD` path recovers normally and
+is unchanged by this milestone.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_DOOMCANVAS_LINKED_ABI_WHITELIST.md](MILESTONE_ESP32_DOOMCANVAS_LINKED_ABI_WHITELIST.md)
+
+## Minimal ESP32 Game compatibility shell — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`44ecee201cbfec6de72150999d94060c231585e5`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The ESP32 `Game_t` compatibility shell is now exactly one pointer:
+
+```c
+struct DoomRPG_s* doomRpg;
+```
+
+Hardware confirms:
+
+```text
+Engine structs: Render=5040 Game=4 Canvas=3740 Total=9544 bytes
+[CORE] Game           used=20 heap=177504 largest=110580
+[CORE] Legacy Game shell minimal gameBytes=4 desktopBytes=36468 totalReclaimed=36464 fields=doomRpg-only worldOwner=native
+```
+
+This removes 36,464 of the 36,468 desktop `Game_t` bytes from the ESP32
+layout (~99.99%). The remaining 4-byte backpointer exists only for the compact
+config/teardown compatibility bridge.
+
+The normal `esp32-cyd` build no longer depends on inherited Game world state.
+To make the 4-byte layout compile, the generated ESP32 sources now explicitly
+retire the last compile-only edges:
+
+- 14 dead DoomCanvas functions that referenced retired Game fields;
+- 2 retained DoomCanvas reads of `monstersTurn` / `activeSprites`;
+- the stale Render monster-activation block that dereferenced retired
+  Player/Game fields;
+- the inherited Render map-file lookup, redirected to `EspMapCatalog`;
+- inherited DoomRPG Game-store cleanup and Game allocation metric writes.
+
+CI #1622 is SUCCESS:
+
+```text
+RAM:   45464 B
+Flash: 780189 B
+esp32-cyd SUCCESS
+```
+
+The real-CYD acceptance run validates the complete behavioral boundary, not
+just boot. It covers fresh START, intro disposal, exact MAP_INTRO first frame,
+crate transform + pickup, repeated native dialog chains with opcode continuation,
+door animation/close deferral, HUB/SYS Exit To Menu, resident reset, dedicated
+LOAD, exact version-11 spatial/checkpoint restore, active-monster resumed
+gameplay, and another crate transform/pickup after restore.
+
+Fresh-session memory settles at:
+
+```text
+[ALIVE] ... heap=165632 heap8=99708 largest8=86004 ...
+```
+
+The dialog-chain allocation later lowers that session to
+`heap8=98672/largest8=86004`, and the checkpoint-resume session settles at the
+same `98672/86004`, as expected for the owners active in that path.
+
+Critical witnesses remain intact:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 ...
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[RESIDENTRESET] ... empty=1
+[SYSEXIT] MENU-READY ... session=off resident=empty
+[NATIVESAVE] LOAD ... version=11 ... world=...-restored-exact
+[ENGINESESSION] RESUME ... checkpoint=restored ...
+```
+
+The existing native renderer compact-span safety guard also recovers normally
+during resumed gameplay and does not affect the milestone result.
+
+No post-test runtime/code change is included in this closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_MINIMAL_GAME_SHELL.md](MILESTONE_ESP32_MINIMAL_GAME_SHELL.md)
+
+## Desktop Game translation unit retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`e497199152be23b86d98054ca458761f04109b9d`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The normal ESP32 build no longer generates or compiles desktop `src/Game.c`.
+Its only retained ABI roots are now permanently implemented by
+`ESP32/src/esp_legacy_game_bridge.c`:
+
+```text
+Game_init
+Game_loadConfig
+Game_unloadMapData
+Game_activate
+```
+
+Any future dependency on another inherited `Game_*` function now fails at
+link time instead of silently reviving desktop gameplay code.
+
+Normal `esp32-cyd` CI #1615 is SUCCESS:
+
+```text
+[ESP32] Desktop Game.c retired; esp_legacy_game_bridge.c owns Game_init/Game_loadConfig/Game_unloadMapData/Game_activate
+RAM:   45464 B
+Flash: 780881 B
+```
+
+Real-CYD acceptance exercises the bridge responsibilities end-to-end. The
+shortened boot log starts after the core-object banner, but proves the bridge
+`Game_loadConfig()` path reaches config/mappings startup with unchanged heap:
+
+```text
+[CONFIG] -> Game_loadConfig()
+loadConfig
+loadConfig: (unable to open file)
+[CONFIG] DONE heap delta=0 heap8=148768 largest8=110580
+[CONFIGMAP] READY config path exercised and mappings resident
+```
+
+A fresh START traverses intro disposal, catalog-backed MAP_INTRO loading and the
+exact first-frame witness:
+
+```text
+[NATIVEBOOT] RESIDENT map=1 file=/intro.bsp ...
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=165200 heap8=99276 largest8=86004 ...
+```
+
+The same hardware run then exercises native crate transform, pickup, dialog
+open/page/close plus resumed opcode execution, HUB/SYS Exit To Menu, and the
+bridge teardown path:
+
+```text
+[SYS] EXIT-CONFIRMED queued=yes saveWrite=no boundary=after-session
+[RESIDENTRESET] ... empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty ...
+```
+
+Finally the main-menu LOAD path restores a version-11 checkpoint, including
+resources, script, line state, automap, monster state/topology/positions/
+activation and drops, then re-enters resident gameplay successfully:
+
+```text
+[NATIVESAVE] LOAD ... version=11 ... world=resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-restored-exact
+[ENGINESESSION] RESUME ... checkpoint=restored ...
+[ENGINESESSION] READY map=1 angle=0 ... shapeData=0x0 mediaTexels=0x0
+```
+
+The checkpoint-resume session settles at `heap8=98240/largest8=86004`, lower
+than fresh-start gameplay only because the dialog-chain owner and restored
+session owners differ from the fresh path; no regression is observed.
+
+This milestone deliberately keeps the 440-byte `Game_t` compatibility shell
+unchanged. The next architectural blocker is the still-generated full desktop
+`DoomCanvas.c`, whose dead functions force legacy `Game_t` fields to remain
+compilable even though the linked DoomCanvas surface observes only a tiny subset.
+
+No post-test runtime/code change is part of the closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DESKTOP_GAME_TU.md](MILESTONE_ESP32_RETIRE_DESKTOP_GAME_TU.md)
+
+## Dormant Game transient stores compacted — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`233904e1b27c03554166f0514bbf34465234dcb4`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The normal ESP32 ELF no longer retains legacy trace or GameSprite producers:
+`Game_trace()`, `Game_gsprite_alloc*()` and `Game_gsprite_update()` are
+absent. Native collision/action tracing and gameplay FX own those responsibilities.
+Only cleanup compatibility remained in the linked `Game_unloadMapData()`.
+
+For ESP32 only, `Game_t::traceEntities[8]` and
+`Game_t::gsprites[MAX_CUSTOM_SPRITES]` are therefore reduced to one-element
+compile-time sentinels. The compatibility scalars still observed by retained
+DoomCanvas state code (`activeSprites`, `f684l`, `monstersTurn`) are kept.
+Desktop/J2ME capacities are unchanged.
+
+Generated `Game_gsprite_clear()` clears only the sentinel and compatibility
+scalars; generated `Game_unloadMapData()` clears the trace sentinel and
+`numTraceEntities` fail-closed.
+
+Normal `esp32-cyd` CI #1609 is SUCCESS:
+
+```text
+static RAM   = 45464 B
+linked Flash = 780817 B
+```
+
+Real-CYD boot proves the exact compact layout:
+
+```text
+Engine structs: Render=5040 Game=440 Canvas=3740 Total=9980 bytes
+[CORE] Game           used=456 heap=177068 largest=110580
+[CORE] Legacy Game transient stores retired trace/gsprites=sentinel capacities=1/1 gameBytes=440 desktopBytes=36468 totalReclaimed=36028 owner=native-collision+gameplay-fx
+[CORE] READY objects=5 heap used=10160 remaining=177068 largest=110580 clip=160x120
+```
+
+Relative to the preceding hardware-tested 768-byte `Game_t`, this recovers
+another 328 B exactly. Settled resident gameplay rises from `heap8=98948` to
+`heap8=99276`.
+
+The same run exercises START, full intro disposal, native MAP_INTRO load,
+movement/turning, pickups, door interaction, HUB/SYS, Exit To Menu, a second
+fresh START, then additional movement, a native crate attack/removal and
+strafe/turn actions. Both resident sessions settle at:
+
+```text
+[ALIVE] ... heap=165200 heap8=99276 largest8=86004 ...
+```
+
+The second START resets the mutated player fingerprint `363261d1` back to
+the canonical fresh `e745fce9`. The exact first-frame witness remains
+`71ca7465`; `shapeData=0x0` and `mediaTexels=0x0` remain invariant.
+
+The existing renderer compact-guard recovery was exercised and recovered
+normally before committed gameplay continued.
+
+No post-test runtime/code change is part of the closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_COMPACT_GAME_TRANSIENT_STORES.md](MILESTONE_ESP32_COMPACT_GAME_TRANSIENT_STORES.md)
+
+## Legacy Game map string tables retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`46b463a6c240f5e7fadd02d3aeb3dc83d65a620e`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The ESP32 runtime no longer keeps the inherited mutable `Game_t::mapNames[]`
+and `Game_t::mapFiles[]` tables. Map identity/resource names are owned by the
+immutable native `EspMapCatalog`; the two legacy arrays are reduced to one-slot
+compile-only sentinels on ESP32 while desktop/J2ME capacities remain unchanged.
+
+Generated `Game.c` now routes the legacy map-resource lookup and save-state
+resource-name edge through `EspMapCatalog`, retires the desktop map-table
+initialization, and fails closed if any direct `game->mapNames[]` or
+`game->mapFiles[]` access survives generation. Native START/bootstrap also
+resolves `startupMap` directly through `EspMapCatalog`.
+
+Normal `esp32-cyd` CI #1605 is SUCCESS:
+
+```text
+static RAM   = 45464 B
+linked Flash = 780721 B
+```
+
+Real-CYD boot proves the compact layout and heap effect:
+
+```text
+Engine structs: Render=5040 Game=768 Canvas=3740 Total=10308 bytes
+[CORE] Game           used=784 heap=176740 largest=110580
+[CORE] Legacy Game map tables retired stores=sentinel capacities=1/1 gameBytes=768 desktopBytes=36468 totalReclaimed=35700 owner=EspMapCatalog
+[CORE] READY objects=5 heap used=10488 remaining=176740 largest=110580 clip=160x120
+```
+
+Relative to the preceding hardware-tested `Game_t=1296` boundary, this removes
+another 528 B from the structure. The menu/runtime witnesses rise accordingly
+(`heap8=140000` at MENU_MAIN and `heap8=98948` in settled gameplay, subject
+to allocator effects).
+
+The same run completes START, full intro disposal, native `/intro.bsp` load,
+the exact first-frame witness, movement, pickups, a door interaction, HUB/SYS,
+Exit To Menu, then a second fresh START. Both gameplay sessions settle at the
+same memory state:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap8=98948 largest8=86004 ...
+...
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+...
+[ALIVE] ... heap8=98948 largest8=86004 ...
+```
+
+The second START sees the mutated player fingerprint `363261d1` and resets it
+to the canonical fresh `e745fce9`. Native map loading reports
+`file=/intro.bsp`, confirming the catalog-backed startup path on hardware.
+
+The existing renderer compact-guard recovery was exercised once and recovered
+normally before gameplay continued. It remains unrelated to this map-catalog
+ownership milestone.
+
+No post-test runtime/code change is part of the closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_GAME_MAP_TABLES.md](MILESTONE_ESP32_RETIRE_GAME_MAP_TABLES.md)
+
+## Dormant Game entity storage compacted — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`449e9e8425e6a4d125804728052c2b4735e31b97`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+A live-ELF audit of the merged main showed that the normal classic-CYD firmware
+retains only five `Game_*` symbols: `Game_init`, `Game_gsprite_clear`,
+`Game_loadConfig`, `Game_unloadMapData`, and the already fail-closed
+`Game_activate` ABI stub. The inherited `Game_t` nevertheless still embedded
+the retired desktop entity runtime:
+
+```text
+Entity_t entities[400]              25600 B
+Entity_t *entityDb[1024]             4096 B
+EntityMonster_t entityMonsters[100]  5600 B
+```
+
+On ESP32 only, those three stores are now compile-only sentinel arrays of one
+element each. Desktop/J2ME capacities remain unchanged. Generated
+`Game_unloadMapData()` also retires the obsolete 1024-entry `entityDb` clear.
+Compile-time guards require the sentinel capacities and
+`sizeof(Game_t) == 1296`.
+
+Normal `esp32-cyd` CI #1602 is SUCCESS:
+
+```text
+static RAM   = 45464 B
+linked Flash = 781141 B
+```
+
+Real-CYD boot proves the heap allocation collapsed exactly as intended:
+
+```text
+[CORE] Game           used=1312 heap=176212 largest=110580
+[CORE] Legacy entity runtime retired stores=sentinel capacities=1/1/1 gameBytes=1296 desktopBytes=36468 reclaimed=35172 entities=0 monsters=0 owner=native-resident-map
+[CORE] READY objects=5 heap used=11016 remaining=176212 largest=110580 clip=160x120
+```
+
+Compared with the preceding hardware witness (`Game used=36484`,
+`remaining=141040`), the core heap recovers exactly 35172 B.
+
+The same hardware run completes MENU_MAIN -> START, full intro disposal,
+MAP_INTRO resident load, exact first frame `71ca7465`, native pickups/HUD,
+SYS Exit To Menu, then a second fresh START. Both resident sessions settle at
+the same memory state:
+
+```text
+[ALIVE] ... heap8=98416 largest8=86004 ...
+...
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+...
+[ALIVE] ... heap8=98416 largest8=86004 ...
+```
+
+The second START also resets the mutated player fingerprint back to the canonical
+fresh `e745fce9`. Throughout both sessions,
+`shapeData=0x0` and `mediaTexels=0x0`.
+
+A renderer compact-guard recovery was exercised once during a turn and recovered
+normally before gameplay continued; it is not a failure of this storage
+milestone.
+
+No post-test runtime/code change is part of the closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_COMPACT_GAME_ENTITY_STORAGE.md](MILESTONE_ESP32_COMPACT_GAME_ENTITY_STORAGE.md)
+
 ## Retired Player/Sound config dereferences closed — REVIEW FIX + REAL-CYD BOOT PASS (2026-10-07)
 
 Current tested code boundary:

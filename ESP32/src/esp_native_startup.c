@@ -115,8 +115,7 @@ static int startupBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            canvas->startupMap <= MAP_END_GAME &&
            introResourcesAreReleased(canvas) &&
            legacyRuntimeIsClear(doomRpg->render) &&
-           doomRpg->game->numEntities == 0 &&
-           doomRpg->game->numMonsters == 0 &&
+           doomRpg->game != NULL &&
            !EspAssetPack_isOpen();
 }
 
@@ -157,9 +156,10 @@ static int loadStartupResident(DoomRPG_t* doomRpg) {
         return 0;
     }
 
-    resourceName = doomRpg->game->mapFiles[doomRpg->doomCanvas->startupMap - 1];
-    if (resourceName == NULL || resourceName[0] == '\0' ||
-        !EspMapCatalog_idForName(resourceName, &targetMapId) ||
+    targetMapId = (uint8_t)doomRpg->doomCanvas->startupMap;
+    resourceName = EspMapCatalog_nameForId(targetMapId);
+    if (resourceName == NULL ||
+        (int)targetMapId != doomRpg->doomCanvas->startupMap ||
         !EspMapCatalog_isValidId(targetMapId)) {
         failStartup("startup map is not in native catalog");
         return -1;
@@ -196,8 +196,7 @@ static int loadStartupResident(DoomRPG_t* doomRpg) {
         snapshot.stringCount != inventory.strings ||
         EspAssetPack_isOpen() ||
         !legacyRuntimeIsClear(doomRpg->render) ||
-        doomRpg->game->numEntities != 0 ||
-        doomRpg->game->numMonsters != 0) {
+        doomRpg->game == NULL) {
         failStartup("generic resident load");
         return -1;
     }
@@ -251,7 +250,7 @@ static int routeInitialSpawn(DoomRPG_t* doomRpg) {
         !EspMapCatalog_isValidId(startupState.targetMapId) ||
         !EspMapResidentLifecycle_capture(&resident) ||
         !legacyRuntimeIsClear(doomRpg->render) ||
-        doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0 ||
+        doomRpg->game == NULL ||
         EspAssetPack_isOpen()) {
         failStartup("unsafe spawn boundary");
         return 0;
@@ -418,11 +417,12 @@ void EspNativeStartup_service(struct DoomRPG_s* doomRpgBase) {
         }
 
         {
+            uint8_t targetMapId =
+                (uint8_t)doomRpg->doomCanvas->startupMap;
             const char* resourceName =
-                doomRpg->game->mapFiles[doomRpg->doomCanvas->startupMap - 1];
-            uint8_t targetMapId = 0U;
+                EspMapCatalog_nameForId(targetMapId);
             if (resourceName == NULL ||
-                !EspMapCatalog_idForName(resourceName, &targetMapId) ||
+                (int)targetMapId != doomRpg->doomCanvas->startupMap ||
                 !EspNativeTransitionPresentation_beginLoading(targetMapId)) {
                 failStartup("intro loading presentation");
                 return;
