@@ -1,5 +1,86 @@
 # Doom RPG ESP32 CYD porting status
 
+## DoomCanvas zero-reference fields retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`596a62b667a2a41dd29789abc249068fca4265fa`.
+
+Branch:
+`agent/esp32-doomcanvas-bridge`.
+
+After the 2560-byte dialog-store retirement, a second complete source-closure
+audit identified 52 inherited DoomCanvas fields with no access from any
+translation unit compiled into the normal ESP32 firmware. Their explicit field
+payload totals 239 bytes; removing them also eliminates one byte of alignment
+padding, for an exact 240-byte layout reduction.
+
+The ESP32 compatibility object is therefore:
+
+```text
+DoomCanvas_t: 1180 B -> 940 B
+reclaimed this step:    240 B
+reclaimed from desktop: 2800 B total
+```
+
+The desktop struct remains unchanged. On ESP32, the retired fields are absent,
+so accidental future reuse fails at compile time. The bridge pins the resulting
+layout with a `_Static_assert`.
+
+Normal `esp32-cyd` CI #1640 is SUCCESS:
+
+```text
+RAM:   45464 B
+Flash: 780097 B
+esp32-cyd SUCCESS
+```
+
+Real-CYD boot proves the exact object and heap reduction:
+
+```text
+Engine structs: Render=5040 Game=4 Canvas=940 Total=6744 bytes
+[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=940 retiredDialogStores=2560 retiredZeroRefLayout=240 clip=160x120
+[CORE] DoomCanvas     used=956 heap=185892 largest=110580
+```
+
+The hardware acceptance run covers the full fresh-session route: START,
+prologue, exact intro disposal, native MAP_INTRO load, the canonical first
+frame, movement/rotation, crate transform, resource pickups, door animation,
+HUB/System and a clean confirmed Exit To Menu.
+
+The exact first-frame witness is unchanged:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY map=1 angle=64 ... shapeData=0x0 mediaTexels=0x0
+```
+
+The same firmware then performs MENU_MAIN -> LOAD on an existing version-11
+checkpoint, restores the complete native world/session state, accepts further
+movement and pickups, opens another door, activates a monster, delivers the
+ordered native attack visualization and commits retaliation damage, then exits
+cleanly again.
+
+Representative resumed-session witnesses:
+
+```text
+[NATIVESAVE] LOAD ... version=11 ... world=...monster-drops-restored-exact session=reprime-pending
+[ENGINESESSION] READY map=1 angle=0 ... shapeData=0x0 mediaTexels=0x0
+[MONSTERATKVIS] COMPLETE probe=1 ... gameplayMutation=no resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT probe=1 ... playerHP=34->32 armor=19->17 ... rollback=closed
+[RESIDENTRESET] ... released=18008 ... after=0/0/0/0/0/0/0 empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+```
+
+The known compact renderer `LEGACY_GUARD -> RETRY -> RECOVERED` path appears
+and recovers normally in both fresh and resumed gameplay; it remains unrelated
+to DoomCanvas compaction.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_COMPACT_DOOMCANVAS_ZEROREF_FIELDS.md](MILESTONE_ESP32_COMPACT_DOOMCANVAS_ZEROREF_FIELDS.md)
+
+
 ## DoomCanvas dialog stores retired — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:
