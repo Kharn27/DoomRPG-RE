@@ -129,7 +129,7 @@ void EspNativeGameplayEventChain_reset(void) {
     SDL_free(transactionOwner);
     transactionOwner = NULL;
     heapAfter = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    printf("[DIALOGCHAIN] OWNER-RELEASE journal=%u topologyCapacity=%u activeAtTeardown=%u heap8=%u->%u recovered=%d owner=none\\n",
+    printf("[DIALOGCHAIN] OWNER-RELEASE journal=%u topologyCapacity=%u activeAtTeardown=%u heap8=%u->%u recovered=%d owner=none\n",
            (unsigned int)sizeof(ChainTransaction),
            (unsigned int)topologyCapacity,
            (unsigned int)pendingRollback,
