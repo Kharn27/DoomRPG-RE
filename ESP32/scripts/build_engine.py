@@ -499,6 +499,62 @@ game_source_text = game_source_text.replace(
     game_sound_volume_needle, game_sound_volume_replacement, 1
 )
 
+game_player_deaths_load_needle = """\t\t\tintData = File_readInt(rw);
+\t\t\tif (game) {
+\t\t\t\tgame->doomRpg->player->totalDeaths = intData;
+\t\t\t}
+"""
+game_player_deaths_load_replacement = """\t\t\tintData = File_readInt(rw);
+\t\t\t/* ESP32 Player_t is retired. Preserve Config stream alignment by
+\t\t\t * consuming the legacy totalDeaths field without dereferencing it. */
+\t\t\t(void)intData;
+"""
+game_player_deaths_load_count = game_source_text.count(
+    game_player_deaths_load_needle
+)
+if game_player_deaths_load_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_loadConfig Player totalDeaths shape; "
+        "review retired ESP32 Player ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_player_deaths_load_needle, game_player_deaths_load_replacement, 1
+)
+
+game_sound_volume_save_needle = """\tFile_writeInt(rw, game->doomRpg->sound->volume);
+"""
+game_sound_volume_save_replacement = """\t/* Preserve the legacy Config field layout while Sound_t is retired. */
+\tFile_writeInt(rw, 0);
+"""
+game_sound_volume_save_count = game_source_text.count(
+    game_sound_volume_save_needle
+)
+if game_sound_volume_save_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_saveConfig Sound volume shape; "
+        "review retired ESP32 Sound ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_sound_volume_save_needle, game_sound_volume_save_replacement, 1
+)
+
+game_player_deaths_save_needle = """\tFile_writeInt(rw, game->doomRpg->player->totalDeaths);
+"""
+game_player_deaths_save_replacement = """\t/* Preserve the legacy Config field layout while Player_t is retired. */
+\tFile_writeInt(rw, 0);
+"""
+game_player_deaths_save_count = game_source_text.count(
+    game_player_deaths_save_needle
+)
+if game_player_deaths_save_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_saveConfig Player totalDeaths shape; "
+        "review retired ESP32 Player ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_player_deaths_save_needle, game_player_deaths_save_replacement, 1
+)
+
 with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(game_source_text)
 
@@ -509,7 +565,10 @@ print(
     f"{game_combat_cleanup_count} legacy Combat cleanup reset retired + "
     f"{game_player_cleanup_count} legacy Player cleanup reset retired + "
     f"{game_entity_reset_count} legacy Entity reset loop retired + "
-    f"{game_sound_volume_count} legacy Sound config field retired"
+    f"{game_sound_volume_count} legacy Sound config load field retired + "
+    f"{game_player_deaths_load_count} legacy Player config load field retired + "
+    f"{game_sound_volume_save_count} legacy Sound config save field retired + "
+    f"{game_player_deaths_save_count} legacy Player config save field retired"
 )
 
 # DoomRPG_createImage() is the central image-loading path used by the game.
