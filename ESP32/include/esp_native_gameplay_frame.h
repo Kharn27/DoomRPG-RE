@@ -73,6 +73,18 @@ int EspNativeGameplayFrame_renderVisualPose(
     uint8_t settledAngle,
     EspNativeGameplayFrameStats* outStats);
 
+/*
+ * MOVE-only preview: two bounded positions between the 64-unit settled
+ * cardinal source and committed destination. No gameplay state mutation,
+ * automap reveal, activation, checkpoint change or extra framebuffer.
+ */
+int EspNativeGameplayFrame_renderVisualMove(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* before,
+    const struct EspPlayerViewState_s* after,
+    uint8_t step,
+    EspNativeGameplayFrameStats* outStats);
+
 #ifdef __cplusplus
 }
 #endif
