@@ -1,5 +1,86 @@
 # Doom RPG ESP32 CYD porting status
 
+## Minimal ESP32 Game compatibility shell — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`44ecee201cbfec6de72150999d94060c231585e5`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The ESP32 `Game_t` compatibility shell is now exactly one pointer:
+
+```c
+struct DoomRPG_s* doomRpg;
+```
+
+Hardware confirms:
+
+```text
+Engine structs: Render=5040 Game=4 Canvas=3740 Total=9544 bytes
+[CORE] Game           used=20 heap=177504 largest=110580
+[CORE] Legacy Game shell minimal gameBytes=4 desktopBytes=36468 totalReclaimed=36464 fields=doomRpg-only worldOwner=native
+```
+
+This removes 36,464 of the 36,468 desktop `Game_t` bytes from the ESP32
+layout (~99.99%). The remaining 4-byte backpointer exists only for the compact
+config/teardown compatibility bridge.
+
+The normal `esp32-cyd` build no longer depends on inherited Game world state.
+To make the 4-byte layout compile, the generated ESP32 sources now explicitly
+retire the last compile-only edges:
+
+- 14 dead DoomCanvas functions that referenced retired Game fields;
+- 2 retained DoomCanvas reads of `monstersTurn` / `activeSprites`;
+- the stale Render monster-activation block that dereferenced retired
+  Player/Game fields;
+- the inherited Render map-file lookup, redirected to `EspMapCatalog`;
+- inherited DoomRPG Game-store cleanup and Game allocation metric writes.
+
+CI #1622 is SUCCESS:
+
+```text
+RAM:   45464 B
+Flash: 780189 B
+esp32-cyd SUCCESS
+```
+
+The real-CYD acceptance run validates the complete behavioral boundary, not
+just boot. It covers fresh START, intro disposal, exact MAP_INTRO first frame,
+crate transform + pickup, repeated native dialog chains with opcode continuation,
+door animation/close deferral, HUB/SYS Exit To Menu, resident reset, dedicated
+LOAD, exact version-11 spatial/checkpoint restore, active-monster resumed
+gameplay, and another crate transform/pickup after restore.
+
+Fresh-session memory settles at:
+
+```text
+[ALIVE] ... heap=165632 heap8=99708 largest8=86004 ...
+```
+
+The dialog-chain allocation later lowers that session to
+`heap8=98672/largest8=86004`, and the checkpoint-resume session settles at the
+same `98672/86004`, as expected for the owners active in that path.
+
+Critical witnesses remain intact:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 ...
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[RESIDENTRESET] ... empty=1
+[SYSEXIT] MENU-READY ... session=off resident=empty
+[NATIVESAVE] LOAD ... version=11 ... world=...-restored-exact
+[ENGINESESSION] RESUME ... checkpoint=restored ...
+```
+
+The existing native renderer compact-span safety guard also recovers normally
+during resumed gameplay and does not affect the milestone result.
+
+No post-test runtime/code change is included in this closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_MINIMAL_GAME_SHELL.md](MILESTONE_ESP32_MINIMAL_GAME_SHELL.md)
+
 ## Desktop Game translation unit retired — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:
