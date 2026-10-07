@@ -108,9 +108,13 @@ typedef struct Render_s
 	int mapSpawnIndex;
 	int mapSpawnDir;
 	int mapCameraSpawnIndex;
+	/* Legacy map-wide sprite pointer lists. Normal CYD native sprite
+	 * topology and drops own these semantics without Render mirrors. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Sprite_s* customSprites[MAX_CUSTOM_SPRITES];
 	struct Sprite_s* dropSprites[MAX_DROP_SPRITES];
 	int firstDropSprite;
+#endif
 	int unk2;
 	int mapMemory;
 	int stringMem;
