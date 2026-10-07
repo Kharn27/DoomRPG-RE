@@ -335,16 +335,13 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
                                   : (selected
                                          ? (armed ? 0xffffffffU : 0xffffa000U)
                                          : 0xffffffffU));
-    /* Legacy drawFont takes char* but only reads the glyph string. Keep these
-     * labels in flash/rodata instead of spending writable RAM on four copies. */
-    DoomCanvas_drawFont(doomRpg->doomCanvas,
-                        (char*)label,
-                        textX,
-                        textY,
-                        0,
-                        0,
-                        -1,
-                        false);
+    /* The ESP32 bridge owns only the compact 9x12 font. Keep these labels in
+     * flash/rodata instead of spending writable RAM on four copies. */
+    DoomCanvas_drawString1(doomRpg->doomCanvas,
+                           (char*)label,
+                           textX,
+                           textY,
+                           0);
 }
 
 int DoomRPG_esp32PaintMenuDashboardCards(
