@@ -160,7 +160,11 @@ typedef struct Render_s
 	int viewAngle;
 	int* columnScale;
 	struct Sprite_s* viewSprites;
+	/* Legacy BSP linked-list sentinel. Production uses native
+	 * bounded world visibility instead of Render_renderBSP traversal. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Node_s viewNodes;
+#endif
 	int* mapTextureTexels;
 	int mapTextureTexelsCount;
 	int* mapSpriteTexels;
