@@ -1,3 +1,32 @@
+## Render legacy plane metadata retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code boundary:
+`d712378b86528065cedf0ce153c7e3a1357b1ba1`.
+CI `esp32-cyd` #1688 SUCCESS, static RAM 45056 B, flash 772381 B.
+The third bounded Render cut removes legacy plane preparation
+metadata `planeTexelOffsets[24]`, `planePaletteOffsets[24]`,
+`planeTextureIds[24]` and `planeTexturesCnt` (292 B total)
+from production; desktop/explicit bringup retain them.
+Legacy plane helpers are production-excluded, native
+`EspMapRuntime` plane data and the active shared sinTable stay
+untouched. `Render_t`: 5040 -> 4016 -> 1968 -> **1676 B**
+(3364 B cumulative reduction).
+
+Real-CYD exact heap8 delta over the preceding milestone:
+CORE **184972** (+292), LAYOUT **178364** (+292), mappings
+**159204** (+292), gameplay **118152** (+292), and restored
+MENU_MAIN **164048** (+292).
+MAP_INTRO native first frame `71ca7465` and arena FNV
+`c3882516`; movement, turning, automap, crate and pickups,
+door open/deferred close and HUB SYS EXIT tested. The known
+`LEGACY_GUARD/RETRY/RECOVERED` renderer recovery worked.
+`[RESIDENTRESET]` released 18008 B with `empty=1`,
+`[SYSEXIT] MENU-READY frame=522dc605`; shapeData/mediaTexels
+remain NULL and checkpoint unchanged. LOAD not retested.
+After this real-CYD PASS, closure commits are **docs-only**.
+
+See [MILESTONE_ESP32_RETIRE_RENDER_PLANE_METADATA.md](MILESTONE_ESP32_RETIRE_RENDER_PLANE_METADATA.md).
+
 ## Render planeTextures 2048-byte retirement — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested code SHA: `d98b6e07cc21b3bff91cd7f0f2c07b00607b01ed`.
