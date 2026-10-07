@@ -4,6 +4,8 @@
 #include <string.h>
 
 #include "DoomRPG.h"
+#include "DoomCanvas.h"
+#include "Menu.h"
 #include "Render.h"
 #include <esp_timer.h>
 
@@ -12,6 +14,9 @@
 #include "esp_entity_def_type_catalog.h"
 #include "esp_map_events.h"
 #include "esp_map_runtime.h"
+#include "esp_map_resident_lifecycle.h"
+#include "esp_hud_refresh_state.h"
+#include "esp_hud_post_load_clear_state.h"
 #include "esp_map_ui_intent.h"
 #include "esp_native_first_frame.h"
 #include "esp_native_bsp_visibility.h"
@@ -37,11 +42,24 @@
 #include "esp_native_gameplay_password.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_select.h"
+#include "esp_native_gameplay_session.h"
+#include "esp_native_gameplay_save_ui.h"
+#include "esp_native_gameplay_present_gate.h"
+#include "esp_native_transition_presentation.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_gameplay_weapon_control.h"
 #include "esp_native_resident_gameplay.h"
 #include "esp_player_view_state.h"
 #include "esp_player_fresh_map_state.h"
+#include "esp_player_initial_tile.h"
+#include "esp_player_orientation_state.h"
+#include "esp_player_finish_rotation_tile.h"
+#include "esp_player_facing_state.h"
+#include "native_intro_clock.h"
+#include "native_main_menu_model.h"
+#include "native_main_menu_present.h"
+#include "native_main_menu_start_action.h"
+#include "native_main_menu_touch_layout.h"
 #include "platform_touch_events.h"
 #include "platform_video_c_bridge.h"
 #include "platform_video_config.h"
@@ -62,6 +80,7 @@ typedef struct EspNativeResidentGameplayState_s {
     uint8_t failed;
     uint8_t checkpointResumeArmed;
     uint8_t modeFlags;
+    uint8_t exitRequested;
 } EspNativeResidentGameplayState;
 
 static EspNativeResidentGameplayState gameplayState;
@@ -1691,6 +1710,80 @@ int EspNativeResidentGameplay_isAutomapActive(void) {
     return EspNativeResidentGameplay_isActive() && automapActive();
 }
 
+int EspNativeResidentGameplay_requestExitToMenu(void) {
+    const EspNativeGameplayHubView* hub = EspNativeGameplayHub_view();
+    if (!EspNativeResidentGameplay_isActive() ||
+        !EspNativeGameplaySession_isActive() ||
+        !EspNativeGameplaySession_canService() || EspAssetPack_isOpen() ||
+        hub == NULL || !hub->active ||
+        hub->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM ||
+        gameplayState.exitRequested) {
+        return 0;
+    }
+    gameplayState.exitRequested = 1U;
+    return 1;
+}
+
+void EspNativeResidentGameplay_serviceMenuExit(struct DoomRPG_s* doomRpgBase) {
+    DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    uint32_t finalFNV = 0U;
+    if (!gameplayState.exitRequested) return;
+    gameplayState.exitRequested = 0U;
+
+    /* Only the outer loop may call this: all composed session consumers must
+     * have returned before their map/HUD/cache references are invalidated.
+     * Legacy Hud/Combat objects are retired: native owners service those roles
+     * and neither object belongs to the main-menu cleanup contract. */
+    if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
+        doomRpg->render == NULL || doomRpg->game == NULL ||
+        doomRpg->menuSystem == NULL || doomRpg->player != NULL ||
+        !EspNativeResidentGameplay_isActive() || EspAssetPack_isOpen()) {
+        printf("[SYSEXIT] REFUSED reason=core-or-session-boundary teardown=no saveWrite=no\n");
+        return;
+    }
+
+    PlatformInput_setTapCallback(NULL);
+    /* Park the intro's post-exit startup service too; otherwise it could
+     * recreate a session behind the newly painted menu. */
+    Esp32IntroClock_park("exit-to-menu");
+    EspAssetPack_mapFlashSetProgressCallback(NULL);
+    EspNativeTransitionPresentation_reset();
+    EspNativeGameplayPresentGate_cancel();
+    EspNativeGameplaySession_reset();
+    EspMapResidentLifecycle_resetAll();
+    EspPlayerView_reset();
+    EspHudRefresh_reset();
+    EspPlayerFreshMap_reset();
+    EspPlayerInitialTile_reset();
+    EspPlayerOrientation_reset();
+    EspPlayerFinishRotationTile_reset();
+    EspPlayerFacing_reset();
+    EspHudPostLoadClear_reset();
+    EspNativeGameplayDispatch_reset();
+    EspNativeGameplaySave_clearTransitionRoute();
+
+    /* Reuse the existing native main-menu cleanup/model/painter. No implicit
+     * checkpoint write, legacy menu router, or retained world underlay. */
+    if (EspNativeGameplaySession_canService() ||
+        !EspMapResidentLifecycle_isEmpty() || EspAssetPack_isResident() ||
+        EspAssetPack_isOpen() ||
+        !DoomRPG_esp32ReleaseMainMenuMemory(doomRpg) ||
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
+        !DoomRPG_esp32MainMenuModelEnter(doomRpg, MENU_MAIN)) {
+        PlatformInput_setTapCallback(NULL);
+        printf("[SYSEXIT] FAILED reason=menu-boundary input=disabled saveWrite=no\n");
+        return;
+    }
+    if (!DoomRPG_esp32RepaintOpaqueMainMenu(doomRpg, &finalFNV) &&
+        !DoomRPG_esp32MainMenuRecover(doomRpg, "exit-to-menu-paint")) {
+        PlatformInput_setTapCallback(NULL);
+        printf("[SYSEXIT] FAILED reason=menu-present input=disabled saveWrite=no\n");
+        return;
+    }
+    printf("[SYSEXIT] MENU-READY frame=%08x session=off resident=empty saveWrite=no checkpoint=unchanged\n",
+           (unsigned int)DoomRPG_esp32MainMenuFramebufferHash(doomRpg->render));
+}
+
 int EspNativeResidentGameplay_redrawAutomap(
     struct Render_s* render,
     const char* reason) {
@@ -1726,7 +1819,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     EspNativeGameplayControlsStats feedbackStats;
     const EspNativeGameplayInputState* pending;
 
-    if (gameplayState.failed) return;
+    if (gameplayState.failed || gameplayState.exitRequested) return;
 
     if (!gameplayState.active) {
         const int checkpointResume =

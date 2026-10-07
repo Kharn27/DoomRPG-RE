@@ -198,10 +198,21 @@ values, avoiding the blurry double-scaled 3x5 glyphs while preserving the full
   internal bitmask. Only the tab remains touch-active.
   The refined typography and key-card colors have passed focused visual testing
   on the real CYD.
-- `SYS` owns the dedicated one-slot checkpoint UI. SAVE and LOAD require a
+- `SYS` has three stacked cards: `SAVE`, `LOAD`, `EXIT TO MENU`. The old
+  `CHECKPOINT 1` caption was only the fixed single save slot, not a stage number,
+  and has been removed. SAVE and LOAD require a
   second SELECT/tap to confirm; missing checkpoints display `NO SAVE`. A
   successful SAVE closes the HUB immediately and queues `Game saved` in the
   gameplay message bar for about 1.2 seconds.
+  Exit also requires two taps: the first displays `EXIT TO MENU?` and
+  `UNSAVED CHANGES LOST`; the second tears down the current session and returns
+  to the existing main dashboard, without autosaving or modifying the SD
+  checkpoint. Changing rows/tabs or closing the HUB cancels confirmation.
+  The destructive lifecycle is now hardware-proven on the real CYD: repeated
+  `LOAD -> gameplay -> EXIT -> MENU_MAIN` cycles return to the exact same
+  `heap8=108488 / largest8=73716` menu state, with resident map owners empty
+  and no save write. Cancellation/Options/Help/fresh-START and unsaved/no-save
+  edge cases remain on the extended acceptance checklist.
 
 The HUB repaints its industrial title bar and the former lower-HUD area while
 active, then reconstructs the normal gameplay HUD when closing. Touch feedback

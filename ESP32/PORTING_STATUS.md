@@ -1,5 +1,176 @@
 # Doom RPG ESP32 CYD porting status
 
+## Retired Player/Sound config dereferences closed — REVIEW FIX + REAL-CYD BOOT PASS (2026-10-07)
+
+Current tested code boundary:
+`084b0c0345cd38ed2093d6c08faf5db65d9a60e9`.
+
+Branch:
+`fix/mainMenu`.
+
+Post-review audit found one remaining legacy `Player_t` dereference in
+`Game_loadConfig()`: a compatible existing Config file would still read
+`totalDeaths` into `doomRpg->player->totalDeaths`, even though
+`doomRpg->player == NULL`. The symmetric `Game_saveConfig()` path also still
+dereferenced retired Player/Sound owners.
+
+The ESP32 generator now preserves Config stream/layout compatibility while
+removing those owners:
+
+- legacy Sound volume is consumed on load and not stored in `Sound_t`;
+- legacy Player `totalDeaths` is consumed on load and not stored in `Player_t`;
+- both retired fields are written as zero on legacy Config save paths;
+- generation fails closed if either
+  `doomRpg->sound->volume` or
+  `doomRpg->player->totalDeaths` survives in generated `Game.c`.
+
+Real-CYD boot on the corrected boundary reaches the config/mappings startup
+without regression:
+
+```text
+[CONFIG] Config file present=no (missing is valid on first boot)
+[CONFIG] -> Game_loadConfig()
+loadConfig: (unable to open file)
+[CONFIG] DONE heap delta=0 heap8=112740 largest8=73716
+[MAPPINGS] Header texelOffsets=592 bitShapeOffsets=1300 textures=152 sprites=252
+[MAPPINGS] Plan payload=8376B largestAlloc=5200B whileData heap8=112740 largest8=73716
+```
+
+This hardware run exercises the corrected firmware and the missing-Config
+branch. A pre-existing compatible Config file was not present, so the
+`version == CONFIG_VERSION` field-consumption branch is not claimed as a
+hardware witness. Its retired-owner dereferences are nevertheless prevented
+structurally by exact generator replacement plus a post-generation fail-closed
+guard.
+
+This review fix does not restore `Player_t` or `Sound_t`, does not alter the
+native 52-byte PlayerState, and does not change the Config field ordering.
+
+## Desktop Entity / EntityMonster translation units retired — REAL-CYD PASS (2026-10-06)
+
+Hardware-tested code boundary:
+`1442bda7f7f19d578afac81d151edfe2fc85e58a`.
+
+Branch:
+`fix/mainMenu`.
+
+The normal `esp32-cyd` build no longer compiles `src/Entity.c` or
+`src/EntityMonster.c`. The inherited `Game_t` shell remains temporarily for
+config/teardown ABI, but its embedded `Entity_t[400]` and
+`EntityMonster_t[100]` arrays are runtime-dormant: no legacy back-pointers are
+seeded, `numEntities == 0`, `numMonsters == 0`, and active/inactive/combat/
+spawn monster list heads remain NULL. Live map entities and monsters continue
+to be owned by compact native resident-map/gameplay state.
+
+The first retirement attempt at `c332ed12c7078b6a555ab1ebe876e302acc12ce4`
+correctly removed both translation units but exposed one residual linker edge:
+desktop `Game_activate()` still referenced `EntityMonster_getSoundID()`.
+The final boundary keeps the legacy `Game_activate` ABI symbol only as a
+fail-closed no-op; production activation remains
+`EspNativeGameplayMonsterActivation`.
+
+Normal local `esp32-cyd` build on the final boundary:
+
+```text
+static RAM   = 45464 B
+linked Flash = 781517 B
+```
+
+Real-CYD boot proves the legacy entity runtime stays dormant:
+
+```text
+[CORE] Game           used=36484 heap=141040 largest=73716
+[CORE] Legacy entity runtime retired arrays=dormant entities=0 monsters=0 owner=native-resident-map
+[CORE] Player retired object=NULL owner=native-gameplay-player-state bytes=52
+[CORE] READY objects=5 heap used=46188 remaining=141040 largest=73716 clip=160x120
+```
+
+START then traverses the full bounded intro/disposal and resident MAP_INTRO load,
+reaching the exact first-frame witness and native gameplay session:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=0x0 mediaTexels=0x0
+[MONSTERSTATE] READY ... noLegacyEntity=yes ...
+[MONSTERCOMBAT] READY ... legacyEntity=no
+[MONSTERACT] READY ... source=bsp-render-visible persistence=map-session ...
+```
+
+The resident session stabilizes at:
+
+```text
+[ALIVE] ... heap=129164 heap8=63240 largest8=51188 ... CORE=ready ... MENU=ready
+```
+
+No post-test gameplay code change is part of this closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DESKTOP_ENTITY_TUS.md](MILESTONE_ESP32_RETIRE_DESKTOP_ENTITY_TUS.md)
+
+## Legacy Player object retired — REAL-CYD PASS (2026-10-06)
+
+Hardware-tested code boundary:
+`9b47b4c141232bc75646d25d04d8b7adf6ecffc2`.
+
+Branch:
+`fix/mainMenu`.
+
+The classic-CYD runtime no longer constructs the inherited `Player_t`.
+`doomRpg->player` remains `NULL`; the 52-byte
+`EspNativeGameplayPlayerState` is the authoritative player owner.
+The normal ESP32 build also excludes `Player.c` and `CombatEntity.c`.
+START now calls `EspNativeGameplayPlayerState_resetFresh()` directly instead
+of resetting a desktop Player object.
+
+The real CYD proves the fresh-game contract with the retired legacy pointer:
+
+```text
+[MAINSTART] Native player before stateFNV=00000000 legacyPlayer=0x0 owner=native-gameplay-player-state
+[PLAYERSTATE] READY bytes=52 level=1 xp=0/80 hp=30/30 armor=0/20 def=16 str=12 agi=14 acc=16 ammo1=8 weapon=2 weapons=0004 stateFNV=e745fce9 legacyPlayer=no
+[MAINSTART] Player after ... hp=30/30 armor=0/20 ... stateFNV=e745fce9 legacyPlayer=0x0
+[MAINSTART] READY native new-game -> PlayerState_resetFresh -> ST_INTRO legacyPlayer=NULL
+```
+
+The same run exercises full intro/disposal, MAP_INTRO resident load, dialogs,
+doors, fire clearing, pickups, secret XP, native monster activation,
+retaliation, live movement, player kill/gib handling and HUB pages with no
+legacy Player object.
+
+Most importantly, the test mutates the native player to
+`stateFNV=4745097e` (HP 22/30, Axe selected/owned, changed resources), performs
+SYS `EXIT TO MENU`, then selects START again. The second START sees the old
+native fingerprint but resets it exactly back to the canonical fresh state:
+
+```text
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+[MAINSTART] Native player before stateFNV=4745097e legacyPlayer=0x0 owner=native-gameplay-player-state
+[PLAYERSTATE] READY ... hp=30/30 armor=0/20 ... weapon=2 weapons=0004 stateFNV=e745fce9 legacyPlayer=no
+[MAINSTART] READY native new-game -> PlayerState_resetFresh -> ST_INTRO legacyPlayer=NULL
+```
+
+This closes the stale dual-owner ambiguity: a new game can no longer reset only
+the desktop Player while leaving the actual native gameplay state dirty.
+
+Memory remains healthy and returns cleanly across the Exit-to-Menu teardown:
+
+```text
+[RESIDENTRESET] heap8=87668->105684 released=18016 ... empty=1
+[MAINOPAQUE] ... heap8=105684 largest8=73716
+...
+[ALIVE] ... heap=125704 heap8=59780 largest8=36852 ... CORE=ready ... MENU=ready
+```
+
+The second resident session has the same total `heap8=59780` as the preceding
+gameplay state, so no leak is indicated. Its largest free block is lower
+(`51188 -> 36852`) after the repeated Exit/START cycle; this remains above the
+16384-byte reserve target and is recorded as fragmentation to watch on future
+multi-cycle tests, not as a failure.
+
+No post-test gameplay code changes are part of this closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_LEGACY_PLAYER_OBJECT.md](MILESTONE_ESP32_RETIRE_LEGACY_PLAYER_OBJECT.md)
+
 ## Legacy Hud object retired — REAL-CYD PASS (2026-10-06)
 
 Hardware-tested code boundary:
@@ -646,6 +817,73 @@ No local PlatformIO build is claimed.
 
 Detailed record:
 [MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md](MILESTONE_ESP32_NATIVE_MONSTER_DROP_CHECKPOINT_V11.md)
+
+## SYS Exit To Menu — REAL-CYD PASS, merge accepted (2026-10-06)
+
+The fixed `CHECKPOINT 1` save-slot caption is replaced by three stacked
+`SAVE` / `LOAD` / `EXIT TO MENU` cards. Exit uses two-step confirmation with
+`UNSAVED CHANGES LOST`, never autosaves, and leaves the existing SD checkpoint
+untouched. The existing native main dashboard/model/touch route is reused.
+Session/map teardown is deferred until all gameplay service wrappers return;
+intro startup servicing is parked before returning to `MENU_MAIN`/`ST_MENU`.
+No new production source file or legacy menu dependency is added.
+
+Validation: `pio run -e esp32-cyd` passes, 45392 B static RAM / 779333 B flash.
+The committed `test_sys_touch.c` passes all content pixels, gaps/margins, all
+nine cursor/target routes and fail-closed preselection. Level-progress regression
+passes. Temporary host fixtures pass SYS painting/framebuffer guards and mocked
+exit lifecycle/order/repeat/recovery checks, plus parked intro continuation
+cancellation. Hardware restart/load behavior is
+not claimed: the acceptance checklist is in
+[`DOCUMENTATION.md`](DOCUMENTATION.md#sys-exit-to-menu--development-candidate-2026-10-02).
+
+Rebased on `origin/main` `72ec1b2` on 2026-10-04. V11 checkpoint persistence,
+monster utility/door turn parity and legacy EntityDef retirement are retained.
+Post-rebase local CYD build: PASS, 45488 B static RAM / 785225 B flash. SYS touch
+and level-progress host tests: PASS. Exit hardware acceptance remains pending.
+
+Rebased again on `origin/main` `f01be0b` on 2026-10-06. The upstream retirement
+of legacy Combat/Sound/Hud and presentation resources is preserved. Removed
+Exit's obsolete non-NULL Hud/Combat admission guards; no legacy owner is restored.
+Local CYD build: PASS, 45464 B static RAM / 781645 B flash. SYS touch and
+level-progress tests: PASS. A mocked host lifecycle fixture also passes Exit
+with both legacy pointers NULL, teardown ordering, repeat and core/pack refusal.
+
+Real-CYD lifecycle acceptance now passes on exact code boundary
+`986a703b967e747219334e5f2d04d0bafe0bab6e`. Double-select EXIT returns from
+resident gameplay to the exact main dashboard with `saveWrite=no` and the
+checkpoint unchanged. The teardown reports:
+
+```text
+[RESIDENTRESET] heap8=90480->108488 released=18008 before=1/1/1/1/1/1/1 after=0/0/0/0/0/0/0 empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+```
+
+The user repeated `MENU_MAIN -> LOAD -> gameplay -> SYS -> EXIT` twice. Both
+loads stabilize at `heap8=62580 largest8=51188`; both exits return exactly to
+`heap8=108488 largest8=73716`. This is the hardware no-leak witness for the
+exercised destructive lifecycle. `shapeData` and `mediaTexels` remain NULL.
+
+Additional real-CYD acceptance proves Exit-confirmation cancellation by
+leaving SYS: after arming Exit, switching pages and later closing the HUB does
+not queue a delayed teardown; normal gameplay resumes and commits movement and
+pickup state. A later in-game LOAD after unsaved movement plus an Armor Shard
+pickup restores the checkpoint exactly from `pos=1248,352 / armor=15/23 /
+playerFNV=eeda091c` back to `pos=1120,352 / armor=11/23 /
+playerFNV=52c15778`.
+
+After another Exit, Help/About opens, pages and returns through the native Back
+route to exact main FNV `522dc605` with menu memory unchanged at
+`heap8=108488 largest8=73716`. Options opens with zero heap delta and its Back
+card arms correctly; the supplied transcript stops before the second Back tap,
+so Options -> Back is not yet claimed.
+
+The later legacy-Player retirement run additionally proves a fresh
+`EXIT TO MENU -> START` cycle resets the authoritative native PlayerState and
+re-enters full intro/gameplay successfully. The branch is accepted for merge.
+Two edge cases remain explicitly unclaimed rather than blocking: the second tap
+of Options -> Back after Exit, and the no-checkpoint / main-menu `No Save`
+path.
 
 ## Native LEVEL UP screen + checkpoint monster projection — REAL-CYD PASS (2026-10-02)
 
@@ -3439,7 +3677,7 @@ EspNativeGameplayHubView = 28 B
 pages = INV | WPN | STAT | SYS
 WPN = complete 3x3 normal arsenal; source BGR565 -> framebuffer RGB565
 STAT = read-only
-SYS = dedicated two-step SAVE/LOAD checkpoint page
+SYS = SAVE / LOAD / EXIT TO MENU; Exit candidate awaits real-CYD testing
 world dispatch blocked while HUB active
 turn advance disabled while HUB active
 ```

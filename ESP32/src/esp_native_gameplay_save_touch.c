@@ -7,16 +7,10 @@
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_save_ui.h"
 
-#define SAVE_TOUCH_LEFT 16
-#define SAVE_TOUCH_RIGHT 143
-#define SAVE_TOUCH_TOP 50
-#define SAVE_TOUCH_BOTTOM 77
-#define LOAD_TOUCH_TOP 84
-#define LOAD_TOUCH_BOTTOM 111
-
-#define SAVE_TARGET_SAVE 0U
-#define SAVE_TARGET_LOAD 1U
-
+static const char* targetName(uint8_t target) {
+    return target == ESP_NATIVE_SYS_SAVE ? "SAVE" :
+           target == ESP_NATIVE_SYS_LOAD ? "LOAD" : "EXIT";
+}
 
 int __real_EspNativeGameplayHubTouchUi_classify(
     int logicalX,
@@ -32,20 +26,20 @@ static int targetForPoint(int logicalX,
                           uint8_t* outTop,
                           uint8_t* outBottom) {
     if (outTarget == NULL || outTop == NULL || outBottom == NULL ||
-        logicalX < SAVE_TOUCH_LEFT || logicalX > SAVE_TOUCH_RIGHT) {
+        logicalX < ESP_NATIVE_SYS_BUTTON_LEFT ||
+        logicalX > ESP_NATIVE_SYS_BUTTON_RIGHT) {
         return 0;
     }
-    if (logicalY >= SAVE_TOUCH_TOP && logicalY <= SAVE_TOUCH_BOTTOM) {
-        *outTarget = SAVE_TARGET_SAVE;
-        *outTop = SAVE_TOUCH_TOP;
-        *outBottom = SAVE_TOUCH_BOTTOM;
-        return 1;
-    }
-    if (logicalY >= LOAD_TOUCH_TOP && logicalY <= LOAD_TOUCH_BOTTOM) {
-        *outTarget = SAVE_TARGET_LOAD;
-        *outTop = LOAD_TOUCH_TOP;
-        *outBottom = LOAD_TOUCH_BOTTOM;
-        return 1;
+    for (uint8_t row = 0U; row < ESP_NATIVE_SYS_COUNT; ++row) {
+        const int top = ESP_NATIVE_SYS_BUTTON_TOP + row *
+            (ESP_NATIVE_SYS_BUTTON_HEIGHT + ESP_NATIVE_SYS_BUTTON_GAP);
+        const int bottom = top + ESP_NATIVE_SYS_BUTTON_HEIGHT - 1;
+        if (logicalY >= top && logicalY <= bottom) {
+            *outTarget = row;
+            *outTop = (uint8_t)top;
+            *outBottom = (uint8_t)bottom;
+            return 1;
+        }
     }
     return 0;
 }
@@ -72,16 +66,19 @@ int __wrap_EspNativeGameplayHubTouchUi_classify(
         memset(outHit, 0, sizeof(*outHit));
         outHit->action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
         outHit->zone = ESP_NATIVE_GAMEPLAY_ZONE_SELECT;
-        outHit->left = SAVE_TOUCH_LEFT;
+        outHit->left = ESP_NATIVE_SYS_BUTTON_LEFT;
         outHit->top = top;
-        outHit->right = SAVE_TOUCH_RIGHT;
+        outHit->right = ESP_NATIVE_SYS_BUTTON_RIGHT;
         outHit->bottom = bottom;
         printf("[NATIVESAVE] TOUCH-HIT row=%s logical=%d,%d action=SELECT direct=yes\n",
-               target == SAVE_TARGET_SAVE ? "SAVE" : "LOAD",
+               targetName(target),
                logicalX, logicalY);
         return 1;
     }
 
+    /* Preserve tabs/header Back, but never let blank SYS content synthesize a
+     * generic SELECT that could confirm Exit outside its own button. */
+    if (logicalY >= 35 && logicalY < 120) return -1;
     return __real_EspNativeGameplayHubTouchUi_classify(
         logicalX, logicalY, outHitBase);
 }
@@ -114,9 +111,9 @@ EspNativeGameplayInputStatus __wrap_EspNativeGameplayInput_consume(
 
     {
         const uint8_t current = EspNativeGameplaySave_statusCursor();
-        if (current > SAVE_TARGET_LOAD) {
+        if (current >= ESP_NATIVE_SYS_COUNT) {
             printf("[NATIVESAVE] TOUCH-PRESELECT row=%s cursor=%u direct=blocked reason=invalid-owner\n",
-                   target == SAVE_TARGET_SAVE ? "SAVE" : "LOAD",
+                   targetName(target),
                    (unsigned int)current);
             outIntent->action = ESP_NATIVE_GAMEPLAY_ACTION_NONE;
             outIntent->zone = ESP_NATIVE_GAMEPLAY_ZONE_NONE;
@@ -124,7 +121,7 @@ EspNativeGameplayInputStatus __wrap_EspNativeGameplayInput_consume(
         }
         if (target != current) {
             const uint8_t cursorAction =
-                target == SAVE_TARGET_LOAD
+                target == (uint8_t)((current + 1U) % ESP_NATIVE_SYS_COUNT)
                     ? ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK
                     : ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD;
             EspNativeGameplayHubStatus hubStatus =
@@ -134,7 +131,7 @@ EspNativeGameplayInputStatus __wrap_EspNativeGameplayInput_consume(
                  hubStatus != ESP_NATIVE_GAMEPLAY_HUB_OK) ||
                 after != target) {
                 printf("[NATIVESAVE] TOUCH-PRESELECT row=%s status=%s cursor=%u->%u direct=blocked\n",
-                       target == SAVE_TARGET_SAVE ? "SAVE" : "LOAD",
+                       targetName(target),
                        EspNativeGameplayHub_statusName(hubStatus),
                        (unsigned int)current, (unsigned int)after);
                 outIntent->action = ESP_NATIVE_GAMEPLAY_ACTION_NONE;
@@ -145,7 +142,7 @@ EspNativeGameplayInputStatus __wrap_EspNativeGameplayInput_consume(
     }
 
     printf("[NATIVESAVE] TOUCH-DISPATCH row=%s logical=%u,%u action=SELECT direct=yes\n",
-           target == SAVE_TARGET_SAVE ? "SAVE" : "LOAD",
+           targetName(target),
            (unsigned int)outIntent->logicalX,
            (unsigned int)outIntent->logicalY);
     return inputStatus;

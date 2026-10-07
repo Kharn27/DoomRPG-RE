@@ -7,7 +7,7 @@
 #include "Game.h"
 #include "Menu.h"
 #include "esp_native_menu_state.h"
-#include "Player.h"
+#include "esp_native_gameplay_player_state.h"
 #include "Render.h"
 #include "esp_native_audio_intent.h"
 
@@ -42,18 +42,26 @@ static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 }
 
-static int playerHasFreshResetContract(const Player_t* player) {
-    return player != NULL &&
-           player->level == 1 &&
-           player->currentXP == 0 &&
-           player->nextLevelXP == 80 &&
-           player->keys == 0 &&
-           player->credits == 0 &&
-           player->ammo[1] == 8 &&
-           player->weapon == 2 &&
-           player->weapons == 4 &&
-           player->disabledWeapons == 0 &&
-           player->totalDeaths == 0;
+static int playerHasFreshResetContract(
+    const EspNativeGameplayPlayerState* player) {
+    return player != NULL && player->active == 1U &&
+           player->level == 1U &&
+           player->currentXP == 0U &&
+           player->nextLevelXP == 80U &&
+           player->keys == 0U &&
+           player->credits == 0U &&
+           player->ammo[1] == 8U &&
+           player->weapon == 2U &&
+           player->weapons == 4U &&
+           player->disabledWeapons == 0U &&
+           EspNativeGameplayPlayerState_health() == 30U &&
+           EspNativeGameplayPlayerState_maxHealth() == 30U &&
+           EspNativeGameplayPlayerState_armor() == 0U &&
+           EspNativeGameplayPlayerState_maxArmor() == 20U &&
+           EspNativeGameplayPlayerState_defense() == 16U &&
+           EspNativeGameplayPlayerState_strength() == 12U &&
+           EspNativeGameplayPlayerState_agility() == 14U &&
+           EspNativeGameplayPlayerState_accuracy() == 16U;
 }
 
 static void printIntroAssetPlan(void) {
@@ -135,7 +143,7 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     DoomCanvas_t* doomCanvas;
     EspNativeMenuState_t* menuSystem;
-    Player_t* player;
+    EspNativeGameplayPlayerState playerState;
     Render_t* render;
     uint32_t inputHash;
     uint32_t outputHash;
@@ -147,14 +155,15 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     printf("\n=== Doom RPG ESP32 real MENU_MAIN -> Start Game entry ===\n");
 
-    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) || doomRpg->player == NULL)  {
-        printf("[MAINSTART] FAILED core/graphics boundary unavailable\n");
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
+        doomRpg->player != NULL) {
+        printf("[MAINSTART] FAILED core/graphics boundary unavailable legacyPlayer=%p expected=NULL\n",
+               doomRpg != NULL ? (void*)doomRpg->player : NULL);
         return 0;
     }
 
     doomCanvas = doomRpg->doomCanvas;
     menuSystem = doomRpg->menuSystem;
-    player = doomRpg->player;
     render = doomRpg->render;
     inputHash = DoomRPG_esp32MainMenuFramebufferHash(render);
     expectedInputHash =
@@ -197,16 +206,9 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    printf("[MAINSTART] Player before level=%d xp=%d nextXP=%d credits=%d keys=%d ammo1=%u weapon=%d weapons=%08x deaths=%d\n",
-           player->level,
-           player->currentXP,
-           player->nextLevelXP,
-           player->credits,
-           player->keys,
-           (unsigned int)player->ammo[1],
-           player->weapon,
-           (unsigned int)player->weapons,
-           player->totalDeaths);
+    printf("[MAINSTART] Native player before stateFNV=%08x legacyPlayer=%p owner=native-gameplay-player-state\n",
+           (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
+           (void*)doomRpg->player);
 
     printIntroAssetPlan();
     /*
@@ -229,8 +231,13 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
      */
     (void)EspNativeAudioIntent_publish(5046U, 0U, 3U);
     menuSystem->imgBG = NULL;
-    Player_reset(player);
-    player->totalDeaths = 0;
+    EspNativeGameplayPlayerState_resetFresh();
+    if (!EspNativeGameplayPlayerState_snapshot(&playerState) ||
+        !playerHasFreshResetContract(&playerState)) {
+        printf("[MAINSTART] FAILED native fresh-player reset contract stateFNV=%08x\n",
+               (unsigned int)EspNativeGameplayPlayerState_fingerprint());
+        return 0;
+    }
     DoomCanvas_setState(doomCanvas, ST_INTRO);
     if (!DoomRPG_esp32MainMenuModelLeave(doomRpg)) {
         printf("[MAINSTART] FAILED leaving MENU_MAIN model for intro\n");
@@ -263,17 +270,26 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
         return 0;
     }
 
-    printf("[MAINSTART] Player after level=%d xp=%d nextXP=%d credits=%d keys=%d ammo1=%u weapon=%d weapons=%08x disabled=%08x deaths=%d\n",
-           player->level,
-           player->currentXP,
-           player->nextLevelXP,
-           player->credits,
-           player->keys,
-           (unsigned int)player->ammo[1],
-           player->weapon,
-           (unsigned int)player->weapons,
-           (unsigned int)player->disabledWeapons,
-           player->totalDeaths);
+    if (!EspNativeGameplayPlayerState_snapshot(&playerState)) {
+        printf("[MAINSTART] FAILED native player snapshot after ST_INTRO\n");
+        return 0;
+    }
+    printf("[MAINSTART] Player after level=%u xp=%u nextXP=%u credits=%u keys=%08x ammo1=%u weapon=%u weapons=%04x disabled=%04x hp=%u/%u armor=%u/%u stateFNV=%08x legacyPlayer=%p\n",
+           (unsigned int)playerState.level,
+           (unsigned int)playerState.currentXP,
+           (unsigned int)playerState.nextLevelXP,
+           (unsigned int)playerState.credits,
+           (unsigned int)playerState.keys,
+           (unsigned int)playerState.ammo[1],
+           (unsigned int)playerState.weapon,
+           (unsigned int)playerState.weapons,
+           (unsigned int)playerState.disabledWeapons,
+           (unsigned int)EspNativeGameplayPlayerState_health(),
+           (unsigned int)EspNativeGameplayPlayerState_maxHealth(),
+           (unsigned int)EspNativeGameplayPlayerState_armor(),
+           (unsigned int)EspNativeGameplayPlayerState_maxArmor(),
+           (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
+           (void*)doomRpg->player);
     printf("[MAINSTART] Intro story pointers page0=%p page1=%p story2=%p storyPage=%d storyTextPage=%d\n",
            (void*)doomCanvas->storyText1[0],
            (void*)doomCanvas->storyText1[1],
@@ -283,17 +299,19 @@ int DoomRPG_esp32ActivateMainMenuStart(struct DoomRPG_s* doomRpgBase) {
 
     if (menuSystem->menu != MENU_NONE ||
         doomCanvas->state != ST_INTRO ||
-        !playerHasFreshResetContract(player)) {
-        printf("[MAINSTART] FAILED fresh-game transition expected menu=%d state=%d resetContract=yes, got menu=%d state=%d resetContract=%s\n",
+        doomRpg->player != NULL ||
+        !playerHasFreshResetContract(&playerState)) {
+        printf("[MAINSTART] FAILED fresh-game transition expected menu=%d state=%d nativeReset=yes legacyPlayer=NULL, got menu=%d state=%d resetContract=%s legacyPlayer=%p\n",
                MENU_NONE,
                ST_INTRO,
                menuSystem->menu,
                doomCanvas->state,
-               playerHasFreshResetContract(player) ? "yes" : "NO");
+               playerHasFreshResetContract(&playerState) ? "yes" : "NO",
+               (void*)doomRpg->player);
         return 0;
     }
 
-    printf("[MAINSTART] READY native new-game -> Player_reset -> ST_INTRO\n");
+    printf("[MAINSTART] READY native new-game -> PlayerState_resetFresh -> ST_INTRO legacyPlayer=NULL\n");
     printf("[MAINSTART] READY prologue loader executed; dead legal/menu runtime released before intro allocation\n");
 
     if (!Esp32StoryFit_prepare(doomCanvas)) {

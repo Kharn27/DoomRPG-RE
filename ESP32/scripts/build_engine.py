@@ -194,9 +194,8 @@ legacy_hud_dying_needle = """\telse if (stateNum == ST_DYING) {
 legacy_hud_dying_replacement = """\telse if (stateNum == ST_DYING) {
 \t\tDoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
 \t\tdoomCanvas->deathTime = doomCanvas->time;
-\t\tdoomCanvas->player->weapon = 0;
-\t\tdoomCanvas->player->weapons = 0;
-\t\t/* ESP32 native player-death path owns HUD presentation. */
+\t\t/* ESP32 native PlayerState + player-death owner hold authoritative
+\t\t * weapon mutation and HUD presentation; Player_t is retired. */
 \t\treturn;
 \t}
 """
@@ -284,6 +283,151 @@ game_patched = join(patched_dir, "Game.c")
 with open(game_source, "r", encoding="latin-1") as source_file:
     game_source_text = source_file.read()
 
+game_entity_init_needle = """Game_t* Game_init(Game_t* game, DoomRPG_t* doomRpg)
+{
+	int i;
+	EntityMonster_t* entityMonst;
+
+	printf("Game_init\\n");
+
+	if (game == NULL)
+	{
+		game = SDL_malloc(sizeof(Game_t));
+		if (game == NULL) {
+			return NULL;
+		}
+	}
+	SDL_memset(game, 0, sizeof(Game_t));
+
+	SDL_memset(game->entities, 0, (sizeof(Entity_t) * 400));
+	SDL_memset(game->entityMonsters, 0, (sizeof(EntityMonster_t) * 100));
+
+	game->activeMonsters = NULL;
+	game->combatMonsters = NULL;
+	game->inactiveMonsters = NULL;
+	game->spawnMonster = NULL;
+	game->passCode = NULL;
+	game->newMapName[0] = '\\0';
+	game->fileMapName[0] = '\\0';
+	game->waitTime = 0;
+	game->activePortal = false;
+	game->disableAI = 0;
+	game->soundMonster = NULL;
+	game->doomRpg = doomRpg;
+
+	i = 0;
+	do {
+		game->entities[i].doomRpg = doomRpg;
+	} while (++i < 400);
+
+	i = 0;
+	do {
+
+		entityMonst = &game->entityMonsters[i];
+		entityMonst->doomRpg = doomRpg;
+		entityMonst->ce.doomRpg = doomRpg;
+	} while (++i < 100);
+"""
+game_entity_init_replacement = """Game_t* Game_init(Game_t* game, DoomRPG_t* doomRpg)
+{
+	printf("Game_init\\n");
+
+	if (game == NULL)
+	{
+		game = SDL_malloc(sizeof(Game_t));
+		if (game == NULL) {
+			return NULL;
+		}
+	}
+	SDL_memset(game, 0, sizeof(Game_t));
+
+	/* ESP32 native resident-map owners replace the inherited Entity_t and
+	 * EntityMonster_t runtime. Keep the embedded desktop arrays zero/dormant;
+	 * do not seed 500 legacy back-pointers into them. */
+	game->activeMonsters = NULL;
+	game->combatMonsters = NULL;
+	game->inactiveMonsters = NULL;
+	game->spawnMonster = NULL;
+	game->passCode = NULL;
+	game->newMapName[0] = '\\0';
+	game->fileMapName[0] = '\\0';
+	game->waitTime = 0;
+	game->activePortal = false;
+	game->disableAI = 0;
+	game->soundMonster = NULL;
+	game->doomRpg = doomRpg;
+"""
+game_entity_init_count = game_source_text.count(game_entity_init_needle)
+if game_entity_init_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_init legacy entity initialization shape; "
+        "review retired ESP32 Entity ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_entity_init_needle, game_entity_init_replacement, 1
+)
+
+game_activate_needle = """void Game_activate(Game_t* game, Entity_t* entity)
+{
+	EntityMonster_t* monster;
+
+	monster = entity->monster;
+	if ((entity->info & 0x80000) == 0) {
+		if (monster->nextOnList) {
+			if (entity == game->inactiveMonsters && monster->nextOnList == game->inactiveMonsters) {
+				game->inactiveMonsters = NULL;
+			}
+			else {
+				if (entity == game->inactiveMonsters) {
+					game->inactiveMonsters = monster->nextOnList;
+				}
+				monster->nextOnList->monster->prevOnList = monster->prevOnList;
+				monster->prevOnList->monster->nextOnList = monster->nextOnList;
+			}
+		}
+		if (game->activeMonsters == NULL) {
+			monster->nextOnList = entity;
+			monster->prevOnList = entity;
+			game->activeMonsters = entity;
+		}
+		else {
+			monster->prevOnList = game->activeMonsters->monster->prevOnList;
+			monster->nextOnList = game->activeMonsters;
+			game->activeMonsters->monster->prevOnList->monster->nextOnList = entity;
+			game->activeMonsters->monster->prevOnList = entity;
+		}
+		entity->info |= 0x80000;
+
+		// Check Sight Sound
+		if (EntityMonster_getSoundID(entity->monster, 1)) {
+			if ((game->soundMonster == NULL) || (game->soundMonster->def->eSubType < entity->def->eSubType)) {
+				game->soundMonster = entity;
+			}
+		}
+	}
+	else {
+		//printf("activate: already active\\event");
+	}
+}
+"""
+game_activate_replacement = """void Game_activate(Game_t* game, Entity_t* entity)
+{
+	/* ESP32 render/gameplay activation is owned by EspNativeGameplayMonsterActivation.
+	 * Keep this inherited ABI symbol fail-closed for any stale desktop caller. */
+	(void)game;
+	(void)entity;
+}
+"""
+game_activate_count = game_source_text.count(game_activate_needle)
+if game_activate_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_activate legacy monster activation shape; "
+        "review retired ESP32 EntityMonster ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_activate_needle, game_activate_replacement, 1
+)
+
 game_combat_cleanup_needle = """	game->doomRpg->combat->curTarget = NULL;
 	game->doomRpg->combat->curAttacker = NULL;
 """
@@ -298,6 +442,41 @@ if game_combat_cleanup_count != 1:
     )
 game_source_text = game_source_text.replace(
     game_combat_cleanup_needle, game_combat_cleanup_replacement, 1
+)
+
+game_player_cleanup_needle = """\tgame->doomRpg->player->facingEntity = NULL;
+\tgame->doomRpg->player->dogFamiliar = NULL;
+"""
+game_player_cleanup_replacement = """\t/* ESP32 facing/familiar state is owned by native map-session owners.
+\t * Player_t is retired and remains NULL. */
+"""
+game_player_cleanup_count = game_source_text.count(game_player_cleanup_needle)
+if game_player_cleanup_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_unloadMapData Player cleanup shape; "
+        "review retired ESP32 Player ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_player_cleanup_needle, game_player_cleanup_replacement, 1
+)
+
+game_entity_reset_needle = """	for (i = 0; i < game->numEntities; i++) {
+		Entity_reset(&game->entities[i]);
+	}
+"""
+game_entity_reset_replacement = """	/* ESP32 native resident-map teardown owns entity/monster state. The
+	 * embedded legacy arrays remain dormant and are never populated. */
+	game->numEntities = 0;
+	game->numMonsters = 0;
+"""
+game_entity_reset_count = game_source_text.count(game_entity_reset_needle)
+if game_entity_reset_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_unloadMapData Entity_reset shape; "
+        "review retired ESP32 Entity ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_entity_reset_needle, game_entity_reset_replacement, 1
 )
 
 game_sound_volume_needle = """\t\t\tintData = File_readInt(rw);
@@ -320,45 +499,86 @@ game_source_text = game_source_text.replace(
     game_sound_volume_needle, game_sound_volume_replacement, 1
 )
 
+game_player_deaths_load_needle = """\t\t\tintData = File_readInt(rw);
+\t\t\tif (game) {
+\t\t\t\tgame->doomRpg->player->totalDeaths = intData;
+\t\t\t}
+"""
+game_player_deaths_load_replacement = """\t\t\tintData = File_readInt(rw);
+\t\t\t/* ESP32 Player_t is retired. Preserve Config stream alignment by
+\t\t\t * consuming the legacy totalDeaths field without dereferencing it. */
+\t\t\t(void)intData;
+"""
+game_player_deaths_load_count = game_source_text.count(
+    game_player_deaths_load_needle
+)
+if game_player_deaths_load_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_loadConfig Player totalDeaths shape; "
+        "review retired ESP32 Player ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_player_deaths_load_needle, game_player_deaths_load_replacement, 1
+)
+
+game_sound_volume_save_needle = """\tFile_writeInt(rw, game->doomRpg->sound->volume);
+"""
+game_sound_volume_save_replacement = """\t/* Preserve the legacy Config field layout while Sound_t is retired. */
+\tFile_writeInt(rw, 0);
+"""
+game_sound_volume_save_count = game_source_text.count(
+    game_sound_volume_save_needle
+)
+if game_sound_volume_save_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_saveConfig Sound volume shape; "
+        "review retired ESP32 Sound ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_sound_volume_save_needle, game_sound_volume_save_replacement, 1
+)
+
+game_player_deaths_save_needle = """\tFile_writeInt(rw, game->doomRpg->player->totalDeaths);
+"""
+game_player_deaths_save_replacement = """\t/* Preserve the legacy Config field layout while Player_t is retired. */
+\tFile_writeInt(rw, 0);
+"""
+game_player_deaths_save_count = game_source_text.count(
+    game_player_deaths_save_needle
+)
+if game_player_deaths_save_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_saveConfig Player totalDeaths shape; "
+        "review retired ESP32 Player ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_player_deaths_save_needle, game_player_deaths_save_replacement, 1
+)
+
+for retired_config_access in (
+    "doomRpg->sound->volume",
+    "doomRpg->player->totalDeaths",
+):
+    if retired_config_access in game_source_text:
+        raise RuntimeError(
+            "Retired ESP32 config owner dereference survived generation: "
+            + retired_config_access
+        )
+
 with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(game_source_text)
 
 print(
     "[ESP32] Game generated with "
+    f"{game_entity_init_count} legacy entity initialization block retired + "
+    f"{game_activate_count} legacy monster activation path retired + "
     f"{game_combat_cleanup_count} legacy Combat cleanup reset retired + "
-    f"{game_sound_volume_count} legacy Sound config field retired"
-)
-
-# Player_reset() still clears the inherited Hud_t message buffers. The native
-# gameplay feedback/message owners reset independently, so generate an ESP32-only
-# Player.c copy without those obsolete Hud_t writes.
-player_source = join(engine_dir, "Player.c")
-player_patched = join(patched_dir, "Player.c")
-
-with open(player_source, "r", encoding="latin-1") as source_file:
-    player_source_text = source_file.read()
-
-player_hud_reset_needle = """\tplayer->doomRpg->hud->logMessage[0] = '\\0';
-\tplayer->doomRpg->hud->msgCount = 0;
-"""
-player_hud_reset_replacement = """\t/* ESP32 native feedback/message owners do not retain Hud_t. */
-"""
-player_hud_reset_count = player_source_text.count(player_hud_reset_needle)
-if player_hud_reset_count != 1:
-    raise RuntimeError(
-        "Unexpected Player_reset Hud_t cleanup shape; "
-        "review retired ESP32 Hud ownership"
-    )
-player_source_text = player_source_text.replace(
-    player_hud_reset_needle, player_hud_reset_replacement, 1
-)
-
-with open(player_patched, "w", encoding="latin-1", newline="\n") as patched_file:
-    patched_file.write(player_source_text)
-
-print(
-    "[ESP32] Player generated with "
-    f"{player_hud_reset_count} legacy Hud reset block retired"
+    f"{game_player_cleanup_count} legacy Player cleanup reset retired + "
+    f"{game_entity_reset_count} legacy Entity reset loop retired + "
+    f"{game_sound_volume_count} legacy Sound config load field retired + "
+    f"{game_player_deaths_load_count} legacy Player config load field retired + "
+    f"{game_sound_volume_save_count} legacy Sound config save field retired + "
+    f"{game_player_deaths_save_count} legacy Player config save field retired"
 )
 
 # DoomRPG_createImage() is the central image-loading path used by the game.
@@ -396,6 +616,16 @@ particle_free_replacement = """\t/* ESP32 native gameplay owns bounded gib effec
 \tdoomrpg->particleSystem = NULL;
 """
 particle_free_count = doom_rpg_source_text.count(particle_free_needle)
+player_free_needle = """\tif (doomrpg->player) {
+\t\tSDL_memset(&doomrpg->player->ce, 0, sizeof(doomrpg->player->ce));
+\t\tSDL_free(doomrpg->player);
+\t}
+\tdoomrpg->player = NULL;
+"""
+player_free_replacement = """\t/* ESP32 authoritative player state is native; Player_t is never constructed. */
+\tdoomrpg->player = NULL;
+"""
+player_free_count = doom_rpg_source_text.count(player_free_needle)
 entity_def_free_needle = """\tif (doomrpg->entityDef) {
 \t\tEntityDef_free(doomrpg->entityDef, true);
 \t}
@@ -458,6 +688,11 @@ if entity_def_free_count != 1:
         "Unexpected DoomRPG.c EntityDef cleanup shape; "
         "review retired ESP32 EntityDef ownership"
     )
+if player_free_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c Player cleanup shape; "
+        "review retired ESP32 Player ownership"
+    )
 if combat_free_count != 1:
     raise RuntimeError(
         "Unexpected DoomRPG.c Combat cleanup shape; "
@@ -496,6 +731,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
     entity_def_free_needle, entity_def_free_replacement, 1
 )
 doom_rpg_source_text = doom_rpg_source_text.replace(
+    player_free_needle, player_free_replacement, 1
+)
+doom_rpg_source_text = doom_rpg_source_text.replace(
     combat_free_needle, combat_free_replacement, 1
 )
 doom_rpg_source_text = doom_rpg_source_text.replace(
@@ -517,6 +755,7 @@ print(
     f"{bmp_call_count} SDL_LoadBMP_RW call(s) redirected, "
     f"{particle_free_count} desktop ParticleSystem cleanup retired, "
     f"{entity_def_free_count} desktop EntityDef cleanup retired, "
+    f"{player_free_count} desktop Player cleanup retired, "
     f"{combat_free_count} desktop Combat cleanup retired, "
     f"{sound_free_count} desktop Sound cleanup retired, "
     f"{hud_free_count} desktop Hud cleanup retired, "
@@ -737,8 +976,11 @@ env.BuildSources(
         "-<MenuSystem.c>",
         "-<ParticleSystem.c>",
         "-<EntityDef.c>",
+        "-<Entity.c>",
+        "-<EntityMonster.c>",
         "-<Combat.c>",
         "-<Weapon.c>",
+        "-<CombatEntity.c>",
         "-<Hud.c>",
         "-<Game.c>",
         "-<Player.c>",
@@ -756,7 +998,6 @@ env.BuildSources(
         "+<DoomCanvas.c>",
         "+<DoomRPG.c>",
         "+<Game.c>",
-        "+<Player.c>",
     ],
 )
 

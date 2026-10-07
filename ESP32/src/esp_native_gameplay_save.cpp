@@ -25,6 +25,7 @@
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_theme.h"
+#include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_input.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_drop.h"
@@ -35,6 +36,7 @@
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_save_ui.h"
 #include "esp_native_transition_presentation.h"
+#include "esp_native_resident_gameplay.h"
 #include "esp_player_facing_state.h"
 #include "esp_player_finish_rotation_tile.h"
 #include "esp_player_fresh_map_state.h"
@@ -74,20 +76,26 @@ constexpr uint16_t kVersionV9 = 9U;
 constexpr uint16_t kVersionV10 = 10U;
 constexpr uint16_t kVersionV11 = 11U;
 constexpr uint8_t kFamiliarAmmoType = 5U;
-constexpr uint8_t kStatusSave = 0U;
-constexpr uint8_t kStatusLoad = 1U;
-constexpr uint8_t kStatusCount = 2U;
+constexpr uint8_t kStatusSave = ESP_NATIVE_SYS_SAVE;
+constexpr uint8_t kStatusLoad = ESP_NATIVE_SYS_LOAD;
+constexpr uint8_t kStatusExit = ESP_NATIVE_SYS_EXIT;
+constexpr uint8_t kStatusCount = ESP_NATIVE_SYS_COUNT;
 constexpr uint8_t kNoConfirmation = 0xffU;
 constexpr int kPanelLeft = 8;
 constexpr int kPanelTop = 36;
 constexpr int kPanelRight = 151;
 constexpr int kPanelBottom = 117;
-constexpr int kButtonLeft = 16;
-constexpr int kButtonRight = 143;
-constexpr int kSaveTop = 50;
-constexpr int kSaveBottom = 77;
-constexpr int kLoadTop = 84;
-constexpr int kLoadBottom = 111;
+constexpr int kButtonLeft = ESP_NATIVE_SYS_BUTTON_LEFT;
+constexpr int kButtonRight = ESP_NATIVE_SYS_BUTTON_RIGHT;
+
+int systemRowTop(uint8_t row) {
+    return ESP_NATIVE_SYS_BUTTON_TOP + row *
+        (ESP_NATIVE_SYS_BUTTON_HEIGHT + ESP_NATIVE_SYS_BUTTON_GAP);
+}
+
+const char* systemRowName(uint8_t row) {
+    return row == kStatusSave ? "SAVE" : row == kStatusLoad ? "LOAD" : "EXIT";
+}
 
 /* Exact on-disk v1 prefix. Keep this byte-for-byte compatible with the
  * hardware-proven 132-byte DRPGSAV1 record so existing checkpoints remain
@@ -3174,80 +3182,9 @@ void drawRect(uint16_t* fb, int left, int top, int right, int bottom,
     }
 }
 
-const uint8_t* glyph(char c) {
-    static const uint8_t A[7] = {0x0e,0x11,0x11,0x1f,0x11,0x11,0x11};
-    static const uint8_t C[7] = {0x0e,0x11,0x10,0x10,0x10,0x11,0x0e};
-    static const uint8_t D[7] = {0x1e,0x11,0x11,0x11,0x11,0x11,0x1e};
-    static const uint8_t E[7] = {0x1f,0x10,0x10,0x1e,0x10,0x10,0x1f};
-    static const uint8_t F[7] = {0x1f,0x10,0x10,0x1e,0x10,0x10,0x10};
-    static const uint8_t H[7] = {0x11,0x11,0x11,0x1f,0x11,0x11,0x11};
-    static const uint8_t I[7] = {0x0e,0x04,0x04,0x04,0x04,0x04,0x0e};
-    static const uint8_t K[7] = {0x11,0x12,0x14,0x18,0x14,0x12,0x11};
-    static const uint8_t L[7] = {0x10,0x10,0x10,0x10,0x10,0x10,0x1f};
-    static const uint8_t N[7] = {0x11,0x19,0x19,0x15,0x13,0x13,0x11};
-    static const uint8_t O[7] = {0x0e,0x11,0x11,0x11,0x11,0x11,0x0e};
-    static const uint8_t P[7] = {0x1e,0x11,0x11,0x1e,0x10,0x10,0x10};
-    static const uint8_t S[7] = {0x0f,0x10,0x10,0x0e,0x01,0x01,0x1e};
-    static const uint8_t T[7] = {0x1f,0x04,0x04,0x04,0x04,0x04,0x04};
-    static const uint8_t V[7] = {0x11,0x11,0x11,0x11,0x11,0x0a,0x04};
-    static const uint8_t ONE[7] = {0x04,0x0c,0x14,0x04,0x04,0x04,0x1f};
-    static const uint8_t QUESTION[7] = {0x0e,0x11,0x01,0x02,0x04,0x00,0x04};
-    switch (c) {
-    case 'A': return A;
-    case 'C': return C;
-    case 'D': return D;
-    case 'E': return E;
-    case 'F': return F;
-    case 'H': return H;
-    case 'I': return I;
-    case 'K': return K;
-    case 'L': return L;
-    case 'N': return N;
-    case 'O': return O;
-    case 'P': return P;
-    case 'S': return S;
-    case 'T': return T;
-    case 'V': return V;
-    case '1': return ONE;
-    case '?': return QUESTION;
-    default: return nullptr;
-    }
-}
-
-void drawGlyph(uint16_t* fb, int x, int y, char c, uint16_t color) {
-    const uint8_t* rows = glyph(c);
-    int row;
-    int col;
-    if (rows == nullptr) return;
-    for (row = 0; row < 7; ++row) {
-        for (col = 0; col < 5; ++col) {
-            if ((rows[row] & (uint8_t)(1U << (4 - col))) != 0U) {
-                const int px = x + col;
-                const int py = y + row;
-                if (px >= 0 && px < DOOMRPG_LOGICAL_WIDTH &&
-                    py >= 0 && py < DOOMRPG_LOGICAL_HEIGHT) {
-                    fb[py * DOOMRPG_LOGICAL_WIDTH + px] = color;
-                }
-            }
-        }
-    }
-}
-
-void drawWord(uint16_t* fb, int x, int y, const char* text, uint16_t color) {
-    if (fb == nullptr || text == nullptr) return;
-    while (*text != '\0') {
-        drawGlyph(fb, x, y, *text++, color);
-        x += 6;
-    }
-}
-
 void drawCenteredWord(uint16_t* fb, int centerX, int y, const char* text,
                       uint16_t color) {
-    size_t length;
-    if (text == nullptr) return;
-    length = strlen(text);
-    drawWord(fb, centerX - (int)(length * 6U - (length != 0U ? 1U : 0U)) / 2,
-             y, text, color);
+    EspNativeGameplayHubTouchUi_drawCrispText(fb, text, centerX, y, color);
 }
 
 bool paintSaveOverlay(void) {
@@ -3255,8 +3192,10 @@ bool paintSaveOverlay(void) {
     uint16_t* fb;
     const char* saveLabel = "SAVE";
     const char* loadLabel = "LOAD";
+    const char* exitLabel = "EXIT TO MENU";
     uint16_t saveColor = ESP_HUB_COLOR_IVORY;
     uint16_t loadColor = ESP_HUB_COLOR_IVORY;
+    const bool confirmExit = confirmationTarget == kStatusExit;
     const bool hasSave = EspNativeGameplaySave_hasReadableCheckpoint() != 0;
     size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
                       (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
@@ -3275,25 +3214,19 @@ bool paintSaveOverlay(void) {
              ESP_HUB_COLOR_PANEL);
     drawRect(fb, kPanelLeft, kPanelTop, kPanelRight, kPanelBottom,
              ESP_HUB_COLOR_STEEL);
-    drawCenteredWord(fb, 80, 40, "CHECKPOINT 1", ESP_HUB_COLOR_STEEL);
-
-    fillRect(fb, kButtonLeft, kSaveTop, kButtonRight, kSaveBottom,
-             statusCursor == kStatusSave ? ESP_HUB_COLOR_PANEL_ALT
-                                         : ESP_HUB_COLOR_BG);
-    fillRect(fb, kButtonLeft, kLoadTop, kButtonRight, kLoadBottom,
-             statusCursor == kStatusLoad ? ESP_HUB_COLOR_PANEL_ALT
-                                         : ESP_HUB_COLOR_BG);
-    drawRect(fb, kButtonLeft, kSaveTop, kButtonRight, kSaveBottom,
-             statusCursor == kStatusSave ? ESP_HUB_COLOR_AMBER
-                                         : ESP_HUB_COLOR_STEEL_DARK);
-    drawRect(fb, kButtonLeft, kLoadTop, kButtonRight, kLoadBottom,
-             statusCursor == kStatusLoad ? ESP_HUB_COLOR_AMBER
-                                         : ESP_HUB_COLOR_STEEL_DARK);
-    fillRect(fb, kButtonLeft + 3,
-             statusCursor == kStatusSave ? kSaveTop + 4 : kLoadTop + 4,
-             kButtonLeft + 5,
-             statusCursor == kStatusSave ? kSaveBottom - 4 : kLoadBottom - 4,
-             ESP_HUB_COLOR_AMBER);
+    for (uint8_t row = 0U; row < kStatusCount; ++row) {
+        const int top = systemRowTop(row);
+        const int bottom = top + ESP_NATIVE_SYS_BUTTON_HEIGHT - 1;
+        const bool selected = statusCursor == row;
+        const uint16_t accent = row == kStatusExit && confirmExit
+            ? ESP_HUB_COLOR_RED : ESP_HUB_COLOR_AMBER;
+        fillRect(fb, kButtonLeft, top, kButtonRight, bottom,
+                 selected ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_BG);
+        drawRect(fb, kButtonLeft, top, kButtonRight, bottom,
+                 selected ? accent : ESP_HUB_COLOR_STEEL_DARK);
+        if (selected) fillRect(fb, kButtonLeft + 3, top + 4,
+                              kButtonLeft + 5, bottom - 4, accent);
+    }
 
     if (confirmationTarget == kStatusSave) {
         saveLabel = "SAVE?";
@@ -3317,8 +3250,14 @@ bool paintSaveOverlay(void) {
         loadColor = ESP_HUB_COLOR_RED;
     }
 
-    drawCenteredWord(fb, 80, kSaveTop + 10, saveLabel, saveColor);
-    drawCenteredWord(fb, 80, kLoadTop + 10, loadLabel, loadColor);
+    if (confirmExit) exitLabel = "EXIT TO MENU?";
+    else if (lastOperation == 3U && !lastOperationOk) exitLabel = "EXIT FAILED";
+    drawCenteredWord(fb, 80, systemRowTop(kStatusSave) + 8, saveLabel, saveColor);
+    drawCenteredWord(fb, 80, systemRowTop(kStatusLoad) + 8, loadLabel, loadColor);
+    drawCenteredWord(fb, 80, systemRowTop(kStatusExit) + (confirmExit ? 4 : 8),
+                     exitLabel, confirmExit ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_IVORY);
+    if (confirmExit) drawCenteredWord(fb, 80, systemRowTop(kStatusExit) + 14,
+                                     "UNSAVED CHANGES LOST", ESP_HUB_COLOR_RED);
     return Esp32PlatformVideo_present();
 }
 
@@ -3417,7 +3356,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
             if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
             printf("[NATIVESAVE] CURSOR page=system row=%u action=%s mutation=no turn=no\n",
                    (unsigned int)statusCursor,
-                   statusCursor == kStatusSave ? "SAVE" : "LOAD");
+                   systemRowName(statusCursor));
             return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
         }
 
@@ -3438,10 +3377,23 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 lastOperation = 0U;
                 if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
                 printf("[NATIVESAVE] CONFIRM-ARM page=system row=%s mutation=no turn=no\n",
-                       statusCursor == kStatusSave ? "SAVE" : "LOAD");
+                       systemRowName(statusCursor));
                 return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
             }
             confirmationTarget = kNoConfirmation;
+
+            if (statusCursor == kStatusExit) {
+                lastOperation = 3U;
+                lastOperationOk = EspNativeResidentGameplay_requestExitToMenu() ? 1U : 0U;
+                if (!lastOperationOk) {
+                    if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+                    return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+                }
+                printf("[SYS] EXIT-CONFIRMED queued=yes saveWrite=no boundary=after-session\n");
+                /* Do not return CLOSED: it would repaint the old gameplay.
+                 * The loop performs teardown only after all wrappers return. */
+                return ESP_NATIVE_GAMEPLAY_HUB_OK;
+            }
 
             if (statusCursor == kStatusSave) {
                 lastOperation = 1U;
@@ -3517,7 +3469,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 statusCursor = kStatusSave;
                 lastOperation = 0U;
                 confirmationTarget = kNoConfirmation;
-                printf("[NATIVESAVE] UI page=system rows=SAVE/LOAD slot=1 path=%s confirmation=double-select worldScope=resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-v11 legacyV1..V10=read-compatible\n",
+                printf("[NATIVESAVE] UI page=system rows=SAVE/LOAD/EXIT path=%s confirmation=double-select saveVersion=11 worldScope=resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-v11 legacyV1..V10=read-compatible exitSave=no\n",
                        kLogPath);
             }
             if ((status == ESP_NATIVE_GAMEPLAY_HUB_REDRAWN ||

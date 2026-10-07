@@ -345,7 +345,10 @@ int Esp32IntroClock_rebasePageEpochs(void) {
 }
 
 void Esp32IntroClock_park(const char* reason) {
-    if (clockState.active) {
+    /* A parked intro-exit clock still services disposal/startup. Leaving the
+     * gameplay domain must cancel that continuation even when rendering has
+     * already stopped. Only intro-exit-ready deliberately retains it. */
+    if (clockState.active || clockState.exitReadyPark) {
         parkClock(reason);
     }
 }

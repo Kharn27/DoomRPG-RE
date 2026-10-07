@@ -5,7 +5,6 @@
 #include "DoomCanvas.h"
 #include "Game.h"
 #include "esp_native_menu_state.h"
-#include "Player.h"
 #include "Render.h"
 #include "SDL_Video.h"
 #include "Sound.h"
@@ -118,12 +117,11 @@ void DoomRPG_getEngineMetrics(DoomRpgEngineMetrics* metrics) {
     metrics->doomCanvas = sizeof(DoomCanvas_t);
     metrics->render = sizeof(Render_t);
     metrics->game = sizeof(Game_t);
-    metrics->player = sizeof(Player_t);
+    metrics->player = 0U;
     metrics->combat = 0U;
     metrics->supportObjects = sizeof(EspNativeMenuState_t);
     metrics->totalInitialObjects = metrics->doomRpg + metrics->doomCanvas +
-        metrics->render + metrics->game + metrics->player +
-        metrics->supportObjects;
+        metrics->render + metrics->game + metrics->supportObjects;
 }
 
 static DoomRpgCoreInitReport coreInitReport;
@@ -276,10 +274,54 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
                      EspNativeMenuStorage_init(NULL));
     INIT_CORE_OBJECT(DOOMRPG_CORE_GAME, game,
                      Game_init(NULL, doomRpg));
-    INIT_CORE_OBJECT(DOOMRPG_CORE_PLAYER, player,
-                     Player_init(NULL, doomRpg));
 
 #undef INIT_CORE_OBJECT
+
+    /*
+     * The legacy Game shell is temporarily retained for config/teardown ABI,
+     * but its embedded Entity/EntityMonster stores are retired runtime owners.
+     * They must remain empty; native resident-map state owns all live entities.
+     */
+    if (doomRpg->game->numEntities != 0 || doomRpg->game->numMonsters != 0 ||
+        doomRpg->game->activeMonsters != NULL ||
+        doomRpg->game->inactiveMonsters != NULL ||
+        doomRpg->game->combatMonsters != NULL ||
+        doomRpg->game->spawnMonster != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_GAME;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED legacy entity runtime not dormant entities=%d monsters=%d active=%p inactive=%p combat=%p spawn=%p\n",
+               doomRpg->game->numEntities,
+               doomRpg->game->numMonsters,
+               (void*)doomRpg->game->activeMonsters,
+               (void*)doomRpg->game->inactiveMonsters,
+               (void*)doomRpg->game->combatMonsters,
+               (void*)doomRpg->game->spawnMonster);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] Legacy entity runtime retired arrays=dormant entities=0 monsters=0 owner=native-resident-map\n");
+
+    /*
+     * Player state is owned by the compact 52-byte native gameplay owner.
+     * The inherited Player_t is not constructed and must remain NULL.
+     */
+    if (doomRpg->player != NULL) {
+        coreInitReport.failedStage = DOOMRPG_CORE_ROOT;
+        coreInitReport.heapAfter = coreFreeHeap();
+        coreInitReport.largestBlockAfter = coreLargestBlock();
+        coreInitReport.bytesUsed =
+            coreInitReport.heapBefore >= coreInitReport.heapAfter
+                ? coreInitReport.heapBefore - coreInitReport.heapAfter
+                : 0;
+        coreInitReport.ready = 0;
+        printf("[CORE] FAILED retired Player pointer=%p expected=NULL\n",
+               (void*)doomRpg->player);
+        if (report != NULL) *report = coreInitReport;
+        return 0;
+    }
+    printf("[CORE] Player retired object=NULL owner=native-gameplay-player-state bytes=52\n");
 
     /*
      * Audio playback remains deferred on classic CYD. Production gameplay

@@ -15,6 +15,21 @@ player/HUD view boundaries are mocked. Tests cover fresh map entry, XP baseline
 across a level-up, elapsed-time resume without offline/loading time, legacy-save
 partial history, rejected malformed suffixes, timer wrap and counter saturation.
 
+SYS direct-touch host regression (from the repository root):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -I ESP32/include \
+  ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c \
+  -o /tmp/test_sys_touch
+/tmp/test_sys_touch
+```
+
+The production touch wrapper is compiled unchanged; its HUB cursor/navigation
+and input boundaries are mocked. Checks cover every content pixel against the
+shared three-card layout, rejection of gaps/margins, all nine cursor-to-target
+routes, failed/invalid preselection, empty input and non-SYS fallback. These
+tests do not replace hardware confirmation of SAVE/LOAD or Exit To Menu.
+
 Unit Testing is a software testing method by which individual units of
 source code, sets of one or more MCU program modules together with associated
 control data, usage procedures, and operating procedures, are tested to
