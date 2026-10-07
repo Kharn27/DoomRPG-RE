@@ -576,7 +576,8 @@ static int buildOrder(Render_t* render,
                       const EspNativeBspVisibilityState* visibility,
                       Order order[MAX_VISIBLE_SPRITES],
                       EspNativeSpriteStats* stats,
-                      uint32_t* outCount) {
+                      uint32_t* outCount,
+                      int preview) {
     uint32_t i;
     uint32_t count = 0U;
     uint32_t hash = 2166136261U;
@@ -619,7 +620,9 @@ static int buildOrder(Render_t* render,
             continue;
         }
 
-        visible = EspNativeBspVisibility_mapSpriteVisible(visibility, i, &leaf);
+        visible = preview
+            ? EspNativeBspVisibility_mapSpriteVisibleReadOnly(visibility, i, &leaf)
+            : EspNativeBspVisibility_mapSpriteVisible(visibility, i, &leaf);
         if (!visible) {
             if (leaf == UINT32_MAX) return 0;
             ++stats->bspRejected;
@@ -1312,11 +1315,13 @@ static int drawParentAndGlow(Render_t* render,
                   frame, seenLogical, stats);
 }
 
-int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
-                                   EspNativeSpriteStats* outStats) {
+static int renderImpl(struct Render_s* renderBase,
+                      const EspPlayerViewState* pose,
+                      int preview,
+                      EspNativeSpriteStats* outStats) {
     Render_t* render = (Render_t*)renderBase;
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
-    const EspPlayerViewState* view = EspPlayerView_view();
+    const EspPlayerViewState* view = pose;
     Scratch* saved = NULL;
     Sources sources;
     SpriteWorkspace* workspace = NULL;
@@ -1356,7 +1361,10 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
                (unsigned int)sizeof(*workspace));
     }
 
-    if (!EspNativeBspVisibility_build(render, &workspace->visibility) ||
+    if (!(preview
+              ? EspNativeBspVisibility_buildForView(
+                    render, view, &workspace->visibility)
+              : EspNativeBspVisibility_build(render, &workspace->visibility)) ||
         !setupDrawView(render, view, &workspace->visibility)) {
         goto done;
     }
@@ -1371,14 +1379,14 @@ int EspNativeSpriteRenderer_render(struct Render_s* renderBase,
     stats.depthSpriteSpans = workspace->visibility.spriteSpans;
 
     if (!buildOrder(render, runtime, &workspace->visibility,
-                    workspace->order, &stats, &orderCount)) {
+                    workspace->order, &stats, &orderCount, preview)) {
         goto done;
     }
     if (!buildPersistentDropOrder(render, workspace->dropOrder,
                                   &dropOrderCount)) {
         goto done;
     }
-    if (EspMapAutomapState_isReady()) {
+    if (!preview && EspMapAutomapState_isReady()) {
         uint16_t linesMutated = 0U;
         uint16_t spritesMutated = 0U;
         if (!EspNativeBspVisibility_publishAutomap(
@@ -1444,4 +1452,18 @@ done:
     free(workspace);
     *outStats = stats;
     return ok;
+}
+
+/* The canonical route keeps its original visibility and automap effects.
+ * Intermediate camera paints skip them and never make monsters active. */
+int EspNativeSpriteRenderer_render(struct Render_s* render,
+                                   EspNativeSpriteStats* outStats) {
+    return renderImpl(render, EspPlayerView_view(), 0, outStats);
+}
+
+int EspNativeSpriteRenderer_renderVisual(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* pose,
+    EspNativeSpriteStats* outStats) {
+    return renderImpl(render, (const EspPlayerViewState*)pose, 1, outStats);
 }

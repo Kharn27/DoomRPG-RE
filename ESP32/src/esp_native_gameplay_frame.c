@@ -142,12 +142,13 @@ static int spriteViewAccountingComplete(const EspNativeSpriteStats* sprites) {
            glowsFinished == sprites->glowCompanions;
 }
 
-int EspNativeGameplayFrame_renderTurn(
+static int renderComposed(
     struct Render_s* renderBase,
+    const EspPlayerViewState* view,
     uint8_t angle,
+    int preview,
     EspNativeGameplayFrameStats* outStats) {
     Render_t* render = (Render_t*)renderBase;
-    const EspPlayerViewState* view = EspPlayerView_view();
     const EspNativePlaneRenderStats* planes;
     const EspNativeGameplayHudState* hudState;
     EspNativeGameplayFrameStats* stats = &frameScratch.stats;
@@ -168,8 +169,9 @@ int EspNativeGameplayFrame_renderTurn(
     if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
     if (frameScratch.busy) return 0;
     if (render == NULL || outStats == NULL || view == NULL ||
-        view->active != 1U || view->viewAngle != (int32_t)angle ||
-        view->destAngle != (int32_t)angle || (angle & 63U) != 0U ||
+        view->active != 1U || view->destAngle != view->viewAngle ||
+        (angle & 63U) != 0U ||
+        (!preview && view->viewAngle != (int32_t)angle) ||
         render->framebuffer != Esp32PlatformVideo_framebuffer() ||
         render->screenX != 0 || render->screenY != 20 ||
         render->screenWidth != 160 || render->screenHeight != 80 ||
@@ -237,7 +239,9 @@ int EspNativeGameplayFrame_renderTurn(
     EspAssetPack_residentGetStats(&spriteStorageBefore);
     phaseStart = esp_timer_get_time();
     renderBeforeSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
-    strictSpriteWitness = EspNativeSpriteRenderer_render(render, sprites);
+    strictSpriteWitness = preview
+        ? EspNativeSpriteRenderer_renderVisual(render, view, sprites)
+        : EspNativeSpriteRenderer_render(render, sprites);
     renderAfterSpritesFNV = fnv1a(render, (uint32_t)sizeof(*render));
     stats->spriteMicros = elapsedMicros(phaseStart);
     EspAssetPack_residentGetStats(&spriteStorageAfter);
@@ -382,7 +386,7 @@ int EspNativeGameplayFrame_renderTurn(
     }
 
     phaseStart = esp_timer_get_time();
-    EspNativeGameplayActionEngine_markFreshFrame();
+    if (!preview) EspNativeGameplayActionEngine_markFreshFrame();
     if (!Esp32PlatformVideo_present()) {
         printf("[TURNFRAME] DIAG fail=PRESENT\n");
         goto done;
@@ -399,4 +403,44 @@ done:
     *outStats = *stats;
     frameScratch.busy = 0U;
     return ok;
+}
+
+int EspNativeGameplayFrame_renderTurn(
+    struct Render_s* render,
+    uint8_t angle,
+    EspNativeGameplayFrameStats* outStats) {
+    return renderComposed(render, EspPlayerView_view(), angle, 0, outStats);
+}
+
+/* Render a copy of the canonical pose with only the angle interpolated.
+ * The normal cardinal frame is still mandatory and authoritative. */
+int EspNativeGameplayFrame_renderVisualPose(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* visualBase,
+    uint8_t settledAngle,
+    EspNativeGameplayFrameStats* outStats) {
+    const EspPlayerViewState* canonical = EspPlayerView_view();
+    const EspPlayerViewState* visual = (const EspPlayerViewState*)visualBase;
+    EspPlayerViewState expected;
+    uint8_t difference;
+
+    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
+    if (canonical == NULL || visual == NULL ||
+        canonical->active != 1U ||
+        canonical->viewAngle != (int32_t)settledAngle ||
+        canonical->destAngle != canonical->viewAngle ||
+        (settledAngle & 63U) != 0U ||
+        visual->viewAngle < 0 || visual->viewAngle > 255 ||
+        visual->destAngle != visual->viewAngle) return 0;
+
+    difference = (uint8_t)(visual->viewAngle - canonical->viewAngle);
+    if (difference == 0U ||
+        (difference > 64U && difference < 192U)) return 0;
+
+    expected = *canonical;
+    expected.viewAngle = visual->viewAngle;
+    expected.destAngle = visual->destAngle;
+    if (memcmp(&expected, visual, sizeof(expected)) != 0) return 0;
+
+    return renderComposed(render, visual, settledAngle, 1, outStats);
 }

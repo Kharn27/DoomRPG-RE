@@ -41,6 +41,18 @@ struct Render_s;
 int EspNativeBspVisibility_build(struct Render_s* render,
                                  EspNativeBspVisibilityState* outState);
 
+/* Presentation-only BSP pass over caller-owned camera pose. Does not write
+ * PlayerView or publish gameplay/automap visibility. */
+struct EspPlayerViewState_s;
+int EspNativeBspVisibility_buildForView(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* pose,
+    EspNativeBspVisibilityState* outState);
+int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
+    const EspNativeBspVisibilityState* state,
+    uint32_t mapSpriteIndex,
+    uint32_t* outLeafIndex);
+
 /* Resolve one compact map sprite through the legacy Render_relinkSprite BSP
  * ownership rule, then report whether its leaf was admitted by outState. */
 int EspNativeBspVisibility_mapSpriteVisible(
