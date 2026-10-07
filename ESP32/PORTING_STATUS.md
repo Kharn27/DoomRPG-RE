@@ -1,5 +1,73 @@
 # Doom RPG ESP32 CYD porting status
 
+## Legacy Game map string tables retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`46b463a6c240f5e7fadd02d3aeb3dc83d65a620e`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The ESP32 runtime no longer keeps the inherited mutable `Game_t::mapNames[]`
+and `Game_t::mapFiles[]` tables. Map identity/resource names are owned by the
+immutable native `EspMapCatalog`; the two legacy arrays are reduced to one-slot
+compile-only sentinels on ESP32 while desktop/J2ME capacities remain unchanged.
+
+Generated `Game.c` now routes the legacy map-resource lookup and save-state
+resource-name edge through `EspMapCatalog`, retires the desktop map-table
+initialization, and fails closed if any direct `game->mapNames[]` or
+`game->mapFiles[]` access survives generation. Native START/bootstrap also
+resolves `startupMap` directly through `EspMapCatalog`.
+
+Normal `esp32-cyd` CI #1605 is SUCCESS:
+
+```text
+static RAM   = 45464 B
+linked Flash = 780721 B
+```
+
+Real-CYD boot proves the compact layout and heap effect:
+
+```text
+Engine structs: Render=5040 Game=768 Canvas=3740 Total=10308 bytes
+[CORE] Game           used=784 heap=176740 largest=110580
+[CORE] Legacy Game map tables retired stores=sentinel capacities=1/1 gameBytes=768 desktopBytes=36468 totalReclaimed=35700 owner=EspMapCatalog
+[CORE] READY objects=5 heap used=10488 remaining=176740 largest=110580 clip=160x120
+```
+
+Relative to the preceding hardware-tested `Game_t=1296` boundary, this removes
+another 528 B from the structure. The menu/runtime witnesses rise accordingly
+(`heap8=140000` at MENU_MAIN and `heap8=98948` in settled gameplay, subject
+to allocator effects).
+
+The same run completes START, full intro disposal, native `/intro.bsp` load,
+the exact first-frame witness, movement, pickups, a door interaction, HUB/SYS,
+Exit To Menu, then a second fresh START. Both gameplay sessions settle at the
+same memory state:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap8=98948 largest8=86004 ...
+...
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+...
+[ALIVE] ... heap8=98948 largest8=86004 ...
+```
+
+The second START sees the mutated player fingerprint `363261d1` and resets it
+to the canonical fresh `e745fce9`. Native map loading reports
+`file=/intro.bsp`, confirming the catalog-backed startup path on hardware.
+
+The existing renderer compact-guard recovery was exercised once and recovered
+normally before gameplay continued. It remains unrelated to this map-catalog
+ownership milestone.
+
+No post-test runtime/code change is part of the closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_GAME_MAP_TABLES.md](MILESTONE_ESP32_RETIRE_GAME_MAP_TABLES.md)
+
 ## Dormant Game entity storage compacted — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:
