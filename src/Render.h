@@ -193,14 +193,19 @@ typedef struct Render_s
 	int screenRight;
 	int screenBottom;
 	short* pixels;
-	#ifdef DOOMRPG_ESP32
+	/* Legacy BSP plane metadata. Native CYD uses immutable EspMapRuntime planes. */
+#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+	/* Deliberately absent from production Render_t. */
+#elif defined(DOOMRPG_ESP32)
 	int planeTexelOffsets[24];
 	int planePaletteOffsets[24];
-	#else
+#else
 	short mediaPlanes[24][64 * 64];
-	#endif
+#endif
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int planeTexturesCnt;
 	int planeTextureIds[24];
+#endif
 	/* This 2048-cell desktop floor/ceiling plane buffer belongs exclusively
      * to the retired legacy BSP loader/render path. The native CYD world
      * renderer reads compact plane indices from EspMapRuntime instead. */
