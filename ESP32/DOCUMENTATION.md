@@ -1,3 +1,29 @@
+## Render legacy sprite mirrors retirement — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code: `1a2bdf3edb6cfbd399a30d509e3718346ced0e57`.
+CI #1694 normal `esp32-cyd` SUCCESS (RAM 45056 B, flash 772109 B).
+Fourth Render ownership cut removes 100 B of
+`Render_t.customSprites[16]`, `dropSprites[8]`,
+`firstDropSprite` on production only. Desktop/bringup
+preserve original BSP loader fields; native sprite topology,
+drops and renderer remain independent. `Render_t=1576 B`
+after four cuts (5040 original; 3464 B cumulative savings).
+
+Real classic CYD confirmed heap8 +100 B versus preceding
+cut at CORE 185072, LAYOUT 178464, mappings 159304,
+gameplay 118252 and menu 164148. Full test includes
+fresh INTRO and MAP_INTRO, attack and pickups, HUB SYS,
+**active-session LOAD v11**, exact monster/topology/position
+checkpoint restore, post-load input, and SYS EXIT.
+First frame `71ca7465`, runtime FNV `c3882516`;
+`[RESIDENTRESET] empty=1` twice, MENU_MAIN FNV
+`522dc605`, `shapeData/mediaTexels=NULL` and no
+checkpoint write. Restored monsters existed but were not
+fully active in combat; no exhaustive AI claim.
+
+Full witness: [MILESTONE_ESP32_RETIRE_RENDER_SPRITE_MIRRORS.md](MILESTONE_ESP32_RETIRE_RENDER_SPRITE_MIRRORS.md).
+Code is frozen after hardware PASS; docs-only closure.
+
 ## Render plane preparation metadata retirement — REAL-CYD PASS (2026-10-08)
 
 Normal-firmware code SHA validated on hardware:
