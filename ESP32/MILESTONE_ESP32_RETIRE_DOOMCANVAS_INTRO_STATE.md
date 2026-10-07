@@ -1,236 +1,296 @@
-# Milestone — Retire DoomCanvas intro state and dead shell
+# Milestone — DoomCanvas intro owner to 44-byte compact shell
 
 Status: **REAL-CYD PASS**
 
 Hardware-tested code boundary:
-`d1b052b6d2934b6a5e6aad68aa84b9e52afd85f4`
+`d75451c56151458d8b0370c0c183531aa74fcd52`
 
 Branch:
 `agent/esp32-intro-state-owner`
 
 ## Goal
 
-Continue shrinking the permanent ESP32 `DoomCanvas_t` compatibility object by
-moving the complete prologue-only state to a transient native owner, then
-retiring the next source-closed group of desktop shell fields and assets without
-reviving desktop gameplay/render ownership.
+Continue shrinking the permanent ESP32 `DoomCanvas_t` compatibility object
+without reviving desktop/J2ME ownership. Every cut must have a current native
+owner, a fixed platform contract, or a source-closed proof that the field is
+inert.
 
-## Part 1 — transient intro owner
+The branch starts from the hardware-proven 368-byte Canvas shell and ends at
+44 bytes.
 
-ESP32 now owns this exact `ST_INTRO` group in
-`EspNativeIntroState_t`:
+## Ownership cuts
 
-```text
-imgSpaceBG
-imgLinesLayer
-imgPlanetLayer
-imgSpaceship
-storyTextTime
-storyAnimTime
-storyText1[2]
-storyText2
-storyPage
-storyTextPage
-showTextDone
-```
+### 1. ST_INTRO state -> transient native owner: 96 B
 
-The state is compile-time pinned to 96 bytes. It is allocated only when a fresh
-START enters the prologue and is destroyed by the bounded intro disposer before
-native MAP_INTRO loading.
+`EspNativeIntroState_t` owns the four prologue images, three copied strings,
+story timers and story page/text state. It exists only for a fresh prologue and
+is released by the bounded intro disposer before MAP_INTRO loading.
 
-`DoomCanvas_loadPrologueText` is no longer an ESP32 source-ABI export. Its
-remaining loading/music transition is internal to the bridge and hands ownership
-to `EspNativeIntroState`.
+`DoomCanvas_loadPrologueText` leaves the ESP32 source ABI.
 
-## Part 2 — dead shell closure
+### 2. Dead shell: 56 B
 
-A second source-closure audit identified 56 bytes that no longer have an ESP32
-consumer:
+Removed permanent fields with no ESP32 behavior: desktop allocation metric,
+legacy automap cursor image, legal-screen image, retired config mirrors and the
+write-only softkey restore flag. Config bytes remain consumed for file-format
+compatibility.
 
-```text
-field                    bytes  disposition
-memory                       4  desktop allocation metric retired by generator
-imgMapCursor                 16  native automap uses compact vector cursor
-imgLegals                    16  legal-screen asset already retired
-vibrateEnabled                4  config byte consumed but no ESP32 behavior
-mouseSensitivity              4  config int consumed but no ESP32 behavior
-mouseYMove                    4  config byte consumed but no ESP32 behavior
-sndPriority                   4  config byte consumed but no ESP32 behavior
-restoreSoftKeys               4  write-only in the retained bridge
-                            ----
-                              56
-```
+The old `b.bmp` automap cursor is no longer loaded; native automap already
+draws its compact vector cursor.
 
-The configuration parser preserves file-format compatibility by continuing to
-consume the retired values. It simply no longer mirrors them into
-`DoomCanvas_t`.
+### 3. Inert animation / softkey / control shell: 72 B
 
-The old desktop automap cursor `b.bmp` is no longer created during
-`DoomCanvas_startup()`. The native automap already draws its player marker as
-a bounded vector primitive.
+The retained bridge no longer owns desktop animation-frame bookkeeping,
+softkey storage/drawing, stale-view invalidation or other control bits whose
+actual behavior is native or absent. Config still consumes the retired
+animation-frame integer.
 
-The legal image is no longer initialized/freed through Canvas or during
-main-menu cleanup. The menu cleanup log explicitly reports `legals=retired`.
-
-`renderFloorCeilingTextures` is **not** retired: generated `Render.c` still
-reads it in the current closure. Fonts, geometry, state/time, softkey strings,
-`doomRpg` and `render` remain live.
-
-## Layout and ABI
+This retires three more bridge exports:
 
 ```text
-DoomCanvas_t                 368 B -> 272 B -> 216 B
-intro-state cut                         96 B
-dead-shell cut                          56 B
-branch-total permanent cut             152 B
-desktop layout reclaimed              3524 B / 3740 B (~94.2%)
-source ABI exports                      11 -> 10
-retired export                          DoomCanvas_loadPrologueText
+DoomCanvas_drawSoftKeys
+DoomCanvas_setAnimFrames
+DoomCanvas_invalidateRectAndUpdateView
 ```
 
-The bridge pins 216 bytes with a `_Static_assert`; future accidental reuse of
-the retired fields fails at compile time.
+Source ABI: 10 -> 7.
+
+### 4. Large font: 16 B plus runtime texture
+
+The ESP32 bridge uses only the compact 9x12 font. All remaining compact-font
+callers use `DoomCanvas_drawString1`, so `DoomCanvas_drawFont` and the
+`imgLargerFont` field are retired.
+
+`larger_font.bmp` is no longer decoded or retained during startup.
+
+Source ABI: 7 -> 6.
+
+Hardware on the 128-byte boundary
+`b0362edcca38880069888ec039f8b5f6eab00ca9` showed the combined 88-byte
+object reduction from the 216-byte boundary and the much larger post-layout
+heap gain from avoiding the large-font texture allocation.
+
+### 5. Fixed CYD geometry mirrors: 56 B
+
+Canvas no longer stores:
+
+```text
+SCR_CX / SCR_CY
+clipRect
+displayRect
+screenRect
+```
+
+The current target contract is permanent and explicit:
+
+```text
+logical canvas  160x120 @ 0,0
+world viewport  160x80  @ 0,20
+canvas centre   80,60
+physical output 320x240, exact 2x
+```
+
+Bridge/menu/story/render startup callers derive those values from the ESP32
+platform constants. Generated Render and DoomRPG sources are patched with
+strict source-shape checks so an inherited geometry dependency cannot silently
+return.
+
+The 72-byte boundary
+`74a4669a67269069700afc52dc10333e294f1935` passed CI #1669 and real CYD.
+
+### 6. Inert view/shake/render aliases: 28 B
+
+The final source-closure audit removes:
+
+```text
+Canvas.viewX/viewY/viewZ/viewAngle   16 B
+Canvas.shakeX/shakeY                 8 B
+Canvas.render                        4 B
+                                    ----
+                                     28 B
+```
+
+The four Canvas view values have no ESP32 consumer; current camera state lives
+in native player/view owners and `Render_t`.
+
+`shakeX/shakeY` have no ESP32 writer. The inherited Render source had exactly
+eight reads of these always-zero fields. The generated ESP32 Render copy now
+substitutes literal zero and the build script requires the exact 4+4 source
+shape before patching.
+
+`Canvas.render` was only a duplicate of `doomRpg->render`; startup now calls
+`Render_setup(doomRpg->render, ...)` directly.
+
+## Final layout
+
+```text
+DoomCanvas_t: 368 -> 272 -> 216 -> 144 -> 128 -> 72 -> 44 B
+
+branch permanent reduction:                  324 B
+desktop DoomCanvas reclaimed:       3696 / 3740 B
+desktop layout retired:                       ~98.8%
+source ABI exports:                         11 -> 6
+```
+
+The remaining 44-byte kernel is deliberately live:
+
+```text
+imgFont                      16 B
+time                          4 B
+state                         4 B
+startupMap                    2 B
+alignment                     2 B
+skipIntro                     4 B
+fontColor                     4 B
+renderFloorCeilingTextures    4 B
+doomRpg*                      4 B
+                            -----
+                              44 B
+```
+
+This is a useful architectural boundary, not an arbitrary target to force to
+zero. `renderFloorCeilingTextures` still controls two generated Render paths;
+`time/state/startupMap/skipIntro` are current transition/intro state;
+`imgFont/fontColor` are the compact text compatibility path; and `doomRpg`
+is the surviving object-graph root.
+
+The bridge pins the 44-byte layout with a `_Static_assert`.
 
 ## CI
 
-The first dead-shell expansion commit
-`8f701388e733af23d61d9fbcedf3a94aeacd02bb` intentionally did not survive the
-layout guard: `vibrateEnabled` was still physically present, so the
-`_Static_assert` rejected the expected 216-byte layout.
-
-The corrective commit
-`d1b052b6d2934b6a5e6aad68aa84b9e52afd85f4` removes that final field and is the
-exact tested boundary.
-
-Normal `esp32-cyd` CI #1662: **SUCCESS**.
+Final normal `esp32-cyd` CI #1670: **SUCCESS**.
 
 ```text
-[ESP32] Desktop DoomCanvas.c retired; esp_legacy_doomcanvas_bridge.c owns 10 source ABI exports
+[ESP32] Desktop DoomCanvas.c retired; esp_legacy_doomcanvas_bridge.c owns 6 source ABI exports
+[ESP32] Render generated with 1 legacy Game/Player monster activation block retired + 1 legacy Game mapFiles lookup redirected + 1 Canvas geometry mirror retired + 8 Canvas shake reads fixed-zero
 RAM:   45056 B
-Flash: 773713 B
+Flash: 772405 B
 esp32-cyd SUCCESS
 ```
 
-Static RAM remains 45056 B from the intro-owner milestone. Relative to merged
-main (45432 B / 772925 B), the full branch is -376 B static RAM and +788 B
-linked Flash while removing 152 permanent Canvas bytes and the obsolete
-automap-cursor runtime allocation.
+Artifact:
+`doom-rpg-esp32-cyd-d75451c56151458d8b0370c0c183531aa74fcd52`,
+ID `11513961743`.
 
-## Real-CYD boot acceptance
+## Real-CYD final boot
 
 ```text
-Engine structs: Render=5040 Game=4 Canvas=216 Total=6020 bytes
-[DOOMCANVASBRIDGE] INIT exports=10 desktopTU=no bytes=216 retiredDialogStores=2560 retiredZeroRefLayout=240 retiredDormantText=428, retiredStateLayout=116 retiredGraphMirrors=28 retiredIntroState=96 retiredDeadShell=56 clip=160x120
-[CORE] DoomCanvas     used=232 heap=187024 largest=110580
-[CORE] READY objects=5 heap used=6200 remaining=181436 largest=110580 clip=160x120
+Engine structs: Render=5040 Game=4 Canvas=44 Total=5848 bytes
+[DOOMCANVASBRIDGE] INIT exports=6 desktopTU=no bytes=44 ... retiredFixedGeometry=56 retiredViewShakeAlias=28 clip=160x120
+[CORE] DoomCanvas     used=60 heap=187196 largest=110580
+[CORE] READY objects=5 heap used=6028 remaining=181608 largest=110580 clip=160x120
 ```
 
-The source-ABI count, physical layout and hardware allocator all agree.
-
-## Permanent + runtime memory gain
-
-Relative to the previous 272-byte REAL-CYD boundary:
+Startup geometry remains exactly:
 
 ```text
-checkpoint                  previous       current        gain
-CORE READY                   181380         181436        +56 B
-LAYOUT READY                 163796         164120       +324 B
-mappings resident            144636         144960       +324 B
-Exit->Menu heap8             149480         149804       +324 B
+[DOOMCANVASBRIDGE] STARTUP ... display=160x120 screen=160x80@0,20 ... geometry=fixed-cyd
+[LAYOUT] clip    x=0 y=0 w=160 h=120
+[LAYOUT] display x=0 y=0 w=160 h=120
+[LAYOUT] screen  x=0 y=20 w=160 h=80
 ```
 
-CORE isolates the 56-byte Canvas shrink exactly.
+## Exact final memory delta
 
-The additional 268-byte gain beginning at layout is the persistent cost avoided
-by no longer loading the legacy `b.bmp` automap cursor. The hardware layout
-trace contains only the two live font decodes:
+Relative to the immediately preceding 72-byte hardware boundary:
 
 ```text
-[BMP] decode 144x72 4-bpp ... out=5184
-[BMP] decode 208x102 4-bpp ... out=10608
-[LAYOUT] heap8 used=17316 remaining=164120 largest=110580
+checkpoint               72-B boundary   44-B boundary   gain
+CORE READY                    181580          181608      +28 B
+LAYOUT READY                  174968          175000      +32 B
+mappings resident             155808          155840      +32 B
+fresh gameplay ALIVE          114756          114788      +32 B
+Exit->Menu heap8              160652          160684      +32 B
 ```
 
-There is no 6x48 `b.bmp` decode.
+The object-level gain is exactly 28 B. The later allocator checkpoints expose
+32 B because of heap block alignment.
 
-## Intro lifecycle remains exact
+## Geometry-sensitive menu acceptance
 
-The complete intro remains functional. Final Continue parks the intro clock and
-the bounded disposer frees the story hand and transient owner without loading a
-map early:
+The final 44-byte firmware explicitly exercises both child screens that were
+migrated off Canvas geometry mirrors.
+
+HELP:
+- parses 83 lines from PAK;
+- page-down/page-up repaint hashes are stable;
+- native Back returns exact MENU_MAIN FNV `522dc605`;
+- heap stays `155840 / largest 110580`.
+
+OPTIONS:
+- paints native options FNV `162d3999`;
+- armed Back FNV is `73303639`;
+- fast native Back returns exact `522dc605`;
+- `shapeData=0x0 mediaTexels=0x0`;
+- no legacy menu renderer/map reload is invoked.
+
+## Intro / MAP_INTRO acceptance
+
+The compact text path and fixed centre still produce the canonical first intro
+frame:
 
 ```text
-[INTROFIT] HAND-RELEASE asset=p.bmp owner=native-story
-[INTRODISP] FREE image=p.bmp/storyHand heap8=119328->119504 gain=176 owner=native-story
+[INTRO1] READY one deterministic ST_INTRO frame presented once FNV=ade0195d
+```
+
+Final Continue parks, then bounded disposal releases the hand and transient
+intro owner while preserving the framebuffer and forbidding early map load:
+
+```text
 [INTROSTATE] RELEASE owner=native-transient state=NULL
-[INTRODISP] FREE owner=native-intro-state stateBytes=96 heap8=119504->153400 gain=33896 state=NULL
-[INTRODISP] READY ... frameFNV=68160500->68160500 heap8=119328->153400 recovered=34072 ... owner=NULL assets=NULL texts=NULL clip=off noMapLoad=yes
+[INTRODISP] READY ... heap8=130224->164280 recovered=34056 ... owner=NULL assets=NULL texts=NULL clip=off noMapLoad=yes
 ```
 
-The framebuffer hash is unchanged across disposal. The four prologue images,
-three copied strings and 96-byte state all leave ownership before MAP_INTRO.
-
-## Native map/session invariants
-
-Native loading then rebuilds MAP_INTRO from the PAK and preserves the canonical
-first visible world frame:
+Native MAP_INTRO is unchanged:
 
 ```text
-[NATIVEBOOT] READY map=1 gameplayLoadMapId=1 spawnTile=904 ... shapeData=0x0 mediaTexels=0x0
+/intro.bsp
+name=Entrance
+CRC32=623f34e4
+arenaBytes=14095
+arenaFNV=c3882516
+nodes=223 lines=480 sprites=344 events=93 byteCodes=265 strings=94
+```
+
+The canonical world frame remains exact:
+
+```text
 [ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
-[ENGINESESSION] READY map=1 angle=64 residentCache=yes largeCache=yes ... shapeData=0x0 mediaTexels=0x0
+[ENGINESESSION] READY map=1 angle=64 ... shapeData=0x0 mediaTexels=0x0
 ```
 
-The acceptance run exercises movement and turning, crate transform/combat,
-multiple armor pickups, regular/deferred door animation and HUB/System.
+## Gameplay / teardown acceptance
 
-## Exit / menu / LOAD regression
+The final 44-byte run covers:
+- movement and rotation;
+- crate combat/transform;
+- resource pickups;
+- regular door animation;
+- HUB inventory, weapon and status pages;
+- PASS_TURN;
+- known compact-renderer guard recovery;
+- confirmed Exit To Menu.
 
-Confirmed Exit To Menu releases the resident session:
+Representative teardown:
 
 ```text
-[RESIDENTRESET] heap8=131796->149804 released=18008 before=1/1/1/1/1/1/1 after=0/0/0/0/0/0/0 empty=1
-[MAINMENU] Runtime cleanup legals=retired heap8=149804->149804 gained=0 largest8=110580->110580 ... shapeData=0x0 mediaTexels=0x0
+[RESIDENTRESET] heap8=142676->160684 released=18008 ... after=0/0/0/0/0/0/0 empty=1
+[MAINMENU] Runtime cleanup legals=retired heap8=160684->160684 gained=0 ... shapeData=0x0 mediaTexels=0x0
 [SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
 ```
 
-The zero-byte legal cleanup is the expected witness: there is no hidden Canvas
-legal image left to release.
+The established `LEGACY_GUARD -> RETRY -> RECOVERED` renderer path fires once
+and recovers normally. It is unrelated to Canvas compaction.
 
-MENU_MAIN -> LOAD restores a version-11 checkpoint exactly and resumes native
-gameplay:
-
-```text
-[NATIVESAVE] LOAD ... version=11 ... world=resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-restored-exact session=reprime-pending
-[ENGINESESSION] READY map=1 angle=0 ... shapeData=0x0 mediaTexels=0x0
-[MONSTERATKVIS] COMPLETE probe=1 ... resolution=unblocked-after-animation
-[MONSTERRETAL] COMMIT probe=1 ... playerHP=34->32 armor=19->17 ... rollback=closed
-```
-
-The resumed session also accepts further movement/pickups and visibility-based
-monster activation.
-
-## Known unrelated diagnostics
-
-The compact renderer's established
-`LEGACY_GUARD -> RETRY -> RECOVERED` path fires and recovers normally in both
-fresh and resumed gameplay. It is not introduced by this Canvas cut.
-
-The resumed monster sequencer may still fail closed with
-`cause=active-order-not-owned` when no movement candidate owns the current
-active-order boundary; that is existing gameplay policy, not a Canvas ownership
-regression.
-
-## Cosmetic log closure
-
-The previously concatenated
-`retiredDormantText=428retiredStateLayout=116` boot witness is fixed in this
-tested code boundary. Hardware now prints the fields separately.
+The immediately preceding 72-byte hardware build also performed a version-11
+checkpoint LOAD, exact native world/session restore, further movement/pickups,
+monster activation, ordered attack visualization and committed retaliation.
+That test remains a regression witness for the same branch before the final
+source-closed 28-byte alias cut.
 
 ## Closure
 
-Hardware-tested code ends at
-`d1b052b6d2934b6a5e6aad68aa84b9e52afd85f4`.
+Hardware-tested runtime code ends at
+`d75451c56151458d8b0370c0c183531aa74fcd52`.
 
-No code/runtime commit follows that SHA. The closure commit changes
-documentation only.
+Any following closure commit must be documentation-only.
