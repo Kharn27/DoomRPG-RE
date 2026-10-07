@@ -238,7 +238,9 @@ void DoomCanvas_updatePlayerDoors(DoomCanvas_t* doomCanvas, Line_t* line);
 void DoomCanvas_attemptMove(DoomCanvas_t* doomCanvas, int x, int y);
 void DoomCanvas_automapState(DoomCanvas_t* doomCanvas);
 void DoomCanvas_setupmenu(DoomCanvas_t* doomCanvas, boolean notdrawLoading);
+#ifndef DOOMRPG_ESP32
 int DoomCanvas_getOverall(DoomCanvas_t* doomCanvas);
+#endif
 void DoomCanvas_captureDogState(DoomCanvas_t* doomCanvas);
 void DoomCanvas_closeDialog(DoomCanvas_t* doomCanvas);
 void DoomCanvas_combatState(DoomCanvas_t* doomCanvas);

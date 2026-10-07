@@ -22,7 +22,6 @@ env.Append(CPPPATH=[join(project_dir, "include"), project_src_dir, engine_dir])
 doom_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.c")
 doom_canvas_bridge_exports = (
     "DoomCanvas_free",
-    "DoomCanvas_getOverall",
     "DoomCanvas_drawImageSpecial",
     "DoomCanvas_drawSoftKeys",
     "DoomCanvas_drawString1",

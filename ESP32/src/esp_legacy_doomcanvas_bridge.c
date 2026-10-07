@@ -118,7 +118,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->vibrateEnabled = true;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=14 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -152,37 +152,6 @@ void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
     if (freePtr) {
         SDL_free(doomCanvas);
     }
-}
-
-int DoomCanvas_getOverall(DoomCanvas_t* doomCanvas)
-{
-    int i = 0;
-    int level;
-    int totalDeaths;
-    Player_t* player;
-
-    if (doomCanvas == NULL || doomCanvas->player == NULL) {
-        return 0;
-    }
-
-    player = doomCanvas->player;
-    for (level = 0; level < 11; ++level) {
-        if ((player->foundSecretsLevels & (1 << level)) != 0) {
-            i += 2;
-        }
-        if ((player->killedMonstersLevels & (1 << level)) != 0) {
-            i += 2;
-        }
-        if ((player->completedLevels & (1 << level)) != 0) {
-            i += 2;
-        }
-    }
-
-    totalDeaths = 5 - player->totalDeaths;
-    if (totalDeaths > 0) {
-        i += 5 * totalDeaths;
-    }
-    return i;
 }
 
 void DoomCanvas_drawImageSpecial(DoomCanvas_t* doomCanvas,
