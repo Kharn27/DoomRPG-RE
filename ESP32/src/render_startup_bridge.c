@@ -14,6 +14,12 @@
 
 /* Include ESP-IDF bool macros only after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
+#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+/* Desktop/bringup retain the original legacy BSP flags; production does not. */
+_Static_assert(sizeof(Render_t) == 1532U,
+               "Render_t must exclude 1024 B BSP flags plus 2048 B legacy plane tiles");
+#endif
+
 
 extern DoomRPG_t* doomRpg;
 void __real_Render_free(Render_t* render, boolean freePtr);

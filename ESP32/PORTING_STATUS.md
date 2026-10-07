@@ -1,3 +1,208 @@
+## Render BSP viewNodes sentinel retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-proven code SHA:
+`27b253cd7de0c29ea7095971296cf675dd91165d`.
+Normal `esp32-cyd` CI #1701 **SUCCESS** (RAM 45056 B,
+flash 772161 B). Fifth bounded `Render_t` cut excludes the
+44-byte legacy `viewNodes` linked-list sentinel in production;
+its old BSP walk and menu BSP probe fail closed / stay bringup-only.
+Desktop and explicit bringup retain the full original layout.
+Native BSP visibility and rendering are unchanged.
+`Render_t`: 5040 -> 4016 -> 1968 -> 1676 -> 1576 ->
+**1532 bytes**, cumulative **3508 bytes removed**.
+
+Real CYD: CORE heap8 **185116** (+44 versus previous cut);
+LAYOUT **178500**, mappings **159340**, fresh gameplay
+**118288** (+36 versus prior cut after an additional 8 B
+layout allocation cost). First frame `71ca7465`;
+MAP_INTRO arena `c3882516`; MENU_MAIN `522dc605`.
+Help/About navigation, Options/Back, START + intro, movement,
+crate attack/pickup, event 88 dialog -> state opcode 19,
+and SYS EXIT were tested. `[RESIDENTRESET]` released 18008 B
+with `empty=1`, all seven resident owners cleared;
+`shapeData==NULL`, `mediaTexels==NULL`,
+checkpoint unchanged and no save write.
+
+**Heap caveat:** The dialogue lazily acquired the one-time
+`ChainTransaction` journal (1020 B payload; 1036 B heap8
+observed). This owner is reused and remains allocated after
+exit; it is outside the seven resident-map reset owners.
+Actual after-exit menu heap8 **163148** reflects that
+process-lifetime journal; do NOT compare it directly with
+the prior no-dialog 164148 B without accounting for it.
+Audit its intended lifetime/release in a separate milestone;
+no code change is part of this hardware PASS closure.
+Fifth-cut LOAD and monster AI were not retested on this SHA.
+
+[Detailed milestone](MILESTONE_ESP32_RETIRE_RENDER_VIEWNODES.md).
+Post-test closure must be **docs-only**. Merge into main
+is reserved for the user.
+
+## Render custom/drop sprite mirrors retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code SHA `1a2bdf3edb6cfbd399a30d509e3718346ced0e57`.
+CI #1694 normal `esp32-cyd`: SUCCESS, static RAM 45056 B,
+flash 772109 B. Fourth bounded Render cut removes legacy
+`customSprites[16]`, `dropSprites[8]`, `firstDropSprite`
+(100 B), whose only original accesses are in the production-
+rejected desktop BSP loader. Desktop/bringup keep the fields;
+native topology, sprite renderer and drop owner are unchanged.
+`Render_t`: 5040 -> 4016 -> 1968 -> 1676 -> **1576 B**,
+a 3464-byte cumulative reduction.
+
+Real-CYD heap8 exact +100 B versus preceding cut:
+CORE 185072, LAYOUT 178464, mappings 159304,
+gameplay 118252, menu after teardown 164148.
+Fresh intro, native MAP_INTRO first frame `71ca7465`
+and immutable arena FNV `c3882516`; movement, turning,
+crate attack/loot, HUB SYS, active-session LOAD v11,
+exact native monster/position/topology state restore,
+post-load movement, and double-confirm EXIT tested.
+The two `[RESIDENTRESET]` events released 18008 B
+with `empty=1`; final menu `522dc605`;
+`shapeData==NULL`, `mediaTexels==NULL`; no save write.
+12 checkpoint-restored active monsters were present but
+ordered dispatch delivered 0; exhaustive monster AI is NOT
+claimed validated. The expected render guard recovered.
+Hardware-proven code is now frozen; documentation closure
+is docs-only.
+
+See [MILESTONE_ESP32_RETIRE_RENDER_SPRITE_MIRRORS.md](MILESTONE_ESP32_RETIRE_RENDER_SPRITE_MIRRORS.md).
+
+## Render legacy plane metadata retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code boundary:
+`d712378b86528065cedf0ce153c7e3a1357b1ba1`.
+CI `esp32-cyd` #1688 SUCCESS, static RAM 45056 B, flash 772381 B.
+The third bounded Render cut removes legacy plane preparation
+metadata `planeTexelOffsets[24]`, `planePaletteOffsets[24]`,
+`planeTextureIds[24]` and `planeTexturesCnt` (292 B total)
+from production; desktop/explicit bringup retain them.
+Legacy plane helpers are production-excluded, native
+`EspMapRuntime` plane data and the active shared sinTable stay
+untouched. `Render_t`: 5040 -> 4016 -> 1968 -> **1676 B**
+(3364 B cumulative reduction).
+
+Real-CYD exact heap8 delta over the preceding milestone:
+CORE **184972** (+292), LAYOUT **178364** (+292), mappings
+**159204** (+292), gameplay **118152** (+292), and restored
+MENU_MAIN **164048** (+292).
+MAP_INTRO native first frame `71ca7465` and arena FNV
+`c3882516`; movement, turning, automap, crate and pickups,
+door open/deferred close and HUB SYS EXIT tested. The known
+`LEGACY_GUARD/RETRY/RECOVERED` renderer recovery worked.
+`[RESIDENTRESET]` released 18008 B with `empty=1`,
+`[SYSEXIT] MENU-READY frame=522dc605`; shapeData/mediaTexels
+remain NULL and checkpoint unchanged. LOAD not retested.
+After this real-CYD PASS, closure commits are **docs-only**.
+
+See [MILESTONE_ESP32_RETIRE_RENDER_PLANE_METADATA.md](MILESTONE_ESP32_RETIRE_RENDER_PLANE_METADATA.md).
+
+## Render planeTextures 2048-byte retirement — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code SHA: `d98b6e07cc21b3bff91cd7f0f2c07b00607b01ed`.
+Normal `esp32-cyd` CI #1678: SUCCESS (RAM 45056 B, flash 772389 B).
+The second bounded Render cut removes 2048 B of legacy plane tile
+mirror storage and fail-closes desktop world/plane render entries in
+production; native `EspMapRuntime` and renderer are untouched.
+`Render_t`: 5040 -> 4016 -> **1968 bytes**; cumulative -3072 B.
+The real CYD reproduced exactly +2048 B heap8 at CORE (184680),
+layout (178072), mappings (158912), gameplay (117860), and clean
+Exit->Menu (163756), versus the preceding hardware cut.
+MAP_INTRO first frame `71ca7465`, runtime arena FNV `c3882516`,
+and MENU_MAIN return `522dc605` are unchanged. Confirmed native
+movement, rotation, crate transformation, loot/pickups, door 275,
+HUB/SYS/EXIT; `shapeData==NULL`, `mediaTexels==NULL`,
+`[RESIDENTRESET] empty=1`, no checkpoint write. The known compact
+renderer guard recovered. LOAD was not rechecked on this exact SHA.
+
+Closure is documentation-only after the hardware-tested code commit.
+Further branch cuts require separate CI and real-CYD logs.
+See [MILESTONE_ESP32_RETIRE_RENDER_PLANETEXTURES.md](MILESTONE_ESP32_RETIRE_RENDER_PLANETEXTURES.md).
+
+## Legacy Render mapFlags retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested runtime SHA:
+\`2d58cdd52bf74242c35b4a196d388ab802ff573c\`.
+
+Branch:
+\`agent/esp32-render-mapflags-retirement\`.
+
+The first bounded Render_t ownership cut drops its desktop BSP-only
+\`mapFlags[1024]\` mirror in the normal \`esp32-cyd\` firmware. The
+native \`EspMapState\` and \`EspMapAutomapState\` already own the
+block-map/event/visited and reveal-state semantics. No substitute
+map-wide allocation is introduced.
+
+\`\`\`text
+Render_t             5040 -> 4016 B   (-1024 B)
+Game_t                         4 B
+DoomCanvas_t                   44 B
+Engine structs       5848 -> 4824 B   (-1024 B)
+\`\`\`
+
+The generated ESP32 Render source compiles fail-closed production
+\`Render_beginLoadMap()\` and \`Render_beginLoadMapData()\` entries rather
+than preserving the historical map-wide BSP parser. Their full original
+bodies and \`mapFlags\` remain available only to desktop or explicit
+\`DOOMRPG_ESP32_BRINGUP_PROBES\` builds. The generator insists on exactly
+13 historical accesses in the loader region, rejecting future unreviewed
+source consumers. The permanent Render startup bridge asserts the
+4016-byte normal-firmware layout.
+
+The normal \`esp32-cyd\` GitHub Actions CI #1675 completed SUCCESS on
+the exact runtime SHA:
+
+\`\`\`text
+[ESP32] Legacy Render BSP loader fail-closed in production; Render.mapFlags 1024-byte mirror retired (bringup/desktop unchanged)
+RAM:   45056 B
+Flash: 772441 B
+esp32-cyd SUCCESS
+\`\`\`
+
+The real classic CYD confirmed precise heap savings against the
+hardware-validated 44-byte DoomCanvas boundary:
+
+\`\`\`text
+checkpoint                   before      after      gain
+CORE READY heap8             181608     182632     +1024 B
+LAYOUT READY heap8           175000     176024     +1024 B
+mappings resident heap8      155840     156864     +1024 B
+fresh gameplay ALIVE heap8   114788     115812     +1024 B
+Exit->Menu heap8             160684     161708     +1024 B
+\`\`\`
+
+Hardware tested native Options and Help/About paths, both returning
+exact main-menu FNV \`522dc605\` with steady heap8. Fresh START
+completes the fitted intro, bounded intro disposal, native
+\`/intro.bsp\` reconstruction, and canonical first world frame:
+
+\`\`\`text
+[INTRO1] READY ... FNV=ade0195d
+[MAPRT] READY arenaBytes=14095 ... arenaFNV=c3882516
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+\`\`\`
+
+The same tested firmware commits movement/rotation, automap discovery,
+crate attack/transform, Armor Shard pickups, regular door 275
+animation, HUB SYS and double-select EXIT. The known compact
+\`LEGACY_GUARD -> RETRY -> RECOVERED\` renderer path also recovered
+while gameplay continued. Final teardown is exact:
+
+\`\`\`text
+[RESIDENTRESET] heap8=143700->161708 released=18008 ... after=0/0/0/0/0/0/0 empty=1
+[MAINMENU] Runtime cleanup ... heap8=161708->161708 ... shapeData=0x0 mediaTexels=0x0
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+\`\`\`
+
+No version-11 checkpoint LOAD was executed in this particular hardware
+test; the preceding DoomCanvas milestone had already validated LOAD.
+All subsequent code cuts on this branch are separate validation
+boundaries and must not be described as hardware-proven by this record.
+
+See [MILESTONE_ESP32_RETIRE_RENDER_MAPFLAGS.md](MILESTONE_ESP32_RETIRE_RENDER_MAPFLAGS.md).
+
 # Doom RPG ESP32 CYD porting status
 
 ## DoomCanvas compact native shell — REAL-CYD PASS (2026-10-07)

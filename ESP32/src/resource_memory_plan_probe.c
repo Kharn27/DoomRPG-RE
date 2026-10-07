@@ -22,6 +22,17 @@ extern DoomRPG_t* doomRpg;
 static int resourcePlanAttempted = 0;
 static int resourcePlanReady = 0;
 
+/* Historical ZIP resource-plan log only. Native production has no
+ * Render_t plane descriptors; original count is bringup-only. */
+static int legacyPlaneCount(const Render_t* render) {
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES) && DOOMRPG_ESP32_BRINGUP_PROBES
+    return render != NULL ? render->planeTexturesCnt : 0;
+#else
+    (void)render;
+    return 0;
+#endif
+}
+
 static uint32_t heap8Free(void) {
     return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
 }
@@ -202,7 +213,7 @@ int DoomRPG_probeMenuResourceMemoryPlan(int mapStructuresReady) {
            (unsigned int)largestBefore,
            render->mapTextureTexelsCount,
            render->mapSpriteTexelsCount,
-           render->planeTexturesCnt);
+           legacyPlaneCount(render));
     printf("[RESOURCEPLAN] bitshapes.bin c=%d u=%d inflateTransient=%lluB\n",
            bitshapesEntry->csize, bitshapesEntry->usize,
            (unsigned long long)inflateTransientBytes(bitshapesEntry));

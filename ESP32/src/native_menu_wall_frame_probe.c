@@ -285,6 +285,15 @@ static int drawNativeMenuWall(Render_t* render,
     return 1;
 }
 
+/* Obsolete menu.bsp view-node probe belongs exclusively to bringup.
+ * The normal CYD main dashboard does not construct a desktop BSP or list. */
+#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
+    (void)renderBase;
+    printf("[MENUWALL] REJECT retired menu BSP probe in production\n");
+    return 0;
+}
+#else
 int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
     Render_t* render = (Render_t*)renderBase;
     DoomCanvas_t* doomCanvas;
@@ -565,3 +574,4 @@ int DoomRPG_probeNativeMenuWallFrame(struct Render_s* renderBase) {
     printf("[MENUWALL] READY measured three-slot cache = 14 hits / 11 misses / 8 evictions / 6144B peak payload\n");
     return 1;
 }
+#endif /* bringup-only menu BSP view-node probe */

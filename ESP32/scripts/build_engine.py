@@ -1,6 +1,7 @@
 Import("env")
 
 import os
+import re
 from os.path import join
 
 
@@ -139,6 +140,185 @@ render_source_text = render_source_text.replace(
     render_legacy_activation_replacement,
     1,
 )
+
+# The original Render_beginLoadMap* BSP parser is a desktop/bringup-only
+# diagnostic path. Production already builds the immutable EspMapRuntime from
+# the native PAK backing. Reject accidental calls instead of retaining its
+# 1024-byte Render.mapFlags mirror (or accepting a legacy map-wide decoder).
+render_legacy_map_begin = "boolean Render_beginLoadMap(Render_t* render, int mapNameID)\n{"
+render_legacy_map_data = "boolean Render_beginLoadMapData(Render_t* render)\n{"
+render_legacy_map_end = "boolean Render_loadBitShapes(Render_t* render)\n{"
+if any(render_source_text.count(anchor) != 1 for anchor in
+       (render_legacy_map_begin, render_legacy_map_data, render_legacy_map_end)):
+    raise RuntimeError("Unexpected legacy Render BSP loader source shape")
+render_legacy_map_region = render_source_text[
+    render_source_text.index(render_legacy_map_begin):
+    render_source_text.index(render_legacy_map_end)]
+if (render_source_text.count("render->mapFlags") != 13 or
+        render_legacy_map_region.count("render->mapFlags") != 13):
+    raise RuntimeError("Render.mapFlags gained an unreviewed source consumer")
+render_source_text = render_source_text.replace(
+    render_legacy_map_begin,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+boolean Render_beginLoadMap(Render_t* render, int mapNameID)
+{
+    (void)render;
+    (void)mapNameID;
+    printf("[LEGACYMAP] REJECT Render_beginLoadMap: native BSP owner required\\n");
+    return false;
+}
+
+boolean Render_beginLoadMapData(Render_t* render)
+{
+    (void)render;
+    printf("[LEGACYMAP] REJECT Render_beginLoadMapData: native BSP owner required\\n");
+    return false;
+}
+#else
+""" + render_legacy_map_begin, 1)
+render_source_text = render_source_text.replace(
+    render_legacy_map_end,
+    "#endif /* production legacy BSP loader rejection */\n\n" +
+    render_legacy_map_end, 1)
+# Fourth bounded ownership cut: map-wide custom/drop sprite pointer
+# mirrors are only populated within this rejected legacy BSP loader.
+# Native topology and native monster drops carry the production state.
+for field, expected in (("customSprites", 1), ("dropSprites", 1),
+                        ("firstDropSprite", 1)):
+    token = "render->" + field
+    if (render_source_text.count(token) != expected or
+            render_legacy_map_region.count(token) != expected):
+        raise RuntimeError("Unreviewed legacy Render sprite mirror: " + field)
+print("[ESP32] Legacy Render BSP loader fail-closed in production; "
+      "Render.mapFlags 1024-byte mirror retired (bringup/desktop unchanged)")
+
+# Second Render ownership cut: the desktop/J2ME plane-cell array is
+# absent from the normal classic-CYD layout. Production rendering uses the
+# immutable native plane records and the native renderer. Legacy BSP load
+# (already fail-closed above) and legacy world/plane draw must not silently
+# reintroduce another 2048-cell map-wide mirror.
+legacy_render_entry = "void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle)\n{"
+legacy_render_next = "void Render_initColumnScale(Render_t* render)\n{"
+legacy_plane_entry = "void Render_renderFloorAndCeilingBG(Render_t* render)\n{"
+legacy_plane_next = "void Render_drawplane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int cnt)\n{"
+for needle in (legacy_render_entry, legacy_render_next,
+               legacy_plane_entry, legacy_plane_next):
+    if render_source_text.count(needle) != 1:
+        raise RuntimeError("Unexpected legacy Render draw shape: " + needle[:60])
+legacy_plane_use = re.findall(r"render->planeTextures\b", render_source_text)
+if len(legacy_plane_use) != 4:
+    raise RuntimeError("Unexpected legacy Render planeTextures use count")
+legacy_loader_piece = render_source_text[
+    render_source_text.index(render_legacy_map_data):
+    render_source_text.index(render_legacy_map_end)]
+legacy_draw_piece = render_source_text[
+    render_source_text.index(legacy_plane_entry):
+    render_source_text.index(legacy_plane_next)]
+if (len(re.findall(r"render->planeTextures\b", legacy_loader_piece)) != 2 or
+        len(re.findall(r"render->planeTextures\b", legacy_draw_piece)) != 2):
+    raise RuntimeError("Render planeTextures read/write closure changed")
+render_source_text = render_source_text.replace(
+    legacy_render_entry,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle)
+{
+    (void)render;
+    (void)viewx;
+    (void)viewy;
+    (void)viewz;
+    (void)viewangle;
+    printf("[LEGACYRENDER] REJECT Render_render: native world renderer required\\n");
+}
+#else
+""" + legacy_render_entry, 1)
+render_source_text = render_source_text.replace(
+    legacy_render_next,
+    "#endif /* production legacy world renderer rejection */\n\n" +
+    legacy_render_next, 1)
+render_source_text = render_source_text.replace(
+    legacy_plane_entry,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_renderFloorAndCeilingBG(Render_t* render)
+{
+    (void)render;
+    printf("[LEGACYRENDER] REJECT Render_renderFloorAndCeilingBG: native planes required\\n");
+}
+#else
+""" + legacy_plane_entry, 1)
+render_source_text = render_source_text.replace(
+    legacy_plane_next,
+    "#endif /* production legacy plane renderer rejection */\n\n" +
+    legacy_plane_next, 1)
+print("[ESP32] Legacy Render_render/plane BG fail-closed in production; "
+      "Render.planeTextures 2048-byte mirror retired (bringup/desktop unchanged)")
+
+# Every legacy producer/consumer must stay inside the audited closure.
+for field, expected in (("planeTexturesCnt", 7), ("planeTextureIds", 4),
+                        ("planeTexelOffsets", 2), ("planePaletteOffsets", 2)):
+    if len(re.findall(r"render->" + field + r"\b", render_source_text)) != expected:
+        raise RuntimeError("Unreviewed legacy Render plane field: " + field)
+# Production has no legacy plane descriptor metadata; reject legacy helpers.
+plane_draw = "void Render_drawplane(Render_t* render, int x, int y, PlaneTextureRef_t* planeTextures, int cnt)\n{"
+plane_end = "void Render_renderBSP(Render_t* render)\n{"
+if render_source_text.count(plane_draw) != 1 or render_source_text.count(plane_end) != 1:
+    raise RuntimeError("Unexpected legacy Render plane helper source")
+render_source_text = render_source_text.replace(plane_draw, """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_drawplane(Render_t* r,int x,int y,PlaneTextureRef_t* p,int n)
+{ (void)r;(void)x;(void)y;(void)p;(void)n; }
+void Render_spanPlane(Render_t* r,int x,int y,PlaneTextureRef_t* p,
+                      int a,int b,int c,int d,int n)
+{ (void)r;(void)x;(void)y;(void)p;(void)a;(void)b;(void)c;(void)d;(void)n; }
+#else
+""" + plane_draw, 1)
+render_source_text = render_source_text.replace(plane_end, "#endif\n\n" + plane_end, 1)
+
+# Fifth bounded cut: viewNodes was a 44-byte linked-list sentinel in
+# the retired Render_renderBSP/Render_walkNode traversal. Native visibility
+# uses compact immutable BSP data and never needs this mutable list.
+# Preserve full desktop/bringup code and fail-close legacy production entry.
+view_bsp_begin = "void Render_renderBSP(Render_t* render)\n{"
+view_bsp_end = "void Render_renderBSPNoclip(Render_t* render)\n{"
+view_walk_begin = "void Render_walkNode(Render_t* render, int i)\n{"
+view_walk_end = "boolean Render_cullBoundingBox(Render_t* render, Node_t* node)\n{"
+for anchor in (view_bsp_begin, view_bsp_end, view_walk_begin, view_walk_end):
+    if render_source_text.count(anchor) != 1:
+        raise RuntimeError("Unreviewed legacy BSP view-list source shape")
+if render_source_text.count("render->viewNodes") != 6:
+    raise RuntimeError("Unreviewed legacy Render.viewNodes consumer")
+if (render_source_text[render_source_text.index(view_bsp_begin):
+                       render_source_text.index(view_bsp_end)].count("render->viewNodes") != 3 or
+        render_source_text[render_source_text.index(view_walk_begin):
+                           render_source_text.index(view_walk_end)].count("render->viewNodes") != 3):
+    raise RuntimeError("Legacy viewNodes consumer escaped its retired owner")
+render_source_text = render_source_text.replace(
+    view_bsp_begin,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_renderBSP(Render_t* render)
+{
+    (void)render;
+    printf("[LEGACYBSP] REJECT Render_renderBSP: native visibility required\\n");
+}
+#else
+""" + view_bsp_begin, 1)
+render_source_text = render_source_text.replace(
+    view_bsp_end,
+    "#endif /* production legacy BSP traversal rejection */\n\n" + view_bsp_end, 1)
+render_source_text = render_source_text.replace(
+    view_walk_begin,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_walkNode(Render_t* render, int i)
+{
+    (void)render;
+    (void)i;
+    printf("[LEGACYBSP] REJECT Render_walkNode: native BSP owner required\\n");
+}
+#else
+""" + view_walk_begin, 1)
+render_source_text = render_source_text.replace(
+    view_walk_end,
+    "#endif /* production legacy BSP walk rejection */\n\n" + view_walk_end, 1)
+print("[ESP32] Legacy BSP view-list traversal fail-closed; "
+      "Render.viewNodes 44-byte sentinel retired from production")
 
 with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(render_source_text)

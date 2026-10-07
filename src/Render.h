@@ -94,7 +94,12 @@ typedef struct Render_s
 	int* mapByteCode;
 	char** mapStringsIDs;
 	int mapStringCount;
+	/* Legacy BSP tile flags: only the desktop parser and the explicit CYD
+     * bringup parser still retain this 1 KiB map-wide mirror. Production
+     * automap uses EspMapState and EspMapAutomapState instead. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	byte mapFlags[1024];
+#endif
 	char mapName[MAPNAMESTRLEN];
 	short unk1;
 	short mapNameID;
@@ -103,9 +108,13 @@ typedef struct Render_s
 	int mapSpawnIndex;
 	int mapSpawnDir;
 	int mapCameraSpawnIndex;
+	/* Legacy map-wide sprite pointer lists. Normal CYD native sprite
+	 * topology and drops own these semantics without Render mirrors. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Sprite_s* customSprites[MAX_CUSTOM_SPRITES];
 	struct Sprite_s* dropSprites[MAX_DROP_SPRITES];
 	int firstDropSprite;
+#endif
 	int unk2;
 	int mapMemory;
 	int stringMem;
@@ -151,7 +160,11 @@ typedef struct Render_s
 	int viewAngle;
 	int* columnScale;
 	struct Sprite_s* viewSprites;
+	/* Legacy BSP linked-list sentinel. Production uses native
+	 * bounded world visibility instead of Render_renderBSP traversal. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	struct Node_s viewNodes;
+#endif
 	int* mapTextureTexels;
 	int mapTextureTexelsCount;
 	int* mapSpriteTexels;
@@ -188,15 +201,25 @@ typedef struct Render_s
 	int screenRight;
 	int screenBottom;
 	short* pixels;
-	#ifdef DOOMRPG_ESP32
+	/* Legacy BSP plane metadata. Native CYD uses immutable EspMapRuntime planes. */
+#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+	/* Deliberately absent from production Render_t. */
+#elif defined(DOOMRPG_ESP32)
 	int planeTexelOffsets[24];
 	int planePaletteOffsets[24];
-	#else
+#else
 	short mediaPlanes[24][64 * 64];
-	#endif
+#endif
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	int planeTexturesCnt;
 	int planeTextureIds[24];
+#endif
+	/* This 2048-cell desktop floor/ceiling plane buffer belongs exclusively
+     * to the retired legacy BSP loader/render path. The native CYD world
+     * renderer reads compact plane indices from EspMapRuntime instead. */
+#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 	PlaneTextureRef_t planeTextures[1024*2];
+#endif
 
 	// New [GEC]
 	// Needed to avoid buffer overflows like in sector 5
