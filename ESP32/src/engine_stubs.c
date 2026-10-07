@@ -19,6 +19,20 @@
  * the C99 false/true macros. */
 #include <esp_heap_caps.h>
 
+#ifdef DOOMRPG_ESP32
+/* The normal classic-CYD build must never silently regain the 35 KB desktop
+ * entity stores. These are compile-only sentinels; native owners hold runtime
+ * entity/monster/topology state. */
+_Static_assert(GAME_LEGACY_ENTITY_CAPACITY == 1,
+               "ESP32 Game_t legacy entity storage must stay compact");
+_Static_assert(GAME_LEGACY_ENTITY_DB_CAPACITY == 1,
+               "ESP32 Game_t legacy entityDb storage must stay compact");
+_Static_assert(GAME_LEGACY_MONSTER_CAPACITY == 1,
+               "ESP32 Game_t legacy monster storage must stay compact");
+_Static_assert(sizeof(Game_t) == 1296,
+               "ESP32 Game_t layout changed; re-audit live compatibility fields");
+#endif
+
 /* DoomRPG.c owns the real engine root. The desktop header intentionally does
  * not export it, but the ESP32 bring-up must populate that same root so later
  * increments can continue startup instead of constructing a parallel engine. */
@@ -301,7 +315,11 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
         if (report != NULL) *report = coreInitReport;
         return 0;
     }
-    printf("[CORE] Legacy entity runtime retired arrays=dormant entities=0 monsters=0 owner=native-resident-map\n");
+    printf("[CORE] Legacy entity runtime retired stores=sentinel capacities=%u/%u/%u gameBytes=%u desktopBytes=36468 reclaimed=35172 entities=0 monsters=0 owner=native-resident-map\n",
+           (unsigned int)GAME_LEGACY_ENTITY_CAPACITY,
+           (unsigned int)GAME_LEGACY_ENTITY_DB_CAPACITY,
+           (unsigned int)GAME_LEGACY_MONSTER_CAPACITY,
+           (unsigned int)sizeof(Game_t));
 
     /*
      * Player state is owned by the compact 52-byte native gameplay owner.

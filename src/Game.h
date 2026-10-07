@@ -5,6 +5,23 @@
 #include "Entity.h"
 #include "EntityMonster.h"
 
+/*
+ * The desktop/J2ME Game object embeds the complete mutable entity runtime.
+ * ESP32 production retired that owner: live entities and monsters are held by
+ * compact native resident-map/gameplay state. Keep one compile-only sentinel
+ * slot so unlinked legacy functions still compile against the historical field
+ * names without reserving the 35 KB desktop stores at runtime.
+ */
+#ifdef DOOMRPG_ESP32
+#define GAME_LEGACY_ENTITY_CAPACITY 1
+#define GAME_LEGACY_ENTITY_DB_CAPACITY 1
+#define GAME_LEGACY_MONSTER_CAPACITY 1
+#else
+#define GAME_LEGACY_ENTITY_CAPACITY 400
+#define GAME_LEGACY_ENTITY_DB_CAPACITY 1024
+#define GAME_LEGACY_MONSTER_CAPACITY 100
+#endif
+
 typedef enum
 {
 	MAP_MENU = 0,
@@ -120,12 +137,12 @@ typedef struct GameSpriteMissile_s
 
 typedef struct Game_s
 {
-	struct Entity_s entities[400];
+	struct Entity_s entities[GAME_LEGACY_ENTITY_CAPACITY];
 	int numEntities;
-	struct Entity_s* entityDb[1024];
+	struct Entity_s* entityDb[GAME_LEGACY_ENTITY_DB_CAPACITY];
 	struct Entity_s* traceEntities[8];
 	int numTraceEntities;
-	struct EntityMonster_s entityMonsters[100];
+	struct EntityMonster_s entityMonsters[GAME_LEGACY_MONSTER_CAPACITY];
 	int numMonsters;
 	int spawnParam;
 	boolean disableAI;

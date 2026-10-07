@@ -460,6 +460,26 @@ game_source_text = game_source_text.replace(
     game_player_cleanup_needle, game_player_cleanup_replacement, 1
 )
 
+game_entity_db_clear_needle = """	for (i = 0; i < 1024; i++) {
+		game->entityDb[i] = NULL;
+	}
+
+"""
+game_entity_db_clear_replacement = """	/* ESP32 has no legacy entityDb runtime. The compact Game_t keeps only
+	 * one compile-time sentinel slot; native topology teardown owns live links. */
+	game->entityDb[0] = NULL;
+
+"""
+game_entity_db_clear_count = game_source_text.count(game_entity_db_clear_needle)
+if game_entity_db_clear_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_unloadMapData entityDb clear shape; "
+        "review compact ESP32 Game entity ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_entity_db_clear_needle, game_entity_db_clear_replacement, 1
+)
+
 game_entity_reset_needle = """	for (i = 0; i < game->numEntities; i++) {
 		Entity_reset(&game->entities[i]);
 	}
@@ -574,6 +594,7 @@ print(
     f"{game_activate_count} legacy monster activation path retired + "
     f"{game_combat_cleanup_count} legacy Combat cleanup reset retired + "
     f"{game_player_cleanup_count} legacy Player cleanup reset retired + "
+    f"{game_entity_db_clear_count} legacy entityDb clear retired + "
     f"{game_entity_reset_count} legacy Entity reset loop retired + "
     f"{game_sound_volume_count} legacy Sound config load field retired + "
     f"{game_player_deaths_load_count} legacy Player config load field retired + "
