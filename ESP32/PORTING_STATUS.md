@@ -1,5 +1,51 @@
 # Doom RPG ESP32 CYD porting status
 
+## Retired Player/Sound config dereferences closed — REVIEW FIX + REAL-CYD BOOT PASS (2026-10-07)
+
+Current tested code boundary:
+`084b0c0345cd38ed2093d6c08faf5db65d9a60e9`.
+
+Branch:
+`fix/mainMenu`.
+
+Post-review audit found one remaining legacy `Player_t` dereference in
+`Game_loadConfig()`: a compatible existing Config file would still read
+`totalDeaths` into `doomRpg->player->totalDeaths`, even though
+`doomRpg->player == NULL`. The symmetric `Game_saveConfig()` path also still
+dereferenced retired Player/Sound owners.
+
+The ESP32 generator now preserves Config stream/layout compatibility while
+removing those owners:
+
+- legacy Sound volume is consumed on load and not stored in `Sound_t`;
+- legacy Player `totalDeaths` is consumed on load and not stored in `Player_t`;
+- both retired fields are written as zero on legacy Config save paths;
+- generation fails closed if either
+  `doomRpg->sound->volume` or
+  `doomRpg->player->totalDeaths` survives in generated `Game.c`.
+
+Real-CYD boot on the corrected boundary reaches the config/mappings startup
+without regression:
+
+```text
+[CONFIG] Config file present=no (missing is valid on first boot)
+[CONFIG] -> Game_loadConfig()
+loadConfig: (unable to open file)
+[CONFIG] DONE heap delta=0 heap8=112740 largest8=73716
+[MAPPINGS] Header texelOffsets=592 bitShapeOffsets=1300 textures=152 sprites=252
+[MAPPINGS] Plan payload=8376B largestAlloc=5200B whileData heap8=112740 largest8=73716
+```
+
+This hardware run exercises the corrected firmware and the missing-Config
+branch. A pre-existing compatible Config file was not present, so the
+`version == CONFIG_VERSION` field-consumption branch is not claimed as a
+hardware witness. Its retired-owner dereferences are nevertheless prevented
+structurally by exact generator replacement plus a post-generation fail-closed
+guard.
+
+This review fix does not restore `Player_t` or `Sound_t`, does not alter the
+native 52-byte PlayerState, and does not change the Config field ordering.
+
 ## Desktop Entity / EntityMonster translation units retired — REAL-CYD PASS (2026-10-06)
 
 Hardware-tested code boundary:

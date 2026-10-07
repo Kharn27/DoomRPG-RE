@@ -73,6 +73,27 @@ gameplay total. The largest free block falls from 51188 to 36852 on the second
 resident cycle. This is still comfortably above the 16384 reserve target and
 is tracked as allocator fragmentation to watch over repeated cycles.
 
+## Post-review Config compatibility correction
+
+Code boundary:
+`084b0c0345cd38ed2093d6c08faf5db65d9a60e9`
+
+A P1 review correctly identified that `Game_loadConfig()` still assigned the
+legacy Config `totalDeaths` field through `doomRpg->player`. With the retired
+Player contract, an existing compatible Config would therefore null-dereference
+during startup. The same audit found stale Player/Sound dereferences in
+`Game_saveConfig()`.
+
+The ESP32 generator now consumes the retired load fields without dereference and
+writes zero placeholders on legacy save paths, preserving the Config binary
+layout. It additionally rejects generated `Game.c` if either retired field
+access survives.
+
+The corrected firmware was booted on the real CYD through config/mappings
+startup. The board had no Config file, so compatible-Config parsing itself is
+not claimed as hardware-exercised; the null dereferences are structurally absent
+and guarded at generation time.
+
 ## Next architectural boundary
 
 `Game_t` remains intentionally resident. The next desktop-disengagement work
