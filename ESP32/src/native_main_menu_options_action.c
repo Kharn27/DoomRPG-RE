@@ -142,13 +142,13 @@ static int paintOptionsBounded(DoomRPG_t* doomRpg,
     DoomRPG_fillRect(doomRpg,
                      0,
                      0,
-                     doomCanvas->displayRect.w,
-                     doomCanvas->displayRect.h);
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
 
-    logoDst.x = doomCanvas->displayRect.x +
-                ((doomCanvas->displayRect.w -
+    logoDst.x = DOOMRPG_CANVAS_X +
+                ((DOOMRPG_CANVAS_WIDTH -
                   DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH) >> 1);
-    logoDst.y = doomCanvas->displayRect.y +
+    logoDst.y = DOOMRPG_CANVAS_Y +
                 DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y;
     logoDst.w = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH;
     logoDst.h = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT;

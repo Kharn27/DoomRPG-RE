@@ -9,6 +9,7 @@
 
 #include "esp_native_intro_state.h"
 #include "native_story_fit.h"
+#include "platform_video_config.h"
 
 #define STORY_FONT_ADVANCE 7
 #define STORY_FONT_WIDTH 9
@@ -94,11 +95,11 @@ static int scaleOffsetFloor(int value, int viewportSize) {
 }
 
 static int virtualLeft(const DoomCanvas_t* doomCanvas) {
-    return doomCanvas->SCR_CX - (ESP32_STORY_VIRTUAL_SIZE / 2);
+    return DOOMRPG_CANVAS_CENTER_X - (ESP32_STORY_VIRTUAL_SIZE / 2);
 }
 
 static int virtualTop(const DoomCanvas_t* doomCanvas) {
-    return doomCanvas->SCR_CY - (ESP32_STORY_VIRTUAL_SIZE / 2);
+    return DOOMRPG_CANVAS_CENTER_Y - (ESP32_STORY_VIRTUAL_SIZE / 2);
 }
 
 static int mapX(const DoomCanvas_t* doomCanvas, int x) {
@@ -219,8 +220,8 @@ static void drawImageSpecialMapped(DoomCanvas_t* doomCanvas,
     source.w = width;
     source.h = height;
 
-    destination.x = doomCanvas->displayRect.x + left;
-    destination.y = doomCanvas->displayRect.y + top;
+    destination.x = DOOMRPG_CANVAS_X + left;
+    destination.y = DOOMRPG_CANVAS_Y + top;
     destination.w = right - left;
     destination.h = bottom - top;
 
@@ -293,8 +294,8 @@ static void drawTextGlyph(DoomCanvas_t* doomCanvas,
     source.y = ySrc;
     source.w = width;
     source.h = height;
-    destination.x = doomCanvas->displayRect.x + left;
-    destination.y = doomCanvas->displayRect.y + top;
+    destination.x = DOOMRPG_CANVAS_X + left;
+    destination.y = DOOMRPG_CANVAS_Y + top;
     destination.w = right - left;
     destination.h = bottom - top;
     SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &source, &destination);
@@ -526,8 +527,8 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     DoomRPG_fillRect(doomCanvas->doomRpg,
                      0,
                      0,
-                     doomCanvas->displayRect.w,
-                     doomCanvas->displayRect.h);
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
 
     if (introState->storyPage == 0 || introState->storyPage == 2) {
         if (introState->storyPage == 0) {
@@ -576,25 +577,25 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         if (introState->storyTextPage < textPageCount - 1) {
             drawImage(doomCanvas,
                       promptHand,
-                      (doomCanvas->SCR_CX + 36) - 4,
-                      (doomCanvas->SCR_CY + 64) - 2,
+                      (DOOMRPG_CANVAS_CENTER_X + 36) - 4,
+                      (DOOMRPG_CANVAS_CENTER_Y + 64) - 2,
                       10);
             drawString1(doomCanvas,
                         "More",
-                        (doomCanvas->SCR_CX + 64) - 4,
-                        doomCanvas->SCR_CY + 64,
+                        (DOOMRPG_CANVAS_CENTER_X + 64) - 4,
+                        DOOMRPG_CANVAS_CENTER_Y + 64,
                         10);
         }
         else {
             drawImage(doomCanvas,
                       promptHand,
-                      (doomCanvas->SCR_CX + 8) - 4,
-                      (doomCanvas->SCR_CY + 64) - 2,
+                      (DOOMRPG_CANVAS_CENTER_X + 8) - 4,
+                      (DOOMRPG_CANVAS_CENTER_Y + 64) - 2,
                       10);
             drawString1(doomCanvas,
                         "Continue",
-                        (doomCanvas->SCR_CX + 64) - 4,
-                        doomCanvas->SCR_CY + 64,
+                        (DOOMRPG_CANVAS_CENTER_X + 64) - 4,
+                        DOOMRPG_CANVAS_CENTER_Y + 64,
                         10);
         }
 
@@ -618,7 +619,7 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         const int bgOffset = elapsedAnim / 457;
         const int linesOffset = elapsedAnim / 157;
         const int shipX = left + (elapsedAnim / 142);
-        const int shipY = (doomCanvas->SCR_CY + 22) + (elapsedAnim / -333);
+        const int shipY = (DOOMRPG_CANVAS_CENTER_Y + 22) + (elapsedAnim / -333);
 
         DoomRPG_setClipTrue(doomCanvas->doomRpg,
                             0, 0,

@@ -10,6 +10,7 @@
 #include "esp_legacy_asset_source.h"
 #include "platform_video_c_bridge.h"
 #include "esp_render_startup_bridge.h"
+#include "platform_video_config.h"
 
 /* Include ESP-IDF bool macros only after DoomRPG's legacy boolean enum. */
 #include <esp_heap_caps.h>
@@ -89,10 +90,10 @@ int __wrap_Render_startup(Render_t* render) {
     printf("[RENDER] sintable loaded: %u bytes\n",
            (unsigned int)sizeof(render->sinTable));
 
-    render->clipRect.x = render->doomRpg->doomCanvas->displayRect.x;
-    render->clipRect.y = render->doomRpg->doomCanvas->displayRect.y;
-    render->clipRect.w = render->doomRpg->doomCanvas->displayRect.w;
-    render->clipRect.h = render->doomRpg->doomCanvas->displayRect.h;
+    render->clipRect.x = DOOMRPG_CANVAS_X;
+    render->clipRect.y = DOOMRPG_CANVAS_Y;
+    render->clipRect.w = DOOMRPG_CANVAS_WIDTH;
+    render->clipRect.h = DOOMRPG_CANVAS_HEIGHT;
 
     width = sdlVideo.rendererW;
     height = sdlVideo.rendererH;
@@ -206,8 +207,8 @@ int EspRenderStartupBridge_start(int preRenderReady) {
 
     if (!result || render->framebuffer != expectedFramebuffer ||
         render->piDIB != NULL || render->pitch != expectedPitch ||
-        render->clipRect.w != doomRpg->doomCanvas->displayRect.w ||
-        render->clipRect.h != doomRpg->doomCanvas->displayRect.h ||
+        render->clipRect.w != DOOMRPG_CANVAS_WIDTH ||
+        render->clipRect.h != DOOMRPG_CANVAS_HEIGHT ||
         render->mediaPalettes == NULL || render->mediaPalettesLength <= 0) {
         printf("[RENDERSTART] FAILED fb=%p expected=%p piDIB=%p pitch=%d/%d clip=%dx%d palettes=%p len=%d\n",
                (void*)render->framebuffer,

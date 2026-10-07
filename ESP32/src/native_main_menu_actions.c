@@ -164,11 +164,11 @@ static int paintHelp(DoomRPG_t* doomRpg, uint32_t* outFrameFNV) {
     DoomRPG_fillRect(doomRpg,
                      0,
                      0,
-                     canvas->displayRect.w,
-                     canvas->displayRect.h);
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
     DoomRPG_setFontColor(doomRpg, 0xffffffff);
 
-    x = canvas->SCR_CX - 64;
+    x = DOOMRPG_CANVAS_CENTER_X - 64;
     y = 0;
     for (i = menuSystem->scrollIndex; i < end; ++i) {
         const char* line = DoomRPG_esp32MainMenuHelpLine(i);

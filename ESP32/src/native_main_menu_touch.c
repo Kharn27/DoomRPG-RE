@@ -84,8 +84,8 @@ int DoomRPG_esp32MainMenuTouchPrepare(struct DoomRPG_s* doomRpgBase) {
     if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg) ||
         doomRpg->menuSystem->menu != MENU_MAIN ||
         doomRpg->menuSystem->numItems != DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT ||
-        doomRpg->doomCanvas->displayRect.w != DOOMRPG_LOGICAL_WIDTH ||
-        doomRpg->doomCanvas->displayRect.h != DOOMRPG_LOGICAL_HEIGHT) {
+        DOOMRPG_CANVAS_WIDTH != DOOMRPG_LOGICAL_WIDTH ||
+        DOOMRPG_CANVAS_HEIGHT != DOOMRPG_LOGICAL_HEIGHT) {
         printf("[MENUTOUCH] FAILED prepare dashboard/model boundary\n");
         return 0;
     }

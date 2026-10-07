@@ -441,8 +441,8 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
     }
     printf("[CORE] Menu root retired object=NULL owner=native-menu-models\n");
 
-    coreInitReport.clipWidth = (uint16_t)doomRpg->doomCanvas->clipRect.w;
-    coreInitReport.clipHeight = (uint16_t)doomRpg->doomCanvas->clipRect.h;
+    coreInitReport.clipWidth = (uint16_t)DOOMRPG_CANVAS_WIDTH;
+    coreInitReport.clipHeight = (uint16_t)DOOMRPG_CANVAS_HEIGHT;
     coreInitReport.heapAfter = coreFreeHeap();
     coreInitReport.largestBlockAfter = coreLargestBlock();
     coreInitReport.bytesUsed = coreInitReport.heapBefore >= coreInitReport.heapAfter
@@ -511,20 +511,20 @@ int DoomRPG_startEngineLayout(DoomRpgLayoutReport* report) {
     layoutReport.bytesUsed = layoutReport.heap8Before >= layoutReport.heap8After
         ? layoutReport.heap8Before - layoutReport.heap8After : 0;
 
-    layoutReport.clipX = (int16_t)canvas->clipRect.x;
-    layoutReport.clipY = (int16_t)canvas->clipRect.y;
-    layoutReport.clipWidth = (uint16_t)canvas->clipRect.w;
-    layoutReport.clipHeight = (uint16_t)canvas->clipRect.h;
+    layoutReport.clipX = (int16_t)DOOMRPG_CANVAS_X;
+    layoutReport.clipY = (int16_t)DOOMRPG_CANVAS_Y;
+    layoutReport.clipWidth = (uint16_t)DOOMRPG_CANVAS_WIDTH;
+    layoutReport.clipHeight = (uint16_t)DOOMRPG_CANVAS_HEIGHT;
 
-    layoutReport.displayX = (int16_t)canvas->displayRect.x;
-    layoutReport.displayY = (int16_t)canvas->displayRect.y;
-    layoutReport.displayWidth = (uint16_t)canvas->displayRect.w;
-    layoutReport.displayHeight = (uint16_t)canvas->displayRect.h;
+    layoutReport.displayX = (int16_t)DOOMRPG_CANVAS_X;
+    layoutReport.displayY = (int16_t)DOOMRPG_CANVAS_Y;
+    layoutReport.displayWidth = (uint16_t)DOOMRPG_CANVAS_WIDTH;
+    layoutReport.displayHeight = (uint16_t)DOOMRPG_CANVAS_HEIGHT;
 
-    layoutReport.screenX = (int16_t)canvas->screenRect.x;
-    layoutReport.screenY = (int16_t)canvas->screenRect.y;
-    layoutReport.screenWidth = (uint16_t)canvas->screenRect.w;
-    layoutReport.screenHeight = (uint16_t)canvas->screenRect.h;
+    layoutReport.screenX = (int16_t)DOOMRPG_VIEWPORT_X;
+    layoutReport.screenY = (int16_t)DOOMRPG_VIEWPORT_Y;
+    layoutReport.screenWidth = (uint16_t)DOOMRPG_VIEWPORT_WIDTH;
+    layoutReport.screenHeight = (uint16_t)DOOMRPG_VIEWPORT_HEIGHT;
 
     layoutReport.renderWidth = (uint16_t)render->screenWidth;
     layoutReport.renderHeight = (uint16_t)render->screenHeight;

@@ -25,6 +25,7 @@
 #define ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES 56U
 #define ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES 72U
 #define ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES 16U
+#define ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES 56U
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
@@ -34,7 +35,8 @@
      ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -70,14 +72,10 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
 
     doomCanvas->doomRpg = doomRpg;
     doomCanvas->imgFont.imgBitmap = NULL;
-    doomCanvas->clipRect.x = 0;
-    doomCanvas->clipRect.y = 0;
-    doomCanvas->clipRect.w = sdlVideo.rendererW;
-    doomCanvas->clipRect.h = sdlVideo.rendererH;
     doomCanvas->fontColor = 0xffffffff;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=6 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=6 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -88,8 +86,9 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES,
-           doomCanvas->clipRect.w,
-           doomCanvas->clipRect.h);
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES,
+           DOOMRPG_CANVAS_WIDTH,
+           DOOMRPG_CANVAS_HEIGHT);
     return doomCanvas;
 }
 
@@ -163,8 +162,8 @@ void DoomCanvas_drawImageSpecial(DoomCanvas_t* doomCanvas,
                 clip.w = remainingWidth;
                 clip.h = height;
 
-                renderQuad.x = doomCanvas->displayRect.x + drawX;
-                renderQuad.y = doomCanvas->displayRect.y + yDst;
+                renderQuad.x = DOOMRPG_CANVAS_X + drawX;
+                renderQuad.y = DOOMRPG_CANVAS_Y + yDst;
                 renderQuad.w = img->width;
                 renderQuad.h = img->height;
                 if (clip.w <= renderQuad.w) {
@@ -276,10 +275,10 @@ static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
     DoomRPG_fillRect(doomCanvas->doomRpg,
                      0,
                      0,
-                     doomCanvas->displayRect.w,
-                     doomCanvas->displayRect.h);
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
     DoomCanvas_drawString1(
-        doomCanvas, "Loading...", doomCanvas->SCR_CX, doomCanvas->SCR_CY, 17);
+        doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X, DOOMRPG_CANVAS_CENTER_Y, 17);
     DoomRPG_flushGraphics(doomCanvas->doomRpg);
     Sound_playSound(doomCanvas->doomRpg->sound,
                     5039,
@@ -297,8 +296,8 @@ static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
     DoomRPG_fillRect(doomCanvas->doomRpg,
                      0,
                      0,
-                     doomCanvas->displayRect.w,
-                     doomCanvas->displayRect.h);
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
     DoomRPG_flushGraphics(doomCanvas->doomRpg);
     return 1;
 }
@@ -345,75 +344,24 @@ void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
 }
 void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
 {
-    int map;
-    int width;
-    int height;
-    int displayH;
-    int clipH;
+    SDL_Rect screenRect;
     DoomRPG_t* doomRpg;
 
-    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
-        return;
-    }
+    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return;
 
     doomRpg = doomCanvas->doomRpg;
     doomCanvas->render = doomRpg->render;
-
-    doomCanvas->displayRect.w = 0;
-    doomCanvas->displayRect.h = 0;
-    width = doomCanvas->clipRect.w;
-    if ((width & 1) != 0) {
-        doomCanvas->clipRect.w = width - 1;
-    }
-
-    doomCanvas->displayRect.w = doomCanvas->clipRect.w;
-    doomCanvas->displayRect.h = doomCanvas->clipRect.h;
-    if (doomCanvas->displayRect.w < 0x80) {
-        doomCanvas->displayRect.w = 0x80;
-    }
-    if (doomCanvas->displayRect.h < DOOMRPG_LOGICAL_HEIGHT) {
-        doomCanvas->displayRect.h = DOOMRPG_LOGICAL_HEIGHT;
-    }
-
-    displayH = doomCanvas->displayRect.h;
-    clipH = doomCanvas->clipRect.h;
-    height = displayH - 40;
-
-    /* Classic CYD logical height is fixed at 120; desktop softkey rows need
-     * >=148 and are permanently retired from the ESP32 Canvas shell. */
-
-    if ((height & 1) != 0) {
-        --height;
-    }
-
-    doomCanvas->displayRect.h = 20 + height + 20;
-    doomCanvas->displayRect.x =
-        (doomCanvas->clipRect.w - doomCanvas->displayRect.w +
-         (doomCanvas->clipRect.w < doomCanvas->displayRect.w)) /
-        2;
-
-    doomCanvas->displayRect.y = (clipH - doomCanvas->displayRect.h) / 2;
-    doomCanvas->SCR_CY = doomCanvas->displayRect.h / 2;
-    doomCanvas->SCR_CX = doomCanvas->displayRect.w / 2;
-    doomCanvas->screenRect.x = doomCanvas->displayRect.x;
-    doomCanvas->screenRect.y = doomCanvas->displayRect.y + 20;
-    doomCanvas->screenRect.w = doomCanvas->displayRect.w;
-    doomCanvas->screenRect.h = height;
-
-    Render_setup(doomCanvas->render, &doomCanvas->screenRect);
-
-    map = 1;
-    doomCanvas->startupMap = (short)map;
+    screenRect.x = DOOMRPG_VIEWPORT_X;
+    screenRect.y = DOOMRPG_VIEWPORT_Y;
+    screenRect.w = DOOMRPG_VIEWPORT_WIDTH;
+    screenRect.h = DOOMRPG_VIEWPORT_HEIGHT;
+    Render_setup(doomCanvas->render, &screenRect);
+    doomCanvas->startupMap = (short)MAP_INTRO;
     doomCanvas->skipIntro = false;
-
     DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
-
-    printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native\n",
-           doomCanvas->displayRect.w,
-           doomCanvas->displayRect.h,
-           doomCanvas->screenRect.w,
-           doomCanvas->screenRect.h,
-           doomCanvas->screenRect.x,
-           doomCanvas->screenRect.y,
+    printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native geometry=fixed-cyd\n",
+           DOOMRPG_CANVAS_WIDTH, DOOMRPG_CANVAS_HEIGHT,
+           DOOMRPG_VIEWPORT_WIDTH, DOOMRPG_VIEWPORT_HEIGHT,
+           DOOMRPG_VIEWPORT_X, DOOMRPG_VIEWPORT_Y,
            doomCanvas->startupMap);
 }

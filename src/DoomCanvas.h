@@ -31,8 +31,10 @@ typedef struct DoomCanvas_s
 	struct Image_s imgLargerFont;
 	struct Image_s imgMapCursor;
 #endif
+#ifndef DOOMRPG_ESP32
 	int SCR_CX;
 	int SCR_CY;
+#endif
 	int viewX;
 	int viewY;
 	int viewZ;
@@ -191,10 +193,10 @@ typedef struct DoomCanvas_s
 	int fillRectIndex;
 	int lastPacifierUpdate;
 #endif
+#ifndef DOOMRPG_ESP32
 	SDL_Rect clipRect;
 	SDL_Rect displayRect;
 	SDL_Rect screenRect;
-#ifndef DOOMRPG_ESP32
 	short softKeyY;
 	char softKeyLeft[12];
 	char softKeyRight[12];
