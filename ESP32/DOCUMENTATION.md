@@ -1,3 +1,28 @@
+## Render_t plane cell mirror retirement — REAL-CYD PASS (2026-10-08)
+
+Code SHA proven on classic CYD:
+`d98b6e07cc21b3bff91cd7f0f2c07b00607b01ed`.
+CI #1678 SUCCESS on the exact code (RAM 45056 B; flash 772389 B).
+Normal `esp32-cyd` excludes `Render_t.planeTextures[2048]`:
+the old loader/renderer keep their implementations only for desktop
+and explicit bringup diagnostics; production world/plane render
+entrypoints fail closed. Native compact BSP planes + renderer are
+unchanged. Compile-time layout `Render_t=1968 B` after
+`mapFlags` and `planeTextures` cuts (original 5040 B).
+
+Real-CYD heap8 gain against preceding cut: CORE +2048 (184680),
+layout +2048 (178072), mappings +2048 (158912), gameplay
++2048 (117860), and exit menu +2048 (163756). First frame
+`71ca7465`, `EspMapRuntime` FNV `c3882516`, clean
+`[RESIDENTRESET] empty=1`, final menu FNV `522dc605`.
+Movement, turning, loot, crate, door, HUB/SYS/EXIT validated;
+shapeData/mediaTexels NULL. LOAD not retested on this SHA.
+
+Full acceptance and boundaries:
+[MILESTONE_ESP32_RETIRE_RENDER_PLANETEXTURES.md](MILESTONE_ESP32_RETIRE_RENDER_PLANETEXTURES.md).
+Post-test documentation is docs-only. Future code changes on the
+branch require independent hardware validation.
+
 ## Legacy Render mapFlags retired — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested runtime SHA:
