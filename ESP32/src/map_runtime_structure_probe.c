@@ -64,6 +64,17 @@ static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 }
 
+/* The original Render plane descriptors exist only in bringup probes.
+ * Normal firmware deliberately has no historical plane-cell owner. */
+static int legacyPlaneTextureCount(const Render_t* render) {
+#if DOOMRPG_ESP32_BRINGUP_PROBES
+    return render != NULL ? render->planeTexturesCnt : 0;
+#else
+    (void)render;
+    return 0;
+#endif
+}
+
 static int realStructuresAreComplete(Render_t* render) {
     if (render == NULL) {
         return 0;
@@ -80,7 +91,7 @@ static int realStructuresAreComplete(Render_t* render) {
            render->mapTextureTexels != NULL && render->mapSpriteTexels != NULL &&
            render->mapTextureTexelsCount > 0 &&
            render->mapSpriteTexelsCount > 0 &&
-           render->planeTexturesCnt > 0 && render->planeTexturesCnt <= 24;
+           legacyPlaneTextureCount(render) > 0 && legacyPlaneTextureCount(render) <= 24;
 }
 
 void DoomRPG_markMapRuntimeStructureBoundary(struct Render_s* renderBase) {
@@ -108,7 +119,7 @@ void DoomRPG_markMapRuntimeStructureBoundary(struct Render_s* renderBase) {
     printf("[MAPSTRUCT] Resource refs mapTextures=%d mapSprites=%d planeTextures=%d\n",
            render->mapTextureTexelsCount,
            render->mapSpriteTexelsCount,
-           render->planeTexturesCnt);
+           legacyPlaneTextureCount(render));
 }
 
 /*
@@ -267,7 +278,7 @@ int DoomRPG_probeMenuMapRuntimeStructures(int menuBspReady) {
            render->numTileEvents,
            render->mapTextureTexelsCount,
            render->mapSpriteTexelsCount,
-           render->planeTexturesCnt,
+           legacyPlaneTextureCount(render),
            (unsigned int)measuredUsed,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
