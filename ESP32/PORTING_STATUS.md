@@ -1,3 +1,25 @@
+## Render planeTextures 2048-byte retirement — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code SHA: `d98b6e07cc21b3bff91cd7f0f2c07b00607b01ed`.
+Normal `esp32-cyd` CI #1678: SUCCESS (RAM 45056 B, flash 772389 B).
+The second bounded Render cut removes 2048 B of legacy plane tile
+mirror storage and fail-closes desktop world/plane render entries in
+production; native `EspMapRuntime` and renderer are untouched.
+`Render_t`: 5040 -> 4016 -> **1968 bytes**; cumulative -3072 B.
+The real CYD reproduced exactly +2048 B heap8 at CORE (184680),
+layout (178072), mappings (158912), gameplay (117860), and clean
+Exit->Menu (163756), versus the preceding hardware cut.
+MAP_INTRO first frame `71ca7465`, runtime arena FNV `c3882516`,
+and MENU_MAIN return `522dc605` are unchanged. Confirmed native
+movement, rotation, crate transformation, loot/pickups, door 275,
+HUB/SYS/EXIT; `shapeData==NULL`, `mediaTexels==NULL`,
+`[RESIDENTRESET] empty=1`, no checkpoint write. The known compact
+renderer guard recovered. LOAD was not rechecked on this exact SHA.
+
+Closure is documentation-only after the hardware-tested code commit.
+Further branch cuts require separate CI and real-CYD logs.
+See [MILESTONE_ESP32_RETIRE_RENDER_PLANETEXTURES.md](MILESTONE_ESP32_RETIRE_RENDER_PLANETEXTURES.md).
+
 ## Legacy Render mapFlags retired — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested runtime SHA:
