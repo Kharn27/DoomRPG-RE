@@ -356,7 +356,7 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
     screenRect.w = DOOMRPG_VIEWPORT_WIDTH;
     screenRect.h = DOOMRPG_VIEWPORT_HEIGHT;
     Render_setup(doomCanvas->render, &screenRect);
-    doomCanvas->startupMap = (short)MAP_INTRO;
+    doomCanvas->startupMap = 1;
     doomCanvas->skipIntro = false;
     DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
     printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native geometry=fixed-cyd\n",
