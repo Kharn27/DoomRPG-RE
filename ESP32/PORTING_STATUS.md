@@ -1,3 +1,34 @@
+## Render custom/drop sprite mirrors retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code SHA `1a2bdf3edb6cfbd399a30d509e3718346ced0e57`.
+CI #1694 normal `esp32-cyd`: SUCCESS, static RAM 45056 B,
+flash 772109 B. Fourth bounded Render cut removes legacy
+`customSprites[16]`, `dropSprites[8]`, `firstDropSprite`
+(100 B), whose only original accesses are in the production-
+rejected desktop BSP loader. Desktop/bringup keep the fields;
+native topology, sprite renderer and drop owner are unchanged.
+`Render_t`: 5040 -> 4016 -> 1968 -> 1676 -> **1576 B**,
+a 3464-byte cumulative reduction.
+
+Real-CYD heap8 exact +100 B versus preceding cut:
+CORE 185072, LAYOUT 178464, mappings 159304,
+gameplay 118252, menu after teardown 164148.
+Fresh intro, native MAP_INTRO first frame `71ca7465`
+and immutable arena FNV `c3882516`; movement, turning,
+crate attack/loot, HUB SYS, active-session LOAD v11,
+exact native monster/position/topology state restore,
+post-load movement, and double-confirm EXIT tested.
+The two `[RESIDENTRESET]` events released 18008 B
+with `empty=1`; final menu `522dc605`;
+`shapeData==NULL`, `mediaTexels==NULL`; no save write.
+12 checkpoint-restored active monsters were present but
+ordered dispatch delivered 0; exhaustive monster AI is NOT
+claimed validated. The expected render guard recovered.
+Hardware-proven code is now frozen; documentation closure
+is docs-only.
+
+See [MILESTONE_ESP32_RETIRE_RENDER_SPRITE_MIRRORS.md](MILESTONE_ESP32_RETIRE_RENDER_SPRITE_MIRRORS.md).
+
 ## Render legacy plane metadata retired — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested code boundary:
