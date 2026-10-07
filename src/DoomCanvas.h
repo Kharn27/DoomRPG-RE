@@ -33,6 +33,7 @@ typedef struct DoomCanvas_s
 	int viewY;
 	int viewZ;
 	int viewAngle;
+#ifndef DOOMRPG_ESP32
 	int destX;
 	int destY;
 	int destAngle;
@@ -40,6 +41,7 @@ typedef struct DoomCanvas_s
 	int viewCos;
 	int viewStepX;
 	int viewStepY;
+#endif
 	int animFrames;
 	int animPos;
 	int animAngle;
@@ -48,10 +50,14 @@ typedef struct DoomCanvas_s
 	boolean staleView;
 	boolean f438d;
 	boolean automapDrawn;
+#ifndef DOOMRPG_ESP32
 	boolean speeds;
 	boolean s_debug;
+#endif
 	boolean skipShakeX;
+#ifndef DOOMRPG_ESP32
 	boolean slowBlit;
+#endif
 	boolean sndFXOnly;
 	boolean combatDone;
 	boolean unloadMedia;
@@ -59,17 +65,23 @@ typedef struct DoomCanvas_s
 	int time;
 	int state;
 	int oldState;
+#ifndef DOOMRPG_ESP32
 	short loadMapID;
+#endif
 	short startupMap;
+#ifndef DOOMRPG_ESP32
 	int loadType;
 	int saveType;
 	boolean renderOnly;
+#endif
 	boolean vibrateEnabled;
 	boolean skipIntro;
+#ifndef DOOMRPG_ESP32
 	boolean legalsSkip;
 	boolean abortMove;
 	int shaketime;
 	int shakeVal;
+#endif
 	int shakeX;
 	int shakeY;
 #ifdef DOOMRPG_ESP32
@@ -79,23 +91,28 @@ typedef struct DoomCanvas_s
 #else
 	short dialogIndexes[1024];
 	char dialogBuffer[512];
-#endif
 	int dialogLineStartTime;
 	int dialogTypeLineIdx;
 	int numDialogLines;
 	int currentDialogLine;
 	boolean dialogBackSoftKey;
+#endif
 	int passwordTime;
+#ifndef DOOMRPG_ESP32
 	char passInput;
 	char passCode[8];
 	char strPassCode[8];
+#endif
 	int beforeRender;
 	int afterRender;
+#ifndef DOOMRPG_ESP32
 	int loopStart;
 	int loopEnd;
 	int lastRenderTime;
 	int lastLoopTime;
+#endif
 	int lastFrameTime;
+#ifndef DOOMRPG_ESP32
 	int idleTime;
 	boolean benchmarkString;
 	int st_count;
@@ -103,6 +120,7 @@ typedef struct DoomCanvas_s
 	int horizAvgMs;
 	int loopAvgMs;
 	int events[8]; // old short type
+#endif
 	byte numEvents;
 	struct Image_s imgSpaceBG;
 	struct Image_s imgLinesLayer;
@@ -119,34 +137,46 @@ typedef struct DoomCanvas_s
 	char epilogueText[2][150];
 	int epilogueTextPage;
 	int epilogueTextTime;
+#ifndef DOOMRPG_ESP32
 	int automapBlinkTime;
 	int automapBlinkState;
+#endif
 	char printMsg[128];
 	int deathTime;
 	int creditsTextTime;
 	char *creditsText;
+#ifndef DOOMRPG_ESP32
 	int captureState;
 	int captureTime;
+#endif
 	struct Entity_s *castEntity;
 	int castSeq;
 	int castTime;
+#ifndef DOOMRPG_ESP32
 	int castEntityLoopFrames;
 	int castEntityBegAttackTime;
 	int castEntityEndAttackTime;
 	int field_0xdcc;
+#endif
 	int castEntityX;
 	int castEntityY;
+#ifndef DOOMRPG_ESP32
 	int field_0xdd8;
 	int field_0xddc;
 	int legalsTime;
 	int legalsNextImage;
+#endif
 	boolean insufficientSpace;
 	boolean displaySoftKeys;
 	struct Line_s* openDoors[8];
+#ifndef DOOMRPG_ESP32
 	int animFrameCount;
+#endif
 	int openDoorsCount;
+#ifndef DOOMRPG_ESP32
 	int fillRectIndex;
 	int lastPacifierUpdate;
+#endif
 	SDL_Rect clipRect;
 	SDL_Rect displayRect;
 	SDL_Rect screenRect;
