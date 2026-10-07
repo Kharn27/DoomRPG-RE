@@ -528,6 +528,50 @@ static void serviceMove(Render_t* render,
         return;
     }
 
+    /*
+     * The gameplay MOVE, collision and tile events have already committed.
+     * Only the camera approaches that settled destination via two local
+     * visual poses. No early monster turn, event execution or automap reveal.
+     * Any preview failure drops directly to the required canonical frame.
+     */
+    if (startedInAutomap == 0U) {
+        uint8_t step;
+        uint8_t previews = 0U;
+        uint32_t previewUs = 0U;
+
+        for (step = 1U; step <= 2U; ++step) {
+            EspNativeGameplayFrameStats intermediate;
+            const int32_t cameraX =
+                beforeView.viewX + result.deltaX * (int32_t)step / 3;
+            const int32_t cameraY =
+                beforeView.viewY + result.deltaY * (int32_t)step / 3;
+            memset(&intermediate, 0, sizeof(intermediate));
+            if (!EspNativeGameplayFrame_renderVisualMove(
+                    render, &beforeView, &afterView, step, &intermediate)) {
+                printf("[VIEWANIM] FALLBACK mode=move seq=%u step=%u pos=%d,%d completed=%u finalCardinal=required gameplayStable=yes\n",
+                       (unsigned int)result.sequence,
+                       (unsigned int)step, (int)cameraX, (int)cameraY,
+                       (unsigned int)previews);
+                break;
+            }
+            ++previews;
+            previewUs += intermediate.totalMicros;
+            printf("[VIEWANIM] FRAME mode=move seq=%u step=%u/2 camera=%d,%d logical=%d,%d rendered=yes presented=%u totalUs=%u gameplayStable=yes\n",
+                   (unsigned int)result.sequence, (unsigned int)step,
+                   (int)cameraX, (int)cameraY,
+                   (int)afterView.viewX, (int)afterView.viewY,
+                   (unsigned int)intermediate.finalPresented,
+                   (unsigned int)intermediate.totalMicros);
+        }
+        printf("[VIEWANIM] END mode=move seq=%u tile=%u->%u from=%d,%d to=%d,%d intermediates=%u previewUs=%u logicalCommit=once turnAdvance=unchanged finalCardinal=next\n",
+               (unsigned int)result.sequence,
+               (unsigned int)result.sourceTile,
+               (unsigned int)result.destTile,
+               (int)beforeView.viewX, (int)beforeView.viewY,
+               (int)afterView.viewX, (int)afterView.viewY,
+               (unsigned int)previews, (unsigned int)previewUs);
+    }
+
     if (!renderActionCurrent(render, (uint8_t)afterView.viewAngle, "MOVE")) {
         status = EspNativeGameplayDispatch_rollbackMove(
             &afterView, &beforeView, &result);
