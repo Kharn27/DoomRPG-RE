@@ -1,3 +1,41 @@
+## Render BSP view-node sentinel — REAL-CYD PASS (2026-10-08)
+
+Code SHA validated on the physical CYD:
+`27b253cd7de0c29ea7095971296cf675dd91165d`.
+CI #1701 on normal `esp32-cyd`: SUCCESS (static RAM
+45056 B, flash 772161 B). The fifth Render owner cut
+removes the desktop `viewNodes` linked-list sentinel,
+44 B, from production. Legacy BSP walker/render entry
+and original menu view-node probe are rejected in
+production; full desktop/explicit bringup support stays
+available. `Render_t=1532 B`, down from 5040 B:
+**3508 B cumulative reduction**.
+
+Physical boot CORE heap8 `185116` (+44); layout
+`178500`, mappings `159340`, fresh gameplay
+`118288` (+36 at latter checkpoints due to an 8 B
+change in layout allocator cost). Exact native
+MAP_INTRO first frame `71ca7465`, BSP arena FNV
+`c3882516`, and MENU_MAIN `522dc605`.
+Help/About and Options/Back, native intro/Entrance,
+movement, crate->loot, full event 88 dialogue with
+opcode 19 state continuation, and double-confirm SYS
+EXIT all exercised. `[RESIDENTRESET]` freed 18008 B,
+all resident maps reset empty, no checkpoint write,
+`shapeData/mediaTexels=NULL`.
+
+The lazy `DIALOGCHAIN` journal is an independently
+reused 1020 B allocation, with 1036 B observed heap cost;
+it stays allocated past EXIT under current source code,
+so final menu heap8 `163148` is **not directly
+comparable** to the prior no-dialog menu. Future cleanup
+requires a separate owner-lifecycle milestone, not an
+unvalidated patch to this code-frozen Render milestone.
+Exact-SHA LOAD and monster AI not retested.
+
+[Full fifth Render milestone](MILESTONE_ESP32_RETIRE_RENDER_VIEWNODES.md).
+Closure on the branch is docs-only. No automatic main merge.
+
 ## Render legacy sprite mirrors retirement — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested code: `1a2bdf3edb6cfbd399a30d509e3718346ced0e57`.
