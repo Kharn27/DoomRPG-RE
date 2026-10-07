@@ -387,23 +387,88 @@ def remove_c_function_definition(source_text, function_name):
         "/* ESP32 pruned dead legacy definition: " + function_name + " */\n"
     ) + source_text[end:]
 
-doom_canvas_dead_game_functions = (
+doom_canvas_retained_abi = (
+    "DoomCanvas_free",
+    "DoomCanvas_getOverall",
+    "DoomCanvas_drawImageSpecial",
+    "DoomCanvas_drawSoftKeys",
+    "DoomCanvas_drawString1",
+    "DoomCanvas_drawFont",
+    "DoomCanvas_initCredits",
+    "DoomCanvas_loadEpilogueText",
+    "DoomCanvas_loadPrologueText",
+    "DoomCanvas_renderScene",
+    "DoomCanvas_setAnimFrames",
+    "DoomCanvas_setState",
+    "DoomCanvas_startup",
+    "DoomCanvas_init",
+    "DoomCanvas_invalidateRectAndUpdateView",
+)
+doom_canvas_pruned_public_functions = (
+    "DoomCanvas_LoadMenuMap",
     "DoomCanvas_attemptMove",
     "DoomCanvas_automapState",
     "DoomCanvas_captureDogState",
+    "DoomCanvas_castState",
+    "DoomCanvas_changeStoryPage",
+    "DoomCanvas_checkFacingEntity",
+    "DoomCanvas_checkState",
+    "DoomCanvas_closeDialog",
     "DoomCanvas_combatState",
+    "DoomCanvas_dialogState",
+    "DoomCanvas_disposeEpilogue",
+    "DoomCanvas_disposeIntro",
     "DoomCanvas_drawAutomap",
+    "DoomCanvas_drawCredits",
+    "DoomCanvas_drawEpilogue",
+    "DoomCanvas_drawImage",
+    "DoomCanvas_drawRGB",
+    "DoomCanvas_drawScrollBar",
+    "DoomCanvas_drawStory",
+    "DoomCanvas_drawString2",
+    "DoomCanvas_dyingState",
     "DoomCanvas_finishMovement",
+    "DoomCanvas_finishRotation",
+    "DoomCanvas_flagForFacingDir",
+    "DoomCanvas_getKeyAction",
     "DoomCanvas_handleDialogEvents",
+    "DoomCanvas_handleEpilogueInput",
+    "DoomCanvas_handleEvent",
+    "DoomCanvas_handleMenuEvents",
     "DoomCanvas_handlePasswordEvents",
     "DoomCanvas_handlePlayingEvents",
+    "DoomCanvas_handleStoryInput",
+    "DoomCanvas_keyPressed",
+    "DoomCanvas_legalsState",
+    "DoomCanvas_loadMap",
     "DoomCanvas_loadMedia",
+    "DoomCanvas_loadState",
+    "DoomCanvas_menuState",
     "DoomCanvas_playingState",
     "DoomCanvas_prepareDialog",
+    "DoomCanvas_renderOnlyState",
+    "DoomCanvas_restoreSoftKeys",
+    "DoomCanvas_resume",
     "DoomCanvas_run",
-    "DoomCanvas_checkFacingEntity",
+    "DoomCanvas_saveState",
+    "DoomCanvas_scrollSpaceBG",
+    "DoomCanvas_setupmenu",
+    "DoomCanvas_sorryState",
+    "DoomCanvas_startDialog",
+    "DoomCanvas_startDialogPassword",
+    "DoomCanvas_startShake",
+    "DoomCanvas_startSpeedTest",
+    "DoomCanvas_uncoverAutomap",
+    "DoomCanvas_unloadMedia",
+    "DoomCanvas_updateLoadingBar",
+    "DoomCanvas_updatePlayerAnimDoors",
+    "DoomCanvas_updatePlayerDoors",
+    "DoomCanvas_updateView",
+    "DoomCanvas_updateViewTrue",
+    "DoomCanvas_vibrate",
 )
-for dead_function in doom_canvas_dead_game_functions:
+
+for dead_function in doom_canvas_pruned_public_functions:
     doom_canvas = remove_c_function_definition(doom_canvas, dead_function)
 
 if "game->" in doom_canvas or "->game->" in doom_canvas:
@@ -421,7 +486,8 @@ print(
     f"{legacy_legals_load_count} legacy legal-strip load retired + "
     f"{legacy_hud_startup_count} legacy HUD startup retired + "
     f"{sum(hud_object_patch_counts)} direct Hud_t use(s) retired + "
-    f"{len(doom_canvas_dead_game_functions)} dead Game-field function(s) pruned + "
+    f"{len(doom_canvas_pruned_public_functions)} dead public function(s) pruned + "
+    f"{len(doom_canvas_retained_abi)} source ABI root(s) retained + "
     "2 retained Game scalar read(s) retired"
 )
 
