@@ -1,5 +1,557 @@
 # ESP32 documentation map
 
+## DoomCanvas object-graph mirrors retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`032c4d6eb8f1b9e3d5b4a3712499832cda96d4bc`.
+
+Branch:
+`agent/esp32-doomcanvas-bridge`.
+
+The ESP32 DoomCanvas compatibility object no longer mirrors seven pointers that
+were copied from `DoomRPG_t` during startup but never consumed through
+`DoomCanvas_t` by the current ESP32 closure:
+
+```text
+player
+game
+entityDef
+combat
+hud
+menuSystem
+particleSystem
+```
+
+The bridge retains only the object references it actually consumes:
+`doomRpg` and `render`.
+
+This removes seven 32-bit pointers with no replacement owner and no runtime
+allocation:
+
+```text
+DoomCanvas_t: 396 B -> 368 B
+reclaimed this step:    28 B
+reclaimed from desktop 3740 B layout: 3372 B (~90.2%)
+source ABI exports: 11, unchanged
+```
+
+Normal `esp32-cyd` CI #1654 is SUCCESS:
+
+```text
+[ESP32] Desktop DoomCanvas.c retired; esp_legacy_doomcanvas_bridge.c owns 11 source ABI exports
+RAM:   45432 B
+Flash: 772925 B
+esp32-cyd SUCCESS
+```
+
+ELF inspection confirms `DoomCanvas_s` is exactly 368 bytes and the linked
+DoomCanvas ABI remains exactly 11 symbols.
+
+Real-CYD boot proves the layout and allocator boundary:
+
+```text
+Engine structs: Render=5040 Game=4 Canvas=368 Total=6172 bytes
+[DOOMCANVASBRIDGE] INIT exports=11 desktopTU=no bytes=368 ... retiredGraphMirrors=28 clip=160x120
+[CORE] DoomCanvas     used=384 heap=186496 largest=110580
+[CORE] READY objects=5 heap used=6352 remaining=180908 largest=110580 clip=160x120
+```
+
+Relative to the prior 396-byte hardware boundary, the deterministic startup
+checkpoints recover the expected 28 bytes exactly:
+
+```text
+CORE READY   180880 -> 180908
+LAYOUT       163296 -> 163324
+mappings     144136 -> 144164
+```
+
+The acceptance run then exercises fresh START, complete intro and disposal,
+native MAP_INTRO load, canonical first frame, PASS_TURN, movement, crate
+combat/transform, pickup, regular door animation, HUB/System and confirmed Exit
+To Menu. The same firmware performs a version-11 checkpoint LOAD, exact native
+world/session restore, resumed movement and pickups, monster activation through
+door visibility, ordered attack visualization and committed retaliation.
+
+Canonical witnesses remain intact:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty
+[NATIVESAVE] LOAD ... version=11 ... world=...restored-exact session=reprime-pending
+[MONSTERATKVIS] COMPLETE probe=1 ... resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT probe=1 ... playerHP=34->32 armor=19->17 ... rollback=closed
+```
+
+The known compact renderer `LEGACY_GUARD -> RETRY -> RECOVERED` path appears
+and recovers normally; it remains unrelated to this ownership cut.
+
+The INIT witness still lacks a space between
+`retiredDormantText=428` and `retiredStateLayout=116`. This is a cosmetic
+logging defect only and does not affect the tested boundary.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DOOMCANVAS_GRAPH_MIRRORS.md](MILESTONE_ESP32_RETIRE_DOOMCANVAS_GRAPH_MIRRORS.md)
+
+
+## DoomCanvas state bridge narrowed — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`63a684d9c30bb20a9962a842c3551dc88aaa64c0`.
+
+Branch:
+`agent/esp32-doomcanvas-bridge`.
+
+The permanent ESP32 DoomCanvas state compatibility hook is now explicitly
+limited to the only three states still used by the current firmware:
+
+```text
+ST_MENU
+ST_PLAYING
+ST_INTRO
+```
+
+Inherited COMBAT / DIALOG / DYING / EPILOGUE / CREDITS / LOADING / AUTOMAP /
+CAST branches are no longer accepted by the bridge. Their behaviors already
+have native owners. Unsupported future calls fail closed with a
+`STATE-REJECT` witness instead of silently widening desktop ownership.
+
+Retiring those branches removes 113 bytes of obsolete field payload and 116
+bytes of actual ESP32 layout after alignment. Three helpers reachable only
+through the retired state fan-out also disappear from the ESP32 ABI:
+
+```text
+DoomCanvas_initCredits
+DoomCanvas_loadEpilogueText
+DoomCanvas_renderScene
+```
+
+The compact object is therefore:
+
+```text
+DoomCanvas_t: 512 B -> 396 B
+reclaimed this step:   116 B
+reclaimed from desktop 3740 B layout: 3344 B (~89.4%)
+source ABI exports: 14 -> 11
+```
+
+Normal `esp32-cyd` CI #1650 is SUCCESS:
+
+```text
+[ESP32] Desktop DoomCanvas.c retired; esp_legacy_doomcanvas_bridge.c owns 11 source ABI exports
+RAM:   45432 B
+Flash: 772949 B
+esp32-cyd SUCCESS
+```
+
+Compared with the prior 512-byte hardware boundary, CI also releases 32 bytes
+of static RAM and 6232 bytes of flash by dropping the legacy state branches and
+their loading strings.
+
+Real-CYD boot proves the exact object and allocator boundary:
+
+```text
+[DOOMCANVASBRIDGE] INIT exports=11 desktopTU=no bytes=396 ... retiredStateLayout=116 clip=160x120
+[CORE] DoomCanvas     used=412 heap=186468 largest=110580
+[CORE] READY objects=5 heap used=6380 remaining=180880 largest=110580 clip=160x120
+```
+
+The stable hardware checkpoints improve by 148 bytes relative to the prior
+512-byte boundary: 116 bytes from the heap-allocated DoomCanvas object plus the
+32-byte static-RAM CI reduction.
+
+```text
+CORE READY       180732 -> 180880
+LAYOUT           163148 -> 163296
+mappings         143988 -> 144136
+fresh LAZY_POST  103748 -> 103896
+fresh ALIVE      102936 -> 103084
+```
+
+The acceptance run covers complete fresh START/intro/disposal, native MAP_INTRO
+load, canonical first frame, crate actions, pickups, regular and deferred door
+animation, a real opcode-26 dialog plus opcode-19 chained resume, HUB/System and
+clean Exit To Menu. The same firmware then performs version-11 checkpoint LOAD,
+restores the complete native world/session, resumes movement and pickups,
+activates a monster through door visibility, completes its ordered attack
+visual and commits retaliation damage, then returns through Options/Back with
+no legacy menu renderer.
+
+Canonical witnesses remain exact:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[DIALOG] OPEN event=79 cmd=0 resume=1 opcode=26 string=3 ...
+[DIALOGCHAIN] RESUME event=79 start=1 handled=1 ... state=1 ... mutation=1
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[MONSTERATKVIS] COMPLETE probe=1 ... resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT probe=1 ... playerHP=34->31 armor=15->12 ... rollback=closed
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty
+[OPTIONBACK] READY native semantic Back + opaque bounded repaint; no MenuSystem_back ...
+```
+
+The known compact renderer `LEGACY_GUARD -> RETRY -> RECOVERED` path still
+recovers normally and remains unrelated.
+
+The boot witness currently concatenates
+`retiredDormantText=428` and `retiredStateLayout=116` without a separating
+space. This remains a cosmetic log-format defect only; the values and runtime
+behavior are unambiguous and hardware-proven.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_NARROW_DOOMCANVAS_STATE_BRIDGE.md](MILESTONE_ESP32_NARROW_DOOMCANVAS_STATE_BRIDGE.md)
+
+
+## DoomCanvas dormant text payloads + dead overall export retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`ccad65e7f56a05a7f5d2e0c6e4768ce0a364d454`.
+
+Branch:
+`agent/esp32-doomcanvas-bridge`.
+
+The ESP32 compatibility object no longer carries two desktop-only permanent
+text payloads:
+
+```text
+epilogueText[2][150] = 300 B
+printMsg[128]         = 128 B
+retired this step     = 428 B
+```
+
+The desktop epilogue run-loop that consumed `epilogueText` is already absent
+from the ESP32 firmware. The retained compatibility hook preserves only its
+remaining lifecycle side effects; any future visible epilogue belongs to the
+native UI/string path. No compiled ESP32 owner wrote `printMsg`, so the
+loading/saving compatibility branch observably always used its existing
+`"Processing..."` fallback. The 428-byte payload is removed rather than moved
+to another permanent arena/BSS owner.
+
+This makes the compact object:
+
+```text
+DoomCanvas_t: 940 B -> 512 B
+reclaimed this step:   428 B
+reclaimed from desktop 3740 B layout: 3228 B (~86.3%)
+```
+
+Removing the epilogue payload also made `DoomCanvas_getOverall()` unreachable.
+The linked ELF already dropped it; the source ABI whitelist and ESP32 bridge
+were then narrowed from 15 to 14 explicit exports so source and binary
+boundaries agree.
+
+Normal `esp32-cyd` CI #1646 is SUCCESS:
+
+```text
+[ESP32] Desktop DoomCanvas.c retired; esp_legacy_doomcanvas_bridge.c owns 14 source ABI exports
+RAM:   45464 B
+Flash: 779181 B
+esp32-cyd SUCCESS
+```
+
+Real-CYD boot proves the exact object and allocator reduction:
+
+```text
+Engine structs: Render=5040 Game=4 Canvas=512 Total=6316 bytes
+[DOOMCANVASBRIDGE] INIT exports=14 desktopTU=no bytes=512 retiredDialogStores=2560 retiredZeroRefLayout=240 retiredDormantText=428...
+[CORE] DoomCanvas     used=528 heap=186320 largest=110580
+[CORE] READY objects=5 heap used=6496 remaining=180732 largest=110580 clip=160x120
+```
+
+Compared with the hardware-proven 940-byte boundary, stable startup checkpoints
+recover exactly 428 bytes: `CORE READY 180304 -> 180732`,
+`LAYOUT 162720 -> 163148`, mappings `143560 -> 143988`, and fresh-session
+lazy gameplay `103320 -> 103748`.
+
+The acceptance run exercises substantially more than the retired payload:
+fresh START and complete intro, exact intro disposal, native MAP_INTRO load,
+the canonical first frame, crate combat/removal, pickups, regular and deferred
+door animation, a real opcode-26 dialog with chained resume, standalone weapon
+help dialog, HUB/System, confirmed Exit To Menu, version-11 checkpoint LOAD,
+world/session restore, resumed movement, pickup, monster activation, ordered
+attack visualization and committed retaliation.
+
+Canonical witnesses remain exact:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[DIALOG] OPEN event=79 cmd=0 resume=1 opcode=26 string=3 ...
+[DIALOGCHAIN] RESUME event=79 start=1 handled=1 ... state=1 ... mutation=1
+[DIALOG] OPEN-STANDALONE ... continuation=none ...
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[MONSTERATKVIS] COMPLETE probe=1 ... resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT probe=1 ... playerHP=34->32 armor=19->17 ... rollback=closed
+[RESIDENTRESET] ... released=18008 ... after=0/0/0/0/0/0/0 empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty
+```
+
+The known compact renderer `LEGACY_GUARD -> RETRY -> RECOVERED` path appears
+and recovers normally. It remains unrelated to DoomCanvas compaction.
+
+The boot witness currently concatenates `retiredDormantText=428` and
+`clip=160x120` without a separating space. This is a log-format-only defect;
+the values and runtime behavior are unambiguous and hardware-proven. It can be
+fixed in the next code milestone without changing this tested boundary.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_COMPACT_DOOMCANVAS_DORMANT_TEXT.md](MILESTONE_ESP32_COMPACT_DOOMCANVAS_DORMANT_TEXT.md)
+
+
+## DoomCanvas zero-reference fields retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`596a62b667a2a41dd29789abc249068fca4265fa`.
+
+Branch:
+`agent/esp32-doomcanvas-bridge`.
+
+After the 2560-byte dialog-store retirement, a second complete source-closure
+audit identified 52 inherited DoomCanvas fields with no access from any
+translation unit compiled into the normal ESP32 firmware. Their explicit field
+payload totals 239 bytes; removing them also eliminates one byte of alignment
+padding, for an exact 240-byte layout reduction.
+
+The ESP32 compatibility object is therefore:
+
+```text
+DoomCanvas_t: 1180 B -> 940 B
+reclaimed this step:    240 B
+reclaimed from desktop: 2800 B total
+```
+
+The desktop struct remains unchanged. On ESP32, the retired fields are absent,
+so accidental future reuse fails at compile time. The bridge pins the resulting
+layout with a `_Static_assert`.
+
+Normal `esp32-cyd` CI #1640 is SUCCESS:
+
+```text
+RAM:   45464 B
+Flash: 780097 B
+esp32-cyd SUCCESS
+```
+
+Real-CYD boot proves the exact object and heap reduction:
+
+```text
+Engine structs: Render=5040 Game=4 Canvas=940 Total=6744 bytes
+[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=940 retiredDialogStores=2560 retiredZeroRefLayout=240 clip=160x120
+[CORE] DoomCanvas     used=956 heap=185892 largest=110580
+```
+
+The hardware acceptance run covers the full fresh-session route: START,
+prologue, exact intro disposal, native MAP_INTRO load, the canonical first
+frame, movement/rotation, crate transform, resource pickups, door animation,
+HUB/System and a clean confirmed Exit To Menu.
+
+The exact first-frame witness is unchanged:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY map=1 angle=64 ... shapeData=0x0 mediaTexels=0x0
+```
+
+The same firmware then performs MENU_MAIN -> LOAD on an existing version-11
+checkpoint, restores the complete native world/session state, accepts further
+movement and pickups, opens another door, activates a monster, delivers the
+ordered native attack visualization and commits retaliation damage, then exits
+cleanly again.
+
+Representative resumed-session witnesses:
+
+```text
+[NATIVESAVE] LOAD ... version=11 ... world=...monster-drops-restored-exact session=reprime-pending
+[ENGINESESSION] READY map=1 angle=0 ... shapeData=0x0 mediaTexels=0x0
+[MONSTERATKVIS] COMPLETE probe=1 ... gameplayMutation=no resolution=unblocked-after-animation
+[MONSTERRETAL] COMMIT probe=1 ... playerHP=34->32 armor=19->17 ... rollback=closed
+[RESIDENTRESET] ... released=18008 ... after=0/0/0/0/0/0/0 empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+```
+
+The known compact renderer `LEGACY_GUARD -> RETRY -> RECOVERED` path appears
+and recovers normally in both fresh and resumed gameplay; it remains unrelated
+to DoomCanvas compaction.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_COMPACT_DOOMCANVAS_ZEROREF_FIELDS.md](MILESTONE_ESP32_COMPACT_DOOMCANVAS_ZEROREF_FIELDS.md)
+
+
+## DoomCanvas dialog stores retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`2907e966f01c22cdecda048d7df0f2afdfef2549`.
+
+Branch:
+`agent/esp32-doomcanvas-bridge`.
+
+The ESP32 definition of `DoomCanvas_t` no longer contains the inherited
+desktop dialog payload stores:
+
+```text
+dialogIndexes[1024] = 2048 B
+dialogBuffer[512]    =  512 B
+total retired        = 2560 B
+```
+
+Those buffers had no reader or writer in the permanent 15-export DoomCanvas
+bridge, the ESP32-native sources, or the remaining compiled compatibility TUs.
+Dialogs are already owned by the native dialog/runtime path. The desktop
+definition is unchanged; on ESP32 the fields do not exist, so any future direct
+reuse fails at compile time.
+
+The bridge pins the new layout with a compile-time guard:
+
+```text
+DoomCanvas_t: 3740 B -> 1180 B
+reclaimed:                2560 B
+```
+
+Normal `esp32-cyd` CI #1636 is SUCCESS:
+
+```text
+RAM:   45464 B
+Flash: 780161 B
+esp32-cyd SUCCESS
+```
+
+Real-CYD boot proves the exact heap-object reduction:
+
+```text
+Engine structs: Render=5040 Game=4 Canvas=1180 Total=6984 bytes
+[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=1180 retiredDialogStores=2560 clip=160x120
+[CORE] DoomCanvas     used=1196
+```
+
+The hardware run then validates the full production path: fresh START, fitted
+intro and exact disposal, native MAP_INTRO load, exact first-frame witness,
+movement/rotation, crate transform and pickups, door animation, HUB/System,
+confirmed Exit To Menu with exact resident teardown, MENU_MAIN -> LOAD of a
+version-11 checkpoint, complete native world restore, and resumed committed
+gameplay.
+
+The canonical first-frame and memory invariants remain unchanged:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[RESIDENTRESET] ... released=18008 ... after=0/0/0/0/0/0/0 empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty
+```
+
+Checkpoint resume also reaches `ENGINESESSION READY` with
+`shapeData=0x0 mediaTexels=0x0` and accepts further movement before a second
+clean Exit To Menu.
+
+The known compact renderer `LEGACY_GUARD -> RETRY -> RECOVERED` path appears
+during both fresh and resumed gameplay and recovers normally; it is unrelated
+to the DoomCanvas compaction.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_COMPACT_DOOMCANVAS_DIALOG_STORES.md](MILESTONE_ESP32_COMPACT_DOOMCANVAS_DIALOG_STORES.md)
+
+
+## Desktop DoomCanvas translation unit retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`50dd03cdf9bf8a5531f6e4d9261a7e2fcce8709b`.
+
+Branch:
+`agent/esp32-doomcanvas-bridge`.
+
+The normal ESP32 build no longer generates or compiles desktop
+`src/DoomCanvas.c`. Its previously hardware-proven 15-source-function ABI is
+implemented permanently by
+`ESP32/src/esp_legacy_doomcanvas_bridge.c`.
+
+The generator now treats that bridge as an explicit fail-closed boundary: any
+future dependency on another inherited `DoomCanvas_*` function must fail at
+link time instead of silently reviving the desktop state machine. It also
+rejects accidental reintroduction of `DoomCanvas_run()` or
+`DoomCanvas_loadMap()` into the bridge.
+
+Normal `esp32-cyd` CI #1632 is SUCCESS:
+
+```text
+[ESP32] Desktop DoomCanvas.c retired; esp_legacy_doomcanvas_bridge.c owns 15 source ABI exports
+RAM:   45464 B
+Flash: 780389 B
+esp32-cyd SUCCESS
+```
+
+The CI artifact ELF exposes exactly the intended 15 `DoomCanvas_*` symbols and
+its source/DWARF records reference `esp_legacy_doomcanvas_bridge.c`, not
+`DoomCanvas.c`.
+
+Real-CYD boot proves the bridge owns construction and fixed native layout:
+
+```text
+[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=3740 clip=160x120
+[CORE] DoomCanvas     used=3756 heap=183092 largest=110580
+...
+[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=160x120 screen=160x80@0,20 startupMap=1 hud=native
+[LAYOUT] READY real engine layout fits inside 160x120
+```
+
+The same hardware run completes a fresh START through the full intro/disposal
+handoff and native MAP_INTRO load. The exact first-frame witness remains
+unchanged:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY map=1 angle=64 ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=165632 heap8=99708 largest8=86004 ...
+```
+
+Fresh gameplay then exercises native SELECT feedback, movement/rotation, crate
+combat/transform, HUB/System and confirmed Exit To Menu. Resident teardown is
+exact:
+
+```text
+[RESIDENTRESET] ... released=18008 ... after=0/0/0/0/0/0/0 empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+```
+
+The same firmware then performs MENU_MAIN -> LOAD on an existing version-11
+checkpoint, restores the complete native world/session state, resumes gameplay
+and continues committed movement. The resumed session settles at the same
+`heap8=99708/largest8=86004` as the fresh session in this run:
+
+```text
+[NATIVESAVE] LOAD ... version=11 ... world=...monster-drops-restored-exact session=reprime-pending
+[ENGINESESSION] RESUME checkpoint=restored ...
+[ENGINESESSION] READY map=1 angle=0 ... shapeData=0x0 mediaTexels=0x0
+[ALIVE] ... heap=165632 heap8=99708 largest8=86004 ...
+```
+
+A compact renderer `LEGACY_GUARD` was encountered during checkpoint resume and
+closed through the already-accepted `RETRY -> RECOVERED` path before normal
+gameplay continued. It is unrelated to the DoomCanvas TU retirement.
+
+The current `DoomCanvas_t` compatibility object remains 3740 B. This milestone
+retires the desktop translation unit only; structural compaction of that object
+is the next separate boundary.
+
+Several dormant compatibility exports (for example epilogue/credits helpers)
+remain intentionally present because the linked-ABI audit requires them, but
+they were not newly exercised by this hardware transcript. No claim is made
+beyond the current runtime paths and the previously accepted ABI closure.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DESKTOP_DOOMCANVAS_TU.md](MILESTONE_ESP32_RETIRE_DESKTOP_DOOMCANVAS_TU.md)
+
+
 ## DoomCanvas linked-ABI whitelist — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:

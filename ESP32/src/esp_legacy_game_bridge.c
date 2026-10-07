@@ -136,20 +136,9 @@ void Game_loadConfig(Game_t* game)
 
 void Game_unloadMapData(Game_t* game)
 {
-    if (game == NULL) {
-        return;
-    }
-
     /*
      * Native resident/session owners perform the real teardown. The minimal
-     * ESP32 Game_t has no world/entity/transient storage left to clear.
+     * ESP32 Game_t and compact DoomCanvas_t carry no world/entity mirrors.
      */
-    if (game->doomRpg != NULL && game->doomRpg->doomCanvas != NULL) {
-        DoomCanvas_t* canvas = game->doomRpg->doomCanvas;
-        for (int i = 0; i < 8; ++i) {
-            canvas->openDoors[i] = NULL;
-        }
-        canvas->openDoorsCount = 0;
-        canvas->castEntity = NULL;
-    }
+    (void)game;
 }

@@ -33,6 +33,7 @@ typedef struct DoomCanvas_s
 	int viewY;
 	int viewZ;
 	int viewAngle;
+#ifndef DOOMRPG_ESP32
 	int destX;
 	int destY;
 	int destAngle;
@@ -40,38 +41,56 @@ typedef struct DoomCanvas_s
 	int viewCos;
 	int viewStepX;
 	int viewStepY;
+#endif
 	int animFrames;
 	int animPos;
 	int animAngle;
 	boolean skipCheckState;
 	boolean isUpdateView;
 	boolean staleView;
+#ifndef DOOMRPG_ESP32
 	boolean f438d;
 	boolean automapDrawn;
 	boolean speeds;
 	boolean s_debug;
+#endif
 	boolean skipShakeX;
+#ifndef DOOMRPG_ESP32
 	boolean slowBlit;
+#endif
 	boolean sndFXOnly;
+#ifndef DOOMRPG_ESP32
 	boolean combatDone;
 	boolean unloadMedia;
+#endif
 	boolean largeStatus;
 	int time;
 	int state;
 	int oldState;
+#ifndef DOOMRPG_ESP32
 	short loadMapID;
+#endif
 	short startupMap;
+#ifndef DOOMRPG_ESP32
 	int loadType;
 	int saveType;
 	boolean renderOnly;
+#endif
 	boolean vibrateEnabled;
 	boolean skipIntro;
+#ifndef DOOMRPG_ESP32
 	boolean legalsSkip;
 	boolean abortMove;
 	int shaketime;
 	int shakeVal;
+#endif
 	int shakeX;
 	int shakeY;
+#ifdef DOOMRPG_ESP32
+	/* Dialog text/index payloads are owned by the native dialog runtime. Keep
+	 * these desktop map-wide stores out of the permanent ESP32 compatibility
+	 * object so any future direct reuse fails at compile time. */
+#else
 	short dialogIndexes[1024];
 	char dialogBuffer[512];
 	int dialogLineStartTime;
@@ -79,16 +98,22 @@ typedef struct DoomCanvas_s
 	int numDialogLines;
 	int currentDialogLine;
 	boolean dialogBackSoftKey;
+#endif
+#ifndef DOOMRPG_ESP32
 	int passwordTime;
 	char passInput;
 	char passCode[8];
 	char strPassCode[8];
+#endif
+#ifndef DOOMRPG_ESP32
 	int beforeRender;
 	int afterRender;
 	int loopStart;
 	int loopEnd;
 	int lastRenderTime;
 	int lastLoopTime;
+#endif
+#ifndef DOOMRPG_ESP32
 	int lastFrameTime;
 	int idleTime;
 	boolean benchmarkString;
@@ -98,6 +123,7 @@ typedef struct DoomCanvas_s
 	int loopAvgMs;
 	int events[8]; // old short type
 	byte numEvents;
+#endif
 	struct Image_s imgSpaceBG;
 	struct Image_s imgLinesLayer;
 	struct Image_s imgPlanetLayer;
@@ -110,6 +136,7 @@ typedef struct DoomCanvas_s
 	int storyPage;
 	int storyTextPage;
 	boolean showTextDone;
+#ifndef DOOMRPG_ESP32
 	char epilogueText[2][150];
 	int epilogueTextPage;
 	int epilogueTextTime;
@@ -121,6 +148,8 @@ typedef struct DoomCanvas_s
 	char *creditsText;
 	int captureState;
 	int captureTime;
+#endif
+#ifndef DOOMRPG_ESP32
 	struct Entity_s *castEntity;
 	int castSeq;
 	int castTime;
@@ -130,17 +159,24 @@ typedef struct DoomCanvas_s
 	int field_0xdcc;
 	int castEntityX;
 	int castEntityY;
+#endif
+#ifndef DOOMRPG_ESP32
 	int field_0xdd8;
 	int field_0xddc;
 	int legalsTime;
 	int legalsNextImage;
+#endif
+#ifndef DOOMRPG_ESP32
 	boolean insufficientSpace;
+#endif
 	boolean displaySoftKeys;
+#ifndef DOOMRPG_ESP32
 	struct Line_s* openDoors[8];
 	int animFrameCount;
 	int openDoorsCount;
 	int fillRectIndex;
 	int lastPacifierUpdate;
+#endif
 	SDL_Rect clipRect;
 	SDL_Rect displayRect;
 	SDL_Rect screenRect;
@@ -157,17 +193,15 @@ typedef struct DoomCanvas_s
 
 	struct DoomRPG_s* doomRpg;
 	struct Render_s* render;
+#ifndef DOOMRPG_ESP32
 	struct Player_s* player;
 	struct Game_s* game;
 	struct EntityDefManager_s* entityDef;
 	struct Combat_s* combat;
 	struct Hud_s* hud;
-#ifdef DOOMRPG_ESP32
-	struct EspNativeMenuState_s* menuSystem;
-#else
 	struct MenuSystem_s* menuSystem;
-#endif
 	struct ParticleSystem_s* particleSystem;
+#endif
 } DoomCanvas_t;
 
 
@@ -200,7 +234,9 @@ void DoomCanvas_updatePlayerDoors(DoomCanvas_t* doomCanvas, Line_t* line);
 void DoomCanvas_attemptMove(DoomCanvas_t* doomCanvas, int x, int y);
 void DoomCanvas_automapState(DoomCanvas_t* doomCanvas);
 void DoomCanvas_setupmenu(DoomCanvas_t* doomCanvas, boolean notdrawLoading);
+#ifndef DOOMRPG_ESP32
 int DoomCanvas_getOverall(DoomCanvas_t* doomCanvas);
+#endif
 void DoomCanvas_captureDogState(DoomCanvas_t* doomCanvas);
 void DoomCanvas_closeDialog(DoomCanvas_t* doomCanvas);
 void DoomCanvas_combatState(DoomCanvas_t* doomCanvas);
@@ -232,8 +268,10 @@ void DoomCanvas_handleEvent(DoomCanvas_t* doomCanvas, int i);
 void DoomCanvas_handlePasswordEvents(DoomCanvas_t* doomCanvas, int i);
 void DoomCanvas_handleMenuEvents(DoomCanvas_t* doomCanvas, int i);
 void DoomCanvas_handlePlayingEvents(DoomCanvas_t* doomCanvas, int i);
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_initCredits(DoomCanvas_t* doomCanvas);
 void DoomCanvas_loadEpilogueText(DoomCanvas_t* doomCanvas);
+#endif
 void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas);
 void DoomCanvas_keyPressed(DoomCanvas_t* doomCanvas, int keyCode);
 void DoomCanvas_loadMap(DoomCanvas_t* doomCanvas, int mapID);
@@ -249,7 +287,9 @@ void DoomCanvas_playingState(DoomCanvas_t* doomCanvas);
 void DoomCanvas_prepareDialog(DoomCanvas_t* doomCanvas, char* str, boolean dialogBackSoftKey);
 void DoomCanvas_restoreSoftKeys(DoomCanvas_t* doomCanvas);
 void DoomCanvas_renderOnlyState(DoomCanvas_t* doomCanvas);
+#ifndef DOOMRPG_ESP32
 void DoomCanvas_renderScene(DoomCanvas_t* doomCanvas, int x, int y, int angle);
+#endif
 void DoomCanvas_resume(DoomCanvas_t* doomCanvas);
 void DoomCanvas_runInputEvents(DoomCanvas_t* doomCanvas);
 void DoomCanvas_run(DoomCanvas_t* doomCanvas);
