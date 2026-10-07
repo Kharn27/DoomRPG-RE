@@ -1,3 +1,23 @@
+## Native MOVE preview pacing: axial midpoint, strafe thirds — CODE CANDIDATE (2026-10-08)
+
+On real classic CYD, the initial two-preview MOVE implementation
+(code 529e7abb177060743ffb8495e97b1be14606fd20) functioned:
+FORWARD/BACK and STRAFE presented both intermediate frames, preserved
+single committed tile movement and corresponding one monster turn per MOVE,
+and kept heap8=117252/largest8=86004 stable. A blocked strafe did not
+animate. Two extra paints took ~205-210ms before each final frame.
+
+Physical UX feedback distinguished the modes: STRAFE was pleasant,
+but FORWARD/BACK felt like advancing twice and a bit slow. The new
+candidate e944dc386758900bc55c68d374344c631640e6b4 therefore renders
+only **one 1/2-step visual preview** for FORWARD/BACK; the previous
+**two 1/3 and 2/3 previews remain for STRAFE**, and rotation is unchanged.
+No change to gameplay position, events, RNG, collisions, monster turns,
+SAVE format, PAK backing or framebuffer count. This is a **tuning
+candidate pending new CI and real-device visual assessment**, not
+a claimed axial animation UX PASS.
+[Milestone](MILESTONE_NATIVE_CAMERA_MOVE_VISUAL.md).
+
 ## Native camera-only cardinal MOVE interpolation — CODE CANDIDATE (2026-10-08)
 
 On existing branch agent/esp32-camera-rotation-visual, a distinct,
