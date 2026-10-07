@@ -17,9 +17,11 @@
 #define ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES (2048U + 512U)
 #define ESP32_DOOMCANVAS_RETIRED_ZEROREF_FIELD_BYTES 239U
 #define ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES 240U
+#define ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES (300U + 128U)
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -116,10 +118,11 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->vibrateEnabled = true;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES,
            doomCanvas->clipRect.w,
            doomCanvas->clipRect.h);
     return doomCanvas;
@@ -436,82 +439,19 @@ void DoomCanvas_initCredits(DoomCanvas_t* doomCanvas)
 
 void DoomCanvas_loadEpilogueText(DoomCanvas_t* doomCanvas)
 {
-    int overall;
-    char rank[32];
-
     if (doomCanvas == NULL) {
         return;
     }
 
+    /*
+     * The desktop run loop consumed two 150-byte epilogue text pages directly
+     * from DoomCanvas_t. That renderer/state machine is retired on ESP32.
+     * Preserve the remaining compatibility lifecycle side effects here, but
+     * keep no permanent text payload. Any future visible epilogue must be owned
+     * by the native UI/string path rather than reviving desktop Canvas storage.
+     */
     doomCanvas->epilogueTextPage = 0;
     doomCanvas->showTextDone = false;
-    overall = DoomCanvas_getOverall(doomCanvas);
-    SDL_memset(rank, 0, sizeof(rank));
-
-    if (overall >= 80) {
-        strncpy(rank, "Master", sizeof(rank));
-        strncpy(doomCanvas->epilogueText[1],
-                "You have found\n"
-                "every secret and\n"
-                "killed every mon-\n"
-                "ster in the game.\n"
-                "This calls for a\n"
-                "celebration!\n"
-                "Please visit:\n"
-                "\n"
-                "doomrpg.com/sarge\n",
-                sizeof(doomCanvas->epilogueText[1]));
-    } else if (overall >= 70) {
-        strncpy(rank, "Baddy", sizeof(rank));
-        strncpy(doomCanvas->epilogueText[1],
-                "Nice job. There\n"
-                "is only a little\n"
-                "more you need to\n"
-                "do to achieve\n"
-                "Master rank. We\n"
-                "have a parade\n"
-                "for you at:\n"
-                "\n"
-                "doomrpg.com/blues\n",
-                sizeof(doomCanvas->epilogueText[1]));
-    } else if (overall >= 50) {
-        strncpy(rank, "Average", sizeof(rank));
-        strncpy(doomCanvas->epilogueText[1],
-                "You've beaten the\n"
-                "demons from Hell,\n"
-                "but we've seen\n"
-                "better. Find out\n"
-                "more by visiting:\n"
-                "\n"
-                "doomrpg.com/spire\n",
-                sizeof(doomCanvas->epilogueText[1]));
-    } else {
-        strncpy(rank, "Chump", sizeof(rank));
-        strncpy(doomCanvas->epilogueText[1],
-                "You've finished\n"
-                "the game, barely.\n"
-                "There's still much\n"
-                "to discover. For a\n"
-                "little inspiration\n"
-                "to do better next\n"
-                "time, visit:\n"
-                "\n"
-                "doomrpg.com/hound\n",
-                sizeof(doomCanvas->epilogueText[1]));
-    }
-
-    SDL_snprintf(doomCanvas->epilogueText[0],
-                 sizeof(doomCanvas->epilogueText[0]),
-                 "Congratulations!\n"
-                 "You've shut down\n"
-                 "the portal to\n"
-                 "Hell and stopped\n"
-                 "the demonic inv-\n"
-                 "asion.\n"
-                 "\n"
-                 "Rank: %s",
-                 rank);
-
     DoomRPG_createImage(doomCanvas->doomRpg, "c.bmp", false, &doomCanvas->imgSpaceBG);
     Sound_playSound(doomCanvas->doomRpg->sound,
                     5039,
@@ -520,7 +460,6 @@ void DoomCanvas_loadEpilogueText(DoomCanvas_t* doomCanvas)
                     5);
     doomCanvas->epilogueTextTime = -1;
 }
-
 void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas)
 {
     int textLen;
@@ -688,7 +627,11 @@ void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
                          width,
                          48);
 
-        msg = doomCanvas->printMsg[0] == '\0' ? processing : doomCanvas->printMsg;
+        /*
+         * No compiled ESP32 owner writes the retired desktop printMsg buffer.
+         * The observable compatibility path therefore always used the fallback.
+         */
+        msg = processing;
         DoomCanvas_drawString1(
             doomCanvas, msg, doomCanvas->SCR_CX, doomCanvas->SCR_CY - 12, 0x11);
         DoomCanvas_drawString1(

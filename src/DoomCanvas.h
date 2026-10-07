@@ -134,14 +134,16 @@ typedef struct DoomCanvas_s
 	int storyPage;
 	int storyTextPage;
 	boolean showTextDone;
+#ifndef DOOMRPG_ESP32
 	char epilogueText[2][150];
+#endif
 	int epilogueTextPage;
 	int epilogueTextTime;
 #ifndef DOOMRPG_ESP32
 	int automapBlinkTime;
 	int automapBlinkState;
-#endif
 	char printMsg[128];
+#endif
 	int deathTime;
 	int creditsTextTime;
 	char *creditsText;
