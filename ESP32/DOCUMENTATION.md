@@ -1,5 +1,69 @@
 # ESP32 documentation map
 
+## Dormant Game transient stores compacted — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`233904e1b27c03554166f0514bbf34465234dcb4`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The normal ESP32 ELF no longer retains legacy trace or GameSprite producers:
+`Game_trace()`, `Game_gsprite_alloc*()` and `Game_gsprite_update()` are
+absent. Native collision/action tracing and gameplay FX own those responsibilities.
+Only cleanup compatibility remained in the linked `Game_unloadMapData()`.
+
+For ESP32 only, `Game_t::traceEntities[8]` and
+`Game_t::gsprites[MAX_CUSTOM_SPRITES]` are therefore reduced to one-element
+compile-time sentinels. The compatibility scalars still observed by retained
+DoomCanvas state code (`activeSprites`, `f684l`, `monstersTurn`) are kept.
+Desktop/J2ME capacities are unchanged.
+
+Generated `Game_gsprite_clear()` clears only the sentinel and compatibility
+scalars; generated `Game_unloadMapData()` clears the trace sentinel and
+`numTraceEntities` fail-closed.
+
+Normal `esp32-cyd` CI #1609 is SUCCESS:
+
+```text
+static RAM   = 45464 B
+linked Flash = 780817 B
+```
+
+Real-CYD boot proves the exact compact layout:
+
+```text
+Engine structs: Render=5040 Game=440 Canvas=3740 Total=9980 bytes
+[CORE] Game           used=456 heap=177068 largest=110580
+[CORE] Legacy Game transient stores retired trace/gsprites=sentinel capacities=1/1 gameBytes=440 desktopBytes=36468 totalReclaimed=36028 owner=native-collision+gameplay-fx
+[CORE] READY objects=5 heap used=10160 remaining=177068 largest=110580 clip=160x120
+```
+
+Relative to the preceding hardware-tested 768-byte `Game_t`, this recovers
+another 328 B exactly. Settled resident gameplay rises from `heap8=98948` to
+`heap8=99276`.
+
+The same run exercises START, full intro disposal, native MAP_INTRO load,
+movement/turning, pickups, door interaction, HUB/SYS, Exit To Menu, a second
+fresh START, then additional movement, a native crate attack/removal and
+strafe/turn actions. Both resident sessions settle at:
+
+```text
+[ALIVE] ... heap=165200 heap8=99276 largest8=86004 ...
+```
+
+The second START resets the mutated player fingerprint `363261d1` back to
+the canonical fresh `e745fce9`. The exact first-frame witness remains
+`71ca7465`; `shapeData=0x0` and `mediaTexels=0x0` remain invariant.
+
+The existing renderer compact-guard recovery was exercised and recovered
+normally before committed gameplay continued.
+
+No post-test runtime/code change is part of the closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_COMPACT_GAME_TRANSIENT_STORES.md](MILESTONE_ESP32_COMPACT_GAME_TRANSIENT_STORES.md)
+
 ## Legacy Game map string tables retired — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:
