@@ -14,380 +14,13 @@ os.makedirs(patched_dir, exist_ok=True)
 
 env.Append(CPPPATH=[join(project_dir, "include"), project_src_dir, engine_dir])
 
-# DoomCanvas keeps the original desktop minimum display height of 128 pixels.
-# The CYD render target is deliberately 160x120, so generate an ESP32-only
-# copy with the minimum tied to the canonical platform video geometry. The
-# source-tree file remains untouched for desktop builds.
-#
-# DoomCanvas.c is a legacy source file and contains non-UTF-8 bytes in comments
-# (for example 0xF3). Latin-1 is used intentionally here because it maps every
-# byte 1:1, so we can safely patch the ASCII code fragments without corrupting
-# the rest of the original source text.
-doom_canvas_source = join(engine_dir, "DoomCanvas.c")
-doom_canvas_patched = join(patched_dir, "DoomCanvas.c")
-
-with open(doom_canvas_source, "r", encoding="latin-1") as source_file:
-    doom_canvas = source_file.read()
-
-include_needle = '#include "SDL_Video.h"\n'
-include_replacement = (
-    '#include "SDL_Video.h"\n'
-    '#include "platform_video_config.h"\n'
-    '#include "esp_native_audio_intent.h"\n'
-)
-
-height_needle = (
-    '\tif (doomCanvas->displayRect.h < 0x80) {\n'
-    '\t\tdoomCanvas->displayRect.h = 0x80;\n'
-    '\t}\n'
-)
-height_replacement = (
-    '#ifdef DOOMRPG_ESP32\n'
-    '\tif (doomCanvas->displayRect.h < DOOMRPG_LOGICAL_HEIGHT) {\n'
-    '\t\tdoomCanvas->displayRect.h = DOOMRPG_LOGICAL_HEIGHT;\n'
-    '\t}\n'
-    '#else\n'
-    '\tif (doomCanvas->displayRect.h < 0x80) {\n'
-    '\t\tdoomCanvas->displayRect.h = 0x80;\n'
-    '\t}\n'
-    '#endif\n'
-)
-
-if doom_canvas.count(include_needle) != 1:
-    raise RuntimeError("Unable to locate SDL_Video.h include in DoomCanvas.c")
-if doom_canvas.count(height_needle) != 1:
-    raise RuntimeError(
-        "Unable to locate the 128-pixel DoomCanvas minimum-height block; "
-        "review the ESP32 patch before building"
-    )
-
-doom_canvas = doom_canvas.replace(include_needle, include_replacement, 1)
-doom_canvas = doom_canvas.replace(height_needle, height_replacement, 1)
-
-legacy_weapon_draw_needle = """	if (doomCanvas->state != ST_CAST) {
-		Combat_drawWeapon(doomCanvas->combat, doomCanvas->shakeX, doomCanvas->shakeY - (doomCanvas->captureState == 2 ? 10 : 0));
-	}
-"""
-legacy_weapon_draw_replacement = """	/* ESP32 resident gameplay owns first-person weapon presentation through
-	 * EspNativeGameplayWeapon. DoomCanvas::combat is intentionally NULL. */
-"""
-legacy_weapon_draw_count = doom_canvas.count(legacy_weapon_draw_needle)
-if legacy_weapon_draw_count != 1:
-    raise RuntimeError(
-        "Unexpected DoomCanvas legacy weapon draw shape; "
-        "review retired ESP32 Combat ownership"
-    )
-doom_canvas = doom_canvas.replace(
-    legacy_weapon_draw_needle, legacy_weapon_draw_replacement, 1
-)
-
-sound_enabled_needle = "			if (doomCanvas->doomRpg->sound->soundEnabled != 0) {"
-sound_enabled_replacement = "			if (0) { /* ESP32 audio playback deferred; legacy soundEnabled was false */"
-sound_enabled_count = doom_canvas.count(sound_enabled_needle)
-sound_nextplay_needle = "\tdoomCanvas->doomRpg->sound->nextplay = 0;\n"
-sound_nextplay_count = doom_canvas.count(sound_nextplay_needle)
-if sound_enabled_count != 1 or sound_nextplay_count != 1:
-    raise RuntimeError(
-        "Unexpected DoomCanvas direct Sound_t field access shape; "
-        "review retired ESP32 Sound ownership"
-    )
-doom_canvas = doom_canvas.replace(
-    sound_enabled_needle, sound_enabled_replacement, 1
-)
-doom_canvas = doom_canvas.replace(sound_nextplay_needle, "", 1)
-
-legacy_legals_load_needle = (
-    '\tDoomRPG_createImage(doomCanvas->doomRpg, "g.bmp", false, '
-    '&doomCanvas->imgLegals);\n'
-)
-legacy_legals_load_replacement = (
-    '\t/* ESP32 native boot skips ST_LEGALS and paints MENU_MAIN directly; '
-    'do not retain the 128x512 legacy legal strip. */\n'
-)
-legacy_legals_load_count = doom_canvas.count(legacy_legals_load_needle)
-if legacy_legals_load_count != 1:
-    raise RuntimeError(
-        "Unexpected DoomCanvas legacy legal asset load shape; "
-        "review native main-menu ownership"
-    )
-doom_canvas = doom_canvas.replace(
-    legacy_legals_load_needle, legacy_legals_load_replacement, 1
-)
-
-legacy_hud_startup_needle = (
-    "\tHud_startup(doomCanvas->hud, doomCanvas->largeStatus);\n"
-)
-legacy_hud_startup_replacement = """\t/* ESP32 native HUD owns visible HUD composition and fixed 20/80/20
-\t * geometry. The inherited Hud_t owner is retired and remains NULL. */
-"""
-legacy_hud_startup_count = doom_canvas.count(legacy_hud_startup_needle)
-if legacy_hud_startup_count != 1:
-    raise RuntimeError(
-        "Unexpected DoomCanvas legacy Hud_startup shape; "
-        "review native HUD ownership"
-    )
-doom_canvas = doom_canvas.replace(
-    legacy_hud_startup_needle, legacy_hud_startup_replacement, 1
-)
-
-legacy_hud_bind_needle = "\tdoomCanvas->hud = doomRpg->hud;\n"
-legacy_hud_bind_replacement = """\t/* ESP32 native HUD state is independent of desktop Hud_t. */
-\tdoomCanvas->hud = NULL;
-"""
-legacy_hud_bind_count = doom_canvas.count(legacy_hud_bind_needle)
-
-legacy_hud_height_needle = (
-    "\theight = (displayH - (doomRpg->hud->statusBarHeight) - "
-    "(doomRpg->hud->statusTopBarHeight));\n"
-)
-legacy_hud_height_replacement = "\theight = displayH - 40;\n"
-legacy_hud_height_count = doom_canvas.count(legacy_hud_height_needle)
-
-legacy_hud_display_height_needle = (
-    "\tdoomCanvas->displayRect.h = (doomRpg->hud->statusBarHeight + "
-    "height + doomRpg->hud->statusTopBarHeight);\n"
-)
-legacy_hud_display_height_replacement = (
-    "\tdoomCanvas->displayRect.h = 20 + height + 20;\n"
-)
-legacy_hud_display_height_count = doom_canvas.count(
-    legacy_hud_display_height_needle
-)
-
-legacy_hud_screen_y_needle = (
-    "\tdoomCanvas->screenRect.y = doomCanvas->displayRect.y + "
-    "doomRpg->hud->statusTopBarHeight;\n"
-)
-legacy_hud_screen_y_replacement = (
-    "\tdoomCanvas->screenRect.y = doomCanvas->displayRect.y + 20;\n"
-)
-legacy_hud_screen_y_count = doom_canvas.count(legacy_hud_screen_y_needle)
-
-legacy_hud_softkey_needle = (
-    "\t\tHud_drawBarTiles(doomCanvas->doomRpg->hud, x, y, "
-    "doomCanvas->clipRect.w, false);\n"
-)
-legacy_hud_softkey_replacement = (
-    "\t\t/* ESP32 native UI owns bars/soft-key surfaces. */\n"
-)
-legacy_hud_softkey_count = doom_canvas.count(legacy_hud_softkey_needle)
-
-legacy_hud_automap_state_needle = """\t\t\tdoomCanvas->doomRpg->hud->isUpdate = true;
-\t\t\tHud_drawTopBar(doomCanvas->doomRpg->hud);
-\t\t\tHud_drawBottomBar(doomCanvas->doomRpg->hud);
-"""
-legacy_hud_automap_state_replacement = """\t\t\t/* ESP32 native dialog/HUD composition repaints explicitly. */
-"""
-legacy_hud_automap_state_count = doom_canvas.count(
-    legacy_hud_automap_state_needle
-)
-
-legacy_hud_dying_needle = """\telse if (stateNum == ST_DYING) {
-\t\tDoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
-\t\tdoomCanvas->deathTime = doomCanvas->time;
-\t\tdoomCanvas->player->weapon = 0;
-\t\tdoomCanvas->player->weapons = 0;
-\t\tHud_drawBottomBar(doomCanvas->hud);
-\t\treturn;
-\t}
-"""
-legacy_hud_dying_replacement = """\telse if (stateNum == ST_DYING) {
-\t\tDoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
-\t\tdoomCanvas->deathTime = doomCanvas->time;
-\t\t/* ESP32 native PlayerState + player-death owner hold authoritative
-\t\t * weapon mutation and HUD presentation; Player_t is retired. */
-\t\treturn;
-\t}
-"""
-legacy_hud_dying_count = doom_canvas.count(legacy_hud_dying_needle)
-
-hud_object_patch_counts = [
-    legacy_hud_bind_count,
-    legacy_hud_height_count,
-    legacy_hud_display_height_count,
-    legacy_hud_screen_y_count,
-    legacy_hud_softkey_count,
-    legacy_hud_automap_state_count,
-    legacy_hud_dying_count,
-]
-if any(count != 1 for count in hud_object_patch_counts):
-    raise RuntimeError(
-        "Unexpected DoomCanvas direct Hud_t usage shape; "
-        "review retired ESP32 Hud ownership"
-    )
-
-doom_canvas = doom_canvas.replace(
-    legacy_hud_bind_needle, legacy_hud_bind_replacement, 1
-)
-doom_canvas = doom_canvas.replace(
-    legacy_hud_height_needle, legacy_hud_height_replacement, 1
-)
-doom_canvas = doom_canvas.replace(
-    legacy_hud_display_height_needle,
-    legacy_hud_display_height_replacement,
-    1,
-)
-doom_canvas = doom_canvas.replace(
-    legacy_hud_screen_y_needle, legacy_hud_screen_y_replacement, 1
-)
-doom_canvas = doom_canvas.replace(
-    legacy_hud_softkey_needle, legacy_hud_softkey_replacement, 1
-)
-doom_canvas = doom_canvas.replace(
-    legacy_hud_automap_state_needle,
-    legacy_hud_automap_state_replacement,
-    1,
-)
-doom_canvas = doom_canvas.replace(
-    legacy_hud_dying_needle, legacy_hud_dying_replacement, 1
-)
-
-menu_play_needle = "MenuSystem_playSound(doomCanvas->menuSystem);"
-menu_enter_sound_needle = "Sound_playSound(doomCanvas->doomRpg->sound, 5067, 0, 3);"
-menu_play_count = doom_canvas.count(menu_play_needle)
-menu_enter_sound_count = doom_canvas.count(menu_enter_sound_needle)
-if menu_play_count != 1 or menu_enter_sound_count != 1:
-    raise RuntimeError(
-        "Unexpected DoomCanvas ST_MENU sound calls; review native audio intent patch"
-    )
-doom_canvas = doom_canvas.replace(
-    menu_play_needle,
-    "(void)EspNativeAudioIntent_publish(5042U, 0U, 3U);",
-    1,
-)
-doom_canvas = doom_canvas.replace(
-    menu_enter_sound_needle,
-    "(void)EspNativeAudioIntent_publish(5067U, 0U, 3U);",
-    1,
-)
-
-doom_canvas_monsters_turn_needle = (
-    "\t\tif (!doomCanvas->doomRpg->game->monstersTurn) {\n"
-)
-doom_canvas_monsters_turn_replacement = (
-    "\t\tif (1) { /* ESP32 legacy Game monster-turn producer retired */\n"
-)
-doom_canvas_active_sprites_needle = (
-    "\t\tif (doomCanvas->openDoorsCount > 0 || doomCanvas->game->activeSprites || doomCanvas->isUpdateView) {\n"
-)
-doom_canvas_active_sprites_replacement = (
-    "\t\tif (doomCanvas->openDoorsCount > 0 || doomCanvas->isUpdateView) {\n"
-)
-if doom_canvas.count(doom_canvas_monsters_turn_needle) != 1:
-    raise RuntimeError(
-        "Unexpected DoomCanvas monstersTurn read; review minimal Game shell"
-    )
-if doom_canvas.count(doom_canvas_active_sprites_needle) != 1:
-    raise RuntimeError(
-        "Unexpected DoomCanvas activeSprites read; review minimal Game shell"
-    )
-doom_canvas = doom_canvas.replace(
-    doom_canvas_monsters_turn_needle,
-    doom_canvas_monsters_turn_replacement,
-    1,
-)
-doom_canvas = doom_canvas.replace(
-    doom_canvas_active_sprites_needle,
-    doom_canvas_active_sprites_replacement,
-    1,
-)
-
-def remove_c_function_definition(source_text, function_name):
-    token = function_name + "("
-    search = 0
-    matches = []
-    while True:
-        pos = source_text.find(token, search)
-        if pos < 0:
-            break
-        paren = pos + len(function_name)
-        depth = 0
-        close = -1
-        for i in range(paren, len(source_text)):
-            ch = source_text[i]
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-                if depth == 0:
-                    close = i
-                    break
-        if close < 0:
-            raise RuntimeError("Unbalanced function signature for " + function_name)
-        scan = close + 1
-        while scan < len(source_text) and source_text[scan].isspace():
-            scan += 1
-        if scan < len(source_text) and source_text[scan] == "{":
-            line_start = source_text.rfind("\n", 0, pos) + 1
-            brace_depth = 0
-            body_end = -1
-            state = "code"
-            i = scan
-            while i < len(source_text):
-                ch = source_text[i]
-                nxt = source_text[i + 1] if i + 1 < len(source_text) else ""
-
-                if state == "code":
-                    if ch == "/" and nxt == "/":
-                        state = "line_comment"
-                        i += 2
-                        continue
-                    if ch == "/" and nxt == "*":
-                        state = "block_comment"
-                        i += 2
-                        continue
-                    if ch == '"':
-                        state = "string"
-                        i += 1
-                        continue
-                    if ch == "'":
-                        state = "char"
-                        i += 1
-                        continue
-                    if ch == "{":
-                        brace_depth += 1
-                    elif ch == "}":
-                        brace_depth -= 1
-                        if brace_depth == 0:
-                            body_end = i + 1
-                            break
-                elif state == "line_comment":
-                    if ch == "\n":
-                        state = "code"
-                elif state == "block_comment":
-                    if ch == "*" and nxt == "/":
-                        state = "code"
-                        i += 2
-                        continue
-                elif state == "string":
-                    if ch == "\\":
-                        i += 2
-                        continue
-                    if ch == '"':
-                        state = "code"
-                elif state == "char":
-                    if ch == "\\":
-                        i += 2
-                        continue
-                    if ch == "'":
-                        state = "code"
-                i += 1
-
-            if body_end < 0:
-                raise RuntimeError("Unbalanced function body for " + function_name)
-            matches.append((line_start, body_end))
-        search = close + 1
-
-    if len(matches) != 1:
-        raise RuntimeError(
-            f"Expected one definition for {function_name}, found {len(matches)}"
-        )
-    start, end = matches[0]
-    return source_text[:start] + (
-        "/* ESP32 pruned dead legacy definition: " + function_name + " */\n"
-    ) + source_text[end:]
-
-doom_canvas_retained_abi = (
+# The desktop DoomCanvas.c translation unit is fully retired from the ESP32
+# build. Its hardware-proven compatibility surface is implemented permanently
+# by ESP32/src/esp_legacy_doomcanvas_bridge.c. Keeping the bridge in project
+# sources means any future DoomCanvas_* dependency outside this explicit ABI
+# fails at link time instead of silently reviving desktop state-machine code.
+doom_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.c")
+doom_canvas_bridge_exports = (
     "DoomCanvas_free",
     "DoomCanvas_getOverall",
     "DoomCanvas_drawImageSpecial",
@@ -404,91 +37,23 @@ doom_canvas_retained_abi = (
     "DoomCanvas_init",
     "DoomCanvas_invalidateRectAndUpdateView",
 )
-doom_canvas_pruned_public_functions = (
-    "DoomCanvas_LoadMenuMap",
-    "DoomCanvas_attemptMove",
-    "DoomCanvas_automapState",
-    "DoomCanvas_captureDogState",
-    "DoomCanvas_castState",
-    "DoomCanvas_changeStoryPage",
-    "DoomCanvas_checkFacingEntity",
-    "DoomCanvas_checkState",
-    "DoomCanvas_closeDialog",
-    "DoomCanvas_combatState",
-    "DoomCanvas_dialogState",
-    "DoomCanvas_disposeEpilogue",
-    "DoomCanvas_disposeIntro",
-    "DoomCanvas_drawAutomap",
-    "DoomCanvas_drawCredits",
-    "DoomCanvas_drawEpilogue",
-    "DoomCanvas_drawImage",
-    "DoomCanvas_drawRGB",
-    "DoomCanvas_drawScrollBar",
-    "DoomCanvas_drawStory",
-    "DoomCanvas_drawString2",
-    "DoomCanvas_dyingState",
-    "DoomCanvas_finishMovement",
-    "DoomCanvas_finishRotation",
-    "DoomCanvas_flagForFacingDir",
-    "DoomCanvas_getKeyAction",
-    "DoomCanvas_handleDialogEvents",
-    "DoomCanvas_handleEpilogueInput",
-    "DoomCanvas_handleEvent",
-    "DoomCanvas_handleMenuEvents",
-    "DoomCanvas_handlePasswordEvents",
-    "DoomCanvas_handlePlayingEvents",
-    "DoomCanvas_handleStoryInput",
-    "DoomCanvas_keyPressed",
-    "DoomCanvas_legalsState",
-    "DoomCanvas_loadMap",
-    "DoomCanvas_loadMedia",
-    "DoomCanvas_loadState",
-    "DoomCanvas_menuState",
-    "DoomCanvas_playingState",
-    "DoomCanvas_prepareDialog",
-    "DoomCanvas_renderOnlyState",
-    "DoomCanvas_restoreSoftKeys",
-    "DoomCanvas_resume",
-    "DoomCanvas_run",
-    "DoomCanvas_saveState",
-    "DoomCanvas_scrollSpaceBG",
-    "DoomCanvas_setupmenu",
-    "DoomCanvas_sorryState",
-    "DoomCanvas_startDialog",
-    "DoomCanvas_startDialogPassword",
-    "DoomCanvas_startShake",
-    "DoomCanvas_startSpeedTest",
-    "DoomCanvas_uncoverAutomap",
-    "DoomCanvas_unloadMedia",
-    "DoomCanvas_updateLoadingBar",
-    "DoomCanvas_updatePlayerAnimDoors",
-    "DoomCanvas_updatePlayerDoors",
-    "DoomCanvas_updateView",
-    "DoomCanvas_updateViewTrue",
-    "DoomCanvas_vibrate",
-)
-
-for dead_function in doom_canvas_pruned_public_functions:
-    doom_canvas = remove_c_function_definition(doom_canvas, dead_function)
-
-if "game->" in doom_canvas or "->game->" in doom_canvas:
+if not os.path.isfile(doom_canvas_bridge_source):
+    raise RuntimeError("Missing permanent ESP32 DoomCanvas compatibility bridge")
+with open(doom_canvas_bridge_source, "r", encoding="utf-8") as source_file:
+    doom_canvas_bridge_text = source_file.read()
+for export_name in doom_canvas_bridge_exports:
+    if export_name + "(" not in doom_canvas_bridge_text:
+        raise RuntimeError(
+            "Missing DoomCanvas bridge export " + export_name +
+            "; review the explicit ESP32 compatibility ABI"
+        )
+if "DoomCanvas_run(" in doom_canvas_bridge_text or "DoomCanvas_loadMap(" in doom_canvas_bridge_text:
     raise RuntimeError(
-        "Direct Game_t field access survived generated DoomCanvas.c minimal-shell pruning"
+        "Desktop DoomCanvas state-machine/map-loading ownership leaked into the ESP32 bridge"
     )
-
-with open(doom_canvas_patched, "w", encoding="latin-1", newline="\n") as patched_file:
-    patched_file.write(doom_canvas)
-
 print(
-    "[ESP32] DoomCanvas generated with 160x120-aware minimum height + "
-    f"native menu audio intents + {legacy_weapon_draw_count} legacy Combat weapon draw retired + "
-    f"{sound_enabled_count + sound_nextplay_count} direct Sound field access(es) retired + "
-    f"{legacy_legals_load_count} legacy legal-strip load retired + "
-    f"{legacy_hud_startup_count} legacy HUD startup retired + "
-    f"{sum(hud_object_patch_counts)} direct Hud_t use(s) retired + "
-    f"{len(doom_canvas_pruned_public_functions)} dead public function(s) pruned + "
-    f"{len(doom_canvas_retained_abi)} source ABI root(s) retained + "
-    "2 retained Game scalar read(s) retired"
+    "[ESP32] Desktop DoomCanvas.c retired; "
+    f"esp_legacy_doomcanvas_bridge.c owns {len(doom_canvas_bridge_exports)} source ABI exports"
 )
 
 # Render_renderSpriteObject() still contains desktop monster activation
@@ -990,7 +555,8 @@ print("[ESP32] SDL shim generated with packed zero-copy indexed BMP textures")
 
 # The desktop entry point and its SDL/audio/ZIP implementations are replaced by
 # the small ESP32 compatibility layer in this PlatformIO project. DoomCanvas.c
-# and DoomRPG.c are compiled from generated ESP32-safe copies above.
+# is retired entirely; DoomRPG.c and Render.c still use generated ESP32-safe
+# copies while their remaining compatibility surfaces are migrated.
 env.BuildSources(
     join(build_dir, "doomrpg_engine"),
     engine_dir,
@@ -1027,7 +593,6 @@ env.BuildSources(
     join(build_dir, "doomrpg_engine_patched"),
     patched_dir,
     src_filter=[
-        "+<DoomCanvas.c>",
         "+<DoomRPG.c>",
         "+<Render.c>",
     ],
