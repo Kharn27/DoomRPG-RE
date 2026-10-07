@@ -321,15 +321,58 @@ def remove_c_function_definition(source_text, function_name):
             line_start = source_text.rfind("\n", 0, pos) + 1
             brace_depth = 0
             body_end = -1
-            for i in range(scan, len(source_text)):
+            state = "code"
+            i = scan
+            while i < len(source_text):
                 ch = source_text[i]
-                if ch == "{":
-                    brace_depth += 1
-                elif ch == "}":
-                    brace_depth -= 1
-                    if brace_depth == 0:
-                        body_end = i + 1
-                        break
+                nxt = source_text[i + 1] if i + 1 < len(source_text) else ""
+
+                if state == "code":
+                    if ch == "/" and nxt == "/":
+                        state = "line_comment"
+                        i += 2
+                        continue
+                    if ch == "/" and nxt == "*":
+                        state = "block_comment"
+                        i += 2
+                        continue
+                    if ch == '"':
+                        state = "string"
+                        i += 1
+                        continue
+                    if ch == "'":
+                        state = "char"
+                        i += 1
+                        continue
+                    if ch == "{":
+                        brace_depth += 1
+                    elif ch == "}":
+                        brace_depth -= 1
+                        if brace_depth == 0:
+                            body_end = i + 1
+                            break
+                elif state == "line_comment":
+                    if ch == "\n":
+                        state = "code"
+                elif state == "block_comment":
+                    if ch == "*" and nxt == "/":
+                        state = "code"
+                        i += 2
+                        continue
+                elif state == "string":
+                    if ch == "\\":
+                        i += 2
+                        continue
+                    if ch == '"':
+                        state = "code"
+                elif state == "char":
+                    if ch == "\\":
+                        i += 2
+                        continue
+                    if ch == "'":
+                        state = "code"
+                i += 1
+
             if body_end < 0:
                 raise RuntimeError("Unbalanced function body for " + function_name)
             matches.append((line_start, body_end))
@@ -391,6 +434,36 @@ render_patched = join(patched_dir, "Render.c")
 with open(render_source, "r", encoding="latin-1") as source_file:
     render_source_text = source_file.read()
 
+render_include_needle = '#include "Render.h"\n'
+render_include_replacement = (
+    '#include "Render.h"\n'
+    '#include "esp_map_catalog.h"\n'
+)
+render_include_count = render_source_text.count(render_include_needle)
+if render_include_count != 1:
+    raise RuntimeError(
+        "Unexpected Render.h include shape; review native map catalog bridge"
+    )
+render_source_text = render_source_text.replace(
+    render_include_needle, render_include_replacement, 1
+)
+
+render_map_file_needle = (
+    "render->doomRpg->game->mapFiles[render->mapNameID - 1]"
+)
+render_map_file_replacement = (
+    "EspMapCatalog_nameForId((uint8_t)render->mapNameID)"
+)
+render_map_file_count = render_source_text.count(render_map_file_needle)
+if render_map_file_count != 1:
+    raise RuntimeError(
+        "Unexpected Render_beginLoadMap mapFiles shape; "
+        "review minimal Game shell map ownership"
+    )
+render_source_text = render_source_text.replace(
+    render_map_file_needle, render_map_file_replacement, 1
+)
+
 render_legacy_activation_needle = """\tif (sprite->ent && sprite->ent->monster &&
 \t\t!(sprite->ent->info & 0x80000) && !(sprite->info & 0x1000000) &&
 \t\t!render->doomRpg->player->noclip && !render->doomRpg->game->disableAI) {
@@ -421,7 +494,8 @@ with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file
 
 print(
     "[ESP32] Render generated with "
-    f"{render_legacy_activation_count} legacy Game/Player monster activation block retired"
+    f"{render_legacy_activation_count} legacy Game/Player monster activation block retired + "
+    f"{render_map_file_count} legacy Game mapFiles lookup redirected"
 )
 
 # The ESP32 firmware no longer compiles a generated copy of desktop Game.c.
@@ -534,6 +608,11 @@ game_storage_free_replacement = """\tif (doomrpg->game) {
 \tdoomrpg->game = NULL;
 """
 game_storage_free_count = doom_rpg_source_text.count(game_storage_free_needle)
+game_memory_metric_needle = """\t\t\t\t\t\t\t\t\tdoomRpg->game->memory = DoomRPG_freeMemory() - mem;
+"""
+game_memory_metric_replacement = """\t\t\t\t\t\t\t\t\t/* ESP32 Game_t has no desktop allocation metric field. */
+"""
+game_memory_metric_count = doom_rpg_source_text.count(game_memory_metric_needle)
 
 if doom_rpg_source_text.count(zip_include_needle) != 1:
     raise RuntimeError("Unable to locate Z_Zip.h include in DoomRPG.c")
@@ -586,6 +665,11 @@ if game_storage_free_count != 1:
         "Unexpected DoomRPG.c legacy Game storage cleanup shape; "
         "review minimal ESP32 Game shell ownership"
     )
+if game_memory_metric_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c Game allocation metric shape; "
+        "review minimal ESP32 Game shell ownership"
+    )
 
 doom_rpg_source_text = doom_rpg_source_text.replace(
     zip_include_needle, zip_include_replacement, 1
@@ -621,6 +705,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
 doom_rpg_source_text = doom_rpg_source_text.replace(
     game_storage_free_needle, game_storage_free_replacement, 1
 )
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    game_memory_metric_needle, game_memory_metric_replacement, 1
+)
 
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
@@ -636,7 +723,8 @@ print(
     f"{sound_free_count} desktop Sound cleanup retired, "
     f"{hud_free_count} desktop Hud cleanup retired, "
     f"{menu_free_count} desktop MenuSystem cleanup redirected, "
-    f"{game_storage_free_count} legacy Game storage cleanup retired)"
+    f"{game_storage_free_count} legacy Game storage cleanup retired, "
+    f"{game_memory_metric_count} legacy Game allocation metric retired)"
 )
 
 # The source-tree SDL shim stores every texture as RGB565. That is acceptable
