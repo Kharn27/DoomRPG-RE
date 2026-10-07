@@ -171,7 +171,6 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
 
     if (canvas->displayRect.w != DOOMRPG_LOGICAL_WIDTH ||
         canvas->displayRect.h != DOOMRPG_LOGICAL_HEIGHT ||
-        canvas->largeStatus ||
         menuSystem->imgLogo.imgBitmap == NULL ||
         menuSystem->imgLogo.width != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_WIDTH ||
         menuSystem->imgLogo.height != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_HEIGHT ||
