@@ -35,11 +35,11 @@ typedef struct DoomCanvas_s
 	int SCR_CX;
 	int SCR_CY;
 #endif
+#ifndef DOOMRPG_ESP32
 	int viewX;
 	int viewY;
 	int viewZ;
 	int viewAngle;
-#ifndef DOOMRPG_ESP32
 	int destX;
 	int destY;
 	int destAngle;
@@ -94,8 +94,10 @@ typedef struct DoomCanvas_s
 	int shaketime;
 	int shakeVal;
 #endif
+#ifndef DOOMRPG_ESP32
 	int shakeX;
 	int shakeY;
+#endif
 #ifdef DOOMRPG_ESP32
 	/* Dialog text/index payloads are owned by the native dialog runtime. Keep
 	 * these desktop map-wide stores out of the permanent ESP32 compatibility
@@ -211,8 +213,8 @@ typedef struct DoomCanvas_s
 	boolean renderFloorCeilingTextures; // New
 
 	struct DoomRPG_s* doomRpg;
-	struct Render_s* render;
 #ifndef DOOMRPG_ESP32
+	struct Render_s* render;
 	struct Player_s* player;
 	struct Game_s* game;
 	struct EntityDefManager_s* entityDef;

@@ -104,6 +104,17 @@ render_source_text = render_source_text.replace(
     render_canvas_geometry_needle, render_canvas_geometry_replacement, 1
 )
 
+render_canvas_shake_x_needle = "render->doomRpg->doomCanvas->shakeX"
+render_canvas_shake_y_needle = "render->doomRpg->doomCanvas->shakeY"
+render_canvas_shake_x_count = render_source_text.count(render_canvas_shake_x_needle)
+render_canvas_shake_y_count = render_source_text.count(render_canvas_shake_y_needle)
+if render_canvas_shake_x_count != 4 or render_canvas_shake_y_count != 4:
+    raise RuntimeError(
+        "Unexpected Render Canvas shake shape; review native shake ownership"
+    )
+render_source_text = render_source_text.replace(render_canvas_shake_x_needle, "0")
+render_source_text = render_source_text.replace(render_canvas_shake_y_needle, "0")
+
 render_legacy_activation_needle = """\tif (sprite->ent && sprite->ent->monster &&
 \t\t!(sprite->ent->info & 0x80000) && !(sprite->info & 0x1000000) &&
 \t\t!render->doomRpg->player->noclip && !render->doomRpg->game->disableAI) {
@@ -136,7 +147,8 @@ print(
     "[ESP32] Render generated with "
     f"{render_legacy_activation_count} legacy Game/Player monster activation block retired + "
     f"{render_map_file_count} legacy Game mapFiles lookup redirected + "
-    f"{render_canvas_geometry_count} Canvas geometry mirror retired"
+    f"{render_canvas_geometry_count} Canvas geometry mirror retired + "
+    f"{render_canvas_shake_x_count + render_canvas_shake_y_count} Canvas shake reads fixed-zero"
 )
 
 # The ESP32 firmware no longer compiles a generated copy of desktop Game.c.

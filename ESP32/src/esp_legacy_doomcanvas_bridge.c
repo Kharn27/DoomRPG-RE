@@ -26,6 +26,7 @@
 #define ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES 72U
 #define ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES 16U
 #define ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES 56U
+#define ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES 28U
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
@@ -36,7 +37,8 @@
      ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -75,7 +77,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->fontColor = 0xffffffff;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=6 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=6 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
@@ -87,6 +89,7 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES,
            DOOMRPG_CANVAS_WIDTH,
            DOOMRPG_CANVAS_HEIGHT);
     return doomCanvas;
@@ -350,12 +353,11 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
     if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return;
 
     doomRpg = doomCanvas->doomRpg;
-    doomCanvas->render = doomRpg->render;
     screenRect.x = DOOMRPG_VIEWPORT_X;
     screenRect.y = DOOMRPG_VIEWPORT_Y;
     screenRect.w = DOOMRPG_VIEWPORT_WIDTH;
     screenRect.h = DOOMRPG_VIEWPORT_HEIGHT;
-    Render_setup(doomCanvas->render, &screenRect);
+    Render_setup(doomRpg->render, &screenRect);
     doomCanvas->startupMap = 1;
     doomCanvas->skipIntro = false;
     DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
