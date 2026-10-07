@@ -1,3 +1,86 @@
+## Legacy Render mapFlags retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested runtime SHA:
+\`2d58cdd52bf74242c35b4a196d388ab802ff573c\`.
+
+Branch:
+\`agent/esp32-render-mapflags-retirement\`.
+
+The first bounded Render_t ownership cut drops its desktop BSP-only
+\`mapFlags[1024]\` mirror in the normal \`esp32-cyd\` firmware. The
+native \`EspMapState\` and \`EspMapAutomapState\` already own the
+block-map/event/visited and reveal-state semantics. No substitute
+map-wide allocation is introduced.
+
+\`\`\`text
+Render_t             5040 -> 4016 B   (-1024 B)
+Game_t                         4 B
+DoomCanvas_t                   44 B
+Engine structs       5848 -> 4824 B   (-1024 B)
+\`\`\`
+
+The generated ESP32 Render source compiles fail-closed production
+\`Render_beginLoadMap()\` and \`Render_beginLoadMapData()\` entries rather
+than preserving the historical map-wide BSP parser. Their full original
+bodies and \`mapFlags\` remain available only to desktop or explicit
+\`DOOMRPG_ESP32_BRINGUP_PROBES\` builds. The generator insists on exactly
+13 historical accesses in the loader region, rejecting future unreviewed
+source consumers. The permanent Render startup bridge asserts the
+4016-byte normal-firmware layout.
+
+The normal \`esp32-cyd\` GitHub Actions CI #1675 completed SUCCESS on
+the exact runtime SHA:
+
+\`\`\`text
+[ESP32] Legacy Render BSP loader fail-closed in production; Render.mapFlags 1024-byte mirror retired (bringup/desktop unchanged)
+RAM:   45056 B
+Flash: 772441 B
+esp32-cyd SUCCESS
+\`\`\`
+
+The real classic CYD confirmed precise heap savings against the
+hardware-validated 44-byte DoomCanvas boundary:
+
+\`\`\`text
+checkpoint                   before      after      gain
+CORE READY heap8             181608     182632     +1024 B
+LAYOUT READY heap8           175000     176024     +1024 B
+mappings resident heap8      155840     156864     +1024 B
+fresh gameplay ALIVE heap8   114788     115812     +1024 B
+Exit->Menu heap8             160684     161708     +1024 B
+\`\`\`
+
+Hardware tested native Options and Help/About paths, both returning
+exact main-menu FNV \`522dc605\` with steady heap8. Fresh START
+completes the fitted intro, bounded intro disposal, native
+\`/intro.bsp\` reconstruction, and canonical first world frame:
+
+\`\`\`text
+[INTRO1] READY ... FNV=ade0195d
+[MAPRT] READY arenaBytes=14095 ... arenaFNV=c3882516
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+\`\`\`
+
+The same tested firmware commits movement/rotation, automap discovery,
+crate attack/transform, Armor Shard pickups, regular door 275
+animation, HUB SYS and double-select EXIT. The known compact
+\`LEGACY_GUARD -> RETRY -> RECOVERED\` renderer path also recovered
+while gameplay continued. Final teardown is exact:
+
+\`\`\`text
+[RESIDENTRESET] heap8=143700->161708 released=18008 ... after=0/0/0/0/0/0/0 empty=1
+[MAINMENU] Runtime cleanup ... heap8=161708->161708 ... shapeData=0x0 mediaTexels=0x0
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+\`\`\`
+
+No version-11 checkpoint LOAD was executed in this particular hardware
+test; the preceding DoomCanvas milestone had already validated LOAD.
+All subsequent code cuts on this branch are separate validation
+boundaries and must not be described as hardware-proven by this record.
+
+See [MILESTONE_ESP32_RETIRE_RENDER_MAPFLAGS.md](MILESTONE_ESP32_RETIRE_RENDER_MAPFLAGS.md).
+
 # Doom RPG ESP32 CYD porting status
 
 ## DoomCanvas compact native shell — REAL-CYD PASS (2026-10-07)
