@@ -1,3 +1,29 @@
+## Render plane preparation metadata retirement — REAL-CYD PASS (2026-10-08)
+
+Normal-firmware code SHA validated on hardware:
+`d712378b86528065cedf0ce153c7e3a1357b1ba1`.
+CI `esp32-cyd` #1688 PASS (RAM 45056 B, flash 772381 B).
+The 292-byte third `Render_t` ownership cut removes the
+plane palette/texel offset arrays, plane texture ID array and
+descriptor count used solely by the old BSP loader/render path.
+Desktop and explicit bringup preserve those fields; production
+legacy plane helpers are excluded. Native planes and active
+`sinTable` remain unchanged. `Render_t=1676 B`
+(original 5040 B, cumulative reduction 3364 B).
+
+Classic CYD heap8 after CORE/layout/mappings/gameplay/exit:
+184972 / 178364 / 159204 / 118152 / 164048 B,
+exactly +292 B at each point versus the previous cut.
+Canonical native frame FNV `71ca7465`, MAP_INTRO runtime FNV
+`c3882516`, menu `522dc605`.
+Movement, rotation, crate transformation, loot, door 275
+open/close, HUB SYS EXIT pass; seven resident owners
+reset empty and no checkpoint modified. `shapeData==NULL`,
+`mediaTexels==NULL`. LOAD not retested on exact code SHA.
+
+See [MILESTONE_ESP32_RETIRE_RENDER_PLANE_METADATA.md](MILESTONE_ESP32_RETIRE_RENDER_PLANE_METADATA.md).
+After the hardware PASS, only documentation changed for closure.
+
 ## Render_t plane cell mirror retirement — REAL-CYD PASS (2026-10-08)
 
 Code SHA proven on classic CYD:
