@@ -7,7 +7,9 @@
 #include "MenuSystem.h"
 #include "SDL_Video.h"
 
+#include "esp_native_intro_state.h"
 #include "native_story_fit.h"
+#include "platform_video_config.h"
 
 #define STORY_FONT_ADVANCE 7
 #define STORY_FONT_WIDTH 9
@@ -68,15 +70,15 @@ void Esp32StoryFit_release(struct DoomCanvas_s* doomCanvasBase) {
     storyHandOwner = NULL;
 }
 
-static int advanceAnimationPageBounded(DoomCanvas_t* doomCanvas) {
-    if (doomCanvas == NULL || doomCanvas->storyPage != 1) {
+static int advanceAnimationPageBounded(EspNativeIntroState_t* introState) {
+    if (introState == NULL || introState->storyPage != 1) {
         return 0;
     }
 
-    doomCanvas->storyPage = 2;
-    doomCanvas->storyTextPage = 0;
-    doomCanvas->storyAnimTime = -1;
-    doomCanvas->storyTextTime = -1;
+    introState->storyPage = 2;
+    introState->storyTextPage = 0;
+    introState->storyAnimTime = -1;
+    introState->storyTextTime = -1;
     return 1;
 }
 
@@ -93,11 +95,11 @@ static int scaleOffsetFloor(int value, int viewportSize) {
 }
 
 static int virtualLeft(const DoomCanvas_t* doomCanvas) {
-    return doomCanvas->SCR_CX - (ESP32_STORY_VIRTUAL_SIZE / 2);
+    return DOOMRPG_CANVAS_CENTER_X - (ESP32_STORY_VIRTUAL_SIZE / 2);
 }
 
 static int virtualTop(const DoomCanvas_t* doomCanvas) {
-    return doomCanvas->SCR_CY - (ESP32_STORY_VIRTUAL_SIZE / 2);
+    return DOOMRPG_CANVAS_CENTER_Y - (ESP32_STORY_VIRTUAL_SIZE / 2);
 }
 
 static int mapX(const DoomCanvas_t* doomCanvas, int x) {
@@ -218,8 +220,8 @@ static void drawImageSpecialMapped(DoomCanvas_t* doomCanvas,
     source.w = width;
     source.h = height;
 
-    destination.x = doomCanvas->displayRect.x + left;
-    destination.y = doomCanvas->displayRect.y + top;
+    destination.x = DOOMRPG_CANVAS_X + left;
+    destination.y = DOOMRPG_CANVAS_Y + top;
     destination.w = right - left;
     destination.h = bottom - top;
 
@@ -292,8 +294,8 @@ static void drawTextGlyph(DoomCanvas_t* doomCanvas,
     source.y = ySrc;
     source.w = width;
     source.h = height;
-    destination.x = doomCanvas->displayRect.x + left;
-    destination.y = doomCanvas->displayRect.y + top;
+    destination.x = DOOMRPG_CANVAS_X + left;
+    destination.y = DOOMRPG_CANVAS_Y + top;
     destination.w = right - left;
     destination.h = bottom - top;
     SDL_RenderCopy(sdlVideo.renderer, img->imgBitmap, &source, &destination);
@@ -400,7 +402,8 @@ static void drawString2(DoomCanvas_t* doomCanvas,
              strEnd);
 }
 
-static void scrollSpaceBG(DoomCanvas_t* doomCanvas) {
+static void scrollSpaceBG(DoomCanvas_t* doomCanvas,
+                          EspNativeIntroState_t* introState) {
     const int i = -((doomCanvas->time / 157) % 192);
     int i2 = i;
     const int i3 = i + 192;
@@ -416,11 +419,11 @@ static void scrollSpaceBG(DoomCanvas_t* doomCanvas) {
                         DOOMRPG_LOGICAL_WIDTH,
                         DOOMRPG_LOGICAL_HEIGHT);
     drawBackgroundImage(doomCanvas,
-                        &doomCanvas->imgSpaceBG,
+                        &introState->imgSpaceBG,
                         left - i2,
                         top);
     drawBackgroundImage(doomCanvas,
-                        &doomCanvas->imgSpaceBG,
+                        &introState->imgSpaceBG,
                         left - i3,
                         top);
     setVirtualClip(doomCanvas,
@@ -461,6 +464,7 @@ static void drawAnimationMappedLine(DoomCanvas_t* doomCanvas,
 
 void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     DoomCanvas_t* doomCanvas = (DoomCanvas_t*)doomCanvasBase;
+    EspNativeIntroState_t* introState;
     char** text;
     Image_t* promptHand;
     int textPageCount;
@@ -470,6 +474,12 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     int top;
 
     if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
+        return;
+    }
+
+    introState = EspNativeIntroState_get(doomCanvas->doomRpg);
+    if (introState == NULL) {
+        printf("[INTROFIT] REFUSE draw native intro state unavailable\n");
         return;
     }
 
@@ -494,20 +504,20 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         geometryLogged = 1;
     }
 
-    if (doomCanvas->storyAnimTime == -1) {
-        doomCanvas->storyAnimTime = DoomRPG_GetUpTimeMS();
+    if (introState->storyAnimTime == -1) {
+        introState->storyAnimTime = DoomRPG_GetUpTimeMS();
     }
-    if (doomCanvas->storyTextTime == -1) {
-        doomCanvas->storyTextTime = DoomRPG_GetUpTimeMS();
+    if (introState->storyTextTime == -1) {
+        introState->storyTextTime = DoomRPG_GetUpTimeMS();
     }
 
-    if (doomCanvas->time < doomCanvas->storyTextTime ||
-        doomCanvas->time < doomCanvas->storyAnimTime) {
+    if (doomCanvas->time < introState->storyTextTime ||
+        doomCanvas->time < introState->storyAnimTime) {
         return;
     }
 
-    elapsedAnim = doomCanvas->time - doomCanvas->storyAnimTime;
-    elapsedText = doomCanvas->time - doomCanvas->storyTextTime;
+    elapsedAnim = doomCanvas->time - introState->storyAnimTime;
+    elapsedText = doomCanvas->time - introState->storyTextTime;
 
     if (doomCanvas->doomRpg->graphSetCliping) {
         DoomRPG_setClipFalse(doomCanvas->doomRpg);
@@ -517,26 +527,26 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
     DoomRPG_fillRect(doomCanvas->doomRpg,
                      0,
                      0,
-                     doomCanvas->displayRect.w,
-                     doomCanvas->displayRect.h);
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
 
-    if (doomCanvas->storyPage == 0 || doomCanvas->storyPage == 2) {
-        if (doomCanvas->storyPage == 0) {
-            text = doomCanvas->storyText1;
+    if (introState->storyPage == 0 || introState->storyPage == 2) {
+        if (introState->storyPage == 0) {
+            text = introState->storyText1;
             textPageCount = 2;
         }
         else {
-            text = &doomCanvas->storyText2;
+            text = &introState->storyText2;
             textPageCount = 1;
         }
 
-        if (textPageCount <= doomCanvas->storyTextPage) {
+        if (textPageCount <= introState->storyTextPage) {
             printf("[INTROFIT] REFUSE legacy-exit page=%d\n",
-                   doomCanvas->storyPage);
+                   introState->storyPage);
             return;
         }
 
-        scrollSpaceBG(doomCanvas);
+        scrollSpaceBG(doomCanvas, introState);
         promptHand = acquireStoryHand(doomCanvas->doomRpg);
 
         /* Text uses its own hardware-tuned soft-wide mapping: wider than the
@@ -547,9 +557,9 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
                             ESP32_STORY_TEXT_WIDTH,
                             DOOMRPG_LOGICAL_HEIGHT);
 
-        if (doomCanvas->showTextDone) {
+        if (introState->showTextDone) {
             drawString2(doomCanvas,
-                        text[doomCanvas->storyTextPage],
+                        text[introState->storyTextPage],
                         left,
                         top,
                         0,
@@ -557,50 +567,50 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         }
         else {
             drawString2(doomCanvas,
-                        text[doomCanvas->storyTextPage],
+                        text[introState->storyTextPage],
                         left,
                         top,
                         0,
-                        doomCanvas->storyTextTime);
+                        introState->storyTextTime);
         }
 
-        if (doomCanvas->storyTextPage < textPageCount - 1) {
+        if (introState->storyTextPage < textPageCount - 1) {
             drawImage(doomCanvas,
                       promptHand,
-                      (doomCanvas->SCR_CX + 36) - 4,
-                      (doomCanvas->SCR_CY + 64) - 2,
+                      (DOOMRPG_CANVAS_CENTER_X + 36) - 4,
+                      (DOOMRPG_CANVAS_CENTER_Y + 64) - 2,
                       10);
             drawString1(doomCanvas,
                         "More",
-                        (doomCanvas->SCR_CX + 64) - 4,
-                        doomCanvas->SCR_CY + 64,
+                        (DOOMRPG_CANVAS_CENTER_X + 64) - 4,
+                        DOOMRPG_CANVAS_CENTER_Y + 64,
                         10);
         }
         else {
             drawImage(doomCanvas,
                       promptHand,
-                      (doomCanvas->SCR_CX + 8) - 4,
-                      (doomCanvas->SCR_CY + 64) - 2,
+                      (DOOMRPG_CANVAS_CENTER_X + 8) - 4,
+                      (DOOMRPG_CANVAS_CENTER_Y + 64) - 2,
                       10);
             drawString1(doomCanvas,
                         "Continue",
-                        (doomCanvas->SCR_CX + 64) - 4,
-                        doomCanvas->SCR_CY + 64,
+                        (DOOMRPG_CANVAS_CENTER_X + 64) - 4,
+                        DOOMRPG_CANVAS_CENTER_Y + 64,
                         10);
         }
 
         if (elapsedText >
-            ((int)SDL_strlen(text[doomCanvas->storyTextPage]) * 25)) {
-            doomCanvas->showTextDone = true;
+            ((int)SDL_strlen(text[introState->storyTextPage]) * 25)) {
+            introState->showTextDone = true;
         }
 
         return;
     }
 
     if (elapsedAnim > 10000) {
-        if (!advanceAnimationPageBounded(doomCanvas)) {
+        if (!advanceAnimationPageBounded(introState)) {
             printf("[INTROFIT] REFUSE legacy-exit page=%d\n",
-                   doomCanvas->storyPage);
+                   introState->storyPage);
             return;
         }
     }
@@ -609,14 +619,14 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
         const int bgOffset = elapsedAnim / 457;
         const int linesOffset = elapsedAnim / 157;
         const int shipX = left + (elapsedAnim / 142);
-        const int shipY = (doomCanvas->SCR_CY + 22) + (elapsedAnim / -333);
+        const int shipY = (DOOMRPG_CANVAS_CENTER_Y + 22) + (elapsedAnim / -333);
 
         DoomRPG_setClipTrue(doomCanvas->doomRpg,
                             0, 0,
                             DOOMRPG_LOGICAL_WIDTH,
                             DOOMRPG_LOGICAL_HEIGHT);
         drawBackgroundImage(doomCanvas,
-                            &doomCanvas->imgSpaceBG,
+                            &introState->imgSpaceBG,
                             left - bgOffset,
                             top);
         setAnimationVirtualClip(doomCanvas,
@@ -625,17 +635,17 @@ void Esp32StoryFit_draw(struct DoomCanvas_s* doomCanvasBase) {
                                 ESP32_STORY_VIRTUAL_SIZE,
                                 ESP32_STORY_VIRTUAL_SIZE);
         drawAnimationImage(doomCanvas,
-                           &doomCanvas->imgLinesLayer,
+                           &introState->imgLinesLayer,
                            left - linesOffset,
                            top,
                            0);
         drawAnimationImage(doomCanvas,
-                           &doomCanvas->imgPlanetLayer,
+                           &introState->imgPlanetLayer,
                            left,
                            top,
                            0);
         drawAnimationImage(doomCanvas,
-                           &doomCanvas->imgSpaceship,
+                           &introState->imgSpaceship,
                            shipX,
                            shipY,
                            0);

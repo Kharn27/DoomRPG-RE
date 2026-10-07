@@ -169,9 +169,8 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
     canvas = doomRpg->doomCanvas;
     menuSystem = doomRpg->menuSystem;
 
-    if (canvas->displayRect.w != DOOMRPG_LOGICAL_WIDTH ||
-        canvas->displayRect.h != DOOMRPG_LOGICAL_HEIGHT ||
-        canvas->largeStatus ||
+    if (DOOMRPG_CANVAS_WIDTH != DOOMRPG_LOGICAL_WIDTH ||
+        DOOMRPG_CANVAS_HEIGHT != DOOMRPG_LOGICAL_HEIGHT ||
         menuSystem->imgLogo.imgBitmap == NULL ||
         menuSystem->imgLogo.width != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_WIDTH ||
         menuSystem->imgLogo.height != DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_HEIGHT ||
@@ -181,7 +180,7 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
         return 0;
     }
 
-    menuSystem->maxItems = canvas->displayRect.h /
+    menuSystem->maxItems = DOOMRPG_CANVAS_HEIGHT /
                            DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
 
     if (!validateMainMenuModel(menuSystem)) return 0;
@@ -336,16 +335,13 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
                                   : (selected
                                          ? (armed ? 0xffffffffU : 0xffffa000U)
                                          : 0xffffffffU));
-    /* Legacy drawFont takes char* but only reads the glyph string. Keep these
-     * labels in flash/rodata instead of spending writable RAM on four copies. */
-    DoomCanvas_drawFont(doomRpg->doomCanvas,
-                        (char*)label,
-                        textX,
-                        textY,
-                        0,
-                        0,
-                        -1,
-                        false);
+    /* The ESP32 bridge owns only the compact 9x12 font. Keep these labels in
+     * flash/rodata instead of spending writable RAM on four copies. */
+    DoomCanvas_drawString1(doomRpg->doomCanvas,
+                           (char*)label,
+                           textX,
+                           textY,
+                           0);
 }
 
 int DoomRPG_esp32PaintMenuDashboardCards(
@@ -428,15 +424,15 @@ static int drawTouchReadyMainMenuOpaque(DoomRPG_t* doomRpg,
 
     DoomRPG_setColor(doomRpg, 0x000000);
     DoomRPG_fillRect(doomRpg,
-                     canvas->displayRect.x,
-                     canvas->displayRect.y,
-                     canvas->displayRect.w,
-                     canvas->displayRect.h);
+                     DOOMRPG_CANVAS_X,
+                     DOOMRPG_CANVAS_Y,
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
 
-    logoDst.x = canvas->displayRect.x +
-                ((canvas->displayRect.w -
+    logoDst.x = DOOMRPG_CANVAS_X +
+                ((DOOMRPG_CANVAS_WIDTH -
                   DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH) >> 1);
-    logoDst.y = canvas->displayRect.y +
+    logoDst.y = DOOMRPG_CANVAS_Y +
                 DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y;
     logoDst.w = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH;
     logoDst.h = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT;
@@ -588,7 +584,7 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
         printf("[MAINTOUCHLAYOUT] FAILED native MENU_MAIN model build\n");
         return 0;
     }
-    menuSystem->maxItems = canvas->displayRect.h /
+    menuSystem->maxItems = DOOMRPG_CANVAS_HEIGHT /
                            DOOMRPG_ESP32_MAIN_MENU_ITEM_LINE_HEIGHT;
 
     if (!adaptMainMenuForEsp32(menuSystem) ||

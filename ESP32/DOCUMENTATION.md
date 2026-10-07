@@ -1,5 +1,130 @@
 # ESP32 documentation map
 
+## DoomCanvas compact native shell — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`d75451c56151458d8b0370c0c183531aa74fcd52`.
+
+Branch:
+`agent/esp32-intro-state-owner`.
+
+This branch continued the DoomCanvas ownership cut from the previous 368-byte
+hardware boundary and now leaves only a 44-byte ESP32 compatibility kernel.
+
+The permanent cuts on this branch are:
+
+```text
+368 -> 272 B   transient ST_INTRO state moved native            -96 B
+272 -> 216 B   dead shell + retired cursor/legal/config fields  -56 B
+216 -> 144 B   inert animation/softkey/control shell            -72 B
+144 -> 128 B   unused large-font image                          -16 B
+128 ->  72 B   fixed CYD geometry mirrors                       -56 B
+ 72 ->  44 B   inert view/shake/render aliases                  -28 B
+                                                                  -----
+branch-total permanent reduction                                  324 B
+desktop layout reclaimed                         3696 / 3740 B (~98.8%)
+source ABI exports                                      11 -> 6
+```
+
+The 96-byte `EspNativeIntroState_t` remains transient and is still released
+before MAP_INTRO loading. The dead-shell cut also stopped loading the obsolete
+`b.bmp` automap cursor. The large-font cut removes `larger_font.bmp` from
+startup entirely. Fixed CYD geometry is now derived from the permanent
+160x120 / 160x80@0,20 platform contract instead of mirrored in Canvas.
+
+The final 28-byte cut removes four unused Canvas view integers, two shake
+integers with no ESP32 writer, and the redundant `Canvas->render` alias.
+Generated `Render.c` replaces exactly eight inherited `shakeX/shakeY` reads
+with fixed zero; the generator checks that exact source shape and fails closed
+if it changes.
+
+The 44 bytes that remain are intentionally live:
+
+```text
+imgFont                      16 B
+time                          4 B
+state                         4 B
+startupMap                    2 B
+alignment                     2 B
+skipIntro                     4 B
+fontColor                     4 B
+renderFloorCeilingTextures    4 B
+doomRpg*                      4 B
+                            -----
+                              44 B
+```
+
+In particular, `renderFloorCeilingTextures` is still read by generated
+`Render.c`; `time/state/startupMap/skipIntro` are active transition/intro
+state; `imgFont/fontColor` remain the compact text path; and `doomRpg` is the
+remaining object-graph root.
+
+Normal `esp32-cyd` CI #1670 is green on the exact hardware-tested SHA:
+
+```text
+[ESP32] Desktop DoomCanvas.c retired; esp_legacy_doomcanvas_bridge.c owns 6 source ABI exports
+[ESP32] Render generated with ... 1 Canvas geometry mirror retired + 8 Canvas shake reads fixed-zero
+RAM:   45056 B
+Flash: 772405 B
+esp32-cyd SUCCESS
+```
+
+Artifact: `doom-rpg-esp32-cyd-d75451c56151458d8b0370c0c183531aa74fcd52`
+(ID `11513961743`).
+
+Real-CYD boot proves the final layout and allocator boundary:
+
+```text
+Engine structs: Render=5040 Game=4 Canvas=44 Total=5848 bytes
+[DOOMCANVASBRIDGE] INIT exports=6 desktopTU=no bytes=44 ... retiredFixedGeometry=56 retiredViewShakeAlias=28 clip=160x120
+[CORE] DoomCanvas     used=60 heap=187196 largest=110580
+[CORE] READY objects=5 heap used=6028 remaining=181608 largest=110580 clip=160x120
+```
+
+The last 72 -> 44 B cut produces the exact +28 B CORE gain. Heap alignment
+rounds that to +32 B at later stable checkpoints:
+
+```text
+checkpoint               72-B boundary   44-B boundary   gain
+CORE READY                    181580          181608      +28 B
+LAYOUT READY                  174968          175000      +32 B
+mappings resident             155808          155840      +32 B
+fresh gameplay ALIVE          114756          114788      +32 B
+Exit->Menu heap8              160652          160684      +32 B
+```
+
+The final hardware acceptance explicitly covers both geometry-sensitive
+main-menu children. HELP pages down/up and returns through native Back to exact
+MENU_MAIN FNV `522dc605`; OPTIONS -> Back returns to the same FNV with
+unchanged `heap8=155840`, and both paths keep
+`shapeData=0x0 mediaTexels=0x0`.
+
+Fresh START then completes the full prologue and bounded disposal. MAP_INTRO
+remains `/intro.bsp`, arena FNV `c3882516`, and the canonical first world
+frame is unchanged:
+
+```text
+[INTRO1] READY one deterministic ST_INTRO frame presented once FNV=ade0195d
+[INTRODISP] READY ... recovered=34056 ... noMapLoad=yes
+[MAPRT] READY arenaBytes=14095 ... arenaFNV=c3882516 ...
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+```
+
+The same final build commits movement/turning, crate transform, pickups, regular
+door animation, HUB inventory/weapons/status, PASS_TURN and confirmed
+Exit To Menu. Resident cleanup returns exact MENU_MAIN FNV `522dc605` with
+`shapeData/mediaTexels` still NULL. The known compact-renderer
+`LEGACY_GUARD -> RETRY -> RECOVERED` path also fires and recovers normally.
+
+A prior 72-byte hardware boundary on
+`74a4669a67269069700afc52dc10333e294f1935` additionally exercised version-11
+LOAD, restored native world/session state and monster retaliation. No regression
+was observed before the final 28-byte source-closed alias cut.
+
+Detailed record:
+[MILESTONE_ESP32_RETIRE_DOOMCANVAS_INTRO_STATE.md](MILESTONE_ESP32_RETIRE_DOOMCANVAS_INTRO_STATE.md)
+
 ## DoomCanvas object-graph mirrors retired — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:

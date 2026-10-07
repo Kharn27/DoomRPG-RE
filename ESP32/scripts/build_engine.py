@@ -23,15 +23,10 @@ doom_canvas_bridge_source = join(project_src_dir, "esp_legacy_doomcanvas_bridge.
 doom_canvas_bridge_exports = (
     "DoomCanvas_free",
     "DoomCanvas_drawImageSpecial",
-    "DoomCanvas_drawSoftKeys",
     "DoomCanvas_drawString1",
-    "DoomCanvas_drawFont",
-    "DoomCanvas_loadPrologueText",
-    "DoomCanvas_setAnimFrames",
     "DoomCanvas_setState",
     "DoomCanvas_startup",
     "DoomCanvas_init",
-    "DoomCanvas_invalidateRectAndUpdateView",
 )
 if not os.path.isfile(doom_canvas_bridge_source):
     raise RuntimeError("Missing permanent ESP32 DoomCanvas compatibility bridge")
@@ -65,6 +60,7 @@ render_include_needle = '#include "Render.h"\n'
 render_include_replacement = (
     '#include "Render.h"\n'
     '#include "esp_map_catalog.h"\n'
+    '#include "platform_video_config.h"\n'
 )
 render_include_count = render_source_text.count(render_include_needle)
 if render_include_count != 1:
@@ -90,6 +86,34 @@ if render_map_file_count != 1:
 render_source_text = render_source_text.replace(
     render_map_file_needle, render_map_file_replacement, 1
 )
+
+render_canvas_geometry_needle = """\trender->clipRect.x = render->doomRpg->doomCanvas->displayRect.x;
+\trender->clipRect.y = render->doomRpg->doomCanvas->displayRect.y;
+\trender->clipRect.w = render->doomRpg->doomCanvas->displayRect.w;
+\trender->clipRect.h = render->doomRpg->doomCanvas->displayRect.h;
+"""
+render_canvas_geometry_replacement = """\trender->clipRect.x = DOOMRPG_CANVAS_X;
+\trender->clipRect.y = DOOMRPG_CANVAS_Y;
+\trender->clipRect.w = DOOMRPG_CANVAS_WIDTH;
+\trender->clipRect.h = DOOMRPG_CANVAS_HEIGHT;
+"""
+render_canvas_geometry_count = render_source_text.count(render_canvas_geometry_needle)
+if render_canvas_geometry_count != 1:
+    raise RuntimeError("Unexpected Render_startup Canvas geometry shape")
+render_source_text = render_source_text.replace(
+    render_canvas_geometry_needle, render_canvas_geometry_replacement, 1
+)
+
+render_canvas_shake_x_needle = "render->doomRpg->doomCanvas->shakeX"
+render_canvas_shake_y_needle = "render->doomRpg->doomCanvas->shakeY"
+render_canvas_shake_x_count = render_source_text.count(render_canvas_shake_x_needle)
+render_canvas_shake_y_count = render_source_text.count(render_canvas_shake_y_needle)
+if render_canvas_shake_x_count != 4 or render_canvas_shake_y_count != 4:
+    raise RuntimeError(
+        "Unexpected Render Canvas shake shape; review native shake ownership"
+    )
+render_source_text = render_source_text.replace(render_canvas_shake_x_needle, "0")
+render_source_text = render_source_text.replace(render_canvas_shake_y_needle, "0")
 
 render_legacy_activation_needle = """\tif (sprite->ent && sprite->ent->monster &&
 \t\t!(sprite->ent->info & 0x80000) && !(sprite->info & 0x1000000) &&
@@ -122,7 +146,9 @@ with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file
 print(
     "[ESP32] Render generated with "
     f"{render_legacy_activation_count} legacy Game/Player monster activation block retired + "
-    f"{render_map_file_count} legacy Game mapFiles lookup redirected"
+    f"{render_map_file_count} legacy Game mapFiles lookup redirected + "
+    f"{render_canvas_geometry_count} Canvas geometry mirror retired + "
+    f"{render_canvas_shake_x_count + render_canvas_shake_y_count} Canvas shake reads fixed-zero"
 )
 
 # The ESP32 firmware no longer compiles a generated copy of desktop Game.c.
@@ -146,6 +172,15 @@ doom_rpg_patched = join(patched_dir, "DoomRPG.c")
 
 with open(doom_rpg_source, "r", encoding="latin-1") as source_file:
     doom_rpg_source_text = source_file.read()
+
+doomrpg_display_x_needle = "doomrpg->doomCanvas->displayRect.x + "
+doomrpg_display_y_needle = "doomrpg->doomCanvas->displayRect.y + "
+doomrpg_display_x_count = doom_rpg_source_text.count(doomrpg_display_x_needle)
+doomrpg_display_y_count = doom_rpg_source_text.count(doomrpg_display_y_needle)
+if doomrpg_display_x_count != 7 or doomrpg_display_y_count != 7:
+    raise RuntimeError("Unexpected DoomRPG drawing displayRect shape")
+doom_rpg_source_text = doom_rpg_source_text.replace(doomrpg_display_x_needle, "")
+doom_rpg_source_text = doom_rpg_source_text.replace(doomrpg_display_y_needle, "")
 
 zip_include_needle = '#include "Z_Zip.h"\n'
 zip_include_replacement = (
@@ -240,6 +275,11 @@ game_memory_metric_needle = """\t\t\t\t\t\t\t\t\tdoomRpg->game->memory = DoomRPG
 game_memory_metric_replacement = """\t\t\t\t\t\t\t\t\t/* ESP32 Game_t has no desktop allocation metric field. */
 """
 game_memory_metric_count = doom_rpg_source_text.count(game_memory_metric_needle)
+canvas_memory_metric_needle = """\t\tdoomRpg->doomCanvas->memory = DoomRPG_freeMemory() - mem;
+"""
+canvas_memory_metric_replacement = """\t\t/* ESP32 DoomCanvas_t has no retired desktop allocation metric field. */
+"""
+canvas_memory_metric_count = doom_rpg_source_text.count(canvas_memory_metric_needle)
 
 if doom_rpg_source_text.count(zip_include_needle) != 1:
     raise RuntimeError("Unable to locate Z_Zip.h include in DoomRPG.c")
@@ -297,6 +337,11 @@ if game_memory_metric_count != 1:
         "Unexpected DoomRPG.c Game allocation metric shape; "
         "review minimal ESP32 Game shell ownership"
     )
+if canvas_memory_metric_count != 1:
+    raise RuntimeError(
+        "Unexpected DoomRPG.c DoomCanvas allocation metric shape; "
+        "review compact ESP32 DoomCanvas ownership"
+    )
 
 doom_rpg_source_text = doom_rpg_source_text.replace(
     zip_include_needle, zip_include_replacement, 1
@@ -335,6 +380,9 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
 doom_rpg_source_text = doom_rpg_source_text.replace(
     game_memory_metric_needle, game_memory_metric_replacement, 1
 )
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    canvas_memory_metric_needle, canvas_memory_metric_replacement, 1
+)
 
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
@@ -351,7 +399,8 @@ print(
     f"{hud_free_count} desktop Hud cleanup retired, "
     f"{menu_free_count} desktop MenuSystem cleanup redirected, "
     f"{game_storage_free_count} legacy Game storage cleanup retired, "
-    f"{game_memory_metric_count} legacy Game allocation metric retired)"
+    f"{game_memory_metric_count} legacy Game allocation metric retired, "
+    f"{canvas_memory_metric_count} legacy DoomCanvas allocation metric retired)"
 )
 
 # The source-tree SDL shim stores every texture as RGB565. That is acceptable

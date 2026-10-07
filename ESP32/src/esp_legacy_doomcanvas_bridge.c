@@ -9,6 +9,7 @@
 #include "SDL_Video.h"
 
 #include "esp_native_audio_intent.h"
+#include "esp_native_intro_state.h"
 #include "native_story_fit.h"
 #include "platform_video_config.h"
 
@@ -20,12 +21,24 @@
 #define ESP32_DOOMCANVAS_RETIRED_STATE_FIELD_BYTES 113U
 #define ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES 116U
 #define ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES (7U * sizeof(void*))
+#define ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES 96U
+#define ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES 56U
+#define ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES 72U
+#define ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES 16U
+#define ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES 56U
+#define ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES 28U
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -47,37 +60,6 @@ void Sound_playSound(struct Sound_s* sound, int resourceID, byte flags, int prio
 #define ESP32_SND_FLG_STOPSOUNDS 2U
 #define ESP32_SND_FLG_ISMUSIC    8U
 
-static char storyTextA[] =
-    "You have been\n"
-    "dispatched in re - \n"
-    "sponse to a dis - \n"
-    "tress call from\n"
-    "Union Aerospace\n"
-    "Corporation's re-\n"
-    "search facility\n"
-    "on Mars. The base\n"
-    "is under attack";
-
-static char storyTextB[] =
-    "by an unknown\n"
-    "force and your\n"
-    "mission is to ac-\n"
-    "quire intelli-\n"
-    "gence and neu-\n"
-    "tralize the\n"
-    "threat.";
-
-static char storyTextC[] =
-    "Insertion com-\n"
-    "plete. For fur-\n"
-    "ther instruc-\n"
-    "tions, rendezvous\n"
-    "with the other\n"
-    "Marines at Junc-\n"
-    "tion. Expect\n"
-    "heavy resistance.\n"
-    "Good luck!";
-
 DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
 {
     printf("DoomCanvas_init\n");
@@ -91,40 +73,25 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     SDL_memset(doomCanvas, 0, sizeof(DoomCanvas_t));
 
     doomCanvas->doomRpg = doomRpg;
-    doomCanvas->skipShakeX = false;
-    doomCanvas->oldState = -1;
     doomCanvas->imgFont.imgBitmap = NULL;
-    doomCanvas->imgLargerFont.imgBitmap = NULL;
-    doomCanvas->imgLegals.imgBitmap = NULL;
-    doomCanvas->imgMapCursor.imgBitmap = NULL;
-    doomCanvas->imgSpaceBG.imgBitmap = NULL;
-    doomCanvas->imgLinesLayer.imgBitmap = NULL;
-    doomCanvas->imgPlanetLayer.imgBitmap = NULL;
-    doomCanvas->imgSpaceship.imgBitmap = NULL;
-    doomCanvas->storyText1[0] = NULL;
-    doomCanvas->storyText1[1] = NULL;
-    doomCanvas->storyText2 = NULL;
-    doomCanvas->softKeyRight[0] = '\0';
-    doomCanvas->softKeyLeft[0] = '\0';
-    doomCanvas->clipRect.x = 0;
-    doomCanvas->clipRect.y = 0;
-    doomCanvas->clipRect.w = sdlVideo.rendererW;
-    doomCanvas->clipRect.h = sdlVideo.rendererH;
     doomCanvas->fontColor = 0xffffffff;
-    doomCanvas->mouseSensitivity = 50;
-    doomCanvas->mouseYMove = true;
-    doomCanvas->vibrateEnabled = true;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=11 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u retiredStateLayout=%u retiredGraphMirrors=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=6 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u, retiredStateLayout=%u retiredGraphMirrors=%u retiredIntroState=%u retiredDeadShell=%u retiredInertControl=%u retiredLargeFont=%u retiredFixedGeometry=%u retiredViewShakeAlias=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_GRAPH_MIRROR_BYTES,
-           doomCanvas->clipRect.w,
-           doomCanvas->clipRect.h);
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_INTRO_STATE_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DEAD_SHELL_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_INERT_CONTROL_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_LARGE_FONT_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_FIXED_GEOMETRY_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_VIEW_SHAKE_ALIAS_BYTES,
+           DOOMRPG_CANVAS_WIDTH,
+           DOOMRPG_CANVAS_HEIGHT);
     return doomCanvas;
 }
 
@@ -135,18 +102,8 @@ void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
     }
 
     Esp32StoryFit_release(doomCanvas);
+    EspNativeIntroState_release(doomCanvas->doomRpg);
     DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgFont);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLargerFont);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLegals);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgMapCursor);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgSpaceBG);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgLinesLayer);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgPlanetLayer);
-    DoomRPG_freeImage(doomCanvas->doomRpg, &doomCanvas->imgSpaceship);
-
-    SDL_free(doomCanvas->storyText1[0]);
-    SDL_free(doomCanvas->storyText1[1]);
-    SDL_free(doomCanvas->storyText2);
 
     if (freePtr) {
         SDL_free(doomCanvas);
@@ -208,8 +165,8 @@ void DoomCanvas_drawImageSpecial(DoomCanvas_t* doomCanvas,
                 clip.w = remainingWidth;
                 clip.h = height;
 
-                renderQuad.x = doomCanvas->displayRect.x + drawX;
-                renderQuad.y = doomCanvas->displayRect.y + yDst;
+                renderQuad.x = DOOMRPG_CANVAS_X + drawX;
+                renderQuad.y = DOOMRPG_CANVAS_Y + yDst;
                 renderQuad.w = img->width;
                 renderQuad.h = img->height;
                 if (clip.w <= renderQuad.w) {
@@ -248,43 +205,20 @@ void DoomCanvas_drawString1(DoomCanvas_t* doomCanvas,
                             int y,
                             int flags)
 {
-    DoomCanvas_drawFont(doomCanvas, text, x, y, flags, 0, -1, false);
-}
-
-void DoomCanvas_drawFont(DoomCanvas_t* doomCanvas,
-                         char* text,
-                         int x,
-                         int y,
-                         int flags,
-                         int strBeg,
-                         int strEnd,
-                         boolean isLargerFont)
-{
     Image_t* imgFont;
-    int advance;
-    int width;
-    int height;
+    const int advance = 7;
+    const int width = 9;
+    const int height = 12;
     int len;
     int xpos;
     int i;
     unsigned int c;
 
-    if (doomCanvas == NULL || text == NULL || strEnd == 0) {
+    if (doomCanvas == NULL || text == NULL) {
         return;
     }
 
-    if (!isLargerFont) {
-        imgFont = &doomCanvas->imgFont;
-        advance = 7;
-        width = 9;
-        height = 12;
-    } else {
-        imgFont = &doomCanvas->imgLargerFont;
-        advance = 10;
-        width = 13;
-        height = 17;
-    }
-
+    imgFont = &doomCanvas->imgFont;
     if (imgFont->imgBitmap == NULL) {
         return;
     }
@@ -296,14 +230,7 @@ void DoomCanvas_drawFont(DoomCanvas_t* doomCanvas,
         SDL_SetTextureColorMod(imgFont->imgBitmap, r, g, b);
     }
 
-    len = (int)SDL_strlen(text) - strBeg;
-    if (len < 0) {
-        return;
-    }
-    if (len > strEnd && strEnd >= 0) {
-        len = strEnd;
-    }
-
+    len = (int)SDL_strlen(text);
     if ((flags & 8) != 0) {
         x -= len * advance;
     } else if ((flags & 16) != 0) {
@@ -316,9 +243,8 @@ void DoomCanvas_drawFont(DoomCanvas_t* doomCanvas,
         y -= height >> 1;
     }
 
-    len += strBeg;
     xpos = x;
-    for (i = strBeg; i < len; ++i) {
+    for (i = 0; i < len; ++i) {
         c = (unsigned char)text[i];
         if (c == 10U) {
             y += height;
@@ -342,76 +268,20 @@ void DoomCanvas_drawFont(DoomCanvas_t* doomCanvas,
     }
 }
 
-void DoomCanvas_drawSoftKeys(DoomCanvas_t* doomCanvas,
-                             char* softKeyLeft,
-                             char* softKeyRight)
+static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
 {
-    int x;
-    int y;
-    int x1;
-    int y1;
-
-    if (doomCanvas == NULL || !doomCanvas->displaySoftKeys) {
-        return;
-    }
-
-    doomCanvas->restoreSoftKeys = true;
-    x1 = x = -doomCanvas->displayRect.x;
-    y1 = y = doomCanvas->softKeyY - doomCanvas->displayRect.y;
-
-    if (softKeyLeft == NULL) {
-        doomCanvas->softKeyLeft[0] = '\0';
-    } else {
-        if (doomCanvas->softKeyLeft != softKeyLeft) {
-            strncpy(doomCanvas->softKeyLeft,
-                    softKeyLeft,
-                    sizeof(doomCanvas->softKeyLeft));
-            doomCanvas->softKeyLeft[sizeof(doomCanvas->softKeyLeft) - 1] = '\0';
-        }
-
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x313131);
-        DoomRPG_drawLine(doomCanvas->doomRpg, x1 + 52, y1, x1 + 52, y1 + 19);
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x808591);
-        DoomRPG_drawLine(doomCanvas->doomRpg, x1 + 53, y1, x1 + 53, y1 + 19);
-        DoomCanvas_drawString1(doomCanvas, softKeyLeft, x + 26, y + 5, 17);
-    }
-
-    if (softKeyRight == NULL) {
-        doomCanvas->softKeyRight[0] = '\0';
-    } else {
-        if (doomCanvas->softKeyRight != softKeyRight) {
-            strncpy(doomCanvas->softKeyRight,
-                    softKeyRight,
-                    sizeof(doomCanvas->softKeyRight));
-            doomCanvas->softKeyRight[sizeof(doomCanvas->softKeyRight) - 1] = '\0';
-        }
-
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x313131);
-        x1 += doomCanvas->clipRect.w - 52;
-        DoomRPG_drawLine(doomCanvas->doomRpg, x1, y1, x1, y1 + 19);
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x808591);
-        DoomRPG_drawLine(doomCanvas->doomRpg, x1 + 1, y1, x1 + 1, y1 + 19);
-        DoomCanvas_drawString1(
-            doomCanvas, softKeyRight, doomCanvas->clipRect.w + x - 28, y + 5, 17);
-    }
-}
-
-void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas)
-{
-    int textLen;
-
-    if (doomCanvas == NULL) {
-        return;
+    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
+        return 0;
     }
 
     DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
     DoomRPG_fillRect(doomCanvas->doomRpg,
                      0,
                      0,
-                     doomCanvas->displayRect.w,
-                     doomCanvas->displayRect.h);
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
     DoomCanvas_drawString1(
-        doomCanvas, "Loading...", doomCanvas->SCR_CX, doomCanvas->SCR_CY, 17);
+        doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X, DOOMRPG_CANVAS_CENTER_Y, 17);
     DoomRPG_flushGraphics(doomCanvas->doomRpg);
     Sound_playSound(doomCanvas->doomRpg->sound,
                     5039,
@@ -419,52 +289,20 @@ void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas)
                         ESP32_SND_FLG_ISMUSIC,
                     5);
 
-    textLen = (int)SDL_strlen(storyTextA);
-    doomCanvas->storyText1[0] = SDL_calloc((size_t)textLen + 1U, sizeof(char));
-    if (doomCanvas->storyText1[0] != NULL) {
-        strncpy(doomCanvas->storyText1[0], storyTextA, (size_t)textLen);
+    if (!EspNativeIntroState_begin(doomCanvas->doomRpg)) {
+        Sound_stopSounds(doomCanvas->doomRpg->sound);
+        printf("[DOOMCANVASBRIDGE] INTRO-REJECT owner=native-transient allocation/load failed\n");
+        return 0;
     }
-
-    textLen = (int)SDL_strlen(storyTextB);
-    doomCanvas->storyText1[1] = SDL_calloc((size_t)textLen + 1U, sizeof(char));
-    if (doomCanvas->storyText1[1] != NULL) {
-        strncpy(doomCanvas->storyText1[1], storyTextB, (size_t)textLen);
-    }
-
-    textLen = (int)SDL_strlen(storyTextC);
-    doomCanvas->storyText2 = SDL_calloc((size_t)textLen + 1U, sizeof(char));
-    if (doomCanvas->storyText2 != NULL) {
-        strncpy(doomCanvas->storyText2, storyTextC, (size_t)textLen);
-    }
-
-    DoomRPG_createImage(doomCanvas->doomRpg, "c.bmp", false, &doomCanvas->imgSpaceBG);
-    DoomRPG_createImage(doomCanvas->doomRpg, "d.bmp", true, &doomCanvas->imgLinesLayer);
-    DoomRPG_createImage(doomCanvas->doomRpg, "e.bmp", true, &doomCanvas->imgPlanetLayer);
-    DoomRPG_createImage(doomCanvas->doomRpg, "f.bmp", true, &doomCanvas->imgSpaceship);
-    doomCanvas->storyTextTime = -1;
-    doomCanvas->storyAnimTime = -1;
-    doomCanvas->showTextDone = false;
-    doomCanvas->storyPage = 0;
-    doomCanvas->storyTextPage = 0;
 
     DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
     DoomRPG_fillRect(doomCanvas->doomRpg,
                      0,
                      0,
-                     doomCanvas->displayRect.w,
-                     doomCanvas->displayRect.h);
+                     DOOMRPG_CANVAS_WIDTH,
+                     DOOMRPG_CANVAS_HEIGHT);
     DoomRPG_flushGraphics(doomCanvas->doomRpg);
-}
-
-void DoomCanvas_setAnimFrames(DoomCanvas_t* doomCanvas, int frames)
-{
-    if (doomCanvas == NULL || frames <= 0) {
-        return;
-    }
-
-    doomCanvas->animFrames = frames;
-    doomCanvas->animPos = ((64 + frames) - 1) / frames;
-    doomCanvas->animAngle = ((64 + frames) - 1) / frames;
+    return 1;
 }
 
 void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
@@ -494,132 +332,38 @@ void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
         Sound_stopSounds(doomCanvas->doomRpg->sound);
     }
 
-    doomCanvas->state = stateNum;
-    if (stateNum != oldState) {
-        doomCanvas->restoreSoftKeys = false;
+    if (stateNum == ST_INTRO && stateNum != oldState) {
+        if (!doomCanvasBeginIntro(doomCanvas)) {
+            return;
+        }
     }
 
-    if (stateNum == ST_PLAYING) {
-        DoomCanvas_drawSoftKeys(doomCanvas, "Menu", "Map");
-        doomCanvas->skipCheckState = true;
-    }
-    else if (stateNum == ST_INTRO) {
-        DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
-        DoomCanvas_loadPrologueText(doomCanvas);
-    }
-    else if (oldState == ST_PLAYING) {
+    doomCanvas->state = stateNum;
+
+    if (stateNum == ST_MENU && oldState == ST_PLAYING) {
         (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
         (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
     }
 }
 void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
 {
-    int frames;
-    int map;
-    int width;
-    int height;
-    int displayH;
-    int clipH;
-    int deltaH;
-    int softKeyY;
+    SDL_Rect screenRect;
     DoomRPG_t* doomRpg;
 
-    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) {
-        return;
-    }
+    if (doomCanvas == NULL || doomCanvas->doomRpg == NULL) return;
 
     doomRpg = doomCanvas->doomRpg;
-    doomCanvas->render = doomRpg->render;
-
-    doomCanvas->displayRect.w = 0;
-    doomCanvas->displayRect.h = 0;
-    width = doomCanvas->clipRect.w;
-    if ((width & 1) != 0) {
-        doomCanvas->clipRect.w = width - 1;
-    }
-
-    doomCanvas->displayRect.w = doomCanvas->clipRect.w;
-    doomCanvas->displayRect.h = doomCanvas->clipRect.h;
-    if (doomCanvas->displayRect.w < 0x80) {
-        doomCanvas->displayRect.w = 0x80;
-    }
-    if (doomCanvas->displayRect.h < DOOMRPG_LOGICAL_HEIGHT) {
-        doomCanvas->displayRect.h = DOOMRPG_LOGICAL_HEIGHT;
-    }
-
-    doomCanvas->softKeyY = doomCanvas->clipRect.h - 20;
-    doomCanvas->largeStatus = doomCanvas->displayRect.w >= 176;
-
-    displayH = doomCanvas->displayRect.h;
-    clipH = doomCanvas->clipRect.h;
-    height = displayH - 40;
-
-    if (sdlVideo.displaySoftKeys && clipH >= 148) {
-        deltaH = clipH - displayH;
-        if (deltaH < 20) {
-            height -= 20 - deltaH;
-        }
-        doomCanvas->displaySoftKeys = true;
-    }
-
-    if ((height & 1) != 0) {
-        --height;
-    }
-
-    doomCanvas->displayRect.h = 20 + height + 20;
-    doomCanvas->displayRect.x =
-        (doomCanvas->clipRect.w - doomCanvas->displayRect.w +
-         (doomCanvas->clipRect.w < doomCanvas->displayRect.w)) /
-        2;
-
-    if (doomCanvas->displaySoftKeys) {
-        clipH = doomCanvas->softKeyY;
-    }
-
-    doomCanvas->displayRect.y = (clipH - doomCanvas->displayRect.h) / 2;
-    doomCanvas->SCR_CY = doomCanvas->displayRect.h / 2;
-    doomCanvas->SCR_CX = doomCanvas->displayRect.w / 2;
-    doomCanvas->screenRect.x = doomCanvas->displayRect.x;
-    doomCanvas->screenRect.y = doomCanvas->displayRect.y + 20;
-    doomCanvas->screenRect.w = doomCanvas->displayRect.w;
-    doomCanvas->screenRect.h = height;
-
-    Render_setup(doomCanvas->render, &doomCanvas->screenRect);
-
-    softKeyY = doomCanvas->softKeyY - 1;
-    if (doomCanvas->displayRect.y + doomCanvas->displayRect.h == softKeyY) {
-        doomCanvas->softKeyY = softKeyY;
-    }
-
-    frames = 4;
-    DoomCanvas_setAnimFrames(doomCanvas, frames);
-
-    map = 1;
-    doomCanvas->startupMap = (short)map;
+    screenRect.x = DOOMRPG_VIEWPORT_X;
+    screenRect.y = DOOMRPG_VIEWPORT_Y;
+    screenRect.w = DOOMRPG_VIEWPORT_WIDTH;
+    screenRect.h = DOOMRPG_VIEWPORT_HEIGHT;
+    Render_setup(doomRpg->render, &screenRect);
+    doomCanvas->startupMap = 1;
     doomCanvas->skipIntro = false;
-    doomCanvas->skipShakeX = false;
-    doomCanvas->sndFXOnly = false;
-
     DoomRPG_createImage(doomCanvas->doomRpg, "a.bmp", true, &doomCanvas->imgFont);
-    DoomRPG_createImage(
-        doomCanvas->doomRpg, "larger_font.bmp", true, &doomCanvas->imgLargerFont);
-    DoomRPG_createImage(doomCanvas->doomRpg, "b.bmp", true, &doomCanvas->imgMapCursor);
-
-    printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native\n",
-           doomCanvas->displayRect.w,
-           doomCanvas->displayRect.h,
-           doomCanvas->screenRect.w,
-           doomCanvas->screenRect.h,
-           doomCanvas->screenRect.x,
-           doomCanvas->screenRect.y,
+    printf("[DOOMCANVASBRIDGE] STARTUP desktopTU=no display=%dx%d screen=%dx%d@%d,%d startupMap=%d hud=native geometry=fixed-cyd\n",
+           DOOMRPG_CANVAS_WIDTH, DOOMRPG_CANVAS_HEIGHT,
+           DOOMRPG_VIEWPORT_WIDTH, DOOMRPG_VIEWPORT_HEIGHT,
+           DOOMRPG_VIEWPORT_X, DOOMRPG_VIEWPORT_Y,
            doomCanvas->startupMap);
-}
-
-void DoomCanvas_invalidateRectAndUpdateView(DoomCanvas_t* doomCanvas)
-{
-    if (doomCanvas == NULL) {
-        return;
-    }
-    doomCanvas->staleView = true;
-    doomCanvas->isUpdateView = true;
 }

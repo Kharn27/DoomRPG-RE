@@ -8,6 +8,7 @@
 
 #include "esp_legacy_asset_source.h"
 #include "native_main_menu_model.h"
+#include "platform_video_config.h"
 
 #define MAIN_HELP_ASSET_NAME "help.txt"
 #define MAIN_HELP_HEADER_BYTES 3U
@@ -301,7 +302,7 @@ int DoomRPG_esp32MainMenuModelEnter(struct DoomRPG_s* doomRpgBase,
         }
     }
 
-    menuSystem->maxItems = canvas->screenRect.h / 12;
+    menuSystem->maxItems = DOOMRPG_VIEWPORT_HEIGHT / 12;
 
     if (menuSystem->numItems <= 0 ||
         (menuId == MENU_MAIN_HELP_ABOUT
@@ -348,13 +349,9 @@ int DoomRPG_esp32MainMenuModelLeave(struct DoomRPG_s* doomRpgBase) {
     releaseHelpData();
     menuSystem->menu = MENU_NONE;
     menuSystem->numItems = 0;
-    DoomCanvas_invalidateRectAndUpdateView(canvas);
-
-    printf("[MAINMODEL] LEAVE target=%d state=%d items=%d staleView=%d updateView=%d dispatcher=native\n",
+    printf("[MAINMODEL] LEAVE target=%d state=%d items=%d viewInvalidation=retired dispatcher=native\n",
            menuSystem->menu,
            canvas->state,
-           menuSystem->numItems,
-           canvas->staleView ? 1 : 0,
-           canvas->isUpdateView ? 1 : 0);
+           menuSystem->numItems);
     return 1;
 }

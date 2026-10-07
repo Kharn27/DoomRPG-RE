@@ -8,6 +8,7 @@
 #include "MenuSystem.h"
 #include "Render.h"
 
+#include "esp_native_intro_state.h"
 #include "native_intro_clock.h"
 #include "native_intro_input.h"
 #include "native_sprite_lru_cache.h"
@@ -37,17 +38,17 @@ static uint32_t largest8Block(void) {
     return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 }
 
-static int storyPositionIsSafe(const DoomCanvas_t* canvas) {
-    if (canvas == NULL) {
+static int storyPositionIsSafe(const EspNativeIntroState_t* introState) {
+    if (introState == NULL) {
         return 0;
     }
 
-    switch (canvas->storyPage) {
+    switch (introState->storyPage) {
     case 0:
-        return canvas->storyTextPage >= 0 && canvas->storyTextPage <= 1;
+        return introState->storyTextPage >= 0 && introState->storyTextPage <= 1;
     case 1:
     case 2:
-        return canvas->storyTextPage == 0;
+        return introState->storyTextPage == 0;
     default:
         return 0;
     }
@@ -55,6 +56,7 @@ static int storyPositionIsSafe(const DoomCanvas_t* canvas) {
 
 static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
     const DoomCanvas_t* canvas;
+    const EspNativeIntroState_t* introState;
     const Render_t* render;
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
@@ -63,18 +65,19 @@ static int boundaryIsSafe(const DoomRPG_t* doomRpg) {
     }
 
     canvas = doomRpg->doomCanvas;
+    introState = EspNativeIntroState_view(doomRpg);
     render = doomRpg->render;
 
     return canvas->state == ST_INTRO &&
            doomRpg->menuSystem->menu == MENU_NONE &&
-           storyPositionIsSafe(canvas) &&
-           canvas->storyText1[0] != NULL &&
-           canvas->storyText1[1] != NULL &&
-           canvas->storyText2 != NULL &&
-           canvas->imgSpaceBG.imgBitmap != NULL &&
-           canvas->imgLinesLayer.imgBitmap != NULL &&
-           canvas->imgPlanetLayer.imgBitmap != NULL &&
-           canvas->imgSpaceship.imgBitmap != NULL &&
+           storyPositionIsSafe(introState) &&
+           introState->storyText1[0] != NULL &&
+           introState->storyText1[1] != NULL &&
+           introState->storyText2 != NULL &&
+           introState->imgSpaceBG.imgBitmap != NULL &&
+           introState->imgLinesLayer.imgBitmap != NULL &&
+           introState->imgPlanetLayer.imgBitmap != NULL &&
+           introState->imgSpaceship.imgBitmap != NULL &&
            render->nodes == NULL &&
            render->lines == NULL &&
            render->mapSprites == NULL &&
@@ -99,6 +102,7 @@ static void onTap(int16_t screenX,
                   uint16_t rawX,
                   uint16_t rawY) {
     DoomCanvas_t* canvas;
+    EspNativeIntroState_t* introState;
     int logicalX;
     int logicalY;
     int accepted;
@@ -120,6 +124,13 @@ static void onTap(int16_t screenX,
     }
 
     canvas = inputState.doomRpg->doomCanvas;
+    introState = EspNativeIntroState_get(inputState.doomRpg);
+    if (introState == NULL) {
+        printf("[INTROIN] FAILED native intro state unavailable\n");
+        disarmInternal();
+        Esp32IntroClock_park("input-native-state-missing");
+        return;
+    }
     logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     logicalY = screenY / DOOMRPG_INTEGER_SCALE;
     accepted = logicalX >= 0 && logicalX < DOOMRPG_LOGICAL_WIDTH &&
@@ -135,16 +146,16 @@ static void onTap(int16_t screenX,
            screenY,
            logicalX,
            logicalY,
-           canvas->storyPage,
-           canvas->storyTextPage,
-           canvas->showTextDone ? 1 : 0,
+           introState->storyPage,
+           introState->storyTextPage,
+           introState->showTextDone ? 1 : 0,
            accepted);
 
     if (!accepted) {
         ++inputState.misses;
         printf("[INTROIN] MISS n=%u page=%d logical=%d,%d domain=full-screen\n",
                (unsigned int)inputState.misses,
-               canvas->storyPage,
+               introState->storyPage,
                logicalX,
                logicalY);
         return;
@@ -153,20 +164,20 @@ static void onTap(int16_t screenX,
     heapBefore = heap8Free();
     largestBefore = largest8Block();
 
-    if (canvas->storyPage == 0 || canvas->storyPage == 2) {
-        if (!canvas->showTextDone) {
-            canvas->showTextDone = true;
-            if (canvas->storyPage == 2) {
+    if (introState->storyPage == 0 || introState->storyPage == 2) {
+        if (!introState->showTextDone) {
+            introState->showTextDone = true;
+            if (introState->storyPage == 2) {
                 inputState.finalTextPresented = 0;
             }
             printf("[INTROIN] REVEAL page=%d textPage=%d t=%d\n",
-                   canvas->storyPage,
-                   canvas->storyTextPage,
+                   introState->storyPage,
+                   introState->storyTextPage,
                    canvas->time);
         }
-        else if (canvas->storyPage == 0 && canvas->storyTextPage == 0) {
-            canvas->storyTextPage = 1;
-            canvas->showTextDone = false;
+        else if (introState->storyPage == 0 && introState->storyTextPage == 0) {
+            introState->storyTextPage = 1;
+            introState->showTextDone = false;
             if (!Esp32IntroClock_rebaseTextEpoch()) {
                 printf("[INTROIN] FAILED More text epoch rebase\n");
                 disarmInternal();
@@ -175,12 +186,12 @@ static void onTap(int16_t screenX,
             }
             printf("[INTROIN] MORE textPage=0->1 t=%d textEpoch=%d\n",
                    canvas->time,
-                   canvas->storyTextTime);
+                   introState->storyTextTime);
         }
-        else if (canvas->storyPage == 0 && canvas->storyTextPage == 1) {
-            canvas->storyPage = 1;
-            canvas->storyTextPage = 0;
-            canvas->showTextDone = false;
+        else if (introState->storyPage == 0 && introState->storyTextPage == 1) {
+            introState->storyPage = 1;
+            introState->storyTextPage = 0;
+            introState->showTextDone = false;
             if (!Esp32IntroClock_rebasePageEpochs()) {
                 printf("[INTROIN] FAILED Continue page epoch rebase\n");
                 disarmInternal();
@@ -189,7 +200,7 @@ static void onTap(int16_t screenX,
             }
             printf("[INTROIN] CONTINUE storyPage=0->1 t=%d epoch=%d\n",
                    canvas->time,
-                   canvas->storyAnimTime);
+                   introState->storyAnimTime);
         }
         else {
             if (!inputState.finalTextPresented) {
@@ -216,17 +227,17 @@ static void onTap(int16_t screenX,
             disarmInternal();
             printf("[INTROIN] READY-TO-EXIT state=%d page=%d textPage=%d heap8=%u largest8=%u assets=retained noDispose=yes noMapLoad=yes\n",
                    canvas->state,
-                   canvas->storyPage,
-                   canvas->storyTextPage,
+                   introState->storyPage,
+                   introState->storyTextPage,
                    (unsigned int)heapAfter,
                    (unsigned int)largestAfter);
             return;
         }
     }
     else {
-        canvas->storyPage = 2;
-        canvas->storyTextPage = 0;
-        canvas->showTextDone = false;
+        introState->storyPage = 2;
+        introState->storyTextPage = 0;
+        introState->showTextDone = false;
         inputState.finalTextPresented = 0;
         if (!Esp32IntroClock_rebasePageEpochs()) {
             printf("[INTROIN] FAILED animation skip epoch rebase\n");
@@ -236,7 +247,7 @@ static void onTap(int16_t screenX,
         }
         printf("[INTROIN] SKIP-ANIM storyPage=1->2 t=%d epoch=%d\n",
                canvas->time,
-               canvas->storyAnimTime);
+               introState->storyAnimTime);
     }
 
     heapAfter = heap8Free();
@@ -245,8 +256,8 @@ static void onTap(int16_t screenX,
     if (heapAfter != heapBefore || largestAfter != largestBefore ||
         !boundaryIsSafe(inputState.doomRpg)) {
         printf("[INTROIN] FAILED transition invariant page=%d textPage=%d heap8=%u->%u largest8=%u->%u\n",
-               canvas->storyPage,
-               canvas->storyTextPage,
+               introState->storyPage,
+               introState->storyTextPage,
                (unsigned int)heapBefore,
                (unsigned int)heapAfter,
                (unsigned int)largestBefore,
@@ -257,15 +268,16 @@ static void onTap(int16_t screenX,
     }
 
     printf("[INTROIN] READY page=%d textPage=%d textDone=%d heap8=%u largest8=%u\n",
-           canvas->storyPage,
-           canvas->storyTextPage,
-           canvas->showTextDone ? 1 : 0,
+           introState->storyPage,
+           introState->storyTextPage,
+           introState->showTextDone ? 1 : 0,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
 }
 
 int Esp32IntroInput_arm(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
+    EspNativeIntroState_t* introState;
 
     inputState.doomRpg = NULL;
     inputState.taps = 0;
@@ -274,9 +286,10 @@ int Esp32IntroInput_arm(struct DoomRPG_s* doomRpgBase) {
     inputState.finalTextPresented = 0;
     PlatformInput_setTapCallback(NULL);
 
+    introState = EspNativeIntroState_get(doomRpg);
     if (!Esp32IntroClock_isActive() || !boundaryIsSafe(doomRpg) ||
-        doomRpg->doomCanvas->storyPage != 0 ||
-        doomRpg->doomCanvas->storyTextPage != 0) {
+        introState == NULL || introState->storyPage != 0 ||
+        introState->storyTextPage != 0) {
         printf("[INTROIN] FAILED arm boundary clock=%d\n",
                Esp32IntroClock_isActive());
         return 0;
@@ -295,6 +308,7 @@ int Esp32IntroInput_arm(struct DoomRPG_s* doomRpgBase) {
 
 void Esp32IntroInput_notifyFramePresented(void) {
     DoomCanvas_t* canvas;
+    EspNativeIntroState_t* introState;
 
     if (!inputState.active || inputState.doomRpg == NULL ||
         inputState.doomRpg->doomCanvas == NULL) {
@@ -302,8 +316,12 @@ void Esp32IntroInput_notifyFramePresented(void) {
     }
 
     canvas = inputState.doomRpg->doomCanvas;
-    if (canvas->storyPage == 2 && canvas->storyTextPage == 0 &&
-        canvas->showTextDone && !inputState.finalTextPresented) {
+    introState = EspNativeIntroState_get(inputState.doomRpg);
+    if (introState == NULL) {
+        return;
+    }
+    if (introState->storyPage == 2 && introState->storyTextPage == 0 &&
+        introState->showTextDone && !inputState.finalTextPresented) {
         inputState.finalTextPresented = 1;
         printf("[INTROIN] FINAL-TEXT-PRESENTED t=%d continueUnlocked=yes\n",
                canvas->time);

@@ -9,6 +9,7 @@
 #include "MenuSystem.h"
 #include "Render.h"
 
+#include "esp_native_intro_state.h"
 #include "native_intro_clock.h"
 #include "native_intro_dispose.h"
 #include "native_intro_input.h"
@@ -77,6 +78,7 @@ static int runtimePoolsAreReleased(const Render_t* render) {
 
 static int preDisposeBoundaryIsSafe(const DoomRPG_t* doomRpg) {
     const DoomCanvas_t* canvas;
+    const EspNativeIntroState_t* introState;
 
     if (doomRpg == NULL || doomRpg->doomCanvas == NULL ||
         doomRpg->render == NULL || doomRpg->menuSystem == NULL) {
@@ -84,21 +86,23 @@ static int preDisposeBoundaryIsSafe(const DoomRPG_t* doomRpg) {
     }
 
     canvas = doomRpg->doomCanvas;
+    introState = EspNativeIntroState_view(doomRpg);
 
     return !Esp32IntroClock_isActive() &&
            !Esp32IntroInput_isActive() &&
            doomRpg->menuSystem->menu == MENU_NONE &&
            canvas->state == ST_INTRO &&
-           canvas->storyPage == 2 &&
-           canvas->storyTextPage == 0 &&
-           canvas->showTextDone &&
-           canvas->storyText1[0] != NULL &&
-           canvas->storyText1[1] != NULL &&
-           canvas->storyText2 != NULL &&
-           canvas->imgSpaceBG.imgBitmap != NULL &&
-           canvas->imgLinesLayer.imgBitmap != NULL &&
-           canvas->imgPlanetLayer.imgBitmap != NULL &&
-           canvas->imgSpaceship.imgBitmap != NULL &&
+           introState != NULL &&
+           introState->storyPage == 2 &&
+           introState->storyTextPage == 0 &&
+           introState->showTextDone &&
+           introState->storyText1[0] != NULL &&
+           introState->storyText1[1] != NULL &&
+           introState->storyText2 != NULL &&
+           introState->imgSpaceBG.imgBitmap != NULL &&
+           introState->imgLinesLayer.imgBitmap != NULL &&
+           introState->imgPlanetLayer.imgBitmap != NULL &&
+           introState->imgSpaceship.imgBitmap != NULL &&
            runtimePoolsAreReleased(doomRpg->render);
 }
 
@@ -116,15 +120,7 @@ static int postDisposeBoundaryIsSafe(const DoomRPG_t* doomRpg) {
            !Esp32IntroInput_isActive() &&
            doomRpg->menuSystem->menu == MENU_NONE &&
            canvas->state == ST_INTRO &&
-           canvas->storyPage == 3 &&
-           canvas->storyTextPage == 0 &&
-           canvas->storyText1[0] == NULL &&
-           canvas->storyText1[1] == NULL &&
-           canvas->storyText2 == NULL &&
-           canvas->imgSpaceBG.imgBitmap == NULL &&
-           canvas->imgLinesLayer.imgBitmap == NULL &&
-           canvas->imgPlanetLayer.imgBitmap == NULL &&
-           canvas->imgSpaceship.imgBitmap == NULL &&
+           EspNativeIntroState_view(doomRpg) == NULL &&
            !Esp32StoryFit_hasHand() &&
            !doomRpg->graphSetCliping &&
            runtimePoolsAreReleased(doomRpg->render);
@@ -175,6 +171,7 @@ void Esp32IntroDispose_reset(void) {
 void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     DoomCanvas_t* canvas;
+    EspNativeIntroState_t* introState;
     Render_t* render;
     uint32_t heapBefore;
     uint32_t heapAfter;
@@ -189,6 +186,7 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
 
     if (!preDisposeBoundaryIsSafe(doomRpg)) {
         canvas = doomRpg->doomCanvas;
+        introState = EspNativeIntroState_get(doomRpg);
         render = doomRpg->render;
         disposeState.attempted = 1;
         printf("[INTRODISP] FAILED precondition clock=%d input=%d menu=%d state=%d page=%d textPage=%d textDone=%d heap8=%u largest8=%u shapeData=%p mediaTexels=%p\n",
@@ -196,9 +194,9 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
                Esp32IntroInput_isActive(),
                doomRpg->menuSystem != NULL ? doomRpg->menuSystem->menu : -1,
                canvas != NULL ? canvas->state : -1,
-               canvas != NULL ? canvas->storyPage : -1,
-               canvas != NULL ? canvas->storyTextPage : -1,
-               canvas != NULL && canvas->showTextDone ? 1 : 0,
+               introState != NULL ? introState->storyPage : -1,
+               introState != NULL ? introState->storyTextPage : -1,
+               introState != NULL && introState->showTextDone ? 1 : 0,
                (unsigned int)heap8Free(),
                (unsigned int)largest8Block(),
                render != NULL ? (void*)render->shapeData : NULL,
@@ -208,15 +206,21 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
 
     disposeState.attempted = 1;
     canvas = doomRpg->doomCanvas;
+    introState = EspNativeIntroState_get(doomRpg);
+    if (introState == NULL) {
+        disposeState.attempted = 1;
+        printf("[INTRODISP] FAILED native transient intro owner missing\n");
+        return;
+    }
     heapBefore = heap8Free();
     largestBefore = largest8Block();
     frameBefore = framebufferHash();
 
     printf("\n=== Doom RPG ESP32 bounded intro disposal ===\n");
-    printf("[INTRODISP] BEGIN state=%d page=%d textPage=%d startupMap=%d frameFNV=%08x heap8=%u largest8=%u clip=%d\n",
+    printf("[INTRODISP] BEGIN state=%d page=%d textPage=%d startupMap=%d frameFNV=%08x heap8=%u largest8=%u clip=%d owner=native-transient\n",
            canvas->state,
-           canvas->storyPage,
-           canvas->storyTextPage,
+           introState->storyPage,
+           introState->storyTextPage,
            canvas->startupMap,
            (unsigned int)frameBefore,
            (unsigned int)heapBefore,
@@ -227,7 +231,7 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
     /* DoomCanvas_changeStoryPage() increments to 3 before calling the original
      * disposer. Preserve that state transition while keeping map loading out.
      */
-    canvas->storyPage = 3;
+    introState->storyPage = 3;
 
     {
         const uint32_t before = heap8Free();
@@ -238,14 +242,15 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
                (int)heap8Free() - (int)before);
     }
 
-    freeImageMeasured(doomRpg, &canvas->imgSpaceBG, "c.bmp/imgSpaceBG");
-    freeImageMeasured(doomRpg, &canvas->imgLinesLayer, "d.bmp/imgLinesLayer");
-    freeImageMeasured(doomRpg, &canvas->imgPlanetLayer, "e.bmp/imgPlanetLayer");
-    freeImageMeasured(doomRpg, &canvas->imgSpaceship, "f.bmp/imgSpaceship");
-
-    freeTextMeasured(&canvas->storyText1[0], "storyText1[0]");
-    freeTextMeasured(&canvas->storyText1[1], "storyText1[1]");
-    freeTextMeasured(&canvas->storyText2, "storyText2");
+    {
+        const uint32_t before = heap8Free();
+        EspNativeIntroState_release(doomRpg);
+        printf("[INTRODISP] FREE owner=native-intro-state stateBytes=96 heap8=%u->%u gain=%d state=NULL\n",
+               (unsigned int)before,
+               (unsigned int)heap8Free(),
+               (int)heap8Free() - (int)before);
+    }
+    introState = NULL;
 
     DoomRPG_setClipFalse(doomRpg);
 
@@ -257,10 +262,8 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
         heapAfter <= heapBefore ||
         largestAfter < largestBefore ||
         frameAfter != frameBefore) {
-        printf("[INTRODISP] FAILED postcondition state=%d page=%d textPage=%d frameFNV=%08x->%08x heap8=%u->%u largest8=%u->%u shapeData=%p mediaTexels=%p\n",
+        printf("[INTRODISP] FAILED postcondition state=%d page=3 textPage=0 frameFNV=%08x->%08x heap8=%u->%u largest8=%u->%u shapeData=%p mediaTexels=%p\n",
                canvas->state,
-               canvas->storyPage,
-               canvas->storyTextPage,
                (unsigned int)frameBefore,
                (unsigned int)frameAfter,
                (unsigned int)heapBefore,
@@ -273,10 +276,8 @@ void Esp32IntroDispose_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     disposeState.done = 1;
-    printf("[INTRODISP] READY state=%d page=%d textPage=%d frameFNV=%08x->%08x heap8=%u->%u recovered=%d largest8=%u->%u assets=NULL texts=NULL clip=off noMapLoad=yes\n",
+    printf("[INTRODISP] READY state=%d page=3 textPage=0 frameFNV=%08x->%08x heap8=%u->%u recovered=%d largest8=%u->%u owner=NULL assets=NULL texts=NULL clip=off noMapLoad=yes\n",
            canvas->state,
-           canvas->storyPage,
-           canvas->storyTextPage,
            (unsigned int)frameBefore,
            (unsigned int)frameAfter,
            (unsigned int)heapBefore,
