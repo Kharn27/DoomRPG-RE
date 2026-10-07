@@ -1,5 +1,66 @@
 # Doom RPG ESP32 CYD porting status
 
+## DoomCanvas linked-ABI whitelist — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`d34cf007663bbb213f5c4e3f3eea7ae694339217`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+The generated ESP32 `DoomCanvas.c` now retains only the source ABI proven to
+survive link-time GC. The desktop source contains 76 public `DoomCanvas_*`
+definitions; the ESP32 generator removes **61** before compilation and retains
+**15 source roots**.
+
+The resulting ELF preserves the same linked DoomCanvas surface as the previous
+accepted build: 15 source functions plus GCC's internal split
+`DoomCanvas_drawFont$part$0`, for 16 binary symbols total.
+
+Normal `esp32-cyd` CI for the tested commit is SUCCESS:
+
+```text
+[ESP32] DoomCanvas generated ... 61 dead public function(s) pruned + 15 source ABI root(s) retained ...
+RAM:   45464 B
+Flash: 780193 B
+esp32-cyd SUCCESS
+```
+
+The real-CYD acceptance run exercises substantially more than boot. It covers:
+
+- fresh START and complete intro handoff;
+- exact MAP_INTRO first-frame witness `71ca7465`;
+- movement, rotation, collision, automap publication and native renderer guard recovery;
+- crate combat/transform and resource pickups;
+- opcode-26 enter-dialog plus resumed opcode-19 state transitions;
+- standalone weapon-help dialog;
+- door open/close animation including deferred post-monster close;
+- native monster activation, attack visualization, retaliation and committed player damage;
+- HUB/System, confirmed Exit To Menu and exact resident teardown;
+- version-11 LOAD and checkpoint restore of resources, scripts, line state/texture,
+  action removals, crate state, automap, monsters, topology, positions, activation
+  order and monster drops;
+- resumed gameplay with the restored 12-monster active set.
+
+Critical invariants remain intact:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 ...
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[RESIDENTRESET] ... empty=1
+[SYSEXIT] MENU-READY ... session=off resident=empty
+[NATIVESAVE] LOAD ... version=11 ... restored-exact
+[ENGINESESSION] RESUME checkpoint=restored ...
+```
+
+The observed renderer compact-span `LEGACY_GUARD` path recovers normally and
+is unchanged by this milestone.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_DOOMCANVAS_LINKED_ABI_WHITELIST.md](MILESTONE_ESP32_DOOMCANVAS_LINKED_ABI_WHITELIST.md)
+
 ## Minimal ESP32 Game compatibility shell — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:
