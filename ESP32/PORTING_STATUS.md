@@ -1,5 +1,75 @@
 # Doom RPG ESP32 CYD porting status
 
+## Dormant Game entity storage compacted — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`449e9e8425e6a4d125804728052c2b4735e31b97`.
+
+Branch:
+`agent/esp32-compact-game-entity-storage`.
+
+A live-ELF audit of the merged main showed that the normal classic-CYD firmware
+retains only five `Game_*` symbols: `Game_init`, `Game_gsprite_clear`,
+`Game_loadConfig`, `Game_unloadMapData`, and the already fail-closed
+`Game_activate` ABI stub. The inherited `Game_t` nevertheless still embedded
+the retired desktop entity runtime:
+
+```text
+Entity_t entities[400]              25600 B
+Entity_t *entityDb[1024]             4096 B
+EntityMonster_t entityMonsters[100]  5600 B
+```
+
+On ESP32 only, those three stores are now compile-only sentinel arrays of one
+element each. Desktop/J2ME capacities remain unchanged. Generated
+`Game_unloadMapData()` also retires the obsolete 1024-entry `entityDb` clear.
+Compile-time guards require the sentinel capacities and
+`sizeof(Game_t) == 1296`.
+
+Normal `esp32-cyd` CI #1602 is SUCCESS:
+
+```text
+static RAM   = 45464 B
+linked Flash = 781141 B
+```
+
+Real-CYD boot proves the heap allocation collapsed exactly as intended:
+
+```text
+[CORE] Game           used=1312 heap=176212 largest=110580
+[CORE] Legacy entity runtime retired stores=sentinel capacities=1/1/1 gameBytes=1296 desktopBytes=36468 reclaimed=35172 entities=0 monsters=0 owner=native-resident-map
+[CORE] READY objects=5 heap used=11016 remaining=176212 largest=110580 clip=160x120
+```
+
+Compared with the preceding hardware witness (`Game used=36484`,
+`remaining=141040`), the core heap recovers exactly 35172 B.
+
+The same hardware run completes MENU_MAIN -> START, full intro disposal,
+MAP_INTRO resident load, exact first frame `71ca7465`, native pickups/HUD,
+SYS Exit To Menu, then a second fresh START. Both resident sessions settle at
+the same memory state:
+
+```text
+[ALIVE] ... heap8=98416 largest8=86004 ...
+...
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+...
+[ALIVE] ... heap8=98416 largest8=86004 ...
+```
+
+The second START also resets the mutated player fingerprint back to the canonical
+fresh `e745fce9`. Throughout both sessions,
+`shapeData=0x0` and `mediaTexels=0x0`.
+
+A renderer compact-guard recovery was exercised once during a turn and recovered
+normally before gameplay continued; it is not a failure of this storage
+milestone.
+
+No post-test runtime/code change is part of the closure commit.
+
+Detailed record:
+[MILESTONE_ESP32_COMPACT_GAME_ENTITY_STORAGE.md](MILESTONE_ESP32_COMPACT_GAME_ENTITY_STORAGE.md)
+
 ## Retired Player/Sound config dereferences closed — REVIEW FIX + REAL-CYD BOOT PASS (2026-10-07)
 
 Current tested code boundary:
