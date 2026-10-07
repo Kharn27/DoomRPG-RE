@@ -1,3 +1,25 @@
+## Native quarter-turn camera interpolation — REAL-CYD VISUAL PASS (2026-10-08)
+
+Production `esp32-cyd` CI run #37703393521 SUCCESS: static RAM
+45056 B, flash 773329 B. Hardware-tested code SHA
+`db0eb476d8070d4a560893718ae79e7570f72fcc`.
+On the real classic CYD, four LEFT/RIGHT 90-degree rotations rendered
+two intermediate preview frames and a canonical final frame each,
+with preview times from **89443 to 105303 us**, no fallback.
+User confirmed the effect feels smooth and clearly shows turn direction.
+`[ALIVE]` heap8 remained **118288**, largest8 **86004** at
+31.7, 36.9 and 41.9s. `[MONSTERTURN]` did not schedule on turns;
+the immediately preceding MOVE did advance its usual monster turn.
+Render-derived automap line publication occurred only on final
+settled frames, not previews. No extra framebuffer or player-state
+mutation was introduced. This is **rotation only**, not MOVE animation.
+
+**Coverage bounds:** 0<->192 wrap, visible-monster encounters, automap
+mode, SYS EXIT / menu fingerprint, dialog, LOAD were not present in
+this log; do not claim them retested. Physically validated code is
+frozen; subsequent changes on this branch are docs-only.
+[Milestone](MILESTONE_NATIVE_CAMERA_ROTATION_VISUAL.md).
+
 ## DIALOGCHAIN rollback journal session teardown — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested code SHA `2aa4ebcb8b932db4f5b803db920fbaae612a088d`; normal `esp32-cyd` CI #1709 SUCCESS

@@ -1,67 +1,72 @@
 # Milestone — Native camera interpolation for quarter-turns
 
-Status: **CODE CANDIDATE — production CI and real-CYD tests pending**
+Status: **REAL-CYD ROTATION VISUAL PASS — limited regression coverage**
 
-Branch `agent/esp32-camera-rotation-visual`, stacked temporarily on
-`agent/esp32-dialogchain-owner-lifecycle` docs-only PASS closure
-`ea2ded7995aa24858947b2b5c07c484069fcd4d9`.
-Main at branch creation: `91e1d8412c98fc10ff7b6a2cff6c97323496ecaf`.
-The dependency must be merged first; never merge main automatically.
+Hardware-tested production code SHA: `db0eb476d8070d4a560893718ae79e7570f72fcc`.
+CI on docs candidate `f534498636d829ee501757c7bd2b8751e26524ce`:
+GitHub Actions run 37703393521, normal `esp32-cyd` **SUCCESS**,
+static RAM **45056 B**, flash **773329 B**.
+Branch `agent/esp32-camera-rotation-visual` is stacked on the merged PR #200 DIALOGCHAIN
+closure (main merge SHA `f2a178e1fa0d04e0e163215bef6d745b7ea64da5`).
+No source changes after physical test; all closure changes docs-only.
 
-Code candidate: `db0eb476d8070d4a560893718ae79e7570f72fcc`.
+## Real classic CYD witness (2026-10-08)
 
-## Boundary
+User observed genuinely smooth and readable turning direction on the
+physical screen, explicitly reporting no perceived lag. Four separate
+quarter-turns completed with **two intermediate frames each**, all
+`rendered=yes presented=1 gameplayStable=yes`, no preview FALLBACK:
 
-- Rotation only. MOVE and automap turn presentation remain byte-for-byte
-  through the original settled gameplay compositor.
-- A TURN commits once using the existing exact cardinal native dispatch.
-  Synchronously paint up to two interpolated visual angles
-  (1/3 and 2/3 of a quarter-turn, 256-angle circle).
-  Always paint the final cardinal frame through the original route.
-- The render-only pose is copied from the committed player view; no edit to
-  `EspPlayerView`, movement state, event queues, turns, scripts, checkpoint,
-  RNG, tiles, monsters or immutable runtime.
-- The preview camera uses native wall/plane projection and native sprites
-  with the same framebuffer, BSS compositor, PAK read leases and existing
-  complete-frame presentation. No second framebuffer or animation heap owner.
-- Preview BSP visibility is driven by a supplied camera pose; production
-  `EspNativeBspVisibility_build` and sprite renderer retain their old API.
-  Preview sprite admission uses the read-only visibility query rather than
-  the wrapped gameplay activation observer, and skips
-  `EspNativeBspVisibility_publishAutomap`. The final canonical render
-  performs the usual activation and automap discovery only once.
-- Preview paints do not publish `EspNativeGameplayActionEngine_markFreshFrame`.
-  If an intermediate compose fails, record `[VIEWANIM] FALLBACK` and
-  attempt the mandatory final cardinal frame. If that final frame fails,
-  the original commit/rollback/fatal path remains unchanged.
-- Non-cardinal camera poses are never passed to gameplay collision,
-  monster turn producers, the HUD direction glyph or save data.
-- The existing world compositor allocates bounded *transient* scratch
-  per render, just as before. Animations multiply the number of presents
-  and PAK leases; real device timing and heap margins must be measured
-  before declaring performance acceptable.
+| Action | Logical turn | Preview camera angles | Preview totalUs |
+|---|---|---|---|
+| TURN_LEFT | 64 -> 128 | 85, 106 | 105303, 93047 |
+| TURN_RIGHT | 128 -> 64 | 107, 86 | 96047, 98072 |
+| TURN_RIGHT | 64 -> 0 | 43, 22 | 92070, 91126 |
+| TURN_LEFT | 0 -> 64 | 21, 42 | 89443, 94766 |
 
-## Hardware acceptance — normal `esp32-cyd`
+Every intermediate paint reported `presented=1`; each pair was
+followed by `[VIEWANIM] END ... intermediates=2 logicalCommit=once
+monsterTurn=no finalCardinal=next` and a normal
+`[RESIDENTGAMEPLAY] TURN ... committed=yes`.
+There was no `[MONSTERTURN]` schedule for these four rotations.
+The preceding forward MOVE did produce a normal
+`[MONSTERTURN] ORDERED-DISPATCH reason=MOVE turnToken=1`.
+Automap discovery was observed only on canonical final renders
+(`lines+=12` and `lines+=2`), never on the preview frames.
+`[ALIVE]` at 31.7, 36.9 and 41.9 seconds remained exactly
+`heap8=118288 largest8=86004 heap=184212`.
+The user's direct visual feedback, not just CI, validates the UX goal.
 
-1. Boot and enter MAP_INTRO. Verify untouched first-map frame,
-   initial/menu FNV, `shapeData==NULL` and `mediaTexels==NULL`.
-2. In world mode, TURN_RIGHT and TURN_LEFT at least twice each, including
-   wrap 0<->192. Each turn should show two `[VIEWANIM] FRAME` events
-   with `presented=1`, then `[VIEWANIM] END intermediates=2`
-   and the unchanged `[RESIDENTGAMEPLAY] TURN ... committed=yes`.
-   Record `totalUs`, visual appearance and perceived latency.
-3. Confirm no extra `[MONSTERTURN] SCHEDULE` on rotation.
-   With visible monsters, verify they do not move/attack on rotation alone.
-4. A collision-free MOVE still advances the monster turn precisely once,
-   rendering and facing-label behavior remain unchanged.
-5. Exercise HUD, a chained dialogue, HUB, SYS EXIT and optional LOAD:
-   no stuck PAK, memory growth or leaked visual camera; final MENU_MAIN
-   fingerprint `522dc605`.
-6. Test automap turn: previews must be skipped, original automap render
-   retained. A failed preview should be optional and log FALLBACK;
-   the cardinal final render must always succeed.
+**Scope limitation:** This excerpt did not include angle wrap
+0 <-> 192, visible-monster rotation tests, automap-mode rotation,
+dialog/HUB/SYS EXIT, LOAD or post-exit menu FNV. Therefore
+no claim is made for these unexercised regressions, although they
+retain the canonical native paths in the code. The tested world
+rotation behavior and memory stability constitute the bounded
+visual-rotation hardware PASS. Review/merge is reasonable with
+the above regression scope explicitly recorded; deeper scenario
+coverage can be done separately.
 
-No hardware PASS is claimed until Serial logs and a human visual check
-confirm both behavior and acceptable latency. This is **not** the MOVE
-interpolation milestone. Any corrective code changes require a fresh
-real-device check on the final code SHA.
+## Design and behavioral invariant
+
+- A TURN still commits a single settled cardinal `EspPlayerView` before
+  rendering. No intermediate pose is published to gameplay, events,
+  collision, checkpoints or monster turn producers.
+- Two non-cardinal camera poses are short-lived stack copies; no new
+  persistent allocation and no second framebuffer.
+- Intermediate wall/plane/sprite rendering bypasses gameplay monster
+  activation and automap reveal mutation, skips FreshFrame notification
+  and paints the compass from the committed cardinal angle.
+- Final frame uses the unchanged canonical production route with its
+  ordinary rollback/error handling. If a preview fails, the intended
+  behavior is fail-open for the optional animation but fail-closed for
+  the required canonical final frame.
+- MOVE interpolation is deliberately **out of scope**. No further code
+  changes belong to this physically validated milestone.
+
+## Merge boundary
+
+Hardware-proven code is `db0eb476d8070d4a560893718ae79e7570f72fcc`.
+Commit `f534498636d829ee501757c7bd2b8751e26524ce` added only
+this milestone's candidate documentation. This closure updates
+documentation only. The user controls merging to main.
