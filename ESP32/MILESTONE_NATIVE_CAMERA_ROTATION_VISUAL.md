@@ -8,7 +8,10 @@ GitHub Actions run 37703393521, normal `esp32-cyd` **SUCCESS**,
 static RAM **45056 B**, flash **773329 B**.
 Branch `agent/esp32-camera-rotation-visual` is stacked on the merged PR #200 DIALOGCHAIN
 closure (main merge SHA `f2a178e1fa0d04e0e163215bef6d745b7ea64da5`).
-No source changes after physical test; all closure changes docs-only.
+The rotation-specific code and its hardware-tested SHA remain frozen.
+At the user's explicit request the same branch subsequently gains a separate
+MOVE interpolation candidate. That later code is not part of the earlier
+rotation hardware PASS; see MILESTONE_NATIVE_CAMERA_MOVE_VISUAL.md.
 
 ## Real classic CYD witness (2026-10-08)
 
@@ -61,8 +64,8 @@ coverage can be done separately.
   ordinary rollback/error handling. If a preview fails, the intended
   behavior is fail-open for the optional animation but fail-closed for
   the required canonical final frame.
-- MOVE interpolation is deliberately **out of scope**. No further code
-  changes belong to this physically validated milestone.
+- MOVE interpolation is a separately documented, later candidate on this
+  same user-requested branch; the previously tested rotation code is frozen.
 
 ## Merge boundary
 

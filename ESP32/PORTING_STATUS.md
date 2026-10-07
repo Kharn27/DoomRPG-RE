@@ -1,3 +1,24 @@
+## Native camera-only cardinal MOVE interpolation — CODE CANDIDATE (2026-10-08)
+
+On existing branch agent/esp32-camera-rotation-visual, a distinct,
+not-yet-hardware-tested extension adds two intermediate camera positions to
+successfully committed 64-unit FORWARD/BACK/STRAFE moves. The normal
+collision/execute-events/commit/rollback and monster-turn sequencing is
+unchanged. The renderer borrows the native side-effect-free visual-preview
+route introduced and physically validated for rotations: two positions at
+1/3 and 2/3 of the step, then mandatory final settled frame. Rejected moves
+and automap-mode moves retain their existing path. No map-wide texture mirror,
+no separate framebuffer or durable animation owner.
+
+Code boundary: 529e7abb177060743ffb8495e97b1be14606fd20.
+Production CI and real-CYD test are pending; do not extend the rotation
+hardware PASS to the translation until its own Serial witness.
+Expected diagnostic: [VIEWANIM] FRAME mode=move, END intermediates=2,
+followed by [RESIDENTGAMEPLAY] MOVE committed=yes and the usual
+single monster-turn dispatch. A preview FALLBACK should not prevent
+a successful canonical last frame. Measure timing and memory.
+[Detailed candidate](MILESTONE_NATIVE_CAMERA_MOVE_VISUAL.md).
+
 ## Native quarter-turn camera interpolation — REAL-CYD VISUAL PASS (2026-10-08)
 
 Production `esp32-cyd` CI run #37703393521 SUCCESS: static RAM
