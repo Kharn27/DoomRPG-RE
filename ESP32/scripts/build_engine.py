@@ -272,6 +272,54 @@ void Render_spanPlane(Render_t* r,int x,int y,PlaneTextureRef_t* p,
 """ + plane_draw, 1)
 render_source_text = render_source_text.replace(plane_end, "#endif\n\n" + plane_end, 1)
 
+# Fifth bounded cut: viewNodes was a 44-byte linked-list sentinel in
+# the retired Render_renderBSP/Render_walkNode traversal. Native visibility
+# uses compact immutable BSP data and never needs this mutable list.
+# Preserve full desktop/bringup code and fail-close legacy production entry.
+view_bsp_begin = "void Render_renderBSP(Render_t* render)\n{"
+view_bsp_end = "void Render_renderBSPNoclip(Render_t* render)\n{"
+view_walk_begin = "void Render_walkNode(Render_t* render, int i)\n{"
+view_walk_end = "boolean Render_cullBoundingBox(Render_t* render, Node_t* node)\n{"
+for anchor in (view_bsp_begin, view_bsp_end, view_walk_begin, view_walk_end):
+    if render_source_text.count(anchor) != 1:
+        raise RuntimeError("Unreviewed legacy BSP view-list source shape")
+if render_source_text.count("render->viewNodes") != 6:
+    raise RuntimeError("Unreviewed legacy Render.viewNodes consumer")
+if (render_source_text[render_source_text.index(view_bsp_begin):
+                       render_source_text.index(view_bsp_end)].count("render->viewNodes") != 3 or
+        render_source_text[render_source_text.index(view_walk_begin):
+                           render_source_text.index(view_walk_end)].count("render->viewNodes") != 3):
+    raise RuntimeError("Legacy viewNodes consumer escaped its retired owner")
+render_source_text = render_source_text.replace(
+    view_bsp_begin,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_renderBSP(Render_t* render)
+{
+    (void)render;
+    printf("[LEGACYBSP] REJECT Render_renderBSP: native visibility required\\n");
+}
+#else
+""" + view_bsp_begin, 1)
+render_source_text = render_source_text.replace(
+    view_bsp_end,
+    "#endif /* production legacy BSP traversal rejection */\n\n" + view_bsp_end, 1)
+render_source_text = render_source_text.replace(
+    view_walk_begin,
+    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+void Render_walkNode(Render_t* render, int i)
+{
+    (void)render;
+    (void)i;
+    printf("[LEGACYBSP] REJECT Render_walkNode: native BSP owner required\\n");
+}
+#else
+""" + view_walk_begin, 1)
+render_source_text = render_source_text.replace(
+    view_walk_end,
+    "#endif /* production legacy BSP walk rejection */\n\n" + view_walk_end, 1)
+print("[ESP32] Legacy BSP view-list traversal fail-closed; "
+      "Render.viewNodes 44-byte sentinel retired from production")
+
 with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(render_source_text)
 
