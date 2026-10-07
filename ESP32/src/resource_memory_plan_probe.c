@@ -26,7 +26,7 @@ static int resourcePlanReady = 0;
  * Render_t plane descriptors; original count is bringup-only. */
 static int legacyPlaneCount(const Render_t* render) {
 #if defined(DOOMRPG_ESP32_BRINGUP_PROBES) && DOOMRPG_ESP32_BRINGUP_PROBES
-    return render != NULL ? legacyPlaneCount(render) : 0;
+    return render != NULL ? render->planeTexturesCnt : 0;
 #else
     (void)render;
     return 0;
@@ -213,7 +213,7 @@ int DoomRPG_probeMenuResourceMemoryPlan(int mapStructuresReady) {
            (unsigned int)largestBefore,
            render->mapTextureTexelsCount,
            render->mapSpriteTexelsCount,
-           render->planeTexturesCnt);
+           legacyPlaneCount(render));
     printf("[RESOURCEPLAN] bitshapes.bin c=%d u=%d inflateTransient=%lluB\n",
            bitshapesEntry->csize, bitshapesEntry->usize,
            (unsigned long long)inflateTransientBytes(bitshapesEntry));
