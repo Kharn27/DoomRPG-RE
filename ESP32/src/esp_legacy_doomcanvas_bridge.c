@@ -13,6 +13,14 @@
 #include "native_story_fit.h"
 #include "platform_video_config.h"
 
+#define ESP32_DOOMCANVAS_DESKTOP_BYTES 3740U
+#define ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES (2048U + 512U)
+#define ESP32_DOOMCANVAS_COMPACT_BYTES \
+    (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES)
+
+_Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
+               "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
+
 /*
  * Permanent ESP32 compatibility bridge for the small DoomCanvas ABI that
  * survived the hardware-proven linked-root audit.
@@ -105,8 +113,9 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->vibrateEnabled = true;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=%u retiredDialogStores=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            doomCanvas->clipRect.w,
            doomCanvas->clipRect.h);
     return doomCanvas;

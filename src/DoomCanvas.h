@@ -72,8 +72,14 @@ typedef struct DoomCanvas_s
 	int shakeVal;
 	int shakeX;
 	int shakeY;
+#ifdef DOOMRPG_ESP32
+	/* Dialog text/index payloads are owned by the native dialog runtime. Keep
+	 * these desktop map-wide stores out of the permanent ESP32 compatibility
+	 * object so any future direct reuse fails at compile time. */
+#else
 	short dialogIndexes[1024];
 	char dialogBuffer[512];
+#endif
 	int dialogLineStartTime;
 	int dialogTypeLineIdx;
 	int numDialogLines;
