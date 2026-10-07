@@ -283,6 +283,126 @@ game_patched = join(patched_dir, "Game.c")
 with open(game_source, "r", encoding="latin-1") as source_file:
     game_source_text = source_file.read()
 
+game_map_catalog_include_needle = '#include "Game.h"\n'
+game_map_catalog_include_replacement = (
+    '#include "Game.h"\n'
+    '#include "esp_map_catalog.h"\n'
+)
+game_map_catalog_include_count = game_source_text.count(
+    game_map_catalog_include_needle
+)
+if game_map_catalog_include_count != 1:
+    raise RuntimeError(
+        "Unexpected Game.h include shape; review native map catalog ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_map_catalog_include_needle,
+    game_map_catalog_include_replacement,
+    1,
+)
+
+game_resource_map_id_needle = """int Game_getResourceMapID(Game_t* game, char* mapName)
+{
+	for (int i = 0; i < MAPFILE_MAX; i++) {
+
+		if (!SDL_strcmp(game->mapFiles[i], mapName)) {
+			return i + MAP_INTRO;
+		}
+	}
+	printf("ERROR: Cannot determine resource ID for '%s'", mapName);
+
+	return MAP_INTRO;
+}
+"""
+game_resource_map_id_replacement = """int Game_getResourceMapID(Game_t* game, char* mapName)
+{
+	uint8_t mapId = 0U;
+
+	(void)game;
+	if (mapName != NULL && EspMapCatalog_idForName(mapName, &mapId)) {
+		return (int)mapId;
+	}
+	printf("ERROR: Cannot determine resource ID for '%s'",
+	       mapName != NULL ? mapName : "(null)");
+
+	return MAP_INTRO;
+}
+"""
+game_resource_map_id_count = game_source_text.count(
+    game_resource_map_id_needle
+)
+if game_resource_map_id_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_getResourceMapID mapFiles scan shape; "
+        "review native map catalog ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_resource_map_id_needle,
+    game_resource_map_id_replacement,
+    1,
+)
+
+game_map_table_init_needle = """	strncpy(game->mapNames[MAPNAME_ENTRANCE], "Entrance", 24);
+	strncpy(game->mapNames[MAPNAME_JUNCTION], "Junction", 24);
+	strncpy(game->mapNames[MAPNAME_S01], "Sector 1", 24);
+	strncpy(game->mapNames[MAPNAME_S02], "Sector 2", 24);
+	strncpy(game->mapNames[MAPNAME_S03], "Sector 3", 24);
+	strncpy(game->mapNames[MAPNAME_S04], "Sector 4", 24);
+	strncpy(game->mapNames[MAPNAME_S05], "Sector 5", 24);
+	strncpy(game->mapNames[MAPNAME_S06], "Sector 6", 24);
+	strncpy(game->mapNames[MAPNAME_S07], "Sector 7", 24);
+	strncpy(game->mapNames[MAPNAME_JUNCTION_DESTROYED], "Junction", 24);
+	strncpy(game->mapNames[MAPNAME_REACTOR], "Reactor", 24);
+
+	strncpy(game->mapFiles[MAPFILE_INTRO], "/intro.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_L01], "/level01.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_L02], "/level02.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_L03], "/level03.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_L04], "/level04.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_L05], "/level05.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_L06], "/level06.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_L07], "/level07.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_JUNCTION], "/junction.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_JUNCTION_DESTROYED], "/junction_destroyed.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_ITEMS], "/items.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_REACTOR], "/reactor.bsp", 24);
+	strncpy(game->mapFiles[MAPFILE_END_GAME], "/endgame.bsp", 24);
+"""
+game_map_table_init_replacement = """	/* ESP32 map identity/resource names are immutable EspMapCatalog data.
+	 * The inherited Game_t tables are compile-only sentinel storage. */
+"""
+game_map_table_init_count = game_source_text.count(game_map_table_init_needle)
+if game_map_table_init_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_init legacy map table shape; "
+        "review native map catalog ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_map_table_init_needle,
+    game_map_table_init_replacement,
+    1,
+)
+
+game_save_state_map_file_needle = """	Game_savePlayerState(game, "Player2", game->mapFiles[mapId-1], x, y, angleDir);
+"""
+game_save_state_map_file_replacement = """	Game_savePlayerState(game, "Player2",
+	                    (char*)EspMapCatalog_nameForId((uint8_t)mapId),
+	                    x, y, angleDir);
+"""
+game_save_state_map_file_count = game_source_text.count(
+    game_save_state_map_file_needle
+)
+if game_save_state_map_file_count != 1:
+    raise RuntimeError(
+        "Unexpected Game_saveState legacy mapFiles access shape; "
+        "review native map catalog ownership"
+    )
+game_source_text = game_source_text.replace(
+    game_save_state_map_file_needle,
+    game_save_state_map_file_replacement,
+    1,
+)
+
 game_entity_init_needle = """Game_t* Game_init(Game_t* game, DoomRPG_t* doomRpg)
 {
 	int i;
@@ -585,6 +705,16 @@ for retired_config_access in (
             + retired_config_access
         )
 
+for retired_map_table_access in (
+    "game->mapNames[",
+    "game->mapFiles[",
+):
+    if retired_map_table_access in game_source_text:
+        raise RuntimeError(
+            "Retired ESP32 Game map-table access survived generation: "
+            + retired_map_table_access
+        )
+
 with open(game_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(game_source_text)
 
@@ -599,7 +729,10 @@ print(
     f"{game_sound_volume_count} legacy Sound config load field retired + "
     f"{game_player_deaths_load_count} legacy Player config load field retired + "
     f"{game_sound_volume_save_count} legacy Sound config save field retired + "
-    f"{game_player_deaths_save_count} legacy Player config save field retired"
+    f"{game_player_deaths_save_count} legacy Player config save field retired + "
+    f"{game_resource_map_id_count} legacy mapFiles lookup retired + "
+    f"{game_map_table_init_count} legacy map table init retired + "
+    f"{game_save_state_map_file_count} legacy save-state mapFiles access retired"
 )
 
 # DoomRPG_createImage() is the central image-loading path used by the game.

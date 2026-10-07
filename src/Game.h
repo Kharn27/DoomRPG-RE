@@ -69,6 +69,14 @@ typedef enum
 	MAPNAME_MAX
 } gameMaps_e;
 
+#ifdef DOOMRPG_ESP32
+#define GAME_LEGACY_MAP_NAME_CAPACITY 1
+#define GAME_LEGACY_MAP_FILE_CAPACITY 1
+#else
+#define GAME_LEGACY_MAP_NAME_CAPACITY MAPNAME_MAX
+#define GAME_LEGACY_MAP_FILE_CAPACITY MAPFILE_MAX
+#endif
+
 #define EV_GOTO			1
 #define EV_CHANGEMAP	2
 #define EV_TRIGGER		3
@@ -189,8 +197,8 @@ typedef struct Game_s
 	struct Entity_s* soundMonster;
 	struct DoomRPG_s* doomRpg;
 
-	char mapNames[MAPNAME_MAX][24];
-	char mapFiles[MAPFILE_MAX][24];
+	char mapNames[GAME_LEGACY_MAP_NAME_CAPACITY][24];
+	char mapFiles[GAME_LEGACY_MAP_FILE_CAPACITY][24];
 } Game_t;
 
 
