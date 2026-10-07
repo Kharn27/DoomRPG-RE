@@ -18,10 +18,13 @@
 #define ESP32_DOOMCANVAS_RETIRED_ZEROREF_FIELD_BYTES 239U
 #define ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES 240U
 #define ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES (300U + 128U)
+#define ESP32_DOOMCANVAS_RETIRED_STATE_FIELD_BYTES 113U
+#define ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES 116U
 #define ESP32_DOOMCANVAS_COMPACT_BYTES \
     (ESP32_DOOMCANVAS_DESKTOP_BYTES - ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES - \
      ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES - \
-     ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES)
+     ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES - \
+     ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES)
 
 _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
                "ESP32 DoomCanvas_t layout changed; audit compatibility owners before proceeding");
@@ -42,9 +45,6 @@ void Sound_playSound(struct Sound_s* sound, int resourceID, byte flags, int prio
 #define ESP32_SND_FLG_LOOP       1U
 #define ESP32_SND_FLG_STOPSOUNDS 2U
 #define ESP32_SND_FLG_ISMUSIC    8U
-
-static char processing[] = "Processing...";
-static char justAMoment[] = "(Just a moment!)";
 
 static char storyTextA[] =
     "You have been\n"
@@ -91,9 +91,6 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
 
     doomCanvas->doomRpg = doomRpg;
     doomCanvas->skipShakeX = false;
-    doomCanvas->insufficientSpace = false;
-    doomCanvas->creditsText = NULL;
-    doomCanvas->castEntity = NULL;
     doomCanvas->oldState = -1;
     doomCanvas->imgFont.imgBitmap = NULL;
     doomCanvas->imgLargerFont.imgBitmap = NULL;
@@ -118,11 +115,12 @@ DoomCanvas_t* DoomCanvas_init(DoomCanvas_t* doomCanvas, DoomRPG_t* doomRpg)
     doomCanvas->vibrateEnabled = true;
     doomCanvas->renderFloorCeilingTextures = true;
 
-    printf("[DOOMCANVASBRIDGE] INIT exports=14 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u clip=%dx%d\n",
+    printf("[DOOMCANVASBRIDGE] INIT exports=11 desktopTU=no bytes=%u retiredDialogStores=%u retiredZeroRefLayout=%u retiredDormantText=%u retiredStateLayout=%u clip=%dx%d\n",
            (unsigned int)sizeof(DoomCanvas_t),
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DIALOG_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_ZEROREF_LAYOUT_BYTES,
            (unsigned int)ESP32_DOOMCANVAS_RETIRED_DORMANT_TEXT_BYTES,
+           (unsigned int)ESP32_DOOMCANVAS_RETIRED_STATE_LAYOUT_BYTES,
            doomCanvas->clipRect.w,
            doomCanvas->clipRect.h);
     return doomCanvas;
@@ -147,7 +145,6 @@ void DoomCanvas_free(DoomCanvas_t* doomCanvas, boolean freePtr)
     SDL_free(doomCanvas->storyText1[0]);
     SDL_free(doomCanvas->storyText1[1]);
     SDL_free(doomCanvas->storyText2);
-    SDL_free(doomCanvas->creditsText);
 
     if (freePtr) {
         SDL_free(doomCanvas);
@@ -397,38 +394,6 @@ void DoomCanvas_drawSoftKeys(DoomCanvas_t* doomCanvas,
     }
 }
 
-void DoomCanvas_initCredits(DoomCanvas_t* doomCanvas)
-{
-    if (doomCanvas == NULL) {
-        return;
-    }
-    DoomRPG_createImage(doomCanvas->doomRpg, "c.bmp", false, &doomCanvas->imgSpaceBG);
-    doomCanvas->creditsTextTime = -1;
-}
-
-void DoomCanvas_loadEpilogueText(DoomCanvas_t* doomCanvas)
-{
-    if (doomCanvas == NULL) {
-        return;
-    }
-
-    /*
-     * The desktop run loop consumed two 150-byte epilogue text pages directly
-     * from DoomCanvas_t. That renderer/state machine is retired on ESP32.
-     * Preserve the remaining compatibility lifecycle side effects here, but
-     * keep no permanent text payload. Any future visible epilogue must be owned
-     * by the native UI/string path rather than reviving desktop Canvas storage.
-     */
-    doomCanvas->epilogueTextPage = 0;
-    doomCanvas->showTextDone = false;
-    DoomRPG_createImage(doomCanvas->doomRpg, "c.bmp", false, &doomCanvas->imgSpaceBG);
-    Sound_playSound(doomCanvas->doomRpg->sound,
-                    5039,
-                    ESP32_SND_FLG_LOOP | ESP32_SND_FLG_STOPSOUNDS |
-                        ESP32_SND_FLG_ISMUSIC,
-                    5);
-    doomCanvas->epilogueTextTime = -1;
-}
 void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas)
 {
     int textLen;
@@ -489,18 +454,6 @@ void DoomCanvas_loadPrologueText(DoomCanvas_t* doomCanvas)
     DoomRPG_flushGraphics(doomCanvas->doomRpg);
 }
 
-void DoomCanvas_renderScene(DoomCanvas_t* doomCanvas, int x, int y, int angle)
-{
-    if (doomCanvas == NULL || doomCanvas->render == NULL) {
-        return;
-    }
-
-    doomCanvas->lastFrameTime = doomCanvas->time;
-    doomCanvas->beforeRender = (int)DoomRPG_GetUpTimeMS();
-    Render_render(doomCanvas->render, x, y, doomCanvas->viewZ, angle);
-    doomCanvas->afterRender = (int)DoomRPG_GetUpTimeMS();
-}
-
 void DoomCanvas_setAnimFrames(DoomCanvas_t* doomCanvas, int frames)
 {
     if (doomCanvas == NULL || frames <= 0) {
@@ -515,121 +468,48 @@ void DoomCanvas_setAnimFrames(DoomCanvas_t* doomCanvas, int frames)
 void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
 {
     int oldState;
-    int len;
-    int width;
-    char* msg;
 
     if (doomCanvas == NULL) {
         return;
     }
 
-    if (doomCanvas->state == ST_AUTOMAP) {
-        doomCanvas->isUpdateView = true;
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
-        DoomRPG_fillRect(
-            doomCanvas->doomRpg, 0, 0, doomCanvas->clipRect.w, doomCanvas->clipRect.h);
-
-        if (stateNum == ST_DIALOG || stateNum == ST_DIALOGPASSWORD) {
-            if (doomCanvas->render != NULL) {
-                doomCanvas->render->skipStretch = false;
-            }
-            DoomCanvas_renderScene(
-                doomCanvas, doomCanvas->viewX, doomCanvas->viewY, doomCanvas->viewAngle);
-        }
-    } else if (doomCanvas->state == ST_MENU) {
-        if (stateNum == ST_MENU) {
-            if (doomCanvas->unloadMedia) {
-                DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
-                DoomRPG_fillRect(doomCanvas->doomRpg,
-                                 0,
-                                 0,
-                                 doomCanvas->clipRect.w,
-                                 doomCanvas->clipRect.h);
-            }
-        } else {
-            Sound_stopSounds(doomCanvas->doomRpg->sound);
-        }
+    /*
+     * ESP32 native owners handle gameplay dialogs, combat, automap, loading,
+     * death, cast, credits and epilogue presentation. Only the three canvas
+     * states still used as compatibility handoff markers remain accepted here.
+     * Any future inherited state dependency must receive its own native owner
+     * instead of silently widening this bridge.
+     */
+    if (stateNum != ST_MENU && stateNum != ST_PLAYING && stateNum != ST_INTRO) {
+        printf("[DOOMCANVASBRIDGE] STATE-REJECT requested=%d current=%d owner=native\n",
+               stateNum,
+               doomCanvas->state);
+        return;
     }
 
     oldState = doomCanvas->state;
+    if (oldState == ST_MENU && stateNum != ST_MENU) {
+        Sound_stopSounds(doomCanvas->doomRpg->sound);
+    }
+
     doomCanvas->state = stateNum;
     if (stateNum != oldState) {
         doomCanvas->restoreSoftKeys = false;
     }
 
-    if (stateNum == ST_SORRY) {
-        DoomRPG_createImage(doomCanvas->doomRpg, "c.bmp", false, &doomCanvas->imgSpaceBG);
-    } else if (stateNum == ST_COMBAT) {
-        DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
-        doomCanvas->combatDone = false;
-    } else if (stateNum == ST_PLAYING) {
+    if (stateNum == ST_PLAYING) {
         DoomCanvas_drawSoftKeys(doomCanvas, "Menu", "Map");
         doomCanvas->skipCheckState = true;
-    } else if (stateNum == ST_DIALOG || stateNum == ST_DIALOGPASSWORD) {
-        DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
-        doomCanvas->passwordTime = 0;
-        doomCanvas->numEvents = 0;
-    } else if (stateNum == ST_DYING) {
-        DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
-        doomCanvas->deathTime = doomCanvas->time;
-        return;
-    } else if (stateNum == ST_EPILOGUE) {
-        DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
-        DoomCanvas_loadEpilogueText(doomCanvas);
-    } else if (stateNum == ST_CREDITS) {
-        DoomCanvas_initCredits(doomCanvas);
-    } else if (stateNum == ST_INTRO) {
+    }
+    else if (stateNum == ST_INTRO) {
         DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
         DoomCanvas_loadPrologueText(doomCanvas);
-    } else if (stateNum == ST_LOADING || stateNum == ST_SAVING) {
-        DoomRPG_setColor(doomCanvas->doomRpg, 0x000000);
-        DoomRPG_fillRect(
-            doomCanvas->doomRpg, 0, 0, doomCanvas->clipRect.w, doomCanvas->softKeyY);
-
-        len = (int)SDL_strlen(justAMoment);
-        width = len * 7 + 10;
-
-        DoomRPG_setColor(doomCanvas->doomRpg, 0xffffff);
-        DoomRPG_drawRect(doomCanvas->doomRpg,
-                         doomCanvas->SCR_CX - (width >> 1),
-                         doomCanvas->SCR_CY - 24,
-                         width,
-                         48);
-
-        /*
-         * No compiled ESP32 owner writes the retired desktop printMsg buffer.
-         * The observable compatibility path therefore always used the fallback.
-         */
-        msg = processing;
-        DoomCanvas_drawString1(
-            doomCanvas, msg, doomCanvas->SCR_CX, doomCanvas->SCR_CY - 12, 0x11);
-        DoomCanvas_drawString1(
-            doomCanvas, justAMoment, doomCanvas->SCR_CX, doomCanvas->SCR_CY, 0x11);
-        DoomCanvas_drawSoftKeys(doomCanvas, NULL, NULL);
-        DoomRPG_flushGraphics(doomCanvas->doomRpg);
-    } else if (stateNum == ST_PARTICLE) {
-        doomCanvas->skipCheckState = true;
-    } else if (stateNum == ST_AUTOMAP) {
-        doomCanvas->f438d =
-            doomCanvas->openDoorsCount > 0 || doomCanvas->isUpdateView;
-        doomCanvas->automapDrawn = false;
-        doomCanvas->staleView = true;
-        doomCanvas->isUpdateView = true;
-        DoomCanvas_drawSoftKeys(doomCanvas, "Menu", "Leave");
-    } else if (stateNum == ST_CAST) {
-        doomCanvas->castSeq = -1;
-        doomCanvas->castTime = 0;
-        doomCanvas->castEntity = NULL;
-        doomCanvas->castEntityX = 0;
-        doomCanvas->castEntityY = 28;
-    } else if (stateNum == ST_MENU) {
-        if (oldState == ST_PLAYING) {
-            (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
-            (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
-        }
+    }
+    else if (oldState == ST_PLAYING) {
+        (void)EspNativeAudioIntent_publish(5042U, 0U, 3U);
+        (void)EspNativeAudioIntent_publish(5067U, 0U, 3U);
     }
 }
-
 void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
 {
     int frames;
