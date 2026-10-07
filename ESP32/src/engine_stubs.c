@@ -334,6 +334,7 @@ int DoomRPG_initEngineCore(DoomRpgCoreInitReport* report) {
            (unsigned int)GAME_LEGACY_TRACE_CAPACITY,
            (unsigned int)GAME_LEGACY_GSPRITE_CAPACITY,
            (unsigned int)sizeof(Game_t));
+    printf("[CORE] Desktop Game.c retired bridge=esp_legacy_game_bridge roots=4 worldOwner=native\n");
 
     /*
      * Player state is owned by the compact 52-byte native gameplay owner.
