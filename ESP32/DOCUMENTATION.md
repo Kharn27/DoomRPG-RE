@@ -1,5 +1,81 @@
 # ESP32 documentation map
 
+## DoomCanvas dialog stores retired — REAL-CYD PASS (2026-10-07)
+
+Hardware-tested code boundary:
+`2907e966f01c22cdecda048d7df0f2afdfef2549`.
+
+Branch:
+`agent/esp32-doomcanvas-bridge`.
+
+The ESP32 definition of `DoomCanvas_t` no longer contains the inherited
+desktop dialog payload stores:
+
+```text
+dialogIndexes[1024] = 2048 B
+dialogBuffer[512]    =  512 B
+total retired        = 2560 B
+```
+
+Those buffers had no reader or writer in the permanent 15-export DoomCanvas
+bridge, the ESP32-native sources, or the remaining compiled compatibility TUs.
+Dialogs are already owned by the native dialog/runtime path. The desktop
+definition is unchanged; on ESP32 the fields do not exist, so any future direct
+reuse fails at compile time.
+
+The bridge pins the new layout with a compile-time guard:
+
+```text
+DoomCanvas_t: 3740 B -> 1180 B
+reclaimed:                2560 B
+```
+
+Normal `esp32-cyd` CI #1636 is SUCCESS:
+
+```text
+RAM:   45464 B
+Flash: 780161 B
+esp32-cyd SUCCESS
+```
+
+Real-CYD boot proves the exact heap-object reduction:
+
+```text
+Engine structs: Render=5040 Game=4 Canvas=1180 Total=6984 bytes
+[DOOMCANVASBRIDGE] INIT exports=15 desktopTU=no bytes=1180 retiredDialogStores=2560 clip=160x120
+[CORE] DoomCanvas     used=1196
+```
+
+The hardware run then validates the full production path: fresh START, fitted
+intro and exact disposal, native MAP_INTRO load, exact first-frame witness,
+movement/rotation, crate transform and pickups, door animation, HUB/System,
+confirmed Exit To Menu with exact resident teardown, MENU_MAIN -> LOAD of a
+version-11 checkpoint, complete native world restore, and resumed committed
+gameplay.
+
+The canonical first-frame and memory invariants remain unchanged:
+
+```text
+[ENGINESESSION] FIRST_FRAME map=1 angle=64 frame=71ca7465 walls=8 pixels=4430 presented=1
+[ENGINESESSION] READY ... shapeData=0x0 mediaTexels=0x0
+[RESIDENTRESET] ... released=18008 ... after=0/0/0/0/0/0/0 empty=1
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty
+```
+
+Checkpoint resume also reaches `ENGINESESSION READY` with
+`shapeData=0x0 mediaTexels=0x0` and accepts further movement before a second
+clean Exit To Menu.
+
+The known compact renderer `LEGACY_GUARD -> RETRY -> RECOVERED` path appears
+during both fresh and resumed gameplay and recovers normally; it is unrelated
+to the DoomCanvas compaction.
+
+No runtime/code change follows the hardware-tested commit in this closure.
+
+Detailed record:
+[MILESTONE_ESP32_COMPACT_DOOMCANVAS_DIALOG_STORES.md](MILESTONE_ESP32_COMPACT_DOOMCANVAS_DIALOG_STORES.md)
+
+
 ## Desktop DoomCanvas translation unit retired — REAL-CYD PASS (2026-10-07)
 
 Hardware-tested code boundary:
