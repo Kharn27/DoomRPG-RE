@@ -254,7 +254,11 @@ static int preflightRenderResources(void) {
     return 1;
 }
 
-int __wrap_Render_startup(Render_t* render) {
+/*
+ * Direct permanent ESP32 Render startup root. The original desktop startup
+ * (SDL texture + second RGB565 framebuffer) is excluded from ESP32 linking.
+ */
+int Render_startup(Render_t* render) {
     byte* fData;
     int i;
     int width;
@@ -267,6 +271,8 @@ int __wrap_Render_startup(Render_t* render) {
         printf("[RENDER] ERROR invalid Render_startup object graph\n");
         return 0;
     }
+
+    printf("[RENDERSTART] OWNER api=Render_startup source=esp-native-render-startup direct=yes wrap=no\n");
 
     fData = DoomRPG_fileOpenRead(render->doomRpg, "/sintable.bin");
     if (fData == NULL) {

@@ -167,6 +167,30 @@ render_source_text = render_source_text.replace(
 print("[ESP32] Render_init/Render_setup desktop roots retired; "
       "owner=esp-native-render-startup bridge=permanent")
 
+# Render_startup now has a direct, single permanent ESP32 implementation.
+# The original desktop startup allocated a second full RGB565 framebuffer
+# and SDL texture, and its linker-wrapped entry was never executed here.
+# Source signature/CRC pin keeps legacy specification drift explicit.
+native_startup_begin = "int Render_startup(Render_t* render)\n{"
+native_startup_end = "void Render_loadPalettes(Render_t* render)\n{"
+if render_source_text.count(native_startup_begin) != 1 or \
+   render_source_text.count(native_startup_end) != 1:
+    raise RuntimeError("Original desktop Render_startup source boundary changed")
+native_startup_region = render_source_text[
+    render_source_text.index(native_startup_begin):
+    render_source_text.index(native_startup_end)]
+if zlib.crc32(native_startup_region.encode("latin-1")) != 0xf0d935e8:
+    raise RuntimeError("Desktop Render_startup changed; audit native equivalent")
+render_source_text = render_source_text.replace(
+    native_startup_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + native_startup_begin, 1)
+render_source_text = render_source_text.replace(
+    native_startup_end,
+    "#endif /* Render_startup direct native ESP32 owner */\n\n" +
+    native_startup_end, 1)
+print("[ESP32] Desktop Render_startup unlinked; "
+      "owner=esp-native-render-startup direct=yes linkerWrap=no")
+
 # Render palette, RGB565 and mappings roots have permanent native owners.
 # The retained source slice is pinned to the exact legacy specification,
 # with a strict function census and CRC32 to catch desktop-side drift.
