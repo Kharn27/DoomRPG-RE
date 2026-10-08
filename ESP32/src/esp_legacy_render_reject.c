@@ -7,6 +7,17 @@
  * operations. The desktop definitions remain available to bringup probes.
  */
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+/* Compatibility-only: production has no Render.tileEvents allocation.
+ * Native event lookup is owned by EspMapRuntime and EspMapState.
+ * Fail closed even if a legacy caller unexpectedly reaches this ABI.
+ */
+int Render_findEventIndex(Render_t* render, int tile)
+{
+    (void)render;
+    (void)tile;
+    return -1;
+}
+
 boolean Render_beginLoadMap(Render_t* r, int id) {
     (void)r; (void)id;
     printf("[LEGACYMAP] REJECT Render_beginLoadMap: native BSP owner required\n");

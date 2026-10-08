@@ -414,11 +414,40 @@ with open(reject_path, "r", encoding="utf-8") as reject_handle:
 reject_exports = ("Render_beginLoadMap", "Render_beginLoadMapData",
                   "Render_render", "Render_renderFloorAndCeilingBG",
                   "Render_drawplane", "Render_spanPlane",
-                  "Render_renderBSP", "Render_walkNode")
+                  "Render_renderBSP", "Render_walkNode",
+                  "Render_findEventIndex")
 if any(reject_code.count(name + "(") != 1 for name in reject_exports):
     raise RuntimeError("Native Render reject export census changed")
 print("[ESP32] Legacy Render map/world/BSP rejects native-owned; "
-      "exports=8 production=fail-closed bringup=desktop-original")
+      "exports=9 production=fail-closed bringup=desktop-original")
+
+
+# Retire old tileEvents binary-search ABI from generated Render.c.
+# Its native map event index is separately owned by EspMapRuntime; this
+# compatibility endpoint never creates or aliases a legacy tileEvents array.
+event_find_begin = "int Render_findEventIndex(Render_t* render, int i)\n{"
+event_find_end = "void Render_renderFloorAndCeilingBG_Test(Render_t* render)\n{"
+if (render_source_text.count(event_find_begin) != 1 or
+        render_source_text.count(event_find_end) != 1):
+    raise RuntimeError("Legacy Render_findEventIndex boundary drift")
+original_event_find_slice = original_render_for_startup[
+    original_render_for_startup.index(event_find_begin):
+    original_render_for_startup.index(event_find_end)]
+generated_event_find_slice = render_source_text[
+    render_source_text.index(event_find_begin):
+    render_source_text.index(event_find_end)]
+if generated_event_find_slice != original_event_find_slice:
+    raise RuntimeError("Render_findEventIndex original body drift")
+if "render->tileEvents[index] & 1023" not in original_event_find_slice:
+    raise RuntimeError("Render_findEventIndex semantics require audit")
+render_source_text = render_source_text.replace(
+    event_find_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + event_find_begin, 1)
+render_source_text = render_source_text.replace(
+    event_find_end,
+    "#endif /* native Render_findEventIndex owner */\n\n" +
+    event_find_end, 1)
+print("[ESP32] Render_findEventIndex native-owned production=fail-closed no-legacy-tileEvents")
 
 # The native CYD renderer still consumes a small set of legacy-named geometry
 # primitives. They are pure Render scratch/math helpers: no desktop map owner,
