@@ -344,7 +344,8 @@ static int activateHelp(DoomRPG_t* doomRpg) {
     uint32_t expectedFNV;
     uint32_t helpFNV = 0U;
 
-    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
+    if (!EspNativeGameplaySave_mainSelectorReady() &&
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINHELP] FAILED graphics boundary\n");
         return 0;
     }
@@ -528,7 +529,7 @@ DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
     if (doomRpg->menuSystem->menu != MENU_MAIN ||
         doomRpg->menuSystem->selectedIndex != MAIN_LOAD_ITEM_INDEX ||
         doomRpg->doomCanvas->state != ST_MENU ||
-        expectedHash == 0U || inputHash != expectedHash) {
+        (!EspNativeGameplaySave_mainSelectorReady() && (expectedHash == 0U || inputHash != expectedHash))) {
         printf("[MAINLOAD] FAILED precondition menu=%d selected=%d state=%d framebuffer=%08x expected=%08x\n",
                doomRpg->menuSystem->menu,
                doomRpg->menuSystem->selectedIndex,
@@ -538,6 +539,13 @@ DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
         return DOOMRPG_ESP32_MAIN_MENU_LOAD_FATAL;
     }
 
+    if (!EspNativeGameplaySave_mainSelectorActive()) {
+        (void)EspNativeGameplaySave_mainSelectorBegin();
+        return DOOMRPG_ESP32_MAIN_MENU_LOAD_NO_SAVE;
+    }
+    if (!EspNativeGameplaySave_mainSelectorReady()) {
+        return DOOMRPG_ESP32_MAIN_MENU_LOAD_NO_SAVE;
+    }
     if (!EspNativeGameplaySave_hasReadableCheckpoint()) {
         printf("[MAINLOAD] NO-SAVE missing-or-invalid; MENU_MAIN remains active\n");
         showNoSaveFeedback(doomRpg);
@@ -558,6 +566,7 @@ DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
         return DOOMRPG_ESP32_MAIN_MENU_LOAD_FATAL;
     }
 
+    EspNativeGameplaySave_mainSelectorFinish();
     doomRpg->menuSystem->menu = MENU_NONE;
     doomRpg->menuSystem->numItems = 0;
     DoomCanvas_setState(doomRpg->doomCanvas, ST_PLAYING);
