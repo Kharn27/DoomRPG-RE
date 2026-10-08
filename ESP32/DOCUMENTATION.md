@@ -1,3 +1,31 @@
+## Render constructor and viewport roots native — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested normal `esp32-cyd` code SHA `9316dd58ad65e916e35b317ad48ff37faffb2d1c`,
+CI #37706764596 **SUCCESS** (RAM static **45056 B**, flash **774705 B**).
+Original `Render_init()` and `Render_setup()` now link from the permanent
+`render_startup_bridge.c`; their generated desktop definitions are excluded.
+Real-CYD witnesses `[RENDERCORE] INIT ... bytes=1532` and
+`[RENDERCORE] SETUP ... view=160x80@0,20 arrays=1280B`;
+`[CORE] Render used=1548`, layout heap8=**178500**, mappings heap8=**159340**,
+first native frame `71ca7465`, map arena `c3882516`, and initial
+menu `522dc605` unchanged. USER physically exercised forward/strafe,
+quarter-turns, crate transform, Armor Shard pickup, event 88 native dialog
+resume opcode 19 and HUB -> SYS -> double-confirm EXIT. Dialog journal
+**1036 B** recovered; `[RESIDENTRESET] released=18008 empty=1`;
+final `[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty`,
+heap8=**164184**, largest8=**110580**, saveWrite=no;
+`shapeData==NULL`, `mediaTexels==NULL`. Gameplay before dialogue
+heap8=**118288**, after lazy journal **117252**. The known
+`[NATIVEFRAME] LEGACY_GUARD/RETRY/RECOVERED` followed its recovered path.
+No memory savings claimed from moving two functions.
+
+**Unexercised on this SHA:** active-monster combat, checkpoint LOAD,
+CHANGEMAP, and blocked collisions. RNG seed fingerprint varies between
+boots and is not used as a deterministic validation fingerprint.
+The tested code is frozen; closure commit is docs-only. The user requested
+further bounded retirement work **on the same active branch**.
+[Milestone](MILESTONE_ESP32_RENDER_CORE_ROOTS_NATIVE.md).
+
 ## Original desktop C source registration retired — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested code SHA `48aab6de7ef0ec06cbb9929894ea9add1b9dc086`, normal `esp32-cyd` CI
