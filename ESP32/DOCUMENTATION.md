@@ -1,3 +1,23 @@
+## Render_renderBSPNoclip retired — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Hardware-tested code SHA `d382610ec593640928e5f882e3e1b66ad0755704`; normal esp32-cyd CI
+[37773098498](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37773098498)
+SUCCESS. Legacy `Render_renderBSPNoclip` formerly walked the pointer-heavy
+`Render.lines` / `Render.mapSprites`; the normal firmware excludes its
+desktop body, with an ESP32 permanent fail-closed compatibility export.
+Desktop reference and native BSP ownership are unchanged.
+
+Real CYD: Render 1532 B, Game 4 B, Canvas 44 B, 38400 B shared framebuffer,
+MAP_INTRO arena FNV c3882516, first frame 71ca7465, fresh MOVE midpoint
+and TURN_RIGHT/LEFT 2-frame previews, subtype-2 crate transform,
+Armor Shard pickup (armor 0->4), dialog 88 with opcode 19 mutation,
+HUB/SYS double-confirm EXIT. Dialog journal recovered 1036 B;
+resident cleanup released 18008 B, empty=1, MENU_MAIN FNV 522dc605,
+heap8 164184 B, largest8 110580 B, checkpoint unchanged;
+shapeData=mediaTexels=NULL. No direct legacy BSP bypass call observed.
+Post-LOAD and active monster caveats remain outside scope.
+[Milestone](MILESTONE_ESP32_RENDER_BSP_NOCLIP_RETIRED.md).
+
 ## Legacy Render plane test routines retired — REAL-CYD NON-REGRESSION PASS (2026-10-08)
 
 Hardware-tested code SHA `2be8b0b47520d167724559d3c647a44620c0e1b9`;
