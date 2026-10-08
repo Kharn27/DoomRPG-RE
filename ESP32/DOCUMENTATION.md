@@ -1,3 +1,164 @@
+## Review P1 fixes: Render fixed-point mode and bringup guards — REAL-CYD PRODUCTION PASS (2026-10-08)
+
+Hardware-tested production code SHA `cccd26d1e3560d1948db3004805d4c8d1a8317a2`. Codex P1 #1 fixed the permanent geometry TU missing local `FIXED_VERSION=1` (matching `src/Render.c`); P1 #2 preserved original `Render_renderBSPNoclip` and `Render_relinkSprite` bodies for `DOOMRPG_ESP32_BRINGUP_PROBES`, while normal firmware stays fail-closed. Normal `esp32-cyd` CI [37775947093](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37775947093) SUCCESS. Bringup compilation remains **not verified**, so do not call that profile PASS until compiled.
+
+User's real classic CYD: core object graph Render/Game/Canvas 1532/4/44 B; `MAPRT` native arena FNV `c3882516`; first visible gameplay FNV `71ca7465`. Fixed-point restoration intentionally changes cache-frame FNVs from `d4151456` to `a9b263f5` (SMALL-COLD) and from `efb3a31b` to `20c09fe4` (SMALL-WARM / LARGE-WARM); the change is **not pixel equivalence proof** and should be treated as changed geometry arithmetic. MOVE midpoint previews, TURN_RIGHT/LEFT two-step animations, crate subtype-2 transform, Armor Shard pickup, dialogue 88 and opcode 19 resume, HUB/SYS EXIT all complete. Note RNG seed FNV changes between boots and crate `first` differs; not an observed deterministic rendering regression.
+
+After EXIT: dialogue journal release 1036 B, native resident release 18008 B with `empty=1`, MENU_MAIN FNV `522dc605`, heap8 164184 B, largest8 110580 B, `shapeData=mediaTexels=NULL` at observed boundaries, `saveWrite=no`, checkpoint unchanged. Test did not cover LOAD, live monster behavior or bringup compilation. Production non-regression PASS; bringup guard is code-reviewed but not CI-tested. [Milestone](MILESTONE_ESP32_RENDER_P1_REVIEW_FIXES.md).
+
+## Render_relinkSprite legacy topology mutator retired — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Hardware-tested code SHA `33fe48d1a01f1146b7a36f746db1dca0ce2f31a4`; normal `esp32-cyd` CI
+[37773404749](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37773404749)
+SUCCESS. The generated production `Render_relinkSprite` body that mutates
+`Sprite.node`, `Render.nodes` and BSP sprite linked lists is excluded.
+Permanent `esp_legacy_render_reject.c` provides the fail-closed
+compatibility endpoint; native map topology remains the sole owner.
+Desktop and bringup retain the original reference.
+
+Real CYD: Render/Game/Canvas 1532/4/44 B, framebuffer 38400 B,
+MAP_INTRO native arena FNV c3882516, first gameplay frame 71ca7465,
+MOVE midpoint and TURN_RIGHT/LEFT previews, crate subtype-2 transform,
+Armor Shard pickup (armor 0->4), dialog 88 opcode 19 resume,
+HUB close/reopen then SYS double-confirm EXIT. Final native reset
+released 18008 B, empty=1; dialog journal recovered 1036 B;
+MENU_MAIN FNV 522dc605, heap8 164184 B, largest8 110580 B;
+shapeData/mediaTexels NULL; saveWrite=no, checkpoint unchanged.
+
+**Scope:** no direct legacy `Render_relinkSprite` call observed, thus
+a real-hardware non-regression PASS, not positive invocation coverage.
+The HUB close log reports `exactHud=NO` for the top+bottom combined
+HUD bands, but `exactBottom=yes` and top-bar recomposition is explicitly
+deferred to world redraw. This is noted without assigning a new regression.
+No LOAD or active-monster sequence coverage in this test.
+All code through this SHA is hardware-tested; only documentation follows.
+[Milestone](MILESTONE_ESP32_RENDER_RELINKSPRITE_RETIRED.md).
+
+## Render_renderBSPNoclip retired — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Hardware-tested code SHA `d382610ec593640928e5f882e3e1b66ad0755704`; normal esp32-cyd CI
+[37773098498](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37773098498)
+SUCCESS. Legacy `Render_renderBSPNoclip` formerly walked the pointer-heavy
+`Render.lines` / `Render.mapSprites`; the normal firmware excludes its
+desktop body, with an ESP32 permanent fail-closed compatibility export.
+Desktop reference and native BSP ownership are unchanged.
+
+Real CYD: Render 1532 B, Game 4 B, Canvas 44 B, 38400 B shared framebuffer,
+MAP_INTRO arena FNV c3882516, first frame 71ca7465, fresh MOVE midpoint
+and TURN_RIGHT/LEFT 2-frame previews, subtype-2 crate transform,
+Armor Shard pickup (armor 0->4), dialog 88 with opcode 19 mutation,
+HUB/SYS double-confirm EXIT. Dialog journal recovered 1036 B;
+resident cleanup released 18008 B, empty=1, MENU_MAIN FNV 522dc605,
+heap8 164184 B, largest8 110580 B, checkpoint unchanged;
+shapeData=mediaTexels=NULL. No direct legacy BSP bypass call observed.
+Post-LOAD and active monster caveats remain outside scope.
+[Milestone](MILESTONE_ESP32_RENDER_BSP_NOCLIP_RETIRED.md).
+
+## Legacy Render plane test routines retired — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Hardware-tested code SHA `2be8b0b47520d167724559d3c647a44620c0e1b9`;
+normal `esp32-cyd` CI [37772211049](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37772211049) SUCCESS.
+The three original `Render_renderFloorAndCeilingBG_Test`,
+`Render_drawPlane_Test`, `Render_spanPlane_Test` desktop plane
+test routines are excluded from production generated Render.c and
+supplied by permanent fail-closed native compatibility stubs. No
+monolithic mediaTexels or map-wide decompression returns.
+Desktop / bringup references remain unchanged.
+
+Real classic CYD: idle menu stable for >150s at heap8=159340 B,
+largest8=110580 B; native map arena FNV `c3882516`, first
+gameplay framebuffer `71ca7465`, 160x120 RGB565 38400 B;
+FORWARD midpoint previews, two-frame RIGHT/LEFT turns,
+crate subtype-2 transform, Armor Shard pickup (armor 0->4),
+dialogue 88 resumed via opcode 19, HUB -> SYS -> EXIT.
+Journal recovered 1036 B; native resident cleanup released
+18008 B (`empty=1`); final MENU_MAIN FNV `522dc605`,
+heap8=164184 B, largest8=110580 B, checkpoint untouched.
+`shapeData=mediaTexels=NULL` at observed boundaries.
+No direct retired-test-function invocation was observed;
+PASS is non-regression, not proof of the fail-closed path executing.
+Old checkpoint LOAD animation and monster resume caveats remain open.
+Tested code is frozen. [Milestone](MILESTONE_ESP32_RENDER_PLANE_TESTS_RETIRED.md).
+
+## Render_findEventIndex retired legacy tileEvents ABI — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Tested code SHA `8672b1ed4fc9b0379a63851d17726b5bc11bfadf`,
+normal `esp32-cyd` CI [37771382195](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37771382195) SUCCESS.
+Production `Render_findEventIndex` now belongs to permanent
+`esp_legacy_render_reject.c` and returns -1 without dereferencing
+the retired `Render.tileEvents` pointer. Native event lookup remains
+the separately owned map runtime/state API; desktop source retained.
+
+Real CYD serial validates intro, map arena `c3882516`, first
+gameplay frame `71ca7465`, MOVE previews, two-frame left/right
+rotations, subtype-2 crate transform, Armor Shard pickup,
+dialogue event 88/opcode 19 resume and double-confirm SYS EXIT.
+Final `[RESIDENTRESET] released=18008 ... empty=1`,
+`[SYSEXIT] MENU-READY frame=522dc605 session=off
+resident=empty saveWrite=no checkpoint=unchanged`.
+Final heap8 **164184 B**, largest8 **110580 B**;
+`shapeData=mediaTexels=NULL` at observed boundaries.
+No direct call to the retired ABI was triggered (non-regression
+only). LOAD/monster resume issues remain outside scope.
+Subsequent code on same branch requires a separate CYD PASS.
+[Milestone](MILESTONE_ESP32_RENDER_FIND_EVENT_NATIVE.md).
+
+## Render_freeRuntime permanent native ownership — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Code SHA `75cefcf402b6bacd8fbd768450cf4b70e8f3e8cd`;
+normal `esp32-cyd` build CI [37770825723](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37770825723) firmware build and artifact PASS.
+`Render_freeRuntime` is implemented in permanent `render_startup_bridge.c`,
+with desktop free order/null resets preserved. Production generated
+`Render.c` excludes the duplicate; desktop remains its reference.
+The hardware boot reproduces Render/Game/Canvas 1532/4/44 B,
+38400 B shared RGB565, menu FNV `522dc605`,
+`MAPRT` FNV `c3882516` and first world frame FNV `71ca7465`.
+Fresh MOVE/TURN previews, crate transform (ammo 8->7), Armor Shard
+(armor 0->4), dialog 88 / opcode 19 resume and HUB/SYS EXIT all work.
+Dialogue journal release recovered 1036 B; resident cleanup released
+18008 B (`empty=1`), final menu FNV `522dc605`, heap8 164184 B,
+largest8 110580 B; `saveWrite=no checkpoint=unchanged`.
+`shapeData=mediaTexels=NULL` throughout observed boundaries.
+
+**Scope caveat:** SYS EXIT exercises native resident cleanup, **not**
+`Render_free` / `Render_freeRuntime` direct destructor invocation:
+there is no `[RENDERFREE] ENTRY` in this run. The new teardown
+implementation is source/CI-verified, but direct runtime execution
+remains untested. Checkpoint-LOAD animation and active-monster
+sequencer issues remain separate and untested. The tested code
+SHA is frozen; subsequent code on this branch needs a new CI/CYD gate.
+[Milestone](MILESTONE_ESP32_RENDER_FREERUNTIME_NATIVE.md).
+
+## Render geometry primitives native-owned — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested SHA `7352c965434797f2ac842f0a2f37a21b225b2b26`;
+normal `esp32-cyd` CI run 37770142955 SUCCESS, static RAM
+**45056 B**, flash **775081 B** (+184 B from previous main).
+Seven projection/clipping/culling and column-occlusion primitives
+moved from generated `Render.c` to permanent
+`esp_render_geometry_primitives.c` without changing desktop
+or bringup reference bodies. Build-time CRC/census guards enforce
+the ownership boundary.
+
+Real classic CYD: Render=1532 B, Game=4 B, Canvas=44 B,
+shared framebuffer 38400 B, MENU_MAIN FNV `522dc605`,
+MAP_INTRO arena FNV `c3882516`, native first frame
+FNV `71ca7465`, `shapeData=mediaTexels=NULL`.
+Fresh movement, both two-step rotations, STRAFE_RIGHT with
+two intermediary frames, crate transform, three Armor Shard
+pickups, dialog 88 / opcode 19 resume and 4-frame door
+animation all succeeded in the supplied Serial trace.
+No fresh-session VIEWANIM FALLBACK occurred.
+One bounded `LEGACY_GUARD -> RETRY -> RECOVERED` succeeded.
+At final ALIVE: heap8 **117252 B**, largest8 **86004 B**;
+RAMBUDGET HEADROOM_OK.
+
+The previously observed **post-LOAD animation fallback**
+and active-monster resume caveat remain open and untested here.
+Likewise no SYS EXIT/destructor run in this trace.
+Hardware-tested code frozen; later doc-only closure.
+[Milestone](MILESTONE_ESP32_RENDER_GEOMETRY_PRIMITIVES_NATIVE.md).
+
 ## Eight legacy Render rejection roots native-owned — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested **code SHA `6a6bdd565a526e27f53b45c66f69e7771a91c78d`**,

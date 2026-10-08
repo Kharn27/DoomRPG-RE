@@ -199,6 +199,29 @@ render_source_text = render_source_text.replace(
 print("[ESP32] Desktop Render_startup unlinked; "
       "owner=esp-native-render-startup direct=yes linkerWrap=no")
 
+# Render_freeRuntime production owner; preserve the original desktop/probe
+# body while the permanent ESP32 teardown bridge owns the active ABI.
+native_runtime_free_begin = "void Render_freeRuntime(Render_t* render) {"
+native_runtime_free_end = "void Render_free(Render_t* render, boolean freePtr)\n{"
+if (render_source_text.count(native_runtime_free_begin) != 1 or
+        render_source_text.count(native_runtime_free_end) != 1):
+    raise RuntimeError("Render_freeRuntime source boundary changed")
+native_runtime_free_original = original_render_for_startup[
+    original_render_for_startup.index(native_runtime_free_begin):
+    original_render_for_startup.index(native_runtime_free_end)]
+if render_source_text[
+    render_source_text.index(native_runtime_free_begin):
+    render_source_text.index(native_runtime_free_end)] != native_runtime_free_original:
+    raise RuntimeError("Generated Render_freeRuntime diverged from desktop source")
+render_source_text = render_source_text.replace(
+    native_runtime_free_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + native_runtime_free_begin, 1)
+render_source_text = render_source_text.replace(
+    native_runtime_free_end,
+    "#endif /* native Render_freeRuntime production owner */\n\n" +
+    native_runtime_free_end, 1)
+print("[ESP32] Render_freeRuntime production=esp-native-bridge desktop=original")
+
 # Render_free's native bridge implements exactly the inherited shell cleanup,
 # with the PlatformVideo framebuffer detached before the legacy
 # Render_freeRuntime() cleanup path. Prevent a duplicated desktop destructor.
@@ -391,11 +414,183 @@ with open(reject_path, "r", encoding="utf-8") as reject_handle:
 reject_exports = ("Render_beginLoadMap", "Render_beginLoadMapData",
                   "Render_render", "Render_renderFloorAndCeilingBG",
                   "Render_drawplane", "Render_spanPlane",
-                  "Render_renderBSP", "Render_walkNode")
+                  "Render_renderBSP", "Render_walkNode",
+                  "Render_findEventIndex",
+                  "Render_renderFloorAndCeilingBG_Test",
+                  "Render_drawPlane_Test", "Render_spanPlane_Test",
+                  "Render_renderBSPNoclip", "Render_relinkSprite")
 if any(reject_code.count(name + "(") != 1 for name in reject_exports):
     raise RuntimeError("Native Render reject export census changed")
 print("[ESP32] Legacy Render map/world/BSP rejects native-owned; "
-      "exports=8 production=fail-closed bringup=desktop-original")
+      "exports=14 production=fail-closed bringup=desktop-original")
+
+
+# Retire old tileEvents binary-search ABI from generated Render.c.
+# Its native map event index is separately owned by EspMapRuntime; this
+# compatibility endpoint never creates or aliases a legacy tileEvents array.
+event_find_begin = "int Render_findEventIndex(Render_t* render, int i)\n{"
+event_find_end = "void Render_renderFloorAndCeilingBG_Test(Render_t* render)\n{"
+if (render_source_text.count(event_find_begin) != 1 or
+        render_source_text.count(event_find_end) != 1):
+    raise RuntimeError("Legacy Render_findEventIndex boundary drift")
+original_event_find_slice = original_render_for_startup[
+    original_render_for_startup.index(event_find_begin):
+    original_render_for_startup.index(event_find_end)]
+generated_event_find_slice = render_source_text[
+    render_source_text.index(event_find_begin):
+    render_source_text.index(event_find_end)]
+if generated_event_find_slice != original_event_find_slice:
+    raise RuntimeError("Render_findEventIndex original body drift")
+if "render->tileEvents[index] & 1023" not in original_event_find_slice:
+    raise RuntimeError("Render_findEventIndex semantics require audit")
+render_source_text = render_source_text.replace(
+    event_find_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + event_find_begin, 1)
+render_source_text = render_source_text.replace(
+    event_find_end,
+    "#endif /* native Render_findEventIndex owner */\n\n" +
+    event_find_end, 1)
+print("[ESP32] Render_findEventIndex native-owned production=fail-closed no-legacy-tileEvents")
+
+# The three desktop-only Render_*_Test plane routines use the forbidden
+# monolithic mediaTexels pointer. Normal production must not compile their
+# original bodies; keep desktop/bringup originals and preserve ABI stubs.
+legacy_plane_test_begin = "void Render_renderFloorAndCeilingBG_Test(Render_t* render)\n{"
+legacy_plane_test_draw = "void Render_drawPlane_Test(Render_t* render, int x, int y, int planeTexture, int cnt)\n{"
+legacy_plane_test_span = "void Render_spanPlane_Test(Render_t* render, int x, int y, int planeTexture, int param_5, int param_6, int param_7, int param_8, int cnt)\n{"
+for symbol in (legacy_plane_test_begin, legacy_plane_test_draw,
+               legacy_plane_test_span):
+    if render_source_text.count(symbol) != 1:
+        raise RuntimeError("Render desktop test plane source drift")
+original_plane_test = original_render_for_startup[
+    original_render_for_startup.index(legacy_plane_test_begin):]
+generated_plane_test = render_source_text[
+    render_source_text.index(legacy_plane_test_begin):]
+if original_plane_test != generated_plane_test:
+    raise RuntimeError("Desktop Render plane test source changed")
+if "mediaTexels[" not in original_plane_test:
+    raise RuntimeError("Render plane test media dependency changed")
+render_source_text = render_source_text.replace(
+    legacy_plane_test_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + legacy_plane_test_begin, 1)
+render_source_text += "\n#endif /* production excludes old mediaTexels plane tests */\n"
+print("[ESP32] Render plane *_Test routines retired production=fail-closed exports=3")
+
+# The desktop BSP no-clip bypass iterates Render.lines/mapSprites and
+# calls the old rasterizer. Production has neither pointer-heavy arrays.
+# Retire it to a native fail-closed compatibility ABI.
+bsp_noclip_begin = "void Render_renderBSPNoclip(Render_t* render)\n{"
+bsp_noclip_end = "void Render_walkNode(Render_t* render, int i)\n{"
+if (render_source_text.count(bsp_noclip_begin) != 1 or
+        render_source_text.count(bsp_noclip_end) != 1):
+    raise RuntimeError("Render_renderBSPNoclip source boundary drift")
+bsp_noclip_original = original_render_for_startup[
+    original_render_for_startup.index(bsp_noclip_begin):
+    original_render_for_startup.index(bsp_noclip_end)]
+bsp_noclip_generated = render_source_text[
+    render_source_text.index(bsp_noclip_begin):
+    render_source_text.index(bsp_noclip_end)]
+# Earlier BSP traversal retirement wraps the next function boundary;
+# compare the function body, not the adjacent generated #if boundary.
+bsp_noclip_body_end = "\n}\n"
+if (bsp_noclip_original.split(bsp_noclip_body_end, 1)[0] !=
+        bsp_noclip_generated.split(bsp_noclip_body_end, 1)[0]):
+    raise RuntimeError("Render_renderBSPNoclip generated source drift")
+for legacy_access in ("render->lines[i]", "render->mapSprites[i]"):
+    if legacy_access not in bsp_noclip_original:
+        raise RuntimeError("Render_renderBSPNoclip no-clip legacy ownership drift")
+render_source_text = render_source_text.replace(
+    bsp_noclip_begin,
+    "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + bsp_noclip_begin, 1)
+render_source_text = render_source_text.replace(
+    bsp_noclip_end,
+    "#endif /* native BSP no-clip compatibility rejection */\n\n" +
+    bsp_noclip_end, 1)
+print("[ESP32] Render_renderBSPNoclip native-owned production=fail-closed")
+
+# Legacy sprite relink mutates pointer-heavy Render.nodes and Sprite.node
+# chains, neither owned by the compact native map runtime.
+relink_begin = "void Render_relinkSprite(Render_t* render, Sprite_t* sprite)\n{"
+relink_end = "void Render_addMapTextures(Render_t* render, int textureId)\n{"
+if (render_source_text.count(relink_begin) != 1 or
+        render_source_text.count(relink_end) != 1):
+    raise RuntimeError("Render_relinkSprite source boundary drift")
+original_relink = original_render_for_startup[
+    original_render_for_startup.index(relink_begin):
+    original_render_for_startup.index(relink_end)]
+generated_relink = render_source_text[
+    render_source_text.index(relink_begin):
+    render_source_text.index(relink_end)]
+if original_relink != generated_relink:
+    raise RuntimeError("Render_relinkSprite generated source drift")
+for field in ("sprite->node", "render->nodes", "node->sprites"):
+    if field not in original_relink:
+        raise RuntimeError("Legacy sprite ownership changed: " + field)
+render_source_text = render_source_text.replace(
+    relink_begin, "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + relink_begin, 1)
+render_source_text = render_source_text.replace(
+    relink_end,
+    "#endif /* native topology owns sprite relinking */\n\n" +
+    relink_end, 1)
+print("[ESP32] Render_relinkSprite production=fail-closed native topology owner")
+
+# The native CYD renderer still consumes a small set of legacy-named geometry
+# primitives. They are pure Render scratch/math helpers: no desktop map owner,
+# no mediaTexels/shapeData access, no world mutation. Keep the desktop/bringup
+# reference bodies, but production must resolve these ABI exports from the
+# permanent ESP32 source below rather than generated Render.c.
+def extract_render_function(source, signature):
+    start = source.find(signature)
+    if start < 0:
+        raise RuntimeError("Missing Render geometry function: " + signature)
+    brace = source.find("{", start)
+    if brace < 0:
+        raise RuntimeError("Missing Render geometry function body: " + signature)
+    depth = 0
+    for pos in range(brace, len(source)):
+        if source[pos] == "{":
+            depth += 1
+        elif source[pos] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:pos + 1]
+    raise RuntimeError("Unterminated Render geometry function: " + signature)
+
+render_geometry_functions = (
+    ("void Render_initColumnScale(Render_t* render)", 0xc33077ed),
+    ("boolean Render_cullBoundingBox(Render_t* render, Node_t* node)", 0x2b5b02ac),
+    ("void Render_transform2DVerts(Render_t* render, Vertex_t* vert)", 0x8c89a9a6),
+    ("boolean Render_clipLine(Render_t* render, Line_t* line)", 0x67f70ded),
+    ("void Render_clipVertex(Render_t* render, Vertex_t* vert, Line_t* line, int i, int i2)", 0x0a7ffb34),
+    ("void Render_projectVertex(Render_t* render, Vertex_t* vert)", 0xd92b8789),
+    ("void Render_occludeClippedLine(Render_t* render, Line_t* line)", 0x71aa6efe),
+)
+for signature, expected_crc in render_geometry_functions:
+    original_body = extract_render_function(original_render_for_startup, signature)
+    current_body = extract_render_function(render_source_text, signature)
+    if current_body != original_body:
+        raise RuntimeError(
+            "Generated Render geometry drifted before ownership cut: " + signature
+        )
+    if zlib.crc32(original_body.encode("latin-1")) != expected_crc:
+        raise RuntimeError(
+            "Original Render geometry changed; review native equivalent: " + signature
+        )
+    render_source_text = render_source_text.replace(
+        current_body,
+        "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + current_body +
+        "\n#endif /* native ESP32 Render geometry owner */",
+        1,
+    )
+
+geometry_path = join(project_src_dir, "esp_render_geometry_primitives.c")
+with open(geometry_path, "r", encoding="utf-8") as geometry_handle:
+    geometry_code = geometry_handle.read()
+if any(geometry_code.count(signature + "\n{") != 1
+       for signature, _ in render_geometry_functions):
+    raise RuntimeError("Native Render geometry export census changed")
+print("[ESP32] Render geometry primitives native-owned; "
+      "exports=7 production=esp-native bringup=desktop-original")
 
 with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(render_source_text)

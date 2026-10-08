@@ -367,3 +367,11 @@ void DoomCanvas_startup(DoomCanvas_t* doomCanvas)
            DOOMRPG_VIEWPORT_X, DOOMRPG_VIEWPORT_Y,
            doomCanvas->startupMap);
 }
+
+#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+/* Historical bringup linker wrapper still references this retired visual
+ * callback. No legacy progress UI owns the shared native framebuffer. */
+void DoomCanvas_updateLoadingBar(DoomCanvas_t* doomCanvas) {
+    (void)doomCanvas;
+}
+#endif
