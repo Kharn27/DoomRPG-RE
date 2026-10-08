@@ -595,8 +595,10 @@ render_source_text = render_source_text.replace(
     "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + solid_bg_generated +
     "\n#endif /* native ESP32 solid BG owner */", 1)
 
-# Bounded RGB565 framebuffer fade: desktop arithmetic and exact pixel loops.
-# Keep the desktop/bringup body, but link the normal owner from permanent C.
+# Render_fadeScreen is not a production API: the original call sites are
+# desktop DoomCanvas animation paths; ESP32 player death owns fadeViewport.
+# Preserve the full function for desktop/bringup but do not link its body
+# on normal firmware. Any remaining native call must fail at link time.
 fade_signature = "void Render_fadeScreen(Render_t* render, int fade)"
 fade_original = extract_render_function(original_render_for_startup, fade_signature)
 fade_generated = extract_render_function(render_source_text, fade_signature)
@@ -604,8 +606,8 @@ if fade_generated != fade_original:
     raise RuntimeError("Generated Render_fadeScreen source drift")
 render_source_text = render_source_text.replace(
     fade_generated,
-    "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + fade_generated +
-    "\n#endif /* native ESP32 framebuffer fade owner */", 1)
+    "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + fade_generated +
+    "\n#endif /* fade owned by native ESP32 player death */", 1)
 
 geometry_path = join(project_src_dir, "esp_render_geometry_primitives.c")
 with open(geometry_path, "r", encoding="utf-8") as geometry_handle:
@@ -615,13 +617,8 @@ if any(geometry_code.count(signature + "\n{") != 1
     raise RuntimeError("Native Render geometry export census changed")
 if extract_render_function(geometry_code, solid_bg_signature) != solid_bg_original:
     raise RuntimeError("Native solid BG must exactly match legacy reference")
-native_fade_with_witness = extract_render_function(geometry_code, fade_signature)
-# Remove exactly the diagnostic prefix before checking pixel algorithm parity.
-witness_pattern = r"\n    /\* One-shot invocation witness:.*?\n    }\n\n"
-native_fade_without_witness, witness_count = re.subn(
-    witness_pattern, "\n", native_fade_with_witness, count=1, flags=re.S)
-if witness_count != 1 or native_fade_without_witness != fade_original:
-    raise RuntimeError("Native fadeScreen differs from legacy pixel algorithm")
+if "void Render_fadeScreen(" in geometry_code:
+    raise RuntimeError("Retired fadeScreen production ABI reintroduced")
 print("[ESP32] Render geometry primitives native-owned; "
       "exports=7 production=esp-native bringup=desktop-original")
 
