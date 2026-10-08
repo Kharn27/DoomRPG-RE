@@ -141,6 +141,32 @@ render_source_text = render_source_text.replace(
     1,
 )
 
+# The two linked Render core roots now belong to the permanent
+# ESP32 render startup bridge. Keep their source slice pinned so an original
+# change must be audited instead of silently changing the native ABI.
+render_core_begin = "Render_t* Render_init(Render_t* render, DoomRPG_t* doomRpg)\n{"
+render_core_setup = "void Render_setup(Render_t* render, SDL_Rect* windowRect)\n{"
+render_core_end = "void Render_freeRuntime(Render_t* render) {"
+if any(render_source_text.count(anchor) != 1 for anchor in
+       (render_core_begin, render_core_setup, render_core_end)):
+    raise RuntimeError("Unexpected inherited Render core boundary")
+render_core_slice = render_source_text[
+    render_source_text.index(render_core_begin):
+    render_source_text.index(render_core_end)]
+import zlib
+if zlib.crc32(render_core_slice.encode("latin-1")) != 0xb89f15f1:
+    raise RuntimeError("Original Render_init/Render_setup changed: review native bridge")
+render_source_text = render_source_text.replace(
+    render_core_begin, "#if !defined(DOOMRPG_ESP32)\n" + render_core_begin, 1
+)
+render_source_text = render_source_text.replace(
+    render_core_end,
+    "#endif /* native ESP32 Render init/setup roots */\n\n" +
+    render_core_end, 1
+)
+print("[ESP32] Render_init/Render_setup desktop roots retired; "
+      "owner=esp-native-render-startup bridge=permanent")
+
 # The original Render_beginLoadMap* BSP parser is a desktop/bringup-only
 # diagnostic path. Production already builds the immutable EspMapRuntime from
 # the native PAK backing. Reject accidental calls instead of retaining its
