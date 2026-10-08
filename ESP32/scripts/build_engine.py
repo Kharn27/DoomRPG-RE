@@ -176,10 +176,18 @@ native_startup_end = "void Render_loadPalettes(Render_t* render)\n{"
 if render_source_text.count(native_startup_begin) != 1 or \
    render_source_text.count(native_startup_end) != 1:
     raise RuntimeError("Original desktop Render_startup source boundary changed")
-native_startup_region = render_source_text[
-    render_source_text.index(native_startup_begin):
-    render_source_text.index(native_startup_end)]
-if zlib.crc32(native_startup_region.encode("latin-1")) != 0xf0d935e8:
+# The canvas-geometry patch above intentionally modifies the generated
+# startup body before we exclude it. Fingerprint the unmodified source,
+# while separately validating the patched definition boundary below.
+with open(render_source, "r", encoding="latin-1") as original_render_file:
+    original_render_for_startup = original_render_file.read()
+if (original_render_for_startup.count(native_startup_begin) != 1 or
+        original_render_for_startup.count(native_startup_end) != 1):
+    raise RuntimeError("Desktop original Render_startup boundary changed")
+native_startup_original_region = original_render_for_startup[
+    original_render_for_startup.index(native_startup_begin):
+    original_render_for_startup.index(native_startup_end)]
+if zlib.crc32(native_startup_original_region.encode("latin-1")) != 0xf0d935e8:
     raise RuntimeError("Desktop Render_startup changed; audit native equivalent")
 render_source_text = render_source_text.replace(
     native_startup_begin,
