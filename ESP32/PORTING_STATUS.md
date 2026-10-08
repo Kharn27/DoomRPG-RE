@@ -1,43 +1,36 @@
-## Native MOVE preview pacing: axial midpoint, strafe thirds — CODE CANDIDATE (2026-10-08)
+## Native MOVE visual pacing — REAL-CYD PASS (2026-10-08)
 
-On real classic CYD, the initial two-preview MOVE implementation
-(code 529e7abb177060743ffb8495e97b1be14606fd20) functioned:
-FORWARD/BACK and STRAFE presented both intermediate frames, preserved
-single committed tile movement and corresponding one monster turn per MOVE,
-and kept heap8=117252/largest8=86004 stable. A blocked strafe did not
-animate. Two extra paints took ~205-210ms before each final frame.
+Hardware-tested code SHA `e944dc386758900bc55c68d374344c631640e6b4`,
+normal production `esp32-cyd` CI #37705217411 SUCCESS
+(RAM static 45056 B; flash 774521 B); docs-only CI #37705286981
+also SUCCESS. Real classic CYD visual feedback: **"C'est pas mal du
+tout là"** after retuning axial movement from two visual thirds to
+**one midpoint**. STRAFE retains **two thirds** and TURN keeps its
+separately proven two-angle camera interpolation. The excerpt covers
+eight FORWARD/BACK translations (each `profile=axial-midpoint`,
+`step=1/1 sample=1/2 intermediates=1`), two STRAFE translations
+(`profile=strafe-thirds`, `intermediates=2`) and three
+TURNs (two previews each); all rendered and presented with no fallback.
+Axial preview cost ~103–106 ms typically (first sample 132213 us),
+versus ~205–210 ms for the previous two-preview axial design;
+strafe previews ~204 ms combined. Correct single native
+`[MONSTERTURN] ORDERED-DISPATCH reason=MOVE` tokens 1..10 follow the
+ten committed moves, and no turn advances on the three rotations.
+Two Armor Shard pickups on tiles 839 and 838 commit exactly once each
+(armor 0->4->8); old wall guard recovers normally.
+Four later `[ALIVE]` samples: heap8 **118288 B**,
+largest8 **86004 B**, total heap **184212 B** unchanged. Automap
+discovery occurs on final settled frames, not previews. No extra
+framebuffer/animation heap owner and no mutation of canonical player
+pose by the presentation path.
 
-Physical UX feedback distinguished the modes: STRAFE was pleasant,
-but FORWARD/BACK felt like advancing twice and a bit slow. The new
-candidate e944dc386758900bc55c68d374344c631640e6b4 therefore renders
-only **one 1/2-step visual preview** for FORWARD/BACK; the previous
-**two 1/3 and 2/3 previews remain for STRAFE**, and rotation is unchanged.
-No change to gameplay position, events, RNG, collisions, monster turns,
-SAVE format, PAK backing or framebuffer count. This is a **tuning
-candidate pending new CI and real-device visual assessment**, not
-a claimed axial animation UX PASS.
-[Milestone](MILESTONE_NATIVE_CAMERA_MOVE_VISUAL.md).
-
-## Native camera-only cardinal MOVE interpolation — CODE CANDIDATE (2026-10-08)
-
-On existing branch agent/esp32-camera-rotation-visual, a distinct,
-not-yet-hardware-tested extension adds two intermediate camera positions to
-successfully committed 64-unit FORWARD/BACK/STRAFE moves. The normal
-collision/execute-events/commit/rollback and monster-turn sequencing is
-unchanged. The renderer borrows the native side-effect-free visual-preview
-route introduced and physically validated for rotations: two positions at
-1/3 and 2/3 of the step, then mandatory final settled frame. Rejected moves
-and automap-mode moves retain their existing path. No map-wide texture mirror,
-no separate framebuffer or durable animation owner.
-
-Code boundary: 529e7abb177060743ffb8495e97b1be14606fd20.
-Production CI and real-CYD test are pending; do not extend the rotation
-hardware PASS to the translation until its own Serial witness.
-Expected diagnostic: [VIEWANIM] FRAME mode=move, END intermediates=2,
-followed by [RESIDENTGAMEPLAY] MOVE committed=yes and the usual
-single monster-turn dispatch. A preview FALLBACK should not prevent
-a successful canonical last frame. Measure timing and memory.
-[Detailed candidate](MILESTONE_NATIVE_CAMERA_MOVE_VISUAL.md).
+**Coverage limits:** no visible-monster fight, latest-SHA blocked step,
+door, LOAD, automap-mode input, dialogue, SYS EXIT or menu FNV in this
+specific log; those are not silently promoted to hardware PASS.
+The earlier two-preview candidate *did* show a blocked strafe;
+the retune affects only sample count, not collision logic.
+Post-hardware closure is docs-only; code remains frozen.
+[Detailed milestone](MILESTONE_NATIVE_CAMERA_MOVE_VISUAL.md).
 
 ## Native quarter-turn camera interpolation — REAL-CYD VISUAL PASS (2026-10-08)
 
