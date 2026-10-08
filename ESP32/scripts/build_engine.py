@@ -638,6 +638,21 @@ render_source_text = render_source_text.replace(
     "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + sprite_2d_generated +
     "\n#endif /* native PAK sprite decoding owns gameplay visuals */", 1)
 
+# shapeData offset/decode helpers are meaningful only to the retired
+# Render_loadTexels map-wide inflate path. Never expose them in production.
+for shape_sig in (
+    "int Render_getSTexelOffsets(Render_t* render, int i)",
+    "int Render_getSTexelBufferSize(Render_t* render, int i)",
+):
+    legacy_shape = extract_render_function(original_render_for_startup, shape_sig)
+    generated_shape = extract_render_function(render_source_text, shape_sig)
+    if legacy_shape != generated_shape:
+        raise RuntimeError("Legacy shape offset helper drift: " + shape_sig)
+    render_source_text = render_source_text.replace(
+        generated_shape,
+        "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + generated_shape +
+        "\n#endif /* shapeData decoder retired from production */", 1)
+
 geometry_path = join(project_src_dir, "esp_render_geometry_primitives.c")
 with open(geometry_path, "r", encoding="utf-8") as geometry_handle:
     geometry_code = geometry_handle.read()
