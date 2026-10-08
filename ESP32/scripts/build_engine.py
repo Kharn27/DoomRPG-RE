@@ -609,6 +609,20 @@ render_source_text = render_source_text.replace(
     "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + fade_generated +
     "\n#endif /* fade owned by native ESP32 player death */", 1)
 
+# Legacy berserk color postprocess belongs to retired desktop DoomCanvas
+# rendering paths. It also calls SDL_UpdateTexture/SDL_RenderCopy directly.
+# Preserve desktop/bringup reference while production has no ABI provider.
+# A native Berserk behavior is NOT claimed here; see parity ledger.
+berserk_signature = "void Render_setBerserkColor(Render_t* render)"
+berserk_original = extract_render_function(original_render_for_startup, berserk_signature)
+berserk_generated = extract_render_function(render_source_text, berserk_signature)
+if berserk_generated != berserk_original:
+    raise RuntimeError("Generated Render_setBerserkColor source drift")
+render_source_text = render_source_text.replace(
+    berserk_generated,
+    "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + berserk_generated +
+    "\n#endif /* berserk effect requires explicit native owner */", 1)
+
 geometry_path = join(project_src_dir, "esp_render_geometry_primitives.c")
 with open(geometry_path, "r", encoding="utf-8") as geometry_handle:
     geometry_code = geometry_handle.read()
