@@ -1,3 +1,43 @@
+## Native direct Render_free, no linker wrap — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Code SHA `77f1de060142b869bbc83727ad17ae137b21789c` compiled by normal `esp32-cyd`
+GitHub Actions #37761071831 **SUCCESS**: static RAM **45056 B**,
+flash **774897 B**. `--wrap=Render_free` retired and the permanent
+`render_startup_bridge.c` now owns the direct `Render_free` symbol.
+It detaches the PlatformVideo-owned framebuffer **before** invoking
+the inherited `Render_freeRuntime` cleanup, preserving `freePtr`
+semantics and avoiding accidental `free()` of the shared RGB565 image.
+
+Real classic CYD smoke test: `[RENDERCORE] INIT bytes=1532`,
+`SETUP view=160x80@0,20 arrays=1280B`, native
+`Render_startup direct=yes wrap=no`, framebuffer **38400 B**;
+palettes **3280/6560 B**, mappings **8376 B**, first MENU_MAIN
+FNV **522dc605**, MAP_INTRO arena FNV **c3882516** and first
+world frame FNV **71ca7465**.
+Two FORWARD moves with single midpoint previews, TURN_RIGHT and TURN_LEFT
+two-frame interpolations, subtype-2 crate attack/transform,
+Armor Shard pickup (armor **0->4**, ammo **8->7**),
+native event **88** dialogue and opcode **19** state mutation,
+HUB and SYS double-confirm EXIT all succeeded. Gameplay heap8
+**118288 B** prior to lazy dialogue journal; **117252 B**
+after journal. `[DIALOGCHAIN] OWNER-RELEASE` recovered **1036 B**,
+`[RESIDENTRESET] released=18008 empty=1`.
+Final `[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty
+saveWrite=no checkpoint=unchanged`; heap8 **164184 B**,
+largest8 **110580 B**. `shapeData==NULL`,
+`mediaTexels==NULL` throughout.
+
+**Critical coverage distinction:** no `[RENDERFREE] ENTRY` occurred
+in this serial log. Ordinary SYS EXIT tears down native session owners
+but **does not exercise the Render_t destructor**. Hardware PASS is
+strictly for boot/gameplay/EXIT non-regression and linker ownership;
+direct destructor execution and the shared framebuffer detachment
+remain **unproven on physical CYD**. A separately bounded destructor
+probe is required before claiming full teardown-path PASS.
+LOAD/CHANGEMAP/active-monster scenarios are not covered either.
+The tested code is frozen; this commit is docs-only.
+[Milestone](MILESTONE_ESP32_RENDER_FREE_NATIVE_DIRECT.md).
+
 ## Direct native Render_startup, no linker wrap — REAL-CYD PASS (2026-10-08)
 
 Real classic CYD normal firmware tested at **code SHA `dd577ad94f66ae642cc1ecaca7dc331b68c5b8e5`**;

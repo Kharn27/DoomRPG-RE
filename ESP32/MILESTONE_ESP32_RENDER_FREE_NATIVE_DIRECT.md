@@ -1,6 +1,39 @@
 # Milestone — native direct Render_free, framebuffer guard preserved
 
-Status: **CODE CANDIDATE — REAL-CYD TEST REQUIRED**
+Status: **REAL-CYD NON-REGRESSION PASS; destructor execution NOT YET PROVEN**
+
+Hardware-tested code SHA: `77f1de060142b869bbc83727ad17ae137b21789c`; GitHub Actions normal
+`esp32-cyd` CI #37761071831 SUCCESS (static RAM 45056 B,
+flash 774897 B).
+
+## Actual CYD hardware results (2026-10-08)
+
+Real production build booted without regression, with
+`[RENDERCORE] INIT bytes=1532`, `SETUP ... arrays=1280B`,
+`Render_startup direct=yes wrap=no`, shared RGB565
+framebuffer 38400 B, 3280 palette entries, 8376 B mappings.
+MENU_MAIN frame 522dc605, compact intro arena c3882516
+and first world frame 71ca7465 matched previous samples.
+Two successful FORWARD moves, two camera-interpolated rotations,
+crate attack/transform, Armor Shard pickup, event 88 DIALOG
+with opcode 19 resumed mutation, HUB and SYS EXIT succeeded.
+`[DIALOGCHAIN] OWNER-RELEASE ... recovered=1036`,
+`[RESIDENTRESET] ... released=18008 ... empty=1`,
+`[SYSEXIT] MENU-READY ... session=off resident=empty`
+and final heap8=164184, largest8=110580 confirmed.
+The permanent null shapeData/mediaTexels invariants survived.
+
+**Destructor caveat:** no `[RENDERFREE] ENTRY` line was logged.
+The native SYS EXIT path is not an engine-object destructor.
+Therefore linkage is CI-validated and normal firmware behavior is
+CYD-validated, but direct `Render_free` execution, including
+shared framebuffer detachment, remains **unvalidated on device**.
+Do not promote that specific path to hardware PASS until a separate
+safe bounded destructor probe passes. The inherited
+`Render_freeRuntime` remains, and must not be retired blindly.
+The next code milestone remains on this same active branch.
+
+
 Branch: `agent/esp32-retire-desktop-source-registration`, no new branch and no merge.
 Previous `Render_startup` code SHA `dd577ad94f66ae642cc1ecaca7dc331b68c5b8e5`
 passed real CYD; docs-only closure `0a4cfddc846459fd54e9cc976d421798507651b9`.
