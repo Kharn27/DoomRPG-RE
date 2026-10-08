@@ -18,6 +18,15 @@
 #define DOOMRPG_ESP32_BRINGUP_PROBES 0
 #endif
 
+/* ZIP is retired for every ESP32 profile. Keep this historical
+ * diagnostic callable, but fail closed rather than resurrect zipFile. */
+#if defined(DOOMRPG_ESP32)
+int DoomRPG_probeMenuBspHeader(int configMappingsReady) {
+    (void)configMappingsReady;
+    printf("[MENUBSP] RETIRED: legacy ZIP BSP header probe unavailable; native PAK BSP reader owns validation\n");
+    return 0;
+}
+#else
 extern DoomRPG_t* doomRpg;
 
 #define MENU_BSP_HEADER_BYTES 33U
@@ -225,3 +234,5 @@ int DoomRPG_probeMenuBspHeader(int configMappingsReady) {
 
     return 1;
 }
+
+#endif /* retired ZIP probe never linked on ESP32 */
