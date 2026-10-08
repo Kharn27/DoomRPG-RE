@@ -24,6 +24,51 @@ _Static_assert(sizeof(Render_t) == 1532U,
 extern DoomRPG_t* doomRpg;
 
 /*
+ * Permanent production owner of Render_freeRuntime. Native map arenas and
+ * overlays are independent; this frees only inherited compatibility slots.
+ * Desktop free/null ordering is preserved.
+ */
+void Render_freeRuntime(Render_t* render)
+{
+    int i;
+
+    SDL_free(render->mediaTexels);
+    render->mediaTexels = NULL;
+    SDL_free(render->shapeData);
+    render->shapeData = NULL;
+    SDL_free(render->mapSprites);
+    render->mapSprites = NULL;
+    render->numMapSprites = 0;
+    SDL_free(render->nodes);
+    render->nodes = NULL;
+    SDL_free(render->lines);
+    render->lines = NULL;
+    render->linesLength = 0;
+    SDL_free(render->tileEvents);
+    render->tileEvents = NULL;
+    SDL_free(render->mapByteCode);
+    render->mapByteCode = NULL;
+    for (i = 0; i < render->mapStringCount; i++) {
+        SDL_free(render->mapStringsIDs[i]);
+    }
+    SDL_free(render->mapStringsIDs);
+    render->mapStringCount = 0;
+    render->mapStringsIDs = NULL;
+    SDL_free(render->mediaBitShapeOffsets);
+    render->mediaBitShapeOffsets = NULL;
+    SDL_free(render->mediaTexelOffsets);
+    render->mediaTexelOffsets = NULL;
+    SDL_free(render->mediaTexturesIds);
+    render->mediaTexturesIds = NULL;
+    SDL_free(render->mediaSpriteIds);
+    render->mediaSpriteIds = NULL;
+    SDL_free(render->mapTextureTexels);
+    render->mapTextureTexels = NULL;
+    SDL_free(render->mapSpriteTexels);
+    render->mapSpriteTexels = NULL;
+}
+
+/*
  * Permanent ESP32 owner of the two constructor/layout Render API roots.
  * The original source bodies are preserved exactly, except for one-time
  * source-ownership diagnostics; all legacy world/raster logic stays excluded.
@@ -337,7 +382,7 @@ int Render_startup(Render_t* render) {
 /*
  * Permanent native Render destructor ABI.
  * Never free PlatformVideo's shared framebuffer: the framebuffer pointer is
- * detached before calling the unchanged legacy Render_freeRuntime cleanup.
+ * detached before invoking the directly owned Render_freeRuntime cleanup.
  * All other cleanup actions and freePtr semantics mirror desktop Render_free.
  */
 void Render_free(Render_t* render, boolean freePtr)

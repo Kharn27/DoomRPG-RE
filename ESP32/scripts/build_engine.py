@@ -199,6 +199,29 @@ render_source_text = render_source_text.replace(
 print("[ESP32] Desktop Render_startup unlinked; "
       "owner=esp-native-render-startup direct=yes linkerWrap=no")
 
+# Render_freeRuntime production owner; preserve the original desktop/probe
+# body while the permanent ESP32 teardown bridge owns the active ABI.
+native_runtime_free_begin = "void Render_freeRuntime(Render_t* render) {"
+native_runtime_free_end = "void Render_free(Render_t* render, boolean freePtr)\n{"
+if (render_source_text.count(native_runtime_free_begin) != 1 or
+        render_source_text.count(native_runtime_free_end) != 1):
+    raise RuntimeError("Render_freeRuntime source boundary changed")
+native_runtime_free_original = original_render_for_startup[
+    original_render_for_startup.index(native_runtime_free_begin):
+    original_render_for_startup.index(native_runtime_free_end)]
+if render_source_text[
+    render_source_text.index(native_runtime_free_begin):
+    render_source_text.index(native_runtime_free_end)] != native_runtime_free_original:
+    raise RuntimeError("Generated Render_freeRuntime diverged from desktop source")
+render_source_text = render_source_text.replace(
+    native_runtime_free_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + native_runtime_free_begin, 1)
+render_source_text = render_source_text.replace(
+    native_runtime_free_end,
+    "#endif /* native Render_freeRuntime production owner */\n\n" +
+    native_runtime_free_end, 1)
+print("[ESP32] Render_freeRuntime production=esp-native-bridge desktop=original")
+
 # Render_free's native bridge implements exactly the inherited shell cleanup,
 # with the PlatformVideo framebuffer detached before the legacy
 # Render_freeRuntime() cleanup path. Prevent a duplicated desktop destructor.
