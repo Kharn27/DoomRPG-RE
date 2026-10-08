@@ -7,6 +7,12 @@
  * operations. The desktop definitions remain available to bringup probes.
  */
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+/* No desktop Node/Sprite linked lists in native map world. */
+void Render_relinkSprite(Render_t* render, Sprite_t* sprite) {
+    (void)render; (void)sprite;
+    printf("[LEGACYBSP] REJECT Render_relinkSprite: native topology required\n");
+}
+
 /* No legacy lines/mapSprites buffers in production; never bypass native BSP. */
 void Render_renderBSPNoclip(Render_t* render) {
     (void)render;

@@ -418,11 +418,11 @@ reject_exports = ("Render_beginLoadMap", "Render_beginLoadMapData",
                   "Render_findEventIndex",
                   "Render_renderFloorAndCeilingBG_Test",
                   "Render_drawPlane_Test", "Render_spanPlane_Test",
-                  "Render_renderBSPNoclip")
+                  "Render_renderBSPNoclip", "Render_relinkSprite")
 if any(reject_code.count(name + "(") != 1 for name in reject_exports):
     raise RuntimeError("Native Render reject export census changed")
 print("[ESP32] Legacy Render map/world/BSP rejects native-owned; "
-      "exports=13 production=fail-closed bringup=desktop-original")
+      "exports=14 production=fail-closed bringup=desktop-original")
 
 
 # Retire old tileEvents binary-search ABI from generated Render.c.
@@ -507,6 +507,32 @@ render_source_text = render_source_text.replace(
     "#endif /* native BSP no-clip compatibility rejection */\n\n" +
     bsp_noclip_end, 1)
 print("[ESP32] Render_renderBSPNoclip native-owned production=fail-closed")
+
+# Legacy sprite relink mutates pointer-heavy Render.nodes and Sprite.node
+# chains, neither owned by the compact native map runtime.
+relink_begin = "void Render_relinkSprite(Render_t* render, Sprite_t* sprite)\n{"
+relink_end = "void Render_addMapTextures(Render_t* render, int textureId)\n{"
+if (render_source_text.count(relink_begin) != 1 or
+        render_source_text.count(relink_end) != 1):
+    raise RuntimeError("Render_relinkSprite source boundary drift")
+original_relink = original_render_for_startup[
+    original_render_for_startup.index(relink_begin):
+    original_render_for_startup.index(relink_end)]
+generated_relink = render_source_text[
+    render_source_text.index(relink_begin):
+    render_source_text.index(relink_end)]
+if original_relink != generated_relink:
+    raise RuntimeError("Render_relinkSprite generated source drift")
+for field in ("sprite->node", "render->nodes", "node->sprites"):
+    if field not in original_relink:
+        raise RuntimeError("Legacy sprite ownership changed: " + field)
+render_source_text = render_source_text.replace(
+    relink_begin, "#if !defined(DOOMRPG_ESP32)\n" + relink_begin, 1)
+render_source_text = render_source_text.replace(
+    relink_end,
+    "#endif /* native topology owns sprite relinking */\n\n" +
+    relink_end, 1)
+print("[ESP32] Render_relinkSprite production=fail-closed native topology owner")
 
 # The native CYD renderer still consumes a small set of legacy-named geometry
 # primitives. They are pure Render scratch/math helpers: no desktop map owner,
