@@ -26,6 +26,44 @@ void Render_renderFloorAndCeilingSolidBG(Render_t* render)
 	}
 }
 
+/* Legacy-equivalent bounded RGB565 fade; framebuffer scratch only. */
+void Render_fadeScreen(Render_t* render, int fade)
+{
+	int pitch, i, j;
+	short color;
+	int r, g, b;
+	short* pixels;
+
+	pixels = (short*)&render->framebuffer[render->pitch * render->screenY + render->screenX * sizeof(short)];
+	pitch = render->pitch >> 1;
+
+	for (i = 0; i < render->screenHeight; i++) {
+		for (j = 0; j < render->screenWidth; j++) {
+			color = pixels[i * pitch + j];
+
+			b = (color & 0x1F);
+			g = (color >> 5) & 0x3f;
+			r = (color >> 11) & 0x1f;
+
+			if (r > (fade >> 3)) {
+				r = (fade >> 3);
+			}
+
+			if (g > (fade >> 2)) {
+				g = (fade >> 2);
+			}
+
+			if (b > (fade >> 3)) {
+				b = (fade >> 3);
+			}
+
+			color = (r << 11) | (g << 5) | b;
+
+			pixels[i * pitch + j] = color;
+		}
+	}
+}
+
 #endif
 
 /*
