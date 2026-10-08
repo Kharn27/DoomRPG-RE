@@ -9,6 +9,20 @@
 #define FIXED_VERSION 1
 #if FIXED_VERSION != 1
 #error "ESP32 geometry must match desktop Render.c fixed-point mode"
+
+
+#endif
+
+/*
+ * Permanent production owner for the legacy-named projection/culling
+ * primitives still consumed by the ESP32-native world and sprite renderers.
+ *
+ * These functions intentionally preserve the desktop arithmetic/ABI exactly.
+ * They mutate only Render_t frame scratch. They do not own map topology,
+ * texels, shapes, entities or gameplay state.
+ */
+#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+
 /* Framebuffer-only floor/ceiling clear, byte-for-byte legacy semantics. */
 void Render_renderFloorAndCeilingSolidBG(Render_t* render)
 {
@@ -26,18 +40,6 @@ void Render_renderFloorAndCeilingSolidBG(Render_t* render)
 	}
 }
 
-
-#endif
-
-/*
- * Permanent production owner for the legacy-named projection/culling
- * primitives still consumed by the ESP32-native world and sprite renderers.
- *
- * These functions intentionally preserve the desktop arithmetic/ABI exactly.
- * They mutate only Render_t frame scratch. They do not own map topology,
- * texels, shapes, entities or gameplay state.
- */
-#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
 
 void Render_initColumnScale(Render_t* render)
 {
