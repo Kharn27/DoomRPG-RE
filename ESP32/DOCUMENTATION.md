@@ -63,8 +63,7 @@ du bilan de mission : cadre sombre, bandeau `YOU DIED` rouge, sous-titre
 `MISSION FAILED`, puis quatre cartes à deux lignes. Aucun asset ni buffer
 supplémentaire n'est chargé ; le propriétaire de mort reste inchangé.
 
-`LOAD SAVED GAME` est mis en évidence en ambre si un checkpoint lisible existe,
-avec `TAP TO LOAD` ; sinon la carte est atténuée avec `NO SAVE` rouge.
+`LOAD GAME` ouvre désormais un sélecteur tactile de **10 slots SD** (deux pages de cinq), qui peut charger l'ancien checkpoint via le slot 1. Deux pressions sur un slot lisible confirment LOAD ; les slots vides sont désactivés. En jeu, HUB → SYSTEM → SAVE/LOAD ouvre le même inventaire de slots, avec sauvegarde V11 atomique indépendante par slot. Pagination : gros chevron supérieur **précédent** (actif page 2), inférieur **suivant** (actif page 1) dans une colonne à droite ; numéro de page dans l'en-tête. Style visuel accepté comme provisoire sur CYD, finition Doom à reprendre en fin de port. Le slot AUTO n'est pas implémenté.
 `GO TO JUNCTION`, `RETRY SECTOR` et `MAIN MENU` restent visibles et atténués,
 avec `NOT AVAILABLE` : leurs backends ne sont pas implémentés par cette refonte.
 Le tap unique LOAD, son dispatch différé au service et les autres actions
