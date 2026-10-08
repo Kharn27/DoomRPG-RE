@@ -344,8 +344,7 @@ static int activateHelp(DoomRPG_t* doomRpg) {
     uint32_t expectedFNV;
     uint32_t helpFNV = 0U;
 
-    if (!EspNativeGameplaySave_mainSelectorReady() &&
-        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
+    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINHELP] FAILED graphics boundary\n");
         return 0;
     }
@@ -518,7 +517,8 @@ DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
     EspNativeTransitionPresentation_reset();
     printf("[MAINLOAD] TRANSITION-UI reset=yes mapFlashProgress=off\n");
 
-    if (!DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
+    if (!EspNativeGameplaySave_mainSelectorReady() &&
+        !DoomRPG_esp32MainMenuGraphicsBoundaryIsSafe(doomRpg)) {
         printf("[MAINLOAD] FAILED core/graphics boundary unavailable\n");
         return DOOMRPG_ESP32_MAIN_MENU_LOAD_FATAL;
     }
