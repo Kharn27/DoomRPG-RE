@@ -1,5 +1,7 @@
 #include <stdint.h>
 
+#include <SDL.h>
+
 #include "DoomRPG.h"
 #include "Render.h"
 
