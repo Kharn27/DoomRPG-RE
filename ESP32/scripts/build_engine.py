@@ -615,8 +615,13 @@ if any(geometry_code.count(signature + "\n{") != 1
     raise RuntimeError("Native Render geometry export census changed")
 if extract_render_function(geometry_code, solid_bg_signature) != solid_bg_original:
     raise RuntimeError("Native solid BG must exactly match legacy reference")
-if extract_render_function(geometry_code, fade_signature) != fade_original:
-    raise RuntimeError("Native fadeScreen must exactly match legacy reference")
+native_fade_with_witness = extract_render_function(geometry_code, fade_signature)
+# Remove exactly the diagnostic prefix before checking pixel algorithm parity.
+witness_pattern = r"\n    /\* One-shot invocation witness:.*?\n    }\n\n"
+native_fade_without_witness, witness_count = re.subn(
+    witness_pattern, "", native_fade_with_witness, count=1, flags=re.S)
+if witness_count != 1 or native_fade_without_witness != fade_original:
+    raise RuntimeError("Native fadeScreen differs from legacy pixel algorithm")
 print("[ESP32] Render geometry primitives native-owned; "
       "exports=7 production=esp-native bringup=desktop-original")
 

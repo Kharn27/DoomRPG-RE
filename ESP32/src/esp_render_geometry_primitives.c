@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include <stdio.h>
 
 #include <SDL.h>
 
@@ -29,6 +30,14 @@ void Render_renderFloorAndCeilingSolidBG(Render_t* render)
 /* Legacy-equivalent bounded RGB565 fade; framebuffer scratch only. */
 void Render_fadeScreen(Render_t* render, int fade)
 {
+    /* One-shot invocation witness: no change to legacy fade pixels or RNG. */
+    static unsigned int nativeFadeWitness = 0;
+    if (nativeFadeWitness++ == 0U) {
+        printf("[RENDERFADE] ENTRY owner=esp-native-geometry api=Render_fadeScreen first=yes fade=%d viewport=%dx%d@%d,%d framebuffer=%p\n",
+               fade, render->screenWidth, render->screenHeight,
+               render->screenX, render->screenY, (void*)render->framebuffer);
+    }
+
 	int pitch, i, j;
 	short color;
 	int r, g, b;
