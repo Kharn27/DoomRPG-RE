@@ -623,6 +623,21 @@ render_source_text = render_source_text.replace(
     "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + berserk_generated +
     "\n#endif /* berserk effect requires explicit native owner */", 1)
 
+# Legacy 2D sprite decompressor directly indexes map-wide shapeData.
+# No source call sites remain in src/Render.c; desktop DoomCanvas is retired
+# from normal ESP32. Keep original ABI in desktop/bringup only.
+# Native weapon/overlay parity is tracked separately, not assumed complete.
+sprite_2d_signature = ("void Render_draw2DSprite(Render_t* render, int weaponFrame, "
+                      "int flashFrame, int x, int y, byte renderMode, boolean damageBlend)")
+sprite_2d_original = extract_render_function(original_render_for_startup, sprite_2d_signature)
+sprite_2d_generated = extract_render_function(render_source_text, sprite_2d_signature)
+if sprite_2d_generated != sprite_2d_original:
+    raise RuntimeError("Generated Render_draw2DSprite source drift")
+render_source_text = render_source_text.replace(
+    sprite_2d_generated,
+    "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + sprite_2d_generated +
+    "\n#endif /* native PAK sprite decoding owns gameplay visuals */", 1)
+
 geometry_path = join(project_src_dir, "esp_render_geometry_primitives.c")
 with open(geometry_path, "r", encoding="utf-8") as geometry_handle:
     geometry_code = geometry_handle.read()
