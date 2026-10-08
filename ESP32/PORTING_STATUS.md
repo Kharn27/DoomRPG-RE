@@ -1,8 +1,14 @@
+## Native SD multi-save — CYD gameplay PASS, navigation accepted (2026-10-08)
+
+**Baseline:** `main` `4554ccd68f7928bd8918ffaf8711d82179f5e587`; branch `agent/esp32-native-save-multislot`, code head `c4f1322509237031bd048c57bb7798036271e06c`. [CI 37835789142](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37835789142): **SUCCESS**. Firmware normal `esp32-cyd`, classic CYD sans PSRAM.
+
+**Hardware evidence:** manual SAVE slot 2 `/DoomRPG-ESP32-slot02.sav` V11 5604 bytes, position 544,1760; after moving and collecting two armor shards, LOAD slot 2 restored exactly position 544,1760, armor 0/20, consumed resources 0, monster state/topology/position/activation. LOAD slot 1 also restored a **different earlier checkpoint** position 1184,352, 36 consumed resources, 12 dead monsters, HP 34/34, armor 11/23; legacy single-save file `/DoomRPG-ESP32.sav` was detected as readable at selection entry. MAPRT `c3882516`, `shapeData=0x0`, `mediaTexels=0x0`, heap8 resident after load 117880/largest8 86004. Session reset logged `released=18008 empty=1`. No save version change, no legacy deletion.
+
+**UI review:** MENU_MAIN LOAD now opens its own ten-slot picker; HUB SAVE/LOAD uses five rows per page. Latest revision separates **previous** (upper) and **next** (lower) chevrons on a right-side column, with disabled states, page number in header, and removes the decorative red vertical stripe. User reviewed the display and called it *better*, accepting it for this milestone with additional Doom-style visual polish **deferred**. This is a visual/acceptance report, **not** a complete new serial trace of both page directions or slots 6..10.
+
+**Still to test separately:** page 1→2→1 on both selectors with actual hardware logs, slots 6..10, overwrite confirmation, empty-slot fail-closed, MENU_MAIN BACK, and power-loss atomicity. `AUTO` remains explicitly out of scope pending a genuine original-game trigger audit. No merge has yet been reported for this branch.
+
 # Doom RPG ESP32 — état actuel du port
-
-## Native SD multi-save : implementation en attente de CI et CYD (2026-10-08)
-
-Branche `agent/esp32-native-save-multislot`. Le firmware possède désormais un sélecteur de **10 slots manuels**, deux pages de cinq lignes et navigation par tactile (bords gauche/droit pour changer de page), avec confirmation sur slot. Les chemins sont isolés `/DoomRPG-ESP32-slot01.sav` à `-slot10.sav`, chacun avec son propre `.tmp`/`.bak`. Le vieux `/DoomRPG-ESP32.sav` (ou `.bak`) reste **en lecture de secours pour slot 1** et n'est jamais effacé par les nouveaux commits ; la première sauvegarde du slot 1 écrit un fichier séparé. Le format V11 reste exactement 5604 octets et la compatibilité V1..V10 est conservée. La carte MENU_MAIN charge le premier slot valide ; la page SYSTEM ouvre un choix de slot pour SAVE et LOAD. Aucun état permanent de sauvegarde map-wide ni cache de dix records en RAM. AUTO est hors périmètre tant que les triggers originaux ne sont pas prouvés. **Ne pas annoncer PASS matériel : code non encore testé sur CYD.** Couvrir : anciens checkpoints lisibles, slots 1 et 6 indépendants, écrasement confirmé, LOAD de chaque, absence de slot, EXIT sans écriture et redémarrage.
 
 ## Prochain jalon — multi-save SD : 10 slots, AUTO conditionnel (2026-10-08)
 
