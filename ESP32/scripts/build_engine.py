@@ -490,7 +490,11 @@ bsp_noclip_original = original_render_for_startup[
 bsp_noclip_generated = render_source_text[
     render_source_text.index(bsp_noclip_begin):
     render_source_text.index(bsp_noclip_end)]
-if bsp_noclip_original != bsp_noclip_generated:
+# Earlier BSP traversal retirement wraps the next function boundary;
+# compare the function body, not the adjacent generated #if boundary.
+bsp_noclip_body_end = "\n}\n"
+if (bsp_noclip_original.split(bsp_noclip_body_end, 1)[0] !=
+        bsp_noclip_generated.split(bsp_noclip_body_end, 1)[0]):
     raise RuntimeError("Render_renderBSPNoclip generated source drift")
 for legacy_access in ("render->lines[i]", "render->mapSprites[i]"):
     if legacy_access not in bsp_noclip_original:
