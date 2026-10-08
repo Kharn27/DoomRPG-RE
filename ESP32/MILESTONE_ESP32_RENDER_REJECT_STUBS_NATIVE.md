@@ -1,6 +1,47 @@
 # ESP32 milestone — eight obsolete Render entrypoints native-owned
 
-Status: **CODE CANDIDATE — normal esp32-cyd CI PASS, REAL-CYD pending**
+Status: **REAL-CYD PASS for 8 legacy reject ownership roots — separate LOAD render caveat**
+
+## Real hardware CYD witness (2026-10-08)
+
+Hardware-tested code SHA: `6a6bdd565a526e27f53b45c66f69e7771a91c78d`.
+Production `esp32-cyd` CI #37765970962 SUCCESS, static RAM 45056 B,
+flash 774897 B. The user physically verified the normal boot,
+native intro/map first-frame FNVs `522dc605`, `c3882516`,
+`71ca7465`, 38400 B shared framebuffer, palette 3280 entries,
+mappings 8376 B, and null `shapeData` / `mediaTexels`.
+Real fresh gameplay completed moving and turning, crate transform,
+Armor Shard pickup and dialog 88/resume opcode 19 without
+**any** `[LEGACYMAP] REJECT`, `[LEGACYRENDER] REJECT` or
+`[LEGACYBSP] REJECT` call.
+
+The user also double-confirmed V11 LOAD from HUB. The checkpoint
+reader reported spatial save valid and world fully restored including
+resources, script, lines, monster topology/positions/activation and drops;
+`ENGINESESSION RESUME-VISIBLE` and READY followed. Two subsequent
+FORWARD commits and another Armor Shard pickup succeeded.
+SYS EXIT then released 18008 B (`empty=1`) and returned exact
+MENU_MAIN FNV 522dc605, heap8 164184, largest8 110580,
+`saveWrite=no checkpoint=unchanged`.
+
+**Important caveat, retained for next milestone:** both checkpoint
+resumed movement animations had `TURNFRAME DIAG
+fail=WORLD_RENDER` then `VIEWANIM FALLBACK intermediates=0`.
+A compact renderer guard did recover through
+`LEGACY_GUARD / RETRY / RECOVERED`. Loaded active monsters
+were counted (activeCount=12) but their turns yielded
+`MONSTERACTIVESEQ delivered=0` with movement
+`DEFER cause=active-order-not-owned`. Thus normal gameplay
+and reject ownership are hardware-proven, but smooth checkpoint
+resumed rendering / active monster turns are **not**.
+Those native runtime issues need focused independent audit;
+the current evidence does not implicate any of the eight relocated
+fail-closed legacy functions. `Render_free` destructor execution
+remains untested (no `[RENDERFREE] ENTRY`).
+This closure changes **documentation only**, not the accepted
+hardware-tested code. No main merge was performed.
+
+
 Tested source SHA: `6a6bdd565a526e27f53b45c66f69e7771a91c78d`
 Normal PlatformIO `esp32-cyd` CI: [run 37765970962](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37765970962), **SUCCESS**.
 Static RAM: **45056 B**, flash: **774897 B**, both unchanged from

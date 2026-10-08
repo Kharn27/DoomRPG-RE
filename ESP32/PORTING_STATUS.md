@@ -1,3 +1,52 @@
+## Eight legacy Render rejection roots native-owned — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested **code SHA `6a6bdd565a526e27f53b45c66f69e7771a91c78d`**,
+docs-only pretest gate SHA `2f6e429c503a4088476208187ec7114de5e7f83b`.
+Normal `esp32-cyd` CI #37765970962 SUCCESS; RAM static **45056 B**,
+flash **774897 B** (unchanged).
+Eight previously generated fail-closed Render map/world/plane/BSP exports
+now live in permanent `ESP32/src/esp_legacy_render_reject.c`;
+production legacy implementations are excluded, desktop and bringup
+reference retained. No `[LEGACYMAP] REJECT`, `[LEGACYRENDER] REJECT`,
+or `[LEGACYBSP] REJECT` occurred in real gameplay.
+
+Real CYD boot invariants: Render **1532 B**, Game **4 B**, Canvas **44 B**;
+native `Render_startup direct=yes wrap=no`, shared RGB565 FB
+**38400 B**, palette **3280 entries/6560 B**, mappings payload
+**8376 B**, initial MENU_MAIN FNV **522dc605**, MAP_INTRO native
+arena FNV **c3882516**, first native world frame **71ca7465**,
+`shapeData=mediaTexels=NULL`. Fresh session: native FORWARD
+midpoint previews, TURN_RIGHT and TURN_LEFT preview pairs,
+crate subtype-2 transform, Armor Shard pickup
+(armor **0->4**, ammo **8->7**), native dialog event **88** / opcode
+**19** state mutation, and no legacy rejects. Dialogue journal
+**1036 B** reclaimed before a confirmed checkpoint LOAD.
+LOAD V11 restored world scope exactly as reported by
+`[NATIVESAVE] LOAD ... world=...restored-exact`,
+including compact map, resources, lines, action removals,
+monster state, topology/positions/activation and drops.
+Post-LOAD `[ENGINESESSION] RESUME-VISIBLE` and READY, two
+logical FORWARD moves, Armor Shard pickup **11->15**;
+later SYS EXIT reclaimed **18008 B**, `empty=1`, and
+returned menu FNV **522dc605**, heap8 **164184 B**,
+largest8 **110580 B**, `saveWrite=no checkpoint=unchanged`.
+All observed memory invariants remain intact.
+
+**Not a full LOAD-render or monster-turn PASS:** the *two* checkpoint
+resumed FORWARD attempts emitted `[TURNFRAME] DIAG fail=WORLD_RENDER`
+and `[VIEWANIM] FALLBACK ... intermediates=0` even though the
+logical MOVEs committed. `[NATIVEFRAME] LEGACY_GUARD -> RETRY ->
+RECOVERED` returned via its bounded recovery path. Also,
+`MONSTERTURN activeCount=12` resulted in `MONSTERACTIVESEQ
+delivered=0` with `[MONSTERMOVE] DEFER cause=active-order-not-owned`.
+Treat as outstanding **native checkpoint-resume rendering and
+active-monster-sequencer investigation**, with **no demonstrated
+causal link** to relocating legacy reject stubs. No actual
+`[RENDERFREE] ENTRY` occurred: the engine destructor invocation
+is still untested. New hardware-tested code is **frozen**;
+this validation closure is docs-only. User handles merge.
+[Milestone](MILESTONE_ESP32_RENDER_REJECT_STUBS_NATIVE.md).
+
 ## Native direct Render_free, no linker wrap — REAL-CYD NON-REGRESSION PASS (2026-10-08)
 
 Code SHA `77f1de060142b869bbc83727ad17ae137b21789c` compiled by normal `esp32-cyd`
