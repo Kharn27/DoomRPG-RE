@@ -141,6 +141,129 @@ render_source_text = render_source_text.replace(
     1,
 )
 
+# The two linked Render core roots now belong to the permanent
+# ESP32 render startup bridge. Keep their source slice pinned so an original
+# change must be audited instead of silently changing the native ABI.
+render_core_begin = "Render_t* Render_init(Render_t* render, DoomRPG_t* doomRpg)\n{"
+render_core_setup = "void Render_setup(Render_t* render, SDL_Rect* windowRect)\n{"
+render_core_end = "void Render_freeRuntime(Render_t* render) {"
+if any(render_source_text.count(anchor) != 1 for anchor in
+       (render_core_begin, render_core_setup, render_core_end)):
+    raise RuntimeError("Unexpected inherited Render core boundary")
+render_core_slice = render_source_text[
+    render_source_text.index(render_core_begin):
+    render_source_text.index(render_core_end)]
+import zlib
+if zlib.crc32(render_core_slice.encode("latin-1")) != 0xb89f15f1:
+    raise RuntimeError("Original Render_init/Render_setup changed: review native bridge")
+render_source_text = render_source_text.replace(
+    render_core_begin, "#if !defined(DOOMRPG_ESP32)\n" + render_core_begin, 1
+)
+render_source_text = render_source_text.replace(
+    render_core_end,
+    "#endif /* native ESP32 Render init/setup roots */\n\n" +
+    render_core_end, 1
+)
+print("[ESP32] Render_init/Render_setup desktop roots retired; "
+      "owner=esp-native-render-startup bridge=permanent")
+
+# Render_startup now has a direct, single permanent ESP32 implementation.
+# The original desktop startup allocated a second full RGB565 framebuffer
+# and SDL texture, and its linker-wrapped entry was never executed here.
+# Source signature/CRC pin keeps legacy specification drift explicit.
+native_startup_begin = "int Render_startup(Render_t* render)\n{"
+native_startup_end = "void Render_loadPalettes(Render_t* render)\n{"
+if render_source_text.count(native_startup_begin) != 1 or \
+   render_source_text.count(native_startup_end) != 1:
+    raise RuntimeError("Original desktop Render_startup source boundary changed")
+# The canvas-geometry patch above intentionally modifies the generated
+# startup body before we exclude it. Fingerprint the unmodified source,
+# while separately validating the patched definition boundary below.
+with open(render_source, "r", encoding="latin-1") as original_render_file:
+    original_render_for_startup = original_render_file.read()
+if (original_render_for_startup.count(native_startup_begin) != 1 or
+        original_render_for_startup.count(native_startup_end) != 1):
+    raise RuntimeError("Desktop original Render_startup boundary changed")
+native_startup_original_region = original_render_for_startup[
+    original_render_for_startup.index(native_startup_begin):
+    original_render_for_startup.index(native_startup_end)]
+if zlib.crc32(native_startup_original_region.encode("latin-1")) != 0xf0d935e8:
+    raise RuntimeError("Desktop Render_startup changed; audit native equivalent")
+render_source_text = render_source_text.replace(
+    native_startup_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + native_startup_begin, 1)
+render_source_text = render_source_text.replace(
+    native_startup_end,
+    "#endif /* Render_startup direct native ESP32 owner */\n\n" +
+    native_startup_end, 1)
+print("[ESP32] Desktop Render_startup unlinked; "
+      "owner=esp-native-render-startup direct=yes linkerWrap=no")
+
+# Render_free's native bridge implements exactly the inherited shell cleanup,
+# with the PlatformVideo framebuffer detached before the legacy
+# Render_freeRuntime() cleanup path. Prevent a duplicated desktop destructor.
+native_free_begin = "void Render_free(Render_t* render, boolean freePtr)\n{"
+native_free_next = "#if !defined(DOOMRPG_ESP32)\nint Render_startup(Render_t* render)\n{"
+native_free_original_next = "int Render_startup(Render_t* render)\n{"
+if (render_source_text.count(native_free_begin) != 1 or
+        render_source_text.count(native_free_next) != 1):
+    raise RuntimeError("Generated Render_free source boundary changed")
+if (original_render_for_startup.count(native_free_begin) != 1 or
+        original_render_for_startup.count(native_free_original_next) != 1):
+    raise RuntimeError("Original desktop Render_free source boundary changed")
+original_free_slice = original_render_for_startup[
+    original_render_for_startup.index(native_free_begin):
+    original_render_for_startup.index(native_free_original_next)]
+if zlib.crc32(original_free_slice.encode("latin-1")) != 0x5c51ec08:
+    raise RuntimeError("Original Render_free changed: audit native teardown owner")
+render_source_text = render_source_text.replace(
+    native_free_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + native_free_begin, 1)
+render_source_text = render_source_text.replace(
+    native_free_next,
+    "#endif /* Native direct Render_free owns platform framebuffer guard */\n\n" +
+    native_free_next, 1)
+print("[ESP32] Desktop Render_free unlinked; "
+      "owner=esp-native-render-startup direct=yes linkerWrap=no "
+      "sharedFB=PlatformVideo guarded=yes")
+
+# Render palette, RGB565 and mappings roots have permanent native owners.
+# The retained source slice is pinned to the exact legacy specification,
+# with a strict function census and CRC32 to catch desktop-side drift.
+palette_native_begin = "void Render_loadPalettes(Render_t* render)\n{"
+palette_native_mapping = "boolean Render_loadMappings(Render_t* render)\n{"
+palette_native_end = "boolean Render_beginLoadMap(Render_t* render, int mapNameID)\n{"
+palette_native_symbols = (
+    "void Render_loadPalettes(",
+    "unsigned int Render_make565RGB(",
+    "unsigned short Render_RGB888_To_RGB565(",
+    "void Render_setGrayPalettes(",
+    "boolean Render_loadMappings(",
+)
+if any(render_source_text.count(anchor) != 1 for anchor in
+       (palette_native_begin, palette_native_mapping, palette_native_end)):
+    raise RuntimeError("Unexpected original Render palette/mappings boundary")
+if any(render_source_text.count(symbol) != 1 for symbol in palette_native_symbols):
+    raise RuntimeError("Unexpected original Render palette/mappings export census")
+palette_native_region = render_source_text[
+    render_source_text.index(palette_native_begin):
+    render_source_text.index(palette_native_end)]
+if zlib.crc32(palette_native_region.encode("latin-1")) != 0x6f5b63d3:
+    raise RuntimeError(
+        "Original Render palette/mappings source changed: review native ABI"
+    )
+render_source_text = render_source_text.replace(
+    palette_native_begin, "#if !defined(DOOMRPG_ESP32)\n" +
+    palette_native_begin, 1
+)
+render_source_text = render_source_text.replace(
+    palette_native_end,
+    "#endif /* native ESP32 palette/mappings roots */\n\n" +
+    palette_native_end, 1
+)
+print("[ESP32] Render palette/mappings desktop roots retired; "
+      "exports=5 palette=esp-render-startup mappings=esp-config-mappings")
+
 # The original Render_beginLoadMap* BSP parser is a desktop/bringup-only
 # diagnostic path. Production already builds the immutable EspMapRuntime from
 # the native PAK backing. Reject accidental calls instead of retaining its
@@ -158,24 +281,7 @@ if (render_source_text.count("render->mapFlags") != 13 or
         render_legacy_map_region.count("render->mapFlags") != 13):
     raise RuntimeError("Render.mapFlags gained an unreviewed source consumer")
 render_source_text = render_source_text.replace(
-    render_legacy_map_begin,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-boolean Render_beginLoadMap(Render_t* render, int mapNameID)
-{
-    (void)render;
-    (void)mapNameID;
-    printf("[LEGACYMAP] REJECT Render_beginLoadMap: native BSP owner required\\n");
-    return false;
-}
-
-boolean Render_beginLoadMapData(Render_t* render)
-{
-    (void)render;
-    printf("[LEGACYMAP] REJECT Render_beginLoadMapData: native BSP owner required\\n");
-    return false;
-}
-#else
-""" + render_legacy_map_begin, 1)
+    render_legacy_map_begin, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + render_legacy_map_begin, 1)
 render_source_text = render_source_text.replace(
     render_legacy_map_end,
     "#endif /* production legacy BSP loader rejection */\n\n" +
@@ -218,33 +324,13 @@ if (len(re.findall(r"render->planeTextures\b", legacy_loader_piece)) != 2 or
         len(re.findall(r"render->planeTextures\b", legacy_draw_piece)) != 2):
     raise RuntimeError("Render planeTextures read/write closure changed")
 render_source_text = render_source_text.replace(
-    legacy_render_entry,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle)
-{
-    (void)render;
-    (void)viewx;
-    (void)viewy;
-    (void)viewz;
-    (void)viewangle;
-    printf("[LEGACYRENDER] REJECT Render_render: native world renderer required\\n");
-}
-#else
-""" + legacy_render_entry, 1)
+    legacy_render_entry, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + legacy_render_entry, 1)
 render_source_text = render_source_text.replace(
     legacy_render_next,
     "#endif /* production legacy world renderer rejection */\n\n" +
     legacy_render_next, 1)
 render_source_text = render_source_text.replace(
-    legacy_plane_entry,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_renderFloorAndCeilingBG(Render_t* render)
-{
-    (void)render;
-    printf("[LEGACYRENDER] REJECT Render_renderFloorAndCeilingBG: native planes required\\n");
-}
-#else
-""" + legacy_plane_entry, 1)
+    legacy_plane_entry, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + legacy_plane_entry, 1)
 render_source_text = render_source_text.replace(
     legacy_plane_next,
     "#endif /* production legacy plane renderer rejection */\n\n" +
@@ -262,14 +348,8 @@ plane_draw = "void Render_drawplane(Render_t* render, int x, int y, PlaneTexture
 plane_end = "void Render_renderBSP(Render_t* render)\n{"
 if render_source_text.count(plane_draw) != 1 or render_source_text.count(plane_end) != 1:
     raise RuntimeError("Unexpected legacy Render plane helper source")
-render_source_text = render_source_text.replace(plane_draw, """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_drawplane(Render_t* r,int x,int y,PlaneTextureRef_t* p,int n)
-{ (void)r;(void)x;(void)y;(void)p;(void)n; }
-void Render_spanPlane(Render_t* r,int x,int y,PlaneTextureRef_t* p,
-                      int a,int b,int c,int d,int n)
-{ (void)r;(void)x;(void)y;(void)p;(void)a;(void)b;(void)c;(void)d;(void)n; }
-#else
-""" + plane_draw, 1)
+render_source_text = render_source_text = render_source_text.replace(
+    plane_draw, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + plane_draw, 1)
 render_source_text = render_source_text.replace(plane_end, "#endif\n\n" + plane_end, 1)
 
 # Fifth bounded cut: viewNodes was a 44-byte linked-list sentinel in
@@ -291,34 +371,31 @@ if (render_source_text[render_source_text.index(view_bsp_begin):
                            render_source_text.index(view_walk_end)].count("render->viewNodes") != 3):
     raise RuntimeError("Legacy viewNodes consumer escaped its retired owner")
 render_source_text = render_source_text.replace(
-    view_bsp_begin,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_renderBSP(Render_t* render)
-{
-    (void)render;
-    printf("[LEGACYBSP] REJECT Render_renderBSP: native visibility required\\n");
-}
-#else
-""" + view_bsp_begin, 1)
+    view_bsp_begin, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + view_bsp_begin, 1)
 render_source_text = render_source_text.replace(
     view_bsp_end,
     "#endif /* production legacy BSP traversal rejection */\n\n" + view_bsp_end, 1)
 render_source_text = render_source_text.replace(
-    view_walk_begin,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_walkNode(Render_t* render, int i)
-{
-    (void)render;
-    (void)i;
-    printf("[LEGACYBSP] REJECT Render_walkNode: native BSP owner required\\n");
-}
-#else
-""" + view_walk_begin, 1)
+    view_walk_begin, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + view_walk_begin, 1)
 render_source_text = render_source_text.replace(
     view_walk_end,
     "#endif /* production legacy BSP walk rejection */\n\n" + view_walk_end, 1)
 print("[ESP32] Legacy BSP view-list traversal fail-closed; "
       "Render.viewNodes 44-byte sentinel retired from production")
+
+# The normal firmware exports eight legacy fail-closed ABI endpoints
+# from a permanent ESP32 C file; desktop originals remain bringup-only.
+reject_path = join(project_src_dir, "esp_legacy_render_reject.c")
+with open(reject_path, "r", encoding="utf-8") as reject_handle:
+    reject_code = reject_handle.read()
+reject_exports = ("Render_beginLoadMap", "Render_beginLoadMapData",
+                  "Render_render", "Render_renderFloorAndCeilingBG",
+                  "Render_drawplane", "Render_spanPlane",
+                  "Render_renderBSP", "Render_walkNode")
+if any(reject_code.count(name + "(") != 1 for name in reject_exports):
+    raise RuntimeError("Native Render reject export census changed")
+print("[ESP32] Legacy Render map/world/BSP rejects native-owned; "
+      "exports=8 production=fail-closed bringup=desktop-original")
 
 with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(render_source_text)
@@ -782,37 +859,51 @@ print("[ESP32] SDL shim generated with packed zero-copy indexed BMP textures")
 # the small ESP32 compatibility layer in this PlatformIO project. DoomCanvas.c
 # is retired entirely; DoomRPG.c and Render.c still use generated ESP32-safe
 # copies while their remaining compatibility surfaces are migrated.
-env.BuildSources(
-    join(build_dir, "doomrpg_engine"),
-    engine_dir,
-    src_filter=[
-        "+<*.c>",
-        "-<Main.c>",
-        "-<SDL_Video.c>",
-        "-<Sound.c>",
-        # Menu_t / MenuItem helpers / MenuSystem_t behavior and ParticleSystem_t
-        # are retired ESP32 ownership surfaces. Exclude their desktop translation
-        # units rather than relying on final-link garbage collection.
-        "-<Menu.c>",
-        "-<MenuItem.c>",
-        "-<MenuSystem.c>",
-        "-<ParticleSystem.c>",
-        "-<EntityDef.c>",
-        "-<Entity.c>",
-        "-<EntityMonster.c>",
-        "-<Combat.c>",
-        "-<Weapon.c>",
-        "-<CombatEntity.c>",
-        "-<Hud.c>",
-        "-<Game.c>",
-        "-<Render.c>",
-        "-<Player.c>",
-        "-<Z_Zone.c>",
-        "-<Z_Zip.c>",
-        "-<DoomCanvas.c>",
-        "-<DoomRPG.c>",
-    ],
-)
+# The desktop original C source tree is no longer registered with SCons.
+# All 21 original TUs were already excluded by the old '+<*.c>' source
+# filter, so that registration compiled exactly zero objects. Make the
+# boundary permanent instead of maintaining a fragile exclusion checklist:
+# native sources live in ESP32/src; the *only* admitted legacy C copies are
+# the two explicitly patched roots below (DoomRPG.c and Render.c).
+#
+# An unexpected original source addition requires an explicit build ownership
+# review; it must not silently be picked up by a future glob. Desktop and
+# original reference code outside ESP32 are not modified by this guard.
+retired_desktop_units = {
+    "Combat.c",
+    "CombatEntity.c",
+    "DoomCanvas.c",
+    "DoomRPG.c",
+    "Entity.c",
+    "EntityDef.c",
+    "EntityMonster.c",
+    "Game.c",
+    "Hud.c",
+    "Main.c",
+    "Menu.c",
+    "MenuItem.c",
+    "MenuSystem.c",
+    "ParticleSystem.c",
+    "Player.c",
+    "Render.c",
+    "SDL_Video.c",
+    "Sound.c",
+    "Weapon.c",
+    "Z_Zip.c",
+    "Z_Zone.c",
+}
+present_desktop_units = {
+    name for name in os.listdir(engine_dir) if name.endswith(".c")
+}
+if present_desktop_units != retired_desktop_units:
+    raise RuntimeError(
+        "Desktop original TU inventory changed; explicitly audit ESP32 "
+        "native-vs-patched ownership before updating build_engine.py: "
+        + repr(sorted(present_desktop_units ^ retired_desktop_units))
+    )
+print("[ESP32] Desktop original source registration retired; "
+      "originalC=%u compiledOriginal=0 patchedRoots=DoomRPG.c,Render.c" %
+      len(retired_desktop_units))
 
 env.BuildSources(
     join(build_dir, "doomrpg_engine_patched"),

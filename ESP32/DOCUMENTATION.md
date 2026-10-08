@@ -1,3 +1,226 @@
+## Eight legacy Render rejection roots native-owned — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested **code SHA `6a6bdd565a526e27f53b45c66f69e7771a91c78d`**,
+docs-only pretest gate SHA `2f6e429c503a4088476208187ec7114de5e7f83b`.
+Normal `esp32-cyd` CI #37765970962 SUCCESS; RAM static **45056 B**,
+flash **774897 B** (unchanged).
+Eight previously generated fail-closed Render map/world/plane/BSP exports
+now live in permanent `ESP32/src/esp_legacy_render_reject.c`;
+production legacy implementations are excluded, desktop and bringup
+reference retained. No `[LEGACYMAP] REJECT`, `[LEGACYRENDER] REJECT`,
+or `[LEGACYBSP] REJECT` occurred in real gameplay.
+
+Real CYD boot invariants: Render **1532 B**, Game **4 B**, Canvas **44 B**;
+native `Render_startup direct=yes wrap=no`, shared RGB565 FB
+**38400 B**, palette **3280 entries/6560 B**, mappings payload
+**8376 B**, initial MENU_MAIN FNV **522dc605**, MAP_INTRO native
+arena FNV **c3882516**, first native world frame **71ca7465**,
+`shapeData=mediaTexels=NULL`. Fresh session: native FORWARD
+midpoint previews, TURN_RIGHT and TURN_LEFT preview pairs,
+crate subtype-2 transform, Armor Shard pickup
+(armor **0->4**, ammo **8->7**), native dialog event **88** / opcode
+**19** state mutation, and no legacy rejects. Dialogue journal
+**1036 B** reclaimed before a confirmed checkpoint LOAD.
+LOAD V11 restored world scope exactly as reported by
+`[NATIVESAVE] LOAD ... world=...restored-exact`,
+including compact map, resources, lines, action removals,
+monster state, topology/positions/activation and drops.
+Post-LOAD `[ENGINESESSION] RESUME-VISIBLE` and READY, two
+logical FORWARD moves, Armor Shard pickup **11->15**;
+later SYS EXIT reclaimed **18008 B**, `empty=1`, and
+returned menu FNV **522dc605**, heap8 **164184 B**,
+largest8 **110580 B**, `saveWrite=no checkpoint=unchanged`.
+All observed memory invariants remain intact.
+
+**Not a full LOAD-render or monster-turn PASS:** the *two* checkpoint
+resumed FORWARD attempts emitted `[TURNFRAME] DIAG fail=WORLD_RENDER`
+and `[VIEWANIM] FALLBACK ... intermediates=0` even though the
+logical MOVEs committed. `[NATIVEFRAME] LEGACY_GUARD -> RETRY ->
+RECOVERED` returned via its bounded recovery path. Also,
+`MONSTERTURN activeCount=12` resulted in `MONSTERACTIVESEQ
+delivered=0` with `[MONSTERMOVE] DEFER cause=active-order-not-owned`.
+Treat as outstanding **native checkpoint-resume rendering and
+active-monster-sequencer investigation**, with **no demonstrated
+causal link** to relocating legacy reject stubs. No actual
+`[RENDERFREE] ENTRY` occurred: the engine destructor invocation
+is still untested. New hardware-tested code is **frozen**;
+this validation closure is docs-only. User handles merge.
+[Milestone](MILESTONE_ESP32_RENDER_REJECT_STUBS_NATIVE.md).
+
+## Native direct Render_free, no linker wrap — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Code SHA `77f1de060142b869bbc83727ad17ae137b21789c` compiled by normal `esp32-cyd`
+GitHub Actions #37761071831 **SUCCESS**: static RAM **45056 B**,
+flash **774897 B**. `--wrap=Render_free` retired and the permanent
+`render_startup_bridge.c` now owns the direct `Render_free` symbol.
+It detaches the PlatformVideo-owned framebuffer **before** invoking
+the inherited `Render_freeRuntime` cleanup, preserving `freePtr`
+semantics and avoiding accidental `free()` of the shared RGB565 image.
+
+Real classic CYD smoke test: `[RENDERCORE] INIT bytes=1532`,
+`SETUP view=160x80@0,20 arrays=1280B`, native
+`Render_startup direct=yes wrap=no`, framebuffer **38400 B**;
+palettes **3280/6560 B**, mappings **8376 B**, first MENU_MAIN
+FNV **522dc605**, MAP_INTRO arena FNV **c3882516** and first
+world frame FNV **71ca7465**.
+Two FORWARD moves with single midpoint previews, TURN_RIGHT and TURN_LEFT
+two-frame interpolations, subtype-2 crate attack/transform,
+Armor Shard pickup (armor **0->4**, ammo **8->7**),
+native event **88** dialogue and opcode **19** state mutation,
+HUB and SYS double-confirm EXIT all succeeded. Gameplay heap8
+**118288 B** prior to lazy dialogue journal; **117252 B**
+after journal. `[DIALOGCHAIN] OWNER-RELEASE` recovered **1036 B**,
+`[RESIDENTRESET] released=18008 empty=1`.
+Final `[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty
+saveWrite=no checkpoint=unchanged`; heap8 **164184 B**,
+largest8 **110580 B**. `shapeData==NULL`,
+`mediaTexels==NULL` throughout.
+
+**Critical coverage distinction:** no `[RENDERFREE] ENTRY` occurred
+in this serial log. Ordinary SYS EXIT tears down native session owners
+but **does not exercise the Render_t destructor**. Hardware PASS is
+strictly for boot/gameplay/EXIT non-regression and linker ownership;
+direct destructor execution and the shared framebuffer detachment
+remain **unproven on physical CYD**. A separately bounded destructor
+probe is required before claiming full teardown-path PASS.
+LOAD/CHANGEMAP/active-monster scenarios are not covered either.
+The tested code is frozen; this commit is docs-only.
+[Milestone](MILESTONE_ESP32_RENDER_FREE_NATIVE_DIRECT.md).
+
+## Direct native Render_startup, no linker wrap — REAL-CYD PASS (2026-10-08)
+
+Real classic CYD normal firmware tested at **code SHA `dd577ad94f66ae642cc1ecaca7dc331b68c5b8e5`**;
+GitHub Actions `esp32-cyd` run **37708924926 SUCCESS**
+(static RAM **45056 B**, flash **774785 B**).
+The native `Render_startup()` ABI now links directly from
+`ESP32/src/render_startup_bridge.c` and the production
+`-Wl,--wrap=Render_startup` has been removed. Exact
+`[RENDERSTART] OWNER api=Render_startup source=esp-native-render-startup
+direct=yes wrap=no` marker observed. Original desktop constructor
+is excluded from generated ESP32 `Render.c`; desktop reference
+remains unchanged with source CRC32 `0xf0d935e8` guard.
+
+Real hardware startup matches **Render_t=1532 B**, viewport
+160x80@0,20, one shared RGB565 framebuffer **38400 B**,
+palette **3280 entries/6560 B**, mappings **8376 B**,
+heap8 **167780** after Render startup and **159340** after mappings.
+First menu framebuffer FNV **522dc605**, MAP_INTRO native immutable arena
+FNV **c3882516**, first native gameplay frame FNV **71ca7465**.
+The user exercised two normal committed FORWARD moves (single midpoint
+camera previews), a TURN_RIGHT (two preview frames), a subtype-2 crate
+transform with exactly one `PLAYER_ATTACK` turn, subsequent Armor Shard
+pickup (armor 0->4), HUB and double-confirm SYS EXIT. Exactly one
+`MONSTERTURN reason=MOVE` dispatch per committed forward step;
+none on rotation. The final `[RESIDENTRESET] released=18008 empty=1`,
+`[SYSEXIT] MENU-READY frame=522dc605` with
+`session=off resident=empty saveWrite=no checkpoint=unchanged`,
+and final heap8 **164184 B**, largest8 **110580 B**.
+`shapeData==NULL` and `mediaTexels==NULL` throughout.
+
+This log does **not** exercise a dialog, LOAD, CHANGEMAP,
+monster-active combat, blocked movement or the actual
+`Render_free()` path: none is claimed. This verifies the direct
+startup and clean native session reset, not all desktop teardown paths.
+The hardware-tested code is frozen; this documentation closure is
+docs-only. Subsequent milestones remain on the same active
+`agent/esp32-retire-desktop-source-registration` branch.
+[Detailed milestone](MILESTONE_ESP32_RENDER_STARTUP_NATIVE_DIRECT.md).
+
+## Native Render palette/color and mappings roots — REAL-CYD PASS (2026-10-08)
+
+Code SHA `ea221b4a7248d05ceda077f6c226e7da0851d302`; normal `esp32-cyd` GitHub Actions
+run **37707296749 SUCCESS**, static RAM **45056 B**, flash **774693 B**.
+Five symbols leave generated desktop `Render.c` for native owners:
+`Render_loadPalettes`, `Render_make565RGB`,
+`Render_RGB888_To_RGB565`, `Render_setGrayPalettes`,
+`Render_loadMappings`. Source-region CRC32 guard
+`0x6f5b63d3` is enabled, original desktop sources unchanged.
+
+Physical classic CYD test on this exact SHA: `[RENDERCORE] INIT
+bytes=1532` and `SETUP view=160x80@0,20 arrays=1280B`,
+palette entries **3280** / **6560 B**, mappings payload **8376 B**,
+heap8 after layout **178500 B**, after Render_startup **167780 B**,
+after mappings **159340 B**. MENU_MAIN FNV `522dc605`,
+compact MAP_INTRO arena FNV `c3882516`, first gameplay
+frame `71ca7465`; framebuffer **38400 B** and
+`shapeData=mediaTexels=NULL`. Forward camera midpoint and
+TURN previews presented; native event **88** dialog closed, resumed
+opcode **19** with `stateMutation=1`. `MONSTERTURN` had one
+dispatch per committed FORWARD, none on TURN.
+`[DIALOGCHAIN] OWNER-RELEASE` recovered **1036 B**;
+`[RESIDENTRESET] released=18008 ... empty=1`;
+`[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty
+saveWrite=no checkpoint=unchanged`. Gameplay heap8 **118288 B**
+before dialog and **117252 B** with lazy journal; final menu
+heap8 **164184 B**, largest8 **110580 B**, stable at follow-on
+ALIVE samples. Physical PASS covers the bounded palette/mappings
+retirement, not every gameplay regression.
+
+**Unexercised on this firmware log:** LOAD, door, active-monster combat,
+blocked collision, explicit automap-mode movements and CHANGEMAP.
+Hardware-tested code is frozen; this closure is docs-only.
+See [milestone](MILESTONE_ESP32_RENDER_PALETTE_MAPPINGS_NATIVE.md).
+
+## Render constructor and viewport roots native — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested normal `esp32-cyd` code SHA `9316dd58ad65e916e35b317ad48ff37faffb2d1c`,
+CI #37706764596 **SUCCESS** (RAM static **45056 B**, flash **774705 B**).
+Original `Render_init()` and `Render_setup()` now link from the permanent
+`render_startup_bridge.c`; their generated desktop definitions are excluded.
+Real-CYD witnesses `[RENDERCORE] INIT ... bytes=1532` and
+`[RENDERCORE] SETUP ... view=160x80@0,20 arrays=1280B`;
+`[CORE] Render used=1548`, layout heap8=**178500**, mappings heap8=**159340**,
+first native frame `71ca7465`, map arena `c3882516`, and initial
+menu `522dc605` unchanged. USER physically exercised forward/strafe,
+quarter-turns, crate transform, Armor Shard pickup, event 88 native dialog
+resume opcode 19 and HUB -> SYS -> double-confirm EXIT. Dialog journal
+**1036 B** recovered; `[RESIDENTRESET] released=18008 empty=1`;
+final `[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty`,
+heap8=**164184**, largest8=**110580**, saveWrite=no;
+`shapeData==NULL`, `mediaTexels==NULL`. Gameplay before dialogue
+heap8=**118288**, after lazy journal **117252**. The known
+`[NATIVEFRAME] LEGACY_GUARD/RETRY/RECOVERED` followed its recovered path.
+No memory savings claimed from moving two functions.
+
+**Unexercised on this SHA:** active-monster combat, checkpoint LOAD,
+CHANGEMAP, and blocked collisions. RNG seed fingerprint varies between
+boots and is not used as a deterministic validation fingerprint.
+The tested code is frozen; closure commit is docs-only. The user requested
+further bounded retirement work **on the same active branch**.
+[Milestone](MILESTONE_ESP32_RENDER_CORE_ROOTS_NATIVE.md).
+
+## Original desktop C source registration retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code SHA `48aab6de7ef0ec06cbb9929894ea9add1b9dc086`, normal `esp32-cyd` CI
+#37706071148 **SUCCESS**: `originalC=21 compiledOriginal=0
+patchedRoots=DoomRPG.c,Render.c`, RAM static **45056 B**, flash
+**774521 B** (same as prior animated-main code). Removes only the
+previously zero-object desktop-original `BuildSources` registration;
+retains explicit patched legacy roots and adds a fail-closed original
+C source inventory guard. **No memory gain is claimed.**
+
+Real classic CYD: fresh boot `Render=1532 Game=4 Canvas=44`, framebuffer
+160x120=38400 B, no PSRAM; initial `MENU_MAIN=522dc605`, native
+MAP_INTRO arena `c3882516` and first frame `71ca7465`. The user
+exercised forward movement with single axial midpoint previews,
+quarter-turn interpolation, SELECT crate transform, native armor-shard
+pickup, event 82 dialogue closing to opcode 19 state mutation,
+HUB/SYS double-confirm EXIT. `[DIALOGCHAIN] OWNER-RELEASE`
+recovered **1036 B**, `[RESIDENTRESET] released=18008 empty=1`,
+final `MENU_MAIN=522dc605`, final heap8 **164184**,
+largest8 **110580**, `shapeData=mediaTexels=NULL`, no checkpoint
+write. During fresh gameplay heap8 **118288**, largest8 **86004**,
+then after opening dialogue **117252**; no growth over observed
+checkpoints. No hardware abnormality was detected; the known
+`LEGACY_GUARD / RETRY / RECOVERED` renderer path resolved.
+
+**Not re-tested here:** checkpoint LOAD, CHANGEMAP, monster combat,
+blocked collision or cross-map session; do not conflate this
+bounded PASS with those scenarios. Code SHA is frozen;
+post-test closure is docs-only. The user explicitly requested
+continuing on this **same branch** with a new, separately validated
+retirement milestone. [Details](MILESTONE_ESP32_RETIRE_DESKTOP_SOURCE_REGISTRATION.md).
+
 ## Native MOVE visual pacing — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested code SHA `e944dc386758900bc55c68d374344c631640e6b4`,

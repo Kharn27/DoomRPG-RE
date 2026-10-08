@@ -228,6 +228,15 @@ int EspLegacyMappings_load(struct Render_s* renderBase) {
     return 1;
 }
 
+/*
+ * Direct native ABI entry point for the PAK-backed compact mappings owner.
+ * Generated desktop Render_loadMappings is deliberately no longer linked.
+ */
+boolean Render_loadMappings(Render_t* render)
+{
+    return EspLegacyMappings_load(render) ? true : false;
+}
+
 static int configFilePresent(void) {
     SDL_RWops* rw = SDL_RWFromFile("Config", "r");
     if (rw == NULL) {

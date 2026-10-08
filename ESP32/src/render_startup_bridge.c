@@ -22,7 +22,192 @@ _Static_assert(sizeof(Render_t) == 1532U,
 
 
 extern DoomRPG_t* doomRpg;
-void __real_Render_free(Render_t* render, boolean freePtr);
+
+/*
+ * Permanent ESP32 owner of the two constructor/layout Render API roots.
+ * The original source bodies are preserved exactly, except for one-time
+ * source-ownership diagnostics; all legacy world/raster logic stays excluded.
+ */
+Render_t* Render_init(Render_t* render, DoomRPG_t* doomRpg)
+{
+	printf("Render_init\n");
+
+	if (render == NULL)
+	{
+		render = SDL_malloc(sizeof(Render_t));
+		if (render == NULL) {
+			return NULL;
+		}
+	}
+	SDL_memset(render, 0, sizeof(Render_t));
+
+	//resourceAsStream.Init(&renderClass->mapFile, doomRPGClass, 1);
+	render->doomRpg = doomRpg;
+	render->skipStretch = 0;
+	render->unk4 = 0;
+	render->skipCull = 0;
+	render->skipBSP = 0;
+	render->skipLines = 0;
+	render->unk5 = 0;
+	render->skipSprites = 0;
+	render->skipViewNudge = 0;
+	render->ioBufferPos = 0;
+	render->lines = NULL;
+	render->nodes = NULL;
+	render->mapSprites = NULL;
+	render->mapCameraSpawnIndex = 0;
+	render->floorColor = NULL;
+	render->ceilingColor = NULL;
+	render->ceilingTex = 0;
+	render->floorTex = 0;
+	render->columnScale = NULL;
+	render->animFrameTime = 0;
+	render->mapStringsIDs = NULL;
+	render->mapStringCount = 0;
+
+	printf("[RENDERCORE] INIT owner=esp-native-bridge bytes=%u\n", (unsigned int)sizeof(*render));
+	return render;
+}
+
+void Render_setup(Render_t* render, SDL_Rect* windowRect)
+{
+	boolean memError = false;
+	render->screenWidth = windowRect->w;
+	render->screenHeight = windowRect->h;
+	render->screenX = windowRect->x;
+	render->screenY = windowRect->y;
+	if ((windowRect->h & 1) != 0) {
+		render->screenHeight = windowRect->h - 1;
+	}
+	render->halfScreenWidth = render->screenWidth / 2;
+	render->halfScreenHeight = render->screenHeight / 2;
+	render->fracHalfScreenWidth = (render->halfScreenWidth << FRACBITS) - 0x8000;
+	render->fracHalfScreenHeight = (render->halfScreenHeight << FRACBITS) - 0x8000;
+
+#if 0
+	printf("render->screenWidth %d\n", render->screenWidth);
+	printf("render->screenHeight %d\n", render->screenHeight);
+	printf("render->screenX %d\n", render->screenX);
+	printf("render->screenY %d\n", render->screenY);
+	printf("render->halfScreenWidth %d\n", render->halfScreenWidth);
+	printf("render->halfScreenHeight %d\n", render->halfScreenHeight);
+	printf("render->fracHalfScreenWidth %d\n", render->fracHalfScreenWidth);
+	printf("render->fracHalfScreenHeight %d\n", render->fracHalfScreenHeight);
+#endif
+
+	SDL_free(render->ceilingColor);
+	render->ceilingColor = SDL_malloc(render->screenWidth * sizeof(short));
+	if (render->ceilingColor == NULL) { memError = true; }
+
+	SDL_free(render->floorColor);
+	render->floorColor = SDL_malloc(render->screenWidth * sizeof(short));
+	if (render->floorColor == NULL) { memError = true; }
+
+	SDL_free(render->columnScale);
+	render->columnScale = SDL_malloc(render->screenWidth * sizeof(int));
+	if (render->columnScale == NULL) { memError = true; }
+
+	if (memError) {
+		//DoomRPG_setErrorID(render->doomRpg, 2);
+		DoomRPG_Error("Render: Insufficient memory for allocation");
+	}
+	printf("[RENDERCORE] SETUP owner=esp-native-bridge view=%dx%d@%d,%d arrays=%uB\n",
+	       render->screenWidth, render->screenHeight,
+	       render->screenX, render->screenY,
+	       (unsigned int)(render->screenWidth * (sizeof(short) * 2U + sizeof(int))));
+}
+
+
+/* Original Render palette and RGB565 ABI behavior, now native-owned. */
+void Render_loadPalettes(Render_t* render)
+{
+	byte* fData;
+	int dataPos = 0, i;
+	short color;
+	int red, green, blue;
+
+	render->paletteMemory = DoomRPG_freeMemory();
+
+	fData = DoomRPG_fileOpenRead(render->doomRpg, "/palettes.bin");
+
+	SDL_free(render->mediaPalettes);
+
+	render->mediaPalettesLength = DoomRPG_intAtNext(fData, &dataPos) / 2;
+	render->mediaPalettes = (short*)SDL_malloc(render->mediaPalettesLength * sizeof(short));
+	if (render->mediaPalettes == NULL) {
+		DoomRPG_Error("Render_loadPalettes: Insufficient memory for allocation");
+	}
+
+	//printf("render->mediaPalettesLength %d\n", render->mediaPalettesLength);
+
+	for (i = 0; i < render->mediaPalettesLength; i++)
+	{
+		color = DoomRPG_shortAtNext(fData, &dataPos);
+
+		blue = (color >> 11) & 0x1f;    // (color << 16) >> 27;
+		blue = (blue << 3) | (blue >> 2);
+
+		green = (color >> 5) & 0x3f;    // (color << 21) >> 26;
+		green = (green << 2) | (green >> 4);
+
+		red = (color & 0x1f);
+		red = (red << 3) | (red >> 2);
+		render->mediaPalettes[i] = (short)Render_make565RGB(render, blue, green, red);
+	}
+
+	SDL_free(fData);
+
+	render->paletteMemory = DoomRPG_freeMemory() - render->paletteMemory;
+	//printf("paletteMemory %d\n", render->paletteMemory);
+}
+
+unsigned int Render_make565RGB(Render_t* render, int blue, int green, int red)
+{
+	return ((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3);
+}
+
+unsigned short Render_RGB888_To_RGB565(Render_t* render, int rgb)
+{
+	return (unsigned short)Render_make565RGB(render, rgb & 0xff, (rgb >> 8) & 0xff, (rgb >> 16) & 0xff);
+}
+
+void Render_setGrayPalettes(Render_t* render)
+{
+	short* mediaPalettes, color, grayColor;
+	#ifndef DOOMRPG_ESP32
+	short* mediaPlanes;
+	#endif
+	int i, j;
+
+	for (i = 0; i < render->mediaPalettesLength; i++) {
+		mediaPalettes = render->mediaPalettes;
+		color = mediaPalettes[i];
+		grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
+		mediaPalettes[i] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
+	}
+
+	#ifndef DOOMRPG_ESP32
+	for (i = 0; i < render->planeTexturesCnt; i++)
+	{
+		for (j = 0; j < (64 * 64); j++) {
+			mediaPlanes = &render->mediaPlanes[i][j];
+			color = mediaPlanes[0];
+			grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
+			mediaPlanes[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
+		}
+	}
+	#endif
+
+	color = render->floorColor[0];
+	grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
+	render->floorColor[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
+
+	color = render->ceilingColor[0];
+	grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
+	render->ceilingColor[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
+}
+
+
 
 static int renderStartupAttempted = 0;
 static int renderStartupReady = 0;
@@ -68,7 +253,11 @@ static int preflightRenderResources(void) {
     return 1;
 }
 
-int __wrap_Render_startup(Render_t* render) {
+/*
+ * Direct permanent ESP32 Render startup root. The original desktop startup
+ * (SDL texture + second RGB565 framebuffer) is excluded from ESP32 linking.
+ */
+int Render_startup(Render_t* render) {
     byte* fData;
     int i;
     int width;
@@ -81,6 +270,8 @@ int __wrap_Render_startup(Render_t* render) {
         printf("[RENDER] ERROR invalid Render_startup object graph\n");
         return 0;
     }
+
+    printf("[RENDERSTART] OWNER api=Render_startup source=esp-native-render-startup direct=yes wrap=no\n");
 
     fData = DoomRPG_fileOpenRead(render->doomRpg, "/sintable.bin");
     if (fData == NULL) {
@@ -143,14 +334,39 @@ int __wrap_Render_startup(Render_t* render) {
     return 1;
 }
 
-void __wrap_Render_free(Render_t* render, boolean freePtr) {
-    if (render != NULL &&
-        render->framebuffer == (byte*)Esp32PlatformVideo_framebuffer()) {
-        /* Render does not own PlatformVideo's shared framebuffer. */
+/*
+ * Permanent native Render destructor ABI.
+ * Never free PlatformVideo's shared framebuffer: the framebuffer pointer is
+ * detached before calling the unchanged legacy Render_freeRuntime cleanup.
+ * All other cleanup actions and freePtr semantics mirror desktop Render_free.
+ */
+void Render_free(Render_t* render, boolean freePtr)
+{
+    const int sharedFramebuffer = render != NULL &&
+        render->framebuffer == (byte*)Esp32PlatformVideo_framebuffer();
+    if (sharedFramebuffer) {
         render->framebuffer = NULL;
     }
+    printf("[RENDERFREE] ENTRY owner=esp-native-render-startup direct=yes wrap=no sharedFB=%d freePtr=%d\n",
+           sharedFramebuffer, (int)freePtr);
 
-    __real_Render_free(render, freePtr);
+    Render_freeRuntime(render);
+    SDL_free(render->ceilingColor);
+    SDL_free(render->floorColor);
+    SDL_free(render->columnScale);
+    SDL_free(render->mediaPalettes);
+
+    SDL_free(render->framebuffer);
+    render->framebuffer = NULL;
+
+    if (render->piDIB) {
+        SDL_DestroyTexture(render->piDIB);
+        render->piDIB = NULL;
+    }
+
+    if (freePtr) {
+        SDL_free(render);
+    }
 }
 
 int EspRenderStartupBridge_start(int preRenderReady) {
