@@ -9,6 +9,12 @@ Real classic CYD boot: Render/Game/Canvas = 1532/4/44 B; `shapeData=0x0 mediaTex
 
 > Source de vérité : **main GitHub + code + logs Serial du vrai classic CYD**. État de référence au 8 octobre 2026, `main` : [`60d34d174bed0d4d4e13137f306070b5018c0fa9`](https://github.com/Kharn27/DoomRPG-RE/commit/60d34d174bed0d4d4e13137f306070b5018c0fa9). Les SHA ci-dessous décrivent des frontières testées, pas nécessairement des mesures du commit documentaire courant.
 
+## Render_draw2DSprite ABI cut — CYD non-regression PASS (2026-10-08)
+
+Code `580fac411ec3ba19514c112e080f12d7308f4664` (followed by docs-only `90659246638b070ad6a6a91e541a12562020dad7`), normal/PR CI [37805150632](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37805150632) and [37805154165](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37805154165) **SUCCESS**. Real ESP32-2432S028R hardware: 160x120 RGB565 38400B, no PSRAM; `shapeData=0x0 mediaTexels=0x0` at entry, map handoff, and EXIT. MENU_MAIN `522dc605`, MAPRT `c3882516`, first gameplay frame `71ca7465`, cold `a9b263f5`, warm `20c09fe4`. MOVE/TURN, blocked BACK, crate transform, armor pickup, dialog event 88 opcode 8→19, HUB system double-confirm EXIT all work; `[RESIDENTRESET] released=18008 empty=1`, menu heap8 164184 / largest8 110580, `saveWrite=no checkpoint=unchanged`. No crash or abnormal heap decline in this scenario.
+
+**Scope**: real-CYD *non-regression* PASS for excluding legacy `Render_draw2DSprite` and preserving native visuals. Does **not** establish full feature parity of all weapon/overlay flash effects; their parity remains OPEN. No SAVE/LOAD, death, or monster-combat test here. Following documentation commit is docs-only.
+
 ## Legacy Render_draw2DSprite retirement — awaiting CI and hardware (2026-10-08)
 
 The old Render 2D sprite path indexes `render->shapeData` and is incompatible with the ESP32 `shapeData == NULL` invariant. Audit found its source definition in `src/Render.c`, no other reference in that file, and production desktop DoomCanvas is already retired. The generator now keeps original desktop/bringup source but excludes the legacy routine from normal production compilation; native sprite and weapon rendering remain unchanged. This only retires an unsafe compatibility ABI, **not** a statement that every original weapon flash/overlay behavior has parity. Require fresh CI and CYD normal-env non-regression before closing the increment.
