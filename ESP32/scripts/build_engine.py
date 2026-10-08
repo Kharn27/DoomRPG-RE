@@ -397,6 +397,64 @@ if any(reject_code.count(name + "(") != 1 for name in reject_exports):
 print("[ESP32] Legacy Render map/world/BSP rejects native-owned; "
       "exports=8 production=fail-closed bringup=desktop-original")
 
+# The native CYD renderer still consumes a small set of legacy-named geometry
+# primitives. They are pure Render scratch/math helpers: no desktop map owner,
+# no mediaTexels/shapeData access, no world mutation. Keep the desktop/bringup
+# reference bodies, but production must resolve these ABI exports from the
+# permanent ESP32 source below rather than generated Render.c.
+def extract_render_function(source, signature):
+    start = source.find(signature)
+    if start < 0:
+        raise RuntimeError("Missing Render geometry function: " + signature)
+    brace = source.find("{", start)
+    if brace < 0:
+        raise RuntimeError("Missing Render geometry function body: " + signature)
+    depth = 0
+    for pos in range(brace, len(source)):
+        if source[pos] == "{":
+            depth += 1
+        elif source[pos] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:pos + 1]
+    raise RuntimeError("Unterminated Render geometry function: " + signature)
+
+render_geometry_functions = (
+    ("void Render_initColumnScale(Render_t* render)", 0xc33077ed),
+    ("boolean Render_cullBoundingBox(Render_t* render, Node_t* node)", 0x2b5b02ac),
+    ("void Render_transform2DVerts(Render_t* render, Vertex_t* vert)", 0x8c89a9a6),
+    ("boolean Render_clipLine(Render_t* render, Line_t* line)", 0x67f70ded),
+    ("void Render_clipVertex(Render_t* render, Vertex_t* vert, Line_t* line, int i, int i2)", 0x0a7ffb34),
+    ("void Render_projectVertex(Render_t* render, Vertex_t* vert)", 0xd92b8789),
+    ("void Render_occludeClippedLine(Render_t* render, Line_t* line)", 0x71aa6efe),
+)
+for signature, expected_crc in render_geometry_functions:
+    original_body = extract_render_function(original_render_for_startup, signature)
+    current_body = extract_render_function(render_source_text, signature)
+    if current_body != original_body:
+        raise RuntimeError(
+            "Generated Render geometry drifted before ownership cut: " + signature
+        )
+    if zlib.crc32(original_body.encode("latin-1")) != expected_crc:
+        raise RuntimeError(
+            "Original Render geometry changed; review native equivalent: " + signature
+        )
+    render_source_text = render_source_text.replace(
+        current_body,
+        "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + current_body +
+        "\n#endif /* native ESP32 Render geometry owner */",
+        1,
+    )
+
+geometry_path = join(project_src_dir, "esp_render_geometry_primitives.c")
+with open(geometry_path, "r", encoding="utf-8") as geometry_handle:
+    geometry_code = geometry_handle.read()
+if any(geometry_code.count(signature + "\n{") != 1
+       for signature, _ in render_geometry_functions):
+    raise RuntimeError("Native Render geometry export census changed")
+print("[ESP32] Render geometry primitives native-owned; "
+      "exports=7 production=esp-native bringup=desktop-original")
+
 with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(render_source_text)
 
