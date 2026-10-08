@@ -186,8 +186,7 @@ boolean Render_clipLine(Render_t* render, Line_t* line)
     return true;
 }
 
-void Render_clipVertex(Render_t* render, Vertex_t* vert, Line_t* line,
-                       int i, int i2)
+void Render_clipVertex(Render_t* render, Vertex_t* vert, Line_t* line, int i, int i2)
 {
 #if FIXED_VERSION == 1
     fixed_t j, j2;
