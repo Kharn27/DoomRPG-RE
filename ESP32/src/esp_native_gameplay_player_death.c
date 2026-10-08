@@ -219,10 +219,20 @@ int EspNativeGameplayPlayerDeath_handleTap(int logicalX, int logicalY) {
     int action;
     if (!EspNativeGameplayPlayerDeath_isMenuReady() ||
         deathState.menuPainted == 0U ||
-        deathState.pendingAction != 0U ||
-        logicalX < DEATH_MENU_LEFT || logicalX > DEATH_MENU_RIGHT) {
+        deathState.pendingAction != 0U) {
         return 0;
     }
+    if (EspNativeGameplaySave_mainSelectorActive()) {
+        const int result = EspNativeGameplaySave_mainSelectorTap(logicalX, logicalY);
+        if (result == -1) {
+            if (!paintDeathMenu()) return 0;
+            printf("[DEATHMENU] SLOT-BACK return=death-menu\n");
+        } else if (result == 1) {
+            deathState.pendingAction = DEATH_MENU_LOAD;
+        }
+        return 1;
+    }
+    if (logicalX < DEATH_MENU_LEFT || logicalX > DEATH_MENU_RIGHT) return 0;
     action = menuRowForY(logicalY);
     if (action == 0) return 0;
     deathState.pendingAction = (uint8_t)action;
@@ -318,11 +328,18 @@ int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
                 printf("[DEATHMENU] DEFER action=LOAD reason=no-readable-checkpoint mutation=no sessionReplace=no\n");
                 return 1;
             }
-            printf("[DEATHMENU] DISPATCH action=LOAD sessionReplace=checkpoint-native input=blocked-until-reset\n");
+            if (!EspNativeGameplaySave_mainSelectorActive()) {
+                (void)EspNativeGameplaySave_mainSelectorBegin();
+                printf("[DEATHMENU] SLOT-OPEN slots=10 choice=required\n");
+                return 1;
+            }
+            if (!EspNativeGameplaySave_mainSelectorReady()) return 1;
+            printf("[DEATHMENU] DISPATCH action=LOAD slot=confirmed sessionReplace=checkpoint-native input=blocked-until-reset\n");
             if (!EspNativeGameplaySave_loadCheckpoint()) {
                 printf("[DEATHMENU] FAILED action=LOAD checkpointRestore=no state=fail-closed\n");
                 return 0;
             }
+            EspNativeGameplaySave_mainSelectorFinish();
             printf("[DEATHMENU] TRANSITION action=LOAD result=session-replaced ownerReset=checkpoint-load\n");
             return 1;
         }
