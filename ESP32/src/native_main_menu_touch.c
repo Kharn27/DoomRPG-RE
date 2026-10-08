@@ -16,6 +16,7 @@
 #include "native_sprite_lru_cache.h"
 #include "native_wall_lru_cache.h"
 #include "platform_touch_events.h"
+#include "esp_native_gameplay_save_ui.h"
 #include "platform_video_config.h"
 
 /* Keep ESP-IDF's stdbool macros after DoomRPG's legacy boolean enum. */
@@ -543,6 +544,13 @@ static void gatedTap(int16_t screenX,
     }
 
     gateTapCount++;
+    if (EspNativeGameplaySave_mainSelectorActive()) {
+        const int result = EspNativeGameplaySave_mainSelectorTap(screenX / 2, screenY / 2);
+        if (result == 1) executeConfirmedAction(DOOMRPG_ESP32_MAIN_MENU_ACTION_LOAD);
+        else if (result == -1 && doomRpg != NULL)
+            (void)DoomRPG_esp32MainMenuRecover(doomRpg, "slot-selector-back");
+        return;
+    }
     hit = gateHitItem(screenX, screenY);
 
     if (hit < 0) {
