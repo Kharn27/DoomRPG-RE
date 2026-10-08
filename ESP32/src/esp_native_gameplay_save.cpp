@@ -3220,6 +3220,23 @@ void drawCenteredWord(uint16_t* fb, int centerX, int y, const char* text,
     EspNativeGameplayHubTouchUi_drawCrispText(fb, text, centerX, y, color);
 }
 
+/* Two chunky industrial page keys, fixed pixels and no extra framebuffer. */
+void drawSlotNav(uint16_t* fb, int top, int bottom, uint8_t page) {
+    const int x0 = 118, x1 = 156;
+    const int upper = top + 2, lower = bottom - 2;
+    const int mid = (upper + lower) / 2;
+    const uint16_t edge = ESP_HUB_COLOR_STEEL;
+    const uint16_t hot = ESP_HUB_COLOR_AMBER;
+    fillRect(fb, x0, top, x1, bottom, ESP_HUB_COLOR_PANEL);
+    drawRect(fb, x0, top, x1, bottom, edge);
+    /* Wide, double-stroke chevron: clearly directional at 160x120. */
+    for (int i = 0; i < 7; ++i) {
+        const int yy = page == 1U ? mid - 3 + i : mid + 3 - i;
+        fillRect(fb, 132 + i, yy - 1, 135 + i, yy + 1, hot);
+    }
+    fillRect(fb, x0 + 2, top + 2, x0 + 4, bottom - 2, ESP_HUB_COLOR_RED);
+}
+
 bool paintSaveOverlay(void) {
     const EspNativeGameplayHubView* hub = EspNativeGameplayHub_view();
     uint16_t* fb;
@@ -3248,7 +3265,7 @@ bool paintSaveOverlay(void) {
         fillRect(fb, 2, 35, 157, 118, ESP_HUB_COLOR_BG);
         snprintf(label, sizeof(label), "%s - PAGE %u/2", slotMode == 1U ? "SAVE" : "LOAD",
                  first == 1U ? 1U : 2U);
-        drawCenteredWord(fb, 80, 35, label, ESP_HUB_COLOR_IVORY);
+        drawCenteredWord(fb, 60, 35, label, ESP_HUB_COLOR_IVORY);
         for (uint8_t row = 0U; row < 5U; ++row) {
             const uint8_t slot = first + row;
             const int top = 47 + row * 14;
@@ -3259,19 +3276,20 @@ bool paintSaveOverlay(void) {
             const bool available = SD.exists(path) || SD.exists(backup) ||
                 (slot == 1U && (SD.exists(kLegacySavePath) || SD.exists(kLegacyBackupPath)));
             const bool focused = slot == slotFocus;
-            fillRect(fb, 19, top, 140, top + 12,
+            fillRect(fb, 7, top, 113, top + 12,
                      focused ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
-            drawRect(fb, 19, top, 140, top + 12,
+            drawRect(fb, 7, top, 113, top + 12,
                      focused ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
             snprintf(label, sizeof(label), "%02u  %s%s", (unsigned)slot,
                      available ? "OCCUPIED" : "-- EMPTY --",
                      focused && slotArmed == slot ? " ?" : "");
-            drawCenteredWord(fb, 80, top + 3, label,
+            drawCenteredWord(fb, 60, top + 3, label,
                              available ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
                                        : ESP_HUB_COLOR_STEEL_DARK);
         }
-        drawCenteredWord(fb, 8, 113, "<", ESP_HUB_COLOR_AMBER);
-        drawCenteredWord(fb, 151, 113, ">", ESP_HUB_COLOR_AMBER);
+        drawSlotNav(fb, 49, 78, first == 1U ? 1U : 2U);
+        drawSlotNav(fb, 83, 112, first == 1U ? 1U : 2U);
+        drawCenteredWord(fb, 136, 79, first == 1U ? "1/2" : "2/2", ESP_HUB_COLOR_IVORY);
         return Esp32PlatformVideo_present();
     }
 
@@ -3344,7 +3362,7 @@ static void paintMainSlots(void) {
     char text[40];
     fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BG);
     snprintf(text, sizeof(text), "LOAD - PAGE %u/2", first == 1U ? 1U : 2U);
-    drawCenteredWord(fb, 80, 15, text, ESP_HUB_COLOR_IVORY);
+    drawCenteredWord(fb, 60, 15, text, ESP_HUB_COLOR_IVORY);
     for (uint8_t row = 0U; row < 5U; ++row) {
         const uint8_t slot = first + row;
         const int y = 32 + row * 14;
@@ -3354,16 +3372,21 @@ static void paintMainSlots(void) {
         const bool occupied = SD.exists(path) || SD.exists(backup) ||
             (slot == 1U && (SD.exists(kLegacySavePath) || SD.exists(kLegacyBackupPath)));
         const bool focused = slot == slotFocus;
-        fillRect(fb, 15, y, 144, y + 12, focused ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
-        drawRect(fb, 15, y, 144, y + 12, focused ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
+        fillRect(fb, 7, y, 113, y + 12, focused ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
+        drawRect(fb, 7, y, 113, y + 12, focused ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
         snprintf(text, sizeof(text), "%02u %s%s", (unsigned)slot,
                  occupied ? "OCCUPIED" : "-- EMPTY --",
                  focused && slotArmed == slot ? " ?" : "");
-        drawCenteredWord(fb, 80, y + 3, text,
+        drawCenteredWord(fb, 60, y + 3, text,
                          occupied ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
                                   : ESP_HUB_COLOR_STEEL_DARK);
     }
-    drawCenteredWord(fb, 80, 107, "< PAGE      BACK      PAGE >", ESP_HUB_COLOR_AMBER);
+    drawSlotNav(fb, 34, 62, first == 1U ? 1U : 2U);
+    drawSlotNav(fb, 69, 98, first == 1U ? 1U : 2U);
+    drawCenteredWord(fb, 136, 63, first == 1U ? "1/2" : "2/2", ESP_HUB_COLOR_IVORY);
+    fillRect(fb, 34, 105, 111, 118, ESP_HUB_COLOR_PANEL_ALT);
+    drawRect(fb, 34, 105, 111, 118, ESP_HUB_COLOR_RED);
+    drawCenteredWord(fb, 72, 108, "BACK", ESP_HUB_COLOR_IVORY);
     (void)Esp32PlatformVideo_present();
 }
 extern "C" int EspNativeGameplaySave_mainSelectorBegin(void) {
@@ -3377,17 +3400,21 @@ extern "C" int EspNativeGameplaySave_mainSelectorBegin(void) {
 extern "C" int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
     if (slotMode != 3U) return 0;
     if (y >= 104) {
-        if (x >= 53 && x <= 108) {
+        if (x >= 34 && x <= 111) {
             EspNativeGameplaySave_mainSelectorFinish();
             return -1;
         }
+        return 0;
+    }
+    if (x >= 117 && y >= 32 && y < 102) {
         slotFocus = slotFocus <= 5U ? 6U : 1U;
         slotArmed = 0U;
         selectSaveSlot(slotFocus);
+        printf("[SAVESLOTS] MAIN-PAGE page=%u via=right-column\n", slotFocus <= 5U ? 1U : 2U);
         paintMainSlots();
         return 0;
     }
-    if (x < 15 || x > 144 || y < 32 || y >= 102) return 0;
+    if (x < 7 || x > 113 || y < 32 || y >= 102) return 0;
     const uint8_t row = (uint8_t)((y - 32) / 14);
     const uint8_t selected = (uint8_t)((slotFocus <= 5U ? 1U : 6U) + row);
     if (selected > 10U) return 0;
