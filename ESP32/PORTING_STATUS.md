@@ -1,3 +1,5 @@
+# Doom RPG ESP32 — état actuel du port
+
 ## Native SD multi-save — CYD gameplay PASS, navigation accepted (2026-10-08)
 
 **Baseline:** `main` `4554ccd68f7928bd8918ffaf8711d82179f5e587`; branch `agent/esp32-native-save-multislot`, code head `c4f1322509237031bd048c57bb7798036271e06c`. [CI 37835789142](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37835789142): **SUCCESS**. Firmware normal `esp32-cyd`, classic CYD sans PSRAM.
@@ -6,7 +8,13 @@
 
 **UI review:** MENU_MAIN LOAD now opens its own ten-slot picker; HUB SAVE/LOAD uses five rows per page. Latest revision separates **previous** (upper) and **next** (lower) chevrons on a right-side column, with disabled states, page number in header, and removes the decorative red vertical stripe. User reviewed the display and called it *better*, accepting it for this milestone with additional Doom-style visual polish **deferred**. This is a visual/acceptance report, **not** a complete new serial trace of both page directions or slots 6..10.
 
-**Still to test separately:** page 1→2→1 on both selectors with actual hardware logs, slots 6..10, overwrite confirmation, empty-slot fail-closed, MENU_MAIN BACK, and power-loss atomicity. `AUTO` remains explicitly out of scope pending a genuine original-game trigger audit. No merge has yet been reported for this branch.
+### Complément CYD : slot 8, deuxième page et restauration (2026-10-08)
+
+Traces du firmware normal, après le code `c4f13225` : HUB → SYSTEM → SAVE → `[SAVESLOTS] PAGE page=2 via=right-column` → `ARM slot=8` → `CONFIRM slot=8`. `[NATIVESAVE] SAVE path=/sd/DoomRPG-ESP32-slot08.sav version=11 bytes=5604 pos=1248,352 angle=0 resources=37/43B ... atomic=temp+backup+rename`. Après déplacement supplémentaire et ramassage d'armure, HUB → SYSTEM → LOAD → page 2 → `ARM slot=8` → `CONFIRM slot=8` ; `LOAD path=/sd/DoomRPG-ESP32-slot08.sav version=11 bytes=5604 pos=1248,352 angle=0 playerFNV=eeda091c`, `RESTORE consumed=37`, armor `15/23`, monsters/topology/positions/activation restaurés. La progression plus tardive avait atteint armor `19/23` et n'a donc pas remplacé le slot 8. `[RESIDENTRESET] released=18008 empty=1`, `[ENGINESESSION] RESUME-VISIBLE`, `heap8=117880 largest8=86004`. Ceci valide sur hardware le chemin **page 1→2**, le SAVE/LOAD du slot 8 et l'indépendance temporelle du checkpoint. Le chemin de retour page 2→1 n'est pas attesté par ces traces.
+
+**Anomalies ouvertes, indépendantes du multi-save :** en haut de carte Entrance chargée depuis la progression avancée, `[TURNFRAME] DIAG fail=WORLD_RENDER` et `[VIEWANIM] FALLBACK` se répètent (mouvement et rotations) ; le mouvement logique est commité une fois et le rendu cardinal final continue, mais l'animation intermédiaire est perdue. À analyser dans un jalon render dédié, sans masquer ces fallbacks. Un `[HUB] CLOSE ... exactHud=NO` est aussi observé juste après SAVE slot 8, alors que `hudBottom ... exactBottom=yes` et le gameplay reprend. Investiguer ce décalage du témoin HUD séparément ; ne pas le déclarer PASS visuel exact. `[MONSTERMOVE] DEFER cause=active-order-not-owned` avec 12 actifs reste une dette de gameplay connue, non causée ici par le système de slots.
+
+**Still to test separately:** page 1→2→1 on both selectors with actual hardware logs, slots 6, 7, 9, 10, overwrite confirmation, empty-slot fail-closed, MENU_MAIN BACK, and power-loss atomicity. `AUTO` remains explicitly out of scope pending a genuine original-game trigger audit. No merge has yet been reported for this branch.
 
 # Doom RPG ESP32 — état actuel du port
 
