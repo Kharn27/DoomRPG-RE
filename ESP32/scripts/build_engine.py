@@ -782,37 +782,51 @@ print("[ESP32] SDL shim generated with packed zero-copy indexed BMP textures")
 # the small ESP32 compatibility layer in this PlatformIO project. DoomCanvas.c
 # is retired entirely; DoomRPG.c and Render.c still use generated ESP32-safe
 # copies while their remaining compatibility surfaces are migrated.
-env.BuildSources(
-    join(build_dir, "doomrpg_engine"),
-    engine_dir,
-    src_filter=[
-        "+<*.c>",
-        "-<Main.c>",
-        "-<SDL_Video.c>",
-        "-<Sound.c>",
-        # Menu_t / MenuItem helpers / MenuSystem_t behavior and ParticleSystem_t
-        # are retired ESP32 ownership surfaces. Exclude their desktop translation
-        # units rather than relying on final-link garbage collection.
-        "-<Menu.c>",
-        "-<MenuItem.c>",
-        "-<MenuSystem.c>",
-        "-<ParticleSystem.c>",
-        "-<EntityDef.c>",
-        "-<Entity.c>",
-        "-<EntityMonster.c>",
-        "-<Combat.c>",
-        "-<Weapon.c>",
-        "-<CombatEntity.c>",
-        "-<Hud.c>",
-        "-<Game.c>",
-        "-<Render.c>",
-        "-<Player.c>",
-        "-<Z_Zone.c>",
-        "-<Z_Zip.c>",
-        "-<DoomCanvas.c>",
-        "-<DoomRPG.c>",
-    ],
-)
+# The desktop original C source tree is no longer registered with SCons.
+# All 21 original TUs were already excluded by the old '+<*.c>' source
+# filter, so that registration compiled exactly zero objects. Make the
+# boundary permanent instead of maintaining a fragile exclusion checklist:
+# native sources live in ESP32/src; the *only* admitted legacy C copies are
+# the two explicitly patched roots below (DoomRPG.c and Render.c).
+#
+# An unexpected original source addition requires an explicit build ownership
+# review; it must not silently be picked up by a future glob. Desktop and
+# original reference code outside ESP32 are not modified by this guard.
+retired_desktop_units = {
+    "Combat.c",
+    "CombatEntity.c",
+    "DoomCanvas.c",
+    "DoomRPG.c",
+    "Entity.c",
+    "EntityDef.c",
+    "EntityMonster.c",
+    "Game.c",
+    "Hud.c",
+    "Main.c",
+    "Menu.c",
+    "MenuItem.c",
+    "MenuSystem.c",
+    "ParticleSystem.c",
+    "Player.c",
+    "Render.c",
+    "SDL_Video.c",
+    "Sound.c",
+    "Weapon.c",
+    "Z_Zip.c",
+    "Z_Zone.c",
+}
+present_desktop_units = {
+    name for name in os.listdir(engine_dir) if name.endswith(".c")
+}
+if present_desktop_units != retired_desktop_units:
+    raise RuntimeError(
+        "Desktop original TU inventory changed; explicitly audit ESP32 "
+        "native-vs-patched ownership before updating build_engine.py: "
+        + repr(sorted(present_desktop_units ^ retired_desktop_units))
+    )
+print("[ESP32] Desktop original source registration retired; "
+      "originalC=%u compiledOriginal=0 patchedRoots=DoomRPG.c,Render.c" %
+      len(retired_desktop_units))
 
 env.BuildSources(
     join(build_dir, "doomrpg_engine_patched"),
