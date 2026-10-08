@@ -3330,6 +3330,8 @@ bool paintSaveOverlay(void) {
 
 }  // namespace
 
+bool readableSaveExists(void);
+
 extern "C" int EspNativeGameplaySave_mainSelectorActive(void) { return slotMode == 3U; }
 extern "C" int EspNativeGameplaySave_mainSelectorReady(void) { return slotMode == 3U && mainSlotReady != 0U; }
 extern "C" void EspNativeGameplaySave_mainSelectorFinish(void) {
