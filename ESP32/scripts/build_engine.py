@@ -583,12 +583,26 @@ for signature, expected_crc in render_geometry_functions:
         1,
     )
 
+# Native framebuffer-only solid background: retain exact desktop behavior,
+# including color row copy order; no BSP/plane texture/SD owner involved.
+solid_bg_signature = "void Render_renderFloorAndCeilingSolidBG(Render_t* render)"
+solid_bg_original = extract_render_function(original_render_for_startup, solid_bg_signature)
+solid_bg_generated = extract_render_function(render_source_text, solid_bg_signature)
+if solid_bg_generated != solid_bg_original:
+    raise RuntimeError("Generated solid BG differs from desktop reference")
+render_source_text = render_source_text.replace(
+    solid_bg_generated,
+    "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + solid_bg_generated +
+    "\n#endif /* native ESP32 solid BG owner */", 1)
+
 geometry_path = join(project_src_dir, "esp_render_geometry_primitives.c")
 with open(geometry_path, "r", encoding="utf-8") as geometry_handle:
     geometry_code = geometry_handle.read()
 if any(geometry_code.count(signature + "\n{") != 1
        for signature, _ in render_geometry_functions):
     raise RuntimeError("Native Render geometry export census changed")
+if extract_render_function(geometry_code, solid_bg_signature) != solid_bg_original:
+    raise RuntimeError("Native solid BG must exactly match legacy reference")
 print("[ESP32] Render geometry primitives native-owned; "
       "exports=7 production=esp-native bringup=desktop-original")
 

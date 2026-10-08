@@ -9,6 +9,23 @@
 #define FIXED_VERSION 1
 #if FIXED_VERSION != 1
 #error "ESP32 geometry must match desktop Render.c fixed-point mode"
+/* Framebuffer-only floor/ceiling clear, byte-for-byte legacy semantics. */
+void Render_renderFloorAndCeilingSolidBG(Render_t* render)
+{
+	int i, h, pitch;
+
+	pitch = ((render->pitch * render->screenY) + (render->screenX * sizeof(short)));
+
+	h = render->screenHeight >> 1;
+	for (i = 0; i < h; i++) {
+		SDL_memmove(&render->framebuffer[pitch + (render->pitch * i)], render->ceilingColor, (render->screenWidth * sizeof(short)));
+	}
+
+	for (i = h; i < render->screenHeight; i++) {
+		SDL_memmove(&render->framebuffer[pitch + (render->pitch * i)], render->floorColor, (render->screenWidth * sizeof(short)));
+	}
+}
+
 #endif
 
 /*
