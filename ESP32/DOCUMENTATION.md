@@ -1,3 +1,42 @@
+## Direct native Render_startup, no linker wrap — REAL-CYD PASS (2026-10-08)
+
+Real classic CYD normal firmware tested at **code SHA `dd577ad94f66ae642cc1ecaca7dc331b68c5b8e5`**;
+GitHub Actions `esp32-cyd` run **37708924926 SUCCESS**
+(static RAM **45056 B**, flash **774785 B**).
+The native `Render_startup()` ABI now links directly from
+`ESP32/src/render_startup_bridge.c` and the production
+`-Wl,--wrap=Render_startup` has been removed. Exact
+`[RENDERSTART] OWNER api=Render_startup source=esp-native-render-startup
+direct=yes wrap=no` marker observed. Original desktop constructor
+is excluded from generated ESP32 `Render.c`; desktop reference
+remains unchanged with source CRC32 `0xf0d935e8` guard.
+
+Real hardware startup matches **Render_t=1532 B**, viewport
+160x80@0,20, one shared RGB565 framebuffer **38400 B**,
+palette **3280 entries/6560 B**, mappings **8376 B**,
+heap8 **167780** after Render startup and **159340** after mappings.
+First menu framebuffer FNV **522dc605**, MAP_INTRO native immutable arena
+FNV **c3882516**, first native gameplay frame FNV **71ca7465**.
+The user exercised two normal committed FORWARD moves (single midpoint
+camera previews), a TURN_RIGHT (two preview frames), a subtype-2 crate
+transform with exactly one `PLAYER_ATTACK` turn, subsequent Armor Shard
+pickup (armor 0->4), HUB and double-confirm SYS EXIT. Exactly one
+`MONSTERTURN reason=MOVE` dispatch per committed forward step;
+none on rotation. The final `[RESIDENTRESET] released=18008 empty=1`,
+`[SYSEXIT] MENU-READY frame=522dc605` with
+`session=off resident=empty saveWrite=no checkpoint=unchanged`,
+and final heap8 **164184 B**, largest8 **110580 B**.
+`shapeData==NULL` and `mediaTexels==NULL` throughout.
+
+This log does **not** exercise a dialog, LOAD, CHANGEMAP,
+monster-active combat, blocked movement or the actual
+`Render_free()` path: none is claimed. This verifies the direct
+startup and clean native session reset, not all desktop teardown paths.
+The hardware-tested code is frozen; this documentation closure is
+docs-only. Subsequent milestones remain on the same active
+`agent/esp32-retire-desktop-source-registration` branch.
+[Detailed milestone](MILESTONE_ESP32_RENDER_STARTUP_NATIVE_DIRECT.md).
+
 ## Native Render palette/color and mappings roots — REAL-CYD PASS (2026-10-08)
 
 Code SHA `ea221b4a7248d05ceda077f6c226e7da0851d302`; normal `esp32-cyd` GitHub Actions
