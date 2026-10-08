@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 struct Render_s;
+struct EspPlayerViewState_s;
 
 typedef struct EspNativeSpriteStats_s {
     uint32_t objects;
@@ -63,6 +64,12 @@ typedef struct EspNativeSpriteStats_s {
  */
 int EspNativeSpriteRenderer_render(struct Render_s* render,
                                    EspNativeSpriteStats* outStats);
+
+/* No activation or automap publication for intermediate visual poses. */
+int EspNativeSpriteRenderer_renderVisual(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* pose,
+    EspNativeSpriteStats* outStats);
 
 
 typedef struct EspNativeSpriteTransient_s {

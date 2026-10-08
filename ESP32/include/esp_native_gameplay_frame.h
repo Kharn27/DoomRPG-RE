@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 struct Render_s;
+struct EspPlayerViewState_s;
 
 typedef struct EspNativeGameplayFrameStats_s {
     uint32_t frameBeforeFNV;
@@ -62,6 +63,28 @@ typedef char EspNativeGameplayFrameStats_must_be_104_bytes[
 int EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,
+    EspNativeGameplayFrameStats* outStats);
+
+/* Non-cardinal, camera-only preview over the same framebuffer; no logical
+ * pose commit, gameplay fresh-frame publication or automap/monster activation. */
+int EspNativeGameplayFrame_renderVisualPose(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* visual,
+    uint8_t settledAngle,
+    EspNativeGameplayFrameStats* outStats);
+
+/*
+ * MOVE-only preview: axial moves sample 1/2; strafe samples 1/3 and
+ * 2/3. Only (step=1, denominator=2) and (step=1/2, denominator=3)
+ * are accepted. No gameplay mutation, automap reveal, activation,
+ * checkpoint change or extra framebuffer.
+ */
+int EspNativeGameplayFrame_renderVisualMove(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* before,
+    const struct EspPlayerViewState_s* after,
+    uint8_t step,
+    uint8_t denominator,
     EspNativeGameplayFrameStats* outStats);
 
 #ifdef __cplusplus

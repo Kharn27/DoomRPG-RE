@@ -1,3 +1,59 @@
+## Native MOVE visual pacing — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code SHA `e944dc386758900bc55c68d374344c631640e6b4`,
+normal production `esp32-cyd` CI #37705217411 SUCCESS
+(RAM static 45056 B; flash 774521 B); docs-only CI #37705286981
+also SUCCESS. Real classic CYD visual feedback: **"C'est pas mal du
+tout là"** after retuning axial movement from two visual thirds to
+**one midpoint**. STRAFE retains **two thirds** and TURN keeps its
+separately proven two-angle camera interpolation. The excerpt covers
+eight FORWARD/BACK translations (each `profile=axial-midpoint`,
+`step=1/1 sample=1/2 intermediates=1`), two STRAFE translations
+(`profile=strafe-thirds`, `intermediates=2`) and three
+TURNs (two previews each); all rendered and presented with no fallback.
+Axial preview cost ~103–106 ms typically (first sample 132213 us),
+versus ~205–210 ms for the previous two-preview axial design;
+strafe previews ~204 ms combined. Correct single native
+`[MONSTERTURN] ORDERED-DISPATCH reason=MOVE` tokens 1..10 follow the
+ten committed moves, and no turn advances on the three rotations.
+Two Armor Shard pickups on tiles 839 and 838 commit exactly once each
+(armor 0->4->8); old wall guard recovers normally.
+Four later `[ALIVE]` samples: heap8 **118288 B**,
+largest8 **86004 B**, total heap **184212 B** unchanged. Automap
+discovery occurs on final settled frames, not previews. No extra
+framebuffer/animation heap owner and no mutation of canonical player
+pose by the presentation path.
+
+**Coverage limits:** no visible-monster fight, latest-SHA blocked step,
+door, LOAD, automap-mode input, dialogue, SYS EXIT or menu FNV in this
+specific log; those are not silently promoted to hardware PASS.
+The earlier two-preview candidate *did* show a blocked strafe;
+the retune affects only sample count, not collision logic.
+Post-hardware closure is docs-only; code remains frozen.
+[Detailed milestone](MILESTONE_NATIVE_CAMERA_MOVE_VISUAL.md).
+
+## Native quarter-turn camera interpolation — REAL-CYD VISUAL PASS (2026-10-08)
+
+Production `esp32-cyd` CI run #37703393521 SUCCESS: static RAM
+45056 B, flash 773329 B. Hardware-tested code SHA
+`db0eb476d8070d4a560893718ae79e7570f72fcc`.
+On the real classic CYD, four LEFT/RIGHT 90-degree rotations rendered
+two intermediate preview frames and a canonical final frame each,
+with preview times from **89443 to 105303 us**, no fallback.
+User confirmed the effect feels smooth and clearly shows turn direction.
+`[ALIVE]` heap8 remained **118288**, largest8 **86004** at
+31.7, 36.9 and 41.9s. `[MONSTERTURN]` did not schedule on turns;
+the immediately preceding MOVE did advance its usual monster turn.
+Render-derived automap line publication occurred only on final
+settled frames, not previews. No extra framebuffer or player-state
+mutation was introduced. This is **rotation only**, not MOVE animation.
+
+**Coverage bounds:** 0<->192 wrap, visible-monster encounters, automap
+mode, SYS EXIT / menu fingerprint, dialog, LOAD were not present in
+this log; do not claim them retested. Physically validated code is
+frozen; subsequent changes on this branch are docs-only.
+[Milestone](MILESTONE_NATIVE_CAMERA_ROTATION_VISUAL.md).
+
 ## DIALOGCHAIN rollback journal session teardown — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested code SHA `2aa4ebcb8b932db4f5b803db920fbaae612a088d`; normal `esp32-cyd` CI #1709 SUCCESS

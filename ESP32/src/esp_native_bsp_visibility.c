@@ -378,11 +378,12 @@ static int spriteLeaf(const EspMapRuntimeView* runtime,
     return 0;
 }
 
-int EspNativeBspVisibility_build(struct Render_s* renderBase,
-                                 EspNativeBspVisibilityState* outState) {
+int EspNativeBspVisibility_buildForView(struct Render_s* renderBase,
+                                        const struct EspPlayerViewState_s* pose,
+                                        EspNativeBspVisibilityState* outState) {
     Render_t* render = (Render_t*)renderBase;
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
-    const EspPlayerViewState* view = EspPlayerView_view();
+    const EspPlayerViewState* view = (const EspPlayerViewState*)pose;
     Scratch before;
     Scratch after;
     int ok = 0;
@@ -412,7 +413,15 @@ int EspNativeBspVisibility_build(struct Render_s* renderBase,
     return ok;
 }
 
-int EspNativeBspVisibility_mapSpriteVisible(
+int EspNativeBspVisibility_build(struct Render_s* render,
+                                 EspNativeBspVisibilityState* outState) {
+    return EspNativeBspVisibility_buildForView(
+        render, EspPlayerView_view(), outState);
+}
+
+/* Pure visibility query: the production symbol may be wrapped to observe
+ * monster activation. Camera preview must bypass that gameplay effect. */
+int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,
     uint32_t* outLeafIndex) {
@@ -432,6 +441,13 @@ int EspNativeBspVisibility_mapSpriteVisible(
     return (state->visibleLeaves[leaf >> 5] & (1U << (leaf & 31U))) != 0U;
 }
 
+int EspNativeBspVisibility_mapSpriteVisible(
+    const EspNativeBspVisibilityState* state,
+    uint32_t mapSpriteIndex,
+    uint32_t* outLeafIndex) {
+    return EspNativeBspVisibility_mapSpriteVisibleReadOnly(
+        state, mapSpriteIndex, outLeafIndex);
+}
 
 int EspNativeBspVisibility_publishAutomap(
     const EspNativeBspVisibilityState* state,
