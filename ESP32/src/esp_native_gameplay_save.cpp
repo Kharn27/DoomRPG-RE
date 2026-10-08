@@ -3344,10 +3344,12 @@ extern "C" int EspNativeGameplaySave_touchSlot(int x, int y) {
     const uint8_t selected = (uint8_t)((slotFocus <= 5U ? 1U : 6U) + row);
     if (selected != slotFocus) {
         slotFocus = selected;
-        slotArmed = 0U;
+        slotArmed = selected; /* first tap selects and arms, next confirms */
         selectSaveSlot(slotFocus);
         (void)paintSaveOverlay();
-        return 1; /* selection only, next tap arms */
+        printf("[SAVESLOTS] ARM mode=%s slot=%u source=touch\n",
+               slotMode == 1U ? "SAVE" : "LOAD", (unsigned)slotFocus);
+        return 1;
     }
     return 2; /* let SELECT arm/confirm */
 }
@@ -3628,7 +3630,8 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
             }
         }
-        else if (after == nullptr || after->active == 0U) {
+        else if (after == nullptr || after->active == 0U ||
+                 after->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
             slotMode = 0U;
             statusCursor = kStatusSave;
             lastOperation = 0U;
