@@ -1,3 +1,26 @@
+## Render_findEventIndex retired legacy tileEvents ABI — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Tested code SHA `8672b1ed4fc9b0379a63851d17726b5bc11bfadf`,
+normal `esp32-cyd` CI [37771382195](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37771382195) SUCCESS.
+Production `Render_findEventIndex` now belongs to permanent
+`esp_legacy_render_reject.c` and returns -1 without dereferencing
+the retired `Render.tileEvents` pointer. Native event lookup remains
+the separately owned map runtime/state API; desktop source retained.
+
+Real CYD serial validates intro, map arena `c3882516`, first
+gameplay frame `71ca7465`, MOVE previews, two-frame left/right
+rotations, subtype-2 crate transform, Armor Shard pickup,
+dialogue event 88/opcode 19 resume and double-confirm SYS EXIT.
+Final `[RESIDENTRESET] released=18008 ... empty=1`,
+`[SYSEXIT] MENU-READY frame=522dc605 session=off
+resident=empty saveWrite=no checkpoint=unchanged`.
+Final heap8 **164184 B**, largest8 **110580 B**;
+`shapeData=mediaTexels=NULL` at observed boundaries.
+No direct call to the retired ABI was triggered (non-regression
+only). LOAD/monster resume issues remain outside scope.
+Subsequent code on same branch requires a separate CYD PASS.
+[Milestone](MILESTONE_ESP32_RENDER_FIND_EVENT_NATIVE.md).
+
 ## Render_freeRuntime permanent native ownership — REAL-CYD NON-REGRESSION PASS (2026-10-08)
 
 Code SHA `75cefcf402b6bacd8fbd768450cf4b70e8f3e8cd`;
