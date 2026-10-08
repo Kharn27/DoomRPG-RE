@@ -20,6 +20,9 @@ void EspNativeGameplayPlayerDeath_reset(void);
 int EspNativeGameplayPlayerDeath_isActive(void);
 int EspNativeGameplayPlayerDeath_isMenuReady(void);
 
+/* Logical death-menu card hitboxes; only queues existing action semantics. */
+int EspNativeGameplayPlayerDeath_handleTap(int logicalX, int logicalY);
+
 int EspNativeGameplayPlayerDeath_arm(struct DoomRPG_s* doomRpg,
                                      uint32_t sequence,
                                      uint16_t tileIndex);

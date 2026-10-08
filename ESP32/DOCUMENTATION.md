@@ -55,6 +55,33 @@ La politique de logs compile-time est définie dans `ESP32/include/doomrpg_log.h
 | Parité Doom RPG originale | Sources desktop/J2ME retenues dans le repo |
 | Historique d'un jalon | Commits/PR GitHub et fichiers historiques au [snapshot du 8 octobre 2026](https://github.com/Kharn27/DoomRPG-RE/tree/60d34d174bed0d4d4e13137f306070b5018c0fa9/ESP32) |
 
+## Présentation du menu de mort
+
+Après la chute et le fondu existants, le menu de mort occupe le framebuffer
+entier et reprend la palette industrielle et les polices partagées du HUB et
+du bilan de mission : cadre sombre, bandeau `YOU DIED` rouge, sous-titre
+`MISSION FAILED`, puis quatre cartes à deux lignes. Aucun asset ni buffer
+supplémentaire n'est chargé ; le propriétaire de mort reste inchangé.
+
+`LOAD SAVED GAME` est mis en évidence en ambre si un checkpoint lisible existe,
+avec `TAP TO LOAD` ; sinon la carte est atténuée avec `NO SAVE` rouge.
+`GO TO JUNCTION`, `RETRY SECTOR` et `MAIN MENU` restent visibles et atténués,
+avec `NOT AVAILABLE` : leurs backends ne sont pas implémentés par cette refonte.
+Le tap unique LOAD, son dispatch différé au service et les autres actions
+fail-closed sont conservés. Les cartes font 140×19 pixels logiques, à
+`x=10..149`, `y=33..51 / 54..72 / 75..93 / 96..114` ; peinture et hit-test
+utilisent les mêmes constantes. Les marges et interlignes ne déclenchent rien.
+
+Ne pas confondre `MAIN MENU` sur cet écran de mort, encore différé, avec
+`SYS → EXIT TO MENU` dans le HUB en jeu : ce dernier possède son propre retour
+natif fonctionnel. La refonte graphique ne débranche ni ne modifie cette route.
+
+Validation locale : commande du test dans [`test/README`](test/README), build
+`esp32-cyd` et inspection du vrai painter avec/sans sauvegarde. Ces preuves
+ne remplacent pas le matériel. Sur CYD : mourir avec un checkpoint, vérifier
+la lisibilité puis charger et reprendre le gameplay ; répéter sans checkpoint,
+vérifier `NO SAVE` et que les options différées ne quittent pas l'écran.
+
 ## Contrat d'évolution
 
 Ne pas introduire de runtime propre à une map, de gros index pointer-heavy, ni de nouveaux wrappers universels simplement pour remplacer ceux du desktop. Le PAK reste le backing store, `EspMapRuntime` reste immuable, chaque mutation a un propriétaire explicite. Différer l'optimisation de `PlatformVideo_present()` : Doom RPG est turn-based.

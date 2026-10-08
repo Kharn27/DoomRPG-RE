@@ -30,6 +30,26 @@ shared three-card layout, rejection of gaps/margins, all nine cursor-to-target
 routes, failed/invalid preselection, empty input and non-SYS fallback. These
 tests do not replace hardware confirmation of SAVE/LOAD or Exit To Menu.
 
+Death-menu presentation / input host regression (from the repository root):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -I ESP32/include -I src ESP32/test/test_death_menu.c \
+  ESP32/src/esp_native_gameplay_player_death.c \
+  ESP32/src/esp_native_gameplay_hub_touch_ui.c \
+  -Wl,--gc-sections -o /tmp/test_death_menu
+/tmp/test_death_menu
+# Optional: export the real painter at physical 320x240 for visual inspection.
+/tmp/test_death_menu /tmp/death-with-save.ppm /tmp/death-no-save.ppm
+```
+
+Production death/menu code and the shared HUB font are compiled unchanged.
+Clock, player/view/HUD, framebuffer/present and checkpoint boundaries are mocked.
+Checks cover the fall and three-second menu admission, shared palette/text,
+with/without save, card corners/gaps/margins, queued LOAD, unchanged deferred
+routes, framebuffer guards and failed presentation. This does not validate
+actual SD restore, combat or display behavior on the CYD.
+
 Unit Testing is a software testing method by which individual units of
 source code, sets of one or more MCU program modules together with associated
 control data, usage procedures, and operating procedures, are tested to

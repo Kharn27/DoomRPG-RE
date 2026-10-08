@@ -162,6 +162,18 @@ If the checkpoint is missing or invalid, the menu remains active and replaces
 the selected row with a red `No Save` response. Both successful resume and the
 no-save response are hardware-proven on the real CYD at `18c1cfb`.
 
+## Current death menu — presentation candidate
+
+The death menu now shares the HUB/mission-report industrial palette and crisp
+fonts: a red `YOU DIED` header and four aligned two-line cards. Checkpoint LOAD
+is amber when available, otherwise shows `NO SAVE`. Junction, Retry and Main
+Menu remain deferred and explicitly display `NOT AVAILABLE`. The fall/fade and
+existing single-tap LOAD route are unchanged. Build/host checks pass; the new
+presentation still awaits CYD testing.
+
+Death-menu `MAIN MENU` is separate from the working in-game
+`SYS → EXIT TO MENU` route, which this redesign does not change.
+
 ## Current in-game HUB
 
 The compact native HUB currently exposes:
