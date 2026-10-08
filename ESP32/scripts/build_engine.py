@@ -583,12 +583,86 @@ for signature, expected_crc in render_geometry_functions:
         1,
     )
 
+# Native framebuffer-only solid background: retain exact desktop behavior,
+# including color row copy order; no BSP/plane texture/SD owner involved.
+solid_bg_signature = "void Render_renderFloorAndCeilingSolidBG(Render_t* render)"
+solid_bg_original = extract_render_function(original_render_for_startup, solid_bg_signature)
+solid_bg_generated = extract_render_function(render_source_text, solid_bg_signature)
+if solid_bg_generated != solid_bg_original:
+    raise RuntimeError("Generated solid BG differs from desktop reference")
+render_source_text = render_source_text.replace(
+    solid_bg_generated,
+    "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + solid_bg_generated +
+    "\n#endif /* native ESP32 solid BG owner */", 1)
+
+# Render_fadeScreen is not a production API: the original call sites are
+# desktop DoomCanvas animation paths; ESP32 player death owns fadeViewport.
+# Preserve the full function for desktop/bringup but do not link its body
+# on normal firmware. Any remaining native call must fail at link time.
+fade_signature = "void Render_fadeScreen(Render_t* render, int fade)"
+fade_original = extract_render_function(original_render_for_startup, fade_signature)
+fade_generated = extract_render_function(render_source_text, fade_signature)
+if fade_generated != fade_original:
+    raise RuntimeError("Generated Render_fadeScreen source drift")
+render_source_text = render_source_text.replace(
+    fade_generated,
+    "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + fade_generated +
+    "\n#endif /* fade owned by native ESP32 player death */", 1)
+
+# Legacy berserk color postprocess belongs to retired desktop DoomCanvas
+# rendering paths. It also calls SDL_UpdateTexture/SDL_RenderCopy directly.
+# Preserve desktop/bringup reference while production has no ABI provider.
+# A native Berserk behavior is NOT claimed here; see parity ledger.
+berserk_signature = "void Render_setBerserkColor(Render_t* render)"
+berserk_original = extract_render_function(original_render_for_startup, berserk_signature)
+berserk_generated = extract_render_function(render_source_text, berserk_signature)
+if berserk_generated != berserk_original:
+    raise RuntimeError("Generated Render_setBerserkColor source drift")
+render_source_text = render_source_text.replace(
+    berserk_generated,
+    "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + berserk_generated +
+    "\n#endif /* berserk effect requires explicit native owner */", 1)
+
+# Legacy 2D sprite decompressor directly indexes map-wide shapeData.
+# No source call sites remain in src/Render.c; desktop DoomCanvas is retired
+# from normal ESP32. Keep original ABI in desktop/bringup only.
+# Native weapon/overlay parity is tracked separately, not assumed complete.
+sprite_2d_signature = ("void Render_draw2DSprite(Render_t* render, int weaponFrame, "
+                      "int flashFrame, int x, int y, byte renderMode, boolean damageBlend)")
+sprite_2d_original = extract_render_function(original_render_for_startup, sprite_2d_signature)
+sprite_2d_generated = extract_render_function(render_source_text, sprite_2d_signature)
+if sprite_2d_generated != sprite_2d_original:
+    raise RuntimeError("Generated Render_draw2DSprite source drift")
+render_source_text = render_source_text.replace(
+    sprite_2d_generated,
+    "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + sprite_2d_generated +
+    "\n#endif /* native PAK sprite decoding owns gameplay visuals */", 1)
+
+# shapeData offset/decode helpers are meaningful only to the retired
+# Render_loadTexels map-wide inflate path. Never expose them in production.
+for shape_sig in (
+    "int Render_getSTexelOffsets(Render_t* render, int i)",
+    "int Render_getSTexelBufferSize(Render_t* render, int i)",
+):
+    legacy_shape = extract_render_function(original_render_for_startup, shape_sig)
+    generated_shape = extract_render_function(render_source_text, shape_sig)
+    if legacy_shape != generated_shape:
+        raise RuntimeError("Legacy shape offset helper drift: " + shape_sig)
+    render_source_text = render_source_text.replace(
+        generated_shape,
+        "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + generated_shape +
+        "\n#endif /* shapeData decoder retired from production */", 1)
+
 geometry_path = join(project_src_dir, "esp_render_geometry_primitives.c")
 with open(geometry_path, "r", encoding="utf-8") as geometry_handle:
     geometry_code = geometry_handle.read()
 if any(geometry_code.count(signature + "\n{") != 1
        for signature, _ in render_geometry_functions):
     raise RuntimeError("Native Render geometry export census changed")
+if extract_render_function(geometry_code, solid_bg_signature) != solid_bg_original:
+    raise RuntimeError("Native solid BG must exactly match legacy reference")
+if "void Render_fadeScreen(" in geometry_code:
+    raise RuntimeError("Retired fadeScreen production ABI reintroduced")
 print("[ESP32] Render geometry primitives native-owned; "
       "exports=7 production=esp-native bringup=desktop-original")
 
