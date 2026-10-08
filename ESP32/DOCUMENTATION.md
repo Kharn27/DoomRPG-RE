@@ -1,3 +1,11 @@
+## Review P1 fixes: Render fixed-point mode and bringup guards — REAL-CYD PRODUCTION PASS (2026-10-08)
+
+Hardware-tested production code SHA `cccd26d1e3560d1948db3004805d4c8d1a8317a2`. Codex P1 #1 fixed the permanent geometry TU missing local `FIXED_VERSION=1` (matching `src/Render.c`); P1 #2 preserved original `Render_renderBSPNoclip` and `Render_relinkSprite` bodies for `DOOMRPG_ESP32_BRINGUP_PROBES`, while normal firmware stays fail-closed. Normal `esp32-cyd` CI [37775947093](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37775947093) SUCCESS. Bringup compilation remains **not verified**, so do not call that profile PASS until compiled.
+
+User's real classic CYD: core object graph Render/Game/Canvas 1532/4/44 B; `MAPRT` native arena FNV `c3882516`; first visible gameplay FNV `71ca7465`. Fixed-point restoration intentionally changes cache-frame FNVs from `d4151456` to `a9b263f5` (SMALL-COLD) and from `efb3a31b` to `20c09fe4` (SMALL-WARM / LARGE-WARM); the change is **not pixel equivalence proof** and should be treated as changed geometry arithmetic. MOVE midpoint previews, TURN_RIGHT/LEFT two-step animations, crate subtype-2 transform, Armor Shard pickup, dialogue 88 and opcode 19 resume, HUB/SYS EXIT all complete. Note RNG seed FNV changes between boots and crate `first` differs; not an observed deterministic rendering regression.
+
+After EXIT: dialogue journal release 1036 B, native resident release 18008 B with `empty=1`, MENU_MAIN FNV `522dc605`, heap8 164184 B, largest8 110580 B, `shapeData=mediaTexels=NULL` at observed boundaries, `saveWrite=no`, checkpoint unchanged. Test did not cover LOAD, live monster behavior or bringup compilation. Production non-regression PASS; bringup guard is code-reviewed but not CI-tested. [Milestone](MILESTONE_ESP32_RENDER_P1_REVIEW_FIXES.md).
+
 ## Render_relinkSprite legacy topology mutator retired — REAL-CYD NON-REGRESSION PASS (2026-10-08)
 
 Hardware-tested code SHA `33fe48d1a01f1146b7a36f746db1dca0ce2f31a4`; normal `esp32-cyd` CI
