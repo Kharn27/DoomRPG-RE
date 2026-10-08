@@ -1,3 +1,33 @@
+## Render geometry primitives native-owned — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested SHA `7352c965434797f2ac842f0a2f37a21b225b2b26`;
+normal `esp32-cyd` CI run 37770142955 SUCCESS, static RAM
+**45056 B**, flash **775081 B** (+184 B from previous main).
+Seven projection/clipping/culling and column-occlusion primitives
+moved from generated `Render.c` to permanent
+`esp_render_geometry_primitives.c` without changing desktop
+or bringup reference bodies. Build-time CRC/census guards enforce
+the ownership boundary.
+
+Real classic CYD: Render=1532 B, Game=4 B, Canvas=44 B,
+shared framebuffer 38400 B, MENU_MAIN FNV `522dc605`,
+MAP_INTRO arena FNV `c3882516`, native first frame
+FNV `71ca7465`, `shapeData=mediaTexels=NULL`.
+Fresh movement, both two-step rotations, STRAFE_RIGHT with
+two intermediary frames, crate transform, three Armor Shard
+pickups, dialog 88 / opcode 19 resume and 4-frame door
+animation all succeeded in the supplied Serial trace.
+No fresh-session VIEWANIM FALLBACK occurred.
+One bounded `LEGACY_GUARD -> RETRY -> RECOVERED` succeeded.
+At final ALIVE: heap8 **117252 B**, largest8 **86004 B**;
+RAMBUDGET HEADROOM_OK.
+
+The previously observed **post-LOAD animation fallback**
+and active-monster resume caveat remain open and untested here.
+Likewise no SYS EXIT/destructor run in this trace.
+Hardware-tested code frozen; later doc-only closure.
+[Milestone](MILESTONE_ESP32_RENDER_GEOMETRY_PRIMITIVES_NATIVE.md).
+
 ## Eight legacy Render rejection roots native-owned — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested **code SHA `6a6bdd565a526e27f53b45c66f69e7771a91c78d`**,
