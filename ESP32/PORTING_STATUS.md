@@ -9,6 +9,10 @@ Real classic CYD boot: Render/Game/Canvas = 1532/4/44 B; `shapeData=0x0 mediaTex
 
 > Source de vérité : **main GitHub + code + logs Serial du vrai classic CYD**. État de référence au 8 octobre 2026, `main` : [`60d34d174bed0d4d4e13137f306070b5018c0fa9`](https://github.com/Kharn27/DoomRPG-RE/commit/60d34d174bed0d4d4e13137f306070b5018c0fa9). Les SHA ci-dessous décrivent des frontières testées, pas nécessairement des mesures du commit documentaire courant.
 
+## ShapeData Render_getSTexel helpers — pending CI/hardware (2026-10-08)
+
+Legacy `Render_getSTexelOffsets` and `Render_getSTexelBufferSize` read `render->shapeData` directly. Their known legacy consumer is `Render_loadTexels`, which allocates map-wide `mediaTexels` and is incompatible with native PAK / compact cache ownership. Generator now retains exact originals for desktop and bringup but excludes both helper definitions from normal ESP32; unexpected linked dependencies fail closed. This removal does NOT certify original texture/sprite feature parity; those remain the responsibility of native decoders. New hardware test and CI required.
+
 ## Render_draw2DSprite ABI cut — CYD non-regression PASS (2026-10-08)
 
 Code `580fac411ec3ba19514c112e080f12d7308f4664` (followed by docs-only `90659246638b070ad6a6a91e541a12562020dad7`), normal/PR CI [37805150632](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37805150632) and [37805154165](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37805154165) **SUCCESS**. Real ESP32-2432S028R hardware: 160x120 RGB565 38400B, no PSRAM; `shapeData=0x0 mediaTexels=0x0` at entry, map handoff, and EXIT. MENU_MAIN `522dc605`, MAPRT `c3882516`, first gameplay frame `71ca7465`, cold `a9b263f5`, warm `20c09fe4`. MOVE/TURN, blocked BACK, crate transform, armor pickup, dialog event 88 opcode 8→19, HUB system double-confirm EXIT all work; `[RESIDENTRESET] released=18008 empty=1`, menu heap8 164184 / largest8 110580, `saveWrite=no checkpoint=unchanged`. No crash or abnormal heap decline in this scenario.
