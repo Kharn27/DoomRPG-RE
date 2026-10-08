@@ -5,6 +5,12 @@
 #include "DoomRPG.h"
 #include "Render.h"
 
+/* src/Render.c fixes this mode locally; mirror its exact arithmetic. */
+#define FIXED_VERSION 1
+#if FIXED_VERSION != 1
+#error "ESP32 geometry must match desktop Render.c fixed-point mode"
+#endif
+
 /*
  * Permanent production owner for the legacy-named projection/culling
  * primitives still consumed by the ESP32-native world and sprite renderers.

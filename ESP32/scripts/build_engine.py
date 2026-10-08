@@ -501,7 +501,7 @@ for legacy_access in ("render->lines[i]", "render->mapSprites[i]"):
         raise RuntimeError("Render_renderBSPNoclip no-clip legacy ownership drift")
 render_source_text = render_source_text.replace(
     bsp_noclip_begin,
-    "#if !defined(DOOMRPG_ESP32)\n" + bsp_noclip_begin, 1)
+    "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + bsp_noclip_begin, 1)
 render_source_text = render_source_text.replace(
     bsp_noclip_end,
     "#endif /* native BSP no-clip compatibility rejection */\n\n" +
@@ -527,7 +527,7 @@ for field in ("sprite->node", "render->nodes", "node->sprites"):
     if field not in original_relink:
         raise RuntimeError("Legacy sprite ownership changed: " + field)
 render_source_text = render_source_text.replace(
-    relink_begin, "#if !defined(DOOMRPG_ESP32)\n" + relink_begin, 1)
+    relink_begin, "#if !defined(DOOMRPG_ESP32) || defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + relink_begin, 1)
 render_source_text = render_source_text.replace(
     relink_end,
     "#endif /* native topology owns sprite relinking */\n\n" +
