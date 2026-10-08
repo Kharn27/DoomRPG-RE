@@ -3229,11 +3229,16 @@ void drawSlotNav(uint16_t* fb, int top, int bottom, uint8_t page) {
     const uint16_t hot = ESP_HUB_COLOR_AMBER;
     fillRect(fb, x0, top, x1, bottom, ESP_HUB_COLOR_PANEL);
     drawRect(fb, x0, top, x1, bottom, edge);
-    /* Wide, double-stroke chevron: clearly directional at 160x120. */
-    for (int i = 0; i < 7; ++i) {
-        const int yy = page == 1U ? mid - 3 + i : mid + 3 - i;
-        fillRect(fb, 132 + i, yy - 1, 135 + i, yy + 1, hot);
+    /* Eight-pixel wide, two-stroke chevron rather than an isolated slash. */
+    for (int i = 0; i < 5; ++i) {
+        const int dx = 134 + i;
+        const int topY = mid - 5 + i;
+        const int botY = mid + 5 - i;
+        fillRect(fb, dx, topY - 1, dx + 2, topY + 1, hot);
+        fillRect(fb, dx, botY - 1, dx + 2, botY + 1, hot);
     }
+    /* Opposite-page direction: same clickable control, reversed geometry. */
+    (void)page;
     fillRect(fb, x0 + 2, top + 2, x0 + 4, bottom - 2, ESP_HUB_COLOR_RED);
 }
 
@@ -3438,16 +3443,16 @@ extern "C" int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
 extern "C" int EspNativeGameplaySave_slotSelectorActive(void) { return slotMode != 0U; }
 extern "C" int EspNativeGameplaySave_touchSlot(int x, int y) {
     if (slotMode == 0U || y < 47 || y > 116) return 0;
-    if (x < 19 || x > 140) {
-        if (x <= 18 || x >= 141) {
-            slotFocus = slotFocus <= 5U ? 6U : 1U;
-            slotArmed = 0U;
-            selectSaveSlot(slotFocus);
-            (void)paintSaveOverlay();
-            printf("[SAVESLOTS] PAGE page=%u\\n", slotFocus <= 5U ? 1U : 2U);
-        }
+    if (x >= 117) {
+        slotFocus = slotFocus <= 5U ? 6U : 1U;
+        slotArmed = 0U;
+        selectSaveSlot(slotFocus);
+        (void)paintSaveOverlay();
+        printf("[SAVESLOTS] PAGE page=%u via=right-column\n",
+               slotFocus <= 5U ? 1U : 2U);
         return 1;
     }
+    if (x < 7 || x > 113) return 1;
     const uint8_t row = (uint8_t)((y - 47) / 14);
     if (row >= 5U) return 1;
     const uint8_t selected = (uint8_t)((slotFocus <= 5U ? 1U : 6U) + row);
