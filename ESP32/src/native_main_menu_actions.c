@@ -561,6 +561,7 @@ DoomRPG_esp32ActivateMainMenuLoad(struct DoomRPG_s* doomRpgBase) {
         printf("[MAINLOAD] FAILED checkpoint restore; attempting MENU_MAIN recovery\n");
         EspNativeTransitionPresentation_reset();
         if (DoomRPG_esp32MainMenuRecover(doomRpg, "load-restore-failed")) {
+            EspNativeGameplaySave_mainSelectorFinish();
             return DOOMRPG_ESP32_MAIN_MENU_LOAD_RECOVERED;
         }
         return DOOMRPG_ESP32_MAIN_MENU_LOAD_FATAL;
