@@ -281,24 +281,7 @@ if (render_source_text.count("render->mapFlags") != 13 or
         render_legacy_map_region.count("render->mapFlags") != 13):
     raise RuntimeError("Render.mapFlags gained an unreviewed source consumer")
 render_source_text = render_source_text.replace(
-    render_legacy_map_begin,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-boolean Render_beginLoadMap(Render_t* render, int mapNameID)
-{
-    (void)render;
-    (void)mapNameID;
-    printf("[LEGACYMAP] REJECT Render_beginLoadMap: native BSP owner required\\n");
-    return false;
-}
-
-boolean Render_beginLoadMapData(Render_t* render)
-{
-    (void)render;
-    printf("[LEGACYMAP] REJECT Render_beginLoadMapData: native BSP owner required\\n");
-    return false;
-}
-#else
-""" + render_legacy_map_begin, 1)
+    render_legacy_map_begin, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + render_legacy_map_begin, 1)
 render_source_text = render_source_text.replace(
     render_legacy_map_end,
     "#endif /* production legacy BSP loader rejection */\n\n" +
@@ -341,33 +324,13 @@ if (len(re.findall(r"render->planeTextures\b", legacy_loader_piece)) != 2 or
         len(re.findall(r"render->planeTextures\b", legacy_draw_piece)) != 2):
     raise RuntimeError("Render planeTextures read/write closure changed")
 render_source_text = render_source_text.replace(
-    legacy_render_entry,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_render(Render_t* render, int viewx, int viewy, int viewz, unsigned int viewangle)
-{
-    (void)render;
-    (void)viewx;
-    (void)viewy;
-    (void)viewz;
-    (void)viewangle;
-    printf("[LEGACYRENDER] REJECT Render_render: native world renderer required\\n");
-}
-#else
-""" + legacy_render_entry, 1)
+    legacy_render_entry, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + legacy_render_entry, 1)
 render_source_text = render_source_text.replace(
     legacy_render_next,
     "#endif /* production legacy world renderer rejection */\n\n" +
     legacy_render_next, 1)
 render_source_text = render_source_text.replace(
-    legacy_plane_entry,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_renderFloorAndCeilingBG(Render_t* render)
-{
-    (void)render;
-    printf("[LEGACYRENDER] REJECT Render_renderFloorAndCeilingBG: native planes required\\n");
-}
-#else
-""" + legacy_plane_entry, 1)
+    legacy_plane_entry, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + legacy_plane_entry, 1)
 render_source_text = render_source_text.replace(
     legacy_plane_next,
     "#endif /* production legacy plane renderer rejection */\n\n" +
@@ -385,14 +348,8 @@ plane_draw = "void Render_drawplane(Render_t* render, int x, int y, PlaneTexture
 plane_end = "void Render_renderBSP(Render_t* render)\n{"
 if render_source_text.count(plane_draw) != 1 or render_source_text.count(plane_end) != 1:
     raise RuntimeError("Unexpected legacy Render plane helper source")
-render_source_text = render_source_text.replace(plane_draw, """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_drawplane(Render_t* r,int x,int y,PlaneTextureRef_t* p,int n)
-{ (void)r;(void)x;(void)y;(void)p;(void)n; }
-void Render_spanPlane(Render_t* r,int x,int y,PlaneTextureRef_t* p,
-                      int a,int b,int c,int d,int n)
-{ (void)r;(void)x;(void)y;(void)p;(void)a;(void)b;(void)c;(void)d;(void)n; }
-#else
-""" + plane_draw, 1)
+render_source_text = render_source_text = render_source_text.replace(
+    plane_draw, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + plane_draw, 1)
 render_source_text = render_source_text.replace(plane_end, "#endif\n\n" + plane_end, 1)
 
 # Fifth bounded cut: viewNodes was a 44-byte linked-list sentinel in
@@ -414,34 +371,31 @@ if (render_source_text[render_source_text.index(view_bsp_begin):
                            render_source_text.index(view_walk_end)].count("render->viewNodes") != 3):
     raise RuntimeError("Legacy viewNodes consumer escaped its retired owner")
 render_source_text = render_source_text.replace(
-    view_bsp_begin,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_renderBSP(Render_t* render)
-{
-    (void)render;
-    printf("[LEGACYBSP] REJECT Render_renderBSP: native visibility required\\n");
-}
-#else
-""" + view_bsp_begin, 1)
+    view_bsp_begin, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + view_bsp_begin, 1)
 render_source_text = render_source_text.replace(
     view_bsp_end,
     "#endif /* production legacy BSP traversal rejection */\n\n" + view_bsp_end, 1)
 render_source_text = render_source_text.replace(
-    view_walk_begin,
-    """#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
-void Render_walkNode(Render_t* render, int i)
-{
-    (void)render;
-    (void)i;
-    printf("[LEGACYBSP] REJECT Render_walkNode: native BSP owner required\\n");
-}
-#else
-""" + view_walk_begin, 1)
+    view_walk_begin, "#if defined(DOOMRPG_ESP32_BRINGUP_PROBES)\n" + view_walk_begin, 1)
 render_source_text = render_source_text.replace(
     view_walk_end,
     "#endif /* production legacy BSP walk rejection */\n\n" + view_walk_end, 1)
 print("[ESP32] Legacy BSP view-list traversal fail-closed; "
       "Render.viewNodes 44-byte sentinel retired from production")
+
+# The normal firmware exports eight legacy fail-closed ABI endpoints
+# from a permanent ESP32 C file; desktop originals remain bringup-only.
+reject_path = join(project_src_dir, "esp_legacy_render_reject.c")
+with open(reject_path, "r", encoding="utf-8") as reject_handle:
+    reject_code = reject_handle.read()
+reject_exports = ("Render_beginLoadMap", "Render_beginLoadMapData",
+                  "Render_render", "Render_renderFloorAndCeilingBG",
+                  "Render_drawplane", "Render_spanPlane",
+                  "Render_renderBSP", "Render_walkNode")
+if any(reject_code.count(name + "(") != 1 for name in reject_exports):
+    raise RuntimeError("Native Render reject export census changed")
+print("[ESP32] Legacy Render map/world/BSP rejects native-owned; "
+      "exports=8 production=fail-closed bringup=desktop-original")
 
 with open(render_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(render_source_text)
