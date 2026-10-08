@@ -417,11 +417,12 @@ reject_exports = ("Render_beginLoadMap", "Render_beginLoadMapData",
                   "Render_renderBSP", "Render_walkNode",
                   "Render_findEventIndex",
                   "Render_renderFloorAndCeilingBG_Test",
-                  "Render_drawPlane_Test", "Render_spanPlane_Test")
+                  "Render_drawPlane_Test", "Render_spanPlane_Test",
+                  "Render_renderBSPNoclip")
 if any(reject_code.count(name + "(") != 1 for name in reject_exports):
     raise RuntimeError("Native Render reject export census changed")
 print("[ESP32] Legacy Render map/world/BSP rejects native-owned; "
-      "exports=12 production=fail-closed bringup=desktop-original")
+      "exports=13 production=fail-closed bringup=desktop-original")
 
 
 # Retire old tileEvents binary-search ABI from generated Render.c.
@@ -474,6 +475,34 @@ render_source_text = render_source_text.replace(
     "#if !defined(DOOMRPG_ESP32)\n" + legacy_plane_test_begin, 1)
 render_source_text += "\n#endif /* production excludes old mediaTexels plane tests */\n"
 print("[ESP32] Render plane *_Test routines retired production=fail-closed exports=3")
+
+# The desktop BSP no-clip bypass iterates Render.lines/mapSprites and
+# calls the old rasterizer. Production has neither pointer-heavy arrays.
+# Retire it to a native fail-closed compatibility ABI.
+bsp_noclip_begin = "void Render_renderBSPNoclip(Render_t* render)\n{"
+bsp_noclip_end = "void Render_walkNode(Render_t* render, int i)\n{"
+if (render_source_text.count(bsp_noclip_begin) != 1 or
+        render_source_text.count(bsp_noclip_end) != 1):
+    raise RuntimeError("Render_renderBSPNoclip source boundary drift")
+bsp_noclip_original = original_render_for_startup[
+    original_render_for_startup.index(bsp_noclip_begin):
+    original_render_for_startup.index(bsp_noclip_end)]
+bsp_noclip_generated = render_source_text[
+    render_source_text.index(bsp_noclip_begin):
+    render_source_text.index(bsp_noclip_end)]
+if bsp_noclip_original != bsp_noclip_generated:
+    raise RuntimeError("Render_renderBSPNoclip generated source drift")
+for legacy_access in ("render->lines[i]", "render->mapSprites[i]"):
+    if legacy_access not in bsp_noclip_original:
+        raise RuntimeError("Render_renderBSPNoclip no-clip legacy ownership drift")
+render_source_text = render_source_text.replace(
+    bsp_noclip_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + bsp_noclip_begin, 1)
+render_source_text = render_source_text.replace(
+    bsp_noclip_end,
+    "#endif /* native BSP no-clip compatibility rejection */\n\n" +
+    bsp_noclip_end, 1)
+print("[ESP32] Render_renderBSPNoclip native-owned production=fail-closed")
 
 # The native CYD renderer still consumes a small set of legacy-named geometry
 # primitives. They are pure Render scratch/math helpers: no desktop map owner,

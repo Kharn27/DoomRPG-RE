@@ -7,6 +7,12 @@
  * operations. The desktop definitions remain available to bringup probes.
  */
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+/* No legacy lines/mapSprites buffers in production; never bypass native BSP. */
+void Render_renderBSPNoclip(Render_t* render) {
+    (void)render;
+    printf("[LEGACYBSP] REJECT Render_renderBSPNoclip: native BSP owner required\n");
+}
+
 /* Desktop plane test entrypoints rely on monolithic mediaTexels.
  * Production is permanently PAK-backed, never creates that array.
  */
