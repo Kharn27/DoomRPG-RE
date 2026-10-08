@@ -1,3 +1,31 @@
+## Render_relinkSprite legacy topology mutator retired — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Hardware-tested code SHA `33fe48d1a01f1146b7a36f746db1dca0ce2f31a4`; normal `esp32-cyd` CI
+[37773404749](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37773404749)
+SUCCESS. The generated production `Render_relinkSprite` body that mutates
+`Sprite.node`, `Render.nodes` and BSP sprite linked lists is excluded.
+Permanent `esp_legacy_render_reject.c` provides the fail-closed
+compatibility endpoint; native map topology remains the sole owner.
+Desktop and bringup retain the original reference.
+
+Real CYD: Render/Game/Canvas 1532/4/44 B, framebuffer 38400 B,
+MAP_INTRO native arena FNV c3882516, first gameplay frame 71ca7465,
+MOVE midpoint and TURN_RIGHT/LEFT previews, crate subtype-2 transform,
+Armor Shard pickup (armor 0->4), dialog 88 opcode 19 resume,
+HUB close/reopen then SYS double-confirm EXIT. Final native reset
+released 18008 B, empty=1; dialog journal recovered 1036 B;
+MENU_MAIN FNV 522dc605, heap8 164184 B, largest8 110580 B;
+shapeData/mediaTexels NULL; saveWrite=no, checkpoint unchanged.
+
+**Scope:** no direct legacy `Render_relinkSprite` call observed, thus
+a real-hardware non-regression PASS, not positive invocation coverage.
+The HUB close log reports `exactHud=NO` for the top+bottom combined
+HUD bands, but `exactBottom=yes` and top-bar recomposition is explicitly
+deferred to world redraw. This is noted without assigning a new regression.
+No LOAD or active-monster sequence coverage in this test.
+All code through this SHA is hardware-tested; only documentation follows.
+[Milestone](MILESTONE_ESP32_RENDER_RELINKSPRITE_RETIRED.md).
+
 ## Render_renderBSPNoclip retired — REAL-CYD NON-REGRESSION PASS (2026-10-08)
 
 Hardware-tested code SHA `d382610ec593640928e5f882e3e1b66ad0755704`; normal esp32-cyd CI
