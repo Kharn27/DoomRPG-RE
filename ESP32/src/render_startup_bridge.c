@@ -22,7 +22,6 @@ _Static_assert(sizeof(Render_t) == 1532U,
 
 
 extern DoomRPG_t* doomRpg;
-void __real_Render_free(Render_t* render, boolean freePtr);
 
 /*
  * Permanent ESP32 owner of the two constructor/layout Render API roots.
@@ -335,14 +334,39 @@ int Render_startup(Render_t* render) {
     return 1;
 }
 
-void __wrap_Render_free(Render_t* render, boolean freePtr) {
-    if (render != NULL &&
-        render->framebuffer == (byte*)Esp32PlatformVideo_framebuffer()) {
-        /* Render does not own PlatformVideo's shared framebuffer. */
+/*
+ * Permanent native Render destructor ABI.
+ * Never free PlatformVideo's shared framebuffer: the framebuffer pointer is
+ * detached before calling the unchanged legacy Render_freeRuntime cleanup.
+ * All other cleanup actions and freePtr semantics mirror desktop Render_free.
+ */
+void Render_free(Render_t* render, boolean freePtr)
+{
+    const int sharedFramebuffer = render != NULL &&
+        render->framebuffer == (byte*)Esp32PlatformVideo_framebuffer();
+    if (sharedFramebuffer) {
         render->framebuffer = NULL;
     }
+    printf("[RENDERFREE] ENTRY owner=esp-native-render-startup direct=yes wrap=no sharedFB=%d freePtr=%d\n",
+           sharedFramebuffer, (int)freePtr);
 
-    __real_Render_free(render, freePtr);
+    Render_freeRuntime(render);
+    SDL_free(render->ceilingColor);
+    SDL_free(render->floorColor);
+    SDL_free(render->columnScale);
+    SDL_free(render->mediaPalettes);
+
+    SDL_free(render->framebuffer);
+    render->framebuffer = NULL;
+
+    if (render->piDIB) {
+        SDL_DestroyTexture(render->piDIB);
+        render->piDIB = NULL;
+    }
+
+    if (freePtr) {
+        SDL_free(render);
+    }
 }
 
 int EspRenderStartupBridge_start(int preRenderReady) {

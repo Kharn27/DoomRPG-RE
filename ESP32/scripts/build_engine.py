@@ -199,6 +199,34 @@ render_source_text = render_source_text.replace(
 print("[ESP32] Desktop Render_startup unlinked; "
       "owner=esp-native-render-startup direct=yes linkerWrap=no")
 
+# Render_free's native bridge implements exactly the inherited shell cleanup,
+# with the PlatformVideo framebuffer detached before the legacy
+# Render_freeRuntime() cleanup path. Prevent a duplicated desktop destructor.
+native_free_begin = "void Render_free(Render_t* render, boolean freePtr)\n{"
+native_free_next = "#if !defined(DOOMRPG_ESP32)\nint Render_startup(Render_t* render)\n{"
+native_free_original_next = "int Render_startup(Render_t* render)\n{"
+if (render_source_text.count(native_free_begin) != 1 or
+        render_source_text.count(native_free_next) != 1):
+    raise RuntimeError("Generated Render_free source boundary changed")
+if (original_render_for_startup.count(native_free_begin) != 1 or
+        original_render_for_startup.count(native_free_original_next) != 1):
+    raise RuntimeError("Original desktop Render_free source boundary changed")
+original_free_slice = original_render_for_startup[
+    original_render_for_startup.index(native_free_begin):
+    original_render_for_startup.index(native_free_original_next)]
+if zlib.crc32(original_free_slice.encode("latin-1")) != 0x5c51ec08:
+    raise RuntimeError("Original Render_free changed: audit native teardown owner")
+render_source_text = render_source_text.replace(
+    native_free_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + native_free_begin, 1)
+render_source_text = render_source_text.replace(
+    native_free_next,
+    "#endif /* Native direct Render_free owns platform framebuffer guard */\n\n" +
+    native_free_next, 1)
+print("[ESP32] Desktop Render_free unlinked; "
+      "owner=esp-native-render-startup direct=yes linkerWrap=no "
+      "sharedFB=PlatformVideo guarded=yes")
+
 # Render palette, RGB565 and mappings roots have permanent native owners.
 # The retained source slice is pinned to the exact legacy specification,
 # with a strict function census and CRC32 to catch desktop-side drift.
