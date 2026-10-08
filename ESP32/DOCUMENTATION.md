@@ -1,3 +1,35 @@
+## Original desktop C source registration retired — REAL-CYD PASS (2026-10-08)
+
+Hardware-tested code SHA `48aab6de7ef0ec06cbb9929894ea9add1b9dc086`, normal `esp32-cyd` CI
+#37706071148 **SUCCESS**: `originalC=21 compiledOriginal=0
+patchedRoots=DoomRPG.c,Render.c`, RAM static **45056 B**, flash
+**774521 B** (same as prior animated-main code). Removes only the
+previously zero-object desktop-original `BuildSources` registration;
+retains explicit patched legacy roots and adds a fail-closed original
+C source inventory guard. **No memory gain is claimed.**
+
+Real classic CYD: fresh boot `Render=1532 Game=4 Canvas=44`, framebuffer
+160x120=38400 B, no PSRAM; initial `MENU_MAIN=522dc605`, native
+MAP_INTRO arena `c3882516` and first frame `71ca7465`. The user
+exercised forward movement with single axial midpoint previews,
+quarter-turn interpolation, SELECT crate transform, native armor-shard
+pickup, event 82 dialogue closing to opcode 19 state mutation,
+HUB/SYS double-confirm EXIT. `[DIALOGCHAIN] OWNER-RELEASE`
+recovered **1036 B**, `[RESIDENTRESET] released=18008 empty=1`,
+final `MENU_MAIN=522dc605`, final heap8 **164184**,
+largest8 **110580**, `shapeData=mediaTexels=NULL`, no checkpoint
+write. During fresh gameplay heap8 **118288**, largest8 **86004**,
+then after opening dialogue **117252**; no growth over observed
+checkpoints. No hardware abnormality was detected; the known
+`LEGACY_GUARD / RETRY / RECOVERED` renderer path resolved.
+
+**Not re-tested here:** checkpoint LOAD, CHANGEMAP, monster combat,
+blocked collision or cross-map session; do not conflate this
+bounded PASS with those scenarios. Code SHA is frozen;
+post-test closure is docs-only. The user explicitly requested
+continuing on this **same branch** with a new, separately validated
+retirement milestone. [Details](MILESTONE_ESP32_RETIRE_DESKTOP_SOURCE_REGISTRATION.md).
+
 ## Native MOVE visual pacing — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested code SHA `e944dc386758900bc55c68d374344c631640e6b4`,

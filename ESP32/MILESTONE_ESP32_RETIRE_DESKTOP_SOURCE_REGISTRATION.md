@@ -1,6 +1,12 @@
 # Milestone — remove original desktop C BuildSources registration
 
-Status: **CODE CANDIDATE — normal CI and real-CYD validation pending**
+Status: **REAL-CYD HARDWARE PASS — DOCS-ONLY CLOSURE**
+
+Hardware-tested code SHA: `48aab6de7ef0ec06cbb9929894ea9add1b9dc086`. Normal `esp32-cyd`
+GitHub Actions run #37706071148: **SUCCESS** (static RAM
+45056 B, flash 774521 B). Build guard recorded the exact 21 original
+TUs, compiled 0 original C TUs and registered only patched
+`DoomRPG.c`/`Render.c`. The latter remain desktop dependencies.
 
 Main source-of-truth base SHA:
 `38e961c65ac0fa2fb036f6dce2c58fdf86783c70` (merged animation PR #201).
@@ -44,7 +50,42 @@ are already removed. Two generated patched engine roots survive and
 remain the next explicit retirement front. Do not claim a reduced
 binary RAM/flash footprint from a previously zero-object stage.
 
-## Acceptance
+## Real physical CYD acceptance (2026-10-08)
+
+The user tested the exact code SHA in the standard `esp32-cyd`
+firmware, not bringup. Fresh startup showed `Render=1532 B`,
+`Game=4 B`, `Canvas=44 B`, shared 38400-byte framebuffer,
+`MENU_MAIN=522dc605` and resident intro BSP arena `c3882516`.
+Animation forward 1 midpoint + turn 2 previews rendered/presented,
+normal committed MOVE turn cadence, successful crate SELECT transform,
+Armor Shard pickup and native event-82 dialogue → opcode-19 state
+mutation. HUB SYS double-confirm EXIT cleanly returned to menu:
+
+```text
+[DIALOGCHAIN] OWNER-RELEASE journal=1020 topologyCapacity=0 activeAtTeardown=1 heap8=118356->119392 recovered=1036 owner=none
+[RESIDENTRESET] heap8=146176->164184 released=18008 before=1/1/1/1/1/1/1 after=0/0/0/0/0/0/0 empty=1
+[MAINMENU] Runtime cleanup ... heap8=164184->164184 largest8=110580->110580 shapeData=0x0 mediaTexels=0x0
+[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty saveWrite=no checkpoint=unchanged
+[ALIVE] ... heap8=164184 largest8=110580 ...
+```
+
+Gameplay `heap8=118288 largest8=86004` when fresh,
+`heap8=117252` after lazy dialogue journal allocation,
+with no drift between samples. Old `[NATIVEFRAME] LEGACY_GUARD`
+logged RETRY and RECOVERED as before.
+
+The users' test did not include LOAD, CHANGEMAP, active monsters,
+blocked collision, door mutation or topology snapshot release.
+Those remain unproven on this specific code SHA.
+
+## Closure policy
+
+This branch remains active **at the user's explicit request**;
+this milestone's tested code is frozen, and this commit changes
+only documentation. The next bounded retirement must get a new
+code SHA and separate hardware test, without creating another branch.
+
+## Original candidate acceptance checklist
 
 1. Normal `esp32-cyd` CI compiles successfully with the guard
    firing and reports expected source registration telemetry.
@@ -57,4 +98,4 @@ binary RAM/flash footprint from a previously zero-object stage.
    documentation changes only. Merge remains user-controlled
    unless explicitly authorized.
 
-No real-CYD PASS is claimed until the user supplies Serial logs.
+Real-CYD PASS for the bounded registration retirement is recorded above.
