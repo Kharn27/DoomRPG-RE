@@ -1,3 +1,29 @@
+## Render_freeRuntime permanent native ownership — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Code SHA `75cefcf402b6bacd8fbd768450cf4b70e8f3e8cd`;
+normal `esp32-cyd` build CI [37770825723](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37770825723) firmware build and artifact PASS.
+`Render_freeRuntime` is implemented in permanent `render_startup_bridge.c`,
+with desktop free order/null resets preserved. Production generated
+`Render.c` excludes the duplicate; desktop remains its reference.
+The hardware boot reproduces Render/Game/Canvas 1532/4/44 B,
+38400 B shared RGB565, menu FNV `522dc605`,
+`MAPRT` FNV `c3882516` and first world frame FNV `71ca7465`.
+Fresh MOVE/TURN previews, crate transform (ammo 8->7), Armor Shard
+(armor 0->4), dialog 88 / opcode 19 resume and HUB/SYS EXIT all work.
+Dialogue journal release recovered 1036 B; resident cleanup released
+18008 B (`empty=1`), final menu FNV `522dc605`, heap8 164184 B,
+largest8 110580 B; `saveWrite=no checkpoint=unchanged`.
+`shapeData=mediaTexels=NULL` throughout observed boundaries.
+
+**Scope caveat:** SYS EXIT exercises native resident cleanup, **not**
+`Render_free` / `Render_freeRuntime` direct destructor invocation:
+there is no `[RENDERFREE] ENTRY` in this run. The new teardown
+implementation is source/CI-verified, but direct runtime execution
+remains untested. Checkpoint-LOAD animation and active-monster
+sequencer issues remain separate and untested. The tested code
+SHA is frozen; subsequent code on this branch needs a new CI/CYD gate.
+[Milestone](MILESTONE_ESP32_RENDER_FREERUNTIME_NATIVE.md).
+
 ## Render geometry primitives native-owned — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested SHA `7352c965434797f2ac842f0a2f37a21b225b2b26`;
