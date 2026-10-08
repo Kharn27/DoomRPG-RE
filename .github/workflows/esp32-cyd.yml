@@ -50,6 +50,10 @@ jobs:
         working-directory: ESP32
         run: pio run -e esp32-cyd
 
+      - name: Build diagnostic CYD bringup firmware
+        working-directory: ESP32
+        run: pio run -e esp32-cyd-bringup
+
       - name: Upload firmware artifacts
         if: success()
         uses: actions/upload-artifact@v4
