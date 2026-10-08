@@ -61,6 +61,19 @@ int __wrap_EspNativeGameplayHubTouchUi_classify(
             logicalX, logicalY, outHitBase);
     }
 
+    if (EspNativeGameplaySave_slotSelectorActive()) {
+        if (logicalY >= 47 && logicalY <= 116) {
+            if (outHit != NULL) {
+                memset(outHit, 0, sizeof(*outHit));
+                outHit->action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
+                outHit->zone = ESP_NATIVE_GAMEPLAY_ZONE_SELECT;
+                outHit->left = 0; outHit->top = 47;
+                outHit->right = 159; outHit->bottom = 116;
+            }
+            return 1;
+        }
+        if (logicalY >= 35) return -1;
+    }
     if (outHit != NULL &&
         targetForPoint(logicalX, logicalY, &target, &top, &bottom)) {
         memset(outHit, 0, sizeof(*outHit));
@@ -102,6 +115,16 @@ EspNativeGameplayInputStatus __wrap_EspNativeGameplayInput_consume(
         return inputStatus;
     }
 
+    if (EspNativeGameplaySave_slotSelectorActive() &&
+        outIntent->action == ESP_NATIVE_GAMEPLAY_ACTION_SELECT) {
+        const int selected = EspNativeGameplaySave_touchSlot(
+            (int)outIntent->logicalX, (int)outIntent->logicalY);
+        if (selected != 2) {
+            outIntent->action = ESP_NATIVE_GAMEPLAY_ACTION_NONE;
+            outIntent->zone = ESP_NATIVE_GAMEPLAY_ZONE_NONE;
+        }
+        return inputStatus;
+    }
     if (outIntent->action != ESP_NATIVE_GAMEPLAY_ACTION_SELECT ||
         !targetForPoint((int)outIntent->logicalX,
                         (int)outIntent->logicalY,
