@@ -43,6 +43,22 @@ Ces chiffres **ne sont pas** une promesse universelle pour toutes les cartes ou 
 - Les parties gameplay vivantes ont leurs propres propriétaires : actions joueur, mouvement/attaque des monstres, état du monde, rendu, feedback et save/load. Ne pas rétablir les structures desktop comme autorité.
 - Détail des invariants de modules : [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
+### Menu de mort — candidat graphique, hardware à confirmer
+
+- Refonte limitée à la présentation : palette industrielle et polices HUB
+  partagées, titre rouge, quatre cartes alignées avec indications d'état.
+- LOAD actif en ambre avec checkpoint ; sinon `NO SAVE`. Junction/Retry/Main
+  restent fail-closed et affichent `NOT AVAILABLE`. Aucun nouveau backend.
+- `MAIN MENU` du menu de mort est distinct du retour `SYS → EXIT TO MENU`
+  fonctionnel du HUB. Ce dernier est inchangé par la refonte graphique.
+- Chute, fondu, admission à 3000 ms et dispatch LOAD conservés ; pas de nouvel
+  asset, framebuffer ou état permanent. Propriétaire de mort : toujours 28 B.
+- Build local `esp32-cyd` : PASS, RAM statique 45056 B / flash 774713 B.
+  Test host `test_death_menu.c` : PASS, timing, rendu, hitboxes, guards et routes
+  avec backends mockés ; aperçu du vrai painter inspecté avec/sans sauvegarde.
+- Validation CYD du nouvel aspect et du LOAD après mort encore à faire, selon
+  le protocole de [`DOCUMENTATION.md`](DOCUMENTATION.md#présentation-du-menu-de-mort).
+
 ### Render — frontière de désengagement en cours
 - `Render_t` 1532 B ; aucun retour des gros membres historiques.
 - Le normal `esp32-cyd` a les propriétaires permanents `render_startup_bridge.c`, `esp_render_geometry_primitives.c` et `esp_legacy_render_reject.c` pour les familles déjà migrées.

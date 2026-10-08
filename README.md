@@ -95,6 +95,15 @@ This is not yet a complete gameplay-parity release. In particular, the complete
 Audio, some advanced weapons and monster behaviors, the player-death path and
 several HUB features also remain intentionally incomplete or fail-closed.
 
+### Death menu — presentation candidate
+
+The death screen now uses the HUB/mission-report industrial style, shared crisp
+fonts and four aligned cards. `LOAD SAVED GAME` is highlighted when a checkpoint
+exists, otherwise shows `NO SAVE`. Junction/Retry/Main Menu remain unavailable;
+death-menu Main Menu is distinct from the working in-game `SYS → EXIT TO MENU`.
+Only presentation changes: fall, fade and existing actions are preserved.
+Local build/tests pass; visual and LOAD acceptance on the CYD remain pending.
+
 ### Mission report — development candidate
 
 Development candidate — mission report: a compact HUB-style full-screen report
@@ -317,6 +326,16 @@ En particulier, la transition de fin de niveau `CHANGEMAP` attend encore sa
 validation matérielle dédiée. L'audio, certaines armes et IA avancées, la mort
 du joueur et plusieurs fonctions du HUB restent également incomplets ou
 volontairement bloqués lorsqu'ils ne sont pas encore sûrs.
+
+### Menu de mort — présentation à valider
+
+L'écran de mort reprend le style industriel du HUB/bilan de mission, ses
+polices nettes et quatre cartes alignées. `LOAD SAVED GAME` ressort lorsqu'une
+sauvegarde existe, sinon affiche `NO SAVE`. Junction/Retry/Main Menu restent
+indisponibles ; ce Main Menu est distinct du retour fonctionnel en jeu
+`SYS → EXIT TO MENU`. Seule la présentation change : chute, fondu et actions
+existantes sont conservés. Compilation/tests locaux OK ; aspect et LOAD sur
+CYD encore à valider.
 
 ### Bilan de mission — évolution en cours
 
