@@ -1,6 +1,36 @@
 # Milestone — native palette/color and mappings ABI roots
 
-Status: **CODE CANDIDATE — real-CYD validation pending**.
+Status: **REAL-CYD HARDWARE PASS — code frozen**.
+
+Normal firmware hardware-tested SHA: `ea221b4a7248d05ceda077f6c226e7da0851d302`.
+CI #37707296749 **SUCCESS**; static RAM 45056 B,
+flash 774693 B (12 B below preceding native init/setup milestone).
+
+## Measured production classic CYD witness — 2026-10-08
+
+The user flashed the normal production firmware and posted the full
+boot/intro/map-start/gameplay/dialog/EXIT sequence. Exactly
+3280 palette entries / 6560 B were loaded, and native mappings
+installed 8376 B with existing framebuffer scratch, without inflating
+map-wide texture storage. Heap8 remained 178500 after layout,
+167780 after Render startup, 159340 after mappings. Starting menu
+frame FNV 522dc605, MAP_INTRO arena c3882516 and first native world
+frame 71ca7465 all matched their verified baselines.
+One-midpoint FORWARD and two-preview TURN frames continued to present;
+every committed MOVE advanced precisely one monster turn, rotation none.
+Native event 88 dialog resumed bytecode opcode 19 state mutation.
+Dialog chain journal reclaimed 1036 B at session teardown.
+`[RESIDENTRESET]` logged `released=18008 empty=1`, and final
+`[SYSEXIT] MENU-READY` returned exact menu FNV 522dc605 with
+saveWrite=no and session=off. Follow-on ALIVE samples remained
+heap8 164184, largest8 110580. `shapeData` and `mediaTexels`
+remained NULL. No regression observed.
+
+The excerpt does **not** re-exercise active-monster fighting, a new
+LOAD, CHANGEMAP, blocked collision, or door flow on this SHA.
+The native code SHA is frozen: subsequent changes to this milestone
+must be docs-only. Further legacy retirements are separate
+milestones on the *same* active branch.
 Branch: `agent/esp32-retire-desktop-source-registration`; no merge or new branch.
 Prior physically tested Render init/setup code:
 `9316dd58ad65e916e35b317ad48ff37faffb2d1c`.
@@ -50,4 +80,4 @@ Normal `esp32-cyd` CI SUCCESS then actual CYD:
 - `shapeData==NULL`, `mediaTexels==NULL`, and zero unexpected
   `[NATIVEFRAME]` unrecovered errors.
 
-No physical PASS is claimed until the exact code SHA is tested.
+Physical hardware PASS is recorded above against the exact tested SHA.

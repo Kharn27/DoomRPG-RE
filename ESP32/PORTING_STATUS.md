@@ -1,3 +1,38 @@
+## Native Render palette/color and mappings roots — REAL-CYD PASS (2026-10-08)
+
+Code SHA `ea221b4a7248d05ceda077f6c226e7da0851d302`; normal `esp32-cyd` GitHub Actions
+run **37707296749 SUCCESS**, static RAM **45056 B**, flash **774693 B**.
+Five symbols leave generated desktop `Render.c` for native owners:
+`Render_loadPalettes`, `Render_make565RGB`,
+`Render_RGB888_To_RGB565`, `Render_setGrayPalettes`,
+`Render_loadMappings`. Source-region CRC32 guard
+`0x6f5b63d3` is enabled, original desktop sources unchanged.
+
+Physical classic CYD test on this exact SHA: `[RENDERCORE] INIT
+bytes=1532` and `SETUP view=160x80@0,20 arrays=1280B`,
+palette entries **3280** / **6560 B**, mappings payload **8376 B**,
+heap8 after layout **178500 B**, after Render_startup **167780 B**,
+after mappings **159340 B**. MENU_MAIN FNV `522dc605`,
+compact MAP_INTRO arena FNV `c3882516`, first gameplay
+frame `71ca7465`; framebuffer **38400 B** and
+`shapeData=mediaTexels=NULL`. Forward camera midpoint and
+TURN previews presented; native event **88** dialog closed, resumed
+opcode **19** with `stateMutation=1`. `MONSTERTURN` had one
+dispatch per committed FORWARD, none on TURN.
+`[DIALOGCHAIN] OWNER-RELEASE` recovered **1036 B**;
+`[RESIDENTRESET] released=18008 ... empty=1`;
+`[SYSEXIT] MENU-READY frame=522dc605 session=off resident=empty
+saveWrite=no checkpoint=unchanged`. Gameplay heap8 **118288 B**
+before dialog and **117252 B** with lazy journal; final menu
+heap8 **164184 B**, largest8 **110580 B**, stable at follow-on
+ALIVE samples. Physical PASS covers the bounded palette/mappings
+retirement, not every gameplay regression.
+
+**Unexercised on this firmware log:** LOAD, door, active-monster combat,
+blocked collision, explicit automap-mode movements and CHANGEMAP.
+Hardware-tested code is frozen; this closure is docs-only.
+See [milestone](MILESTONE_ESP32_RENDER_PALETTE_MAPPINGS_NATIVE.md).
+
 ## Render constructor and viewport roots native — REAL-CYD PASS (2026-10-08)
 
 Hardware-tested normal `esp32-cyd` code SHA `9316dd58ad65e916e35b317ad48ff37faffb2d1c`,
