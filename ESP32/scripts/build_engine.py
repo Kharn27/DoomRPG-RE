@@ -619,7 +619,7 @@ native_fade_with_witness = extract_render_function(geometry_code, fade_signature
 # Remove exactly the diagnostic prefix before checking pixel algorithm parity.
 witness_pattern = r"\n    /\* One-shot invocation witness:.*?\n    }\n\n"
 native_fade_without_witness, witness_count = re.subn(
-    witness_pattern, "", native_fade_with_witness, count=1, flags=re.S)
+    witness_pattern, "\n", native_fade_with_witness, count=1, flags=re.S)
 if witness_count != 1 or native_fade_without_witness != fade_original:
     raise RuntimeError("Native fadeScreen differs from legacy pixel algorithm")
 print("[ESP32] Render geometry primitives native-owned; "
