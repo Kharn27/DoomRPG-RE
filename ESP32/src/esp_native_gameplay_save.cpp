@@ -3228,7 +3228,8 @@ bool paintSaveOverlay(void) {
     uint16_t saveColor = ESP_HUB_COLOR_IVORY;
     uint16_t loadColor = ESP_HUB_COLOR_IVORY;
     const bool confirmExit = confirmationTarget == kStatusExit;
-    const bool hasSave = EspNativeGameplaySave_hasReadableCheckpoint() != 0;
+    const bool hasSave = slotMode == 0U &&
+        EspNativeGameplaySave_hasReadableCheckpoint() != 0;
     size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
                       (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
 
@@ -3250,9 +3251,6 @@ bool paintSaveOverlay(void) {
         for (uint8_t row = 0U; row < 5U; ++row) {
             const uint8_t slot = first + row;
             const int top = 47 + row * 14;
-            const bool present = SD.exists(slot == 1U ? kLegacySavePath : "") ||
-                false;
-            (void)present;
             char path[48];
             snprintf(path, sizeof(path), "/DoomRPG-ESP32-slot%02u.sav", (unsigned)slot);
             const bool available = SD.exists(path) ||
@@ -3502,6 +3500,8 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 printf("[SAVESLOTS] CONFIRM mode=%s slot=%u\\n",
                        slotMode == 1U ? "SAVE" : "LOAD", (unsigned)slotFocus);
                 slotArmed = 0U;
+                /* Slot already armed by a previous SELECT: no third confirm. */
+                confirmationTarget = statusCursor;
             }
             if (statusCursor == kStatusLoad &&
                 !EspNativeGameplaySave_hasReadableCheckpoint()) {
@@ -3564,7 +3564,6 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 else {
                     printf("[NATIVESAVE] SAVE-CLOSE result=success hub=closed feedback=\"Game saved\" duration=action-default fallback=status-then-facing turn=no\n");
                 }
-                slotMode = 0U;
                 slotMode = 0U;
                 statusCursor = kStatusSave;
                 lastOperation = 0U;
