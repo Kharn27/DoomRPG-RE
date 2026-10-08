@@ -167,6 +167,43 @@ render_source_text = render_source_text.replace(
 print("[ESP32] Render_init/Render_setup desktop roots retired; "
       "owner=esp-native-render-startup bridge=permanent")
 
+# Render palette, RGB565 and mappings roots have permanent native owners.
+# The retained source slice is pinned to the exact legacy specification,
+# with a strict function census and CRC32 to catch desktop-side drift.
+palette_native_begin = "void Render_loadPalettes(Render_t* render)\n{"
+palette_native_mapping = "boolean Render_loadMappings(Render_t* render)\n{"
+palette_native_end = "boolean Render_beginLoadMap(Render_t* render, int mapNameID)\n{"
+palette_native_symbols = (
+    "void Render_loadPalettes(",
+    "unsigned int Render_make565RGB(",
+    "unsigned short Render_RGB888_To_RGB565(",
+    "void Render_setGrayPalettes(",
+    "boolean Render_loadMappings(",
+)
+if any(render_source_text.count(anchor) != 1 for anchor in
+       (palette_native_begin, palette_native_mapping, palette_native_end)):
+    raise RuntimeError("Unexpected original Render palette/mappings boundary")
+if any(render_source_text.count(symbol) != 1 for symbol in palette_native_symbols):
+    raise RuntimeError("Unexpected original Render palette/mappings export census")
+palette_native_region = render_source_text[
+    render_source_text.index(palette_native_begin):
+    render_source_text.index(palette_native_end)]
+if zlib.crc32(palette_native_region.encode("latin-1")) != 0x6f5b63d3:
+    raise RuntimeError(
+        "Original Render palette/mappings source changed: review native ABI"
+    )
+render_source_text = render_source_text.replace(
+    palette_native_begin, "#if !defined(DOOMRPG_ESP32)\n" +
+    palette_native_begin, 1
+)
+render_source_text = render_source_text.replace(
+    palette_native_end,
+    "#endif /* native ESP32 palette/mappings roots */\n\n" +
+    palette_native_end, 1
+)
+print("[ESP32] Render palette/mappings desktop roots retired; "
+      "exports=5 palette=esp-render-startup mappings=esp-config-mappings")
+
 # The original Render_beginLoadMap* BSP parser is a desktop/bringup-only
 # diagnostic path. Production already builds the immutable EspMapRuntime from
 # the native PAK backing. Reject accidental calls instead of retaining its

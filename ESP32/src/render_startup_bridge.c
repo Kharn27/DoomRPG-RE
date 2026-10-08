@@ -119,6 +119,97 @@ void Render_setup(Render_t* render, SDL_Rect* windowRect)
 }
 
 
+/* Original Render palette and RGB565 ABI behavior, now native-owned. */
+void Render_loadPalettes(Render_t* render)
+{
+	byte* fData;
+	int dataPos = 0, i;
+	short color;
+	int red, green, blue;
+
+	render->paletteMemory = DoomRPG_freeMemory();
+
+	fData = DoomRPG_fileOpenRead(render->doomRpg, "/palettes.bin");
+
+	SDL_free(render->mediaPalettes);
+
+	render->mediaPalettesLength = DoomRPG_intAtNext(fData, &dataPos) / 2;
+	render->mediaPalettes = (short*)SDL_malloc(render->mediaPalettesLength * sizeof(short));
+	if (render->mediaPalettes == NULL) {
+		DoomRPG_Error("Render_loadPalettes: Insufficient memory for allocation");
+	}
+
+	//printf("render->mediaPalettesLength %d\n", render->mediaPalettesLength);
+
+	for (i = 0; i < render->mediaPalettesLength; i++)
+	{
+		color = DoomRPG_shortAtNext(fData, &dataPos);
+
+		blue = (color >> 11) & 0x1f;    // (color << 16) >> 27;
+		blue = (blue << 3) | (blue >> 2);
+
+		green = (color >> 5) & 0x3f;    // (color << 21) >> 26;
+		green = (green << 2) | (green >> 4);
+
+		red = (color & 0x1f);
+		red = (red << 3) | (red >> 2);
+		render->mediaPalettes[i] = (short)Render_make565RGB(render, blue, green, red);
+	}
+
+	SDL_free(fData);
+
+	render->paletteMemory = DoomRPG_freeMemory() - render->paletteMemory;
+	//printf("paletteMemory %d\n", render->paletteMemory);
+}
+
+unsigned int Render_make565RGB(Render_t* render, int blue, int green, int red)
+{
+	return ((red >> 3) << 11) | ((green >> 2) << 5) | (blue >> 3);
+}
+
+unsigned short Render_RGB888_To_RGB565(Render_t* render, int rgb)
+{
+	return (unsigned short)Render_make565RGB(render, rgb & 0xff, (rgb >> 8) & 0xff, (rgb >> 16) & 0xff);
+}
+
+void Render_setGrayPalettes(Render_t* render)
+{
+	short* mediaPalettes, color, grayColor;
+	#ifndef DOOMRPG_ESP32
+	short* mediaPlanes;
+	#endif
+	int i, j;
+
+	for (i = 0; i < render->mediaPalettesLength; i++) {
+		mediaPalettes = render->mediaPalettes;
+		color = mediaPalettes[i];
+		grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
+		mediaPalettes[i] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
+	}
+
+	#ifndef DOOMRPG_ESP32
+	for (i = 0; i < render->planeTexturesCnt; i++)
+	{
+		for (j = 0; j < (64 * 64); j++) {
+			mediaPlanes = &render->mediaPlanes[i][j];
+			color = mediaPlanes[0];
+			grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
+			mediaPlanes[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
+		}
+	}
+	#endif
+
+	color = render->floorColor[0];
+	grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
+	render->floorColor[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
+
+	color = render->ceilingColor[0];
+	grayColor = (((color & 0xf800) >> 10) + ((color >> 5) & 0x3f) + ((color & 0x1f) << 1)) / 3; //RGB
+	render->ceilingColor[0] = ((grayColor >> 1) << 11) | (grayColor << 5) | (grayColor >> 1);
+}
+
+
+
 static int renderStartupAttempted = 0;
 static int renderStartupReady = 0;
 
