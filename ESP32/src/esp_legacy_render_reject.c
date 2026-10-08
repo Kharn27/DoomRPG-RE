@@ -7,6 +7,24 @@
  * operations. The desktop definitions remain available to bringup probes.
  */
 #if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+/* Desktop plane test entrypoints rely on monolithic mediaTexels.
+ * Production is permanently PAK-backed, never creates that array.
+ */
+void Render_renderFloorAndCeilingBG_Test(Render_t* r) {
+    (void)r;
+    printf("[LEGACYRENDER] REJECT Render_renderFloorAndCeilingBG_Test\n");
+}
+void Render_drawPlane_Test(Render_t* r, int x, int y, int texture, int cnt) {
+    (void)r; (void)x; (void)y; (void)texture; (void)cnt;
+    printf("[LEGACYRENDER] REJECT Render_drawPlane_Test\n");
+}
+void Render_spanPlane_Test(Render_t* r, int x, int y, int texture,
+                           int p5, int p6, int p7, int p8, int cnt) {
+    (void)r; (void)x; (void)y; (void)texture;
+    (void)p5; (void)p6; (void)p7; (void)p8; (void)cnt;
+    printf("[LEGACYRENDER] REJECT Render_spanPlane_Test\n");
+}
+
 /* Compatibility-only: production has no Render.tileEvents allocation.
  * Native event lookup is owned by EspMapRuntime and EspMapState.
  * Fail closed even if a legacy caller unexpectedly reaches this ABI.

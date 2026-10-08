@@ -415,11 +415,13 @@ reject_exports = ("Render_beginLoadMap", "Render_beginLoadMapData",
                   "Render_render", "Render_renderFloorAndCeilingBG",
                   "Render_drawplane", "Render_spanPlane",
                   "Render_renderBSP", "Render_walkNode",
-                  "Render_findEventIndex")
+                  "Render_findEventIndex",
+                  "Render_renderFloorAndCeilingBG_Test",
+                  "Render_drawPlane_Test", "Render_spanPlane_Test")
 if any(reject_code.count(name + "(") != 1 for name in reject_exports):
     raise RuntimeError("Native Render reject export census changed")
 print("[ESP32] Legacy Render map/world/BSP rejects native-owned; "
-      "exports=9 production=fail-closed bringup=desktop-original")
+      "exports=12 production=fail-closed bringup=desktop-original")
 
 
 # Retire old tileEvents binary-search ABI from generated Render.c.
@@ -448,6 +450,30 @@ render_source_text = render_source_text.replace(
     "#endif /* native Render_findEventIndex owner */\n\n" +
     event_find_end, 1)
 print("[ESP32] Render_findEventIndex native-owned production=fail-closed no-legacy-tileEvents")
+
+# The three desktop-only Render_*_Test plane routines use the forbidden
+# monolithic mediaTexels pointer. Normal production must not compile their
+# original bodies; keep desktop/bringup originals and preserve ABI stubs.
+legacy_plane_test_begin = "void Render_renderFloorAndCeilingBG_Test(Render_t* render)\n{"
+legacy_plane_test_draw = "void Render_drawPlane_Test(Render_t* render, int x, int y, int planeTexture, int cnt)\n{"
+legacy_plane_test_span = "void Render_spanPlane_Test(Render_t* render, int x, int y, int planeTexture, int param_5, int param_6, int param_7, int param_8, int cnt)\n{"
+for symbol in (legacy_plane_test_begin, legacy_plane_test_draw,
+               legacy_plane_test_span):
+    if render_source_text.count(symbol) != 1:
+        raise RuntimeError("Render desktop test plane source drift")
+original_plane_test = original_render_for_startup[
+    original_render_for_startup.index(legacy_plane_test_begin):]
+generated_plane_test = render_source_text[
+    render_source_text.index(legacy_plane_test_begin):]
+if original_plane_test != generated_plane_test:
+    raise RuntimeError("Desktop Render plane test source changed")
+if "mediaTexels[" not in original_plane_test:
+    raise RuntimeError("Render plane test media dependency changed")
+render_source_text = render_source_text.replace(
+    legacy_plane_test_begin,
+    "#if !defined(DOOMRPG_ESP32)\n" + legacy_plane_test_begin, 1)
+render_source_text += "\n#endif /* production excludes old mediaTexels plane tests */\n"
+print("[ESP32] Render plane *_Test routines retired production=fail-closed exports=3")
 
 # The native CYD renderer still consumes a small set of legacy-named geometry
 # primitives. They are pure Render scratch/math helpers: no desktop map owner,
