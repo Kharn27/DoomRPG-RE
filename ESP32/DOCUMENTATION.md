@@ -1,3 +1,29 @@
+## Legacy Render plane test routines retired — REAL-CYD NON-REGRESSION PASS (2026-10-08)
+
+Hardware-tested code SHA `2be8b0b47520d167724559d3c647a44620c0e1b9`;
+normal `esp32-cyd` CI [37772211049](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37772211049) SUCCESS.
+The three original `Render_renderFloorAndCeilingBG_Test`,
+`Render_drawPlane_Test`, `Render_spanPlane_Test` desktop plane
+test routines are excluded from production generated Render.c and
+supplied by permanent fail-closed native compatibility stubs. No
+monolithic mediaTexels or map-wide decompression returns.
+Desktop / bringup references remain unchanged.
+
+Real classic CYD: idle menu stable for >150s at heap8=159340 B,
+largest8=110580 B; native map arena FNV `c3882516`, first
+gameplay framebuffer `71ca7465`, 160x120 RGB565 38400 B;
+FORWARD midpoint previews, two-frame RIGHT/LEFT turns,
+crate subtype-2 transform, Armor Shard pickup (armor 0->4),
+dialogue 88 resumed via opcode 19, HUB -> SYS -> EXIT.
+Journal recovered 1036 B; native resident cleanup released
+18008 B (`empty=1`); final MENU_MAIN FNV `522dc605`,
+heap8=164184 B, largest8=110580 B, checkpoint untouched.
+`shapeData=mediaTexels=NULL` at observed boundaries.
+No direct retired-test-function invocation was observed;
+PASS is non-regression, not proof of the fail-closed path executing.
+Old checkpoint LOAD animation and monster resume caveats remain open.
+Tested code is frozen. [Milestone](MILESTONE_ESP32_RENDER_PLANE_TESTS_RETIRED.md).
+
 ## Render_findEventIndex retired legacy tileEvents ABI — REAL-CYD NON-REGRESSION PASS (2026-10-08)
 
 Tested code SHA `8672b1ed4fc9b0379a63851d17726b5bc11bfadf`,
