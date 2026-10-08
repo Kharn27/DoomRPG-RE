@@ -3221,25 +3221,22 @@ void drawCenteredWord(uint16_t* fb, int centerX, int y, const char* text,
 }
 
 /* Two chunky industrial page keys, fixed pixels and no extra framebuffer. */
-void drawSlotNav(uint16_t* fb, int top, int bottom, uint8_t page) {
+/* Two distinct page actions: PREV (upper), NEXT (lower).
+ * The inactive direction is visibly disabled and does not consume state. */
+void drawSlotNav(uint16_t* fb, int top, int bottom, bool next, bool enabled) {
     const int x0 = 118, x1 = 156;
-    const int upper = top + 2, lower = bottom - 2;
-    const int mid = (upper + lower) / 2;
-    const uint16_t edge = ESP_HUB_COLOR_STEEL;
-    const uint16_t hot = ESP_HUB_COLOR_AMBER;
-    fillRect(fb, x0, top, x1, bottom, ESP_HUB_COLOR_PANEL);
-    drawRect(fb, x0, top, x1, bottom, edge);
-    /* Eight-pixel wide, two-stroke chevron rather than an isolated slash. */
-    for (int i = 0; i < 5; ++i) {
-        const int dx = 134 + i;
-        const int topY = mid - 5 + i;
-        const int botY = mid + 5 - i;
-        fillRect(fb, dx, topY - 1, dx + 2, topY + 1, hot);
-        fillRect(fb, dx, botY - 1, dx + 2, botY + 1, hot);
+    const int cx = 137, cy = (top + bottom) / 2;
+    const uint16_t color = enabled ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK;
+    fillRect(fb, x0, top, x1, bottom, enabled ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
+    drawRect(fb, x0, top, x1, bottom, enabled ? ESP_HUB_COLOR_STEEL : ESP_HUB_COLOR_STEEL_DARK);
+    /* Broad 2px chevron, pointing UP for previous, DOWN for next. */
+    for (int i = 0; i < 7; ++i) {
+        const int yy = next ? cy - 3 + i : cy + 3 - i;
+        const int left = cx - 7 + i;
+        const int right = cx + 7 - i;
+        fillRect(fb, left, yy, left + 2, yy + 1, color);
+        fillRect(fb, right - 2, yy, right, yy + 1, color);
     }
-    /* Opposite-page direction: same clickable control, reversed geometry. */
-    (void)page;
-    fillRect(fb, x0 + 2, top + 2, x0 + 4, bottom - 2, ESP_HUB_COLOR_RED);
 }
 
 bool paintSaveOverlay(void) {
@@ -3292,9 +3289,8 @@ bool paintSaveOverlay(void) {
                              available ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
                                        : ESP_HUB_COLOR_STEEL_DARK);
         }
-        drawSlotNav(fb, 49, 78, first == 1U ? 1U : 2U);
-        drawSlotNav(fb, 83, 112, first == 1U ? 1U : 2U);
-        drawCenteredWord(fb, 136, 79, first == 1U ? "1/2" : "2/2", ESP_HUB_COLOR_IVORY);
+        drawSlotNav(fb, 49, 78, false, first != 1U);
+        drawSlotNav(fb, 83, 112, true, first == 1U);
         return Esp32PlatformVideo_present();
     }
 
@@ -3386,9 +3382,8 @@ static void paintMainSlots(void) {
                          occupied ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
                                   : ESP_HUB_COLOR_STEEL_DARK);
     }
-    drawSlotNav(fb, 34, 62, first == 1U ? 1U : 2U);
-    drawSlotNav(fb, 69, 98, first == 1U ? 1U : 2U);
-    drawCenteredWord(fb, 136, 63, first == 1U ? "1/2" : "2/2", ESP_HUB_COLOR_IVORY);
+    drawSlotNav(fb, 34, 62, false, first != 1U);
+    drawSlotNav(fb, 69, 98, true, first == 1U);
     fillRect(fb, 34, 105, 111, 118, ESP_HUB_COLOR_PANEL_ALT);
     drawRect(fb, 34, 105, 111, 118, ESP_HUB_COLOR_RED);
     drawCenteredWord(fb, 72, 108, "BACK", ESP_HUB_COLOR_IVORY);
@@ -3411,8 +3406,12 @@ extern "C" int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
         }
         return 0;
     }
-    if (x >= 117 && y >= 32 && y < 102) {
-        slotFocus = slotFocus <= 5U ? 6U : 1U;
+    if (x >= 118 && x <= 156 && y >= 34 && y <= 98) {
+        const bool previous = y <= 62;
+        const uint8_t page = slotFocus <= 5U ? 1U : 2U;
+        if ((previous && page != 2U) || (!previous && (y < 69 || page != 1U)))
+            return 0;
+        slotFocus = previous ? 1U : 6U;
         slotArmed = 0U;
         selectSaveSlot(slotFocus);
         printf("[SAVESLOTS] MAIN-PAGE page=%u via=right-column\n", slotFocus <= 5U ? 1U : 2U);
@@ -3443,8 +3442,13 @@ extern "C" int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
 extern "C" int EspNativeGameplaySave_slotSelectorActive(void) { return slotMode != 0U; }
 extern "C" int EspNativeGameplaySave_touchSlot(int x, int y) {
     if (slotMode == 0U || y < 47 || y > 116) return 0;
-    if (x >= 117) {
-        slotFocus = slotFocus <= 5U ? 6U : 1U;
+    if (x >= 118 && x <= 156) {
+        const bool previous = y >= 49 && y <= 78;
+        const bool next = y >= 83 && y <= 112;
+        const uint8_t page = slotFocus <= 5U ? 1U : 2U;
+        if ((!previous && !next) || (previous && page == 1U) ||
+            (next && page == 2U)) return 1;
+        slotFocus = previous ? 1U : 6U;
         slotArmed = 0U;
         selectSaveSlot(slotFocus);
         (void)paintSaveOverlay();
