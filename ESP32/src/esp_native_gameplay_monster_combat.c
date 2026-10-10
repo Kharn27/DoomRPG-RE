@@ -306,6 +306,8 @@ void EspNativeGameplayMonsterCombat_reset(void) {
     memset(&combatRollbackOwner, 0, sizeof(combatRollbackOwner));
     memset(&splashLevelUp, 0, sizeof(splashLevelUp));
     splashLevelUpSequence = 0U;
+    splashSequenceActive = 0U;
+    splashSequenceNumber = 0U;
     combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
@@ -885,6 +887,69 @@ typedef struct MonsterSplashRollback_s {
 } MonsterSplashRollback;
 
 static MonsterSplashRollback splashRollback;
+static uint8_t splashSequenceActive;
+static uint32_t splashSequenceNumber;
+
+/* The rollback image is BSS-bounded and shared between ordinary single-blast
+ * splash and a multi-wave/monster transaction. Do not allocate per monster or
+ * per wave. A multi-wave transaction keeps the ORIGINAL snapshot across all
+ * subsequent splash calls so a later failure undoes earlier waves as well. */
+static int restoreSplashSnapshot(DoomRPG_t* runtime) {
+    int exact = 1;
+    if (runtime == NULL) return 0;
+    if (!EspNativeGameplayMonsterDrop_restore(&splashRollback.drops))
+        exact = 0;
+    if (!EspNativeGameplayMonsterState_restoreInPlace(
+            &splashRollback.monsters)) exact = 0;
+    if (!EspNativeGameplayPlayerState_restore(&splashRollback.player))
+        exact = 0;
+    runtime->random = splashRollback.random;
+    combatOwner = splashRollback.combat;
+    splashSequenceActive = 0U;
+    splashSequenceNumber = 0U;
+    splashLevelUpSequence = 0U;
+    memset(&splashLevelUp, 0, sizeof(splashLevelUp));
+    return exact;
+}
+
+int EspNativeGameplayMonsterCombat_beginSplashSequence(
+    DoomRPG_t* runtime, uint32_t sequence) {
+    if (runtime == NULL || sequence == 0U ||
+        splashSequenceActive != 0U || splashLevelUpSequence != 0U ||
+        !syncOwner() || combatOwner.pending.active != 0U ||
+        !EspNativeGameplayMonsterState_snapshot(&splashRollback.monsters) ||
+        !EspNativeGameplayMonsterDrop_snapshot(&splashRollback.drops) ||
+        !EspNativeGameplayPlayerState_snapshot(&splashRollback.player))
+        return 0;
+    splashRollback.combat = combatOwner;
+    splashRollback.random = runtime->random;
+    splashSequenceActive = 1U;
+    splashSequenceNumber = sequence;
+    printf("[MONSTERRADIUS] SEQUENCE-BEGIN seq=%u snapshot=monster+drop+player+rng+visual owner=bounded-BSS rollback=armed\n",
+           (unsigned int)sequence);
+    return 1;
+}
+
+int EspNativeGameplayMonsterCombat_cancelSplashSequence(
+    DoomRPG_t* runtime) {
+    int exact;
+    if (splashSequenceActive == 0U) return 1;
+    exact = restoreSplashSnapshot(runtime);
+    printf("[MONSTERRADIUS] SEQUENCE-CANCEL exact=%s snapshots=restored\n",
+           exact ? "yes" : "NO");
+    return exact;
+}
+
+int EspNativeGameplayMonsterCombat_commitSplashSequence(
+    uint32_t sequence) {
+    if (splashSequenceActive == 0U ||
+        splashSequenceNumber != sequence) return 0;
+    splashSequenceActive = 0U;
+    splashSequenceNumber = 0U;
+    printf("[MONSTERRADIUS] SEQUENCE-COMMIT seq=%u order=blast-then-impact-per-wave rng=live-interleaved rollback=closed\n",
+           (unsigned int)sequence);
+    return 1;
+}
 
 int EspNativeGameplayMonsterCombat_applySplash(
     DoomRPG_t* runtime,
@@ -901,15 +966,24 @@ int EspNativeGameplayMonsterCombat_applySplash(
 
     if (runtime == NULL || hits == NULL || count == 0U ||
         count > ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS ||
-        splashLevelUpSequence != 0U ||
-        !syncOwner() || combatOwner.pending.active ||
-        !EspNativeGameplayMonsterState_snapshot(&splashRollback.monsters) ||
-        !EspNativeGameplayMonsterDrop_snapshot(&splashRollback.drops) ||
-        !EspNativeGameplayPlayerState_snapshot(&splashRollback.player)) {
+        (splashSequenceActive != 0U &&
+         splashSequenceNumber != sequence) ||
+        (splashLevelUpSequence != 0U &&
+         (splashSequenceActive == 0U ||
+          splashLevelUpSequence != sequence)) ||
+        !syncOwner() || combatOwner.pending.active) {
         return 0;
     }
-    splashRollback.combat = combatOwner;
-    splashRollback.random = runtime->random;
+    if (splashSequenceActive == 0U) {
+        if (!EspNativeGameplayMonsterState_snapshot(
+                &splashRollback.monsters) ||
+            !EspNativeGameplayMonsterDrop_snapshot(
+                &splashRollback.drops) ||
+            !EspNativeGameplayPlayerState_snapshot(
+                &splashRollback.player)) return 0;
+        splashRollback.combat = combatOwner;
+        splashRollback.random = runtime->random;
+    }
     memset(&popup, 0, sizeof(popup));
 
     for (i = 0U; i < count; ++i) {
@@ -943,7 +1017,8 @@ int EspNativeGameplayMonsterCombat_applySplash(
             rngCalls += xp.rngCalls;
             totalXp += gained;
             if (xp.levelUps != 0U) {
-                if (needsPopup) goto splash_failed;
+                if (needsPopup || splashLevelUpSequence != 0U)
+                    goto splash_failed;
                 popup = xp;
                 needsPopup = 1;
             }
@@ -1020,21 +1095,9 @@ int EspNativeGameplayMonsterCombat_applySplash(
     return 1;
 
 splash_failed:
-    /* Run EVERY undo even if an earlier restore fails. No short-circuit:
-     * partially restored gameplay must never be reported as a clean rollback. */
-    rollbackOk = 1;
-    if (!EspNativeGameplayMonsterDrop_restore(&splashRollback.drops)) {
-        rollbackOk = 0;
-    }
-    if (!EspNativeGameplayMonsterState_restoreInPlace(
-            &splashRollback.monsters)) {
-        rollbackOk = 0;
-    }
-    if (!EspNativeGameplayPlayerState_restore(&splashRollback.player)) {
-        rollbackOk = 0;
-    }
-    runtime->random = splashRollback.random;
-    combatOwner = splashRollback.combat;
+    /* A wave-N failure must restore the initial wave-1 snapshot, not just the
+     * most recent hit. This also releases any deferred popup from prior waves. */
+    rollbackOk = restoreSplashSnapshot(runtime);
     printf("[MONSTERRADIUS] ROLLBACK seq=%u hits=%u failedAt=%u exact=%s rng=yes monster=yes player=yes drops=yes\n",
            (unsigned int)sequence, (unsigned int)count,
            (unsigned int)i, rollbackOk ? "yes" : "NO");
