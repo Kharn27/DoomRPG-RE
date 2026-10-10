@@ -47,6 +47,11 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/native_bsp_visibility_capacity_host.c -o /tmp/doomrpg-native-bsp-visibility-test
           /tmp/doomrpg-native-bsp-visibility-test
 
+      - name: Test Imp projectile 204 sparse catalog prime and rollback (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_graphics_catalog.c ESP32/test/imp_projectile_catalog_host.c -o /tmp/doomrpg-imp-projectile-catalog-test
+          /tmp/doomrpg-imp-projectile-catalog-test
+
       - name: Test all twelve native WPN grid and familiar touch cells (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include ESP32/src/esp_native_gameplay_hub_weapon_grid.c ESP32/test/hub_weapon_grid_native_host.c -Wl,--gc-sections -o /tmp/doomrpg-native-weapon-grid-test
