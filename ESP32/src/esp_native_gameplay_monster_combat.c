@@ -940,6 +940,7 @@ int EspNativeGameplayMonsterCombat_applySplash(
             memset(&xp, 0, sizeof(xp));
             if (!EspNativeGameplayPlayerState_applyXp(
                     runtime, gained, &xp)) goto splash_failed;
+            rngCalls += xp.rngCalls;
             totalXp += gained;
             if (xp.levelUps != 0U) {
                 if (needsPopup) goto splash_failed;
