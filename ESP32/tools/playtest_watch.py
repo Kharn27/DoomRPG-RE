@@ -71,6 +71,14 @@ def classify(line: str) -> str | None:
     if (line.startswith("[ACTIONENGINE] BACKEND-DEFER") and
             "family=monster-combat" in line):
         return None
+    # After a kill, activationOrder intentionally retains historical slots;
+    # the legacy fallback may report zero *living* candidates with a nonzero
+    # activeCount. The ordered owner already skipped every dead member. Keep
+    # failures with real candidates and every other MONSTERMOVE DEFER visible.
+    if (line.startswith("[MONSTERMOVE] DEFER ") and
+            "cause=active-order-not-owned" in line and
+            "candidates=0 " in line):
+        return None
     for name, pattern in RULES:
         if pattern.search(line):
             return name
@@ -193,6 +201,12 @@ def self_test() -> None:
         assert "HUB-INPUT seq=12" in clip
         assert classify('[TURNFRAME] DIAG fail=WORLD_RENDER player=100,200') == "WORLD_RENDER_FALLBACK"
         assert classify('[MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK cause=active-order-not-owned') == "MONSTER_AI_UNOWNED"
+        # User CYD case: last living member just died, 0 movement candidates
+        # even though two historical activation slots remain.
+        assert classify('[MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK n=50 candidates=0 activeCount=2 cause=active-order-not-owned mutation=no rngConsumed=0') is None
+        assert classify('[MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK n=50 candidates=2 activeCount=2 cause=active-order-not-owned mutation=no rngConsumed=0') == "MONSTER_AI_UNOWNED"
+        # A destructible enemy/line not yet owned remains an actionable alert.
+        assert classify('[ACTIONENGINE] BACKEND-DEFER seq=235 sprite=65535 line=201 family=destructible-combat reason=generic-hit+hp/subtype-consequence-not-owned mutation=no') == "WORLD_BACKEND_DEFER"
         assert classify('[HUB] CLOSE exactHud=NO expectedHud=123') == "HUD_MISMATCH"
         assert classify('[PASSTURN] REQUEST sound=deferred turnAdvance=deferred') is None
         # Real CYD playtest at 04:01: user selects empty space; the action
