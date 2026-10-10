@@ -11,6 +11,8 @@
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_map_sprite_topology.h"
+#include "esp_native_sprite_renderer.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_player_view_state.h"
 
@@ -18,6 +20,10 @@
 #define ATTACK_VISUAL_PRIMARY_FRAME 1U
 #define ATTACK_VISUAL_ALTERNATE_FRAME 5U
 #define ATTACK_VISUAL_FRAME_MS 150U
+#define ATTACK_IMP_SUBTYPE 3U
+#define ATTACK_IMP_PROJECTILE_LOGICAL 204U
+#define ATTACK_IMP_PROJECTILE_STEP_MS 65U
+#define ATTACK_IMP_PROJECTILE_STEPS 3U
 #define ATTACK_VISUAL_SUBTYPE_COUNT 14U
 
 /* Exact Combat monsterWpInfo table split into its two semantic fields.
@@ -47,6 +53,11 @@ static uint8_t activeTotalLoops;
 static uint8_t activeCompletedLoops;
 static uint8_t activeFinalIdle;
 static uint16_t activePhaseMs;
+static uint32_t projectileNextMs;
+static uint16_t projectileSourceTile;
+static uint16_t projectileTargetTile;
+static uint8_t projectileStep;
+static uint8_t projectileEnabled;
 
 static const char* reasonName(uint8_t reason) {
     switch ((EspNativeGameplayMonsterTurnReason)reason) {
@@ -80,6 +91,11 @@ static int syncOwner(void) {
         activeCompletedLoops = 0U;
         activeFinalIdle = 0U;
         activePhaseMs = 0U;
+        projectileNextMs = 0U;
+        projectileSourceTile = 0U;
+        projectileTargetTile = 0U;
+        projectileStep = 0U;
+        projectileEnabled = 0U;
         attackVisual.sourceArenaFNV1a = turn->sourceArenaFNV1a;
         attackVisual.observedAttackProbes = turn->attackProbes;
         attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
@@ -137,6 +153,87 @@ static void clearSequence(void) {
     activeCompletedLoops = 0U;
     activeFinalIdle = 0U;
     activePhaseMs = 0U;
+    projectileNextMs = 0U;
+    projectileSourceTile = 0U;
+    projectileTargetTile = 0U;
+    projectileStep = 0U;
+    projectileEnabled = 0U;
+}
+
+/* Legacy Combat_launchProjectile(weapon15) uses logical sprite 204 for
+ * ordinary Imps. Render three bounded in-world positions during the first
+ * attack pose, without changing the authoritative combat roll or RNG. This
+ * only paints a visible missile for already-published, line-of-sight-valid
+ * native ranged attacks; it never manufactures a new attack or bypasses
+ * a wall/collision rejection. */
+static void serviceImpProjectile(DoomRPG_t* runtime,
+                                 const EspPlayerViewState* view,
+                                 uint32_t now) {
+    EspNativeGameplayFrameStats frame;
+    const uint32_t sourceX =
+        ((uint32_t)(projectileSourceTile & 31U) << 6U) + 32U;
+    const uint32_t sourceY =
+        ((uint32_t)(projectileSourceTile >> 5U) << 6U) + 32U;
+    const uint32_t targetX =
+        ((uint32_t)(projectileTargetTile & 31U) << 6U) + 32U;
+    const uint32_t targetY =
+        ((uint32_t)(projectileTargetTile >> 5U) << 6U) + 32U;
+    int32_t worldX;
+    int32_t worldY;
+    uint8_t step;
+    int rngExact = 0;
+    int rendered;
+
+    if (!projectileEnabled || activeSequence == 0U ||
+        attackVisual.poseActive == 0U ||
+        (int32_t)(now - projectileNextMs) < 0 ||
+        runtime == NULL || !settledPlayerView(view) ||
+        EspNativeGameplayControls_isActive()) {
+        return;
+    }
+    step = projectileStep;
+    if (step >= ATTACK_IMP_PROJECTILE_STEPS) {
+        projectileEnabled = 0U;
+        return;
+    }
+    worldX = (int32_t)sourceX +
+             ((int32_t)targetX - (int32_t)sourceX) * (step + 1) /
+                 (ATTACK_IMP_PROJECTILE_STEPS + 1);
+    worldY = (int32_t)sourceY +
+             ((int32_t)targetY - (int32_t)sourceY) * (step + 1) /
+                 (ATTACK_IMP_PROJECTILE_STEPS + 1);
+
+    if (!EspNativeSpriteRenderer_armTransient(
+            ATTACK_IMP_PROJECTILE_LOGICAL, 0U,
+            (int16_t)worldX, (int16_t)worldY)) {
+        projectileEnabled = 0U;
+        printf("[IMPPROJECTILE] DEFER probe=%u reason=transient-not-ready gameplayRng=untouched\n",
+               (unsigned int)attackVisual.activeProbe);
+        return;
+    }
+    rendered = guardedRender(runtime, view, &frame, &rngExact);
+    EspNativeSpriteRenderer_clearTransient();
+    if (!rendered) {
+        projectileEnabled = 0U;
+        printf("[IMPPROJECTILE] DEFER probe=%u step=%u reason=%s gameplayRng=restored gameplayMutation=no\n",
+               (unsigned int)attackVisual.activeProbe, (unsigned int)step,
+               rngExact ? "render-failed" : "rng-guard");
+        return;
+    }
+    projectileStep = (uint8_t)(step + 1U);
+    projectileNextMs = DoomRPG_GetUpTimeMS() +
+                       ATTACK_IMP_PROJECTILE_STEP_MS;
+    printf("[IMPPROJECTILE] FRAME probe=%u sprite=%u step=%u/%u logical=%u pos=%d,%d sourceTile=%u playerTile=%u frame=%08x presented=%u gameplayRng=untouched\n",
+           (unsigned int)attackVisual.activeProbe,
+           (unsigned int)attackVisual.activeSpriteIndex,
+           (unsigned int)projectileStep,
+           (unsigned int)ATTACK_IMP_PROJECTILE_STEPS,
+           (unsigned int)ATTACK_IMP_PROJECTILE_LOGICAL,
+           (int)worldX, (int)worldY,
+           (unsigned int)projectileSourceTile,
+           (unsigned int)projectileTargetTile,
+           (unsigned int)frame.frameAfterFNV,
+           (unsigned int)frame.finalPresented);
 }
 
 static void serviceTimeline(DoomRPG_t* runtime) {
@@ -154,6 +251,7 @@ static void serviceTimeline(DoomRPG_t* runtime) {
 
     if (activeSequence == 0U || attackVisual.clearAtMs == 0U) return;
     now = DoomRPG_GetUpTimeMS();
+    serviceImpProjectile(runtime, EspPlayerView_view(), now);
     if ((int32_t)(now - attackVisual.clearAtMs) < 0) return;
 
     /* Touch feedback owns a bounded framebuffer snapshot.  A world redraw under
@@ -175,6 +273,7 @@ static void serviceTimeline(DoomRPG_t* runtime) {
     wasAttackPose = attackVisual.poseActive != 0U;
 
     if (wasAttackPose) {
+        projectileEnabled = 0U;
         /* Attack -> idle. Every idle pose, including the final one, owns the
          * exact recovered subtype cadence before either the next attack or
          * stage-2 retaliation resolution may begin. */
@@ -278,6 +377,11 @@ void EspNativeGameplayMonsterAttackVisual_reset(void) {
     activeCompletedLoops = 0U;
     activeFinalIdle = 0U;
     activePhaseMs = 0U;
+    projectileNextMs = 0U;
+    projectileSourceTile = 0U;
+    projectileTargetTile = 0U;
+    projectileStep = 0U;
+    projectileEnabled = 0U;
     attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
 }
 
@@ -442,6 +546,33 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
                recoveryRendered ? "yes" : "NO",
                recoveryRngExact ? "yes" : "NO");
         return;
+    }
+
+    /* Only subtype-3 primary weapon 15 is the original Imp fireball 204.
+     * Capture the live topology tile, not immutable BSP spawn coordinates. */
+    if (monster->subtype == ATTACK_IMP_SUBTYPE &&
+        monster->alternateAttack == 0U) {
+        uint8_t type = 0U, sub = 0U;
+        uint16_t link = 0U, order = 0U;
+        if (EspMapSpriteTopology_getEntity(monster->spriteIndex,
+                                            &type, &sub, &link, &order) &&
+            type == 1U && sub == ATTACK_IMP_SUBTYPE &&
+            (link & (ESP_MAP_SPRITE_TOPOLOGY_LINKED |
+                     ESP_MAP_SPRITE_TOPOLOGY_ALIVE)) ==
+                (ESP_MAP_SPRITE_TOPOLOGY_LINKED |
+                 ESP_MAP_SPRITE_TOPOLOGY_ALIVE) &&
+            view->destX >= 0 && view->destY >= 0 &&
+            view->destX < 2048 && view->destY < 2048) {
+            projectileSourceTile =
+                (uint16_t)(link & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK);
+            projectileTargetTile =
+                (uint16_t)((((uint32_t)view->destY >> 6U) * 32U) +
+                           ((uint32_t)view->destX >> 6U));
+            projectileStep = 0U;
+            projectileEnabled = 1U;
+            projectileNextMs = DoomRPG_GetUpTimeMS() +
+                               ATTACK_VISUAL_FRAME_MS;
+        }
     }
 
     /* Start the first visual phase only after physical presentation so render
