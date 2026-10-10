@@ -15,6 +15,7 @@
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_modal_scratch.h"
+#include "esp_native_gameplay_note_prefix.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
 
@@ -36,6 +37,35 @@ typedef struct EspNativeGameplayNotePrefixState_s {
  * It is then reused across the session/map changes with the existing map-id
  * reset semantics, so no per-event allocation is introduced. */
 static EspNativeGameplayNotePrefixState* notePrefix;
+
+void EspNativeGameplayNotePrefix_reset(void) {
+    if (notePrefix == NULL) return;
+    if (notePrefix->busy != 0U) {
+        /* Modal scratch must finish its owner transaction before reset. */
+        printf("[NOTE] RESET-DEFER owner=busy mutation=no\n");
+        return;
+    }
+    SDL_free(notePrefix);
+    notePrefix = NULL;
+    printf("[NOTE] RESET map-owner=released\n");
+}
+
+const char* EspNativeGameplayNotePrefix_text(uint16_t* outLength) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    const char* text;
+    if (outLength != NULL) *outLength = 0U;
+    if (notePrefix == NULL || notePrefix->active != 1U ||
+        notePrefix->busy != 0U || view == NULL || view->active != 1U ||
+        notePrefix->targetMapId != view->targetMapId) {
+        return "";
+    }
+    text = EspMapNotebook_text(&notePrefix->notebook);
+    if (text == NULL) return "";
+    if (outLength != NULL) {
+        *outLength = EspMapNotebook_length(&notePrefix->notebook);
+    }
+    return text;
+}
 
 static size_t modalScratchCapacity(void) {
     return offsetof(EspNativeGameplayNotePrefixState, scratch) +

@@ -1492,6 +1492,11 @@ int EspNativeGameplayMonsterTurn_cancelPlayerAttack(uint32_t inputSequence) {
     return 1;
 }
 
+int EspNativeGameplayMonsterTurn_canRequestPassTurn(void) {
+    return syncOwner() && turnOwner.passPending == TURN_PENDING_NONE &&
+           turnOwner.attackPending == 0U;
+}
+
 int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence) {
     if (!syncOwner() || turnOwner.passPending != TURN_PENDING_NONE) return 0;
     turnOwner.pendingPassSequence = inputSequence;

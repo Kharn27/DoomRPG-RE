@@ -2186,6 +2186,23 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         }
         ++gameplayState.actions;
         hubStatus = EspNativeGameplayHub_handleAction(intent.action);
+        if (hubStatus == ESP_NATIVE_GAMEPLAY_HUB_ITEM_USED) {
+            /* PlayerState/inventory are committed; HUB has closed and restored
+             * the HUD. The original Player_useItem advances exactly one turn. */
+            const int turnRequested =
+                EspNativeGameplayMonsterTurn_requestPassTurn(intent.sequence);
+            if (!restoreWorldAfterHub(doomRpg->render, "HUB-ITEM")) {
+                disableGameplay("hub-item-world-render");
+                return;
+            }
+            printf("[RESIDENTGAMEPLAY] HUB-ITEM seq=%u action=SELECT worldRedraw=yes consumed=one turnAdvance=%s sound=deferred\n",
+                   (unsigned int)intent.sequence,
+                   turnRequested ? "PASS_TURN-requested" : "DEFER-busy");
+            if (!turnRequested) {
+                ++gameplayState.deferred;
+            }
+            return;
+        }
         if (hubStatus == ESP_NATIVE_GAMEPLAY_HUB_CLOSED) {
             if (!restoreWorldAfterHub(doomRpg->render, "HUB-CLOSE")) {
                 disableGameplay("hub-close-world-render");
