@@ -115,6 +115,8 @@ static MonsterCombatOwner combatOwner;
 static MonsterCombatOwner combatRollbackOwner;
 static EspNativeGameplayPlayerXpResult splashLevelUp;
 static uint32_t splashLevelUpSequence;
+static uint8_t splashSequenceActive;
+static uint32_t splashSequenceNumber;
 _Static_assert(sizeof(MonsterCombatOwner) <= 384U,
                "monster combat rollback owner must remain small and bounded");
 
@@ -887,8 +889,6 @@ typedef struct MonsterSplashRollback_s {
 } MonsterSplashRollback;
 
 static MonsterSplashRollback splashRollback;
-static uint8_t splashSequenceActive;
-static uint32_t splashSequenceNumber;
 
 /* The rollback image is BSS-bounded and shared between ordinary single-blast
  * splash and a multi-wave/monster transaction. Do not allocate per monster or
