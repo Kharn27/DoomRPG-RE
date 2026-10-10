@@ -40,6 +40,7 @@
 #include "esp_native_gameplay_pass_turn.h"
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_gameplay_password.h"
+#include "esp_native_gameplay_store.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_select.h"
 #include "esp_native_gameplay_session.h"
@@ -99,6 +100,7 @@ static void disableGameplay(const char* reason) {
     EspNativeGameplayDialog_reset();
     EspNativeGameplayLevelUp_reset();
     EspNativeGameplayPassword_reset();
+    EspNativeGameplayStore_reset();
     gameplayState.failed = 1U;
     gameplayState.active = 0U;
     PlatformInput_setTapCallback(NULL);
@@ -194,6 +196,25 @@ static void onGameplayTap(int16_t screenX,
                (unsigned int)gameplayState.taps,
                logicalX,
                logicalY);
+        return;
+    }
+
+    /*
+     * EV_OPENSTORE is a modal event. Its native vendor UI owns all taps
+     * directly until it closes; never classify a shop tap as world movement
+     * or SELECT, and do not allocate a touch-feedback overlay.
+     */
+    if (EspNativeGameplayStore_isActive() ||
+        EspNativeGameplayStore_closePending()) {
+        int storeTap;
+        ++gameplayState.taps;
+        storeTap=EspNativeGameplayStore_handleTap(logicalX,logicalY);
+        if (storeTap<0) {
+            disableGameplay("store-touch-paint");
+            return;
+        }
+        printf("[RESIDENTGAMEPLAY] STORE-TAP tap=%u logical=%d,%d result=%d worldAction=no queued=no\n",
+               (unsigned)gameplayState.taps,logicalX,logicalY,storeTap);
         return;
     }
 
@@ -1003,6 +1024,37 @@ static void serviceSelect(DoomRPG_t* doomRpg,
         return;
     }
 
+    if (status == ESP_NATIVE_GAMEPLAY_ACTION_STORE_READY) {
+        if (startedInAutomap != 0U &&
+            !closeAutomap(render, "AUTOMAP-SELECT-STORE")) {
+            ++gameplayState.deferred;
+            printf("[STORE] DEFER seq=%u event=%u reason=automap-close mutation=no\n",
+                   (unsigned)intent->sequence,(unsigned)result.eventIndex);
+            return;
+        }
+        if (!EspNativeGameplayStore_begin(result.storeId,
+                                          result.eventIndex,
+                                          result.commandOffset)) {
+            ++gameplayState.deferred;
+            printf("[STORE] DEFER seq=%u event=%u vendor=%u reason=modal-open mutation=no\n",
+                   (unsigned)intent->sequence,(unsigned)result.eventIndex,
+                   (unsigned)result.storeId);
+            if (startedInAutomap != 0U) {
+                gameplayState.modeFlags=(uint8_t)(
+                    gameplayState.modeFlags | RESIDENT_MODE_AUTOMAP);
+                if (!renderAutomapCurrent(render,"SELECT-STORE-ROLLBACK"))
+                    disableGameplay("store-automap-rollback");
+            }
+            return;
+        }
+        ++gameplayState.selects;
+        printf("[RESIDENTGAMEPLAY] SELECT-STORE n=%u seq=%u event=%u cmd=%u vendor=%u active=yes pauseScript=yes skipTurn=yes mutation=no\n",
+               (unsigned)gameplayState.selects,(unsigned)intent->sequence,
+               (unsigned)result.eventIndex,(unsigned)result.commandOffset,
+               (unsigned)result.storeId);
+        return;
+    }
+
     if (status == ESP_NATIVE_GAMEPLAY_ACTION_PASSWORD_READY) {
         EspNativeGameplayPasswordBeginStatus passwordStatus;
 
@@ -1789,6 +1841,7 @@ void EspNativeResidentGameplay_reset(void) {
     EspNativeGameplayDialog_reset();
     EspNativeGameplayLevelUp_reset();
     EspNativeGameplayPassword_reset();
+    EspNativeGameplayStore_reset();
     EspNativeGameplayFacingLabel_reset();
     EspNativeGameplayControls_reset();
     EspNativeGameplayInput_reset();
@@ -1953,6 +2006,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         EspNativeGameplayHub_reset();
         EspNativeGameplayDialog_reset();
         EspNativeGameplayPassword_reset();
+    EspNativeGameplayStore_reset();
         EspNativeGameplayFacingLabel_reset();
         EspNativeGameplayControls_reset();
         EspNativeGameplayInput_reset();
@@ -2003,6 +2057,20 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         }
         return;
     }
+
+    if (EspNativeGameplayStore_closePending()) {
+        const EspPlayerViewState* storeView=EspPlayerView_view();
+        if (storeView==NULL || storeView->active!=1U ||
+            !renderCurrent(doomRpg->render,(uint8_t)storeView->viewAngle,
+                           "STORE-CLOSE")) {
+            disableGameplay("store-close-world-render");
+            return;
+        }
+        EspNativeGameplayStore_finishClose();
+        printf("[RESIDENTGAMEPLAY] STORE-CLOSE worldRedraw=yes turnAdvance=no hud=player-state-synced\n");
+        return;
+    }
+    if (EspNativeGameplayStore_isActive()) return;
 
     if (EspNativeGameplayLevelUp_isActive()) {
         EspNativeGameplayHudStats levelHudStats;
