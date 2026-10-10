@@ -418,7 +418,14 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
         }
     }
 
-    if (activeSeq.turnDelivered == 0U) {
+    /* If an activation-order prefix exists but every member was skipped
+     * (typically defeated monsters, whose first-render activation is retained
+     * for checkpoint parity), there is no current monster to move. Do not
+     * replay a synthetic unselected planner: it reports a misleading
+     * active-order-not-owned despite having no living member to dispatch.
+     * Preserve the zero-activation counter synchronization only. Unsupported
+     * living subtypes remain explicitly MEMBER-DEFER above, not masked. */
+    if (activeSeq.turnDelivered == 0U && activationCount == 0U) {
         uint8_t committed = 0U;
         ++activeSeq.expandedNoAttack;
         (void)callMovementMember(doomRpg, ACTIVESEQ_NO_SPRITE, 0,
