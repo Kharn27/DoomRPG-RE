@@ -21,6 +21,7 @@
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_level_gate.h"
 #include "esp_native_resident_gameplay.h"
 
 #define CHAIN_REMOVE_FLAG 0x00000200UL
@@ -196,7 +197,8 @@ static EspNativeGameplayDialogBeginStatus validateDialogCommand(
     }
     if (filtered.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE ||
         (filtered.codeId != ESP_MAP_OPCODE_DIALOG &&
-         filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK)) {
+         filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK &&
+         filtered.codeId != 39U /* EV_CHECK_COMPLETED_LEVEL warning */)) {
         printf("[DIALOGCHAIN] FILTER-DEFER event=%u cmd=%u opcode=%u decision=%u keys=%02x effective=%08x runFlags=%08x\n",
                (unsigned int)eventIndex,
                (unsigned int)commandOffset,
@@ -206,6 +208,39 @@ static EspNativeGameplayDialogBeginStatus validateDialogCommand(
                (unsigned int)filterPlan.effectiveFlags,
                (unsigned int)runFlags);
         return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    }
+
+    if (filtered.codeId == 39U) {
+        EspMapByteCode gate;
+        EspMapStringRef text;
+        uint16_t eligibleMask = 0U;
+        uint8_t warning = 0U;
+        memset(&gate, 0, sizeof(gate));
+        memset(&text, 0, sizeof(text));
+        /* Re-check the exact immutable operand and the same player completion
+         * predicate as MOVE preflight; do not accept arbitrary event39 dialogs
+         * or invent a pass for a save with unknown completion history. */
+        if (!EspMapEvents_getCommand(&descriptor, commandOffset, &gate) ||
+            gate.id != 39U ||
+            !EspNativeLevelGate_evaluate(
+                gate.arg1,
+                EspNativeGameplayPlayerState_completedLevels(),
+                &eligibleMask, &warning) ||
+            warning == 0U ||
+            !EspMapStrings_getRef(gate.arg1 & 0xffffU, &text) ||
+            text.length == 0U) {
+            printf("[DIALOGCHAIN] LEVELGATE-DEFER event=%u cmd=%u reason=operand-or-gate-mismatch mutation=no\n",
+                   (unsigned int)eventIndex, (unsigned int)commandOffset);
+            return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+        }
+        if (text.length + 1U > ESP_NATIVE_GAMEPLAY_DIALOG_TEXT_CAPACITY) {
+            return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_TEXT_TOO_LARGE;
+        }
+        printf("[DIALOGCHAIN] LEVELGATE-READY event=%u cmd=%u dialogString=%u eligibleMask=%04x completed=%04x continuation=preflight\n",
+               (unsigned int)eventIndex, (unsigned int)commandOffset,
+               (unsigned int)text.index, (unsigned int)eligibleMask,
+               (unsigned int)EspNativeGameplayPlayerState_completedLevels());
+        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK;
     }
 
     memset(&intent, 0, sizeof(intent));
