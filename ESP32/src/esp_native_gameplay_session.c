@@ -26,6 +26,7 @@
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_note_prefix.h"
+#include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_resident_gameplay.h"
@@ -215,6 +216,7 @@ void EspNativeGameplaySession_reset(void) {
     EspNativeGameplayMonsterPosition_reset();
     EspNativeGameplayMonsterActivation_reset();
     EspNativeGameplayMonsterDrop_reset();
+    EspNativeRngReplayGuard_reset();
     EspNativeGameplayStatusMessage_reset();
     EspNativeGameplayNotePrefix_reset();
     EspNativeResidentGameplay_reset();
