@@ -39,6 +39,9 @@ jobs:
 
       - name: Test native store catalog and purchase semantics (host C)
         run: |
+          # Compile the real event router as well; the filtered event view
+          # deliberately exposes arg2 but NOT the immutable bytecode arg1.
+          cc -std=c11 -Wall -Wextra -fsyntax-only -IESP32/include ESP32/src/esp_native_gameplay_action.c
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_gameplay_store.c ESP32/test/store_native_host.c -o /tmp/doomrpg-native-store-test
           /tmp/doomrpg-native-store-test
 
