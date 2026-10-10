@@ -264,6 +264,23 @@ int EspNativeGameplayMonsterState_snapshot(
         outSnapshot, runtime->arenaFNV1a);
 }
 
+int EspNativeGameplayMonsterState_restoreInPlace(
+    const EspNativeGameplayMonsterStateSnapshot* snapshot) {
+    const EspMapRuntimeView* runtime = EspMapRuntime_view();
+    if (snapshot == NULL || runtime == NULL ||
+        !EspNativeGameplayMonsterState_isReady() ||
+        monsterView.sourceArenaFNV1a != runtime->arenaFNV1a ||
+        monsterView.count != snapshot->count ||
+        !EspNativeGameplayMonsterState_snapshotShapeValid(
+            snapshot, runtime->arenaFNV1a)) {
+        return 0;
+    }
+    memcpy(monsterRecords, snapshot->records,
+           snapshot->count * sizeof(*monsterRecords));
+    monsterView.stateFNV1a = recordsFNV();
+    return monsterView.stateFNV1a == snapshot->stateFNV1a;
+}
+
 int EspNativeGameplayMonsterState_stageRestore(
     const EspNativeGameplayMonsterStateSnapshot* snapshot) {
     const EspMapRuntimeView* runtime = EspMapRuntime_view();
