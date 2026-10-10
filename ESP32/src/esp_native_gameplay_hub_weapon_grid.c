@@ -423,6 +423,62 @@ static int drawFrame(uint16_t* framebuffer,
     return 1;
 }
 
+/* An unresolvable familiar sprite must never leave a blank selectable
+ * button. Display its exact legacy ID as DOG9/10/11 using six tiny glyphs
+ * in the existing framebuffer; no extra asset, heap, or text owner. The
+ * authoritative familiar name is still read from entities.db above. */
+static void drawFamiliarPlaceholder(uint16_t* framebuffer,
+                                    uint8_t weapon,
+                                    int owned) {
+    static const uint8_t glyphs[6][5] = {
+        {6U, 5U, 5U, 5U, 6U}, /* D */
+        {7U, 5U, 5U, 5U, 7U}, /* O */
+        {7U, 4U, 5U, 5U, 7U}, /* G */
+        {7U, 5U, 5U, 5U, 7U}, /* 0 */
+        {2U, 6U, 2U, 2U, 7U}, /* 1 */
+        {7U, 5U, 7U, 1U, 7U}  /* 9 */
+    };
+    const char* label = weapon == 9U
+                            ? "DOG9"
+                            : (weapon == 10U ? "DOG10" : "DOG11");
+    const uint16_t color = owned ? GRID_OWNED_BORDER : GRID_DIM_BORDER;
+    uint8_t left, top, right, bottom;
+    int x;
+    int y;
+    int i;
+    if (framebuffer == NULL || weapon < GRID_FAMILIAR_FIRST_ID ||
+        weapon >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT) return;
+    EspNativeGameplayHubWeaponGrid_cellBounds(
+        weapon, &left, &top, &right, &bottom);
+    x = (int)left + ((int)GRID_CELL_WIDTH -
+                       ((int)strlen(label) * 4 - 1)) / 2;
+    y = (int)top + 11;
+    for (i = 0; label[i] != '\0'; ++i) {
+        const uint8_t* glyph;
+        int row;
+        switch (label[i]) {
+        case 'D': glyph = glyphs[0]; break;
+        case 'O': glyph = glyphs[1]; break;
+        case 'G': glyph = glyphs[2]; break;
+        case '0': glyph = glyphs[3]; break;
+        case '1': glyph = glyphs[4]; break;
+        case '9': glyph = glyphs[5]; break;
+        default: return;
+        }
+        for (row = 0; row < 5; ++row) {
+            int col;
+            for (col = 0; col < 3; ++col) {
+                if ((glyph[row] & (1U << (2 - col))) != 0U) {
+                    putPixel(framebuffer, x + col, y + row, color);
+                }
+            }
+        }
+        x += 4;
+    }
+    (void)right;
+    (void)bottom;
+}
+
 int EspNativeGameplayHubWeaponGrid_paint(
     uint16_t* framebuffer,
     const EspNativeGameplayPlayerState* player,
@@ -588,9 +644,13 @@ int EspNativeGameplayHubWeaponGrid_paint(
             drawRect(framebuffer, left + 1, top + 1, right - 1, bottom - 1,
                      GRID_FOCUS);
         }
-        if (iconReady &&
-            !drawFrame(framebuffer, weapon, owned, &frame, &workspace,
-                       &drawWidth, &drawHeight)) return 0;
+        if (iconReady) {
+            if (!drawFrame(framebuffer, weapon, owned, &frame, &workspace,
+                           &drawWidth, &drawHeight)) return 0;
+        }
+        else if (weapon >= GRID_FAMILIAR_FIRST_ID) {
+            drawFamiliarPlaceholder(framebuffer, weapon, owned);
+        }
 
         assetFNV = fnvUpdate(assetFNV, &weapon, sizeof(weapon));
         assetFNV = fnvUpdate(assetFNV, &weaponTile, sizeof(weaponTile));
