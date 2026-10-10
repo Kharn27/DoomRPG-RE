@@ -1,5 +1,11 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Outil PC de capture playtest — autotest et CI PASS, CYD non instrumenté (2026-10-10)
+
+Branche `agent/esp32-playtest-incident-capture` créée depuis `main` exact `d07a4b0a59c527b1a3792f1c2c38b0f0010affc1`. Outil Python autonome `ESP32/tools/playtest_watch.py` : lit UART via pyserial ou stdin, filtre par préfixes d'incidents réellement actionnables plutôt que chaque mot `deferred`, conserve un contexte hôte borné de 75 lignes avant/20 après, capture immédiatement sur disque, limite à un événement par classe par 45 s, option alerte sonore, snapshot des dernières lignes à Ctrl+C. Aucune modification du firmware, aucun buffer embarqué, aucune écriture SD, aucun freeze/watchdog. Commande : depuis `ESP32/`, `python3 tools/playtest_watch.py --port /dev/ttyUSB0 --bell`, **sans lancer simultanément le moniteur PlatformIO**. Logs sous `ESP32/playtest-captures/` ignorés par git.
+
+Code de l'outil `10d4c42494d83d0daebb5a4c55d9c3f46dab38aa` ; workflow test ajouté `5b40bc05`, documentation et ignore ajoutés ensuite. [CI 38012812860](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38012812860) **SUCCESS** : `py_compile` + `--self-test` du filtre et des extraits, builds normaux `esp32-cyd` et diagnostic `esp32-cyd-bringup` SUCCESS. Pas de validation du capteur sur un vrai flux Serial ou de comparaison d'effets gameplay : **outil hôte, pas un jalon firmware CYD**. Les règles explicites peuvent manquer de nouvelles familles ; conserver le contexte entier sur Ctrl+C ou étendre la classification sur preuve. Cheats et pause native des actions demeurent deux sujets séparés.
+
 ## Multi-save PR #207 — P1 death-menu CYD PASS, P2 accepted (2026-10-10)
 
 Code head testé : `0824b4c4adc84e0604e9a0ca74075def23f4f91d`; CI GitHub Actions du head : **SUCCESS**. Le code est inchangé après cette validation, les commits ultérieurs de clôture sont documentaires uniquement.
