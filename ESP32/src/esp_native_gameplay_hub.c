@@ -954,6 +954,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
         const char* sessionMutation;
         const char* hudExact;
+        uint32_t exactBottomTarget;
         int itemMutation;
         int playerExact;
         playerFNV = EspNativeGameplayPlayerState_fingerprint();
@@ -974,9 +975,17 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
                        playerFNV != hub.playerFNVAtOpen;
         sessionMutation = player.weapon != hub.weaponAtOpen ? "weapon-only" :
                           itemMutation ? "consumable" : "no";
-        /* A consumable changes the top HUD HP/armor intentionally. The
-         * pre-HUB full-band hash is then not an equivalence target, whereas
-         * the protected bottom band must still match exactly. */
+        /* A medkit changes bottom HUD health/armor too. Do not compare this
+         * frame against the old player state. Repaint once more and demand
+         * pixel-exact idempotence of the NEW player/HUD owner instead. No
+         * second framebuffer or snapshot owner is allocated. */
+        exactBottomTarget = expectedProtected;
+        if (itemMutation && hudRepainted) {
+            const int replayOk = repaintGameplayHud();
+            exactBottomTarget = hudProtectedFNV();
+            if (!replayOk || exactBottomTarget == 0U ||
+                exactBottomTarget != restoredProtected) hudRepainted = 0;
+        }
         hudExact = restoredHudBands != 0U &&
                    restoredHudBands == expectedHudBands ? "yes" :
                    itemMutation ? "new-player-state" : "NO";
@@ -991,14 +1000,14 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
                (unsigned int)restoredHudBands, (unsigned int)expectedHudBands,
                hudExact,
                (unsigned int)restoredProtected,
-               (unsigned int)expectedProtected,
+               (unsigned int)exactBottomTarget,
                restoredProtected != 0U &&
-                       restoredProtected == expectedProtected
+                       restoredProtected == exactBottomTarget
                    ? "yes" : "NO",
                EspAssetPack_isOpen() ? "NO" : "yes");
         return (playerExact && menuRestored && hudRepainted &&
                 restoredProtected != 0U &&
-                restoredProtected == expectedProtected &&
+                restoredProtected == exactBottomTarget &&
                 !EspAssetPack_isOpen())
                    ? ESP_NATIVE_GAMEPLAY_HUB_CLOSED
                    : ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
