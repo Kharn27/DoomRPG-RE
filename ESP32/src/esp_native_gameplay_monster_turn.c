@@ -667,7 +667,8 @@ static int findCandidateForSprite(
     return 1;
 }
 
-EEspNativeGameplayMonsterTurn_probeActiveMember(
+EspNativeGameplayMonsterMemberProbeStatus
+EspNativeGameplayMonsterTurn_probeActiveMember(
     struct DoomRPG_s* doomRpgBase,
     uint16_t spriteIndex) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
@@ -824,8 +825,6 @@ EEspNativeGameplayMonsterTurn_probeActiveMember(
            (unsigned int)randomFNVAfter,
            (unsigned int)turnOwner.view.attackProbes);
     return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED;
-}
-EPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED;
 }
 
 static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
