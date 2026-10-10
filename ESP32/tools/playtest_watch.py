@@ -25,8 +25,12 @@ RULES = (
         r"^\[HUB\] SELECT-DEFER page=inventory .*\bkind=item\b")),
     ("UNOWNED_INPUT", re.compile(
         r"^\[RESIDENTGAMEPLAY\] DEFER \b.*semantic-not-enabled\b")),
+    # SELECT with no event/eligible command is not an incident: the action
+    # engine handles its own entity/world fallback, including NOTHING_TO_USE.
     ("SELECT_DEFER", re.compile(
-        r"^\[RESIDENTGAMEPLAY\] (?:SELECT-(?:CHAIN|DIALOG|PASSWORD)-DEFER|SELECT-DEFER)\b")),
+        r"^\[RESIDENTGAMEPLAY\] SELECT-(?:CHAIN|DIALOG|PASSWORD)-DEFER\b")),
+    ("SELECT_UNSUPPORTED", re.compile(
+        r"^\[RESIDENTGAMEPLAY\] SELECT-DEFER\b.*\bstatus=(?:UNSUPPORTED_EVENT|COMPLEX_EVENT)\b")),
     ("MOVE_EVENT_DEFER", re.compile(
         r"^\[RESIDENTGAMEPLAY\] MOVE-(?:EVENT|DIALOG|MESSAGE)-DEFER\b")),
     ("WORLD_BACKEND_DEFER", re.compile(
@@ -38,8 +42,10 @@ RULES = (
         r"^\[MONSTERTURN\] (?:MEMBER-|ATTACK-)?DEFER\b")),
     ("WORLD_RENDER_FALLBACK", re.compile(
         r"^\[TURNFRAME\] DIAG fail=WORLD_RENDER\b")),
-    ("RENDER_GUARD", re.compile(
-        r"^\[NATIVEFRAME\] LEGACY_GUARD\b")),
+    # LEGACY_GUARD -> RETRY -> RECOVERED is a successful recovery, not a
+    # defect. Alert only on an actual final native-frame failure.
+    ("FIRSTFRAME_UNRECOVERED", re.compile(
+        r"^\[NATIVEFRAME\] FAILED\b")),
     ("HUD_MISMATCH", re.compile(
         r"^\[HUB\] CLOSE\b.*\bexactHud=NO\b")),
 )
@@ -59,6 +65,12 @@ def normalize(raw: str) -> str:
 
 
 def classify(line: str) -> str | None:
+    # The generic action engine intentionally defers monster combat to the
+    # already-owned native monster backend. A following MONSTERCOMBAT COMMIT
+    # is expected, not an unimplemented player action.
+    if (line.startswith("[ACTIONENGINE] BACKEND-DEFER") and
+            "family=monster-combat" in line):
+        return None
     for name, pattern in RULES:
         if pattern.search(line):
             return name
@@ -183,6 +195,23 @@ def self_test() -> None:
         assert classify('[MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK cause=active-order-not-owned') == "MONSTER_AI_UNOWNED"
         assert classify('[HUB] CLOSE exactHud=NO expectedHud=123') == "HUD_MISMATCH"
         assert classify('[PASSTURN] REQUEST sound=deferred turnAdvance=deferred') is None
+        # Real CYD playtest at 04:01: user selects empty space; the action
+        # engine presents NOTHING_TO_USE and no unsupported opcode is present.
+        assert classify('[ACTIONENGINE] ROUTE seq=4 weapon=2 target=none distance=0 route=NOTHING_TO_USE feedback=screen turnAdvance=deferred') is None
+        assert classify('[ACTION] SELECT seq=4 status=NO_EVENT tile=776 event=65535 eligible=0 unsupported=0') is None
+        assert classify('[RESIDENTGAMEPLAY] SELECT-DEFER n=1 seq=4 status=NO_EVENT unsupported=0 entity/otherSemantics=deferred mutation=no') is None
+        assert classify('[RESIDENTGAMEPLAY] SELECT-DEFER n=3 seq=21 status=NO_ELIGIBLE unsupported=0 entity/otherSemantics=deferred mutation=no') is None
+        assert classify('[RESIDENTGAMEPLAY] SELECT-DEFER n=7 seq=25 status=UNSUPPORTED_EVENT unsupported=41 entity/otherSemantics=deferred mutation=no') == "SELECT_UNSUPPORTED"
+        assert classify('[RESIDENTGAMEPLAY] SELECT-DEFER n=7 seq=25 status=COMPLEX_EVENT unsupported=0 entity/otherSemantics=deferred mutation=no') == "SELECT_UNSUPPORTED"
+        assert classify('[RESIDENTGAMEPLAY] SELECT-DIALOG-DEFER n=1 seq=5 event=12 cmd=0 status=bad-state mutation=no') == "SELECT_DEFER"
+        assert classify('[ACTIONENGINE] BACKEND-DEFER seq=30 sprite=200 family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no') is None
+        assert classify('[NATIVEFRAME] LEGACY_GUARD logical=15 actual=40 owner=BSS bytes=16') is None
+        assert classify('[NATIVEFRAME] RECOVERED legacy compact guard actual=40 successorActual=68') is None
+        assert classify('[NATIVEFRAME] FAILED route=gameplay code=3/SPAN_OOB') == "FIRSTFRAME_UNRECOVERED"
+        # No incident must be written for a normal empty-space SELECT.
+        countBeforeEmptySelect = watcher.count
+        watcher.feed('[RESIDENTGAMEPLAY] SELECT-DEFER n=1 seq=4 status=NO_EVENT unsupported=0 entity/otherSemantics=deferred mutation=no\n')
+        assert watcher.count == countBeforeEmptySelect
         watcher.feed('[MONSTERTURN] MEMBER-ATTACK-PROBE sprite=220 firstRandHit=177 crit=0 producerProbe=1\n')
         watcher.feed('[MONSTERRETAL] COMMIT probe=1 sprite=220 firstRandHit=5 crit=1\n')
         assert watcher.count == 2
