@@ -113,6 +113,8 @@ static MonsterCombatOwner combatOwner;
  * HUB/save stack-canary recovery pattern.
  */
 static MonsterCombatOwner combatRollbackOwner;
+static EspNativeGameplayPlayerXpResult splashLevelUp;
+static uint32_t splashLevelUpSequence;
 _Static_assert(sizeof(MonsterCombatOwner) <= 384U,
                "monster combat rollback owner must remain small and bounded");
 
@@ -302,6 +304,8 @@ void EspNativeGameplayMonsterCombat_reset(void) {
     EspNativeGameplayMonsterDrop_reset();
     memset(&combatOwner, 0, sizeof(combatOwner));
     memset(&combatRollbackOwner, 0, sizeof(combatRollbackOwner));
+    memset(&splashLevelUp, 0, sizeof(splashLevelUp));
+    splashLevelUpSequence = 0U;
     combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
@@ -897,6 +901,7 @@ int EspNativeGameplayMonsterCombat_applySplash(
 
     if (runtime == NULL || hits == NULL || count == 0U ||
         count > ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS ||
+        splashLevelUpSequence != 0U ||
         !syncOwner() || combatOwner.pending.active ||
         !EspNativeGameplayMonsterState_snapshot(&splashRollback.monsters) ||
         !EspNativeGameplayMonsterDrop_snapshot(&splashRollback.drops) ||
@@ -1006,11 +1011,10 @@ int EspNativeGameplayMonsterCombat_applySplash(
            (unsigned int)combatOwner.view.currentMonsterFNV1a,
            (unsigned int)EspNativeGameplayPlayerState_fingerprint());
     if (needsPopup) {
-        const int opened =
-            EspNativeGameplayLevelUp_begin(&popup, sequence);
-        printf("[MONSTERRADIUS] LEVELUP seq=%u levels=%u opened=%u\n",
-               (unsigned int)sequence,
-               (unsigned int)popup.levelUps, (unsigned int)opened);
+        splashLevelUp = popup;
+        splashLevelUpSequence = sequence;
+        printf("[MONSTERRADIUS] LEVELUP-QUEUED seq=%u levels=%u presentation=after-attack-settle\n",
+               (unsigned int)sequence, (unsigned int)popup.levelUps);
     }
     return 1;
 
@@ -1034,6 +1038,21 @@ splash_failed:
            (unsigned int)sequence, (unsigned int)count,
            (unsigned int)i, rollbackOk ? "yes" : "NO");
     return 0;
+}
+
+int EspNativeGameplayMonsterCombat_finishSplashPresentation(
+    uint32_t sequence) {
+    int opened;
+    if (splashLevelUpSequence == 0U) return 1;
+    if (splashLevelUpSequence != sequence) return 0;
+    opened = EspNativeGameplayLevelUp_begin(&splashLevelUp, sequence);
+    printf("[MONSTERRADIUS] LEVELUP seq=%u levels=%u opened=%u afterAttackSettle=yes\n",
+           (unsigned int)sequence, (unsigned int)splashLevelUp.levelUps,
+           (unsigned int)opened);
+    if (!opened) return 0;
+    splashLevelUpSequence = 0U;
+    memset(&splashLevelUp, 0, sizeof(splashLevelUp));
+    return 1;
 }
 
 EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect(
