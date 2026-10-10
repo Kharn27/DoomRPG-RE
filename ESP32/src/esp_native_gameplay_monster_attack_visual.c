@@ -13,6 +13,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_sprite_renderer.h"
+#include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_player_view_state.h"
 
@@ -100,7 +101,7 @@ static int syncOwner(void) {
         attackVisual.observedAttackProbes = turn->attackProbes;
         attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
         attackVisual.active = 1U;
-        printf("[MONSTERATKVIS] READY arena=%08x ownerBytes=%u source=turn-probe primaryFrame=%u alternateFrame=%u projectileFrameMs=%u sequence=generic-1or3-loop cadence=legacy-monsterWpInfo immutableSprite=yes fixedAnim=overlay gameplayRng=guarded projectile=deferred attackMessage=deferred sound=deferred\n",
+        printf("[MONSTERATKVIS] READY arena=%08x ownerBytes=%u source=turn-probe primaryFrame=%u alternateFrame=%u projectileFrameMs=%u sequence=generic-1or3-loop cadence=legacy-monsterWpInfo immutableSprite=yes fixedAnim=overlay gameplayRng=guarded projectile=imp204-if-primed attackMessage=deferred sound=deferred\n",
                (unsigned int)attackVisual.sourceArenaFNV1a,
                (unsigned int)sizeof(attackVisual),
                (unsigned int)ATTACK_VISUAL_PRIMARY_FRAME,
@@ -221,8 +222,10 @@ static void serviceImpProjectile(DoomRPG_t* runtime,
             ATTACK_IMP_PROJECTILE_LOGICAL, 0U,
             (int16_t)worldX, (int16_t)worldY)) {
         projectileEnabled = 0U;
-        printf("[IMPPROJECTILE] DEFER probe=%u reason=transient-not-ready gameplayRng=untouched\n",
-               (unsigned int)attackVisual.activeProbe);
+        printf("[IMPPROJECTILE] DEFER probe=%u reason=transient-not-ready catalog204=%s gameplayRng=untouched\n",
+               (unsigned int)attackVisual.activeProbe,
+               EspNativeGraphicsCatalog_findSprite(ATTACK_IMP_PROJECTILE_LOGICAL)
+                   != NULL ? "present" : "missing");
         return;
     }
     rendered = guardedRender(runtime, view, &frame, &rngExact);
@@ -596,7 +599,7 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
     attackVisual.observedAttackProbes = turn->attackProbes;
     attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + activePhaseMs;
     ++attackVisual.presentedAttacks;
-    printf("[MONSTERATKVIS] ARM probe=%u reason=%s sprite=%u subtype=%u alt=%u loops=%u shot=1/%u phase=attack visual=%u fixedAnim=yes phaseMs=%u projectileFrameMs=%u frame=%08x presented=%u rngExact=yes immutableSprite=yes retaliation=blocked-until-final-idle projectile=deferred attackMessage=deferred sound=deferred gameplayMutation=no\n",
+    printf("[MONSTERATKVIS] ARM probe=%u reason=%s sprite=%u subtype=%u alt=%u loops=%u shot=1/%u phase=attack visual=%u fixedAnim=yes phaseMs=%u projectileFrameMs=%u frame=%08x presented=%u rngExact=yes immutableSprite=yes retaliation=blocked-until-final-idle projectile=%s attackMessage=deferred sound=deferred gameplayMutation=no\n",
            (unsigned int)turn->attackProbes,
            reasonName(turn->lastReason),
            (unsigned int)monster->spriteIndex,
@@ -608,5 +611,6 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
            (unsigned int)activePhaseMs,
            (unsigned int)ATTACK_VISUAL_FRAME_MS,
            (unsigned int)frame.frameAfterFNV,
-           (unsigned int)frame.finalPresented);
+           (unsigned int)frame.finalPresented,
+           projectileEnabled != 0U ? "imp204-armed" : "none");
 }
