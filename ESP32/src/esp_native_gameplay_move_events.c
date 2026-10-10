@@ -1306,8 +1306,7 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
          * test of one level. V10/V11 old saves carry no proven completion
          * bits; their conservative zero mask shows the warning, never
          * grants an unearned sector completion. */
-        if (firstMapId == 0U || firstMapId > 11U ||
-            command.id != filtered.codeId) {
+        if (firstMapId == 0U || firstMapId > 11U) {
             outResult->unsupportedCodeId = command.id;
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
         }
