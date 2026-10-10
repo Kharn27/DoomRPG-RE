@@ -1198,6 +1198,38 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
             filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK &&
             filtered.codeId != ESP_MAP_OPCODE_SHOW &&
             !isStateCode(filtered.codeId)) {
+            /*
+             * The legacy EV_CHECK_COMPLETED_LEVEL (39) depends on
+             * Player.completedLevels, which the compact native PlayerState and
+             * V11 checkpoint do not yet own. Do NOT classify it as a harmless
+             * no-op or assume a zero mask on LOAD: either would fabricate
+             * sector-completion history and could change the warning dialog.
+             * Preserve the existing transactional MOVE refusal, but record
+             * the exact BSP operands for the subsequent owner milestone.
+             */
+            if (filtered.codeId == 39U) {
+                EspMapByteCode gate;
+                memset(&gate, 0, sizeof(gate));
+                if (EspMapEvents_getCommand(&descriptor, offset, &gate) &&
+                    gate.id == 39U) {
+                    const uint32_t firstOneBased = (gate.arg1 >> 16) & 0xffffU;
+                    const uint32_t dialogStringId = gate.arg1 & 0xffffU;
+                    printf("[LEVELGATE] DEFER event=%u tile=%u cmd=%u opcode=39/EV_CHECK_COMPLETED_LEVEL arg1=%08x arg2=%08x firstMapId=%u dialogString=%u completedLevels=unowned saveV11=no-completion-mask outcome=fail-closed moveCommit=no\n",
+                           (unsigned int)descriptor.eventIndex,
+                           (unsigned int)tile,
+                           (unsigned int)offset,
+                           (unsigned int)gate.arg1,
+                           (unsigned int)gate.arg2,
+                           (unsigned int)firstOneBased,
+                           (unsigned int)dialogStringId);
+                }
+                else {
+                    printf("[LEVELGATE] DEFER event=%u tile=%u cmd=%u opcode=39 bytecode=unreadable outcome=fail-closed moveCommit=no\n",
+                           (unsigned int)descriptor.eventIndex,
+                           (unsigned int)tile,
+                           (unsigned int)offset);
+                }
+            }
             outResult->unsupportedCodeId = filtered.codeId;
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
         }
