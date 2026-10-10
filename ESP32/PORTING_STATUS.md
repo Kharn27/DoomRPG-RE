@@ -1,5 +1,15 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Multi-save PR #207 — P1 death-menu CYD PASS, P2 accepted (2026-10-10)
+
+Code head testé : `0824b4c4adc84e0604e9a0ca74075def23f4f91d`; CI GitHub Actions du head : **SUCCESS**. Le code est inchangé après cette validation, les commits ultérieurs de clôture sont documentaires uniquement.
+
+**P1 (death-menu LOAD)** — **PASS sur CYD normal** : attaque létale après `PASS_TURN`, `[PLAYERDEATH] READY ... load=available`, tap LOAD, `[SAVESLOTS] MAIN-OPEN slots=10 pages=2` puis `[DEATHMENU] SLOT-OPEN ... choice=required`. Pagination `MAIN-PAGE page=2` puis `page=1`, retour `[DEATHMENU] SLOT-BACK`, réouverture LOAD, `MAIN-ARM slot=1`, `MAIN-CONFIRM slot=1`, enfin `[DEATHMENU] DISPATCH ... slot=confirmed`. Le checkpoint V11 du slot 1 est restauré à `pos=1184,352 angle=0`, joueur `34/34`, armure `11/23`, `RESIDENTRESET released=18008 empty=1`, `ENGINESESSION RESUME-VISIBLE`, `shapeData/mediaTexels` inchangés. Aucun chargement automatique du premier slot n'a eu lieu à la première pression LOAD.
+
+**P2 (hidden main selector on restore failure)** — correction défensive revue et **acceptée par l'utilisateur sans reproduction matérielle du cas d'échec tardif**. Le chemin de récupération réussie `MENU_MAIN` appelle `EspNativeGameplaySave_mainSelectorFinish()`; pas de test hardware d'injection d'erreur et aucun checkpoint SD n'a été altéré artificiellement.
+
+**Réserves hors périmètre** : polish final des menus, autres slots et coupure électrique non exhaustivement testés, fallbacks de rendu `WORLD_RENDER`, anomalie `exactHud=NO`, tours monstres différés. Pas de slot AUTO.
+
 ## Native SD multi-save — CYD gameplay PASS, navigation accepted (2026-10-08)
 
 **Baseline:** `main` `4554ccd68f7928bd8918ffaf8711d82179f5e587`; branch `agent/esp32-native-save-multislot`, code head `c4f1322509237031bd048c57bb7798036271e06c`. [CI 37835789142](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37835789142): **SUCCESS**. Firmware normal `esp32-cyd`, classic CYD sans PSRAM.
