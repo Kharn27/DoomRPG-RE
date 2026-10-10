@@ -350,9 +350,14 @@ int __wrap_DoomRPG_randNextInt(Random_t* rand) {
             if (rngReplayGuard.probeReservedRand == rand &&
                 memcmp(rand, &rngReplayGuard.preRefill, sizeof(*rand)) == 0) {
                 *rand = rngReplayGuard.postRefill;
-                rngReplayGuard.probeReserved = 0U;
-                rngReplayGuard.probeReservedRand = NULL;
-                rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
+                if (rngReplayGuard.attackProbeActive != 0U &&
+                    rngReplayGuard.attackProbeRandom == rand) {
+                    rngReplayGuard.attackProbeRefilled = 1U;
+                } else {
+                    rngReplayGuard.probeReserved = 0U;
+                    rngReplayGuard.probeReservedRand = NULL;
+                    rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
+                }
                 rngReplayGuard.valid = 1U;
                 ++rngReplayGuard.replayedRefills;
                 DRPG_LOGD("[RNGGUARD] WORD-PROBE-REPLAY refill=%u replay=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=untouched reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
@@ -376,6 +381,13 @@ int __wrap_DoomRPG_randNextInt(Random_t* rand) {
                  memcmp(rand, &rngReplayGuard.preRefill, sizeof(*rand)) == 0) {
             *rand = rngReplayGuard.postRefill;
             ++rngReplayGuard.replayedRefills;
+            if (rngReplayGuard.attackProbeActive != 0U &&
+                rngReplayGuard.attackProbeRandom == rand) {
+                rngReplayGuard.attackProbeRefilled = 1U;
+                rngReplayGuard.probeReserved = 1U;
+                rngReplayGuard.probeReservedRand = rand;
+                rngReplayGuard.validUntilMs = 0U;
+            }
             DRPG_LOGD("[RNGGUARD] WORD-REPLAY refill=%u replay=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=untouched rollbackSafe=yes\n",
                    (unsigned int)rngReplayGuard.realRefills,
                    (unsigned int)rngReplayGuard.replayedRefills,
@@ -389,7 +401,18 @@ int __wrap_DoomRPG_randNextInt(Random_t* rand) {
             rngReplayGuard.probeReservedRand = NULL;
             rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
             rngReplayGuard.valid = 1U;
-            rngReplayGuard.probeReserved = 0U;
+            if (rngReplayGuard.attackProbeActive != 0U &&
+                rngReplayGuard.attackProbeRandom == rand) {
+                rngReplayGuard.attackProbeRefilled = 1U;
+                rngReplayGuard.probeReserved = 1U;
+                rngReplayGuard.probeReservedRand = rand;
+                rngReplayGuard.validUntilMs = 0U;
+                DRPG_LOGI("[RNGGUARD] ATTACK-PROBE-WORD-REFILL refill=%u next=%d->0 owner=persistent-until-live-replay hiddenGenerator=advanced-once\n",
+                          (unsigned int)rngReplayGuard.realRefills + 1U,
+                          refillFrom);
+            } else {
+                rngReplayGuard.probeReserved = 0U;
+            }
             ++rngReplayGuard.realRefills;
             DRPG_LOGD("[RNGGUARD] WORD-REFILL refill=%u leaseMs=%u next=%d->0 bytes=4 hiddenGenerator=advanced-once rollbackReplay=armed\n",
                    (unsigned int)rngReplayGuard.realRefills,
