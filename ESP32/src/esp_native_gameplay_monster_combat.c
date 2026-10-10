@@ -1015,10 +1015,19 @@ int EspNativeGameplayMonsterCombat_applySplash(
     return 1;
 
 splash_failed:
-    rollbackOk =
-        EspNativeGameplayMonsterDrop_restore(&splashRollback.drops) &&
-        EspNativeGameplayMonsterState_restoreInPlace(&splashRollback.monsters) &&
-        EspNativeGameplayPlayerState_restore(&splashRollback.player);
+    /* Run EVERY undo even if an earlier restore fails. No short-circuit:
+     * partially restored gameplay must never be reported as a clean rollback. */
+    rollbackOk = 1;
+    if (!EspNativeGameplayMonsterDrop_restore(&splashRollback.drops)) {
+        rollbackOk = 0;
+    }
+    if (!EspNativeGameplayMonsterState_restoreInPlace(
+            &splashRollback.monsters)) {
+        rollbackOk = 0;
+    }
+    if (!EspNativeGameplayPlayerState_restore(&splashRollback.player)) {
+        rollbackOk = 0;
+    }
     runtime->random = splashRollback.random;
     combatOwner = splashRollback.combat;
     printf("[MONSTERRADIUS] ROLLBACK seq=%u hits=%u failedAt=%u exact=%s rng=yes monster=yes player=yes drops=yes\n",
