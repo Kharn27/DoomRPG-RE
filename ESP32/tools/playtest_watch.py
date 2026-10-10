@@ -21,6 +21,8 @@ import time
 # sound=...-deferred, the READY contract and harmless pending animation states.
 # Match only meaningful runtime boundaries; add rules after observing actual logs.
 RULES = (
+    ("PLAYER_OVERLAP_RECOVERY", re.compile(
+        r"^\[PLAYEROVERLAP\] ESCAPE\b")),
     # Firmware detects a replay mismatch before committing: never suppress it.
     ("RNG_REPLAY_DIVERGED", re.compile(
         r"^\[MONSTERRETAL\] REPLAY-DIVERGED\b")),
@@ -58,6 +60,11 @@ RULES = (
 PROBE_LINE = re.compile(r"^\[MONSTERTURN\] MEMBER-ATTACK-PROBE\b")
 COMMIT_LINE = re.compile(r"^\[MONSTERRETAL\] (?:COMMIT|MISS-COMMIT|LETHAL-COMMIT)\b")
 KEY_VALUE = re.compile(r"\b(producerProbe|probe|sprite|firstRandHit|crit)=(\d+)")
+BLOCKED_STEP = re.compile(
+    r"^\[RESIDENTGAMEPLAY\] MOVE-BLOCKED\b.*"
+    r"\btile=(\d+)->(\d+)\b.*\bblocker=(\d+)\s+type=(\d+)\b")
+COMMITTED_MOVE = re.compile(r"^\[RESIDENTGAMEPLAY\] MOVE n=\d+\b")
+
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
@@ -102,6 +109,8 @@ class PlaytestWatcher:
         self.pending: list[list] = []
         self.count = 0
         self.attack_probes: dict[tuple[int, int], tuple[int, int]] = {}
+        self.blocked_dests: dict[tuple[int, int], set[int]] = {}
+        self.stuck_collision_alerted: set[tuple[int, int]] = set()
 
     def replay_status(self, line: str) -> str | None:
         if "[ENGINESESSION] READY" in line or "[RESIDENTRESET]" in line:
@@ -134,6 +143,33 @@ class PlaytestWatcher:
             return "RNG_REPLAY_DIVERGED"
         return None
 
+    def stuck_collision_status(self, line: str) -> str | None:
+        if COMMITTED_MOVE.search(line) or (
+                "[ENGINESESSION] READY" in line or "[RESIDENTRESET]" in line):
+            self.blocked_dests.clear()
+            self.stuck_collision_alerted.clear()
+            return None
+        match = BLOCKED_STEP.search(line)
+        if match is None:
+            return None
+        source_tile, dest_tile, blocker, entity_type = map(int, match.groups())
+        if entity_type != 1:
+            return None
+        key = (source_tile, blocker)
+        if key in self.stuck_collision_alerted:
+            return None
+        # One sprite blocking DIFFERENT destinations from the same source is
+        # a strong indicator of source-cell overlap. Ordinary front-only
+        # monster collision does not qualify, regardless of repeated taps.
+        dests = self.blocked_dests.setdefault(key, set())
+        dests.add(dest_tile)
+        if len(self.blocked_dests) > 8:
+            self.blocked_dests.pop(next(iter(self.blocked_dests)))
+        if len(dests) > 1:
+            self.stuck_collision_alerted.add(key)
+            return "PLAYER_STUCK_COLLISION"
+        return None
+
     def feed(self, raw: str) -> None:
         line = normalize(raw)
         if not line:
@@ -154,7 +190,10 @@ class PlaytestWatcher:
         self.pending = waiting
         self.ring.append(stamped)
         replay_alert = self.replay_status(line)
-        rule = replay_alert if replay_alert is not None else classify(line)
+        collision_alert = self.stuck_collision_status(line)
+        rule = (replay_alert if replay_alert is not None else
+                collision_alert if collision_alert is not None else
+                classify(line))
         if rule is None:
             return
         # Never coalesce RNG integrity faults. A rapid series of mismatched
@@ -281,6 +320,21 @@ def self_test() -> None:
         watcher.feed('[MONSTERRETAL] LETHAL-COMMIT probe=8 sprite=220 totalDamage=4 crit=1\n')
         assert watcher.count == 8
         assert len(list(output.glob("incident-*RNG_REPLAY_UNVERIFIED.log"))) == 1
+        # Actual CYD key-area snapshot: the same living monster blocked
+        # source tile=665 -> two destinations, without any DEFER log.
+        watcher.feed('[RESIDENTGAMEPLAY] MOVE-BLOCKED n=9 seq=520 action=FORWARD tile=665->697 blocker=286 type=1 context=WORLD legacyAdvance=no\n')
+        assert watcher.count == 8
+        watcher.feed('[RESIDENTGAMEPLAY] MOVE-BLOCKED n=10 seq=521 action=BACK tile=665->633 blocker=286 type=1 context=WORLD legacyAdvance=no\n')
+        assert watcher.count == 9
+        assert len(list(output.glob("incident-*PLAYER_STUCK_COLLISION.log"))) == 1
+        watcher.feed('[RESIDENTGAMEPLAY] MOVE-BLOCKED n=11 seq=522 action=FORWARD tile=665->697 blocker=286 type=1 context=WORLD legacyAdvance=no\n')
+        assert watcher.count == 9
+        watcher.feed('[RESIDENTGAMEPLAY] MOVE n=62 seq=523 action=FORWARD tile=665->697 committed=yes\n')
+        watcher.feed('[RESIDENTGAMEPLAY] MOVE-BLOCKED n=1 seq=524 action=FORWARD tile=697->729 blocker=286 type=1 context=WORLD legacyAdvance=no\n')
+        watcher.feed('[RESIDENTGAMEPLAY] MOVE-BLOCKED n=2 seq=525 action=BACK tile=697->665 blocker=286 type=1 context=WORLD legacyAdvance=no\n')
+        assert watcher.count == 10
+        assert len(list(output.glob("incident-*PLAYER_STUCK_COLLISION.log"))) == 2
+        assert classify('[PLAYEROVERLAP] ESCAPE source=665 dest=697 sprite=286 subtype=1') == "PLAYER_OVERLAP_RECOVERY"
         watcher.close()
     print("[WATCH] SELF-TEST PASS")
 
