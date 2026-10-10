@@ -807,6 +807,22 @@ static int findSpriteOnTile(uint16_t tile,
             !entityTypeInTraceMask(type)) {
             continue;
         }
+        if (type == ACTION_ENTITY_ENEMY) {
+            /*
+             * actionGetEntity() deliberately reads the private action-engine
+             * leaf (to avoid recursing through MonsterCombat's public topology
+             * wrapper). That leaf still reports immutable BSP linkage for a
+             * dead enemy. Entity_died() unlinks it in the original game;
+             * the native MonsterState.alive bit is authoritative instead.
+             * Match findRadiusSpriteOnTile() and MonsterTrace_forward() so a
+             * corpse can neither shadow a fire/other blocker farther along
+             * this ray nor produce a spurious TRACE-MISMATCH. Living monsters
+             * continue to block and no gameplay/RNG owner is mutated.
+             */
+            const EspNativeGameplayMonsterRecord* monster =
+                EspNativeGameplayMonsterState_find((uint16_t)i);
+            if (monster == NULL || monster->alive == 0U) continue;
+        }
         if (type == 14U) {
             specialBlocks = specialEntityBlocks(i, sourceX, sourceY,
                                                 destX, destY);
