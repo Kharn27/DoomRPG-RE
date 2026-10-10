@@ -3178,6 +3178,107 @@ bool loadNow(void) {
     return true;
 }
 
+/*
+ * V1..V11 all start with the identical on-disk NativeSaveCore prefix.
+ * Inspect only that small header to paint the menu; full CRC and complete
+ * structural validation still belong exclusively to readBestRecord() on LOAD.
+ * No checkpoint rewrite, full-save read, heap allocation or live-player query.
+ */
+bool readSlotPreviewCore(const char* path, NativeSaveCore* outCore) {
+    File file;
+    NativeSaveCore core;
+    const uint8_t* expectedMagic = nullptr;
+    size_t expectedBytes = 0U;
+    size_t actualBytes;
+    if (path == nullptr || outCore == nullptr || !SD.exists(path)) return false;
+    file = SD.open(path, FILE_READ);
+    if (!file) return false;
+    actualBytes = (size_t)file.size();
+    if (actualBytes < sizeof(core) ||
+        file.read(reinterpret_cast<uint8_t*>(&core), sizeof(core)) !=
+            sizeof(core)) {
+        file.close();
+        return false;
+    }
+    file.close();
+    switch (core.version) {
+    case kVersionV1: expectedMagic = kMagicV1; expectedBytes = sizeof(NativeSaveCore); break;
+    case kVersionV2: expectedMagic = kMagicV2; expectedBytes = sizeof(NativeSaveRecordV2); break;
+    case kVersionV3: expectedMagic = kMagicV3; expectedBytes = sizeof(NativeSaveRecordV3); break;
+    case kVersionV4: expectedMagic = kMagicV4; expectedBytes = sizeof(NativeSaveRecordV4); break;
+    case kVersionV5: expectedMagic = kMagicV5; expectedBytes = sizeof(NativeSaveRecordV5); break;
+    case kVersionV6: expectedMagic = kMagicV6; expectedBytes = kRecordBytesV6; break;
+    case kVersionV7: expectedMagic = kMagicV7; expectedBytes = kRecordBytesV7; break;
+    case kVersionV8: expectedMagic = kMagicV8; expectedBytes = kRecordBytesV8; break;
+    case kVersionV9: expectedMagic = kMagicV9; expectedBytes = kRecordBytesV9; break;
+    case kVersionV10: expectedMagic = kMagicV10; expectedBytes = kRecordBytesV10; break;
+    case kVersionV11: expectedMagic = kMagicV11; expectedBytes = kRecordBytesV11; break;
+    default: return false;
+    }
+    if (actualBytes != expectedBytes ||
+        !coreShapeValid(core, expectedMagic, core.version,
+                        (uint16_t)expectedBytes) ||
+        core.player.level == 0U) return false;
+    *outCore = core;
+    return true;
+}
+
+/* Compact labels fit the existing 107-pixel-wide, seven-pixel-tall row font. */
+const char* slotMapCaption(uint8_t mapId, char* sector, size_t capacity) {
+    if (!EspMapCatalog_isValidId(mapId)) return nullptr;
+    switch (mapId) {
+    case ESP_MAP_ID_INTRO: return "ENTRANCE";
+    case ESP_MAP_ID_JUNCTION: return "JUNCTION";
+    case 10U: return "JCT RUIN";
+    case 11U: return "ITEMS";
+    case 12U: return "REACTOR";
+    case ESP_MAP_ID_END_GAME: return "ENDGAME";
+    default:
+        if (mapId >= 2U && mapId <= 8U &&
+            sector != nullptr && capacity >= 9U) {
+            snprintf(sector, capacity, "SECTOR %u", (unsigned)(mapId - 1U));
+            return sector;
+        }
+        return nullptr;
+    }
+}
+
+bool formatSlotCaption(uint8_t slot, bool armed, char* out, size_t capacity) {
+    char path[48];
+    char backup[52];
+    char sector[12];
+    NativeSaveCore core;
+    bool occupied = false;
+    const char* candidates[4];
+    if (out == nullptr || capacity == 0U || slot < 1U || slot > 10U)
+        return false;
+    snprintf(path, sizeof(path), "/DoomRPG-ESP32-slot%02u.sav",
+             (unsigned)slot);
+    snprintf(backup, sizeof(backup), "/DoomRPG-ESP32-slot%02u.sav.bak",
+             (unsigned)slot);
+    candidates[0] = path;
+    candidates[1] = backup;
+    candidates[2] = slot == 1U ? kLegacySavePath : nullptr;
+    candidates[3] = slot == 1U ? kLegacyBackupPath : nullptr;
+    for (uint8_t i = 0U; i < 4U; ++i) {
+        const char* candidate = candidates[i];
+        if (candidate == nullptr || !SD.exists(candidate)) continue;
+        occupied = true;
+        if (!readSlotPreviewCore(candidate, &core)) continue;
+        const char* mapName =
+            slotMapCaption(core.targetMapId, sector, sizeof(sector));
+        if (mapName == nullptr) continue;
+        snprintf(out, capacity, "%02u %s LVL %u%s",
+                 (unsigned)slot, mapName, (unsigned)core.player.level,
+                 armed ? "?" : "");
+        return true;
+    }
+    /* Unknown/corrupt headers keep their original occupied indicator. */
+    snprintf(out, capacity, "%02u %s%s", (unsigned)slot,
+             occupied ? "OCCUPIED" : "-- EMPTY --", armed ? "?" : "");
+    return occupied;
+}
+
 void fillRect(uint16_t* fb, int left, int top, int right, int bottom,
               uint16_t color) {
     int x;
@@ -3271,20 +3372,13 @@ bool paintSaveOverlay(void) {
         for (uint8_t row = 0U; row < 5U; ++row) {
             const uint8_t slot = first + row;
             const int top = 47 + row * 14;
-            char path[48];
-            snprintf(path, sizeof(path), "/DoomRPG-ESP32-slot%02u.sav", (unsigned)slot);
-            char backup[52];
-            snprintf(backup, sizeof(backup), "/DoomRPG-ESP32-slot%02u.sav.bak", (unsigned)slot);
-            const bool available = SD.exists(path) || SD.exists(backup) ||
-                (slot == 1U && (SD.exists(kLegacySavePath) || SD.exists(kLegacyBackupPath)));
             const bool focused = slot == slotFocus;
+            const bool available = formatSlotCaption(
+                slot, focused && slotArmed == slot, label, sizeof(label));
             fillRect(fb, 7, top, 113, top + 12,
                      focused ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
             drawRect(fb, 7, top, 113, top + 12,
                      focused ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
-            snprintf(label, sizeof(label), "%02u  %s%s", (unsigned)slot,
-                     available ? "OCCUPIED" : "-- EMPTY --",
-                     focused && slotArmed == slot ? " ?" : "");
             drawCenteredWord(fb, 60, top + 3, label,
                              available ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
                                        : ESP_HUB_COLOR_STEEL_DARK);
@@ -3367,17 +3461,11 @@ static void paintMainSlots(void) {
     for (uint8_t row = 0U; row < 5U; ++row) {
         const uint8_t slot = first + row;
         const int y = 32 + row * 14;
-        char path[48], backup[52];
-        snprintf(path, sizeof(path), "/DoomRPG-ESP32-slot%02u.sav", (unsigned)slot);
-        snprintf(backup, sizeof(backup), "/DoomRPG-ESP32-slot%02u.sav.bak", (unsigned)slot);
-        const bool occupied = SD.exists(path) || SD.exists(backup) ||
-            (slot == 1U && (SD.exists(kLegacySavePath) || SD.exists(kLegacyBackupPath)));
         const bool focused = slot == slotFocus;
+        const bool occupied = formatSlotCaption(
+            slot, focused && slotArmed == slot, text, sizeof(text));
         fillRect(fb, 7, y, 113, y + 12, focused ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
         drawRect(fb, 7, y, 113, y + 12, focused ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
-        snprintf(text, sizeof(text), "%02u %s%s", (unsigned)slot,
-                 occupied ? "OCCUPIED" : "-- EMPTY --",
-                 focused && slotArmed == slot ? " ?" : "");
         drawCenteredWord(fb, 60, y + 3, text,
                          occupied ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
                                   : ESP_HUB_COLOR_STEEL_DARK);
