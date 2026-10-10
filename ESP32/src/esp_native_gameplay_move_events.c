@@ -18,6 +18,8 @@
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_dispatch.h"
 #include "esp_native_gameplay_move_events.h"
+#include "esp_native_gameplay_dialog.h"
+#include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
@@ -189,7 +191,8 @@ static int phaseHandled(EspNativeGameplayMoveEventStatus status) {
 
 static int isDialogCode(uint8_t codeId) {
     return codeId == ESP_MAP_OPCODE_DIALOG ||
-           codeId == ESP_MAP_OPCODE_DIALOG_NO_BACK;
+           codeId == ESP_MAP_OPCODE_DIALOG_NO_BACK ||
+           codeId == 39U /* EV_CHECK_COMPLETED_LEVEL conditional dialog */;
 }
 
 static int isStateCode(uint8_t codeId) {
@@ -1197,39 +1200,8 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
             filtered.codeId != ESP_MAP_OPCODE_DIALOG &&
             filtered.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK &&
             filtered.codeId != ESP_MAP_OPCODE_SHOW &&
+            filtered.codeId != 39U &&
             !isStateCode(filtered.codeId)) {
-            /*
-             * The legacy EV_CHECK_COMPLETED_LEVEL (39) depends on
-             * Player.completedLevels, which the compact native PlayerState and
-             * V11 checkpoint do not yet own. Do NOT classify it as a harmless
-             * no-op or assume a zero mask on LOAD: either would fabricate
-             * sector-completion history and could change the warning dialog.
-             * Preserve the existing transactional MOVE refusal, but record
-             * the exact BSP operands for the subsequent owner milestone.
-             */
-            if (filtered.codeId == 39U) {
-                EspMapByteCode gate;
-                memset(&gate, 0, sizeof(gate));
-                if (EspMapEvents_getCommand(&descriptor, offset, &gate) &&
-                    gate.id == 39U) {
-                    const uint32_t firstOneBased = (gate.arg1 >> 16) & 0xffffU;
-                    const uint32_t dialogStringId = gate.arg1 & 0xffffU;
-                    printf("[LEVELGATE] DEFER event=%u tile=%u cmd=%u opcode=39/EV_CHECK_COMPLETED_LEVEL arg1=%08x arg2=%08x firstMapId=%u dialogString=%u completedLevels=unowned saveV11=no-completion-mask outcome=fail-closed moveCommit=no\n",
-                           (unsigned int)descriptor.eventIndex,
-                           (unsigned int)tile,
-                           (unsigned int)offset,
-                           (unsigned int)gate.arg1,
-                           (unsigned int)gate.arg2,
-                           (unsigned int)firstOneBased,
-                           (unsigned int)dialogStringId);
-                }
-                else {
-                    printf("[LEVELGATE] DEFER event=%u tile=%u cmd=%u opcode=39 bytecode=unreadable outcome=fail-closed moveCommit=no\n",
-                           (unsigned int)descriptor.eventIndex,
-                           (unsigned int)tile,
-                           (unsigned int)offset);
-                }
-            }
             outResult->unsupportedCodeId = filtered.codeId;
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
         }
@@ -1318,6 +1290,58 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
     outResult->codeId = command.id;
     outResult->removeIfHandled =
         (uint8_t)((command.arg2 & ESP_MAP_COMMAND_FLAG_REMOVE) != 0U ? 1U : 0U);
+
+    if (command.id == 39U /* EV_CHECK_COMPLETED_LEVEL */) {
+        EspMapStringRef dialogRef;
+        const uint32_t firstMapId = command.arg1 >> 16U;
+        const uint32_t stringId = command.arg1 & 0xffffU;
+        const uint16_t completed =
+            EspNativeGameplayPlayerState_completedLevels();
+        uint32_t eligibleMask;
+        int warning;
+
+        /* Legacy: for (n = firstMapId-1; n < MAP_ITEMS &&
+         * !(completedLevels & (1<<n)); ++n) ; if (n==MAP_ITEMS) dialog.
+         * MAP_ITEMS is 11; preserve the open-ended search, not an exact
+         * test of one level. V10/V11 old saves carry no proven completion
+         * bits; their conservative zero mask shows the warning, never
+         * grants an unearned sector completion. */
+        if (firstMapId == 0U || firstMapId > 11U ||
+            command.id != filtered.codeId) {
+            outResult->unsupportedCodeId = command.id;
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
+        }
+        eligibleMask = 0x07ffUL &
+                       ~((1UL << (firstMapId - 1U)) - 1UL);
+        warning = (completed & eligibleMask) == 0U;
+        if (!warning) {
+            printf("[LEVELGATE] PASS event=%u tile=%u firstMapId=%u completed=%04x eligibleMask=%04x dialog=no mutation=no\n",
+                   (unsigned int)descriptor.eventIndex,
+                   (unsigned int)tile,
+                   (unsigned int)firstMapId,
+                   (unsigned int)completed,
+                   (unsigned int)eligibleMask);
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_NO_ELIGIBLE;
+        }
+        memset(&dialogRef, 0, sizeof(dialogRef));
+        if (!EspMapStrings_getRef(stringId, &dialogRef) ||
+            dialogRef.length == 0U ||
+            dialogRef.length >= ESP_NATIVE_GAMEPLAY_DIALOG_TEXT_CAPACITY) {
+            outResult->unsupportedCodeId = command.id;
+            return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
+        }
+        printf("[LEVELGATE] WARNING event=%u tile=%u cmd=%u firstMapId=%u dialogString=%u completed=%04x history=%s eligibleMask=%04x outcome=native-dialog moveCommit=pending\n",
+               (unsigned int)descriptor.eventIndex,
+               (unsigned int)tile,
+               (unsigned int)selectedOffset,
+               (unsigned int)firstMapId,
+               (unsigned int)stringId,
+               (unsigned int)completed,
+               EspNativeGameplayPlayerState_completedLevelsKnown()
+                   ? "full" : "legacy-incomplete",
+               (unsigned int)eligibleMask);
+        return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_DIALOG_READY;
+    }
 
     if (command.id == ESP_MAP_OPCODE_MESSAGE) {
         EspMapStringRef messageRef;
