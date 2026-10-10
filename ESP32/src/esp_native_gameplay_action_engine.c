@@ -15,6 +15,7 @@
 #include "esp_map_sprite_topology.h"
 #include "esp_map_state.h"
 #include "esp_native_gameplay_action.h"
+#include "esp_native_gameplay_barrel_radius.h"
 #include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_combat_math.h"
@@ -953,15 +954,17 @@ static int barrelRadiusCellSupported(uint16_t tile,
         outTarget->isLine = 1U;
         outTarget->type = lineType;
         outTarget->subtype = lineSubtype;
-        /* A line without an EntityDef but with flags&24 is linked as the
-         * generic type-9 fallback. Entity_initspawn() leaves it non-hurtable,
-         * so Game_hurtEntityAt() finds it first and no-ops. Native
-         * findLinkedLineBlocker() represents that fallback as type=0/sub=255.
-         * Jammed doors and power couplings are also explicit radius no-ops. */
-        if (lineType == 0U && lineSubtype == 0xffU) return 1;
-        return lineType == ACTION_ENTITY_DESTRUCTIBLE &&
-               (lineSubtype == ACTION_DESTRUCTIBLE_JAMMED_SUBTYPE ||
-                lineSubtype == 4U);
+        /*
+         * The linked type=0 line is never hurtable in the legacy, whatever
+         * its subtype: Entity_initspawn() does not set info&0x40000 for
+         * eType=0. This includes real EntityDef entries (e.g. type=0/sub=1)
+         * as well as the synthetic type=0/sub=255 fallback. The original
+         * Game_hurtEntityAt() sees the first linked entity and no-ops; it
+         * does not propagate the blast to another entity on the same tile.
+         * Jammed doors / power couplings are also no-ops. Keep every other
+         * line family fail-closed rather than destroying it implicitly.
+         */
+        return EspNativeGameplayBarrelRadius_lineNoop(lineType, lineSubtype);
     }
 
     spriteResult = findRadiusSpriteOnTile(tile, outTarget);
