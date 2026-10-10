@@ -648,15 +648,48 @@ static int findCandidateForSprite(
 
     dx = (int64_t)monsterX - playerView->destX;
     dy = (int64_t)monsterY - playerView->destY;
-    if ((dx != 0 && dy != 0) || (dx == 0 && dy == 0)) return 1;
+    if ((dx != 0 && dy != 0) || (dx == 0 && dy == 0)) {
+        if (monster->subtype == 3U) {
+            printf("[IMPAI] TARGET sprite=%u tile=%u target=%d,%d weapon=%u decision=move reason=not-cardinal-alignment mutation=no rngConsumed=0\n",
+                   (unsigned int)monster->spriteIndex,
+                   (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                   (int)playerView->destX, (int)playerView->destY,
+                   (unsigned int)weaponId);
+        }
+        return 1;
+    }
 
     worldDistance = (uint32_t)(dx * dx + dy * dy);
     attackRange = (1 + (int)weapon->rangeMin) * TURN_TILE_SIZE;
-    if (worldDistance > (uint32_t)(attackRange * attackRange)) return 1;
+    if (worldDistance > (uint32_t)(attackRange * attackRange)) {
+        if (monster->subtype == 3U) {
+            printf("[IMPAI] TARGET sprite=%u tile=%u distance2=%u range2=%u weapon=%u decision=move reason=out-of-range mutation=no rngConsumed=0\n",
+                   (unsigned int)monster->spriteIndex,
+                   (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                   (unsigned int)worldDistance,
+                   (unsigned int)(attackRange * attackRange),
+                   (unsigned int)weaponId);
+        }
+        return 1;
+    }
     if (!cardinalLosClear(monsterX, monsterY,
                           playerView->destX, playerView->destY,
                           monster->spriteIndex)) {
+        if (monster->subtype == 3U) {
+            printf("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=move reason=trace-blocked mutation=no rngConsumed=0\n",
+                   (unsigned int)monster->spriteIndex,
+                   (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                   (unsigned int)worldDistance,
+                   (unsigned int)weaponId);
+        }
         return 1;
+    }
+    if (monster->subtype == 3U) {
+        printf("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=attack-candidate reason=cardinal-range-los-clear mutation=no rngConsumed=0\n",
+               (unsigned int)monster->spriteIndex,
+               (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+               (unsigned int)worldDistance,
+               (unsigned int)weaponId);
     }
 
     outCandidate->monster = monster;
