@@ -1072,7 +1072,9 @@ static int drawTransientBatch(Render_t* render,
         Render_projectVertex(render, &line.vert1);
         Render_projectVertex(render, &line.vert2);
         if (!spans(render, &line, frame,
-                   spriteRenderMode(transientWorldBatch.logical),
+                   transientWorldBatch.logical == 204U
+                       ? RENDER_MODE_ADD
+                       : spriteRenderMode(transientWorldBatch.logical),
                    0, stats)) {
             return 0;
         }
