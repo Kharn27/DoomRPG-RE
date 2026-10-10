@@ -22,6 +22,10 @@ extern "C" {
  * EspNativeRngReplayGuard_endProbeBoundary() or committed by
  * EspNativeRngReplayGuard_commitProbeBoundary().
  */
+/* Drop any pending post-refill lease/reservation on a real map or
+ * checkpoint session transition. The old world's RNG replay is not portable. */
+void EspNativeRngReplayGuard_reset(void);
+
 /*
  * An attack probe can cross the 128-byte boundary AFTER consuming its AI
  * decision and its first hit/damage byte. This scoped transaction holds the
