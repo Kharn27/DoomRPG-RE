@@ -39,11 +39,7 @@ jobs:
 
       - name: Test native store catalog and purchase semantics (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror \\
-            -IESP32/include \\
-            ESP32/src/esp_native_gameplay_store.c \\
-            ESP32/test/store_native_host.c \\
-            -o /tmp/doomrpg-native-store-test
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_gameplay_store.c ESP32/test/store_native_host.c -o /tmp/doomrpg-native-store-test
           /tmp/doomrpg-native-store-test
 
       - name: Cache PlatformIO packages
