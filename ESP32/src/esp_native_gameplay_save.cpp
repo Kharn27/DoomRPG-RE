@@ -1159,10 +1159,15 @@ bool monsterSpatialShapeValid(
 
 bool levelProgressShapeValid(const EspPlayerLevelProgress& progress,
                               const NativeSaveCore& core) {
+    /* V11 reuses the previously-zero two reserved progress bytes for
+     * 11 legacy completed-map bits and bit15 provenance. Old saves remain
+     * valid, but their missing completion history is explicitly unknown. */
+    const uint16_t completion =
+        (uint16_t)progress.reserved[0] |
+        ((uint16_t)progress.reserved[1] << 8U);
     return progress.targetMapId == core.targetMapId &&
            progress.xpBaseline <= core.player.xpGained &&
-           progress.complete <= 1U && progress.reserved[0] == 0U &&
-           progress.reserved[1] == 0U;
+           progress.complete <= 1U && (completion & 0x7800U) == 0U;
 }
 
 bool loadedV9Valid(
