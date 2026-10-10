@@ -38,6 +38,12 @@ RULES = (
         r"^\[RESIDENTGAMEPLAY\] SELECT-(?:CHAIN|DIALOG|PASSWORD)-DEFER\b")),
     ("SELECT_UNSUPPORTED", re.compile(
         r"^\[RESIDENTGAMEPLAY\] SELECT-DEFER\b.*\bstatus=(?:UNSUPPORTED_EVENT|COMPLEX_EVENT)\b")),
+    # Specific actionable unowned families take precedence over the generic
+    # MOVE/BARREL defers, and preserve the exact first failure in captures.
+    ("LEVEL_PROGRESS_UNOWNED", re.compile(
+        r"^\[LEVELGATE\] DEFER\b.*\bopcode=39(?:/EV_CHECK_COMPLETED_LEVEL)?\b.*\bcompletedLevels=unowned\b")),
+    ("BARREL_RADIUS_MONSTER_UNOWNED", re.compile(
+        r"^\[BARRELRADIUS\] DEFER\b.*\breason=unsupported-radius-family\b.*\btype=1\s+subtype=\d+\b")),
     ("MOVE_EVENT_DEFER", re.compile(
         r"^\[RESIDENTGAMEPLAY\] MOVE-(?:EVENT|DIALOG|MESSAGE)-DEFER\b")),
     ("WORLD_BACKEND_DEFER", re.compile(
@@ -306,6 +312,15 @@ def self_test() -> None:
         assert classify('[MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK n=50 candidates=2 activeCount=2 cause=active-order-not-owned mutation=no rngConsumed=0') == "MONSTER_AI_UNOWNED"
         # A destructible enemy/line not yet owned remains an actionable alert.
         assert classify('[ACTIONENGINE] BACKEND-DEFER seq=235 sprite=65535 line=201 family=destructible-combat reason=generic-hit+hp/subtype-consequence-not-owned mutation=no') == "WORLD_BACKEND_DEFER"
+        # Real CYD Junction gate: opcode 39 requires a persisted completed-level
+        # mask; do not reinterpret this as a missing key or passable door.
+        gate = '[LEVELGATE] DEFER event=43 tile=806 cmd=0 opcode=39/EV_CHECK_COMPLETED_LEVEL arg1=00040031 arg2=0000000f firstMapId=4 dialogString=49 completedLevels=unowned saveV11=no-completion-mask outcome=fail-closed moveCommit=no'
+        assert classify(gate) == "LEVEL_PROGRESS_UNOWNED"
+        assert classify('[LEVELGATE] DEFER event=43 opcode=39 reason=other') is None
+        # Actual barrel at tile 442, exploding next to a live monster on 473.
+        barrel = '[BARRELRADIUS] DEFER seq=20 sprite=269 reason=unsupported-radius-family targetSprite=0 line=65535 tile=473 type=1 subtype=4 chainCap=16 playerSentinel=254 playerRollback=yes rngRollback=yes mutation=no'
+        assert classify(barrel) == "BARREL_RADIUS_MONSTER_UNOWNED"
+        assert classify('[BARRELRADIUS] DEFER seq=21 sprite=269 reason=unsupported-radius-family targetSprite=310 line=65535 tile=442 type=12 subtype=2') == "WORLD_BACKEND_DEFER"
         assert classify('[HUB] CLOSE exactHud=NO expectedHud=123') == "HUD_MISMATCH"
         assert classify('[PASSTURN] REQUEST sound=deferred turnAdvance=deferred') is None
         # Real CYD playtest at 04:01: user selects empty space; the action
