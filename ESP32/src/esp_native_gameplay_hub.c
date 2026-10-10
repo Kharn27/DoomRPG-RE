@@ -1016,6 +1016,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         const char* hudExact;
         uint32_t exactBottomTarget;
         int itemMutation;
+        int weaponMutation;
         int playerExact;
         playerFNV = EspNativeGameplayPlayerState_fingerprint();
         memset(&player, 0, sizeof(player));
@@ -1031,20 +1032,32 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         restoredHudBands = hudBandsFNV();
         restoredProtected = hudProtectedFNV();
         playerExact = playerFNV != 0U && playerFNV == hub.lastPlayerFNV;
-        itemMutation = player.weapon == hub.weaponAtOpen &&
-                       playerFNV != hub.playerFNVAtOpen;
-        sessionMutation = player.weapon != hub.weaponAtOpen ? "weapon-only" :
+        weaponMutation = player.weapon != hub.weaponAtOpen;
+        itemMutation = !weaponMutation && playerFNV != hub.playerFNVAtOpen;
+        sessionMutation = weaponMutation ? "weapon-only" :
                           itemMutation ? "consumable" : "no";
-        /* A medkit changes bottom HUD health/armor too. Do not compare this
-         * frame against the old player state. Repaint once more and demand
-         * pixel-exact idempotence of the NEW player/HUD owner instead. No
-         * second framebuffer or snapshot owner is allocated. */
+        /* A HUB weapon selection changes the lower HUD ammo glyph/count,
+         * just as a medkit changes its health/armor. Comparing either freshly
+         * rebuilt HUD to the pre-HUB framebuffer hash is invalid. Repaint
+         * once more and demand pixel-exact idempotence of the current native
+         * PlayerState -> HUD view, including the live ammo-type mapping.
+         * Purely navigational HUB closes must still match their original
+         * baseline exactly. No framebuffer copy, relaxed mismatch guard or
+         * extra owner is introduced. */
         exactBottomTarget = expectedProtected;
-        if (itemMutation && hudRepainted) {
+        if ((weaponMutation || itemMutation) && hudRepainted) {
             const int replayOk = repaintGameplayHud();
             exactBottomTarget = hudProtectedFNV();
             if (!replayOk || exactBottomTarget == 0U ||
-                exactBottomTarget != restoredProtected) hudRepainted = 0;
+                exactBottomTarget != restoredProtected) {
+                hudRepainted = 0;
+                printf("[HUBHUD] REBASE-FAILED reason=%s originalBottom=%08x firstBottom=%08x secondBottom=%08x replay=%s failClosed=yes\n",
+                       sessionMutation,
+                       (unsigned int)expectedProtected,
+                       (unsigned int)restoredProtected,
+                       (unsigned int)exactBottomTarget,
+                       replayOk ? "yes" : "NO");
+            }
         }
         /* Whole-band FNV contains the top bar, whose live feedback/timer
          * owner is deliberately re-composed in restoreWorldAfterHub(). Only
