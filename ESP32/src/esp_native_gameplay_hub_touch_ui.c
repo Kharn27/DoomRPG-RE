@@ -852,14 +852,25 @@ int EspNativeGameplayHubTouchUi_classify(
     if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
         EspNativeGameplayHub_notebookOpen()) {
         uint8_t action;
-        if (logicalY < 35) return -1;
-        /* Notebook bottom-left is BACK; bottom-right and body are NEXT.
-         * On keyboard, MOVE_FORWARD/MOVE_BACK can also page backward/forward. */
-        action = logicalY >= 99 && logicalX < 80
-                     ? ESP_NATIVE_GAMEPLAY_ACTION_SELECT
-                     : ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK;
-        setHit(outHit, action, zoneForAction(action),
-               1, 35, 158, 119);
+        uint8_t left;
+        uint8_t right;
+        /* Notebook uses three distinct footer buttons. Taps in the text
+         * body are deliberately inert, avoiding accidental page advances
+         * when the user is reading or pointing to a note. */
+        if (logicalY < 101 || logicalY > 118) return -1;
+        if (logicalX >= 4 && logicalX <= 49) {
+            action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;       /* BACK */
+            left = 4U; right = 49U;
+        } else if (logicalX >= 56 && logicalX <= 103) {
+            action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD; /* PREV */
+            left = 56U; right = 103U;
+        } else if (logicalX >= 110 && logicalX <= 155) {
+            action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK;    /* NEXT */
+            left = 110U; right = 155U;
+        } else {
+            return -1;
+        }
+        setHit(outHit, action, zoneForAction(action), left, 101U, right, 118U);
         return 1;
     }
 
