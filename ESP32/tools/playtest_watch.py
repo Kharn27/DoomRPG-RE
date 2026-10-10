@@ -44,6 +44,10 @@ RULES = (
         r"^\[LEVELGATE\] DEFER\b.*\bopcode=39(?:/EV_CHECK_COMPLETED_LEVEL)?\b.*\bcompletedLevels=unowned\b")),
     ("BARREL_RADIUS_MONSTER_UNOWNED", re.compile(
         r"^\[BARRELRADIUS\] DEFER\b.*\breason=unsupported-radius-family\b.*\btype=1\s+subtype=\d+\b")),
+    ("LEVEL_GATE_DIALOG_CHAIN", re.compile(
+        r"^\[DIALOGCHAIN\] (?:FILTER-DEFER\b.*\bopcode=39\b|LEVELGATE-DEFER\b)")),
+    ("IMP_PROJECTILE_DEFER", re.compile(
+        r"^\[IMPPROJECTILE\] DEFER\b")),
     ("MOVE_EVENT_DEFER", re.compile(
         r"^\[RESIDENTGAMEPLAY\] MOVE-(?:EVENT|DIALOG|MESSAGE)-DEFER\b")),
     ("WORLD_BACKEND_DEFER", re.compile(
@@ -316,6 +320,12 @@ def self_test() -> None:
         # mask; do not reinterpret this as a missing key or passable door.
         gate = '[LEVELGATE] DEFER event=43 tile=806 cmd=0 opcode=39/EV_CHECK_COMPLETED_LEVEL arg1=00040031 arg2=0000000f firstMapId=4 dialogString=49 completedLevels=unowned saveV11=no-completion-mask outcome=fail-closed moveCommit=no'
         assert classify(gate) == "LEVEL_PROGRESS_UNOWNED"
+        # Real 23:08 CYD failure: MOVE opcode39 accepted, but the dialog-chain
+        # validator rejected the eligible bytecode and rolled the move back.
+        assert classify('[DIALOGCHAIN] FILTER-DEFER event=43 cmd=0 opcode=39 decision=0 keys=02 effective=10001404 runFlags=10000404') == "LEVEL_GATE_DIALOG_CHAIN"
+        assert classify('[DIALOGCHAIN] LEVELGATE-DEFER event=43 cmd=0 reason=operand-or-gate-mismatch mutation=no') == "LEVEL_GATE_DIALOG_CHAIN"
+        assert classify('[IMPPROJECTILE] DEFER probe=4 step=1 reason=render-failed gameplayRng=restored gameplayMutation=no') == "IMP_PROJECTILE_DEFER"
+        assert classify('[IMPPROJECTILE] FRAME probe=4 sprite=218 step=1/3 logical=204 pos=1696,800 frame=123 presented=1 gameplayRng=untouched') is None
         assert classify('[LEVELGATE] DEFER event=43 opcode=39 reason=other') is None
         # Actual barrel at tile 442, exploding next to a live monster on 473.
         barrel = '[BARRELRADIUS] DEFER seq=20 sprite=269 reason=unsupported-radius-family targetSprite=0 line=65535 tile=473 type=1 subtype=4 chainCap=16 playerSentinel=254 playerRollback=yes rngRollback=yes mutation=no'
