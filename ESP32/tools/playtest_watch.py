@@ -103,33 +103,36 @@ class PlaytestWatcher:
         self.count = 0
         self.attack_probes: dict[tuple[int, int], tuple[int, int]] = {}
 
-    def replay_diverged(self, line: str) -> bool:
+    def replay_status(self, line: str) -> str | None:
         if "[ENGINESESSION] READY" in line or "[RESIDENTRESET]" in line:
             self.attack_probes.clear()
-            return False
+            return None
         if not (PROBE_LINE.search(line) or COMMIT_LINE.search(line)):
-            return False
+            return None
         values = {name: int(value) for name, value in KEY_VALUE.findall(line)}
-        required = ("sprite", "firstRandHit")
-        if any(field not in values for field in required):
-            return False
         if PROBE_LINE.search(line):
-            if "producerProbe" not in values or "crit" not in values:
-                return False
+            if any(k not in values for k in
+                   ("producerProbe", "sprite", "firstRandHit", "crit")):
+                return None
             key = (values["producerProbe"], values["sprite"])
             if len(self.attack_probes) >= 16:
                 self.attack_probes.pop(next(iter(self.attack_probes)))
             self.attack_probes[key] = (values["firstRandHit"], values["crit"])
-            return False
-        if "probe" not in values:
-            return False
+            return None
+        if "probe" not in values or "sprite" not in values:
+            return None
         key = (values["probe"], values["sprite"])
         expected = self.attack_probes.pop(key, None)
+        if expected is None:
+            return None  # No paired probe seen by this monitor session.
+        if "firstRandHit" not in values:
+            # Old LETHAL-COMMIT firmware omits the real first roll. Alert
+            # honestly as unverified instead of silently skipping it.
+            return "RNG_REPLAY_UNVERIFIED"
         # MISS-COMMIT has no crit field and semantically means crit=0.
-        # LETHAL-COMMIT includes firstRandHit in the instrumented firmware;
-        # older firmware builds cannot be checked for lethal roll equality.
-        return expected is not None and expected != (
-            values["firstRandHit"], values.get("crit", 0))
+        if expected != (values["firstRandHit"], values.get("crit", 0)):
+            return "RNG_REPLAY_DIVERGED"
+        return None
 
     def feed(self, raw: str) -> None:
         line = normalize(raw)
@@ -150,19 +153,19 @@ class PlaytestWatcher:
                 file.close()
         self.pending = waiting
         self.ring.append(stamped)
-        replay_mismatch = self.replay_diverged(line)
-        rule = "RNG_REPLAY_DIVERGED" if replay_mismatch else classify(line)
+        replay_alert = self.replay_status(line)
+        rule = replay_alert if replay_alert is not None else classify(line)
         if rule is None:
             return
         # Never coalesce RNG integrity faults. A rapid series of mismatched
         # attacks must produce one durable capture per detected occurrence,
         # even when the user sets --cooldown to hours. No user-selectable
         # option can disable this exception.
-        if (rule != "RNG_REPLAY_DIVERGED" and
+        if (rule not in ("RNG_REPLAY_DIVERGED", "RNG_REPLAY_UNVERIFIED") and
                 now - self.last_seen.get(rule, -1e12) < self.cooldown):
             return
 
-        if rule != "RNG_REPLAY_DIVERGED":
+        if rule not in ("RNG_REPLAY_DIVERGED", "RNG_REPLAY_UNVERIFIED"):
             self.last_seen[rule] = now
         self.count += 1
         when = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -272,6 +275,12 @@ def self_test() -> None:
         watcher.feed('[MONSTERRETAL] LETHAL-COMMIT probe=7 sprite=220 firstRandHit=4 crit=1\n')
         assert watcher.count == 7
         assert len(list(output.glob("incident-*RNG_REPLAY_DIVERGED.log"))) == 6
+        # With old lethal firmware, the first roll was never logged: warn
+        # rather than silently losing a potentially divergent critical hit.
+        watcher.feed('[MONSTERTURN] MEMBER-ATTACK-PROBE sprite=220 firstRandHit=180 crit=0 producerProbe=8\n')
+        watcher.feed('[MONSTERRETAL] LETHAL-COMMIT probe=8 sprite=220 totalDamage=4 crit=1\n')
+        assert watcher.count == 8
+        assert len(list(output.glob("incident-*RNG_REPLAY_UNVERIFIED.log"))) == 1
         watcher.close()
     print("[WATCH] SELF-TEST PASS")
 
