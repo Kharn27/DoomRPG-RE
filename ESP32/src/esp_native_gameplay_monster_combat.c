@@ -873,12 +873,11 @@ static int servicePending(DoomRPG_t* runtime) {
 
 /*
  * Barrel radius calls Game_hurtEntityAt() in cardinal-then-diagonal order.
- * This bounded bridge deliberately supports the one-root-barrel family: all
- * wave frame renders and its blast-RNG witness have finished before this
- * function is entered. Applying the resulting monster hits in one batch
- * permits full in-place rollback on any unsupported death/drop/XP result.
- * Multi-barrel waves with monster victims remain fail-closed at preflight
- * until they can preview interleaved monster sound/death RNG between waves.
+ * A single barrel applies its one monster splash after its blast word.
+ * A multi-barrel chain applies a splash after EACH explosion so pain/death/
+ * drop RNG consumption happens before the next barrel's blast word, exactly
+ * as the legacy Game_gsprite_update() sequence. The shared BSS snapshot
+ * permits rollback across every wave if later native consequences fail.
  */
 typedef struct MonsterSplashRollback_s {
     EspNativeGameplayMonsterStateSnapshot monsters;
@@ -1080,12 +1079,13 @@ int EspNativeGameplayMonsterCombat_applySplash(
 
     combatOwner.view.currentMonsterFNV1a = currentMonsterFNV();
     combatOwner.visualRedrawPending = 1U;
-    printf("[MONSTERRADIUS] COMMIT seq=%u hits=%u deaths=%u xp=%u rngConsequence=%u monsterFNV=%08x playerFNV=%08x rollback=closed owner=esp-native\n",
+    printf("[MONSTERRADIUS] COMMIT seq=%u hits=%u deaths=%u xp=%u rngConsequence=%u monsterFNV=%08x playerFNV=%08x rollback=%s owner=esp-native\n",
            (unsigned int)sequence, (unsigned int)count,
            (unsigned int)deaths, (unsigned int)totalXp,
            (unsigned int)rngCalls,
            (unsigned int)combatOwner.view.currentMonsterFNV1a,
-           (unsigned int)EspNativeGameplayPlayerState_fingerprint());
+           (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
+           splashSequenceActive != 0U ? "sequence-armed" : "closed");
     if (needsPopup) {
         splashLevelUp = popup;
         splashLevelUpSequence = sequence;
