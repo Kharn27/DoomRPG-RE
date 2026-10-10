@@ -899,10 +899,18 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
     traceStatus = EspNativeGameplayMonsterTrace_forward(&target);
     if (traceStatus != ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_FOUND) {
         if (genericEnemy) {
-            printf("[MONSTERCOMBAT] TRACE-MISMATCH seq=%u genericSprite=%u genericTile=%u genericSubtype=%u nativeStatus=%u nativeSprite=%u reason=trace-disagrees arm=no mutation=no rng=untouched\n",
+            const EspNativeGameplayMonsterRecord* genericMonster =
+                EspNativeGameplayMonsterState_find(genericSprite);
+            printf("[MONSTERCOMBAT] TRACE-MISMATCH seq=%u genericSprite=%u genericTile=%u genericSubtype=%u genericMonster=%u genericAlive=%u genericStateSubtype=%u nativeStatus=%u nativeSprite=%u reason=trace-disagrees arm=no mutation=no rng=untouched\n",
                    (unsigned int)intent->sequence,
                    (unsigned int)genericSprite, (unsigned int)genericTile,
-                   (unsigned int)genericSubtype, (unsigned int)traceStatus,
+                   (unsigned int)genericSubtype,
+                   genericMonster != NULL ? 1U : 0U,
+                   genericMonster != NULL
+                       ? (unsigned int)genericMonster->alive : 0U,
+                   genericMonster != NULL
+                       ? (unsigned int)genericMonster->subtype : 255U,
+                   (unsigned int)traceStatus,
                    (unsigned int)target.spriteIndex);
         }
         return status;
@@ -913,13 +921,14 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
         (target.spriteIndex != genericSprite ||
          target.tileIndex != genericTile ||
          target.subtype != genericSubtype)) {
-        printf("[MONSTERCOMBAT] TRACE-MISMATCH seq=%u genericSprite=%u genericTile=%u genericSubtype=%u nativeSprite=%u nativeTile=%u nativeSubtype=%u reason=different-first-target arm=no mutation=no rng=untouched\n",
+        /* Read-only witness. Preserve the existing native combat decision:
+         * corpses in the generic leaf can be intentionally bypassed here. */
+        printf("[MONSTERCOMBAT] TRACE-DIFFERENCE seq=%u genericSprite=%u genericTile=%u genericSubtype=%u nativeSprite=%u nativeTile=%u nativeSubtype=%u action=preserve-native-trace mutation=no rng=untouched\n",
                (unsigned int)intent->sequence,
                (unsigned int)genericSprite, (unsigned int)genericTile,
                (unsigned int)genericSubtype,
                (unsigned int)target.spriteIndex, (unsigned int)target.tileIndex,
                (unsigned int)target.subtype);
-        return status; /* Preserve entity-first semantics, never retarget. */
     }
     if (monster == NULL || monster->alive == 0U ||
         monster->subtype != target.subtype) {
