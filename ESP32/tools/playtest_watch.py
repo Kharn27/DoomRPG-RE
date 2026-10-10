@@ -200,11 +200,13 @@ class PlaytestWatcher:
         # attacks must produce one durable capture per detected occurrence,
         # even when the user sets --cooldown to hours. No user-selectable
         # option can disable this exception.
-        if (rule not in ("RNG_REPLAY_DIVERGED", "RNG_REPLAY_UNVERIFIED") and
+        if (rule not in ("RNG_REPLAY_DIVERGED", "RNG_REPLAY_UNVERIFIED",
+                         "PLAYER_STUCK_COLLISION", "PLAYER_OVERLAP_RECOVERY") and
                 now - self.last_seen.get(rule, -1e12) < self.cooldown):
             return
 
-        if rule not in ("RNG_REPLAY_DIVERGED", "RNG_REPLAY_UNVERIFIED"):
+        if rule not in ("RNG_REPLAY_DIVERGED", "RNG_REPLAY_UNVERIFIED",
+                         "PLAYER_STUCK_COLLISION", "PLAYER_OVERLAP_RECOVERY"):
             self.last_seen[rule] = now
         self.count += 1
         when = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
