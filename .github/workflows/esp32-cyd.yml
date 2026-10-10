@@ -32,6 +32,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Self-test bounded playtest incident recorder
+        run: |
+          python -m py_compile ESP32/tools/playtest_watch.py
+          python ESP32/tools/playtest_watch.py --self-test
+
       - name: Cache PlatformIO packages
         uses: actions/cache@v4
         with:
