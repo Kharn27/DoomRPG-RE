@@ -25,6 +25,14 @@ typedef struct EspNativeRngReplayGuard_s {
 
 static EspNativeRngReplayGuard rngReplayGuard;
 
+void EspNativeRngReplayGuard_reset(void) {
+    if (rngReplayGuard.probeReserved != 0U ||
+        rngReplayGuard.attackProbeActive != 0U) {
+        DRPG_LOGI("[RNGGUARD] RESET reservation=discarded scope=map-session rngDistribution=unchanged\n");
+    }
+    memset(&rngReplayGuard, 0, sizeof(rngReplayGuard));
+}
+
 static int leaseActive(uint32_t now) {
     return rngReplayGuard.valid != 0U &&
            rngReplayGuard.probeReserved == 0U &&
