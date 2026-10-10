@@ -58,6 +58,18 @@ int __real_EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats);
+int __real_EspNativeGameplayFrame_renderVisualPose(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* visual,
+    uint8_t settledAngle,
+    EspNativeGameplayFrameStats* outStats);
+int __real_EspNativeGameplayFrame_renderVisualMove(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* before,
+    const struct EspPlayerViewState_s* after,
+    uint8_t step,
+    uint8_t denominator,
+    EspNativeGameplayFrameStats* outStats);
 int __real_EspMapRuntime_getLine(uint32_t index, EspMapLine* outLine);
 const EspMapLineStateView* __real_EspMapLineState_view(void);
 boolean __real_Render_clipLine(Render_t* render, Line_t* line);
@@ -294,6 +306,69 @@ static int renderDynamicFrame(struct Render_s* render,
                ok ? "ok" : "failed");
     }
     return ok;
+}
+
+/*
+ * Intermediate MOVE/ROTATE previews used to bypass the dynamic-line owner,
+ * unlike the final cardinal frame. Any opened door therefore tripped the
+ * first-frame renderer's historical closed-only preflight and produced
+ * [TURNFRAME] DIAG fail=WORLD_RENDER / [VIEWANIM] FALLBACK. Scope exactly the
+ * same immutable-line adapter around each render-only preview. In particular
+ * do NOT consume door animation frames or move-event publications here.
+ */
+static int beginDynamicPreview(void) {
+    if (dynamicFrameActive != 0U) return 0;
+    dynamicOpenLineReads = 0U;
+    dynamicAnimatedLineReads = 0U;
+    dynamicTextureVariantReads = 0U;
+    dynamicAnimationFault = 0U;
+    memset(&animatedClip, 0, sizeof(animatedClip));
+    dynamicFrameActive = 1U;
+    return 1;
+}
+
+static int endDynamicPreview(int rendered, const char* kind) {
+    const int ok = rendered && dynamicAnimationFault == 0U;
+    dynamicFrameActive = 0U;
+    animatedClip.valid = 0U;
+    if (!ok && (dynamicOpenLineReads != 0U ||
+                dynamicAnimatedLineReads != 0U ||
+                dynamicTextureVariantReads != 0U ||
+                dynamicAnimationFault != 0U)) {
+        printf("[DYNAMICLINES] PREVIEW-DEFER kind=%s openReads=%u animatedReads=%u textureVariants=%u fault=%u mutation=no\n",
+               kind,
+               (unsigned int)dynamicOpenLineReads,
+               (unsigned int)dynamicAnimatedLineReads,
+               (unsigned int)dynamicTextureVariantReads,
+               (unsigned int)dynamicAnimationFault);
+    }
+    return ok;
+}
+
+int __wrap_EspNativeGameplayFrame_renderVisualPose(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* visual,
+    uint8_t settledAngle,
+    EspNativeGameplayFrameStats* outStats) {
+    int ok;
+    if (!beginDynamicPreview()) return 0;
+    ok = __real_EspNativeGameplayFrame_renderVisualPose(
+        render, visual, settledAngle, outStats);
+    return endDynamicPreview(ok, "rotate");
+}
+
+int __wrap_EspNativeGameplayFrame_renderVisualMove(
+    struct Render_s* render,
+    const struct EspPlayerViewState_s* before,
+    const struct EspPlayerViewState_s* after,
+    uint8_t step,
+    uint8_t denominator,
+    EspNativeGameplayFrameStats* outStats) {
+    int ok;
+    if (!beginDynamicPreview()) return 0;
+    ok = __real_EspNativeGameplayFrame_renderVisualMove(
+        render, before, after, step, denominator, outStats);
+    return endDynamicPreview(ok, "move");
 }
 
 int __wrap_EspNativeGameplayFrame_renderTurn(
