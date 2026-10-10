@@ -38,6 +38,18 @@ typedef struct EspNativeGameplayNotePrefixState_s {
  * reset semantics, so no per-event allocation is introduced. */
 static EspNativeGameplayNotePrefixState* notePrefix;
 
+void EspNativeGameplayNotePrefix_reset(void) {
+    if (notePrefix == NULL) return;
+    if (notePrefix->busy != 0U) {
+        /* Modal scratch must finish its owner transaction before reset. */
+        printf("[NOTE] RESET-DEFER owner=busy mutation=no\n");
+        return;
+    }
+    SDL_free(notePrefix);
+    notePrefix = NULL;
+    printf("[NOTE] RESET map-owner=released\n");
+}
+
 const char* EspNativeGameplayNotePrefix_text(uint16_t* outLength) {
     const EspPlayerViewState* view = EspPlayerView_view();
     const char* text;
