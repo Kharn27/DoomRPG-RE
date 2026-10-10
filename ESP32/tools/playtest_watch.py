@@ -77,10 +77,12 @@ SELECT_END = re.compile(r"^\[ACTION\] SELECT\b.*\bseq=(\d+)\b")
 
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+RECORDED_STAMP = re.compile(r"^\[\d{2}:\d{2}:\d{2}\.\d{3}\]\s+")
 
 
 def normalize(raw: str) -> str:
     cleaned = ANSI.sub("", raw).replace("\x00", "").strip("\r\n")
+    cleaned = RECORDED_STAMP.sub("", cleaned)
     return "".join(c if c == "\t" or ord(c) >= 32 else "?" for c in cleaned)[:800]
 
 
@@ -344,6 +346,15 @@ def self_test() -> None:
         assert stalled.count == 1  # cooldown applies to repeating same failure
         normal.close()
         stalled.close()
+        # Replaying an existing watcher snapshot must see the same incident:
+        # snapshots contain wall-clock prefixes not present on live Serial.
+        assert normalize('[21:11:26.401] [ACTION] SELECT seq=217 status=NO_ELIGIBLE') == '[ACTION] SELECT seq=217 status=NO_ELIGIBLE'
+        replay = PlaytestWatcher(output / "replay-snapshot", 12, 0, 60.0, False, False)
+        replay.feed('[21:11:26.382] [ACTIONENGINE] TRACE seq=217 weapon=2 distance=2 tile=494 target=sprite index=118 line=65535 type=1 subtype=3 route=ENEMY_COMBAT_DEFERRED\n')
+        replay.feed('[21:11:26.393] [ACTIONENGINE] BACKEND-DEFER seq=217 sprite=118 family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no\n')
+        replay.feed('[21:11:26.401] [ACTION] SELECT seq=217 status=NO_ELIGIBLE tile=495 event=47 eligible=0 unsupported=0\n')
+        assert replay.count == 1
+        replay.close()
         assert classify('[NATIVEFRAME] LEGACY_GUARD logical=15 actual=40 owner=BSS bytes=16') is None
         assert classify('[NATIVEFRAME] RECOVERED legacy compact guard actual=40 successorActual=68') is None
         assert classify('[NATIVEFRAME] FAILED route=gameplay code=3/SPAN_OOB') == "FIRSTFRAME_UNRECOVERED"
