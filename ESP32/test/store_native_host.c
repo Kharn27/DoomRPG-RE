@@ -16,12 +16,13 @@ static uint16_t pixels[DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT];
 static EspNativeGameplayPlayerState player;
 static unsigned presents;
 static unsigned textDraws;
+static int presentOk=1;
 
 void* Esp32PlatformVideo_framebuffer(void) { return pixels; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
     return sizeof(pixels);
 }
-int Esp32PlatformVideo_present(void) { ++presents;return 1; }
+int Esp32PlatformVideo_present(void) { ++presents;return presentOk; }
 void EspNativeGameplayHubTouchUi_drawCrispText(
     uint16_t* framebuffer,const char* str,int x,int y,uint16_t color) {
     assert(framebuffer == pixels);
@@ -121,6 +122,15 @@ int main(void) {
     confirmBuy();
     assert(player.credits==85U && player.param2==0x110e0c10U);
     closeFromList();
+
+    /* Render failure AFTER the atomic purchase restores credits and stock. */
+    EspNativeGameplayStore_reset();seed(30);
+    enterList(0U);pickFirst();
+    presentOk=0;
+    assert(EspNativeGameplayStore_handleTap(80,76)==-1);
+    assert(player.credits==30U && player.inventory[0]==0U);
+    presentOk=1;
+    EspNativeGameplayStore_reset();
 
     assert(presents>20U && textDraws>20U);
     puts("[STORE] HOST-SELF-TEST PASS vendor-prices/player-credit/stack-cap/page/stat/no-rng");
