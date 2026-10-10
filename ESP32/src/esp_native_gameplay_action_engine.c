@@ -1076,20 +1076,21 @@ static int barrelChainPreflight(uint16_t primarySprite,
             chain[count++] = target.spriteIndex;
         }
     }
-    /* Each monster consequence consumes sound/death RNG after the current
-     * blast word. The established multi-barrel preview assumes consecutive
-     * blast words: never run that path with interleaved monster RNG. */
-    if (count != 1U && monsterCount != 0U) {
-        *outUnsupported = monsterWitness;
-        return 0;
-    }
+    /* Multi-barrel/monster paths apply each blast and its consequence RNG
+     * before drawing the next blast word. The full consecutive-word preview
+     * remains valid only when no monster consequences can interleave. */
+    (void)monsterWitness;
     *outCount = count;
     *outMonsterCount = monsterCount;
     return 1;
 }
 
-static void barrelRollbackRemoved(const uint16_t* chain, uint8_t count) {
+static void barrelRollbackRemoved(DoomRPG_t* runtime,
+                                  const uint16_t* chain, uint8_t count) {
     uint8_t i;
+    if (!EspNativeGameplayMonsterCombat_cancelSplashSequence(runtime)) {
+        DRPG_LOGE("[BARRELRADIUS] ROLLBACK-FAILED owner=monster-splash stateExact=NO\n");
+    }
     if (chain == NULL) return;
     for (i = 0U; i < count; ++i) setRemoved(chain[i], 0);
 }
@@ -2386,6 +2387,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         uint8_t barrelExpectedChainCount = 0U;
         uint8_t barrelPreflightMonsters = 0U;
         uint8_t barrelSplashCount = 0U;
+        uint8_t barrelInterleaved = 0U;
+        uint8_t barrelPreviewWords = 0U;
+        uint16_t barrelSplashTotalHits = 0U;
         EspNativeGameplaySplashHit
             barrelSplashHits[ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS];
         uint8_t barrelBlastRngCalls = 0U;
@@ -2631,6 +2635,11 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     return 1;
                 }
                 barrelExpectedChainCount = preflightCount;
+                barrelInterleaved = (uint8_t)(
+                    barrelExpectedChainCount > 1U &&
+                    barrelPreflightMonsters != 0U);
+                barrelPreviewWords = barrelInterleaved != 0U
+                                         ? 1U : barrelExpectedChainCount;
                 if (barrelExpectedChainCount == 0U ||
                     barrelExpectedChainCount > ACTION_BARREL_CHAIN_MAX ||
                     doomRpg->random.nextRand < 0 ||
@@ -2683,7 +2692,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     return 1;
                 }
                 for (previewOrdinal = 0U;
-                     previewOrdinal < barrelExpectedChainCount;
+                     previewOrdinal < barrelPreviewWords;
                      ++previewOrdinal) {
                     barrelBlastPreview[previewOrdinal] = (uint8_t)
                         DoomRPG_randNextInt(&doomRpg->random);
@@ -2706,15 +2715,31 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                            (unsigned int)pending.spriteIndex);
                     return 1;
                 }
-                printf("[BARRELRADIUS] RNG-PREFLIGHT seq=%u sprite=%u next=%d->%d words=%u refill=%s exact=yes rollback=closed\n",
+                printf("[BARRELRADIUS] RNG-PREFLIGHT seq=%u sprite=%u next=%d->%d words=%u plannedBlasts=%u mode=%s refill=%s exact=yes rollback=closed\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
                        barrelRandomAfterCombat.nextRand,
                        barrelRandomAfterPreview.nextRand,
+                       (unsigned int)barrelPreviewWords,
                        (unsigned int)barrelExpectedChainCount,
+                       barrelInterleaved != 0U
+                           ? "first-word-only/monster-consequence-live"
+                           : "full-consecutive",
                        barrelRandomAfterCombat.nextRand +
-                           (int)barrelExpectedChainCount * 4 >= RANDTABLESIZE
+                           (int)barrelPreviewWords * 4 >= RANDTABLESIZE
                            ? "reserved" : "none");
+                if (barrelInterleaved != 0U &&
+                    !EspNativeGameplayMonsterCombat_beginSplashSequence(
+                        doomRpg, pending.sequence)) {
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    doomRpg->random = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=monster-sequence-snapshot-not-ready mutation=no rollback=player+rng\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex);
+                    return 1;
+                }
 
                 /* The dry-run array proved capacity/support only. Runtime must
                  * rediscover neighbors at each 450 ms expiry so removals happen
@@ -2727,11 +2752,13 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 barrelWorldX = barrelSprite.x;
                 barrelWorldY = barrelSprite.y;
                 barrelExplosionArmed = 1U;
-                printf("[BARRELRADIUS] PREFLIGHT seq=%u root=%u chain=%u radius=4-cardinal-full+4-diagonal-half targetFamily=barrel+player unsupported=fail-closed rngWords=%u visual=wave-batch-concurrent gameplayOrder=legacy-causal\n",
+                printf("[BARRELRADIUS] PREFLIGHT seq=%u root=%u chain=%u radius=4-cardinal-full+4-diagonal-half targetFamily=barrel+player+monster unsupported=fail-closed rngWords=%u visual=wave-batch-concurrent gameplayOrder=%s\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
                        (unsigned int)barrelExpectedChainCount,
-                       (unsigned int)barrelExpectedChainCount);
+                       (unsigned int)barrelPreviewWords,
+                       barrelInterleaved != 0U ? "legacy-blast-impact-interleaved"
+                                               : "legacy-causal");
                 printf("[BARREL] HIT seq=%u sprite=%u weapon=%u worldDist=%u loops=%u hits=%u damage=%ld armorDamage=%ld rng=%u ammo=%u->%u removed=0->1 explosion=logical%u/x%u pos=%d,%d persistence=v5-removal-owner\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
@@ -2753,7 +2780,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             if (!EspNativeGameplayMonsterTurn_requestPlayerAttack(
                     pending.sequence)) {
                 if (barrelRemoved != 0U) {
-                    barrelRollbackRemoved(barrelChain, barrelChainCount);
+                    barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
                 }
                 (void)EspNativeGameplayPlayerState_restore(&playerBefore);
                 doomRpg->random = randomBefore;
@@ -3129,7 +3156,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     rollbackOk = 0;
                 }
                 if (barrelRemoved != 0U) {
-                    barrelRollbackRemoved(barrelChain, barrelChainCount);
+                    barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
                 }
                 if (playerCaptured != 0U &&
                     !EspNativeGameplayPlayerState_restore(&playerBefore)) {
@@ -3214,8 +3241,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 pending.sequence)) {
                             rollbackOk = 0;
                         }
-                        barrelRollbackRemoved(
-                            barrelChain, barrelChainCount);
+                        barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
                         if (!EspNativeGameplayPlayerState_restore(
                                 &playerBefore)) {
                             rollbackOk = 0;
@@ -3259,8 +3285,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 pending.sequence)) {
                             rollbackOk = 0;
                         }
-                        barrelRollbackRemoved(
-                            barrelChain, barrelChainCount);
+                        barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
                         if (!EspNativeGameplayPlayerState_restore(
                                 &playerBefore)) {
                             rollbackOk = 0;
@@ -3329,15 +3354,15 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
                     blastByte = (uint8_t)
                         DoomRPG_randNextInt(&doomRpg->random);
-                    if (blastByte != barrelBlastPreview[blastCursor]) {
+                    if (blastCursor < barrelPreviewWords &&
+                        blastByte != barrelBlastPreview[blastCursor]) {
                         int rollbackOk = 1;
                         if (barrelTurnRequested != 0U &&
                             !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
                                 pending.sequence)) {
                             rollbackOk = 0;
                         }
-                        barrelRollbackRemoved(
-                            barrelChain, barrelChainCount);
+                        barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
                         if (!EspNativeGameplayPlayerState_restore(
                                 &playerBefore)) {
                             rollbackOk = 0;
@@ -3376,8 +3401,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 pending.sequence)) {
                             rollbackOk = 0;
                         }
-                        barrelRollbackRemoved(
-                            barrelChain, barrelChainCount);
+                        barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
                         if (!EspNativeGameplayPlayerState_restore(
                                 &playerBefore)) {
                             rollbackOk = 0;
@@ -3393,6 +3417,35 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                (unsigned int)waveOrdinal,
                                rollbackOk ? "yes" : "NO");
                         return rollbackOk ? 1 : 0;
+                    }
+                    if (barrelInterleaved != 0U &&
+                        barrelSplashCount != 0U) {
+                        const uint8_t hitCount = barrelSplashCount;
+                        if (!EspNativeGameplayMonsterCombat_applySplash(
+                                doomRpg, barrelSplashHits, hitCount,
+                                pending.sequence)) {
+                            int rollbackOk = 1;
+                            if (barrelTurnRequested != 0U &&
+                                !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
+                                    pending.sequence)) rollbackOk = 0;
+                            barrelRollbackRemoved(doomRpg, barrelChain,
+                                                  barrelChainCount);
+                            if (!EspNativeGameplayPlayerState_restore(
+                                    &playerBefore)) rollbackOk = 0;
+                            doomRpg->random = randomBefore;
+                            EspNativeGameplayWeapon_cancelAttack();
+                            memset(&actionState.pending, 0,
+                                   sizeof(actionState.pending));
+                            printf("[BARRELRADIUS] ROLLBACK seq=%u source=%u reason=interleaved-monster-impact hits=%u rollback=%s player=yes rng=yes world=yes monster=sequence-snapshot\n",
+                                   (unsigned int)pending.sequence,
+                                   (unsigned int)barrelChain[blastCursor],
+                                   (unsigned int)hitCount,
+                                   rollbackOk ? "yes" : "NO");
+                            return rollbackOk ? 1 : 0;
+                        }
+                        barrelSplashTotalHits =
+                            (uint16_t)(barrelSplashTotalHits + hitCount);
+                        barrelSplashCount = 0U;
                     }
                     barrelPlayerHits =
                         (uint8_t)(barrelPlayerHits +
@@ -3435,8 +3488,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             pending.sequence)) {
                         rollbackOk = 0;
                     }
-                    barrelRollbackRemoved(
-                        barrelChain, barrelChainCount);
+                    barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
                     if (!EspNativeGameplayPlayerState_restore(
                             &playerBefore)) {
                         rollbackOk = 0;
@@ -3475,20 +3527,21 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
             if (barrelChainCount != barrelExpectedChainCount ||
                 barrelBlastRngCalls != barrelExpectedChainCount ||
-                memcmp(&doomRpg->random, &barrelRandomAfterPreview,
-                       sizeof(barrelRandomAfterPreview)) != 0) {
+                (barrelInterleaved == 0U &&
+                 memcmp(&doomRpg->random, &barrelRandomAfterPreview,
+                        sizeof(barrelRandomAfterPreview)) != 0)) {
                 int rollbackOk = 1;
                 const int rngExact =
                     barrelBlastRngCalls == barrelExpectedChainCount &&
-                    memcmp(&doomRpg->random, &barrelRandomAfterPreview,
-                           sizeof(barrelRandomAfterPreview)) == 0;
+                    (barrelInterleaved != 0U ||
+                     memcmp(&doomRpg->random, &barrelRandomAfterPreview,
+                            sizeof(barrelRandomAfterPreview)) == 0);
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
                         pending.sequence)) {
                     rollbackOk = 0;
                 }
-                barrelRollbackRemoved(
-                    barrelChain, barrelChainCount);
+                barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
                 if (!EspNativeGameplayPlayerState_restore(
                         &playerBefore)) {
                     rollbackOk = 0;
@@ -3515,16 +3568,17 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        rollbackOk ? "yes" : "NO");
                 return rollbackOk ? 1 : 0;
             }
-            if (barrelSplashCount != barrelPreflightMonsters ||
-                (barrelSplashCount != 0U &&
-                 !EspNativeGameplayMonsterCombat_applySplash(
-                     doomRpg, barrelSplashHits, barrelSplashCount,
-                     pending.sequence))) {
+            if (barrelInterleaved == 0U &&
+                (barrelSplashCount != barrelPreflightMonsters ||
+                 (barrelSplashCount != 0U &&
+                  !EspNativeGameplayMonsterCombat_applySplash(
+                      doomRpg, barrelSplashHits, barrelSplashCount,
+                      pending.sequence)))) {
                 int rollbackOk = 1;
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
                         pending.sequence)) rollbackOk = 0;
-                barrelRollbackRemoved(barrelChain, barrelChainCount);
+                barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
                 if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
                 }
@@ -3537,6 +3591,18 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)barrelPreflightMonsters,
                        rollbackOk ? "yes" : "NO");
                 return rollbackOk ? 1 : 0;
+            }
+            if (barrelInterleaved != 0U) {
+                if (!EspNativeGameplayMonsterCombat_commitSplashSequence(
+                        pending.sequence)) {
+                    DRPG_LOGE("[BARRELRADIUS] FAILED seq=%u reason=monster-sequence-commit contract=broken\n",
+                              (unsigned int)pending.sequence);
+                    return 0;
+                }
+                printf("[BARRELRADIUS] INTERLEAVED-COMMIT seq=%u blasts=%u monsterHits=%u firstWordPreview=exact laterWords=live-after-monster-consequences rollback=closed\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)barrelBlastRngCalls,
+                       (unsigned int)barrelSplashTotalHits);
             }
         }
 
@@ -3878,7 +3944,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)pending.weapon);
             }
         }
-        if (isBarrel && barrelSplashCount != 0U &&
+        if (isBarrel &&
+            (barrelSplashCount != 0U || barrelSplashTotalHits != 0U) &&
             !EspNativeGameplayMonsterCombat_finishSplashPresentation(
                 pending.sequence)) {
             printf("[BARRELRADIUS] PRESENT-FAILED seq=%u reason=level-up-modal-after-settle worldCommitted=yes recovery=required\n",
