@@ -980,6 +980,8 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         uint8_t beforePageNum = notebookPage;
         if (action == ESP_NATIVE_GAMEPLAY_ACTION_SELECT ||
             action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
+            /* BACK returns to inventory. The global MENU button must still
+             * close the entire HUB, rather than acting like a second BACK. */
             notebookOpen = 0U;
         } else if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK) {
             if (notebookPage + 1U >= notebookPages()) return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
@@ -994,7 +996,8 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
             return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
         }
         if (action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT &&
-            action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT) {
+            action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT &&
+            action != ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
             status = paintCurrentPage();
             if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) {
                 notebookOpen = 1U;
