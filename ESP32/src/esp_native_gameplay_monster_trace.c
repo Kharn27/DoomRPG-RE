@@ -282,12 +282,20 @@ EspNativeGameplayMonsterTraceStatus EspNativeGameplayMonsterTrace_forward(
             return ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_NOT_READY;
         }
         if ((tileFlags & ESP_MAP_TILE_WALL) != 0U) {
+            outTarget->tileIndex = tile;
+            outTarget->distance = (uint8_t)distance;
+            outTarget->reserved = 1U; /* diagnostic: map wall */
             return ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_BLOCKED_OTHER;
         }
 
         lineBlock = closedLineBlocksTile(tile);
         if (lineBlock < 0) return ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_NOT_READY;
-        if (lineBlock > 0) return ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_BLOCKED_OTHER;
+        if (lineBlock > 0) {
+            outTarget->tileIndex = tile;
+            outTarget->distance = (uint8_t)distance;
+            outTarget->reserved = 2U; /* diagnostic: closed line */
+            return ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_BLOCKED_OTHER;
+        }
 
         spriteBlock = findBlockingSprite(tile, sourceX, sourceY, destX, destY,
                                          &spriteIndex, &type, &subtype);
@@ -301,6 +309,8 @@ EspNativeGameplayMonsterTraceStatus EspNativeGameplayMonsterTrace_forward(
             outTarget->worldDistance =
                 (uint32_t)(distance * TILE_SIZE) *
                 (uint32_t)(distance * TILE_SIZE);
+            outTarget->reserved =
+                type == TYPE_ENEMY ? 0U : 3U; /* other sprite blocker */
             return type == TYPE_ENEMY
                        ? ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_FOUND
                        : ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_BLOCKED_OTHER;
