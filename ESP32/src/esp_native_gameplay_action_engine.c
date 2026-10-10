@@ -3811,6 +3811,14 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)pending.weapon);
             }
         }
+        if (isBarrel && barrelSplashCount != 0U &&
+            !EspNativeGameplayMonsterCombat_finishSplashPresentation(
+                pending.sequence)) {
+            printf("[BARRELRADIUS] PRESENT-FAILED seq=%u reason=level-up-modal-after-settle worldCommitted=yes recovery=required\n",
+                   (unsigned int)pending.sequence);
+            memset(&actionState.pending, 0, sizeof(actionState.pending));
+            return 0;
+        }
     }
 
     memset(&actionState.pending, 0, sizeof(actionState.pending));
