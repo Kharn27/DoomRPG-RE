@@ -953,6 +953,8 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
 
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
         const char* sessionMutation;
+        const char* hudExact;
+        int itemMutation;
         int playerExact;
         playerFNV = EspNativeGameplayPlayerState_fingerprint();
         memset(&player, 0, sizeof(player));
@@ -968,7 +970,16 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
         restoredHudBands = hudBandsFNV();
         restoredProtected = hudProtectedFNV();
         playerExact = playerFNV != 0U && playerFNV == hub.lastPlayerFNV;
-        sessionMutation = player.weapon == hub.weaponAtOpen ? "no" : "weapon-only";
+        itemMutation = player.weapon == hub.weaponAtOpen &&
+                       playerFNV != hub.playerFNVAtOpen;
+        sessionMutation = player.weapon != hub.weaponAtOpen ? "weapon-only" :
+                          itemMutation ? "consumable" : "no";
+        /* A consumable changes the top HUD HP/armor intentionally. The
+         * pre-HUB full-band hash is then not an equivalence target, whereas
+         * the protected bottom band must still match exactly. */
+        hudExact = restoredHudBands != 0U &&
+                   restoredHudBands == expectedHudBands ? "yes" :
+                   itemMutation ? "new-player-state" : "NO";
         ++hub.closes;
         printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x expected=%08x exact=%s weapon=%u->%u sessionMutation=%s turn=no worldRedraw=pending fullScreenHub=yes menuUnderlayRestore=%s hudRepaint=%s hudBands=%08x expectedHud=%08x exactHud=%s hudBottom=%08x expectedBottom=%08x exactBottom=%s topBar=recompose-on-world-redraw packClosed=%s\n",
                (unsigned int)hub.closes, pageName(hub.page),
@@ -978,8 +989,7 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
                sessionMutation, menuRestored ? "exact" : "FAILED",
                hudRepainted ? "yes" : "FAILED",
                (unsigned int)restoredHudBands, (unsigned int)expectedHudBands,
-               restoredHudBands != 0U && restoredHudBands == expectedHudBands
-                   ? "yes" : "NO",
+               hudExact,
                (unsigned int)restoredProtected,
                (unsigned int)expectedProtected,
                restoredProtected != 0U &&
