@@ -528,6 +528,17 @@ int EspNativeTransitionPresentation_showStats(
         80, 108, COLOR_IVORY);
 
     if (!__real_Esp32PlatformVideo_present()) return 0;
+    /* Legacy Player_addLevelStats(z=showStats) marks the SOURCE level,
+     * never the destination. Do this only after the stats frame becomes
+     * visible; the bitmap is idempotent and survives the map teardown. */
+    if (transition->levelStats.markCompleted != 0U &&
+        !EspNativeGameplayPlayerState_markCompleted(
+            transition->levelStats.completionLevelBit)) {
+        printf("[LEVELSTATS] COMPLETION-FAILED sourceMap=%u bit=%08x presentation=done transition=fail-closed\n",
+               (unsigned int)transition->committed.sourceMapId,
+               (unsigned int)transition->levelStats.completionLevelBit);
+        return 0;
+    }
     fnv = frameFNV();
     printf("[LEVELSTATS] PRESENT sourceMap=%u targetMap=%u source=%s secrets=%u/%u monsters=%u/%u elapsedMs=%lu moves=%lu xp=%lu counters=%s style=hub-sector-report font=crisp5x7+mini3x5 reads=0 fullScreen=yes frame=%08x input=one-tap\n",
            (unsigned int)transition->committed.sourceMapId,
