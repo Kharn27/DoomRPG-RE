@@ -178,6 +178,11 @@ typedef struct ActionEngineState_s {
     uint32_t jammedDoorClears;
     uint32_t noUses;
     uint32_t combatDeferred;
+    uint32_t deferredMonsterSequence;
+    uint16_t deferredMonsterSprite;
+    uint16_t deferredMonsterTile;
+    uint8_t deferredMonsterSubtype;
+    uint8_t deferredMonsterReserved;
     uint32_t destructibleDeferred;
     uint32_t deferredXp;
     uint32_t feedbackShownAtMs;
@@ -2137,6 +2142,10 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
     }
     else if (route == ACTION_ROUTE_ENEMY_DEFERRED) {
         ++actionState.combatDeferred;
+        actionState.deferredMonsterSequence = intent->sequence;
+        actionState.deferredMonsterSprite = target.spriteIndex;
+        actionState.deferredMonsterTile = target.tileIndex;
+        actionState.deferredMonsterSubtype = target.subtype;
         printf("[ACTIONENGINE] BACKEND-DEFER seq=%u sprite=%u family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no\n",
                (unsigned int)intent->sequence,
                (unsigned int)target.spriteIndex);
@@ -2149,6 +2158,18 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayAction_executeSelect(
                (unsigned int)target.lineIndex);
     }
     return status;
+}
+
+int EspNativeGameplayActionEngine_deferredMonsterTarget(
+    uint32_t sequence, uint16_t* outSprite, uint16_t* outTile,
+    uint8_t* outSubtype) {
+    if (outSprite == NULL || outTile == NULL || outSubtype == NULL ||
+        actionState.ready != 1U || sequence == 0U ||
+        actionState.deferredMonsterSequence != sequence) return 0;
+    *outSprite = actionState.deferredMonsterSprite;
+    *outTile = actionState.deferredMonsterTile;
+    *outSubtype = actionState.deferredMonsterSubtype;
+    return 1;
 }
 
 void EspNativeGameplayActionEngine_reset(void) {
