@@ -3271,6 +3271,13 @@ bool formatSlotCaption(uint8_t slot, bool armed, char* out, size_t capacity) {
         snprintf(out, capacity, "%02u %s LVL %u%s",
                  (unsigned)slot, mapName, (unsigned)core.player.level,
                  armed ? "?" : "");
+        /* 18 glyphs * 6px minus 1 = 107px: the exact slot card width.
+         * Keep the armed '?' and the map name readable at two/three digits. */
+        if (strlen(out) > 18U) {
+            snprintf(out, capacity, "%02u %s L%u%s",
+                     (unsigned)slot, mapName, (unsigned)core.player.level,
+                     armed ? "?" : "");
+        }
         return true;
     }
     /* Unknown/corrupt headers keep their original occupied indicator. */
