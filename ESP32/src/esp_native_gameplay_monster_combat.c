@@ -901,7 +901,7 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
         if (genericEnemy) {
             const EspNativeGameplayMonsterRecord* genericMonster =
                 EspNativeGameplayMonsterState_find(genericSprite);
-            printf("[MONSTERCOMBAT] TRACE-MISMATCH seq=%u genericSprite=%u genericTile=%u genericSubtype=%u genericMonster=%u genericAlive=%u genericStateSubtype=%u nativeStatus=%u nativeSprite=%u reason=trace-disagrees arm=no mutation=no rng=untouched\n",
+            printf("[MONSTERCOMBAT] TRACE-MISMATCH seq=%u genericSprite=%u genericTile=%u genericSubtype=%u genericMonster=%u genericAlive=%u genericStateSubtype=%u nativeStatus=%u nativeSprite=%u nativeTile=%u nativeDistance=%u blockerKind=%u reason=trace-disagrees arm=no mutation=no rng=untouched\n",
                    (unsigned int)intent->sequence,
                    (unsigned int)genericSprite, (unsigned int)genericTile,
                    (unsigned int)genericSubtype,
@@ -911,7 +911,10 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
                    genericMonster != NULL
                        ? (unsigned int)genericMonster->subtype : 255U,
                    (unsigned int)traceStatus,
-                   (unsigned int)target.spriteIndex);
+                   (unsigned int)target.spriteIndex,
+                   (unsigned int)target.tileIndex,
+                   (unsigned int)target.distance,
+                   (unsigned int)target.reserved);
         }
         return status;
     }
