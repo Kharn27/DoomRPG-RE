@@ -289,7 +289,7 @@ int EspNativeGameplayStore_handleTap(int x,int y) {
         } else if (x>=7 && x<=113 && y>=38 && y<=101) {
             const int row=(y-38)/13;
             const uint8_t chosen=(uint8_t)(store.page*STORE_PAGE_ROWS+row);
-            if (row<0 || row>=STORE_PAGE_ROWS || chosen>=store.count ||
+            if (row<0 || row>=(int)STORE_PAGE_ROWS || chosen>=store.count ||
                 y>49+13*row) return 0;
             store.selected=chosen;
             store.stage=STORE_CONFIRM;
