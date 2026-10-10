@@ -171,10 +171,13 @@ static EspNativeFirstFrameState frameState;
 static uint8_t frameScratchLogged;
 /* Failure-only BSS witness, printed after renderer work has unwound. */
 static FirstFrameFailure frameFailure;
-/* One exact packed byte from the next legacy compact wall block. It is resolved
- * only after an OOB witness has unwound the renderer stack, then reused by the
- * bounded sampler on the retry. */
-static LegacyWallGuard legacyWallGuard;
+/* One byte per distinct crossed packed-texture boundary. Several wall
+ * textures can require the legacy successor nibble in the SAME image. The old
+ * single-entry retry recovered the first then failed on the next texture.
+ * Keep a strict 4-entry BSS bound, never expand the map-wide texel owner. */
+#define LEGACY_WALL_GUARD_LIMIT 4U
+static LegacyWallGuard legacyWallGuards[LEGACY_WALL_GUARD_LIMIT];
+static uint8_t legacyWallGuardCount;
 
 static uint16_t readLe16(const uint8_t* p) {
     return (uint16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
@@ -279,7 +282,19 @@ static int prepareLegacyWallGuard(void) {
     int currentPresent = 0;
     int ok = 0;
 
-    memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
+    if (legacyWallGuardCount >= LEGACY_WALL_GUARD_LIMIT) return 0;
+    /* If the retry failed on the same source again, another attempt cannot
+     * improve matters. Fail closed instead of looping indefinitely. */
+    for (uint8_t j = 0U; j < legacyWallGuardCount; ++j) {
+        if (legacyWallGuards[j].valid == 1U &&
+            legacyWallGuards[j].logicalId == frameFailure.logicalId &&
+            legacyWallGuards[j].actualId == frameFailure.actualId &&
+            legacyWallGuards[j].sourceOffset == frameFailure.sourceOffset) {
+            return 0;
+        }
+    }
+    memset(&legacyWallGuards[legacyWallGuardCount], 0,
+           sizeof(legacyWallGuards[0]));
     if (frameFailure.code != FIRST_FRAME_FAIL_SPAN_OOB ||
         frameFailure.value0 != (int32_t)WALL_PACKED_BYTES ||
         (frameFailure.sourceOffset & 1U) != 0U ||
@@ -379,26 +394,28 @@ static int prepareLegacyWallGuard(void) {
         goto done;
     }
 
-    legacyWallGuard.logicalId = (uint16_t)frameFailure.logicalId;
-    legacyWallGuard.actualId = (uint16_t)frameFailure.actualId;
-    legacyWallGuard.successorActualId = (uint16_t)nextActual;
-    legacyWallGuard.packedByte = packedByte;
-    legacyWallGuard.valid = 1U;
-    legacyWallGuard.sourceOffset = frameFailure.sourceOffset;
-    legacyWallGuard.successorSourceOffset = nextSource;
+    legacyWallGuards[legacyWallGuardCount].logicalId = (uint16_t)frameFailure.logicalId;
+    legacyWallGuards[legacyWallGuardCount].actualId = (uint16_t)frameFailure.actualId;
+    legacyWallGuards[legacyWallGuardCount].successorActualId = (uint16_t)nextActual;
+    legacyWallGuards[legacyWallGuardCount].packedByte = packedByte;
+    legacyWallGuards[legacyWallGuardCount].valid = 1U;
+    legacyWallGuards[legacyWallGuardCount].sourceOffset = frameFailure.sourceOffset;
+    legacyWallGuards[legacyWallGuardCount].successorSourceOffset = nextSource;
     printf("[NATIVEFRAME] LEGACY_GUARD logical=%u actual=%u source=%u successorActual=%u successorSource=%u byte=%02x owner=BSS bytes=%u\n",
-           (unsigned int)legacyWallGuard.logicalId,
-           (unsigned int)legacyWallGuard.actualId,
-           (unsigned int)legacyWallGuard.sourceOffset,
-           (unsigned int)legacyWallGuard.successorActualId,
-           (unsigned int)legacyWallGuard.successorSourceOffset,
-           (unsigned int)legacyWallGuard.packedByte,
-           (unsigned int)sizeof(legacyWallGuard));
+           (unsigned int)legacyWallGuards[legacyWallGuardCount].logicalId,
+           (unsigned int)legacyWallGuards[legacyWallGuardCount].actualId,
+           (unsigned int)legacyWallGuards[legacyWallGuardCount].sourceOffset,
+           (unsigned int)legacyWallGuards[legacyWallGuardCount].successorActualId,
+           (unsigned int)legacyWallGuards[legacyWallGuardCount].successorSourceOffset,
+           (unsigned int)legacyWallGuards[legacyWallGuardCount].packedByte,
+           (unsigned int)sizeof(legacyWallGuards[0]));
+    ++legacyWallGuardCount;
     ok = 1;
 
 done:
     if (EspAssetPack_isOpen()) EspAssetPack_close();
-    if (!ok) memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
+    if (!ok) memset(&legacyWallGuards[legacyWallGuardCount], 0,
+                    sizeof(legacyWallGuards[0]));
     return ok;
 }
 
@@ -801,12 +818,23 @@ static int sampleWallSpan(FirstFrameWork* work,
         }
         packedIndex = (uint32_t)(localPosition >> 13);
         if (packedIndex >= WALL_PACKED_BYTES) {
-            if (packedIndex == WALL_PACKED_BYTES &&
-                legacyWallGuard.valid == 1U &&
-                legacyWallGuard.logicalId == source->logicalId &&
-                legacyWallGuard.actualId == source->actualId &&
-                legacyWallGuard.sourceOffset == source->sourceTexelOffset) {
-                packed = legacyWallGuard.packedByte;
+            const LegacyWallGuard* matching = NULL;
+            uint8_t guardIndex;
+            if (packedIndex == WALL_PACKED_BYTES) {
+                for (guardIndex = 0U; guardIndex < legacyWallGuardCount;
+                     ++guardIndex) {
+                    const LegacyWallGuard* guard = &legacyWallGuards[guardIndex];
+                    if (guard->valid == 1U &&
+                        guard->logicalId == source->logicalId &&
+                        guard->actualId == source->actualId &&
+                        guard->sourceOffset == source->sourceTexelOffset) {
+                        matching = guard;
+                        break;
+                    }
+                }
+            }
+            if (matching != NULL) {
+                packed = matching->packedByte;
             }
             else {
                 RECORD_FRAME_FAILURE(FIRST_FRAME_FAIL_SPAN_OOB,
@@ -1378,33 +1406,46 @@ static int renderFrameWithLegacyGuardRecovery(
     const EspPlayerViewState* playerView,
     EspNativeFirstFrameState* outState,
     int clearWholeFramebuffer) {
-    if (renderFrame(render, playerView, outState, clearWholeFramebuffer)) {
-        return 1;
+    uint8_t retry = 0U;
+    legacyWallGuardCount = 0U;
+    memset(legacyWallGuards, 0, sizeof(legacyWallGuards));
+    for (;;) {
+        if (renderFrame(render, playerView, outState, clearWholeFramebuffer)) {
+            if (retry != 0U) {
+                printf("[NATIVEFRAME] RECOVERED legacy compact guards=%u owner=BSS bytes=%u\n",
+                       (unsigned int)legacyWallGuardCount,
+                       (unsigned int)sizeof(legacyWallGuards));
+            }
+            return 1;
+        }
+        if (frameFailure.code != FIRST_FRAME_FAIL_SPAN_OOB ||
+            frameFailure.value0 != (int32_t)WALL_PACKED_BYTES ||
+            retry >= LEGACY_WALL_GUARD_LIMIT ||
+            !prepareLegacyWallGuard()) {
+            if (retry != 0U) {
+                printf("[NATIVEFRAME] RECOVERY-FAILED guards=%u/%u code=%u source=%u actual=%u fail-closed=yes\n",
+                       (unsigned int)legacyWallGuardCount,
+                       (unsigned int)LEGACY_WALL_GUARD_LIMIT,
+                       (unsigned int)frameFailure.code,
+                       (unsigned int)frameFailure.sourceOffset,
+                       (unsigned int)frameFailure.actualId);
+            }
+            return 0;
+        }
+        ++retry;
+        printf("[NATIVEFRAME] RETRY legacy compact guard %u/%u after unwound SPAN_OOB line=%u actual=%u\n",
+               (unsigned int)retry,
+               (unsigned int)LEGACY_WALL_GUARD_LIMIT,
+               (unsigned int)frameFailure.lineIndex,
+               (unsigned int)frameFailure.actualId);
     }
-    if (frameFailure.code != FIRST_FRAME_FAIL_SPAN_OOB ||
-        frameFailure.value0 != (int32_t)WALL_PACKED_BYTES ||
-        !prepareLegacyWallGuard()) {
-        return 0;
-    }
-
-    printf("[NATIVEFRAME] RETRY legacy compact guard after unwound SPAN_OOB line=%u actual=%u\n",
-           (unsigned int)frameFailure.lineIndex,
-           (unsigned int)frameFailure.actualId);
-    if (!renderFrame(render, playerView, outState, clearWholeFramebuffer)) {
-        return 0;
-    }
-    printf("[NATIVEFRAME] RECOVERED legacy compact guard actual=%u successorActual=%u source=%u->%u\n",
-           (unsigned int)legacyWallGuard.actualId,
-           (unsigned int)legacyWallGuard.successorActualId,
-           (unsigned int)legacyWallGuard.sourceOffset,
-           (unsigned int)legacyWallGuard.successorSourceOffset);
-    return 1;
 }
 
 void EspNativeFirstFrame_reset(void) {
     memset(&frameState, 0, sizeof(frameState));
     memset(&frameFailure, 0, sizeof(frameFailure));
-    memset(&legacyWallGuard, 0, sizeof(legacyWallGuard));
+    memset(legacyWallGuards, 0, sizeof(legacyWallGuards));
+    legacyWallGuardCount = 0U;
     frameScratchLogged = 0U;
 }
 
