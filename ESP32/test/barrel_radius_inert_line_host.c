@@ -27,6 +27,16 @@ int main(void) {
     assert(!EspNativeGameplayBarrelRadius_lineNoop(2U, 0U));
     assert(!EspNativeGameplayBarrelRadius_lineNoop(7U, 1U));
     assert(!EspNativeGameplayBarrelRadius_lineNoop(10U, 0U));
-    puts("barrel_radius_inert_line_host: PASS type0=all type12=3,4 only");
+    /* Single-barrel monster damage is applied after its one blast word.
+     * Multi-barrel without monsters preserves the full consecutive preview.
+     * Multi-barrel WITH monsters previews only the first word; subsequent
+     * words must be drawn after earlier monster consequence RNG. */
+    assert(EspNativeGameplayBarrelRadius_previewWords(1U, 0U) == 1U);
+    assert(EspNativeGameplayBarrelRadius_previewWords(1U, 1U) == 1U);
+    assert(EspNativeGameplayBarrelRadius_previewWords(2U, 0U) == 2U);
+    assert(EspNativeGameplayBarrelRadius_previewWords(16U, 0U) == 16U);
+    assert(EspNativeGameplayBarrelRadius_previewWords(2U, 1U) == 1U);
+    assert(EspNativeGameplayBarrelRadius_previewWords(16U, 8U) == 1U);
+    puts("barrel_radius_inert_line_host: PASS type0=all type12=3,4 only, blast RNG preview modes");
     return 0;
 }
