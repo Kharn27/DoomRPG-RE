@@ -8,7 +8,12 @@ extern "C" {
 #endif
 
 #define ESP_NATIVE_BSP_VISIBILITY_COLUMNS 160U
-#define ESP_NATIVE_BSP_VISIBILITY_MAX_NODES 256U
+/* A map's immutable BSP may have more than 256 nodes: level02.bsp (map 3)
+ * has 283. The previous 256-bit leaf mask failed before any sprite scan and
+ * made the entire gameplay session fail at SMALL-COLD. Keep a 1024-node
+ * bounded scratch mask (128 bytes, +96 bytes vs the old mask), no map-wide
+ * node expansion and no permanent per-map allocation. */
+#define ESP_NATIVE_BSP_VISIBILITY_MAX_NODES 1024U
 #define ESP_NATIVE_BSP_VISIBILITY_LEAF_WORDS \
     (ESP_NATIVE_BSP_VISIBILITY_MAX_NODES / 32U)
 
