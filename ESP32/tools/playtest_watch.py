@@ -26,6 +26,8 @@ RULES = (
     # Firmware detects a replay mismatch before committing: never suppress it.
     ("RNG_REPLAY_DIVERGED", re.compile(
         r"^\[MONSTERRETAL\] REPLAY-DIVERGED\b")),
+    ("RNG_GUARD_FAILURE", re.compile(
+        r"^\[RNGGUARD\] (?:FATAL-|WORD-FATAL-|ATTACK-PROBE-DEFER\b|ATTACK-PROBE-RESTORE\b.*(?:preExact=NO|boundaryReservation=NO))")),
     ("INVENTORY_UNOWNED", re.compile(
         r"^\[HUB\] SELECT-DEFER page=inventory .*\bkind=item\b")),
     ("UNOWNED_INPUT", re.compile(
@@ -201,12 +203,14 @@ class PlaytestWatcher:
         # even when the user sets --cooldown to hours. No user-selectable
         # option can disable this exception.
         if (rule not in ("RNG_REPLAY_DIVERGED", "RNG_REPLAY_UNVERIFIED",
-                         "PLAYER_STUCK_COLLISION", "PLAYER_OVERLAP_RECOVERY") and
+                         "PLAYER_STUCK_COLLISION", "PLAYER_OVERLAP_RECOVERY",
+                         "RNG_GUARD_FAILURE") and
                 now - self.last_seen.get(rule, -1e12) < self.cooldown):
             return
 
         if rule not in ("RNG_REPLAY_DIVERGED", "RNG_REPLAY_UNVERIFIED",
-                         "PLAYER_STUCK_COLLISION", "PLAYER_OVERLAP_RECOVERY"):
+                         "PLAYER_STUCK_COLLISION", "PLAYER_OVERLAP_RECOVERY",
+                         "RNG_GUARD_FAILURE"):
             self.last_seen[rule] = now
         self.count += 1
         when = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -337,6 +341,10 @@ def self_test() -> None:
         assert watcher.count == 10
         assert len(list(output.glob("incident-*PLAYER_STUCK_COLLISION.log"))) == 2
         assert classify('[PLAYEROVERLAP] ESCAPE source=665 dest=697 sprite=286 subtype=1') == "PLAYER_OVERLAP_RECOVERY"
+        assert classify('[RNGGUARD] FATAL-RESERVATION-MISMATCH next=127 ptrMatch=yes sequenceExact=NO') == "RNG_GUARD_FAILURE"
+        assert classify('[RNGGUARD] ATTACK-PROBE-RESTORE preExact=NO boundaryReservation=yes') == "RNG_GUARD_FAILURE"
+        assert classify('[RNGGUARD] ATTACK-PROBE-RESTORE preExact=yes boundaryReservation=NO') == "RNG_GUARD_FAILURE"
+        assert classify('[RNGGUARD] ATTACK-PROBE-RESTORE preExact=yes boundaryReservation=yes') is None
         watcher.close()
     print("[WATCH] SELF-TEST PASS")
 
