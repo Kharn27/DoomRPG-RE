@@ -262,9 +262,15 @@ int EspNativeGameplayStore_begin(uint8_t storeId,
     return 1;
 }
 int EspNativeGameplayStore_handleTap(int x,int y) {
+    EspNativeGameplayPlayerState purchaseBefore;
+    const uint8_t purchaseAttempt =
+        store.stage==STORE_CONFIRM && y>=68 && y<=86;
+    const uint32_t purchasesBefore=store.purchases;
     if (store.closePending!=0U) return 0;
     if (store.stage==STORE_CLOSED || x<0 || x>=160 || y<0 || y>=120)
         return 0;
+    if (purchaseAttempt &&
+        !EspNativeGameplayPlayerState_snapshot(&purchaseBefore)) return -1;
     if (store.stage==STORE_PROMPT) {
         if (y>=52 && y<=71) store.stage=STORE_LIST;
         else if (y>=78 && y<=97) {
@@ -302,5 +308,15 @@ int EspNativeGameplayStore_handleTap(int x,int y) {
                (unsigned)store.storeId,(unsigned long)store.purchases);
         return 2;
     }
-    return paint()?1:-1;
+    if (!paint()) {
+        if (purchaseAttempt && store.purchases!=purchasesBefore) {
+            const int restored=EspNativeGameplayPlayerState_restore(
+                &purchaseBefore);
+            store.purchases=purchasesBefore;
+            printf("[STORE] ROLLBACK reason=purchase-paint-failed restored=%s turn=no rng=untouched\n",
+                   restored?"yes":"NO");
+        }
+        return -1;
+    }
+    return 1;
 }
