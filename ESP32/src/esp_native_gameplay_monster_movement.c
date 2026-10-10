@@ -467,6 +467,28 @@ static int cardinalTraceClear(int32_t sourceX,
         if (!tileIndexFor(x, y, &tile) || !EspMapState_getTileFlags(tile, &flags)) {
             return 0;
         }
+        /* Legacy Game_trace checks the player's destination-cell sentinel
+         * when traceMask includes 0x0100. Native topology stores only map
+         * entities, not the legacy player entity, so the planner used to
+         * allow a monster to step on the player and permanently trap them.
+         * This check applies solely to movement masks: attack LOS masks
+         * exclude 0x0100 and must remain unaffected. */
+        if ((mask & 0x0100U) != 0U) {
+            const EspPlayerViewState* player = EspPlayerView_view();
+            uint16_t playerTile;
+            if (player == NULL || player->active != 1U ||
+                player->viewX != player->destX ||
+                player->viewY != player->destY ||
+                !tileIndexFor(player->destX, player->destY, &playerTile)) {
+                return -1;
+            }
+            if (tile == playerTile) {
+                printf("[MONSTERMOVE] TRACE-BLOCK side=dest kind=player-sentinel tile=%u mask=%04x from=%d,%d to=%d,%d\n",
+                       (unsigned int)tile, (unsigned int)mask,
+                       (int)prevX, (int)prevY, (int)x, (int)y);
+                return 0;
+            }
+        }
         if ((flags & ESP_MAP_TILE_WALL) != 0U) return 0;
         lineBlock = closedLineBlocksTile(tile, mask);
         if (lineBlock < 0) return -1;
