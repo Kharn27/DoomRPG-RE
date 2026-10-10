@@ -871,9 +871,16 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
     const EspNativeGameplayMonsterRecord* monster;
     const EspNativeGameplayWeaponSpec* weapon;
     const EspNativeGameplayHudState* hud;
+    uint16_t genericSprite = MONSTER_NO_SPRITE;
+    uint16_t genericTile = 0U;
+    uint8_t genericSubtype = 0U;
     uint8_t weaponIndex;
+    int genericEnemy;
 
     status = __real_EspNativeGameplayActionEngine_executeSelect(intent, outResult);
+    genericEnemy = intent != NULL &&
+        EspNativeGameplayActionEngine_deferredMonsterTarget(
+            intent->sequence, &genericSprite, &genericTile, &genericSubtype);
     if ((status != ESP_NATIVE_GAMEPLAY_ACTION_NO_EVENT &&
          status != ESP_NATIVE_GAMEPLAY_ACTION_NO_ELIGIBLE) ||
         intent == NULL || intent->action != ESP_NATIVE_GAMEPLAY_ACTION_SELECT ||
@@ -890,11 +897,42 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
 
     memset(&target, 0, sizeof(target));
     traceStatus = EspNativeGameplayMonsterTrace_forward(&target);
-    if (traceStatus != ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_FOUND) return status;
+    if (traceStatus != ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_FOUND) {
+        if (genericEnemy) {
+            printf("[MONSTERCOMBAT] TRACE-MISMATCH seq=%u genericSprite=%u genericTile=%u genericSubtype=%u nativeStatus=%u nativeSprite=%u reason=trace-disagrees arm=no mutation=no rng=untouched\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)genericSprite, (unsigned int)genericTile,
+                   (unsigned int)genericSubtype, (unsigned int)traceStatus,
+                   (unsigned int)target.spriteIndex);
+        }
+        return status;
+    }
 
     monster = EspNativeGameplayMonsterState_find(target.spriteIndex);
+    if (genericEnemy &&
+        (target.spriteIndex != genericSprite ||
+         target.tileIndex != genericTile ||
+         target.subtype != genericSubtype)) {
+        printf("[MONSTERCOMBAT] TRACE-MISMATCH seq=%u genericSprite=%u genericTile=%u genericSubtype=%u nativeSprite=%u nativeTile=%u nativeSubtype=%u reason=different-first-target arm=no mutation=no rng=untouched\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)genericSprite, (unsigned int)genericTile,
+               (unsigned int)genericSubtype,
+               (unsigned int)target.spriteIndex, (unsigned int)target.tileIndex,
+               (unsigned int)target.subtype);
+        return status; /* Preserve entity-first semantics, never retarget. */
+    }
     if (monster == NULL || monster->alive == 0U ||
-        monster->subtype != target.subtype) return status;
+        monster->subtype != target.subtype) {
+        if (genericEnemy) {
+            printf("[MONSTERCOMBAT] TARGET-MISMATCH seq=%u sprite=%u subtype=%u found=%u alive=%u actualSubtype=%u reason=monster-state-disagrees arm=no mutation=no rng=untouched\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex, (unsigned int)target.subtype,
+                   monster != NULL ? 1U : 0U,
+                   monster != NULL ? (unsigned int)monster->alive : 0U,
+                   monster != NULL ? (unsigned int)monster->subtype : 255U);
+        }
+        return status;
+    }
 
     if ((STANDARD_WEAPON_DIRECT_MASK & (1U << weaponIndex)) == 0U) {
         printf("[MONSTERCOMBAT] DEFER seq=%u sprite=%u subtype=%u weapon=%u reason=%s backend=generic monsterFamilyOwned=yes mutation=no\n",
