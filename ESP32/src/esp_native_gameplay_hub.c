@@ -8,6 +8,7 @@
 #include "esp_native_gameplay_hub_content.h"
 #include "esp_native_gameplay_hub_nonweapon.h"
 #include "esp_native_gameplay_note_prefix.h"
+#include "esp_native_gameplay_monster_turn.h"
 #include "esp_entity_def_type_catalog.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
@@ -748,6 +749,12 @@ static EspNativeGameplayHubStatus handleInventorySelect(void) {
         type != 4U || subtype != (uint8_t)(25U + slot) ||
         (slot < 2U && (parm <= 0 || parm > 200))) {
         printf("[HUBITEM] DEFER slot=%u reason=metadata-or-count mutation=no turn=no\n",
+               (unsigned int)slot);
+        return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+    }
+
+    if (!EspNativeGameplayMonsterTurn_canRequestPassTurn()) {
+        printf("[HUBITEM] DEFER slot=%u reason=turn-producer-busy mutation=no turn=no\n",
                (unsigned int)slot);
         return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
     }
