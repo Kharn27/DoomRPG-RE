@@ -44,6 +44,11 @@ int EspNativeGameplayMonsterCombat_applySplash(
     uint8_t count,
     uint32_t sequence);
 
+/* Present any XP level-up popup only after the initiating action's
+ * final settle frame; never let the action renderer overwrite the modal. */
+int EspNativeGameplayMonsterCombat_finishSplashPresentation(
+    uint32_t sequence);
+
 void EspNativeGameplayMonsterCombat_reset(void);
 int EspNativeGameplayMonsterCombat_isReady(void);
 const EspNativeGameplayMonsterCombatView* EspNativeGameplayMonsterCombat_view(void);
