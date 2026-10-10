@@ -19,6 +19,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_three_goal_turn.h"
 #include "esp_native_gameplay_monster_turn.h"
+#include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
 #include "esp_player_fresh_map_state.h"
@@ -666,8 +667,7 @@ static int findCandidateForSprite(
     return 1;
 }
 
-EspNativeGameplayMonsterMemberProbeStatus
-EspNativeGameplayMonsterTurn_probeActiveMember(
+EEspNativeGameplayMonsterTurn_probeActiveMember(
     struct DoomRPG_s* doomRpgBase,
     uint16_t spriteIndex) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
@@ -723,12 +723,23 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
     randomBefore = doomRpg->random;
     randomFNVBefore = randomFNV(&randomBefore);
     playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
+    if (!EspNativeRngReplayGuard_beginAttackProbe(&doomRpg->random)) {
+        printf("[MONSTERTURN] MEMBER-DEFER reason=%s sprite=%u cause=rng-probe-lease-busy mutation=no\n",
+               reasonName(reason), (unsigned int)spriteIndex);
+        return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
+    }
 
     if (((1U + (uint32_t)monsterWeapons[candidate.weaponId].rangeMin) / 2U) != 0U) {
         aiDecision = DoomRPG_randNextByte(&doomRpg->random);
         ++aiRngCalls;
         if (aiDecision >= 217U) {
             doomRpg->random = randomBefore;
+            if (!EspNativeRngReplayGuard_endAttackProbe(
+                    &doomRpg->random, &randomBefore)) {
+                printf("[MONSTERTURN] MEMBER-DEFER sprite=%u cause=rng-probe-reservation-failed path=ranged-ai mutation=no\n",
+                       (unsigned int)spriteIndex);
+                return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
+            }
             randomFNVAfter = randomFNV(&doomRpg->random);
             printf("[MONSTERTURN] MEMBER-MOVE reason=%s sprite=%u subtype=%u tile=%u weapon=%u aiRand=%u threshold=217 branch=ranged-ai ordered=yes rngCalls=1 rng=%08x->%08x rollback=yes mutation=no\n",
                    reasonName(reason),
@@ -747,6 +758,8 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
     if (!rollMonsterAttack(doomRpg, candidate.monster, player,
                            candidate.weaponId, candidate.loops, &roll)) {
         doomRpg->random = randomBefore;
+        (void)EspNativeRngReplayGuard_endAttackProbe(
+            &doomRpg->random, &randomBefore);
         printf("[MONSTERTURN] MEMBER-DEFER reason=%s sprite=%u cause=attack-roll-failed rngRollback=yes mutation=no\n",
                reasonName(reason),
                (unsigned int)candidate.monster->spriteIndex);
@@ -756,9 +769,12 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
     prospectivePlayerPain(player, roll.totalDamage, roll.totalArmorDamage,
                           &healthAfter, &armorAfter);
     doomRpg->random = randomBefore;
+    rngExact = EspNativeRngReplayGuard_endAttackProbe(
+                   &doomRpg->random, &randomBefore);
     randomFNVAfter = randomFNV(&doomRpg->random);
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
-    rngExact = memcmp(&doomRpg->random, &randomBefore,
+    rngExact = rngExact &&
+               memcmp(&doomRpg->random, &randomBefore,
                       sizeof(randomBefore)) == 0;
     playerExact = memcmp(EspNativeGameplayPlayerState_view(),
                          &playerBefore, sizeof(playerBefore)) == 0;
@@ -808,6 +824,8 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
            (unsigned int)randomFNVAfter,
            (unsigned int)turnOwner.view.attackProbes);
     return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED;
+}
+EPLAY_MONSTER_MEMBER_ATTACK_PUBLISHED;
 }
 
 static void runProbe(DoomRPG_t* doomRpg, uint8_t reason) {
