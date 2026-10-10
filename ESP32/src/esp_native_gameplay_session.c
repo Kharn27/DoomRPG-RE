@@ -278,6 +278,23 @@ int EspNativeGameplaySession_hasFailed(void) {
     return sessionState.failed != 0U;
 }
 
+/* The immutable BSP resource set cannot list runtime-created missiles.
+ * Preflight this sprite once during session loading, never during combat. */
+static int mapNeedsImpProjectile(void) {
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+    uint32_t i;
+
+    if (topology == NULL || topology->storage == NULL) return -1;
+    for (i = 0U; i < topology->spriteCount; ++i) {
+        uint8_t type = 0U, subtype = 0U;
+        uint16_t link = 0U, order = 0U;
+        if (!EspMapSpriteTopology_getEntity(i, &type, &subtype,
+                                             &link, &order)) return -1;
+        if (type == ESP_MAP_ENTITY_TYPE_ENEMY && subtype == 3U) return 1;
+    }
+    return 0;
+}
+
 void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     const EspPlayerViewState* view;
@@ -471,16 +488,42 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
         if (sessionState.stage == SESSION_STAGE_DEPENDENCIES) {
             EspNativeGraphicsCatalogStatus status =
                 EspNativeGraphicsCatalog_expandSpriteDependencies();
-            const EspNativeGraphicsCatalogView* catalog =
-                EspNativeGraphicsCatalog_view();
-            if ((status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
-                 status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) ||
-                catalog == NULL) {
+            const EspNativeGraphicsCatalogView* catalog;
+            int needsImp;
+
+            if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+                status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
                 failSession("sprite dependency closure");
                 return;
             }
-            printf("[ENGINESESSION] SPRITES dependencyStatus=%d catalogSprites=%u\n",
-                   (int)status, (unsigned int)catalog->spriteCount);
+
+            needsImp = mapNeedsImpProjectile();
+            if (needsImp < 0) {
+                failSession("imp projectile topology census");
+                return;
+            }
+            if (needsImp != 0) {
+                /* Legacy Combat_launchProjectile(weapon 15) uses sprite 204
+                 * for Imps. Its transient is not part of the BSP resource set. */
+                status = EspNativeGraphicsCatalog_ensureSprite(204U);
+                if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+                    status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
+                    printf("[ENGINESESSION] IMPPROJECTILE resource=204 status=%d catalog=unchanged gameplay=not-armed\n",
+                           (int)status);
+                    failSession("imp projectile sprite dependency");
+                    return;
+                }
+            }
+            catalog = EspNativeGraphicsCatalog_view();
+            if (catalog == NULL ||
+                (needsImp != 0 &&
+                 EspNativeGraphicsCatalog_findSprite(204U) == NULL)) {
+                failSession("sprite dependency publication");
+                return;
+            }
+            printf("[ENGINESESSION] SPRITES dependencyStatus=%d impProjectile204=%s catalogSprites=%u\n",
+                   (int)status, needsImp != 0 ? "primed" : "not-required",
+                   (unsigned int)catalog->spriteCount);
             sessionState.stage = SESSION_STAGE_SMALL_BEGIN;
             continue;
         }
