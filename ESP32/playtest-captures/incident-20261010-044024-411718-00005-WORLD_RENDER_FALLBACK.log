@@ -1,0 +1,99 @@
+# CYD playtest incident 5
+# category=WORLD_RENDER_FALLBACK; before=75; after=20
+# NOTE: only selected runtime boundaries are trapped; the CYD is NOT paused.
+# --- preceding lines + trigger ---
+[04:40:17.057] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=1 seq=205 action=STRAFE_RIGHT tile=150->182 blocker=258 type=7 context=WORLD legacyAdvance=no
+[04:40:17.608] [RESIDENTGAMEPLAY] QUEUE tap=231 action=SELECT zone=5 logical=92,56 context=WORLD
+[04:40:17.731] [ACTION] SELECT seq=206 status=DIALOG_READY tile=151 event=7 eligible=1 unsupported=0
+[04:40:17.773] [DIALOG] OPEN event=7 cmd=2 resume=3 opcode=8 string=14 bytes=91 lines=7 back=1 runFlags=00000500 ownerBytes=12 textCap=384 frame=9b686275 pack=open
+[04:40:17.787] [RESIDENTGAMEPLAY] SELECT-DIALOG n=19 seq=206 event=7 cmd=2 active=yes pauseScript=yes skipTurn=yes continuation=preflighted worldMutation=no
+[04:40:18.574] [RESIDENTGAMEPLAY] QUEUE tap=232 action=SELECT zone=5 logical=96,47 context=DIALOG tapDomain=full-screen feedback=none
+[04:40:18.579] [TOUCH] raw=1741,2430 pressure=1697 screen=192,95
+[04:40:18.624] [DIALOG] FASTFORWARD pageStart=0 lines=4 frame=8c5a4193
+[04:40:18.633] [RESIDENTGAMEPLAY] DIALOG-INPUT seq=207 action=SELECT active=yes redraw=dialog-only
+[04:40:18.924] [RESIDENTGAMEPLAY] QUEUE tap=233 action=SELECT zone=5 logical=100,49 context=DIALOG tapDomain=full-screen feedback=none
+[04:40:18.929] [TOUCH] raw=1805,2525 pressure=1612 screen=201,99
+[04:40:18.971] [DIALOG] PAGE start=4/7 frame=9b686275
+[04:40:18.979] [RESIDENTGAMEPLAY] DIALOG-INPUT seq=208 action=SELECT active=yes redraw=dialog-only
+[04:40:19.349] [RESIDENTGAMEPLAY] QUEUE tap=234 action=SELECT zone=5 logical=102,53 context=DIALOG tapDomain=full-screen feedback=none
+[04:40:19.354] [TOUCH] raw=1898,2572 pressure=1850 screen=205,106
+[04:40:19.399] [DIALOG] FASTFORWARD pageStart=4 lines=3 frame=003d3e3b
+[04:40:19.408] [RESIDENTGAMEPLAY] DIALOG-INPUT seq=209 action=SELECT active=yes redraw=dialog-only
+[04:40:19.738] [RESIDENTGAMEPLAY] QUEUE tap=235 action=SELECT zone=5 logical=101,48 context=DIALOG tapDomain=full-screen feedback=none
+[04:40:19.744] [TOUCH] raw=1784,2554 pressure=1474 screen=204,98
+[04:40:19.755] [DIALOG] CLOSE event=7 resume=3 mode=resume paints=32 fontReads=423 bytes=363810 frame=003d3e3b packClosed=yes
+[04:40:19.768] [DIALOGCHAIN] RESUME event=7 start=3 handled=1 show=0 hide=0 unlock=0 givemap=0 state=1 removed=0 mutation=1 topologySnapshot=0B automapSnapshot=no
+[04:40:19.885] [RESIDENTGAMEPLAY] DIALOG-RESUME n=19 seq=210 event=7 offset=3 opcode=11 stateMutation=1 redraw=yes turnAdvance=deferred dialog=closed
+[04:40:20.349] [RESIDENTGAMEPLAY] QUEUE tap=236 action=TURN_LEFT zone=4 logical=5,51 context=WORLD
+[04:40:20.354] [TOUCH] raw=1843,514 pressure=2343 screen=16,102
+[04:40:20.430] [TOUCH] raw=1872,524 pressure=1794 screen=17,104
+[04:40:20.578] [VIEWANIM] FRAME mode=rotate step=1/2 camera=21 logical=64 rendered=yes presented=1 totalUs=99515 gameplayStable=yes
+[04:40:20.677] [VIEWANIM] FRAME mode=rotate step=2/2 camera=42 logical=64 rendered=yes presented=1 totalUs=99351 gameplayStable=yes
+[04:40:20.688] [VIEWANIM] END mode=rotate from=0 to=64 intermediates=2 previewUs=198866 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:40:20.803] [RESIDENTGAMEPLAY] TURN n=19 seq=211 action=TURN_LEFT angle=0->64 committed=yes
+[04:40:20.902] [RESIDENTGAMEPLAY] QUEUE tap=237 action=TURN_LEFT zone=4 logical=9,59 context=WORLD
+[04:40:20.907] [TOUCH] raw=2067,544 pressure=2319 screen=19,118
+[04:40:20.980] [ALIVE] uptime=754011 ms heap=181328 heap8=115404 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle
+[04:40:21.136] [VIEWANIM] FRAME mode=rotate step=1/2 camera=85 logical=128 rendered=yes presented=1 totalUs=104483 gameplayStable=yes
+[04:40:21.239] [VIEWANIM] FRAME mode=rotate step=2/2 camera=106 logical=128 rendered=yes presented=1 totalUs=104219 gameplayStable=yes
+[04:40:21.252] [VIEWANIM] END mode=rotate from=64 to=128 intermediates=2 previewUs=208702 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:40:21.325] [AUTOMAPVIS] PUBLISH source=world-render lines+=1 sprites+=0 mutation=render-derived
+[04:40:21.378] [RESIDENTGAMEPLAY] TURN n=20 seq=212 action=TURN_LEFT angle=64->128 committed=yes
+[04:40:21.861] [RESIDENTGAMEPLAY] QUEUE tap=238 action=TURN_RIGHT zone=6 logical=151,57 context=WORLD
+[04:40:21.866] [TOUCH] raw=2097,3637 pressure=1129 screen=303,120
+[04:40:21.942] [TOUCH] raw=2109,3635 pressure=1089 screen=303,121
+[04:40:22.094] [VIEWANIM] FRAME mode=rotate step=1/2 camera=107 logical=64 rendered=yes presented=1 totalUs=104368 gameplayStable=yes
+[04:40:22.197] [VIEWANIM] FRAME mode=rotate step=2/2 camera=86 logical=64 rendered=yes presented=1 totalUs=103123 gameplayStable=yes
+[04:40:22.209] [VIEWANIM] END mode=rotate from=128 to=64 intermediates=2 previewUs=207491 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:40:22.325] [RESIDENTGAMEPLAY] TURN n=21 seq=213 action=TURN_RIGHT angle=128->64 committed=yes
+[04:40:22.605] [RESIDENTGAMEPLAY] QUEUE tap=239 action=FORWARD zone=2 logical=98,26 context=WORLD
+[04:40:22.634] [TOUCH] raw=1148,2465 pressure=1397 screen=196,54
+[04:40:22.839] [VIEWANIM] FRAME mode=move profile=axial-midpoint seq=214 step=1/1 sample=1/2 camera=1440,256 logical=1440,224 rendered=yes presented=1 totalUs=98132 gameplayStable=yes
+[04:40:22.855] [VIEWANIM] END mode=move profile=axial-midpoint seq=214 tile=150->118 from=1440,288 to=1440,224 intermediates=1 previewUs=98132 logicalCommit=once turnAdvance=unchanged finalCardinal=next
+[04:40:22.976] [RESIDENTGAMEPLAY] MOVE n=61 seq=214 action=FORWARD tile=150->118 delta=0,-64 pos=1440,224 moveEvents=door15/16+message4+force24+enter-dialog8/26-live-other-deferred committed=yes
+[04:40:22.984] [PLAYERRES] KEEP tile=118 sprite=255 type=3 subtype=21 parm=4 reason=resource-at-maximum mutation=no
+[04:40:22.998] [MONSTERTURN] ORDERED-DISPATCH reason=MOVE turnToken=87 activeCount=12 producer=active-sequence perMember=immediate-attack-or-move simultaneousProbe=no
+[04:40:23.008] [MONSTERACTIVESEQ] BEGIN turn=87 reason=1 activeCount=12 order=snapshot-prefix perMember=immediate-attack-then-move sameMonsterTurn=yes
+[04:40:23.022] [MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK n=112 candidates=0 activeCount=12 cause=active-order-not-owned mutation=no rngConsumed=0
+[04:40:23.037] [MONSTERACTIVESEQ] COMPLETE turn=87 reason=1 activeCount=12 delivered=0 sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time
+[04:40:23.146] [RESIDENTGAMEPLAY] QUEUE tap=240 action=SELECT zone=5 logical=93,50 context=WORLD
+[04:40:23.151] [TOUCH] raw=1839,2325 pressure=1856 screen=183,102
+[04:40:23.273] [ACTIONENGINE] ROUTE seq=215 weapon=0 target=none distance=0 route=NOTHING_TO_USE feedback=screen turnAdvance=deferred
+[04:40:23.281] [ACTION] SELECT seq=215 status=NO_EVENT tile=86 event=65535 eligible=0 unsupported=0
+[04:40:23.291] [RESIDENTGAMEPLAY] SELECT-DEFER n=23 seq=215 status=NO_EVENT unsupported=0 entity/otherSemantics=deferred mutation=no
+[04:40:23.325] [ACTIONENGINE] PRESENT seq=215 route=NOTHING_TO_USE worldMutation=no fullRedraw=no feedback=yes
+[04:40:23.623] [RESIDENTGAMEPLAY] QUEUE tap=241 action=TURN_LEFT zone=4 logical=7,61 context=WORLD
+[04:40:23.628] [TOUCH] raw=2122,501 pressure=2254 screen=15,122
+[04:40:23.848] [VIEWANIM] FRAME mode=rotate step=1/2 camera=85 logical=128 rendered=yes presented=1 totalUs=97592 gameplayStable=yes
+[04:40:23.952] [VIEWANIM] FRAME mode=rotate step=2/2 camera=106 logical=128 rendered=yes presented=1 totalUs=105298 gameplayStable=yes
+[04:40:23.965] [VIEWANIM] END mode=rotate from=64 to=128 intermediates=2 previewUs=202890 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:40:24.014] [NATIVEFRAME] LEGACY_GUARD logical=49 actual=112 source=65536 successorActual=116 successorSource=69632 byte=a7 owner=BSS bytes=16
+[04:40:24.021] [NATIVEFRAME] RETRY legacy compact guard after unwound SPAN_OOB line=179 actual=112
+[04:40:24.049] [NATIVEFRAME] RECOVERED legacy compact guard actual=112 successorActual=116 source=65536->69632
+[04:40:24.151] [RESIDENTGAMEPLAY] TURN n=22 seq=216 action=TURN_LEFT angle=64->128 committed=yes
+[04:40:24.190] [RESIDENTGAMEPLAY] QUEUE tap=242 action=TURN_LEFT zone=4 logical=8,62 context=WORLD
+[04:40:24.195] [TOUCH] raw=2192,788 pressure=1149 screen=42,126
+[04:40:24.362] [NATIVEFRAME] LEGACY_GUARD logical=28 actual=68 source=32768 successorActual=108 successorSource=61440 byte=aa owner=BSS bytes=16
+[04:40:24.370] [NATIVEFRAME] RETRY legacy compact guard after unwound SPAN_OOB line=169 actual=68
+[04:40:24.406] [NATIVEFRAME] FAILED route=gameplay code=3/SPAN_OOB view=1440,224,36 angle=149 line=185 logical=49 actual=112 flags=00000800 source=65536 v=2048,16782550,15734,0
+[04:40:24.411] [TURNFRAME] DIAG fail=WORLD_RENDER player=1440,224 angle=149
+[04:40:24.420] [VIEWANIM] FALLBACK mode=rotate step=1 angle=149 completed=0 finalCardinal=required gameplayStable=yes
+[04:40:24.430] [VIEWANIM] END mode=rotate from=128 to=192 intermediates=0 previewUs=0 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:40:24.564] [RESIDENTGAMEPLAY] TURN n=23 seq=217 action=TURN_LEFT angle=128->192 committed=yes
+[04:40:24.600] [ACTIONFEEDBACK] EXPIRE kind=1 elapsedMs=1240 targetMs=1200 restored=topbar-only
+[04:40:25.294] [RESIDENTGAMEPLAY] QUEUE tap=243 action=FORWARD zone=2 logical=89,27 context=WORLD
+[04:40:25.299] [TOUCH] raw=1137,2282 pressure=1124 screen=179,53
+[04:40:25.535] [VIEWANIM] FRAME mode=move profile=axial-midpoint seq=218 step=1/1 sample=1/2 camera=1440,256 logical=1440,288 rendered=yes presented=1 totalUs=104325 gameplayStable=yes
+[04:40:25.552] [VIEWANIM] END mode=move profile=axial-midpoint seq=218 tile=118->150 from=1440,224 to=1440,288 intermediates=1 previewUs=104325 logicalCommit=once turnAdvance=unchanged finalCardinal=next
+[04:40:25.678] [RESIDENTGAMEPLAY] MOVE n=62 seq=218 action=FORWARD tile=118->150 delta=0,64 pos=1440,288 moveEvents=door15/16+message4+force24+enter-dialog8/26-live-other-deferred committed=yes
+[04:40:25.686] [PLAYERRES] KEEP tile=150 sprite=256 type=3 subtype=21 parm=4 reason=resource-at-maximum mutation=no
+[04:40:25.700] [MONSTERTURN] ORDERED-DISPATCH reason=MOVE turnToken=88 activeCount=12 producer=active-sequence perMember=immediate-attack-or-move simultaneousProbe=no
+[04:40:25.711] [MONSTERACTIVESEQ] BEGIN turn=88 reason=1 activeCount=12 order=snapshot-prefix perMember=immediate-attack-then-move sameMonsterTurn=yes
+[04:40:25.725] [MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK n=113 candidates=0 activeCount=12 cause=active-order-not-owned mutation=no rngConsumed=0
+[04:40:25.740] [MONSTERACTIVESEQ] COMPLETE turn=88 reason=1 activeCount=12 delivered=0 sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time
+[04:40:25.981] [ALIVE] uptime=759012 ms heap=181328 heap8=115404 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle
+[04:40:26.526] [RESIDENTGAMEPLAY] QUEUE tap=244 action=TURN_LEFT zone=4 logical=9,58 context=WORLD
+[04:40:26.754] [VIEWANIM] FRAME mode=rotate step=1/2 camera=213 logical=0 rendered=yes presented=1 totalUs=103010 gameplayStable=yes
+[04:40:26.854] [VIEWANIM] FRAME mode=rotate step=2/2 camera=234 logical=0 rendered=yes presented=1 totalUs=100352 gameplayStable=yes
+[04:40:26.866] [VIEWANIM] END mode=rotate from=192 to=0 intermediates=2 previewUs=203362 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:40:26.977] [RESIDENTGAMEPLAY] TURN n=24 seq=219 action=TURN_LEFT angle=192->0 committed=yes
