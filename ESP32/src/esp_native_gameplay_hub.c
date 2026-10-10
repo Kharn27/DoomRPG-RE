@@ -403,11 +403,12 @@ static int drawText(const EspNativeIndexedBmp* font,
     return 1;
 }
 
-/* Notebook text is already owned by the NOTE event prefix. Split the
- * original bounded 512-byte corpus into 20-column lines without storing a
- * second copy, even when there are many || separators. */
+/* Borrowed current-map EV_NOTE corpus. No second string owner: the maximum
+ * underlying buffer is 512 bytes. Each page has four 20-character text rows,
+ * with a permanent three-button footer (BACK / PREV / NEXT). */
 #define HUB_NOTE_COLS 20U
 #define HUB_NOTE_ROWS 4U
+#define HUB_NOTE_FOOTER_TOP 101
 static uint16_t notebookLineCount(const char* text, uint16_t length,
                                   const EspNativeIndexedBmp* font,
                                   uint16_t* fb, EspNativeIndexedBmpStats* stats,
@@ -430,8 +431,8 @@ static uint16_t notebookLineCount(const char* text, uint16_t length,
             ++offset;
         }
         if (font != NULL && row / HUB_NOTE_ROWS == page) {
-            if (!drawText(font, fb, line, 8,
-                          52 + (int)(row % HUB_NOTE_ROWS) * 13, stats)) {
+            if (!drawText(font, fb, line, 9,
+                          49 + (int)(row % HUB_NOTE_ROWS) * 12, stats)) {
                 return UINT16_MAX;
             }
         }
@@ -447,35 +448,91 @@ static uint8_t notebookPages(void) {
     return rows == 0U ? 1U : (uint8_t)((rows + HUB_NOTE_ROWS - 1U) / HUB_NOTE_ROWS);
 }
 
+static void notebookFill(uint16_t* framebuffer, int left, int top,
+                         int right, int bottom, uint16_t color) {
+    int x, y;
+    for (y = top; y <= bottom; ++y) {
+        for (x = left; x <= right; ++x) {
+            putPixel(framebuffer, x, y, color);
+        }
+    }
+}
+
+static void notebookRect(uint16_t* framebuffer, int left, int top,
+                         int right, int bottom, uint16_t color) {
+    int x, y;
+    for (x = left; x <= right; ++x) {
+        putPixel(framebuffer, x, top, color);
+        putPixel(framebuffer, x, bottom, color);
+    }
+    for (y = top + 1; y < bottom; ++y) {
+        putPixel(framebuffer, left, y, color);
+        putPixel(framebuffer, right, y, color);
+    }
+}
+
+static int notebookButton(const EspNativeIndexedBmp* font,
+                          uint16_t* framebuffer,
+                          EspNativeIndexedBmpStats* stats,
+                          int left, int right, const char* label,
+                          int enabled) {
+    const int textWidth = (int)strlen(label) * HUB_FONT_ADVANCE;
+    const int textX = left + (right - left + 1 - textWidth) / 2;
+    notebookFill(framebuffer, left, 101, right, 118,
+                 enabled ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
+    notebookRect(framebuffer, left, 101, right, 118,
+                 enabled ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
+    return drawText(font, framebuffer, label, textX, 104, stats);
+}
+
 static int paintNotebookContent(const EspNativeIndexedBmp* font,
                                 uint16_t* framebuffer,
                                 EspNativeIndexedBmpStats* stats) {
     char pageLabel[20];
     uint16_t length = 0U;
     const char* text = EspNativeGameplayNotePrefix_text(&length);
-    uint8_t pages = notebookPages();
+    const uint8_t pages = notebookPages();
+    const int hasPrev = notebookPage > 0U;
+    const int hasNext = (uint8_t)(notebookPage + 1U) < pages;
     int x, y;
     if (font == NULL || framebuffer == NULL || stats == NULL ||
         pages == 0U || notebookPage >= pages) return 0;
-    for (y = 34; y <= 118; ++y) {
-        for (x = 1; x <= 158; ++x) putPixel(framebuffer, x, y, ESP_HUB_COLOR_BG);
+
+    /* Distinct readable page panel, progress strip and touch-sized footer.
+     * All rendering is into the existing 160x120 framebuffer. */
+    notebookFill(framebuffer, 1, 31, 158, 118, ESP_HUB_COLOR_BG);
+    notebookFill(framebuffer, 4, 32, 155, 43, ESP_HUB_COLOR_PANEL);
+    notebookRect(framebuffer, 4, 32, 155, 99, ESP_HUB_COLOR_STEEL);
+    notebookFill(framebuffer, 5, 44, 154, 45, ESP_HUB_COLOR_STEEL_DARK);
+    notebookFill(framebuffer, 5, 44,
+                 5 + (int)((149U * (uint32_t)(notebookPage + 1U)) / pages),
+                 45, ESP_HUB_COLOR_AMBER);
+    for (y = 49; y <= 96; ++y) {
+        if (((y - 49) / 12) & 1) {
+            for (x = 5; x <= 154; ++x) putPixel(framebuffer, x, y, ESP_HUB_COLOR_PANEL);
+        }
     }
-    if (!drawText(font, framebuffer, "NOTEBOOK", 8, 36, stats)) return 0;
+    if (!drawText(font, framebuffer, "NOTES", 9, 32, stats)) return 0;
     snprintf(pageLabel, sizeof(pageLabel), "%u/%u",
              (unsigned int)(notebookPage + 1U), (unsigned int)pages);
-    if (!drawText(font, framebuffer, pageLabel, 116, 36, stats)) return 0;
+    if (!drawText(font, framebuffer, pageLabel, 115, 32, stats)) return 0;
+
     if (length == 0U) {
-        if (!drawText(font, framebuffer, "NO NOTES YET", 8, 65, stats)) return 0;
-    }
-    else if (notebookLineCount(text, length, font, framebuffer, stats,
-                               notebookPage) == UINT16_MAX) {
+        if (!drawText(font, framebuffer, "NO NOTES YET", 9, 62, stats)) return 0;
+    } else if (notebookLineCount(text, length, font, framebuffer, stats,
+                                 notebookPage) == UINT16_MAX) {
         return 0;
     }
-    if (!drawText(font, framebuffer, "BACK", 8, 105, stats) ||
-        !drawText(font, framebuffer, "NEXT", 115, 105, stats)) return 0;
-    printf("[HUBNOTE] PAGE page=%u/%u textBytes=%u owner=EV_NOTE copy=no mutation=no turn=no\n",
+    if (!notebookButton(font, framebuffer, stats, 4, 49, "BACK", 1) ||
+        !notebookButton(font, framebuffer, stats, 56, 103, "PREV", hasPrev) ||
+        !notebookButton(font, framebuffer, stats, 110, 155, "NEXT", hasNext)) {
+        return 0;
+    }
+    printf("[HUBNOTE] PAGE page=%u/%u textBytes=%u controls=BACK+PREV(%s)+NEXT(%s) owner=EV_NOTE copy=no mutation=no turn=no\n",
            (unsigned int)(notebookPage + 1U),
-           (unsigned int)pages, (unsigned int)length);
+           (unsigned int)pages, (unsigned int)length,
+           hasPrev ? "enabled" : "disabled",
+           hasNext ? "enabled" : "disabled");
     return 1;
 }
 
@@ -986,9 +1043,17 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
             if (!replayOk || exactBottomTarget == 0U ||
                 exactBottomTarget != restoredProtected) hudRepainted = 0;
         }
+        /* Whole-band FNV contains the top bar, whose live feedback/timer
+         * owner is deliberately re-composed in restoreWorldAfterHub(). Only
+         * the bottom HUD is byte-exact at this boundary. Do not label this
+         * expected intermediate state as a mismatch or falsely claim the
+         * whole HUD is already restored. */
         hudExact = restoredHudBands != 0U &&
                    restoredHudBands == expectedHudBands ? "yes" :
-                   itemMutation ? "new-player-state" : "NO";
+                   (hudRepainted && restoredProtected != 0U &&
+                    restoredProtected == exactBottomTarget)
+                       ? "topbar-pending"
+                       : "NO";
         ++hub.closes;
         printf("[HUB] CLOSE n=%u page=%s playerFNV=%08x->%08x expected=%08x exact=%s weapon=%u->%u sessionMutation=%s turn=no worldRedraw=pending fullScreenHub=yes menuUnderlayRestore=%s hudRepaint=%s hudBands=%08x expectedHud=%08x exactHud=%s hudBottom=%08x expectedBottom=%08x exactBottom=%s topBar=recompose-on-world-redraw packClosed=%s\n",
                (unsigned int)hub.closes, pageName(hub.page),
