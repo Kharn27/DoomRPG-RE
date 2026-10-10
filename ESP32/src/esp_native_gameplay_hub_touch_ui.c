@@ -849,6 +849,20 @@ int EspNativeGameplayHubTouchUi_classify(
                       HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM, outHit);
     if (tab != 0) return tab;
 
+    if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
+        EspNativeGameplayHub_notebookOpen()) {
+        uint8_t action;
+        if (logicalY < 35) return -1;
+        /* Notebook bottom-left is BACK; bottom-right and body are NEXT.
+         * On keyboard, MOVE_FORWARD/MOVE_BACK can also page backward/forward. */
+        action = logicalY >= 99 && logicalX < 80
+                     ? ESP_NATIVE_GAMEPLAY_ACTION_SELECT
+                     : ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK;
+        setHit(outHit, action, zoneForAction(action),
+               1, 35, 158, 119);
+        return 1;
+    }
+
     if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
         uint8_t weapon;
         uint8_t left;
