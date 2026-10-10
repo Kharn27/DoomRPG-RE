@@ -348,6 +348,11 @@ def self_test() -> None:
         assert classify('[RNGGUARD] BARREL-PREVIEW-FAILED seq=49 stateExact=NO action=fail-closed') == "RNG_GUARD_FAILURE"
         assert classify('[RNGGUARD] BARREL-PREVIEW-DIVERGED seq=49 expected=13 actual=20 sequenceExact=NO') == "RNG_GUARD_FAILURE"
         assert classify('[BARRELRADIUS] RNG-PREFLIGHT seq=49 words=3 refill=reserved exact=yes') is None
+        # A true barrel replay mismatch is never rate-limited away.
+        watcher.feed('[RNGGUARD] BARREL-PREVIEW-DIVERGED seq=49 root=283 expected=11 actual=23 sequenceExact=NO\n')
+        watcher.feed('[RNGGUARD] BARREL-PREVIEW-DIVERGED seq=50 root=283 expected=10 actual=24 sequenceExact=NO\n')
+        assert watcher.count == 12
+        assert len(list(output.glob("incident-*RNG_GUARD_FAILURE.log"))) == 2
         watcher.close()
     print("[WATCH] SELF-TEST PASS")
 
