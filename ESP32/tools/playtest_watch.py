@@ -56,7 +56,7 @@ RULES = (
 # Probe/commit RNG parity: replay must keep the same hit and crit outcome.
 # A mismatch can happen at a legacy random-table refill and changes damage.
 PROBE_LINE = re.compile(r"^\[MONSTERTURN\] MEMBER-ATTACK-PROBE\b")
-COMMIT_LINE = re.compile(r"^\[MONSTERRETAL\] COMMIT\b")
+COMMIT_LINE = re.compile(r"^\[MONSTERRETAL\] (?:COMMIT|MISS-COMMIT|LETHAL-COMMIT)\b")
 KEY_VALUE = re.compile(r"\b(producerProbe|probe|sprite|firstRandHit|crit)=(\d+)")
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -110,11 +110,11 @@ class PlaytestWatcher:
         if not (PROBE_LINE.search(line) or COMMIT_LINE.search(line)):
             return False
         values = {name: int(value) for name, value in KEY_VALUE.findall(line)}
-        required = ("sprite", "firstRandHit", "crit")
+        required = ("sprite", "firstRandHit")
         if any(field not in values for field in required):
             return False
         if PROBE_LINE.search(line):
-            if "producerProbe" not in values:
+            if "producerProbe" not in values or "crit" not in values:
                 return False
             key = (values["producerProbe"], values["sprite"])
             if len(self.attack_probes) >= 16:
@@ -125,8 +125,11 @@ class PlaytestWatcher:
             return False
         key = (values["probe"], values["sprite"])
         expected = self.attack_probes.pop(key, None)
+        # MISS-COMMIT has no crit field and semantically means crit=0.
+        # LETHAL-COMMIT includes firstRandHit in the instrumented firmware;
+        # older firmware builds cannot be checked for lethal roll equality.
         return expected is not None and expected != (
-            values["firstRandHit"], values["crit"])
+            values["firstRandHit"], values.get("crit", 0))
 
     def feed(self, raw: str) -> None:
         line = normalize(raw)
@@ -260,6 +263,15 @@ def self_test() -> None:
         watcher.feed('[MONSTERRETAL] REPLAY-DIVERGED probe=5 reason=MOVE sprite=264 weapon=15 aiRand=245 expected=<217 rngRollback=yes mutation=no\n')
         assert watcher.count == 5
         assert len(list(output.glob("incident-*RNG_REPLAY_DIVERGED.log"))) == 4
+        # Misses must also preserve the preview roll, despite having no crit
+        # field in the MISS-COMMIT format. Lethal commits expose firstRandHit
+        # once the new serial-only firmware instrumentation is flashed.
+        watcher.feed('[MONSTERTURN] MEMBER-ATTACK-PROBE sprite=264 firstRandHit=241 crit=0 producerProbe=6\n')
+        watcher.feed('[MONSTERRETAL] MISS-COMMIT probe=6 sprite=264 firstRandHit=198\n')
+        watcher.feed('[MONSTERTURN] MEMBER-ATTACK-PROBE sprite=220 firstRandHit=180 crit=0 producerProbe=7\n')
+        watcher.feed('[MONSTERRETAL] LETHAL-COMMIT probe=7 sprite=220 firstRandHit=4 crit=1\n')
+        assert watcher.count == 7
+        assert len(list(output.glob("incident-*RNG_REPLAY_DIVERGED.log"))) == 6
         watcher.close()
     print("[WATCH] SELF-TEST PASS")
 
