@@ -18,7 +18,9 @@ typedef struct EspNativeRngReplayGuard_s {
     uint32_t replayedRefills;
     uint8_t valid;
     uint8_t probeReserved;
-    uint8_t reserved[2];
+    uint8_t attackProbeActive;
+    uint8_t attackProbeRefilled;
+    Random_t* attackProbeRandom;
 } EspNativeRngReplayGuard;
 
 static EspNativeRngReplayGuard rngReplayGuard;
@@ -37,6 +39,49 @@ static int atByteBoundary(const Random_t* rand) {
 static int atWordBoundary(const Random_t* rand) {
     return rand != NULL &&
            (rand->nextRand + (int)sizeof(uint32_t)) >= RANDTABLESIZE;
+}
+
+/*
+ * Unlike the movement probe (which deliberately materializes next=127 in
+ * advance), an attack may BEGIN at next=123 then cross 127 after consuming
+ * AI and hit bytes. Holding the speculative refill through the delayed
+ * attack animation is essential: the 1000-ms ordinary rollback lease is
+ * insufficient after attack->final-idle cadence.
+ *
+ * The exact post-refill table is reserved by the real wrapper WHEN the probe
+ * reaches that boundary. We restore Random_t after probing, but do not release
+ * this reservation until a real RNG consumer crosses the same boundary.
+ */
+int EspNativeRngReplayGuard_beginAttackProbe(Random_t* liveRandom) {
+    if (liveRandom == NULL || rngReplayGuard.attackProbeActive != 0U) {
+        DRPG_LOGE("[RNGGUARD] ATTACK-PROBE-DEFER reason=owner-busy-or-null\n");
+        return 0;
+    }
+    rngReplayGuard.attackProbeRandom = liveRandom;
+    rngReplayGuard.attackProbeRefilled = 0U;
+    rngReplayGuard.attackProbeActive = 1U;
+    return 1;
+}
+
+int EspNativeRngReplayGuard_endAttackProbe(
+    Random_t* liveRandom, const Random_t* restoredBefore) {
+    int valid = rngReplayGuard.attackProbeActive != 0U &&
+                liveRandom != NULL && restoredBefore != NULL &&
+                rngReplayGuard.attackProbeRandom == liveRandom &&
+                memcmp(liveRandom, restoredBefore,
+                       sizeof(*restoredBefore)) == 0;
+    if (rngReplayGuard.attackProbeRefilled != 0U) {
+        const int reservedExact =
+            rngReplayGuard.probeReserved != 0U &&
+            rngReplayGuard.probeReservedRand == liveRandom;
+        DRPG_LOGI("[RNGGUARD] ATTACK-PROBE-RESTORE preExact=%s boundaryReservation=%s delay=until-real-replay\n",
+                  valid ? "yes" : "NO", reservedExact ? "yes" : "NO");
+        valid = valid && reservedExact;
+    }
+    rngReplayGuard.attackProbeActive = 0U;
+    rngReplayGuard.attackProbeRandom = NULL;
+    rngReplayGuard.attackProbeRefilled = 0U;
+    return valid;
 }
 
 /*
@@ -194,9 +239,17 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
             if (rngReplayGuard.probeReservedRand == rand &&
                 memcmp(rand, &rngReplayGuard.preRefill, sizeof(*rand)) == 0) {
                 *rand = rngReplayGuard.postRefill;
-                rngReplayGuard.probeReserved = 0U;
-                rngReplayGuard.probeReservedRand = NULL;
-                rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
+                if (rngReplayGuard.attackProbeActive != 0U &&
+                    rngReplayGuard.attackProbeRandom == rand) {
+                    /* The speculative caller will roll Random_t back.
+                     * Do NOT downgrade to the time-limited lease here. */
+                    rngReplayGuard.attackProbeRefilled = 1U;
+                } else {
+                    rngReplayGuard.probeReserved = 0U;
+                    rngReplayGuard.probeReservedRand = NULL;
+                    rngReplayGuard.validUntilMs =
+                        now + RNG_REPLAY_GUARD_LEASE_MS;
+                }
                 rngReplayGuard.valid = 1U;
                 ++rngReplayGuard.replayedRefills;
                 DRPG_LOGD("[RNGGUARD] PROBE-REPLAY refill=%u replay=%u leaseMs=%u next=127->0 hiddenGenerator=untouched reservation=consumed rollbackReplay=armed sequenceExact=yes\n",
@@ -219,6 +272,13 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
                  memcmp(rand, &rngReplayGuard.preRefill, sizeof(*rand)) == 0) {
             *rand = rngReplayGuard.postRefill;
             ++rngReplayGuard.replayedRefills;
+            if (rngReplayGuard.attackProbeActive != 0U &&
+                rngReplayGuard.attackProbeRandom == rand) {
+                rngReplayGuard.attackProbeRefilled = 1U;
+                rngReplayGuard.probeReserved = 1U;
+                rngReplayGuard.probeReservedRand = rand;
+                rngReplayGuard.validUntilMs = 0U;
+            }
             DRPG_LOGD("[RNGGUARD] REPLAY refill=%u replay=%u leaseMs=%u next=127->0 hiddenGenerator=untouched rollbackSafe=yes\n",
                    (unsigned int)rngReplayGuard.realRefills,
                    (unsigned int)rngReplayGuard.replayedRefills,
@@ -231,7 +291,17 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
             rngReplayGuard.probeReservedRand = NULL;
             rngReplayGuard.validUntilMs = now + RNG_REPLAY_GUARD_LEASE_MS;
             rngReplayGuard.valid = 1U;
-            rngReplayGuard.probeReserved = 0U;
+            if (rngReplayGuard.attackProbeActive != 0U &&
+                rngReplayGuard.attackProbeRandom == rand) {
+                rngReplayGuard.attackProbeRefilled = 1U;
+                rngReplayGuard.probeReserved = 1U;
+                rngReplayGuard.probeReservedRand = rand;
+                rngReplayGuard.validUntilMs = 0U;
+                DRPG_LOGI("[RNGGUARD] ATTACK-PROBE-REFILL refill=%u next=127->0 owner=persistent-until-live-replay hiddenGenerator=advanced-once\n",
+                          (unsigned int)rngReplayGuard.realRefills + 1U);
+            } else {
+                rngReplayGuard.probeReserved = 0U;
+            }
             ++rngReplayGuard.realRefills;
             DRPG_LOGD("[RNGGUARD] REFILL refill=%u leaseMs=%u next=127->0 hiddenGenerator=advanced-once rollbackReplay=armed\n",
                    (unsigned int)rngReplayGuard.realRefills,
