@@ -1,5 +1,9 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Playtest CYD : attaques à distance des Imps — PASS matériel (2026-10-11)
+
+**Confirmation explicite du testeur sur le vrai classic CYD :** « Les attaques à distance des Imps sont validées ». Les correctifs sur la branche `agent/esp32-playtest-incident-capture` relatifs au sprite de projectile Imp 204 (catalogue sparse `7cb7c00`, composition additive `14f02ad`, instrumentation `362dc91`, test hôte `5210621` et CI `a7fccdc`) sont donc associés à un **PASS matériel de cette interaction**. Ce retour ne contient pas de nouvelles empreintes Serial détaillées et ne constitue pas une validation générale de la parité graphique des projectiles, du RNG de tous les monstres ni de l'audio. Ne pas étendre ce PASS à ces autres familles. Le correctif HUD postérieur `e02b090b` reste séparément en attente de son test CYD.
+
 ## Playtest 04:29–04:45 : trois anomalies matériel observées, correctifs à tester (2026-10-10)
 
 **Source matérielle :** six fichiers utilisateur sur `agent/esp32-playtest-incident-capture:ESP32/playtest-captures/` (5 incidents et 1 snapshot), code d'origine des captures `955d739a3dace4d961a554f02bef1bf94c7d1e4f`. `main` demeure `d07a4b0a59c527b1a3792f1c2c38b0f0010affc1`. Aucun nouveau `agent/*`, aucun merge `main`. Plusieurs SAVE V11 sur SD facilitent la reproduction.
@@ -140,7 +144,7 @@ Status vocabulary: **native-validated** = original behavior reproduced and exerc
 | Screen floor/ceiling solid fill (`Render_renderFloorAndCeilingSolidBG`) | **unverified invocation**, implementation migrated unchanged | First-session regression PASS SHA `0503b08b`; direct-call witness not recorded |
 | Framebuffer fade (`Render_fadeScreen`) | **compat-only, retired from production linkage**; no native ABI export | Death fade **native-validated** in SHA `2e541ab8`; prove whether this specific ABI is actually called |
 | Player death fall + fade + death menu | native-partial: `PLAYERDEATH` | Fall/fade/death menu real-CYD PASS; legacy shake and death sound intentionally deferred; test LOAD/RETRY from death menu separately |
-| Monster activation, movement, retaliation, attack animation | native-partial: `MONSTERACT/MOVELIVE/RETAL/ATKVIS` | Live behavior observed, projectile/attack sound/message/pain face/shake and movement interpolation deferred |
+| Monster activation, movement, retaliation, attack animation | native-partial: `MONSTERACT/MOVELIVE/RETAL/ATKVIS` | **Imp ranged attacks: CYD PASS (2026-10-11)**; generic projectile/attack sound/message/pain face/shake and movement interpolation parity still open |
 | Save/load original world semantics | native-partial: save V11 and read-compatible V1–V10 | LOAD animation fallbacks, loaded live-monster lifecycle and older save coverage remain |
 | Original sound/music | disconnected/deferred: `AUDIOINTENT` silent backend | Implement native playback independently; don't revive legacy Sound object |
 | Legacy plane-test functions / BSP traversal / map loads | compat-only: production `esp_legacy_render_reject.c`; normal owner native | Reject stubs are not validated positive invocations; any missing original effect must get a native owner, not a fallback |
