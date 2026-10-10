@@ -193,7 +193,21 @@ static void serviceImpProjectile(DoomRPG_t* runtime,
     }
     step = projectileStep;
     if (step >= ATTACK_IMP_PROJECTILE_STEPS) {
-        projectileEnabled = 0U;
+        /* The transient is not resident in the renderer; repaint once
+         * without it so the final fireball cannot remain frozen in the
+         * framebuffer until the attack-pose cadence expires. */
+        rendered = guardedRender(runtime, view, &frame, &rngExact);
+        if (rendered) {
+            projectileEnabled = 0U;
+            printf("[IMPPROJECTILE] CLEAR probe=%u steps=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no\n",
+                   (unsigned int)attackVisual.activeProbe,
+                   (unsigned int)projectileStep,
+                   (unsigned int)frame.frameAfterFNV,
+                   (unsigned int)frame.finalPresented);
+        }
+        else {
+            projectileNextMs = DoomRPG_GetUpTimeMS() + 1U;
+        }
         return;
     }
     worldX = (int32_t)sourceX +
