@@ -21,6 +21,9 @@ import time
 # sound=...-deferred, the READY contract and harmless pending animation states.
 # Match only meaningful runtime boundaries; add rules after observing actual logs.
 RULES = (
+    # Firmware detects a replay mismatch before committing: never suppress it.
+    ("RNG_REPLAY_DIVERGED", re.compile(
+        r"^\\[MONSTERRETAL\\] REPLAY-DIVERGED\\b")),
     ("INVENTORY_UNOWNED", re.compile(
         r"^\[HUB\] SELECT-DEFER page=inventory .*\bkind=item\b")),
     ("UNOWNED_INPUT", re.compile(
@@ -146,13 +149,22 @@ class PlaytestWatcher:
         self.ring.append(stamped)
         replay_mismatch = self.replay_diverged(line)
         rule = "RNG_REPLAY_DIVERGED" if replay_mismatch else classify(line)
-        if rule is None or now - self.last_seen.get(rule, -1e12) < self.cooldown:
+        if rule is None:
+            return
+        # Never coalesce RNG integrity faults. A rapid series of mismatched
+        # attacks must produce one durable capture per detected occurrence,
+        # even when the user sets --cooldown to hours. No user-selectable
+        # option can disable this exception.
+        if (rule != "RNG_REPLAY_DIVERGED" and
+                now - self.last_seen.get(rule, -1e12) < self.cooldown):
             return
 
-        self.last_seen[rule] = now
+        if rule != "RNG_REPLAY_DIVERGED":
+            self.last_seen[rule] = now
         self.count += 1
         when = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        path = self.output / f"incident-{when}-{rule}.log"
+        # Strictly unique within one run, including simultaneous detections.
+        path = self.output / f"incident-{when}-{self.count:05d}-{rule}.log"
         file = path.open("w", encoding="utf-8")
         file.write(f"# CYD playtest incident {self.count}\n")
         file.write(f"# category={rule}; before={self.ring.maxlen}; after={self.after}\n")
@@ -233,6 +245,21 @@ def self_test() -> None:
         watcher.feed('[MONSTERTURN] MEMBER-ATTACK-PROBE sprite=220 firstRandHit=42 crit=0 producerProbe=2\n')
         watcher.feed('[MONSTERRETAL] COMMIT probe=2 sprite=220 firstRandHit=42 crit=0\n')
         assert watcher.count == 2
+        # Same category, same session and same second: RNG alerts must not
+        # inherit the 60-second general cooldown and must never overwrite.
+        watcher.feed('[MONSTERTURN] MEMBER-ATTACK-PROBE sprite=264 firstRandHit=199 crit=0 producerProbe=3\n')
+        watcher.feed('[MONSTERRETAL] COMMIT probe=3 sprite=264 firstRandHit=71 crit=0\n')
+        watcher.feed('[MONSTERTURN] MEMBER-ATTACK-PROBE sprite=264 firstRandHit=12 crit=0 producerProbe=4\n')
+        watcher.feed('[MONSTERRETAL] COMMIT probe=4 sprite=264 firstRandHit=3 crit=1\n')
+        assert watcher.count == 4
+        rng_files = list(output.glob("incident-*RNG_REPLAY_DIVERGED.log"))
+        assert len(rng_files) == 3
+        assert len({p.name for p in rng_files}) == 3
+        assert all("MONSTERRETAL" in p.read_text(encoding="utf-8") for p in rng_files)
+        # A firmware-side replay guard is independently actionable.
+        watcher.feed('[MONSTERRETAL] REPLAY-DIVERGED probe=5 reason=MOVE sprite=264 weapon=15 aiRand=245 expected=<217 rngRollback=yes mutation=no\n')
+        assert watcher.count == 5
+        assert len(list(output.glob("incident-*RNG_REPLAY_DIVERGED.log"))) == 4
         watcher.close()
     print("[WATCH] SELF-TEST PASS")
 
