@@ -24,6 +24,26 @@ typedef struct EspNativeGameplayMonsterCombatView_s {
     uint8_t reserved;
 } EspNativeGameplayMonsterCombatView;
 
+struct DoomRPG_s;
+
+#define ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS 8U
+
+typedef struct EspNativeGameplaySplashHit_s {
+    uint16_t spriteIndex;
+    uint8_t healthComponent;
+    uint8_t armorComponent;
+} EspNativeGameplaySplashHit;
+
+/* One-barrel blast family: stage every monster hit until after exact explosion
+ * RNG preview and all wave frames. Apply damage/deaths/drops as one atomic
+ * native transaction, with snapshots and rollback on failure. No world-wide
+ * collision bypass and no legacy CombatEntity/Entity heap graph. */
+int EspNativeGameplayMonsterCombat_applySplash(
+    struct DoomRPG_s* runtime,
+    const EspNativeGameplaySplashHit* hits,
+    uint8_t count,
+    uint32_t sequence);
+
 void EspNativeGameplayMonsterCombat_reset(void);
 int EspNativeGameplayMonsterCombat_isReady(void);
 const EspNativeGameplayMonsterCombatView* EspNativeGameplayMonsterCombat_view(void);
