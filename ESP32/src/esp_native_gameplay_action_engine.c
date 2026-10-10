@@ -28,6 +28,7 @@
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_weapon.h"
 #include "esp_native_indexed_bmp.h"
@@ -244,12 +245,10 @@ static uint32_t actionNowMs(void) {
  * next 32-bit RNG word.  On the little-endian target that byte is exactly
  * randTable[nextRand], while the word still consumes four table bytes.
  *
- * Keep this correction local to the already-audited explosion families
- * (crate trap and barrel anim #1) for now: other inherited randNextInt() call
- * sites need their own bounded audit before changing global gameplay RNG
- * sequencing. If the legacy word would refill the table (nextRand + 4 >=
- * RANDTABLESIZE), fail closed rather than calling setRand() during a preview
- * transaction whose hidden refill state cannot be rolled back.
+ * Crate traps retain their bounded no-refill preview. Barrel chains preview
+ * the exact 4-byte words through the replay guard, which reserves any hidden
+ * generator refill until the same words are consumed after animation.
+ * Other inherited randNextInt() call sites remain outside this family's audit.
  */
 static int explosionPeekWordLowByte(const Random_t* random,
                                     uint8_t* outByte) {
@@ -2259,6 +2258,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         uint8_t barrelChainCount = 0U;
         uint8_t barrelExpectedChainCount = 0U;
         uint8_t barrelBlastRngCalls = 0U;
+        uint8_t barrelBlastPreview[ACTION_BARREL_CHAIN_MAX];
+        Random_t barrelRandomAfterCombat;
+        Random_t barrelRandomAfterPreview;
         uint8_t barrelPlayerHits = 0U;
         uint16_t barrelTotalPlayerMessageDamage = 0U;
         uint16_t barrelChain[ACTION_BARREL_CHAIN_MAX];
@@ -2469,7 +2471,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             else {
                 ActionTarget unsupported;
                 uint8_t preflightCount = 0U;
-                int32_t rngEnd;
+                uint8_t previewOrdinal;
+                int previewExact;
 
                 /* Entity_died(type=12/subtype=1) allocates gsprite animation #1
                  * at the exact sprite coordinate, then Game_remove()s the barrel.
@@ -2496,21 +2499,19 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     return 1;
                 }
                 barrelExpectedChainCount = preflightCount;
-                rngEnd = doomRpg->random.nextRand +
-                         ((int32_t)sizeof(int) *
-                          (int32_t)barrelExpectedChainCount);
-                if (doomRpg->random.nextRand < 0 ||
-                    rngEnd >= RANDTABLESIZE) {
+                if (barrelExpectedChainCount == 0U ||
+                    barrelExpectedChainCount > ACTION_BARREL_CHAIN_MAX ||
+                    doomRpg->random.nextRand < 0 ||
+                    doomRpg->random.nextRand >= RANDTABLESIZE) {
                     (void)EspNativeGameplayPlayerState_restore(&playerBefore);
                     doomRpg->random = randomBefore;
                     EspNativeGameplayWeapon_cancelAttack();
                     memset(&actionState.pending, 0, sizeof(actionState.pending));
-                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=rng-word-refill-boundary nextRand=%d explosions=%u bytesPerWord=%u playerRollback=yes rngRollback=yes mutation=no\n",
+                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=invalid-rng-or-chain nextRand=%d explosions=%u mutation=no\n",
                            (unsigned int)pending.sequence,
                            (unsigned int)pending.spriteIndex,
                            doomRpg->random.nextRand,
-                           (unsigned int)barrelExpectedChainCount,
-                           (unsigned int)sizeof(int));
+                           (unsigned int)barrelExpectedChainCount);
                     return 1;
                 }
 
@@ -2529,6 +2530,59 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                            (unsigned int)graphicsStatus);
                     return 1;
                 }
+
+                /*
+                 * Dry-run the bounded chain's exact RNG words on the live
+                 * Random_t pointer: only that pointer can own the persistent
+                 * hidden-generator refill reservation. Save the state after
+                 * combat, sample every word, then restore it byte-for-byte.
+                 * Up to 16 words / 64 bytes cross at most one 128B boundary.
+                 */
+                barrelRandomAfterCombat = doomRpg->random;
+                if (!EspNativeRngReplayGuard_beginAttackProbe(
+                        &doomRpg->random)) {
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    doomRpg->random = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=rng-probe-owner-busy rollback=player+rng mutation=no\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex);
+                    return 1;
+                }
+                for (previewOrdinal = 0U;
+                     previewOrdinal < barrelExpectedChainCount;
+                     ++previewOrdinal) {
+                    barrelBlastPreview[previewOrdinal] = (uint8_t)
+                        DoomRPG_randNextInt(&doomRpg->random);
+                }
+                barrelRandomAfterPreview = doomRpg->random;
+                doomRpg->random = barrelRandomAfterCombat;
+                previewExact = EspNativeRngReplayGuard_endAttackProbe(
+                    &doomRpg->random, &barrelRandomAfterCombat);
+                if (!previewExact) {
+                    DRPG_LOGE("[RNGGUARD] BARREL-PREVIEW-FAILED seq=%u sprite=%u chain=%u stateExact=NO action=fail-closed\n",
+                              (unsigned int)pending.sequence,
+                              (unsigned int)pending.spriteIndex,
+                              (unsigned int)barrelExpectedChainCount);
+                    (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                    doomRpg->random = randomBefore;
+                    EspNativeGameplayWeapon_cancelAttack();
+                    memset(&actionState.pending, 0, sizeof(actionState.pending));
+                    printf("[BARRELRADIUS] DEFER seq=%u sprite=%u reason=rng-preview-not-exact rollback=player+rng mutation=no\n",
+                           (unsigned int)pending.sequence,
+                           (unsigned int)pending.spriteIndex);
+                    return 1;
+                }
+                printf("[BARRELRADIUS] RNG-PREFLIGHT seq=%u sprite=%u next=%d->%d words=%u refill=%s exact=yes rollback=closed\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       barrelRandomAfterCombat.nextRand,
+                       barrelRandomAfterPreview.nextRand,
+                       (unsigned int)barrelExpectedChainCount,
+                       barrelRandomAfterCombat.nextRand +
+                           (int)barrelExpectedChainCount * 4 >= RANDTABLESIZE
+                           ? "reserved" : "none");
 
                 /* The dry-run array proved capacity/support only. Runtime must
                  * rediscover neighbors at each 450 ms expiry so removals happen
@@ -3139,8 +3193,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                     uint8_t playerHitsThisBlast = 0U;
                     uint16_t playerMessageDamageThisBlast = 0U;
 
-                    if (!explosionConsumeWordLowByte(
-                            &doomRpg->random, &blastByte)) {
+                    blastByte = (uint8_t)
+                        DoomRPG_randNextInt(&doomRpg->random);
+                    if (blastByte != barrelBlastPreview[blastCursor]) {
                         int rollbackOk = 1;
                         if (barrelTurnRequested != 0U &&
                             !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -3157,12 +3212,14 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         EspNativeGameplayWeapon_cancelAttack();
                         memset(&actionState.pending, 0,
                                sizeof(actionState.pending));
-                        printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u exploding=%u wave=%u reason=rng-word-refill-boundary rollback=%s rng=yes player=yes world=yes\n",
-                               (unsigned int)pending.sequence,
-                               (unsigned int)pending.spriteIndex,
-                               (unsigned int)barrelChain[blastCursor],
-                               (unsigned int)waveOrdinal,
-                               rollbackOk ? "yes" : "NO");
+                        DRPG_LOGE("[RNGGUARD] BARREL-PREVIEW-DIVERGED seq=%u root=%u exploding=%u word=%u expected=%u actual=%u rollback=%s sequenceExact=NO\n",
+                                  (unsigned int)pending.sequence,
+                                  (unsigned int)pending.spriteIndex,
+                                  (unsigned int)barrelChain[blastCursor],
+                                  (unsigned int)blastCursor,
+                                  (unsigned int)barrelBlastPreview[blastCursor],
+                                  (unsigned int)blastByte,
+                                  rollbackOk ? "yes" : "NO");
                         return rollbackOk ? 1 : 0;
                     }
                     ++barrelBlastRngCalls;
@@ -3280,8 +3337,15 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)ACTION_TRAP_DAMAGE_FLASH_MS);
             }
 
-            if (barrelChainCount != barrelExpectedChainCount) {
+            if (barrelChainCount != barrelExpectedChainCount ||
+                barrelBlastRngCalls != barrelExpectedChainCount ||
+                memcmp(&doomRpg->random, &barrelRandomAfterPreview,
+                       sizeof(barrelRandomAfterPreview)) != 0) {
                 int rollbackOk = 1;
+                const int rngExact =
+                    barrelBlastRngCalls == barrelExpectedChainCount &&
+                    memcmp(&doomRpg->random, &barrelRandomAfterPreview,
+                           sizeof(barrelRandomAfterPreview)) == 0;
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
                         pending.sequence)) {
@@ -3297,9 +3361,19 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0,
                        sizeof(actionState.pending));
-                printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u reason=preflight-runtime-chain-mismatch expected=%u actual=%u rollback=%s rng=yes player=yes world=yes\n",
+                if (!rngExact) {
+                    DRPG_LOGE("[RNGGUARD] BARREL-PREVIEW-DIVERGED seq=%u root=%u expectedWords=%u actualWords=%u stateExact=NO rollback=%s sequenceExact=NO\n",
+                              (unsigned int)pending.sequence,
+                              (unsigned int)pending.spriteIndex,
+                              (unsigned int)barrelExpectedChainCount,
+                              (unsigned int)barrelBlastRngCalls,
+                              rollbackOk ? "yes" : "NO");
+                }
+                printf("[BARRELRADIUS] ROLLBACK seq=%u root=%u reason=%s expected=%u actual=%u rollback=%s rng=yes player=yes world=yes\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
+                       rngExact ? "preflight-runtime-chain-mismatch"
+                                : "rng-preview-diverged",
                        (unsigned int)barrelExpectedChainCount,
                        (unsigned int)barrelChainCount,
                        rollbackOk ? "yes" : "NO");
