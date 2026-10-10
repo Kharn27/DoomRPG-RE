@@ -1,0 +1,99 @@
+# CYD playtest incident 22
+# category=SELECT_DEFER; before=75; after=20
+# NOTE: only selected runtime boundaries are trapped; the CYD is NOT paused.
+# --- preceding lines + trigger ---
+[03:39:27.641] [MONSTERMOVELIVE] COMMIT trigger=NO-IMMEDIATE-ATTACK sprite=89 tile=328->360 pos=544,672->544,736 rngCalls=1 randomCommitted=yes positionFNV=42fd5f3d->b5f6835d topologyFNV=2b5f416d->ae2a8d26 linkOrder=225->227 renderer=snap-destination projected=yes frame=4c6ce659 presented=1 interpolation=deferred rollback=closed
+[03:39:27.686] [MONSTERPOSTMOVE] ATTACK-PROBE reason=PLAYER_ATTACK sprite=89 subtype=1 mType=1 tile=328->360 weapon=12 alt=0 loops=1 goalStep=1/1 distance2=4096 adjacentCardinal=yes trace=clear hitLoops=1 firstRandHit=100 firstCalcHit=215 firstCritLimit=10 firstRandDamage=153 totalDamage=2 armorDamage=2 crit=0 rngCalls=2 missProjectileRng=0 playerHP=19->17 armor=20->18 lethal=no playerFNV=bff0c7a9->bff0c7a9 rng=ee1549eb->ee1549eb rngRollback=yes playerExact=yes sameTurn=yes movementAlreadyCommitted=yes gameplayMutation=no
+[03:39:27.702] [MONSTERACTIVESEQ] MEMBER turn=155 ordinal=5/6 sprite=89 subtype=1 decision=goal-move movement=committed attackProbe=9->10 publication=probe-before-next sameMonsterTurn=yes
+[03:39:27.713] [MONSTERACTIVESEQ] PAUSE turn=155 afterOrdinal=5/6 probe=10 reason=attack-in-flight nextOrdinal=6 sameMonsterTurn=yes
+[03:39:27.720] [MONSTERACT] DELIVER actualProbe=10 deliveredProbe=10 sprite=89 reason=3 activated=yes
+[03:39:27.846] [MONSTERATKVIS] ARM probe=10 reason=PLAYER_ATTACK sprite=89 subtype=1 alt=0 loops=1 shot=1/1 phase=attack visual=1 fixedAnim=yes phaseMs=500 projectileFrameMs=150 frame=2c889154 presented=1 rngExact=yes immutableSprite=yes retaliation=blocked-until-final-idle projectile=deferred attackMessage=deferred sound=deferred gameplayMutation=no
+[03:39:27.860] [MONSTERRETAL] WAIT probe=10 reason=PLAYER_ATTACK sprite=89 phase=attack-animation resolution=after-animation playerMutation=no rngConsumed=0 worldInput=blocked
+[03:39:28.442] [MONSTERATKVIS] STEP probe=10 sprite=89 shot=1/1 phase=final-idle phaseMs=500 frame=4c6ce659 presented=1 rngExact=yes gameplayMutation=no resolution=pending-after-idle-cadence
+[03:39:28.660] [ACTIONFEEDBACK] EXPIRE kind=7 elapsedMs=1204 targetMs=1200 restored=topbar-only
+[03:39:28.776] [ALIVE] uptime=695660 ms heap=178912 heap8=112988 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle
+[03:39:28.943] [MONSTERATKVIS] COMPLETE probe=10 sprite=89 loops=1 phase=final-idle-expired phaseMs=500 redraw=no gameplayMutation=no resolution=unblocked-after-animation
+[03:39:29.054] [VIEWFLASH] PAINT color565=b800 viewport=0,20,160,80 thickness=2 pixels=944 durationMs=500 snapshot=bounded present=caller feedback=6
+[03:39:29.109] [MONSTERRETAL] COMMIT probe=10 reason=PLAYER_ATTACK sprite=89 subtype=1 mType=1 weapon=12 alt=0 loops=1 hitLoops=1 firstRandHit=100 firstCalcHit=215 firstCritLimit=10 firstRandDamage=153 totalDamage=2 armorDamage=2 crit=0 aiRand=unused/0 rngCalls=2 combatRngCalls=2 missProjectileRng=0 playerHP=19->17 armor=20->18 playerFNV=bff0c7a9->51b58635 rng=ee1549eb->4dbccbc9 frame=cab75d1f presented=1 message="4 damage!" damageTotal=4 redFlash=b800/500ms passMessage=n/a rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=deferred shake=deferred sound=deferred statusWarnings=deferred playerDeath=nonlethal turn=closed
+[03:39:29.119] [MONSTERACTIVESEQ] RESUME turn=155 nextOrdinal=6/6 resolvedProbe=10 delivered=1 sameMonsterTurn=yes
+[03:39:29.313] [MONSTERMOVEACT] ALLOW sprite=114 activation=map-session-active conservative=yes mutation=position-preflight-captured
+[03:39:29.353] [MONSTERMOVE] PROBE trigger=NO-IMMEDIATE-ATTACK n=153 reason=3 sprite=114 subtype=1 weapon=12 sourceTile=296 source=544,608 target=544,736 destTile=328 delta=0,64 immediateAttack=no aiRand=unused/0 closeRand=unused/0 visitCount=4 tieRand=222 choice=1 mask=ff87 rngCalls=1 rngBoundary=no randomLiveUntouched=yes positionFNV=b5f6835d->70c2c23d->b5f6835d positionRollback=yes rendererPublish=deferred topologyRelink=deferred liveMove=no mutation=no
+[03:39:29.475] [MONSTERMOVELIVE] COMMIT trigger=NO-IMMEDIATE-ATTACK sprite=114 tile=296->328 pos=544,608->544,672 rngCalls=1 randomCommitted=yes positionFNV=b5f6835d->70c2c23d topologyFNV=ae2a8d26->0ada4f4f linkOrder=226->228 renderer=snap-destination projected=yes frame=b0cef6a0 presented=1 interpolation=deferred rollback=closed
+[03:39:29.489] [MONSTERPOSTMOVE] COMPLETE reason=PLAYER_ATTACK sprite=114 subtype=1 tile=296->328 distance2=16384 adjacentCardinal=no attack=no mutation=no rngConsumed=0
+[03:39:29.505] [MONSTERACTIVESEQ] MEMBER turn=155 ordinal=6/6 sprite=114 subtype=1 decision=goal-move movement=committed attackProbe=10->10 publication=closed-before-next sameMonsterTurn=yes
+[03:39:29.521] [MONSTERACTIVESEQ] COMPLETE turn=155 reason=3 activeCount=6 delivered=2 sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time
+[03:39:29.588] [VIEWFLASH] EXPIRE elapsedMs=504 targetMs=500 color565=b800 restored=viewport-border-only
+[03:39:29.810] [RESIDENTGAMEPLAY] QUEUE tap=292 action=PREV_WEAPON zone=7 logical=9,82 context=WORLD
+[03:39:29.816] [TOUCH] raw=2678,558 pressure=2472 screen=20,160
+[03:39:29.893] [TOUCH] raw=2682,570 pressure=2482 screen=21,161
+[03:39:30.068] [WEAPONCONTROL] COMMIT seq=292 action=PREV_WEAPON weapon=2->1 weapons=000f ammoType=0 ammo=19 inspected=1 playerFNV=51b58635->29b308a6 redraw=yes turn=no rollback=closed
+[03:39:30.249] [RESIDENTGAMEPLAY] QUEUE tap=293 action=PREV_WEAPON zone=7 logical=8,80 context=WORLD
+[03:39:30.255] [TOUCH] raw=2677,544 pressure=2484 screen=19,160
+[03:39:30.332] [TOUCH] raw=2700,548 pressure=2253 screen=19,162
+[03:39:30.524] [WEAPONCONTROL] COMMIT seq=293 action=PREV_WEAPON weapon=1->0 weapons=000f ammoType=0 ammo=19 inspected=1 playerFNV=29b308a6->05b09163 redraw=yes turn=no rollback=closed
+[03:39:30.557] [ACTIONFEEDBACK] EXPIRE kind=6 elapsedMs=1471 targetMs=1200 restored=topbar-only
+[03:39:30.847] [RESIDENTGAMEPLAY] QUEUE tap=294 action=SELECT zone=5 logical=90,61 context=WORLD
+[03:39:30.853] [TOUCH] raw=2113,2284 pressure=2089 screen=179,121
+[03:39:30.980] [ACTIONENGINE] TRACE seq=294 weapon=0 distance=1 tile=360 target=sprite index=89 line=65535 type=1 subtype=1 route=ENEMY_COMBAT_DEFERRED
+[03:39:30.991] [ACTIONENGINE] BACKEND-DEFER seq=294 sprite=89 family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no
+[03:39:31.008] [MONSTERCOMBAT] ARM seq=294 sprite=89 tile=360 subtype=1 mType=1 weapon=0 distance=1 hp=5/8 armor=1/3 def=15 agi=15 playerAcc=16 playerStr=12 backend=generic-type1 rng=pending mutation=no rollback=armed
+[03:39:31.016] [ACTION] SELECT seq=294 status=NO_ELIGIBLE tile=360 event=38 eligible=1 unsupported=0
+[03:39:31.027] [RESIDENTGAMEPLAY] SELECT-DEFER n=28 seq=294 status=NO_ELIGIBLE unsupported=0 entity/otherSemantics=deferred mutation=no
+[03:39:31.047] [MONSTERCOMBAT] ROLL seq=294 sprite=89 subtype=1 mType=1 weapon=0 distance=1 worldDist=4096 loops=1 hitLoops=1 firstRandHit=179 firstCalcHit=225 firstCritLimit=11 firstRandDamage=224 totalDamage=8 armorDamage=1 crit=0 rngCalls=3
+[03:39:31.062] [HITFX] ARM seq=294 sprite=89 subtype=1 weapon=0 mode=blood distance=1 damage=8+1 total=9 color565=b800 particles=64 ownerBytes=36 visualRng=local gameplayRng=untouched
+[03:39:31.142] [HITFX] PAINT seq=294 sprite=89 particles=64 pixels=97 center=80,52 ageMs=89 leaseMs=350 color565=b800 motion=legacy-kinematic-spray presentOverlay=yes gameplayRng=untouched
+[03:39:31.185] [MONSTERHITFEEDBACK] ARM seq=294 sprite=89 hit=1 crit=0 message=9 damage! textQueued=yes impact=blood-armed timing=attack-frame deathSuffix=deferred-bounded-topbar mutation=no gameplayRng=untouched
+[03:39:31.199] [MONSTERCOMBAT] FRAME seq=294 sprite=89 subtype=1 weapon=0 phase=attack frame=f92a2453 worldUs=32712 spriteUs=27205 hudUs=3117 presentUs=41410 totalUs=115906 presented=1
+[03:39:31.236] [MONSTERCOMBAT] COMMIT seq=294 sprite=89 subtype=1 hp=5->0 armor=1->0 alive=1->0 monsterFNV=a0ab155e->6be8c74d playerFNV=05b09163->9eebc743 ammo=19->19 visual=death4->gib-hidden/250ms+unlink,gibFX-deferred attackSound=5136-deferred consequenceSound=5091-deferred xp=7-applied level=1->1 levelUps=0 dropRoll=value/f4721f10 dropMaterialize=none corpseTrim=deferred turnAdvance=deferred AI=deferred rollback=closed
+[03:39:31.347] [MONSTERCOMBAT] FRAME seq=294 sprite=89 subtype=1 weapon=0 phase=settle-idle frame=94889ecb worldUs=32730 spriteUs=26261 hudUs=697 presentUs=36552 totalUs=107286 presented=1
+[03:39:31.353] [MONSTERCOMBAT] ATTACK seq=294 weapon=0 genericMonster=yes worldCommitted=yes
+[03:39:31.364] [MONSTERCOMBAT] DEATH-SETTLE sprite=89 visual=4->hidden delayMs=250 gib=1 gibFX=deferred immutableSprite=yes
+[03:39:31.378] [MONSTERTURN] ORDERED-DISPATCH reason=PLAYER_ATTACK turnToken=156 activeCount=6 producer=active-sequence perMember=immediate-attack-or-move simultaneousProbe=no
+[03:39:31.390] [MONSTERACTIVESEQ] BEGIN turn=156 reason=3 activeCount=6 order=snapshot-prefix perMember=immediate-attack-then-move sameMonsterTurn=yes
+[03:39:31.446] [MONSTERMOVEACT] ALLOW sprite=114 activation=map-session-active conservative=yes mutation=position-preflight-captured
+[03:39:31.486] [MONSTERMOVE] PROBE trigger=NO-IMMEDIATE-ATTACK n=154 reason=3 sprite=114 subtype=1 weapon=12 sourceTile=328 source=544,672 target=544,736 destTile=360 delta=0,64 immediateAttack=no aiRand=unused/0 closeRand=unused/0 visitCount=1 tieRand=86 choice=1 mask=ff87 rngCalls=1 rngBoundary=no randomLiveUntouched=yes positionFNV=70c2c23d->4a215b9d->70c2c23d positionRollback=yes rendererPublish=deferred topologyRelink=deferred liveMove=no mutation=no
+[03:39:31.561] [GIBFX] PAINT sprite=89 subtype=1 particles=18 chunks=5 pixels=103 center=80,52 ownerBytes=156 leaseMs=350 visualRng=local gameplayRng=untouched legacyParticleSystem=no
+[03:39:31.613] [MONSTERMOVELIVE] COMMIT trigger=NO-IMMEDIATE-ATTACK sprite=114 tile=328->360 pos=544,672->544,736 rngCalls=1 randomCommitted=yes positionFNV=70c2c23d->4a215b9d topologyFNV=0ada4f4f->8eb496af linkOrder=228->229 renderer=snap-destination projected=yes frame=ad15e75c presented=1 interpolation=deferred rollback=closed
+[03:39:31.657] [MONSTERPOSTMOVE] ATTACK-PROBE reason=PLAYER_ATTACK sprite=114 subtype=1 mType=1 tile=328->360 weapon=12 alt=0 loops=1 goalStep=1/1 distance2=4096 adjacentCardinal=yes trace=clear hitLoops=1 firstRandHit=154 firstCalcHit=215 firstCritLimit=10 firstRandDamage=31 totalDamage=1 armorDamage=1 crit=0 rngCalls=2 missProjectileRng=0 playerHP=17->16 armor=18->17 lethal=no playerFNV=9eebc743->9eebc743 rng=e1fa25bd->e1fa25bd rngRollback=yes playerExact=yes sameTurn=yes movementAlreadyCommitted=yes gameplayMutation=no
+[03:39:31.674] [MONSTERACTIVESEQ] MEMBER turn=156 ordinal=6/6 sprite=114 subtype=1 decision=goal-move movement=committed attackProbe=10->11 publication=probe-before-next sameMonsterTurn=yes
+[03:39:31.689] [MONSTERACTIVESEQ] COMPLETE turn=156 reason=3 activeCount=6 delivered=1 sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time
+[03:39:31.757] [GIBFX] REPAINT sprite=89 particles=18 pixels=103 lease=preserved composition=present gameplayRng=untouched
+[03:39:31.796] [HITFX] EXPIRE sprite=89 leaseMs=350 paints=2 pixels=194 frame=ad15e75c presented=1 restored=world-redraw gameplayRng=untouched
+[03:39:31.901] [MONSTERCOMBAT] DEATH-FRAME frame=ad15e75c presented=1
+[03:39:31.909] [MONSTERACT] DELIVER actualProbe=11 deliveredProbe=11 sprite=114 reason=3 activated=yes
+[03:39:32.034] [MONSTERATKVIS] ARM probe=11 reason=PLAYER_ATTACK sprite=114 subtype=1 alt=0 loops=1 shot=1/1 phase=attack visual=1 fixedAnim=yes phaseMs=500 projectileFrameMs=150 frame=063f811e presented=1 rngExact=yes immutableSprite=yes retaliation=blocked-until-final-idle projectile=deferred attackMessage=deferred sound=deferred gameplayMutation=no
+[03:39:32.050] [MONSTERRETAL] WAIT probe=11 reason=PLAYER_ATTACK sprite=114 phase=attack-animation resolution=after-animation playerMutation=no rngConsumed=0 worldInput=blocked
+[03:39:32.156] [GIBFX] EXPIRE sprite=89 leaseMs=350 repaints=2 frame=063f811e presented=1 restored=world-redraw gameplayRng=untouched
+[03:39:32.628] [MONSTERATKVIS] STEP probe=11 sprite=114 shot=1/1 phase=final-idle phaseMs=500 frame=ad15e75c presented=1 rngExact=yes gameplayMutation=no resolution=pending-after-idle-cadence
+[03:39:32.666] [ACTIONFEEDBACK] EXPIRE kind=7 elapsedMs=1291 targetMs=1200 restored=topbar-only
+[03:39:32.901] [RESIDENTGAMEPLAY] COMBAT-INPUT-BLOCK tap=295 logical=98,63 owner=monster-attack-animation queued=no feedback=none
+[03:39:33.127] [MONSTERATKVIS] COMPLETE probe=11 sprite=114 loops=1 phase=final-idle-expired phaseMs=500 redraw=no gameplayMutation=no resolution=unblocked-after-animation
+[03:39:33.237] [VIEWFLASH] PAINT color565=b800 viewport=0,20,160,80 thickness=2 pixels=944 durationMs=500 snapshot=bounded present=caller feedback=6
+[03:39:33.293] [MONSTERRETAL] COMMIT probe=11 reason=PLAYER_ATTACK sprite=114 subtype=1 mType=1 weapon=12 alt=0 loops=1 hitLoops=1 firstRandHit=154 firstCalcHit=215 firstCritLimit=10 firstRandDamage=31 totalDamage=1 armorDamage=1 crit=0 aiRand=unused/0 rngCalls=2 combatRngCalls=2 missProjectileRng=0 playerHP=17->16 armor=18->17 playerFNV=9eebc743->76357ed5 rng=e1fa25bd->8252a3df frame=1791ed53 presented=1 message="2 damage!" damageTotal=2 redFlash=b800/500ms passMessage=n/a rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=deferred shake=deferred sound=deferred statusWarnings=deferred playerDeath=nonlethal turn=closed
+[03:39:33.584] [RESIDENTGAMEPLAY] QUEUE tap=296 action=SELECT zone=5 logical=93,58 context=WORLD
+[03:39:33.589] [TOUCH] raw=2062,2340 pressure=1903 screen=184,117
+[03:39:33.717] [ACTIONENGINE] TRACE seq=295 weapon=0 distance=1 tile=360 target=sprite index=114 line=65535 type=1 subtype=1 route=ENEMY_COMBAT_DEFERRED
+[03:39:33.727] [ACTIONENGINE] BACKEND-DEFER seq=295 sprite=114 family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no
+[03:39:33.744] [MONSTERCOMBAT] ARM seq=295 sprite=114 tile=360 subtype=1 mType=1 weapon=0 distance=1 hp=6/6 armor=3/3 def=13 agi=11 playerAcc=16 playerStr=12 backend=generic-type1 rng=pending mutation=no rollback=armed
+[03:39:33.752] [ACTION] SELECT seq=295 status=NO_ELIGIBLE tile=360 event=38 eligible=1 unsupported=0
+[03:39:33.764] [RESIDENTGAMEPLAY] SELECT-DEFER n=29 seq=295 status=NO_ELIGIBLE unsupported=0 entity/otherSemantics=deferred mutation=no
+[03:39:33.794] [VIEWFLASH] EXPIRE elapsedMs=529 targetMs=500 color565=b800 restored=viewport-border-only
+[03:39:33.813] [MONSTERCOMBAT] ROLL seq=295 sprite=114 subtype=1 mType=1 weapon=0 distance=1 worldDist=4096 loops=1 hitLoops=1 firstRandHit=176 firstCalcHit=275 firstCritLimit=13 firstRandDamage=7 totalDamage=3 armorDamage=0 crit=0 rngCalls=3
+[03:39:33.830] [HITFX] ARM seq=295 sprite=114 subtype=1 weapon=0 mode=blood distance=1 damage=3+0 total=3 color565=b800 particles=16 ownerBytes=36 visualRng=local gameplayRng=untouched
+[03:39:33.908] [HITFX] PAINT seq=295 sprite=114 particles=16 pixels=25 center=80,52 ageMs=88 leaseMs=350 color565=b800 motion=legacy-kinematic-spray presentOverlay=yes gameplayRng=untouched
+[03:39:33.948] [MONSTERHITFEEDBACK] ARM seq=295 sprite=114 hit=1 crit=0 message=3 damage! textQueued=yes impact=blood-armed timing=attack-frame deathSuffix=n/a mutation=no gameplayRng=untouched
+[03:39:33.962] [MONSTERCOMBAT] FRAME seq=295 sprite=114 subtype=1 weapon=0 phase=attack frame=042a401d worldUs=33097 spriteUs=28012 hudUs=729 presentUs=41325 totalUs=113995 presented=1
+[03:39:33.997] [MONSTERCOMBAT] COMMIT seq=295 sprite=114 subtype=1 hp=6->3 armor=3->3 alive=1->1 monsterFNV=6be8c74d->9f1f0104 playerFNV=76357ed5->76357ed5 ammo=19->19 visual=pain6/250ms attackSound=5136-deferred consequenceSound=5089-deferred xp=0-applied level=0->0 levelUps=0 dropRoll=unused/00000000 dropMaterialize=unused corpseTrim=deferred turnAdvance=deferred AI=deferred rollback=closed
+[03:39:34.109] [MONSTERCOMBAT] FRAME seq=295 sprite=114 subtype=1 weapon=0 phase=settle-idle frame=7bf2d1b2 worldUs=33089 spriteUs=26406 hudUs=691 presentUs=36455 totalUs=107672 presented=1
+[03:39:34.115] [MONSTERCOMBAT] ATTACK seq=295 weapon=0 genericMonster=yes worldCommitted=yes
+[03:39:34.131] [MONSTERTURN] ORDERED-DISPATCH reason=PLAYER_ATTACK turnToken=157 activeCount=6 producer=active-sequence perMember=immediate-attack-or-move simultaneousProbe=no
+[03:39:34.143] [MONSTERACTIVESEQ] BEGIN turn=157 reason=3 activeCount=6 order=snapshot-prefix perMember=immediate-attack-then-move sameMonsterTurn=yes
+[03:39:34.184] [MONSTERTURN] MEMBER-ATTACK-PROBE reason=PLAYER_ATTACK sprite=114 subtype=1 mType=1 tile=360 weapon=12 alt=0 loops=1 hitLoops=1 firstRandHit=31 firstCalcHit=215 firstCritLimit=10 firstRandDamage=106 totalDamage=2 armorDamage=2 crit=0 aiRand=unused/0 rngCalls=2 combatRngCalls=2 missProjectileRng=0 playerHP=16->14 armor=17->15 lethal=no playerFNV=76357ed5->76357ed5 rng=70137002->70137002 rngRollback=yes playerExact=yes ordered=yes producerProbe=12 gameplayMutation=no
+[03:39:34.198] [MONSTERACTIVESEQ] MEMBER turn=157 ordinal=6/6 sprite=114 subtype=1 decision=immediate-attack movement=none attackProbe=11->12 publication=probe-before-next sameMonsterTurn=yes
+[03:39:34.212] [MONSTERACTIVESEQ] COMPLETE turn=157 reason=3 activeCount=6 delivered=1 sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time
+[03:39:34.229] [ALIVE] uptime=701104 ms heap=178912 heap8=112988 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle
+[03:39:34.238] [MONSTERACT] DELIVER actualProbe=12 deliveredProbe=12 sprite=114 reason=3 activated=yes
+[03:39:34.366] [MONSTERATKVIS] ARM probe=12 reason=PLAYER_ATTACK sprite=114 subtype=1 alt=0 loops=1 shot=1/1 phase=attack visual=1 fixedAnim=yes phaseMs=500 projectileFrameMs=150 frame=71891a3f presented=1 rngExact=yes immutableSprite=yes retaliation=blocked-until-final-idle projectile=deferred attackMessage=deferred sound=deferred gameplayMutation=no
+[03:39:34.381] [MONSTERRETAL] WAIT probe=12 reason=PLAYER_ATTACK sprite=114 phase=attack-animation resolution=after-animation playerMutation=no rngConsumed=0 worldInput=blocked
+[03:39:34.488] [HITFX] EXPIRE sprite=114 leaseMs=350 paints=2 pixels=50 frame=71891a3f presented=1 restored=world-redraw gameplayRng=untouched
+[03:39:34.961] [MONSTERATKVIS] STEP probe=12 sprite=114 shot=1/1 phase=final-idle phaseMs=500 frame=cdaecc99 presented=1 rngExact=yes gameplayMutation=no resolution=pending-after-idle-cadence

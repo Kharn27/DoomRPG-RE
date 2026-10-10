@@ -1,0 +1,99 @@
+# CYD playtest incident 28
+# category=MONSTER_AI_UNOWNED; before=75; after=20
+# NOTE: only selected runtime boundaries are trapped; the CYD is NOT paused.
+# --- preceding lines + trigger ---
+[03:40:42.769] [MONSTERDROP] RESTORE version=11 arena=c3882516 serial=2 next=2 visible=0 stateFNV=05bb0349 rng=untouched materialize=replay-no
+[03:40:42.774] [LEVELPROGRESS] LOAD map=1 history=full-level timer=resume-on-gameplay
+[03:40:42.957] [TRANSITIONLOAD] FRAME n=5 stage=STATE overall=75 background=repainted assetReads=14 source=checkpoint frame=dfb21e03
+[03:40:43.026] [NATIVESAVE] LOAD path=/sd/DoomRPG-ESP32-slot01.sav version=11 bytes=5604 map=1 gameplayLoadMapId=1 pos=224,480 angle=0 playerFNV=9e8324cd runtimeFNV=c3882516 sourceBytes=21823 sourceCrc=623f34e4 backupRecovery=no resources=restored/34/43B script=restored/93/265/81B/2de13d98 lines=restored/480/60B/open9/locked6/tex101/e2397d78/bda09634 actionRemoved=restored/10/43B/4737938b crateTransforms=restored/1/81205bdd automap=restored/223L/163S/219V/b7c8d412 monsters=staged/30/20fbe7bd topology=restored/32b40aca positions=staged/4a215b9d activation=restored/3c71f7fb monsterDrops=restored/0/05bb0349/serial2/next2 world=resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-restored-exact session=reprime-pending
+[03:40:43.209] [TRANSITIONLOAD] FRAME n=6 stage=RESTORE overall=85 background=repainted assetReads=14 source=checkpoint frame=3d00c103
+[03:40:43.222] [NATIVESAVE] LOAD-UI targetMap=1 progress=85 owner=retained-until-session-active gameplayPresents=blocked primeProgress=session-stages
+[03:40:43.231] [RESIDENTGAMEPLAY] HUB-INPUT seq=15 action=SELECT status=OK worldDispatch=blocked turnAdvance=no
+[03:40:43.242] [PLAYERRES] CORPUS map=1 arena=c3882516 pickups=115 type3=85 type4=6 type5=3 type6=17 type16=4 routes=all-generic playerOwner=shared
+[03:40:43.247] [HUBACTIONGATE] RESUME owner=world worldActionFeedback=yes timer=realtime mutation=no
+[03:40:43.261] [MONSTERSTATE] RESTORE arena=c3882516 enemies=30 ownerBytes=480 stateFNV=20fbe7bd rngCalls=0 source=checkpoint-v8 noLegacyEntity=yes
+[03:40:43.272] [MONSTERSTATE] WITNESS sprite=179 defTile=20 subtype=1 mType=1 hp=0/8 armor=0/3 def=15 str=18 agi=16 acc=15 alt=0 alive=0
+[03:40:43.281] [MONSTERCOMBAT] RESUME-DEAD normalized=6 visual=corpse2 linked=masked alive=masked exactGibReplay=deferred
+[03:40:43.309] [MONSTERCOMBAT] READY arena=c3882516 monsters=30 backend=type1-generic subtypes=0..13 trace=shared combatMath=shared playerState=52B playerFNV=9e8324cd directWeaponMask=2f specialDeathMask=3180 deathVisual=4->(corpse2|gibHidden)/250ms gibFX=deferred rollbackOwner=324B/static renderStats=single-frame legacyEntity=no
+[03:40:43.336] [MONSTERTURN] READY arena=c3882516 ownerBytes=68 enemies=30 mode=probe+rollback schedule=MOVE+PLAYER_ATTACK+PASS_TURN rotation=legacy-no-turn attackFamily=stationary-cardinal-generic traceMask=5687 playerDamage=prospective movementPositions=deferred activationOrder=fail-closed subtype10AI=deferred mutation=no
+[03:40:43.361] [MONSTERATKVIS] READY arena=c3882516 ownerBytes=44 source=turn-probe primaryFrame=1 alternateFrame=5 projectileFrameMs=150 sequence=generic-1or3-loop cadence=legacy-monsterWpInfo immutableSprite=yes fixedAnim=overlay gameplayRng=guarded projectile=deferred attackMessage=deferred sound=deferred
+[03:40:43.397] [MONSTERRETAL] READY arena=c3882516 ownerBytes=40 source=hardware-proven-turn-probe commit=playerstate+native-death render=transactional playerPainFeedback=damage-text+red-500ms passMessage=legacy-superseded-on-hit miss=commit-rng lethal=playerdeath-live resolvedProbe=published dogFamiliar=fail-closed movement=ordered-sequencer attackVisual=deferred attackMessage=deferred painFace=deferred shake=deferred sound=deferred
+[03:40:43.409] [MONSTERPOS] RESTORE arena=c3882516 monsters=30 ownerBytes=240 stateFNV=4a215b9d source=checkpoint-v9 topologyExact=yes
+[03:40:43.442] [MONSTERMOVE] READY arena=c3882516 ownerBytes=240 positionRecordBytes=8 mode=planner-probe+position-rollback trigger=no-immediate-attack|ranged-ai>=217 activation=shared-map-session-single-active aiGoal=legacy-cardinal calcPath=2-step+special-plane traceMask=ff87 subtypeMask=legacy rng=local-copy-boundary-fail-closed rendererPublish=deferred topologyRelink=deferred liveMove=no
+[03:40:43.464] [MONSTERACTIVESEQ] READY arena=c3882516 ownerBytes=52 activationOrder=first-render-activation planner=selected-member syntheticCounters=movement-private-only publication=ordinal-pause-resume multiAttack=serialized-one-probe-in-flight allocation=no
+[03:40:43.474] [GIBFX] READY arena=c3882516 ownerBytes=156 maxSprites=1024 mode=present-overlay expiryMs=350 gameplayRng=decoupled
+[03:40:44.915] === Doom RPG ESP32-native generic gameplay session ===
+[03:40:44.940] [ENGINESESSION] CONTRACT current resident runtime + EspPlayerView select map/pose; generic graphics, HUD, small cache cold/warm, shared-payload 2048B learn/warm, then collision/input/gameplay. Historical Junction/Entrance probes are regression witnesses, never runtime prerequisites.
+[03:40:44.948] [ENGINESESSION] CATALOG map=1 textures=33 sprites=45 storage=3120 fnv=29ffc14a
+[03:40:44.959] [MONSTERMOVELIVE] CHECKPOINT-PROJECTION arena=c3882516 monsters=30 projected=5 source=restored-position-v9 inference=raw-bsp-delta firstFrame=exact
+[03:40:44.973] [GIBFX] CHECKPOINT-ADOPT arena=c3882516 monsters=30 deadSeen=6 aliveEligible=24 replay=no mutation=presentation-owner-only rng=untouched
+[03:40:44.987] [ENGINESESSION] RESUME checkpoint=restored monsterState=20fbe7bd/30 monsterPosition=4a215b9d preRender=yes freshFirstFrame=skipped dynamicLines=gameplay-wrapper
+[03:40:45.193] [ENGINESESSION] HUD map=1 hp=22/30 armor=20/20 weapon=0 ammo=19 resources=5 pixels=7495 reads=72 presented=0 loadingSuppressed=1
+[03:40:45.256] [ENGINESESSION] SPRITES dependencyStatus=10 catalogSprites=46
+[03:40:45.266] [RAMBUDGET] CACHE_PRE heap=140056 heap8=140056 largest8=110580 dma=140056 largestDMA=110580
+[03:40:45.629] [MAPFLASH] REUSE HIT requestedMap=1 current=/intro.bsp cachedMap=1 sourceIndexFNV=3a51cc4d payloadFNV=9ec04e22 verifyUs=361632 rebuild=no
+[03:40:45.653] [MAPFLASH] ARM map=1 active=1 verified=1 reused=1 staged=2248743 metadata=12288 prepareUs=362979 buildUs=0 resident=1
+[03:40:45.661] [RAMBUDGET] CACHE_POST heap=116448 heap8=116448 largest8=86004 dma=116448 largestDMA=86004
+[03:40:45.675] [RAMBUDGET] CACHE_DELTA mainOwner=21160 owner=23592 configured=2432 observedHeap=23608 observed8=23608 observedDMA=23608 largest8=110580->86004 largestDMA=110580->86004
+[03:40:45.689] [ENGINECACHE] OWNER bytes=23592 payload=19456 entries=288 heap8=140056->116448 largest8=110580->86004 large=off physicalOpen=1 validate=1
+[03:40:45.697] [NATIVEFRAME] SCRATCH owner=heap-transient bytes=2960 stackRender=732 lifetime=one-render
+[03:40:45.808] [ENGINECACHE] SMALL-COLD physical=319/55905B entry=14H/11M range=154H/222M/222S/21B cache=12543/19456B entries=222/288 large=0 time=48125/39739/13658/24 total=113481 frame=9271b57d
+[03:40:45.857] [TRANSITIONLOAD] FRAME n=7 stage=CACHE-COLD overall=90 background=repainted assetReads=14 source=checkpoint frame=87bc01b3
+[03:40:45.958] [ENGINECACHE] SMALL-WARM physical=227/51128B entry=15H/0M range=118H/206M/206S/21B cache=14086/19456B entries=211/288 large=0 time=41728/38522/5162/17 total=95944 frame=6b122fb7
+[03:40:45.969] [ENGINECACHE] LARGE_READY cache=14086/19456B entries=211/288 largeEntries=0 ownerDelta=0 heap8=116448 largest8=86004
+[03:40:46.042] [ENGINECACHE] LARGE-LEARN physical=21/41842B entry=15H/0M range=324H/19M/2S/19B cache=18182/19456B entries=213/288 large=2 time=28779/27597/1270/4 total=68138 frame=6b122fb7
+[03:40:46.091] [TRANSITIONLOAD] FRAME n=8 stage=CACHE-LEARN overall=96 background=repainted assetReads=14 source=checkpoint frame=72e0c237
+[03:40:46.192] [ENGINECACHE] LARGE-WARM physical=227/51128B entry=15H/0M range=118H/225M/211S/16B cache=18054/19456B entries=214/288 large=1 time=42033/38683/5295/5 total=96544 frame=6b122fb7
+[03:40:46.203] [ENGINECACHE] PRIMED map=1 angle=0 totalUs=96544 largeEntries=1 heap8=116448 largest8=86004 next=collision+input
+[03:40:46.209] [RAMBUDGET] LAZY_PRE heap=116448 heap8=116448 largest8=86004 dma=116448 largestDMA=86004
+[03:40:46.214] [AUTOMAP] UNCOVER reason=SESSION-ARM mutated=0 state=ready
+[03:40:46.220] === Doom RPG ESP32-native resident gameplay service ===
+[03:40:46.267] [RESIDENTGAMEPLAY] READY map=current entry=checkpoint-resume touch=invisible-12-zone+120ms-feedback dispatch=TURN+MOVE+SELECT_DOOR6/15/16/17+SELECT_DIALOG8/26+PASSWORD10+PASS_TURN+MENU_HUB collision=native/entityDefs=115 moveEvents=door15/16+message4+force24+enter-dialog8/26-live-other-deferred doorAnimation=regular4frame-live password=touch-keypad-0-9+DEL+VALID menu=inventory-weapon-select-no-turn SELECT-entity/other=deferred AUTOMAP=move+turn+select-live/other-actions-deferred PASS_TURN-message=topbar-live+type10/11-touch=deferred
+[03:40:46.275] [RAMBUDGET] LAZY_POST heap=116448 heap8=116448 largest8=86004 dma=116448 largestDMA=86004
+[03:40:46.286] [RAMBUDGET] LAZY_DELTA heap=0 heap8=0 dma=0 largest8=86004->86004 largestDMA=86004->86004 cache=18070/19456B entries=215/288
+[03:40:46.302] [RAMBUDGET] RESERVE audioI2SDMA=16384 audioBuffers=8192 general=32768 total8Target=57344 largest8Target=16384 largestDMATarget=8192 margin8=59104 marginDMA=100064 advisory=HEADROOM_OK
+[03:40:46.351] [TRANSITIONLOAD] FRAME n=9 stage=READY overall=100 background=repainted assetReads=14 source=checkpoint frame=0257b833
+[03:40:46.453] [ENGINECACHE] FINAL-READY physical=227/51128B entry=15H/0M range=118H/225M/210S/17B cache=17926/19456B entries=215/288 large=0 time=42243/38896/5329/9 total=96993 frame=6b122fb7
+[03:40:46.467] [TRANSITIONLOAD] RELEASE targetMap=1 frames=9 elapsedMs=4822 progress=100 background=fixed owner=gameplay-next-present reason=checkpoint-session-active
+[03:40:46.478] [GAMEPLAYHUD] REPAINT health=22/30 armor=20/20 weapon=0 ammo=19 angle=0 pixels=7495 reads=72 bytes=8072 ownerMutation=no dirtyConsume=no
+[03:40:46.487] [ENGINESESSION] FINAL-HUD pixels=7495 reads=72 bands=top+bottom owner=retained afterRelease=yes
+[03:40:46.526] [ENGINESESSION] RESUME-VISIBLE map=1 loadingOwner=released finalWorldPresent=yes intermediatePresents=blocked
+[03:40:46.537] [ENGINESESSION] READY map=1 angle=0 residentCache=yes largeCache=yes touch=invisible-120ms TURN+MOVE=armed shapeData=0x0 mediaTexels=0x0
+[03:40:46.554] [ALIVE] uptime=773428 ms heap=182372 heap8=116448 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle
+[03:40:47.306] [RESIDENTGAMEPLAY] QUEUE tap=1 action=TURN_RIGHT zone=6 logical=141,57 context=WORLD
+[03:40:47.311] [TOUCH] raw=2020,3404 pressure=1238 screen=282,114
+[03:40:47.389] [TOUCH] raw=2027,3403 pressure=1233 screen=282,115
+[03:40:47.435] [TURNFRAME] DIAG fail=WORLD_RENDER player=224,480 angle=235
+[03:40:47.445] [VIEWANIM] FALLBACK mode=rotate step=1 angle=235 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:47.454] [VIEWANIM] END mode=rotate from=0 to=192 intermediates=0 previewUs=0 logicalCommit=once monsterTurn=no finalCardinal=next
+[03:40:47.584] [RESIDENTGAMEPLAY] TURN n=1 seq=1 action=TURN_RIGHT angle=0->192 committed=yes
+[03:40:48.058] [RESIDENTGAMEPLAY] QUEUE tap=2 action=FORWARD zone=2 logical=93,32 context=WORLD
+[03:40:48.063] [TOUCH] raw=1258,2291 pressure=1851 screen=180,61
+[03:40:48.190] [TURNFRAME] DIAG fail=WORLD_RENDER player=224,512 angle=192
+[03:40:48.204] [VIEWANIM] FALLBACK mode=move profile=axial-midpoint seq=2 step=1/1 camera=224,512 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:48.219] [VIEWANIM] END mode=move profile=axial-midpoint seq=2 tile=227->259 from=224,480 to=224,544 intermediates=0 previewUs=0 logicalCommit=once turnAdvance=unchanged finalCardinal=next
+[03:40:48.330] [RESIDENTGAMEPLAY] MOVE n=1 seq=2 action=FORWARD tile=227->259 delta=0,64 pos=224,544 moveEvents=door15/16+message4+force24+enter-dialog8/26-live-other-deferred committed=yes
+[03:40:48.338] [PLAYERRES] KEEP tile=259 sprite=43 type=3 subtype=21 parm=4 reason=resource-at-maximum mutation=no
+[03:40:48.352] [MONSTERTURN] ORDERED-DISPATCH reason=MOVE turnToken=1 activeCount=6 producer=active-sequence perMember=immediate-attack-or-move simultaneousProbe=no
+[03:40:48.363] [MONSTERACTIVESEQ] BEGIN turn=1 reason=1 activeCount=6 order=snapshot-prefix perMember=immediate-attack-then-move sameMonsterTurn=yes
+[03:40:48.374] [MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK n=1 candidates=0 activeCount=6 cause=active-order-not-owned mutation=no rngConsumed=0
+[03:40:48.390] [MONSTERACTIVESEQ] COMPLETE turn=1 reason=1 activeCount=6 delivered=0 sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time
+[03:40:48.736] [RESIDENTGAMEPLAY] QUEUE tap=3 action=TURN_LEFT zone=4 logical=20,59 context=WORLD
+[03:40:48.741] [TOUCH] raw=2083,835 pressure=2342 screen=46,119
+[03:40:48.862] [TURNFRAME] DIAG fail=WORLD_RENDER player=224,544 angle=213
+[03:40:48.873] [VIEWANIM] FALLBACK mode=rotate step=1 angle=213 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:48.882] [VIEWANIM] END mode=rotate from=192 to=0 intermediates=0 previewUs=0 logicalCommit=once monsterTurn=no finalCardinal=next
+[03:40:48.948] [AUTOMAPVIS] PUBLISH source=world-render lines+=1 sprites+=0 mutation=render-derived
+[03:40:49.003] [RESIDENTGAMEPLAY] TURN n=2 seq=3 action=TURN_LEFT angle=192->0 committed=yes
+[03:40:49.339] [RESIDENTGAMEPLAY] QUEUE tap=4 action=FORWARD zone=2 logical=97,35 context=WORLD
+[03:40:49.344] [TOUCH] raw=1341,2369 pressure=1890 screen=187,67
+[03:40:49.471] [TURNFRAME] DIAG fail=WORLD_RENDER player=256,544 angle=0
+[03:40:49.484] [VIEWANIM] FALLBACK mode=move profile=axial-midpoint seq=4 step=1/1 camera=256,544 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:49.500] [VIEWANIM] END mode=move profile=axial-midpoint seq=4 tile=259->260 from=224,544 to=288,544 intermediates=0 previewUs=0 logicalCommit=once turnAdvance=unchanged finalCardinal=next
+[03:40:49.621] [RESIDENTGAMEPLAY] MOVE n=2 seq=4 action=FORWARD tile=259->260 delta=64,0 pos=288,544 moveEvents=door15/16+message4+force24+enter-dialog8/26-live-other-deferred committed=yes
+[03:40:49.635] [MONSTERTURN] ORDERED-DISPATCH reason=MOVE turnToken=2 activeCount=6 producer=active-sequence perMember=immediate-attack-or-move simultaneousProbe=no
+[03:40:49.646] [MONSTERACTIVESEQ] BEGIN turn=2 reason=1 activeCount=6 order=snapshot-prefix perMember=immediate-attack-then-move sameMonsterTurn=yes
+[03:40:49.658] [MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK n=2 candidates=0 activeCount=6 cause=active-order-not-owned mutation=no rngConsumed=0
+[03:40:49.673] [MONSTERACTIVESEQ] COMPLETE turn=2 reason=1 activeCount=6 delivered=0 sameMonsterTurn=yes ordered=yes publication=serialized-per-member multiAttack=one-probe-at-a-time
+[03:40:49.854] [RESIDENTGAMEPLAY] QUEUE tap=5 action=FORWARD zone=2 logical=94,33 context=WORLD
+[03:40:49.859] [TOUCH] raw=1309,2366 pressure=1807 screen=187,65

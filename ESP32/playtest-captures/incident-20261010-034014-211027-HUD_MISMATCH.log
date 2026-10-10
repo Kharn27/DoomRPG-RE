@@ -1,0 +1,99 @@
+# CYD playtest incident 26
+# category=HUD_MISMATCH; before=75; after=20
+# NOTE: only selected runtime boundaries are trapped; the CYD is NOT paused.
+# --- preceding lines + trigger ---
+[03:40:04.026] [TURNFRAME] DIAG fail=WORLD_RENDER player=224,480 angle=235
+[03:40:04.037] [VIEWANIM] FALLBACK mode=rotate step=1 angle=235 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:04.046] [VIEWANIM] END mode=rotate from=0 to=192 intermediates=0 previewUs=0 logicalCommit=once monsterTurn=no finalCardinal=next
+[03:40:04.154] [RESIDENTGAMEPLAY] TURN n=50 seq=331 action=TURN_RIGHT angle=0->192 committed=yes
+[03:40:04.599] [RESIDENTGAMEPLAY] QUEUE tap=333 action=TURN_RIGHT zone=6 logical=136,57 context=WORLD
+[03:40:04.604] [TOUCH] raw=2033,3297 pressure=1142 screen=272,115
+[03:40:04.621] [ALIVE] uptime=731495 ms heap=178912 heap8=112988 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=active
+[03:40:04.721] [TURNFRAME] DIAG fail=WORLD_RENDER player=224,480 angle=171
+[03:40:04.732] [VIEWANIM] FALLBACK mode=rotate step=1 angle=171 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:04.743] [VIEWANIM] END mode=rotate from=192 to=128 intermediates=0 previewUs=0 logicalCommit=once monsterTurn=no finalCardinal=next
+[03:40:04.849] [RESIDENTGAMEPLAY] TURN n=51 seq=332 action=TURN_RIGHT angle=192->128 committed=yes
+[03:40:05.894] [RESIDENTGAMEPLAY] QUEUE tap=334 action=TURN_LEFT zone=4 logical=13,63 context=WORLD
+[03:40:05.899] [TOUCH] raw=2217,762 pressure=2432 screen=39,128
+[03:40:05.977] [TOUCH] raw=2225,825 pressure=2452 screen=45,129
+[03:40:06.022] [TURNFRAME] DIAG fail=WORLD_RENDER player=224,480 angle=149
+[03:40:06.034] [VIEWANIM] FALLBACK mode=rotate step=1 angle=149 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:06.044] [VIEWANIM] END mode=rotate from=128 to=192 intermediates=0 previewUs=0 logicalCommit=once monsterTurn=no finalCardinal=next
+[03:40:06.150] [RESIDENTGAMEPLAY] TURN n=52 seq=333 action=TURN_LEFT angle=128->192 committed=yes
+[03:40:06.705] [RESIDENTGAMEPLAY] QUEUE tap=335 action=TURN_RIGHT zone=6 logical=136,58 context=WORLD
+[03:40:06.711] [TOUCH] raw=2059,3307 pressure=1204 screen=273,117
+[03:40:06.833] [TURNFRAME] DIAG fail=WORLD_RENDER player=224,480 angle=171
+[03:40:06.843] [VIEWANIM] FALLBACK mode=rotate step=1 angle=171 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:06.853] [VIEWANIM] END mode=rotate from=192 to=128 intermediates=0 previewUs=0 logicalCommit=once monsterTurn=no finalCardinal=next
+[03:40:06.960] [RESIDENTGAMEPLAY] TURN n=53 seq=334 action=TURN_RIGHT angle=192->128 committed=yes
+[03:40:07.425] [RESIDENTGAMEPLAY] QUEUE tap=336 action=TURN_LEFT zone=4 logical=12,64 context=WORLD
+[03:40:07.429] [TOUCH] raw=2216,633 pressure=2270 screen=27,128
+[03:40:07.551] [TURNFRAME] DIAG fail=WORLD_RENDER player=224,480 angle=149
+[03:40:07.562] [VIEWANIM] FALLBACK mode=rotate step=1 angle=149 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:07.572] [VIEWANIM] END mode=rotate from=128 to=192 intermediates=0 previewUs=0 logicalCommit=once monsterTurn=no finalCardinal=next
+[03:40:07.678] [RESIDENTGAMEPLAY] TURN n=54 seq=335 action=TURN_LEFT angle=128->192 committed=yes
+[03:40:07.983] [RESIDENTGAMEPLAY] QUEUE tap=337 action=TURN_LEFT zone=4 logical=13,67 context=WORLD
+[03:40:07.988] [TOUCH] raw=2396,692 pressure=2341 screen=33,141
+[03:40:08.066] [TOUCH] raw=2440,717 pressure=2304 screen=35,144
+[03:40:08.112] [TURNFRAME] DIAG fail=WORLD_RENDER player=224,480 angle=213
+[03:40:08.122] [VIEWANIM] FALLBACK mode=rotate step=1 angle=213 completed=0 finalCardinal=required gameplayStable=yes
+[03:40:08.131] [VIEWANIM] END mode=rotate from=192 to=0 intermediates=0 previewUs=0 logicalCommit=once monsterTurn=no finalCardinal=next
+[03:40:08.240] [RESIDENTGAMEPLAY] TURN n=55 seq=336 action=TURN_LEFT angle=192->0 committed=yes
+[03:40:09.612] [ALIVE] uptime=736495 ms heap=178912 heap8=112988 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle
+[03:40:11.220] [RESIDENTGAMEPLAY] QUEUE tap=338 action=MENU zone=10 logical=15,6 context=WORLD
+[03:40:11.223] [TOUCH] raw=557,733 pressure=2107 screen=36,12
+[03:40:11.302] [TOUCH] raw=628,771 pressure=2094 screen=40,17
+[03:40:11.371] [HUBINV] FRAME entries=2 selected=0 window=0..1 rows=2 content=notebook+carried-items+owned-keys credits=stat keyMirror=stat weapons=dedicated-grid persistentListBytes=0 visibleEntryBytes=62 fontReads=18 fontBytes=13890 packOwnership=preserved-open mutation=no turn=no
+[03:40:11.421] [HUB] FRAME paint=3 page=inventory row=0 frame=0a2693bc viewport=160x100/y20..119 lowerHud=f254ac49 owned=yes menuButton=hand asset=p.bmp frame=0 menuZone=23adb433 underlayBytes=1280 reads=14 bytes=7996 playerFNV=9e8324cd exact=yes packClosed=yes presented=1 mutation=no turn=no
+[03:40:11.457] [HUB] OPEN n=2 mode=inventory+weapons-grid+status-readonly+system-checkpoint page=inventory pages=4 viewport=160x100/y20..119 header=industrial menuButton=hand asset=p.bmp frame=0 menuUnderlayBytes=1280 lowerHud=hidden-until-close ownerBytes=28 playerStateBytes=52 playerFNV=9e8324cd weapon=0 weapons=00f ammo=19/28/21/00/00/00 items=03/00/00/00/00 keys=00000000 credits=12 mutation=no turn=no packClosed=yes
+[03:40:11.468] [RESIDENTGAMEPLAY] HUB-OPEN seq=337 page=inventory-weapon-select openMutation=no turnAdvance=no worldDispatch=blocked packClosed=yes
+[03:40:11.476] [HUBACTIONGATE] PAUSE owner=hub worldActionFeedback=yes timer=realtime mutation=no
+[03:40:11.992] [RESIDENTGAMEPLAY] QUEUE tap=339 action=TURN_LEFT zone=4 logical=141,22 context=HUB
+[03:40:11.997] [TOUCH] raw=1032,3369 pressure=1050 screen=279,46
+[03:40:12.075] [TOUCH] raw=1045,3376 pressure=1055 screen=279,46
+[03:40:12.175] [HUB] FRAME paint=4 page=system row=0 frame=00e6712c viewport=160x100/y20..119 lowerHud=8328bd0d owned=yes menuButton=hand asset=p.bmp frame=0 menuZone=23adb433 underlayBytes=1280 reads=11 bytes=5404 playerFNV=9e8324cd exact=yes packClosed=yes presented=1 mutation=no turn=no
+[03:40:12.186] [HUB] PAGE page=inventory->system direction=touch-direct row=0 playerMutation=no turn=no worldDispatch=blocked
+[03:40:12.212] [NATIVESAVE] UI page=system rows=SAVE/LOAD/EXIT path=/sd/DoomRPG-ESP32-slot01.sav confirmation=double-select saveVersion=11 worldScope=resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-v11 legacyV1..V10=read-compatible exitSave=no
+[03:40:12.255] [NATIVESAVE] READABLE-SPATIAL path=/DoomRPG-ESP32-slot01.sav bytes=5604 tailWorkspace=3508 monsterState=1612 monsterTopology=816 monsterPosition=812 monsterActivation=268 result=valid
+[03:40:12.289] [RESIDENTGAMEPLAY] HUB-INPUT seq=338 action=TURN_LEFT status=REDRAWN worldDispatch=blocked turnAdvance=no
+[03:40:12.590] [NATIVESAVE] TOUCH-HIT row=SAVE logical=110,43 action=SELECT direct=yes
+[03:40:12.627] [RESIDENTGAMEPLAY] QUEUE tap=340 action=SELECT zone=5 logical=110,43 context=HUB
+[03:40:12.632] [TOUCH] raw=1585,2689 pressure=1727 screen=216,84
+[03:40:12.710] [TOUCH] raw=1585,2709 pressure=1465 screen=218,84
+[03:40:12.753] [NATIVESAVE] TOUCH-DISPATCH row=SAVE logical=110,43 action=SELECT direct=yes
+[03:40:12.760] [SAVESLOTS] OPEN mode=SAVE slots=10 page=1 legacy=slot1-read-only
+[03:40:12.849] [RESIDENTGAMEPLAY] HUB-INPUT seq=339 action=SELECT status=REDRAWN worldDispatch=blocked turnAdvance=no
+[03:40:13.010] [TOUCH] raw=1648,2784 pressure=1458 screen=225,88
+[03:40:13.091] [TOUCH] raw=1635,2762 pressure=1674 screen=223,88
+[03:40:13.515] [TOUCHFEEDBACK] SKIP tap=341 action=SELECT zone=5 logical=103,47 reason=overlay-unavailable inputQueued=yes fatal=no
+[03:40:13.519] [SAVESLOTS] ARM mode=SAVE slot=1
+[03:40:13.613] [RESIDENTGAMEPLAY] HUB-INPUT seq=340 action=SELECT status=REDRAWN worldDispatch=blocked turnAdvance=no
+[03:40:13.618] [TOUCH] raw=1690,2476 pressure=1716 screen=197,91
+[03:40:13.906] [TOUCHFEEDBACK] SKIP tap=342 action=SELECT zone=5 logical=99,48 reason=overlay-unavailable inputQueued=yes fatal=no
+[03:40:13.911] [TOUCH] raw=1741,2485 pressure=1720 screen=197,95
+[03:40:13.917] [SAVESLOTS] CONFIRM mode=SAVE slot=1
+[03:40:14.105] [MONSTERDROP] SAVE version=11 arena=c3882516 serial=2 next=2 visible=0 stateFNV=05bb0349 snapshotBytes=144 rng=untouched
+[03:40:14.114] [LEVELPROGRESS] SAVE map=1 elapsedMs=344367 moves=182 xpBaseline=0 complete=1 suffixBytes=16
+[03:40:14.169] [NATIVESAVE] SAVE path=/sd/DoomRPG-ESP32-slot01.sav version=11 bytes=5604 map=1 gameplayLoadMapId=1 pos=224,480 angle=0 returnRoute=-/0,0/0 playerFNV=9e8324cd runtimeFNV=c3882516 sourceBytes=21823 sourceCrc=623f34e4 recordCrc=ebca2b62 resources=34/43B sprites=344 script=93/265/81B scriptFNV=2de13d98 lines=480/60B open=9 locked=6 texture10=1 lineFNV=e2397d78 textureFNV=bda09634 actionRemoved=10/43B/4737938b crateTransforms=1/43B/1B/81205bdd automap=223L/163S/219V/b7c8d412 monsters=30/20fbe7bd topology=43/32b40aca positions=30/4a215b9d activation=6/3c71f7fb atomic=temp+backup+rename world=monster-spatial-exact-v9
+[03:40:14.180] [GAMEPLAYHUD] REPAINT health=22/30 armor=20/20 weapon=0 ammo=19 angle=64 pixels=7505 reads=72 bytes=8072 ownerMutation=no dirtyConsume=no
+[03:40:14.210] [HUB] CLOSE n=2 page=system playerFNV=9e8324cd->9e8324cd expected=9e8324cd exact=yes weapon=0->0 sessionMutation=no turn=no worldRedraw=pending fullScreenHub=yes menuUnderlayRestore=exact hudRepaint=yes hudBands=e4a145db expectedHud=e67d0d2e exactHud=NO hudBottom=9f1277cb expectedBottom=9f1277cb exactBottom=yes topBar=recompose-on-world-redraw packClosed=yes
+[03:40:14.223] [NATIVESAVE] SAVE-CLOSE result=success hub=closed feedback="Game saved" duration=action-default fallback=status-then-facing turn=no
+[03:40:14.337] [RESIDENTGAMEPLAY] HUB-CLOSE seq=341 action=SELECT worldRedraw=yes closeMutation=no retainedPlayerMutation=weapon-only-possible turnAdvance=no packClosed=yes
+[03:40:14.347] [HUBACTIONGATE] RESUME owner=world worldActionFeedback=yes timer=realtime mutation=no
+[03:40:14.614] [ALIVE] uptime=741498 ms heap=178912 heap8=112988 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle
+[03:40:15.253] [RESIDENTGAMEPLAY] QUEUE tap=343 action=MENU zone=10 logical=15,11 context=WORLD
+[03:40:15.258] [TOUCH] raw=616,753 pressure=2262 screen=38,17
+[03:40:15.401] [HUBINV] FRAME entries=2 selected=0 window=0..1 rows=2 content=notebook+carried-items+owned-keys credits=stat keyMirror=stat weapons=dedicated-grid persistentListBytes=0 visibleEntryBytes=62 fontReads=18 fontBytes=13890 packOwnership=preserved-open mutation=no turn=no
+[03:40:15.451] [HUB] FRAME paint=5 page=inventory row=0 frame=0a2693bc viewport=160x100/y20..119 lowerHud=f254ac49 owned=yes menuButton=hand asset=p.bmp frame=0 menuZone=23adb433 underlayBytes=1280 reads=14 bytes=7996 playerFNV=9e8324cd exact=yes packClosed=yes presented=1 mutation=no turn=no
+[03:40:15.487] [HUB] OPEN n=3 mode=inventory+weapons-grid+status-readonly+system-checkpoint page=inventory pages=4 viewport=160x100/y20..119 header=industrial menuButton=hand asset=p.bmp frame=0 menuUnderlayBytes=1280 lowerHud=hidden-until-close ownerBytes=28 playerStateBytes=52 playerFNV=9e8324cd weapon=0 weapons=00f ammo=19/28/21/00/00/00 items=03/00/00/00/00 keys=00000000 credits=12 mutation=no turn=no packClosed=yes
+[03:40:15.498] [RESIDENTGAMEPLAY] HUB-OPEN seq=342 page=inventory-weapon-select openMutation=no turnAdvance=no worldDispatch=blocked packClosed=yes
+[03:40:15.506] [HUBACTIONGATE] PAUSE owner=hub worldActionFeedback=yes timer=realtime mutation=no
+[03:40:15.907] [RESIDENTGAMEPLAY] QUEUE tap=344 action=TURN_LEFT zone=4 logical=141,23 context=HUB
+[03:40:15.912] [TOUCH] raw=1004,3356 pressure=1146 screen=278,44
+[03:40:16.088] [HUB] FRAME paint=6 page=system row=0 frame=00e6712c viewport=160x100/y20..119 lowerHud=8328bd0d owned=yes menuButton=hand asset=p.bmp frame=0 menuZone=23adb433 underlayBytes=1280 reads=11 bytes=5404 playerFNV=9e8324cd exact=yes packClosed=yes presented=1 mutation=no turn=no
+[03:40:16.099] [HUB] PAGE page=inventory->system direction=touch-direct row=0 playerMutation=no turn=no worldDispatch=blocked
+[03:40:16.125] [NATIVESAVE] UI page=system rows=SAVE/LOAD/EXIT path=/sd/DoomRPG-ESP32-slot01.sav confirmation=double-select saveVersion=11 worldScope=resources+script+lines+action-removals+crate-transforms+automap+monster-state+topology+position+activation+monster-drops-v11 legacyV1..V10=read-compatible exitSave=no
+[03:40:16.168] [NATIVESAVE] READABLE-SPATIAL path=/DoomRPG-ESP32-slot01.sav bytes=5604 tailWorkspace=3508 monsterState=1612 monsterTopology=816 monsterPosition=812 monsterActivation=268 result=valid
+[03:40:16.202] [RESIDENTGAMEPLAY] HUB-INPUT seq=343 action=TURN_LEFT status=REDRAWN worldDispatch=blocked turnAdvance=no
+[03:40:16.638] [NATIVESAVE] TOUCH-HIT row=EXIT logical=112,102 action=SELECT direct=yes
+[03:40:16.675] [RESIDENTGAMEPLAY] QUEUE tap=345 action=SELECT zone=5 logical=112,102 context=HUB
