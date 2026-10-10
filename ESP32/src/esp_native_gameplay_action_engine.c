@@ -996,8 +996,8 @@ static int barrelRadiusCellSupported(uint16_t tile,
 }
 
 /* Dry-run the whole barrel-connected component before consuming explosion RNG
- * or mutating world state. This milestone owns barrel->barrel propagation only.
- * Any player/monster/human/crate/other radius consequence stays fail-closed. */
+ * or mutating world state. Barrel chains, player damage and bounded ordinary
+ * monster damage are owned; other radius consequences remain fail-closed. */
 static int barrelChainPreflight(uint16_t primarySprite,
                                 const EspPlayerViewState* view,
                                 uint16_t* chain,
@@ -1007,9 +1007,7 @@ static int barrelChainPreflight(uint16_t primarySprite,
     uint8_t count = 1U;
     uint8_t cursor;
     uint8_t monsterCount = 0U;
-    ActionTarget monsterWitness;
-    memset(&monsterWitness, 0, sizeof(monsterWitness));
-
+ 
     if (view == NULL || chain == NULL || outCount == NULL ||
         outMonsterCount == NULL ||
         outUnsupported == NULL ||
@@ -1057,8 +1055,7 @@ static int barrelChainPreflight(uint16_t primarySprite,
             }
             (void)isPlayer;
             if (target.type == ACTION_ENTITY_ENEMY) {
-                if (monsterCount == 0U) monsterWitness = target;
-                if (monsterCount == UINT8_MAX) return 0;
+                 if (monsterCount == UINT8_MAX) return 0;
                 ++monsterCount;
                 continue;
             }
@@ -1079,8 +1076,7 @@ static int barrelChainPreflight(uint16_t primarySprite,
     /* Multi-barrel/monster paths apply each blast and its consequence RNG
      * before drawing the next blast word. The full consecutive-word preview
      * remains valid only when no monster consequences can interleave. */
-    (void)monsterWitness;
-    *outCount = count;
+     *outCount = count;
     *outMonsterCount = monsterCount;
     return 1;
 }
@@ -2678,11 +2674,12 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 }
 
                 /*
-                 * Dry-run the bounded chain's exact RNG words on the live
-                 * Random_t pointer: only that pointer can own the persistent
-                 * hidden-generator refill reservation. Save the state after
-                 * combat, sample every word, then restore it byte-for-byte.
-                 * Up to 16 words / 64 bytes cross at most one 128B boundary.
+                 * Preview all consecutive explosion words only when no
+                 * monster consequence can draw RNG between them. Otherwise
+                 * preview JUST the first word, then apply each monster hit
+                 * before drawing subsequent live explosion words. Use the
+                 * actual RNG pointer for exact hidden-refill reservations,
+                 * and restore its Random_t bytes after this probe.
                  */
                 barrelRandomAfterCombat = doomRpg->random;
                 if (!EspNativeRngReplayGuard_beginAttackProbe(
