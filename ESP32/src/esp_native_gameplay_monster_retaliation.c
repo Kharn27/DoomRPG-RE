@@ -521,7 +521,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         retaliationView.lastResolvedProbe = turn->attackProbes;
         playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
         randomFNVAfter = randomFNV(&doomRpg->random);
-        printf("[MONSTERRETAL] LETHAL-COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->0 armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x attackRngCommitted=yes deathRngCommitted=yes deathTile=%u deathOwner=armed damageFeedback=%s presented=%s turn=terminal\n",
+        printf("[MONSTERRETAL] LETHAL-COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->0 armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x attackRngCommitted=yes deathRngCommitted=yes deathTile=%u deathOwner=armed damageFeedback=%s presented=%s turn=terminal\n",
                (unsigned int)turn->attackProbes,
                reasonName(turn->lastReason),
                (unsigned int)monster->spriteIndex,
@@ -531,6 +531,10 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
                (unsigned int)monster->alternateAttack,
                (unsigned int)roll.loops,
                (unsigned int)roll.hitLoops,
+               (unsigned int)roll.firstRandHit,
+               (int)roll.firstCalcHit,
+               (int)roll.firstCritLimit,
+               (unsigned int)roll.firstRandDamage,
                (int)roll.totalDamage,
                (int)roll.totalArmorDamage,
                (unsigned int)roll.gotCrit,
