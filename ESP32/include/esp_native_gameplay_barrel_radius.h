@@ -19,4 +19,14 @@ static inline int EspNativeGameplayBarrelRadius_lineNoop(
            (type == 12U && (subtype == 3U || subtype == 4U));
 }
 
+/* Consequence RNG draws are interleaved between barrel blast words as soon
+ * as a chain has multiple barrels and any monster in a radius cell.
+ * Preview exactly the first explosion word, then consume each later word
+ * LIVE after the preceding monster's pain/death/drop RNG side effects. */
+static inline uint8_t EspNativeGameplayBarrelRadius_previewWords(
+    uint8_t barrelCount, uint8_t monsterPreflightCount) {
+    return barrelCount > 1U && monsterPreflightCount != 0U
+               ? 1U : barrelCount;
+}
+
 #endif
