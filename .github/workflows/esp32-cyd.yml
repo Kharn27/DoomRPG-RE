@@ -37,6 +37,15 @@ jobs:
           python -m py_compile ESP32/tools/playtest_watch.py
           python ESP32/tools/playtest_watch.py --self-test
 
+      - name: Test native store catalog and purchase semantics (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \\
+            -IESP32/include \\
+            ESP32/src/esp_native_gameplay_store.c \\
+            ESP32/test/store_native_host.c \\
+            -o /tmp/doomrpg-native-store-test
+          /tmp/doomrpg-native-store-test
+
       - name: Cache PlatformIO packages
         uses: actions/cache@v4
         with:
