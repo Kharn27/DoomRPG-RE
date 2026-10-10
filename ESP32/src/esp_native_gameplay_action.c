@@ -275,17 +275,23 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
                 continue;
             }
             else if (filtered.codeId == 33U) { /* EV_OPENSTORE */
-                /* Smallest recovered shop boundary: one SELECT-only event
-                 * opening one of the four fixed original vendor catalogs. */
+                EspMapByteCode storeCommand;
+                /* The filtered result intentionally does not mirror arg1:
+                 * read the immutable command through the bounded map API. */
+                memset(&storeCommand, 0, sizeof(storeCommand));
                 if (descriptor.commandCount != 1U ||
                     notePrefixEligible != 0U ||
-                    filtered.arg1 >= 4U ||
-                    filtered.arg2 != 0x00000100UL ||
-                    selectedOffset != 0U) {
+                    selectedOffset != 0U ||
+                    !EspMapEvents_getCommand(&descriptor, offset,
+                                             &storeCommand) ||
+                    storeCommand.id != 33U ||
+                    storeCommand.arg1 >= 4U ||
+                    storeCommand.arg2 != 0x00000100UL ||
+                    filtered.arg2 != storeCommand.arg2) {
                     outResult->unsupportedCodeId = filtered.codeId;
                     return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
                 }
-                outResult->storeId = (uint8_t)filtered.arg1;
+                outResult->storeId = (uint8_t)storeCommand.arg1;
                 family = SELECT_FAMILY_STORE;
                 break;
             }
