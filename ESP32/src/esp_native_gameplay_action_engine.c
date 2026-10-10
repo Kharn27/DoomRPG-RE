@@ -2638,8 +2638,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 barrelInterleaved = (uint8_t)(
                     barrelExpectedChainCount > 1U &&
                     barrelPreflightMonsters != 0U);
-                barrelPreviewWords = barrelInterleaved != 0U
-                                         ? 1U : barrelExpectedChainCount;
+                barrelPreviewWords =
+                    EspNativeGameplayBarrelRadius_previewWords(
+                        barrelExpectedChainCount, barrelPreflightMonsters);
                 if (barrelExpectedChainCount == 0U ||
                     barrelExpectedChainCount > ACTION_BARREL_CHAIN_MAX ||
                     doomRpg->random.nextRand < 0 ||
