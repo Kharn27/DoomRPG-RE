@@ -20,6 +20,7 @@ typedef struct EspNativeRngReplayGuard_s {
     uint8_t probeReserved;
     uint8_t attackProbeActive;
     uint8_t attackProbeRefilled;
+    uint8_t attackProbeFailed;
     Random_t* attackProbeRandom;
 } EspNativeRngReplayGuard;
 
@@ -67,6 +68,7 @@ int EspNativeRngReplayGuard_beginAttackProbe(Random_t* liveRandom) {
     }
     rngReplayGuard.attackProbeRandom = liveRandom;
     rngReplayGuard.attackProbeRefilled = 0U;
+    rngReplayGuard.attackProbeFailed = 0U;
     rngReplayGuard.attackProbeActive = 1U;
     return 1;
 }
@@ -78,6 +80,10 @@ int EspNativeRngReplayGuard_endAttackProbe(
                 rngReplayGuard.attackProbeRandom == liveRandom &&
                 memcmp(liveRandom, restoredBefore,
                        sizeof(*restoredBefore)) == 0;
+    if (rngReplayGuard.attackProbeFailed != 0U) {
+        DRPG_LOGE("[RNGGUARD] ATTACK-PROBE-DEFER reason=refill-conflict sequenceExact=NO action=fail-closed\n");
+        valid = 0;
+    }
     if (rngReplayGuard.attackProbeRefilled != 0U) {
         const int reservedExact =
             rngReplayGuard.probeReserved != 0U &&
@@ -89,6 +95,7 @@ int EspNativeRngReplayGuard_endAttackProbe(
     rngReplayGuard.attackProbeActive = 0U;
     rngReplayGuard.attackProbeRandom = NULL;
     rngReplayGuard.attackProbeRefilled = 0U;
+    rngReplayGuard.attackProbeFailed = 0U;
     return valid;
 }
 
@@ -272,6 +279,10 @@ byte __wrap_DoomRPG_randNextByte(Random_t* rand) {
                 rngReplayGuard.probeReserved = 0U;
                 rngReplayGuard.probeReservedRand = NULL;
                 rngReplayGuard.valid = 0U;
+                if (rngReplayGuard.attackProbeActive != 0U &&
+                    rngReplayGuard.attackProbeRandom == rand) {
+                    rngReplayGuard.attackProbeFailed = 1U;
+                }
                 DoomRPG_setRand(rand);
                 ++rngReplayGuard.realRefills;
             }
@@ -373,6 +384,10 @@ int __wrap_DoomRPG_randNextInt(Random_t* rand) {
                 rngReplayGuard.probeReserved = 0U;
                 rngReplayGuard.probeReservedRand = NULL;
                 rngReplayGuard.valid = 0U;
+                if (rngReplayGuard.attackProbeActive != 0U &&
+                    rngReplayGuard.attackProbeRandom == rand) {
+                    rngReplayGuard.attackProbeFailed = 1U;
+                }
                 DoomRPG_setRand(rand);
                 ++rngReplayGuard.realRefills;
             }
