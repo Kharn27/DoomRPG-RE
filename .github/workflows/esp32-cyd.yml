@@ -42,6 +42,11 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/level_gate_native_host.c -o /tmp/doomrpg-native-level-gate-test
           /tmp/doomrpg-native-level-gate-test
 
+      - name: Test inert legacy line barrier during barrel radius preflight (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/barrel_radius_inert_line_host.c -o /tmp/doomrpg-barrel-radius-inert-line-test
+          /tmp/doomrpg-barrel-radius-inert-line-test
+
       - name: Test Sector 2 BSP visibility capacity and bounded scratch (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/native_bsp_visibility_capacity_host.c -o /tmp/doomrpg-native-bsp-visibility-test
