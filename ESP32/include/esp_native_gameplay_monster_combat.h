@@ -34,10 +34,17 @@ typedef struct EspNativeGameplaySplashHit_s {
     uint8_t armorComponent;
 } EspNativeGameplaySplashHit;
 
-/* One-barrel blast family: stage every monster hit until after exact explosion
- * RNG preview and all wave frames. Apply damage/deaths/drops as one atomic
- * native transaction, with snapshots and rollback on failure. No world-wide
- * collision bypass and no legacy CombatEntity/Entity heap graph. */
+/* Each splash batch applies the legacy cardinal/diagonal hit ordering.
+ * Multi-barrel chains with monster victims wrap consecutive batches in ONE
+ * bounded snapshot transaction, so wave N can roll back wave 1 on failure.
+ * Blast RNG must be interleaved with each batch's monster consequence RNG.
+ * No legacy CombatEntity/Entity heap graph or map-wide buffers. */
+int EspNativeGameplayMonsterCombat_beginSplashSequence(
+    struct DoomRPG_s* runtime, uint32_t sequence);
+int EspNativeGameplayMonsterCombat_cancelSplashSequence(
+    struct DoomRPG_s* runtime);
+int EspNativeGameplayMonsterCombat_commitSplashSequence(
+    uint32_t sequence);
 int EspNativeGameplayMonsterCombat_applySplash(
     struct DoomRPG_s* runtime,
     const EspNativeGameplaySplashHit* hits,
