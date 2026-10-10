@@ -5,7 +5,7 @@
 #include "esp_native_gameplay_barrel_radius.h"
 
 /*
- * Regression for CYD Sector-1(?) barrel at sprite 186 / tile 241:
+ * Regression for CYD barrel at sprite 186 / tile 241:
  * radius neighbor tile 177 contains linked line 288, type=0/subtype=1.
  * The legacy leaves that line non-hurtable. The previous native preflight
  * handled only type=0/subtype=255 and rejected the entire explosion.
