@@ -1085,14 +1085,18 @@ static int barrelChainPreflight(uint16_t primarySprite,
     return 1;
 }
 
-static void barrelRollbackRemoved(DoomRPG_t* runtime,
-                                  const uint16_t* chain, uint8_t count) {
+static int barrelRollbackRemoved(DoomRPG_t* runtime,
+                                 const uint16_t* chain, uint8_t count) {
     uint8_t i;
-    if (!EspNativeGameplayMonsterCombat_cancelSplashSequence(runtime)) {
+    const int exact =
+        EspNativeGameplayMonsterCombat_cancelSplashSequence(runtime);
+    if (!exact) {
         DRPG_LOGE("[BARRELRADIUS] ROLLBACK-FAILED owner=monster-splash stateExact=NO\n");
     }
-    if (chain == NULL) return;
-    for (i = 0U; i < count; ++i) setRemoved(chain[i], 0);
+    if (chain != NULL) {
+        for (i = 0U; i < count; ++i) setRemoved(chain[i], 0);
+    }
+    return exact;
 }
 
 static int barrelTriggerNeighbors(uint16_t sourceSprite,
@@ -2780,17 +2784,20 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
 
             if (!EspNativeGameplayMonsterTurn_requestPlayerAttack(
                     pending.sequence)) {
-                if (barrelRemoved != 0U) {
-                    barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
-                }
-                (void)EspNativeGameplayPlayerState_restore(&playerBefore);
+                int rollbackOk = 1;
+                if (barrelRemoved != 0U &&
+                    !barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
+                if (!EspNativeGameplayPlayerState_restore(&playerBefore))
+                    rollbackOk = 0;
                 doomRpg->random = randomBefore;
                 EspNativeGameplayWeapon_cancelAttack();
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
-                printf("[BARREL] FAILED seq=%u sprite=%u reason=monster-turn-request-busy rollback=yes player=yes rng=yes world=yes\n",
+                printf("[BARREL] FAILED seq=%u sprite=%u reason=monster-turn-request-busy rollback=%s player=yes rng=yes world=yes\n",
                        (unsigned int)pending.sequence,
-                       (unsigned int)pending.spriteIndex);
-                return 1;
+                       (unsigned int)pending.spriteIndex,
+                       rollbackOk ? "yes" : "NO");
+                return rollbackOk ? 1 : 0;
             }
             barrelTurnRequested = 1U;
         }
@@ -3156,9 +3163,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         pending.sequence)) {
                     rollbackOk = 0;
                 }
-                if (barrelRemoved != 0U) {
-                    barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
-                }
+                if (barrelRemoved != 0U &&
+                    !barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
                 if (playerCaptured != 0U &&
                     !EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
@@ -3242,7 +3249,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 pending.sequence)) {
                             rollbackOk = 0;
                         }
-                        barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
+                        if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
                         if (!EspNativeGameplayPlayerState_restore(
                                 &playerBefore)) {
                             rollbackOk = 0;
@@ -3286,7 +3294,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 pending.sequence)) {
                             rollbackOk = 0;
                         }
-                        barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
+                        if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
                         if (!EspNativeGameplayPlayerState_restore(
                                 &playerBefore)) {
                             rollbackOk = 0;
@@ -3363,7 +3372,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 pending.sequence)) {
                             rollbackOk = 0;
                         }
-                        barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
+                        if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
                         if (!EspNativeGameplayPlayerState_restore(
                                 &playerBefore)) {
                             rollbackOk = 0;
@@ -3402,7 +3412,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                 pending.sequence)) {
                             rollbackOk = 0;
                         }
-                        barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
+                        if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
                         if (!EspNativeGameplayPlayerState_restore(
                                 &playerBefore)) {
                             rollbackOk = 0;
@@ -3429,8 +3440,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             if (barrelTurnRequested != 0U &&
                                 !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
                                     pending.sequence)) rollbackOk = 0;
-                            barrelRollbackRemoved(doomRpg, barrelChain,
-                                                  barrelChainCount);
+                            if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                                       barrelChainCount))
+                                rollbackOk = 0;
                             if (!EspNativeGameplayPlayerState_restore(
                                     &playerBefore)) rollbackOk = 0;
                             doomRpg->random = randomBefore;
@@ -3489,7 +3501,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             pending.sequence)) {
                         rollbackOk = 0;
                     }
-                    barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
+                    if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
                     if (!EspNativeGameplayPlayerState_restore(
                             &playerBefore)) {
                         rollbackOk = 0;
@@ -3542,7 +3555,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         pending.sequence)) {
                     rollbackOk = 0;
                 }
-                barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
+                if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
                 if (!EspNativeGameplayPlayerState_restore(
                         &playerBefore)) {
                     rollbackOk = 0;
@@ -3579,7 +3593,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
                         pending.sequence)) rollbackOk = 0;
-                barrelRollbackRemoved(doomRpg, barrelChain, barrelChainCount);
+                if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
                 if (!EspNativeGameplayPlayerState_restore(&playerBefore)) {
                     rollbackOk = 0;
                 }
