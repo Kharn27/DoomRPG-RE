@@ -66,6 +66,14 @@ BLOCKED_STEP = re.compile(
     r"^\[RESIDENTGAMEPLAY\] MOVE-BLOCKED\b.*"
     r"\btile=(\d+)->(\d+)\b.*\bblocker=(\d+)\s+type=(\d+)\b")
 COMMITTED_MOVE = re.compile(r"^\[RESIDENTGAMEPLAY\] MOVE n=\d+\b")
+# The generic action engine defers enemy combat *by design*, but its native
+# successor must ARM (or reject for NOAMMO) synchronously before ACTION SELECT.
+# Inspect the handoff rather than suppressing all monster-combat defers.
+MONSTER_BACKEND_DEFER = re.compile(
+    r"^\[ACTIONENGINE\] BACKEND-DEFER\b.*\bseq=(\d+)\b.*\bfamily=monster-combat\b")
+MONSTER_BACKEND_HANDLED = re.compile(
+    r"^\[MONSTERCOMBAT\] (?:ARM|NOAMMO)\b.*\bseq=(\d+)\b")
+SELECT_END = re.compile(r"^\[ACTION\] SELECT\b.*\bseq=(\d+)\b")
 
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -113,6 +121,7 @@ class PlaytestWatcher:
         self.attack_probes: dict[tuple[int, int], tuple[int, int]] = {}
         self.blocked_dests: dict[tuple[int, int], set[int]] = {}
         self.stuck_collision_alerted: set[tuple[int, int]] = set()
+        self.monster_backend_pending: set[int] = set()
 
     def replay_status(self, line: str) -> str | None:
         if "[ENGINESESSION] READY" in line or "[RESIDENTRESET]" in line:
@@ -172,6 +181,29 @@ class PlaytestWatcher:
             return "PLAYER_STUCK_COLLISION"
         return None
 
+    def monster_backend_status(self, line: str) -> str | None:
+        if "[ENGINESESSION] READY" in line or "[RESIDENTRESET]" in line:
+            self.monster_backend_pending.clear()
+            return None
+        backend = MONSTER_BACKEND_DEFER.search(line)
+        if backend is not None:
+            if len(self.monster_backend_pending) >= 8:
+                self.monster_backend_pending.pop()
+            self.monster_backend_pending.add(int(backend.group(1)))
+            return None
+        handled = MONSTER_BACKEND_HANDLED.search(line)
+        if handled is not None:
+            self.monster_backend_pending.discard(int(handled.group(1)))
+            return None
+        selected = SELECT_END.search(line)
+        if selected is None:
+            return None
+        seq = int(selected.group(1))
+        if seq not in self.monster_backend_pending:
+            return None
+        self.monster_backend_pending.discard(seq)
+        return "MONSTER_COMBAT_UNOWNED"
+
     def feed(self, raw: str) -> None:
         line = normalize(raw)
         if not line:
@@ -193,8 +225,10 @@ class PlaytestWatcher:
         self.ring.append(stamped)
         replay_alert = self.replay_status(line)
         collision_alert = self.stuck_collision_status(line)
+        monster_alert = self.monster_backend_status(line)
         rule = (replay_alert if replay_alert is not None else
                 collision_alert if collision_alert is not None else
+                monster_alert if monster_alert is not None else
                 classify(line))
         if rule is None:
             return
@@ -282,6 +316,34 @@ def self_test() -> None:
         assert classify('[RESIDENTGAMEPLAY] SELECT-DEFER n=7 seq=25 status=COMPLEX_EVENT unsupported=0 entity/otherSemantics=deferred mutation=no') == "SELECT_UNSUPPORTED"
         assert classify('[RESIDENTGAMEPLAY] SELECT-DIALOG-DEFER n=1 seq=5 event=12 cmd=0 status=bad-state mutation=no') == "SELECT_DEFER"
         assert classify('[ACTIONENGINE] BACKEND-DEFER seq=30 sprite=200 family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no') is None
+        # A normal handoff to the native backend must not alert merely
+        # because the generic engine logs BACKEND-DEFER.
+        normal = PlaytestWatcher(output / "handoff", 10, 0, 60.0, False, False)
+        normal.feed('[ACTIONENGINE] BACKEND-DEFER seq=210 sprite=118 family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no\n')
+        normal.feed('[MONSTERCOMBAT] ARM seq=210 sprite=118 tile=494 subtype=3 weapon=2 distance=2\n')
+        normal.feed('[ACTION] SELECT seq=210 status=NO_ELIGIBLE tile=495 event=47 eligible=0 unsupported=0\n')
+        assert normal.count == 0
+        normal.feed('[ACTIONENGINE] BACKEND-DEFER seq=211 sprite=118 family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no\n')
+        normal.feed('[MONSTERCOMBAT] NOAMMO seq=211 sprite=118 weapon=2 need=1 have=0 mutation=no\n')
+        normal.feed('[ACTION] SELECT seq=211 status=NO_ELIGIBLE tile=495 event=47 eligible=0 unsupported=0\n')
+        assert normal.count == 0
+        # Actual Sector 1/Junction CYD capture: a generic target was seen,
+        # but native combat neither ARM-ed nor explicitly rejected ammo.
+        stalled = PlaytestWatcher(output / "missing-handoff", 12, 1, 60.0, False, False)
+        stalled.feed('[ACTIONENGINE] TRACE seq=212 weapon=2 distance=2 tile=494 target=sprite index=118 line=65535 type=1 subtype=3 route=ENEMY_COMBAT_DEFERRED\n')
+        stalled.feed('[ACTIONENGINE] BACKEND-DEFER seq=212 sprite=118 family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no\n')
+        stalled.feed('[ACTION] SELECT seq=212 status=NO_ELIGIBLE tile=495 event=47 eligible=0 unsupported=0\n')
+        assert stalled.count == 1
+        stalled.feed('[RESIDENTGAMEPLAY] SELECT-DEFER n=30 seq=212 status=NO_ELIGIBLE unsupported=0 entity/otherSemantics=deferred mutation=no\n')
+        files = list((output / "missing-handoff").glob("*MONSTER_COMBAT_UNOWNED.log"))
+        assert len(files) == 1
+        clip = files[0].read_text(encoding="utf-8")
+        assert "sprite=118" in clip and "seq=212" in clip
+        stalled.feed('[ACTIONENGINE] BACKEND-DEFER seq=213 sprite=118 family=monster-combat reason=native-monster-hp+attack-state-not-owned mutation=no\n')
+        stalled.feed('[ACTION] SELECT seq=213 status=NO_ELIGIBLE tile=495 event=47 eligible=0 unsupported=0\n')
+        assert stalled.count == 1  # cooldown applies to repeating same failure
+        normal.close()
+        stalled.close()
         assert classify('[NATIVEFRAME] LEGACY_GUARD logical=15 actual=40 owner=BSS bytes=16') is None
         assert classify('[NATIVEFRAME] RECOVERED legacy compact guard actual=40 successorActual=68') is None
         assert classify('[NATIVEFRAME] FAILED route=gameplay code=3/SPAN_OOB') == "FIRSTFRAME_UNRECOVERED"
