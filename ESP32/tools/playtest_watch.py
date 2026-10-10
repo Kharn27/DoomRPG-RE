@@ -27,7 +27,7 @@ RULES = (
     ("RNG_REPLAY_DIVERGED", re.compile(
         r"^\[MONSTERRETAL\] REPLAY-DIVERGED\b")),
     ("RNG_GUARD_FAILURE", re.compile(
-        r"^\[RNGGUARD\] (?:FATAL-|WORD-FATAL-|ATTACK-PROBE-DEFER\b|ATTACK-PROBE-RESTORE\b.*(?:preExact=NO|boundaryReservation=NO))")),
+        r"^\[RNGGUARD\] (?:FATAL-|WORD-FATAL-|BARREL-PREVIEW-(?:FAILED|DIVERGED)\b|ATTACK-PROBE-DEFER\b|ATTACK-PROBE-RESTORE\b.*(?:preExact=NO|boundaryReservation=NO))")),
     ("INVENTORY_UNOWNED", re.compile(
         r"^\[HUB\] SELECT-DEFER page=inventory .*\bkind=item\b")),
     ("UNOWNED_INPUT", re.compile(
@@ -345,6 +345,9 @@ def self_test() -> None:
         assert classify('[RNGGUARD] ATTACK-PROBE-RESTORE preExact=NO boundaryReservation=yes') == "RNG_GUARD_FAILURE"
         assert classify('[RNGGUARD] ATTACK-PROBE-RESTORE preExact=yes boundaryReservation=NO') == "RNG_GUARD_FAILURE"
         assert classify('[RNGGUARD] ATTACK-PROBE-RESTORE preExact=yes boundaryReservation=yes') is None
+        assert classify('[RNGGUARD] BARREL-PREVIEW-FAILED seq=49 stateExact=NO action=fail-closed') == "RNG_GUARD_FAILURE"
+        assert classify('[RNGGUARD] BARREL-PREVIEW-DIVERGED seq=49 expected=13 actual=20 sequenceExact=NO') == "RNG_GUARD_FAILURE"
+        assert classify('[BARRELRADIUS] RNG-PREFLIGHT seq=49 words=3 refill=reserved exact=yes') is None
         watcher.close()
     print("[WATCH] SELF-TEST PASS")
 
