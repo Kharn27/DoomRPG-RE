@@ -66,6 +66,10 @@ int EspNativeGameplayMonsterState_snapshotShapeValid(
     uint32_t expectedArenaFNV1a);
 int EspNativeGameplayMonsterState_stageRestore(
     const EspNativeGameplayMonsterStateSnapshot* snapshot);
+/* Exact in-place rollback for a serialized native blast transaction. Never
+ * stages a new allocation or touches immutable topology/position owners. */
+int EspNativeGameplayMonsterState_restoreInPlace(
+    const EspNativeGameplayMonsterStateSnapshot* snapshot);
 
 /*
  * The monster-state lifecycle historically owned the linker wrappers around
