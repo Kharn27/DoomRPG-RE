@@ -20,6 +20,7 @@
 #include "esp_native_gameplay_move_events.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_level_gate.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
@@ -1297,8 +1298,8 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
         const uint32_t stringId = command.arg1 & 0xffffU;
         const uint16_t completed =
             EspNativeGameplayPlayerState_completedLevels();
-        uint32_t eligibleMask;
-        int warning;
+        uint16_t eligibleMask = 0U;
+        uint8_t warning = 0U;
 
         /* Legacy: for (n = firstMapId-1; n < MAP_ITEMS &&
          * !(completedLevels & (1<<n)); ++n) ; if (n==MAP_ITEMS) dialog.
@@ -1306,13 +1307,11 @@ static EspNativeGameplayMoveEventStatus inspectPhase(
          * test of one level. V10/V11 old saves carry no proven completion
          * bits; their conservative zero mask shows the warning, never
          * grants an unearned sector completion. */
-        if (firstMapId == 0U || firstMapId > 11U) {
+        if (!EspNativeLevelGate_evaluate(
+                command.arg1, completed, &eligibleMask, &warning)) {
             outResult->unsupportedCodeId = command.id;
             return ESP_NATIVE_GAMEPLAY_MOVE_EVENT_UNSUPPORTED;
         }
-        eligibleMask = 0x07ffUL &
-                       ~((1UL << (firstMapId - 1U)) - 1UL);
-        warning = (completed & eligibleMask) == 0U;
         if (!warning) {
             printf("[LEVELGATE] PASS event=%u tile=%u firstMapId=%u completed=%04x eligibleMask=%04x dialog=no mutation=no\n",
                    (unsigned int)descriptor.eventIndex,
