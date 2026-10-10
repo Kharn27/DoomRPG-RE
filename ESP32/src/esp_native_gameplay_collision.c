@@ -330,6 +330,19 @@ EspNativeGameplayCollisionStatus EspNativeGameplayCollision_traceCardinalStep(
         tile = linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK;
         if (tile != sourceTile && tile != destTile) continue;
 
+        /* Recovery from a player/enemy tile overlap. The legacy trace visits
+         * the source cell too, but a resident monster must never make all
+         * four exits impassable after having stepped onto the player. Retain
+         * every source-line, wall and non-enemy blocker; still block enemies
+         * on the destination. This is not normal gameplay: log it for QA. */
+        if (type == 1U && tile == sourceTile &&
+            (linkState & ESP_MAP_SPRITE_TOPOLOGY_ALIVE) != 0U) {
+            printf("[PLAYEROVERLAP] ESCAPE source=%u dest=%u sprite=%u subtype=%u reason=enemy-on-player-tile destination-still-checked turn=unchanged\n",
+                   (unsigned int)sourceTile, (unsigned int)destTile,
+                   (unsigned int)i, (unsigned int)subType);
+            continue;
+        }
+
         if (type == 14U || type == 15U) {
             specialBlocks = specialEntityBlocks(
                 i, sourceX, sourceY, destX, destY);
