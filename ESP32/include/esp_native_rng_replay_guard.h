@@ -22,6 +22,17 @@ extern "C" {
  * EspNativeRngReplayGuard_endProbeBoundary() or committed by
  * EspNativeRngReplayGuard_commitProbeBoundary().
  */
+/*
+ * An attack probe can cross the 128-byte boundary AFTER consuming its AI
+ * decision and its first hit/damage byte. This scoped transaction holds the
+ * crossed post-refill table as a persistent reservation until the real attack
+ * resolves (possibly >1s later, after a visual animation). No RNG byte is
+ * consumed by begin/end; callers restore Random_t before end.
+ */
+int EspNativeRngReplayGuard_beginAttackProbe(Random_t* liveRandom);
+int EspNativeRngReplayGuard_endAttackProbe(Random_t* liveRandom,
+                                           const Random_t* restoredBefore);
+
 int EspNativeRngReplayGuard_beginProbeBoundary(Random_t* liveRandom,
                                                Random_t* outSaved,
                                                uint8_t* outPrepared);
