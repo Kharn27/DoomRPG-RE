@@ -130,6 +130,18 @@ uint8_t EspNativeGameplayPlayerState_ammo(uint8_t ammoType);
 uint16_t EspNativeGameplayPlayerState_weapons(void);
 uint32_t EspNativeGameplayPlayerState_fingerprint(void);
 
+/* Legacy Player.completedLevels (map-id-1 bits). Kept in a tiny session-
+ * permanent overlay to preserve the 52-byte V11 player checkpoint prefix.
+ * The high marker bit distinguishes newly persisted history from old V10/V11
+ * progress records whose two reserved bytes were zero. Unknown old history
+ * never grants completion credit. */
+uint16_t EspNativeGameplayPlayerState_completedLevels(void);
+int EspNativeGameplayPlayerState_completedLevelsKnown(void);
+int EspNativeGameplayPlayerState_markCompleted(uint32_t bit);
+uint16_t EspNativeGameplayPlayerState_completionCheckpoint(void);
+int EspNativeGameplayPlayerState_restoreCompletionCheckpoint(uint16_t encoded);
+
+
 #ifdef __cplusplus
 }
 #endif
