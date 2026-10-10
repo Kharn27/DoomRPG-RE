@@ -23,7 +23,7 @@ import time
 RULES = (
     # Firmware detects a replay mismatch before committing: never suppress it.
     ("RNG_REPLAY_DIVERGED", re.compile(
-        r"^\\[MONSTERRETAL\\] REPLAY-DIVERGED\\b")),
+        r"^\[MONSTERRETAL\] REPLAY-DIVERGED\b")),
     ("INVENTORY_UNOWNED", re.compile(
         r"^\[HUB\] SELECT-DEFER page=inventory .*\bkind=item\b")),
     ("UNOWNED_INPUT", re.compile(
