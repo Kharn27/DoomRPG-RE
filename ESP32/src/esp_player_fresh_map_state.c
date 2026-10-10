@@ -41,13 +41,24 @@ int EspPlayerFreshMap_snapshotProgress(uint32_t nowMs,
     outProgress->xpBaseline = freshMapState.xpBaseline;
     outProgress->targetMapId = freshMapState.targetMapId;
     outProgress->complete = freshMapState.statsComplete;
+    {
+        uint16_t completion =
+            EspNativeGameplayPlayerState_completionCheckpoint();
+        outProgress->reserved[0] = (uint8_t)(completion & 0xffU);
+        outProgress->reserved[1] = (uint8_t)(completion >> 8U);
+    }
     return 1;
 }
 
 int EspPlayerFreshMap_restoreProgress(const EspPlayerLevelProgress* progress) {
+    uint16_t completed;
     if (progress == NULL || !EspMapCatalog_isValidId(progress->targetMapId) ||
-        progress->complete > 1U || progress->reserved[0] != 0U ||
-        progress->reserved[1] != 0U) return 0;
+        progress->complete > 1U) return 0;
+    completed = (uint16_t)progress->reserved[0] |
+                ((uint16_t)progress->reserved[1] << 8U);
+    if (!EspNativeGameplayPlayerState_restoreCompletionCheckpoint(completed)) {
+        return 0;
+    }
     memset(&freshMapState, 0, sizeof(freshMapState));
     freshMapState.moves = progress->moves;
     freshMapState.elapsedBeforeMs = progress->elapsedMs;
