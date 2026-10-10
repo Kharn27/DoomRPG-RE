@@ -44,6 +44,12 @@ RULES = (
         r"^\[HUB\] CLOSE\b.*\bexactHud=NO\b")),
 )
 
+# Probe/commit RNG parity: replay must keep the same hit and crit outcome.
+# A mismatch can happen at a legacy random-table refill and changes damage.
+PROBE_LINE = re.compile(r"^\[MONSTERTURN\] MEMBER-ATTACK-PROBE\b")
+COMMIT_LINE = re.compile(r"^\[MONSTERRETAL\] COMMIT\b")
+KEY_VALUE = re.compile(r"\b(producerProbe|probe|sprite|firstRandHit|crit)=(\d+)")
+
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
@@ -72,6 +78,32 @@ class PlaytestWatcher:
         self.last_seen: dict[str, float] = {}
         self.pending: list[list] = []
         self.count = 0
+        self.attack_probes: dict[tuple[int, int], tuple[int, int]] = {}
+
+    def replay_diverged(self, line: str) -> bool:
+        if "[ENGINESESSION] READY" in line or "[RESIDENTRESET]" in line:
+            self.attack_probes.clear()
+            return False
+        if not (PROBE_LINE.search(line) or COMMIT_LINE.search(line)):
+            return False
+        values = {name: int(value) for name, value in KEY_VALUE.findall(line)}
+        required = ("sprite", "firstRandHit", "crit")
+        if any(field not in values for field in required):
+            return False
+        if PROBE_LINE.search(line):
+            if "producerProbe" not in values:
+                return False
+            key = (values["producerProbe"], values["sprite"])
+            if len(self.attack_probes) >= 16:
+                self.attack_probes.pop(next(iter(self.attack_probes)))
+            self.attack_probes[key] = (values["firstRandHit"], values["crit"])
+            return False
+        if "probe" not in values:
+            return False
+        key = (values["probe"], values["sprite"])
+        expected = self.attack_probes.pop(key, None)
+        return expected is not None and expected != (
+            values["firstRandHit"], values["crit"])
 
     def feed(self, raw: str) -> None:
         line = normalize(raw)
@@ -92,7 +124,8 @@ class PlaytestWatcher:
                 file.close()
         self.pending = waiting
         self.ring.append(stamped)
-        rule = classify(line)
+        replay_mismatch = self.replay_diverged(line)
+        rule = "RNG_REPLAY_DIVERGED" if replay_mismatch else classify(line)
         if rule is None or now - self.last_seen.get(rule, -1e12) < self.cooldown:
             return
 
@@ -150,6 +183,13 @@ def self_test() -> None:
         assert classify('[MONSTERMOVE] DEFER trigger=NO-IMMEDIATE-ATTACK cause=active-order-not-owned') == "MONSTER_AI_UNOWNED"
         assert classify('[HUB] CLOSE exactHud=NO expectedHud=123') == "HUD_MISMATCH"
         assert classify('[PASSTURN] REQUEST sound=deferred turnAdvance=deferred') is None
+        watcher.feed('[MONSTERTURN] MEMBER-ATTACK-PROBE sprite=220 firstRandHit=177 crit=0 producerProbe=1\n')
+        watcher.feed('[MONSTERRETAL] COMMIT probe=1 sprite=220 firstRandHit=5 crit=1\n')
+        assert watcher.count == 2
+        assert len(list(output.glob("*RNG_REPLAY_DIVERGED.log"))) == 1
+        watcher.feed('[MONSTERTURN] MEMBER-ATTACK-PROBE sprite=220 firstRandHit=42 crit=0 producerProbe=2\n')
+        watcher.feed('[MONSTERRETAL] COMMIT probe=2 sprite=220 firstRandHit=42 crit=0\n')
+        assert watcher.count == 2
         watcher.close()
     print("[WATCH] SELF-TEST PASS")
 
