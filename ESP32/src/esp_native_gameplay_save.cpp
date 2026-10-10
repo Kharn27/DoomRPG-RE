@@ -49,10 +49,27 @@
 
 namespace {
 
-constexpr char kSavePath[] = "/DoomRPG-ESP32.sav";
-constexpr char kTempPath[] = "/DoomRPG-ESP32.sav.tmp";
-constexpr char kBackupPath[] = "/DoomRPG-ESP32.sav.bak";
-constexpr char kLogPath[] = "/sd/DoomRPG-ESP32.sav";
+constexpr char kLegacySavePath[] = "/DoomRPG-ESP32.sav";
+constexpr char kLegacyBackupPath[] = "/DoomRPG-ESP32.sav.bak";
+char kSavePath[48] = "/DoomRPG-ESP32-slot01.sav";
+char kTempPath[52] = "/DoomRPG-ESP32-slot01.sav.tmp";
+char kBackupPath[52] = "/DoomRPG-ESP32-slot01.sav.bak";
+char kLogPath[52] = "/sd/DoomRPG-ESP32-slot01.sav";
+uint8_t activeSlot = 1U;
+uint8_t slotMode = 0U; /* 0=system, 1=manual SAVE, 2=manual LOAD */
+uint8_t slotFocus = 1U;
+uint8_t slotArmed = 0U;
+uint8_t mainSlotReady = 0U;
+const char* activeReadPath = kSavePath;
+void selectSaveSlot(uint8_t slot) {
+    if (slot < 1U || slot > 10U) return;
+    activeSlot = slot;
+    snprintf(kSavePath, sizeof(kSavePath), "/DoomRPG-ESP32-slot%02u.sav", (unsigned)slot);
+    snprintf(kTempPath, sizeof(kTempPath), "/DoomRPG-ESP32-slot%02u.sav.tmp", (unsigned)slot);
+    snprintf(kBackupPath, sizeof(kBackupPath), "/DoomRPG-ESP32-slot%02u.sav.bak", (unsigned)slot);
+    snprintf(kLogPath, sizeof(kLogPath), "/sd/DoomRPG-ESP32-slot%02u.sav", (unsigned)slot);
+}
+
 constexpr uint8_t kMagicV1[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '1'};
 constexpr uint8_t kMagicV2[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '2'};
 constexpr uint8_t kMagicV3[8] = {'D', 'R', 'P', 'G', 'S', 'A', 'V', '3'};
@@ -1550,10 +1567,26 @@ bool readRecordPath(const char* path, LoadedSaveRecord* outRecord) {
 
 bool readBestRecord(LoadedSaveRecord* outRecord, bool* outRecoveredBackup) {
     if (outRecoveredBackup != nullptr) *outRecoveredBackup = false;
-    if (readRecordPath(kSavePath, outRecord)) return true;
-    if (!readRecordPath(kBackupPath, outRecord)) return false;
-    if (outRecoveredBackup != nullptr) *outRecoveredBackup = true;
-    return true;
+    if (readRecordPath(kSavePath, outRecord)) {
+        activeReadPath = kSavePath;
+        return true;
+    }
+    if (readRecordPath(kBackupPath, outRecord)) {
+        activeReadPath = kBackupPath;
+        if (outRecoveredBackup != nullptr) *outRecoveredBackup = true;
+        return true;
+    }
+    /* The pre-multislot checkpoint remains untouched, readable as slot 1. */
+    if (activeSlot == 1U && readRecordPath(kLegacySavePath, outRecord)) {
+        activeReadPath = kLegacySavePath;
+        return true;
+    }
+    if (activeSlot == 1U && readRecordPath(kLegacyBackupPath, outRecord)) {
+        activeReadPath = kLegacyBackupPath;
+        if (outRecoveredBackup != nullptr) *outRecoveredBackup = true;
+        return true;
+    }
+    return false;
 }
 
 bool writeExactV8(
@@ -2812,7 +2845,7 @@ bool loadNow(void) {
         return false;
     }
     record = &loaded.core;
-    selectedPath = recoveredBackup ? kBackupPath : kSavePath;
+    selectedPath = activeReadPath;
     name = EspMapCatalog_nameForId(record->targetMapId);
     if (name == nullptr || name[0] == '\0') {
         printf("[NATIVESAVE] LOAD-FAILED path=%s stage=MAP_ID map=%u failClosed=yes\n",
@@ -3187,6 +3220,25 @@ void drawCenteredWord(uint16_t* fb, int centerX, int y, const char* text,
     EspNativeGameplayHubTouchUi_drawCrispText(fb, text, centerX, y, color);
 }
 
+/* Two chunky industrial page keys, fixed pixels and no extra framebuffer. */
+/* Two distinct page actions: PREV (upper), NEXT (lower).
+ * The inactive direction is visibly disabled and does not consume state. */
+void drawSlotNav(uint16_t* fb, int top, int bottom, bool next, bool enabled) {
+    const int x0 = 118, x1 = 156;
+    const int cx = 137, cy = (top + bottom) / 2;
+    const uint16_t color = enabled ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK;
+    fillRect(fb, x0, top, x1, bottom, enabled ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
+    drawRect(fb, x0, top, x1, bottom, enabled ? ESP_HUB_COLOR_STEEL : ESP_HUB_COLOR_STEEL_DARK);
+    /* Broad 2px chevron, pointing UP for previous, DOWN for next. */
+    for (int i = 0; i < 7; ++i) {
+        const int yy = next ? cy - 3 + i : cy + 3 - i;
+        const int left = cx - 7 + i;
+        const int right = cx + 7 - i;
+        fillRect(fb, left, yy, left + 2, yy + 1, color);
+        fillRect(fb, right - 2, yy, right, yy + 1, color);
+    }
+}
+
 bool paintSaveOverlay(void) {
     const EspNativeGameplayHubView* hub = EspNativeGameplayHub_view();
     uint16_t* fb;
@@ -3196,7 +3248,8 @@ bool paintSaveOverlay(void) {
     uint16_t saveColor = ESP_HUB_COLOR_IVORY;
     uint16_t loadColor = ESP_HUB_COLOR_IVORY;
     const bool confirmExit = confirmationTarget == kStatusExit;
-    const bool hasSave = EspNativeGameplaySave_hasReadableCheckpoint() != 0;
+    const bool hasSave = slotMode == 0U &&
+        EspNativeGameplaySave_hasReadableCheckpoint() != 0;
     size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
                       (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t);
 
@@ -3208,6 +3261,39 @@ bool paintSaveOverlay(void) {
     }
 
     fb = static_cast<uint16_t*>(Esp32PlatformVideo_framebuffer());
+    if (slotMode != 0U) {
+        const uint8_t first = slotFocus <= 5U ? 1U : 6U;
+        char label[40];
+        fillRect(fb, 2, 35, 157, 118, ESP_HUB_COLOR_BG);
+        snprintf(label, sizeof(label), "%s - PAGE %u/2", slotMode == 1U ? "SAVE" : "LOAD",
+                 first == 1U ? 1U : 2U);
+        drawCenteredWord(fb, 60, 35, label, ESP_HUB_COLOR_IVORY);
+        for (uint8_t row = 0U; row < 5U; ++row) {
+            const uint8_t slot = first + row;
+            const int top = 47 + row * 14;
+            char path[48];
+            snprintf(path, sizeof(path), "/DoomRPG-ESP32-slot%02u.sav", (unsigned)slot);
+            char backup[52];
+            snprintf(backup, sizeof(backup), "/DoomRPG-ESP32-slot%02u.sav.bak", (unsigned)slot);
+            const bool available = SD.exists(path) || SD.exists(backup) ||
+                (slot == 1U && (SD.exists(kLegacySavePath) || SD.exists(kLegacyBackupPath)));
+            const bool focused = slot == slotFocus;
+            fillRect(fb, 7, top, 113, top + 12,
+                     focused ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
+            drawRect(fb, 7, top, 113, top + 12,
+                     focused ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
+            snprintf(label, sizeof(label), "%02u  %s%s", (unsigned)slot,
+                     available ? "OCCUPIED" : "-- EMPTY --",
+                     focused && slotArmed == slot ? " ?" : "");
+            drawCenteredWord(fb, 60, top + 3, label,
+                             available ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
+                                       : ESP_HUB_COLOR_STEEL_DARK);
+        }
+        drawSlotNav(fb, 49, 78, false, first != 1U);
+        drawSlotNav(fb, 83, 112, true, first == 1U);
+        return Esp32PlatformVideo_present();
+    }
+
 
     fillRect(fb, 2, 35, 157, 118, ESP_HUB_COLOR_BG);
     fillRect(fb, kPanelLeft, kPanelTop, kPanelRight, kPanelBottom,
@@ -3262,6 +3348,129 @@ bool paintSaveOverlay(void) {
 }
 
 }  // namespace
+
+bool readableSaveExists(void);
+
+extern "C" int EspNativeGameplaySave_mainSelectorActive(void) { return slotMode == 3U; }
+extern "C" int EspNativeGameplaySave_mainSelectorReady(void) { return slotMode == 3U && mainSlotReady != 0U; }
+extern "C" void EspNativeGameplaySave_mainSelectorFinish(void) {
+    slotMode = 0U; slotArmed = 0U; mainSlotReady = 0U;
+}
+static void paintMainSlots(void) {
+    uint16_t* fb = static_cast<uint16_t*>(Esp32PlatformVideo_framebuffer());
+    if (!fb || Esp32PlatformVideo_framebufferSizeBytes() != 38400U) return;
+    const uint8_t first = slotFocus <= 5U ? 1U : 6U;
+    char text[40];
+    fillRect(fb, 0, 0, 159, 119, ESP_HUB_COLOR_BG);
+    snprintf(text, sizeof(text), "LOAD - PAGE %u/2", first == 1U ? 1U : 2U);
+    drawCenteredWord(fb, 60, 15, text, ESP_HUB_COLOR_IVORY);
+    for (uint8_t row = 0U; row < 5U; ++row) {
+        const uint8_t slot = first + row;
+        const int y = 32 + row * 14;
+        char path[48], backup[52];
+        snprintf(path, sizeof(path), "/DoomRPG-ESP32-slot%02u.sav", (unsigned)slot);
+        snprintf(backup, sizeof(backup), "/DoomRPG-ESP32-slot%02u.sav.bak", (unsigned)slot);
+        const bool occupied = SD.exists(path) || SD.exists(backup) ||
+            (slot == 1U && (SD.exists(kLegacySavePath) || SD.exists(kLegacyBackupPath)));
+        const bool focused = slot == slotFocus;
+        fillRect(fb, 7, y, 113, y + 12, focused ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL);
+        drawRect(fb, 7, y, 113, y + 12, focused ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK);
+        snprintf(text, sizeof(text), "%02u %s%s", (unsigned)slot,
+                 occupied ? "OCCUPIED" : "-- EMPTY --",
+                 focused && slotArmed == slot ? " ?" : "");
+        drawCenteredWord(fb, 60, y + 3, text,
+                         occupied ? (focused ? ESP_HUB_COLOR_GREEN : ESP_HUB_COLOR_IVORY)
+                                  : ESP_HUB_COLOR_STEEL_DARK);
+    }
+    drawSlotNav(fb, 34, 62, false, first != 1U);
+    drawSlotNav(fb, 69, 98, true, first == 1U);
+    fillRect(fb, 34, 105, 111, 118, ESP_HUB_COLOR_PANEL_ALT);
+    drawRect(fb, 34, 105, 111, 118, ESP_HUB_COLOR_RED);
+    drawCenteredWord(fb, 72, 108, "BACK", ESP_HUB_COLOR_IVORY);
+    (void)Esp32PlatformVideo_present();
+}
+extern "C" int EspNativeGameplaySave_mainSelectorBegin(void) {
+    slotMode = 3U; slotFocus = 1U; slotArmed = 0U; mainSlotReady = 0U;
+    selectSaveSlot(1U);
+    paintMainSlots();
+    printf("[SAVESLOTS] MAIN-OPEN slots=10 pages=2\n");
+    return 1;
+}
+/* 0 stay, 1 confirmed, -1 back */
+extern "C" int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
+    if (slotMode != 3U) return 0;
+    if (y >= 104) {
+        if (x >= 34 && x <= 111) {
+            EspNativeGameplaySave_mainSelectorFinish();
+            return -1;
+        }
+        return 0;
+    }
+    if (x >= 118 && x <= 156 && y >= 34 && y <= 98) {
+        const bool previous = y <= 62;
+        const uint8_t page = slotFocus <= 5U ? 1U : 2U;
+        if ((previous && page != 2U) || (!previous && (y < 69 || page != 1U)))
+            return 0;
+        slotFocus = previous ? 1U : 6U;
+        slotArmed = 0U;
+        selectSaveSlot(slotFocus);
+        printf("[SAVESLOTS] MAIN-PAGE page=%u via=right-column\n", slotFocus <= 5U ? 1U : 2U);
+        paintMainSlots();
+        return 0;
+    }
+    if (x < 7 || x > 113 || y < 32 || y >= 102) return 0;
+    const uint8_t row = (uint8_t)((y - 32) / 14);
+    const uint8_t selected = (uint8_t)((slotFocus <= 5U ? 1U : 6U) + row);
+    if (selected > 10U) return 0;
+    if (selected != slotFocus) { slotFocus = selected; slotArmed = 0U; }
+    selectSaveSlot(slotFocus);
+    if (!readableSaveExists()) {
+        slotArmed = 0U;
+        printf("[SAVESLOTS] MAIN-EMPTY slot=%u\n", (unsigned)slotFocus);
+    } else if (slotArmed == slotFocus) {
+        mainSlotReady = 1U;
+        printf("[SAVESLOTS] MAIN-CONFIRM slot=%u\n", (unsigned)slotFocus);
+        return 1;
+    } else {
+        slotArmed = slotFocus;
+        printf("[SAVESLOTS] MAIN-ARM slot=%u\n", (unsigned)slotFocus);
+    }
+    paintMainSlots();
+    return 0;
+}
+
+extern "C" int EspNativeGameplaySave_slotSelectorActive(void) { return slotMode != 0U; }
+extern "C" int EspNativeGameplaySave_touchSlot(int x, int y) {
+    if (slotMode == 0U || y < 47 || y > 116) return 0;
+    if (x >= 118 && x <= 156) {
+        const bool previous = y >= 49 && y <= 78;
+        const bool next = y >= 83 && y <= 112;
+        const uint8_t page = slotFocus <= 5U ? 1U : 2U;
+        if ((!previous && !next) || (previous && page == 1U) ||
+            (next && page == 2U)) return 1;
+        slotFocus = previous ? 1U : 6U;
+        slotArmed = 0U;
+        selectSaveSlot(slotFocus);
+        (void)paintSaveOverlay();
+        printf("[SAVESLOTS] PAGE page=%u via=right-column\n",
+               slotFocus <= 5U ? 1U : 2U);
+        return 1;
+    }
+    if (x < 7 || x > 113) return 1;
+    const uint8_t row = (uint8_t)((y - 47) / 14);
+    if (row >= 5U) return 1;
+    const uint8_t selected = (uint8_t)((slotFocus <= 5U ? 1U : 6U) + row);
+    if (selected != slotFocus) {
+        slotFocus = selected;
+        slotArmed = selected; /* first tap selects and arms, next confirms */
+        selectSaveSlot(slotFocus);
+        (void)paintSaveOverlay();
+        printf("[SAVESLOTS] ARM mode=%s slot=%u source=touch\n",
+               slotMode == 1U ? "SAVE" : "LOAD", (unsigned)slotFocus);
+        return 1;
+    }
+    return 2; /* let SELECT arm/confirm */
+}
 
 extern "C" int EspNativeGameplaySave_adoptTransitionRoute(
     const EspMapSaveRouteState* route) {
@@ -3318,10 +3527,22 @@ bool readableSaveExists(void) {
 }
 
 extern "C" int EspNativeGameplaySave_hasReadableCheckpoint(void) {
-    return readableSaveExists() ? 1 : 0;
+    if (slotMode != 0U) {
+        selectSaveSlot(slotFocus);
+        return readableSaveExists() ? 1 : 0;
+    }
+    /* MENU_MAIN reads the first valid manual checkpoint, not only slot 1. */
+    for (uint8_t slot = 1U; slot <= 10U; ++slot) {
+        selectSaveSlot(slot);
+        if (readableSaveExists()) return 1;
+    }
+    selectSaveSlot(1U);
+    return 0;
 }
 
 extern "C" int EspNativeGameplaySave_loadCheckpoint(void) {
+    if (slotMode == 0U && !EspNativeGameplaySave_hasReadableCheckpoint()) return 0;
+    if (slotMode != 0U) selectSaveSlot(slotFocus);
     if (!loadNow()) return 0;
     /*
      * V1..V11 do not serialize the legacy return route. Never leak a route from
@@ -3342,6 +3563,16 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
 
     if (before != nullptr && before->active == 1U &&
         before->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
+        if (slotMode != 0U &&
+            (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ||
+             action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK)) {
+            slotFocus = (uint8_t)(1U + ((slotFocus - 1U +
+                (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK ? 1U : 9U)) % 10U));
+            slotArmed = 0U;
+            selectSaveSlot(slotFocus);
+            if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+            return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+        }
         if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD ||
             action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK) {
             if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD) {
@@ -3361,6 +3592,37 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
         }
 
         if (action == ESP_NATIVE_GAMEPLAY_ACTION_SELECT) {
+            if (slotMode == 0U && statusCursor != kStatusExit) {
+                slotMode = statusCursor == kStatusSave ? 1U : 2U;
+                slotFocus = 1U;
+                slotArmed = 0U;
+                selectSaveSlot(slotFocus);
+                printf("[SAVESLOTS] OPEN mode=%s slots=10 page=1 legacy=slot1-read-only\n",
+                       slotMode == 1U ? "SAVE" : "LOAD");
+                if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+                return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+            }
+            if (slotMode != 0U) {
+                selectSaveSlot(slotFocus);
+                if (slotMode == 2U && !readableSaveExists()) {
+                    slotArmed = 0U;
+                    printf("[SAVESLOTS] EMPTY slot=%u load=blocked\n", (unsigned)slotFocus);
+                    if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+                    return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+                }
+                if (slotArmed != slotFocus) {
+                    slotArmed = slotFocus;
+                    printf("[SAVESLOTS] ARM mode=%s slot=%u\n", slotMode == 1U ? "SAVE" : "LOAD",
+                           (unsigned)slotFocus);
+                    if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+                    return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+                }
+                printf("[SAVESLOTS] CONFIRM mode=%s slot=%u\n",
+                       slotMode == 1U ? "SAVE" : "LOAD", (unsigned)slotFocus);
+                slotArmed = 0U;
+                /* Slot already armed by a previous SELECT: no third confirm. */
+                confirmationTarget = statusCursor;
+            }
             if (statusCursor == kStatusLoad &&
                 !EspNativeGameplaySave_hasReadableCheckpoint()) {
                 confirmationTarget = kNoConfirmation;
@@ -3422,6 +3684,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 else {
                     printf("[NATIVESAVE] SAVE-CLOSE result=success hub=closed feedback=\"Game saved\" duration=action-default fallback=status-then-facing turn=no\n");
                 }
+                slotMode = 0U;
                 statusCursor = kStatusSave;
                 lastOperation = 0U;
                 lastOperationOk = 0U;
@@ -3444,6 +3707,7 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
             lastOperation = 2U;
             lastOperationOk =
                 EspNativeGameplaySave_loadCheckpoint() ? 1U : 0U;
+            slotMode = 0U;
             statusCursor = kStatusSave;
             if (!lastOperationOk) {
                 printf("[NATIVESAVE] LOAD-TERMINAL result=failed gameplaySession=reset failClosed=yes\n");
@@ -3460,6 +3724,12 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
         }
     }
 
+    if (slotMode != 0U && action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
+        slotMode = 0U;
+        slotArmed = 0U;
+        if (!paintSaveOverlay()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+        return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+    }
     status = __real_EspNativeGameplayHub_handleAction(action);
     {
         const EspNativeGameplayHubView* after = EspNativeGameplayHub_view();
@@ -3478,7 +3748,9 @@ __wrap_EspNativeGameplayHub_handleAction(uint8_t action) {
                 return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
             }
         }
-        else if (after == nullptr || after->active == 0U) {
+        else if (after == nullptr || after->active == 0U ||
+                 after->page != ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM) {
+            slotMode = 0U;
             statusCursor = kStatusSave;
             lastOperation = 0U;
             confirmationTarget = kNoConfirmation;

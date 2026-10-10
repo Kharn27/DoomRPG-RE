@@ -17,6 +17,14 @@ extern "C" {
  * physical controls can move the status cursor before a direct touch select.
  */
 uint8_t EspNativeGameplaySave_statusCursor(void);
+int EspNativeGameplaySave_mainSelectorActive(void);
+int EspNativeGameplaySave_mainSelectorReady(void);
+int EspNativeGameplaySave_mainSelectorBegin(void);
+int EspNativeGameplaySave_mainSelectorTap(int logicalX, int logicalY);
+void EspNativeGameplaySave_mainSelectorFinish(void);
+int EspNativeGameplaySave_slotSelectorActive(void);
+/* Returns 0=not claimed, 1=consumed, 2=dispatch SELECT. */
+int EspNativeGameplaySave_touchSlot(int logicalX, int logicalY);
 
 /* One layout contract for painting and touch: 24 logical pixels = 48 physical
  * pixels per row. No title/slot number consumes the reclaimed SYS space. */

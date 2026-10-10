@@ -1,5 +1,38 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Multi-save PR #207 — P1 death-menu CYD PASS, P2 accepted (2026-10-10)
+
+Code head testé : `0824b4c4adc84e0604e9a0ca74075def23f4f91d`; CI GitHub Actions du head : **SUCCESS**. Le code est inchangé après cette validation, les commits ultérieurs de clôture sont documentaires uniquement.
+
+**P1 (death-menu LOAD)** — **PASS sur CYD normal** : attaque létale après `PASS_TURN`, `[PLAYERDEATH] READY ... load=available`, tap LOAD, `[SAVESLOTS] MAIN-OPEN slots=10 pages=2` puis `[DEATHMENU] SLOT-OPEN ... choice=required`. Pagination `MAIN-PAGE page=2` puis `page=1`, retour `[DEATHMENU] SLOT-BACK`, réouverture LOAD, `MAIN-ARM slot=1`, `MAIN-CONFIRM slot=1`, enfin `[DEATHMENU] DISPATCH ... slot=confirmed`. Le checkpoint V11 du slot 1 est restauré à `pos=1184,352 angle=0`, joueur `34/34`, armure `11/23`, `RESIDENTRESET released=18008 empty=1`, `ENGINESESSION RESUME-VISIBLE`, `shapeData/mediaTexels` inchangés. Aucun chargement automatique du premier slot n'a eu lieu à la première pression LOAD.
+
+**P2 (hidden main selector on restore failure)** — correction défensive revue et **acceptée par l'utilisateur sans reproduction matérielle du cas d'échec tardif**. Le chemin de récupération réussie `MENU_MAIN` appelle `EspNativeGameplaySave_mainSelectorFinish()`; pas de test hardware d'injection d'erreur et aucun checkpoint SD n'a été altéré artificiellement.
+
+**Réserves hors périmètre** : polish final des menus, autres slots et coupure électrique non exhaustivement testés, fallbacks de rendu `WORLD_RENDER`, anomalie `exactHud=NO`, tours monstres différés. Pas de slot AUTO.
+
+## Native SD multi-save — CYD gameplay PASS, navigation accepted (2026-10-08)
+
+**Baseline:** `main` `4554ccd68f7928bd8918ffaf8711d82179f5e587`; branch `agent/esp32-native-save-multislot`, code head `c4f1322509237031bd048c57bb7798036271e06c`. [CI 37835789142](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37835789142): **SUCCESS**. Firmware normal `esp32-cyd`, classic CYD sans PSRAM.
+
+**Hardware evidence:** manual SAVE slot 2 `/DoomRPG-ESP32-slot02.sav` V11 5604 bytes, position 544,1760; after moving and collecting two armor shards, LOAD slot 2 restored exactly position 544,1760, armor 0/20, consumed resources 0, monster state/topology/position/activation. LOAD slot 1 also restored a **different earlier checkpoint** position 1184,352, 36 consumed resources, 12 dead monsters, HP 34/34, armor 11/23; legacy single-save file `/DoomRPG-ESP32.sav` was detected as readable at selection entry. MAPRT `c3882516`, `shapeData=0x0`, `mediaTexels=0x0`, heap8 resident after load 117880/largest8 86004. Session reset logged `released=18008 empty=1`. No save version change, no legacy deletion.
+
+**UI review:** MENU_MAIN LOAD now opens its own ten-slot picker; HUB SAVE/LOAD uses five rows per page. Latest revision separates **previous** (upper) and **next** (lower) chevrons on a right-side column, with disabled states, page number in header, and removes the decorative red vertical stripe. User reviewed the display and called it *better*, accepting it for this milestone with additional Doom-style visual polish **deferred**. This is a visual/acceptance report, **not** a complete new serial trace of both page directions or slots 6..10.
+
+### Complément CYD : slot 8, deuxième page et restauration (2026-10-08)
+
+Traces du firmware normal, après le code `c4f13225` : HUB → SYSTEM → SAVE → `[SAVESLOTS] PAGE page=2 via=right-column` → `ARM slot=8` → `CONFIRM slot=8`. `[NATIVESAVE] SAVE path=/sd/DoomRPG-ESP32-slot08.sav version=11 bytes=5604 pos=1248,352 angle=0 resources=37/43B ... atomic=temp+backup+rename`. Après déplacement supplémentaire et ramassage d'armure, HUB → SYSTEM → LOAD → page 2 → `ARM slot=8` → `CONFIRM slot=8` ; `LOAD path=/sd/DoomRPG-ESP32-slot08.sav version=11 bytes=5604 pos=1248,352 angle=0 playerFNV=eeda091c`, `RESTORE consumed=37`, armor `15/23`, monsters/topology/positions/activation restaurés. La progression plus tardive avait atteint armor `19/23` et n'a donc pas remplacé le slot 8. `[RESIDENTRESET] released=18008 empty=1`, `[ENGINESESSION] RESUME-VISIBLE`, `heap8=117880 largest8=86004`. Ceci valide sur hardware le chemin **page 1→2**, le SAVE/LOAD du slot 8 et l'indépendance temporelle du checkpoint. Le chemin de retour page 2→1 n'est pas attesté par ces traces.
+
+**Anomalies ouvertes, indépendantes du multi-save :** en haut de carte Entrance chargée depuis la progression avancée, `[TURNFRAME] DIAG fail=WORLD_RENDER` et `[VIEWANIM] FALLBACK` se répètent (mouvement et rotations) ; le mouvement logique est commité une fois et le rendu cardinal final continue, mais l'animation intermédiaire est perdue. À analyser dans un jalon render dédié, sans masquer ces fallbacks. Un `[HUB] CLOSE ... exactHud=NO` est aussi observé juste après SAVE slot 8, alors que `hudBottom ... exactBottom=yes` et le gameplay reprend. Investiguer ce décalage du témoin HUD séparément ; ne pas le déclarer PASS visuel exact. `[MONSTERMOVE] DEFER cause=active-order-not-owned` avec 12 actifs reste une dette de gameplay connue, non causée ici par le système de slots.
+
+**Still to test separately:** page 1→2→1 on both selectors with actual hardware logs, slots 6, 7, 9, 10, overwrite confirmation, empty-slot fail-closed, MENU_MAIN BACK, and power-loss atomicity. `AUTO` remains explicitly out of scope pending a genuine original-game trigger audit. No merge has yet been reported for this branch.
+
+# Doom RPG ESP32 — état actuel du port
+
+## Prochain jalon — multi-save SD : 10 slots, AUTO conditionnel (2026-10-08)
+
+Branche `agent/esp32-native-save-multislot`, base `main` `4554ccd68f7928bd8918ffaf8711d82179f5e587`. **Périmètre corrigé avec l'utilisateur : exactement 10 slots manuels au maximum, et pas 20.** AUTO est **conditionnel**, non promis tant que les déclencheurs et la sémantique originaux n'ont pas été audités. Legacy `Game.c` possède `EV_SAVEGAME` (27), qui capture un itinéraire/point d'arrivée, ainsi que `Game_saveState` avec fichiers `Player`/`Player2`; cela ne prouve pas un slot AUTO supplémentaire dans l'interface originale. Ne pas transformer EV_SAVEGAME en autosave arbitraire. Le runtime actuel écrit un unique V11 5604 B sous `/DoomRPG-ESP32.sav` sur la microSD, avec `.tmp`/`.bak` ; partition flash interne raw PAK n'est pas le lieu de stockage. V1..V10 restent lisibles. Préserver l'ancien checkpoint et conserver la compatibilité en lecture. Toute écriture doit être atomique par slot et ne jamais toucher à un autre fichier ; pas de cache des dix sauvegardes en RAM. HUB SAVE/LOAD et MENU_MAIN LOAD doivent sélectionner la même source explicite, avec pagination tactile 160x120 et confirmation d'écrasement. Séparer le stockage borné et l'UI en jalons hardware-testables, et vérifier les chemins LOAD/death/changement de carte avant implémentation d'AUTO.
+
+
 ## Render solid background — REAL-CYD NON-REGRESSION PASS (2026-10-08)
 
 Tested code SHA `0503b08b7bd89a7a50706f9d18cda51fd75679e0`; normal esp32-cyd CI [37790502396](https://github.com/Kharn27/DoomRPG-RE/actions/runs/37790502396) **SUCCESS**. `Render_renderFloorAndCeilingSolidBG` is now defined by the permanent `esp_render_geometry_primitives.c`; generator keeps desktop/bringup source and checks exact legacy function parity. No extra allocator, backing store, or mutable world ownership.
