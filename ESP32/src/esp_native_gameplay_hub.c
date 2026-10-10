@@ -7,6 +7,8 @@
 #include "esp_native_gameplay_hub.h"
 #include "esp_native_gameplay_hub_content.h"
 #include "esp_native_gameplay_hub_nonweapon.h"
+#include "esp_native_gameplay_note_prefix.h"
+#include "esp_entity_def_type_catalog.h"
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_hub_touch_ui.h"
 #include "esp_native_gameplay_hub_weapon_grid.h"
@@ -64,6 +66,10 @@ typedef struct EspNativeGameplayHubMenuOverlay_s {
 
 static EspNativeGameplayHubView hub;
 static EspNativeGameplayHubMenuOverlay menuOverlay;
+/* UI-only, not a gameplay owner; HUB remains the original 28-byte view. */
+static uint8_t notebookOpen;
+static uint8_t notebookPage;
+
 
 static uint32_t fnv1aUpdate(uint32_t hash, const void* data, uint32_t bytes) {
     const uint8_t* p = (const uint8_t*)data;
@@ -396,6 +402,82 @@ static int drawText(const EspNativeIndexedBmp* font,
     return 1;
 }
 
+/* Notebook text is already owned by the NOTE event prefix. Split the
+ * original bounded 512-byte corpus into 20-column lines without storing a
+ * second copy, even when there are many || separators. */
+#define HUB_NOTE_COLS 20U
+#define HUB_NOTE_ROWS 4U
+static uint16_t notebookLineCount(const char* text, uint16_t length,
+                                  const EspNativeIndexedBmp* font,
+                                  uint16_t* fb, EspNativeIndexedBmpStats* stats,
+                                  uint8_t page) {
+    uint16_t offset = 0U;
+    uint16_t row = 0U;
+    if (text == NULL || length == 0U) return 0U;
+    while (offset < length) {
+        char line[HUB_NOTE_COLS + 1U];
+        uint8_t col = 0U;
+        memset(line, 0, sizeof(line));
+        while (offset < length && col < HUB_NOTE_COLS &&
+               text[offset] != '|' && text[offset] != '\n') {
+            const unsigned char c = (unsigned char)text[offset++];
+            line[col++] = c >= 32U && c <= 126U ? (char)c : '?';
+        }
+        if (offset < length &&
+            (text[offset] == '|' || text[offset] == '\n' ||
+             (col == HUB_NOTE_COLS && text[offset] == ' '))) {
+            ++offset;
+        }
+        if (font != NULL && row / HUB_NOTE_ROWS == page) {
+            if (!drawText(font, fb, line, 8,
+                          52 + (int)(row % HUB_NOTE_ROWS) * 13, stats)) {
+                return UINT16_MAX;
+            }
+        }
+        ++row;
+    }
+    return row;
+}
+
+static uint8_t notebookPages(void) {
+    uint16_t length = 0U;
+    const char* text = EspNativeGameplayNotePrefix_text(&length);
+    const uint16_t rows = notebookLineCount(text, length, NULL, NULL, NULL, 0U);
+    return rows == 0U ? 1U : (uint8_t)((rows + HUB_NOTE_ROWS - 1U) / HUB_NOTE_ROWS);
+}
+
+static int paintNotebookContent(const EspNativeIndexedBmp* font,
+                                uint16_t* framebuffer,
+                                EspNativeIndexedBmpStats* stats) {
+    char pageLabel[20];
+    uint16_t length = 0U;
+    const char* text = EspNativeGameplayNotePrefix_text(&length);
+    uint8_t pages = notebookPages();
+    int x, y;
+    if (font == NULL || framebuffer == NULL || stats == NULL ||
+        pages == 0U || notebookPage >= pages) return 0;
+    for (y = 34; y <= 118; ++y) {
+        for (x = 1; x <= 158; ++x) putPixel(framebuffer, x, y, ESP_HUB_COLOR_BG);
+    }
+    if (!drawText(font, framebuffer, "NOTEBOOK", 8, 36, stats)) return 0;
+    snprintf(pageLabel, sizeof(pageLabel), "%u/%u",
+             (unsigned int)(notebookPage + 1U), (unsigned int)pages);
+    if (!drawText(font, framebuffer, pageLabel, 116, 36, stats)) return 0;
+    if (length == 0U) {
+        if (!drawText(font, framebuffer, "NO NOTES YET", 8, 65, stats)) return 0;
+    }
+    else if (notebookLineCount(text, length, font, framebuffer, stats,
+                               notebookPage) == UINT16_MAX) {
+        return 0;
+    }
+    if (!drawText(font, framebuffer, "BACK", 8, 105, stats) ||
+        !drawText(font, framebuffer, "NEXT", 115, 105, stats)) return 0;
+    printf("[HUBNOTE] PAGE page=%u/%u textBytes=%u owner=EV_NOTE copy=no mutation=no turn=no\n",
+           (unsigned int)(notebookPage + 1U),
+           (unsigned int)pages, (unsigned int)length);
+    return 1;
+}
+
 static int paintInventoryContent(const EspNativeGameplayPlayerState* player,
                                  const EspNativeIndexedBmp* font,
                                  uint16_t* framebuffer,
@@ -483,6 +565,9 @@ static EspNativeGameplayHubStatus paintCurrentPage(void) {
 
     if (ok && !EspNativeGameplayHubTouchUi_paint(
                   framebuffer, hub.page, hub.selectedRow)) ok = 0;
+    if (ok && hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
+        notebookOpen != 0U &&
+        !paintNotebookContent(&font, framebuffer, &stats)) ok = 0;
     if (ok && !paintHubHeader(&font, &faces, framebuffer, &stats)) ok = 0;
     EspAssetPack_close();
     if (!ok || EspAssetPack_isOpen()) return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
@@ -532,10 +617,18 @@ void EspNativeGameplayHub_reset(void) {
     }
     memset(&menuOverlay, 0, sizeof(menuOverlay));
     memset(&hub, 0, sizeof(hub));
+    notebookOpen = 0U;
+    notebookPage = 0U;
 }
 
 int EspNativeGameplayHub_isActive(void) {
     return hub.active != 0U;
+}
+
+int EspNativeGameplayHub_notebookOpen(void) {
+    return hub.active != 0U &&
+           hub.page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
+           notebookOpen != 0U;
 }
 
 const EspNativeGameplayHubView* EspNativeGameplayHub_view(void) {
@@ -563,6 +656,8 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
     ++hub.opens;
     hub.selectedRow = 0U;
     hub.page = ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY;
+    notebookOpen = 0U;
+    notebookPage = 0U;
     hub.playerFNVAtOpen = playerFNV;
     hub.lastPlayerFNV = playerFNV;
     hub.weaponAtOpen = player.weapon;
@@ -595,24 +690,119 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_open(void) {
 }
 
 static EspNativeGameplayHubStatus handleInventorySelect(void) {
-    EspNativeGameplayPlayerState player;
+    EspNativeGameplayPlayerState before;
+    EspNativeGameplayPlayerState after;
+    EspNativeGameplayPlayerState actual;
     EspNativeGameplayHubInventoryEntry entry;
+    EspNativeGameplayHubStatus closeStatus;
     uint8_t count;
-    memset(&player, 0, sizeof(player));
+    uint8_t subtype;
+    uint8_t type;
+    uint8_t slot;
+    uint16_t tile;
+    int32_t parm = 0;
+    uint16_t heal;
+    uint16_t armorGain;
+    uint8_t hpBefore, armorBefore, maxHp, maxArmor;
+    uint16_t nextHp, nextArmor;
+    uint32_t fnvBefore, fnvAfter;
+
+    memset(&before, 0, sizeof(before));
+    memset(&after, 0, sizeof(after));
+    memset(&actual, 0, sizeof(actual));
     memset(&entry, 0, sizeof(entry));
-    if (!EspNativeGameplayPlayerState_snapshot(&player) || player.active != 1U) {
+    if (!EspNativeGameplayPlayerState_snapshot(&before) ||
+        before.active != 1U || EspAssetPack_isOpen()) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
-    count = EspNativeGameplayHubNonWeapon_entryCount(&player);
+    count = EspNativeGameplayHubNonWeapon_entryCount(&before);
     if (count == 0U || hub.selectedRow >= count ||
-        !EspNativeGameplayHubNonWeapon_entryAt(&player, hub.selectedRow, &entry)) {
+        !EspNativeGameplayHubNonWeapon_entryAt(&before, hub.selectedRow, &entry)) {
         return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
     }
-    printf("[HUB] SELECT-DEFER page=inventory entry=%u kind=%s source=%u cause=unsupported-entry mutation=no turn=no\n",
-           (unsigned int)hub.selectedRow,
-           EspNativeGameplayHubContent_inventoryKindName(entry.kind),
-           (unsigned int)entry.sourceId);
-    return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+    if (entry.kind == ESP_NATIVE_GAMEPLAY_HUB_ENTRY_NOTEBOOK) {
+        notebookOpen = 1U;
+        notebookPage = 0U;
+        if (paintCurrentPage() != ESP_NATIVE_GAMEPLAY_HUB_OK) {
+            notebookOpen = 0U;
+            return ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+        }
+        printf("[HUBNOTE] OPEN entries=%u text=existing-map-owner turn=no mutation=no\n",
+               (unsigned int)count);
+        return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+    }
+    if (entry.kind != ESP_NATIVE_GAMEPLAY_HUB_ENTRY_ITEM ||
+        entry.sourceId > 2U) {
+        printf("[HUB] SELECT-DEFER page=inventory entry=%u kind=%s source=%u cause=unsupported-entry mutation=no turn=no\n",
+               (unsigned int)hub.selectedRow,
+               EspNativeGameplayHubContent_inventoryKindName(entry.kind),
+               (unsigned int)entry.sourceId);
+        return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+    }
+
+    slot = entry.sourceId;
+    subtype = (uint8_t)(25U + slot);
+    if (before.inventory[slot] == 0U ||
+        !EspEntityDefTypeCatalog_findTileIndex(4U, subtype, &tile) ||
+        !EspEntityDefTypeCatalog_getMetadata(tile, &type, &subtype, &parm) ||
+        type != 4U || subtype != (uint8_t)(25U + slot) ||
+        (slot < 2U && (parm <= 0 || parm > 200))) {
+        printf("[HUBITEM] DEFER slot=%u reason=metadata-or-count mutation=no turn=no\n",
+               (unsigned int)slot);
+        return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+    }
+
+    hpBefore = (uint8_t)(before.param1 & 0xffU);
+    maxHp = (uint8_t)((before.param1 >> 8) & 0xffU);
+    armorBefore = (uint8_t)((before.param1 >> 16) & 0xffU);
+    maxArmor = (uint8_t)((before.param1 >> 24) & 0xffU);
+    heal = slot == 2U ? 200U : (uint16_t)parm;
+    armorGain = slot == 2U ? 200U : 0U;
+    nextHp = (uint16_t)hpBefore + heal;
+    nextArmor = (uint16_t)armorBefore + armorGain;
+    if (nextHp > maxHp) nextHp = maxHp;
+    if (nextArmor > maxArmor) nextArmor = maxArmor;
+
+    fnvBefore = EspNativeGameplayPlayerState_fingerprint();
+    after = before;
+    --after.inventory[slot];
+    after.param1 = (before.param1 & 0xff000000U) |
+                   ((uint32_t)nextArmor << 16) |
+                   ((uint32_t)maxHp << 8) | nextHp;
+    if (!EspNativeGameplayPlayerState_restore(&after) ||
+        !EspNativeGameplayPlayerState_snapshot(&actual) ||
+        memcmp(&actual, &after, sizeof(actual)) != 0 ||
+        (fnvAfter = EspNativeGameplayPlayerState_fingerprint()) == 0U ||
+        fnvAfter == fnvBefore) {
+        (void)EspNativeGameplayPlayerState_restore(&before);
+        printf("[HUBITEM] ROLLBACK slot=%u reason=player-state-verify\n",
+               (unsigned int)slot);
+        return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+    }
+
+    /* Close the full-screen HUB before requesting the one original gameplay
+     * turn. No stale inventory list or stale HUD remains visible. */
+    hub.lastPlayerFNV = fnvAfter;
+    closeStatus = EspNativeGameplayHub_handleAction(
+        ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN);
+    if (closeStatus != ESP_NATIVE_GAMEPLAY_HUB_CLOSED) {
+        const int restored = EspNativeGameplayPlayerState_restore(&before) &&
+                             EspNativeGameplayPlayerState_fingerprint() == fnvBefore;
+        hub.lastPlayerFNV = fnvBefore;
+        printf("[HUBITEM] ROLLBACK slot=%u reason=hub-close status=%s playerExact=%s\n",
+               (unsigned int)slot, EspNativeGameplayHub_statusName(closeStatus),
+               restored ? "yes" : "NO");
+        return restored ? ESP_NATIVE_GAMEPLAY_HUB_NOT_READY
+                        : ESP_NATIVE_GAMEPLAY_HUB_IO_FAILED;
+    }
+    printf("[HUBITEM] COMMIT slot=%u subtype=%u parm=%ld qty=%u->%u hp=%u->%u armor=%u->%u playerFNV=%08x->%08x hub=closed sound=deferred turn=request-next\n",
+           (unsigned int)slot, (unsigned int)subtype, (long)parm,
+           (unsigned int)before.inventory[slot],
+           (unsigned int)after.inventory[slot],
+           (unsigned int)hpBefore, (unsigned int)nextHp,
+           (unsigned int)armorBefore, (unsigned int)nextArmor,
+           (unsigned int)fnvBefore, (unsigned int)fnvAfter);
+    return ESP_NATIVE_GAMEPLAY_HUB_ITEM_USED;
 }
 
 static EspNativeGameplayHubStatus handleWeaponGridSelect(void) {
@@ -721,6 +911,38 @@ EspNativeGameplayHubStatus EspNativeGameplayHub_handleAction(uint8_t action) {
     int touchDirect;
 
     if (hub.active == 0U) return ESP_NATIVE_GAMEPLAY_HUB_NOT_READY;
+
+    if (EspNativeGameplayHub_notebookOpen()) {
+        uint8_t beforePageNum = notebookPage;
+        if (action == ESP_NATIVE_GAMEPLAY_ACTION_SELECT ||
+            action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
+            notebookOpen = 0U;
+        } else if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK) {
+            if (notebookPage + 1U >= notebookPages()) return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+            ++notebookPage;
+        } else if (action == ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD) {
+            if (notebookPage == 0U) return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+            --notebookPage;
+        } else if (action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT ||
+                   action == ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT) {
+            notebookOpen = 0U;
+        } else {
+            return ESP_NATIVE_GAMEPLAY_HUB_IGNORED;
+        }
+        if (action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_LEFT &&
+            action != ESP_NATIVE_GAMEPLAY_ACTION_TURN_RIGHT) {
+            status = paintCurrentPage();
+            if (status != ESP_NATIVE_GAMEPLAY_HUB_OK) {
+                notebookOpen = 1U;
+                notebookPage = beforePageNum;
+                return status;
+            }
+            printf("[HUBNOTE] NAV page=%u open=%u action=%u worldMutation=no turn=no\n",
+                   (unsigned int)(notebookPage + 1U),
+                   (unsigned int)notebookOpen, (unsigned int)action);
+            return ESP_NATIVE_GAMEPLAY_HUB_REDRAWN;
+        }
+    }
 
     if (action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN) {
         const char* sessionMutation;
@@ -874,6 +1096,7 @@ const char* EspNativeGameplayHub_statusName(EspNativeGameplayHubStatus status) {
     case ESP_NATIVE_GAMEPLAY_HUB_REDRAWN: return "REDRAWN";
     case ESP_NATIVE_GAMEPLAY_HUB_CLOSED: return "CLOSED";
     case ESP_NATIVE_GAMEPLAY_HUB_OK: return "OK";
+    case ESP_NATIVE_GAMEPLAY_HUB_ITEM_USED: return "ITEM_USED";
     default: return "UNKNOWN";
     }
 }
