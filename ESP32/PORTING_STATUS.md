@@ -1,5 +1,38 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Consolidation — lot 2 graphique ZIP + fixtures hôte (2026-10-13)
+
+Même branche `agent/esp32-consolidate-postload-junction`, parent `9cde9d5`,
+base main inchangée `9d203e525a4b8736fadfd34aaf693423bff7f602`.
+Retrait du renderer/diagnostic de menu ZIP : **16 sources / 13 headers**,
+6 455 lignes, 31 exports déjà absents des deux ELF ; diagnostic fermé ramené
+de 238 à 11 lignes, quatre directives de wrap sans endpoint chargé retirées.
+Après les deux lots : **158 sources C/C++, 152 headers include**, 157 unités
+du dossier compilées + 3 copies générées ; aucun original desktop compilé.
+Détail, fermeture et suites : [`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md).
+
+Builds locaux normal/bringup PASS, neuf sections allouées strictement identiques
+à `9cde9d5` dans chaque profil, mêmes ensembles de symboles. RAM/flash : normal
+47 680 / 802 633 B, bringup 47 832 / 820 313 B. `.bin` de même taille, seuls
+SHA ELF/checksum/digest image diffèrent, digests vérifiés. Pas de gain RAM
+revendiqué. Les deux gardes LRU et leurs 488 B BSS restent conservés.
+
+Les deux bridges scène→dashboard du fichier painter sont **différés** : leur
+retrait tentatif changeait l'inlining de deux fonctions actives et 24 B de
+Flash. Comparateur strict en échec, tentative annulée ; painter final inchangé.
+La suite ZIP n'était déjà pas accessible en bringup (stub RETIRED retourne 0,
+`MENU BSP FAIL` conservé). Pas de suppression des vrais diagnostics actifs.
+
+Les trois fixtures hôte SYS touch / level progress / death menu sont réalignées
+sur les APIs slot/completion et intégrées à la CI. Les dix tests C, watcher,
+comparateur Python et garde des exports passent localement. Slot picker,
+restore SD et validateur completion demeurent mockés dans ces fixtures : pas
+de PASS matériel/SD/parité globale inventé. **CI distante à vérifier après push.**
+
+Pas de reflash/PASS CYD exigé pour ce lot final : code/data/layout chargés
+inchangés. RNG, rollback, save V11, rendu natif et backing PAK sont conservés.
+Aucune nouvelle correction des anomalies de gameplay documentées ci-dessous.
+
 ## Consolidation architecturale — lot post-load Junction (2026-10-13)
 
 Base auditée exacte : `9d203e525a4b8736fadfd34aaf693423bff7f602`, après le merge

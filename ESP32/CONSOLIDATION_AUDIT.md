@@ -16,6 +16,11 @@ neuf sources et neuf headers sans consommateur extérieur ni section allouée
 dans les deux profils. Pas de fusion d'états, pas de nouveau module production,
 pas de modification d'un fichier de gameplay conservé.
 
+Suite sur la même branche depuis `9cde9d5` : **lot 2 graphique ZIP** et remise
+en état des trois fixtures hôte. Le compteur courant devient **158 sources /
+152 headers include**, contre 183/174 à la base. Les inventaires CSV restent
+des snapshots du main initial ; les preuves du nouveau lot figurent ci-dessous.
+
 ## Méthode et portée des preuves
 
 Les trois documents de référence, `platformio.ini` et les 1 190 lignes de
@@ -246,3 +251,127 @@ python3 ESP32/tools/compare_elf_alloc.py ESP32/.pio/build/esp32-cyd-bringup/firm
   --baseline /chemin/base-bringup.elf \
   --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService
 ```
+
+## Deuxième jalon : ancien pipeline graphique ZIP retiré
+
+Branche conservée : `agent/esp32-consolidate-postload-junction`, depuis le head
+documentaire `9cde9d5`, sans rebase implicite ni changement de base main.
+
+Le lot retire les quinze sources candidates du renderer/diagnostic ancien :
+
+```text
+menu_bsp_structure_probe / map_runtime_structure_probe
+ -> resource_memory_plan_probe / native_asset_pack_probe
+ -> native_bitshape_loader / native_sprite_texel_probe / native_palette
+ -> native_graphics_resource_manager
+ -> native_sprite_render_consumer / native_wall_render_consumer
+ -> native_projected_wall_bridge / native_projected_wall_probe
+ -> native_projected_sprite_renderer
+ -> native_menu_wall_frame_probe / native_menu_sprite_frame_probe
+```
+
+Le seizième retrait est `esp_render_mapping_reload_guard.c`, wrapper dormant de
+`Render_beginLoadMap`. **16 C + 13 H = 6 455 lignes supprimées**. Le diagnostic
+`menu_bsp_probe.c` passe de 238 à 11 lignes : son implémentation ESP32 conserve
+exactement le log RETIRED et le retour 0 ; le fallback non-ESP32 à ZIP/longjmp
+est retiré. Ce dossier n'est pas une cible desktop. Les sources desktop de
+référence dans `src/` et le générateur sont inchangés. Tout retrait est
+récupérable dans Git au parent du lot.
+
+### Fermeture et états vérifiés
+
+- Ces 16 objets étaient compilés, mais leurs **31 exports** et leurs sections
+  allouées étaient absents des deux ELF avant retrait. Leur orchestration venait
+  du fallback `#else` de `DoomRPG_probeMenuBspHeader`, déjà exclu sur ESP32.
+  `main.cpp` bringup continue d'appeler uniquement le stub qui retourne 0 ; le
+  menu normal continue de construire/peindre le dashboard directement.
+- Includes et symboles sont recherchés dans tout le code du dépôt, les tests et
+  scripts. Les références externes aux anciens loaders proviennent seulement
+  des méthodes LRU dormantes ; aucun begin/acquire/end/getStats de ces caches
+  n'est lié. Aucun callback, RNG, format save ou owner transactionnel ne rend
+  l'ancien pipeline accessible. Les ABI Render/DoomCanvas conservés ne sont
+  pas supprimés sous prétexte que leurs anciens wrappers sont morts.
+- Quatre directives sont retirées : `EspNativeGraphics_loadSpriteFrame`,
+  `EspNativeGraphics_releaseSpriteFrame`, `Render_beginLoadMap` et
+  `DoomCanvas_updateLoadingBar`. Les deux premières étaient communes aux
+  profils ; les deux suivantes uniquement bringup. Compteurs wrap : **46/51**,
+  contre 48/55 à la base ; wrappers projet effectivement liés : toujours 46/49.
+- Les **guards cache-inactif restent conservés** : seuls les deux `isActive()`
+  sont liés, mais ils gardent les BSS historiques sprite **312 B** et wall
+  **176 B**. Ce sont 488 B **réellement présents**, non un gain fictif. Les
+  corps des caches et `native_graphics_resource_manager.h` restent inchangés
+  (sauf commentaire du contrat) pour préserver leurs layouts et les gates.
+  Les fonctions de chargement anciennes n'ont plus de backend : elles ne sont
+  pas une API disponible et ne doivent pas être réactivées. Le linker échouerait
+  si leurs références non résolues devenaient vivantes.
+
+### Retrait volontairement différé : les deux bridges du painter
+
+Une tentative de retrait des deux wrappers scène→dashboard à l'intérieur de
+`native_main_menu_touch_layout.c` a changé l'inlining de GCC dans
+`DoomRPG_esp32PaintMenuDashboardCards` et `DoomRPG_esp32RepaintOpaqueMainMenu` :
+déplacement des helpers/clones, **24 B de Flash en moins**, malgré l'absence des
+wrappers dans les ELF. Le comparateur strict a correctement **REFUSÉ** cette
+version. Les tailles rodata étaient inchangées ; ce n'est pas une preuve de
+retrait de simples chaînes ni un no-op machine.
+
+Le fichier du painter a donc été rétabli à l'identique au parent, avec ses deux
+headers de bridge et leurs directives bringup. Seuls les commentaires de ces
+headers clarifient leur dormance. **L'ELF final retrouve l'identité stricte**.
+Ce retrait se fera dans un jalon séparé, avec tests ciblés MENU_MAIN/Options Back/
+LOAD échec/START sur CYD si le code lié change, pas en ajoutant des constantes
+de remplissage ou en désactivant les gardes du comparateur.
+
+### Consolidation des régressions hôte
+
+Les trois fixtures auparavant non compilables sont réparées **sans changement
+de leur code production testé**, puis ajoutées au workflow CYD :
+
+- SYS touch : mocks slotSelector/touchSlot, carte de hitboxes de l'overlay,
+  aucun déplacement du curseur EXIT sous le picker, dispatch SELECT seulement
+  au résultat 2, consommation des taps d'armement/navigation.
+- Level progress : transport des deux bytes de completion dans le suffixe
+  existant, validation map/complete avant appel de l'owner, rejet de l'owner
+  sans remplacement du progress, anciens zéro réservés. Temps/moves/XP,
+  wrap et saturation restent testés. **Le validateur des bits completion est
+  mocké** : on ne lui attribue pas un PASS par ce test.
+- Death menu : ouvrir LOAD ne restaure pas automatiquement une partie ; choix
+  explicite, BACK avec repaint, admission failed/unready, restore failure puis
+  retry et finish du selector. Les tests gardent timing, palette/fonts,
+  no-save/deferred routes et guards framebuffer/present. Le picker et le
+  backend SD sont mockés : ni pagination réelle ni atomicité SD ne sont validées.
+
+### Mesures et acceptation du lot 2
+
+| Mesure courante | Normal | Bringup |
+| --- | ---: | ---: |
+| Sources C/C++ présentes | 158 | 158 |
+| Sources du dossier directement compilées | 157 | 157 |
+| Copies générées / original desktop directement compilé | 3 / 0 | 3 / 0 |
+| Commandes totales, framework/libs inclus | 215 | 215 |
+| Sources contribuant aux sections allouées | 147 | 150 |
+| Headers include / headers locaux src | 152 / 8 | 152 / 8 |
+| RAM statique PlatformIO | 47 680 B | 47 832 B |
+| Flash PlatformIO | 802 633 B | 820 313 B |
+
+Deux builds locaux PASS. Les neuf sections allouées, layout/adresses/bytes et
+les ensembles de symboles définis sont strictement identiques à `9cde9d5`
+dans chaque profil. Les `.bin` ont la même taille (802 992 / 820 672 B) ; seules
+les zones SHA ELF, checksum image et SHA image diffèrent, digests vérifiés.
+Les dix tests C du workflow, l'autotest watcher, le comparateur Python et le
+garde des exports passent localement. Les guards CI interdisent maintenant
+aussi les namespaces/endpoints retirés du pipeline graphique dans les deux ELF.
+Les trois fixtures réparées passent aussi localement sous ASan/UBSan ; le
+LeakSanitizer est désactivé car incompatible avec le ptrace de cet environnement.
+Ce contrôle mémoire hôte ne prouve pas les allocations/RAM sur le CYD.
+
+**CI distante du nouveau lot : à vérifier après push.** Aucun nouveau PASS
+matériel demandé : aucune section chargée ni adresse ne change dans le lot
+final. Les contraintes PAK, `shapeData == NULL`, `mediaTexels == NULL`, RNG,
+rollback, sauvegarde et transaction de publication demeurent inchangées.
+
+Suites prioritaires mises à jour : les trois fixtures et les 15 diagnostics
+candidats sont traités. Restent les deux bridges avec effet compiler, les
+gardes/layouts LRU (488 B), les quatre helpers/modèle de sortie parallèles,
+la documentation historique restante et les aliases de composition actifs.
+Ne pas fusionner leurs lifetimes ; refaire audit et preuve à chaque frontière.

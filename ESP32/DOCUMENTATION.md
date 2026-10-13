@@ -23,6 +23,12 @@ Selon le poste, PlatformIO peut être invoqué avec `platformio` au lieu de `pio
 
 `esp32-cyd-bringup` sert aux diagnostics/probes supplémentaires ; **ne pas** tirer de conclusions RAM production à partir de ce profil. La vérité matérielle vient du boot et des interactions réelles, via Serial.
 
+L'ancienne suite graphique `menu.bsp`/ZIP est retirée : son point d'entrée
+retournait déjà 0 pour tous les builds ESP32. Le rapport bringup `[MENUBSP]
+RETIRED` et `MENU BSP FAIL` reste donc attendu ; il ne teste pas le menu opaque
+production. Les diagnostics actifs première frame, CHANGEMAP, opcodes et touch
+ne sont pas supprimés avec cette suite historique.
+
 La politique de logs compile-time est définie dans `ESP32/include/doomrpg_log.h` : `DRPG_LOGE/I/D/T`. Normal = INFO, bringup = TRACE. Les messages de succès récurrents sur VIDEO, PAKIO, redraw et tour doivent rester hors du flux INFO ; ne pas masquer les erreurs, transitions, guards et recoveries.
 
 ## Playtest libre : captures automatiques des incidents
@@ -118,6 +124,14 @@ Premier lot : retrait de neuf anciens markers post-load Junction inaccessibles,
 sans fusion d'états actifs. La comparaison des sections allouées des deux ELF
 est stricte (octets/adresses/layout), avec `tools/compare_elf_alloc.py` ; les
 tests hôte et la CI n'attribuent aucun nouveau PASS gameplay/matériel.
+
+Deuxième lot sur la même branche : retrait de l'ancien renderer/probes de
+menu ZIP (16 sources, 13 headers), quatre directives de wrap inutilisées et
+allègement du diagnostic fermé. Après les deux lots : **158 sources C/C++,
+152 headers include**. Sections allouées et RAM/flash inchangées dans les deux
+profils. Trois fixtures SYS/progress/death-menu sont réalignées et intégrées
+à la CI ; elles ne valident pas la restauration SD réelle. Les bridges de menu
+et caches encore liés/partagés restent explicitement différés dans l'audit.
 
 Ne pas introduire de runtime propre à une map, de gros index pointer-heavy, ni de nouveaux wrappers universels simplement pour remplacer ceux du desktop. Le PAK reste le backing store, `EspMapRuntime` reste immuable, chaque mutation a un propriétaire explicite. Différer l'optimisation de `PlatformVideo_present()` : Doom RPG est turn-based.
 

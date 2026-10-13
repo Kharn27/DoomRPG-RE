@@ -17,9 +17,17 @@ static uint8_t cursor;
 static int navigationCalls;
 static int navigationFails;
 static EspNativeGameplayInputStatus consumeStatus;
+static int slotSelector, slotResult, slotCalls;
+static int slotX, slotY;
 
 const EspNativeGameplayHubView* EspNativeGameplayHub_view(void) { return &hub; }
 uint8_t EspNativeGameplaySave_statusCursor(void) { return cursor; }
+int EspNativeGameplaySave_slotSelectorActive(void) { return slotSelector; }
+int EspNativeGameplaySave_touchSlot(int x, int y) {
+    ++slotCalls;
+    slotX = x; slotY = y;
+    return slotResult;
+}
 const char* EspNativeGameplayHub_statusName(EspNativeGameplayHubStatus status) {
     (void)status;
     return "mock";
@@ -108,11 +116,52 @@ int main(void) {
     navigationCalls = 0;
     assert(__wrap_EspNativeGameplayInput_consume(&intent) == ESP_NATIVE_GAMEPLAY_INPUT_EMPTY);
     assert(navigationCalls == 0);
+
+    /* The multislot overlay owns SYS content while open. No tap may navigate
+     * the underlying SAVE/LOAD/EXIT cards, even when Exit is selected. */
+    slotSelector = 1;
+    cursor = ESP_NATIVE_SYS_EXIT;
+    navigationFails = 0;
+    for (int y = 35; y < 120; ++y) {
+        for (int x = 0; x < 160; ++x) {
+            int result = __wrap_EspNativeGameplayHubTouchUi_classify(x, y, &hit);
+            assert(result == (y >= 47 && y <= 116 ? 1 : -1));
+            if (result == 1) {
+                assert(hit.top == 47 && hit.bottom == 116);
+                assert(hit.left == 0 && hit.right == 159);
+                assert(hit.action == ESP_NATIVE_GAMEPLAY_ACTION_SELECT);
+            }
+        }
+    }
+    assert(__wrap_EspNativeGameplayHubTouchUi_classify(80, 25, &hit) == 0);
+    consumeStatus = ESP_NATIVE_GAMEPLAY_INPUT_OK;
+    pending.logicalX = 123; pending.logicalY = 60;
+    for (slotResult = 0; slotResult <= 2; ++slotResult) {
+        slotCalls = navigationCalls = 0;
+        assert(__wrap_EspNativeGameplayInput_consume(&intent) == ESP_NATIVE_GAMEPLAY_INPUT_OK);
+        assert(slotCalls == 1 && slotX == 123 && slotY == 60);
+        assert(navigationCalls == 0 && cursor == ESP_NATIVE_SYS_EXIT);
+        assert(intent.action == (slotResult == 2
+               ? ESP_NATIVE_GAMEPLAY_ACTION_SELECT : ESP_NATIVE_GAMEPLAY_ACTION_NONE));
+        assert(intent.zone == (slotResult == 2
+               ? ESP_NATIVE_GAMEPLAY_ZONE_SELECT : ESP_NATIVE_GAMEPLAY_ZONE_NONE));
+    }
+    pending.action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK;
+    slotCalls = 0;
+    assert(__wrap_EspNativeGameplayInput_consume(&intent) == ESP_NATIVE_GAMEPLAY_INPUT_OK);
+    assert(intent.action == pending.action && slotCalls == 0);
+    assert(__wrap_EspNativeGameplayInput_consume(NULL) == ESP_NATIVE_GAMEPLAY_INPUT_OK);
+    assert(slotCalls == 0);
+    pending.action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
+    consumeStatus = ESP_NATIVE_GAMEPLAY_INPUT_EMPTY;
+    assert(__wrap_EspNativeGameplayInput_consume(&intent) == ESP_NATIVE_GAMEPLAY_INPUT_EMPTY);
+    assert(slotCalls == 0);
+    slotSelector = 0;
     hub.page = ESP_NATIVE_GAMEPLAY_HUB_PAGE_STATUS;
     assert(__wrap_EspNativeGameplayHubTouchUi_classify(80, rowTop(2), &hit) == 0);
     hub.page = ESP_NATIVE_GAMEPLAY_HUB_PAGE_SYSTEM;
     hub.active = 0;
     assert(__wrap_EspNativeGameplayHubTouchUi_classify(80, rowTop(2), &hit) == 0);
-    puts("SYS touch: PASS (all card pixels, margins, nine routes, fail-closed)");
+    puts("SYS touch: PASS (card/slot pixels, margins, nine routes, slot dispatch, fail-closed)");
     return 0;
 }

@@ -78,6 +78,21 @@ jobs:
       - name: Test strict allocated ELF comparison (host Python)
         run: python ESP32/test/elf_alloc_compare_host.py
 
+      - name: Test SYS cards and multislot input ownership (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test
+          /tmp/doomrpg-sys-touch-test
+
+      - name: Test level progress and completion-checkpoint transport (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/test_level_progress.c ESP32/src/esp_player_fresh_map_state.c ESP32/src/esp_map_catalog.c -o /tmp/doomrpg-level-progress-test
+          /tmp/doomrpg-level-progress-test
+
+      - name: Test death menu and explicit slot confirmation (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/test_death_menu.c ESP32/src/esp_native_gameplay_player_death.c ESP32/src/esp_native_gameplay_hub_touch_ui.c -Wl,--gc-sections -o /tmp/doomrpg-death-menu-test
+          /tmp/doomrpg-death-menu-test
+
       - name: Cache PlatformIO packages
         uses: actions/cache@v4
         with:
@@ -100,11 +115,25 @@ jobs:
         working-directory: ESP32
         run: pio run -e esp32-cyd-bringup
 
-      - name: Reject retired Junction post-load exports in both profiles
+      - name: Reject retired migration exports in both profiles
         working-directory: ESP32
         run: |
-          python tools/compare_elf_alloc.py .pio/build/esp32-cyd/firmware.elf --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService
-          python tools/compare_elf_alloc.py .pio/build/esp32-cyd-bringup/firmware.elf --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService
+          for profile in esp32-cyd esp32-cyd-bringup; do
+            python tools/compare_elf_alloc.py ".pio/build/$profile/firmware.elf" \
+              --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService \
+              --forbid-prefix EspNativeGraphics_ --forbid-prefix EspNativeProjectedSprite_ \
+              --forbid-prefix EspNativeProjectedWall_ --forbid-prefix DoomRPG_probeNative \
+              --forbid-prefix DoomRPG_probeMenuMapRuntimeStructures \
+              --forbid-prefix DoomRPG_markMapRuntimeStructureBoundary \
+              --forbid-prefix DoomRPG_probeMenuBspStructure \
+              --forbid-prefix DoomRPG_probeMenuResourceMemoryPlan \
+              --forbid-prefix DoomRPG_probeProjectedWallGfxrm \
+              --forbid-prefix DoomRPG_loadNativeBitShapes \
+              --forbid-prefix DoomRPG_prepareNativePalette \
+              --forbid-prefix __wrap_Render_beginLoadMap \
+              --forbid-prefix __wrap_DoomCanvas_updateLoadingBar \
+              --forbid-prefix __wrap_DoomRPG_probeNative
+          done
 
       - name: Upload firmware artifacts
         if: success()

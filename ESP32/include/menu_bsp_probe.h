@@ -6,13 +6,9 @@ extern "C" {
 #endif
 
 /*
- * First BSP contact for the classic no-PSRAM CYD.
- *
- * Requires the already validated config/mappings stage. The probe checks the
- * ZIP metadata and transient inflate budget, reads /menu.bsp for real, parses
- * only the fixed 33-byte map header, then frees the BSP buffer immediately.
- * It deliberately does NOT call Render_beginLoadMap() or
- * Render_beginLoadMapData().
+ * Retired ZIP diagnostic, retained only for the bringup boot report.
+ * Always returns 0, without loading a map or touching renderer state.
+ * Native PAK readers, not this compatibility endpoint, validate current BSPs.
  */
 int DoomRPG_probeMenuBspHeader(int configMappingsReady);
 

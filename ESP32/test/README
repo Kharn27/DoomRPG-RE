@@ -26,9 +26,12 @@ cc -std=c11 -Wall -Wextra -Werror -I ESP32/include \
 ```
 
 The production progress owner and map catalog are compiled unchanged; only the
-player/HUD view boundaries are mocked. Tests cover fresh map entry, XP baseline
+player/HUD view and completion-checkpoint transport boundaries are mocked.
+Tests cover fresh map entry, XP baseline
 across a level-up, elapsed-time resume without offline/loading time, legacy-save
-partial history, rejected malformed suffixes, timer wrap and counter saturation.
+partial history, completion-byte roundtrip/owner rejection without replacing
+progress, malformed map/complete flags, timer wrap and counter saturation.
+The completion-mask validator itself is mocked, not validated by this fixture.
 
 SYS direct-touch host regression (from the repository root):
 
@@ -42,7 +45,9 @@ cc -std=c11 -Wall -Wextra -Werror -I ESP32/include \
 The production touch wrapper is compiled unchanged; its HUB cursor/navigation
 and input boundaries are mocked. Checks cover every content pixel against the
 shared three-card layout, rejection of gaps/margins, all nine cursor-to-target
-routes, failed/invalid preselection, empty input and non-SYS fallback. These
+routes, failed/invalid preselection, empty input and non-SYS fallback. While the
+slot selector is open, checks cover its content rectangle and dispatch only
+on touchSlot result 2, without navigating the underlying EXIT card. These
 tests do not replace hardware confirmation of SAVE/LOAD or Exit To Menu.
 
 Death-menu presentation / input host regression (from the repository root):
@@ -61,8 +66,11 @@ cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
 Production death/menu code and the shared HUB font are compiled unchanged.
 Clock, player/view/HUD, framebuffer/present and checkpoint boundaries are mocked.
 Checks cover the fall and three-second menu admission, shared palette/text,
-with/without save, card corners/gaps/margins, queued LOAD, unchanged deferred
-routes, framebuffer guards and failed presentation. This does not validate
+with/without save, card corners/gaps/margins, queued LOAD, selector open/back/
+confirm, failed/unready selector admission, failed restore, successful selector
+finish, unchanged deferred routes, framebuffer guards and failed presentation.
+The selector is mocked: its actual pagination/storage code is not exercised.
+These three fixtures are now required by the CYD CI workflow. This does not validate
 actual SD restore, combat or display behavior on the CYD.
 
 Unit Testing is a software testing method by which individual units of
