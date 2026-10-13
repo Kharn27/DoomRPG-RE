@@ -16,7 +16,12 @@ adresses/flags/alignement/taille/octet par octet compris (NOBITS par layout).
 RAM/flash utiles inchangées : normal 47 680 / 802 633 B, bringup 47 832 /
 820 313 B. Pas de gain RAM revendiqué pour les 108 B de markers des objets
 éliminés ; ils étaient déjà absents des ELF. Tests comparateur et garde CI
-d'absence d'exports ajoutés ; CI distante à vérifier après push.
+d'absence d'exports ajoutés. Frontière de code :
+`1bd1120550040d0b7060f537bc13783b64af7a5b` sur
+`agent/esp32-consolidate-postload-junction`. CI distante
+[38385323228](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38385323228) :
+**SUCCESS**, tests hôte, builds normal/bringup et garde des exports retirés.
+La clôture suivante est docs-only ; aucun nouveau firmware n'est modifié.
 
 Les tests C/outil du workflow passent localement. Trois fixtures historiques
 hors CI (SYS touch, level progress, death menu) sont déjà désalignées avec les

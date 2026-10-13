@@ -202,6 +202,13 @@ Ce gain est de compréhension/build et d'API retirées, **pas de RAM/flash**.
 ## Vérification et niveau d'acceptation
 
 - Builds normal/bringup locaux avant et après : PASS.
+- Frontière de code commitée/poussée :
+  `1bd1120550040d0b7060f537bc13783b64af7a5b`, branche
+  `agent/esp32-consolidate-postload-junction`, parent exact `9d203e5`.
+  [CI 38385323228](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38385323228)
+  **SUCCESS** : tests hôte, deux builds, absence des exports retirés. La CI ne
+  refait pas le comparatif byte-à-byte avec la base locale ; ces deux preuves
+  sont distinctes. Clôture documentaire uniquement après ce résultat.
 - Les **neuf sections allouées de chaque ELF sont strictement identiques**, y
   compris `.flash.appdesc`, `.flash.text`, `.flash.rodata`, IRAM, DRAM et BSS.
   Comparateur sans masque ni exception : `tools/compare_elf_alloc.py`.
