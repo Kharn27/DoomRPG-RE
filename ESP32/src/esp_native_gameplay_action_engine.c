@@ -1986,6 +1986,14 @@ static int serviceDirectionalCue(void) {
         directionCue.snapshotPixels = 0U;
         directionCue.needsRepaint = 0U;
     }
+    /* A failed physical publish may have restored the clean framebuffer
+     * while the *screen* still shows the previous pulse. Repaint first;
+     * otherwise expiry would attempt a restore with no valid snapshot and
+     * leave the cue stuck indefinitely. No gameplay retry is involved. */
+    if (directionCue.phase == 2U && directionCue.needsRepaint != 0U) {
+        (void)__wrap_Esp32PlatformVideo_present();
+        return 1;
+    }
     if (directionCue.phase == 2U &&
         (uint32_t)(now - directionCue.phaseAtMs) >= DAMAGE_CUE_ON_MS) {
         if (!visitDirectionalCue(1U)) {
