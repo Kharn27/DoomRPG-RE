@@ -3690,7 +3690,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             &triggered,
                             &playerHitsThisBlast,
                             &playerMessageDamageThisBlast,
-                            barrelExpectedChainCount == 1U,
+                            EspNativeGameplayBarrelRadius_terminalDeathOwned(
+                                barrelExpectedChainCount),
                             &barrelPlayerLethal)) {
                         int rollbackOk = 1;
                         if (barrelTurnRequested != 0U &&
