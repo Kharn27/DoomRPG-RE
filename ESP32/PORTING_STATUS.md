@@ -1,5 +1,83 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Feedback dégâts directionnels + tonneau mortel — clôture CYD (2026-10-14)
+
+**PR #209** sur `agent/esp32-directional-damage-feedback`, base `main`
+`65e9e8c5ab199895b0ebbc31088761193576d5b4`. Dernier SHA de code
+fonctionnel `6763c9f43f7b8e50a7224748bf9f4e7d4e99698e`; le commit
+`56ca2f16d54b8de936c14bb9ae9d72e66097aa2c` annule intégralement
+une exploration d'activation post-LOAD (même arbre Git que le dernier
+SHA de code fonctionnel). **Aucun scan à 360°, aucune réactivation forcée
+au LOAD, aucune modification du format SAVE** dans cette PR.
+
+**Feedback d'attaque — accepté qualitativement par l'utilisateur sur
+le vrai CYD après sa dernière passe** (confirmation « C'est good »,
+sans nouveau log Serial détaillé dans cette confirmation). Après un
+`MONSTERRETAL COMMIT` réel et non létal, un contour rouge 2 px logiques
+sur le viewport (500 ms) coexiste avec une bande latérale directionnelle
+10 px logiques / 20 physiques, RGB565 mélangé à 50 %. Direction calculée
+depuis la position du monstre ayant effectivement commité ses dégâts et
+l'orientation du joueur ; `FRONT/RIGHT/BACK/LEFT`. Deux impulsions
+de 85 ms séparées par 45 ms, FIFO bornée 8. Aucune barrière de gameplay
+ajoutée entre les monstres : le séquenceur reprend sur résolution réelle
+`lastResolvedProbe`, pas sur expiration du feedback. Aucune mutation
+supplémentaire de RNG/HP/armure/tour, heap, PAK, shapeData ou mediaTexels.
+
+**Réserve observée dans les logs matériels précédant l'acceptation :**
+lors de la première attaque immédiatement après une chaîne de déplacements,
+`[VIEWFLASH] EXPIRE elapsedMs=803 targetMs=500` précède
+`[DAMAGECUE] ON probe=1 ... side=LEFT redBorder=none`. Le premier
+clignotement directionnel n'est donc *pas démontré synchrone* avec le rouge
+dans cette trace. À l'attaque suivante,
+`[DAMAGECUE] ON probe=2 ... side=RIGHT redBorder=visible` prouve bien
+la superposition sur la présentation réelle ; autres coups
+`probe=3/4 redBorder=visible`. **Acceptation de jalon ne signifie pas
+que le décalage après mouvement est corrigé à 100 %.** À isoler si
+reproduit, sans réintroduire d'attente du tour de monstre.
+
+**Tonneau mortel — PASS matériel ciblé** sur le log utilisateur :
+`BARREL sprite=89`, un seul blast (`chain=1`), le rayon applique
+`PLAYER-HIT component=19 hp=15->0 armor=0->0`, réserve le RNG de mort
+(`DEATH-RNG-RESERVE value=148`) après celui du blast et avant les
+conséquences sur les monstres ; sprites 7 et 8 meurent, 12 XP crédités,
+puis `BARRELRADIUS LETHAL-COMMIT ... deathOwner=armed rollback=closed`,
+`PLAYERDEATH ARM` et `PLAYERDEATH READY ... death-menu-ready`. Le
+checkpoint SD apparaît lisible (`READABLE-SPATIAL result=valid`).
+Ce test valide **la mort sur un seul tonneau avec monstres voisins**, pas
+la famille létale multi-tonneaux, toujours fail-closed. Un impact
+non létal peut émettre son intent directionnel ; le cas mortel laisse
+priorité à la présentation de mort. La vraie transition ne réintroduit
+pas `applyDamageNonlethal` pour forcer HP=0.
+
+**CI** : push [38476870335](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38476870335)
+et PR [38476878889](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38476878889)
+**PASS** sur `56ca2f16` (arbre de code inchangé depuis `6763c9f4`) :
+fixture 16/16 directions, compositing rouge+direction et restauration
+LIFO, death-menu/RNG réservé, barrel terminal/rollback, suite hôte et
+builds `esp32-cyd` normal et bringup. Dernières tailles remontées
+pour le SHA fonctionnel `6763c9f4` : **50 976 B RAM statique,
+809 557 B flash** en normal, **51 128 B / 830 089 B** en bringup.
+Ces preuves logicielles ne remplacent pas le test matériel ci-dessus.
+
+**Anomalie ouverte, hors PR : activation des monstres apparus par trigger
+après SAVE/LOAD.** Sur map 2, juste après LOAD à
+`tile=486 pos=416,992 angle=128`, quatre `PASS_TURN`
+consécutifs voient `activeCount=19 delivered=0`. Après deux
+`TURN_LEFT`, le rendu BSP déclenche
+`MONSTERACT ACTIVE sprite=7 subtype=4 tile=460` et
+`sprite=8 tile=521` ; `activeCount=21`, et les deux avancent puis
+attaquent. Selon l'utilisateur, ils sont apparus après un ordinateur /
+déverrouillage de porte et avaient déjà été vus/activés avant SAVE.
+**Cause non tranchée** : instant exact de capture de l'ordre d'activation,
+restauration du snapshot V9/V11 (268 B, FNV), possible reset ultérieur,
+ou sémantique SHOW/activation BSP. Sur reproduction sauvegardée avant et
+après le trigger, comparer `[MONSTERACT] ACTIVE`,
+`[NATIVESAVE] SAVE ... activation=<count>/<FNV>`,
+`[MONSTERACT] RESTORE ... activeCount=... stateFNV=...`, puis
+`MONSTERACTIVESEQ BEGIN`. **Ne pas élargir les monstres actifs par
+heuristique de vue arrière avant d'avoir établi la cause en amont.**
+Le code de l'IA et de SAVE/LOAD est inchangé pour cette anomalie.
+
 ## Revue PR #210 : rollback du démarrage script depuis automap (2026-10-13)
 
 P2 confirmé : SELECT opcode 23 ferme l'automap avant d'exécuter l'interaction.
