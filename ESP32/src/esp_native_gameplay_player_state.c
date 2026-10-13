@@ -270,11 +270,11 @@ int EspNativeGameplayPlayerState_enterDeath(uint16_t* outWeaponsBefore,
     return 1;
 }
 
-EspNativeGameplayPlayerDamageStatus
-EspNativeGameplayPlayerState_applyDamageNonlethal(
+static EspNativeGameplayPlayerDamageStatus applyDamageInternal(
     uint16_t damage,
     uint16_t armorDamage,
-    EspNativeGameplayPlayerDamageResult* outResult) {
+    EspNativeGameplayPlayerDamageResult* outResult,
+    int allowLethal) {
     EspNativeGameplayPlayerDamageResult result;
     int32_t health;
     int32_t armor;
@@ -308,7 +308,8 @@ EspNativeGameplayPlayerState_applyDamageNonlethal(
     result.healthAfter = (uint8_t)health;
     result.armorAfter = (uint8_t)armor;
     if (result.healthAfter == 0U &&
-        (damage != 0U || armorDamage != 0U)) {
+        (damage != 0U || armorDamage != 0U) &&
+        !allowLethal) {
         result.stateFNVAfter = result.stateFNVBefore;
         if (outResult != NULL) *outResult = result;
         return ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED;
@@ -319,7 +320,24 @@ EspNativeGameplayPlayerState_applyDamageNonlethal(
                          ((uint32_t)result.armorAfter << 16);
     result.stateFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     if (outResult != NULL) *outResult = result;
-    return ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK;
+    return allowLethal && result.healthAfter == 0U &&
+                   (damage != 0U || armorDamage != 0U)
+               ? ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_COMMITTED
+               : ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK;
+}
+
+EspNativeGameplayPlayerDamageStatus
+EspNativeGameplayPlayerState_applyDamageNonlethal(
+    uint16_t damage, uint16_t armorDamage,
+    EspNativeGameplayPlayerDamageResult* outResult) {
+    return applyDamageInternal(damage, armorDamage, outResult, 0);
+}
+
+EspNativeGameplayPlayerDamageStatus
+EspNativeGameplayPlayerState_applyDamageForDeath(
+    uint16_t damage, uint16_t armorDamage,
+    EspNativeGameplayPlayerDamageResult* outResult) {
+    return applyDamageInternal(damage, armorDamage, outResult, 1);
 }
 
 int EspNativeGameplayPlayerState_addCredits(uint32_t amount) {

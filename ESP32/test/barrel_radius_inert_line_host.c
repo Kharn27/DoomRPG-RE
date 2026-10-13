@@ -37,6 +37,13 @@ int main(void) {
     assert(EspNativeGameplayBarrelRadius_previewWords(16U, 0U) == 16U);
     assert(EspNativeGameplayBarrelRadius_previewWords(2U, 1U) == 1U);
     assert(EspNativeGameplayBarrelRadius_previewWords(16U, 8U) == 1U);
-    puts("barrel_radius_inert_line_host: PASS type0=all type12=3,4 only, blast RNG preview modes");
+    /* Real incident: chain=1, but it may splash adjacent monsters as well
+     * as the player. Death byte must be reserved before monster consequence
+     * RNG. A subsequent barrel makes that ordering unsupported for now. */
+    assert(EspNativeGameplayBarrelRadius_terminalDeathOwned(1U));
+    assert(!EspNativeGameplayBarrelRadius_terminalDeathOwned(0U));
+    assert(!EspNativeGameplayBarrelRadius_terminalDeathOwned(2U));
+    assert(!EspNativeGameplayBarrelRadius_terminalDeathOwned(16U));
+    puts("barrel_radius_inert_line_host: PASS type0=all type12=3,4 only, blast RNG preview modes, lethal single-blast boundary");
     return 0;
 }

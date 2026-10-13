@@ -55,6 +55,114 @@ int EspNativeGameplayActionEngine_queueTextFeedback(
     EspNativeGameplayActionFeedback feedback,
     const char* text,
     uint16_t viewportFlashMs);
+/*
+ * Monster -> player impact direction in the player's CURRENT cardinal view.
+ * The pure contract uses world positions from MonsterPosition and the exact
+ * 64-unit step from EspPlayerView_cardinalBasis(). No trig, RNG or allocation.
+ * Ties resolve forward/back before left/right. Coincident positions fail closed.
+ */
+typedef enum EspNativeGameplayDamageSide_e {
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE = 0,
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT = 1,
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT = 2,
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK = 3,
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT = 4
+} EspNativeGameplayDamageSide;
+
+static inline EspNativeGameplayDamageSide
+EspNativeGameplayDamageSide_fromWorld(int32_t playerX, int32_t playerY,
+                                      int32_t stepX, int32_t stepY,
+                                      int32_t attackerX, int32_t attackerY) {
+    int64_t dx;
+    int64_t dy;
+    int64_t front;
+    int64_t right;
+    uint64_t absFront;
+    uint64_t absRight;
+    /* Check the cardinal basis before any multiplication: unknown callers
+     * must not overflow the pure projection by supplying arbitrary steps. */
+    if (!((stepX == 64 || stepX == -64) && stepY == 0) &&
+        !((stepY == 64 || stepY == -64) && stepX == 0)) {
+        return ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE;
+    }
+    dx = (int64_t)attackerX - playerX;
+    dy = (int64_t)attackerY - playerY;
+    if (dx == 0 && dy == 0) return ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE;
+    front = dx * stepX + dy * stepY;
+    right = dy * stepX - dx * stepY;
+    absFront = (uint64_t)(front < 0 ? -front : front);
+    absRight = (uint64_t)(right < 0 ? -right : right);
+    if (absFront >= absRight) {
+        return front > 0 ? ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT
+                         : ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK;
+    }
+    return right > 0 ? ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT
+                     : ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT;
+}
+
+/* Bounded, allocation-free FIFO. The presentation owner consumes the oldest
+ * committed attack first; repeated sides remain distinct when attacker/probe
+ * IDs differ. This small pure contract also runs as a host regression. */
+#define ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP 8U
+typedef struct EspNativeGameplayDamageCue_s {
+    uint32_t probe;
+    uint16_t attackerSprite;
+    uint8_t side;
+    uint8_t reserved;
+} EspNativeGameplayDamageCue;
+typedef struct EspNativeGameplayDamageCueQueue_s {
+    EspNativeGameplayDamageCue entries[ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP];
+    uint8_t head;
+    uint8_t count;
+} EspNativeGameplayDamageCueQueue;
+
+static inline int EspNativeGameplayDamageCueQueue_push(
+    EspNativeGameplayDamageCueQueue* fifo,
+    uint32_t probe, uint16_t attackerSprite,
+    EspNativeGameplayDamageSide side) {
+    uint8_t tail;
+    if (fifo == NULL || probe == 0U || attackerSprite == 0xffffU ||
+        side < ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT ||
+        side > ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT ||
+        fifo->count >= ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP) return 0;
+    tail = (uint8_t)((fifo->head + fifo->count) %
+                     ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP);
+    fifo->entries[tail].probe = probe;
+    fifo->entries[tail].attackerSprite = attackerSprite;
+    fifo->entries[tail].side = (uint8_t)side;
+    fifo->entries[tail].reserved = 0U;
+    ++fifo->count;
+    return 1;
+}
+
+static inline int EspNativeGameplayDamageCueQueue_pop(
+    EspNativeGameplayDamageCueQueue* fifo,
+    EspNativeGameplayDamageCue* outCue) {
+    if (fifo == NULL || outCue == NULL || fifo->count == 0U ||
+        fifo->count > ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP) return 0;
+    *outCue = fifo->entries[fifo->head];
+    fifo->head = (uint8_t)((fifo->head + 1U) %
+                           ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP);
+    --fifo->count;
+    return 1;
+}
+
+/* Independent presentation-only FIFO. Every committed monster hit keeps
+ * its existing red 500 ms border; the direction band blinks concurrently on
+ * top of it. Nothing here delays the next member of the monster sequence. */
+int EspNativeGameplayActionEngine_queueDirectionalDamage(
+    uint32_t attackProbe, uint16_t attackerSprite,
+    EspNativeGameplayDamageSide side);
+
+/* Integer 50%-alpha RGB565 blend, called on the existing framebuffer only.
+ * A band snapshot is taken AFTER the base red border: restoring it returns
+ * the red border, then its own owner restores the original world pixels. */
+static inline uint16_t EspNativeGameplayDamageCue_blend565(
+    uint16_t base, uint16_t overlay) {
+    return (uint16_t)(((base & 0xf7deU) >> 1U) +
+                      ((overlay & 0xf7deU) >> 1U));
+}
+
 /* Legacy Hud keeps at most five queued messages. This bounded batch API is
  * intentionally narrow: it lets one committed multi-pickup tile publish the
  * same ordered "Got ..." sequence without importing Hud_t or heap ownership. */

@@ -75,6 +75,16 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_gameplay_store.c ESP32/test/store_native_host.c -o /tmp/doomrpg-native-store-test
           /tmp/doomrpg-native-store-test
 
+      - name: Test lethal barrel damage through real native PlayerState (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/barrel_lethal_damage_host.c ESP32/src/esp_native_gameplay_player_state.c -Wl,--gc-sections -o /tmp/doomrpg-barrel-lethal-test
+          /tmp/doomrpg-barrel-lethal-test
+
+      - name: Test monster damage direction for all cardinal facings (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/directional_damage_side_host.c -o /tmp/doomrpg-directional-damage-test
+          /tmp/doomrpg-directional-damage-test
+
       - name: Test strict allocated ELF comparison (host Python)
         run: python ESP32/test/elf_alloc_compare_host.py
 

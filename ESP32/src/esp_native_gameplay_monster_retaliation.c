@@ -12,6 +12,7 @@
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_player_death.h"
@@ -309,6 +310,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     uint32_t aiRngCalls = 0U;
     uint8_t healthAfter;
     uint8_t armorAfter;
+    EspNativeGameplayDamageSide damageSide = ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE;
     char damageText[RETALIATION_DAMAGE_TEXT_BYTES];
     int damageTextLen;
     int rollbackRendered;
@@ -445,6 +447,24 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
                           &healthAfter,
                           &armorAfter);
     randomAfterRoll = doomRpg->random;
+
+    /* Attribute the impact to THIS resolved attacker, including its final
+     * post-movement position. Never infer the source from a rendered sprite.
+     * The 500 ms red border now applies to EVERY hit. A resolved direction
+     * adds a sequential 20-physical-px cue after the border's lease ends. */
+    if (roll.hitLoops != 0U) {
+        const EspNativeGameplayMonsterPositionRecord* attackerPosition =
+            EspNativeGameplayMonsterPosition_find(monster->spriteIndex);
+        int32_t stepX;
+        int32_t stepY;
+        if (attackerPosition != NULL &&
+            EspPlayerView_cardinalBasis((uint8_t)playerView->viewAngle,
+                                        NULL, NULL, &stepX, &stepY, NULL)) {
+            damageSide = EspNativeGameplayDamageSide_fromWorld(
+                playerView->viewX, playerView->viewY, stepX, stepY,
+                attackerPosition->worldX, attackerPosition->worldY);
+        }
+    }
 
     if (healthAfter == 0U && roll.hitLoops != 0U) {
         uint16_t deathTile;
@@ -678,6 +698,12 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
 
     ++retaliationView.committedAttacks;
     retaliationView.lastResolvedProbe = turn->attackProbes;
+    /* UI intent is published only after player+RNG+frame COMMIT. Overflow
+     * never rolls back gameplay or aliases another attacker's direction. */
+    if (damageSide != ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE) {
+        (void)EspNativeGameplayActionEngine_queueDirectionalDamage(
+            turn->attackProbes, monster->spriteIndex, damageSide);
+    }
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     randomFNVAfter = randomFNV(&doomRpg->random);
     printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=deferred shake=deferred sound=deferred statusWarnings=deferred playerDeath=nonlethal turn=closed\n",

@@ -31,6 +31,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_player_death.h"
 #include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_weapon.h"
@@ -110,6 +111,14 @@
 #define FEEDBACK_DAMAGE_RED565 0xb800U
 #define FEEDBACK_VIEW_Y FEEDBACK_TOP_HEIGHT
 #define FEEDBACK_VIEW_HEIGHT (DOOMRPG_LOGICAL_HEIGHT - (FEEDBACK_TOP_HEIGHT * 2U))
+#define DAMAGE_CUE_THICKNESS 10U /* 20 physical px after 2x scaling */
+#define DAMAGE_CUE_ON_MS 85U
+#define DAMAGE_CUE_GAP_MS 45U
+#define DAMAGE_CUE_PULSES 2U
+#define DAMAGE_CUE_MAX_PHASE_MS 1500U
+#define DAMAGE_CUE_QUEUE_MAX ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP
+#define DAMAGE_CUE_MAX_PIXELS (DOOMRPG_LOGICAL_WIDTH * DAMAGE_CUE_THICKNESS)
+#define DAMAGE_CUE_COLOR565 0xfa20U
 #define FEEDBACK_BORDER_THICKNESS 2U
 #define FEEDBACK_BORDER_PIXELS \
     ((DOOMRPG_LOGICAL_WIDTH * FEEDBACK_BORDER_THICKNESS * 2U) + \
@@ -224,6 +233,27 @@ typedef struct FeedbackScratch_s {
 
 static ActionEngineState actionState;
 static uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];
+
+/* Pure presentation FIFO: attack probe -> immutable screen-relative side.
+ * No references to MonsterState after queueing, no heap/PAK or gameplay RNG.
+ * One BSS snapshot stores only the largest possible 160x10 viewport band.
+ * Keep this overlay inside the existing action-feedback presenter: a second
+ * --wrap_Esp32PlatformVideo_present would violate the established chain. */
+typedef struct DirectionalCueOwner_s {
+    EspNativeGameplayDamageCueQueue queued;
+    EspNativeGameplayDamageCue current;
+    uint32_t phaseAtMs;
+    uint32_t startedAtMs;
+    uint16_t snapshotPixels;
+    uint8_t phase; /* 0 idle, 1 requested-on, 2 lit, 3 gap */
+    uint8_t pulsesShown;
+    uint8_t snapshotValid;
+    uint8_t needsRepaint;
+} DirectionalCueOwner;
+static DirectionalCueOwner directionCue;
+static uint16_t directionCueSnapshot[DAMAGE_CUE_MAX_PIXELS];
+_Static_assert(DAMAGE_CUE_MAX_PIXELS == 1600U,
+               "directional overlay must stay within one 3.2 KB band");
 
 EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
@@ -1104,7 +1134,9 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
                                   uint8_t* ioMonsterCount,
                                   uint8_t* outTriggered,
                                   uint8_t* outPlayerHits,
-                                  uint16_t* outPlayerMessageDamage) {
+                                  uint16_t* outPlayerMessageDamage,
+                                  int allowTerminalDeath,
+                                  uint8_t* outLethal) {
     EspMapSprite source;
     uint8_t n;
     uint8_t triggered = 0U;
@@ -1114,7 +1146,8 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
     if (view == NULL || chain == NULL || ioCount == NULL ||
         monsterHits == NULL || ioMonsterCount == NULL ||
         outTriggered == NULL || outPlayerHits == NULL ||
-        outPlayerMessageDamage == NULL || blastDamage == 0U ||
+        outPlayerMessageDamage == NULL || outLethal == NULL ||
+        blastDamage == 0U ||
         !__real_EspMapRuntime_getMapSprite(sourceSprite, &source)) {
         return 0;
     }
@@ -1146,7 +1179,23 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
             if (component == 0U) continue;
             damageStatus = EspNativeGameplayPlayerState_applyDamageNonlethal(
                 component, component, &damageResult);
-            if (damageStatus != ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK) {
+            if (damageStatus ==
+                    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED &&
+                allowTerminalDeath) {
+                /* Only the single-blast, monster-free transaction currently
+                 * owns the subsequent PlayerDeath_arm terminal transition.
+                 * All other lethal consequences remain fail-closed. */
+                damageStatus =
+                    EspNativeGameplayPlayerState_applyDamageForDeath(
+                        component, component, &damageResult);
+                if (damageStatus ==
+                    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_COMMITTED) {
+                    *outLethal = 1U;
+                }
+            }
+            if (damageStatus != ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK &&
+                damageStatus !=
+                    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_COMMITTED) {
                 printf("[BARRELRADIUS] PLAYER-DEFER source=%u tile=%u relation=%s component=%u status=%u hp=%u armor=%u mutation=%s\n",
                        (unsigned int)sourceSprite,
                        (unsigned int)tile,
@@ -1157,13 +1206,14 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
                        (unsigned int)damageResult.armorBefore,
                        damageStatus ==
                                ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED
-                           ? "no/lethal-deferred" : "no/invalid");
+                           ? "no/lethal-deferred-chain-complex"
+                           : "no/invalid");
                 return 0;
             }
             ++playerHits;
             playerMessageDamage =
                 (uint16_t)((uint16_t)component * 2U);
-            printf("[BARRELRADIUS] PLAYER-HIT source=%u tile=%u relation=%s component=%u messageDamage=%u hp=%u->%u armor=%u->%u playerFNV=%08x->%08x mutation=yes\n",
+            printf("[BARRELRADIUS] PLAYER-HIT source=%u tile=%u relation=%s component=%u messageDamage=%u hp=%u->%u armor=%u->%u playerFNV=%08x->%08x mutation=yes terminal=%s\n",
                    (unsigned int)sourceSprite,
                    (unsigned int)tile,
                    n < 4U ? "cardinal" : "diagonal",
@@ -1174,7 +1224,8 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
                    (unsigned int)damageResult.armorBefore,
                    (unsigned int)damageResult.armorAfter,
                    (unsigned int)damageResult.stateFNVBefore,
-                   (unsigned int)damageResult.stateFNVAfter);
+                   (unsigned int)damageResult.stateFNVAfter,
+                   *outLethal ? "pending-death-arm" : "no");
             continue;
         }
         if (target.type == ACTION_ENTITY_ENEMY) {
@@ -1480,6 +1531,96 @@ static int visitViewportBorder(uint16_t* framebuffer,
     return pos == FEEDBACK_BORDER_PIXELS;
 }
 
+static const char* directionCueName(uint8_t side) {
+    switch ((EspNativeGameplayDamageSide)side) {
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT: return "FRONT";
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT: return "RIGHT";
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK: return "BACK";
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT: return "LEFT";
+    default: return "NONE";
+    }
+}
+
+int EspNativeGameplayActionEngine_queueDirectionalDamage(
+    uint32_t attackProbe, uint16_t attackerSprite,
+    EspNativeGameplayDamageSide side) {
+    if (!EspNativeGameplayDamageCueQueue_push(
+            &directionCue.queued, attackProbe, attackerSprite, side)) {
+        printf("[DAMAGECUE] DEFER probe=%u sprite=%u side=%s cause=fifo-full cap=%u gameplay=unchanged\n",
+               (unsigned int)attackProbe, (unsigned int)attackerSprite,
+               directionCueName((uint8_t)side), (unsigned int)DAMAGE_CUE_QUEUE_MAX);
+        return 0;
+    }
+    printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=%s\n",
+           (unsigned int)attackProbe, (unsigned int)attackerSprite,
+           directionCueName((uint8_t)side),
+           (unsigned int)directionCue.queued.count,
+           (attackProbe & 0x80000000UL) != 0U
+               ? "committed-barrel-blast" : "committed-monster-hit");
+    return 1;
+}
+
+/* Visit exactly one side of the 160x80 world viewport, never the HUD bars.
+ * mode 0 = capture clean pixels and blend, 1 = restore clean pixels,
+ * mode 2 = repaint from the preserved clean snapshot. RGB565 averaging gives
+ * 50% alpha; no framebuffer-sized scratch and no read from storage. */
+static int visitDirectionalCue(uint8_t mode) {
+    uint16_t* fb = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    uint32_t x0 = 0U;
+    uint32_t y0 = FEEDBACK_VIEW_Y;
+    uint32_t width = DOOMRPG_LOGICAL_WIDTH;
+    uint32_t height = DAMAGE_CUE_THICKNESS;
+    uint32_t x;
+    uint32_t y;
+    uint32_t at = 0U;
+    uint32_t pixels;
+    if (fb == NULL || mode > 2U ||
+        Esp32PlatformVideo_framebufferSizeBytes() !=
+            (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                sizeof(uint16_t)) return 0;
+    switch ((EspNativeGameplayDamageSide)directionCue.current.side) {
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT:
+        break;
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK:
+        y0 += FEEDBACK_VIEW_HEIGHT - DAMAGE_CUE_THICKNESS;
+        break;
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT:
+        width = DAMAGE_CUE_THICKNESS;
+        height = FEEDBACK_VIEW_HEIGHT;
+        break;
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT:
+        x0 += DOOMRPG_LOGICAL_WIDTH - DAMAGE_CUE_THICKNESS;
+        width = DAMAGE_CUE_THICKNESS;
+        height = FEEDBACK_VIEW_HEIGHT;
+        break;
+    default:
+        return 0;
+    }
+    pixels = width * height;
+    if (pixels > DAMAGE_CUE_MAX_PIXELS ||
+        (mode != 0U &&
+         (!directionCue.snapshotValid ||
+          directionCue.snapshotPixels != pixels))) return 0;
+    for (y = y0; y < y0 + height; ++y) {
+        for (x = x0; x < x0 + width; ++x) {
+            uint16_t* pixel = &fb[y * DOOMRPG_LOGICAL_WIDTH + x];
+            uint16_t clean;
+            if (mode == 0U) directionCueSnapshot[at] = *pixel;
+            clean = directionCueSnapshot[at++];
+            if (mode == 1U) *pixel = clean;
+            else {
+                *pixel = EspNativeGameplayDamageCue_blend565(
+                    clean, DAMAGE_CUE_COLOR565);
+            }
+        }
+    }
+    if (mode == 0U) {
+        directionCue.snapshotPixels = (uint16_t)pixels;
+        directionCue.snapshotValid = 1U;
+    }
+    return 1;
+}
+
 static int paintViewportFlash(void) {
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
@@ -1656,6 +1797,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
     uint8_t feedback = ACTION_FEEDBACK_NONE;
     int hadFeedback = 0;
     int flashPainted = 0;
+    int directionalPainted = 0;
     int ok;
 
     /*
@@ -1717,6 +1859,10 @@ int __wrap_Esp32PlatformVideo_present(void) {
         }
     }
 
+    /* Layer order is strict: base WORLD -> 2px red viewport border ->
+     * translucent 10px attacker side. The direction snapshot contains the
+     * red border underneath it, never replaces its original world snapshot.
+     * Both effects live in the same 500ms interval, not one after another. */
     if ((actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
         (actionState.viewportFlashPending != 0U ||
@@ -1728,8 +1874,56 @@ int __wrap_Esp32PlatformVideo_present(void) {
         flashPainted = 1;
     }
 
+    if (directionCue.phase == 1U ||
+        (directionCue.phase == 2U &&
+         (actionState.framebufferFresh != 0U ||
+          directionCue.needsRepaint != 0U))) {
+        if (!visitDirectionalCue(0U)) {
+            printf("[DAMAGECUE] FAILED phase=paint probe=%u\n",
+                   (unsigned int)directionCue.current.probe);
+            return 0;
+        }
+        directionalPainted = 1;
+    }
+
     ok = __real_Esp32PlatformVideo_present();
-    if (!ok) return 0;
+    if (!ok) {
+        if (directionalPainted != 0 && visitDirectionalCue(1U)) {
+            directionCue.snapshotValid = 0U;
+            directionCue.needsRepaint = 1U;
+        }
+        return 0;
+    }
+
+    if (directionalPainted) {
+        directionCue.needsRepaint = 0U;
+        if (directionCue.phase == 1U) {
+            directionCue.phase = 2U;
+            directionCue.phaseAtMs = actionNowMs();
+            if (directionCue.pulsesShown == 0U) {
+                /* This witness is AFTER the physical present, not an intent.
+                 * Useful to prove the side was actually over the red border
+                 * during the same 500ms damage flash on the real CYD. */
+                printf("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=1/%u redBorder=%s presented=1 concurrent=yes\n",
+                       (unsigned int)directionCue.current.probe,
+                       (unsigned int)directionCue.current.attackerSprite,
+                       directionCueName(directionCue.current.side),
+                       (unsigned int)DAMAGE_CUE_PULSES,
+                       actionState.viewportFlashPending != 0U ||
+                           actionState.viewportFlashVisible != 0U
+                           ? "visible" : "none");
+            }
+            else {
+                DRPG_LOGT("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=%u/%u pixels=%u\n",
+                          (unsigned int)directionCue.current.probe,
+                          (unsigned int)directionCue.current.attackerSprite,
+                          directionCueName(directionCue.current.side),
+                          (unsigned int)(directionCue.pulsesShown + 1U),
+                          (unsigned int)DAMAGE_CUE_PULSES,
+                          (unsigned int)directionCue.snapshotPixels);
+            }
+        }
+    }
 
     if (flashPainted && actionState.viewportFlashPending != 0U) {
         actionState.viewportFlashPending = 0U;
@@ -1780,6 +1974,11 @@ static int serviceViewportFlashExpiry(void) {
     duration = actionState.viewportFlashDurationMs;
     if (duration == 0U || elapsed < duration) return 1;
     if (EspNativeGameplayControls_isActive()) return 1;
+    /* The side band owns the TOP layer: restoring the base red border while
+     * the band still holds a red-pixel snapshot would leave stale pixels.
+     * Expire the base only after the short side pulse has restored its own
+     * snapshot. This is UI-only; the monster sequencer never waits for it. */
+    if (directionCue.phase != 0U) return 1;
     if (!restoreViewportFlash()) {
         printf("[VIEWFLASH] FAILED phase=restore\n");
         return 0;
@@ -1792,6 +1991,99 @@ static int serviceViewportFlashExpiry(void) {
     actionState.viewportFlashShownAtMs = 0U;
     actionState.viewportFlashDurationMs = 0U;
     actionState.viewportFlashColor565 = 0U;
+    return 1;
+}
+
+/* Timed two-pulse FIFO, paced by the existing loopTask service. Never hold
+ * a gameplay transaction, nor paint below touch/level-up/PAK leases. A failed
+ * physical present retries the same phase without dropping the attacker. */
+static int serviceDirectionalCue(void) {
+    uint32_t now = actionNowMs();
+    if (EspNativeGameplayControls_isActive() ||
+        EspNativeGameplayLevelUp_isActive() ||
+        EspAssetPack_isOpen() || actionState.pending.active != 0U) return 1;
+    if (directionCue.phase == 0U) {
+        if (directionCue.queued.count == 0U) return 1;
+        if (!EspNativeGameplayDamageCueQueue_pop(
+                &directionCue.queued, &directionCue.current)) return 1;
+        directionCue.phase = 1U;
+        directionCue.startedAtMs = now;
+        directionCue.pulsesShown = 0U;
+        directionCue.snapshotValid = 0U;
+        directionCue.snapshotPixels = 0U;
+        directionCue.needsRepaint = 0U;
+        DRPG_LOGT("[DAMAGECUE] BEGIN probe=%u sprite=%u side=%s redBorder=%s phase=overlay-concurrent sequencer=unblocked\n",
+               (unsigned int)directionCue.current.probe,
+               (unsigned int)directionCue.current.attackerSprite,
+               directionCueName(directionCue.current.side),
+               actionState.viewportFlashVisible != 0U ||
+                   actionState.viewportFlashPending != 0U ? "visible" : "none");
+    }
+    /* A failing presentation must not hold a logical monster turn forever.
+     * This explicit fail-open policy applies ONLY to UI timing, never to
+     * combat/RNG. The warning stays visible in playtest captures. */
+    if (directionCue.phase != 0U &&
+        (uint32_t)(now - directionCue.startedAtMs) >= DAMAGE_CUE_MAX_PHASE_MS) {
+        uint8_t phase = directionCue.phase;
+        if (phase == 2U && directionCue.snapshotValid != 0U &&
+            visitDirectionalCue(1U)) {
+            (void)__real_Esp32PlatformVideo_present();
+        }
+        printf("[DAMAGECUE] TIMEOUT probe=%u sprite=%u side=%s phase=%u afterMs=%u cue=discarded combat=untouched sequencer=never-blocked\n",
+               (unsigned int)directionCue.current.probe,
+               (unsigned int)directionCue.current.attackerSprite,
+               directionCueName(directionCue.current.side),
+               (unsigned int)phase,
+               (unsigned int)(now - directionCue.startedAtMs));
+        directionCue.phase = 0U;
+        directionCue.snapshotValid = 0U;
+        directionCue.needsRepaint = 0U;
+        return 1;
+    }
+    /* A failed physical publish may have restored the clean framebuffer
+     * while the *screen* still shows the previous pulse. Repaint first;
+     * otherwise expiry would attempt a restore with no valid snapshot and
+     * leave the cue stuck indefinitely. No gameplay retry is involved. */
+    if (directionCue.phase == 2U && directionCue.needsRepaint != 0U) {
+        (void)__wrap_Esp32PlatformVideo_present();
+        return 1;
+    }
+    if (directionCue.phase == 2U &&
+        (uint32_t)(now - directionCue.phaseAtMs) >= DAMAGE_CUE_ON_MS) {
+        if (!visitDirectionalCue(1U)) {
+            printf("[DAMAGECUE] FAILED phase=restore probe=%u\n",
+                   (unsigned int)directionCue.current.probe);
+            return 1;
+        }
+        if (!__real_Esp32PlatformVideo_present()) {
+            (void)visitDirectionalCue(2U);
+            return 1;
+        }
+        ++directionCue.pulsesShown;
+        directionCue.snapshotValid = 0U;
+        if (directionCue.pulsesShown == DAMAGE_CUE_PULSES) {
+            /* No final 45ms tail; the last visible pulse is complete. */
+            printf("[DAMAGECUE] DONE probe=%u sprite=%u side=%s pulses=%u ordered=yes gameplay=unblocked\n",
+                   (unsigned int)directionCue.current.probe,
+                   (unsigned int)directionCue.current.attackerSprite,
+                   directionCueName(directionCue.current.side),
+                   (unsigned int)directionCue.pulsesShown);
+            directionCue.phase = 0U;
+            return 1;
+        }
+        directionCue.phase = 3U;
+        directionCue.phaseAtMs = actionNowMs();
+        return 1;
+    }
+    if (directionCue.phase == 3U &&
+        (uint32_t)(now - directionCue.phaseAtMs) >= DAMAGE_CUE_GAP_MS) {
+        directionCue.phase = 1U;
+        directionCue.snapshotValid = 0U;
+    }
+    if (directionCue.phase == 1U) {
+        /* The wrapper owns blending + the physical present. */
+        (void)__wrap_Esp32PlatformVideo_present();
+    }
     return 1;
 }
 
@@ -2278,6 +2570,7 @@ int EspNativeGameplayActionEngine_deferredMonsterTarget(
 }
 
 void EspNativeGameplayActionEngine_reset(void) {
+    memset(&directionCue, 0, sizeof(directionCue));
     EspNativeGameplayWeapon_cancelAttack();
     EspNativeSpriteRenderer_clearTransient();
     EspNativeGameplayCrateState_reset();
@@ -2325,6 +2618,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     ActionPending pending;
 
     if (!serviceFeedbackExpiry()) return 0;
+    if (!serviceDirectionalCue()) return 0;
     /* PASS TURN and future non-SELECT actions may queue transient feedback
      * without owning an ActionPending transaction. If no gameplay redraw has
      * consumed it yet, present the existing framebuffer with the queued topbar.
@@ -2396,7 +2690,12 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         uint8_t barrelBlastPreview[ACTION_BARREL_CHAIN_MAX];
         Random_t barrelRandomAfterCombat;
         Random_t barrelRandomAfterPreview;
+        Random_t barrelRandomBeforeDeathByte;
+        uint8_t barrelReservedDeathRand = 0U;
+        uint8_t barrelReservedDeathRandValid = 0U;
         uint8_t barrelPlayerHits = 0U;
+        uint8_t barrelPlayerLethal = 0U;
+        uint16_t barrelPlayerHitSources[ACTION_BARREL_CHAIN_MAX];
         uint16_t barrelTotalPlayerMessageDamage = 0U;
         uint16_t barrelChain[ACTION_BARREL_CHAIN_MAX];
         EspNativeSpriteTransient
@@ -3402,7 +3701,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             &barrelSplashCount,
                             &triggered,
                             &playerHitsThisBlast,
-                            &playerMessageDamageThisBlast)) {
+                            &playerMessageDamageThisBlast,
+                            EspNativeGameplayBarrelRadius_terminalDeathOwned(
+                                barrelExpectedChainCount),
+                            &barrelPlayerLethal)) {
                         int rollbackOk = 1;
                         if (barrelTurnRequested != 0U &&
                             !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -3426,6 +3728,24 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                (unsigned int)waveOrdinal,
                                rollbackOk ? "yes" : "NO");
                         return rollbackOk ? 1 : 0;
+                    }
+                    /* When this one blast kills the player, legacy death
+                     * consumes one RNG byte before subsequent monster
+                     * splash consequences. Defer death activation until the
+                     * entire world transaction is validated, but reserve the
+                     * exact byte here. A rollback restores randomBefore. */
+                    if (barrelPlayerLethal != 0U &&
+                        barrelReservedDeathRandValid == 0U) {
+                        barrelRandomBeforeDeathByte = doomRpg->random;
+                        barrelReservedDeathRand =
+                            DoomRPG_randNextByte(&doomRpg->random);
+                        barrelReservedDeathRandValid = 1U;
+                        printf("[BARRELRADIUS] DEATH-RNG-RESERVE seq=%u source=%u nextBefore=%d nextAfter=%d value=%u ordering=blast-death-before-monster-effects transaction=pending\n",
+                               (unsigned int)pending.sequence,
+                               (unsigned int)barrelChain[blastCursor],
+                               barrelRandomBeforeDeathByte.nextRand,
+                               doomRpg->random.nextRand,
+                               (unsigned int)barrelReservedDeathRand);
                     }
                     if (barrelInterleaved != 0U &&
                         barrelSplashCount != 0U) {
@@ -3456,6 +3776,11 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         barrelSplashTotalHits =
                             (uint16_t)(barrelSplashTotalHits + hitCount);
                         barrelSplashCount = 0U;
+                    }
+                    if (playerHitsThisBlast != 0U &&
+                        barrelPlayerHits < ACTION_BARREL_CHAIN_MAX) {
+                        barrelPlayerHitSources[barrelPlayerHits] =
+                            barrelChain[blastCursor];
                     }
                     barrelPlayerHits =
                         (uint8_t)(barrelPlayerHits +
@@ -3536,16 +3861,24 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)ACTION_TRAP_DAMAGE_FLASH_MS);
             }
 
+            /* The reserved death byte is AFTER the blast preview by
+             * contract. Verify the saved pre-death RNG snapshot, never the
+             * RNG that has legitimately moved past that death side effect. */
             if (barrelChainCount != barrelExpectedChainCount ||
                 barrelBlastRngCalls != barrelExpectedChainCount ||
                 (barrelInterleaved == 0U &&
-                 memcmp(&doomRpg->random, &barrelRandomAfterPreview,
+                 memcmp(barrelReservedDeathRandValid != 0U
+                            ? &barrelRandomBeforeDeathByte : &doomRpg->random,
+                        &barrelRandomAfterPreview,
                         sizeof(barrelRandomAfterPreview)) != 0)) {
                 int rollbackOk = 1;
                 const int rngExact =
                     barrelBlastRngCalls == barrelExpectedChainCount &&
                     (barrelInterleaved != 0U ||
-                     memcmp(&doomRpg->random, &barrelRandomAfterPreview,
+                     memcmp(barrelReservedDeathRandValid != 0U
+                                ? &barrelRandomBeforeDeathByte
+                                : &doomRpg->random,
+                            &barrelRandomAfterPreview,
                             sizeof(barrelRandomAfterPreview)) == 0);
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -3965,6 +4298,95 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                    (unsigned int)pending.sequence);
             memset(&actionState.pending, 0, sizeof(actionState.pending));
             return 0;
+        }
+
+        if (isBarrel && barrelPlayerLethal != 0U) {
+            /* Single-blast/no-monster terminal boundary. The blast, player
+             * pain, weapon/turn reservation and settle frame have completed,
+             * and there can be no later monster consequence to roll back.
+             * Arm the permanent death owner before releasing the transaction.
+             * Multiple blasts + monster interleaving remain fail-closed in
+             * barrelTriggerNeighbors (the death RNG order is not owned yet). */
+            const int validTile =
+                view->destX >= 0 && view->destY >= 0 &&
+                ((uint32_t)view->destX >> 6) < MAP_WIDTH &&
+                ((uint32_t)view->destY >> 6) < MAP_WIDTH;
+            const uint16_t deathTile = validTile
+                ? (uint16_t)((((uint32_t)view->destY >> 6) * MAP_WIDTH) +
+                             ((uint32_t)view->destX >> 6))
+                : 0xffffU;
+            if (!validTile || barrelReservedDeathRandValid == 0U ||
+                !EspNativeGameplayPlayerDeath_armWithReservedRand(
+                    doomRpgBase, pending.sequence, deathTile,
+                    barrelReservedDeathRand)) {
+                int rollbackOk = 1;
+                if (barrelTurnRequested != 0U &&
+                    !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
+                        pending.sequence)) rollbackOk = 0;
+                if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
+                if (!EspNativeGameplayPlayerState_restore(
+                        &playerBefore)) rollbackOk = 0;
+                doomRpg->random = randomBefore;
+                actionState.feedbackPending = 0U;
+                actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+                actionState.feedbackText[0] = '\0';
+                actionState.viewportFlashPending = 0U;
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&frame, 0, sizeof(frame));
+                if (rollbackOk &&
+                    EspNativeGameplayFacingLabel_refresh(
+                        "BARREL-DEATH-ROLLBACK")) {
+                    rollbackOk = EspNativeGameplayFrame_renderTurn(
+                        doomRpg->render, (uint8_t)view->viewAngle, &frame);
+                }
+                printf("[BARRELRADIUS] LETHAL-ROLLBACK seq=%u root=%u cause=%s rollback=%s rng=yes player=yes world=yes death=not-armed\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       !validTile ? "invalid-player-tile" :
+                           barrelReservedDeathRandValid == 0U
+                               ? "missing-death-rng" : "player-death-arm",
+                       rollbackOk ? "yes" : "NO");
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                return rollbackOk ? 1 : 0;
+            }
+            /* Death's HUD and presentation have priority over transient cue
+             * animations; it is not safe to keep painting on a fading world. */
+            if (!Esp32PlatformVideo_present()) {
+                printf("[BARRELRADIUS] LETHAL-PRESENT-DEFER seq=%u death=armed recovery=death-service\n",
+                       (unsigned int)pending.sequence);
+            }
+            printf("[BARRELRADIUS] LETHAL-COMMIT seq=%u root=%u blastCount=%u playerHP=0 tile=%u deathOwner=armed rollback=closed rng=blast-then-death\n",
+                   (unsigned int)pending.sequence,
+                   (unsigned int)pending.spriteIndex,
+                   (unsigned int)barrelBlastRngCalls,
+                   (unsigned int)deathTile);
+        }
+        else if (isBarrel && barrelPlayerHits != 0U) {
+            uint8_t i;
+            int32_t stepX = 0;
+            int32_t stepY = 0;
+            if (EspPlayerView_cardinalBasis(
+                    (uint8_t)view->viewAngle, NULL, NULL,
+                    &stepX, &stepY, NULL)) {
+                for (i = 0U; i < barrelPlayerHits &&
+                             i < ACTION_BARREL_CHAIN_MAX; ++i) {
+                    EspMapSprite blast;
+                    EspNativeGameplayDamageSide side;
+                    if (!__real_EspMapRuntime_getMapSprite(
+                            barrelPlayerHitSources[i], &blast)) continue;
+                    side = EspNativeGameplayDamageSide_fromWorld(
+                        view->viewX, view->viewY, stepX, stepY,
+                        blast.x, blast.y);
+                    if (side != ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE) {
+                        /* High bit namespaces barrel action sequences away
+                         * from ordinary monster attack-probe identifiers. */
+                        (void)EspNativeGameplayActionEngine_queueDirectionalDamage(
+                            0x80000000UL | (pending.sequence & 0x7fffffffUL),
+                            barrelPlayerHitSources[i], side);
+                    }
+                }
+            }
         }
     }
 

@@ -54,6 +54,47 @@ resident avec startup/render/assets mockés ; il ne prouve pas un échec I/O
 réel sur CYD. Pour un smoke matériel, ouvrir normalement le dialogue depuis
 automap ; ne pas retirer/corrompre le PAK pour fabriquer une panne.
 
+## Feedback directionnel des dégâts et réserves post-LOAD
+
+Sur le CYD, un hit monstre non mortel commité affiche le contour rouge
+historique de 2 px logiques / 500 ms **et**, pendant cette période lorsque
+le compositor publie immédiatement la première impulsion, une bande de
+10 px logiques (20 px physiques) dans le côté de provenance réel :
+`FRONT` en haut de la vue, `RIGHT` à droite, `BACK` en bas,
+`LEFT` à gauche. Deux impulsions de 85 ms avec 45 ms de pause ;
+le feedback est distinct du séquenceur IA et ne doit pas retarder
+l'attaquant suivant. En INFO, comparer `[MONSTERRETAL] COMMIT`,
+`[VIEWFLASH] PAINT/EXPIRE`, `[DAMAGECUE] QUEUE` et
+`[DAMAGECUE] ON ... redBorder=visible presented=1`. Le
+`concurrent=yes` du log signifie que les deux effets *peuvent* coexister,
+pas que chaque impulsion a réellement recouvert le rouge : c'est
+`redBorder=visible` qui l'atteste. Le premier hit après déplacement
+a déjà montré `redBorder=none` ; cette limite reste ouverte malgré
+l'acceptation qualitative du jalon par l'utilisateur.
+
+Pour un tonneau, tester séparément la cible et son explosion.
+Un blast **unique** mortel (`chain=1`) peut désormais mettre
+`playerHP=0` dans l'API terminale, réserver exactement un octet RNG
+de mort après le blast et avant les conséquences monstres, puis armer le
+vrai menu de mort une fois la transaction commise. Chercher
+`BARRELRADIUS PLAYER-HIT`, `DEATH-RNG-RESERVE`,
+`MONSTERRADIUS COMMIT`, `LETHAL-COMMIT`, `PLAYERDEATH ARM/READY`.
+Le vrai CYD a validé ce chemin avec deux monstres voisins ; une
+**chaîne létale de plusieurs tonneaux** reste explicitement non supportée.
+
+Lorsqu'un monstre né d'un trigger `SHOW` refuse de bouger après
+LOAD jusqu'à ce que le joueur se retourne, **ne pas** réactiver tout
+le voisinage ou scanner à 360° comme correctif. V9/V11 enregistre déjà
+activation + ordre (snapshot 268 B), topologie et positions. Garder
+un slot avant le trigger et un autre après apparition/activation,
+puis comparer `[MONSTERACT] ACTIVE` avant SAVE,
+`[NATIVESAVE] SAVE ... activation=count/FNV`,
+`[MONSTERACT] RESTORE ... activeCount/stateFNV` et le premier
+`[MONSTERACTIVESEQ] BEGIN/COMPLETE`. Une apparition après rotation
+prouve une activation par visibilité BSP, **pas** une perte du snapshot
+à elle seule. L'enquête root-cause SAVE/LOAD/SHOW doit rester un
+jalon distinct ; détails dans `PORTING_STATUS.md`.
+
 ## Playtest libre : captures automatiques des incidents
 
 Pour jouer normalement **sans surveiller le terminal**, depuis `ESP32/` :

@@ -26,6 +26,13 @@ int EspNativeGameplayPlayerDeath_handleTap(int logicalX, int logicalY);
 int EspNativeGameplayPlayerDeath_arm(struct DoomRPG_s* doomRpg,
                                      uint32_t sequence,
                                      uint16_t tileIndex);
+/* A barrel may need to consume the legacy death RNG byte between its
+ * explosion word and the adjacent monster's consequence rolls, while keeping
+ * death activation transactional until all blast-side effects commit. The
+ * caller owns/rolls back the preconsumed byte; this variant never draws RNG. */
+int EspNativeGameplayPlayerDeath_armWithReservedRand(
+    struct DoomRPG_s* doomRpg, uint32_t sequence,
+    uint16_t tileIndex, uint8_t reservedDeathRand);
 int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpg);
 
 #ifdef __cplusplus
