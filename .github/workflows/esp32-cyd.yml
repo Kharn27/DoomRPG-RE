@@ -52,6 +52,11 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/native_bsp_visibility_capacity_host.c -o /tmp/doomrpg-native-bsp-visibility-test
           /tmp/doomrpg-native-bsp-visibility-test
 
+      - name: Test Malwrath triple projectile versus Imp single projectile (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/malwrath_projectile204_contract_host.c -o /tmp/doomrpg-malwrath-projectile-test
+          /tmp/doomrpg-malwrath-projectile-test
+
       - name: Test Imp projectile 204 sparse catalog prime and rollback (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_graphics_catalog.c ESP32/test/imp_projectile_catalog_host.c -o /tmp/doomrpg-imp-projectile-catalog-test
