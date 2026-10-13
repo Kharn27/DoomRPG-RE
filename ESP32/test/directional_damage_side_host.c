@@ -63,6 +63,62 @@ int main(void) {
     assert(EspNativeGameplayDamageSide_fromWorld(
         736, 1504, 64, 0, 736, 1504) ==
         ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE);
-    puts("DAMAGECUE host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok");
+    {
+        EspNativeGameplayDamageCueQueue fifo = {0};
+        EspNativeGameplayDamageCue popped;
+        unsigned int i;
+        const EspNativeGameplayDamageSide sides[4] = {
+            ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT,
+            ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT,
+            ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK,
+            ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT
+        };
+        /* Four different real attackers: order and identity, not last-wins. */
+        for (i = 0U; i < 4U; ++i)
+            assert(EspNativeGameplayDamageCueQueue_push(
+                &fifo, 100U + i, (uint16_t)(220U + i), sides[i]));
+        assert(fifo.count == 4U);
+        for (i = 0U; i < 4U; ++i) {
+            assert(EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
+            assert(popped.probe == 100U + i);
+            assert(popped.attackerSprite == 220U + i);
+            assert(popped.side == (uint8_t)sides[i]);
+        }
+        assert(fifo.count == 0U);
+        assert(!EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
+
+        /* Exhaust the queue and prove fail-closed overflow; then wrap. */
+        for (i = 0U; i < ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP; ++i)
+            assert(EspNativeGameplayDamageCueQueue_push(
+                &fifo, i + 1U, (uint16_t)(300U + i),
+                ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK));
+        assert(!EspNativeGameplayDamageCueQueue_push(
+            &fifo, 1234U, 999U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
+        for (i = 0U; i < 3U; ++i) {
+            assert(EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
+            assert(popped.probe == i + 1U);
+        }
+        for (i = 0U; i < 3U; ++i)
+            assert(EspNativeGameplayDamageCueQueue_push(
+                &fifo, 501U + i, (uint16_t)(501U + i),
+                ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT));
+        for (i = 3U; i < ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP; ++i) {
+            assert(EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
+            assert(popped.probe == i + 1U);
+        }
+        for (i = 0U; i < 3U; ++i) {
+            assert(EspNativeGameplayDamageCueQueue_pop(&fifo, &popped));
+            assert(popped.probe == 501U + i);
+            assert(popped.side == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT);
+        }
+        assert(fifo.count == 0U);
+        assert(!EspNativeGameplayDamageCueQueue_push(
+            &fifo, 0U, 5U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK));
+        assert(!EspNativeGameplayDamageCueQueue_push(
+            &fifo, 600U, 0xffffU, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK));
+        assert(!EspNativeGameplayDamageCueQueue_push(
+            &fifo, 600U, 5U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE));
+    }
+    puts("DAMAGECUE host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok fifo-order=ok wrap=ok full=guarded");
     return 0;
 }
