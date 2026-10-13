@@ -110,6 +110,13 @@
 #define FEEDBACK_DAMAGE_RED565 0xb800U
 #define FEEDBACK_VIEW_Y FEEDBACK_TOP_HEIGHT
 #define FEEDBACK_VIEW_HEIGHT (DOOMRPG_LOGICAL_HEIGHT - (FEEDBACK_TOP_HEIGHT * 2U))
+#define DAMAGE_CUE_THICKNESS 10U /* 20 physical px after 2x scaling */
+#define DAMAGE_CUE_ON_MS 85U
+#define DAMAGE_CUE_GAP_MS 45U
+#define DAMAGE_CUE_PULSES 2U
+#define DAMAGE_CUE_QUEUE_MAX 8U
+#define DAMAGE_CUE_MAX_PIXELS (DOOMRPG_LOGICAL_WIDTH * DAMAGE_CUE_THICKNESS)
+#define DAMAGE_CUE_COLOR565 0xfa20U
 #define FEEDBACK_BORDER_THICKNESS 2U
 #define FEEDBACK_BORDER_PIXELS \
     ((DOOMRPG_LOGICAL_WIDTH * FEEDBACK_BORDER_THICKNESS * 2U) + \
@@ -224,6 +231,34 @@ typedef struct FeedbackScratch_s {
 
 static ActionEngineState actionState;
 static uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];
+
+/* Pure presentation FIFO: attack probe -> immutable screen-relative side.
+ * No references to MonsterState after queueing, no heap/PAK or gameplay RNG.
+ * One BSS snapshot stores only the largest possible 160x10 viewport band.
+ * Keep this overlay inside the existing action-feedback presenter: a second
+ * --wrap_Esp32PlatformVideo_present would violate the established chain. */
+typedef struct DirectionalCue_s {
+    uint32_t probe;
+    uint16_t attackerSprite;
+    uint8_t side;
+    uint8_t reserved;
+} DirectionalCue;
+typedef struct DirectionalCueOwner_s {
+    DirectionalCue fifo[DAMAGE_CUE_QUEUE_MAX];
+    DirectionalCue current;
+    uint32_t phaseAtMs;
+    uint16_t snapshotPixels;
+    uint8_t head;
+    uint8_t count;
+    uint8_t phase; /* 0 idle, 1 requested-on, 2 lit, 3 gap */
+    uint8_t pulsesShown;
+    uint8_t snapshotValid;
+    uint8_t needsRepaint;
+} DirectionalCueOwner;
+static DirectionalCueOwner directionCue;
+static uint16_t directionCueSnapshot[DAMAGE_CUE_MAX_PIXELS];
+_Static_assert(DAMAGE_CUE_MAX_PIXELS == 1600U,
+               "directional overlay must stay within one 3.2 KB band");
 
 EspNativeGameplayActionStatus __real_EspNativeGameplayAction_executeSelect(
     const EspNativeGameplayInputState* intent,
@@ -1480,6 +1515,103 @@ static int visitViewportBorder(uint16_t* framebuffer,
     return pos == FEEDBACK_BORDER_PIXELS;
 }
 
+static const char* directionCueName(uint8_t side) {
+    switch ((EspNativeGameplayDamageSide)side) {
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT: return "FRONT";
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT: return "RIGHT";
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK: return "BACK";
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT: return "LEFT";
+    default: return "NONE";
+    }
+}
+
+int EspNativeGameplayActionEngine_queueDirectionalDamage(
+    uint32_t attackProbe, uint16_t attackerSprite,
+    EspNativeGameplayDamageSide side) {
+    uint8_t tail;
+    if (attackProbe == 0U || attackerSprite == 0xffffU ||
+        side < ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT ||
+        side > ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT) return 0;
+    if (directionCue.count >= DAMAGE_CUE_QUEUE_MAX) {
+        printf("[DAMAGECUE] DEFER probe=%u sprite=%u side=%s cause=fifo-full cap=%u gameplay=unchanged\n",
+               (unsigned int)attackProbe, (unsigned int)attackerSprite,
+               directionCueName((uint8_t)side), (unsigned int)DAMAGE_CUE_QUEUE_MAX);
+        return 0;
+    }
+    tail = (uint8_t)((directionCue.head + directionCue.count) %
+                     DAMAGE_CUE_QUEUE_MAX);
+    directionCue.fifo[tail].probe = attackProbe;
+    directionCue.fifo[tail].attackerSprite = attackerSprite;
+    directionCue.fifo[tail].side = (uint8_t)side;
+    directionCue.fifo[tail].reserved = 0U;
+    ++directionCue.count;
+    printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=committed-monster-hit\n",
+           (unsigned int)attackProbe, (unsigned int)attackerSprite,
+           directionCueName((uint8_t)side), (unsigned int)directionCue.count);
+    return 1;
+}
+
+/* Visit exactly one side of the 160x80 world viewport, never the HUD bars.
+ * mode 0 = capture clean pixels and blend, 1 = restore clean pixels,
+ * mode 2 = repaint from the preserved clean snapshot. RGB565 averaging gives
+ * 50% alpha; no framebuffer-sized scratch and no read from storage. */
+static int visitDirectionalCue(uint8_t mode) {
+    uint16_t* fb = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    uint32_t x0 = 0U;
+    uint32_t y0 = FEEDBACK_VIEW_Y;
+    uint32_t width = DOOMRPG_LOGICAL_WIDTH;
+    uint32_t height = DAMAGE_CUE_THICKNESS;
+    uint32_t x;
+    uint32_t y;
+    uint32_t at = 0U;
+    uint32_t pixels;
+    if (fb == NULL || mode > 2U ||
+        Esp32PlatformVideo_framebufferSizeBytes() !=
+            (size_t)DOOMRPG_LOGICAL_WIDTH * DOOMRPG_LOGICAL_HEIGHT *
+                sizeof(uint16_t)) return 0;
+    switch ((EspNativeGameplayDamageSide)directionCue.current.side) {
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT:
+        break;
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK:
+        y0 += FEEDBACK_VIEW_HEIGHT - DAMAGE_CUE_THICKNESS;
+        break;
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT:
+        width = DAMAGE_CUE_THICKNESS;
+        height = FEEDBACK_VIEW_HEIGHT;
+        break;
+    case ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT:
+        x0 += DOOMRPG_LOGICAL_WIDTH - DAMAGE_CUE_THICKNESS;
+        width = DAMAGE_CUE_THICKNESS;
+        height = FEEDBACK_VIEW_HEIGHT;
+        break;
+    default:
+        return 0;
+    }
+    pixels = width * height;
+    if (pixels > DAMAGE_CUE_MAX_PIXELS ||
+        (mode != 0U &&
+         (!directionCue.snapshotValid ||
+          directionCue.snapshotPixels != pixels))) return 0;
+    for (y = y0; y < y0 + height; ++y) {
+        for (x = x0; x < x0 + width; ++x) {
+            uint16_t* pixel = &fb[y * DOOMRPG_LOGICAL_WIDTH + x];
+            uint16_t clean;
+            if (mode == 0U) directionCueSnapshot[at] = *pixel;
+            clean = directionCueSnapshot[at++];
+            if (mode == 1U) *pixel = clean;
+            else {
+                *pixel = (uint16_t)(((clean & 0xf7deU) >> 1U) +
+                                    ((DAMAGE_CUE_COLOR565 & 0xf7deU) >> 1U));
+            }
+        }
+    }
+    if (mode == 0U) {
+        directionCue.snapshotPixels = (uint16_t)pixels;
+        directionCue.snapshotValid = 1U;
+    }
+    return 1;
+}
+
 static int paintViewportFlash(void) {
     uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     size_t expected = (size_t)DOOMRPG_LOGICAL_WIDTH *
@@ -1656,6 +1788,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
     uint8_t feedback = ACTION_FEEDBACK_NONE;
     int hadFeedback = 0;
     int flashPainted = 0;
+    int directionalPainted = 0;
     int ok;
 
     /*
@@ -1717,7 +1850,10 @@ int __wrap_Esp32PlatformVideo_present(void) {
         }
     }
 
-    if ((actionState.viewportFlashPending != 0U ||
+    /* Do not interleave the generic 2px border lease with a directional
+     * 10px snapshot: both must restore exactly their own original pixels. */
+    if (directionCue.phase == 0U &&
+        (actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
         (actionState.viewportFlashPending != 0U ||
          actionState.framebufferFresh != 0U)) {
@@ -1728,8 +1864,41 @@ int __wrap_Esp32PlatformVideo_present(void) {
         flashPainted = 1;
     }
 
+    if (directionCue.phase == 1U ||
+        (directionCue.phase == 2U &&
+         (actionState.framebufferFresh != 0U ||
+          directionCue.needsRepaint != 0U))) {
+        if (!visitDirectionalCue(0U)) {
+            printf("[DAMAGECUE] FAILED phase=paint probe=%u\n",
+                   (unsigned int)directionCue.current.probe);
+            return 0;
+        }
+        directionalPainted = 1;
+    }
+
     ok = __real_Esp32PlatformVideo_present();
-    if (!ok) return 0;
+    if (!ok) {
+        if (directionalPainted != 0 && visitDirectionalCue(1U)) {
+            directionCue.snapshotValid = 0U;
+            directionCue.needsRepaint = 1U;
+        }
+        return 0;
+    }
+
+    if (directionalPainted) {
+        directionCue.needsRepaint = 0U;
+        if (directionCue.phase == 1U) {
+            directionCue.phase = 2U;
+            directionCue.phaseAtMs = actionNowMs();
+            printf("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=%u/%u thickness=10logical/20physical alpha=50%% pixels=%u\n",
+                   (unsigned int)directionCue.current.probe,
+                   (unsigned int)directionCue.current.attackerSprite,
+                   directionCueName(directionCue.current.side),
+                   (unsigned int)(directionCue.pulsesShown + 1U),
+                   (unsigned int)DAMAGE_CUE_PULSES,
+                   (unsigned int)directionCue.snapshotPixels);
+        }
+    }
 
     if (flashPainted && actionState.viewportFlashPending != 0U) {
         actionState.viewportFlashPending = 0U;
@@ -1792,6 +1961,66 @@ static int serviceViewportFlashExpiry(void) {
     actionState.viewportFlashShownAtMs = 0U;
     actionState.viewportFlashDurationMs = 0U;
     actionState.viewportFlashColor565 = 0U;
+    return 1;
+}
+
+/* Timed two-pulse FIFO, paced by the existing loopTask service. Never hold
+ * a gameplay transaction, nor paint below touch/level-up/PAK leases. A failed
+ * physical present retries the same phase without dropping the attacker. */
+static int serviceDirectionalCue(void) {
+    uint32_t now = actionNowMs();
+    if (EspNativeGameplayControls_isActive() ||
+        EspNativeGameplayLevelUp_isActive() ||
+        EspAssetPack_isOpen() || actionState.pending.active != 0U) return 1;
+    if (directionCue.phase == 0U) {
+        if (directionCue.count == 0U ||
+            actionState.viewportFlashPending != 0U ||
+            actionState.viewportFlashVisible != 0U) return 1;
+        directionCue.current = directionCue.fifo[directionCue.head];
+        directionCue.head =
+            (uint8_t)((directionCue.head + 1U) % DAMAGE_CUE_QUEUE_MAX);
+        --directionCue.count;
+        directionCue.phase = 1U;
+        directionCue.pulsesShown = 0U;
+        directionCue.snapshotValid = 0U;
+        directionCue.snapshotPixels = 0U;
+        directionCue.needsRepaint = 0U;
+    }
+    if (directionCue.phase == 2U &&
+        (uint32_t)(now - directionCue.phaseAtMs) >= DAMAGE_CUE_ON_MS) {
+        if (!visitDirectionalCue(1U)) {
+            printf("[DAMAGECUE] FAILED phase=restore probe=%u\n",
+                   (unsigned int)directionCue.current.probe);
+            return 1;
+        }
+        if (!__real_Esp32PlatformVideo_present()) {
+            (void)visitDirectionalCue(2U);
+            return 1;
+        }
+        directionCue.phase = 3U;
+        directionCue.phaseAtMs = actionNowMs();
+        ++directionCue.pulsesShown;
+        directionCue.snapshotValid = 0U;
+        return 1;
+    }
+    if (directionCue.phase == 3U &&
+        (uint32_t)(now - directionCue.phaseAtMs) >= DAMAGE_CUE_GAP_MS) {
+        if (directionCue.pulsesShown == DAMAGE_CUE_PULSES) {
+            printf("[DAMAGECUE] DONE probe=%u sprite=%u side=%s pulses=%u ordered=yes\n",
+                   (unsigned int)directionCue.current.probe,
+                   (unsigned int)directionCue.current.attackerSprite,
+                   directionCueName(directionCue.current.side),
+                   (unsigned int)directionCue.pulsesShown);
+            directionCue.phase = 0U;
+            return 1;
+        }
+        directionCue.phase = 1U;
+        directionCue.snapshotValid = 0U;
+    }
+    if (directionCue.phase == 1U) {
+        /* The wrapper owns blending + the physical present. */
+        (void)__wrap_Esp32PlatformVideo_present();
+    }
     return 1;
 }
 
@@ -2278,6 +2507,7 @@ int EspNativeGameplayActionEngine_deferredMonsterTarget(
 }
 
 void EspNativeGameplayActionEngine_reset(void) {
+    memset(&directionCue, 0, sizeof(directionCue));
     EspNativeGameplayWeapon_cancelAttack();
     EspNativeSpriteRenderer_clearTransient();
     EspNativeGameplayCrateState_reset();
@@ -2325,6 +2555,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     ActionPending pending;
 
     if (!serviceFeedbackExpiry()) return 0;
+    if (!serviceDirectionalCue()) return 0;
     /* PASS TURN and future non-SELECT actions may queue transient feedback
      * without owning an ActionPending transaction. If no gameplay redraw has
      * consumed it yet, present the existing framebuffer with the queued topbar.
