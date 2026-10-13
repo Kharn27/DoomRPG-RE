@@ -25,7 +25,6 @@
 #include "esp_native_gameplay_frame.h"
 #include "esp_native_gameplay_gib_fx.h"
 #include "esp_native_gameplay_note_prefix.h"
-#include "esp_native_gameplay_present_gate.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_level_gate.h"
 #include "esp_native_resident_gameplay.h"
@@ -1140,13 +1139,10 @@ int EspNativeGameplayEventChain_serviceWait(struct Render_s* render) {
     if (age < transaction.continuation.durationMs) {
         if (transaction.continuation.waitPresented &&
             now - transaction.continuation.lastPaintMs < 50U) return 1;
-        if (!EspNativeGameplayPresentGate_armOne()) return 0;
         memset(&frame, 0, sizeof(frame));
-        if (!EspNativeGameplayFrame_renderTurn(render, (uint8_t)view->viewAngle, &frame)) {
-            EspNativeGameplayPresentGate_cancel();
+        if (!EspNativeGameplayFrame_composeTurn(render, (uint8_t)view->viewAngle, &frame)) {
             return 1; /* Retain/retry the unpublished visual, never complete it. */
         }
-        EspNativeGameplayPresentGate_cancel();
         if (!EspNativeGameplayGibFx_paintCapture(transaction.continuation.particles,
                 age, transaction.continuation.durationMs, transaction.continuation.eventIndex) ||
             !__real_Esp32PlatformVideo_present()) return 1;

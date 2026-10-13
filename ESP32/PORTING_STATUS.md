@@ -1,5 +1,49 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Correction WAIT + Back tactile — logiciel testé, CYD pending (2026-10-13)
+
+Retour matériel sur `fca7d04` : débit 20→10 et dialogue 26 ouverts, puis
+`SCRIPTWAIT ARM` sans aucun `PRESENT/COMPLETE` pendant plus de 30 s. Le CYD
+reste vivant (`ALIVE`, touch), entrée monde fermée ; **pas de PASS matériel**.
+Le suffixe HIDE/SHOW qui remplace le civil n'a pas encore été exécuté dans
+cette trace : ce n'est pas une preuve d'un crash de monster spawn.
+
+Cause : le WAIT armait PresentGate avant renderTurn(), alors que le vrai
+compositor refuse une gate pré-armée. Le mock de frame hôte précédent avait
+masqué cette incompatibilité. Correction dans les owners existants :
+`Frame_composeTurn()` compose une pose cardinale sans present, activation
+monstre/automap ni fresh-frame publication ; la même adaptation des lignes
+dynamiques est scoped comme les previews, sans consommer d'animation/move event.
+Le WAIT ajoute les particules puis publie une seule frame physique. La garde
+de renderTurn reste intacte ; timer/retry/rollback/note/débit inchangés.
+
+Pas de YES/NO dans ce script original : REQSTAT vérifie, DECSTAT débite.
+Le dialogue EV_DIALOG précédent autorise toutefois **Back**, devenu
+inaccessible lorsque tous les taps natifs étaient convertis en SELECT.
+Une carte BACK visible (viewport x=16..59, y=22..42, hors HUD et texte) rétablit
+MENU/cancel ; tous les autres taps gardent SELECT. EV_DIALOGNOBACK après
+paiement reste non annulable. Pas de branche de script inventée ni de refund.
+
+Tests hôte : vrai Frame/PresentGate/dynamic-line adapter intégrés au replay
+payant ; l'ancien WAIT échoue effectivement dans ce fixture, le nouveau passe.
+Quatre angles cardinaux, portes ouvertes/texture déverrouillée, absence de
+publish intermédiaire/activation, échec render/present et retries couverts.
+Un troisième test exerce le vrai dialog paint/tap/cancel et la fonte HUB ;
+PAK/font-atlas et physical present restent mockés. Suite locale : **13 tests C
+et 2 tests Python PASS**, ASan/UBSan PASS pour les fixtures WAIT et BACK
+(LeakSanitizer désactivé sous ptrace). Builds normal/bringup et garde des
+exports retirés PASS. RAM/Flash **47 680 / 808 341 B** et **47 832 / 825 861 B** :
+RAM statique/journal lazy inchangés, Flash +248 / +268 B depuis `fca7d04`.
+CI distante encore à vérifier après push.
+
+**À refaire sur CYD avant merge**, depuis une sauvegarde antérieure au
+paiement : BACK dans le dialogue d'offre → monde, crédits/states inchangés,
+puis réouvrir et continuer. Avec ≥10 crédits → débit unique, dialogue sans
+Back → `SCRIPTWAIT PRESENT` → HIDE/SHOW/NOTE → `SCRIPTSTAT COMPLETE`, reprise
+et civil remplacé par le monstre prévu. Vérifier interaction/combat avec ce
+monstre et retap sans second débit ; <10 crédits → refus. Smoke-test MOVE/TURN
+près des portes, dialogues usuels et HUB/SAVE/LOAD. Aucun flash/merge effectué.
+
 ## Interaction payante REQSTAT/WAIT — logiciel testé, CYD pending (2026-10-13)
 
 Même branche `agent/esp32-consolidate-postload-junction`, parent `0423fde`.

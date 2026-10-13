@@ -16,6 +16,8 @@
 #include "esp_map_strings.h"
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_dialog.h"
+#include "esp_native_gameplay_hub_touch_ui.h"
+#include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_indexed_bmp.h"
 #include "esp_player_view_state.h"
 #include "platform_video_c_bridge.h"
@@ -44,6 +46,12 @@
 #define DIALOG_BORDER_BOTTOM 99
 #define DIALOG_TEXT_X 16
 #define DIALOG_TEXT_Y 48
+
+/* Above the text box, inside the world viewport: no line capacity/HUD loss. */
+#define DIALOG_BACK_X 16
+#define DIALOG_BACK_Y 22
+#define DIALOG_BACK_W 44
+#define DIALOG_BACK_H 21
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "Native dialog presenter is defined for the 160x120 logical framebuffer"
@@ -293,6 +301,15 @@ static int paintDialog(uint32_t now) {
     fillRect(framebuffer, DIALOG_FILL_X, DIALOG_FILL_Y,
              DIALOG_FILL_W, DIALOG_FILL_H, 0x0000U);
     drawBorder(framebuffer, 0xffffU);
+    if (dialog.backAllowed) {
+        fillRect(framebuffer, DIALOG_BACK_X, DIALOG_BACK_Y,
+                 DIALOG_BACK_W, DIALOG_BACK_H, ESP_HUB_COLOR_STEEL_DARK);
+        fillRect(framebuffer, DIALOG_BACK_X + 1, DIALOG_BACK_Y + 1,
+                 DIALOG_BACK_W - 2, DIALOG_BACK_H - 2, ESP_HUB_COLOR_PANEL);
+        EspNativeGameplayHubTouchUi_drawCrispText(framebuffer, "BACK",
+            DIALOG_BACK_X + DIALOG_BACK_W / 2, DIALOG_BACK_Y + 7,
+            ESP_HUB_COLOR_IVORY);
+    }
 
     rows = pageLineCount();
     for (row = 0U; row < rows; ++row) {
@@ -426,6 +443,17 @@ void EspNativeGameplayDialog_reset(void) {
 
 int EspNativeGameplayDialog_isActive(void) {
     return dialog.active != 0U;
+}
+
+EspNativeGameplayAction EspNativeGameplayDialog_tapAction(int x, int y) {
+    if (!dialog.active || x < 0 || x >= DOOMRPG_LOGICAL_WIDTH ||
+        y < 0 || y >= DOOMRPG_LOGICAL_HEIGHT)
+        return ESP_NATIVE_GAMEPLAY_ACTION_NONE;
+    if (dialog.backAllowed &&
+        x >= DIALOG_BACK_X && x < DIALOG_BACK_X + DIALOG_BACK_W &&
+        y >= DIALOG_BACK_Y && y < DIALOG_BACK_Y + DIALOG_BACK_H)
+        return ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN;
+    return ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
 }
 
 EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(

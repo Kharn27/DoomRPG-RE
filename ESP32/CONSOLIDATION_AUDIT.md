@@ -405,3 +405,14 @@ Flash est +5 460 / +5 280 B par rapport au parent.
 Preuve et protocole hardware : DOCUMENTATION/PORTING_STATUS, validation CYD
 encore pending. Ne pas fusionner ce correctif fonctionnel sous le seul PASS
 matériel historique du menu/consolidation.
+
+Le retour CYD sur `fca7d04` invalide la clôture matérielle du WAIT : PresentGate
+pré-armé était refusé par le vrai compositor, une frontière auparavant mockée.
+Correction : API de composition sans present dans Frame, même scope natif des
+lignes dynamiques, puis publish FX unique. Aucun nouveau propriétaire/BSS ni
+TU/header production ; le wrap supplémentaire adapte ce nouvel endpoint au
+même owner dynamique permanent, pas une nouvelle couche de migration.
+Replay hôte renforcé avec ces vrais owners (contre-épreuve : ancien WAIT échoue),
+et carte BACK qui rend enfin accessible l'annulation EV_DIALOG d'origine.
+Ne pas confondre absence de YES/NO dans le bytecode avec absence de Back.
+Validation matérielle renouvelée requise, notamment SHOW du monstre après WAIT.

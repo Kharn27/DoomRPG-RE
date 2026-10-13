@@ -95,8 +95,23 @@ jobs:
 
       - name: Test credit-gated script with dialog and WAIT (host C)
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include -Isrc ESP32/test/paid_interaction_host.c ESP32/src/esp_native_gameplay_event_chain.c ESP32/src/esp_map_events.c ESP32/src/esp_map_event_filter.c ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c ESP32/src/esp_native_gameplay_gib_fx.c -Wl,--gc-sections -o /tmp/doomrpg-paid-interaction-test
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/test/host_include -IESP32/include -Isrc \
+            ESP32/test/paid_interaction_host.c ESP32/src/esp_native_gameplay_event_chain.c \
+            ESP32/src/esp_map_events.c ESP32/src/esp_map_event_filter.c \
+            ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c \
+            ESP32/src/esp_native_gameplay_gib_fx.c ESP32/src/esp_native_gameplay_frame.c \
+            ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
+            -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayFrame_renderTurn \
+            -Wl,--wrap=EspNativeGameplayFrame_composeTurn -Wl,--wrap=EspMapRuntime_getLine \
+            -Wl,--wrap=EspMapLineState_view -Wl,--wrap=Esp32PlatformVideo_present \
+            -Wl,--wrap=EspNativeGameplayActionEngine_present -o /tmp/doomrpg-paid-interaction-test
           /tmp/doomrpg-paid-interaction-test
+
+      - name: Test native dialog BACK touch and cancel semantics (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include ESP32/test/dialog_touch_host.c ESP32/src/esp_native_gameplay_hub_touch_ui.c -Wl,--gc-sections -o /tmp/doomrpg-dialog-touch-test
+          /tmp/doomrpg-dialog-touch-test
 
       - name: Test read-only SHOW admission and unchanged commit rollback (host C)
         run: |

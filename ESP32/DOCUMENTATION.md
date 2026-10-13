@@ -63,6 +63,14 @@ Enfin, si les taps remontent en `[TOUCH]` mais que `[ALIVE] SD=unavailable PAK=u
 
 ### Interactions payantes avec dialogue et attente
 
+Le script original ne propose pas de YES/NO : terminer le dialogue d'offre
+avance son état, puis une nouvelle interaction contrôle/débite les crédits.
+Il est toutefois possible d'interrompre **EV_DIALOG** avec sa carte **BACK**
+tactile (en haut à gauche du viewport, au-dessus du texte). Ce tap annule sans
+reprise du script ni débit ; ailleurs, le tap reste SELECT (texte/page/suite).
+**EV_DIALOGNOBACK**, notamment après paiement, n'a pas cette carte et reste
+SELECT-only : aucun remboursement ou nouvelle branche script n'est ajouté.
+
 Le SELECT natif admet maintenant un `EV_REQSTAT` crédits (23, stat 2) suivi
 du débit `EV_DECSTAT` correspondant (22), d'un dialogue sans Back (26), des
 particules de capture (35, famille 3), d'un son publié comme intent silencieux
@@ -76,14 +84,22 @@ Paiement : snapshot PlayerState et rollback si l'ouverture du dialogue échoue ;
 le débit est commité seulement lorsque le dialogue est présenté. WAIT garde
 l'entrée monde fermée, sans sleep ni action différée derrière le timer. Le
 timer monotonic démarre après la première frame d'effet réussie, accepte le wrap
-32 bits, et reste borné à 10 s. Une note est préparée dans le candidate/scratch
+32 bits, et reste borné à 10 s. Le fond de l'effet passe par `Frame_composeTurn`
+(pas de present/activation/automap/fresh-frame), puis l'effet est ajouté et une
+seule frame physique publiée. Ne pas armer PresentGate avant renderTurn : sa
+garde refuse cette composition et laisserait le WAIT armé indéfiniment.
+Une note est préparée dans le candidate/scratch
 NOTE existant et commise après le rendu final ; échec I/O/rendu = rollback du
 segment et retry, pas de second paiement. Pas de nouveau fichier moteur ni de
 nouveau propriétaire Player/Notebook/topologie/PAK.
 
 **Validation CYD encore requise** : reproduire l'interaction de la trace (event
-67, tile 675) avec ≥10 crédits, terminer le dialogue, observer l'effet orange et
-la reprise gameplay, puis vérifier la note et un débit unique de 10 crédits.
+67, tile 675) depuis une sauvegarde pré-paiement. Annuler d'abord le dialogue
+d'offre via BACK : aucune reprise/debit. Puis réouvrir avec ≥10 crédits,
+terminer le dialogue, observer l'effet orange et la reprise gameplay, vérifier
+le civil remplacé par le monstre, son comportement/combat, la note et un débit
+unique de 10 crédits. Les logs doivent montrer `SCRIPTWAIT PRESENT` puis
+`SCRIPTSTAT COMPLETE` ; `ARM` seul ne vaut pas succès.
 Re-taper la cible ne doit pas facturer à nouveau. Avec <10 crédits, le dialogue
 de refus ne doit changer ni les crédits ni le monde. Garder les logs
 `[SCRIPTSTAT]`, `[SCRIPTWAIT]`, `[NOTE]`, et vérifier `shapeData/mediaTexels=0`.

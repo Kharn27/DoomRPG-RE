@@ -65,6 +65,17 @@ int EspNativeGameplayFrame_renderTurn(
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats);
 
+/* Compose the same settled cardinal frame without physical presentation or
+ * fresh-world feedback, automap or monster activation publication. The caller
+ * adds its overlay and owns the final present. No pre-armed PresentGate is
+ * allowed, just as for
+ * renderTurn(); stats.finalPresented remains zero. Dynamic-line adaptation is
+ * scoped identically to visual previews, without consuming door/move events. */
+int EspNativeGameplayFrame_composeTurn(
+    struct Render_s* render,
+    uint8_t angle,
+    EspNativeGameplayFrameStats* outStats);
+
 /* Non-cardinal, camera-only preview over the same framebuffer; no logical
  * pose commit, gameplay fresh-frame publication or automap/monster activation. */
 int EspNativeGameplayFrame_renderVisualPose(

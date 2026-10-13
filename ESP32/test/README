@@ -1,7 +1,7 @@
 
 This directory contains project tests.
 
-Credit-gated interaction + real SHOW admission regression (also in CI):
+Credit-gated interaction, real compositor/gate + SHOW admission (also in CI):
 
 ```sh
 cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
@@ -9,7 +9,12 @@ cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
   ESP32/test/paid_interaction_host.c ESP32/src/esp_native_gameplay_event_chain.c \
   ESP32/src/esp_map_events.c ESP32/src/esp_map_event_filter.c \
   ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c \
-  ESP32/src/esp_native_gameplay_gib_fx.c -Wl,--gc-sections \
+  ESP32/src/esp_native_gameplay_gib_fx.c ESP32/src/esp_native_gameplay_frame.c \
+  ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
+  -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayFrame_renderTurn \
+  -Wl,--wrap=EspNativeGameplayFrame_composeTurn -Wl,--wrap=EspMapRuntime_getLine \
+  -Wl,--wrap=EspMapLineState_view -Wl,--wrap=Esp32PlatformVideo_present \
+  -Wl,--wrap=EspNativeGameplayActionEngine_present \
   -o /tmp/doomrpg-paid-interaction-test
 /tmp/doomrpg-paid-interaction-test
 cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
@@ -19,11 +24,32 @@ cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
 ```
 
 The first fixture replays the supplied event67 raw sequence through real event
-filter/state/continuation and capture-painter code. Player/dialog/PAK/notebook/
-topology and frame/present are mocked; no SD or CYD claim follows. The second
+filter/state/continuation, frame compositor, PresentGate, dynamic-line scope and
+capture-painter code. Player/dialog/PAK/notebook/topology, raster children and
+physical present are mocked; no SD or CYD claim follows. It retains the real
+renderer rejection of pre-armed gates that caused the hardware WAIT stall;
+composition publishes no incomplete world frame, effects bypass decorators,
+open-line/lock-texture adaptation stays scoped, all cardinal angles complete.
+The second
 seeds the real compact topology storage and checks read-only SHOW admission,
 unchanged successful commit/rollback, random blocker/linked/order/coordinate
 guards. host_include is test-only SDK declaration glue, never a firmware input.
+
+Dialog BACK touch / original cancel semantics (also in CI):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -IESP32/test/host_include -IESP32/include ESP32/test/dialog_touch_host.c \
+  ESP32/src/esp_native_gameplay_hub_touch_ui.c \
+  -Wl,--gc-sections -o /tmp/doomrpg-dialog-touch-test
+/tmp/doomrpg-dialog-touch-test
+```
+
+The real dialog owner/paint/input and shared crisp font are used; its private
+state is seeded, and PAK/font-atlas blits/present are mocked. Every screen pixel
+is classified: only the visible BACK card cancels EV_DIALOG without continuation;
+EV_DIALOGNOBACK remains SELECT-only. Checks cover border/gap/OOB taps, lease
+closure, no HUD overwrite and framebuffer guards. This adds no script YES/NO.
 
 Architecture-consolidation audit tool (host Python, no firmware dependency):
 

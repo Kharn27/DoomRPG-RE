@@ -84,6 +84,9 @@ typedef struct EspNativeGameplayDialogResumeResult_s {
  */
 void EspNativeGameplayDialog_reset(void);
 int EspNativeGameplayDialog_isActive(void);
+/* Dialog owns all taps. Only its visible BACK card maps to MENU/cancel when
+ * the original opcode allows Back; every other valid tap remains SELECT. */
+EspNativeGameplayAction EspNativeGameplayDialog_tapAction(int x, int y);
 EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(
     uint16_t eventIndex,
     uint8_t commandOffset,

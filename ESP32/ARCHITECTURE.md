@@ -33,6 +33,14 @@ dialog/WAIT continuation and per-segment journal. PlayerState owns money;
 NotePrefix leases its existing candidate/scratch until frame publication;
 sprite topology owns SHOW admission/commit; GibFx provides a stateless capture
 painter. The WAIT clock lives with the continuation, not a second world engine.
+Frame owns the explicit `composeTurn` no-present endpoint used for the effect
+background (preview sprites, no activation/automap/fresh-frame publication).
+The existing dynamic-line adapter scopes that composition exactly like visual
+previews; EventChain adds the effect and owns its single physical publication.
+Do not pre-arm PresentGate before rendering: the compositor deliberately refuses
+it. Dialog retains cancellation state and exposes a visible native BACK card
+only for EV_DIALOG; its tap maps to the original MENU/cancel semantics, not a
+new script YES/NO branch.
 Unsupported stats/particle families remain closed. This is a new production
 boundary requiring CYD validation, not part of the earlier byte-identical
 cleanup evidence. Production source/header counts remain 158/152.

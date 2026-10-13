@@ -1,11 +1,13 @@
-/* Real event/filter/opcode/continuation + capture painter; only platform,
- * PlayerState, topology, dialog, notebook and PAK I/O boundaries are mocked.
+/* Real event/filter/opcode/continuation, frame compositor, dynamic-line scope,
+ * PresentGate and capture painter. Raster/assets and external gameplay owners
+ * are mocked below those real production boundaries, not renderTurn itself.
  * Raw sequence is the supplied event67 Serial witness, not a firmware special case. */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include "SDL.h"
 #include "DoomRPG.h"
+#include "Render.h"
 #include "esp_map_automap_state.h"
 #include "esp_map_catalog.h"
 #include "esp_map_line_texture_state.h"
@@ -13,6 +15,14 @@
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_first_frame.h"
+#include "esp_native_plane_renderer.h"
+#include "esp_native_sprite_renderer.h"
+#include "esp_native_gameplay_hud.h"
+#include "esp_native_gameplay_hud_direction.h"
+#include "esp_native_gameplay_weapon.h"
+#include "esp_native_gameplay_present_gate.h"
+#include "esp_native_door_animator.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
 
@@ -25,15 +35,25 @@ static uint8_t states[70], removedBits[200], topology[16];
 static EspMapSpriteTopologyView topologyView;
 static uint16_t pixels[160 * 120 + 2];
 static int dialogActive, dialogOk = 1, standalone, frameOk = 1, presentOk = 1;
-static int gate, pack, noteOk = 1, noteStaged, notes, sounds, captures;
+static int pack, noteOk = 1, noteStaged, notes, sounds, captures;
 static int showOk = 1, hides, shows, renderCalls, presents;
+static int freshFrames, decoratedPresents, moveFrameResults, spritePublications;
+static Render_t renderOwner;
+static EspMapLineStateView lineView;
+static EspMapLineTextureStateView textureView;
+static uint8_t textureBits;
+static EspNativePlaneRenderStats planes;
+static EspNativeGameplayHudState hud;
 
 EspNativeGameplayDialogResumeStatus __wrap_EspNativeGameplayDialog_resume(
     const EspNativeGameplayDialogClose*, EspNativeGameplayDialogResumeResult*);
 int __wrap_EspNativeGameplayDialog_rollbackResume(const EspNativeGameplayDialogResumeResult*);
+const EspMapLineStateView* __wrap_EspMapLineState_view(void);
+int __wrap_EspMapRuntime_getLine(uint32_t index, EspMapLine* out);
 
 size_t heap_caps_get_free_size(unsigned int caps) { (void)caps; return 100000U; }
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
+int64_t esp_timer_get_time(void) { return (int64_t)clockMs * 1000; }
 const EspMapRuntimeView* EspMapRuntime_view(void) { return &runtime; }
 int EspMapRuntime_getEvent(uint32_t index, uint32_t* value) {
     if (index >= 70U || value == NULL) return 0;
@@ -86,6 +106,27 @@ EspMapSpriteTopologyStatus EspMapSpriteTopology_applyHide(
 }
 int EspMapLineState_isReady(void) { return 1; }
 int EspMapLineTextureState_isReady(void) { return 1; }
+const EspMapLineStateView* EspMapLineState_view(void) { return &lineView; }
+const EspMapLineTextureStateView* EspMapLineTextureState_view(void) { return &textureView; }
+int EspMapLineState_getOpen(uint32_t index, uint8_t* open) {
+    assert(index == 0U); *open = 1; return 1;
+}
+int EspMapRuntime_getLine(uint32_t index, EspMapLine* out) {
+    assert(index == 0U); memset(out, 0, sizeof(*out));
+    out->flags = 0x20000000U; out->texture = 9U; return 1;
+}
+int EspNativeDoorAnimator_getLineDisplacement(uint32_t index, int16_t* out) {
+    (void)index; (void)out; return 0;
+}
+int EspNativeDoorAnimator_hasPendingFrames(void) { return 0; }
+const EspNativeDoorAnimatorView* EspNativeDoorAnimator_view(void) { return NULL; }
+int EspNativeDoorAnimator_validateLineState(void) { assert(0); return 0; }
+int EspNativeDoorAnimator_isHoldingDeferredClose(void) { assert(0); return 0; }
+uint8_t EspNativeDoorAnimator_deferredCloseCount(void) { assert(0); return 0; }
+int EspNativeDoorAnimator_prepareFrame(EspNativeDoorAnimationFrame* out) { (void)out; assert(0); return 0; }
+int EspNativeDoorAnimator_finishFrame(int ok) { (void)ok; assert(0); return 0; }
+void EspNativeDoorAnimator_reset(void) { assert(0); }
+void EspNativeGameplayMoveEvents_onFrameResult(int ok) { (void)ok; ++moveFrameResults; }
 int EspMapLineState_setLocked(uint32_t line, uint8_t locked) { (void)line; (void)locked; return 0; }
 int EspMapLineTextureState_setDoorTexture(uint32_t line, uint16_t texture) { (void)line; (void)texture; return 0; }
 EspMapLineUnlockStatus EspMapLineTextureState_applyUnlockCommand(
@@ -121,6 +162,7 @@ void EspAssetPack_close(void) { pack = 0; }
 int EspAssetPack_findEntry(const char* name, EspAssetPackEntry* entry) {
     (void)name; memset(entry, 0, sizeof(*entry)); return 1;
 }
+void EspAssetPack_residentGetStats(EspAssetPackResidentStats* out) { memset(out, 0, sizeof(*out)); }
 EspNativeGameplayDialogBeginStatus __real_EspNativeGameplayDialog_begin(
     uint16_t event, uint8_t offset, uint32_t flags) {
     assert(event == 67U && offset == 13U && flags == 0x500U);
@@ -145,26 +187,56 @@ int EspNativeAudioIntent_publish(uint16_t sound, uint8_t flags, uint8_t priority
     assert(sound == 5091U && flags == 0 && priority == 3); ++sounds; return 1;
 }
 int EspNativeGameplayFacingLabel_refresh(const char* reason) { (void)reason; return 1; }
-int EspNativeGameplayPresentGate_armOne(void) { assert(!gate); gate = 1; return 1; }
-void EspNativeGameplayPresentGate_cancel(void) { gate = 0; }
 void* Esp32PlatformVideo_framebuffer(void) { return pixels + 1; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) { return 160U * 120U * 2U; }
-int __real_Esp32PlatformVideo_present(void) {
+int Esp32PlatformVideo_present(void) {
     ++presents; return presentOk;
 }
-int Esp32PlatformVideo_present(void) {
-    if (gate) { gate = 0; return 1; }
+int __real_Esp32PlatformVideo_present(void);
+int __wrap_EspNativeGameplayActionEngine_present(void) {
+    ++decoratedPresents;
     return __real_Esp32PlatformVideo_present();
 }
-int EspNativeGameplayFrame_renderTurn(struct Render_s* render, uint8_t angle,
-    EspNativeGameplayFrameStats* out) {
-    (void)render; assert(angle == 0); ++renderCalls;
+void EspNativeGameplayActionEngine_markFreshFrame(void) { ++freshFrames; }
+int EspNativeTransitionPresentation_isLoadingActive(void) { return 0; }
+int EspNativeGameplayLevelUp_filterGameplayPresent(void) { return 0; }
+int EspNativeGameplayLevelUp_repaintOwned(void) { assert(0); return 0; }
+void EspNativePlaneRenderer_reset(void) { memset(&planes, 0, sizeof(planes)); }
+const EspNativePlaneRenderStats* EspNativePlaneRenderer_view(void) { return &planes; }
+const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) { return &hud; }
+int EspNativeGameplayWeapon_render(struct Render_s* render, uint8_t weapon,
+    uint8_t present, EspNativeGameplayWeaponStats* out) {
+    (void)render; (void)weapon; memset(out, 0, sizeof(*out));
+    out->drawn = !!present; out->skipped = !present; return 1;
+}
+int EspNativeGameplayHudDirection_render(uint8_t angle, EspNativeGameplayHudDirectionStats* out) {
+    memset(out, 0, sizeof(*out)); out->angle = angle; out->rendered = 1; return 1;
+}
+int EspNativeSpriteRenderer_render(struct Render_s* render, EspNativeSpriteStats* out) {
+    (void)render; ++spritePublications;
+    memset(out, 0, sizeof(*out)); out->objects = out->hidden = 1U; return 0;
+}
+int EspNativeSpriteRenderer_renderVisual(struct Render_s* render,
+    const struct EspPlayerViewState_s* pose, EspNativeSpriteStats* out) {
+    (void)render; (void)pose;
+    memset(out, 0, sizeof(*out)); out->objects = out->hidden = 1U; return 0;
+}
+EspNativeFirstFrameStatus EspNativeFirstFrame_renderGameplayViewport(
+    struct Render_s* render, const struct EspPlayerViewState_s* pose,
+    EspNativeFirstFrameState* out) {
+    EspMapLine line;
+    assert(render == &renderOwner && pose == &view); ++renderCalls;
     memset(out, 0, sizeof(*out));
-    if (!frameOk) return 0;
+    if (!frameOk) return ESP_NATIVE_FIRST_FRAME_RENDER_FAILED;
+    /* The REAL dynamic scope must keep an opened door/texture variant usable. */
+    assert(__wrap_EspMapLineState_view()->openCount == 0U);
+    assert(__wrap_EspMapRuntime_getLine(0, &line) && line.texture == 10U);
+    assert((line.flags & 0x20000000U) == 0U && (line.flags & 2U));
     for (unsigned y = 20; y < 100; ++y) for (unsigned x = 0; x < 160; ++x)
         pixels[1 + y * 160 + x] = 0;
     ++captures;
-    return Esp32PlatformVideo_present();
+    out->rendered = 1U; out->frameAfterFNV = 123U;
+    return ESP_NATIVE_FIRST_FRAME_OK;
 }
 static void seed(unsigned credits) {
     EspNativeGameplayEventChain_reset();
@@ -193,9 +265,17 @@ static void seed(unsigned credits) {
         {11,0x10404,0x80100},{19,0x1503,0x80100}
     };
     memset(commands, 0, sizeof(commands)); memcpy(commands + 148, witness, sizeof(witness));
-    dialogActive = standalone = noteStaged = notes = sounds = hides = shows = gate = pack = 0;
+    dialogActive = standalone = noteStaged = notes = sounds = hides = shows = pack = 0;
+    EspNativeGameplayPresentGate_cancel();
     dialogOk = noteOk = frameOk = presentOk = showOk = 1;
-    captures = presents = renderCalls = 0; clockMs = 1000;
+    captures = presents = renderCalls = freshFrames = decoratedPresents = moveFrameResults = spritePublications = 0;
+    clockMs = 1000;
+    memset(&renderOwner, 0, sizeof(renderOwner)); renderOwner.framebuffer = (byte*)(pixels + 1);
+    renderOwner.screenWidth = 160; renderOwner.screenHeight = 80; renderOwner.screenY = 20;
+    memset(&lineView, 0, sizeof(lineView)); lineView.lineCount = lineView.openCount = 1;
+    memset(&textureView, 0, sizeof(textureView)); textureView.lineCount = 1;
+    textureBits = 1; textureView.texture10Bits = &textureBits;
+    memset(&hud, 0, sizeof(hud)); hud.active = hud.painted = hud.model.weaponsPresent = 1;
     for (unsigned i = 0; i < 160 * 120 + 2; ++i) pixels[i] = 0xbeef;
 }
 static void openPaid(void) {
@@ -218,7 +298,26 @@ static void closePaid(void) {
 }
 int main(void) {
     EspNativeGameplayDialogResumeResult result;
-    struct Render_s* render = (void*)1;
+    struct Render_s* render = &renderOwner;
+    EspNativeGameplayFrameStats frame;
+    seed(10);
+    assert(EspNativeGameplayPresentGate_armOne());
+    /* Regression witness: renderTurn MUST refuse a pre-armed gate. The old
+     * WAIT implementation hit exactly this guard forever, before any raster. */
+    assert(!EspNativeGameplayFrame_renderTurn(render, 0, &frame));
+    assert(!EspNativeGameplayFrame_composeTurn(render, 0, &frame));
+    assert(presents == 0 && renderCalls == 0);
+    EspNativeGameplayPresentGate_cancel();
+    assert(EspNativeGameplayFrame_composeTurn(render, 0, &frame));
+    assert(frame.active && !frame.finalPresented && !frame.presentMicros);
+    assert(presents == 0 && freshFrames == 0 && moveFrameResults == 1);
+    assert(spritePublications == 0);
+    /* One failed turn above delivered a failed frame result; compose itself
+     * consumes neither door frames nor move-event publications. */
+    assert(lineView.openCount == 1 && textureBits == 1);
+    assert(EspNativeGameplayFrame_renderTurn(render, 0, &frame));
+    assert(frame.finalPresented && presents == 1 && freshFrames == 1 && decoratedPresents == 1);
+    assert(spritePublications == 1);
     seed(9);
     assert(EspNativeGameplayEventChain_execute(67,9,0x500,&result) == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED);
     assert(standalone == 1 && player.credits == 9 && hides == 0 && !pack && notes == 0);
@@ -227,9 +326,12 @@ int main(void) {
     assert(player.credits == 10 && states[66] == 1 && topology[0] == 0 && removedBits[159] == 0);
     dialogOk = 1; openPaid(); closePaid();
     frameOk = 0; clockMs = 50000;
-    assert(EspNativeGameplayEventChain_serviceWait(render) && sounds == 0 && gate == 0 && notes == 0);
+    assert(EspNativeGameplayEventChain_serviceWait(render) && sounds == 0 &&
+        !EspNativeGameplayPresentGate_isArmed() && notes == 0 && presents == 0);
     frameOk = 1;
     assert(EspNativeGameplayEventChain_serviceWait(render) && sounds == 1);
+    assert(presents == 1 && freshFrames == 0 && decoratedPresents == 0 && moveFrameResults == 0);
+    assert(spritePublications == 0);
     unsigned colored = 0;
     for (unsigned i = 0; i < 160U * 120U; ++i) colored += pixels[1+i] == 0xfc00U;
     assert(colored > 45U); /* Canonical RGB565 orange; no red/blue swap. */
@@ -277,8 +379,29 @@ int main(void) {
     assert(EspNativeGameplayEventChain_serviceWait(render) && sounds == 1);
     clockMs += 350;
     assert(EspNativeGameplayEventChain_serviceWait(render) && notes == 1);
+    seed(30); openPaid(); closePaid();
+    assert(EspNativeGameplayEventChain_serviceWait(render));
+    clockMs += 350; presentOk = 0;
+    assert(EspNativeGameplayEventChain_serviceWait(render));
+    assert(EspNativeGameplayEventChain_isWaiting() && player.credits == 20);
+    assert(notes == 0 && !noteStaged && states[67] == 4 && topology[0] == 1);
+    assert(removedBits[168] == 0 && sounds == 1);
+    presentOk = 1; clockMs += 100;
+    assert(EspNativeGameplayEventChain_serviceWait(render));
+    assert(!EspNativeGameplayEventChain_isWaiting() && notes == 1 && player.credits == 20);
+    for (unsigned angle = 64; angle <= 192; angle += 64) {
+        seed(20); view.viewAngle = view.destAngle = (int32_t)angle;
+        openPaid(); closePaid();
+        assert(EspNativeGameplayEventChain_serviceWait(render));
+        assert(presents == 1 && sounds == 1 && notes == 0 && decoratedPresents == 0);
+        clockMs += 350;
+        assert(EspNativeGameplayEventChain_serviceWait(render));
+        assert(!EspNativeGameplayEventChain_isWaiting() && notes == 1 && player.credits == 10);
+        assert(presents == 2 && freshFrames == 1 && decoratedPresents == 1);
+        assert(view.viewAngle == (int32_t)angle && view.destAngle == (int32_t)angle);
+    }
     EspNativeGameplayEventChain_reset();
     assert(!EspNativeGameplayEventChain_isWaiting());
-    puts("paid_interaction_host: PASS credit gate/debit rollback, dialog/WAIT pauses, retry, NOTE commit, wrap, guards");
+    puts("paid_interaction_host: PASS real frame/gate/dynamic-lines, credit rollback, WAIT publish/retry, NOTE, clock wrap, guards");
     return 0;
 }

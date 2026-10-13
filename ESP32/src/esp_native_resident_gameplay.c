@@ -257,7 +257,8 @@ static void onGameplayTap(int16_t screenX,
     }
 
     /*
-     * Dialog owns the whole touch surface. A tap anywhere means the same
+     * Dialog owns the whole touch surface. Apart from its visible Back card
+     * (only when the original opcode allows cancellation), a tap means the same
      * semantic SELECT that the legacy HIT key used: first finish the current
      * typewriter page, then advance/page/resume on later taps. Keep this route
      * separate from the world/HUB hit map so no movement, weapon or menu action
@@ -267,8 +268,10 @@ static void onGameplayTap(int16_t screenX,
      */
     if (EspNativeGameplayDialog_isActive()) {
         memset(&hit, 0, sizeof(hit));
-        hit.action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
-        hit.zone = ESP_NATIVE_GAMEPLAY_ZONE_SELECT;
+        hit.action = EspNativeGameplayDialog_tapAction(logicalX, logicalY);
+        if (hit.action == ESP_NATIVE_GAMEPLAY_ACTION_NONE) return;
+        hit.zone = hit.action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN
+            ? ESP_NATIVE_GAMEPLAY_ZONE_MENU : ESP_NATIVE_GAMEPLAY_ZONE_SELECT;
         hit.left = 0U;
         hit.top = 0U;
         hit.right = (uint8_t)(DOOMRPG_LOGICAL_WIDTH - 1);
@@ -277,15 +280,17 @@ static void onGameplayTap(int16_t screenX,
         ++gameplayState.taps;
         status = EspNativeGameplayInput_route(&hit, logicalX, logicalY);
         if (status == ESP_NATIVE_GAMEPLAY_INPUT_OK) {
-            printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=SELECT zone=%u logical=%d,%d context=DIALOG tapDomain=full-screen feedback=none\n",
+            printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=%s zone=%u logical=%d,%d context=DIALOG tapDomain=owned-screen feedback=none\n",
                    (unsigned int)gameplayState.taps,
+                   EspNativeGameplayInput_actionName(hit.action),
                    (unsigned int)hit.zone,
                    logicalX,
                    logicalY);
         }
         else if (status == ESP_NATIVE_GAMEPLAY_INPUT_BUSY) {
-            printf("[RESIDENTGAMEPLAY] BUSY tap=%u action=SELECT context=DIALOG pending=1\n",
-                   (unsigned int)gameplayState.taps);
+            printf("[RESIDENTGAMEPLAY] BUSY tap=%u action=%s context=DIALOG pending=1\n",
+                   (unsigned int)gameplayState.taps,
+                   EspNativeGameplayInput_actionName(hit.action));
         }
         return;
     }

@@ -58,6 +58,10 @@ int __real_EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats);
+int __real_EspNativeGameplayFrame_composeTurn(
+    struct Render_s* render,
+    uint8_t angle,
+    EspNativeGameplayFrameStats* outStats);
 int __real_EspNativeGameplayFrame_renderVisualPose(
     struct Render_s* render,
     const struct EspPlayerViewState_s* visual,
@@ -343,6 +347,16 @@ static int endDynamicPreview(int rendered, const char* kind) {
                (unsigned int)dynamicAnimationFault);
     }
     return ok;
+}
+
+int __wrap_EspNativeGameplayFrame_composeTurn(
+    struct Render_s* render,
+    uint8_t angle,
+    EspNativeGameplayFrameStats* outStats) {
+    int ok;
+    if (!beginDynamicPreview()) return 0;
+    ok = __real_EspNativeGameplayFrame_composeTurn(render, angle, outStats);
+    return endDynamicPreview(ok, "compose");
 }
 
 int __wrap_EspNativeGameplayFrame_renderVisualPose(
