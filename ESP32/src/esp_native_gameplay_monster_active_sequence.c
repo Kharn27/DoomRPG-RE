@@ -15,6 +15,7 @@
 #include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
 #include "esp_native_gameplay_monster_retaliation.h"
+#include "esp_native_gameplay_action_engine.h"
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_death.h"
@@ -250,6 +251,13 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                 retaliation->lastResolvedProbe < activeSeq.pauseProbe) {
                 return;
             }
+            /* Keep each side flash attached to the attacker that just
+             * inflicted damage. If the next monster animates immediately,
+             * the previous cue looks like the new attacker's direction.
+             * Presentation-only wait: no reroll/move/timer turn mutation.
+             * ActionEngine has a hard UI timeout if physical present fails. */
+            if (EspNativeGameplayActionEngine_directionalDamagePending(
+                    activeSeq.pauseProbe)) return;
             DRPG_LOGT("[MONSTERACTIVESEQ] RESUME turn=%u nextOrdinal=%u/%u resolvedProbe=%u delivered=%u sameMonsterTurn=yes\n",
                    (unsigned int)activeSeq.expandedTurns,
                    (unsigned int)(activeSeq.turnOrdinal + 1U),
