@@ -29,4 +29,14 @@ static inline uint8_t EspNativeGameplayBarrelRadius_previewWords(
                ? 1U : barrelCount;
 }
 
+/* Terminal death may be committed after the entire explosion transaction
+ * only if exactly one barrel's blast word participates. Adjacent monster
+ * splash is supported because the death RNG byte is pre-reserved before its
+ * consequence rolls; multi-barrel death remains fail-closed until subsequent
+ * blast/death ordering has a dedicated replay milestone. */
+static inline int EspNativeGameplayBarrelRadius_terminalDeathOwned(
+    uint8_t barrelCount) {
+    return barrelCount == 1U;
+}
+
 #endif
