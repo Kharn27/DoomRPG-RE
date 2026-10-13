@@ -1889,7 +1889,7 @@ int __wrap_Esp32PlatformVideo_present(void) {
         if (directionCue.phase == 1U) {
             directionCue.phase = 2U;
             directionCue.phaseAtMs = actionNowMs();
-            printf("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=%u/%u thickness=10logical/20physical alpha=50%% pixels=%u\n",
+            DRPG_LOGT("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=%u/%u thickness=10logical/20physical alpha=50%% pixels=%u\n",
                    (unsigned int)directionCue.current.probe,
                    (unsigned int)directionCue.current.attackerSprite,
                    directionCueName(directionCue.current.side),
