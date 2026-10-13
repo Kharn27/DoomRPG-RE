@@ -1900,13 +1900,28 @@ int __wrap_Esp32PlatformVideo_present(void) {
         if (directionCue.phase == 1U) {
             directionCue.phase = 2U;
             directionCue.phaseAtMs = actionNowMs();
-            DRPG_LOGT("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=%u/%u thickness=10logical/20physical alpha=50%% pixels=%u\n",
-                   (unsigned int)directionCue.current.probe,
-                   (unsigned int)directionCue.current.attackerSprite,
-                   directionCueName(directionCue.current.side),
-                   (unsigned int)(directionCue.pulsesShown + 1U),
-                   (unsigned int)DAMAGE_CUE_PULSES,
-                   (unsigned int)directionCue.snapshotPixels);
+            if (directionCue.pulsesShown == 0U) {
+                /* This witness is AFTER the physical present, not an intent.
+                 * Useful to prove the side was actually over the red border
+                 * during the same 500ms damage flash on the real CYD. */
+                printf("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=1/%u redBorder=%s presented=1 concurrent=yes\n",
+                       (unsigned int)directionCue.current.probe,
+                       (unsigned int)directionCue.current.attackerSprite,
+                       directionCueName(directionCue.current.side),
+                       (unsigned int)DAMAGE_CUE_PULSES,
+                       actionState.viewportFlashPending != 0U ||
+                           actionState.viewportFlashVisible != 0U
+                           ? "visible" : "none");
+            }
+            else {
+                DRPG_LOGT("[DAMAGECUE] ON probe=%u sprite=%u side=%s pulse=%u/%u pixels=%u\n",
+                          (unsigned int)directionCue.current.probe,
+                          (unsigned int)directionCue.current.attackerSprite,
+                          directionCueName(directionCue.current.side),
+                          (unsigned int)(directionCue.pulsesShown + 1U),
+                          (unsigned int)DAMAGE_CUE_PULSES,
+                          (unsigned int)directionCue.snapshotPixels);
+            }
         }
     }
 
@@ -1997,7 +2012,7 @@ static int serviceDirectionalCue(void) {
         directionCue.snapshotValid = 0U;
         directionCue.snapshotPixels = 0U;
         directionCue.needsRepaint = 0U;
-        printf("[DAMAGECUE] BEGIN probe=%u sprite=%u side=%s redBorder=%s phase=overlay-concurrent sequencer=unblocked\n",
+        DRPG_LOGT("[DAMAGECUE] BEGIN probe=%u sprite=%u side=%s redBorder=%s phase=overlay-concurrent sequencer=unblocked\n",
                (unsigned int)directionCue.current.probe,
                (unsigned int)directionCue.current.attackerSprite,
                directionCueName(directionCue.current.side),
