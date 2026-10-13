@@ -11,6 +11,7 @@
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_monster_projectile204_contract.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_sprite_renderer.h"
 #include "esp_native_graphics_catalog.h"
@@ -21,7 +22,6 @@
 #define ATTACK_VISUAL_PRIMARY_FRAME 1U
 #define ATTACK_VISUAL_ALTERNATE_FRAME 5U
 #define ATTACK_VISUAL_FRAME_MS 150U
-#define ATTACK_IMP_SUBTYPE 3U
 #define ATTACK_IMP_PROJECTILE_LOGICAL 204U
 #define ATTACK_IMP_PROJECTILE_STEP_MS 65U
 #define ATTACK_IMP_PROJECTILE_STEPS 3U
@@ -59,6 +59,8 @@ static uint16_t projectileSourceTile;
 static uint16_t projectileTargetTile;
 static uint8_t projectileStep;
 static uint8_t projectileEnabled;
+static uint8_t projectileSubtype;
+static uint8_t projectileShots;
 
 static const char* reasonName(uint8_t reason) {
     switch ((EspNativeGameplayMonsterTurnReason)reason) {
@@ -97,11 +99,13 @@ static int syncOwner(void) {
         projectileTargetTile = 0U;
         projectileStep = 0U;
         projectileEnabled = 0U;
+        projectileSubtype = 0U;
+        projectileShots = 0U;
         attackVisual.sourceArenaFNV1a = turn->sourceArenaFNV1a;
         attackVisual.observedAttackProbes = turn->attackProbes;
         attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
         attackVisual.active = 1U;
-        printf("[MONSTERATKVIS] READY arena=%08x ownerBytes=%u source=turn-probe primaryFrame=%u alternateFrame=%u projectileFrameMs=%u sequence=generic-1or3-loop cadence=legacy-monsterWpInfo immutableSprite=yes fixedAnim=overlay gameplayRng=guarded projectile=imp204-if-primed attackMessage=deferred sound=deferred\n",
+        printf("[MONSTERATKVIS] READY arena=%08x ownerBytes=%u source=turn-probe primaryFrame=%u alternateFrame=%u projectileFrameMs=%u sequence=generic-1or3-loop cadence=legacy-monsterWpInfo immutableSprite=yes fixedAnim=overlay gameplayRng=guarded projectile=imp-or-malwrath204-if-primed attackMessage=deferred sound=deferred\n",
                (unsigned int)attackVisual.sourceArenaFNV1a,
                (unsigned int)sizeof(attackVisual),
                (unsigned int)ATTACK_VISUAL_PRIMARY_FRAME,
@@ -159,15 +163,18 @@ static void clearSequence(void) {
     projectileTargetTile = 0U;
     projectileStep = 0U;
     projectileEnabled = 0U;
+    projectileSubtype = 0U;
+    projectileShots = 0U;
 }
 
 /* Legacy Combat_launchProjectile(weapon15) uses logical sprite 204 for
- * ordinary Imps. Render three bounded in-world positions during the first
- * attack pose, without changing the authoritative combat roll or RNG. This
- * only paints a visible missile for already-published, line-of-sight-valid
- * native ranged attacks; it never manufactures a new attack or bypasses
- * a wall/collision rejection. */
-static void serviceImpProjectile(DoomRPG_t* runtime,
+ * ordinary Imps AND Malwrath/Cacodemon (primary subtype 6). Each attack pose
+ * launches a missile after 150 ms. Three bounded in-world points approximate
+ * its travel, with no combat/RNG mutation. Malwrath's three missile flights
+ * continue through their corresponding idle pose; an Imp's already proven
+ * one-shot presentation remains unchanged. The projectile never creates an
+ * attack or bypasses collision/LOS. */
+static void serviceMonsterProjectile(DoomRPG_t* runtime,
                                  const EspPlayerViewState* view,
                                  uint32_t now) {
     EspNativeGameplayFrameStats frame;
@@ -184,9 +191,11 @@ static void serviceImpProjectile(DoomRPG_t* runtime,
     uint8_t step;
     int rngExact = 0;
     int rendered;
+    const char* tag = projectileSubtype == 6U
+                          ? "MALWRATHPROJECTILE" : "IMPPROJECTILE";
 
     if (!projectileEnabled || activeSequence == 0U ||
-        attackVisual.poseActive == 0U ||
+        (attackVisual.poseActive == 0U && projectileShots <= 1U) ||
         (int32_t)(now - projectileNextMs) < 0 ||
         runtime == NULL || !settledPlayerView(view) ||
         EspNativeGameplayControls_isActive()) {
@@ -200,7 +209,8 @@ static void serviceImpProjectile(DoomRPG_t* runtime,
         rendered = guardedRender(runtime, view, &frame, &rngExact);
         if (rendered) {
             projectileEnabled = 0U;
-            printf("[IMPPROJECTILE] CLEAR probe=%u steps=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no\n",
+            printf("[%s] CLEAR probe=%u steps=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no\n",
+    tag,
                    (unsigned int)attackVisual.activeProbe,
                    (unsigned int)projectileStep,
                    (unsigned int)frame.frameAfterFNV,
@@ -222,7 +232,8 @@ static void serviceImpProjectile(DoomRPG_t* runtime,
             ATTACK_IMP_PROJECTILE_LOGICAL, 0U,
             (int16_t)worldX, (int16_t)worldY)) {
         projectileEnabled = 0U;
-        printf("[IMPPROJECTILE] DEFER probe=%u reason=transient-not-ready catalog204=%s gameplayRng=untouched\n",
+        printf("[%s] DEFER probe=%u reason=transient-not-ready catalog204=%s gameplayRng=untouched\n",
+    tag,
                (unsigned int)attackVisual.activeProbe,
                EspNativeGraphicsCatalog_findSprite(ATTACK_IMP_PROJECTILE_LOGICAL)
                    != NULL ? "present" : "missing");
@@ -232,7 +243,8 @@ static void serviceImpProjectile(DoomRPG_t* runtime,
     EspNativeSpriteRenderer_clearTransient();
     if (!rendered) {
         projectileEnabled = 0U;
-        printf("[IMPPROJECTILE] DEFER probe=%u step=%u reason=%s gameplayRng=restored gameplayMutation=no\n",
+        printf("[%s] DEFER probe=%u step=%u reason=%s gameplayRng=restored gameplayMutation=no\n",
+    tag,
                (unsigned int)attackVisual.activeProbe, (unsigned int)step,
                rngExact ? "render-failed" : "rng-guard");
         return;
@@ -240,7 +252,8 @@ static void serviceImpProjectile(DoomRPG_t* runtime,
     projectileStep = (uint8_t)(step + 1U);
     projectileNextMs = DoomRPG_GetUpTimeMS() +
                        ATTACK_IMP_PROJECTILE_STEP_MS;
-    printf("[IMPPROJECTILE] FRAME probe=%u sprite=%u step=%u/%u logical=%u pos=%d,%d sourceTile=%u playerTile=%u frame=%08x presented=%u gameplayRng=untouched\n",
+    printf("[%s] FRAME probe=%u sprite=%u step=%u/%u logical=%u pos=%d,%d sourceTile=%u playerTile=%u frame=%08x presented=%u gameplayRng=untouched\n",
+    tag,
            (unsigned int)attackVisual.activeProbe,
            (unsigned int)attackVisual.activeSpriteIndex,
            (unsigned int)projectileStep,
@@ -268,7 +281,7 @@ static void serviceTimeline(DoomRPG_t* runtime) {
 
     if (activeSequence == 0U || attackVisual.clearAtMs == 0U) return;
     now = DoomRPG_GetUpTimeMS();
-    serviceImpProjectile(runtime, EspPlayerView_view(), now);
+    serviceMonsterProjectile(runtime, EspPlayerView_view(), now);
     if ((int32_t)(now - attackVisual.clearAtMs) < 0) return;
 
     /* Touch feedback owns a bounded framebuffer snapshot.  A world redraw under
@@ -290,7 +303,9 @@ static void serviceTimeline(DoomRPG_t* runtime) {
     wasAttackPose = attackVisual.poseActive != 0U;
 
     if (wasAttackPose) {
-        projectileEnabled = 0U;
+        /* Imp's existing one-shot contract ends on pose exit; three-shot
+         * Malwrath missiles may continue across the intervening idle pose. */
+        if (projectileShots <= 1U) projectileEnabled = 0U;
         /* Attack -> idle. Every idle pose, including the final one, owns the
          * exact recovered subtype cadence before either the next attack or
          * stage-2 retaliation resolution may begin. */
@@ -373,6 +388,20 @@ static void serviceTimeline(DoomRPG_t* runtime) {
         return;
     }
 
+    if (projectileShots > 1U) {
+        /* Re-arm at the same 150 ms legacy launch point for each of the
+         * remaining Malwrath shots, only after presentation succeeded. */
+        projectileEnabled = 1U;
+        projectileStep = 0U;
+        projectileNextMs = DoomRPG_GetUpTimeMS() +
+                           ATTACK_VISUAL_FRAME_MS;
+        printf("[MALWRATHPROJECTILE] REARM probe=%u shot=%u/%u logical=%u launchAfterMs=%u gameplayRng=untouched\n",
+               (unsigned int)probe,
+               (unsigned int)activeCompletedLoops,
+               (unsigned int)totalLoops,
+               (unsigned int)ATTACK_IMP_PROJECTILE_LOGICAL,
+               (unsigned int)ATTACK_VISUAL_FRAME_MS);
+    }
     attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + phaseMs;
     printf("[MONSTERATKVIS] STEP probe=%u sprite=%u shot=%u/%u phase=attack visual=%u phaseMs=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no\n",
            (unsigned int)probe,
@@ -399,6 +428,8 @@ void EspNativeGameplayMonsterAttackVisual_reset(void) {
     projectileTargetTile = 0U;
     projectileStep = 0U;
     projectileEnabled = 0U;
+    projectileSubtype = 0U;
+    projectileShots = 0U;
     attackVisual.activeSpriteIndex = ATTACK_VISUAL_NO_SPRITE;
 }
 
@@ -565,15 +596,16 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
         return;
     }
 
-    /* Only subtype-3 primary weapon 15 is the original Imp fireball 204.
-     * Capture the live topology tile, not immutable BSP spawn coordinates. */
-    if (monster->subtype == ATTACK_IMP_SUBTYPE &&
-        monster->alternateAttack == 0U) {
+    /* Weapon-15 sprite 204 is owned for primary Imp and Malwrath attacks.
+     * Capture the live topology tile, not immutable BSP spawn coordinates.
+     * Subsequent shots reuse this tile while combat owns world input. */
+    if (EspNativeMonsterProjectile204_attackOwned(
+            monster->subtype, monster->alternateAttack)) {
         uint8_t type = 0U, sub = 0U;
         uint16_t link = 0U, order = 0U;
         if (EspMapSpriteTopology_getEntity(monster->spriteIndex,
                                             &type, &sub, &link, &order) &&
-            type == 1U && sub == ATTACK_IMP_SUBTYPE &&
+            type == 1U && sub == monster->subtype &&
             (link & (ESP_MAP_SPRITE_TOPOLOGY_LINKED |
                      ESP_MAP_SPRITE_TOPOLOGY_ALIVE)) ==
                 (ESP_MAP_SPRITE_TOPOLOGY_LINKED |
@@ -587,6 +619,9 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
                            ((uint32_t)view->destX >> 6U));
             projectileStep = 0U;
             projectileEnabled = 1U;
+            projectileSubtype = monster->subtype;
+            projectileShots = EspNativeMonsterProjectile204_shots(
+                monster->subtype, monster->alternateAttack);
             projectileNextMs = DoomRPG_GetUpTimeMS() +
                                ATTACK_VISUAL_FRAME_MS;
         }
@@ -612,5 +647,8 @@ void EspNativeGameplayMonsterAttackVisual_service(struct DoomRPG_s* doomRpgBase)
            (unsigned int)ATTACK_VISUAL_FRAME_MS,
            (unsigned int)frame.frameAfterFNV,
            (unsigned int)frame.finalPresented,
-           projectileEnabled != 0U ? "imp204-armed" : "none");
+           projectileEnabled != 0U
+               ? (projectileShots == 3U ? "malwrath204-3shots-armed"
+                                        : "imp204-armed")
+               : "none");
 }
