@@ -263,8 +263,11 @@ int EspNativeGameplayStore_begin(uint8_t storeId,
 }
 int EspNativeGameplayStore_handleTap(int x,int y) {
     EspNativeGameplayPlayerState purchaseBefore;
+    /* Cards are painted at x=12..147; the blank side margins are not buttons.
+     * Use the SAME card rectangle to arm purchase rollback and to commit. */
     const uint8_t purchaseAttempt =
-        store.stage==STORE_CONFIRM && y>=68 && y<=86;
+        store.stage==STORE_CONFIRM && x>=12 && x<=147 &&
+        y>=68 && y<=86;
     const uint32_t purchasesBefore=store.purchases;
     if (store.closePending!=0U) return 0;
     if (store.stage==STORE_CLOSED || x<0 || x>=160 || y<0 || y>=120)
@@ -272,8 +275,8 @@ int EspNativeGameplayStore_handleTap(int x,int y) {
     if (purchaseAttempt &&
         !EspNativeGameplayPlayerState_snapshot(&purchaseBefore)) return -1;
     if (store.stage==STORE_PROMPT) {
-        if (y>=52 && y<=71) store.stage=STORE_LIST;
-        else if (y>=78 && y<=97) {
+        if (x>=12 && x<=147 && y>=52 && y<=71) store.stage=STORE_LIST;
+        else if (x>=12 && x<=147 && y>=78 && y<=97) {
             store.stage=STORE_CLOSED;store.closePending=1U;
         } else return 0;
     } else if (store.stage==STORE_LIST) {
@@ -295,12 +298,13 @@ int EspNativeGameplayStore_handleTap(int x,int y) {
             store.stage=STORE_CONFIRM;
         } else return 0;
     } else if (store.stage==STORE_CONFIRM) {
-        if (y>=68 && y<=86) {
+        if (purchaseAttempt) {
             if (!buySelected()) return -1;
-        } else if (y>=92 && y<=111) store.stage=STORE_LIST;
+        } else if (x>=12 && x<=147 && y>=92 && y<=111)
+            store.stage=STORE_LIST;
         else return 0;
     } else if (store.stage==STORE_NOTICE) {
-        if (y<76 || y>98) return 0;
+        if (x<12 || x>147 || y<76 || y>98) return 0;
         store.stage=STORE_LIST;
     } else return -1;
     if (store.closePending!=0U) {
