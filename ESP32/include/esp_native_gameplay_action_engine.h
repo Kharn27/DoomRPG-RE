@@ -55,6 +55,50 @@ int EspNativeGameplayActionEngine_queueTextFeedback(
     EspNativeGameplayActionFeedback feedback,
     const char* text,
     uint16_t viewportFlashMs);
+/*
+ * Monster -> player impact direction in the player's CURRENT cardinal view.
+ * The pure contract uses world positions from MonsterPosition and the exact
+ * 64-unit step from EspPlayerView_cardinalBasis(). No trig, RNG or allocation.
+ * Ties resolve forward/back before left/right. Coincident positions fail closed.
+ */
+typedef enum EspNativeGameplayDamageSide_e {
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE = 0,
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT = 1,
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT = 2,
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK = 3,
+    ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT = 4
+} EspNativeGameplayDamageSide;
+
+static inline EspNativeGameplayDamageSide
+EspNativeGameplayDamageSide_fromWorld(int32_t playerX, int32_t playerY,
+                                      int32_t stepX, int32_t stepY,
+                                      int32_t attackerX, int32_t attackerY) {
+    const int64_t dx = (int64_t)attackerX - playerX;
+    const int64_t dy = (int64_t)attackerY - playerY;
+    const int64_t front = dx * stepX + dy * stepY;
+    const int64_t right = dy * stepX - dx * stepY;
+    const uint64_t absFront = (uint64_t)(front < 0 ? -front : front);
+    const uint64_t absRight = (uint64_t)(right < 0 ? -right : right);
+    if (!((stepX == 64 || stepX == -64) && stepY == 0) &&
+        !((stepY == 64 || stepY == -64) && stepX == 0)) {
+        return ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE;
+    }
+    if (dx == 0 && dy == 0) return ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE;
+    if (absFront >= absRight) {
+        return front > 0 ? ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT
+                         : ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK;
+    }
+    return right > 0 ? ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_RIGHT
+                     : ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT;
+}
+
+/* Presentation-only post-COMMIT FIFO: one attack probe/sprite per cue.
+ * No legacy red full-border flash for positioned monster hits. Non-positional
+ * damage retains the historical red viewport border fallback. */
+int EspNativeGameplayActionEngine_queueDirectionalDamage(
+    uint32_t attackProbe, uint16_t attackerSprite,
+    EspNativeGameplayDamageSide side);
+
 /* Legacy Hud keeps at most five queued messages. This bounded batch API is
  * intentionally narrow: it lets one committed multi-pickup tile publish the
  * same ordered "Got ..." sequence without importing Hud_t or heap ownership. */
