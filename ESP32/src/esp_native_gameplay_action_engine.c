@@ -1560,20 +1560,6 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
     return 1;
 }
 
-int EspNativeGameplayActionEngine_directionalDamagePending(
-    uint32_t attackProbe) {
-    uint8_t i;
-    if (attackProbe == 0U) return 0;
-    if (directionCue.phase != 0U &&
-        directionCue.current.probe == attackProbe) return 1;
-    for (i = 0U; i < directionCue.queued.count; ++i) {
-        uint8_t index = (uint8_t)((directionCue.queued.head + i) %
-                                 DAMAGE_CUE_QUEUE_MAX);
-        if (directionCue.queued.entries[index].probe == attackProbe) return 1;
-    }
-    return 0;
-}
-
 /* Visit exactly one side of the 160x80 world viewport, never the HUD bars.
  * mode 0 = capture clean pixels and blend, 1 = restore clean pixels,
  * mode 2 = repaint from the preserved clean snapshot. RGB565 averaging gives
@@ -1623,8 +1609,8 @@ static int visitDirectionalCue(uint8_t mode) {
             clean = directionCueSnapshot[at++];
             if (mode == 1U) *pixel = clean;
             else {
-                *pixel = (uint16_t)(((clean & 0xf7deU) >> 1U) +
-                                    ((DAMAGE_CUE_COLOR565 & 0xf7deU) >> 1U));
+                *pixel = EspNativeGameplayDamageCue_blend565(
+                    clean, DAMAGE_CUE_COLOR565);
             }
         }
     }
@@ -1873,10 +1859,11 @@ int __wrap_Esp32PlatformVideo_present(void) {
         }
     }
 
-    /* Do not interleave the generic 2px border lease with a directional
-     * 10px snapshot: both must restore exactly their own original pixels. */
-    if (directionCue.phase == 0U &&
-        (actionState.viewportFlashPending != 0U ||
+    /* Layer order is strict: base WORLD -> 2px red viewport border ->
+     * translucent 10px attacker side. The direction snapshot contains the
+     * red border underneath it, never replaces its original world snapshot.
+     * Both effects live in the same 500ms interval, not one after another. */
+    if ((actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
         (actionState.viewportFlashPending != 0U ||
          actionState.framebufferFresh != 0U)) {
@@ -1972,6 +1959,11 @@ static int serviceViewportFlashExpiry(void) {
     duration = actionState.viewportFlashDurationMs;
     if (duration == 0U || elapsed < duration) return 1;
     if (EspNativeGameplayControls_isActive()) return 1;
+    /* The side band owns the TOP layer: restoring the base red border while
+     * the band still holds a red-pixel snapshot would leave stale pixels.
+     * Expire the base only after the short side pulse has restored its own
+     * snapshot. This is UI-only; the monster sequencer never waits for it. */
+    if (directionCue.phase != 0U) return 1;
     if (!restoreViewportFlash()) {
         printf("[VIEWFLASH] FAILED phase=restore\n");
         return 0;
@@ -1996,9 +1988,7 @@ static int serviceDirectionalCue(void) {
         EspNativeGameplayLevelUp_isActive() ||
         EspAssetPack_isOpen() || actionState.pending.active != 0U) return 1;
     if (directionCue.phase == 0U) {
-        if (directionCue.queued.count == 0U ||
-            actionState.viewportFlashPending != 0U ||
-            actionState.viewportFlashVisible != 0U) return 1;
+        if (directionCue.queued.count == 0U) return 1;
         if (!EspNativeGameplayDamageCueQueue_pop(
                 &directionCue.queued, &directionCue.current)) return 1;
         directionCue.phase = 1U;
@@ -2007,6 +1997,12 @@ static int serviceDirectionalCue(void) {
         directionCue.snapshotValid = 0U;
         directionCue.snapshotPixels = 0U;
         directionCue.needsRepaint = 0U;
+        printf("[DAMAGECUE] BEGIN probe=%u sprite=%u side=%s redBorder=%s phase=overlay-concurrent sequencer=unblocked\n",
+               (unsigned int)directionCue.current.probe,
+               (unsigned int)directionCue.current.attackerSprite,
+               directionCueName(directionCue.current.side),
+               actionState.viewportFlashVisible != 0U ||
+                   actionState.viewportFlashPending != 0U ? "visible" : "none");
     }
     /* A failing presentation must not hold a logical monster turn forever.
      * This explicit fail-open policy applies ONLY to UI timing, never to
@@ -2018,7 +2014,7 @@ static int serviceDirectionalCue(void) {
             visitDirectionalCue(1U)) {
             (void)__real_Esp32PlatformVideo_present();
         }
-        printf("[DAMAGECUE] TIMEOUT probe=%u sprite=%u side=%s phase=%u afterMs=%u cue=discarded combat=untouched sequencer=unblocked\n",
+        printf("[DAMAGECUE] TIMEOUT probe=%u sprite=%u side=%s phase=%u afterMs=%u cue=discarded combat=untouched sequencer=never-blocked\n",
                (unsigned int)directionCue.current.probe,
                (unsigned int)directionCue.current.attackerSprite,
                directionCueName(directionCue.current.side),
@@ -2048,16 +2044,11 @@ static int serviceDirectionalCue(void) {
             (void)visitDirectionalCue(2U);
             return 1;
         }
-        directionCue.phase = 3U;
-        directionCue.phaseAtMs = actionNowMs();
         ++directionCue.pulsesShown;
         directionCue.snapshotValid = 0U;
-        return 1;
-    }
-    if (directionCue.phase == 3U &&
-        (uint32_t)(now - directionCue.phaseAtMs) >= DAMAGE_CUE_GAP_MS) {
         if (directionCue.pulsesShown == DAMAGE_CUE_PULSES) {
-            printf("[DAMAGECUE] DONE probe=%u sprite=%u side=%s pulses=%u ordered=yes\n",
+            /* No final 45ms tail; the last visible pulse is complete. */
+            printf("[DAMAGECUE] DONE probe=%u sprite=%u side=%s pulses=%u ordered=yes gameplay=unblocked\n",
                    (unsigned int)directionCue.current.probe,
                    (unsigned int)directionCue.current.attackerSprite,
                    directionCueName(directionCue.current.side),
@@ -2065,6 +2056,12 @@ static int serviceDirectionalCue(void) {
             directionCue.phase = 0U;
             return 1;
         }
+        directionCue.phase = 3U;
+        directionCue.phaseAtMs = actionNowMs();
+        return 1;
+    }
+    if (directionCue.phase == 3U &&
+        (uint32_t)(now - directionCue.phaseAtMs) >= DAMAGE_CUE_GAP_MS) {
         directionCue.phase = 1U;
         directionCue.snapshotValid = 0U;
     }
