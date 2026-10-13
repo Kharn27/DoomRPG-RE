@@ -248,9 +248,9 @@ int EspNativeGameplayPlayerDeath_handleTap(int logicalX, int logicalY) {
     return 1;
 }
 
-int EspNativeGameplayPlayerDeath_arm(struct DoomRPG_s* doomRpgBase,
-                                     uint32_t sequence,
-                                     uint16_t tileIndex) {
+static int armDeath(struct DoomRPG_s* doomRpgBase,
+                    uint32_t sequence, uint16_t tileIndex,
+                    int useReservedRand, uint8_t reservedRand) {
     DoomRPG_t* doomRpg = (DoomRPG_t*)doomRpgBase;
     const EspPlayerViewState* view = EspPlayerView_view();
     const EspNativeGameplayPlayerState* player;
@@ -295,7 +295,8 @@ int EspNativeGameplayPlayerDeath_arm(struct DoomRPG_s* doomRpgBase,
     deathState.lastFrameMs = deathState.startedMs;
     deathState.lastViewZ = 36;
     deathState.lastFade = 255U;
-    deathState.deathRand = DoomRPG_randNextByte(&doomRpg->random);
+    deathState.deathRand = useReservedRand
+        ? reservedRand : DoomRPG_randNextByte(&doomRpg->random);
     deathState.phase = ESP_NATIVE_GAMEPLAY_PLAYER_DEATH_FALL;
     deathState.active = 1U;
 
@@ -308,6 +309,19 @@ int EspNativeGameplayPlayerDeath_arm(struct DoomRPG_s* doomRpgBase,
            (unsigned int)hudStats.pixelsWritten,
            (unsigned int)sizeof(deathState));
     return 1;
+}
+
+int EspNativeGameplayPlayerDeath_arm(struct DoomRPG_s* doomRpgBase,
+                                     uint32_t sequence,
+                                     uint16_t tileIndex) {
+    return armDeath(doomRpgBase, sequence, tileIndex, 0, 0U);
+}
+
+int EspNativeGameplayPlayerDeath_armWithReservedRand(
+    struct DoomRPG_s* doomRpgBase, uint32_t sequence,
+    uint16_t tileIndex, uint8_t reservedDeathRand) {
+    return armDeath(doomRpgBase, sequence, tileIndex,
+                    1, reservedDeathRand);
 }
 
 int EspNativeGameplayPlayerDeath_service(struct DoomRPG_s* doomRpgBase) {
