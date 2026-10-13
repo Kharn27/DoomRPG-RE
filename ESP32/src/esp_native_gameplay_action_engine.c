@@ -2678,6 +2678,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         uint8_t barrelBlastPreview[ACTION_BARREL_CHAIN_MAX];
         Random_t barrelRandomAfterCombat;
         Random_t barrelRandomAfterPreview;
+        Random_t barrelRandomBeforeDeathByte;
+        uint8_t barrelReservedDeathRand = 0U;
+        uint8_t barrelReservedDeathRandValid = 0U;
         uint8_t barrelPlayerHits = 0U;
         uint8_t barrelPlayerLethal = 0U;
         uint16_t barrelPlayerHitSources[ACTION_BARREL_CHAIN_MAX];
@@ -3687,8 +3690,7 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             &triggered,
                             &playerHitsThisBlast,
                             &playerMessageDamageThisBlast,
-                            barrelExpectedChainCount == 1U &&
-                                barrelPreflightMonsters == 0U,
+                            barrelExpectedChainCount == 1U,
                             &barrelPlayerLethal)) {
                         int rollbackOk = 1;
                         if (barrelTurnRequested != 0U &&
@@ -3713,6 +3715,24 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                                (unsigned int)waveOrdinal,
                                rollbackOk ? "yes" : "NO");
                         return rollbackOk ? 1 : 0;
+                    }
+                    /* When this one blast kills the player, legacy death
+                     * consumes one RNG byte before subsequent monster
+                     * splash consequences. Defer death activation until the
+                     * entire world transaction is validated, but reserve the
+                     * exact byte here. A rollback restores randomBefore. */
+                    if (barrelPlayerLethal != 0U &&
+                        barrelReservedDeathRandValid == 0U) {
+                        barrelRandomBeforeDeathByte = doomRpg->random;
+                        barrelReservedDeathRand =
+                            DoomRPG_randNextByte(&doomRpg->random);
+                        barrelReservedDeathRandValid = 1U;
+                        printf("[BARRELRADIUS] DEATH-RNG-RESERVE seq=%u source=%u nextBefore=%d nextAfter=%d value=%u ordering=blast-death-before-monster-effects transaction=pending\n",
+                               (unsigned int)pending.sequence,
+                               (unsigned int)barrelChain[blastCursor],
+                               barrelRandomBeforeDeathByte.nextRand,
+                               doomRpg->random.nextRand,
+                               (unsigned int)barrelReservedDeathRand);
                     }
                     if (barrelInterleaved != 0U &&
                         barrelSplashCount != 0U) {
@@ -3828,16 +3848,24 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                        (unsigned int)ACTION_TRAP_DAMAGE_FLASH_MS);
             }
 
+            /* The reserved death byte is AFTER the blast preview by
+             * contract. Verify the saved pre-death RNG snapshot, never the
+             * RNG that has legitimately moved past that death side effect. */
             if (barrelChainCount != barrelExpectedChainCount ||
                 barrelBlastRngCalls != barrelExpectedChainCount ||
                 (barrelInterleaved == 0U &&
-                 memcmp(&doomRpg->random, &barrelRandomAfterPreview,
+                 memcmp(barrelReservedDeathRandValid != 0U
+                            ? &barrelRandomBeforeDeathByte : &doomRpg->random,
+                        &barrelRandomAfterPreview,
                         sizeof(barrelRandomAfterPreview)) != 0)) {
                 int rollbackOk = 1;
                 const int rngExact =
                     barrelBlastRngCalls == barrelExpectedChainCount &&
                     (barrelInterleaved != 0U ||
-                     memcmp(&doomRpg->random, &barrelRandomAfterPreview,
+                     memcmp(barrelReservedDeathRandValid != 0U
+                                ? &barrelRandomBeforeDeathByte
+                                : &doomRpg->random,
+                            &barrelRandomAfterPreview,
                             sizeof(barrelRandomAfterPreview)) == 0);
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -4274,9 +4302,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 ? (uint16_t)((((uint32_t)view->destY >> 6) * MAP_WIDTH) +
                              ((uint32_t)view->destX >> 6))
                 : 0xffffU;
-            if (!validTile ||
-                !EspNativeGameplayPlayerDeath_arm(
-                    doomRpgBase, pending.sequence, deathTile)) {
+            if (!validTile || barrelReservedDeathRandValid == 0U ||
+                !EspNativeGameplayPlayerDeath_armWithReservedRand(
+                    doomRpgBase, pending.sequence, deathTile,
+                    barrelReservedDeathRand)) {
                 int rollbackOk = 1;
                 if (barrelTurnRequested != 0U &&
                     !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -4301,7 +4330,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                 printf("[BARRELRADIUS] LETHAL-ROLLBACK seq=%u root=%u cause=%s rollback=%s rng=yes player=yes world=yes death=not-armed\n",
                        (unsigned int)pending.sequence,
                        (unsigned int)pending.spriteIndex,
-                       validTile ? "player-death-arm" : "invalid-player-tile",
+                       !validTile ? "invalid-player-tile" :
+                           barrelReservedDeathRandValid == 0U
+                               ? "missing-death-rng" : "player-death-arm",
                        rollbackOk ? "yes" : "NO");
                 memset(&actionState.pending, 0, sizeof(actionState.pending));
                 return rollbackOk ? 1 : 0;
