@@ -23,6 +23,7 @@
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_monster_projectile204_contract.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_note_prefix.h"
@@ -280,7 +281,7 @@ int EspNativeGameplaySession_hasFailed(void) {
 
 /* The immutable BSP resource set cannot list runtime-created missiles.
  * Preflight this sprite once during session loading, never during combat. */
-static int mapNeedsImpProjectile(void) {
+static int mapNeedsMonsterProjectile204(void) {
     const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
     uint32_t i;
 
@@ -290,7 +291,8 @@ static int mapNeedsImpProjectile(void) {
         uint16_t link = 0U, order = 0U;
         if (!EspMapSpriteTopology_getEntity(i, &type, &subtype,
                                              &link, &order)) return -1;
-        if (type == ESP_MAP_ENTITY_TYPE_ENEMY && subtype == 3U) return 1;
+        if (type == ESP_MAP_ENTITY_TYPE_ENEMY &&
+            EspNativeMonsterProjectile204_needsResource(subtype)) return 1;
     }
     return 0;
 }
@@ -489,7 +491,7 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
             EspNativeGraphicsCatalogStatus status =
                 EspNativeGraphicsCatalog_expandSpriteDependencies();
             const EspNativeGraphicsCatalogView* catalog;
-            int needsImp;
+            int needsProjectile204;
 
             if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
                 status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
@@ -497,32 +499,34 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
                 return;
             }
 
-            needsImp = mapNeedsImpProjectile();
-            if (needsImp < 0) {
-                failSession("imp projectile topology census");
+            needsProjectile204 = mapNeedsMonsterProjectile204();
+            if (needsProjectile204 < 0) {
+                failSession("monster projectile 204 topology census");
                 return;
             }
-            if (needsImp != 0) {
-                /* Legacy Combat_launchProjectile(weapon 15) uses sprite 204
-                 * for Imps. Its transient is not part of the BSP resource set. */
+            if (needsProjectile204 != 0) {
+                /* Legacy weapon 15 uses 204 for both Imp (subtype 3)
+                 * and Malwrath/Cacodemon (subtype 6) primary attacks.
+                 * This runtime-only missile is not in the BSP sprite set. */
                 status = EspNativeGraphicsCatalog_ensureSprite(204U);
                 if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
                     status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
-                    printf("[ENGINESESSION] IMPPROJECTILE resource=204 status=%d catalog=unchanged gameplay=not-armed\n",
+                    printf("[ENGINESESSION] MONSTERPROJECTILE resource=204 status=%d catalog=unchanged gameplay=not-armed\n",
                            (int)status);
-                    failSession("imp projectile sprite dependency");
+                    failSession("monster projectile 204 sprite dependency");
                     return;
                 }
             }
             catalog = EspNativeGraphicsCatalog_view();
             if (catalog == NULL ||
-                (needsImp != 0 &&
+                (needsProjectile204 != 0 &&
                  EspNativeGraphicsCatalog_findSprite(204U) == NULL)) {
                 failSession("sprite dependency publication");
                 return;
             }
-            printf("[ENGINESESSION] SPRITES dependencyStatus=%d impProjectile204=%s catalogSprites=%u\n",
-                   (int)status, needsImp != 0 ? "primed" : "not-required",
+            printf("[ENGINESESSION] SPRITES dependencyStatus=%d monsterProjectile204=%s catalogSprites=%u\n",
+                   (int)status,
+                   needsProjectile204 != 0 ? "primed" : "not-required",
                    (unsigned int)catalog->spriteCount);
             sessionState.stage = SESSION_STAGE_SMALL_BEGIN;
             continue;
