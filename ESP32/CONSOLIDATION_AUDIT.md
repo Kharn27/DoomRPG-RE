@@ -440,6 +440,9 @@ Sur l'extrait Troop : 8 060 B de succès évitables sur 16 833 B (37 lignes),
 Le nouveau test compile/preprocess les six vrais TU et vérifie le vrai gate
 admission/capture à deux niveaux ; dépendances état/position restent mockées.
 CI/hardware performance : PORTING_STATUS ; pas de PASS latence inventé.
+Frontière de code `3910a7cc7e0cc48eeda848c49698463f6837b057`, suite hôte,
+normal/bringup et garde des exports PASS local et
+[CI 38437582969](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38437582969).
 
 Suite priorisée : établir une preuve conservatrice des déplacements réellement
 invisibles avant de supprimer leurs redraws complets. Le même FNV dans trois

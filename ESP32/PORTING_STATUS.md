@@ -17,9 +17,9 @@ de succès** retirables sur 16 833 B (~47,9 %). Équivalent UART 115200 8N1 :
 699,7 ms de ligne, **pas** un gain CPU/FPS mesuré ni une garantie d'autant de
 latence gagnée (buffers/ordonnancement non mesurés). Le coût des redraws monde
 par monstre et des animations demeure ; ne pas raccourcir l'idle final pour
-accélérer. Trois mouvements hors champ réaffichent le même FNV `7aa4ab0f` dans
-la trace : piste pour un futur préflight géométrique, pas un motif pour sauter
-un rendu d'après son hash.
+accélérer. Trois redraws successifs affichent le même FNV `7aa4ab0f` dans
+la trace : indice de pixels inchangés, pas une preuve d'invisibilité ni un
+motif pour sauter un rendu d'après son hash. La géométrie doit être préflightée.
 
 Builds normal/bringup locaux PASS ; RAM/Flash **47 680 / 805 649 B** et
 **47 832 / 825 861 B** (normal **−2 692 B Flash**, RAM statique inchangée,
@@ -28,7 +28,11 @@ Les **neuf sections allouées bringup sont byte-identiques** au parent avec le
 même toolchain ; aucune identité binaire annoncée pour INFO. Tests : syntaxe
 et préprocessing des six vrais TU aux niveaux INFO/TRACE, 16 sites exclus en
 normal, trois guards conservés, capture/admission réelles à deux niveaux avec
-leurs dépendances mockées. Test CI ajouté ; CI distante à vérifier après push.
+leurs dépendances mockées ; ASan/UBSan du gate PASS local (LeakSanitizer désactivé
+sous ptrace). **CI distante PASS** sur le code
+`3910a7cc7e0cc48eeda848c49698463f6837b057` : les 16 étapes hôte, les deux
+builds et la garde des exports retirés
+([run 38437582969](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38437582969)).
 
 Pas de nouvelle frontière gameplay dans ce lot ; pas de nouveau PASS matériel
 attribué. Pour juger le gain ressenti, jouer avec **esp32-cyd normal**, pas
