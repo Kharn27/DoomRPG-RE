@@ -111,6 +111,14 @@ vérifier `NO SAVE` et que les options différées ne quittent pas l'écran.
 
 ## Contrat d'évolution
 
+L'audit architectural depuis `main 9d203e5` est dans
+[`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md). Son inventaire distingue
+sources présentes, unités compilées, sections liées et preuves d'exécution.
+Premier lot : retrait de neuf anciens markers post-load Junction inaccessibles,
+sans fusion d'états actifs. La comparaison des sections allouées des deux ELF
+est stricte (octets/adresses/layout), avec `tools/compare_elf_alloc.py` ; les
+tests hôte et la CI n'attribuent aucun nouveau PASS gameplay/matériel.
+
 Ne pas introduire de runtime propre à une map, de gros index pointer-heavy, ni de nouveaux wrappers universels simplement pour remplacer ceux du desktop. Le PAK reste le backing store, `EspMapRuntime` reste immuable, chaque mutation a un propriétaire explicite. Différer l'optimisation de `PlatformVideo_present()` : Doom RPG est turn-based.
 
 La documentation ne doit plus être un second journal de développement : décrire **le fonctionnement actuel**, son protocole de test et ses limites. L'historique exhaustif vit dans Git.

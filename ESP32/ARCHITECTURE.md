@@ -7,6 +7,18 @@ in which historical recovery probes were written.
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
 For build/platform notes, read [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
+Current architectural consolidation census (main `9d203e5`, 2026-10-13):
+[`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md), with the per-source build/ELF
+inventory. Several older recovery descriptions below (notably §6/7/10/13) no
+longer describe the complete live port. Use the current census and source for
+ownership, and PORTING_STATUS for the exact scope of hardware evidence; do not
+infer live ZIP access or retired desktop ownership from those historical notes.
+
+The closed, unreachable fresh-Junction post-load marker ladder has been retired
+as nine source/header pairs. The generic startup/session and genuine post-spawn
+owners are unchanged. Do not recreate `EspPostLoad*` or
+`EspNativePlayingService*` markers as prerequisites for generic gameplay.
+
 ## 1. Design rule
 
 **A new BSP is data, not a new engine.**

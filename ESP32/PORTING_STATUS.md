@@ -1,5 +1,34 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Consolidation architecturale — lot post-load Junction (2026-10-13)
+
+Base auditée exacte : `9d203e525a4b8736fadfd34aaf693423bff7f602`, après le merge
+de la PR #208. Rapport et priorités :
+[`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md), inventaire des 183 sources
+de base dans le CSV associé. Le premier lot retire neuf sources et neuf headers
+du ladder historique Junction, 1 691 lignes et 45 exports sans consommateur
+extérieur ; aucune section allouée dans normal/bringup, déjà avant retrait.
+Après : 174 sources / 165 headers include, sans nouveau propriétaire production.
+
+Vérification locale : builds normal et bringup PASS ; les neuf sections non
+vides `SHF_ALLOC` de chaque ELF sont strictement identiques avant/après,
+adresses/flags/alignement/taille/octet par octet compris (NOBITS par layout).
+RAM/flash utiles inchangées : normal 47 680 / 802 633 B, bringup 47 832 /
+820 313 B. Pas de gain RAM revendiqué pour les 108 B de markers des objets
+éliminés ; ils étaient déjà absents des ELF. Tests comparateur et garde CI
+d'absence d'exports ajoutés ; CI distante à vérifier après push.
+
+Les tests C/outil du workflow passent localement. Trois fixtures historiques
+hors CI (SYS touch, level progress, death menu) sont déjà désalignées avec les
+APIs de la base : compilation refusée par des mocks manquants, pas un PASS.
+Cette dette est décrite dans l'audit et n'est pas réparée en modifiant le firmware.
+
+Aucun nouveau trajet exécuté ni PASS matériel revendiqué. Aucun octet chargé
+ne change dans cette comparaison contrôlée : pas de reflash/PASS CYD exigé pour
+ce lot. RNG, rollback, save V11, PAK et invariants renderer restent hors mutation.
+Les preuves/limites matérielles de PR #208 et des autres jalons restent celles
+ci-dessous ; ce retrait ne résout aucune de leurs anomalies ouvertes.
+
 ## PR #208 — vendeur natif : PASS CYD après les deux correctifs de code review (2026-10-13)
 
 **Témoin sur le vrai classic CYD, firmware normal `esp32-cyd`, frontière de code `f2d85321e6c286289d1021ad6735396aa3987677` + commit documentaire `91635c6d1aaddfe1e064e755b417afe78a1d67b5`.** Le testeur confirme « Allez c'est ok » après un test physique du vendeur `vendor=0`. CI de la frontière : [run 38379283255](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38379283255), **SUCCESS** (normal, bringup, tests hôte). Ce jalon fait suite aux deux commentaires P2 de la PR #208, tous deux corrigés, répondus et résolus.

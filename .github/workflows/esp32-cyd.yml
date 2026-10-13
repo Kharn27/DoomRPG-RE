@@ -75,6 +75,9 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_gameplay_store.c ESP32/test/store_native_host.c -o /tmp/doomrpg-native-store-test
           /tmp/doomrpg-native-store-test
 
+      - name: Test strict allocated ELF comparison (host Python)
+        run: python ESP32/test/elf_alloc_compare_host.py
+
       - name: Cache PlatformIO packages
         uses: actions/cache@v4
         with:
@@ -96,6 +99,12 @@ jobs:
       - name: Build diagnostic CYD bringup firmware
         working-directory: ESP32
         run: pio run -e esp32-cyd-bringup
+
+      - name: Reject retired Junction post-load exports in both profiles
+        working-directory: ESP32
+        run: |
+          python tools/compare_elf_alloc.py .pio/build/esp32-cyd/firmware.elf --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService
+          python tools/compare_elf_alloc.py .pio/build/esp32-cyd-bringup/firmware.elf --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService
 
       - name: Upload firmware artifacts
         if: success()

@@ -1,6 +1,21 @@
 
 This directory contains project tests.
 
+Architecture-consolidation audit tool (host Python, no firmware dependency):
+
+```sh
+python3 ESP32/test/elf_alloc_compare_host.py
+python3 ESP32/tools/compare_elf_alloc.py ESP32/.pio/build/esp32-cyd/firmware.elf \
+  --baseline /path/to/same-toolchain-base.elf \
+  --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService
+```
+
+Repeat with the bringup ELF and its own baseline. All non-empty SHF_ALLOC
+sections must retain exact bytes/address/layout, including app metadata; NOBITS
+uses layout. Debug-only differences are allowed, code/data/BSS changes are not.
+CI tests the parser and checks retired exports in both final ELFs; the baseline
+byte comparison is a separate controlled local check, not a hardware witness.
+
 Level progress host regression (from the repository root):
 
 ```sh
