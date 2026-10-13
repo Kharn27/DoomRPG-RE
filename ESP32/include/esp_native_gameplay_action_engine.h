@@ -92,6 +92,53 @@ EspNativeGameplayDamageSide_fromWorld(int32_t playerX, int32_t playerY,
                      : ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT;
 }
 
+/* Bounded, allocation-free FIFO. The presentation owner consumes the oldest
+ * committed attack first; repeated sides remain distinct when attacker/probe
+ * IDs differ. This small pure contract also runs as a host regression. */
+#define ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP 8U
+typedef struct EspNativeGameplayDamageCue_s {
+    uint32_t probe;
+    uint16_t attackerSprite;
+    uint8_t side;
+    uint8_t reserved;
+} EspNativeGameplayDamageCue;
+typedef struct EspNativeGameplayDamageCueQueue_s {
+    EspNativeGameplayDamageCue entries[ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP];
+    uint8_t head;
+    uint8_t count;
+} EspNativeGameplayDamageCueQueue;
+
+static inline int EspNativeGameplayDamageCueQueue_push(
+    EspNativeGameplayDamageCueQueue* fifo,
+    uint32_t probe, uint16_t attackerSprite,
+    EspNativeGameplayDamageSide side) {
+    uint8_t tail;
+    if (fifo == NULL || probe == 0U || attackerSprite == 0xffffU ||
+        side < ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT ||
+        side > ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT ||
+        fifo->count >= ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP) return 0;
+    tail = (uint8_t)((fifo->head + fifo->count) %
+                     ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP);
+    fifo->entries[tail].probe = probe;
+    fifo->entries[tail].attackerSprite = attackerSprite;
+    fifo->entries[tail].side = (uint8_t)side;
+    fifo->entries[tail].reserved = 0U;
+    ++fifo->count;
+    return 1;
+}
+
+static inline int EspNativeGameplayDamageCueQueue_pop(
+    EspNativeGameplayDamageCueQueue* fifo,
+    EspNativeGameplayDamageCue* outCue) {
+    if (fifo == NULL || outCue == NULL || fifo->count == 0U ||
+        fifo->count > ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP) return 0;
+    *outCue = fifo->entries[fifo->head];
+    fifo->head = (uint8_t)((fifo->head + 1U) %
+                           ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP);
+    --fifo->count;
+    return 1;
+}
+
 /* Presentation-only post-COMMIT FIFO: one attack probe/sprite per cue.
  * No legacy red full-border flash for positioned monster hits. Non-positional
  * damage retains the historical red viewport border fallback. */
