@@ -34,7 +34,11 @@ et 2 tests Python PASS**, ASan/UBSan PASS pour les fixtures WAIT et BACK
 (LeakSanitizer désactivé sous ptrace). Builds normal/bringup et garde des
 exports retirés PASS. RAM/Flash **47 680 / 808 341 B** et **47 832 / 825 861 B** :
 RAM statique/journal lazy inchangés, Flash +248 / +268 B depuis `fca7d04`.
-CI distante encore à vérifier après push.
+**CI distante PASS** sur le code
+`7220f17f97bd334f5348c3eb79cbcf97a61e6249` : suite hôte, les deux builds et
+garde des exports retirés
+([run 38407334363](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38407334363)).
+Validation CYD toujours pending ; le PASS CI ne remplace pas l'essai ci-dessous.
 
 **À refaire sur CYD avant merge**, depuis une sauvegarde antérieure au
 paiement : BACK dans le dialogue d'offre → monde, crédits/states inchangés,

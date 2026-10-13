@@ -416,3 +416,8 @@ Replay hôte renforcé avec ces vrais owners (contre-épreuve : ancien WAIT éch
 et carte BACK qui rend enfin accessible l'annulation EV_DIALOG d'origine.
 Ne pas confondre absence de YES/NO dans le bytecode avec absence de Back.
 Validation matérielle renouvelée requise, notamment SHOW du monstre après WAIT.
+Correctif code `7220f17f97bd334f5348c3eb79cbcf97a61e6249` : suite hôte,
+normal/bringup et garde d'exports PASS local et
+[CI 38407334363](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38407334363).
+RAM/Flash 47 680 / 808 341 B et 47 832 / 825 861 B (+248 / +268 B Flash,
+RAM/journal inchangés depuis `fca7d04`). Aucun PASS CYD attribué à ce correctif.
