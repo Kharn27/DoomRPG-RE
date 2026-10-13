@@ -365,9 +365,13 @@ Les trois fixtures réparées passent aussi localement sous ASan/UBSan ; le
 LeakSanitizer est désactivé car incompatible avec le ptrace de cet environnement.
 Ce contrôle mémoire hôte ne prouve pas les allocations/RAM sur le CYD.
 
-**CI distante du nouveau lot : à vérifier après push.** Aucun nouveau PASS
-matériel demandé : aucune section chargée ni adresse ne change dans le lot
-final. Les contraintes PAK, `shapeData == NULL`, `mediaTexels == NULL`, RNG,
+Frontière de code du lot : `8dfd82e00e20305132977b324f8314f83bc6939f`, commitée
+et poussée sur la même branche. [CI 38390131286](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38390131286)
+**SUCCESS** : tous les tests hôte, builds normal/bringup et garde des exports.
+Le comparatif byte-à-byte avec le parent reste une preuve locale contrôlée,
+pas un comparatif effectué par cette CI. Clôture suivante **docs-only**.
+Aucun nouveau PASS matériel demandé : aucune section chargée ni adresse ne
+change dans le lot final. Les contraintes PAK, `shapeData == NULL`, `mediaTexels == NULL`, RNG,
 rollback, sauvegarde et transaction de publication demeurent inchangées.
 
 Suites prioritaires mises à jour : les trois fixtures et les 15 diagnostics

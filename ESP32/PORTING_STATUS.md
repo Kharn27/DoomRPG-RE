@@ -27,7 +27,10 @@ Les trois fixtures hôte SYS touch / level progress / death menu sont réaligné
 sur les APIs slot/completion et intégrées à la CI. Les dix tests C, watcher,
 comparateur Python et garde des exports passent localement. Slot picker,
 restore SD et validateur completion demeurent mockés dans ces fixtures : pas
-de PASS matériel/SD/parité globale inventé. **CI distante à vérifier après push.**
+de PASS matériel/SD/parité globale inventé. Frontière de code du lot :
+`8dfd82e00e20305132977b324f8314f83bc6939f`. [CI 38390131286](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38390131286)
+**SUCCESS** : tests hôte, deux builds et garde des exports retirés. Le comparatif
+ELF avec le parent est local, distinct de cette CI. Clôture suivante docs-only.
 
 Pas de reflash/PASS CYD exigé pour ce lot final : code/data/layout chargés
 inchangés. RNG, rollback, save V11, rendu natif et backing PAK sont conservés.
@@ -56,10 +59,10 @@ d'absence d'exports ajoutés. Frontière de code :
 **SUCCESS**, tests hôte, builds normal/bringup et garde des exports retirés.
 La clôture suivante est docs-only ; aucun nouveau firmware n'est modifié.
 
-Les tests C/outil du workflow passent localement. Trois fixtures historiques
-hors CI (SYS touch, level progress, death menu) sont déjà désalignées avec les
-APIs de la base : compilation refusée par des mocks manquants, pas un PASS.
-Cette dette est décrite dans l'audit et n'est pas réparée en modifiant le firmware.
+À la frontière du lot 1, les tests C/outil du workflow passaient localement,
+mais trois fixtures hors CI (SYS touch, level progress, death menu) étaient
+désalignées avec les APIs de la base : mocks manquants, pas un PASS. Cette
+dette est réparée dans le lot 2 ci-dessus, sans modifier le code firmware testé.
 
 Aucun nouveau trajet exécuté ni PASS matériel revendiqué. Aucun octet chargé
 ne change dans cette comparaison contrôlée : pas de reflash/PASS CYD exigé pour
