@@ -114,7 +114,7 @@
 #define DAMAGE_CUE_ON_MS 85U
 #define DAMAGE_CUE_GAP_MS 45U
 #define DAMAGE_CUE_PULSES 2U
-#define DAMAGE_CUE_QUEUE_MAX 8U
+#define DAMAGE_CUE_QUEUE_MAX ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP
 #define DAMAGE_CUE_MAX_PIXELS (DOOMRPG_LOGICAL_WIDTH * DAMAGE_CUE_THICKNESS)
 #define DAMAGE_CUE_COLOR565 0xfa20U
 #define FEEDBACK_BORDER_THICKNESS 2U
@@ -237,19 +237,11 @@ static uint16_t viewportBorderSnapshot[FEEDBACK_BORDER_PIXELS];
  * One BSS snapshot stores only the largest possible 160x10 viewport band.
  * Keep this overlay inside the existing action-feedback presenter: a second
  * --wrap_Esp32PlatformVideo_present would violate the established chain. */
-typedef struct DirectionalCue_s {
-    uint32_t probe;
-    uint16_t attackerSprite;
-    uint8_t side;
-    uint8_t reserved;
-} DirectionalCue;
 typedef struct DirectionalCueOwner_s {
-    DirectionalCue fifo[DAMAGE_CUE_QUEUE_MAX];
-    DirectionalCue current;
+    EspNativeGameplayDamageCueQueue queued;
+    EspNativeGameplayDamageCue current;
     uint32_t phaseAtMs;
     uint16_t snapshotPixels;
-    uint8_t head;
-    uint8_t count;
     uint8_t phase; /* 0 idle, 1 requested-on, 2 lit, 3 gap */
     uint8_t pulsesShown;
     uint8_t snapshotValid;
@@ -1528,26 +1520,17 @@ static const char* directionCueName(uint8_t side) {
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side) {
-    uint8_t tail;
-    if (attackProbe == 0U || attackerSprite == 0xffffU ||
-        side < ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT ||
-        side > ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_LEFT) return 0;
-    if (directionCue.count >= DAMAGE_CUE_QUEUE_MAX) {
+    if (!EspNativeGameplayDamageCueQueue_push(
+            &directionCue.queued, attackProbe, attackerSprite, side)) {
         printf("[DAMAGECUE] DEFER probe=%u sprite=%u side=%s cause=fifo-full cap=%u gameplay=unchanged\n",
                (unsigned int)attackProbe, (unsigned int)attackerSprite,
                directionCueName((uint8_t)side), (unsigned int)DAMAGE_CUE_QUEUE_MAX);
         return 0;
     }
-    tail = (uint8_t)((directionCue.head + directionCue.count) %
-                     DAMAGE_CUE_QUEUE_MAX);
-    directionCue.fifo[tail].probe = attackProbe;
-    directionCue.fifo[tail].attackerSprite = attackerSprite;
-    directionCue.fifo[tail].side = (uint8_t)side;
-    directionCue.fifo[tail].reserved = 0U;
-    ++directionCue.count;
-    printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=committed-monster-hit\n",
+     printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=committed-monster-hit\n",
            (unsigned int)attackProbe, (unsigned int)attackerSprite,
-           directionCueName((uint8_t)side), (unsigned int)directionCue.count);
+           directionCueName((uint8_t)side),
+           (unsigned int)directionCue.queued.count);
     return 1;
 }
 
@@ -1973,13 +1956,11 @@ static int serviceDirectionalCue(void) {
         EspNativeGameplayLevelUp_isActive() ||
         EspAssetPack_isOpen() || actionState.pending.active != 0U) return 1;
     if (directionCue.phase == 0U) {
-        if (directionCue.count == 0U ||
+        if (directionCue.queued.count == 0U ||
             actionState.viewportFlashPending != 0U ||
             actionState.viewportFlashVisible != 0U) return 1;
-        directionCue.current = directionCue.fifo[directionCue.head];
-        directionCue.head =
-            (uint8_t)((directionCue.head + 1U) % DAMAGE_CUE_QUEUE_MAX);
-        --directionCue.count;
+        if (!EspNativeGameplayDamageCueQueue_pop(
+                &directionCue.queued, &directionCue.current)) return 1;
         directionCue.phase = 1U;
         directionCue.pulsesShown = 0U;
         directionCue.snapshotValid = 0U;
