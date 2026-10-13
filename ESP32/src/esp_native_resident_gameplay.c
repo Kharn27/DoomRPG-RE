@@ -1014,9 +1014,19 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                    (unsigned int)result.commandOffset,
                    (unsigned int)result.codeId,
                    EspNativeGameplayDialog_resumeStatusName(chainStatus));
-            if (result.codeId == 23U &&
-                !renderCurrent(render, (uint8_t)view->viewAngle, "SCRIPT-BEGIN-ROLLBACK"))
-                disableGameplay("script-begin-rollback-render");
+            if (result.codeId == 23U) {
+                if (startedInAutomap != 0U) {
+                    gameplayState.modeFlags =
+                        (uint8_t)(gameplayState.modeFlags | RESIDENT_MODE_AUTOMAP);
+                    if (!renderAutomapCurrent(render, "SCRIPT-BEGIN-ROLLBACK")) {
+                        disableGameplay("script-begin-automap-rollback");
+                    }
+                }
+                else if (!renderCurrent(render, (uint8_t)view->viewAngle,
+                                        "SCRIPT-BEGIN-ROLLBACK")) {
+                    disableGameplay("script-begin-rollback-render");
+                }
+            }
             return;
         }
         if (!renderActionCurrent(render, (uint8_t)view->viewAngle,

@@ -1,6 +1,26 @@
 
 This directory contains project tests.
 
+Resident SELECT / automap rollback on opcode-23 startup failure (also in CI):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -IESP32/test/host_include -IESP32/include -Isrc \
+  ESP32/test/script_startup_automap_host.c -Wl,--gc-sections \
+  -o /tmp/doomrpg-script-startup-automap-test
+/tmp/doomrpg-script-startup-automap-test
+```
+
+Includes the production resident owner directly: real SELECT routing, private
+mode flags, closeAutomap and renderAutomapCurrent. Action/script startup, HUD,
+visibility, raster/present and external gameplay owners are mocked. EXEC_FAILED
+and INVALID restore the original automap/world context; unrelated mode bits
+survive, failed restoration disables gameplay, failed close never starts the
+script, and a successful modal pause does not restore automap prematurely.
+Unselected modal/door/reward branches assert on invocation. This does not test
+actual font/PAK failure, physical pixels, debit rollback or SD on CYD; the paid
+interaction fixture separately covers the real script transaction.
+
 Monster movement log budget / INFO versus TRACE (also in CI):
 
 ```sh

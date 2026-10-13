@@ -113,6 +113,14 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include ESP32/test/dialog_touch_host.c ESP32/src/esp_native_gameplay_hub_touch_ui.c -Wl,--gc-sections -o /tmp/doomrpg-dialog-touch-test
           /tmp/doomrpg-dialog-touch-test
 
+      - name: Test automap restoration on script startup failure (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+            -IESP32/test/host_include -IESP32/include -Isrc \
+            ESP32/test/script_startup_automap_host.c -Wl,--gc-sections \
+            -o /tmp/doomrpg-script-startup-automap-test
+          /tmp/doomrpg-script-startup-automap-test
+
       - name: Test read-only SHOW admission and unchanged commit rollback (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include ESP32/test/show_preview_host.c -Wl,--gc-sections -o /tmp/doomrpg-show-preview-test
