@@ -12,6 +12,7 @@
 #include "esp_native_gameplay_monster_retaliation.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_gameplay_player_death.h"
@@ -309,6 +310,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     uint32_t aiRngCalls = 0U;
     uint8_t healthAfter;
     uint8_t armorAfter;
+    EspNativeGameplayDamageSide damageSide = ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE;
     char damageText[RETALIATION_DAMAGE_TEXT_BYTES];
     int damageTextLen;
     int rollbackRendered;
@@ -445,6 +447,23 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
                           &healthAfter,
                           &armorAfter);
     randomAfterRoll = doomRpg->random;
+
+    /* Attribute the impact to THIS resolved attacker, including its final
+     * post-movement position. Never infer the source from a rendered sprite.
+     * Coincident/invalid positions retain the legacy omnidirectional flash. */
+    if (roll.hitLoops != 0U) {
+        const EspNativeGameplayMonsterPositionRecord* attackerPosition =
+            EspNativeGameplayMonsterPosition_find(monster->spriteIndex);
+        int32_t stepX;
+        int32_t stepY;
+        if (attackerPosition != NULL &&
+            EspPlayerView_cardinalBasis((uint8_t)playerView->viewAngle,
+                                        NULL, NULL, &stepX, &stepY, NULL)) {
+            damageSide = EspNativeGameplayDamageSide_fromWorld(
+                playerView->viewX, playerView->viewY, stepX, stepY,
+                attackerPosition->worldX, attackerPosition->worldY);
+        }
+    }
 
     if (healthAfter == 0U && roll.hitLoops != 0U) {
         uint16_t deathTile;
@@ -630,7 +649,9 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     if (damageTextLen <= 0 || (size_t)damageTextLen >= sizeof(damageText) ||
         !EspNativeGameplayActionEngine_queueTextFeedback(
             ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE,
-            damageText, RETALIATION_DAMAGE_FLASH_MS)) {
+            damageText,
+            damageSide == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE
+                ? RETALIATION_DAMAGE_FLASH_MS : 0U)) {
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
         doomRpg->random = randomBefore;
         printf("[MONSTERRETAL] ROLLBACK probe=%u reason=%s sprite=%u cause=player-pain-feedback playerExact=%s rngExact=%s damageTotal=%d crit=%u mutation=no\n",
@@ -678,6 +699,12 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
 
     ++retaliationView.committedAttacks;
     retaliationView.lastResolvedProbe = turn->attackProbes;
+    /* UI intent is published only after player+RNG+frame COMMIT. Overflow
+     * never rolls back gameplay or aliases another attacker's direction. */
+    if (damageSide != ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE) {
+        (void)EspNativeGameplayActionEngine_queueDirectionalDamage(
+            turn->attackProbes, monster->spriteIndex, damageSide);
+    }
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
     randomFNVAfter = randomFNV(&doomRpg->random);
     printf("[MONSTERRETAL] COMMIT probe=%u reason=%s sprite=%u subtype=%u mType=%u weapon=%u alt=%u loops=%u hitLoops=%u firstRandHit=%u firstCalcHit=%d firstCritLimit=%d firstRandDamage=%u totalDamage=%d armorDamage=%d crit=%u aiRand=%s%u rngCalls=%u combatRngCalls=%u missProjectileRng=%u playerHP=%u->%u armor=%u->%u playerFNV=%08x->%08x rng=%08x->%08x frame=%08x presented=%u message=\"%s\" damageTotal=%d redFlash=b800/%ums passMessage=%s rollback=closed attackVisual=complete-before-resolution attackMessage=deferred painFace=deferred shake=deferred sound=deferred statusWarnings=deferred playerDeath=nonlethal turn=closed\n",
@@ -714,7 +741,8 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
            (unsigned int)frame.finalPresented,
            damageText,
            (int)(roll.totalDamage + roll.totalArmorDamage),
-           (unsigned int)RETALIATION_DAMAGE_FLASH_MS,
+           (unsigned int)(damageSide == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE
+                              ? RETALIATION_DAMAGE_FLASH_MS : 0U),
            turn->lastReason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN
                ? "legacy-superseded" : "n/a");
 }
