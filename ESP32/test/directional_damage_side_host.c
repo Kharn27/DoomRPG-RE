@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "esp_native_gameplay_action_engine.h"
 
@@ -18,6 +19,79 @@ static const Facing cases[4] = {
     {  0, 64, { {0, +64}, {-64, 0}, {0, -64}, {+64, 0} } }
 };
 
+/* A pure pixel-leasing fixture for the exact 160x80 gameplay viewport:
+ * the red border is the lower layer, then the translucent side. Snapshots
+ * must restore LIFO (side -> red -> native world). No other framebuffer. */
+static uint16_t fixture[160U * 120U];
+static uint16_t original[160U * 120U];
+static uint16_t borderPixels[944U];
+static uint16_t cuePixels[1600U];
+
+static void paintBorder(unsigned int mode) {
+    unsigned int x, y, n = 0U;
+    for (y = 20U; y < 100U; ++y) {
+        for (x = 0U; x < 160U; ++x) {
+            const int edge = y < 22U || y >= 98U ||
+                             x < 2U || x >= 158U;
+            uint16_t* p;
+            if (!edge) continue;
+            p = &fixture[y * 160U + x];
+            if (mode == 0U) {
+                assert(n < 944U);
+                borderPixels[n] = *p;
+                *p = 0xb800U;
+            } else {
+                assert(n < 944U);
+                *p = borderPixels[n];
+            }
+            ++n;
+        }
+    }
+    assert(n == 944U);
+}
+
+static void testOverlayDuringRedBorder(void) {
+    unsigned int side;
+    for (side = 1U; side <= 4U; ++side) {
+        unsigned int x, y, x0 = 0U, y0 = 20U;
+        unsigned int width = 160U, height = 10U;
+        unsigned int n = 0U, pulse;
+        if (side == 2U) { x0 = 150U; width = 10U; height = 80U; }
+        if (side == 3U) y0 = 90U;
+        if (side == 4U) { width = 10U; height = 80U; }
+        for (y = 0U; y < 120U; ++y) {
+            for (x = 0U; x < 160U; ++x) {
+                fixture[y * 160U + x] =
+                    (uint16_t)((y * 59U + x * 13U) & 0xffffU);
+            }
+        }
+        memcpy(original, fixture, sizeof(fixture));
+        paintBorder(0U);
+        for (pulse = 0U; pulse < 2U; ++pulse) {
+            n = 0U;
+            for (y = y0; y < y0 + height; ++y) {
+                for (x = x0; x < x0 + width; ++x) {
+                    uint16_t* p = &fixture[y * 160U + x];
+                    assert(n < 1600U);
+                    cuePixels[n++] = *p;
+                    *p = EspNativeGameplayDamageCue_blend565(*p, 0xfa20U);
+                }
+            }
+            assert(n == width * height);
+            /* The overlay really appears OVER the already-painted red,
+             * not as an isolated replacement or a flash scheduled later. */
+            assert(fixture[y0 * 160U + x0] ==
+                   EspNativeGameplayDamageCue_blend565(0xb800U, 0xfa20U));
+            n = 0U;
+            for (y = y0; y < y0 + height; ++y)
+                for (x = x0; x < x0 + width; ++x)
+                    fixture[y * 160U + x] = cuePixels[n++];
+            assert(fixture[y0 * 160U + x0] == 0xb800U);
+        }
+        paintBorder(1U);
+        assert(memcmp(fixture, original, sizeof(fixture)) == 0);
+    }
+}
 int main(void) {
     unsigned int facing;
     unsigned int side;
@@ -119,6 +193,7 @@ int main(void) {
         assert(!EspNativeGameplayDamageCueQueue_push(
             &fifo, 600U, 5U, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE));
     }
-    puts("DAMAGECUE host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok fifo-order=ok wrap=ok full=guarded");
+    testOverlayDuringRedBorder();
+    puts("DAMAGECUE host: cardinal=16/16 behind=ok diagonal=ok oblique=ok invalid=ok fifo-order=ok wrap=ok full=guarded red+side=concurrent 2-pulses=exact restore=LIFO");
     return 0;
 }
