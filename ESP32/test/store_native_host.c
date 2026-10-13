@@ -74,8 +74,53 @@ int main(void) {
     /* Store 0: first offer = small medkit at 8 credits. */
     seed(100);
     assert(!EspNativeGameplayStore_begin(4U,0U,0U));
-    enterList(0U);pickFirst();confirmBuy();
+    enterList(0U);pickFirst();
+    /* Review P2: painted YES - BUY is x=12..147 / y=68..86 inclusive.
+     * Blank left/right margins must not debit credits, grant items, redraw,
+     * leave the confirmation screen or arm a purchase rollback snapshot. */
+    {
+        const int margins[] = {0, 11, 148, 159};
+        const int rows[] = {68, 76, 86};
+        const unsigned beforePresents = presents;
+        size_t mi, yi;
+        for (mi = 0; mi < sizeof(margins)/sizeof(margins[0]); ++mi) {
+            for (yi = 0; yi < sizeof(rows)/sizeof(rows[0]); ++yi) {
+                assert(EspNativeGameplayStore_handleTap(margins[mi],
+                                                        rows[yi]) == 0);
+                assert(player.credits == 100U);
+                assert(player.inventory[0] == 0U);
+                assert(presents == beforePresents);
+            }
+        }
+        /* The NO - BACK card has the same horizontal bounds. */
+        assert(EspNativeGameplayStore_handleTap(11, 100) == 0);
+        assert(EspNativeGameplayStore_handleTap(148, 100) == 0);
+        assert(presents == beforePresents);
+    }
+    confirmBuy();
     assert(player.credits==92U && player.inventory[0]==1U);
+    closeFromList();
+
+    /* Edge pixels are interactive exactly when they are painted. */
+    EspNativeGameplayStore_reset();seed(100);
+    enterList(0U);pickFirst();
+    assert(EspNativeGameplayStore_handleTap(12,68)==1);
+    assert(player.credits==92U && player.inventory[0]==1U);
+    closeFromList();
+    EspNativeGameplayStore_reset();seed(100);
+    enterList(0U);pickFirst();
+    assert(EspNativeGameplayStore_handleTap(147,86)==1);
+    assert(player.credits==92U && player.inventory[0]==1U);
+    closeFromList();
+
+    /* Non-card taps on the prompt and notice are inert as well. */
+    EspNativeGameplayStore_reset();seed(100);
+    assert(EspNativeGameplayStore_begin(0U,0U,0U));
+    assert(EspNativeGameplayStore_handleTap(11,60)==0);
+    assert(EspNativeGameplayStore_handleTap(148,85)==0);
+    assert(EspNativeGameplayStore_handleTap(80,60)==1);
+    pickFirst();
+    assert(EspNativeGameplayStore_handleTap(12,100)==1); /* NO - BACK */
     closeFromList();
 
     /* Insufficient funds must neither debit credits nor grant items. */
