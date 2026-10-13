@@ -54,7 +54,8 @@ typedef struct EspNativeGameplayPlayerXpResult_s {
 typedef enum EspNativeGameplayPlayerDamageStatus_e {
     ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_INVALID = 0,
     ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED = 1,
-    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK = 2
+    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK = 2,
+    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_COMMITTED = 3
 } EspNativeGameplayPlayerDamageStatus;
 
 typedef struct EspNativeGameplayPlayerDamageResult_s {
@@ -111,6 +112,16 @@ EspNativeGameplayPlayerState_applyDamageNonlethal(
     uint16_t damage,
     uint16_t armorDamage,
     EspNativeGameplayPlayerDamageResult* outResult);
+/* Same damage arithmetic, but permits a 0-HP transaction state ONLY when
+ * the caller owns a corresponding native PlayerDeath_arm() terminal commit.
+ * On failed death-arm the caller MUST restore its PlayerState snapshot and RNG
+ * before releasing the world/action transaction. The ordinary nonlethal API
+ * remains fail-closed and ABI-compatible. */
+EspNativeGameplayPlayerDamageStatus
+EspNativeGameplayPlayerState_applyDamageForDeath(
+    uint16_t damage, uint16_t armorDamage,
+    EspNativeGameplayPlayerDamageResult* outResult);
+
 int EspNativeGameplayPlayerState_addCredits(uint32_t amount);
 int EspNativeGameplayPlayerState_addKeys(uint32_t keyMask);
 int EspNativeGameplayPlayerState_applyXp(
