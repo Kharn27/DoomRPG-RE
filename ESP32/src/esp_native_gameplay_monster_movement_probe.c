@@ -5,6 +5,7 @@
 
 #include "DoomRPG.h"
 
+#include "doomrpg_log.h"
 #include "esp_native_gameplay_monster_active_sequence.h"
 #include "esp_native_gameplay_monster_movement.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
@@ -35,7 +36,7 @@ static void servicePostMoveGoal(
      * move. The same-turn post-move attack gate belongs to aiMoveToGoal's melee
      * goal family reached from the no-immediate-attack path. */
     if (strcmp(trigger, "NO-IMMEDIATE-ATTACK") != 0) {
-        printf("[MONSTERPOSTMOVE] SKIP trigger=%s sprite=%u tile=%u->%u cause=ranged-ai-branch legacySameTurnAttack=no mutation=no rngConsumed=0\n",
+        DRPG_LOGT("[MONSTERPOSTMOVE] SKIP trigger=%s sprite=%u tile=%u->%u cause=ranged-ai-branch legacySameTurnAttack=no mutation=no rngConsumed=0\n",
                trigger,
                (unsigned int)publish->spriteIndex,
                (unsigned int)publish->sourceTile,

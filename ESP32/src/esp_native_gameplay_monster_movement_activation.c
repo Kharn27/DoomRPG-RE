@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "doomrpg_log.h"
 #include "esp_native_gameplay_monster_activation.h"
 #include "esp_native_gameplay_monster_movement_activation.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
@@ -40,6 +41,9 @@ int EspNativeGameplayMonsterMovementActivation_prepareCardinalMove(
     if (prepared) {
         EspNativeGameplayMonsterMovementPublish_capturePrepared(outBefore, outAfter);
     }
+#if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_TRACE
+    if (!prepared)
+#endif
     printf("[MONSTERMOVEACT] %s sprite=%u activation=map-session-active conservative=yes mutation=%s\n",
            prepared ? "ALLOW" : "DEFER",
            (unsigned int)spriteIndex,

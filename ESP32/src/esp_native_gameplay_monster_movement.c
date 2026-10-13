@@ -435,7 +435,7 @@ static int cardinalTraceClear(int32_t sourceX,
                                                    &sourceLine);
                 if (lineBlock < 0) return -1;
                 if (lineBlock == 1) {
-                    printf("[MONSTERMOVE] TRACE-BLOCK side=source kind=line tile=%u line=%u mask=%04x from=%d,%d to=%d,%d\n",
+                    DRPG_LOGT("[MONSTERMOVE] TRACE-BLOCK side=source kind=line tile=%u line=%u mask=%04x from=%d,%d to=%d,%d\n",
                            (unsigned int)sourceTile,
                            (unsigned int)sourceLine,
                            (unsigned int)mask,
@@ -456,7 +456,7 @@ static int cardinalTraceClear(int32_t sourceX,
                                                strictSpecial);
             if (spriteBlock < 0) return spriteBlock;
             if (spriteBlock > 0) {
-                printf("[MONSTERMOVE] TRACE-BLOCK side=source kind=entity tile=%u mask=%04x from=%d,%d to=%d,%d\n",
+                DRPG_LOGT("[MONSTERMOVE] TRACE-BLOCK side=source kind=entity tile=%u mask=%04x from=%d,%d to=%d,%d\n",
                        (unsigned int)sourceTile,
                        (unsigned int)mask,
                        (int)prevX, (int)prevY, (int)x, (int)y);
@@ -483,7 +483,7 @@ static int cardinalTraceClear(int32_t sourceX,
                 return -1;
             }
             if (tile == playerTile) {
-                printf("[MONSTERMOVE] TRACE-BLOCK side=dest kind=player-sentinel tile=%u mask=%04x from=%d,%d to=%d,%d\n",
+                DRPG_LOGT("[MONSTERMOVE] TRACE-BLOCK side=dest kind=player-sentinel tile=%u mask=%04x from=%d,%d to=%d,%d\n",
                        (unsigned int)tile, (unsigned int)mask,
                        (int)prevX, (int)prevY, (int)x, (int)y);
                 return 0;
@@ -1171,6 +1171,11 @@ void EspNativeGameplayMonsterMovement_service(struct DoomRPG_s* doomRpgBase) {
     movementView.lastDestTile = plan.destTile;
     movementView.lastPositionFNV1a = positionFNVAfter;
 
+    /* Keep the full rollback witness on failure even in normal firmware.
+     * Successful per-member evidence belongs to bringup, not the UART budget. */
+#if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_TRACE
+    if (!positionExact || !randomExact)
+#endif
     printf("[MONSTERMOVE] PROBE trigger=%s n=%u reason=%u sprite=%u subtype=%u weapon=%u sourceTile=%u source=%u,%u target=%d,%d destTile=%u delta=%d,%d immediateAttack=%s aiRand=%s%u closeRand=%s%u visitCount=%u tieRand=%u choice=%u mask=%04x rngCalls=%u rngBoundary=no randomLiveUntouched=%s positionFNV=%08x->%08x->%08x positionRollback=%s rendererPublish=deferred topologyRelink=deferred liveMove=no mutation=no\n",
            trigger,
            (unsigned int)triggerCount,

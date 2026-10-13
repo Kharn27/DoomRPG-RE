@@ -1,6 +1,22 @@
 
 This directory contains project tests.
 
+Monster movement log budget / INFO versus TRACE (also in CI):
+
+```sh
+python3 ESP32/test/monster_log_policy_host.py
+# Optional, estimate removed bytes from an existing Serial capture:
+python3 ESP32/test/monster_log_policy_host.py --measure-log /path/to/capture.log
+```
+
+Compiles/preprocesses the six real movement/turn TUs at both levels, checks
+16 detailed-success sites are absent at INFO, three conditional failure
+witnesses remain, and attack-probe strings needed by the PC watcher survive.
+Compiles/runs the real activation/capture gate with mocked lower owners at both
+levels; success admits/captures identically while both failures still log.
+No full AI, CYD timing or audio claim follows. The estimator reports UTF-8 byte
+counts and ideal 115200/8N1 line time, not a measured gameplay speedup.
+
 Credit-gated interaction, real compositor/gate + SHOW admission (also in CI):
 
 ```sh

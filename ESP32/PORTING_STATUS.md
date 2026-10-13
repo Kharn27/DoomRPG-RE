@@ -1,6 +1,42 @@
 # Doom RPG ESP32 — état actuel du port
 
-## Correction WAIT + Back tactile — logiciel testé, CYD pending (2026-10-13)
+## Consolidation des diagnostics de mouvement — logiciel testé (2026-10-13)
+
+Même branche, parent documentaire `e12abcd`. Premier lot performance borné :
+**19 sites** de diagnostic dans les six owners mouvement/tour existants ;
+16 détails succès/collision deviennent TRACE-only, 3 témoins mixtes restent
+visibles en INFO sur échec (prepare refusé, rollback position/RNG non exact,
+publication de membre échouée). DEFER/FATAL/ROLLBACK, réservations RNG et les
+couples attaque-probe/retaliation du watcher restent visibles. BEGIN/COMPLETE
+et ORDERED-DISPATCH conservent le résumé de tour. États, ordre, tirages, frames,
+timers/cadences et formats save inchangés ; aucun owner fusionné/supprimé,
+toujours 158/152.
+
+Motivation chiffrée sur la capture Troop/zombie fournie : **37 lignes / 8 060 B
+de succès** retirables sur 16 833 B (~47,9 %). Équivalent UART 115200 8N1 :
+699,7 ms de ligne, **pas** un gain CPU/FPS mesuré ni une garantie d'autant de
+latence gagnée (buffers/ordonnancement non mesurés). Le coût des redraws monde
+par monstre et des animations demeure ; ne pas raccourcir l'idle final pour
+accélérer. Trois mouvements hors champ réaffichent le même FNV `7aa4ab0f` dans
+la trace : piste pour un futur préflight géométrique, pas un motif pour sauter
+un rendu d'après son hash.
+
+Builds normal/bringup locaux PASS ; RAM/Flash **47 680 / 805 649 B** et
+**47 832 / 825 861 B** (normal **−2 692 B Flash**, RAM statique inchangée,
+aucune nouvelle allocation gameplay).
+Les **neuf sections allouées bringup sont byte-identiques** au parent avec le
+même toolchain ; aucune identité binaire annoncée pour INFO. Tests : syntaxe
+et préprocessing des six vrais TU aux niveaux INFO/TRACE, 16 sites exclus en
+normal, trois guards conservés, capture/admission réelles à deux niveaux avec
+leurs dépendances mockées. Test CI ajouté ; CI distante à vérifier après push.
+
+Pas de nouvelle frontière gameplay dans ce lot ; pas de nouveau PASS matériel
+attribué. Pour juger le gain ressenti, jouer avec **esp32-cyd normal**, pas
+bringup qui conserve tout le texte. Si la latence reste forte, prioriser les
+rendus hors champ après preuve d'activation/automap/overlay/rollback, puis la
+réservation audio ; aucun backend sonore ni buffer audio ajouté ici.
+
+## Correction WAIT + Back tactile — PASS CYD ciblé (2026-10-13)
 
 Retour matériel sur `fca7d04` : débit 20→10 et dialogue 26 ouverts, puis
 `SCRIPTWAIT ARM` sans aucun `PRESENT/COMPLETE` pendant plus de 30 s. Le CYD
@@ -38,15 +74,22 @@ RAM statique/journal lazy inchangés, Flash +248 / +268 B depuis `fca7d04`.
 `7220f17f97bd334f5348c3eb79cbcf97a61e6249` : suite hôte, les deux builds et
 garde des exports retirés
 ([run 38407334363](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38407334363)).
-Validation CYD toujours pending ; le PASS CI ne remplace pas l'essai ci-dessous.
+Retour CYD fourni après `e12abcd` (frontière code correspondante `7220f17`,
+SHA de boot absent de l'extrait) : **PASS ciblé** paiement 19→9, dialogue
+opcode26 `back=0`, `SCRIPTWAIT PRESENT`, HIDE/SHOW/NOTE, activation sprite9
+subtype3 puis COMPLETE et retour WORLD. L'interaction suivante a `NO_ELIGIBLE`
+pour le script, sans second débit ; le combat natif tue ce monstre (HP9→0,
+armure5→0), consomme une munition et applique 7 XP/drop. MOVE/TURN et une porte
+fermée après le tour continuent. NOTE staged 71→104 et commit annoncé par
+COMPLETE ; consultation visuelle du notebook non prouvée. BACK généralisé aux
+EV_DIALOG est accepté par l'utilisateur ; cancellation et stabilité des
+crédits/states non tracées dans cet extrait.
 
-**À refaire sur CYD avant merge**, depuis une sauvegarde antérieure au
-paiement : BACK dans le dialogue d'offre → monde, crédits/states inchangés,
-puis réouvrir et continuer. Avec ≥10 crédits → débit unique, dialogue sans
-Back → `SCRIPTWAIT PRESENT` → HIDE/SHOW/NOTE → `SCRIPTSTAT COMPLETE`, reprise
-et civil remplacé par le monstre prévu. Vérifier interaction/combat avec ce
-monstre et retap sans second débit ; <10 crédits → refus. Smoke-test MOVE/TURN
-près des portes, dialogues usuels et HUB/SAVE/LOAD. Aucun flash/merge effectué.
+**Non couverts par cette preuve** : refus <10 crédits, SAVE/LOAD, SHA/invariants
+NULL du boot et parité visuelle/RNG globale. Garder le test fonds insuffisants
+et le smoke SAVE/LOAD pour compléter la frontière. Les SPAN_OOB intermédiaires
+sont récupérés (`RECOVERED`), pas assimilés à un crash ni déclarés corrigés.
+Aucun flash/merge effectué par l'agent.
 
 ## Interaction payante REQSTAT/WAIT — logiciel testé, CYD pending (2026-10-13)
 

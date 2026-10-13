@@ -250,7 +250,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                 retaliation->lastResolvedProbe < activeSeq.pauseProbe) {
                 return;
             }
-            printf("[MONSTERACTIVESEQ] RESUME turn=%u nextOrdinal=%u/%u resolvedProbe=%u delivered=%u sameMonsterTurn=yes\n",
+            DRPG_LOGT("[MONSTERACTIVESEQ] RESUME turn=%u nextOrdinal=%u/%u resolvedProbe=%u delivered=%u sameMonsterTurn=yes\n",
                    (unsigned int)activeSeq.expandedTurns,
                    (unsigned int)(activeSeq.turnOrdinal + 1U),
                    (unsigned int)activeSeq.turnActivationCount,
@@ -375,6 +375,10 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
         afterTurn = EspNativeGameplayMonsterTurn_view();
         attackAfter = afterTurn != NULL ? afterTurn->attackProbes : attackBefore;
 
+        /* Keep failed publication visible; successful members are TRACE-only. */
+#if DOOMRPG_LOG_LEVEL < DOOMRPG_LOG_TRACE
+        if (!transactionStatus)
+#endif
         printf("[MONSTERACTIVESEQ] MEMBER turn=%u ordinal=%u/%u sprite=%u subtype=%u decision=%s movement=%s attackProbe=%u->%u publication=%s sameMonsterTurn=yes\n",
                (unsigned int)activeSeq.expandedTurns,
                (unsigned int)(ordinal + 1U),
@@ -398,7 +402,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
         if (attackAfter > attackBefore) {
             if (activeSeq.turnOrdinal < activationCount) {
                 activeSeq.pauseProbe = attackAfter;
-                printf("[MONSTERACTIVESEQ] PAUSE turn=%u afterOrdinal=%u/%u probe=%u reason=attack-in-flight nextOrdinal=%u sameMonsterTurn=yes\n",
+                DRPG_LOGT("[MONSTERACTIVESEQ] PAUSE turn=%u afterOrdinal=%u/%u probe=%u reason=attack-in-flight nextOrdinal=%u sameMonsterTurn=yes\n",
                        (unsigned int)activeSeq.expandedTurns,
                        (unsigned int)activeSeq.turnOrdinal,
                        (unsigned int)activationCount,
@@ -408,7 +412,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
             }
             if (EspNativeDoorAnimator_isHoldingDeferredClose()) {
                 activeSeq.pauseProbe = attackAfter;
-                printf("[MONSTERACTIVESEQ] PAUSE-FINAL turn=%u ordinal=%u/%u probe=%u reason=deferred-door-waits-final-attack sameMonsterTurn=yes\n",
+                DRPG_LOGT("[MONSTERACTIVESEQ] PAUSE-FINAL turn=%u ordinal=%u/%u probe=%u reason=deferred-door-waits-final-attack sameMonsterTurn=yes\n",
                        (unsigned int)activeSeq.expandedTurns,
                        (unsigned int)activeSeq.turnOrdinal,
                        (unsigned int)activationCount,

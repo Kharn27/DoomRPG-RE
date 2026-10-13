@@ -421,3 +421,28 @@ normal/bringup et garde d'exports PASS local et
 [CI 38407334363](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38407334363).
 RAM/Flash 47 680 / 808 341 B et 47 832 / 825 861 B (+248 / +268 B Flash,
 RAM/journal inchangés depuis `fca7d04`). Aucun PASS CYD attribué à ce correctif.
+
+## Troisième lot : budget des diagnostics de mouvement
+
+Depuis `e12abcd`, 19 sites dans six TU sont soumis à la politique existante :
+16 succès/obstacles détaillés en TRACE, trois témoins mixtes restent en INFO si
+admission/rollback/publication échoue. Le watcher garde ses paires de probes
+attaque/résolution ; ni ordre actif ni cadres/cadences ne sont raccourcis.
+Les propriétaires position, activation, planner, capture/publication, RNG et
+séquence restent séparés, y compris le petit adapter admission/capture : il
+exprime une vraie frontière, pas un module mort à retirer pour un compteur.
+158 sources / 152 headers conservés ; tests ajoutés uniquement côté hôte.
+
+Sur l'extrait Troop : 8 060 B de succès évitables sur 16 833 B (37 lignes),
+équivalent 699,7 ms de ligne 115200/8N1, pas un benchmark CPU/FPS. INFO perd
+2 692 B Flash : RAM/Flash 47 680 / 805 649 B. TRACE reste 47 832 / 825 861 B,
+**neuf sections allouées byte-identiques** au parent (toolchain identique).
+Le nouveau test compile/preprocess les six vrais TU et vérifie le vrai gate
+admission/capture à deux niveaux ; dépendances état/position restent mockées.
+CI/hardware performance : PORTING_STATUS ; pas de PASS latence inventé.
+
+Suite priorisée : établir une preuve conservatrice des déplacements réellement
+invisibles avant de supprimer leurs redraws complets. Le même FNV dans trois
+mouvements est un indice, pas une autorisation de dispatch sur hash. Ne pas
+regrouper les transactions de plusieurs monstres ou supprimer l'idle final
+pour obtenir un chiffre de FPS ; l'audio reste un lot ultérieur.

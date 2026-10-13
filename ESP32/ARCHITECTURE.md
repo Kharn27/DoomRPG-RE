@@ -764,6 +764,17 @@ be TRACE, but failure paths from the same owner must remain ERROR/INFO as
 appropriate. ALIVE stays INFO until a separate hardware-validated milestone
 changes its cadence or level.
 
+The movement hot path classifies 19 diagnostic sites in its existing owners:
+16 detailed success/pathfinding messages are TRACE-only; three mixed witnesses
+remain operational when prepare, position/RNG rollback, or member publication
+fails. Turn BEGIN/COMPLETE and ORDERED-DISPATCH remain INFO, as do the attack
+probe/resolution pairs consumed by the PC playtest watcher's RNG checks.
+This is compile-time diagnostic consolidation, not batched monster transactions
+or shorter attack cadences. Movement's position/activation/capture/sequence
+boundaries are still functional, including their thin admission adapter.
+An unchanged render FNV is a profiling clue, not sufficient proof to skip a
+future invisible-monster redraw. No additional framebuffer/audio RAM is reserved.
+
 Read-only recovery census code is not production ownership. If an inventory or
 corpus probe is needed only for recovery, the normal INFO image should neither
 execute it nor retain a linker interception solely to reach it. Such probes may

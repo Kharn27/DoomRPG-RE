@@ -31,6 +31,15 @@ ne sont pas supprimés avec cette suite historique.
 
 La politique de logs compile-time est définie dans `ESP32/include/doomrpg_log.h` : `DRPG_LOGE/I/D/T`. Normal = INFO, bringup = TRACE. Les messages de succès récurrents sur VIDEO, PAKIO, redraw et tour doivent rester hors du flux INFO ; ne pas masquer les erreurs, transitions, guards et recoveries.
 
+Mouvements de monstres : le normal conserve les résumés BEGIN/COMPLETE,
+ORDERED-DISPATCH, les erreurs de mouvement/publication, ainsi que les témoins
+attaque-probe/retaliation nécessaires au watcher. Les succès PROBE/ALLOW/COMMIT,
+obstacles de pathfinding ordinaires et détails MEMBER/PAUSE/RESUME sont TRACE ;
+les mêmes PROBE/prepare/MEMBER restent affichés si rollback/admission/publication
+échouent. Utiliser **esp32-cyd** pour juger la latence : bringup garde les logs
+exhaustifs. Ce retrait de texte ne change ni le nombre de redraws, ni le RNG,
+ni la cadence d'attaque ; pas de gain FPS hardware revendiqué.
+
 ## Playtest libre : captures automatiques des incidents
 
 Pour jouer normalement **sans surveiller le terminal**, depuis `ESP32/` :
@@ -93,15 +102,15 @@ NOTE existant et commise après le rendu final ; échec I/O/rendu = rollback du
 segment et retry, pas de second paiement. Pas de nouveau fichier moteur ni de
 nouveau propriétaire Player/Notebook/topologie/PAK.
 
-**Validation CYD encore requise** : reproduire l'interaction de la trace (event
-67, tile 675) depuis une sauvegarde pré-paiement. Annuler d'abord le dialogue
-d'offre via BACK : aucune reprise/debit. Puis réouvrir avec ≥10 crédits,
-terminer le dialogue, observer l'effet orange et la reprise gameplay, vérifier
-le civil remplacé par le monstre, son comportement/combat, la note et un débit
-unique de 10 crédits. Les logs doivent montrer `SCRIPTWAIT PRESENT` puis
-`SCRIPTSTAT COMPLETE` ; `ARM` seul ne vaut pas succès.
-Re-taper la cible ne doit pas facturer à nouveau. Avec <10 crédits, le dialogue
-de refus ne doit changer ni les crédits ni le monde. Garder les logs
+**PASS CYD ciblé consigné** : event67/tile675, débit 19→9, effet publié,
+HIDE/SHOW/NOTE, activation puis combat/mort du monstre, retour WORLD et aucune
+seconde facture dans la trace. Portée précise et réserve d'identité firmware :
+PORTING_STATUS. BACK visible est accepté ; son annulation sans débit n'est pas
+prouvée par cet extrait. Pour compléter : depuis une sauvegarde pré-paiement,
+annuler l'offre via BACK puis réouvrir ; avec <10 crédits, le dialogue de refus
+ne doit changer ni crédits ni monde. Vérifier le notebook à l'écran et SAVE/LOAD.
+Les logs doivent montrer `SCRIPTWAIT PRESENT` puis `SCRIPTSTAT COMPLETE` ;
+`ARM` seul ne vaut pas succès. Garder les logs
 `[SCRIPTSTAT]`, `[SCRIPTWAIT]`, `[NOTE]`, et vérifier `shapeData/mediaTexels=0`.
 Le timer, le son silencieux et les mocks hôte ne prouvent pas une parité visuelle
 ou RNG exhaustive avec le desktop. Ajouter un smoke-test dialogue ordinaire,
