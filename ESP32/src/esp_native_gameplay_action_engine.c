@@ -114,6 +114,7 @@
 #define DAMAGE_CUE_ON_MS 85U
 #define DAMAGE_CUE_GAP_MS 45U
 #define DAMAGE_CUE_PULSES 2U
+#define DAMAGE_CUE_MAX_PHASE_MS 1500U
 #define DAMAGE_CUE_QUEUE_MAX ESP_NATIVE_GAMEPLAY_DAMAGE_CUE_QUEUE_CAP
 #define DAMAGE_CUE_MAX_PIXELS (DOOMRPG_LOGICAL_WIDTH * DAMAGE_CUE_THICKNESS)
 #define DAMAGE_CUE_COLOR565 0xfa20U
@@ -241,6 +242,7 @@ typedef struct DirectionalCueOwner_s {
     EspNativeGameplayDamageCueQueue queued;
     EspNativeGameplayDamageCue current;
     uint32_t phaseAtMs;
+    uint32_t startedAtMs;
     uint16_t snapshotPixels;
     uint8_t phase; /* 0 idle, 1 requested-on, 2 lit, 3 gap */
     uint8_t pulsesShown;
@@ -1527,11 +1529,25 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
                directionCueName((uint8_t)side), (unsigned int)DAMAGE_CUE_QUEUE_MAX);
         return 0;
     }
-     printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=committed-monster-hit\n",
+    printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=committed-monster-hit\n",
            (unsigned int)attackProbe, (unsigned int)attackerSprite,
            directionCueName((uint8_t)side),
            (unsigned int)directionCue.queued.count);
     return 1;
+}
+
+int EspNativeGameplayActionEngine_directionalDamagePending(
+    uint32_t attackProbe) {
+    uint8_t i;
+    if (attackProbe == 0U) return 0;
+    if (directionCue.phase != 0U &&
+        directionCue.current.probe == attackProbe) return 1;
+    for (i = 0U; i < directionCue.queued.count; ++i) {
+        uint8_t index = (uint8_t)((directionCue.queued.head + i) %
+                                 DAMAGE_CUE_QUEUE_MAX);
+        if (directionCue.queued.entries[index].probe == attackProbe) return 1;
+    }
+    return 0;
 }
 
 /* Visit exactly one side of the 160x80 world viewport, never the HUD bars.
@@ -1962,10 +1978,32 @@ static int serviceDirectionalCue(void) {
         if (!EspNativeGameplayDamageCueQueue_pop(
                 &directionCue.queued, &directionCue.current)) return 1;
         directionCue.phase = 1U;
+        directionCue.startedAtMs = now;
         directionCue.pulsesShown = 0U;
         directionCue.snapshotValid = 0U;
         directionCue.snapshotPixels = 0U;
         directionCue.needsRepaint = 0U;
+    }
+    /* A failing presentation must not hold a logical monster turn forever.
+     * This explicit fail-open policy applies ONLY to UI timing, never to
+     * combat/RNG. The warning stays visible in playtest captures. */
+    if (directionCue.phase != 0U &&
+        (uint32_t)(now - directionCue.startedAtMs) >= DAMAGE_CUE_MAX_PHASE_MS) {
+        uint8_t phase = directionCue.phase;
+        if (phase == 2U && directionCue.snapshotValid != 0U &&
+            visitDirectionalCue(1U)) {
+            (void)__real_Esp32PlatformVideo_present();
+        }
+        printf("[DAMAGECUE] TIMEOUT probe=%u sprite=%u side=%s phase=%u afterMs=%u cue=discarded combat=untouched sequencer=unblocked\n",
+               (unsigned int)directionCue.current.probe,
+               (unsigned int)directionCue.current.attackerSprite,
+               directionCueName(directionCue.current.side),
+               (unsigned int)phase,
+               (unsigned int)(now - directionCue.startedAtMs));
+        directionCue.phase = 0U;
+        directionCue.snapshotValid = 0U;
+        directionCue.needsRepaint = 0U;
+        return 1;
     }
     /* A failed physical publish may have restored the clean framebuffer
      * while the *screen* still shows the previous pulse. Repaint first;
