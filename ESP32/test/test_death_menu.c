@@ -22,6 +22,7 @@ static int available, loads, presents, presentOk = 1, validBuffer = 1;
 static int selectorActive, selectorReady, selectorBegins, selectorFinishes;
 static int selectorBeginOk = 1, selectorTapResult, selectorTaps;
 static int loadOk = 1;
+static unsigned int deathRngCalls;
 
 void* Esp32PlatformVideo_framebuffer(void) { return pixels + 1; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
@@ -29,7 +30,11 @@ size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
 }
 int Esp32PlatformVideo_present(void) { ++presents; return presentOk; }
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
-byte DoomRPG_randNextByte(Random_t* rng) { (void)rng; return 1; }
+byte DoomRPG_randNextByte(Random_t* rng) {
+    (void)rng;
+    ++deathRngCalls;
+    return 1;
+}
 const EspPlayerViewState* EspPlayerView_view(void) { return &view; }
 const EspNativeGameplayHudState* EspNativeGameplayHud_view(void) { return &hud; }
 const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void) { return &player; }
@@ -211,6 +216,22 @@ int main(int argc, char** argv) {
     assert(!EspNativeGameplayPlayerDeath_service(&doom));
     assert(!EspNativeGameplayPlayerDeath_handleTap(80, 40));
     assert(pixels[0] == 0xdead && pixels[160 * 120 + 1] == 0xdead);
-    puts("Death menu: PASS (theme/timing/hitboxes, slot open/back/confirm/failure, no-save, guards)");
+    /* The single-blast barrel consumes death RNG before monster splash, then
+     * commits into this same terminal owner WITHOUT drawing another byte. */
+    EspNativeGameplayPlayerDeath_reset();
+    view.viewZ = 36;
+    clockMs = 0;
+    presentOk = 1;
+    unsigned int beforeDeathRng = deathRngCalls;
+    assert(EspNativeGameplayPlayerDeath_armWithReservedRand(
+        &doom, 487U, 486U, 0xa5U));
+    assert(EspNativeGameplayPlayerDeath_isActive());
+    assert(deathRngCalls == beforeDeathRng);
+    assert(player.weapon == 0U && player.weapons == 0U);
+    EspNativeGameplayPlayerDeath_reset();
+    view.viewZ = 36;
+    assert(EspNativeGameplayPlayerDeath_arm(&doom, 488U, 486U));
+    assert(deathRngCalls == beforeDeathRng + 1U);
+    puts("Death menu: PASS (theme/timing/hitboxes, slot open/back/confirm/failure, no-save, guards, reserved RNG exact)");
     return 0;
 }
