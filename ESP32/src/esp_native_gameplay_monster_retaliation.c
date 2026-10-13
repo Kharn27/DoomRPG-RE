@@ -450,7 +450,8 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
 
     /* Attribute the impact to THIS resolved attacker, including its final
      * post-movement position. Never infer the source from a rendered sprite.
-     * Coincident/invalid positions retain the legacy omnidirectional flash. */
+     * The 500 ms red border now applies to EVERY hit. A resolved direction
+     * adds a sequential 20-physical-px cue after the border's lease ends. */
     if (roll.hitLoops != 0U) {
         const EspNativeGameplayMonsterPositionRecord* attackerPosition =
             EspNativeGameplayMonsterPosition_find(monster->spriteIndex);
@@ -649,9 +650,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
     if (damageTextLen <= 0 || (size_t)damageTextLen >= sizeof(damageText) ||
         !EspNativeGameplayActionEngine_queueTextFeedback(
             ESP_NATIVE_GAMEPLAY_ACTION_FEEDBACK_DAMAGE,
-            damageText,
-            damageSide == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE
-                ? RETALIATION_DAMAGE_FLASH_MS : 0U)) {
+            damageText, RETALIATION_DAMAGE_FLASH_MS)) {
         (void)EspNativeGameplayPlayerState_restore(&playerBefore);
         doomRpg->random = randomBefore;
         printf("[MONSTERRETAL] ROLLBACK probe=%u reason=%s sprite=%u cause=player-pain-feedback playerExact=%s rngExact=%s damageTotal=%d crit=%u mutation=no\n",
@@ -741,8 +740,7 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
            (unsigned int)frame.finalPresented,
            damageText,
            (int)(roll.totalDamage + roll.totalArmorDamage),
-           (unsigned int)(damageSide == ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE
-                              ? RETALIATION_DAMAGE_FLASH_MS : 0U),
+           (unsigned int)RETALIATION_DAMAGE_FLASH_MS,
            turn->lastReason == ESP_NATIVE_GAMEPLAY_MONSTER_TURN_PASS_TURN
                ? "legacy-superseded" : "n/a");
 }
