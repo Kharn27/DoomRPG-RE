@@ -31,6 +31,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_player_death.h"
 #include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_status_message.h"
 #include "esp_native_gameplay_weapon.h"
@@ -1133,7 +1134,9 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
                                   uint8_t* ioMonsterCount,
                                   uint8_t* outTriggered,
                                   uint8_t* outPlayerHits,
-                                  uint16_t* outPlayerMessageDamage) {
+                                  uint16_t* outPlayerMessageDamage,
+                                  int allowTerminalDeath,
+                                  uint8_t* outLethal) {
     EspMapSprite source;
     uint8_t n;
     uint8_t triggered = 0U;
@@ -1143,7 +1146,8 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
     if (view == NULL || chain == NULL || ioCount == NULL ||
         monsterHits == NULL || ioMonsterCount == NULL ||
         outTriggered == NULL || outPlayerHits == NULL ||
-        outPlayerMessageDamage == NULL || blastDamage == 0U ||
+        outPlayerMessageDamage == NULL || outLethal == NULL ||
+        blastDamage == 0U ||
         !__real_EspMapRuntime_getMapSprite(sourceSprite, &source)) {
         return 0;
     }
@@ -1175,7 +1179,23 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
             if (component == 0U) continue;
             damageStatus = EspNativeGameplayPlayerState_applyDamageNonlethal(
                 component, component, &damageResult);
-            if (damageStatus != ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK) {
+            if (damageStatus ==
+                    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED &&
+                allowTerminalDeath) {
+                /* Only the single-blast, monster-free transaction currently
+                 * owns the subsequent PlayerDeath_arm terminal transition.
+                 * All other lethal consequences remain fail-closed. */
+                damageStatus =
+                    EspNativeGameplayPlayerState_applyDamageForDeath(
+                        component, component, &damageResult);
+                if (damageStatus ==
+                    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_COMMITTED) {
+                    *outLethal = 1U;
+                }
+            }
+            if (damageStatus != ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_OK &&
+                damageStatus !=
+                    ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_COMMITTED) {
                 printf("[BARRELRADIUS] PLAYER-DEFER source=%u tile=%u relation=%s component=%u status=%u hp=%u armor=%u mutation=%s\n",
                        (unsigned int)sourceSprite,
                        (unsigned int)tile,
@@ -1186,13 +1206,14 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
                        (unsigned int)damageResult.armorBefore,
                        damageStatus ==
                                ESP_NATIVE_GAMEPLAY_PLAYER_DAMAGE_LETHAL_DEFERRED
-                           ? "no/lethal-deferred" : "no/invalid");
+                           ? "no/lethal-deferred-chain-complex"
+                           : "no/invalid");
                 return 0;
             }
             ++playerHits;
             playerMessageDamage =
                 (uint16_t)((uint16_t)component * 2U);
-            printf("[BARRELRADIUS] PLAYER-HIT source=%u tile=%u relation=%s component=%u messageDamage=%u hp=%u->%u armor=%u->%u playerFNV=%08x->%08x mutation=yes\n",
+            printf("[BARRELRADIUS] PLAYER-HIT source=%u tile=%u relation=%s component=%u messageDamage=%u hp=%u->%u armor=%u->%u playerFNV=%08x->%08x mutation=yes terminal=%s\n",
                    (unsigned int)sourceSprite,
                    (unsigned int)tile,
                    n < 4U ? "cardinal" : "diagonal",
@@ -1203,7 +1224,8 @@ static int barrelTriggerNeighbors(uint16_t sourceSprite,
                    (unsigned int)damageResult.armorBefore,
                    (unsigned int)damageResult.armorAfter,
                    (unsigned int)damageResult.stateFNVBefore,
-                   (unsigned int)damageResult.stateFNVAfter);
+                   (unsigned int)damageResult.stateFNVAfter,
+                   *outLethal ? "pending-death-arm" : "no");
             continue;
         }
         if (target.type == ACTION_ENTITY_ENEMY) {
@@ -1529,10 +1551,12 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
                directionCueName((uint8_t)side), (unsigned int)DAMAGE_CUE_QUEUE_MAX);
         return 0;
     }
-    printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=committed-monster-hit\n",
+    printf("[DAMAGECUE] QUEUE probe=%u sprite=%u side=%s depth=%u source=%s\n",
            (unsigned int)attackProbe, (unsigned int)attackerSprite,
            directionCueName((uint8_t)side),
-           (unsigned int)directionCue.queued.count);
+           (unsigned int)directionCue.queued.count,
+           (attackProbe & 0x80000000UL) != 0U
+               ? "committed-barrel-blast" : "committed-monster-hit");
     return 1;
 }
 
@@ -2655,6 +2679,8 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
         Random_t barrelRandomAfterCombat;
         Random_t barrelRandomAfterPreview;
         uint8_t barrelPlayerHits = 0U;
+        uint8_t barrelPlayerLethal = 0U;
+        uint16_t barrelPlayerHitSources[ACTION_BARREL_CHAIN_MAX];
         uint16_t barrelTotalPlayerMessageDamage = 0U;
         uint16_t barrelChain[ACTION_BARREL_CHAIN_MAX];
         EspNativeSpriteTransient
@@ -3660,7 +3686,10 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                             &barrelSplashCount,
                             &triggered,
                             &playerHitsThisBlast,
-                            &playerMessageDamageThisBlast)) {
+                            &playerMessageDamageThisBlast,
+                            barrelExpectedChainCount == 1U &&
+                                barrelPreflightMonsters == 0U,
+                            &barrelPlayerLethal)) {
                         int rollbackOk = 1;
                         if (barrelTurnRequested != 0U &&
                             !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
@@ -3714,6 +3743,11 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
                         barrelSplashTotalHits =
                             (uint16_t)(barrelSplashTotalHits + hitCount);
                         barrelSplashCount = 0U;
+                    }
+                    if (playerHitsThisBlast != 0U &&
+                        barrelPlayerHits < ACTION_BARREL_CHAIN_MAX) {
+                        barrelPlayerHitSources[barrelPlayerHits] =
+                            barrelChain[blastCursor];
                     }
                     barrelPlayerHits =
                         (uint8_t)(barrelPlayerHits +
