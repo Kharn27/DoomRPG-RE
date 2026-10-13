@@ -4258,6 +4258,92 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
             memset(&actionState.pending, 0, sizeof(actionState.pending));
             return 0;
         }
+
+        if (isBarrel && barrelPlayerLethal != 0U) {
+            /* Single-blast/no-monster terminal boundary. The blast, player
+             * pain, weapon/turn reservation and settle frame have completed,
+             * and there can be no later monster consequence to roll back.
+             * Arm the permanent death owner before releasing the transaction.
+             * Multiple blasts + monster interleaving remain fail-closed in
+             * barrelTriggerNeighbors (the death RNG order is not owned yet). */
+            const int validTile =
+                view->destX >= 0 && view->destY >= 0 &&
+                ((uint32_t)view->destX >> 6) < MAP_WIDTH &&
+                ((uint32_t)view->destY >> 6) < MAP_WIDTH;
+            const uint16_t deathTile = validTile
+                ? (uint16_t)((((uint32_t)view->destY >> 6) * MAP_WIDTH) +
+                             ((uint32_t)view->destX >> 6))
+                : 0xffffU;
+            if (!validTile ||
+                !EspNativeGameplayPlayerDeath_arm(
+                    doomRpgBase, pending.sequence, deathTile)) {
+                int rollbackOk = 1;
+                if (barrelTurnRequested != 0U &&
+                    !EspNativeGameplayMonsterTurn_cancelPlayerAttack(
+                        pending.sequence)) rollbackOk = 0;
+                if (!barrelRollbackRemoved(doomRpg, barrelChain,
+                                           barrelChainCount)) rollbackOk = 0;
+                if (!EspNativeGameplayPlayerState_restore(
+                        &playerBefore)) rollbackOk = 0;
+                doomRpg->random = randomBefore;
+                actionState.feedbackPending = 0U;
+                actionState.feedbackKind = ACTION_FEEDBACK_NONE;
+                actionState.feedbackText[0] = '\0';
+                actionState.viewportFlashPending = 0U;
+                EspNativeGameplayWeapon_cancelAttack();
+                memset(&frame, 0, sizeof(frame));
+                if (rollbackOk &&
+                    EspNativeGameplayFacingLabel_refresh(
+                        "BARREL-DEATH-ROLLBACK")) {
+                    rollbackOk = EspNativeGameplayFrame_renderTurn(
+                        doomRpg->render, (uint8_t)view->viewAngle, &frame);
+                }
+                printf("[BARRELRADIUS] LETHAL-ROLLBACK seq=%u root=%u cause=%s rollback=%s rng=yes player=yes world=yes death=not-armed\n",
+                       (unsigned int)pending.sequence,
+                       (unsigned int)pending.spriteIndex,
+                       validTile ? "player-death-arm" : "invalid-player-tile",
+                       rollbackOk ? "yes" : "NO");
+                memset(&actionState.pending, 0, sizeof(actionState.pending));
+                return rollbackOk ? 1 : 0;
+            }
+            /* Death's HUD and presentation have priority over transient cue
+             * animations; it is not safe to keep painting on a fading world. */
+            if (!Esp32PlatformVideo_present()) {
+                printf("[BARRELRADIUS] LETHAL-PRESENT-DEFER seq=%u death=armed recovery=death-service\n",
+                       (unsigned int)pending.sequence);
+            }
+            printf("[BARRELRADIUS] LETHAL-COMMIT seq=%u root=%u blastCount=%u playerHP=0 tile=%u deathOwner=armed rollback=closed rng=blast-then-death\n",
+                   (unsigned int)pending.sequence,
+                   (unsigned int)pending.spriteIndex,
+                   (unsigned int)barrelBlastRngCalls,
+                   (unsigned int)deathTile);
+        }
+        else if (isBarrel && barrelPlayerHits != 0U) {
+            uint8_t i;
+            int32_t stepX = 0;
+            int32_t stepY = 0;
+            if (EspPlayerView_cardinalBasis(
+                    (uint8_t)view->viewAngle, NULL, NULL,
+                    &stepX, &stepY, NULL)) {
+                for (i = 0U; i < barrelPlayerHits &&
+                             i < ACTION_BARREL_CHAIN_MAX; ++i) {
+                    EspMapSprite blast;
+                    EspNativeGameplayDamageSide side;
+                    if (!__real_EspMapRuntime_getMapSprite(
+                            barrelPlayerHitSources[i], &blast)) continue;
+                    side = EspNativeGameplayDamageSide_fromWorld(
+                        view->viewX, view->viewY, stepX, stepY,
+                        blast.x, blast.y);
+                    if (side != ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE) {
+                        /* High bit namespaces barrel action sequences away
+                         * from ordinary monster attack-probe identifiers. */
+                        (void)EspNativeGameplayActionEngine_queueDirectionalDamage(
+                            0x80000000UL | (pending.sequence & 0x7fffffffUL),
+                            barrelPlayerHitSources[i], side);
+                    }
+                }
+            }
+        }
     }
 
     memset(&actionState.pending, 0, sizeof(actionState.pending));
