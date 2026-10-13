@@ -145,6 +145,10 @@ static inline int EspNativeGameplayDamageCueQueue_pop(
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side);
+/* Presentation-only pacing barrier: the ordered monster sequencer does not
+ * start another attack while this probe's impact flashes. Never alters RNG,
+ * actor selection or turn tokens. Invalid/unknown probe is always unblocked. */
+int EspNativeGameplayActionEngine_directionalDamagePending(uint32_t attackProbe);
 
 /* Legacy Hud keeps at most five queued messages. This bounded batch API is
  * intentionally narrow: it lets one committed multi-pickup tile publish the
