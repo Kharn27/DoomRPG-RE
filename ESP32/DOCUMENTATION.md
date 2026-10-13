@@ -40,6 +40,20 @@ les mêmes PROBE/prepare/MEMBER restent affichés si rollback/admission/publicat
 exhaustifs. Ce retrait de texte ne change ni le nombre de redraws, ni le RNG,
 ni la cadence d'attaque ; pas de gain FPS hardware revendiqué.
 
+Le dernier retour CYD confirme l'absence de gain ressenti et un SAVE V11 slot 3
+suivi du retour au jeu/expiration de « Game saved » ; pas de LOAD dans cet
+extrait. Le goal 2/3 de sprite 202/subtype 4 reste différé sur une géométrie
+special-plane non possédée (premier déplacement déjà commis), code inchangé
+depuis la base main. Détails et limites de preuve : `PORTING_STATUS.md`.
+
+Rollback de l'interaction opcode 23 depuis automap : en cas d'échec de
+démarrage du script/dialogue, le resident restaure son mode et redessine
+l'automap ; depuis WORLD, il redessine le monde. Si le redraw de restauration
+échoue, le gameplay se désactive. Le test hôte utilise le vrai routage/mode
+resident avec startup/render/assets mockés ; il ne prouve pas un échec I/O
+réel sur CYD. Pour un smoke matériel, ouvrir normalement le dialogue depuis
+automap ; ne pas retirer/corrompre le PAK pour fabriquer une panne.
+
 ## Playtest libre : captures automatiques des incidents
 
 Pour jouer normalement **sans surveiller le terminal**, depuis `ESP32/` :

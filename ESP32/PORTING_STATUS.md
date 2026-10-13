@@ -1,5 +1,72 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Revue PR #210 : rollback du démarrage script depuis automap (2026-10-13)
+
+P2 confirmé : SELECT opcode 23 ferme l'automap avant d'exécuter l'interaction.
+Si le démarrage retourne EXEC_FAILED/INVALID (par exemple ouverture/premier
+present du dialogue refusé), le journal script restaure son segment mais le
+resident redessinait seulement le monde, perdant le contexte automap.
+Le resident rétablit maintenant son bit RESIDENT_MODE_AUTOMAP puis appelle
+`renderAutomapCurrent`, comme les chemins dialogue/password/store adjacents.
+Depuis WORLD, le rollback conserve son redraw monde. Si cette restauration
+échoue, `disableGameplay` reste la frontière fail-closed ; un démarrage PAUSED
+réussi garde la présentation modale, sans rouvrir l'automap prématurément.
+Aucun owner/TU/header production ajouté, ni changement de crédit, RNG, WAIT,
+sauvegarde ou cadence ; backing PAK et invariants NULL inchangés par ce lot.
+
+Test hôte `script_startup_automap_host.c` : vrai resident SELECT, closeAutomap,
+mode et routage de restauration ; script/action, HUD, visibilité, raster et
+present sont mockés. EXEC_FAILED/INVALID depuis automap et WORLD, bits voisins,
+échec de restauration/fermeture et pause réussie couverts. **Contre-épreuve :**
+l'ancien code échoue sur la première assertion de conservation d'automap.
+Fixture corrigé et ASan/UBSan PASS local (LeakSanitizer désactivé sous ptrace).
+Les **17 étapes hôte** et la garde des exports retirés PASS local ; sur ce
+poste, commandes Python exécutées avec `python3` (la CI configure `python`).
+Builds normal/bringup PASS : RAM/Flash **47 680 / 805 717 B** et
+**47 832 / 825 905 B** (+68 / +44 B Flash, RAM statique inchangée).
+Le redraw automap réutilise son scratch de visibilité transitoire existant ;
+aucune nouvelle réserve persistante. **CI distante PASS** sur le code
+`363828a50557f77f8e47c164c80154b0cc193aba` : 17 étapes hôte, les deux builds
+et garde des exports retirés
+([push 38446227208](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38446227208),
+[PR 38446235549](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38446235549)).
+La clôture documentaire suivante ne modifie pas le firmware.
+Les preuves CYD ci-dessous précèdent ce changement de code :
+aucun PASS matériel de l'échec font/PAK/present n'est attribué à ce correctif.
+Ne pas corrompre le PAK pour provoquer l'échec ; un smoke depuis automap peut
+vérifier l'ouverture normale du dialogue sans valider l'injection d'erreur.
+
+## Dernier playtest CYD : sauvegarde et limites persistantes (2026-10-13)
+
+Extrait utilisateur après le lot de diagnostics `3910a7c` / doc `5959de5`,
+sans SHA de boot : parcours continu jusqu'au SAVE slot 3 puis retour WORLD,
+sans crash visible dans l'extrait. Deux explosions interleavées sont commises
+(`seq=116`, `blasts=2`, `monsterHits=2`, `rollback=closed`), avec 12 XP et
+consommation de munition ; level-up 4→5, extinction d'un feu et MOVE/TURN
+continuent. Ce sont les scénarios observés, pas une parité globale du moteur.
+
+`NATIVESAVE SAVE` : `/sd/DoomRPG-ESP32-slot03.sav`, V11, 5 604 B,
+`atomic=temp+backup+rename`, `playerFNV=916e606d` conservé à la fermeture du
+HUB ; `SAVE-CLOSE result=success feedback="Game saved"`, expiration après
+1 203 ms avec `restored=topbar-only`. **SAVE exercé ; LOAD non exercé** dans
+cette trace, ni restauration visuelle d'un label d'objet démontrée.
+
+**Limite AI ouverte, pas une régression du lot :** sprite 202/subtype 4
+diffère neuf fois le goal 2/3 (`calcPath-special-plane-corpus-needed`, mask
+f387). Le premier mouvement reste commis, la continuation n'est pas publiée
+(`priorMovesRemainCommitted=yes`), avec alternance des tiles 242/274.
+`esp_native_gameplay_monster_three_goal_turn.c` est inchangé depuis la base
+main `9d203e525a4b8736fadfd34aaf693423bff7f602`. Ce fail-closed n'est pas une
+validation du comportement complet de cette famille ; correction à isoler
+dans un futur jalon géométrie/AI, sans élargir le nettoyage actuel.
+
+**Performance :** l'utilisateur ne constate pas d'accélération particulière.
+Les frames intermédiaires tracées restent de l'ordre de 100 ms ; ce n'est pas
+une comparaison contrôlée avant/après. Le lot réduit les logs/Flash, pas le
+nombre de rendus. Aucun gain FPS/latence matériel revendiqué, aucun son ajouté.
+Les SPAN_OOB récupérés et les diagnostics sprite restants ne sont pas déclarés
+corrigés par cette consolidation.
+
 ## Consolidation des diagnostics de mouvement — logiciel testé (2026-10-13)
 
 Même branche, parent documentaire `e12abcd`. Premier lot performance borné :

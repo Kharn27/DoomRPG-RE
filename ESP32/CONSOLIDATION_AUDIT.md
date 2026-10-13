@@ -402,8 +402,8 @@ suite hôte PASS local et
 [CI 38403169340](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38403169340).
 RAM/Flash : normal 47 680 / 808 093 B, bringup 47 832 / 825 593 B ; le coût
 Flash est +5 460 / +5 280 B par rapport au parent.
-Preuve et protocole hardware : DOCUMENTATION/PORTING_STATUS, validation CYD
-encore pending. Ne pas fusionner ce correctif fonctionnel sous le seul PASS
+Preuve et protocole hardware : DOCUMENTATION/PORTING_STATUS ; à cette frontière
+initiale la validation CYD était pending. Ne pas fusionner sous le seul PASS
 matériel historique du menu/consolidation.
 
 Le retour CYD sur `fca7d04` invalide la clôture matérielle du WAIT : PresentGate
@@ -415,12 +415,17 @@ même owner dynamique permanent, pas une nouvelle couche de migration.
 Replay hôte renforcé avec ces vrais owners (contre-épreuve : ancien WAIT échoue),
 et carte BACK qui rend enfin accessible l'annulation EV_DIALOG d'origine.
 Ne pas confondre absence de YES/NO dans le bytecode avec absence de Back.
-Validation matérielle renouvelée requise, notamment SHOW du monstre après WAIT.
+Une validation matérielle renouvelée était requise, notamment SHOW après WAIT.
 Correctif code `7220f17f97bd334f5348c3eb79cbcf97a61e6249` : suite hôte,
 normal/bringup et garde d'exports PASS local et
 [CI 38407334363](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38407334363).
 RAM/Flash 47 680 / 808 341 B et 47 832 / 825 861 B (+248 / +268 B Flash,
-RAM/journal inchangés depuis `fca7d04`). Aucun PASS CYD attribué à ce correctif.
+RAM/journal inchangés depuis `fca7d04`). Le retour CYD ultérieur fournit un
+**PASS ciblé** : paiement 19→9, DIALOGNOBACK, WAIT PRESENT, HIDE/SHOW/NOTE,
+activation puis combat du monstre et retour WORLD ; SHA de boot absent de
+l'extrait. Voir PORTING_STATUS pour la preuve et ses limites, dont refus <10
+crédits, LOAD et parité globale non validés. BACK généralisé aux EV_DIALOG
+accepté par l'utilisateur, sans preuve Serial de cancellation dans cet extrait.
 
 ## Troisième lot : budget des diagnostics de mouvement
 
@@ -449,3 +454,23 @@ invisibles avant de supprimer leurs redraws complets. Le même FNV dans trois
 mouvements est un indice, pas une autorisation de dispatch sur hash. Ne pas
 regrouper les transactions de plusieurs monstres ou supprimer l'idle final
 pour obtenir un chiffre de FPS ; l'audio reste un lot ultérieur.
+
+Le playtest ultérieur n'a pas montré d'accélération ressentie : le nombre de
+rendus/cadences n'a pas changé. SAVE V11 slot 3 et retour WORLD sont exercés,
+pas LOAD. Il expose aussi le fail-closed special-plane au goal 2/3 de sprite
+202/subtype 4, avec premier mouvement déjà commis. Le propriétaire ThreeGoal
+est inchangé depuis la base main ; ne pas attribuer ce comportement incomplet
+au nettoyage ni le compter comme une parité AI réussie.
+
+## Revue PR #210 : restauration du contexte automap
+
+Le rollback UI d'un SELECT opcode 23 oublié dans le resident perdait l'automap
+après un échec de démarrage script. Correction locale dans le propriétaire de
+mode existant : restaurer le bit puis redessiner l'automap, conserver WORLD
+si l'action en venait et désactiver le gameplay si la restauration échoue.
+Pas de fusion de propriétaires, nouveau TU/header, owner d'allocation ou
+journal ; le scratch de visibilité transitoire du redraw automap est réutilisé.
+Le chemin modal réussi et les transactions du script sont inchangés.
+La régression hôte inclut le vrai resident et échoue contre l'ancien code ;
+assets/raster/script restent mockés, pas de PASS CYD d'injection I/O inventé.
+Résultats builds/CI et limites matérielles : PORTING_STATUS.

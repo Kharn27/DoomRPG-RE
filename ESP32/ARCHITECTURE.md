@@ -207,6 +207,13 @@ dialog interaction and redraw boundaries. Doom RPG is turn-based; presentation
 is requested by gameplay/UI needs, not architected as a mandatory high-FPS game
 loop.
 
+The resident owns the automap/world mode, independently of EventChain's script
+rollback journal. Opcode-23 startup closes automap before opening a modal;
+failed startup must restore the entry mode and render automap again, not just
+redraw the world. Failed restoration disables gameplay; a successful modal
+pause does not restore automap early. This uses existing resident/render paths,
+without transferring credit/RNG/script ownership or adding another state owner.
+
 ## 6. Collision, entities and pickups
 
 The native world uses compact sprite topology plus `entities.db` type metadata.
