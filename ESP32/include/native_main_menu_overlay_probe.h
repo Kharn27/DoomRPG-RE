@@ -8,10 +8,9 @@ extern "C" {
 struct DoomRPG_s;
 
 /*
- * Compose the real MENU_MAIN UI over the already hardware-validated native
- * menu.bsp walls+sprites framebuffer. This intentionally exercises only the
- * post-3D MenuSystem_paint() composition semantics; it does not call the
- * legacy Render_render() path or MenuSystem_setMenu().
+ * Dormant historical scene-to-dashboard bridge; absent from both linked ELFs.
+ * It is not current boot ownership. Its body remains in the live painter TU
+ * until a separate change validates GCC's altered inlining after its removal.
  */
 int DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpg);
 

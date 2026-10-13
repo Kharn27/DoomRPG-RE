@@ -170,6 +170,13 @@ static void onGameplayTap(int16_t screenX,
         return;
     }
 
+    if (EspNativeGameplayEventChain_isWaiting()) {
+        ++gameplayState.taps;
+        printf("[SCRIPTWAIT] INPUT-BLOCK logical=%d,%d queued=no worldMutation=no\n",
+               logicalX, logicalY);
+        return;
+    }
+
     if (EspNativeGameplayLevelUp_isActive()) {
         ++gameplayState.taps;
         if (EspNativeGameplayLevelUp_requestDismiss(logicalX, logicalY)) {
@@ -250,7 +257,8 @@ static void onGameplayTap(int16_t screenX,
     }
 
     /*
-     * Dialog owns the whole touch surface. A tap anywhere means the same
+     * Dialog owns the whole touch surface. Apart from its visible Back card
+     * (only when the original opcode allows cancellation), a tap means the same
      * semantic SELECT that the legacy HIT key used: first finish the current
      * typewriter page, then advance/page/resume on later taps. Keep this route
      * separate from the world/HUB hit map so no movement, weapon or menu action
@@ -260,8 +268,10 @@ static void onGameplayTap(int16_t screenX,
      */
     if (EspNativeGameplayDialog_isActive()) {
         memset(&hit, 0, sizeof(hit));
-        hit.action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;
-        hit.zone = ESP_NATIVE_GAMEPLAY_ZONE_SELECT;
+        hit.action = EspNativeGameplayDialog_tapAction(logicalX, logicalY);
+        if (hit.action == ESP_NATIVE_GAMEPLAY_ACTION_NONE) return;
+        hit.zone = hit.action == ESP_NATIVE_GAMEPLAY_ACTION_MENU_OPEN
+            ? ESP_NATIVE_GAMEPLAY_ZONE_MENU : ESP_NATIVE_GAMEPLAY_ZONE_SELECT;
         hit.left = 0U;
         hit.top = 0U;
         hit.right = (uint8_t)(DOOMRPG_LOGICAL_WIDTH - 1);
@@ -270,15 +280,17 @@ static void onGameplayTap(int16_t screenX,
         ++gameplayState.taps;
         status = EspNativeGameplayInput_route(&hit, logicalX, logicalY);
         if (status == ESP_NATIVE_GAMEPLAY_INPUT_OK) {
-            printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=SELECT zone=%u logical=%d,%d context=DIALOG tapDomain=full-screen feedback=none\n",
+            printf("[RESIDENTGAMEPLAY] QUEUE tap=%u action=%s zone=%u logical=%d,%d context=DIALOG tapDomain=owned-screen feedback=none\n",
                    (unsigned int)gameplayState.taps,
+                   EspNativeGameplayInput_actionName(hit.action),
                    (unsigned int)hit.zone,
                    logicalX,
                    logicalY);
         }
         else if (status == ESP_NATIVE_GAMEPLAY_INPUT_BUSY) {
-            printf("[RESIDENTGAMEPLAY] BUSY tap=%u action=SELECT context=DIALOG pending=1\n",
-                   (unsigned int)gameplayState.taps);
+            printf("[RESIDENTGAMEPLAY] BUSY tap=%u action=%s context=DIALOG pending=1\n",
+                   (unsigned int)gameplayState.taps,
+                   EspNativeGameplayInput_actionName(hit.action));
         }
         return;
     }
@@ -977,12 +989,21 @@ static void serviceSelect(DoomRPG_t* doomRpg,
     if (status == ESP_NATIVE_GAMEPLAY_ACTION_CHAIN_READY) {
         EspNativeGameplayDialogResumeResult chain;
         EspNativeGameplayDialogResumeStatus chainStatus;
+        if (result.codeId == 23U && startedInAutomap &&
+            !closeAutomap(render, "AUTOMAP-SELECT-SCRIPT")) {
+            ++gameplayState.deferred;
+            return;
+        }
         memset(&chain, 0, sizeof(chain));
         chainStatus = EspNativeGameplayEventChain_execute(
             result.eventIndex,
             result.commandOffset,
             ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS,
             &chain);
+        if (chainStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED) {
+            ++gameplayState.selects;
+            return; /* Dialog/WAIT already owns presentation and continuation. */
+        }
         if (chainStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
             chainStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
             ++gameplayState.deferred;
@@ -993,6 +1014,19 @@ static void serviceSelect(DoomRPG_t* doomRpg,
                    (unsigned int)result.commandOffset,
                    (unsigned int)result.codeId,
                    EspNativeGameplayDialog_resumeStatusName(chainStatus));
+            if (result.codeId == 23U) {
+                if (startedInAutomap != 0U) {
+                    gameplayState.modeFlags =
+                        (uint8_t)(gameplayState.modeFlags | RESIDENT_MODE_AUTOMAP);
+                    if (!renderAutomapCurrent(render, "SCRIPT-BEGIN-ROLLBACK")) {
+                        disableGameplay("script-begin-automap-rollback");
+                    }
+                }
+                else if (!renderCurrent(render, (uint8_t)view->viewAngle,
+                                        "SCRIPT-BEGIN-ROLLBACK")) {
+                    disableGameplay("script-begin-rollback-render");
+                }
+            }
             return;
         }
         if (!renderActionCurrent(render, (uint8_t)view->viewAngle,
@@ -1011,6 +1045,11 @@ static void serviceSelect(DoomRPG_t* doomRpg,
             return;
         }
         ++gameplayState.selects;
+        if (result.codeId == 23U && chainStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+            !EspNativeGameplayEventChain_commit(&chain)) {
+            disableGameplay("script-select-commit");
+            return;
+        }
         printf("[RESIDENTGAMEPLAY] SELECT-CHAIN n=%u seq=%u event=%u startCmd=%u entryOpcode=%u finalOpcode=%u mutation=%u redraw=yes rollback=closed turnAdvance=deferred\n",
                (unsigned int)gameplayState.selects,
                (unsigned int)intent->sequence,
@@ -1453,6 +1492,10 @@ static void serviceDialogAction(Render_t* render,
     }
 
     resumeStatus = EspNativeGameplayDialog_resume(&close, &resume);
+    if (resumeStatus == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED) {
+        ++gameplayState.dialogResumes;
+        return;
+    }
     if (resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
         resumeStatus != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
         printf("[RESIDENTGAMEPLAY] DIALOG-RESUME-FAILED seq=%u event=%u offset=%u status=%s\n",
@@ -1481,6 +1524,10 @@ static void serviceDialogAction(Render_t* render,
     }
 
     ++gameplayState.dialogResumes;
+    if (!EspNativeGameplayEventChain_commit(&resume)) {
+        disableGameplay("dialog-chain-commit");
+        return;
+    }
     printf("[RESIDENTGAMEPLAY] DIALOG-RESUME n=%u seq=%u event=%u offset=%u opcode=%u stateMutation=%u redraw=yes turnAdvance=deferred dialog=closed\n",
            (unsigned int)gameplayState.dialogResumes,
            (unsigned int)intent->sequence,
@@ -2121,6 +2168,18 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     }
 
     pending = EspNativeGameplayInput_peek();
+    if (EspNativeGameplayEventChain_isWaiting()) {
+        if (pending != NULL && pending->pending != 0U) {
+            memset(&intent, 0, sizeof(intent));
+            if (EspNativeGameplayInput_consume(&intent) != ESP_NATIVE_GAMEPLAY_INPUT_OK) {
+                disableGameplay("script-wait-pending-drop");
+                return;
+            }
+        }
+        if (!EspNativeGameplayEventChain_serviceWait(doomRpg->render))
+            disableGameplay("script-wait-continuation");
+        return;
+    }
 
     /* Defensive race closure: the tap callback normally rejects combat-time
      * input, but if an IRQ queued one immediately before the visual owner armed,

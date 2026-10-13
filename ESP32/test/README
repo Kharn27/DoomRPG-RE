@@ -1,6 +1,107 @@
 
 This directory contains project tests.
 
+Resident SELECT / automap rollback on opcode-23 startup failure (also in CI):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -IESP32/test/host_include -IESP32/include -Isrc \
+  ESP32/test/script_startup_automap_host.c -Wl,--gc-sections \
+  -o /tmp/doomrpg-script-startup-automap-test
+/tmp/doomrpg-script-startup-automap-test
+```
+
+Includes the production resident owner directly: real SELECT routing, private
+mode flags, closeAutomap and renderAutomapCurrent. Action/script startup, HUD,
+visibility, raster/present and external gameplay owners are mocked. EXEC_FAILED
+and INVALID restore the original automap/world context; unrelated mode bits
+survive, failed restoration disables gameplay, failed close never starts the
+script, and a successful modal pause does not restore automap prematurely.
+Unselected modal/door/reward branches assert on invocation. This does not test
+actual font/PAK failure, physical pixels, debit rollback or SD on CYD; the paid
+interaction fixture separately covers the real script transaction.
+
+Monster movement log budget / INFO versus TRACE (also in CI):
+
+```sh
+python3 ESP32/test/monster_log_policy_host.py
+# Optional, estimate removed bytes from an existing Serial capture:
+python3 ESP32/test/monster_log_policy_host.py --measure-log /path/to/capture.log
+```
+
+Compiles/preprocesses the six real movement/turn TUs at both levels, checks
+16 detailed-success sites are absent at INFO, three conditional failure
+witnesses remain, and attack-probe strings needed by the PC watcher survive.
+Compiles/runs the real activation/capture gate with mocked lower owners at both
+levels; success admits/captures identically while both failures still log.
+No full AI, CYD timing or audio claim follows. The estimator reports UTF-8 byte
+counts and ideal 115200/8N1 line time, not a measured gameplay speedup.
+
+Credit-gated interaction, real compositor/gate + SHOW admission (also in CI):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -IESP32/test/host_include -IESP32/include -Isrc \
+  ESP32/test/paid_interaction_host.c ESP32/src/esp_native_gameplay_event_chain.c \
+  ESP32/src/esp_map_events.c ESP32/src/esp_map_event_filter.c \
+  ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c \
+  ESP32/src/esp_native_gameplay_gib_fx.c ESP32/src/esp_native_gameplay_frame.c \
+  ESP32/src/esp_native_dynamic_line_render.c ESP32/src/esp_native_gameplay_present_gate.c \
+  -Wl,--gc-sections -Wl,--wrap=EspNativeGameplayFrame_renderTurn \
+  -Wl,--wrap=EspNativeGameplayFrame_composeTurn -Wl,--wrap=EspMapRuntime_getLine \
+  -Wl,--wrap=EspMapLineState_view -Wl,--wrap=Esp32PlatformVideo_present \
+  -Wl,--wrap=EspNativeGameplayActionEngine_present \
+  -o /tmp/doomrpg-paid-interaction-test
+/tmp/doomrpg-paid-interaction-test
+cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -IESP32/test/host_include -IESP32/include ESP32/test/show_preview_host.c \
+  -Wl,--gc-sections -o /tmp/doomrpg-show-preview-test
+/tmp/doomrpg-show-preview-test
+```
+
+The first fixture replays the supplied event67 raw sequence through real event
+filter/state/continuation, frame compositor, PresentGate, dynamic-line scope and
+capture-painter code. Player/dialog/PAK/notebook/topology, raster children and
+physical present are mocked; no SD or CYD claim follows. It retains the real
+renderer rejection of pre-armed gates that caused the hardware WAIT stall;
+composition publishes no incomplete world frame, effects bypass decorators,
+open-line/lock-texture adaptation stays scoped, all cardinal angles complete.
+The second
+seeds the real compact topology storage and checks read-only SHOW admission,
+unchanged successful commit/rollback, random blocker/linked/order/coordinate
+guards. host_include is test-only SDK declaration glue, never a firmware input.
+
+Dialog BACK touch / original cancel semantics (also in CI):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -IESP32/test/host_include -IESP32/include ESP32/test/dialog_touch_host.c \
+  ESP32/src/esp_native_gameplay_hub_touch_ui.c \
+  -Wl,--gc-sections -o /tmp/doomrpg-dialog-touch-test
+/tmp/doomrpg-dialog-touch-test
+```
+
+The real dialog owner/paint/input and shared crisp font are used; its private
+state is seeded, and PAK/font-atlas blits/present are mocked. Every screen pixel
+is classified: only the visible BACK card cancels EV_DIALOG without continuation;
+EV_DIALOGNOBACK remains SELECT-only. Checks cover border/gap/OOB taps, lease
+closure, no HUD overwrite and framebuffer guards. This adds no script YES/NO.
+
+Architecture-consolidation audit tool (host Python, no firmware dependency):
+
+```sh
+python3 ESP32/test/elf_alloc_compare_host.py
+python3 ESP32/tools/compare_elf_alloc.py ESP32/.pio/build/esp32-cyd/firmware.elf \
+  --baseline /path/to/same-toolchain-base.elf \
+  --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService
+```
+
+Repeat with the bringup ELF and its own baseline. All non-empty SHF_ALLOC
+sections must retain exact bytes/address/layout, including app metadata; NOBITS
+uses layout. Debug-only differences are allowed, code/data/BSS changes are not.
+CI tests the parser and checks retired exports in both final ELFs; the baseline
+byte comparison is a separate controlled local check, not a hardware witness.
+
 Level progress host regression (from the repository root):
 
 ```sh
@@ -11,9 +112,12 @@ cc -std=c11 -Wall -Wextra -Werror -I ESP32/include \
 ```
 
 The production progress owner and map catalog are compiled unchanged; only the
-player/HUD view boundaries are mocked. Tests cover fresh map entry, XP baseline
+player/HUD view and completion-checkpoint transport boundaries are mocked.
+Tests cover fresh map entry, XP baseline
 across a level-up, elapsed-time resume without offline/loading time, legacy-save
-partial history, rejected malformed suffixes, timer wrap and counter saturation.
+partial history, completion-byte roundtrip/owner rejection without replacing
+progress, malformed map/complete flags, timer wrap and counter saturation.
+The completion-mask validator itself is mocked, not validated by this fixture.
 
 SYS direct-touch host regression (from the repository root):
 
@@ -27,7 +131,9 @@ cc -std=c11 -Wall -Wextra -Werror -I ESP32/include \
 The production touch wrapper is compiled unchanged; its HUB cursor/navigation
 and input boundaries are mocked. Checks cover every content pixel against the
 shared three-card layout, rejection of gaps/margins, all nine cursor-to-target
-routes, failed/invalid preselection, empty input and non-SYS fallback. These
+routes, failed/invalid preselection, empty input and non-SYS fallback. While the
+slot selector is open, checks cover its content rectangle and dispatch only
+on touchSlot result 2, without navigating the underlying EXIT card. These
 tests do not replace hardware confirmation of SAVE/LOAD or Exit To Menu.
 
 Death-menu presentation / input host regression (from the repository root):
@@ -46,8 +152,11 @@ cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
 Production death/menu code and the shared HUB font are compiled unchanged.
 Clock, player/view/HUD, framebuffer/present and checkpoint boundaries are mocked.
 Checks cover the fall and three-second menu admission, shared palette/text,
-with/without save, card corners/gaps/margins, queued LOAD, unchanged deferred
-routes, framebuffer guards and failed presentation. This does not validate
+with/without save, card corners/gaps/margins, queued LOAD, selector open/back/
+confirm, failed/unready selector admission, failed restore, successful selector
+finish, unchanged deferred routes, framebuffer guards and failed presentation.
+The selector is mocked: its actual pagination/storage code is not exercised.
+These three fixtures are now required by the CYD CI workflow. This does not validate
 actual SD restore, combat or display behavior on the CYD.
 
 Unit Testing is a software testing method by which individual units of

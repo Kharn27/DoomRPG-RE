@@ -9,6 +9,11 @@ extern "C" {
 
 struct Render_s;
 
+/* Historical frame layout still used by the dormant LRU cache bodies.
+ * Their isActive() gates remain part of the current menu/startup boundary.
+ * The old GFXRM implementation is retired: load/release APIs below must not
+ * be called by the native renderer. Retire this contract with those caches
+ * in a separately validated boundary change, not by merging active owners. */
 typedef struct EspNativeSpriteFrame_s {
     int spriteIndex;
     int paletteOffset;

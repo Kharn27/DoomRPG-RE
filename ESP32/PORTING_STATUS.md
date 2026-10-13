@@ -1,5 +1,288 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Revue PR #210 : rollback du démarrage script depuis automap (2026-10-13)
+
+P2 confirmé : SELECT opcode 23 ferme l'automap avant d'exécuter l'interaction.
+Si le démarrage retourne EXEC_FAILED/INVALID (par exemple ouverture/premier
+present du dialogue refusé), le journal script restaure son segment mais le
+resident redessinait seulement le monde, perdant le contexte automap.
+Le resident rétablit maintenant son bit RESIDENT_MODE_AUTOMAP puis appelle
+`renderAutomapCurrent`, comme les chemins dialogue/password/store adjacents.
+Depuis WORLD, le rollback conserve son redraw monde. Si cette restauration
+échoue, `disableGameplay` reste la frontière fail-closed ; un démarrage PAUSED
+réussi garde la présentation modale, sans rouvrir l'automap prématurément.
+Aucun owner/TU/header production ajouté, ni changement de crédit, RNG, WAIT,
+sauvegarde ou cadence ; backing PAK et invariants NULL inchangés par ce lot.
+
+Test hôte `script_startup_automap_host.c` : vrai resident SELECT, closeAutomap,
+mode et routage de restauration ; script/action, HUD, visibilité, raster et
+present sont mockés. EXEC_FAILED/INVALID depuis automap et WORLD, bits voisins,
+échec de restauration/fermeture et pause réussie couverts. **Contre-épreuve :**
+l'ancien code échoue sur la première assertion de conservation d'automap.
+Fixture corrigé et ASan/UBSan PASS local (LeakSanitizer désactivé sous ptrace).
+Les **17 étapes hôte** et la garde des exports retirés PASS local ; sur ce
+poste, commandes Python exécutées avec `python3` (la CI configure `python`).
+Builds normal/bringup PASS : RAM/Flash **47 680 / 805 717 B** et
+**47 832 / 825 905 B** (+68 / +44 B Flash, RAM statique inchangée).
+Le redraw automap réutilise son scratch de visibilité transitoire existant ;
+aucune nouvelle réserve persistante. **CI distante PASS** sur le code
+`363828a50557f77f8e47c164c80154b0cc193aba` : 17 étapes hôte, les deux builds
+et garde des exports retirés
+([push 38446227208](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38446227208),
+[PR 38446235549](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38446235549)).
+La clôture documentaire suivante ne modifie pas le firmware.
+Les preuves CYD ci-dessous précèdent ce changement de code :
+aucun PASS matériel de l'échec font/PAK/present n'est attribué à ce correctif.
+Ne pas corrompre le PAK pour provoquer l'échec ; un smoke depuis automap peut
+vérifier l'ouverture normale du dialogue sans valider l'injection d'erreur.
+
+## Dernier playtest CYD : sauvegarde et limites persistantes (2026-10-13)
+
+Extrait utilisateur après le lot de diagnostics `3910a7c` / doc `5959de5`,
+sans SHA de boot : parcours continu jusqu'au SAVE slot 3 puis retour WORLD,
+sans crash visible dans l'extrait. Deux explosions interleavées sont commises
+(`seq=116`, `blasts=2`, `monsterHits=2`, `rollback=closed`), avec 12 XP et
+consommation de munition ; level-up 4→5, extinction d'un feu et MOVE/TURN
+continuent. Ce sont les scénarios observés, pas une parité globale du moteur.
+
+`NATIVESAVE SAVE` : `/sd/DoomRPG-ESP32-slot03.sav`, V11, 5 604 B,
+`atomic=temp+backup+rename`, `playerFNV=916e606d` conservé à la fermeture du
+HUB ; `SAVE-CLOSE result=success feedback="Game saved"`, expiration après
+1 203 ms avec `restored=topbar-only`. **SAVE exercé ; LOAD non exercé** dans
+cette trace, ni restauration visuelle d'un label d'objet démontrée.
+
+**Limite AI ouverte, pas une régression du lot :** sprite 202/subtype 4
+diffère neuf fois le goal 2/3 (`calcPath-special-plane-corpus-needed`, mask
+f387). Le premier mouvement reste commis, la continuation n'est pas publiée
+(`priorMovesRemainCommitted=yes`), avec alternance des tiles 242/274.
+`esp_native_gameplay_monster_three_goal_turn.c` est inchangé depuis la base
+main `9d203e525a4b8736fadfd34aaf693423bff7f602`. Ce fail-closed n'est pas une
+validation du comportement complet de cette famille ; correction à isoler
+dans un futur jalon géométrie/AI, sans élargir le nettoyage actuel.
+
+**Performance :** l'utilisateur ne constate pas d'accélération particulière.
+Les frames intermédiaires tracées restent de l'ordre de 100 ms ; ce n'est pas
+une comparaison contrôlée avant/après. Le lot réduit les logs/Flash, pas le
+nombre de rendus. Aucun gain FPS/latence matériel revendiqué, aucun son ajouté.
+Les SPAN_OOB récupérés et les diagnostics sprite restants ne sont pas déclarés
+corrigés par cette consolidation.
+
+## Consolidation des diagnostics de mouvement — logiciel testé (2026-10-13)
+
+Même branche, parent documentaire `e12abcd`. Premier lot performance borné :
+**19 sites** de diagnostic dans les six owners mouvement/tour existants ;
+16 détails succès/collision deviennent TRACE-only, 3 témoins mixtes restent
+visibles en INFO sur échec (prepare refusé, rollback position/RNG non exact,
+publication de membre échouée). DEFER/FATAL/ROLLBACK, réservations RNG et les
+couples attaque-probe/retaliation du watcher restent visibles. BEGIN/COMPLETE
+et ORDERED-DISPATCH conservent le résumé de tour. États, ordre, tirages, frames,
+timers/cadences et formats save inchangés ; aucun owner fusionné/supprimé,
+toujours 158/152.
+
+Motivation chiffrée sur la capture Troop/zombie fournie : **37 lignes / 8 060 B
+de succès** retirables sur 16 833 B (~47,9 %). Équivalent UART 115200 8N1 :
+699,7 ms de ligne, **pas** un gain CPU/FPS mesuré ni une garantie d'autant de
+latence gagnée (buffers/ordonnancement non mesurés). Le coût des redraws monde
+par monstre et des animations demeure ; ne pas raccourcir l'idle final pour
+accélérer. Trois redraws successifs affichent le même FNV `7aa4ab0f` dans
+la trace : indice de pixels inchangés, pas une preuve d'invisibilité ni un
+motif pour sauter un rendu d'après son hash. La géométrie doit être préflightée.
+
+Builds normal/bringup locaux PASS ; RAM/Flash **47 680 / 805 649 B** et
+**47 832 / 825 861 B** (normal **−2 692 B Flash**, RAM statique inchangée,
+aucune nouvelle allocation gameplay).
+Les **neuf sections allouées bringup sont byte-identiques** au parent avec le
+même toolchain ; aucune identité binaire annoncée pour INFO. Tests : syntaxe
+et préprocessing des six vrais TU aux niveaux INFO/TRACE, 16 sites exclus en
+normal, trois guards conservés, capture/admission réelles à deux niveaux avec
+leurs dépendances mockées ; ASan/UBSan du gate PASS local (LeakSanitizer désactivé
+sous ptrace). **CI distante PASS** sur le code
+`3910a7cc7e0cc48eeda848c49698463f6837b057` : les 16 étapes hôte, les deux
+builds et la garde des exports retirés
+([run 38437582969](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38437582969)).
+
+Pas de nouvelle frontière gameplay dans ce lot ; pas de nouveau PASS matériel
+attribué. Pour juger le gain ressenti, jouer avec **esp32-cyd normal**, pas
+bringup qui conserve tout le texte. Si la latence reste forte, prioriser les
+rendus hors champ après preuve d'activation/automap/overlay/rollback, puis la
+réservation audio ; aucun backend sonore ni buffer audio ajouté ici.
+
+## Correction WAIT + Back tactile — PASS CYD ciblé (2026-10-13)
+
+Retour matériel sur `fca7d04` : débit 20→10 et dialogue 26 ouverts, puis
+`SCRIPTWAIT ARM` sans aucun `PRESENT/COMPLETE` pendant plus de 30 s. Le CYD
+reste vivant (`ALIVE`, touch), entrée monde fermée ; **pas de PASS matériel**.
+Le suffixe HIDE/SHOW qui remplace le civil n'a pas encore été exécuté dans
+cette trace : ce n'est pas une preuve d'un crash de monster spawn.
+
+Cause : le WAIT armait PresentGate avant renderTurn(), alors que le vrai
+compositor refuse une gate pré-armée. Le mock de frame hôte précédent avait
+masqué cette incompatibilité. Correction dans les owners existants :
+`Frame_composeTurn()` compose une pose cardinale sans present, activation
+monstre/automap ni fresh-frame publication ; la même adaptation des lignes
+dynamiques est scoped comme les previews, sans consommer d'animation/move event.
+Le WAIT ajoute les particules puis publie une seule frame physique. La garde
+de renderTurn reste intacte ; timer/retry/rollback/note/débit inchangés.
+
+Pas de YES/NO dans ce script original : REQSTAT vérifie, DECSTAT débite.
+Le dialogue EV_DIALOG précédent autorise toutefois **Back**, devenu
+inaccessible lorsque tous les taps natifs étaient convertis en SELECT.
+Une carte BACK visible (viewport x=16..59, y=22..42, hors HUD et texte) rétablit
+MENU/cancel ; tous les autres taps gardent SELECT. EV_DIALOGNOBACK après
+paiement reste non annulable. Pas de branche de script inventée ni de refund.
+
+Tests hôte : vrai Frame/PresentGate/dynamic-line adapter intégrés au replay
+payant ; l'ancien WAIT échoue effectivement dans ce fixture, le nouveau passe.
+Quatre angles cardinaux, portes ouvertes/texture déverrouillée, absence de
+publish intermédiaire/activation, échec render/present et retries couverts.
+Un troisième test exerce le vrai dialog paint/tap/cancel et la fonte HUB ;
+PAK/font-atlas et physical present restent mockés. Suite locale : **13 tests C
+et 2 tests Python PASS**, ASan/UBSan PASS pour les fixtures WAIT et BACK
+(LeakSanitizer désactivé sous ptrace). Builds normal/bringup et garde des
+exports retirés PASS. RAM/Flash **47 680 / 808 341 B** et **47 832 / 825 861 B** :
+RAM statique/journal lazy inchangés, Flash +248 / +268 B depuis `fca7d04`.
+**CI distante PASS** sur le code
+`7220f17f97bd334f5348c3eb79cbcf97a61e6249` : suite hôte, les deux builds et
+garde des exports retirés
+([run 38407334363](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38407334363)).
+Retour CYD fourni après `e12abcd` (frontière code correspondante `7220f17`,
+SHA de boot absent de l'extrait) : **PASS ciblé** paiement 19→9, dialogue
+opcode26 `back=0`, `SCRIPTWAIT PRESENT`, HIDE/SHOW/NOTE, activation sprite9
+subtype3 puis COMPLETE et retour WORLD. L'interaction suivante a `NO_ELIGIBLE`
+pour le script, sans second débit ; le combat natif tue ce monstre (HP9→0,
+armure5→0), consomme une munition et applique 7 XP/drop. MOVE/TURN et une porte
+fermée après le tour continuent. NOTE staged 71→104 et commit annoncé par
+COMPLETE ; consultation visuelle du notebook non prouvée. BACK généralisé aux
+EV_DIALOG est accepté par l'utilisateur ; cancellation et stabilité des
+crédits/states non tracées dans cet extrait.
+
+**Non couverts par cette preuve** : refus <10 crédits, SAVE/LOAD, SHA/invariants
+NULL du boot et parité visuelle/RNG globale. Garder le test fonds insuffisants
+et le smoke SAVE/LOAD pour compléter la frontière. Les SPAN_OOB intermédiaires
+sont récupérés (`RECOVERED`), pas assimilés à un crash ni déclarés corrigés.
+Aucun flash/merge effectué par l'agent.
+
+## Interaction payante REQSTAT/WAIT — logiciel testé, CYD pending (2026-10-13)
+
+Même branche `agent/esp32-consolidate-postload-junction`, parent `0423fde`.
+Trace fournie : event 67/tile 675, SELECT refusé avec `unsupported=23`, après
+les dialogues et la progression d'état normaux. `001d0a02` demande 10 crédits,
+`00000a02` les débite, puis la fermeture inclut HIDE/state/dialogue 26, effet
+capture 35, son 42, WAIT 350 ms et SHOW/HIDE/REFRESH/NOTE/state. Le filtre
+`00080000` est le masque **état 4**, pas un numéro d'état 8.
+
+Correction native bornée : préflight de la fermeture avant débit ; rollback
+PlayerState/topologie/states/removed si l'ouverture du dialogue échoue ; commit
+au dialogue visible. Après clôture, WAIT non bloquant avec entrée monde fermée,
+particules orange RGB565 via un painter stateless/local visual RNG, son comme
+intent **silencieux**, reprise du suffixe après 350 ms depuis sa première frame
+réussie. Note staged dans l'owner existant, commit après rendu final ; failure
+I/O/rendu = rollback et retry du suffixe sans rejouer le paiement. Unsupported
+stats, autres particules, dialogues cancelables et formes de scripts hors ce
+contrat restent fail-closed. SHOW est préflighté conservativement contre la
+topologie courante, sans writes ni tirage RNG.
+
+Les tests hôte rejouent les 23 commandes de la trace avec les vrais filtre,
+event walker, opcode-state executor, journal/continuation et capture painter.
+Player, dialog, PAK, notebook et topology sont mockés dans ce test ; un second
+test exerce le vrai kernel SHOW preview/commit/rollback. Cas couverts : <10
+crédits, erreur d'ouverture puis retry, double SELECT sans double débit,
+attente depuis première frame publiée, échec rendu et note I/O, restauration
+exacte du suffixe, NOTE unique, wrap uptime et guards framebuffer/HUD.
+ASan/UBSan PASS local (LeakSanitizer incompatible avec ptrace, désactivé).
+CI ajoute ces deux tests aux dix tests C existants. **CI distante PASS** sur
+`99c9f6153bbbcb2f7259f842ff02f3cbdbe34e48` : les douze tests C, les deux
+tests Python, les deux builds et la garde des exports retirés passent
+([run 38403169340](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38403169340)).
+**Aucun PASS matériel attribué.**
+
+RAM statique cible inchangée ; journal lazy **1 020 → 1 128 B (+108 B heap)**,
+mesuré par le type DWARF de l'ELF Xtensa. Le propriétaire NOTE/scratch existe
+déjà et reste lazy ; cette route peut l'acquérir. Aucun nouveau fichier moteur
+ou header production (158/152), ni source desktop/shapeData/mediaTexels rétabli.
+Builds locaux normal/bringup PASS : RAM/Flash **47 680 / 808 093 B** et
+**47 832 / 825 593 B**. Flash +5 460 / +5 280 B par rapport au parent ; ce
+n'est pas un retrait no-op.
+
+**PASS CYD demandé avant merge** : interaction avec ≥10 crédits → dialogue
+→ effet/WAIT → gameplay/note ; crédit débité une fois, état avancé, retap sans
+nouvelle facture. Autre essai avec <10 crédits → refus sans mutation. Capturer
+`SCRIPTSTAT CHECK/DEBIT/PAUSE/COMPLETE`, `SCRIPTWAIT ARM/PRESENT` et l'état des
+crédits/note après reprise. Smoke-test dialogue habituel et HUB/SAVE/LOAD.
+PAK, NULL shapes/texels et sauvegarde V11 doivent rester invariants. La parité
+pixel-perfect des particules, tous les scripts/stats et l'audio audible restent
+hors de cette validation. Aucun flash ni merge main effectué par l'agent.
+
+## Consolidation — lot 2 graphique ZIP + fixtures hôte (2026-10-13)
+
+Même branche `agent/esp32-consolidate-postload-junction`, parent `9cde9d5`,
+base main inchangée `9d203e525a4b8736fadfd34aaf693423bff7f602`.
+Retrait du renderer/diagnostic de menu ZIP : **16 sources / 13 headers**,
+6 455 lignes, 31 exports déjà absents des deux ELF ; diagnostic fermé ramené
+de 238 à 11 lignes, quatre directives de wrap sans endpoint chargé retirées.
+Après les deux lots : **158 sources C/C++, 152 headers include**, 157 unités
+du dossier compilées + 3 copies générées ; aucun original desktop compilé.
+Détail, fermeture et suites : [`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md).
+
+Builds locaux normal/bringup PASS, neuf sections allouées strictement identiques
+à `9cde9d5` dans chaque profil, mêmes ensembles de symboles. RAM/flash : normal
+47 680 / 802 633 B, bringup 47 832 / 820 313 B. `.bin` de même taille, seuls
+SHA ELF/checksum/digest image diffèrent, digests vérifiés. Pas de gain RAM
+revendiqué. Les deux gardes LRU et leurs 488 B BSS restent conservés.
+
+Les deux bridges scène→dashboard du fichier painter sont **différés** : leur
+retrait tentatif changeait l'inlining de deux fonctions actives et 24 B de
+Flash. Comparateur strict en échec, tentative annulée ; painter final inchangé.
+La suite ZIP n'était déjà pas accessible en bringup (stub RETIRED retourne 0,
+`MENU BSP FAIL` conservé). Pas de suppression des vrais diagnostics actifs.
+
+Les trois fixtures hôte SYS touch / level progress / death menu sont réalignées
+sur les APIs slot/completion et intégrées à la CI. Les dix tests C, watcher,
+comparateur Python et garde des exports passent localement. Slot picker,
+restore SD et validateur completion demeurent mockés dans ces fixtures : pas
+de PASS matériel/SD/parité globale inventé. Frontière de code du lot :
+`8dfd82e00e20305132977b324f8314f83bc6939f`. [CI 38390131286](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38390131286)
+**SUCCESS** : tests hôte, deux builds et garde des exports retirés. Le comparatif
+ELF avec le parent est local, distinct de cette CI. Clôture suivante docs-only.
+
+Pas de reflash/PASS CYD exigé pour ce lot final : code/data/layout chargés
+inchangés. RNG, rollback, save V11, rendu natif et backing PAK sont conservés.
+Aucune nouvelle correction des anomalies de gameplay documentées ci-dessous.
+
+## Consolidation architecturale — lot post-load Junction (2026-10-13)
+
+Base auditée exacte : `9d203e525a4b8736fadfd34aaf693423bff7f602`, après le merge
+de la PR #208. Rapport et priorités :
+[`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md), inventaire des 183 sources
+de base dans le CSV associé. Le premier lot retire neuf sources et neuf headers
+du ladder historique Junction, 1 691 lignes et 45 exports sans consommateur
+extérieur ; aucune section allouée dans normal/bringup, déjà avant retrait.
+Après : 174 sources / 165 headers include, sans nouveau propriétaire production.
+
+Vérification locale : builds normal et bringup PASS ; les neuf sections non
+vides `SHF_ALLOC` de chaque ELF sont strictement identiques avant/après,
+adresses/flags/alignement/taille/octet par octet compris (NOBITS par layout).
+RAM/flash utiles inchangées : normal 47 680 / 802 633 B, bringup 47 832 /
+820 313 B. Pas de gain RAM revendiqué pour les 108 B de markers des objets
+éliminés ; ils étaient déjà absents des ELF. Tests comparateur et garde CI
+d'absence d'exports ajoutés. Frontière de code :
+`1bd1120550040d0b7060f537bc13783b64af7a5b` sur
+`agent/esp32-consolidate-postload-junction`. CI distante
+[38385323228](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38385323228) :
+**SUCCESS**, tests hôte, builds normal/bringup et garde des exports retirés.
+La clôture suivante est docs-only ; aucun nouveau firmware n'est modifié.
+
+À la frontière du lot 1, les tests C/outil du workflow passaient localement,
+mais trois fixtures hors CI (SYS touch, level progress, death menu) étaient
+désalignées avec les APIs de la base : mocks manquants, pas un PASS. Cette
+dette est réparée dans le lot 2 ci-dessus, sans modifier le code firmware testé.
+
+Aucun nouveau trajet exécuté ni PASS matériel revendiqué. Aucun octet chargé
+ne change dans cette comparaison contrôlée : pas de reflash/PASS CYD exigé pour
+ce lot. RNG, rollback, save V11, PAK et invariants renderer restent hors mutation.
+Les preuves/limites matérielles de PR #208 et des autres jalons restent celles
+ci-dessous ; ce retrait ne résout aucune de leurs anomalies ouvertes.
+
 ## PR #208 — vendeur natif : PASS CYD après les deux correctifs de code review (2026-10-13)
 
 **Témoin sur le vrai classic CYD, firmware normal `esp32-cyd`, frontière de code `f2d85321e6c286289d1021ad6735396aa3987677` + commit documentaire `91635c6d1aaddfe1e064e755b417afe78a1d67b5`.** Le testeur confirme « Allez c'est ok » après un test physique du vendeur `vendor=0`. CI de la frontière : [run 38379283255](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38379283255), **SUCCESS** (normal, bringup, tests hôte). Ce jalon fait suite aux deux commentaires P2 de la PR #208, tous deux corrigés, répondus et résolus.

@@ -4,9 +4,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <esp_heap_caps.h>
-
+#include "DoomRPG.h"
 #include "doomrpg_log.h"
+#include "esp_asset_pack.h"
+#include "esp_map_catalog.h"
 #include "esp_map_automap_state.h"
 #include "esp_map_event_filter.h"
 #include "esp_map_events.h"
@@ -20,9 +21,19 @@
 #include "esp_map_ui_intent.h"
 #include "esp_native_gameplay_dialog.h"
 #include "esp_native_gameplay_event_chain.h"
+#include "esp_native_gameplay_facing_label.h"
+#include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_gib_fx.h"
+#include "esp_native_gameplay_note_prefix.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_native_level_gate.h"
 #include "esp_native_resident_gameplay.h"
+#include "esp_native_audio_intent.h"
+#include "esp_player_view_state.h"
+#include "platform_video_c_bridge.h"
+
+/* Keep ESP-IDF stdbool after the legacy DoomRPG boolean enum. */
+#include <esp_heap_caps.h>
 
 #define CHAIN_REMOVE_FLAG 0x00000200UL
 #define CHAIN_OPCODE_LIMIT 64U
@@ -55,12 +66,32 @@ typedef struct ChainRemovedUndo_s {
     uint8_t after;
 } ChainRemovedUndo;
 
+/* Script lifetime spans committed dialog/WAIT boundaries; the journal below
+ * still owns only one synchronous transaction. No map-specific state or BSS. */
+typedef struct ChainContinuation_s {
+    uint32_t runFlags;
+    uint32_t startedMs;
+    uint32_t durationMs;
+    uint32_t lastPaintMs;
+    uint32_t particles;
+    uint16_t eventIndex;
+    uint8_t offset;
+    uint8_t active;
+    uint8_t waiting;
+    uint8_t finished;
+    uint8_t waitPresented;
+    uint8_t retry;
+} ChainContinuation;
+
 typedef struct ChainTransaction_s {
     ChainStateUndo states[ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS];
     ChainUnlockUndo unlocks[ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS];
     ChainRemovedUndo removed[ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS];
     EspMapAutomapSnapshot automapBefore;
     EspMapSpriteTopologyView topologyViewBefore;
+    EspNativeGameplayPlayerState playerBefore;
+    ChainContinuation continuation;
+    uint16_t sounds[ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS];
     uint8_t* topologyBytes;
     uint32_t topologyCapacity;
     uint32_t topologyBytesUsed;
@@ -73,7 +104,9 @@ typedef struct ChainTransaction_s {
     uint8_t automapCaptured;
     uint8_t active;
     uint8_t mutated;
-    uint8_t reserved;
+    uint8_t playerCaptured;
+    uint8_t noteStaged;
+    uint8_t soundCount;
 } ChainTransaction;
 
 /* The rollback journal is gameplay-only and comparatively large.  Keep only a
@@ -81,6 +114,14 @@ typedef struct ChainTransaction_s {
  * acquire the reusable owner before the first dialog with a real continuation. */
 static ChainTransaction* transactionOwner;
 #define transaction (*transactionOwner)
+
+static EspNativeGameplayDialogResumeStatus beginInteraction(uint16_t eventIndex,
+    uint8_t offset, uint32_t runFlags, EspNativeGameplayDialogResumeResult* result);
+static EspNativeGameplayDialogResumeStatus resumeInteraction(uint16_t eventIndex,
+    uint8_t offset, uint32_t runFlags, EspNativeGameplayDialogResumeResult* result);
+int __wrap_EspNativeGameplayDialog_rollbackResume(
+    const EspNativeGameplayDialogResumeResult* result);
+extern int __real_Esp32PlatformVideo_present(void);
 
 #if DOOMRPG_LOG_LEVEL >= DOOMRPG_LOG_DEBUG
 static uint8_t corpusLogged;
@@ -124,6 +165,7 @@ void EspNativeGameplayEventChain_reset(void) {
     heapBefore = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
     topologyCapacity = transaction.topologyCapacity;
     pendingRollback = transaction.active;
+    if (transaction.noteStaged) EspNativeGameplayNotePrefix_cancel();
     SDL_free(transaction.topologyBytes);
     transaction.topologyBytes = NULL;
     transaction.topologyCapacity = 0U;
@@ -158,6 +200,18 @@ static int chainOpcodeSupported(uint8_t codeId) {
            codeId == ESP_MAP_OPCODE_UNLOCK ||
            codeId == ESP_MAP_OPCODE_GIVEMAP ||
            EspMapOpcodeExecutor_supports(codeId);
+}
+
+static int interactionOpcodeSupported(uint8_t codeId) {
+    return EspMapOpcodeExecutor_supports(codeId) ||
+           codeId == ESP_MAP_OPCODE_SHOW || codeId == ESP_MAP_OPCODE_HIDE || codeId == 22U ||
+           codeId == 26U || codeId == 35U || codeId == 36U ||
+           codeId == 37U || codeId == 40U || codeId == 42U;
+}
+
+static int interactionOwns(uint16_t eventIndex) {
+    return transactionOwner != NULL && transaction.continuation.active &&
+           transaction.continuation.eventIndex == eventIndex;
 }
 
 extern EspNativeGameplayDialogBeginStatus
@@ -305,7 +359,9 @@ static EspNativeGameplayEventChainPreflightStatus buildPlan(
             return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_INVALID;
         }
         if (filtered.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) continue;
-        if (!chainOpcodeSupported(filtered.codeId) ||
+        if (!(chainOpcodeSupported(filtered.codeId) ||
+              (interactionOwns(eventIndex) &&
+               interactionOpcodeSupported(filtered.codeId))) ||
             outPlan->count >= ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS) {
             printf("[DIALOGCHAIN] PREFLIGHT-DEFER event=%u start=%u off=%u opcode=%u count=%u reason=%s\n",
                    (unsigned int)eventIndex,
@@ -505,12 +561,15 @@ EspNativeGameplayEventChain_beginDialogCommand(
 static void clearTransaction(void) {
     uint8_t* backup;
     uint32_t capacity;
+    ChainContinuation continuation;
     if (transactionOwner == NULL) return;
     backup = transaction.topologyBytes;
     capacity = transaction.topologyCapacity;
+    continuation = transaction.continuation;
     memset(&transaction, 0, sizeof(transaction));
     transaction.topologyBytes = backup;
     transaction.topologyCapacity = capacity;
+    transaction.continuation = continuation;
 }
 
 static int captureTopology(void) {
@@ -552,6 +611,9 @@ static int restoreTransaction(void) {
     int i;
 
     if (transactionOwner == NULL) return 0;
+    if (transaction.noteStaged) EspNativeGameplayNotePrefix_cancel();
+    if (transaction.playerCaptured &&
+        !EspNativeGameplayPlayerState_restore(&transaction.playerBefore)) ok = 0;
     for (i = (int)transaction.removedCount - 1; i >= 0; --i) {
         if (!EspMapScriptState_setCommandRemoved(
                 transaction.removed[i].global,
@@ -718,6 +780,43 @@ static EspNativeGameplayDialogResumeStatus executeChain(
                    (unsigned int)result.entranceTargetCount,
                    (unsigned int)result.removeCommandIfHandled);
         }
+        else if (interactionOwns(close->sourceEventIndex) && command.id == 22U) {
+            EspNativeGameplayPlayerState next;
+            uint32_t amount = (command.arg1 >> 8U) & 255U;
+            if ((command.arg1 & 255U) != 2U || command.arg1 >> 16U ||
+                !EspNativeGameplayPlayerState_snapshot(&next) ||
+                next.credits < amount) goto failed;
+            if (!transaction.playerCaptured) {
+                transaction.playerBefore = next;
+                transaction.playerCaptured = 1U;
+            }
+            next.credits -= amount;
+            if (!EspNativeGameplayPlayerState_restore(&next)) goto failed;
+            if (amount != 0U) anyMutation = 1U;
+            printf("[SCRIPTSTAT] DEBIT event=%u cmd=%u credits=%u->%u amount=%u provisional=yes rng=untouched\n",
+                   (unsigned)close->sourceEventIndex, (unsigned)plan.command[i].offset,
+                   (unsigned)(next.credits + amount), (unsigned)next.credits,
+                   (unsigned)amount);
+        }
+        else if (interactionOwns(close->sourceEventIndex) && command.id == 40U) {
+            if (transaction.noteStaged ||
+                !EspNativeGameplayNotePrefix_prepare(close->sourceEventIndex,
+                                                      plan.command[i].offset)) goto failed;
+            transaction.noteStaged = 1U;
+            anyMutation = 1U;
+        }
+        else if (interactionOwns(close->sourceEventIndex) && command.id == 42U) {
+            if (transaction.soundCount >= ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS ||
+                (command.arg1 & 0xffffU) == 0U) goto failed;
+            transaction.sounds[transaction.soundCount++] = (uint16_t)command.arg1;
+        }
+        else if (interactionOwns(close->sourceEventIndex) && command.id == 35U) {
+            /* Validated capture family, armed by the following WAIT boundary.
+             * No legacy ParticleSystem or gameplay RNG is materialized. */
+        }
+        else if (interactionOwns(close->sourceEventIndex) && command.id == 36U) {
+            /* Settled facing/view refresh is performed by the enclosing frame. */
+        }
         else {
             EspMapOpcodeExecResult exec;
             if (transaction.stateCount >=
@@ -781,6 +880,315 @@ failed:
     return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED;
 }
 
+/* Full immutable operand/closure proof before a credit can be debited. This
+ * deliberately admits only credit-check/debit, one no-back dialog and one
+ * capture-particle WAIT. Segment sizes retain the existing 12-command journal. */
+EspNativeGameplayEventChainPreflightStatus
+EspNativeGameplayEventChain_preflightInteraction(uint16_t eventIndex,
+    uint8_t start, uint32_t runFlags) {
+    EspMapEventDescriptor descriptor;
+    EspMapEventFilterPlan filter;
+    EspMapEventCommandFilterResult eligible;
+    EspMapByteCode command;
+    EspMapStringRef text;
+    uint32_t keys, offset, required = 0U;
+    uint8_t state, count = 0U, segment = 0U, dialog = 0U, suffix = 0U;
+    uint8_t particles = 0U, wait = 0U, notes = 0U;
+    if (!eventDescriptorForIndex(eventIndex, &descriptor) ||
+        start >= descriptor.commandCount || !currentPlayerKeys(&keys) ||
+        !EspMapScriptState_getEventState(eventIndex, &state) ||
+        !EspMapEventFilter_prepare(&descriptor, state, start, runFlags, keys, &filter))
+        return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_NOT_READY;
+    for (offset = start; offset < descriptor.commandCount; ++offset) {
+        uint8_t removed;
+        uint32_t global = descriptor.firstCommandIndex + offset;
+        if (offset > UINT8_MAX || global > UINT16_MAX ||
+            !EspMapScriptState_isCommandRemoved(global, &removed) ||
+            !EspMapEventFilter_evaluate(&descriptor, &filter, offset, removed, &eligible) ||
+            !EspMapEvents_getCommand(&descriptor, offset, &command))
+            return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_INVALID;
+        if (eligible.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) continue;
+        ++count; ++segment;
+        if (dialog) ++suffix;
+        if (segment > ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS ||
+            suffix > ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_MAX_COMMANDS) goto unsupported;
+        if (count == 1U) {
+            if (offset != start || command.id != 23U ||
+                (command.arg1 & 255U) != 2U || (command.arg2 & CHAIN_REMOVE_FLAG) ||
+                !EspMapStrings_getRef(command.arg1 >> 16U, &text) ||
+                text.length + 1U > ESP_NATIVE_GAMEPLAY_DIALOG_TEXT_CAPACITY) goto unsupported;
+            required = (command.arg1 >> 8U) & 255U;
+            continue;
+        }
+        if (!interactionOpcodeSupported(command.id)) goto unsupported;
+        if (command.id == 22U) {
+            if (count != 2U || (command.arg1 & 255U) != 2U || command.arg1 >> 16U ||
+                ((command.arg1 >> 8U) & 255U) != required) goto unsupported;
+        } else if (count == 2U) goto unsupported;
+        if (command.id == 26U || command.id == 40U) {
+            if (!EspMapStrings_getRef(command.arg1, &text) ||
+                text.length + 1U > ESP_NATIVE_GAMEPLAY_DIALOG_TEXT_CAPACITY) goto unsupported;
+            if (command.id == 26U) {
+                if (dialog++ || particles || wait || (command.arg2 & CHAIN_REMOVE_FLAG)) goto unsupported;
+                segment = 0U;
+            } else if (notes++) goto unsupported;
+        } else if (command.id == 35U) {
+            if (!dialog || particles++ || wait || ((command.arg1 >> 24U) & 31U) != 3U)
+                goto unsupported;
+        } else if (command.id == 37U) {
+            if (!particles || wait++ || command.arg1 == 0U || command.arg1 > 10000U ||
+                (command.arg2 & CHAIN_REMOVE_FLAG))
+                goto unsupported;
+            segment = 0U;
+        } else if (command.id == 42U) {
+            if ((command.arg1 & 0xffffU) == 0U) goto unsupported;
+        } else if (command.id == ESP_MAP_OPCODE_SHOW) {
+            const EspMapRuntimeView* runtime = EspMapRuntime_view();
+            EspMapShowResult preview;
+            if (!EspMapSpriteTopology_isReady() || runtime == NULL ||
+                (command.arg1 & 0xffffU) >= runtime->mapSpriteCount ||
+                EspMapSpriteTopology_previewShow(&descriptor, offset, &preview) !=
+                    ESP_MAP_SPRITE_TOPOLOGY_OK) goto unsupported;
+        } else if (command.id == ESP_MAP_OPCODE_HIDE) {
+            if (!EspMapSpriteTopology_isReady() || (command.arg1 & 255U) > 31U ||
+                ((command.arg1 >> 8U) & 255U) > 31U) goto unsupported;
+        } else if (EspMapOpcodeExecutor_supports(command.id)) {
+            EspMapEventRef target;
+            uint32_t x = command.arg1 & 255U, y = (command.arg1 >> 8U) & 255U;
+            if (x > 31U || y > 31U || !EspMapEvents_findByTile(x + y * 32U, &target) ||
+                (command.id == ESP_MAP_OPCODE_CHANGE_STATE &&
+                 ((command.arg1 >> 16U) & 255U) > 15U)) goto unsupported;
+        }
+    }
+    if (count < 3U || dialog != 1U || particles != 1U || wait != 1U) goto unsupported;
+    return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK;
+unsupported:
+    printf("[SCRIPTSTAT] PREFLIGHT-DEFER event=%u start=%u off=%u opcode=%u reason=unsupported-closure mutation=no\n",
+           (unsigned)eventIndex, (unsigned)start, (unsigned)offset, (unsigned)command.id);
+    return ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_UNSUPPORTED;
+}
+
+int EspNativeGameplayEventChain_commit(const EspNativeGameplayDialogResumeResult* result) {
+    uint8_t i;
+    /* Keep established synchronous families' journal lifetime untouched. Only
+     * the new segmented interaction needs an explicit publication commit. */
+    if (transactionOwner == NULL || !transaction.continuation.active) return 1;
+    if (result == NULL || transactionOwner == NULL || !transaction.active ||
+        result->globalCommandIndex != transaction.firstGlobal) return 0;
+    if (transaction.noteStaged) EspNativeGameplayNotePrefix_commit();
+    for (i = 0U; i < transaction.soundCount; ++i)
+        (void)EspNativeAudioIntent_publish(transaction.sounds[i], 0U, 3U);
+    if (transaction.continuation.finished) {
+        printf("[SCRIPTSTAT] COMPLETE event=%u credits=%u wait=finished note=committed input=world rng=untouched\n",
+               (unsigned)transaction.continuation.eventIndex,
+               (unsigned)EspNativeGameplayPlayerState_view()->credits);
+        memset(&transaction.continuation, 0, sizeof(transaction.continuation));
+    }
+    clearTransaction();
+    return 1;
+}
+
+static int readInteractionText(uint32_t index, char* text, size_t capacity) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspMapStringRef ref;
+    EspAssetPackEntry entry;
+    const char* name;
+    int ok;
+    if (view == NULL || EspAssetPack_isOpen() ||
+        !EspMapStrings_getRef(index, &ref)) return 0;
+    name = EspMapCatalog_nameForId(view->targetMapId);
+    if (name == NULL || !EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+    memset(&entry, 0, sizeof(entry));
+    ok = EspAssetPack_findEntry(name, &entry) &&
+         EspMapStrings_read(&entry, &ref, text, capacity, NULL) == ESP_MAP_STRING_READ_OK;
+    EspAssetPack_close();
+    return ok && !EspAssetPack_isOpen();
+}
+
+static EspNativeGameplayDialogResumeStatus beginInteraction(uint16_t eventIndex,
+    uint8_t offset, uint32_t runFlags, EspNativeGameplayDialogResumeResult* result) {
+    EspMapEventDescriptor descriptor;
+    EspMapByteCode gate;
+    const EspNativeGameplayPlayerState* player = EspNativeGameplayPlayerState_view();
+    uint32_t required;
+    if (result == NULL) return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
+    memset(result, 0, sizeof(*result));
+    if (player == NULL || (transactionOwner != NULL && transaction.continuation.active) ||
+        EspNativeGameplayEventChain_preflightInteraction(eventIndex, offset, runFlags) !=
+            ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK ||
+        !eventDescriptorForIndex(eventIndex, &descriptor) ||
+        !EspMapEvents_getCommand(&descriptor, offset, &gate))
+        return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
+    required = (gate.arg1 >> 8U) & 255U;
+    printf("[SCRIPTSTAT] CHECK event=%u cmd=%u required=%u credits=%u result=%s\n",
+           (unsigned)eventIndex, (unsigned)offset, (unsigned)required,
+           (unsigned)player->credits, player->credits >= required ? "pass" : "insufficient");
+    if (player->credits < required) {
+        char text[ESP_NATIVE_GAMEPLAY_DIALOG_TEXT_CAPACITY];
+        if (!readInteractionText(gate.arg1 >> 16U, text, sizeof(text)))
+            return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED;
+        if (text[0] == '\0') strcpy(text, "Insufficient funds!");
+        if (EspNativeGameplayDialog_beginStandalone(text) != ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK)
+            return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED;
+        printf("[SCRIPTSTAT] BLOCK event=%u debit=no continuation=no removed=no\n", (unsigned)eventIndex);
+        return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED;
+    }
+    if (!ensureTransactionOwner()) return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED;
+    memset(&transaction.continuation, 0, sizeof(transaction.continuation));
+    transaction.continuation.eventIndex = eventIndex;
+    transaction.continuation.runFlags = runFlags;
+    transaction.continuation.active = 1U;
+    {
+        EspNativeGameplayDialogResumeStatus status =
+            resumeInteraction(eventIndex, (uint8_t)(offset + 1U), runFlags, result);
+        if (status == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED ||
+            status == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID)
+            memset(&transaction.continuation, 0, sizeof(transaction.continuation));
+        return status;
+    }
+}
+
+static EspNativeGameplayDialogResumeStatus resumeInteraction(uint16_t eventIndex,
+    uint8_t start, uint32_t runFlags, EspNativeGameplayDialogResumeResult* result) {
+    EspMapEventDescriptor descriptor;
+    EspMapEventFilterPlan filter;
+    EspMapEventCommandFilterResult eligible;
+    EspMapByteCode boundary;
+    EspNativeGameplayDialogClose close;
+    EspNativeGameplayDialogResumeStatus status;
+    uint32_t keys, offset;
+    uint8_t state, pause = 0U;
+    if (!interactionOwns(eventIndex) || EspNativeGameplayDialog_isActive() ||
+        !eventDescriptorForIndex(eventIndex, &descriptor) || !currentPlayerKeys(&keys) ||
+        !EspMapScriptState_getEventState(eventIndex, &state) ||
+        !EspMapEventFilter_prepare(&descriptor, state, start, runFlags, keys, &filter))
+        return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
+    memset(&boundary, 0, sizeof(boundary));
+    for (offset = start; offset < descriptor.commandCount; ++offset) {
+        uint8_t removed;
+        EspMapByteCode command;
+        if (!EspMapScriptState_isCommandRemoved(descriptor.firstCommandIndex + offset, &removed) ||
+            !EspMapEventFilter_evaluate(&descriptor, &filter, offset, removed, &eligible) ||
+            !EspMapEvents_getCommand(&descriptor, offset, &command))
+            return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
+        if (eligible.decision != ESP_MAP_EVENT_COMMAND_ELIGIBLE) continue;
+        if (command.id == 26U || command.id == 37U) {
+            boundary = command; pause = command.id; break;
+        }
+        if (command.id == 35U) transaction.continuation.particles = command.arg1;
+    }
+    memset(&close, 0, sizeof(close));
+    close.sourceEventIndex = eventIndex;
+    close.resumeCommandOffset = start;
+    close.runFlags = runFlags;
+    close.resumeRequested = 1U;
+    status = executeChain(&close, (uint16_t)offset, result);
+    if (status != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+        status != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) return status;
+    if (pause == 26U) {
+        if (EspNativeGameplayEventChain_beginDialogCommand(eventIndex, (uint8_t)offset, runFlags) !=
+                ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_OK) {
+            if (transaction.active) { (void)restoreTransaction(); clearTransaction(); }
+            memset(&transaction.continuation, 0, sizeof(transaction.continuation));
+            return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED;
+        }
+        if (status == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+            !EspNativeGameplayEventChain_commit(result)) return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED;
+        transaction.continuation.offset = (uint8_t)(offset + 1U);
+        transaction.continuation.waiting = 0U;
+        result->rollbackAvailable = 0U;
+        printf("[SCRIPTSTAT] PAUSE event=%u dialogCmd=%u next=%u debit=committed-on-dialog-open\n",
+               (unsigned)eventIndex, (unsigned)offset, (unsigned)(offset + 1U));
+        return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED;
+    }
+    if (pause == 37U) {
+        transaction.continuation.offset = (uint8_t)(offset + 1U);
+        transaction.continuation.durationMs = boundary.arg1;
+        transaction.continuation.waiting = 1U;
+        transaction.continuation.waitPresented = 0U;
+        /* No removed WAIT flag is admitted; the boundary is replayed only by
+         * the explicit continuation, never by a buffered world SELECT. */
+        printf("[SCRIPTWAIT] ARM event=%u cmd=%u duration=%u next=%u input=blocked timer=monotonic\n",
+               (unsigned)eventIndex, (unsigned)offset, (unsigned)boundary.arg1,
+               (unsigned)(offset + 1U));
+        return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED;
+    }
+    transaction.continuation.finished = 1U;
+    if (status == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) {
+        memset(&transaction.continuation, 0, sizeof(transaction.continuation));
+    }
+    return status;
+}
+
+int EspNativeGameplayEventChain_isWaiting(void) {
+    return transactionOwner != NULL && transaction.continuation.active &&
+           transaction.continuation.waiting;
+}
+
+int EspNativeGameplayEventChain_serviceWait(struct Render_s* render) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayFrameStats frame;
+    EspNativeGameplayDialogResumeResult result;
+    EspNativeGameplayDialogResumeStatus status;
+    uint32_t now = DoomRPG_GetUpTimeMS(), age;
+    if (!EspNativeGameplayEventChain_isWaiting()) return 1;
+    if (render == NULL || view == NULL || !view->active ||
+        view->viewAngle != view->destAngle) return 0;
+    age = transaction.continuation.waitPresented
+        ? (uint32_t)(now - transaction.continuation.startedMs) : 0U;
+    if (age < transaction.continuation.durationMs) {
+        if (transaction.continuation.waitPresented &&
+            now - transaction.continuation.lastPaintMs < 50U) return 1;
+        memset(&frame, 0, sizeof(frame));
+        if (!EspNativeGameplayFrame_composeTurn(render, (uint8_t)view->viewAngle, &frame)) {
+            return 1; /* Retain/retry the unpublished visual, never complete it. */
+        }
+        if (!EspNativeGameplayGibFx_paintCapture(transaction.continuation.particles,
+                age, transaction.continuation.durationMs, transaction.continuation.eventIndex) ||
+            !__real_Esp32PlatformVideo_present()) return 1;
+        /* Capture owns this physical publish, like other native modals. Do not
+         * let old hit/gib/action decorators overwrite its composed pixels. */
+        if (!transaction.continuation.waitPresented) {
+            transaction.continuation.startedMs = DoomRPG_GetUpTimeMS();
+            transaction.continuation.waitPresented = 1U;
+            if (transaction.active && !EspNativeGameplayEventChain_commit(&(
+                    EspNativeGameplayDialogResumeResult){.globalCommandIndex = transaction.firstGlobal})) return 0;
+            printf("[SCRIPTWAIT] PRESENT event=%u particles=45 rng=visual-local gameplayRng=untouched\n",
+                   (unsigned)transaction.continuation.eventIndex);
+        }
+        transaction.continuation.lastPaintMs = now;
+        return 1;
+    }
+    if (transaction.continuation.retry &&
+        now - transaction.continuation.lastPaintMs < 100U) return 1;
+    memset(&result, 0, sizeof(result));
+    status = resumeInteraction(transaction.continuation.eventIndex,
+        transaction.continuation.offset, transaction.continuation.runFlags, &result);
+    if (status == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED) return 1;
+    if (status == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED) {
+        transaction.continuation.retry = 1U;
+        transaction.continuation.lastPaintMs = now;
+        printf("[SCRIPTWAIT] RETRY event=%u phase=suffix transaction=rolled-back input=blocked\n",
+               (unsigned)transaction.continuation.eventIndex);
+        return 1;
+    }
+    if (status != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK &&
+        status != ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND) return 0;
+    (void)EspNativeGameplayFacingLabel_refresh("SCRIPT-WAIT-CLOSE");
+    memset(&frame, 0, sizeof(frame));
+    if (!EspNativeGameplayFrame_renderTurn(render, (uint8_t)view->viewAngle, &frame)) {
+        if (result.rollbackAvailable && __wrap_EspNativeGameplayDialog_rollbackResume(&result)) {
+            transaction.continuation.finished = 0U;
+            transaction.continuation.retry = 1U;
+            transaction.continuation.lastPaintMs = now;
+            return 1;
+        }
+        return 0;
+    }
+    return status == ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND ||
+           EspNativeGameplayEventChain_commit(&result);
+}
+
 EspNativeGameplayDialogResumeStatus
 EspNativeGameplayEventChain_execute(
     uint16_t eventIndex,
@@ -793,6 +1201,16 @@ EspNativeGameplayEventChain_execute(
     close.resumeCommandOffset = commandOffset;
     close.runFlags = runFlags;
     close.resumeRequested = 1U;
+    {
+        EspMapEventDescriptor descriptor;
+        EspMapByteCode entry;
+        if (eventDescriptorForIndex(eventIndex, &descriptor) &&
+            EspMapEvents_getCommand(&descriptor, commandOffset, &entry) &&
+            entry.id == 23U) {
+            return beginInteraction(eventIndex,
+                       commandOffset, runFlags, outResult);
+        }
+    }
     return executeChain(&close, UINT16_MAX, outResult);
 }
 
@@ -815,6 +1233,15 @@ EspNativeGameplayEventChain_executeRange(
 EspNativeGameplayDialogResumeStatus __wrap_EspNativeGameplayDialog_resume(
     const EspNativeGameplayDialogClose* close,
     EspNativeGameplayDialogResumeResult* outResult) {
+    if (close != NULL && interactionOwns(close->sourceEventIndex)) {
+        if (!close->resumeRequested ||
+            close->resumeCommandOffset != transaction.continuation.offset ||
+            close->runFlags != transaction.continuation.runFlags) {
+            return ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID;
+        }
+        return resumeInteraction(close->sourceEventIndex,
+                   close->resumeCommandOffset, close->runFlags, outResult);
+    }
     return executeChain(close, UINT16_MAX, outResult);
 }
 

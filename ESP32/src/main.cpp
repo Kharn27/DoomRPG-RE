@@ -319,9 +319,9 @@ namespace
 
 #if DOOMRPG_ESP32_BRINGUP_PROBES
         /*
-         * Keep the historical menu.bsp structural/render suite available only
-         * in the explicit bring-up profile. Production no longer needs a 3D
-         * menu map before painting the opaque native dashboard.
+         * Report the retired ZIP menu probe fail-closed in bringup. It no
+         * longer runs a structural/render suite. Production directly paints
+         * the opaque native dashboard; do not resurrect a 3D menu prerequisite.
          */
         engineMainMenuReady =
             DoomRPG_probeMenuBspHeader(1) != 0;

@@ -90,6 +90,9 @@ typedef struct EspNativeGameplayActionResult_s {
  *   5. EV_CHECK_KEY followed by a pure 1..8 door batch. A missing key is a
  *      handled, non-mutating pause with the exact legacy key id/message; an
  *      owned key admits the complete door suffix to the normal atomic preview.
+ *   6. EV_REQSTAT credits followed by its matching debit and the preflighted
+ *      no-back dialog/capture-particle/WAIT continuation. The existing event
+ *      chain owns the segmented transaction, not this SELECT resolver.
  *
  * SELECT deliberately stops preflight at that first dialog, matching legacy
  * Game_runEvent(): saveTileEvent publishes the continuation and returns at the

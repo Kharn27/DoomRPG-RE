@@ -36,7 +36,8 @@ typedef enum EspNativeGameplayDialogResumeStatus_e {
     ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_INVALID = 0,
     ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND = 1,
     ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED = 2,
-    ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK = 3
+    ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK = 3,
+    ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED = 4
 } EspNativeGameplayDialogResumeStatus;
 
 typedef struct EspNativeGameplayDialogClose_s {
@@ -83,6 +84,9 @@ typedef struct EspNativeGameplayDialogResumeResult_s {
  */
 void EspNativeGameplayDialog_reset(void);
 int EspNativeGameplayDialog_isActive(void);
+/* Dialog owns all taps. Only its visible BACK card maps to MENU/cancel when
+ * the original opcode allows Back; every other valid tap remains SELECT. */
+EspNativeGameplayAction EspNativeGameplayDialog_tapAction(int x, int y);
 EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(
     uint16_t eventIndex,
     uint8_t commandOffset,

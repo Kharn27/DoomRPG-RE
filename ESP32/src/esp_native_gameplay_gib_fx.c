@@ -14,6 +14,7 @@
 #include "esp_native_gameplay_hit_feedback.h"
 #include "esp_native_gameplay_controls.h"
 #include "esp_native_gameplay_frame.h"
+#include "esp_native_gameplay_event_chain.h"
 #include "esp_native_gameplay_gib_fx.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
 #include "esp_native_gameplay_monster_movement_probe.h"
@@ -92,6 +93,40 @@ typedef struct HitFxOwner_s {
 } HitFxOwner;
 
 static HitFxOwner hitFxOwner;
+
+int EspNativeGameplayGibFx_paintCapture(uint32_t operand, uint32_t ageMs,
+    uint32_t durationMs, uint32_t seed) {
+    uint16_t* fb = Esp32PlatformVideo_framebuffer();
+    uint16_t color;
+    uint32_t i, remaining;
+    if (fb == NULL || Esp32PlatformVideo_framebufferSizeBytes() != 160U * 120U * 2U ||
+        ((operand >> 24U) & 31U) != 3U || durationMs == 0U ||
+        durationMs > 10000U || ageMs >= durationMs) return 0;
+    color = (uint16_t)(((operand & 255U) >> 3U) << 11U |
+            (((operand >> 8U) & 255U) >> 2U) << 5U |
+            (((operand >> 16U) & 255U) >> 3U));
+    remaining = durationMs - ageMs;
+    seed ^= operand ^ 0x91e10da5U;
+    /* Legacy capture: 45 particles, +/-44 starting field, sizes 1..4,
+     * attraction toward centre rather than a blood spray. Deterministic local
+     * visual RNG follows the native FX contract, not legacy ParticleSystem. */
+    for (i = 0U; i < 45U; ++i) {
+        int x, y, size, dx, dy;
+        seed = seed * 1664525U + 1013904223U;
+        dx = (int)((seed >> 8U) % 89U) - 44;
+        seed = seed * 1664525U + 1013904223U;
+        dy = (int)((seed >> 8U) % 89U) - 44;
+        size = 1 + (int)((seed >> 24U) & 3U);
+        x = 80 + (dx * (int)remaining) / (int)durationMs;
+        y = 67 + (dy * (int)remaining) / (int)durationMs;
+        for (dy = 0; dy < size; ++dy) for (dx = 0; dx < size; ++dx) {
+            int px = x + dx, py = y + dy;
+            if (px >= 0 && px < 160 && py >= 20 && py <= 99)
+                fb[py * 160 + px] = color;
+        }
+    }
+    return 1;
+}
 
 static uint32_t xorshift32(uint32_t* state) {
     uint32_t x = *state;
@@ -700,7 +735,8 @@ static void serviceHitExpiry(struct DoomRPG_s* doomRpg) {
     /* Keep exact short framebuffer owners and dialog PAK leases authoritative.
      * Action feedback is serviced earlier in the same session chain, so a fresh
      * redraw here can repaint an unexpired top-bar lease without truncating it. */
-    if (EspNativeGameplayControls_isActive() || EspAssetPack_isOpen()) return;
+    if (EspNativeGameplayControls_isActive() || EspAssetPack_isOpen() ||
+        EspNativeGameplayEventChain_isWaiting()) return;
 
     playerView = EspPlayerView_view();
     if (runtime == NULL || runtime->render == NULL || playerView == NULL ||
@@ -747,7 +783,8 @@ static void serviceExpiry(struct DoomRPG_s* doomRpg) {
     /* Touch feedback owns an exact framebuffer snapshot for its short lease.
      * Clearing underneath it would be restored by the touch layer afterwards,
      * resurrecting the gib pixels. Retry on the next gameplay service instead. */
-    if (EspNativeGameplayControls_isActive()) return;
+    if (EspNativeGameplayControls_isActive() ||
+        EspNativeGameplayEventChain_isWaiting()) return;
 
     playerView = EspPlayerView_view();
     if (runtime == NULL || runtime->render == NULL || playerView == NULL ||

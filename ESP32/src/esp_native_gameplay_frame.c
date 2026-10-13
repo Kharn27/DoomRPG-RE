@@ -147,6 +147,7 @@ static int renderComposed(
     const EspPlayerViewState* view,
     uint8_t angle,
     int preview,
+    int publish,
     EspNativeGameplayFrameStats* outStats) {
     Render_t* render = (Render_t*)renderBase;
     const EspNativePlaneRenderStats* planes;
@@ -385,14 +386,16 @@ static int renderComposed(
         goto done;
     }
 
-    phaseStart = esp_timer_get_time();
-    if (!preview) EspNativeGameplayActionEngine_markFreshFrame();
-    if (!Esp32PlatformVideo_present()) {
-        printf("[TURNFRAME] DIAG fail=PRESENT\n");
-        goto done;
+    if (publish) {
+        phaseStart = esp_timer_get_time();
+        if (!preview) EspNativeGameplayActionEngine_markFreshFrame();
+        if (!Esp32PlatformVideo_present()) {
+            printf("[TURNFRAME] DIAG fail=PRESENT\n");
+            goto done;
+        }
+        stats->presentMicros = elapsedMicros(phaseStart);
+        stats->finalPresented = 1U;
     }
-    stats->presentMicros = elapsedMicros(phaseStart);
-    stats->finalPresented = 1U;
     stats->active = 1U;
     ok = 1;
 
@@ -409,7 +412,19 @@ int EspNativeGameplayFrame_renderTurn(
     struct Render_s* render,
     uint8_t angle,
     EspNativeGameplayFrameStats* outStats) {
-    return renderComposed(render, EspPlayerView_view(), angle, 0, outStats);
+    return renderComposed(render, EspPlayerView_view(), angle, 0, 1, outStats);
+}
+
+int EspNativeGameplayFrame_composeTurn(
+    struct Render_s* render,
+    uint8_t angle,
+    EspNativeGameplayFrameStats* outStats) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    if (outStats != NULL) memset(outStats, 0, sizeof(*outStats));
+    if (view == NULL || view->viewAngle != (int32_t)angle) return 0;
+    /* Like camera previews, an unpublished effect background must not reveal
+     * automap cells or activate monsters before its owner commits/presents. */
+    return renderComposed(render, view, angle, 1, 0, outStats);
 }
 
 /* Render a copy of the canonical pose with only the angle interpolated.
@@ -442,7 +457,7 @@ int EspNativeGameplayFrame_renderVisualPose(
     expected.destAngle = visual->destAngle;
     if (memcmp(&expected, visual, sizeof(expected)) != 0) return 0;
 
-    return renderComposed(render, visual, settledAngle, 1, outStats);
+    return renderComposed(render, visual, settledAngle, 1, 1, outStats);
 }
 
 
@@ -504,5 +519,5 @@ int EspNativeGameplayFrame_renderVisualMove(
     visual.destX = visual.viewX;
     visual.destY = visual.viewY;
     return renderComposed(
-        render, &visual, (uint8_t)after->viewAngle, 1, outStats);
+        render, &visual, (uint8_t)after->viewAngle, 1, 1, outStats);
 }

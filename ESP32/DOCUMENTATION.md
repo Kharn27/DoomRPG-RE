@@ -23,7 +23,36 @@ Selon le poste, PlatformIO peut être invoqué avec `platformio` au lieu de `pio
 
 `esp32-cyd-bringup` sert aux diagnostics/probes supplémentaires ; **ne pas** tirer de conclusions RAM production à partir de ce profil. La vérité matérielle vient du boot et des interactions réelles, via Serial.
 
+L'ancienne suite graphique `menu.bsp`/ZIP est retirée : son point d'entrée
+retournait déjà 0 pour tous les builds ESP32. Le rapport bringup `[MENUBSP]
+RETIRED` et `MENU BSP FAIL` reste donc attendu ; il ne teste pas le menu opaque
+production. Les diagnostics actifs première frame, CHANGEMAP, opcodes et touch
+ne sont pas supprimés avec cette suite historique.
+
 La politique de logs compile-time est définie dans `ESP32/include/doomrpg_log.h` : `DRPG_LOGE/I/D/T`. Normal = INFO, bringup = TRACE. Les messages de succès récurrents sur VIDEO, PAKIO, redraw et tour doivent rester hors du flux INFO ; ne pas masquer les erreurs, transitions, guards et recoveries.
+
+Mouvements de monstres : le normal conserve les résumés BEGIN/COMPLETE,
+ORDERED-DISPATCH, les erreurs de mouvement/publication, ainsi que les témoins
+attaque-probe/retaliation nécessaires au watcher. Les succès PROBE/ALLOW/COMMIT,
+obstacles de pathfinding ordinaires et détails MEMBER/PAUSE/RESUME sont TRACE ;
+les mêmes PROBE/prepare/MEMBER restent affichés si rollback/admission/publication
+échouent. Utiliser **esp32-cyd** pour juger la latence : bringup garde les logs
+exhaustifs. Ce retrait de texte ne change ni le nombre de redraws, ni le RNG,
+ni la cadence d'attaque ; pas de gain FPS hardware revendiqué.
+
+Le dernier retour CYD confirme l'absence de gain ressenti et un SAVE V11 slot 3
+suivi du retour au jeu/expiration de « Game saved » ; pas de LOAD dans cet
+extrait. Le goal 2/3 de sprite 202/subtype 4 reste différé sur une géométrie
+special-plane non possédée (premier déplacement déjà commis), code inchangé
+depuis la base main. Détails et limites de preuve : `PORTING_STATUS.md`.
+
+Rollback de l'interaction opcode 23 depuis automap : en cas d'échec de
+démarrage du script/dialogue, le resident restaure son mode et redessine
+l'automap ; depuis WORLD, il redessine le monde. Si le redraw de restauration
+échoue, le gameplay se désactive. Le test hôte utilise le vrai routage/mode
+resident avec startup/render/assets mockés ; il ne prouve pas un échec I/O
+réel sur CYD. Pour un smoke matériel, ouvrir normalement le dialogue depuis
+automap ; ne pas retirer/corrompre le PAK pour fabriquer une panne.
 
 ## Playtest libre : captures automatiques des incidents
 
@@ -54,6 +83,54 @@ Pour les tonneaux, distinguer **visée** (`[ACTIONENGINE] TRACE ... route=BARREL
 Enfin, si les taps remontent en `[TOUCH]` mais que `[ALIVE] SD=unavailable PAK=unavailable ... MENU=unavailable`, rechercher l'échec du montage SD avant d'incriminer le menu ou les correctifs gameplay. Un firmware qui démarre sans `/DoomRPG-ESP32.pak` ne peut pas initialiser le jeu.
 
 ## Validation d'une nouvelle frontière
+
+### Interactions payantes avec dialogue et attente
+
+Le script original ne propose pas de YES/NO : terminer le dialogue d'offre
+avance son état, puis une nouvelle interaction contrôle/débite les crédits.
+Il est toutefois possible d'interrompre **EV_DIALOG** avec sa carte **BACK**
+tactile (en haut à gauche du viewport, au-dessus du texte). Ce tap annule sans
+reprise du script ni débit ; ailleurs, le tap reste SELECT (texte/page/suite).
+**EV_DIALOGNOBACK**, notamment après paiement, n'a pas cette carte et reste
+SELECT-only : aucun remboursement ou nouvelle branche script n'est ajouté.
+
+Le SELECT natif admet maintenant un `EV_REQSTAT` crédits (23, stat 2) suivi
+du débit `EV_DECSTAT` correspondant (22), d'un dialogue sans Back (26), des
+particules de capture (35, famille 3), d'un son publié comme intent silencieux
+(42) et d'une attente (37). Après l'attente : SHOW/HIDE, refresh de vue (36),
+note (40) et mutations d'état (11/19/20). Les opérandes et toute cette fermeture
+sont préflightés avant le paiement ; SHOW utilise les gardes natives existantes.
+Les autres stats, particules et formes de chaîne restent fail-closed.
+
+Fonds insuffisants : texte BSP de l'opcode 23, aucun débit ni continuation.
+Paiement : snapshot PlayerState et rollback si l'ouverture du dialogue échoue ;
+le débit est commité seulement lorsque le dialogue est présenté. WAIT garde
+l'entrée monde fermée, sans sleep ni action différée derrière le timer. Le
+timer monotonic démarre après la première frame d'effet réussie, accepte le wrap
+32 bits, et reste borné à 10 s. Le fond de l'effet passe par `Frame_composeTurn`
+(pas de present/activation/automap/fresh-frame), puis l'effet est ajouté et une
+seule frame physique publiée. Ne pas armer PresentGate avant renderTurn : sa
+garde refuse cette composition et laisserait le WAIT armé indéfiniment.
+Une note est préparée dans le candidate/scratch
+NOTE existant et commise après le rendu final ; échec I/O/rendu = rollback du
+segment et retry, pas de second paiement. Pas de nouveau fichier moteur ni de
+nouveau propriétaire Player/Notebook/topologie/PAK.
+
+**PASS CYD ciblé consigné** : event67/tile675, débit 19→9, effet publié,
+HIDE/SHOW/NOTE, activation puis combat/mort du monstre, retour WORLD et aucune
+seconde facture dans la trace. Portée précise et réserve d'identité firmware :
+PORTING_STATUS. BACK visible est accepté ; son annulation sans débit n'est pas
+prouvée par cet extrait. Pour compléter : depuis une sauvegarde pré-paiement,
+annuler l'offre via BACK puis réouvrir ; avec <10 crédits, le dialogue de refus
+ne doit changer ni crédits ni monde. Vérifier le notebook à l'écran et SAVE/LOAD.
+Les logs doivent montrer `SCRIPTWAIT PRESENT` puis `SCRIPTSTAT COMPLETE` ;
+`ARM` seul ne vaut pas succès. Garder les logs
+`[SCRIPTSTAT]`, `[SCRIPTWAIT]`, `[NOTE]`, et vérifier `shapeData/mediaTexels=0`.
+Le timer, le son silencieux et les mocks hôte ne prouvent pas une parité visuelle
+ou RNG exhaustive avec le desktop. Ajouter un smoke-test dialogue ordinaire,
+HUB/SAVE/LOAD et SHOW/HIDE (les types/formats de sauvegarde restent inchangés).
+
+### Protocole général
 
 1. Lire le vrai SHA `main`, [`PORTING_STATUS.md`](PORTING_STATUS.md) et [`ARCHITECTURE.md`](ARCHITECTURE.md) ; examiner les fonctions legacy concernées dans le repo.
 2. Partir **du SHA exact** après chaque merge ; créer une branche `agent/*`. Jamais de merge automatique dans `main`.
@@ -110,6 +187,22 @@ la lisibilité puis charger et reprendre le gameplay ; répéter sans checkpoint
 vérifier `NO SAVE` et que les options différées ne quittent pas l'écran.
 
 ## Contrat d'évolution
+
+L'audit architectural depuis `main 9d203e5` est dans
+[`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md). Son inventaire distingue
+sources présentes, unités compilées, sections liées et preuves d'exécution.
+Premier lot : retrait de neuf anciens markers post-load Junction inaccessibles,
+sans fusion d'états actifs. La comparaison des sections allouées des deux ELF
+est stricte (octets/adresses/layout), avec `tools/compare_elf_alloc.py` ; les
+tests hôte et la CI n'attribuent aucun nouveau PASS gameplay/matériel.
+
+Deuxième lot sur la même branche : retrait de l'ancien renderer/probes de
+menu ZIP (16 sources, 13 headers), quatre directives de wrap inutilisées et
+allègement du diagnostic fermé. Après les deux lots : **158 sources C/C++,
+152 headers include**. Sections allouées et RAM/flash inchangées dans les deux
+profils. Trois fixtures SYS/progress/death-menu sont réalignées et intégrées
+à la CI ; elles ne valident pas la restauration SD réelle. Les bridges de menu
+et caches encore liés/partagés restent explicitement différés dans l'audit.
 
 Ne pas introduire de runtime propre à une map, de gros index pointer-heavy, ni de nouveaux wrappers universels simplement pour remplacer ceux du desktop. Le PAK reste le backing store, `EspMapRuntime` reste immuable, chaque mutation a un propriétaire explicite. Différer l'optimisation de `PlatformVideo_present()` : Doom RPG est turn-based.
 

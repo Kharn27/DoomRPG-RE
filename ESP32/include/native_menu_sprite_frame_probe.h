@@ -7,9 +7,9 @@ extern "C" {
 
 struct Render_s;
 
-/* Adds the real BSP-sorted visible sprite list on top of the already validated
- * cached walls-only menu framebuffer. Sprite frames are deliberately uncached
- * so the first real request sequence can be measured on hardware.
+/* Retired scene-probe declaration, retained for the dormant dashboard bridge.
+ * Its implementation is removed and neither profile links the bridge.
+ * Do not make it a prerequisite for the current opaque native menu.
  */
 int DoomRPG_probeNativeMenuSpriteFrame(struct Render_s* render);
 

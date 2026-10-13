@@ -5,6 +5,7 @@
 
 #include "DoomRPG.h"
 
+#include "doomrpg_log.h"
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_gameplay_frame.h"
@@ -453,7 +454,7 @@ int EspNativeGameplayMonsterMovementPublish_afterProbeWithView(
     outResult->topologyFNVAfter = topology != NULL ? topology->stateFNV1a : 0U;
     outResult->rngCalls = rngCalls;
     outResult->committed = 1U;
-    printf("[MONSTERMOVELIVE] COMMIT trigger=%s sprite=%u tile=%u->%u pos=%u,%u->%u,%u rngCalls=%u randomCommitted=yes positionFNV=%08x->%08x topologyFNV=%08x->%08x linkOrder=%u->%u renderer=snap-destination projected=yes frame=%08x presented=%u interpolation=deferred rollback=closed\n",
+    DRPG_LOGT("[MONSTERMOVELIVE] COMMIT trigger=%s sprite=%u tile=%u->%u pos=%u,%u->%u,%u rngCalls=%u randomCommitted=yes positionFNV=%08x->%08x topologyFNV=%08x->%08x linkOrder=%u->%u renderer=snap-destination projected=yes frame=%08x presented=%u interpolation=deferred rollback=closed\n",
            trigger,
            (unsigned int)publishCapture.before.spriteIndex,
            (unsigned int)publishCapture.before.tileIndex,

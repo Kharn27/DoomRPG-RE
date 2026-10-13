@@ -650,7 +650,7 @@ static int findCandidateForSprite(
     dy = (int64_t)monsterY - playerView->destY;
     if ((dx != 0 && dy != 0) || (dx == 0 && dy == 0)) {
         if (monster->subtype == 3U) {
-            printf("[IMPAI] TARGET sprite=%u tile=%u target=%d,%d weapon=%u decision=move reason=not-cardinal-alignment mutation=no rngConsumed=0\n",
+            DRPG_LOGT("[IMPAI] TARGET sprite=%u tile=%u target=%d,%d weapon=%u decision=move reason=not-cardinal-alignment mutation=no rngConsumed=0\n",
                    (unsigned int)monster->spriteIndex,
                    (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
                    (int)playerView->destX, (int)playerView->destY,
@@ -663,7 +663,7 @@ static int findCandidateForSprite(
     attackRange = (1 + (int)weapon->rangeMin) * TURN_TILE_SIZE;
     if (worldDistance > (uint32_t)(attackRange * attackRange)) {
         if (monster->subtype == 3U) {
-            printf("[IMPAI] TARGET sprite=%u tile=%u distance2=%u range2=%u weapon=%u decision=move reason=out-of-range mutation=no rngConsumed=0\n",
+            DRPG_LOGT("[IMPAI] TARGET sprite=%u tile=%u distance2=%u range2=%u weapon=%u decision=move reason=out-of-range mutation=no rngConsumed=0\n",
                    (unsigned int)monster->spriteIndex,
                    (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
                    (unsigned int)worldDistance,
@@ -676,7 +676,7 @@ static int findCandidateForSprite(
                           playerView->destX, playerView->destY,
                           monster->spriteIndex)) {
         if (monster->subtype == 3U) {
-            printf("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=move reason=trace-blocked mutation=no rngConsumed=0\n",
+            DRPG_LOGT("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=move reason=trace-blocked mutation=no rngConsumed=0\n",
                    (unsigned int)monster->spriteIndex,
                    (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
                    (unsigned int)worldDistance,
@@ -685,7 +685,7 @@ static int findCandidateForSprite(
         return 1;
     }
     if (monster->subtype == 3U) {
-        printf("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=attack-candidate reason=cardinal-range-los-clear mutation=no rngConsumed=0\n",
+        DRPG_LOGT("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=attack-candidate reason=cardinal-range-los-clear mutation=no rngConsumed=0\n",
                (unsigned int)monster->spriteIndex,
                (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
                (unsigned int)worldDistance,
@@ -775,7 +775,7 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
                 return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
             }
             randomFNVAfter = randomFNV(&doomRpg->random);
-            printf("[MONSTERTURN] MEMBER-MOVE reason=%s sprite=%u subtype=%u tile=%u weapon=%u aiRand=%u threshold=217 branch=ranged-ai ordered=yes rngCalls=1 rng=%08x->%08x rollback=yes mutation=no\n",
+            DRPG_LOGT("[MONSTERTURN] MEMBER-MOVE reason=%s sprite=%u subtype=%u tile=%u weapon=%u aiRand=%u threshold=217 branch=ranged-ai ordered=yes rngCalls=1 rng=%08x->%08x rollback=yes mutation=no\n",
                    reasonName(reason),
                    (unsigned int)candidate.monster->spriteIndex,
                    (unsigned int)candidate.monster->subtype,
@@ -1182,7 +1182,7 @@ int EspNativeGameplayMonsterTurn_postMoveGoal(struct DoomRPG_s* doomRpgBase,
         return 1;
     }
     if (monster->subtype != 1U && monster->subtype != 5U) {
-        printf("[MONSTERPOSTMOVE] COMPLETE reason=%s sprite=%u subtype=%u tile=%u->%u legacyAttackCapable=no attack=no mutation=no rngConsumed=0\n",
+        DRPG_LOGT("[MONSTERPOSTMOVE] COMPLETE reason=%s sprite=%u subtype=%u tile=%u->%u legacyAttackCapable=no attack=no mutation=no rngConsumed=0\n",
                reasonName(reason),
                (unsigned int)spriteIndex,
                (unsigned int)monster->subtype,
@@ -1218,7 +1218,7 @@ int EspNativeGameplayMonsterTurn_postMoveGoal(struct DoomRPG_s* doomRpgBase,
     worldDistance = (uint32_t)(dx * dx + dy * dy);
     if ((dx != 0 && dy != 0) || (dx == 0 && dy == 0) ||
         worldDistance > (uint32_t)(TURN_TILE_SIZE * TURN_TILE_SIZE)) {
-        printf("[MONSTERPOSTMOVE] COMPLETE reason=%s sprite=%u subtype=%u tile=%u->%u distance2=%u adjacentCardinal=no attack=no mutation=no rngConsumed=0\n",
+        DRPG_LOGT("[MONSTERPOSTMOVE] COMPLETE reason=%s sprite=%u subtype=%u tile=%u->%u distance2=%u adjacentCardinal=no attack=no mutation=no rngConsumed=0\n",
                reasonName(reason),
                (unsigned int)spriteIndex,
                (unsigned int)monster->subtype,
@@ -1231,7 +1231,7 @@ int EspNativeGameplayMonsterTurn_postMoveGoal(struct DoomRPG_s* doomRpgBase,
     if (!cardinalLosClear(monsterX, monsterY,
                           playerView->destX, playerView->destY,
                           monster->spriteIndex)) {
-        printf("[MONSTERPOSTMOVE] COMPLETE reason=%s sprite=%u subtype=%u tile=%u->%u distance2=%u adjacentCardinal=yes trace=blocked attack=no mutation=no rngConsumed=0\n",
+        DRPG_LOGT("[MONSTERPOSTMOVE] COMPLETE reason=%s sprite=%u subtype=%u tile=%u->%u distance2=%u adjacentCardinal=yes trace=blocked attack=no mutation=no rngConsumed=0\n",
                reasonName(reason),
                (unsigned int)spriteIndex,
                (unsigned int)monster->subtype,

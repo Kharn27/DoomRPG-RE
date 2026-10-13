@@ -1,7 +1,8 @@
 /* Host regression: cc -std=c11 -Wall -Wextra -Werror -IESP32/include
  * ESP32/test/test_level_progress.c ESP32/src/esp_player_fresh_map_state.c
  * ESP32/src/esp_map_catalog.c -o /tmp/test_level_progress && /tmp/test_level_progress
- * Only player/HUD view boundaries are mocked; the progress owner is production C. */
+ * Player/HUD views and completion-checkpoint transport are mocked;
+ * the progress owner is production C, not the completion-mask validator. */
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,11 +12,22 @@
 static EspPlayerViewState view;
 static EspHudRefreshState hud;
 static EspNativeGameplayPlayerState player;
+static uint16_t completion;
+static int completionAccept = 1, completionRestores;
 
 const EspPlayerViewState* EspPlayerView_view(void) { return &view; }
 const EspHudRefreshState* EspHudRefresh_view(void) { return &hud; }
 const EspNativeGameplayPlayerState* EspNativeGameplayPlayerState_view(void) {
     return &player;
+}
+uint16_t EspNativeGameplayPlayerState_completionCheckpoint(void) {
+    return completion;
+}
+int EspNativeGameplayPlayerState_restoreCompletionCheckpoint(uint16_t encoded) {
+    ++completionRestores;
+    if (!completionAccept) return 0;
+    completion = encoded;
+    return 1;
 }
 int EspPlayerView_consumePlayerSetup(uint8_t map, uint8_t loadMap, uint8_t load) {
     assert(map == view.targetMapId && loadMap == view.gameplayLoadMapId &&
@@ -51,9 +63,11 @@ int main(void) {
     assert(!EspPlayerFreshMap_snapshotProgress(1000U, &p));
     assert(!EspPlayerFreshMap_snapshotProgress(1000U, NULL));
     fresh(1U, 200U);
+    completion = 0x8005U; /* Known history + two completion bits. */
     assert(EspPlayerFreshMap_snapshotProgress(10000U, &p));
     assert(p.elapsedMs == 0U && p.moves == 0U && p.complete == 1U &&
            p.xpBaseline == 200U); /* Loading must not count. */
+    assert(p.reserved[0] == 5U && p.reserved[1] == 0x80U);
     EspPlayerFreshMap_beginTimer(10000U);
     EspPlayerFreshMap_beginTimer(11000U); /* Re-arming must not restart it. */
     EspPlayerFreshMap_recordMove();
@@ -64,7 +78,9 @@ int main(void) {
     assert(saved.elapsedMs == 2500U && saved.moves == 2U &&
            player.xpGained - saved.xpBaseline == 75U);
     EspPlayerFreshMap_reset();
+    completion = 0U;
     assert(EspPlayerFreshMap_restoreProgress(&saved));
+    assert(completion == 0x8005U);
     assert(EspPlayerFreshMap_snapshotProgress(300000U, &p));
     assert(p.elapsedMs == 2500U && p.moves == 2U); /* No offline/LOAD duration. */
     EspPlayerFreshMap_beginTimer(300000U);
@@ -73,19 +89,27 @@ int main(void) {
     assert(p.elapsedMs == 4000U && p.moves == 3U && p.complete == 1U);
     invalid = saved;
     invalid.targetMapId = 0U;
+    completionRestores = 0;
     assert(!EspPlayerFreshMap_restoreProgress(&invalid));
     invalid = saved;
     invalid.complete = 2U;
     assert(!EspPlayerFreshMap_restoreProgress(&invalid));
+    assert(completionRestores == 0); /* Validate suffix before touching owner. */
     invalid = saved;
-    invalid.reserved[1] = 1U;
+    /* These bytes now carry completion history, not all-zero padding. */
+    invalid.reserved[0] = 0xffU;
+    invalid.reserved[1] = 0xffU;
+    completionAccept = 0; /* Simulate rejection by the authoritative owner. */
     assert(!EspPlayerFreshMap_restoreProgress(&invalid));
+    assert(completionRestores == 1 && completion == 0x8005U);
+    completionAccept = 1;
     assert(!EspPlayerFreshMap_restoreProgress(NULL));
     assert(EspPlayerFreshMap_snapshotProgress(301500U, &p) && p.moves == 3U);
     EspPlayerFreshMap_resumeLegacy(1U, player.xpGained);
     assert(EspPlayerFreshMap_snapshotProgress(999U, &p));
     assert(p.complete == 0U && p.elapsedMs == 0U && p.moves == 0U &&
            p.xpBaseline == player.xpGained);
+    assert(p.reserved[0] == 0U && p.reserved[1] == 0U && completion == 0U);
     assert(EspPlayerFreshMap_restoreProgress(&p)); /* Partial flag survives saving. */
     assert(EspPlayerFreshMap_snapshotProgress(999U, &p) && !p.complete);
     fresh(2U, player.xpGained);
@@ -99,6 +123,6 @@ int main(void) {
     EspPlayerFreshMap_recordMove();
     assert(EspPlayerFreshMap_snapshotProgress(1000U, &p));
     assert(p.moves == UINT32_MAX && p.elapsedMs == UINT32_MAX);
-    puts("level progress: fresh/reset, XP baseline, resume, legacy, wrap, saturation PASS");
+    puts("level progress: XP/time/moves, completion transport/rejection, legacy, wrap, saturation PASS");
     return 0;
 }

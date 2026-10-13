@@ -7,7 +7,43 @@ in which historical recovery probes were written.
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
 For build/platform notes, read [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
+Current architectural consolidation census (main `9d203e5`, 2026-10-13):
+[`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md), with the per-source build/ELF
+inventory. Several older recovery descriptions below (notably §6/7/10/13) no
+longer describe the complete live port. Use the current census and source for
+ownership, and PORTING_STATUS for the exact scope of hardware evidence; do not
+infer live ZIP access or retired desktop ownership from those historical notes.
+
+The closed, unreachable fresh-Junction post-load marker ladder has been retired
+as nine source/header pairs. The generic startup/session and genuine post-spawn
+owners are unchanged. Do not recreate `EspPostLoad*` or
+`EspNativePlayingService*` markers as prerequisites for generic gameplay.
+
+The next consolidation lot retires the unreachable ZIP/menu-scene diagnostic
+renderer (16 sources, 13 headers) while retaining the current native renderer,
+PAK catalogs, live cache-inactivity gates and opaque menu painter unchanged.
+Current census: **158 C/C++ sources, 152 include headers**. See the audit for
+why two dormant dashboard bridges and their frame contracts remain deferred;
+removing an unlinked function can still alter GCC inlining in a live TU.
+
 ## 1. Design rule
+
+Credit-gated script interactions reuse `EspNativeGameplayEventChain` for their
+dialog/WAIT continuation and per-segment journal. PlayerState owns money;
+NotePrefix leases its existing candidate/scratch until frame publication;
+sprite topology owns SHOW admission/commit; GibFx provides a stateless capture
+painter. The WAIT clock lives with the continuation, not a second world engine.
+Frame owns the explicit `composeTurn` no-present endpoint used for the effect
+background (preview sprites, no activation/automap/fresh-frame publication).
+The existing dynamic-line adapter scopes that composition exactly like visual
+previews; EventChain adds the effect and owns its single physical publication.
+Do not pre-arm PresentGate before rendering: the compositor deliberately refuses
+it. Dialog retains cancellation state and exposes a visible native BACK card
+only for EV_DIALOG; its tap maps to the original MENU/cancel semantics, not a
+new script YES/NO branch.
+Unsupported stats/particle families remain closed. This is a new production
+boundary requiring CYD validation, not part of the earlier byte-identical
+cleanup evidence. Production source/header counts remain 158/152.
 
 **A new BSP is data, not a new engine.**
 
@@ -171,6 +207,13 @@ dialog interaction and redraw boundaries. Doom RPG is turn-based; presentation
 is requested by gameplay/UI needs, not architected as a mandatory high-FPS game
 loop.
 
+The resident owns the automap/world mode, independently of EventChain's script
+rollback journal. Opcode-23 startup closes automap before opening a modal;
+failed startup must restore the entry mode and render automap again, not just
+redraw the world. Failed restoration disables gameplay; a successful modal
+pause does not restore automap early. This uses existing resident/render paths,
+without transferring credit/RNG/script ownership or adding another state owner.
+
 ## 6. Collision, entities and pickups
 
 The native world uses compact sprite topology plus `entities.db` type metadata.
@@ -300,21 +343,21 @@ The retained startup chain is currently:
 ```text
 DoomCanvas/layout startup
  -> EspLegacyPrerenderStartup_start()
-      -> ParticleSystem_startup()
-      -> MenuSystem_startup()
-      -> EntityDef_startup()
+      -> preflight j.bmp/p.bmp through the PAK adapter
+      -> EspNativeMenuStorage_startup()
  -> EspRenderStartupBridge_start()
  -> EspLegacyConfigMappingsStartup_start()
       -> Game_loadConfig()
-      -> validate mappings.bin ZIP metadata and allocation plan
-      -> decode into the permanent framebuffer scratch
+      -> read mappings.bin from the PAK into the framebuffer scratch
+      -> validate the allocation plan
       -> install four immutable persistent mapping arrays
- -> menu BSP/menu compatibility stage
+ -> native fixed MENU_MAIN model + opaque dashboard (normal profile)
 ```
 
-`EspLegacyPrerenderStartup` initializes exactly `ParticleSystem`, `MenuSystem`
-and `EntityDef`, preflights their still-ZIP-backed compatibility resources, and
-stops before Render. It is not a map loader or gameplay owner.
+`EspLegacyPrerenderStartup` preflights `j.bmp`/`p.bmp` and initializes native
+menu storage. Desktop ParticleSystem/EntityDef startup is retired; the native
+entity catalog is built from the PAK at resident-map load. This startup adapter
+is not a map loader or gameplay owner.
 
 `EspRenderStartupBridge` aliases `Render.framebuffer` to PlatformVideo's
 permanent 160x120 RGB565 framebuffer, keeps desktop `piDIB` absent, and loads the
@@ -322,18 +365,18 @@ legacy sintable/palette resources still required by retained Render helpers.
 
 `EspLegacyConfigMappingsStartup` owns the retained config/mapping stage. It
 allows a missing first-boot Config file, validates the legacy `mappings.bin`
-allocation plan, then uses `readZipFileEntryInto()` to decode directly into the
-already-owned 38,400-byte framebuffer. `EspLegacyMappings_load()` parses that
+allocation plan, using `EspLegacyAssetSource_readInto()` to read the PAK entry
+directly into the already-owned 38,400-byte framebuffer. `EspLegacyMappings_load()` parses that
 scratch payload and installs the same four persistent mapping arrays without a
 second inflated heap buffer. ESP32 `Render_loadMappings()` delegates to this
 bounded loader.
 
 The mapping arrays are immutable after installation. They stay resident across
-menu and gameplay BSP loads; a later `Render_loadMappings()` call recognizes a
-complete owner and reports `REUSE` instead of allocating or decoding again.
-`esp_render_mapping_reload_guard.c` preserves this ownership before
-`Render_beginLoadMap()` and emits the `RETAIN-BEFORE-MAP` witness. It no longer
-frees the arrays ahead of each map load.
+compatible reload calls; a later `Render_loadMappings()` recognizes a complete
+owner and reports `REUSE` instead of allocating or reading again. The dormant
+`esp_render_mapping_reload_guard.c` wrapper has been removed: it contributed no
+allocated section in either profile and does not own those arrays. Native map
+startup retains its explicit legacy-runtime-empty and cache-inactivity gates.
 
 These are compatibility boundaries, not permission to move migrated world data
 back to ZIP ownership.
@@ -416,21 +459,23 @@ bringup diagnostic instead needs a clear diagnostic purpose and build scope.
 
 The cleanup is intentionally incremental. Remaining transitional areas include:
 
-- `main.cpp` still performs old platform/core/layout/menu bring-up and directly
-  indexes `DoomRPG.zip` for legacy menu/HUD/bootstrap resources;
-- `EspLegacyPrerenderStartup` still owns ZIP-backed compatibility resources for
-  ParticleSystem/MenuSystem/EntityDef until those systems are replaced or their
-  required assets move to appropriate native owners;
+- `main.cpp` still composes platform/core/layout and compatibility startup,
+  but its resource adapter is PAK-backed, not a live ZIP reader;
+- `EspLegacyPrerenderStartup` retains its older name while composing native
+  menu storage; desktop ParticleSystem/EntityDef startup is retired;
 - `EspRenderStartupBridge` still loads legacy sintable/palette resources needed
   by retained Render helpers;
 - `EspLegacyConfigMappingsStartup` still reads retained config/mapping resources
   through legacy compatibility APIs;
-- menu BSP/menu graphics compatibility still needs classification into permanent
-  runtime ownership vs useful bringup/regression diagnostics;
-- some native menu sprite/overlay wrappers still expose probe-named linker
-  compatibility symbols and must be audited before any cleanup;
-- live CHANGEMAP/save/password/key/automap promotion is not complete;
-- combat/monsters and several player-stat/inventory families are not native yet.
+- two dormant menu scene/overlay wrapper bodies remain inside the live painter
+  TU: their removal changes compiler inlining, despite their absence from both
+  final ELFs. Retire them with a targeted menu validation, not a false no-op claim;
+- historical LRU cache bodies/frame layouts remain only because `isActive()`
+  gates and 488 B of static metadata are still linked. Their load APIs are not
+  current renderer ownership and must not be reactivated;
+- native gameplay families still have explicitly unsupported branches; current
+  CHANGEMAP/save/password/combat/inventory limits are in PORTING_STATUS, not a
+  blanket claim that these families are still desktop-owned.
 
 `pre_render_probe.*` and `config_mappings_probe.*` are no longer transitional
 production naming debt because their live behavior now has permanent explicit
@@ -662,16 +707,18 @@ opaque dashboard. In the hardware-tested production image, the menu starts
 without `Render_beginLoadMap(MAP_MENU)`, legacy nodes/lines/mapSprites, or the
 loading-bar/longjmp structural escape.
 
-The old menu BSP structure, wall and sprite probes remain useful regression
-witnesses, but they belong to the explicit `esp32-cyd-bringup` diagnostic
-profile. Diagnostic reachability must not force their loader closure back into
-the normal firmware.
+The old ZIP menu BSP structure/wall/sprite suite is retired. Before this
+consolidation, `DoomRPG_probeMenuBspHeader()` already returned 0 on every ESP32
+profile, so bringup did not reach that suite either. Its callable fail-closed
+report is retained unchanged. In bringup, `initializeMainMenu()` still reports
+`MENU BSP FAIL`; this is an existing diagnostic limitation, not a new regression
+or an assertion that the production menu fails.
 
 This distinction is deliberate:
 
 ```text
 esp32-cyd          permanent product owners only
-esp32-cyd-bringup  historical structural/render probes may be retained
+esp32-cyd-bringup  active diagnostics/overlays + retired ZIP endpoint report
 ```
 
 The real CYD validates native MENU_MAIN, OPTIONS/HELP Back, START, complete
@@ -723,6 +770,17 @@ even when profiling output is disabled. Hot success summaries should generally
 be TRACE, but failure paths from the same owner must remain ERROR/INFO as
 appropriate. ALIVE stays INFO until a separate hardware-validated milestone
 changes its cadence or level.
+
+The movement hot path classifies 19 diagnostic sites in its existing owners:
+16 detailed success/pathfinding messages are TRACE-only; three mixed witnesses
+remain operational when prepare, position/RNG rollback, or member publication
+fails. Turn BEGIN/COMPLETE and ORDERED-DISPATCH remain INFO, as do the attack
+probe/resolution pairs consumed by the PC playtest watcher's RNG checks.
+This is compile-time diagnostic consolidation, not batched monster transactions
+or shorter attack cadences. Movement's position/activation/capture/sequence
+boundaries are still functional, including their thin admission adapter.
+An unchanged render FNV is a profiling clue, not sufficient proof to skip a
+future invisible-monster redraw. No additional framebuffer/audio RAM is reserved.
 
 Read-only recovery census code is not production ownership. If an inventory or
 corpus probe is needed only for recovery, the normal INFO image should neither

@@ -10,6 +10,7 @@
 #include "esp_native_gameplay_hub_theme.h"
 #include "esp_native_gameplay_player_death.h"
 #include "esp_native_gameplay_player_state.h"
+#include "esp_native_gameplay_save_ui.h"
 #include "esp_player_view_state.h"
 
 static uint16_t pixels[160 * 120 + 2];
@@ -18,6 +19,9 @@ static EspNativeGameplayHudState hud;
 static EspNativeGameplayPlayerState player;
 static uint32_t clockMs;
 static int available, loads, presents, presentOk = 1, validBuffer = 1;
+static int selectorActive, selectorReady, selectorBegins, selectorFinishes;
+static int selectorBeginOk = 1, selectorTapResult, selectorTaps;
+static int loadOk = 1;
 
 void* Esp32PlatformVideo_framebuffer(void) { return pixels + 1; }
 size_t Esp32PlatformVideo_framebufferSizeBytes(void) {
@@ -48,8 +52,30 @@ int EspNativeGameplayFrame_renderTurn(struct Render_s* render, uint8_t angle,
     (void)render; (void)angle; memset(stats, 0, sizeof(*stats)); return 1;
 }
 int EspNativeGameplaySave_hasReadableCheckpoint(void) { return available; }
+int EspNativeGameplaySave_mainSelectorActive(void) { return selectorActive; }
+int EspNativeGameplaySave_mainSelectorReady(void) { return selectorReady; }
+int EspNativeGameplaySave_mainSelectorBegin(void) {
+    ++selectorBegins;
+    selectorActive = selectorBeginOk;
+    selectorReady = 0;
+    return selectorBeginOk;
+}
+int EspNativeGameplaySave_mainSelectorTap(int x, int y) {
+    (void)x; (void)y;
+    assert(selectorActive);
+    ++selectorTaps;
+    if (selectorTapResult == -1) selectorActive = selectorReady = 0;
+    return selectorTapResult;
+}
+void EspNativeGameplaySave_mainSelectorFinish(void) {
+    ++selectorFinishes;
+    selectorActive = selectorReady = 0;
+}
 int EspNativeGameplaySave_loadCheckpoint(void) {
-    ++loads; EspNativeGameplayPlayerDeath_reset(); return 1;
+    assert(selectorActive && selectorReady);
+    ++loads;
+    if (!loadOk) return 0;
+    EspNativeGameplayPlayerDeath_reset(); return 1;
 }
 
 static uint16_t pixel(int x, int y) { return pixels[1 + y * 160 + x]; }
@@ -65,6 +91,9 @@ static void start(DoomRPG_t* doom, int hasSave) {
     memset(&player, 0, sizeof(player));
     view.active = 1; view.viewZ = 36; hud.active = hud.painted = 1;
     available = hasSave; clockMs = 0; presents = 0;
+    selectorActive = selectorReady = selectorBegins = selectorFinishes = 0;
+    selectorTaps = selectorTapResult = 0;
+    selectorBeginOk = loadOk = 1;
     for (int i = 0; i < 160 * 120 + 2; ++i) pixels[i] = 0xdead;
     assert(EspNativeGameplayPlayerDeath_arm(doom, 1, 0));
     assert(!EspNativeGameplayPlayerDeath_handleTap(80, 40));
@@ -110,7 +139,49 @@ int main(int argc, char** argv) {
     assert(loads == 0); /* Touch only queues: LOAD runs in service, unchanged. */
     assert(!EspNativeGameplayPlayerDeath_handleTap(149, 51));
     assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(loads == 0 && selectorBegins == 1 && selectorActive);
+    assert(EspNativeGameplayPlayerDeath_isMenuReady());
+    /* Pagination/arming is consumed without dispatching a checkpoint load. */
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(selectorTaps == 1 && loads == 0);
+    selectorTapResult = -1; /* BACK repaints the death menu. */
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 8));
+    assert(!selectorActive && loads == 0);
+    assert(pixel(10, 33) == ESP_HUB_COLOR_AMBER);
+    assert(EspNativeGameplayPlayerDeath_handleTap(10, 33));
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(selectorBegins == 2 && loads == 0);
+    selectorTapResult = 1; selectorReady = 1; /* Explicit slot confirmation. */
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
+    assert(loads == 0);
+    assert(!EspNativeGameplayPlayerDeath_handleTap(80, 60)); /* Already queued. */
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
     assert(loads == 1 && !EspNativeGameplayPlayerDeath_isActive());
+    assert(selectorFinishes == 1 && !selectorActive);
+
+    /* Selector open failure, unready choice and restore failure stay closed. */
+    start(&doom, 1);
+    selectorBeginOk = 0;
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 40));
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(!selectorActive && loads == 1);
+    selectorBeginOk = 1;
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 40));
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    selectorTapResult = 1; /* A callback alone does not prove Ready. */
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(loads == 1 && selectorFinishes == 0);
+    selectorReady = 1; loadOk = 0;
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
+    assert(!EspNativeGameplayPlayerDeath_service(&doom));
+    assert(loads == 2 && selectorActive && selectorFinishes == 0);
+    assert(EspNativeGameplayPlayerDeath_isActive());
+    loadOk = 1;
+    assert(EspNativeGameplayPlayerDeath_handleTap(80, 60));
+    assert(EspNativeGameplayPlayerDeath_service(&doom));
+    assert(loads == 3 && selectorFinishes == 1 && !selectorActive);
 
     start(&doom, 0);
     assert(pixel(10, 33) == ESP_HUB_COLOR_STEEL_DARK);
@@ -121,11 +192,11 @@ int main(int argc, char** argv) {
         const int top = 33 + row * 21;
         assert(EspNativeGameplayPlayerDeath_handleTap(149, top + 18));
         assert(EspNativeGameplayPlayerDeath_service(&doom));
-        assert(loads == 1 && EspNativeGameplayPlayerDeath_isMenuReady());
+        assert(loads == 3 && EspNativeGameplayPlayerDeath_isMenuReady());
         assert(EspNativeGameplayPlayerDeath_handleTap(10, top));
         assert(EspNativeGameplayPlayerDeath_service(&doom));
     }
-    assert(loads == 1);
+    assert(loads == 3 && selectorBegins == 0 && selectorFinishes == 0);
     /* A malformed buffer or failed present must not publish a usable menu. */
     EspNativeGameplayPlayerDeath_reset();
     view.viewZ = 36; clockMs = 0;
@@ -140,6 +211,6 @@ int main(int argc, char** argv) {
     assert(!EspNativeGameplayPlayerDeath_service(&doom));
     assert(!EspNativeGameplayPlayerDeath_handleTap(80, 40));
     assert(pixels[0] == 0xdead && pixels[160 * 120 + 1] == 0xdead);
-    puts("Death menu: PASS (theme/fonts, timing, hitboxes, LOAD/no-save/deferred routes, guards)");
+    puts("Death menu: PASS (theme/timing/hitboxes, slot open/back/confirm/failure, no-save, guards)");
     return 0;
 }
