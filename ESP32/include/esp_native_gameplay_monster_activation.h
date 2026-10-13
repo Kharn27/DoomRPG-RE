@@ -42,11 +42,6 @@ EspNativeGameplayMonsterActivation_turnView(void);
 int EspNativeGameplayMonsterActivation_observeVisible(uint16_t spriteIndex,
                                                       uint8_t subtype,
                                                       uint16_t tileIndex);
-/* Explicit checkpoint-only BSP probe; append to the same native active order
- * with a distinct source log. Only the caller can guarantee preflighted
- * viewpoint admission and an unchanged map/position/topology snapshot. */
-int EspNativeGameplayMonsterActivation_observeCheckpointSight(
-    uint16_t spriteIndex, uint8_t subtype, uint16_t tileIndex);
 int EspNativeGameplayMonsterActivation_isActive(uint16_t spriteIndex);
 uint32_t EspNativeGameplayMonsterActivation_count(void);
 int EspNativeGameplayMonsterActivation_getOrdered(uint32_t ordinal,

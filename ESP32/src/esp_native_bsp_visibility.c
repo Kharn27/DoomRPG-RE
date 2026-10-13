@@ -441,23 +441,6 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
     return (state->visibleLeaves[leaf >> 5] & (1U << (leaf & 31U))) != 0U;
 }
 
-int EspNativeBspVisibility_worldPointVisibleReadOnly(
-    const EspNativeBspVisibilityState* state,
-    uint16_t worldX, uint16_t worldY) {
-    const EspMapRuntimeView* runtime = EspMapRuntime_view();
-    EspMapSprite at;
-    uint32_t leaf = 0U;
-    if (state == NULL || runtime == NULL ||
-        !EspMapRuntime_isLoaded()) return 0;
-    memset(&at, 0, sizeof(at));
-    at.x = (int16_t)worldX;
-    at.y = (int16_t)worldY;
-    if (!spriteLeaf(runtime, &at, &leaf) ||
-        leaf >= ESP_NATIVE_BSP_VISIBILITY_MAX_NODES) return 0;
-    return (state->visibleLeaves[leaf >> 5] &
-            (1U << (leaf & 31U))) != 0U;
-}
-
 int EspNativeBspVisibility_mapSpriteVisible(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,

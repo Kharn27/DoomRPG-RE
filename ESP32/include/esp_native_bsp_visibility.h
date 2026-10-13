@@ -57,11 +57,6 @@ int EspNativeBspVisibility_mapSpriteVisibleReadOnly(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,
     uint32_t* outLeafIndex);
-int EspNativeBspVisibility_worldPointVisibleReadOnly(
-    const EspNativeBspVisibilityState* state,
-    uint16_t worldX, uint16_t worldY);
-/* Query actual mutable monster-position coordinates after V9+ LOAD, not the
- * immutable BSP spawn sprite's obsolete position. No activation side effect. */
 
 /* Resolve one compact map sprite through the legacy Render_relinkSprite BSP
  * ownership rule, then report whether its leaf was admitted by outState. */
