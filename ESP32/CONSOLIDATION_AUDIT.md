@@ -397,6 +397,11 @@ comme « aucun coût RAM ». Les deux tests supplémentaires sont hôte uniqueme
 Les anciens invariants de build/exports, PAK, NULL texels/shapes et formats save
 restent conservés ; le nouveau code chargé n'est **pas** annoncé identique.
 
+Code `99c9f6153bbbcb2f7259f842ff02f3cbdbe34e48`, builds normal/bringup et
+suite hôte PASS local et
+[CI 38403169340](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38403169340).
+RAM/Flash : normal 47 680 / 808 093 B, bringup 47 832 / 825 593 B ; le coût
+Flash est +5 460 / +5 280 B par rapport au parent.
 Preuve et protocole hardware : DOCUMENTATION/PORTING_STATUS, validation CYD
 encore pending. Ne pas fusionner ce correctif fonctionnel sous le seul PASS
 matériel historique du menu/consolidation.

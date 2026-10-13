@@ -28,8 +28,11 @@ crédits, erreur d'ouverture puis retry, double SELECT sans double débit,
 attente depuis première frame publiée, échec rendu et note I/O, restauration
 exacte du suffixe, NOTE unique, wrap uptime et guards framebuffer/HUD.
 ASan/UBSan PASS local (LeakSanitizer incompatible avec ptrace, désactivé).
-CI ajoute ces deux tests aux dix tests C existants. **CI distante à vérifier
-après push ; aucun PASS matériel attribué.**
+CI ajoute ces deux tests aux dix tests C existants. **CI distante PASS** sur
+`99c9f6153bbbcb2f7259f842ff02f3cbdbe34e48` : les douze tests C, les deux
+tests Python, les deux builds et la garde des exports retirés passent
+([run 38403169340](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38403169340)).
+**Aucun PASS matériel attribué.**
 
 RAM statique cible inchangée ; journal lazy **1 020 → 1 128 B (+108 B heap)**,
 mesuré par le type DWARF de l'ELF Xtensa. Le propriétaire NOTE/scratch existe
