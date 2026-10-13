@@ -22,7 +22,8 @@ typedef enum EspNativeGameplayActionStatus_e {
     ESP_NATIVE_GAMEPLAY_ACTION_DIALOG_READY = 9,
     ESP_NATIVE_GAMEPLAY_ACTION_PASSWORD_READY = 10,
     ESP_NATIVE_GAMEPLAY_ACTION_CHAIN_READY = 11,
-    ESP_NATIVE_GAMEPLAY_ACTION_KEY_REQUIRED = 12
+    ESP_NATIVE_GAMEPLAY_ACTION_KEY_REQUIRED = 12,
+    ESP_NATIVE_GAMEPLAY_ACTION_STORE_READY = 13
 } EspNativeGameplayActionStatus;
 
 #define ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS 8U
@@ -67,6 +68,7 @@ typedef struct EspNativeGameplayActionResult_s {
     uint8_t keyCheckPresent;
     uint8_t requiredKeyId;
     uint8_t requiredKeyMask;
+    uint8_t storeId;
     EspNativeGameplayActionDoorStep
         doors[ESP_NATIVE_GAMEPLAY_ACTION_MAX_DOOR_COMMANDS];
 } EspNativeGameplayActionResult;
@@ -82,7 +84,10 @@ typedef struct EspNativeGameplayActionResult_s {
  *      eligible EV_DIALOG/EV_DIALOGNOBACK pause;
  *   3. exactly one first eligible EV_PASSWORD pause, whose native keypad owns
  *      validation and the saved continuation;
- *   4. EV_CHECK_KEY followed by a pure 1..8 door batch. A missing key is a
+ *   4. A single SELECT-only EV_OPENSTORE (opcode 33, arg2=0x100),
+ *      selecting exactly one of the four legacy store catalogs. The
+ *      dedicated native modal owns the purchase flow and player mutations.
+ *   5. EV_CHECK_KEY followed by a pure 1..8 door batch. A missing key is a
  *      handled, non-mutating pause with the exact legacy key id/message; an
  *      owned key admits the complete door suffix to the normal atomic preview.
  *

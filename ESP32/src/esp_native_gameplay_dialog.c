@@ -451,11 +451,40 @@ EspNativeGameplayDialogBeginStatus EspNativeGameplayDialog_begin(
     }
 
     memset(&intent, 0, sizeof(intent));
-    if (EspMapUiIntent_build(&descriptor, commandOffset, &intent) !=
-            ESP_MAP_UI_INTENT_OK ||
-        (intent.codeId != ESP_MAP_OPCODE_DIALOG &&
-         intent.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK)) {
-        return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+    {
+        EspMapByteCode command;
+        memset(&command, 0, sizeof(command));
+        if (!EspMapEvents_getCommand(&descriptor, commandOffset, &command)) {
+            return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+        }
+        if (command.id == 39U /* EV_CHECK_COMPLETED_LEVEL */) {
+            const uint32_t firstMap = command.arg1 >> 16U;
+            const uint32_t stringIndex = command.arg1 & 0xffffU;
+            const uint32_t global = (uint32_t)descriptor.firstCommandIndex +
+                                    commandOffset;
+            if (firstMap == 0U || firstMap > 11U ||
+                global > UINT16_MAX ||
+                !EspMapStrings_getRef(stringIndex, &intent.text)) {
+                return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+            }
+            intent.arg1 = command.arg1;
+            intent.arg2 = command.arg2;
+            intent.sourceEventIndex = descriptor.eventIndex;
+            intent.globalCommandIndex = (uint16_t)global;
+            intent.sourceCommandOffset = commandOffset;
+            intent.resumeCommandOffset = (uint8_t)(commandOffset + 1U);
+            intent.codeId = 39U;
+            intent.kind = ESP_MAP_UI_INTENT_DIALOG;
+            intent.flags = ESP_MAP_UI_INTENT_FLAG_PAUSE_SCRIPT |
+                           ESP_MAP_UI_INTENT_FLAG_SKIP_ADVANCE_TURN;
+            intent.status = ESP_MAP_UI_INTENT_OK;
+        }
+        else if (EspMapUiIntent_build(&descriptor, commandOffset, &intent) !=
+                     ESP_MAP_UI_INTENT_OK ||
+                 (intent.codeId != ESP_MAP_OPCODE_DIALOG &&
+                  intent.codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK)) {
+            return ESP_NATIVE_GAMEPLAY_DIALOG_BEGIN_INVALID;
+        }
     }
 
     EspNativeGameplayDialog_reset();

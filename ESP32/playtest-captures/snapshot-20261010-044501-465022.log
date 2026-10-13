@@ -1,0 +1,76 @@
+# CYD recent context (Ctrl+C); no device pause
+[04:44:45.158] [TOUCH] raw=1155,2410 pressure=1588 screen=191,54
+[04:44:45.210] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=9 seq=520 action=FORWARD tile=665->697 blocker=286 type=1 context=WORLD legacyAdvance=no
+[04:44:45.784] [RESIDENTGAMEPLAY] QUEUE tap=553 action=FORWARD zone=2 logical=94,29 context=WORLD
+[04:44:45.789] [TOUCH] raw=1233,2357 pressure=1769 screen=186,60
+[04:44:45.916] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=10 seq=521 action=FORWARD tile=665->697 blocker=286 type=1 context=WORLD legacyAdvance=no
+[04:44:46.142] [RESIDENTGAMEPLAY] QUEUE tap=554 action=FORWARD zone=2 logical=90,40 context=WORLD
+[04:44:46.182] [TOUCH] raw=1502,2308 pressure=1856 screen=181,78
+[04:44:46.274] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=11 seq=522 action=FORWARD tile=665->697 blocker=286 type=1 context=WORLD legacyAdvance=no
+[04:44:46.508] [RESIDENTGAMEPLAY] QUEUE tap=555 action=TURN_RIGHT zone=6 logical=113,52 context=WORLD
+[04:44:46.514] [TOUCH] raw=1979,2846 pressure=1632 screen=231,112
+[04:44:46.589] [TOUCH] raw=1947,2965 pressure=1480 screen=242,109
+[04:44:46.734] [VIEWANIM] FRAME mode=rotate step=1/2 camera=171 logical=128 rendered=yes presented=1 totalUs=98017 gameplayStable=yes
+[04:44:46.830] [VIEWANIM] FRAME mode=rotate step=2/2 camera=150 logical=128 rendered=yes presented=1 totalUs=96178 gameplayStable=yes
+[04:44:46.843] [VIEWANIM] END mode=rotate from=192 to=128 intermediates=2 previewUs=194195 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:44:46.959] [RESIDENTGAMEPLAY] TURN n=86 seq=523 action=TURN_RIGHT angle=192->128 committed=yes
+[04:44:47.326] [ALIVE] uptime=1020351 ms heap=181288 heap8=115364 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle
+[04:44:47.416] [RESIDENTGAMEPLAY] QUEUE tap=556 action=TURN_RIGHT zone=6 logical=117,50 context=WORLD
+[04:44:47.449] [TOUCH] raw=1817,2894 pressure=1614 screen=235,100
+[04:44:47.643] [VIEWANIM] FRAME mode=rotate step=1/2 camera=107 logical=64 rendered=yes presented=1 totalUs=100301 gameplayStable=yes
+[04:44:47.743] [VIEWANIM] FRAME mode=rotate step=2/2 camera=86 logical=64 rendered=yes presented=1 totalUs=101018 gameplayStable=yes
+[04:44:47.756] [VIEWANIM] END mode=rotate from=128 to=64 intermediates=2 previewUs=201319 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:44:47.876] [RESIDENTGAMEPLAY] TURN n=87 seq=524 action=TURN_RIGHT angle=128->64 committed=yes
+[04:44:48.033] [RESIDENTGAMEPLAY] QUEUE tap=557 action=TURN_LEFT zone=4 logical=12,63 context=WORLD
+[04:44:48.038] [TOUCH] raw=2166,672 pressure=2221 screen=31,125
+[04:44:48.115] [TOUCH] raw=2200,712 pressure=2312 screen=35,127
+[04:44:48.261] [VIEWANIM] FRAME mode=rotate step=1/2 camera=85 logical=128 rendered=yes presented=1 totalUs=99043 gameplayStable=yes
+[04:44:48.362] [VIEWANIM] FRAME mode=rotate step=2/2 camera=106 logical=128 rendered=yes presented=1 totalUs=100679 gameplayStable=yes
+[04:44:48.374] [VIEWANIM] END mode=rotate from=64 to=128 intermediates=2 previewUs=199722 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:44:48.490] [RESIDENTGAMEPLAY] TURN n=88 seq=525 action=TURN_LEFT angle=64->128 committed=yes
+[04:44:48.629] [RESIDENTGAMEPLAY] QUEUE tap=558 action=TURN_LEFT zone=4 logical=12,62 context=WORLD
+[04:44:48.634] [TOUCH] raw=2172,635 pressure=2280 screen=27,125
+[04:44:48.710] [TOUCH] raw=2185,651 pressure=2103 screen=29,126
+[04:44:48.857] [VIEWANIM] FRAME mode=rotate step=1/2 camera=149 logical=192 rendered=yes presented=1 totalUs=99795 gameplayStable=yes
+[04:44:48.957] [VIEWANIM] FRAME mode=rotate step=2/2 camera=170 logical=192 rendered=yes presented=1 totalUs=100042 gameplayStable=yes
+[04:44:48.970] [VIEWANIM] END mode=rotate from=128 to=192 intermediates=2 previewUs=199837 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:44:49.081] [RESIDENTGAMEPLAY] TURN n=89 seq=526 action=TURN_LEFT angle=128->192 committed=yes
+[04:44:49.290] [RESIDENTGAMEPLAY] QUEUE tap=559 action=TURN_LEFT zone=4 logical=9,61 context=WORLD
+[04:44:49.295] [TOUCH] raw=2196,595 pressure=2359 screen=24,127
+[04:44:49.371] [TOUCH] raw=2215,610 pressure=2307 screen=25,128
+[04:44:49.519] [VIEWANIM] FRAME mode=rotate step=1/2 camera=213 logical=0 rendered=yes presented=1 totalUs=100122 gameplayStable=yes
+[04:44:49.613] [VIEWANIM] FRAME mode=rotate step=2/2 camera=234 logical=0 rendered=yes presented=1 totalUs=95180 gameplayStable=yes
+[04:44:49.626] [VIEWANIM] END mode=rotate from=192 to=0 intermediates=2 previewUs=195302 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:44:49.740] [RESIDENTGAMEPLAY] TURN n=90 seq=527 action=TURN_LEFT angle=192->0 committed=yes
+[04:44:50.028] [RESIDENTGAMEPLAY] QUEUE tap=560 action=TURN_RIGHT zone=6 logical=135,53 context=WORLD
+[04:44:50.034] [TOUCH] raw=2011,3309 pressure=1265 screen=273,114
+[04:44:50.111] [TOUCH] raw=2073,3355 pressure=1366 screen=277,118
+[04:44:50.254] [VIEWANIM] FRAME mode=rotate step=1/2 camera=235 logical=192 rendered=yes presented=1 totalUs=96820 gameplayStable=yes
+[04:44:50.353] [VIEWANIM] FRAME mode=rotate step=2/2 camera=214 logical=192 rendered=yes presented=1 totalUs=99416 gameplayStable=yes
+[04:44:50.366] [VIEWANIM] END mode=rotate from=0 to=192 intermediates=2 previewUs=196236 logicalCommit=once monsterTurn=no finalCardinal=next
+[04:44:50.477] [RESIDENTGAMEPLAY] TURN n=91 seq=528 action=TURN_RIGHT angle=0->192 committed=yes
+[04:44:50.648] [RESIDENTGAMEPLAY] QUEUE tap=561 action=FORWARD zone=2 logical=80,29 context=WORLD
+[04:44:50.687] [TOUCH] raw=1187,2113 pressure=1769 screen=163,56
+[04:44:50.779] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=12 seq=529 action=FORWARD tile=665->697 blocker=286 type=1 context=WORLD legacyAdvance=no
+[04:44:50.923] [RESIDENTGAMEPLAY] QUEUE tap=562 action=FORWARD zone=2 logical=82,28 context=WORLD
+[04:44:50.928] [TOUCH] raw=1233,2112 pressure=1798 screen=163,60
+[04:44:51.055] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=13 seq=530 action=FORWARD tile=665->697 blocker=286 type=1 context=WORLD legacyAdvance=no
+[04:44:51.160] [RESIDENTGAMEPLAY] QUEUE tap=563 action=FORWARD zone=2 logical=84,31 context=WORLD
+[04:44:51.165] [TOUCH] raw=1306,2178 pressure=1819 screen=169,65
+[04:44:51.291] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=14 seq=531 action=FORWARD tile=665->697 blocker=286 type=1 context=WORLD legacyAdvance=no
+[04:44:51.592] [RESIDENTGAMEPLAY] QUEUE tap=564 action=SELECT zone=5 logical=85,72 context=WORLD
+[04:44:51.722] [ACTIONENGINE] TRACE seq=532 weapon=0 distance=3 tile=761 target=line index=65535 line=6 type=0 subtype=1 route=NOTHING_TO_USE
+[04:44:51.730] [ACTION] SELECT seq=532 status=NO_ELIGIBLE tile=697 event=74 eligible=0 unsupported=0
+[04:44:51.742] [RESIDENTGAMEPLAY] SELECT-DEFER n=60 seq=532 status=NO_ELIGIBLE unsupported=0 entity/otherSemantics=deferred mutation=no
+[04:44:51.776] [ACTIONENGINE] PRESENT seq=532 route=NOTHING_TO_USE worldMutation=no fullRedraw=no feedback=yes
+[04:44:52.229] [RESIDENTGAMEPLAY] QUEUE tap=565 action=BACK zone=8 logical=86,84 context=WORLD
+[04:44:52.357] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=15 seq=533 action=BACK tile=665->633 blocker=286 type=1 context=WORLD legacyAdvance=no
+[04:44:52.376] [ALIVE] uptime=1025392 ms heap=181288 heap8=115364 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle
+[04:44:52.465] [RESIDENTGAMEPLAY] QUEUE tap=566 action=BACK zone=8 logical=87,81 context=WORLD
+[04:44:52.469] [TOUCH] raw=2788,2254 pressure=1710 screen=176,168
+[04:44:52.596] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=16 seq=534 action=BACK tile=665->633 blocker=286 type=1 context=WORLD legacyAdvance=no
+[04:44:52.637] [RESIDENTGAMEPLAY] QUEUE tap=567 action=BACK zone=8 logical=89,85 context=WORLD
+[04:44:52.677] [TOUCH] raw=2860,2279 pressure=2020 screen=179,173
+[04:44:52.768] [RESIDENTGAMEPLAY] MOVE-BLOCKED n=17 seq=535 action=BACK tile=665->633 blocker=286 type=1 context=WORLD legacyAdvance=no
+[04:44:53.013] [ACTIONFEEDBACK] EXPIRE kind=1 elapsedMs=1201 targetMs=1200 restored=topbar-only
+[04:44:57.367] [ALIVE] uptime=1030394 ms heap=181288 heap8=115364 largest8=86004 SD=ready PAK=ready VIDEO=ready CORE=ready LAYOUT=ready PRERENDER=ready RENDER=ready MAPPINGS=ready MENU=ready touchIRQ=idle

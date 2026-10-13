@@ -80,7 +80,8 @@ EspMapDialogOwnerApplyStatus EspMapDialogOwner_apply(
         return ESP_MAP_DIALOG_OWNER_APPLY_INVALID;
     }
     if (intent->codeId != ESP_MAP_OPCODE_DIALOG &&
-        intent->codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK) {
+        intent->codeId != ESP_MAP_OPCODE_DIALOG_NO_BACK &&
+        intent->codeId != 39U /* EV_CHECK_COMPLETED_LEVEL warning */) {
         return ESP_MAP_DIALOG_OWNER_APPLY_UNSUPPORTED;
     }
 
@@ -93,7 +94,9 @@ EspMapDialogOwnerApplyStatus EspMapDialogOwner_apply(
     if (intent->status != ESP_MAP_UI_INTENT_OK ||
         intent->kind != ESP_MAP_UI_INTENT_DIALOG ||
         intent->flags != expectedFlags ||
-        intent->arg1 != (uint32_t)intent->text.index ||
+        (intent->codeId == 39U
+             ? (intent->arg1 & 0xffffU) != (uint32_t)intent->text.index
+             : intent->arg1 != (uint32_t)intent->text.index) ||
         (uint16_t)intent->sourceCommandOffset + 1U !=
             (uint16_t)intent->resumeCommandOffset ||
         !intentProvenanceIsCanonical(intent) ||

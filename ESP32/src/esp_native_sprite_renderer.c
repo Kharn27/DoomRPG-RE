@@ -1072,7 +1072,9 @@ static int drawTransientBatch(Render_t* render,
         Render_projectVertex(render, &line.vert1);
         Render_projectVertex(render, &line.vert2);
         if (!spans(render, &line, frame,
-                   spriteRenderMode(transientWorldBatch.logical),
+                   transientWorldBatch.logical == 204U
+                       ? RENDER_MODE_ADD
+                       : spriteRenderMode(transientWorldBatch.logical),
                    0, stats)) {
             return 0;
         }
@@ -1438,11 +1440,21 @@ static int renderImpl(struct Render_s* renderBase,
         goto done;
     }
 
-    ok = stats.bspCandidates > 0U && stats.draws > 0U &&
-         stats.pixelsDrawn > 0U && stats.mode0Objects > 0U &&
-         stats.mode7Objects > 0U && stats.mode7Pixels > 0U &&
-         stats.glowCompanions > 0U && stats.glowDraws > 0U &&
-         stats.glowPixels > 0U && stats.glowDeferred == 0U;
+    /* A complete frame need not contain a visible additive sprite or glow.
+     * Those nonzero witnesses happened to hold on Entrance and Junction,
+     * but not on every sector/camera pose. Accept only if *every* real map
+     * sprite and admitted companion is accounted for without unsupported
+     * resources. Missing resources and partial rasterization still fail
+     * closed through the checks above and the frame compositor. */
+    ok = stats.objects == runtime->mapSpriteCount &&
+         stats.unsupported == 0U && stats.glowDeferred == 0U &&
+         stats.hidden + stats.bspRejected + stats.bspCandidates ==
+             stats.objects &&
+         stats.mode0Objects + stats.mode7Objects == stats.bspCandidates &&
+         stats.draws + stats.nearCulled + stats.clipCulled ==
+             stats.bspCandidates &&
+         stats.glowDraws + stats.glowNearCulled + stats.glowClipCulled ==
+             stats.glowCompanions;
 
 done:
     if (opened || EspAssetPack_isOpen()) EspAssetPack_close();

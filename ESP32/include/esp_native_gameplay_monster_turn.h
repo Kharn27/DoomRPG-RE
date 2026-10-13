@@ -50,6 +50,8 @@ void EspNativeGameplayMonsterTurn_reset(void);
  * counter path, and can be cancelled while a caller still owns rollback. */
 int EspNativeGameplayMonsterTurn_requestPlayerAttack(uint32_t inputSequence);
 int EspNativeGameplayMonsterTurn_cancelPlayerAttack(uint32_t inputSequence);
+/* Preflight the turn producer before committing an inventory consumable. */
+int EspNativeGameplayMonsterTurn_canRequestPassTurn(void);
 int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence);
 /* Successful SELECT door events call legacy Game_advanceTurn() unless the
  * script explicitly paused progression (dialog/password). Ordinary native door

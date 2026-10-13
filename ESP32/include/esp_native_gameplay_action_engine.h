@@ -95,6 +95,13 @@ uint32_t EspNativeGameplayActionEngine_removedFingerprint(void);
 EspNativeGameplayActionStatus EspNativeGameplayActionEngine_executeSelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayActionResult* outResult);
+
+/* Read-only cross-layer diagnostic witness: when the generic trace selects an
+ * enemy, the native combat trace must resolve the same sprite before arming.
+ * Populated only by that specific generic route; no extra world trace or RNG. */
+int EspNativeGameplayActionEngine_deferredMonsterTarget(
+    uint32_t sequence, uint16_t* outSprite, uint16_t* outTile,
+    uint8_t* outSubtype);
 #define __wrap_EspNativeGameplayAction_executeSelect \
     EspNativeGameplayActionEngine_executeSelect
 

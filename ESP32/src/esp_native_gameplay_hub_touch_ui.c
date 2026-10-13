@@ -849,6 +849,31 @@ int EspNativeGameplayHubTouchUi_classify(
                       HUB_UI_SYSTEM_RIGHT, HUB_UI_SYSTEM_BOTTOM, outHit);
     if (tab != 0) return tab;
 
+    if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_INVENTORY &&
+        EspNativeGameplayHub_notebookOpen()) {
+        uint8_t action;
+        uint8_t left;
+        uint8_t right;
+        /* Notebook uses three distinct footer buttons. Taps in the text
+         * body are deliberately inert, avoiding accidental page advances
+         * when the user is reading or pointing to a note. */
+        if (logicalY < 101 || logicalY > 118) return -1;
+        if (logicalX >= 4 && logicalX <= 49) {
+            action = ESP_NATIVE_GAMEPLAY_ACTION_SELECT;       /* BACK */
+            left = 4U; right = 49U;
+        } else if (logicalX >= 56 && logicalX <= 103) {
+            action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_FORWARD; /* PREV */
+            left = 56U; right = 103U;
+        } else if (logicalX >= 110 && logicalX <= 155) {
+            action = ESP_NATIVE_GAMEPLAY_ACTION_MOVE_BACK;    /* NEXT */
+            left = 110U; right = 155U;
+        } else {
+            return -1;
+        }
+        setHit(outHit, action, zoneForAction(action), left, 101U, right, 118U);
+        return 1;
+    }
+
     if (view->page == ESP_NATIVE_GAMEPLAY_HUB_PAGE_WEAPONS) {
         uint8_t weapon;
         uint8_t left;

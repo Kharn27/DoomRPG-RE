@@ -15,7 +15,9 @@ typedef enum EspNativeGameplayHubStatus_e {
     ESP_NATIVE_GAMEPLAY_HUB_IGNORED = 4,
     ESP_NATIVE_GAMEPLAY_HUB_REDRAWN = 5,
     ESP_NATIVE_GAMEPLAY_HUB_CLOSED = 6,
-    ESP_NATIVE_GAMEPLAY_HUB_OK = 7
+    ESP_NATIVE_GAMEPLAY_HUB_OK = 7,
+    /* Consumed a native inventory item; caller closes HUB and schedules 1 turn. */
+    ESP_NATIVE_GAMEPLAY_HUB_ITEM_USED = 8
 } EspNativeGameplayHubStatus;
 
 typedef enum EspNativeGameplayHubPage_e {
@@ -47,6 +49,7 @@ typedef struct EspNativeGameplayHubView_s {
  * a time and System reuses the existing checkpoint owner. */
 void EspNativeGameplayHub_reset(void);
 int EspNativeGameplayHub_isActive(void);
+int EspNativeGameplayHub_notebookOpen(void);
 const EspNativeGameplayHubView* EspNativeGameplayHub_view(void);
 
 EspNativeGameplayHubStatus EspNativeGameplayHub_open(void);

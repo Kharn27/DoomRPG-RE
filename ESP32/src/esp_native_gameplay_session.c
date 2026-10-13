@@ -23,8 +23,11 @@
 #include "esp_native_gameplay_monster_position.h"
 #include "esp_native_gameplay_monster_movement_publish.h"
 #include "esp_native_gameplay_monster_state.h"
+#include "esp_native_monster_projectile204_contract.h"
 #include "esp_native_gameplay_session.h"
 #include "esp_native_gameplay_status_message.h"
+#include "esp_native_gameplay_note_prefix.h"
+#include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_transition.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_resident_gameplay.h"
@@ -214,7 +217,9 @@ void EspNativeGameplaySession_reset(void) {
     EspNativeGameplayMonsterPosition_reset();
     EspNativeGameplayMonsterActivation_reset();
     EspNativeGameplayMonsterDrop_reset();
+    EspNativeRngReplayGuard_reset();
     EspNativeGameplayStatusMessage_reset();
+    EspNativeGameplayNotePrefix_reset();
     EspNativeResidentGameplay_reset();
     /* The last rollback opportunity ended with the gameplay owner. Do not
      * carry its lazy journal or topology snapshot into MENU/LOAD/CHANGEMAP. */
@@ -272,6 +277,24 @@ int EspNativeGameplaySession_isActive(void) {
 
 int EspNativeGameplaySession_hasFailed(void) {
     return sessionState.failed != 0U;
+}
+
+/* The immutable BSP resource set cannot list runtime-created missiles.
+ * Preflight this sprite once during session loading, never during combat. */
+static int mapNeedsMonsterProjectile204(void) {
+    const EspMapSpriteTopologyView* topology = EspMapSpriteTopology_view();
+    uint32_t i;
+
+    if (topology == NULL || topology->storage == NULL) return -1;
+    for (i = 0U; i < topology->spriteCount; ++i) {
+        uint8_t type = 0U, subtype = 0U;
+        uint16_t link = 0U, order = 0U;
+        if (!EspMapSpriteTopology_getEntity(i, &type, &subtype,
+                                             &link, &order)) return -1;
+        if (type == ESP_MAP_ENTITY_TYPE_ENEMY &&
+            EspNativeMonsterProjectile204_needsResource(subtype)) return 1;
+    }
+    return 0;
 }
 
 void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
@@ -467,16 +490,44 @@ void EspNativeGameplaySession_service(struct DoomRPG_s* doomRpgBase) {
         if (sessionState.stage == SESSION_STAGE_DEPENDENCIES) {
             EspNativeGraphicsCatalogStatus status =
                 EspNativeGraphicsCatalog_expandSpriteDependencies();
-            const EspNativeGraphicsCatalogView* catalog =
-                EspNativeGraphicsCatalog_view();
-            if ((status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
-                 status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) ||
-                catalog == NULL) {
+            const EspNativeGraphicsCatalogView* catalog;
+            int needsProjectile204;
+
+            if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+                status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
                 failSession("sprite dependency closure");
                 return;
             }
-            printf("[ENGINESESSION] SPRITES dependencyStatus=%d catalogSprites=%u\n",
-                   (int)status, (unsigned int)catalog->spriteCount);
+
+            needsProjectile204 = mapNeedsMonsterProjectile204();
+            if (needsProjectile204 < 0) {
+                failSession("monster projectile 204 topology census");
+                return;
+            }
+            if (needsProjectile204 != 0) {
+                /* Legacy weapon 15 uses 204 for both Imp (subtype 3)
+                 * and Malwrath/Cacodemon (subtype 6) primary attacks.
+                 * This runtime-only missile is not in the BSP sprite set. */
+                status = EspNativeGraphicsCatalog_ensureSprite(204U);
+                if (status != ESP_NATIVE_GRAPHICS_CATALOG_OK &&
+                    status != ESP_NATIVE_GRAPHICS_CATALOG_ALREADY_ACTIVE) {
+                    printf("[ENGINESESSION] MONSTERPROJECTILE resource=204 status=%d catalog=unchanged gameplay=not-armed\n",
+                           (int)status);
+                    failSession("monster projectile 204 sprite dependency");
+                    return;
+                }
+            }
+            catalog = EspNativeGraphicsCatalog_view();
+            if (catalog == NULL ||
+                (needsProjectile204 != 0 &&
+                 EspNativeGraphicsCatalog_findSprite(204U) == NULL)) {
+                failSession("sprite dependency publication");
+                return;
+            }
+            printf("[ENGINESESSION] SPRITES dependencyStatus=%d monsterProjectile204=%s catalogSprites=%u\n",
+                   (int)status,
+                   needsProjectile204 != 0 ? "primed" : "not-required",
+                   (unsigned int)catalog->spriteCount);
             sessionState.stage = SESSION_STAGE_SMALL_BEGIN;
             continue;
         }

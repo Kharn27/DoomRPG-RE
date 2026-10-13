@@ -113,6 +113,10 @@ static MonsterCombatOwner combatOwner;
  * HUB/save stack-canary recovery pattern.
  */
 static MonsterCombatOwner combatRollbackOwner;
+static EspNativeGameplayPlayerXpResult splashLevelUp;
+static uint32_t splashLevelUpSequence;
+static uint8_t splashSequenceActive;
+static uint32_t splashSequenceNumber;
 _Static_assert(sizeof(MonsterCombatOwner) <= 384U,
                "monster combat rollback owner must remain small and bounded");
 
@@ -302,6 +306,10 @@ void EspNativeGameplayMonsterCombat_reset(void) {
     EspNativeGameplayMonsterDrop_reset();
     memset(&combatOwner, 0, sizeof(combatOwner));
     memset(&combatRollbackOwner, 0, sizeof(combatRollbackOwner));
+    memset(&splashLevelUp, 0, sizeof(splashLevelUp));
+    splashLevelUpSequence = 0U;
+    splashSequenceActive = 0U;
+    splashSequenceNumber = 0U;
     combatOwner.view.pendingSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
     combatOwner.deathSpriteIndex = MONSTER_NO_SPRITE;
@@ -862,6 +870,255 @@ static int servicePending(DoomRPG_t* runtime) {
     return 1;
 }
 
+
+/*
+ * Barrel radius calls Game_hurtEntityAt() in cardinal-then-diagonal order.
+ * A single barrel applies its one monster splash after its blast word.
+ * A multi-barrel chain applies a splash after EACH explosion so pain/death/
+ * drop RNG consumption happens before the next barrel's blast word, exactly
+ * as the legacy Game_gsprite_update() sequence. The shared BSS snapshot
+ * permits rollback across every wave if later native consequences fail.
+ */
+typedef struct MonsterSplashRollback_s {
+    EspNativeGameplayMonsterStateSnapshot monsters;
+    EspNativeGameplayMonsterDropSnapshot drops;
+    EspNativeGameplayPlayerState player;
+    MonsterCombatOwner combat;
+    Random_t random;
+} MonsterSplashRollback;
+
+static MonsterSplashRollback splashRollback;
+
+/* The rollback image is BSS-bounded and shared between ordinary single-blast
+ * splash and a multi-wave/monster transaction. Do not allocate per monster or
+ * per wave. A multi-wave transaction keeps the ORIGINAL snapshot across all
+ * subsequent splash calls so a later failure undoes earlier waves as well. */
+static int restoreSplashSnapshot(DoomRPG_t* runtime) {
+    int exact = 1;
+    if (runtime == NULL) return 0;
+    if (!EspNativeGameplayMonsterDrop_restore(&splashRollback.drops))
+        exact = 0;
+    if (!EspNativeGameplayMonsterState_restoreInPlace(
+            &splashRollback.monsters)) exact = 0;
+    if (!EspNativeGameplayPlayerState_restore(&splashRollback.player))
+        exact = 0;
+    runtime->random = splashRollback.random;
+    combatOwner = splashRollback.combat;
+    splashSequenceActive = 0U;
+    splashSequenceNumber = 0U;
+    splashLevelUpSequence = 0U;
+    memset(&splashLevelUp, 0, sizeof(splashLevelUp));
+    return exact;
+}
+
+int EspNativeGameplayMonsterCombat_beginSplashSequence(
+    DoomRPG_t* runtime, uint32_t sequence) {
+    if (runtime == NULL || sequence == 0U ||
+        splashSequenceActive != 0U || splashLevelUpSequence != 0U ||
+        !syncOwner() || combatOwner.pending.active != 0U ||
+        !EspNativeGameplayMonsterState_snapshot(&splashRollback.monsters) ||
+        !EspNativeGameplayMonsterDrop_snapshot(&splashRollback.drops) ||
+        !EspNativeGameplayPlayerState_snapshot(&splashRollback.player))
+        return 0;
+    splashRollback.combat = combatOwner;
+    splashRollback.random = runtime->random;
+    splashSequenceActive = 1U;
+    splashSequenceNumber = sequence;
+    printf("[MONSTERRADIUS] SEQUENCE-BEGIN seq=%u snapshot=monster+drop+player+rng+visual owner=bounded-BSS rollback=armed\n",
+           (unsigned int)sequence);
+    return 1;
+}
+
+int EspNativeGameplayMonsterCombat_cancelSplashSequence(
+    DoomRPG_t* runtime) {
+    int exact;
+    if (splashSequenceActive == 0U) return 1;
+    exact = restoreSplashSnapshot(runtime);
+    printf("[MONSTERRADIUS] SEQUENCE-CANCEL exact=%s snapshots=restored\n",
+           exact ? "yes" : "NO");
+    return exact;
+}
+
+int EspNativeGameplayMonsterCombat_commitSplashSequence(
+    uint32_t sequence) {
+    if (splashSequenceActive == 0U ||
+        splashSequenceNumber != sequence) return 0;
+    splashSequenceActive = 0U;
+    splashSequenceNumber = 0U;
+    printf("[MONSTERRADIUS] SEQUENCE-COMMIT seq=%u order=blast-then-impact-per-wave rng=live-interleaved rollback=closed\n",
+           (unsigned int)sequence);
+    return 1;
+}
+
+int EspNativeGameplayMonsterCombat_applySplash(
+    DoomRPG_t* runtime,
+    const EspNativeGameplaySplashHit* hits,
+    uint8_t count,
+    uint32_t sequence) {
+    uint8_t i;
+    uint32_t rngCalls = 0U;
+    uint32_t deaths = 0U;
+    uint32_t totalXp = 0U;
+    EspNativeGameplayPlayerXpResult popup;
+    int needsPopup = 0;
+    int rollbackOk;
+
+    if (runtime == NULL || hits == NULL || count == 0U ||
+        count > ESP_NATIVE_GAMEPLAY_SPLASH_MAX_HITS ||
+        (splashSequenceActive != 0U &&
+         splashSequenceNumber != sequence) ||
+        (splashLevelUpSequence != 0U &&
+         (splashSequenceActive == 0U ||
+          splashLevelUpSequence != sequence)) ||
+        !syncOwner() || combatOwner.pending.active) {
+        return 0;
+    }
+    if (splashSequenceActive == 0U) {
+        if (!EspNativeGameplayMonsterState_snapshot(
+                &splashRollback.monsters) ||
+            !EspNativeGameplayMonsterDrop_snapshot(
+                &splashRollback.drops) ||
+            !EspNativeGameplayPlayerState_snapshot(
+                &splashRollback.player)) return 0;
+        splashRollback.combat = combatOwner;
+        splashRollback.random = runtime->random;
+    }
+    memset(&popup, 0, sizeof(popup));
+
+    for (i = 0U; i < count; ++i) {
+        EspNativeGameplayMonsterRecord* monster =
+            EspNativeGameplayMonsterState_findMutable(hits[i].spriteIndex);
+        EspNativeGameplayMonsterRecord before;
+        int32_t hpAfter;
+        int32_t armorAfter;
+        uint16_t sound = 0U;
+        if (monster == NULL || monster->alive != 1U ||
+            monster->subtype >= MONSTER_SUBTYPE_COUNT ||
+            hits[i].healthComponent == 0U ||
+            hits[i].armorComponent != hits[i].healthComponent) {
+            goto splash_failed;
+        }
+        before = *monster;
+        applyPain(monster, hits[i].healthComponent,
+                  hits[i].armorComponent, &hpAfter, &armorAfter);
+        if (hpAfter == 0) {
+            EspNativeGameplayPlayerXpResult xp;
+            EspNativeGameplayMonsterDropSpawnPlan drop;
+            uint32_t dropRoll;
+            uint32_t gained;
+            /* Extra spawning/boss-death scripts need their own native owner. */
+            if (specialDeath(before.subtype)) goto splash_failed;
+            monster->alive = 0U;
+            gained = EspNativeGameplayCombatMath_monsterExp(&before);
+            memset(&xp, 0, sizeof(xp));
+            if (!EspNativeGameplayPlayerState_applyXp(
+                    runtime, gained, &xp)) goto splash_failed;
+            rngCalls += xp.rngCalls;
+            totalXp += gained;
+            if (xp.levelUps != 0U) {
+                if (needsPopup || splashLevelUpSequence != 0U)
+                    goto splash_failed;
+                popup = xp;
+                needsPopup = 1;
+            }
+            sound = consumeDeathSound(runtime, before.subtype, &rngCalls);
+            dropRoll = (uint32_t)DoomRPG_randNextInt(&runtime->random);
+            ++rngCalls;
+            memset(&drop, 0, sizeof(drop));
+            if (!EspNativeGameplayMonsterDrop_prepare(
+                    dropRoll, &before, &drop) ||
+                (drop.outcome == ESP_NATIVE_GAMEPLAY_MONSTER_DROP_SPAWN &&
+                 !EspNativeGameplayMonsterDrop_commit(&drop))) {
+                goto splash_failed;
+            }
+            if (combatOwner.deathSpriteIndex != MONSTER_NO_SPRITE &&
+                combatOwner.deathSpriteIndex != before.spriteIndex) {
+                setCorpseReady(combatOwner.deathSpriteIndex, 1);
+            }
+            setGibbed(before.spriteIndex, 0);
+            setCorpseReady(before.spriteIndex, 0);
+            combatOwner.deathSpriteIndex = before.spriteIndex;
+            combatOwner.deathFinalGib = 0U;
+            combatOwner.deathUntilMs =
+                DoomRPG_GetUpTimeMS() + MONSTER_DEATH_MS;
+            combatOwner.view.painSpriteIndex = MONSTER_NO_SPRITE;
+            combatOwner.painUntilMs = 0U;
+            ++combatOwner.view.kills;
+            combatOwner.view.xpApplied += gained;
+            ++deaths;
+            printf("[MONSTERRADIUS] HIT seq=%u sprite=%u subtype=%u damage=%u+%u hp=%u->0 armor=%u->%d killed=yes xp=%u dropRoll=%08x sound=%u rng=committed\n",
+                   (unsigned int)sequence,
+                   (unsigned int)before.spriteIndex,
+                   (unsigned int)before.subtype,
+                   (unsigned int)hits[i].healthComponent,
+                   (unsigned int)hits[i].armorComponent,
+                   (unsigned int)(before.param1 & 0xffU),
+                   (unsigned int)((before.param1 >> 16U) & 0xffU),
+                   (int)armorAfter,
+                   (unsigned int)gained,
+                   (unsigned int)dropRoll,
+                   (unsigned int)sound);
+        }
+        else {
+            sound = consumePainSound(runtime, before.subtype, &rngCalls);
+            combatOwner.view.painSpriteIndex = before.spriteIndex;
+            combatOwner.painUntilMs = DoomRPG_GetUpTimeMS() + MONSTER_PAIN_MS;
+            printf("[MONSTERRADIUS] HIT seq=%u sprite=%u subtype=%u damage=%u+%u hp=%u->%d armor=%u->%d killed=no sound=%u rng=committed\n",
+                   (unsigned int)sequence,
+                   (unsigned int)before.spriteIndex,
+                   (unsigned int)before.subtype,
+                   (unsigned int)hits[i].healthComponent,
+                   (unsigned int)hits[i].armorComponent,
+                   (unsigned int)(before.param1 & 0xffU),
+                   (int)hpAfter,
+                   (unsigned int)((before.param1 >> 16U) & 0xffU),
+                   (int)armorAfter,
+                   (unsigned int)sound);
+        }
+    }
+
+    combatOwner.view.currentMonsterFNV1a = currentMonsterFNV();
+    combatOwner.visualRedrawPending = 1U;
+    printf("[MONSTERRADIUS] COMMIT seq=%u hits=%u deaths=%u xp=%u rngConsequence=%u monsterFNV=%08x playerFNV=%08x rollback=%s owner=esp-native\n",
+           (unsigned int)sequence, (unsigned int)count,
+           (unsigned int)deaths, (unsigned int)totalXp,
+           (unsigned int)rngCalls,
+           (unsigned int)combatOwner.view.currentMonsterFNV1a,
+           (unsigned int)EspNativeGameplayPlayerState_fingerprint(),
+           splashSequenceActive != 0U ? "sequence-armed" : "closed");
+    if (needsPopup) {
+        splashLevelUp = popup;
+        splashLevelUpSequence = sequence;
+        printf("[MONSTERRADIUS] LEVELUP-QUEUED seq=%u levels=%u presentation=after-attack-settle\n",
+               (unsigned int)sequence, (unsigned int)popup.levelUps);
+    }
+    return 1;
+
+splash_failed:
+    /* A wave-N failure must restore the initial wave-1 snapshot, not just the
+     * most recent hit. This also releases any deferred popup from prior waves. */
+    rollbackOk = restoreSplashSnapshot(runtime);
+    printf("[MONSTERRADIUS] ROLLBACK seq=%u hits=%u failedAt=%u exact=%s rng=yes monster=yes player=yes drops=yes\n",
+           (unsigned int)sequence, (unsigned int)count,
+           (unsigned int)i, rollbackOk ? "yes" : "NO");
+    return 0;
+}
+
+int EspNativeGameplayMonsterCombat_finishSplashPresentation(
+    uint32_t sequence) {
+    int opened;
+    if (splashLevelUpSequence == 0U) return 1;
+    if (splashLevelUpSequence != sequence) return 0;
+    opened = EspNativeGameplayLevelUp_begin(&splashLevelUp, sequence);
+    printf("[MONSTERRADIUS] LEVELUP seq=%u levels=%u opened=%u afterAttackSettle=yes\n",
+           (unsigned int)sequence, (unsigned int)splashLevelUp.levelUps,
+           (unsigned int)opened);
+    if (!opened) return 0;
+    splashLevelUpSequence = 0U;
+    memset(&splashLevelUp, 0, sizeof(splashLevelUp));
+    return 1;
+}
+
 EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect(
     const EspNativeGameplayInputState* intent,
     EspNativeGameplayActionResult* outResult) {
@@ -871,9 +1128,16 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
     const EspNativeGameplayMonsterRecord* monster;
     const EspNativeGameplayWeaponSpec* weapon;
     const EspNativeGameplayHudState* hud;
+    uint16_t genericSprite = MONSTER_NO_SPRITE;
+    uint16_t genericTile = 0U;
+    uint8_t genericSubtype = 0U;
     uint8_t weaponIndex;
+    int genericEnemy;
 
     status = __real_EspNativeGameplayActionEngine_executeSelect(intent, outResult);
+    genericEnemy = intent != NULL &&
+        EspNativeGameplayActionEngine_deferredMonsterTarget(
+            intent->sequence, &genericSprite, &genericTile, &genericSubtype);
     if ((status != ESP_NATIVE_GAMEPLAY_ACTION_NO_EVENT &&
          status != ESP_NATIVE_GAMEPLAY_ACTION_NO_ELIGIBLE) ||
         intent == NULL || intent->action != ESP_NATIVE_GAMEPLAY_ACTION_SELECT ||
@@ -890,11 +1154,54 @@ EspNativeGameplayActionStatus __wrap_EspNativeGameplayActionEngine_executeSelect
 
     memset(&target, 0, sizeof(target));
     traceStatus = EspNativeGameplayMonsterTrace_forward(&target);
-    if (traceStatus != ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_FOUND) return status;
+    if (traceStatus != ESP_NATIVE_GAMEPLAY_MONSTER_TRACE_FOUND) {
+        if (genericEnemy) {
+            const EspNativeGameplayMonsterRecord* genericMonster =
+                EspNativeGameplayMonsterState_find(genericSprite);
+            printf("[MONSTERCOMBAT] TRACE-MISMATCH seq=%u genericSprite=%u genericTile=%u genericSubtype=%u genericMonster=%u genericAlive=%u genericStateSubtype=%u nativeStatus=%u nativeSprite=%u nativeTile=%u nativeDistance=%u blockerKind=%u reason=trace-disagrees arm=no mutation=no rng=untouched\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)genericSprite, (unsigned int)genericTile,
+                   (unsigned int)genericSubtype,
+                   genericMonster != NULL ? 1U : 0U,
+                   genericMonster != NULL
+                       ? (unsigned int)genericMonster->alive : 0U,
+                   genericMonster != NULL
+                       ? (unsigned int)genericMonster->subtype : 255U,
+                   (unsigned int)traceStatus,
+                   (unsigned int)target.spriteIndex,
+                   (unsigned int)target.tileIndex,
+                   (unsigned int)target.distance,
+                   (unsigned int)target.reserved);
+        }
+        return status;
+    }
 
     monster = EspNativeGameplayMonsterState_find(target.spriteIndex);
+    if (genericEnemy &&
+        (target.spriteIndex != genericSprite ||
+         target.tileIndex != genericTile ||
+         target.subtype != genericSubtype)) {
+        /* Read-only witness. Preserve the existing native combat decision:
+         * corpses in the generic leaf can be intentionally bypassed here. */
+        printf("[MONSTERCOMBAT] TRACE-DIFFERENCE seq=%u genericSprite=%u genericTile=%u genericSubtype=%u nativeSprite=%u nativeTile=%u nativeSubtype=%u action=preserve-native-trace mutation=no rng=untouched\n",
+               (unsigned int)intent->sequence,
+               (unsigned int)genericSprite, (unsigned int)genericTile,
+               (unsigned int)genericSubtype,
+               (unsigned int)target.spriteIndex, (unsigned int)target.tileIndex,
+               (unsigned int)target.subtype);
+    }
     if (monster == NULL || monster->alive == 0U ||
-        monster->subtype != target.subtype) return status;
+        monster->subtype != target.subtype) {
+        if (genericEnemy) {
+            printf("[MONSTERCOMBAT] TARGET-MISMATCH seq=%u sprite=%u subtype=%u found=%u alive=%u actualSubtype=%u reason=monster-state-disagrees arm=no mutation=no rng=untouched\n",
+                   (unsigned int)intent->sequence,
+                   (unsigned int)target.spriteIndex, (unsigned int)target.subtype,
+                   monster != NULL ? 1U : 0U,
+                   monster != NULL ? (unsigned int)monster->alive : 0U,
+                   monster != NULL ? (unsigned int)monster->subtype : 255U);
+        }
+        return status;
+    }
 
     if ((STANDARD_WEAPON_DIRECT_MASK & (1U << weaponIndex)) == 0U) {
         printf("[MONSTERCOMBAT] DEFER seq=%u sprite=%u subtype=%u weapon=%u reason=%s backend=generic monsterFamilyOwned=yes mutation=no\n",

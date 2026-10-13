@@ -25,6 +25,34 @@ Selon le poste, PlatformIO peut être invoqué avec `platformio` au lieu de `pio
 
 La politique de logs compile-time est définie dans `ESP32/include/doomrpg_log.h` : `DRPG_LOGE/I/D/T`. Normal = INFO, bringup = TRACE. Les messages de succès récurrents sur VIDEO, PAKIO, redraw et tour doivent rester hors du flux INFO ; ne pas masquer les erreurs, transitions, guards et recoveries.
 
+## Playtest libre : captures automatiques des incidents
+
+Pour jouer normalement **sans surveiller le terminal**, depuis `ESP32/` :
+
+```sh
+# Python utilisé par PlatformIO a généralement déjà pyserial :
+python3 -m pip install pyserial  # seulement si non installé
+python3 tools/playtest_watch.py --port /dev/ttyUSB0 --bell
+```
+
+Cet outil remplace le moniteur Serial pendant le playtest : **ne pas ouvrir `pio device monitor` simultanément**, car les deux processus se disputeraient le port série. Aucun reflash n'est nécessaire. Les règles explicites reconnaissent les frontières non implémentées ou les anomalies importantes (ex. `[HUB] SELECT-DEFER ... kind=item`, `[RESIDENTGAMEPLAY] SELECT-DEFER`, `[MONSTERMOVE] DEFER`, `[TURNFRAME] DIAG fail=WORLD_RENDER`, `[HUB] CLOSE ... exactHud=NO`). Les simples textes `sound=...-deferred`, `turnAdvance=deferred` et les messages READY ne provoquent **pas** d'alerte.
+
+À chaque incident : une alerte `[WATCH]` et un fichier `playtest-captures/incident-....log` de ~75 lignes précédentes, le déclencheur, puis jusqu'à 20 lignes suivantes. Un cooldown de 45 s par catégorie limite les duplications ; ce n'est **pas** une garantie de capture exhaustive de chaque occurrence. `Ctrl+C` arrête seulement le moniteur PC et écrit `snapshot-....log` contenant les dernières lignes, utile si un problème visuel ne correspond à aucune règle. **Le CYD continue à tourner : aucun arrêt logiciel, watchdog, ou écriture microSD n'est impliqué.** Ne pas confondre capture du contexte et pause du gameplay.
+
+Options : `--echo` réaffiche tous les logs, `--before 120 --after 30` augmente le contexte, `--cooldown 90` réduit les alertes. On peut valider sans matériel avec `python3 tools/playtest_watch.py --self-test`, ou lire un flux enregistré : `python3 tools/playtest_watch.py --stdin < ancien-log.txt`. Les fichiers de capture sont ignorés par Git. Pour une pause du jeu réellement ciblée sur des actions non possédées, ajouter plus tard un mode diagnostic ESP32 **opt-in** avec reprise explicite, jamais un `while(1)` qui déclenche le watchdog.
+
+Cheats : jalon séparé, à auditer par rapport aux commandes réelles du legacy ; ne pas inventer de code secret ni modifier les progressions de sauvegarde dans ce jalon.
+
+## Régression native : projectiles de monstres et tonneaux
+
+Le **sprite logique 204** est une ressource de projectile créée en combat, pas un sprite BSP permanent. Sa paire de mappings est ajoutée *sparsely* au catalogue **avant** le gameplay dès que la topologie contient un Imp (subtype 3) ou un Malwrath/Cacodemon (subtype 6). Ce chemin de présentation est autorisé **uniquement pour l'attaque primaire** de ces deux subtypes : Imp = un projectile, Malwrath = trois. Chaque projectile est un effet monde transitoire, peint aux positions bornées par le renderer, sans ajouter de sprite persistant ni consommer de gameplay RNG. Les autres familles de missiles demeurent hors de ce contrat limité.
+
+Sur le vrai CYD, contrôler `[ENGINESESSION] SPRITES ... monsterProjectile204=primed` si l'une de ces familles est présente ; puis, pour une attaque du Malwrath, `[MONSTERATKVIS] ARM ... projectile=malwrath204-3shots-armed`, les `[MALWRATHPROJECTILE] FRAME ... logical=204 ... presented=1` (trois points par vol) et deux `REARM shot=2/3` / `shot=3/3`. Le `[MONSTERATKVIS] COMPLETE` doit précéder la résolution réelle `[MONSTERRETAL] COMMIT` ou `MISS-COMMIT`; les HP/armure/RNG et le tour restent les propriétaires gameplay existants. Un `projectile=none` sur cette attaque primaire, des `DEFER` de rendu ou un sprite 204 absent ne sont **pas** un PASS. La validation matérielle ciblée du Malwrath est consignée dans `PORTING_STATUS.md`.
+
+Pour les tonneaux, distinguer **visée** (`[ACTIONENGINE] TRACE ... route=BARREL_SUBTYPE1`) et **préflight du rayon d'explosion** (`[BARRELRADIUS] PREFLIGHT` ou `DEFER`). Une ligne liée `type=0` est inerte pour `Game_hurtEntityAt()`, quel que soit son subtype, sans rendre les autres entités destructibles ignorables. Quand plusieurs tonneaux et monstres participent à la chaîne, l'ordre natif est tirage de l'explosion, dégâts/conséquences et RNG des monstres, puis explosion suivante, dans une transaction à rollback borné ; chercher `[MONSTERRADIUS] SEQUENCE-BEGIN`, `[BARRELRADIUS] BLAST` et `[BARRELRADIUS] INTERLEAVED-COMMIT`. **Ne pas qualifier un ancien `DEFER` ou une impression visuelle seule de PASS ciblé** : reproduire le scénario exact et vérifier la consommation d'ammo, les monstres, les drops et l'absence de rollback partiel.
+
+Enfin, si les taps remontent en `[TOUCH]` mais que `[ALIVE] SD=unavailable PAK=unavailable ... MENU=unavailable`, rechercher l'échec du montage SD avant d'incriminer le menu ou les correctifs gameplay. Un firmware qui démarre sans `/DoomRPG-ESP32.pak` ne peut pas initialiser le jeu.
+
 ## Validation d'une nouvelle frontière
 
 1. Lire le vrai SHA `main`, [`PORTING_STATUS.md`](PORTING_STATUS.md) et [`ARCHITECTURE.md`](ARCHITECTURE.md) ; examiner les fonctions legacy concernées dans le repo.

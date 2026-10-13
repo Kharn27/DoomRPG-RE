@@ -10,11 +10,11 @@
 
 #define GRID_LEFT 2
 #define GRID_TOP 35
-#define GRID_CELL_WIDTH 52
+#define GRID_CELL_WIDTH 39
 #define GRID_CELL_HEIGHT 28
 #define GRID_RIGHT 157
 #define GRID_BOTTOM 118
-#define GRID_ICON_MAX_WIDTH 46
+#define GRID_ICON_MAX_WIDTH 33
 #define GRID_ICON_MAX_HEIGHT 24
 
 #define GRID_BLACK ESP_HUB_COLOR_BG
@@ -27,6 +27,24 @@
 #define GRID_ENTITY_TYPE_AMMO 6U
 #define GRID_BULLETS_AMMO_SUBTYPE 1U
 #define GRID_PISTOL_WEAPON_ID 2U
+#define GRID_FAMILIAR_FIRST_ID 9U
+
+#if ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT != 12U || \
+    ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT != \
+        ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS * \
+        ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_ROWS
+#error "The native WPN grid must cover every legacy player weapon"
+#endif
+
+#if GRID_LEFT + GRID_CELL_WIDTH * ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COLUMNS != \
+    GRID_RIGHT + 1
+#error "Native WPN grid must fit the 160px viewport without gaps"
+#endif
+
+#if GRID_TOP + GRID_CELL_HEIGHT * ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_ROWS != \
+    GRID_BOTTOM + 1
+#error "Native WPN grid must fit the 120px viewport without gaps"
+#endif
 #define GRID_MAX_SOURCE_DIMENSION 64U
 #define GRID_MAX_MASK_BYTES 512U
 #define GRID_MAX_TEXEL_BYTES 2048U
@@ -377,7 +395,7 @@ static int drawFrame(uint16_t* framebuffer,
 
     /* Inventory pickup sprites are already authored for a tiny screen. Never
      * upscale them: the 16x11 bullets icon should remain 16x11 rather than
-     * balloon to the full 33x17 cell budget. Larger weapon sprites are only
+     * balloon to the full icon cell budget. Larger weapon sprites are only
      * downscaled to fit. */
     if (targetWidth > (int)frame->width) targetWidth = (int)frame->width;
     if (targetHeight > (int)frame->height) targetHeight = (int)frame->height;
@@ -403,6 +421,62 @@ static int drawFrame(uint16_t* framebuffer,
     if (outDrawWidth != NULL) *outDrawWidth = (uint8_t)targetWidth;
     if (outDrawHeight != NULL) *outDrawHeight = (uint8_t)targetHeight;
     return 1;
+}
+
+/* An unresolvable familiar sprite must never leave a blank selectable
+ * button. Display its exact legacy ID as DOG9/10/11 using six tiny glyphs
+ * in the existing framebuffer; no extra asset, heap, or text owner. The
+ * authoritative familiar name is still read from entities.db above. */
+static void drawFamiliarPlaceholder(uint16_t* framebuffer,
+                                    uint8_t weapon,
+                                    int owned) {
+    static const uint8_t glyphs[6][5] = {
+        {6U, 5U, 5U, 5U, 6U}, /* D */
+        {7U, 5U, 5U, 5U, 7U}, /* O */
+        {7U, 4U, 5U, 5U, 7U}, /* G */
+        {7U, 5U, 5U, 5U, 7U}, /* 0 */
+        {2U, 6U, 2U, 2U, 7U}, /* 1 */
+        {7U, 5U, 7U, 1U, 7U}  /* 9 */
+    };
+    const char* label = weapon == 9U
+                            ? "DOG9"
+                            : (weapon == 10U ? "DOG10" : "DOG11");
+    const uint16_t color = owned ? GRID_OWNED_BORDER : GRID_DIM_BORDER;
+    uint8_t left, top, right, bottom;
+    int x;
+    int y;
+    int i;
+    if (framebuffer == NULL || weapon < GRID_FAMILIAR_FIRST_ID ||
+        weapon >= ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_COUNT) return;
+    EspNativeGameplayHubWeaponGrid_cellBounds(
+        weapon, &left, &top, &right, &bottom);
+    x = (int)left + ((int)GRID_CELL_WIDTH -
+                       ((int)strlen(label) * 4 - 1)) / 2;
+    y = (int)top + 11;
+    for (i = 0; label[i] != '\0'; ++i) {
+        const uint8_t* glyph;
+        int row;
+        switch (label[i]) {
+        case 'D': glyph = glyphs[0]; break;
+        case 'O': glyph = glyphs[1]; break;
+        case 'G': glyph = glyphs[2]; break;
+        case '0': glyph = glyphs[3]; break;
+        case '1': glyph = glyphs[4]; break;
+        case '9': glyph = glyphs[5]; break;
+        default: return;
+        }
+        for (row = 0; row < 5; ++row) {
+            int col;
+            for (col = 0; col < 3; ++col) {
+                if ((glyph[row] & (1U << (2 - col))) != 0U) {
+                    putPixel(framebuffer, x + col, y + row, color);
+                }
+            }
+        }
+        x += 4;
+    }
+    (void)right;
+    (void)bottom;
 }
 
 int EspNativeGameplayHubWeaponGrid_paint(
@@ -489,7 +563,7 @@ int EspNativeGameplayHubWeaponGrid_paint(
     paletteEntries = paletteBytes / 2U;
     spriteBaseTexelOffset = wallDataSize * 2U;
 
-    printf("[HUBWGRID] SOURCES catalog=yes bullets=tile/%u familiarIds=9..11 display=blank\n",
+    printf("[HUBWGRID] SOURCES catalog=yes bullets=tile/%u familiarIds=9..11 display=grid\n",
            (unsigned int)bulletsTile);
     printf("[HUBWGRID] MAPPINGS texelPairs=%u bitShapePairs=%u textures=%u sprites=%u spriteIdsBase=%u bytes=%u contract=tile->mediaSprite->bitshape\n",
            (unsigned int)texelPairs,
@@ -499,7 +573,7 @@ int EspNativeGameplayHubWeaponGrid_paint(
            (unsigned int)spriteIdsBase,
            (unsigned int)mappings.size);
 
-    /* Paint the complete 3x3 arsenal board first. */
+    /* Paint all twelve legacy weapon slots, including dog-familiar forms. */
     for (slot = 0U; slot < ESP_NATIVE_GAMEPLAY_HUB_WEAPON_GRID_SLOT_COUNT; ++slot) {
         uint8_t left;
         uint8_t top;
@@ -570,9 +644,13 @@ int EspNativeGameplayHubWeaponGrid_paint(
             drawRect(framebuffer, left + 1, top + 1, right - 1, bottom - 1,
                      GRID_FOCUS);
         }
-        if (iconReady &&
-            !drawFrame(framebuffer, weapon, owned, &frame, &workspace,
-                       &drawWidth, &drawHeight)) return 0;
+        if (iconReady) {
+            if (!drawFrame(framebuffer, weapon, owned, &frame, &workspace,
+                           &drawWidth, &drawHeight)) return 0;
+        }
+        else if (weapon >= GRID_FAMILIAR_FIRST_ID) {
+            drawFamiliarPlaceholder(framebuffer, weapon, owned);
+        }
 
         assetFNV = fnvUpdate(assetFNV, &weapon, sizeof(weapon));
         assetFNV = fnvUpdate(assetFNV, &weaponTile, sizeof(weaponTile));
@@ -610,7 +688,7 @@ int EspNativeGameplayHubWeaponGrid_paint(
     }
 
     if (assetFNV == 0U || !EspAssetPack_isOpen()) return 0;
-    printf("[HUBWGRID] FRAME weapons=9/9 layout=3x3 blankSlots=0 icons=%u missing=%u owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray palette=source-bgr565-to-framebuffer-rgb565 familiarIds=9..11/excluded pistolIcon=bullets-pickup/native-no-upscale persistentIconBytes=0 scratchBytes=%u scratchOwner=static sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
+    printf("[HUBWGRID] FRAME weapons=12/12 layout=4x3 blankSlots=0 icons=%u missing=%u owned=%u equipped=%u selected=%u ownedRender=color unavailableRender=gray palette=source-bgr565-to-framebuffer-rgb565 familiarIds=9..11/included pistolIcon=bullets-pickup/native-no-upscale persistentIconBytes=0 scratchBytes=%u scratchOwner=static sourceMaskBytes=%u sourceTexelBytes=%u assetFNV=%08x packOwnership=preserved-open mutation=no turn=no\n",
            (unsigned int)readyIcons,
            (unsigned int)missingIcons,
            (unsigned int)ownedCount,

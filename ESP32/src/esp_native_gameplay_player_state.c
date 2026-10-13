@@ -12,6 +12,12 @@
 #define PLAYER_STACK_MAX 99U
 
 static EspNativeGameplayPlayerState playerState;
+/* MAP_ITEMS == 11, so 11 level bits plus bit15 provenance fit two bytes. */
+#define PLAYER_COMPLETION_VALID 0x8000U
+#define PLAYER_COMPLETION_BITS  0x07ffU
+static uint16_t completedLevels;
+static uint8_t completedLevelsKnown;
+
 
 _Static_assert(sizeof(EspNativeGameplayPlayerState) == 52U,
                "native player gameplay state must remain 52 bytes");
@@ -104,6 +110,8 @@ void EspNativeGameplayPlayerState_resetFresh(void) {
      * Ordinary map/session resets never call this function. */
     EspNativeGameplaySave_clearTransitionRoute();
     memset(&playerState, 0, sizeof(playerState));
+    completedLevels = 0U;
+    completedLevelsKnown = 1U;
     playerState.param1 = packParam1(30U, 30U, 0U, 20U);
     playerState.param2 = packParam2(16U, 12U, 14U, 16U);
     playerState.currentXP = 0U;
@@ -465,4 +473,43 @@ uint8_t EspNativeGameplayPlayerState_ammo(uint8_t ammoType) {
 
 uint16_t EspNativeGameplayPlayerState_weapons(void) {
     return EspNativeGameplayPlayerState_ensure() ? playerState.weapons : 0U;
+}
+
+uint16_t EspNativeGameplayPlayerState_completedLevels(void) {
+    return completedLevels;
+}
+
+int EspNativeGameplayPlayerState_completedLevelsKnown(void) {
+    return completedLevelsKnown != 0U;
+}
+
+int EspNativeGameplayPlayerState_markCompleted(uint32_t bit) {
+    if (bit == 0U || (bit & ~((uint32_t)PLAYER_COMPLETION_BITS)) != 0U ||
+        (bit & (bit - 1U)) != 0U) return 0;
+    completedLevels = (uint16_t)(completedLevels | (uint16_t)bit);
+    /* An old checkpoint remains incomplete-history even after a new
+     * completion. Only the actual newly observed bits are authoritative. */
+    printf("[LEVELCOMPLETION] MARK bit=%08x knownMask=%04x history=%s owner=esp-native\n",
+           (unsigned int)bit, (unsigned int)completedLevels,
+           completedLevelsKnown ? "full" : "partial-from-legacy-save");
+    return 1;
+}
+
+uint16_t EspNativeGameplayPlayerState_completionCheckpoint(void) {
+    return (uint16_t)(completedLevels |
+                      (completedLevelsKnown ? PLAYER_COMPLETION_VALID : 0U));
+}
+
+int EspNativeGameplayPlayerState_restoreCompletionCheckpoint(uint16_t encoded) {
+    if (encoded != 0U &&
+        (encoded & ~(PLAYER_COMPLETION_VALID | PLAYER_COMPLETION_BITS)) != 0U) {
+        return 0;
+    }
+    completedLevels = (uint16_t)(encoded & PLAYER_COMPLETION_BITS);
+    completedLevelsKnown = (uint8_t)((encoded & PLAYER_COMPLETION_VALID) != 0U);
+    printf("[LEVELCOMPLETION] RESTORE mask=%04x history=%s provenance=%s\n",
+           (unsigned int)completedLevels,
+           completedLevelsKnown ? "full" : "partial-or-unknown",
+           encoded == 0U ? "legacy-zero-reserved" : "checkpoint");
+    return 1;
 }

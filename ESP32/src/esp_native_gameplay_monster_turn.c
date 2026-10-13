@@ -19,6 +19,7 @@
 #include "esp_native_gameplay_monster_state.h"
 #include "esp_native_gameplay_monster_three_goal_turn.h"
 #include "esp_native_gameplay_monster_turn.h"
+#include "esp_native_rng_replay_guard.h"
 #include "esp_native_gameplay_player_state.h"
 #include "esp_player_view_state.h"
 #include "esp_player_fresh_map_state.h"
@@ -647,15 +648,48 @@ static int findCandidateForSprite(
 
     dx = (int64_t)monsterX - playerView->destX;
     dy = (int64_t)monsterY - playerView->destY;
-    if ((dx != 0 && dy != 0) || (dx == 0 && dy == 0)) return 1;
+    if ((dx != 0 && dy != 0) || (dx == 0 && dy == 0)) {
+        if (monster->subtype == 3U) {
+            printf("[IMPAI] TARGET sprite=%u tile=%u target=%d,%d weapon=%u decision=move reason=not-cardinal-alignment mutation=no rngConsumed=0\n",
+                   (unsigned int)monster->spriteIndex,
+                   (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                   (int)playerView->destX, (int)playerView->destY,
+                   (unsigned int)weaponId);
+        }
+        return 1;
+    }
 
     worldDistance = (uint32_t)(dx * dx + dy * dy);
     attackRange = (1 + (int)weapon->rangeMin) * TURN_TILE_SIZE;
-    if (worldDistance > (uint32_t)(attackRange * attackRange)) return 1;
+    if (worldDistance > (uint32_t)(attackRange * attackRange)) {
+        if (monster->subtype == 3U) {
+            printf("[IMPAI] TARGET sprite=%u tile=%u distance2=%u range2=%u weapon=%u decision=move reason=out-of-range mutation=no rngConsumed=0\n",
+                   (unsigned int)monster->spriteIndex,
+                   (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                   (unsigned int)worldDistance,
+                   (unsigned int)(attackRange * attackRange),
+                   (unsigned int)weaponId);
+        }
+        return 1;
+    }
     if (!cardinalLosClear(monsterX, monsterY,
                           playerView->destX, playerView->destY,
                           monster->spriteIndex)) {
+        if (monster->subtype == 3U) {
+            printf("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=move reason=trace-blocked mutation=no rngConsumed=0\n",
+                   (unsigned int)monster->spriteIndex,
+                   (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                   (unsigned int)worldDistance,
+                   (unsigned int)weaponId);
+        }
         return 1;
+    }
+    if (monster->subtype == 3U) {
+        printf("[IMPAI] TARGET sprite=%u tile=%u distance2=%u weapon=%u decision=attack-candidate reason=cardinal-range-los-clear mutation=no rngConsumed=0\n",
+               (unsigned int)monster->spriteIndex,
+               (unsigned int)(linkState & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+               (unsigned int)worldDistance,
+               (unsigned int)weaponId);
     }
 
     outCandidate->monster = monster;
@@ -723,12 +757,23 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
     randomBefore = doomRpg->random;
     randomFNVBefore = randomFNV(&randomBefore);
     playerFNVBefore = EspNativeGameplayPlayerState_fingerprint();
+    if (!EspNativeRngReplayGuard_beginAttackProbe(&doomRpg->random)) {
+        printf("[MONSTERTURN] MEMBER-DEFER reason=%s sprite=%u cause=rng-probe-lease-busy mutation=no\n",
+               reasonName(reason), (unsigned int)spriteIndex);
+        return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
+    }
 
     if (((1U + (uint32_t)monsterWeapons[candidate.weaponId].rangeMin) / 2U) != 0U) {
         aiDecision = DoomRPG_randNextByte(&doomRpg->random);
         ++aiRngCalls;
         if (aiDecision >= 217U) {
             doomRpg->random = randomBefore;
+            if (!EspNativeRngReplayGuard_endAttackProbe(
+                    &doomRpg->random, &randomBefore)) {
+                printf("[MONSTERTURN] MEMBER-DEFER sprite=%u cause=rng-probe-reservation-failed path=ranged-ai mutation=no\n",
+                       (unsigned int)spriteIndex);
+                return ESP_NATIVE_GAMEPLAY_MONSTER_MEMBER_INVALID;
+            }
             randomFNVAfter = randomFNV(&doomRpg->random);
             printf("[MONSTERTURN] MEMBER-MOVE reason=%s sprite=%u subtype=%u tile=%u weapon=%u aiRand=%u threshold=217 branch=ranged-ai ordered=yes rngCalls=1 rng=%08x->%08x rollback=yes mutation=no\n",
                    reasonName(reason),
@@ -747,6 +792,8 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
     if (!rollMonsterAttack(doomRpg, candidate.monster, player,
                            candidate.weaponId, candidate.loops, &roll)) {
         doomRpg->random = randomBefore;
+        (void)EspNativeRngReplayGuard_endAttackProbe(
+            &doomRpg->random, &randomBefore);
         printf("[MONSTERTURN] MEMBER-DEFER reason=%s sprite=%u cause=attack-roll-failed rngRollback=yes mutation=no\n",
                reasonName(reason),
                (unsigned int)candidate.monster->spriteIndex);
@@ -756,9 +803,12 @@ EspNativeGameplayMonsterTurn_probeActiveMember(
     prospectivePlayerPain(player, roll.totalDamage, roll.totalArmorDamage,
                           &healthAfter, &armorAfter);
     doomRpg->random = randomBefore;
+    rngExact = EspNativeRngReplayGuard_endAttackProbe(
+                   &doomRpg->random, &randomBefore);
     randomFNVAfter = randomFNV(&doomRpg->random);
     playerFNVAfter = EspNativeGameplayPlayerState_fingerprint();
-    rngExact = memcmp(&doomRpg->random, &randomBefore,
+    rngExact = rngExact &&
+               memcmp(&doomRpg->random, &randomBefore,
                       sizeof(randomBefore)) == 0;
     playerExact = memcmp(EspNativeGameplayPlayerState_view(),
                          &playerBefore, sizeof(playerBefore)) == 0;
@@ -1490,6 +1540,11 @@ int EspNativeGameplayMonsterTurn_cancelPlayerAttack(uint32_t inputSequence) {
     printf("[MONSTERTURN] ATTACK-CANCEL seq=%u cause=action-rollback scheduled=no\n",
            (unsigned int)inputSequence);
     return 1;
+}
+
+int EspNativeGameplayMonsterTurn_canRequestPassTurn(void) {
+    return syncOwner() && turnOwner.passPending == TURN_PENDING_NONE &&
+           turnOwner.attackPending == 0U;
 }
 
 int EspNativeGameplayMonsterTurn_requestPassTurn(uint32_t inputSequence) {

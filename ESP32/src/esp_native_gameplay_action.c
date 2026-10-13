@@ -23,7 +23,8 @@ typedef enum SelectFamily_e {
     SELECT_FAMILY_DIALOG = 2,
     SELECT_FAMILY_PASSWORD = 3,
     SELECT_FAMILY_CHAIN = 4,
-    SELECT_FAMILY_KEY_DOOR = 5
+    SELECT_FAMILY_KEY_DOOR = 5,
+    SELECT_FAMILY_STORE = 6
 } SelectFamily;
 
 static int descriptorMatchesSelect(
@@ -273,6 +274,27 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
                 family = SELECT_FAMILY_KEY_DOOR;
                 continue;
             }
+            else if (filtered.codeId == 33U) { /* EV_OPENSTORE */
+                EspMapByteCode storeCommand;
+                /* The filtered result intentionally does not mirror arg1:
+                 * read the immutable command through the bounded map API. */
+                memset(&storeCommand, 0, sizeof(storeCommand));
+                if (descriptor.commandCount != 1U ||
+                    notePrefixEligible != 0U ||
+                    selectedOffset != 0U ||
+                    !EspMapEvents_getCommand(&descriptor, offset,
+                                             &storeCommand) ||
+                    storeCommand.id != 33U ||
+                    storeCommand.arg1 >= 4U ||
+                    storeCommand.arg2 != 0x00000100UL ||
+                    filtered.arg2 != storeCommand.arg2) {
+                    outResult->unsupportedCodeId = filtered.codeId;
+                    return ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
+                }
+                outResult->storeId = (uint8_t)storeCommand.arg1;
+                family = SELECT_FAMILY_STORE;
+                break;
+            }
             else if (isSynchronousChainEntry(filtered.codeId)) {
                 if (notePrefixEligible != 0U || selectedOffset > UINT8_MAX) {
                     outResult->unsupportedCodeId = filtered.codeId;
@@ -318,6 +340,13 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
     outResult->codeId = selectedCodeId;
     outResult->removedBefore = selectedRemoved;
     outResult->removedAfter = selectedRemoved;
+
+    if (family == SELECT_FAMILY_STORE) {
+        return (eligibleCount == 1U && selectedOffset == 0U &&
+                selectedCodeId == 33U)
+                   ? ESP_NATIVE_GAMEPLAY_ACTION_STORE_READY
+                   : ESP_NATIVE_GAMEPLAY_ACTION_UNSUPPORTED_EVENT;
+    }
 
     if (family == SELECT_FAMILY_DIALOG) {
         if (selectedOffset > UINT8_MAX || !isDialogOpcode(selectedCodeId)) {
@@ -555,6 +584,7 @@ const char* EspNativeGameplayAction_statusName(
     case ESP_NATIVE_GAMEPLAY_ACTION_PASSWORD_READY: return "PASSWORD_READY";
     case ESP_NATIVE_GAMEPLAY_ACTION_CHAIN_READY: return "CHAIN_READY";
     case ESP_NATIVE_GAMEPLAY_ACTION_KEY_REQUIRED: return "KEY_REQUIRED";
+    case ESP_NATIVE_GAMEPLAY_ACTION_STORE_READY: return "STORE_READY";
     default: return "UNKNOWN";
     }
 }
