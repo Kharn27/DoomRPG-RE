@@ -147,16 +147,21 @@ static inline int EspNativeGameplayDamageCueQueue_pop(
     return 1;
 }
 
-/* Presentation-only post-COMMIT FIFO: one attack probe/sprite per cue.
- * No legacy red full-border flash for positioned monster hits. Non-positional
- * damage retains the historical red viewport border fallback. */
+/* Independent presentation-only FIFO. Every committed monster hit keeps
+ * its existing red 500 ms border; the direction band blinks concurrently on
+ * top of it. Nothing here delays the next member of the monster sequence. */
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side);
-/* Presentation-only pacing barrier: the ordered monster sequencer does not
- * start another attack while this probe's impact flashes. Never alters RNG,
- * actor selection or turn tokens. Invalid/unknown probe is always unblocked. */
-int EspNativeGameplayActionEngine_directionalDamagePending(uint32_t attackProbe);
+
+/* Integer 50%-alpha RGB565 blend, called on the existing framebuffer only.
+ * A band snapshot is taken AFTER the base red border: restoring it returns
+ * the red border, then its own owner restores the original world pixels. */
+static inline uint16_t EspNativeGameplayDamageCue_blend565(
+    uint16_t base, uint16_t overlay) {
+    return (uint16_t)(((base & 0xf7deU) >> 1U) +
+                      ((overlay & 0xf7deU) >> 1U));
+}
 
 /* Legacy Hud keeps at most five queued messages. This bounded batch API is
  * intentionally narrow: it lets one committed multi-pickup tile publish the
