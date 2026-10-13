@@ -28,6 +28,15 @@ removing an unlinked function can still alter GCC inlining in a live TU.
 
 ## 1. Design rule
 
+Credit-gated script interactions reuse `EspNativeGameplayEventChain` for their
+dialog/WAIT continuation and per-segment journal. PlayerState owns money;
+NotePrefix leases its existing candidate/scratch until frame publication;
+sprite topology owns SHOW admission/commit; GibFx provides a stateless capture
+painter. The WAIT clock lives with the continuation, not a second world engine.
+Unsupported stats/particle families remain closed. This is a new production
+boundary requiring CYD validation, not part of the earlier byte-identical
+cleanup evidence. Production source/header counts remain 158/152.
+
 **A new BSP is data, not a new engine.**
 
 The desktop/J2ME reverse-engineered source is an executable specification for

@@ -1,6 +1,8 @@
 #ifndef DOOMRPG_ESP32_NATIVE_GAMEPLAY_GIB_FX_H
 #define DOOMRPG_ESP32_NATIVE_GAMEPLAY_GIB_FX_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -12,6 +14,11 @@ extern "C" {
  * burst. No gameplay, RNG, topology or renderer state is mutated.
  */
 int EspNativeGameplayGibFx_adoptCheckpointState(void);
+
+/* Stateless capture-shaped EV_SPAWNPARTICLES family 3 overlay. The event
+ * continuation owns time; this painter owns no lease, RNG or world mutation. */
+int EspNativeGameplayGibFx_paintCapture(uint32_t operand, uint32_t ageMs,
+    uint32_t durationMs, uint32_t seed);
 
 #ifdef __cplusplus
 }

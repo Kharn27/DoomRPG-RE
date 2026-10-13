@@ -165,6 +165,59 @@ static int eventDescriptorForIndex(uint16_t eventIndex,
     return EspMapEvents_describe(&ref, outDescriptor);
 }
 
+int EspNativeGameplayNotePrefix_prepare(uint16_t eventIndex, uint8_t offset) {
+    const EspPlayerViewState* view = EspPlayerView_view();
+    EspNativeGameplayNotePrefixState* state;
+    EspMapEventDescriptor descriptor;
+    EspMapUiIntent intent;
+    EspAssetPackEntry entry;
+    const char* name;
+    size_t bytes = 0U;
+    int ok;
+    if (view == NULL || view->active != 1U || EspAssetPack_isOpen() ||
+        (notePrefix != NULL && notePrefix->busy != 0U) ||
+        !eventDescriptorForIndex(eventIndex, &descriptor) ||
+        EspMapUiIntent_build(&descriptor, offset, &intent) != ESP_MAP_UI_INTENT_OK ||
+        intent.kind != ESP_MAP_UI_INTENT_APPEND_NOTE) return 0;
+    name = EspMapCatalog_nameForId(view->targetMapId);
+    if (name == NULL) return 0;
+    if (notePrefix == NULL) {
+        notePrefix = SDL_calloc(1, sizeof(*notePrefix));
+        if (notePrefix == NULL) return 0;
+    }
+    state = notePrefix;
+    if (!state->active || state->targetMapId != view->targetMapId) {
+        EspMapNotebook_reset(&state->notebook);
+        state->active = 1U;
+        state->targetMapId = view->targetMapId;
+    }
+    state->candidate = state->notebook;
+    if (!EspAssetPack_open(ESP_ASSET_PACK_DEFAULT_PATH)) return 0;
+    memset(&entry, 0, sizeof(entry));
+    ok = EspAssetPack_findEntry(name, &entry) &&
+         EspMapNotebook_apply(&state->candidate, &entry, &intent,
+                              state->scratch, sizeof(state->scratch), &bytes) ==
+             ESP_MAP_NOTEBOOK_APPLY_OK;
+    EspAssetPack_close();
+    if (!ok || EspAssetPack_isOpen()) return 0;
+    state->busy = 1U;
+    printf("[NOTE] STAGE event=%u cmd=%u string=%u len=%u->%u commit=after-presentation\n",
+           (unsigned)eventIndex, (unsigned)offset, (unsigned)intent.text.index,
+           (unsigned)state->notebook.length, (unsigned)state->candidate.length);
+    return 1;
+}
+
+void EspNativeGameplayNotePrefix_commit(void) {
+    if (notePrefix != NULL && notePrefix->busy == 1U) {
+        notePrefix->notebook = notePrefix->candidate;
+        notePrefix->busy = 0U;
+    }
+}
+
+void EspNativeGameplayNotePrefix_cancel(void) {
+    if (notePrefix != NULL && notePrefix->busy == 1U) notePrefix->busy = 0U;
+}
+
 /* The dialog owner's historical preflight accepts only zero/one state opcode.
  * The permanent chain layer now proves the whole saved continuation first.  We
  * temporarily hide that already-proven continuation from the old preflight,

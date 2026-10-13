@@ -205,6 +205,12 @@ EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
     uint32_t commandOffset,
     EspMapShowResult* outResult);
 
+/* Same admission checks as applyShow, without any topology/visual/RNG writes.
+ * Conservative against the current topology, not a speculative future world. */
+EspMapSpriteTopologyStatus EspMapSpriteTopology_previewShow(
+    const EspMapEventDescriptor* descriptor, uint32_t commandOffset,
+    EspMapShowResult* outResult);
+
 /* Exact inverse of one successful applyShow(), used by the MOVE/render
  * transaction when the destination frame cannot commit. */
 int EspMapSpriteTopology_rollbackShow(const EspMapShowResult* result);

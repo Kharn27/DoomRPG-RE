@@ -959,6 +959,7 @@ const char* EspNativeGameplayDialog_resumeStatusName(
     case ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_NO_COMMAND: return "NO_COMMAND";
     case ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_EXEC_FAILED: return "EXEC_FAILED";
     case ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_OK: return "OK";
+    case ESP_NATIVE_GAMEPLAY_DIALOG_RESUME_PAUSED: return "PAUSED";
     default: return "UNKNOWN";
     }
 }

@@ -5,6 +5,8 @@
 
 #include "esp_native_gameplay_dialog.h"
 
+struct Render_s;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -103,6 +105,18 @@ EspNativeGameplayEventChain_executeRange(
  * both the lazy rollback journal and its optional topology snapshot; safe to
  * call again when no journal was acquired. */
 void EspNativeGameplayEventChain_reset(void);
+
+/* Credit-gated scripted interactions: preflight the complete eligible path,
+ * then commit each synchronous segment only after its dialog/frame publishes.
+ * WAIT owns its continuation/input, not a blocking delay or another world owner.
+ * Unsupported stat mutations/particle families remain fail-closed. */
+EspNativeGameplayEventChainPreflightStatus
+EspNativeGameplayEventChain_preflightInteraction(uint16_t eventIndex,
+    uint8_t offset, uint32_t runFlags);
+int EspNativeGameplayEventChain_isWaiting(void);
+int EspNativeGameplayEventChain_serviceWait(struct Render_s* render);
+int EspNativeGameplayEventChain_commit(
+    const EspNativeGameplayDialogResumeResult* result);
 
 /* One-shot diagnostic over the resident event corpus. Allocation-free and
  * mutation-free; intended to tell hardware testing which opcode families will

@@ -1,6 +1,30 @@
 
 This directory contains project tests.
 
+Credit-gated interaction + real SHOW admission regression (also in CI):
+
+```sh
+cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -IESP32/test/host_include -IESP32/include -Isrc \
+  ESP32/test/paid_interaction_host.c ESP32/src/esp_native_gameplay_event_chain.c \
+  ESP32/src/esp_map_events.c ESP32/src/esp_map_event_filter.c \
+  ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c \
+  ESP32/src/esp_native_gameplay_gib_fx.c -Wl,--gc-sections \
+  -o /tmp/doomrpg-paid-interaction-test
+/tmp/doomrpg-paid-interaction-test
+cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections \
+  -IESP32/test/host_include -IESP32/include ESP32/test/show_preview_host.c \
+  -Wl,--gc-sections -o /tmp/doomrpg-show-preview-test
+/tmp/doomrpg-show-preview-test
+```
+
+The first fixture replays the supplied event67 raw sequence through real event
+filter/state/continuation and capture-painter code. Player/dialog/PAK/notebook/
+topology and frame/present are mocked; no SD or CYD claim follows. The second
+seeds the real compact topology storage and checks read-only SHOW admission,
+unchanged successful commit/rollback, random blocker/linked/order/coordinate
+guards. host_include is test-only SDK declaration glue, never a firmware input.
+
 Architecture-consolidation audit tool (host Python, no firmware dependency):
 
 ```sh

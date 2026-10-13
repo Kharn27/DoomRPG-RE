@@ -379,3 +379,24 @@ candidats sont traités. Restent les deux bridges avec effet compiler, les
 gardes/layouts LRU (488 B), les quatre helpers/modèle de sortie parallèles,
 la documentation historique restante et les aliases de composition actifs.
 Ne pas fusionner leurs lifetimes ; refaire audit et preuve à chaque frontière.
+
+## Suite fonctionnelle demandée : interaction REQSTAT/WAIT
+
+Depuis le head documentaire `0423fde`, l'utilisateur fournit un nouveau blocage
+CYD event 67/tile 675 : premier opcode éligible 23, opérande `001d0a02`
+(crédits ≥10, texte d'échec 29), puis débit 22, dialogue 26, particules capture
+35, son 42, WAIT 350 ms, SHOW/HIDE/NOTE/state. Cette correction est **une nouvelle
+frontière gameplay**, distincte des retraits byte-identiques précédents.
+
+Pas de nouveau TU/header production, toujours 158/152. La continuation est
+portée par le journal EventChain existant, Player/Notebook/topologie/renderer
+gardent leurs états. Le journal lazy passe de 1 020 à 1 128 B sur Xtensa
+(DWARF ELF, **+108 B heap**, pas de BSS). Le scratch NOTE existant est réutilisé,
+le painter capture est sans état. Ne pas présenter la RAM statique inchangée
+comme « aucun coût RAM ». Les deux tests supplémentaires sont hôte uniquement.
+Les anciens invariants de build/exports, PAK, NULL texels/shapes et formats save
+restent conservés ; le nouveau code chargé n'est **pas** annoncé identique.
+
+Preuve et protocole hardware : DOCUMENTATION/PORTING_STATUS, validation CYD
+encore pending. Ne pas fusionner ce correctif fonctionnel sous le seul PASS
+matériel historique du menu/consolidation.

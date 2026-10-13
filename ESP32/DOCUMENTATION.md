@@ -61,6 +61,38 @@ Enfin, si les taps remontent en `[TOUCH]` mais que `[ALIVE] SD=unavailable PAK=u
 
 ## Validation d'une nouvelle frontière
 
+### Interactions payantes avec dialogue et attente
+
+Le SELECT natif admet maintenant un `EV_REQSTAT` crédits (23, stat 2) suivi
+du débit `EV_DECSTAT` correspondant (22), d'un dialogue sans Back (26), des
+particules de capture (35, famille 3), d'un son publié comme intent silencieux
+(42) et d'une attente (37). Après l'attente : SHOW/HIDE, refresh de vue (36),
+note (40) et mutations d'état (11/19/20). Les opérandes et toute cette fermeture
+sont préflightés avant le paiement ; SHOW utilise les gardes natives existantes.
+Les autres stats, particules et formes de chaîne restent fail-closed.
+
+Fonds insuffisants : texte BSP de l'opcode 23, aucun débit ni continuation.
+Paiement : snapshot PlayerState et rollback si l'ouverture du dialogue échoue ;
+le débit est commité seulement lorsque le dialogue est présenté. WAIT garde
+l'entrée monde fermée, sans sleep ni action différée derrière le timer. Le
+timer monotonic démarre après la première frame d'effet réussie, accepte le wrap
+32 bits, et reste borné à 10 s. Une note est préparée dans le candidate/scratch
+NOTE existant et commise après le rendu final ; échec I/O/rendu = rollback du
+segment et retry, pas de second paiement. Pas de nouveau fichier moteur ni de
+nouveau propriétaire Player/Notebook/topologie/PAK.
+
+**Validation CYD encore requise** : reproduire l'interaction de la trace (event
+67, tile 675) avec ≥10 crédits, terminer le dialogue, observer l'effet orange et
+la reprise gameplay, puis vérifier la note et un débit unique de 10 crédits.
+Re-taper la cible ne doit pas facturer à nouveau. Avec <10 crédits, le dialogue
+de refus ne doit changer ni les crédits ni le monde. Garder les logs
+`[SCRIPTSTAT]`, `[SCRIPTWAIT]`, `[NOTE]`, et vérifier `shapeData/mediaTexels=0`.
+Le timer, le son silencieux et les mocks hôte ne prouvent pas une parité visuelle
+ou RNG exhaustive avec le desktop. Ajouter un smoke-test dialogue ordinaire,
+HUB/SAVE/LOAD et SHOW/HIDE (les types/formats de sauvegarde restent inchangés).
+
+### Protocole général
+
 1. Lire le vrai SHA `main`, [`PORTING_STATUS.md`](PORTING_STATUS.md) et [`ARCHITECTURE.md`](ARCHITECTURE.md) ; examiner les fonctions legacy concernées dans le repo.
 2. Partir **du SHA exact** après chaque merge ; créer une branche `agent/*`. Jamais de merge automatique dans `main`.
 3. Choisir **une famille cohérente bornée** ; introduire uniquement le propriétaire natif durable et les guards de parité nécessaires. Les cas non couverts restent **fail-closed**.

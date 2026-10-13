@@ -1,5 +1,53 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Interaction payante REQSTAT/WAIT — logiciel testé, CYD pending (2026-10-13)
+
+Même branche `agent/esp32-consolidate-postload-junction`, parent `0423fde`.
+Trace fournie : event 67/tile 675, SELECT refusé avec `unsupported=23`, après
+les dialogues et la progression d'état normaux. `001d0a02` demande 10 crédits,
+`00000a02` les débite, puis la fermeture inclut HIDE/state/dialogue 26, effet
+capture 35, son 42, WAIT 350 ms et SHOW/HIDE/REFRESH/NOTE/state. Le filtre
+`00080000` est le masque **état 4**, pas un numéro d'état 8.
+
+Correction native bornée : préflight de la fermeture avant débit ; rollback
+PlayerState/topologie/states/removed si l'ouverture du dialogue échoue ; commit
+au dialogue visible. Après clôture, WAIT non bloquant avec entrée monde fermée,
+particules orange RGB565 via un painter stateless/local visual RNG, son comme
+intent **silencieux**, reprise du suffixe après 350 ms depuis sa première frame
+réussie. Note staged dans l'owner existant, commit après rendu final ; failure
+I/O/rendu = rollback et retry du suffixe sans rejouer le paiement. Unsupported
+stats, autres particules, dialogues cancelables et formes de scripts hors ce
+contrat restent fail-closed. SHOW est préflighté conservativement contre la
+topologie courante, sans writes ni tirage RNG.
+
+Les tests hôte rejouent les 23 commandes de la trace avec les vrais filtre,
+event walker, opcode-state executor, journal/continuation et capture painter.
+Player, dialog, PAK, notebook et topology sont mockés dans ce test ; un second
+test exerce le vrai kernel SHOW preview/commit/rollback. Cas couverts : <10
+crédits, erreur d'ouverture puis retry, double SELECT sans double débit,
+attente depuis première frame publiée, échec rendu et note I/O, restauration
+exacte du suffixe, NOTE unique, wrap uptime et guards framebuffer/HUD.
+ASan/UBSan PASS local (LeakSanitizer incompatible avec ptrace, désactivé).
+CI ajoute ces deux tests aux dix tests C existants. **CI distante à vérifier
+après push ; aucun PASS matériel attribué.**
+
+RAM statique cible inchangée ; journal lazy **1 020 → 1 128 B (+108 B heap)**,
+mesuré par le type DWARF de l'ELF Xtensa. Le propriétaire NOTE/scratch existe
+déjà et reste lazy ; cette route peut l'acquérir. Aucun nouveau fichier moteur
+ou header production (158/152), ni source desktop/shapeData/mediaTexels rétabli.
+Builds locaux normal/bringup PASS : RAM/Flash **47 680 / 808 093 B** et
+**47 832 / 825 593 B**. Flash +5 460 / +5 280 B par rapport au parent ; ce
+n'est pas un retrait no-op.
+
+**PASS CYD demandé avant merge** : interaction avec ≥10 crédits → dialogue
+→ effet/WAIT → gameplay/note ; crédit débité une fois, état avancé, retap sans
+nouvelle facture. Autre essai avec <10 crédits → refus sans mutation. Capturer
+`SCRIPTSTAT CHECK/DEBIT/PAUSE/COMPLETE`, `SCRIPTWAIT ARM/PRESENT` et l'état des
+crédits/note après reprise. Smoke-test dialogue habituel et HUB/SAVE/LOAD.
+PAK, NULL shapes/texels et sauvegarde V11 doivent rester invariants. La parité
+pixel-perfect des particules, tous les scripts/stats et l'audio audible restent
+hors de cette validation. Aucun flash ni merge main effectué par l'agent.
+
 ## Consolidation — lot 2 graphique ZIP + fixtures hôte (2026-10-13)
 
 Même branche `agent/esp32-consolidate-postload-junction`, parent `9cde9d5`,

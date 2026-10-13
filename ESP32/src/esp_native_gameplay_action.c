@@ -59,7 +59,7 @@ static int isPasswordOpcode(uint8_t codeId) {
 }
 
 static int isSynchronousChainEntry(uint8_t codeId) {
-    return codeId == ESP_MAP_OPCODE_GIVEMAP;
+    return codeId == ESP_MAP_OPCODE_GIVEMAP || codeId == 23U;
 }
 
 static int decodeKeyCheck(uint32_t arg1, uint8_t* outKeyId,
@@ -368,9 +368,13 @@ EspNativeGameplayActionStatus EspNativeGameplayAction_executeSelect(
             !isSynchronousChainEntry(selectedCodeId)) {
             return ESP_NATIVE_GAMEPLAY_ACTION_INVALID;
         }
-        chainStatus = EspNativeGameplayEventChain_preflight(
-            descriptor.eventIndex, (uint8_t)selectedOffset,
-            ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS);
+        chainStatus = selectedCodeId == 23U
+            ? EspNativeGameplayEventChain_preflightInteraction(
+                descriptor.eventIndex, (uint8_t)selectedOffset,
+                ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS)
+            : EspNativeGameplayEventChain_preflight(
+                descriptor.eventIndex, (uint8_t)selectedOffset,
+                ESP_NATIVE_GAMEPLAY_SELECT_RUN_FLAGS);
         if (chainStatus == ESP_NATIVE_GAMEPLAY_EVENT_CHAIN_PREFLIGHT_OK) {
             return ESP_NATIVE_GAMEPLAY_ACTION_CHAIN_READY;
         }

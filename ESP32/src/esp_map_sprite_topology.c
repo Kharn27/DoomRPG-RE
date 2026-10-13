@@ -745,10 +745,10 @@ int EspMapSpriteTopology_rollbackPreparedRelink(
     return 1;
 }
 
-EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
+static EspMapSpriteTopologyStatus showCommand(
     const EspMapEventDescriptor* descriptor,
     uint32_t commandOffset,
-    EspMapShowResult* outResult) {
+    EspMapShowResult* outResult, int commit) {
     EspMapByteCode command;
     EspMapSprite sprite;
     uint32_t globalCommandIndex;
@@ -844,6 +844,8 @@ EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
         outResult->blocker1LinkOrderBefore = linkOrderAt(blocker1);
     }
 
+    if (!commit) return ESP_MAP_SPRITE_TOPOLOGY_OK;
+
     visualStates[spriteIndex] =
         (uint8_t)((visualStates[spriteIndex] & 0x70U) | showFlags);
     outResult->visualAfter = visualStates[spriteIndex];
@@ -884,6 +886,16 @@ EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
     outResult->effectFlags = effectFlags;
     refreshView();
     return ESP_MAP_SPRITE_TOPOLOGY_OK;
+}
+
+EspMapSpriteTopologyStatus EspMapSpriteTopology_applyShow(
+    const EspMapEventDescriptor* descriptor, uint32_t offset, EspMapShowResult* result) {
+    return showCommand(descriptor, offset, result, 1);
+}
+
+EspMapSpriteTopologyStatus EspMapSpriteTopology_previewShow(
+    const EspMapEventDescriptor* descriptor, uint32_t offset, EspMapShowResult* result) {
+    return showCommand(descriptor, offset, result, 0);
 }
 
 int EspMapSpriteTopology_rollbackShow(const EspMapShowResult* result) {

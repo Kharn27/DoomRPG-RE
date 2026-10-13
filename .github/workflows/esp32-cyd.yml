@@ -93,6 +93,16 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/include -Isrc ESP32/test/test_death_menu.c ESP32/src/esp_native_gameplay_player_death.c ESP32/src/esp_native_gameplay_hub_touch_ui.c -Wl,--gc-sections -o /tmp/doomrpg-death-menu-test
           /tmp/doomrpg-death-menu-test
 
+      - name: Test credit-gated script with dialog and WAIT (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include -Isrc ESP32/test/paid_interaction_host.c ESP32/src/esp_native_gameplay_event_chain.c ESP32/src/esp_map_events.c ESP32/src/esp_map_event_filter.c ESP32/src/esp_map_opcode_executor.c ESP32/src/esp_map_catalog.c ESP32/src/esp_native_gameplay_gib_fx.c -Wl,--gc-sections -o /tmp/doomrpg-paid-interaction-test
+          /tmp/doomrpg-paid-interaction-test
+
+      - name: Test read-only SHOW admission and unchanged commit rollback (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -IESP32/test/host_include -IESP32/include ESP32/test/show_preview_host.c -Wl,--gc-sections -o /tmp/doomrpg-show-preview-test
+          /tmp/doomrpg-show-preview-test
+
       - name: Cache PlatformIO packages
         uses: actions/cache@v4
         with:
