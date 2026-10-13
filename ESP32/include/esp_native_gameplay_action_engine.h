@@ -73,17 +73,25 @@ static inline EspNativeGameplayDamageSide
 EspNativeGameplayDamageSide_fromWorld(int32_t playerX, int32_t playerY,
                                       int32_t stepX, int32_t stepY,
                                       int32_t attackerX, int32_t attackerY) {
-    const int64_t dx = (int64_t)attackerX - playerX;
-    const int64_t dy = (int64_t)attackerY - playerY;
-    const int64_t front = dx * stepX + dy * stepY;
-    const int64_t right = dy * stepX - dx * stepY;
-    const uint64_t absFront = (uint64_t)(front < 0 ? -front : front);
-    const uint64_t absRight = (uint64_t)(right < 0 ? -right : right);
+    int64_t dx;
+    int64_t dy;
+    int64_t front;
+    int64_t right;
+    uint64_t absFront;
+    uint64_t absRight;
+    /* Check the cardinal basis before any multiplication: unknown callers
+     * must not overflow the pure projection by supplying arbitrary steps. */
     if (!((stepX == 64 || stepX == -64) && stepY == 0) &&
         !((stepY == 64 || stepY == -64) && stepX == 0)) {
         return ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE;
     }
+    dx = (int64_t)attackerX - playerX;
+    dy = (int64_t)attackerY - playerY;
     if (dx == 0 && dy == 0) return ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_NONE;
+    front = dx * stepX + dy * stepY;
+    right = dy * stepX - dx * stepY;
+    absFront = (uint64_t)(front < 0 ? -front : front);
+    absRight = (uint64_t)(right < 0 ? -right : right);
     if (absFront >= absRight) {
         return front > 0 ? ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT
                          : ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_BACK;
