@@ -1,5 +1,87 @@
 # Doom RPG ESP32 — guide de travail
 
+## Deuxième extraction DoomRPG — images/PAK (CYD accepté le 15 octobre 2026)
+
+Sur la même branche que l'extraction math/binary,
+`esp_doomrpg_image_resources.c` possède maintenant
+`DoomRPG_createImage`, `DoomRPG_freeImage` et
+`DoomRPG_fileOpenRead`, retirés de la **copie C générée**. Il
+préserve strictement les corps **déjà adaptés** pour PAK et
+`Esp32Bmp_LoadRW`, sans lecture ZIP runtime ni map-wide
+`mediaTexels`/`shapeData`. La source `src/DoomRPG.c` est toujours
+une référence, pas une unité compilée telle quelle.
+
+Test hôte depuis la racine :
+
+```sh
+python3 ESP32/test/doomrpg_image_resources_host.py
+```
+
+Il épingle les CRC des corps d'origine/adaptés et vérifie
+l'owner concret : lecture allouée PAK, nom slash, RGB565,
+color key, tailles, passage surface→texture, imageMemory,
+free et double-free sans texture ; les interfaces BMP/PAK/SDL
+sont **mockées**, pas des lectures SD physiques.
+Le générateur refuse une différence de corps.
+CI commit `e648f2fc` :
+[push PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38648524728)
+et [PR PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38648529981)
+sur normal/trace/bringup et vérifications compiledb/ELF.
+
+Le boot utilisateur confirme BMP indexés 144×72 / 108×74,
+logo et menu natif, READ du slot V11 07 depuis MENU_MAIN,
+entrée /intro.bsp CRC `623f34e4`, viewport, HUD, PAK,
+mouvement 552→520, porte ouverte et combat du sprite 106
+jusqu'à corpse/drop, avec feedback FRONT et
+`heap8=112328 largest8=86004`, `shapeData/mediaTexels=NULL`.
+**PASS ciblé du chargement et de la session**, sans test direct de
+teardown et sans preuve d'accélération sur le même scénario.
+Ne pas interpréter la différence entre `Wrote 809936 bytes`
+(esptool, image écrite) et `809565 B Flash` (mesure CI PlatformIO)
+comme une incohérence de taille : ce sont deux métriques distinctes.
+
+L'incident dormant/invisible après LOAD reste à reproduire séparément.
+Pour toute future migration d'un provider lié, build/test CI puis
+flash du profil **normal** et logs réels avant doc de clôture.
+Le commit documentaire ne touche pas aux fichiers de firmware.
+
+
+
+### Clôture matérielle du lot DoomRPG math/binary — 15 octobre 2026
+
+Depuis `main bb5b599f`, la PR [#212](https://github.com/Kharn27/DoomRPG-RE/pull/212)
+sort six helpers stateless de la copie générée `DoomRPG.c` sans déplacer
+les RNG, clocks, images ou états persistants. Owner source :
+`src/esp_doomrpg_primitives.c`. Test reproductible depuis la racine :
+
+```sh
+python3 ESP32/test/doomrpg_pure_primitives_host.py
+```
+
+Il compare les corps C desktop pinés et natifs (60 000 vecteurs seeded,
+endian, offsets et quelques limites) ; le générateur rejette un drift CRC
+ou une divergence exacte de corps. CI sur `9fec89d1` :
+[38645127794 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38645127794),
+trois firmwares + tests + gardes compiledb/ELF.
+
+**Log CYD utilisateur sur le firmware normal demandé** : boot/menu PAK
+READY ; LOAD V11 slot 07 /intro.bsp ; monde visible après session prime ;
+mouvement `552->520` ; porte ouverte, sprite 106 frappé trois fois
+(7→5→3→0 HP), retaliation 27→23 HP, feedback directionnel FRONT
+superposé au cadre rouge. `shapeData` et `mediaTexels` restent NULL,
+`heap8=112328` et `largest8=86004` à la session. Pas de SHA flash
+imprimé dans la capture ; tests qualitatifs ciblés, pas tous les états du
+jeu ni preuve d'égalité binaire. Les anomalies post-LOAD préexistantes
+restent indépendantes et ouvertes.
+
+**Procédure pour le lot suivant :** construire les trois profils, comparer
+les références source + ABI, et tester uniquement `esp32-cyd` sur le vrai
+CYD avec boot, LOAD, mouvement, combat et Serial. Tant que le provider
+lié change, ne pas réutiliser une preuve d'identité ELF du jalon Render.c
+pour éviter un reflash. La documentation après PASS est docs-only.
+
+
+
 Documentation **opérationnelle** du port classic CYD. Pour l'état exact et les limites hardware : [`PORTING_STATUS.md`](PORTING_STATUS.md). Pour le design de long terme : [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Matériel et stockage

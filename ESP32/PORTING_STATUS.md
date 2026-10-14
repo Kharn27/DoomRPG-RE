@@ -1,5 +1,142 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Consolidation DoomRPG : propriétaire natif images / PAK — CI et CYD PASS ciblé (15 octobre 2026)
+
+Suite **sur la même branche** `agent/esp32-extract-doomrpg-pure-primitives`,
+depuis le `main bb5b599fbc56c39bd5ddf4a48bc4bd2cfb7cad0c` ;
+lot 1 déjà accepté (six primitives mathématiques/binaires), lot 2
+code **`2d09b91b8eedfd9083da08eede01d5399cdf88d3`**, correction de la
+fixture hôte **`e648f2fc89c9047f3d73d47122c7bd963a63db2e`**.
+Les trois fonctions **réellement liées**
+`DoomRPG_createImage`, `DoomRPG_freeImage` et
+`DoomRPG_fileOpenRead` résident maintenant dans
+`src/esp_doomrpg_image_resources.c` ; le générateur élimine
+**leurs trois définitions** du `DoomRPG.c` hérité. Il impose des CRC
+des corps après adaptation ZIP→PAK / BMP→indexed et l'égalité textuelle
+exacte des méthodes de l'owner permanent. `src/DoomRPG.c` desktop reste
+une spécification intacte ; **le runtime n'utilise pas le ZIP**.
+Aucune modification intentionnelle de comportement ou de lifetime :
+palette quantifiée RGB565, transparence, ownership texture/surface,
+`imageMemory`, allocations bornées par asset, lecture alloc PAK et
+retour de buffer restent les mêmes. Berserk, dessin/clip SDL, RNG,
+horloges, structs et restauration du monde non concernés.
+
+La suite CI du **HEAD `e648f2fc`** est **SUCCESS** :
+[push 38648524728](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38648524728),
+[PR 38648529981](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38648529981).
+Le premier run de la nouvelle fixture échouait **au lien hôte** faute
+de stub `SDL_GetError` ; correction dans la fixture seule, aucune
+correction firmware nécessaire. Le test hôte valide l'owner réel avec
+I/O PAK, BMP et SDL **mockés** (palette, masque, conversion, dimensions,
+`imageMemory`, libération et path slash). Les tests existants,
+les trois builds et les gardes ELF/compiledb PASS. Mesures CI
+**RAM statique / Flash** : normal **50 976 / 809 565 B**, trace
+**51 024 / 826 041 B**, bringup **51 128 / 830 089 B**.
+Par rapport au lot 1 : RAM statique inchangée, Flash normale -4 B ;
+ne pas extrapoler à un gain FPS, une parité ELF globale ou un gain heap.
+Le message `Wrote 809936 bytes` d'esptool mesure l'image écrite,
+**pas** la colonne Flash utilisée de PlatformIO.
+
+**Test matériel de l'utilisateur — PASS ciblé sur la nouvelle tête de
+branche (sans SHA binaire imprimé par le firmware).**
+Boot : CYD ESP32-D0WD-V3, **PSRAM 0**, framebuffer logique
+160×120 RGB565/38 400 B, ILI9341 ×2, SD montée, **PAK 241 entrées** ;
+`[BMP] decode 144x72 4-bpp ... out=5184` puis
+`[SDL] Adopt packed indexed texture`, et image `j.bmp`
+`108x74 4-bpp out=3996` avec
+`[MENUSTORAGE] STARTUP READY`.
+`[MAINOPAQUE] READY`, `logoFNV=0ac1f9c6` (conforme à la capture
+précédente). Tactile MAIN→LOAD, slot 07 confirmé :
+`[NATIVESAVE] LOAD ... version=11 bytes=5604 map=1`,
+`/intro.bsp` CRC `623f34e4`, états native scripts/lignes,
+topologie, positions et activation annoncés restaurés ;
+`[ENGINESESSION] RESUME-VISIBLE` puis READY,
+`shapeData=0x0 mediaTexels=0x0`. Déplacement affiché
+`tile=552->520` (commit unique), porte jammed `line=413`
+ouverte ; monstre `sprite=106` activé depuis rendu BSP, frappé
+au pistolet jusqu'à **HP 7→5→3→0**, death settle, drop, corpse,
+contre-attaques **joueur 27→23→18→13**, avec direction
+`FRONT` et `redBorder=visible`, fermeture des probes/RNG.
+À session stable : `heap8=112328 largest8=86004`,
+`HEADROOM_OK`. Aucune anomalie fatale signalée.
+
+**Limites d'acceptation :** la capture ne prouve pas
+`DoomRPG_freeImage` sur sortie/teardown, ni un SAVE écrit puis relu,
+ni le comportement de tous les assets, ni un benchmark de fluidité.
+La variation `[CORERNG] tableFNV` entre boots provient de seeds
+différents ; ce lot n'a pas modifié la cadence RNG.
+L'incident historique du monstre invisible ou dormant après LOAD
+reste **ouvert**. Le présent commit de clôture est **docs-only** :
+aucun binaire changé depuis le PASS matériel. Après cette preuve,
+la PR #212 peut passer **ready for review** ; merge effectué par
+l'utilisateur seulement. La suite exige de relire `main` après merge
+avant toute nouvelle branche.
+
+
+
+## Consolidation : six primitives DoomRPG transférées en natif — CI PASS / CYD PASS ciblé (2026-10-15)
+
+Branche `agent/esp32-extract-doomrpg-pure-primitives` créée depuis le
+**main exact `bb5b599fbc56c39bd5ddf4a48bc4bd2cfb7cad0c`** après
+PR #211. Frontière de code `9fec89d17ab028062477421277422d448e810679`.
+Premier lot P1 après le retrait de Render.c : six corps réellement liés
+`DoomRPG_FixedMul`, `DoomRPG_FixedDiv`, `DoomRPG_shortAt`,
+`DoomRPG_shortAtNext`, `DoomRPG_intAt`, `DoomRPG_intAtNext`
+passent dans l'owner permanent sans état
+`src/esp_doomrpg_primitives.c`. Le générateur supprime leurs six définitions
+de la copie `DoomRPG.c` et contrôle leurs signatures, CRC de référence et
+équivalence textuelle stricte de chaque corps. Le vrai `src/DoomRPG.c`
+desktop reste intact/test-only. Aucun changement de comportement volontaire,
+de RNG, horloge, PAK, framebuffer, SAVE V11, activation ou gameplay.
+
+Test hôte ajouté au workflow : comparaison des vrais corps natifs contre
+six corps desktop isolés, **60 000 vecteurs seeded**, encodage
+little-endian/offsets et frontières de signes/saturation (sans couvrir
+toutes les combinaisons 32 bits ni prouver un ELF bit-identique).
+La **CI [38645127794](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38645127794)
+est SUCCESS** sur le SHA de code, comprenant tests hôte, builds normal,
+trace et bringup et gardes compiledb/ELF. Mesures du runner GitHub Actions
+sur le SHA de code (RAM statique / Flash) : normal **50 976 / 809 569 B**,
+trace **51 024 / 826 025 B**, bringup **51 128 / 830 073 B**.
+Par rapport aux derniers nombres publiés avant ce lot
+(50 976 / 809 593 ; 51 024 / 826 041 ; 51 128 / 830 089),
+RAM statique inchangée, Flash -24/-16/-16 B. Ce n'est **pas**
+une comparaison stricte de neuf sections ALLOC ni un gain FPS/heap revendiqué.
+
+**Test matériel fourni par l'utilisateur (normal demandé, logs Serial sans
+fingerprint SHA firmware) : PASS ciblé boot / LOAD / déplacement / combat.**
+Boot : ESP32-D0WD-V3 240 MHz, 4 MB, **PSRAM=0**, TFT 320×240 /
+framebuffer logique 160×120 RGB565 38 400 B, SD montée, PAK indexé
+241 entrées, menu opaque READY. LOAD du slot 07, SAVE **V11**, map 1
+`/intro.bsp` (CRC `623f34e4`), restauration annoncée exacte des
+overlays ressources/scripts/lignes/topologie/positions/activation,
+`ENGINESESSION READY` et `shapeData=0x0 mediaTexels=0x0`.
+Un mouvement vers l'avant est présenté et commité une fois
+(`tile=552->520`), une porte jammed-door est ouverte par attaque
+(`line=413`), le sprite 106 est activé lors du rendu puis reçoit trois
+COMMIT de combat (**HP 7→5→3→0**), mort/cadavre présentés.
+La retaliation committée fait **HP joueur 27→23** et montre
+`DAMAGECUE side=FRONT redBorder=visible`, `VIEWFLASH EXPIRE`
+à 504 ms. Session prête : `heap8=112328 largest8=86004`,
+`RAMBUDGET HEADROOM_OK`. Aucun fatal, rollback fermé signalant un
+échec, ni divergence RNG dans la capture.
+
+**Limites :** aucun checksum de binaire flashé, de comparaison hardware
+avant/après, de parcours save *écrit* puis relu dans cette capture, ni de
+parité complète du renderer/simulation. L'incident zombie invisible ou
+activation post-LOAD reste **ouvert** : la capture atteste activation
+du sprite 106 dans ce parcours, pas la résolution de l'autre reproduction.
+Le commit de clôture suivant est **docs-only** ; aucun firmware différent
+n'est introduit. PR [#212](https://github.com/Kharn27/DoomRPG-RE/pull/212)
+présentable au merge après ce PASS ; jamais de merge automatique.
+
+Suite : migrer de façon séparée images / PAK / adaptateurs SDL liés, puis
+RNG, clocks, config et racines avec leurs lifetimes explicites. Ne pas
+regrouper les 1 600 B d'états historiques de `DoomRPG.o` ni retirer
+un wrapper gameplay sous prétexte de réduire le nombre de TU.
+
+
+
 ## Correctif : synchronisation rectangle rouge / première impulsion directionnelle — CI PASS / acceptation matérielle ciblée (2026-10-14)
 
 Suite sur la même branche depuis `ef2447e`. Capture `814a5034...` : attaques

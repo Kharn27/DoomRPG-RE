@@ -103,6 +103,12 @@ jobs:
           python ESP32/test/desktop_elf_audit_host.py
           python ESP32/test/render_geometry_host.py
 
+      - name: Test stateless DoomRPG primitive ownership and reference ABI (host C)
+        run: python ESP32/test/doomrpg_pure_primitives_host.py
+
+      - name: Test native DoomRPG image and PAK resource lifetime (host C)
+        run: python ESP32/test/doomrpg_image_resources_host.py
+
       - name: Test SYS cards and multislot input ownership (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test

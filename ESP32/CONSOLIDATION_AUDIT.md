@@ -1,5 +1,106 @@
 # Audit de consolidation architecturale ESP32
 
+## Suite P1 : trois fonctions images/PAK extraites et validées — 15 octobre 2026
+
+Sur `agent/esp32-extract-doomrpg-pure-primitives`, **base main
+`bb5b599fbc56c39bd5ddf4a48bc4bd2cfb7cad0c`** :
+code `2d09b91b8eedfd9083da08eede01d5399cdf88d3`,
+fix de test hôte `e648f2fc89c9047f3d73d47122c7bd963a63db2e`.
+Trois fonctions liées du `DoomRPG.c` généré sont sorties :
+`createImage`, `freeImage`, `fileOpenRead`. Nouvel
+owner permanent `esp_doomrpg_image_resources.c`.
+Le générateur retire leurs définitions après application des patches
+PAK / indexed BMP, contrôle CRC et corps exacts. `DoomRPG.c`
+desktop reste une référence non enregistrée. **Neuf fonctions liées**
+migrées sur la branche au total (six math/binary + trois images/PAK).
+Le **TU généré demeure**, ses autres fonctions et ses 1 600 B de
+globals historiques ne sont pas retirés. Aucune fusion artificielle
+d'owners natifs.
+
+**CI PASS** sur `e648f2fc` : [push 38648524728](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38648524728),
+[PR 38648529981](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38648529981).
+La première CI du lot échouait sur le mock SDL_GetError de la
+fixture, corrigée sans modifier le firmware. Comparaison source
+du provider effectif, test hôte de l'ABI/lifetimes avec I/O mockés,
+trois builds et gardes compiledb/ELF verts.
+Mesures CI de la nouvelle tête, statique/Flash :
+`esp32-cyd` **50 976 / 809 565 B**,
+`esp32-cyd-trace` **51 024 / 826 041 B**,
+`esp32-cyd-bringup` **51 128 / 830 089 B**.
+RAM inchangée contre le lot 1 ; Flash normale -4 B.
+Ce sont des mesures de build, **pas** des comparaisons strictes
+de sections ALLOC ni une mesure de speed-up.
+
+**Hardware : PASS ciblé**, capture Serial utilisateur :
+TFT/SD/PAK, BMP indexés et logo original identique
+`logoFNV=0ac1f9c6` ; MENU_MAIN tactile→LOAD V11 slot07 ;
+entrée /intro.bsp CRC `623f34e4` ; `ENGINESESSION READY`,
+`shapeData=0x0 mediaTexels=0x0` ; mouvement affiché 552→520,
+porte ligne 413 et monstre 106 combat HP 7→5→3→0,
+drop/corpse et retaliations 27→23→18→13 avec cue FRONT.
+`heap8=112328 largest8=86004` stable et headroom OK.
+L'upload Serial `Wrote 809936 bytes` relève d'esptool,
+distinct de l'utilisation Flash CI 809 565 B.
+Pas de SHA firmware boot, teardown/freeImage physique, SAVE écrit,
+analyse de latence contrôlée, ni preuve générale post-LOAD.
+Le défaut zombie invisible/dormant reste ouvert.
+Commit de clôture **docs-only**, pas de firmware différent
+du commit validé. Ne pas merger automatiquement dans `main`.
+
+Direction après merge : compléter familles de dessin/clip SDL
+à partir de leurs symboles ELF **réellement liés**, puis
+horloge/RNG/config avec invariants de seed/cadence, formes
+de propriétaire et tests appropriés avant migration.
+Un jalon ne doit pas mêler ces familles.
+
+
+
+## Suite P1 : six helpers math/binary de DoomRPG.c en owner natif — 15 octobre 2026
+
+Base main **`bb5b599fbc56c39bd5ddf4a48bc4bd2cfb7cad0c`**
+(merge PR #211), branche `agent/esp32-extract-doomrpg-pure-primitives`,
+frontière **`9fec89d17ab028062477421277422d448e810679`**.
+Six fonctions liées de `DoomRPG.o` à la base sont extraites vers le
+nouvel owner permanent `esp_doomrpg_primitives.c`, sans état persistant :
+fixed-point mul/div et lecteurs short/int directs + avancés. Le générateur
+retire les six corps de sa copie héritée et vérifie chaque signature,
+CRC32 de référence et égalité complète du corps au source desktop.
+Source de référence desktop inchangée. L'ABI `DoomRPG_*` reste à
+l'identique pour le runtime et le renderer : **migration de fournisseur**,
+pas une suppression fonctionnelle. Le TU généré `DoomRPG.c` reste admis
+pour images, SDL, RNG, clocks, globals, config et racines encore liées.
+
+La CI [38645127794](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38645127794)
+a **PASS complet** : test hôte avec 60 000 vecteurs seeded/original vs natif,
+build normal/trace/bringup, gardes d'exports et d'admission source/ELF.
+Profil, RAM statique B, Flash B **mesurés par le runner CI** :
+normal **50 976 / 809 569**, trace **51 024 / 826 025**,
+bringup **51 128 / 830 073**. Les RAM restent égales au main
+précédent dans chacun des profils, mais aucune comparaison stricte des
+sections SHF_ALLOC ni identité binaire n'a été faite pour ce lot.
+La Flash normal varie de **-24 B** vis-à-vis des derniers nombres publiés
+du main (809 593 B), sans attribution de gain de performance.
+Le nombre de fichiers sous `ESP32/src` monte de 158 à **159**
+(+1 owner dédié) ; le TU généré DoomRPG reste compilé. Compteur
+de source volontairement non optimisé.
+
+Capture Serial fournie par l'utilisateur sur le normal demandé :
+boot/menu/TFT/SD/PAK, LOAD V11 slot 07 map 1 avec offsets et CRC
+`623f34e4`, réadmission session, sprite/carte visibles,
+`shapeData=0x0` et `mediaTexels=0x0`, mouvement 552→520 commité,
+ouverture de porte, attaque du sprite 106 jusqu'à mort (HP 7→5→3→0),
+retaliation et cue FRONT correctement présenté, heap8 de session
+112 328 / largest8 86 004, `HEADROOM_OK`.
+**PASS matériel ciblé**, pas un contrôle exhaustif du format SAVE,
+de la parité math cross-compiler, de l'activation post-LOAD ni de la
+récurrence du zombie invisible. Pas de SHA de boot du firmware capturé.
+Cette clôture documentaire ne modifie aucun byte de firmware.
+Suite P1 : 3 ressources/images, 7 helpers de présentation SDL,
+puis phase P2 des lifetimes RNG/time/core ; chaque famille avec
+ABI/corpus/probe et garde de taille/ELF propre.
+
+
+
 ## Frontière production suivante : synchronisation des dégâts
 
 Après `ef2447e`, un correctif fonctionnel borné change l'owner action-feedback
