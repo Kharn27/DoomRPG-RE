@@ -1,5 +1,51 @@
 # Audit de consolidation architecturale ESP32
 
+## Suite P1 : six helpers math/binary de DoomRPG.c en owner natif — 15 octobre 2026
+
+Base main **`bb5b599fbc56c39bd5ddf4a48bc4bd2cfb7cad0c`**
+(merge PR #211), branche `agent/esp32-extract-doomrpg-pure-primitives`,
+frontière **`9fec89d17ab028062477421277422d448e810679`**.
+Six fonctions liées de `DoomRPG.o` à la base sont extraites vers le
+nouvel owner permanent `esp_doomrpg_primitives.c`, sans état persistant :
+fixed-point mul/div et lecteurs short/int directs + avancés. Le générateur
+retire les six corps de sa copie héritée et vérifie chaque signature,
+CRC32 de référence et égalité complète du corps au source desktop.
+Source de référence desktop inchangée. L'ABI `DoomRPG_*` reste à
+l'identique pour le runtime et le renderer : **migration de fournisseur**,
+pas une suppression fonctionnelle. Le TU généré `DoomRPG.c` reste admis
+pour images, SDL, RNG, clocks, globals, config et racines encore liées.
+
+La CI [38645127794](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38645127794)
+a **PASS complet** : test hôte avec 60 000 vecteurs seeded/original vs natif,
+build normal/trace/bringup, gardes d'exports et d'admission source/ELF.
+Profil, RAM statique B, Flash B **mesurés par le runner CI** :
+normal **50 976 / 809 569**, trace **51 024 / 826 025**,
+bringup **51 128 / 830 073**. Les RAM restent égales au main
+précédent dans chacun des profils, mais aucune comparaison stricte des
+sections SHF_ALLOC ni identité binaire n'a été faite pour ce lot.
+La Flash normal varie de **-24 B** vis-à-vis des derniers nombres publiés
+du main (809 593 B), sans attribution de gain de performance.
+Le nombre de fichiers sous `ESP32/src` monte de 158 à **159**
+(+1 owner dédié) ; le TU généré DoomRPG reste compilé. Compteur
+de source volontairement non optimisé.
+
+Capture Serial fournie par l'utilisateur sur le normal demandé :
+boot/menu/TFT/SD/PAK, LOAD V11 slot 07 map 1 avec offsets et CRC
+`623f34e4`, réadmission session, sprite/carte visibles,
+`shapeData=0x0` et `mediaTexels=0x0`, mouvement 552→520 commité,
+ouverture de porte, attaque du sprite 106 jusqu'à mort (HP 7→5→3→0),
+retaliation et cue FRONT correctement présenté, heap8 de session
+112 328 / largest8 86 004, `HEADROOM_OK`.
+**PASS matériel ciblé**, pas un contrôle exhaustif du format SAVE,
+de la parité math cross-compiler, de l'activation post-LOAD ni de la
+récurrence du zombie invisible. Pas de SHA de boot du firmware capturé.
+Cette clôture documentaire ne modifie aucun byte de firmware.
+Suite P1 : 3 ressources/images, 7 helpers de présentation SDL,
+puis phase P2 des lifetimes RNG/time/core ; chaque famille avec
+ABI/corpus/probe et garde de taille/ELF propre.
+
+
+
 ## Frontière production suivante : synchronisation des dégâts
 
 Après `ef2447e`, un correctif fonctionnel borné change l'owner action-feedback

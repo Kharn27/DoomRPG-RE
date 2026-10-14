@@ -1,5 +1,40 @@
 # Doom RPG ESP32 — guide de travail
 
+### Clôture matérielle du lot DoomRPG math/binary — 15 octobre 2026
+
+Depuis `main bb5b599f`, la PR [#212](https://github.com/Kharn27/DoomRPG-RE/pull/212)
+sort six helpers stateless de la copie générée `DoomRPG.c` sans déplacer
+les RNG, clocks, images ou états persistants. Owner source :
+`src/esp_doomrpg_primitives.c`. Test reproductible depuis la racine :
+
+```sh
+python3 ESP32/test/doomrpg_pure_primitives_host.py
+```
+
+Il compare les corps C desktop pinés et natifs (60 000 vecteurs seeded,
+endian, offsets et quelques limites) ; le générateur rejette un drift CRC
+ou une divergence exacte de corps. CI sur `9fec89d1` :
+[38645127794 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38645127794),
+trois firmwares + tests + gardes compiledb/ELF.
+
+**Log CYD utilisateur sur le firmware normal demandé** : boot/menu PAK
+READY ; LOAD V11 slot 07 /intro.bsp ; monde visible après session prime ;
+mouvement `552->520` ; porte ouverte, sprite 106 frappé trois fois
+(7→5→3→0 HP), retaliation 27→23 HP, feedback directionnel FRONT
+superposé au cadre rouge. `shapeData` et `mediaTexels` restent NULL,
+`heap8=112328` et `largest8=86004` à la session. Pas de SHA flash
+imprimé dans la capture ; tests qualitatifs ciblés, pas tous les états du
+jeu ni preuve d'égalité binaire. Les anomalies post-LOAD préexistantes
+restent indépendantes et ouvertes.
+
+**Procédure pour le lot suivant :** construire les trois profils, comparer
+les références source + ABI, et tester uniquement `esp32-cyd` sur le vrai
+CYD avec boot, LOAD, mouvement, combat et Serial. Tant que le provider
+lié change, ne pas réutiliser une preuve d'identité ELF du jalon Render.c
+pour éviter un reflash. La documentation après PASS est docs-only.
+
+
+
 Documentation **opérationnelle** du port classic CYD. Pour l'état exact et les limites hardware : [`PORTING_STATUS.md`](PORTING_STATUS.md). Pour le design de long terme : [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Matériel et stockage
