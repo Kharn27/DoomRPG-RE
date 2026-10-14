@@ -48,6 +48,18 @@
 #define RENDER_MODE_NORMAL 0U
 #define RENDER_MODE_ADD 7U
 
+/* A single reusable trace profile selects one immutable map sprite index.
+ * Observe values already read by production: no extra gameplay getters, state,
+ * buffers, activation, or RNG calls. INFO/bringup omit this instrumentation. */
+#if defined(DOOMRPG_ESP32_TRACE_SPRITE)
+#define TRACE_SPRITE(index, ...) do { \
+    if ((uint32_t)(index) == (uint32_t)DOOMRPG_ESP32_TRACE_SPRITE) \
+        printf(__VA_ARGS__); \
+} while (0)
+#else
+#define TRACE_SPRITE(index, ...) do { } while (0)
+#endif
+
 typedef struct Sources_s {
     EspAssetPackEntry mappings;
     EspAssetPackEntry palettes;
@@ -615,7 +627,18 @@ static int buildOrder(Render_t* render,
 
         info = (sprite.info & ~VISUAL_MASK) | ((uint32_t)visual << 9);
         id = info & 511U;
+        TRACE_SPRITE(i, "[SPRITETRACE] STATE sprite=%u pos=%u,%u tile=%u type=%u subtype=%u linked=%u alive=%u visual=%02x info=%08x camera=%d,%d preview=%u\n",
+                     (unsigned int)i, (unsigned int)sprite.x,
+                     (unsigned int)sprite.y,
+                     (unsigned int)(link & ESP_MAP_SPRITE_TOPOLOGY_TILE_MASK),
+                     (unsigned int)type, (unsigned int)subtype,
+                     (unsigned int)((link & ESP_MAP_SPRITE_TOPOLOGY_LINKED) != 0U),
+                     (unsigned int)((link & ESP_MAP_SPRITE_TOPOLOGY_ALIVE) != 0U),
+                     (unsigned int)visual, (unsigned int)info,
+                     (int)render->viewX, (int)render->viewY,
+                     (unsigned int)(preview != 0));
         if ((info & HIDDEN) != 0U) {
+            TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=hidden\n", (unsigned int)i);
             ++stats->hidden;
             continue;
         }
@@ -624,11 +647,13 @@ static int buildOrder(Render_t* render,
             ? EspNativeBspVisibility_mapSpriteVisibleReadOnly(visibility, i, &leaf)
             : EspNativeBspVisibility_mapSpriteVisible(visibility, i, &leaf);
         if (!visible) {
+            TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=bsp-rejected leaf=%u\n", (unsigned int)i, (unsigned int)leaf);
             if (leaf == UINT32_MAX) return 0;
             ++stats->bspRejected;
             continue;
         }
         ++stats->bspCandidates;
+        TRACE_SPRITE(i, "[SPRITETRACE] ADMISSION sprite=%u result=candidate leaf=%u\n", (unsigned int)i, (unsigned int)leaf);
 
         recoveredCross = isLegacyCrossLogical((uint16_t)id);
         if (recoveredCross) info |= CROSS;
@@ -1113,6 +1138,9 @@ static int drawAt(Render_t* render,
     int maximum;
     int spriteX;
     int spriteY;
+#if defined(DOOMRPG_ESP32_TRACE_SPRITE)
+    uint32_t tracePixelsBefore = stats->pixelsDrawn;
+#endif
 
     if (!EspMapRuntime_getMapSprite(parent->index, &sprite)) return 0;
     spriteX = sprite.x + offsetX;
@@ -1123,6 +1151,7 @@ static int drawAt(Render_t* render,
                     : 0U;
     if (!loadFrame(sources, logical, animation, glow,
                    frame, seenLogical, stats)) {
+        TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=frame-failed logical=%u animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)logical, (unsigned int)animation, (unsigned int)(glow != 0));
         return 0;
     }
 
@@ -1139,6 +1168,7 @@ static int drawAt(Render_t* render,
         Render_transform2DVerts(render, &center);
         center.x -= 0x100000;
         if (center.x < 0x40000) {
+            TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=near-culled depth=%d animation=%u glow=%u\n", (unsigned int)parent->index, (int)center.x, (unsigned int)animation, (unsigned int)(glow != 0));
             if (glow) ++stats->glowNearCulled;
             else ++stats->nearCulled;
             return 1;
@@ -1191,6 +1221,7 @@ static int drawAt(Render_t* render,
             ((line.vert1.y - render->viewY) *
              (-(line.vert2.x - line.vert1.x))) <= 0) {
             if ((parent->info & TWO_SIDED) == 0U) {
+                TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=backface-culled animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
                 if (glow) ++stats->glowClipCulled;
                 else ++stats->clipCulled;
                 return 1;
@@ -1205,13 +1236,22 @@ static int drawAt(Render_t* render,
     }
 
     if (!Render_clipLine(render, &line)) {
+        TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=clip-culled animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
         if (glow) ++stats->glowClipCulled;
         else ++stats->clipCulled;
         return 1;
     }
     Render_projectVertex(render, &line.vert1);
     Render_projectVertex(render, &line.vert2);
-    if (!spans(render, &line, frame, renderMode, glow, stats)) return 0;
+    if (!spans(render, &line, frame, renderMode, glow, stats)) {
+        TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=span-failed animation=%u glow=%u\n", (unsigned int)parent->index, (unsigned int)animation, (unsigned int)(glow != 0));
+        return 0;
+    }
+    TRACE_SPRITE(parent->index, "[SPRITETRACE] DRAW sprite=%u result=rasterized pos=%d,%d logical=%u animation=%u actual=%u glow=%u pixels=%u\n",
+                 (unsigned int)parent->index, spriteX, spriteY,
+                 (unsigned int)logical, (unsigned int)animation,
+                 (unsigned int)frame->actual, (unsigned int)(glow != 0),
+                 (unsigned int)(stats->pixelsDrawn - tracePixelsBefore));
     if (glow) ++stats->glowDraws;
     else ++stats->draws;
     return 1;

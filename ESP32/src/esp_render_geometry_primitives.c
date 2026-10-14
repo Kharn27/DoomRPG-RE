@@ -14,14 +14,14 @@
 #endif
 
 /*
- * Permanent production owner for the legacy-named projection/culling
+ * Permanent CYD owner for the legacy-named projection/culling
  * primitives still consumed by the ESP32-native world and sprite renderers.
  *
  * These functions intentionally preserve the desktop arithmetic/ABI exactly.
  * They mutate only Render_t frame scratch. They do not own map topology,
  * texels, shapes, entities or gameplay state.
  */
-#if defined(DOOMRPG_ESP32) && !defined(DOOMRPG_ESP32_BRINGUP_PROBES)
+#if defined(DOOMRPG_ESP32)
 
 /* Framebuffer-only floor/ceiling clear, byte-for-byte legacy semantics. */
 void Render_renderFloorAndCeilingSolidBG(Render_t* render)

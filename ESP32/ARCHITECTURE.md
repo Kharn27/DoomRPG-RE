@@ -7,7 +7,7 @@ in which historical recovery probes were written.
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
 For build/platform notes, read [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
-Current architectural consolidation census (main `9d203e5`, 2026-10-13):
+Current ELF census (main `b941048`, 2026-10-14; earlier census `9d203e5` retained):
 [`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md), with the per-source build/ELF
 inventory. Several older recovery descriptions below (notably §6/7/10/13) no
 longer describe the complete live port. Use the current census and source for
@@ -26,7 +26,35 @@ Current census: **158 C/C++ sources, 152 include headers**. See the audit for
 why two dormant dashboard bridges and their frame contracts remain deferred;
 removing an unlinked function can still alter GCC inlining in a live TU.
 
+Neither CYD profile generates or compiles desktop Render.c anymore. Normal
+already linked zero bytes from it; bringup's seven pure geometry helpers now
+come from the same permanent `esp_render_geometry_primitives.c` as production.
+No world/sprite/plane/shape loader is reactivated, no owner is merged. Desktop
+Render.c remains a test-only behavior reference; the old bringup-only bodies
+are no longer firmware providers. Normal loaded ELF is unchanged in the local
+controlled comparison; bringup is not claimed binary-identical.
+
+The remaining generated desktop C root is DoomRPG.c: 27 linked utilities plus
+seven named data symbols, including process-lifetime basetime and hidden RNG
+seed/reset state. Its next retirement must separate math/binary, image/SDL,
+clock/RNG, config and core responsibilities, reusing genuine owners. Renaming
+the monolith is not native ownership, nor permission to combine independent
+state lifetimes. The separately generated packed SDL shim is not desktop
+gameplay; its surface→texture ownership transfer remains functional.
+
 ## 1. Design rule
+
+Damage feedback remains in the existing ActionEngine presentation owner.
+Post-COMMIT directional enqueue attempts the first overlay present before
+the sequencer resumes other monsters; it never waits for the blink cadence,
+renders the world again, or rolls back gameplay on a UI-present failure.
+The service admits direction before expiring the underlying border; active
+and queued cues protect LIFO restoration. Touch/PAK/level-up/transaction
+barriers and the existing FIFO/retry/timeout remain authoritative. An extra
+bounded physical overlay present is possible; this is synchronization, not
+a latency optimization. Host compositor tests do not prove hardware SPI
+timings or complete retaliation rollback. The fix changes normal loaded code,
+unlike the earlier ALLOC-identical consolidation increments.
 
 Credit-gated script interactions reuse `EspNativeGameplayEventChain` for their
 dialog/WAIT continuation and per-segment journal. PlayerState owns money;
@@ -413,13 +441,22 @@ native_junction_* for map-independent behavior
 *_probe.c as the permanent always-built implementation of gameplay/live compatibility semantics
 ```
 
-That rule does **not** ban useful diagnostics. The project has two distinct
+That rule does **not** ban useful diagnostics. The project has three distinct
 build intents:
 
 ```text
 esp32-cyd          normal production/runtime hardware authority
+esp32-cyd-trace    production-path diagnostics, release + TRACE + one sprite filter
 esp32-cyd-bringup  optional diagnostic profile with extra probes/overlays
 ```
+
+Trace inherits the normal profile, not bringup: it preserves production layouts
+and routing and does not enable startup census or touch overlays. Its targeted
+sprite logs observe existing renderer reads; they own no state or buffer and
+compile out unless `DOOMRPG_ESP32_TRACE_SPRITE` is defined. Serial affects timing,
+so final gameplay/latency authority remains normal. Retired one-off story-hand
+teardown and divider firmware profiles are covered by host regression tests
+(real code, mocked image I/O/intro cleanup, no ESP32 heap/PAK parity claim).
 
 Bringup-only probes, regression witnesses and bounded instrumentation may retain
 probe naming while they provide useful observability. They are not cleanup debt

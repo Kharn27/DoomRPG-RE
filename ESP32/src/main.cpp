@@ -362,6 +362,10 @@ namespace
     {
         Serial.println();
         Serial.println("=== Doom RPG CYD hardware bring-up ===");
+#if defined(DOOMRPG_ESP32_TRACE_SPRITE)
+        Serial.printf("[TRACEPROFILE] production-path sprite=%u optimization=release bringup=no timing=instrumented\n",
+                      static_cast<unsigned int>(DOOMRPG_ESP32_TRACE_SPRITE));
+#endif
         Serial.printf("Chip: %s, revision %u, cores %u\n", ESP.getChipModel(),
                       ESP.getChipRevision(), ESP.getChipCores());
         Serial.printf("CPU: %u MHz\n", ESP.getCpuFreqMHz());

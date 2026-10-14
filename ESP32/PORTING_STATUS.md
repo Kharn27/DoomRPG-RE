@@ -1,5 +1,147 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Correctif : synchronisation rectangle rouge / première impulsion directionnelle — CI PASS / acceptation matérielle ciblée (2026-10-14)
+
+Suite sur la même branche depuis `ef2447e`. Capture `814a5034...` : attaques
+ranged de sprite 157, probes 4/5/8, `VIEWFLASH EXPIRE` après 1108/818/567 ms
+puis `DAMAGECUE ON redBorder=none`. Probes melee 6/7 de sprite 159 : ON avec
+`redBorder=visible`. Ce n'est pas une règle de rendu selon la distance :
+le rectangle est déjà présenté lors de la retaliation, puis la direction
+est queued post-COMMIT, les membres restants reprennent avant son service.
+L'expiration du rectangle était en outre évaluée avant l'admission de la file.
+
+Correctif dans l'owner action-feedback existant : l'enqueue post-COMMIT tente
+immédiatement le présent de la première impulsion via le compositor existant ;
+le service direction passe avant expiry, et la base attend aussi une file non
+vide avant restauration. FIFO, barrières UI, retry/timeout et LIFO conservés.
+Pas de nouveau owner/buffer, de boucle d'attente ou de redraw monde ajouté.
+Un présent physique overlay borné peut être supplémentaire ; aucun gain FPS
+revendiqué. Les durées nominales peuvent s'allonger sous charge. Aucun code
+retaliation, AI, dégâts, RNG, SAVE V11, PAK ou layout propriétaire modifié.
+
+Test `damage_cue_timing_host.c` : le vrai service UI et compositor, dont le
+premier essai sur ancien code échoue faute de première impulsion immédiate.
+Après correction : stall 818 ms, barrières touch/level-up/PAK/transaction,
+FIFO/overflow, présent fail→retry/timeout, quatre côtés, clock wrap et nouveau
+world-redraw entre impulsions ; restauration des pixels/snapshots et guards
+exacte. Assets/horloge/présent et autres propriétaires externes mockés : pas de
+preuve de transaction retaliation complète ni de timing/SPI sur le CYD.
+La nouvelle suite passe également sous ASan/UBSan (LSan off sous ptrace).
+Les **22 étapes hôte du workflow** et les gardes ELF/compiledb des trois
+profils passent localement.
+
+Builds locaux PASS : normal **50 976 / 809 593 B RAM/Flash**, trace
+**51 024 / 826 041 B**, bringup **51 128 / 830 089 B**. RAM inchangée.
+**Le normal chargé change pour ce correctif** (+20 B Flash) ; les preuves
+d'identité ALLOC des lots de consolidation ci-dessous restent historiques.
+CI code **`c81c2d3f2a4a504504a2e3d6a2aa950a94fc5f95`** :
+[push 38559202786](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38559202786)
+et [PR 38559211874](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38559211874),
+**SUCCESS**. Le commit documentaire suivant ne modifie pas le firmware.
+**Acceptation matérielle qualitative donnée par l'utilisateur** après ce
+correctif : « pas réussi à reproduire, disons que c'est bon ». Ce retour clôt
+le besoin de retest demandé pour la désynchronisation rectangle/direction.
+Frontière de code de la branche : `c81c2d3`, head présenté pour essai `24d5901`
+(docs-only). Aucun nouveau log, SHA de boot ni profil effectivement flashé
+fourni : ne pas prétendre à une mesure exacte de concurrence ni à une
+validation exhaustive ranged/multi-monstres/melee/MOVE/weapon-cycle/rollback.
+Les tests logiciels détaillés ci-dessus restent une preuve distincte.
+La disparition du zombie reste séparément ouverte/non reproduite ; cette
+acceptation ne la clôture pas. Aucun nouveau firmware dans ce lot documentaire.
+
+## Diagnostics gameplay : profil production TRACE et retrait de deux probes — CI PASS (2026-10-14)
+
+Suite sur `agent/esp32-retire-generated-render`, parent `d8bf3997`.
+Trois profils désormais : normal, trace et bringup. `esp32-cyd-trace` hérite
+du normal en release, TRACE + filtre `DOOMRPG_ESP32_TRACE_SPRITE=106`, sans
+bringup/overlay. Les logs observent uniquement les lectures existantes du
+renderer ; pas d'owner/buffer/lecture gameplay supplémentaire ajouté. Les
+traces MOVE/MEMBER/RNG existantes complètent admission et raster par sprite.
+Les profils story-teardown/divider et **79 lignes** conditionnelles de startup
+sont retirés ; leur couverture utile passe côté hôte, avec I/O image et
+cleanup intro mockés, sans preuve hardware de heap/PAK.
+
+Builds locaux des trois profils PASS. Normal **50 976 / 809 573 B RAM/Flash**,
+bringup **51 128 / 830 061 B** : leurs **neuf sections SHF_ALLOC strictement
+identiques** à celles du parent dans la comparaison contrôlée locale.
+Trace **51 024 / 826 013 B**, soit +48 B RAM statique et +16 440 B Flash
+par rapport au normal : logs TRACE existants + instrumentation, pas un nouveau
+buffer graphique. Ne pas attribuer à ce profil de gain de performance :
+Serial et l'expiration des leases changent le timing observé.
+
+`test/diagnostic_profiles_host.py` valide séparation de profils, filtre d'un
+sprite, admission hidden/BSP/candidate sur le vrai renderer, counts de lectures
+identiques et chemin preview/live conservé ; vrais formatter/story/free testés.
+Les essais admission ne couvrent pas le raster complet ni la reproduction CYD.
+La CI construit les trois profils et vérifie les mêmes gardes d'exports et
+d'admission de Render.c. Procédure matérielle : `DOCUMENTATION.md`.
+Vérification locale : **21 étapes hôte du workflow PASS**, nouvelle suite
+également sous ASan/UBSan (LSan off sous ptrace), gardes ELF/compiledb PASS
+sur les trois profils. CI code **`87fdacce3df9dddf08665d9d9a3373ba62d22d25`** :
+[push 38548186622](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38548186622)
+et [PR 38548193657](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38548193657),
+**SUCCESS**. Le commit documentaire suivant ne change pas le code firmware.
+
+**Incident zombie ouvert, pas de correctif ni PASS matériel revendiqué.**
+Capture `7abee51e...` : sprite 106, tirs seq 111–113, HP 7→5→3→1,
+armor 4→3→2→0, alive 1→1 et rollback fermé. Aucun échec de rendu signalé.
+Le tour 60 livre un membre sans attack-probe ; les déplacements réussis sont
+masqués en INFO. La disparition puis réapparition au MOVE peut relever de la
+position ou du rendu : cette trace ne permet pas de trancher. Charger la
+sauvegarde conservée près du cas, tracer tirs/disparition/premier mouvement,
+puis valider une éventuelle réparation sur le profil normal. SAVE V11, RNG,
+`shapeData == NULL`, `mediaTexels == NULL` et backing PAK restent inchangés.
+
+## Consolidation : retrait de Render.c généré — CI PASS (2026-10-14)
+
+Nouvelle branche `agent/esp32-retire-generated-render` depuis main exact
+`b9410482b67af3158c2095aa7eefaa26c3d0980d`. Audit **ELF renouvelé** dans
+[`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md), avec CSV symboles de cette
+base : Render.o normal **0 B lié**, bringup **7 fonctions / 776 B** ;
+DoomRPG.o conserve **27 fonctions / 7 données nommées**, dont RNG et temps.
+Ne pas supprimer celui-ci ni regrouper ses globals sans leurs contrats.
+
+Premier lot : Render.c n'est plus généré/compilé dans aucun des deux profils ;
+les sept géométries bringup passent au fichier natif existant. Build script
+1 190→568 lignes ; 158 sources/152 headers conservés, aucun nouvel owner
+production. SCons 215→214 commandes, 160→159 unités moteur, trois→deux copies
+générées (DoomRPG.c et shim SDL packed). Desktop original src/Render.c intact,
+référence des tests hôte seulement. Les ABI/helpers natifs et wraps
+transactionnels restent ; les features desktop non possédées restent deferred.
+
+Normal **50 976 B RAM / 809 573 B Flash**, neuf sections allouées **strictement
+identiques** au main de cette base, bytes/adresses/flags/alignement/layout,
+app descriptor compris. Ce n'est pas une identité de tout le .bin/digest ELF.
+Bringup **51 128 / 830 061 B**, RAM inchangée,
+−44 B Flash par rapport aux 830 105 B du main reconstruit. Pas de gain de
+fluidité ni RAM production inventé ; pas d'identité du binaire bringup annoncée.
+
+Tests nouveaux PASS local : attribution ELF/map/homonymes ; différentiel des
+sept primitives contre référence, 10 000 cas seeded/quatre cardinaux, guards
+colonnes et solid BG aux deux profils ; ASan/UBSan (LSan off sous ptrace).
+La garde compiledb/map rejette l'ancienne base et accepte le retrait : elle
+distingue les artefacts .pio résiduels des véritables sources admises.
+Builds normal/bringup, **20 étapes hôte**, garde des exports retirés et garde
+source/admission Render PASS local (Python local = python3). **CI distante
+PASS** sur le code `0a1dd49e171760f61aaf01cd9e340525da75971c` :
+[push 38541821965](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38541821965)
+et [PR 38542095599](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38542095599),
+suite hôte, les deux builds et les deux gardes, dont compiledb/map régénérés
+aux deux profils. [PR #211](https://github.com/Kharn27/DoomRPG-RE/pull/211)
+ouverte, pas mergée. Clôture suivante docs-only. La comparaison des neuf
+sections avec le main est locale, distincte de cette CI.
+Les références desktop ne sont pas des inputs
+firmware ; quatre tests parser/admission couvrent aussi l'objet résiduel et
+la compilation database vide refusée.
+
+Pas de reflash/PASS CYD demandé pour le normal chargé bit-identique. Aucun
+nouveau PASS physique bringup, Render ABI, SD, RNG ou parité globale attribué.
+Les anomalies post-LOAD/AI/feedback décrites ci-dessous restent ouvertes,
+shapeData/mediaTexels NULL et backing `/DoomRPG-ESP32.pak` préservés. Aucune
+modification du gameplay, de ses RNG/timers/journaux ou du format SAVE V11.
+Suite : retirer DoomRPG.c par familles/lifetimes (utilitaires, assets/SDL, puis
+clock/RNG/config/core), pas copier son monolithe dans un autre fichier.
+
 ## Feedback dégâts directionnels + tonneau mortel — clôture CYD (2026-10-14)
 
 **PR #209** sur `agent/esp32-directional-damage-feedback`, base `main`
@@ -531,7 +673,7 @@ Status vocabulary: **native-validated** = original behavior reproduced and exerc
 | Original sound/music | disconnected/deferred: `AUDIOINTENT` silent backend | Implement native playback independently; don't revive legacy Sound object |
 | Legacy plane-test functions / BSP traversal / map loads | compat-only: production `esp_legacy_render_reject.c`; normal owner native | Reject stubs are not validated positive invocations; any missing original effect must get a native owner, not a fallback |
 | Legacy `Render_draw2DSprite` / `shapeData` decoding | **production legacy ABI retired**; native weapon/sprite assets read packed PAK | Weapon/HUB visuals are native; **remaining original overlay/effect parity OPEN**, do not restore map-wide `shapeData` |
-| Legacy berserk postprocess (`Render_setBerserkColor`) | **disconnected/deferred**: desktop/bringup original retained; production ABI retired | **Berserk red-tint behavior parity remains OPEN**. Audit original trigger, timing and native HUD/framebuffer owner before claiming reproduction; never silently re-enable legacy SDL texture writes |
+| Legacy berserk postprocess (`Render_setBerserkColor`) | **disconnected/deferred**: desktop reference retained; ABI absent in both CYD profiles after generated Render retirement | **Berserk red-tint behavior parity remains OPEN**. Audit original trigger, timing and native HUD/framebuffer owner before claiming reproduction; never silently re-enable legacy SDL texture writes |
 
 Update this ledger whenever a legacy function is unlinked or a corresponding native behavior becomes hardware-validated; historic milestones live in Git, not in 123 separate files.
 
@@ -597,8 +739,8 @@ Ces chiffres **ne sont pas** une promesse universelle pour toutes les cartes ou 
 - Le normal `esp32-cyd` a les propriétaires permanents `render_startup_bridge.c`, `esp_render_geometry_primitives.c` et `esp_legacy_render_reject.c` pour les familles déjà migrées.
 - `Render_initColumnScale`, `Render_cullBoundingBox`, `Render_transform2DVerts`, `Render_clipLine`, `Render_clipVertex`, `Render_projectVertex`, `Render_occludeClippedLine` sont natifs ; calcul fixed-point `FIXED_VERSION=1` restauré pour la parité legacy.
 - `Render_findEventIndex`, `Render_relinkSprite`, `Render_renderBSPNoclip` et trois fonctions plane-test sont retirés du production legacy, via des compatibilités **fail-closed** là où nécessaire. `Render_freeRuntime` a un propriétaire natif.
-- Le code généré `Render.c` subsiste **pour les autres fonctions legacy encore utilisées** : ne pas le retirer en bloc.
-- Le bringup conserve les références legacy nécessaires à ses probes ; les guards bringup du correctif P1 sont revus dans le code, **mais leur compilation n'est pas encore validée**.
+- Depuis le jalon b941048, Render.c n'est plus généré/compilé dans aucun profil CYD : la cartographie a prouvé zéro code lié en normal et seulement sept primitives géométriques bringup, désormais fournies par l'owner natif existant.
+- Les références desktop restent hors firmware pour les tests différentiels ; les builds normal/bringup passent. Le normal chargé est strictement identique dans la comparaison locale ; le binaire bringup change, sans PASS matériel revendiqué.
 - Les validations de retrait sans appel effectif sont des **PASS de non-régression**, pas des preuves que les stubs ont été invoqués.
 - `SYS EXIT` éprouve le reset résident natif ; il ne prouve **pas** l'exécution directe de `Render_free` / `Render_freeRuntime`.
 

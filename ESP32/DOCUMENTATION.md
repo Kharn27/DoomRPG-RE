@@ -23,6 +23,71 @@ Selon le poste, PlatformIO peut être invoqué avec `platformio` au lieu de `pio
 
 `esp32-cyd-bringup` sert aux diagnostics/probes supplémentaires ; **ne pas** tirer de conclusions RAM production à partir de ce profil. La vérité matérielle vient du boot et des interactions réelles, via Serial.
 
+### Diagnostic d'un incident gameplay
+
+`esp32-cyd-trace` hérite de **la production** : même layout, optimisations
+release, stockage et propriétaires. Il active TRACE sans définir
+`DOOMRPG_ESP32_BRINGUP_PROBES`, sans overlay tactile et sans probes de startup.
+Les écritures Serial modifient le timing : ce n'est ni un benchmark ni une
+preuve d'identité du firmware normal. Bringup reste un diagnostic plateforme,
+avec d'autres layouts et un démarrage différent, pas un simple « mode debug ».
+
+Les anciens profils `esp32-cyd-story-teardown-probe` et
+`esp32-cyd-divider-probe` et leurs blocs firmware sont retirés. Leur couverture
+utile est exercée par `test/diagnostic_profiles_host.py` : vrais formatter,
+story-hand et `DoomCanvas_free`, I/O image/cleanup intro mockés. Pas de preuve
+PAK ou d'équivalence heap ESP32 apportée par ce test hôte.
+
+Pour l'incident zombie actuel, `DOOMRPG_ESP32_TRACE_SPRITE=106` dans
+`platformio.ini` sélectionne **l'index immuable du sprite de la carte**, pas
+son subtype ni son ordre d'activation. Changer uniquement cette valeur pour
+un autre incident, sans créer d'environnement par monstre. `[SPRITETRACE]`
+observe les données déjà lues par le renderer : position projetée, tile et
+flags topology, pose, caméra, preview, admission hidden/BSP/candidate,
+near/backface/clip/frame/span failure ou raster avec nombre de pixels.
+`result=rasterized pixels=0` n'est pas une preuve d'affichage visible ; un rejet
+ou une frame réussie ne suffit pas à diagnostiquer un rollback gameplay.
+Les déplacements commis et décisions de chaque membre deviennent également
+visibles via les logs TRACE existants. Aucun buffer ni owner persistant ajouté.
+
+Depuis `ESP32/` :
+
+```sh
+pio run -e esp32-cyd-trace
+pio run -e esp32-cyd-trace -t upload --upload-port /dev/ttyUSB0
+pio device monitor --port /dev/ttyUSB0 --baud 115200
+```
+
+Fermer tout autre lecteur Serial avant le monitor. Vérifier au boot
+`[TRACEPROFILE] production-path sprite=106 ... bringup=no`, puis charger la
+sauvegarde existante près du zombie **sans la réécrire**. Capturer la sortie
+depuis LOAD, tous les tirs jusqu'à la disparition, puis le premier mouvement
+qui le fait réapparaître. Conserver les lignes complètes, pas seulement les
+SPRITETRACE. Une sauvegarde est une reproduction, pas la preuve d'une cause.
+Après correction éventuelle, refaire le scénario avec `esp32-cyd` normal.
+Ce jalon ajoute l'observabilité ; il ne corrige pas encore la disparition.
+
+Le jalon depuis main `b941048` retire la copie C desktop Render générée dans
+les deux profils. L'owner géométrique natif sert maintenant aussi bringup ;
+normal reste bit-identique chargé dans la comparaison locale. DoomRPG.c reste
+généré pour ses utilitaires/états réellement liés, et le shim SDL packed reste
+fonctionnel. Cartographie ELF et priorités : `CONSOLIDATION_AUDIT.md`.
+
+Pour refaire la cartographie sur **un build courant**, depuis ESP32 :
+
+```sh
+pio run -e esp32-cyd
+pio run -e esp32-cyd -t compiledb
+python3 tools/audit_desktop_elf.py .pio/build/esp32-cyd --compiledb compile_commands.json --calls
+python3 tools/audit_desktop_elf.py .pio/build/esp32-cyd --compiledb compile_commands.json --require-retired-render
+```
+
+Répéter avec bringup et régénérer compiledb pour le profil choisi. Les vieux
+Render.o/Render.c de .pio ne prouvent pas une compilation ; SCons/map/ELF sont
+croisés. Le CSV b941048 est un snapshot de la base **avant** retrait, pas un
+inventaire automatique du HEAD. Un symbole lié ou un call direct ne prouve
+jamais un chemin réellement exécuté sur le CYD.
+
 L'ancienne suite graphique `menu.bsp`/ZIP est retirée : son point d'entrée
 retournait déjà 0 pour tous les builds ESP32. Le rapport bringup `[MENUBSP]
 RETIRED` et `MENU BSP FAIL` reste donc attendu ; il ne teste pas le menu opaque
@@ -68,9 +133,36 @@ l'attaquant suivant. En INFO, comparer `[MONSTERRETAL] COMMIT`,
 `[DAMAGECUE] ON ... redBorder=visible presented=1`. Le
 `concurrent=yes` du log signifie que les deux effets *peuvent* coexister,
 pas que chaque impulsion a réellement recouvert le rouge : c'est
-`redBorder=visible` qui l'atteste. Le premier hit après déplacement
-a déjà montré `redBorder=none` ; cette limite reste ouverte malgré
-l'acceptation qualitative du jalon par l'utilisateur.
+`redBorder=visible` qui l'atteste.
+
+Correction de synchronisation après la capture `814a5034...` : le rectangle
+était présenté dans la transaction de dégâts, mais la direction ne démarrait
+qu'au prochain service, après les autres monstres. Le rectangle expirait
+alors avant l'impulsion (818 ms dans le témoin à distance).
+L'enqueue **après commit réussi** tente désormais immédiatement la première
+impulsion via le compositor existant, sans nouveau rendu monde ni attente
+des deux clignotements. La direction est servie avant l'expiration des effets ;
+le rouge ne se restaure pas sous une direction active **ou encore en file**.
+Les barrières touch/PAK/level-up/transaction et retry/timeout UI restent actifs,
+la file reste ordonnée, et un échec du présent UI ne rejoue pas les dégâts.
+Ce présent overlay borné peut ajouter le coût d'un transfert écran ; ce n'est
+pas une optimisation de performances. Les durées 500/85/45 ms sont nominales :
+un loopTask occupé peut allonger l'affichage, sans attendre ni bloquer le tour
+logique pour terminer le feedback. Tests hôte du vrai service/compositor
+avec clock/assets/présentation mockés. **Acceptation matérielle qualitative
+du correctif donnée le 14 octobre 2026** : l'utilisateur n'a pas reproduit la
+désynchronisation et accepte le résultat. Aucun nouveau log/SHA de boot/profil
+fourni ; ce n'est pas une validation exhaustive des cas ci-dessous ni une
+mesure de timings. La preuve logicielle et ce retour matériel restent distincts.
+
+Scénario de non-régression à conserver sur **esp32-cyd normal** : hit zombie à distance avec plusieurs monstres
+actifs, puis hit au corps-à-corps ; vérifier la première impulsion sur le rouge,
+et l'absence de pixels persistants après un mouvement/changement d'arme.
+En Serial, attendre `DAMAGECUE ON ... redBorder=visible` pour le premier hit
+avant les traitements suivants, pas `VIEWFLASH EXPIRE` puis `ON ... none`.
+Le log `MONSTERRETAL COMMIT` peut suivre le `DAMAGECUE ON` : le commit des
+owners player/RNG/frame est déjà clos avant l'enqueue, le texte est imprimé
+après. L'incident distinct du zombie invisible reste ouvert/non reproduit.
 
 Pour un tonneau, tester séparément la cible et son explosion.
 Un blast **unique** mortel (`chain=1`) peut désormais mettre

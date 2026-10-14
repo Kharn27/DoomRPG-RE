@@ -85,8 +85,23 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/directional_damage_side_host.c -o /tmp/doomrpg-directional-damage-test
           /tmp/doomrpg-directional-damage-test
 
+      - name: Test real damage compositor synchronization and delayed service (host C)
+        run: |
+          # -O2 specializes the NULL runtime UI-only entry; world branches are
+          # unreachable in this harness. Suppress existing unrelated warnings.
+          cc -O2 -std=c11 -Wall -Wextra -Werror -Wno-unused-variable -Wno-type-limits \
+            -D_POSIX_C_SOURCE=200809L -ffunction-sections -fdata-sections \
+            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            ESP32/test/damage_cue_timing_host.c -Wl,--gc-sections -o /tmp/doomrpg-damage-cue-timing-test
+          /tmp/doomrpg-damage-cue-timing-test
+
       - name: Test strict allocated ELF comparison (host Python)
         run: python ESP32/test/elf_alloc_compare_host.py
+
+      - name: Test desktop ELF attribution and shared geometry (host Python and C)
+        run: |
+          python ESP32/test/desktop_elf_audit_host.py
+          python ESP32/test/render_geometry_host.py
 
       - name: Test SYS cards and multislot input ownership (host C)
         run: |
@@ -139,6 +154,9 @@ jobs:
       - name: Test monster diagnostics policy and activation capture (host Python and C)
         run: python ESP32/test/monster_log_policy_host.py
 
+      - name: Test production trace isolation and retired startup regressions (host Python and C)
+        run: python ESP32/test/diagnostic_profiles_host.py
+
       - name: Cache PlatformIO packages
         uses: actions/cache@v4
         with:
@@ -161,10 +179,14 @@ jobs:
         working-directory: ESP32
         run: pio run -e esp32-cyd-bringup
 
-      - name: Reject retired migration exports in both profiles
+      - name: Build production-path CYD trace firmware
+        working-directory: ESP32
+        run: pio run -e esp32-cyd-trace
+
+      - name: Reject retired migration exports in all profiles
         working-directory: ESP32
         run: |
-          for profile in esp32-cyd esp32-cyd-bringup; do
+          for profile in esp32-cyd esp32-cyd-bringup esp32-cyd-trace; do
             python tools/compare_elf_alloc.py ".pio/build/$profile/firmware.elf" \
               --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService \
               --forbid-prefix EspNativeGraphics_ --forbid-prefix EspNativeProjectedSprite_ \
@@ -181,6 +203,15 @@ jobs:
               --forbid-prefix __wrap_DoomRPG_probeNative
           done
 
+      - name: Reject generated Render source registration in all profiles
+        working-directory: ESP32
+        run: |
+          for profile in esp32-cyd esp32-cyd-bringup esp32-cyd-trace; do
+            pio run -e "$profile" -t compiledb
+            python tools/audit_desktop_elf.py ".pio/build/$profile" \
+              --compiledb compile_commands.json --require-retired-render
+          done
+
       - name: Upload firmware artifacts
         if: success()
         uses: actions/upload-artifact@v4
@@ -189,6 +220,10 @@ jobs:
           path: |
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
+            ESP32/.pio/build/esp32-cyd-trace/*.bin
+            ESP32/.pio/build/esp32-cyd-trace/firmware.elf
+            ESP32/.pio/build/esp32-cyd-bringup/*.bin
+            ESP32/.pio/build/esp32-cyd-bringup/firmware.elf
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14
