@@ -60,6 +60,7 @@ struct SDL_RWops { void *bytes; int length; };
 struct SDL_Texture { int w, h, mask; SDL_Color colors[3]; };
 
 SDLVideo_t sdlVideo;
+const char* SDL_GetError(void) { return "host SDL failure"; }
 static int activeTextures, readCalls, rwCloses, loads, freedSurfaces;
 static int destroyCalls, maskCalls, createCalls;
 static char lastRequested[64];
