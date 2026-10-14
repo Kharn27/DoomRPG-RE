@@ -78,6 +78,51 @@ doom_rpg_patched = join(patched_dir, "DoomRPG.c")
 with open(doom_rpg_source, "r", encoding="latin-1") as source_file:
     doom_rpg_source_text = source_file.read()
 
+# Retire only the six ELF-linked pure math/binary bodies from the generated
+# DoomRPG.c. Original source stays an executable specification; the ESP32
+# provider is a permanent stateless TU. Preserve the original arithmetic
+# verbatim (including signed 32-bit quirks) until an independently tested
+# behavior change is justified. Any upstream drift fails the build.
+import zlib
+
+def extract_doomrpg_function(source, signature):
+    anchor = signature + "\n{"
+    if source.count(anchor) != 1:
+        raise RuntimeError("DoomRPG pure primitive signature drift: " + signature)
+    start = source.index(anchor)
+    depth = 0
+    for pos in range(source.index("{", start), len(source)):
+        if source[pos] == "{":
+            depth += 1
+        elif source[pos] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:pos + 1]
+    raise RuntimeError("Unterminated DoomRPG primitive: " + signature)
+
+pure_primitives = (
+    ("fixed_t\tDoomRPG_FixedMul(fixed_t a, fixed_t b)", 0x383e7af6),
+    ("fixed_t\tDoomRPG_FixedDiv(fixed_t a, fixed_t b)", 0x3cc430eb),
+    ("short DoomRPG_shortAtNext(byte* data, int* posData)", 0x1af28fb4),
+    ("short DoomRPG_shortAt(byte* data, int posData)", 0xe3c972b6),
+    ("int DoomRPG_intAtNext(byte* data, int* posData)", 0x1fa2c02d),
+    ("int DoomRPG_intAt(byte* data, int posData)", 0xd1998a2d),
+)
+pure_path = join(project_src_dir, "esp_doomrpg_primitives.c")
+with open(pure_path, "r", encoding="latin-1") as pure_file:
+    pure_native = pure_file.read()
+for signature, expected_crc in pure_primitives:
+    original_body = extract_doomrpg_function(doom_rpg_source_text, signature)
+    if zlib.crc32(original_body.encode("latin-1")) != expected_crc:
+        raise RuntimeError("DoomRPG primitive reference changed: " + signature)
+    if extract_doomrpg_function(pure_native, signature) != original_body:
+        raise RuntimeError("Native DoomRPG primitive differs from reference: " + signature)
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        original_body, "/* Stateless ESP32 primitive in esp_doomrpg_primitives.c */", 1
+    )
+print("[ESP32] DoomRPG pure primitives migrated=6 owner=esp_doomrpg_primitives "
+      "source-bodies=removed")
+
 doomrpg_display_x_needle = "doomrpg->doomCanvas->displayRect.x + "
 doomrpg_display_y_needle = "doomrpg->doomCanvas->displayRect.y + "
 doomrpg_display_x_count = doom_rpg_source_text.count(doomrpg_display_x_needle)
