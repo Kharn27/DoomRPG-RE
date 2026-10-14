@@ -1,5 +1,18 @@
 # Audit de consolidation architecturale ESP32
 
+## Frontière production suivante : synchronisation des dégâts
+
+Après `ef2447e`, un correctif fonctionnel borné change l'owner action-feedback
+existant : première impulsion présentée dès l'enqueue post-COMMIT, admission
+de la direction avant expiry, et base protégée pour les cues encore en file.
+Aucun owner/buffer/source firmware ajouté. Les preuves ALLOC-identiques des
+lots ci-dessous ne s'appliquent **pas** à ce correctif : normal mesuré
+50 976 B RAM / 809 593 B Flash (+20 B Flash, RAM inchangée).
+Tests du vrai service UI/compositor avec seams externes, trois builds et
+gardes ELF/compiledb PASS localement ; PASS CYD normal requis avant fermeture.
+Cause, limites, CI et scénario matériel dans `PORTING_STATUS.md` et
+`DOCUMENTATION.md`. L'incident distinct du zombie invisible reste ouvert.
+
 ## Suite : diagnostics production, retrait des profils ponctuels — 14 octobre 2026
 
 Après `d8bf3997`, sur la même branche : retrait des environnements

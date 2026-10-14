@@ -1541,6 +1541,8 @@ static const char* directionCueName(uint8_t side) {
     }
 }
 
+static int serviceDirectionalCue(void);
+
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side) {
@@ -1557,6 +1559,12 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
            (unsigned int)directionCue.queued.count,
            (attackProbe & 0x80000000UL) != 0U
                ? "committed-barrel-blast" : "committed-monster-hit");
+    /* This is a post-COMMIT UI intent. Start its first pulse before the
+     * sequencer resumes other members/redraws, which can consume the entire
+     * red-border lease. Reuse the existing compositor, never redraw the world
+     * or wait for the pulse cadence here. Strict leases defer it; a failed
+     * physical present keeps the queued/current cue for the normal retry. */
+    (void)serviceDirectionalCue();
     return 1;
 }
 
@@ -1862,7 +1870,8 @@ int __wrap_Esp32PlatformVideo_present(void) {
     /* Layer order is strict: base WORLD -> 2px red viewport border ->
      * translucent 10px attacker side. The direction snapshot contains the
      * red border underneath it, never replaces its original world snapshot.
-     * Both effects live in the same 500ms interval, not one after another. */
+     * The first pulse overlaps the red lease; a delayed loop must retain the
+     * base until queued/active side snapshots can be released safely. */
     if ((actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
         (actionState.viewportFlashPending != 0U ||
@@ -1978,7 +1987,7 @@ static int serviceViewportFlashExpiry(void) {
      * the band still holds a red-pixel snapshot would leave stale pixels.
      * Expire the base only after the short side pulse has restored its own
      * snapshot. This is UI-only; the monster sequencer never waits for it. */
-    if (directionCue.phase != 0U) return 1;
+    if (directionCue.phase != 0U || directionCue.queued.count != 0U) return 1;
     if (!restoreViewportFlash()) {
         printf("[VIEWFLASH] FAILED phase=restore\n");
         return 0;
@@ -2617,8 +2626,9 @@ int EspNativeGameplayActionEngine_service(struct DoomRPG_s* doomRpgBase) {
     const EspPlayerViewState* view = EspPlayerView_view();
     ActionPending pending;
 
-    if (!serviceFeedbackExpiry()) return 0;
     if (!serviceDirectionalCue()) return 0;
+    /* Admit a deferred first pulse before expiry can retire its base layer. */
+    if (!serviceFeedbackExpiry()) return 0;
     /* PASS TURN and future non-SELECT actions may queue transient feedback
      * without owning an ActionPending transaction. If no gameplay redraw has
      * consumed it yet, present the existing framebuffer with the queued topbar.

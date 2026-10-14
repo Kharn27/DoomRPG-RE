@@ -149,7 +149,11 @@ static inline int EspNativeGameplayDamageCueQueue_pop(
 
 /* Independent presentation-only FIFO. Every committed monster hit keeps
  * its existing red 500 ms border; the direction band blinks concurrently on
- * top of it. Nothing here delays the next member of the monster sequence. */
+ * top of it. Post-COMMIT enqueue tries to present the first pulse immediately
+ * through the existing compositor, before the next member can consume the
+ * border lease. Touch/PAK/level-up/transaction barriers defer that UI paint;
+ * presentation failure is retried and never rolls back committed gameplay.
+ * No wait for the blink cadence or new world render is introduced. */
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side);

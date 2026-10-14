@@ -44,6 +44,18 @@ gameplay; its surface→texture ownership transfer remains functional.
 
 ## 1. Design rule
 
+Damage feedback remains in the existing ActionEngine presentation owner.
+Post-COMMIT directional enqueue attempts the first overlay present before
+the sequencer resumes other monsters; it never waits for the blink cadence,
+renders the world again, or rolls back gameplay on a UI-present failure.
+The service admits direction before expiring the underlying border; active
+and queued cues protect LIFO restoration. Touch/PAK/level-up/transaction
+barriers and the existing FIFO/retry/timeout remain authoritative. An extra
+bounded physical overlay present is possible; this is synchronization, not
+a latency optimization. Host compositor tests do not prove hardware SPI
+timings or complete retaliation rollback. The fix changes normal loaded code,
+unlike the earlier ALLOC-identical consolidation increments.
+
 Credit-gated script interactions reuse `EspNativeGameplayEventChain` for their
 dialog/WAIT continuation and per-segment journal. PlayerState owns money;
 NotePrefix leases its existing candidate/scratch until frame publication;

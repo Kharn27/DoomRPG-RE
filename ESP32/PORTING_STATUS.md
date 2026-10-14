@@ -1,5 +1,44 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Correctif : synchronisation rectangle rouge / première impulsion directionnelle (2026-10-14)
+
+Suite sur la même branche depuis `ef2447e`. Capture `814a5034...` : attaques
+ranged de sprite 157, probes 4/5/8, `VIEWFLASH EXPIRE` après 1108/818/567 ms
+puis `DAMAGECUE ON redBorder=none`. Probes melee 6/7 de sprite 159 : ON avec
+`redBorder=visible`. Ce n'est pas une règle de rendu selon la distance :
+le rectangle est déjà présenté lors de la retaliation, puis la direction
+est queued post-COMMIT, les membres restants reprennent avant son service.
+L'expiration du rectangle était en outre évaluée avant l'admission de la file.
+
+Correctif dans l'owner action-feedback existant : l'enqueue post-COMMIT tente
+immédiatement le présent de la première impulsion via le compositor existant ;
+le service direction passe avant expiry, et la base attend aussi une file non
+vide avant restauration. FIFO, barrières UI, retry/timeout et LIFO conservés.
+Pas de nouveau owner/buffer, de boucle d'attente ou de redraw monde ajouté.
+Un présent physique overlay borné peut être supplémentaire ; aucun gain FPS
+revendiqué. Les durées nominales peuvent s'allonger sous charge. Aucun code
+retaliation, AI, dégâts, RNG, SAVE V11, PAK ou layout propriétaire modifié.
+
+Test `damage_cue_timing_host.c` : le vrai service UI et compositor, dont le
+premier essai sur ancien code échoue faute de première impulsion immédiate.
+Après correction : stall 818 ms, barrières touch/level-up/PAK/transaction,
+FIFO/overflow, présent fail→retry/timeout, quatre côtés, clock wrap et nouveau
+world-redraw entre impulsions ; restauration des pixels/snapshots et guards
+exacte. Assets/horloge/présent et autres propriétaires externes mockés : pas de
+preuve de transaction retaliation complète ni de timing/SPI sur le CYD.
+La nouvelle suite passe également sous ASan/UBSan (LSan off sous ptrace).
+Les **22 étapes hôte du workflow** et les gardes ELF/compiledb des trois
+profils passent localement.
+
+Builds locaux PASS : normal **50 976 / 809 593 B RAM/Flash**, trace
+**51 024 / 826 041 B**, bringup **51 128 / 830 089 B**. RAM inchangée.
+**Le normal chargé change pour ce correctif** (+20 B Flash) ; les preuves
+d'identité ALLOC des lots de consolidation ci-dessous restent historiques.
+CI distante à confirmer sur le commit poussé. **PASS matériel requis** en
+normal : ranged avec plusieurs monstres, melee, MOVE/weapon-cycle pendant
+feedback, puis image propre. La disparition du zombie reste séparément
+ouverte/non reproduite ; ce correctif ne la clôture pas.
+
 ## Diagnostics gameplay : profil production TRACE et retrait de deux probes — CI PASS (2026-10-14)
 
 Suite sur `agent/esp32-retire-generated-render`, parent `d8bf3997`.
