@@ -1,6 +1,6 @@
 # Doom RPG ESP32 — état actuel du port
 
-## Correctif : synchronisation rectangle rouge / première impulsion directionnelle (2026-10-14)
+## Correctif : synchronisation rectangle rouge / première impulsion directionnelle — CI PASS (2026-10-14)
 
 Suite sur la même branche depuis `ef2447e`. Capture `814a5034...` : attaques
 ranged de sprite 157, probes 4/5/8, `VIEWFLASH EXPIRE` après 1108/818/567 ms
@@ -34,7 +34,11 @@ Builds locaux PASS : normal **50 976 / 809 593 B RAM/Flash**, trace
 **51 024 / 826 041 B**, bringup **51 128 / 830 089 B**. RAM inchangée.
 **Le normal chargé change pour ce correctif** (+20 B Flash) ; les preuves
 d'identité ALLOC des lots de consolidation ci-dessous restent historiques.
-CI distante à confirmer sur le commit poussé. **PASS matériel requis** en
+CI code **`c81c2d3f2a4a504504a2e3d6a2aa950a94fc5f95`** :
+[push 38559202786](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38559202786)
+et [PR 38559211874](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38559211874),
+**SUCCESS**. Le commit documentaire suivant ne modifie pas le firmware.
+**PASS matériel requis** en
 normal : ranged avec plusieurs monstres, melee, MOVE/weapon-cycle pendant
 feedback, puis image propre. La disparition du zombie reste séparément
 ouverte/non reproduite ; ce correctif ne la clôture pas.
