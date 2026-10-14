@@ -334,6 +334,31 @@ doom_rpg_source_text = doom_rpg_source_text.replace(
     canvas_memory_metric_needle, canvas_memory_metric_replacement, 1
 )
 
+# Extract the three linked image/PAK methods to a permanent ESP32
+# owner, after the legacy-to-PAK and indexed-BMP rewrites above. Keep their
+# effective bodies exactly identical for this no-behavior-change transition.
+# A source drift must be reviewed, not hidden by resurrecting desktop ZIP.
+image_resource_methods = (
+    ("void DoomRPG_createImage(DoomRPG_t* doomrpg, const char* resourceName, boolean isTransparentMask, Image_t* img)", 0xb853aa58),
+    ("void DoomRPG_freeImage(DoomRPG_t* doomrpg, Image_t* image)", 0x34799bd6),
+    ("byte *DoomRPG_fileOpenRead(DoomRPG_t* doomrpg, const char* resourceName)", 0xbf98b090),
+)
+image_owner_path = join(project_src_dir, "esp_doomrpg_image_resources.c")
+with open(image_owner_path, "r", encoding="latin-1") as image_file:
+    image_owner_source = image_file.read()
+for signature, expected_crc in image_resource_methods:
+    legacy_patched_body = extract_doomrpg_function(doom_rpg_source_text, signature)
+    if zlib.crc32(legacy_patched_body.encode("latin-1")) != expected_crc:
+        raise RuntimeError("DoomRPG image/PAK patched contract drift: " + signature)
+    if extract_doomrpg_function(image_owner_source, signature) != legacy_patched_body:
+        raise RuntimeError("ESP32 image resource owner parity drift: " + signature)
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        legacy_patched_body,
+        "/* Native image/PAK owner: esp_doomrpg_image_resources.c */", 1
+    )
+print("[ESP32] DoomRPG image/resource provider moved=3 "
+      "PAK=bounded indexedBMP=packed generatedBodies=removed")
+
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
 
