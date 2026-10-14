@@ -1,5 +1,27 @@
 # Audit de consolidation architecturale ESP32
 
+## Suite : diagnostics production, retrait des profils ponctuels — 14 octobre 2026
+
+Après `d8bf3997`, sur la même branche : retrait des environnements
+story-teardown/divider et de leurs 79 lignes conditionnelles dans startup.
+Couverture utile transférée aux tests hôte (vrais formatter/story/free ; I/O
+image et cleanup intro mockés). Aucun propriétaire d'état fusionné/ajouté,
+compteurs sources/headers production inchangés. La source présente des probes
+était compilée **seulement** sous leurs macros dédiées ; elle ne fournissait
+pas de code chargé en normal/bringup. Nouvelle comparaison locale des neuf
+sections SHF_ALLOC : **normal et bringup identiques à d8bf3997**.
+
+Le profil réutilisable `esp32-cyd-trace` garde le moteur/layout/routage release
+production ; TRACE + un filtre d'index sprite, pas les macros bringup. La
+présentation ciblée observe des lectures existantes, ne possède ni état ni
+buffer et n'est pas compilée dans normal/bringup. Trace mesuré localement :
+51 024 B RAM statique / 826 013 B Flash, contre 50 976 / 809 573 normal.
+Les +48 B RAM incluent l'admission des logs TRACE existants, pas une nouvelle
+allocation graphique. Ces diagnostics modifient le timing Serial, ne corrigent
+ni ne prouvent un incident gameplay. L'incident zombie reste ouvert ; sa
+sauvegarde sert à la reproduction. Tests de séparation/admission/read-counts,
+trois builds et gardes CI ; limites et procédure dans les guides opérationnels.
+
 ## Cartographie ELF renouvelée : copies desktop — 14 octobre 2026
 
 **Nouvelle mesure sur le vrai main `b9410482b67af3158c2095aa7eefaa26c3d0980d`**

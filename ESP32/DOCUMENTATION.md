@@ -23,6 +23,50 @@ Selon le poste, PlatformIO peut être invoqué avec `platformio` au lieu de `pio
 
 `esp32-cyd-bringup` sert aux diagnostics/probes supplémentaires ; **ne pas** tirer de conclusions RAM production à partir de ce profil. La vérité matérielle vient du boot et des interactions réelles, via Serial.
 
+### Diagnostic d'un incident gameplay
+
+`esp32-cyd-trace` hérite de **la production** : même layout, optimisations
+release, stockage et propriétaires. Il active TRACE sans définir
+`DOOMRPG_ESP32_BRINGUP_PROBES`, sans overlay tactile et sans probes de startup.
+Les écritures Serial modifient le timing : ce n'est ni un benchmark ni une
+preuve d'identité du firmware normal. Bringup reste un diagnostic plateforme,
+avec d'autres layouts et un démarrage différent, pas un simple « mode debug ».
+
+Les anciens profils `esp32-cyd-story-teardown-probe` et
+`esp32-cyd-divider-probe` et leurs blocs firmware sont retirés. Leur couverture
+utile est exercée par `test/diagnostic_profiles_host.py` : vrais formatter,
+story-hand et `DoomCanvas_free`, I/O image/cleanup intro mockés. Pas de preuve
+PAK ou d'équivalence heap ESP32 apportée par ce test hôte.
+
+Pour l'incident zombie actuel, `DOOMRPG_ESP32_TRACE_SPRITE=106` dans
+`platformio.ini` sélectionne **l'index immuable du sprite de la carte**, pas
+son subtype ni son ordre d'activation. Changer uniquement cette valeur pour
+un autre incident, sans créer d'environnement par monstre. `[SPRITETRACE]`
+observe les données déjà lues par le renderer : position projetée, tile et
+flags topology, pose, caméra, preview, admission hidden/BSP/candidate,
+near/backface/clip/frame/span failure ou raster avec nombre de pixels.
+`result=rasterized pixels=0` n'est pas une preuve d'affichage visible ; un rejet
+ou une frame réussie ne suffit pas à diagnostiquer un rollback gameplay.
+Les déplacements commis et décisions de chaque membre deviennent également
+visibles via les logs TRACE existants. Aucun buffer ni owner persistant ajouté.
+
+Depuis `ESP32/` :
+
+```sh
+pio run -e esp32-cyd-trace
+pio run -e esp32-cyd-trace -t upload --upload-port /dev/ttyUSB0
+pio device monitor --port /dev/ttyUSB0 --baud 115200
+```
+
+Fermer tout autre lecteur Serial avant le monitor. Vérifier au boot
+`[TRACEPROFILE] production-path sprite=106 ... bringup=no`, puis charger la
+sauvegarde existante près du zombie **sans la réécrire**. Capturer la sortie
+depuis LOAD, tous les tirs jusqu'à la disparition, puis le premier mouvement
+qui le fait réapparaître. Conserver les lignes complètes, pas seulement les
+SPRITETRACE. Une sauvegarde est une reproduction, pas la preuve d'une cause.
+Après correction éventuelle, refaire le scénario avec `esp32-cyd` normal.
+Ce jalon ajoute l'observabilité ; il ne corrige pas encore la disparition.
+
 Le jalon depuis main `b941048` retire la copie C desktop Render générée dans
 les deux profils. L'owner géométrique natif sert maintenant aussi bringup ;
 normal reste bit-identique chargé dans la comparaison locale. DoomRPG.c reste

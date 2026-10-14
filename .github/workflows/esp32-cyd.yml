@@ -144,6 +144,9 @@ jobs:
       - name: Test monster diagnostics policy and activation capture (host Python and C)
         run: python ESP32/test/monster_log_policy_host.py
 
+      - name: Test production trace isolation and retired startup regressions (host Python and C)
+        run: python ESP32/test/diagnostic_profiles_host.py
+
       - name: Cache PlatformIO packages
         uses: actions/cache@v4
         with:
@@ -166,10 +169,14 @@ jobs:
         working-directory: ESP32
         run: pio run -e esp32-cyd-bringup
 
-      - name: Reject retired migration exports in both profiles
+      - name: Build production-path CYD trace firmware
+        working-directory: ESP32
+        run: pio run -e esp32-cyd-trace
+
+      - name: Reject retired migration exports in all profiles
         working-directory: ESP32
         run: |
-          for profile in esp32-cyd esp32-cyd-bringup; do
+          for profile in esp32-cyd esp32-cyd-bringup esp32-cyd-trace; do
             python tools/compare_elf_alloc.py ".pio/build/$profile/firmware.elf" \
               --forbid-prefix EspPostLoad --forbid-prefix EspNativePlayingService \
               --forbid-prefix EspNativeGraphics_ --forbid-prefix EspNativeProjectedSprite_ \
@@ -186,10 +193,10 @@ jobs:
               --forbid-prefix __wrap_DoomRPG_probeNative
           done
 
-      - name: Reject generated Render source registration in both profiles
+      - name: Reject generated Render source registration in all profiles
         working-directory: ESP32
         run: |
-          for profile in esp32-cyd esp32-cyd-bringup; do
+          for profile in esp32-cyd esp32-cyd-bringup esp32-cyd-trace; do
             pio run -e "$profile" -t compiledb
             python tools/audit_desktop_elf.py ".pio/build/$profile" \
               --compiledb compile_commands.json --require-retired-render
@@ -203,6 +210,10 @@ jobs:
           path: |
             ESP32/.pio/build/esp32-cyd/*.bin
             ESP32/.pio/build/esp32-cyd/firmware.elf
+            ESP32/.pio/build/esp32-cyd-trace/*.bin
+            ESP32/.pio/build/esp32-cyd-trace/firmware.elf
+            ESP32/.pio/build/esp32-cyd-bringup/*.bin
+            ESP32/.pio/build/esp32-cyd-bringup/firmware.elf
           if-no-files-found: error
           include-hidden-files: true
           retention-days: 14

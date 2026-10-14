@@ -429,13 +429,22 @@ native_junction_* for map-independent behavior
 *_probe.c as the permanent always-built implementation of gameplay/live compatibility semantics
 ```
 
-That rule does **not** ban useful diagnostics. The project has two distinct
+That rule does **not** ban useful diagnostics. The project has three distinct
 build intents:
 
 ```text
 esp32-cyd          normal production/runtime hardware authority
+esp32-cyd-trace    production-path diagnostics, release + TRACE + one sprite filter
 esp32-cyd-bringup  optional diagnostic profile with extra probes/overlays
 ```
+
+Trace inherits the normal profile, not bringup: it preserves production layouts
+and routing and does not enable startup census or touch overlays. Its targeted
+sprite logs observe existing renderer reads; they own no state or buffer and
+compile out unless `DOOMRPG_ESP32_TRACE_SPRITE` is defined. Serial affects timing,
+so final gameplay/latency authority remains normal. Retired one-off story-hand
+teardown and divider firmware profiles are covered by host regression tests
+(real code, mocked image I/O/intro cleanup, no ESP32 heap/PAK parity claim).
 
 Bringup-only probes, regression witnesses and bounded instrumentation may retain
 probe naming while they provide useful observability. They are not cleanup debt

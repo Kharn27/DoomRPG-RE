@@ -1,5 +1,45 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Diagnostics gameplay : profil production TRACE et retrait de deux probes (2026-10-14)
+
+Suite sur `agent/esp32-retire-generated-render`, parent `d8bf3997`.
+Trois profils désormais : normal, trace et bringup. `esp32-cyd-trace` hérite
+du normal en release, TRACE + filtre `DOOMRPG_ESP32_TRACE_SPRITE=106`, sans
+bringup/overlay. Les logs observent uniquement les lectures existantes du
+renderer ; pas d'owner/buffer/lecture gameplay supplémentaire ajouté. Les
+traces MOVE/MEMBER/RNG existantes complètent admission et raster par sprite.
+Les profils story-teardown/divider et **79 lignes** conditionnelles de startup
+sont retirés ; leur couverture utile passe côté hôte, avec I/O image et
+cleanup intro mockés, sans preuve hardware de heap/PAK.
+
+Builds locaux des trois profils PASS. Normal **50 976 / 809 573 B RAM/Flash**,
+bringup **51 128 / 830 061 B** : leurs **neuf sections SHF_ALLOC strictement
+identiques** à celles du parent dans la comparaison contrôlée locale.
+Trace **51 024 / 826 013 B**, soit +48 B RAM statique et +16 440 B Flash
+par rapport au normal : logs TRACE existants + instrumentation, pas un nouveau
+buffer graphique. Ne pas attribuer à ce profil de gain de performance :
+Serial et l'expiration des leases changent le timing observé.
+
+`test/diagnostic_profiles_host.py` valide séparation de profils, filtre d'un
+sprite, admission hidden/BSP/candidate sur le vrai renderer, counts de lectures
+identiques et chemin preview/live conservé ; vrais formatter/story/free testés.
+Les essais admission ne couvrent pas le raster complet ni la reproduction CYD.
+La CI construit les trois profils et vérifie les mêmes gardes d'exports et
+d'admission de Render.c. Procédure matérielle : `DOCUMENTATION.md`.
+Vérification locale : **21 étapes hôte du workflow PASS**, nouvelle suite
+également sous ASan/UBSan (LSan off sous ptrace), gardes ELF/compiledb PASS
+sur les trois profils. CI distante à confirmer sur le commit poussé.
+
+**Incident zombie ouvert, pas de correctif ni PASS matériel revendiqué.**
+Capture `7abee51e...` : sprite 106, tirs seq 111–113, HP 7→5→3→1,
+armor 4→3→2→0, alive 1→1 et rollback fermé. Aucun échec de rendu signalé.
+Le tour 60 livre un membre sans attack-probe ; les déplacements réussis sont
+masqués en INFO. La disparition puis réapparition au MOVE peut relever de la
+position ou du rendu : cette trace ne permet pas de trancher. Charger la
+sauvegarde conservée près du cas, tracer tirs/disparition/premier mouvement,
+puis valider une éventuelle réparation sur le profil normal. SAVE V11, RNG,
+`shapeData == NULL`, `mediaTexels == NULL` et backing PAK restent inchangés.
+
 ## Consolidation : retrait de Render.c généré — CI PASS (2026-10-14)
 
 Nouvelle branche `agent/esp32-retire-generated-render` depuis main exact

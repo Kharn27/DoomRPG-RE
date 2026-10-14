@@ -48,13 +48,13 @@ print(
     f"esp_legacy_doomcanvas_bridge.c owns {len(doom_canvas_bridge_exports)} source ABI exports"
 )
 
-# Render.c is no longer generated or compiled in either CYD profile. The
+# Render.c is no longer generated or compiled in any CYD profile. The
 # permanent esp_render_geometry_primitives.c owns the seven linked geometry
 # primitives for normal AND bringup. Startup/palette/mapping/teardown owners
 # remain unchanged; retired desktop BSP/shape/texel functions are not admitted.
 # Desktop reference parity is checked by host tests, not build-time rewriting.
 print("[ESP32] Desktop Render.c retired; geometry=esp-render-geometry-primitives "
-      "profiles=normal+bringup generated=no")
+      "profiles=normal+trace+bringup generated=no")
 
 # The ESP32 firmware no longer compiles a generated copy of desktop Game.c.
 # Its only four linked compatibility roots are implemented permanently by
