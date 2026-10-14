@@ -9,7 +9,10 @@ Aucun owner/buffer/source firmware ajouté. Les preuves ALLOC-identiques des
 lots ci-dessous ne s'appliquent **pas** à ce correctif : normal mesuré
 50 976 B RAM / 809 593 B Flash (+20 B Flash, RAM inchangée).
 Tests du vrai service UI/compositor avec seams externes, trois builds et
-gardes ELF/compiledb PASS localement ; PASS CYD normal requis avant fermeture.
+gardes ELF/compiledb PASS localement ; acceptation matérielle qualitative
+donnée par l'utilisateur le 14 octobre 2026 (désynchronisation non reproduite,
+résultat accepté). Pas de nouveau log/SHA de boot/profil : ne pas présenter
+ce retour comme une validation exhaustive ou une mesure de concurrence.
 Cause, limites, CI et scénario matériel dans `PORTING_STATUS.md` et
 `DOCUMENTATION.md`. L'incident distinct du zombie invisible reste ouvert.
 

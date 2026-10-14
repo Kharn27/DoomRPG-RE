@@ -149,10 +149,13 @@ Ce présent overlay borné peut ajouter le coût d'un transfert écran ; ce n'es
 pas une optimisation de performances. Les durées 500/85/45 ms sont nominales :
 un loopTask occupé peut allonger l'affichage, sans attendre ni bloquer le tour
 logique pour terminer le feedback. Tests hôte du vrai service/compositor
-avec clock/assets/présentation mockés ; **PASS matériel de cette correction
-encore requis**, distinct des anciens jalons.
+avec clock/assets/présentation mockés. **Acceptation matérielle qualitative
+du correctif donnée le 14 octobre 2026** : l'utilisateur n'a pas reproduit la
+désynchronisation et accepte le résultat. Aucun nouveau log/SHA de boot/profil
+fourni ; ce n'est pas une validation exhaustive des cas ci-dessous ni une
+mesure de timings. La preuve logicielle et ce retour matériel restent distincts.
 
-Tester sur **esp32-cyd normal** : hit zombie à distance avec plusieurs monstres
+Scénario de non-régression à conserver sur **esp32-cyd normal** : hit zombie à distance avec plusieurs monstres
 actifs, puis hit au corps-à-corps ; vérifier la première impulsion sur le rouge,
 et l'absence de pixels persistants après un mouvement/changement d'arme.
 En Serial, attendre `DAMAGECUE ON ... redBorder=visible` pour le premier hit

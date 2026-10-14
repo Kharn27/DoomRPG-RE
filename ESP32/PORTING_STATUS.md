@@ -1,6 +1,6 @@
 # Doom RPG ESP32 — état actuel du port
 
-## Correctif : synchronisation rectangle rouge / première impulsion directionnelle — CI PASS (2026-10-14)
+## Correctif : synchronisation rectangle rouge / première impulsion directionnelle — CI PASS / acceptation matérielle ciblée (2026-10-14)
 
 Suite sur la même branche depuis `ef2447e`. Capture `814a5034...` : attaques
 ranged de sprite 157, probes 4/5/8, `VIEWFLASH EXPIRE` après 1108/818/567 ms
@@ -38,10 +38,16 @@ CI code **`c81c2d3f2a4a504504a2e3d6a2aa950a94fc5f95`** :
 [push 38559202786](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38559202786)
 et [PR 38559211874](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38559211874),
 **SUCCESS**. Le commit documentaire suivant ne modifie pas le firmware.
-**PASS matériel requis** en
-normal : ranged avec plusieurs monstres, melee, MOVE/weapon-cycle pendant
-feedback, puis image propre. La disparition du zombie reste séparément
-ouverte/non reproduite ; ce correctif ne la clôture pas.
+**Acceptation matérielle qualitative donnée par l'utilisateur** après ce
+correctif : « pas réussi à reproduire, disons que c'est bon ». Ce retour clôt
+le besoin de retest demandé pour la désynchronisation rectangle/direction.
+Frontière de code de la branche : `c81c2d3`, head présenté pour essai `24d5901`
+(docs-only). Aucun nouveau log, SHA de boot ni profil effectivement flashé
+fourni : ne pas prétendre à une mesure exacte de concurrence ni à une
+validation exhaustive ranged/multi-monstres/melee/MOVE/weapon-cycle/rollback.
+Les tests logiciels détaillés ci-dessus restent une preuve distincte.
+La disparition du zombie reste séparément ouverte/non reproduite ; cette
+acceptation ne la clôture pas. Aucun nouveau firmware dans ce lot documentaire.
 
 ## Diagnostics gameplay : profil production TRACE et retrait de deux probes — CI PASS (2026-10-14)
 
