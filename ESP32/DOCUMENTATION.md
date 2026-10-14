@@ -23,6 +23,27 @@ Selon le poste, PlatformIO peut être invoqué avec `platformio` au lieu de `pio
 
 `esp32-cyd-bringup` sert aux diagnostics/probes supplémentaires ; **ne pas** tirer de conclusions RAM production à partir de ce profil. La vérité matérielle vient du boot et des interactions réelles, via Serial.
 
+Le jalon depuis main `b941048` retire la copie C desktop Render générée dans
+les deux profils. L'owner géométrique natif sert maintenant aussi bringup ;
+normal reste bit-identique chargé dans la comparaison locale. DoomRPG.c reste
+généré pour ses utilitaires/états réellement liés, et le shim SDL packed reste
+fonctionnel. Cartographie ELF et priorités : `CONSOLIDATION_AUDIT.md`.
+
+Pour refaire la cartographie sur **un build courant**, depuis ESP32 :
+
+```sh
+pio run -e esp32-cyd
+pio run -e esp32-cyd -t compiledb
+python3 tools/audit_desktop_elf.py .pio/build/esp32-cyd --compiledb compile_commands.json --calls
+python3 tools/audit_desktop_elf.py .pio/build/esp32-cyd --compiledb compile_commands.json --require-retired-render
+```
+
+Répéter avec bringup et régénérer compiledb pour le profil choisi. Les vieux
+Render.o/Render.c de .pio ne prouvent pas une compilation ; SCons/map/ELF sont
+croisés. Le CSV b941048 est un snapshot de la base **avant** retrait, pas un
+inventaire automatique du HEAD. Un symbole lié ou un call direct ne prouve
+jamais un chemin réellement exécuté sur le CYD.
+
 L'ancienne suite graphique `menu.bsp`/ZIP est retirée : son point d'entrée
 retournait déjà 0 pour tous les builds ESP32. Le rapport bringup `[MENUBSP]
 RETIRED` et `MENU BSP FAIL` reste donc attendu ; il ne teste pas le menu opaque

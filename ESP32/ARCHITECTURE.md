@@ -7,7 +7,7 @@ in which historical recovery probes were written.
 For current hardware status and exact canons, read [`PORTING_STATUS.md`](PORTING_STATUS.md).
 For build/platform notes, read [`DOCUMENTATION.md`](DOCUMENTATION.md).
 
-Current architectural consolidation census (main `9d203e5`, 2026-10-13):
+Current ELF census (main `b941048`, 2026-10-14; earlier census `9d203e5` retained):
 [`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md), with the per-source build/ELF
 inventory. Several older recovery descriptions below (notably §6/7/10/13) no
 longer describe the complete live port. Use the current census and source for
@@ -25,6 +25,22 @@ PAK catalogs, live cache-inactivity gates and opaque menu painter unchanged.
 Current census: **158 C/C++ sources, 152 include headers**. See the audit for
 why two dormant dashboard bridges and their frame contracts remain deferred;
 removing an unlinked function can still alter GCC inlining in a live TU.
+
+Neither CYD profile generates or compiles desktop Render.c anymore. Normal
+already linked zero bytes from it; bringup's seven pure geometry helpers now
+come from the same permanent `esp_render_geometry_primitives.c` as production.
+No world/sprite/plane/shape loader is reactivated, no owner is merged. Desktop
+Render.c remains a test-only behavior reference; the old bringup-only bodies
+are no longer firmware providers. Normal loaded ELF is unchanged in the local
+controlled comparison; bringup is not claimed binary-identical.
+
+The remaining generated desktop C root is DoomRPG.c: 27 linked utilities plus
+seven named data symbols, including process-lifetime basetime and hidden RNG
+seed/reset state. Its next retirement must separate math/binary, image/SDL,
+clock/RNG, config and core responsibilities, reusing genuine owners. Renaming
+the monolith is not native ownership, nor permission to combine independent
+state lifetimes. The separately generated packed SDL shim is not desktop
+gameplay; its surface→texture ownership transfer remains functional.
 
 ## 1. Design rule
 

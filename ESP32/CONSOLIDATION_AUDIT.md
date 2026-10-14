@@ -1,5 +1,141 @@
 # Audit de consolidation architecturale ESP32
 
+## Cartographie ELF renouvelée : copies desktop — 14 octobre 2026
+
+**Nouvelle mesure sur le vrai main `b9410482b67af3158c2095aa7eefaa26c3d0980d`**
+(après #210 et #209), avant modification. Ce n'est pas une extrapolation des
+CSV du 13 octobre, ni une trace d'exécution du CYD. Worktree main propre ;
+builds normal/bringup et compiledb reconstruits avec espressif32 6.12.0,
+Arduino 3.20017.241212, GCC Xtensa 8.4.0. Mesures locales :
+**50 976 / 809 573 B RAM/Flash** normal, **51 128 / 830 105 B** bringup.
+Ne pas recopier les tailles du dernier SHA de code PR #209 comme mesures de
+ce main : les relevés ici sont 16 B Flash plus élevés.
+
+Le compteur reste 158 C/C++ dans ESP32/src, 152 headers include. SCons admet
+157 sources du dossier (template SDL exclu), trois copies générées et 55 unités
+framework/libs : **215 commandes**, dont **160 unités moteur**, par profil.
+Aucun TU desktop original compilé. Les deux copies C admises sont
+`DoomRPG.c` (1 228 lignes générées) et `Render.c` (3 186), plus le shim SDL C++
+packed/zero-copy qui est un autre sujet, pas un moteur desktop à réactiver.
+
+### Source, objet, linkage et exécution
+
+| Objet généré à la base | Symboles définis objet | Fonctions finales liées | Données nommées finales | Sections d'entrée chargées |
+| --- | ---: | ---: | ---: | --- |
+| DoomRPG.o normal | 61 | 27 | 7 | .flash.text 1 366 B ; .flash.rodata 151 B ; .dram0.data 528 B ; .dram0.bss 1 072 B |
+| DoomRPG.o bringup | 61 | 27 | 7 | mêmes tailles, pas une promesse d'adresses identiques entre profils |
+| Render.o normal | 24 | **0** | 0 | **0 B** |
+| Render.o bringup | 48 | **7** | 0 | .flash.text **776 B**, literals compris |
+
+Les tailles de sections d'entrée ne sont pas un gain Flash disponible :
+relaxation, padding et réattribution des mêmes fonctions à un owner natif
+comptent. Le CSV [desktop_elf_symbols_b941048.csv](desktop_elf_symbols_b941048.csv)
+fixe le détail symboles/tailles/adresses **de cette base avant retrait**.
+L'objet DoomRPG définit 54 fonctions (dont un helper local) et sept données ;
+27 fonctions sont déjà éliminées. Sa fermeture `DoomRPG_Init`, event-key,
+loopGame, serializers non consommés, etc. n'est pas du moteur embarqué à
+« optimiser » en effaçant ses lignes. À l'inverse, ses 27 utilitaires liés et
+ses 1 600 B de données ne peuvent pas être supprimés sans replacement audité.
+
+Outil hôte reproductible : `tools/audit_desktop_elf.py`. Il croise nm objet/ELF,
+map chargée après « Linker script and memory map », et appartenance exacte à
+une plage SHF_ALLOC ; adresse zéro, debug, sections hors plage et lignes
+discarded ne sont pas du linkage. Les collisions de noms locaux sont résolues
+par la plage de l'owner, pas par le nom seul. `--compiledb` sépare admission
+SCons et vieil objet physique ; `--calls` recense les calls/jumps directs.
+Les références indirectes/callx, pointers, inlining et usages réellement
+exécutés ne sont pas prouvés par ce graphe. Zéro caller direct ne signifie
+**pas** zéro consommateur. La vérité d'exécution reste le hardware.
+
+### Responsabilités encore portées par DoomRPG.o
+
+| Famille liée | Fonctions | État / consommateurs et frontière |
+| --- | ---: | --- |
+| Fixed math + lecteurs binary/mappings | 6 : FixedMul/Div, shortAt/intAt et variantes Next | stateless ; géométrie native, mappings, palettes ; préserver signed/fixed/saturation/endian |
+| Images / resource open | 3 : createImage/freeImage/fileOpenRead | SDL packed BMP et PAK alloc ; core/layout, menu storage, intro/story ; transfert pixels/palette, leases et teardown |
+| Présentation SDL minimale | 7 : ClipFalse/True, Color/FontColor, fillRect/drawLine/flushGraphics | renderer/clip/font existants ; Help, intro, menu opaque ; pas d'état monde à fusionner |
+| Temps | 2 : GetTimeMS/GetUpTimeMS | basetime 4 B process-lifetime ; SDL ticks, intro, WAIT, cadences, death et replay RNG |
+| RNG | 3 : Random_Get/getRand + setRand | _seed/resetRand 8 B process-lifetime **hors Random_t** ; replay/refill wrappers et réservations d'attaque, pas un reset map-session |
+| Binds / config | 3 : setDefaultBinds, File_readByte/Int | keyMapping/Temp/Default : 3 × 528 B ; initialisation/config shell ; ne pas remplacer par un reset UI arbitraire |
+| Core / erreur | 3 : Error, FreeAppData, freeMemory | doomRpg singleton 4 B, teardown native storage/shells, fatal allocation/asset path |
+
+Ces 27 fonctions sont des compatibilités/outils réellement consommés, pas un
+contrôleur desktop vivant. Exemples de calls finaux : createImage ← Canvas
+startup/menu storage/intro ; short/intAtNext ← mappings/palettes ; setRand ←
+core et replay guard ; GetUpTimeMS ← WAIT/attack/death/intro/replay ; drawing ←
+Help/menu/story. Le graphe ne prouve pas que tous ces chemins ont été exécutés.
+RNG et basetime ne doivent pas être regroupés avec un owner de map par simple
+proximité de fichier. Le singleton et les binds sont aussi des durées de vie
+distinctes ; déplacer un fichier monolithique tel quel serait une fausse fin.
+
+### Ordre de consolidation retenu
+
+| Priorité | Jalon | Bénéfice concret | Risque / vérification |
+| --- | --- | --- | --- |
+| P0, ce lot | Retirer complètement Render.c généré dans les deux profils ; partager l'owner géométrique natif existant | un TU généré en moins, 622 lignes nettes de patching retirées ; aucune fusion d'état | normal : 9 sections ALLOC strictement identiques ; bringup : sept fonctions, référence/différentiel et build |
+| P1 | Retirer les utilitaires stateless de DoomRPG.c vers leurs responsabilités explicites | sortir 6 fonctions math/binary, puis 3 assets et 7 SDL de la génération ; réutiliser les owners quand leur contrat convient | integer/endian vectors ; palettes/mappings ; BMP packed et transfert/double-free ; menu/intro si code chargé change |
+| P2, séparé | Finir le retrait de DoomRPG.c avec temps/RNG/config/core explicites | supprimer le second TU C généré et le patching de cleanup ; liste ABI minimale maintenable | clocks monotonic/wrap et basetime ; refill/table/hidden seed/probe→commit ; process vs session lifetime ; fatal teardown ; RAM/save et CI ; PASS CYD ciblé si frontière de production change |
+| Non retenu | Fusion aveugle des 158 sources, suppression des wrappers transactionnels ou regroupement de globals | compteur plus petit seulement | casser position/activation, preview/publication, journal/save/RNG ; aucune justification architecturale |
+
+P1 n'autorise pas de ranger tous les utilitaires dans un nouveau « core ».
+Le but final reste **zéro copie C desktop générée**. Le propriétaire SDL
+packed actuel n'est pas à supprimer avec elles ; sa future source native
+permanente nécessite son propre audit d'ownership pixels/palette.
+
+### Premier jalon implémenté : Render.c n'est plus un input firmware
+
+Branche `agent/esp32-retire-generated-render`, créée exactement depuis b941048.
+`scripts/build_engine.py` **1 190 → 568 lignes**, plus aucune génération ni
+registration de Render.c. Original src/Render.c inchangé et conservé comme
+spécification test-only. Les sept corps nécessaires au bringup sont déjà
+implémentés par `esp_render_geometry_primitives.c` ; seul son guard de profil
+est ouvert. Aucun TU/header/owner ou état production ajouté, toujours 158/152.
+La production normale était déjà entièrement servie par cet owner.
+
+Les bodies BSP/shapeData/mediaTexels, sprite lists, plane-test, berserk/fade et
+loadTexels du desktop disparaissent aussi de la **compilation bringup**, où ils
+étaient éliminés. Ce retrait ne produit **aucune parité nouvelle** pour leurs
+features ; notamment Berserk reste deferred. Les sept geometries gardent les
+mêmes ABI/wraps ; aucun wrapper de publication, RNG ou transaction n'est retiré.
+Les prototypes historiques restent dans Render.h : ils ne créent pas un
+provider lié. Une nouvelle dépendance desktop doit échouer au lien/à la garde,
+pas ressusciter l'ancien loader. Le diagnostic menu BSP RETIRED reste inchangé.
+
+Après : **214 commandes / 159 unités moteur**, 157 directes + deux copies
+générées (`DoomRPG.c`, SDL C++). Une ancienne Render.c/Render.o peut subsister
+dans .pio d'un poste incrémental ; elle n'est ni régénérée, ni admise, ni liée.
+La CI teste compiledb + map pour ne pas confondre cet artefact avec une source
+compilée. La garde nouvelle rejette l'ancienne base, accepte les deux profils
+du jalon et interdit toute registration desktop originale.
+
+Builds locaux PASS. Normal **50 976 / 809 573 B**, **les neuf sections SHF_ALLOC
+inchangées**, bytes/adresses/flags/alignement/layout et app descriptor compris
+(NOBITS par layout). Bringup **51 128 / 830 061 B**, RAM inchangée,
+Flash **−44 B**, pas d'identité binaire annoncée pour ce profil. Les 776 B de
+sections anciennes ne sont pas un gain de 776 B : les sept corps sont encore
+liés, désormais natifs. Aucun gain de fluidité ni RAM production revendiqué.
+L'identité stricte porte sur les sections ELF, pas sur tout le .bin :
+elf2image recalcule le digest ELF, qui peut changer avec le debug non chargé.
+
+Tests hôte : quatre cas du parser/admission ELF (discarded/debug, plages,
+homonymes, objet résiduel et compiledb vide refusé),
+sept géométries confrontées à leurs références CRC-pinnées, 10 000 cas seeded,
+quatre cardinaux, colonnes/clip/cull/projection/occlusion ; solid BG exact et
+guards framebuffer séparés. Exécutés aux deux profils, ASan/UBSan local PASS
+(LSan désactivé sous ptrace). Les deux côtés utilisent les mêmes helpers
+fixed-math dans ce test : **pas** une validation indépendante du RNG, fixed
+math, monde, render complet, assets, SD ou sauvegarde. Les références ne sont
+compilées que sur hôte ; aucun desktop monolithique n'est réintroduit au CYD.
+Suite hôte/CI et clôture de code : PORTING_STATUS. La comparaison stricte avec
+l'ELF main est locale, pas annoncée comme réalisée par la CI.
+
+Pas de nouveau PASS CYD exigé pour **le normal bit-identique chargé**. Le
+bringup a changé de provider et de binaire ; sa vérification est logicielle,
+pas un PASS physique inventé. Les limites AI special-plane, activation
+post-LOAD, packed-wall guards, feedback après MOVE et audio restent ouvertes.
+
+## Audit historique du 13 octobre — base 9d203e5
+
 Base vérifiée : `9d203e525a4b8736fadfd34aaf693423bff7f602` (main après PR #208).
 Audit du 13 octobre 2026. Classic CYD, sans PSRAM. Ce rapport n'attribue aucun
 nouveau PASS matériel et ne clôt aucune anomalie gameplay du statut courant.

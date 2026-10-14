@@ -1,5 +1,48 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Consolidation : retrait de Render.c généré — logiciel local PASS (2026-10-14)
+
+Nouvelle branche `agent/esp32-retire-generated-render` depuis main exact
+`b9410482b67af3158c2095aa7eefaa26c3d0980d`. Audit **ELF renouvelé** dans
+[`CONSOLIDATION_AUDIT.md`](CONSOLIDATION_AUDIT.md), avec CSV symboles de cette
+base : Render.o normal **0 B lié**, bringup **7 fonctions / 776 B** ;
+DoomRPG.o conserve **27 fonctions / 7 données nommées**, dont RNG et temps.
+Ne pas supprimer celui-ci ni regrouper ses globals sans leurs contrats.
+
+Premier lot : Render.c n'est plus généré/compilé dans aucun des deux profils ;
+les sept géométries bringup passent au fichier natif existant. Build script
+1 190→568 lignes ; 158 sources/152 headers conservés, aucun nouvel owner
+production. SCons 215→214 commandes, 160→159 unités moteur, trois→deux copies
+générées (DoomRPG.c et shim SDL packed). Desktop original src/Render.c intact,
+référence des tests hôte seulement. Les ABI/helpers natifs et wraps
+transactionnels restent ; les features desktop non possédées restent deferred.
+
+Normal **50 976 B RAM / 809 573 B Flash**, neuf sections allouées **strictement
+identiques** au main de cette base, bytes/adresses/flags/alignement/layout,
+app descriptor compris. Ce n'est pas une identité de tout le .bin/digest ELF.
+Bringup **51 128 / 830 061 B**, RAM inchangée,
+−44 B Flash par rapport aux 830 105 B du main reconstruit. Pas de gain de
+fluidité ni RAM production inventé ; pas d'identité du binaire bringup annoncée.
+
+Tests nouveaux PASS local : attribution ELF/map/homonymes ; différentiel des
+sept primitives contre référence, 10 000 cas seeded/quatre cardinaux, guards
+colonnes et solid BG aux deux profils ; ASan/UBSan (LSan off sous ptrace).
+La garde compiledb/map rejette l'ancienne base et accepte le retrait : elle
+distingue les artefacts .pio résiduels des véritables sources admises.
+Builds normal/bringup, **20 étapes hôte**, garde des exports retirés et garde
+source/admission Render PASS local (Python local = python3). CI distante à
+consigner après vérification. Les références desktop ne sont pas des inputs
+firmware ; quatre tests parser/admission couvrent aussi l'objet résiduel et
+la compilation database vide refusée.
+
+Pas de reflash/PASS CYD demandé pour le normal chargé bit-identique. Aucun
+nouveau PASS physique bringup, Render ABI, SD, RNG ou parité globale attribué.
+Les anomalies post-LOAD/AI/feedback décrites ci-dessous restent ouvertes,
+shapeData/mediaTexels NULL et backing `/DoomRPG-ESP32.pak` préservés. Aucune
+modification du gameplay, de ses RNG/timers/journaux ou du format SAVE V11.
+Suite : retirer DoomRPG.c par familles/lifetimes (utilitaires, assets/SDL, puis
+clock/RNG/config/core), pas copier son monolithe dans un autre fichier.
+
 ## Feedback dégâts directionnels + tonneau mortel — clôture CYD (2026-10-14)
 
 **PR #209** sur `agent/esp32-directional-damage-feedback`, base `main`
@@ -531,7 +574,7 @@ Status vocabulary: **native-validated** = original behavior reproduced and exerc
 | Original sound/music | disconnected/deferred: `AUDIOINTENT` silent backend | Implement native playback independently; don't revive legacy Sound object |
 | Legacy plane-test functions / BSP traversal / map loads | compat-only: production `esp_legacy_render_reject.c`; normal owner native | Reject stubs are not validated positive invocations; any missing original effect must get a native owner, not a fallback |
 | Legacy `Render_draw2DSprite` / `shapeData` decoding | **production legacy ABI retired**; native weapon/sprite assets read packed PAK | Weapon/HUB visuals are native; **remaining original overlay/effect parity OPEN**, do not restore map-wide `shapeData` |
-| Legacy berserk postprocess (`Render_setBerserkColor`) | **disconnected/deferred**: desktop/bringup original retained; production ABI retired | **Berserk red-tint behavior parity remains OPEN**. Audit original trigger, timing and native HUD/framebuffer owner before claiming reproduction; never silently re-enable legacy SDL texture writes |
+| Legacy berserk postprocess (`Render_setBerserkColor`) | **disconnected/deferred**: desktop reference retained; ABI absent in both CYD profiles after generated Render retirement | **Berserk red-tint behavior parity remains OPEN**. Audit original trigger, timing and native HUD/framebuffer owner before claiming reproduction; never silently re-enable legacy SDL texture writes |
 
 Update this ledger whenever a legacy function is unlinked or a corresponding native behavior becomes hardware-validated; historic milestones live in Git, not in 123 separate files.
 
@@ -597,8 +640,8 @@ Ces chiffres **ne sont pas** une promesse universelle pour toutes les cartes ou 
 - Le normal `esp32-cyd` a les propriétaires permanents `render_startup_bridge.c`, `esp_render_geometry_primitives.c` et `esp_legacy_render_reject.c` pour les familles déjà migrées.
 - `Render_initColumnScale`, `Render_cullBoundingBox`, `Render_transform2DVerts`, `Render_clipLine`, `Render_clipVertex`, `Render_projectVertex`, `Render_occludeClippedLine` sont natifs ; calcul fixed-point `FIXED_VERSION=1` restauré pour la parité legacy.
 - `Render_findEventIndex`, `Render_relinkSprite`, `Render_renderBSPNoclip` et trois fonctions plane-test sont retirés du production legacy, via des compatibilités **fail-closed** là où nécessaire. `Render_freeRuntime` a un propriétaire natif.
-- Le code généré `Render.c` subsiste **pour les autres fonctions legacy encore utilisées** : ne pas le retirer en bloc.
-- Le bringup conserve les références legacy nécessaires à ses probes ; les guards bringup du correctif P1 sont revus dans le code, **mais leur compilation n'est pas encore validée**.
+- Depuis le jalon b941048, Render.c n'est plus généré/compilé dans aucun profil CYD : la cartographie a prouvé zéro code lié en normal et seulement sept primitives géométriques bringup, désormais fournies par l'owner natif existant.
+- Les références desktop restent hors firmware pour les tests différentiels ; les builds normal/bringup passent. Le normal chargé est strictement identique dans la comparaison locale ; le binaire bringup change, sans PASS matériel revendiqué.
 - Les validations de retrait sans appel effectif sont des **PASS de non-régression**, pas des preuves que les stubs ont été invoqués.
 - `SYS EXIT` éprouve le reset résident natif ; il ne prouve **pas** l'exécution directe de `Render_free` / `Render_freeRuntime`.
 

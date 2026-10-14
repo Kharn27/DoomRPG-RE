@@ -1,6 +1,32 @@
 
 This directory contains project tests.
 
+Shared CYD geometry and desktop ELF attribution (also in CI):
+
+```sh
+python3 ESP32/test/desktop_elf_audit_host.py
+python3 ESP32/test/render_geometry_host.py
+ASAN_OPTIONS=detect_leaks=0 GEOMETRY_SANITIZE_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' python3 ESP32/test/render_geometry_host.py
+```
+
+Attribution rejects discarded/debug/out-of-ALLOC rows and resolves duplicate
+local symbol names by owner address range. Geometry compiles the real native
+owner for normal and bringup against eight isolated reference bodies (seven
+geometry primitives plus solid BG), not the desktop TU. Reference CRC guards
+and the solid exact-body check formerly in the generator now live here. Ten
+thousand seeded cases cover cardinal transforms, clip/cull/project/occlude and
+column guards; solid BG separately preserves framebuffer/HUD guards. Both sides
+use the same inherited fixed-math helpers in the fixture; -fwrapv specifies
+32-bit wrapping, and the pre-existing unused Render_clipVertex argument is
+allowed. Not a whole renderer/PAK/RNG/gameplay or hardware test. LSan is disabled
+locally under ptrace, not memory errors or UB checks.
+
+After firmware builds, CI regenerates compiledb for each profile and requires
+no Render.c registration/loaded generated sections and no desktop original TU.
+Local stale generated source/object artifacts do not defeat the guard.
+Strict ALLOC comparison against a separately retained main ELF is a controlled
+local check, not performed by this CI.
+
 Resident SELECT / automap rollback on opcode-23 startup failure (also in CI):
 
 ```sh

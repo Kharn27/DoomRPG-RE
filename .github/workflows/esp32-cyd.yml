@@ -88,6 +88,11 @@ jobs:
       - name: Test strict allocated ELF comparison (host Python)
         run: python ESP32/test/elf_alloc_compare_host.py
 
+      - name: Test desktop ELF attribution and shared geometry (host Python and C)
+        run: |
+          python ESP32/test/desktop_elf_audit_host.py
+          python ESP32/test/render_geometry_host.py
+
       - name: Test SYS cards and multislot input ownership (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test
@@ -179,6 +184,15 @@ jobs:
               --forbid-prefix __wrap_Render_beginLoadMap \
               --forbid-prefix __wrap_DoomCanvas_updateLoadingBar \
               --forbid-prefix __wrap_DoomRPG_probeNative
+          done
+
+      - name: Reject generated Render source registration in both profiles
+        working-directory: ESP32
+        run: |
+          for profile in esp32-cyd esp32-cyd-bringup; do
+            pio run -e "$profile" -t compiledb
+            python tools/audit_desktop_elf.py ".pio/build/$profile" \
+              --compiledb compile_commands.json --require-retired-render
           done
 
       - name: Upload firmware artifacts
