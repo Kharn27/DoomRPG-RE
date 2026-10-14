@@ -126,8 +126,14 @@ guards framebuffer séparés. Exécutés aux deux profils, ASan/UBSan local PASS
 fixed-math dans ce test : **pas** une validation indépendante du RNG, fixed
 math, monde, render complet, assets, SD ou sauvegarde. Les références ne sont
 compilées que sur hôte ; aucun desktop monolithique n'est réintroduit au CYD.
-Suite hôte/CI et clôture de code : PORTING_STATUS. La comparaison stricte avec
-l'ELF main est locale, pas annoncée comme réalisée par la CI.
+Frontière de code `0a1dd49e171760f61aaf01cd9e340525da75971c` : suite hôte,
+deux builds et gardes des exports/admission **CI PASS**
+([push 38541821965](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38541821965),
+[PR 38542095599](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38542095599)).
+Clôture suivante docs-only ; [PR #211](https://github.com/Kharn27/DoomRPG-RE/pull/211)
+ouverte, aucun merge. La comparaison stricte avec l'ELF main est locale,
+pas annoncée comme réalisée par la CI. Les preuves des deux lots historiques
+ci-dessous ne sont pas une nouvelle comparaison avec ce main.
 
 Pas de nouveau PASS CYD exigé pour **le normal bit-identique chargé**. Le
 bringup a changé de provider et de binaire ; sa vérification est logicielle,

@@ -1,6 +1,6 @@
 # Doom RPG ESP32 — état actuel du port
 
-## Consolidation : retrait de Render.c généré — logiciel local PASS (2026-10-14)
+## Consolidation : retrait de Render.c généré — CI PASS (2026-10-14)
 
 Nouvelle branche `agent/esp32-retire-generated-render` depuis main exact
 `b9410482b67af3158c2095aa7eefaa26c3d0980d`. Audit **ELF renouvelé** dans
@@ -30,8 +30,15 @@ colonnes et solid BG aux deux profils ; ASan/UBSan (LSan off sous ptrace).
 La garde compiledb/map rejette l'ancienne base et accepte le retrait : elle
 distingue les artefacts .pio résiduels des véritables sources admises.
 Builds normal/bringup, **20 étapes hôte**, garde des exports retirés et garde
-source/admission Render PASS local (Python local = python3). CI distante à
-consigner après vérification. Les références desktop ne sont pas des inputs
+source/admission Render PASS local (Python local = python3). **CI distante
+PASS** sur le code `0a1dd49e171760f61aaf01cd9e340525da75971c` :
+[push 38541821965](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38541821965)
+et [PR 38542095599](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38542095599),
+suite hôte, les deux builds et les deux gardes, dont compiledb/map régénérés
+aux deux profils. [PR #211](https://github.com/Kharn27/DoomRPG-RE/pull/211)
+ouverte, pas mergée. Clôture suivante docs-only. La comparaison des neuf
+sections avec le main est locale, distincte de cette CI.
+Les références desktop ne sont pas des inputs
 firmware ; quatre tests parser/admission couvrent aussi l'objet résiduel et
 la compilation database vide refusée.
 
