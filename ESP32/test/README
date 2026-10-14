@@ -1,6 +1,22 @@
 
 This directory contains project tests.
 
+Native image/PAK DoomRPG owner regression (also required by CI):
+
+```sh
+python3 ESP32/test/doomrpg_image_resources_host.py
+```
+
+References three desktop function bodies (original and PAK/packed-BMP
+adapted CRC), asserts exact native owner body equivalence and compiles
+the production provider with mocked PAK/BMP/SDL boundaries. Covers
+color-key admission, RGB565 palette rounding, dimensions, SDL texture
+ownership and destruction, imageMemory accounting, raw alloc resource
+reads and legacy slash path. The initial test mock required the
+SDL_GetError error-path stub; it now links and passes. No hardware
+teardown, SD error-injection or performance equivalence is claimed.
+
+
 Stateless DoomRPG helper migration (also required by CI):
 
 ```sh

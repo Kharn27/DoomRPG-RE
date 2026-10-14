@@ -1,5 +1,52 @@
 # Doom RPG ESP32 — guide de travail
 
+## Deuxième extraction DoomRPG — images/PAK (CYD accepté le 15 octobre 2026)
+
+Sur la même branche que l'extraction math/binary,
+`esp_doomrpg_image_resources.c` possède maintenant
+`DoomRPG_createImage`, `DoomRPG_freeImage` et
+`DoomRPG_fileOpenRead`, retirés de la **copie C générée**. Il
+préserve strictement les corps **déjà adaptés** pour PAK et
+`Esp32Bmp_LoadRW`, sans lecture ZIP runtime ni map-wide
+`mediaTexels`/`shapeData`. La source `src/DoomRPG.c` est toujours
+une référence, pas une unité compilée telle quelle.
+
+Test hôte depuis la racine :
+
+```sh
+python3 ESP32/test/doomrpg_image_resources_host.py
+```
+
+Il épingle les CRC des corps d'origine/adaptés et vérifie
+l'owner concret : lecture allouée PAK, nom slash, RGB565,
+color key, tailles, passage surface→texture, imageMemory,
+free et double-free sans texture ; les interfaces BMP/PAK/SDL
+sont **mockées**, pas des lectures SD physiques.
+Le générateur refuse une différence de corps.
+CI commit `e648f2fc` :
+[push PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38648524728)
+et [PR PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38648529981)
+sur normal/trace/bringup et vérifications compiledb/ELF.
+
+Le boot utilisateur confirme BMP indexés 144×72 / 108×74,
+logo et menu natif, READ du slot V11 07 depuis MENU_MAIN,
+entrée /intro.bsp CRC `623f34e4`, viewport, HUD, PAK,
+mouvement 552→520, porte ouverte et combat du sprite 106
+jusqu'à corpse/drop, avec feedback FRONT et
+`heap8=112328 largest8=86004`, `shapeData/mediaTexels=NULL`.
+**PASS ciblé du chargement et de la session**, sans test direct de
+teardown et sans preuve d'accélération sur le même scénario.
+Ne pas interpréter la différence entre `Wrote 809936 bytes`
+(esptool, image écrite) et `809565 B Flash` (mesure CI PlatformIO)
+comme une incohérence de taille : ce sont deux métriques distinctes.
+
+L'incident dormant/invisible après LOAD reste à reproduire séparément.
+Pour toute future migration d'un provider lié, build/test CI puis
+flash du profil **normal** et logs réels avant doc de clôture.
+Le commit documentaire ne touche pas aux fichiers de firmware.
+
+
+
 ### Clôture matérielle du lot DoomRPG math/binary — 15 octobre 2026
 
 Depuis `main bb5b599f`, la PR [#212](https://github.com/Kharn27/DoomRPG-RE/pull/212)
