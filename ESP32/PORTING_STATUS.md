@@ -1,6 +1,6 @@
 # Doom RPG ESP32 — état actuel du port
 
-## Diagnostics gameplay : profil production TRACE et retrait de deux probes (2026-10-14)
+## Diagnostics gameplay : profil production TRACE et retrait de deux probes — CI PASS (2026-10-14)
 
 Suite sur `agent/esp32-retire-generated-render`, parent `d8bf3997`.
 Trois profils désormais : normal, trace et bringup. `esp32-cyd-trace` hérite
@@ -28,7 +28,10 @@ La CI construit les trois profils et vérifie les mêmes gardes d'exports et
 d'admission de Render.c. Procédure matérielle : `DOCUMENTATION.md`.
 Vérification locale : **21 étapes hôte du workflow PASS**, nouvelle suite
 également sous ASan/UBSan (LSan off sous ptrace), gardes ELF/compiledb PASS
-sur les trois profils. CI distante à confirmer sur le commit poussé.
+sur les trois profils. CI code **`87fdacce3df9dddf08665d9d9a3373ba62d22d25`** :
+[push 38548186622](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38548186622)
+et [PR 38548193657](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38548193657),
+**SUCCESS**. Le commit documentaire suivant ne change pas le code firmware.
 
 **Incident zombie ouvert, pas de correctif ni PASS matériel revendiqué.**
 Capture `7abee51e...` : sprite 106, tirs seq 111–113, HP 7→5→3→1,
