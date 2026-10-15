@@ -391,6 +391,102 @@ for signature, _ in presentation_methods:
 print("[ESP32] DoomRPG presentation/clip linked ABI moved=7 "
       "owner=esp_doomrpg_presentation generatedBodies=removed")
 
+# The last two ELF-linked desktop clock methods have a permanent process-
+# lifetime owner. Preserve the original Uint32 SDL tick and basetime==0 sentinel
+# semantics, including wraparound. Do not combine this with hidden RNG state.
+clock_basetime = "static Uint32 basetime = 0;"
+clock_methods = (
+    ("unsigned int DoomRPG_GetTimeMS(void)", 0xc3048db2),
+    ("unsigned int DoomRPG_GetUpTimeMS(void)", 0x0fad5924),
+)
+clock_path = join(project_src_dir, "esp_doomrpg_process_clock.c")
+with open(clock_path, "r", encoding="latin-1") as clock_file:
+    clock_native = clock_file.read()
+if doom_rpg_source_text.count(clock_basetime) != 1 or clock_native.count(clock_basetime) != 1:
+    raise RuntimeError("DoomRPG clock basetime process-lifetime declaration drift")
+for signature, expected_crc in clock_methods:
+    reference_body = extract_doomrpg_function(doom_rpg_source_text, signature)
+    if zlib.crc32(reference_body.encode("latin-1")) != expected_crc:
+        raise RuntimeError("DoomRPG process clock reference drift: " + signature)
+    if extract_doomrpg_function(clock_native, signature) != reference_body:
+        raise RuntimeError("ESP32 process clock owner body drift: " + signature)
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        reference_body, "/* Native process clock owner: esp_doomrpg_process_clock.c */", 1
+    )
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    clock_basetime, "/* basetime is owned by esp_doomrpg_process_clock.c */", 1
+)
+for signature, _ in clock_methods:
+    if signature in doom_rpg_source_text:
+        raise RuntimeError("Migrated clock definition remains in DoomRPG.c: " + signature)
+if clock_basetime in doom_rpg_source_text:
+    raise RuntimeError("Generated DoomRPG.c still owns process clock basetime")
+print("[ESP32] DoomRPG process clock linked ABI moved=2 "
+      "owner=esp_doomrpg_process_clock basetime=process-lifetime generatedBodies=removed")
+
+# The still-linked RNG refill backend carries TWO hidden process-lifetime
+# globals outside Random_t: _seed and resetRand. All four original function
+# bodies (including the unlinked SetSeed helper) must move together. Do not
+# reset on game/map LOAD, alter seed/tick order, or modify replay guard wraps.
+rng_hidden_globals = ("static unsigned int _seed = 0;",
+                      "static int resetRand = 0;")
+rng_methods = (
+    ("void Random_SetSeed(unsigned int seed)", 0x73c03c40),
+    ("unsigned int Random_Get(void)", 0x0fd52c14),
+    ("void  Random_getRand(byte* buff, int i)", 0xf75045df),
+    ("void DoomRPG_setRand(Random_t* rand)", 0x3c57334d),
+)
+rng_owner_path = join(project_src_dir, "esp_doomrpg_process_rng.c")
+with open(rng_owner_path, "r", encoding="latin-1") as rng_file:
+    rng_native = rng_file.read()
+for global_definition in rng_hidden_globals:
+    if doom_rpg_source_text.count(global_definition) != 1 or rng_native.count(global_definition) != 1:
+        raise RuntimeError("DoomRPG hidden process RNG state declaration drift")
+for signature, expected_crc in rng_methods:
+    legacy_body = extract_doomrpg_function(doom_rpg_source_text, signature)
+    if zlib.crc32(legacy_body.encode("latin-1")) != expected_crc:
+        raise RuntimeError("DoomRPG hidden RNG reference drift: " + signature)
+    if extract_doomrpg_function(rng_native, signature) != legacy_body:
+        raise RuntimeError("ESP32 hidden RNG owner ABI/body drift: " + signature)
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        legacy_body, "/* Native process RNG owner: esp_doomrpg_process_rng.c */", 1
+    )
+for global_definition in rng_hidden_globals:
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        global_definition, "/* Hidden RNG process state owned by esp_doomrpg_process_rng.c */", 1
+    )
+for signature, _ in rng_methods:
+    if signature in doom_rpg_source_text:
+        raise RuntimeError("Migrated RNG method remains in DoomRPG.c: " + signature)
+for global_definition in rng_hidden_globals:
+    if global_definition in doom_rpg_source_text:
+        raise RuntimeError("Hidden RNG global remains in DoomRPG.c: " + global_definition)
+print("[ESP32] DoomRPG RNG provider moved=4 linked=3 "
+      "owner=esp_doomrpg_process_rng hiddenGlobals=2 lifetime=process generatedBodies=removed")
+
+# Remaining linked binary config readers: preserve exact bodies and
+# signed-char/SDL LE semantics. Do not add inferred EOF handling here.
+config_readers = (
+    ("int File_readByte(SDL_RWops* rw)", 0x91bf04f3),
+    ("int File_readInt(SDL_RWops* rw)", 0x417442d7),
+)
+with open(join(project_src_dir, "esp_doomrpg_config_read.c"),
+          "r", encoding="latin-1") as config_reader_file:
+    config_reader_native = config_reader_file.read()
+for signature, crc in config_readers:
+    reference_body = extract_doomrpg_function(doom_rpg_source_text, signature)
+    if zlib.crc32(reference_body.encode("latin-1")) != crc:
+        raise RuntimeError("Desktop config reader reference drift: " + signature)
+    if extract_doomrpg_function(config_reader_native, signature) != reference_body:
+        raise RuntimeError("Native config reader body drift: " + signature)
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        reference_body, "/* Native config reader: esp_doomrpg_config_read.c */", 1)
+for signature, _ in config_readers:
+    if signature in doom_rpg_source_text:
+        raise RuntimeError("Generated DoomRPG still defines config reader: " + signature)
+print("[ESP32] DoomRPG config readers moved=2 owner=esp_doomrpg_config_read "
+      "signedByte+LE32=unchanged generatedBodies=removed")
+
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
 

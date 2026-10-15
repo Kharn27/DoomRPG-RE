@@ -1,5 +1,97 @@
 # Audit de consolidation architecturale ESP32
 
+## Readers of legacy Config RWops — CI and scoped CYD PASS (2026-10-15)
+
+Following documented clock + RNG extraction on the same
+`agent/esp32-extract-doomrpg-process-clock` branch, firmware
+code SHA `eaa915aacf5171dbd118758ab33bb402f9f9edee`
+moves `File_readByte` and `File_readInt` unchanged to
+`esp_doomrpg_config_read.c`; the generated `DoomRPG.c`
+is stripped of the two bodies under CRC and textual parity.
+No other ABI/callers changed, including `Game_loadConfig`.
+`char` sign extension and LE32 conversion remain legacy-defined.
+
+[CI SUCCESS 38717722550](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38717722550):
+4,096 mixed RWops reads / 8,194 bytes native vs original,
+two linked owner definitions and none in generated DoomRPG.o,
+normal static RAM/Flash **50976/809561**, bringup
+**51120/830089**, trace **51016/826041**, all builds PASS.
+No direct performance gain claimed.
+
+Physical normal CYD trace: startup completed, PAK/mappings ready,
+main dashboard, HUB-based slot07 V11 LOAD and exact spatial
+restoration for monster/topology/position/activation,
+world/door/movement/combat and delayed retaliation all functional,
+`rngExact=yes`, `rngRollback=yes`, `heap8=112328` stable during
+recorded combat, `shapeData/mediaTexels=NULL`. Explicit caveat:
+`Config file present=no`, `loadConfig: (unable to open file)`,
+thus these RWops functions **were not directly called on an
+existing hardware Config file**. Mark as CI parity and hardware
+startup/gameplay non-regression PASS, not positive-file-parse
+hardware coverage. Renderer `LEGACY_GUARD/SPAN_OOB/RECOVERED`
+persists independently. Post-test commits documentation-only;
+branch merge-ready after human review, main untouched.
+
+
+## Native process RNG provider — CI and CYD PASS (2026-10-15)
+
+After hardware-proven process clock, code
+`a7968169a0af2e2ad93322214547089102b2d292`
+migrates `Random_SetSeed`, `Random_Get`,
+`Random_getRand`, and `DoomRPG_setRand` plus two hidden
+process-lifetime `_seed/resetRand` BSS globals to
+`esp_doomrpg_process_rng.c`. Three linked exports and helper
+are removed from generated DoomRPG.c with exact source CRC and
+body guard. The `DoomRPG_randNextByte/Int` wrappers and native
+rollback/replay guard remain unchanged.
+[CI 38714139429](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38714139429)
+passes source parity, 12,000 mixed steps × 4 initial tick cases,
+byte/word crossing/refill/reservation/rollback/replay, three builds
+and strict ELF attribution. Normal static RAM/Flash
+`50976/809565` B unchanged.
+
+Physical normal CYD: V11 slot07 load exact, extensive combat,
+multi-hit sprite286 `rngExact=yes`, mixed SHOW event74,
+SAVE slot06, complete Entrance 6/6 secrets 30/30 monsters,
+native Junction transition CRC `4a2c5800` and arena
+`bc432a0f`. Real RNG test `MONSTERMOVERNG next=127->0`
+preparation and `COMMIT reservation=consumed-by-live-move
+randomLive=advanced-exactly`. No observed RNG guard divergence
+in provided excerpts. `shapeData/mediaTexels=NULL`, stable heap
+snapshots. Compact rendering repeatedly emits
+`LEGACY_GUARD/SPAN_OOB/RECOVERED`; this debt remains open.
+After-PASS documentation only; future code edits on this branch
+require new physical validation.
+
+
+## Extraction horloge process-lifetime : CI et CYD PASS (2026-10-15)
+
+Depuis `main e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`,
+branche `agent/esp32-extract-doomrpg-process-clock`, code
+`d757502976f3eaaa37e5bf28bc8dd63c7e9c002a` :
+`DoomRPG_GetTimeMS`, `DoomRPG_GetUpTimeMS` et leur unique
+`basetime` 4 B sortent du `DoomRPG.o` généré vers
+`esp_doomrpg_process_clock.c`. Corps exacts pinés par CRC/generator,
+zéro changement de la sentinelle SDL tick=0, de l'arithmétique
+Uint32, ou de la lifetime process. Le test hôte compare les deux
+implementations sur 10 000 pas et des wraps. ELF/compiledb
+contrôlent symboles/état propriétaires dans 3 profils.
+[CI 38711767983 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38711767983) :
+normal `50976/809565` B RAM statique/Flash, trace
+`51016/826041`, bringup `51120/830089`.
+
+Vrai CYD firmware normal, PASS de non-régression : intro complète,
+MAP_INTRO `c3882516`, LOAD slot07 FNV state/topology/position/activation
+exact, dialogues et continuations 19/11, animation porte/tour/mouvement,
+combat sprite5 subtype4 en trois boucles et extincteur, pickup,
+retour SYS EXIT `522dc605`, résident vidé, `shapeData/mediaTexels=NULL`.
+`NATIVEFRAME LEGACY_GUARD/SPAN_OOB/RECOVERED` existe encore et ne
+doit pas être masqué. Cette preuve **n'est ni un test à 49 jours ni un
+benchmark**. Commit post-test uniquement documentaire. Prochaine
+famille distincte : générateur RNG caché (_seed/resetRand) et séquences
+refill/replay; ne pas en changer les règles.
+
+
 ## Frontière liée de présentation DoomRPG — sept symboles sortis de la génération (15 octobre 2026)
 
 Base `main 3dde62507cee7cc335423617759502c217d67651`,

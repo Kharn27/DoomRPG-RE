@@ -1,5 +1,94 @@
 # Doom RPG ESP32 — guide de travail
 
+## Lecteurs RWops de Config — extraction native (15 octobre 2026)
+
+Code testé `eaa915aacf5171dbd118758ab33bb402f9f9edee`;
+[CI PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38717722550).
+`src/esp_doomrpg_config_read.c` est maintenant propriétaire
+des deux corps identiques au desktop `File_readByte` et
+`File_readInt`. Suppression des corps du `DoomRPG.c` généré
+avec garde d'empreinte/égalité du générateur et contrôle de
+l'ELF (exactement 2 exports dans la TU native, zéro dans le généré).
+Preserver `char` signé, `SDL_SwapLE32`, et la sémantique SDL_RWops :
+**ne pas prétendre avoir corrigé les lectures courtes ou NULL**.
+
+Tests locaux reproductibles :
+```sh
+python3 ESP32/test/doomrpg_config_read_host.py
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+CI : parité hôte 4 096 appels, 8 194 octets, profils
+normal/trace/bringup PASS. Vrai CYD normal : boot, absence
+de Config traitée correctement, LOAD V11 slot07 via le HUB,
+restauration exacte des overlays et activation, gameplay,
+attaques et ripostes avec RNG probes intacts, RAM stable,
+`shapeData/mediaTexels=NULL`. **La trace indique
+`Config file present=no` : aucun fichier Config réel n'a
+été lu physiquement.** Ce PASS couvre l'intégration et
+l'absence de régression sur ce chemin, pas un parse physique
+de Config présent. Si un futur test utilise un Config réel,
+valider sa lecture sans modifier le fichier de sauvegarde.
+Le renderer signale toujours `LEGACY_GUARD/SPAN_OOB/RECOVERED`,
+hors périmètre du lecteur binaire. Pas d'autre changement
+de firmware après cette validation.
+
+
+## RNG provider extracted — hardware PASS (15 October 2026)
+
+Permanent owner: `esp_doomrpg_process_rng.c`. Four exact legacy
+functions and process-lifetime hidden globals `_seed` and
+`resetRand` moved out of generated DoomRPG.c. Generator pins CRC
+and body parity. Byte/int replay guard unchanged.
+Code `a7968169a0af2e2ad93322214547089102b2d292`,
+[CI PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38714139429):
+12,000 RNG operations per scenario across 4 initial ticks,
+reservation and rollback, word/byte boundary, three builds and ELF.
+
+CYD PASS: LOAD V11 slot07, hundreds of actions, combat,
+multi-hit sprite286 `rngExact=yes`, save slot06,
+Entrance full 6/6 secrets and 30/30 monsters; transition to Junction.
+Real `MONSTERMOVERNG next=127->0 prepared=1` followed by
+`COMMIT reservation=consumed-by-live-move`.
+Heap and null legacy map invariants preserved.
+Repeated compact renderer `LEGACY_GUARD/SPAN_OOB/RECOVERED`
+remains unresolved. This is a scoped, non-exhaustive RNG proof.
+Run `python3 ESP32/test/doomrpg_process_rng_host.py` and flash
+normal `pio run -e esp32-cyd -t upload -t monitor` for regression.
+
+
+## Process clock natif : validation CYD (15 octobre 2026)
+
+Base du lot : `main e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`,
+branche `agent/esp32-extract-doomrpg-process-clock`, commit de code
+`d757502976f3eaaa37e5bf28bc8dd63c7e9c002a`.
+`esp_doomrpg_process_clock.c` possède les corps intacts de
+`DoomRPG_GetTimeMS` / `DoomRPG_GetUpTimeMS` ainsi que
+`basetime` ; le générateur les retire strictement de `DoomRPG.c`.
+**Ne pas réinitialiser basetime** à l'ouverture d'une carte ou au LOAD ;
+respecter la sentinelle zéro et les ticks SDL Uint32.
+
+Validation reproductible :
+```sh
+python3 ESP32/test/doomrpg_process_clock_host.py
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+[Test CI SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38711767983) :
+10 000 pas hôte d'horloge en ordre mixte, trois profils compilés,
+audit `--require-native-doomrpg-clock` (définitions et BSS).
+CYD réel normal : START→intro→Entrance→LOAD slot07, déplacements,
+rotations, dialogues, portes, pickup, attaque/riposte de sprite5,
+HUB SYS EXIT vers MENU_MAIN `522dc605`, reset résident vide.
+LOAD restaure monster/topology/position/activation FNV ; heap8
+`112328` stable après LOAD puis `111184` avec contexte dialogue ;
+`shapeData/mediaTexels=NULL`. Pas d'écriture SAVE.
+Le renderer compact `LEGACY_GUARD/SPAN_OOB` reste un incident
+indépendant et ouvert ; ne pas confondre recovery et résolution.
+Cette documentation ferme **le lot horloge seulement** ; les commits
+RNG ultérieurs imposent une nouvelle validation matérielle.
+
+
 ## Extraction DoomRPG — présentation SDL/clip native (CYD validé le 15 octobre 2026)
 
 La famille de sept méthodes **réellement liées** de présentation

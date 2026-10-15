@@ -162,8 +162,135 @@ def main():
     parser.add_argument("--calls", action="store_true")
     parser.add_argument("--require-retired-render", action="store_true")
     parser.add_argument("--require-native-doomrpg-presentation", action="store_true")
+    parser.add_argument("--require-native-doomrpg-clock", action="store_true")
+    parser.add_argument("--require-native-doomrpg-rng", action="store_true")
+    parser.add_argument("--require-native-doomrpg-config-read", action="store_true")
     args = parser.parse_args()
     reports = audit(args.build, args.repo.resolve(), args.nm, args.compiledb)
+    if args.require_native_doomrpg_config_read:
+        if args.compiledb is None:
+            parser.error("--require-native-doomrpg-config-read requires compiledb")
+        names = {"File_readByte", "File_readInt"}
+        generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
+        if generated & names or reports["desktop_original_units"]:
+            parser.exit(1, "FAIL: legacy config reader definition/source leaked\n")
+        owner = args.build / "src" / "esp_doomrpg_config_read.c.o"
+        if not owner.is_file():
+            parser.exit(1, "FAIL: native config reader owner not built\n")
+        owner_nm = subprocess.check_output(
+            [str(args.nm), "--defined-only", str(owner)], text=True)
+        own = {}
+        for line in owner_nm.splitlines():
+            fields = line.split()
+            if len(fields) >= 3:
+                own.setdefault(fields[-1], []).append(fields[-2])
+        if any(own.get(name) != ["T"] for name in names):
+            parser.exit(1, "FAIL: native config reader owner symbols: " +
+                        str(own) + "\n")
+        elf_nm = subprocess.check_output(
+            [str(args.nm), "-g", "--defined-only",
+             str(args.build / "firmware.elf")], text=True)
+        found = {name: 0 for name in names}
+        for line in elf_nm.splitlines():
+            fields = line.split()
+            if len(fields) >= 3 and fields[-2].upper() == "T" and fields[-1] in found:
+                found[fields[-1]] += 1
+        if any(n != 1 for n in found.values()):
+            parser.exit(1, "FAIL: config readers linked count: " +
+                        str(found) + "\n")
+        print("PASS native config readers linked=2 generated=0 "
+              "signedByte=preserved LE32=preserved")
+        return
+    if args.require_native_doomrpg_rng:
+        if args.compiledb is None:
+            parser.error("--require-native-doomrpg-rng requires current compiledb")
+        linked = {"Random_Get", "Random_getRand", "DoomRPG_setRand"}
+        definitions = linked | {"Random_SetSeed"}
+        generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
+        leaked = sorted((definitions | {"_seed", "resetRand"}) & generated)
+        if leaked:
+            parser.exit(1, "FAIL: generated DoomRPG still owns RNG: " +
+                        ", ".join(leaked) + "\n")
+        if reports["desktop_original_units"]:
+            parser.exit(1, "FAIL: desktop original unit admitted\n")
+        owner = args.build / "src" / "esp_doomrpg_process_rng.c.o"
+        if not owner.is_file():
+            parser.exit(1, "FAIL: permanent RNG owner not built\n")
+        native_nm = subprocess.check_output(
+            [str(args.nm), "--defined-only", str(owner)], text=True)
+        owner_symbols = {}
+        for line in native_nm.splitlines():
+            fields = line.split()
+            if len(fields) >= 3:
+                owner_symbols.setdefault(fields[-1], []).append(fields[-2])
+        if any(owner_symbols.get(x) != ["T"] for x in definitions):
+            parser.exit(1, "FAIL: RNG owner method definitions: " +
+                        str({x: owner_symbols.get(x) for x in definitions}) + "\n")
+        for name in ("_seed", "resetRand"):
+            matches = [x for x in owner_symbols
+                       if x == name or x.startswith(name + ".")]
+            if len(matches) != 1 or owner_symbols[matches[0]] != ["b"]:
+                parser.exit(1, "FAIL: hidden RNG BSS owner: " +
+                            name + " " + str(matches) + "\n")
+        output = subprocess.check_output(
+            [str(args.nm), "-g", "--defined-only",
+             str(args.build / "firmware.elf")], text=True)
+        counts = {name: 0 for name in linked}
+        for line in output.splitlines():
+            fields = line.split()
+            if len(fields) >= 3 and fields[-1] in counts and fields[-2].upper() == "T":
+                counts[fields[-1]] += 1
+        if any(v != 1 for v in counts.values()):
+            parser.exit(1, "FAIL: linked native RNG methods: " +
+                        str(counts) + "\n")
+        print("PASS process RNG provider linked=3 ownerDefinitions=4 "
+              "hiddenGlobals=2 generated=0 originalDesktop=0")
+        return
+    if args.require_native_doomrpg_clock:
+        if args.compiledb is None:
+            parser.error("--require-native-doomrpg-clock requires current compiledb")
+        wanted = {"DoomRPG_GetTimeMS", "DoomRPG_GetUpTimeMS"}
+        generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
+        leaked = sorted((wanted | {"basetime"}) & generated)
+        if leaked:
+            parser.exit(1, "FAIL: generated DoomRPG clock definitions: " +
+                        ", ".join(leaked) + "\n")
+        if reports["desktop_original_units"]:
+            parser.exit(1, "FAIL: desktop original unit admitted\n")
+        owner = args.build / "src" / "esp_doomrpg_process_clock.c.o"
+        if not owner.is_file():
+            parser.exit(1, "FAIL: native clock owner object not built\n")
+        native_nm = subprocess.check_output(
+            [str(args.nm), "--defined-only", str(owner)], text=True)
+        symbols = {}
+        for line in native_nm.splitlines():
+            parts = line.split()
+            if len(parts) >= 3:
+                symbols.setdefault(parts[-1], []).append(parts[-2].upper())
+        if any(symbols.get(name) != ["T"] for name in wanted):
+            parser.exit(1, "FAIL: native clock ABI missing/duplicate: " +
+                        str({name: symbols.get(name) for name in wanted}) + "\n")
+        # GCC can suffix the static basetime symbol but the ownership must
+        # remain in this object, not disappear into the generated root.
+        state = [name for name in symbols if name == "basetime" or
+                 name.startswith("basetime.")]
+        if len(state) != 1 or symbols[state[0]] != ["B"]:
+            parser.exit(1, "FAIL: native clock basetime must be one BSS owner: " +
+                        str(state) + "\n")
+        final = subprocess.check_output(
+            [str(args.nm), "-g", "--defined-only",
+             str(args.build / "firmware.elf")], text=True)
+        counts = {name: 0 for name in wanted}
+        for line in final.splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[-1] in counts and parts[-2].upper() == "T":
+                counts[parts[-1]] += 1
+        if any(count != 1 for count in counts.values()):
+            parser.exit(1, "FAIL: linked native clock methods missing/duplicate: " +
+                        str(counts) + "\n")
+        print("PASS native clock ABI=2 generated clock definitions/state=0 "
+              "process basetime=BSS original desktop TUs=0")
+        return
     if args.require_native_doomrpg_presentation:
         if args.compiledb is None:
             parser.error("--require-native-doomrpg-presentation requires current compiledb")

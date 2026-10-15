@@ -1,5 +1,153 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Lecteurs de configuration binaires natifs — CI + CYD PASS de non-régression (15 octobre 2026)
+
+Suite sur la **même branche** après le PASS process clock/RNG.
+Code firmware testé : `eaa915aacf5171dbd118758ab33bb402f9f9edee`.
+Les corps legacy **strictement inchangés** `File_readByte` et
+`File_readInt` ont quitté la copie générée de `DoomRPG.c`
+pour `ESP32/src/esp_doomrpg_config_read.c`. La comparaison
+source CRC + corps est exigée par le générateur. Aucun changement
+de l'ABI SDL_RWops, du `char` signé, du little-endian `SDL_SwapLE32`,
+de `Game_loadConfig`, du RNG ni du format SAVE.
+Le fichier source desktop reste la référence.
+
+[CI #38717722550 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38717722550) :
+hôte différentiel **4 096 appels, 8 194 octets consommés**,
+audit ELF 2 définitions propriétaires, 0 dans `DoomRPG.o` généré,
+builds normal, trace et bringup. Profil normal :
+**50 976 B RAM statique, 809 561 B Flash** ;
+bringup **51 120/830 089 B**, trace **51 016/826 041 B**.
+
+**CYD réel normal : PASS d'intégration et de non-régression.**
+Boot ESP32-D0WD-V3 sans PSRAM, PAK 241 entrées, startup complet,
+CONFIGMAP READY et menu `522dc605`. LOAD depuis HUB du slot07
+V11 (5 604 B) avec runtime arena `c3882516` et restauration
+exacte des empreintes monstres `8acca67c`, topologie
+`ebca87dd`, positions `24bbd504`, activation `6698ed80`
+(22 actifs) sans consommation RNG au restore.
+Session gameplay prête, `shapeData=mediaTexels=NULL`, mouvements,
+ouverture de porte 160, activation monstres 6 et 7,
+attaques/ripostes/commits morts, `rngRollback=yes` et
+`rngExact=yes`. `heap8=112328`, `largest8=86004`
+stables pendant les actions observées, pas de reboot ni anomalie
+nouvelle dans les logs communiqués.
+
+**Limite matérielle explicite :** `[CONFIG] Config file present=no`
+et `loadConfig: (unable to open file)`. Ces deux fonctions
+**n'ont pas été exercées par un vrai fichier Config sur CYD**
+dans cette trace ; leur comportement de lecture est validé par
+l'exécution hôte comparative, les définitions/liaisons par ELF,
+et le matériel ne prouve ici que la non-régression en mode
+configuration absente. Ne pas écrire « Config présent validé ».
+
+Reste ouvert indépendamment :
+`NATIVEFRAME LEGACY_GUARD -> SPAN_OOB -> RECOVERED`,
+notamment ligne 161 pendant déplacement ; le cache mural
+récupère par retry, sa cause n'a pas été corrigée.
+**Clôture du lot de lecteurs : modifications post-test docs-only ;
+aucun nouveau firmware. Branche prête pour merge après revue,
+sans merge automatique dans main.**
+
+
+## Extraction du RNG process natif : PASS matériel ciblé (15 octobre 2026)
+
+Code firmware testé `a7968169a0af2e2ad93322214547089102b2d292`
+sur `agent/esp32-extract-doomrpg-process-clock`, base main
+`e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`.
+Les corps originaux `Random_SetSeed`, `Random_Get`,
+`Random_getRand`, `DoomRPG_setRand` sont dans
+`esp_doomrpg_process_rng.c`. Etat statique `_seed/resetRand` unique
+et process-lifetime ; les wrappers RNG byte/int et replay guard
+restent inchangés. Contrat source CRC/égalité des corps et audit ELF
+sur les trois profils, zéro définition restante dans le généré.
+
+[CI SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38714139429) :
+test hôte différentiel 12 000 opérations par scenario sur 4 ticks
+initiaux, tests reservation/rollback/replay byte et word, builds
+normaux/trace/bringup. Normal : RAM statique 50976 B, Flash 809565 B.
+
+**CYD firmware normal PASS de non-régression** : MENU_MAIN LOAD
+slot07 V11, restauration exacte MAP_INTRO CRC `623f34e4`,
+monstres `8acca67c`, topologie `ebca87dd`, positions `24bbd504`,
+activation `6698ed80` (22 actifs), `rngCalls=0` au restore.
+Plusieurs centaines d'actions, combat et riposte, PASS_TURN, portes,
+pickups, SAVE slot06, evenement SHOW-batch 74, fin Entrance
+secrets 6/6 et monstres 30/30. Transition reelle vers Junction,
+CRC `4a2c5800`, map flash rebuild verified, arena `bc432a0f`;
+`shapeData=mediaTexels=NULL`. Heap8 112328 en debut de
+session, 109552 en fin d'Entrance, 121716 en Junction ;
+largest8=86004 sur ces snapshots.
+
+**Temoin reel RNG limite de table** :
+`MONSTERMOVERNG ARM next=127->0 prepared=1 reservation=persistent`
+puis `MONSTERMOVERNG COMMIT reservation=consumed-by-live-move
+randomLive=advanced-exactly`. Autre combat : trois coups de
+sprite286 subtype2, `rngExact=yes` durant animation, resolution
+differee apres final-idle. Aucun marqueur RNG divergence ou mismatch
+dans les extraits fournis. Ceci ne demontre pas toutes les
+sequences RNG possibles ; aucune mesure de perf revendiquee.
+
+Les nombreux `NATIVEFRAME LEGACY_GUARD / SPAN_OOB / RECOVERED`
+restent un incident de rendu **ouvert** ; il ne faut pas confondre
+recovery et correction. La cloture apres ce PASS ne modifie que
+la documentation. Les commits de code suivants doivent etre
+valides a nouveau physiquement.
+
+
+## DoomRPG process clock — CI + vrai CYD PASS ciblé (2026-10-15)
+
+Base après merge PR #213 : `main e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`.
+Branche `agent/esp32-extract-doomrpg-process-clock`, code testé
+`d757502976f3eaaa37e5bf28bc8dd63c7e9c002a`. Deux fonctions
+**réellement liées** `DoomRPG_GetTimeMS` / `DoomRPG_GetUpTimeMS`
+et leur `static Uint32 basetime=0` sont déplacées du `DoomRPG.c`
+généré vers `src/esp_doomrpg_process_clock.c`. Corps **inchangés**
+(CRC source, égalité native/legacy), état **process-lifetime**, sentinelle
+`basetime==0`, ticks SDL et soustraction Uint32 conservés. Le
+générateur retire les corps + le global de la copie ; le source desktop
+de référence reste inchangé. **Aucun reset session / LOAD** ni
+couplage au RNG; ce n'est pas une correction de la cadence de jeu.
+
+[CI SUCCESS #38711767983](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38711767983)
+sur le **SHA code testé**, trois profils + host différentiel (10 000
+étapes mixed-order, zéro, overflow) + audit compiledb/ELF : deux
+définitions dans l'owner permanent, zéro dans le généré et un seul
+`basetime` en BSS native. RAM statique / Flash rapportées par CI :
+normal **50 976 / 809 565 B**, trace **51 016 / 826 041 B**,
+bringup **51 120 / 830 089 B**. Pas de gain Flash/heap/FPS revendiqué.
+
+**Validation physique utilisateur, firmware normal : PASS ciblé.**
+MENU_MAIN → START, intro texte/animation/skip/final, disposal
+`recovered=34056` ; MAP_INTRO source CRC `623f34e4`, runtime
+`c3882516`, first frame `71ca7465`, cache cold `a9b263f5` /
+warm `20c09fe4`. LOAD V11 slot07 à `1632,992 / angle192` :
+monstres `966ac091`, topologie `14ce1a4e`, positions
+`eb9553d2`, activation `aca2058f` restitués exactement,
+`activeCount=21`. Test tactile réel : rotations et mouvements
+axial/strafe, portes 102/113/152 avec fermeture différée,
+dialogues paginés events 33/19 et resume opcode 19/11, pickup
+Health Vial, monstre `sprite=5 subtype4` activé à l'ouverture,
+attaque trois coups et COMMIT de dégâts/riposte, extincteur
+sur sprite5 HP 5→0, XP/gib, HUD/HUB puis double confirmation SYS EXIT.
+Le SAVE existant n'a **pas** été réécrit (`saveWrite=no`).
+Sur les snapshots `[ALIVE]` : heap8 en gameplay fresh
+`112328`, après reprise/dialogues `111184`, largest8
+`86004`; après EXIT : `[RESIDENTRESET] released=18008 empty=1`,
+`MENU_MAIN frame=522dc605`, heap8 `158064` largest8 `110580`.
+`shapeData=0x0 mediaTexels=0x0` maintenus.
+
+**Limites :** ni mesure de temps absolu/overflow à 49,7 jours sur
+matériel, ni preuve d'égalité des pixels/latences ; logs ne donnent
+pas de hash de l'image effectivement flashée. Anomalie préexistante
+`[NATIVEFRAME] LEGACY_GUARD→SPAN_OOB→RECOVERED` observée plusieurs
+fois : **ouverte**, récupération bornée ≠ correction. L'incident
+historique de monstres apparus par trigger après LOAD n'est pas
+résolu par ce test. Cette clôture est **docs-only** après PASS ;
+la suite RNG sera un **autre commit de code** et exigera un **nouveau
+PASS matériel** avant toute déclaration merge-ready.
+
+
 ## DoomRPG — extraction de 7 primitives SDL/clip de la TU générée : CYD PASS ciblé (15 octobre 2026)
 
 Base exacte `main 3dde62507cee7cc335423617759502c217d67651`; branche
