@@ -1,5 +1,43 @@
 # Doom RPG ESP32 — guide de travail
 
+## Config key bindings natifs : premier lot PR #216 validé sur CYD (15 octobre 2026)
+
+Branche `agent/esp32-own-config-keybinds`, code firmware
+`8436de9caa83c8b3efd1d3d39fbc340c5293c89f`,
+[PR #216](https://github.com/Kharn27/DoomRPG-RE/pull/216).
+Les 3 tableaux process-lifetime `keyMapping`, `keyMappingTemp`,
+`keyMappingDefault` (12 × 44 B chacun) et
+`DoomRPG_setDefaultBinds` résident désormais dans
+`esp_legacy_config_mappings_startup.c` au lieu de la copie
+`DoomRPG.c` générée. Le source desktop reste inchangé.
+
+Le script `build_engine.py` rejette toute dérive CRC ou
+textuelle du tableau de defaults et du corps de reset.
+Le test hôte `python3 ESP32/test/doomrpg_config_binds_host.py`
+compile les définitions native et desktop et exerce 8 192
+modifications/restaurations de la map. Le contrôle
+`tools/audit_desktop_elf.py --require-native-doomrpg-config-binds`
+vérifie compiledb et la propriété native, sur trois
+environnements. `COMMON` objet GCC Xtensa est légitime pour
+les états non initialisés, la **définition finale doit être BSS**
+et unique. [CI push PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38747810890)
+et [PR PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38747821709).
+
+Le vrai CYD normal a démarré : `Config file present=no`,
+`CONFIGMAP READY`, menu `522dc605`, chargement V11 slot07
+CRC/runtime/états spatiaux identiques, déplacements/portes/
+combat/FX/pickup/retour EXIT opérationnels ;
+`heap8=112328 largest8=86004` constants pendant le gameplay.
+Exit sans sauvegarde, resident vidé, menu rétabli.
+**Ne pas déclarer le chemin `Config present=yes` validé** :
+la lecture positive n'a pas été exercée sur la dalle/SD.
+Les logs attestent des présentations de frames, mais aucune
+comparaison visuelle pixel à pixel. Le correctif CI post-code
+n'a pas modifié le firmware. Ce lot est accepté ;
+tout nouveau lot de code sur #216 réclame un nouveau PASS
+matériel et une clôture documentaire propre, distincte.
+
+
 ## Sprite mural en angle : règles du renderer legacy rétablies (15 octobre 2026)
 
 Code CYD validé `a088b485f3891d515537ae2961a27e0d0a40e5eb` ;

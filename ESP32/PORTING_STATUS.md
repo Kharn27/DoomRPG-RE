@@ -1,5 +1,70 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #216 — Config key bindings natifs, CI + CYD PASS de non-régression (15 octobre 2026)
+
+Base réelle : `main 0ca15d756c2c6a64a5b4bc6b3e2b0ec89d83b7bd`.
+Branche `agent/esp32-own-config-keybinds` ; **code firmware matériel
+testé `8436de9caa83c8b3efd1d3d39fbc340c5293c89f`** ;
+commit `7f943508395b375514889c7895072dcd86df12de`
+corrige **uniquement le garde CI ELF** (tentative COMMON de GCC Xtensa
+dans l'objet → BSS finale), sans modifier le firmware.
+[PR #216](https://github.com/Kharn27/DoomRPG-RE/pull/216).
+
+Trois variables à vie process `keyMapping[12]`, `keyMappingTemp[12]`
+et `keyMappingDefault[12]` (3 × 528 B) ainsi que
+`DoomRPG_setDefaultBinds` sont sorties du `DoomRPG.c` généré.
+L'owner permanent existant `esp_legacy_config_mappings_startup.c`
+garde le tableau et le corps de reset **strictement identiques**
+au legacy. Le générateur pinne les CRC `640ab977` (table) et
+`5c83b22a` (fonction), vérifie corps/valeurs et retire leurs
+définitions du généré. Aucun nouveau TU de production, aucune
+nouvelle allocation, aucun changement de format de sauvegarde,
+RNG, input tactile, world ou render.
+
+**CI hôte + 3 profils PASS** :
+[push #38747810890](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38747810890)
+et [PR #38747821709](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38747821709).
+Test compilé : 8 192 séquences de mutation/configuration et reset,
+copie des 2 jeux de binds, parité différentielle et 1 584 B de
+storage, pas la lecture d'un fichier `Config` réel.
+Audit compiledb/ELF trois profils : deux tableaux BSS et un
+tableau DATA, une fonction reset, toutes dans l'owner natif ;
+zéro doublon/résidu généré. RAM statique/Flash :
+normal **50 976/809 517 B**, bringup **51 120/829 997 B**,
+trace **51 016/825 953 B**, égales aux budgets du précédent
+jalon. Ce n'est pas une mesure de RAM dynamique CYD.
+
+**CYD normal — PASS matériel ciblé de non-régression sur les
+logs utilisateur** : boot `[CONFIGMAP] READY`, menu
+`frame=522dc605`, `Config file present=no` puis
+`loadConfig: (unable to open file)` attendu. Depuis HUB,
+LOAD slot07 V11 /intro.bsp : CRC `623f34e4`,
+arena `c3882516`, 30 monstres `8acca67c`,
+topologie `ebca87dd`, positions `24bbd504`,
+activation `6698ed80` (22 actifs), RNG au restore = 0.
+Mouvements axiaux + strafe + rotation, porte160
+ouverte puis fermée après le tour, activation des sprites
+6/7, attaque/riposte, `rngRollback=yes` et
+`rngExact=yes`, effets sang/gib, ramassage d'Armor Shard,
+changement d'armes ; aucun échec nouveau remonté.
+EXIT par double sélection, `saveWrite=no`,
+`[RESIDENTRESET] released=18008 empty=1`, retour au menu
+`522dc605`. `shapeData=mediaTexels=0x0` au retour.
+Snapshots ALIVE gameplay `heap8=112328 largest8=86004`
+stables, puis retour menu `158264/110580`.
+Ces logs prouvent les frames `presented=1`, **pas**
+une validation visuelle exhaustive de tous les pixels.
+
+**Limites** : `Config` absent sur la SD ; pas de validation
+matérielle de la lecture positive des binds configurés.
+La parité des defaults/reset est logicielle.
+Ce PASS valide le **premier lot de code**, pas les prochains
+commits firmware sur la même branche. La clôture présente est
+**docs-only après hardware PASS** ; toute nouvelle frontière
+de code nécessite une **nouvelle validation CYD**. Pas de merge
+automatique.
+
+
 ## Décorations murales visibles en oblique — CI + CYD PASS (15 octobre 2026)
 
 Après le PASS `BOUNDARY-INLINE` (code `a71ed3c4`), l'utilisateur
