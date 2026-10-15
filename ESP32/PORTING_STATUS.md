@@ -1,5 +1,55 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Lecteurs de configuration binaires natifs — CI + CYD PASS de non-régression (15 octobre 2026)
+
+Suite sur la **même branche** après le PASS process clock/RNG.
+Code firmware testé : `eaa915aacf5171dbd118758ab33bb402f9f9edee`.
+Les corps legacy **strictement inchangés** `File_readByte` et
+`File_readInt` ont quitté la copie générée de `DoomRPG.c`
+pour `ESP32/src/esp_doomrpg_config_read.c`. La comparaison
+source CRC + corps est exigée par le générateur. Aucun changement
+de l'ABI SDL_RWops, du `char` signé, du little-endian `SDL_SwapLE32`,
+de `Game_loadConfig`, du RNG ni du format SAVE.
+Le fichier source desktop reste la référence.
+
+[CI #38717722550 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38717722550) :
+hôte différentiel **4 096 appels, 8 194 octets consommés**,
+audit ELF 2 définitions propriétaires, 0 dans `DoomRPG.o` généré,
+builds normal, trace et bringup. Profil normal :
+**50 976 B RAM statique, 809 561 B Flash** ;
+bringup **51 120/830 089 B**, trace **51 016/826 041 B**.
+
+**CYD réel normal : PASS d'intégration et de non-régression.**
+Boot ESP32-D0WD-V3 sans PSRAM, PAK 241 entrées, startup complet,
+CONFIGMAP READY et menu `522dc605`. LOAD depuis HUB du slot07
+V11 (5 604 B) avec runtime arena `c3882516` et restauration
+exacte des empreintes monstres `8acca67c`, topologie
+`ebca87dd`, positions `24bbd504`, activation `6698ed80`
+(22 actifs) sans consommation RNG au restore.
+Session gameplay prête, `shapeData=mediaTexels=NULL`, mouvements,
+ouverture de porte 160, activation monstres 6 et 7,
+attaques/ripostes/commits morts, `rngRollback=yes` et
+`rngExact=yes`. `heap8=112328`, `largest8=86004`
+stables pendant les actions observées, pas de reboot ni anomalie
+nouvelle dans les logs communiqués.
+
+**Limite matérielle explicite :** `[CONFIG] Config file present=no`
+et `loadConfig: (unable to open file)`. Ces deux fonctions
+**n'ont pas été exercées par un vrai fichier Config sur CYD**
+dans cette trace ; leur comportement de lecture est validé par
+l'exécution hôte comparative, les définitions/liaisons par ELF,
+et le matériel ne prouve ici que la non-régression en mode
+configuration absente. Ne pas écrire « Config présent validé ».
+
+Reste ouvert indépendamment :
+`NATIVEFRAME LEGACY_GUARD -> SPAN_OOB -> RECOVERED`,
+notamment ligne 161 pendant déplacement ; le cache mural
+récupère par retry, sa cause n'a pas été corrigée.
+**Clôture du lot de lecteurs : modifications post-test docs-only ;
+aucun nouveau firmware. Branche prête pour merge après revue,
+sans merge automatique dans main.**
+
+
 ## Extraction du RNG process natif : PASS matériel ciblé (15 octobre 2026)
 
 Code firmware testé `a7968169a0af2e2ad93322214547089102b2d292`
