@@ -1,5 +1,33 @@
 # Audit de consolidation architecturale ESP32
 
+## Extraction horloge process-lifetime : CI et CYD PASS (2026-10-15)
+
+Depuis `main e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`,
+branche `agent/esp32-extract-doomrpg-process-clock`, code
+`d757502976f3eaaa37e5bf28bc8dd63c7e9c002a` :
+`DoomRPG_GetTimeMS`, `DoomRPG_GetUpTimeMS` et leur unique
+`basetime` 4 B sortent du `DoomRPG.o` généré vers
+`esp_doomrpg_process_clock.c`. Corps exacts pinés par CRC/generator,
+zéro changement de la sentinelle SDL tick=0, de l'arithmétique
+Uint32, ou de la lifetime process. Le test hôte compare les deux
+implementations sur 10 000 pas et des wraps. ELF/compiledb
+contrôlent symboles/état propriétaires dans 3 profils.
+[CI 38711767983 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38711767983) :
+normal `50976/809565` B RAM statique/Flash, trace
+`51016/826041`, bringup `51120/830089`.
+
+Vrai CYD firmware normal, PASS de non-régression : intro complète,
+MAP_INTRO `c3882516`, LOAD slot07 FNV state/topology/position/activation
+exact, dialogues et continuations 19/11, animation porte/tour/mouvement,
+combat sprite5 subtype4 en trois boucles et extincteur, pickup,
+retour SYS EXIT `522dc605`, résident vidé, `shapeData/mediaTexels=NULL`.
+`NATIVEFRAME LEGACY_GUARD/SPAN_OOB/RECOVERED` existe encore et ne
+doit pas être masqué. Cette preuve **n'est ni un test à 49 jours ni un
+benchmark**. Commit post-test uniquement documentaire. Prochaine
+famille distincte : générateur RNG caché (_seed/resetRand) et séquences
+refill/replay; ne pas en changer les règles.
+
+
 ## Frontière liée de présentation DoomRPG — sept symboles sortis de la génération (15 octobre 2026)
 
 Base `main 3dde62507cee7cc335423617759502c217d67651`,

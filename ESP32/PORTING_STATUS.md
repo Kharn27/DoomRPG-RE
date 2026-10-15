@@ -1,5 +1,58 @@
 # Doom RPG ESP32 — état actuel du port
 
+## DoomRPG process clock — CI + vrai CYD PASS ciblé (2026-10-15)
+
+Base après merge PR #213 : `main e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`.
+Branche `agent/esp32-extract-doomrpg-process-clock`, code testé
+`d757502976f3eaaa37e5bf28bc8dd63c7e9c002a`. Deux fonctions
+**réellement liées** `DoomRPG_GetTimeMS` / `DoomRPG_GetUpTimeMS`
+et leur `static Uint32 basetime=0` sont déplacées du `DoomRPG.c`
+généré vers `src/esp_doomrpg_process_clock.c`. Corps **inchangés**
+(CRC source, égalité native/legacy), état **process-lifetime**, sentinelle
+`basetime==0`, ticks SDL et soustraction Uint32 conservés. Le
+générateur retire les corps + le global de la copie ; le source desktop
+de référence reste inchangé. **Aucun reset session / LOAD** ni
+couplage au RNG; ce n'est pas une correction de la cadence de jeu.
+
+[CI SUCCESS #38711767983](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38711767983)
+sur le **SHA code testé**, trois profils + host différentiel (10 000
+étapes mixed-order, zéro, overflow) + audit compiledb/ELF : deux
+définitions dans l'owner permanent, zéro dans le généré et un seul
+`basetime` en BSS native. RAM statique / Flash rapportées par CI :
+normal **50 976 / 809 565 B**, trace **51 016 / 826 041 B**,
+bringup **51 120 / 830 089 B**. Pas de gain Flash/heap/FPS revendiqué.
+
+**Validation physique utilisateur, firmware normal : PASS ciblé.**
+MENU_MAIN → START, intro texte/animation/skip/final, disposal
+`recovered=34056` ; MAP_INTRO source CRC `623f34e4`, runtime
+`c3882516`, first frame `71ca7465`, cache cold `a9b263f5` /
+warm `20c09fe4`. LOAD V11 slot07 à `1632,992 / angle192` :
+monstres `966ac091`, topologie `14ce1a4e`, positions
+`eb9553d2`, activation `aca2058f` restitués exactement,
+`activeCount=21`. Test tactile réel : rotations et mouvements
+axial/strafe, portes 102/113/152 avec fermeture différée,
+dialogues paginés events 33/19 et resume opcode 19/11, pickup
+Health Vial, monstre `sprite=5 subtype4` activé à l'ouverture,
+attaque trois coups et COMMIT de dégâts/riposte, extincteur
+sur sprite5 HP 5→0, XP/gib, HUD/HUB puis double confirmation SYS EXIT.
+Le SAVE existant n'a **pas** été réécrit (`saveWrite=no`).
+Sur les snapshots `[ALIVE]` : heap8 en gameplay fresh
+`112328`, après reprise/dialogues `111184`, largest8
+`86004`; après EXIT : `[RESIDENTRESET] released=18008 empty=1`,
+`MENU_MAIN frame=522dc605`, heap8 `158064` largest8 `110580`.
+`shapeData=0x0 mediaTexels=0x0` maintenus.
+
+**Limites :** ni mesure de temps absolu/overflow à 49,7 jours sur
+matériel, ni preuve d'égalité des pixels/latences ; logs ne donnent
+pas de hash de l'image effectivement flashée. Anomalie préexistante
+`[NATIVEFRAME] LEGACY_GUARD→SPAN_OOB→RECOVERED` observée plusieurs
+fois : **ouverte**, récupération bornée ≠ correction. L'incident
+historique de monstres apparus par trigger après LOAD n'est pas
+résolu par ce test. Cette clôture est **docs-only** après PASS ;
+la suite RNG sera un **autre commit de code** et exigera un **nouveau
+PASS matériel** avant toute déclaration merge-ready.
+
+
 ## DoomRPG — extraction de 7 primitives SDL/clip de la TU générée : CYD PASS ciblé (15 octobre 2026)
 
 Base exacte `main 3dde62507cee7cc335423617759502c217d67651`; branche

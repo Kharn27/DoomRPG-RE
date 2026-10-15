@@ -1,5 +1,37 @@
 # Doom RPG ESP32 — guide de travail
 
+## Process clock natif : validation CYD (15 octobre 2026)
+
+Base du lot : `main e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`,
+branche `agent/esp32-extract-doomrpg-process-clock`, commit de code
+`d757502976f3eaaa37e5bf28bc8dd63c7e9c002a`.
+`esp_doomrpg_process_clock.c` possède les corps intacts de
+`DoomRPG_GetTimeMS` / `DoomRPG_GetUpTimeMS` ainsi que
+`basetime` ; le générateur les retire strictement de `DoomRPG.c`.
+**Ne pas réinitialiser basetime** à l'ouverture d'une carte ou au LOAD ;
+respecter la sentinelle zéro et les ticks SDL Uint32.
+
+Validation reproductible :
+```sh
+python3 ESP32/test/doomrpg_process_clock_host.py
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+[Test CI SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38711767983) :
+10 000 pas hôte d'horloge en ordre mixte, trois profils compilés,
+audit `--require-native-doomrpg-clock` (définitions et BSS).
+CYD réel normal : START→intro→Entrance→LOAD slot07, déplacements,
+rotations, dialogues, portes, pickup, attaque/riposte de sprite5,
+HUB SYS EXIT vers MENU_MAIN `522dc605`, reset résident vide.
+LOAD restaure monster/topology/position/activation FNV ; heap8
+`112328` stable après LOAD puis `111184` avec contexte dialogue ;
+`shapeData/mediaTexels=NULL`. Pas d'écriture SAVE.
+Le renderer compact `LEGACY_GUARD/SPAN_OOB` reste un incident
+indépendant et ouvert ; ne pas confondre recovery et résolution.
+Cette documentation ferme **le lot horloge seulement** ; les commits
+RNG ultérieurs imposent une nouvelle validation matérielle.
+
+
 ## Extraction DoomRPG — présentation SDL/clip native (CYD validé le 15 octobre 2026)
 
 La famille de sept méthodes **réellement liées** de présentation
