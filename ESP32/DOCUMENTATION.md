@@ -1,5 +1,93 @@
 # Doom RPG ESP32 — guide de travail
 
+## Sprite mural en angle : règles du renderer legacy rétablies (15 octobre 2026)
+
+Code CYD validé `a088b485f3891d515537ae2961a27e0d0a40e5eb` ;
+[PR #215](https://github.com/Kharn27/DoomRPG-RE/pull/215).
+Après suppression du retry mural, les motifs d'un mur rouge
+d'Entrance étaient absents en angle oblique et présents de face.
+La comparaison avec `src/Render.c` a révélé des règles visuelles
+non encore portées : les sprites avec le flag
+`0x00800000` sont décalés d'une unité suivant leur direction
+et ont une priorité de tri `INT32_MAX`. Les sprites 184..190
+reçoivent la profondeur spéciale `0`, quand le test de flags
+précédent ne s'applique pas. Le helper purement visuel
+`esp_native_sprite_visual_legacy.h` rétablit ces règles pour
+`esp_native_sprite_renderer.c` (projection/tri) et
+`esp_native_bsp_visibility.c` (BSP leaf) ; il **ne modifie pas
+la carte immutable ni les positions persistantes**.
+
+```sh
+python3 ESP32/test/wall_sprite_visual_host.py
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+Host **25 920** comparaisons/compilation native, CI
+[push PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734975334)
+et [PR PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734982820).
+Sur CYD normal, l'utilisateur constate que les motifs restent
+dessinés face au mur et de biais dans la pièce auparavant
+défectueuse. Log de non-régression : mouvement/rotation,
+porte160 animée, monstres6/7 et combat/riposte/FX/drop/pickup
+opérationnels ; RNG des probes rollback exact,
+`heap8=112328 largest8=86004` stables. Pas de nouveau
+problème de rendu remonté.
+
+Conserver le correctif `BOUNDARY-INLINE` précédent, ses tests
+et ses propres preuves matérielles. Ce PASS est celui de
+**`a088b485f3891d515537ae2961a27e0d0a40e5eb`**, pas une validation pixel parfaite de
+tous les sprites du jeu. Ne pas déplacer ces décalages vers
+le runtime map immutable ou la sauvegarde. Après les logs
+de validation, seuls des changements documentaires sont
+autorisés avant le merge utilisateur.
+
+
+
+## Renderer natif : frontiere murale sans retry — hardware PASS (15 octobre 2026)
+
+Depuis `main c5384c7664f062a64b0e7ed3c928b2dcde8cd89b`, code
+`a71ed3c4cb0b12e2a0ad6ab2e06292637bbb39d5` sur
+`agent/esp32-wall-boundary-inline`. [PR #215](https://github.com/Kharn27/DoomRPG-RE/pull/215),
+[CI push PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38728936980),
+[CI PR PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38729192919).
+Le renderer conserve la semantique historique du sampler des murs :
+2048 octets de texels packed pour un mur 64x64, avec possibilite
+d'un octet provenant de la texture successeur aux limites. La
+resolution inline `BOUNDARY-INLINE` utilise mappings.bin et
+wtexels.bin via la lease PAK existante, reutilise le garde sur
+le meme rendu, et ne refait plus l'image. Quatre gardes BSS
+de 16 B max, `SPAN_OOB` fail-closed si indice >2048,
+successeur/PAK invalide ou limite depassee. Pas de tableau
+`mediaTexels`, pas de changement des objets gameplay/sauvegarde/RNG.
+
+Test de preuve hote (vraies fonctions sampler/resolver compilees) :
+```sh
+python3 ESP32/test/native_wall_boundary_inline_host.py
+```
+2 000 cas deterministes, nibble/pixel, garde reutilisee,
+octet exact du successeur, refus borne et pixels sentinelles
+preserves sur les erreurs. Pour reproduire sur classic CYD :
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+LOAD slot07 -> Entrance -> STRAFE_LEFT 310->309. Le CYD a emis
+`BOUNDARY-INLINE logical=15 actual=40 source=20480
+successorActual=68 successorSource=32768 byte=11` ;
+meme temoignage au retour STRAFE_RIGHT 308->309. Aucun
+`RETRY/RECOVERED` et pas de `NATIVEFRAME FAILED` visibles.
+LOAD V11 identique, portes et combats actifs, RNG guard intact,
+RAM residente `heap8=112328 largest8=86004`,
+`shapeData/mediaTexels=NULL`. Le test n'etablit pas un hash
+de frame identique a la reference desktop ni un delta FPS
+mesure. L'ancien probleme SPAN_OOB dans les autres sections
+de documentation est historique, pas une anomalie ouverte
+observee sur ce cas depuis le correctif. Apres le PASS,
+**ne modifier que la documentation**. Merge par l'utilisateur.
+
+
+
 ## Lecteurs RWops de Config — extraction native (15 octobre 2026)
 
 Code testé `eaa915aacf5171dbd118758ab33bb402f9f9edee`;

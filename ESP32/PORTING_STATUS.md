@@ -1,5 +1,130 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Décorations murales visibles en oblique — CI + CYD PASS (15 octobre 2026)
+
+Après le PASS `BOUNDARY-INLINE` (code `a71ed3c4`), l'utilisateur
+a signalé une **régression visuelle restante** dans la dernière
+pièce d'Entrance : des motifs sur un mur rouge disparaissaient selon
+l'angle d'observation et réapparaissaient de face. Ce symptôme a
+bloqué la PR #215 et conduit à un second correctif distinct,
+**code firmware matériel testé `a088b485f3891d515537ae2961a27e0d0a40e5eb`**.
+
+Comparaison avec le vrai `src/Render.c` : les sprites marqués
+`0x00800000` sont décalés visuellement d'une unité devant leur
+mur suivant les flags directionnels (N/S/E/O). Le renderer native
+négligeait ce décalage et utilisait un tri de profondeur générique ;
+la priorité legacy des sprites muraux (`INT32_MAX`) et le cas
+spécial des IDs 184..190 (`sortZ=0`) manquaient.
+`ESP32/include/esp_native_sprite_visual_legacy.h` contient ces
+règles de projection en fonctions pures ; le code natif les emploie
+pour le tri, le placement à l'écran et la recherche de feuille BSP
+(`esp_native_sprite_renderer.c`,
+`esp_native_bsp_visibility.c`).
+**Aucune modification** des positions du BSP immutable, du
+save/checkpoint, de la topologie des monstres, des assets ni du RNG ;
+pas de réintroduction de `shapeData` ou `mediaTexels`.
+
+**CI code exact** :
+[push #38734975334 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734975334),
+[PR #38734982820 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734982820).
+`ESP32/test/wall_sprite_visual_host.py` compare les règles avec
+le legacy et compile leur implémentation permanente : **25 920
+cas**, quatre directions, priorités murales et IDs 184..190.
+Les trois firmwares compilent : profil normal RAM statique
+**50 976 B**, Flash **809 517 B** ; bringup **51 120/829 997 B** ;
+trace **51 016/825 953 B**.
+
+**CYD normal — PASS visuel rapporté par l'utilisateur :**
+« les murs sont bien dessinés et leurs motifs ne disparaissent pas »,
+y compris dans les vues obliques de la pièce initialement en défaut.
+Trace fournie : déplacements/strafe/rotations avec preview
+`rendered=yes presented=1`, ouverture de la porte 160 et
+fermeture différée après le tour des monstres, activation des
+sprites 6 et 7, combat et ripostes différées, FX/gibs,
+drop dynamique puis collecte de munition et d'armure,
+`rngRollback=yes` dans les probes et `rngExact=yes`
+sur les animations d'attaque. `heap8=112328` et
+`largest8=86004` constants sur les lignes `ALIVE`
+observées. Pas de `NATIVEFRAME FAILED` ni anomalie nouvelle
+rapportée dans cette trace.
+
+**Portée exacte :** restitution visuelle du mur problématique
+validée par l'utilisateur, pas une comparaison pixel à pixel
+de toutes les cartes contre le desktop. Le premier PASS
+`BOUNDARY-INLINE` reste attribué au code `a71ed3c4` ;
+les nouveaux logs ne reproduisent pas explicitement le cas
+packed-index 2048. Le second PASS concerne le nouveau code
+`a088b485f3891d515537ae2961a27e0d0a40e5eb` et son rendu visuel. Après ce test,
+**commit(s) exclusivement docs-only**, sans modification de
+firmware ; PR #215 merge-ready après deux checks verts.
+
+
+
+## Renderer mural compact : frontiere 2048 resolue inline — CI + PASS materiel cible (15 octobre 2026)
+
+**Base post-merge PR #214 :** `main c5384c7664f062a64b0e7ed3c928b2dcde8cd89b`.
+Branche `agent/esp32-wall-boundary-inline` ; **firmware reel teste :
+`a71ed3c4cb0b12e2a0ad6ab2e06292637bbb39d5`** ; [PR #215](https://github.com/Kharn27/DoomRPG-RE/pull/215).
+Le sampler d'`esp_native_first_frame.c` peut encore produire un indice
+2048 pour une texture murale 64x64 / 2048 B. La lecture contigue
+historique utilisait un octet de la texture successeur, pas un clamp
+sur 2047. Avant : `SPAN_OOB -> LEGACY_GUARD -> RETRY -> RECOVERED`,
+avec abandon puis second rendu complet. Maintenant, quand
+`packedIndex == 2048`, `prepareLegacyWallGuard(work, source)`
+retrouve **le meme octet exact** dans mappings.bin/wtexels.bin
+pendant la lease PAK deja ouverte, puis le span continue **sans
+relancer le rendu**. Ownership BSS strict : 4 gardes au maximum,
+16 B chacun, soit 64 B ; indice >2048, mapping absent/incoherent,
+PACK ferme ou gardes epuisees : `SPAN_OOB` fail-closed. La fonction
+de rendu n'a plus sa boucle de retry. Aucun `mediaTexels` / gros
+buffer monolithique reinstalle.
+
+**CI hote + compilations :** [push #38728936980 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38728936980),
+[PR #38729192919 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38729192919).
+`ESP32/test/native_wall_boundary_inline_host.py` extrait et compile
+les vraies fonctions `prepareLegacyWallGuard` et
+`sampleWallSpan` ; 2000 cas deterministes de nibble/pixel,
+octet successeur reference 68 depuis offset 32768, source actual40
+offset 20480 ; reuse sans lecture PAK supplementaire, violations
+>=2049, garde pleine, mapping invalide et PACK ferme restent
+bloquees sans peindre. Profil normal statique RAM **50976 B**,
+Flash **809333 B** ; bringup **51120 / 829809 B** ; trace
+**51016 / 825773 B**. Il s'agit d'un test de span, non de
+parite de l'image complete.
+
+**Preuve materielle utilisateur, firmware normal CYD :
+PASS cible pour le cas reproduit.** Menu Load Game, slot07
+V11 5604 B ; `/intro.bsp` CRC `623f34e4` et arena
+`c3882516` ; restore exact monstres `8acca67c`,
+topologie `ebca87dd`, positions `24bbd504`,
+activation `6698ed80` (22 actifs). Trajet
+`STRAFE_LEFT tile=310->309`, puis second passage
+`STRAFE_RIGHT tile=308->309` : marqueurs recurrents
+`[NATIVEFRAME] BOUNDARY-INLINE logical=15 actual=40
+source=20480 successorActual=68 successorSource=32768 byte=11
+owner=BSS bytes=16`. Aucun `RETRY`, `RECOVERED`,
+`SPAN_OOB` non recupere ni `NATIVEFRAME FAILED` dans
+les logs communiques. Animation porte line160 ouverte/fermee
+(y compris fermeture differee apres tour), mouvement/rotation,
+combat ennemis sprites6/7, riposte differee,
+`rngRollback=yes`, `rngExact=yes`, critiques/gib,
+drop `MONSTERDROP COMMIT`, pickup et PASS_TURN fonctionnels.
+`[ALIVE] heap8=112328 largest8=86004` stables pendant
+la session ; `shapeData=0x0 mediaTexels=0x0`.
+Scratch rendu transitoire observe 2980 B contre 2960 B dans
+le jalon precedent, sans baisse de la RAM libre residente observee.
+
+**Limites :** le PASS concerne la frontiere effective index2048,
+pas une preuve de parite pixel pour toutes les vues/textures,
+ni un benchmark permettant d'affirmer un gain de FPS ou de temps.
+Les incidents historiques figurant dans les milestones precedents
+restent de vrais temoins du probleme *avant ce correctif* ;
+ne pas les requalifier retrospectivement. Post-test : commits
+documentation uniquement ; aucune nouvelle modification firmware
+sans revalidation CYD. Jalon pret pour revue et merge manuel.
+
+
+
 ## Lecteurs de configuration binaires natifs — CI + CYD PASS de non-régression (15 octobre 2026)
 
 Suite sur la **même branche** après le PASS process clock/RNG.
