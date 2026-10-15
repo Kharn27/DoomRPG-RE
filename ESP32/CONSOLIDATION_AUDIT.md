@@ -1,5 +1,43 @@
 # Audit de consolidation architecturale ESP32
 
+## PR #216 — Process Config bindings retirés du root généré : premier PASS CYD (2026-10-15)
+
+Base main `0ca15d756c2c6a64a5b4bc6b3e2b0ec89d83b7bd`.
+Le dernier `DoomRPG.c` généré possédait encore trois globals
+de key binds (12 × 44 × 3 = 1 584 B) et
+`DoomRPG_setDefaultBinds`, tous consom­més par la racine
+initiale et `Game_loadConfig`. Le transfert est **une
+migration de propriétaire**, pas un retrait de données.
+Réutilisation de `esp_legacy_config_mappings_startup.c`,
+0 nouveau source production. CRC et text parity stricts avec
+`src/DoomRPG.c` ; le généré perd les quatre définitions.
+Test hôte 8 192 resets/configurations ; audits ELF/compiledb
+normal, trace, bringup : 3 données + méthode exclusivement
+dans l'owner, aucune dans le root généré.
+Code matériel `8436de9caa83c8b3efd1d3d39fbc340c5293c89f`.
+`7f943508` n'a corrigé que le garde ELF pour l'attribution
+COMMON objet → BSS finale. Deux CI vertes :
+[push](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38747810890)
+[PR](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38747821709).
+Budgets normal 50 976/809 517 B,
+bringup 51 120/829 997 B, trace 51 016/825 953 B :
+inchangés par rapport au jalon #215.
+
+CYD normal, **PASS de non-régression ciblé** rapporté par
+les traces utilisateur : Config absent, boot et menu FNV
+`522dc605`, LOAD V11 slot07 état exact, animations,
+porte160, deux activations, combat, RNG preview/riposte
+exact, pickup, EXIT sans SAVE, résident vidé. Heap8
+`112328` et largest8 `86004` constants pendant le
+jeu ; `shapeData/mediaTexels=NULL`. **Aucun Config
+existant ni test de bindings personnalisés** : rester
+prudent sur cette frontière non exercée.
+La documentation après ce PASS est docs-only ;
+les prochains commits de code sur #216 constitueront
+une **autre frontière et un autre firmware à valider**,
+avant que la PR puisse être merge-ready.
+
+
 ## Wall-attached sprite orientation/priority parity — second CYD PASS (2026-10-15)
 
 [PR #215](https://github.com/Kharn27/DoomRPG-RE/pull/215)

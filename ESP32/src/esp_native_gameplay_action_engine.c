@@ -244,11 +244,17 @@ typedef struct DirectionalCueOwner_s {
     EspNativeGameplayDamageCue current;
     uint32_t phaseAtMs;
     uint32_t startedAtMs;
+    /* Physical ON/OFF presentation timings: diagnostic-only, 12 B static.
+     * No cadence, framebuffer, combat, or scheduler modification. */
+    uint32_t observedOnMs[2];
+    uint32_t observedGapMs;
     uint16_t snapshotPixels;
     uint8_t phase; /* 0 idle, 1 requested-on, 2 lit, 3 gap */
     uint8_t pulsesShown;
     uint8_t snapshotValid;
     uint8_t needsRepaint;
+    uint8_t deferFirstPulse; /* UI boundary only; FIFO/RNG untouched */
+    uint8_t stageNonlethalBorder; /* no player/turn effect; same-frame cue */
 } DirectionalCueOwner;
 static DirectionalCueOwner directionCue;
 static uint16_t directionCueSnapshot[DAMAGE_CUE_MAX_PIXELS];
@@ -1543,6 +1549,40 @@ static const char* directionCueName(uint8_t side) {
 
 static int serviceDirectionalCue(void);
 
+/* The native session is single-threaded on loopTask. Never defer an existing
+ * pulse or a logical monster transaction: only the first physical ON after a
+ * post-COMMIT enqueue is gated through the ordered-member/FX tail. */
+void EspNativeGameplayActionEngine_beginMonsterVisualWork(void) {
+    directionCue.deferFirstPulse = 1U;
+}
+
+void EspNativeGameplayActionEngine_stageNonlethalMonsterFlash(void) {
+    /* The retaliation body opts in ONLY after nonlethal player pain is
+     * committed and its DAMAGE feedback is queued. A render rollback cancels
+     * the flash and never publishes a side intent. */
+    if (directionCue.deferFirstPulse != 0U &&
+        actionState.viewportFlashPending != 0U &&
+        actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565)
+        directionCue.stageNonlethalBorder = 1U;
+}
+
+void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
+    const uint8_t stagedBorder = directionCue.stageNonlethalBorder;
+    directionCue.deferFirstPulse = 0U;
+    directionCue.stageNonlethalBorder = 0U;
+    if (directionCue.phase == 0U && directionCue.queued.count != 0U) {
+        /* __wrap_Esp32PlatformVideo_present paints pending border FIRST,
+         * then the side blend, and presents both atomically. */
+        (void)serviceDirectionalCue();
+    } else if (stagedBorder != 0U &&
+               actionState.viewportFlashPending != 0U &&
+               directionCue.phase == 0U) {
+        /* Failed/unsupported direction admission must not strand the red
+         * border forever: retain the original non-directional feedback. */
+        (void)__wrap_Esp32PlatformVideo_present();
+    }
+}
+
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side) {
@@ -1564,7 +1604,8 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
      * red-border lease. Reuse the existing compositor, never redraw the world
      * or wait for the pulse cadence here. Strict leases defer it; a failed
      * physical present keeps the queued/current cue for the normal retry. */
-    (void)serviceDirectionalCue();
+    if (directionCue.deferFirstPulse == 0U)
+        (void)serviceDirectionalCue();
     return 1;
 }
 
@@ -1828,12 +1869,22 @@ int __wrap_Esp32PlatformVideo_present(void) {
     }
 
     if (actionState.feedbackPending != 0U) {
-        feedback = actionState.feedbackKind;
-        if (!paintFeedback(feedback)) {
-            printf("[ACTIONFEEDBACK] FAILED kind=%u\n", (unsigned int)feedback);
-            return 0;
+        /* Nonlethal monster retaliation stages the thin red border until
+         * its first directional band. Hold its DAMAGE text in the same
+         * pending feedback owner through the early committed world frame.
+         * The end-of-monster-work present will paint text, border, and side
+         * together, and only THEN start the 1200ms text lease. All other
+         * feedback, including lethal damage, keeps original behavior. */
+        if (directionCue.stageNonlethalBorder == 0U ||
+            actionState.feedbackKind != ACTION_FEEDBACK_DAMAGE) {
+            feedback = actionState.feedbackKind;
+            if (!paintFeedback(feedback)) {
+                printf("[ACTIONFEEDBACK] FAILED kind=%u\n",
+                       (unsigned int)feedback);
+                return 0;
+            }
+            hadFeedback = 1;
         }
-        hadFeedback = 1;
     }
     else if (actionState.feedbackVisible != 0U &&
              actionState.framebufferFresh != 0U &&
@@ -1875,7 +1926,8 @@ int __wrap_Esp32PlatformVideo_present(void) {
     if ((actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
         (actionState.viewportFlashPending != 0U ||
-         actionState.framebufferFresh != 0U)) {
+         actionState.framebufferFresh != 0U) &&
+        directionCue.stageNonlethalBorder == 0U) {
         if (!paintViewportFlash()) {
             printf("[VIEWFLASH] FAILED phase=paint\n");
             return 0;
@@ -1908,6 +1960,11 @@ int __wrap_Esp32PlatformVideo_present(void) {
         directionCue.needsRepaint = 0U;
         if (directionCue.phase == 1U) {
             directionCue.phase = 2U;
+            /* The gap ends only when the second ON frame is presented. */
+            if (directionCue.pulsesShown == 1U) {
+                directionCue.observedGapMs =
+                    actionNowMs() - directionCue.phaseAtMs;
+            }
             directionCue.phaseAtMs = actionNowMs();
             if (directionCue.pulsesShown == 0U) {
                 /* This witness is AFTER the physical present, not an intent.
@@ -2018,6 +2075,9 @@ static int serviceDirectionalCue(void) {
         directionCue.phase = 1U;
         directionCue.startedAtMs = now;
         directionCue.pulsesShown = 0U;
+        directionCue.observedOnMs[0] = 0U;
+        directionCue.observedOnMs[1] = 0U;
+        directionCue.observedGapMs = 0U;
         directionCue.snapshotValid = 0U;
         directionCue.snapshotPixels = 0U;
         directionCue.needsRepaint = 0U;
@@ -2068,15 +2128,28 @@ static int serviceDirectionalCue(void) {
             (void)visitDirectionalCue(2U);
             return 1;
         }
+        /* Measure from physical ON completion through physical OFF completion;
+         * a stalled gameplay loop prolongs the displayed band, even though
+         * the requested on-interval is only 85 ms. */
+        directionCue.observedOnMs[directionCue.pulsesShown] =
+            actionNowMs() - directionCue.phaseAtMs;
         ++directionCue.pulsesShown;
         directionCue.snapshotValid = 0U;
         if (directionCue.pulsesShown == DAMAGE_CUE_PULSES) {
-            /* No final 45ms tail; the last visible pulse is complete. */
-            printf("[DAMAGECUE] DONE probe=%u sprite=%u side=%s pulses=%u ordered=yes gameplay=unblocked\n",
+            /* One timing witness per cue; never turn this into per-frame spam. */
+            printf("[DAMAGECUE] DONE probe=%u sprite=%u side=%s pulses=%u onMs=%u/%u gapMs=%u nominalOnMs=%u nominalGapMs=%u delayed=%s ordered=yes gameplay=unblocked\n",
                    (unsigned int)directionCue.current.probe,
                    (unsigned int)directionCue.current.attackerSprite,
                    directionCueName(directionCue.current.side),
-                   (unsigned int)directionCue.pulsesShown);
+                   (unsigned int)directionCue.pulsesShown,
+                   (unsigned int)directionCue.observedOnMs[0],
+                   (unsigned int)directionCue.observedOnMs[1],
+                   (unsigned int)directionCue.observedGapMs,
+                   (unsigned int)DAMAGE_CUE_ON_MS,
+                   (unsigned int)DAMAGE_CUE_GAP_MS,
+                   directionCue.observedOnMs[0] > 200U ||
+                   directionCue.observedOnMs[1] > 200U ||
+                   directionCue.observedGapMs > 180U ? "yes" : "no");
             directionCue.phase = 0U;
             return 1;
         }

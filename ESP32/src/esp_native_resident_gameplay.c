@@ -36,6 +36,7 @@
 #include "esp_native_gameplay_level_up.h"
 #include "esp_native_gameplay_move_events.h"
 #include "esp_native_gameplay_monster_attack_visual.h"
+#include "esp_native_gameplay_monster_active_sequence.h"
 #include "esp_native_gameplay_monster_turn.h"
 #include "esp_native_gameplay_pass_turn.h"
 #include "esp_native_gameplay_player_death.h"
@@ -197,9 +198,10 @@ static void onGameplayTap(int16_t screenX,
     /* Legacy ST_COMBAT owns input until the monster sequence reaches stage 2.
      * Do not buffer a world action behind the animation: a tap made while the
      * enemy is attacking is intentionally discarded. */
-    if (EspNativeGameplayMonsterAttackVisual_isBusy()) {
+    if (EspNativeGameplayMonsterAttackVisual_isBusy() ||
+        EspNativeGameplayMonsterActiveSequence_isBusy()) {
         ++gameplayState.taps;
-        printf("[RESIDENTGAMEPLAY] COMBAT-INPUT-BLOCK tap=%u logical=%d,%d owner=monster-attack-animation queued=no feedback=none\n",
+        printf("[RESIDENTGAMEPLAY] COMBAT-INPUT-BLOCK tap=%u logical=%d,%d owner=monster-turn-or-attack queued=no feedback=none\n",
                (unsigned int)gameplayState.taps,
                logicalX,
                logicalY);
@@ -2184,7 +2186,8 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
     /* Defensive race closure: the tap callback normally rejects combat-time
      * input, but if an IRQ queued one immediately before the visual owner armed,
      * discard it rather than replaying it after combat returns to idle. */
-    if (EspNativeGameplayMonsterAttackVisual_isBusy()) {
+    if (EspNativeGameplayMonsterAttackVisual_isBusy() ||
+        EspNativeGameplayMonsterActiveSequence_isBusy()) {
         if (pending != NULL && pending->pending != 0U) {
             memset(&intent, 0, sizeof(intent));
             inputStatus = EspNativeGameplayInput_consume(&intent);
@@ -2192,7 +2195,7 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
                 disableGameplay("combat-input-discard");
                 return;
             }
-            printf("[RESIDENTGAMEPLAY] COMBAT-PENDING-DROP seq=%u action=%s owner=monster-attack-animation queued=no turnAdvance=no\n",
+            printf("[RESIDENTGAMEPLAY] COMBAT-PENDING-DROP seq=%u action=%s owner=monster-turn-or-attack queued=no turnAdvance=no\n",
                    (unsigned int)intent.sequence,
                    EspNativeGameplayInput_actionName(intent.action));
         }

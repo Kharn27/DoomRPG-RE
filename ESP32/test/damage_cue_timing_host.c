@@ -6,7 +6,7 @@
 static uint16_t pixels[160U * 120U + 2U];
 static uint32_t clockMs;
 static int controls, levelUp, pack, failPresent;
-static unsigned presents, concurrentPresents;
+static unsigned presents, concurrentPresents, damageGlyphs, groupedTextPresents;
 unsigned int DoomRPG_GetUpTimeMS(void) { return clockMs; }
 const EspPlayerViewState* EspPlayerView_view(void) { return NULL; }
 void* Esp32PlatformVideo_framebuffer(void) { return &pixels[1]; }
@@ -25,8 +25,19 @@ int EspNativeGameplayStatusMessage_repaintCurrent(void) { return 1; }
 int EspNativeGameplayHud_paintTopTouchNotches(void) { return 1; }
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
     const char* name, EspNativeIndexedBmp* bmp, EspNativeIndexedBmpStats* stats) {
-    (void)name; (void)stats;
-    bmp->width = 20; bmp->height = FEEDBACK_TOP_HEIGHT;
+    /* The original compositor tests used only k.bmp (HUD strip). Grouped
+     * DAMAGE text also opens a.bmp (144x72 font): model both real contracts
+     * instead of returning a 20x20 strip for every resource. */
+    (void)stats;
+    if (strcmp(name, "a.bmp") == 0) {
+        bmp->width = FEEDBACK_FONT_SOURCE_WIDTH;
+        bmp->height = FEEDBACK_FONT_SOURCE_HEIGHT;
+    }
+    else {
+        assert(strcmp(name, "k.bmp") == 0);
+        bmp->width = 20U;
+        bmp->height = FEEDBACK_TOP_HEIGHT;
+    }
     return ESP_NATIVE_INDEXED_BMP_OK;
 }
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_tile(
@@ -43,6 +54,9 @@ EspNativeIndexedBmpStatus EspNativeIndexedBmp_blit(
     uint8_t transparent, EspNativeIndexedBmpStats* stats) {
     (void)bmp; (void)fb; (void)fw; (void)fh; (void)sx; (void)sy;
     (void)w; (void)h; (void)x; (void)y; (void)transparent; (void)stats;
+    if (actionState.feedbackPending &&
+        actionState.feedbackKind == ACTION_FEEDBACK_DAMAGE)
+        ++damageGlyphs;
     return ESP_NATIVE_INDEXED_BMP_OK;
 }
 int __real_Esp32PlatformVideo_present(void) {
@@ -56,19 +70,23 @@ int __real_Esp32PlatformVideo_present(void) {
         pixels[1 + y * 160U + x] ==
             EspNativeGameplayDamageCue_blend565(0xb800U, DAMAGE_CUE_COLOR565)) {
         ++concurrentPresents;
+        if (damageGlyphs != 0U) ++groupedTextPresents;
     }
     return 1;
 }
-static void seed(void) {
+static void seedUnpainted(void) {
     memset(&actionState, 0, sizeof(actionState));
     memset(&directionCue, 0, sizeof(directionCue));
     for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) pixels[i] = 0x1234;
     clockMs = 1000;
     controls = levelUp = pack = failPresent = 0;
-    presents = concurrentPresents = 0;
+    presents = concurrentPresents = damageGlyphs = groupedTextPresents = 0;
     actionState.viewportFlashPending = 1;
     actionState.viewportFlashColor565 = 0xb800;
     actionState.viewportFlashDurationMs = 500;
+}
+static void seed(void) {
+    seedUnpainted();
     assert(__wrap_Esp32PlatformVideo_present());
     assert(actionState.viewportFlashVisible && presents == 1);
 }
@@ -85,6 +103,9 @@ static void finish(void) {
     clockMs += DAMAGE_CUE_ON_MS;
     poll();
     assert(directionCue.phase == 0U);
+    assert(directionCue.observedOnMs[0] == DAMAGE_CUE_ON_MS);
+    assert(directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
+    assert(directionCue.observedGapMs == DAMAGE_CUE_GAP_MS);
     clockMs += 501;
     poll();
     assert(!actionState.viewportFlashVisible);
@@ -98,12 +119,116 @@ int main(void) {
     clockMs += 818; /* Original ranged witness: next service arrives too late. */
     poll();
     assert(actionState.viewportFlashVisible && directionCue.phase == 3U);
+    assert(directionCue.observedOnMs[0] == 818U);
+    assert(directionCue.observedOnMs[1] == 0U);
     clockMs += DAMAGE_CUE_GAP_MS;
     poll();
     clockMs += DAMAGE_CUE_ON_MS;
     poll();
     assert(directionCue.phase == 0U && !actionState.viewportFlashVisible);
+    assert(directionCue.observedOnMs[0] == 818U);
+    assert(directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
+    assert(directionCue.observedGapMs == DAMAGE_CUE_GAP_MS);
     for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) assert(pixels[i] == 0x1234);
+
+    /* Real CYD witness: after a monster hit, the synchronous 818ms turn tail
+     * used to extend the already-lit first pulse. Start only after that tail;
+     * do not wait for pulses or change attack/turn ordering. */
+    seed();
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        14, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
+    assert(directionCue.queued.count == 1U &&
+           directionCue.phase == 0U && presents == 1U);
+    clockMs += 818U; /* simulated heavy member/FX tail on loopTask */
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(directionCue.phase == 2U && directionCue.queued.count == 0U &&
+           concurrentPresents == 1U && presents == 2U);
+    finish();
+    assert(directionCue.observedOnMs[0] == 85U &&
+           directionCue.observedOnMs[1] == 85U);
+
+    /* Real sprite-157 CYD regression: earlier correction moved the first side
+     * ON past an ~800ms monster tail, but left the thin red flash visible for
+     * that full wait. Nonlethal staging now atomically paints base+side after
+     * the synchronous work, while the validated hit can render earlier. */
+    seedUnpainted();
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
+    memcpy(actionState.feedbackText, "8 damage!", sizeof("8 damage!"));
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
+    assert(directionCue.stageNonlethalBorder == 1U);
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(presents == 1U && damageGlyphs == 0U &&
+           groupedTextPresents == 0U &&
+           actionState.feedbackPending == 1U &&
+           actionState.feedbackVisible == 0U &&
+           actionState.feedbackShownAtMs == 0U &&
+           actionState.viewportFlashPending &&
+           !actionState.viewportFlashVisible &&
+           !actionState.viewportFlashSnapshotValid);
+    assert(pixels[1 + 20U * 160U + 80U] == 0x1234);
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        17, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
+    assert(directionCue.queued.count == 1U && directionCue.phase == 0U);
+    clockMs += 818U;
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    fprintf(stderr,
+            "[DAMAGEGROUP-HOST] presents=%u concurrent=%u grouped=%u glyphs=%u feedbackVisibleKind=%u damageKind=%u feedbackVisible=%u feedbackPending=%u feedbackShown=%u clock=%u phase=%u flashVisible=%u flashShown=%u flashPending=%u snapshot=%u\n",
+            presents, concurrentPresents, groupedTextPresents, damageGlyphs,
+            actionState.feedbackVisibleKind, ACTION_FEEDBACK_DAMAGE,
+            actionState.feedbackVisible, actionState.feedbackPending,
+            actionState.feedbackShownAtMs, clockMs, directionCue.phase,
+            actionState.viewportFlashVisible, actionState.viewportFlashShownAtMs,
+            actionState.viewportFlashPending,
+            actionState.viewportFlashSnapshotValid);
+    assert(presents == 2U && concurrentPresents == 1U &&
+           groupedTextPresents == 1U && damageGlyphs != 0U &&
+           actionState.feedbackVisibleKind == ACTION_FEEDBACK_DAMAGE &&
+           actionState.feedbackVisible == 1U &&
+           actionState.feedbackPending == 0U &&
+           actionState.feedbackShownAtMs == clockMs &&
+           directionCue.phase == 2U && actionState.viewportFlashVisible &&
+           actionState.viewportFlashShownAtMs == clockMs &&
+           !actionState.viewportFlashPending &&
+           actionState.viewportFlashSnapshotValid);
+    assert(pixels[1 + 20U * 160U + 80U] ==
+           EspNativeGameplayDamageCue_blend565(0xb800U, DAMAGE_CUE_COLOR565));
+    finish(); /* First ON, second ON and GAP all start after 818ms tail. */
+    assert(directionCue.observedOnMs[0] == DAMAGE_CUE_ON_MS &&
+           directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
+    /* No direction: both text and border must still appear, together. */
+    seedUnpainted();
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
+    memcpy(actionState.feedbackText, "7 damage!", sizeof("7 damage!"));
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(!actionState.viewportFlashVisible && presents == 1U &&
+           damageGlyphs == 0U && actionState.feedbackPending == 1U);
+    clockMs += 818U;
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(actionState.viewportFlashVisible && !actionState.viewportFlashPending &&
+           actionState.feedbackPending == 0U &&
+           actionState.feedbackVisibleKind == ACTION_FEEDBACK_DAMAGE &&
+           damageGlyphs != 0U && directionCue.phase == 0U && presents == 2U);
+    clockMs += 501U;
+    poll();
+    assert(!actionState.viewportFlashVisible);
+    /* Lethal / non-staged DAMAGE keeps original immediate presentation. */
+    seedUnpainted();
+    actionState.feedbackPending = 1U;
+    actionState.feedbackKind = ACTION_FEEDBACK_DAMAGE;
+    memcpy(actionState.feedbackText, "9 damage!", sizeof("9 damage!"));
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(actionState.viewportFlashVisible && presents == 1U &&
+           damageGlyphs != 0U && actionState.feedbackVisible == 1U &&
+           actionState.feedbackPending == 0U);
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(presents == 1U);
 
     /* Every strict UI/transaction barrier defers paint, not intent or gameplay. */
     for (unsigned barrier = 0; barrier < 4U; ++barrier) {
@@ -190,6 +315,6 @@ int main(void) {
     for (unsigned y = 0; y < 120; ++y)
         for (unsigned x = 0; x < 160; ++x)
             assert(pixels[1 + y * 160 + x] == (y >= 20 && y < 100 ? 0x5678 : 0x1234));
-    puts("damage_cue_timing_host: PASS real service/compositor, immediate pulse, 818ms stall, barriers, FIFO/full, present retry/timeout, four sides, clock wrap, redraw and exact LIFO restoration");
+    puts("damage_cue_timing_host: PASS grouped DAMAGE text+red+direction after 818ms tail, unchanged lethal timing, fallback, pulse metrics, barriers, FIFO/full, retry/timeout, four sides, clock wrap, redraw and exact restoration");
     return 0;
 }

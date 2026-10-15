@@ -56,9 +56,15 @@ int EspNativeGameplayMonsterAttackVisual_isPoseSprite(uint32_t spriteIndex);
  * waiting for a transiently failed first-frame render to retry. */
 int EspNativeGameplayMonsterAttackVisual_isBusy(void);
 
-/* Damage/RNG resolution is allowed only after the matching visual sequence has
- * returned the attacker to idle and held the final idle pose for the recovered
- * subtype cadence, matching legacy Combat_monsterSeq stage 2. */
+/* ESP32 native boundary: one successful final idle PRESENT suffices for
+ * retaliation (no extra desktop stage-2 idle delay). The last shot's
+ * transient 204 projectile must also have been cleared, including its
+ * final clear-present. Pure, no RNG or world mutation. */
+static inline int EspNativeGameplayMonsterAttackVisual_impactReady(
+    uint8_t completedShots, uint8_t totalShots, uint8_t projectileActive) {
+    return totalShots != 0U && completedShots == totalShots &&
+           projectileActive == 0U;
+}
 int EspNativeGameplayMonsterAttackVisual_isProbeComplete(uint32_t probe);
 
 const EspNativeGameplayMonsterAttackVisualView*
