@@ -277,6 +277,13 @@ static void chamferCard(Render_t* render,
     putPixel(render, right, bottom, ESP_HUB_COLOR_BLACK);
 }
 
+/* Menu-specific RGB565 red. HUB amber remains unchanged elsewhere. */
+#define MAIN_DOOM_RED       0xc002U
+#define MAIN_DOOM_RED_HOT   0xf0e2U
+#define MAIN_DOOM_RED_DARK  0x4801U
+#define MAIN_DOOM_METAL     0x1082U
+#define MAIN_DOOM_METAL_HI  0x2104U
+
 static void drawDashboardCard(DoomRPG_t* doomRpg,
                               int item,
                               const char* label,
@@ -291,33 +298,23 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
     int textWidth;
     int textX;
     int textY;
-    uint16_t panel = selected ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL;
-    uint16_t border = selected ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL;
-    uint16_t rail = selected ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK;
+    const int focused = selected && armed && enabled;
+    const uint16_t panel = !enabled ? ESP_HUB_COLOR_BG :
+                           (focused ? MAIN_DOOM_RED_DARK : MAIN_DOOM_METAL);
+    const uint16_t border = !enabled ? ESP_HUB_COLOR_STEEL_DARK :
+                            (focused ? MAIN_DOOM_RED_HOT : ESP_HUB_COLOR_STEEL_DARK);
+    const uint16_t rail = focused ? MAIN_DOOM_RED_HOT : MAIN_DOOM_METAL_HI;
 
     dashboardCardRect(item, &left, &top, &right, &bottom);
-
-    if (!enabled) {
-        panel = ESP_HUB_COLOR_BG;
-        border = ESP_HUB_COLOR_STEEL_DARK;
-        rail = ESP_HUB_COLOR_STEEL_DARK;
-    }
-    else if (armed && selected) {
-        panel = ESP_HUB_COLOR_STEEL_DARK;
-        border = ESP_HUB_COLOR_IVORY;
-    }
-
     fillRect565(render, left, top, right, bottom, panel);
+
+    /* Single-pixel perimeter only: no competing ivory outer border and no
+     * amber/white double-ring. Red is reserved for a real first-tap arm. */
     drawRect565(render, left, top, right, bottom, border);
-    if (selected) {
-        drawRect565(render, left + 2, top + 2, right - 2, bottom - 2,
-                    armed ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_AMBER_DIM);
-    }
+    fillRect565(render, left + 2, top + 4,
+                left + (focused ? 4 : 3), bottom - 4, rail);
 
-    fillRect565(render, left + 2, top + 4, left + (selected ? 4 : 3),
-                bottom - 4, rail);
-
-    /* Small Doom-tech corner teeth keep the cards from reading as phone UI. */
+    /* Small industrial corner teeth instead of rounded phone-like buttons. */
     putPixel(render, right - 3, top + 2, border);
     putPixel(render, right - 2, top + 2, border);
     putPixel(render, right - 2, top + 3, border);
@@ -328,20 +325,13 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
 
     textWidth = (int)strlen(label) * MENU_GLYPH_ADVANCE;
     textX = ((left + right + 1) >> 1) - (textWidth >> 1);
-    textY = top + (((bottom - top + 1) - DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT) >> 1);
-
+    textY = top + (((bottom - top + 1) -
+                    DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT) >> 1);
     DoomRPG_setFontColor(doomRpg,
-                         !enabled ? 0xff6f7881U
-                                  : (selected
-                                         ? (armed ? 0xffffffffU : 0xffffa000U)
-                                         : 0xffffffffU));
-    /* The ESP32 bridge owns only the compact 9x12 font. Keep these labels in
-     * flash/rodata instead of spending writable RAM on four copies. */
+                         !enabled ? 0xff6f7881U :
+                         (focused ? 0xffffece8U : 0xffddd5ccU));
     DoomCanvas_drawString1(doomRpg->doomCanvas,
-                           (char*)label,
-                           textX,
-                           textY,
-                           0);
+                           (char*)label, textX, textY, 0);
 }
 
 int DoomRPG_esp32PaintMenuDashboardCards(
@@ -385,7 +375,7 @@ int DoomRPG_esp32PaintMenuDashboardCards(
         drawDashboardCard(doomRpg,
                           item,
                           labels[item],
-                          item == selectedIndex &&
+                          item == selectedIndex && armed &&
                               (enabledMask & (uint8_t)(1U << item)) != 0U,
                           armed && item == selectedIndex,
                           (enabledMask & (uint8_t)(1U << item)) != 0U);
