@@ -180,6 +180,21 @@ def main():
                         ", ".join(leaked) + "\\n")
         if reports["desktop_original_units"]:
             parser.exit(1, "FAIL: desktop original unit admitted\\n")
+        # Verify the permanent owner itself defines the ABI, rather than
+        # accepting arbitrary providers merely because final symbols exist.
+        owner_obj = args.build / "src" / "esp_doomrpg_presentation.c.o"
+        if not owner_obj.is_file():
+            parser.exit(1, "FAIL: native presentation owner object not built\\n")
+        owner_symbols = subprocess.check_output(
+            [str(args.nm), "-g", "--defined-only", str(owner_obj)], text=True)
+        owner_counts = {name: 0 for name in wanted}
+        for line in owner_symbols.splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[-1] in owner_counts and parts[-2].upper() == "T":
+                owner_counts[parts[-1]] += 1
+        if any(count != 1 for count in owner_counts.values()):
+            parser.exit(1, "FAIL: presentation owner object symbols: " +
+                        str(owner_counts) + "\\n")
         # Require each global definition to survive exactly once in the ELF,
         # independent of old generator object or stale build-directory files.
         result = subprocess.check_output([str(args.nm), "-g", "--defined-only",
@@ -193,6 +208,27 @@ def main():
         if bad:
             parser.exit(1, "FAIL: native presentation symbols missing/duplicate: " +
                         str(bad) + "\\n")
+        # A call/jump graph is evidence of direct static consumers only;
+        # indirect calls, inlining and hardware execution remain unproven.
+        objdump = Path(args.nm).with_name(
+            Path(args.nm).name.replace("-nm", "-objdump"))
+        disasm = subprocess.check_output(
+            [str(objdump), "-d", str(args.build / "firmware.elf")], text=True)
+        direct = {name: set() for name in wanted}
+        current = None
+        for line in disasm.splitlines():
+            function = re.match(r"^[0-9a-f]+ <([^>]+)>:$", line)
+            if function:
+                current = function[1]
+            call = re.search(
+                r"\\b(?:call[048]|call12|j)\\s+[0-9a-f]+ <([^>+]+)(?:\\+[^>]*)?>",
+                line)
+            if call and call[1] in direct and current != call[1]:
+                direct[call[1]].add(current)
+        print("Native DoomRPG presentation direct callers (no indirect proof):")
+        for name, callers in sorted(direct.items()):
+            print("  " + name + " <- " +
+                  (", ".join(sorted(callers)) if callers else "(none direct)"))
         print("PASS presentation ABI linked=7, generated DoomRPG definitions=0, "
               "original desktop TUs=0")
         return
