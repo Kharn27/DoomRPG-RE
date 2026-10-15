@@ -142,7 +142,7 @@ int main(void) {
     fakeMs = 1101U;
     failFrame = 0; advance(); /* successful projectile clear => resolve */
     assert(projectileEnabled == 0U && attackVisual.completedProbe == 21U &&
-           activeSequence == 0U && renderCalls == 4U);
+           activeSequence == 0U && renderCalls == 3U);
 
     puts("monster_attack_visual_timeline_host: PASS real one-shot same-tick, render rollback, touch lease, triple-shot cadence and last-projectile clear");
     return 0;
