@@ -117,7 +117,7 @@ int DoomRPG_esp32MainMenuTouchPrepare(struct DoomRPG_s* doomRpgBase) {
     confirmCount = 0U;
     missCount = 0U;
 
-    printf("[MENUTOUCH] PREPARED dashboard=2x2 cursorPatchBytes=0 targetLogical=68x23 targetPhysical=136x46\n");
+    printf("[MENUTOUCH] PREPARED dashboard=2x2 cursorPatchBytes=0 targetLogical=68x19 targetPhysical=136x38\n");
     return 1;
 }
 
@@ -163,7 +163,7 @@ int DoomRPG_esp32MainMenuTouchActivate(struct DoomRPG_s* doomRpgBase,
            DOOMRPG_LOGICAL_HEIGHT,
            DOOMRPG_INTEGER_SCALE,
            (unsigned int)currentHash);
-    printf("[MENUTOUCH] READY first tap arms bright card; second released tap on same card confirms\n");
+    printf("[MENUTOUCH] READY idle cards neutral; first tap arms red card; second released tap on same card confirms\n");
     return 1;
 }
 
@@ -217,7 +217,7 @@ int DoomRPG_esp32MainMenuTouchArmSelected(int itemIndex) {
     memset(selectionHashes, 0, sizeof(selectionHashes));
     selectionHashes[itemIndex] = frameHash;
     SDL_RenderPresent(NULL);
-    printf("[MENUTOUCH] ARM-VISUAL item=%d framebufferFNV=%08x style=ivory+amber-double-border allocation=no\n",
+    printf("[MENUTOUCH] ARM-VISUAL item=%d framebufferFNV=%08x style=doom-red-single-border allocation=no\n",
            itemIndex,
            (unsigned int)frameHash);
     return 1;
@@ -585,7 +585,7 @@ static void gatedTap(int16_t screenX,
                hit,
                (unsigned int)gateTapCount);
     }
-    printf("[MENUTOUCH] ARM item=%d tap=%u selected=%d awaitingReleasedSecondTap=yes visual=bright-card\n",
+    printf("[MENUTOUCH] ARM item=%d tap=%u selected=%d awaitingReleasedSecondTap=yes visual=doom-red-armed-card\n",
            hit,
            (unsigned int)gateTapCount,
            gateSelectedItem);
