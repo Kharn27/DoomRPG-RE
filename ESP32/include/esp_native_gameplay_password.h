@@ -49,6 +49,10 @@ void EspNativeGameplayPassword_reset(void);
 int EspNativeGameplayPassword_isActive(void);
 int EspNativeGameplayPassword_hasPendingCompletion(void);
 
+/* Incremental old-school block cursor; called only while this modal owns the
+ * framebuffer. No PAK reads, no frame-wide repaint and no gameplay turn. */
+int EspNativeGameplayPassword_serviceCursor(uint32_t nowMs);
+
 EspNativeGameplayPasswordBeginStatus EspNativeGameplayPassword_begin(
     uint16_t eventIndex,
     uint8_t commandOffset,
