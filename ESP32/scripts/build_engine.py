@@ -464,6 +464,29 @@ for global_definition in rng_hidden_globals:
 print("[ESP32] DoomRPG RNG provider moved=4 linked=3 "
       "owner=esp_doomrpg_process_rng hiddenGlobals=2 lifetime=process generatedBodies=removed")
 
+# Remaining linked binary config readers: preserve exact bodies and
+# signed-char/SDL LE semantics. Do not add inferred EOF handling here.
+config_readers = (
+    ("int File_readByte(SDL_RWops* rw)", 0x91bf04f3),
+    ("int File_readInt(SDL_RWops* rw)", 0x417442d7),
+)
+with open(join(project_src_dir, "esp_doomrpg_config_read.c"),
+          "r", encoding="latin-1") as config_reader_file:
+    config_reader_native = config_reader_file.read()
+for signature, crc in config_readers:
+    reference_body = extract_doomrpg_function(doom_rpg_source_text, signature)
+    if zlib.crc32(reference_body.encode("latin-1")) != crc:
+        raise RuntimeError("Desktop config reader reference drift: " + signature)
+    if extract_doomrpg_function(config_reader_native, signature) != reference_body:
+        raise RuntimeError("Native config reader body drift: " + signature)
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        reference_body, "/* Native config reader: esp_doomrpg_config_read.c */", 1)
+for signature, _ in config_readers:
+    if signature in doom_rpg_source_text:
+        raise RuntimeError("Generated DoomRPG still defines config reader: " + signature)
+print("[ESP32] DoomRPG config readers moved=2 owner=esp_doomrpg_config_read "
+      "signedByte+LE32=unchanged generatedBodies=removed")
+
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
 

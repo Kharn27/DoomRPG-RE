@@ -164,8 +164,43 @@ def main():
     parser.add_argument("--require-native-doomrpg-presentation", action="store_true")
     parser.add_argument("--require-native-doomrpg-clock", action="store_true")
     parser.add_argument("--require-native-doomrpg-rng", action="store_true")
+    parser.add_argument("--require-native-doomrpg-config-read", action="store_true")
     args = parser.parse_args()
     reports = audit(args.build, args.repo.resolve(), args.nm, args.compiledb)
+    if args.require_native_doomrpg_config_read:
+        if args.compiledb is None:
+            parser.error("--require-native-doomrpg-config-read requires compiledb")
+        names = {"File_readByte", "File_readInt"}
+        generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
+        if generated & names or reports["desktop_original_units"]:
+            parser.exit(1, "FAIL: legacy config reader definition/source leaked\n")
+        owner = args.build / "src" / "esp_doomrpg_config_read.c.o"
+        if not owner.is_file():
+            parser.exit(1, "FAIL: native config reader owner not built\n")
+        owner_nm = subprocess.check_output(
+            [str(args.nm), "--defined-only", str(owner)], text=True)
+        own = {}
+        for line in owner_nm.splitlines():
+            fields = line.split()
+            if len(fields) >= 3:
+                own.setdefault(fields[-1], []).append(fields[-2])
+        if any(own.get(name) != ["T"] for name in names):
+            parser.exit(1, "FAIL: native config reader owner symbols: " +
+                        str(own) + "\n")
+        elf_nm = subprocess.check_output(
+            [str(args.nm), "-g", "--defined-only",
+             str(args.build / "firmware.elf")], text=True)
+        found = {name: 0 for name in names}
+        for line in elf_nm.splitlines():
+            fields = line.split()
+            if len(fields) >= 3 and fields[-2].upper() == "T" and fields[-1] in found:
+                found[fields[-1]] += 1
+        if any(n != 1 for n in found.values()):
+            parser.exit(1, "FAIL: config readers linked count: " +
+                        str(found) + "\n")
+        print("PASS native config readers linked=2 generated=0 "
+              "signedByte=preserved LE32=preserved")
+        return
     if args.require_native_doomrpg_rng:
         if args.compiledb is None:
             parser.error("--require-native-doomrpg-rng requires current compiledb")
