@@ -1,5 +1,65 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Décorations murales visibles en oblique — CI + CYD PASS (15 octobre 2026)
+
+Après le PASS `BOUNDARY-INLINE` (code `a71ed3c4`), l'utilisateur
+a signalé une **régression visuelle restante** dans la dernière
+pièce d'Entrance : des motifs sur un mur rouge disparaissaient selon
+l'angle d'observation et réapparaissaient de face. Ce symptôme a
+bloqué la PR #215 et conduit à un second correctif distinct,
+**code firmware matériel testé `a088b485f3891d515537ae2961a27e0d0a40e5eb`**.
+
+Comparaison avec le vrai `src/Render.c` : les sprites marqués
+`0x00800000` sont décalés visuellement d'une unité devant leur
+mur suivant les flags directionnels (N/S/E/O). Le renderer native
+négligeait ce décalage et utilisait un tri de profondeur générique ;
+la priorité legacy des sprites muraux (`INT32_MAX`) et le cas
+spécial des IDs 184..190 (`sortZ=0`) manquaient.
+`ESP32/include/esp_native_sprite_visual_legacy.h` contient ces
+règles de projection en fonctions pures ; le code natif les emploie
+pour le tri, le placement à l'écran et la recherche de feuille BSP
+(`esp_native_sprite_renderer.c`,
+`esp_native_bsp_visibility.c`).
+**Aucune modification** des positions du BSP immutable, du
+save/checkpoint, de la topologie des monstres, des assets ni du RNG ;
+pas de réintroduction de `shapeData` ou `mediaTexels`.
+
+**CI code exact** :
+[push #38734975334 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734975334),
+[PR #38734982820 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734982820).
+`ESP32/test/wall_sprite_visual_host.py` compare les règles avec
+le legacy et compile leur implémentation permanente : **25 920
+cas**, quatre directions, priorités murales et IDs 184..190.
+Les trois firmwares compilent : profil normal RAM statique
+**50 976 B**, Flash **809 517 B** ; bringup **51 120/829 997 B** ;
+trace **51 016/825 953 B**.
+
+**CYD normal — PASS visuel rapporté par l'utilisateur :**
+« les murs sont bien dessinés et leurs motifs ne disparaissent pas »,
+y compris dans les vues obliques de la pièce initialement en défaut.
+Trace fournie : déplacements/strafe/rotations avec preview
+`rendered=yes presented=1`, ouverture de la porte 160 et
+fermeture différée après le tour des monstres, activation des
+sprites 6 et 7, combat et ripostes différées, FX/gibs,
+drop dynamique puis collecte de munition et d'armure,
+`rngRollback=yes` dans les probes et `rngExact=yes`
+sur les animations d'attaque. `heap8=112328` et
+`largest8=86004` constants sur les lignes `ALIVE`
+observées. Pas de `NATIVEFRAME FAILED` ni anomalie nouvelle
+rapportée dans cette trace.
+
+**Portée exacte :** restitution visuelle du mur problématique
+validée par l'utilisateur, pas une comparaison pixel à pixel
+de toutes les cartes contre le desktop. Le premier PASS
+`BOUNDARY-INLINE` reste attribué au code `a71ed3c4` ;
+les nouveaux logs ne reproduisent pas explicitement le cas
+packed-index 2048. Le second PASS concerne le nouveau code
+`a088b485f3891d515537ae2961a27e0d0a40e5eb` et son rendu visuel. Après ce test,
+**commit(s) exclusivement docs-only**, sans modification de
+firmware ; PR #215 merge-ready après deux checks verts.
+
+
+
 ## Renderer mural compact : frontiere 2048 resolue inline — CI + PASS materiel cible (15 octobre 2026)
 
 **Base post-merge PR #214 :** `main c5384c7664f062a64b0e7ed3c928b2dcde8cd89b`.

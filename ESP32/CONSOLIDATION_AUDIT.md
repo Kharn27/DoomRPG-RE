@@ -1,5 +1,48 @@
 # Audit de consolidation architecturale ESP32
 
+## Wall-attached sprite orientation/priority parity — second CYD PASS (2026-10-15)
+
+[PR #215](https://github.com/Kharn27/DoomRPG-RE/pull/215)
+was reopened as draft after user found last-room Entrance red-wall
+decals missing at oblique angles, visible when facing the wall.
+Root-cause candidate verified against desktop `src/Render.c`:
+wall-attached flag `0x00800000` moves visual coordinates one
+unit along oriented wall normal during legacy map load, while
+`Render_walkNode` forces wall-attached `sortZ=INT32_MAX`
+and sets IDs 184..190 to `sortZ=0` in the appropriate branch.
+The native renderer previously used unnudged positions and
+generic priority. Recovered rules now live in pure
+`esp_native_sprite_visual_legacy.h`, consumed by sprite sort,
+projection and BSP leaf classification; persistent arena, entity
+position, save and RNG ownership unchanged.
+
+**Hardware-tested code SHA: `a088b485f3891d515537ae2961a27e0d0a40e5eb`.**
+Host parity **25,920** cases against desktop rule model, exact
+native helper compiled. [CI push SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734975334)
+and [PR SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734982820).
+Normal static RAM/Flash **50976/809517**; bringup
+**51120/829997**, trace **51016/825953**.
+
+**User's real classic CYD: visual PASS** — missing decals
+stay visible on red walls, including at the formerly
+problematic oblique angle. Serial corroboration: view
+animation, door160 open/held close, monster activation 6/7,
+retaliation/hit effects/gibs, persistent drop + pickup,
+pass-turn and weapon cycling. `rngRollback=yes` and
+`rngExact=yes`; repeated `[ALIVE] heap8=112328
+largest8=86004`. No new frame-render failure reported.
+
+The previous `BOUNDARY-INLINE` test was a different
+hardware witness on earlier code `a71ed3c4`; the new log
+does not explicitly encounter the packed-index-2048 case.
+No complete framebuffer-to-desktop parity is claimed,
+nor any timing-speedup extrapolation from gameplay animation.
+Both fixes coexist on PR #215. Only **docs-only** commits
+follow hardware PASS; no firmware rebuilt on hardware
+from this documentation commit. Merge exclusively by user.
+
+
+
 ## Compact wall texel boundary inline, no frame retry — CYD PASS (2026-10-15)
 
 Base after merged PR #214 `main c5384c7664f062a64b0e7ed3c928b2dcde8cd89b`;

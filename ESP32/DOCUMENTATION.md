@@ -1,5 +1,49 @@
 # Doom RPG ESP32 — guide de travail
 
+## Sprite mural en angle : règles du renderer legacy rétablies (15 octobre 2026)
+
+Code CYD validé `a088b485f3891d515537ae2961a27e0d0a40e5eb` ;
+[PR #215](https://github.com/Kharn27/DoomRPG-RE/pull/215).
+Après suppression du retry mural, les motifs d'un mur rouge
+d'Entrance étaient absents en angle oblique et présents de face.
+La comparaison avec `src/Render.c` a révélé des règles visuelles
+non encore portées : les sprites avec le flag
+`0x00800000` sont décalés d'une unité suivant leur direction
+et ont une priorité de tri `INT32_MAX`. Les sprites 184..190
+reçoivent la profondeur spéciale `0`, quand le test de flags
+précédent ne s'applique pas. Le helper purement visuel
+`esp_native_sprite_visual_legacy.h` rétablit ces règles pour
+`esp_native_sprite_renderer.c` (projection/tri) et
+`esp_native_bsp_visibility.c` (BSP leaf) ; il **ne modifie pas
+la carte immutable ni les positions persistantes**.
+
+```sh
+python3 ESP32/test/wall_sprite_visual_host.py
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+Host **25 920** comparaisons/compilation native, CI
+[push PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734975334)
+et [PR PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38734982820).
+Sur CYD normal, l'utilisateur constate que les motifs restent
+dessinés face au mur et de biais dans la pièce auparavant
+défectueuse. Log de non-régression : mouvement/rotation,
+porte160 animée, monstres6/7 et combat/riposte/FX/drop/pickup
+opérationnels ; RNG des probes rollback exact,
+`heap8=112328 largest8=86004` stables. Pas de nouveau
+problème de rendu remonté.
+
+Conserver le correctif `BOUNDARY-INLINE` précédent, ses tests
+et ses propres preuves matérielles. Ce PASS est celui de
+**`a088b485f3891d515537ae2961a27e0d0a40e5eb`**, pas une validation pixel parfaite de
+tous les sprites du jeu. Ne pas déplacer ces décalages vers
+le runtime map immutable ou la sauvegarde. Après les logs
+de validation, seuls des changements documentaires sont
+autorisés avant le merge utilisateur.
+
+
+
 ## Renderer natif : frontiere murale sans retry — hardware PASS (15 octobre 2026)
 
 Depuis `main c5384c7664f062a64b0e7ed3c928b2dcde8cd89b`, code
