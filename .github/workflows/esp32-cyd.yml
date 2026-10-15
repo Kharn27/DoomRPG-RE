@@ -57,6 +57,15 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/malwrath_projectile204_contract_host.c -o /tmp/doomrpg-malwrath-projectile-test
           /tmp/doomrpg-malwrath-projectile-test
 
+      - name: Test native monster attack visual timeline and impact admission (host C)
+        run: |
+          cc -O2 -std=c11 -Wall -Wextra -Werror -Wno-unused-variable \
+            -D_POSIX_C_SOURCE=200809L -ffunction-sections -fdata-sections \
+            -IESP32/test/host_include -IESP32/include -IESP32/src -Isrc \
+            ESP32/test/monster_attack_visual_timeline_host.c \
+            -Wl,--gc-sections -o /tmp/doomrpg-monster-visual-timeline-test
+          /tmp/doomrpg-monster-visual-timeline-test
+
       - name: Test Imp projectile 204 sparse catalog prime and rollback (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/src/esp_native_graphics_catalog.c ESP32/test/imp_projectile_catalog_host.c -o /tmp/doomrpg-imp-projectile-catalog-test
