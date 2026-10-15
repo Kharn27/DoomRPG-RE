@@ -1,5 +1,64 @@
 # Doom RPG ESP32 — guide de travail
 
+## Extraction DoomRPG — présentation SDL/clip native (CYD validé le 15 octobre 2026)
+
+La famille de sept méthodes **réellement liées** de présentation
+`DoomRPG_setClipFalse/True`, `DoomRPG_setColor`,
+`DoomRPG_setFontColor`, `DoomRPG_fillRect`,
+`DoomRPG_drawLine` et `DoomRPG_flushGraphics` a un propriétaire
+permanent : [`src/esp_doomrpg_presentation.c`](src/esp_doomrpg_presentation.c).
+Le script [`scripts/build_engine.py`](scripts/build_engine.py)
+contrôle les corps adaptés (CRC + égalité exacte) et enlève ces sept
+définitions de la **copie générée** de `DoomRPG.c`.
+L'original desktop reste intact. Aucun framebuffer supplémentaire ;
+le raster utilise le contexte SDL/CYD existant et le framebuffer
+**160×120 RGB565**, avec son clip et les couleurs habituelles.
+`drawRect` et `drawCircle` n'étaient pas parmi les exports liés
+identifiés : **ne pas les compter comme migrés**.
+
+Vérification hôte :
+
+```sh
+python3 ESP32/test/doomrpg_presentation_host.py
+```
+
+Le test compare les vraies définitions adaptées aux sources natives
+et exerce **1 600 opérations déterministes** de clip, rectangles,
+lignes, changement de couleur/font, flush et sentinelles dans un
+simulateur SDL/RGB565. Pour le binaire, compiler les trois profils
+`esp32-cyd`, `esp32-cyd-trace`, `esp32-cyd-bringup` et utiliser
+l'audit `tools/audit_desktop_elf.py` avec
+`--require-native-doomrpg-presentation` (intégré en CI).
+Dernier code testé `1840009295909088f97d94b806320585ef832e41` ;
+[CI SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38693375415).
+Pour flasher le **profil RAM de référence** sur classic CYD sans PSRAM :
+
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+La validation matérielle de l'utilisateur couvre les transitions
+UI et MAP_INTRO, les dialogues et le monde, les déplacements/rotations,
+l'attaque des monstres, le chain-blast de trois barils, les effets
+visuels et SAVE V11 / LOAD. Test post-trigger utile à conserver :
+après ouverture de porte `line=87`, activation
+`sprite=10 activeCount=21` ; SAVE slot07 à `1632,992 / 192`
+(dos au monstre) puis LOAD et un PASS_TURN **sans rotation**.
+`activation FNV aca2058f` et `monster FNV 966ac091` sont
+restaurés ; le monstre `sprite=10` attaque avec
+`DAMAGECUE side=BACK`. `shapeData/mediaTexels` restent NULL et
+`heap8=112128 largest8=86004` dans ce passage.
+
+**Portée limitée** : une même activation après LOAD n'établit pas
+que tous les monstres SHOW par trigger sont restaurés correctement.
+Les protections `NATIVEFRAME LEGACY_GUARD/SPAN_OOB/RECOVERED`
+restent un problème de renderer compact distinct. Tests hôte,
+CI et playtest ne prouvent pas la parité absolue des pixels,
+ni une accélération. La présentation ne doit pas être utilisée
+pour réintroduire un framebuffer ou la dépendance ZIP runtime.
+
+
 ## Deuxième extraction DoomRPG — images/PAK (CYD accepté le 15 octobre 2026)
 
 Sur la même branche que l'extraction math/binary,
