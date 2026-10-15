@@ -171,9 +171,11 @@ def main():
     if args.require_native_doomrpg_config_binds:
         if args.compiledb is None:
             parser.error("--require-native-doomrpg-config-binds requires compiledb")
-        data = {"keyMapping": "B", "keyMappingTemp": "B",
-                "keyMappingDefault": "D"}
-        required = {**data, "DoomRPG_setDefaultBinds": "T"}
+        # Xtensa GCC may emit uninitialized globals as tentative COMMON
+        # ('C') in the owner object; the linker resolves them to final BSS.
+        # The end-of-link ABI still requires exactly one BSS definition.
+        required = {"keyMapping": "B", "keyMappingTemp": "B",
+                    "keyMappingDefault": "D", "DoomRPG_setDefaultBinds": "T"}
         generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
         if generated & required.keys() or reports["desktop_original_units"]:
             parser.exit(1, "FAIL: legacy config binds still defined/admitted\n")
@@ -192,7 +194,8 @@ def main():
         native = owned(owner)
         final = owned(args.build / "firmware.elf")
         for name, kind in required.items():
-            if native[name] != [kind] or final[name] != [kind]:
+            owner_kinds = ("B", "C") if kind == "B" else (kind,)
+            if len(native[name]) != 1 or native[name][0] not in owner_kinds or final[name] != [kind]:
                 parser.exit(1, "FAIL: config binding owner/ELF symbol " +
                             name + ": " + str(native[name]) + "/" +
                             str(final[name]) + "\n")
