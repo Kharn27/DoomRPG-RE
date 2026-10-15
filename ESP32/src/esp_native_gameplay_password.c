@@ -453,8 +453,10 @@ int EspNativeGameplayPassword_serviceCursor(uint32_t nowMs) {
     next = password.cursorVisible == 0U ? 1U : 0U;
     paintCursorBlock(framebuffer, next);
     if (!Esp32PlatformVideo_present()) {
+        /* Cosmetic present failure must not tear down a valid PASSWORD modal.
+         * Restore the exact previous caret pixels and retry on next service. */
         paintCursorBlock(framebuffer, password.cursorVisible);
-        return 0;
+        return 1;
     }
     password.cursorVisible = next;
     password.cursorEpochMs = nowMs;
