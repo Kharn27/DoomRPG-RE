@@ -47,6 +47,10 @@ typedef struct ActiveMovementSequencer_s {
 
 static ActiveMovementSequencer activeSeq;
 
+int EspNativeGameplayMonsterActiveSequence_isBusy(void) {
+    return activeSeq.active == 1U && activeSeq.turnInProgress != 0U;
+}
+
 int __real_EspNativeBspVisibility_mapSpriteVisible(
     const EspNativeBspVisibilityState* state,
     uint32_t mapSpriteIndex,
@@ -203,6 +207,8 @@ static void resetSequencer(const EspNativeGameplayMonsterTurnView* actual,
  *   2. if no immediate attack, run its selected movement transaction;
  *   3. if movement lands on an attack gate, publish that one attack;
  *   4. pause before the next ordinal until Retaliation resolves the probe.
+ *   5. yield after a fully processed non-attacking live member, allowing one
+ *      compositor service between members without a wall-clock delay.
  *
  * This preserves the one-probe-in-flight invariant without starving movers that
  * appear before or after an already-adjacent attacker. Newly activated monsters
@@ -215,6 +221,7 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
     const EspNativeGameplayMonsterRetaliationView* retaliation;
     uint32_t activationCount;
     uint32_t ordinal;
+    uint32_t handledThisService = 0U;
 
     if (actual == NULL || actual->active != 1U ||
         actual->sourceArenaFNV1a == 0U) {
@@ -423,6 +430,21 @@ void EspNativeGameplayMonsterActiveSequence_service(struct DoomRPG_s* doomRpg) {
                        (unsigned int)activeSeq.pauseProbe);
                 return;
             }
+        }
+        /* One complete LIVE member per service. Preserve the same immutable
+         * active-list prefix, ordinal, counter overrides and RNG/turn state.
+         * Never yield inside a member or in the middle of attack publication.
+         * The caller's compositor can now run between movement members. */
+        ++handledThisService;
+        if (EspNativeGameplayMonsterActiveSequence_shouldYield(
+                handledThisService, activationCount - activeSeq.turnOrdinal)) {
+            DRPG_LOGT("[MONSTERACTIVESEQ] YIELD turn=%u nextOrdinal=%u/%u handled=%u budget=%u mode=cooperative-loop-task turn=still-locked\n",
+                      (unsigned int)activeSeq.expandedTurns,
+                      (unsigned int)(activeSeq.turnOrdinal + 1U),
+                      (unsigned int)activationCount,
+                      (unsigned int)handledThisService,
+                      (unsigned int)ESP_NATIVE_GAMEPLAY_ACTIVESEQ_MEMBER_BUDGET);
+            return;
         }
     }
 

@@ -57,6 +57,13 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/malwrath_projectile204_contract_host.c -o /tmp/doomrpg-malwrath-projectile-test
           /tmp/doomrpg-malwrath-projectile-test
 
+      - name: Test cooperative monster turn service budget (host C)
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -IESP32/include \
+            ESP32/test/monster_active_sequence_budget_host.c \
+            -o /tmp/doomrpg-monster-budget-test
+          /tmp/doomrpg-monster-budget-test
+
       - name: Test native monster attack visual timeline and impact admission (host C)
         run: |
           cc -O2 -std=c11 -Wall -Wextra -Werror -Wno-unused-variable \
