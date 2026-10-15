@@ -1,5 +1,39 @@
 # Doom RPG ESP32 — guide de travail
 
+## Lecteurs RWops de Config — extraction native (15 octobre 2026)
+
+Code testé `eaa915aacf5171dbd118758ab33bb402f9f9edee`;
+[CI PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38717722550).
+`src/esp_doomrpg_config_read.c` est maintenant propriétaire
+des deux corps identiques au desktop `File_readByte` et
+`File_readInt`. Suppression des corps du `DoomRPG.c` généré
+avec garde d'empreinte/égalité du générateur et contrôle de
+l'ELF (exactement 2 exports dans la TU native, zéro dans le généré).
+Preserver `char` signé, `SDL_SwapLE32`, et la sémantique SDL_RWops :
+**ne pas prétendre avoir corrigé les lectures courtes ou NULL**.
+
+Tests locaux reproductibles :
+```sh
+python3 ESP32/test/doomrpg_config_read_host.py
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+CI : parité hôte 4 096 appels, 8 194 octets, profils
+normal/trace/bringup PASS. Vrai CYD normal : boot, absence
+de Config traitée correctement, LOAD V11 slot07 via le HUB,
+restauration exacte des overlays et activation, gameplay,
+attaques et ripostes avec RNG probes intacts, RAM stable,
+`shapeData/mediaTexels=NULL`. **La trace indique
+`Config file present=no` : aucun fichier Config réel n'a
+été lu physiquement.** Ce PASS couvre l'intégration et
+l'absence de régression sur ce chemin, pas un parse physique
+de Config présent. Si un futur test utilise un Config réel,
+valider sa lecture sans modifier le fichier de sauvegarde.
+Le renderer signale toujours `LEGACY_GUARD/SPAN_OOB/RECOVERED`,
+hors périmètre du lecteur binaire. Pas d'autre changement
+de firmware après cette validation.
+
+
 ## RNG provider extracted — hardware PASS (15 October 2026)
 
 Permanent owner: `esp_doomrpg_process_rng.c`. Four exact legacy
