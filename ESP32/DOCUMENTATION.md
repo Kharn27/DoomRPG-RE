@@ -1,5 +1,49 @@
 # Doom RPG ESP32 — guide de travail
 
+## Renderer natif : frontiere murale sans retry — hardware PASS (15 octobre 2026)
+
+Depuis `main c5384c7664f062a64b0e7ed3c928b2dcde8cd89b`, code
+`a71ed3c4cb0b12e2a0ad6ab2e06292637bbb39d5` sur
+`agent/esp32-wall-boundary-inline`. [PR #215](https://github.com/Kharn27/DoomRPG-RE/pull/215),
+[CI push PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38728936980),
+[CI PR PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38729192919).
+Le renderer conserve la semantique historique du sampler des murs :
+2048 octets de texels packed pour un mur 64x64, avec possibilite
+d'un octet provenant de la texture successeur aux limites. La
+resolution inline `BOUNDARY-INLINE` utilise mappings.bin et
+wtexels.bin via la lease PAK existante, reutilise le garde sur
+le meme rendu, et ne refait plus l'image. Quatre gardes BSS
+de 16 B max, `SPAN_OOB` fail-closed si indice >2048,
+successeur/PAK invalide ou limite depassee. Pas de tableau
+`mediaTexels`, pas de changement des objets gameplay/sauvegarde/RNG.
+
+Test de preuve hote (vraies fonctions sampler/resolver compilees) :
+```sh
+python3 ESP32/test/native_wall_boundary_inline_host.py
+```
+2 000 cas deterministes, nibble/pixel, garde reutilisee,
+octet exact du successeur, refus borne et pixels sentinelles
+preserves sur les erreurs. Pour reproduire sur classic CYD :
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+LOAD slot07 -> Entrance -> STRAFE_LEFT 310->309. Le CYD a emis
+`BOUNDARY-INLINE logical=15 actual=40 source=20480
+successorActual=68 successorSource=32768 byte=11` ;
+meme temoignage au retour STRAFE_RIGHT 308->309. Aucun
+`RETRY/RECOVERED` et pas de `NATIVEFRAME FAILED` visibles.
+LOAD V11 identique, portes et combats actifs, RNG guard intact,
+RAM residente `heap8=112328 largest8=86004`,
+`shapeData/mediaTexels=NULL`. Le test n'etablit pas un hash
+de frame identique a la reference desktop ni un delta FPS
+mesure. L'ancien probleme SPAN_OOB dans les autres sections
+de documentation est historique, pas une anomalie ouverte
+observee sur ce cas depuis le correctif. Apres le PASS,
+**ne modifier que la documentation**. Merge par l'utilisateur.
+
+
+
 ## Lecteurs RWops de Config — extraction native (15 octobre 2026)
 
 Code testé `eaa915aacf5171dbd118758ab33bb402f9f9edee`;

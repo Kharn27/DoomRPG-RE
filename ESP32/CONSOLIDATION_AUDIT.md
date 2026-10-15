@@ -1,5 +1,56 @@
 # Audit de consolidation architecturale ESP32
 
+## Compact wall texel boundary inline, no frame retry — CYD PASS (2026-10-15)
+
+Base after merged PR #214 `main c5384c7664f062a64b0e7ed3c928b2dcde8cd89b`;
+hardware-tested code commit `a71ed3c4cb0b12e2a0ad6ab2e06292637bbb39d5`;
+branch `agent/esp32-wall-boundary-inline`,
+[PR #215](https://github.com/Kharn27/DoomRPG-RE/pull/215).
+Previous `SPAN_OOB -> LEGACY_GUARD -> RETRY -> RECOVERED`
+refetched the successor octet from mapping and texel PAK after
+the aborted render and then redrew the whole frame. New path
+executes the same checked successor scan in the failing sampler
+while the existing renderer PAK lease is open, preserving exact
+actual-ID/offset/byte lookup. The hard maximum is four
+`LegacyWallGuard` records at 16 B each in BSS; no expanded
+mediaTexels owner. Missing/invalid successor, closed lease,
+index >2048 and guard exhaustion fail closed rather than
+clamp/pad. Work struct gained one 20-byte `EspAssetPackEntry`
+for mappings; observed transient scratch 2960 -> 2980 B.
+No full-frame retry path remains.
+
+[CI push SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38728936980)
+and [CI PR SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38729192919):
+real production resolver + sampler extracted/compiled in host
+2,000 deterministic samples, strict boundary/oracle and failures;
+all three firmware builds PASS, normal 50976 B static RAM,
+809333 B Flash, bringup 51120/829809, trace 51016/825773.
+
+Hardware normal CYD: real slot07 V11 load exact monster
+`8acca67c`, topology `ebca87dd`, position `24bbd504`,
+activation `6698ed80`, arena `c3882516`. Previously
+failing movement `310->309`, plus return `308->309`:
+`BOUNDARY-INLINE logical=15 actual=40 source=20480
+successorActual=68 successorSource=32768 byte=11`,
+including re-render during monster turn. No
+`RETRY/RECOVERED/NATIVEFRAME FAILED` or unrecovered
+`SPAN_OOB` in supplied hardware transcript.
+Door line160 opening/held close, monster activation, critiques,
+attack/hit FX, retaliation, gib/drop/pickup, PASS_TURN work.
+`rngExact=yes`, `rngRollback=yes`,
+`heap8=112328 largest8=86004` stable and
+`shapeData/mediaTexels=NULL`.
+
+Scope: only known packed-wall edge and sampled pixels proved,
+not all-image desktop pixel equality or an FPS speed-up.
+Prior incidents in old documentation are evidence of
+pre-fix behavior. Any other edge requiring more than four
+guards remains fail-closed until separately validated.
+**Only docs-only commits after physical PASS.**
+Ready for user merge after green docs CI and PR review.
+
+
+
 ## Readers of legacy Config RWops — CI and scoped CYD PASS (2026-10-15)
 
 Following documented clock + RNG extraction on the same
