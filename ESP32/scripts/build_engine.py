@@ -424,6 +424,46 @@ if clock_basetime in doom_rpg_source_text:
 print("[ESP32] DoomRPG process clock linked ABI moved=2 "
       "owner=esp_doomrpg_process_clock basetime=process-lifetime generatedBodies=removed")
 
+# The still-linked RNG refill backend carries TWO hidden process-lifetime
+# globals outside Random_t: _seed and resetRand. All four original function
+# bodies (including the unlinked SetSeed helper) must move together. Do not
+# reset on game/map LOAD, alter seed/tick order, or modify replay guard wraps.
+rng_hidden_globals = ("static unsigned int _seed = 0;",
+                      "static int resetRand = 0;")
+rng_methods = (
+    ("void Random_SetSeed(unsigned int seed)", 0x73c03c40),
+    ("unsigned int Random_Get(void)", 0x0fd52c14),
+    ("void  Random_getRand(byte* buff, int i)", 0xf75045df),
+    ("void DoomRPG_setRand(Random_t* rand)", 0x3c57334d),
+)
+rng_owner_path = join(project_src_dir, "esp_doomrpg_process_rng.c")
+with open(rng_owner_path, "r", encoding="latin-1") as rng_file:
+    rng_native = rng_file.read()
+for global_definition in rng_hidden_globals:
+    if doom_rpg_source_text.count(global_definition) != 1 or rng_native.count(global_definition) != 1:
+        raise RuntimeError("DoomRPG hidden process RNG state declaration drift")
+for signature, expected_crc in rng_methods:
+    legacy_body = extract_doomrpg_function(doom_rpg_source_text, signature)
+    if zlib.crc32(legacy_body.encode("latin-1")) != expected_crc:
+        raise RuntimeError("DoomRPG hidden RNG reference drift: " + signature)
+    if extract_doomrpg_function(rng_native, signature) != legacy_body:
+        raise RuntimeError("ESP32 hidden RNG owner ABI/body drift: " + signature)
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        legacy_body, "/* Native process RNG owner: esp_doomrpg_process_rng.c */", 1
+    )
+for global_definition in rng_hidden_globals:
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        global_definition, "/* Hidden RNG process state owned by esp_doomrpg_process_rng.c */", 1
+    )
+for signature, _ in rng_methods:
+    if signature in doom_rpg_source_text:
+        raise RuntimeError("Migrated RNG method remains in DoomRPG.c: " + signature)
+for global_definition in rng_hidden_globals:
+    if global_definition in doom_rpg_source_text:
+        raise RuntimeError("Hidden RNG global remains in DoomRPG.c: " + global_definition)
+print("[ESP32] DoomRPG RNG provider moved=4 linked=3 "
+      "owner=esp_doomrpg_process_rng hiddenGlobals=2 lifetime=process generatedBodies=removed")
+
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
 

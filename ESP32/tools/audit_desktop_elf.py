@@ -163,8 +163,54 @@ def main():
     parser.add_argument("--require-retired-render", action="store_true")
     parser.add_argument("--require-native-doomrpg-presentation", action="store_true")
     parser.add_argument("--require-native-doomrpg-clock", action="store_true")
+    parser.add_argument("--require-native-doomrpg-rng", action="store_true")
     args = parser.parse_args()
     reports = audit(args.build, args.repo.resolve(), args.nm, args.compiledb)
+    if args.require_native_doomrpg_rng:
+        if args.compiledb is None:
+            parser.error("--require-native-doomrpg-rng requires current compiledb")
+        linked = {"Random_Get", "Random_getRand", "DoomRPG_setRand"}
+        definitions = linked | {"Random_SetSeed"}
+        generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
+        leaked = sorted((definitions | {"_seed", "resetRand"}) & generated)
+        if leaked:
+            parser.exit(1, "FAIL: generated DoomRPG still owns RNG: " +
+                        ", ".join(leaked) + "\n")
+        if reports["desktop_original_units"]:
+            parser.exit(1, "FAIL: desktop original unit admitted\n")
+        owner = args.build / "src" / "esp_doomrpg_process_rng.c.o"
+        if not owner.is_file():
+            parser.exit(1, "FAIL: permanent RNG owner not built\n")
+        native_nm = subprocess.check_output(
+            [str(args.nm), "--defined-only", str(owner)], text=True)
+        owner_symbols = {}
+        for line in native_nm.splitlines():
+            fields = line.split()
+            if len(fields) >= 3:
+                owner_symbols.setdefault(fields[-1], []).append(fields[-2])
+        if any(owner_symbols.get(x) != ["T"] for x in definitions):
+            parser.exit(1, "FAIL: RNG owner method definitions: " +
+                        str({x: owner_symbols.get(x) for x in definitions}) + "\n")
+        for name in ("_seed", "resetRand"):
+            matches = [x for x in owner_symbols
+                       if x == name or x.startswith(name + ".")]
+            if len(matches) != 1 or owner_symbols[matches[0]] != ["b"]:
+                parser.exit(1, "FAIL: hidden RNG BSS owner: " +
+                            name + " " + str(matches) + "\n")
+        output = subprocess.check_output(
+            [str(args.nm), "-g", "--defined-only",
+             str(args.build / "firmware.elf")], text=True)
+        counts = {name: 0 for name in linked}
+        for line in output.splitlines():
+            fields = line.split()
+            if len(fields) >= 3 and fields[-1] in counts and fields[-2].upper() == "T":
+                counts[fields[-1]] += 1
+        if any(v != 1 for v in counts.values()):
+            parser.exit(1, "FAIL: linked native RNG methods: " +
+                        str(counts) + "\n")
+        print("PASS process RNG provider linked=3 ownerDefinitions=4 "
+              "hiddenGlobals=2 generated=0 originalDesktop=0")
+        return
     if args.require_native_doomrpg_clock:
         if args.compiledb is None:
             parser.error("--require-native-doomrpg-clock requires current compiledb")
