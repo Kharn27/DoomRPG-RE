@@ -52,7 +52,6 @@ static uint8_t activeAttackFrame;
 static uint8_t activeSequence;
 static uint8_t activeTotalLoops;
 static uint8_t activeCompletedLoops;
-static uint8_t activeFinalIdle;
 static uint16_t activePhaseMs;
 static uint32_t projectileNextMs;
 static uint16_t projectileSourceTile;
@@ -92,7 +91,6 @@ static int syncOwner(void) {
         activeSequence = 0U;
         activeTotalLoops = 0U;
         activeCompletedLoops = 0U;
-        activeFinalIdle = 0U;
         activePhaseMs = 0U;
         projectileNextMs = 0U;
         projectileSourceTile = 0U;
@@ -156,7 +154,6 @@ static void clearSequence(void) {
     activeSequence = 0U;
     activeTotalLoops = 0U;
     activeCompletedLoops = 0U;
-    activeFinalIdle = 0U;
     activePhaseMs = 0U;
     projectileNextMs = 0U;
     projectileSourceTile = 0U;
@@ -165,6 +162,19 @@ static void clearSequence(void) {
     projectileEnabled = 0U;
     projectileSubtype = 0U;
     projectileShots = 0U;
+}
+
+/* The final idle pose has already been presented and verified with exact
+ * gameplay RNG. Closing the visual probe here removes a redundant legacy
+ * stage-2 idle lease without altering attack shots, their intervals, or
+ * committed combat/RNG. The current projectile must have cleared first. */
+static void finishVisualProbe(uint32_t probe, uint16_t spriteIndex,
+                              uint8_t totalLoops, const char* phase) {
+    attackVisual.completedProbe = probe;
+    printf("[MONSTERATKVIS] COMPLETE probe=%u sprite=%u loops=%u phase=%s finalIdleHoldMs=0 reason=last-idle-presented+projectile-drained gameplayMutation=no resolution=unblocked-after-animation\n",
+           (unsigned int)probe, (unsigned int)spriteIndex,
+           (unsigned int)totalLoops, phase);
+    clearSequence();
 }
 
 /* Legacy Combat_launchProjectile(weapon15) uses logical sprite 204 for
@@ -306,9 +316,9 @@ static void serviceTimeline(DoomRPG_t* runtime) {
         /* Imp's existing one-shot contract ends on pose exit; three-shot
          * Malwrath missiles may continue across the intervening idle pose. */
         if (projectileShots <= 1U) projectileEnabled = 0U;
-        /* Attack -> idle. Every idle pose, including the final one, owns the
-         * exact recovered subtype cadence before either the next attack or
-         * stage-2 retaliation resolution may begin. */
+        /* Attack -> idle. Intermediate idle poses retain their recovered
+         * cadence; a successful FINAL idle frame permits immediate impact
+         * except while the last multi-shot projectile is still resident. */
         attackVisual.poseActive = 0U;
         activeVisualFrame = 0U;
         if (!guardedRender(runtime, view, &frame, &rngExact)) {
@@ -327,16 +337,22 @@ static void serviceTimeline(DoomRPG_t* runtime) {
         }
 
         if (completedLoops >= totalLoops) {
-            activeFinalIdle = 1U;
-            attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + phaseMs;
-            printf("[MONSTERATKVIS] STEP probe=%u sprite=%u shot=%u/%u phase=final-idle phaseMs=%u frame=%08x presented=%u rngExact=yes gameplayMutation=no resolution=pending-after-idle-cadence\n",
-                   (unsigned int)probe,
-                   (unsigned int)spriteIndex,
-                   (unsigned int)completedLoops,
-                   (unsigned int)totalLoops,
-                   (unsigned int)phaseMs,
+            printf("[MONSTERATKVIS] STEP probe=%u sprite=%u shot=%u/%u phase=final-idle phaseMs=0 frame=%08x presented=%u rngExact=yes gameplayMutation=no resolution=%s\n",
+                   (unsigned int)probe, (unsigned int)spriteIndex,
+                   (unsigned int)completedLoops, (unsigned int)totalLoops,
                    (unsigned int)frame.frameAfterFNV,
-                   (unsigned int)frame.finalPresented);
+                   (unsigned int)frame.finalPresented,
+                   projectileEnabled != 0U ? "projectile-drain" :
+                                              "next-transaction");
+            if (EspNativeGameplayMonsterAttackVisual_impactReady(
+                    completedLoops, totalLoops, projectileEnabled)) {
+                finishVisualProbe(probe, spriteIndex, totalLoops,
+                                  "final-idle-presented");
+            } else {
+                /* Malwrath: last projectile may still need 65ms steps and
+                 * its transient-clear present; no arbitrary idle timeout. */
+                attackVisual.clearAtMs = DoomRPG_GetUpTimeMS() + 1U;
+            }
             return;
         }
 
@@ -353,18 +369,14 @@ static void serviceTimeline(DoomRPG_t* runtime) {
         return;
     }
 
-    if (activeFinalIdle != 0U) {
-        /* Legacy Combat_monsterSeq() sets animEndTime when it draws the final
-         * idle pose and does not enter stage 2 / Player_pain until that final
-         * cadence expires. Publish completion only now; no redraw is needed
-         * because the idle pose has remained visible for the whole lease. */
-        attackVisual.completedProbe = probe;
-        printf("[MONSTERATKVIS] COMPLETE probe=%u sprite=%u loops=%u phase=final-idle-expired phaseMs=%u redraw=no gameplayMutation=no resolution=unblocked-after-animation\n",
-               (unsigned int)probe,
-               (unsigned int)spriteIndex,
-               (unsigned int)totalLoops,
-               (unsigned int)phaseMs);
-        clearSequence();
+    if (completedLoops >= totalLoops) {
+        /* The final idle is already visible; only a pending projectile
+         * transient/clear may hold the probe. No extra legacy dwell. */
+        if (EspNativeGameplayMonsterAttackVisual_impactReady(
+                completedLoops, totalLoops, projectileEnabled)) {
+            finishVisualProbe(probe, spriteIndex, totalLoops,
+                              "final-projectile-cleared");
+        }
         return;
     }
 
@@ -421,7 +433,6 @@ void EspNativeGameplayMonsterAttackVisual_reset(void) {
     activeSequence = 0U;
     activeTotalLoops = 0U;
     activeCompletedLoops = 0U;
-    activeFinalIdle = 0U;
     activePhaseMs = 0U;
     projectileNextMs = 0U;
     projectileSourceTile = 0U;
