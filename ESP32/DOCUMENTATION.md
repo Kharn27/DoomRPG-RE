@@ -1,5 +1,28 @@
 # Doom RPG ESP32 — guide de travail
 
+## RNG provider extracted — hardware PASS (15 October 2026)
+
+Permanent owner: `esp_doomrpg_process_rng.c`. Four exact legacy
+functions and process-lifetime hidden globals `_seed` and
+`resetRand` moved out of generated DoomRPG.c. Generator pins CRC
+and body parity. Byte/int replay guard unchanged.
+Code `a7968169a0af2e2ad93322214547089102b2d292`,
+[CI PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38714139429):
+12,000 RNG operations per scenario across 4 initial ticks,
+reservation and rollback, word/byte boundary, three builds and ELF.
+
+CYD PASS: LOAD V11 slot07, hundreds of actions, combat,
+multi-hit sprite286 `rngExact=yes`, save slot06,
+Entrance full 6/6 secrets and 30/30 monsters; transition to Junction.
+Real `MONSTERMOVERNG next=127->0 prepared=1` followed by
+`COMMIT reservation=consumed-by-live-move`.
+Heap and null legacy map invariants preserved.
+Repeated compact renderer `LEGACY_GUARD/SPAN_OOB/RECOVERED`
+remains unresolved. This is a scoped, non-exhaustive RNG proof.
+Run `python3 ESP32/test/doomrpg_process_rng_host.py` and flash
+normal `pio run -e esp32-cyd -t upload -t monitor` for regression.
+
+
 ## Process clock natif : validation CYD (15 octobre 2026)
 
 Base du lot : `main e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`,
