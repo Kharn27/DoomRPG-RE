@@ -391,6 +391,39 @@ for signature, _ in presentation_methods:
 print("[ESP32] DoomRPG presentation/clip linked ABI moved=7 "
       "owner=esp_doomrpg_presentation generatedBodies=removed")
 
+# The last two ELF-linked desktop clock methods have a permanent process-
+# lifetime owner. Preserve the original Uint32 SDL tick and basetime==0 sentinel
+# semantics, including wraparound. Do not combine this with hidden RNG state.
+clock_basetime = "static Uint32 basetime = 0;"
+clock_methods = (
+    ("unsigned int DoomRPG_GetTimeMS(void)", 0xc3048db2),
+    ("unsigned int DoomRPG_GetUpTimeMS(void)", 0x0fad5924),
+)
+clock_path = join(project_src_dir, "esp_doomrpg_process_clock.c")
+with open(clock_path, "r", encoding="latin-1") as clock_file:
+    clock_native = clock_file.read()
+if doom_rpg_source_text.count(clock_basetime) != 1 or clock_native.count(clock_basetime) != 1:
+    raise RuntimeError("DoomRPG clock basetime process-lifetime declaration drift")
+for signature, expected_crc in clock_methods:
+    reference_body = extract_doomrpg_function(doom_rpg_source_text, signature)
+    if zlib.crc32(reference_body.encode("latin-1")) != expected_crc:
+        raise RuntimeError("DoomRPG process clock reference drift: " + signature)
+    if extract_doomrpg_function(clock_native, signature) != reference_body:
+        raise RuntimeError("ESP32 process clock owner body drift: " + signature)
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        reference_body, "/* Native process clock owner: esp_doomrpg_process_clock.c */", 1
+    )
+doom_rpg_source_text = doom_rpg_source_text.replace(
+    clock_basetime, "/* basetime is owned by esp_doomrpg_process_clock.c */", 1
+)
+for signature, _ in clock_methods:
+    if signature in doom_rpg_source_text:
+        raise RuntimeError("Migrated clock definition remains in DoomRPG.c: " + signature)
+if clock_basetime in doom_rpg_source_text:
+    raise RuntimeError("Generated DoomRPG.c still owns process clock basetime")
+print("[ESP32] DoomRPG process clock linked ABI moved=2 "
+      "owner=esp_doomrpg_process_clock basetime=process-lifetime generatedBodies=removed")
+
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
 

@@ -112,6 +112,9 @@ jobs:
       - name: Test native presentation and clip pixel parity (host C)
         run: python ESP32/test/doomrpg_presentation_host.py
 
+      - name: Test native process-lifetime DoomRPG clock parity (host C)
+        run: python ESP32/test/doomrpg_process_clock_host.py
+
       - name: Test SYS cards and multislot input ownership (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test
@@ -221,6 +224,8 @@ jobs:
               --compiledb compile_commands.json --require-retired-render
             python tools/audit_desktop_elf.py ".pio/build/$profile" \
               --compiledb compile_commands.json --require-native-doomrpg-presentation
+            python tools/audit_desktop_elf.py ".pio/build/$profile" \
+              --compiledb compile_commands.json --require-native-doomrpg-clock
           done
 
       - name: Upload firmware artifacts
