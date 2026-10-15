@@ -140,6 +140,9 @@ jobs:
       - name: Test permanent DoomRPG root and fatal cleanup ownership (host C)
         run: python ESP32/test/doomrpg_root_owner_host.py
 
+      - name: Test native canvas audio handoff without desktop Sound ABI (host C)
+        run: python ESP32/test/native_audio_handoff_host.py
+
       - name: Test native process RNG refill and rollback/replay (host C)
         run: python ESP32/test/doomrpg_process_rng_host.py
 
