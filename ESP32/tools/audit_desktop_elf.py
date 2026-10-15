@@ -165,8 +165,40 @@ def main():
     parser.add_argument("--require-native-doomrpg-clock", action="store_true")
     parser.add_argument("--require-native-doomrpg-rng", action="store_true")
     parser.add_argument("--require-native-doomrpg-config-read", action="store_true")
+    parser.add_argument("--require-native-doomrpg-config-binds", action="store_true")
     args = parser.parse_args()
     reports = audit(args.build, args.repo.resolve(), args.nm, args.compiledb)
+    if args.require_native_doomrpg_config_binds:
+        if args.compiledb is None:
+            parser.error("--require-native-doomrpg-config-binds requires compiledb")
+        data = {"keyMapping": "B", "keyMappingTemp": "B",
+                "keyMappingDefault": "D"}
+        required = {**data, "DoomRPG_setDefaultBinds": "T"}
+        generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
+        if generated & required.keys() or reports["desktop_original_units"]:
+            parser.exit(1, "FAIL: legacy config binds still defined/admitted\n")
+        owner = args.build / "src" / "esp_legacy_config_mappings_startup.c.o"
+        if not owner.is_file():
+            parser.exit(1, "FAIL: native config binds owner missing\n")
+        def owned(path):
+            output = subprocess.check_output(
+                [str(args.nm), "-g", "--defined-only", str(path)], text=True)
+            found = {name: [] for name in required}
+            for line in output.splitlines():
+                fields = line.split()
+                if len(fields) >= 3 and fields[-1] in found:
+                    found[fields[-1]].append(fields[-2].upper())
+            return found
+        native = owned(owner)
+        final = owned(args.build / "firmware.elf")
+        for name, kind in required.items():
+            if native[name] != [kind] or final[name] != [kind]:
+                parser.exit(1, "FAIL: config binding owner/ELF symbol " +
+                            name + ": " + str(native[name]) + "/" +
+                            str(final[name]) + "\n")
+        print("PASS native config key-bind globals=3 BSS=2 DATA=1 "
+              "reset=1 generated=0 desktopOriginal=0")
+        return
     if args.require_native_doomrpg_config_read:
         if args.compiledb is None:
             parser.error("--require-native-doomrpg-config-read requires compiledb")

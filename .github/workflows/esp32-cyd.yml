@@ -118,6 +118,9 @@ jobs:
       - name: Test native binary config reader ABI (host C)
         run: python ESP32/test/doomrpg_config_read_host.py
 
+      - name: Test permanent config key binding ownership and reset parity (host C)
+        run: python ESP32/test/doomrpg_config_binds_host.py
+
       - name: Test native process RNG refill and rollback/replay (host C)
         run: python ESP32/test/doomrpg_process_rng_host.py
 
@@ -242,6 +245,8 @@ jobs:
               --compiledb compile_commands.json --require-native-doomrpg-rng
             python tools/audit_desktop_elf.py ".pio/build/$profile" \
               --compiledb compile_commands.json --require-native-doomrpg-config-read
+            python tools/audit_desktop_elf.py ".pio/build/$profile" \
+              --compiledb compile_commands.json --require-native-doomrpg-config-binds
           done
 
       - name: Upload firmware artifacts
