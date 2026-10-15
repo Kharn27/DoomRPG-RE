@@ -59,7 +59,7 @@ int __real_Esp32PlatformVideo_present(void) {
     }
     return 1;
 }
-static void seed(void) {
+static void seedUnpainted(void) {
     memset(&actionState, 0, sizeof(actionState));
     memset(&directionCue, 0, sizeof(directionCue));
     for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) pixels[i] = 0x1234;
@@ -69,6 +69,9 @@ static void seed(void) {
     actionState.viewportFlashPending = 1;
     actionState.viewportFlashColor565 = 0xb800;
     actionState.viewportFlashDurationMs = 500;
+}
+static void seed(void) {
+    seedUnpainted();
     assert(__wrap_Esp32PlatformVideo_present());
     assert(actionState.viewportFlashVisible && presents == 1);
 }
@@ -129,6 +132,54 @@ int main(void) {
     finish();
     assert(directionCue.observedOnMs[0] == 85U &&
            directionCue.observedOnMs[1] == 85U);
+
+    /* Real sprite-157 CYD regression: earlier correction moved the first side
+     * ON past an ~800ms monster tail, but left the thin red flash visible for
+     * that full wait. Nonlethal staging now atomically paints base+side after
+     * the synchronous work, while the validated hit can render earlier. */
+    seedUnpainted();
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
+    assert(directionCue.stageNonlethalBorder == 1U);
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(presents == 1U && actionState.viewportFlashPending &&
+           !actionState.viewportFlashVisible &&
+           !actionState.viewportFlashSnapshotValid);
+    assert(pixels[1 + 20U * 160U + 80U] == 0x1234);
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        17, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
+    assert(directionCue.queued.count == 1U && directionCue.phase == 0U);
+    clockMs += 818U;
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(presents == 2U && concurrentPresents == 1U &&
+           directionCue.phase == 2U && actionState.viewportFlashVisible &&
+           !actionState.viewportFlashPending &&
+           actionState.viewportFlashSnapshotValid);
+    assert(pixels[1 + 20U * 160U + 80U] ==
+           EspNativeGameplayDamageCue_blend565(0xb800U, DAMAGE_CUE_COLOR565));
+    finish(); /* First ON, second ON and GAP all start after 818ms tail. */
+    assert(directionCue.observedOnMs[0] == DAMAGE_CUE_ON_MS &&
+           directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
+    /* Direction unavailable/fifo full must still show base damage border. */
+    seedUnpainted();
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(!actionState.viewportFlashVisible && presents == 1U);
+    clockMs += 818U;
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(actionState.viewportFlashVisible && !actionState.viewportFlashPending &&
+           directionCue.phase == 0U && presents == 2U);
+    clockMs += 501U;
+    poll();
+    assert(!actionState.viewportFlashVisible);
+    /* Fatal/non-opted-in flash retains the original immediate presentation. */
+    seedUnpainted();
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    assert(__wrap_Esp32PlatformVideo_present());
+    assert(actionState.viewportFlashVisible && presents == 1U);
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(presents == 1U);
 
     /* Every strict UI/transaction barrier defers paint, not intent or gameplay. */
     for (unsigned barrier = 0; barrier < 4U; ++barrier) {

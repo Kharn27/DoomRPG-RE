@@ -666,6 +666,11 @@ void EspNativeGameplayMonsterRetaliation_service(struct DoomRPG_s* doomRpgBase) 
         return;
     }
 
+    /* Render/commit the validated hit with its text as before, but hold the
+     * nonlethal 2px red border until ordered member/FX work returns. The
+     * action compositor then presents it together with the directional band.
+     * Lethal retirement and early rollback branches never enter this opt-in. */
+    EspNativeGameplayActionEngine_stageNonlethalMonsterFlash();
     memset(&frame, 0, sizeof(frame));
     if (!EspNativeGameplayFrame_renderTurn(doomRpg->render,
                                            (uint8_t)playerView->viewAngle,

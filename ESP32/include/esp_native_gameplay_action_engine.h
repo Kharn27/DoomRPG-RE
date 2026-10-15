@@ -154,6 +154,12 @@ static inline int EspNativeGameplayDamageCueQueue_pop(
 void EspNativeGameplayActionEngine_beginMonsterVisualWork(void);
 void EspNativeGameplayActionEngine_endMonsterVisualWork(void);
 
+/* Opt-in only for nonlethal monster retaliation: its frame/feedback is still
+ * committed as usual, but postpone the 2px damage border until the first
+ * directional pulse can be physically presented in that SAME display frame.
+ * Lethal deaths, traps and barrel damage never opt in. Presentation-only. */
+void EspNativeGameplayActionEngine_stageNonlethalMonsterFlash(void);
+
 /* Independent presentation-only FIFO. Every committed monster hit keeps
  * its existing red 500 ms border; the direction band blinks concurrently on
  * top of it. Post-COMMIT enqueue publishes intent immediately and starts

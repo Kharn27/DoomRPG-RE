@@ -254,6 +254,7 @@ typedef struct DirectionalCueOwner_s {
     uint8_t snapshotValid;
     uint8_t needsRepaint;
     uint8_t deferFirstPulse; /* UI boundary only; FIFO/RNG untouched */
+    uint8_t stageNonlethalBorder; /* no player/turn effect; same-frame cue */
 } DirectionalCueOwner;
 static DirectionalCueOwner directionCue;
 static uint16_t directionCueSnapshot[DAMAGE_CUE_MAX_PIXELS];
@@ -1555,10 +1556,31 @@ void EspNativeGameplayActionEngine_beginMonsterVisualWork(void) {
     directionCue.deferFirstPulse = 1U;
 }
 
+void EspNativeGameplayActionEngine_stageNonlethalMonsterFlash(void) {
+    /* The retaliation body opts in ONLY after nonlethal player pain is
+     * committed and its DAMAGE feedback is queued. A render rollback cancels
+     * the flash and never publishes a side intent. */
+    if (directionCue.deferFirstPulse != 0U &&
+        actionState.viewportFlashPending != 0U &&
+        actionState.viewportFlashColor565 == FEEDBACK_DAMAGE_RED565)
+        directionCue.stageNonlethalBorder = 1U;
+}
+
 void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
+    const uint8_t stagedBorder = directionCue.stageNonlethalBorder;
     directionCue.deferFirstPulse = 0U;
-    if (directionCue.phase == 0U && directionCue.queued.count != 0U)
+    directionCue.stageNonlethalBorder = 0U;
+    if (directionCue.phase == 0U && directionCue.queued.count != 0U) {
+        /* __wrap_Esp32PlatformVideo_present paints pending border FIRST,
+         * then the side blend, and presents both atomically. */
         (void)serviceDirectionalCue();
+    } else if (stagedBorder != 0U &&
+               actionState.viewportFlashPending != 0U &&
+               directionCue.phase == 0U) {
+        /* Failed/unsupported direction admission must not strand the red
+         * border forever: retain the original non-directional feedback. */
+        (void)__wrap_Esp32PlatformVideo_present();
+    }
 }
 
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
@@ -1894,7 +1916,8 @@ int __wrap_Esp32PlatformVideo_present(void) {
     if ((actionState.viewportFlashPending != 0U ||
          actionState.viewportFlashVisible != 0U) &&
         (actionState.viewportFlashPending != 0U ||
-         actionState.framebufferFresh != 0U)) {
+         actionState.framebufferFresh != 0U) &&
+        directionCue.stageNonlethalBorder == 0U) {
         if (!paintViewportFlash()) {
             printf("[VIEWFLASH] FAILED phase=paint\n");
             return 0;
