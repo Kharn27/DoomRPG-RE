@@ -1,5 +1,64 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #217 — Canvas se désengage de l'ABI audio desktop : CI PASS, CYD PASS ciblé (16 octobre 2026)
+
+**Base main GitHub post-merge #216 :** `4434e47a36b70826c401fc17a8b24d371789098c`.
+Branche `agent/esp32-retire-canvas-sound-abi`,
+[PR #217](https://github.com/Kharn27/DoomRPG-RE/pull/217).
+**SHA exact du code testé par l'utilisateur en firmware normal `esp32-cyd` :**
+`b6711e666965dfa7efb2017d18d6cff3ab68b5fc`.
+La [CI push #38824713309](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38824713309)
+est **SUCCESS** (test hôte, build normal/bringup/trace, gardes
+compiledb/ELF). Il s'agit d'un nouveau jalon autonome, et non d'un
+retest du scheduler de combat #216.
+
+**Frontière retirée :** dans `esp_legacy_doomcanvas_bridge.c`,
+l'entrée `ST_INTRO` publie maintenant l'intention native
+`EspNativeAudioIntent_publish(5039, LOOP|STOPSOUNDS|ISMUSIC, 5)`
+sans `Sound_playSound`. Les deux sites de l'ancien `Sound_stopSounds`
+(transition quittant le menu et rollback d'intro) publient une
+commande `EspNativeAudioIntent_stopAll()`. Cette commande emploie
+le record 8 B préexistant, avec `resourceId=0` et flag
+`ESP_NATIVE_AUDIO_STOP_ALL_FLAG=0x80` ; la séquence reste ordonnée.
+Le test `ESP32/test/native_audio_handoff_host.py` compile/exécute
+le vrai owner, prouve le layout de 8 B, PLAY→STOP→PLAY, reset et refus
+d'un PLAY de ressource zéro ; il interdit statiquement les appels
+Sound depuis le pont. **Il n'y a toujours ni backend sonore physique
+ni file garantissant de conserver plusieurs intentions : `lastIntent`
+est un seul enregistrement.** Les stubs `Sound_*` résiduels ne sont
+pas retirés dans cette PR.
+
+**Preuve CYD sur les logs utilisateur :** `START GAME`, préparation
+de l'intro PAK (4 BMP, 33 236 B de source), `[AUDIOINTENT] STOP_ALL
+seq=5` puis `PUBLISH seq=6 resource=5039 flags=11 priority=5
+backend=silent`. Sept taps conduisent de l'intro à `FINAL-CONTINUE`,
+puis `INTRODISP READY` libère 34 056 B depuis `heap8=124200`
+jusqu'à `158256`, sans mutation du framebuffer conservé.
+`/intro.bsp` est chargé avec `sourceCRC=623f34e4` et
+`arenaFNV=c3882516`, `ENGINESESSION FRESH-VISIBLE` et
+`RESIDENTGAMEPLAY READY` atteints, `shapeData=mediaTexels=NULL`.
+En jeu, les témoins `[ALIVE]` donnent `heap8=112576,
+largest8=86004` constants. HUB→SYS→EXIT à double sélection :
+`saveWrite=no`, `[RESIDENTRESET] released=18008 empty=1`,
+retour MENU_MAIN avec `heap8=158256 largest8=110580`
+et frame `522dc605`, sans échec signalé. Le menu HUB et l'EXIT
+n'avancent pas le tour. Ces chiffres sont les mesures de ce
+parcours, pas un benchmark comparatif avec #216.
+
+**Limites matérielles/observations ouvertes :** aucun événement
+`STOP_ALL` n'est visible **au retour gameplay→menu** dans cette
+trace ; ce chemin natif n'atteste donc pas l'appel à
+`DoomCanvas_setState(ST_MENU)`. Ne pas déclarer l'arrêt audio EXIT
+physiquement validé. Aucune lecture audio, conservation FIFO des
+plusieurs intents, parité auditive, SAVE→LOAD avec ce firmware,
+combat/RNG ou validation visuelle pixel à pixel ne sont prouvés par
+ces logs. La dette de cadence DAMAGECUE de #216 reste indépendante.
+**Après le SHA testé, commits de clôture exclusivement docs-only.**
+Ne pas merger dans `main` automatiquement ; nouveau code = nouveau
+jalon + nouveau flash CYD.
+
+---
+
 ## PR #216 — racine DoomRPG C native et retour d'impact coopératif : CI PASS, acceptation CYD ciblée (16 octobre 2026)
 
 **Base GitHub réelle** : `main 0ca15d756c2c6a64a5b4bc6b3e2b0ec89d83b7bd` ;
