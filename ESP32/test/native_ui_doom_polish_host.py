@@ -131,7 +131,7 @@ int main(void) {
     assert(presents == 2 && s.cursorVisible == 1);
     assert(pixels[PASSWORD_CURSOR_Y*160+x] == PASSWORD_COLOR_RED_HOT);
     presentFails = 1;
-    assert(EspNativeGameplayPassword_serviceCursor(2350) == 0);
+    assert(EspNativeGameplayPassword_serviceCursor(2350) == 1);
     assert(s.cursorVisible == 1 && s.cursorEpochMs == 1900);
     assert(pixels[PASSWORD_CURSOR_Y*160+x] == PASSWORD_COLOR_RED_HOT);
     presentFails = 0;
