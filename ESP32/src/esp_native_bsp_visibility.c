@@ -9,6 +9,7 @@
 #include "esp_map_automap_state.h"
 #include "esp_map_runtime.h"
 #include "esp_native_bsp_visibility.h"
+#include "esp_native_sprite_visual_legacy.h"
 #include "esp_player_view_state.h"
 
 #define MAX_BSP_DEPTH 64U
@@ -337,12 +338,17 @@ static int spriteLeaf(const EspMapRuntimeView* runtime,
                       uint32_t* outLeaf) {
     uint32_t nodeIndex = 0U;
     uint32_t depth;
+    int visualX;
+    int visualY;
 
     if (runtime == NULL || sprite == NULL || outLeaf == NULL ||
         runtime->nodeCount == 0U ||
         runtime->nodeCount > ESP_NATIVE_BSP_VISIBILITY_MAX_NODES) {
         return 0;
     }
+
+    EspNativeSpriteVisual_coordinates(sprite->x, sprite->y,
+                                      sprite->info, &visualX, &visualY);
 
     for (depth = 0U; depth <= MAX_BSP_DEPTH; ++depth) {
         EspMapNode node;
@@ -360,12 +366,12 @@ static int spriteLeaf(const EspMapRuntimeView* runtime,
 
         split = node.args1 & 0xffffU;
         if ((node.args1 & 0x10000U) != 0U) {
-            child = sprite->x > split
+            child = visualX > (int)split
                         ? (node.args2 & 0xffffU)
                         : ((node.args2 >> 16) & 0xffffU);
         }
         else if ((node.args1 & 0x20000U) != 0U) {
-            child = sprite->y > split
+            child = visualY > (int)split
                         ? (node.args2 & 0xffffU)
                         : ((node.args2 >> 16) & 0xffffU);
         }

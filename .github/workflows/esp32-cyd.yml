@@ -124,6 +124,9 @@ jobs:
       - name: Test bounded native wall texture successor inline (host C)
         run: python ESP32/test/native_wall_boundary_inline_host.py
 
+      - name: Test wall sprite visual offset and priority versus desktop (host C)
+        run: python ESP32/test/wall_sprite_visual_host.py
+
       - name: Test SYS cards and multislot input ownership (host C)
         run: |
           cc -std=c11 -Wall -Wextra -Werror -IESP32/include ESP32/test/test_sys_touch.c ESP32/src/esp_native_gameplay_save_touch.c -o /tmp/doomrpg-sys-touch-test

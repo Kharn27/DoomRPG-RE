@@ -13,6 +13,7 @@
 #include "esp_map_runtime.h"
 #include "esp_map_sprite_topology.h"
 #include "esp_native_bsp_visibility.h"
+#include "esp_native_sprite_visual_legacy.h"
 #include "esp_native_graphics_catalog.h"
 #include "esp_native_gameplay_monster_drop.h"
 #include "esp_native_sprite_renderer.h"
@@ -613,6 +614,8 @@ static int buildOrder(Render_t* render,
         uint32_t leaf = UINT32_MAX;
         uint32_t position;
         int visible;
+        int visualX;
+        int visualY;
         int32_t sortZ;
 
         if (!EspMapRuntime_getMapSprite(i, &sprite) ||
@@ -691,11 +694,11 @@ static int buildOrder(Render_t* render,
             ++stats->mode0Objects;
         }
 
-        sortZ = (int32_t)((sprite.x * render->viewCos_) +
-                          (sprite.y * render->viewSin_) + render->viewTransX);
-        if ((info & SORT_BIAS) != 0U) ++sortZ;
-        else if (type == ENEMY_TYPE) --sortZ;
-        else if (id >= 180U && id <= 191U) sortZ -= 2;
+        EspNativeSpriteVisual_coordinates(sprite.x, sprite.y, info,
+                                          &visualX, &visualY);
+        sortZ = EspNativeSpriteVisual_sortDepth(
+            visualX, visualY, info, type,
+            render->viewCos_, render->viewSin_, render->viewTransX);
 
         position = count;
         while (position > 0U && sortZ >= order[position - 1U].sortZ) {
@@ -1143,8 +1146,10 @@ static int drawAt(Render_t* render,
 #endif
 
     if (!EspMapRuntime_getMapSprite(parent->index, &sprite)) return 0;
-    spriteX = sprite.x + offsetX;
-    spriteY = sprite.y + offsetY;
+    EspNativeSpriteVisual_coordinates(sprite.x, sprite.y, parent->info,
+                                      &spriteX, &spriteY);
+    spriteX += offsetX;
+    spriteY += offsetY;
 
     animation = (parent->info & FIXED_ANIM) != 0U
                     ? ((parent->info & 0x1e00U) >> 9)
