@@ -1,5 +1,45 @@
 # Audit de consolidation architecturale ESP32
 
+## PR #217 — première couture audio Canvas supprimée, matériel PASS ciblé (2026-10-16)
+
+Base `main 4434e47a36b70826c401fc17a8b24d371789098c`,
+branche `agent/esp32-retire-canvas-sound-abi`,
+[PR #217](https://github.com/Kharn27/DoomRPG-RE/pull/217).
+Les quatre desktop TUs `DoomRPG.c`, `Game.c`, `Render.c`,
+`DoomCanvas.c` étaient **déjà entièrement retirées du lien**.
+Cette PR ne les retire pas une deuxième fois : elle enlève les
+dépendances `Sound_playSound` et `Sound_stopSounds` de l'owner
+compatibilité `esp_legacy_doomcanvas_bridge.c` pour l'intro
+et l'arrêt lors de son handoff. Les commandes deviennent
+`EspNativeAudioIntent_publish(5039, 11, 5)` et
+`EspNativeAudioIntent_stopAll()` (commande `resourceId=0`,
+`flags=0x80`, record de 8 octets). Le backend est silencieux ;
+pas de `Sound_t` alloué, de ZIP runtime, de décodeur ou d'I2S.
+Le contrat `lastIntent` n'est pas une FIFO : le futur backend
+audio devra décider explicitement de la politique de queue,
+d'interruption et de priorité, indépendamment du scheduler de combat.
+
+Code matériel `b6711e666965dfa7efb2017d18d6cff3ab68b5fc` ;
+[CI #38824713309 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38824713309).
+Le host compile et exécute le vrai audio-intent owner, teste
+PLAY→STOP→PLAY, le reset et son format strict de 8 octets, et
+rejette les appels `Sound_*` du pont Canvas ; trois profils
+firmware et les gardes ELF/compiledb passent. Témoignage CYD
+normal : `STOP_ALL seq=5`, `PUBLISH seq=6 resource=5039 flags=11`,
+intro/ressources libérées (+34 056 B), Entrance jouable,
+`heap8=112576 largest8=86004` stable, EXIT confirmé sans
+SAVE, owners `empty=1`, retour menu frame `522dc605`,
+`heap8=158256`, `shapeData/mediaTexels=NULL`.
+**Aucune commande STOP_ALL n'est rapportée au retour EXIT→menu** :
+la transition native ne prouve pas la réutilisation de
+`DoomCanvas_setState(ST_MENU)`. C'est une frontière distincte
+avant le véritable backend sonore. Pas de son audible ni de
+parité combat/RNG ou de cycle SAVE→LOAD testés dans ce témoin.
+Après ce hardware PASS, seuls des commits de documentation
+sont permis dans #217 ; merge par l'utilisateur exclusivement.
+
+---
+
 ## PR #216 — Process Config bindings retirés du root généré : premier PASS CYD (2026-10-15)
 
 Base main `0ca15d756c2c6a64a5b4bc6b3e2b0ec89d83b7bd`.
