@@ -1,5 +1,50 @@
 # Doom RPG ESP32 — état actuel du port
 
+## Extraction du RNG process natif : PASS matériel ciblé (15 octobre 2026)
+
+Code firmware testé `a7968169a0af2e2ad93322214547089102b2d292`
+sur `agent/esp32-extract-doomrpg-process-clock`, base main
+`e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`.
+Les corps originaux `Random_SetSeed`, `Random_Get`,
+`Random_getRand`, `DoomRPG_setRand` sont dans
+`esp_doomrpg_process_rng.c`. Etat statique `_seed/resetRand` unique
+et process-lifetime ; les wrappers RNG byte/int et replay guard
+restent inchangés. Contrat source CRC/égalité des corps et audit ELF
+sur les trois profils, zéro définition restante dans le généré.
+
+[CI SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38714139429) :
+test hôte différentiel 12 000 opérations par scenario sur 4 ticks
+initiaux, tests reservation/rollback/replay byte et word, builds
+normaux/trace/bringup. Normal : RAM statique 50976 B, Flash 809565 B.
+
+**CYD firmware normal PASS de non-régression** : MENU_MAIN LOAD
+slot07 V11, restauration exacte MAP_INTRO CRC `623f34e4`,
+monstres `8acca67c`, topologie `ebca87dd`, positions `24bbd504`,
+activation `6698ed80` (22 actifs), `rngCalls=0` au restore.
+Plusieurs centaines d'actions, combat et riposte, PASS_TURN, portes,
+pickups, SAVE slot06, evenement SHOW-batch 74, fin Entrance
+secrets 6/6 et monstres 30/30. Transition reelle vers Junction,
+CRC `4a2c5800`, map flash rebuild verified, arena `bc432a0f`;
+`shapeData=mediaTexels=NULL`. Heap8 112328 en debut de
+session, 109552 en fin d'Entrance, 121716 en Junction ;
+largest8=86004 sur ces snapshots.
+
+**Temoin reel RNG limite de table** :
+`MONSTERMOVERNG ARM next=127->0 prepared=1 reservation=persistent`
+puis `MONSTERMOVERNG COMMIT reservation=consumed-by-live-move
+randomLive=advanced-exactly`. Autre combat : trois coups de
+sprite286 subtype2, `rngExact=yes` durant animation, resolution
+differee apres final-idle. Aucun marqueur RNG divergence ou mismatch
+dans les extraits fournis. Ceci ne demontre pas toutes les
+sequences RNG possibles ; aucune mesure de perf revendiquee.
+
+Les nombreux `NATIVEFRAME LEGACY_GUARD / SPAN_OOB / RECOVERED`
+restent un incident de rendu **ouvert** ; il ne faut pas confondre
+recovery et correction. La cloture apres ce PASS ne modifie que
+la documentation. Les commits de code suivants doivent etre
+valides a nouveau physiquement.
+
+
 ## DoomRPG process clock — CI + vrai CYD PASS ciblé (2026-10-15)
 
 Base après merge PR #213 : `main e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`.
