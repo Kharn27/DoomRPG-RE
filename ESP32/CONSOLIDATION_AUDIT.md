@@ -1,5 +1,38 @@
 # Audit de consolidation architecturale ESP32
 
+## Readers of legacy Config RWops — CI and scoped CYD PASS (2026-10-15)
+
+Following documented clock + RNG extraction on the same
+`agent/esp32-extract-doomrpg-process-clock` branch, firmware
+code SHA `eaa915aacf5171dbd118758ab33bb402f9f9edee`
+moves `File_readByte` and `File_readInt` unchanged to
+`esp_doomrpg_config_read.c`; the generated `DoomRPG.c`
+is stripped of the two bodies under CRC and textual parity.
+No other ABI/callers changed, including `Game_loadConfig`.
+`char` sign extension and LE32 conversion remain legacy-defined.
+
+[CI SUCCESS 38717722550](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38717722550):
+4,096 mixed RWops reads / 8,194 bytes native vs original,
+two linked owner definitions and none in generated DoomRPG.o,
+normal static RAM/Flash **50976/809561**, bringup
+**51120/830089**, trace **51016/826041**, all builds PASS.
+No direct performance gain claimed.
+
+Physical normal CYD trace: startup completed, PAK/mappings ready,
+main dashboard, HUB-based slot07 V11 LOAD and exact spatial
+restoration for monster/topology/position/activation,
+world/door/movement/combat and delayed retaliation all functional,
+`rngExact=yes`, `rngRollback=yes`, `heap8=112328` stable during
+recorded combat, `shapeData/mediaTexels=NULL`. Explicit caveat:
+`Config file present=no`, `loadConfig: (unable to open file)`,
+thus these RWops functions **were not directly called on an
+existing hardware Config file**. Mark as CI parity and hardware
+startup/gameplay non-regression PASS, not positive-file-parse
+hardware coverage. Renderer `LEGACY_GUARD/SPAN_OOB/RECOVERED`
+persists independently. Post-test commits documentation-only;
+branch merge-ready after human review, main untouched.
+
+
 ## Native process RNG provider — CI and CYD PASS (2026-10-15)
 
 After hardware-proven process clock, code
