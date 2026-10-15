@@ -221,7 +221,7 @@ def main():
             if function:
                 current = function[1]
             call = re.search(
-                r"\\b(?:call[048]|call12|j)\\s+[0-9a-f]+ <([^>+]+)(?:\\+[^>]*)?>",
+                r"\b(?:call[048]|call12|j)\s+[0-9a-f]+ <([^>+]+)(?:\+[^>]*)?>",
                 line)
             if call and call[1] in direct and current != call[1]:
                 direct[call[1]].add(current)
