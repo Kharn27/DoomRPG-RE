@@ -163,6 +163,15 @@ int main(void) {
     assert(directionCue.queued.count == 1U && directionCue.phase == 0U);
     clockMs += 818U;
     EspNativeGameplayActionEngine_endMonsterVisualWork();
+    fprintf(stderr,
+            "[DAMAGEGROUP-HOST] presents=%u concurrent=%u grouped=%u glyphs=%u feedbackVisibleKind=%u damageKind=%u feedbackVisible=%u feedbackPending=%u feedbackShown=%u clock=%u phase=%u flashVisible=%u flashShown=%u flashPending=%u snapshot=%u\n",
+            presents, concurrentPresents, groupedTextPresents, damageGlyphs,
+            actionState.feedbackVisibleKind, ACTION_FEEDBACK_DAMAGE,
+            actionState.feedbackVisible, actionState.feedbackPending,
+            actionState.feedbackShownAtMs, clockMs, directionCue.phase,
+            actionState.viewportFlashVisible, actionState.viewportFlashShownAtMs,
+            actionState.viewportFlashPending,
+            actionState.viewportFlashSnapshotValid);
     assert(presents == 2U && concurrentPresents == 1U &&
            groupedTextPresents == 1U && damageGlyphs != 0U &&
            actionState.feedbackVisibleKind == ACTION_FEEDBACK_DAMAGE &&
