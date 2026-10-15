@@ -244,6 +244,10 @@ typedef struct DirectionalCueOwner_s {
     EspNativeGameplayDamageCue current;
     uint32_t phaseAtMs;
     uint32_t startedAtMs;
+    /* Physical ON/OFF presentation timings: diagnostic-only, 12 B static.
+     * No cadence, framebuffer, combat, or scheduler modification. */
+    uint32_t observedOnMs[2];
+    uint32_t observedGapMs;
     uint16_t snapshotPixels;
     uint8_t phase; /* 0 idle, 1 requested-on, 2 lit, 3 gap */
     uint8_t pulsesShown;
@@ -1908,6 +1912,11 @@ int __wrap_Esp32PlatformVideo_present(void) {
         directionCue.needsRepaint = 0U;
         if (directionCue.phase == 1U) {
             directionCue.phase = 2U;
+            /* The gap ends only when the second ON frame is presented. */
+            if (directionCue.pulsesShown == 1U) {
+                directionCue.observedGapMs =
+                    actionNowMs() - directionCue.phaseAtMs;
+            }
             directionCue.phaseAtMs = actionNowMs();
             if (directionCue.pulsesShown == 0U) {
                 /* This witness is AFTER the physical present, not an intent.
@@ -2018,6 +2027,9 @@ static int serviceDirectionalCue(void) {
         directionCue.phase = 1U;
         directionCue.startedAtMs = now;
         directionCue.pulsesShown = 0U;
+        directionCue.observedOnMs[0] = 0U;
+        directionCue.observedOnMs[1] = 0U;
+        directionCue.observedGapMs = 0U;
         directionCue.snapshotValid = 0U;
         directionCue.snapshotPixels = 0U;
         directionCue.needsRepaint = 0U;
@@ -2068,15 +2080,28 @@ static int serviceDirectionalCue(void) {
             (void)visitDirectionalCue(2U);
             return 1;
         }
+        /* Measure from physical ON completion through physical OFF completion;
+         * a stalled gameplay loop prolongs the displayed band, even though
+         * the requested on-interval is only 85 ms. */
+        directionCue.observedOnMs[directionCue.pulsesShown] =
+            actionNowMs() - directionCue.phaseAtMs;
         ++directionCue.pulsesShown;
         directionCue.snapshotValid = 0U;
         if (directionCue.pulsesShown == DAMAGE_CUE_PULSES) {
-            /* No final 45ms tail; the last visible pulse is complete. */
-            printf("[DAMAGECUE] DONE probe=%u sprite=%u side=%s pulses=%u ordered=yes gameplay=unblocked\n",
+            /* One timing witness per cue; never turn this into per-frame spam. */
+            printf("[DAMAGECUE] DONE probe=%u sprite=%u side=%s pulses=%u onMs=%u/%u gapMs=%u nominalOnMs=%u nominalGapMs=%u delayed=%s ordered=yes gameplay=unblocked\n",
                    (unsigned int)directionCue.current.probe,
                    (unsigned int)directionCue.current.attackerSprite,
                    directionCueName(directionCue.current.side),
-                   (unsigned int)directionCue.pulsesShown);
+                   (unsigned int)directionCue.pulsesShown,
+                   (unsigned int)directionCue.observedOnMs[0],
+                   (unsigned int)directionCue.observedOnMs[1],
+                   (unsigned int)directionCue.observedGapMs,
+                   (unsigned int)DAMAGE_CUE_ON_MS,
+                   (unsigned int)DAMAGE_CUE_GAP_MS,
+                   directionCue.observedOnMs[0] > 200U ||
+                   directionCue.observedOnMs[1] > 200U ||
+                   directionCue.observedGapMs > 180U ? "yes" : "no");
             directionCue.phase = 0U;
             return 1;
         }

@@ -85,6 +85,9 @@ static void finish(void) {
     clockMs += DAMAGE_CUE_ON_MS;
     poll();
     assert(directionCue.phase == 0U);
+    assert(directionCue.observedOnMs[0] == DAMAGE_CUE_ON_MS);
+    assert(directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
+    assert(directionCue.observedGapMs == DAMAGE_CUE_GAP_MS);
     clockMs += 501;
     poll();
     assert(!actionState.viewportFlashVisible);
@@ -98,11 +101,16 @@ int main(void) {
     clockMs += 818; /* Original ranged witness: next service arrives too late. */
     poll();
     assert(actionState.viewportFlashVisible && directionCue.phase == 3U);
+    assert(directionCue.observedOnMs[0] == 818U);
+    assert(directionCue.observedOnMs[1] == 0U);
     clockMs += DAMAGE_CUE_GAP_MS;
     poll();
     clockMs += DAMAGE_CUE_ON_MS;
     poll();
     assert(directionCue.phase == 0U && !actionState.viewportFlashVisible);
+    assert(directionCue.observedOnMs[0] == 818U);
+    assert(directionCue.observedOnMs[1] == DAMAGE_CUE_ON_MS);
+    assert(directionCue.observedGapMs == DAMAGE_CUE_GAP_MS);
     for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) assert(pixels[i] == 0x1234);
 
     /* Every strict UI/transaction barrier defers paint, not intent or gameplay. */
@@ -190,6 +198,6 @@ int main(void) {
     for (unsigned y = 0; y < 120; ++y)
         for (unsigned x = 0; x < 160; ++x)
             assert(pixels[1 + y * 160 + x] == (y >= 20 && y < 100 ? 0x5678 : 0x1234));
-    puts("damage_cue_timing_host: PASS real service/compositor, immediate pulse, 818ms stall, barriers, FIFO/full, present retry/timeout, four sides, clock wrap, redraw and exact LIFO restoration");
+    puts("damage_cue_timing_host: PASS real compositor ON/GAP timing witness, immediate pulse, 818ms stall, barriers, FIFO/full, present retry/timeout, four sides, clock wrap, redraw and exact LIFO restoration");
     return 0;
 }
