@@ -1,5 +1,52 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #217 — handoff audio natif depuis l'intro, test CYD (16 octobre 2026)
+
+Depuis le `main 4434e47a36b70826c401fc17a8b24d371789098c`,
+branche `agent/esp32-retire-canvas-sound-abi`,
+[PR #217](https://github.com/Kharn27/DoomRPG-RE/pull/217).
+Le dernier code firmware normal flashé et observé :
+`b6711e666965dfa7efb2017d18d6cff3ab68b5fc`.
+[CI SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38824713309),
+avec nouveau test hôte `python3 ESP32/test/native_audio_handoff_host.py`,
+trois builds et gardes ELF.
+
+L'intro ne passe plus par `Sound_playSound`; le pont Canvas émet
+une commande native PLAY `5039 flags=11 priority=5`.
+Deux anciens sites `Sound_stopSounds` utilisent désormais
+`EspNativeAudioIntent_stopAll()` : `resourceId=0 flags=0x80`,
+dans le même record borné à 8 octets. Le backend reste **silent**
+et `lastIntent` conserve uniquement la dernière intention ; ne
+pas prétendre que les sons successifs ou la musique jouent déjà.
+Les autres stubs `Sound_*` sont hors de ce jalon.
+
+Pour la preuve physique, flasher **uniquement le profil normal** :
+
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+Chemin validé par les logs utilisateurs : Start Game → intro complète
+→ dispose → Entrance → HUB SYSTEM → EXIT confirmé → menu principal.
+On observe `[AUDIOINTENT] STOP_ALL seq=5` puis
+`PUBLISH seq=6 resource=5039 flags=11 priority=5`, les 7 taps
+d'intro, `INTRODISP READY` récupérant 34 056 octets,
+`ENGINESESSION FRESH-VISIBLE` et `RESIDENTGAMEPLAY READY`.
+Deux `ALIVE` en session à `heap8=112576 largest8=86004`.
+Le reset EXIT vide les owners (`released=18008 empty=1`) et
+retrouve le menu de FNV `522dc605`, `heap8=158256`,
+`saveWrite=no`, avec `shapeData/mediaTexels=NULL`.
+
+**Ne pas extrapoler :** aucun STOP_ALL observé **pendant EXIT**,
+aucune sortie sonore réelle, aucun combat ni nouveau SAVE→LOAD sur
+ce code, et pas de comparaison pixel exhaustive. Toute mutation
+firmware ultérieure exige un nouveau test matériel ; la clôture
+de #217 après ce témoin est docs-only. La cadence UI sous charge
+est une dette distincte et reste documentée dans PORTING_STATUS.
+
+---
+
 ## PR #216 — état du firmware natif et retour d'impact (16 octobre 2026)
 
 **Firmware normal `esp32-cyd` joué sur CYD :**
