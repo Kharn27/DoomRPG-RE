@@ -1869,12 +1869,22 @@ int __wrap_Esp32PlatformVideo_present(void) {
     }
 
     if (actionState.feedbackPending != 0U) {
-        feedback = actionState.feedbackKind;
-        if (!paintFeedback(feedback)) {
-            printf("[ACTIONFEEDBACK] FAILED kind=%u\n", (unsigned int)feedback);
-            return 0;
+        /* Nonlethal monster retaliation stages the thin red border until
+         * its first directional band. Hold its DAMAGE text in the same
+         * pending feedback owner through the early committed world frame.
+         * The end-of-monster-work present will paint text, border, and side
+         * together, and only THEN start the 1200ms text lease. All other
+         * feedback, including lethal damage, keeps original behavior. */
+        if (directionCue.stageNonlethalBorder == 0U ||
+            actionState.feedbackKind != ACTION_FEEDBACK_DAMAGE) {
+            feedback = actionState.feedbackKind;
+            if (!paintFeedback(feedback)) {
+                printf("[ACTIONFEEDBACK] FAILED kind=%u\n",
+                       (unsigned int)feedback);
+                return 0;
+            }
+            hadFeedback = 1;
         }
-        hadFeedback = 1;
     }
     else if (actionState.feedbackVisible != 0U &&
              actionState.framebufferFresh != 0U &&
