@@ -147,11 +147,18 @@ static inline int EspNativeGameplayDamageCueQueue_pop(
     return 1;
 }
 
+/* Bracket synchronous retaliation -> ordered-member -> FX work.
+ * The direction UI intent is queued at COMMIT, but its first physical ON
+ * begins after potentially slow work in that same loopTask iteration.
+ * Independent queuing outside this bracket still starts immediately. */
+void EspNativeGameplayActionEngine_beginMonsterVisualWork(void);
+void EspNativeGameplayActionEngine_endMonsterVisualWork(void);
+
 /* Independent presentation-only FIFO. Every committed monster hit keeps
  * its existing red 500 ms border; the direction band blinks concurrently on
- * top of it. Post-COMMIT enqueue tries to present the first pulse immediately
- * through the existing compositor, before the next member can consume the
- * border lease. Touch/PAK/level-up/transaction barriers defer that UI paint;
+ * top of it. Post-COMMIT enqueue publishes intent immediately and starts
+ * physical ON when the current synchronous monster work has completed.
+ * Touch/PAK/level-up/transaction barriers defer that UI paint;
  * presentation failure is retried and never rolls back committed gameplay.
  * No wait for the blink cadence or new world render is introduced. */
 int EspNativeGameplayActionEngine_queueDirectionalDamage(

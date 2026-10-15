@@ -838,6 +838,10 @@ int EspNativeGameplayActionEngine_present(void) {
 void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     EspNativeGameplayPlayerResources_sessionService(doomRpg);
     EspNativeGameplayMonsterAttackVisual_service(doomRpg);
+    /* The first 85ms damage-cue pulse must not begin before synchronous
+     * ordered member processing (784ms on the sprite-157 CYD witness).
+     * Queue damage intent at COMMIT, release display after the world tail. */
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
     EspNativeGameplayMonsterRetaliation_service(doomRpg);
     EspNativeGameplayMonsterMovementProbe_service(doomRpg);
     serviceHitExpiry(doomRpg);
@@ -845,6 +849,7 @@ void __wrap_EspNativeGameplaySession_service(struct DoomRPG_s* doomRpg) {
     /* A showStats=0 CHANGEMAP is staged by resident gameplay and consumed only
      * after that source-map service has returned from its SELECT transaction. */
     EspNativeGameplayTransitionHandoff_service();
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
 }
 
 void __wrap_EspNativeGameplaySession_reset(void) {

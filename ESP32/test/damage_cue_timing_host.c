@@ -113,6 +113,23 @@ int main(void) {
     assert(directionCue.observedGapMs == DAMAGE_CUE_GAP_MS);
     for (unsigned i = 0; i < sizeof(pixels) / sizeof(pixels[0]); ++i) assert(pixels[i] == 0x1234);
 
+    /* Real CYD witness: after a monster hit, the synchronous 818ms turn tail
+     * used to extend the already-lit first pulse. Start only after that tail;
+     * do not wait for pulses or change attack/turn ordering. */
+    seed();
+    EspNativeGameplayActionEngine_beginMonsterVisualWork();
+    assert(EspNativeGameplayActionEngine_queueDirectionalDamage(
+        14, 157, ESP_NATIVE_GAMEPLAY_DAMAGE_SIDE_FRONT));
+    assert(directionCue.queued.count == 1U &&
+           directionCue.phase == 0U && presents == 1U);
+    clockMs += 818U; /* simulated heavy member/FX tail on loopTask */
+    EspNativeGameplayActionEngine_endMonsterVisualWork();
+    assert(directionCue.phase == 2U && directionCue.queued.count == 0U &&
+           concurrentPresents == 1U && presents == 2U);
+    finish();
+    assert(directionCue.observedOnMs[0] == 85U &&
+           directionCue.observedOnMs[1] == 85U);
+
     /* Every strict UI/transaction barrier defers paint, not intent or gameplay. */
     for (unsigned barrier = 0; barrier < 4U; ++barrier) {
         seed();

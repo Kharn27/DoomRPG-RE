@@ -253,6 +253,7 @@ typedef struct DirectionalCueOwner_s {
     uint8_t pulsesShown;
     uint8_t snapshotValid;
     uint8_t needsRepaint;
+    uint8_t deferFirstPulse; /* UI boundary only; FIFO/RNG untouched */
 } DirectionalCueOwner;
 static DirectionalCueOwner directionCue;
 static uint16_t directionCueSnapshot[DAMAGE_CUE_MAX_PIXELS];
@@ -1547,6 +1548,19 @@ static const char* directionCueName(uint8_t side) {
 
 static int serviceDirectionalCue(void);
 
+/* The native session is single-threaded on loopTask. Never defer an existing
+ * pulse or a logical monster transaction: only the first physical ON after a
+ * post-COMMIT enqueue is gated through the ordered-member/FX tail. */
+void EspNativeGameplayActionEngine_beginMonsterVisualWork(void) {
+    directionCue.deferFirstPulse = 1U;
+}
+
+void EspNativeGameplayActionEngine_endMonsterVisualWork(void) {
+    directionCue.deferFirstPulse = 0U;
+    if (directionCue.phase == 0U && directionCue.queued.count != 0U)
+        (void)serviceDirectionalCue();
+}
+
 int EspNativeGameplayActionEngine_queueDirectionalDamage(
     uint32_t attackProbe, uint16_t attackerSprite,
     EspNativeGameplayDamageSide side) {
@@ -1568,7 +1582,8 @@ int EspNativeGameplayActionEngine_queueDirectionalDamage(
      * red-border lease. Reuse the existing compositor, never redraw the world
      * or wait for the pulse cadence here. Strict leases defer it; a failed
      * physical present keeps the queued/current cue for the normal retry. */
-    (void)serviceDirectionalCue();
+    if (directionCue.deferFirstPulse == 0U)
+        (void)serviceDirectionalCue();
     return 1;
 }
 
