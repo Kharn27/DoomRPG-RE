@@ -1,5 +1,36 @@
 # Audit de consolidation architecturale ESP32
 
+## Native process RNG provider — CI and CYD PASS (2026-10-15)
+
+After hardware-proven process clock, code
+`a7968169a0af2e2ad93322214547089102b2d292`
+migrates `Random_SetSeed`, `Random_Get`,
+`Random_getRand`, and `DoomRPG_setRand` plus two hidden
+process-lifetime `_seed/resetRand` BSS globals to
+`esp_doomrpg_process_rng.c`. Three linked exports and helper
+are removed from generated DoomRPG.c with exact source CRC and
+body guard. The `DoomRPG_randNextByte/Int` wrappers and native
+rollback/replay guard remain unchanged.
+[CI 38714139429](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38714139429)
+passes source parity, 12,000 mixed steps × 4 initial tick cases,
+byte/word crossing/refill/reservation/rollback/replay, three builds
+and strict ELF attribution. Normal static RAM/Flash
+`50976/809565` B unchanged.
+
+Physical normal CYD: V11 slot07 load exact, extensive combat,
+multi-hit sprite286 `rngExact=yes`, mixed SHOW event74,
+SAVE slot06, complete Entrance 6/6 secrets 30/30 monsters,
+native Junction transition CRC `4a2c5800` and arena
+`bc432a0f`. Real RNG test `MONSTERMOVERNG next=127->0`
+preparation and `COMMIT reservation=consumed-by-live-move
+randomLive=advanced-exactly`. No observed RNG guard divergence
+in provided excerpts. `shapeData/mediaTexels=NULL`, stable heap
+snapshots. Compact rendering repeatedly emits
+`LEGACY_GUARD/SPAN_OOB/RECOVERED`; this debt remains open.
+After-PASS documentation only; future code edits on this branch
+require new physical validation.
+
+
 ## Extraction horloge process-lifetime : CI et CYD PASS (2026-10-15)
 
 Depuis `main e99286b9dc1c3a120f24f76ed3741ee22cc6be0c`,
