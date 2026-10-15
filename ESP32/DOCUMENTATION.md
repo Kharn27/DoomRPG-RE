@@ -1,5 +1,90 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #216 — état du firmware natif et retour d'impact (16 octobre 2026)
+
+**Firmware normal `esp32-cyd` joué sur CYD :**
+`3361cdd1d4208f69c9d9eb12c41207b9016f1ac4`, depuis
+`main 0ca15d756c2c6a64a5b4bc6b3e2b0ec89d83b7bd`.
+[PR #216](https://github.com/Kharn27/DoomRPG-RE/pull/216) ;
+[CI push PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38822809348) /
+[PR PASS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38822814390).
+La copie générée de `DoomRPG.c` sert encore d'artefact de
+vérification, mais **aucune TU desktop C générée n'est liée** ;
+la racine `doomRpg` et les fonctions de sortie/cleanup vivent
+dans `ESP32/src/engine_stubs.c` (durée process).
+
+### Frontière native du combat
+
+- `MONSTERATKVIS` présente les poses de tir et revient à idle ;
+  la **dernière pose idle réellement présentée** publie
+  `completedProbe` dans le même passage, sans bail
+  `final-idle` de 500 ms supplémentaire. Pour les familles à trois
+  tirs, les phases *intermédiaires* gardent leur cadence ; un
+  projectile 204 actif impose une dernière frame de CLEAR réussie.
+  Une frame non présentée ou altérant le RNG est refusée/retry,
+  sans autoriser prématurément le COMMIT.
+- `MONSTERRETAL` reste seul responsable du commit HP/armure,
+  des RNG gameplay et de la décision létale ; le `MONSTERTURN`
+  maintient un seul probe en vol. Le `DAMAGE` non létal
+  regroupe **message + contour rouge + première bande de direction**
+  dans une frame physique, après le commit et le traitement de
+  mouvement du passage courant. Le début réel de la lease de
+  1200 ms du message et de 500 ms du contour est mesuré au présent,
+  pas à l'intention. Décès/pièges/barils hors de ce regroupement.
+- `MONSTERACTIVESEQ` exécute au maximum **un membre vivant
+  entier par service**, et sauvegarde l'ordinal/préfixe ordonné
+  jusqu'au prochain passage de loopTask. `isBusy()` bloque
+  touches et intentions déjà en attente tant que le tour n'est
+  pas clos. Aucun `delay`, aucune nouvelle task, aucun nouveau
+  buffer map-wide. Le budget est une limite d'actions complètes,
+  pas un plafond en microsecondes.
+
+### Reproduction et preuve
+
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+Sur `/intro.bsp` / Entrance, reprendre le checkpoint près de la
+porte `line=396`, SELECT pour l'ouvrir, laisser attaquer
+`sprite=157 subtype=0`, puis PASS_TURN. Les logs validés
+pour ce firmware montrent le `STEP phase=final-idle phaseMs=0`,
+`COMPLETE finalIdleHoldMs=0`, `MONSTERRETAL COMMIT`,
+`DAMAGECUE ON redBorder=visible presented=1` **avant**
+`MONSTERACTIVESEQ COMPLETE` : le composeur reçoit désormais une
+opportunité de rendu entre les autres membres. Préflight du RNG
+`rngRollback=yes` ; dégâts réels `HP 30→26→22` et
+armure `20→17→15`. Les `[ALIVE]` disponibles donnent
+`heap8=112320 largest8=86004` inchangés. L'utilisateur constate
+une amélioration nette, mais ne revendique pas une cadence parfaite.
+
+**Défaut encore ouvert :** sous charge `DAMAGECUE DONE`
+`onMs=272/120 gapMs=281 delayed=yes` puis
+`onMs=321/120 gapMs=237 delayed=yes` ; malgré un
+`VIEWFLASH targetMs=500`, expiration à `675/681ms`.
+Ne pas reporter `nominalOnMs=85 nominalGapMs=45` comme temps
+physiques atteints. Le prochain jalon doit auditer la durée des
+transactions de membre/renderer et établir des opportunités de
+service UI réellement bornées ; ne pas accélérer arbitrairement
+les tirs 3-shot ni retoucher le RNG.
+
+**Limites de couverture :** ce playtest est un PASS ciblé
+porte/riposte/ordonnancement/heap, pas un nouveau test
+SAVE→LOAD/EXIT sur ce SHA, ni une preuve de parité frame-à-frame
+desktop, de projectile Malwrath physique ou de `Config present=yes`.
+Le test hôte de `monster_active_sequence_budget_host.c` valide
+la politique du budget, tandis que les logs du vrai CYD valident
+l'ordre de présentation ; ne pas intervertir leurs preuves.
+
+**Clôture :** après le dernier SHA de code joué, seules des
+modifications documentaires sont admises avant merge utilisateur ;
+nouveau jalon de timing sur une branche `agent/*` issue du prochain
+`main` réellement fusionné. Ne pas merger automatiquement.
+
+---
+
+
 ## Config key bindings natifs : premier lot PR #216 validé sur CYD (15 octobre 2026)
 
 Branche `agent/esp32-own-config-keybinds`, code firmware

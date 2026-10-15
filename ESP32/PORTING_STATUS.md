@@ -1,5 +1,109 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #216 — racine DoomRPG C native et retour d'impact coopératif : CI PASS, acceptation CYD ciblée (16 octobre 2026)
+
+**Base GitHub réelle** : `main 0ca15d756c2c6a64a5b4bc6b3e2b0ec89d83b7bd` ;
+branche `agent/esp32-own-config-keybinds`, [PR #216](https://github.com/Kharn27/DoomRPG-RE/pull/216).
+**Dernier commit de code effectivement chargé et joué sur le classic CYD normal
+`esp32-cyd` : `3361cdd1d4208f69c9d9eb12c41207b9016f1ac4`.**
+Ce nouveau témoignage complète le lot Config (déjà clôturé ci-dessous).
+La racine process native est validée pour le boot/reprise et ce parcours de combat
+sur la vraie carte ; il ne contient **pas** de test d'EXIT jusqu'au menu,
+de lecture positive de `Config`, ni de cycle nouveau SAVE→LOAD avec le firmware
+présent. Ne pas attribuer ces preuves absentes à ce SHA.
+
+**Ownership natif / retraite desktop :** `engine_stubs.c` détient désormais
+`doomRpg`, `DoomRPG_freeMemory`, `DoomRPG_FreeAppData` et
+`DoomRPG_Error`. L'outillage peut encore *générer* une copie C pour
+vérification, mais elle n'est compilée ni liée dans aucun des trois profils :
+`DoomRPG.c`, `Game.c`, `Render.c` et `DoomCanvas.c` desktop
+sont tous exclus du firmware. Le test hôte de cleanup exerce
+4 096 configurations et les gardes compiledb/ELF vérifient la propriété
+native/process et l'absence de définitions en double. Cela ne retire
+pas tous les adaptateurs historiques ni tous les comportements legacy.
+
+**Symptôme et résolution des retours de dégâts :** sur l'Imp/monstre distant
+`sprite=157 subtype=0`, le rectangle rouge apparaissait trop tôt, puis la
+bande directionnelle clignotait tardivement. La première impulsion tenait
+**784 ms** au lieu de 85 ms nominaux en présence d'un long traitement
+synchrone. L'owner de feedback mesure maintenant les temps physiques
+`onMs/gapMs`. Le `DAMAGE` non létal groupe le texte, le contour 2 px et
+la première impulsion dans **une même présentation physique après COMMIT**,
+avec début de lease mesuré au présent. Les ripostes létales et dommages
+pièges/tonneaux conservent leurs chemins distincts ; échec de présent,
+FIFO pleine, barrières tactiles/PAK, timeout et restauration bornée restent
+testés. Aucun changement au calcul de dégâts/RNG/SAVE.
+
+**Frontière d'animation native :** la pose finale immobile doit être
+**présentée avec succès** avant le COMMIT, mais elle ne bloque plus 500 ms
+de plus. `MONSTERATKVIS STEP phase=final-idle phaseMs=0`, puis
+`COMPLETE finalIdleHoldMs=0` et `MONSTERRETAL COMMIT`. Pour les trois
+tirs, les intervalles intermédiaires sont conservés ; le dernier projectile
+204 doit être effacé physiquement, avec retry en cas d'échec, avant
+résolution. Touch snapshot et RNG guard restent fail-closed.
+
+**Séquenceur coopératif :** `EspNativeGameplayMonsterActiveSequence_service`
+conserve préfixe d'activation, ordinal, compteur privé et pause sur probe
+de riposte ; il traite au plus **un membre vivant complet par appel** puis
+rend la main au service UI. La mutation d'un membre n'est jamais interrompue.
+`EspNativeGameplayMonsterActiveSequence_isBusy()` ferme le toucher et
+l'admission d'inputs en attente jusqu'à fin du tour. Pas de délai ajouté,
+de nouvelle tâche FreeRTOS ou allocation. Les tests hôtes de budget
+sont des tests de contrat/politique ; ils ne prouvent pas à eux seuls
+l'ordonnancement réel. Le vrai CYD atteste néanmoins
+`DAMAGECUE ON` **avant** `MONSTERACTIVESEQ COMPLETE` pour
+`SELECT_DOOR` et `PASS_TURN`, contrairement à l'ancien blocage.
+
+**Témoignage matériel utilisateur sur le code `3361cdd1` :**
+boot gameplay et cache prêts, porte `line=396` ouverte par événement 22,
+dix monstres actifs, sprite 157 armé et riposte réelle :
+probe 1 `HP 30→26`, armure `20→17`, RNG
+`2c65f990→1ceab6c3`, texte `7 damage!` ; probe 2
+`HP 26→22`, armure `17→15`, texte `6 damage!`,
+`rngRollback=yes` en préflight, `playerExact=yes`,
+`rngExact=yes` lors de l'animation. Les `[ALIVE]` maintiennent
+`heap8=112320`, `largest8=86004` avant/après, sans incident de
+collision, RNG ou de présentation signalé. Retour visuel utilisateur :
+« C'est vraiment pas mal là », **acceptation ciblée de l'amélioration**,
+pas preuve d'une animation parfaitement régulière.
+
+**Anomalie résiduelle ouverte — NE PAS masquer :** sous cette charge
+coopérative, deux `[DAMAGECUE] DONE` donnent
+`onMs=272/120 gapMs=281 delayed=yes` et
+`onMs=321/120 gapMs=237 delayed=yes`, pour un nominal
+`85/85` et `gap=45`. Les flashs expirent physiquement à
+`675` et `681 ms` pour `targetMs=500` ; ce n'est ni
+`delayed=no`, ni une stabilité de cadence validée. La
+préemption cooperative entre **membres** n'offre pas de deadline UI
+lorsqu'un membre, un rendu ou une présentation bloque la boucle ;
+résoudre ce point dans un **jalon séparé de scheduling/presentation**,
+sans toucher gratuitement à la parité RNG, aux tours ou aux visuels
+déjà validés. Les tables `monsterPhaseMs` (200–500 ms),
+cadences intermédiaires des trois tirs, lancement projectile 150 ms
+et étapes 65 ms restent à auditer par famille, pas à remplacer par zéro.
+
+**CI sur SHA code exact :**
+[push 38822809348 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38822809348),
+[PR 38822814390 SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38822814390).
+Tests de vrai compositeur `damage_cue_timing_host.c`,
+machine d'états réelle `monster_attack_visual_timeline_host.c`,
+contrat budget `monster_active_sequence_budget_host.c`,
+config/root/clock/RNG et audits ELF ; build
+**normal RAM statique 50 984 B / Flash 809 997 B**,
+trace **51 032/826 605 B**, bringup **51 136/830 649 B**.
+Ces chiffres statiques ne sont pas le heap mesuré sur le CYD.
+
+**Décision de clôture :** ce lot fonctionnel est accepté par l'utilisateur
+pour revue/merge **avec latence d'overlay connue et documentée**, non
+comme correction exhaustive des timings. Les commits après ce témoin
+matériel doivent être exclusivement **docs-only** ; nouvelle correction
+du scheduler/timing, et éventuellement vérification dédiée d'EXIT/LOAD,
+sur branche/milestone séparé avec nouveau PASS physique. Ne jamais merger
+`main` automatiquement.
+
+---
+
+
 ## PR #216 — Config key bindings natifs, CI + CYD PASS de non-régression (15 octobre 2026)
 
 Base réelle : `main 0ca15d756c2c6a64a5b4bc6b3e2b0ec89d83b7bd`.
