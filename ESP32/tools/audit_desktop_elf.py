@@ -161,8 +161,41 @@ def main():
     parser.add_argument("--csv", action="store_true")
     parser.add_argument("--calls", action="store_true")
     parser.add_argument("--require-retired-render", action="store_true")
+    parser.add_argument("--require-native-doomrpg-presentation", action="store_true")
     args = parser.parse_args()
     reports = audit(args.build, args.repo.resolve(), args.nm, args.compiledb)
+    if args.require_native_doomrpg_presentation:
+        if args.compiledb is None:
+            parser.error("--require-native-doomrpg-presentation requires current compiledb")
+        wanted = {
+            "DoomRPG_setClipFalse", "DoomRPG_setClipTrue",
+            "DoomRPG_setColor", "DoomRPG_setFontColor",
+            "DoomRPG_fillRect", "DoomRPG_drawLine",
+            "DoomRPG_flushGraphics",
+        }
+        generated = {row["symbol"] for row in reports["DoomRPG"]["symbols"]}
+        leaked = sorted(wanted & generated)
+        if leaked:
+            parser.exit(1, "FAIL: DoomRPG.o still defines presentation methods: " +
+                        ", ".join(leaked) + "\\n")
+        if reports["desktop_original_units"]:
+            parser.exit(1, "FAIL: desktop original unit admitted\\n")
+        # Require each global definition to survive exactly once in the ELF,
+        # independent of old generator object or stale build-directory files.
+        result = subprocess.check_output([str(args.nm), "-g", "--defined-only",
+                                          str(args.build / "firmware.elf")], text=True)
+        counts = {name: 0 for name in wanted}
+        for line in result.splitlines():
+            parts = line.split()
+            if len(parts) >= 3 and parts[-1] in counts and parts[-2].upper() == "T":
+                counts[parts[-1]] += 1
+        bad = {name: count for name, count in counts.items() if count != 1}
+        if bad:
+            parser.exit(1, "FAIL: native presentation symbols missing/duplicate: " +
+                        str(bad) + "\\n")
+        print("PASS presentation ABI linked=7, generated DoomRPG definitions=0, "
+              "original desktop TUs=0")
+        return
     if args.require_retired_render:
         if args.compiledb is None:
             parser.error("--require-retired-render needs --compiledb, not stale object presence")

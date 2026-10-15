@@ -359,6 +359,38 @@ for signature, expected_crc in image_resource_methods:
 print("[ESP32] DoomRPG image/resource provider moved=3 "
       "PAK=bounded indexedBMP=packed generatedBodies=removed")
 
+
+# Linked presentation/clip ABI is owned by a permanent bounded native module,
+# not by generated DoomRPG.c. The ESP32 displayRect stripping above is part
+# of the already hardware-proven 160x120 contract, NOT a new coordinate rule.
+# Unlike SDL's renderer, this owner does not allocate/own framebuffer pixels.
+presentation_methods = (
+    ("void DoomRPG_setClipFalse(DoomRPG_t* doomrpg)", 0x2dd78609),
+    ("void DoomRPG_setClipTrue(DoomRPG_t* doomrpg, int x, int y, int w, int h)", 0xa02f2e6e),
+    ("void DoomRPG_setColor(DoomRPG_t* doomrpg, int color)", 0x71b1064b),
+    ("void DoomRPG_setFontColor(DoomRPG_t* doomrpg, int color)", 0xc7fa369c),
+    ("void DoomRPG_fillRect(DoomRPG_t* doomrpg, int x, int y, int w, int h)", 0xbf15d43a),
+    ("void DoomRPG_drawLine(DoomRPG_t* doomrpg, int x1, int y1, int x2, int y2)", 0x441e2ca2),
+    ("void DoomRPG_flushGraphics(DoomRPG_t* doomrpg)", 0x7ca4dad8),
+)
+presentation_owner_path = join(project_src_dir, "esp_doomrpg_presentation.c")
+with open(presentation_owner_path, "r", encoding="latin-1") as presentation_file:
+    presentation_owner = presentation_file.read()
+for signature, expected_crc in presentation_methods:
+    adapted_body = extract_doomrpg_function(doom_rpg_source_text, signature)
+    if zlib.crc32(adapted_body.encode("latin-1")) != expected_crc:
+        raise RuntimeError("DoomRPG presentation contract drift: " + signature)
+    if extract_doomrpg_function(presentation_owner, signature) != adapted_body:
+        raise RuntimeError("ESP32 presentation owner ABI/body drift: " + signature)
+    doom_rpg_source_text = doom_rpg_source_text.replace(
+        adapted_body, "/* Native classic-CYD presentation owner */", 1
+    )
+for signature, _ in presentation_methods:
+    if signature in doom_rpg_source_text:
+        raise RuntimeError("Migrated presentation definition remains in DoomRPG.c: " + signature)
+print("[ESP32] DoomRPG presentation/clip linked ABI moved=7 "
+      "owner=esp_doomrpg_presentation generatedBodies=removed")
+
 with open(doom_rpg_patched, "w", encoding="latin-1", newline="\n") as patched_file:
     patched_file.write(doom_rpg_source_text)
 
