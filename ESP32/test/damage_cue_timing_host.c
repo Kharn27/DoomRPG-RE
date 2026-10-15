@@ -25,8 +25,19 @@ int EspNativeGameplayStatusMessage_repaintCurrent(void) { return 1; }
 int EspNativeGameplayHud_paintTopTouchNotches(void) { return 1; }
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_open(
     const char* name, EspNativeIndexedBmp* bmp, EspNativeIndexedBmpStats* stats) {
-    (void)name; (void)stats;
-    bmp->width = 20; bmp->height = FEEDBACK_TOP_HEIGHT;
+    /* The original compositor tests used only k.bmp (HUD strip). Grouped
+     * DAMAGE text also opens a.bmp (144x72 font): model both real contracts
+     * instead of returning a 20x20 strip for every resource. */
+    (void)stats;
+    if (strcmp(name, "a.bmp") == 0) {
+        bmp->width = FEEDBACK_FONT_SOURCE_WIDTH;
+        bmp->height = FEEDBACK_FONT_SOURCE_HEIGHT;
+    }
+    else {
+        assert(strcmp(name, "k.bmp") == 0);
+        bmp->width = 20U;
+        bmp->height = FEEDBACK_TOP_HEIGHT;
+    }
     return ESP_NATIVE_INDEXED_BMP_OK;
 }
 EspNativeIndexedBmpStatus EspNativeIndexedBmp_tile(
