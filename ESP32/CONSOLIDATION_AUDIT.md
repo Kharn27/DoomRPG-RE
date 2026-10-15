@@ -1,5 +1,69 @@
 # Audit de consolidation architecturale ESP32
 
+## Frontière liée de présentation DoomRPG — sept symboles sortis de la génération (15 octobre 2026)
+
+Base `main 3dde62507cee7cc335423617759502c217d67651`,
+branche `agent/esp32-extract-doomrpg-presentation-sdl`,
+code `1840009295909088f97d94b806320585ef832e41`.
+L'inventaire ELF *effectivement lié* attribuait les sept méthodes
+`DoomRPG_setClipFalse`, `DoomRPG_setClipTrue`,
+`DoomRPG_setColor`, `DoomRPG_setFontColor`,
+`DoomRPG_fillRect`, `DoomRPG_drawLine`,
+`DoomRPG_flushGraphics` à la TU `DoomRPG.c` générée.
+**Propriétaire permanent :** `ESP32/src/esp_doomrpg_presentation.c`.
+Le générateur vérifie CRC et texte des sept corps réellement adaptés
+au profil CYD avant leur retrait de l'unité générée. L'audit
+`--require-native-doomrpg-presentation` vérifie l'objet natif,
+l'absence de ces définitions dans `DoomRPG.o`, l'unicité ELF,
+ainsi que l'absence des unités desktop historiques, pour les trois
+profils. Ni `drawRect` ni `drawCircle` n'appartiennent à cette
+frontière ; l'original desktop n'a pas été édité.
+
+**Appels réels attestés par objdump ELF** : lignes depuis
+`drawAnimationMappedLine`/`paintHelp` ; rectangles depuis
+`DoomCanvas_setState`, menu et `Esp32StoryFit_draw` ;
+`flushGraphics` depuis `DoomCanvas_setState`,
+`DoomRPG_esp32RenderFirstIntroFrame` et
+`Esp32IntroClock_service` ; clip depuis
+`Esp32StoryFit_draw`/`Esp32IntroDispose_service` ;
+couleurs depuis les menus/aide/story et police depuis
+menus/aide. Aucun nouveau propriétaire de framebuffer, copie
+de monde, mutation du RNG ou appel ZIP runtime.
+Le reste de la TU générée, notamment ses derniers états/globals,
+demeure explicitement **hors de cette extraction**.
+
+**Preuves logicielles :** [CI code SUCCESS 38693375415](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38693375415),
+test hôte de **1 600 opérations** avec vrais corps SDL adaptés,
+mocks pixels/clip/RGB565, sentinelles et comparaison de sources ;
+trois builds PlatformIO, compiledb et contrôles ELF PASS.
+Normal **50 976 B RAM statique / 809 565 B Flash**,
+trace **51 024 / 826 041 B**, bringup **51 128 / 830 089 B**.
+Aucune réduction de temps de rendu inférée.
+
+**Preuve CYD utilisateur :** série continue de sessions sur le
+firmware normal, intro, HUD/dialogue, animation MOVE/TURN, gameplay,
+trois explosions en chaîne, combat, pickups, SAVE/LOAD V11.
+Checkpoint slot07 de `/intro.bsp` à `1632,992 angle=192`
+après ouverture porte ligne 87 et activation visible de
+`sprite=10` ; quatre empreintes SAVE/LOAD identiques
+(monstre `966ac091`, topologie `14ce1a4e`, positions
+`eb9553d2`, activation `aca2058f`), `activeCount=21`
+rétabli, attaque `sprite=10` dès le premier PASS_TURN
+dos au monstre (cue BACK, HP `34→31`, armure `20→18`).
+Invariants `shapeData/mediaTexels=NULL` ; heap8
+`112128`, largest8 `86004` en session chargée.
+PASS matériel **de non-régression de cette frontière**, non
+preuve d'identité totale de pixel/framebuffer ou du changement
+de performances.
+
+**Dettes préexistantes préservées** : renderer compact
+`LEGACY_GUARD/SPAN_OOB/RECOVERED` répétitifs, activation
+de certains monstres créés par trigger après LOAD non élucidée
+par ce seul témoin, sauvegarde et RNG non retouchés, audio différé.
+Aucune modification de code après le PASS hardware ; les
+commits post-test sont exclusivement documentaires.
+
+
 ## Suite P1 : trois fonctions images/PAK extraites et validées — 15 octobre 2026
 
 Sur `agent/esp32-extract-doomrpg-pure-primitives`, **base main

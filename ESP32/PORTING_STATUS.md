@@ -1,5 +1,68 @@
 # Doom RPG ESP32 — état actuel du port
 
+## DoomRPG — extraction de 7 primitives SDL/clip de la TU générée : CYD PASS ciblé (15 octobre 2026)
+
+Base exacte `main 3dde62507cee7cc335423617759502c217d67651`; branche
+`agent/esp32-extract-doomrpg-presentation-sdl`; **dernier commit de code
+testé `1840009295909088f97d94b806320585ef832e41`**.
+Selon l'inventaire **des symboles réellement liés** du firmware, les
+sept définitions `DoomRPG_setClipFalse`, `DoomRPG_setClipTrue`,
+`DoomRPG_setColor`, `DoomRPG_setFontColor`,
+`DoomRPG_fillRect`, `DoomRPG_drawLine` et
+`DoomRPG_flushGraphics` sont sorties du `DoomRPG.c` généré
+pour rejoindre `ESP32/src/esp_doomrpg_presentation.c`.
+`drawRect` et `drawCircle` ne faisaient **pas** partie de ces
+sept symboles liés et n'ont pas été extraits. Le générateur compare
+CRC/corps adaptés et échoue sur dérive ; audit ELF : **7 définitions
+natives, 0 dans DoomRPG.o généré, 0 unité desktop d'origine liée**.
+SDL/clip/couleur/rendu et framebuffer logique partagé **160×120 RGB565**
+conservés ; aucun framebuffer secondaire, retour ZIP, `shapeData` ni
+`mediaTexels`. Le `DoomRPG.c` généré reste compilé pour le reste
+de son périmètre : son retrait total **n'est pas** revendiqué.
+
+**CI du code : SUCCESS**, [run 38693375415](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38693375415),
+avec test hôte [`doomrpg_presentation_host.py`](test/doomrpg_presentation_host.py)
+(1 600 opérations mixtes, équivalence des corps, raster/clip/RGB565
+simulés, sentinelles, couleur/font/present) et trois profils
+PlatformIO + audits compiledb/ELF. Mesures **RAM statique / Flash** :
+normal `esp32-cyd` **50 976 / 809 565 B** ; trace **51 024 /
+826 041 B** ; bringup **51 128 / 830 089 B**.
+Ce sont des métriques CI, sans gain FPS/latence revendiqué ; le
+raster hôte simulé n'est pas une mesure de la dalle physique.
+
+**Validation utilisateur sur le vrai CYD, firmware normal : PASS ciblé
+de non-régression visible**, avec mouvement et rotation animés,
+dialogues paginés/continuation, portes animées et événement mixte
+`event=74` (six SHOW), ramassage de la clé jaune, HUD/HUB,
+combat chiens/zombies/Troop, attaques et ripostes multi-animations,
+chaîne de trois barils `283→276+303` et SAVE/LOAD V11.
+Après ouverture de la porte `line=87`, une activation
+`[MONSTERACT] ACTIVE sprite=10 ... activeCount=21` est observée.
+Sauvegarde `slot07` **dos au monstre**, `pos=1632,992 angle=192` :
+`monsters=30/966ac091`,
+`topology=43/14ce1a4e`, `positions=30/eb9553d2`,
+`activation=21/aca2058f`. LOAD restitue ces **quatre FNV exactement**,
+`[MONSTERACT] RESTORE activeCount=21 orderCount=21
+stateFNV=aca2058f`, puis sans tourner la caméra,
+premier `PASS_TURN` : `sprite=10` attaque depuis **BACK** ;
+`HP 34→31, armure 20→18`, `DAMAGECUE side=BACK`.
+La sauvegarde ne prouve pas à elle seule que `sprite=10` a été
+**créé** par SHOW : la ligne d'activation indique
+`source=bsp-render-visible`. Cet essai valide la persistance de
+l'activation de **ce** monstre, sans résoudre le précédent incident
+spécifique à des monstres effectivement apparus par trigger.
+`shapeData=0x0 mediaTexels=0x0` après LOAD, `heap8=112128`
+et `largest8=86004` stables pendant les tours montrés.
+
+**Restent ouverts, hors périmètre** : cause des répétitions
+`[NATIVEFRAME] LEGACY_GUARD → SPAN_OOB → RECOVERED`
+(vues pendant ce playtest ; recovery bornée, pas correction) ;
+investigation de l'ancienne activation post-trigger après LOAD ;
+rendu, son et autres fonctions desktop encore différés ;
+preuve de parité pixel-à-pixel sur TFT ou gain de performance non établie.
+Les modifications post-PASS de ce jalon sont **documentation uniquement**.
+
+
 ## Consolidation DoomRPG : propriétaire natif images / PAK — CI et CYD PASS ciblé (15 octobre 2026)
 
 Suite **sur la même branche** `agent/esp32-extract-doomrpg-pure-primitives`,
