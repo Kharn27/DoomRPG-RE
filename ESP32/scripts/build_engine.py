@@ -760,8 +760,9 @@ print("[ESP32] SDL shim generated with packed zero-copy indexed BMP textures")
 # All 21 original TUs were already excluded by the old '+<*.c>' source
 # filter, so that registration compiled exactly zero objects. Make the
 # boundary permanent instead of maintaining a fragile exclusion checklist:
-# native sources live in ESP32/src; the *only* admitted legacy C copies are
-# the single explicitly patched root below (DoomRPG.c).
+# native sources live in ESP32/src; no desktop C copy is registered by SCons.
+# The patched DoomRPG.c file is kept TEMPORARILY as a source-parity oracle for
+# host tests; it is not compiled or linked in any firmware profile.
 #
 # An unexpected original source addition requires an explicit build ownership
 # review; it must not silently be picked up by a future glob. Desktop and
@@ -799,16 +800,13 @@ if present_desktop_units != retired_desktop_units:
         + repr(sorted(present_desktop_units ^ retired_desktop_units))
     )
 print("[ESP32] Desktop original source registration retired; "
-      "originalC=%u compiledOriginal=0 patchedRoots=DoomRPG.c" %
+      "originalC=%u compiledOriginal=0 compiledPatchedC=0" %
       len(retired_desktop_units))
 
-env.BuildSources(
-    join(build_dir, "doomrpg_engine_patched"),
-    patched_dir,
-    src_filter=[
-        "+<DoomRPG.c>",
-    ],
-)
+# No legacy C source is admitted: the last three linked functions and
+# singleton now reside in ESP32/src/engine_stubs.c. Keep the generated
+# reference file for strict host parity checks until its generator is retired
+# in a separate cleanup with its own test-policy migration.
 
 env.BuildSources(
     join(build_dir, "doomrpg_esp32_sdl_patched"),

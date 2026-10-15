@@ -1,5 +1,7 @@
 #include <SDL.h>
 #include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h>
 
 #include "DoomRPG.h"
 #include "DoomCanvas.h"
@@ -25,10 +27,88 @@ _Static_assert(sizeof(Game_t) == sizeof(void*),
                "ESP32 Game_t must remain the one-pointer compatibility shell");
 #endif
 
-/* DoomRPG.c owns the real engine root. The desktop header intentionally does
- * not export it, but the ESP32 bring-up must populate that same root so later
- * increments can continue startup instead of constructing a parallel engine. */
-extern DoomRPG_t* doomRpg;
+/* The final linked DoomRPG.c globals/functions are now native-owned.
+ * Keep the one process root, never create an extra session-owned mirror. */
+DoomRPG_t* doomRpg = NULL;
+
+/* Original metric contract. Z_FreeMemory() is the single native heap report. */
+int DoomRPG_freeMemory(void) { // 0x1EBFC
+    return Z_FreeMemory();
+}
+
+/* This is the generated ESP32-compatible root teardown contract. World owners
+ * are released elsewhere; legacy large members stay NULL. Preserve the exact
+ * disposal order of the last linked generated provider on fatal cleanup.
+ * Normal HUB->EXIT releases only resident/session owners, not this root. */
+void DoomRPG_FreeAppData(DoomRPG_t* doomrpg)
+{
+    if (doomRpg == NULL)
+        return;
+
+    /* Legacy Combat/Particle/Player/EntityDef/Sound/Hud are retired on CYD. */
+    doomrpg->combat = NULL;
+    doomrpg->particleSystem = NULL;
+    doomrpg->player = NULL;
+    if (doomrpg->game) {
+        SDL_free(doomrpg->game);
+    }
+    doomrpg->game = NULL;
+    doomrpg->entityDef = NULL;
+    doomrpg->sound = NULL;
+    doomrpg->hud = NULL;
+    if (doomrpg->menuSystem) {
+        EspNativeMenuStorage_free(doomrpg->menuSystem, doomrpg, true);
+    }
+    doomrpg->menuSystem = NULL;
+    if (doomrpg->menu) {
+        SDL_free(doomrpg->menu);
+    }
+    doomrpg->menu = NULL;
+    if (doomrpg->render) {
+        Render_free(doomrpg->render, true);
+    }
+    doomrpg->render = NULL;
+    if (doomrpg->doomCanvas) {
+        DoomCanvas_free(doomrpg->doomCanvas, true);
+    }
+    doomrpg->doomCanvas = NULL;
+    SDL_free(doomrpg);
+}
+
+/* Fatal desktop callback retains its message/teardown semantics. The only
+ * intentional deviation is skipping the historical ZIP close: ESP32 has no
+ * ZIP runtime handle and PAK/SD lifetimes are owned independently. */
+void DoomRPG_Error(const char* fmt, ...)
+{
+    char errMsg[256];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(errMsg, sizeof(errMsg), fmt, ap);
+    va_end(ap);
+
+    printf("%s", errMsg);
+
+    const SDL_MessageBoxButtonData buttons[] = {
+        {0, 0, "Ok"},
+    };
+    const SDL_MessageBoxColorScheme colorScheme = {
+        {
+            {255, 0, 0}, {0, 255, 0}, {255, 255, 0},
+            {0, 0, 255}, {255, 0, 255}
+        }
+    };
+    const SDL_MessageBoxData messageboxdata = {
+        SDL_MESSAGEBOX_ERROR, NULL, "DoomRPG Error", errMsg,
+        SDL_arraysize(buttons), buttons, &colorScheme
+    };
+    SDL_ShowMessageBox(&messageboxdata, NULL);
+    /* Native PAK backing store is not a desktop ZIP and is not closed here. */
+    DoomRPG_FreeAppData(doomRpg);
+    SDL_CloseAudio();
+    SDL_Close();
+    exit(0);
+}
+
 
 SDLVideo_t sdlVideo = {
     NULL,

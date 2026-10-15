@@ -161,6 +161,7 @@ def main():
     parser.add_argument("--csv", action="store_true")
     parser.add_argument("--calls", action="store_true")
     parser.add_argument("--require-retired-render", action="store_true")
+    parser.add_argument("--require-retired-doomrpg", action="store_true")
     parser.add_argument("--require-native-doomrpg-presentation", action="store_true")
     parser.add_argument("--require-native-doomrpg-clock", action="store_true")
     parser.add_argument("--require-native-doomrpg-rng", action="store_true")
@@ -168,6 +169,44 @@ def main():
     parser.add_argument("--require-native-doomrpg-config-binds", action="store_true")
     args = parser.parse_args()
     reports = audit(args.build, args.repo.resolve(), args.nm, args.compiledb)
+    if args.require_retired_doomrpg:
+        if args.compiledb is None:
+            parser.error("--require-retired-doomrpg requires current compiledb")
+        if (reports["DoomRPG"]["admitted"] is not False or
+                reports["DoomRPG"]["loaded_sections"] != 0 or
+                reports["desktop_original_units"] or
+                any(s.endswith("/DoomRPG.c") for s in reports["admitted_engine_units"])):
+            parser.exit(1, "FAIL: desktop DoomRPG C source admitted or loaded\n")
+        symbols = {"doomRpg": "B", "DoomRPG_freeMemory": "T",
+                   "DoomRPG_FreeAppData": "T", "DoomRPG_Error": "T"}
+        owner = args.build / "src" / "engine_stubs.c.o"
+        if not owner.is_file():
+            parser.exit(1, "FAIL: permanent ESP32 core object missing\n")
+        def symbols_in(file):
+            result = subprocess.check_output(
+                [str(args.nm), "-g", "--defined-only", str(file)], text=True)
+            found = {name: [] for name in symbols}
+            for line in result.splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[-1] in found:
+                    found[parts[-1]].append(parts[-2].upper())
+            return found
+        own, final = symbols_in(owner), symbols_in(args.build / "firmware.elf")
+        for name, kind in symbols.items():
+            owner_kinds = ("B", "C") if kind == "B" else (kind,)
+            if len(own[name]) != 1 or own[name][0] not in owner_kinds:
+                parser.exit(1, "FAIL: native core owner symbol " + name +
+                            " " + str(own[name]) + "\n")
+            # The fatal callback may be discarded when no live caller needs it.
+            # But all the other exports (including the root) must be linked.
+            if name != "DoomRPG_Error" and final[name] != [kind]:
+                parser.exit(1, "FAIL: native core linked symbol " + name +
+                            " " + str(final[name]) + "\n")
+            if name == "DoomRPG_Error" and final[name] not in ([], [kind]):
+                parser.exit(1, "FAIL: invalid fatal callback linkage\n")
+        print("PASS DoomRPG.c generated/original admission=0 linkedInput=0 "
+              "nativeRoot=1 nativeCoreMethods=3 rootLifetime=process")
+        return
     if args.require_native_doomrpg_config_binds:
         if args.compiledb is None:
             parser.error("--require-native-doomrpg-config-binds requires compiledb")
