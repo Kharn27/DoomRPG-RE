@@ -2229,6 +2229,12 @@ void EspNativeResidentGameplay_service(struct DoomRPG_s* doomRpgBase) {
         return;
     }
     if (EspNativeGameplayPassword_isActive()) {
+        /* The password modal exclusively owns the framebuffer here. Animate
+         * only its old-school block caret, without font/PAK I/O or world draw. */
+        if (!EspNativeGameplayPassword_serviceCursor(
+                (uint32_t)(esp_timer_get_time() / 1000LL))) {
+            disableGameplay("password-caret-present");
+        }
         return;
     }
 
