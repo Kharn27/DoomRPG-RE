@@ -425,8 +425,12 @@ static int paintKeypad(void) {
             fillRect(framebuffer, x + 4, y + 5, 2, height - 10,
                      border);
 
+            /* DEL/VALID visually sit high with this PAK font. Shift only
+             * their glyphs, never the key rectangles or touch mapping. */
+            const int labelY = (row == 3 && (col == 0 || col == 2))
+                                   ? y + 5 : y + 2;
             if (!drawLabel(&font, framebuffer, label, labelX,
-                           y + 2, &stats)) {
+                           labelY, &stats)) {
                 return 0;
             }
         }
