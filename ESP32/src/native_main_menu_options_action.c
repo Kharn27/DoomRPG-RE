@@ -145,9 +145,9 @@ static int paintOptionsBounded(DoomRPG_t* doomRpg,
                      DOOMRPG_CANVAS_WIDTH,
                      DOOMRPG_CANVAS_HEIGHT);
 
-    logoDst.x = DOOMRPG_CANVAS_X +
-                ((DOOMRPG_CANVAS_WIDTH -
-                  DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH) >> 1);
+    /* Options must use the exact same left-stage origin as MENU_MAIN.
+     * Centering the stretched 102x120 logo would overlap the right rail. */
+    logoDst.x = DOOMRPG_CANVAS_X + DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X;
     logoDst.y = DOOMRPG_CANVAS_Y +
                 DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y;
     logoDst.w = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH;
@@ -307,7 +307,7 @@ int DoomRPG_esp32ActivateMainMenuOptions(struct DoomRPG_s* doomRpgBase,
 
     SDL_RenderPresent(NULL);
     if (finalFramebufferFNV != NULL) *finalFramebufferFNV = finalHash;
-    printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared 2x2 dashboard paint\n");
+    printf("[MAINOPTIONS] Presented real MENU_MAIN_OPTIONS model with shared split logo-left/cards-right dashboard paint\n");
     printf("[MAINOPTIONS] READY explicit MENU_MAIN -> MENU_MAIN_OPTIONS composition; no legacy Render_render, no map reload, no gameplay loader\n");
     return 1;
 }
