@@ -1,5 +1,89 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #217 — clôture de branche : audio-intent natif + interfaces DOOM (16 octobre 2026)
+
+**Source GitHub** : `main 4434e47a36b70826c401fc17a8b24d371789098c`,
+branche `agent/esp32-retire-canvas-sound-abi`,
+[PR #217](https://github.com/Kharn27/DoomRPG-RE/pull/217).
+**Dernier SHA de code (firmware à merger)** :
+`7c866696f4ce1d263b4a514544d7f83c06146d27`.
+[CI de ce SHA : SUCCESS, 51 étapes](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38877111031)
+(test hôte, builds `esp32-cyd` normal, bringup et trace, compiledb/ELF).
+Ce SHA **n'est pas** le SHA du premier PASS audio :
+`b6711e666965dfa7efb2017d18d6cff3ab68b5fc`.
+
+**Couture audio initiale**, conservée depuis le premier PASS CYD :
+`esp_legacy_doomcanvas_bridge.c` n'appelle plus `Sound_playSound`
+ou `Sound_stopSounds` lors de l'entrée/sortie d'intro ;
+`EspNativeAudioIntent_publish(5039, 11, 5)` et
+`EspNativeAudioIntent_stopAll()` utilisent l'owner natif existant
+de **8 B**. `STOP_ALL` est `resourceId=0, flags=0x80`.
+Le backend reste **silencieux**, sans file FIFO garantissant
+plusieurs intentions. L'audio audible, le stop à la sortie gameplay
+et la politique d'interruption restent **hors périmètre**.
+
+**Reprise UI native sur cette même branche, validée en revue
+fonctionnelle par l'utilisateur et autorisée à merger :**
+
+- **MENU_MAIN** : logo PAK original, peint par le chemin SDL natif
+  existant, maintenant **étiré volontairement** de la source 108×74
+  vers le rectangle logique `x=0, y=0, w=102, h=120` :
+  bord haut à zéro, pleine hauteur 160×120, proportions non conservées,
+  **aucun cadre** sur la zone gauche. Il ne faut ni réactiver le
+  cadre des itérations précédentes ni rétablir l'ajustement proportionnel.
+  La zone boutons reste seulement à droite : rail `x=102..159`,
+  quatre cartes `x=104..157`, chacune 54×20 logiques,
+  premières positions `y=13,38,63,88`, pas de 25.
+  Focus/armement rouge DOOM, état initial visuellement neutre,
+  **premier tap pour armer, second tap après relâchement pour confirmer**.
+  `native_main_menu_160x120_layout.h` centralise les rectangles
+  pour painter, hitboxes, Options→Back et retour LOAD `NO SAVE`.
+  Repaint des cartes borné au rail ; même dispatch/actions.
+- **PASSWORD / terminal** : habillage industriel RGB565 plutôt que
+  monochrome, header à deux lignes nettes, suppression des deux
+  fragments rouges décoratifs dans le champ de code, touches
+  en relief et DEL/VALID différenciés. Seuls les glyphes **DEL**
+  et **VALID** sont descendus de 3 px ; les zones 3×4 restent
+  identiques. Curseur rectangulaire 5×9 à la prochaine position
+  de saisie, clignotement modal toutes les **450 ms**, changement
+  de 5×9 pixels du framebuffer sans relire la police/PAK ni
+  exécuter de tour ; l'appel à `present()` reste un présent
+  normal, **ne pas prétendre à un transfert SPI partiel**.
+- Gardes dans `ESP32/test/native_ui_doom_polish_host.py` :
+  vraie géométrie C et non-recouvrement logo/rail, dessin sans
+  cadre, états menu, chemins NO SAVE et Options Back, en-tête
+  terminal, DEL/VALID, curseur et retry cosmétique. CI sans
+  régression sur les 3 profils firmware.
+
+**Preuves et limites** : le **premier PASS CYD audio** est établi
+par les logs de la section historique ci-dessous (intro → Entrance
+→ EXIT, `shapeData=mediaTexels=NULL`). Les captures/retours
+CYD des itérations UI antérieures ont motivé les changements ;
+le dernier accord utilisateur clôt le choix visuel. **Aucun
+nouveau log Serial ni capture explicitement rattaché au SHA
+`7c866696` n'est fourni ici** : le rendu pleine hauteur final
+n'a pas de mesure matérielle indépendante à déclarer. La CI
+atteste compilation/tests, pas pixels physiques ni audio audible.
+L'anomalie supposée « zombie sans tour » correspond, dans le
+scénario fourni, à un `LEVELUP` après mort du chien :
+`MONSTERTURN SKIP levelup=active`, comportement expliqué par
+`Player_nextLevel` → dialogue legacy et par le retour à
+`ST_PLAYING` sans nouvel `Game_advanceTurn`. Aucun correctif
+AI/RNG n'a été introduit ; les cas sans LEVELUP restent à
+diagnostiquer séparément.
+
+**Frontières permanentes préservées :** écran 160×120 RGB565 ×2,
+pas de nouveau framebuffer ni de cache de texels global, données
+runtime depuis PAK, `shapeData == NULL`,
+`mediaTexels == NULL`, pas de nouveau code desktop lié,
+aucune modification des sauvegardes, RNG ou combats dans cette
+passe UI. **À partir du code `7c866696`, clôture docs-only** ;
+tout changement de firmware ultérieur exigerait un autre test CYD.
+PR prête pour décision de merge par l'utilisateur,
+**aucun merge de `main` par l'agent**.
+
+---
+
 ## PR #217 — Canvas se désengage de l'ABI audio desktop : CI PASS, CYD PASS ciblé (16 octobre 2026)
 
 **Base main GitHub post-merge #216 :** `4434e47a36b70826c401fc17a8b24d371789098c`.
@@ -53,7 +137,7 @@ physiquement validé. Aucune lecture audio, conservation FIFO des
 plusieurs intents, parité auditive, SAVE→LOAD avec ce firmware,
 combat/RNG ou validation visuelle pixel à pixel ne sont prouvés par
 ces logs. La dette de cadence DAMAGECUE de #216 reste indépendante.
-**Après le SHA testé, commits de clôture exclusivement docs-only.**
+**Après ce premier SHA audio testé, trois commits de documentation audio étaient docs-only ; les itérations visuelles ultérieures constituent un second lot de code explicitement borné et tracé ci-dessus.**
 Ne pas merger dans `main` automatiquement ; nouveau code = nouveau
 jalon + nouveau flash CYD.
 
