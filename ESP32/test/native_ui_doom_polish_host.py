@@ -20,6 +20,7 @@ touch = (SRC / "native_main_menu_touch.c").read_text()
 password = (SRC / "esp_native_gameplay_password.c").read_text()
 resident = (SRC / "esp_native_resident_gameplay.c").read_text()
 load = (SRC / "native_main_menu_actions.c").read_text()
+options = (SRC / "native_main_menu_options_back.c").read_text()
 
 def macro(src, name):
     m = re.search(r"^#define\s+" + re.escape(name) + r"\s+([0-9xa-fA-FU]+)", src, re.M)
@@ -56,6 +57,10 @@ assert "DoomRPG_esp32MainMenuCardRect" in layout
 assert menu.count("DoomRPG_esp32MainMenuCardRect(") == 1
 assert touch.count("DoomRPG_esp32MainMenuCardRect(") == 1
 assert "return findHitItem(screenX / DOOMRPG_INTEGER_SCALE" in touch
+assert "DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom)" in options
+assert "DoomRPG_esp32MainMenuCardRect(OPTIONS_BACK_ITEM" in options
+assert "DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT" not in options
+assert "DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP" not in options
 assert "cardRect(item, &left, &top, &right, &bottom)" in touch
 assert "DOOMRPG_ESP32_MAIN_MENU_CARD_COL0" not in touch
 assert "DOOMRPG_ESP32_MAIN_MENU_CARD_COL1" not in touch
