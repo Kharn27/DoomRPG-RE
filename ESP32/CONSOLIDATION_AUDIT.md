@@ -1,5 +1,63 @@
 # Audit de consolidation architecturale ESP32
 
+## PR #217 — clôture d'audit : audio-intent et présentation native (2026-10-16)
+
+[PR #217](https://github.com/Kharn27/DoomRPG-RE/pull/217), base
+`main 4434e47a36b70826c401fc17a8b24d371789098c`,
+branche `agent/esp32-retire-canvas-sound-abi`.
+**Frontière finale de code :**
+`7c866696f4ce1d263b4a514544d7f83c06146d27`.
+[CI finale SUCCESS, 51 étapes](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38877111031).
+La revue utilisateur demande clôture documentaire et merge de la
+branche par ses soins. **Aucune nouvelle mutation firmware après
+ce SHA : les commits suivants ne concernent que les docs.**
+
+Le premier ensemble audio est un petit remplacement d'appels
+`Sound_*` du pont Canvas/intro par `EspNativeAudioIntent`
+(8 octets, PLAY 5039 et STOP_ALL 0x80), avec test hôte et premier
+PASS CYD réel `b6711e666965dfa7efb2017d18d6cff3ab68b5fc`.
+Il n'existe toujours aucun backend audio I2S effectif, ni
+FIFO, ni preuve de STOP_ALL pendant gameplay→menu.
+
+Le second ensemble natif n'étend **que les présentations**.
+Le menu réutilise l'image PAK 108×74 via une destination
+`SDL_Rect(0,0,102,120)` volontairement non homothétique ;
+la zone du logo est libre de cadre, le rail droit `x>=102`
+réutilise quatre hitboxes verticales invariantes de 54×20,
+validées dans un seul header partagé. Le terminal conserve
+les règles Password 10, DEL, VALID, la source police PAK et
+les hitboxes 3×4 ; les deux fragments rouges décoratifs ont
+été supprimés, DEL et VALID descendus de 3 px et le curseur
+5×9 de 450 ms ne charge pas d'asset ou ne consomme aucun tour.
+L'appel de présentation reste celui du framebuffer entier
+même si seuls les pixels du curseur sont changés.
+Le test `native_ui_doom_polish_host.py` extrait et exécute
+la vraie logique C du caret et vérifie les contrats du menu.
+
+**Ownership/mémoire** : pas de nouveau framebuffer, pas de map-wide
+`shapeData` ni `mediaTexels`, pas de ZIP runtime, pas de gros
+buffers permanents ajoutés, pas de nouvelle TU desktop liée.
+Intents audio, séquenceur de combat, RNG et sauvegarde ont
+gardé leur propriétaire. Les logs matériels du précédent
+parcours combat contiennent `LEVELUP` → `MONSTERTURN SKIP`
+sur la mort du chien ; l'enchaînement legacy
+`Player_nextLevel` → dialogue → retour `ST_PLAYING` sans
+`Game_advanceTurn` explique cette observation, **aucune
+rustine AI** n'a été introduite. Un cas de non-riposte sans
+levelup constituerait un problème distinct.
+
+**Niveau de preuve** : les anciennes traces CYD certifient
+le handoff audio et des parcours jouables ; les retours
+visuels utilisateurs ont demandé les itérations MENU/PASSWORD
+et l'utilisateur a autorisé la clôture pour merge. **Aucune
+capture/log matériel identifiée comme preuve du dernier
+rectangle étiré `102×120` n'a été fournie avec le SHA final.**
+L'acceptation produit n'est pas une preuve de FNV pixel
+spécifique. Garder la distinction lors de la prochaine branche,
+et laisser l'utilisateur merger dans `main` manuellement.
+
+---
+
 ## PR #217 — première couture audio Canvas supprimée, matériel PASS ciblé (2026-10-16)
 
 Base `main 4434e47a36b70826c401fc17a8b24d371789098c`,
@@ -35,8 +93,10 @@ la transition native ne prouve pas la réutilisation de
 `DoomCanvas_setState(ST_MENU)`. C'est une frontière distincte
 avant le véritable backend sonore. Pas de son audible ni de
 parité combat/RNG ou de cycle SAVE→LOAD testés dans ce témoin.
-Après ce hardware PASS, seuls des commits de documentation
-sont permis dans #217 ; merge par l'utilisateur exclusivement.
+Après ce premier PASS audio, les trois commits de clôture immédiats
+étaient strictement documentaires ; les itérations UI indépendantes ont
+ensuite ajouté de nouveaux commits de code sur #217, bornés par
+`7c866696`. Merge de `main` par l'utilisateur exclusivement.
 
 ---
 
