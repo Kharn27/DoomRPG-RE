@@ -34,11 +34,22 @@
 #define PASSWORD_KEY_ROW_HEIGHT 19
 #define PASSWORD_KEY_COL_WIDTH 53
 
-#define PASSWORD_COLOR_BLACK 0x0000U
-#define PASSWORD_COLOR_WHITE 0xffffU
-#define PASSWORD_COLOR_DIM 0x8410U
-#define PASSWORD_COLOR_DEL 0xf800U
-#define PASSWORD_COLOR_VALID 0x07e0U
+/* RGB565 industrial-UAC keypad palette. The sprite-font remains PAK-backed. */
+#define PASSWORD_COLOR_BLACK      0x0820U
+#define PASSWORD_COLOR_PANEL      0x1042U
+#define PASSWORD_COLOR_BUTTON     0x18a3U
+#define PASSWORD_COLOR_INPUT      0x0801U
+#define PASSWORD_COLOR_STEEL      0x4a49U
+#define PASSWORD_COLOR_STEEL_DIM  0x2945U
+#define PASSWORD_COLOR_RED        0xd004U
+#define PASSWORD_COLOR_RED_HOT    0xf0c4U
+#define PASSWORD_COLOR_GREEN      0x562bU
+#define PASSWORD_COLOR_DEL        0xb004U
+#define PASSWORD_COLOR_VALID      0x35c6U
+#define PASSWORD_CURSOR_PERIOD_MS 450U
+#define PASSWORD_CURSOR_Y         32
+#define PASSWORD_CURSOR_WIDTH     5
+#define PASSWORD_CURSOR_HEIGHT    9
 
 #if DOOMRPG_LOGICAL_WIDTH != 160 || DOOMRPG_LOGICAL_HEIGHT != 120
 #error "Native password keypad is defined for the 160x120 logical framebuffer"
@@ -51,6 +62,7 @@ typedef struct EspNativeGameplayPasswordState_s {
     char entered[ESP_NATIVE_GAMEPLAY_PASSWORD_MAX_CODE + 1U];
     uint32_t runFlags;
     uint32_t paintCount;
+    uint32_t cursorEpochMs;
     uint32_t fontPackReads;
     uint32_t fontBytesRead;
     uint16_t eventIndex;
@@ -68,7 +80,7 @@ typedef struct EspNativeGameplayPasswordState_s {
     uint8_t removeChanged;
     uint8_t packOwned;
     uint8_t active;
-    uint8_t reserved;
+    uint8_t cursorVisible;
 } EspNativeGameplayPasswordState;
 
 /*
@@ -235,27 +247,30 @@ static int drawLabel(const EspNativeIndexedBmp* font,
     return 1;
 }
 
+/* The original BSP question may contain '|' as a line break. Two 12px
+ * sprite-font rows fit the 29px header exactly; the bottom rule is BELOW
+ * the second row, never over the glyph descenders. */
 static int drawPrompt(const EspNativeIndexedBmp* font,
                       uint16_t* framebuffer,
                       EspNativeIndexedBmpStats* stats) {
     uint16_t i;
-    int x = 2;
-    int y = 2;
+    int x = 10;
+    int y = 3;
 
-    for (i = 0U; i < password.promptLength && y <= 14; ++i) {
-        uint8_t c = (uint8_t)password.prompt[i];
+    for (i = 0U; i < password.promptLength && y <= 16; ++i) {
+        const uint8_t c = (uint8_t)password.prompt[i];
         if (c == '|' || c == '\n') {
-            x = 2;
-            y += PASSWORD_FONT_HEIGHT;
+            x = 10;
+            y += 13;
             continue;
         }
-        if (x + PASSWORD_FONT_WIDTH > DOOMRPG_LOGICAL_WIDTH - 2) {
-            x = 2;
-            y += PASSWORD_FONT_HEIGHT;
-            if (y > 14) break;
+        if (x + PASSWORD_FONT_WIDTH > DOOMRPG_LOGICAL_WIDTH - 8) {
+            x = 10;
+            y += 13;
+            if (y > 16) break;
         }
         if (c == ' ') {
-            x += PASSWORD_FONT_ADVANCE;
+            if (x > 10) x += PASSWORD_FONT_ADVANCE;
             continue;
         }
         if (!drawGlyph(font, framebuffer, c, x, y, stats)) return 0;
@@ -264,14 +279,28 @@ static int drawPrompt(const EspNativeIndexedBmp* font,
     return 1;
 }
 
+static int codeCursorX(void) {
+    const int width = ((int)password.expectedLength + 1) *
+                      PASSWORD_FONT_ADVANCE;
+    return (DOOMRPG_LOGICAL_WIDTH - width) / 2 +
+           (int)strlen(password.entered) * PASSWORD_FONT_ADVANCE + 1;
+}
+
+static void paintCursorBlock(uint16_t* framebuffer, int visible) {
+    const int x = codeCursorX();
+    fillRect(framebuffer, x, PASSWORD_CURSOR_Y,
+             PASSWORD_CURSOR_WIDTH, PASSWORD_CURSOR_HEIGHT,
+             visible ? PASSWORD_COLOR_RED_HOT : PASSWORD_COLOR_INPUT);
+}
+
 static int drawCode(const EspNativeIndexedBmp* font,
                     uint16_t* framebuffer,
                     EspNativeIndexedBmpStats* stats) {
-    char display[ESP_NATIVE_GAMEPLAY_PASSWORD_MAX_CODE + 1U];
-    uint16_t enteredLength = (uint16_t)strlen(password.entered);
+    const uint16_t enteredLength = (uint16_t)strlen(password.entered);
+    const int width = ((int)password.expectedLength + 1) *
+                      PASSWORD_FONT_ADVANCE;
+    const int x = (DOOMRPG_LOGICAL_WIDTH - width) / 2;
     uint16_t i;
-    int width;
-    int x;
 
     if (password.expectedLength == 0U ||
         password.expectedLength > ESP_NATIVE_GAMEPLAY_PASSWORD_MAX_CODE ||
@@ -279,15 +308,27 @@ static int drawCode(const EspNativeIndexedBmp* font,
         return 0;
     }
 
+    /* Entire strip owns 30..43; both frame edges are continuous steel.
+     * Remove the two isolated red dashes at x3..19 and x141..157,y27.
+     * They were decorations in the old drawCode, not SPI corruption. */
+    fillRect(framebuffer, 0, 30, DOOMRPG_LOGICAL_WIDTH, 14,
+             PASSWORD_COLOR_STEEL_DIM);
+    fillRect(framebuffer, 2, 31, DOOMRPG_LOGICAL_WIDTH - 4, 12,
+             PASSWORD_COLOR_INPUT);
+
     for (i = 0U; i < password.expectedLength; ++i) {
-        display[i] = i < enteredLength ? password.entered[i] : '_';
+        if (i == enteredLength) continue; /* exclusive blinking caret cell */
+        if (!drawGlyph(font, framebuffer,
+                       i < enteredLength ? (uint8_t)password.entered[i]
+                                         : (uint8_t)'_',
+                       x + i * PASSWORD_FONT_ADVANCE, 31, stats)) {
+            return 0;
+        }
     }
-    display[password.expectedLength] = '\0';
-    width = (int)password.expectedLength * PASSWORD_FONT_ADVANCE;
-    x = (DOOMRPG_LOGICAL_WIDTH - width) / 2;
-    drawRect(framebuffer, 1, 27, DOOMRPG_LOGICAL_WIDTH - 2, 15,
-             PASSWORD_COLOR_DIM);
-    return drawLabel(font, framebuffer, display, x, 29, stats);
+    password.cursorVisible = 1U;
+    password.cursorEpochMs = 0U;
+    paintCursorBlock(framebuffer, 1);
+    return 1;
 }
 
 static const char* keyLabel(int row, int col) {
@@ -305,8 +346,7 @@ static const char* keyLabel(int row, int col) {
 }
 
 static int paintKeypad(void) {
-    uint16_t* framebuffer =
-        (uint16_t*)Esp32PlatformVideo_framebuffer();
+    uint16_t* framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
     EspNativeIndexedBmp font;
     EspNativeIndexedBmpStats stats;
     int row;
@@ -329,9 +369,19 @@ static int paintKeypad(void) {
         return 0;
     }
 
+    /* Continuous UAC header. Two question rows sit at y3 and y16,
+     * separator at y29, entry field at y30..43, keypad starts y44.
+     * No red corner teeth, overdrawn descenders or orphan dashes. */
     fillRect(framebuffer, 0, 0,
              DOOMRPG_LOGICAL_WIDTH, DOOMRPG_LOGICAL_HEIGHT,
              PASSWORD_COLOR_BLACK);
+    fillRect(framebuffer, 0, 0, DOOMRPG_LOGICAL_WIDTH, 30,
+             PASSWORD_COLOR_PANEL);
+    fillRect(framebuffer, 0, 0, DOOMRPG_LOGICAL_WIDTH, 2,
+             PASSWORD_COLOR_RED);
+    fillRect(framebuffer, 0, 29, DOOMRPG_LOGICAL_WIDTH, 1,
+             PASSWORD_COLOR_STEEL);
+    fillRect(framebuffer, 4, 4, 2, 23, PASSWORD_COLOR_STEEL);
 
     if (!drawPrompt(&font, framebuffer, &stats) ||
         !drawCode(&font, framebuffer, &stats)) {
@@ -341,25 +391,46 @@ static int paintKeypad(void) {
     for (row = 0; row < PASSWORD_KEYPAD_ROWS; ++row) {
         for (col = 0; col < PASSWORD_KEYPAD_COLS; ++col) {
             const char* label = keyLabel(row, col);
-            int x = col * PASSWORD_KEY_COL_WIDTH + 1;
-            int y = PASSWORD_KEYPAD_Y + row * PASSWORD_KEY_ROW_HEIGHT;
-            int width = col == PASSWORD_KEYPAD_COLS - 1
-                            ? DOOMRPG_LOGICAL_WIDTH - x - 1
-                            : PASSWORD_KEY_COL_WIDTH - 2;
-            int labelWidth;
-            int labelX;
-            uint16_t border =
-                row == 3 && col == 0
-                    ? PASSWORD_COLOR_DEL
-                    : (row == 3 && col == 2
-                           ? PASSWORD_COLOR_VALID
-                           : PASSWORD_COLOR_WHITE);
+            const int x = col * PASSWORD_KEY_COL_WIDTH + 1;
+            const int y = PASSWORD_KEYPAD_Y + row * PASSWORD_KEY_ROW_HEIGHT;
+            const int width = col == PASSWORD_KEYPAD_COLS - 1
+                                  ? DOOMRPG_LOGICAL_WIDTH - x - 1
+                                  : PASSWORD_KEY_COL_WIDTH - 2;
+            const int height = PASSWORD_KEY_ROW_HEIGHT - 1;
+            const int labelWidth = label != NULL
+                                       ? (int)strlen(label) * PASSWORD_FONT_ADVANCE
+                                       : 0;
+            const int labelX = x + (width - labelWidth) / 2;
+            uint16_t border = PASSWORD_COLOR_STEEL;
+
             if (label == NULL || width <= 2) return 0;
-            drawRect(framebuffer, x, y, width, PASSWORD_KEY_ROW_HEIGHT - 1,
+            if (row == 3 && col == 0) border = PASSWORD_COLOR_DEL;
+            if (row == 3 && col == 2) border = PASSWORD_COLOR_VALID;
+
+            /* Each key floats in a dark recess, with inner metal lip. */
+            const uint16_t face =
+                row == 3 && col == 0 ? 0x3802U :
+                (row == 3 && col == 2 ? 0x0862U : PASSWORD_COLOR_BUTTON);
+            fillRect(framebuffer, x, y, width, height,
+                     PASSWORD_COLOR_BLACK);
+            fillRect(framebuffer, x + 1, y + 1, width - 2, height - 2,
+                     PASSWORD_COLOR_STEEL_DIM);
+            fillRect(framebuffer, x + 2, y + 2, width - 4, height - 4,
+                     face);
+            drawRect(framebuffer, x + 2, y + 2, width - 4, height - 4,
                      border);
-            labelWidth = (int)strlen(label) * PASSWORD_FONT_ADVANCE;
-            labelX = x + (width - labelWidth) / 2;
-            if (!drawLabel(&font, framebuffer, label, labelX, y + 2, &stats)) {
+            fillRect(framebuffer, x + 4, y + height - 4, width - 8, 1,
+                     PASSWORD_COLOR_STEEL_DIM);
+            /* Thin status index at left; no contact with font glyph cells. */
+            fillRect(framebuffer, x + 4, y + 5, 2, height - 10,
+                     border);
+
+            /* DEL/VALID visually sit high with this PAK font. Shift only
+             * their glyphs, never the key rectangles or touch mapping. */
+            const int labelY = (row == 3 && (col == 0 || col == 2))
+                                   ? y + 5 : y + 2;
+            if (!drawLabel(&font, framebuffer, label, labelX,
+                           labelY, &stats)) {
                 return 0;
             }
         }
@@ -369,6 +440,42 @@ static int paintKeypad(void) {
     password.fontBytesRead += stats.bytesRead;
     if (!Esp32PlatformVideo_present()) return 0;
     ++password.paintCount;
+    return 1;
+}
+
+/* Called from resident gameplay idle modal path. A caret blink updates only
+ * 5x9 pixels; never reopens a font, repaints the keypad or consumes a turn.
+ * Failed presents restore the old pixels so the next tick can retry. */
+int EspNativeGameplayPassword_serviceCursor(uint32_t nowMs) {
+    uint16_t* framebuffer;
+    uint8_t next;
+    if (passwordState() == NULL || !password.active) return 1;
+    if (!password.packOwned || !EspAssetPack_isOpen()) return 0;
+    if (password.cursorEpochMs == 0U) {
+        password.cursorEpochMs = nowMs != 0U ? nowMs : 1U;
+        return 1;
+    }
+    if ((uint32_t)(nowMs - password.cursorEpochMs) <
+        PASSWORD_CURSOR_PERIOD_MS) {
+        return 1;
+    }
+    framebuffer = (uint16_t*)Esp32PlatformVideo_framebuffer();
+    if (framebuffer == NULL ||
+        Esp32PlatformVideo_framebufferSizeBytes() !=
+            (size_t)DOOMRPG_LOGICAL_WIDTH *
+            (size_t)DOOMRPG_LOGICAL_HEIGHT * sizeof(uint16_t)) {
+        return 0;
+    }
+    next = password.cursorVisible == 0U ? 1U : 0U;
+    paintCursorBlock(framebuffer, next);
+    if (!Esp32PlatformVideo_present()) {
+        /* Cosmetic present failure must not tear down a valid PASSWORD modal.
+         * Restore the exact previous caret pixels and retry on next service. */
+        paintCursorBlock(framebuffer, password.cursorVisible);
+        return 1;
+    }
+    password.cursorVisible = next;
+    password.cursorEpochMs = nowMs;
     return 1;
 }
 

@@ -53,9 +53,6 @@ _Static_assert(sizeof(DoomCanvas_t) == ESP32_DOOMCANVAS_COMPACT_BYTES,
  * by the native runtime while those call sites are migrated individually.
  */
 
-void Sound_stopSounds(struct Sound_s* sound);
-void Sound_playSound(struct Sound_s* sound, int resourceID, byte flags, int priority);
-
 #define ESP32_SND_FLG_LOOP       1U
 #define ESP32_SND_FLG_STOPSOUNDS 2U
 #define ESP32_SND_FLG_ISMUSIC    8U
@@ -283,14 +280,14 @@ static int doomCanvasBeginIntro(DoomCanvas_t* doomCanvas)
     DoomCanvas_drawString1(
         doomCanvas, "Loading...", DOOMRPG_CANVAS_CENTER_X, DOOMRPG_CANVAS_CENTER_Y, 17);
     DoomRPG_flushGraphics(doomCanvas->doomRpg);
-    Sound_playSound(doomCanvas->doomRpg->sound,
-                    5039,
-                    ESP32_SND_FLG_LOOP | ESP32_SND_FLG_STOPSOUNDS |
-                        ESP32_SND_FLG_ISMUSIC,
-                    5);
+    /* Intro music is a native intent, independent of the retired Sound_t.
+     * Playback remains deferred until a bounded hardware backend exists. */
+    (void)EspNativeAudioIntent_publish(
+        5039U, ESP32_SND_FLG_LOOP | ESP32_SND_FLG_STOPSOUNDS |
+                   ESP32_SND_FLG_ISMUSIC, 5U);
 
     if (!EspNativeIntroState_begin(doomCanvas->doomRpg)) {
-        Sound_stopSounds(doomCanvas->doomRpg->sound);
+        EspNativeAudioIntent_stopAll();
         printf("[DOOMCANVASBRIDGE] INTRO-REJECT owner=native-transient allocation/load failed\n");
         return 0;
     }
@@ -329,7 +326,7 @@ void DoomCanvas_setState(DoomCanvas_t* doomCanvas, int stateNum)
 
     oldState = doomCanvas->state;
     if (oldState == ST_MENU && stateNum != ST_MENU) {
-        Sound_stopSounds(doomCanvas->doomRpg->sound);
+        EspNativeAudioIntent_stopAll();
     }
 
     if (stateNum == ST_INTRO && stateNum != oldState) {

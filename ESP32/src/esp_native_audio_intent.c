@@ -30,6 +30,20 @@ int EspNativeAudioIntent_publish(uint16_t resourceId,
     return 1;
 }
 
+/* Stop is a command, not an audio resource. Retain the same 8-byte record
+ * and monotonic call-order sequence so a future backend can consume it. */
+int EspNativeAudioIntent_stopAll(void) {
+    if (intentCount != UINT32_MAX) ++intentCount;
+    lastIntent.sequence = intentCount;
+    lastIntent.resourceId = 0U;
+    lastIntent.flags = ESP_NATIVE_AUDIO_STOP_ALL_FLAG;
+    lastIntent.priority = 0U;
+
+    printf("[AUDIOINTENT] STOP_ALL seq=%u backend=silent order=call-order\n",
+           (unsigned int)lastIntent.sequence);
+    return 1;
+}
+
 const EspNativeAudioIntent* EspNativeAudioIntent_last(void) {
     return intentCount != 0U ? &lastIntent : NULL;
 }

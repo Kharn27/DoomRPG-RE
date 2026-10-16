@@ -27,25 +27,41 @@
     (DOOMRPG_ESP32_MAIN_MENU_LAST_ITEM_Y + \
      DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT)
 
-/* Finger-first MENU_MAIN dashboard. Preserve the proven 90x62 title scale:
- * the logo stays visually dominant while the two card rows remain generous
- * 68x23 logical / 136x46 physical touch targets.
- */
-#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH 90
-#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT 62
-#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y 2
+/* Landscape split layout, all coordinates logical RGB565 160x120.
+ * Deliberately stretch the 108x74 source logo to a 102x120 tall left
+ * banner, anchored at 0,0; the user prefers full height over aspect ratio.
+ * Four 54x20 logical touch cards (108x40 physical) stay in the right rail.
+ * One source of truth for painting, touch gate and debug hitboxes. */
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH 102
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT 120
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X 0
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y 0
 
-#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP 64
-#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM 65
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT 102
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT 159
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP 4
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM 116
 
-#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT 8
-#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT 75
-#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT 84
-#define DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT 151
-#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP 67
-#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM 89
-#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP 93
-#define DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM 115
-#define DOOMRPG_ESP32_MAIN_MENU_DASH_FOOTER_Y 118
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT 104
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT 157
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP 13
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT 20
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH 25
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(index) \
+    (DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP + \
+     (index) * DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH)
+#define DOOMRPG_ESP32_MAIN_MENU_CARD_BOTTOM(index) \
+    (DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(index) + \
+     DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT - 1)
+#define DOOMRPG_ESP32_MAIN_MENU_DASH_FOOTER_Y 119
+
+/* Keep the exact 2-tap logical selection/confirmation contract. */
+static inline void DoomRPG_esp32MainMenuCardRect(
+    int item, int* left, int* top, int* right, int* bottom) {
+    if (left != 0) *left = DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT;
+    if (right != 0) *right = DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT;
+    if (top != 0) *top = DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(item);
+    if (bottom != 0) *bottom = DOOMRPG_ESP32_MAIN_MENU_CARD_BOTTOM(item);
+}
 
 #endif

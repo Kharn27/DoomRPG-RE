@@ -471,14 +471,15 @@ DoomRPG_esp32MainMenuDispatchConfirmed(struct DoomRPG_s* doomRpgBase,
 #define MAIN_LOAD_ITEM_INDEX 1
 #define MAIN_LOAD_GLYPH_ADVANCE 7
 
-static char noSaveLabel[] = "No Save   ";
+static char noSaveLabel[] = "NO SAVE";
 
 static void showNoSaveFeedback(DoomRPG_t* doomRpg) {
     DoomCanvas_t* canvas = doomRpg->doomCanvas;
-    const int left = DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT;
-    const int right = DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT;
-    const int top = DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP;
-    const int bottom = DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM;
+    int left, top, right, bottom;
+    /* LOAD is item 1 of the vertical rail, not column 1/row 0.
+     * Confine NO SAVE to its new 63x20 hitbox and rebase the frame hash. */
+    DoomRPG_esp32MainMenuCardRect(MAIN_LOAD_ITEM_INDEX,
+                                 &left, &top, &right, &bottom);
     const int width = (int)(sizeof(noSaveLabel) - 1U) *
                       MAIN_LOAD_GLYPH_ADVANCE;
     const int x = ((left + right + 1) >> 1) - (width >> 1);

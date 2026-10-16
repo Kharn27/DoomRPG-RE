@@ -1,5 +1,157 @@
 # Doom RPG ESP32 — guide de travail
 
+## PR #217 — follow-up de code review : Options aligné sur MENU_MAIN (16 octobre 2026)
+
+Après la clôture initiale `7c866696`/docs `909e7e37`,
+la review Codex GitHub a identifié un P2 réel :
+`paintOptionsBounded()` composait le logo 102×120 à `x=29`
+(car il le centrait dans 160px) tandis que le menu principal
+l'affiche à `x=0`. Le rail `x=102..159` masquait sa droite.
+**Nouveau SHA de code :**
+`e4d0d03844ebfbd431318b8b1e0c9f2936c5d961`.
+Le painter Options utilise désormais exactement
+`DOOMRPG_CANVAS_X + DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X`,
+comme MENU_MAIN, sans modifier y/w/h ou les quatre boutons.
+Le test hôte vérifie explicitement l'égalité des destinations
+`logoDst` dans les deux renderers et interdit le recentrage.
+
+Il s'agit d'une **nouvelle frontière de code** : ne pas
+présenter les photos précédentes comme un test matériel de
+cette variante. Pour validation sur le classic CYD normal,
+ouvrir MENU_MAIN → OPTIONS et vérifier que le logo occupe
+la même zone gauche `x=0..101`, puis BACK. Les autres
+limitations audio et gameplay listées ci-dessous subsistent.
+Seul l'utilisateur merge dans `main`.
+
+---
+
+## PR #217 — clôture et mode d'emploi du menu DOOM / terminal (16 octobre 2026)
+
+Base réelle `main 4434e47a36b70826c401fc17a8b24d371789098c`,
+branche `agent/esp32-retire-canvas-sound-abi`,
+[PR #217](https://github.com/Kharn27/DoomRPG-RE/pull/217).
+**SHA code définitif de ce lot :**
+`7c866696f4ce1d263b4a514544d7f83c06146d27`.
+[CI du SHA : SUCCESS (51 étapes)](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38877111031) ;
+le retour utilisateur du 16 octobre autorise la clôture documentaire
+et la préparation au merge, **sans demander à l'agent de merger**.
+
+### Rendu MENU_MAIN : contrat désormais retenu
+
+En logique 160×120, le logo source PAK **108×74** est copié vers
+`SDL_Rect{x=0,y=0,w=102,h=120}`. Il est donc aligné **au bord haut**,
+occupe toute la hauteur et est **volontairement déformé** ; ne pas
+« corriger » son ratio sans nouveau retour visuel. Aucun encadrement
+ni montage rouge autour du logo. Le panneau droit, seul habillé,
+commence à `x=102` et contient les boutons `START`, `LOAD`,
+`OPTIONS`, `HELP` : `x=104..157`, hauteur 20, `top=13+25*i`
+pour `i=0..3`. `native_main_menu_160x120_layout.h`
+définit la géométrie partagée par dessin, sélections, touch gate,
+hitboxes de debug, Options Back et retour `NO SAVE`. La carte
+reste neutre jusqu'au premier tap, devient rouge armée, puis
+le **second tap après relâchement** confirme ; la logique
+d'action/touch existante ne change pas.
+
+### Terminal et code d'accès
+
+L'owner permanent `esp_native_gameplay_password.c` dessine
+l'en-tête de question sur deux lignes, un séparateur unique,
+un champ de saisie en creux (sans les deux anciens traits
+rouges isolés), et un keypad natif 3×4 avec touches différenciées
+DEL rouge / VALID vert. Les seules étiquettes déplacées sont
+DEL et VALID (`y+5` au lieu de `y+2`) ; rectangles tactiles
+inchangés. Un curseur bloc 5×9 (ligne `y=32`) clignote
+toutes les 450 ms dans le chemin modal résident, à la suite
+du code saisi, sans relecture des glyphes ni tour supplémentaire.
+Les 5×9 pixels sont modifiés dans le framebuffer, puis
+`Esp32PlatformVideo_present()` est appelé normalement ;
+ne pas confondre ce rafraîchissement logique borné avec
+un transfert matériel partiel.
+
+### Preuve et test en cas de nouvelle révision
+
+Le dernier firmware avant documentation compile dans les profils
+`esp32-cyd`, `bringup` et `trace` ; les tests hôte
+`ESP32/test/native_ui_doom_polish_host.py` et
+`native_audio_handoff_host.py` ainsi que les gardes
+compiledb/ELF passent. L'ancien hardware PASS audio
+`b6711e666965dfa7efb2017d18d6cff3ab68b5fc` a prouvé
+intro/Entrance/EXIT et les invariants mémoire, mais
+**n'est pas un essai matériel du logo final 102×120**.
+Le retour visuel utilisateur accepte le jalon pour merge,
+sans nouveau Serial/capture indexé au SHA final.
+
+Si le layout doit encore bouger, tester sur carte réelle uniquement
+en configuration normale :
+
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+Sur les logs, repérer `[MAINOPAQUE] TARGET` indiquant
+`logo=102x120@0,0 stretched=yes unframed=yes`,
+puis vérifier les quatre doubles taps et Options→Back,
+LOAD `NO SAVE`, le champ code et son curseur. Les FNV
+de framebuffer seront nécessairement différents des étapes
+historisées. Audio : le nouvel `EspNativeAudioIntent_stopAll()`
+et le PLAY 5039 utilisent encore un backend **silent**,
+sans FIFO ni sortie sonore réelle ; ce chantier sera testé
+ultérieurement. Ne pas réintroduire de ZIP runtime, de
+`shapeData` ou `mediaTexels`, ni de source desktop
+compilée. Pour tout prochain milestone après merge, relire
+le vrai `main` et ses SHA de référence.
+
+---
+
+## PR #217 — handoff audio natif depuis l'intro, test CYD (16 octobre 2026)
+
+Depuis le `main 4434e47a36b70826c401fc17a8b24d371789098c`,
+branche `agent/esp32-retire-canvas-sound-abi`,
+[PR #217](https://github.com/Kharn27/DoomRPG-RE/pull/217).
+Le dernier code firmware normal flashé et observé :
+`b6711e666965dfa7efb2017d18d6cff3ab68b5fc`.
+[CI SUCCESS](https://github.com/Kharn27/DoomRPG-RE/actions/runs/38824713309),
+avec nouveau test hôte `python3 ESP32/test/native_audio_handoff_host.py`,
+trois builds et gardes ELF.
+
+L'intro ne passe plus par `Sound_playSound`; le pont Canvas émet
+une commande native PLAY `5039 flags=11 priority=5`.
+Deux anciens sites `Sound_stopSounds` utilisent désormais
+`EspNativeAudioIntent_stopAll()` : `resourceId=0 flags=0x80`,
+dans le même record borné à 8 octets. Le backend reste **silent**
+et `lastIntent` conserve uniquement la dernière intention ; ne
+pas prétendre que les sons successifs ou la musique jouent déjà.
+Les autres stubs `Sound_*` sont hors de ce jalon.
+
+Pour la preuve physique, flasher **uniquement le profil normal** :
+
+```sh
+cd ESP32
+pio run -e esp32-cyd -t upload -t monitor
+```
+
+Chemin validé par les logs utilisateurs : Start Game → intro complète
+→ dispose → Entrance → HUB SYSTEM → EXIT confirmé → menu principal.
+On observe `[AUDIOINTENT] STOP_ALL seq=5` puis
+`PUBLISH seq=6 resource=5039 flags=11 priority=5`, les 7 taps
+d'intro, `INTRODISP READY` récupérant 34 056 octets,
+`ENGINESESSION FRESH-VISIBLE` et `RESIDENTGAMEPLAY READY`.
+Deux `ALIVE` en session à `heap8=112576 largest8=86004`.
+Le reset EXIT vide les owners (`released=18008 empty=1`) et
+retrouve le menu de FNV `522dc605`, `heap8=158256`,
+`saveWrite=no`, avec `shapeData/mediaTexels=NULL`.
+
+**Ne pas extrapoler :** aucun STOP_ALL observé **pendant EXIT**,
+aucune sortie sonore réelle, aucun combat ni nouveau SAVE→LOAD sur
+ce code, et pas de comparaison pixel exhaustive. Toute mutation firmware ultérieure exige un nouveau test matériel ;
+les commits documentaires qui suivirent ce premier témoin audio
+étaient docs-only, puis une passe UI distincte fut conduite sur
+cette même PR, clôturée avec son propre code SHA ci-dessus. La cadence UI sous charge
+est une dette distincte et reste documentée dans PORTING_STATUS.
+
+---
+
 ## PR #216 — état du firmware natif et retour d'impact (16 octobre 2026)
 
 **Firmware normal `esp32-cyd` joué sur CYD :**

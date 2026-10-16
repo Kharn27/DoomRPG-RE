@@ -119,17 +119,19 @@ static uint32_t menuModelHash(const EspNativeMenuState_t* menuSystem) {
 
 static uint32_t dashboardLayoutHash(void) {
     uint32_t hash = 2166136261U;
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH);
     hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP);
-    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_FIRST_TOP);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_HEIGHT);
+    hash = fnvMixU32(hash, DOOMRPG_ESP32_MAIN_MENU_CARD_PITCH);
     return hash;
 }
 
@@ -188,14 +190,31 @@ static int validatePresentationContract(DoomRPG_t* doomRpg,
     modelHash = menuModelHash(menuSystem);
     layoutHash = dashboardLayoutHash();
     if (modelHash != EXPECTED_MAIN_MENU_MODEL_FNV ||
+        DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X < 0 ||
+        DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y < 0 ||
+        DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X +
+            DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH >
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT ||
         DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y +
-                DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT >
+            DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT >
+            DOOMRPG_LOGICAL_HEIGHT ||
+        DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP < 0 ||
+        DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT >=
+            DOOMRPG_LOGICAL_WIDTH ||
+        DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT <=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT ||
+        DOOMRPG_ESP32_MAIN_MENU_CARD_RIGHT >=
+            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT ||
+        DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(0) <=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP ||
-        DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT < 0 ||
-        DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT >= DOOMRPG_LOGICAL_WIDTH ||
-        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP <=
+        DOOMRPG_ESP32_MAIN_MENU_CARD_BOTTOM(3) >=
             DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM ||
-        DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM >= DOOMRPG_LOGICAL_HEIGHT) {
+        DOOMRPG_ESP32_MAIN_MENU_CARD_BOTTOM(0) >=
+            DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(1) ||
+        DOOMRPG_ESP32_MAIN_MENU_CARD_BOTTOM(1) >=
+            DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(2) ||
+        DOOMRPG_ESP32_MAIN_MENU_CARD_BOTTOM(2) >=
+            DOOMRPG_ESP32_MAIN_MENU_CARD_TOP(3)) {
         return 0;
     }
 
@@ -209,16 +228,7 @@ static void dashboardCardRect(int item,
                               int* top,
                               int* right,
                               int* bottom) {
-    const int col = item & 1;
-    const int row = item >> 1;
-    *left = col ? DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT
-                : DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT;
-    *right = col ? DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT
-                 : DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT;
-    *top = row ? DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP
-               : DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP;
-    *bottom = row ? DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM
-                  : DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM;
+    DoomRPG_esp32MainMenuCardRect(item, left, top, right, bottom);
 }
 
 static void putPixel(Render_t* render, int x, int y, uint16_t color) {
@@ -277,6 +287,13 @@ static void chamferCard(Render_t* render,
     putPixel(render, right, bottom, ESP_HUB_COLOR_BLACK);
 }
 
+/* Menu-specific RGB565 red. HUB amber remains unchanged elsewhere. */
+#define MAIN_DOOM_RED       0xc002U
+#define MAIN_DOOM_RED_HOT   0xf0e2U
+#define MAIN_DOOM_RED_DARK  0x4801U
+#define MAIN_DOOM_METAL     0x1082U
+#define MAIN_DOOM_METAL_HI  0x2104U
+
 static void drawDashboardCard(DoomRPG_t* doomRpg,
                               int item,
                               const char* label,
@@ -291,33 +308,23 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
     int textWidth;
     int textX;
     int textY;
-    uint16_t panel = selected ? ESP_HUB_COLOR_PANEL_ALT : ESP_HUB_COLOR_PANEL;
-    uint16_t border = selected ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL;
-    uint16_t rail = selected ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_STEEL_DARK;
+    const int focused = selected && armed && enabled;
+    const uint16_t panel = !enabled ? ESP_HUB_COLOR_BG :
+                           (focused ? MAIN_DOOM_RED_DARK : MAIN_DOOM_METAL);
+    const uint16_t border = !enabled ? ESP_HUB_COLOR_STEEL_DARK :
+                            (focused ? MAIN_DOOM_RED_HOT : ESP_HUB_COLOR_STEEL_DARK);
+    const uint16_t rail = focused ? MAIN_DOOM_RED_HOT : MAIN_DOOM_METAL_HI;
 
     dashboardCardRect(item, &left, &top, &right, &bottom);
-
-    if (!enabled) {
-        panel = ESP_HUB_COLOR_BG;
-        border = ESP_HUB_COLOR_STEEL_DARK;
-        rail = ESP_HUB_COLOR_STEEL_DARK;
-    }
-    else if (armed && selected) {
-        panel = ESP_HUB_COLOR_STEEL_DARK;
-        border = ESP_HUB_COLOR_IVORY;
-    }
-
     fillRect565(render, left, top, right, bottom, panel);
+
+    /* Single-pixel perimeter only: no competing ivory outer border and no
+     * amber/white double-ring. Red is reserved for a real first-tap arm. */
     drawRect565(render, left, top, right, bottom, border);
-    if (selected) {
-        drawRect565(render, left + 2, top + 2, right - 2, bottom - 2,
-                    armed ? ESP_HUB_COLOR_AMBER : ESP_HUB_COLOR_AMBER_DIM);
-    }
+    fillRect565(render, left + 2, top + 4,
+                left + (focused ? 4 : 3), bottom - 4, rail);
 
-    fillRect565(render, left + 2, top + 4, left + (selected ? 4 : 3),
-                bottom - 4, rail);
-
-    /* Small Doom-tech corner teeth keep the cards from reading as phone UI. */
+    /* Small industrial corner teeth instead of rounded phone-like buttons. */
     putPixel(render, right - 3, top + 2, border);
     putPixel(render, right - 2, top + 2, border);
     putPixel(render, right - 2, top + 3, border);
@@ -328,20 +335,13 @@ static void drawDashboardCard(DoomRPG_t* doomRpg,
 
     textWidth = (int)strlen(label) * MENU_GLYPH_ADVANCE;
     textX = ((left + right + 1) >> 1) - (textWidth >> 1);
-    textY = top + (((bottom - top + 1) - DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT) >> 1);
-
+    textY = top + (((bottom - top + 1) -
+                    DOOMRPG_ESP32_MAIN_MENU_FONT_HEIGHT) >> 1);
     DoomRPG_setFontColor(doomRpg,
-                         !enabled ? 0xff6f7881U
-                                  : (selected
-                                         ? (armed ? 0xffffffffU : 0xffffa000U)
-                                         : 0xffffffffU));
-    /* The ESP32 bridge owns only the compact 9x12 font. Keep these labels in
-     * flash/rodata instead of spending writable RAM on four copies. */
+                         !enabled ? 0xff6f7881U :
+                         (focused ? 0xffffece8U : 0xffddd5ccU));
     DoomCanvas_drawString1(doomRpg->doomCanvas,
-                           (char*)label,
-                           textX,
-                           textY,
-                           0);
+                           (char*)label, textX, textY, 0);
 }
 
 int DoomRPG_esp32PaintMenuDashboardCards(
@@ -368,24 +368,35 @@ int DoomRPG_esp32PaintMenuDashboardCards(
 
     render = doomRpg->render;
 
-    /* Keep the four touch cards visually independent on the true black menu
-     * background. The previous full-width ESP_HUB_COLOR_BG slab made the lower
-     * half read as one oversized grey panel and visually competed with the
-     * Doom RPG title. Repaint the bounded dashboard band black on every
-     * selection change so no previous focus pixels survive between cards.
-     */
+    /* Bound every selection repaint to the right rail only. The original
+     * PAK logo and its left stage must remain byte-exact, even after rapid
+     * selections and NO SAVE feedback. No allocations or scene redraw. */
     fillRect565(render,
-                0,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
-                DOOMRPG_LOGICAL_WIDTH - 1,
-                DOOMRPG_LOGICAL_HEIGHT - 1,
-                ESP_HUB_COLOR_BLACK);
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
+                MAIN_DOOM_METAL);
+    /* Only the *button rail* is framed. The larger PAK logo is free on black. */
+    drawRect565(render,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT - 1,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
+                ESP_HUB_COLOR_STEEL_DARK);
+    fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 1,
+                5, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 2,
+                115, MAIN_DOOM_METAL_HI);
+    fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);
+    fillRect565(render, 127, 7, 155, 8, ESP_HUB_COLOR_STEEL_DARK);
+    fillRect565(render, 105, 112, 155, 113, ESP_HUB_COLOR_STEEL_DARK);
+    fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);
 
     for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
         drawDashboardCard(doomRpg,
                           item,
                           labels[item],
-                          item == selectedIndex &&
+                          item == selectedIndex && armed &&
                               (enabledMask & (uint8_t)(1U << item)) != 0U,
                           armed && item == selectedIndex,
                           (enabledMask & (uint8_t)(1U << item)) != 0U);
@@ -429,9 +440,10 @@ static int drawTouchReadyMainMenuOpaque(DoomRPG_t* doomRpg,
                      DOOMRPG_CANVAS_WIDTH,
                      DOOMRPG_CANVAS_HEIGHT);
 
-    logoDst.x = DOOMRPG_CANVAS_X +
-                ((DOOMRPG_CANVAS_WIDTH -
-                  DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH) >> 1);
+    /* Deliberately no border, panel or mounting bracket around the logo.
+     * Let the original artwork float on the full black left-hand canvas. */
+
+    logoDst.x = DOOMRPG_CANVAS_X + DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X;
     logoDst.y = DOOMRPG_CANVAS_Y +
                 DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y;
     logoDst.w = DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH;
@@ -532,7 +544,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET cards=68x23 logical=136x46 physical labels=START|LOAD|OPTIONS|HELP style=doom-tech-floating-on-black cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET layout=split logo=102x120@0,0 stretched=yes unframed=yes rail=x102..159 cards=54x20 logical=108x40 physical palette=doom-red idle=neutral focus=single-border cursorPatchBytes=0\n");
 
     SDL_RenderPresent(NULL);
 
@@ -569,7 +581,7 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
     render = doomRpg->render;
     sceneHash = DoomRPG_esp32MainMenuFramebufferHash(render);
 
-    printf("[MAINTOUCHLAYOUT] Begin sceneFNV=%08x expected=%08x heap8=%u largest8=%u background=black-with-floating-cards\n",
+    printf("[MAINTOUCHLAYOUT] Begin sceneFNV=%08x expected=%08x heap8=%u largest8=%u background=black-with-split-rail\n",
            (unsigned int)sceneHash,
            (unsigned int)EXPECTED_NATIVE_SCENE_FNV,
            (unsigned int)heap8Free(),
@@ -627,7 +639,7 @@ int __wrap_DoomRPG_probeNativeMainMenuOverlay(struct DoomRPG_s* doomRpgBase) {
            (unsigned int)sceneHash,
            (void*)render->shapeData,
            (void*)render->mediaTexels);
-    printf("[MAINTOUCHLAYOUT] READY 2x2 dashboard; existing MENU_MAIN model/actions preserved\n");
+    printf("[MAINTOUCHLAYOUT] READY split logo-left cards-right; existing MENU_MAIN model/actions preserved\n");
     printf("[MAINTOUCHLAYOUT] READY same bounded painter reusable by Options Back and failed-load recovery\n");
     return 1;
 }

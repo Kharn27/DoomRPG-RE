@@ -40,63 +40,34 @@ static uint32_t optionsExpectedFrameFNV = 0U;
 static int optionsItemAt(int16_t screenX, int16_t screenY) {
     const int logicalX = screenX / DOOMRPG_INTEGER_SCALE;
     const int logicalY = screenY / DOOMRPG_INTEGER_SCALE;
-    int col;
-    int row;
-
-    if (logicalX >= DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT &&
-        logicalX <= DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT) {
-        col = 0;
+    int item;
+    for (item = 0; item < OPTIONS_ITEM_COUNT; ++item) {
+        int left, top, right, bottom;
+        DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom);
+        if (logicalX >= left && logicalX <= right &&
+            logicalY >= top && logicalY <= bottom) return item;
     }
-    else if (logicalX >= DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT &&
-             logicalX <= DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT) {
-        col = 1;
-    }
-    else {
-        return -1;
-    }
-
-    if (logicalY >= DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP &&
-        logicalY <= DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM) {
-        row = 0;
-    }
-    else if (logicalY >= DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP &&
-             logicalY <= DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM) {
-        row = 1;
-    }
-    else {
-        return -1;
-    }
-
-    return (row << 1) | col;
+    return -1;
 }
 
 #if DOOMRPG_ESP32_TOUCH_HITBOX_OVERLAY
 static void registerOptionsHitboxOverlay(void) {
     int item;
-
     Esp32PlatformVideo_debugOverlayClear();
     for (item = 0; item < OPTIONS_ITEM_COUNT; ++item) {
-        const int col = item & 1;
-        const int row = item >> 1;
-        const int left = col ? DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_LEFT
-                             : DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT;
-        const int right = col ? DOOMRPG_ESP32_MAIN_MENU_CARD_COL1_RIGHT
-                              : DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT;
-        const int top = row ? DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_TOP
-                            : DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP;
-        const int bottom = row ? DOOMRPG_ESP32_MAIN_MENU_CARD_ROW1_BOTTOM
-                               : DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM;
+        int left, top, right, bottom;
+        DoomRPG_esp32MainMenuCardRect(item, &left, &top, &right, &bottom);
         Esp32PlatformVideo_debugOverlaySetZone(item,
                                                (int16_t)left,
                                                (int16_t)top,
                                                (int16_t)right,
                                                (int16_t)bottom);
     }
-
     Esp32PlatformVideo_debugOverlayRefresh();
-    printf("[HITBOX] OPTIONS dashboard overlay zones=%d Back=active others=deferred framebuffer=untouched\n",
+    printf("[HITBOX] OPTIONS split-rail overlay zones=%d Back=active others=deferred framebuffer=untouched\n",
            OPTIONS_ITEM_COUNT);
 }
+
 #endif
 
 static int paintBackState(int armed) {
@@ -286,16 +257,16 @@ int DoomRPG_esp32OptionsBackActivate(struct DoomRPG_s* doomRpgBase,
 #endif
     PlatformInput_setTapCallback(optionsBackTap);
 
-    printf("[OPTIONBACK] READY Back card logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d firstTap=bright-arm secondReleasedTap=back Video/Input/Sound=deferred fastOpaqueReturn=yes\n",
-           DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT,
-           DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT,
-           DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP,
-           DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM,
-           DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_LEFT * DOOMRPG_INTEGER_SCALE,
-           ((DOOMRPG_ESP32_MAIN_MENU_CARD_COL0_RIGHT + 1) *
-                DOOMRPG_INTEGER_SCALE) - 1,
-           DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_TOP * DOOMRPG_INTEGER_SCALE,
-           ((DOOMRPG_ESP32_MAIN_MENU_CARD_ROW0_BOTTOM + 1) *
-                DOOMRPG_INTEGER_SCALE) - 1);
+    {
+        int left, top, right, bottom;
+        DoomRPG_esp32MainMenuCardRect(OPTIONS_BACK_ITEM,
+                                     &left, &top, &right, &bottom);
+        printf("[OPTIONBACK] READY Back card logical=x%d..%d y%d..%d physical=x%d..%d y%d..%d firstTap=red-arm secondReleasedTap=back Video/Input/Sound=deferred fastOpaqueReturn=yes\n",
+               left, right, top, bottom,
+               left * DOOMRPG_INTEGER_SCALE,
+               ((right + 1) * DOOMRPG_INTEGER_SCALE) - 1,
+               top * DOOMRPG_INTEGER_SCALE,
+               ((bottom + 1) * DOOMRPG_INTEGER_SCALE) - 1);
+    }
     return 1;
 }
