@@ -43,9 +43,16 @@ def function(src, signature):
 # Native 160x120 split geometry. Test the *shared* contract instead of
 # duplicating a second touch-hit table in the test suite.
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X") == 0
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y") == 25
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH") == 100
-assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT") == 69
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y") == 0
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH") == 102
+assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT") == 120
+assert (macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y") +
+        macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT")) == 120
+# Intentional anisotropic nearest-neighbor scaling rather than fitted aspect ratio.
+assert (macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH") *
+        macro(layout, "DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_HEIGHT")) != (
+        macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT") *
+        macro(layout, "DOOMRPG_ESP32_MAIN_MENU_LOGO_SRC_WIDTH"))
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT") == 102
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT") == 159
 assert macro(layout, "DOOMRPG_ESP32_MAIN_MENU_CARD_LEFT") == 104
@@ -77,7 +84,7 @@ drawMain = function(menu, "static int drawTouchReadyMainMenuOpaque(")
 assert "drawRect565(" not in drawMain
 assert "fillRect565(" not in drawMain
 assert "logoDst.x = DOOMRPG_CANVAS_X + DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X" in drawMain
-assert "logo=100x69@0,25 unframed=yes" in menu
+assert "logo=102x120@0,0 stretched=yes unframed=yes" in menu
 assert 'static char noSaveLabel[] = "NO SAVE";' in load
 loadFeedback = function(load, "static void showNoSaveFeedback(")
 assert "DoomRPG_esp32MainMenuCardRect(MAIN_LOAD_ITEM_INDEX" in loadFeedback
@@ -166,6 +173,10 @@ int main(void) {
     assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X +
            DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_WIDTH <=
            DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT);
+    assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y == 0);
+    assert(DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_Y +
+           DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_HEIGHT ==
+           DOOMRPG_LOGICAL_HEIGHT);
     for (int i = 0; i < 4; ++i) {
         int l, t, r, b;
         DoomRPG_esp32MainMenuCardRect(i, &l, &t, &r, &b);
@@ -220,4 +231,4 @@ with tempfile.TemporaryDirectory() as d:
     subprocess.run([cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
                     "-I", str(INC), str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
-print("PASS native Doom UI: unframed 100x69 logo, 54x20 cards, aligned DEL/VALID, caret")
+print("PASS native Doom UI: full-height 102x120 stretched logo, 54x20 cards, keypad caret")
