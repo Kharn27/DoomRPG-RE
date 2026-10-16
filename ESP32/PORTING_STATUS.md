@@ -1,5 +1,34 @@
 # Doom RPG ESP32 — état actuel du port
 
+## PR #217 — correctif de code review P2, écran Options (16 octobre 2026)
+
+**Correctif post-clôture demandé par la review GitHub** :
+`e4d0d03844ebfbd431318b8b1e0c9f2936c5d961`
+(2 commits de code/test après le HEAD documentaire `909e7e37`).
+Le reviewer a identifié une vraie régression : dans
+`native_main_menu_options_action.c`, `paintOptionsBounded()`
+centrait toujours le logo 102×120 sur x=29 alors que
+`MENU_MAIN` le pose en x=0 et que le rail droit débute x=102.
+Les 29 pixels de droite du logo pouvaient être écrasés et
+une bande noire apparaissait à gauche. Options partage
+désormais **exactement** la position du MENU_MAIN via
+`DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X`. Le test
+`native_ui_doom_polish_host.py` compare les quatre paramètres
+`logoDst` des deux renderers et interdit le recentrage.
+Les actions, hitboxes, PAK, RAM, gameplay et RNG sont inchangés.
+
+**Validations** : la CI de `7c866696` et celle de la clôture
+documentaire `909e7e37` étaient SUCCESS (51 étapes chacune).
+Le code review-fix **n'a pas encore été flashé et photographié
+sur le CYD** : n'attribuer aucune validation matérielle nouvelle
+au SHA `e4d0d038`. La revue/CI du nouveau SHA sont distinctes.
+Le présent correctif *déplace* la dernière frontière de code ;
+la clôture docs-only ci-dessous doit être lue comme le checkpoint
+historique précédant cette review. Le merge de `main` reste
+exclusivement à l'utilisateur.
+
+---
+
 ## PR #217 — clôture de branche : audio-intent natif + interfaces DOOM (16 octobre 2026)
 
 **Source GitHub** : `main 4434e47a36b70826c401fc17a8b24d371789098c`,
