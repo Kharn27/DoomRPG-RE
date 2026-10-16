@@ -377,12 +377,20 @@ int DoomRPG_esp32PaintMenuDashboardCards(
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT,
                 DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
                 MAIN_DOOM_METAL);
-    drawRect565(render, 89, 4, 158, 116, ESP_HUB_COLOR_STEEL_DARK);
-    fillRect565(render, 90, 5, 91, 115, MAIN_DOOM_METAL_HI);
-    fillRect565(render, 94, 7, 120, 8, MAIN_DOOM_RED);
-    fillRect565(render, 122, 7, 155, 8, ESP_HUB_COLOR_STEEL_DARK);
-    fillRect565(render, 94, 112, 155, 113, ESP_HUB_COLOR_STEEL_DARK);
-    fillRect565(render, 94, 112, 108, 112, MAIN_DOOM_RED);
+    /* Only the *button rail* is framed. The larger PAK logo is free on black. */
+    drawRect565(render,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_TOP,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_RIGHT - 1,
+                DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_BOTTOM,
+                ESP_HUB_COLOR_STEEL_DARK);
+    fillRect565(render, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 1,
+                5, DOOMRPG_ESP32_MAIN_MENU_DASH_RAIL_LEFT + 2,
+                115, MAIN_DOOM_METAL_HI);
+    fillRect565(render, 105, 7, 125, 8, MAIN_DOOM_RED);
+    fillRect565(render, 127, 7, 155, 8, ESP_HUB_COLOR_STEEL_DARK);
+    fillRect565(render, 105, 112, 155, 113, ESP_HUB_COLOR_STEEL_DARK);
+    fillRect565(render, 105, 112, 118, 112, MAIN_DOOM_RED);
 
     for (item = 0; item < DOOMRPG_ESP32_MAIN_MENU_ITEM_COUNT; ++item) {
         drawDashboardCard(doomRpg,
@@ -432,15 +440,8 @@ static int drawTouchReadyMainMenuOpaque(DoomRPG_t* doomRpg,
                      DOOMRPG_CANVAS_WIDTH,
                      DOOMRPG_CANVAS_HEIGHT);
 
-    /* Left-stage mounting brackets; inset black preserves the PAK artwork.
-     * All decorative pixels are outside the 84x58 logo rectangle. */
-    drawRect565(doomRpg->render, 0, 26, 87, 95,
-                ESP_HUB_COLOR_STEEL_DARK);
-    fillRect565(doomRpg->render, 0, 26, 17, 27, MAIN_DOOM_RED);
-    fillRect565(doomRpg->render, 71, 94, 87, 95, MAIN_DOOM_RED_DARK);
-    fillRect565(doomRpg->render, 2, 105, 87, 105,
-                ESP_HUB_COLOR_STEEL_DARK);
-    fillRect565(doomRpg->render, 2, 105, 26, 105, MAIN_DOOM_RED);
+    /* Deliberately no border, panel or mounting bracket around the logo.
+     * Let the original artwork float on the full black left-hand canvas. */
 
     logoDst.x = DOOMRPG_CANVAS_X + DOOMRPG_ESP32_MAIN_MENU_DASH_LOGO_X;
     logoDst.y = DOOMRPG_CANVAS_Y +
@@ -543,7 +544,7 @@ int DoomRPG_esp32RepaintOpaqueMainMenu(struct DoomRPG_s* doomRpgBase,
            (unsigned int)composeMs,
            (unsigned int)heapAfter,
            (unsigned int)largestAfter);
-    printf("[MAINOPAQUE] TARGET layout=split logo=84x58@2,31 rail=x89..159 cards=63x20 logical=126x40 physical palette=doom-red idle=neutral focus=single-border cursorPatchBytes=0\n");
+    printf("[MAINOPAQUE] TARGET layout=split logo=100x69@0,25 unframed=yes rail=x102..159 cards=54x20 logical=108x40 physical palette=doom-red idle=neutral focus=single-border cursorPatchBytes=0\n");
 
     SDL_RenderPresent(NULL);
 
